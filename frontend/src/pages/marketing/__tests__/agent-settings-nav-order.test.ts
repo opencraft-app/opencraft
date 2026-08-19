@@ -48,44 +48,4 @@ describe("Agent settings navigation groups", () => {
     expect(manage).toMatch(/id: "files"[\s\S]*id: "diagnostics"/);
   });
 
-  it("keeps group labels legible at the navigation text size", () => {
-    const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
-    const labelStart = styles.indexOf(".lv-agents-nav-group-label");
-    const labelEnd = styles.indexOf(".lv-agents-nav-group-items", labelStart);
-
-    expect(labelStart).toBeGreaterThanOrEqual(0);
-    expect(labelEnd).toBeGreaterThan(labelStart);
-    expect(styles.slice(labelStart, labelEnd)).toContain("color: rgb(0 0 0 / 60%);");
-  });
-
-  it("uses compact density for second-level navigation items", () => {
-    const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
-    const itemsStart = styles.indexOf(".lv-agents-nav-group-items");
-    const itemsEnd = styles.indexOf(".lv-agents-nav-group .lv-agents-nav-item", itemsStart);
-    const navItemStart = styles.indexOf(".lv-agents-nav-item {", itemsEnd);
-    const navItemEnd = styles.indexOf(".lv-agents-nav-item.is-active", navItemStart);
-
-    expect(itemsStart).toBeGreaterThanOrEqual(0);
-    expect(itemsEnd).toBeGreaterThan(itemsStart);
-    expect(navItemStart).toBeGreaterThan(itemsEnd);
-    expect(navItemEnd).toBeGreaterThan(navItemStart);
-    expect(styles.slice(itemsStart, itemsEnd)).toContain("gap: 2px;");
-    expect(styles.slice(navItemStart, navItemEnd)).toContain("height: 36px;");
-  });
-
-  it("keeps revealed advanced tools in the responsive navigation grid", () => {
-    const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
-    const mobileStart = styles.indexOf("@media (max-width: 720px)");
-    const mobileEnd = styles.indexOf("@media (min-width: 768px)", mobileStart);
-
-    expect(styles).toMatch(
-      /@media \(max-width: 1023px\)[\s\S]*?\.lv-agents-nav \{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/,
-    );
-    expect(mobileStart).toBeGreaterThanOrEqual(0);
-    expect(mobileEnd).toBeGreaterThan(mobileStart);
-    expect(styles.slice(mobileStart, mobileEnd)).toContain(".lv-agents-nav,");
-    expect(styles.slice(mobileStart, mobileEnd)).toContain(
-      "grid-template-columns: repeat(2, minmax(0, 1fr));",
-    );
-  });
 });

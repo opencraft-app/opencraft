@@ -1,3 +1,32 @@
+# Agent 导航 CR 修正 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认提交和推送。
+
+**Goal:** 修正隐藏高级工具与分组导航的布局结构、测试耦合及分组命名语义。
+
+**Scope:** 仅调整 Agent 左侧导航组件、对应样式和定向测试；不改变四个可见一级分类、菜单顺序、路由或隐藏工具的开启方式。
+
+### Task 1: 统一导航结构与可访问语义
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Modify: `frontend/src/styles.css`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+**Acceptance:**
+- 隐藏的终端、浏览器入口与普通分组使用同一 items 容器，桌面缩进和窄屏栅格一致。
+- 可见分组通过 `aria-labelledby` 引用可见标题；导航项使用列表语义。
+- 删除颜色、间距和高度的 CSS 精确字符串断言，改由渲染测试验证结构与归属。
+
+- [x] 先补充渲染失败测试并确认 RED。
+- [x] 实现最小组件和样式调整并确认 GREEN。
+- [x] 运行定向测试、类型检查、i18n 检查和 diff 检查。
+
+---
+
 # 已安装技能实例展开 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

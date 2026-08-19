@@ -5419,71 +5419,81 @@ export const AgentSettingsPage = ({
                       className="lv-agents-nav"
                     >
                       {showHiddenAgentTools ? (
-                        <>
-                          <AppLink
-                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
-                            aria-current={activeSection === "terminal" ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              activeSection === "terminal"
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left">{t("终端")}</span>
-                          </AppLink>
-                          <AppLink
-                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
-                            aria-current={activeSection === "browser" ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              activeSection === "browser"
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left">{t("浏览器")}</span>
-                          </AppLink>
-                        </>
-                      ) : null}
-                      {settingsGroups.map((group) => (
-                        <div
-                          key={group.id}
-                          className="lv-agents-nav-group"
-                          role="group"
-                          aria-label={group.label}
-                        >
-                          <span className="lv-agents-nav-group-label">{group.label}</span>
-                          <div className="lv-agents-nav-group-items">
-                            {group.sections.map((section) => {
-                              const isActive = section.id === activeSection;
-                              return (
-                                <AppLink
-                                  key={section.id}
-                                  to={getAgentSectionHref(section.path, searchParams)}
-                                  aria-current={isActive ? "page" : undefined}
-                                  className={cn(
-                                    "lw-settings-nav-item lv-agents-nav-item",
-                                    isActive
-                                      ? "is-active"
-                                      : "text-black/70 hover:bg-black/[0.025]",
-                                  )}
-                                >
-                                  <span className="lv-agents-nav-icon">{section.icon}</span>
-                                  <span className="flex-1 text-left">{section.label}</span>
-                                  {section.badge && (
-                                    <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
-                                      {section.badge}
-                                    </span>
-                                  )}
-                                </AppLink>
-                              );
-                            })}
-                          </div>
+                        <div className="lv-agents-nav-group">
+                          <ul className="lv-agents-nav-group-items">
+                            <li>
+                              <AppLink
+                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
+                                aria-current={activeSection === "terminal" ? "page" : undefined}
+                                className={cn(
+                                  "lw-settings-nav-item lv-agents-nav-item",
+                                  activeSection === "terminal"
+                                    ? "is-active"
+                                    : "text-black/70 hover:bg-black/[0.025]",
+                                )}
+                              >
+                                <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
+                                <span className="flex-1 text-left">{t("终端")}</span>
+                              </AppLink>
+                            </li>
+                            <li>
+                              <AppLink
+                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
+                                aria-current={activeSection === "browser" ? "page" : undefined}
+                                className={cn(
+                                  "lw-settings-nav-item lv-agents-nav-item",
+                                  activeSection === "browser"
+                                    ? "is-active"
+                                    : "text-black/70 hover:bg-black/[0.025]",
+                                )}
+                              >
+                                <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
+                                <span className="flex-1 text-left">{t("浏览器")}</span>
+                              </AppLink>
+                            </li>
+                          </ul>
                         </div>
-                      ))}
+                      ) : null}
+                      {settingsGroups.map((group) => {
+                        const groupLabelId = `agent-settings-nav-group-${group.id}`;
+                        return (
+                          <div
+                            key={group.id}
+                            className="lv-agents-nav-group"
+                            role="group"
+                            aria-labelledby={groupLabelId}
+                          >
+                            <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
+                            <ul className="lv-agents-nav-group-items">
+                              {group.sections.map((section) => {
+                                const isActive = section.id === activeSection;
+                                return (
+                                  <li key={section.id}>
+                                    <AppLink
+                                      to={getAgentSectionHref(section.path, searchParams)}
+                                      aria-current={isActive ? "page" : undefined}
+                                      className={cn(
+                                        "lw-settings-nav-item lv-agents-nav-item",
+                                        isActive
+                                          ? "is-active"
+                                          : "text-black/70 hover:bg-black/[0.025]",
+                                      )}
+                                    >
+                                      <span className="lv-agents-nav-icon">{section.icon}</span>
+                                      <span className="flex-1 text-left">{section.label}</span>
+                                      {section.badge && (
+                                        <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                          {section.badge}
+                                        </span>
+                                      )}
+                                    </AppLink>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        );
+                      })}
                     </nav>
 
                     {isCN ? (

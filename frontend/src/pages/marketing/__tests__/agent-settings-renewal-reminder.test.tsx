@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -146,6 +146,7 @@ const renderAgentSettingsPage = () => render(
 describe("AgentSettingsPage renewal reminder", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete (window as Window & { show?: unknown }).show;
     vi.setSystemTime(new Date("2026-07-27T00:00:00.000Z"));
     currentSessionUser = {
       id: "usr_agent_renewal",
@@ -215,6 +216,36 @@ describe("AgentSettingsPage renewal reminder", () => {
 
     expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
     expect(screen.getByText("生效中")).toBeInTheDocument();
+  });
+
+  it("keeps revealed advanced tools in the same grouped navigation structure", async () => {
+    renderAgentSettingsPage();
+
+    await waitFor(() => {
+      expect(typeof (window as Window & { show?: unknown }).show).toBe("function");
+    });
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    const navigation = screen.getByRole("navigation", { name: "实例配置导航" });
+    const terminalLink = within(navigation).getByRole("link", { name: "终端" });
+    const advancedToolsList = terminalLink.closest(".lv-agents-nav-group-items");
+
+    expect(advancedToolsList).toBeInstanceOf(HTMLUListElement);
+    if (!(advancedToolsList instanceof HTMLUListElement)) return;
+    expect(within(advancedToolsList).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(advancedToolsList).getByRole("link", { name: "终端" })).toBe(terminalLink);
+    expect(within(advancedToolsList).getByRole("link", { name: "浏览器" })).toBeInTheDocument();
+
+    for (const label of ["配置", "使用", "成长", "管理"]) {
+      const group = within(navigation).getByRole("group", { name: label });
+      const visibleLabel = within(group).getByText(label);
+
+      expect(group).toHaveAttribute("aria-labelledby", visibleLabel.id);
+      expect(group).not.toHaveAttribute("aria-label");
+      expect(within(group).getByRole("list")).toBeInTheDocument();
+    }
   });
 
   it("shows the realname guide in the renewal modal when an unverified user clicks the renewal reminder", async () => {
