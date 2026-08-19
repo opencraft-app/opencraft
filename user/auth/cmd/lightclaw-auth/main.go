@@ -68,7 +68,11 @@ func main() {
 		ContentAudit:           contentAuditConfig,
 		ContentAuditClient:     contentAuditClient,
 		ShadowBinding:          shadowBinding,
-		PaymentMethods:         paymentMethods,
+		PasswordSignupShadowEnabled: envOrDefault(
+			"LIGHTCLAW_PASSWORD_SIGNUP_SHADOW_PROVISIONING_ENABLED",
+			"false",
+		) == "true",
+		PaymentMethods: paymentMethods,
 		PaymentMethodSignOrderLimit: int(envInt64OrDefault(
 			"LIGHTCLAW_PAYMENT_METHOD_SIGN_ORDER_LIMIT",
 			5,
