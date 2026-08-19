@@ -12,6 +12,8 @@ on:
       - argocd/services/trade/**
       - argocd/apps/shprod/trade.yaml
       - argocd/projects/shprod-trade.yaml
+      - argocd/apps/sgprod/trade.yaml
+      - argocd/projects/sgprod-trade.yaml
       - argocd/catalogs/sandbox/beijing-sandbox/trade.yaml
       - argocd/catalogs/playground/beijing-playground/*/trade.yaml
       - argocd/catalogs/playground/seoul-playground/*/trade.yaml
@@ -35,7 +37,11 @@ extends:
     BUNDLE: trade
     DISPLAY_NAME: trade
     DEFAULT_TARGET_ENV: beijing-sandbox
-    MASTER_BUILD_ENVS: beijing-sandbox,shprod
+    # sgprod 加入构建矩阵以支持新加坡现网国际站计费上线；
+    # 与 ctl / lightclaw-auth / payment 等服务保持一致，AUTO_PIN 仍只含
+    # beijing-sandbox —— 正式环境（shprod / sgprod）必须人工触发 promote 并由人合并
+    # 发布 MR，不自动跟随 master。
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod,sgprod
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
     ENABLE_MASTER_PROD_DB_MIGRATION: true
     ENABLE_MASTER_PROD_PROMOTE: true
