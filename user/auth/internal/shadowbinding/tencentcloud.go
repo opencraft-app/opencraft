@@ -18,20 +18,23 @@ import (
 )
 
 type TencentCloudConfig struct {
-	SecretID        string
-	SecretKey       string
-	Region          string
-	AccountEndpoint string
-	CAMEndpoint     string
-	STSEndpoint     string
-	RequestTimeout  time.Duration
-	Platform        string
-	SiteKind        string
-	CloudLadder     CloudLadderConfig
+	SecretID          string
+	SecretKey         string
+	ServiceAccountID  string
+	ServiceAccountKey string
+	Region            string
+	AccountEndpoint   string
+	CAMEndpoint       string
+	STSEndpoint       string
+	RequestTimeout    time.Duration
+	Platform          string
+	SiteKind          string
+	CloudLadder       CloudLadderConfig
 }
 
 type TencentCloudSDKClient struct {
 	accountClient  *common.Client
+	appIDClient    *common.Client
 	camClient      *common.Client
 	stsClient      *common.Client
 	region         string
@@ -82,6 +85,24 @@ func NewTencentCloudSDKClient(cfg TencentCloudConfig) (*TencentCloudSDKClient, e
 	if err != nil {
 		return nil, err
 	}
+	serviceAccountSecretID := strings.TrimSpace(cfg.ServiceAccountID)
+	serviceAccountSecretKey := strings.TrimSpace(cfg.ServiceAccountKey)
+	if (serviceAccountSecretID == "") != (serviceAccountSecretKey == "") {
+		return nil, fmt.Errorf("shadow service-account secret id/key must be configured together")
+	}
+	serviceAccountClient := accountClient
+	if serviceAccountSecretID != "" {
+		serviceAccountClient, err = newCommonClient(
+			common.NewCredential(serviceAccountSecretID, serviceAccountSecretKey),
+			region,
+			accountProfile,
+			cfg.CloudLadder,
+			cfg.CloudLadder.RouteID,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	camClient, err := newCommonClient(credential, region, clientProfile(camEndpoint, timeout), cfg.CloudLadder, cfg.CloudLadder.CAMRouteID)
 	if err != nil {
 		return nil, err
@@ -92,6 +113,7 @@ func NewTencentCloudSDKClient(cfg TencentCloudConfig) (*TencentCloudSDKClient, e
 	}
 	return &TencentCloudSDKClient{
 		accountClient:  accountClient,
+		appIDClient:    serviceAccountClient,
 		camClient:      camClient,
 		stsClient:      stsClient,
 		region:         region,
@@ -509,7 +531,7 @@ func (c *TencentCloudSDKClient) getAppIDByUin(ctx context.Context, uin int64) (i
 	}
 	req.SetContext(ctx)
 	resp := tchttp.NewCommonResponse()
-	if err := c.accountClient.Send(req, resp); err != nil {
+	if err := c.appIDClient.Send(req, resp); err != nil {
 		return 0, fmt.Errorf("send GetAppIdByUin: %w", err)
 	}
 	var payload struct {

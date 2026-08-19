@@ -290,15 +290,17 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger, s
 	}
 	var client shadowbinding.TencentCloudClient
 	tencentClient, err := shadowbinding.NewTencentCloudSDKClient(shadowbinding.TencentCloudConfig{
-		SecretID:        envOrDefault("SHADOW_SECRET_ID", ""),
-		SecretKey:       envOrDefault("SHADOW_SECRET_KEY", ""),
-		Region:          envOrDefault("SHADOW_REGION", "ap-guangzhou"),
-		AccountEndpoint: envOrDefault("SHADOW_ACCOUNT_ENDPOINT", "account.tencentcloudapi.com"),
-		CAMEndpoint:     envOrDefault("SHADOW_CAM_ENDPOINT", "cam.tencentcloudapi.com"),
-		STSEndpoint:     envOrDefault("SHADOW_STS_ENDPOINT", "sts.tencentcloudapi.com"),
-		Platform:        envOrDefault("SHADOW_PLATFORM", "lightvela"),
-		SiteKind:        siteKind,
-		RequestTimeout:  parseDurationEnv("SHADOW_REQUEST_TIMEOUT", 10*time.Second),
+		SecretID:          envOrDefault("SHADOW_SECRET_ID", ""),
+		SecretKey:         envOrDefault("SHADOW_SECRET_KEY", ""),
+		ServiceAccountID:  envOrDefault("SHADOW_SERVICE_ACCOUNT_SECRET_ID", ""),
+		ServiceAccountKey: envOrDefault("SHADOW_SERVICE_ACCOUNT_SECRET_KEY", ""),
+		Region:            envOrDefault("SHADOW_REGION", "ap-guangzhou"),
+		AccountEndpoint:   envOrDefault("SHADOW_ACCOUNT_ENDPOINT", "account.tencentcloudapi.com"),
+		CAMEndpoint:       envOrDefault("SHADOW_CAM_ENDPOINT", "cam.tencentcloudapi.com"),
+		STSEndpoint:       envOrDefault("SHADOW_STS_ENDPOINT", "sts.tencentcloudapi.com"),
+		Platform:          envOrDefault("SHADOW_PLATFORM", "lightvela"),
+		SiteKind:          siteKind,
+		RequestTimeout:    parseDurationEnv("SHADOW_REQUEST_TIMEOUT", 10*time.Second),
 		CloudLadder: shadowbinding.CloudLadderConfig{
 			Enabled:        envOrDefault("SHADOW_CLOUDLADDER_ENABLED", "false") == "true",
 			GatewayBaseURL: envOrDefault("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL", ""),
