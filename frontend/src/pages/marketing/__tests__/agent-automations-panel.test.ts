@@ -311,6 +311,41 @@ describe("cron context relationship helpers", () => {
 });
 
 describe("cron context panel integration", () => {
+  it("keeps the refresh button static and disabled during the initial load", async () => {
+    let resolveJobs: ((jobs: CronJob[]) => void) | undefined;
+    cronClientMocks.listCronJobs.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveJobs = resolve;
+    }));
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const refreshButton = screen.getByRole("button", { name: "刷新" });
+    expect(refreshButton).toBeDisabled();
+    expect(refreshButton.querySelector("svg")).not.toHaveClass("animate-spin");
+
+    resolveJobs?.([]);
+    await waitFor(() => expect(refreshButton).toBeEnabled());
+  });
+
+  it("spins the refresh icon only after an explicit refresh", async () => {
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+    const refreshButton = screen.getByRole("button", { name: "刷新" });
+    await waitFor(() => expect(refreshButton).toBeEnabled());
+
+    let resolveRefresh: ((jobs: CronJob[]) => void) | undefined;
+    cronClientMocks.listCronJobs.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRefresh = resolve;
+    }));
+    fireEvent.click(refreshButton);
+
+    expect(refreshButton).toBeDisabled();
+    expect(refreshButton.querySelector("svg")).toHaveClass("animate-spin");
+
+    resolveRefresh?.([]);
+    await waitFor(() => expect(refreshButton).toBeEnabled());
+    expect(refreshButton.querySelector("svg")).not.toHaveClass("animate-spin");
+  });
+
   it("renders the Skill picker before the upstream task picker", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([]);
 
