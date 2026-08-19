@@ -1,7 +1,6 @@
 import { planCatalog } from "@/domain/plan-catalog";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
-import type { OAuthProvider } from "@/lib/oauth";
 import type {
   AuthSessionSnapshot,
   BillingSummary,
@@ -289,34 +288,17 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
 
-const resolveOAuthStartBaseURL = (baseUrl: string, relayIssuerBaseURL: string | null) => {
-  if (relayIssuerBaseURL) {
-    return relayIssuerBaseURL;
-  }
+const resolveOAuthStartBaseURL = (baseUrl: string) => {
   // local-proxy keeps OAuth start/callback on the dev server origin so the
   // state cookie and returned session token survive the browser redirect flow.
-  return baseUrl;
+  return baseUrl === "" ? "" : baseUrl;
 };
 
-const configuredOAuthRelayIssuerBaseURL = (provider: OAuthProvider): string | null => {
-  if (typeof window !== "undefined" && window.location) {
-    const hostname = window.location.hostname.trim().toLowerCase();
-    if (/^intl-sandbox-kr-\d+\.preview\.lightclaw\.tech$/.test(hostname)) {
-      if (provider === "google") {
-        return "https://api.lightvela.ai";
-      }
-      if (provider === "github") {
-        return null;
-      }
-    }
-  }
-
-  const configured = [
-    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL : undefined,
-    import.meta.env?.VITE_OAUTH_RELAY_ISSUER_BASE_URL,
-  ]
-    .map((value) => value?.trim())
-    .find((value): value is string => Boolean(value));
+const configuredOAuthRelayIssuerBaseURL = (): string | null => {
+  const configured = (
+    (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL : undefined)
+    ?? import.meta.env?.VITE_OAUTH_RELAY_ISSUER_BASE_URL
+  )?.trim();
   if (!configured) {
     return null;
   }
@@ -1538,11 +1520,15 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
   },
   getOAuthStartUrl(provider, options) {
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
-    const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL(provider);
-    const oauthStartBaseURL = resolveOAuthStartBaseURL(baseUrl, relayIssuerBaseURL);
+    const oauthStartBaseURL = resolveOAuthStartBaseURL(baseUrl);
     const startURL = new URL(buildUrl(oauthStartBaseURL, `/auth/oauth/${provider}/start`), base);
     if (provider === "wechat" && options?.wechatMode) {
       startURL.searchParams.set("mode", options.wechatMode);
+    }
+    const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
+    if (relayIssuerBaseURL) {
+      startURL.searchParams.set("relay_mode", "issuer");
+      startURL.searchParams.set("issuer_redirect_uri", buildUrl(relayIssuerBaseURL, `/auth/oauth/${provider}/callback`));
     }
     const returnTo = currentOAuthReturnTo();
     if (returnTo) {

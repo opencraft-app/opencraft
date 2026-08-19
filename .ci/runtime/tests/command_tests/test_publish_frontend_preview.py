@@ -20,13 +20,6 @@ class PublishFrontendPreviewTests(unittest.TestCase):
         self.assertIn('upload_staticpages_preview cn "$FRONTEND_PREVIEW_CN_ARTIFACT_DIR"', source)
         self.assertIn('upload_staticpages_preview intl "$FRONTEND_PREVIEW_INTL_ARTIFACT_DIR"', source)
 
-    def test_kr_preview_keeps_its_api_base_without_a_global_oauth_issuer(self) -> None:
-        source = SCRIPT.read_text()
-
-        self.assertNotIn("printf 'https://api.lightvela.ai'", source)
-        self.assertNotIn('export VITE_OAUTH_RELAY_ISSUER_BASE_URL="https://api.lightvela.ai"', source)
-        self.assertNotIn('export NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL="https://api.lightvela.ai"', source)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,9 +14,6 @@ describe("http repositories auth token bootstrap", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "");
-    vi.stubEnv("NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL", "");
-    vi.stubEnv("VITE_VISIBLE_OAUTH_PROVIDERS", "");
-    vi.stubEnv("NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS", "");
     const values = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => values.get(key) ?? null,
@@ -1391,16 +1388,16 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
-  it("starts OAuth on the relay issuer host when relay issuer is configured", () => {
+  it("adds relay params without changing the target auth backend when relay issuer is configured", () => {
     vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
     stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");
 
     const repositories = createHttpRepositories("https://api-sandbox-bj-7.lightclaw.tech");
     const parsed = new URL(repositories.auth.getOAuthStartUrl("qq")!);
 
-    expect(`${parsed.origin}${parsed.pathname}`).toBe("https://lightclaw.tech/auth/oauth/qq/start");
-    expect(parsed.searchParams.get("relay_mode")).toBeNull();
-    expect(parsed.searchParams.get("issuer_redirect_uri")).toBeNull();
+    expect(`${parsed.origin}${parsed.pathname}`).toBe("https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/qq/start");
+    expect(parsed.searchParams.get("relay_mode")).toBe("issuer");
+    expect(parsed.searchParams.get("issuer_redirect_uri")).toBe("https://lightclaw.tech/auth/oauth/qq/callback");
     expect(parsed.searchParams.get("return_to")).toBe("https://intl-sandbox-bj-7.preview.lightclaw.tech/auth/sign-in");
   });
 
@@ -1412,39 +1409,8 @@ describe("http repositories auth token bootstrap", () => {
     const repositories = createHttpRepositories("https://api-sandbox-bj-7.lightclaw.tech");
     const parsed = new URL(repositories.auth.getOAuthStartUrl("qq")!);
 
-    expect(`${parsed.origin}${parsed.pathname}`).toBe("https://lightclaw.tech/auth/oauth/qq/start");
-    expect(parsed.searchParams.get("relay_mode")).toBeNull();
-    expect(parsed.searchParams.get("issuer_redirect_uri")).toBeNull();
-  });
-
-  it("uses the international production Google issuer on KR previews despite a generic relay env", () => {
-    vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech");
-    vi.stubEnv("NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL", "");
-    stubHostname("intl-sandbox-kr-1.preview.lightclaw.tech");
-
-    const repositories = createHttpRepositories("https://api-sandbox-kr-1.lightclaw.tech");
-    const parsed = new URL(repositories.auth.getOAuthStartUrl("google")!);
-
-    expect(`${parsed.origin}${parsed.pathname}`).toBe("https://api.lightvela.ai/auth/oauth/google/start");
-    expect(parsed.searchParams.get("return_to")).toBe(
-      "https://intl-sandbox-kr-1.preview.lightclaw.tech/auth/sign-in",
-    );
-  });
-
-  it("keeps GitHub OAuth on the KR sandbox issuer despite a generic relay env", () => {
-    vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech");
-    vi.stubEnv("NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL", "");
-    stubHostname("intl-sandbox-kr-1.preview.lightclaw.tech");
-
-    const repositories = createHttpRepositories("https://api-sandbox-kr-1.lightclaw.tech");
-    const parsed = new URL(repositories.auth.getOAuthStartUrl("github")!);
-
-    expect(`${parsed.origin}${parsed.pathname}`).toBe(
-      "https://api-sandbox-kr-1.lightclaw.tech/auth/oauth/github/start",
-    );
-    expect(parsed.searchParams.get("return_to")).toBe(
-      "https://intl-sandbox-kr-1.preview.lightclaw.tech/auth/sign-in",
-    );
+    expect(parsed.searchParams.get("relay_mode")).toBe("issuer");
+    expect(parsed.searchParams.get("issuer_redirect_uri")).toBe("https://lightclaw.tech/auth/oauth/qq/callback");
   });
 
   it("adds the requested WeChat OAuth mode to the start URL", () => {
