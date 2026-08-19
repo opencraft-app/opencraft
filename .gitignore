@@ -158,3 +158,8 @@ frontend/.workflow/
 # 每次编辑都会变动，入库会造成反复 merge conflict。
 # 用不带前缀的模式匹配任意层级（仓库根、wiki/ 等）。
 .obsidian/
+.playwright-mcp/
+docs/harness/
+# teamai（ClawPro）本地状态目录与注入的工具 hooks —— 机器本地配置，不入库
+.teamai/
+.codebuddy/settings.json
