@@ -33,7 +33,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, useSyncExternalStore, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -47,14 +47,19 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/co
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
-import {
-  createLighthouseConfig,
-  useModelProviders,
-  getHermesScriptCommands,
-  createLocalCommandExecutor,
-  type IProductConfig,
-  type ICommandExecutor,
-} from "@/pages/marketing/agent-config";
+// ⚠️ SSR 约束：不要从 barrel（agent-config/index.ts）导入。
+// barrel 会级联求值 useModelOperations / useChannelOperations →
+// useAgentInternals → @tencent/tea-sdk-lightclaw/scripts（tea-app i18n
+// 顶层访问 window），静态导出预渲染 /agents/* 时会抛
+// `ReferenceError: window is not defined`（window 副作用使 tree-shake 失效）。
+// 页面层只从子路径引入 SSR 安全模块；操作类 hooks 仅由 lazy 面板在
+// 客户端消费。
+import { createLighthouseConfig } from "@/pages/marketing/agent-config/product-config";
+import { useModelProviders } from "@/pages/marketing/agent-config/hooks/useModelProviders";
+import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
+import { createLocalCommandExecutor } from "@/pages/marketing/agent-config/local-command-executor";
+import type { ICommandExecutor } from "@/pages/marketing/agent-config/local-command-executor";
+import type { IProductConfig } from "@/pages/marketing/agent-config/types";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
@@ -213,6 +218,26 @@ function TeaSdkSettingsPanel({
 }) {
   const t = useT();
   const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
+
+  /**
+   * 配置面板客户端专属挂载。
+   *
+   * lazy 面板（agent-channel-panel / agent-model-panel）的依赖链上有
+   * `@tencent/tea-sdk-lightclaw/scripts`（经 useAgentInternals 静态值导入），
+   * 该子入口顶层 import tea-app i18n、模块求值即访问 `window`。Next 静态
+   * 导出预渲染 `/agents/*` 时若求值该链会抛 `ReferenceError: window is not
+   * defined`（scripts-runtime.ts 注释记载的同一约束）。
+   *
+   * 迁移前面板即客户端动态加载（SSR 链上无 SDK），此处以
+   * useSyncExternalStore 区分服务端/客户端，复刻同一语义：预渲染只产出
+   * loading 骨架，浏览器端 mount 后才拉起 lazy 面板模块。
+   */
+  const isBrowser = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+
   const productConfig = useMemo<IProductConfig>(() => {
     // 本地 createLighthouseConfig 内部的 getFilteredModelProviders 已用 isI18n
     // 正确过滤国内/国际站 provider，无需再套 SDK 那套 IS_I18N hidden-providers hack。
@@ -229,6 +254,15 @@ function TeaSdkSettingsPanel({
   }, [modelProviders]);
 
   const Panel = kind === "channel" ? AgentChannelPanel : AgentModelPanel;
+
+  if (!isBrowser) {
+    return (
+      <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        {t("正在加载配置面板…")}
+      </div>
+    );
+  }
 
   return (
     <StableTeaSdkPanelHost>
