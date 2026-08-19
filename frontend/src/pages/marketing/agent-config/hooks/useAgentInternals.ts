@@ -3,11 +3,11 @@ import {
   createLightClawScripts,
   type LightClawScriptsSDK,
 } from "@tencent/tea-sdk-lightclaw/scripts";
-import { createLighthouseConfig } from '../config';
+import { createLighthouseConfig } from '../product-config';
 import { useGatewayCommand } from './useGatewayCommand';
 import type { ICommandExecutor } from '../local-command-executor';
-import type { IProductConfig } from '../config/types';
-import type { IFeatureFlags, IInstanceInfo, IExecuteCommandOptions } from '../hermes-panel/types';
+import type { IProductConfig } from '../types';
+import type { IFeatureFlags, IInstanceInfo, IExecuteCommandOptions } from '../types';
 
 // ============================================================
 // 独立组件公共 Props 基类

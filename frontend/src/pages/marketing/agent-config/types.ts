@@ -1,9 +1,13 @@
 /**
- * 产品差异化配置类型定义
+ * agent-config 统一类型定义（原 types.ts + types.ts + types.ts 合并）
  *
- * 将 moltbot.ts 中硬编码的产品数据（模型列表、通道列表、镜像版本、COS桶域名等）
- * 抽为可注入的配置接口，使 UI 层零产品硬编码。
+ * 三个分区：
+ *   1. 产品差异化配置类型 —— 将 model-providers.ts 中硬编码的产品数据抽为可注入的配置接口
+ *   2. Agent 运行时/实例类型 —— 配置数据结构、镜像能力标志、命令执行选项
+ *   3. Standard 面板 Props 类型 —— Standard 变体面板组件的 Props
  */
+
+import type { IAgentComponentBaseProps } from './hooks/useAgentInternals';
 
 /** 模型提供商配置 */
 export interface IModelProvider {
@@ -110,7 +114,7 @@ export interface IOpenClawVersion {
 /**
  * 产品差异化配置 —— 由宿主应用注入
  *
- * 将 moltbot.ts 中硬编码的模型列表、通道列表、镜像版本、COS桶域名等
+ * 将 model-providers.ts 中硬编码的模型列表、通道列表、镜像版本、COS桶域名等
  * 产品相关数据全部抽为可注入配置，使 SDK UI 层零产品硬编码。
  *
  * @example
@@ -398,3 +402,111 @@ export interface IFirewallAdapter {
    */
   openPort: (instanceId: string, regionId: number, port: number) => Promise<boolean>;
 }
+
+// ═══ 2. Agent 运行时/实例类型（原 types.ts）═══
+
+// Config data from remote openclaw.json (OpenClaw) or harness CLI outputs (Hermes)
+export interface IConfigData {
+  channels: any[];
+  providers: any[];
+  webUI: { port?: number; basePath?: string; token?: string };
+  /**
+   * Hermes 专属：当前生效的模型（`harness model list` 的 active_model 字段）
+   * OpenClaw 下该字段为 null
+   */
+  activeModel?: any | null;
+}
+
+// Gateway command execution options
+export interface IExecuteCommandOptions {
+  command: string;
+  action: string;
+  showButtonLoading?: boolean;
+  shouldQueryStatus?: boolean;
+  timeout?: number;
+  callback?: (result?: any) => void | Promise<void>;
+  onFailed?: (error?: any) => void | Promise<void>;
+}
+
+/**
+ * 镜像能力标志（Blueprint Capability Flags）—— 实例级、运行时动态
+ *
+ * ⚠️ 与 `IProductFeatureFlags`（`productConfig.features`）区分：
+ *
+ * | 维度     | IFeatureFlags（本类型）              | IProductFeatureFlags                     |
+ * | -------- | ------------------------------------ | ---------------------------------------- |
+ * | 数据来源 | 当前实例的**镜像版本**（Blueprint）  | 当前 **agent 类型**（openclaw/hermes）   |
+ * | 回答问题 | "这台机器支不支持 X 能力？"          | "这个产品形态需不需要做 X ？"            |
+ * | 决定者   | 宿主根据 Blueprint 版本计算          | createLighthouseConfig() 根据 agentType  |
+ * | 变化频率 | 每台实例不同（随镜像升级）           | 每种 agent 类型一套                      |
+ * | 典型例子 | `channel`（V3+ 才支持）              | `channelGrouping`（产品设计差异）        |
+ *
+ * 典型组合使用：
+ * ```ts
+ * // ChannelCard 里渲染"企微入口"
+ * if (!featureFlags.wecomChannel) return null;          // ← 镜像能力判断
+ * if (productConfig.features?.channelGrouping) { ... }  // ← 产品形态判断
+ * ```
+ */
+export interface IFeatureFlags {
+  /** 镜像是否内置 gateway（V3+） */
+  gateway: boolean;
+  /** 镜像是否支持通道配置（V2+） */
+  channel: boolean;
+  /** 镜像是否支持企微通道（V5+） */
+  wecomChannel: boolean;
+  /** 镜像是否支持 ADP 通道（V6+） */
+  adpChannel: boolean;
+  /** 镜像是否支持企微长链接（V7+） */
+  wecomLongConn: boolean;
+  /** 镜像是否支持元宝通道（V9+） */
+  yuanbaoChannel: boolean;
+  /** 镜像是否支持微信通道（V10+） */
+  weixinChannel: boolean;
+  /** 镜像是否支持扫码配置（V4+） */
+  qrConfig: boolean;
+  /** 镜像是否支持技能安装（V4+） */
+  skills: boolean;
+  /** 镜像是否内置 WebUI（V8+） */
+  webUI: boolean;
+  /** 镜像是否支持记忆管理（V11+） */
+  memoryManagement: boolean;
+  /** 镜像是否使用 V2 记忆插件（V13+） */
+  memoryV2: boolean;
+  /** 镜像是否内置 QQ 机器人插件（V12+） */
+  qqbotplugin: boolean;
+}
+
+// Instance info interface
+export interface IInstanceInfo {
+  InstanceId: string;
+  RegionId: number;
+  PlatformType?: string;
+  Zone?: string;
+  [key: string]: any;
+}
+
+// ═══ 3. Standard 面板 Props 类型（原 types.ts）═══
+
+// ─── 公共 Props 基类 ───
+
+export interface IStandardPanelBaseProps extends IAgentComponentBaseProps {
+  /** 数据是否准备就绪 */
+  isDataReady?: boolean;
+  /** 操作禁用提示（有值时禁用所有操作） */
+  operationDisabledTip?: string;
+  /** 自定义 CSS class name */
+  className?: string;
+}
+
+// ─── ModelPanel ───
+
+export type ModelConfigKind = 'coding_plan' | 'api' | 'custom';
+export type CustomApiMode = 'openai-completions' | 'anthropic-messages';
+export type CustomInputMode = 'form' | 'json';
+
+export interface ModelPanelProps extends IStandardPanelBaseProps {}
+
+// ─── ChannelPanel ───
+
+export interface ChannelPanelProps extends IStandardPanelBaseProps {}

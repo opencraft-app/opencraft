@@ -47,10 +47,14 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/co
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
-import type { IProductConfig } from "@/pages/marketing/tea-sdk-internal/config/types";
-import { createLighthouseConfig } from "@/pages/marketing/tea-sdk-internal/config";
-import { useModelProviders } from "@/pages/marketing/tea-sdk-internal/hooks/useModelProviders";
-import { getHermesScriptCommands } from "@/pages/marketing/tea-sdk-internal/scripts-runtime";
+import {
+  createLighthouseConfig,
+  useModelProviders,
+  getHermesScriptCommands,
+  createLocalCommandExecutor,
+  type IProductConfig,
+  type ICommandExecutor,
+} from "@/pages/marketing/agent-config";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
@@ -63,10 +67,6 @@ import {
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
 import type { WorkerActionStatusResult } from "@/repositories/types";
-import {
-  createLocalCommandExecutor,
-  type ICommandExecutor,
-} from "@/pages/marketing/tea-sdk-internal/local-command-executor";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
@@ -150,7 +150,7 @@ const TerminalPanel = lazy(() =>
   import("@/pages/marketing/agent-terminal-panel").then((module) => ({ default: module.TerminalPanel })),
 );
 
-// ChannelPanel / ModelPanel 已本地化（tea-sdk-internal），用 lazy 做代码分割，
+// ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
 // 与其他面板一致。内部依赖全部指向本地 config/hooks，仅 scripts 命令生成走
 // SDK `/scripts` 子入口（纯 TS、无浏览器副作用）。
 const AgentChannelPanel = lazy(() =>
@@ -184,7 +184,7 @@ type TeaSdkFeatureFlags = {
 /**
  * 通道/模型配置面板接入层。
  *
- * ChannelPanel / ModelPanel 已完全本地化（tea-sdk-internal），其 productConfig、
+ * ChannelPanel / ModelPanel 已完全本地化（agent-config），其 productConfig、
  * scriptCommands 均可由组件内部 createLighthouseConfig()/createLightClawScripts()
  * 兜底。宿主这里只需补两处组件默认值给不了的差异：
  *   1. isI18n：国际站 provider 过滤（国内/国际站模型列表不同）
@@ -3264,7 +3264,7 @@ export const AgentSettingsPage = ({
 
 
   /**
-   * channel / model 配置面板（tea-sdk-internal 的 ChannelPanel / ModelPanel）
+   * channel / model 配置面板（agent-config 的 ChannelPanel / ModelPanel）
    * 使用的命令执行器。
    *
    * 走本地 `createLocalCommandExecutor`，直连 `POST /v1/instances/:botId/debug/exec`
@@ -3291,7 +3291,7 @@ export const AgentSettingsPage = ({
   /**
    * LightVelaPanel 用的 commandExecutor。
    *
-   * 与上方 `teaSdkCommandExecutor`（给 tea-sdk-internal 面板用、形状为
+   * 与上方 `teaSdkCommandExecutor`（给 agent-config 面板用、形状为
    * `ICommandExecutor` 的 run/runWithProgress）不同，LightVelaPanel 接受的是
    * ClawPanel 公共层定义的更直接的 `CommandExecutor` 契约
    * （`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。

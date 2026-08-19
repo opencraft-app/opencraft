@@ -30,7 +30,7 @@ import type { DebugExecCommandLifecycle } from "@/pages/marketing/agent-debug-ex
 // 接口类型（本地权威定义，形状对齐原 SDK ICommandExecutor）
 //
 // 迁移前这些类型从 `@tencent/tea-sdk-lightclaw/scripts` import；脱离 SDK 后
-// 由本模块提供，供 tea-sdk-internal 全局复用。
+// 由本模块提供，供 agent-config 全局复用。
 // ────────────────────────────────────────────────────────────
 
 /** 执行命令选项 */

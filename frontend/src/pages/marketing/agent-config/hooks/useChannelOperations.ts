@@ -11,8 +11,8 @@ import { useCallback, useState } from 'react';
 import { useAgentConfig } from './useAgentConfig';
 import { useAgentInternals } from './useAgentInternals';
 import type { IAgentComponentBaseProps } from './useAgentInternals';
-import type { IConfigData } from '../hermes-panel/types';
-import type { IChannelConfig, IProductConfig } from '../config/types';
+import type { IConfigData } from '../types';
+import type { IChannelConfig, IProductConfig } from '../types';
 
 // ─── 类型定义 ───
 

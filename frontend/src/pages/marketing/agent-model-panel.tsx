@@ -10,17 +10,24 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import './tea-sdk-internal/styles-index.css';
+import './agent-config/styles-index.css';
 import { t } from "@/i18n/t";
 import { ChevronDown, ChevronRight, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { useModelOperations } from './tea-sdk-internal/hooks/useModelOperations';
-import { CUSTOM_JSON_PLACEHOLDER, normalizeCustomProvider } from './tea-sdk-internal/utils/moltbot';
-import { message } from './tea-sdk-internal/utils/message';
-import { parseJsonWithNormalizedWhitespace } from './tea-sdk-internal/utils/json';
-import { getModelSwitchFailureMessage } from './tea-sdk-internal/utils/modelOperationErrors';
-import type { ModelPanelProps, ModelConfigKind, CustomApiMode, CustomInputMode } from './tea-sdk-internal/standard-panel-types';
-import { isHermesModelProbeSuccessful } from "./tea-sdk-internal/utils/hermesParsers";
-import type { IHermesModelProbeParams, IHermesModelProbeResult } from "./tea-sdk-internal/utils/hermesParsers";
+import {
+  useModelOperations,
+  CUSTOM_JSON_PLACEHOLDER,
+  normalizeCustomProvider,
+  message,
+  parseJsonWithNormalizedWhitespace,
+  getModelSwitchFailureMessage,
+  isHermesModelProbeSuccessful,
+  type ModelPanelProps,
+  type ModelConfigKind,
+  type CustomApiMode,
+  type CustomInputMode,
+  type IHermesModelProbeParams,
+  type IHermesModelProbeResult,
+} from './agent-config';
 
 const CLS = 'lh-std-model-panel';
 

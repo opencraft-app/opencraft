@@ -23,11 +23,11 @@ import { t } from "@/i18n/t";
 import { Loader2 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { message } from '../utils/message';
-import { parseHermesQrStream } from "../utils/hermesParsers";
+import { parseHermesQrStream } from "../utils/hermes-parsers";
 import { useWecomAIBotSDK } from '../hooks/useWecomAIBotSDK';
 import type { LightClawScriptsSDK } from "@tencent/tea-sdk-lightclaw/scripts";
 import type { ICommandExecutor } from '../local-command-executor';
-import type { IInstanceInfo } from './types';
+import type { IInstanceInfo } from '../types';
 
 export type HermesQrUiStatus = 'init' | 'loading' | 'ready' | 'expired' | 'failed' | 'success';
 

@@ -28,9 +28,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { t } from "@/i18n/t";
-import { CHANNEL_LIST } from '../utils/moltbot';
-import type { IProductConfig } from '../config/types';
-import type { IConfigData, IFeatureFlags } from '../hermes-panel/types';
+import { CHANNEL_LIST } from '../utils/model-providers';
+import type { IProductConfig } from '../types';
+import type { IConfigData, IFeatureFlags } from '../types';
 import { useAgentInternals } from './useAgentInternals';
 import type { IAgentComponentBaseProps } from './useAgentInternals';
 

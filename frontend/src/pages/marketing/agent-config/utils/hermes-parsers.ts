@@ -9,7 +9,7 @@
  */
 
 import { t } from "@/i18n/t";
-import type { IChannelConfig, IChannelListOptions } from "../config/types";
+import type { IChannelConfig, IChannelListOptions } from "../types";
 
 // ===========================================================================
 // acli 标准响应解析底座
@@ -277,14 +277,9 @@ export function parseHermesQrStream(stdout: string): IHermesQrStreamResult | nul
 /** 内部通道 item 结构：比 IChannelConfig 多一个 i18nOnly（仅用于站点级过滤，不对外暴露）。 */
 type IHermesChannelItem = IChannelConfig & { i18nOnly?: boolean };
 
-/**
- * 惰性求值：channel_name / description 中的 t() 必须在 i18n 初始化后再求值，
- * 否则模块加载时词条尚未注册，只能拿到中文 defaultValue。
- */
-let _cachedHermesChannelList: IHermesChannelItem[] | null = null;
-
-function buildHermesChannelList(): IHermesChannelItem[] {
-  return [
+// 同 model-providers.ts：t() 走 @/i18n/t（i18n 顶层同步 init 且经 import 链先于本模块求值），
+// 顶层直接求值即安全，无需惰性缓存。
+const HERMES_CHANNEL_LIST: IHermesChannelItem[] = [
     {
       value: "weixin",
       channel: "weixin",
@@ -379,14 +374,6 @@ function buildHermesChannelList(): IHermesChannelItem[] {
       channel_keys: [],
     },
   ];
-}
-
-function getHermesChannelListCached(): IHermesChannelItem[] {
-  if (!_cachedHermesChannelList) {
-    _cachedHermesChannelList = buildHermesChannelList();
-  }
-  return _cachedHermesChannelList;
-}
 
 const HERMES_I18N_CHANNEL_ORDER = ["telegram", "discord", "whatsapp", "weixin", "qqbot", "wecom", "feishu"];
 
@@ -407,7 +394,7 @@ export function getHermesChannelList(
 ): IChannelConfig[] {
   const useOversea = !!options.isI18n;
   const isLightvela = options.acliProduct === "lightvela";
-  const list = getHermesChannelListCached().filter((ch) => {
+  const list = HERMES_CHANNEL_LIST.filter((ch) => {
     if (ch.value === "yuanbao" && (useOversea || isLightvela)) return false;
     if (!useOversea && ch.i18nOnly) return false;
     return true;

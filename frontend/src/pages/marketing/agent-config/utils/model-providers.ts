@@ -1,5 +1,5 @@
 import { t } from "@/i18n/t";
-import { IS_I18N } from '../config/constants';
+import { IS_I18N } from '../constants';
 
 /**
  * 腾讯系 provider 列表（apiKey 自动获取，无需用户手动输入）

@@ -12,11 +12,11 @@ import { t } from "@/i18n/t";
 import { useAgentConfig } from './useAgentConfig';
 import { useAgentInternals } from './useAgentInternals';
 import type { IAgentComponentBaseProps } from './useAgentInternals';
-import type { IConfigData } from '../hermes-panel/types';
-import type { IModelProvider } from '../config/types';
-import { normalizeCustomProvider } from '../utils/moltbot';
-import { isHermesModelProbeSuccessful, normalizeHermesApi, parseHermesModelProbe } from "../utils/hermesParsers";
-import type { IHermesModelProbeParams, IHermesModelProbeResult } from "../utils/hermesParsers";
+import type { IConfigData } from '../types';
+import type { IModelProvider } from '../types';
+import { normalizeCustomProvider } from '../utils/model-providers';
+import { isHermesModelProbeSuccessful, normalizeHermesApi, parseHermesModelProbe } from "../utils/hermes-parsers";
+import type { IHermesModelProbeParams, IHermesModelProbeResult } from "../utils/hermes-parsers";
 
 // ─── 类型定义 ───
 

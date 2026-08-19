@@ -17,10 +17,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { MODEL_PROVIDER_LIST } from '../utils/moltbot';
-import type { IModelProvider } from '../utils/moltbot';
+import { MODEL_PROVIDER_LIST } from '../utils/model-providers';
+import type { IModelProvider } from '../utils/model-providers';
 import { getRainbow } from '../utils/rainbow';
-import { MODEL_PROVIDER_RAINBOW_GROUP, parseRainbowModelProviders } from '../utils/modelProviderParser';
+import { MODEL_PROVIDER_RAINBOW_GROUP, parseRainbowModelProviders } from '../utils/model-provider-parser';
 
 /** useModelProviders 入参 */
 export interface IUseModelProvidersParams {

@@ -10,13 +10,13 @@
 import { IS_I18N } from './constants';
 import type { IProductConfig, IProductFeatureFlags, IModelProvider } from './types';
 
-// ─── 复用 moltbot.ts 中的数据和函数 ───
+// ─── 复用 model-providers.ts 中的数据和函数 ───
 import {
   MODEL_PROVIDER_LIST,
   getFilteredModelProviderList,
   isTencentProvider as _isTencentProvider,
   CUSTOM_JSON_PLACEHOLDER,
-} from '../utils/moltbot';
+} from './utils/model-providers';
 
 // ─── Hermes 专属解析函数(产品形态无关，本地实现) ───
 import {
@@ -25,7 +25,7 @@ import {
   isHermes as _isHermes,
   parseAcliProviderList,
   getHermesChannelList,
-} from "../utils/hermesParsers";
+} from "./utils/hermes-parsers";
 
 /**
  * Hermes 默认模型提供商列表 —— 从全量列表派生,过滤掉 OAuth-only 的 provider。

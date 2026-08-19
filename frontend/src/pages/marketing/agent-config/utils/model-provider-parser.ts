@@ -7,9 +7,9 @@
  * 解析失败一律静默返回 null，由上层回退到兜底列表。
  */
 
-import type { IModelProvider } from './moltbot';
+import type { IModelProvider } from './model-providers';
 import type { IRainbowKeyValue } from './rainbow';
-import { sanitizeHtml } from './sanitizeHtml';
+import { sanitizeHtml } from './sanitize-html';
 
 /** 七彩石中模型列表的 group 名（七彩石固定配置名，非 UI 文案，禁止国际化） */
 // eslint-disable-next-line @tencent/tea-i18n/no-bare-zh-in-js
