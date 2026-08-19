@@ -60,6 +60,7 @@ type Options struct {
 	ContentAudit                 ContentAuditConfig
 	ContentAuditClient           ContentAuditClient
 	ShadowBinding                *shadowbinding.Service
+	PasswordSignupShadowEnabled  bool
 	PaymentMethods               paymentmethod.Client
 	PaymentMethodSignOrderLimit  int
 	PaymentMethodSignOrderWindow time.Duration
@@ -377,6 +378,7 @@ type Service struct {
 	contentAudit                 ContentAuditConfig
 	contentAuditClient           ContentAuditClient
 	shadowBinding                *shadowbinding.Service
+	passwordSignupShadowEnabled  bool
 	paymentMethods               paymentmethod.Client
 	paymentMethodSignOrderLimit  int
 	paymentMethodSignOrderWindow time.Duration
@@ -463,6 +465,7 @@ func newWithStoreAndRegistrationEmailSuffixBlacklist(store Store, opts Options, 
 		contentAudit:                 opts.ContentAudit,
 		contentAuditClient:           opts.ContentAuditClient,
 		shadowBinding:                opts.ShadowBinding,
+		passwordSignupShadowEnabled:  opts.PasswordSignupShadowEnabled,
 		paymentMethods:               opts.PaymentMethods,
 		paymentMethodSignOrderLimit:  defaultInt(opts.PaymentMethodSignOrderLimit, 5),
 		paymentMethodSignOrderWindow: defaultDuration(opts.PaymentMethodSignOrderWindow, 10*time.Minute),
@@ -944,7 +947,12 @@ func (s *Service) SignUpWithPassword(ctx context.Context, input PasswordSignUpIn
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
-	return s.store.CreatePasswordSession(ctx, input, hash, s.now(), s.sessionTTL)
+	session, err := s.store.CreatePasswordSession(ctx, input, hash, s.now(), s.sessionTTL)
+	if err != nil {
+		return nil, err
+	}
+	s.ensureIntlPasswordSignupShadowBinding(ctx, session, input.Email)
+	return session, nil
 }
 
 func (s *Service) SignInWithPassword(ctx context.Context, email string, password string) (*AuthSession, error) {
@@ -1039,13 +1047,31 @@ func (s *Service) ensureIntlShadowBinding(ctx context.Context, session *AuthSess
 		)
 		return
 	}
+	s.bindIntlShadowAccount(ctx, session, email, input.Provider)
+}
+
+func (s *Service) ensureIntlPasswordSignupShadowBinding(ctx context.Context, session *AuthSession, email string) {
+	if s == nil || !s.passwordSignupShadowEnabled || session == nil || s.siteKind != shadowbinding.SiteKindIntl || s.shadowBinding == nil || !s.shadowBinding.Enabled() {
+		return
+	}
+	normalizedEmail := normalizeEmail(email)
+	if normalizedEmail == "" {
+		return
+	}
+	slog.WarnContext(ctx, "international shadow provisioning enabled for test password sign-up",
+		"user_id", session.User.ID,
+	)
+	s.bindIntlShadowAccount(ctx, session, normalizedEmail, "password_signup_test")
+}
+
+func (s *Service) bindIntlShadowAccount(ctx context.Context, session *AuthSession, email string, source string) {
 	if _, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
 		UserID: session.User.ID,
 		Email:  email,
 	}); err != nil {
 		slog.WarnContext(ctx, "international shadow provisioning failed",
 			"user_id", session.User.ID,
-			"provider", input.Provider,
+			"provider", source,
 			"err", err,
 		)
 	}
