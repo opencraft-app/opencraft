@@ -24,6 +24,7 @@ import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
   DashboardSnapshot,
+  PaymentMethod,
   RealnameFaceIdAttempt,
   RealnameFaceIdAttemptState,
   Repositories,
@@ -437,6 +438,8 @@ const computeExpiredIso = (bundle: Bundle): string => {
 };
 
 export const createFakeRepositories = (): Repositories => {
+  let paymentMethods: PaymentMethod[] = [];
+
   return {
     auth: {
       async signInWithCode({ phone }) {
@@ -833,6 +836,30 @@ export const createFakeRepositories = (): Repositories => {
           expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         };
       },
+      async listPaymentMethods() {
+        await wait(NETWORK_DELAY_MS / 2);
+        return { total: paymentMethods.length, items: paymentMethods };
+      },
+      async createPaymentMethodSignOrder(languageCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const redirectUrl = new URL("https://sandbox-card.centauriglobal.com/sign/fake-contract");
+        redirectUrl.searchParams.set("language_code", languageCode);
+        return {
+          contractCode: "fake-contract",
+          redirectUrl: redirectUrl.toString(),
+        };
+      },
+      async setDefaultPaymentMethod(contractCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        paymentMethods = paymentMethods.map((method) => ({
+          ...method,
+          isDefault: method.contractCode === contractCode,
+        }));
+      },
+      async deletePaymentMethod(contractCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        paymentMethods = paymentMethods.filter((method) => method.contractCode !== contractCode);
+      },
       getOAuthStartUrl(provider: OAuthProvider, options) {
         return fakeOAuthStartURL(provider, options?.wechatMode);
       },
@@ -1091,6 +1118,30 @@ export const createFakeRepositories = (): Repositories => {
 };
 
 const createBotRepository = (): BotRepository => {
+  const fakeConnectedChannels = new Set<string>();
+
+  const fakeChannelStatusOutput = () => JSON.stringify({
+    success: true,
+    data: {
+      platforms: Array.from(fakeConnectedChannels).map((name) => ({
+        name,
+        status: "connected",
+      })),
+    },
+    error: null,
+  });
+
+  const maybeApplyFakeChannelCommand = (command: string) => {
+    if (command.includes("strip_slack_env") && command.includes("SLACK_BOT_TOKEN")) {
+      fakeConnectedChannels.delete("slack");
+      return;
+    }
+
+    if (command.includes("SLACK_BOT_TOKEN") && command.includes("SLACK_APP_TOKEN")) {
+      fakeConnectedChannels.add("slack");
+    }
+  };
+
   return {
     async getDashboardSnapshot(mode = "live") {
       await assertMode(mode);
@@ -1457,14 +1508,21 @@ const createBotRepository = (): BotRepository => {
           output: JSON.stringify({ models: {}, channels: {}, gateway: {} }),
         };
       }
+      maybeApplyFakeChannelCommand(command);
+      if (command.includes("acli channel status")) {
+        return { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() };
+      }
       return { status: "Succeeded", exitCode: 0, output: "" };
     },
 
     async execDebugCommandStream(_botId, command, onChunk) {
       await wait(NETWORK_DELAY_MS);
+      maybeApplyFakeChannelCommand(command);
       const result = command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND
         ? { status: "Succeeded", exitCode: 0, output: JSON.stringify({ models: {}, channels: {}, gateway: {} }) }
-        : { status: "Succeeded", exitCode: 0, output: "" };
+        : command.includes("acli channel status")
+          ? { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() }
+          : { status: "Succeeded", exitCode: 0, output: "" };
       if (result.output) onChunk({ stream: DEBUG_EXEC_STDOUT_STREAM, chunk: result.output });
       return result;
     },

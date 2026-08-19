@@ -1,6 +1,6 @@
 # LightVela 适合哪些人使用？
 
-LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，适合**想拥有一个长期在线、认识你、越聊越懂你的专属 AI 伙伴，但不想管理服务器、容器和 API 鉴权的用户**。它把 Agent 的部署、运维和 7×24 小时运行交给云端托管；你只需在网页上完成配置，就能通过 Telegram、WhatsApp、Discord 和 WeChat 与自己的 Hermes Agent 对话。
+LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，适合**想拥有一个长期在线、认识你、越聊越懂你的专属 AI 伙伴，但不想管理服务器、容器和 API 鉴权的用户**。它把 Agent 的部署、运维和 7×24 小时运行交给云端托管；你只需在网页上完成配置，就能通过 Telegram、WhatsApp、Discord、Slack 和 WeChat 与自己的 Hermes Agent 对话。
 
 如果你还不清楚 LightVela 具体是什么，可以先看 [LightVela 是什么](./01-overview.md)。
 
@@ -14,7 +14,7 @@ LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，适合**�
   你不需要懂服务器、Docker、反向代理或 API 鉴权。开通可用套餐后，云端会自动完成环境配置与运行时管理，你面对的只有一个可视化管理面板。
 
 * **希望在日常聊天软件里使用 AI，而不是再安装一个独立 App 的人**
-  Hermes Agent 通过[通道](./04-core-concepts.md)接入 Telegram、WhatsApp、Discord 和 WeChat。你可以直接在常用的聊天入口与它交流，不用来回切换应用。
+  Hermes Agent 通过[通道](./04-core-concepts.md)接入 Telegram、WhatsApp、Discord、Slack 和 WeChat。你可以直接在常用的聊天入口与它交流，不用来回切换应用。
 
 * **希望灵活选择大语言模型的人**
   LightVela 可接入 ChatGPT、Claude、Gemini、DeepSeek、Qwen、Zhipu、Hunyuan，以及其他 OpenAI-compatible endpoints。具体配置方式见[配置模型](./configuration/model.md)。
@@ -33,7 +33,7 @@ LightVela 特别适合这些场景：
 
 * **个人 AI 助手**：处理日程提醒、信息整理和随时问答，见[如何用 LightVela 搭建个人 AI 助手？](./use-cases/personal-ai-assistant.md)
 
-* **常驻在线的对话入口**：把 Agent 接入 Telegram、WhatsApp、Discord 或 WeChat，随时都能找到它。
+* **常驻在线的对话入口**：把 Agent 接入 Telegram、WhatsApp、Discord、Slack 或 WeChat，随时都能找到它。
 
 * **每日定时任务**：让 Agent 按固定时间自动执行任务、汇总你关心的内容。
 
@@ -47,9 +47,9 @@ LightVela 特别适合这些场景：
 
 * 一个 Google 或 GitHub 账号，用于登录 LightVela；国际站不要求完成中国实名认证
 
-* 从[订阅页](/subscribe)选择并开通当前可用的套餐；国际站目前采用限量、限时免费的内测开放方式
+* 从[订阅页](/subscribe)选择并开通当前可用的套餐；公测计费后新用户可免费体验启航版 14 天
 
-* 至少一个可接入的聊天通道账号，例如 Telegram、WhatsApp、Discord 或 WeChat
+* 至少一个可接入的聊天通道账号，例如 Telegram、WhatsApp、Discord、Slack 或 WeChat
 
 无需自备服务器，也无需具备任何运维能力。
 

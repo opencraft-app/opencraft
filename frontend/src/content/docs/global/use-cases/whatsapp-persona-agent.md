@@ -1,9 +1,8 @@
 # 如何在 WhatsApp 中配置一个具有独立人格的 Hermes Agent？
 
-WhatsApp 是 Hermes Agent 与你保持日常联系的一个消息入口。
-它负责传递消息，而 Agent 的角色、语气、行为边界和长期上下文由 LightVela 中的 Agent 配置决定。
+## 摘要
 
-本指南会带你把 Hermes Agent 接入 WhatsApp，再选择一套适合个人沟通、提醒或客户沟通的稳定人设。
+**WhatsApp 负责传递消息，Agent 的角色、语气、行为边界与长期上下文则由 LightVela 中的 Agent 配置决定——换入口不改变它是谁。** 流程是先完成 WhatsApp 通道接入（按通道文档授权并确认管理台显示为已接入），再在管理台 Agent 设置页的「人设」区域选择一套适合个人沟通、提醒或客户沟通的稳定人设并注入。如果这个 Agent 面向客户或团队使用，人设里应把服务对象写具体，并补充品牌语气、可处理范围以及升级人工的条件。接入后先发一条测试消息，确认回复落在预期会话；若无回复，优先检查模型是否已配置、体验积分是否耗尽、通道是否显示为已接入。
 
 ![在 WhatsApp 中使用具有独立人格的 Hermes Agent](../images/use-case-04-whatsapp-persona-agent.png)
 

@@ -258,6 +258,8 @@ items:
       - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
       - SHADOW_SECRET_ID
       - SHADOW_SECRET_KEY
+      - SHADOW_BILLING_SECRET_ID
+      - SHADOW_BILLING_SECRET_KEY
     namespace: lightvela-playground-sandbox-jp-1
     kubernetes_resource_name: shadow-runtime-secrets
     kubernetes_resource_kind: Secret

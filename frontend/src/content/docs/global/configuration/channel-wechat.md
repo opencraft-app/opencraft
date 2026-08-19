@@ -136,4 +136,6 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 
 - [配置通道 - Discord](./channel-discord.md) — 社群运营与开发者社区
 
+- [配置通道 - Slack](./channel-slack.md) — 团队协作、工作区通知和频道任务流转
+
 - [配置技能](./skill.md) — 扩展 Hermes Agent 能力

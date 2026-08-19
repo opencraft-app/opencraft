@@ -38,6 +38,8 @@
 - `subscription`
 - `trade`
 - `velagw`
+- `workers-website-deployer`（workers 镜像的 `website-deployer` 进程，运行在 `ctl` namespace，
+  发布通道独立于 `.ci/workers.yml` / `shanghai-workers`）
 
 当前上海项目模型：
 
@@ -58,6 +60,7 @@
   - `shprod-subscription`
   - `shprod-trade`
   - `shprod-velagw`
+  - `shprod-workers-website-deployer`
 
 新增/修改上海 leaf app 时，至少要同时确认：
 

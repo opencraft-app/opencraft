@@ -6,6 +6,9 @@ namespace: user-auth
 resources:
   - ../../base
 
+patches:
+  - path: patch-oauth-registration.yaml
+
 generatorOptions:
   disableNameSuffixHash: true
 

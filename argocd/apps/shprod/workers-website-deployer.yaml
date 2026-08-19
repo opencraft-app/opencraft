@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: workers-website-deployer-shprod
+  namespace: argocd
+spec:
+  project: shprod-workers-website-deployer
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/workers-website-deployer/shprod
+  destination:
+    namespace: ctl
+    name: shprod
+# 注意：上海正式环境不启用 syncPolicy.automated。
+# 合入 gitops 只代表发布批准，实际下发必须由人工在发布窗口执行 Argo sync。

@@ -57,6 +57,8 @@ const (
 // ctl.bundle 表的真实 bundle_id 命名保持一致（如 bundle_free_trial_01）。
 const freeTrialBundleIDPrefix = "bundle_free_trial"
 
+const bundleQuoteTimeout = 15 * time.Second
+
 // isFreeTrialBundleID 判断 bundle_id 是否属于免费试用类。免费试用 bundle 不参与 trade 询价。
 func isFreeTrialBundleID(bundleID string) bool {
 	return strings.HasPrefix(bundleID, freeTrialBundleIDPrefix)
@@ -336,9 +338,9 @@ func (h *bundleHandler) fetchBundleQuotes(
 		return nil
 	}
 
-	// 给 trade RPC 5s 超时上限，避免拖慢 bundle 列表响应。fast path 与 slow path 共用同一
-	// ctx：slow path N 次串行调用累计也不会超过这个上限，保证整体响应时间可控。
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	// 给 trade RPC 询价预算。trade 当前批量接口会串行调用计费询价，KR 国际站 6 个套餐
+	// 累计耗时容易超过 5s；这里保留整体上限，避免前端入口过早降级成无价套餐列表。
+	ctx, cancel := context.WithTimeout(r.Context(), bundleQuoteTimeout)
 	defer cancel()
 
 	// ===== fast path：一次性批量询价 =====

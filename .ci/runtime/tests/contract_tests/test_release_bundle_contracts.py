@@ -3,6 +3,7 @@ import re
 import subprocess
 import sys
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
@@ -270,6 +271,73 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
                 )
 
+    def test_ctl_prod_projection_covers_ksops_secret_files(self) -> None:
+        manifest = load_manifest()
+        workflow = (REPO_ROOT / ".ci" / "ctl.yml").read_text()
+
+        workflow_config = yaml.safe_load(workflow) or {}
+        workflow_parameters = (workflow_config.get("extends") or {}).get("parameters") or {}
+        self.assertIs(workflow_parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
+        self.assertIs(workflow_parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), False)
+        self.assertIs(workflow_parameters.get("ENABLE_MASTER_SGPROD_DB_MIGRATION"), True)
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                bundle = require_build_metadata(load_bundle(manifest, "ctl", env))
+                service_root = REPO_ROOT / "argocd" / "services" / "ctl" / env
+                referenced_secrets = {
+                    (generator.parent / secret_path).resolve().relative_to(REPO_ROOT).as_posix()
+                    for generator in service_root.glob("ksops*-generator.yaml")
+                    for secret_path in (yaml.safe_load(generator.read_text()) or {}).get("files", [])
+                }
+
+                self.assertFalse(
+                    referenced_secrets - set(bundle.publish_paths),
+                    f"ctl/{env} publish projection misses KSOPS secrets: "
+                    f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
+                )
+
+        self.assertIn("argocd/secrets/*/ctl-agentchat-secrets.sops.yaml", workflow)
+        self.assertIn("argocd/secrets/*/ctl-website-runtime-secrets.sops.yaml", workflow)
+
+    def test_sgprod_website_cos_lifecycle_only_expires_temporary_artifacts(self) -> None:
+        lifecycle_path = (
+            REPO_ROOT
+            / "argocd"
+            / "services"
+            / "workers-website-deployer"
+            / "sgprod"
+            / "website-cos-lifecycle.xml"
+        )
+        self.assertTrue(lifecycle_path.is_file(), f"missing desired COS lifecycle: {lifecycle_path}")
+
+        rule = ET.parse(lifecycle_path).getroot().find("Rule")
+        self.assertIsNotNone(rule)
+        self.assertEqual(rule.findtext("Status"), "Enabled")
+        self.assertEqual(rule.findtext("Filter/Prefix"), "_artifacts/")
+        self.assertEqual(rule.findtext("Expiration/Days"), "2")
+        self.assertEqual(rule.findtext("AbortIncompleteMultipartUpload/DaysAfterInitiation"), "1")
+
+    def test_sgprod_site_gateway_tls_binding_is_platform_owned(self) -> None:
+        service_root = REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod"
+        kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text()) or {}
+        resources = kustomization.get("resources") or []
+        platform_values = {
+            key: value
+            for line in (service_root / "site-gateway-platform.env").read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertNotIn("tls-secrets.yaml", resources)
+        self.assertFalse((service_root / "tls-secrets.yaml").exists())
+        self.assertEqual(platform_values.get("SITE_GATEWAY_TLS_SECRET_NAME"), "site-gateway-wildcard-tls")
+
+        readme = (service_root / "README.md").read_text()
+        self.assertIn("TLS lifecycle is platform-owned", readme)
+        self.assertIn("does not create, update, or rotate that Secret", readme)
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
@@ -292,6 +360,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
                 self.assertEqual(source_mode, "faceless")
                 self.assertEqual(deploy_mode, source_mode)
+
+    def test_beijing_shadow_callback_prefix_matches_deploy_facing_config(self) -> None:
+        source_patch = yaml.safe_load(
+            (REPO_ROOT / "user/auth/k8s/overlays/beijing-sandbox/patch-shadowbinding.yaml").read_text()
+        )
+        deploy_patch = next(
+            doc
+            for doc in yaml.safe_load_all(
+                (
+                    REPO_ROOT
+                    / "argocd/services/lightclaw-auth/beijing-sandbox/patch-shadowbinding.yaml"
+                ).read_text()
+            )
+            if doc.get("kind") == "ConfigMap"
+        )
+
+        self.assertEqual(source_patch["data"]["SHADOW_USER_NAME_PREFIX"], "bjsbx_")
+        self.assertEqual(
+            deploy_patch["data"]["SHADOW_USER_NAME_PREFIX"],
+            source_patch["data"]["SHADOW_USER_NAME_PREFIX"],
+        )
 
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()
@@ -1309,6 +1398,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
+    def test_frontend_checkouts_disable_virtual_merge(self) -> None:
+        for workflow_path in (".ci/frontend.yml", ".ci/frontend-preview.yml"):
+            with self.subTest(workflow=workflow_path):
+                workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                steps = workflow["stages"][0]["jobs"][next(iter(workflow["stages"][0]["jobs"]))]["steps"]
+                checkout = next(step for step in steps if step.get("checkout") == "self")
+
+                self.assertIs(checkout["with"].get("enableVirtualMergeBranch"), False)
+
     def test_frontend_workflow_uses_native_edgeone_subpipeline_fanout(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
         workflow = yaml.safe_load(workflow_text) or {}
@@ -1817,6 +1915,66 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
+        )
+
+    def test_korea_trade_uses_international_billing_test_route(self) -> None:
+        env_path = (
+            REPO_ROOT
+            / "argocd/services/trade"
+            / KOREA_PLAYGROUND_ENV
+            / "trade-platform.env"
+        )
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertEqual(
+            values["TRADE_BILLING_ENDPOINT"],
+            "billing.test.tencentcloudapi.com",
+        )
+        self.assertEqual(
+            values["TRADE_BILLING_CLOUDLADDER_ROUTE_ID"],
+            "tcapi-billing-trade-intl-test",
+        )
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_CALLER", values)
+        billing_client_source = (
+            REPO_ROOT / "trade/internal/cloudbillingclient/client.go"
+        ).read_text()
+        self.assertIn('cloudLadderCaller      = "lightvela-trade"', billing_client_source)
+        self.assertEqual(
+            values["JIFEI_CGW_X_QCLOUD_USER_ID"],
+            "450860000002",
+        )
+
+        common = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/trade/common/kustomization.yaml"
+            ).read_text()
+        )
+        redeploy_replacement = next(
+            replacement
+            for replacement in common["replacements"]
+            if replacement["source"].get("fieldPath") == "data.TRADE_DEPLOYED_AT"
+        )
+        self.assertEqual(
+            redeploy_replacement["targets"][0]["fieldPaths"],
+            ["spec.template.metadata.annotations.[trade.clawhub.dev/redeploy-at]"],
+        )
+
+        manifests = list(
+            yaml.safe_load_all((REPO_ROOT / "trade/k8s/base/manifests.yaml").read_text())
+        )
+        deployment = next(doc for doc in manifests if doc and doc.get("kind") == "Deployment")
+        self.assertEqual(
+            deployment["spec"]["template"]["metadata"]["annotations"][
+                "trade.clawhub.dev/redeploy-at"
+            ],
+            "REPLACE_TRADE_DEPLOYED_AT",
         )
 
     def test_standard_service_extends_stays_on_v2_local_template_contract(self) -> None:

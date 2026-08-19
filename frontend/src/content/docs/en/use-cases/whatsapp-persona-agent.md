@@ -1,9 +1,8 @@
 # How to Configure a Hermes Agent with a Distinct Personality in WhatsApp
 
-WhatsApp is one of the messaging entry points where Hermes Agent can stay in touch with you.
-It delivers the messages, while the Agent's role, voice, behavioral boundaries, and durable context come from its LightVela configuration.
+## Summary
 
-This guide shows how to connect Hermes Agent to WhatsApp and choose a stable personality for personal conversations, reminders, or customer-facing 1-to-1 work.
+**WhatsApp carries the messages; the Agent's role, tone, limits, and long-term context come from its configuration in LightVela — changing the entry point does not change who it is.** Connect the WhatsApp channel first (authorise per the channel guide and confirm the console shows it as connected), then use the Persona section on the Agent's settings page to select and inject a persona suited to personal messaging, reminders, or customer conversations. If this Agent faces customers or a team, name the audience explicitly in the persona and add brand tone, the scope it may handle, and the conditions for escalating to a human. After connecting, send a test message and confirm the reply lands in the expected conversation. If nothing arrives, check whether the model is configured, whether trial credits are exhausted, and whether the channel shows as connected.
 
 ![A Hermes Agent with a distinct personality in WhatsApp](../images/use-case-04-whatsapp-persona-agent.png)
 

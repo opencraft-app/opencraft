@@ -118,6 +118,11 @@ const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClaw
 /* ─── Default ─── */
 
 const DEFAULT_AVATAR_URL = "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/8f6347f3-5b3f-4dfb-844d-bb2501cb9e3d.png";
+const LOCAL_PREVIEW_AUTH_ENABLED =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === "1")
+  || (typeof process !== "undefined" && process.env.VITE_LOCAL_PREVIEW_AUTH === "1")
+  || import.meta.env?.VITE_LOCAL_PREVIEW_AUTH === "1";
+const LOCAL_PREVIEW_BOT_ID = "bot_local_preview";
 
 const defaultPlan: OpenClawUser["plan"] = {
   name: "体验版",
@@ -135,6 +140,18 @@ const defaultUser: OpenClawUser = {
   plan: defaultPlan,
 };
 
+const buildLocalPreviewBot = (): OpenClawBot => ({
+  id: LOCAL_PREVIEW_BOT_ID,
+  name: "我的Hermes",
+  personality: "通用对话模板",
+  personalityEmoji: "✨",
+  intro: "本地预览 Agent 控制台",
+  status: "running",
+  createdAt: new Date().toISOString(),
+  connectedChannels: [],
+  installedSkills: [],
+});
+
 const OpenClawContext = createContext<OpenClawContextValue | null>(null);
 
 /* ─── Provider ─── */
@@ -142,6 +159,7 @@ const OpenClawContext = createContext<OpenClawContextValue | null>(null);
 export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const { isAuthenticated, session, signOut: sessionSignOut } = useSession();
   const repositories = useRepositories();
+  const effectiveIsAuthenticated = isAuthenticated || LOCAL_PREVIEW_AUTH_ENABLED;
 
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [activePass, setActivePass] = useState<Pass | null>(null);
@@ -179,7 +197,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   /* ── Derive user from session instead of manual sync ── */
   const user = useMemo<OpenClawUser>(() => {
-    if (!isAuthenticated || !session.user) {
+    if (!effectiveIsAuthenticated || !session.user) {
       return defaultUser;
     }
     /**
@@ -204,7 +222,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
         ...(planFromPass ?? {}),
       },
     };
-  }, [isAuthenticated, session.user, activePass]);
+  }, [activePass, effectiveIsAuthenticated, session.user]);
 
   /* ── Load bots from backend, then fetch openclaw config to restore channel status ── */
   const refreshBots = useCallback(async () => {
@@ -243,7 +261,9 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       //   }
       // }
     } catch {
-      /* silently ignore – bots stay as-is */
+      if (LOCAL_PREVIEW_AUTH_ENABLED) {
+        setBots((prev) => (prev.length > 0 ? prev : [buildLocalPreviewBot()]));
+      }
     } finally {
       setBotsLoading(false);
     }
@@ -251,7 +271,13 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   /* ── Fetch bots & passes once on login ── */
   useEffect(() => {
-    if (isAuthenticated && session.user) {
+    if (LOCAL_PREVIEW_AUTH_ENABLED && session.authReady) {
+      if (!fetchedRef.current) {
+        fetchedRef.current = true;
+        void refreshBots();
+        void refreshPasses();
+      }
+    } else if (isAuthenticated && session.user) {
       if (!fetchedRef.current) {
         fetchedRef.current = true;
         void refreshBots();
@@ -333,7 +359,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   const value = useMemo<OpenClawContextValue>(
     () => ({
-      isLoggedIn: isAuthenticated,
+      isLoggedIn: effectiveIsAuthenticated,
       isSubscribed,
       user,
       bots,
@@ -350,7 +376,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [isAuthenticated, isSubscribed, user, bots, botsLoading, activePass, latestPass, login, logout, subscribe, refreshPasses, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, latestPass, login, logout, subscribe, refreshPasses, updateUser, addBot, updateBot, deleteBot, refreshBots],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

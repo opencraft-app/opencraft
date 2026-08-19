@@ -32,7 +32,6 @@ Credits are **allocated monthly with a plan**, and the monthly amount differs by
 |---|---|
 | Launch | 100 credits / month |
 | Cruise | 200 credits / month |
-| Voyage | 500 credits / month (coming soon) |
 
 Some plans may offer a **higher credit allocation**. Check the plan cards on the [Subscribe page](/subscribe) for currently available options, and see [Plans](./plans.md) for the resource and credit structure of each tier.
 
@@ -42,7 +41,7 @@ Some plans may offer a **higher credit allocation**. Check the plan cards on the
 
 Credits are consumed in the following situations because each one requires Hermes to call a language model:
 
-- **Talking to your Agent** — Messaging through Telegram, WhatsApp, Discord, WeChat, or another supported channel
+- **Talking to your Agent** — Messaging through Telegram, WhatsApp, Discord, Slack, WeChat, or another supported channel
 
 - **Running automations** — Letting your Agent execute [scheduled tasks](./configuration/automation.md)
 

@@ -32,7 +32,6 @@
 |---|---|
 | 启航 Launch | 100 积分 / 月 |
 | 巡游 Cruise | 200 积分 / 月 |
-| 远航 Voyage | 500 积分 / 月（敬请期待） |
 
 部分套餐可能提供**更高的积分档位**。当前可选档位以[订阅页](/subscribe)的套餐卡片为准，各档资源与额度见[套餐说明](./plans.md)。
 
@@ -42,7 +41,7 @@
 
 积分会在以下场景中消耗，本质上都是 Hermes Agent 调用了大模型：
 
-- **和 Agent 对话** — 通过 Telegram、WhatsApp、Discord 或 WeChat 等通道与 Agent 交流
+- **和 Agent 对话** — 通过 Telegram、WhatsApp、Discord、Slack 或 WeChat 等通道与 Agent 交流
 
 - **执行自动任务** — Agent 按计划运行[定时任务](./configuration/automation.md)
 

@@ -1,10 +1,8 @@
 # 如何让 Hermes Agent 7×24 小时在线？
 
-只有当问题出现时随时可用，而不只是你的电脑开着时，助手才最有帮助。
-无论是用手机快速得到回复、在上班前收到定时简报，还是在忙完一天后查看待跟进事项，这种可用性都很重要。
+## 摘要
 
-Hermes Agent 是 LightVela 中的云端 AI Agent。
-配置好模型和对话通道后，它可以独立于你的本地设备保持可用，无论你从哪里给它发消息，都能使用相同的记忆和行为方式。
+**Hermes Agent 能 7×24 小时可用，是因为它运行在云端实例上，不依赖你本地设备开机；配置好模型与至少一个对话通道后，无论你从哪个入口发消息，它都使用同一份记忆与行为方式。** 要真正达到长期在线，需要三件事到位：模型已配置且账户有可用额度（体验积分耗尽会导致无回复）、至少一个通道显示为已接入、以及用自动任务承担你不在场时的定时工作。判断是否真的可用不要只看控制台状态，应当从实际通道发一条消息验证；出现异常时可在诊断中心查看并导出近期日志（可选 1、3、6、12 或 24 小时范围）定位问题。
 
 ![LightVela 控制台中在线的 Hermes Agent](../images/use-case-hermes-online.webp)
 
@@ -24,7 +22,7 @@ Hermes Agent 是 LightVela 中的云端 AI Agent。
 - 已经配置好的模型或可用的体验积分。
   Hermes 需要模型才能生成回复。
 
-- 至少一个已连接的通道，例如 Telegram、WhatsApp、Discord 或 WeChat，这样你才有实际联系它的方式。
+- 至少一个已连接的通道，例如 Telegram、WhatsApp、Discord、Slack 或 WeChat，这样你才有实际联系它的方式。
 
 - 如果你希望 Hermes 不只是等待消息，还能主动执行工作，则需要一个可选的重复任务。
 
@@ -36,7 +34,7 @@ Hermes Agent 是 LightVela 中的云端 AI Agent。
 对于个人使用，通常应选择你每天已经会查看多次的应用。
 先完成连接，发送一条简短的测试消息，并确认 Hermes 能够回复，再进行更多配置。
 
-你可以查看 [Telegram](../configuration/channel-telegram.md)、[WhatsApp](../configuration/channel-whatsapp.md)、[Discord](../configuration/channel-discord.md) 和 [WeChat](../configuration/channel-wechat.md) 的详细说明。
+你可以查看 [Telegram](../configuration/channel-telegram.md)、[WhatsApp](../configuration/channel-whatsapp.md)、[Discord](../configuration/channel-discord.md)、[Slack](../configuration/channel-slack.md) 和 [WeChat](../configuration/channel-wechat.md) 的详细说明。
 
 ![运行中的 Hermes Agent 与已连接通道](../images/use-case-hermes-online-channel.png)
 

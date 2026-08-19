@@ -39,6 +39,10 @@ type SessionAction =
 
 const UI_SESSION_STORAGE_KEY = "lightclaw-ui-session-v1";
 const MAX_AVATAR_UPLOAD_BYTES = 200 * 1024;
+const LOCAL_PREVIEW_AUTH_ENABLED =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === "1")
+  || (typeof process !== "undefined" && process.env.VITE_LOCAL_PREVIEW_AUTH === "1")
+  || import.meta.env?.VITE_LOCAL_PREVIEW_AUTH === "1";
 
 const defaultLocalSessionState: LocalSessionState = {
   firstBotId: null,
@@ -125,6 +129,19 @@ const buildInitialSessionState = (): SessionState => ({
   ...parseStoredLocalSession(),
 });
 
+const buildLocalPreviewSession = (): AuthSessionSnapshot => ({
+  user: {
+    id: "usr_local_preview",
+    name: "本地预览用户",
+    avatarUrl: "/auth/profile/avatar",
+    inviteRequired: false,
+    createdAt: new Date().toISOString(),
+  },
+  currentSubscription: null,
+  impersonated: false,
+  authenticatedAt: new Date().toISOString(),
+});
+
 interface SessionContextValue {
   session: SessionState;
   authReady: boolean;
@@ -176,12 +193,12 @@ export const SessionProvider = ({ children }: PropsWithChildren) => {
         bootstrapStoredAuthTokenFromLocation();
         const currentSession = await repositories.auth.getSession();
         if (!cancelled && requestVersion === authRequestVersion.current) {
-          dispatch({ type: "SET_AUTH_STATE", payload: currentSession });
+          dispatch({ type: "SET_AUTH_STATE", payload: currentSession ?? (LOCAL_PREVIEW_AUTH_ENABLED ? buildLocalPreviewSession() : null) });
         }
       } catch (error) {
         console.error("Failed to hydrate auth session", error);
         if (!cancelled && requestVersion === authRequestVersion.current) {
-          dispatch({ type: "SET_AUTH_STATE", payload: null });
+          dispatch({ type: "SET_AUTH_STATE", payload: LOCAL_PREVIEW_AUTH_ENABLED ? buildLocalPreviewSession() : null });
         }
       }
     };
@@ -196,6 +213,10 @@ export const SessionProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     const handleUnauthorized = () => {
       authRequestVersion.current += 1;
+      if (LOCAL_PREVIEW_AUTH_ENABLED) {
+        dispatch({ type: "SET_AUTH_STATE", payload: buildLocalPreviewSession() });
+        return;
+      }
       dispatch({ type: "SIGN_OUT" });
       localStorage.removeItem(UI_SESSION_STORAGE_KEY);
     };

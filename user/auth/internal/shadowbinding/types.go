@@ -7,6 +7,9 @@ import (
 )
 
 const (
+	SiteKindCN   = "cn"
+	SiteKindIntl = "intl"
+
 	StatusPending  = "pending"
 	StatusActive   = "active"
 	StatusFailed   = "failed"
@@ -53,6 +56,7 @@ type Store interface {
 	SavePendingBinding(ctx context.Context, userID string, shadowUserName string, now time.Time) (Binding, error)
 	GetBindingByUserID(ctx context.Context, userID string) (Binding, error)
 	GetBindingByShadowUserName(ctx context.Context, shadowUserName string) (Binding, error)
+	MarkBindingRegistered(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
 	MarkBindingActive(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
 	MarkBindingFailed(ctx context.Context, userID string, code string, message string, now time.Time) (Binding, error)
 	MarkBasicAuthSucceeded(ctx context.Context, userID string, sourceAttemptID string, identityHash string, phoneHash string, now time.Time) (Binding, error)
@@ -63,6 +67,7 @@ type Store interface {
 
 type BindInput struct {
 	UserID     string
+	Email      string
 	Phone      string
 	ClientIP   string
 	ClientUA   string
@@ -93,6 +98,7 @@ type BasicAuthInput struct {
 
 type CloudRegisterInput struct {
 	UserName   string
+	Email      string
 	Phone      string
 	ClientIP   string
 	ClientUA   string
@@ -133,11 +139,19 @@ type CloudSaaSTokenResult struct {
 }
 
 type CloudTemporaryCredentials struct {
+	Uin          int64
+	OwnerUin     int64
 	Token        string
 	TmpSecretID  string
 	TmpSecretKey string
 	ExpiredTime  time.Time
 	RequestID    string
+}
+
+type CloudTemporaryCredentialsInput struct {
+	AuthCode string
+	ClientIP string
+	ClientUA string
 }
 
 type CloudRegisterResult struct {
@@ -146,9 +160,26 @@ type CloudRegisterResult struct {
 	AppID    int64
 }
 
+type BillingAccountResult struct {
+	IsOpen    bool
+	RequestID string
+}
+
+type BillingAccountClient interface {
+	EnsureBillingAccount(ctx context.Context, uin int64) (BillingAccountResult, error)
+}
+
 type TencentCloudClient interface {
 	SendSMSVerifyCode(ctx context.Context, in CloudSendSMSInput) error
 	RegisterShadowAccount(ctx context.Context, in CloudRegisterInput) (CloudRegisterResult, error)
 	UpdatePhoneByAuthCode(ctx context.Context, in CloudUpdatePhoneInput) error
 	SaveBasicAuthForSaaS(ctx context.Context, in CloudSaveBasicAuthInput) error
+}
+
+type TemporaryCredentialsClient interface {
+	GetTemporaryCredentialsForSaaS(ctx context.Context, in CloudTemporaryCredentialsInput) (CloudTemporaryCredentials, error)
+}
+
+type ShadowIdentityRecoveryClient interface {
+	RecoverShadowIdentityForSaaS(ctx context.Context, in CloudTemporaryCredentialsInput) (CloudSaaSTokenResult, error)
 }

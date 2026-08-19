@@ -27,7 +27,7 @@ import { isGlobal, switchLocaleInPath } from "@/lib/region";
 export type LanguageSwitcherVariant = "dropdown" | "inline";
 export type LanguageSwitcherNavigate = (targetUrl: string) => void;
 
-type I18nLocale = "zh-CN" | "en-US" | "zh-Hant";
+type I18nLocale = "zh-CN" | "en-US" | "zh-Hant" | "id-ID";
 
 type Option = {
   value: PublicSiteLocale;
@@ -41,6 +41,7 @@ const EN_OPTION: Option = { value: PUBLIC_SITE_LOCALES.EN_US, short: "EN", label
 const ZH_CN_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_CN, short: "中", label: "Intl - 中文" };
 const ZH_SG_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_SG, short: "简", label: "Intl - 简体中文" };
 const ZH_HANT_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_HANT, short: "繁", label: "Intl - 繁體中文" };
+const ID_ID_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ID_ID, short: "ID", label: "Intl - Bahasa Indonesia" };
 const CHINA_SITE_URL = "https://lightvela.com";
 const INTL_SITE_URL = "https://lightvela.ai";
 
@@ -50,6 +51,7 @@ function chineseOption(): Option {
 
 function currentOption(lang: string | undefined): Option {
   if (lang === PUBLIC_SITE_LOCALES.ZH_HANT) return ZH_HANT_OPTION;
+  if (lang === PUBLIC_SITE_LOCALES.ID_ID) return ID_ID_OPTION;
   if (lang?.startsWith("zh")) return chineseOption();
   return EN_OPTION;
 }
@@ -66,6 +68,8 @@ function dropdownOptionLabel(opt: Option): string {
       ? "English"
       : opt.value === PUBLIC_SITE_LOCALES.ZH_HANT
         ? "繁體中文"
+        : opt.value === PUBLIC_SITE_LOCALES.ID_ID
+          ? "Bahasa Indonesia"
         : "简体中文";
   return sitePrefix + name;
 }
@@ -76,6 +80,7 @@ function languageFromPublicLocale(locale: PublicSiteLocale | undefined): PublicS
 }
 
 function i18nLocaleForPublicLocale(locale: PublicSiteLocale): I18nLocale {
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
   return locale.startsWith("zh") ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.EN_US;
 }
@@ -143,7 +148,9 @@ function intlSiteUrlForLocale(value: PublicSiteLocale): string {
   const barePath = stripPublicSiteLocalePrefix(window.location.pathname || "/");
   const targetPath = value.startsWith("zh") && shouldLocalizePublicPath(barePath)
     ? (barePath === "/" ? "/zh-sg/" : `/zh-sg${barePath}`)
-    : barePath;
+    : value === PUBLIC_SITE_LOCALES.ID_ID && shouldLocalizePublicPath(barePath)
+      ? (barePath === "/" ? "/id-id/" : `/id-id${barePath}`)
+      : barePath;
 
   return `${INTL_SITE_URL}${targetPath}${window.location.search}${window.location.hash}`;
 }
@@ -178,7 +185,7 @@ function DropdownSwitcher({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const active = currentOption(activeLocale ?? i18n.language);
-  const options = [EN_OPTION, chineseOption(), ZH_HANT_OPTION] as const;
+  const options = [EN_OPTION, chineseOption(), ZH_HANT_OPTION, ID_ID_OPTION] as const;
 
   /* 点击外部关闭下拉 */
   useEffect(() => {
@@ -282,7 +289,7 @@ function InlineSwitcher({
 }) {
   const { i18n } = useTranslation();
   const active = currentOption(activeLocale ?? i18n.language);
-  const options = [EN_OPTION, chineseOption(), ZH_HANT_OPTION] as const;
+  const options = [EN_OPTION, chineseOption(), ZH_HANT_OPTION, ID_ID_OPTION] as const;
 
   return (
     <div className="flex flex-col gap-2">

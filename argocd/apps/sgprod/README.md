@@ -32,9 +32,11 @@
 - `payment`
 - `sandbox`
 - `service-gateway`
+- `site-gateway`
 - `subscription`
 - `velagw`（部署在独立的 `johorbahru-llmgateway-prod` 目标集群）
 - `vibebase`
+- `workers-website-deployer`
 
 当前新加坡项目模型：
 
@@ -51,9 +53,11 @@
   - `sgprod-payment`
   - `sgprod-sandbox`
   - `sgprod-service-gateway`
+  - `sgprod-site-gateway`
   - `sgprod-subscription`
   - `sgprod-velagw`
   - `sgprod-vibebase`
+  - `sgprod-workers-website-deployer`
 
 当前已有 deploy-facing 目录但尚未接入 live leaf app：
 

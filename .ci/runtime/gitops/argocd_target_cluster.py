@@ -28,6 +28,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--cluster-manifest", required=True)
+    parser.add_argument(
+        "--project-manifest",
+        help="AppProject manifest to upsert; defaults to the cluster manifest's spec.projectPath",
+    )
     parser.add_argument("--kubeconfig")
     parser.add_argument("--argocd-base-url")
     parser.add_argument("--argocd-username")
@@ -75,6 +79,17 @@ def resolve_kubeconfig_path(repo_root: Path, manifest: Mapping[str, Any], cli_pa
     if not path.is_file():
         raise FileNotFoundError(f"missing kubeconfig: {path}")
     return path
+
+
+def resolve_project_manifest(repo_root: Path, manifest: Mapping[str, Any], cli_path: str | None) -> Path:
+    raw_path = (cli_path or str(manifest.get("spec", {}).get("projectPath", ""))).strip()
+    if not raw_path:
+        raise ValueError("cluster manifest spec.projectPath is required when --project-manifest is omitted")
+    project_path = Path(raw_path)
+    project_path = project_path if project_path.is_absolute() else repo_root / project_path
+    if not project_path.is_file():
+        raise FileNotFoundError(f"missing AppProject manifest: {project_path}")
+    return project_path
 
 
 def _named_entry(entries: list[Any], name: str, key: str) -> dict[str, Any]:
@@ -204,7 +219,7 @@ def main() -> int:
     )
     cluster_payload = apply_cluster_scope_options(cluster_payload, spec)
 
-    project_path = repo_root / str(spec["projectPath"])
+    project_path = resolve_project_manifest(repo_root, manifest, args.project_manifest)
     project = load_yaml_mapping(project_path)
     validate_project_manifest(project, project_path)
 

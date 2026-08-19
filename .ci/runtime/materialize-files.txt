@@ -66,6 +66,7 @@
 .ci/runtime/bundles/payment.bundle
 .ci/runtime/bundles/sandbox.bundle
 .ci/runtime/bundles/service-gateway.bundle
+.ci/runtime/bundles/site-gateway.bundle
 .ci/runtime/bundles/session.bundle
 .ci/runtime/bundles/staticpages.bundle
 .ci/runtime/bundles/subscription.bundle

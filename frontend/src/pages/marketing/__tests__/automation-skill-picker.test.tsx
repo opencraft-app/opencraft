@@ -62,10 +62,14 @@ function renderAutomationFormModal() {
     <AutomationFormModal
       botId="bot-1"
       mode="create"
+      jobs={[]}
+      contextCapability="supported"
+      onRetryContextCapability={vi.fn()}
       enabledChannels={new Set()}
       channelStatus="ready"
       skillLoadState={ready(["builder-radar", "finance-news"])}
       onRefreshSkills={async () => ready(["builder-radar", "finance-news"])}
+      onRefreshJobs={async () => []}
       onClose={vi.fn()}
       onSaved={vi.fn()}
       onError={vi.fn()}
@@ -175,6 +179,24 @@ describe("AutomationSkillPicker", () => {
 
     expect(onChange).toHaveBeenCalledWith("");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("turns the selected Skill option check into a clear action and clears it when clicked", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderPicker({ value: "finance-news" });
+
+    await user.click(screen.getByRole("button", { name: "调用技能" }));
+    const selectedOption = screen.getByRole("option", { name: /Finance News.*finance-news/ });
+    const checkIcon = selectedOption.querySelector(".lucide-check");
+    const clearIcon = selectedOption.querySelector(".lucide-x");
+
+    expect(checkIcon).toHaveClass("opacity-100", "group-hover/option:opacity-0");
+    expect(clearIcon).toHaveClass("opacity-0", "group-hover/option:opacity-100");
+
+    await user.click(selectedOption);
+
+    expect(onChange).toHaveBeenCalledWith("");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 

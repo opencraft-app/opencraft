@@ -59,6 +59,15 @@ data:
   # trade-platform-values configmap 通过 replacements 注入。
   # 该 key 必须显式存在（即使空串），否则 kustomize replacement 找不到 target field 报错。
   JIFEI_BILLING_APIGW_URL: ""
+
+  # --- 国际站支付链接 CloudAPI（CreatePayUrl）---
+  # 非敏感项由 trade-platform.env 注入；CloudLadder HMAC 密钥走
+  # trade-runtime-secrets。国际站 Billing client 固定经 CloudLadder 出向。
+  TRADE_BILLING_ENDPOINT: ""
+  TRADE_BILLING_REGION: ""
+  TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL: ""
+  TRADE_BILLING_CLOUDLADDER_ROUTE_ID: ""
+
   # TRADE_SHADOW_MOCK_ENABLED（v1.7.28 BUG-02 修复 / 新增）：仅联调测试环境启用
   # （"true"/"1"/"yes"/"on"，大小写不敏感），现网必须为 "false"/"0"/空字符串。
   # 启用后 trade 启动时改注入 mockShadowClient（cmd/trade/shadow_mock.go），任意
@@ -97,6 +106,7 @@ data:
   #     · "ap-beijing"   → 8 / 800001 / "北京"（北京 2 预发布使用）
   #     · "ap-shanghai"  → 4 / 400001 / "上海"（上海正式使用）
   #     · "ap-singapore" → 9 / 900001 / "Singapore"
+  #     · "ap-seoul"     → 18 / 1800001 / "Seoul"（JP 联调环境使用）
   #   - 留空字符串 → 按 LIGHTVELA_SITE_KIND 兜底（cn → 广州 / intl → 新加坡）。
   #   - 未注册字面量（例："ap-tokyo" / "bj" 拼写错误）→ trade 启动 fail-fast。
   # 本字段与 LIGHTVELA_SITE_KIND 解耦：可以“国内站身份 cn + region 字段北京”（北京 2 预发布场景）。
@@ -115,6 +125,7 @@ data:
   # 设计稿：.tmp/dianshi-activity-bundle-design.md §5.7 / §5.8
   DIANSHI_PRICE_BASE_URL: ""
   DIANSHI_ORDER_BASE_URL: ""
+  DIANSHI_PREVIEW: "0"
 
   # --- DB ---
   # MYSQL_HOST / MYSQL_PORT 由 deploy-facing common Component 用 replacements
@@ -138,6 +149,8 @@ spec:
       app: trade
   template:
     metadata:
+      annotations:
+        trade.clawhub.dev/redeploy-at: REPLACE_TRADE_DEPLOYED_AT
       labels:
         app: trade
     spec:

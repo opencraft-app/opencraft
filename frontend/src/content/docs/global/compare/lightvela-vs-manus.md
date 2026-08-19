@@ -1,8 +1,10 @@
 # LightVela vs Manus：哪个更适合托管你的 AI Agent？
 
-![LightVela 与 Manus 在 AI Agent 托管和使用方式上的对比](../images/lightvela-vs-manus.webp)
+## 摘要
 
 **如果你想要一个长期在线、记得你的设置，并存在于日常消息通道中的个人 Hermes Agent，可以选择 LightVela。** 如果你希望把一个明确的任务——研究、浏览器操作、报告或工作流——交给 Agent，并让它朝着可交付结果执行，可以选择 Manus。两者都被称为“Agent”，但在日常使用中，它们的出发点完全不同。
+
+![LightVela 与 Manus 在 AI Agent 托管和使用方式上的对比](../images/lightvela-vs-manus.webp)
 
 ## 快速对比
 
@@ -16,7 +18,7 @@
 
 ## 两种不同的出发点
 
-LightVela 采取的是更个人化的路径。它在云端托管独立的 Hermes Agent，让 Agent 长期在线，并通过 Telegram、WhatsApp、Discord 和 WeChat 等已配置通道与你对话。[LightVela 概览](https://lightvela.ai/zh-sg/docs/overview) 介绍了这种托管模式，以及 Agent 如何保持与你日常工具的连接。
+LightVela 采取的是更个人化的路径。它在云端托管独立的 Hermes Agent，让 Agent 长期在线，并通过 Telegram、WhatsApp、Discord、Slack 和 WeChat 等已配置通道与你对话。[LightVela 概览](https://lightvela.ai/zh-sg/docs/overview) 介绍了这种托管模式，以及 Agent 如何保持与你日常工具的连接。
 
 Manus 将自己定位为拥有虚拟电脑的自主通用 AI Agent：你给出一个结果目标，它负责规划、执行并返回工作成果。它的 [Cloud Browser](https://manus.im/docs/features/cloud-browser) 可以访问网站、填写表单、提取信息，并完成多步骤浏览器工作流。
 

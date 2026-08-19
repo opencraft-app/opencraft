@@ -1,16 +1,16 @@
 # Plans
 
-LightVela offers three plan tiers—**Launch, Cruise, and Voyage**—for needs ranging from a lightweight starting point to more advanced use. Each plan provides an isolated cloud environment for a Hermes Agent and a monthly model-credit allocation. This page explains the positioning, resources, and benefits of each tier so you can choose the right fit.
+LightVela offers two plan tiers—**Launch and Cruise**—for needs ranging from a lightweight starting point to regular Agent use. Each plan provides an isolated cloud environment for a Hermes Agent and a monthly model-credit allocation. This page explains the positioning, resources, and benefits of each tier so you can choose the right fit.
 
 ## What this page covers
 
-- Who each of the three plans is designed for
+- Who each plan is designed for
 
 - Isolated runtime resources, storage, and model credits by tier
 
 - Core Agent capabilities shared by every plan
 
-- Current beta availability and plan-selection guidance
+- Public beta and billing, new-user trial benefits, and plan-selection guidance
 
 ---
 
@@ -20,11 +20,11 @@ A plan is the resource package that activates a Hermes Agent on LightVela. After
 
 The main differences between tiers are the **runtime resources, dedicated storage, and monthly model-credit allocation**. Core Agent capabilities—including adaptive behavior, multiple channels, skills, automations, and long-term memory—remain available across tiers.
 
-The international service is currently in beta, with **free beta access available to a limited number of users for a limited time**. Available tiers, quotas, and future pricing may change. Check the [Subscribe page](/subscribe) for current availability and pricing. The values below describe the current resource and credit structure.
+LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month, and new users can try the Launch plan free for 14 days. Check the [Subscribe page](/subscribe) for current availability and pricing, and see the [LightVela Paid Version Announcement](./announcements/public-beta.md) for details. The values below describe the current resource and credit structure.
 
 ---
 
-## The three plans
+## The two plans
 
 ### Launch — Start light and get your Agent running
 
@@ -36,7 +36,7 @@ Launch is for **people trying a cloud Agent for the first time** and provides th
 | Isolated cloud runtime | 2 CPU cores, 4 GB memory |
 | Dedicated cloud storage | 50 GB |
 | Model credits | 100 credits / month |
-| Current access | Limited-quantity, limited-time free beta; see Subscribe |
+| Current access | 14-day free trial for new users after public beta and billing start; see Subscribe |
 
 Launch is a practical way to experience the full product before deciding what level of resources you need. To understand how model credits are measured and consumed, see [Credits](./credits.md).
 
@@ -52,20 +52,6 @@ Cruise is for people who use an Agent as a **regular part of their day** and nee
 | Model credits | 200 credits / month |
 | Current status | Availability is shown on the Subscribe page |
 
-### Voyage — Advanced resources for professional use
-
-Voyage is intended for **heavy and advanced use**, with a larger Agent allowance and credit allocation. This tier is currently **coming soon** and cannot yet be activated.
-
-| Item | Specification |
-|---|---|
-| Number of Agents | 3 |
-| Isolated cloud runtime | 4 CPU cores, 8 GB memory |
-| Dedicated cloud storage | 80 GB |
-| Model credits | 500 credits / month |
-| Status | Coming soon |
-
----
-
 ## Agent capabilities included with every plan
 
 Every Hermes Agent has the same core capabilities; tiers differ only in runtime resources and credit allocation:
@@ -76,7 +62,7 @@ Every Hermes Agent has the same core capabilities; tiers differ only in runtime 
 
 - **Simple configuration console** — Configure [models](./configuration/model.md), channels, and skills from the web
 
-- **Supported messaging channels** — Connect Telegram, WhatsApp, Discord, WeChat, QQ, WeCom, and Lark
+- **Supported messaging channels** — Connect Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark
 
 - **Mainstream model APIs** — Choose the foundation model that fits your needs
 
@@ -94,7 +80,7 @@ Every Hermes Agent has the same core capabilities; tiers differ only in runtime 
 
 ## Availability and plan selection
 
-- **Current phase**: The international service is in beta, with free access available to a limited number of users for a limited time.
+- **Current phase**: LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users' existing plan validity will be extended by one additional month after public beta and billing officially start.
 
 - **Availability and pricing**: Available tiers, remaining quotas, and future pricing may change. Always check the [Subscribe page](/subscribe) for current information.
 
@@ -108,7 +94,7 @@ Every Hermes Agent has the same core capabilities; tiers differ only in runtime 
 
 ### How much does each plan cost?
 
-The international service currently uses a limited-quantity, limited-time free beta flow. Available plans and future pricing may change as the service evolves. See the [Subscribe page](/subscribe) for current information.
+After billing starts, Launch is priced at $7.5 / month and Cruise at $15 / month. New users can try Launch free for 14 days. See the [Subscribe page](/subscribe) for current information.
 
 ### Can I upgrade or switch plans?
 
@@ -116,7 +102,7 @@ Direct upgrades and plan changes are not currently supported for an active plan.
 
 ### How many Agents does one plan include?
 
-Launch and Cruise each include one Agent. Voyage is designed to include three Agents but is still coming soon. The Agent allowance is the number of Hermes instances that can run at the same time.
+Launch and Cruise each include one Agent. The Agent allowance is the number of Hermes instances that can run at the same time.
 
 ### What happens when I run out of credits?
 

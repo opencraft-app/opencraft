@@ -1,10 +1,10 @@
 # 如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒？
 
-AI 社群助手通常需要处理入群欢迎、常见问题、讨论摘要和定时提醒四类工作。
+## 摘要
 
-但按当前 LightVela 国际站 Telegram 通道文档，Telegram 目前仅支持 1 对 1 对话，不能把本文当成已经上线的群组接入教程。
+**这篇的第一件事是能力边界：Telegram 通道页面明确写着「当前不支持群聊，仅支持 1 对 1 对话」，因此目前无法在 LightVela 中完成「把 Bot 加入 Telegram 群组并自动欢迎成员」的完整流程。** BotFather 的隐私模式或群内 @ 机器人设置都不能替代 LightVela 对群聊通道能力的支持。当前可行的路径是：先按通道文档接入 1 对 1 对话，在私聊中把入群欢迎、FAQ、摘要、提醒这四类内容流程验证成熟，同时完成上线前准备清单。这样等群聊能力开放后，你只需切换触发场景，内容与人设无需重做。本页因此更适合作为设计与准备指南来使用。
 
-本文先记录这个场景的设计方式、上线前检查项和当前替代路径，等群聊能力有明确产品支持后再补充实际接入步骤。
+![Telegram 群组 AI 社群助手的欢迎、FAQ、摘要与提醒方案](../images/use-case-08-telegram-group-community-assistant.png)
 
 ## 当前能力边界
 
@@ -16,7 +16,6 @@ Telegram 的 BotFather 隐私模式或群内 @ 机器人设置，不能替代 Li
 
 如果你现在就要使用 Telegram，可以先按[配置通道 - Telegram](../configuration/channel-telegram.md)接入 1 对 1 对话，并在私聊中验证 FAQ、摘要和提醒的内容流程。
 
-![Telegram 群组 AI 社群助手的欢迎、FAQ、摘要与提醒方案](../images/use-case-08-telegram-group-community-assistant.png)
 
 ## 适合谁
 

@@ -143,7 +143,7 @@ export interface ScenarioTaskPack {
   /** 快速启用时展示的自然语言模板；field 片段与真实 Cron 参数双向绑定。 */
   quickPromptTemplate?: ScenarioQuickPromptPart[];
   /** 仅控制快速任务句里的日期与列表显示，不参与 Cron 解析。 */
-  quickPromptLocale?: "zh-CN" | "en-US";
+  quickPromptLocale?: "zh-CN" | "en-US" | "id-ID";
   category: ScenarioCategoryId;
   /** 二级子类（须属于所在分类的 subCategories） */
   subCategory: string;
@@ -243,7 +243,7 @@ export function formatScenarioQuickPromptSegments(
   values: Record<string, string>,
 ): ScenarioQuickPromptSegment[] {
   if (!pack.quickPromptTemplate?.length) return [{ text: pack.quickPrompt, suggested: true }];
-  const listSeparator = pack.quickPromptLocale === "en-US" ? ", " : "、";
+  const listSeparator = pack.quickPromptLocale === "zh-CN" || !pack.quickPromptLocale ? "、" : ", ";
   const fieldByKey = new Map(pack.fields.map((field) => [field.key, field]));
   const segments = pack.quickPromptTemplate
     .filter((part) => isScenarioQuickPromptPartVisible(pack, part, values))
@@ -307,7 +307,7 @@ function formatQuickPromptDate(
 ): string {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return value;
-  if (locale === "en-US") return `${match[1]}-${match[2]}-${match[3]}`;
+  if (locale === "en-US" || locale === "id-ID") return `${match[1]}-${match[2]}-${match[3]}`;
   return `${match[1]}年${Number(match[2])}月${Number(match[3])}日`;
 }
 
@@ -3076,9 +3076,213 @@ const OVERVIEW_ENGLISH_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number],
   },
 };
 
-function localizeOverviewFieldForEnglish(
+const OVERVIEW_INDONESIAN_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number], OverviewEnglishPackCopy> = {
+  "medication-once": {
+    name: "Pengingat minum air & obat",
+    valueProp: "Pengingat ringan untuk minum air dan obat sesuai instruksi Anda",
+    description: "Gabungkan pengingat minum air dan obat dalam satu tugas, dengan aturan obat tetap mengikuti resep atau instruksi yang Anda berikan.",
+    quickPrompt: "Ingatkan saya untuk minum air dan minum obat sesuai instruksi.",
+    defaultFrequencyLabel: "Sekali saja atau sesuai masa pengobatan",
+    quickPromptTemplate: [
+      { type: "text", text: "Gunakan mode pengingat " },
+      { type: "field", fieldKey: "reminderMode" },
+      { type: "text", text: " untuk minum air dan obat: " },
+      { type: "field", fieldKey: "medicine" },
+      { type: "text", text: ". " },
+      { type: "text", text: "Ingatkan saya pada ", visibleWhen: { fieldKey: "reminderMode", values: ["仅这一次"] } },
+      { type: "field", fieldKey: "triggerAt" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["仅这一次"] } },
+      { type: "text", text: "Ingatkan setiap hari pada ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复", "长期重复"] } },
+      { type: "field", fieldKey: "recurringTimes" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复", "长期重复"] } },
+      { type: "text", text: "Lanjutkan sampai ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复"] } },
+      { type: "field", fieldKey: "courseEndDate" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复"] } },
+      { type: "text", text: "Catatan: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      medicine: "Ikuti resep dan instruksi dosis yang sudah saya miliki",
+      customRequest: "Buat pengingat minum air tetap singkat; untuk obat, ikuti resep serta instruksi atau tautan yang saya berikan",
+    },
+    optionLabels: {
+      reminderMode: {
+        "仅这一次": "sekali saja",
+        "按疗程重复": "sesuai masa pengobatan",
+        "长期重复": "berulang jangka panjang",
+      },
+    },
+    safetyNote: "Ikuti anjuran medis. Pengingat ini bukan saran penggunaan obat.",
+  },
+  "rent-reminder": {
+    name: "Pengingat sewa",
+    valueProp: "Dapatkan pengingat sebelum jatuh tempo sewa",
+    description: "Pantau tanggal jatuh tempo bulanan, beserta jumlah, penerima, metode pembayaran, dan catatan saat pengingat dikirim.",
+    quickPrompt: "Ingatkan saya sebelum sewa bulanan jatuh tempo.",
+    defaultFrequencyLabel: "Pengingat tagihan bulanan",
+    quickPromptTemplate: [
+      { type: "text", text: "Setiap hari pada " },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", periksa siklus tagihan. Mulai " },
+      { type: "field", fieldKey: "dueDate" },
+      { type: "text", text: ", ingatkan saya setiap bulan untuk membayar " },
+      { type: "field", fieldKey: "rentInfo" },
+      { type: "text", text: ". Ingatkan " },
+      { type: "field", fieldKey: "advanceDays" },
+      { type: "text", text: ", dan " },
+      { type: "field", fieldKey: "includeDueDay", trueLabel: "ingatkan lagi pada tanggal jatuh tempo", falseLabel: "jangan ulangi pada tanggal jatuh tempo" },
+      { type: "text", text: ". Catatan: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      rentInfo: "sewa 5.000 CNY ke pemilik rumah melalui transfer bank",
+      customRequest: "Tambahkan utilitas, parkir, referensi pembayaran, atau detail pemilik rumah jika saya mengisinya",
+    },
+    optionLabels: {
+      advanceDays: Object.fromEntries(
+        Array.from({ length: 31 }, (_, days) => [
+          String(days),
+          days === 0 ? "pada tanggal jatuh tempo" : `${days} hari sebelumnya`,
+        ]),
+      ),
+    },
+  },
+  "country-fx-alert": {
+    name: "Pengingat kurs target",
+    valueProp: "Pilih pasangan mata uang dan dapatkan notifikasi saat kondisi terpenuhi",
+    description: "Pantau pasangan mata uang berdasarkan kurs target atau ambang perubahan harian, lalu kirim notifikasi hanya saat kondisi terpenuhi.",
+    quickPrompt: "Pantau pasangan mata uang pilihan saya dan beri tahu saat ambang tercapai.",
+    defaultFrequencyLabel: "Setiap hari pukul 10:00",
+    quickPromptTemplate: [
+      { type: "text", text: "Setiap hari pada " },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", periksa kurs " },
+      { type: "field", fieldKey: "fromCurrency" },
+      { type: "text", text: " ke " },
+      { type: "field", fieldKey: "toCurrency" },
+      { type: "text", text: ". Beri tahu saya saat " },
+      { type: "field", fieldKey: "thresholdMode" },
+      { type: "text", text: " " },
+      { type: "field", fieldKey: "thresholdValue" },
+      { type: "text", text: ". Catatan: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      customRequest: "Gunakan untuk perjalanan, studi luar negeri, atau pembayaran lintas negara, dan beri tahu hal yang perlu saya cek",
+    },
+    optionLabels: {
+      thresholdMode: {
+        "相较前一自然日同源参考值，涨跌幅达到": "perubahan absolut dari referensi valid hari sebelumnya mencapai (%)",
+        "当前汇率高于": "kurs saat ini lebih tinggi dari",
+        "当前汇率低于": "kurs saat ini lebih rendah dari",
+      },
+    },
+    safetyNote: "Informasi kurs saja. Ini bukan saran investasi.",
+  },
+  "calorie-fitness-checkin": {
+    name: "Catatan kalori & kebugaran",
+    valueProp: "Catat makanan, olahraga, dan tren berat badan setiap hari",
+    description: "Minta catatan makan, olahraga, berat badan, dan kondisi tubuh, lalu berikan estimasi yang jelas serta ringkasan ringan.",
+    quickPrompt: "Bantu saya mencatat makanan dan olahraga hari ini.",
+    defaultFrequencyLabel: "Setiap hari pukul 21:30",
+    quickPromptTemplate: [
+      { type: "text", text: "Setiap hari pada " },
+      { type: "field", fieldKey: "checkinTime" },
+      { type: "text", text: ", ingatkan saya untuk mencatat " },
+      { type: "field", fieldKey: "foodLog" },
+      { type: "text", text: ". Target saya adalah " },
+      { type: "field", fieldKey: "fitnessGoal" },
+      { type: "text", text: ". Gaya masukan: " },
+      { type: "field", fieldKey: "reportStyle" },
+      { type: "text", text: ". Catatan: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      foodLog: "apa yang saya makan dan minum, olahraga saya, serta perubahan berat badan",
+      fitnessGoal: "mengurangi lemak sambil tetap latihan kekuatan",
+      customRequest: "Data tubuh opsional: tinggi, berat, usia, jenis kelamin, target berat, dan latar latihan; tanyakan bagian yang kurang jika catatan saya belum lengkap",
+    },
+    optionLabels: {
+      reportStyle: {
+        "估算热量 + 给明天一个小调整": "estimasi kalori dan sarankan satu penyesuaian kecil untuk besok",
+        "只做记录和趋势，不评价": "catat tren tanpa menghakimi",
+        "重点看蛋白质、饮水和运动完成度": "fokus pada protein, hidrasi, dan penyelesaian olahraga",
+      },
+    },
+    safetyNote: "Kalori dan pembakaran aktivitas adalah estimasi, bukan saran medis, nutrisi, atau latihan.",
+  },
+  "global-holiday-reminder": {
+    name: "Hari libur & cuaca",
+    valueProp: "Pantau hari libur publik, cuaca tujuan, dan peringatan resmi sekaligus",
+    description: "Ikuti hari libur, hari kerja pengganti, prakiraan cuaca tujuan, dan peringatan cuaca resmi untuk perjalanan dan perencanaan lintas negara.",
+    quickPrompt: "Pantau hari libur, cuaca tujuan, dan peringatan resmi untuk tempat yang saya perhatikan.",
+    defaultFrequencyLabel: "Setiap hari pukul 09:00",
+    quickPromptTemplate: [
+      { type: "text", text: "Setiap hari pada " },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", pantau " },
+      { type: "field", fieldKey: "holidayCountries" },
+      { type: "text", text: " untuk " },
+      { type: "field", fieldKey: "holidayScope" },
+      { type: "text", text: ". Ingatkan saya " },
+      { type: "field", fieldKey: "reminderWindow" },
+      { type: "text", text: ". " },
+      { type: "field", fieldKey: "holidayWeatherPlan" },
+      { type: "text", text: ". Catatan: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      holidayWeatherPlan: "Pantau juga cuaca 7 hari ke depan di Bangkok dan Jakarta, plus peringatan resmi untuk hujan lebat, topan, dan panas ekstrem",
+      customRequest: "Gunakan tanggal perjalanan, pengiriman, pelanggan, atau rapat yang saya tambahkan agar pengingat lebih relevan",
+    },
+    optionLabels: {
+      holidayScope: {
+        "公共假期 + 调休日 + 银行假日": "hari libur publik, hari kerja pengganti, dan hari libur bank",
+        "只看法定公共假期": "hanya hari libur publik resmi",
+        "加上当地大型节庆/交通高峰": "hari libur publik plus festival besar lokal",
+      },
+      reminderWindow: {
+        "提前 7 天 + 提前 1 天": "7 hari dan 1 hari sebelumnya",
+        "提前 3 天 + 当天早上": "3 hari sebelumnya dan pagi hari H",
+        "仅在假期当天早上提醒": "hanya pagi hari saat libur",
+      },
+    },
+  },
+  "stock-info-digest": {
+    name: "Ringkasan info saham",
+    valueProp: "Ringkas harga, pengumuman, dan pembaruan laporan untuk saham pilihan",
+    description: "Susun informasi publik untuk saham A-share, Hong Kong, dan AS tanpa memberi saran transaksi.",
+    quickPrompt: "Ringkas informasi pasar publik untuk saham yang saya pantau.",
+    defaultFrequencyLabel: "Setiap hari pukul 09:00",
+    quickPromptTemplate: [
+      { type: "text", text: "Setiap hari pada " },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", ringkas pembaruan untuk saham berikut: " },
+      { type: "field", fieldKey: "stockList" },
+      { type: "text", text: ". Fokus pada " },
+      { type: "field", fieldKey: "stockFocus" },
+      { type: "text", text: ". Catatan: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      stockList: "Tencent Holdings 00700, NVIDIA NVDA, Kweichow Moutai 600519",
+      stockFocus: "harga terbaru, persentase perubahan, pengumuman penting, pembaruan laporan, dan kemungkinan penyebab publik dari pergerakan tidak biasa",
+      customRequest: "Gunakan informasi publik saja dan jangan memberi saran beli, jual, tambah, atau kurangi posisi",
+    },
+    safetyNote: "Informasi publik saja. Ini bukan saran investasi.",
+  },
+};
+
+function localizeOverviewField(
   field: ScenarioTaskField,
   copy: OverviewEnglishPackCopy,
+  locale: "en-US" | "id-ID",
 ): ScenarioTaskField {
   const defaultValue = copy.fieldDefaults?.[field.key] ?? field.defaultValue;
   const optionLabels = copy.optionLabels?.[field.key];
@@ -3089,7 +3293,7 @@ function localizeOverviewFieldForEnglish(
 
   if (field.key === "fromCurrency" || field.key === "toCurrency") {
     const displayNames = typeof Intl.DisplayNames === "function"
-      ? new Intl.DisplayNames(["en-US"], { type: "currency" })
+      ? new Intl.DisplayNames([locale], { type: "currency" })
       : null;
     options = field.options?.map((option) => {
       const name = displayNames?.of(option.value);
@@ -3098,7 +3302,7 @@ function localizeOverviewFieldForEnglish(
   }
   if (field.key === "holidayCountries") {
     const displayNames = typeof Intl.DisplayNames === "function"
-      ? new Intl.DisplayNames(["en-US"], { type: "region" })
+      ? new Intl.DisplayNames([locale], { type: "region" })
       : null;
     options = field.options?.map((option) => ({
       ...option,
@@ -3110,17 +3314,19 @@ function localizeOverviewFieldForEnglish(
 }
 
 export function getOverviewScenarioTaskPacks(
-  locale: "zh-CN" | "zh-SG" | "en-US",
+  locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID",
 ): readonly ScenarioTaskPack[] {
-  if (locale !== "en-US") return OVERVIEW_SCENARIO_TASK_PACKS;
+  if (locale !== "en-US" && locale !== "id-ID") return OVERVIEW_SCENARIO_TASK_PACKS;
+
+  const localizedCopy = locale === "id-ID" ? OVERVIEW_INDONESIAN_COPY : OVERVIEW_ENGLISH_COPY;
 
   return OVERVIEW_SCENARIO_TASK_PACKS.map((pack) => {
-    const copy = OVERVIEW_ENGLISH_COPY[pack.id as (typeof OVERVIEW_SCENARIO_TASK_IDS)[number]];
+    const copy = localizedCopy[pack.id as (typeof OVERVIEW_SCENARIO_TASK_IDS)[number]];
     return {
       ...pack,
       ...copy,
-      quickPromptLocale: "en-US",
-      fields: pack.fields.map((field) => localizeOverviewFieldForEnglish(field, copy)),
+      quickPromptLocale: locale,
+      fields: pack.fields.map((field) => localizeOverviewField(field, copy, locale)),
     };
   });
 }

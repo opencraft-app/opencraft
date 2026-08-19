@@ -141,6 +141,7 @@
 | 变量 | 说明 |
 |------|------|
 | `LIGHTCLAW_PHONE_AUTH_ENABLED` | 是否启用隐藏手机号登录分流；启用后 `/auth/sms/send` 和 `/auth/sms/verify` 会走 `phone_auth_challenges` |
+| `LIGHTCLAW_PASSWORD_SIGNUP_SHADOW_PROVISIONING_ENABLED` | 仅国际测试环境使用；设为 `true` 时，密码注册复用正式 Shadow 注册与 Billing 开户状态机。生产禁止设置 |
 | `LIGHTCLAW_SMS_SECRET_ID` | 腾讯云短信 SecretId（手机号登录现有用户分支） |
 | `LIGHTCLAW_SMS_SECRET_KEY` | 腾讯云短信 SecretKey（手机号登录现有用户分支） |
 | `LIGHTCLAW_SMS_REGION` | 腾讯云短信地域，默认 `ap-guangzhou` |

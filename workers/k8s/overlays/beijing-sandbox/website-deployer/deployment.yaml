@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: website-deployer
+  namespace: temporal-workers
+imagePullSecrets:
+- name: tcr.ipsqcloudregistrykey
+- name: tcr.ipstcr-regcred
+- name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: website-deployer-platform-values
+  namespace: temporal-workers
+data:
+  REDIS_ADDR: "REPLACE_REDIS_ADDR"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: website-deployer
+  namespace: temporal-workers
+  labels:
+    app: website-deployer
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: website-deployer
+  template:
+    metadata:
+      labels:
+        app: website-deployer
+    spec:
+      serviceAccountName: website-deployer
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: website-deployer
+        image: REPLACE_WORKERS_IMAGE
+        imagePullPolicy: IfNotPresent
+        command:
+        - /usr/local/bin/website-deployer
+        env:
+        - name: CTL_BASE_URL
+          value: "http://ctl-api.ctl.svc.cluster.local"
+        - name: REDIS_ADDR
+          valueFrom:
+            configMapKeyRef:
+              name: website-deployer-platform-values
+              key: REDIS_ADDR
+        - name: POLL_INTERVAL_SECONDS
+          value: "10"
+        # 制品 zip 流式写临时文件，峰值内存仅几 KB/部署，不随并发线性增长。
+        - name: MAX_CONCURRENCY
+          value: "200"
+        - name: WEBSITE_REQUIRE_REDIS_LIMITER
+          value: "true"
+        - name: WEBSITE_COS_UPLOADS_PER_MINUTE
+          value: "8000"
+        - name: WEBSITE_INTERNAL_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: WEBSITE_INTERNAL_API_TOKEN
+        - name: TENCENT_SECRET_ID
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: TENCENT_SECRET_ID
+        - name: TENCENT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: TENCENT_SECRET_KEY
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi

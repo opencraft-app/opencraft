@@ -10,6 +10,69 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/sandbox-kr-1/config.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	want := map[string]struct{}{
+		http.MethodGet + " /auth/payment-methods":                         {},
+		http.MethodPost + " /auth/payment-methods/sign-orders":            {},
+		http.MethodPut + " /auth/payment-methods/{contract_code}/default": {},
+		http.MethodDelete + " /auth/payment-methods/{contract_code}":      {},
+	}
+	wantOrigins := map[string]struct{}{
+		"https://sandbox-kr-1.lightclaw.tech":              {},
+		"https://intl-sandbox-kr-1.preview.lightclaw.tech": {},
+		"https://lightvela-intl.pages.dev":                 {},
+		"http://localhost:4173":                            {},
+		"http://127.0.0.1:4173":                            {},
+		"http://localhost:5173":                            {},
+		"http://127.0.0.1:5173":                            {},
+	}
+	for _, route := range cfg.Routes {
+		if route.Name != "auth-payment-methods" {
+			continue
+		}
+		if route.Prefix != "/auth/payment-methods" || route.Access != AccessAuthenticated {
+			t.Fatalf("payment method route must be authenticated and narrowly prefixed: %+v", route)
+		}
+		if route.RequireRealname {
+			t.Fatal("international payment method route must not require realname")
+		}
+		if route.PathPolicy != PathPolicyAllowlist {
+			t.Fatalf("path_policy = %q, want allowlist", route.PathPolicy)
+		}
+		if len(route.AllowedOrigins) != len(wantOrigins) {
+			t.Fatalf("payment method allowed_origins has %d entries, want %d: %+v", len(route.AllowedOrigins), len(wantOrigins), route.AllowedOrigins)
+		}
+		for _, origin := range route.AllowedOrigins {
+			if _, ok := wantOrigins[origin]; !ok {
+				t.Fatalf("payment method route has unexpected allowed origin %q", origin)
+			}
+		}
+		got := make(map[string]struct{}, len(route.PathAllow))
+		for _, rule := range route.PathAllow {
+			got[rule.Method+" "+rule.Path] = struct{}{}
+		}
+		if len(got) != len(want) {
+			t.Fatalf("payment method path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
+		}
+		for key := range want {
+			if _, ok := got[key]; !ok {
+				t.Fatalf("payment method path allowlist missing %s", key)
+			}
+		}
+		return
+	}
+	t.Fatal("auth-payment-methods route not found")
+}
+
 func TestDeployConfigsScopePhoneAuthPublicRoutes(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -132,6 +195,75 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 }
 
+func TestDeployConfigsScopeWebsiteInstanceRoutes(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	configPaths := []string{
+		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
+		"argocd/services/service-gateway/shprod/config.yaml",
+		"argocd/services/service-gateway/sgprod/config.yaml",
+	}
+	wantInstancePaths := map[string]struct{}{
+		http.MethodGet + " /v1/instance/websites/capability":                          {},
+		http.MethodGet + " /v1/instance/websites":                                     {},
+		http.MethodPost + " /v1/instance/websites":                                    {},
+		http.MethodGet + " /v1/instance/websites/{site_id}":                           {},
+		http.MethodDelete + " /v1/instance/websites/{site_id}":                        {},
+		http.MethodGet + " /v1/instance/websites/{site_id}/releases":                  {},
+		http.MethodPost + " /v1/instance/websites/{site_id}/releases":                 {},
+		http.MethodGet + " /v1/instance/websites/{site_id}/operations/{operation_id}": {},
+	}
+
+	for _, configPath := range configPaths {
+		t.Run(configPath, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			var browserRoute, instanceRoute *Route
+			for i := range cfg.Routes {
+				route := &cfg.Routes[i]
+				switch route.Prefix {
+				case "/v1/websites":
+					browserRoute = route
+				case "/v1/instance/websites":
+					instanceRoute = route
+				}
+			}
+			if browserRoute == nil || browserRoute.Access != AccessAuthenticated {
+				t.Fatalf("authenticated browser website route is required: %+v", browserRoute)
+			}
+			if len(browserRoute.PublicAllow) != 0 {
+				t.Fatalf("browser website route must not contain public exceptions: %+v", browserRoute.PublicAllow)
+			}
+			if instanceRoute == nil {
+				t.Fatal("instance website route is required")
+			}
+			if instanceRoute.Access != AccessPublic || instanceRoute.PathPolicy != PathPolicyAllowlist {
+				t.Fatalf("instance website route must be public + allowlist: %+v", *instanceRoute)
+			}
+			if instanceRoute.RewritePrefix != "/v1/websites" {
+				t.Fatalf("rewrite_prefix = %q, want /v1/websites", instanceRoute.RewritePrefix)
+			}
+			got := make(map[string]struct{}, len(instanceRoute.PathAllow))
+			for _, rule := range instanceRoute.PathAllow {
+				got[rule.Method+" "+rule.Path] = struct{}{}
+			}
+			if len(got) != len(wantInstancePaths) {
+				t.Fatalf("instance website allowlist has %d rules, want %d: %+v", len(got), len(wantInstancePaths), got)
+			}
+			for key := range wantInstancePaths {
+				if _, ok := got[key]; !ok {
+					t.Fatalf("instance website allowlist missing %s", key)
+				}
+			}
+		})
+	}
+}
+
 func TestLegacySandboxProxyRoutesStayRestricted(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -207,14 +339,14 @@ func TestFaceIDCallbackIsPublicInDomesticEnvironments(t *testing.T) {
 	}
 }
 
-func TestTencentCloudAccountCallbackIsPublicInDomesticEnvironments(t *testing.T) {
+func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 
-	for _, env := range []string{"beijing-sandbox", "shprod"} {
+	for _, env := range []string{"beijing-sandbox", "sandbox-kr-1", "shprod"} {
 		t.Run(env, func(t *testing.T) {
 			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
 			if err != nil {

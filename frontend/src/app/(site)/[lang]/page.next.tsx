@@ -13,6 +13,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela｜云端专属个人 Agent',
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela｜云端专属个人 Agent',
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela｜雲端專屬個人 Agent',
+  [PUBLIC_SITE_LOCALES.ID_ID]: 'LightVela | Agen AI Pribadi di Cloud',
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
@@ -20,6 +21,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品。',
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品。',
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela 是騰訊輕量雲團隊推出的雲端 Agent 託管產品。',
+  [PUBLIC_SITE_LOCALES.ID_ID]: 'LightVela adalah produk hosting Agent cloud dari tim Tencent Lighthouse.',
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

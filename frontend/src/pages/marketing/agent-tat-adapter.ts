@@ -61,6 +61,12 @@ const b64 = {
   },
 };
 
+const MOCK_CONNECTED_CHANNELS_STORAGE_KEY = "lightclaw-mock-connected-channels-v1";
+const SLACK_PLATFORM = "slack";
+const STRIP_SLACK_ENV_COMMAND = "strip_slack_env";
+const SLACK_BOT_TOKEN_ENV = "SLACK_BOT_TOKEN";
+const SLACK_APP_TOKEN_ENV = "SLACK_APP_TOKEN";
+
 /** SDK 的 runCommand 入参形状（与 IRunCommandParams 同形） */
 type RunCommandRequest = {
   RegionId: number;
@@ -429,6 +435,116 @@ export function createMonoDebugExecAdapter(
     throw new Error(
       `[debug-exec-adapter] invocationId=${invocationId} 未在本次会话下发，结果已不可用`,
     );
+  };
+
+  return { runCommand, getInvocationTask };
+}
+
+export function createMockDebugExecAdapter(
+  options: Pick<CreateMonoDebugExecAdapterOptions, "commandLifecycle"> = {},
+): Pick<Required<IProductConfig>, "runCommand" | "getInvocationTask"> {
+  const pendingCommands = new Map<string, {
+    botId: string;
+    command: string;
+    metadata: unknown;
+  }>();
+  const readConnectedChannels = () => {
+    if (typeof window === "undefined") return new Set<string>();
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(MOCK_CONNECTED_CHANNELS_STORAGE_KEY) || "[]");
+      return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+    } catch {
+      return new Set<string>();
+    }
+  };
+  const writeConnectedChannels = (channels: Set<string>) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(MOCK_CONNECTED_CHANNELS_STORAGE_KEY, JSON.stringify(Array.from(channels)));
+  };
+  const connectedChannels = readConnectedChannels();
+
+  const channelStatusOutput = () => JSON.stringify({
+    success: true,
+    data: {
+      platforms: Array.from(connectedChannels).map((name) => ({
+        name,
+        status: "connected",
+      })),
+    },
+    error: null,
+  });
+
+  const applyMockChannelCommand = (command: string) => {
+    if (command.includes(STRIP_SLACK_ENV_COMMAND) && command.includes(SLACK_BOT_TOKEN_ENV)) {
+      connectedChannels.delete(SLACK_PLATFORM);
+      writeConnectedChannels(connectedChannels);
+      return;
+    }
+
+    if (command.includes(SLACK_BOT_TOKEN_ENV) && command.includes(SLACK_APP_TOKEN_ENV)) {
+      connectedChannels.add(SLACK_PLATFORM);
+      writeConnectedChannels(connectedChannels);
+    }
+  };
+
+  const runCommand: IProductConfig["runCommand"] = async (data: RunCommandRequest) => {
+    // 业务约定：当前一次命令只面向一个 Agent 实例，SDK 入参里取第一个 InstanceId 作为 botId。
+    const botId = data.InstanceIds?.[0]?.trim();
+    if (!botId) {
+      throw new Error(
+        "[debug-exec-adapter] instance.InstanceId 为空，请在构造 SDK instance 时传入 activeBot.id",
+      );
+    }
+
+    const command = b64.decode(data.Content ?? "");
+    const metadata = await options.commandLifecycle?.beforeExecute?.({ botId, command });
+    const invocationId = `mock-debug-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    pendingCommands.set(invocationId, { botId, command, metadata });
+
+    return { InvocationId: invocationId };
+  };
+
+  const getInvocationTask: IProductConfig["getInvocationTask"] = async (
+    _regionId,
+    invocationId,
+    pollingOptions,
+  ) => {
+    if (!invocationId) {
+      throw new Error("[debug-exec-adapter] getInvocationTask: invocationId is empty");
+    }
+
+    const pending = pendingCommands.get(invocationId);
+    if (!pending) {
+      throw new Error(
+        `[debug-exec-adapter] invocationId=${invocationId} 未在本次会话下发，结果已不可用`,
+      );
+    }
+
+    pendingCommands.delete(invocationId);
+    applyMockChannelCommand(pending.command);
+    const output = pending.command.includes("acli channel status")
+      ? channelStatusOutput()
+      : `mock executed: ${pending.command}`;
+    const base64Output = b64.encode(output);
+    if (pollingOptions?.onProgress) {
+      pollingOptions.onProgress(base64Output);
+    }
+
+    await options.commandLifecycle?.afterExecute?.({
+      botId: pending.botId,
+      command: pending.command,
+      metadata: pending.metadata,
+      result: {
+        status: "SUCCESS",
+        exitCode: 0,
+        output,
+      },
+    });
+
+    return {
+      TaskStatus: "SUCCESS",
+      TaskResult: { Output: base64Output },
+    };
   };
 
   return { runCommand, getInvocationTask };

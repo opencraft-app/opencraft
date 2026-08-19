@@ -59,20 +59,53 @@ func (f *fakeCTL) DestroyPass(_ context.Context, _ string, _ *ctlclient.DestroyP
 }
 
 type fakeBundleStore struct {
-	def *store.BundleDefinition
-	err error
+	def                       *store.BundleDefinition
+	defs                      map[string]*store.BundleDefinition
+	err                       error
+	getBundleDefinitionsByIDs func(ctx context.Context, bundleIDs []string) (map[string]*store.BundleDefinition, error)
 }
 
 func (f *fakeBundleStore) GetBundleDefinitionByID(ctx context.Context, bundleID string) (*store.BundleDefinition, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
+	if f.defs != nil {
+		def := f.defs[bundleID]
+		if def == nil {
+			return nil, store.ErrBundleDefinitionNotFound
+		}
+		return def, nil
+	}
 	return f.def, nil
 }
 func (f *fakeBundleStore) ListBundleDefsBySubProductCode(_ context.Context, _, _ string) ([]*store.BundleDefinition, error) {
 	return nil, errors.New("ListBundleDefsBySubProductCode not used in inquiry")
 }
-func (f *fakeBundleStore) GetBundleDefinitionsByIDs(_ context.Context, _ []string) (map[string]*store.BundleDefinition, error) {
+func (f *fakeBundleStore) GetBundleDefinitionsByIDs(ctx context.Context, bundleIDs []string) (map[string]*store.BundleDefinition, error) {
+	if f.getBundleDefinitionsByIDs != nil {
+		return f.getBundleDefinitionsByIDs(ctx, bundleIDs)
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.defs != nil {
+		out := make(map[string]*store.BundleDefinition, len(bundleIDs))
+		for _, id := range bundleIDs {
+			if def := f.defs[id]; def != nil {
+				out[id] = def
+			}
+		}
+		return out, nil
+	}
+	if f.def != nil {
+		out := make(map[string]*store.BundleDefinition, len(bundleIDs))
+		for _, id := range bundleIDs {
+			def := *f.def
+			def.BundleID = id
+			out[id] = &def
+		}
+		return out, nil
+	}
 	return nil, errors.New("GetBundleDefinitionsByIDs not used in inquiry")
 }
 
@@ -149,6 +182,14 @@ func stdDef() *store.BundleDefinition {
 		},
 		ProductInfo: []map[string]interface{}{{"k": "v"}},
 	}
+}
+
+func stdDefForBundle(bundleID string, pid int64, category int64) *store.BundleDefinition {
+	def := stdDef()
+	def.BundleID = bundleID
+	def.Pid = pid
+	def.CategoryIDs = []store.CategoryIDEntry{{Scene: "purchase", Category: category}}
+	return def
 }
 
 func stdQuoteReq() QuoteRequest {
@@ -248,6 +289,79 @@ func TestQuote_HappyPath(t *testing.T) {
 	}
 	if gd["sv_mem"] != int64(4) {
 		t.Errorf("goodsDetail.sv_mem = %v, want int64(4)", gd["sv_mem"])
+	}
+}
+
+func TestQuoteBatch_CallsJifeiOnceAndMatchesPricesByRequestOrder(t *testing.T) {
+	ctl := &fakeCTL{getBundleByIDFn: func(ctx context.Context, id string) (*ctlclient.BundleDetail, error) {
+		return &ctlclient.BundleDetail{
+			BundleID:    id,
+			BundleName:  "name-" + id,
+			BundleState: "ONLINE",
+		}, nil
+	}}
+	bs := &fakeBundleStore{defs: map[string]*store.BundleDefinition{
+		"bundle_voyage": stdDefForBundle("bundle_voyage", 3003, 300059),
+		"bundle_launch": stdDefForBundle("bundle_launch", 1001, 100059),
+		"bundle_cruise": stdDefForBundle("bundle_cruise", 2002, 200059),
+	}}
+	jc := &fakeJifei{getPriceFn: func(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+		if len(req.ResInfo) != 3 {
+			t.Fatalf("GetPrice ResInfo len = %d, want 3", len(req.ResInfo))
+		}
+		gotCategories := []int64{
+			req.ResInfo[0].GoodsCategoryID,
+			req.ResInfo[1].GoodsCategoryID,
+			req.ResInfo[2].GoodsCategoryID,
+		}
+		wantCategories := []int64{300059, 100059, 200059}
+		for i := range wantCategories {
+			if gotCategories[i] != wantCategories[i] {
+				t.Fatalf("ResInfo[%d].GoodsCategoryID = %d, want %d; full=%v",
+					i, gotCategories[i], wantCategories[i], gotCategories)
+			}
+		}
+		return &jifeiclient.GetPriceResponse{Data: []jifeiclient.GetPriceData{
+			{Price: "65.00", TotalCost: "65.00", RealTotalCost: "65.00", Currency: "USD", Pid: 3003},
+			{Price: "12.00", TotalCost: "12.00", RealTotalCost: "12.00", Currency: "USD", Pid: 1001},
+			{Price: "23.00", TotalCost: "23.00", RealTotalCost: "23.00", Currency: "USD", Pid: 2002},
+		}}, nil
+	}}
+	svc := New(Deps{CTLClient: ctl, BundleStore: bs, JifeiClient: jc, SiteKind: "intl"})
+
+	got, err := svc.QuoteBatch(context.Background(), QuoteBatchRequest{
+		ExternalUserID: "user-1",
+		Uin:            "1000123456",
+		AppID:          "10001",
+		BundleIDs:      []string{"bundle_voyage", "bundle_launch", "bundle_cruise"},
+		TimeSpan:       1,
+		TimeUnit:       "m",
+		GoodsNum:       1,
+		PayMode:        1,
+	})
+	if err != nil {
+		t.Fatalf("QuoteBatch returned error: %v", err)
+	}
+	if calls := jc.getPriceCalls.Load(); calls != 1 {
+		t.Fatalf("GetPrice calls = %d, want 1", calls)
+	}
+	if len(got) != 3 {
+		t.Fatalf("QuoteBatch len = %d, want 3", len(got))
+	}
+	want := []struct {
+		bundleID string
+		price    string
+		pid      int64
+	}{
+		{"bundle_voyage", "65.00", 3003},
+		{"bundle_launch", "12.00", 1001},
+		{"bundle_cruise", "23.00", 2002},
+	}
+	for i, w := range want {
+		if got[i].BundleID != w.bundleID || got[i].Price != w.price || got[i].Pid != w.pid {
+			t.Fatalf("QuoteBatch[%d] = {BundleID:%q Price:%q Pid:%d}, want {BundleID:%q Price:%q Pid:%d}",
+				i, got[i].BundleID, got[i].Price, got[i].Pid, w.bundleID, w.price, w.pid)
+		}
 	}
 }
 
@@ -473,9 +587,13 @@ func newSvcStub() *Service {
 
 // fakeShadow 是 inquiry 测试用的 shadowclient.Client mock。
 type fakeShadow struct {
-	getBindingFn   func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
-	calls          atomic.Int32
-	lastExternalID string
+	getBindingFn      func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	getBindingStateFn func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	retryBillingFn    func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	calls             atomic.Int32
+	stateCalls        atomic.Int32
+	retryCalls        atomic.Int32
+	lastExternalID    string
 }
 
 func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
@@ -485,6 +603,22 @@ func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUse
 		return f.getBindingFn(ctx, externalUserID)
 	}
 	return nil, errors.New("fakeShadow: GetBindingByExternalUserID not implemented")
+}
+
+func (f *fakeShadow) GetBindingStateByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.stateCalls.Add(1)
+	if f.getBindingStateFn != nil {
+		return f.getBindingStateFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: GetBindingStateByExternalUserID not implemented")
+}
+
+func (f *fakeShadow) RetryBillingAccountByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.retryCalls.Add(1)
+	if f.retryBillingFn != nil {
+		return f.retryBillingFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: RetryBillingAccountByExternalUserID not implemented")
 }
 
 // 当 ShadowClient 注入 + 调用方未传 Uin/AppID 时，service 应反查 shadow 回填这两个字段。
@@ -623,6 +757,47 @@ func TestQuote_ShadowClient_BindingNotFoundWithoutFallback(t *testing.T) {
 	}
 	if !errors.Is(err, ErrBindingNotFound) {
 		t.Errorf("err = %v, want ErrBindingNotFound", err)
+	}
+}
+
+func TestQuote_IntlBillingOpenRetryFailureUsesUserShadowIdentity(t *testing.T) {
+	failedBinding := &shadowclient.Binding{
+		UserID:        "user-1",
+		Uin:           "450860000003",
+		OwnerUin:      "450860000003",
+		AppID:         "1374211120",
+		Status:        "failed",
+		LastErrorCode: "billing_account_open_failed",
+	}
+	shadow := &fakeShadow{
+		getBindingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		},
+		getBindingStateFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return failedBinding, nil
+		},
+		retryBillingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return failedBinding, nil
+		},
+	}
+	jifei := &fakeJifei{getPriceFn: func(context.Context, *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+		return stdJifeiPriceResp(), nil
+	}}
+	svc := New(Deps{
+		CTLClient:    &fakeCTL{getBundleByIDFn: func(context.Context, string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:  &fakeBundleStore{def: stdDef()},
+		JifeiClient:  jifei,
+		ShadowClient: shadow,
+		SiteKind:     "intl",
+	})
+	req := stdQuoteReq()
+	req.Uin = ""
+	req.AppID = ""
+	if _, err := svc.Quote(context.Background(), req); err != nil {
+		t.Fatalf("quote with failed billing open: %v", err)
+	}
+	if shadow.retryCalls.Load() != 1 || jifei.lastGetPriceArgs == nil || jifei.lastGetPriceArgs.Uin != failedBinding.Uin {
+		t.Fatalf("retry_calls=%d get_price=%+v", shadow.retryCalls.Load(), jifei.lastGetPriceArgs)
 	}
 }
 

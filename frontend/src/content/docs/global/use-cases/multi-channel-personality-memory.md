@@ -1,8 +1,8 @@
 # 如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆？
 
-Telegram 和 WhatsApp 可以作为同一个 Hermes Agent 的不同入口。
+## 摘要
 
-只要两个通道都连接到同一个 Agent，它们就可以共享 Agent 级的人格、Skill、自动任务和长期记忆，但每个通道仍有自己的授权和消息限制。
+**Telegram 与 WhatsApp 可以作为同一个 Hermes Agent 的两个入口：只要两个通道连接到同一个 Agent，它们就共享 Agent 级的人格、Skill、自动任务与长期记忆，不需要为每个平台复制一份配置。** 但「统一」有明确范围——共享的是 Agent 级资产，每个通道仍保有各自的授权方式与消息限制，因此接入是两次独立的授权动作。验证是否真的共享，最直接的方法是在一个通道说一件事，再到另一个通道询问同一件事；能答出来才说明两个入口指向同一个 Agent。接入新通道后还要确认回复落在你发消息的那一条会话里，避免投递到错误会话。
 
 ![一个 Agent 同时连接 Telegram 和 WhatsApp 并共享人格与长期记忆](../images/use-case-07-multi-channel-personality-memory.png)
 

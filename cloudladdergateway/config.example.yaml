@@ -232,6 +232,18 @@ backends:
       timeout: 15s
       allowed_methods: ["POST"]
 
+  - alias: tcapi-billing-intl-prod
+    upstream:
+      base_url: "http://billing.ap-singapore.tencentcloudapi.woa.com"
+      timeout: 15s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-billing-trade-intl-test
+    upstream:
+      base_url: "https://billing.test.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - alias: tcapi-account-cn-test
     upstream:
       base_url: "https://account.test.tencentcloudapi.com"
@@ -268,6 +280,24 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  - alias: tcapi-account-intl-prod
+    upstream:
+      base_url: "https://account.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-cam-intl-prod
+    upstream:
+      base_url: "https://cam.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-sts-intl-prod
+    upstream:
+      base_url: "https://sts.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - alias: lightclaw-auth-bjsbx
     env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_BJSBX
     upstream:
@@ -285,6 +315,15 @@ backends:
       allowed_methods: ["POST"]
       headers_from_env:
         X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
+
+  - alias: lightclaw-auth-jpsbx
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_JPSBX
+    upstream:
+      base_url: "https://api-sandbox-jp-1.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers_from_env:
+        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_JPSBX_TOKEN
 
   - alias: lightclaw-auth-shprod
     env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_SHPROD
@@ -320,6 +359,7 @@ auth:
     - jifei-test
     - tencentcloud-account-callback-bjsbx
     - tencentcloud-account-callback-krsbx
+    - tencentcloud-account-callback-jpsbx
     - tencentcloud-account-callback-shprod
     - lightvela-cloudapi-bj
     - lightvela-cloudapi-sh
@@ -330,6 +370,7 @@ auth:
         - tcapi-account-cn-dev
         - tcapi-billing-cn-dev
         - tcapi-billing-intl-test
+        - tcapi-billing-intl-prod
         - tcapi-account-cn-test
         - tcapi-cam-cn-test
         - tcapi-sts-cn-test
@@ -343,6 +384,16 @@ auth:
         - shadow-cam-prod
         - shadow-sts-prod
         - shadow-billing-api-test
+    - id: lightvela-trade
+      secret_env: CLOUDLADDER_TRADE_HMAC_SECRET
+      routes:
+        - jifei-test
+        - jifei-prod
+        - jifei-billing-apigw-test
+        - jifei-billing-apigw-prod
+        - dianshi-price
+        - dianshi-order
+        - tcapi-billing-trade-intl-test
 
 audit:
   service_name: cloudladdergateway
@@ -364,6 +415,8 @@ external_routes:
         route_id: tencentcloud-account-callback-bjsbx
       - prefix: "krsbx."
         route_id: tencentcloud-account-callback-krsbx
+      - prefix: "jpsbx."
+        route_id: tencentcloud-account-callback-jpsbx
       - prefix: "shprod."
         route_id: tencentcloud-account-callback-shprod
     user_id_routes:
@@ -374,6 +427,8 @@ external_routes:
         route_id: tencentcloud-account-callback-bjsbx
       - prefix: "krsbx_"
         route_id: tencentcloud-account-callback-krsbx
+      - prefix: "jpsbx_"
+        route_id: tencentcloud-account-callback-jpsbx
   - path: /cloudapi
     methods: ["POST"]
     route_id: lightvela-cloudapi-sh
@@ -877,6 +932,22 @@ routes:
     upstream:
       backend: tcapi-billing-intl-test
 
+  - id: tcapi-billing-intl-prod
+    description: "Signed tunnel for TencentCloud international billing account API production internal endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-intl-prod
+
+  - id: tcapi-billing-trade-intl-test
+    description: "Signed tunnel for LightVela trade intl CreatePayUrl test endpoint."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-trade-intl-test
+
   - id: tcapi-account-cn-test
     description: "Signed tunnel for TencentCloud account API test endpoint from shadow script defaults."
     mode: signed_http_tunnel
@@ -949,6 +1020,30 @@ routes:
     upstream:
       backend: tcapi-sts-cn-prod
 
+  - id: tcapi-account-intl-prod
+    description: "Signed tunnel for TencentCloud international account API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-intl-prod
+
+  - id: tcapi-cam-intl-prod
+    description: "Signed tunnel for TencentCloud international CAM API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-cam-intl-prod
+
+  - id: tcapi-sts-intl-prod
+    description: "Signed tunnel for TencentCloud international STS API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-sts-intl-prod
+
   - id: shadow-account-prod
     description: "Compatibility alias for TencentCloud account API production endpoint."
     mode: signed_http_tunnel
@@ -992,6 +1087,12 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: lightclaw-auth-krsbx
+
+  - id: tencentcloud-account-callback-jpsbx
+    description: "TencentCloud SaaS account callback route for Tokyo sandbox."
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: lightclaw-auth-jpsbx
 
   - id: tencentcloud-account-callback-shprod
     description: "TencentCloud SaaS account callback route for Shanghai production."

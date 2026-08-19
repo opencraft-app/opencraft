@@ -201,6 +201,93 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     expect(screen.getByText("finance-news")).toBeInTheDocument();
   });
 
+  it("suppresses the native search clear control when the custom clear button is shown", async () => {
+    renderPanel(mode, "installed");
+    await screen.findByText("finance-news");
+
+    const search = screen.getByRole("searchbox", { name: "搜索已安装技能" });
+    fireEvent.change(search, { target: { value: "builder" } });
+
+    expect(search).toHaveClass(
+      "[&::-webkit-search-cancel-button]:appearance-none",
+      "[&::-webkit-search-decoration]:appearance-none",
+    );
+    expect(screen.getByRole("button", { name: "清除已安装技能搜索" })).toBeInTheDocument();
+  });
+
+  it("uses the skill package search field styling for discover and installed tabs", async () => {
+    renderPanel(mode);
+
+    const discoverSearch = screen.getByPlaceholderText(
+      mode === "domestic" ? "搜索 SkillHub 中的技能" : "搜索 Skills.sh / Clawhub 中的技能",
+    );
+    expect(discoverSearch).toHaveClass("lv-skills-search-input", "lv-agent-search-box-input");
+    expect(discoverSearch.parentElement).toHaveClass("lv-agent-search-box");
+    expect(discoverSearch.parentElement?.querySelector(".lv-agent-search-box-icon")).toBeInTheDocument();
+
+    cleanup();
+    renderPanel(mode, "installed");
+    await screen.findByText("finance-news");
+
+    const installedSearch = screen.getByRole("searchbox", { name: "搜索已安装技能" });
+    expect(installedSearch).toHaveClass("lv-skills-search-input", "lv-agent-search-box-input");
+    expect(installedSearch.parentElement).toHaveClass("lv-agent-search-box");
+    expect(installedSearch.parentElement?.querySelector(".lv-agent-search-box-icon")).toBeInTheDocument();
+  });
+
+  it("filters installed SkillHub instances by relative path while keeping the instance id for uninstall", async () => {
+    const dataLayer = makeDataLayer(mode);
+    dataLayer.listInstalled = vi.fn(async () => ({
+      failedSources: [],
+      skills: [{
+        registry: "skillhub" as const,
+        rawId: "skill_91fca7e4",
+        slug: "creative/humanizer",
+        name: "humanizer",
+        category: "creative",
+        version: "2.5.1",
+        registries: ["skillhub" as const],
+        sourceLabel: "SkillHub",
+        uninstallable: true,
+        nativeAliases: ["humanizer", "skill_91fca7e4", "creative/humanizer"],
+      }, {
+        registry: "skillhub" as const,
+        rawId: "skill_e95600124c0d7729fa4d",
+        slug: "unclecheng-reduce-ai-perception-v2",
+        name: "humanizer",
+        category: "creative",
+        version: "4.1.0",
+        registries: ["skillhub" as const],
+        sourceLabel: "SkillHub",
+        uninstallable: true,
+        nativeAliases: ["humanizer", "skill_e95600124c0d7729fa4d", "unclecheng-reduce-ai-perception-v2"],
+      }],
+    }));
+    mocks.createSkillsDataLayer.mockReturnValue(dataLayer);
+    render(<SkillsDemoPanel botId="bot-1" execDebugCommand={vi.fn()} mode={mode} initialTab="installed" />);
+
+    await screen.findByText("creative/humanizer");
+    const search = screen.getByRole("searchbox", { name: "搜索已安装技能" });
+    fireEvent.change(search, { target: { value: "unclecheng-reduce-ai-perception-v2" } });
+
+    const instancePath = screen.getByText("unclecheng-reduce-ai-perception-v2");
+    const row = instancePath.closest("li") as HTMLElement;
+    expect(row).toHaveTextContent("humanizer");
+    expect(row).toHaveTextContent("v4.1.0");
+    expect(row).not.toHaveTextContent("skill_e95600124c0d7729fa4d");
+    expect(screen.getByText("(1/2)")).toBeInTheDocument();
+    expect(screen.queryByText("creative/humanizer")).not.toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole("button", { name: /删除技能/ }));
+    expect(dataLayer.uninstall).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除 humanizer" }));
+    await waitFor(() => expect(dataLayer.uninstall).toHaveBeenCalledWith(expect.objectContaining({
+      registry: "skillhub",
+      rawId: "skill_e95600124c0d7729fa4d",
+      slug: "unclecheng-reduce-ai-perception-v2",
+    })));
+  });
+
   it("orders installed source filters by product priority", async () => {
     const dataLayer = makeDataLayer(mode);
     dataLayer.listInstalled = vi.fn(async () => ({
@@ -698,6 +785,58 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
   });
 });
 
+it("shows a fixed Source link for ClawHub search results and keeps skills.sh Source links", async () => {
+  const dataLayer = renderPanel("global");
+  vi.mocked(dataLayer.search).mockResolvedValue({
+    clawhub: [{
+      registry: "clawhub",
+      rawId: "first",
+      slug: "first",
+      name: "First",
+      author: "owner",
+    }],
+    skillssh: [{
+      registry: "skills-sh",
+      rawId: "team/repository/second",
+      slug: "second",
+      name: "Second",
+    }],
+    skillhub: [],
+    failedSources: [],
+  });
+
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索技能" }), { target: { value: "first" } });
+
+  const clawhubRow = (await screen.findByText("First")).closest("li") as HTMLElement;
+  const skillsshRow = screen.getByText("Second").closest("li") as HTMLElement;
+  expect(within(clawhubRow).getByRole("link", { name: "来源" })).toHaveAttribute(
+    "href",
+    "https://clawhub.ai/",
+  );
+  expect(within(clawhubRow).queryByText("@owner")).not.toBeInTheDocument();
+  expect(within(skillsshRow).getByRole("link", { name: "来源" })).toHaveAttribute(
+    "href",
+    "https://skills.sh/team/repository/second",
+  );
+});
+
+it("shows the international source link in a curated skill details dialog", async () => {
+  renderPanel("global");
+
+  fireEvent.click(screen.getByRole("button", { name: "查看Stock Analysis详情" }));
+
+  const dialog = await screen.findByRole("dialog");
+  const sourceLink = within(dialog).getByRole("link", { name: "来源" });
+  expect(sourceLink).toHaveAttribute(
+    "href",
+    "https://skills.sh/gracefullight/stock-checker/stock-analysis",
+  );
+  expect(sourceLink).toHaveAttribute("target", "_blank");
+  expect(sourceLink).toHaveClass("text-[#2563EB]", "hover:underline");
+  expect(sourceLink.parentElement).toHaveClass("mt-1", "text-[11px]");
+  expect(sourceLink).not.toHaveClass("h-8", "border", "bg-[#F5F9FF]");
+});
+
 describe("SkillsDemoPanel installed identity boundaries", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -714,6 +853,10 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
         rawId: "shared-skill",
         slug: "shared-skill",
         name: "Shared Skill",
+        sourceUrls: {
+          clawhub: "https://clawhub.ai/example-owner/skills/shared-skill",
+          "skills-sh": "https://skills.sh/team/repository/shared-skill",
+        },
         registries: ["clawhub", "skills-sh", "hermes"],
         sourceLabel: "ClawHub / skills.sh / Hermes",
         uninstallTargets: [
@@ -729,8 +872,14 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
     const skillName = await screen.findByText("Shared Skill");
     const installedRow = skillName.closest("li");
     expect(installedRow).not.toBeNull();
-    expect(within(installedRow as HTMLElement).getByText("ClawHub")).toBeInTheDocument();
-    expect(within(installedRow as HTMLElement).getByText("skills.sh")).toBeInTheDocument();
+    expect(within(installedRow as HTMLElement).getByRole("link", { name: "ClawHub" })).toHaveAttribute(
+      "href",
+      "https://clawhub.ai/example-owner/skills/shared-skill",
+    );
+    expect(within(installedRow as HTMLElement).getByRole("link", { name: "skills.sh" })).toHaveAttribute(
+      "href",
+      "https://skills.sh/team/repository/shared-skill",
+    );
     expect(screen.getAllByText("Shared Skill")).toHaveLength(1);
   });
 

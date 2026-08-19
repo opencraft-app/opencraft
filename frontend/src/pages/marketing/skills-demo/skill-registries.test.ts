@@ -6,6 +6,7 @@ import {
   buildHermesSkillsListCommand,
   buildClawhubBatchInstallCommand,
   buildClawhubListCommand,
+  buildClawhubSearchCommand,
   buildClawhubUninstallCommand,
   buildSkillhubBatchInstallCommand,
   buildSkillhubInstallCommand,
@@ -18,6 +19,7 @@ import {
   buildSkillsshListCommand,
   buildSkillsshSearchCommand,
   buildSkillsshUninstallCommand,
+  getSkillSourceUrl,
   getPopularityTier,
   installSkillsInBatch,
   installSkillsSequentially,
@@ -34,6 +36,32 @@ import {
 import { parseSkillhubList, parseSkillhubSearch } from "./skill-registries";
 
 describe("skills.sh command builders", () => {
+  it("derives canonical marketplace detail links only from reliable result identity", () => {
+    const skillsShSkill: Skill = {
+      registry: "skills-sh",
+      rawId: "anthropics/skills/frontend-design",
+      slug: "frontend-design",
+      name: "Frontend Design",
+    };
+    const clawhubSkill: Skill = {
+      registry: "clawhub",
+      rawId: "akshare-stock",
+      slug: "akshare-stock",
+      name: "AkShare Stock",
+      author: "mbpz",
+    };
+    const clawhubSkillWithoutAuthor: Skill = {
+      ...clawhubSkill,
+      author: undefined,
+    };
+
+    expect(getSkillSourceUrl(skillsShSkill)).toBe("https://skills.sh/anthropics/skills/frontend-design");
+    expect(getSkillSourceUrl(clawhubSkill)).toBe("https://clawhub.ai/mbpz/skills/akshare-stock");
+    expect(getSkillSourceUrl(clawhubSkillWithoutAuthor)).toBeUndefined();
+    expect(getSkillSourceUrl({ ...skillsShSkill, rawId: "stock" })).toBeUndefined();
+    expect(getSkillSourceUrl({ ...skillsShSkill, rawId: "owner//stock" })).toBeUndefined();
+  });
+
   it("runs installs in agentuser's login-shell context", () => {
     const command = buildSkillsshInstallCommand("anthropics/skills/frontend-design");
 
@@ -84,6 +112,9 @@ describe("skills.sh command builders", () => {
       name: "OKX Sentiment Tracker",
       registries: ["clawhub"],
       sourceLabel: "ClawHub",
+      sourceUrls: {
+        clawhub: "https://clawhub.ai/example-owner/skills/okx-sentiment-tracker",
+      },
     };
     const skillsshSkill: InstalledSkill = {
       registry: "skills-sh",
@@ -92,6 +123,9 @@ describe("skills.sh command builders", () => {
       name: "okx-sentiment-tracker",
       registries: ["skills-sh"],
       sourceLabel: "skills.sh",
+      sourceUrls: {
+        "skills-sh": "https://skills.sh/okx/agent-skills/okx-sentiment-tracker",
+      },
     };
     const hermesSkills = parseHermesInstalledSkills("okx-sentiment-tracker");
 
@@ -110,6 +144,10 @@ describe("skills.sh command builders", () => {
         { registry: "clawhub", rawId: "okx-sentiment-tracker" },
         { registry: "skills-sh", rawId: "okx/agent-skills/okx-sentiment-tracker" },
       ],
+      sourceUrls: {
+        clawhub: "https://clawhub.ai/example-owner/skills/okx-sentiment-tracker",
+        "skills-sh": "https://skills.sh/okx/agent-skills/okx-sentiment-tracker",
+      },
     }));
   });
 
@@ -285,6 +323,59 @@ describe("domestic SkillHub command and response handling", () => {
       iconUrl: "https://cdn.example.com/builder-radar.png",
       sourceLabel: "SkillHub",
     })]);
+
+    const groupedInstalled = parseSkillhubList(JSON.stringify({
+      success: true,
+      data: {
+        skills: [{
+          id: "skill_91fca7e4",
+          name: "humanizer",
+          display_name: "humanizer",
+          relative_path: "creative/humanizer",
+          category: "creative",
+          version: "2.5.1",
+          instances: [{
+            id: "skill_91fca7e4",
+            name: "humanizer",
+            display_name: "humanizer",
+            relative_path: "creative/humanizer",
+            source: "builtin",
+            version: "2.5.1",
+          }, {
+            id: "skill_e95600124c0d7729fa4d",
+            name: "humanizer",
+            display_name: "humanizer",
+            relative_path: "unclecheng-reduce-ai-perception-v2",
+            source: "builtin",
+            version: "4.1.0",
+          }],
+        }],
+      },
+    }));
+    expect(groupedInstalled).toHaveLength(2);
+    expect(groupedInstalled).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rawId: "skill_91fca7e4",
+        slug: "creative/humanizer",
+        name: "humanizer",
+        category: "creative",
+        version: "2.5.1",
+      }),
+      expect.objectContaining({
+        rawId: "skill_e95600124c0d7729fa4d",
+        slug: "unclecheng-reduce-ai-perception-v2",
+        name: "humanizer",
+        category: "creative",
+        version: "4.1.0",
+      }),
+    ]));
+    expect(
+      groupedInstalled.find((skill) => skill.slug === "unclecheng-reduce-ai-perception-v2")?.nativeAliases,
+    ).toEqual(expect.arrayContaining([
+      "humanizer",
+      "skill_e95600124c0d7729fa4d",
+      "unclecheng-reduce-ai-perception-v2",
+    ]));
 
     const tableInstalled = parseSkillhubList([
       "┌───────────────┬──────────────┬─────────┐",
@@ -882,6 +973,72 @@ describe("batch skill installation", () => {
 });
 
 describe("registry search reliability", () => {
+  it("removes the trailing download count from ClawHub search result names", async () => {
+    const execDebugCommand = async (_botId: string, command: string) => {
+      if (command === buildClawhubSearchCommand("image")) {
+        return {
+          status: "SUCCESS",
+          exitCode: 0,
+          output: JSON.stringify({
+            results: [{
+              slug: "image-tools",
+              displayName: "Image Tools 1,000 downloads",
+              installs: 1_000,
+            }],
+          }),
+        };
+      }
+      if (command === buildSkillsshSearchCommand("image")) {
+        return {
+          status: "SUCCESS",
+          exitCode: 0,
+          output: JSON.stringify({ results: [] }),
+        };
+      }
+      throw new Error(`unexpected command: ${command}`);
+    };
+
+    const result = await createLiveDataLayer("bot-1", execDebugCommand).search("image");
+
+    expect(result.clawhub).toEqual([
+      expect.objectContaining({
+        name: "Image Tools",
+        installs: 1_000,
+      }),
+    ]);
+  });
+
+  it("does not run ClawHub searches while loading installed skills", async () => {
+    const calls: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      calls.push(command);
+      if (command === buildClawhubListCommand()) {
+        return {
+          status: "SUCCESS",
+          exitCode: 0,
+          output: JSON.stringify({ skills: [{ slug: "react", displayName: "React" }] }),
+        };
+      }
+      if (command === buildSkillsshListCommand()) {
+        return { status: "SUCCESS", exitCode: 0, output: JSON.stringify({ skills: [] }) };
+      }
+      if (command === buildHermesSkillsListCommand()) {
+        return { status: "SUCCESS", exitCode: 0, output: "" };
+      }
+      throw new Error(`unexpected command: ${command}`);
+    };
+
+    const result = await createLiveDataLayer("bot-1", execDebugCommand).listInstalled();
+
+    expect(calls.some((command) => command.startsWith("acli clawhub search"))).toBe(false);
+    expect(result.skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rawId: "react",
+      }),
+    ]));
+    expect(result.skills.find((skill) => skill.rawId === "react")?.sourceUrls?.clawhub).toBeUndefined();
+  });
+
   it("reports a failed international source and applies a finite search timeout", async () => {
     const calls: Array<{ command: string; timeoutMs?: number }> = [];
     const execDebugCommand = async (

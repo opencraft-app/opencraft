@@ -40,7 +40,7 @@ export interface FullSeoMetaOptions {
   siteUrl?: string;
   /** 是否允许搜索引擎收录；默认 true。私域路径（/auth/*、/account/*）应传 false。 */
   indexable?: boolean;
-  /** 分享卡缩略图相对路径，默认 `/lightvela-logo.jpg`。 */
+  /** 分享卡缩略图相对路径，默认 `/lightvela-social-preview.png`。 */
   ogImagePath?: string;
 }
 
@@ -79,7 +79,7 @@ const NON_INDEXABLE_PREFIXES = [
   "/bots/",
 ];
 
-const DEFAULT_OG_IMAGE_PATH = "/lightvela-logo.jpg";
+const DEFAULT_OG_IMAGE_PATH = "/lightvela-social-preview.png";
 
 /* ──────────────────────────────────────────────────────────────
  * 区域差异（国内 cn / 国际 global）
@@ -155,6 +155,7 @@ const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
     "Telegram bot",
     "WhatsApp bot",
     "Discord bot",
+    "Slack bot",
     "personal agent",
   ].join(", "),
 };
@@ -187,9 +188,9 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/account":
       "了解 LightVela 的账号体系、登录方式（QQ / 微信）、实名认证流程、账号信息页结构，以及退出登录与注销说明。",
     "/docs/plans":
-      "LightVela 启航 Launch、巡游 Cruise、远航 Voyage 三档套餐说明：各含独立云端环境、专属存储与每月模型积分。本页讲各档定位、规格、权益与计费，帮你按需选择。",
+      "LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。",
     "/docs/credits":
-      "LightVela 模型积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐、模型的关系。",
+      "LightVela AI 积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐的关系。",
     "/docs/create-first-hermes":
       "开通第一个 Hermes 实例的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建实例，再配置模型与通道，让你的云端 AI Agent 7×24 小时在线运行。",
     "/docs/core-concepts":
@@ -223,9 +224,11 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/overview":
       "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team, built around Hermes Agent — a personal AI companion that stays online 24/7, knows you, remembers you, and understands you better over time.",
     "/docs/quickstart":
-      "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord) and have your first AI conversation.",
+      "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord / Slack) and have your first AI conversation.",
     "/docs/plans":
-      "Compare LightVela's Launch, Cruise, and Voyage plans for isolated Hermes runtime resources, storage, and monthly model credits. International beta access is free but limited while available; check Subscribe for current tiers, quotas, and pricing.",
+      "Compare LightVela's Launch and Cruise plans for isolated Hermes runtime resources, storage, monthly credits, paid plan availability, and the new-user 14-day Launch trial.",
+    "/docs/announcements/public-beta":
+      "LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch free for 14 days after public beta and billing start.",
     "/docs/credits":
       "Learn how LightVela model credits measure Hermes usage across conversations, automations, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
     "/docs/create-first-hermes":
@@ -233,7 +236,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/core-concepts":
       "LightVela's four core concepts: Hermes, Models, Channels, and Skills. This page explains how they relate and what happens inside a single conversation.",
     "/docs/who-is-lightvela-for":
-      "Discover whether LightVela is right for you: a cloud-hosted personal AI Agent with long-term memory and channels including Telegram, WhatsApp, Discord, and WeChat. Sign in with Google or GitHub; no China real-name verification is required.",
+      "Discover whether LightVela is right for you: a cloud-hosted personal AI Agent with long-term memory and channels including Telegram, WhatsApp, Discord, Slack, and WeChat. Sign in with Google or GitHub; no China real-name verification is required.",
     "/docs/configuration":
       "Overview of the Hermes admin console: the three configuration cards (Models / Channels / Skills), their entry points, and common operations like switching models, connecting multiple channels, and rebuilding Hermes.",
     "/docs/configuration/model":
@@ -246,6 +249,8 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "WhatsApp channel setup guide: connect Hermes to WhatsApp, complete authorization, and start a conversation through your WhatsApp account.",
     "/docs/configuration/channel-discord":
       "Discord channel setup guide: register a bot in the Discord Developer Portal, paste the token into LightVela, invite the bot to your server, and chat with Hermes.",
+    "/docs/configuration/channel-slack":
+      "Slack channel setup guide: create a Slack app, enable Socket Mode, paste the Bot Token and App Token into LightVela, and receive Hermes messages in your workspace.",
     "/docs/configuration/channel-qq":
       "QQ channel setup guide: register a bot on the QQ Open Platform, obtain AppID and AppSecret, fill them into LightVela — total time around 5–10 minutes.",
     "/docs/configuration/channel-wecom":
@@ -268,8 +273,6 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "Talk to Hermes in the Chat page: long-term memory accumulation, MEMORY.md / USER.md split, and how Hermes evolves with every conversation.",
     "/docs/faq":
       "Common questions about using LightVela: sign-in, identity verification, plan credits, model and channel configuration, conversation and memory mechanics.",
-    "/docs/faq/using-lightvela-safely":
-      "Safety guidance for using LightVela: avoid sharing passwords, secrets, or sensitive personal / financial / medical / business data with the AI; redact when in doubt.",
   },
 };
 
@@ -278,6 +281,7 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/about": "关于我们",
     "/changelog": "更新日志",
     "/privacy-policy": "隐私政策",
+    "/terms-of-service": "服务条款",
     "/cookie-policy": "Cookies 政策",
     "/open-source-licenses": "开源声明",
     "/dashboard/create": "创建 Agent",
@@ -302,8 +306,9 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/about": "About LightVela",
     "/changelog": "Changelog",
     "/privacy-policy": "Privacy Policy",
+    "/terms-of-service": "Terms of Service",
     "/cookie-policy": "Cookie Policy",
-    "/open-source-licenses": "Open Source Licenses",
+    "/open-source-licenses": "Open Source Notice",
     "/dashboard/create": "Create Agent",
     "/subscribe": "Subscribe",
     "/dashboard/setup": "Setup",
@@ -389,6 +394,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/channel-qq": "QQ",
     "/docs/configuration/skill": "配置技能",
+    "/docs/plans": "套餐管理",
     "/docs/announcements/public-beta": "LightVela 付费版本公告",
     "/docs/faq": "常见问题 FAQ",
   },
@@ -407,6 +413,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/channel-telegram": "Telegram",
     "/docs/configuration/channel-whatsapp": "WhatsApp",
     "/docs/configuration/channel-discord": "Discord",
+    "/docs/configuration/channel-slack": "Slack",
     "/docs/configuration/channel-qq": "QQ",
     "/docs/configuration/channel-wecom": "WeCom",
     "/docs/configuration/channel-feishu": "Lark",
@@ -415,10 +422,10 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/agent-chat": "Chat",
     "/docs/faq": "FAQ",
     "/docs/plans": "Plans",
+    "/docs/announcements/public-beta": "LightVela Paid Version Announcement",
     "/docs/credits": "Credits",
     "/docs/create-first-hermes": "How Do I Activate My First Hermes Instance?",
     "/docs/who-is-lightvela-for": "Who Is LightVela For?",
-    "/docs/faq/using-lightvela-safely": "Using LightVela Safely",
   },
 };
 
@@ -466,10 +473,10 @@ function normalizePathname(pathname: string): string {
  * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant";
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id";
 
 function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|en|zh)(?:\/(.*))?$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
@@ -486,6 +493,7 @@ const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
   "zh-cn": "zh-CN",
   "zh-sg": "zh-SG",
   "zh-hant": "zh-Hant",
+  "id-id": "id-ID",
 };
 const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   en: "en_US",
@@ -495,6 +503,7 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   "zh-sg": "zh_SG",
   // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
   "zh-hant": "zh_HK",
+  "id-id": "id_ID",
 };
 
 function safeDecodeURIComponent(value: string): string {

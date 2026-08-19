@@ -7,7 +7,7 @@ import { createPublicMetadata } from '@next-site/seo';
 export const metadata: Metadata = createPublicMetadata({
   path: '/open-source-licenses',
   locale: DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
-  title: DEFAULT_PUBLIC_ROUTE_LOCALE.locale === 'en-US' ? 'Open Source Licenses' : '开源声明',
+  title: DEFAULT_PUBLIC_ROUTE_LOCALE.locale === 'en-US' ? 'Open Source Notice' : '开源声明',
   description:
     DEFAULT_PUBLIC_ROUTE_LOCALE.locale === 'en-US'
       ? 'Open source software notices and license attributions used by LightVela.'

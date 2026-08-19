@@ -5,6 +5,7 @@
  */
 
 import { motion } from "framer-motion";
+import { CalendarCheck } from "lucide-react";
 import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -46,8 +47,8 @@ type ChangelogEntry = {
   id: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -60,7 +61,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skill-package" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -89,6 +90,20 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
           ? "/assets/changelog/lightvela-skill-packages-global-zh.webp"
           : "/assets/changelog/lightvela-skill-packages-global-en.webp"
         : "/assets/changelog/lightvela-skill-package-cn.webp"
+      : variant === "skillsBulkInstall"
+      ? useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-skills-bulk-install-global-zh.png"
+        : "/assets/changelog/lightvela-skills-bulk-install-global-en.png"
+      : variant === "automationTemplates"
+      ? useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-automation-templates-global-zh.png"
+        : "/assets/changelog/lightvela-automation-templates-global-en.png"
+      : variant === "qqGroupMentions"
+      ? useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-qq-group-mentions-global-zh.png"
+        : "/assets/changelog/lightvela-qq-group-mentions-global-en.png"
+      : variant === "traditionalChinese"
+      ? "/assets/changelog/lightvela-traditional-chinese-global-all.png"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset
@@ -135,6 +150,14 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("技能页面全新升级")
       : variant === "skillPackagesRevamp"
       ? t("LightVela 支持技能包")
+      : variant === "skillsBulkInstall"
+      ? t("技能页面支持批量安装与来源查看")
+      : variant === "automationTemplates"
+      ? t("自动任务模板")
+      : variant === "qqGroupMentions"
+      ? t("支持在 QQ 群聊中 @ 机器人")
+      : variant === "traditionalChinese"
+      ? t("支持繁体中文")
       : variant === "diagnosticsCenter"
       ? t("诊断中心上线，让 Agent 排查更简单")
       : variant === "achievements"
@@ -169,6 +192,14 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? isGlobal
         ? useGlobalChineseAsset ? "1279 / 635" : "1275 / 666"
         : "1166 / 680"
+      : variant === "skillsBulkInstall"
+      ? useGlobalChineseAsset ? "1284 / 806" : "1270 / 805"
+      : variant === "automationTemplates"
+      ? useGlobalChineseAsset ? "1629 / 1090" : "1657 / 1117"
+      : variant === "qqGroupMentions"
+      ? useGlobalChineseAsset ? "1864 / 844" : "1863 / 844"
+      : variant === "traditionalChinese"
+      ? "2202 / 1286"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset ? "1281 / 615" : "1283 / 638"
@@ -220,13 +251,66 @@ function ChangelogContent() {
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
      国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
   const launchDesc = isGlobal
-    ? t("支持一键创建云端 Hermes Agent，支持快速接入 Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
+    ? t("支持一键创建云端 Hermes Agent，支持快速接入 Telegram、WhatsApp、Discord、Slack 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
     : t("支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
   const skillsPageDesc = isGlobal
     ? t("支持从 ClawHub 和 skills.sh 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。")
     : t("支持从 SkillHub 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。");
 
   const changelogGroups: ChangelogMonthGroup[] = [
+    ...(isGlobal
+      ? [
+          {
+            id: "2026-08",
+            month: t("2026 年 8 月"),
+            entries: [
+              {
+                id: "skills-install-and-sources",
+                title: t("技能页面支持批量安装与来源查看"),
+                desc: t("安装多个 Skill 时可以查看实时进度，并从技能页面直接打开 ClawHub 或 skills.sh 的原始来源页面。"),
+                visual: "skillsBulkInstall" as const,
+              },
+              {
+                id: "automation-templates",
+                title: t("自动任务模板"),
+                desc: t("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。"),
+                visual: "automationTemplates" as const,
+              },
+              {
+                id: "qq-group-mentions",
+                title: t("支持在 QQ 群聊中 @ 机器人"),
+                desc: t("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。"),
+                visual: "qqGroupMentions" as const,
+              },
+              {
+                id: "traditional-chinese",
+                title: t("支持繁体中文"),
+                desc: t("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。"),
+                visual: "traditionalChinese" as const,
+              },
+            ],
+          },
+        ]
+      : [
+          {
+            id: "2026-08",
+            month: t("2026 年 8 月"),
+            entries: [
+              {
+                id: "automation-templates",
+                title: t("自动任务模板"),
+                desc: t("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。"),
+                visual: "automationTemplates" as const,
+              },
+              {
+                id: "qq-group-mentions",
+                title: t("支持在 QQ 群聊中 @ 机器人"),
+                desc: t("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。"),
+                visual: "qqGroupMentions" as const,
+              },
+            ],
+          },
+        ]),
     {
       id: "2026-07",
       month: t("2026 年 7 月"),
@@ -404,15 +488,17 @@ function ChangelogContent() {
                 {/* 左列：月份 */}
                 <div className="pt-1">
                   <p
+                    className="inline-flex h-12 items-center gap-4"
                     style={{
+                      color: "#6E47FF",
                       fontSize: "16px",
                       fontWeight: 400,
-                      color: "rgba(0,0,0,0.5)",
-                      lineHeight: 2,
+                      lineHeight: 1.5,
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {group.month}
+                    <CalendarCheck className="size-5 shrink-0" aria-hidden="true" />
+                    <span>{group.month}</span>
                   </p>
                 </div>
 

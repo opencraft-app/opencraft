@@ -24,6 +24,8 @@ import (
 	"ctl/pkg/taskruntime"
 	taskcommon "ctl/pkg/taskruntime/common"
 
+	websitelogic "ctl/pkg/logic/website"
+
 	"go.uber.org/zap"
 )
 
@@ -196,6 +198,12 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 				return "", fmt.Errorf("short-circuit re-align legacy ai-gateway subscription: %w", err)
 			}
 		}
+		// best-effort 恢复用户站点（失败不阻塞续费流程）
+		if userID != "" {
+			if err := websitelogic.ReactivateSitesOnPassRenewed(logger, userID); err != nil {
+				logger.Warn("website reactivate sites on pass renewed failed", zap.Error(err))
+			}
+		}
 		// pass 终态但 trade callback 上一轮可能没成功，best-effort 再补一次
 		t.notifyTradeFlowCompleted(ctx, logger)
 		return t.markSuccess(ctx)
@@ -345,6 +353,13 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	if t.in.UserID != "" {
 		if err := logicpass.AlignAiGatewaySubscriptionPeriodEnd(logger, t.in.UserID, t.in.PassID, newExpired); err != nil {
 			return "", fmt.Errorf("extend ai-gateway subscription: %w", err)
+		}
+	}
+
+	// best-effort 恢复用户站点（失败不阻塞续费流程）
+	if t.in.UserID != "" {
+		if err := websitelogic.ReactivateSitesOnPassRenewed(logger, t.in.UserID); err != nil {
+			logger.Warn("website reactivate sites on pass renewed failed", zap.Error(err))
 		}
 	}
 

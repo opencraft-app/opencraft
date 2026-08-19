@@ -1,10 +1,8 @@
 # How to Define an IM Agent's Role, Personality, and Voice with SOUL.md
 
-An IM Agent does not feel like the same person simply because it is connected to Telegram or WhatsApp.
-Stable role rules, voice, behavioral boundaries, and durable context all shape how it behaves across messaging scenarios.
+## Summary
 
-In the Hermes Agent runtime, `SOUL.md` is the core file that carries the Agent persona.
-LightVela generates and injects a Soul through the Personality feature, so you do not need to operate the cloud file system directly.
+**Whether an IM Agent feels like "the same person" depends on its persona, not on which channel it runs through. `SOUL.md` carries the role, tone, priorities, behaviour, and limits, and it is the core persona file in the Hermes runtime.** On LightVela you never touch the cloud filesystem directly — the Persona section on an Agent's settings page offers two entry points, drawing a persona at random or answering a short quiz. Review a persona card's role, tone, and behaviour notes, then choose Inject Persona to apply it. Write judgeable principles rather than specific facts: "lead with the conclusion", "state uncertainty explicitly", and "confirm before sending external messages" are persona rules, while project names and ports belong in long-term memory. After injecting, verify tone and limits with one real conversation.
 
 ![Defining an IM Agent's role, personality, and voice with SOUL.md](../images/use-case-05-im-agent-persona-soul-md.png)
 

@@ -276,9 +276,10 @@ type inquiryBatchResponse struct {
 // inquiryBatchHandler 处理批量询价。
 //
 // 实现策略：
-//   - 入参 BundleIDs 长度 N → 内部串行 N 次 Quote 调用（jifei 询价 SDK 已支持单次 ResInfo[]
-//     批量但本期 inquiry.Service 接口先按 1 调用 1 bundle 落地，未来如需要批次合并可扩展
-//     Service 接口）
+//   - 入参 BundleIDs 长度 N → inquiry.Service.QuoteBatch 合并普通 jifei bundle 为一次
+//     GetPrice(resInfo[]) 调用
+//   - jifei 返回 data[] 与入参 resInfo[] 按下标匹配，QuoteBatch 负责保持 Prices[] 与
+//     BundleIDs 原顺序一致
 //   - 任一 bundle 询价失败 → 整批失败（与 jifei adapter InquiryBatch 设计一致）
 func inquiryBatchHandler(svc *inquiry.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -298,29 +299,24 @@ func inquiryBatchHandler(svc *inquiry.Service) gin.HandlerFunc {
 			return
 		}
 
-		results := make([]*inquiry.QuoteResult, 0, len(req.BundleIDs))
-		for _, bid := range req.BundleIDs {
-			r, err := svc.Quote(c.Request.Context(), inquiry.QuoteRequest{
-				ExternalUserID: req.ExternalUserID,
-				Uin:            req.Uin,
-				AppID:          req.AppID,
-				BundleID:       bid,
-				TimeSpan:       req.Period,
-				TimeUnit:       req.TimeUnit,
-				GoodsNum:       req.GoodsNum,
-				PayMode:        req.PayMode,
-				// Q41 修订 2026-05-11：RegionID 不再透传，trade 内部固定 1（广州）
+		results, err := svc.QuoteBatch(c.Request.Context(), inquiry.QuoteBatchRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleIDs:      req.BundleIDs,
+			TimeSpan:       req.Period,
+			TimeUnit:       req.TimeUnit,
+			GoodsNum:       req.GoodsNum,
+			PayMode:        req.PayMode,
+			// Q41 修订 2026-05-11：RegionID 不再透传，trade 内部固定 1（广州）
+		})
+		if err != nil {
+			code, status := classifyInquiryError(err)
+			c.JSON(status, gin.H{
+				"code":    code,
+				"message": err.Error(),
 			})
-			if err != nil {
-				code, status := classifyInquiryError(err)
-				c.JSON(status, gin.H{
-					"code":     code,
-					"message":  err.Error(),
-					"bundleId": bid,
-				})
-				return
-			}
-			results = append(results, r)
+			return
 		}
 		c.JSON(http.StatusOK, inquiryBatchResponse{Prices: results})
 	}
@@ -438,6 +434,7 @@ type placeOrderRequest struct {
 	TimeUnit       string `json:"timeUnit"`
 	GoodsNum       int    `json:"goodsNum"`
 	PayMode        int    `json:"payMode"`
+	AutoRenewFlag  string `json:"auto_renew_flag,omitempty"`
 	// 注：Q41 修订 2026-05-11 删除 RegionID 字段。trade 内部固定 1（广州），ctl / 前端不再透传。
 }
 
@@ -479,6 +476,7 @@ func placeOrderHandler(svc *placeorder.Service) gin.HandlerFunc {
 			TimeUnit:       req.TimeUnit,
 			GoodsNum:       req.GoodsNum,
 			PayMode:        req.PayMode,
+			AutoRenewFlag:  req.AutoRenewFlag,
 			// Q41 修订：RegionID 不再透传，trade 内部固定 1（广州）
 		})
 		if err != nil {
@@ -514,6 +512,8 @@ func classifyPlaceOrderError(err error) (string, int) {
 	case errors.Is(err, placeorder.ErrBindingNotFound):
 		// 8B-1：externalUserId 在 shadow 没有绑定记录（用户未实名 / 未绑云账号）
 		return "BindingNotFound", http.StatusUnprocessableEntity
+	case errors.Is(err, placeorder.ErrBillingAccountOpenFailed):
+		return "BillingAccountOpenFailed", http.StatusConflict
 	default:
 		return "UpstreamError", http.StatusBadGateway
 	}
@@ -561,6 +561,7 @@ func placeOrderAndPayHandler(svc *placeorder.Service) gin.HandlerFunc {
 			TimeUnit:       req.TimeUnit,
 			GoodsNum:       req.GoodsNum,
 			PayMode:        req.PayMode,
+			AutoRenewFlag:  req.AutoRenewFlag,
 			// Q41 修订：RegionID 不再透传，trade 内部固定 1（广州）
 		})
 		if err != nil {
@@ -811,17 +812,22 @@ func payURLHandler(svc *placeorder.Service) gin.HandlerFunc {
 		// v1.7.31 接口拆分：解析可选 body（body 为空 / nil 时兼容现有行为）
 		var opts *placeorder.GeneratePayURLOptions
 		var body struct {
-			Platform string `json:"platform"`
-			WxOpenID string `json:"wx_open_id"`
-			WxAppID  string `json:"wx_app_id"`
+			Platform  string `json:"platform"`
+			WxOpenID  string `json:"wx_open_id"`
+			WxAppID   string `json:"wx_app_id"`
+			CancelURL string `json:"cancel_url"`
+			ReturnURL string `json:"return_url"`
 		}
 		// 尝试解析 body；忽略 EOF / 空 body 错误（兼容无 body 调用）
 		if err := c.ShouldBindJSON(&body); err == nil {
-			if body.Platform != "" || body.WxOpenID != "" || body.WxAppID != "" {
+			if body.Platform != "" || body.WxOpenID != "" || body.WxAppID != "" ||
+				body.CancelURL != "" || body.ReturnURL != "" {
 				opts = &placeorder.GeneratePayURLOptions{
-					Platform: body.Platform,
-					WxOpenID: body.WxOpenID,
-					WxAppID:  body.WxAppID,
+					Platform:  body.Platform,
+					WxOpenID:  body.WxOpenID,
+					WxAppID:   body.WxAppID,
+					CancelURL: body.CancelURL,
+					ReturnURL: body.ReturnURL,
 				}
 			}
 		}

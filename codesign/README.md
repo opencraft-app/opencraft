@@ -13,6 +13,7 @@
 - [StaticPages Frontend Preview Operator 使用说明](./staticpages-preview-operator.md)
 - [腾讯云 EdgeOne Preview 子账号创建记录](./tencent-cloud-edgeone-preview-account-provisioning.md)
 - [北京新后端测试环境创建记录](./beijing-backend-env-provisioning.md)
+- [CTL 与前端计费联调协议](./ctl-frontend-billing-api.md)
 
 其中：
 
@@ -44,6 +45,16 @@
 - 为什么新增了 `manage_cam_access=false`
 - 为什么测试环境不该默认照搬老环境的 EIP 规模
 - 为什么 TKE addon 首次 `Upgrading` 不能直接等同于“环境失败”
+
+### 3. 前后端联调协议
+
+- [CTL 与前端计费联调协议](./ctl-frontend-billing-api.md)
+
+这份文档记录的是：
+
+- 前端获取支付 URL 时传给 CTL 的 JSON 协议
+- 国际站信用卡/签约支付需要传入的 `cancel_url` / `return_url`
+- CTL、trade 到计费 `getMidasEarmarking` 的字段透传关系
 
 ## 默认范围
 

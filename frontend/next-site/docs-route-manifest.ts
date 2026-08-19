@@ -1,4 +1,4 @@
-export const DOCS_ROUTE_LOCALES = ["en-us","zh-cn","zh-sg","zh-hant"] as const;
+export const DOCS_ROUTE_LOCALES = ["en-us","zh-cn","zh-sg","zh-hant","id-id"] as const;
 
 export type DocsRouteLocale = (typeof DOCS_ROUTE_LOCALES)[number];
 
@@ -19,6 +19,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "plans"
+    ],
+    [
+      "announcements",
+      "public-beta"
     ],
     [
       "credits"
@@ -44,6 +48,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "channel-discord"
+    ],
+    [
+      "configuration",
+      "channel-slack"
     ],
     [
       "configuration",
@@ -164,10 +172,6 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "compare",
       "lightvela-vs-genspark"
-    ],
-    [
-      "faq",
-      "using-lightvela-safely"
     ],
     [
       "hermes-agent",
@@ -295,7 +299,50 @@ export const DOCS_ROUTE_SLUGS = {
       "memory-vs-skill"
     ],
     [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-ai-chatbot"
+    ],
+    [
       "faq"
+    ],
+    [
+      "contact-us"
     ]
   ],
   "zh-sg": [
@@ -314,6 +361,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "plans"
+    ],
+    [
+      "announcements",
+      "public-beta"
     ],
     [
       "credits"
@@ -339,6 +390,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "channel-discord"
+    ],
+    [
+      "configuration",
+      "channel-slack"
     ],
     [
       "configuration",
@@ -459,10 +514,6 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "compare",
       "lightvela-vs-genspark"
-    ],
-    [
-      "faq",
-      "using-lightvela-safely"
     ],
     [
       "hermes-agent",
@@ -534,6 +585,10 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
+      "announcements",
+      "public-beta"
+    ],
+    [
       "credits"
     ],
     [
@@ -557,6 +612,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "channel-discord"
+    ],
+    [
+      "configuration",
+      "channel-slack"
     ],
     [
       "configuration",
@@ -679,8 +738,226 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
-      "faq",
-      "using-lightvela-safely"
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
+    ],
+    [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
+    ],
+    [
+      "contact-us"
+    ]
+  ],
+  "id-id": [
+    [],
+    [
+      "overview"
+    ],
+    [
+      "quickstart"
+    ],
+    [
+      "core-concepts"
+    ],
+    [
+      "who-is-lightvela-for"
+    ],
+    [
+      "plans"
+    ],
+    [
+      "announcements",
+      "public-beta"
+    ],
+    [
+      "credits"
+    ],
+    [
+      "create-first-hermes"
+    ],
+    [
+      "configuration"
+    ],
+    [
+      "configuration",
+      "model"
+    ],
+    [
+      "configuration",
+      "channel-telegram"
+    ],
+    [
+      "configuration",
+      "channel-whatsapp"
+    ],
+    [
+      "configuration",
+      "channel-discord"
+    ],
+    [
+      "configuration",
+      "channel-slack"
+    ],
+    [
+      "configuration",
+      "channel-wechat"
+    ],
+    [
+      "configuration",
+      "channel-qq"
+    ],
+    [
+      "configuration",
+      "channel-wecom"
+    ],
+    [
+      "configuration",
+      "channel-feishu"
+    ],
+    [
+      "configuration",
+      "skill"
+    ],
+    [
+      "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
+      "automation"
+    ],
+    [
+      "configuration",
+      "files"
+    ],
+    [
+      "configuration",
+      "agent-chat"
+    ],
+    [
+      "configuration",
+      "diagnostics"
+    ],
+    [
+      "configuration",
+      "multiple-models"
+    ],
+    [
+      "use-cases",
+      "personal-ai-assistant"
+    ],
+    [
+      "use-cases",
+      "chinese-messaging-channels"
+    ],
+    [
+      "use-cases",
+      "telegram-persona-agent"
+    ],
+    [
+      "use-cases",
+      "whatsapp-persona-agent"
+    ],
+    [
+      "use-cases",
+      "im-agent-persona-soul-md"
+    ],
+    [
+      "use-cases",
+      "im-agent-skill-scenarios"
+    ],
+    [
+      "use-cases",
+      "multi-channel-personality-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-group-community-assistant"
+    ],
+    [
+      "use-cases",
+      "whatsapp-24-7-customer-service"
+    ],
+    [
+      "use-cases",
+      "lifelike-im-agent-rhythm-social-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-whatsapp-safety-boundaries"
+    ],
+    [
+      "use-cases",
+      "daily-summary"
+    ],
+    [
+      "use-cases",
+      "hermes-agent-24-7"
+    ],
+    [
+      "use-cases",
+      "memory-and-knowledge"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-hostinger"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-chatgpt"
+    ],
+    [
+      "compare",
+      "lightvela-vs-genspark"
     ],
     [
       "hermes-agent",

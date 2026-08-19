@@ -120,6 +120,8 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 - [配置通道 - Discord](./channel-discord.md) — 社群运营与开发者社区
 
+- [配置通道 - Slack](./channel-slack.md) — 团队协作、工作区通知和频道任务流转
+
 - [配置通道 - QQ](./channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
 
 - [配置通道 - 企业微信](./channel-wecom.md) — 企业内部协作与办公场景

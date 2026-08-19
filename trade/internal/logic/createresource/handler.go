@@ -323,7 +323,7 @@ func runMainFlow(
 	//   - TimeUnit = goodsDetail.timeUnit       （同上）
 	//   - Uin / AppID = jifei 入参顶层 uin / appId（jifei 协议字段）
 	//   - DealName = jifei 入参顶层 dealName    （jifei 协议字段）
-	//   - RenewFlag = "MANUAL_RENEW"             （v4 收敛：本期不暴露 auto_renew）
+	//   - RenewFlag = goodsDetail.autoRenewFlag 映射；仅明确为 1 时自动续费，其余手动续费
 	externalUserID := extractStringFromGoodsDetail(para.GoodsDetail, "externalUserId")
 	if externalUserID == "" {
 		// goodsDetail.externalUserId 缺失：PlaceOrderAndPay 端没塞或 jifei 没回传 —
@@ -367,7 +367,7 @@ func runMainFlow(
 		Uin:       uinInt,
 		AppID:     para.AppID,
 		DealName:  para.DealName,
-		RenewFlag: "MANUAL_RENEW",
+		RenewFlag: renewFlagFromGoodsDetail(para.GoodsDetail),
 	}
 	pass, err := deps.CTLClient.CompletePass(ctx, completeReq)
 	if err != nil {
@@ -469,6 +469,43 @@ func extractIntFromGoodsDetail(goodsDetail map[string]interface{}, key string) i
 		return int(n)
 	}
 	return 0
+}
+
+// renewFlagFromGoodsDetail 把 jifei 的 autoRenewFlag 映射为 ctl 内部续费枚举。
+// jifei 允许该字段是 number/string 且可能不传；只有明确值 1 表示自动续费，任何缺失、
+// 其它值或类型异常都按手动续费处理，保持国内站和旧订单的默认行为。
+func renewFlagFromGoodsDetail(goodsDetail map[string]interface{}) string {
+	const (
+		manualRenew = "MANUAL_RENEW"
+		autoRenew   = "AUTO_RENEW"
+	)
+
+	if goodsDetail == nil {
+		return manualRenew
+	}
+	v, ok := goodsDetail["autoRenewFlag"]
+	if !ok {
+		return manualRenew
+	}
+
+	isAutoRenew := false
+	switch flag := v.(type) {
+	case float64:
+		isAutoRenew = flag == 1
+	case int:
+		isAutoRenew = flag == 1
+	case int64:
+		isAutoRenew = flag == 1
+	case json.Number:
+		parsed, err := flag.Int64()
+		isAutoRenew = err == nil && parsed == 1
+	case string:
+		isAutoRenew = flag == "1"
+	}
+	if isAutoRenew {
+		return autoRenew
+	}
+	return manualRenew
 }
 
 // handleLoser 实现 Q61 抢占失败的三分支处理（status='completed' / 'failed' / 'in_progress'）。

@@ -20,6 +20,17 @@ func TestMapTradePlaceOrderErrorBindingNotFound(t *testing.T) {
 	}
 }
 
+func TestMapTradePlaceOrderErrorBillingAccountOpenFailed(t *testing.T) {
+	err := mapTradePlaceOrderError(&tradeadapter.Error{
+		Status:  http.StatusConflict,
+		Code:    "BillingAccountOpenFailed",
+		Message: "billing account open failed",
+	})
+	if !errors.Is(err, errcode.ErrPassBillingAccountOpenFailed) {
+		t.Fatalf("expected PASS_BILLING_ACCOUNT_OPEN_FAILED, got %v", err)
+	}
+}
+
 func TestMapTradePlaceOrderErrorKeepsOtherErrors(t *testing.T) {
 	err := mapTradePlaceOrderError(&tradeadapter.Error{
 		Status:  http.StatusBadGateway,

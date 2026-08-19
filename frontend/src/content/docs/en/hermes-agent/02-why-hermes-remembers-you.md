@@ -146,7 +146,7 @@ This is where cloud hosting becomes genuinely useful. [**LightVela**](https://li
 - A dedicated cloud instance online 24×7, with `MEMORY.md` / `USER.md` / the SQLite session archive living there permanently;
 - The background nudge loop keeps running, so the agent genuinely grows even when you are not using it;
 - Data stays only on your dedicated server;
-- Phone, laptop, Telegram, Lark — every channel reaches the same agent that knows you.
+- Phone, laptop, Telegram, Slack, Lark — every channel reaches the same agent that knows you.
 
 Hermes turned "remembering you" into a working engineering design; LightVela makes that design take effect **every single day, right next to you.**
 

@@ -1,10 +1,8 @@
 # How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Automations
 
-WhatsApp can be the 1-to-1 entry point where customers talk to Hermes Agent, ask common questions, and receive service drafts or routing guidance.
+## Summary
 
-Here, 24/7 means that the Agent can respond whenever the service is running, the model is available, and the channel connection is healthy; it is not an uninterrupted-service promise or a human-support SLA.
-
-WhatsApp proactive messages are still affected by conversation windows, message templates, and channel configuration, so automated reminders must be designed separately from customer-initiated conversations.
+**WhatsApp can serve as a one-to-one entry point between customers and a Hermes Agent, useful for answering recurring questions, capturing customer needs, and drafting responses. But "24/7" here means it can respond whenever the service is running, the model is available, and the channel is connected — it is not an uninterrupted-service guarantee or a human-support SLA.** A second constraint matters just as much: proactive messaging on WhatsApp remains subject to conversation windows, template messages, and channel configuration, so automated reminders must be designed separately from customer-initiated conversations rather than assuming you can push at will. Build in four layers, in order: the persona sets voice and escalation conditions, knowledge captures FAQs, skills add reusable procedures, and automations handle scheduled summaries.
 
 ![Configuring 24/7 AI customer service in WhatsApp](../images/use-case-09-whatsapp-24-7-customer-service.png)
 
@@ -169,5 +167,3 @@ By default, let the Skill create a draft or internal reminder, then have a human
 - [How to Define an IM Agent's Role, Personality, and Voice with SOUL.md](./im-agent-persona-soul-md.md) - Define the support personality and behavioral boundary.
 
 - [Automations](../configuration/automation.md) - Configure internal reminders and scheduled summaries.
-
-- [Using LightVela Safely](../faq/using-lightvela-safely.md) - Review sensitive-data and team-channel safety boundaries.

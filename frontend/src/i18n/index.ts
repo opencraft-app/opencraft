@@ -13,7 +13,8 @@
  *
  * 设计要点：
  *   - 默认语言由 `src/lib/region.ts` 根据 `VITE_REGION` 编译期决定
- *   - 浏览器侧可通过 `localStorage.setItem('lw-locale', 'en-US')` 覆盖
+ *   - 国际站浏览器侧可通过 `localStorage.setItem('lw-locale', 'en-US')` 覆盖
+ *   - 国内站固定中文，忽略跨站点遗留的语言覆盖
  *
  * 不做的事（保持简单）：
  *   - 不接 `i18next-browser-languagedetector`
@@ -23,8 +24,9 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import { DEFAULT_LOCALE, readLocaleFromPath } from "@/lib/region";
+import { DEFAULT_LOCALE, isGlobal, readLocaleFromPath } from "@/lib/region";
 import enUS from "./generated/en-US.json";
+import idID from "./generated/id-ID.json";
 import zhCN from "./generated/zh-CN.json";
 import zhHant from "./generated/zh-Hant.json";
 
@@ -43,6 +45,7 @@ const SUPPORTED_LOCALES = {
   ZH_CN: "zh-CN",
   EN_US: "en-US",
   ZH_HANT: "zh-Hant",
+  ID_ID: "id-ID",
 } as const;
 
 /** i18next 支持的 locale 联合类型 */
@@ -62,24 +65,54 @@ const readOverride = (): string | null => {
 };
 
 /**
- * 初始语言优先级（仅国际站涉及多语言）：
- *   1. URL 路径前缀（/en-us/...、/zh-cn/...、/zh-sg/...；兼容旧 /en、/zh）
+ * 初始语言优先级（仅国际站涉及多语言；国内站固定中文）：
+ *   1. URL 路径前缀（/en-us/...、/zh-cn/...、/zh-sg/...、/id-id/...；兼容旧 /en、/zh）
  *      —— 给搜索引擎跳转 / 直接外链使用
- *   2. localStorage 用户手动覆盖
- *   3. 区域默认（国际站默认英文，国内站默认中文）
- *
- * 在国内站，readLocaleFromPath() 始终返回 null，等价于回退到原有逻辑。
+ *   2. 国际站裸 / 固定使用区域默认英文，避免陈旧 localStorage 把首页首屏改成中文
+ *   3. localStorage 用户手动覆盖
+ *   4. 区域默认（国际站默认英文，国内站默认中文）
  */
+const pathnameForInitialLocale =
+  typeof window !== "undefined" ? window.location.pathname : null;
+
+const initialLocaleFromPath =
+  pathnameForInitialLocale ? readLocaleFromPath(pathnameForInitialLocale) : null;
+
+const shouldUseDefaultLocaleForBarePublicRoot =
+  pathnameForInitialLocale === "/" && DEFAULT_LOCALE === SUPPORTED_LOCALES.EN_US;
+
 const initialLocale =
-  (typeof window !== "undefined" ? readLocaleFromPath(window.location.pathname) : null) ??
-  readOverride() ??
+  (isGlobal
+    ? initialLocaleFromPath ??
+      (shouldUseDefaultLocaleForBarePublicRoot ? DEFAULT_LOCALE : readOverride())
+    : null) ??
   DEFAULT_LOCALE;
+
+/**
+ * 从带语言前缀的公开页进入时，把该语言持久化下来。
+ *
+ * 原因：控制台等路径（/agents、/auth 等）刻意不做 URL 本地化
+ * （见 PUBLIC_LOCALIZED_PATH_PREFIXES），因此无法从路径推断语言，
+ * 只能依赖 localStorage。若用户从 /id-id/subscribe 直接跳到 /agents，
+ * 而此前从未手动切换过语言，localStorage 为空会导致回退英文。
+ * 这里把「URL 已明确表达的语言意图」写入存储，保证跨路径连续性。
+ */
+if (initialLocaleFromPath && typeof window !== "undefined") {
+  try {
+    if (window.localStorage.getItem(LOCALE_STORAGE_KEY) !== initialLocaleFromPath) {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, initialLocaleFromPath);
+    }
+  } catch {
+    /* 隐私模式等场景 localStorage 不可用，忽略 */
+  }
+}
 
 void i18n.use(initReactI18next).init({
   resources: {
     [SUPPORTED_LOCALES.ZH_CN]: { translation: zhCN },
     [SUPPORTED_LOCALES.EN_US]: { translation: enUS },
     [SUPPORTED_LOCALES.ZH_HANT]: { translation: zhHant },
+    [SUPPORTED_LOCALES.ID_ID]: { translation: idID },
   },
   lng: initialLocale,
   fallbackLng: SUPPORTED_LOCALES.ZH_CN,

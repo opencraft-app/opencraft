@@ -8,7 +8,7 @@ This tutorial walks through the full process from signing in to receiving a Herm
 
 - Activating the Launch plan and creating a Hermes instance
 
-- Connecting WeChat / Telegram / WhatsApp / Discord channels
+- Connecting Telegram / WhatsApp / Discord / Slack / WeChat channels
 
 - Sending a message in WeChat and receiving a reply
 
@@ -34,9 +34,9 @@ Return to the homepage, click "Create Now" to enter the plan page, select "Launc
 
 ![](./images/2-2.webp)
 
-> ⚠️ **The Launch plan is currently free for a limited time**
+> ⚠️ **Launch has a 14-day free trial for new users after billing starts**
 >
-> The original price is $7.5/month, and it is currently free for a limited time. If the quota is full or the campaign has ended, please follow official updates.
+> LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After billing starts, new users can try Launch free for 14 days. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 
 After activation succeeds, the top navigation shows "My Hermes" and the page automatically redirects to the console. For plan details, see [What is LightVela - About plans](./01-overview.md#about-plans).
 
@@ -106,7 +106,7 @@ If you need to use a specific provider's model, or continue using Hermes after c
 
 | Issue | Possible cause | Solution |
 |---|---|---|
-| Unable to claim the Launch plan | Limited free quota is full | Follow official updates and wait for the next quota release |
+| Unable to activate the Launch plan | The current offer or payment flow is unavailable | Check the [Subscribe page](/subscribe) and follow official updates |
 | Hermes creation stays on the transition page for a long time | Cloud initialization is slow or the network is unstable | Refresh the page; if there is no response after 1 minute, click "+ Create Hermes" again |
 | No response in the console after scanning the WeChat QR code | The QR code has expired | Close the dialog and click "Authorize Access" again to generate a new QR code |
 | No reply after sending a message | Trial credits are exhausted or the channel is not connected | Check the "Connected channels" status; configure your own API Key after credits run out |

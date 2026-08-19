@@ -91,6 +91,8 @@ export interface InstalledSkill extends Skill {
   uninstallable?: boolean;
   /** 来源查询不完整，当前记录不能安全决定卸载命令。 */
   sourceUncertain?: boolean;
+  /** 各 marketplace registry 的具体详情页链接；合并来源时必须按 registry 分别保留。 */
+  sourceUrls?: Partial<Record<Registry, string>>;
   /** 合并展示时保留可用的 registry 卸载候选，任一候选成功即可删除同一运行时技能。 */
   uninstallTargets?: Array<Pick<Skill, "registry" | "rawId">>;
 }
@@ -182,6 +184,43 @@ export function buildSkillsshListCommand(): string {
   return "acli skills-sh list";
 }
 
+function getCompleteSkillsshId(id: string): string | undefined {
+  try {
+    const normalized = safeSkillsshId(id);
+    const segments = normalized.split("/");
+    return segments.length >= 3 && segments.every(Boolean) ? normalized : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 返回市场中该技能的规范详情页。
+ * 仅使用 registry 搜索结果提供的稳定标识，避免从展示名称推测不可靠的外部 URL。
+ */
+export function getSkillSourceUrl(skill: Pick<Skill, "registry" | "rawId" | "slug" | "author">): string | undefined {
+  if (skill.registry === "skills-sh") {
+    const id = getCompleteSkillsshId(skill.rawId);
+    return id ? `https://skills.sh/${id}` : undefined;
+  }
+
+  if (skill.registry === "clawhub") {
+    const author = skill.author?.trim();
+    const slug = skill.slug.trim();
+    if (!author || !slug) return undefined;
+    return `https://clawhub.ai/${encodeURIComponent(author)}/skills/${encodeURIComponent(slug)}`;
+  }
+
+  return undefined;
+}
+
+function getInstalledSourceUrls(
+  skill: Pick<Skill, "registry" | "rawId" | "slug" | "author">,
+): Partial<Record<Registry, string>> | undefined {
+  const sourceUrl = getSkillSourceUrl(skill);
+  return sourceUrl ? { [skill.registry]: sourceUrl } : undefined;
+}
+
 export function buildSkillhubInstallCommand(slug: string): string {
   return `acli skills install ${shellQuote(slug)}`;
 }
@@ -255,6 +294,15 @@ interface ClawhubSearchItem {
   score?: number;
   slug?: string;
 }
+
+function normalizeClawhubDisplayName(displayName: string | undefined, slug: string): string {
+  const normalized = (displayName ?? slug)
+    .trim()
+    .replace(/\s+\(?\d[\d,.]*\s*[KMB]?\s+(?:downloads?|installs?)\)?\s*$/i, "")
+    .trim();
+  return normalized || slug;
+}
+
 function parseClawhubSearch(raw: string): Skill[] {
   const parsed = dataEnvelope(extractJsonObject(raw));
   if (!isRecord(parsed)) return [];
@@ -267,7 +315,7 @@ function parseClawhubSearch(raw: string): Skill[] {
         registry: "clawhub" as const,
         rawId: slug,
         slug,
-        name: (item?.displayName ?? slug).trim(),
+        name: normalizeClawhubDisplayName(item?.displayName, slug),
         installs: typeof item?.installs === "number" ? item.installs : undefined,
         score: typeof item?.score === "number" ? item.score : undefined,
         author: item?.author?.trim() || undefined,
@@ -307,6 +355,7 @@ function parseSkillsshSearch(raw: string): Skill[] {
 }
 
 interface ClawhubListItem {
+  author?: string;
   displayName?: string;
   slug?: string;
   status?: string;
@@ -320,15 +369,19 @@ function parseClawhubList(raw: string): InstalledSkill[] {
     .map((item) => {
       const slug = (item?.slug ?? "").trim();
       if (!slug) return null;
+      const author = item?.author?.trim() || undefined;
+      const name = (item?.displayName ?? slug).trim();
       return {
         registry: "clawhub" as const,
         rawId: slug,
         slug,
-        name: (item?.displayName ?? slug).trim(),
+        name,
+        author,
         status: item?.status?.trim() || undefined,
         version: item?.version?.trim() || undefined,
         registries: ["clawhub" as Registry],
         sourceLabel: REGISTRY_LABEL.clawhub,
+        sourceUrls: getInstalledSourceUrls({ registry: "clawhub", rawId: slug, slug, name, author }),
       } satisfies InstalledSkill;
     })
     .filter((s): s is InstalledSkill => s !== null);
@@ -351,15 +404,17 @@ function parseSkillsshList(raw: string): InstalledSkill[] {
       const rawId = (item?.id ?? item?.rawId ?? item?.slug ?? "").trim();
       if (!rawId) return null;
       const slug = (item?.slug ?? rawId.split("/").pop() ?? rawId).trim();
+      const name = (item?.displayName ?? slug).trim();
       return {
         registry: "skills-sh" as const,
         rawId,
         slug,
-        name: (item?.displayName ?? slug).trim(),
+        name,
         status: item?.status?.trim() || undefined,
         version: item?.version?.trim() || undefined,
         registries: ["skills-sh" as Registry],
         sourceLabel: REGISTRY_LABEL["skills-sh"],
+        sourceUrls: getInstalledSourceUrls({ registry: "skills-sh", rawId, slug, name }),
       } satisfies InstalledSkill;
     })
     .filter((s): s is InstalledSkill => s !== null);
@@ -431,8 +486,11 @@ interface SkillhubListItem {
   displayName?: string;
   id?: string;
   iconUrl?: string;
+  instances?: SkillhubListItem[];
   name?: string;
   rawId?: string;
+  relative_path?: string;
+  relativePath?: string;
   slug?: string;
   source?: string;
   status?: string;
@@ -461,38 +519,100 @@ function parseSkillhubListTable(raw: string): SkillhubListItem[] {
     }));
 }
 
+function cleanSkillhubString(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function compactSkillhubAliases(values: Array<string | undefined>): string[] {
+  const aliases: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const alias = cleanSkillhubString(value);
+    if (!alias) continue;
+    const key = alias.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(alias);
+  }
+  return aliases;
+}
+
+function pickSkillhubRawId(item: SkillhubListItem, isInstance: boolean): string | undefined {
+  const explicitId = cleanSkillhubString(isInstance
+    ? (item.id ?? item.rawId ?? item.slug)
+    : (item.slug ?? item.rawId ?? item.id));
+  if (explicitId) return /^\d+$/.test(explicitId) ? undefined : explicitId;
+  return cleanSkillhubString(item.relative_path)
+    ?? cleanSkillhubString(item.relativePath)
+    ?? cleanSkillhubString(item.name);
+}
+
+function mapSkillhubInstalledItem(item: SkillhubListItem, parent?: SkillhubListItem): InstalledSkill | null {
+  const rawId = pickSkillhubRawId(item, parent !== undefined);
+  if (!rawId) return null;
+  const slug = cleanSkillhubString(item.relative_path)
+    ?? cleanSkillhubString(item.relativePath)
+    ?? cleanSkillhubString(item.slug)
+    ?? cleanSkillhubString(parent?.relative_path)
+    ?? cleanSkillhubString(parent?.relativePath)
+    ?? cleanSkillhubString(parent?.slug)
+    ?? rawId;
+  const name = cleanSkillhubString(item.display_name)
+    ?? cleanSkillhubString(item.displayName)
+    ?? cleanSkillhubString(item.name)
+    ?? cleanSkillhubString(parent?.display_name)
+    ?? cleanSkillhubString(parent?.displayName)
+    ?? cleanSkillhubString(parent?.name)
+    ?? slug;
+  const nativeAliases = compactSkillhubAliases([
+    rawId,
+    slug,
+    item.id,
+    item.rawId,
+    item.slug,
+    item.relative_path,
+    item.relativePath,
+    item.name,
+    item.display_name,
+    item.displayName,
+    parent?.id,
+    parent?.rawId,
+    parent?.slug,
+    parent?.relative_path,
+    parent?.relativePath,
+    parent?.name,
+    parent?.display_name,
+    parent?.displayName,
+  ]);
+  return {
+    registry: "skillhub" as const,
+    rawId,
+    slug,
+    name,
+    category: cleanSkillhubString(item.category) ?? cleanSkillhubString(parent?.category),
+    iconUrl: cleanSkillhubString(item.iconUrl) ?? cleanSkillhubString(parent?.iconUrl),
+    status: cleanSkillhubString(item.status) ?? cleanSkillhubString(parent?.status),
+    version: cleanSkillhubString(item.version) ?? cleanSkillhubString(parent?.version),
+    nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
+    registries: ["skillhub" as Registry],
+    sourceLabel: REGISTRY_LABEL.skillhub,
+  } satisfies InstalledSkill;
+}
+
 export function parseSkillhubList(raw: string): InstalledSkill[] {
   const parsed = dataEnvelope(extractJsonObject(raw));
   const items = isRecord(parsed) && Array.isArray(parsed.skills)
     ? parsed.skills as SkillhubListItem[]
     : parseSkillhubListTable(raw);
 
-  return items.map((item) => {
-    const explicitId = item.slug ?? item.rawId ?? item.id;
-    const listedName = (item.name ?? "").trim();
-    const nativeAliases = Array.from(new Set(
-      [explicitId ? listedName : "", item.display_name, item.displayName]
-        .map((value) => value?.trim() ?? "")
-        .filter(Boolean),
-    ));
-    const rawId = explicitId
-      ? (/^\d+$/.test(explicitId.trim()) ? "" : explicitId.trim())
-      : listedName;
-    if (!rawId) return null;
-    const name = (item.display_name ?? item.displayName ?? item.name ?? rawId).trim();
-    return {
-      registry: "skillhub" as const,
-      rawId,
-      slug: rawId,
-      name,
-      category: item.category?.trim() || undefined,
-      iconUrl: item.iconUrl?.trim() || undefined,
-      status: item.status?.trim() || undefined,
-      version: item.version?.trim() || undefined,
-      nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
-      registries: ["skillhub" as Registry],
-      sourceLabel: REGISTRY_LABEL.skillhub,
-    } satisfies InstalledSkill;
+  return items.flatMap((item) => {
+    const instances = Array.isArray(item.instances)
+      ? (item.instances.filter(isRecord) as SkillhubListItem[])
+      : [];
+    return instances.length > 0
+      ? instances.map((instance) => mapSkillhubInstalledItem(instance, item))
+      : [mapSkillhubInstalledItem(item)];
   }).filter((skill): skill is InstalledSkill => skill !== null);
 }
 
@@ -596,6 +716,7 @@ export function mergeInstalledSources(
         const registries = Array.from(set);
         existing.registries = registries;
         existing.sourceLabel = registries.map((r) => REGISTRY_LABEL[r]).join(" / ");
+        existing.sourceUrls = { ...existing.sourceUrls, ...skill.sourceUrls };
         existing.category = existing.category ?? skill.category;
         existing.version = existing.version ?? skill.version;
       }
@@ -663,6 +784,7 @@ export function mergeInstalledWithHermes(
           nativeAliases,
           registries,
           sourceLabel: registries.map((registry) => REGISTRY_LABEL[registry]).join(" / "),
+          sourceUrls: Object.assign({}, ...matches.map((skill) => skill.sourceUrls)),
           uninstallTargets,
         };
         const insertionIndex = matchingIndexes[0];
@@ -1086,11 +1208,11 @@ function mockMatch(skill: Skill, keyword: string): boolean {
 const MOCK_INSTALLED_STORAGE_PREFIX = "lightvela-skills-demo-installed";
 
 /** 默认预置几个已安装技能，让「已安装」区能直接展示来源归属（ClawHub / skills.sh）。 */
-const MOCK_SEED_INSTALLED: Array<{ slug: string; registry: Registry; name: string; version?: string }> = [
-  { slug: "react", registry: "clawhub", name: "React", version: "1.0.4" },
-  { slug: "react-best-practices", registry: "clawhub", name: "React Best Practices" },
-  { slug: "frontend-design", registry: "skills-sh", name: "frontend-design" },
-  { slug: "lark-doc", registry: "skills-sh", name: "lark-doc" },
+const MOCK_SEED_INSTALLED: Array<{ slug: string; rawId?: string; registry: Registry; name: string; version?: string; author?: string }> = [
+  { slug: "react", registry: "clawhub", name: "React", version: "1.0.4", author: "ivangdavila" },
+  { slug: "react-best-practices", registry: "clawhub", name: "React Best Practices", author: "wpank" },
+  { slug: "frontend-design", rawId: "anthropics/skills/frontend-design", registry: "skills-sh", name: "frontend-design" },
+  { slug: "lark-doc", rawId: "larksuite/cli/lark-doc", registry: "skills-sh", name: "lark-doc" },
 ];
 
 interface MockInstalledRecord {
@@ -1099,6 +1221,7 @@ interface MockInstalledRecord {
   registry: Registry;
   name: string;
   version?: string;
+  author?: string;
 }
 
 function readMockInstalled(): MockInstalledRecord[] {
@@ -1164,9 +1287,17 @@ export function createMockDataLayer(): SkillsDataLayer {
           rawId: rec.rawId ?? rec.slug,
           slug: rec.slug,
           name: rec.name,
+          author: rec.author,
           version: rec.version,
           registries: [rec.registry],
           sourceLabel: REGISTRY_LABEL[rec.registry],
+          sourceUrls: getInstalledSourceUrls({
+            registry: rec.registry,
+            rawId: rec.rawId ?? rec.slug,
+            slug: rec.slug,
+            name: rec.name,
+            author: rec.author,
+          }),
         };
         if (rec.registry === "clawhub") clawhubInstalled.push(entry);
         else skillsshInstalled.push(entry);
@@ -1181,7 +1312,13 @@ export function createMockDataLayer(): SkillsDataLayer {
         rawId: r.rawId ?? r.slug,
       }) === skillIdentity(skill));
       if (!exists) {
-        records.push({ rawId: skill.rawId, slug: skill.slug, registry: skill.registry, name: skill.name });
+        records.push({
+          rawId: skill.rawId,
+          slug: skill.slug,
+          registry: skill.registry,
+          name: skill.name,
+          author: skill.author,
+        });
         writeMockInstalled(records);
       }
       return { ok: true };

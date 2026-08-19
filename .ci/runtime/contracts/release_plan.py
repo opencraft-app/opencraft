@@ -121,6 +121,26 @@ def dependency_changed(manifest: dict[str, Any], dependencies: Sequence[str], ch
     )
 
 
+def release_dependencies_for_env(manifest: dict[str, Any], service: str, env: str) -> list[str]:
+    bundle = (manifest.get("bundles") or {}).get(service, {})
+    dependencies_by_env = bundle.get("release_dependencies_by_env") or {}
+    if isinstance(dependencies_by_env, dict):
+        override = _env_mapping_value(dependencies_by_env, env)
+        if override is not None:
+            return [str(item) for item in (override or [])]
+    return [str(item) for item in (bundle.get("release_dependencies") or [])]
+
+
+def _env_mapping_value(mapping: dict[str, Any], env: str) -> Any:
+    if env in mapping:
+        return mapping[env]
+    for key, value in mapping.items():
+        key_text = str(key)
+        if key_text.endswith("*") and env.startswith(key_text[:-1]):
+            return value
+    return None
+
+
 def plan_release_gates(
     *,
     repo_root: Path,
@@ -142,12 +162,13 @@ def plan_release_gates(
     has_verifier = bool(contract.get("verifier"))
     readiness_declared_unsupported = contract.get("readiness_supported") is False
     readiness_supported = bool(contract.get("readiness_supported", True)) and has_verifier
-    requires_db_job = db_mode == "migration" and bool(contract.get("migration_operation"))
-    requires_db_readiness = db_mode == "migration" and (has_verifier or readiness_declared_unsupported)
+    needs_db_gate = migration_changed or env in PROD_MANUAL_SYNC_ENVS
+    requires_db_job = migration_changed and bool(contract.get("migration_operation"))
+    requires_db_readiness = needs_db_gate and db_mode == "migration" and (has_verifier or readiness_declared_unsupported)
     db_job_service = str(contract.get("db_job_service") or service)
     db_job_operation = str(contract.get("migration_operation") or "")
     db_job_image_override = resolve_image_override(image, str(contract.get("migration_image_key") or ""))
-    dependencies = [str(item) for item in ((manifest.get("bundles") or {}).get(service, {}).get("release_dependencies") or [])]
+    dependencies = release_dependencies_for_env(manifest, service, env)
     release_dependency_changed = dependency_changed(manifest, dependencies, changed_files)
 
     argo_sync = "manual" if is_manual_sync_env(env) else "auto" if is_preprod_auto_sync_env(env) else "manual"

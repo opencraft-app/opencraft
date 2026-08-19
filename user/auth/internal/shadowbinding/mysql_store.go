@@ -100,6 +100,21 @@ func (s *MySQLStore) MarkBindingActive(ctx context.Context, userID string, uin, 
 	return s.GetBindingByUserID(ctx, userID)
 }
 
+func (s *MySQLStore) MarkBindingRegistered(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error) {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE shadow_bindings
+		SET uin = ?, owner_uin = ?, app_id = ?, status = ?, last_error_code = NULL, last_error_message = NULL, updated_at = ?
+		WHERE user_id = ?
+	`, uin, ownerUin, appID, StatusPending, now, userID)
+	if err != nil {
+		return Binding{}, fmt.Errorf("mark shadow binding registered: %w", err)
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return Binding{}, ErrNotFound
+	}
+	return s.GetBindingByUserID(ctx, userID)
+}
+
 func (s *MySQLStore) MarkBindingFailed(ctx context.Context, userID string, code string, message string, now time.Time) (Binding, error) {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE shadow_bindings

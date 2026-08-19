@@ -11,6 +11,40 @@ func setRequiredLoadEnv(t *testing.T) {
 	t.Setenv("CTL_INTERNAL_BASE_URL", "http://ctl.local")
 }
 
+func TestLoad_DianshiPreview(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    int
+		wantErr bool
+	}{
+		{name: "unset defaults to zero", value: "", want: 0},
+		{name: "explicit zero", value: "0", want: 0},
+		{name: "preview enabled", value: "1", want: 1},
+		{name: "invalid value", value: "true", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setRequiredLoadEnv(t)
+			t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.local")
+			t.Setenv("DIANSHI_PREVIEW", tt.value)
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Load() expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.DianshiPreview != tt.want {
+				t.Fatalf("DianshiPreview = %d, want %d", cfg.DianshiPreview, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadUsesAccountBindingInternalBaseURL(t *testing.T) {
 	setRequiredLoadEnv(t)
 	t.Setenv("ACCOUNT_BINDING_INTERNAL_BASE_URL", "http://auth.local")
@@ -102,12 +136,34 @@ func TestLoad_SiteKindFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoad_ShadowMockBindingFromEnv(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("TRADE_SHADOW_MOCK_ENABLED", "true")
+	t.Setenv("TRADE_SHADOW_MOCK_UIN", " 800000294207 ")
+	t.Setenv("TRADE_SHADOW_MOCK_APP_ID", " 251221987 ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.ShadowMockEnabled {
+		t.Fatalf("ShadowMockEnabled = false, want true")
+	}
+	if cfg.ShadowMockUin != "800000294207" {
+		t.Fatalf("ShadowMockUin = %q", cfg.ShadowMockUin)
+	}
+	if cfg.ShadowMockAppID != "251221987" {
+		t.Fatalf("ShadowMockAppID = %q", cfg.ShadowMockAppID)
+	}
+}
+
 // TestLoad_RegionOverrideFromEnv 验证 Load() 端到端从 LIGHTVELA_TRADE_REGION env 读取
 // 并写入 Config.RegionOverride 字段（北京 2 预发布接入 2026-06-12 新增）。
 //
 // 关键不变量：
 //   - 未设 env / 空字符串 → cfg.RegionOverride = ""，trade 出向走 SiteKind 兜底
-//   - 已注册的 region 字面量（ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore）→ 写入字面量原值
+//   - 已注册的 region 字面量（ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore / ap-seoul）→ 写入字面量原值
 //   - 大小写 / 前后空白由 Load 直接 trim 但不 lower（lower 由 region.LookupByRegion 内部做）
 //   - 未注册的 region 字面量 → Load 返回 error（fail-fast）
 func TestLoad_RegionOverrideFromEnv(t *testing.T) {
@@ -122,6 +178,7 @@ func TestLoad_RegionOverrideFromEnv(t *testing.T) {
 		{"ap-shanghai override accepted", "ap-shanghai", "ap-shanghai", false},
 		{"ap-guangzhou override accepted", "ap-guangzhou", "ap-guangzhou", false},
 		{"ap-singapore override accepted", "ap-singapore", "ap-singapore", false},
+		{"ap-seoul override accepted", "ap-seoul", "ap-seoul", false},
 		{"surrounding whitespace trimmed", "  ap-beijing  ", "ap-beijing", false},
 		{"unknown region fails fast", "ap-tokyo", "", true},
 		{"typo fails fast", "bj", "", true},
@@ -192,5 +249,75 @@ func TestLoad_InquiryFallbackIdentityFromEnv(t *testing.T) {
 					cfg.InquiryFallbackUin, cfg.InquiryFallbackAppID, tc.wantUin, tc.wantAppID)
 			}
 		})
+	}
+}
+
+func TestLoad_BillingCloudAPIIgnoresShadowCredentialFallback(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("SHADOW_SECRET_ID", "shadow-opening-secret-id")
+	t.Setenv("SHADOW_SECRET_KEY", "shadow-opening-secret-key")
+	t.Setenv("SHADOW_BILLING_SECRET_ID", "shadow-billing-secret-id")
+	t.Setenv("SHADOW_BILLING_SECRET_KEY", "shadow-billing-secret-key")
+	t.Setenv("SHADOW_CLOUDLADDER_ENABLED", "true")
+	t.Setenv("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL", "http://clgateway.test")
+	t.Setenv("SHADOW_CLOUDLADDER_HMAC_SECRET", "shadow-hmac")
+	t.Setenv("SHADOW_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BillingCloudAPICloudLadderGatewayURL != "" {
+		t.Fatalf("BillingCloudAPICloudLadderGatewayURL = %q", cfg.BillingCloudAPICloudLadderGatewayURL)
+	}
+	if cfg.BillingCloudAPICloudLadderRouteID != "tcapi-billing-trade-intl-test" {
+		t.Fatalf("BillingCloudAPICloudLadderRouteID default = %q", cfg.BillingCloudAPICloudLadderRouteID)
+	}
+	if cfg.BillingCloudAPICloudLadderHMACSecret != "" {
+		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
+	}
+}
+
+func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("SHADOW_SECRET_ID", "shadow-opening-secret-id")
+	t.Setenv("SHADOW_SECRET_KEY", "shadow-opening-secret-key")
+	t.Setenv("TRADE_BILLING_SECRET_ID", "trade-billing-secret-id")
+	t.Setenv("TRADE_BILLING_SECRET_KEY", "trade-billing-secret-key")
+	t.Setenv("TRADE_BILLING_ENDPOINT", "billing.dev.tencentcloudapi.com")
+	t.Setenv("TRADE_BILLING_REGION", "ap-singapore")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL", "http://trade-clgateway.test")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-dev")
+	t.Setenv("TRADE_BILLING_PAY_REDIRECT_URL", "  https://sandbox-kr-1.lightclaw.tech/subscribe  ")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "trade-hmac")
+	t.Setenv("TRADE_BILLING_X_QCLOUD_USER_ID", "")
+	t.Setenv("JIFEI_CGW_X_QCLOUD_USER_ID", "800000294207")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BillingCloudAPIEndpoint != "billing.dev.tencentcloudapi.com" {
+		t.Fatalf("BillingCloudAPIEndpoint = %q", cfg.BillingCloudAPIEndpoint)
+	}
+	if cfg.BillingCloudAPIRegion != "ap-singapore" {
+		t.Fatalf("BillingCloudAPIRegion = %q", cfg.BillingCloudAPIRegion)
+	}
+	if cfg.BillingCloudAPICloudLadderGatewayURL != "http://trade-clgateway.test" {
+		t.Fatalf("BillingCloudAPICloudLadderGatewayURL = %q", cfg.BillingCloudAPICloudLadderGatewayURL)
+	}
+	if cfg.BillingCloudAPICloudLadderRouteID != "tcapi-billing-intl-dev" {
+		t.Fatalf("BillingCloudAPICloudLadderRouteID = %q", cfg.BillingCloudAPICloudLadderRouteID)
+	}
+	if cfg.BillingCloudAPIPayRedirectURL != "https://sandbox-kr-1.lightclaw.tech/subscribe" {
+		t.Fatalf("BillingCloudAPIPayRedirectURL = %q", cfg.BillingCloudAPIPayRedirectURL)
+	}
+	if cfg.BillingCloudAPICloudLadderHMACSecret != "trade-hmac" {
+		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
+	}
+	if cfg.BillingCloudAPIXQCloudUserID != "800000294207" {
+		t.Fatalf("BillingCloudAPIXQCloudUserID = %q", cfg.BillingCloudAPIXQCloudUserID)
 	}
 }
