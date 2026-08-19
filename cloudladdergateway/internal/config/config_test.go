@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -173,6 +174,56 @@ func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToTestHost(t *testing.T)
 		return
 	}
 	t.Fatal("tcapi-billing-trade-intl-test route is missing")
+}
+
+// sgprod 现网发布前置：trade 国际站 CreatePayUrl 必须有独立的生产出向路由，
+// 否则 trade 会沿用 tcapi-billing-trade-intl-test 把现网真实订单打到测试计费环境
+// （billing.test.tencentcloudapi.com），导致用户无法支付且污染测试计费库。
+// 生产 endpoint 复用 tcapi-billing-intl-prod 的内网域名（新加坡地域）。
+func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToProdHost(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, route := range cfg.Routes {
+		if route.ID != "tcapi-billing-trade-intl-prod" {
+			continue
+		}
+		if route.Mode != RouteModeSignedHTTPTunnel {
+			t.Fatalf("route mode = %q", route.Mode)
+		}
+		if len(route.Callers) != 1 || route.Callers[0] != "lightvela-trade" {
+			t.Fatalf("route callers = %#v", route.Callers)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve trade international billing prod upstream: %v", err)
+		}
+		if got := upstream.BaseURL; got != "http://billing.ap-singapore.tencentcloudapi.woa.com" {
+			t.Fatalf("trade international billing prod base_url = %q", got)
+		}
+		return
+	}
+	t.Fatal("tcapi-billing-trade-intl-prod route is missing")
+}
+
+// caller allowlist 与 route 定义必须同进同退：只加 route 不加 allowlist，
+// trade 出向会被 clgateway 以 caller 未授权拒绝。
+func TestExampleConfigGrantsTradeCallerProdBillingRoute(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, caller := range cfg.Auth.Callers {
+		if caller.ID != "lightvela-trade" {
+			continue
+		}
+		if slices.Contains(caller.Routes, "tcapi-billing-trade-intl-prod") {
+			return
+		}
+		t.Fatalf("lightvela-trade caller routes missing tcapi-billing-trade-intl-prod: %#v", caller.Routes)
+	}
+	t.Fatal("lightvela-trade caller is missing")
 }
 
 func TestLoadAppliesRouteHostHeaderOverride(t *testing.T) {
