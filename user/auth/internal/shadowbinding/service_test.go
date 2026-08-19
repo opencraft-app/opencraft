@@ -3,12 +3,15 @@ package shadowbinding
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	tcerr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 )
+
+func noBillingWait(context.Context, time.Duration) error { return nil }
 
 type recordingClient struct {
 	calls                  int
@@ -273,7 +276,7 @@ func TestBindShadowAccountRecordsFailureAndAllowsRetry(t *testing.T) {
 func TestBindShadowAccountOpensBillingBeforeActivatingIntlBinding(t *testing.T) {
 	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002}}
 	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true, RequestID: "billing-request-1"}}
-	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing, Wait: noBillingWait})
 
 	binding, err := svc.BindShadowAccount(context.Background(), BindInput{
 		UserID: "usr_intl",
@@ -292,28 +295,47 @@ func TestBindShadowAccountOpensBillingBeforeActivatingIntlBinding(t *testing.T) 
 
 func TestBindShadowAccountWaitsForAsyncBillingActivation(t *testing.T) {
 	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036}}
-	billing := &recordingBillingClient{results: []BillingAccountResult{{IsOpen: false}, {IsOpen: true}}}
+	billing := &recordingBillingClient{results: []BillingAccountResult{{IsOpen: false}, {IsOpen: false}, {IsOpen: true}}}
+	var waits []time.Duration
 	svc := New(NewMemoryStore(), client, Options{
 		Enabled:             true,
 		SiteKind:            SiteKindIntl,
 		BillingAccount:      billing,
-		BillingOpenTimeout:  time.Second,
-		BillingPollInterval: time.Millisecond,
+		BillingInitialDelay: 10 * time.Second,
+		BillingOpenTimeout:  time.Minute,
+		BillingPollInterval: time.Second,
+		Wait: func(_ context.Context, delay time.Duration) error {
+			waits = append(waits, delay)
+			return nil
+		},
 	})
 
 	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
 	if err != nil {
 		t.Fatalf("wait for billing activation: %v", err)
 	}
-	if binding.Status != StatusActive || billing.calls != 2 {
+	if binding.Status != StatusActive || billing.calls != 3 {
 		t.Fatalf("expected active binding after billing propagation, binding=%+v calls=%d", binding, billing.calls)
+	}
+	if want := []time.Duration{10 * time.Second, time.Second, 2 * time.Second}; !reflect.DeepEqual(waits, want) {
+		t.Fatalf("billing waits = %v, want %v", waits, want)
 	}
 }
 
 func TestBindShadowAccountRetriesBillingWithoutRegisteringAgain(t *testing.T) {
 	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002}}
 	billing := &recordingBillingClient{err: errors.New("billing unavailable")}
-	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+	var waits []time.Duration
+	svc := New(NewMemoryStore(), client, Options{
+		Enabled:             true,
+		SiteKind:            SiteKindIntl,
+		BillingAccount:      billing,
+		BillingInitialDelay: 10 * time.Second,
+		Wait: func(_ context.Context, delay time.Duration) error {
+			waits = append(waits, delay)
+			return nil
+		},
+	})
 
 	failed, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
 	if err == nil {
@@ -322,9 +344,13 @@ func TestBindShadowAccountRetriesBillingWithoutRegisteringAgain(t *testing.T) {
 	if failed.Status != StatusFailed || failed.Uin != 450860000002 || failed.LastErrorCode != "billing_account_open_failed" {
 		t.Fatalf("expected registered UIN retained for billing retry, got %+v", failed)
 	}
+	if want := []time.Duration{10 * time.Second}; !reflect.DeepEqual(waits, want) {
+		t.Fatalf("initial billing waits = %v, want %v", waits, want)
+	}
 
 	billing.err = nil
 	billing.result = BillingAccountResult{IsOpen: true, RequestID: "billing-request-2"}
+	waits = nil
 	active, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
 	if err != nil {
 		t.Fatalf("retry billing account: %v", err)
@@ -332,12 +358,15 @@ func TestBindShadowAccountRetriesBillingWithoutRegisteringAgain(t *testing.T) {
 	if active.Status != StatusActive || client.calls != 1 || billing.calls != 2 {
 		t.Fatalf("expected retry to skip registration, binding=%+v register_calls=%d billing_calls=%d", active, client.calls, billing.calls)
 	}
+	if len(waits) != 0 {
+		t.Fatalf("billing retry repeated initial wait: %v", waits)
+	}
 }
 
 func TestRetryBillingAccountOpeningRetriesOnlyBillingOpenFailure(t *testing.T) {
 	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002}}
 	billing := &recordingBillingClient{err: errors.New("billing unavailable")}
-	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing, Wait: noBillingWait})
 
 	failed, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
 	if err == nil || failed.LastErrorCode != "billing_account_open_failed" {
@@ -370,6 +399,7 @@ func TestBindIntlRecoversRegisteredShadowUINAfterUncertainRegisterFailure(t *tes
 		SiteKind:       SiteKindIntl,
 		BillingAccount: billing,
 		AuthCodePrefix: "jpsbx",
+		Wait:           noBillingWait,
 	})
 
 	binding, err := svc.BindShadowAccount(context.Background(), BindInput{
@@ -413,6 +443,7 @@ func TestBillingCardRequiredBindingCanIssueTemporaryCredentials(t *testing.T) {
 		SiteKind:       SiteKindIntl,
 		BillingAccount: billing,
 		Now:            func() time.Time { return now },
+		Wait:           noBillingWait,
 	})
 
 	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
@@ -430,7 +461,7 @@ func TestBillingCardRequiredBindingCanIssueTemporaryCredentials(t *testing.T) {
 func TestRetryBillingAccountOpeningSkipsNonBillingFailure(t *testing.T) {
 	client := &recordingClient{err: errors.New("register unavailable")}
 	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true}}
-	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing, Wait: noBillingWait})
 
 	failed, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
 	if err == nil || failed.LastErrorCode != "tencentcloud_register_failed" {
@@ -457,7 +488,7 @@ func TestBindShadowAccountResumesRegisteredPendingBinding(t *testing.T) {
 	}
 	client := &recordingClient{}
 	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true}}
-	svc := New(store, client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+	svc := New(store, client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing, Wait: noBillingWait})
 
 	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
 	if err != nil {
@@ -483,7 +514,7 @@ func TestBindShadowAccountDoesNotReactivateDisabledIntlBinding(t *testing.T) {
 	store.bindings["usr_intl"] = disabled
 	store.mu.Unlock()
 	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true}}
-	svc := New(store, &recordingClient{}, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+	svc := New(store, &recordingClient{}, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing, Wait: noBillingWait})
 
 	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
 	if err != nil {

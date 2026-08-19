@@ -18,11 +18,13 @@ import (
 type Options struct {
 	Enabled             bool
 	Now                 func() time.Time
+	Wait                func(context.Context, time.Duration) error
 	AuthCodeTTL         time.Duration
 	AuthCodePrefix      string
 	UserNamePrefix      string
 	SiteKind            string
 	BillingAccount      BillingAccountClient
+	BillingInitialDelay time.Duration
 	BillingOpenTimeout  time.Duration
 	BillingPollInterval time.Duration
 }
@@ -31,8 +33,10 @@ type Service struct {
 	store               Store
 	client              TencentCloudClient
 	billingAccount      BillingAccountClient
+	billingInitialDelay time.Duration
 	billingOpenTimeout  time.Duration
 	billingPollInterval time.Duration
+	wait                func(context.Context, time.Duration) error
 	enabled             bool
 	now                 func() time.Time
 	authCodeTTL         time.Duration
@@ -46,13 +50,21 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 	if now == nil {
 		now = time.Now
 	}
+	wait := opts.Wait
+	if wait == nil {
+		wait = waitForDuration
+	}
 	ttl := opts.AuthCodeTTL
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
+	billingInitialDelay := opts.BillingInitialDelay
+	if billingInitialDelay < 0 {
+		billingInitialDelay = 0
+	}
 	billingOpenTimeout := opts.BillingOpenTimeout
 	if billingOpenTimeout <= 0 {
-		billingOpenTimeout = 15 * time.Second
+		billingOpenTimeout = time.Minute
 	}
 	billingPollInterval := opts.BillingPollInterval
 	if billingPollInterval <= 0 {
@@ -66,8 +78,10 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 		store:               store,
 		client:              client,
 		billingAccount:      opts.BillingAccount,
+		billingInitialDelay: billingInitialDelay,
 		billingOpenTimeout:  billingOpenTimeout,
 		billingPollInterval: billingPollInterval,
+		wait:                wait,
 		enabled:             opts.Enabled,
 		now:                 now,
 		authCodeTTL:         ttl,
@@ -175,7 +189,7 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 	if err == nil && !in.Force {
 		if s.siteKind == SiteKindIntl && existing.Uin > 0 &&
 			(existing.Status == StatusPending || existing.Status == StatusFailed) {
-			return s.openBillingAccount(ctx, existing)
+			return s.openBillingAccount(ctx, existing, false)
 		}
 		switch existing.Status {
 		case StatusActive, StatusPending, StatusDisabled:
@@ -235,7 +249,7 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 	if err != nil {
 		return binding, err
 	}
-	return s.openBillingAccount(ctx, registered)
+	return s.openBillingAccount(ctx, registered, true)
 }
 
 func (s *Service) RetryBillingAccountOpening(ctx context.Context, userID string) (Binding, error) {
@@ -251,10 +265,10 @@ func (s *Service) RetryBillingAccountOpening(ctx context.Context, userID string)
 		binding.Uin <= 0 {
 		return binding, nil
 	}
-	return s.openBillingAccount(ctx, binding)
+	return s.openBillingAccount(ctx, binding, false)
 }
 
-func (s *Service) openBillingAccount(ctx context.Context, binding Binding) (Binding, error) {
+func (s *Service) openBillingAccount(ctx context.Context, binding Binding, waitBeforeFirstAttempt bool) (Binding, error) {
 	if s.billingAccount == nil {
 		err := errors.New("billing account client is not configured")
 		failed, markErr := s.store.MarkBindingFailed(ctx, binding.UserID, "billing_account_open_failed", err.Error(), s.now())
@@ -266,23 +280,25 @@ func (s *Service) openBillingAccount(ctx context.Context, binding Binding) (Bind
 	openCtx, cancel := context.WithTimeout(ctx, s.billingOpenTimeout)
 	defer cancel()
 	var err error
+	if waitBeforeFirstAttempt {
+		err = s.wait(openCtx, s.billingInitialDelay)
+	}
+	backoff := s.billingPollInterval
 	for {
+		if err != nil {
+			break
+		}
 		var result BillingAccountResult
 		result, err = s.billingAccount.EnsureBillingAccount(openCtx, binding.Uin)
 		if err != nil || result.IsOpen {
 			break
 		}
-		timer := time.NewTimer(s.billingPollInterval)
-		select {
-		case <-openCtx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			err = fmt.Errorf("billing account did not open within %s: %w", s.billingOpenTimeout, openCtx.Err())
-		case <-timer.C:
-			continue
+		if err = s.wait(openCtx, backoff); err != nil {
+			break
 		}
-		break
+		if backoff <= s.billingOpenTimeout/2 {
+			backoff *= 2
+		}
 	}
 	if err != nil {
 		failureCode := "billing_account_open_failed"
@@ -296,6 +312,20 @@ func (s *Service) openBillingAccount(ctx context.Context, binding Binding) (Bind
 		return failed, err
 	}
 	return s.store.MarkBindingActive(ctx, binding.UserID, binding.Uin, binding.OwnerUin, binding.AppID, s.now())
+}
+
+func waitForDuration(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (s *Service) recoverShadowIdentity(ctx context.Context, userID, clientIP, clientUA string) (CloudRegisterResult, error) {
