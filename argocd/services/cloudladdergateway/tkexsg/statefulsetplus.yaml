@@ -90,6 +90,10 @@ spec:
           value: https://api-sandbox-jp-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER
           value: test.trade-intl.billing.tencentyun.com
+        - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_PRICE_BASE_URL
+          value: http://opc-activity-price.production.sgpolaris:10006
+        - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_ORDER_BASE_URL
+          value: http://opc-dianshi-activity.production.sgpolaris:80
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always
         name: lightvela-proxy
