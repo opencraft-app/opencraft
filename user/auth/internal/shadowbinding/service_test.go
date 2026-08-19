@@ -54,17 +54,23 @@ type recordingBillingClient struct {
 	result  BillingAccountResult
 	results []BillingAccountResult
 	err     error
+	errs    []error
 }
 
 func (c *recordingBillingClient) EnsureBillingAccount(_ context.Context, uin int64) (BillingAccountResult, error) {
 	c.calls++
 	c.lastUin = uin
+	err := c.err
+	if len(c.errs) > 0 {
+		err = c.errs[0]
+		c.errs = c.errs[1:]
+	}
 	if len(c.results) > 0 {
 		result := c.results[0]
 		c.results = c.results[1:]
-		return result, c.err
+		return result, err
 	}
-	return c.result, c.err
+	return c.result, err
 }
 
 func (c *recordingClient) SendSMSVerifyCode(context.Context, CloudSendSMSInput) error {
@@ -345,6 +351,50 @@ func TestBindShadowAccountWaitsForAsyncBillingActivation(t *testing.T) {
 		t.Fatalf("expected active binding after billing propagation, binding=%+v calls=%d err=%v", active, billing.calls, err)
 	}
 	if want := []time.Duration{10 * time.Second, time.Second, 2 * time.Second}; !reflect.DeepEqual(waits, want) {
+		t.Fatalf("billing waits = %v, want %v", waits, want)
+	}
+}
+
+func TestBindShadowAccountRetriesBillingWhileUINBaseInfoPropagates(t *testing.T) {
+	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000003, OwnerUin: 450860000003}}
+	baseInfoPending := func() error {
+		return tcerr.NewTencentCloudSDKError(
+			"FailedOperation.UinNeedBaseInfo",
+			"failed to query mdmId",
+			"billing-request-id",
+		)
+	}
+	billing := &recordingBillingClient{
+		results: []BillingAccountResult{{}, {}, {}, {}, {IsOpen: true}},
+		errs:    []error{baseInfoPending(), baseInfoPending(), baseInfoPending(), baseInfoPending(), nil},
+	}
+	var waits []time.Duration
+	async := &asyncCapture{}
+	svc := New(NewMemoryStore(), client, Options{
+		Enabled:             true,
+		SiteKind:            SiteKindIntl,
+		BillingAccount:      billing,
+		BillingInitialDelay: 10 * time.Second,
+		BillingOpenTimeout:  30 * time.Second,
+		BillingPollInterval: time.Second,
+		Wait: func(_ context.Context, delay time.Duration) error {
+			waits = append(waits, delay)
+			return nil
+		},
+		RunAsync: async.run,
+	})
+
+	pending, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err != nil || pending.Status != StatusPending {
+		t.Fatalf("registration should return pending: binding=%+v err=%v", pending, err)
+	}
+	async.runNext(t)
+
+	active, err := svc.GetBindingByUserID(context.Background(), "usr_intl")
+	if err != nil || active.Status != StatusActive || billing.calls != 5 {
+		t.Fatalf("expected active binding after base info propagation, binding=%+v calls=%d err=%v", active, billing.calls, err)
+	}
+	if want := []time.Duration{10 * time.Second, time.Second, 2 * time.Second, 3 * time.Second, 4 * time.Second}; !reflect.DeepEqual(waits, want) {
 		t.Fatalf("billing waits = %v, want %v", waits, want)
 	}
 }

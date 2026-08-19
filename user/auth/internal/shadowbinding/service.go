@@ -70,7 +70,7 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 	}
 	billingOpenTimeout := opts.BillingOpenTimeout
 	if billingOpenTimeout <= 0 {
-		billingOpenTimeout = time.Minute
+		billingOpenTimeout = 30 * time.Second
 	}
 	billingPollInterval := opts.BillingPollInterval
 	if billingPollInterval <= 0 {
@@ -304,20 +304,27 @@ func (s *Service) openBillingAccount(ctx context.Context, binding Binding, waitB
 		err = s.wait(openCtx, s.billingInitialDelay)
 	}
 	backoff := s.billingPollInterval
+	maxBackoff := 4 * s.billingPollInterval
 	for {
 		if err != nil {
 			break
 		}
 		var result BillingAccountResult
 		result, err = s.billingAccount.EnsureBillingAccount(openCtx, binding.Uin)
-		if err != nil || result.IsOpen {
+		if err == nil && result.IsOpen {
+			break
+		}
+		if err != nil && !isBillingBaseInfoPending(err) {
 			break
 		}
 		if err = s.wait(openCtx, backoff); err != nil {
 			break
 		}
-		if backoff <= s.billingOpenTimeout/2 {
-			backoff *= 2
+		if backoff < maxBackoff {
+			backoff += s.billingPollInterval
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}
 	if err != nil {
@@ -378,6 +385,11 @@ func (s *Service) recoverShadowIdentity(ctx context.Context, userID, clientIP, c
 func isBillingCardRequired(err error) bool {
 	var sdkErr *tcerr.TencentCloudSDKError
 	return errors.As(err, &sdkErr) && sdkErr.Code == "FailedOperation.UinNeedBindCard"
+}
+
+func isBillingBaseInfoPending(err error) bool {
+	var sdkErr *tcerr.TencentCloudSDKError
+	return errors.As(err, &sdkErr) && sdkErr.Code == "FailedOperation.UinNeedBaseInfo"
 }
 
 func isBillingRetryableCode(code string) bool {
