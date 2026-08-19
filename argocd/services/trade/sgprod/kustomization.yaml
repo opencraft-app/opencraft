@@ -1,0 +1,40 @@
+# trade 新加坡正式（sgprod）deploy-facing 环境特化
+#
+# 形态参考 shprod（同为正式环境）：
+#   - 不启用 migration job：生产 DB migration 由 service-release 的生产 DB
+#     migration 阶段人工准入后受控执行，不随 Argo sync 自动跑。
+#   - namespace 使用独立 `trade`（由 common component 固定），与 payment /
+#     lightclaw-auth 共用的 user-auth namespace 隔离。
+#
+# 与 sandbox-kr-1（同为国际站）的差异：
+#   - kr-1 是 playground，需要 delete-shared-namespace / delete-shared-serviceaccount
+#     等 patch 摘除共享资源；sgprod 是独立正式环境，不需要。
+#   - kr-1 走测试计费路由，sgprod 走生产计费路由（见 trade-platform.env）。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: trade
+components:
+  - ../common
+generators:
+  - ksops-secret-generator.yaml
+configMapGenerator:
+  - name: trade-platform-values
+    envs:
+      - trade-platform.env
+replacements:
+  # 支付完成后的浏览器回跳地址是站点专属配置，不进 common；
+  # 其余 Billing CloudAPI 字段（endpoint / region / gateway / route）由 common 投影。
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_PAY_REDIRECT_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_PAY_REDIRECT_URL
+        options:
+          create: true
+patches:
+  - path: patch-account-binding.yaml
