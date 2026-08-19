@@ -244,6 +244,17 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  # trade 国际站 CreatePayUrl 生产出向（sgprod 现网）。
+  # endpoint 与 tcapi-billing-intl-prod 同域名（新加坡地域内网），
+  # 但独立成一个 alias/route，以便 caller 授权按 lightvela-trade 单独收敛，
+  # 不把 shadow 的开户通道与 trade 的支付通道混在同一条路由上。
+  # timeout 对齐 tcapi-billing-intl-prod 的 15s（CreatePayUrl 比 test 环境慢）。
+  - alias: tcapi-billing-trade-intl-prod
+    upstream:
+      base_url: "http://billing.ap-singapore.tencentcloudapi.woa.com"
+      timeout: 15s
+      allowed_methods: ["POST"]
+
   - alias: tcapi-account-cn-test
     upstream:
       base_url: "https://account.test.tencentcloudapi.com"
@@ -394,6 +405,7 @@ auth:
         - dianshi-price
         - dianshi-order
         - tcapi-billing-trade-intl-test
+        - tcapi-billing-trade-intl-prod
 
 audit:
   service_name: cloudladdergateway
@@ -947,6 +959,14 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-billing-trade-intl-test
+
+  - id: tcapi-billing-trade-intl-prod
+    description: "Signed tunnel for LightVela trade intl CreatePayUrl production endpoint (sgprod)."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-trade-intl-prod
 
   - id: tcapi-account-cn-test
     description: "Signed tunnel for TencentCloud account API test endpoint from shadow script defaults."
