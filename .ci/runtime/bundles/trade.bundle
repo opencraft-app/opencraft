@@ -46,10 +46,18 @@ bundles:
       - argocd/projects/shprod-trade.yaml
       - argocd/secrets/shprod/trade-runtime-secrets.sops.yaml
       - trade/k8s/base/**
+      sgprod:
+      - argocd/services/trade/sgprod/**
+      - argocd/services/trade/common/**
+      - argocd/apps/sgprod/trade.yaml
+      - argocd/projects/sgprod-trade.yaml
+      - argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml
+      - trade/k8s/base/**
     dockerfile: trade/Dockerfile
     build_context: trade
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/trade
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/trade
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/trade
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/trade
       sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/trade

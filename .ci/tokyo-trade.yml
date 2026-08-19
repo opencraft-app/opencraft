@@ -11,6 +11,8 @@ on:
       - argocd/services/trade/**
       - argocd/apps/shprod/trade.yaml
       - argocd/projects/shprod-trade.yaml
+      - argocd/apps/sgprod/trade.yaml
+      - argocd/projects/sgprod-trade.yaml
       - argocd/catalogs/sandbox/beijing-sandbox/trade.yaml
       - argocd/catalogs/playground/beijing-playground/*/trade.yaml
       - argocd/catalogs/playground/seoul-playground/*/trade.yaml

@@ -1878,6 +1878,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = load_manifest()
         bundle = require_build_metadata(load_bundle(manifest, "trade", "beijing-sandbox"))
         shprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "shprod"))
+        sgprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "sgprod"))
         playground_bundle = require_build_metadata(load_bundle(manifest, "trade", PLAYGROUND_ENV))
         workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
 
@@ -1901,6 +1902,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
             shprod_bundle.publish_paths,
         )
         self.assertIn("trade/k8s/base/**", shprod_bundle.publish_paths)
+        # sgprod（新加坡正式）承载国际站计费与点石活动，形态对齐 shprod。
+        self.assertEqual(sgprod_bundle.image_repo, "lightclaw-sgprod.tencentcloudcr.com/lightclaw/trade")
+        self.assertIn("argocd/services/trade/sgprod/**", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/services/trade/common/**", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/apps/sgprod/trade.yaml", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/projects/sgprod-trade.yaml", sgprod_bundle.publish_paths)
+        self.assertIn(
+            "argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml",
+            sgprod_bundle.publish_paths,
+        )
+        self.assertIn("trade/k8s/base/**", sgprod_bundle.publish_paths)
         self.assertEqual(playground_bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
         self.assertIn(f"argocd/services/trade/{PLAYGROUND_ENV}/**", playground_bundle.publish_paths)
         self.assertIn(
@@ -1911,7 +1923,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow,
             expected_service="trade",
             expected_pin_targets="trade",
-            expected_master_build_envs="beijing-sandbox,shprod",
+            expected_master_build_envs="beijing-sandbox,shprod,sgprod",
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
