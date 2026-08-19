@@ -257,6 +257,7 @@ http://21.215.157.57:8080/internal/tencentcloud/account
 | --- | --- | --- | --- |
 | 北京主沙箱 | `bjsbx_` | `bjsbx.` | `https://lightclaw.tech` |
 | 韩国沙箱 | `krsbx_` | `krsbx.` | `https://api-sandbox-kr-1.lightclaw.tech` |
+| 东京沙箱 | `jpsbx_` | `jpsbx.` | `https://api-sandbox-jp-1.lightclaw.tech` |
 | 上海生产 | 无（兼容存量） | `shprod.` | `https://api.lightvela.com` |
 
 未匹配前缀的请求继续进入上海生产默认 route，以兼容存量 Shadow 账号。
@@ -272,6 +273,8 @@ external_routes:
         route_id: tencentcloud-account-callback-bjsbx
       - prefix: "krsbx."
         route_id: tencentcloud-account-callback-krsbx
+      - prefix: "jpsbx."
+        route_id: tencentcloud-account-callback-jpsbx
       - prefix: "shprod."
         route_id: tencentcloud-account-callback-shprod
     user_id_prefix_routes:
@@ -279,9 +282,11 @@ external_routes:
         route_id: tencentcloud-account-callback-bjsbx
       - prefix: "krsbx_"
         route_id: tencentcloud-account-callback-krsbx
+      - prefix: "jpsbx_"
+        route_id: tencentcloud-account-callback-jpsbx
 ```
 
-`external_routes` 只注册 exact path，不允许调用方传任意 URL。这个 route 可加入 `auth.allow_unauthenticated`，因为腾讯侧无法生成 CloudLadder HMAC；真实安全边界由固定 upstream 和注入的 `X-Shadow-Callback-Token` 共同保证。北京/上海使用 `CLOUDLADDER_TENCENT_CALLBACK_TOKEN`，韩国使用独立的 `CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN`；目标 auth 服务中的 `SHADOW_TENCENT_CALLBACK_TOKEN` 必须与对应 route 的 token 一致。
+`external_routes` 只注册 exact path，不允许调用方传任意 URL。这个 route 可加入 `auth.allow_unauthenticated`，因为腾讯侧无法生成 CloudLadder HMAC；真实安全边界由固定 upstream 和注入的 `X-Shadow-Callback-Token` 共同保证。北京/上海使用 `CLOUDLADDER_TENCENT_CALLBACK_TOKEN`，韩国和东京分别使用独立的 `CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN`、`CLOUDLADDER_TENCENT_CALLBACK_JPSBX_TOKEN`；目标 auth 服务中的 `SHADOW_TENCENT_CALLBACK_TOKEN` 必须与对应 route 的 token 一致。
 
 ## 上游连接池
 
