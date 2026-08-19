@@ -382,6 +382,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
             source_patch["data"]["SHADOW_USER_NAME_PREFIX"],
         )
 
+    def test_sgprod_auth_uses_international_production_shadow_contract(self) -> None:
+        source_path = REPO_ROOT / "user/auth/k8s/overlays/sgprod/patch-shadowbinding.yaml"
+        self.assertTrue(source_path.exists())
+
+        documents = list(yaml.safe_load_all(source_path.read_text()))
+        config_map = next(document for document in documents if document.get("kind") == "ConfigMap")
+        data = config_map["data"]
+
+        self.assertEqual(data["LIGHTVELA_SITE_KIND"], "intl")
+        self.assertEqual(data["SHADOW_BINDING_ENABLED"], "true")
+        self.assertEqual(data["SHADOW_AUTH_CODE_PREFIX"], "sgprod")
+        self.assertEqual(data["SHADOW_USER_NAME_PREFIX"], "sgprod_")
+        self.assertEqual(data["SHADOW_PLATFORM"], "intlSaaSLightvela")
+        self.assertEqual(data["SHADOW_ACCOUNT_ENDPOINT"], "account.tencentcloudapi.com")
+        self.assertEqual(data["SHADOW_BILLING_REGION"], "ap-singapore")
+        self.assertEqual(
+            data["SHADOW_BILLING_ENDPOINT"],
+            "billing.ap-singapore.tencentcloudapi.woa.com",
+        )
+        self.assertEqual(data["SHADOW_CLOUDLADDER_ROUTE_ID"], "tcapi-account-intl-prod")
+        self.assertEqual(data["SHADOW_BILLING_CLOUDLADDER_ROUTE_ID"], "tcapi-billing-intl-prod")
+        self.assertEqual(data["LIGHTCLAW_PAYMENT_METHODS_ENABLED"], "true")
+
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()
 

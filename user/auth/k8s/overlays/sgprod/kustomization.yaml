@@ -8,6 +8,7 @@ resources:
 
 patches:
   - path: patch-oauth-registration.yaml
+  - path: patch-shadowbinding.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
