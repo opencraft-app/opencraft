@@ -26,7 +26,7 @@
  * ```
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from "@/i18n/t";
 import { CHANNEL_LIST } from '../utils/model-providers';
 import type { IProductConfig } from '../types';
@@ -94,7 +94,7 @@ export function parseConfigResult(
   const { featureFlags, currentChannelList, productConfig } = options;
 
   try {
-    if (!configResult) return { channels: [], providers: [], webUI: undefined };
+    if (!configResult) return { channels: [], providers: [], webUI: {} };
 
     const config = JSON.parse(configResult);
     const { gateway } = config;
@@ -104,7 +104,7 @@ export function parseConfigResult(
           basePath: gateway.controlUi?.basePath,
           token: String(gateway.auth?.token),
         }
-      : undefined;
+      : {};
 
     // ─── 解析 channels ───
     const channels = Object.entries(config.channels || {})
@@ -209,7 +209,7 @@ export function parseConfigResult(
     return { channels, providers, webUI };
   } catch (error) {
     console.error('[useAgentConfig] parseConfigResult failed:', error);
-    return { channels: [], providers: [], webUI: undefined };
+    return { channels: [], providers: [], webUI: {} };
   }
 }
 
@@ -271,6 +271,9 @@ export function useAgentConfig(params: IUseAgentConfigParams): IUseAgentConfigRe
   const [loading, setLoading] = useState(true);
   const [configData, setConfigData] = useState<IConfigData>(EMPTY_CONFIG);
 
+  // 记录已完成 acli bootstrap 的 instanceId，避免 StrictMode 双挂载下重复 bootstrap
+  const bootstrappedInstanceRef = useRef<string | null>(null);
+
   // 计算 currentChannelList（依赖 configData.webUI.port）
   const currentChannelList = useMemo(
     () => computeChannelList(featureFlags, productConfig, configData.webUI?.port),
@@ -331,7 +334,7 @@ export function useAgentConfig(params: IUseAgentConfigParams): IUseAgentConfigRe
       return fetchHermesConfig(silent);
     }
 
-    let resolvedConfig: IConfigData | void;
+    let resolvedConfig: IConfigData | void = undefined;
 
     // 请求时重新计算 channelList（因为 webUI.port 可能已更新）
     const latestChannelList = computeChannelList(featureFlags, productConfig, configData.webUI?.port);
@@ -423,27 +426,39 @@ export function useAgentConfig(params: IUseAgentConfigParams): IUseAgentConfigRe
 
   // ─── mount 时自动请求 ───
   useEffect(() => {
-    if (instance?.InstanceId && isDataReady && !operationDisabledTip) {
-      (async () => {
-        try {
-          // Hermes：先确保 acli 已安装（Bootstrap：self-update 优先 + install.sh 兜底）
-          // 安装失败静默继续，后续命令会报错
-          if (isHermes) {
-            const installCmd = scriptCommands.hermes.gateway.getBootstrapCommand(productConfig.acliProduct);
-            await executeGatewayCommand({
-              command: installCmd,
-              action: 'install_acli',
-              showButtonLoading: false,
-              shouldQueryStatus: false,
-              callback: () => {},
-            });
-          }
-          await getOpenclawConfig();
-        } catch {
-          setLoading(false);
+    const instanceId = instance?.InstanceId;
+    if (!instanceId || !isDataReady || operationDisabledTip) return;
+
+    // cancelled 旗标：StrictMode 下第一次挂载会立即被卸载，
+    // 卸载后禁止继续 setLoading / setConfigData，避免打断第二次挂载已完成的渲染
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Hermes：先确保 acli 已安装（Bootstrap：self-update 优先 + install.sh 兜底）
+        // 安装失败静默继续，后续命令会报错。
+        // 按 instanceId 去重：同一实例只 bootstrap 一次，避免两条 ~7s 的 acli 链并行互相打断
+        if (isHermes && bootstrappedInstanceRef.current !== instanceId) {
+          bootstrappedInstanceRef.current = instanceId;
+          const installCmd = scriptCommands.hermes.gateway.getBootstrapCommand(productConfig.acliProduct);
+          await executeGatewayCommand({
+            command: installCmd,
+            action: 'install_acli',
+            showButtonLoading: false,
+            shouldQueryStatus: false,
+            callback: () => {},
+          });
         }
-      })();
-    }
+        if (cancelled) return;
+        await getOpenclawConfig();
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instance?.InstanceId, isDataReady, operationDisabledTip]);
 
