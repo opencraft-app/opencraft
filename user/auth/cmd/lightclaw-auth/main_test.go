@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
 
 func TestParseSameSite(t *testing.T) {
@@ -136,6 +137,42 @@ func TestBuildPhoneAuthSMSSenderUsesConfiguredEnvNames(t *testing.T) {
 
 	if sender := buildPhoneAuthSMSSender(loggingDiscardLogger()); sender == nil {
 		t.Fatal("expected configured phone auth sms sender")
+	}
+}
+
+func TestBuildPaymentMethodClientRequiresExplicitEnable(t *testing.T) {
+	t.Setenv("LIGHTCLAW_PAYMENT_METHODS_ENABLED", "false")
+	if client := buildPaymentMethodClient(loggingDiscardLogger(), shadowbinding.SiteKindIntl); client != nil {
+		t.Fatal("expected payment method client to remain disabled")
+	}
+}
+
+func TestBuildPaymentMethodClientRejectsCNSite(t *testing.T) {
+	t.Setenv("LIGHTCLAW_PAYMENT_METHODS_ENABLED", "true")
+	t.Setenv("SHADOW_BILLING_ENDPOINT", "billing.test.tencentcloudapi.com")
+	t.Setenv("SHADOW_PLATFORM", "intlSaaSLightvela")
+	if client := buildPaymentMethodClient(loggingDiscardLogger(), shadowbinding.SiteKindCN); client != nil {
+		t.Fatal("expected payment method client to remain disabled on CN site")
+	}
+}
+
+func TestBuildPaymentMethodClientRejectsIncompleteConfig(t *testing.T) {
+	t.Setenv("LIGHTCLAW_PAYMENT_METHODS_ENABLED", "true")
+	t.Setenv("SHADOW_BILLING_ENDPOINT", "")
+	t.Setenv("SHADOW_PLATFORM", "intlSaaSLightvela")
+	if client := buildPaymentMethodClient(loggingDiscardLogger(), shadowbinding.SiteKindIntl); client != nil {
+		t.Fatal("expected incomplete payment method config to remain unavailable")
+	}
+}
+
+func TestBuildPaymentMethodClientUsesBillingConfig(t *testing.T) {
+	t.Setenv("LIGHTCLAW_PAYMENT_METHODS_ENABLED", "true")
+	t.Setenv("SHADOW_BILLING_ENDPOINT", "billing.test.tencentcloudapi.com")
+	t.Setenv("SHADOW_BILLING_REGION", "ap-guangzhou")
+	t.Setenv("SHADOW_PLATFORM", "intlSaaSLightvela")
+	t.Setenv("SHADOW_CLOUDLADDER_ENABLED", "false")
+	if client := buildPaymentMethodClient(loggingDiscardLogger(), shadowbinding.SiteKindIntl); client == nil {
+		t.Fatal("expected configured payment method client")
 	}
 }
 

@@ -4,7 +4,7 @@ Memory helps Hermes retain important information across conversations and device
 
 ![The Memory and User Profile page in the LightVela console](../images/memory-management-overview-en.png)
 
-LightVela is cloud-hosted, so these memories are stored with your Hermes instance in the cloud. They are not lost when you change devices or switch between Telegram, WhatsApp, Discord, and WeChat. If you tell Hermes something in Telegram today, it can still remember it when you continue the conversation in WhatsApp tomorrow.
+LightVela is cloud-hosted, so these memories are stored with your Hermes instance in the cloud. They are not lost when you change devices or switch between Telegram, WhatsApp, Discord, Slack, and WeChat. If you tell Hermes something in Telegram today, it can still remember it when you continue the conversation in WhatsApp tomorrow.
 
 ## What this page covers
 
@@ -32,7 +32,7 @@ Without memory, every conversation with an AI assistant starts from a blank page
 
 - **Repeat yourself less**: Tell Hermes once that you live in Singapore and prefer a morning briefing, and you do not need to restate it every time.
 
-- **Stay consistent across channels**: Telegram, WhatsApp, Discord, and WeChat share the same memory. When you switch channels, you are still talking to the same assistant that understands you.
+- **Stay consistent across channels**: Telegram, WhatsApp, Discord, Slack, and WeChat share the same memory. When you switch channels, you are still talking to the same assistant that understands you.
 
 - **Improve through continued use**: As you work together, Hermes remembers your routines, preferred names, and active projects, making its responses increasingly relevant.
 
@@ -128,7 +128,7 @@ This is expected. Hermes automatically identifies information that may be useful
 
 ### Does memory remain when I change devices or channels?
 
-Yes. Memory is stored with the cloud instance and is independent of any one device or channel. Telegram, WhatsApp, Discord, and WeChat all share the same memory.
+Yes. Memory is stored with the cloud instance and is independent of any one device or channel. Telegram, WhatsApp, Discord, Slack, and WeChat all share the same memory.
 
 ### What happens when memory reaches capacity?
 

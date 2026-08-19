@@ -12,7 +12,7 @@ const requiredPublicRoutes = [
   "/docs",
   "/docs/overview",
 ];
-const localizedPrefixes = ["en-us", "zh-cn", "zh-sg", "zh-hant"];
+const localizedPrefixes = ["en-us", "zh-cn", "zh-sg", "zh-hant", "id-id"];
 
 function htmlFileForRoute(route) {
   if (route === "/") return join(outRoot, "index.html");

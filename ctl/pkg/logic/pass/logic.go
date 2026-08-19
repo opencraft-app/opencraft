@@ -38,7 +38,13 @@ func tradeSubscriptionIdempotencyKey(dealName string) string {
 	return "trade:" + strings.TrimSpace(dealName)
 }
 
-const freeCreditSubscriptionNamePrefix = "free-credit:"
+const (
+	freeCreditSubscriptionNamePrefix = "free-credit:"
+	// International payment URL generation can include auth credential
+	// exchange, card lookup, order lookup, and CreatePayUrl. Keep the budget
+	// below the common 60-second edge timeout while leaving room for fallback.
+	payURLRequestTimeout = 50 * time.Second
+)
 
 func packageSubscriptionName(userID, passID string) string {
 	return "package:" + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
@@ -175,7 +181,7 @@ type Logic interface {
 	//   - 入参 time_span / time_unit 由 trade 透传（来源于下单时的 trade_order，而非 bundle 字段）
 	//   - 入参 uin / app_id 由 trade 透传，写入 ctl_pass 表（取代 CreateTrialPass 中的 TODO=0）
 	//   - 入参 deal_name 仅日志记录用于排障，ctl_pass 表不持久化（归 trade_order 反查）
-	//   - renew_flag 本期 logic 内部写死 MANUAL_RENEW（不读 req.RenewFlag，待 AUTO_RENEW 放开后再切换）
+	//   - renew_flag 仅接受 AUTO_RENEW；缺失或其它值兜底 MANUAL_RENEW
 	//   - 兜底防御：用户已有 active pass 直接报 ErrPassAlreadyExists（不做幂等，不依赖 pass_pending_order）
 	CompletePass(req *transport.CompletePassRequest) (*PassDetail, error)
 
@@ -1377,7 +1383,7 @@ func entitiesToDetails(entities []*passmodel.Entity) []*PassDetail {
 //  1. 入参从 (userID, bundleID) 升级为完整 *transport.CompletePassRequest（透传 jifei 协议字段）
 //  2. expired_time 计算用 req.TimeSpan/TimeUnit（trade 持有的下单参数），不再读 bundle.TimeSpan/TimeUnit
 //  3. entity.Uin / AppID 从 req 透传写入（不再 TODO=0）
-//  4. RenewFlag 强制写 MANUAL_RENEW（v4 收敛：本期不对外暴露，req.RenewFlag 仅协议预留）
+//  4. RenewFlag 接受 trade 映射后的 AUTO_RENEW；缺失或非法值兜底 MANUAL_RENEW
 //  5. deal_name 仅日志记录用于排障，pass 表不持久化
 //
 // 复用 CreateTrialPass 步骤 5-12 的核心逻辑（EnsureUser → DecrementAvailCount →
@@ -1515,7 +1521,7 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		}
 	}
 
-	// 步骤 10：事务写入 pass + quota（v4 收敛：uin/app_id 从 req 透传，renew_flag 写死 MANUAL_RENEW）
+	// 步骤 10：事务写入 pass + quota（uin/app_id 与 renew_flag 从 trade 透传）
 	entity := &passmodel.Entity{
 		PassID:      passID,
 		UserID:      req.UserID,
@@ -1523,8 +1529,8 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		Uin:         req.Uin,
 		AppID:       req.AppID,
 		ExpiredTime: expiredTime,
-		RenewFlag:   passmodel.RenewFlagManual, // v4 收敛：本期不对外暴露，logic 写死
-		Status:      passmodel.StatusActive,    // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
+		RenewFlag:   normalizeCompletePassRenewFlag(req.RenewFlag),
+		Status:      passmodel.StatusActive, // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
 	}
 	if err := passDao.CreatePassWithQuota(entity, req.UserID, agentQuota); err != nil {
 		return nil, compensateEnsuredEntitlement(
@@ -1552,10 +1558,19 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 	return detail, nil
 }
 
+// normalizeCompletePassRenewFlag 只放行内部自动续费枚举。trade 旧版本、国内站回调或异常
+// 调用没有传入合法值时统一回落手动续费，避免改变既有 pass 的续费语义。
+func normalizeCompletePassRenewFlag(flag string) string {
+	if flag == passmodel.RenewFlagAuto {
+		return passmodel.RenewFlagAuto
+	}
+	return passmodel.RenewFlagManual
+}
+
 // validateCompletePassRequest v4 收敛：CompletePass 入参强校验
 //
-// trade 反向调时所有字段必填，缺失即报 ErrPassInvalidParam（trade 侧应已校验，
-// ctl 侧仅做防御性校验避免脏数据进入业务流程）。
+// trade 反向调时除可选 RenewFlag 外的业务字段必填，缺失即报 ErrPassInvalidParam
+// （trade 侧应已校验，ctl 侧仅做防御性校验避免脏数据进入业务流程）。
 func validateCompletePassRequest(req *transport.CompletePassRequest) error {
 	if req == nil {
 		return errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
@@ -1667,8 +1682,13 @@ func (l *logic) CreatePassOrder(userID string, req *transport.CreatePassOrderReq
 
 func mapTradePlaceOrderError(err error) error {
 	var tradeErr *tradeadapter.Error
-	if errors.As(err, &tradeErr) && tradeErr.Code == "BindingNotFound" {
-		return errcode.ErrPassShadowBindingRequired
+	if errors.As(err, &tradeErr) {
+		switch tradeErr.Code {
+		case "BindingNotFound":
+			return errcode.ErrPassShadowBindingRequired
+		case "BillingAccountOpenFailed":
+			return errcode.ErrPassBillingAccountOpenFailed
+		}
 	}
 	return nil
 }
@@ -1678,7 +1698,7 @@ func mapTradePlaceOrderError(err error) error {
 // 流程概览：
 //
 //  1. 入参校验（userID / deal_names 非空）
-//  2. 调 trade.GeneratePayURL（透传 platform / wx_open_id / wx_app_id）
+//  2. 调 trade.GeneratePayURL（透传 platform / wx_open_id / wx_app_id / cancel_url / return_url）
 //  3. 返回支付 URL + 协议外字段
 //
 // **不写本地 pass 表**。
@@ -1700,10 +1720,12 @@ func (l *logic) CreatePassOrderUrl(userID string, req *transport.CreatePassOrder
 	// 当前单元素，遍历 deal_names[0]
 	dealName := req.DealNames[0]
 	var opts *tradeadapter.GeneratePayURLOptions
-	if req.Platform != "" || req.WxOpenID != "" {
+	if req.Platform != "" || req.WxOpenID != "" || req.CancelURL != "" || req.ReturnURL != "" {
 		opts = &tradeadapter.GeneratePayURLOptions{
-			Platform: req.Platform,
-			WxOpenID: req.WxOpenID,
+			Platform:  req.Platform,
+			WxOpenID:  req.WxOpenID,
+			CancelURL: req.CancelURL,
+			ReturnURL: req.ReturnURL,
 		}
 		// wx_app_id：当 wx_open_id 非空（微信公众号 / 小程序场景）时透传给 trade
 		// → jifei.getMidasEarmarking.wxAppId。
@@ -1716,7 +1738,7 @@ func (l *logic) CreatePassOrderUrl(userID string, req *transport.CreatePassOrder
 		}
 	}
 
-	urlCtx, urlCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	urlCtx, urlCancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().GeneratePayURL(urlCtx, dealName, opts)
 	urlCancel()
 	if urlErr != nil {
@@ -1880,6 +1902,7 @@ func (l *logic) prepareCreatePassOrder(
 		TimeUnit:       req.TimeUnit,
 		GoodsNum:       lighthousePassGoodsNum,
 		PayMode:        lighthousePassPayMode,
+		AutoRenewFlag:  req.AutoRenewFlag,
 		// Q41 修订 2026-05-11：RegionID 不再透传，trade 内部固定 1（广州）
 		// Q30 拍板：Uin / AppID 不在 ctl 端反查，由 trade 内部 ShadowClient 反查
 	}, logger, nil
@@ -2027,10 +2050,12 @@ func (l *logic) RenewPassOrderUrl(userID, passID string, req *transport.RenewPas
 	// 步骤 3：调 trade.GeneratePayURL（当前单元素，遍历 deal_names[0]）
 	dealName := req.DealNames[0]
 	var opts *tradeadapter.GeneratePayURLOptions
-	if req.Platform != "" || req.WxOpenID != "" {
+	if req.Platform != "" || req.WxOpenID != "" || req.CancelURL != "" || req.ReturnURL != "" {
 		opts = &tradeadapter.GeneratePayURLOptions{
-			Platform: req.Platform,
-			WxOpenID: req.WxOpenID,
+			Platform:  req.Platform,
+			WxOpenID:  req.WxOpenID,
+			CancelURL: req.CancelURL,
+			ReturnURL: req.ReturnURL,
 		}
 		// wx_app_id：当 wx_open_id 非空（微信公众号 / 小程序场景）时透传给 trade
 		// → jifei.getMidasEarmarking.wxAppId。
@@ -2042,7 +2067,7 @@ func (l *logic) RenewPassOrderUrl(userID, passID string, req *transport.RenewPas
 			opts.WxAppID = "wxf95ea3ae45d5304f"
 		}
 	}
-	urlCtx, urlCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	urlCtx, urlCancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().GeneratePayURL(urlCtx, dealName, opts)
 	urlCancel()
 	if urlErr != nil {

@@ -33,4 +33,13 @@ describe("agent settings TEA SDK boundary", () => {
     expect(page).not.toContain("sdk.ModelPanel");
     expect(page).not.toContain("runtime.ModelPanel");
   });
+
+  it("uses the real debug exec adapter whenever an auth API backend is configured", () => {
+    const page = readSource("src/pages/marketing/agent-settings-page.tsx");
+
+    expect(page).toMatch(/if \(authApiBaseUrl === null\) \{/);
+    expect(page).toMatch(/return createMonoDebugExecAdapter\(/);
+    expect(page).not.toMatch(/useLocalPreviewAdapter/);
+    expect(page).not.toMatch(/activeBotId === LOCAL_PREVIEW_BOT_ID/);
+  });
 });

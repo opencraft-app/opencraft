@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Loader2, ShieldAlert, X } from "lucide-react";
+import { CreditCard, Loader2, ShieldAlert, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,6 +18,7 @@ import {
 import { getRenewalRealnameFlowFlags, isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { cn } from "@/lib/utils";
 import { buildPayPlan } from "@/lib/wx-pay";
+import { isGlobal } from "@/lib/region";
 import { useT } from "@/i18n/t";
 import { RepositoryError } from "@/repositories/http-repositories";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
@@ -49,6 +50,9 @@ const __markRenewalOptionsForI18n = (t: (zh: string, opts?: Record<string, unkno
   void t("季付");
   void t("1个月");
   void t("3个月");
+  void t("信用卡支付");
+  void t("已在新窗口打开信用卡支付页");
+  void t("完成支付后点击下方刷新，或支付完成后页面会自动刷新。");
 };
 
 export const RenewPassModal = ({
@@ -74,6 +78,7 @@ export const RenewPassModal = ({
   const [payContext, setPayContext] = useState<{
     dealNames: string[];
     bridgeUrl: string;
+    payUrl: string;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checkingPayment, setCheckingPayment] = useState(false);
@@ -108,7 +113,9 @@ export const RenewPassModal = ({
     faceIdFlowEnabled,
     phoneProofEnabled,
   } = getRenewalRealnameFlowFlags(user, realnamePhoneVerificationEnabled);
-  const realnameVerified = isRenewalRealnameVerified(user, realnamePhoneVerificationEnabled);
+  /* 国际站（lightvela.ai）无中国实名要求：短路实名门禁，避免续费按钮被 disabled。
+     国内站续费仍需 PHONE_3FA 实名（renewal-realname.ts isRenewalRealnameVerified）。 */
+  const realnameVerified = isGlobal || isRenewalRealnameVerified(user, realnamePhoneVerificationEnabled);
   const realnameSyncStatus = user?.realnameSyncStatus as RealnameSyncStatus | undefined;
   const renewActionDisabled = submitting || pricing || !realnameVerified;
 
@@ -219,15 +226,58 @@ export const RenewPassModal = ({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const order = await plans.createRenewOrder(pass.pass_id, selected);
-      const payPlan = buildPayPlan({
-        dealName: order.deal_names[0] ?? "",
-        authCode: order.auth_code,
-        passId: pass.pass_id,
-        bundleName: pass.bundle_name,
-      });
-      setPayContext({ dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
-      setStep("paying");
+      if (isGlobal) {
+        /* 国际站：createRenewOrder → getRenewOrderUrl（PC Bearer）→ 信用卡 hosted page 直跳。
+           占位窗口必须在用户手势同步栈内 window.open，跨 await 后会被浏览器弹窗拦截。
+           复用 subscribe-page startIntlCardPay 的模式（联调文档 §3.3）。 */
+        const payWindow = window.open("about:blank", "_blank");
+        try {
+          const order = await plans.createRenewOrder(pass.pass_id, selected);
+          /* 回跳地址用当前页面地址（去掉 query/hash）：续费入口在账号页，
+             不传时 trade 会用环境兜底 TRADE_BILLING_PAY_REDIRECT_URL（KR 写死 /subscribe），
+             会把用户从账号页扔到订阅页。见 codesign/ctl-frontend-billing-api.md 字段说明。 */
+          const payRedirectBase = typeof window !== "undefined"
+            ? window.location.href.split("#")[0]?.split("?")[0]
+            : undefined;
+          const orderUrl = await plans.getRenewOrderUrl(pass.pass_id, {
+            deal_names: order.deal_names,
+            platform: "pc",
+            ...(payRedirectBase ? { cancel_url: payRedirectBase, return_url: payRedirectBase } : {}),
+          });
+          /* need_charge=0：零元订单已支付成功，关闭占位窗口直接接棒 onSuccess */
+          if (orderUrl.need_charge === 0) {
+            payWindow?.close();
+            paymentSettledRef.current = true;
+            await onSuccess();
+            return;
+          }
+          /* need_charge=1：占位窗口跳转信用卡 hosted page；pay_url 为空视为异常 */
+          if (!orderUrl.pay_url) {
+            throw new Error("trade generate renew pay url: empty pay_url");
+          }
+          if (payWindow) {
+            payWindow.location.href = orderUrl.pay_url;
+          } else {
+            /* 占位窗口被拦截（浏览器弹窗限制）：兜底当前页跳转 */
+            window.location.assign(orderUrl.pay_url);
+          }
+          setPayContext({ dealNames: order.deal_names, bridgeUrl: "", payUrl: orderUrl.pay_url });
+          setStep("paying");
+        } catch (err) {
+          payWindow?.close();
+          throw err;
+        }
+      } else {
+        const order = await plans.createRenewOrder(pass.pass_id, selected);
+        const payPlan = buildPayPlan({
+          dealName: order.deal_names[0] ?? "",
+          authCode: order.auth_code,
+          passId: pass.pass_id,
+          bundleName: pass.bundle_name,
+        });
+        setPayContext({ dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl, payUrl: "" });
+        setStep("paying");
+      }
     } catch (err) {
       const code = getBillingErrorCode(err);
       const fallbackMsg = err instanceof Error ? err.message : t("创建订单失败，请稍后重试。");
@@ -238,7 +288,7 @@ export const RenewPassModal = ({
     } finally {
       setSubmitting(false);
     }
-  }, [pass.bundle_name, pass.pass_id, plans, realnameVerified, selected, submitting, t, user]);
+  }, [isGlobal, onSuccess, pass.bundle_name, pass.pass_id, plans, realnameVerified, selected, submitting, t, user]);
 
   const handleOpenRealnameGuide = useCallback(() => {
     setSubmitError(null);
@@ -301,7 +351,7 @@ export const RenewPassModal = ({
 
         <div className="px-7 pb-6 pt-7">
           <h3 className="m-0 text-[18px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
-            {step === "confirm" ? t("续费套餐") : t("微信扫码支付")}
+            {step === "confirm" ? t("续费套餐") : isGlobal ? t("信用卡支付") : t("微信扫码支付")}
           </h3>
           <p className="text-sm" style={{ margin: "6px 0 20px 0", color: "#999" }}>
             {step === "confirm"
@@ -451,13 +501,23 @@ export const RenewPassModal = ({
               </div>
 
               <div className="mb-5 flex flex-col items-center gap-3 rounded-[8px] bg-[#F9F8F7] p-4">
-                {payContext?.bridgeUrl ? (
+                {isGlobal ? (
+                  <>
+                    <CreditCard className="h-10 w-10 text-[var(--lw-accent)]" aria-hidden="true" />
+                    <p className="m-0 text-sm text-[#333]">{t("已在新窗口打开信用卡支付页")}</p>
+                    <p className="m-0 text-xs text-[#999]">{t("完成支付后点击下方刷新，或支付完成后页面会自动刷新。")}</p>
+                  </>
+                ) : payContext?.bridgeUrl ? (
                   <QRCodeSVG value={payContext.bridgeUrl} size={180} level="M" includeMargin={false} />
                 ) : (
                   <Loader2 className="h-5 w-5 animate-spin text-[var(--lw-accent)]" />
                 )}
-                <p className="m-0 text-sm text-[#333]">{t("请使用微信扫描二维码完成支付")}</p>
-                <p className="m-0 text-xs text-[#999]">{t("支付完成后页面会自动刷新。")}</p>
+                {!isGlobal && (
+                  <>
+                    <p className="m-0 text-sm text-[#333]">{t("请使用微信扫描二维码完成支付")}</p>
+                    <p className="m-0 text-xs text-[#999]">{t("支付完成后页面会自动刷新。")}</p>
+                  </>
+                )}
               </div>
 
               {submitError && (

@@ -10,9 +10,9 @@ import { useSession } from "@/contexts/session-context";
 import {
   CN_PRIVACY_POLICY_URL,
   CN_TERMS_OF_SERVICE_URL,
-  getGlobalTermsOfServiceUrl,
 } from "@/constants/legal";
-import { useT } from "@/i18n/t";
+import { useLocaleOverride, useT } from "@/i18n/t";
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
@@ -22,7 +22,7 @@ import {
   type OAuthProvider,
 } from "@/lib/oauth";
 import { assetUrl } from "@/lib/asset-url";
-import { isGlobal } from "@/lib/region";
+import { isGlobal, localizedPath } from "@/lib/region";
 import { cn } from "@/lib/utils";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 import { trackDatongEvent } from "@/observability/datong-tracker";
@@ -244,8 +244,19 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   const { session } = useSession();
   const t = useT();
   const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
   const showGitHubLogin = useGitHubLoginVisibility();
-  const globalTermsOfServiceUrl = getGlobalTermsOfServiceUrl(i18n.language);
+  const currentLocale: PublicSiteLocaleCode =
+    localeOverride === PUBLIC_SITE_LOCALES.ID_ID || i18n.language === PUBLIC_SITE_LOCALES.ID_ID
+      ? PUBLIC_SITE_LOCALES.ID_ID
+      : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT || i18n.language === PUBLIC_SITE_LOCALES.ZH_HANT
+        ? PUBLIC_SITE_LOCALES.ZH_HANT
+        : localeOverride?.startsWith("zh") || i18n.language?.startsWith("zh")
+          ? PUBLIC_SITE_LOCALES.ZH_SG
+          : PUBLIC_SITE_LOCALES.EN_US;
+  const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
+  const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
+  const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
 
   const [mounted, setMounted] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -384,9 +395,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
           {t("我已阅读并同意")}{" "}
           {isGlobal ? (
             <a
-              href={globalTermsOfServiceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={termsOfServicePath}
               className="font-medium hover:underline"
               style={{ color: "var(--lw-accent)" }}
             >
@@ -406,7 +415,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
           {t("与")}{" "}
           {isGlobal ? (
             <a
-              href="/privacy-policy"
+              href={privacyPolicyPath}
               className="font-medium hover:underline"
               style={{ color: "var(--lw-accent)" }}
             >
@@ -428,7 +437,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
               {" "}
               {t("与")}{" "}
               <a
-                href="/open-source-licenses"
+                href={openSourceLicensesPath}
                 className="font-medium hover:underline"
                 style={{ color: "var(--lw-accent)" }}
               >

@@ -1,0 +1,42 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lightvela-playground-sandbox-kr-1
+components:
+  - ../common
+generators:
+  - ksops-secret-generator.yaml
+configMapGenerator:
+  - name: trade-platform-values
+    envs:
+      - trade-platform.env
+resources:
+  - trade-migration-job.yaml
+replacements:
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.DIANSHI_PREVIEW
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.DIANSHI_PREVIEW
+  # 支付完成后的浏览器回跳地址是站点专属配置，其余 Billing CloudAPI 字段由 common 注入。
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_PAY_REDIRECT_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_PAY_REDIRECT_URL
+        options:
+          create: true
+patches:
+  - path: delete-shared-namespace.yaml
+  - path: delete-shared-serviceaccount.yaml
+  - path: patch-playground-db.yaml
+  - path: patch-runtime-secrets-rollout.yaml

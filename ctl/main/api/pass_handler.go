@@ -808,7 +808,7 @@ func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 // 与 detailToPassResponse 的关键差异（删除 lightclaw / 腾讯云内部概念字段）：
 //   - 不返 uin / app_id（用户不感知腾讯云账号）
 //   - 不返 deleted_time（DB 字段后期会删除）
-//   - 不返 renew_flag（本期未启用自动续费，待支持自动续费时再加回）
+//   - 不返 renew_flag（内部计费状态，用户面不直接暴露）
 func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassResponse {
 	return &transport.UserPassResponse{
 		PassID:              d.PassID,

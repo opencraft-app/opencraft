@@ -110,6 +110,10 @@ function sameModel(
   return !!left && !!right && getHermesModelIdentity(left) === getHermesModelIdentity(right);
 }
 
+function displayConfiguredModelId(modelId: string) {
+  return ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? "Auto" : modelId;
+}
+
 function displayError(message: string, localizedFallback: string) {
   if (/^(Model configuration|Hermes model config response)/.test(message)) {
     return localizedFallback;
@@ -370,7 +374,7 @@ export function AgentModelConfigPanel({
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="break-all text-sm font-semibold text-black/85">{model.id}</span>
+                      <span className="break-all text-sm font-semibold text-black/85">{displayConfiguredModelId(model.id)}</span>
                       <Badge variant={primary ? "success" : fallback ? "warning" : "neutral"}>
                         {role === "primary" ? t("主模型") : role === "fallback" ? t("备用模型") : t("未启用")}
                       </Badge>

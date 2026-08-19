@@ -6,10 +6,18 @@ import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 
 const getRenewPrice = vi.fn();
 const createRenewOrder = vi.fn();
+const getRenewOrderUrl = vi.fn();
 const listMyPasses = vi.fn();
 const refreshProfile = vi.fn();
 let sessionUser: User | null = null;
 let realnamePhoneVerificationEnabled = false;
+let regionIsGlobal = false;
+
+vi.mock("@/lib/region", () => ({
+  get isGlobal() {
+    return regionIsGlobal;
+  },
+}));
 
 vi.mock("@/i18n/t", () => ({
   useT: () => (text: string, options?: Record<string, unknown>) => text.replace(/\{\{\s*(\w+)\s*\}\}/g, (raw, name: string) => {
@@ -23,6 +31,7 @@ vi.mock("@/contexts/repository-context", () => ({
     plans: {
       getRenewPrice,
       createRenewOrder,
+      getRenewOrderUrl,
       listMyPasses,
     },
   }),
@@ -76,6 +85,7 @@ describe("RenewPassModal", () => {
     vi.clearAllMocks();
     sessionUser = buildUser();
     realnamePhoneVerificationEnabled = false;
+    regionIsGlobal = false;
     refreshProfile.mockResolvedValue(undefined);
     getRenewPrice.mockResolvedValue({
       bundle_id: "bundle_launch",
@@ -97,6 +107,45 @@ describe("RenewPassModal", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("passes the current page as the intl renewal redirect target", async () => {
+    // 续费入口在账号页：不显式传 cancel_url / return_url 时，trade 会用环境兜底
+    // TRADE_BILLING_PAY_REDIRECT_URL（KR 写死 /subscribe），把用户从账号页扔到订阅页。
+    regionIsGlobal = true;
+    getRenewPrice.mockResolvedValue({
+      bundle_id: "bundle_launch",
+      price: 4900,
+      total_cost: 4900,
+      real_total_cost: 4900,
+      currency: "USD",
+      discount: 100,
+    });
+    getRenewOrderUrl.mockResolvedValue({ need_charge: 1, pay_url: "https://pay.example.com/checkout" });
+    const payWindow = { location: { href: "" }, close: vi.fn() };
+    vi.spyOn(window, "open").mockReturnValue(payWindow as unknown as Window);
+    window.history.replaceState({}, "", "/account?tab=billing#renew");
+
+    render(
+      <RenewPassModal
+        pass={buildPass()}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("button", { name: "确认续费" });
+    fireEvent.click(screen.getByRole("button", { name: "确认续费" }));
+
+    await waitFor(() => expect(getRenewOrderUrl).toHaveBeenCalled());
+
+    const [passId, input] = getRenewOrderUrl.mock.calls[0] as [string, Record<string, unknown>];
+    expect(passId).toBe("pass_renew_modal");
+    expect(input.platform).toBe("pc");
+    // 必须是不带 query/hash 的稳定地址，避免把 ticket / code 带进计费回跳地址。
+    expect(input.cancel_url).toBe(`${window.location.origin}/account`);
+    expect(input.return_url).toBe(`${window.location.origin}/account`);
+    expect(payWindow.location.href).toBe("https://pay.example.com/checkout");
   });
 
   it("keeps automatic payment status polling serial while a request is still in flight", async () => {

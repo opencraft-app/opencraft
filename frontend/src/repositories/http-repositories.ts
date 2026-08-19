@@ -287,13 +287,11 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 });
 
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
-const DEFAULT_OAUTH_START_BASE_URL = "https://lightclaw.tech";
 
 const resolveOAuthStartBaseURL = (baseUrl: string) => {
-  // API calls may use a local dev proxy, but OAuth is a browser redirect flow.
-  // The start URL must live on the same host as the configured callback so the
-  // state cookie is available when QQ/WeChat redirects back to the auth service.
-  return baseUrl === "" ? DEFAULT_OAUTH_START_BASE_URL : baseUrl;
+  // local-proxy keeps OAuth start/callback on the dev server origin so the
+  // state cookie and returned session token survive the browser redirect flow.
+  return baseUrl === "" ? "" : baseUrl;
 };
 
 const configuredOAuthRelayIssuerBaseURL = (): string | null => {
@@ -1497,6 +1495,27 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
     return request<TencentCloudRedirectResult>(baseUrl, "/auth/tencent-cloud/redirect", {
       method: "POST",
       body: targetPath ? { targetPath } : {},
+    });
+  },
+  async listPaymentMethods() {
+    return request(baseUrl, "/auth/payment-methods?page=1&pageSize=100", {
+      method: "GET",
+    });
+  },
+  async createPaymentMethodSignOrder(languageCode) {
+    return request(baseUrl, "/auth/payment-methods/sign-orders", {
+      method: "POST",
+      body: { languageCode },
+    });
+  },
+  async setDefaultPaymentMethod(contractCode) {
+    await request<void>(baseUrl, `/auth/payment-methods/${encodeURIComponent(contractCode)}/default`, {
+      method: "PUT",
+    });
+  },
+  async deletePaymentMethod(contractCode) {
+    await request<void>(baseUrl, `/auth/payment-methods/${encodeURIComponent(contractCode)}`, {
+      method: "DELETE",
     });
   },
   getOAuthStartUrl(provider, options) {

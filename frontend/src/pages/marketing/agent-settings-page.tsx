@@ -61,6 +61,7 @@ import {
 } from "@/lib/agent-routes";
 import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
+  createMockDebugExecAdapter,
   createMonoDebugExecAdapter,
 } from "@/pages/marketing/agent-tat-adapter";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
@@ -186,6 +187,7 @@ type TeaSdkPanelProps = {
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
   productConfig: TeaSdkProductConfig;
+  renderChannelCard?: (props: TeaSdkRenderChannelCardProps) => ReactNode;
 };
 
 type TeaSdkRuntime = {
@@ -213,9 +215,228 @@ type TeaSdkRuntime = {
   getModelSwitchCommand: (modelFullId: string) => string;
 };
 
+type TeaSdkChannelConfig = {
+  value: string;
+  channel: string;
+  channel_name?: string;
+  primaryLabel?: string;
+  description?: string;
+  url?: string;
+  i18nOnly?: boolean;
+  supportQrConfig?: boolean;
+  qrCodeOnly?: boolean;
+  channel_keys?: Array<{ key: string; description: string }>;
+  [key: string]: unknown;
+};
+
+type TeaSdkRenderChannelCardProps = {
+  channel: TeaSdkChannelConfig;
+  isBound: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  loading?: boolean;
+};
+
 let teaSdkRuntimePromise: Promise<TeaSdkRuntime> | null = null;
 let teaSdkRuntimeCache: TeaSdkRuntime | null = null;
 let teaSdkRuntimeError: Error | null = null;
+
+function getChannelGuideLink(channelValue: string): string | null {
+  const guideLinks: Record<string, string> = {
+    weixin: "https://lightvela.ai/docs/configuration/channel-wechat",
+    qqbot: "https://lightvela.ai/docs/configuration/channel-qq",
+    wecom: "https://lightvela.ai/docs/configuration/channel-wecom",
+    feishu: "https://lightvela.ai/docs/configuration/channel-lark",
+    telegram: "https://lightvela.ai/docs/configuration/channel-telegram",
+    discord: "https://lightvela.ai/docs/configuration/channel-discord",
+    slack: "https://lightvela.ai/docs/configuration/channel-slack",
+    whatsapp: "https://lightvela.ai/docs/configuration/channel-whatsapp",
+  };
+  return guideLinks[channelValue] ?? null;
+}
+
+function getChannelCardDesc(channel: TeaSdkChannelConfig, t: ReturnType<typeof useT>): string {
+  if (channel.value === "qqbot") return t("扫码或通过 App ID / Secret 绑定");
+  if (channel.value === "telegram") return t("通过 Bot Token 绑定");
+  if (channel.value === "discord") return t("通过 Bot Token 绑定");
+  if (channel.value === "slack") return t("通过 Bot Token / App Token 绑定");
+  if (channel.value === "whatsapp") return t("使用手机 WhatsApp 扫码登录");
+  return t("扫码授权连接");
+}
+
+function LightVelaChannelIcon({ channel }: { channel: string }) {
+  switch (channel) {
+    case "slack":
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(74, 21, 75, 0.08)" }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none">
+            <path d="M9.2 2.4a2.1 2.1 0 0 0 0 4.2h2.1V4.5a2.1 2.1 0 0 0-2.1-2.1Z" fill="#36C5F0" />
+            <path d="M9.2 8H3.6a2.1 2.1 0 1 0 0 4.2h5.6A2.1 2.1 0 0 0 9.2 8Z" fill="#36C5F0" />
+            <path d="M21.6 10.1A2.1 2.1 0 0 0 17.4 10v2.1h2.1a2.1 2.1 0 0 0 2.1-2Z" fill="#2EB67D" />
+            <path d="M16 10.1V4.5a2.1 2.1 0 1 0-4.2 0v5.6a2.1 2.1 0 0 0 4.2 0Z" fill="#2EB67D" />
+            <path d="M13.9 21.6a2.1 2.1 0 0 0 0-4.2h-2.1v2.1a2.1 2.1 0 0 0 2.1 2.1Z" fill="#ECB22E" />
+            <path d="M13.9 16h5.6a2.1 2.1 0 1 0 0-4.2h-5.6a2.1 2.1 0 0 0 0 4.2Z" fill="#ECB22E" />
+            <path d="M2.4 13.9A2.1 2.1 0 0 0 6.6 14v-2.1H4.5a2.1 2.1 0 0 0-2.1 2Z" fill="#E01E5A" />
+            <path d="M8 13.9v5.6a2.1 2.1 0 1 0 4.2 0v-5.6a2.1 2.1 0 0 0-4.2 0Z" fill="#E01E5A" />
+          </svg>
+        </div>
+      );
+    case "telegram":
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(38, 165, 229, 0.08)" }}>
+          <svg width="24" height="24" viewBox="0 0 48 48" aria-hidden="true" fill="none">
+            <path d="M5.8 23.2l8.6 3.2 3.3 10.8c.2.7 1.1.9 1.6.4l4.8-3.9c.4-.4 1.1-.4 1.5 0l8.7 6.3c.6.4 1.4.1 1.5-.6L42.2 7.4c.2-.8-.6-1.4-1.3-1.1L5.7 21.5c-.8.3-.8 1.4.1 1.7zm11.4 1.7l17.1-10.5c.3-.2.6.2.4.4L21.4 27.1c-.4.4-.7.9-.8 1.5l-.4 3c-.1.5-.7.6-.9.1l-2.6-6c-.2-.4 0-.9.5-1.1v.3z" fill="#26A5E5" />
+          </svg>
+        </div>
+      );
+    case "discord":
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(88, 101, 242, 0.08)" }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none">
+            <path d="M20.3 4.4a19.8 19.8 0 0 0-4.9-1.5c-.2.4-.4.9-.6 1.3a18.3 18.3 0 0 0-5.5 0c-.2-.4-.4-.9-.6-1.3a19.7 19.7 0 0 0-4.9 1.5C.5 9-.3 13.6.1 18.1a19.9 19.9 0 0 0 6 3c.5-.6.9-1.3 1.2-2a13.1 13.1 0 0 1-1.9-.9c.1-.1.3-.2.4-.3a13.5 13.5 0 0 0 12.1 0l.4.3c-.6.4-1.2.7-1.9.9.4.7.8 1.4 1.2 2a19.8 19.8 0 0 0 6-3c.6-5.2-.8-9.7-3.3-13.7ZM8 15.3c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.5 8 10.5s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z" fill="#5865F2" />
+          </svg>
+        </div>
+      );
+    case "whatsapp":
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(37, 211, 102, 0.08)" }}>
+          <MessageCircle className="h-6 w-6" style={{ color: "#25D366" }} />
+        </div>
+      );
+    case "qqbot":
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(18, 183, 245, 0.08)" }}>
+          <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/43adbcec-a954-4809-9310-1237e3981f99.png" alt="QQ" className="lh-std-channel-panel__icon-img" />
+        </div>
+      );
+    case "weixin":
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(7, 193, 96, 0.08)" }}>
+          <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/aef7d749-cabe-48dc-938b-11f1f50980c8.png" alt="微信" className="lh-std-channel-panel__icon-img" />
+        </div>
+      );
+    case "wecom":
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(24, 144, 255, 0.08)" }}>
+          <img src={assetUrl("/assets/landing/where-to-use/wecom-logo.png")} alt="WeCom" className="lh-std-channel-panel__icon-img" />
+        </div>
+      );
+    case "feishu":
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(43, 97, 255, 0.08)" }}>
+          <img src={assetUrl("/assets/landing/where-to-use/feishu-logo.png")} alt="Lark" className="lh-std-channel-panel__icon-img" />
+        </div>
+      );
+    default:
+      return (
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(15, 23, 42, 0.06)" }}>
+          <MessageSquare className="h-6 w-6" style={{ color: "#111827" }} />
+        </div>
+      );
+  }
+}
+
+function LightVelaSdkChannelCard({
+  channel,
+  isBound,
+  onConnect,
+  onDisconnect,
+  loading,
+}: TeaSdkRenderChannelCardProps) {
+  const t = useT();
+  const guideLink = getChannelGuideLink(channel.value);
+
+  return (
+    <div key={channel.value} className={`lh-std-channel-panel__card ${isBound ? "lh-std-channel-panel__card--bound" : ""}`}>
+      <div className="lh-std-channel-panel__card-body">
+        <div className="lh-std-channel-panel__card-icon">
+          <LightVelaChannelIcon channel={channel.value} />
+        </div>
+        <div className="lh-std-channel-panel__card-content">
+          <div className="lh-std-channel-panel__card-header">
+            <h3 className="lh-std-channel-panel__card-name">{channel.channel_name ?? channel.primaryLabel ?? channel.value}</h3>
+            {isBound ? <span className="lh-std-channel-panel__card-badge">{t("已连接")}</span> : null}
+          </div>
+          <p className="lh-std-channel-panel__card-desc">{getChannelCardDesc(channel, t)}</p>
+        </div>
+      </div>
+      <div
+        className="lh-std-channel-panel__card-action"
+        style={{
+          alignItems: "stretch",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        {isGlobal && guideLink ? (
+          <a
+            className="lh-std-channel-panel__guide-btn"
+            href={guideLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t("配置教程")}
+            style={{
+              alignItems: "center",
+              justifyContent: "center",
+              display: "inline-flex",
+              width: "100%",
+              lineHeight: 1.25,
+              minWidth: 0,
+              overflow: "visible",
+              textAlign: "center",
+              textOverflow: "clip",
+              whiteSpace: "normal",
+            }}
+          >
+            {t("配置教程")}
+          </a>
+        ) : null}
+        <div
+          className="lh-std-channel-panel__card-action-right"
+          style={{
+            display: "flex",
+            flexShrink: 0,
+            marginLeft: 0,
+            width: "100%",
+          }}
+        >
+          {isBound ? (
+            <button
+              type="button"
+              className="lh-std-channel-panel__card-unbind"
+              onClick={onDisconnect}
+              disabled={loading}
+              aria-label={t("断开")}
+              style={{ flex: 1, justifyContent: "center", whiteSpace: "nowrap" }}
+            >
+              {t("断开")}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={`lh-std-channel-panel__connect-btn ${isBound ? "lh-std-channel-panel__connect-btn--reconnect" : ""}`}
+            onClick={onConnect}
+            style={{
+              flex: 1,
+              justifyContent: "center",
+              whiteSpace: "nowrap",
+              width: "100%",
+            }}
+          >
+            {isBound ? t("重新连接") : (
+              /* 用 flex + gap 组合，而非 `+ 文案` 字符串拼接：
+                 拼接产生的空格是合法断点，长文案下 `+` 会被甩到另一行。 */
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <span aria-hidden>+</span>
+                <span>{t("连接")}</span>
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
   if (teaSdkRuntimeCache) {
@@ -397,11 +618,21 @@ function TeaSdkSettingsPanelReady({
   botId?: string;
   execDebugCommand?: HermesModelConfigExecDebugCommand;
 }) {
+  const t = useT();
+  const { i18n } = useTranslation();
   const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
   const productConfig = useMemo(
     () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
     [runtime, productConfigArgs, modelProviders],
   );
+  const sdkTextReplacements = useMemo(() => {
+    if (!i18n.language?.startsWith("id")) return undefined;
+    return {
+      "Configure a channel to start chatting with your cloud AI agent in messaging apps": t(
+        "配置通道后，即可在聊天软件中与你的云端智能体伙伴对话",
+      ),
+    };
+  }, [i18n.language, t]);
 
   if (kind === "model") {
     if (!botId || !execDebugCommand) {
@@ -423,11 +654,13 @@ function TeaSdkSettingsPanelReady({
   }
 
   return (
-    <StableTeaSdkPanelHost>
+    <StableTeaSdkPanelHost textReplacements={sdkTextReplacements}>
       <runtime.ChannelPanel
+        key={kind}
         instance={instance}
         featureFlags={featureFlags}
         productConfig={productConfig}
+        renderChannelCard={kind === "channel" ? (props) => <LightVelaSdkChannelCard {...props} /> : undefined}
       />
     </StableTeaSdkPanelHost>
   );
@@ -3170,16 +3403,71 @@ export const AgentSettingsPage = ({
   /**
    * AgentChat（LightVela）启动 token：
    * - 接口：`POST /v1/instances/:instanceId/agentchat/launch-token`，需带 LightClaw Bearer 登录态
-   * - TTL：300 秒；过期前 60 秒自动续期
-   * - 仅在用户进入 chat tab 且 activeBot 存在时拉取，避免无意义请求
-   * - 401 / 网络错误：状态置为 error，由 chat tab UI 提示并提供重试
+   * - TTL 由后端 `expires_at` 决定（默认 24h）；本页不再维护 setTimeout 续期
+   * - 续期改由 SDK 热更新机制驱动，经 refreshLaunchToken 拉新 token，不写本页 state（不重渲染 / 重连）
+   * - 首帧仅拉取一次写 state 供面板挂载；仅在 chat tab 且 activeBot 存在时拉取
+   * - 401 / 网络错误：状态置为 error，由 UI 提示并重试
    */
   const [launchToken, setLaunchToken] = useState<string | null>(null);
+  // 首帧 token 过期时刻（Unix 秒；后端未下发为 null），下传给面板判断复用。
+  const [launchTokenExpiresAt, setLaunchTokenExpiresAt] = useState<number | null>(null);
   const [launchTokenStatus, setLaunchTokenStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [launchTokenError, setLaunchTokenError] = useState<string | null>(null);
   const [launchTokenRefreshTick, setLaunchTokenRefreshTick] = useState(0);
 
   const activeBotId = activeBot?.id;
+
+  /**
+   * 拉取一个 launch token（纯请求，不碰 state），供首帧拉取与 SDK 续期回调共用。
+   * 返回 token 及过期时刻（expiresAt，Unix 秒；后端未返回为 undefined），失败抛错。
+   */
+  const fetchLaunchTokenValue = useCallback(
+    async (botId: string, signal?: AbortSignal): Promise<{ token: string; expiresAt?: number }> => {
+      const baseUrl = resolveConfiguredAuthApiBaseUrl();
+      if (!baseUrl) {
+        throw new Error(AUTH_SERVICE_UNAVAILABLE_MESSAGE);
+      }
+      const authToken = readStoredAuthToken();
+      if (!authToken) {
+        throw new Error("未登录，无法获取 AgentChat 启动 token");
+      }
+
+      const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(botId)}/agentchat/launch-token`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: "{}",
+        signal,
+      });
+
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const body = await response.json() as { code?: string; message?: string };
+          if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
+        } catch {
+          // 忽略响应体解析错误
+        }
+        throw new Error(detail);
+      }
+
+      const json = await response.json() as {
+        code?: string;
+        data?: { launch_token?: string; expires_at?: number };
+        message?: string;
+      };
+      const token = json?.data?.launch_token;
+      if (!token) {
+        throw new Error(json?.message || "返回数据缺少 launch_token");
+      }
+      const expiresAt = typeof json?.data?.expires_at === "number" ? json.data.expires_at : undefined;
+      return { token, expiresAt };
+    },
+    [],
+  );
 
   useEffect(() => {
     // 仅在 chat tab 激活、activeBot 已就位、用户已登录（拿到账号 id）时拉取
@@ -3192,82 +3480,18 @@ export const AgentSettingsPage = ({
       return;
     }
 
-    const baseUrl = resolveConfiguredAuthApiBaseUrl();
-    if (!baseUrl) {
-      setLaunchTokenStatus("error");
-      setLaunchTokenError(AUTH_SERVICE_UNAVAILABLE_MESSAGE);
-      return;
-    }
-
-    const authToken = readStoredAuthToken();
-    if (!authToken) {
-      setLaunchTokenStatus("error");
-      setLaunchTokenError("未登录，无法获取 AgentChat 启动 token");
-      return;
-    }
-
     const controller = new AbortController();
     let cancelled = false;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const fetchLaunchToken = async () => {
+    const loadInitialToken = async () => {
       setLaunchTokenStatus("loading");
       setLaunchTokenError(null);
       try {
-        const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(activeBotId)}/agentchat/launch-token`;
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: "{}",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          if (cancelled) return;
-          let detail = `HTTP ${response.status}`;
-          try {
-            const body = await response.json() as { code?: string; message?: string };
-            if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
-          } catch {
-            // 忽略响应体解析错误
-          }
-          setLaunchTokenStatus("error");
-          setLaunchTokenError(detail);
-          return;
-        }
-
-        const json = await response.json() as {
-          code?: string;
-          data?: { launch_token?: string; expires_at?: number };
-          message?: string;
-        };
+        const { token, expiresAt } = await fetchLaunchTokenValue(activeBotId, controller.signal);
         if (cancelled) return;
-
-        const token = json?.data?.launch_token;
-        const expiresAt = json?.data?.expires_at;
-        if (!token) {
-          setLaunchTokenStatus("error");
-          setLaunchTokenError(json?.message || "返回数据缺少 launch_token");
-          return;
-        }
-
         setLaunchToken(token);
+        setLaunchTokenExpiresAt(typeof expiresAt === "number" ? expiresAt : null);
         setLaunchTokenStatus("ready");
-
-        // 过期前 60s 触发续期；若返回的 expires_at 不可信则按 4 分钟兜底
-        const now = Math.floor(Date.now() / 1000);
-        const ttlSeconds = typeof expiresAt === "number" && expiresAt > now
-          ? expiresAt - now
-          : 300;
-        const refreshAfterMs = Math.max(30, ttlSeconds - 60) * 1000;
-        refreshTimer = setTimeout(() => {
-          if (!cancelled) {
-            setLaunchTokenRefreshTick((tick) => tick + 1);
-          }
-        }, refreshAfterMs);
       } catch (e) {
         if (cancelled || (e as Error)?.name === "AbortError") return;
         setLaunchTokenStatus("error");
@@ -3275,19 +3499,30 @@ export const AgentSettingsPage = ({
       }
     };
 
-    fetchLaunchToken();
+    void loadInitialToken();
 
     return () => {
       cancelled = true;
       controller.abort();
-      if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick]);
+  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick, fetchLaunchTokenValue]);
+
+  /**
+   * SDK 续期入口：token 将过期时调用，拿新 token 返回给面板。不写 state，故不触发
+   * 重渲染 / 重连（保活不断连的关键）。expiresAt 为 Unix 秒，供面板判断复用。
+   */
+  const refreshLaunchToken = useCallback(async (): Promise<{ token: string; expiresAt?: number }> => {
+    if (!activeBotId) {
+      throw new Error("无有效实例，无法续期 AgentChat token");
+    }
+    return fetchLaunchTokenValue(activeBotId);
+  }, [activeBotId, fetchLaunchTokenValue]);
 
   // 切到非 chat tab 或换 bot 时，清空已缓存的 token，避免泄露给下个 bot
   useEffect(() => {
     if (activeSection !== "chat") {
       setLaunchToken(null);
+      setLaunchTokenExpiresAt(null);
       setLaunchTokenStatus("idle");
       setLaunchTokenError(null);
     }
@@ -3470,18 +3705,21 @@ export const AgentSettingsPage = ({
    * 适配器从 `InstanceIds[0]` 拿到的就是 botId，无需额外映射或查询
    * sandbox_id。
    */
-  const commandAdapter = useMemo(
-    () =>
-      createMonoDebugExecAdapter({
-        baseUrl: resolveConfiguredAuthApiBaseUrl() ?? "",
-        getAuthHeader: () => {
-          const token = readStoredAuthToken();
-          return token ? `Bearer ${token}` : undefined;
-        },
+  const commandAdapter = useMemo(() => {
+    const authApiBaseUrl = resolveConfiguredAuthApiBaseUrl();
+    const authToken = readStoredAuthToken();
+    if (authApiBaseUrl === null) {
+      return createMockDebugExecAdapter({
         commandLifecycle: sdkCommandLifecycle,
-      }),
-    [sdkCommandLifecycle],
-  );
+      });
+    }
+
+    return createMonoDebugExecAdapter({
+      baseUrl: authApiBaseUrl,
+      getAuthHeader: () => (authToken ? `Bearer ${authToken}` : undefined),
+      commandLifecycle: sdkCommandLifecycle,
+    });
+  }, [sdkCommandLifecycle]);
 
   /**
    * LightVelaPanel 用的 commandExecutor。
@@ -4939,22 +5177,53 @@ export const AgentSettingsPage = ({
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
             (() => {
-              const settingsSections: { id: AgentSettingsSectionId; label: string; icon: React.ReactNode; path: string; badge?: string }[] = [
-                { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
-                { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
-                { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
-                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
-                { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
-                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
-                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
-                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
-                ...(isGlobal
-                  ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
-                  : []),
-                ...(SHOW_AGENTCHAT_ENTRY
-                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
-                  : []),
-                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+              type SettingsSection = {
+                id: AgentSettingsSectionId;
+                label: string;
+                icon: React.ReactNode;
+                path: string;
+                badge?: string;
+              };
+              const settingsGroups: { id: string; label: string; sections: SettingsSection[] }[] = [
+                {
+                  id: "setup",
+                  label: t("配置"),
+                  sections: [
+                    { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
+                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
+                  ],
+                },
+                {
+                  id: "use",
+                  label: t("使用"),
+                  sections: [
+                    ...(SHOW_AGENTCHAT_ENTRY
+                      ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
+                      : []),
+                    { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+                    ...(isGlobal
+                      ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
+                      : []),
+                  ],
+                },
+                {
+                  id: "growth",
+                  label: t("成长"),
+                  sections: [
+                    { id: "buddy", label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
+                    { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
+                    { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
+                  ],
+                },
+                {
+                  id: "manage",
+                  label: t("管理"),
+                  sections: [
+                    { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
+                    { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+                  ],
+                },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
@@ -5180,57 +5449,79 @@ export const AgentSettingsPage = ({
                       className="lv-agents-nav"
                     >
                       {showHiddenAgentTools ? (
-                        <>
-                          <AppLink
-                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
-                            aria-current={activeSection === "terminal" ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              activeSection === "terminal"
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left">{t("终端")}</span>
-                          </AppLink>
-                          <AppLink
-                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
-                            aria-current={activeSection === "browser" ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              activeSection === "browser"
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left">{t("浏览器")}</span>
-                          </AppLink>
-                        </>
+                        <div className="lv-agents-nav-group">
+                          <ul className="lv-agents-nav-group-items">
+                            <li>
+                              <AppLink
+                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
+                                aria-current={activeSection === "terminal" ? "page" : undefined}
+                                className={cn(
+                                  "lw-settings-nav-item lv-agents-nav-item",
+                                  activeSection === "terminal"
+                                    ? "is-active"
+                                    : "text-black/70 hover:bg-black/[0.025]",
+                                )}
+                              >
+                                <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
+                                <span className="flex-1 text-left">{t("终端")}</span>
+                              </AppLink>
+                            </li>
+                            <li>
+                              <AppLink
+                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
+                                aria-current={activeSection === "browser" ? "page" : undefined}
+                                className={cn(
+                                  "lw-settings-nav-item lv-agents-nav-item",
+                                  activeSection === "browser"
+                                    ? "is-active"
+                                    : "text-black/70 hover:bg-black/[0.025]",
+                                )}
+                              >
+                                <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
+                                <span className="flex-1 text-left">{t("浏览器")}</span>
+                              </AppLink>
+                            </li>
+                          </ul>
+                        </div>
                       ) : null}
-                      {settingsSections.map((section) => {
-                        const isActive = section.id === activeSection;
+                      {settingsGroups.map((group) => {
+                        const groupLabelId = `agent-settings-nav-group-${group.id}`;
                         return (
-                          <AppLink
-                            key={section.id}
-                            to={getAgentSectionHref(section.path, searchParams)}
-                            aria-current={isActive ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              isActive
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
+                          <div
+                            key={group.id}
+                            className="lv-agents-nav-group"
+                            role="group"
+                            aria-labelledby={groupLabelId}
                           >
-                            <span className="lv-agents-nav-icon">{section.icon}</span>
-                            <span className="flex-1 text-left">{section.label}</span>
-                            {section.badge && (
-                              <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
-                                {section.badge}
-                              </span>
-                            )}
-                          </AppLink>
+                            <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
+                            <ul className="lv-agents-nav-group-items">
+                              {group.sections.map((section) => {
+                                const isActive = section.id === activeSection;
+                                return (
+                                  <li key={section.id}>
+                                    <AppLink
+                                      to={getAgentSectionHref(section.path, searchParams)}
+                                      aria-current={isActive ? "page" : undefined}
+                                      className={cn(
+                                        "lw-settings-nav-item lv-agents-nav-item",
+                                        isActive
+                                          ? "is-active"
+                                          : "text-black/70 hover:bg-black/[0.025]",
+                                      )}
+                                    >
+                                      <span className="lv-agents-nav-icon">{section.icon}</span>
+                                      <span className="flex-1 text-left">{section.label}</span>
+                                      {section.badge && (
+                                        <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                          {section.badge}
+                                        </span>
+                                      )}
+                                    </AppLink>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
                         );
                       })}
                     </nav>
@@ -5323,9 +5614,11 @@ export const AgentSettingsPage = ({
                               commandExecutor={lightvelaCommandExecutor}
                               instanceId={sdkInstance.InstanceId}
                               launchToken={launchToken}
+                              launchTokenExpiresAt={launchTokenExpiresAt}
                               launchTokenError={launchTokenError}
                               launchTokenStatus={launchTokenStatus}
                               onRetryLaunchToken={retryLaunchToken}
+                              onRefreshLaunchToken={refreshLaunchToken}
                             />
                           )}
                           {activeSection === "memory" && (

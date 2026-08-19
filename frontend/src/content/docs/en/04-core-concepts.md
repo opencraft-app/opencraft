@@ -27,7 +27,7 @@ LightVela involves four core concepts: Hermes Agent, models, channels, and skill
 ┌───────┐                   ┌────────┐                   ┌────────┐
 │ Model │                   │Channel │                   │ Skill  │
 └───────┘                   └────────┘                   └────────┘
- Model provider    WeChat/Telegram/WhatsApp/Discord            SkillHub
+ Model provider    Telegram/WhatsApp/Discord/Slack/WeChat      SkillHub
 ```
 
 | Concept | Role | Description |
@@ -87,12 +87,11 @@ Channels are the messaging platform entry points where users chat with Hermes Ag
 | Telegram | Bot Token access | Personal or team messaging, simple setup, suitable for lightweight automation |
 | WhatsApp | WhatsApp Business API access | International user communication, customer service, notifications, and reminders |
 | Discord | Bot Token access | Community operations, developer communities, gaming or interest groups |
+| Slack | Bot Token / App Token access | Team collaboration, workspace notifications, and channel-based workflows |
 
 For WeChat, choose the channel and click "Authorize Access" to generate a QR code. Scan it with your phone to complete authorization.
 
-Telegram, WhatsApp, and Discord configuration channels are still under construction and will be available soon.
-
-Detailed access steps for each channel: [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md).
+Detailed access steps for each channel: [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md).
 
 > 💡 **Multiple channels can coexist**
 >

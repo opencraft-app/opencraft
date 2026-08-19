@@ -61,8 +61,38 @@ describe("getOverviewScenarioTaskPacks", () => {
     });
   });
 
+  it("localizes every visible Indonesian card and default task request without changing automation behavior", () => {
+    const packs = getOverviewScenarioTaskPacks("id-ID");
+
+    expect(packs.map((pack) => pack.name)).toEqual([
+      "Pengingat minum air & obat",
+      "Pengingat sewa",
+      "Pengingat kurs target",
+      "Catatan kalori & kebugaran",
+      "Hari libur & cuaca",
+      "Ringkasan info saham",
+    ]);
+
+    packs.forEach((pack, index) => {
+      const original = OVERVIEW_SCENARIO_TASK_PACKS[index];
+      expect(original).toBeDefined();
+      expect(pack.id).toBe(original?.id);
+      expect(pack.defaultSchedule).toBe(original?.defaultSchedule);
+      expect(pack.promptBuilder).toBe(original?.promptBuilder);
+      expect(HAN_CHARACTER_PATTERN.test(pack.name)).toBe(false);
+      expect(HAN_CHARACTER_PATTERN.test(pack.valueProp)).toBe(false);
+      expect(HAN_CHARACTER_PATTERN.test(pack.description)).toBe(false);
+      const defaultValues = Object.fromEntries(
+        pack.fields.map((field) => [field.key, field.defaultValue]),
+      );
+      const quickPrompt = formatScenarioQuickPrompt(pack, defaultValues);
+      expect(HAN_CHARACTER_PATTERN.test(quickPrompt)).toBe(false);
+      expect(quickPrompt).not.toMatch(/\b(Remind|Every day|Notes|Follow my|Monitor|Summarize)\b/);
+    });
+  });
+
   it("includes an editable reminder time in every Chinese and English overview task request", () => {
-    for (const locale of ["zh-CN", "zh-SG", "en-US"] as const) {
+    for (const locale of ["zh-CN", "zh-SG", "en-US", "id-ID"] as const) {
       for (const pack of getOverviewScenarioTaskPacks(locale)) {
         const defaultValues = Object.fromEntries(
           pack.fields.map((field) => [field.key, field.defaultValue]),

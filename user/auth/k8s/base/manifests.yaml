@@ -46,6 +46,7 @@ data:
   LIGHTCLAW_AUTH_DB: "lightclaw_auth"
   LIGHTCLAW_AUTH_DB_USER: "lightclaw_auth"
   LIGHTCLAW_EMAIL_BIND_ENABLED: "false"
+  LIGHTCLAW_PAYMENT_METHODS_ENABLED: "false"
   LIGHTCLAW_SES_REGION: "ap-guangzhou"
   LIGHTCLAW_SES_FROM: "LightVela <noreply@service.lightvela.com>"
   CONTENT_AUDIT_ENABLED: "false"

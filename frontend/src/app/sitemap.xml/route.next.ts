@@ -60,6 +60,7 @@ export function GET() {
     '/about',
     '/changelog',
     '/privacy-policy',
+    '/terms-of-service',
     '/cookie-policy',
     '/open-source-licenses',
   ];

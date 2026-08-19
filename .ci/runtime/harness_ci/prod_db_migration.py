@@ -207,7 +207,9 @@ def migration_diff_hint(bundle_service: str, env: str, source_sha: str, image_pa
         "requires_db_job": plan.requires_db_job,
         "migration_changed": plan.migration_changed,
     }
-    if plan.db_mode != "migration" or not plan.requires_db_job:
+    contract = load_db_contract(bundle_service, env)
+    has_migration_contract = plan.db_mode == "migration" and bool(contract.get("migration_operation"))
+    if not has_migration_contract:
         print(f"skip production DB migration: {bundle_service}/{env} has no migration DB job contract", flush=True)
         hint["has_migration_contract"] = False
         return hint
@@ -265,13 +267,13 @@ def build_version_probe_script(verifier: dict[str, Any], expected_version: int) 
             "}",
             f"db=\"$(value {db_contract_verifier.shell_single_quote(database_env)})\"",
             f"user=\"$(value {db_contract_verifier.shell_single_quote(user_env)})\"",
-            f"password=\"$(value {db_contract_verifier.shell_single_quote(password_env)})\"",
+            f"password=\"$(value {db_contract_verifier.shell_single_quote(password_env)})\"",  # pragma: allowlist secret -- shell variable reference, not a literal secret
             'test -n "${MYSQL_HOST:-}"',
             'test -n "${MYSQL_PORT:-}"',
             'test -n "$db"',
             'test -n "$user"',
             'test -n "$password"',
-            'mysql_query() { mysql --host="${MYSQL_HOST}" --port="${MYSQL_PORT}" --user="$user" --password="$password" "$db" -Nse "$1"; }',
+            'mysql_query() { mysql --host="${MYSQL_HOST}" --port="${MYSQL_PORT}" --user="$user" --password="$password" "$db" -Nse "$1"; }',  # pragma: allowlist secret -- shell variable reference, not a literal secret
             'table_exists="$(mysql_query "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = \'schema_migrations\'")"',
             'if [ "$table_exists" = "0" ]; then',
             f'  echo "MIGRATION_VERSION current=0 dirty=false table_exists=false expected={expected_version}"',

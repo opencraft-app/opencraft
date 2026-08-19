@@ -2,7 +2,7 @@ import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
 import { buildScenarioTaskDraft } from "./scenario-task-builder";
 import { getOverviewScenarioTaskPacks, type ScenarioTaskId, type ScenarioTaskPack } from "./scenario-packs";
 
-type AutomationDisplayLocale = "zh-CN" | "zh-SG" | "en-US";
+type AutomationDisplayLocale = "zh-CN" | "zh-SG" | "en-US" | "id-ID";
 
 export interface ScenarioJobPresentation {
   name: string;
@@ -39,55 +39,56 @@ function getScenarioRecordPresentation(
   rawPrompt: string,
   locale: AutomationDisplayLocale,
 ): ScenarioJobPresentation {
-  if (locale !== "en-US") return { name: rawName, prompt: rawPrompt };
+  if (locale !== "en-US" && locale !== "id-ID") return { name: rawName, prompt: rawPrompt };
 
-  const match = findOverviewScenarioPack(rawName, rawPrompt);
+  const match = findOverviewScenarioPack(rawName, rawPrompt, locale);
   if (!match) return { name: rawName, prompt: rawPrompt };
 
-  const englishName = buildEnglishScenarioJobName(match.englishPack, rawName, match.aliases);
-  const englishPrompt = buildScenarioTaskDraft({
-    pack: match.englishPack,
+  const localizedName = buildLocalizedScenarioJobName(match.localizedPack, rawName, match.aliases);
+  const localizedPrompt = buildScenarioTaskDraft({
+    pack: match.localizedPack,
     values: {},
-    userPrompt: match.englishPack.quickPrompt,
+    userPrompt: match.localizedPack.quickPrompt,
   }).generatedPrompt;
 
   return {
-    name: englishName,
-    prompt: englishPrompt,
+    name: localizedName,
+    prompt: localizedPrompt,
   };
 }
 
 function findOverviewScenarioPack(
   rawName: string,
   rawPrompt: string,
-): { englishPack: ScenarioTaskPack; aliases: readonly string[] } | null {
+  locale: AutomationDisplayLocale,
+): { localizedPack: ScenarioTaskPack; aliases: readonly string[] } | null {
   const haystack = `${rawName}\n${rawPrompt}`;
   const zhPacks = getOverviewScenarioTaskPacks("zh-CN");
-  const enPacks = getOverviewScenarioTaskPacks("en-US");
+  const localizedPacks = getOverviewScenarioTaskPacks(locale);
 
   for (const [index, zhPack] of zhPacks.entries()) {
-    const englishPack = enPacks[index];
-    if (!englishPack) continue;
+    const localizedPack = localizedPacks[index];
+    if (!localizedPack) continue;
     const aliases = [
       zhPack.name,
-      englishPack.name,
+      localizedPack.name,
       ...(SCENARIO_NAME_ALIASES[zhPack.id] ?? []),
     ];
     if (aliases.some((alias) => alias && haystack.includes(alias))) {
-      return { englishPack, aliases };
+      return { localizedPack, aliases };
     }
   }
   return null;
 }
 
-function buildEnglishScenarioJobName(
-  englishPack: ScenarioTaskPack,
+function buildLocalizedScenarioJobName(
+  localizedPack: ScenarioTaskPack,
   rawName: string,
   aliases: readonly string[],
 ): string {
   const suffix = extractScenarioJobSuffix(rawName, aliases);
-  if (!suffix || CJK_TEXT_RE.test(suffix)) return englishPack.name;
-  return `${englishPack.name} · ${suffix}`;
+  if (!suffix || CJK_TEXT_RE.test(suffix)) return localizedPack.name;
+  return `${localizedPack.name} · ${suffix}`;
 }
 
 function extractScenarioJobSuffix(rawName: string, aliases: readonly string[]): string {

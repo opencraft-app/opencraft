@@ -6,9 +6,12 @@ import { LightVelaFooter } from "@/components/site/lightvela-footer";
 
 vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => text,
+  // 组件用 `useLocaleOverride() ?? i18n.language` 判定语言；
+  // 这里返回 null 表示无覆盖，让用例继续通过 mockLanguage 控制语言。
+  useLocaleOverride: () => null,
 }));
 
-// 当前语言可变，供不同用例切换（en-US / zh-CN / zh-SG / zh-Hant）
+// 当前语言可变，供不同用例切换（en-US / zh-CN / zh-SG / zh-Hant / id-ID）
 let mockLanguage = "en-US";
 
 vi.mock("react-i18next", () => ({
@@ -23,9 +26,17 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/lib/region", () => ({
   isGlobal: true,
-  localizedPath: (path: string, locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US") => {
+  localizedPath: (path: string, locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID") => {
     const lang =
-      locale === "zh-CN" ? "zh" : locale === "zh-SG" ? "zh-sg" : locale === "zh-Hant" ? "zh-hant" : "en";
+      locale === "zh-CN"
+        ? "zh"
+        : locale === "zh-SG"
+          ? "zh-sg"
+          : locale === "zh-Hant"
+            ? "zh-hant"
+            : locale === "id-ID"
+              ? "id-id"
+              : "en";
     return path === "/" ? `/${lang}/` : `/${lang}${path}`;
   },
 }));
@@ -63,7 +74,7 @@ describe("LightVelaFooter", () => {
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "服务条款" })).toHaveAttribute(
       "href",
-      "https://www.tencentcloud.com/document/product/301/12905?lang=en&pg=",
+      "/en/terms-of-service",
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "开源声明" })).toHaveAttribute(
       "href",
@@ -112,7 +123,7 @@ describe("LightVelaFooter", () => {
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "服务条款" })).toHaveAttribute(
       "href",
-      "https://www.tencentcloud.com/document/product/301/12905?lang=zh&pg=",
+      "/zh-hant/terms-of-service",
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "开源声明" })).toHaveAttribute(
       "href",

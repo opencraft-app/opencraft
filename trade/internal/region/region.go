@@ -14,7 +14,7 @@
 // 沿调用链注入，**不在本包做 site 决策**（避免 region 包被业务语义污染）。
 //
 // v1.7.x 北京 2 预发布接入（2026-06-12）：新增 region override 路径，Resolve 第二参数
-// `regionOverride`（腾讯云 region 字面量，例：ap-shanghai / ap-beijing / ap-guangzhou / ap-singapore）
+// `regionOverride`（腾讯云 region 字面量，例：ap-shanghai / ap-beijing / ap-guangzhou / ap-singapore / ap-seoul）
 // 非空且命中 `regionTable` 时优先于 siteKind 兜底，用于"国内站身份 + 北京 region 字段"
 // 这种 site/region 解耦的部署场景。命名表唯一来源在本文件 `regionTable`，调用方零感知。
 //
@@ -63,6 +63,14 @@ const LighthouseIntlZoneID = 900001
 // "Singapore"（非中文 "新加坡"），与国际站 UI 语言一致。
 const LighthouseIntlRegionName = "Singapore"
 
+// 首尔常量供 JP 联调环境使用：业务入口在东京，但计费资源按用户配置落在韩国地域。
+// RegionID=18 对应 ap-seoul，ZoneID=1800001 对应首尔一区。
+const (
+	LighthouseSeoulRegionID   = 18
+	LighthouseSeoulZoneID     = 1800001
+	LighthouseSeoulRegionName = "Seoul"
+)
+
 // LighthouseRegion 是 region / zone / regionName 三元组，由 Resolve 按 site 返回。
 //
 // 该类型仅作为 Resolve 出参与 trade 出向 jifei 链路（envelope.resInfo / 资源反查响应）的
@@ -85,6 +93,7 @@ var regionTable = map[string]LighthouseRegion{
 	"ap-beijing":   {RegionID: 8, ZoneID: 800001, RegionName: "北京"},
 	"ap-shanghai":  {RegionID: 4, ZoneID: 400001, RegionName: "上海"},
 	"ap-singapore": {RegionID: LighthouseIntlRegionID, ZoneID: LighthouseIntlZoneID, RegionName: LighthouseIntlRegionName},
+	"ap-seoul":     {RegionID: LighthouseSeoulRegionID, ZoneID: LighthouseSeoulZoneID, RegionName: LighthouseSeoulRegionName},
 }
 
 // LookupByRegion 按腾讯云 region 字面量返回三元组；未注册返回 (zero, false)。

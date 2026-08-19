@@ -1,7 +1,7 @@
 // 设计稿：.tmp/trade-pass-renew-design.md §3.4 失败回滚链路升级（R-MR-5，2026-05-24 用户拍板）
 //
-// rollbackRenewPassTask 是续费失败回滚 task，由 renewPassTask.finalizeFailure 在
-// max_execute_count=5 用尽后派发。负责把以下已生效的副作用回滚到续费前的基线：
+// rollbackRenewPassTask 是续费失败回滚 task，由 renewPassTask.finalizeFailure 在检测到
+// RenewInstance 终态失败或最大次数兜底时派发。负责把以下已生效的副作用回滚到续费前的基线：
 //  1. 已被 RenewInstance 子 task 改 Paused→Running 的 instance（仅 isolated 续费分支）
 //  2. isolated 续费恢复阶段创建的长期 AI 权益
 //  3. pass.status / expired_time / isolated_time 已被 FinalizeRenewal 推到 active+newExpired+NULL
@@ -29,6 +29,7 @@ import (
 	taskcommon "ctl/pkg/taskruntime/common"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // rollbackRenewPassTask 实现续费失败回滚的顶层 task。
@@ -118,6 +119,17 @@ func (t *rollbackRenewPassTask) execute(ctx pctx.Context) (string, error) {
 	// 幂等：若 pass 已经回滚到原态（active 或 isolated），直接 markSuccess。
 	passEntity, err := passDao.GetByPassID(t.in.PassID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			destroyed, historyErr := rollbackPassAlreadyDestroyed(ctx, t.in.PassID)
+			if historyErr != nil {
+				return "", fmt.Errorf("get history pass: %w", historyErr)
+			}
+			if destroyed {
+				logger.Info("pass already destroyed, rollback no longer required")
+				notifyTradeFlowFailed(logger, t.in.TradeFlowID, t.in.FailureReason)
+				return t.markSuccess(ctx)
+			}
+		}
 		return "", fmt.Errorf("get pass: %w", err)
 	}
 	targetStatus := t.targetStatus()
@@ -337,6 +349,18 @@ func (t *rollbackRenewPassTask) idempotentCheck(ctx pctx.Context) (string, error
 	}
 	passEntity, err := daoFactory.DefaultDaoFactory.PassDao(nil).GetByPassID(t.in.PassID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			destroyed, historyErr := rollbackPassAlreadyDestroyed(ctx, t.in.PassID)
+			if historyErr != nil {
+				return "", fmt.Errorf("LockTask failed and history check unavailable: %w", historyErr)
+			}
+			if destroyed {
+				ctx.Logger().Info("rollback idempotent check: pass already destroyed",
+					zap.String("pass_id", t.in.PassID))
+				notifyTradeFlowFailed(ctx.Logger(), t.in.TradeFlowID, t.in.FailureReason)
+				return t.markSuccess(ctx)
+			}
+		}
 		ctx.Logger().Warn("rollback idempotent check: query pass failed",
 			zap.Error(err), zap.String("pass_id", t.in.PassID))
 		return "", fmt.Errorf("LockTask failed and idempotent check unavailable: %w", err)
@@ -350,6 +374,17 @@ func (t *rollbackRenewPassTask) idempotentCheck(ctx pctx.Context) (string, error
 		return t.markSuccess(ctx)
 	}
 	return "", fmt.Errorf("LockTask failed, pass status=%s (not yet rolled back)", passEntity.Status)
+}
+
+func rollbackPassAlreadyDestroyed(ctx pctx.Context, passID string) (bool, error) {
+	_, err := modelpass.NewHistoryDao().GetByPassID(ctx, passID)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (t *rollbackRenewPassTask) onExecuteFailed(_ string, err error) {

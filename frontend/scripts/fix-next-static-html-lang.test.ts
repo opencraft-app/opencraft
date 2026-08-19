@@ -64,7 +64,7 @@ describe("fix-next-static-html-lang", () => {
       mkdirSync(out, { recursive: true });
       writeFileSync(join(out, "index.html"), '<html lang="en"><body></body></html>');
       writeFileSync(join(out, "index.txt"), "root flight");
-      for (const locale of ["en-us", "zh-hant", "zh-sg"]) {
+      for (const locale of ["en-us", "zh-hant", "zh-sg", "id-id"]) {
         for (let index = 0; index < 120; index += 1) {
           const dir = join(out, locale, "docs", `page-${index.toString().padStart(3, "0")}`);
           mkdirSync(dir, { recursive: true });
@@ -126,6 +126,15 @@ describe("fix-next-static-html-lang", () => {
 
       expect(readFileSync(join(out, "about", "index.html"), "utf8")).toContain('<html lang="en-US"');
       expect(readFileSync(join(out, "zh-cn", "about", "index.html"), "utf8")).toContain('<html lang="zh-CN"');
+
+      mkdirSync(join(out, "id-id", "about"), { recursive: true });
+      writeFileSync(join(out, "id-id", "about", "index.html"), '<html lang="en"><body></body></html>');
+      execFileSync(process.execPath, [script], {
+        cwd: root,
+        env: { ...process.env, NEXT_PUBLIC_REGION: "global", NEXT_WRITE_EDGEONE_BUILD_OUTPUT: "0" },
+        stdio: "pipe",
+      });
+      expect(readFileSync(join(out, "id-id", "about", "index.html"), "utf8")).toContain('<html lang="id-ID"');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

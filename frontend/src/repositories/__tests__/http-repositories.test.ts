@@ -25,17 +25,37 @@ describe("http repositories auth token bootstrap", () => {
     window.history.replaceState({}, "", "/auth/sign-in");
   });
 
-  const stubHostname = (hostname: string) => {
+  const stubLocation = ({
+    hostname,
+    host = hostname,
+    protocol = "https:",
+    pathname = "/auth/sign-in",
+    search = "",
+    hash = "",
+  }: {
+    hostname: string;
+    host?: string;
+    protocol?: string;
+    pathname?: string;
+    search?: string;
+    hash?: string;
+  }) => {
     Object.defineProperty(window, "location", {
       configurable: true,
       value: {
         ...window.location,
         hostname,
-        host: hostname,
-        protocol: "https:",
+        host,
+        origin: `${protocol}//${host}`,
+        protocol,
+        pathname,
+        search,
+        hash,
       },
     });
   };
+
+  const stubHostname = (hostname: string) => stubLocation({ hostname });
 
   const expectOAuthStartURL = (actual: string | null, expectedBase: string, expectedReturnTo: string) => {
     expect(actual).not.toBeNull();
@@ -1348,6 +1368,23 @@ describe("http repositories auth token bootstrap", () => {
       repositories.auth.getOAuthStartUrl("qq"),
       "https://lightclaw.tech/auth/oauth/qq/start",
       "http://127.0.0.1:5173/auth/sign-in",
+    );
+  });
+
+  it("keeps OAuth start on the current origin when using local-proxy", () => {
+    stubLocation({
+      hostname: "127.0.0.1",
+      host: "127.0.0.1:5174",
+      protocol: "http:",
+      pathname: "/agents/channels/",
+    });
+
+    const repositories = createHttpRepositories("");
+
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("google"),
+      "http://127.0.0.1:5174/auth/oauth/google/start",
+      "http://127.0.0.1:5174/agents/channels/",
     );
   });
 

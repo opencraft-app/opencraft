@@ -39,6 +39,7 @@ import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-st
 import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { SavedCardsSection } from "./saved-cards-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
 
 /* ─── animation variants ─── */
@@ -1863,6 +1864,8 @@ export const AccountPage = () => {
 
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
+
+            {isGlobal && <SavedCardsSection />}
           </motion.div>
         </section>
       </main>

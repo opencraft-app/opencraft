@@ -74,6 +74,22 @@ type QuoteRequest struct {
 	// 注：Q41 修订删除 RegionID 字段
 }
 
+// QuoteBatchRequest 是批量新购询价入参。
+//
+// BundleIDs 的顺序是协议语义的一部分：jifei GetPrice 返回的 data[] 与传入
+// resInfo[] 按下标一一对应，因此 QuoteBatch 必须按 BundleIDs 原顺序组装 resInfo，
+// 并按同一下标把价格回填给对应 bundle。
+type QuoteBatchRequest struct {
+	ExternalUserID string
+	Uin            string
+	AppID          string
+	BundleIDs      []string
+	TimeSpan       int
+	TimeUnit       string
+	GoodsNum       int
+	PayMode        int
+}
+
 // trade 内部固定的 region/zone 常量已收敛到 trade/internal/region 包（11C 抽取 2026-05-12）。
 // 历史上本文件、placeorder/service.go、jifei/adapter.go、resourcequery/install.go 各自声明
 // 同值常量，11C 起统一引用 region.LighthouseRegionID / region.LighthouseZoneID。
@@ -207,30 +223,8 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	// 1.5 shadow 反查（8B-1）：当 Uin 未由调用方显式提供时，从 externalUserId 反查云账号身份。
 	// 询价是展示链路，允许未绑定影子账号的用户使用配置化兜底账号拿价格；付费下单仍由
 	// placeorder 包强校验 shadow binding，不复用本策略。
-	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
-		if strings.TrimSpace(req.ExternalUserID) == "" {
-			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
-		}
-		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
-		if err != nil {
-			if errors.Is(err, shadowclient.ErrBindingNotFound) {
-				if !s.applyInquiryFallbackIdentity(&req, "shadow binding not found") {
-					return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
-				}
-			} else {
-				return nil, fmt.Errorf("inquiry: shadow GetBindingByExternalUserID: %w", err)
-			}
-		} else if strings.TrimSpace(binding.Uin) == "" {
-			if !s.applyInquiryFallbackIdentity(&req, "shadow binding empty uin") {
-				return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
-					ErrBindingNotFound, req.ExternalUserID)
-			}
-		} else {
-			req.Uin = binding.Uin
-			if req.AppID == "" {
-				req.AppID = binding.AppID
-			}
-		}
+	if err := s.resolveQuoteIdentity(ctx, &req); err != nil {
+		return nil, err
 	}
 
 	// 2. 反查 ctl bundle
@@ -274,36 +268,16 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 
 	// Q71 2026-05-13：CategoryIDForScene 返回 int64，未命中场景返 0
 	//   （jifei 协议层 goodsCategoryId 是 int，PDF §4.1 line 14 "goodsCategoryId Integer"）。
-	categoryID := def.CategoryIDForScene("purchase")
-	if categoryID == 0 {
-		return nil, fmt.Errorf("inquiry: bundle definition missing category_ids[scene=purchase]: bundleId=%s",
-			req.BundleID)
+	item, err := s.buildPurchaseGetPriceItem(def, req)
+	if err != nil {
+		return nil, err
 	}
-
-	// 4. 拼装 jifei goodsDetail
-	goodsDetail := buildGoodsDetail(def, req)
 
 	// 5. 调 jifei GetPrice
 	priceReq := &jifeiclient.GetPriceRequest{
 		OwnerUin: req.Uin,
 		Uin:      req.Uin,
-		ResInfo: []jifeiclient.GetPriceItem{
-			{
-				GoodsCategoryID: categoryID,
-				// v1.7.x 国际站接入 A5：currency 按 deps.SiteKind 决定（cn=CNY / intl=USD）
-				Currency: s.currency,
-				// Q41 修订 2026-05-11 + v1.7.x A6.1：region/zone 在 New() 期按 site 解析一次缓存
-				// （cn=1/100001 广州 / intl=9/900001 新加坡，合规要求国际站资源落海外地域）
-				RegionID: s.region.RegionID,
-				ZoneID:   s.region.ZoneID,
-				GoodsNum: req.GoodsNum,
-				PayMode:  req.PayMode,
-				// Action 字段不传：jifei PDF《下单接口》line 173 明示「有 categoryid 则不用传 action」，
-				// trade 已通过 GoodsCategoryID 区分 purchase/renew/modify 场景；同时传 action + categoryId 会被
-				// jifei 现网拒回 `returnCode=100001 param error[action: is invalid]`（v1.7.x B17 修复）。
-				GoodsDetail: goodsDetail,
-			},
-		},
+		ResInfo:  []jifeiclient.GetPriceItem{*item},
 	}
 	priceResp, err := s.deps.JifeiClient.GetPrice(ctx, priceReq)
 	if err != nil {
@@ -314,45 +288,123 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	}
 
 	// 6. 拍平 QuoteResult（取首条 data）
-	d := priceResp.Data[0]
-	result := &QuoteResult{
-		BundleID:       req.BundleID,
-		BundleName:     bundle.BundleName,
-		Price:          string(d.Price),
-		TotalCost:      string(d.TotalCost),
-		RealTotalCost:  string(d.RealTotalCost),
-		Currency:       d.Currency,
-		TimeSpan:       d.TimeSpan,
-		TimeUnit:       d.TimeUnit,
-		GoodsNum:       d.GoodsNum,
-		ProductCode:    d.ProductCode,
-		SubProductCode: d.SubProductCode,
-		Pid:            d.Pid,
+	return s.quoteResultFromPriceData(req, bundle, def, priceResp.Data[0]), nil
+}
+
+// QuoteBatch 执行批量新购询价。
+//
+// 普通 jifei bundle 会被合并成一次 GetPrice(resInfo[]) 调用；jifei 返回 data[]
+// 与 resInfo[] 按下标一一对应，禁止按 pid / bundleId / price 字段重新匹配。
+// 点石活动命中的 bundle 保持走 Quote 单条分支，避免改变活动通道语义。
+func (s *Service) QuoteBatch(ctx context.Context, req QuoteBatchRequest) ([]*QuoteResult, error) {
+	if err := s.validateQuoteBatchRequest(&req); err != nil {
+		return nil, err
 	}
-	if d.PolicyDetail != nil {
-		result.Discount = d.PolicyDetail.Total
+
+	baseReq := QuoteRequest{
+		ExternalUserID: req.ExternalUserID,
+		Uin:            req.Uin,
+		AppID:          req.AppID,
+		TimeSpan:       req.TimeSpan,
+		TimeUnit:       req.TimeUnit,
+		GoodsNum:       req.GoodsNum,
+		PayMode:        req.PayMode,
 	}
-	// 当 jifei 返回的 productCode / subProductCode / pid 为空时，回填 trade_bundle_definition 值
-	// （避免业务层依赖空字段；jifei 默认会回显但有兜底场景）
-	if result.ProductCode == "" {
-		result.ProductCode = def.ProductCode
+	if err := s.resolveQuoteIdentity(ctx, &baseReq); err != nil {
+		return nil, err
 	}
-	if result.SubProductCode == "" {
-		result.SubProductCode = def.SubProductCode
+
+	results := make([]*QuoteResult, len(req.BundleIDs))
+	jifeiItems := make([]jifeiclient.GetPriceItem, 0, len(req.BundleIDs))
+	jifeiIndexes := make([]int, 0, len(req.BundleIDs))
+	jifeiReqs := make([]QuoteRequest, 0, len(req.BundleIDs))
+	jifeiBundles := make([]*ctlclient.BundleDetail, 0, len(req.BundleIDs))
+	jifeiDefs := make([]*store.BundleDefinition, 0, len(req.BundleIDs))
+
+	bundlesByID := make(map[string]*ctlclient.BundleDetail, len(req.BundleIDs))
+	for _, bid := range req.BundleIDs {
+		bundle, err := s.deps.CTLClient.GetBundleByID(ctx, bid)
+		if err != nil {
+			if errors.Is(err, ctlclient.ErrNotFound) {
+				return nil, fmt.Errorf("%w: ctl bundleId=%s", ErrBundleNotFound, bid)
+			}
+			return nil, fmt.Errorf("inquiry: ctl GetBundleByID: %w", err)
+		}
+		if !strings.EqualFold(bundle.BundleState, "ONLINE") {
+			return nil, fmt.Errorf("%w: bundleId=%s state=%s",
+				ErrBundleOffline, bid, bundle.BundleState)
+		}
+		bundlesByID[bid] = bundle
 	}
-	if result.Pid == 0 {
-		result.Pid = def.Pid
+
+	defsByID, err := s.deps.BundleStore.GetBundleDefinitionsByIDs(ctx, req.BundleIDs)
+	if err != nil {
+		return nil, fmt.Errorf("inquiry: batch get bundle definitions: %w", err)
 	}
-	if result.TimeSpan == 0 {
-		result.TimeSpan = req.TimeSpan
+
+	for i, bid := range req.BundleIDs {
+		bundle := bundlesByID[bid]
+		def := defsByID[bid]
+		if def == nil {
+			return nil, fmt.Errorf("%w: trade_bundle_definition bundleId=%s",
+				ErrBundleNotFound, bid)
+		}
+		itemReq := baseReq
+		itemReq.BundleID = bid
+
+		if s.deps.ActivityResolver != nil {
+			mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, itemReq.BundleID, itemReq.Uin, itemReq.TimeSpan, itemReq.TimeUnit)
+			if resolveErr != nil {
+				log.Printf("[activity-resolver] inquiry resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
+					itemReq.BundleID, itemReq.Uin, resolveErr)
+			} else if useDianshi {
+				log.Printf("[activity-resolver] inquiry useDianshi=true bundleId=%s uin=%s activityId=%d actId=%d",
+					itemReq.BundleID, itemReq.Uin, mapping.ActivityID, mapping.ActID)
+				result, err := s.quoteDianshi(ctx, itemReq, bundle, def, mapping)
+				if err != nil {
+					return nil, err
+				}
+				results[i] = result
+				continue
+			}
+		}
+
+		item, err := s.buildPurchaseGetPriceItem(def, itemReq)
+		if err != nil {
+			return nil, err
+		}
+		jifeiItems = append(jifeiItems, *item)
+		jifeiIndexes = append(jifeiIndexes, i)
+		jifeiReqs = append(jifeiReqs, itemReq)
+		jifeiBundles = append(jifeiBundles, bundle)
+		jifeiDefs = append(jifeiDefs, def)
 	}
-	if result.TimeUnit == "" {
-		result.TimeUnit = req.TimeUnit
+
+	if len(jifeiItems) == 0 {
+		return results, nil
 	}
-	if result.GoodsNum == 0 {
-		result.GoodsNum = req.GoodsNum
+
+	priceResp, err := s.deps.JifeiClient.GetPrice(ctx, &jifeiclient.GetPriceRequest{
+		OwnerUin: baseReq.Uin,
+		Uin:      baseReq.Uin,
+		ResInfo:  jifeiItems,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("inquiry: jifei GetPrice: %w", err)
 	}
-	return result, nil
+	if priceResp == nil || len(priceResp.Data) == 0 {
+		return nil, fmt.Errorf("inquiry: jifei GetPrice returned empty data")
+	}
+	if len(priceResp.Data) != len(jifeiItems) {
+		return nil, fmt.Errorf("inquiry: jifei GetPrice returned data len=%d, want %d",
+			len(priceResp.Data), len(jifeiItems))
+	}
+
+	for i, d := range priceResp.Data {
+		resultIndex := jifeiIndexes[i]
+		results[resultIndex] = s.quoteResultFromPriceData(jifeiReqs[i], jifeiBundles[i], jifeiDefs[i], d)
+	}
+	return results, nil
 }
 
 func (s *Service) applyInquiryFallbackIdentity(req *QuoteRequest, reason string) bool {
@@ -368,6 +420,43 @@ func (s *Service) applyInquiryFallbackIdentity(req *QuoteRequest, reason string)
 		req.AppID = fallbackAppID
 	}
 	return true
+}
+
+func (s *Service) resolveQuoteIdentity(ctx context.Context, req *QuoteRequest) error {
+	if strings.TrimSpace(req.Uin) != "" || s.deps.ShadowClient == nil {
+		return nil
+	}
+	if strings.TrimSpace(req.ExternalUserID) == "" {
+		return fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
+	}
+	var binding *shadowclient.Binding
+	var err error
+	if strings.EqualFold(strings.TrimSpace(s.deps.SiteKind), "intl") {
+		binding, err = shadowclient.ResolveBindingWithBillingRetry(ctx, s.deps.ShadowClient, req.ExternalUserID, true)
+	} else {
+		binding, err = s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+	}
+	if err != nil {
+		if errors.Is(err, shadowclient.ErrBindingNotFound) {
+			if !s.applyInquiryFallbackIdentity(req, "shadow binding not found") {
+				return fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+			}
+			return nil
+		}
+		return fmt.Errorf("inquiry: shadow GetBindingByExternalUserID: %w", err)
+	}
+	if strings.TrimSpace(binding.Uin) == "" {
+		if !s.applyInquiryFallbackIdentity(req, "shadow binding empty uin") {
+			return fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
+				ErrBindingNotFound, req.ExternalUserID)
+		}
+		return nil
+	}
+	req.Uin = binding.Uin
+	if req.AppID == "" {
+		req.AppID = binding.AppID
+	}
+	return nil
 }
 
 // QuoteRenewRequest 是单次"续费询价"的入参。
@@ -507,12 +596,13 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 
 	// 6. 拍平 QuoteResult
 	d := priceResp.Data[0]
+	price, totalCost, realTotalCost := s.quoteAmountFields(d)
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
-		Price:          string(d.Price),
-		TotalCost:      string(d.TotalCost),
-		RealTotalCost:  string(d.RealTotalCost),
+		Price:          price,
+		TotalCost:      totalCost,
+		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
 		TimeUnit:       d.TimeUnit,
@@ -543,6 +633,88 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 		result.GoodsNum = req.GoodsNum
 	}
 	return result, nil
+}
+
+func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCost, realTotalCost string) {
+	price = string(d.Price)
+	totalCost = string(d.TotalCost)
+	realTotalCost = string(d.RealTotalCost)
+
+	if !strings.EqualFold(s.currency, "USD") || d.HighPrecisionPrice == nil {
+		return price, totalCost, realTotalCost
+	}
+	// 国际站高精度金额字段单位为 USD * 1e8；trade 对前端保持“分”单位契约，
+	// 因此这里除以 1e6 输出美分，前端 centsToYuan 再除以 100 后即为 USD 主币种。
+	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.PriceHigh)); v != "" {
+		price = v
+	}
+	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.TotalCostHigh)); v != "" {
+		totalCost = v
+	}
+	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.RealTotalCostHigh)); v != "" {
+		realTotalCost = v
+	}
+	return price, totalCost, realTotalCost
+}
+
+func highPrecisionAmountToCents(raw string) string {
+	return scaleDecimalString(raw, 6)
+}
+
+func scaleDecimalString(raw string, scale int) string {
+	s := strings.TrimSpace(raw)
+	if s == "" || scale < 0 {
+		return ""
+	}
+	negative := false
+	if s[0] == '-' || s[0] == '+' {
+		negative = s[0] == '-'
+		s = strings.TrimSpace(s[1:])
+	}
+	if s == "" {
+		return ""
+	}
+
+	parts := strings.Split(s, ".")
+	if len(parts) > 2 {
+		return ""
+	}
+	intPart := parts[0]
+	fracPart := ""
+	if len(parts) == 2 {
+		fracPart = parts[1]
+	}
+	digits := intPart + fracPart
+	if digits == "" {
+		return ""
+	}
+	for _, ch := range digits {
+		if ch < '0' || ch > '9' {
+			return ""
+		}
+	}
+
+	totalScale := scale + len(fracPart)
+	if len(digits) <= totalScale {
+		digits = strings.Repeat("0", totalScale-len(digits)+1) + digits
+	}
+	point := len(digits) - totalScale
+	whole := strings.TrimLeft(digits[:point], "0")
+	if whole == "" {
+		whole = "0"
+	}
+	frac := strings.TrimRight(digits[point:], "0")
+	if frac == "" {
+		if negative && whole != "0" {
+			return "-" + whole
+		}
+		return whole
+	}
+	out := whole + "." + frac
+	if negative {
+		return "-" + out
+	}
+	return out
 }
 
 // validateQuoteRenewRequest 校验 QuoteRenewRequest 必填字段。
@@ -614,6 +786,108 @@ func (s *Service) validateQuoteRequest(req *QuoteRequest) error {
 		req.GoodsNum = 1
 	}
 	return nil
+}
+
+func (s *Service) validateQuoteBatchRequest(req *QuoteBatchRequest) error {
+	if len(req.BundleIDs) == 0 {
+		return fmt.Errorf("%w: bundle_ids is required", ErrInvalidInput)
+	}
+	for _, bid := range req.BundleIDs {
+		if strings.TrimSpace(bid) == "" {
+			return fmt.Errorf("%w: bundle_id is required", ErrInvalidInput)
+		}
+	}
+	if s.deps.ShadowClient == nil {
+		if strings.TrimSpace(req.Uin) == "" {
+			return fmt.Errorf("%w: uin is required", ErrInvalidInput)
+		}
+	} else if strings.TrimSpace(req.Uin) == "" && strings.TrimSpace(req.ExternalUserID) == "" {
+		return fmt.Errorf("%w: external_user_id or uin is required", ErrInvalidInput)
+	}
+	if req.TimeSpan <= 0 {
+		return fmt.Errorf("%w: time_span must be > 0", ErrInvalidInput)
+	}
+	if req.TimeUnit == "" {
+		return fmt.Errorf("%w: time_unit is required", ErrInvalidInput)
+	}
+	if req.GoodsNum <= 0 {
+		req.GoodsNum = 1
+	}
+	return nil
+}
+
+func (s *Service) buildPurchaseGetPriceItem(
+	def *store.BundleDefinition,
+	req QuoteRequest,
+) (*jifeiclient.GetPriceItem, error) {
+	categoryID := def.CategoryIDForScene("purchase")
+	if categoryID == 0 {
+		return nil, fmt.Errorf("inquiry: bundle definition missing category_ids[scene=purchase]: bundleId=%s",
+			req.BundleID)
+	}
+
+	return &jifeiclient.GetPriceItem{
+		GoodsCategoryID: categoryID,
+		// v1.7.x 国际站接入 A5：currency 按 deps.SiteKind 决定（cn=CNY / intl=USD）
+		Currency: s.currency,
+		// Q41 修订 2026-05-11 + v1.7.x A6.1：region/zone 在 New() 期按 site 解析一次缓存
+		// （cn=1/100001 广州 / intl=9/900001 新加坡，合规要求国际站资源落海外地域）
+		RegionID: s.region.RegionID,
+		ZoneID:   s.region.ZoneID,
+		GoodsNum: req.GoodsNum,
+		PayMode:  req.PayMode,
+		// Action 字段不传：jifei PDF《下单接口》line 173 明示「有 categoryid 则不用传 action」，
+		// trade 已通过 GoodsCategoryID 区分 purchase/renew/modify 场景；同时传 action + categoryId 会被
+		// jifei 现网拒回 `returnCode=100001 param error[action: is invalid]`（v1.7.x B17 修复）。
+		GoodsDetail: buildGoodsDetail(def, req),
+	}, nil
+}
+
+func (s *Service) quoteResultFromPriceData(
+	req QuoteRequest,
+	bundle *ctlclient.BundleDetail,
+	def *store.BundleDefinition,
+	d jifeiclient.GetPriceData,
+) *QuoteResult {
+	price, totalCost, realTotalCost := s.quoteAmountFields(d)
+	result := &QuoteResult{
+		BundleID:       req.BundleID,
+		BundleName:     bundle.BundleName,
+		Price:          price,
+		TotalCost:      totalCost,
+		RealTotalCost:  realTotalCost,
+		Currency:       d.Currency,
+		TimeSpan:       d.TimeSpan,
+		TimeUnit:       d.TimeUnit,
+		GoodsNum:       d.GoodsNum,
+		ProductCode:    d.ProductCode,
+		SubProductCode: d.SubProductCode,
+		Pid:            d.Pid,
+	}
+	if d.PolicyDetail != nil {
+		result.Discount = d.PolicyDetail.Total
+	}
+	// 当 jifei 返回的 productCode / subProductCode / pid 为空时，回填 trade_bundle_definition 值
+	// （避免业务层依赖空字段；jifei 默认会回显但有兜底场景）
+	if result.ProductCode == "" {
+		result.ProductCode = def.ProductCode
+	}
+	if result.SubProductCode == "" {
+		result.SubProductCode = def.SubProductCode
+	}
+	if result.Pid == 0 {
+		result.Pid = def.Pid
+	}
+	if result.TimeSpan == 0 {
+		result.TimeSpan = req.TimeSpan
+	}
+	if result.TimeUnit == "" {
+		result.TimeUnit = req.TimeUnit
+	}
+	if result.GoodsNum == 0 {
+		result.GoodsNum = req.GoodsNum
+	}
+	return result
 }
 
 // buildGoodsDetail 把 BundleDefinition 的元数据 + 用户入参展平成 jifei goodsDetail map。

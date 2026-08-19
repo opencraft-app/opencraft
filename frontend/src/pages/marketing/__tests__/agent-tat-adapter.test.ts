@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createMonoDebugExecAdapter } from "@/pages/marketing/agent-tat-adapter";
+import { createMockDebugExecAdapter, createMonoDebugExecAdapter } from "@/pages/marketing/agent-tat-adapter";
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  window.localStorage.clear();
 });
 
 describe("createMonoDebugExecAdapter command lifecycle", () => {
@@ -105,9 +106,84 @@ describe("createMonoDebugExecAdapter command lifecycle", () => {
   });
 });
 
+describe("createMockDebugExecAdapter channel status", () => {
+  it("keeps Slack connected after the local preview config command succeeds", async () => {
+    const adapter = createMockDebugExecAdapter({});
+
+    const configure = await adapter.runCommand({
+      RegionId: 1,
+      InstanceIds: ["bot-1"],
+      SaveCommand: false,
+      CommandType: "SHELL",
+      Content: encodeBase64("SLACK_BOT_TOKEN=xoxb-test\nSLACK_APP_TOKEN=xapp-test"),
+      Timeout: 60,
+    });
+    await adapter.getInvocationTask(1, configure.InvocationId, undefined);
+
+    const status = await adapter.runCommand({
+      RegionId: 1,
+      InstanceIds: ["bot-1"],
+      SaveCommand: false,
+      CommandType: "SHELL",
+      Content: encodeBase64("python3 - <<'PY'\nacli channel status\nPY"),
+      Timeout: 60,
+    });
+    const result = await adapter.getInvocationTask(1, status.InvocationId, undefined);
+    const output = decodeBase64(result.TaskResult.Output);
+
+    expect(JSON.parse(output)).toEqual({
+      success: true,
+      data: {
+        platforms: [
+          {
+            name: "slack",
+            status: "connected",
+          },
+        ],
+      },
+      error: null,
+    });
+  });
+
+  it("persists Slack connected status across local preview adapter instances", async () => {
+    const firstAdapter = createMockDebugExecAdapter({});
+    const configure = await firstAdapter.runCommand({
+      RegionId: 1,
+      InstanceIds: ["bot-1"],
+      SaveCommand: false,
+      CommandType: "SHELL",
+      Content: encodeBase64("SLACK_BOT_TOKEN=xoxb-test\nSLACK_APP_TOKEN=xapp-test"),
+      Timeout: 60,
+    });
+    await firstAdapter.getInvocationTask(1, configure.InvocationId, undefined);
+
+    const secondAdapter = createMockDebugExecAdapter({});
+    const status = await secondAdapter.runCommand({
+      RegionId: 1,
+      InstanceIds: ["bot-1"],
+      SaveCommand: false,
+      CommandType: "SHELL",
+      Content: encodeBase64("acli channel status"),
+      Timeout: 60,
+    });
+    const result = await secondAdapter.getInvocationTask(1, status.InvocationId, undefined);
+
+    expect(JSON.parse(decodeBase64(result.TaskResult.Output)).data.platforms).toContainEqual({
+      name: "slack",
+      status: "connected",
+    });
+  });
+});
+
 function encodeBase64(value: string): string {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
+}
+
+function decodeBase64(value: string): string {
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }

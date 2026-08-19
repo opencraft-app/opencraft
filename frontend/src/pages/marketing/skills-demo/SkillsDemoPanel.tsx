@@ -85,6 +85,7 @@ import {
   getCuratedSkillOverview,
   type CuratedSkillBullet,
   type CuratedSkillOverview,
+  type CuratedSkillOverviewLocale,
 } from "./curated-skill-overviews";
 
 type RegistryFilter = "all" | Exclude<Registry, "hermes">;
@@ -100,6 +101,11 @@ type InstalledSourceDescriptor = {
 
 type Translate = ReturnType<typeof useT>;
 type SortMode = "popular" | "name";
+type SkillCategoryLabel = {
+  zh: string;
+  en: string;
+  id?: string;
+};
 type SearchInstallRowStatus = {
   status: "pending" | "installing" | "retrying" | "done" | "failed" | "skipped";
   message?: string;
@@ -287,34 +293,52 @@ type SkillDetailsEntry = {
 
 export type SkillsDemoMode = "global" | "domestic";
 
-function getSkillOverview(skill: Skill, isChinese: boolean): CuratedSkillOverview {
+/**
+ * 未被 curated 数据集收录的 Skill 走这套兜底概览。
+ *
+ * 文案统一走 `t()` 而非中英二元字面量 —— 否则印尼语等语言会落到英文。
+ * 因为本函数在模块作用域，`t` 由调用方（组件内）注入。
+ */
+function getSkillOverview(
+  skill: Skill,
+  overviewLocale: CuratedSkillOverviewLocale,
+  t: (zh: string, options?: Record<string, unknown>) => string,
+): CuratedSkillOverview {
   try {
-    return getCuratedSkillOverview(skill.rawId, isChinese ? "zh-CN" : "en-US");
+    return getCuratedSkillOverview(skill.rawId, overviewLocale);
   } catch {
-    const description = skill.description?.trim() || (isChinese
-      ? "该技能来自 SkillHub，可根据名称和描述帮助智能体完成对应任务。"
-      : "This SkillHub skill helps the agent complete the task described by its name and metadata.");
-    const language = isChinese;
+    const description = skill.description?.trim()
+      || t("该技能来自 SkillHub，可根据名称和描述帮助智能体完成对应任务。");
     const bullet = (title: string, text: string): CuratedSkillBullet => ({ title, description: text });
     return {
-      overview: [description, language ? "安装后，智能体可以在对话中按需调用该技能。" : "After installation, the agent can invoke it when the task matches."],
+      overview: [description, t("安装后，智能体可以在对话中按需调用该技能。")],
       whoShouldUse: [
-        bullet(language ? "需要这项能力的用户" : "Users with this need", language ? "希望把这类任务交给智能体处理。" : "They want the agent to handle this kind of task."),
-        bullet(language ? "团队成员" : "Team members", language ? "需要可复用、统一的工作方式。" : "They need a repeatable way to handle the work."),
+        bullet(t("需要这项能力的用户"), t("希望把这类任务交给智能体处理。")),
+        bullet(t("团队成员"), t("需要可复用、统一的工作方式。")),
       ],
       problemsItSolves: [
-        bullet(language ? "重复查找" : "Repeated setup", language ? "减少每次重新说明任务背景的成本。" : "Reduces the need to restate the task context every time."),
-        bullet(language ? "流程不统一" : "Inconsistent process", language ? "让相似任务更容易按同一套步骤完成。" : "Makes similar tasks easier to complete consistently."),
+        bullet(t("重复查找"), t("减少每次重新说明任务背景的成本。")),
+        bullet(t("流程不统一"), t("让相似任务更容易按同一套步骤完成。")),
       ],
       keyCapabilities: [
-        bullet(language ? "任务理解" : "Task understanding", description),
-        bullet(language ? "结构化处理" : "Structured handling", language ? "根据输入整理并执行相关步骤。" : "Organizes and carries out the relevant steps from the input."),
-        bullet(language ? "结果输出" : "Result output", language ? "生成适合当前任务的结果。" : "Produces a result suited to the task."),
+        bullet(t("任务理解"), description),
+        bullet(t("结构化处理"), t("根据输入整理并执行相关步骤。")),
+        bullet(t("结果输出"), t("生成适合当前任务的结果。")),
       ],
-      basicUsage: language ? "安装技能后，直接描述目标并提供必要的资料或约束。" : "Install the skill, then describe the goal and provide the needed material or constraints.",
-      examplePrompt: language ? `请使用“${skill.name}”完成这项任务，并先说明需要哪些输入。` : `Use ${skill.name} for this task and first tell me what input you need.`,
+      basicUsage: t("安装技能后，直接描述目标并提供必要的资料或约束。"),
+      examplePrompt: t("请使用“{{name}}”完成这项任务，并先说明需要哪些输入。", { name: skill.name }),
     };
   }
+}
+
+function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
+  const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
+    "zh-CN": label.zh,
+    "id-ID": label.id,
+    "en-US": label.en,
+  };
+
+  return labelByLocale[overviewLocale] ?? label.en;
 }
 
 const CLS = "lv-skills-demo";
@@ -1816,6 +1840,13 @@ export function SkillsDemoPanel({
   const { i18n } = useTranslation();
   const shouldReduceMotion = useReducedMotion();
   const isChinese = i18n.resolvedLanguage?.startsWith("zh") ?? false;
+  // Skill 概览数据集按语言分流：中文（含繁体，繁体再由 OpenCC 就地转字形）、
+  // 印尼语、其余回退英文。未收录的条目由 getCuratedSkillOverview 回退英文。
+  const overviewLocale: CuratedSkillOverviewLocale = isChinese
+    ? "zh-CN"
+    : i18n.resolvedLanguage === "id-ID"
+      ? "id-ID"
+      : "en-US";
   const isDomestic = mode === "domestic";
   const featuredSkillCopy: Record<string, { title: string; subtitle: string; description: string }> = {
     "self-improving-agent": {
@@ -2168,10 +2199,12 @@ export function SkillsDemoPanel({
       (index + 1) * FEATURED_BATCH_SIZE,
     ),
   );
+  // 未收录到 featuredSkillCopy 的条目走这套兜底文案。
+  // 走 t() 而非中英二元字面量，否则印尼语等语言会落到英文。
   const getFeaturedCopy = (entry: FeaturedSkillEntry) => featuredSkillCopy[entry.id] ?? {
-    title: isChinese ? `精选技能：${entry.skill.name}` : `Featured Skill: ${entry.skill.name}`,
-    subtitle: isChinese ? "SkillHub 热门技能" : "Popular on SkillHub",
-    description: entry.skill.description || (isChinese ? "帮助智能体完成对应任务" : "Helps the agent complete the matching task"),
+    title: t("精选技能：{{name}}", { name: entry.skill.name }),
+    subtitle: t("SkillHub 热门技能"),
+    description: entry.skill.description || t("帮助智能体完成对应任务"),
   };
 
   const handleInstall = useCallback(
@@ -2775,7 +2808,7 @@ export function SkillsDemoPanel({
                               disabled={batchInstalling || Boolean(installingId)}
                               onOpenDetails={(skill) => setSelectedSkillDetails({
                                 skill,
-                                overview: getSkillOverview(skill, isChinese),
+                                overview: getSkillOverview(skill, overviewLocale, t),
                               })}
                             />
                           );
@@ -2801,12 +2834,12 @@ export function SkillsDemoPanel({
               {skillCategories.map((category) => (
                 <section key={category.id}>
                   <SectionTitle className="mb-2 text-base">
-                    {isChinese ? category.label.zh : category.label.en}
+                    {getCategoryLabel(category.label, overviewLocale)}
                   </SectionTitle>
                   <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
                     {category.skills.map((entry) => {
                       const skill = "skill" in entry ? entry.skill : entry;
-                      const description = getSkillOverview(skill, isChinese).overview[0];
+                      const description = getSkillOverview(skill, overviewLocale, t).overview[0];
                       return (
                       <SkillCard
                         key={`discover:${skillIdentity(skill)}`}
@@ -2820,7 +2853,7 @@ export function SkillsDemoPanel({
                         disabled={batchInstalling || Boolean(installingId)}
                         onOpenDetails={() => setSelectedSkillDetails({
                           skill,
-                          overview: getSkillOverview(skill, isChinese),
+                          overview: getSkillOverview(skill, overviewLocale, t),
                         })}
                         description={description}
                       />

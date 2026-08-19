@@ -60,6 +60,15 @@ const idleModel: HermesConfiguredModel = {
   keyEnv: "HERMES_CUSTOM_LIGHTVELA_GAMMA_API_KEY",
 };
 
+const autoModel: HermesConfiguredModel = {
+  id: "auto",
+  providerKey: "lightvela-auto",
+  providerName: "Auto API",
+  baseUrl: "https://auto.example.com/v1",
+  apiMode: "chat_completions",
+  keyEnv: "HERMES_CUSTOM_LIGHTVELA_AUTO_API_KEY",
+};
+
 const providers: ModelProviderOption[] = [
   {
     providerKey: "alpha",
@@ -267,6 +276,22 @@ describe("AgentModelConfigPanel", () => {
     expect(within(fallbackRow).getByRole("button", { name: "取消备用" })).toBeEnabled();
     expect(primaryRow.querySelector("[title]")).toBeNull();
     expect(screen.queryByRole("button", { name: /上移|下移/ })).not.toBeInTheDocument();
+  });
+
+  it("displays the default configured model as Auto", async () => {
+    const remote = createRemote({
+      primary: autoModel,
+      fallbacks: [],
+      configuredModels: [autoModel],
+    });
+    renderPanel(remote);
+
+    const autoRow = (await screen.findByText("Auto")).closest("li") as HTMLElement;
+    expect(autoRow).toBeInTheDocument();
+    expect(within(autoRow).queryByText("auto")).not.toBeInTheDocument();
+
+    await userEvent.click(within(autoRow).getByRole("button", { name: "设为主模型" }));
+    expect(remote.actions).not.toContainEqual(expect.objectContaining({ type: "assign" }));
   });
 
   it("uses the production-style lower form without changing the configured-model list", async () => {

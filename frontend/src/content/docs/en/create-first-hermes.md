@@ -16,7 +16,7 @@ A Hermes instance is the cloud runtime where your LightVela Agent lives. Activat
 
 - A currently available plan selected from the [Subscribe page](/subscribe); the international site does not require China real-name verification
 
-- At least one messaging account you plan to connect, such as Telegram, WhatsApp, Discord, or WeChat
+- At least one messaging account you plan to connect, such as Telegram, WhatsApp, Discord, Slack, or WeChat
 
 ---
 
@@ -46,7 +46,7 @@ Once the instance is ready, open the console and complete the basic setup:
 
 1. **Configure a model** — Choose the underlying language model; see [Configure Models](./configuration/model.md)
 
-2. **Connect a channel** — Add Telegram, WhatsApp, Discord, WeChat, or another supported channel, then talk to your Agent from the messaging app
+2. **Connect a channel** — Add Telegram, WhatsApp, Discord, Slack, WeChat, or another supported channel, then talk to your Agent from the messaging app
 
 3. **Optionally add skills and automations** — Extend what your Agent can do; see [Configure Automations](./configuration/automation.md)
 

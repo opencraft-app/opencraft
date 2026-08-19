@@ -20,7 +20,7 @@ import (
 )
 
 func requireInternalBearer(r *http.Request) bool {
-	expected := strings.TrimSpace(os.Getenv("CTL_INTERNAL_TOKEN"))
+	expected := firstNonEmptyEnv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "CTL_INTERNAL_TOKEN")
 	if expected == "" {
 		return true
 	}
@@ -30,6 +30,15 @@ func requireInternalBearer(r *http.Request) bool {
 	}
 	token := strings.TrimSpace(strings.TrimSpace(auth[len("Bearer "):]))
 	return token == expected
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (h *instanceHandler) handleInternalBots(w http.ResponseWriter, r *http.Request) {

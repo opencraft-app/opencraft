@@ -84,6 +84,16 @@ func TestResolve(t *testing.T) {
 			},
 		},
 		{
+			name:           "intl + ap-seoul override returns seoul",
+			siteKind:       "intl",
+			regionOverride: "ap-seoul",
+			want: LighthouseRegion{
+				RegionID:   18,
+				ZoneID:     1800001,
+				RegionName: "Seoul",
+			},
+		},
+		{
 			name:           "override is case-insensitive and trim-friendly",
 			siteKind:       "cn",
 			regionOverride: "  AP-Beijing  ",
@@ -130,6 +140,9 @@ func TestLookupByRegion(t *testing.T) {
 		}, true},
 		{"ap-singapore", "ap-singapore", LighthouseRegion{
 			RegionID: LighthouseIntlRegionID, ZoneID: LighthouseIntlZoneID, RegionName: LighthouseIntlRegionName,
+		}, true},
+		{"ap-seoul", "ap-seoul", LighthouseRegion{
+			RegionID: 18, ZoneID: 1800001, RegionName: "Seoul",
 		}, true},
 		{"upper case", "AP-BEIJING", LighthouseRegion{
 			RegionID: 8, ZoneID: 800001, RegionName: "北京",
