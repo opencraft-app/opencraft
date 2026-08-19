@@ -46,6 +46,10 @@ const config = {
   // Next.js 只内联 NEXT_PUBLIC_* 变量，VITE_* 需通过 env 显式暴露到客户端。
   env: {
     VITE_AUTH_API_BASE_URL: process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.VITE_AUTH_API_BASE_URL || '',
+    NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL: process.env.NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL || process.env.VITE_OAUTH_RELAY_ISSUER_BASE_URL || '',
+    NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS: process.env.NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS || process.env.VITE_VISIBLE_OAUTH_PROVIDERS || '',
+    VITE_OAUTH_RELAY_ISSUER_BASE_URL: process.env.NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL || process.env.VITE_OAUTH_RELAY_ISSUER_BASE_URL || '',
+    VITE_VISIBLE_OAUTH_PROVIDERS: process.env.NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS || process.env.VITE_VISIBLE_OAUTH_PROVIDERS || '',
   },
   allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev','intl-sandbox-kr-1.preview.lightclaw.tech'],
   pageExtensions: ['next.tsx', 'next.ts'],

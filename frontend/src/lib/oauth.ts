@@ -6,16 +6,41 @@ export type WeChatOAuthStartTarget = WeChatOAuthMode | "unsupported_mobile_brows
 
 export const WECHAT_MOBILE_BROWSER_PROMPT = "请在微信中打开当前页面后继续登录。";
 
+const SUPPORTED_OAUTH_PROVIDERS = new Set<OAuthProvider>(["qq", "wechat", "google", "github"]);
+
+const parseConfiguredOAuthProviders = (): readonly OAuthProvider[] | null => {
+  const configured = [
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS : undefined,
+    import.meta.env?.VITE_VISIBLE_OAUTH_PROVIDERS,
+  ]
+    .map((value) => value?.trim())
+    .find((value): value is string => Boolean(value));
+  if (!configured) {
+    return null;
+  }
+
+  const providers = configured
+    .split(",")
+    .map((provider) => provider.trim())
+    .filter((provider): provider is OAuthProvider => SUPPORTED_OAUTH_PROVIDERS.has(provider as OAuthProvider));
+
+  return providers.length > 0 ? providers : null;
+};
+
+const DEFAULT_VISIBLE_OAUTH_PROVIDERS: readonly OAuthProvider[] = isGlobal
+  ? (["google", "github"] as const)
+  : (["qq", "wechat"] as const);
+
 /**
  * 当前区域允许展示的 OAuth 登录渠道（编译期常量）。
- * - 国内站：QQ / 微信（GitHub 彩蛋走 useGitHubLoginVisibility 动态开启）
- * - 国际站：Google / GitHub
+ * - 国内站默认：QQ / 微信（GitHub 彩蛋走 useGitHubLoginVisibility 动态开启）
+ * - 国际站默认：Google / GitHub
+ * - 预览环境可用 VITE_VISIBLE_OAUTH_PROVIDERS / NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS 收紧到已配置渠道
  *
  * 数组顺序即登录页渲染顺序，修改前请确认设计稿。
  */
-export const VISIBLE_OAUTH_PROVIDERS: readonly OAuthProvider[] = isGlobal
-  ? (["google", "github"] as const)
-  : (["qq", "wechat"] as const);
+export const VISIBLE_OAUTH_PROVIDERS: readonly OAuthProvider[] =
+  parseConfiguredOAuthProviders() ?? DEFAULT_VISIBLE_OAUTH_PROVIDERS;
 
 /** GitHub 彩蛋入口是否允许在国内站通过 show_github_login() 显示 */
 export const ALLOW_GITHUB_EASTER_EGG = !isGlobal;

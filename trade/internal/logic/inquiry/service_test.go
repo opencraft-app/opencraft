@@ -345,6 +345,9 @@ func TestQuoteBatch_CallsJifeiOnceAndMatchesPricesByRequestOrder(t *testing.T) {
 	if calls := jc.getPriceCalls.Load(); calls != 1 {
 		t.Fatalf("GetPrice calls = %d, want 1", calls)
 	}
+	for _, item := range jc.lastGetPriceArgs.ResInfo {
+		assertIntlPointOfSale(t, item.GoodsDetail)
+	}
 	if len(got) != 3 {
 		t.Fatalf("QuoteBatch len = %d, want 3", len(got))
 	}
@@ -937,7 +940,7 @@ func TestQuoteRenew_HappyPath(t *testing.T) {
 	jc := &fakeJifei{getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
 		return stdJifeiPriceResp(), nil
 	}}
-	svc := New(Deps{CTLClient: ctl, BundleStore: bs, JifeiClient: jc})
+	svc := New(Deps{CTLClient: ctl, BundleStore: bs, JifeiClient: jc, SiteKind: "intl"})
 
 	got, err := svc.QuoteRenew(context.Background(), stdQuoteRenewReq())
 	if err != nil {
@@ -972,8 +975,8 @@ func TestQuoteRenew_HappyPath(t *testing.T) {
 	if res.GoodsCategoryID != 100060 {
 		t.Errorf("GoodsCategoryID = %d, want 100060 (scene=renew)", res.GoodsCategoryID)
 	}
-	if res.Currency != "CNY" {
-		t.Errorf("Currency = %q, want CNY", res.Currency)
+	if res.Currency != "USD" {
+		t.Errorf("Currency = %q, want USD", res.Currency)
 	}
 	gd := res.GoodsDetail
 	if gd["resourceId"] != "lhpass-r1" {
@@ -992,6 +995,7 @@ func TestQuoteRenew_HappyPath(t *testing.T) {
 	if gd["timeSpan"] != 1 || gd["timeUnit"] != "m" || gd["goodsNum"] != 1 {
 		t.Errorf("timeSpan/timeUnit/goodsNum mis-set in goodsDetail: %+v", gd)
 	}
+	assertIntlPointOfSale(t, gd)
 }
 
 // QuoteRenew 入参校验：ResourceID 必填新增；其余与 Quote 一致。

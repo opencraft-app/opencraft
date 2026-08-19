@@ -19,39 +19,44 @@ import (
 // 直接断言 ResInfo[0] 的 RegionID/ZoneID/Currency 三字段。
 func TestQuote_IntlSiteRegionAndCurrency(t *testing.T) {
 	cases := []struct {
-		name         string
-		siteKind     string
-		wantRegionID int
-		wantZoneID   int
-		wantCurrency string
+		name            string
+		siteKind        string
+		wantRegionID    int
+		wantZoneID      int
+		wantCurrency    string
+		wantPointOfSale bool
 	}{
 		{
-			name:         "cn falls back to guangzhou + CNY",
-			siteKind:     "cn",
-			wantRegionID: region.LighthouseRegionID,
-			wantZoneID:   region.LighthouseZoneID,
-			wantCurrency: "CNY",
+			name:            "cn falls back to guangzhou + CNY",
+			siteKind:        "cn",
+			wantRegionID:    region.LighthouseRegionID,
+			wantZoneID:      region.LighthouseZoneID,
+			wantCurrency:    "CNY",
+			wantPointOfSale: false,
 		},
 		{
-			name:         "empty falls back to cn behavior",
-			siteKind:     "",
-			wantRegionID: region.LighthouseRegionID,
-			wantZoneID:   region.LighthouseZoneID,
-			wantCurrency: "CNY",
+			name:            "empty falls back to cn behavior",
+			siteKind:        "",
+			wantRegionID:    region.LighthouseRegionID,
+			wantZoneID:      region.LighthouseZoneID,
+			wantCurrency:    "CNY",
+			wantPointOfSale: false,
 		},
 		{
-			name:         "intl uses singapore + USD",
-			siteKind:     "intl",
-			wantRegionID: region.LighthouseIntlRegionID,
-			wantZoneID:   region.LighthouseIntlZoneID,
-			wantCurrency: "USD",
+			name:            "intl uses singapore + USD",
+			siteKind:        "intl",
+			wantRegionID:    region.LighthouseIntlRegionID,
+			wantZoneID:      region.LighthouseIntlZoneID,
+			wantCurrency:    "USD",
+			wantPointOfSale: true,
 		},
 		{
-			name:         "bogus value falls back to cn",
-			siteKind:     "bogus",
-			wantRegionID: region.LighthouseRegionID,
-			wantZoneID:   region.LighthouseZoneID,
-			wantCurrency: "CNY",
+			name:            "bogus value falls back to cn",
+			siteKind:        "bogus",
+			wantRegionID:    region.LighthouseRegionID,
+			wantZoneID:      region.LighthouseZoneID,
+			wantCurrency:    "CNY",
+			wantPointOfSale: false,
 		},
 	}
 
@@ -87,7 +92,34 @@ func TestQuote_IntlSiteRegionAndCurrency(t *testing.T) {
 			if got.Currency != tc.wantCurrency {
 				t.Errorf("ResInfo[0].Currency = %q, want %q", got.Currency, tc.wantCurrency)
 			}
+			if tc.wantPointOfSale {
+				assertIntlPointOfSale(t, got.GoodsDetail)
+			} else {
+				assertNoPointOfSale(t, got.GoodsDetail)
+			}
 		})
+	}
+}
+
+func assertIntlPointOfSale(t *testing.T, goodsDetail map[string]interface{}) {
+	t.Helper()
+	billingParam, ok := goodsDetail["billingParam"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("goodsDetail.billingParam = %#v, want object", goodsDetail["billingParam"])
+	}
+	if got := billingParam["pointOfSale"]; got != "intlSaaSLightvela" {
+		t.Fatalf("goodsDetail.billingParam.pointOfSale = %#v, want intlSaaSLightvela", got)
+	}
+}
+
+func assertNoPointOfSale(t *testing.T, goodsDetail map[string]interface{}) {
+	t.Helper()
+	billingParam, ok := goodsDetail["billingParam"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if got, exists := billingParam["pointOfSale"]; exists {
+		t.Fatalf("goodsDetail.billingParam.pointOfSale = %#v, want absent", got)
 	}
 }
 

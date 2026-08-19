@@ -1874,6 +1874,10 @@ func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
 			},
 		}, nil
 	}
+	d.service = New(Deps{
+		CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+		OrderWriter: d.writer, OrderStore: d.store, SiteKind: "intl",
+	})
 
 	resp, err := d.service.PlaceOrderAndPay(context.Background(), stdPlaceOrderReq())
 	if err != nil {
@@ -1912,6 +1916,7 @@ func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
 		if pr.Goods[0].PayMode != 1 || pr.Goods[0].GoodsNum != 1 {
 			t.Errorf("para GoodsInfos[0] PayMode/GoodsNum: %+v", pr.Goods[0])
 		}
+		assertIntlPointOfSale(t, pr.Goods[0].GoodsDetail)
 	}
 	if d.writer.createOrderCalls.Load() != 1 {
 		t.Errorf("trade_order createOrder calls = %d, want 1", d.writer.createOrderCalls.Load())
@@ -1937,6 +1942,10 @@ func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 			BigDealIDs: []string{"20260720000000001"},
 		}, nil
 	}
+	d.service = New(Deps{
+		CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+		OrderWriter: d.writer, OrderStore: d.store, SiteKind: "intl",
+	})
 
 	resp, err := d.service.MoveInOrderAndPay(context.Background(), MoveInOrderRequest{
 		ExternalUserID: "usr_migrate",
@@ -1981,6 +1990,7 @@ func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 	if !ok || billingParam["resourcesSource"] != "lightvela" {
 		t.Fatalf("billingParam mismatch: %+v", detail["billingParam"])
 	}
+	assertIntlPointOfSale(t, detail)
 }
 
 func TestMoveInOrderAndPay_InvalidInput(t *testing.T) {
@@ -2209,6 +2219,7 @@ func TestPlaceRenewOrder_HappyPath(t *testing.T) {
 		JifeiClient: d.jifei,
 		OrderWriter: d.writer,
 		OrderStore:  d.store,
+		SiteKind:    "intl",
 	})
 
 	got, err := svc.PlaceRenewOrder(context.Background(), stdPlaceRenewOrderReq())
@@ -2234,8 +2245,8 @@ func TestPlaceRenewOrder_HappyPath(t *testing.T) {
 	if gi.GoodsCategoryID != 100060 {
 		t.Errorf("GoodsCategoryID = %d, want 100060 (scene=renew)", gi.GoodsCategoryID)
 	}
-	if gi.RegionID != region.LighthouseRegionID {
-		t.Errorf("RegionID = %d, want LighthouseRegionID", gi.RegionID)
+	if gi.RegionID != region.LighthouseIntlRegionID {
+		t.Errorf("RegionID = %d, want LighthouseIntlRegionID", gi.RegionID)
 	}
 	if gi.GoodsDetail["resourceId"] != "lhpass-r1" {
 		t.Errorf("goodsDetail.resourceId = %v, want lhpass-r1", gi.GoodsDetail["resourceId"])
@@ -2251,6 +2262,7 @@ func TestPlaceRenewOrder_HappyPath(t *testing.T) {
 	if gi.GoodsDetail["sv_cpu"] != int64(2) {
 		t.Errorf("goodsDetail.sv_cpu = %v, want int64(2)", gi.GoodsDetail["sv_cpu"])
 	}
+	assertIntlPointOfSale(t, gi.GoodsDetail)
 
 	// 验证 trade_order 落库：OrderType=renew + ResourceID=passID + Status=pending_pay
 	in := d.writer.lastCreateOrderInput
@@ -2566,6 +2578,7 @@ func TestPlaceRenewOrderAndPay_HappyPath(t *testing.T) {
 		JifeiClient: d.jifei,
 		OrderWriter: d.writer,
 		OrderStore:  d.store,
+		SiteKind:    "intl",
 	})
 
 	got, err := svc.PlaceRenewOrderAndPay(context.Background(), stdPlaceRenewOrderReq())
@@ -2598,6 +2611,7 @@ func TestPlaceRenewOrderAndPay_HappyPath(t *testing.T) {
 	if gi.GoodsDetail["curDeadline"] != "2026-06-15 10:30:00" {
 		t.Errorf("goodsDetail.curDeadline = %v, want 2026-06-15 10:30:00", gi.GoodsDetail["curDeadline"])
 	}
+	assertIntlPointOfSale(t, gi.GoodsDetail)
 
 	// 验证 trade_order 落库：OrderType=renew + ResourceID + Status=provisioned（BUG-26 修订）
 	in := d.writer.lastCreateOrderInput

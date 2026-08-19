@@ -48,12 +48,14 @@ echo "预览 API base：cn=${PREVIEW_CN_AUTH_API_BASE_URL}"
 echo "预览 API base：intl=${PREVIEW_INTL_AUTH_API_BASE_URL}"
 echo "预览构建类型：next"
 case "$FRONTEND_PREVIEW_BRANCH" in
-  playground/sandbox-bj-*|playground/sandbox-kr-*)
+  playground/sandbox-bj-*)
     export VITE_OAUTH_RELAY_ISSUER_BASE_URL="https://lightclaw.tech"
+    export NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL="https://lightclaw.tech"
     echo "OAuth relay issuer base：${VITE_OAUTH_RELAY_ISSUER_BASE_URL}"
     ;;
   *)
     unset VITE_OAUTH_RELAY_ISSUER_BASE_URL
+    unset NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL
     echo "OAuth relay issuer base：disabled"
     ;;
 esac
@@ -75,6 +77,21 @@ build_next_preview_variant() {
     export NEXT_PUBLIC_REGION="$region"
     export VITE_AUTH_API_BASE_URL="$api_base"
     export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"
+    if [[ "$variant" == "intl" ]]; then
+      case "$FRONTEND_PREVIEW_BRANCH" in
+        playground/sandbox-bj-*)
+          export VITE_VISIBLE_OAUTH_PROVIDERS="github"
+          export NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS="github"
+          ;;
+        *)
+          unset VITE_VISIBLE_OAUTH_PROVIDERS
+          unset NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS
+          ;;
+      esac
+    else
+      unset VITE_VISIBLE_OAUTH_PROVIDERS
+      unset NEXT_PUBLIC_VISIBLE_OAUTH_PROVIDERS
+    fi
     export NEXT_WRITE_EDGEONE_BUILD_OUTPUT=0
     "$PNPM_BIN" run build:next
   )
