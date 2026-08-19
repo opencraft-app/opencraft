@@ -1,6 +1,21 @@
 package shadowbinding
 
-import "testing"
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
+)
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestRegistrationRequestUsesInternationalLevel2EmailContract(t *testing.T) {
 	action, params, err := registrationRequest(SiteKindIntl, "intlSaaSLightvela", CloudRegisterInput{
@@ -43,45 +58,39 @@ func TestRegistrationRequestKeepsDomesticPhoneContract(t *testing.T) {
 	}
 }
 
-func TestTencentCloudClientUsesSeparateServiceAccountForAppIDLookup(t *testing.T) {
-	client, err := NewTencentCloudSDKClient(TencentCloudConfig{
-		SecretID:          "saas-secret-id",
-		SecretKey:         "saas-secret-key",
-		ServiceAccountID:  "service-account-secret-id",
-		ServiceAccountKey: "service-account-secret-key",
-		SiteKind:          SiteKindIntl,
+func TestInternationalRegistrationUsesSaaSClientAndSkipsAppIDLookup(t *testing.T) {
+	var calls int
+	cp := profile.NewClientProfile()
+	accountClient := common.NewCommonClient(common.NewCredential("saas-id", "saas-key"), "ap-singapore", cp)
+	accountClient.WithHttpTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"Response":{"Uin":450850000001,"RequestId":"register-request-id"}}`,
+			)),
+			Request: req,
+		}, nil
+	}))
+	client := &TencentCloudSDKClient{
+		accountClient: accountClient,
+		platform:      "intlSaaSLightvela",
+		siteKind:      SiteKindIntl,
+	}
+
+	result, err := client.RegisterShadowAccount(context.Background(), CloudRegisterInput{
+		UserName: "jpsbx_u8899816908",
+		Email:    "verified@example.com",
 	})
 	if err != nil {
-		t.Fatalf("new tencent cloud client: %v", err)
+		t.Fatalf("register international shadow account: %v", err)
 	}
-	if client.appIDClient == nil || client.appIDClient == client.accountClient {
-		t.Fatal("expected a distinct service-account client for GetAppIdByUin")
+	if result.Uin != 450850000001 || result.OwnerUin != 450850000001 || result.AppID != 0 {
+		t.Fatalf("unexpected registration result: %+v", result)
 	}
-}
-
-func TestTencentCloudClientDefaultsAppIDLookupToAccountClient(t *testing.T) {
-	client, err := NewTencentCloudSDKClient(TencentCloudConfig{
-		SecretID:  "saas-secret-id",
-		SecretKey: "saas-secret-key",
-		SiteKind:  SiteKindIntl,
-	})
-	if err != nil {
-		t.Fatalf("new tencent cloud client: %v", err)
-	}
-	if client.appIDClient != client.accountClient {
-		t.Fatal("expected backward-compatible account client fallback")
-	}
-}
-
-func TestTencentCloudClientRejectsPartialServiceAccountCredentials(t *testing.T) {
-	_, err := NewTencentCloudSDKClient(TencentCloudConfig{
-		SecretID:         "saas-secret-id",
-		SecretKey:        "saas-secret-key",
-		ServiceAccountID: "service-account-secret-id",
-		SiteKind:         SiteKindIntl,
-	})
-	if err == nil {
-		t.Fatal("expected incomplete service-account credentials to fail")
+	if calls != 1 {
+		t.Fatalf("account API calls = %d, want registration only", calls)
 	}
 }
 

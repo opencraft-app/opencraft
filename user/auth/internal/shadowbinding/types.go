@@ -179,3 +179,7 @@ type TencentCloudClient interface {
 type TemporaryCredentialsClient interface {
 	GetTemporaryCredentialsForSaaS(ctx context.Context, in CloudTemporaryCredentialsInput) (CloudTemporaryCredentials, error)
 }
+
+type ShadowIdentityRecoveryClient interface {
+	RecoverShadowIdentityForSaaS(ctx context.Context, in CloudTemporaryCredentialsInput) (CloudSaaSTokenResult, error)
+}

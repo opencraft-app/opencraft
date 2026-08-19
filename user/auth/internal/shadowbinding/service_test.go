@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tcerr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 )
 
 type recordingClient struct {
@@ -14,16 +16,19 @@ type recordingClient struct {
 	updateCalls            int
 	basicAuthCalls         int
 	temporaryCalls         int
+	recoveryCalls          int
 	lastRegister           CloudRegisterInput
 	lastUpdate             CloudUpdatePhoneInput
 	lastBasicAuth          CloudSaveBasicAuthInput
 	lastTemporary          CloudTemporaryCredentialsInput
 	result                 CloudRegisterResult
 	temporaryResult        CloudTemporaryCredentials
+	recoveryResult         CloudSaaSTokenResult
 	err                    error
 	updateErr              error
 	basicAuthErr           error
 	temporaryCredentialErr error
+	recoveryErr            error
 }
 
 type recordingBillingClient struct {
@@ -78,6 +83,12 @@ func (c *recordingClient) GetTemporaryCredentialsForSaaS(_ context.Context, in C
 	c.temporaryCalls++
 	c.lastTemporary = in
 	return c.temporaryResult, c.temporaryCredentialErr
+}
+
+func (c *recordingClient) RecoverShadowIdentityForSaaS(_ context.Context, in CloudTemporaryCredentialsInput) (CloudSaaSTokenResult, error) {
+	c.recoveryCalls++
+	c.lastTemporary = in
+	return c.recoveryResult, c.recoveryErr
 }
 
 func TestIssueTemporaryCredentialsUsesActiveBinding(t *testing.T) {
@@ -260,7 +271,7 @@ func TestBindShadowAccountRecordsFailureAndAllowsRetry(t *testing.T) {
 }
 
 func TestBindShadowAccountOpensBillingBeforeActivatingIntlBinding(t *testing.T) {
-	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036}}
+	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002}}
 	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true, RequestID: "billing-request-1"}}
 	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
 
@@ -271,7 +282,7 @@ func TestBindShadowAccountOpensBillingBeforeActivatingIntlBinding(t *testing.T) 
 	if err != nil {
 		t.Fatalf("bind international shadow account: %v", err)
 	}
-	if binding.Status != StatusActive || billing.calls != 1 || billing.lastUin != 450860000002 {
+	if binding.Status != StatusActive || binding.AppID != 0 || billing.calls != 1 || billing.lastUin != 450860000002 {
 		t.Fatalf("expected billing-open active binding, binding=%+v billing=%+v", binding, billing)
 	}
 	if client.lastRegister.Email != "verified@example.com" {
@@ -300,7 +311,7 @@ func TestBindShadowAccountWaitsForAsyncBillingActivation(t *testing.T) {
 }
 
 func TestBindShadowAccountRetriesBillingWithoutRegisteringAgain(t *testing.T) {
-	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036}}
+	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002}}
 	billing := &recordingBillingClient{err: errors.New("billing unavailable")}
 	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
 
@@ -324,7 +335,7 @@ func TestBindShadowAccountRetriesBillingWithoutRegisteringAgain(t *testing.T) {
 }
 
 func TestRetryBillingAccountOpeningRetriesOnlyBillingOpenFailure(t *testing.T) {
-	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036}}
+	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002}}
 	billing := &recordingBillingClient{err: errors.New("billing unavailable")}
 	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
 
@@ -341,6 +352,78 @@ func TestRetryBillingAccountOpeningRetriesOnlyBillingOpenFailure(t *testing.T) {
 	}
 	if active.Status != StatusActive || billing.calls != 2 || client.calls != 1 {
 		t.Fatalf("expected billing-only retry, binding=%+v billing_calls=%d register_calls=%d", active, billing.calls, client.calls)
+	}
+}
+
+func TestBindIntlRecoversRegisteredShadowUINAfterUncertainRegisterFailure(t *testing.T) {
+	client := &recordingClient{
+		err: errors.New("register response lost"),
+		recoveryResult: CloudSaaSTokenResult{
+			Uin:       450850000001,
+			OwnerUin:  450850000001,
+			RequestID: "saas-token-request-id",
+		},
+	}
+	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true, RequestID: "billing-request-id"}}
+	svc := New(NewMemoryStore(), client, Options{
+		Enabled:        true,
+		SiteKind:       SiteKindIntl,
+		BillingAccount: billing,
+		AuthCodePrefix: "jpsbx",
+	})
+
+	binding, err := svc.BindShadowAccount(context.Background(), BindInput{
+		UserID: "usr_intl",
+		Email:  "verified@example.com",
+	})
+	if err != nil {
+		t.Fatalf("recover registered shadow identity: %v", err)
+	}
+	if binding.Status != StatusActive || binding.Uin != 450850000001 || binding.OwnerUin != 450850000001 || binding.AppID != 0 {
+		t.Fatalf("unexpected recovered binding: %+v", binding)
+	}
+	if client.calls != 1 || client.recoveryCalls != 1 || billing.calls != 1 {
+		t.Fatalf("calls: register=%d recovery=%d billing=%d", client.calls, client.recoveryCalls, billing.calls)
+	}
+	if !strings.HasPrefix(client.lastTemporary.AuthCode, "jpsbx.") {
+		t.Fatalf("recovery auth code = %q, want jpsbx prefix", client.lastTemporary.AuthCode)
+	}
+}
+
+func TestBillingCardRequiredBindingCanIssueTemporaryCredentials(t *testing.T) {
+	now := time.Date(2026, 8, 19, 4, 30, 0, 0, time.UTC)
+	client := &recordingClient{
+		result: CloudRegisterResult{Uin: 450850000001, OwnerUin: 450850000001},
+		temporaryResult: CloudTemporaryCredentials{
+			Uin:          450850000001,
+			OwnerUin:     450850000001,
+			TmpSecretID:  "tmp-id",
+			TmpSecretKey: "tmp-key",
+			Token:        "tmp-token",
+			ExpiredTime:  now.Add(time.Hour),
+		},
+	}
+	billing := &recordingBillingClient{err: tcerr.NewTencentCloudSDKError(
+		"FailedOperation.UinNeedBindCard",
+		"No default payment method",
+		"billing-request-id",
+	)}
+	svc := New(NewMemoryStore(), client, Options{
+		Enabled:        true,
+		SiteKind:       SiteKindIntl,
+		BillingAccount: billing,
+		Now:            func() time.Time { return now },
+	})
+
+	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err == nil {
+		t.Fatal("expected billing card requirement")
+	}
+	if binding.Status != StatusFailed || binding.LastErrorCode != "billing_account_card_required" || binding.Uin != 450850000001 {
+		t.Fatalf("unexpected card-required binding: %+v", binding)
+	}
+	if _, err := svc.IssueTemporaryCredentials(context.Background(), "usr_intl", "127.0.0.1", "payment-method"); err != nil {
+		t.Fatalf("card-required binding should issue temporary credentials: %v", err)
 	}
 }
 

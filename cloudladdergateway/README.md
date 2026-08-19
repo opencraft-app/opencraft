@@ -240,6 +240,9 @@ client.WithHttpTransport(transport)
 | `tcapi-account-cn-prod` | `account.tencentcloudapi.com` | SaaS 注册/安全手机生产环境 |
 | `tcapi-cam-cn-prod` | `cam.tencentcloudapi.com` | SaaS BasicAuth 生产环境 |
 | `tcapi-sts-cn-prod` | `sts.tencentcloudapi.com` | SaaS BasicAuth 生产环境 |
+| `tcapi-account-intl-prod` | `account.tencentcloudapi.com` | 国际站 SaaS 注册生产通道 |
+| `tcapi-cam-intl-prod` | `cam.tencentcloudapi.com` | 国际站 authCode 换 SaaS token 生产通道 |
+| `tcapi-sts-intl-prod` | `sts.tencentcloudapi.com` | 国际站 SaaS token 换临时密钥生产通道 |
 
 ## TencentCloud SaaS callback 兼容入口
 

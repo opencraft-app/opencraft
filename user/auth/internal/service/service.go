@@ -1713,7 +1713,7 @@ func (s *Service) activeShadowBindingByUserID(ctx context.Context, userID string
 		}
 		return ShadowBindingResult{}, err
 	}
-	if binding.Status != shadowbinding.StatusActive {
+	if binding.Status != shadowbinding.StatusActive && !shadowbinding.CanIssueTemporaryCredentials(binding) {
 		return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
 	}
 	return toShadowBindingResult(binding), nil
