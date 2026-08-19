@@ -145,7 +145,7 @@ func newCommonClient(credential *common.Credential, region string, cpf *profile.
 }
 
 func (c *TencentCloudSDKClient) RegisterShadowAccount(ctx context.Context, in CloudRegisterInput) (CloudRegisterResult, error) {
-	if c == nil || c.accountClient == nil {
+	if c == nil || c.appIDClient == nil {
 		return CloudRegisterResult{}, fmt.Errorf("shadow tencentcloud client is not configured")
 	}
 	password, err := cloudAccountPassword()
@@ -163,7 +163,7 @@ func (c *TencentCloudSDKClient) RegisterShadowAccount(ctx context.Context, in Cl
 	req.SetContext(ctx)
 
 	resp := tchttp.NewCommonResponse()
-	if err := c.accountClient.Send(req, resp); err != nil {
+	if err := c.appIDClient.Send(req, resp); err != nil {
 		return CloudRegisterResult{}, fmt.Errorf("send %s: %w", action, err)
 	}
 	var payload struct {
