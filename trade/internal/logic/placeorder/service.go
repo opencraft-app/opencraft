@@ -330,7 +330,7 @@ func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Place
 	}
 
 	// 4. 拼装 jifei generateDeals 入参
-	goodsDetail := buildGoodsDetail(def, req)
+	goodsDetail := s.buildJifeiGoodsDetail(def, req)
 	// AppID 类型转换（与 PlaceOrderAndPay 一致；jifei 协议 appId 是 int64，PDF §4.1 "appId Integer"
 	// 必填）。空字符串 → 0（omitempty 不传字段，jifei 通常会从 ownerUin 反查；trade 调用方
 	// 应该总是传非零值，从 shadowclient 拿）。v1.7.28 BUG-05 修复：本路径 v1.7.19 协议校准时
@@ -447,6 +447,7 @@ func (s *Service) MoveInOrderAndPay(ctx context.Context, req MoveInOrderRequest)
 	}
 
 	goodsDetail := buildMoveInGoodsDetail(def, req)
+	s.addIntlPointOfSale(goodsDetail)
 	dealsReq := &jifeiclient.GenerateDealsAndPayRequest{
 		OwnerUin:    req.Uin,
 		Uin:         req.Uin,
@@ -612,7 +613,7 @@ func (s *Service) PlaceRenewOrder(ctx context.Context, req PlaceRenewOrderReques
 	}
 
 	// 4. 拼装 jifei goodsDetail（基于 buildGoodsDetail 转化为 PlaceOrderRequest 形态复用，附加 resourceId）
-	goodsDetail := buildGoodsDetail(def, PlaceOrderRequest{
+	goodsDetail := s.buildJifeiGoodsDetail(def, PlaceOrderRequest{
 		Period:   req.Period,
 		TimeUnit: req.TimeUnit,
 		GoodsNum: req.GoodsNum,
@@ -869,7 +870,7 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 	}
 
 	// 5. 拼装 jifei generateDealsAndPay 入参
-	goodsDetail := buildGoodsDetail(def, req)
+	goodsDetail := s.buildJifeiGoodsDetail(def, req)
 	autoVoucher := 1 // 测试链路下默认自动扣代金券；如未来生产场景需要按业务参数化，再加 req 字段
 	dealsReq := &jifeiclient.GenerateDealsAndPayRequest{
 		OwnerUin:    req.Uin,
@@ -1094,7 +1095,7 @@ func (s *Service) PlaceRenewOrderAndPay(ctx context.Context, req PlaceRenewOrder
 
 	// 5. 拼装 jifei generateDealsAndPay 入参
 	//    与 PlaceOrderAndPay 关键差异：goodsDetail 注入 resourceId（续费目标 pass_id）
-	goodsDetail := buildGoodsDetail(def, PlaceOrderRequest{
+	goodsDetail := s.buildJifeiGoodsDetail(def, PlaceOrderRequest{
 		Period:   req.Period,
 		TimeUnit: req.TimeUnit,
 		GoodsNum: req.GoodsNum,
@@ -1666,6 +1667,18 @@ func buildGoodsDetail(def *store.BundleDefinition, req PlaceOrderRequest) map[st
 		out["productInfo"] = def.ProductInfo
 	}
 	return out
+}
+
+func (s *Service) buildJifeiGoodsDetail(def *store.BundleDefinition, req PlaceOrderRequest) map[string]interface{} {
+	goodsDetail := buildGoodsDetail(def, req)
+	s.addIntlPointOfSale(goodsDetail)
+	return goodsDetail
+}
+
+func (s *Service) addIntlPointOfSale(goodsDetail map[string]interface{}) {
+	if isIntlSite(s.deps.SiteKind) {
+		jifei.AddIntlPointOfSale(goodsDetail)
+	}
 }
 
 func buildMoveInGoodsDetail(def *store.BundleDefinition, req MoveInOrderRequest) map[string]interface{} {

@@ -49,34 +49,39 @@ func newStdDepsWithSiteKind(siteKind string) *stdDeps {
 // 通过 fakeJifei.lastGenerateDealsReq 和 fakeOrderWriter.lastCreateOrderInput 直接断言。
 func TestPlaceOrder_IntlSiteRegion(t *testing.T) {
 	cases := []struct {
-		name         string
-		siteKind     string
-		wantRegionID int
-		wantZoneID   int
+		name            string
+		siteKind        string
+		wantRegionID    int
+		wantZoneID      int
+		wantPointOfSale bool
 	}{
 		{
-			name:         "cn falls back to guangzhou",
-			siteKind:     "cn",
-			wantRegionID: region.LighthouseRegionID,
-			wantZoneID:   region.LighthouseZoneID,
+			name:            "cn falls back to guangzhou",
+			siteKind:        "cn",
+			wantRegionID:    region.LighthouseRegionID,
+			wantZoneID:      region.LighthouseZoneID,
+			wantPointOfSale: false,
 		},
 		{
-			name:         "empty falls back to cn behavior",
-			siteKind:     "",
-			wantRegionID: region.LighthouseRegionID,
-			wantZoneID:   region.LighthouseZoneID,
+			name:            "empty falls back to cn behavior",
+			siteKind:        "",
+			wantRegionID:    region.LighthouseRegionID,
+			wantZoneID:      region.LighthouseZoneID,
+			wantPointOfSale: false,
 		},
 		{
-			name:         "intl uses singapore",
-			siteKind:     "intl",
-			wantRegionID: region.LighthouseIntlRegionID,
-			wantZoneID:   region.LighthouseIntlZoneID,
+			name:            "intl uses singapore",
+			siteKind:        "intl",
+			wantRegionID:    region.LighthouseIntlRegionID,
+			wantZoneID:      region.LighthouseIntlZoneID,
+			wantPointOfSale: true,
 		},
 		{
-			name:         "bogus value falls back to cn",
-			siteKind:     "bogus",
-			wantRegionID: region.LighthouseRegionID,
-			wantZoneID:   region.LighthouseZoneID,
+			name:            "bogus value falls back to cn",
+			siteKind:        "bogus",
+			wantRegionID:    region.LighthouseRegionID,
+			wantZoneID:      region.LighthouseZoneID,
+			wantPointOfSale: false,
 		},
 	}
 
@@ -98,11 +103,38 @@ func TestPlaceOrder_IntlSiteRegion(t *testing.T) {
 			if gi.ZoneID != tc.wantZoneID {
 				t.Errorf("envelope.resInfo[0].ZoneID = %d, want %d", gi.ZoneID, tc.wantZoneID)
 			}
+			if tc.wantPointOfSale {
+				assertIntlPointOfSale(t, gi.GoodsDetail)
+			} else {
+				assertNoPointOfSale(t, gi.GoodsDetail)
+			}
 			// 2) trade_order.region_id 维度断言（与出向 envelope 同源 — A6.1 合规留痕）
 			if d.writer.lastCreateOrderInput.RegionID != tc.wantRegionID {
 				t.Errorf("trade_order.region_id = %d, want %d (same as envelope.resInfo)",
 					d.writer.lastCreateOrderInput.RegionID, tc.wantRegionID)
 			}
 		})
+	}
+}
+
+func assertIntlPointOfSale(t *testing.T, goodsDetail map[string]interface{}) {
+	t.Helper()
+	billingParam, ok := goodsDetail["billingParam"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("goodsDetail.billingParam = %#v, want object", goodsDetail["billingParam"])
+	}
+	if got := billingParam["pointOfSale"]; got != "intlSaaSLightvela" {
+		t.Fatalf("goodsDetail.billingParam.pointOfSale = %#v, want intlSaaSLightvela", got)
+	}
+}
+
+func assertNoPointOfSale(t *testing.T, goodsDetail map[string]interface{}) {
+	t.Helper()
+	billingParam, ok := goodsDetail["billingParam"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if got, exists := billingParam["pointOfSale"]; exists {
+		t.Fatalf("goodsDetail.billingParam.pointOfSale = %#v, want absent", got)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
@@ -136,6 +137,65 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	}
 	if res.Discount != 50 {
 		t.Errorf("Discount=%v want 50", res.Discount)
+	}
+}
+
+func TestQuote_DianshiBranch_MicroPentAmountsConvertedToCents(t *testing.T) {
+	jc := &fakeJifei{}
+	dc := newFakeDianshiSuccess()
+	dc.priceResp.PriceItems[0].AmountUnit = "microPent"
+	dc.priceResp.PriceItems[0].Currency = "USD"
+	dc.priceResp.PriceItems[0].Price = 650000000
+	dc.priceResp.PriceItems[0].TotalCost = 1400000000
+	dc.priceResp.PriceItems[0].RealCost = 1200000000
+	r := &fakeResolver{
+		mapping:    &activity.Mapping{BundleID: "bundle_launch_01", ActivityID: 165523570799387, ActID: 142062575174494, Active: true, TimeSpanUnit: "14d"},
+		useDianshi: true,
+	}
+	svc := New(Deps{
+		CTLClient:        &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:      &fakeBundleStore{def: stdDef()},
+		JifeiClient:      jc,
+		ActivityResolver: r,
+		DianshiClient:    dc,
+		SiteKind:         "intl",
+	})
+
+	res, err := svc.Quote(context.Background(), QuoteRequest{
+		BundleID: "bundle_launch_01", Uin: "450860000002",
+		TimeSpan: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+	})
+	if err != nil {
+		t.Fatalf("Quote err=%v", err)
+	}
+	if res.Price != "650" || res.TotalCost != "1400" || res.RealTotalCost != "1200" {
+		t.Fatalf("amounts=%s/%s/%s want 650/1400/1200 cents",
+			res.Price, res.TotalCost, res.RealTotalCost)
+	}
+}
+
+func TestQuote_DianshiBranch_UnknownAmountUnitRejected(t *testing.T) {
+	jc := &fakeJifei{}
+	dc := newFakeDianshiSuccess()
+	dc.priceResp.PriceItems[0].AmountUnit = "nanoPent"
+	r := &fakeResolver{
+		mapping:    &activity.Mapping{BundleID: "bundle_launch_01", ActivityID: 165523570799387, ActID: 142062575174494, Active: true, TimeSpanUnit: "14d"},
+		useDianshi: true,
+	}
+	svc := New(Deps{
+		CTLClient:        &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:      &fakeBundleStore{def: stdDef()},
+		JifeiClient:      jc,
+		ActivityResolver: r,
+		DianshiClient:    dc,
+	})
+
+	_, err := svc.Quote(context.Background(), QuoteRequest{
+		BundleID: "bundle_launch_01", Uin: "450860000002",
+		TimeSpan: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), `unsupported amount_unit "nanoPent"`) {
+		t.Fatalf("Quote err=%v, want unsupported amount_unit error", err)
 	}
 }
 

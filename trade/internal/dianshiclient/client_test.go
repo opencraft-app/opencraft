@@ -241,6 +241,46 @@ func TestGetActivityPrice_DefaultPreviewOmitted(t *testing.T) {
 	if _, ok := para["preview"]; ok {
 		t.Fatalf("preview unexpectedly present: %s", sent.Interface.Para)
 	}
+	if _, ok := para["uin"]; ok {
+		t.Fatalf("uin unexpectedly present without preview: %s", sent.Interface.Para)
+	}
+}
+
+// TestGetActivityPrice_PreviewCarriesUin 锁定点石 preview 模式的成对约束：
+// preview=1 时顶层 uin 必须出现在 para（缺 uin 点石返 returnCode=1100105 "商品ID不存在"，
+// 见 commit 68aa66c73 与 2026-08-19 KR 联调实测）。
+func TestGetActivityPrice_PreviewCarriesUin(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"returnCode":0,"returnMessage":"ok","data":[]}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "", Options{Preview: 1})
+	request := &GetPriceRequest{
+		ActivityID: 1,
+		Uin:        "450860000002",
+		Goods:      []GetPriceGoodsItem{{ActID: 1, PreferenceParam: map[string]interface{}{}}},
+	}
+	if _, err := c.GetActivityPrice(context.Background(), request); err != nil {
+		t.Fatalf("GetActivityPrice err=%v", err)
+	}
+
+	var sent envelope
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("decode sent body: %v", err)
+	}
+	var para map[string]interface{}
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if got := para["preview"]; got != float64(1) {
+		t.Fatalf("preview = %#v, want 1", got)
+	}
+	if got := para["uin"]; got != "450860000002" {
+		t.Fatalf("uin = %#v, want 450860000002", got)
+	}
 }
 
 func TestDoGoods_DefaultPreviewOmitted(t *testing.T) {
