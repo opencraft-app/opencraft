@@ -165,3 +165,7 @@ frontend/.workflow/
 .obsidian/
 .playwright-mcp/
 docs/harness/
+
+# teamai（ClawPro）本地状态目录与注入的工具 hooks —— 机器本地配置，不入库
+.teamai/
+.codebuddy/settings.json
