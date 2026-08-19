@@ -43,6 +43,48 @@ func TestRegistrationRequestKeepsDomesticPhoneContract(t *testing.T) {
 	}
 }
 
+func TestTencentCloudClientUsesSeparateServiceAccountForAppIDLookup(t *testing.T) {
+	client, err := NewTencentCloudSDKClient(TencentCloudConfig{
+		SecretID:          "saas-secret-id",
+		SecretKey:         "saas-secret-key",
+		ServiceAccountID:  "service-account-secret-id",
+		ServiceAccountKey: "service-account-secret-key",
+		SiteKind:          SiteKindIntl,
+	})
+	if err != nil {
+		t.Fatalf("new tencent cloud client: %v", err)
+	}
+	if client.appIDClient == nil || client.appIDClient == client.accountClient {
+		t.Fatal("expected a distinct service-account client for GetAppIdByUin")
+	}
+}
+
+func TestTencentCloudClientDefaultsAppIDLookupToAccountClient(t *testing.T) {
+	client, err := NewTencentCloudSDKClient(TencentCloudConfig{
+		SecretID:  "saas-secret-id",
+		SecretKey: "saas-secret-key",
+		SiteKind:  SiteKindIntl,
+	})
+	if err != nil {
+		t.Fatalf("new tencent cloud client: %v", err)
+	}
+	if client.appIDClient != client.accountClient {
+		t.Fatal("expected backward-compatible account client fallback")
+	}
+}
+
+func TestTencentCloudClientRejectsPartialServiceAccountCredentials(t *testing.T) {
+	_, err := NewTencentCloudSDKClient(TencentCloudConfig{
+		SecretID:         "saas-secret-id",
+		SecretKey:        "saas-secret-key",
+		ServiceAccountID: "service-account-secret-id",
+		SiteKind:         SiteKindIntl,
+	})
+	if err == nil {
+		t.Fatal("expected incomplete service-account credentials to fail")
+	}
+}
+
 func TestParseSiteKindRejectsUnknownValue(t *testing.T) {
 	if _, err := ParseSiteKind("korea"); err == nil {
 		t.Fatal("expected unknown site kind to be rejected")
