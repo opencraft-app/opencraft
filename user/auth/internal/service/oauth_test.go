@@ -8,6 +8,8 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
 
+func runShadowTaskInline(task func()) { task() }
+
 type oauthBillingClient struct {
 	calls  int
 	result shadowbinding.BillingAccountResult
@@ -85,6 +87,7 @@ func TestIntlOAuthSignInProvisionsShadowAccountAndBilling(t *testing.T) {
 		Enabled:        true,
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
+		RunAsync:       runShadowTaskInline,
 	})
 	svc := NewWithStore(store, Options{
 		Now:           fixedNow,
@@ -127,6 +130,7 @@ func TestIntlPasswordSignUpProvisionsShadowAccountAndBillingWhenEnabled(t *testi
 		Enabled:        true,
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
+		RunAsync:       runShadowTaskInline,
 	})
 	svc := NewWithStore(store, Options{
 		Now:                         fixedNow,
@@ -164,6 +168,7 @@ func TestPasswordSignUpShadowProvisioningIsDisabledByDefault(t *testing.T) {
 		Enabled:        true,
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
+		RunAsync:       runShadowTaskInline,
 	})
 	svc := NewWithStore(store, Options{
 		Now:           fixedNow,
@@ -228,6 +233,7 @@ func TestIntlPasswordSignUpSurvivesProvisioningFailure(t *testing.T) {
 		Enabled:        true,
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
+		RunAsync:       runShadowTaskInline,
 	})
 	svc := NewWithStore(store, Options{
 		Now:                         fixedNow,
@@ -263,6 +269,7 @@ func TestIntlOAuthSignInSurvivesProvisioningFailure(t *testing.T) {
 		Enabled:        true,
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
+		RunAsync:       runShadowTaskInline,
 	})
 	svc := NewWithStore(store, Options{
 		Now:           fixedNow,
@@ -316,6 +323,7 @@ func TestRetryShadowBindingUsesVerifiedSessionEmail(t *testing.T) {
 		Enabled:        true,
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
+		RunAsync:       runShadowTaskInline,
 	})
 	retrySvc := NewWithStore(store, Options{
 		Now:           fixedNow,
@@ -327,8 +335,12 @@ func TestRetryShadowBindingUsesVerifiedSessionEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry shadow binding: %v", err)
 	}
-	if binding.Status != shadowbinding.StatusActive {
-		t.Fatalf("binding=%+v, want active", binding)
+	if binding.Status != shadowbinding.StatusPending {
+		t.Fatalf("binding=%+v, want immediate pending response", binding)
+	}
+	active, err := shadowStore.GetBindingByUserID(context.Background(), session.User.ID)
+	if err != nil || active.Status != shadowbinding.StatusActive {
+		t.Fatalf("stored binding=%+v, want async active: %v", active, err)
 	}
 	if cloud.lastRegister.Email != "verified@example.com" {
 		t.Fatalf("registration email=%q, want verified session email", cloud.lastRegister.Email)

@@ -209,6 +209,7 @@ func TestInternalShadowBillingRetryReturnsRegisteredIdentityUntilActive(t *testi
 		Now:            fixedHTTPTestNow,
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
+		RunAsync:       func(task func()) { task() },
 	})
 	svc := service.NewWithStore(authStore, service.Options{
 		Now:           fixedHTTPTestNow,
@@ -221,12 +222,16 @@ func TestInternalShadowBillingRetryReturnsRegisteredIdentityUntilActive(t *testi
 		ShadowBindingInternalToken: "shadow-internal-token",
 	})
 	const userID = "usr_intl_billing_retry"
-	failed, err := shadowSvc.BindShadowAccount(context.Background(), shadowbinding.BindInput{
+	pending, err := shadowSvc.BindShadowAccount(context.Background(), shadowbinding.BindInput{
 		UserID: userID,
 		Email:  "verified@example.com",
 	})
-	if err == nil || failed.LastErrorCode != "billing_account_open_failed" {
-		t.Fatalf("seed billing failure: binding=%+v err=%v", failed, err)
+	if err != nil || pending.Status != shadowbinding.StatusPending {
+		t.Fatalf("registration should return pending: binding=%+v err=%v", pending, err)
+	}
+	failed, err := shadowSvc.GetBindingByUserID(context.Background(), userID)
+	if err != nil || failed.LastErrorCode != "billing_account_open_failed" {
+		t.Fatalf("seed async billing failure: binding=%+v err=%v", failed, err)
 	}
 
 	unauthorized := performJSONRequest(t, router, http.MethodPost, "/internal/shadow/binding/retry", map[string]any{"external_user_id": userID})

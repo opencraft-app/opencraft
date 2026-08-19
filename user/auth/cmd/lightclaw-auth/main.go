@@ -344,7 +344,8 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger, s
 		UserNamePrefix:      envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
 		SiteKind:            siteKind,
 		BillingAccount:      billingAccount,
-		BillingOpenTimeout:  parseDurationEnv("SHADOW_BILLING_OPEN_TIMEOUT", 15*time.Second),
+		BillingInitialDelay: parseDurationEnv("SHADOW_BILLING_INITIAL_DELAY", 10*time.Second),
+		BillingOpenTimeout:  parseDurationEnv("SHADOW_BILLING_OPEN_TIMEOUT", time.Minute),
 		BillingPollInterval: parseDurationEnv("SHADOW_BILLING_POLL_INTERVAL", time.Second),
 	})
 }
