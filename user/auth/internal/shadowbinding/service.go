@@ -19,6 +19,7 @@ type Options struct {
 	Enabled             bool
 	Now                 func() time.Time
 	Wait                func(context.Context, time.Duration) error
+	RunAsync            func(func())
 	AuthCodeTTL         time.Duration
 	AuthCodePrefix      string
 	UserNamePrefix      string
@@ -37,6 +38,7 @@ type Service struct {
 	billingOpenTimeout  time.Duration
 	billingPollInterval time.Duration
 	wait                func(context.Context, time.Duration) error
+	runAsync            func(func())
 	enabled             bool
 	now                 func() time.Time
 	authCodeTTL         time.Duration
@@ -53,6 +55,10 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 	wait := opts.Wait
 	if wait == nil {
 		wait = waitForDuration
+	}
+	runAsync := opts.RunAsync
+	if runAsync == nil {
+		runAsync = func(task func()) { go task() }
 	}
 	ttl := opts.AuthCodeTTL
 	if ttl <= 0 {
@@ -82,6 +88,7 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 		billingOpenTimeout:  billingOpenTimeout,
 		billingPollInterval: billingPollInterval,
 		wait:                wait,
+		runAsync:            runAsync,
 		enabled:             opts.Enabled,
 		now:                 now,
 		authCodeTTL:         ttl,
@@ -249,7 +256,20 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 	if err != nil {
 		return binding, err
 	}
-	return s.openBillingAccount(ctx, registered, true)
+	s.startBillingAccountOpening(registered)
+	return registered, nil
+}
+
+func (s *Service) startBillingAccountOpening(binding Binding) {
+	s.runAsync(func() {
+		if _, err := s.openBillingAccount(context.Background(), binding, true); err != nil {
+			slog.Warn("international shadow billing activation failed",
+				"user_id", binding.UserID,
+				"uin", binding.Uin,
+				"err", err,
+			)
+		}
+	})
 }
 
 func (s *Service) RetryBillingAccountOpening(ctx context.Context, userID string) (Binding, error) {
