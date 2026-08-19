@@ -73,7 +73,7 @@ export const HK_REGION_HIDDEN_PROVIDERS = ['openai', 'openai_codex', 'anthropic'
  * TokenHub base_url 国内/海外切换映射
  *
  * tokenhub 是国内+海外都展示的 provider，base_url 需按集合切换。
- * SDK 内置数据（buildModelProviderList）默认填 domestic 值；
+ * SDK 内置数据（MODEL_PROVIDER_LIST）默认填 domestic 值；
  * 海外业务方可在自己的过滤逻辑里 map 出 oversea 值。
  */
 export const TOKENHUB_BASE_URL = {
@@ -195,13 +195,12 @@ export interface IModelProvider {
   };
 }
 
-// 惰性求值：provider_name / description 中的 t() 必须在 i18n 初始化后才求值，
-// 否则模块加载时 i18next 尚未注册词条，t() 只能返回中文 defaultValue（英文环境下表现为中文，
-// 中文环境下若 i18n 已被空词条 init 锁住则表现为空字符串，导致下拉选项为空）。
-let _cachedProviderList: IModelProvider[] | null = null;
+// 列表文案含 t()。原 SDK 的 i18n 词条由宿主在模块加载后才注册，顶层求值会拿到
+// 未初始化的 i18n（返回中文 defaultValue 或空串），故曾用惰性 Proxy 推迟到首次访问。
+// 本地化后 t() 走 @/i18n/t：构建期静态字典 + i18n 在模块顶层同步 init，
+// 且经 import 依赖链先于本模块体求值，顶层直接求值即安全。
 
-function buildModelProviderList(): IModelProvider[] {
-  return [
+export const MODEL_PROVIDER_LIST: IModelProvider[] = [
     // 国际站专属模型（排在最前，国际站过滤后默认选中第一个）
     {
       value: 'openai',
@@ -871,30 +870,7 @@ function buildModelProviderList(): IModelProvider[] {
         { id: 'glm-5', name: 'GLM-5' },
       ],
     },
-  ] as IModelProvider[];
-}
-
-/** 获取模型提供商列表（惰性求值，确保 i18n 词条已注册后再调用 t()） */
-function getModelProviderListCached(): IModelProvider[] {
-  if (!_cachedProviderList) {
-    _cachedProviderList = buildModelProviderList();
-  }
-  return _cachedProviderList;
-}
-
-/**
- * 模型提供商列表。
- *
- * 通过 Proxy 实现惰性求值：首次访问（如 .filter / .map / .length / for...of）时
- * 才构建列表，确保 t() 在 i18n 初始化完成后执行。
- * 对外使用方式与普通数组完全一致，无需修改调用代码。
- */
-export const MODEL_PROVIDER_LIST: IModelProvider[] = new Proxy([] as IModelProvider[], {
-  get: (_t, p, r) => Reflect.get(getModelProviderListCached(), p, r),
-  has: (_t, p) => Reflect.has(getModelProviderListCached(), p),
-  ownKeys: () => Reflect.ownKeys(getModelProviderListCached()),
-  getOwnPropertyDescriptor: (_t, p) => Reflect.getOwnPropertyDescriptor(getModelProviderListCached(), p),
-});
+];
 
 interface IChannelConfig {
   value: string;
@@ -909,11 +885,9 @@ interface IChannelConfig {
   channel_keys: { key: string; description: string }[];
 }
 
-// 惰性求值：channel_name / description 中的 t() 必须在 i18n 初始化后才求值
-let _cachedChannelList: IChannelConfig[] | null = null;
-
-function buildChannelList(): IChannelConfig[] {
-  return [
+// 同 MODEL_PROVIDER_LIST：t() 走 @/i18n/t（构建期静态字典，i18n 顶层同步 init 且经 import
+// 链先于本模块求值），顶层直接求值即安全。
+export const CHANNEL_LIST: IChannelConfig[] = [
     {
       value: 'qqbot',
       channel: 'qqbot',
@@ -988,26 +962,7 @@ function buildChannelList(): IChannelConfig[] {
         },
       ],
     },
-  ];
-}
-
-function getChannelListCached(): IChannelConfig[] {
-  if (!_cachedChannelList) {
-    _cachedChannelList = buildChannelList();
-  }
-  return _cachedChannelList;
-}
-
-/**
- * 通道列表（惰性 Proxy，用法与普通数组一致）。
- * 通过 Proxy 实现惰性求值，确保 t() 在 i18n 初始化完成后才执行。
- */
-export const CHANNEL_LIST: IChannelConfig[] = new Proxy([] as IChannelConfig[], {
-  get: (_t, p, r) => Reflect.get(getChannelListCached(), p, r),
-  has: (_t, p) => Reflect.has(getChannelListCached(), p),
-  ownKeys: () => Reflect.ownKeys(getChannelListCached()),
-  getOwnPropertyDescriptor: (_t, p) => Reflect.getOwnPropertyDescriptor(getChannelListCached(), p),
-});
+];
 
 // Gateway状态常量
 export const GATEWAY_STATUS = {
