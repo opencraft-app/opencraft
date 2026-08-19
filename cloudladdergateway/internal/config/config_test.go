@@ -114,6 +114,40 @@ func TestExampleConfigRoutesIntlBillingAccountAPIToProductionInternalHost(t *tes
 	t.Fatal("tcapi-billing-intl-prod route is missing")
 }
 
+func TestExampleConfigRoutesIntlAccountAPIsToProductionHosts(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	want := map[string]string{
+		"tcapi-account-intl-prod": "https://account.tencentcloudapi.com",
+		"tcapi-cam-intl-prod":     "https://cam.tencentcloudapi.com",
+		"tcapi-sts-intl-prod":     "https://sts.tencentcloudapi.com",
+	}
+	for routeID, baseURL := range want {
+		var route *RouteConfig
+		for i := range cfg.Routes {
+			if cfg.Routes[i].ID == routeID {
+				route = &cfg.Routes[i]
+				break
+			}
+		}
+		if route == nil {
+			t.Fatalf("route %q is missing", routeID)
+		}
+		if route.Mode != RouteModeSignedHTTPTunnel || len(route.Callers) != 1 || route.Callers[0] != "shadow" {
+			t.Fatalf("route %q has invalid security contract: %+v", routeID, route)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve route %q: %v", routeID, err)
+		}
+		if upstream.BaseURL != baseURL {
+			t.Fatalf("route %q base_url = %q, want %q", routeID, upstream.BaseURL, baseURL)
+		}
+	}
+}
+
 func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToTestHost(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
 	if err != nil {
@@ -229,6 +263,9 @@ func TestExampleConfigLoads(t *testing.T) {
 		"tcapi-account-cn-prod":                false,
 		"tcapi-cam-cn-prod":                    false,
 		"tcapi-sts-cn-prod":                    false,
+		"tcapi-account-intl-prod":              false,
+		"tcapi-cam-intl-prod":                  false,
+		"tcapi-sts-intl-prod":                  false,
 		"jifei-test":                           false,
 		"shadow-account-test":                  false,
 		"shadow-cam-test":                      false,

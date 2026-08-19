@@ -11,6 +11,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	tcerr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 )
 
 type Options struct {
@@ -206,11 +208,25 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 		VerifyCode: strings.TrimSpace(in.VerifyCode),
 	})
 	if err != nil {
-		failed, markErr := s.store.MarkBindingFailed(ctx, userID, "tencentcloud_register_failed", err.Error(), now)
-		if markErr != nil {
-			return binding, fmt.Errorf("register shadow account: %w; mark failed: %v", err, markErr)
+		if s.siteKind == SiteKindIntl {
+			recovered, recoveryErr := s.recoverShadowIdentity(ctx, userID, in.ClientIP, in.ClientUA)
+			if recoveryErr == nil {
+				result = recovered
+				err = nil
+			} else {
+				err = fmt.Errorf("register shadow account: %w; recover existing shadow identity: %v", err, recoveryErr)
+			}
 		}
-		return failed, err
+		if err != nil {
+			failed, markErr := s.store.MarkBindingFailed(ctx, userID, "tencentcloud_register_failed", err.Error(), now)
+			if markErr != nil {
+				return binding, fmt.Errorf("%w; mark failed: %v", err, markErr)
+			}
+			return failed, err
+		}
+	}
+	if result.OwnerUin <= 0 {
+		result.OwnerUin = result.Uin
 	}
 	if s.siteKind != SiteKindIntl {
 		return s.store.MarkBindingActive(ctx, userID, result.Uin, result.OwnerUin, result.AppID, now)
@@ -231,8 +247,8 @@ func (s *Service) RetryBillingAccountOpening(ctx context.Context, userID string)
 		return Binding{}, err
 	}
 	if binding.Status != StatusFailed ||
-		strings.TrimSpace(binding.LastErrorCode) != "billing_account_open_failed" ||
-		binding.Uin <= 0 || binding.AppID <= 0 {
+		!isBillingRetryableCode(binding.LastErrorCode) ||
+		binding.Uin <= 0 {
 		return binding, nil
 	}
 	return s.openBillingAccount(ctx, binding)
@@ -269,13 +285,58 @@ func (s *Service) openBillingAccount(ctx context.Context, binding Binding) (Bind
 		break
 	}
 	if err != nil {
-		failed, markErr := s.store.MarkBindingFailed(ctx, binding.UserID, "billing_account_open_failed", err.Error(), s.now())
+		failureCode := "billing_account_open_failed"
+		if isBillingCardRequired(err) {
+			failureCode = "billing_account_card_required"
+		}
+		failed, markErr := s.store.MarkBindingFailed(ctx, binding.UserID, failureCode, err.Error(), s.now())
 		if markErr != nil {
 			return binding, fmt.Errorf("open billing account: %w; mark failed: %v", err, markErr)
 		}
 		return failed, err
 	}
 	return s.store.MarkBindingActive(ctx, binding.UserID, binding.Uin, binding.OwnerUin, binding.AppID, s.now())
+}
+
+func (s *Service) recoverShadowIdentity(ctx context.Context, userID, clientIP, clientUA string) (CloudRegisterResult, error) {
+	recoveryClient, ok := s.client.(ShadowIdentityRecoveryClient)
+	if !ok {
+		return CloudRegisterResult{}, errors.New("shadow identity recovery client is not configured")
+	}
+	authCode, err := s.IssueExternalAuthCode(ctx, userID, AuthCodePurposeSaaSCallback)
+	if err != nil {
+		return CloudRegisterResult{}, err
+	}
+	identity, err := recoveryClient.RecoverShadowIdentityForSaaS(ctx, CloudTemporaryCredentialsInput{
+		AuthCode: authCode.Code,
+		ClientIP: strings.TrimSpace(clientIP),
+		ClientUA: strings.TrimSpace(clientUA),
+	})
+	if err != nil {
+		return CloudRegisterResult{}, err
+	}
+	if identity.Uin <= 0 {
+		return CloudRegisterResult{}, errors.New("GetTokenByAuthCodeForSaaS returned empty uin")
+	}
+	ownerUin := identity.OwnerUin
+	if ownerUin <= 0 {
+		ownerUin = identity.Uin
+	}
+	return CloudRegisterResult{Uin: identity.Uin, OwnerUin: ownerUin}, nil
+}
+
+func isBillingCardRequired(err error) bool {
+	var sdkErr *tcerr.TencentCloudSDKError
+	return errors.As(err, &sdkErr) && sdkErr.Code == "FailedOperation.UinNeedBindCard"
+}
+
+func isBillingRetryableCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case "billing_account_open_failed", "billing_account_card_required":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) SyncPhoneChange(ctx context.Context, in PhoneChangeInput) (Binding, error) {
@@ -505,7 +566,7 @@ func (s *Service) IssueTemporaryCredentials(ctx context.Context, userID, clientI
 	if err != nil {
 		return CloudTemporaryCredentials{}, err
 	}
-	if binding.Status != StatusActive {
+	if !CanIssueTemporaryCredentials(binding) {
 		return CloudTemporaryCredentials{}, errors.New("shadow binding is not active")
 	}
 	authCode, err := s.IssueExternalAuthCode(ctx, binding.UserID, AuthCodePurposeSaaSCallback)
@@ -535,6 +596,13 @@ func (s *Service) IssueTemporaryCredentials(ctx context.Context, userID, clientI
 		return CloudTemporaryCredentials{}, errors.New("shadow temporary credentials are expired")
 	}
 	return credentials, nil
+}
+
+func CanIssueTemporaryCredentials(binding Binding) bool {
+	return binding.Status == StatusActive ||
+		(binding.Status == StatusFailed &&
+			strings.TrimSpace(binding.LastErrorCode) == "billing_account_card_required" &&
+			binding.Uin > 0)
 }
 
 // externalAuthCode decorates the opaque code only while it travels through

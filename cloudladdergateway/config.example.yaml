@@ -280,6 +280,24 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  - alias: tcapi-account-intl-prod
+    upstream:
+      base_url: "https://account.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-cam-intl-prod
+    upstream:
+      base_url: "https://cam.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-sts-intl-prod
+    upstream:
+      base_url: "https://sts.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - alias: lightclaw-auth-bjsbx
     env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_BJSBX
     upstream:
@@ -1001,6 +1019,30 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-sts-cn-prod
+
+  - id: tcapi-account-intl-prod
+    description: "Signed tunnel for TencentCloud international account API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-intl-prod
+
+  - id: tcapi-cam-intl-prod
+    description: "Signed tunnel for TencentCloud international CAM API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-cam-intl-prod
+
+  - id: tcapi-sts-intl-prod
+    description: "Signed tunnel for TencentCloud international STS API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-sts-intl-prod
 
   - id: shadow-account-prod
     description: "Compatibility alias for TencentCloud account API production endpoint."
