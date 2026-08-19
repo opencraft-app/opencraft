@@ -5172,7 +5172,7 @@ export const AgentSettingsPage = ({
                       ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
                       : []),
                     { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
-                    ...(isGlobal
+                    ...(isGlobal && showHiddenAgentTools
                       ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
                       : []),
                   ],

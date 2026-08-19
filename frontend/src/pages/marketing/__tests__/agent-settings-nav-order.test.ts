@@ -48,4 +48,19 @@ describe("Agent settings navigation groups", () => {
     expect(manage).toMatch(/id: "files"[\s\S]*id: "diagnostics"/);
   });
 
+  it("keeps the My creations navigation entry behind show()", () => {
+    const settingsGroups = readNavigationSource();
+
+    expect(settingsGroups).toMatch(/isGlobal\s*&&\s*showHiddenAgentTools[\s\S]*id: "website"/);
+  });
+
+  it("keeps the website panel directly reachable after hiding its navigation entry", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
+      "utf8",
+    );
+
+    expect(page).toContain('isGlobal && activeSection === "website"');
+  });
+
 });

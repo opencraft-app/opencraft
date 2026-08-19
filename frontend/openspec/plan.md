@@ -847,3 +847,62 @@
 - `git diff --check`
 
 ---
+# My creations show() reveal Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 国际站“我的作品”和账号页支付方式入口默认隐藏，仅在当前页面调用 `show()` 后展示，同时保持直接 URL 与订阅支付可用。
+
+**Scope:** 仅调整头像菜单、Agent 导航、账号页支付方式区块及定向测试；不修改 `/agents/websites/` 路由、订阅下单、API 或后端。
+
+### Task 1: 使用现有 show() 彩蛋控制“我的作品”入口
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/components/site/user-avatar-menu.tsx`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Test: `frontend/src/components/site/__tests__/user-avatar-menu.test.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+
+**Acceptance:**
+- 头像菜单和 Agent “使用”分组默认不显示“我的作品”。
+- 调用 `window.show()` 后，两处入口按其所在组件生命周期展示。
+- 直接访问 `/agents/websites/` 仍可渲染作品面板。
+- 不修改网站 API、路由和后端能力。
+
+- [x] 先补充失败测试并确认 RED。
+- [x] 复用现有 `show()` 链式回调实现最小展示开关并确认 GREEN。
+- [x] 运行定向测试、类型检查、i18n 检查和 diff 检查。
+
+**Verification:**
+- `pnpm exec vitest run src/components/site/__tests__/user-avatar-menu.test.tsx src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`（12 tests passed）
+- `pnpm i18n:check`
+- `pnpm check`
+- `git diff --check`
+
+### Task 2: 使用 show() 控制账号页支付方式区块
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/account-page-payment-visibility.test.ts`
+
+**Acceptance:**
+- 国际站账号页默认不挂载“支付方式”区块。
+- 在账号页调用 `window.show()` 后挂载“支付方式”区块。
+- `show()` 继续调用页面上原有的同名 helper。
+- 订阅页下单与信用卡支付流程不变。
+
+- [x] 先补充失败测试并确认 RED。
+- [x] 实现账号页局部展示状态并确认 GREEN。
+- [x] 运行支付方式相关测试、类型检查、i18n 检查和 diff 检查。
+
+**Verification:**
+- `pnpm exec vitest run src/pages/marketing/__tests__/account-page-payment-visibility.test.ts src/pages/marketing/__tests__/saved-cards-section.test.tsx src/components/site/__tests__/user-avatar-menu.test.tsx src/pages/marketing/__tests__/agent-settings-nav-order.test.ts src/pages/marketing/__tests__/agent-console-helpers.test.ts`（34 tests passed）
+- `pnpm i18n:check`
+- `pnpm check`
+- `git diff --check`
+
+---
