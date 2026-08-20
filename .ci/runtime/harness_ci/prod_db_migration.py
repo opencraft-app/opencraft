@@ -372,9 +372,10 @@ def probe_db_version(*, source_dir: Path, deploy_root: Path, bundle_service: str
     verifier = contract.get("verifier") or {}
     if not verifier:
         raise ValueError(f"bundle {bundle_service} does not define db_contract.verifier")
-    expected_version = db_contract_verifier.max_migration_version(
+    expected_version = db_contract_verifier.expected_migration_version(
         source_dir,
-        str(contract.get("expected_migration_source") or ""),
+        contract,
+        env,
     )
     expected_source = str(contract.get("expected_migration_source") or "")
     env_values, node_selector, env_secret_values = db_contract_verifier.resolve_runtime_env(

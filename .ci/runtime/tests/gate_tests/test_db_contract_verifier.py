@@ -19,6 +19,7 @@ from gates.db_contract_verifier import (  # noqa: E402
     apply_playground_ctl_runtime_env,
     build_check_script,
     build_job_manifest,
+    expected_migration_version,
     kubectl,
     main,
     max_migration_version,
@@ -50,6 +51,45 @@ class DbContractVerifierTests(unittest.TestCase):
             (migrations / "12_add_plan.down.sql").write_text("select 1;\n")
 
             self.assertEqual(max_migration_version(repo_root, "payment/migrations"), 12)
+
+    def test_expected_migration_version_uses_environment_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            migrations = repo_root / "ctl" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000027_add_index.up.sql").write_text("select 1;\n")
+            (migrations / "000028_create_websites.up.sql").write_text("select 1;\n")
+            contract = {
+                "expected_migration_source": "ctl/migrations",
+                "expected_migration_version_by_env": {
+                    "shprod": 27,
+                    "sgprod": 28,
+                },
+            }
+            self.assertEqual(
+                expected_migration_version(repo_root, contract, "shprod"),
+                27,
+            )
+            self.assertEqual(
+                expected_migration_version(repo_root, contract, "sgprod"),
+                28,
+            )
+            self.assertEqual(
+                expected_migration_version(repo_root, contract, "beijing-sandbox"),
+                28,
+            )
+
+    def test_expected_migration_version_rejects_non_mapping_override(self) -> None:
+        contract = {
+            "expected_migration_source": "ctl/migrations",
+            "expected_migration_version_by_env": [],
+        }
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "expected_migration_version_by_env must be a mapping",
+        ):
+            expected_migration_version(Path("/tmp"), contract, "shprod")
 
     def test_check_script_is_shell_parseable_and_checks_baseline_without_secret_values(self) -> None:
         verifier = {

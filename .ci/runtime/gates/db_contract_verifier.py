@@ -316,6 +316,31 @@ def max_migration_version(repo_root: Path, source: str) -> int:
     return max(versions) if versions else 0
 
 
+def expected_migration_version(
+    repo_root: Path,
+    contract: Mapping[str, Any],
+    env: str,
+) -> int:
+    source = str(contract.get("expected_migration_source") or "")
+    latest_version = max_migration_version(repo_root, source)
+    versions_by_env = contract.get("expected_migration_version_by_env")
+    if versions_by_env is None:
+        return latest_version
+    if not isinstance(versions_by_env, Mapping):
+        raise TypeError("expected_migration_version_by_env must be a mapping")
+    if env not in versions_by_env:
+        return latest_version
+
+    configured_version = versions_by_env[env]
+    if isinstance(configured_version, bool) or not isinstance(configured_version, int):
+        raise TypeError(f"expected migration version for {env} must be an integer")
+    if configured_version < 0 or configured_version > latest_version:
+        raise ValueError(
+            f"expected migration version for {env} must be between 0 and {latest_version}"
+        )
+    return configured_version
+
+
 def shell_single_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
@@ -576,7 +601,7 @@ def main() -> int:
         raise ValueError(f"bundle {args.service} does not define db_contract.verifier")
     catalog_service = resolve_catalog_service(args.service, contract)
     verifier["namespace"] = resolve_verifier_namespace(deploy_root, args.env, catalog_service, verifier)
-    expected_version = max_migration_version(repo_root, str(contract.get("expected_migration_source") or ""))
+    expected_version = expected_migration_version(repo_root, contract, args.env)
     env_values, node_selector, env_secret_values = resolve_runtime_env(deploy_root, args.env, verifier, contract)
     kubeconfig = ""
     if args.apply:
