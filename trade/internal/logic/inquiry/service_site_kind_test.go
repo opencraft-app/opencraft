@@ -2,6 +2,7 @@ package inquiry
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
@@ -67,6 +68,9 @@ func TestQuote_IntlSiteRegionAndCurrency(t *testing.T) {
 			}}
 			bs := &fakeBundleStore{def: stdDef()}
 			jc := &fakeJifei{getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+				if tc.siteKind == "intl" {
+					return stdIntlJifeiPriceResp(), nil
+				}
 				return stdJifeiPriceResp(), nil
 			}}
 			svc := New(Deps{
@@ -155,6 +159,7 @@ func TestQuote_IntlHighPrecisionPriceUsesCentsContract(t *testing.T) {
 					TotalCost:     "999999",
 					RealTotalCost: "999999",
 					Currency:      "USD",
+					TaxDetail:     &jifeiclient.TaxDetail{TaxRate: "0.07"},
 					HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{
 						PriceHigh:         "650000000",
 						TotalCostHigh:     "1400000000",
@@ -175,8 +180,8 @@ func TestQuote_IntlHighPrecisionPriceUsesCentsContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Quote: %v", err)
 	}
-	if got.Price != "650" || got.TotalCost != "1400" || got.RealTotalCost != "1200" {
-		t.Fatalf("Quote amounts = price:%s total:%s real:%s, want 650/1400/1200",
+	if got.Price != "696" || got.TotalCost != "1498" || got.RealTotalCost != "1284" {
+		t.Fatalf("Quote amounts = price:%s total:%s real:%s, want 696/1498/1284",
 			got.Price, got.TotalCost, got.RealTotalCost)
 	}
 
@@ -184,9 +189,44 @@ func TestQuote_IntlHighPrecisionPriceUsesCentsContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QuoteRenew: %v", err)
 	}
-	if renewGot.Price != "650" || renewGot.TotalCost != "1400" || renewGot.RealTotalCost != "1200" {
-		t.Fatalf("QuoteRenew amounts = price:%s total:%s real:%s, want 650/1400/1200",
+	if renewGot.Price != "696" || renewGot.TotalCost != "1498" || renewGot.RealTotalCost != "1284" {
+		t.Fatalf("QuoteRenew amounts = price:%s total:%s real:%s, want 696/1498/1284",
 			renewGot.Price, renewGot.TotalCost, renewGot.RealTotalCost)
+	}
+}
+
+func TestQuote_IntlRejectsInvalidTaxRate(t *testing.T) {
+	tests := []struct {
+		name      string
+		taxDetail *jifeiclient.TaxDetail
+	}{
+		{name: "missing tax detail"},
+		{name: "missing tax rate", taxDetail: &jifeiclient.TaxDetail{}},
+		{name: "malformed tax rate", taxDetail: &jifeiclient.TaxDetail{TaxRate: "bad"}},
+		{name: "negative tax rate", taxDetail: &jifeiclient.TaxDetail{TaxRate: "-0.01"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctl := &fakeCTL{getBundleByIDFn: func(context.Context, string) (*ctlclient.BundleDetail, error) {
+				return stdBundle(), nil
+			}}
+			jc := &fakeJifei{getPriceFn: func(context.Context, *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+				return &jifeiclient.GetPriceResponse{Data: []jifeiclient.GetPriceData{{
+					Currency:  "USD",
+					TaxDetail: tt.taxDetail,
+					HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{
+						PriceHigh: "650000000", TotalCostHigh: "650000000", RealTotalCostHigh: "650000000",
+					},
+				}}}, nil
+			}}
+			svc := New(Deps{CTLClient: ctl, BundleStore: &fakeBundleStore{def: stdDef()}, JifeiClient: jc, SiteKind: "intl"})
+
+			_, err := svc.Quote(context.Background(), stdQuoteReq())
+			if err == nil || !strings.Contains(err.Error(), "tax") {
+				t.Fatalf("Quote error = %v, want tax error", err)
+			}
+		})
 	}
 }
 

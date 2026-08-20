@@ -27,6 +27,7 @@ import (
 	"log"
 	"strings"
 
+	"git.woa.com/wisp/mono/trade/internal/billingamount"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/jifei"
@@ -289,7 +290,7 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	}
 
 	// 6. 拍平 QuoteResult（取首条 data）
-	return s.quoteResultFromPriceData(req, bundle, def, priceResp.Data[0]), nil
+	return s.quoteResultFromPriceData(req, bundle, def, priceResp.Data[0])
 }
 
 // QuoteBatch 执行批量新购询价。
@@ -403,7 +404,11 @@ func (s *Service) QuoteBatch(ctx context.Context, req QuoteBatchRequest) ([]*Quo
 
 	for i, d := range priceResp.Data {
 		resultIndex := jifeiIndexes[i]
-		results[resultIndex] = s.quoteResultFromPriceData(jifeiReqs[i], jifeiBundles[i], jifeiDefs[i], d)
+		result, err := s.quoteResultFromPriceData(jifeiReqs[i], jifeiBundles[i], jifeiDefs[i], d)
+		if err != nil {
+			return nil, err
+		}
+		results[resultIndex] = result
 	}
 	return results, nil
 }
@@ -597,7 +602,10 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 
 	// 6. 拍平 QuoteResult
 	d := priceResp.Data[0]
-	price, totalCost, realTotalCost := s.quoteAmountFields(d)
+	price, totalCost, realTotalCost, err := s.quoteAmountFields(d)
+	if err != nil {
+		return nil, err
+	}
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
@@ -636,26 +644,50 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 	return result, nil
 }
 
-func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCost, realTotalCost string) {
+func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCost, realTotalCost string, err error) {
 	price = string(d.Price)
 	totalCost = string(d.TotalCost)
 	realTotalCost = string(d.RealTotalCost)
 
-	if !strings.EqualFold(s.currency, "USD") || d.HighPrecisionPrice == nil {
-		return price, totalCost, realTotalCost
+	if !strings.EqualFold(s.currency, "USD") {
+		return price, totalCost, realTotalCost, nil
 	}
-	// 国际站高精度金额字段单位为 USD * 1e8；trade 对前端保持“分”单位契约，
-	// 因此这里除以 1e6 输出美分，前端 centsToYuan 再除以 100 后即为 USD 主币种。
-	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.PriceHigh)); v != "" {
-		price = v
+	if d.TaxDetail == nil {
+		return "", "", "", fmt.Errorf("inquiry: jifei GetPrice taxDetail is required for intl quote")
 	}
-	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.TotalCostHigh)); v != "" {
-		totalCost = v
+	taxRate := strings.TrimSpace(string(d.TaxDetail.TaxRate))
+	if d.HighPrecisionPrice != nil {
+		if v := strings.TrimSpace(string(d.HighPrecisionPrice.PriceHigh)); v != "" {
+			price = v
+		}
+		if v := strings.TrimSpace(string(d.HighPrecisionPrice.TotalCostHigh)); v != "" {
+			totalCost = v
+		}
+		if v := strings.TrimSpace(string(d.HighPrecisionPrice.RealTotalCostHigh)); v != "" {
+			realTotalCost = v
+		}
 	}
-	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.RealTotalCostHigh)); v != "" {
-		realTotalCost = v
+	price, err = taxInclusiveQuoteAmount("price", price, taxRate)
+	if err != nil {
+		return "", "", "", err
 	}
-	return price, totalCost, realTotalCost
+	totalCost, err = taxInclusiveQuoteAmount("totalCost", totalCost, taxRate)
+	if err != nil {
+		return "", "", "", err
+	}
+	realTotalCost, err = taxInclusiveQuoteAmount("realTotalCost", realTotalCost, taxRate)
+	if err != nil {
+		return "", "", "", err
+	}
+	return price, totalCost, realTotalCost, nil
+}
+
+func taxInclusiveQuoteAmount(field, rawAmount, taxRate string) (string, error) {
+	cents, err := billingamount.TaxInclusiveCents(rawAmount, taxRate)
+	if err != nil {
+		return "", fmt.Errorf("inquiry: jifei GetPrice invalid %s=%q or taxRate=%q: %w", field, rawAmount, taxRate, err)
+	}
+	return cents, nil
 }
 
 func highPrecisionAmountToCents(raw string) string {
@@ -857,8 +889,11 @@ func (s *Service) quoteResultFromPriceData(
 	bundle *ctlclient.BundleDetail,
 	def *store.BundleDefinition,
 	d jifeiclient.GetPriceData,
-) *QuoteResult {
-	price, totalCost, realTotalCost := s.quoteAmountFields(d)
+) (*QuoteResult, error) {
+	price, totalCost, realTotalCost, err := s.quoteAmountFields(d)
+	if err != nil {
+		return nil, err
+	}
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
@@ -896,7 +931,7 @@ func (s *Service) quoteResultFromPriceData(
 	if result.GoodsNum == 0 {
 		result.GoodsNum = req.GoodsNum
 	}
-	return result
+	return result, nil
 }
 
 // buildGoodsDetail 把 BundleDefinition 的元数据 + 用户入参展平成 jifei goodsDetail map。
