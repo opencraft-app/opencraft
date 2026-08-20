@@ -155,6 +155,17 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_ctl_production_schema_versions_match_environment_policy(self) -> None:
+        manifest = load_manifest()
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                contract = load_bundle(manifest, "ctl", env).db_contract
+                self.assertEqual(
+                    contract.get("expected_migration_version_by_env"),
+                    {"shprod": 27, "sgprod": 28},
+                )
+
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
         rendered = dump_manifest(merge_bundle_sources(RUNTIME_DIR / "bundles"))
 
