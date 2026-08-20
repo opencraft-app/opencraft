@@ -443,7 +443,7 @@ type RenewPassPriceRequest struct {
 // RenewPassPriceResult 续费询价响应（v1.7.21 B16 / R-C-4 / v1.7.28 BUG-04 C 路径精简）
 //
 // **字段集精简（v1.7.28 拍板）**：与新购询价 transport.BundlePrice 字段集严格对齐 — 前端
-// UI 续费询价 / 新购询价共用同一价格展示组件，只需要价格 5 字段 + bundle_id 即可。
+// UI 续费询价 / 新购询价共用同一价格展示组件，只需要价格 6 字段 + bundle_id 即可。
 //
 // 删除的字段（jifei 协议层死字段，ctl 不应感知）：
 //   - bundle_name：续费时前端已有 pass，可从 pass.bundle_id → bundle 拿名称
@@ -455,6 +455,7 @@ type RenewPassPriceResult struct {
 	BundleID      string  `json:"bundle_id"`
 	Price         float64 `json:"price"`           // CGW data[].price，标价（单位分）
 	TotalCost     float64 `json:"total_cost"`      // CGW totalCost，成本价（单位分）
+	TaxPrice      float64 `json:"tax_price"`       // 实付金额对应税额（单位分）
 	RealTotalCost float64 `json:"real_total_cost"` // CGW realTotalCost，实付价（单位分）
 	Currency      string  `json:"currency"`        // 币种，如 CNY
 	Discount      float64 `json:"discount"`        // 总折扣率，policyDetail.total 拍平；100 = 无折扣

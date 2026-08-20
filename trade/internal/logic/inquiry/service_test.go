@@ -380,16 +380,19 @@ func TestQuoteBatch_CallsJifeiOnceAndMatchesPricesByRequestOrder(t *testing.T) {
 	want := []struct {
 		bundleID string
 		price    string
+		taxPrice string
+		realCost string
 		pid      int64
 	}{
-		{"bundle_voyage", "696", 3003},
-		{"bundle_launch", "1320", 1001},
-		{"bundle_cruise", "2300", 2002},
+		{"bundle_voyage", "650", "46", "696", 3003},
+		{"bundle_launch", "1200", "120", "1320", 1001},
+		{"bundle_cruise", "2300", "0", "2300", 2002},
 	}
 	for i, w := range want {
-		if got[i].BundleID != w.bundleID || got[i].Price != w.price || got[i].Pid != w.pid {
-			t.Fatalf("QuoteBatch[%d] = {BundleID:%q Price:%q Pid:%d}, want {BundleID:%q Price:%q Pid:%d}",
-				i, got[i].BundleID, got[i].Price, got[i].Pid, w.bundleID, w.price, w.pid)
+		if got[i].BundleID != w.bundleID || got[i].Price != w.price || got[i].TaxPrice != w.taxPrice || got[i].RealTotalCost != w.realCost || got[i].Pid != w.pid {
+			t.Fatalf("QuoteBatch[%d] = {BundleID:%q Price:%q TaxPrice:%q RealTotalCost:%q Pid:%d}, want {BundleID:%q Price:%q TaxPrice:%q RealTotalCost:%q Pid:%d}",
+				i, got[i].BundleID, got[i].Price, got[i].TaxPrice, got[i].RealTotalCost, got[i].Pid,
+				w.bundleID, w.price, w.taxPrice, w.realCost, w.pid)
 		}
 	}
 }

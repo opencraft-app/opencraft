@@ -3,8 +3,9 @@
 ## Goal
 
 When an international site generates a payment URL, pass a tax-inclusive
-`ChargeAmount` to billing `CreatePayUrl`. Return tax-inclusive `price`,
-`total_cost`, and `real_total_cost` for regular Jifei international inquiries.
+`ChargeAmount` to billing `CreatePayUrl`. For regular Jifei international
+inquiries, return untaxed `price` and `total_cost`, the tax amount in
+`tax_price`, and the tax-inclusive paid total in `real_total_cost`.
 
 ## Confirmed Upstream Shape
 
@@ -31,10 +32,11 @@ the observed response.
 5. Pass the resulting integer cents as `CreatePayUrl.ChargeAmount`.
 
 For regular Jifei international purchase, batch, and renewal inquiries, decode
-`taxDetail.taxRate` from each `GetPrice` item and apply the same calculation to
-all three high-precision amount fields before returning cents. Domestic inquiry
-amounts remain unchanged. Dianshi activity inquiries remain unchanged because
-their response does not currently provide a tax rate.
+`taxDetail.taxRate` from each `GetPrice` item. Convert `price` and `total_cost`
+from their high-precision fields without tax, calculate `real_total_cost` from
+the high-precision paid amount with tax, and return the difference between the
+tax-inclusive and untaxed paid amounts as `tax_price`. Domestic and Dianshi
+activity inquiries return `tax_price` as zero.
 
 ## Validation
 
@@ -54,5 +56,9 @@ their response does not currently provide a tax rate.
 - Round positive fractional cents up to the next whole cent.
 - Preserve high-precision paid amount priority and legacy fallback behavior.
 - Verify missing and negative tax rates fail before `CreatePayUrl`.
-- Verify international purchase, batch, and renewal inquiry amounts include tax.
-- Verify domestic and Dianshi inquiry amounts remain unchanged.
+- Verify international purchase, batch, and renewal inquiries return untaxed
+  `price`/`total_cost`, a separate `tax_price`, and tax-inclusive
+  `real_total_cost`.
+- Verify CTL exposes `tax_price` for purchase and renewal inquiry responses.
+- Verify domestic and Dianshi inquiry amounts remain unchanged and return zero
+  tax.

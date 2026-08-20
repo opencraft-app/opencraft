@@ -580,6 +580,7 @@ func bundleQuoteToPrice(q *tradeadapter.BundleQuote) *transport.BundlePrice {
 	return &transport.BundlePrice{
 		Price:         parse(q.Price),
 		TotalCost:     parse(q.TotalCost),
+		TaxPrice:      parse(q.TaxPrice),
 		RealTotalCost: parse(q.RealTotalCost),
 		Currency:      q.Currency,
 		Discount:      q.Discount,

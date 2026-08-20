@@ -180,18 +180,18 @@ func TestQuote_IntlHighPrecisionPriceUsesCentsContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Quote: %v", err)
 	}
-	if got.Price != "696" || got.TotalCost != "1498" || got.RealTotalCost != "1284" {
-		t.Fatalf("Quote amounts = price:%s total:%s real:%s, want 696/1498/1284",
-			got.Price, got.TotalCost, got.RealTotalCost)
+	if got.Price != "650" || got.TotalCost != "1400" || got.TaxPrice != "84" || got.RealTotalCost != "1284" {
+		t.Fatalf("Quote amounts = price:%s total:%s tax:%s real:%s, want 650/1400/84/1284",
+			got.Price, got.TotalCost, got.TaxPrice, got.RealTotalCost)
 	}
 
 	renewGot, err := svc.QuoteRenew(context.Background(), stdQuoteRenewReq())
 	if err != nil {
 		t.Fatalf("QuoteRenew: %v", err)
 	}
-	if renewGot.Price != "696" || renewGot.TotalCost != "1498" || renewGot.RealTotalCost != "1284" {
-		t.Fatalf("QuoteRenew amounts = price:%s total:%s real:%s, want 696/1498/1284",
-			renewGot.Price, renewGot.TotalCost, renewGot.RealTotalCost)
+	if renewGot.Price != "650" || renewGot.TotalCost != "1400" || renewGot.TaxPrice != "84" || renewGot.RealTotalCost != "1284" {
+		t.Fatalf("QuoteRenew amounts = price:%s total:%s tax:%s real:%s, want 650/1400/84/1284",
+			renewGot.Price, renewGot.TotalCost, renewGot.TaxPrice, renewGot.RealTotalCost)
 	}
 }
 
@@ -265,6 +265,9 @@ func TestQuote_CNHighPrecisionPriceIgnored(t *testing.T) {
 	if got.Price != "3900" || got.TotalCost != "3900" || got.RealTotalCost != "3510" {
 		t.Fatalf("Quote amounts = price:%s total:%s real:%s, want original 3900/3900/3510",
 			got.Price, got.TotalCost, got.RealTotalCost)
+	}
+	if got.TaxPrice != "0" {
+		t.Fatalf("TaxPrice = %q, want 0", got.TaxPrice)
 	}
 }
 

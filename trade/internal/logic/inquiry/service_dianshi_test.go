@@ -135,6 +135,9 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	if res.RealTotalCost != "4750" || res.TotalCost != "9500" {
 		t.Errorf("RealTotalCost=%s TotalCost=%s want 4750/9500", res.RealTotalCost, res.TotalCost)
 	}
+	if res.TaxPrice != "0" {
+		t.Errorf("TaxPrice=%s want 0", res.TaxPrice)
+	}
 	if res.Discount != 50 {
 		t.Errorf("Discount=%v want 50", res.Discount)
 	}
@@ -171,6 +174,9 @@ func TestQuote_DianshiBranch_MicroPentAmountsConvertedToCents(t *testing.T) {
 	if res.Price != "650" || res.TotalCost != "1400" || res.RealTotalCost != "1200" {
 		t.Fatalf("amounts=%s/%s/%s want 650/1400/1200 cents",
 			res.Price, res.TotalCost, res.RealTotalCost)
+	}
+	if res.TaxPrice != "0" {
+		t.Fatalf("TaxPrice=%s want 0", res.TaxPrice)
 	}
 }
 
