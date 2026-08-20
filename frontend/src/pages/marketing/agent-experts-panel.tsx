@@ -47,6 +47,13 @@ import {
   type SkillHubSkillSet,
 } from "@/lib/skillhub-api";
 
+import {
+  installSkillsWithNativeBatch,
+  type BatchInstallResult,
+  type Skill,
+  type SkillsExecDebugCommandStream,
+} from "./skills-demo/skill-registries";
+
 type ExpertFilterId = "all" | SkillHubKnownSkillSetScene;
 type ExpertView = "list" | "grid";
 
@@ -430,6 +437,10 @@ export function buildInstallSkillCommand(skillSlug: string): string {
   return `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=${shellQuote(SKILLHUB_DOWNLOAD_URL_TEMPLATE)} acli skills install ${shellQuote(skillSlug)}`;
 }
 
+export function buildInstallSkillsBatchCommand(skillSlugs: string[]): string {
+  return `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=${shellQuote(SKILLHUB_DOWNLOAD_URL_TEMPLATE)} acli skills batch-install --wait=true ${shellQuote(skillSlugs.join(" "))}`;
+}
+
 export function buildSkillHubSelfUpgradeCommand(): string {
   return SKILLHUB_SELF_UPGRADE_COMMAND;
 }
@@ -576,38 +587,173 @@ async function retryFailedSkillInstall(
   return result;
 }
 
+type SkillHubUpgradeState = {
+  attempted: boolean;
+};
+
+async function recoverSkillInstall(
+  botId: string,
+  skillSlug: string,
+  execDebugCommand: ExpertsExecDebugCommand,
+  failedResult: { succeeded: boolean; output: string },
+  upgradeState: SkillHubUpgradeState,
+): Promise<{ succeeded: boolean; output: string }> {
+  let result = failedResult;
+  if (!result.succeeded && !upgradeState.attempted && shouldUpgradeSkillHubCli(result.output)) {
+    upgradeState.attempted = true;
+    await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand(), {
+      timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
+    }).catch(() => null);
+    result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+  }
+  if (!result.succeeded) {
+    result = await retryFailedSkillInstall(botId, skillSlug, execDebugCommand, result);
+  }
+  return result;
+}
+
+async function installSkillSlugWithRecovery(
+  botId: string,
+  skillSlug: string,
+  execDebugCommand: ExpertsExecDebugCommand,
+  upgradeState: SkillHubUpgradeState,
+): Promise<{ succeeded: boolean; output: string }> {
+  const result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+  if (result.succeeded) return result;
+  return recoverSkillInstall(botId, skillSlug, execDebugCommand, result, upgradeState);
+}
+
+function toPackageSkill(skillSlug: string): Skill {
+  return {
+    registry: "skillhub",
+    rawId: skillSlug,
+    slug: skillSlug,
+    name: skillSlug,
+  };
+}
+
+function mapBatchInstallResult(
+  skillSlugs: string[],
+  result: BatchInstallResult,
+): SkillInstallResult {
+  const succeededSlugs = new Set(result.succeeded.map((skill) => skill.rawId));
+  const failedOutputs = new Map(result.failed.map(({ skill, message }) => [skill.rawId, message ?? ""]));
+  return {
+    succeeded: skillSlugs.filter((skillSlug) => succeededSlugs.has(skillSlug)),
+    failed: skillSlugs
+      .filter((skillSlug) => failedOutputs.has(skillSlug))
+      .map((skillSlug) => ({ slug: skillSlug, output: failedOutputs.get(skillSlug) ?? "" })),
+  };
+}
+
+async function installSkillSlugsSequentially(
+  botId: string,
+  skillSlugs: string[],
+  execDebugCommand: ExpertsExecDebugCommand,
+  onProgress?: (progress: SkillInstallProgress) => void,
+  upgradeState: SkillHubUpgradeState = { attempted: false },
+): Promise<SkillInstallResult> {
+  const succeeded: string[] = [];
+  const failed: SkillInstallFailure[] = [];
+
+  for (const [index, skillSlug] of skillSlugs.entries()) {
+    onProgress?.({ current: index + 1, total: skillSlugs.length });
+    const result = await installSkillSlugWithRecovery(botId, skillSlug, execDebugCommand, upgradeState);
+    if (result.succeeded) succeeded.push(skillSlug);
+    else failed.push({ slug: skillSlug, output: result.output });
+  }
+
+  return { succeeded, failed };
+}
+
+async function installSkillSlugsWithNativeBatch(
+  botId: string,
+  skillSlugs: string[],
+  execDebugCommand: ExpertsExecDebugCommand,
+  execDebugCommandStream: SkillsExecDebugCommandStream,
+  onProgress?: (progress: SkillInstallProgress) => void,
+): Promise<SkillInstallResult> {
+  const skills = skillSlugs.map(toPackageSkill);
+  const upgradeState: SkillHubUpgradeState = { attempted: false };
+  let usedSequentialFallback = false;
+  const runBatchInstall = () => {
+    usedSequentialFallback = false;
+    return installSkillsWithNativeBatch(
+      botId,
+      execDebugCommandStream,
+      async (skill) => {
+        const result = await installSkillSlugWithRecovery(botId, skill.rawId, execDebugCommand, upgradeState);
+        return { ok: result.succeeded, message: result.output };
+      },
+      skills,
+      ({ index, total }) => onProgress?.({ current: index, total }),
+      {
+        buildBatchCommand: (_registry, batchSkills) => (
+          buildInstallSkillsBatchCommand(batchSkills.map((skill) => skill.rawId))
+        ),
+        onSequentialFallback: () => {
+          usedSequentialFallback = true;
+        },
+      },
+    );
+  };
+
+  let batchResult = await runBatchInstall();
+  if (usedSequentialFallback) return mapBatchInstallResult(skillSlugs, batchResult);
+
+  const shouldRetryBatchAfterUpgrade = !upgradeState.attempted
+    && batchResult.succeeded.length === 0
+    && batchResult.failed.length === skills.length
+    && batchResult.failed.every(({ message }) => shouldUpgradeSkillHubCli(message ?? ""));
+  if (shouldRetryBatchAfterUpgrade) {
+    upgradeState.attempted = true;
+    await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand(), {
+      timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
+    }).catch(() => null);
+    batchResult = await runBatchInstall();
+    if (usedSequentialFallback) return mapBatchInstallResult(skillSlugs, batchResult);
+  }
+
+  const succeededSlugs = new Set(batchResult.succeeded.map((skill) => skill.rawId));
+  const failedOutputs = new Map<string, string>();
+  for (const { skill, message } of batchResult.failed) {
+    onProgress?.({ current: skillSlugs.indexOf(skill.rawId) + 1, total: skillSlugs.length });
+    const recovered = await recoverSkillInstall(
+      botId,
+      skill.rawId,
+      execDebugCommand,
+      { succeeded: false, output: message ?? "" },
+      upgradeState,
+    );
+    if (recovered.succeeded) succeededSlugs.add(skill.rawId);
+    else failedOutputs.set(skill.rawId, recovered.output);
+  }
+
+  return {
+    succeeded: skillSlugs.filter((skillSlug) => succeededSlugs.has(skillSlug)),
+    failed: skillSlugs
+      .filter((skillSlug) => failedOutputs.has(skillSlug))
+      .map((skillSlug) => ({ slug: skillSlug, output: failedOutputs.get(skillSlug) ?? "" })),
+  };
+}
+
 export async function installSkillSlugs(
   botId: string,
   skillSlugs: string[],
   execDebugCommand: ExpertsExecDebugCommand,
   onProgress?: (progress: SkillInstallProgress) => void,
+  execDebugCommandStream?: SkillsExecDebugCommandStream,
 ): Promise<SkillInstallResult> {
-  const succeeded: string[] = [];
-  const failed: SkillInstallFailure[] = [];
-  let hasTriedSkillHubUpgrade = false;
-
-  for (const [index, skillSlug] of skillSlugs.entries()) {
-    onProgress?.({ current: index + 1, total: skillSlugs.length });
-    let result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
-    if (!result.succeeded && !hasTriedSkillHubUpgrade && shouldUpgradeSkillHubCli(result.output)) {
-      hasTriedSkillHubUpgrade = true;
-      await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand(), {
-        timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
-      }).catch(() => null);
-      result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
-    }
-    if (!result.succeeded) {
-      result = await retryFailedSkillInstall(botId, skillSlug, execDebugCommand, result);
-    }
-
-    if (result.succeeded) {
-      succeeded.push(skillSlug);
-    } else {
-      failed.push({ slug: skillSlug, output: result.output });
-    }
+  if (execDebugCommandStream) {
+    return installSkillSlugsWithNativeBatch(
+      botId,
+      skillSlugs,
+      execDebugCommand,
+      execDebugCommandStream,
+      onProgress,
+    );
   }
-
-  return { succeeded, failed };
+  return installSkillSlugsSequentially(botId, skillSlugs, execDebugCommand, onProgress);
 }
 
 function tryParseJson(value: string): unknown | null {
@@ -762,10 +908,12 @@ async function fetchExperts(params: {
 export function ExpertsPanel({
   botId,
   execDebugCommand,
+  execDebugCommandStream,
   lang,
 }: {
   botId: string;
   execDebugCommand: ExpertsExecDebugCommand;
+  execDebugCommandStream?: SkillsExecDebugCommandStream;
   lang?: ExpertLanguage;
 }) {
   const t = useT();
@@ -1002,7 +1150,13 @@ export function ExpertsPanel({
         return;
       }
 
-      const installResult = await installSkillSlugs(botId, skillSlugs, execDebugCommand, setInstallProgress);
+      const installResult = await installSkillSlugs(
+        botId,
+        skillSlugs,
+        execDebugCommand,
+        setInstallProgress,
+        execDebugCommandStream,
+      );
       if (installResult.failed.length > 0) {
         toast.error(getSkillPackageInstallFailureMessage(installResult, t));
         return;
@@ -1035,7 +1189,7 @@ export function ExpertsPanel({
       setInstallingSlug(null);
       setInstallProgress(null);
     }
-  }, [botId, execDebugCommand, installingSlug, lang, t]);
+  }, [botId, execDebugCommand, execDebugCommandStream, installingSlug, lang, t]);
 
   const handleOpenDetail = useCallback((card: ExpertPackageCard) => {
     setSelectedCard(card);

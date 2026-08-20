@@ -23,6 +23,7 @@ import {
   getPopularityTier,
   installSkillsInBatch,
   installSkillsSequentially,
+  installSkillsWithNativeBatch,
   mergeInstalledWithHermes,
   mergeInstalledSources,
   parseHermesInstalledSkills,
@@ -718,6 +719,36 @@ describe("Hermes native installed skills", () => {
 });
 
 describe("batch skill installation", () => {
+  it("allows a consumer-specific batch command and exposes sequential fallback", async () => {
+    const skills: Skill[] = [
+      { registry: "skillhub", rawId: "market-data", slug: "market-data", name: "Market Data" },
+    ];
+    const commands: string[] = [];
+    let fellBack = false;
+    const execDebugCommandStream = async (_botId: string, command: string) => {
+      commands.push(command);
+      return { status: "FAILED", exitCode: 1, output: 'unknown command "batch-install"' };
+    };
+
+    const result = await installSkillsWithNativeBatch(
+      "bot-1",
+      execDebugCommandStream,
+      async () => ({ ok: true }),
+      skills,
+      undefined,
+      {
+        buildBatchCommand: () => "custom skill-package batch command",
+        onSequentialFallback: () => {
+          fellBack = true;
+        },
+      },
+    );
+
+    expect(commands).toEqual(["custom skill-package batch command"]);
+    expect(fellBack).toBe(true);
+    expect(result).toEqual({ succeeded: skills, failed: [], skipped: [] });
+  });
+
   it("keeps summary results aligned after an earlier progress event", async () => {
     const skills: Skill[] = [
       { registry: "clawhub", rawId: "first", slug: "first", name: "First" },

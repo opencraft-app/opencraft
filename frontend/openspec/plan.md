@@ -1,3 +1,54 @@
+# 技能包 ACLI 原生批量安装 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 技能包安装优先通过单次 ACLI `batch-install` 执行，减少多次 `/debug/exec` 与进程启动；在旧 ACLI、不完整批量结果、CLI 升级提示或单项失败时保留可靠兜底。
+
+**Architecture:** 复用 Skills 页已有的流式批量结果解析与去重逻辑，为技能包注入带国内 SkillHub 下载模板的批量命令；批量命令不可用时回落到现有逐个安装，批量中的失败项仅逐项重试。组件从现有 repository 向 Experts 面板透传流式执行能力。
+
+**Scope:** 国内站技能包安装链路；不改变单技能安装、国际站 registry、套餐定义、安装状态存储或后端接口。
+
+### Task 1: 以测试锁定批量优先和兜底契约
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-experts-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+
+**Acceptance:**
+- 技能包默认只发起一次带 `SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE` 的 `acli skills batch-install --wait=true`。
+- 原生命令不支持时执行现有逐个安装；批量部分失败时只逐个重试失败 slug。
+- CLI 升级提示仍只触发一次 `skillhub self-upgrade`，随后重试批量命令。
+
+- [x] 先补失败测试并确认 RED，覆盖批量成功、旧 ACLI 回退、部分失败重试和升级后重试。
+
+### Task 2: 接入原生批量执行并保留恢复策略
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/agent-experts-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-skills-panel.tsx`
+
+**Acceptance:**
+- 复用既有批量事件解析，避免 `progress` 与完整 `summary.results` 重复事件导致结果错配。
+- 包级进度持续更新；仅全部技能最终成功时记录套餐为已安装。
+- 无流式执行能力时兼容现有逐个安装路径。
+
+- [x] 完成最小实现并让定向测试 GREEN。
+
+### Task 3: 验证范围和质量门禁
+
+**Files:**
+- Modify: `frontend/openspec/plan.md`
+- Add: `frontend/openspec/changes/2026-08-20-skill-package-native-batch-design.md`
+
+**Acceptance:**
+- 定向测试、TypeScript 检查、i18n 检查和 `git diff --check` 通过。
+- 展示真实改动与验证证据，等待用户确认后才提交、推送或创建 MR。
+
+- [x] 完成验证并输出验收摘要。
+
+---
+
 # Agent 导航 CR 修正 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认提交和推送。
