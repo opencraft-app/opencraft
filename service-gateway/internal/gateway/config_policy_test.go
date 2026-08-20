@@ -346,7 +346,7 @@ func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T)
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 
-	for _, env := range []string{"beijing-sandbox", "sandbox-kr-1", "shprod"} {
+	for _, env := range []string{"beijing-sandbox", "sandbox-kr-1", "sgprod", "shprod"} {
 		t.Run(env, func(t *testing.T) {
 			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
 			if err != nil {
