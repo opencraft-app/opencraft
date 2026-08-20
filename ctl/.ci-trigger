@@ -1,2 +1,2 @@
-triggered_at=2026-08-20T07:54:59Z
-reason=retrigger ctl prod release after DB contract environment version fix
+triggered_at=2026-08-20T08:40:45Z
+reason=retrigger ctl prod release after promote worktree isolation fix
