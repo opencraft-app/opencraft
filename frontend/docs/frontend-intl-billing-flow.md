@@ -13,35 +13,36 @@
 | 概念 | 说明 | 代码位置 |
 |---|---|---|
 | **站点分流** | `isGlobal=true` 为国际站。编译期常量（`REGION=global` 构建），构建时折叠 | `src/lib/region.ts` |
-| **计费灰度** | 国际站付费默认关闭，需显式开启才展示真实计费；未开启时回到「免费试用」老逻辑 | `runtime-config-context.tsx` → `resolvePaidBillingEnabled` |
+| **计费灰度** | 国际站默认走「免费试用」老逻辑；运行时计费能力可用且当前会话执行 `show()` 后，才展示真实计费 | `runtime-config-context.tsx` + `subscribe-page.tsx` |
 | **强制订阅制** | 确认订单弹窗的自动续费为**只读说明**（非开关），`auto_renew_flag` 固定 `auto_renew` | `CreditCardConfirmOrderModal` |
 | **价格单位** | 后端返回**分**，币种跟随 `bundle.price?.currency`（USD / KRW 等，缺失兜底 CNY），展示时按币种换算；确认订单弹窗币种符号跟随 `plan.price`（7a6bf73ee 修复，曾硬编码 `$` 导致 KRW 环境错显）；折扣仅后端有真实 `discount` 时展示 | `mapBundleToPlan` / `formatYuan` / `centsToYuan` |
 | **支付回跳** | 弹窗拦截兜底走 `location.assign` 替换当前页，付款后 `return_url` 回到全新页面，需 `pay_return` 标记重建轮询 | `subscribe-page.tsx` → `PAY_RETURN_QUERY_KEY` |
 | **免费试用** | 灰度未开启时国际站入口走 `POST /v1/passes`（直接发货，不支付） | `createPass` |
 
-### 灰度开关（随 !2979 已合入 master）
+### 隐藏计费入口
 
 ```js
-// 控制台执行，与国内站灰度期完全同一把钥匙：
-localStorage.setItem("lightclaw:features.paidBillingEnabled", "true")
-location.reload()
+// 在国际站订阅页控制台执行；当前浏览器会话内持续有效：
+show()
 ```
 
-判定链（`resolvePaidBillingEnabled`）：
+判定链：
 
 ```
 config.features.paidBillingEnabled !== true  → 关（后端可一键熔断，本地钥匙打不开）
                 ↓ true
 国内站 → 开（全量，零影响）
-国际站 → hasExplicitPaidBillingOptIn()？
-           localStorage "true" 或构建期环境变量显式 "true" → 开
-           否则（含未配置/非法值）                        → 关
+国际站 → 运行时/构建期计费配置允许？
+           否 → 免费试用链路
+           是 → 当前会话执行过 show()？
+                  否 → 免费试用链路
+                  是 → 付费下单链路
 ```
 
 三个关键点：
-1. **后端目前对所有站点硬编码下发 `true`**（`ctl/main/api/server.go`），所以后端下发值不能作为国际站放量信号，必须本地显式开启。
-2. 构建期判断用「**显式配置过**」而非「解析结果为 true」——兜底默认值是 `true`，若按解析结果判断，未配置环境变量时灰度直接失效。
-3. 灰度关闭时 `freeGuideAllowed` 翻转为 `true`：免费试用引导文案与 `createPass` 链路整体复活，是**回到老逻辑**而不只是隐藏价格。
+1. 运行时/构建期配置是后端熔断与能力资格，`show()` 是国际站产品曝光门控；两者同时满足才进入付费链路。
+2. `show()` 状态写入 `sessionStorage`，只在当前浏览器会话内保留，不把付费入口永久暴露给普通用户。
+3. 支付回跳携带 `pay_return=1` 时会自动恢复付费状态，保证付款后的发货轮询可以接棒；默认访问订阅页仍走免费链路。
 
 ## 三、时序图
 
