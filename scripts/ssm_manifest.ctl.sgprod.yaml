@@ -18,7 +18,7 @@ items:
     managed-by: export_ssm_to_sops.py
 - id: ctl-runtime-secrets
   secret_name: mono-sgprod-ctl-runtime-secrets
-  version_id: v1
+  version_id: v2
   namespace: ctl
   kubernetes_resource_name: ctl-runtime-secrets
   kubernetes_resource_kind: Secret
@@ -30,6 +30,8 @@ items:
   - CTL_LLMGATEWAY_DEFAULT_MODEL_ID
   - CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
   - CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+  required_keys:
+  - CTL_TRADE_TOKEN
   labels:
     app.kubernetes.io/name: ctl
     app.kubernetes.io/managed-by: argocd
