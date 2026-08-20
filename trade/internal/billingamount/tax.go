@@ -8,13 +8,13 @@ import (
 
 const amountToCentsDivisor = int64(1_000_000)
 
-// TaxInclusiveCents applies a decimal tax rate to a main-currency * 1e8
-// amount and rounds any positive fractional cent up to the next whole cent.
+// TaxInclusiveCents applies a decimal tax rate to a non-negative main-currency
+// * 1e8 amount and rounds any positive fractional cent up to the next whole cent.
 func TaxInclusiveCents(rawAmount, rawTaxRate string) (string, error) {
 	amountText := strings.TrimSpace(rawAmount)
 	amount, ok := new(big.Rat).SetString(amountText)
-	if !ok || amount.Sign() <= 0 {
-		return "", fmt.Errorf("amount must be a positive decimal: %q", amountText)
+	if !ok || amount.Sign() < 0 {
+		return "", fmt.Errorf("amount must be a non-negative decimal: %q", amountText)
 	}
 	taxRateText := strings.TrimSpace(rawTaxRate)
 	taxRate, ok := new(big.Rat).SetString(taxRateText)

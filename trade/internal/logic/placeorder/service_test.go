@@ -952,6 +952,55 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 	}
 }
 
+func TestGeneratePayURL_IntlZeroAmountStillCallsCreatePayURL(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       "deal-1",
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeCreate,
+		}, nil
+	}
+	d.billing.describeOrderListFn = func(context.Context, cloudbillingclient.TemporaryCredentials, *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
+		return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
+			OrderID:                               "deal-1",
+			PriceDetailHighPrecisionRealTotalCost: "0",
+			TaxRate:                               "0.09",
+		}}}, nil
+	}
+	d.billing.createPayURLFn = func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ChargeAmount != 0 {
+			t.Fatalf("ChargeAmount = %d, want 0", req.ChargeAmount)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{
+			URL: "https://buy.cloud.tencent.com/midas/zero?dealName=deal-1",
+		}, nil
+	}
+
+	detail, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
+	if err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if detail.PayURL != "https://buy.cloud.tencent.com/midas/zero?dealName=deal-1" {
+		t.Fatalf("PayURL = %q", detail.PayURL)
+	}
+	if d.billing.createPayURLCalls.Load() != 1 {
+		t.Fatalf("CreatePayURL calls = %d, want 1", d.billing.createPayURLCalls.Load())
+	}
+}
+
 func TestGeneratePayURL_IntlCreateWithSavedCardDoesNotCreateContractOrder(t *testing.T) {
 	d := newStdDeps()
 	d.paymentContext.hasPaymentMethod = true
@@ -1382,6 +1431,7 @@ func TestChargeAmountFromOrderListIncludesTaxAndRoundsUpFractionalCents(t *testi
 		{name: "seven percent tax rounds up half cent", rawAmount: "650000000", taxRate: "0.07", wantAmount: 696},
 		{name: "ten percent tax is exact cents", rawAmount: "650000000", taxRate: "0.10", wantAmount: 715},
 		{name: "sub-cent paid amount rounds up after tax", rawAmount: "650000001", taxRate: "0.07", wantAmount: 696},
+		{name: "zero amount remains zero", rawAmount: "0", taxRate: "0.09", wantAmount: 0},
 		{name: "zero tax preserves paid cents", rawAmount: "650000000", taxRate: "0", wantAmount: 650},
 	}
 
