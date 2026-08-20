@@ -30,7 +30,7 @@ import {
   type SkillsDemoMode,
   type SkillsDemoTab,
 } from "@/pages/marketing/skills-demo/SkillsDemoPanel";
-import { ZhHantScope } from "@/pages/marketing/tea-sdk-zh-hant-observer";
+import { ZhHantScope } from "@/pages/marketing/zh-hant-scope";
 
 type LearnSkillSourceKind = "cloud" | "url" | "notes" | "upload";
 type LearnSkillStatus = "idle" | "loading" | "learning" | "success" | "error";

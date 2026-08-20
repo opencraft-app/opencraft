@@ -1,4 +1,4 @@
-import type { DebugExecCommandLifecycle } from "@/pages/marketing/agent-tat-adapter";
+import type { DebugExecCommandLifecycle } from "@/pages/marketing/agent-debug-exec-lifecycle";
 
 export const QQBOT_GROUP_POLICY_OPEN_COMMAND = "hermes config set platforms.qqbot.extra.group_policy open";
 
