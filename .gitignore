@@ -153,6 +153,9 @@ openspec/spec.md
 # 例外（保留追踪）：项目共享配置
 !.codebuddy/mcp.json.example
 # === END FEAI MANAGED ===
+# ClawPro（teamai）本机绑定状态与 CodeBuddy 个人 IDE 设置，不入库
+.teamai/
+.codebuddy/settings.json
 .DS_Store
 frontend/.support-feedback/
 frontend/.next-global/

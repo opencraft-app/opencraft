@@ -64,7 +64,7 @@ sequenceDiagram
         BE-->>WX: { pay_url, ... }
         WX->>WX: 阶段三 tcb-jssdk wxSign 拉起委托划扣
         U->>WX: 完成支付
-        loop 每 3s，最多 180s
+        loop 每 3s（180s 超时后仅切「开通中」文案，不停止）
             FE->>BE: GET /v1/passes 轮询
         end
         BE-->>FE: 命中有效 pass
