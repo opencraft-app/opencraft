@@ -5,6 +5,7 @@ import sys
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -1961,6 +1962,36 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
+        )
+
+    def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        cloudladder = yaml.safe_load(
+            (REPO_ROOT / "cloudladdergateway/config.example.yaml").read_text()
+        )
+        route_id = values["TRADE_BILLING_CLOUDLADDER_ROUTE_ID"]
+        route = next(route for route in cloudladder["routes"] if route["id"] == route_id)
+        backend_alias = route["upstream"]["backend"]
+        backend = next(
+            backend
+            for backend in cloudladder["backends"]
+            if backend["alias"] == backend_alias
+        )
+        trusted_host = urlparse(backend["upstream"]["base_url"]).hostname
+
+        self.assertEqual(route_id, "tcapi-billing-trade-intl-prod")
+        self.assertEqual(
+            values["TRADE_BILLING_ENDPOINT"],
+            trusted_host,
+            "trade signs the original billing host, so it must match CloudLadder's trusted upstream host",
         )
 
     def test_korea_trade_uses_international_billing_test_route(self) -> None:
