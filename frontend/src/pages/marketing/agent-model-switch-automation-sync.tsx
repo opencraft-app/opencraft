@@ -18,7 +18,7 @@ import {
 import { toast } from "@/lib/toast";
 import { useT } from "@/i18n/t";
 import { isCronJobExpired } from "@/pages/marketing/agent-automations-panel";
-import type { DebugExecCommandLifecycle } from "@/pages/marketing/agent-debug-exec-lifecycle";
+import type { DebugExecCommandLifecycle } from "@/pages/marketing/agent-tat-adapter";
 
 const MODEL_SYNC_OUTPUT_PREFIX = "LIGHTVELA_CRON_MODEL_SYNC=";
 
