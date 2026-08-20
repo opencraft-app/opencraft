@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /* 国际站（isGlobal）专属用例。
@@ -130,8 +130,33 @@ const resetState = () => {
   /* listBundles 直接返回 Bundle[]，不是 { bundles } 包装。 */
   listBundlesMock.mockResolvedValue([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
   navigateMock.mockReset();
+  window.sessionStorage.clear();
+  delete (window as Window & { show?: unknown }).show;
   window.history.replaceState({}, "", "/subscribe");
 };
+
+describe("SubscribePage paid billing visibility", () => {
+  beforeEach(resetState);
+  afterEach(cleanup);
+
+  it("keeps the international paid order flow behind show()", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    await waitFor(() => expect(listBundlesMock).toHaveBeenCalled());
+    expect(screen.queryByRole("tablist", { name: "付费时长" })).not.toBeInTheDocument();
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    expect(await screen.findByRole("tablist", { name: "付费时长" })).toBeInTheDocument();
+  });
+});
 
 describe("SubscribePage payment return", () => {
   beforeEach(resetState);
