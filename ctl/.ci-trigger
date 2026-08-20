@@ -1,2 +1,2 @@
-triggered_at=2026-05-29T06:32:48Z
-reason=refresh ctl prod release after gitops validation assets were restored
+triggered_at=2026-08-20T07:54:59Z
+reason=retrigger ctl prod release after DB contract environment version fix
