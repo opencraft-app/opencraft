@@ -367,6 +367,49 @@ func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T)
 	}
 }
 
+func TestSingaporeBillingEntryRoutesArePublic(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/sgprod/config.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	want := map[string]struct {
+		prefix   string
+		upstream string
+	}{
+		"trade-jifei-callback": {
+			prefix:   "/trade/jifei/callback",
+			upstream: "http://trade.trade.svc.cluster.local",
+		},
+		"ctl-cloudapi": {
+			prefix:   "/cloudapi",
+			upstream: "http://ctl-api.ctl.svc.cluster.local",
+		},
+	}
+
+	for _, route := range cfg.Routes {
+		expected, required := want[route.Name]
+		if !required {
+			continue
+		}
+		if route.Prefix != expected.prefix || route.Upstream != expected.upstream || route.Access != AccessPublic {
+			t.Fatalf("route %s must use the public SG billing target: %+v", route.Name, route)
+		}
+		if len(route.Methods) != 2 || !containsString(route.Methods, http.MethodPost) || !containsString(route.Methods, http.MethodOptions) {
+			t.Fatalf("route %s must be limited to POST/OPTIONS: %+v", route.Name, route)
+		}
+		delete(want, route.Name)
+	}
+	for routeName := range want {
+		t.Fatalf("required SG billing route %s not found", routeName)
+	}
+}
+
 func TestProdWorkerActionConfigsDeclareRequiredRuntimeSecretKeys(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
