@@ -24,6 +24,10 @@ class CtlSgprodTradeContractTests(unittest.TestCase):
             item for item in manifest["items"] if item["id"] == "ctl-runtime-secrets"
         )
         self.assertIn("CTL_TRADE_TOKEN", runtime_item.get("required_keys", []))
+        self.assertIn(
+            "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            runtime_item.get("required_keys", []),
+        )
 
         runtime_secret = yaml.safe_load(
             (
@@ -33,6 +37,12 @@ class CtlSgprodTradeContractTests(unittest.TestCase):
         )
         self.assertRegex(
             runtime_secret.get("stringData", {}).get("CTL_TRADE_TOKEN", ""),
+            r"^ENC\[AES256_GCM,",
+        )
+        self.assertRegex(
+            runtime_secret.get("stringData", {}).get(
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN", ""
+            ),
             r"^ENC\[AES256_GCM,",
         )
 
