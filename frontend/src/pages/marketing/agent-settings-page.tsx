@@ -33,7 +33,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ComponentType, type ReactNode } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, useSyncExternalStore, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -47,7 +47,19 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/co
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
-import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
+// ⚠️ SSR 约束：不要从 barrel（agent-config/index.ts）导入。
+// barrel 会级联求值 useModelOperations / useChannelOperations →
+// useAgentInternals → @tencent/tea-sdk-lightclaw/scripts（tea-app i18n
+// 顶层访问 window），静态导出预渲染 /agents/* 时会抛
+// `ReferenceError: window is not defined`（window 副作用使 tree-shake 失效）。
+// 页面层只从子路径引入 SSR 安全模块；操作类 hooks 仅由 lazy 面板在
+// 客户端消费。
+import { createLighthouseConfig } from "@/pages/marketing/agent-config/product-config";
+import { useModelProviders } from "@/pages/marketing/agent-config/hooks/useModelProviders";
+import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
+import { createLocalCommandExecutor } from "@/pages/marketing/agent-config/local-command-executor";
+import type { ICommandExecutor } from "@/pages/marketing/agent-config/local-command-executor";
+import type { IProductConfig } from "@/pages/marketing/agent-config/types";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
@@ -60,10 +72,6 @@ import {
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
 import type { WorkerActionStatusResult } from "@/repositories/types";
-import {
-  createMockDebugExecAdapter,
-  createMonoDebugExecAdapter,
-} from "@/pages/marketing/agent-tat-adapter";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
@@ -150,6 +158,16 @@ const AgentWebsitePanel = lazy(() =>
   import("@/pages/marketing/agent-website-panel").then((module) => ({ default: module.AgentWebsitePanel })),
 );
 
+// ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
+// 与其他面板一致。内部依赖全部指向本地 config/hooks，仅 scripts 命令生成走
+// SDK `/scripts` 子入口（纯 TS、无浏览器副作用）。
+const AgentChannelPanel = lazy(() =>
+  import("@/pages/marketing/agent-channel-panel").then((module) => ({ default: module.ChannelPanel })),
+);
+const AgentModelPanel = lazy(() =>
+  import("@/pages/marketing/agent-model-panel").then((module) => ({ default: module.ModelPanel })),
+);
+
 type TeaSdkInstanceInfo = {
   InstanceId: string;
   RegionId: number;
@@ -171,467 +189,98 @@ type TeaSdkFeatureFlags = {
   qqbotplugin: boolean;
 };
 
-type TeaSdkProductConfig = {
-  acliProduct: "lightvela";
-  runCommand: unknown;
-  getInvocationTask: unknown;
-  [key: string]: unknown;
-};
-
-type TeaSdkPanelProps = {
-  instance: TeaSdkInstanceInfo;
-  featureFlags: TeaSdkFeatureFlags;
-  productConfig: TeaSdkProductConfig;
-  renderChannelCard?: (props: TeaSdkRenderChannelCardProps) => ReactNode;
-};
-
-type TeaSdkRuntime = {
-  ChannelPanel: ComponentType<TeaSdkPanelProps>;
-  ModelPanel: ComponentType<TeaSdkPanelProps>;
-  /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
-  useModelProviders: (params?: {
-    isI18n?: boolean;
-    useEnglish?: boolean;
-    rainbowBaseUrl?: string;
-    app?: string;
-  }) => IModelProvider[] | undefined;
-  createProductConfig: (args: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-    modelProviders?: IModelProvider[];
-  }) => TeaSdkProductConfig;
-  getGatewayRestartCommand: () => string;
-  getProviderSaveCommand: (config: {
-    name: string;
-    baseUrl: string;
-    api: string;
-    apiKey: string;
-    models: Array<{ id: string; name: string }>;
-  }) => string;
-  getModelSwitchCommand: (modelFullId: string) => string;
-};
-
-type TeaSdkChannelConfig = {
-  value: string;
-  channel: string;
-  channel_name?: string;
-  primaryLabel?: string;
-  description?: string;
-  url?: string;
-  i18nOnly?: boolean;
-  supportQrConfig?: boolean;
-  qrCodeOnly?: boolean;
-  channel_keys?: Array<{ key: string; description: string }>;
-  [key: string]: unknown;
-};
-
-type TeaSdkRenderChannelCardProps = {
-  channel: TeaSdkChannelConfig;
-  isBound: boolean;
-  onConnect: () => void;
-  onDisconnect: () => void;
-  loading?: boolean;
-};
-
-let teaSdkRuntimePromise: Promise<TeaSdkRuntime> | null = null;
-let teaSdkRuntimeCache: TeaSdkRuntime | null = null;
-let teaSdkRuntimeError: Error | null = null;
-
-function getChannelGuideLink(channelValue: string): string | null {
-  const guideLinks: Record<string, string> = {
-    weixin: "https://lightvela.ai/docs/configuration/channel-wechat",
-    qqbot: "https://lightvela.ai/docs/configuration/channel-qq",
-    wecom: "https://lightvela.ai/docs/configuration/channel-wecom",
-    feishu: "https://lightvela.ai/docs/configuration/channel-lark",
-    telegram: "https://lightvela.ai/docs/configuration/channel-telegram",
-    discord: "https://lightvela.ai/docs/configuration/channel-discord",
-    slack: "https://lightvela.ai/docs/configuration/channel-slack",
-    whatsapp: "https://lightvela.ai/docs/configuration/channel-whatsapp",
-  };
-  return guideLinks[channelValue] ?? null;
-}
-
-function getChannelCardDesc(channel: TeaSdkChannelConfig, t: ReturnType<typeof useT>): string {
-  if (channel.value === "qqbot") return t("扫码或通过 App ID / Secret 绑定");
-  if (channel.value === "telegram") return t("通过 Bot Token 绑定");
-  if (channel.value === "discord") return t("通过 Bot Token 绑定");
-  if (channel.value === "slack") return t("通过 Bot Token / App Token 绑定");
-  if (channel.value === "whatsapp") return t("使用手机 WhatsApp 扫码登录");
-  return t("扫码授权连接");
-}
-
-function LightVelaChannelIcon({ channel }: { channel: string }) {
-  switch (channel) {
-    case "slack":
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(74, 21, 75, 0.08)" }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none">
-            <path d="M9.2 2.4a2.1 2.1 0 0 0 0 4.2h2.1V4.5a2.1 2.1 0 0 0-2.1-2.1Z" fill="#36C5F0" />
-            <path d="M9.2 8H3.6a2.1 2.1 0 1 0 0 4.2h5.6A2.1 2.1 0 0 0 9.2 8Z" fill="#36C5F0" />
-            <path d="M21.6 10.1A2.1 2.1 0 0 0 17.4 10v2.1h2.1a2.1 2.1 0 0 0 2.1-2Z" fill="#2EB67D" />
-            <path d="M16 10.1V4.5a2.1 2.1 0 1 0-4.2 0v5.6a2.1 2.1 0 0 0 4.2 0Z" fill="#2EB67D" />
-            <path d="M13.9 21.6a2.1 2.1 0 0 0 0-4.2h-2.1v2.1a2.1 2.1 0 0 0 2.1 2.1Z" fill="#ECB22E" />
-            <path d="M13.9 16h5.6a2.1 2.1 0 1 0 0-4.2h-5.6a2.1 2.1 0 0 0 0 4.2Z" fill="#ECB22E" />
-            <path d="M2.4 13.9A2.1 2.1 0 0 0 6.6 14v-2.1H4.5a2.1 2.1 0 0 0-2.1 2Z" fill="#E01E5A" />
-            <path d="M8 13.9v5.6a2.1 2.1 0 1 0 4.2 0v-5.6a2.1 2.1 0 0 0-4.2 0Z" fill="#E01E5A" />
-          </svg>
-        </div>
-      );
-    case "telegram":
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(38, 165, 229, 0.08)" }}>
-          <svg width="24" height="24" viewBox="0 0 48 48" aria-hidden="true" fill="none">
-            <path d="M5.8 23.2l8.6 3.2 3.3 10.8c.2.7 1.1.9 1.6.4l4.8-3.9c.4-.4 1.1-.4 1.5 0l8.7 6.3c.6.4 1.4.1 1.5-.6L42.2 7.4c.2-.8-.6-1.4-1.3-1.1L5.7 21.5c-.8.3-.8 1.4.1 1.7zm11.4 1.7l17.1-10.5c.3-.2.6.2.4.4L21.4 27.1c-.4.4-.7.9-.8 1.5l-.4 3c-.1.5-.7.6-.9.1l-2.6-6c-.2-.4 0-.9.5-1.1v.3z" fill="#26A5E5" />
-          </svg>
-        </div>
-      );
-    case "discord":
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(88, 101, 242, 0.08)" }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none">
-            <path d="M20.3 4.4a19.8 19.8 0 0 0-4.9-1.5c-.2.4-.4.9-.6 1.3a18.3 18.3 0 0 0-5.5 0c-.2-.4-.4-.9-.6-1.3a19.7 19.7 0 0 0-4.9 1.5C.5 9-.3 13.6.1 18.1a19.9 19.9 0 0 0 6 3c.5-.6.9-1.3 1.2-2a13.1 13.1 0 0 1-1.9-.9c.1-.1.3-.2.4-.3a13.5 13.5 0 0 0 12.1 0l.4.3c-.6.4-1.2.7-1.9.9.4.7.8 1.4 1.2 2a19.8 19.8 0 0 0 6-3c.6-5.2-.8-9.7-3.3-13.7ZM8 15.3c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.5 8 10.5s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z" fill="#5865F2" />
-          </svg>
-        </div>
-      );
-    case "whatsapp":
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(37, 211, 102, 0.08)" }}>
-          <MessageCircle className="h-6 w-6" style={{ color: "#25D366" }} />
-        </div>
-      );
-    case "qqbot":
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(18, 183, 245, 0.08)" }}>
-          <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/43adbcec-a954-4809-9310-1237e3981f99.png" alt="QQ" className="lh-std-channel-panel__icon-img" />
-        </div>
-      );
-    case "weixin":
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(7, 193, 96, 0.08)" }}>
-          <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/aef7d749-cabe-48dc-938b-11f1f50980c8.png" alt="微信" className="lh-std-channel-panel__icon-img" />
-        </div>
-      );
-    case "wecom":
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(24, 144, 255, 0.08)" }}>
-          <img src={assetUrl("/assets/landing/where-to-use/wecom-logo.png")} alt="WeCom" className="lh-std-channel-panel__icon-img" />
-        </div>
-      );
-    case "feishu":
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(43, 97, 255, 0.08)" }}>
-          <img src={assetUrl("/assets/landing/where-to-use/feishu-logo.png")} alt="Lark" className="lh-std-channel-panel__icon-img" />
-        </div>
-      );
-    default:
-      return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: "rgba(15, 23, 42, 0.06)" }}>
-          <MessageSquare className="h-6 w-6" style={{ color: "#111827" }} />
-        </div>
-      );
-  }
-}
-
-function LightVelaSdkChannelCard({
-  channel,
-  isBound,
-  onConnect,
-  onDisconnect,
-  loading,
-}: TeaSdkRenderChannelCardProps) {
-  const t = useT();
-  const guideLink = getChannelGuideLink(channel.value);
-
-  return (
-    <div key={channel.value} className={`lh-std-channel-panel__card ${isBound ? "lh-std-channel-panel__card--bound" : ""}`}>
-      <div className="lh-std-channel-panel__card-body">
-        <div className="lh-std-channel-panel__card-icon">
-          <LightVelaChannelIcon channel={channel.value} />
-        </div>
-        <div className="lh-std-channel-panel__card-content">
-          <div className="lh-std-channel-panel__card-header">
-            <h3 className="lh-std-channel-panel__card-name">{channel.channel_name ?? channel.primaryLabel ?? channel.value}</h3>
-            {isBound ? <span className="lh-std-channel-panel__card-badge">{t("已连接")}</span> : null}
-          </div>
-          <p className="lh-std-channel-panel__card-desc">{getChannelCardDesc(channel, t)}</p>
-        </div>
-      </div>
-      <div
-        className="lh-std-channel-panel__card-action"
-        style={{
-          alignItems: "stretch",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
-        {isGlobal && guideLink ? (
-          <a
-            className="lh-std-channel-panel__guide-btn"
-            href={guideLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={t("配置教程")}
-            style={{
-              alignItems: "center",
-              justifyContent: "center",
-              display: "inline-flex",
-              width: "100%",
-              lineHeight: 1.25,
-              minWidth: 0,
-              overflow: "visible",
-              textAlign: "center",
-              textOverflow: "clip",
-              whiteSpace: "normal",
-            }}
-          >
-            {t("配置教程")}
-          </a>
-        ) : null}
-        <div
-          className="lh-std-channel-panel__card-action-right"
-          style={{
-            display: "flex",
-            flexShrink: 0,
-            marginLeft: 0,
-            width: "100%",
-          }}
-        >
-          {isBound ? (
-            <button
-              type="button"
-              className="lh-std-channel-panel__card-unbind"
-              onClick={onDisconnect}
-              disabled={loading}
-              aria-label={t("断开")}
-              style={{ flex: 1, justifyContent: "center", whiteSpace: "nowrap" }}
-            >
-              {t("断开")}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={`lh-std-channel-panel__connect-btn ${isBound ? "lh-std-channel-panel__connect-btn--reconnect" : ""}`}
-            onClick={onConnect}
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              whiteSpace: "nowrap",
-              width: "100%",
-            }}
-          >
-            {isBound ? t("重新连接") : (
-              /* 用 flex + gap 组合，而非 `+ 文案` 字符串拼接：
-                 拼接产生的空格是合法断点，长文案下 `+` 会被甩到另一行。 */
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <span aria-hidden>+</span>
-                <span>{t("连接")}</span>
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
-  if (teaSdkRuntimeCache) {
-    return Promise.resolve(teaSdkRuntimeCache);
-  }
-  if (!teaSdkRuntimePromise) {
-    teaSdkRuntimePromise = (async () => {
-      // Keep TEA SDK out of the module graph evaluated during Next static generation.
-      // The SDK reads browser globals at module scope, so it must be initialized
-      // only inside the hydrated agents page before its panels render.
-      await import("@/lib/i18n-env");
-      await import("@tencent/tea-sdk-lightclaw/styles");
-      const [sdk, scriptsModule] = await Promise.all([
-        import("@tencent/tea-sdk-lightclaw"),
-        import("@tencent/tea-sdk-lightclaw/scripts"),
-      ]);
-      const lightVelaHermesScripts = scriptsModule.createLightClawScripts();
-      const hermesScripts = lightVelaHermesScripts.hermes;
-      const hermesGatewayCommands = hermesScripts.gateway;
-      const hermesModelCommands = hermesScripts.model;
-      const useModelProviders: TeaSdkRuntime["useModelProviders"] =
-        typeof sdk.useModelProviders === "function"
-          ? sdk.useModelProviders
-          : () => undefined;
-
-      const runtime: TeaSdkRuntime = {
-        ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        useModelProviders,
-        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
-          const config = sdk.createLighthouseConfig({
-            agentType: "hermes",
-            supportsTencentCloudApi: false,
-            isI18n: isGlobal,
-            modelProviders,
-          });
-          // SDK 的 getFilteredModelProviderList 用 IS_I18N（来自 window.LOGIN_INFO.area）
-          // 做国内/国际站过滤，但 mono2 不设置 window.LOGIN_INFO，导致 IS_I18N 恒为 false，
-          // 国际站会错误隐藏 OpenAI/Anthropic 等海外 provider。这里用 mono2 的 isGlobal
-          // 覆盖过滤逻辑，绕过 SDK 的模块级常量。
-          const hiddenProviders = isGlobal
-            ? sdk.I18N_HIDDEN_PROVIDERS
-            : sdk.DOMESTIC_HIDDEN_PROVIDERS;
-          return {
-            ...config,
-            acliProduct: "lightvela",
-            runCommand,
-            getInvocationTask,
-            getFilteredModelProviders: (region?: string) => {
-              const filtered = config.modelProviders.filter(
-                (p) => !hiddenProviders.includes(p.value),
-              );
-              if (region === "ap-hongkong") {
-                return filtered.filter(
-                  (p) => !sdk.HK_REGION_HIDDEN_PROVIDERS.includes(p.value),
-                );
-              }
-              return filtered;
-            },
-          };
-        },
-        getGatewayRestartCommand: () => hermesGatewayCommands.getRestartCommand(),
-        getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
-        getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
-      };
-      teaSdkRuntimeCache = runtime;
-      teaSdkRuntimeError = null;
-      return runtime;
-    })().catch((error: unknown) => {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
-      teaSdkRuntimeError = normalizedError;
-      teaSdkRuntimePromise = null;
-      throw normalizedError;
-    });
-  }
-  return teaSdkRuntimePromise;
-}
-
-function TeaSdkRuntimeLoading() {
-  const t = useT();
-
-  return (
-    <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
-      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-      {t("正在加载配置面板…")}
-    </div>
-  );
-}
-
+/**
+ * 通道/模型配置面板接入层。
+ *
+ * ChannelPanel / ModelPanel 已完全本地化（agent-config），其 productConfig、
+ * scriptCommands 均可由组件内部 createLighthouseConfig()/createLightClawScripts()
+ * 兜底。宿主这里只需补两处组件默认值给不了的差异：
+ *   1. isI18n：国际站 provider 过滤（国内/国际站模型列表不同）
+ *   2. commandExecutor：mono2 的本地命令执行器（直连 debug/exec，脱离 SDK TAT）
+ *
+ * 用本地 useModelProviders 拉取模型列表、本地 createLighthouseConfig 生成
+ * IProductConfig，再叠加宿主命令执行器，得到类型正确的 productConfig +
+ * commandExecutor 直接传入 lazy Panel（Suspense 兜加载态）。
+ */
 function TeaSdkSettingsPanel({
   kind,
   instance,
   featureFlags,
-  productConfigArgs,
+  commandExecutor,
   useEnglish,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  commandExecutor?: ICommandExecutor;
+  /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
 }) {
   const t = useT();
-  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
-  const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
+  const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
 
-  useEffect(() => {
-    if (teaSdkRuntimeCache) {
-      setRuntime(teaSdkRuntimeCache);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    void loadTeaSdkRuntime()
-      .then((nextRuntime) => {
-        if (!cancelled) setRuntime(nextRuntime);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
+  /**
+   * 配置面板客户端专属挂载。
+   *
+   * lazy 面板（agent-channel-panel / agent-model-panel）的依赖链上有
+   * `@tencent/tea-sdk-lightclaw/scripts`（经 useAgentInternals 静态值导入），
+   * 该子入口顶层 import tea-app i18n、模块求值即访问 `window`。Next 静态
+   * 导出预渲染 `/agents/*` 时若求值该链会抛 `ReferenceError: window is not
+   * defined`（scripts-runtime.ts 注释记载的同一约束）。
+   *
+   * 迁移前面板即客户端动态加载（SSR 链上无 SDK），此处以
+   * useSyncExternalStore 区分服务端/客户端，复刻同一语义：预渲染只产出
+   * loading 骨架，浏览器端 mount 后才拉起 lazy 面板模块。
+   */
+  const isBrowser = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+
+  const productConfig = useMemo<IProductConfig>(() => {
+    // 本地 createLighthouseConfig 内部的 getFilteredModelProviders 已用 isI18n
+    // 正确过滤国内/国际站 provider，无需再套 SDK 那套 IS_I18N hidden-providers hack。
+    const config = createLighthouseConfig({
+      agentType: "hermes",
+      supportsTencentCloudApi: false,
+      isI18n: isGlobal,
+      modelProviders,
+    });
+    return {
+      ...config,
+      acliProduct: "lightvela",
     };
-  }, []);
+  }, [modelProviders]);
 
-  if (error) {
+  const Panel = kind === "channel" ? AgentChannelPanel : AgentModelPanel;
+
+  if (!isBrowser) {
     return (
-      <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {t("加载配置面板失败：{{message}}", { message: error })}
+      <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        {t("正在加载配置面板…")}
       </div>
     );
   }
 
-  if (!runtime) {
-    return <TeaSdkRuntimeLoading />;
-  }
-
   return (
-    <TeaSdkSettingsPanelReady
-      runtime={runtime}
-      kind={kind}
-      instance={instance}
-      featureFlags={featureFlags}
-      productConfigArgs={productConfigArgs}
-      useEnglish={useEnglish}
-    />
-  );
-}
-
-/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
-function TeaSdkSettingsPanelReady({
-  runtime,
-  kind,
-  instance,
-  featureFlags,
-  productConfigArgs,
-  useEnglish,
-}: {
-  runtime: TeaSdkRuntime;
-  kind: "channel" | "model";
-  instance: TeaSdkInstanceInfo;
-  featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  useEnglish: boolean;
-}) {
-  const t = useT();
-  const { i18n } = useTranslation();
-  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
-  const productConfig = useMemo(
-    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
-    [runtime, productConfigArgs, modelProviders],
-  );
-  const sdkTextReplacements = useMemo(() => {
-    if (!i18n.language?.startsWith("id")) return undefined;
-    return {
-      "Configure a channel to start chatting with your cloud AI agent in messaging apps": t(
-        "配置通道后，即可在聊天软件中与你的云端智能体伙伴对话",
-      ),
-    };
-  }, [i18n.language, t]);
-
-  const Panel = kind === "channel" ? runtime.ChannelPanel : runtime.ModelPanel;
-
-  return (
-    <StableTeaSdkPanelHost textReplacements={sdkTextReplacements}>
-      <Panel
-        key={kind}
-        instance={instance}
-        featureFlags={featureFlags}
-        productConfig={productConfig}
-        renderChannelCard={kind === "channel" ? (props) => <LightVelaSdkChannelCard {...props} /> : undefined}
-      />
+    <StableTeaSdkPanelHost>
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {t("正在加载配置面板…")}
+          </div>
+        }
+      >
+        <Panel
+          instance={instance}
+          featureFlags={featureFlags}
+          productConfig={productConfig}
+          commandExecutor={commandExecutor}
+        />
+      </Suspense>
     </StableTeaSdkPanelHost>
   );
 }
@@ -3313,13 +2962,6 @@ export const AgentSettingsPage = ({
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
-  useEffect(() => {
-    if (!TEA_SDK_SECTIONS.has(activeSection)) return;
-    void loadTeaSdkRuntime().catch(() => {
-      // The visible settings panel reports the concrete loading error.
-    });
-  }, [activeSection]);
-
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
@@ -3611,8 +3253,7 @@ export const AgentSettingsPage = ({
         value,
         existingChars,
         getGatewayRestartCommand: async () => {
-          const teaSdkRuntime = await loadTeaSdkRuntime();
-          return teaSdkRuntime.getGatewayRestartCommand();
+          return (await getHermesScriptCommands()).getGatewayRestartCommand();
         },
       });
       if (!isCurrentRequest()) return false;
@@ -3663,47 +3304,43 @@ export const AgentSettingsPage = ({
 
 
   /**
-   * tea-sdk-lightclaw 的 ModelCard / ChannelCard / SkillCard 内部通过
-   * 自定义 `runCommand` + `getInvocationTask` 把命令下发到 mono 后端。
+   * channel / model 配置面板（agent-config 的 ChannelPanel / ModelPanel）
+   * 使用的命令执行器。
    *
-   * 和存量业务（channel 配置、onboard、debug 排错等）保持一致，走通用
-   * 入口 `POST /v1/instances/:botId/debug/exec`。国际站由后端直接使用腾讯云
-   * TAT PtyExecCmdStream，国内站保持原 envd 执行链路。
+   * 走本地 `createLocalCommandExecutor`，直连 `POST /v1/instances/:botId/debug/exec`
+   * （国际站由后端建立 TAT PtyExecCmdStream，国内站保持原 envd 执行链路），
+   * 与 chat / skill / diagnostics 面板同一条「直连」链路，彻底脱离 SDK 的
+   * TAT 两步式（RunCommand → 轮询 getInvocationTask）逻辑。
    *
-   * 业务约定：把 `activeBot.id` 作为 SDK `IInstanceInfo.InstanceId` 传入，
-   * SDK 内部 `InstanceIds: [instance.InstanceId]` 原样透传给适配器，
-   * 适配器从 `InstanceIds[0]` 拿到的就是 botId，无需额外映射或查询
-   * sandbox_id。
+   * `sdkCommandLifecycle` 挂载业务钩子（自动化模型切换同步、QQ 群策略注入）。
+   * 仅在 activeBot 存在时构造；无 bot 时传 undefined，面板内部 fallback 到空
+   * executor 占位（实际操作路径不会触发）。
    */
-  const commandAdapter = useMemo(() => {
-    const authApiBaseUrl = resolveConfiguredAuthApiBaseUrl();
-    const authToken = readStoredAuthToken();
-    if (authApiBaseUrl === null) {
-      return createMockDebugExecAdapter({
-        commandLifecycle: sdkCommandLifecycle,
-      });
-    }
-
-    return createMonoDebugExecAdapter({
-      baseUrl: authApiBaseUrl,
-      getAuthHeader: () => (authToken ? `Bearer ${authToken}` : undefined),
-      commandLifecycle: sdkCommandLifecycle,
-    });
-  }, [sdkCommandLifecycle]);
+  const teaSdkCommandExecutor = useMemo<ICommandExecutor | undefined>(
+    () =>
+      activeBotId
+        ? createLocalCommandExecutor({
+            repositories,
+            botId: activeBotId,
+            commandLifecycle: sdkCommandLifecycle,
+          })
+        : undefined,
+    [repositories, activeBotId, sdkCommandLifecycle],
+  );
 
   /**
    * LightVelaPanel 用的 commandExecutor。
    *
-   * 与上方 `commandAdapter`（给 `@tencent/tea-sdk-lightclaw` SDK 走 TAT 协议
-   * 的适配器）不同，LightVelaPanel 接受的是 ClawPanel 公共层定义的更直接的
-   * `CommandExecutor` 契约（`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
+   * 与上方 `teaSdkCommandExecutor`（给 agent-config 面板用、形状为
+   * `ICommandExecutor` 的 run/runWithProgress）不同，LightVelaPanel 接受的是
+   * ClawPanel 公共层定义的更直接的 `CommandExecutor` 契约
+   * （`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
    *
-   * 两者底层都走 mono debug/exec，但接口形状不同：
-   *   - commandAdapter：runCommand → getInvocationTask 两步式（兼容 SDK 的 TAT 模型）
-   *   - lightvelaCommandExecutor：单步同步返回（贴近 LightVelaPanel 期望）
+   * 两者底层都走 mono debug/exec 直连（均已脱离 SDK TAT），只是对上层暴露的
+   * 接口形状不同。
    *
    * 仅在 activeBot 存在时构造；切换到无 bot 状态会传 undefined，让 panel
-   * 内部 fallback 到默认 TAT 通道（实际 lightvela 场景不会走到）。
+   * 内部 fallback 到默认通道（实际 lightvela 场景不会走到）。
    */
   const lightvelaCommandExecutor = useMemo(
     () => activeBotId
@@ -3781,8 +3418,8 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const providerSaveCmd = teaSdkRuntime.getProviderSaveCommand({
+      const hermesScriptCommands = await getHermesScriptCommands();
+      const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
         name: result.config.providerName,
         baseUrl: result.config.baseUrl,
         api: result.config.api,
@@ -3804,7 +3441,7 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const switchModelCmd = teaSdkRuntime.getModelSwitchCommand(
+      const switchModelCmd = hermesScriptCommands.getModelSwitchCommand(
         hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
       );
       const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
@@ -3906,8 +3543,8 @@ export const AgentSettingsPage = ({
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const result = await repositories.bots.execDebugCommand(targetBotId, teaSdkRuntime.getGatewayRestartCommand());
+      const gatewayRestartCommand = (await getHermesScriptCommands()).getGatewayRestartCommand();
+      const result = await repositories.bots.execDebugCommand(targetBotId, gatewayRestartCommand);
       const errorMsg = buildRestartErrorMessage(result);
       if (errorMsg) {
         setRestartErrors((prev) => setErrorForBot(prev, targetBotId, errorMsg));
@@ -4126,10 +3763,6 @@ export const AgentSettingsPage = ({
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
   const useEnglish = !!i18n.language?.startsWith("en");
-  const sdkProductConfigArgs = useMemo(() => ({
-    runCommand: commandAdapter.runCommand,
-    getInvocationTask: commandAdapter.getInvocationTask,
-  }), [commandAdapter]);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
     isGlobalRegion: isGlobal,
     hiddenToolsRevealed: showHiddenAgentTools,
@@ -5520,7 +5153,7 @@ export const AgentSettingsPage = ({
                               kind="channel"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfigArgs={sdkProductConfigArgs}
+                              commandExecutor={teaSdkCommandExecutor}
                               useEnglish={useEnglish}
                             />
                           )}
@@ -5529,7 +5162,7 @@ export const AgentSettingsPage = ({
                               kind="model"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfigArgs={sdkProductConfigArgs}
+                              commandExecutor={teaSdkCommandExecutor}
                               useEnglish={useEnglish}
                             />
                           )}
