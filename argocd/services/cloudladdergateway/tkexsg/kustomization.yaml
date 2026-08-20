@@ -14,6 +14,7 @@ generators:
 - ksops-krsbx-callback-secret-generator.yaml
 - ksops-jpsbx-callback-secret-generator.yaml
 - ksops-polaris-prod-service-generator.yaml
+- ksops-polaris-prod-sg-service-generator.yaml
 - ksops-polaris-testing-service-generator.yaml
 generatorOptions:
   disableNameSuffixHash: true
