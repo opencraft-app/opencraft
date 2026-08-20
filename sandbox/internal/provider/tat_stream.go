@@ -275,6 +275,8 @@ func (p *TencentCloudProvider) openTerminalCommandHandshake(ctx context.Context,
 		"Data": map[string]any{
 			"SessionId":   session.SessionID,
 			"ChannelId":   handshake.channelID,
+			"Cols":        defaultTerminalCols,
+			"Rows":        defaultTerminalRows,
 			"UserName":    terminalCommandUsername,
 			"NoShell":     true,
 			"MaxIdleTime": timeoutSeconds,
