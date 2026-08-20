@@ -42,9 +42,12 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
         self.assertEqual(len(env), 7)
         return env
 
-    def test_sg_prod_callbacks_target_jp_api(self) -> None:
+    def test_sg_prod_callback_targets_sg_api(self) -> None:
+        callbacks = self.callback_base_urls("statefulsetplus.yaml")
+        sg_key = "CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_SG_BASE_URL"
+        self.assertEqual(callbacks.pop(sg_key), "https://api.lightvela.ai")
         self.assertEqual(
-            set(self.callback_base_urls("statefulsetplus.yaml").values()),
+            set(callbacks.values()),
             {"https://api-sandbox-jp-1.lightclaw.tech"},
         )
 
