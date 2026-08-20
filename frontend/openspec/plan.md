@@ -65,6 +65,37 @@
 
 ---
 
+# Cruise placeholder paid gate fix
+
+**Status:** Implemented and verified; approved for commit and push.
+
+**Goal:** Keep the international Cruise placeholder disabled when paid billing is off, while preserving the real CTL-backed Cruise purchase path when paid billing is on.
+
+### Task: Remove the global placeholder release override
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/next-site/subscribe-page.tsx`
+- Test: `frontend/next-site/__tests__/subscribe-page.global.test.tsx`
+
+**Acceptance:**
+- Paid billing off: the frontend Cruise placeholder remains `comingSoon` and cannot enter checkout.
+- Paid billing on: backend Cruise bundles remain purchasable through the existing CTL payment flow.
+- No backend, bundle mapping, or domestic-site behavior changes.
+
+- [x] Add a failing international-site regression test for the disabled placeholder.
+- [x] Remove the Cruise `releasedOnGlobal` override and make the test pass.
+- [x] Run targeted tests, type checking, i18n checking, and diff checks.
+
+**Verification:**
+- `pnpm exec vitest run next-site/__tests__/subscribe-page.test.tsx next-site/__tests__/subscribe-page.global.test.tsx` (7 tests passed)
+- `pnpm check`
+- `pnpm i18n:check`
+- `git diff --check`
+
+---
+
 # Agent 导航 CR 修正 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认提交和推送。

@@ -943,7 +943,6 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     ctaStyle: "outline-dark",
     maxBots: 1,
     comingSoon: true,
-    releasedOnGlobal: true,
     agentQuota: 1,
     bundleType: "general",
   },

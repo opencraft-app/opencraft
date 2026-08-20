@@ -139,6 +139,17 @@ describe("SubscribePage paid billing visibility", () => {
   beforeEach(resetState);
   afterEach(cleanup);
 
+  it("keeps the Cruise placeholder disabled before paid billing is revealed", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    await screen.findByText("巡游 Cruise");
+    expect(screen.getByRole("button", { name: "即将上线" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "立即订阅" })).not.toBeInTheDocument();
+  });
+
   it("keeps the international paid order flow behind show()", async () => {
     (globalThis as { React?: typeof React }).React = React;
     sessionState.isAuthenticated = true;
@@ -155,6 +166,7 @@ describe("SubscribePage paid billing visibility", () => {
     });
 
     expect(await screen.findByRole("tablist", { name: "付费时长" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "立即订阅" })).toBeEnabled();
   });
 });
 
