@@ -15,7 +15,7 @@
 2. 复用现有 Skills 页对 JSONL `progress` / `summary` 的解析、技能匹配和重复事件去重逻辑。
 3. ACLI 不认识 `batch-install` 时，完整回退到现有逐个安装流程。
 4. 批量命令返回部分失败时，仅把失败 slug 交给现有逐项重试逻辑；HTTP 429 继续使用 2 秒、5 秒退避。
-5. 批量命令提示 SkillHub CLI 需要升级且尚无成功项时，只执行一次 `skillhub self-upgrade`，再重试一次批量命令。
+5. 批量命令尚无成功项且所有失败结果均提示 SkillHub CLI 需要升级时，只执行一次 `skillhub self-upgrade`，再重试一次批量命令；混合失败继续逐项恢复。
 6. 只有所有目标技能最终成功时才把技能包写入已安装状态；失败提示保留具体 slug 和输出摘要。
 
 ## 兼容与边界

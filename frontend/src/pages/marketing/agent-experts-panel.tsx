@@ -676,6 +676,11 @@ async function installSkillSlugsWithNativeBatch(
   const skills = skillSlugs.map(toPackageSkill);
   const upgradeState: SkillHubUpgradeState = { attempted: false };
   let usedSequentialFallback = false;
+  let maxReportedProgress = 0;
+  const reportProgress = (current: number, total: number) => {
+    maxReportedProgress = Math.max(maxReportedProgress, current);
+    onProgress?.({ current: maxReportedProgress, total });
+  };
   const runBatchInstall = () => {
     usedSequentialFallback = false;
     return installSkillsWithNativeBatch(
@@ -686,13 +691,20 @@ async function installSkillSlugsWithNativeBatch(
         return { ok: result.succeeded, message: result.output };
       },
       skills,
-      ({ index, total }) => onProgress?.({ current: index, total }),
+      ({ index, total }) => reportProgress(index, total),
       {
         buildBatchCommand: (_registry, batchSkills) => (
           buildInstallSkillsBatchCommand(batchSkills.map((skill) => skill.rawId))
         ),
         onSequentialFallback: () => {
           usedSequentialFallback = true;
+        },
+        onIncompleteResults: (_registry, incompleteSkills) => {
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[experts] ACLI batch-install omitted results; retrying individually:",
+            incompleteSkills.map((skill) => skill.rawId),
+          );
         },
       },
     );
@@ -717,7 +729,7 @@ async function installSkillSlugsWithNativeBatch(
   const succeededSlugs = new Set(batchResult.succeeded.map((skill) => skill.rawId));
   const failedOutputs = new Map<string, string>();
   for (const { skill, message } of batchResult.failed) {
-    onProgress?.({ current: skillSlugs.indexOf(skill.rawId) + 1, total: skillSlugs.length });
+    reportProgress(skillSlugs.indexOf(skill.rawId) + 1, skillSlugs.length);
     const recovered = await recoverSkillInstall(
       botId,
       skill.rawId,

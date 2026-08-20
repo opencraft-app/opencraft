@@ -187,6 +187,69 @@ describe("hermes agent experts panel", () => {
     ]);
   });
 
+  it("keeps package progress monotonic while recovering an earlier failed skill", async () => {
+    const progress: number[] = [];
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = vi.fn().mockImplementation(async (
+      _botId: string,
+      _command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","results":[{"name":"first","status":"failed","message":"download failed"},{"name":"second","status":"installed"},{"name":"third","status":"installed"}]}\n',
+      });
+      return { status: "FAILED", exitCode: 1, output: "download failed" };
+    });
+
+    await expect(installSkillSlugs(
+      "bot-1",
+      ["first", "second", "third"],
+      execDebugCommand,
+      ({ current }) => progress.push(current),
+      execDebugCommandStream,
+    )).resolves.toEqual({
+      succeeded: ["first", "second", "third"],
+      failed: [],
+    });
+    expect(progress).toEqual([1, 1, 2, 2, 3, 3, 3]);
+  });
+
+  it("warns with uncovered slugs when ACLI omits package batch results", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "" });
+      const execDebugCommandStream = vi.fn().mockImplementation(async (
+        _botId: string,
+        _command: string,
+        onChunk: (event: { stream: string; chunk: string }) => void,
+      ) => {
+        onChunk({
+          stream: "stdout",
+          chunk: '{"event":"summary","results":[{"name":"market-data","status":"installed"}]}\n',
+        });
+        return { status: "SUCCESS", exitCode: 0, output: "" };
+      });
+
+      await expect(installSkillSlugs(
+        "bot-1",
+        ["market-data", "backtest-engine"],
+        execDebugCommand,
+        undefined,
+        execDebugCommandStream,
+      )).resolves.toEqual({
+        succeeded: ["market-data", "backtest-engine"],
+        failed: [],
+      });
+      expect(warn).toHaveBeenCalledWith(
+        "[experts] ACLI batch-install omitted results; retrying individually:",
+        ["backtest-engine"],
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("self-upgrades once and retries the native batch command", async () => {
     const upgradeOutput = "发现新版本。运行 `skillhub self-upgrade` 进行升级。";
     const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "upgraded" });

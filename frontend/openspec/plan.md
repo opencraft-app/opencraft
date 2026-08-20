@@ -1,6 +1,6 @@
 # 技能包 ACLI 原生批量安装 Implementation Plan
 
-**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+**Status:** MR !3125 CR 修复与验证完成，等待用户确认提交和推送。
 
 **Goal:** 技能包安装优先通过单次 ACLI `batch-install` 执行，减少多次 `/debug/exec` 与进程启动；在旧 ACLI、不完整批量结果、CLI 升级提示或单项失败时保留可靠兜底。
 
@@ -46,6 +46,22 @@
 - 展示真实改动与验证证据，等待用户确认后才提交、推送或创建 MR。
 
 - [x] 完成验证并输出验收摘要。
+
+### Task 4: 修正 CR 中的进度与诊断问题
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-experts-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-experts-panel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/openspec/changes/2026-08-20-skill-package-native-batch-design.md`
+
+**Acceptance:**
+- 批量阶段进入 `3/3` 后，补装早期失败项不会让用户可见进度回退。
+- ACLI 批量结果少于请求项时，诊断日志明确记录未覆盖并进入逐项补装的 slug。
+- 保留“所有失败结果均提示升级”才重跑 batch 的严格条件，并在设计文档中写清。
+
+- [x] 先补失败测试并确认 RED，再完成最小修复和定向验证。
 
 ---
 

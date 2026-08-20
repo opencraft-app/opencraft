@@ -885,6 +885,7 @@ export type NativeBatchInstallOptions = {
   shouldCancel?: () => boolean;
   buildBatchCommand?: (registry: Registry, skills: Skill[]) => string | null;
   onSequentialFallback?: (registry: Registry, skills: Skill[]) => void;
+  onIncompleteResults?: (registry: Registry, skills: Skill[]) => void;
 };
 
 export async function installSkillsSequentially(
@@ -1135,7 +1136,11 @@ export async function installSkillsWithNativeBatch(
       continue;
     }
 
-    run.skills.filter((skill) => !completed.has(skillIdentity(skill))).forEach((skill) => {
+    const incompleteSkills = run.skills.filter((skill) => !completed.has(skillIdentity(skill)));
+    if (incompleteSkills.length > 0) {
+      options?.onIncompleteResults?.(run.registry, incompleteSkills);
+    }
+    incompleteSkills.forEach((skill) => {
       markInstalling(skill);
       const message = errorOutput || "未收到技能安装结果";
       result.failed.push({ skill, message });

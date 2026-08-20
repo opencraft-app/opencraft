@@ -749,6 +749,45 @@ describe("batch skill installation", () => {
     expect(result).toEqual({ succeeded: skills, failed: [], skipped: [] });
   });
 
+  it("reports skills omitted from an otherwise supported native batch response", async () => {
+    const skills: Skill[] = [
+      { registry: "skillhub", rawId: "market-data", slug: "market-data", name: "Market Data" },
+      { registry: "skillhub", rawId: "backtest-engine", slug: "backtest-engine", name: "Backtest Engine" },
+    ];
+    const incompleteRuns: string[][] = [];
+    const execDebugCommandStream = async (
+      _botId: string,
+      _command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","results":[{"name":"market-data","status":"installed"}]}\n',
+      });
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    };
+
+    const result = await installSkillsWithNativeBatch(
+      "bot-1",
+      execDebugCommandStream,
+      async () => ({ ok: true }),
+      skills,
+      undefined,
+      {
+        onIncompleteResults: (_registry, incompleteSkills) => {
+          incompleteRuns.push(incompleteSkills.map((skill) => skill.rawId));
+        },
+      },
+    );
+
+    expect(incompleteRuns).toEqual([["backtest-engine"]]);
+    expect(result).toEqual({
+      succeeded: [skills[0]],
+      failed: [{ skill: skills[1], message: "未收到技能安装结果" }],
+      skipped: [],
+    });
+  });
+
   it("keeps summary results aligned after an earlier progress event", async () => {
     const skills: Skill[] = [
       { registry: "clawhub", rawId: "first", slug: "first", name: "First" },
