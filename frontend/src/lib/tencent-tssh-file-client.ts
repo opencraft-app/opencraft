@@ -440,6 +440,8 @@ export class TencentTsshFileClient {
         SessionId: this.bootstrap.sessionId,
         ChannelId: this.channelId,
         UserName: this.userName,
+        Cols: this.bootstrap.cols,
+        Rows: this.bootstrap.rows,
         NoShell: true,
         MaxIdleTime: this.bootstrap.timeoutSeconds ?? DEFAULT_TAT_FILE_TIMEOUT_SECONDS,
       },

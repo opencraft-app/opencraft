@@ -9,6 +9,8 @@ const bootstrap = {
   appId: 1250000000,
   instanceId: "rins-file001",
   wsUrl: "wss://ap-guangzhou.forward.tat-tc.tencent.cn/ws",
+  cols: 120,
+  rows: 32,
   timeoutSeconds: 3600,
 };
 
@@ -61,6 +63,9 @@ const WebSocketImpl = FakeWebSocket as unknown as new (url: string | URL, protoc
 const parseBsonFrames = (socket: FakeWebSocket) =>
   socket.sent.filter((frame): frame is Uint8Array => frame instanceof Uint8Array).map((frame) => deserialize(frame) as Record<string, unknown>);
 
+const parseJsonFrames = (socket: FakeWebSocket) =>
+  socket.sent.filter((frame): frame is string => typeof frame === "string").map((frame) => JSON.parse(frame) as Record<string, unknown>);
+
 const bsonResponse = (type: string, channelId: string, customData: string, data: Record<string, unknown>) =>
   serialize({
     Type: type,
@@ -90,6 +95,32 @@ afterEach(() => {
 });
 
 describe("TencentTsshFileClient", () => {
+  it("includes terminal dimensions when starting the file channel", () => {
+    const client = new TencentTsshFileClient(bootstrap, {
+      WebSocketImpl,
+      channelId: "file-test",
+      startDelayMs: 0,
+    });
+
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+
+    expect(parseJsonFrames(socket).find((frame) => frame.Type === "PtyStart")).toMatchObject({
+      Type: "PtyStart",
+      Data: {
+        SessionId: "session-1",
+        ChannelId: "file-test",
+        Cols: 120,
+        Rows: 32,
+        NoShell: true,
+      },
+    });
+
+    client.close();
+  });
+
   it("keeps exec requests pending for the TAT command timeout window", async () => {
     const client = new TencentTsshFileClient(bootstrap, {
       WebSocketImpl,
