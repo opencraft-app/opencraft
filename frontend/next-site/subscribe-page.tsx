@@ -195,6 +195,13 @@ interface PlanInfo {
   badge?: string;
   badgeStyle?: "tag" | "popular";
   price: string;
+  /* 结构化价格（分）：确认订单弹窗三行金额的真源。登录态真实计费时填充；
+     demoMode 占位卡 / 静态价为 undefined，弹窗退化为旧视觉。 */
+  priceDetail?: {
+    subtotalCents: number;
+    taxCents: number;
+    totalCents: number;
+  };
   priceUnit?: string;
   priceNote?: string;
   /* 原价（折扣前价格）：有折扣时展在活动价右侧，小字删除线灰色。无折扣时为 undefined。 */
@@ -564,10 +571,19 @@ const mapBundleToPlan = (
   /* 新用户（未订阅任何套餐）：决定是否展示「首单」类权益文案。
      未登录一律视为新用户（未登录必然还没有订阅），与登录后的新用户展示口径保持一致。 */
   const isNewUser = !isSubscribed;
-  /** 国内站要展示的真实金额（元）；后端 bundle.price.real_total_cost 单位是分，
-   *  展示前需调 centsToYuan 转为元；后端 price 为 null 时返回 null 并标记为「暂无报价」禁用 */
+  /** 套餐卡展示的「价格基准」：产品口径为税前实付价（价签模式：卡片标税前，付款实付含税）。
+   *  注意与后端 2692ca1ca 询价税费拆分的语义：
+   *    real_total_cost = 含税实付；total_cost = 税前原价；tax_price = 实付税额。
+   *  卡片价 = real_total_cost - tax_price = 税前实付价（含折扣）：
+   *    - 有税数据：从含税实付中扣除税额，与弹窗「小计（税前）」同口径，避免
+   *      「卡片 $52、弹窗小计 $45」被用户当成变价；
+   *    - 无税数据（tax_price 缺失 / 静态价表）：等于 real_total_cost 直显，
+   *      与静态新用户实付价（如启航月付 $0、巡游 AI $13.8）的展示设计兼容。
+   *  单位转换后端给的是分，cent...Yuan 内部乘 0.01；后端 price 为 null 时返回 null。 */
   const realPriceYuan =
-    paid && bundle.price ? centsToYuan(bundle.price.real_total_cost) : null;
+    paid && bundle.price
+      ? centsToYuan(bundle.price.real_total_cost - (bundle.price.tax_price ?? 0))
+      : null;
   const priceUnavailable = paid && !bundle.price && !soldOut;
   /* 询价中中间态：用户已切换 durationKey、但新时长的询价尚未返回。此时 bundle.price 仍是旧时长的价。
      方案 B1：视觉上保留旧价 + 旧单位（不切成新单位，避免「旧价 + 新单位」的误导组合），
@@ -817,6 +833,19 @@ const mapBundleToPlan = (
     badgeStyle: soldOut ? "tag" : undefined,
     /* 价格：中间态保留旧价原样展示，视觉稳定不跳变；CTA 由 pricingLoading 兜底禁用。 */
     price,
+    /* 结构化价格（分）：确认订单弹窗三行金额真源（后端 2692ca1ca 询价税费拆分）。
+       口径（产品确认）：小计=total_cost（税前价）、税费=tax_price、合计=real_total_cost（含税实付）。
+       注意含折扣时小计+税≠合计（差额为折扣，弹窗不单列折扣行）。
+       仅在登录态真实计费（paid && bundle.price）时填充；
+       询价中间态沿用旧 bundle.price，与新时长无关——弹窗在 CTA 禁用期间不可打开，无误导窗口。 */
+    priceDetail:
+      paid && bundle.price
+        ? {
+            subtotalCents: bundle.price.total_cost,
+            taxCents: bundle.price.tax_price ?? 0,
+            totalCents: bundle.price.real_total_cost,
+          }
+        : undefined,
     /* 原价（折扣前）：有折扣时展在活动价右侧删除线；询价加载中不展示，避免误导。 */
     originalPrice: showPricingPlaceholder ? undefined : originalPrice,
     /* 价格单位需与当前 durationKey 一致，且中间态必须与旧价口径一致：
@@ -2155,9 +2184,11 @@ const ConfirmOrderModal = ({
  *     提示绑卡并拦截支付，点击「Bind card」进入绑卡表单
  *   - 绑卡为前端演示：卡片状态仅在弹窗生命周期内维护，不落库、不发请求
  *
- * ⚠️ 税费为前端占位（TAX_RATE = 0），真实税额应由后端结算返回后替换。
+ * 金额三行口径（后端计费字段，单位分，见 BundlePrice.tax_price 注释）：
+ *   小计 ← total_cost（税前价）；税费 ← tax_price（未下发视为 0）；
+ *   合计 ← real_total_cost（含税实付）直接展示，不做前端加总。
+ * 含折扣时小计+税≠合计（差额为折扣，不单列折扣行）。
  */
-const TAX_RATE = 0; // 前端占位税率；接入后端结算后用真实税额替换
 
 const CreditCardConfirmOrderModal = ({
   plan,
@@ -2180,9 +2211,15 @@ const CreditCardConfirmOrderModal = ({
   const t = useT();
   const [view, setView] = useState<"order" | "success">("order");
 
-  const subtotal = parseFloat(plan.price.replace(/[^0-9.]/g, "")) || 0;
-  const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
-  const total = Math.round((subtotal + tax) * 100) / 100;
+  /* 有 priceDetail（登录态真实计费）时三行全部用后端真源：
+     小计=total_cost 税前价、税费=tax_price、合计=real_total_cost（含税）直显。
+     合计不做前端加总——分转元的舍入误差与后端未来的调整项都会让加总对不上实付。
+     无 priceDetail（demoMode 占位卡 / 静态价）时退化为旧视觉：tax=0、合计=小计。 */
+  const subtotal = plan.priceDetail
+    ? plan.priceDetail.subtotalCents / 100
+    : parseFloat(plan.price.replace(/[^0-9.]/g, "")) || 0;
+  const tax = plan.priceDetail ? plan.priceDetail.taxCents / 100 : 0;
+  const total = plan.priceDetail ? plan.priceDetail.totalCents / 100 : subtotal + tax;
   /* 币种符号必须跟随 plan.price，不能硬编码 "$"：
      plan.price 由 formatYuan(displayPriceYuan, bundle.price.currency) 产出，
      而 currency 走 `bundle.price?.currency ?? "CNY"` 兜底。
@@ -2277,6 +2314,7 @@ const CreditCardConfirmOrderModal = ({
             <div style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
                 <span>{t("「{{plan}}」套餐", { plan: plan.name })}</span>
+                {/* 套餐行展示税前价 total_cost（产品口径：套餐行与小计行同为税前价）。 */}
                 <span style={{ fontWeight: 600, color: colors.black }}>{fmt(subtotal)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>

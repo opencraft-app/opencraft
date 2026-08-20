@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -132,6 +132,25 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 });
 
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
+
+/**
+ * 组件按嵌套结构读 bundle.price（见 BundlePrice 类型），金额用例必须用嵌套 mock
+ * 才能走到真实计费分支。
+ * 口径（后端 2692ca1ca 询价税费拆分）：real_total_cost 含税、tax_price 为税额、
+ * 小计 = real_total_cost - tax_price。total_cost 刻意构造成 4500（≠ 小计 4800），
+ * 若实现误用 total_cost 做小计，断言 $48.00 会失败。
+ */
+const buildNestedBundle = () => ({
+  ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
+  price: {
+    price: 4900,
+    total_cost: 4500,
+    real_total_cost: 5200,
+    currency: "USD",
+    discount: 0,
+    tax_price: 400,
+  },
+});
 
 const resetState = () => {
   openClawState.isLoggedIn = false;
@@ -587,6 +606,102 @@ describe("SubscribePage intl AI promo tags", () => {
 
     expect(await screen.findByText("5折")).toBeInTheDocument();
     expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+  });
+});
+
+describe("SubscribePage confirm order amounts", () => {
+  beforeEach(resetState);
+  afterEach(cleanup);
+
+  /**
+   * 卡片价口径（价签模式：卡片标税前实付，付款实付含税）：
+   *   卡片展示价 = real_total_cost - tax_price = 税前实付价（含折扣）。
+   *   误用 real_total_cost（含税实付）直显会让卡片出现 $52，
+   *   用户看到「卡片 $52、弹窗小计 $45」会以为变价。本用例锁定税前口径。
+   *
+   * buildNestedBundle（刻意构造 real - tax ≠ total_cost，两类误用都会被抓住）：
+   *   real_total_cost=5200、tax_price=400 → 卡片价 = 4800 分 → $48.00；
+   *   误用 total_cost（税前原价）会显示 $45.00；
+   *   误用 real_total_cost（含税实付）会显示 $52.00。
+   */
+  it("shows the tax-exclusive discounted price on the plan card", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([buildNestedBundle()]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    /* 等套餐列表渲染完成（listBundles 异步，套餐卡片非同步出现） */
+    await screen.findByText("巡游 Cruise");
+
+    /**
+     * 卡片价口径锁定：税前实付价而非含税实付。
+     * 卡片价格渲染为「$ 符号 + 数字」分离节点（formatYuan 拼接），故断言纯数字文本。
+     * 弹窗三行用 fmt() 生成完整 "$45.00" 文本，与卡片的分离节点格式不同——两处口径
+     * 分别由本用例与「renders subtotal, tax and total」用例锁定。
+     */
+    expect(screen.getByText("48.00")).toBeInTheDocument();
+    expect(screen.queryByText("52.00")).not.toBeInTheDocument();
+  });
+
+  /**
+   * 税费展示三行口径（产品确认，后端 2692ca1ca）：
+   *   小计 ← total_cost（税前价）
+   *   税费 ← tax_price（缺失视为 0）
+   *   合计 ← real_total_cost 直接展示（含税实付真源，不做前端加总）
+   * 含折扣时小计+税≠合计（4500+400=4900≠5200，差额 300 为折扣，不单列折扣行）。
+   */
+  it("renders subtotal, tax and total from the backend price fields", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([buildNestedBundle()]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "立即订阅" }));
+
+    expect(await screen.findByText("确认订单")).toBeInTheDocument();
+    /* 小计 = total_cost 4500 分 → $45.00；套餐行同为税前价，共两处 */
+    expect(screen.getAllByText("$45.00").length).toBeGreaterThanOrEqual(2);
+    /* 税费 = tax_price 400 分 → $4.00 */
+    expect(screen.getByText("$4.00")).toBeInTheDocument();
+    /* 合计 = real_total_cost 5200 分 → $52.00（含税实付真源直显，≠ 45+4=49） */
+    expect(screen.getByText("$52.00")).toBeInTheDocument();
+    expect(screen.queryByText("$48.00")).not.toBeInTheDocument();
+  });
+
+  it("treats a missing tax field as zero tax", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([
+      {
+        ...buildNestedBundle(),
+        price: {
+          price: 4900,
+          total_cost: 4500,
+          real_total_cost: 5200,
+          currency: "USD",
+          discount: 0,
+          /* tax_price 缺失：视为税额 0，小计=合计=含税实付（国内站/免税场景现状） */
+        },
+      },
+    ]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "立即订阅" }));
+
+    expect(await screen.findByText("确认订单")).toBeInTheDocument();
+    expect(screen.getByText("$0.00")).toBeInTheDocument();
+    /* 合计 = real_total_cost（含税），tax 缺失时小计仍为税前 total_cost $45.00 */
+    expect(screen.getAllByText("$45.00").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("$52.00")).toBeInTheDocument();
   });
 });
 
