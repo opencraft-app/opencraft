@@ -253,3 +253,48 @@ func TestFromEnvRejectsInvalidUsageBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestFromEnvDSHDefaultsDisabled(t *testing.T) {
+	setRequired(t)
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DSHDomains) != 0 || cfg.DSHTargetURL != "" {
+		t.Fatalf("DSH unexpectedly enabled: %+v", cfg.DSHDomains)
+	}
+}
+
+func TestFromEnvDSHRequiresCompleteConfiguration(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_DSH_DOMAINS", "dsh.lightvela.site,dsh.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_DSH_TARGET_URL", "http://getport.ctl.svc.cluster.local/v1/dsh/target")
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DSHDomains) != 2 || cfg.DSHMaxTargets != 16 || cfg.DSHMaxConnectionsPerTarget != 64 || cfg.DSHQueueDepth != 64 ||
+		cfg.DSHMaxFrameBytes != 256<<10 || cfg.DSHMaxBufferedBytesPerConn != 2<<20 ||
+		cfg.DSHMaxBufferedBytesPerTarget != 16<<20 || cfg.DSHMaxBufferedBytesTotal != 64<<20 {
+		t.Fatalf("DSH config = %+v", cfg)
+	}
+
+	t.Setenv("TENCENT_SECRET_ID", "")
+	t.Setenv("TENCENT_SECRET_KEY", "")
+	t.Setenv("WEBSITE_COS_SECRET_ID", "cos-only-id")
+	t.Setenv("WEBSITE_COS_SECRET_KEY", "cos-only-key")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("DSH enabled without Tencent credentials unexpectedly succeeded")
+	}
+}
+
+func TestFromEnvDSHRejectsInconsistentByteLimits(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_DSH_DOMAINS", "dsh.lightvela.site")
+	t.Setenv("SITE_GATEWAY_DSH_TARGET_URL", "http://getport.ctl.svc.cluster.local/v1/dsh/target")
+	t.Setenv("SITE_GATEWAY_DSH_MAX_FRAME_BYTES", "4096")
+	t.Setenv("SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION", "2048")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("frame limit larger than connection budget unexpectedly succeeded")
+	}
+}

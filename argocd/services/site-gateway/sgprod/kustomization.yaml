@@ -81,6 +81,26 @@ replacements:
   - source:
       kind: ConfigMap
       name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_DSH_DOMAINS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_DSH_DOMAINS
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_DSH_TARGET_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_DSH_TARGET_URL
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
       fieldPath: data.SITE_GATEWAY_WILDCARD_HOST
     targets:
       - select:

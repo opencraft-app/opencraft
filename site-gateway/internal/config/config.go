@@ -38,6 +38,22 @@ type Config struct {
 	AuthPublicKeys map[string]ed25519.PublicKey
 	AuthSessionTTL time.Duration
 
+	DSHDomains                   []string
+	DSHTargetURL                 string
+	DSHSecretID                  string
+	DSHSecretKey                 string
+	DSHTargetTimeout             time.Duration
+	DSHTATStartTimeout           time.Duration
+	DSHTATOpenTimeout            time.Duration
+	DSHTATIdleTimeout            time.Duration
+	DSHMaxTargets                int
+	DSHMaxConnectionsPerTarget   int
+	DSHQueueDepth                int
+	DSHMaxFrameBytes             int64
+	DSHMaxBufferedBytesPerConn   int64
+	DSHMaxBufferedBytesPerTarget int64
+	DSHMaxBufferedBytesTotal     int64
+
 	SitePositiveTTL time.Duration
 	SiteNegativeTTL time.Duration
 	// SiteCacheMaxEntries 是站点元信息缓存的条目上界。
@@ -71,6 +87,10 @@ func FromEnv() (Config, error) {
 		AuthIssuer:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_ISSUER")),
 		AuthAudience:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_AUDIENCE")),
 		AuthStartURL:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_START_URL")),
+		DSHDomains:       splitList(os.Getenv("SITE_GATEWAY_DSH_DOMAINS")),
+		DSHTargetURL:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_TARGET_URL")),
+		DSHSecretID:      strings.TrimSpace(os.Getenv("TENCENT_SECRET_ID")),
+		DSHSecretKey:     strings.TrimSpace(os.Getenv("TENCENT_SECRET_KEY")),
 	}
 	switch AuthMode(getEnv("SITE_GATEWAY_AUTH_MODE", string(AuthModePublic))) {
 	case AuthModePublic:
@@ -110,6 +130,39 @@ func FromEnv() (Config, error) {
 	if cfg.AuthSessionTTL, err = getDuration("SITE_GATEWAY_AUTH_SESSION_TTL", 5*time.Minute); err != nil {
 		return Config{}, err
 	}
+	if cfg.DSHTargetTimeout, err = getDuration("SITE_GATEWAY_DSH_TARGET_TIMEOUT", 3*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHTATStartTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_START_TIMEOUT", 10*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHTATOpenTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT", 15*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHTATIdleTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT", time.Hour); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxTargets, err = getPositiveInt("SITE_GATEWAY_DSH_MAX_TARGETS", 16); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxConnectionsPerTarget, err = getPositiveInt("SITE_GATEWAY_DSH_MAX_CONNECTIONS_PER_TARGET", 64); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHQueueDepth, err = getPositiveInt("SITE_GATEWAY_DSH_QUEUE_DEPTH", 64); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxFrameBytes, err = getPositiveInt64("SITE_GATEWAY_DSH_MAX_FRAME_BYTES", 256<<10); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxBufferedBytesPerConn, err = getPositiveInt64("SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION", 2<<20); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxBufferedBytesPerTarget, err = getPositiveInt64("SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_TARGET", 16<<20); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxBufferedBytesTotal, err = getPositiveInt64("SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_TOTAL", 64<<20); err != nil {
+		return Config{}, err
+	}
 	// 根域是配置项而非常量：测试和正式用不同的域，正式根域后续还会更换。
 	if len(cfg.RootDomains) == 0 {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_ROOT_DOMAINS is required")
@@ -142,6 +195,37 @@ func FromEnv() (Config, error) {
 		}
 		if len(cfg.AuthPublicKeys) == 0 {
 			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS is required when auth mode is required")
+		}
+	}
+	if len(cfg.DSHDomains) == 0 && cfg.DSHTargetURL != "" {
+		return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_DOMAINS is required when DSH target URL is configured")
+	}
+	if len(cfg.DSHDomains) > 0 {
+		if cfg.DSHTargetURL == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_TARGET_URL is required when DSH domains are configured")
+		}
+		targetURL, err := url.Parse(cfg.DSHTargetURL)
+		if err != nil || (targetURL.Scheme != "http" && targetURL.Scheme != "https") || targetURL.Host == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_TARGET_URL must be an http or https URL")
+		}
+		if targetURL.User != nil || targetURL.Fragment != "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_TARGET_URL must not contain userinfo or a fragment")
+		}
+		if cfg.DSHSecretID == "" || cfg.DSHSecretKey == "" {
+			return Config{}, fmt.Errorf("TENCENT_SECRET_ID/KEY are required when DSH domains are configured")
+		}
+		if cfg.DSHMaxFrameBytes > cfg.DSHMaxBufferedBytesPerConn ||
+			cfg.DSHMaxBufferedBytesPerConn > cfg.DSHMaxBufferedBytesPerTarget ||
+			cfg.DSHMaxBufferedBytesPerTarget > cfg.DSHMaxBufferedBytesTotal {
+			return Config{}, fmt.Errorf("DSH byte limits must satisfy frame <= connection <= target <= total")
+		}
+		if int64(cfg.DSHMaxTargets) > (cfg.DSHMaxBufferedBytesTotal/4)/cfg.DSHMaxFrameBytes {
+			return Config{}, fmt.Errorf("DSH target and frame limits exceed the transient memory budget")
+		}
+		for _, domain := range cfg.DSHDomains {
+			if strings.ContainsAny(domain, "/:@") || strings.Trim(domain, ". ") != domain || !strings.Contains(domain, ".") {
+				return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_DOMAINS contains invalid domain %q", domain)
+			}
 		}
 	}
 	return cfg, nil
@@ -216,6 +300,21 @@ func getPositiveInt(key string, fallback int) (int, error) {
 		return fallback, nil
 	}
 	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("%s must be positive", key)
+	}
+	return value, nil
+}
+
+func getPositiveInt64(key string, fallback int64) (int64, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", key, err)
 	}

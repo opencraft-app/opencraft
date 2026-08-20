@@ -20,12 +20,15 @@ Platform values in `site-gateway-platform.env`:
 - `SITE_GATEWAY_AUTH_START_URL`
 - `SITE_GATEWAY_AUTH_PUBLIC_KEYS`
 - `SITE_GATEWAY_AUTH_SESSION_TTL=5m`
+- `SITE_GATEWAY_DSH_DOMAINS` (empty keeps DSH disabled)
+- `SITE_GATEWAY_DSH_TARGET_URL` (empty keeps DSH disabled)
 
 Secret values in `site-gateway-secrets`:
 
 - `WEBSITE_INTERNAL_API_TOKEN`, identical to the CTL runtime value
 - `WEBSITE_COS_SECRET_ID`
 - `WEBSITE_COS_SECRET_KEY`
+- `TENCENT_SECRET_ID` and `TENCENT_SECRET_KEY` when DSH is enabled
 
 The COS credentials must be scoped to the dedicated website bucket. The bucket stays private;
 all public reads go through site-gateway.
@@ -55,6 +58,11 @@ The Singapore deployment is intentionally `SITE_GATEWAY_AUTH_MODE=public` and se
 `*.lightvela.site` anonymously. A future domestic deployment for `*.lightvela.tech` must use
 `required` mode, a trusted Auth start URL, and public Ed25519 keys only; signing private keys
 stay in the Auth control plane.
+
+DSH must remain disabled until `dsh.lightvela.site` and `dsh.lightvela.tech` route only through
+`access_proxy/user-auth`. That proxy must remove all client-supplied `Key` headers and inject
+exactly one value derived after login validation. The public Pages Ingress is not a trusted DSH
+entry and must not be used to bypass that proxy.
 
 ## Release ownership
 

@@ -366,6 +366,62 @@ class ReleaseBundleContractTests(unittest.TestCase):
         bundle = (REPO_ROOT / ".ci" / "runtime" / "bundles" / "site-gateway.bundle").read_text()
         self.assertIn("site-gateway/docs", bundle)
 
+    def test_site_gateway_dsh_tat_proxy_is_shipped_disabled(self) -> None:
+        base_manifest = REPO_ROOT / "site-gateway" / "k8s" / "base" / "manifests.yaml"
+        documents = list(yaml.safe_load_all(base_manifest.read_text()))
+        config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
+        deployment = next(doc for doc in documents if doc.get("kind") == "Deployment")
+        data = config_map.get("data", {})
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_DOMAINS"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_TARGET_URL"), "")
+        for key in (
+            "SITE_GATEWAY_DSH_TAT_START_TIMEOUT",
+            "SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT",
+            "SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT",
+            "SITE_GATEWAY_DSH_MAX_TARGETS",
+            "SITE_GATEWAY_DSH_MAX_CONNECTIONS_PER_TARGET",
+            "SITE_GATEWAY_DSH_QUEUE_DEPTH",
+            "SITE_GATEWAY_DSH_MAX_FRAME_BYTES",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_TARGET",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_TOTAL",
+        ):
+            self.assertIn(key, data)
+
+        env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        tencent_refs = {
+            item["name"]: item["valueFrom"]["secretKeyRef"]
+            for item in env
+            if item["name"] in {"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY"}
+        }
+        self.assertEqual(set(tencent_refs), {"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY"})
+        self.assertTrue(all(ref.get("optional") is True for ref in tencent_refs.values()))
+
+        for platform_file in (
+            REPO_ROOT / "site-gateway" / "k8s" / "overlays" / "sgprod" / "generated" / "platform.env.example",
+            REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod" / "site-gateway-platform.env",
+        ):
+            platform_values = {
+                key: value
+                for line in platform_file.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_DOMAINS"), "")
+            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_TARGET_URL"), "")
+
+        source_root = REPO_ROOT / "site-gateway" / "internal"
+        for relative in (
+            "dshproxy/handler.go",
+            "dshproxy/target.go",
+            "tatproxy/bootstrap.go",
+            "tatproxy/session.go",
+            "tatproxy/conn.go",
+            "httpapi/dispatcher.go",
+        ):
+            self.assertTrue((source_root / relative).is_file(), relative)
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
