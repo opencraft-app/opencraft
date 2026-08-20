@@ -1290,7 +1290,12 @@ export function HermesAgentSkillsPanel({
           mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
           initialTab={initialGlobalSkillsTab}
           expertsPanel={(
-            <ExpertsPanel botId={botId} execDebugCommand={execDebugCommand} lang={isGlobal ? globalExpertLanguage : undefined} />
+            <ExpertsPanel
+              botId={botId}
+              execDebugCommand={execDebugCommand}
+              execDebugCommandStream={repositories.bots.execDebugCommandStream}
+              lang={isGlobal ? globalExpertLanguage : undefined}
+            />
           )}
           learnSkillPanel={(
             <LearnSkillDialog
