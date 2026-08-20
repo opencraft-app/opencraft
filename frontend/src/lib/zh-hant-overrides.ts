@@ -13,7 +13,7 @@
  *
  * 该表被以下三处共享：
  *   1. `src/lib/zh-hant.ts`（法律页运行时转换）
- *   2. `src/pages/marketing/zh-hant-scope.tsx`（硬编码 `{en,zh}` 数据的运行时转换）
+ *   2. `src/pages/marketing/tea-sdk-zh-hant-observer.tsx`（SDK 面板 DOM observer）
  *   3. `scripts/i18n-zh-hant.mjs`（构建期 zh-Hant.json 生成 —— 需手动同步，
  *      因为 .mjs 文件不能 import .ts；若在此增删条目请同步该脚本）
  */

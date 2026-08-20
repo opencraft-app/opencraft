@@ -33,7 +33,7 @@
  * 避免 SDK 的默认轮询行为浪费时间。
  */
 
-import type { IProductConfig } from "./agent-config";
+import type { IProductConfig } from "@tencent/tea-sdk-lightclaw";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 
 /**

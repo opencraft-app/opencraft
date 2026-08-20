@@ -1,21 +1,20 @@
 import type { ReactNode } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 
+import { useTeaSdkZhHantObserver } from "./tea-sdk-zh-hant-observer";
+
 const SDK_LOADING_SELECTORS = [
   ".lh-std-channel-panel--loading",
   ".lh-std-channel-panel__loader",
   ".lh-std-model-panel__loader",
 ] as const;
 
-/**
- * 面板是否处于加载态。
- *
- * 只按 loading class 判断，不再校验文案内容 —— 面板文案已国际化，
- * 英文站 loader 文本是 "Loading..."，早先的 `text.includes("加载中")`
- * 在国际站恒为 false，导致加载态被误判成就绪内容、防闪烁快照完全失效。
- */
 export function isTeaSdkLoading(root: ParentNode): boolean {
-  return SDK_LOADING_SELECTORS.some((selector) => root.querySelector(selector));
+  if (SDK_LOADING_SELECTORS.some((selector) => root.querySelector(selector))) {
+    const text = root.textContent ?? "";
+    return text.includes("加载中");
+  }
+  return false;
 }
 
 export function hasTeaSdkReadyContent(root: ParentNode): boolean {
@@ -24,23 +23,50 @@ export function hasTeaSdkReadyContent(root: ParentNode): boolean {
   return text.length > 0;
 }
 
-export function StableTeaSdkPanelHost({ children }: { children: ReactNode }) {
+function replaceTextNodeContent(root: ParentNode, replacements: Record<string, string>): void {
+  const entries = Object.entries(replacements);
+  if (entries.length === 0) return;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const original = node.nodeValue ?? "";
+    const next = entries.reduce(
+      (value, [source, replacement]) => value.replaceAll(source, replacement),
+      original,
+    );
+    if (next !== original) {
+      node.nodeValue = next;
+    }
+    node = walker.nextNode();
+  }
+}
+
+export function StableTeaSdkPanelHost({
+  children,
+  textReplacements,
+}: {
+  children: ReactNode;
+  textReplacements?: Record<string, string>;
+}) {
   const liveRef = useRef<HTMLDivElement | null>(null);
   const snapshotRef = useRef<string | null>(null);
   const [snapshotHtml, setSnapshotHtml] = useState<string | null>(null);
   const [showSnapshot, setShowSnapshot] = useState(false);
 
-  // 面板文案已本地化为 mono2 自身 i18n（`@/i18n/t`），繁体由 `zh-Hant.json`
-  // 词条覆盖，与其他页面一致，无需运行时转换。本 host 仅负责在面板内容
-  // 短暂回到加载态时用上一帧快照防止闪烁。
-  //
-  // 依赖数组为空：observer 只在挂载时建立一次。此前无依赖数组，每次渲染都
-  // disconnect + 重建，而回调内的 setState 又触发渲染，形成自激循环。
+  // zh-Hant 环境下把 SDK 渲染出的简体文案就地转成繁体字形，
+  // 并把 SDK 硬编码的 docs 链接加上 /zh-hant/ 前缀。
+  useTeaSdkZhHantObserver(liveRef);
+
   useLayoutEffect(() => {
     const live = liveRef.current;
     if (!live) return;
 
     const syncSnapshot = () => {
+      if (textReplacements) {
+        replaceTextNodeContent(live, textReplacements);
+      }
+
       if (hasTeaSdkReadyContent(live)) {
         const html = live.innerHTML;
         snapshotRef.current = html;
@@ -63,7 +89,7 @@ export function StableTeaSdkPanelHost({ children }: { children: ReactNode }) {
     });
 
     return () => observer.disconnect();
-  }, []);
+  }, [textReplacements]);
 
   return (
     <div className="relative" data-tea-sdk-stable-host>
