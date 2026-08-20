@@ -2,13 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Include billing tax in international payment URLs and regular Jifei inquiry prices.
+**Goal:** Include billing tax in international payment URLs and expose a split
+untaxed/tax/inclusive price breakdown for regular Jifei inquiries.
 
 **Architecture:** Decode the amount and nested `taxDetail.taxRate` together from
 the JSON-encoded billing `OrderInfos[].PriceDetail`, then calculate integer cents
 with a shared exact rational helper used by place-order and inquiry services.
-Regular Jifei international inquiries apply tax to all three displayed amount
-fields; domestic and Dianshi inquiry paths remain unchanged.
+Regular Jifei international inquiries keep list and pre-discount totals
+untaxed, expose the paid-amount tax separately, and keep the paid total tax
+inclusive. CTL passes the new tax field through to its user-facing APIs.
 
 **Tech Stack:** Go, standard library `encoding/json` and `math/big`, Go testing.
 
@@ -21,7 +23,9 @@ fields; domestic and Dianshi inquiry paths remain unchanged.
 - Missing, empty, malformed, or negative tax rates are errors; zero is valid.
 - Do not add a decimal-library dependency.
 - Apply inquiry tax only to regular Jifei international purchase, batch, and
-  renewal paths; do not change domestic or Dianshi inquiry amounts.
+  renewal paths; domestic and Dianshi inquiry amounts remain unchanged and
+  report zero tax.
+- Do not change frontend code.
 
 ---
 
@@ -246,12 +250,67 @@ cd trade && go test ./...
 
 Expected: PASS.
 
-- [x] **Step 5: Run Trade regression tests**
+### Task 5: Split Inquiry Tax and Propagate It Through CTL
+
+**Files:**
+- Modify: `trade/internal/logic/inquiry/service.go`
+- Test: `trade/internal/logic/inquiry/service_site_kind_test.go`
+- Test: `trade/internal/logic/inquiry/service_test.go`
+- Test: `trade/internal/logic/inquiry/service_dianshi_test.go`
+- Modify: `ctl/pkg/adapter/trade/adapter.go`
+- Test: `ctl/pkg/adapter/trade/adapter_test.go`
+- Modify: `ctl/pkg/transport/bundle.go`
+- Modify: `ctl/pkg/transport/pass.go`
+- Modify: `ctl/main/api/bundle_handler.go`
+- Test: `ctl/main/api/bundle_handler_test.go`
+- Modify: `ctl/pkg/logic/pass/logic.go`
+
+**Interfaces:**
+- Produces: `QuoteResult.TaxPrice string` in cents.
+- Consumes: `BundleQuote.TaxPrice`; exposes `BundlePrice.TaxPrice` and
+  `RenewPassPriceResult.TaxPrice` as `float64`.
+
+- [x] **Step 1: Write failing Trade and CTL contract tests**
+
+Assert that a 7% international quote based on `650/1400/1200` cents returns
+`price=650`, `total_cost=1400`, `tax_price=84`, and
+`real_total_cost=1284`. Assert CTL parses and exposes `tax_price` for both new
+purchase and renewal responses. Assert domestic and Dianshi quotes return zero
+tax.
+
+- [x] **Step 2: Verify the tests fail for the missing field and old semantics**
 
 Run:
 
 ```bash
-cd trade && go test ./...
+cd trade && go test ./internal/logic/inquiry -count=1
+cd ctl && go test ./pkg/adapter/trade ./main/api ./pkg/logic/pass -count=1
 ```
 
-Expected: PASS.
+Expected: FAIL because `tax_price` is absent and international list/total
+prices are still tax inclusive.
+
+- [x] **Step 3: Implement the Trade amount split**
+
+Add `TaxPrice` to `QuoteResult`. For international Jifei quotes, convert
+high-precision `price` and `totalCost` directly to cents, calculate the
+tax-inclusive paid total with `billingamount.TaxInclusiveCents`, and calculate
+tax as the inclusive paid total minus the untaxed paid amount. Set zero tax on
+domestic and Dianshi paths.
+
+- [x] **Step 4: Implement CTL propagation**
+
+Add `TaxPrice` to the Trade adapter DTO and to purchase/renewal transport DTOs.
+Parse it with the existing defensive string-to-float helpers in both handlers.
+
+- [x] **Step 5: Run backend regression checks**
+
+Run:
+
+```bash
+cd trade && go test ./... && go vet ./...
+cd ctl && go test ./... && go vet ./...
+git diff --check
+```
+
+Expected: PASS with no frontend files changed.

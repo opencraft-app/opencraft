@@ -174,6 +174,7 @@ type UserBundleResponse struct {
 type BundlePrice struct {
 	Price         float64 `json:"price"`           // CGW data[].price，标价
 	TotalCost     float64 `json:"total_cost"`      // CGW totalCost，成本价
+	TaxPrice      float64 `json:"tax_price"`       // 实付金额对应税额
 	RealTotalCost float64 `json:"real_total_cost"` // CGW realTotalCost，实付价
 	Currency      string  `json:"currency"`        // 币种，如 CNY
 	Discount      float64 `json:"discount"`        // 总折扣率，来自 CGW policyDetail.total（拍平）；1.0 = 无折扣

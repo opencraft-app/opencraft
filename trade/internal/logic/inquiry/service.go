@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"strings"
 
 	"git.woa.com/wisp/mono/trade/internal/billingamount"
@@ -104,6 +105,7 @@ type QuoteResult struct {
 	BundleName     string  `json:"bundle_name"`
 	Price          string  `json:"price"`           // 单价（带小数字符串）
 	TotalCost      string  `json:"total_cost"`      // 折扣前总价
+	TaxPrice       string  `json:"tax_price"`       // 实付金额对应税额
 	RealTotalCost  string  `json:"real_total_cost"` // 实付总价（折扣后）
 	Currency       string  `json:"currency"`        // 通常 "CNY"
 	Discount       float64 `json:"discount"`        // policyDetail.total 拍平
@@ -602,7 +604,7 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 
 	// 6. 拍平 QuoteResult
 	d := priceResp.Data[0]
-	price, totalCost, realTotalCost, err := s.quoteAmountFields(d)
+	price, totalCost, taxPrice, realTotalCost, err := s.quoteAmountFields(d)
 	if err != nil {
 		return nil, err
 	}
@@ -611,6 +613,7 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 		BundleName:     bundle.BundleName,
 		Price:          price,
 		TotalCost:      totalCost,
+		TaxPrice:       taxPrice,
 		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
@@ -644,16 +647,16 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 	return result, nil
 }
 
-func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCost, realTotalCost string, err error) {
+func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCost, taxPrice, realTotalCost string, err error) {
 	price = string(d.Price)
 	totalCost = string(d.TotalCost)
 	realTotalCost = string(d.RealTotalCost)
 
 	if !strings.EqualFold(s.currency, "USD") {
-		return price, totalCost, realTotalCost, nil
+		return price, totalCost, "0", realTotalCost, nil
 	}
 	if d.TaxDetail == nil {
-		return "", "", "", fmt.Errorf("inquiry: jifei GetPrice taxDetail is required for intl quote")
+		return "", "", "", "", fmt.Errorf("inquiry: jifei GetPrice taxDetail is required for intl quote")
 	}
 	taxRate := strings.TrimSpace(string(d.TaxDetail.TaxRate))
 	if d.HighPrecisionPrice != nil {
@@ -667,27 +670,51 @@ func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCos
 			realTotalCost = v
 		}
 	}
-	price, err = taxInclusiveQuoteAmount("price", price, taxRate)
+	price, err = quoteAmountCents("price", price, "0")
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
-	totalCost, err = taxInclusiveQuoteAmount("totalCost", totalCost, taxRate)
+	totalCost, err = quoteAmountCents("totalCost", totalCost, "0")
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
-	realTotalCost, err = taxInclusiveQuoteAmount("realTotalCost", realTotalCost, taxRate)
+	untaxedRealTotalCost, err := quoteAmountCents("realTotalCost", realTotalCost, "0")
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
-	return price, totalCost, realTotalCost, nil
+	realTotalCost, err = quoteAmountCents("realTotalCost", realTotalCost, taxRate)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	taxPrice, err = subtractQuoteCents(realTotalCost, untaxedRealTotalCost)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return price, totalCost, taxPrice, realTotalCost, nil
 }
 
-func taxInclusiveQuoteAmount(field, rawAmount, taxRate string) (string, error) {
+func quoteAmountCents(field, rawAmount, taxRate string) (string, error) {
 	cents, err := billingamount.TaxInclusiveCents(rawAmount, taxRate)
 	if err != nil {
 		return "", fmt.Errorf("inquiry: jifei GetPrice invalid %s=%q or taxRate=%q: %w", field, rawAmount, taxRate, err)
 	}
 	return cents, nil
+}
+
+func subtractQuoteCents(inclusive, untaxed string) (string, error) {
+	inclusiveCents, ok := new(big.Int).SetString(inclusive, 10)
+	if !ok {
+		return "", fmt.Errorf("inquiry: invalid tax-inclusive cents %q", inclusive)
+	}
+	untaxedCents, ok := new(big.Int).SetString(untaxed, 10)
+	if !ok {
+		return "", fmt.Errorf("inquiry: invalid untaxed cents %q", untaxed)
+	}
+	taxCents := new(big.Int).Sub(inclusiveCents, untaxedCents)
+	if taxCents.Sign() < 0 {
+		return "", fmt.Errorf("inquiry: tax-inclusive cents %q is less than untaxed cents %q", inclusive, untaxed)
+	}
+	return taxCents.String(), nil
 }
 
 func highPrecisionAmountToCents(raw string) string {
@@ -890,7 +917,7 @@ func (s *Service) quoteResultFromPriceData(
 	def *store.BundleDefinition,
 	d jifeiclient.GetPriceData,
 ) (*QuoteResult, error) {
-	price, totalCost, realTotalCost, err := s.quoteAmountFields(d)
+	price, totalCost, taxPrice, realTotalCost, err := s.quoteAmountFields(d)
 	if err != nil {
 		return nil, err
 	}
@@ -899,6 +926,7 @@ func (s *Service) quoteResultFromPriceData(
 		BundleName:     bundle.BundleName,
 		Price:          price,
 		TotalCost:      totalCost,
+		TaxPrice:       taxPrice,
 		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
@@ -1050,6 +1078,7 @@ func (s *Service) quoteDianshi(
 		BundleName:     bundle.BundleName,
 		Price:          price,
 		TotalCost:      totalCost,
+		TaxPrice:       "0",
 		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
