@@ -94,6 +94,34 @@ spec:
           value: http://opc-activity-price.production.sgpolaris:10006
         - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_ORDER_BASE_URL
           value: http://opc-dianshi-activity.production.sgpolaris:80
+        # 国际站开发者个人环境的 jifei 回调改派：uin 命中就不走上面 KR_BASE_URL 那条
+        # 共享落点（api-sandbox-kr-1），而是转给下面的 dev-1。这样共享 playground 不会
+        # 因为个人联调多出订单/pass。加人时在这里追加 `<uin>=jifei-callback-dev-2` 等。
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_UIN_ROUTES
+          value: 450860000011=jifei-callback-dev-1
+        # 各开发者环境的可达地址（config.example.yaml 里是黑洞占位，必须在这里覆盖）。
+        #
+        # 不直连 DevCloud：本 Pod 反向连 DevCloud 实测不通（10s 超时），改成打到
+        # devtunnel，由开发者机器上的 agent 出站长轮询把回调取走。分流 key 是 Host。
+        # 用 FQDN 是因为 dnsConfig ndots=2，单标签名要多绕一轮 search 域。
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_1_BASE_URL
+          value: http://devtunnel-testing.ns-prjqt8dd-867795-production.svc.cluster.local:8080
+        # host 用 sg1 而非 tkexgz 那边的 dev1：同一个开发者可能同时挂国内站和国际站两条
+        # agent，host 撞了会把回调投错落点。
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_1_HOST_HEADER
+          value: sg1.tunnel.internal
+        # devtunnel 控制面：给 DevCloud 上的 agent 经本网关 CLB 出站 poll/reply 用。
+        # 回调本身不走这条 route，走的是上面 dev-1 的 base_url。
+        - name: CLOUDLADDERGATEWAY_ROUTE_DEVTUNNEL_BASE_URL
+          value: http://devtunnel-testing.ns-prjqt8dd-867795-production.svc.cluster.local:8080
+        # devtunnel 的 ingest 端点要鉴权，而 route 的 env 覆盖没有注入 header 的口子，
+        # 所以 config.example.yaml 里 jifei-callback-dev-* 用 headers_from_env 从这个
+        # 环境变量取值注入 Authorization。与 devtunnel 服务端、agent 共用同一份 token。
+        - name: DEVTUNNEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: DEVTUNNEL_TOKEN
+              name: cloudladdergateway-devtunnel-secrets
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always
         name: lightvela-proxy

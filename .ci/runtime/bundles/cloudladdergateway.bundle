@@ -14,6 +14,8 @@ bundles:
     - argocd/secrets/{env}/cloudladdergateway-runtime-secrets.sops.yaml
     - argocd/secrets/{env}/cloudladdergateway-callback-secrets.sops.yaml
     - argocd/secrets/{env}/cloudladdergateway-krsbx-callback-secrets.sops.yaml
+    - argocd/secrets/{env}/cloudladdergateway-jpsbx-callback-secrets.sops.yaml
+    - argocd/secrets/{env}/cloudladdergateway-devtunnel-secrets.sops.yaml
     - argocd/secrets/{env}/cloudladdergateway-polaris-*.sops.yaml
     dockerfile: cloudladdergateway/Dockerfile
     build_context: .
