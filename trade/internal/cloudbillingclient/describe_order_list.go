@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
@@ -24,6 +25,7 @@ type OrderInfo struct {
 	OrderID                               string
 	PriceDetailHighPrecisionRealTotalCost string
 	PriceDetailRealTotalCost              string
+	TaxRate                               string
 }
 
 type DescribeOrderListResponse struct {
@@ -73,7 +75,7 @@ func (c *TencentCloudClient) DescribeOrderList(ctx context.Context, credentials 
 	out := &DescribeOrderListResponse{RequestID: strings.TrimSpace(payload.Response.RequestID)}
 	for _, bigOrder := range payload.Response.Data {
 		for _, order := range bigOrder.OrderInfos {
-			highPrecisionRealTotalCost, realTotalCost, err := decodeOrderPriceDetail(order.PriceDetail)
+			highPrecisionRealTotalCost, realTotalCost, taxRate, err := decodeOrderPriceDetail(order.PriceDetail)
 			if err != nil {
 				return nil, fmt.Errorf("decode DescribeOrderList PriceDetail orderId=%s: %w", order.OrderID, err)
 			}
@@ -82,38 +84,84 @@ func (c *TencentCloudClient) DescribeOrderList(ctx context.Context, credentials 
 				OrderID:                               strings.TrimSpace(order.OrderID),
 				PriceDetailHighPrecisionRealTotalCost: highPrecisionRealTotalCost,
 				PriceDetailRealTotalCost:              realTotalCost,
+				TaxRate:                               taxRate,
 			})
 		}
 	}
 	return out, nil
 }
 
-func decodeOrderPriceDetail(raw string) (highPrecisionRealTotalCost string, realTotalCost string, err error) {
+func decodeOrderTaxDetail(raw json.RawMessage) (string, error) {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", errors.New("taxDetail is required")
+	}
+	if raw[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(raw, &encoded); err != nil {
+			return "", err
+		}
+		raw = json.RawMessage(strings.TrimSpace(encoded))
+	}
+	var detail struct {
+		TaxRate json.RawMessage `json:"taxRate"`
+	}
+	if err := json.Unmarshal(raw, &detail); err != nil {
+		return "", err
+	}
+	taxRate, err := billingAmountText(detail.TaxRate)
+	if err != nil {
+		return "", fmt.Errorf("taxRate: %w", err)
+	}
+	if taxRate == "" {
+		return "", errors.New("taxRate is required")
+	}
+	rate, ok := new(big.Rat).SetString(taxRate)
+	if !ok {
+		return "", fmt.Errorf("taxRate is invalid: %q", taxRate)
+	}
+	if rate.Sign() < 0 {
+		return "", fmt.Errorf("taxRate must be non-negative: %q", taxRate)
+	}
+	return taxRate, nil
+}
+
+func decodeOrderPriceDetail(raw string) (
+	highPrecisionRealTotalCost string,
+	realTotalCost string,
+	taxRate string,
+	err error,
+) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", "", nil
+		return "", "", "", errors.New("priceDetail is required")
 	}
 	var detail struct {
 		RealTotalCost      json.RawMessage `json:"realTotalCost"`
 		HighPrecisionPrice struct {
 			RealTotalCostHigh json.RawMessage `json:"realTotalCostHigh"`
 		} `json:"highPrecisionPrice"`
+		TaxDetail json.RawMessage `json:"taxDetail"`
 	}
 	if err := json.Unmarshal([]byte(raw), &detail); err != nil {
-		return "", "", err
+		return "", "", "", err
+	}
+	taxRate, err = decodeOrderTaxDetail(detail.TaxDetail)
+	if err != nil {
+		return "", "", "", fmt.Errorf("taxDetail: %w", err)
 	}
 	highPrecisionRealTotalCost, err = billingAmountText(detail.HighPrecisionPrice.RealTotalCostHigh)
 	if err != nil {
-		return "", "", fmt.Errorf("highPrecisionPrice.realTotalCostHigh: %w", err)
+		return "", "", "", fmt.Errorf("highPrecisionPrice.realTotalCostHigh: %w", err)
 	}
 	if highPrecisionRealTotalCost != "" {
-		return highPrecisionRealTotalCost, "", nil
+		return highPrecisionRealTotalCost, "", taxRate, nil
 	}
 	realTotalCost, err = billingAmountText(detail.RealTotalCost)
 	if err != nil {
-		return "", "", fmt.Errorf("realTotalCost: %w", err)
+		return "", "", "", fmt.Errorf("realTotalCost: %w", err)
 	}
-	return highPrecisionRealTotalCost, realTotalCost, nil
+	return highPrecisionRealTotalCost, realTotalCost, taxRate, nil
 }
 
 func billingAmountText(raw json.RawMessage) (string, error) {

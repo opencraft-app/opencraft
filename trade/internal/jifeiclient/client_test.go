@@ -117,6 +117,7 @@ func TestGetPrice_Success(t *testing.T) {
 				RealTotalCost: "80.00",
 				Currency:      "CNY",
 				PolicyDetail:  &PolicyDetail{Total: 0.8, User: 0.9, Common: 1.0},
+				TaxDetail:     &TaxDetail{TaxRate: "0.07"},
 			},
 		}))
 	}))
@@ -161,6 +162,9 @@ func TestGetPrice_Success(t *testing.T) {
 	}
 	if resp.Data[0].PolicyDetail == nil || resp.Data[0].PolicyDetail.Total != 0.8 {
 		t.Errorf("PolicyDetail.Total: got %+v want 0.8", resp.Data[0].PolicyDetail)
+	}
+	if resp.Data[0].TaxDetail == nil || resp.Data[0].TaxDetail.TaxRate != "0.07" {
+		t.Errorf("TaxDetail.TaxRate: got %+v want 0.07", resp.Data[0].TaxDetail)
 	}
 
 	// 请求字段断言

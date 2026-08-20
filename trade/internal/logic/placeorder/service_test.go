@@ -380,7 +380,7 @@ func newStdDeps() *stdDeps {
 		billing: &fakeCloudBilling{
 			describeOrderListFn: func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
 				return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
-					OrderID: req.OrderIDs[0], PriceDetailRealTotalCost: "650000000",
+					OrderID: req.OrderIDs[0], PriceDetailRealTotalCost: "650000000", TaxRate: "0.07",
 				}}}, nil
 			},
 		},
@@ -902,8 +902,8 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 		if req.Application != "intlSaaSLightvela" {
 			t.Errorf("Application = %q, want intlSaaSLightvela", req.Application)
 		}
-		if req.ChargeAmount != 650 {
-			t.Errorf("ChargeAmount = %d, want 650", req.ChargeAmount)
+		if req.ChargeAmount != 696 {
+			t.Errorf("ChargeAmount = %d, want 696", req.ChargeAmount)
 		}
 		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
 			t.Errorf("CancelURL mismatch: %q", req.CancelURL)
@@ -1299,6 +1299,37 @@ func TestGeneratePayURL_IntlRejectsDescribeOrderListWithoutMatchingOrder(t *test
 	}
 }
 
+func TestGeneratePayURL_IntlRejectsMissingTaxRateBeforeCreatePayURL(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: "deal-1", ExternalUserID: "usr_1", Uin: "1000123456"}, nil
+	}
+	d.billing.describeOrderListFn = func(context.Context, cloudbillingclient.TemporaryCredentials, *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
+		return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
+			OrderID: "deal-1", PriceDetailRealTotalCost: "650000000",
+		}}}, nil
+	}
+
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
+	if err == nil || !strings.Contains(err.Error(), "taxRate") {
+		t.Fatalf("GeneratePayURL error = %v, want missing taxRate error", err)
+	}
+	if d.billing.createPayURLCalls.Load() != 0 {
+		t.Fatalf("CreatePayURL calls = %d, want 0", d.billing.createPayURLCalls.Load())
+	}
+}
+
 func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1311,6 +1342,7 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 				OrderID:                               "deal-1",
 				PriceDetailHighPrecisionRealTotalCost: "650000000",
 				PriceDetailRealTotalCost:              "700000000",
+				TaxRate:                               "0",
 			},
 			want: 650,
 		},
@@ -1319,6 +1351,7 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 			order: cloudbillingclient.OrderInfo{
 				OrderID:                  "deal-1",
 				PriceDetailRealTotalCost: "650000000",
+				TaxRate:                  "0",
 			},
 			want: 650,
 		},
@@ -1339,15 +1372,52 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 	}
 }
 
-func TestChargeAmountFromOrderListRejectsSubCentAmount(t *testing.T) {
-	_, err := chargeAmountFromOrderList("deal-1", &cloudbillingclient.DescribeOrderListResponse{
-		Orders: []cloudbillingclient.OrderInfo{{
-			OrderID:                               "deal-1",
-			PriceDetailHighPrecisionRealTotalCost: "650000001",
-		}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "cannot be represented as whole cents") {
-		t.Fatalf("chargeAmountFromOrderList error = %v, want sub-cent precision error", err)
+func TestChargeAmountFromOrderListIncludesTaxAndRoundsUpFractionalCents(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawAmount  string
+		taxRate    string
+		wantAmount int64
+	}{
+		{name: "seven percent tax rounds up half cent", rawAmount: "650000000", taxRate: "0.07", wantAmount: 696},
+		{name: "ten percent tax is exact cents", rawAmount: "650000000", taxRate: "0.10", wantAmount: 715},
+		{name: "sub-cent paid amount rounds up after tax", rawAmount: "650000001", taxRate: "0.07", wantAmount: 696},
+		{name: "zero tax preserves paid cents", rawAmount: "650000000", taxRate: "0", wantAmount: 650},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := chargeAmountFromOrderList("deal-1", &cloudbillingclient.DescribeOrderListResponse{
+				Orders: []cloudbillingclient.OrderInfo{{
+					OrderID:                               "deal-1",
+					PriceDetailHighPrecisionRealTotalCost: tt.rawAmount,
+					TaxRate:                               tt.taxRate,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("chargeAmountFromOrderList: %v", err)
+			}
+			if got != tt.wantAmount {
+				t.Fatalf("charge amount = %d, want %d", got, tt.wantAmount)
+			}
+		})
+	}
+}
+
+func TestChargeAmountFromOrderListRejectsInvalidTaxRate(t *testing.T) {
+	for _, taxRate := range []string{"", "invalid", "-0.01"} {
+		t.Run(taxRate, func(t *testing.T) {
+			_, err := chargeAmountFromOrderList("deal-1", &cloudbillingclient.DescribeOrderListResponse{
+				Orders: []cloudbillingclient.OrderInfo{{
+					OrderID:                  "deal-1",
+					PriceDetailRealTotalCost: "650000000",
+					TaxRate:                  taxRate,
+				}},
+			})
+			if err == nil || !strings.Contains(err.Error(), "taxRate") {
+				t.Fatalf("chargeAmountFromOrderList taxRate=%q error = %v, want taxRate error", taxRate, err)
+			}
+		})
 	}
 }
 

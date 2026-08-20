@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"git.woa.com/wisp/mono/trade/internal/billingamount"
 	"git.woa.com/wisp/mono/trade/internal/cloudbillingclient"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
@@ -54,7 +55,6 @@ const (
 	intlPayURLApplication       = "intlSaaSLightvela"
 	intlDescribeOrderPayMode    = "prePay"
 	paymentContextLookupTimeout = 8 * time.Second
-	billingAmountToCentsDivisor = int64(1_000_000)
 )
 
 // 业务错误哨兵（上层 errors.Is 判定）。
@@ -1506,18 +1506,22 @@ func chargeAmountFromOrderList(dealName string, resp *cloudbillingclient.Describ
 		amountField = "PriceDetail.realTotalCost"
 		amountText = strings.TrimSpace(matched.PriceDetailRealTotalCost)
 	}
-	rawAmount, err := strconv.ParseInt(amountText, 10, 64)
-	if err != nil || rawAmount <= 0 {
-		return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned invalid %s=%q for dealName=%s", amountField, amountText, dealName)
-	}
-	// PriceDetail 金额字段的单位是主币种 * 1e8，CreatePayUrl ChargeAmount 要求分。
-	if rawAmount%billingAmountToCentsDivisor != 0 {
+	taxRateText := strings.TrimSpace(matched.TaxRate)
+	chargeAmountText, err := billingamount.TaxInclusiveCents(amountText, taxRateText)
+	if err != nil {
 		return 0, fmt.Errorf(
-			"placeorder: billing DescribeOrderList %s=%q cannot be represented as whole cents for dealName=%s",
-			amountField, amountText, dealName,
+			"placeorder: billing DescribeOrderList invalid %s=%q or taxRate=%q for dealName=%s: %w",
+			amountField, amountText, taxRateText, dealName, err,
 		)
 	}
-	return rawAmount / billingAmountToCentsDivisor, nil
+	chargeAmount, err := strconv.ParseInt(chargeAmountText, 10, 64)
+	if err != nil || chargeAmount <= 0 {
+		return 0, fmt.Errorf(
+			"placeorder: billing DescribeOrderList tax-inclusive amount is out of range for dealName=%s",
+			dealName,
+		)
+	}
+	return chargeAmount, nil
 }
 
 // parsePayURLAuxFields 从 trade_order.pay_url 缓存值反解析协议外字段，仅供

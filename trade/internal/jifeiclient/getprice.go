@@ -117,11 +117,17 @@ type GetPriceData struct {
 	Pid                int64               `json:"pid,omitempty"`    // Q71：PDF §4.4 pid 是 int
 	Policy             float64             `json:"policy,omitempty"` // jifei 实测返回 0.01 浮点（折扣率 1.0=不打折 / 0.01=1 折），不能用 int；本字段仅 ELK 兜底，业务层不消费
 	PolicyDetail       *PolicyDetail       `json:"policyDetail,omitempty"`
+	TaxDetail          *TaxDetail          `json:"taxDetail,omitempty"`
 	HighPrecisionPrice *HighPrecisionPrice `json:"highPrecisionPrice,omitempty"`
 	// PartDetail jifei 沙箱实测回包是 object（如 `{"discount": ...}`），但 PDF
 	// §4.4 / 设计稿标 array。为兼容两种形态保留为 RawMessage（业务层不消费此字段，
 	// 仅 ELK 日志兜底，与 Q50 不持久化原则一致）。v1.7.18 B13.
 	PartDetail json.RawMessage `json:"partDetail,omitempty"`
+}
+
+// TaxDetail is the international tax metadata returned for one quoted item.
+type TaxDetail struct {
+	TaxRate flexString `json:"taxRate"`
 }
 
 // HighPrecisionPrice 是 jifei 国际站高精度金额字段。
