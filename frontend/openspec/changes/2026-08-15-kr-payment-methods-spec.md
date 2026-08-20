@@ -46,7 +46,7 @@ Auth 已固定回跳到 `/account/?payment-method=success|cancelled`。`SavedCar
 ## Security
 
 - LightVela 不渲染 PAN、有效期、CVC 输入框。
-- 重定向 URL 必须是绝对 HTTPS URL，且 host 为 `centauriglobal.com` 或其子域；不满足时拒绝跳转并展示错误。
+- 重定向 URL 必须是绝对 HTTPS URL，且 host 为国际站生产签约域名 `card.harvestsharp.com`、`centauriglobal.com` 或其子域；不满足时拒绝跳转并展示错误。
 - 回跳 query 只驱动提示和刷新，最终状态始终以列表 API 为准。
 - 不在 localStorage、sessionStorage 或日志中保存签约卡详情、contractCode 以外的敏感信息。
 
