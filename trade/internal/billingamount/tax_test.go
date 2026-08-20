@@ -17,6 +17,7 @@ func TestTaxInclusiveCents(t *testing.T) {
 		{name: "sub-cent amount rounds up after tax", amount: "650000001", taxRate: "0.07", wantCents: "696"},
 		{name: "decimal raw amount", amount: "750000000.0", taxRate: "0.07", wantCents: "803"},
 		{name: "positive amount below one cent rounds up", amount: "1", taxRate: "0", wantCents: "1"},
+		{name: "zero amount remains zero", amount: "0", taxRate: "0.09", wantCents: "0"},
 		{name: "zero tax", amount: "650000000", taxRate: "0", wantCents: "650"},
 	}
 
@@ -42,7 +43,6 @@ func TestTaxInclusiveCentsRejectsInvalidInput(t *testing.T) {
 	}{
 		{name: "missing amount", taxRate: "0.07", field: "amount"},
 		{name: "malformed amount", amount: "bad", taxRate: "0.07", field: "amount"},
-		{name: "zero amount", amount: "0", taxRate: "0.07", field: "amount"},
 		{name: "negative amount", amount: "-1", taxRate: "0.07", field: "amount"},
 		{name: "missing tax", amount: "650000000", field: "tax rate"},
 		{name: "malformed tax", amount: "650000000", taxRate: "bad", field: "tax rate"},

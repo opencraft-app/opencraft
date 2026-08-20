@@ -1515,7 +1515,7 @@ func chargeAmountFromOrderList(dealName string, resp *cloudbillingclient.Describ
 		)
 	}
 	chargeAmount, err := strconv.ParseInt(chargeAmountText, 10, 64)
-	if err != nil || chargeAmount <= 0 {
+	if err != nil || chargeAmount < 0 {
 		return 0, fmt.Errorf(
 			"placeorder: billing DescribeOrderList tax-inclusive amount is out of range for dealName=%s",
 			dealName,
