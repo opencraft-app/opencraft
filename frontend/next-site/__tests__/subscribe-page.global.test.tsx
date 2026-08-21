@@ -61,6 +61,12 @@ const createDianshiPassOrderAndPayMock = vi.fn();
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
+    auth: {
+      /* master 新版 LoginModal 会在渲染时读取国际站 OAuth 地址；本组用例不触发登录跳转。 */
+      getOAuthStartUrl: vi.fn((provider: string) =>
+        `https://lightvela.ai/auth/oauth/${provider}/start`,
+      ),
+    },
     plans: {
       listBundles: listBundlesMock,
       createPassOrder: createPassOrderMock,
