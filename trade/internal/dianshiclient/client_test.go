@@ -209,6 +209,69 @@ func TestDoGoods_Success(t *testing.T) {
 	}
 }
 
+func TestDoGoodsAndPay_Success(t *testing.T) {
+	const sampleResp = `{
+		"version":1,"componentName":"qcact-logic","eventId":966200588,
+		"returnValue":0,"returnCode":0,"returnMessage":"成功",
+		"data":{"deal_names":["20240809794064572803152"],"big_deal_no":"20240809794064572803142"}
+	}`
+
+	var gotBody []byte
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sampleResp))
+	}))
+	defer srv.Close()
+
+	c := New("", srv.URL+"/activity_web/activity/do_goods", Options{
+		EventIDProvider: newFixedEventID(966200588),
+		NowProvider:     newFixedClock(),
+		Preview:         1,
+	})
+	request := &DoGoodsRequest{
+		Uin:        "815836472",
+		ActivityID: 164273735574009,
+		Originate:  OriginateLightvelaTrade,
+		Goods: []DoGoodsItem{{
+			ActID: 1862147936410255,
+			PreferenceParam: map[string]interface{}{
+				"externalUserId": "usr_zero_order",
+			},
+		}},
+	}
+
+	got, err := c.DoGoodsAndPay(context.Background(), request)
+	if err != nil {
+		t.Fatalf("DoGoodsAndPay err=%v", err)
+	}
+	if gotPath != "/activity_web/activity/do_goods_and_pay" {
+		t.Fatalf("path=%q want %q", gotPath, "/activity_web/activity/do_goods_and_pay")
+	}
+	if len(got.DealNames) != 1 || got.DealNames[0] != "20240809794064572803152" {
+		t.Errorf("DealNames=%v", got.DealNames)
+	}
+	if got.BigDealNo != "20240809794064572803142" {
+		t.Errorf("BigDealNo=%s", got.BigDealNo)
+	}
+
+	var sent envelope
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("decode sent body: %v", err)
+	}
+	if sent.ComponentName != ComponentNameOrder {
+		t.Errorf("componentName=%s want %s", sent.ComponentName, ComponentNameOrder)
+	}
+	if sent.Interface == nil || sent.Interface.InterfaceName != InterfaceNameDoGoodsAndPay {
+		t.Errorf("interfaceName missing or wrong: %+v", sent.Interface)
+	}
+	if !strings.Contains(string(sent.Interface.Para), `"externalUserId":"usr_zero_order"`) {
+		t.Errorf("para missing externalUserId: %s", string(sent.Interface.Para))
+	}
+}
+
 func TestGetActivityPrice_DefaultPreviewOmitted(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

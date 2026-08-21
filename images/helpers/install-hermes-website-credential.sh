@@ -6,7 +6,7 @@
 # (set by TAT parameter substitution from {{tat-hidden:website_key}} and {{api_base}}).
 #
 # Actions:
-#   1. Validate the token format (vwk_<key_id>_<secret>)
+#   1. Validate the token format (vik_<key_id>_<secret>)
 #   2. Atomically write /etc/vela/website-credential.env (root:agentuser 0440)
 #   3. Discover the single Hermes gateway systemd user unit
 #   4. Add a drop-in with EnvironmentFile= pointing to the credential file
@@ -44,7 +44,7 @@ validate_token() {
   local token="$1"
   # key_id and secret are base64url, where '_' is legal data. Match their
   # fixed encoded lengths instead of splitting on the first underscore.
-  [[ "$token" =~ ^vwk_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}$ ]]
+  [[ "$token" =~ ^vik_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}$ ]]
 }
 
 run_systemctl_user() {
@@ -171,7 +171,7 @@ main() {
   [[ -n "$token" ]] || fail "WEBSITE_KEY environment variable is required"
   [[ -n "$api_base" ]] || fail "API_BASE environment variable is required"
 
-  validate_token "$token" || fail "invalid token format (expected vwk_<key_id>_<secret>)"
+  validate_token "$token" || fail "invalid token format (expected vik_<key_id>_<secret>)"
 
   local unit="$HERMES_GATEWAY_UNIT"
   if [[ -z "$unit" ]]; then

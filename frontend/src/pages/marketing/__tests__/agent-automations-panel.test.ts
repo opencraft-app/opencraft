@@ -1314,7 +1314,7 @@ describe("automation notification channel options", () => {
     expect(screen.queryByRole("link", { name: "去通道配置" })).toBeNull();
   });
 
-  it("keeps the global empty state when no notification channel is configured", () => {
+  it("hides the background-only hint in the global channel empty state", () => {
     if (!isGlobal) return;
     renderAutomationForm({
       enabledChannels: new Set(),
@@ -1322,8 +1322,25 @@ describe("automation notification channel options", () => {
     });
 
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
-    expect(screen.getByText("No notification channels are configured yet.")).toBeTruthy();
+    expect(screen.getByText("No channels configured.")).toBeTruthy();
+    expect(screen.queryByText("No notification channels are configured yet.")).toBeNull();
+    expect(screen.queryByText(
+      "If none are selected, the agent will only run the task in the background without sending notifications.",
+    )).toBeNull();
     expect(screen.getByRole("link", { name: "Configure channels" })).toHaveAttribute("href", "/agents/channels/");
+  });
+
+  it("keeps the background-only hint when a global channel is available", () => {
+    if (!isGlobal) return;
+    renderAutomationForm({
+      enabledChannels: new Set(["telegram"]),
+      channelStatus: "ready",
+    });
+
+    expect(screen.getByRole("checkbox", { name: "Telegram" })).toBeEnabled();
+    expect(screen.getByText(
+      "If none are selected, the agent will only run the task in the background without sending notifications.",
+    )).toBeTruthy();
   });
 });
 

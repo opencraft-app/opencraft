@@ -7,6 +7,7 @@ import type {
   BotVersion,
   Bundle,
   BundlePrice,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlResult,
@@ -1014,6 +1015,19 @@ export const createFakeRepositories = (): Repositories => {
         }
         return {
           deal_name: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          big_order_id: `${Date.now()}`,
+        };
+      },
+      async createDianshiPassOrderAndPay(input): Promise<CreateDianshiPassOrderAndPayResult> {
+        await wait(NETWORK_DELAY_MS);
+        const bundle = FAKE_BUNDLES.find((b) => b.bundle_id === input.bundle_id);
+        if (!bundle) {
+          const err = new Error("套餐已下架") as Error & { code?: string };
+          err.code = "BUNDLE_NOT_FOUND";
+          throw err;
+        }
+        return {
+          deal_name: `mock-dianshi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           big_order_id: `${Date.now()}`,
         };
       },

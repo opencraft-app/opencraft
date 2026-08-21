@@ -62,6 +62,35 @@ type createTaskSandboxAdapterStub struct {
 	ptyBatches     [][]psandbox.PtyExecStreamEvent
 	ptyCalls       []psandbox.PtyExecStreamRequest
 	deletedIDs     []string
+	invokeResult   *psandbox.ExecCommandResult
+	invokeErr      error
+	invokeCalls    []struct {
+		sandboxID  string
+		commandID  string
+		parameters map[string]string
+		timeoutSec int
+	}
+	beforeInvoke func()
+}
+
+func (s *createTaskSandboxAdapterStub) InvokeCommand(_ context.Context, sandboxID, commandID string, parameters map[string]string, timeoutSec int) (*psandbox.ExecCommandResult, error) {
+	cloned := make(map[string]string, len(parameters))
+	for key, value := range parameters {
+		cloned[key] = value
+	}
+	s.invokeCalls = append(s.invokeCalls, struct {
+		sandboxID  string
+		commandID  string
+		parameters map[string]string
+		timeoutSec int
+	}{sandboxID: sandboxID, commandID: commandID, parameters: cloned, timeoutSec: timeoutSec})
+	if s.beforeInvoke != nil {
+		s.beforeInvoke()
+	}
+	if s.invokeResult != nil {
+		return s.invokeResult, s.invokeErr
+	}
+	return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}, s.invokeErr
 }
 
 func (s *createTaskSandboxAdapterStub) CreateSandbox(_ context.Context, _ *psandbox.CreateSandboxRequest) (*psandbox.Sandbox, error) {

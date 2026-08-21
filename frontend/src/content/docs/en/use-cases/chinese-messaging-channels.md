@@ -2,13 +2,13 @@
 
 ## Summary
 
-**Connecting a Hermes Agent to messaging platforms rests on one idea: channels are entry points, and the Agent is the thing that works. One cloud Agent shares the same model, skills, and memory across every connected channel, so there is no need for a separate bot per platform.** The flow has four steps: confirm the channel is available in your region (the global region supports Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark; the China region targets WeChat, Lark, and QQ); complete authorisation on the platform side to obtain credentials; connect in the console and confirm the channel shows as connected; then send a test message and verify the reply lands in the same conversation you messaged from. Credentials are sensitive — never write them into long-term context or paste them into chat.
+**Connecting a Hermes Agent to messaging platforms rests on one idea: channels are entry points, and the Agent is the thing that works. One cloud Agent shares the same model, skills, and memory across every connected channel, so there is no need for a separate bot per platform.** The flow has four steps: confirm the channel is available in your region (the global region supports Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark; the China region targets WeChat, Lark, and QQ); complete authorisation on the platform side to obtain credentials; connect in the console and confirm the channel shows as connected; then send a test message and verify the reply lands in the same conversation you messaged from. Credentials are sensitive - never write them into long-term context or paste them into chat.
 
 ![LightVela messaging platform connections](../images/use-case-messaging-platforms.webp)
 
 ## Who this is for
 
-This guide is for anyone who wants to talk to Hermes from a messaging app rather than only from the web console. It also helps if you want one assistant available in more than one place—for example, Telegram for personal use and Discord for a community.
+This guide is for anyone who wants to talk to Hermes from a messaging app rather than only from the web console. It also helps if you want one assistant available in more than one place - for example, Telegram for personal use and Discord for a community.
 
 Start with one channel. Add another only when it serves a distinct context, audience, or device habit.
 
@@ -70,6 +70,8 @@ Use [Memory Management](../configuration/memory.md) to review the long-term cont
 
 ![The same Hermes Agent context shared across channels](../images/use-case-messaging-memory.png)
 
+If Discord is the channel you want to use for a community, continue with [Meet LightVela for Discord: Your AI Agent Discord Bot Serving Your Channel](./discord-community-agent.md).
+
 ## FAQ
 
 ### Can I connect several messaging platforms to one Hermes Agent?
@@ -90,8 +92,8 @@ Avoid doing so unless the platform and your intended workflow clearly support it
 
 ## Next steps
 
-- [Configure Models](../configuration/model.md) — confirm Hermes has a model ready to answer.
+- [Configure Models](../configuration/model.md) - confirm Hermes has a model ready to answer.
 
-- [Memory Management](../configuration/memory.md) — manage the context shared by your connected channels.
+- [Memory Management](../configuration/memory.md) - manage the context shared by your connected channels.
 
-- [Automations](../configuration/automation.md) — deliver scheduled updates to a connected channel when appropriate.
+- [Automations](../configuration/automation.md) - deliver scheduled updates to a connected channel when appropriate.

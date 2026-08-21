@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"testing"
 	"time"
 )
@@ -12,6 +14,117 @@ func setRequired(t *testing.T) {
 	t.Setenv("SITE_GATEWAY_COS_BUCKET", "test-vela-user-sites-1388575217")
 	t.Setenv("SITE_GATEWAY_COS_REGION", "ap-beijing")
 	t.Setenv("SITE_GATEWAY_CTL_BASE_URL", "http://ctl-api-cloudbase.ctl.svc.cluster.local")
+	t.Setenv("TENCENT_SECRET_ID", "AKIDPLATFORM")
+	t.Setenv("TENCENT_SECRET_KEY", "platform-key")
+}
+
+func TestFromEnvAuthDefaultsToPublic(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "")
+	t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "")
+	t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "")
+	t.Setenv("SITE_GATEWAY_AUTH_START_URL", "")
+	t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "")
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.AuthMode != AuthModePublic || cfg.AuthSessionTTL != 5*time.Minute {
+		t.Fatalf("auth config = %+v", cfg)
+	}
+}
+
+func TestFromEnvRequiredAuthParsesPublicKeys(t *testing.T) {
+	setRequired(t)
+	publicKey, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "lightvela-auth")
+	t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "lightvela-site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/site-access/start")
+	t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString(publicKey))
+	t.Setenv("SITE_GATEWAY_AUTH_SESSION_TTL", "5m")
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.AuthMode != AuthModeRequired || cfg.AuthIssuer != "lightvela-auth" || cfg.AuthAudience != "lightvela-site-gateway" || cfg.AuthSessionTTL != 5*time.Minute {
+		t.Fatalf("auth config = %+v", cfg)
+	}
+	if len(cfg.AuthPublicKeys) != 1 || len(cfg.AuthPublicKeys["key-1"]) != ed25519.PublicKeySize {
+		t.Fatalf("public keys = %+v", cfg.AuthPublicKeys)
+	}
+}
+
+func TestFromEnvRejectsAuthSessionTTLOverFiveMinutes(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_SESSION_TTL", "5m1s")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("auth session TTL over five minutes unexpectedly succeeded")
+	}
+}
+
+func TestFromEnvRequiredAuthRejectsIncompleteConfig(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	for _, tc := range []struct {
+		name string
+		set  func()
+	}{
+		{name: "issuer", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "aud")
+			t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/start")
+			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1=bad")
+		}},
+		{name: "audience", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "iss")
+			t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/start")
+			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1=bad")
+		}},
+		{name: "start url", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "iss")
+			t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "aud")
+			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1=bad")
+		}},
+		{name: "public keys", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "iss")
+			t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "aud")
+			t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/start")
+			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "bad")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "")
+			t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "")
+			t.Setenv("SITE_GATEWAY_AUTH_START_URL", "")
+			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "")
+			tc.set()
+			if _, err := FromEnv(); err == nil {
+				t.Fatal("incomplete required auth config unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+func TestFromEnvRequiredAuthRejectsInsecureStartURL(t *testing.T) {
+	setRequired(t)
+	publicKey, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "lightvela-auth")
+	t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "lightvela-site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_START_URL", "http://lightvela.com/site-access/start")
+	t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString(publicKey))
+
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("insecure auth start URL unexpectedly succeeded")
+	}
 }
 
 // 站点专用凭据一旦配上，网关就不能再用共享平台凭据回源：三个组件的优先级必须一致，

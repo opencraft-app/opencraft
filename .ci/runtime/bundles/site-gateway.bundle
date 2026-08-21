@@ -8,6 +8,7 @@ bundles:
     - site-gateway/Dockerfile
     - site-gateway/k8s/base
     - site-gateway/k8s/overlays/sgprod
+    - site-gateway/docs
     - argocd/apps/sgprod/site-gateway.yaml
     - argocd/projects/sgprod-site-gateway.yaml
     - argocd/secrets/sgprod/site-gateway-secrets.sops.yaml

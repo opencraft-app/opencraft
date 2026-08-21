@@ -217,6 +217,8 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
 	identity.RegistrationDisabled = h.githubOAuth.registrationDisabled
+	identity.ClientIP = ctx.ClientIP()
+	identity.ClientUA = ctx.Request.UserAgent()
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(

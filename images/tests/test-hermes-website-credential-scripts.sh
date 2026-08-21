@@ -92,12 +92,26 @@ STUB
     printf 'FAIL: create: could not extract Content from tccli args\n' >&2
   fi
 
-  assert "create: no vwk_ token in tccli log" \
-    '! grep -q "vwk_" "${tccli_log}"'
-  assert "create: no vwk_ token in stdout" \
-    '! echo "$output" | grep -q "vwk_"'
+  assert "create: no vik_ token in tccli log" \
+    '! grep -q "vik_" "${tccli_log}"'
+  assert "create: no vik_ token in stdout" \
+    '! echo "$output" | grep -q "vik_"'
   assert "create: no DefaultParameters" \
     '! echo "$args" | grep -qi "DefaultParameters"'
+
+  cat >"${TEST_TMP}/bin/tccli" <<'STUB'
+#!/usr/bin/env bash
+printf '{"CommandId":"cmd-test-cred-top-level","RequestId":"req-create-top-level"}'
+STUB
+  chmod +x "${TEST_TMP}/bin/tccli"
+
+  local top_level_output
+  top_level_output="$(
+    HERMES_TAT_REGION=ap-shanghai \
+      bash "${ROOT_DIR}/.ci/runtime/commands/create_hermes_website_credential_command.sh" 2>/dev/null
+  )" || true
+  assert "create: accepts top-level CommandId from tccli" \
+    '[[ "$top_level_output" == *"cmd-test-cred-top-level"* ]]'
 }
 
 # ========================================================================
@@ -135,13 +149,13 @@ with open(sys.argv[1]) as f:
 assert request["CommandId"] == "cmd-test-cred-001"
 assert len(request["InstanceIds"]) == 1
 parameters = json.loads(request["Parameters"])
-assert parameters["website_key"].startswith("vwk_")
+assert parameters["website_key"].startswith("vik_")
 assert parameters["api_base"] == "https://api.example.com"
 print(request["InstanceIds"][0])
 PY
 )" || exit 4
     printf '%s|%s\n' "$instance_id" "$request_mode" >>"${TCCLI_REQUEST_LOG:-/dev/null}"
-    printf '{"Response":{"InvocationId":"inv-%s","RequestId":"req-invoke-%s"}}' "$instance_id" "$instance_id"
+    printf '{"InvocationId":"inv-%s","RequestId":"req-invoke-%s"}' "$instance_id" "$instance_id"
     ;;
   DescribeInvocationTasks)
     invocation_id=""
@@ -157,7 +171,7 @@ PY
     final_status="${TAT_STUB_FINAL_STATUS:-SUCCESS}"
     exit_code=0
     [[ "$final_status" == "SUCCESS" ]] || exit_code=1
-    printf '{"Response":{"InvocationTaskSet":[{"InvocationId":"%s","InstanceId":"%s","TaskStatus":"%s","TaskResult":{"ExitCode":%s}}],"RequestId":"req-poll-%s"}}' \
+    printf '{"InvocationTaskSet":[{"InvocationId":"%s","InstanceId":"%s","TaskStatus":"%s","TaskResult":{"ExitCode":%s}}],"RequestId":"req-poll-%s"}' \
       "$invocation_id" "$instance_id" "$final_status" "$exit_code" "$instance_id"
     ;;
   *)
@@ -171,8 +185,8 @@ STUB
   local input_file="${TEST_TMP}/instances.jsonl"
   local request_log="${TEST_TMP}/tccli-request.log"
   cat >"$input_file" <<'JSONL'
-{"cloud_id":"ins-aaa111","website_key":"vwk_AAAAAAAAAAAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"}
-{"cloud_id":"ins-bbb222","website_key":"vwk_CCCCCCCCCCCCCCCCCCCCCC_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"}
+{"cloud_id":"ins-aaa111","website_key":"vik_AAAAAAAAAAAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"}
+{"cloud_id":"ins-bbb222","website_key":"vik_CCCCCCCCCCCCCCCCCCCCCC_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"}
 JSONL
 
   local output
@@ -205,14 +219,14 @@ JSONL
   assert "invoke: uses cli-input-json" \
     'echo "$args" | grep -q -- "--cli-input-json"'
   assert "invoke: tccli argv contains no website key" \
-    '! echo "$args" | grep -q "vwk_"'
+    '! echo "$args" | grep -q "vik_"'
   assert "invoke: tccli argv contains no parameter payload" \
     '! echo "$args" | grep -q "website_key"'
 
   assert "invoke: no key in stdout" \
-    '! echo "$output" | grep -q "vwk_AAAA"'
+    '! echo "$output" | grep -q "vik_AAAA"'
   assert "invoke: no key in stdout (2)" \
-    '! echo "$output" | grep -q "vwk_CCCC"'
+    '! echo "$output" | grep -q "vik_CCCC"'
 
   assert "invoke: result JSONL exists" \
     'ls "${TEST_TMP}"/website-credential-invoke-*.jsonl 2>/dev/null | head -1 | grep -q .'
@@ -224,7 +238,7 @@ JSONL
   assert "invoke: detailed results do not retain website_key field" \
     '! grep -q '"'"'website_key'"'"' "$result_jsonl" "$result_json" "$summary_json"'
   assert "invoke: detailed results do not retain token value" \
-    '! grep -q '"'"'vwk_'"'"' "$result_jsonl" "$result_json" "$summary_json"'
+    '! grep -q '"'"'vik_'"'"' "$result_jsonl" "$result_json" "$summary_json"'
   assert "invoke: records final SUCCESS status, not mere acceptance" \
     'grep -q '"'"'"task_status":"SUCCESS"'"'"' "$result_jsonl" && ! grep -q '"'"'"invoke_status":"INVOKED"'"'"' "$result_jsonl"'
   assert "invoke: result files are owner-only" \
@@ -243,7 +257,7 @@ JSONL
   assert "invoke: terminal FAILED exits non-zero" \
     '[[ $failed_result -ne 0 ]]'
   assert "invoke: terminal FAILED is retained without credential" \
-    'grep -q '"'"'"task_status":"FAILED"'"'"' "$failed_output_dir"/*.jsonl && ! grep -q '"'"'vwk_'"'"' "$failed_output_dir"/*'
+    'grep -q '"'"'"task_status":"FAILED"'"'"' "$failed_output_dir"/*.jsonl && ! grep -q '"'"'vik_'"'"' "$failed_output_dir"/*'
 
   local invalid_cloud_log="${TEST_TMP}/tccli-invalid-cloud.log"
   local invalid_cloud_result=0
@@ -254,7 +268,7 @@ JSONL
   HERMES_TAT_OUTPUT_DIR="${TEST_TMP}/invalid-cloud-results" \
     bash "${ROOT_DIR}/.ci/runtime/commands/invoke_hermes_website_credential_command.sh" \
       <<'JSONL' >"${TEST_TMP}/invalid-cloud.stdout" 2>"${TEST_TMP}/invalid-cloud.stderr" || invalid_cloud_result=$?
-{"cloud_id":"ins-../../escape","website_key":"vwk_AAAAAAAAAAAAAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"}
+{"cloud_id":"ins-../../escape","website_key":"vik_AAAAAAAAAAAAAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"}
 JSONL
   assert "invoke: rejects cloud_id outside the CVM ID format" \
     '[[ $invalid_cloud_result -ne 0 ]]'
@@ -340,7 +354,7 @@ Description=Hermes Gateway
 ExecStart=/bin/true
 SVC
 
-  local valid_token="vwk_AAAAAAAAAAAAAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+  local valid_token="vik_AAAAAAAAAAAAAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
   local api_base="https://api.example.com"
 
   local install_stdout
@@ -379,15 +393,15 @@ SVC
     'grep -q "restart" "${systemctl_log}"'
 
   assert "install: token not in stderr" \
-    '! grep -q "vwk_AAAA" "${TEST_TMP}/install-stderr.log"'
+    '! grep -q "vik_AAAA" "${TEST_TMP}/install-stderr.log"'
   assert "install: token not in stdout" \
-    '! echo "$install_stdout" | grep -q "vwk_AAAA"'
+    '! echo "$install_stdout" | grep -q "vik_AAAA"'
   assert "install: token not in systemctl log" \
-    '! grep -q "vwk_AAAA" "${systemctl_log}"'
+    '! grep -q "vik_AAAA" "${systemctl_log}"'
 
   # Base64url key IDs may legally contain underscores. Validation must use
   # fixed token-part lengths instead of splitting on the first underscore.
-  local underscore_token="vwk_AAAAAAAAAA_AAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+  local underscore_token="vik_AAAAAAAAAA_AAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
   local underscore_result=0
   DESTDIR="$fake_root" \
   WEBSITE_KEY="$underscore_token" \
@@ -462,7 +476,7 @@ SVC
 
   local old_credential
   old_credential="$(cat "${fake_root}/etc/vela/website-credential.env")"
-  local replacement_token="vwk_CCCCCCCCCCCCCCCCCCCCCC_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+  local replacement_token="vik_CCCCCCCCCCCCCCCCCCCCCC_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
   local rollback_result=0
   DESTDIR="$fake_root" \
   WEBSITE_KEY="$replacement_token" \
@@ -478,7 +492,7 @@ SVC
   assert "install: restart failure restores previous credential" \
     '[[ "$(cat "${fake_root}/etc/vela/website-credential.env")" == "$old_credential" ]]'
   assert "install: failed replacement token is not retained" \
-    '! grep -q '"'"'vwk_CCCC'"'"' "${fake_root}/etc/vela/website-credential.env"'
+    '! grep -q '"'"'vik_CCCC'"'"' "${fake_root}/etc/vela/website-credential.env"'
 
   local chown_failure_result=0
   DESTDIR="$fake_root" \

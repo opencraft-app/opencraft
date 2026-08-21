@@ -350,6 +350,34 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("TLS lifecycle is platform-owned", readme)
         self.assertIn("does not create, update, or rotate that Secret", readme)
 
+    def test_site_gateway_auth_contract_keeps_international_public(self) -> None:
+        base_manifest = REPO_ROOT / "site-gateway" / "k8s" / "base" / "manifests.yaml"
+        documents = list(yaml.safe_load_all(base_manifest.read_text()))
+        config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
+        for key in (
+            "SITE_GATEWAY_AUTH_MODE",
+            "SITE_GATEWAY_AUTH_ISSUER",
+            "SITE_GATEWAY_AUTH_AUDIENCE",
+            "SITE_GATEWAY_AUTH_START_URL",
+            "SITE_GATEWAY_AUTH_PUBLIC_KEYS",
+            "SITE_GATEWAY_AUTH_SESSION_TTL",
+        ):
+            self.assertIn(key, config_map.get("data", {}))
+
+        platform_values = {
+            key: value
+            for line in (
+                REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod" / "site-gateway-platform.env"
+            ).read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(platform_values.get("SITE_GATEWAY_AUTH_MODE"), "public")
+
+        bundle = (REPO_ROOT / ".ci" / "runtime" / "bundles" / "site-gateway.bundle").read_text()
+        self.assertIn("site-gateway/docs", bundle)
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
@@ -2014,6 +2042,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
             trusted_host,
             "trade signs the original billing host, so it must match CloudLadder's trusted upstream host",
         )
+
+    def test_sgprod_trade_uses_configured_inquiry_fallback_account(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertEqual(values["TRADE_INQUIRY_FALLBACK_UIN"], "450850000019")
+        self.assertEqual(values["TRADE_INQUIRY_FALLBACK_APP_ID"], "1472039146")
 
     def test_korea_trade_uses_international_billing_test_route(self) -> None:
         env_path = (

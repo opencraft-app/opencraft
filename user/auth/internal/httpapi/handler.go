@@ -163,14 +163,22 @@ func (h *Handler) SignInWithPassword(ctx context.Context, request api.SignInWith
 
 func (h *Handler) SignUpWithPassword(ctx context.Context, request api.SignUpWithPasswordRequestObject) (api.SignUpWithPasswordResponseObject, error) {
 	inviteCode := optionalStringValue(request.Body.InviteCode)
-	if gctx := ginContext(ctx); gctx != nil && inviteCode == "" {
-		inviteCode = h.inviteTicketFromRequest(gctx)
+	clientIP := ""
+	clientUA := ""
+	if gctx := ginContext(ctx); gctx != nil {
+		if inviteCode == "" {
+			inviteCode = h.inviteTicketFromRequest(gctx)
+		}
+		clientIP = gctx.ClientIP()
+		clientUA = gctx.Request.UserAgent()
 	}
 	session, err := h.service.SignUpWithPassword(ctx, service.PasswordSignUpInput{
 		Name:       request.Body.Name,
 		Email:      request.Body.Email,
 		Password:   request.Body.Password,
 		InviteCode: inviteCode,
+		ClientIP:   clientIP,
+		ClientUA:   clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)

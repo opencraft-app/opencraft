@@ -211,6 +211,36 @@ func TestPlaceOrderAndPay_Success(t *testing.T) {
 	}
 }
 
+func TestPlaceDianshiOrderAndPay_Success(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PlaceOrderResult{
+			DealName:   "DIANSHI-DEAL-001",
+			BigOrderID: "DIANSHI-BIG-001",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.PlaceDianshiOrderAndPay(context.Background(), &PlaceOrderRequest{
+		ExternalUserID: "usr_test",
+		BundleID:       "bundle_zero",
+		Period:         1,
+		TimeUnit:       "m",
+	})
+	if err != nil {
+		t.Fatalf("PlaceDianshiOrderAndPay: %v", err)
+	}
+	if gotPath != "/internal/trade/dianshi/orders/place-and-pay" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if result == nil || result.DealName != "DIANSHI-DEAL-001" || result.BigOrderID != "DIANSHI-BIG-001" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
 func TestPlaceOrderAndPay_NilRequest(t *testing.T) {
 	adp := newTestAdapter(t, "http://example.invalid", "")
 	_, err := adp.PlaceOrderAndPay(context.Background(), nil)
