@@ -221,6 +221,10 @@ type Logic interface {
 	// 与 CreatePassOrder 一致：**本接口不创建本地 pass**，pass 发货走相同的回调链路。
 	CreatePassOrderAndPay(userID string, req *transport.CreatePassOrderRequest) (*transport.CreatePassOrderAndPayResult, error)
 
+	// CreateDianshiPassOrderAndPay creates and pays through the dedicated
+	// Dianshi activity endpoint. It does not expose payment or renewal options.
+	CreateDianshiPassOrderAndPay(userID string, req *transport.CreateDianshiPassOrderAndPayRequest) (*transport.CreateDianshiPassOrderAndPayResult, error)
+
 	// GetPasses 查询所有 Pass（后台管理用）
 	GetPasses(userID *string, bundleID *string) ([]*PassDetail, error)
 	GetPassesPage(userID *string, bundleID *string, status *string, page, pageSize int) ([]*PassDetail, int64, error)
@@ -1688,6 +1692,8 @@ func mapTradePlaceOrderError(err error) error {
 			return errcode.ErrPassShadowBindingRequired
 		case "BillingAccountOpenFailed":
 			return errcode.ErrPassBillingAccountOpenFailed
+		case "DianshiActivityRequired":
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "%s", tradeErr.Message)
 		}
 	}
 	return nil
@@ -1820,6 +1826,45 @@ func (l *logic) CreatePassOrderAndPay(userID string, req *transport.CreatePassOr
 
 	// 步骤 6：返回（不写本地 pass，PayURL 一体化接口下永远为空，不返）
 	return &transport.CreatePassOrderAndPayResult{
+		DealName:   placeResp.DealName,
+		BigOrderID: placeResp.BigOrderID,
+	}, nil
+}
+
+// CreateDianshiPassOrderAndPay uses Dianshi do_goods_and_pay for activity
+// bundles. Trade enforces activity eligibility and never falls back to jifei.
+func (l *logic) CreateDianshiPassOrderAndPay(userID string, req *transport.CreateDianshiPassOrderAndPayRequest) (*transport.CreateDianshiPassOrderAndPayResult, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	placeReq, logger, err := l.prepareCreatePassOrder(userID, &transport.CreatePassOrderRequest{
+		BundleID: req.BundleID,
+		Period:   req.Period,
+		TimeUnit: req.TimeUnit,
+	}, "create_dianshi_pass_order_and_pay")
+	if err != nil {
+		return nil, err
+	}
+
+	placeCtx, placeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	placeResp, placeErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().PlaceDianshiOrderAndPay(placeCtx, placeReq)
+	placeCancel()
+	if placeErr != nil {
+		logger.Warn("create Dianshi pass order and pay failed", zap.Error(placeErr))
+		if err := mapTradePlaceOrderError(placeErr); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("trade place Dianshi order and pay: %w", placeErr)
+	}
+	if placeResp == nil || placeResp.DealName == "" {
+		return nil, fmt.Errorf("trade place Dianshi order and pay: empty deal_name")
+	}
+
+	logger.Info("create Dianshi pass order and pay succeeded",
+		zap.String("deal_name", placeResp.DealName),
+		zap.String("big_order_id", placeResp.BigOrderID),
+	)
+	return &transport.CreateDianshiPassOrderAndPayResult{
 		DealName:   placeResp.DealName,
 		BigOrderID: placeResp.BigOrderID,
 	}, nil

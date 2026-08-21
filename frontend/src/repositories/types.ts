@@ -5,6 +5,7 @@ import type {
   AutoRenewFlag,
   BillingSummary,
   Bundle,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlInput,
@@ -228,6 +229,12 @@ export interface PlanRepository {
    * ⚠️ 仅联调测试用，现网禁止暴露给真实用户。
    */
   createPassOrderAndPay(input: { bundle_id: string; period: number; time_unit: BundleTimeUnit }): Promise<CreatePassOrderAndPayResult>;
+  /** 点石活动套餐专用下单并支付入口，不接受支付方式或自动续费参数。 */
+  createDianshiPassOrderAndPay(input: {
+    bundle_id: string;
+    period: number;
+    time_unit: BundleTimeUnit;
+  }): Promise<CreateDianshiPassOrderAndPayResult>;
   /**
    * 续费询价（POST /v1/passes/{pass_id}/renew/price）— 联调文档 §3.1
    *
