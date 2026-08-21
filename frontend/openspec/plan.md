@@ -1,3 +1,55 @@
+# 国际站自动任务上游 Context Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认提交和推送；不得自动创建 MR。
+
+**Goal:** 将已经在国内站上线的自动任务上游 Context 能力同步到国际站，并保持其他既有区域差异不变。
+
+**Architecture:** 复用现有 Hermes `context_from` 探测、关系水合、单上游表单、关系展示和带回滚删除链路；仅移除这些能力上的 `isGlobal` 隔离，不改终止任务、场景任务、通知渠道或技能选择器的区域行为。
+
+### Task 1: 用国际站测试锁定能力对齐
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-automations-panel.global.test.ts`
+
+**Acceptance:**
+- 国际站加载自动任务时探测 `context_from` 并水合任务关系。
+- 卡片、详情和创建/编辑表单展示英文上游任务信息。
+- 选择上游时走结构化创建/编辑；删除被引用任务时走依赖解绑与回滚链路。
+- 国际站既有终止任务行为不变。
+
+- [x] 先补国际站失败测试并确认 RED。
+
+### Task 2: 移除上游 Context 的国际站隔离
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
+
+**Acceptance:**
+- 国际站与国内站共用上游任务读写、展示、能力探测和安全删除逻辑。
+- 只移除 `context_from` 相关区域判断；保留其他 `isGlobal` 产品差异。
+
+- [x] 完成最小实现并让定向测试 GREEN。
+
+### Task 3: 同步产品范围并完成质量门禁
+
+**Files:**
+- Modify: `wiki/prd-docs/2026-08-13-自动任务支持获取上游任务的Context.md`
+- Modify: `frontend/openspec/plan.md`
+
+**Acceptance:**
+- PRD 将发布范围更新为国内站与国际站，并保留技能选择器的区域差异说明。
+- 定向测试、TypeScript 检查、i18n 检查、国际站构建和 `git diff --check` 通过；浏览器冒烟在登录态允许时执行，否则记录阻塞。
+
+- [x] 同步文档、完成验证并展示证据。
+
+**Verification:**
+- RED：国际站专属测试先出现 3 个预期失败，分别命中关系水合、详情/安全删除和结构化创建隔离。
+- GREEN：相关 4 个测试文件共 226 个用例通过，包含国际站创建、编辑、展示、删除和既有终止任务回归。
+- `pnpm check`、`pnpm i18n:check`、`pnpm build:global`、`git diff --check` 通过。
+- 已登录浏览器确认当前线上国际站尚未展示 `Upstream task`；本地新版本因 `localhost` 无登录态无法完成同一页面的交互式截图，改由国际站组件集成测试留证。
+
+---
+
 # 技能包 ACLI 原生批量安装 Implementation Plan
 
 **Status:** MR !3125 CR 修复与验证完成，等待用户确认提交和推送。

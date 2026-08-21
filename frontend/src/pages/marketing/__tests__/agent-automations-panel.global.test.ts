@@ -62,8 +62,8 @@ afterEach(() => {
   cleanup();
 });
 
-describe("HermesAgentAutomationsPanel global isolation", () => {
-  it("does not detect or expose upstream task context on the global site", async () => {
+describe("HermesAgentAutomationsPanel global upstream context", () => {
+  it("hydrates and exposes upstream task context on the global site", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
       makeCronJob({ id: "downstream", name: "Downstream", context_from: ["upstream"] }),
       makeCronJob({ id: "upstream", name: "Upstream" }),
@@ -72,16 +72,16 @@ describe("HermesAgentAutomationsPanel global isolation", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     await waitFor(() => {
-      expect(cronClientMocks.listCronJobs).toHaveBeenCalledWith("bot-1", { hydrateContextFrom: false });
+      expect(cronClientMocks.listCronJobs).toHaveBeenCalledWith("bot-1", { hydrateContextFrom: true });
     });
-    expect(cronClientMocks.detectCronContextFromCapability).not.toHaveBeenCalled();
-    expect(screen.queryByText(/From: Upstream|来自：Upstream/)).toBeNull();
+    expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
+    expect(await screen.findByText("From: Upstream")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Add|添加/ }));
-    expect(screen.queryByText(/Upstream task|上游任务/)).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Upstream task" })).toBeInTheDocument();
   });
 
-  it("hides relationship details and keeps deletion on the legacy path", async () => {
+  it("shows relationship details and safely detaches dependents before deletion", async () => {
     const upstream = makeCronJob({ id: "upstream", name: "Upstream" });
     const downstream = makeCronJob({ id: "downstream", name: "Downstream", context_from: ["upstream"] });
     cronClientMocks.listCronJobs.mockResolvedValue([upstream, downstream]);
@@ -90,21 +90,80 @@ describe("HermesAgentAutomationsPanel global isolation", () => {
 
     const upstreamCard = await getCronJobCard("Upstream");
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /View|查看/ }));
-    expect(within(screen.getByRole("dialog")).queryByText(/Upstream task|上游任务/)).toBeNull();
+    expect(within(screen.getByRole("dialog")).getByText("Upstream task")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Close|关闭/ }));
 
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /Delete|删除/ }));
     const deleteDialog = screen.getByRole("dialog");
-    expect(within(deleteDialog).queryByText("Downstream")).toBeNull();
+    expect(within(deleteDialog).getByText("Downstream")).toBeInTheDocument();
     fireEvent.click(within(deleteDialog).getByRole("button", { name: /Delete|删除/ }));
 
     await waitFor(() => {
-      expect(cronClientMocks.removeCronJob).toHaveBeenCalledWith("bot-1", "upstream");
+      expect(cronClientMocks.removeCronJobWithDependentRollback).toHaveBeenCalledWith("bot-1", "upstream", [{
+        id: "downstream",
+        name: "Downstream",
+        contextFrom: ["upstream"],
+      }]);
     });
-    expect(cronClientMocks.removeCronJobWithDependentRollback).not.toHaveBeenCalled();
+    expect(cronClientMocks.removeCronJob).not.toHaveBeenCalled();
   });
 
-  it("keeps creation on the legacy path", async () => {
+  it("uses structured creation when an upstream task is selected", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([
+      makeCronJob({ id: "upstream", name: "Upstream" }),
+    ]);
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    fireEvent.change(screen.getByPlaceholderText("Enter the automation name"), {
+      target: { value: "Global downstream" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Describe the task as a prompt/), {
+      target: { value: "Summarize upstream output" },
+    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Upstream task" }));
+    fireEvent.click(screen.getByRole("option", { name: /Upstream/ }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.createCronJobWithContextAndScriptRollback).toHaveBeenCalledWith(
+        "bot-1",
+        expect.objectContaining({
+          name: "Global downstream",
+          prompt: "Summarize upstream output",
+        }),
+        "upstream",
+        undefined,
+      );
+    });
+    expect(cronClientMocks.createCronJobWithScriptRollback).not.toHaveBeenCalled();
+  });
+
+  it("uses structured editing when an upstream relationship is cleared", async () => {
+    const upstream = makeCronJob({ id: "upstream", name: "Upstream" });
+    const downstream = makeCronJob({
+      id: "downstream",
+      name: "Downstream",
+      context_from: ["upstream"],
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([downstream, upstream]);
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const card = await getCronJobCard("Downstream");
+    fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("combobox", { name: "Upstream task" })).toHaveTextContent("Upstream");
+    fireEvent.click(screen.getByRole("button", { name: "Deselect" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.editCronJobWithContext).toHaveBeenCalledWith("bot-1", "downstream", {}, []);
+    });
+    expect(cronClientMocks.editCronJob).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary creation on the legacy path", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([]);
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
@@ -124,7 +183,7 @@ describe("HermesAgentAutomationsPanel global isolation", () => {
     expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
   });
 
-  it("keeps editing on the legacy path", async () => {
+  it("keeps editing on the legacy path when no relationship changes", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
       makeCronJob({ id: "ordinary", name: "Ordinary task" }),
     ]);
