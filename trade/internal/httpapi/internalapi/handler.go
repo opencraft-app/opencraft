@@ -137,6 +137,7 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/inquiry/renew", inquiryRenewHandler(deps.Inquiry))
 	group.POST("/orders", placeOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/place-and-pay", placeOrderAndPayHandler(deps.PlaceOrder))
+	group.POST("/dianshi/orders/place-and-pay", placeDianshiOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/orders/move-in", moveInOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew", placeRenewOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew/place-and-pay", placeRenewOrderAndPayHandler(deps.PlaceOrder))
@@ -514,8 +515,50 @@ func classifyPlaceOrderError(err error) (string, int) {
 		return "BindingNotFound", http.StatusUnprocessableEntity
 	case errors.Is(err, placeorder.ErrBillingAccountOpenFailed):
 		return "BillingAccountOpenFailed", http.StatusConflict
+	case errors.Is(err, placeorder.ErrDianshiActivityRequired):
+		return "DianshiActivityRequired", http.StatusUnprocessableEntity
 	default:
 		return "UpstreamError", http.StatusBadGateway
+	}
+}
+
+// placeDianshiOrderAndPayHandler is the dedicated zero-price Dianshi purchase
+// endpoint. Its schema matches placeOrderHandler, but it never falls back to
+// jifei when the requested bundle is not eligible for the Dianshi activity.
+func placeDianshiOrderAndPayHandler(svc *placeorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req placeOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": "decode JSON: " + err.Error(),
+			})
+			return
+		}
+
+		res, err := svc.PlaceDianshiOrderAndPay(c.Request.Context(), placeorder.PlaceOrderRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleID:       req.BundleID,
+			Period:         req.Period,
+			TimeUnit:       req.TimeUnit,
+			GoodsNum:       req.GoodsNum,
+			PayMode:        req.PayMode,
+		})
+		if err != nil {
+			code, status := classifyPlaceOrderError(err)
+			c.JSON(status, gin.H{
+				"code":    code,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, placeOrderResponse{
+			DealName:   res.DealName,
+			BigOrderID: res.BigOrderID,
+		})
 	}
 }
 

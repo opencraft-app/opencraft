@@ -11,6 +11,7 @@ import type {
   BotRuntime,
   BotVersion,
   Bundle,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlResult,
@@ -1646,6 +1647,12 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
   async createPassOrderAndPay(input) {
     // 联调文档 §2.2：仅联调测试用，现网禁止暴露给真实用户
     return requestEnvelope<CreatePassOrderAndPayResult>(baseUrl, "/v1/passes/order-and-pay", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async createDianshiPassOrderAndPay(input) {
+    return requestEnvelope<CreateDianshiPassOrderAndPayResult>(baseUrl, "/v1/passes/dianshi/order-and-pay", {
       method: "POST",
       body: input,
     });

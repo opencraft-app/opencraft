@@ -85,6 +85,9 @@ var (
 	// ErrBillingAccountOpenFailed 影子账号已注册但计费账户开户补偿仍失败。
 	ErrBillingAccountOpenFailed = errors.New("placeorder: billing account open failed")
 
+	// ErrDianshiActivityRequired 点石专用入口收到未配置活动映射的 bundle。
+	ErrDianshiActivityRequired = errors.New("placeorder: dianshi activity required")
+
 	// ErrPassNotFoundForRenew 续费场景下 ctl 反查 pass 失败（pass_id 在用户名下找不到 / 已销毁）。
 	//
 	// 触发条件：trade.PlaceRenewOrder / PlaceRenewOrderAndPay 在拼装 jifei goodsDetail 前
@@ -973,6 +976,81 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 		DealName:   dealName,
 		BigOrderID: bigDealID,
 	}, nil
+}
+
+// PlaceDianshiOrderAndPay 执行点石 0 元商品的专用下单并支付流程。
+//
+// 本入口不复用通用 PlaceOrderAndPay，也不回落 jifei。调用方根据已完成的询价结果决定
+// 是否进入本链路；trade 只校验 bundle 确实配置了有效的点石活动映射。
+func (s *Service) PlaceDianshiOrderAndPay(ctx context.Context, req PlaceOrderRequest) (*PlaceOrderResult, error) {
+	if err := s.validatePlaceOrderRequest(&req); err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
+		if strings.TrimSpace(req.ExternalUserID) == "" {
+			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
+		}
+		var binding *shadowclient.Binding
+		var err error
+		if isIntlSite(s.deps.SiteKind) {
+			binding, err = shadowclient.ResolveBindingWithBillingRetry(ctx, s.deps.ShadowClient, req.ExternalUserID, false)
+		} else {
+			binding, err = s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		}
+		if err != nil {
+			if errors.Is(err, shadowclient.ErrBillingAccountOpenFailed) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBillingAccountOpenFailed, req.ExternalUserID)
+			}
+			if errors.Is(err, shadowclient.ErrBindingNotFound) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+			}
+			return nil, fmt.Errorf("placeorder: shadow GetBindingByExternalUserID: %w", err)
+		}
+		if strings.TrimSpace(binding.Uin) == "" {
+			return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
+				ErrBindingNotFound, req.ExternalUserID)
+		}
+		req.Uin = binding.Uin
+		if req.AppID == "" {
+			req.AppID = binding.AppID
+		}
+	}
+
+	bundle, err := s.deps.CTLClient.GetBundleByID(ctx, req.BundleID)
+	if err != nil {
+		if errors.Is(err, ctlclient.ErrNotFound) {
+			return nil, fmt.Errorf("%w: ctl bundleId=%s", ErrBundleNotFound, req.BundleID)
+		}
+		return nil, fmt.Errorf("placeorder: ctl GetBundleByID: %w", err)
+	}
+	if !strings.EqualFold(bundle.BundleState, "ONLINE") {
+		return nil, fmt.Errorf("%w: bundleId=%s state=%s", ErrBundleOffline, req.BundleID, bundle.BundleState)
+	}
+
+	def, err := s.deps.BundleStore.GetBundleDefinitionByID(ctx, req.BundleID)
+	if err != nil {
+		if errors.Is(err, store.ErrBundleDefinitionNotFound) {
+			return nil, fmt.Errorf("%w: trade_bundle_definition bundleId=%s", ErrBundleNotFound, req.BundleID)
+		}
+		return nil, fmt.Errorf("placeorder: get bundle definition: %w", err)
+	}
+	if s.deps.ActivityResolver == nil {
+		return nil, fmt.Errorf("%w: resolver is not configured", ErrDianshiActivityRequired)
+	}
+	mapping, useDianshi, err := s.deps.ActivityResolver.ResolveForPlaceOrder(
+		ctx, req.BundleID, req.Uin, req.Period, req.TimeUnit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w", req.BundleID, req.Uin, err)
+	}
+	if !useDianshi || mapping == nil {
+		return nil, fmt.Errorf("%w: bundleId=%s", ErrDianshiActivityRequired, req.BundleID)
+	}
+
+	log.Printf("[activity-resolver] dianshi-order-and-pay bundleId=%s uin=%s activityId=%d actId=%d",
+		req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID)
+	return s.placeOrderDianshiAndPay(ctx, req, def, mapping)
 }
 
 // shouldPersistOrderAfterPay 判定 generateDealsAndPay 同步响应是否满足"一次到位落
@@ -1910,6 +1988,30 @@ func (s *Service) placeOrderDianshi(
 	if s.deps.DianshiClient == nil {
 		return nil, fmt.Errorf("placeorder: dianshi client not configured (ActivityResolver injected without DianshiClient)")
 	}
+	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoods", "do_goods", s.deps.DianshiClient.DoGoods)
+}
+
+func (s *Service) placeOrderDianshiAndPay(
+	ctx context.Context,
+	req PlaceOrderRequest,
+	def *store.BundleDefinition,
+	mapping *activity.Mapping,
+) (*PlaceOrderResult, error) {
+	if s.deps.DianshiClient == nil {
+		return nil, fmt.Errorf("placeorder: dianshi client not configured (ActivityResolver injected without DianshiClient)")
+	}
+	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoodsAndPay", "do_goods_and_pay", s.deps.DianshiClient.DoGoodsAndPay)
+}
+
+func (s *Service) placeOrderDianshiWith(
+	ctx context.Context,
+	req PlaceOrderRequest,
+	def *store.BundleDefinition,
+	mapping *activity.Mapping,
+	operationName string,
+	interfaceName string,
+	place func(context.Context, *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error),
+) (*PlaceOrderResult, error) {
 
 	reusableStore, ok := s.deps.OrderStore.(store.ReusableDianshiOrderStore)
 	if !ok {
@@ -1968,15 +2070,15 @@ func (s *Service) placeOrderDianshi(
 		},
 	}
 
-	// 3. 调点石 do_goods（失败直接返业务错，不写任何 trade 端记录）
-	doGoodsResp, err := s.deps.DianshiClient.DoGoods(ctx, doGoodsReq)
+	// 3. 调点石落单接口（失败直接返业务错，不写任何 trade 端记录）
+	doGoodsResp, err := place(ctx, doGoodsReq)
 	if err != nil {
-		return nil, fmt.Errorf("placeorder: dianshi DoGoods bundleId=%s activityId=%d actId=%d: %w",
-			req.BundleID, mapping.ActivityID, mapping.ActID, err)
+		return nil, fmt.Errorf("placeorder: dianshi %s bundleId=%s activityId=%d actId=%d: %w",
+			operationName, req.BundleID, mapping.ActivityID, mapping.ActID, err)
 	}
 	if doGoodsResp == nil || len(doGoodsResp.DealNames) == 0 || doGoodsResp.DealNames[0] == "" {
-		return nil, fmt.Errorf("%w: dianshi do_goods returned empty deal_names (bundleId=%s activityId=%d big_deal_no=%q)",
-			ErrJifeiResponseInvalid, req.BundleID, mapping.ActivityID,
+		return nil, fmt.Errorf("%w: dianshi %s returned empty deal_names (bundleId=%s activityId=%d big_deal_no=%q)",
+			ErrJifeiResponseInvalid, interfaceName, req.BundleID, mapping.ActivityID,
 			func() string {
 				if doGoodsResp == nil {
 					return ""

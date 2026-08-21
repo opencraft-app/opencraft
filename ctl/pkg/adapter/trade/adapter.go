@@ -359,6 +359,10 @@ type Adapter interface {
 	// 关心 DealName / BigOrderID。
 	PlaceOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
 
+	// PlaceDianshiOrderAndPay uses the dedicated Dianshi do_goods_and_pay path.
+	// Trade rejects bundles that are not eligible for the configured activity.
+	PlaceDianshiOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
+
 	// MoveInOrderAndPay 调 trade POST /internal/trade/orders/move-in，为存量 pass 创建外部资源迁入单。
 	MoveInOrderAndPay(ctx context.Context, req *MoveInOrderRequest) (*PlaceOrderResult, error)
 
@@ -675,6 +679,22 @@ func (a *adapter) PlaceOrderAndPay(ctx context.Context, req *PlaceOrderRequest) 
 	}
 
 	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/orders/place-and-pay"
+	var result PlaceOrderResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (a *adapter) PlaceDianshiOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: PlaceDianshiOrderAndPay request is nil")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/orders/place-and-pay"
 	var result PlaceOrderResult
 	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
 		return nil, err
