@@ -195,7 +195,7 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 }
 
-func TestDeployConfigsScopeWebsiteInstanceRoutes(t *testing.T) {
+func TestDeployConfigsScopeWebsiteInstanceCredentials(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
@@ -207,14 +207,14 @@ func TestDeployConfigsScopeWebsiteInstanceRoutes(t *testing.T) {
 		"argocd/services/service-gateway/sgprod/config.yaml",
 	}
 	wantInstancePaths := map[string]struct{}{
-		http.MethodGet + " /v1/instance/websites/capability":                          {},
-		http.MethodGet + " /v1/instance/websites":                                     {},
-		http.MethodPost + " /v1/instance/websites":                                    {},
-		http.MethodGet + " /v1/instance/websites/{site_id}":                           {},
-		http.MethodDelete + " /v1/instance/websites/{site_id}":                        {},
-		http.MethodGet + " /v1/instance/websites/{site_id}/releases":                  {},
-		http.MethodPost + " /v1/instance/websites/{site_id}/releases":                 {},
-		http.MethodGet + " /v1/instance/websites/{site_id}/operations/{operation_id}": {},
+		http.MethodGet + " /v1/websites/capability":                          {},
+		http.MethodGet + " /v1/websites":                                     {},
+		http.MethodPost + " /v1/websites":                                    {},
+		http.MethodGet + " /v1/websites/{site_id}":                           {},
+		http.MethodDelete + " /v1/websites/{site_id}":                        {},
+		http.MethodGet + " /v1/websites/{site_id}/releases":                  {},
+		http.MethodPost + " /v1/websites/{site_id}/releases":                 {},
+		http.MethodGet + " /v1/websites/{site_id}/operations/{operation_id}": {},
 	}
 
 	for _, configPath := range configPaths {
@@ -223,33 +223,27 @@ func TestDeployConfigsScopeWebsiteInstanceRoutes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load config: %v", err)
 			}
-			var browserRoute, instanceRoute *Route
+			var websiteRoute *Route
 			for i := range cfg.Routes {
 				route := &cfg.Routes[i]
-				switch route.Prefix {
-				case "/v1/websites":
-					browserRoute = route
-				case "/v1/instance/websites":
-					instanceRoute = route
+				if route.Prefix == "/v1/instance/websites" {
+					t.Fatal("legacy /v1/instance/websites route must not be exposed")
+				}
+				if route.Prefix == "/v1/websites" {
+					websiteRoute = route
 				}
 			}
-			if browserRoute == nil || browserRoute.Access != AccessAuthenticated {
-				t.Fatalf("authenticated browser website route is required: %+v", browserRoute)
+			if websiteRoute == nil || websiteRoute.Access != AccessAuthenticated {
+				t.Fatalf("authenticated website route is required: %+v", websiteRoute)
 			}
-			if len(browserRoute.PublicAllow) != 0 {
-				t.Fatalf("browser website route must not contain public exceptions: %+v", browserRoute.PublicAllow)
+			if len(websiteRoute.PublicAllow) != 0 {
+				t.Fatalf("website route must not contain public exceptions: %+v", websiteRoute.PublicAllow)
 			}
-			if instanceRoute == nil {
-				t.Fatal("instance website route is required")
+			if !websiteRoute.AllowVelaInstanceKey {
+				t.Fatal("website route must enable scoped Vela instance credentials")
 			}
-			if instanceRoute.Access != AccessPublic || instanceRoute.PathPolicy != PathPolicyAllowlist {
-				t.Fatalf("instance website route must be public + allowlist: %+v", *instanceRoute)
-			}
-			if instanceRoute.RewritePrefix != "/v1/websites" {
-				t.Fatalf("rewrite_prefix = %q, want /v1/websites", instanceRoute.RewritePrefix)
-			}
-			got := make(map[string]struct{}, len(instanceRoute.PathAllow))
-			for _, rule := range instanceRoute.PathAllow {
+			got := make(map[string]struct{}, len(websiteRoute.VelaInstanceKeyAllow))
+			for _, rule := range websiteRoute.VelaInstanceKeyAllow {
 				got[rule.Method+" "+rule.Path] = struct{}{}
 			}
 			if len(got) != len(wantInstancePaths) {
@@ -346,7 +340,7 @@ func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T)
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 
-	for _, env := range []string{"beijing-sandbox", "sandbox-kr-1", "shprod"} {
+	for _, env := range []string{"beijing-sandbox", "sandbox-kr-1", "sgprod", "shprod"} {
 		t.Run(env, func(t *testing.T) {
 			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
 			if err != nil {
@@ -364,6 +358,49 @@ func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T)
 			}
 			t.Fatal("TencentCloud account callback must bypass session authentication")
 		})
+	}
+}
+
+func TestSingaporeBillingEntryRoutesArePublic(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/sgprod/config.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	want := map[string]struct {
+		prefix   string
+		upstream string
+	}{
+		"trade-jifei-callback": {
+			prefix:   "/trade/jifei/callback",
+			upstream: "http://trade.trade.svc.cluster.local",
+		},
+		"ctl-cloudapi": {
+			prefix:   "/cloudapi",
+			upstream: "http://ctl-api.ctl.svc.cluster.local",
+		},
+	}
+
+	for _, route := range cfg.Routes {
+		expected, required := want[route.Name]
+		if !required {
+			continue
+		}
+		if route.Prefix != expected.prefix || route.Upstream != expected.upstream || route.Access != AccessPublic {
+			t.Fatalf("route %s must use the public SG billing target: %+v", route.Name, route)
+		}
+		if len(route.Methods) != 2 || !containsString(route.Methods, http.MethodPost) || !containsString(route.Methods, http.MethodOptions) {
+			t.Fatalf("route %s must be limited to POST/OPTIONS: %+v", route.Name, route)
+		}
+		delete(want, route.Name)
+	}
+	for routeName := range want {
+		t.Fatalf("required SG billing route %s not found", routeName)
 	}
 }
 

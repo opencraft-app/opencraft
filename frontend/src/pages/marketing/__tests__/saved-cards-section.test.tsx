@@ -114,6 +114,24 @@ describe("SavedCardsSection", () => {
     expect(window.sessionStorage.getItem("lightvela-payment-method-sign-order-v1")).toContain("contract-new");
   });
 
+  it("navigates to the international production hosted payment page", async () => {
+    const navigate = vi.fn();
+    mocks.createSignOrder.mockResolvedValue({
+      contractCode: "contract-intl-production",
+      redirectUrl: "https://card.harvestsharp.com/apps/creditcard/views/sign?token=opaque",
+    });
+
+    render(<SavedCardsSection navigateToHostedPage={navigate} />);
+    await screen.findByText("555555****4444");
+    await userEvent.click(screen.getByRole("button", { name: "添加支付卡" }));
+
+    await waitFor(() => {
+      expect(navigate).toHaveBeenCalledWith(
+        "https://card.harvestsharp.com/apps/creditcard/views/sign?token=opaque",
+      );
+    });
+  });
+
   it("refuses to navigate to an unapproved redirect host", async () => {
     const navigate = vi.fn();
     mocks.createSignOrder.mockResolvedValue({

@@ -5,6 +5,7 @@ import sys
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -155,6 +156,17 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_ctl_production_schema_versions_match_environment_policy(self) -> None:
+        manifest = load_manifest()
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                contract = load_bundle(manifest, "ctl", env).db_contract
+                self.assertEqual(
+                    contract.get("expected_migration_version_by_env"),
+                    {"shprod": 27, "sgprod": 28},
+                )
+
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
         rendered = dump_manifest(merge_bundle_sources(RUNTIME_DIR / "bundles"))
 
@@ -338,6 +350,34 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("TLS lifecycle is platform-owned", readme)
         self.assertIn("does not create, update, or rotate that Secret", readme)
 
+    def test_site_gateway_auth_contract_keeps_international_public(self) -> None:
+        base_manifest = REPO_ROOT / "site-gateway" / "k8s" / "base" / "manifests.yaml"
+        documents = list(yaml.safe_load_all(base_manifest.read_text()))
+        config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
+        for key in (
+            "SITE_GATEWAY_AUTH_MODE",
+            "SITE_GATEWAY_AUTH_ISSUER",
+            "SITE_GATEWAY_AUTH_AUDIENCE",
+            "SITE_GATEWAY_AUTH_START_URL",
+            "SITE_GATEWAY_AUTH_PUBLIC_KEYS",
+            "SITE_GATEWAY_AUTH_SESSION_TTL",
+        ):
+            self.assertIn(key, config_map.get("data", {}))
+
+        platform_values = {
+            key: value
+            for line in (
+                REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod" / "site-gateway-platform.env"
+            ).read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(platform_values.get("SITE_GATEWAY_AUTH_MODE"), "public")
+
+        bundle = (REPO_ROOT / ".ci" / "runtime" / "bundles" / "site-gateway.bundle").read_text()
+        self.assertIn("site-gateway/docs", bundle)
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
@@ -380,6 +420,50 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(
             deploy_patch["data"]["SHADOW_USER_NAME_PREFIX"],
             source_patch["data"]["SHADOW_USER_NAME_PREFIX"],
+        )
+
+    def test_sgprod_auth_uses_international_production_shadow_contract(self) -> None:
+        source_path = REPO_ROOT / "user/auth/k8s/overlays/sgprod/patch-shadowbinding.yaml"
+        self.assertTrue(source_path.exists())
+
+        documents = list(yaml.safe_load_all(source_path.read_text()))
+        config_map = next(document for document in documents if document.get("kind") == "ConfigMap")
+        data = config_map["data"]
+
+        self.assertEqual(data["LIGHTVELA_SITE_KIND"], "intl")
+        self.assertEqual(data["SHADOW_BINDING_ENABLED"], "true")
+        self.assertEqual(data["SHADOW_AUTH_CODE_PREFIX"], "sgprod")
+        self.assertEqual(data["SHADOW_USER_NAME_PREFIX"], "sgprod_")
+        self.assertEqual(data["SHADOW_PLATFORM"], "intlSaaSLightvela")
+        self.assertEqual(data["SHADOW_ACCOUNT_ENDPOINT"], "account.tencentcloudapi.com")
+        self.assertEqual(data["SHADOW_BILLING_REGION"], "ap-singapore")
+        self.assertEqual(
+            data["SHADOW_BILLING_ENDPOINT"],
+            "billing.ap-singapore.tencentcloudapi.woa.com",
+        )
+        self.assertEqual(data["SHADOW_CLOUDLADDER_ROUTE_ID"], "tcapi-account-intl-prod")
+        self.assertEqual(data["SHADOW_BILLING_CLOUDLADDER_ROUTE_ID"], "tcapi-billing-intl-prod")
+        self.assertEqual(data["LIGHTCLAW_PAYMENT_METHODS_ENABLED"], "true")
+
+        deploy_root = REPO_ROOT / "argocd/services/lightclaw-auth/sgprod"
+        deploy_kustomization = yaml.safe_load((deploy_root / "kustomization.yaml").read_text())
+        self.assertIn(
+            {"path": "patch-shadow-internal-token.yaml"},
+            deploy_kustomization["patches"],
+        )
+
+        deploy_patch = yaml.safe_load((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        token_env = next(
+            env
+            for env in deploy_patch["spec"]["template"]["spec"]["containers"][0]["env"]
+            if env["name"] == "SHADOW_BINDING_INTERNAL_TOKEN"
+        )
+        self.assertEqual(
+            token_env["valueFrom"]["secretKeyRef"],
+            {
+                "name": "lightclaw-auth-secrets",
+                "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
         )
 
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
@@ -1878,6 +1962,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = load_manifest()
         bundle = require_build_metadata(load_bundle(manifest, "trade", "beijing-sandbox"))
         shprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "shprod"))
+        sgprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "sgprod"))
         playground_bundle = require_build_metadata(load_bundle(manifest, "trade", PLAYGROUND_ENV))
         workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
 
@@ -1901,6 +1986,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
             shprod_bundle.publish_paths,
         )
         self.assertIn("trade/k8s/base/**", shprod_bundle.publish_paths)
+        # sgprod（新加坡正式）承载国际站计费与点石活动，形态对齐 shprod。
+        self.assertEqual(sgprod_bundle.image_repo, "lightclaw-sgprod.tencentcloudcr.com/lightclaw/trade")
+        self.assertIn("argocd/services/trade/sgprod/**", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/services/trade/common/**", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/apps/sgprod/trade.yaml", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/projects/sgprod-trade.yaml", sgprod_bundle.publish_paths)
+        self.assertIn(
+            "argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml",
+            sgprod_bundle.publish_paths,
+        )
+        self.assertIn("trade/k8s/base/**", sgprod_bundle.publish_paths)
         self.assertEqual(playground_bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
         self.assertIn(f"argocd/services/trade/{PLAYGROUND_ENV}/**", playground_bundle.publish_paths)
         self.assertIn(
@@ -1911,10 +2007,40 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow,
             expected_service="trade",
             expected_pin_targets="trade",
-            expected_master_build_envs="beijing-sandbox,shprod",
+            expected_master_build_envs="beijing-sandbox,shprod,sgprod",
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
+        )
+
+    def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        cloudladder = yaml.safe_load(
+            (REPO_ROOT / "cloudladdergateway/config.example.yaml").read_text()
+        )
+        route_id = values["TRADE_BILLING_CLOUDLADDER_ROUTE_ID"]
+        route = next(route for route in cloudladder["routes"] if route["id"] == route_id)
+        backend_alias = route["upstream"]["backend"]
+        backend = next(
+            backend
+            for backend in cloudladder["backends"]
+            if backend["alias"] == backend_alias
+        )
+        trusted_host = urlparse(backend["upstream"]["base_url"]).hostname
+
+        self.assertEqual(route_id, "tcapi-billing-trade-intl-prod")
+        self.assertEqual(
+            values["TRADE_BILLING_ENDPOINT"],
+            trusted_host,
+            "trade signs the original billing host, so it must match CloudLadder's trusted upstream host",
         )
 
     def test_korea_trade_uses_international_billing_test_route(self) -> None:

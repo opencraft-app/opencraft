@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
@@ -91,6 +92,42 @@ func TestInternationalRegistrationUsesSaaSClientAndSkipsAppIDLookup(t *testing.T
 	}
 	if calls != 1 {
 		t.Fatalf("account API calls = %d, want registration only", calls)
+	}
+}
+
+func TestDescribeAccountInfoUsesShadowTemporaryCredentials(t *testing.T) {
+	oldTransport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = oldTransport })
+	var gotAction, gotToken string
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		gotAction = req.Header["X-TC-Action"][0]
+		gotToken = req.Header["X-TC-Token"][0]
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"Response":{"OwnerUin":450850000004,"LoginUin":450850000004,"AppId":1471748557,"RequestId":"account-info-request-id"}}`,
+			)),
+			Request: req,
+		}, nil
+	})
+	client := &TencentCloudSDKClient{
+		region:         "ap-singapore",
+		accountProfile: clientProfile("account.tencentcloudapi.com", time.Second),
+	}
+
+	info, err := client.DescribeAccountInfo(context.Background(), CloudTemporaryCredentials{
+		Uin: 450850000004, OwnerUin: 450850000004,
+		TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token",
+	})
+	if err != nil {
+		t.Fatalf("DescribeAccountInfo: %v", err)
+	}
+	if gotAction != "DescribeAccountInfo" || gotToken != "tmp-token" {
+		t.Fatalf("unexpected request action=%q token=%q", gotAction, gotToken)
+	}
+	if info.LoginUin != 450850000004 || info.OwnerUin != 450850000004 || info.AppID != 1471748557 || info.RequestID != "account-info-request-id" {
+		t.Fatalf("unexpected account info: %+v", info)
 	}
 }
 

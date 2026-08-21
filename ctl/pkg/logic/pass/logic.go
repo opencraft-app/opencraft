@@ -2312,16 +2312,21 @@ func (l *logic) RenewPassPrice(userID, passID string, req *transport.RenewPassPr
 		zap.Float64("discount", q.Discount),
 	)
 
-	// 步骤 6：拍平为 RenewPassPriceResult（v1.7.28 BUG-04 C 路径精简：仅返价格 5 字段
+	// 步骤 6：拍平为 RenewPassPriceResult（仅返价格 6 字段
 	// + bundle_id 用于审计；string → float64 与新购 BundlePrice 对齐）
+	return renewQuoteToPrice(q), nil
+}
+
+func renewQuoteToPrice(q *tradeadapter.BundleQuote) *transport.RenewPassPriceResult {
 	return &transport.RenewPassPriceResult{
 		BundleID:      q.BundleID,
 		Price:         parseQuotePrice(q.Price),
 		TotalCost:     parseQuotePrice(q.TotalCost),
+		TaxPrice:      parseQuotePrice(q.TaxPrice),
 		RealTotalCost: parseQuotePrice(q.RealTotalCost),
 		Currency:      q.Currency,
 		Discount:      q.Discount,
-	}, nil
+	}
 }
 
 // parseQuotePrice 把 trade adapter BundleQuote 的字符串价格字段解析为 float64。

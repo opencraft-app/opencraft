@@ -380,7 +380,7 @@ func newStdDeps() *stdDeps {
 		billing: &fakeCloudBilling{
 			describeOrderListFn: func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
 				return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
-					OrderID: req.OrderIDs[0], PriceDetailRealTotalCost: "650000000",
+					OrderID: req.OrderIDs[0], PriceDetailRealTotalCost: "650000000", TaxRate: "0.07",
 				}}}, nil
 			},
 		},
@@ -902,8 +902,8 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 		if req.Application != "intlSaaSLightvela" {
 			t.Errorf("Application = %q, want intlSaaSLightvela", req.Application)
 		}
-		if req.ChargeAmount != 650 {
-			t.Errorf("ChargeAmount = %d, want 650", req.ChargeAmount)
+		if req.ChargeAmount != 696 {
+			t.Errorf("ChargeAmount = %d, want 696", req.ChargeAmount)
 		}
 		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
 			t.Errorf("CancelURL mismatch: %q", req.CancelURL)
@@ -949,6 +949,55 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 	}
 	if d.paymentContext.calls.Load() != 1 || d.paymentContext.lastUserID != "usr_1" {
 		t.Errorf("payment context query = %d/%q, want 1/usr_1", d.paymentContext.calls.Load(), d.paymentContext.lastUserID)
+	}
+}
+
+func TestGeneratePayURL_IntlZeroAmountStillCallsCreatePayURL(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       "deal-1",
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeCreate,
+		}, nil
+	}
+	d.billing.describeOrderListFn = func(context.Context, cloudbillingclient.TemporaryCredentials, *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
+		return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
+			OrderID:                               "deal-1",
+			PriceDetailHighPrecisionRealTotalCost: "0",
+			TaxRate:                               "0.09",
+		}}}, nil
+	}
+	d.billing.createPayURLFn = func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ChargeAmount != 0 {
+			t.Fatalf("ChargeAmount = %d, want 0", req.ChargeAmount)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{
+			URL: "https://buy.cloud.tencent.com/midas/zero?dealName=deal-1",
+		}, nil
+	}
+
+	detail, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
+	if err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if detail.PayURL != "https://buy.cloud.tencent.com/midas/zero?dealName=deal-1" {
+		t.Fatalf("PayURL = %q", detail.PayURL)
+	}
+	if d.billing.createPayURLCalls.Load() != 1 {
+		t.Fatalf("CreatePayURL calls = %d, want 1", d.billing.createPayURLCalls.Load())
 	}
 }
 
@@ -1299,6 +1348,37 @@ func TestGeneratePayURL_IntlRejectsDescribeOrderListWithoutMatchingOrder(t *test
 	}
 }
 
+func TestGeneratePayURL_IntlRejectsMissingTaxRateBeforeCreatePayURL(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: "deal-1", ExternalUserID: "usr_1", Uin: "1000123456"}, nil
+	}
+	d.billing.describeOrderListFn = func(context.Context, cloudbillingclient.TemporaryCredentials, *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
+		return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
+			OrderID: "deal-1", PriceDetailRealTotalCost: "650000000",
+		}}}, nil
+	}
+
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
+	if err == nil || !strings.Contains(err.Error(), "taxRate") {
+		t.Fatalf("GeneratePayURL error = %v, want missing taxRate error", err)
+	}
+	if d.billing.createPayURLCalls.Load() != 0 {
+		t.Fatalf("CreatePayURL calls = %d, want 0", d.billing.createPayURLCalls.Load())
+	}
+}
+
 func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1311,6 +1391,7 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 				OrderID:                               "deal-1",
 				PriceDetailHighPrecisionRealTotalCost: "650000000",
 				PriceDetailRealTotalCost:              "700000000",
+				TaxRate:                               "0",
 			},
 			want: 650,
 		},
@@ -1319,6 +1400,7 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 			order: cloudbillingclient.OrderInfo{
 				OrderID:                  "deal-1",
 				PriceDetailRealTotalCost: "650000000",
+				TaxRate:                  "0",
 			},
 			want: 650,
 		},
@@ -1339,15 +1421,53 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 	}
 }
 
-func TestChargeAmountFromOrderListRejectsSubCentAmount(t *testing.T) {
-	_, err := chargeAmountFromOrderList("deal-1", &cloudbillingclient.DescribeOrderListResponse{
-		Orders: []cloudbillingclient.OrderInfo{{
-			OrderID:                               "deal-1",
-			PriceDetailHighPrecisionRealTotalCost: "650000001",
-		}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "cannot be represented as whole cents") {
-		t.Fatalf("chargeAmountFromOrderList error = %v, want sub-cent precision error", err)
+func TestChargeAmountFromOrderListIncludesTaxAndRoundsUpFractionalCents(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawAmount  string
+		taxRate    string
+		wantAmount int64
+	}{
+		{name: "seven percent tax rounds up half cent", rawAmount: "650000000", taxRate: "0.07", wantAmount: 696},
+		{name: "ten percent tax is exact cents", rawAmount: "650000000", taxRate: "0.10", wantAmount: 715},
+		{name: "sub-cent paid amount rounds up after tax", rawAmount: "650000001", taxRate: "0.07", wantAmount: 696},
+		{name: "zero amount remains zero", rawAmount: "0", taxRate: "0.09", wantAmount: 0},
+		{name: "zero tax preserves paid cents", rawAmount: "650000000", taxRate: "0", wantAmount: 650},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := chargeAmountFromOrderList("deal-1", &cloudbillingclient.DescribeOrderListResponse{
+				Orders: []cloudbillingclient.OrderInfo{{
+					OrderID:                               "deal-1",
+					PriceDetailHighPrecisionRealTotalCost: tt.rawAmount,
+					TaxRate:                               tt.taxRate,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("chargeAmountFromOrderList: %v", err)
+			}
+			if got != tt.wantAmount {
+				t.Fatalf("charge amount = %d, want %d", got, tt.wantAmount)
+			}
+		})
+	}
+}
+
+func TestChargeAmountFromOrderListRejectsInvalidTaxRate(t *testing.T) {
+	for _, taxRate := range []string{"", "invalid", "-0.01"} {
+		t.Run(taxRate, func(t *testing.T) {
+			_, err := chargeAmountFromOrderList("deal-1", &cloudbillingclient.DescribeOrderListResponse{
+				Orders: []cloudbillingclient.OrderInfo{{
+					OrderID:                  "deal-1",
+					PriceDetailRealTotalCost: "650000000",
+					TaxRate:                  taxRate,
+				}},
+			})
+			if err == nil || !strings.Contains(err.Error(), "taxRate") {
+				t.Fatalf("chargeAmountFromOrderList taxRate=%q error = %v, want taxRate error", taxRate, err)
+			}
+		})
 	}
 }
 
@@ -1874,6 +1994,10 @@ func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
 			},
 		}, nil
 	}
+	d.service = New(Deps{
+		CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+		OrderWriter: d.writer, OrderStore: d.store, SiteKind: "intl",
+	})
 
 	resp, err := d.service.PlaceOrderAndPay(context.Background(), stdPlaceOrderReq())
 	if err != nil {
@@ -1912,6 +2036,7 @@ func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
 		if pr.Goods[0].PayMode != 1 || pr.Goods[0].GoodsNum != 1 {
 			t.Errorf("para GoodsInfos[0] PayMode/GoodsNum: %+v", pr.Goods[0])
 		}
+		assertIntlPointOfSale(t, pr.Goods[0].GoodsDetail)
 	}
 	if d.writer.createOrderCalls.Load() != 1 {
 		t.Errorf("trade_order createOrder calls = %d, want 1", d.writer.createOrderCalls.Load())
@@ -1937,6 +2062,10 @@ func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 			BigDealIDs: []string{"20260720000000001"},
 		}, nil
 	}
+	d.service = New(Deps{
+		CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+		OrderWriter: d.writer, OrderStore: d.store, SiteKind: "intl",
+	})
 
 	resp, err := d.service.MoveInOrderAndPay(context.Background(), MoveInOrderRequest{
 		ExternalUserID: "usr_migrate",
@@ -1981,6 +2110,7 @@ func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 	if !ok || billingParam["resourcesSource"] != "lightvela" {
 		t.Fatalf("billingParam mismatch: %+v", detail["billingParam"])
 	}
+	assertIntlPointOfSale(t, detail)
 }
 
 func TestMoveInOrderAndPay_InvalidInput(t *testing.T) {
@@ -2209,6 +2339,7 @@ func TestPlaceRenewOrder_HappyPath(t *testing.T) {
 		JifeiClient: d.jifei,
 		OrderWriter: d.writer,
 		OrderStore:  d.store,
+		SiteKind:    "intl",
 	})
 
 	got, err := svc.PlaceRenewOrder(context.Background(), stdPlaceRenewOrderReq())
@@ -2234,8 +2365,8 @@ func TestPlaceRenewOrder_HappyPath(t *testing.T) {
 	if gi.GoodsCategoryID != 100060 {
 		t.Errorf("GoodsCategoryID = %d, want 100060 (scene=renew)", gi.GoodsCategoryID)
 	}
-	if gi.RegionID != region.LighthouseRegionID {
-		t.Errorf("RegionID = %d, want LighthouseRegionID", gi.RegionID)
+	if gi.RegionID != region.LighthouseIntlRegionID {
+		t.Errorf("RegionID = %d, want LighthouseIntlRegionID", gi.RegionID)
 	}
 	if gi.GoodsDetail["resourceId"] != "lhpass-r1" {
 		t.Errorf("goodsDetail.resourceId = %v, want lhpass-r1", gi.GoodsDetail["resourceId"])
@@ -2251,6 +2382,7 @@ func TestPlaceRenewOrder_HappyPath(t *testing.T) {
 	if gi.GoodsDetail["sv_cpu"] != int64(2) {
 		t.Errorf("goodsDetail.sv_cpu = %v, want int64(2)", gi.GoodsDetail["sv_cpu"])
 	}
+	assertIntlPointOfSale(t, gi.GoodsDetail)
 
 	// 验证 trade_order 落库：OrderType=renew + ResourceID=passID + Status=pending_pay
 	in := d.writer.lastCreateOrderInput
@@ -2566,6 +2698,7 @@ func TestPlaceRenewOrderAndPay_HappyPath(t *testing.T) {
 		JifeiClient: d.jifei,
 		OrderWriter: d.writer,
 		OrderStore:  d.store,
+		SiteKind:    "intl",
 	})
 
 	got, err := svc.PlaceRenewOrderAndPay(context.Background(), stdPlaceRenewOrderReq())
@@ -2598,6 +2731,7 @@ func TestPlaceRenewOrderAndPay_HappyPath(t *testing.T) {
 	if gi.GoodsDetail["curDeadline"] != "2026-06-15 10:30:00" {
 		t.Errorf("goodsDetail.curDeadline = %v, want 2026-06-15 10:30:00", gi.GoodsDetail["curDeadline"])
 	}
+	assertIntlPointOfSale(t, gi.GoodsDetail)
 
 	// 验证 trade_order 落库：OrderType=renew + ResourceID + Status=provisioned（BUG-26 修订）
 	in := d.writer.lastCreateOrderInput

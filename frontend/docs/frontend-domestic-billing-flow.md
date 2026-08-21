@@ -2,7 +2,7 @@
 
 > 面向对象：前端 / 后端 / 产品 / 测试同学，用于快速理解 lightvela.com（国内站）的订阅计费链路。
 > 代码基准：`frontend/next-site/subscribe-page.tsx`（v1.7.31 起统一 bridge 中转页二维码方案）。
-> 后端接口联调细节见代码注释多处引用的《ctl-frontend-billing-api.md》（§2 新购 / §3 续费等章节号，该联调文档由后端维护，未随本仓库提交）；
+> 后端接口联调细节见代码注释多处引用的《ctl-frontend-billing-api.md》（§2 新购 / §3 续费等章节号，该联调文档已随本仓库提交：[`codesign/ctl-frontend-billing-api.md`](../../codesign/ctl-frontend-billing-api.md)）；
 > bundle 字段（含 `time_span` / `time_unit`）定义见 [`codesign/ctl-bundle-feature-fields-api.md`](../../codesign/ctl-bundle-feature-fields-api.md)。
 
 ---
@@ -19,8 +19,9 @@
 
 | 概念 | 说明 | 代码位置 |
 |---|---|---|
-| **站点分流** | `isGlobal=false` 为国内站；国内站才走真实计费，国际站仍是「限时免费」内测视觉 | `mapBundleToPlan` 内 `paid = paidBillingEnabled && !isGlobal` |
-| **计费开关** | 运行时配置 `paidBillingEnabled`，决定是否放开真实付费 | `usePaidBillingEnabled()` / `isPaidBillingEnabled()` |
+| **站点分流** | `isGlobal=false` 为国内站，全量真实计费；国际站已具备信用卡订阅制，由灰度开关默认关闭（详见 `runtime-config-context` 的 `resolvePaidBillingEnabled`） | `mapBundleToPlan` 内 `paid = paidBillingEnabled && !isGlobal` |
+| **计费开关** | 运行时配置 `paidBillingEnabled`：国内站全量生效；国际站需显式开启（localStorage `lightclaw:features.paidBillingEnabled` 或构建期环境变量） | `usePaidBillingEnabled()` / `isPaidBillingEnabled()` |
+| **退款规则入口** | 国内站套餐卡片区底部「退款规则」链接（`isCN` 条件渲染），指向 `/docs/plans/#退款规则`（6c71f5764） | `CN_REFUND_RULES_PATH` / `subscribe-page.tsx` |
 | **付费时长** | 月付 `monthly` / 季付 `quarterly`，全局作用于所有可购买套餐；默认月付 | `aiDurationKey` / `AI_DURATION_TABS` |
 | **Pass（权益）** | 后端计费主体，一个 pass = 一份已生效的订阅权益 | `listMyPasses` / `createPassOrder` |
 | **中转页（bridge）** | `/auth/wechat-pay`，微信内打开，负责拉支付 URL + 拉起划扣 | `NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL` |
@@ -57,7 +58,7 @@ sequenceDiagram
         BE-->>WX: { pay_url, ... }
         WX->>WX: 阶段三 tcb-jssdk wxSign 拉起委托划扣
         U->>WX: 完成支付
-        loop 每 3s，最多 180s
+        loop 每 3s（180s 超时后仅切「开通中」文案，不停止）
             FE->>BE: GET /v1/passes 轮询
         end
         BE-->>FE: 命中有效 pass
@@ -125,12 +126,13 @@ CTA 文案优先级：`当前订阅` > `已售罄` > `询价中...` > `暂无报
 
 ### 阶段 5：支付完成接棒（创建实例）
 
-有两条接棒路径，任一命中即 `finalizeBot`：
+有接棒路径（**唯一**）：
 
-- **自动**：`paying` 阶段轮询 `listMyPasses`（间隔 `PAY_POLL_INTERVAL_MS=3s`，超时 `PAY_POLL_TIMEOUT_MS=180s`），轮询到有效 active pass → 自动 `finalizeBot`。
-- **手动兜底**：用户点「我已完成支付」→ `handleManualConfirm` → 刷新 pass + `finalizeBot`。
+- **自动轮询**：`paying` 阶段轮询 `listMyPasses`（间隔 `PAY_POLL_INTERVAL_MS=3s`），轮询到有效 active pass → 自动 `finalizeBot`。
+  - 超时（`PAY_POLL_TIMEOUT_MS=180s`）后**不停止轮询**，仅将弹窗文案切为「开通稍有延迟，本页会自动完成，请勿关闭」。
+  - 「我已完成支付」手动确认按钮已移除（随删除 `onManualConfirm` / `handleManualConfirm`）：轮询是唯一接棒途径，若停止，发货慢的用户将永远等不到自动开通；轮询随弹窗关闭（effect cleanup）而终止。
 
-`finalizeBot`：`addBot` 创建实例 → `subscribe()` 刷新订阅态 → 关弹窗 → `navigate` 跳转到实例创建页。同时上报大同埋点（`SUBSCRIBE_PAY_SUCCESS` / `AGENT_CREATE_SUCCESS`）。
+`finalizeBot`：`addBot` 创建实例 → `subscribe()` 刷新订阅态 → 关弹窗 → `navigate` 跳转到实例创建页。同时上报大同埋点（`SUBSCRIBE_PAY_SUCCESS` / `AGENT_CREATE_SUCCESS`）。带幂等闸门：并发或重复触发时只创建一次（`finalizingRef` 执行闸门，`finally` 中复位；账号已有实例时只跳转不重复创建——防原窗口轮询与支付回跳页双开场景重复建实例）。
 
 ### 二维码刷新
 
@@ -181,7 +183,7 @@ CTA 文案优先级：`当前订阅` > `已售罄` > `询价中...` > `暂无报
 | `frontend/src/repositories/http-repositories.ts` | 计费接口的 HTTP 实现 |
 | `frontend/src/repositories/types.ts` | 计费接口定义 + 联调文档章节引用 |
 | `frontend/src/contexts/runtime-config-context.tsx` | `usePaidBillingEnabled` 计费开关 |
-| `ctl-frontend-billing-api.md`（代码注释引用，后端维护，未随本仓库提交） | 后端接口联调文档（§2 新购、§3 续费、§4 销毁、§5 试用） |
+| [`codesign/ctl-frontend-billing-api.md`](../../codesign/ctl-frontend-billing-api.md) | 后端接口联调文档（§2 新购、§3 续费、§4 销毁、§5 试用） |
 | `codesign/ctl-bundle-feature-fields-api.md` | bundle 字段（含 `time_span` / `time_unit`）定义 |
 
 ---
@@ -205,13 +207,14 @@ CTA 文案优先级：`当前订阅` > `已售罄` > `询价中...` > `暂无报
 ## 九、状态机（弹窗 modalStep）
 
 ```
-closed ──选套餐下单──▶ paying ──轮询到 pass / 手动确认──▶ finalizeBot ──▶ closed(跳转实例页)
+closed ──选套餐下单──▶ paying ──轮询到 pass──▶ finalizeBot ──▶ closed(跳转实例页)
                          │
-                         └──二维码过期──▶ 刷新(重新下单)──▶ paying
+                         ├──二维码过期──▶ 刷新(重新下单)──▶ paying
+                         └──轮询超 180s──▶ 文案切「开通中」（轮询继续）
 ```
 
 - `finalizeBot` 失败：落错误提示，回到 `closed`。
-- v1.7.30 起后端明确「前端不需要轮询支付状态」，SDK callback / 用户手动确认均走 `finalizeBot` 接棒；v1.7.31 起统一 bridge 二维码，已删除旧的 fallback 新窗口模式。
+- v1.7.30 起后端明确「前端不需要轮询支付状态」，实际以 paying 阶段的 `listMyPasses` 轮询自动接棒，「我已完成支付」手动确认入口已移除；v1.7.31 起统一 bridge 二维码，已删除旧的 fallback 新窗口模式。
 
 ---
 

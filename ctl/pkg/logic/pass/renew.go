@@ -252,6 +252,11 @@ func renewLogger() *zap.Logger {
 // AlignAiGatewaySubscriptionPeriodEnd 只为迁移期的 legacy ai-gateway 用户保留。
 // 旧 ai-gateway 仍需要把 ctl 算好的 pass.expired_time 对齐到 subscription.period_end；
 // LLMGateway/velagw 的订阅为长期权益，续费不再延长 period_end。
+//
+// 降级规则（2026-08-19 用户拍板）：ai-gateway 返回路由 404（ErrAiGatewayRouteNotFound，
+// 镜像未升级 / 路由未注册导致的部署滞后）时，不再阻断续费，降级为 llmgateway 的
+// periodless 处理（跳过 period_end 对齐）。仅业务 404（ErrAiGatewayPlanNotFound，
+// 用户确无 legacy 订阅）与 ai-gateway 未配置（ErrAiGatewayNotConfigured）保持原降级语义。
 func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID string, newPeriodEnd time.Time) error {
 	if logger == nil {
 		logger = renewLogger()
@@ -283,6 +288,12 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 			if err != nil {
 				if errors.Is(err, aigateway.ErrAiGatewayPlanNotFound) {
 					logger.Warn("recorded ai-gateway subscription not found, skipping align",
+						zap.String("user_id", userID),
+						zap.String("pass_id", passID))
+					return nil
+				}
+				if errors.Is(err, aigateway.ErrAiGatewayRouteNotFound) {
+					logger.Warn("recorded ai-gateway route not found (deployment lag), fallback to llmgateway periodless handling",
 						zap.String("user_id", userID),
 						zap.String("pass_id", passID))
 					return nil
@@ -328,7 +339,9 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 				zap.Bool("updated", legacyResp != nil && legacyResp.Updated)) // false = 等值幂等 no-op
 			return nil
 		}
-		if !errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) && !isLegacyGatewayDisabled(legacyErr) {
+		if !errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) &&
+			!errors.Is(legacyErr, aigateway.ErrAiGatewayRouteNotFound) &&
+			!isLegacyGatewayDisabled(legacyErr) {
 			return legacyErr
 		}
 	}

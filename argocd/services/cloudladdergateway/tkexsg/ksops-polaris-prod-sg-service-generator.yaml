@@ -1,0 +1,6 @@
+apiVersion: viaduct.ai/v1
+kind: ksops
+metadata:
+  name: cloudladdergateway-polaris-prod-sg-service
+files:
+  - ../../../secrets/tkexsg/cloudladdergateway-polaris-prod-sg-service.sops.yaml

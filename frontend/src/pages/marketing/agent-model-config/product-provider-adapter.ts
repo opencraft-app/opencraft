@@ -1,4 +1,4 @@
-import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
+import type { IModelProvider } from "@/pages/marketing/agent-config";
 
 import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config-client";
 

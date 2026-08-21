@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -175,6 +176,56 @@ func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToTestHost(t *testing.T)
 	t.Fatal("tcapi-billing-trade-intl-test route is missing")
 }
 
+// sgprod 现网发布前置：trade 国际站 CreatePayUrl 必须有独立的生产出向路由，
+// 否则 trade 会沿用 tcapi-billing-trade-intl-test 把现网真实订单打到测试计费环境
+// （billing.test.tencentcloudapi.com），导致用户无法支付且污染测试计费库。
+// 生产 endpoint 复用 tcapi-billing-intl-prod 的内网域名（新加坡地域）。
+func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToProdHost(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, route := range cfg.Routes {
+		if route.ID != "tcapi-billing-trade-intl-prod" {
+			continue
+		}
+		if route.Mode != RouteModeSignedHTTPTunnel {
+			t.Fatalf("route mode = %q", route.Mode)
+		}
+		if len(route.Callers) != 1 || route.Callers[0] != "lightvela-trade" {
+			t.Fatalf("route callers = %#v", route.Callers)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve trade international billing prod upstream: %v", err)
+		}
+		if got := upstream.BaseURL; got != "http://billing.ap-singapore.tencentcloudapi.woa.com" {
+			t.Fatalf("trade international billing prod base_url = %q", got)
+		}
+		return
+	}
+	t.Fatal("tcapi-billing-trade-intl-prod route is missing")
+}
+
+// caller allowlist 与 route 定义必须同进同退：只加 route 不加 allowlist，
+// trade 出向会被 clgateway 以 caller 未授权拒绝。
+func TestExampleConfigGrantsTradeCallerProdBillingRoute(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, caller := range cfg.Auth.Callers {
+		if caller.ID != "lightvela-trade" {
+			continue
+		}
+		if slices.Contains(caller.Routes, "tcapi-billing-trade-intl-prod") {
+			return
+		}
+		t.Fatalf("lightvela-trade caller routes missing tcapi-billing-trade-intl-prod: %#v", caller.Routes)
+	}
+	t.Fatal("lightvela-trade caller is missing")
+}
+
 func TestLoadAppliesRouteHostHeaderOverride(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER", "test.trade-intl.billing.tencentyun.com")
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -277,6 +328,7 @@ func TestExampleConfigLoads(t *testing.T) {
 		"tencentcloud-account-callback-bjsbx":  false,
 		"tencentcloud-account-callback-krsbx":  false,
 		"tencentcloud-account-callback-jpsbx":  false,
+		"tencentcloud-account-callback-sgprod": false,
 		"tencentcloud-account-callback-shprod": false,
 	}
 	for _, route := range cfg.Routes {
@@ -304,6 +356,8 @@ func TestExampleConfigLoads(t *testing.T) {
 				wantBackend = "lightclaw-auth-krsbx"
 			case "tencentcloud-account-callback-jpsbx":
 				wantBackend = "lightclaw-auth-jpsbx"
+			case "tencentcloud-account-callback-sgprod":
+				wantBackend = "lightclaw-auth-sgprod"
 			case "tencentcloud-account-callback-shprod":
 				wantBackend = "lightclaw-auth-shprod"
 			}
@@ -324,6 +378,7 @@ func TestExampleConfigLoads(t *testing.T) {
 		"lightclaw-auth-bjsbx":  "CLOUDLADDER_TENCENT_CALLBACK_TOKEN",
 		"lightclaw-auth-krsbx":  "CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN",
 		"lightclaw-auth-jpsbx":  "CLOUDLADDER_TENCENT_CALLBACK_JPSBX_TOKEN",
+		"lightclaw-auth-sgprod": "CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN",
 		"lightclaw-auth-shprod": "CLOUDLADDER_TENCENT_CALLBACK_TOKEN",
 	} {
 		backend := findBackendForTest(cfg.Backends, backendAlias)
@@ -338,20 +393,22 @@ func TestExampleConfigLoads(t *testing.T) {
 	if tencentCallback == nil {
 		t.Fatalf("example config missing TencentCloud callback external route: %+v", cfg.External)
 	}
-	if got := tencentCallback.AuthCodeRoutes; len(got) != 4 ||
+	if got := tencentCallback.AuthCodeRoutes; len(got) != 5 ||
 		got[0].Prefix != "bjsbx." || got[0].RouteID != "tencentcloud-account-callback-bjsbx" ||
 		got[1].Prefix != "krsbx." || got[1].RouteID != "tencentcloud-account-callback-krsbx" ||
 		got[2].Prefix != "jpsbx." || got[2].RouteID != "tencentcloud-account-callback-jpsbx" ||
-		got[3].Prefix != "shprod." || got[3].RouteID != "tencentcloud-account-callback-shprod" {
+		got[3].Prefix != "sgprod." || got[3].RouteID != "tencentcloud-account-callback-sgprod" ||
+		got[4].Prefix != "shprod." || got[4].RouteID != "tencentcloud-account-callback-shprod" {
 		t.Fatalf("example config missing auth-code callback routes: %+v", got)
 	}
 	if got := tencentCallback.UserIDRoutes; len(got) != 1 || got[0].UserID != "u4912323654" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
 		t.Fatalf("example config missing legacy user-id callback route: %+v", got)
 	}
-	if got := tencentCallback.UserIDPrefixRoutes; len(got) != 3 ||
+	if got := tencentCallback.UserIDPrefixRoutes; len(got) != 4 ||
 		got[0].Prefix != "bjsbx_" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" ||
 		got[1].Prefix != "krsbx_" || got[1].RouteID != "tencentcloud-account-callback-krsbx" ||
-		got[2].Prefix != "jpsbx_" || got[2].RouteID != "tencentcloud-account-callback-jpsbx" {
+		got[2].Prefix != "jpsbx_" || got[2].RouteID != "tencentcloud-account-callback-jpsbx" ||
+		got[3].Prefix != "sgprod_" || got[3].RouteID != "tencentcloud-account-callback-sgprod" {
 		t.Fatalf("example config missing user-id prefix callback route: %+v", got)
 	}
 	cloudapi := findExternalRouteForTest(cfg.External, "/cloudapi")

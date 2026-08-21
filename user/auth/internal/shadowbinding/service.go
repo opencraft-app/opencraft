@@ -70,7 +70,7 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 	}
 	billingOpenTimeout := opts.BillingOpenTimeout
 	if billingOpenTimeout <= 0 {
-		billingOpenTimeout = time.Minute
+		billingOpenTimeout = 30 * time.Second
 	}
 	billingPollInterval := opts.BillingPollInterval
 	if billingPollInterval <= 0 {
@@ -256,13 +256,23 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 	if err != nil {
 		return binding, err
 	}
-	s.startBillingAccountOpening(registered)
+	s.startBillingAccountOpening(registered, in.ClientIP, in.ClientUA)
 	return registered, nil
 }
 
-func (s *Service) startBillingAccountOpening(binding Binding) {
+func (s *Service) startBillingAccountOpening(binding Binding, clientIP, clientUA string) {
 	s.runAsync(func() {
-		if _, err := s.openBillingAccount(context.Background(), binding, true); err != nil {
+		ctx := context.Background()
+		resolved, err := s.ensureBindingAppID(ctx, binding, clientIP, clientUA)
+		if err != nil {
+			slog.Warn("international shadow app id lookup after registration failed",
+				"user_id", binding.UserID,
+				"uin", binding.Uin,
+				"err", err,
+			)
+			resolved = binding
+		}
+		if _, err = s.openBillingAccount(ctx, resolved, true); err != nil {
 			slog.Warn("international shadow billing activation failed",
 				"user_id", binding.UserID,
 				"uin", binding.Uin,
@@ -288,6 +298,60 @@ func (s *Service) RetryBillingAccountOpening(ctx context.Context, userID string)
 	return s.openBillingAccount(ctx, binding, false)
 }
 
+func (s *Service) EnsureBindingAppID(ctx context.Context, userID, clientIP, clientUA string) (Binding, error) {
+	if s == nil || s.store == nil {
+		return Binding{}, errors.New("shadow binding is not configured")
+	}
+	binding, err := s.store.GetBindingByUserID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return Binding{}, err
+	}
+	return s.ensureBindingAppID(ctx, binding, clientIP, clientUA)
+}
+
+func (s *Service) ensureBindingAppID(ctx context.Context, binding Binding, clientIP, clientUA string) (Binding, error) {
+	if binding.AppID > 0 {
+		return binding, nil
+	}
+	if s.siteKind != SiteKindIntl {
+		return binding, nil
+	}
+	if binding.Uin <= 0 || binding.OwnerUin <= 0 {
+		return binding, errors.New("shadow binding app id is unavailable")
+	}
+	accountInfoClient, ok := s.client.(CloudAccountInfoClient)
+	if !ok {
+		return binding, errors.New("shadow account info client is not configured")
+	}
+	credentials, err := s.issueTemporaryCredentialsForBinding(ctx, binding, clientIP, clientUA)
+	if err != nil {
+		return binding, err
+	}
+	info, err := accountInfoClient.DescribeAccountInfo(ctx, credentials)
+	if err != nil {
+		return binding, err
+	}
+	if info.LoginUin != binding.Uin || info.OwnerUin != binding.OwnerUin {
+		err = fmt.Errorf("shadow account identity mismatch: binding_uin=%d binding_owner_uin=%d account_login_uin=%d account_owner_uin=%d", binding.Uin, binding.OwnerUin, info.LoginUin, info.OwnerUin)
+		return binding, err
+	}
+	if info.AppID <= 0 {
+		err = errors.New("DescribeAccountInfo returned empty app id")
+		return binding, err
+	}
+	resolved, err := s.store.SetBindingAppIDIfMissing(ctx, binding.UserID, binding.Uin, binding.OwnerUin, info.AppID, s.now())
+	if err != nil {
+		return binding, err
+	}
+	slog.InfoContext(ctx, "shadow app id resolved",
+		"user_id", binding.UserID,
+		"uin", binding.Uin,
+		"app_id", resolved.AppID,
+		"request_id", info.RequestID,
+	)
+	return resolved, nil
+}
+
 func (s *Service) openBillingAccount(ctx context.Context, binding Binding, waitBeforeFirstAttempt bool) (Binding, error) {
 	if s.billingAccount == nil {
 		err := errors.New("billing account client is not configured")
@@ -304,20 +368,27 @@ func (s *Service) openBillingAccount(ctx context.Context, binding Binding, waitB
 		err = s.wait(openCtx, s.billingInitialDelay)
 	}
 	backoff := s.billingPollInterval
+	maxBackoff := 4 * s.billingPollInterval
 	for {
 		if err != nil {
 			break
 		}
 		var result BillingAccountResult
 		result, err = s.billingAccount.EnsureBillingAccount(openCtx, binding.Uin)
-		if err != nil || result.IsOpen {
+		if err == nil && result.IsOpen {
+			break
+		}
+		if err != nil && !isBillingBaseInfoPending(err) {
 			break
 		}
 		if err = s.wait(openCtx, backoff); err != nil {
 			break
 		}
-		if backoff <= s.billingOpenTimeout/2 {
-			backoff *= 2
+		if backoff < maxBackoff {
+			backoff += s.billingPollInterval
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}
 	if err != nil {
@@ -378,6 +449,11 @@ func (s *Service) recoverShadowIdentity(ctx context.Context, userID, clientIP, c
 func isBillingCardRequired(err error) bool {
 	var sdkErr *tcerr.TencentCloudSDKError
 	return errors.As(err, &sdkErr) && sdkErr.Code == "FailedOperation.UinNeedBindCard"
+}
+
+func isBillingBaseInfoPending(err error) bool {
+	var sdkErr *tcerr.TencentCloudSDKError
+	return errors.As(err, &sdkErr) && sdkErr.Code == "FailedOperation.UinNeedBaseInfo"
 }
 
 func isBillingRetryableCode(code string) bool {
@@ -608,16 +684,20 @@ func (s *Service) IssueTemporaryCredentials(ctx context.Context, userID, clientI
 	if s == nil || s.store == nil || !s.enabled || s.client == nil {
 		return CloudTemporaryCredentials{}, errors.New("shadow binding is not configured")
 	}
-	credentialsClient, ok := s.client.(TemporaryCredentialsClient)
-	if !ok {
-		return CloudTemporaryCredentials{}, errors.New("shadow temporary credential client is not configured")
-	}
 	binding, err := s.store.GetBindingByUserID(ctx, strings.TrimSpace(userID))
 	if err != nil {
 		return CloudTemporaryCredentials{}, err
 	}
 	if !CanIssueTemporaryCredentials(binding) {
 		return CloudTemporaryCredentials{}, errors.New("shadow binding is not active")
+	}
+	return s.issueTemporaryCredentialsForBinding(ctx, binding, clientIP, clientUA)
+}
+
+func (s *Service) issueTemporaryCredentialsForBinding(ctx context.Context, binding Binding, clientIP, clientUA string) (CloudTemporaryCredentials, error) {
+	credentialsClient, ok := s.client.(TemporaryCredentialsClient)
+	if !ok {
+		return CloudTemporaryCredentials{}, errors.New("shadow temporary credential client is not configured")
 	}
 	authCode, err := s.IssueExternalAuthCode(ctx, binding.UserID, AuthCodePurposeSaaSCallback)
 	if err != nil {

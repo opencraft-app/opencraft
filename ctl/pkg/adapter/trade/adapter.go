@@ -245,7 +245,7 @@ type InquiryBatchRequest struct {
 // BundleQuote 是 trade 询价响应单条 bundle 报价（用于 ctl 端 JSON 反序列化）。
 //
 // **字段集精简（v1.7.28 BUG-04 拍板 = C 路径）**：仅保留 ctl 业务真消费的字段
-// （bundle 标识 + 价格 5 字段），删除 jifei 协议层死字段。设计原则:
+// （bundle 标识 + 价格 6 字段），删除 jifei 协议层死字段。设计原则:
 //
 //  1. ctl 是 lightclaw 业务层，**不应感知 jifei 协议层** product_code / sub_product_code / pid
 //     等字段（这些归 trade 持有 + ELK 落日志兜底，前端排障应看后端日志而不是 response body）
@@ -257,7 +257,7 @@ type InquiryBatchRequest struct {
 //
 // 字段语义：
 //   - BundleID：用于 fetchBundleQuotes map key + 审计
-//   - Price / TotalCost / RealTotalCost：价格（带小数字符串，单位分）
+//   - Price / TotalCost / TaxPrice / RealTotalCost：价格（带小数字符串，单位分）
 //   - Currency：币种（"CNY" 等）
 //   - Discount：policyDetail.total 拍平折扣率（100 = 无折扣）
 //
@@ -266,6 +266,7 @@ type BundleQuote struct {
 	BundleID      string  `json:"bundle_id"`
 	Price         string  `json:"price"`           // 单价（带小数字符串）
 	TotalCost     string  `json:"total_cost"`      // 折扣前总价
+	TaxPrice      string  `json:"tax_price"`       // 实付金额对应税额
 	RealTotalCost string  `json:"real_total_cost"` // 实付总价（折扣后）
 	Currency      string  `json:"currency"`        // 通常 "CNY"
 	Discount      float64 `json:"discount"`        // policyDetail.total 拍平

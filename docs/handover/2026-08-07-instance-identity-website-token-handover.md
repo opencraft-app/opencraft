@@ -13,7 +13,7 @@
 
 | 组件 | 文件 | 说明 |
 |---|---|---|
-| Redis 凭据存储 | `ctl/pkg/websiteauth/store.go` | `vwk_<key_id>_<secret>` 格式，SHA-256(salt‖secret)，无 TTL，无明文；两类 key 共用 Cluster hash tag |
+| Redis 凭据存储 | `ctl/pkg/websiteauth/store.go` | `vik_<key_id>_<secret>` 格式，SHA-256(salt‖secret)，无 TTL，无明文；两类 key 共用 Cluster hash tag |
 | CTL 签发/校验 | `ctl/main/api/website_credential_handler.go` | POST issue / DELETE revoke + `Vela-Instance-Key` 中间件 |
 | CreateSite bundle 推导 | `ctl/pkg/logic/website/logic.go` | `bundle_id` 省略时从 active pass 自动推导 |
 | Service Gateway 路由 | `argocd/services/service-gateway/*/config.yaml` | `ctl-instance-websites` 公开路由 + 8 条精确 allowlist |
@@ -25,7 +25,7 @@
 ### 鉴权链路（最终）
 
 ```
-Skill: Authorization: Vela-Instance-Key vwk_xxx_yyy
+Skill: Authorization: Vela-Instance-Key vik_xxx_yyy
   → service-gateway ctl-instance-websites route (public, allowlist)
   → ctl websiteInstanceAuthMiddleware (validate against Redis)
   → inject X-User-Id / X-Instance-Id

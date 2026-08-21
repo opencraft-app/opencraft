@@ -102,13 +102,19 @@ func (e *CGWError) Error() string {
 
 // GetPriceRequest 是询价 envelope.interface.para 内层（设计稿 §5.1）。
 //
-// Uin 不在询价请求中：询价不计算 check_sum，无需 uin。下单端的 DoGoodsRequest.Uin 仍保留
-// 供 check_sum 与 jifei 站点路由使用。
+// Uin 只服务于 preview 模式：正式形态询价不计算 check_sum、点石也不需要 uin，
+// 所以 §5.1 基线 envelope 不带该字段。但 preview=1 时点石靠顶层 uin 做商品可见性 /
+// 归属路由，缺 uin 会返 returnCode=1100105 "商品ID不存在"（commit 68aa66c73 已记录，
+// 2026-08-19 KR 联调再次实测复现）。因此 client 只在 preview=1 时把它写入出向 para，
+// preview=0 时出向形态与正式环境完全一致。
+//
+// 下单端的 DoGoodsRequest.Uin 是无条件必填，供 check_sum 与 jifei 站点路由使用。
 type GetPriceRequest struct {
 	ActivityID int64                  `json:"activity_id"`
 	ClientInfo map[string]interface{} `json:"client_info,omitempty"`
 	Goods      []GetPriceGoodsItem    `json:"goods"`
 	Preview    int                    `json:"preview,omitempty"`
+	Uin        string                 `json:"uin,omitempty"`
 }
 
 // GetPriceGoodsItem 是询价 goods[] 元素。
@@ -297,6 +303,12 @@ func (c *client) GetActivityPrice(ctx context.Context, req *GetPriceRequest) (*G
 	out := &GetPriceResponse{}
 	outbound := *req
 	outbound.Preview = c.preview
+	// preview 与顶层 uin 成对出现：preview=1 时点石强校验 uin，preview=0（正式形态）
+	// 则两个字段都不出现在出向 para（见 GetPriceRequest.Uin 注释）。
+	outbound.Uin = ""
+	if c.preview == 1 {
+		outbound.Uin = req.Uin
+	}
 	if err := c.do(ctx, c.priceBaseURL, InterfaceNameActivityGetPrice, ComponentNamePrice, &outbound, out); err != nil {
 		return nil, err
 	}

@@ -42,9 +42,12 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
         self.assertEqual(len(env), 7)
         return env
 
-    def test_sg_prod_callbacks_target_jp_api(self) -> None:
+    def test_sg_prod_callback_targets_sg_api(self) -> None:
+        callbacks = self.callback_base_urls("statefulsetplus.yaml")
+        sg_key = "CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_SG_BASE_URL"
+        self.assertEqual(callbacks.pop(sg_key), "https://api.lightvela.ai")
         self.assertEqual(
-            set(self.callback_base_urls("statefulsetplus.yaml").values()),
+            set(callbacks.values()),
             {"https://api-sandbox-jp-1.lightclaw.tech"},
         )
 
@@ -66,11 +69,17 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
         )
         self.assertEqual(self.backend_base_urls("statefulsetplus.yaml"), expected)
 
-    def test_sg_prod_registers_in_singapore_polaris_with_encrypted_token(self) -> None:
-        prod_service = yaml.safe_load(
+    def test_sg_prod_registers_same_service_in_china_and_singapore_polaris(self) -> None:
+        china_prod_service = yaml.safe_load(
             (
                 REPO_ROOT
                 / "argocd/secrets/tkexsg/cloudladdergateway-polaris-prod-service.sops.yaml"
+            ).read_text()
+        )
+        singapore_prod_service = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/secrets/tkexsg/cloudladdergateway-polaris-prod-sg-service.sops.yaml"
             ).read_text()
         )
         testing_service = yaml.safe_load(
@@ -79,19 +88,37 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
                 / "argocd/secrets/tkexsg/cloudladdergateway-polaris-testing-service.sops.yaml"
             ).read_text()
         )
-        prod_annotations = prod_service["metadata"]["annotations"]
+        china_annotations = china_prod_service["metadata"]["annotations"]
+        singapore_annotations = singapore_prod_service["metadata"]["annotations"]
         testing_annotations = testing_service["metadata"]["annotations"]
 
+        for annotations in (china_annotations, singapore_annotations):
+            self.assertEqual(
+                annotations["polaris.tkex.cloud.tencentyun.com/service"],
+                "clgateway-intl",
+            )
+            self.assertEqual(
+                annotations["polaris.tkex.cloud.tencentyun.com/namespace"],
+                "Production",
+            )
+            self.assertEqual(
+                annotations["polaris.tkex.cloud.tencentyun.com/workloadname"],
+                "lightvela-proxy",
+            )
+            self.assertTrue(
+                annotations["polaris.tkex.cloud.tencentyun.com/token"].startswith("ENC[")
+            )
         self.assertEqual(
-            prod_annotations["polaris.tkex.cloud.tencentyun.com/service"],
-            "clgateway-intl",
+            china_annotations["polaris.tkex.cloud.tencentyun.com/polaris-site-zone"],
+            "china",
         )
         self.assertEqual(
-            prod_annotations["polaris.tkex.cloud.tencentyun.com/polaris-site-zone"],
+            singapore_annotations["polaris.tkex.cloud.tencentyun.com/polaris-site-zone"],
             "singapore",
         )
-        self.assertTrue(
-            prod_annotations["polaris.tkex.cloud.tencentyun.com/token"].startswith("ENC[")
+        self.assertNotEqual(
+            china_prod_service["metadata"]["name"],
+            singapore_prod_service["metadata"]["name"],
         )
         self.assertEqual(
             testing_annotations["polaris.tkex.cloud.tencentyun.com/polaris-site-zone"],
@@ -106,6 +133,7 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
         ).read_text()
         self.assertNotIn("lightvela-proxy-inner-service-prod-intl", service_text)
         self.assertIn("ksops-polaris-prod-service-generator.yaml", kustomization_text)
+        self.assertIn("ksops-polaris-prod-sg-service-generator.yaml", kustomization_text)
 
 
 if __name__ == "__main__":

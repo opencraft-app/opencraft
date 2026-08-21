@@ -943,7 +943,6 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     ctaStyle: "outline-dark",
     maxBots: 1,
     comingSoon: true,
-    releasedOnGlobal: true,
     agentQuota: 1,
     bundleType: "general",
   },
@@ -2351,6 +2350,29 @@ const PAY_POLL_TIMEOUT_MS = 180_000;
  */
 const PAY_RETURN_QUERY_KEY = "pay_return";
 const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
+const INTL_PAID_BILLING_REVEAL_KEY = "lightvela:features.intlPaidBillingRevealed";
+
+type RevealPaidBillingHost = Window & {
+  show?: (...args: unknown[]) => unknown;
+};
+
+const readIntlPaidBillingReveal = (): boolean => {
+  if (!isGlobal || typeof window === "undefined") return false;
+  if (new URLSearchParams(window.location.search).get(PAY_RETURN_QUERY_KEY) === "1") return true;
+  try {
+    return window.sessionStorage.getItem(INTL_PAID_BILLING_REVEAL_KEY) === "true";
+  } catch {
+    return false;
+  }
+};
+
+const persistIntlPaidBillingReveal = (): void => {
+  try {
+    window.sessionStorage.setItem(INTL_PAID_BILLING_REVEAL_KEY, "true");
+  } catch {
+    // The current render still reveals billing when sessionStorage is unavailable.
+  }
+};
 
 export const SubscribePage = ({
   authControls,
@@ -2380,6 +2402,34 @@ export const SubscribePage = ({
   const [bundles, setBundles] = useState<Bundle[] | null>(null);
   const [bundlesLoading, setBundlesLoading] = useState(false);
   const [bundlesError, setBundlesError] = useState<string | null>(null);
+  const [intlPaidBillingRevealed, setIntlPaidBillingRevealed] = useState(readIntlPaidBillingReveal);
+
+  useEffect(() => {
+    if (!isGlobal) return;
+    const host = window as RevealPaidBillingHost;
+    const originalShow = host.show;
+    let mounted = true;
+    const revealPaidBilling = (...args: unknown[]) => {
+      persistIntlPaidBillingReveal();
+      if (mounted) setIntlPaidBillingRevealed(true);
+      if (typeof originalShow === "function") {
+        const originalResult = originalShow.apply(host, args);
+        return originalResult === undefined ? true : originalResult;
+      }
+      return true;
+    };
+
+    host.show = revealPaidBilling;
+    return () => {
+      mounted = false;
+      if (host.show !== revealPaidBilling) return;
+      if (originalShow === undefined) {
+        delete host.show;
+      } else {
+        host.show = originalShow;
+      }
+    };
+  }, []);
 
   /* 付费时长（月付 / 季付）；切换时会触发 listBundles 用新时长重拉价格。默认月付。
      作用于所有可购买套餐（general / ai），与卡内积分档位切换正交。 */
@@ -2390,13 +2440,13 @@ export const SubscribePage = ({
   );
 
   const paidBillingEnabled = usePaidBillingEnabled();
-  const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
+  const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled)
+    && (!isGlobal || intlPaidBillingRevealed);
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
-     对应 localStorage 覆盖 lightclaw:features.paidBillingEnabled=false
-     且 lightclaw:features.realnamePhoneVerificationEnabled=false 的场景。
-     任一开关开启时不做免费引导，CTA 维持「立即开通」。 */
-  const freeGuideAllowed = !paidBillingEnabled && !realnamePhoneVerificationEnabled;
+     国际站未执行 show() 时 paidBillingActive=false，展示口径和执行路径都回到免费阶段；
+     任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
+  const freeGuideAllowed = !paidBillingActive && !realnamePhoneVerificationEnabled;
   const header = (
     <SubscribePageHeader
       authControls={authControls}

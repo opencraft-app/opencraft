@@ -244,6 +244,17 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  # trade 国际站 CreatePayUrl 生产出向（sgprod 现网）。
+  # endpoint 与 tcapi-billing-intl-prod 同域名（新加坡地域内网），
+  # 但独立成一个 alias/route，以便 caller 授权按 lightvela-trade 单独收敛，
+  # 不把 shadow 的开户通道与 trade 的支付通道混在同一条路由上。
+  # timeout 对齐 tcapi-billing-intl-prod 的 15s（CreatePayUrl 比 test 环境慢）。
+  - alias: tcapi-billing-trade-intl-prod
+    upstream:
+      base_url: "http://billing.ap-singapore.tencentcloudapi.woa.com"
+      timeout: 15s
+      allowed_methods: ["POST"]
+
   - alias: tcapi-account-cn-test
     upstream:
       base_url: "https://account.test.tencentcloudapi.com"
@@ -325,6 +336,15 @@ backends:
       headers_from_env:
         X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_JPSBX_TOKEN
 
+  - alias: lightclaw-auth-sgprod
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_SGPROD
+    upstream:
+      base_url: "https://api.lightvela.ai"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers_from_env:
+        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
+
   - alias: lightclaw-auth-shprod
     env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_SHPROD
     upstream:
@@ -394,6 +414,7 @@ auth:
         - dianshi-price
         - dianshi-order
         - tcapi-billing-trade-intl-test
+        - tcapi-billing-trade-intl-prod
 
 audit:
   service_name: cloudladdergateway
@@ -417,6 +438,8 @@ external_routes:
         route_id: tencentcloud-account-callback-krsbx
       - prefix: "jpsbx."
         route_id: tencentcloud-account-callback-jpsbx
+      - prefix: "sgprod."
+        route_id: tencentcloud-account-callback-sgprod
       - prefix: "shprod."
         route_id: tencentcloud-account-callback-shprod
     user_id_routes:
@@ -429,6 +452,8 @@ external_routes:
         route_id: tencentcloud-account-callback-krsbx
       - prefix: "jpsbx_"
         route_id: tencentcloud-account-callback-jpsbx
+      - prefix: "sgprod_"
+        route_id: tencentcloud-account-callback-sgprod
   - path: /cloudapi
     methods: ["POST"]
     route_id: lightvela-cloudapi-sh
@@ -948,6 +973,14 @@ routes:
     upstream:
       backend: tcapi-billing-trade-intl-test
 
+  - id: tcapi-billing-trade-intl-prod
+    description: "Signed tunnel for LightVela trade intl CreatePayUrl production endpoint (sgprod)."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-trade-intl-prod
+
   - id: tcapi-account-cn-test
     description: "Signed tunnel for TencentCloud account API test endpoint from shadow script defaults."
     mode: signed_http_tunnel
@@ -1093,6 +1126,12 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: lightclaw-auth-jpsbx
+
+  - id: tencentcloud-account-callback-sgprod
+    description: "TencentCloud SaaS account callback route for Singapore production."
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: lightclaw-auth-sgprod
 
   - id: tencentcloud-account-callback-shprod
     description: "TencentCloud SaaS account callback route for Shanghai production."

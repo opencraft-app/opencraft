@@ -23,6 +23,7 @@ import {
   getPopularityTier,
   installSkillsInBatch,
   installSkillsSequentially,
+  installSkillsWithNativeBatch,
   mergeInstalledWithHermes,
   mergeInstalledSources,
   parseHermesInstalledSkills,
@@ -718,6 +719,75 @@ describe("Hermes native installed skills", () => {
 });
 
 describe("batch skill installation", () => {
+  it("allows a consumer-specific batch command and exposes sequential fallback", async () => {
+    const skills: Skill[] = [
+      { registry: "skillhub", rawId: "market-data", slug: "market-data", name: "Market Data" },
+    ];
+    const commands: string[] = [];
+    let fellBack = false;
+    const execDebugCommandStream = async (_botId: string, command: string) => {
+      commands.push(command);
+      return { status: "FAILED", exitCode: 1, output: 'unknown command "batch-install"' };
+    };
+
+    const result = await installSkillsWithNativeBatch(
+      "bot-1",
+      execDebugCommandStream,
+      async () => ({ ok: true }),
+      skills,
+      undefined,
+      {
+        buildBatchCommand: () => "custom skill-package batch command",
+        onSequentialFallback: () => {
+          fellBack = true;
+        },
+      },
+    );
+
+    expect(commands).toEqual(["custom skill-package batch command"]);
+    expect(fellBack).toBe(true);
+    expect(result).toEqual({ succeeded: skills, failed: [], skipped: [] });
+  });
+
+  it("reports skills omitted from an otherwise supported native batch response", async () => {
+    const skills: Skill[] = [
+      { registry: "skillhub", rawId: "market-data", slug: "market-data", name: "Market Data" },
+      { registry: "skillhub", rawId: "backtest-engine", slug: "backtest-engine", name: "Backtest Engine" },
+    ];
+    const incompleteRuns: string[][] = [];
+    const execDebugCommandStream = async (
+      _botId: string,
+      _command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","results":[{"name":"market-data","status":"installed"}]}\n',
+      });
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    };
+
+    const result = await installSkillsWithNativeBatch(
+      "bot-1",
+      execDebugCommandStream,
+      async () => ({ ok: true }),
+      skills,
+      undefined,
+      {
+        onIncompleteResults: (_registry, incompleteSkills) => {
+          incompleteRuns.push(incompleteSkills.map((skill) => skill.rawId));
+        },
+      },
+    );
+
+    expect(incompleteRuns).toEqual([["backtest-engine"]]);
+    expect(result).toEqual({
+      succeeded: [skills[0]],
+      failed: [{ skill: skills[1], message: "未收到技能安装结果" }],
+      skipped: [],
+    });
+  });
+
   it("keeps summary results aligned after an earlier progress event", async () => {
     const skills: Skill[] = [
       { registry: "clawhub", rawId: "first", slug: "first", name: "First" },

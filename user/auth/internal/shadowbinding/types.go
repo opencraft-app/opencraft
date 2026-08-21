@@ -58,6 +58,7 @@ type Store interface {
 	GetBindingByShadowUserName(ctx context.Context, shadowUserName string) (Binding, error)
 	MarkBindingRegistered(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
 	MarkBindingActive(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
+	SetBindingAppIDIfMissing(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
 	MarkBindingFailed(ctx context.Context, userID string, code string, message string, now time.Time) (Binding, error)
 	MarkBasicAuthSucceeded(ctx context.Context, userID string, sourceAttemptID string, identityHash string, phoneHash string, now time.Time) (Binding, error)
 	MarkBasicAuthFailed(ctx context.Context, userID string, code string, message string, now time.Time) (Binding, error)
@@ -154,6 +155,13 @@ type CloudTemporaryCredentialsInput struct {
 	ClientUA string
 }
 
+type CloudAccountInfo struct {
+	LoginUin  int64
+	OwnerUin  int64
+	AppID     int64
+	RequestID string
+}
+
 type CloudRegisterResult struct {
 	Uin      int64
 	OwnerUin int64
@@ -178,6 +186,10 @@ type TencentCloudClient interface {
 
 type TemporaryCredentialsClient interface {
 	GetTemporaryCredentialsForSaaS(ctx context.Context, in CloudTemporaryCredentialsInput) (CloudTemporaryCredentials, error)
+}
+
+type CloudAccountInfoClient interface {
+	DescribeAccountInfo(ctx context.Context, credentials CloudTemporaryCredentials) (CloudAccountInfo, error)
 }
 
 type ShadowIdentityRecoveryClient interface {

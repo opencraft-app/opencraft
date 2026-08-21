@@ -24,6 +24,7 @@ func main() {
 		log.Fatalf("init redis route store: %v", err)
 	}
 	var commands provider.CommandRunner
+	var invocations provider.CommandInvoker
 	var terminals provider.TerminalSessionStarter
 	var terminalCommands provider.TerminalCommandStreamer
 	cp, err := provider.ResolveFromEnv()
@@ -32,6 +33,9 @@ func main() {
 	} else {
 		if runner, ok := cp.(provider.CommandRunner); ok {
 			commands = runner
+		}
+		if invoker, ok := cp.(provider.CommandInvoker); ok {
+			invocations = invoker
 		}
 		if starter, ok := cp.(provider.TerminalSessionStarter); ok {
 			terminals = starter
@@ -42,14 +46,16 @@ func main() {
 	}
 	apiMetrics := observability.NewAPIMetrics(prometheus.NewRegistry())
 	h := &handler{
-		svc:              svc,
-		routes:           routes,
-		commands:         commands,
-		terminals:        terminals,
-		terminalCommands: terminalCommands,
-		cloud:            cp,
-		metrics:          apiMetrics,
-		cloudPauseResume: cfg.CloudPauseResume,
+		svc:                 svc,
+		routes:              routes,
+		commands:            commands,
+		invocations:         invocations,
+		terminals:           terminals,
+		terminalCommands:    terminalCommands,
+		cloud:               cp,
+		metrics:             apiMetrics,
+		allowedTATCommandID: cfg.AllowedTATCommandID,
+		cloudPauseResume:    cfg.CloudPauseResume,
 	}
 
 	r := gin.New()
@@ -65,7 +71,10 @@ func main() {
 	internal := r.Group("/internal")
 	registerPoolRoutes(internal, h)
 	registerTemplateClassRoutes(internal, h)
-	registerInternalTATRoutes(internal, h)
+	registerInternalTATStreamRoute(internal, h)
+	internalInvocations := internal.Group("")
+	internalInvocations.Use(internalAPIKeyAuth(cfg.InternalAPIKey))
+	registerInternalTATInvocationRoutes(internalInvocations, h)
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,

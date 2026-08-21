@@ -242,6 +242,18 @@ spec:
                   name: ctl-platform-values
                   key: SHADOW_BASE_URL
                   optional: true
+            - name: WEBSITE_CREDENTIAL_TAT_COMMAND_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: WEBSITE_CREDENTIAL_TAT_COMMAND_ID
+                  optional: true
+            - name: WEBSITE_AGENT_API_BASE
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: WEBSITE_AGENT_API_BASE
+                  optional: true
           command: ["/usr/local/lightglobal/bin/service"]
           args: ["-conf-dir", "/etc/ctl/conf"]
           ports:

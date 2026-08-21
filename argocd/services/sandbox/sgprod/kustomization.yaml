@@ -30,6 +30,16 @@ replacements:
   - source:
       kind: ConfigMap
       name: sandbox-platform-values
+      fieldPath: data.WEBSITE_CREDENTIAL_TAT_COMMAND_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: sandbox-runtime-config
+        fieldPaths:
+          - data.WEBSITE_CREDENTIAL_TAT_COMMAND_ID
+  - source:
+      kind: ConfigMap
+      name: sandbox-platform-values
       fieldPath: data.SANDBOX_REDIS_ADDR
     targets:
       - select:

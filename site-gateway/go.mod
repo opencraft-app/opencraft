@@ -2,7 +2,10 @@ module git.woa.com/wisp/mono/site-gateway
 
 go 1.25.0
 
-require github.com/tencentyun/cos-go-sdk-v5 v0.7.75
+require (
+	github.com/golang-jwt/jwt/v5 v5.2.3
+	github.com/tencentyun/cos-go-sdk-v5 v0.7.75
+)
 
 require (
 	github.com/clbanning/mxj v1.8.4 // indirect

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -10,6 +11,64 @@ import (
 	"cvm-mock-e2b/internal/blueprint"
 	"cvm-mock-e2b/internal/core"
 )
+
+func TestInvokeCommandParametersTargetsOneInstanceAndEncodesRuntimeParameters(t *testing.T) {
+	params, err := invokeCommandParameters("ins-1", "cmd-website1", map[string]string{
+		"website_key": "vik_secret_value",
+		"api_base":    "https://api.lightvela.ai",
+	})
+	if err != nil {
+		t.Fatalf("invokeCommandParameters: %v", err)
+	}
+	if params["CommandId"] != "cmd-website1" {
+		t.Fatalf("CommandId = %#v", params["CommandId"])
+	}
+	instances, ok := params["InstanceIds"].([]string)
+	if !ok || len(instances) != 1 || instances[0] != "ins-1" {
+		t.Fatalf("InstanceIds = %#v", params["InstanceIds"])
+	}
+	var runtime map[string]string
+	if err := json.Unmarshal([]byte(params["Parameters"].(string)), &runtime); err != nil {
+		t.Fatalf("decode Parameters: %v", err)
+	}
+	if runtime["website_key"] != "vik_secret_value" || runtime["api_base"] != "https://api.lightvela.ai" {
+		t.Fatalf("runtime Parameters = %#v", runtime)
+	}
+}
+
+func TestCommandInvocationMetadataQueryHidesOutput(t *testing.T) {
+	params := commandInvocationQueryParameters("inv-1", "ins-1", true)
+	if hide, ok := params["HideOutput"].(bool); !ok || !hide {
+		t.Fatalf("HideOutput = %#v, want true", params["HideOutput"])
+	}
+	filters, ok := params["Filters"].([]map[string]interface{})
+	if !ok || len(filters) != 2 {
+		t.Fatalf("Filters = %#v", params["Filters"])
+	}
+	if filters[0]["Name"] != "invocation-id" || filters[1]["Name"] != "instance-id" {
+		t.Fatalf("Filters = %#v", filters)
+	}
+}
+
+func TestDecodeCommandInvocationMetadataDropsCredentialBearingOutput(t *testing.T) {
+	const secret = "vik_test_should_not_escape"
+	body := []byte(`{"Response":{"InvocationTaskSet":[{"CommandId":"cmd-website1","InvocationId":"inv-1","TaskStatus":"FAILED","InstanceId":"ins-1","StartTime":"start","EndTime":"end","ErrorInfo":"` + secret + `","TaskResult":{"ExitCode":17,"Output":"` + secret + `","OutputUrl":"https://example.invalid/secret","Dropped":3,"ExecutionTime":"1.0"}}]}}`)
+
+	result, err := decodeCommandInvocationMetadata(body, "ap-beijing")
+	if err != nil {
+		t.Fatalf("decodeCommandInvocationMetadata: %v", err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	if strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), "OutputUrl") {
+		t.Fatalf("metadata leaked command output: %s", encoded)
+	}
+	if result.Status != "FAILED" || result.ExitCode != 17 || result.InvocationID != "inv-1" {
+		t.Fatalf("metadata = %+v", result)
+	}
+}
 
 func TestVerifyInstanceDeliveryWithOpsUsesFreshTATAgentAndHandshake(t *testing.T) {
 	now := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)

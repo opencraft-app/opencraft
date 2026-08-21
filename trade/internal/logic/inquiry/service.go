@@ -25,10 +25,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"strings"
 
+	"git.woa.com/wisp/mono/trade/internal/billingamount"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
+	"git.woa.com/wisp/mono/trade/internal/jifei"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/activity"
 	"git.woa.com/wisp/mono/trade/internal/region"
@@ -102,6 +105,7 @@ type QuoteResult struct {
 	BundleName     string  `json:"bundle_name"`
 	Price          string  `json:"price"`           // 单价（带小数字符串）
 	TotalCost      string  `json:"total_cost"`      // 折扣前总价
+	TaxPrice       string  `json:"tax_price"`       // 实付金额对应税额
 	RealTotalCost  string  `json:"real_total_cost"` // 实付总价（折扣后）
 	Currency       string  `json:"currency"`        // 通常 "CNY"
 	Discount       float64 `json:"discount"`        // policyDetail.total 拍平
@@ -288,7 +292,7 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	}
 
 	// 6. 拍平 QuoteResult（取首条 data）
-	return s.quoteResultFromPriceData(req, bundle, def, priceResp.Data[0]), nil
+	return s.quoteResultFromPriceData(req, bundle, def, priceResp.Data[0])
 }
 
 // QuoteBatch 执行批量新购询价。
@@ -402,7 +406,11 @@ func (s *Service) QuoteBatch(ctx context.Context, req QuoteBatchRequest) ([]*Quo
 
 	for i, d := range priceResp.Data {
 		resultIndex := jifeiIndexes[i]
-		results[resultIndex] = s.quoteResultFromPriceData(jifeiReqs[i], jifeiBundles[i], jifeiDefs[i], d)
+		result, err := s.quoteResultFromPriceData(jifeiReqs[i], jifeiBundles[i], jifeiDefs[i], d)
+		if err != nil {
+			return nil, err
+		}
+		results[resultIndex] = result
 	}
 	return results, nil
 }
@@ -559,7 +567,7 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 	}
 
 	// 4. 拼装 jifei goodsDetail（基于 buildGoodsDetail，附加 resourceId）
-	goodsDetail := buildGoodsDetail(def, QuoteRequest{
+	goodsDetail := s.buildJifeiGoodsDetail(def, QuoteRequest{
 		TimeSpan: req.TimeSpan,
 		TimeUnit: req.TimeUnit,
 		GoodsNum: req.GoodsNum,
@@ -596,12 +604,16 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 
 	// 6. 拍平 QuoteResult
 	d := priceResp.Data[0]
-	price, totalCost, realTotalCost := s.quoteAmountFields(d)
+	price, totalCost, taxPrice, realTotalCost, err := s.quoteAmountFields(d)
+	if err != nil {
+		return nil, err
+	}
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
 		Price:          price,
 		TotalCost:      totalCost,
+		TaxPrice:       taxPrice,
 		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
@@ -635,26 +647,74 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 	return result, nil
 }
 
-func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCost, realTotalCost string) {
+func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCost, taxPrice, realTotalCost string, err error) {
 	price = string(d.Price)
 	totalCost = string(d.TotalCost)
 	realTotalCost = string(d.RealTotalCost)
 
-	if !strings.EqualFold(s.currency, "USD") || d.HighPrecisionPrice == nil {
-		return price, totalCost, realTotalCost
+	if !strings.EqualFold(s.currency, "USD") {
+		return price, totalCost, "0", realTotalCost, nil
 	}
-	// 国际站高精度金额字段单位为 USD * 1e8；trade 对前端保持“分”单位契约，
-	// 因此这里除以 1e6 输出美分，前端 centsToYuan 再除以 100 后即为 USD 主币种。
-	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.PriceHigh)); v != "" {
-		price = v
+	if d.TaxDetail == nil {
+		return "", "", "", "", fmt.Errorf("inquiry: jifei GetPrice taxDetail is required for intl quote")
 	}
-	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.TotalCostHigh)); v != "" {
-		totalCost = v
+	taxRate := strings.TrimSpace(string(d.TaxDetail.TaxRate))
+	if d.HighPrecisionPrice != nil {
+		if v := strings.TrimSpace(string(d.HighPrecisionPrice.PriceHigh)); v != "" {
+			price = v
+		}
+		if v := strings.TrimSpace(string(d.HighPrecisionPrice.TotalCostHigh)); v != "" {
+			totalCost = v
+		}
+		if v := strings.TrimSpace(string(d.HighPrecisionPrice.RealTotalCostHigh)); v != "" {
+			realTotalCost = v
+		}
 	}
-	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.RealTotalCostHigh)); v != "" {
-		realTotalCost = v
+	price, err = quoteAmountCents("price", price, "0")
+	if err != nil {
+		return "", "", "", "", err
 	}
-	return price, totalCost, realTotalCost
+	totalCost, err = quoteAmountCents("totalCost", totalCost, "0")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	untaxedRealTotalCost, err := quoteAmountCents("realTotalCost", realTotalCost, "0")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	realTotalCost, err = quoteAmountCents("realTotalCost", realTotalCost, taxRate)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	taxPrice, err = subtractQuoteCents(realTotalCost, untaxedRealTotalCost)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return price, totalCost, taxPrice, realTotalCost, nil
+}
+
+func quoteAmountCents(field, rawAmount, taxRate string) (string, error) {
+	cents, err := billingamount.TaxInclusiveCents(rawAmount, taxRate)
+	if err != nil {
+		return "", fmt.Errorf("inquiry: jifei GetPrice invalid %s=%q or taxRate=%q: %w", field, rawAmount, taxRate, err)
+	}
+	return cents, nil
+}
+
+func subtractQuoteCents(inclusive, untaxed string) (string, error) {
+	inclusiveCents, ok := new(big.Int).SetString(inclusive, 10)
+	if !ok {
+		return "", fmt.Errorf("inquiry: invalid tax-inclusive cents %q", inclusive)
+	}
+	untaxedCents, ok := new(big.Int).SetString(untaxed, 10)
+	if !ok {
+		return "", fmt.Errorf("inquiry: invalid untaxed cents %q", untaxed)
+	}
+	taxCents := new(big.Int).Sub(inclusiveCents, untaxedCents)
+	if taxCents.Sign() < 0 {
+		return "", fmt.Errorf("inquiry: tax-inclusive cents %q is less than untaxed cents %q", inclusive, untaxed)
+	}
+	return taxCents.String(), nil
 }
 
 func highPrecisionAmountToCents(raw string) string {
@@ -839,8 +899,16 @@ func (s *Service) buildPurchaseGetPriceItem(
 		// Action 字段不传：jifei PDF《下单接口》line 173 明示「有 categoryid 则不用传 action」，
 		// trade 已通过 GoodsCategoryID 区分 purchase/renew/modify 场景；同时传 action + categoryId 会被
 		// jifei 现网拒回 `returnCode=100001 param error[action: is invalid]`（v1.7.x B17 修复）。
-		GoodsDetail: buildGoodsDetail(def, req),
+		GoodsDetail: s.buildJifeiGoodsDetail(def, req),
 	}, nil
+}
+
+func (s *Service) buildJifeiGoodsDetail(def *store.BundleDefinition, req QuoteRequest) map[string]interface{} {
+	goodsDetail := buildGoodsDetail(def, req)
+	if s.deps.SiteKind == "intl" {
+		jifei.AddIntlPointOfSale(goodsDetail)
+	}
+	return goodsDetail
 }
 
 func (s *Service) quoteResultFromPriceData(
@@ -848,13 +916,17 @@ func (s *Service) quoteResultFromPriceData(
 	bundle *ctlclient.BundleDetail,
 	def *store.BundleDefinition,
 	d jifeiclient.GetPriceData,
-) *QuoteResult {
-	price, totalCost, realTotalCost := s.quoteAmountFields(d)
+) (*QuoteResult, error) {
+	price, totalCost, taxPrice, realTotalCost, err := s.quoteAmountFields(d)
+	if err != nil {
+		return nil, err
+	}
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
 		Price:          price,
 		TotalCost:      totalCost,
+		TaxPrice:       taxPrice,
 		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
@@ -887,7 +959,7 @@ func (s *Service) quoteResultFromPriceData(
 	if result.GoodsNum == 0 {
 		result.GoodsNum = req.GoodsNum
 	}
-	return result
+	return result, nil
 }
 
 // buildGoodsDetail 把 BundleDefinition 的元数据 + 用户入参展平成 jifei goodsDetail map。
@@ -946,24 +1018,25 @@ func (s *Service) quoteDianshi(
 		return nil, fmt.Errorf("inquiry: dianshi client not configured (ActivityResolver injected without DianshiClient)")
 	}
 
-	// 2026-06-25 用户拍板：点石活动切到正式形态，不再带 preview / 顶层 uin
-	// （详见 dianshiclient.GetPriceRequest 字段说明）。req.Uin 仍保留在
-	// QuoteRequest 中用于 placeOrderDianshi 端 DoGoodsRequest.Uin 与 check_sum 计算。
+	// preview / uin 由 dianshiclient 按 DIANSHI_PREVIEW 决定是否写入出向 para：
+	// preview=0（正式形态）两者都不出现；preview=1（KR 联调）点石强校验顶层 uin。
+	// 这里无条件透传 req.Uin（已由 shadow 反查回填），client 侧做最终裁剪。
 	priceReq := &dianshiclient.GetPriceRequest{
 		ActivityID: mapping.ActivityID,
+		Uin:        req.Uin,
 		Goods: []dianshiclient.GetPriceGoodsItem{
 			{
 				ActID: mapping.ActID,
 				// preference_param 4 字段拼装来源（联调期实测推翻设计稿 §5.1 "固定 {}"）：
 				//   - regionId       int  ：trade 端 region.Resolve() 映射的 RegionID（s.region 已缓存）
-				//   - timeSpanUnit   str  ：仅启航套餐询价使用用户请求周期（如 1m）展示原价；
-				//                            其他点石套餐仍使用 trade_bundle_activity.time_span_unit
+				//   - timeSpanUnit   str  ：启航询价、国际站启航 AI 询价使用用户请求周期（如 1m）；
+				//                            其他点石询价使用 trade_bundle_activity.time_span_unit
 				//   - subProductCode str  ：trade_bundle_definition.sub_product_code（同 jifei 路径同源）
 				//   - bundleId       str  ：mapping.BundleID（与 trade_bundle_activity.bundle_id 同源）
 				// 缺任一字段点石返 returnCode=1100109 缺少参数 / 1100105 商品ID不存在。
 				PreferenceParam: map[string]interface{}{
 					"regionId":       s.region.RegionID,
-					"timeSpanUnit":   dianshiInquiryTimeSpanUnit(req, mapping),
+					"timeSpanUnit":   dianshiInquiryTimeSpanUnit(req, mapping, s.deps.SiteKind),
 					"subProductCode": def.SubProductCode,
 					"bundleId":       mapping.BundleID,
 				},
@@ -982,13 +1055,17 @@ func (s *Service) quoteDianshi(
 	}
 
 	d := resp.PriceItems[0]
+	price, totalCost, realTotalCost, err := dianshiAmountFields(d)
+	if err != nil {
+		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice bundleId=%s: %w", req.BundleID, err)
+	}
 
 	// 拍平为 QuoteResult（外部观察不到与 jifei 路径的差异，Q5 拍板：不暴露 source 字段）。
 	//
 	// 字段映射（点石 .tmp/点石询价 协议样例 → jifei QuoteResult）：
-	//   - data[].price       → Price（单价，pent=分*1，与 jifei 同单位）
-	//   - data[].total_cost  → TotalCost（折扣前总价）
-	//   - data[].real_cost   → RealTotalCost（实付总价；点石 real_cost 已是折扣后金额）
+	//   - data[].price       → Price（按 amount_unit 归一化为分/美分）
+	//   - data[].total_cost  → TotalCost（按 amount_unit 归一化为分/美分）
+	//   - data[].real_cost   → RealTotalCost（按 amount_unit 归一化为分/美分）
 	//   - data[].currency    → Currency（点石协议样例 "CNY"）
 	//   - data[].time_span   → TimeSpan
 	//   - data[].time_unit   → TimeUnit
@@ -999,9 +1076,10 @@ func (s *Service) quoteDianshi(
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
-		Price:          formatAmount(d.Price),
-		TotalCost:      formatAmount(d.TotalCost),
-		RealTotalCost:  formatAmount(d.RealCost),
+		Price:          price,
+		TotalCost:      totalCost,
+		TaxPrice:       "0",
+		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
 		TimeUnit:       d.TimeUnit,
@@ -1039,11 +1117,18 @@ func (s *Service) quoteDianshi(
 	return result, nil
 }
 
-const dianshiLaunchBundleID = "bundle_launch_01"
+const (
+	dianshiLaunchBundleID   = "bundle_launch_01"
+	dianshiLaunchAIBundleID = "bundle_launch_ai_01"
+)
 
-func dianshiInquiryTimeSpanUnit(req QuoteRequest, mapping *activity.Mapping) string {
-	if mapping != nil && mapping.BundleID != dianshiLaunchBundleID {
-		return mapping.TimeSpanUnit
+func dianshiInquiryTimeSpanUnit(req QuoteRequest, mapping *activity.Mapping, siteKind string) string {
+	if mapping != nil {
+		useRequestPeriod := mapping.BundleID == dianshiLaunchBundleID ||
+			(mapping.BundleID == dianshiLaunchAIBundleID && strings.EqualFold(strings.TrimSpace(siteKind), "intl"))
+		if !useRequestPeriod {
+			return mapping.TimeSpanUnit
+		}
 	}
 	unit := strings.ToLower(strings.TrimSpace(req.TimeUnit))
 	if unit == "" {
@@ -1067,10 +1152,27 @@ func parseDianshiPolicyTotal(raw json.RawMessage) (float64, bool) {
 	return detail.Total, true
 }
 
-// formatAmount 把点石返的整数金额（pent=分）转字符串保持与 jifei Price/TotalCost 同源
-// 表现（jifei 这两个字段是 json.Number，trade 透传为字符串）。
-func formatAmount(v int64) string {
-	return strconvFormatInt(v)
+// dianshiAmountFields 按点石响应 amount_unit 把三个金额统一归一化为分/美分：
+//   - pent：点石返回值已经是分，原样输出；
+//   - microPent：点石国际站返回值是主币种 * 1e8，除以 1e6 后得到美分；
+//   - 其他单位：拒绝输出，避免未知倍率的价格被前端按分二次解释。
+//
+// 转换复用普通计费询价的精确十进制缩放，不经过 float64。
+func dianshiAmountFields(d dianshiclient.PriceItem) (price, totalCost, realTotalCost string, err error) {
+	price = strconvFormatInt(d.Price)
+	totalCost = strconvFormatInt(d.TotalCost)
+	realTotalCost = strconvFormatInt(d.RealCost)
+
+	switch strings.ToLower(strings.TrimSpace(d.AmountUnit)) {
+	case "pent":
+		return price, totalCost, realTotalCost, nil
+	case "micropent":
+		return highPrecisionAmountToCents(price),
+			highPrecisionAmountToCents(totalCost),
+			highPrecisionAmountToCents(realTotalCost), nil
+	default:
+		return "", "", "", fmt.Errorf("unsupported amount_unit %q", d.AmountUnit)
+	}
 }
 
 // strconvFormatInt 是不引入 strconv import 的简易实现（避免污染 service.go 顶部 import 集；

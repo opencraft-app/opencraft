@@ -26,6 +26,7 @@ type Options struct {
 	// Usage 为 nil 表示不计量，请求路径不需要额外判空。
 	Usage  *usage.Meter
 	Logger *log.Logger
+	Auth   AuthOptions
 }
 
 type SiteHandler struct {
@@ -35,6 +36,7 @@ type SiteHandler struct {
 	origin       origin.Fetcher
 	usage        *usage.Meter
 	logger       *log.Logger
+	auth         AuthOptions
 }
 
 func NewSiteHandler(opts Options) *SiteHandler {
@@ -49,6 +51,7 @@ func NewSiteHandler(opts Options) *SiteHandler {
 		origin:       opts.Origin,
 		usage:        opts.Usage,
 		logger:       logger,
+		auth:         opts.Auth,
 	}
 }
 
@@ -57,6 +60,20 @@ func NewSiteHandler(opts Options) *SiteHandler {
 // 网关不再保留任何命名空间：站点是纯静态托管，没有需要与页面同源的服务端接口，
 // 保留前缀只会白白占用用户的路径。所有路径一视同仁地走候选 key 回源，命不中就 404。
 func (h *SiteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.auth.Required {
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+	}
+	if h.auth.Required {
+		if h.handleAuthPath(w, r) {
+			return
+		}
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			if !h.authorizeSiteRequest(w, r) {
+				return
+			}
+		}
+	}
 	h.serveStatic(w, r)
 }
 
@@ -202,7 +219,12 @@ func (h *SiteHandler) writeSiteNotFound(w http.ResponseWriter, r *http.Request, 
 	defer obj.Body.Close()
 
 	w.Header().Set("Content-Type", contentTypeOrDefault(obj.ContentType, "text/html; charset=utf-8"))
-	w.Header().Set("Cache-Control", "no-cache")
+	if h.auth.Required {
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	w.WriteHeader(http.StatusNotFound)
 	if r.Method != http.MethodHead {
 		_, _ = io.Copy(w, obj.Body)
@@ -214,7 +236,12 @@ func (h *SiteHandler) writeObject(w http.ResponseWriter, r *http.Request, key st
 
 	header := w.Header()
 	header.Set("Content-Type", contentTypeOrDefault(obj.ContentType, "application/octet-stream"))
-	header.Set("Cache-Control", cacheControlFor(key, obj.CacheControl))
+	if h.auth.Required {
+		header.Set("Cache-Control", "private, no-store")
+		header.Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+	} else {
+		header.Set("Cache-Control", cacheControlFor(key, obj.CacheControl))
+	}
 	if obj.ETag != "" {
 		header.Set("ETag", obj.ETag)
 	}
@@ -282,7 +309,9 @@ func etagMatches(ifNoneMatch string, etag string) bool {
 
 func writeErrorPage(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"+
 		"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"+

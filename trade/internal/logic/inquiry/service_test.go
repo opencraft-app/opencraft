@@ -226,6 +226,23 @@ func stdJifeiPriceResp() *jifeiclient.GetPriceResponse {
 	}
 }
 
+func stdIntlJifeiPriceResp() *jifeiclient.GetPriceResponse {
+	return &jifeiclient.GetPriceResponse{Data: []jifeiclient.GetPriceData{{
+		Currency:       "USD",
+		TimeUnit:       "m",
+		TimeSpan:       1,
+		GoodsNum:       1,
+		ProductCode:    "p_lighthouse",
+		SubProductCode: "sp_linux_small",
+		Pid:            1234,
+		PolicyDetail:   &jifeiclient.PolicyDetail{Total: 0.9},
+		TaxDetail:      &jifeiclient.TaxDetail{TaxRate: "0"},
+		HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{
+			PriceHigh: "3900000000", TotalCostHigh: "3900000000", RealTotalCostHigh: "3510000000",
+		},
+	}}}
+}
+
 // ============================================================================
 // happy path
 // ============================================================================
@@ -322,9 +339,18 @@ func TestQuoteBatch_CallsJifeiOnceAndMatchesPricesByRequestOrder(t *testing.T) {
 			}
 		}
 		return &jifeiclient.GetPriceResponse{Data: []jifeiclient.GetPriceData{
-			{Price: "65.00", TotalCost: "65.00", RealTotalCost: "65.00", Currency: "USD", Pid: 3003},
-			{Price: "12.00", TotalCost: "12.00", RealTotalCost: "12.00", Currency: "USD", Pid: 1001},
-			{Price: "23.00", TotalCost: "23.00", RealTotalCost: "23.00", Currency: "USD", Pid: 2002},
+			{
+				Currency: "USD", Pid: 3003, TaxDetail: &jifeiclient.TaxDetail{TaxRate: "0.07"},
+				HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{PriceHigh: "650000000", TotalCostHigh: "650000000", RealTotalCostHigh: "650000000"},
+			},
+			{
+				Currency: "USD", Pid: 1001, TaxDetail: &jifeiclient.TaxDetail{TaxRate: "0.10"},
+				HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{PriceHigh: "1200000000", TotalCostHigh: "1200000000", RealTotalCostHigh: "1200000000"},
+			},
+			{
+				Currency: "USD", Pid: 2002, TaxDetail: &jifeiclient.TaxDetail{TaxRate: "0"},
+				HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{PriceHigh: "2300000000", TotalCostHigh: "2300000000", RealTotalCostHigh: "2300000000"},
+			},
 		}}, nil
 	}}
 	svc := New(Deps{CTLClient: ctl, BundleStore: bs, JifeiClient: jc, SiteKind: "intl"})
@@ -345,22 +371,28 @@ func TestQuoteBatch_CallsJifeiOnceAndMatchesPricesByRequestOrder(t *testing.T) {
 	if calls := jc.getPriceCalls.Load(); calls != 1 {
 		t.Fatalf("GetPrice calls = %d, want 1", calls)
 	}
+	for _, item := range jc.lastGetPriceArgs.ResInfo {
+		assertIntlPointOfSale(t, item.GoodsDetail)
+	}
 	if len(got) != 3 {
 		t.Fatalf("QuoteBatch len = %d, want 3", len(got))
 	}
 	want := []struct {
 		bundleID string
 		price    string
+		taxPrice string
+		realCost string
 		pid      int64
 	}{
-		{"bundle_voyage", "65.00", 3003},
-		{"bundle_launch", "12.00", 1001},
-		{"bundle_cruise", "23.00", 2002},
+		{"bundle_voyage", "650", "46", "696", 3003},
+		{"bundle_launch", "1200", "120", "1320", 1001},
+		{"bundle_cruise", "2300", "0", "2300", 2002},
 	}
 	for i, w := range want {
-		if got[i].BundleID != w.bundleID || got[i].Price != w.price || got[i].Pid != w.pid {
-			t.Fatalf("QuoteBatch[%d] = {BundleID:%q Price:%q Pid:%d}, want {BundleID:%q Price:%q Pid:%d}",
-				i, got[i].BundleID, got[i].Price, got[i].Pid, w.bundleID, w.price, w.pid)
+		if got[i].BundleID != w.bundleID || got[i].Price != w.price || got[i].TaxPrice != w.taxPrice || got[i].RealTotalCost != w.realCost || got[i].Pid != w.pid {
+			t.Fatalf("QuoteBatch[%d] = {BundleID:%q Price:%q TaxPrice:%q RealTotalCost:%q Pid:%d}, want {BundleID:%q Price:%q TaxPrice:%q RealTotalCost:%q Pid:%d}",
+				i, got[i].BundleID, got[i].Price, got[i].TaxPrice, got[i].RealTotalCost, got[i].Pid,
+				w.bundleID, w.price, w.taxPrice, w.realCost, w.pid)
 		}
 	}
 }
@@ -781,7 +813,7 @@ func TestQuote_IntlBillingOpenRetryFailureUsesUserShadowIdentity(t *testing.T) {
 		},
 	}
 	jifei := &fakeJifei{getPriceFn: func(context.Context, *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
-		return stdJifeiPriceResp(), nil
+		return stdIntlJifeiPriceResp(), nil
 	}}
 	svc := New(Deps{
 		CTLClient:    &fakeCTL{getBundleByIDFn: func(context.Context, string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
@@ -935,9 +967,9 @@ func TestQuoteRenew_HappyPath(t *testing.T) {
 	}}
 	bs := &fakeBundleStore{def: stdRenewDef()}
 	jc := &fakeJifei{getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
-		return stdJifeiPriceResp(), nil
+		return stdIntlJifeiPriceResp(), nil
 	}}
-	svc := New(Deps{CTLClient: ctl, BundleStore: bs, JifeiClient: jc})
+	svc := New(Deps{CTLClient: ctl, BundleStore: bs, JifeiClient: jc, SiteKind: "intl"})
 
 	got, err := svc.QuoteRenew(context.Background(), stdQuoteRenewReq())
 	if err != nil {
@@ -946,8 +978,8 @@ func TestQuoteRenew_HappyPath(t *testing.T) {
 	if got.BundleID != "bundle_linux_small" {
 		t.Errorf("BundleID = %q", got.BundleID)
 	}
-	if got.RealTotalCost != "35.10" {
-		t.Errorf("RealTotalCost = %q, want 35.10", got.RealTotalCost)
+	if got.RealTotalCost != "3510" {
+		t.Errorf("RealTotalCost = %q, want 3510", got.RealTotalCost)
 	}
 	if got.Pid != 1234 {
 		t.Errorf("Pid = %d, want 1234", got.Pid)
@@ -972,8 +1004,8 @@ func TestQuoteRenew_HappyPath(t *testing.T) {
 	if res.GoodsCategoryID != 100060 {
 		t.Errorf("GoodsCategoryID = %d, want 100060 (scene=renew)", res.GoodsCategoryID)
 	}
-	if res.Currency != "CNY" {
-		t.Errorf("Currency = %q, want CNY", res.Currency)
+	if res.Currency != "USD" {
+		t.Errorf("Currency = %q, want USD", res.Currency)
 	}
 	gd := res.GoodsDetail
 	if gd["resourceId"] != "lhpass-r1" {
@@ -992,6 +1024,7 @@ func TestQuoteRenew_HappyPath(t *testing.T) {
 	if gd["timeSpan"] != 1 || gd["timeUnit"] != "m" || gd["goodsNum"] != 1 {
 		t.Errorf("timeSpan/timeUnit/goodsNum mis-set in goodsDetail: %+v", gd)
 	}
+	assertIntlPointOfSale(t, gd)
 }
 
 // QuoteRenew 入参校验：ResourceID 必填新增；其余与 Quote 一致。

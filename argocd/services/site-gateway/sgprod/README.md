@@ -14,6 +14,12 @@ Platform values in `site-gateway-platform.env`:
 - `SITE_GATEWAY_COS_BUCKET`
 - `SITE_GATEWAY_COS_REGION=ap-singapore`
 - `SITE_GATEWAY_CTL_BASE_URL=http://ctl-api.ctl.svc.cluster.local`
+- `SITE_GATEWAY_AUTH_MODE=public`
+- `SITE_GATEWAY_AUTH_ISSUER`
+- `SITE_GATEWAY_AUTH_AUDIENCE`
+- `SITE_GATEWAY_AUTH_START_URL`
+- `SITE_GATEWAY_AUTH_PUBLIC_KEYS`
+- `SITE_GATEWAY_AUTH_SESSION_TTL=5m`
 
 Secret values in `site-gateway-secrets`:
 
@@ -26,18 +32,29 @@ all public reads go through site-gateway.
 
 ## Domain and TLS gate
 
+TLS lifecycle is platform-owned.
+The application does not create, update, or rotate that Secret.
+
 The root domain, wildcard host, and Singapore COS bucket are already set to their production values.
-The wildcard certificate must cover the exact wildcard host and must be imported into Tencent
-Cloud SSL.
+Do not sync while the release-managed image tag placeholder remains in `site-gateway-platform.env`.
+`SITE_GATEWAY_TLS_SECRET_NAME` is the stable Secret name used by the Ingress. The platform
+certificate automation owns the live `Opaque` Secret in the `ctl` namespace: it obtains/renews
+the wildcard certificate, imports it into Tencent Cloud SSL, and updates the live Secret's
+`qcloud_cert_id`. Certificate IDs must not be written to `argocd/**`.
 
-TLS lifecycle is platform-owned. The normal site-gateway Kustomize render only references the
-stable `site-gateway-wildcard-tls` Secret name; it does not create, update, or rotate that Secret.
-Before the first Argo CD sync, the platform owner must provision the Secret in namespace `ctl`
-with the Tencent Cloud SSL `qcloud_cert_id`. Certificate renewal and rotation must update that
-existing Secret through the platform TLS workflow, independently of site-gateway releases.
+The wildcard certificate must cover the exact wildcard host. Before production sync, verify that
+the platform automation has created `site-gateway-wildcard-tls` and that the qcloud Ingress
+controller can read it. Certificate rotation may change the Tencent Cloud certificate ID without
+any GitOps or application change.
+The normal site-gateway Kustomize render only references the stable Secret name; it does not
+create, update, or rotate that Secret. Before the first Argo CD sync, the platform owner must
+provision the Secret in namespace `ctl` through the platform TLS workflow. Certificate renewal
+and rotation update that existing Secret independently of site-gateway releases.
 
-Do not sync while the release-managed image tag placeholder remains. Before syncing a newly
-created environment, also verify that the platform-owned TLS Secret already exists.
+The Singapore deployment is intentionally `SITE_GATEWAY_AUTH_MODE=public` and serves
+`*.lightvela.site` anonymously. A future domestic deployment for `*.lightvela.tech` must use
+`required` mode, a trusted Auth start URL, and public Ed25519 keys only; signing private keys
+stay in the Auth control plane.
 
 ## Release ownership
 

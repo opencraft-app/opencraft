@@ -2,6 +2,7 @@ package cloudbillingclient
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"reflect"
@@ -113,6 +114,22 @@ func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 	}
 }
 
+func TestCreatePayURLParamsAllowsZeroAmountChargePay(t *testing.T) {
+	params, err := createPayURLParams(&CreatePayURLRequest{
+		OrderIDs:     []string{"20260820019012978588001"},
+		ChargeAmount: 0,
+		PayScene:     "credit_card",
+		PayOption:    "chargePay",
+		Application:  "intlSaaSLightvela",
+	})
+	if err != nil {
+		t.Fatalf("createPayURLParams: %v", err)
+	}
+	if got, ok := params["ChargeAmount"]; !ok || got != int64(0) {
+		t.Fatalf("ChargeAmount = %#v, present = %t; want int64(0)", got, ok)
+	}
+}
+
 func TestDescribeOrderListParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 	params, err := describeOrderListParams(&DescribeOrderListRequest{
 		OrderIDs: []string{" 20260813002021864858631 ", ""},
@@ -162,7 +179,7 @@ func TestDescribeOrderListDecodesNestedOrderInfos(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"Response":{"TotalCount":"1","Data":[{"BigOrderId":"20260813002021864858621","OrderInfos":[{"OrderId":"20260813002021864858631","RealTotalCost":"","PriceDetail":"{\"realTotalCost\":650000000,\"highPrecisionPrice\":{\"realTotalCostHigh\":\"650000001\"}}"}]}],"RequestId":"req-order-1"}}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"Response":{"TotalCount":"1","Data":[{"BigOrderId":"20260813002021864858621","OrderInfos":[{"OrderId":"20260813002021864858631","RealTotalCost":"","PriceDetail":"{\"realTotalCost\":650000000,\"highPrecisionPrice\":{\"realTotalCostHigh\":\"650000001\"},\"taxDetail\":{\"taxRate\":\"0.07\"}}"}]}],"RequestId":"req-order-1"}}`)),
 				Request:    req,
 			}, nil
 		}),
@@ -183,8 +200,44 @@ func TestDescribeOrderListDecodesNestedOrderInfos(t *testing.T) {
 		t.Fatalf("response = %+v", resp)
 	}
 	if got := resp.Orders[0]; got.OrderID != "20260813002021864858631" ||
-		got.PriceDetailHighPrecisionRealTotalCost != "650000001" {
+		got.PriceDetailHighPrecisionRealTotalCost != "650000001" || got.TaxRate != "0.07" {
 		t.Fatalf("order = %+v", got)
+	}
+}
+
+func TestDecodeOrderTaxDetail(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     json.RawMessage
+		want    string
+		wantErr bool
+	}{
+		{name: "object with string rate", raw: json.RawMessage(`{"taxRate":"0.07"}`), want: "0.07"},
+		{name: "object with numeric rate", raw: json.RawMessage(`{"taxRate":0.07}`), want: "0.07"},
+		{name: "encoded object string", raw: json.RawMessage(`"{\"taxRate\":\"0.07\"}"`), want: "0.07"},
+		{name: "zero rate", raw: json.RawMessage(`{"taxRate":0}`), want: "0"},
+		{name: "missing detail", wantErr: true},
+		{name: "missing rate", raw: json.RawMessage(`{}`), wantErr: true},
+		{name: "malformed rate", raw: json.RawMessage(`{"taxRate":{}}`), wantErr: true},
+		{name: "negative rate", raw: json.RawMessage(`{"taxRate":"-0.01"}`), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := decodeOrderTaxDetail(tt.raw)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("decodeOrderTaxDetail(%s) error = nil, want error", tt.raw)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decodeOrderTaxDetail(%s): %v", tt.raw, err)
+			}
+			if got != tt.want {
+				t.Fatalf("tax rate = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -197,24 +250,25 @@ func TestDecodeOrderPriceDetailOnlyUsesFallbackWhenHighPrecisionIsEmpty(t *testi
 	}{
 		{
 			name:     "ignore malformed fallback when high precision exists",
-			raw:      `{"realTotalCost":{},"highPrecisionPrice":{"realTotalCostHigh":"650000001"}}`,
+			raw:      `{"realTotalCost":{},"highPrecisionPrice":{"realTotalCostHigh":"650000001"},"taxDetail":{"taxRate":"0.07"}}`,
 			wantHigh: "650000001",
 		},
 		{
 			name:     "use numeric fallback when high precision is empty",
-			raw:      `{"realTotalCost":650000000,"highPrecisionPrice":{"realTotalCostHigh":""}}`,
+			raw:      `{"realTotalCost":650000000,"highPrecisionPrice":{"realTotalCostHigh":""},"taxDetail":{"taxRate":"0.07"}}`,
 			wantReal: "650000000",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotHigh, gotReal, err := decodeOrderPriceDetail(tt.raw)
+			gotHigh, gotReal, gotTaxRate, err := decodeOrderPriceDetail(tt.raw)
 			if err != nil {
 				t.Fatalf("decodeOrderPriceDetail: %v", err)
 			}
-			if gotHigh != tt.wantHigh || gotReal != tt.wantReal {
-				t.Fatalf("amounts = (%q, %q), want (%q, %q)", gotHigh, gotReal, tt.wantHigh, tt.wantReal)
+			if gotHigh != tt.wantHigh || gotReal != tt.wantReal || gotTaxRate != "0.07" {
+				t.Fatalf("decoded = (%q, %q, %q), want (%q, %q, %q)",
+					gotHigh, gotReal, gotTaxRate, tt.wantHigh, tt.wantReal, "0.07")
 			}
 		})
 	}

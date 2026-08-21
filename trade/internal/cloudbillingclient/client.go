@@ -189,6 +189,9 @@ func createPayURLParams(in *CreatePayURLRequest) (map[string]any, error) {
 		return nil, errors.New("CreatePayUrl OrderIds is required")
 	}
 	params := map[string]any{"OrderIds": orderIDs}
+	if in.ChargeAmount < 0 {
+		return nil, errors.New("CreatePayUrl ChargeAmount must be non-negative")
+	}
 	if in.ChargeAmount > 0 {
 		params["ChargeAmount"] = in.ChargeAmount
 	}
@@ -208,8 +211,8 @@ func createPayURLParams(in *CreatePayURLRequest) (map[string]any, error) {
 		params["PayScene"] = v
 	}
 	if v := strings.TrimSpace(in.PayOption); v != "" {
-		if strings.EqualFold(v, "chargePay") && in.ChargeAmount <= 0 {
-			return nil, errors.New("CreatePayUrl ChargeAmount must be > 0 when PayOption is chargePay")
+		if strings.EqualFold(v, "chargePay") {
+			params["ChargeAmount"] = in.ChargeAmount
 		}
 		params["PayOption"] = v
 	}

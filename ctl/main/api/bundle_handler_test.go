@@ -197,6 +197,7 @@ func TestDescribeBundles_LoggedIn_QuotesBackfilled(t *testing.T) {
 					BundleID:      "bundle_basic",
 					Price:         "9.90",
 					TotalCost:     "9.90",
+					TaxPrice:      "0.63",
 					RealTotalCost: "8.91",
 					Currency:      "CNY",
 					Discount:      0.9,
@@ -252,7 +253,7 @@ func TestDescribeBundles_LoggedIn_QuotesBackfilled(t *testing.T) {
 	if basic.Price == nil {
 		t.Fatalf("basic.Price: got nil, want filled")
 	}
-	if basic.Price.Price != 9.9 || basic.Price.RealTotalCost != 8.91 || basic.Price.Currency != "CNY" || basic.Price.Discount != 0.9 {
+	if basic.Price.Price != 9.9 || basic.Price.TaxPrice != 0.63 || basic.Price.RealTotalCost != 8.91 || basic.Price.Currency != "CNY" || basic.Price.Discount != 0.9 {
 		t.Fatalf("basic.Price unexpected: %+v", basic.Price)
 	}
 	if pro.Price != nil {
@@ -398,12 +399,13 @@ func TestBundleQuoteToPrice(t *testing.T) {
 		q := &tradeadapter.BundleQuote{
 			Price:         "9.90",
 			TotalCost:     "9.90",
+			TaxPrice:      "0.63",
 			RealTotalCost: "8.91",
 			Currency:      "CNY",
 			Discount:      0.9,
 		}
 		p := bundleQuoteToPrice(q)
-		if p == nil || p.Price != 9.9 || p.RealTotalCost != 8.91 || p.Currency != "CNY" || p.Discount != 0.9 {
+		if p == nil || p.Price != 9.9 || p.TaxPrice != 0.63 || p.RealTotalCost != 8.91 || p.Currency != "CNY" || p.Discount != 0.9 {
 			t.Fatalf("got %+v", p)
 		}
 	})
@@ -411,12 +413,13 @@ func TestBundleQuoteToPrice(t *testing.T) {
 		q := &tradeadapter.BundleQuote{
 			Price:         "not-a-number",
 			TotalCost:     "",
+			TaxPrice:      "invalid-tax",
 			RealTotalCost: "10",
 			Currency:      "CNY",
 			Discount:      1.0,
 		}
 		p := bundleQuoteToPrice(q)
-		if p == nil || p.Price != 0 || p.TotalCost != 0 || p.RealTotalCost != 10 {
+		if p == nil || p.Price != 0 || p.TotalCost != 0 || p.TaxPrice != 0 || p.RealTotalCost != 10 {
 			t.Fatalf("got %+v", p)
 		}
 	})

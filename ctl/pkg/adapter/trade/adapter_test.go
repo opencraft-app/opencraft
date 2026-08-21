@@ -489,6 +489,7 @@ func TestInquiryBatch_Success(t *testing.T) {
 					BundleID:      "bundle_basic_monthly",
 					Price:         "9.90",
 					TotalCost:     "9.90",
+					TaxPrice:      "0.69",
 					RealTotalCost: "9.90",
 					Currency:      "CNY",
 					Discount:      1.0,
@@ -542,7 +543,7 @@ func TestInquiryBatch_Success(t *testing.T) {
 	if result == nil || len(result.Prices) != 2 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if result.Prices[0].BundleID != "bundle_basic_monthly" || result.Prices[0].RealTotalCost != "9.90" {
+	if result.Prices[0].BundleID != "bundle_basic_monthly" || result.Prices[0].TaxPrice != "0.69" || result.Prices[0].RealTotalCost != "9.90" {
 		t.Fatalf("unexpected first quote: %+v", result.Prices[0])
 	}
 	if result.Prices[1].Discount != 0.9 || result.Prices[1].Currency != "CNY" {
