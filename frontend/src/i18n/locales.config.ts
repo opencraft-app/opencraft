@@ -4,38 +4,56 @@
  *
  * ## 为什么需要这个文件
  *
- * 重构前，locale 常量分散在 5 条互不 import 的镜像管线中：
+ * 重构前，locale 常量分散在 6 条互不 import 的镜像管线中：
  *   ① SPA / Vite 层      `src/lib/public-site-routing.ts`
  *   ② Next.js 层         `next-site/public-locale.ts`
  *   ③ i18next 资源层     `src/i18n/index.ts`
- *   ④ Node 脚本层        `scripts/sync-fumadocs-content.mjs`
+ *   ④ Node 脚本层        `scripts/sync-fumadocs-content.mjs` 等
  *   ⑤ SEO 校验层         `src/lib/seo-data.ts`
+ *   ⑥ 自动任务展示层     `agent-automations-panel.tsx`（2026-08 新增）
  *
  * 新增一个语种需要在 8 个文件中手工修改 45 处，其中多数漏改
  * **不会编译报错**，只会静默回退成英文/简体，或字体缺字。历史上
  * `scripts/subset-fonts.mjs` 就漏配了 `id-ID`（因印尼语是纯 ASCII
  * 而长期未被发现）。
  *
- * 本文件把语言集合收敛为**数据**，其余模块一律从这里派生。
+ * ## 数据与类型的分工
+ *
+ * - `locales.json`：**数据真源**。TS 与 Node 脚本（`.mjs`）都直接读它。
+ *   之所以用 JSON 而不是把数据写在本文件里：`.mjs` 无法 import `.ts`，
+ *   而 CI 使用的 Node 22.12 剥离 TS 类型仍需实验性 flag。JSON 是两条
+ *   管线唯一无摩擦的共享格式。
+ * - 本文件：**类型层与派生索引**。`LocaleCode` 等联合类型在此手写，
+ *   以获得字面量类型，从而让 `Record<LocaleCode, T>` 具备穷举保护。
+ *
+ * 两者的一致性由 `__tests__/locales.config.test.ts` 双向校验：
+ * JSON 多一个语种或联合类型少一个语种，测试都会失败。
  *
  * ## 新增一个语言版本的正确做法
  *
- * 1. 在 `LOCALE_DEFINITIONS` 中增加一条声明（本文件是唯一需要改的地方）。
- * 2. 运行 `pnpm i18n:extract` 生成字典骨架，补齐翻译。
- * 3. 运行 `pnpm check`；若有任何 `Record<LocaleCode, …>` 未补齐条目，
- *    TypeScript 会直接报错并指出位置。
+ * 1. 在 `locales.json` 增加一条数据。
+ * 2. 在本文件的 `LocaleCode` / `UrlLang` / `I18nDictKey` 联合类型中补上对应字面量。
+ * 3. 运行 `pnpm i18n:extract` 生成字典骨架，补齐翻译。
+ * 4. 运行 `pnpm check`；任何 `Record<LocaleCode, …>` 未补齐条目都会编译失败。
  *
  * ## 严禁的写法
  *
  * - 不要在其他文件中硬编码 locale 字面量（如 `'ja-JP'`、`'ja-jp'`）。
- * - 不要用带 fallback 的三元链或 `startsWith('zh')` 猜测语种分支；
+ * - 不要用带 fallback 的三元链、`startsWith('zh')` 猜测，或
+ *   `locale !== 'en-US' && locale !== 'id-ID'` 这类排除式判断；
  *   一律使用 `Record<LocaleCode, T>` 全量查表，让漏配在编译期暴露。
  *
  * @see wiki/prd-docs/2026-08-21-intl-locale-registry-es-ja-ko.md
  */
 
+import rawLocaleDefinitions from "./locales.json";
+
 /* ──────────────────────────────────────────────────────────────
  * 1. 类型定义
+ *
+ * 这些联合类型刻意手写而非从 JSON 派生：JSON 模块的字符串会被 TS 推断为
+ * `string`，无法提供字面量类型，也就无法支撑 `Record` 的穷举检查。
+ * 手写联合类型 = 显式声明「本项目支持哪些语种」，由测试保证与 JSON 同步。
  * ────────────────────────────────────────────────────────────── */
 
 /**
@@ -96,7 +114,12 @@ export type LocaleDefinition = {
   readonly docsFallbackPrefixes: readonly string[];
   /** 是否参与国际站 SEO URL 前缀与 hreflang。 */
   readonly seoPrefixed: boolean;
-  /** 是否在语言切换器中展示（可用于灰度未完成的语种）。 */
+  /**
+   * 是否在语言切换器中展示。
+   *
+   * 用于灰度：字典尚未翻译完成的语种应保持 `false`，避免用户选中后
+   * 看到大面积中文回退。
+   */
   readonly switcherVisible: boolean;
   /** CI 是否强制校验该语种字典无缺失翻译。 */
   readonly translationRequired: boolean;
@@ -109,143 +132,19 @@ export type LocaleDefinition = {
 };
 
 /* ──────────────────────────────────────────────────────────────
- * 2. 注册表本体 —— 新增语言只需在此增加一条
+ * 2. 数据装载
  * ────────────────────────────────────────────────────────────── */
 
-export const LOCALE_DEFINITIONS = [
-  {
-    code: "en-US",
-    urlLang: "en-us",
-    i18nKey: "en-US",
-    htmlLang: "en-US",
-    ogLocale: "en_US",
-    displayName: "English",
-    shortLabel: "EN",
-    docsSourcePrefix: "en",
-    docsFallbackPrefixes: [],
-    seoPrefixed: true,
-    switcherVisible: true,
-    translationRequired: true,
-    requiresFontFallback: false,
-  },
-  {
-    code: "zh-CN",
-    urlLang: "zh-cn",
-    i18nKey: "zh-CN",
-    htmlLang: "zh-CN",
-    ogLocale: "zh_CN",
-    displayName: "简体中文",
-    shortLabel: "中",
-    docsSourcePrefix: "",
-    docsFallbackPrefixes: [],
-    seoPrefixed: true,
-    switcherVisible: true,
-    translationRequired: true,
-    requiresFontFallback: false,
-  },
-  {
-    /* 国际站简体中文的 SEO 别名：URL 走 /zh-sg，文案复用 zh-CN 字典。 */
-    code: "zh-SG",
-    urlLang: "zh-sg",
-    i18nKey: "zh-CN",
-    htmlLang: "zh-SG",
-    ogLocale: "zh_SG",
-    displayName: "简体中文",
-    shortLabel: "简",
-    docsSourcePrefix: "global",
-    docsFallbackPrefixes: [],
-    seoPrefixed: true,
-    switcherVisible: true,
-    translationRequired: true,
-    requiresFontFallback: false,
-  },
-  {
-    code: "zh-Hant",
-    urlLang: "zh-hant",
-    i18nKey: "zh-Hant",
-    htmlLang: "zh-Hant",
-    ogLocale: "zh_TW",
-    displayName: "繁體中文",
-    shortLabel: "繁",
-    docsSourcePrefix: "global",
-    docsFallbackPrefixes: [],
-    seoPrefixed: true,
-    switcherVisible: true,
-    translationRequired: true,
-    requiresFontFallback: false,
-  },
-  {
-    code: "id-ID",
-    urlLang: "id-id",
-    i18nKey: "id-ID",
-    htmlLang: "id-ID",
-    ogLocale: "id_ID",
-    displayName: "Bahasa Indonesia",
-    shortLabel: "ID",
-    docsSourcePrefix: "id",
-    docsFallbackPrefixes: ["en", "global"],
-    seoPrefixed: true,
-    switcherVisible: true,
-    translationRequired: true,
-    requiresFontFallback: false,
-  },
-  {
-    /**
-     * 西语（面向拉美市场）。
-     *
-     * 采用 2 字母纯语言码 `es` 而非 `es-419` / `es-MX`：URL 前缀最短、
-     * SEO 兼容性最好、无数字前缀带来的路由与 CDN 风险。
-     * 已知取舍：不区分拉美与西班牙本土；未来若需西班牙本土版本，
-     * 新增 `es-ES` 条目即可（前缀匹配已按长度降序，不会被 `es` 抢占）。
-     */
-    code: "es",
-    urlLang: "es",
-    i18nKey: "es",
-    htmlLang: "es",
-    ogLocale: "es_ES",
-    displayName: "Español",
-    shortLabel: "ES",
-    docsSourcePrefix: "es",
-    docsFallbackPrefixes: ["en", "global"],
-    seoPrefixed: true,
-    switcherVisible: true,
-    translationRequired: true,
-    /* 主字体缺 ñÑ ¿¡，必须依赖拉丁字体回退栈。 */
-    requiresFontFallback: true,
-  },
-  {
-    code: "ja-JP",
-    urlLang: "ja-jp",
-    i18nKey: "ja-JP",
-    htmlLang: "ja-JP",
-    ogLocale: "ja_JP",
-    displayName: "日本語",
-    shortLabel: "JA",
-    docsSourcePrefix: "ja",
-    docsFallbackPrefixes: ["en", "global"],
-    seoPrefixed: true,
-    switcherVisible: true,
-    translationRequired: true,
-    /* 主字体不含平假名/片假名，必须依赖系统字体回退栈。 */
-    requiresFontFallback: true,
-  },
-  {
-    code: "ko-KR",
-    urlLang: "ko-kr",
-    i18nKey: "ko-KR",
-    htmlLang: "ko-KR",
-    ogLocale: "ko_KR",
-    displayName: "한국어",
-    shortLabel: "KO",
-    docsSourcePrefix: "ko",
-    docsFallbackPrefixes: ["en", "global"],
-    seoPrefixed: true,
-    switcherVisible: true,
-    translationRequired: true,
-    /* 主字体不含谚文，必须依赖系统字体回退栈。 */
-    requiresFontFallback: true,
-  },
-] as const satisfies readonly LocaleDefinition[];
+/**
+ * 全部 locale 定义，数据来自 `locales.json`。
+ *
+ * 这里的类型断言是**必要**的：JSON 模块会把字符串推断为 `string`，
+ * 而下游需要字面量类型。JSON 与联合类型的实际一致性由单元测试校验，
+ * 不依赖此处的断言。
+ */
+export const LOCALE_DEFINITIONS: readonly LocaleDefinition[] =
+  rawLocaleDefinitions as readonly LocaleDefinition[];
+
 
 /**
  * 历史遗留的短 URL 前缀别名，仅用于**解析**旧链接，不用于生成新链接。

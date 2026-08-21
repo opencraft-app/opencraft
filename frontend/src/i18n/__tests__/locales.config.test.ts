@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import rawLocales from "../locales.json";
 import {
   ALL_I18N_DICT_KEYS,
   ALL_LOCALE_CODES,
@@ -21,6 +22,77 @@ import {
   TRANSLATION_REQUIRED_DICT_KEYS,
   urlLangMatchCandidates,
 } from "../locales.config";
+
+/**
+ * 数据（locales.json）与类型层（locales.config.ts 手写联合类型）的
+ * 双向一致性校验。
+ *
+ * 这是本文件最重要的一组断言：因为 `LOCALE_DEFINITIONS` 使用了类型断言
+ * 把 JSON 转成字面量类型，编译期无法发现「JSON 加了语种但联合类型没加」
+ * 或反之。这些测试就是那道防线。
+ */
+describe("locales.json 与联合类型的一致性", () => {
+  /** 与 locales.config.ts 中 LocaleCode 联合类型逐字对应，需同步维护。 */
+  const EXPECTED_LOCALE_CODES = [
+    "en-US",
+    "zh-CN",
+    "zh-SG",
+    "zh-Hant",
+    "id-ID",
+    "es",
+    "ja-JP",
+    "ko-KR",
+  ] as const;
+
+  /** 与 UrlLang 联合类型逐字对应。 */
+  const EXPECTED_URL_LANGS = [
+    "en-us",
+    "zh-cn",
+    "zh-sg",
+    "zh-hant",
+    "id-id",
+    "es",
+    "ja-jp",
+    "ko-kr",
+  ] as const;
+
+  it("JSON 中的 code 集合与 LocaleCode 联合类型完全一致", () => {
+    expect([...ALL_LOCALE_CODES].sort()).toEqual([...EXPECTED_LOCALE_CODES].sort());
+  });
+
+  it("JSON 中的 urlLang 集合与 UrlLang 联合类型完全一致", () => {
+    expect([...ALL_URL_LANGS].sort()).toEqual([...EXPECTED_URL_LANGS].sort());
+  });
+
+  it("JSON 条目数与联合类型成员数一致（防止漏加/多加）", () => {
+    expect(rawLocales.length).toBe(EXPECTED_LOCALE_CODES.length);
+  });
+
+  it("每条 JSON 数据都包含全部必需字段且类型正确", () => {
+    for (const def of rawLocales) {
+      expect(typeof def.code, `code: ${def.code}`).toBe("string");
+      expect(typeof def.urlLang, `urlLang: ${def.code}`).toBe("string");
+      expect(typeof def.i18nKey, `i18nKey: ${def.code}`).toBe("string");
+      expect(typeof def.htmlLang, `htmlLang: ${def.code}`).toBe("string");
+      expect(typeof def.ogLocale, `ogLocale: ${def.code}`).toBe("string");
+      expect(typeof def.displayName, `displayName: ${def.code}`).toBe("string");
+      expect(typeof def.shortLabel, `shortLabel: ${def.code}`).toBe("string");
+      expect(typeof def.docsSourcePrefix, `docsSourcePrefix: ${def.code}`).toBe("string");
+      expect(Array.isArray(def.docsFallbackPrefixes), `docsFallbackPrefixes: ${def.code}`).toBe(true);
+      expect(typeof def.seoPrefixed, `seoPrefixed: ${def.code}`).toBe("boolean");
+      expect(typeof def.switcherVisible, `switcherVisible: ${def.code}`).toBe("boolean");
+      expect(typeof def.translationRequired, `translationRequired: ${def.code}`).toBe("boolean");
+      expect(typeof def.requiresFontFallback, `requiresFontFallback: ${def.code}`).toBe("boolean");
+    }
+  });
+
+  it("i18nKey 必须指向真实存在的字典语种", () => {
+    /* zh-SG 复用 zh-CN，因此 i18nKey 可以不等于 code，但必须是已登记的字典 key。 */
+    for (const def of LOCALE_DEFINITIONS) {
+      expect(ALL_I18N_DICT_KEYS, `${def.code} 的 i18nKey 未登记`).toContain(def.i18nKey);
+    }
+  });
+});
 
 describe("注册表自身一致性", () => {
   it("locale code 与 URL 前缀均无重复", () => {
@@ -149,6 +221,16 @@ describe("新增语种的已知约束", () => {
   it("新增语种配置了文档回落，避免正文缺失导致 404", () => {
     for (const code of ["ja-JP", "ko-KR", "es"] as const) {
       expect(localeDefinition(code).docsFallbackPrefixes.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("翻译未完成的语种不得在切换器中展示", () => {
+    /* 灰度约束：字典未翻译完成前 switcherVisible 必须为 false，
+       否则用户选中后会看到大面积中文回退。
+       待某语种翻译补齐并把 translationRequired 打开后，才允许展示。 */
+    for (const def of LOCALE_DEFINITIONS) {
+      if (def.translationRequired) continue;
+      expect(def.switcherVisible, `${def.code} 翻译未完成却已在切换器展示`).toBe(false);
     }
   });
 
