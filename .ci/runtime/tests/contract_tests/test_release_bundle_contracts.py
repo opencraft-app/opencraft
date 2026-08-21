@@ -452,7 +452,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
             deploy_kustomization["patches"],
         )
 
-        deploy_patch = yaml.safe_load((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        deploy_documents = list(
+            yaml.safe_load_all((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        )
+        deploy_config_map = next(
+            document for document in deploy_documents if document.get("kind") == "ConfigMap"
+        )
+        self.assertEqual(deploy_config_map["data"], data)
+
+        deploy_patch = next(
+            document for document in deploy_documents if document.get("kind") == "Deployment"
+        )
         token_env = next(
             env
             for env in deploy_patch["spec"]["template"]["spec"]["containers"][0]["env"]
