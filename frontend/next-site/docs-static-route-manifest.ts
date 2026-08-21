@@ -5,6 +5,7 @@ export const DOCS_RETIRED_ROUTE_SLUGS = {
   'zh-cn': [],
   'zh-sg': [],
   'zh-hant': [],
+  'id-id': [],
 } as const;
 
 export const DOCS_STATIC_ROUTE_SLUGS = {
@@ -12,4 +13,5 @@ export const DOCS_STATIC_ROUTE_SLUGS = {
   'zh-cn': DOCS_ROUTE_SLUGS['zh-cn'],
   'zh-sg': DOCS_ROUTE_SLUGS['zh-sg'],
   'zh-hant': DOCS_ROUTE_SLUGS['zh-hant'],
+  'id-id': DOCS_ROUTE_SLUGS['id-id'],
 } as const;

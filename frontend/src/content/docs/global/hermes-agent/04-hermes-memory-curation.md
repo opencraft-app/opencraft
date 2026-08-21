@@ -254,7 +254,7 @@ hermes journey edit <node>    # 用 $EDITOR 打开编辑
 - 独立云端实例，24×7 在线，`MEMORY.md`/`USER.md`/SQLite 会话档案永久驻留；
 - 后台自省循环持续运行，Agent 真正做到"你不用它的时候也在成长"；
 - 数据仅存于你的专属服务器；
-- 手机、笔记本、Telegram、飞书……多渠道进来都是同一个"认识你的 Agent"。
+- 手机、笔记本、Telegram、Slack、飞书……多渠道进来都是同一个"认识你的 Agent"。
 
 Hermes 把"记忆不是越多越好"的哲学做到了极致；**LightVela 让这套哲学真的每一天都在你身边生效。** 这才是"越用越懂你"这句 slogan 兑现的方式。
 

@@ -11,6 +11,7 @@ patches:
   - path: delete-default-serviceaccount.yaml
   - path: delete-lightclaw-auth-internal.yaml
   - path: patch-oauth-registration.yaml
+  - path: patch-shadow-internal-token.yaml
 
 generators:
   - ksops-secret-generator.yaml

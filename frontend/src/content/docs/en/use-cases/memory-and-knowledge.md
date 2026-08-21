@@ -1,14 +1,10 @@
 # How to Manage Long-Term Memory and Personal Knowledge with an Agent
 
-Useful knowledge has two very different shapes. Some information should remain stable because it describes you and the way you work; other information belongs in documents, notes, and project material that changes over time. Treating both as the same thing makes an assistant less useful.
-
-LightVela gives a Hermes Agent both long-term memory and cloud file storage. Memory helps it retain durable context across conversations; Cloud Storage gives you a place to keep working material and reference files. Used together, they make a personal AI agent easier to brief, revisit, and improve.
-
-![LightVela Agent Memory and personal knowledge](../images/use-case-agent-memory.webp)
-
 ## Summary
 
 **Personal knowledge comes in two shapes that must be managed separately: stable information about who you are and how you work belongs in long-term memory, while evolving documents, notes, and project material belong in cloud storage.** Managing both as one thing costs you stability and findability at the same time. On LightVela, memory preserves context across conversations — the console's memory page shows what has been retained across separate Memory and User Profile tabs and lets you adjust the capacity limit, while additions and removals happen mainly through conversation with Hermes. Cloud storage is the file workspace, supporting upload, create, organise, download, rename, and delete, with a 1 GB per-file limit. One rule to hold to: never write passwords, keys, or unnecessary sensitive data into long-term memory.
+
+![LightVela Agent Memory and personal knowledge](../images/use-case-agent-memory.webp)
 
 ## Who this is for
 

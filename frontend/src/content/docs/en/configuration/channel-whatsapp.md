@@ -120,6 +120,8 @@ After access succeeds, the WhatsApp bot can receive and reply to basic text mess
 
 - [Configure Channel - Discord](./channel-discord.md) — Community operations and developer communities
 
+- [Configure Channel - Slack](./channel-slack.md) — Team collaboration, workspace notifications, and channel workflows
+
 - [Configure Channel - QQ](./channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
 
 - [Configure Channel - WeCom](./channel-wecom.md) — Enterprise internal collaboration and office scenarios

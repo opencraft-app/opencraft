@@ -82,16 +82,21 @@ func TestGetActivityPrice_Success(t *testing.T) {
 	c := New(srv.URL, "", Options{
 		EventIDProvider: newFixedEventID(123456789),
 		NowProvider:     newFixedClock(),
+		Preview:         1,
 	})
-	got, err := c.GetActivityPrice(context.Background(), &GetPriceRequest{
+	request := &GetPriceRequest{
 		ActivityID: 164273735574009,
 		Goods: []GetPriceGoodsItem{{
 			ActID:           1862147936410255,
 			PreferenceParam: map[string]interface{}{},
 		}},
-	})
+	}
+	got, err := c.GetActivityPrice(context.Background(), request)
 	if err != nil {
 		t.Fatalf("GetActivityPrice err=%v", err)
+	}
+	if request.Preview != 0 {
+		t.Fatalf("request Preview=%d, want 0", request.Preview)
 	}
 	if len(got.PriceItems) != 1 {
 		t.Fatalf("PriceItems len=%d want 1", len(got.PriceItems))
@@ -117,6 +122,13 @@ func TestGetActivityPrice_Success(t *testing.T) {
 	if sent.Interface == nil || sent.Interface.InterfaceName != InterfaceNameActivityGetPrice {
 		t.Errorf("interfaceName missing or wrong: %+v", sent.Interface)
 	}
+	var para map[string]interface{}
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if got := para["preview"]; got != float64(1) {
+		t.Fatalf("preview = %#v, want 1", got)
+	}
 }
 
 func TestDoGoods_Success(t *testing.T) {
@@ -137,9 +149,10 @@ func TestDoGoods_Success(t *testing.T) {
 	c := New("", srv.URL, Options{
 		EventIDProvider: newFixedEventID(966200587),
 		NowProvider:     newFixedClock(),
+		Preview:         1,
 	})
 	checksum := CalcCheckSum("815836472", 164273735574009, "demo_secret")
-	got, err := c.DoGoods(context.Background(), &DoGoodsRequest{
+	request := &DoGoodsRequest{
 		Uin:        "815836472",
 		ActivityID: 164273735574009,
 		Originate:  OriginateLightvelaTrade,
@@ -150,9 +163,13 @@ func TestDoGoods_Success(t *testing.T) {
 				"externalUserId": "usr_e2e_test_01",
 			},
 		}},
-	})
+	}
+	got, err := c.DoGoods(context.Background(), request)
 	if err != nil {
 		t.Fatalf("DoGoods err=%v", err)
+	}
+	if request.Preview != 0 {
+		t.Fatalf("request Preview=%d, want 0", request.Preview)
 	}
 	if len(got.DealNames) != 1 || got.DealNames[0] != "20240809794064572803151" {
 		t.Errorf("DealNames=%v", got.DealNames)
@@ -182,6 +199,122 @@ func TestDoGoods_Success(t *testing.T) {
 	// preference_param 内含 externalUserId
 	if !strings.Contains(string(sent.Interface.Para), `"externalUserId":"usr_e2e_test_01"`) {
 		t.Errorf("para missing externalUserId: %s", string(sent.Interface.Para))
+	}
+	var para map[string]interface{}
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if got := para["preview"]; got != float64(1) {
+		t.Fatalf("preview = %#v, want 1", got)
+	}
+}
+
+func TestGetActivityPrice_DefaultPreviewOmitted(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"returnCode":0,"returnMessage":"ok","data":[]}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	request := &GetPriceRequest{
+		ActivityID: 1,
+		Preview:    1,
+		Goods:      []GetPriceGoodsItem{{ActID: 1, PreferenceParam: map[string]interface{}{}}},
+	}
+	if _, err := c.GetActivityPrice(context.Background(), request); err != nil {
+		t.Fatalf("GetActivityPrice err=%v", err)
+	}
+	if request.Preview != 1 {
+		t.Fatalf("request Preview=%d, want 1", request.Preview)
+	}
+
+	var sent envelope
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("decode sent body: %v", err)
+	}
+	var para map[string]interface{}
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if _, ok := para["preview"]; ok {
+		t.Fatalf("preview unexpectedly present: %s", sent.Interface.Para)
+	}
+	if _, ok := para["uin"]; ok {
+		t.Fatalf("uin unexpectedly present without preview: %s", sent.Interface.Para)
+	}
+}
+
+// TestGetActivityPrice_PreviewCarriesUin 锁定点石 preview 模式的成对约束：
+// preview=1 时顶层 uin 必须出现在 para（缺 uin 点石返 returnCode=1100105 "商品ID不存在"，
+// 见 commit 68aa66c73 与 2026-08-19 KR 联调实测）。
+func TestGetActivityPrice_PreviewCarriesUin(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"returnCode":0,"returnMessage":"ok","data":[]}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "", Options{Preview: 1})
+	request := &GetPriceRequest{
+		ActivityID: 1,
+		Uin:        "450860000002",
+		Goods:      []GetPriceGoodsItem{{ActID: 1, PreferenceParam: map[string]interface{}{}}},
+	}
+	if _, err := c.GetActivityPrice(context.Background(), request); err != nil {
+		t.Fatalf("GetActivityPrice err=%v", err)
+	}
+
+	var sent envelope
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("decode sent body: %v", err)
+	}
+	var para map[string]interface{}
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if got := para["preview"]; got != float64(1) {
+		t.Fatalf("preview = %#v, want 1", got)
+	}
+	if got := para["uin"]; got != "450860000002" {
+		t.Fatalf("uin = %#v, want 450860000002", got)
+	}
+}
+
+func TestDoGoods_DefaultPreviewOmitted(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"returnCode":0,"returnMessage":"ok","data":{"deal_names":["d"],"big_deal_no":"b"}}`))
+	}))
+	defer srv.Close()
+
+	c := New("", srv.URL)
+	request := &DoGoodsRequest{
+		Uin:        "1",
+		ActivityID: 1,
+		Preview:    1,
+		Goods:      []DoGoodsItem{{ActID: 1, PreferenceParam: map[string]interface{}{}}},
+	}
+	if _, err := c.DoGoods(context.Background(), request); err != nil {
+		t.Fatalf("DoGoods err=%v", err)
+	}
+	if request.Preview != 1 {
+		t.Fatalf("request Preview=%d, want 1", request.Preview)
+	}
+
+	var sent envelope
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("decode sent body: %v", err)
+	}
+	var para map[string]interface{}
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if _, ok := para["preview"]; ok {
+		t.Fatalf("preview unexpectedly present: %s", sent.Interface.Para)
 	}
 }
 

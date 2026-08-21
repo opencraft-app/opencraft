@@ -70,6 +70,16 @@ type Config struct {
 	JifeiBillingAppID     string // jifei 计费网关分配的 appid
 	JifeiBillingAppSecret string // jifei 计费网关分配的 appSecret（HMAC-SHA256 签名密钥；通过 SSM + sops 注入）
 
+	// 国际站获取支付链接走计费 CloudAPI CreatePayUrl；请求密钥由 user/auth
+	// 按订单用户即时签发，这里只保留 Billing endpoint 与 CloudLadder 路由配置。
+	BillingCloudAPIRegion                string
+	BillingCloudAPIEndpoint              string
+	BillingCloudAPICloudLadderGatewayURL string
+	BillingCloudAPICloudLadderRouteID    string
+	BillingCloudAPICloudLadderHMACSecret string
+	BillingCloudAPIXQCloudUserID         string
+	BillingCloudAPIPayRedirectURL        string
+
 	// Q58 出口 framework 双层结构必填项；Q60 dispatcher 入参三段式校验前缀。
 	JifeiComponentName      string
 	JifeiProtocolVersion    string
@@ -79,12 +89,19 @@ type Config struct {
 	// `LIGHTVELA_SITE_KIND` 注入，缺省 / 非法值兜底为 "cn"。详见上方包级注释。
 	SiteKind string
 
+	// ShadowMockEnabled 仅供联调测试环境使用。启用后 cmd/trade 注入 in-process
+	// shadow mock client，避免未部署 shadow / 未写真实绑定时阻塞询价和下单。
+	ShadowMockEnabled bool
+	ShadowMockUin     string
+	ShadowMockAppID   string
+
 	// RegionOverride 是 trade 出向 jifei 协议字段 region 的运行时 override（北京 2 预发布
 	// 接入 2026-06-12 新增）。取值为腾讯云 region 字面量（kebab-case 全小写），例：
 	//   - "ap-guangzhou" → 1 / 100001 / "广州"
 	//   - "ap-beijing"   → 8 / 800001 / "北京"
 	//   - "ap-shanghai"  → 4 / 400001 / "上海"
 	//   - "ap-singapore" → 9 / 900001 / "Singapore"
+	//   - "ap-seoul"     → 18 / 1800001 / "Seoul"
 	//
 	// 取值优先级：override 非空且命中 region.regionTable 时优先于 SiteKind 兑底；空字符串
 	// 时按 SiteKind 走（cn → 广州 / intl → 新加坡）。注册表唯一来源在 trade/internal/region
@@ -109,6 +126,7 @@ type Config struct {
 	// 两者部分缺失（只配一个）会被 Load 期列为配置错误（避免只能询价却不能下单的跳脚状态）。
 	DianshiPriceBaseURL string
 	DianshiOrderBaseURL string
+	DianshiPreview      int
 }
 
 // Load 从环境变量构建 Config，未设必填项时返回 error。
@@ -141,6 +159,26 @@ func Load() (Config, error) {
 		JifeiBillingAppID:     strings.TrimSpace(os.Getenv("JIFEI_BILLING_APP_ID")),
 		JifeiBillingAppSecret: strings.TrimSpace(os.Getenv("JIFEI_BILLING_APP_SECRET")),
 
+		BillingCloudAPIRegion: firstNonEmpty(
+			os.Getenv("TRADE_BILLING_REGION"),
+			"ap-guangzhou",
+		),
+		BillingCloudAPIEndpoint: firstNonEmpty(
+			os.Getenv("TRADE_BILLING_ENDPOINT"),
+			"billing.tencentcloudapi.com",
+		),
+		BillingCloudAPICloudLadderGatewayURL: strings.TrimSpace(os.Getenv("TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL")),
+		BillingCloudAPICloudLadderRouteID: firstNonEmpty(
+			os.Getenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID"),
+			"tcapi-billing-trade-intl-test",
+		),
+		BillingCloudAPICloudLadderHMACSecret: strings.TrimSpace(os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET")),
+		BillingCloudAPIXQCloudUserID: firstNonEmpty(
+			os.Getenv("TRADE_BILLING_X_QCLOUD_USER_ID"),
+			os.Getenv("JIFEI_CGW_X_QCLOUD_USER_ID"),
+		),
+		BillingCloudAPIPayRedirectURL: strings.TrimSpace(os.Getenv("TRADE_BILLING_PAY_REDIRECT_URL")),
+
 		// Q58 / Q60 dispatcher + builder 默认值（联调期按 jifei align 后再 override）
 		JifeiComponentName:      envOrDefault("TRADE_JIFEI_COMPONENT_NAME", "trade"),
 		JifeiProtocolVersion:    envOrDefault("TRADE_JIFEI_PROTOCOL_VERSION", "1.0"),
@@ -148,6 +186,10 @@ func Load() (Config, error) {
 
 		// v1.7.x 国际站接入：站点标识 env 解析（兼容性兜底见 normalizeSiteKind）
 		SiteKind: normalizeSiteKind(os.Getenv("LIGHTVELA_SITE_KIND")),
+
+		ShadowMockEnabled: parseBoolEnv("TRADE_SHADOW_MOCK_ENABLED"),
+		ShadowMockUin:     strings.TrimSpace(os.Getenv("TRADE_SHADOW_MOCK_UIN")),
+		ShadowMockAppID:   strings.TrimSpace(os.Getenv("TRADE_SHADOW_MOCK_APP_ID")),
 
 		// 北京 2 预发布接入（2026-06-12）：region 字段 override，未配则按 SiteKind 兜底
 		RegionOverride: strings.TrimSpace(os.Getenv("LIGHTVELA_TRADE_REGION")),
@@ -159,6 +201,14 @@ func Load() (Config, error) {
 		// 点石活动接入（设计稿 §8）：两个 env 同进同退；都为空时 main.go 不装配 Resolver/DianshiClient。
 		DianshiPriceBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_PRICE_BASE_URL")),
 		DianshiOrderBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_ORDER_BASE_URL")),
+	}
+	switch raw := strings.TrimSpace(os.Getenv("DIANSHI_PREVIEW")); raw {
+	case "", "0":
+		cfg.DianshiPreview = 0
+	case "1":
+		cfg.DianshiPreview = 1
+	default:
+		return Config{}, fmt.Errorf("DIANSHI_PREVIEW must be 0 or 1, got %q", raw)
 	}
 	if cfg.MySQLDSN == "" {
 		return Config{}, fmt.Errorf("TRADE_MYSQL_DSN is required")
@@ -180,7 +230,7 @@ func Load() (Config, error) {
 		if _, ok := region.LookupByRegion(cfg.RegionOverride); !ok {
 			return Config{}, fmt.Errorf(
 				"LIGHTVELA_TRADE_REGION=%q is not a registered region; "+
-					"supported: ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore",
+					"supported: ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore / ap-seoul",
 				cfg.RegionOverride)
 		}
 	}
@@ -233,13 +283,29 @@ func normalizeSiteKind(raw string) string {
 // parseBoolEnv 解析 env 为 bool；常见 truthy 值（"true"/"1"/"yes"/"on"，大小写不敏感）→ true，
 // 其他（含空字符串、"false"、"0" 等）→ false。仅供 trade 内部使用，避免引入额外依赖。
 func parseBoolEnv(key string) bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	return parseBoolValue(os.Getenv(key))
+}
+
+func parseBoolValue(raw string) bool {
+	value := strings.ToLower(strings.TrimSpace(raw))
 	switch value {
 	case "true", "1", "yes", "on":
 		return true
 	default:
 		return false
 	}
+}
+
+func parseDurationEnv(key string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func firstNonEmpty(values ...string) string {

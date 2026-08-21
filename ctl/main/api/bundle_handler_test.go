@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	tradeadapter "ctl/pkg/adapter/trade"
 	bundlelogic "ctl/pkg/logic/bundle"
@@ -53,12 +54,16 @@ type stubTradeAdapter struct {
 	inquiryErr        error
 	inquiryHandler    func(*tradeadapter.InquiryBatchRequest) (*tradeadapter.InquiryBatchResult, error)
 	inquiryCalled     int
+	inquiryDeadline   time.Duration
 }
 
-func (s *stubTradeAdapter) InquiryBatch(_ context.Context, req *tradeadapter.InquiryBatchRequest) (*tradeadapter.InquiryBatchResult, error) {
+func (s *stubTradeAdapter) InquiryBatch(ctx context.Context, req *tradeadapter.InquiryBatchRequest) (*tradeadapter.InquiryBatchResult, error) {
 	s.inquiryCalled++
 	s.inquiryReq = req
 	s.inquiryReqs = append(s.inquiryReqs, req)
+	if deadline, ok := ctx.Deadline(); ok {
+		s.inquiryDeadline = time.Until(deadline)
+	}
 	ids := make([]string, len(req.BundleIDs))
 	copy(ids, req.BundleIDs)
 	s.inquiryReqBundles = append(s.inquiryReqBundles, ids)
@@ -114,6 +119,33 @@ func (s *stubTradeAdapter) DeleteDianshiParticipation(context.Context, int64) (*
 	panic("stubTradeAdapter.DeleteDianshiParticipation: not implemented")
 }
 
+// TestDescribeBundles_QuoteContextAllowsBillingLatency 已登录套餐列表会一次性询 6 个套餐。
+// trade 当前串行调用计费询价，KR 环境实测 5s 预算会触发 context deadline exceeded 并降级成无价列表；
+// 用户可见入口需要给这条链路至少 15s 预算。
+func TestDescribeBundles_QuoteContextAllowsBillingLatency(t *testing.T) {
+	logic := &stubBundleLogic{describeReturn: sampleBundleDetails()}
+	trader := &stubTradeAdapter{
+		inquiryResult: &tradeadapter.InquiryBatchResult{Prices: nil},
+	}
+	h := &bundleHandler{logic: logic, tradeAdapter: trader}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+	req.Header.Set("X-User-Id", "user_123")
+	rec := httptest.NewRecorder()
+
+	h.describeBundles(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if trader.inquiryCalled != 1 {
+		t.Fatalf("trader.inquiryCalled: got %d want 1", trader.inquiryCalled)
+	}
+	if trader.inquiryDeadline < 14*time.Second {
+		t.Fatalf("trade inquiry deadline: got %v want at least 14s", trader.inquiryDeadline)
+	}
+}
+
 func sampleBundleDetails() []*bundlelogic.BundleDetail {
 	return []*bundlelogic.BundleDetail{
 		{
@@ -165,6 +197,7 @@ func TestDescribeBundles_LoggedIn_QuotesBackfilled(t *testing.T) {
 					BundleID:      "bundle_basic",
 					Price:         "9.90",
 					TotalCost:     "9.90",
+					TaxPrice:      "0.63",
 					RealTotalCost: "8.91",
 					Currency:      "CNY",
 					Discount:      0.9,
@@ -220,7 +253,7 @@ func TestDescribeBundles_LoggedIn_QuotesBackfilled(t *testing.T) {
 	if basic.Price == nil {
 		t.Fatalf("basic.Price: got nil, want filled")
 	}
-	if basic.Price.Price != 9.9 || basic.Price.RealTotalCost != 8.91 || basic.Price.Currency != "CNY" || basic.Price.Discount != 0.9 {
+	if basic.Price.Price != 9.9 || basic.Price.TaxPrice != 0.63 || basic.Price.RealTotalCost != 8.91 || basic.Price.Currency != "CNY" || basic.Price.Discount != 0.9 {
 		t.Fatalf("basic.Price unexpected: %+v", basic.Price)
 	}
 	if pro.Price != nil {
@@ -366,12 +399,13 @@ func TestBundleQuoteToPrice(t *testing.T) {
 		q := &tradeadapter.BundleQuote{
 			Price:         "9.90",
 			TotalCost:     "9.90",
+			TaxPrice:      "0.63",
 			RealTotalCost: "8.91",
 			Currency:      "CNY",
 			Discount:      0.9,
 		}
 		p := bundleQuoteToPrice(q)
-		if p == nil || p.Price != 9.9 || p.RealTotalCost != 8.91 || p.Currency != "CNY" || p.Discount != 0.9 {
+		if p == nil || p.Price != 9.9 || p.TaxPrice != 0.63 || p.RealTotalCost != 8.91 || p.Currency != "CNY" || p.Discount != 0.9 {
 			t.Fatalf("got %+v", p)
 		}
 	})
@@ -379,12 +413,13 @@ func TestBundleQuoteToPrice(t *testing.T) {
 		q := &tradeadapter.BundleQuote{
 			Price:         "not-a-number",
 			TotalCost:     "",
+			TaxPrice:      "invalid-tax",
 			RealTotalCost: "10",
 			Currency:      "CNY",
 			Discount:      1.0,
 		}
 		p := bundleQuoteToPrice(q)
-		if p == nil || p.Price != 0 || p.TotalCost != 0 || p.RealTotalCost != 10 {
+		if p == nil || p.Price != 0 || p.TotalCost != 0 || p.TaxPrice != 0 || p.RealTotalCost != 10 {
 			t.Fatalf("got %+v", p)
 		}
 	})

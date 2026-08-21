@@ -62,7 +62,7 @@ LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测
 
 - **极简配置面板** — 在网页中完成[模型](./configuration/model.md)、通道和技能配置
 
-- **连接支持的聊天通道** — 可接入 Telegram、WhatsApp、Discord、WeChat、QQ、WeCom 和 Lark
+- **连接支持的聊天通道** — 可接入 Telegram、WhatsApp、Discord、Slack、WeChat、QQ、WeCom 和 Lark
 
 - **接入主流模型 API** — 自由选择适合自己的底层大模型
 

@@ -61,4 +61,28 @@ describe("fake repositories FaceID flow", () => {
     expect(passes[0]?.bundle_name).toBe("启航 Launch");
     expect(new Date(passes[0]?.expired_time ?? "").getTime() - Date.now()).toBeGreaterThan(5 * 24 * 60 * 60 * 1000);
   });
+
+  it("keeps Slack connected after the local preview config command succeeds", async () => {
+    const repositories = createFakeRepositories();
+
+    await repositories.bots.execDebugCommand("bot_local_preview", "SLACK_BOT_TOKEN=xoxb-test\nSLACK_APP_TOKEN=xapp-test");
+
+    const status = await repositories.bots.execDebugCommand(
+      "bot_local_preview",
+      "python3 - <<'PY'\nacli channel status\nslack_status = \"connected\"\nPY",
+    );
+
+    expect(JSON.parse(status.output)).toEqual({
+      success: true,
+      data: {
+        platforms: [
+          {
+            name: "slack",
+            status: "connected",
+          },
+        ],
+      },
+      error: null,
+    });
+  });
 });

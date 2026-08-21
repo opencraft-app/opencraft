@@ -10,6 +10,69 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/sandbox-kr-1/config.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	want := map[string]struct{}{
+		http.MethodGet + " /auth/payment-methods":                         {},
+		http.MethodPost + " /auth/payment-methods/sign-orders":            {},
+		http.MethodPut + " /auth/payment-methods/{contract_code}/default": {},
+		http.MethodDelete + " /auth/payment-methods/{contract_code}":      {},
+	}
+	wantOrigins := map[string]struct{}{
+		"https://sandbox-kr-1.lightclaw.tech":              {},
+		"https://intl-sandbox-kr-1.preview.lightclaw.tech": {},
+		"https://lightvela-intl.pages.dev":                 {},
+		"http://localhost:4173":                            {},
+		"http://127.0.0.1:4173":                            {},
+		"http://localhost:5173":                            {},
+		"http://127.0.0.1:5173":                            {},
+	}
+	for _, route := range cfg.Routes {
+		if route.Name != "auth-payment-methods" {
+			continue
+		}
+		if route.Prefix != "/auth/payment-methods" || route.Access != AccessAuthenticated {
+			t.Fatalf("payment method route must be authenticated and narrowly prefixed: %+v", route)
+		}
+		if route.RequireRealname {
+			t.Fatal("international payment method route must not require realname")
+		}
+		if route.PathPolicy != PathPolicyAllowlist {
+			t.Fatalf("path_policy = %q, want allowlist", route.PathPolicy)
+		}
+		if len(route.AllowedOrigins) != len(wantOrigins) {
+			t.Fatalf("payment method allowed_origins has %d entries, want %d: %+v", len(route.AllowedOrigins), len(wantOrigins), route.AllowedOrigins)
+		}
+		for _, origin := range route.AllowedOrigins {
+			if _, ok := wantOrigins[origin]; !ok {
+				t.Fatalf("payment method route has unexpected allowed origin %q", origin)
+			}
+		}
+		got := make(map[string]struct{}, len(route.PathAllow))
+		for _, rule := range route.PathAllow {
+			got[rule.Method+" "+rule.Path] = struct{}{}
+		}
+		if len(got) != len(want) {
+			t.Fatalf("payment method path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
+		}
+		for key := range want {
+			if _, ok := got[key]; !ok {
+				t.Fatalf("payment method path allowlist missing %s", key)
+			}
+		}
+		return
+	}
+	t.Fatal("auth-payment-methods route not found")
+}
+
 func TestDeployConfigsScopePhoneAuthPublicRoutes(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -270,14 +333,14 @@ func TestFaceIDCallbackIsPublicInDomesticEnvironments(t *testing.T) {
 	}
 }
 
-func TestTencentCloudAccountCallbackIsPublicInDomesticEnvironments(t *testing.T) {
+func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 
-	for _, env := range []string{"beijing-sandbox", "shprod"} {
+	for _, env := range []string{"beijing-sandbox", "sandbox-kr-1", "sgprod", "shprod"} {
 		t.Run(env, func(t *testing.T) {
 			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
 			if err != nil {
@@ -295,6 +358,49 @@ func TestTencentCloudAccountCallbackIsPublicInDomesticEnvironments(t *testing.T)
 			}
 			t.Fatal("TencentCloud account callback must bypass session authentication")
 		})
+	}
+}
+
+func TestSingaporeBillingEntryRoutesArePublic(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/sgprod/config.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	want := map[string]struct {
+		prefix   string
+		upstream string
+	}{
+		"trade-jifei-callback": {
+			prefix:   "/trade/jifei/callback",
+			upstream: "http://trade.trade.svc.cluster.local",
+		},
+		"ctl-cloudapi": {
+			prefix:   "/cloudapi",
+			upstream: "http://ctl-api.ctl.svc.cluster.local",
+		},
+	}
+
+	for _, route := range cfg.Routes {
+		expected, required := want[route.Name]
+		if !required {
+			continue
+		}
+		if route.Prefix != expected.prefix || route.Upstream != expected.upstream || route.Access != AccessPublic {
+			t.Fatalf("route %s must use the public SG billing target: %+v", route.Name, route)
+		}
+		if len(route.Methods) != 2 || !containsString(route.Methods, http.MethodPost) || !containsString(route.Methods, http.MethodOptions) {
+			t.Fatalf("route %s must be limited to POST/OPTIONS: %+v", route.Name, route)
+		}
+		delete(want, route.Name)
+	}
+	for routeName := range want {
+		t.Fatalf("required SG billing route %s not found", routeName)
 	}
 }
 

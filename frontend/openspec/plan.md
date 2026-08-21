@@ -1,3 +1,130 @@
+# 技能包 ACLI 原生批量安装 Implementation Plan
+
+**Status:** MR !3125 CR 修复与验证完成，等待用户确认提交和推送。
+
+**Goal:** 技能包安装优先通过单次 ACLI `batch-install` 执行，减少多次 `/debug/exec` 与进程启动；在旧 ACLI、不完整批量结果、CLI 升级提示或单项失败时保留可靠兜底。
+
+**Architecture:** 复用 Skills 页已有的流式批量结果解析与去重逻辑，为技能包注入带国内 SkillHub 下载模板的批量命令；批量命令不可用时回落到现有逐个安装，批量中的失败项仅逐项重试。组件从现有 repository 向 Experts 面板透传流式执行能力。
+
+**Scope:** 国内站技能包安装链路；不改变单技能安装、国际站 registry、套餐定义、安装状态存储或后端接口。
+
+### Task 1: 以测试锁定批量优先和兜底契约
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-experts-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+
+**Acceptance:**
+- 技能包默认只发起一次带 `SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE` 的 `acli skills batch-install --wait=true`。
+- 原生命令不支持时执行现有逐个安装；批量部分失败时只逐个重试失败 slug。
+- CLI 升级提示仍只触发一次 `skillhub self-upgrade`，随后重试批量命令。
+
+- [x] 先补失败测试并确认 RED，覆盖批量成功、旧 ACLI 回退、部分失败重试和升级后重试。
+
+### Task 2: 接入原生批量执行并保留恢复策略
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/agent-experts-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-skills-panel.tsx`
+
+**Acceptance:**
+- 复用既有批量事件解析，避免 `progress` 与完整 `summary.results` 重复事件导致结果错配。
+- 包级进度持续更新；仅全部技能最终成功时记录套餐为已安装。
+- 无流式执行能力时兼容现有逐个安装路径。
+
+- [x] 完成最小实现并让定向测试 GREEN。
+
+### Task 3: 验证范围和质量门禁
+
+**Files:**
+- Modify: `frontend/openspec/plan.md`
+- Add: `frontend/openspec/changes/2026-08-20-skill-package-native-batch-design.md`
+
+**Acceptance:**
+- 定向测试、TypeScript 检查、i18n 检查和 `git diff --check` 通过。
+- 展示真实改动与验证证据，等待用户确认后才提交、推送或创建 MR。
+
+- [x] 完成验证并输出验收摘要。
+
+### Task 4: 修正 CR 中的进度与诊断问题
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-experts-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-experts-panel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/openspec/changes/2026-08-20-skill-package-native-batch-design.md`
+
+**Acceptance:**
+- 批量阶段进入 `3/3` 后，补装早期失败项不会让用户可见进度回退。
+- ACLI 批量结果少于请求项时，诊断日志明确记录未覆盖并进入逐项补装的 slug。
+- 保留“所有失败结果均提示升级”才重跑 batch 的严格条件，并在设计文档中写清。
+
+- [x] 先补失败测试并确认 RED，再完成最小修复和定向验证。
+
+---
+
+# Cruise placeholder paid gate fix
+
+**Status:** Implemented and verified; approved for commit and push.
+
+**Goal:** Keep the international Cruise placeholder disabled when paid billing is off, while preserving the real CTL-backed Cruise purchase path when paid billing is on.
+
+### Task: Remove the global placeholder release override
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/next-site/subscribe-page.tsx`
+- Test: `frontend/next-site/__tests__/subscribe-page.global.test.tsx`
+
+**Acceptance:**
+- Paid billing off: the frontend Cruise placeholder remains `comingSoon` and cannot enter checkout.
+- Paid billing on: backend Cruise bundles remain purchasable through the existing CTL payment flow.
+- No backend, bundle mapping, or domestic-site behavior changes.
+
+- [x] Add a failing international-site regression test for the disabled placeholder.
+- [x] Remove the Cruise `releasedOnGlobal` override and make the test pass.
+- [x] Run targeted tests, type checking, i18n checking, and diff checks.
+
+**Verification:**
+- `pnpm exec vitest run next-site/__tests__/subscribe-page.test.tsx next-site/__tests__/subscribe-page.global.test.tsx` (7 tests passed)
+- `pnpm check`
+- `pnpm i18n:check`
+- `git diff --check`
+
+---
+
+# Agent 导航 CR 修正 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认提交和推送。
+
+**Goal:** 修正隐藏高级工具与分组导航的布局结构、测试耦合及分组命名语义。
+
+**Scope:** 仅调整 Agent 左侧导航组件、对应样式和定向测试；不改变四个可见一级分类、菜单顺序、路由或隐藏工具的开启方式。
+
+### Task 1: 统一导航结构与可访问语义
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Modify: `frontend/src/styles.css`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+**Acceptance:**
+- 隐藏的终端、浏览器入口与普通分组使用同一 items 容器，桌面缩进和窄屏栅格一致。
+- 可见分组通过 `aria-labelledby` 引用可见标题；导航项使用列表语义。
+- 删除颜色、间距和高度的 CSS 精确字符串断言，改由渲染测试验证结构与归属。
+
+- [x] 先补充渲染失败测试并确认 RED。
+- [x] 实现最小组件和样式调整并确认 GREEN。
+- [x] 运行定向测试、类型检查、i18n 检查和 diff 检查。
+
+---
+
 # 已安装技能实例展开 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -815,6 +942,65 @@
 - `python3 .ci/runtime/tests/contract_tests/test_release_bundle_contracts.py ReleaseBundleContractTests.test_frontend_playground_release_uses_beijing_registry`
 - 国内构建机真实执行 `build_release_image.py --service frontend --env sandbox-jp-1 --platform linux/amd64 --push --reuse-existing`
 - JP TCR manifest：`frontend-6cf545e930d2`，`linux/amd64`
+- `git diff --check`
+
+---
+# My creations show() reveal Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 国际站“我的作品”和账号页支付方式入口默认隐藏，仅在当前页面调用 `show()` 后展示，同时保持直接 URL 与订阅支付可用。
+
+**Scope:** 仅调整头像菜单、Agent 导航、账号页支付方式区块及定向测试；不修改 `/agents/websites/` 路由、订阅下单、API 或后端。
+
+### Task 1: 使用现有 show() 彩蛋控制“我的作品”入口
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/components/site/user-avatar-menu.tsx`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Test: `frontend/src/components/site/__tests__/user-avatar-menu.test.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+
+**Acceptance:**
+- 头像菜单和 Agent “使用”分组默认不显示“我的作品”。
+- 调用 `window.show()` 后，两处入口按其所在组件生命周期展示。
+- 直接访问 `/agents/websites/` 仍可渲染作品面板。
+- 不修改网站 API、路由和后端能力。
+
+- [x] 先补充失败测试并确认 RED。
+- [x] 复用现有 `show()` 链式回调实现最小展示开关并确认 GREEN。
+- [x] 运行定向测试、类型检查、i18n 检查和 diff 检查。
+
+**Verification:**
+- `pnpm exec vitest run src/components/site/__tests__/user-avatar-menu.test.tsx src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`（12 tests passed）
+- `pnpm i18n:check`
+- `pnpm check`
+- `git diff --check`
+
+### Task 2: 使用 show() 控制账号页支付方式区块
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/account-page-payment-visibility.test.ts`
+
+**Acceptance:**
+- 国际站账号页默认不挂载“支付方式”区块。
+- 在账号页调用 `window.show()` 后挂载“支付方式”区块。
+- `show()` 继续调用页面上原有的同名 helper。
+- 订阅页下单与信用卡支付流程不变。
+
+- [x] 先补充失败测试并确认 RED。
+- [x] 实现账号页局部展示状态并确认 GREEN。
+- [x] 运行支付方式相关测试、类型检查、i18n 检查和 diff 检查。
+
+**Verification:**
+- `pnpm exec vitest run src/pages/marketing/__tests__/account-page-payment-visibility.test.ts src/pages/marketing/__tests__/saved-cards-section.test.tsx src/components/site/__tests__/user-avatar-menu.test.tsx src/pages/marketing/__tests__/agent-settings-nav-order.test.ts src/pages/marketing/__tests__/agent-console-helpers.test.ts`（34 tests passed）
+- `pnpm i18n:check`
+- `pnpm check`
 - `git diff --check`
 
 ---

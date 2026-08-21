@@ -33,7 +33,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ComponentType, type ReactNode } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -47,7 +47,17 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/co
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
-import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
+// agent-config 本地模块统一从 barrel 导入。
+// 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
+// 治本（见该文件说明），barrel 顶层已无 SSR 危险依赖，页面层可安全静态导入。
+import {
+  createLighthouseConfig,
+  useModelProviders,
+  createLocalCommandExecutor,
+  type ICommandExecutor,
+  type IProductConfig,
+} from "@/pages/marketing/agent-config";
+import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
@@ -60,9 +70,6 @@ import {
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
 import type { WorkerActionStatusResult } from "@/repositories/types";
-import {
-  createMonoDebugExecAdapter,
-} from "@/pages/marketing/agent-tat-adapter";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
@@ -149,6 +156,16 @@ const AgentWebsitePanel = lazy(() =>
   import("@/pages/marketing/agent-website-panel").then((module) => ({ default: module.AgentWebsitePanel })),
 );
 
+// ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
+// 与其他面板一致。内部依赖全部指向本地 config/hooks，仅 scripts 命令生成走
+// SDK `/scripts` 子入口（纯 TS、无浏览器副作用）。
+const AgentChannelPanel = lazy(() =>
+  import("@/pages/marketing/agent-channel-panel").then((module) => ({ default: module.ChannelPanel })),
+);
+const AgentModelPanel = lazy(() =>
+  import("@/pages/marketing/agent-model-panel").then((module) => ({ default: module.ModelPanel })),
+);
+
 type TeaSdkInstanceInfo = {
   InstanceId: string;
   RegionId: number;
@@ -170,235 +187,73 @@ type TeaSdkFeatureFlags = {
   qqbotplugin: boolean;
 };
 
-type TeaSdkProductConfig = {
-  acliProduct: "lightvela";
-  runCommand: unknown;
-  getInvocationTask: unknown;
-  [key: string]: unknown;
-};
-
-type TeaSdkPanelProps = {
-  instance: TeaSdkInstanceInfo;
-  featureFlags: TeaSdkFeatureFlags;
-  productConfig: TeaSdkProductConfig;
-};
-
-type TeaSdkRuntime = {
-  ChannelPanel: ComponentType<TeaSdkPanelProps>;
-  ModelPanel: ComponentType<TeaSdkPanelProps>;
-  /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
-  useModelProviders: (params?: {
-    isI18n?: boolean;
-    useEnglish?: boolean;
-    rainbowBaseUrl?: string;
-    app?: string;
-  }) => IModelProvider[] | undefined;
-  createProductConfig: (args: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-    modelProviders?: IModelProvider[];
-  }) => TeaSdkProductConfig;
-  getGatewayRestartCommand: () => string;
-  getProviderSaveCommand: (config: {
-    name: string;
-    baseUrl: string;
-    api: string;
-    apiKey: string;
-    models: Array<{ id: string; name: string }>;
-  }) => string;
-  getModelSwitchCommand: (modelFullId: string) => string;
-};
-
-let teaSdkRuntimePromise: Promise<TeaSdkRuntime> | null = null;
-let teaSdkRuntimeCache: TeaSdkRuntime | null = null;
-let teaSdkRuntimeError: Error | null = null;
-
-function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
-  if (teaSdkRuntimeCache) {
-    return Promise.resolve(teaSdkRuntimeCache);
-  }
-  if (!teaSdkRuntimePromise) {
-    teaSdkRuntimePromise = (async () => {
-      // Keep TEA SDK out of the module graph evaluated during Next static generation.
-      // The SDK reads browser globals at module scope, so it must be initialized
-      // only inside the hydrated agents page before its panels render.
-      await import("@/lib/i18n-env");
-      await import("@tencent/tea-sdk-lightclaw/styles");
-      const [sdk, scriptsModule] = await Promise.all([
-        import("@tencent/tea-sdk-lightclaw"),
-        import("@tencent/tea-sdk-lightclaw/scripts"),
-      ]);
-      const lightVelaHermesScripts = scriptsModule.createLightClawScripts();
-      const hermesScripts = lightVelaHermesScripts.hermes;
-      const hermesGatewayCommands = hermesScripts.gateway;
-      const hermesModelCommands = hermesScripts.model;
-      const useModelProviders: TeaSdkRuntime["useModelProviders"] =
-        typeof sdk.useModelProviders === "function"
-          ? sdk.useModelProviders
-          : () => undefined;
-
-      const runtime: TeaSdkRuntime = {
-        ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        useModelProviders,
-        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
-          const config = sdk.createLighthouseConfig({
-            agentType: "hermes",
-            supportsTencentCloudApi: false,
-            isI18n: isGlobal,
-            modelProviders,
-          });
-          // SDK 的 getFilteredModelProviderList 用 IS_I18N（来自 window.LOGIN_INFO.area）
-          // 做国内/国际站过滤，但 mono2 不设置 window.LOGIN_INFO，导致 IS_I18N 恒为 false，
-          // 国际站会错误隐藏 OpenAI/Anthropic 等海外 provider。这里用 mono2 的 isGlobal
-          // 覆盖过滤逻辑，绕过 SDK 的模块级常量。
-          const hiddenProviders = isGlobal
-            ? sdk.I18N_HIDDEN_PROVIDERS
-            : sdk.DOMESTIC_HIDDEN_PROVIDERS;
-          return {
-            ...config,
-            acliProduct: "lightvela",
-            runCommand,
-            getInvocationTask,
-            getFilteredModelProviders: (region?: string) => {
-              const filtered = config.modelProviders.filter(
-                (p) => !hiddenProviders.includes(p.value),
-              );
-              if (region === "ap-hongkong") {
-                return filtered.filter(
-                  (p) => !sdk.HK_REGION_HIDDEN_PROVIDERS.includes(p.value),
-                );
-              }
-              return filtered;
-            },
-          };
-        },
-        getGatewayRestartCommand: () => hermesGatewayCommands.getRestartCommand(),
-        getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
-        getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
-      };
-      teaSdkRuntimeCache = runtime;
-      teaSdkRuntimeError = null;
-      return runtime;
-    })().catch((error: unknown) => {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
-      teaSdkRuntimeError = normalizedError;
-      teaSdkRuntimePromise = null;
-      throw normalizedError;
-    });
-  }
-  return teaSdkRuntimePromise;
-}
-
-function TeaSdkRuntimeLoading() {
-  const t = useT();
-
-  return (
-    <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
-      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-      {t("正在加载配置面板…")}
-    </div>
-  );
-}
-
+/**
+ * 通道/模型配置面板接入层。
+ *
+ * ChannelPanel / ModelPanel 已完全本地化（agent-config），其 productConfig、
+ * scriptCommands 均可由组件内部 createLighthouseConfig()/createLightClawScripts()
+ * 兜底。宿主这里只需补两处组件默认值给不了的差异：
+ *   1. isI18n：国际站 provider 过滤（国内/国际站模型列表不同）
+ *   2. commandExecutor：mono2 的本地命令执行器（直连 debug/exec，脱离 SDK TAT）
+ *
+ * 用本地 useModelProviders 拉取模型列表、本地 createLighthouseConfig 生成
+ * IProductConfig，再叠加宿主命令执行器，得到类型正确的 productConfig +
+ * commandExecutor 直接传入 lazy Panel（Suspense 兜加载态）。
+ */
 function TeaSdkSettingsPanel({
   kind,
   instance,
   featureFlags,
-  productConfigArgs,
+  commandExecutor,
   useEnglish,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  commandExecutor?: ICommandExecutor;
+  /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
 }) {
   const t = useT();
-  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
-  const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
+  const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
 
-  useEffect(() => {
-    if (teaSdkRuntimeCache) {
-      setRuntime(teaSdkRuntimeCache);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    void loadTeaSdkRuntime()
-      .then((nextRuntime) => {
-        if (!cancelled) setRuntime(nextRuntime);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
+  const productConfig = useMemo<IProductConfig>(() => {
+    // 本地 createLighthouseConfig 内部的 getFilteredModelProviders 已用 isI18n
+    // 正确过滤国内/国际站 provider，无需再套 SDK 那套 IS_I18N hidden-providers hack。
+    const config = createLighthouseConfig({
+      agentType: "hermes",
+      supportsTencentCloudApi: false,
+      isI18n: isGlobal,
+      modelProviders,
+    });
+    return {
+      ...config,
+      acliProduct: "lightvela",
     };
-  }, []);
+  }, [modelProviders]);
 
-  if (error) {
-    return (
-      <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {t("加载配置面板失败：{{message}}", { message: error })}
-      </div>
-    );
-  }
+  const Panel = kind === "channel" ? AgentChannelPanel : AgentModelPanel;
 
-  if (!runtime) {
-    return <TeaSdkRuntimeLoading />;
-  }
-
-  return (
-    <TeaSdkSettingsPanelReady
-      runtime={runtime}
-      kind={kind}
-      instance={instance}
-      featureFlags={featureFlags}
-      productConfigArgs={productConfigArgs}
-      useEnglish={useEnglish}
-    />
-  );
-}
-
-/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
-function TeaSdkSettingsPanelReady({
-  runtime,
-  kind,
-  instance,
-  featureFlags,
-  productConfigArgs,
-  useEnglish,
-}: {
-  runtime: TeaSdkRuntime;
-  kind: "channel" | "model";
-  instance: TeaSdkInstanceInfo;
-  featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  useEnglish: boolean;
-}) {
-  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
-  const productConfig = useMemo(
-    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
-    [runtime, productConfigArgs, modelProviders],
-  );
-
-  const Panel = kind === "channel" ? runtime.ChannelPanel : runtime.ModelPanel;
-
+  // 面板经 lazy() 动态加载，SSR 静态导出预渲染时走 Suspense fallback、不求值
+  // 面板模块；客户端 hydrate 后才真正 import。scripts SDK 的 window 副作用也已
+  // 在 useAgentInternals 内动态 import 治本，无需再手动区分 SSR / 客户端。
   return (
     <StableTeaSdkPanelHost>
-      <Panel
-        instance={instance}
-        featureFlags={featureFlags}
-        productConfig={productConfig}
-      />
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {t("正在加载配置面板…")}
+          </div>
+        }
+      >
+        <Panel
+          instance={instance}
+          featureFlags={featureFlags}
+          productConfig={productConfig}
+          commandExecutor={commandExecutor}
+        />
+      </Suspense>
     </StableTeaSdkPanelHost>
   );
 }
@@ -3080,13 +2935,6 @@ export const AgentSettingsPage = ({
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
-  useEffect(() => {
-    if (!TEA_SDK_SECTIONS.has(activeSection)) return;
-    void loadTeaSdkRuntime().catch(() => {
-      // The visible settings panel reports the concrete loading error.
-    });
-  }, [activeSection]);
-
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
@@ -3378,8 +3226,7 @@ export const AgentSettingsPage = ({
         value,
         existingChars,
         getGatewayRestartCommand: async () => {
-          const teaSdkRuntime = await loadTeaSdkRuntime();
-          return teaSdkRuntime.getGatewayRestartCommand();
+          return (await getHermesScriptCommands()).getGatewayRestartCommand();
         },
       });
       if (!isCurrentRequest()) return false;
@@ -3430,44 +3277,43 @@ export const AgentSettingsPage = ({
 
 
   /**
-   * tea-sdk-lightclaw 的 ModelCard / ChannelCard / SkillCard 内部通过
-   * 自定义 `runCommand` + `getInvocationTask` 把命令下发到 mono 后端。
+   * channel / model 配置面板（agent-config 的 ChannelPanel / ModelPanel）
+   * 使用的命令执行器。
    *
-   * 和存量业务（channel 配置、onboard、debug 排错等）保持一致，走通用
-   * 入口 `POST /v1/instances/:botId/debug/exec`。国际站由后端直接使用腾讯云
-   * TAT PtyExecCmdStream，国内站保持原 envd 执行链路。
+   * 走本地 `createLocalCommandExecutor`，直连 `POST /v1/instances/:botId/debug/exec`
+   * （国际站由后端建立 TAT PtyExecCmdStream，国内站保持原 envd 执行链路），
+   * 与 chat / skill / diagnostics 面板同一条「直连」链路，彻底脱离 SDK 的
+   * TAT 两步式（RunCommand → 轮询 getInvocationTask）逻辑。
    *
-   * 业务约定：把 `activeBot.id` 作为 SDK `IInstanceInfo.InstanceId` 传入，
-   * SDK 内部 `InstanceIds: [instance.InstanceId]` 原样透传给适配器，
-   * 适配器从 `InstanceIds[0]` 拿到的就是 botId，无需额外映射或查询
-   * sandbox_id。
+   * `sdkCommandLifecycle` 挂载业务钩子（自动化模型切换同步、QQ 群策略注入）。
+   * 仅在 activeBot 存在时构造；无 bot 时传 undefined，面板内部 fallback 到空
+   * executor 占位（实际操作路径不会触发）。
    */
-  const commandAdapter = useMemo(
+  const teaSdkCommandExecutor = useMemo<ICommandExecutor | undefined>(
     () =>
-      createMonoDebugExecAdapter({
-        baseUrl: resolveConfiguredAuthApiBaseUrl() ?? "",
-        getAuthHeader: () => {
-          const token = readStoredAuthToken();
-          return token ? `Bearer ${token}` : undefined;
-        },
-        commandLifecycle: sdkCommandLifecycle,
-      }),
-    [sdkCommandLifecycle],
+      activeBotId
+        ? createLocalCommandExecutor({
+            repositories,
+            botId: activeBotId,
+            commandLifecycle: sdkCommandLifecycle,
+          })
+        : undefined,
+    [repositories, activeBotId, sdkCommandLifecycle],
   );
 
   /**
    * LightVelaPanel 用的 commandExecutor。
    *
-   * 与上方 `commandAdapter`（给 `@tencent/tea-sdk-lightclaw` SDK 走 TAT 协议
-   * 的适配器）不同，LightVelaPanel 接受的是 ClawPanel 公共层定义的更直接的
-   * `CommandExecutor` 契约（`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
+   * 与上方 `teaSdkCommandExecutor`（给 agent-config 面板用、形状为
+   * `ICommandExecutor` 的 run/runWithProgress）不同，LightVelaPanel 接受的是
+   * ClawPanel 公共层定义的更直接的 `CommandExecutor` 契约
+   * （`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
    *
-   * 两者底层都走 mono debug/exec，但接口形状不同：
-   *   - commandAdapter：runCommand → getInvocationTask 两步式（兼容 SDK 的 TAT 模型）
-   *   - lightvelaCommandExecutor：单步同步返回（贴近 LightVelaPanel 期望）
+   * 两者底层都走 mono debug/exec 直连（均已脱离 SDK TAT），只是对上层暴露的
+   * 接口形状不同。
    *
    * 仅在 activeBot 存在时构造；切换到无 bot 状态会传 undefined，让 panel
-   * 内部 fallback 到默认 TAT 通道（实际 lightvela 场景不会走到）。
+   * 内部 fallback 到默认通道（实际 lightvela 场景不会走到）。
    */
   const lightvelaCommandExecutor = useMemo(
     () => activeBotId
@@ -3545,8 +3391,8 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const providerSaveCmd = teaSdkRuntime.getProviderSaveCommand({
+      const hermesScriptCommands = await getHermesScriptCommands();
+      const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
         name: result.config.providerName,
         baseUrl: result.config.baseUrl,
         api: result.config.api,
@@ -3568,7 +3414,7 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const switchModelCmd = teaSdkRuntime.getModelSwitchCommand(
+      const switchModelCmd = hermesScriptCommands.getModelSwitchCommand(
         hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
       );
       const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
@@ -3670,8 +3516,8 @@ export const AgentSettingsPage = ({
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const result = await repositories.bots.execDebugCommand(targetBotId, teaSdkRuntime.getGatewayRestartCommand());
+      const gatewayRestartCommand = (await getHermesScriptCommands()).getGatewayRestartCommand();
+      const result = await repositories.bots.execDebugCommand(targetBotId, gatewayRestartCommand);
       const errorMsg = buildRestartErrorMessage(result);
       if (errorMsg) {
         setRestartErrors((prev) => setErrorForBot(prev, targetBotId, errorMsg));
@@ -3890,10 +3736,6 @@ export const AgentSettingsPage = ({
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
   const useEnglish = !!i18n.language?.startsWith("en");
-  const sdkProductConfigArgs = useMemo(() => ({
-    runCommand: commandAdapter.runCommand,
-    getInvocationTask: commandAdapter.getInvocationTask,
-  }), [commandAdapter]);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
     isGlobalRegion: isGlobal,
     hiddenToolsRevealed: showHiddenAgentTools,
@@ -4911,22 +4753,53 @@ export const AgentSettingsPage = ({
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
             (() => {
-              const settingsSections: { id: AgentSettingsSectionId; label: string; icon: React.ReactNode; path: string; badge?: string }[] = [
-                { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
-                { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
-                { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
-                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
-                { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
-                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
-                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
-                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
-                ...(isGlobal
-                  ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
-                  : []),
-                ...(SHOW_AGENTCHAT_ENTRY
-                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
-                  : []),
-                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+              type SettingsSection = {
+                id: AgentSettingsSectionId;
+                label: string;
+                icon: React.ReactNode;
+                path: string;
+                badge?: string;
+              };
+              const settingsGroups: { id: string; label: string; sections: SettingsSection[] }[] = [
+                {
+                  id: "setup",
+                  label: t("配置"),
+                  sections: [
+                    { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
+                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
+                  ],
+                },
+                {
+                  id: "use",
+                  label: t("使用"),
+                  sections: [
+                    ...(SHOW_AGENTCHAT_ENTRY
+                      ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
+                      : []),
+                    { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+                    ...(isGlobal && showHiddenAgentTools
+                      ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
+                      : []),
+                  ],
+                },
+                {
+                  id: "growth",
+                  label: t("成长"),
+                  sections: [
+                    { id: "buddy", label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
+                    { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
+                    { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
+                  ],
+                },
+                {
+                  id: "manage",
+                  label: t("管理"),
+                  sections: [
+                    { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
+                    { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+                  ],
+                },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
@@ -5152,57 +5025,79 @@ export const AgentSettingsPage = ({
                       className="lv-agents-nav"
                     >
                       {showHiddenAgentTools ? (
-                        <>
-                          <AppLink
-                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
-                            aria-current={activeSection === "terminal" ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              activeSection === "terminal"
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left">{t("终端")}</span>
-                          </AppLink>
-                          <AppLink
-                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
-                            aria-current={activeSection === "browser" ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              activeSection === "browser"
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left">{t("浏览器")}</span>
-                          </AppLink>
-                        </>
+                        <div className="lv-agents-nav-group">
+                          <ul className="lv-agents-nav-group-items">
+                            <li>
+                              <AppLink
+                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
+                                aria-current={activeSection === "terminal" ? "page" : undefined}
+                                className={cn(
+                                  "lw-settings-nav-item lv-agents-nav-item",
+                                  activeSection === "terminal"
+                                    ? "is-active"
+                                    : "text-black/70 hover:bg-black/[0.025]",
+                                )}
+                              >
+                                <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
+                                <span className="flex-1 text-left">{t("终端")}</span>
+                              </AppLink>
+                            </li>
+                            <li>
+                              <AppLink
+                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
+                                aria-current={activeSection === "browser" ? "page" : undefined}
+                                className={cn(
+                                  "lw-settings-nav-item lv-agents-nav-item",
+                                  activeSection === "browser"
+                                    ? "is-active"
+                                    : "text-black/70 hover:bg-black/[0.025]",
+                                )}
+                              >
+                                <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
+                                <span className="flex-1 text-left">{t("浏览器")}</span>
+                              </AppLink>
+                            </li>
+                          </ul>
+                        </div>
                       ) : null}
-                      {settingsSections.map((section) => {
-                        const isActive = section.id === activeSection;
+                      {settingsGroups.map((group) => {
+                        const groupLabelId = `agent-settings-nav-group-${group.id}`;
                         return (
-                          <AppLink
-                            key={section.id}
-                            to={getAgentSectionHref(section.path, searchParams)}
-                            aria-current={isActive ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              isActive
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
+                          <div
+                            key={group.id}
+                            className="lv-agents-nav-group"
+                            role="group"
+                            aria-labelledby={groupLabelId}
                           >
-                            <span className="lv-agents-nav-icon">{section.icon}</span>
-                            <span className="flex-1 text-left">{section.label}</span>
-                            {section.badge && (
-                              <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
-                                {section.badge}
-                              </span>
-                            )}
-                          </AppLink>
+                            <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
+                            <ul className="lv-agents-nav-group-items">
+                              {group.sections.map((section) => {
+                                const isActive = section.id === activeSection;
+                                return (
+                                  <li key={section.id}>
+                                    <AppLink
+                                      to={getAgentSectionHref(section.path, searchParams)}
+                                      aria-current={isActive ? "page" : undefined}
+                                      className={cn(
+                                        "lw-settings-nav-item lv-agents-nav-item",
+                                        isActive
+                                          ? "is-active"
+                                          : "text-black/70 hover:bg-black/[0.025]",
+                                      )}
+                                    >
+                                      <span className="lv-agents-nav-icon">{section.icon}</span>
+                                      <span className="flex-1 text-left">{section.label}</span>
+                                      {section.badge && (
+                                        <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                          {section.badge}
+                                        </span>
+                                      )}
+                                    </AppLink>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
                         );
                       })}
                     </nav>
@@ -5231,7 +5126,7 @@ export const AgentSettingsPage = ({
                               kind="channel"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfigArgs={sdkProductConfigArgs}
+                              commandExecutor={teaSdkCommandExecutor}
                               useEnglish={useEnglish}
                             />
                           )}
@@ -5240,7 +5135,7 @@ export const AgentSettingsPage = ({
                               kind="model"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfigArgs={sdkProductConfigArgs}
+                              commandExecutor={teaSdkCommandExecutor}
                               useEnglish={useEnglish}
                             />
                           )}

@@ -1,16 +1,10 @@
 # 如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作？
 
-把 Agent 接入 Telegram 或 WhatsApp 后，安全边界不只由模型决定，也取决于通道凭证、会话范围、记忆策略和外部操作规则。
-
-一套清晰的边界应该让你知道谁可以找到 Agent、哪些消息会被处理、哪些内容不能发送，以及什么操作必须先确认。
-
-当前 Telegram 和 WhatsApp 文档都以 1 对 1 对话为主要支持方式，群聊规则因此先作为设计和上线前检查项。
-
-![为 Telegram 和 WhatsApp Agent 设计授权、群聊规则与敏感操作安全边界](../images/use-case-11-telegram-whatsapp-safety-boundaries.png)
-
 ## 摘要
 
 **Agent 的安全边界不只由模型决定，而由四层共同构成：通道凭证、会话范围、记忆策略、外部操作规则。** 一套清晰的边界应当让你明确回答四个问题——谁可以找到这个 Agent、哪些消息会被处理、哪些内容不能发送、什么操作必须先确认。落地要点：凭证属于敏感信息，不要写入长期上下文或粘贴到聊天；记忆策略要避免把敏感信息沉淀成永久记录；涉及外部发送或不可逆操作时必须设置确认环节。需要注意当前 Telegram 与 WhatsApp 都以 1 对 1 对话为主要支持方式，因此群聊规则目前作为设计与上线前的检查项，而非已可落地的配置。上线前建议逐项走完文中的安全清单。
+
+![为 Telegram 和 WhatsApp Agent 设计授权、群聊规则与敏感操作安全边界](../images/use-case-11-telegram-whatsapp-safety-boundaries.png)
 
 ## 适合谁
 

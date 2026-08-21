@@ -239,6 +239,16 @@ export type BundleState = "ONLINE" | "OFFLINE";
 export type BundleSalesState = "AVAILABLE" | "SOLD_OUT";
 export type BundleTimeUnit = "d" | "m" | "y";
 
+/**
+ * 自动续费标记（国际站支持）— 对应后端 CreatePassOrderRequest.auto_renew_flag
+ *
+ * 取值（与 ctl/pkg/transport/pass.go 对齐）：
+ *   - auto_renew：自动续费
+ *   - notify_and_manual_renew：通知 + 手动续费
+ *   - no_notify_and_manual_renew：不通知 + 手动续费
+ */
+export type AutoRenewFlag = "auto_renew" | "notify_and_manual_renew" | "no_notify_and_manual_renew";
+
 export interface BundleDescriptionEntry {
   Key: string;
   Value: string;
@@ -391,6 +401,18 @@ export interface CreatePassOrderUrlInput {
    * 用 auth_code 反查 user_id；TTL 同二维码 TTL（≤10 分钟）。
    */
   auth_code?: string;
+  /**
+   * 国际站信用卡/签约支付：用户取消支付后的前端回跳地址（完整 HTTPS URL）。
+   * ctl 不解析，仅透传给 trade → jifei cancelUrl。
+   * 约束：稳定页面地址，不含 query/hash（避免 OAuth code/openid/一次性 ticket 带入回跳地址）。
+   */
+  cancel_url?: string;
+  /**
+   * 国际站信用卡/签约支付：用户完成支付后的前端回跳地址（完整 HTTPS URL）。
+   * ctl 不解析，仅透传给 trade → jifei returnUrl。
+   * 约束同 cancel_url：稳定页面地址，不含 query/hash。
+   */
+  return_url?: string;
 }
 
 /**

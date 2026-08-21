@@ -37,6 +37,10 @@ export interface CronJob {
   script: string;
   effective_window: CronEffectiveWindow | null;
   lightvela_schedule: CronLightVelaSchedule | null;
+  /** Hermes 原生上游任务 ID；null 表示未关联上游。 */
+  context_from: string[] | null;
+  /** 是否已从 jobs.json 对该任务的 context_from 完成可信水合。 */
+  context_from_hydrated?: boolean;
   /** jobs.json 中的任务级推理绑定；null 表示当前无法安全确认。 */
   inference_config: CronInferenceConfig | null;
 }
@@ -45,6 +49,33 @@ export interface CronInferenceConfig {
   provider: string | null;
   model: string | null;
   no_agent: boolean;
+}
+
+export type CronContextCapability = "supported" | "unsupported" | "unknown";
+
+export type CronContextPatch = undefined | string[];
+
+export type CronjobToolPayload = Record<string, unknown> & {
+  action: "create" | "update" | "remove";
+};
+
+interface CronjobToolResult {
+  success: true;
+  job_id?: string;
+  job?: Record<string, unknown>;
+}
+
+export interface CronDependentBinding {
+  id: string;
+  name: string;
+  contextFrom: string[];
+}
+
+interface CronDependentMutationSummary {
+  success: boolean;
+  updated: string[];
+  rollback_failed: string[];
+  error?: string;
 }
 
 export interface CronEffectiveWindow {
@@ -74,15 +105,6 @@ export interface CronRunRecord {
   status: string | null;
   output_path: string;
   skip_reason?: "model_changed";
-}
-
-export interface CronModelSyncResult {
-  targetModel: string;
-  scanned: number;
-  updated: number;
-  skipped: number;
-  failed: number;
-  failedJobIds: string[];
 }
 
 /** 调用方传给 create() 的入参 */
@@ -194,6 +216,110 @@ function buildErrorMessage(output: string, status: string): string {
 /** 单个 shell 参数加引号（仅处理单引号，足够给 hermes cron 用） */
 export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function normalizeCronContextFrom(value: unknown): string[] | null {
+  const values = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
+  const normalized = [...new Set(values
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean))];
+  return normalized.length > 0 ? normalized : null;
+}
+
+const CRON_CONTEXT_CAPABILITY_MARKER = "LIGHTVELA_CRON_CONTEXT_CAPABILITY=";
+const CRON_CONTEXT_RESULT_MARKER = "LIGHTVELA_CRON_CONTEXT_RESULT=";
+
+export function buildDetectCronContextFromCapabilityCommand(): string {
+  const script = [
+    "import inspect, json",
+    "from tools.cronjob_tools import cronjob",
+    'supported = "context_from" in inspect.signature(cronjob).parameters',
+    `print("${CRON_CONTEXT_CAPABILITY_MARKER}" + json.dumps({"supported": supported}))`,
+  ].join("\n");
+  return `cd "$HOME/.hermes/hermes-agent" && ./venv/bin/python -c ${shellQuote(script)}`;
+}
+
+export function parseCronContextCapabilityOutput(output: string): CronContextCapability {
+  const markerLine = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(CRON_CONTEXT_CAPABILITY_MARKER))
+    .at(-1);
+  if (!markerLine) return "unknown";
+  try {
+    const parsed: unknown = JSON.parse(markerLine.slice(CRON_CONTEXT_CAPABILITY_MARKER.length));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const supported = (parsed as Record<string, unknown>).supported;
+      if (supported === true) return "supported";
+      if (supported === false) return "unsupported";
+    }
+  } catch {
+    return "unknown";
+  }
+  return "unknown";
+}
+
+export function buildCronjobToolCommand(payload: CronjobToolPayload): string {
+  const serializedPayload = JSON.stringify(payload);
+  const script = [
+    "import json",
+    "from tools.cronjob_tools import cronjob",
+    `payload = json.loads(${JSON.stringify(serializedPayload)})`,
+    "result = cronjob(**payload)",
+    "parsed = json.loads(result)",
+    `print("${CRON_CONTEXT_RESULT_MARKER}" + json.dumps(parsed, ensure_ascii=False))`,
+  ].join("\n");
+  return `cd "$HOME/.hermes/hermes-agent" && ./venv/bin/python -c ${shellQuote(script)}`;
+}
+
+function cronjobToolOutputError(code: string): CronCommandError {
+  return new CronCommandError({
+    command: "cronjob",
+    output: code,
+    status: "CRONJOB_TOOL_FAILED",
+    exitCode: 1,
+  });
+}
+
+export function parseCronjobToolOutput(output: string): CronjobToolResult {
+  const markerLine = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(CRON_CONTEXT_RESULT_MARKER))
+    .at(-1);
+  if (!markerLine) throw cronjobToolOutputError("missing result marker");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(markerLine.slice(CRON_CONTEXT_RESULT_MARKER.length));
+  } catch {
+    throw cronjobToolOutputError("invalid result payload");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw cronjobToolOutputError("invalid result payload");
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record.success !== true) throw cronjobToolOutputError("cronjob operation failed");
+  const job = record.job;
+  if (job !== undefined && (!job || typeof job !== "object" || Array.isArray(job))) {
+    throw cronjobToolOutputError("invalid result job");
+  }
+  const jobId = typeof record.job_id === "string" ? record.job_id.trim() : "";
+  return {
+    success: true,
+    ...(jobId ? { job_id: jobId } : {}),
+    ...(job === undefined ? {} : { job: job as Record<string, unknown> }),
+  };
+}
+
+export async function detectCronContextFromCapability(botId: string): Promise<CronContextCapability> {
+  try {
+    const payload = await execCommand(botId, buildDetectCronContextFromCapabilityCommand());
+    return parseCronContextCapabilityOutput(payload.output || "");
+  } catch {
+    return "unknown";
+  }
 }
 
 /** 拼装一条 hermes cron 命令行 */
@@ -506,7 +632,10 @@ function buildDebugExecDetailsOutput(details: DebugExecErrorPayload["details"]):
  *
  * 空列表：`No scheduled jobs. Create one with ...`
  */
-export async function listCronJobs(botId: string): Promise<CronJob[]> {
+export async function listCronJobs(
+  botId: string,
+  { hydrateContextFrom = true }: { hydrateContextFrom?: boolean } = {},
+): Promise<CronJob[]> {
   // 必须带 --all：默认 list 只展示 active jobs，paused/disabled 的会被过滤掉，
   // 导致前端暂停操作后整张卡片消失（看起来像被删除）。
   const command = "hermes cron list --all";
@@ -531,6 +660,8 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
       const promptById = new Map<string, string>();
       const createdAtById = new Map<string, string>();
       const scriptById = new Map<string, string>();
+      const contextFromById = new Map<string, string[] | null>();
+      const contextHydratedIds = new Set<string>();
       const inferenceConfigById = new Map<string, CronInferenceConfig>();
       for (const raw of arr) {
         const r = raw as Record<string, unknown>;
@@ -542,6 +673,10 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
         if (createdAt) createdAtById.set(id, createdAt);
         const script = typeof r.script === "string" ? r.script : "";
         if (script) scriptById.set(id, script);
+        if (hydrateContextFrom) {
+          contextFromById.set(id, normalizeCronContextFrom(r.context_from));
+          contextHydratedIds.add(id);
+        }
         inferenceConfigById.set(id, {
           provider: typeof r.provider === "string" && r.provider.trim() ? r.provider.trim() : null,
           model: typeof r.model === "string" && r.model.trim() ? r.model.trim() : null,
@@ -555,6 +690,10 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
         if (c) j.created_at = c;
         const script = scriptById.get(j.id);
         if (script) j.script = script;
+        if (hydrateContextFrom) {
+          j.context_from = contextFromById.get(j.id) ?? null;
+          j.context_from_hydrated = contextHydratedIds.has(j.id);
+        }
         j.inference_config = inferenceConfigById.get(j.id) ?? null;
       }
     }
@@ -956,6 +1095,8 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     script: p.script || "",
     effective_window: p.effective_window || null,
     lightvela_schedule: p.lightvela_schedule || null,
+    context_from: p.context_from || null,
+    context_from_hydrated: p.context_from_hydrated === true,
     inference_config: p.inference_config || null,
   };
 }
@@ -1182,55 +1323,6 @@ function resolvePinnedModelFromRawCronRecord(raw: Record<string, unknown> | null
   return null;
 }
 
-function normalizeCronModelId(value: string | null | undefined): string {
-  return (value ?? "").trim();
-}
-
-function rawCronScheduleKind(raw: Record<string, unknown>): string {
-  const schedule = raw.schedule;
-  if (typeof schedule === "string") return detectScheduleKind(schedule);
-  if (schedule && typeof schedule === "object") {
-    const scheduleRecord = schedule as Record<string, unknown>;
-    return pickStringValue(scheduleRecord, ["kind", "type"]);
-  }
-  return "";
-}
-
-function rawCronScheduleDisplay(raw: Record<string, unknown>): string {
-  const schedule = raw.schedule;
-  if (typeof schedule === "string") return schedule.trim();
-  if (schedule && typeof schedule === "object") {
-    const scheduleRecord = schedule as Record<string, unknown>;
-    return pickStringValue(scheduleRecord, ["display", "expr", "value"]);
-  }
-  return "";
-}
-
-function isFinishedOnceCronRecord(raw: Record<string, unknown>): boolean {
-  const kind = rawCronScheduleKind(raw).toLowerCase();
-  const display = rawCronScheduleDisplay(raw);
-  const isOnce = kind === "once" || /^once\b/i.test(display);
-  if (!isOnce) return false;
-  const state = pickStringValue(raw, ["state", "status"]).toLowerCase();
-  if (["completed", "complete", "done", "finished"].includes(state)) return true;
-  const lastRunAt = pickStringValue(raw, ["last_run_at", "lastRunAt", "last_run"]);
-  const hasNextRunField = Object.prototype.hasOwnProperty.call(raw, "next_run_at")
-    || Object.prototype.hasOwnProperty.call(raw, "nextRunAt")
-    || Object.prototype.hasOwnProperty.call(raw, "next_run");
-  const nextRunAt = pickStringValue(raw, ["next_run_at", "nextRunAt", "next_run"]);
-  return Boolean(lastRunAt && hasNextRunField && !nextRunAt);
-}
-
-function shouldSyncCronModel(raw: Record<string, unknown>, targetModel: string): boolean {
-  const id = String(raw.id ?? "").trim();
-  if (!id) return false;
-  const name = String(raw.name ?? "");
-  if (isTestRunMarkerName(name)) return false;
-  if (isFinishedOnceCronRecord(raw)) return false;
-  const currentModel = normalizeCronModelId(resolvePinnedModelFromRawCronRecord(raw));
-  return currentModel !== targetModel;
-}
-
 function parseRawCronJobsJson(text: string): Record<string, unknown>[] {
   if (!text.trim()) return [];
   const parsed = JSON.parse(text) as unknown;
@@ -1252,56 +1344,7 @@ async function readRawCronJobRecords(botId: string): Promise<Record<string, unkn
   }
 }
 
-/**
- * LightVela 的产品语义：用户切换默认模型后，已有自动任务继续跟随当前可用模型。
- *
- * Hermes 官方 cron 会在创建时快照 provider/model；若之后全局默认模型变化，未更新
- * 的 job 会 fail-closed 跳过执行。这里不改 Hermes 的安全策略，而是在 LightVela
- * 的模型切换链路里主动把未结束的 cron job 重新 pin 到新模型。
- */
-export async function syncCronJobsToModel(botId: string, modelFullId: string): Promise<CronModelSyncResult> {
-  const targetModel = normalizeCronModelId(modelFullId);
-  const result: CronModelSyncResult = {
-    targetModel,
-    scanned: 0,
-    updated: 0,
-    skipped: 0,
-    failed: 0,
-    failedJobIds: [],
-  };
-  if (!targetModel) return result;
-
-  const records = await readRawCronJobRecords(botId);
-  result.scanned = records.length;
-  for (const raw of records) {
-    const id = String(raw.id ?? "").trim();
-    if (!shouldSyncCronModel(raw, targetModel)) {
-      result.skipped += 1;
-      continue;
-    }
-    try {
-      await editCronJob(botId, id, { model: targetModel });
-      result.updated += 1;
-    } catch {
-      result.failed += 1;
-      result.failedJobIds.push(id);
-    }
-  }
-  if (result.updated > 0) {
-    await archiveCronJobMetadata(botId);
-  }
-  return result;
-}
-
-export function extractHermesModelFullIdFromCommand(command: string): string | null {
-  const match = /\bacli\s+model\s+switch\b[\s\S]*?--model\s+(?:'([^']*)'|"([^"]*)"|([^\s]+))/i.exec(command);
-  const raw = match?.[1] ?? match?.[2] ?? match?.[3] ?? "";
-  return normalizeCronModelId(raw) || null;
-}
-
-async function pinCronJobModelBestEffort(botId: string, jobName: string): Promise<void> {
-  const jobId = await findCronJobIdByExactNameWithRetry(botId, jobName);
-  if (!jobId) return;
+async function pinCronJobModelByIdBestEffort(botId: string, jobId: string): Promise<void> {
   const raw = await readRawCronJobRecordById(botId, jobId);
   const model = resolvePinnedModelFromRawCronRecord(raw);
   if (!model) return;
@@ -1310,6 +1353,11 @@ async function pinCronJobModelBestEffort(botId: string, jobName: string): Promis
   } catch {
     /* 某些 CLI 版本可能暂不支持 --model，保持 best-effort，不阻断创建流程 */
   }
+}
+
+async function pinCronJobModelBestEffort(botId: string, jobName: string): Promise<void> {
+  const jobId = await findCronJobIdByExactNameWithRetry(botId, jobName);
+  if (jobId) await pinCronJobModelByIdBestEffort(botId, jobId);
 }
 
 export async function createCronJob(botId: string, input: CreateCronJobInput): Promise<void> {
@@ -1346,6 +1394,57 @@ export async function createCronJobWithScriptRollback(
       }
     }
     throw err;
+  }
+}
+
+function buildCronjobCreatePayload(input: CreateCronJobInput, upstreamId: string): CronjobToolPayload {
+  const payload: CronjobToolPayload = {
+    action: "create",
+    schedule: input.schedule,
+    prompt: input.prompt,
+    name: input.name,
+    context_from: [upstreamId],
+  };
+  if (input.skills !== undefined) payload.skills = input.skills;
+  if (input.deliver !== undefined) payload.deliver = input.deliver;
+  if (input.script !== undefined) payload.script = input.script;
+  return payload;
+}
+
+async function executeCronjobTool(botId: string, payload: CronjobToolPayload): Promise<CronjobToolResult> {
+  const command = buildCronjobToolCommand(payload);
+  let execResult: DebugExecPayload;
+  try {
+    execResult = await execCommand(botId, command);
+  } catch {
+    throw cronjobToolOutputError("cronjob execution failed");
+  }
+  return parseCronjobToolOutput(execResult.output || "");
+}
+
+export async function createCronJobWithContextAndScriptRollback(
+  botId: string,
+  input: CreateCronJobInput,
+  upstreamId: string,
+  rollbackScript?: string,
+): Promise<string> {
+  try {
+    const result = await executeCronjobTool(botId, buildCronjobCreatePayload(input, upstreamId));
+    const nestedJobId = typeof result.job?.id === "string" ? result.job.id.trim() : "";
+    const jobId = result.job_id ?? nestedJobId;
+    if (!jobId) throw cronjobToolOutputError("missing created job id");
+    if (input.pinCurrentModel) await pinCronJobModelByIdBestEffort(botId, jobId);
+    await archiveCronJobMetadata(botId);
+    return jobId;
+  } catch (error) {
+    if (rollbackScript && isLightVelaEffectiveWindowScript(rollbackScript)) {
+      try {
+        await removeEffectiveWindowScript(botId, rollbackScript);
+      } catch {
+        /* keep the original create error */
+      }
+    }
+    throw error;
   }
 }
 
@@ -1438,7 +1537,7 @@ export function buildTestRunMarker(jobId: string, originName?: string): string {
 }
 
 /** 判断是否为「测试运行」创建的用完即焚临时任务，供 `listCronJobs` 过滤 */
-function isTestRunMarkerName(name: string): boolean {
+export function isTestRunMarkerName(name: string): boolean {
   return ZW_MARKER_RE.test(name);
 }
 
@@ -1552,6 +1651,7 @@ function normalizeChannelKeyForDeliver(channel: string): string {
   if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
   if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
   if (["discord", "openclaw-discord"].includes(normalized)) return "discord";
+  if (["slack", "openclaw-slack"].includes(normalized)) return "slack";
   return normalized;
 }
 
@@ -1567,6 +1667,7 @@ const DELIVER_FALLBACK_CHANNEL_PRIORITY = [
   "telegram",
   "whatsapp",
   "discord",
+  "slack",
 ] as const;
 
 /**
@@ -1910,6 +2011,76 @@ export async function removeCronJob(botId: string, id: string): Promise<void> {
   await execCommand(botId, `hermes cron remove ${shellQuote(id)}`);
 }
 
+async function rollbackCronDependentBindings(
+  botId: string,
+  updated: readonly CronDependentBinding[],
+): Promise<string[]> {
+  const rollbackFailed: string[] = [];
+  for (const dependent of [...updated].reverse()) {
+    try {
+      await executeCronjobTool(botId, {
+        action: "update",
+        job_id: dependent.id,
+        context_from: dependent.contextFrom,
+      });
+    } catch {
+      rollbackFailed.push(dependent.id);
+    }
+  }
+  return rollbackFailed;
+}
+
+function cronDependentMutationError(summary: CronDependentMutationSummary): CronCommandError {
+  const details = [summary.error ?? "dependent mutation failed"];
+  if (summary.rollback_failed.length > 0) {
+    details.push(`rollback_failed:${summary.rollback_failed.join(",")}`);
+  }
+  return new CronCommandError({
+    command: "cronjob dependent removal",
+    output: details.join(";"),
+    status: "CRON_DEPENDENT_MUTATION_FAILED",
+    exitCode: 1,
+  });
+}
+
+export async function removeCronJobWithDependentRollback(
+  botId: string,
+  targetId: string,
+  dependents: readonly CronDependentBinding[],
+): Promise<void> {
+  const updated: CronDependentBinding[] = [];
+  for (const dependent of dependents) {
+    try {
+      await executeCronjobTool(botId, {
+        action: "update",
+        job_id: dependent.id,
+        context_from: dependent.contextFrom.filter((id) => id !== targetId),
+      });
+      updated.push(dependent);
+    } catch {
+      const rollbackFailed = await rollbackCronDependentBindings(botId, updated);
+      throw cronDependentMutationError({
+        success: false,
+        updated: updated.map((item) => item.id),
+        rollback_failed: rollbackFailed,
+        error: `update_failed:${dependent.id}`,
+      });
+    }
+  }
+
+  try {
+    await executeCronjobTool(botId, { action: "remove", job_id: targetId });
+  } catch {
+    const rollbackFailed = await rollbackCronDependentBindings(botId, updated);
+    throw cronDependentMutationError({
+      success: false,
+      updated: updated.map((item) => item.id),
+      rollback_failed: rollbackFailed,
+      error: `remove_failed:${targetId}`,
+    });
+  }
+}
+
 /** 编辑已存在 cron job：传入要更新的字段，未传不动 */
 export async function editCronJob(
   botId: string,
@@ -1917,4 +2088,29 @@ export async function editCronJob(
   patch: EditCronJobPatch,
 ): Promise<void> {
   await execCommand(botId, buildEditCommand(id, patch));
+}
+
+export async function editCronJobWithContext(
+  botId: string,
+  id: string,
+  patch: EditCronJobPatch,
+  contextFrom: CronContextPatch,
+): Promise<void> {
+  if (contextFrom === undefined) {
+    await editCronJob(botId, id, patch);
+    return;
+  }
+  const payload: CronjobToolPayload = {
+    action: "update",
+    job_id: id,
+    context_from: contextFrom,
+  };
+  if (patch.schedule !== undefined) payload.schedule = patch.schedule;
+  if (patch.prompt !== undefined) payload.prompt = patch.prompt;
+  if (patch.name !== undefined) payload.name = patch.name;
+  if (patch.deliver !== undefined) payload.deliver = patch.deliver;
+  if (patch.script !== undefined) payload.script = patch.script;
+  if (patch.model !== undefined) payload.model = patch.model;
+  if (patch.skills !== undefined) payload.skills = patch.skills;
+  await executeCronjobTool(botId, payload);
 }

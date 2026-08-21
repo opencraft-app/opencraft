@@ -1,0 +1,12 @@
+.git
+.secret
+**/.secret
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/node_modules
+**/.next
+**/out
+**/dist
+**/.cache

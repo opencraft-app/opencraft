@@ -521,6 +521,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
     def test_manual_promote_fans_out_csv_target_envs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fake_bin = Path(tmp)
+            source_repo = fake_bin / "source"
             fake_runtime = fake_bin / "runtime"
             fake_runtime_commands = fake_runtime / "commands"
             pins_file = fake_bin / "pins.log"
@@ -529,6 +530,13 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             fake_resolver = fake_runtime_commands / "resolve_release_bundle.py"
             fake_runtime_commands.mkdir(parents=True)
             fake_resolver.touch()
+            (source_repo / "ctl/migrations").mkdir(parents=True)
+            (source_repo / "ctl/migrations/000028_test.up.sql").write_text("SELECT 1;\n")
+            subprocess.run(["git", "init"], cwd=source_repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "CI Test"], cwd=source_repo, check=True)
+            subprocess.run(["git", "config", "user.email", "ci-test@example.com"], cwd=source_repo, check=True)
+            subprocess.run(["git", "add", "."], cwd=source_repo, check=True)
+            subprocess.run(["git", "commit", "-m", "source"], cwd=source_repo, check=True, capture_output=True)
             fake_python.write_text(
                 textwrap.dedent(
                     f"""\
@@ -562,7 +570,9 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                 textwrap.dedent(
                     """\
                     #!/bin/bash
-                    printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" >> "$PIN_LOG_FILE"
+                    migration_count="$(find "$REPO_ROOT/ctl/migrations" -maxdepth 1 -name '*.up.sql' 2>/dev/null | wc -l)"
+                    printf '%s\t%s\t%s\n' "$3" "$REPO_ROOT" "$migration_count" >> "$PIN_LOG_FILE"
+                    mv "$REPO_ROOT/ctl/migrations" "$REPO_ROOT/ctl/migrations.promoted" 2>/dev/null || true
                     """
                 )
             )
@@ -575,10 +585,13 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                     "RUNTIME_COMMAND_DIR": str(fake_runtime_commands),
                     "PIN_SCRIPT_OVERRIDE": str(fake_pin),
                     "PIN_LOG_FILE": str(pins_file),
+                    "REPO_ROOT": str(source_repo),
                 }
             )
 
-            source_ref = "0123456789abcdef"
+            source_ref = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=source_repo, text=True
+            ).strip()
             subprocess.run(
                 [
                     "/bin/bash",
@@ -588,7 +601,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                     "shprod,sgprod",
                     source_ref,
                 ],
-                cwd=REPO_ROOT,
+                cwd=source_repo,
                 env=env,
                 check=True,
                 capture_output=True,
@@ -597,14 +610,13 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
 
             pins = pins_file.read_text().splitlines()
             self.assertEqual(len(pins), 2)
-            self.assertEqual(
-                pins[0],
-                "admin-gateway\tadmin-gateway\tshprod\tregistry.example.com/admin-gateway-shprod:admin-gateway-0123456789ab\t0123456789abcdef",
-            )
-            self.assertEqual(
-                pins[1],
-                "admin-gateway\tadmin-gateway\tsgprod\tregistry.example.com/admin-gateway-sgprod:admin-gateway-0123456789ab\t0123456789abcdef",
-            )
+            shprod_env, shprod_root, shprod_migrations = pins[0].split("\t")
+            sgprod_env, sgprod_root, sgprod_migrations = pins[1].split("\t")
+            self.assertEqual(shprod_env, "shprod")
+            self.assertEqual(sgprod_env, "sgprod")
+            self.assertNotEqual(shprod_root, sgprod_root)
+            self.assertEqual(shprod_migrations, "1")
+            self.assertEqual(sgprod_migrations, "1")
 
     def test_pin_script_uses_materialized_runtime_after_gitops_checkout(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
@@ -672,6 +684,17 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn('cp -R "$REPO_ROOT/.ci/runtime" "$PIN_RUNTIME_SNAPSHOT/.ci/runtime"', script)
         self.assertIn('PIN_SCRIPT="$PIN_RUNTIME_SNAPSHOT/.ci/runtime/pin_image_to_gitops.sh"', script)
         self.assertIn('prepare_pin_runtime_snapshot\n\nIFS=\',\' read -r -a AUTO_ENVS <<<"$AUTO_PIN_ENVS"', script)
+
+    def test_pin_script_resets_frontend_build_generated_files_before_dirty_guard(self) -> None:
+        script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
+
+        self.assertIn("reset_known_build_side_effects_before_rewrite", script)
+        self.assertIn("frontend/next-env.d.ts", script)
+        self.assertIn("frontend/public/fonts/HYRuiYiSong-45J.subset.woff2", script)
+        self.assertLess(
+            script.index("reset_known_build_side_effects_before_rewrite\n\nif ! git"),
+            script.index("repository has uncommitted changes; refuse to rewrite branch state"),
+        )
 
     def test_prod_promote_fanout_pins_runtime_before_branch_checkouts(self) -> None:
         template = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()

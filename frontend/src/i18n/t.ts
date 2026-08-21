@@ -39,7 +39,7 @@ type ZhToKeyMap = Record<string, string>;
 const zhToKeyMap = zhToKey as ZhToKeyMap;
 
 /** 支持的 i18n locale —— 与 src/i18n/index.ts 中的 resources 保持一致 */
-export type I18nLocale = "zh-CN" | "en-US" | "zh-Hant";
+export type I18nLocale = "zh-CN" | "en-US" | "zh-Hant" | "id-ID";
 
 /**
  * Locale override context —— 由路由层（例如 Next.js App Router 的 layout）

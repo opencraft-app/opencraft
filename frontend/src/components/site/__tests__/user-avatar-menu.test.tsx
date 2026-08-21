@@ -29,6 +29,10 @@ vi.mock("@/lib/avatar-image", () => ({
   avatarImageUrl: () => "https://example.com/avatar.png",
 }));
 
+vi.mock("@/lib/region", () => ({
+  isGlobal: true,
+}));
+
 const stubLocation = (hostname: string) => {
   Object.defineProperty(window, "location", {
     configurable: true,
@@ -199,5 +203,29 @@ describe("UserAvatarMenu", () => {
     });
 
     expect(screen.getByRole("link", { name: "产品反馈" })).toHaveAttribute("href", "/support");
+  });
+
+  it("keeps My creations hidden until show() reveals it", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(<UserAvatarMenu />);
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.queryByRole("link", { name: "我的作品" })).not.toBeInTheDocument();
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    expect(screen.getByRole("link", { name: "我的作品" })).toHaveAttribute("href", "/agents/websites");
   });
 });

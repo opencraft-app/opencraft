@@ -1,15 +1,10 @@
 # How to Configure a Hermes Agent with a Distinct Personality in Telegram
 
-Telegram is the place where you talk to Hermes Agent.
-The Agent's personality, working style, and boundaries come from the Agent's persona and durable context, not from the Telegram bot itself.
-
-This guide shows how to connect a Hermes Agent to Telegram and use LightVela's personality features to give it a stable role, voice, and set of behavioral boundaries.
-
-![A Hermes Agent with a distinct personality in Telegram](../images/use-case-03-telegram-persona-agent.png)
-
 ## Summary
 
 **Telegram is only an entry point. What determines how the Agent speaks, how it works, and what it will not do is its persona and long-term context.** The flow has two halves: first connect the Hermes Agent to Telegram following the channel guide (create a bot with BotFather to obtain a token, connect in the console, and confirm it shows as connected), then use the Persona section on the Agent's settings page to select a stable role, tone, and set of limits and inject it. Keep the three layers distinct: the persona holds durable behavioural principles, user preferences hold how you want to be treated, and long-term memory holds confirmed facts and project background. Note that the Telegram channel currently supports one-to-one conversations only, not group chats.
+
+![A Hermes Agent with a distinct personality in Telegram](../images/use-case-03-telegram-persona-agent.png)
 
 ## Who this is for
 

@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trade-sgprod
+  namespace: argocd
+spec:
+  project: sgprod-trade
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/trade/sgprod
+  destination:
+    namespace: trade
+    name: sgprod

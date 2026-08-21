@@ -102,15 +102,19 @@ func (e *CGWError) Error() string {
 
 // GetPriceRequest 是询价 envelope.interface.para 内层（设计稿 §5.1）。
 //
-// 历史变更（2026-06-25 用户拍板）：原本字段集含 Preview / Uin 两个联调期补丁字段——
-// Preview 用于让询价/下单两端在 preview=1 时拿到统一定价口径，Uin 是 preview=1 时
-// 点石侧顶层强校验。点石活动 1881819452816580 切换到正式形态后，preview 模式不再需要，
-// 顶层 Uin 也随之去掉（询价不计算 check_sum，无需 uin），回到设计稿 §5.1 envelope 样例
-// 形态。下单端的 DoGoodsRequest.Uin 仍保留供 check_sum 与 jifei 站点路由使用。
+// Uin 只服务于 preview 模式：正式形态询价不计算 check_sum、点石也不需要 uin，
+// 所以 §5.1 基线 envelope 不带该字段。但 preview=1 时点石靠顶层 uin 做商品可见性 /
+// 归属路由，缺 uin 会返 returnCode=1100105 "商品ID不存在"（commit 68aa66c73 已记录，
+// 2026-08-19 KR 联调再次实测复现）。因此 client 只在 preview=1 时把它写入出向 para，
+// preview=0 时出向形态与正式环境完全一致。
+//
+// 下单端的 DoGoodsRequest.Uin 是无条件必填，供 check_sum 与 jifei 站点路由使用。
 type GetPriceRequest struct {
 	ActivityID int64                  `json:"activity_id"`
 	ClientInfo map[string]interface{} `json:"client_info,omitempty"`
 	Goods      []GetPriceGoodsItem    `json:"goods"`
+	Preview    int                    `json:"preview,omitempty"`
+	Uin        string                 `json:"uin,omitempty"`
 }
 
 // GetPriceGoodsItem 是询价 goods[] 元素。
@@ -169,10 +173,8 @@ type PriceItem struct {
 
 // DoGoodsRequest 是下单 envelope.interface.para 内层（设计稿 §5.1）。
 //
-// 历史变更（2026-06-25 用户拍板）：移除 Preview 字段——联调期临时用 preview=1 走点石
-// 预览模式（不真实扣费 / 仅返 mock deal_names）的需求结束，现网形态 envelope 不再带
-// preview 字段（缺省 = 正式下单）。Uin 必须保留：① CalcCheckSum(uin, activity_id, secret_key)
-// 签名输入；② jifei 计费侧按 uin 注册区分国内站 / 国际站、并把 deal 归属到真实账号。
+// Uin 必须保留：① CalcCheckSum(uin, activity_id, secret_key) 签名输入；② jifei 计费侧按
+// uin 注册区分国内站 / 国际站、并把 deal 归属到真实账号。
 type DoGoodsRequest struct {
 	Uin        string                 `json:"uin"`
 	ActivityID int64                  `json:"activity_id"`
@@ -183,6 +185,7 @@ type DoGoodsRequest struct {
 	Goods      []DoGoodsItem          `json:"goods"`
 	ClientInfo map[string]interface{} `json:"client_info,omitempty"`
 	CheckSum   string                 `json:"check_sum,omitempty"` // §7.1 签名，secret_key 为空时不出现
+	Preview    int                    `json:"preview,omitempty"`
 }
 
 // DoGoodsItem 是下单 goods[] 元素。
@@ -219,6 +222,7 @@ type Options struct {
 	HTTPClient      *http.Client
 	EventIDProvider func() int64
 	NowProvider     func() time.Time
+	Preview         int
 }
 
 type client struct {
@@ -227,6 +231,7 @@ type client struct {
 	httpClient      *http.Client
 	eventIDProvider func() int64
 	nowProvider     func() time.Time
+	preview         int
 }
 
 // New 构造点石 client。
@@ -247,6 +252,7 @@ func New(priceBaseURL, orderBaseURL string, opts ...Options) Client {
 	}
 	if len(opts) > 0 {
 		o := opts[0]
+		c.preview = o.Preview
 		if o.HTTPClient != nil {
 			c.httpClient = o.HTTPClient
 		}
@@ -295,7 +301,15 @@ func (c *client) GetActivityPrice(ctx context.Context, req *GetPriceRequest) (*G
 		return nil, fmt.Errorf("dianshiclient: priceBaseURL is required")
 	}
 	out := &GetPriceResponse{}
-	if err := c.do(ctx, c.priceBaseURL, InterfaceNameActivityGetPrice, ComponentNamePrice, req, out); err != nil {
+	outbound := *req
+	outbound.Preview = c.preview
+	// preview 与顶层 uin 成对出现：preview=1 时点石强校验 uin，preview=0（正式形态）
+	// 则两个字段都不出现在出向 para（见 GetPriceRequest.Uin 注释）。
+	outbound.Uin = ""
+	if c.preview == 1 {
+		outbound.Uin = req.Uin
+	}
+	if err := c.do(ctx, c.priceBaseURL, InterfaceNameActivityGetPrice, ComponentNamePrice, &outbound, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -310,7 +324,9 @@ func (c *client) DoGoods(ctx context.Context, req *DoGoodsRequest) (*DoGoodsResp
 		return nil, fmt.Errorf("dianshiclient: orderBaseURL is required")
 	}
 	out := &DoGoodsResponse{}
-	if err := c.do(ctx, c.orderBaseURL, InterfaceNameDoGoods, ComponentNameOrder, req, out); err != nil {
+	outbound := *req
+	outbound.Preview = c.preview
+	if err := c.do(ctx, c.orderBaseURL, InterfaceNameDoGoods, ComponentNameOrder, &outbound, out); err != nil {
 		return nil, err
 	}
 	return out, nil

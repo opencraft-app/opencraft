@@ -24,6 +24,7 @@ function langForOutputPath(path) {
   if (relative.startsWith('zh-cn/')) return 'zh-CN';
   if (relative.startsWith('zh-sg/')) return 'zh-SG';
   if (relative.startsWith('zh-hant/')) return 'zh-Hant';
+  if (relative.startsWith('id-id/')) return 'id-ID';
   return defaultHtmlLang;
 }
 

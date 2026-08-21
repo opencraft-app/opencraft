@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
 import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS } from "@/lib/public-site-routing";
 import {
@@ -34,10 +35,19 @@ const copy = {
     accept: "接受全部",
     necessary: "僅必要 Cookie",
   },
+  [PUBLIC_SITE_LOCALES.ID_ID]: {
+    title: "Kami menggunakan Cookie",
+    description:
+      "Kami menggunakan Cookie untuk menjaga LightVela tetap stabil, memahami penggunaan situs, dan meningkatkan pengalaman Anda. Anda dapat menerima semua Cookie atau hanya Cookie yang diperlukan. Detail tersedia di",
+    policy: "Kebijakan Cookie",
+    accept: "Terima semua",
+    necessary: "Hanya yang diperlukan",
+  },
 };
 
 export const CookieConsentBanner = () => {
   const pathname = usePathname();
+  const { i18n } = useTranslation();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -52,13 +62,43 @@ export const CookieConsentBanner = () => {
     localePrefix === PUBLIC_URL_LANGS.EN_US ||
     localePrefix === PUBLIC_URL_LANGS.ZH_CN ||
     localePrefix === PUBLIC_URL_LANGS.ZH_SG ||
-    localePrefix === PUBLIC_URL_LANGS.ZH_HANT;
-  const locale =
-    localePrefix === PUBLIC_URL_LANGS.ZH_HANT
+    localePrefix === PUBLIC_URL_LANGS.ZH_HANT ||
+    localePrefix === PUBLIC_URL_LANGS.ID_ID;
+
+  /**
+   * 语言判定优先级：
+   *   1. URL 语言前缀（公开页，如 /id-id/subscribe）
+   *   2. 当前 i18n 语言（控制台等刻意不做 URL 本地化的路径，如 /agents、/auth；
+   *      见 PUBLIC_LOCALIZED_PATH_PREFIXES）
+   *   3. 英文兜底
+   *
+   * 若只看 URL 前缀，在 /agents 下 localePrefix 会是 "agents"，
+   * 匹配不到任何语言而错误地回退英文。
+   */
+  const localeFromPrefix =
+    localePrefix === PUBLIC_URL_LANGS.ID_ID
+      ? PUBLIC_SITE_LOCALES.ID_ID
+      : localePrefix === PUBLIC_URL_LANGS.ZH_HANT
       ? PUBLIC_SITE_LOCALES.ZH_HANT
       : localePrefix === PUBLIC_URL_LANGS.ZH_CN || localePrefix === PUBLIC_URL_LANGS.ZH_SG
         ? PUBLIC_SITE_LOCALES.ZH_CN
-        : PUBLIC_SITE_LOCALES.EN_US;
+        : localePrefix === PUBLIC_URL_LANGS.EN_US
+          ? PUBLIC_SITE_LOCALES.EN_US
+          : null;
+
+  const currentI18nLanguage = i18n.language;
+  const localeFromI18n =
+    currentI18nLanguage === PUBLIC_SITE_LOCALES.ID_ID
+      ? PUBLIC_SITE_LOCALES.ID_ID
+      : currentI18nLanguage === PUBLIC_SITE_LOCALES.ZH_HANT
+      ? PUBLIC_SITE_LOCALES.ZH_HANT
+      : currentI18nLanguage === PUBLIC_SITE_LOCALES.ZH_CN
+        ? PUBLIC_SITE_LOCALES.ZH_CN
+        : currentI18nLanguage === PUBLIC_SITE_LOCALES.EN_US
+          ? PUBLIC_SITE_LOCALES.EN_US
+          : null;
+
+  const locale = localeFromPrefix ?? localeFromI18n ?? PUBLIC_SITE_LOCALES.EN_US;
   const cookiePolicyPath = hasLocalizedRoute ? `/${localePrefix}/cookie-policy` : "/cookie-policy";
   const text = copy[locale];
   const handleChoice = (value: CookieConsentValue) => {

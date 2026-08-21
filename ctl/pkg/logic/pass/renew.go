@@ -41,18 +41,14 @@ const extendAiGatewayCallTimeout = 10 * time.Second
 //	pass.status=='isolating' → ErrPassIsolating （隔离进行中不能续费）
 //	pass.status 其他值 / pass 不存在 → ErrPassNotFound / ErrPassNotRenewable
 
-// 异步父 task RenewPass 自身重试节奏（R-MR-5 升级，2026-05-24 用户拍板）：
-//   - 30s × 5 次 = 2.5min 重试窗口
-//   - 与 isolate 父 task "永不放弃 + INT64_MAX 兜底" 不同 — 续费失败不能无限重投，
-//     否则会卡住 trade_flow（jifei 不会自动退款），且持续占着 pass.status='renewing' 让
-//     用户无法发起新订单。
-//   - max=5 用尽后由 finalizeFailure 派发 RollbackRenewPassTask 回滚副作用 +
-//     CompleteFlow(failed) 触发 jifei 退款（详见 .tmp/trade-pass-renew-design.md
-//     §3.4 失败回滚链路升级）。
+// 异步父 task RenewPass 自身重试节奏：
+//   - 父 task 需要覆盖 RenewInstance 子 task 的完整重试窗口，不能在子 task 仍可恢复时
+//     提前触发 RollbackRenewPass。
+//   - 使用与 worker 侧一致的 1<<30 兜底值；确定性的子 task 终态失败仍由
+//     finalizeFailure 立即派发回滚，不依赖耗尽重试次数。
 const (
 	renewPassParentExecuteIntervalSeconds = int64(30)
-	// R-MR-5 升级：1<<30 → 5（有限重试 + 失败回滚链路接管）。
-	renewPassParentMaxExecuteCount = 5
+	renewPassParentMaxExecuteCount        = 1 << 30
 )
 
 // RenewPass 详见 Logic 接口注释
@@ -256,6 +252,11 @@ func renewLogger() *zap.Logger {
 // AlignAiGatewaySubscriptionPeriodEnd 只为迁移期的 legacy ai-gateway 用户保留。
 // 旧 ai-gateway 仍需要把 ctl 算好的 pass.expired_time 对齐到 subscription.period_end；
 // LLMGateway/velagw 的订阅为长期权益，续费不再延长 period_end。
+//
+// 降级规则（2026-08-19 用户拍板）：ai-gateway 返回路由 404（ErrAiGatewayRouteNotFound，
+// 镜像未升级 / 路由未注册导致的部署滞后）时，不再阻断续费，降级为 llmgateway 的
+// periodless 处理（跳过 period_end 对齐）。仅业务 404（ErrAiGatewayPlanNotFound，
+// 用户确无 legacy 订阅）与 ai-gateway 未配置（ErrAiGatewayNotConfigured）保持原降级语义。
 func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID string, newPeriodEnd time.Time) error {
 	if logger == nil {
 		logger = renewLogger()
@@ -287,6 +288,12 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 			if err != nil {
 				if errors.Is(err, aigateway.ErrAiGatewayPlanNotFound) {
 					logger.Warn("recorded ai-gateway subscription not found, skipping align",
+						zap.String("user_id", userID),
+						zap.String("pass_id", passID))
+					return nil
+				}
+				if errors.Is(err, aigateway.ErrAiGatewayRouteNotFound) {
+					logger.Warn("recorded ai-gateway route not found (deployment lag), fallback to llmgateway periodless handling",
 						zap.String("user_id", userID),
 						zap.String("pass_id", passID))
 					return nil
@@ -332,7 +339,9 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 				zap.Bool("updated", legacyResp != nil && legacyResp.Updated)) // false = 等值幂等 no-op
 			return nil
 		}
-		if !errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) && !isLegacyGatewayDisabled(legacyErr) {
+		if !errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) &&
+			!errors.Is(legacyErr, aigateway.ErrAiGatewayRouteNotFound) &&
+			!isLegacyGatewayDisabled(legacyErr) {
 			return legacyErr
 		}
 	}
