@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lightclaw-auth
+  namespace: user-auth
+spec:
+  template:
+    spec:
+      containers:
+        - name: auth
+          env:
+            - name: SHADOW_BINDING_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lightclaw-auth-secrets
+                  key: LIGHTCLAW_INTERNAL_SERVICE_TOKEN
