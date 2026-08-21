@@ -350,6 +350,34 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("TLS lifecycle is platform-owned", readme)
         self.assertIn("does not create, update, or rotate that Secret", readme)
 
+    def test_site_gateway_auth_contract_keeps_international_public(self) -> None:
+        base_manifest = REPO_ROOT / "site-gateway" / "k8s" / "base" / "manifests.yaml"
+        documents = list(yaml.safe_load_all(base_manifest.read_text()))
+        config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
+        for key in (
+            "SITE_GATEWAY_AUTH_MODE",
+            "SITE_GATEWAY_AUTH_ISSUER",
+            "SITE_GATEWAY_AUTH_AUDIENCE",
+            "SITE_GATEWAY_AUTH_START_URL",
+            "SITE_GATEWAY_AUTH_PUBLIC_KEYS",
+            "SITE_GATEWAY_AUTH_SESSION_TTL",
+        ):
+            self.assertIn(key, config_map.get("data", {}))
+
+        platform_values = {
+            key: value
+            for line in (
+                REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod" / "site-gateway-platform.env"
+            ).read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(platform_values.get("SITE_GATEWAY_AUTH_MODE"), "public")
+
+        bundle = (REPO_ROOT / ".ci" / "runtime" / "bundles" / "site-gateway.bundle").read_text()
+        self.assertIn("site-gateway/docs", bundle)
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
@@ -416,6 +444,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(data["SHADOW_CLOUDLADDER_ROUTE_ID"], "tcapi-account-intl-prod")
         self.assertEqual(data["SHADOW_BILLING_CLOUDLADDER_ROUTE_ID"], "tcapi-billing-intl-prod")
         self.assertEqual(data["LIGHTCLAW_PAYMENT_METHODS_ENABLED"], "true")
+
+        deploy_root = REPO_ROOT / "argocd/services/lightclaw-auth/sgprod"
+        deploy_kustomization = yaml.safe_load((deploy_root / "kustomization.yaml").read_text())
+        self.assertIn(
+            {"path": "patch-shadow-internal-token.yaml"},
+            deploy_kustomization["patches"],
+        )
+
+        deploy_patch = yaml.safe_load((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        token_env = next(
+            env
+            for env in deploy_patch["spec"]["template"]["spec"]["containers"][0]["env"]
+            if env["name"] == "SHADOW_BINDING_INTERNAL_TOKEN"
+        )
+        self.assertEqual(
+            token_env["valueFrom"]["secretKeyRef"],
+            {
+                "name": "lightclaw-auth-secrets",
+                "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
+        )
 
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()

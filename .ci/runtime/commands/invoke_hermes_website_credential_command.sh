@@ -7,18 +7,18 @@
 # in one invocation — and each instance has a unique key.
 #
 # Input: JSONL file with one object per line:
-#   {"cloud_id":"ins-xxx","website_key":"vwk_xxx_yyy"}
+#   {"cloud_id":"ins-xxx","website_key":"vik_xxx_yyy"}
 #
 # Usage:
 #   HERMES_TAT_COMMAND_ID=cmd-xxx \
-#   HERMES_TAT_REGION=ap-shanghai \
+#   HERMES_TAT_REGION=ap-singapore \
 #   HERMES_TAT_API_BASE=https://api.lightvela.com \
 #   HERMES_TAT_INPUT_FILE=/tmp/instances.jsonl \
 #     bash .ci/runtime/commands/invoke_hermes_website_credential_command.sh
 #
 # Environment:
 #   HERMES_TAT_COMMAND_ID   Required. TAT CommandId.
-#   HERMES_TAT_REGION        Default: ap-shanghai.
+#   HERMES_TAT_REGION        Default: ap-singapore.
 #   HERMES_TAT_API_BASE      Required. API base URL for the environment.
 #   HERMES_TAT_INPUT_FILE    JSONL file. If unset, reads stdin.
 #   HERMES_TAT_OUTPUT_DIR    Default: /tmp/hermes-website-credential-results.
@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-REGION="${HERMES_TAT_REGION:-ap-shanghai}"
+REGION="${HERMES_TAT_REGION:-ap-singapore}"
 COMMAND_ID="${HERMES_TAT_COMMAND_ID:-}"
 API_BASE="${HERMES_TAT_API_BASE:-}"
 INPUT_FILE="${HERMES_TAT_INPUT_FILE:-}"
@@ -56,7 +56,7 @@ Environment:
   HERMES_TAT_API_BASE
       Required. API base URL for the target environment.
   HERMES_TAT_REGION
-      Default: ap-shanghai.
+      Default: ap-singapore.
   HERMES_TAT_INPUT_FILE
       JSONL file. If unset, reads stdin.
   HERMES_TAT_OUTPUT_DIR
@@ -238,7 +238,7 @@ with open(sys.argv[1], "w") as f:
 import json, sys
 try:
     data = json.load(sys.stdin)
-    print(data.get("Response", {}).get("InvocationId", ""))
+    print(data.get("Response", data).get("InvocationId", ""))
 except Exception:
     print("")
 ' <"$invoke_stdout" 2>/dev/null || true)"
@@ -272,7 +272,7 @@ except Exception:
     print("INVALID_RESPONSE")
     raise SystemExit
 
-tasks = data.get("Response", {}).get("InvocationTaskSet", [])
+tasks = data.get("Response", data).get("InvocationTaskSet", [])
 matches = [
     task for task in tasks
     if task.get("InstanceId") == sys.argv[2]

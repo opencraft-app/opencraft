@@ -6,8 +6,10 @@
 > **目标**：国际站域名 `lightvela.site` 静态网站托管功能上线
 > **测试环境**：北京 Sandbox（tke-bj8）
 > **状态**：北京测试环境曾完成 API 直调 HTTPS E2E；当前真实用户站点回归未闭环，生产证书、DNS 切换和生产发布均未完成
+>
+> **剩余事项集中清单**：见 [2026-08-18-lightvela-site-remaining-todos.md](2026-08-18-lightvela-site-remaining-todos.md)。本文件保留架构和历史验收上下文，发布前以集中清单为准。
 
-> **源码交付边界**：除正式 `*.lightvela.site` 证书 ID、生产 CLB/DNS 切换和受保护环境中的 secret render/apply 外，源码、迁移、流水线和 sgprod GitOps 骨架应保持可直接合入 `master`。合入 `master` 会触发 CTL、site-gateway、website-deployer 和前端相关构建；生产 promote、GitOps MR 合并、Argo sync 仍需按发布窗口人工执行。
+> **源码交付边界**：除生产证书自动化接入、生产 CLB/DNS 切换和受保护环境中的 secret render/apply 外，源码、迁移、流水线和 sgprod GitOps 骨架应保持可直接合入 `master`。本后端分支不包含 `frontend/**`、frontend GitOps 或 frontend Application 变更，不会自动触发 frontend 构建；但最新 `master` 已包含此前合入的建站入口代码，后端验收完成前禁止手动发布国际站 frontend。
 
 ---
 
@@ -94,10 +96,10 @@ COS Bucket（7869-xiamitcb-db-lab-d5fofz8t62c5140d-1251810746 / ap-shanghai）
 ```
 用户机器上的 Hermes Agent
   │  通过 website-builder Skill
-  │  Authorization: Vela-Instance-Key vwk_xxx_yyy
+  │  Authorization: Vela-Instance-Key vik_xxx_yyy
   ▼
-service-gateway（路由：ctl-instance-websites）
-  │  allowlist 过滤
+service-gateway（路由：ctl-websites）
+  │  Vela-Instance-Key 路径 allowlist 过滤
   ▼
 ctl-api-websites（Go，端口 9590）
   │  1. websiteInstanceAuthMiddleware 校验 Vela-Instance-Key
@@ -223,7 +225,7 @@ ctl → LPUSH Redis key="website:deploy:queue" operation_id
 | 证书类型 | **付费泛域名证书**（不能复用测试 Let's Encrypt 免费证书） |
 | 状态 | ❌ 未申请 — 生产发布前必须完成 |
 | 申请方式 | 通过腾讯云 SSL 证书控制台申请付费泛域名证书 |
-| 部署方式 | 平台 TLS 流程在 sgprod `ctl` namespace 创建或轮换稳定 Secret，不随 site-gateway 日常发布下发 |
+| 部署方式 | 平台证书自动化在 sgprod `ctl` namespace 创建/轮换稳定 live Secret；不随 site-gateway 日常发布下发，GitOps 不保存证书 ID |
 | K8s Secret | `site-gateway-wildcard-tls`（Opaque，key=`qcloud_cert_id`） |
 
 ### 4.3 Ingress 规则
@@ -330,7 +332,7 @@ site-gateway 的 `origin/cos.go` 负责将 HTTP 请求反向代理到 COS：
 
 ```
 GET /v1/websites/capability
-Authorization: Vela-Instance-Key vwk_xxx_yyy
+Authorization: Vela-Instance-Key vik_xxx_yyy
 ```
 
 返回：
@@ -436,7 +438,7 @@ CREATE TABLE `website_custom_domains` (
 ### 7.1 凭据格式
 
 ```
-vwk_<key_id>_<secret>
+vik_<key_id>_<secret>
 ```
 
 - `key_id` = base64url_no_padding(random(16 bytes))，固定 22 字符
@@ -473,7 +475,7 @@ HERMES_TAT_REGION=ap-beijing \
 **Step 2：逐台调用 TAT（每台实例独立调用）**
 
 ```bash
-echo '{"cloud_id":"ins-xxx","website_key":"vwk_xxx_yyy"}' | \
+echo '{"cloud_id":"ins-xxx","website_key":"vik_xxx_yyy"}' | \
 HERMES_TAT_COMMAND_ID=cmd-xxx \
 HERMES_TAT_REGION=ap-beijing \
 HERMES_TAT_API_BASE=https://api.lightvela.ai \
@@ -563,10 +565,11 @@ Skill 的分发渠道：
 2. **SkillHub 安装**：`images/build.sh` 通过 `SKILLHUB_INSTALL_URL` 安装 SkillHub CLI（`/usr/local/bin/skillhub`），用户/平台可以通过 `skillhub install` 命令安装额外 Skill
 3. **手动部署**：通过 SSH 或通用 TAT 命令（`.ci/runtime/commands/create_hermes_tat_command.sh`）将 SKILL.md 复制到机器的 `${RUNTIME_HOME}/.hermes/skills/` 或 `${RUNTIME_HOME}/.agents/skills/` 目录
 
-**当前状态**：website-builder Skill 尚未集成到 Hermes 镜像的 `curate_hermes_skills` keep_list 中。生产发布前需要：
-- 将 website-builder 加入 Hermes 镜像的预装 Skill 列表，或
+**当前状态**：website-builder Skill 已加入 Hermes 镜像的 `curate_hermes_skills` keep_list（`images/build.sh`）。生产发布前仍需确认：
+- ~~将 website-builder 加入 Hermes 镜像的预装 Skill 列表~~ ✅ 已完成
 - 通过 SkillHub 发布后让用户 `skillhub install website-builder`，或
 - 通过通用 TAT 命令批量部署到所有用户机器
+- 确认镜像构建流程中 website-builder Skill 文件会被正确复制到 `${RUNTIME_HOME}/.hermes/skills/` 目录
 
 **仓库中与 TAT 相关的完整脚本清单**：
 
@@ -609,7 +612,7 @@ Skill 的分发渠道：
 | `ctl-api-websites` deployment | `WEBSITE_COS_BUCKET` + `WEBSITE_COS_REGION` 改为用户 bucket | `kubectl set env deploy/ctl-api-websites` |
 | `website-deployer` deployment | `WEBSITE_COS_BUCKET` + `WEBSITE_COS_REGION` 改为用户 bucket | `kubectl set env deploy/website-deployer` |
 | Ingress `lightclaw-sites-public` | 添加 `*.lightvela.site` host + TLS | `kubectl patch ingress` |
-| Secret `site-gateway-lightvela-tls` | 创建/更新为 Opaque + `qcloud_cert_id=ZtmnNUcl` | `kubectl create secret` |
+| Secret `site-gateway-lightvela-tls` | 测试环境创建/更新为 Opaque + `qcloud_cert_id=ZtmnNUcl` | `kubectl create secret` |
 | Secret `ctl-runtime-secrets` | COS AK/SK 改为用户账号凭据 | `kubectl patch secret` |
 | Secret `site-gateway-secrets` | COS AK/SK 改为用户账号凭据 | `kubectl patch secret` |
 | Secret `website-deployer-secrets` | COS AK/SK 改为用户账号凭据 | `kubectl patch secret` |
@@ -665,10 +668,9 @@ Skill 的分发渠道：
 
 | 占位符 / 待办 | 文件 | 期望值 / 操作 |
 |---|---|---|
-| 平台 TLS Secret | sgprod `ctl/site-gateway-wildcard-tls` | 平台侧预置生产 TLS 证书 ID，并独立完成续期和轮换 |
+| 生产 TLS Secret | 平台证书自动化 | 在 sgprod `ctl` 预置/更新 `site-gateway-wildcard-tls`；证书 ID 只存在于 live Secret，不写入 `argocd/**`，并独立完成续期和轮换 |
 | `REPLACE_BOOTSTRAP_TAG`（镜像） | `sgprod/*-platform.env` | CI 流水线自动填充 |
 | DB 迁移 000028 | sgprod MySQL | CTL 流水线生产门禁执行一次（含 5 张表和配额 seed） |
-| `/v1/frontend/runtime-config` 路由 | sgprod config | 本地已补充，需提交当前功能分支后随生产发布 |
 | DNS `*.lightvela.site` | DNS 控制台 | 当前指向测试 CLB，需切到 sgprod CLB |
 | TAT 命令 | ap-singapore | 需在生产区域创建 |
 
@@ -682,8 +684,9 @@ Skill 的分发渠道：
 - [ ] **2. TLS 证书配置到生产**
   - **不能复用测试证书**（测试用 Let’s Encrypt 免费证书，不便于生产管理和续期）
   - 需重新申请生产专用 `*.lightvela.site` 泛域名证书
-  - 平台 TLS 流程在 sgprod `ctl` namespace 预置 `site-gateway-wildcard-tls`
-  - Secret 使用 `qcloud_cert_id` 关联腾讯云 SSL 证书，并由平台独立续期和轮换
+  - sgprod GitOps 只配置稳定 Secret 名：`site-gateway-wildcard-tls`
+  - 平台证书自动化负责申请/续期、上传腾讯云 SSL，并更新 `ctl` 命名空间 live Secret 的 `qcloud_cert_id`
+  - 证书 ID 轮换不修改 GitOps；更新后验证 qcloud Ingress controller 和公网 HTTPS 已切到新证书
   - site-gateway 日常 Kustomize 只引用稳定 Secret 名称，不创建或覆盖证书绑定
 
 - [x] **3. COS Bucket ✅ 已创建已配置**
@@ -708,13 +711,13 @@ Skill 的分发渠道：
 
 - [ ] **5. GitOps manifests**
   - sgprod 的 site-gateway、website-deployer、Ingress 和 SOPS 结构已在功能分支准备
-  - 发布前由受保护环境完成 SSM → SOPS 导出和 KSOPS render 校验
-  - 替换生产镜像 tag、生产证书 ID 等发布期占位符后再合入 `gitops`
+  - 发布前在受保护环境核验现有 SOPS 是否对应当前 SSM；仅在 SSM 变更或 SOPS 过期/无效时按现有 manifest 重新导出，随后执行 secret scan 和 KSOPS render 校验
+  - 替换生产镜像 tag 等发布期占位符后再合入 `gitops`；生产证书 ID 不进入 GitOps
 
 - [x] **6. service-gateway 建站路由配置**
-  - sgprod 已包含 `ctl-websites` 和 `ctl-instance-websites` 路由
-  - `ctl-instance-websites` 已配置 8 条 allowlist 精确匹配建站 API 路径
-  - `/v1/frontend/runtime-config` 路由已在本地补充，需随本分支提交
+  - sgprod 的 `ctl-websites` 路由已启用 `allow_vela_instance_key`
+  - `vela_instance_key_allow` 已配置 8 条 allowlist 精确匹配建站 API 路径
+  - `/v1/frontend/runtime-config` 已在最新 `master`，是计费/实名的后端运行时配置接口，不是建站 UI 开关，也不属于本 MR 差异
 
 - [ ] **7. 镜像构建**
   - 从 `codex/site-cos-gateway` 分支构建生产镜像
@@ -722,7 +725,7 @@ Skill 的分发渠道：
   - 更新 GitOps 中的 image tag
 
 - [ ] **8. TAT 命令创建**
-  - 在生产区域（ap-shanghai）创建 TAT 命令
+  - 在生产区域（ap-singapore）创建 TAT 命令
   - 使用 `create_hermes_website_credential_command.sh`
   - 记录 CommandId
 
@@ -734,16 +737,17 @@ Skill 的分发渠道：
 
 ### 10.2 发布步骤
 
-1. **合入 master** → 触发 CTL、site-gateway、website-deployer 和前端构建流水线；确认生产 TCR 中镜像存在
-2. **生产发布准备** → 申请正式付费 `*.lightvela.site` 证书，记录腾讯云证书 ID；准备生产 CLB 地址但暂不切 DNS
-3. **受保护配置** → 补 SSM，导出 SOPS，执行 secret scan 和 KSOPS render；不得输出 secret 明文
+1. **合入 master** → 触发本次命中的后端流水线并确认生产 TCR 中目标镜像存在；本分支无 frontend 路径变更，不自动触发 frontend 构建，但必须冻结从当前 `master` 手动发布国际站 frontend
+2. **生产发布准备** → 由平台证书自动化申请/托管正式 `*.lightvela.site` 证书并创建 `site-gateway-wildcard-tls`；准备生产 CLB 地址但暂不切 DNS
+3. **受保护配置** → 核验现有 SOPS 是否对应生产 SSM；仅在 SSM 变更或 SOPS 过期/无效时重新导出，执行 secret scan 和 KSOPS render；不得输出 secret 明文
 4. **DB 迁移** → CTL 发布门禁执行唯一的 `000028`，验证版本 28、5 张表和配额 seed
-5. **Promote GitOps** → 分别 promote CTL、service-gateway、website-deployer、site-gateway 和 frontend，审查并合并到 `gitops`
+5. **Promote 后端 GitOps** → 分别 promote CTL、service-gateway、website-deployer 和 site-gateway，审查并合并到 `gitops`；本阶段不 promote frontend
 6. **Argo CD sync** → 人工同步并验证 revision、workload image、`Synced / Healthy`
 7. **TLS/CLB 验证** → 先用 Host 绑定或临时解析验证生产 CLB、Ingress 和正式证书，确认后再切 wildcard DNS
 8. **DNS 切换** → `*.lightvela.site` 从北京测试 CLB 切到 sgprod CLB，等待 TTL 收敛
 9. **TAT 小流量下发** → 给少量真实用户实例安装凭据和 website-builder Skill
 10. **真实 HTTPS E2E** → 在真实用户机器创建、发布、访问 `https://<site_id>.lightvela.site/`、删除并验证 404；通过后扩大下发
+11. **前端后发** → 后端验收通过后再合入/发布 Sarah 前端分支；若后端就绪前必须发布其他 frontend 需求，先在独立前端 MR 增加默认关闭的建站 feature flag
 
 ### 10.3 发布后验证
 
@@ -759,7 +763,7 @@ curl -sk https://ws-xxx.lightvela.site/ -o /dev/null -w '%{http_code}'
 
 # 4. 验证 API
 curl -s https://api.lightvela.ai/v1/websites/capability \
-  -H "Authorization: Vela-Instance-Key vwk_xxx_yyy"
+  -H "Authorization: Vela-Instance-Key vik_xxx_yyy"
 
 # 5. 验证用户机器凭据
 ssh agentuser@<instance_ip>
@@ -817,10 +821,10 @@ mysql -h <prod-db> -e "USE ctl; source ctl/migrations/000028_create_static_websi
 | # | 事项 | 优先级 | 说明 |
 |---|---|---|---|
 | 1 | ~~创建生产专用 COS bucket~~ ✅ | 已完成 | bucket `lightvela-user-sites-1388575217`（ap-singapore）已创建，GitOps + SOPS 已配置 |
-| 2 | 将 kubectl patch 写入 GitOps | P0 | 所有临时改动必须持久化 |
-| 3 | service-gateway 生产路由 | P0 | 建站路由已准备；`/v1/frontend/runtime-config` 待随本分支提交并发布 |
+| 2 | 持久化仍需保留的非证书临时改动 | P0 | 应用/路由配置进入 GitOps；平台维护的 TLS live Secret 不写入 GitOps |
+| 3 | service-gateway 生产路由 | P0 | 建站路由已在最新 `master` 准备；本 MR 不含 frontend 或 frontend runtime-config 路由变更 |
 | 4 | DNS 切换方案确认 | P0 | 需要与产品确认 DNS 管理权限 |
-| 5 | TLS 证书生产部署 | P0 | 正式付费泛域名证书尚未申请；申请后需把证书 ID 配置到生产 CLB/Ingress |
+| 5 | TLS 证书生产部署 | P0 | 正式泛域名证书和平台自动化尚未完成；需验证轮换时 live Secret 更新、CLB 切换和公网 HTTPS |
 | 6 | 镜像构建+推送生产 TCR | P0 | 从分支构建 |
 | 7 | bundle_free_trial_01 的 max_artifact_size | P1 | 测试环境是 20MB，需确认生产是否统一为 50MB |
 | 8 | TAT 命令在生产区域创建 | P1 | sgprod 所在生产区域 |
@@ -889,7 +893,7 @@ mysql -h <prod-db> -e "USE ctl; source ctl/migrations/000028_create_static_websi
 
 **鉴权头格式**：
 ```
-Authorization: Vela-Instance-Key vwk_<key_id>_<secret>
+Authorization: Vela-Instance-Key vik_<key_id>_<secret>
 ```
 （注意：不是 `Vela-Instance-Key: <token>`，是 `Authorization: Vela-Instance-Key <token>`）
 

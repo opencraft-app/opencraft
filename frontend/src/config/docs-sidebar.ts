@@ -255,6 +255,17 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         title: "如何用 Agent 管理长期记忆和个人知识？",
         titleEn: "How to Manage Long-Term Memory and Personal Knowledge with an Agent",
       },
+      {
+        slug: "use-cases/discord-community-agent",
+        title: "Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot",
+        titleEn: "Meet LightVela for Discord: Your AI Agent Discord Bot Serving Your Channel",
+      },
+      {
+        slug: "use-cases/discord-event-agent",
+        title: "如何用 AI Agent 能力增强 Discord 活动机器人？",
+        titleEn: "Empower your Discord Event Bot with AI-Agentic Capabilities",
+        indent: true,
+      },
     ],
   },
   {
@@ -384,6 +395,8 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "use-cases/daily-summary": "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7": "use-cases/hermes-agent-24-7.md",
   "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",
+  "use-cases/discord-community-agent": "use-cases/discord-community-agent.md",
+  "use-cases/discord-event-agent": "use-cases/discord-event-agent.md",
   "hermes-agent/hermes-vs-openclaw": "hermes-agent/01-hermes-vs-openclaw.md",
   "hermes-agent/why-hermes-remembers-you": "hermes-agent/02-why-hermes-remembers-you.md",
   "hermes-agent/user-md-vs-memory-md": "hermes-agent/03-user-md-vs-memory-md.md",

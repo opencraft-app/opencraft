@@ -1,5 +1,5 @@
-// Package websiteauth stores permanent, per-instance credentials for the
-// static website API. Plaintext credentials are returned only when issued.
+// Package websiteauth stores per-instance credentials for the static website
+// API. Plaintext credentials are returned only when issued.
 package websiteauth
 
 import (
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	tokenPrefix         = "vwk"
+	tokenPrefix         = "vik"
 	credentialKeyPrefix = "website:{website-instance-keys}:credential:"
 	instanceIndexPrefix = "website:{website-instance-keys}:instance:"
 	keyIDBytes          = 16
@@ -27,6 +27,18 @@ const (
 )
 
 var ErrInvalidCredential = errors.New("websiteauth: invalid credential")
+
+var activateCredentialScript = redis.NewScript(`
+local stored_instance_id = redis.call('HGET', KEYS[1], 'instance_id')
+if not stored_instance_id or stored_instance_id ~= ARGV[1] then
+  return 0
+end
+if redis.call('SISMEMBER', KEYS[2], ARGV[2]) ~= 1 then
+  return 0
+end
+redis.call('PERSIST', KEYS[1])
+return 1
+`)
 
 type Binding struct {
 	KeyID      string    `json:"key_id"`
@@ -42,6 +54,14 @@ type Store interface {
 	RevokeInstance(ctx context.Context, instanceID string) error
 }
 
+// ProvisionalStore supports short-lived credentials that become permanent only
+// after their out-of-process delivery has been confirmed.
+type ProvisionalStore interface {
+	Store
+	IssueProvisional(ctx context.Context, userID, instanceID string, ttl time.Duration) (plainToken string, binding Binding, err error)
+	Activate(ctx context.Context, instanceID, keyID string) error
+}
+
 type store struct {
 	client *redis.Client
 }
@@ -51,6 +71,17 @@ func New(client *redis.Client) Store {
 }
 
 func (s *store) Issue(ctx context.Context, userID, instanceID string) (string, Binding, error) {
+	return s.issue(ctx, userID, instanceID, 0)
+}
+
+func (s *store) IssueProvisional(ctx context.Context, userID, instanceID string, ttl time.Duration) (string, Binding, error) {
+	if ttl <= 0 {
+		return "", Binding{}, errors.New("websiteauth: provisional ttl must be positive")
+	}
+	return s.issue(ctx, userID, instanceID, ttl)
+}
+
+func (s *store) issue(ctx context.Context, userID, instanceID string, ttl time.Duration) (string, Binding, error) {
 	if strings.TrimSpace(userID) == "" || strings.TrimSpace(instanceID) == "" {
 		return "", Binding{}, errors.New("websiteauth: user_id and instance_id are required")
 	}
@@ -82,15 +113,20 @@ func (s *store) Issue(ctx context.Context, userID, instanceID string) (string, B
 		CreatedAt:  createdAt,
 	}
 
+	credentialKey := credentialKeyPrefix + keyID
+	indexKey := instanceIndexPrefix + instanceID
 	_, err = s.client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.HSet(ctx, credentialKeyPrefix+keyID, map[string]any{
+		pipe.HSet(ctx, credentialKey, map[string]any{
 			"salt":        base64.RawURLEncoding.EncodeToString(salt),
 			"secret_hash": base64.RawURLEncoding.EncodeToString(digest[:]),
 			"user_id":     userID,
 			"instance_id": instanceID,
 			"created_at":  createdAt.Unix(),
 		})
-		pipe.SAdd(ctx, instanceIndexPrefix+instanceID, keyID)
+		pipe.SAdd(ctx, indexKey, keyID)
+		if ttl > 0 {
+			pipe.Expire(ctx, credentialKey, ttl)
+		}
 		return nil
 	})
 	if err != nil {
@@ -99,6 +135,28 @@ func (s *store) Issue(ctx context.Context, userID, instanceID string) (string, B
 
 	token := tokenPrefix + "_" + keyID + "_" + secretEncoded
 	return token, binding, nil
+}
+
+func (s *store) Activate(ctx context.Context, instanceID, keyID string) error {
+	expectedInstanceID := strings.TrimSpace(instanceID)
+	keyID = strings.TrimSpace(keyID)
+	if expectedInstanceID == "" || keyID == "" {
+		return ErrInvalidCredential
+	}
+	if s.client == nil {
+		return errors.New("websiteauth: Redis client is not configured")
+	}
+
+	credentialKey := credentialKeyPrefix + keyID
+	indexKey := instanceIndexPrefix + expectedInstanceID
+	result, err := activateCredentialScript.Run(ctx, s.client, []string{credentialKey, indexKey}, expectedInstanceID, keyID).Int64()
+	if err != nil {
+		return fmt.Errorf("websiteauth activate credential: %w", err)
+	}
+	if result != 1 {
+		return ErrInvalidCredential
+	}
+	return nil
 }
 
 func (s *store) Validate(ctx context.Context, plainToken string) (*Binding, error) {
@@ -185,21 +243,29 @@ func (s *store) RevokeInstance(ctx context.Context, instanceID string) error {
 	}
 
 	indexKey := instanceIndexPrefix + instanceID
-	keyIDs, err := s.client.SMembers(ctx, indexKey).Result()
-	if err != nil {
-		return fmt.Errorf("websiteauth load instance credentials: %w", err)
-	}
-	_, err = s.client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		for _, keyID := range keyIDs {
-			pipe.Del(ctx, credentialKeyPrefix+keyID)
+	for attempt := 0; attempt < 5; attempt++ {
+		err := s.client.Watch(ctx, func(tx *redis.Tx) error {
+			keyIDs, err := tx.SMembers(ctx, indexKey).Result()
+			if err != nil {
+				return err
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				for _, keyID := range keyIDs {
+					pipe.Del(ctx, credentialKeyPrefix+keyID)
+				}
+				pipe.Del(ctx, indexKey)
+				return nil
+			})
+			return err
+		}, indexKey)
+		if err == nil {
+			return nil
 		}
-		pipe.Del(ctx, indexKey)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("websiteauth revoke instance credentials: %w", err)
+		if !errors.Is(err, redis.TxFailedErr) {
+			return fmt.Errorf("websiteauth revoke instance credentials: %w", err)
+		}
 	}
-	return nil
+	return errors.New("websiteauth revoke instance credentials: concurrent credential updates")
 }
 
 func randomBytes(size int) ([]byte, error) {

@@ -480,7 +480,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const t = useT();
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [contextCapability, setContextCapability] = useState<"loading" | CronContextCapability>(
-    isGlobal ? "unsupported" : "loading",
+    "loading",
   );
   const [enabledChannels, setEnabledChannels] = useState<Set<string> | null>(null);
   const [channelStatus, setChannelStatus] = useState<"loading" | "ready">("loading");
@@ -524,7 +524,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const jobsRef = useRef<CronJob[]>([]);
   const contextCapabilityRequestRef = useRef(0);
   const confirmDeleteDependents = useMemo<CronDependentBinding[]>(
-    () => !isGlobal && confirmDeleteJob ? getDirectCronDependents(jobs, confirmDeleteJob.id) : [],
+    () => confirmDeleteJob ? getDirectCronDependents(jobs, confirmDeleteJob.id) : [],
     [confirmDeleteJob, jobs],
   );
   const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
@@ -646,7 +646,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     if (manageLoading) setLoadingJobs(true);
     setListError(null);
     try {
-      const list = await listCronJobs(botId, { hydrateContextFrom: !isGlobal });
+      const list = await listCronJobs(botId, { hydrateContextFrom: true });
       jobsRef.current = list;
       setJobs(list);
       return list;
@@ -712,10 +712,6 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
 
   const refreshContextCapability = useCallback(async () => {
     const requestId = ++contextCapabilityRequestRef.current;
-    if (isGlobal) {
-      setContextCapability("unsupported");
-      return;
-    }
     if (!botId) {
       setContextCapability("unknown");
       return;
@@ -860,14 +856,6 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!botId || !confirmDeleteJob) return;
-    if (isGlobal) {
-      trackDatongEvent(DATONG_EVENTS.AUTOMATION_DELETE, {
-        pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-        params: { bot_id: botId, task_id: confirmDeleteJob.id },
-      });
-      await handleAction(confirmDeleteJob, "remove");
-      return;
-    }
     const previewDependents = confirmDeleteDependents;
     setBusyId(confirmDeleteJob.id);
     setDeleteError(null);
@@ -1072,7 +1060,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         ) : activeView === "recent" ? (
           <RecentCronRunsPanel
             runs={recentRuns}
-            jobs={isGlobal ? [] : jobs}
+            jobs={jobs}
             skillLoadState={installedSkillLoadState}
           />
         ) : visibleJobs.length === 0 ? (
@@ -1102,8 +1090,8 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
                 <CronJobCard
                   key={job.id}
                   job={job}
-                  upstream={!isGlobal && job.context_from?.length === 1 ? jobsById.get(job.context_from[0]!) ?? null : null}
-                  upstreamMissing={!isGlobal && job.context_from?.length === 1 && !jobsById.has(job.context_from[0]!)}
+                  upstream={job.context_from?.length === 1 ? jobsById.get(job.context_from[0]!) ?? null : null}
+                  upstreamMissing={job.context_from?.length === 1 && !jobsById.has(job.context_from[0]!)}
                   busy={busyId === job.id}
                   testState={testState[job.id] ?? "idle"}
                   onTestRun={() => handleTestRun(job)}
@@ -1296,7 +1284,7 @@ export function RecentCronRunsPanel({
   const [viewingRun, setViewingRun] = useState<CronRunRecord | null>(null);
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const viewingJob = viewingRun ? jobsById.get(viewingRun.job_id) : undefined;
-  const viewingUpstream = !isGlobal && viewingJob?.context_from?.length === 1
+  const viewingUpstream = viewingJob?.context_from?.length === 1
     ? jobsById.get(viewingJob.context_from[0]!)
     : undefined;
   return (
@@ -1540,7 +1528,7 @@ function CronJobCard({
 
       <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{presentation.prompt}</p>
 
-      {!isGlobal && job.context_from?.length === 1 && (
+      {job.context_from?.length === 1 && (
         <p className="mt-2 truncate text-xs text-black/45">
           {upstream
             ? t("来自：{{name}}", { name: upstream.name })
@@ -1893,23 +1881,21 @@ function CronJobDetailModal({
               />
             )}
           />
-          {!isGlobal && (
-            <DetailRow
-              label={t("上游任务")}
-              value={upstreamIds.length === 0 ? t("未配置") : (
-                <div className="space-y-2">
-                  {upstreamJobs.map((upstream, index) => (
-                    <div key={upstreamIds[index]}>
-                      {upstream ? <UpstreamCurrentState job={upstream} /> : t("上游任务已不可用")}
-                    </div>
-                  ))}
-                  <p className="text-pretty text-xs text-black/45">
-                    {t("本任务执行时，将使用上游任务最近一次的输出作为上下文。")}
-                  </p>
-                </div>
-              )}
-            />
-          )}
+          <DetailRow
+            label={t("上游任务")}
+            value={upstreamIds.length === 0 ? t("未配置") : (
+              <div className="space-y-2">
+                {upstreamJobs.map((upstream, index) => (
+                  <div key={upstreamIds[index]}>
+                    {upstream ? <UpstreamCurrentState job={upstream} /> : t("上游任务已不可用")}
+                  </div>
+                ))}
+                <p className="text-pretty text-xs text-black/45">
+                  {t("本任务执行时，将使用上游任务最近一次的输出作为上下文。")}
+                </p>
+              </div>
+            )}
+          />
           <DetailRow label={t("执行时间")} value={formatScheduleDetailValue(job, t)} />
           {lastAgentRun && (
             <DetailRow
@@ -2826,7 +2812,7 @@ export function AutomationFormModal({
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
   const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
-  const initialContextFrom = isGlobal ? null : initialJob?.context_from ?? null;
+  const initialContextFrom = initialJob?.context_from ?? null;
   const initialSelectedUpstream = initialContextFrom?.[0] ?? "";
   const [selectedUpstream, setSelectedUpstream] = useState(initialSelectedUpstream);
   const [upstreamChanged, setUpstreamChanged] = useState(false);
@@ -2920,7 +2906,7 @@ export function AutomationFormModal({
   const [submitting, setSubmitting] = useState(false);
 
   const eligibleUpstreams = useMemo(
-    () => isGlobal ? [] : getEligibleCronUpstreams(jobs, initialJob?.id ?? null, Date.now()),
+    () => getEligibleCronUpstreams(jobs, initialJob?.id ?? null, Date.now()),
     [initialJob?.id, jobs],
   );
   const pickerUpstreams = useMemo(() => {
@@ -2961,6 +2947,9 @@ export function AutomationFormModal({
   const weixinBlockedByFrequency = kind === "interval"
     && intervalMinutes < 15
     && isHermesNotificationChannelConfigured(enabledChannels, "weixin");
+  const hasAvailableNotificationChannel = !isGlobal || GLOBAL_NOTIFICATION_CHANNELS.some(
+    ({ key, comingSoon }) => isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon),
+  );
 
   useEffect(() => {
     if (!weixinBlockedByFrequency) return;
@@ -3093,11 +3082,11 @@ export function AutomationFormModal({
     }
     setSubmitting(true);
     try {
-      const contextPatch = isGlobal || externalMultipleUpstreams
+      const contextPatch = externalMultipleUpstreams
         ? undefined
         : toCronContextPatch(initialContextFrom, selectedUpstream, upstreamChanged);
       setUpstreamError(null);
-      if (!isGlobal && selectedUpstream && !externalMultipleUpstreams && (mode === "create" || upstreamChanged)) {
+      if (selectedUpstream && !externalMultipleUpstreams && (mode === "create" || upstreamChanged)) {
         const latestJobs = await onRefreshJobs();
         if (!latestJobs) {
           setUpstreamError(t("暂时无法刷新上游任务，请重试"));
@@ -3169,7 +3158,7 @@ export function AutomationFormModal({
           skills: toCreateCronSkills(selectedSkill),
           pinCurrentModel: true,
         };
-        if (!isGlobal && selectedUpstream) {
+        if (selectedUpstream) {
           await createCronJobWithContextAndScriptRollback(botId, createInput, selectedUpstream, script);
         } else {
           await createCronJobWithScriptRollback(botId, createInput, script);
@@ -3344,44 +3333,42 @@ export function AutomationFormModal({
           onRetry={() => void onRefreshSkills()}
         />
 
-        {!isGlobal && (
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-black/80">
-              {t("上游任务")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
-            </label>
-            <div className="mt-2">
-              {externalMultipleUpstreams ? (
-                <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs text-amber-800">
-                  <p className="font-medium">{t("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")}</p>
-                  <ul className="mt-1 space-y-1 text-amber-800/75">
-                    {externalMultipleUpstreams.map((job, index) => (
-                      <li key={index} className="break-words">
-                        {job?.name ?? t("上游任务已不可用")}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <AutomationUpstreamPicker
-                  value={selectedUpstream}
-                  options={pickerUpstreams}
-                  state={contextCapability}
-                  onRetry={onRetryContextCapability}
-                  onChange={(jobId) => {
-                    setSelectedUpstream(jobId);
-                    setUpstreamChanged(true);
-                    setUpstreamError(null);
-                  }}
-                />
-              )}
-            </div>
-            {upstreamError && (
-              <p role="alert" className="mt-2 text-pretty text-xs leading-5 text-[#B91C1C]">
-                {upstreamError}
-              </p>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-black/80">
+            {t("上游任务")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
+          </label>
+          <div className="mt-2">
+            {externalMultipleUpstreams ? (
+              <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs text-amber-800">
+                <p className="font-medium">{t("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")}</p>
+                <ul className="mt-1 space-y-1 text-amber-800/75">
+                  {externalMultipleUpstreams.map((job, index) => (
+                    <li key={index} className="break-words">
+                      {job?.name ?? t("上游任务已不可用")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <AutomationUpstreamPicker
+                value={selectedUpstream}
+                options={pickerUpstreams}
+                state={contextCapability}
+                onRetry={onRetryContextCapability}
+                onChange={(jobId) => {
+                  setSelectedUpstream(jobId);
+                  setUpstreamChanged(true);
+                  setUpstreamError(null);
+                }}
+              />
             )}
           </div>
-        )}
+          {upstreamError && (
+            <p role="alert" className="mt-2 text-pretty text-xs leading-5 text-[#B91C1C]">
+              {upstreamError}
+            </p>
+          )}
+        </div>
 
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (
@@ -3491,7 +3478,7 @@ export function AutomationFormModal({
                     { key: "feishu", label: t("飞书"), comingSoon: false },
                   ] as const);
 
-                if (isGlobal && channels.length === 0) {
+                if (!hasAvailableNotificationChannel) {
                   return (
                     <div className="flex flex-wrap items-center gap-2 text-sm text-black/45" style={MODAL_HELP_TEXT_STYLE}>
                       <span>{t("暂无已配置的通知通道。")}</span>
@@ -3668,18 +3655,22 @@ export function AutomationFormModal({
               })()}
             </div>
           )}
-          {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
-          <div aria-hidden="true" style={{ height: 4 }} />
-          {deliverPlatforms.length === 0 ? (
-            <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              {t("如不选，智能体只会在后台执行任务，不发通知。")}
-            </p>
-          ) : (
-            // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
-            <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              {"\u00A0"}
-            </p>
-          )}
+          {hasAvailableNotificationChannel ? (
+            <>
+              {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
+              <div aria-hidden="true" style={{ height: 4 }} />
+              {deliverPlatforms.length === 0 ? (
+                <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                  {t("如不选，智能体只会在后台执行任务，不发通知。")}
+                </p>
+              ) : (
+                // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
+                <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                  {"\u00A0"}
+                </p>
+              )}
+            </>
+          ) : null}
         </div>
 
         {/* 操作 */}

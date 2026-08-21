@@ -1661,6 +1661,141 @@ func (p *TencentCloudProvider) RunCommand(ctx context.Context, region, instanceI
 	}, nil
 }
 
+func (p *TencentCloudProvider) InvokeCommand(ctx context.Context, region, instanceID, commandID string, parameters map[string]string) (CommandInvocation, error) {
+	region = p.resolveRegion(region)
+	instanceID = strings.TrimSpace(instanceID)
+	commandID = strings.TrimSpace(commandID)
+	if instanceID == "" {
+		return CommandInvocation{}, errors.New("missing instance id for tat invocation")
+	}
+	if commandID == "" {
+		return CommandInvocation{}, errors.New("missing command id for tat invocation")
+	}
+	req := tchttp.NewCommonRequest(tatService, tatVersion, "InvokeCommand")
+	req.SetContext(ctx)
+	requestParameters, err := invokeCommandParameters(instanceID, commandID, parameters)
+	if err != nil {
+		return CommandInvocation{}, err
+	}
+	if err := req.SetActionParameters(requestParameters); err != nil {
+		return CommandInvocation{}, err
+	}
+
+	resp := tchttp.NewCommonResponse()
+	client := p.newCommonClient(region, p.cfg.TATEndpoint)
+	if err := retryRateLimit(ctx, "TAT.InvokeCommand", func() error {
+		return client.Send(req, resp)
+	}); err != nil {
+		return CommandInvocation{}, err
+	}
+
+	var payload struct {
+		Response struct {
+			InvocationID string `json:"InvocationId"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp.GetBody(), &payload); err != nil {
+		return CommandInvocation{}, err
+	}
+	if strings.TrimSpace(payload.Response.InvocationID) == "" {
+		return CommandInvocation{}, errors.New("tat InvokeCommand returned empty invocation id")
+	}
+	return CommandInvocation{
+		CommandID:    commandID,
+		InvocationID: payload.Response.InvocationID,
+		InstanceID:   instanceID,
+		Region:       region,
+		Status:       defaultInvocationStatus,
+	}, nil
+}
+
+func (p *TencentCloudProvider) GetCommandInvocationMetadata(ctx context.Context, region, invocationID, instanceID string) (CommandInvocationMetadata, error) {
+	region = p.resolveRegion(region)
+	if strings.TrimSpace(invocationID) == "" {
+		return CommandInvocationMetadata{}, errors.New("missing invocation id")
+	}
+	if strings.TrimSpace(instanceID) == "" {
+		return CommandInvocationMetadata{}, errors.New("missing instance id")
+	}
+
+	req := tchttp.NewCommonRequest(tatService, tatVersion, "DescribeInvocationTasks")
+	req.SetContext(ctx)
+	if err := req.SetActionParameters(commandInvocationQueryParameters(invocationID, instanceID, true)); err != nil {
+		return CommandInvocationMetadata{}, err
+	}
+
+	resp := tchttp.NewCommonResponse()
+	client := p.newCommonClient(region, p.cfg.TATEndpoint)
+	if err := retryRateLimit(ctx, "TAT.DescribeInvocationTasks", func() error {
+		return client.Send(req, resp)
+	}); err != nil {
+		return CommandInvocationMetadata{}, err
+	}
+	return decodeCommandInvocationMetadata(resp.GetBody(), region)
+}
+
+func decodeCommandInvocationMetadata(body []byte, region string) (CommandInvocationMetadata, error) {
+	var payload struct {
+		Response struct {
+			InvocationTaskSet []struct {
+				CommandID    string `json:"CommandId"`
+				InvocationID string `json:"InvocationId"`
+				TaskStatus   string `json:"TaskStatus"`
+				InstanceID   string `json:"InstanceId"`
+				StartTime    string `json:"StartTime"`
+				EndTime      string `json:"EndTime"`
+				TaskResult   struct {
+					ExitCode      int64  `json:"ExitCode"`
+					ExecutionTime string `json:"ExecutionTime"`
+				} `json:"TaskResult"`
+			} `json:"InvocationTaskSet"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return CommandInvocationMetadata{}, err
+	}
+	if len(payload.Response.InvocationTaskSet) == 0 {
+		return CommandInvocationMetadata{}, ErrInvocationNotFound
+	}
+	task := payload.Response.InvocationTaskSet[0]
+	return CommandInvocationMetadata{
+		CommandInvocation: CommandInvocation{
+			CommandID:    task.CommandID,
+			InvocationID: task.InvocationID,
+			InstanceID:   task.InstanceID,
+			Region:       region,
+			Status:       task.TaskStatus,
+		},
+		ExitCode:      task.TaskResult.ExitCode,
+		StartTime:     task.StartTime,
+		EndTime:       task.EndTime,
+		ExecutionTime: task.TaskResult.ExecutionTime,
+	}, nil
+}
+
+func commandInvocationQueryParameters(invocationID, instanceID string, hideOutput bool) map[string]interface{} {
+	return map[string]interface{}{
+		"HideOutput": hideOutput,
+		"Filters": []map[string]interface{}{
+			{"Name": "invocation-id", "Values": []string{invocationID}},
+			{"Name": "instance-id", "Values": []string{instanceID}},
+		},
+		"Limit": 1,
+	}
+}
+
+func invokeCommandParameters(instanceID, commandID string, parameters map[string]string) (map[string]interface{}, error) {
+	parameterJSON, err := json.Marshal(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tat invocation parameters: %w", err)
+	}
+	return map[string]interface{}{
+		"CommandId":   commandID,
+		"InstanceIds": []string{instanceID},
+		"Parameters":  string(parameterJSON),
+	}, nil
+}
+
 func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region, instanceID string) (TerminalSession, error) {
 	region = p.resolveRegion(region)
 	instanceID = strings.TrimSpace(instanceID)
@@ -1732,14 +1867,7 @@ func (p *TencentCloudProvider) GetCommandInvocation(ctx context.Context, region,
 
 	req := tchttp.NewCommonRequest(tatService, tatVersion, "DescribeInvocationTasks")
 	req.SetContext(ctx)
-	if err := req.SetActionParameters(map[string]interface{}{
-		"HideOutput": false,
-		"Filters": []map[string]interface{}{
-			{"Name": "invocation-id", "Values": []string{invocationID}},
-			{"Name": "instance-id", "Values": []string{instanceID}},
-		},
-		"Limit": 1,
-	}); err != nil {
+	if err := req.SetActionParameters(commandInvocationQueryParameters(invocationID, instanceID, false)); err != nil {
 		return CommandResult{}, err
 	}
 

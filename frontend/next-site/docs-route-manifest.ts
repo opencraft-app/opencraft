@@ -154,6 +154,14 @@ export const DOCS_ROUTE_SLUGS = {
       "memory-and-knowledge"
     ],
     [
+      "use-cases",
+      "discord-community-agent"
+    ],
+    [
+      "use-cases",
+      "discord-event-agent"
+    ],
+    [
       "compare",
       "lightvela-vs-localhost-ai-agent"
     ],
@@ -496,6 +504,14 @@ export const DOCS_ROUTE_SLUGS = {
       "memory-and-knowledge"
     ],
     [
+      "use-cases",
+      "discord-community-agent"
+    ],
+    [
+      "use-cases",
+      "discord-event-agent"
+    ],
+    [
       "compare",
       "lightvela-vs-localhost-ai-agent"
     ],
@@ -716,6 +732,14 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "memory-and-knowledge"
+    ],
+    [
+      "use-cases",
+      "discord-community-agent"
+    ],
+    [
+      "use-cases",
+      "discord-event-agent"
     ],
     [
       "compare",

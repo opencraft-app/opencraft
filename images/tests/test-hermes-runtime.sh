@@ -392,7 +392,7 @@ HERMES_SKILLS_OUTPUT="$(remote_exec_runtime '
   skills_root="$HOME/.hermes/skills"
   if [ ! -d "$skills_root" ]; then
     echo "skills-root-missing"
-    exit 0
+    exit 1
   fi
   python3 - "$skills_root" <<'"'"'PY'"'"'
 import os
@@ -418,6 +418,7 @@ keep = {
     "productivity/maps",
     "creative/architecture-diagram",
     "creative/humanizer",
+    "website-builder",
 }
 found = []
 for dirpath, _, filenames in os.walk(root):
@@ -428,10 +429,13 @@ if extra:
     print("extra-skills:")
     print("\n".join(extra))
     raise SystemExit(1)
+if "website-builder" not in found:
+    print("website-builder-missing")
+    raise SystemExit(1)
 print("curated-skills-ok")
 PY
 ' 2>&1 || true)"
-if echo "${HERMES_SKILLS_OUTPUT}" | grep -Eq 'curated-skills-ok|skills-root-missing' \
+if echo "${HERMES_SKILLS_OUTPUT}" | grep -q 'curated-skills-ok' \
   && ! echo "${HERMES_SKILLS_OUTPUT}" | grep -q '^extra-skills:'; then
   pass "Hermes bundled skills are curated"
 else

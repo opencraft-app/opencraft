@@ -2,7 +2,10 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -28,6 +31,13 @@ type Config struct {
 	CTLInternalToken string
 	CTLTimeout       time.Duration
 
+	AuthMode       AuthMode
+	AuthIssuer     string
+	AuthAudience   string
+	AuthStartURL   string
+	AuthPublicKeys map[string]ed25519.PublicKey
+	AuthSessionTTL time.Duration
+
 	SitePositiveTTL time.Duration
 	SiteNegativeTTL time.Duration
 	// SiteCacheMaxEntries 是站点元信息缓存的条目上界。
@@ -42,6 +52,13 @@ type Config struct {
 	UsageMaxSites int
 }
 
+type AuthMode string
+
+const (
+	AuthModePublic   AuthMode = "public"
+	AuthModeRequired AuthMode = "required"
+)
+
 func FromEnv() (Config, error) {
 	cfg := Config{
 		Addr:             getEnv("SITE_GATEWAY_ADDR", ":8080"),
@@ -51,10 +68,24 @@ func FromEnv() (Config, error) {
 		COSRegion:        strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_REGION")),
 		CTLBaseURL:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_CTL_BASE_URL")),
 		CTLInternalToken: strings.TrimSpace(os.Getenv("WEBSITE_INTERNAL_API_TOKEN")),
+		AuthIssuer:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_ISSUER")),
+		AuthAudience:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_AUDIENCE")),
+		AuthStartURL:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_START_URL")),
+	}
+	switch AuthMode(getEnv("SITE_GATEWAY_AUTH_MODE", string(AuthModePublic))) {
+	case AuthModePublic:
+		cfg.AuthMode = AuthModePublic
+	case AuthModeRequired:
+		cfg.AuthMode = AuthModeRequired
+	default:
+		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_MODE must be public or required")
+	}
+	var err error
+	if cfg.AuthPublicKeys, err = parseAuthPublicKeys(os.Getenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS")); err != nil {
+		return Config{}, err
 	}
 	cfg.COSSecretID, cfg.COSSecretKey = cosSecrets()
 
-	var err error
 	if cfg.COSTimeout, err = getDuration("SITE_GATEWAY_COS_TIMEOUT", 10*time.Second); err != nil {
 		return Config{}, err
 	}
@@ -76,6 +107,12 @@ func FromEnv() (Config, error) {
 	if cfg.UsageMaxSites, err = getPositiveInt("SITE_GATEWAY_USAGE_MAX_SITES", 20000); err != nil {
 		return Config{}, err
 	}
+	if cfg.AuthSessionTTL, err = getDuration("SITE_GATEWAY_AUTH_SESSION_TTL", 5*time.Minute); err != nil {
+		return Config{}, err
+	}
+	if cfg.AuthSessionTTL > 5*time.Minute {
+		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_SESSION_TTL must not exceed 5m")
+	}
 	// 根域是配置项而非常量：测试和正式用不同的域，正式根域后续还会更换。
 	if len(cfg.RootDomains) == 0 {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_ROOT_DOMAINS is required")
@@ -92,7 +129,49 @@ func FromEnv() (Config, error) {
 	if cfg.CTLBaseURL == "" {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_CTL_BASE_URL is required")
 	}
+	if cfg.AuthMode == AuthModeRequired {
+		if cfg.AuthIssuer == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_ISSUER is required when auth mode is required")
+		}
+		if cfg.AuthAudience == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_AUDIENCE is required when auth mode is required")
+		}
+		if cfg.AuthStartURL == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_START_URL is required when auth mode is required")
+		}
+		startURL, err := url.Parse(cfg.AuthStartURL)
+		if err != nil || startURL.Scheme != "https" || startURL.Host == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_START_URL must be an https URL when auth mode is required")
+		}
+		if len(cfg.AuthPublicKeys) == 0 {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS is required when auth mode is required")
+		}
+	}
 	return cfg, nil
+}
+
+func parseAuthPublicKeys(raw string) (map[string]ed25519.PublicKey, error) {
+	keys := make(map[string]ed25519.PublicKey)
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS entry must be kid=base64url-public-key")
+		}
+		kid := strings.TrimSpace(parts[0])
+		if _, exists := keys[kid]; exists {
+			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS contains duplicate kid %q", kid)
+		}
+		decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(parts[1]))
+		if err != nil || len(decoded) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS key %q must be a base64url Ed25519 public key", kid)
+		}
+		keys[kid] = ed25519.PublicKey(decoded)
+	}
+	return keys, nil
 }
 
 // cosSecrets 读取站点桶的访问凭据。
