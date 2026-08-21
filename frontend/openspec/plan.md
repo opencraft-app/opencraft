@@ -1,3 +1,511 @@
+# DeepSeek Harness 实验室入口 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `test-driven-development` before implementation and `verification-before-completion` before claiming completion. This FE-AI plan is the execution source for the DeepSeek Harness lab entry; do not commit, push, create MR, or archive until user acceptance.
+
+**Status:** 真实接入、方案 A、运行态卡片高度收紧及模型配置覆盖反馈均已完成并通过本地验证，等待用户验收。未安装远端实例、未提交、未推送、未创建 MR。
+
+**Goal:** 在 `/agents` 控制台中新增“管理 > 实验室 > DeepSeek Harness”二级入口，并提供真实安装、运行状态、WebUI 访问和 Provider 配置体验。
+
+**Architecture:** 安装、状态查询、安装进度、重启和模型配置全部复用现有 `BotRepository.execDebugCommand` 与 `/v1/instances/:id/debug/exec`，不新增 DeepSeek Harness 专用 ctl 或 gateway 接口。实例侧固定管理脚本负责版本、目录、Provider 白名单和 DSH 回环 RPC；dsh 以系统级 `deepseek-harness.service` 运行并监听 `127.0.0.1:3080`。API Key 只写、不回显、不进入 URL 或前端持久化。
+
+**Tech Stack:** Next.js 16 App Router、React 19、TypeScript 5.9、Tailwind CSS v4、lucide-react、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 入口固定为左侧导航“管理 > 实验室 > DeepSeek Harness”，DeepSeek Harness 不作为一级左导航出现。
+- 路由采用 `/agents/labs/deepseek-harness`；不新增 `/agents/deepseek-harness` 旁路。
+- 两条抢先体验公告位于 DeepSeek Harness 卡片上方，不嵌入卡片。
+- 未安装态必须展示 DeepSeek Harness Logo、标题后的 `Beta`、指定简介，以及简介下方的“即刻安装体验”按钮。
+- 安装中态在简介下方展示真实任务进度和“请稍等片刻，安装大约需要 1-3 分钟”，完成后通过淡出/淡入切换卡片内容。
+- 已安装态移除简介，不展示静态 WebUI 地址，只展示 Logo、标题、`Beta`、运行状态，以及右侧“访问 WebUI”和“重启”。
+- 不展示安装时间、最近启动时间、异常态主按钮置灰或查看诊断。
+- 当前接入现有 `debug/exec`、TAT 同源代理与回环健康检查；真实 `xxxxx.dsh.lightvela.site` 域名仍不在本期范围。
+- 本阶段只开发代码与本地测试；不得安装目标实例、重启远端服务或接入真实凭据。
+- 模型配置按 Provider + API Key 实现；本期不提供具体 model ID 选择。
+- LightVela `deepseek` 固定映射到 DSH 原生 `deepseek-official`。
+- 固定版本为 `@deepseek-ai/dsh@0.1.0-rc.7`、`@cocofhu/skillhub@0.2.13`、`deepseek-harness-qqbot@0.1.5`、`deepseek-harness-weixin@0.2.5`、`deepseek-harness-wecom@0.1.5` 与 `deepseek-harness-lark@0.1.5`，真实安装前必须完成北京 Sandbox 组合冒烟。
+- 首批真实安装只进入北京 Sandbox；`debug/exec` 已是现有通道，本需求不新增 service-gateway allowlist。
+- `*.dsh.lightvela.site` 就绪前，WebUI 使用登录态下的同源 TAT 虚拟代理。
+- Logo 使用产品提供的 SVG：`https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/ae53bb41-9387-4f31-b264-0e4fd747e20b.svg`。
+- UI 保持 Agent 控制台工具型风格：页面卡片使用 `rounded-md`、轻边框和 `0 10px 30px rgba(15,23,42,0.04)` 级别阴影；不做营销 hero、不嵌套卡片。
+- 新增用户可见中文需走 `useT()`，实现后按影响范围运行 i18n 检查。
+
+## Scope And Decision
+
+### 采用方案：独立 Lab section + 独立 Panel
+
+- 在 `agent-routes.ts` 中增加 DeepSeek Harness section id 与 lab slug 解析。
+- 新增 `agents/labs/[lab]` App Router 页面，避免污染现有 `/agents/[section]` 单段 section 路由。
+- 在 `AgentSettingsPage` 内把“实验室”作为“管理”分组下的可展开导航项，子项 DeepSeek Harness 指向 `/agents/labs/deepseek-harness`。
+- 页面主体抽到 `agent-deepseek-harness-panel.tsx`，减少继续膨胀 `agent-settings-page.tsx`。
+
+### 备选方案与取舍
+
+- 备选 A：把 DeepSeek Harness 直接作为“管理”下普通平级项。实现最短，但不满足用户明确要求的“实验室可展开二级导航”，不采用。
+- 备选 B（第一版记录）：复用现有 `browser` / `TatHermesWebPanel` 代理链路直接嵌入 WebUI。当时未采用；Task 7 已在不嵌入页面的前提下复用并扩展该链路。
+- 备选 C（第一版记录）：先做后端安装接口再上前端入口。当时未采用；Task 7 已在入口验证后补齐真实安装接口。
+
+## File Map
+
+- Modify: `frontend/src/lib/agent-routes.ts`
+  增加 DeepSeek Harness section id、`/agents/labs/deepseek-harness` path、lab slug helper。
+- Create: `frontend/src/app/(site)/agents/labs/[lab]/page.next.tsx`
+  承接 `/agents/labs/deepseek-harness`，非法 lab 返回 `notFound()`。
+- Modify: `frontend/src/observability/datong-page-map.ts`
+  为新增 section 补齐 pgid 映射，当前无独立 pgid 时归到 `agents_home`，避免类型和上报断层。
+- Create: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+  承载状态查询、安装轮询、失败恢复、重启、同源 WebUI 链接与模型配置入口。
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+  接入 panel；导航模型支持“实验室”二级展开；引入合适 lucide 图标。
+- Modify: `frontend/src/styles.css`
+  补充二级导航样式、移动端布局、激活态和 focus 样式。
+- Test: `frontend/src/lib/__tests__/agent-routes.test.ts`
+  锁定 lab path 与 slug helper。
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+  锁定“实验室”位于“管理”分组，DeepSeek Harness 是其二级项。
+- Test: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+  覆盖三态文案、Logo、按钮和 WebUI 链接。
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
+  覆盖“实验室”展开/收起、选中态和 DeepSeek Harness 页面渲染。
+
+---
+
+### Task 1: 路由与 Section 模型
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/lib/agent-routes.ts`
+- Create: `frontend/src/app/(site)/agents/labs/[lab]/page.next.tsx`
+- Modify: `frontend/src/observability/datong-page-map.ts`
+- Test: `frontend/src/lib/__tests__/agent-routes.test.ts`
+
+**Interfaces:**
+- Produces: `AgentSettingsSectionId` 新增 `"deepseek-harness"`。
+- Produces: `AGENT_SECTION_PATH_BY_ID["deepseek-harness"] === "/agents/labs/deepseek-harness"`。
+- Produces: `AGENT_LAB_SECTION_ID_BY_SLUG["deepseek-harness"] === "deepseek-harness"` or `getAgentLabSectionFromSlug("deepseek-harness") === "deepseek-harness"`。
+- Preserves: `getAgentSectionFromSlug("deepseek-harness") === null`，防止 `/agents/deepseek-harness` 成为旁路。
+
+**Acceptance:**
+- `/agents/labs/deepseek-harness` 可以渲染 `AgentsPageClient` 并传入 DeepSeek Harness section。
+- `/agents/[section]` 原有 channel/model/skills 等路径不受影响。
+- 未知 lab slug 返回 `notFound()`。
+- Datong 页面解析不因新增 section type 编译失败；无独立 pgid 前按 `agents_home` 兜底。
+
+- [x] 增加 `agent-routes.test.ts` 失败用例，断言 lab path、lab slug helper、无单段旁路。
+- [x] 更新 `agent-routes.ts` 的类型、path map 和 lab slug helper。
+- [x] 新增 `agents/labs/[lab]/page.next.tsx`，复用 `AgentsPageClient`。
+- [x] 补齐 `datong-page-map.ts` 的新增 section 映射或显式兜底。
+- [x] 运行 `cd frontend && pnpm exec vitest run src/lib/__tests__/agent-routes.test.ts`。
+
+### Task 2: DeepSeek Harness Panel
+
+> 第一版历史实现记录；真实接口与模型配置由 Task 7 替代。
+
+**Role:** Developer
+
+**Files:**
+- Create: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+
+**Interfaces:**
+- Produces: `<AgentDeepSeekHarnessPanel />` 第一版三态组件。
+- Logo: `DEEPSEEK_HARNESS_LOGO_URL` 使用产品提供的 SVG。
+
+**Acceptance:**
+- 初始未安装态展示 Logo、`DeepSeek Harness`、标题后的 `Beta`、用户确认的简介、两条公告和右上角“即刻安装体验”。
+- 点击“即刻安装体验”后进入安装中态，按钮 loading 且不重复提交。
+- 演示安装完成后切到已安装态，保持产品信息区不变并展示 `运行中`、“访问 WebUI”和“重启”。
+- “访问 WebUI”是带 `target="_blank"`、`rel="noopener noreferrer"` 的主按钮链接。
+- “重启”是次按钮，本阶段使用本地 loading 状态演示并阻止重复提交。
+- 页面不出现“安装时间”“最近启动时间”“查看诊断”。
+
+- [x] 先写 panel 失败测试，覆盖未安装态、安装中态、已安装态和禁用文案缺失。
+- [x] 创建 `AgentDeepSeekHarnessPanel`，复用 `AgentSectionHeader` 与本地轻量状态机。
+- [x] 使用 lucide `ExternalLink` / `Loader2` 等图标，按钮文字不被图标替代。
+- [x] 运行 `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`。
+
+### Task 3: 左侧导航二级实验室入口
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Modify: `frontend/src/styles.css`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
+
+**Interfaces:**
+- Consumes: `AGENT_SECTION_PATH_BY_ID["deepseek-harness"]`。
+- Produces: Manage group 中的 expandable item：`实验室 -> DeepSeek Harness`。
+- Produces: `activeSection === "deepseek-harness"` 时，实验室自动展开，子项 `aria-current="page"`。
+
+**Acceptance:**
+- “实验室”出现在“管理”分组内，且不是一级导航分组。
+- 点击“实验室”只展开/收起，不直接跳转。
+- 点击二级项“DeepSeek Harness”跳转 `/agents/labs/deepseek-harness`。
+- 选中 DeepSeek Harness 时，“实验室”保持展开。
+- 桌面端二级项缩进清晰；移动端不溢出、不挤压、不横向滚动。
+- 导航具有可访问语义：展开按钮有 `aria-expanded`、`aria-controls`，当前页有 `aria-current="page"`。
+
+- [x] 扩展 `agent-settings-nav-order.test.ts`，用源码结构锁定“管理”内 `files -> diagnostics -> labs -> deepseek-harness`。
+- [x] 新增 `agent-settings-labs-nav.test.tsx`，渲染 `AgentSettingsPage sectionId="deepseek-harness"` 并断言展开态、选中态与链接。
+- [x] 调整 `SettingsSection` 导航数据结构，使其支持普通 section 和 expandable labs item。
+- [x] 接入 `AgentDeepSeekHarnessPanel` 到 section 分发。
+- [x] 补充 `.lv-agents-nav-subitems`、`.lv-agents-nav-expand-toggle`、移动端 grid span 样式。
+- [x] 运行 `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-nav-order.test.ts src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`。
+
+### Task 4: i18n、质量门禁与人工验收
+
+**Role:** Developer + Reviewer
+
+**Files:**
+- Modify as generated if needed: `frontend/src/i18n/generated/*.json`
+- Verify: `frontend/openspec/plan.md`
+
+**Acceptance:**
+- 新增中文文案已被 i18n 生成与检查覆盖。
+- TypeScript 检查通过。
+- 相关 Vitest 通过。
+- 本地预览确认 `/agents/labs/deepseek-harness` 可以进入、安装演示可切换、WebUI 外链可打开。
+- 不提交、不推送、不创建 MR；等待用户验收。
+
+- [x] 运行 `cd frontend && pnpm i18n:extract`，如生成字典变化则检查中文/英文 key 是否合理。
+- [x] 运行定向测试：
+  - `cd frontend && pnpm exec vitest run src/lib/__tests__/agent-routes.test.ts src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx src/pages/marketing/__tests__/agent-settings-nav-order.test.ts src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
+- [x] 运行质量门禁：
+  - `cd frontend && pnpm check`
+  - `cd frontend && pnpm i18n:check`
+  - `git diff --check`
+- [x] 启动本地预览并检查桌面/移动端：
+  - `cd frontend && pnpm exec next dev -H 127.0.0.1 -p 5175`
+  - 访问 `/agents/labs/deepseek-harness`
+  - 验证左导“管理 > 实验室 > DeepSeek Harness”、未安装态、安装中态、已安装态和“打开 WebUI”。
+- [x] 汇总变更、验证结果、截图/观察结论与剩余风险，停在用户验收确认点。
+
+### Task 5: 用户验收反馈调整
+
+**Role:** Developer + Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+- Modify: `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+- Modify as generated: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- `Beta` 紧跟 `DeepSeek Harness` 标题；“即刻安装体验”位于卡片右上角操作位。
+- 描述下方持续展示同环境说明与抢先体验风险公告。
+- 安装完成后产品信息区不变，分割线下展示运行状态、静态地址、主按钮“访问 WebUI”和次按钮“重启”。
+- 重启在演示阶段提供 loading、完成播报和重复提交保护，不触发后端请求。
+
+- [x] 先调整 Panel 测试并确认旧实现 RED。
+- [x] 实现新布局、公告条和本地重启状态并确认 Panel 测试 GREEN。
+- [x] 同步更新 PRD 与实现计划，撤销旧版“无重启操作”约束。
+- [x] 重新生成并补齐 i18n 字典，运行定向测试和质量门禁。
+- [x] 在桌面端和 390px 移动端复验未安装、安装完成、重启和无溢出状态。
+- [x] 完成独立复审并停在用户验收确认点。
+
+### Task 6: 第二轮用户验收反馈调整
+
+**Role:** Developer + Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+- Modify: `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+- Modify as generated: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 公告位于卡片上方；卡片内不重复展示公告。
+- 未安装态的安装按钮位于简介下方。
+- 安装中态展示可访问的模拟进度条、百分比和 1-3 分钟等待提示。
+- 安装完成时先淡出引导卡片，再切换并淡入运行卡片。
+- 运行卡片不展示简介和静态 URL，左侧展示状态，右侧展示“访问 WebUI”和“重启”。
+
+- [x] 先调整 Panel 测试并确认旧实现 RED。
+- [x] 重构卡片外公告、安装进度和双卡片淡出/淡入切换，确认 Panel 测试 GREEN。
+- [x] 重新生成 i18n 字典并补齐本次新增英文、印尼语文案。
+- [x] 同步 PRD，运行定向测试与质量门禁。
+- [x] 复验桌面端和 390px 移动端的三态、动画、操作及无溢出。
+- [x] 修正复审发现的安装焦点断档、动画完成时序和进度条布局动画问题。
+- [x] 完成独立复审并停在用户验收确认点。
+
+### Task 7: 模型配置与真实安装接入（历史方案，已由 Task 8 纠偏）
+
+**Role:** Planner + Developer + Reviewer
+
+**Planning Evidence:**
+- 已只读检查 DSH WebUI 的 Models / Add provider 交互和 Provider 目录。
+- 已核对 DSH 官方 `settings.mutate`、`credentials.set`、`llm.providers` 契约及只写凭据语义。
+- 已核对 `@cocofhu/skillhub@0.2.13` 的安装命令、Node 要求和重启要求。
+- 已只读检查参考机的 systemd、回环监听、Caddy 代理与运行版本，未修改远端状态。
+- 已更新 `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`，等待用户确认五项产品与版本边界。
+
+**Proposed Files:**
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Create: `frontend/src/lib/dsh-config-client.ts`
+- Create: `frontend/src/lib/dsh-provider-catalog.ts`
+- Modify: `frontend/src/lib/tat-http-virtual-client.ts` or add a DSH-specific wrapper
+- Modify: `frontend/src/repositories/types.ts` and `frontend/src/repositories/http-repositories.ts`
+- Modify backend service selected during implementation planning for typed status/install/restart APIs
+- Create a checked-in, idempotent instance installer under the Hermes image/helper ownership boundary
+- Add focused frontend, backend, installer and proxy tests
+
+**Acceptance:**
+- 已安装主卡片下方展示模型配置卡片，支持当前站点白名单内的多 Provider 添加和 API Key 更新。
+- 国内站 Provider：`deepseek`、`minimax-cn`、`moonshotai-cn`、`qwen-token-plan-cn`、`openrouter`。
+- 国际站 Provider：`deepseek`、`minimax`、`minimax-cn`、`moonshotai`、`moonshotai-cn`、`openrouter`、`anthropic`、`groq`、`openai`。
+- LightVela `deepseek` 映射到 DSH 原生 `deepseek-official`。
+- API Key 只写、不回显，不进入日志、URL、埋点或浏览器持久化；Task 8 改为经 `debug/exec` 的 base64 shell 安全编码传输。
+- 安装固定版本的 dsh 和 SkillHub；Task 8 改为系统级 `deepseek-harness.service`，通过 `User=agentuser` 降权并监听回环 3080。
+- Task 8 将安装、状态查询、重启和模型配置统一改走现有 `debug/exec`，安装任务仍幂等且支持失败回滚。
+- WebUI 访问地址由受鉴权链路返回，页面不展示静态 IP。
+
+- [x] 用户确认“模型选择”按 Provider + API Key 理解，本期不提供具体 model ID 选择。
+- [x] 用户确认 `deepseek -> deepseek-official`、`dsh@0.1.0-rc.7`、`skillhub@0.2.13` 与北京 Sandbox 首批灰度。
+- [x] 用户确认真实域名前使用登录态下的同源 TAT 虚拟代理。
+- [x] **历史批次 A：实例安装与状态接口。** 曾新增 DSH 专用 ctl 与 gateway 路由；用户评审后判定为重复设计，已在 Task 8 全部删除。
+- [x] **历史批次 B：DSH 配置与 WebUI 传输。** WebUI 的 3080 TAT broker 保留；前端直连 DSH 配置 RPC 已在 Task 8 替换为实例 helper + `debug/exec`。
+- [x] **批次 C：页面真实状态与模型卡片。** 页面交互保留，底层调用由 Task 8 统一切换为 `BotRepository.execDebugCommand`。
+
+### Task 8: 统一复用 debug/exec（用户架构纠偏）
+
+**Goal:** 删除 DeepSeek Harness 专用后端协议，让页面内所有实例操作统一通过现有 `debug/exec` 下发固定命令。
+
+**Files:**
+
+- Create: `frontend/src/lib/deepseek-harness-command.ts`
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-model-card.tsx`
+- Add: `frontend/src/pages/marketing/agent-deepseek-harness-provider-controls.tsx`
+- Add: `frontend/src/pages/marketing/agent-deepseek-harness-configured-provider-list.tsx`
+- Add: `frontend/src/pages/marketing/agent-deepseek-harness-provider-delete-dialog.tsx`
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Delete: `frontend/src/lib/deepseek-harness-api.ts`
+- Delete: `frontend/src/lib/deepseek-harness-client.ts`
+- Delete: `ctl/pkg/instance/deepseek_harness.go`
+- Delete: `ctl/pkg/errcode/deepseek_harness.go`
+- Revert scoped DSH additions: `ctl/main/api/server.go`、`ctl/pkg/instance/logic.go`、`ctl/pkg/transport/instance.go`、`argocd/services/service-gateway/beijing-sandbox/config.yaml`、`service-gateway/internal/gateway/config_policy_test.go`
+
+**Interfaces:**
+
+- Consumes: `BotRepository.execDebugCommand(botId, command, options?)`。
+- Produces: 固定命令构造与 JSON 结果解析；页面不能提交包名、版本、目录、端口或任意 Provider。
+- Produces: 系统级 `/etc/systemd/system/deepseek-harness.service`，运行用户仍为 `agentuser`。
+
+- [x] 先改测试，断言状态使用 `sudo systemctl status deepseek-harness.service --no-pager`，安装、任务轮询、重启和 Provider 配置全部调用 `execDebugCommand`。
+- [x] 运行聚焦测试并确认因旧 API/RPC 调用而失败。
+- [x] 新增命令构造与解析模块；Provider 白名单、任务 ID、输出 JSON 和 API Key 编码在浏览器侧校验。
+- [x] 安装器切换为系统服务，并增加只接受白名单 Provider 的 `providers` / `configure` 动作；密钥从 stdin 读取且不回显。
+- [x] 页面改用 Repository；删除 TAT 直连模型 RPC 和 DeepSeek Harness 专用 API 客户端。
+- [x] 删除 ctl、transport、errcode、server route 和 gateway allowlist 中仅为本需求新增的内容。
+- [x] 更新 PRD、proposal、spec 和安装脚本测试，确保文档不再声称存在专用接口或 systemd 用户服务。
+- [x] 运行 DSH 聚焦 Vitest、`pnpm check`、i18n、shell 测试、`git diff --check` 和浏览器桌面/移动端验收。
+
+## Planning Gate
+
+**规模判定：** M 级。Task 8 只保留 frontend、Hermes 镜像 helper 和现有 WebUI broker；不再修改 ctl 或 service-gateway。
+
+**Capability：** 不需要启用 `figma-fidelity`。本需求无 Figma 还原；浏览器 smoke 已通过本地预览执行。
+
+**规划门禁结论：** 通过。用户已确认所有 DSH 操作统一走 `debug/exec`；Task 8 代码、文档、自动化测试和浏览器桌面/移动端验收已完成，等待用户验收后再决定提交和 Sandbox 联调。
+**交付边界：** 用户验收前不提交、不推送、不创建 MR、不归档。
+
+### Task 9: 已配置模型供应商的修改与删除
+
+**Goal:** 将模型配置卡片升级为 DSH WebUI 风格的“已配置列表 + 单项展开编辑区 + 未配置供应商添加区”，并让添加、修改、删除全部通过固定命令复用 `debug/exec`。
+
+**Role:** Developer
+
+**Confirmed Design:**
+
+- 卡片上方持续展示 `configured=true` 的模型供应商，每行显示名称、绿色状态、编辑和删除操作。
+- 同一时间只展开一个编辑区；API Key 始终为空，留空保存保留原密钥，输入新值执行替换。
+- 添加区只展示尚未配置的站点白名单供应商；字段文案由 `Provider` 改为“模型供应商”。
+- 删除前二次确认；DeepSeek 只清除 LightVela 写入的 `DEEPSEEK_API_KEY`，其他供应商删除 profile，并只清理由 LightVela 派生且可写的凭据。
+- 环境变量密钥、自定义引用和不可识别凭据不删除；环境管理的 DeepSeek 凭据明确拒绝删除，部分失败保留确认弹窗并允许重试。
+
+**Planned Files:**
+
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-model-card.tsx`
+- Modify: `frontend/src/lib/deepseek-harness-command.ts`
+- Modify: `frontend/src/repositories/fake-repositories.ts`
+- Modify: `images/helpers/configure-deepseek-harness.py`
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Modify focused frontend, command-client, fake-repository, Python helper and installer tests
+
+**Out of Scope:**
+
+- 不新增 DSH 专用后端接口，不让浏览器直接访问 DSH RPC。
+- 不读取、回显或持久化现有 API Key；编辑区始终以空输入开始。
+- 不删除环境变量、自定义凭据引用或无法证明由 LightVela 创建的凭据。
+
+**Implementation Batches:**
+
+- [x] Batch 1（固定命令与实例 helper）：先补 `remove-provider` 的命令客户端、Python helper 和安装器失败测试，再实现白名单校验、凭据归属判断、幂等删除与非零退出码识别。验收信号为未知供应商无法下发命令，DeepSeek 仅清可写凭据，目录供应商按“凭据后 profile”顺序删除，外部凭据保持不变。
+- [x] Batch 2（模型配置交互与 Mock）：先补已配置列表、单项编辑、添加过滤、删除确认和失败重试测试，再实现紧凑列表、一次只展开一个编辑区、删除弹窗及 Fake Repository 状态变更。验收信号为已配置供应商持续可见，添加区只出现未配置项，删除失败时弹窗保留且可重试。
+- [x] Batch 3（规格与验收）：同步 PRD、proposal、spec 与 TAPD，运行聚焦测试、类型检查、i18n、shell/Python 测试和浏览器桌面/移动端 smoke。验收信号为页面无横向溢出、无控制台错误，且全部 DSH 操作仍只经 `debug/exec`。
+
+**TDD Checklist:**
+
+- [x] 前端组件测试先覆盖已配置列表、单项编辑、添加过滤、删除确认、删除失败重试与“模型供应商”文案。
+- [x] 命令客户端测试先覆盖白名单 `remove-provider` 命令，并拒绝未知 Provider ID。
+- [x] Python helper 测试先覆盖 DeepSeek 仅清凭据、目录供应商清凭据后 unset profile、外部凭据不清理和幂等重试。
+- [x] 安装器测试先覆盖 `remove-provider --provider <id>` 的参数校验与 helper 委托。
+- [x] 完成最小实现并运行聚焦测试、类型检查、i18n、shell/Python 测试和浏览器桌面/移动端验收。
+
+**Planning Gate:** M 级增量需求；方案 A、删除语义、影响文件、空态/错误态/加载态和验收标准均已确认，不新增依赖或专用接口。规划门禁通过，可进入 TDD 实现。
+
+**Status:** 方案 A 实现与验证完成，等待用户验收。
+
+---
+
+### Task 10: 收紧已安装运行态卡片高度
+
+**Goal:** 取消 DeepSeek Harness 已安装运行态不必要的固定最小高度，使卡片随单行运行信息自然收紧，同时保持加载、错误、未安装和安装中状态的稳定高度。
+
+**Files:**
+
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+
+**Interfaces:**
+
+- Preserves: 状态查询、安装动画、运行状态、WebUI 和重启操作不变。
+- Produces: `status === "installed"` 时主卡片不包含 `min-h-52`；其他状态继续包含 `min-h-52`。
+
+**Out of Scope:**
+
+- 不调整公告、模型配置卡片、按钮尺寸、移动端堆叠或安装状态内容。
+- 不新增高度动画，避免动画布局属性。
+
+- [x] 先扩展 Panel 测试，断言未安装态保留 `min-h-52`、已安装态移除 `min-h-52`，并确认旧实现 RED。
+- [x] 使用 `cn()` 按状态组合卡片 class，仅在非 installed 状态应用 `min-h-52`。
+- [x] 运行 Panel 定向测试、`pnpm check`、`git diff --check`，并复验桌面与 390x844 移动端无溢出。
+
+**Status:** 实现与验证完成，等待用户验收。
+
+---
+
+### Task 11: 模型配置保存反馈与覆盖更新
+
+**Goal:** 让模型供应商配置在等待 `debug/exec` 返回期间提供明确加载反馈，并允许从完整供应商列表重复选择同一 Provider 进行覆盖更新。
+
+**Confirmed Design:**
+
+- 点击“保存配置”后，按钮显示加载图标与“保存中...”，供应商选择、密钥输入和其他配置操作保持禁用，直到 `debug/exec` 成功或失败。
+- 保存成功或失败统一复用全局顶部居中 Toast，约 3 秒自动消失；删除失败仍保留在确认弹窗内，便于直接重试。
+- 配置区下拉始终展示当前站点全部白名单供应商，不再过滤已配置项；再次保存已配置 Provider 等价于覆盖更新其配置。
+- 区块文案由“添加模型供应商 / 添加配置”调整为“配置模型供应商 / 保存配置”。
+- 保存成功后保留当前 Provider 选择并清空 API 密钥输入；保存失败时保留输入，方便用户重试。
+
+**Files:**
+
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-model-card.tsx`
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-provider-controls.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-model-card.test.tsx`
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`, `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Out of Scope:**
+
+- 不新增接口或改变固定命令，模型配置仍只通过 `BotRepository.execDebugCommand` 下发。
+- 不回显、持久化或读取现有 API Key。
+- 不改变删除失败弹窗及其重试行为。
+
+- [x] 先补充模型卡片失败测试，覆盖等待态、顶部 Toast、完整供应商下拉与同 Provider 覆盖保存。
+- [x] 实现最小交互调整，保存成功清空密钥、失败保留密钥，并确认测试 GREEN。
+- [x] 同步 proposal、spec 与 PRD，更新 i18n 生成字典。
+- [x] 运行定向测试、类型检查、i18n、diff 检查和浏览器桌面/移动端验收。
+
+**Planning Gate:** 用户已确认复用现有全局 Toast 的方案；交互状态、覆盖语义、反馈位置和错误边界均明确。规划门禁通过，可进入 TDD 实现。
+
+**Status:** 实现与验证完成，等待用户验收。
+
+---
+
+### Task 12: SkillHub 安装后明确重启 DSH
+
+**Goal:** 确保首次安装及重复安装/升级 SkillHub 后，`deepseek-harness.service` 都会重新启动并立即加载最新插件。
+
+**Files:**
+
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Modify: `images/tests/test-deepseek-harness-installer.sh`
+- Modify: `frontend/openspec/spec.md`, `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Interfaces:**
+
+- Preserves: DSH、SkillHub 固定版本、安装任务进度、健康检查、失败回滚和系统级服务结构。
+- Produces: SkillHub 安装或版本确认完成后，服务注册阶段执行 `systemctl enable deepseek-harness.service`，随后明确执行 `systemctl restart deepseek-harness.service`。
+
+**Out of Scope:**
+
+- 不新增独立重启任务或前端步骤。
+- 不改变模型配置后的生效策略；本次只处理插件安装/升级。
+
+- [x] 先修改安装器测试，断言 SkillHub 安装之后明确重启 DSH，并确认旧实现 RED。
+- [x] 调整服务注册命令并确认安装器测试 GREEN。
+- [x] 同步规格与 PRD，运行安装器、镜像脚本和差异检查。
+
+**Planning Gate:** 用户明确说明 SkillHub 安装后通常需要重启；现有 `enable --now` 在服务已运行时不保证重启，问题和修正边界已确认。规划门禁通过。
+
+**Status:** 实现与验证完成，等待用户验收。
+
+---
+
+### Task 13: 在线冻结依赖与五插件原子安装
+
+**Goal:** 保留用户点击后的在线安装方式，使用冻结依赖和校验清单安装 DSH runtime，并为 DSH `web` profile 全量安装 SkillHub、QQBot、微信、企业微信和 Lark；全部验证成功后才完成任务。
+
+**Role:** Developer + Reviewer
+
+**Files:**
+
+- Create: `images/runtime/deepseek-harness/manifest.json`
+- Create: `images/runtime/deepseek-harness/runtime/package.json`, `images/runtime/deepseek-harness/runtime/pnpm-lock.yaml`, `images/runtime/deepseek-harness/runtime/.pnpmfile.cjs`
+- Create: `images/runtime/deepseek-harness/web-profile/package.json`, `images/runtime/deepseek-harness/web-profile/pnpm-lock.yaml`, `images/runtime/deepseek-harness/web-profile/.pnpmfile.cjs`, `images/runtime/deepseek-harness/web-profile/pnpm-workspace.yaml`
+- Modify: `images/build.sh`
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Modify: `images/tests/test-deepseek-harness-installer.sh`, `images/tests/test-hermes-build-script.sh`
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`, `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Interfaces:**
+
+- Preserves: 前端三态交互、`debug/exec` 异步任务、`agentuser`、系统级 `deepseek-harness.service`、回环 3080、Provider helper 和 TAT WebUI 代理。
+- Produces: root-owned 冻结清单；固定 `pnpm@10.33.0`；DSH runtime 和 `web` profile 的 `--frozen-lockfile` 在线安装；四个渠道插件的固定 COS revision/SHA256；SkillHub 与 registry 依赖的 lockfile integrity；最多 5 次下载重试和有界超时。
+- Produces: 五插件准确版本、bundle 声明、profile bundle 列表、`dsh plugin ... list`、`dsh --profile web --dump-config`、systemd active 和 HTTP 200 的分层验收。
+
+**Atomicity and Error Handling:**
+
+- 网络下载、依赖安装和静态验证全部在任务临时目录完成，有限重试耗尽或任一校验失败时不触碰正式目录。
+- 正式切换前记录并复核旧 `web` profile 指纹；若安装期间被外部修改，则安全失败并保留现场。
+- 切换前备份旧 runtime、完整旧 `web` profile 和旧 unit；切换后明确 restart。任何后置验证失败都恢复三者和旧服务，首次安装失败清理半成品。
+- 已存在非 LightVela 管理的额外 profile 依赖或 bundle 时保持原状并失败，不删除未知插件、不降级为非冻结安装。
+- 保留原 `web/cordis.patch.yml` 和 `$DSH_HOME` 下 credentials/settings/storage；禁止宽泛执行 `pnpm approve-builds --all`，依赖构建脚本只能使用冻结清单中的精确白名单。
+
+**Out of Scope:**
+
+- 不安装 `dsh-auth`、Caddy 或独立 SkillHub CLI。
+- 不把 DSH runtime 和插件包体离线预置进镜像，不新增独立 COS bundle 发布链路。
+- 不修改 Hermes 自身的 SkillHub CLI、QQBot、微信、企业微信或 Lark 插件配置。
+- 不修改前端页面、ctl、service-gateway 或数据库接口。
+
+- [x] Batch 1 / RED：扩展 `images/tests/test-hermes-build-script.sh`，先断言镜像固定安装 `pnpm@10.33.0`，并把 `manifest.json`、runtime/web-profile 的 `package.json` 与 `pnpm-lock.yaml` 以 root-owned、只读方式复制到 `/usr/local/share/lightvela/deepseek-harness`；运行 `bash images/tests/test-hermes-build-script.sh`，确认旧实现因缺少冻结输入复制而失败。
+- [x] Batch 1 / RED：重构 `images/tests/test-deepseek-harness-installer.sh` 的 fake `pnpm/curl/systemctl/dsh`，断言安装器只使用 `pnpm install --frozen-lockfile`，四个渠道包执行最多 5 次、有连接/单次请求超时的下载及 SHA256 校验，SkillHub 走锁文件完整性；同时断言五插件版本、`dsh.bundle`、profile bundle 列表、`plugin list` 和 `dump-config` 全部通过后才重启服务。运行测试并确认旧实现 RED。
+- [x] Batch 2 / frozen inputs：新增冻结 manifest；runtime package 固定 `@deepseek-ai/dsh@0.1.0-rc.7`，两份 `.pnpmfile.cjs` 将整个 `@deepseek-ai/dsh-*` 依赖族保持在 `rc.7`，避免主包与新发布 `rc.8` 子包混装；web profile 复用官方 `nodeLinker: hoisted`、`autoInstallPeers: false` workspace 约定，只直接安装 SkillHub `0.2.13` 与 QQBot/微信/企业微信/Lark 的固定 revision、包版本和 SHA256，base/web-app bundles 由 runtime fallback 提供；使用 `pnpm@10.33.0 install --lockfile-only --ignore-scripts` 生成两份 lockfile，并以独立临时安装验证 `--frozen-lockfile` 不产生差异。
+- [x] Batch 2 / image wiring：为 `images/build.sh` 增加冻结输入 source/target，复制后校验文件集合、权限和所有者；将 Hermes WhatsApp bridge 的全局 pnpm 安装固定为 `pnpm@${PNPM_VERSION}`。运行镜像脚本测试转 GREEN。
+- [x] Batch 3 / candidate install：安装器读取 root-owned manifest，在 task 私有目录下载四个渠道包并校验 SHA256，将 SkillHub 交给 lockfile integrity；把 runtime 和完整 `web` profile 安装到候选目录，保留旧 `cordis.patch.yml`，拒绝未知依赖或 bundle，候选校验失败时只清理 task 目录并记录失败。
+- [x] Batch 3 / atomic switch：记录旧 profile 指纹，候选验证后再次比对；停服前备份 current symlink、完整旧 profile 和 unit，再一次性切换 runtime/profile/unit。后置的五插件清单、配置解析、systemd active、回环端口和 HTTP 200 任一失败时恢复三者并重启旧服务；首次安装失败不残留 release/profile/unit。
+- [x] Batch 4 / GREEN and regression：覆盖首次安装、重复安装、未知插件、下载校验失败、插件验证失败、profile 并发修改、切换中途失败、服务健康失败、服务 enable 状态恢复和成功清理；运行 `bash images/tests/test-deepseek-harness-installer.sh`、`bash images/tests/test-hermes-build-script.sh`、lockfile 再生成差异检查、`bash -n` 与 `git diff --check`。
+- [x] Batch 4 / docs：同步规格、PRD 和当前任务摘要，记录本地验证证据。北京 Sandbox 真实组合冒烟仍需用户另行确认后执行，不在本批次自动触发。
+
+**Planning Gate:** M 级安装可靠性增强。用户已选择在线冻结方案，并确认五个 `web` profile 插件全量成功才算完成；方案不新增后端接口或 UI，不启用额外 capability。书面规格和原子切换边界已经用户确认，按上述四个批次进入 TDD 实现。
+
+**Status:** 本地实现与验证完成，等待用户验收；确认前不 commit / push / MR，也不执行北京 Sandbox 远端安装。
+
+---
+
 # Agent 导航 CR 修正 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认提交和推送。

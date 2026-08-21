@@ -45,7 +45,9 @@ describe("Agent settings navigation groups", () => {
     expect(setup).toMatch(/id: "channel"[\s\S]*id: "model"[\s\S]*id: "skill"/);
     expect(use).toMatch(/id: "chat"[\s\S]*id: "automations"[\s\S]*id: "website"/);
     expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"[\s\S]*id: "achievement"/);
-    expect(manage).toMatch(/id: "files"[\s\S]*id: "diagnostics"/);
+    expect(manage).toMatch(
+      /id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "labs"[\s\S]*id: "deepseek-harness"/,
+    );
   });
 
   it("keeps the My creations navigation entry behind show()", () => {

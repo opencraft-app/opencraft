@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "pnpmVersion": "10.33.0",
+  "runtime": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.0-rc.7",
+    "integrity": "sha512-ZceDCJ8FAywih+USW/OMk9jEhunlvJBGEz4kqrhau23hPzbciOazZrywH0nBRsaalSeAJ1JGBmjtw4OSjToStw=="
+  },
+  "profile": {
+    "name": "web",
+    "builtInBundles": [
+      "@deepseek-ai/dsh-base",
+      "@deepseek-ai/dsh-web-app"
+    ],
+    "plugins": [
+      {
+        "id": "skillhub",
+        "package": "@cocofhu/skillhub",
+        "version": "0.2.13",
+        "source": "registry",
+        "integrity": "sha512-/1G/Sn6uoP3S5SPLHyt675XAouFIAXvu2JEL8vV6tUmDvL1IB1RH33Nbcc2taa/AIrJxXfUxUAlo8+slCMdBqw=="
+      },
+      {
+        "id": "qqbot",
+        "package": "deepseek-harness-qqbot",
+        "version": "0.1.5",
+        "source": "archive",
+        "revision": "691af8ca2ffc9a1d67784d49744565b08d936f5e",
+        "url": "https://qa-rag-masonxhuang-1251810746.cos.ap-guangzhou.myqcloud.com/deepseek-harness/build-deps/plugins/qqbot/691af8ca2ffc9a1d67784d49744565b08d936f5e.tar.gz",
+        "filename": "qqbot-691af8ca2ffc9a1d67784d49744565b08d936f5e.tar.gz",
+        "sha256": "4d2e5c06dc3934569e7a19137c99dabfdbdafb9b6fb0bb7b87167a6ea69be68a"
+      },
+      {
+        "id": "weixin",
+        "package": "deepseek-harness-weixin",
+        "version": "0.2.5",
+        "source": "archive",
+        "revision": "361927d701f664074b1ea72096f8e61c121a602d",
+        "url": "https://qa-rag-masonxhuang-1251810746.cos.ap-guangzhou.myqcloud.com/deepseek-harness/build-deps/plugins/weixin/361927d701f664074b1ea72096f8e61c121a602d.tar.gz",
+        "filename": "weixin-361927d701f664074b1ea72096f8e61c121a602d.tar.gz",
+        "sha256": "20369d311752211550b178e6e519b80cbd949148d37cbde38ff1974af5afe6b0"
+      },
+      {
+        "id": "wecom",
+        "package": "deepseek-harness-wecom",
+        "version": "0.1.5",
+        "source": "archive",
+        "revision": "e241355f081c90cddfcc16d0e26020a5db30be25",
+        "url": "https://qa-rag-masonxhuang-1251810746.cos.ap-guangzhou.myqcloud.com/deepseek-harness/build-deps/plugins/wecom/e241355f081c90cddfcc16d0e26020a5db30be25.tar.gz",
+        "filename": "wecom-e241355f081c90cddfcc16d0e26020a5db30be25.tar.gz",
+        "sha256": "870194ca4055afae87ff8b25261ab1d10d5604c2b0c07e17a961128c84ebe6ac"
+      },
+      {
+        "id": "lark",
+        "package": "deepseek-harness-lark",
+        "version": "0.1.5",
+        "source": "archive",
+        "revision": "b8c6f6ed8eab67a5b99be9b430ef19bea631fd4d",
+        "url": "https://qa-rag-masonxhuang-1251810746.cos.ap-guangzhou.myqcloud.com/deepseek-harness/build-deps/plugins/lark/b8c6f6ed8eab67a5b99be9b430ef19bea631fd4d.tar.gz",
+        "filename": "lark-b8c6f6ed8eab67a5b99be9b430ef19bea631fd4d.tar.gz",
+        "sha256": "e3a0aacdd3c2f4926cc5d976d32f152c8e76af204d4315a4c57ccb69b120c153"
+      }
+    ]
+  }
+}

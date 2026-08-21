@@ -1,3 +1,44 @@
+# DeepSeek Harness 真实接入 Proposal
+
+**状态：** 本地第一版与在线冻结依赖、五插件原子安装增强均已实现并完成本地验证；北京 Sandbox 真实组合冒烟仍待用户确认后执行。
+
+## 背景与目标
+
+在现有“管理 > 实验室 > DeepSeek Harness”三态演示基础上，接入真实实例状态、幂等安装、重启、同源 WebUI 访问和页面内模型供应商配置。配置卡片采用“已配置列表 + 单项展开编辑 + 完整白名单配置区”，支持 API Key 新增、覆盖修改和删除。保存期间锁定配置交互并等待 `debug/exec` 返回，结果通过顶部居中 Toast 即时反馈。DSH 与 Hermes 运行在同一台实例、同一 `agentuser` 环境中，但使用独立版本目录、`DSH_HOME` 和系统级 `deepseek-harness.service`；DSH 依赖不写入 Hermes runtime 包树，共用的 pnpm 版本由镜像清单固定。
+
+## 范围
+
+- frontend 复用 `BotRepository.execDebugCommand`，经现有 `/v1/instances/:id/debug/exec` 完成状态、安装、任务查询、重启和模型配置。
+- Hermes 镜像提供固定版本、幂等、可回滚的安装器、冻结依赖清单与模型供应商配置 helper。
+- 安装器在线获取锁文件指定的依赖，并为 DSH `web` profile 全量安装 SkillHub、QQBot、微信、企业微信和 Lark；五个插件全部验证成功后才允许任务完成。
+- Provider helper 在实例回环访问 DSH 固定 RPC；WebUI 继续通过登录态 TAT 虚拟 HTTP 访问 `127.0.0.1:3080`。
+- 国内站和国际站使用已确认的不同 Provider 白名单；DeepSeek 产品标识映射到 `deepseek-official`。
+- 配置下拉始终展示当前站点完整 Provider 白名单；重复保存已配置 Provider 等价于覆盖更新。
+- 首批真实安装只进入北京 Sandbox；本需求不新增 service-gateway 路由。
+
+## 非目标
+
+- 不提供具体 model ID 选择、自定义 Provider、Base URL、协议或模型参数。
+- 不公开实例 3080，不复用参考机的公网 IP/路径配置。
+- 不把 API Key 明文写入 shell、URL、日志、埋点、localStorage 或后端业务数据库；`debug/exec` 命令使用 base64 进行 shell 安全编码，该编码不等同于加密。
+- 不新增 DeepSeek Harness 专用 ctl、transport、errcode 或 service-gateway 接口。
+- 不在本轮创建 `*.dsh.lightvela.site` 独立域名。
+- 不安装 `dsh-auth`、Caddy 或另一套 SkillHub CLI；继续使用 LightVela 登录态 TAT 代理，Hermes 已有工具和渠道插件保持不变。
+- 本轮不改为镜像内离线预置，也不新增独立 COS 安装包发布链路。
+
+## 关键决策
+
+- 固定 `@deepseek-ai/dsh@0.1.0-rc.7`、`@cocofhu/skillhub@0.2.13`、`deepseek-harness-qqbot@0.1.5`、`deepseek-harness-weixin@0.2.5`、`deepseek-harness-wecom@0.1.5` 和 `deepseek-harness-lark@0.1.5`。
+- DSH runtime 与 `web` profile 分别使用仓库内 `pnpm-lock.yaml` 执行 `--frozen-lockfile` 安装；四个渠道插件固定 COS revision 和 SHA256，registry 依赖使用 lockfile integrity 校验并配置有限重试。
+- 安装在任务临时目录完成下载、依赖安装和配置组合检查后再原子切换；任一插件失败即恢复旧 runtime、完整旧 `web` profile 和旧 service unit。
+- 已安装 profile 出现非 LightVela 管理的额外 DSH 插件时，安装器保持原状并安全失败，不删除未知插件或退化为非冻结安装。
+- 包名、版本、目录、用户、端口和 Provider 白名单由实例侧 helper 固定；前端只选择固定动作与白名单 Provider ID。
+- API Key 经 `debug/exec` 传给实例 helper 的 stdin，再由 helper 通过 DSH `credentials.set` 单向写入；设置写入携带 `expectedRevision`。
+- 删除经同一 `debug/exec` 通道调用固定 `remove-provider` 动作；只清理可确认由 LightVela 创建且当前可写的凭据，环境变量密钥和自定义引用保持不变。
+- WebUI 过渡期复用登录态下的同源 TAT Service Worker 代理。
+
+---
+
 # 个人助理运行时概览页重构 Proposal
 
 **状态：** 已获得用户对产品方向的明确授权，待按本提案实现并由用户验收。

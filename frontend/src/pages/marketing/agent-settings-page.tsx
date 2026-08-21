@@ -23,6 +23,7 @@ import {
   TerminalSquare,
   Download,
   Files,
+  FlaskConical,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -128,6 +129,7 @@ import { isPaidBillingEnabled } from "@/lib/billing-flow";
 import { getPassExpiryReminder } from "@/lib/pass-renewal";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
@@ -3312,6 +3314,14 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
+  const [isLabsExpanded, setIsLabsExpanded] = useState(activeSection === "deepseek-harness");
+  const labsNavigationId = useId();
+
+  useEffect(() => {
+    if (activeSection === "deepseek-harness") {
+      setIsLabsExpanded(true);
+    }
+  }, [activeSection]);
 
   useEffect(() => {
     if (!TEA_SDK_SECTIONS.has(activeSection)) return;
@@ -5147,14 +5157,21 @@ export const AgentSettingsPage = ({
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
             (() => {
-              type SettingsSection = {
+              type SettingsSectionLink = {
                 id: AgentSettingsSectionId;
                 label: string;
                 icon: React.ReactNode;
                 path: string;
                 badge?: string;
               };
-              const settingsGroups: { id: string; label: string; sections: SettingsSection[] }[] = [
+              type SettingsExpandableSection = {
+                id: "labs";
+                label: string;
+                icon: React.ReactNode;
+                children: SettingsSectionLink[];
+              };
+              type SettingsNavigationItem = SettingsSectionLink | SettingsExpandableSection;
+              const settingsGroups: { id: string; label: string; sections: SettingsNavigationItem[] }[] = [
                 {
                   id: "setup",
                   label: t("配置"),
@@ -5192,6 +5209,20 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                     { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+                    {
+                      id: "labs",
+                      label: t("实验室"),
+                      icon: <FlaskConical className="h-4 w-4" />,
+                      children: [
+                        {
+                          id: "deepseek-harness",
+                          label: "DeepSeek Harness",
+                          icon: null,
+                          path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
+                          badge: "Beta",
+                        },
+                      ],
+                    },
                   ],
                 },
               ];
@@ -5466,6 +5497,60 @@ export const AgentSettingsPage = ({
                             <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
                             <ul className="lv-agents-nav-group-items">
                               {group.sections.map((section) => {
+                                if ("children" in section) {
+                                  const hasActiveChild = section.children.some((child) => child.id === activeSection);
+                                  return (
+                                    <li key={section.id} className="lv-agents-nav-expandable">
+                                      <button
+                                        type="button"
+                                        aria-expanded={isLabsExpanded}
+                                        aria-controls={labsNavigationId}
+                                        onClick={() => setIsLabsExpanded((expanded) => !expanded)}
+                                        className={cn(
+                                          "lw-settings-nav-item lv-agents-nav-item lv-agents-nav-expand-toggle",
+                                          hasActiveChild
+                                            ? "is-parent-active"
+                                            : "text-black/70 hover:bg-black/[0.025]",
+                                        )}
+                                      >
+                                        <span className="lv-agents-nav-icon">{section.icon}</span>
+                                        <span className="min-w-0 flex-1 text-left">{section.label}</span>
+                                        <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
+                                      </button>
+                                      <ul
+                                        id={labsNavigationId}
+                                        className="lv-agents-nav-subitems"
+                                        hidden={!isLabsExpanded}
+                                      >
+                                        {section.children.map((child) => {
+                                          const isActive = child.id === activeSection;
+                                          return (
+                                            <li key={child.id}>
+                                              <AppLink
+                                                to={getAgentSectionHref(child.path, searchParams)}
+                                                aria-label={child.label}
+                                                aria-current={isActive ? "page" : undefined}
+                                                className={cn(
+                                                  "lv-agents-nav-subitem",
+                                                  isActive
+                                                    ? "is-active"
+                                                    : "text-black/60 hover:bg-black/[0.025] hover:text-black/80",
+                                                )}
+                                              >
+                                                <span className="min-w-0 flex-1 truncate text-left">{child.label}</span>
+                                                {child.badge ? (
+                                                  <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
+                                                    {child.badge}
+                                                  </span>
+                                                ) : null}
+                                              </AppLink>
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                    </li>
+                                  );
+                                }
                                 const isActive = section.id === activeSection;
                                 return (
                                   <li key={section.id}>
@@ -5606,6 +5691,9 @@ export const AgentSettingsPage = ({
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "deepseek-harness" && (
+                            <AgentDeepSeekHarnessPanel botId={activeBot.id} />
                           )}
                           {isGlobal && activeSection === "website" && (
                             <AgentWebsitePanel />

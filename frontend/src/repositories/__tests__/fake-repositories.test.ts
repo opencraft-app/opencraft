@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DeepSeekHarnessCommandClient } from "@/lib/deepseek-harness-command";
 import { createFakeRepositories } from "@/repositories/fake-repositories";
 
 const createMemoryStorage = (): Storage => {
@@ -84,5 +85,36 @@ describe("fake repositories FaceID flow", () => {
       },
       error: null,
     });
+  });
+
+  it("previews the DeepSeek Harness lifecycle through debug exec commands", async () => {
+    const repositories = createFakeRepositories();
+    const client = new DeepSeekHarnessCommandClient(
+      "bot_local_preview",
+      repositories.bots.execDebugCommand,
+      { createTaskId: () => "dshi-0123456789abcdef0123456789abcdef" },
+    );
+
+    await expect(client.getStatus()).resolves.toMatchObject({ installed: false, status: "not-installed" });
+    await expect(client.listProviders("cn")).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "deepseek", configured: false, active: true }),
+      expect.objectContaining({ id: "qwen-token-plan-cn" }),
+    ]));
+
+    await client.saveProvider("deepseek", "sk-preview");
+    await expect(client.listProviders("cn")).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "deepseek", configured: true, active: true }),
+    ]));
+
+    await client.removeProvider("deepseek");
+    await expect(client.listProviders("cn")).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "deepseek", configured: false, active: true }),
+    ]));
+
+    const task = await client.startInstall();
+    await expect(client.getInstallation(task.task_id)).resolves.toMatchObject({ status: "running" });
+    await expect(client.getInstallation(task.task_id)).resolves.toMatchObject({ status: "succeeded", progress: 100 });
+    await expect(client.getStatus()).resolves.toMatchObject({ installed: true, status: "running", healthy: true });
+    await expect(client.restart()).resolves.toMatchObject({ installed: true, status: "running", healthy: true });
   });
 });

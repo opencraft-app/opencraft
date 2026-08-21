@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isHermesWebTextResponse, rewriteHermesWebTextPayload } from "@/lib/tat-hermes-web-proxy-rewrite";
+import { isHermesWebTextResponse, rewriteHermesWebTextPayload, rewriteTatWebTextPayload } from "@/lib/tat-hermes-web-proxy-rewrite";
 
 const proxyBase = "/__tat_hermes_proxy/ins-demo";
 
@@ -90,5 +90,16 @@ describe("Hermes WebUI proxy rewrite", () => {
     expect(isHermesWebTextResponse("text/html; charset=utf-8")).toBe(true);
     expect(isHermesWebTextResponse("text/css")).toBe(true);
     expect(isHermesWebTextResponse("application/javascript")).toBe(true);
+  });
+
+  it("rewrites DeepSeek Harness loopback URLs with its own port and proxy base", () => {
+    const proxyBase = "/__tat_hermes_proxy/dsh--ins-1";
+    const html = '<html><head></head><body><script src="http://127.0.0.1:3080/assets/app.js"></script></body></html>';
+    const rewritten = rewriteTatWebTextPayload(html, "text/html", proxyBase, 3080);
+
+    expect(rewritten).toContain(`${proxyBase}/assets/app.js`);
+    expect(rewritten).toContain(`const base = "${proxyBase}/";`);
+    expect(rewritten).toContain(":3080(?=/|$)");
+    expect(rewritten).not.toContain(":9119(?=/|$)");
   });
 });

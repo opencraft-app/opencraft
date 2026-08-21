@@ -88,6 +88,12 @@ ARG_HERMES_SRC_VERSION="${ARG_HERMES_SRC_VERSION:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 MANIFEST_PATH="${SCRIPT_DIR}/build-manifest.json"
 HERMES_BACKEND_BLUEPRINT_RESOLVER="${HERMES_BACKEND_BLUEPRINT_RESOLVER:-${SCRIPT_DIR}/helpers/resolve-hermes-backend-blueprint-id.py}"
+HERMES_DSH_INSTALLER_SOURCE="${HERMES_DSH_INSTALLER_SOURCE:-${SCRIPT_DIR}/helpers/install-deepseek-harness.sh}"
+HERMES_DSH_INSTALLER_TARGET="${HERMES_DSH_INSTALLER_TARGET:-/usr/local/libexec/lightvela/install-deepseek-harness}"
+HERMES_DSH_CONFIG_HELPER_SOURCE="${HERMES_DSH_CONFIG_HELPER_SOURCE:-${SCRIPT_DIR}/helpers/configure-deepseek-harness.py}"
+HERMES_DSH_CONFIG_HELPER_TARGET="${HERMES_DSH_CONFIG_HELPER_TARGET:-/usr/local/libexec/lightvela/configure-deepseek-harness.py}"
+HERMES_DSH_ASSETS_SOURCE="${HERMES_DSH_ASSETS_SOURCE:-${SCRIPT_DIR}/runtime/deepseek-harness}"
+HERMES_DSH_ASSETS_TARGET="${HERMES_DSH_ASSETS_TARGET:-/usr/local/share/lightvela/deepseek-harness}"
 ENVD_BINARY="/usr/local/bin/envd"
 ENVD_SERVICE="envd.service"
 ENVD_LISTEN_PORT="${ENVD_LISTEN_PORT:-49983}"
@@ -1219,7 +1225,7 @@ install_hermes_whatsapp_bridge_deps() {
     "${bridge_home}/.hermes/hermes-agent/scripts" 2>/dev/null || true
   chown -R "${bridge_user}:${bridge_user}" "${bridge_dir}" 2>/dev/null || true
 
-  sudo npm install -g pnpm
+  sudo npm install -g "pnpm@${PNPM_VERSION}"
 
   resolve_js='for (const m of ["@whiskeysockets/baileys","qrcode-terminal","express","pino"]) console.log(m, require.resolve(m))'
   printf -v bridge_home_escaped '%q' "${bridge_home}"
@@ -2155,6 +2161,46 @@ uninstall_security_agent() {
   rm -rf /usr/local/sa
 }
 
+install_deepseek_harness_installer() {
+  local required=""
+
+  if [ ! -r "${HERMES_DSH_INSTALLER_SOURCE}" ]; then
+    log_error "DeepSeek Harness installer not found: ${HERMES_DSH_INSTALLER_SOURCE}"
+    return 1
+  fi
+  if [ ! -r "${HERMES_DSH_CONFIG_HELPER_SOURCE}" ]; then
+    log_error "DeepSeek Harness config helper not found: ${HERMES_DSH_CONFIG_HELPER_SOURCE}"
+    return 1
+  fi
+  for required in \
+    manifest.json \
+    runtime/package.json \
+    runtime/pnpm-lock.yaml \
+    runtime/.pnpmfile.cjs \
+    web-profile/package.json \
+    web-profile/pnpm-lock.yaml \
+    web-profile/.pnpmfile.cjs \
+    web-profile/pnpm-workspace.yaml; do
+    if [ ! -s "${HERMES_DSH_ASSETS_SOURCE}/${required}" ]; then
+      log_error "DeepSeek Harness frozen input not found: ${HERMES_DSH_ASSETS_SOURCE}/${required}"
+      return 1
+    fi
+  done
+  mkdir -p "$(dirname "${HERMES_DSH_INSTALLER_TARGET}")"
+  install -m 0755 "${HERMES_DSH_INSTALLER_SOURCE}" "${HERMES_DSH_INSTALLER_TARGET}"
+  mkdir -p "$(dirname "${HERMES_DSH_CONFIG_HELPER_TARGET}")"
+  install -m 0755 "${HERMES_DSH_CONFIG_HELPER_SOURCE}" "${HERMES_DSH_CONFIG_HELPER_TARGET}"
+  rm -rf "${HERMES_DSH_ASSETS_TARGET}"
+  install -d -m 0755 "${HERMES_DSH_ASSETS_TARGET}"
+  cp -a "${HERMES_DSH_ASSETS_SOURCE}/." "${HERMES_DSH_ASSETS_TARGET}/"
+  chown -R root:root "${HERMES_DSH_ASSETS_TARGET}"
+  find "${HERMES_DSH_ASSETS_TARGET}" -type d -exec chmod 0755 {} +
+  find "${HERMES_DSH_ASSETS_TARGET}" -type f -exec chmod 0644 {} +
+  log_info "installed DeepSeek Harness installer: ${HERMES_DSH_INSTALLER_TARGET}"
+  log_info "installed DeepSeek Harness config helper: ${HERMES_DSH_CONFIG_HELPER_TARGET}"
+  log_info "installed DeepSeek Harness frozen inputs: ${HERMES_DSH_ASSETS_TARGET}"
+}
+
 cleanup_for_image() {
   rm -rf /tmp/tat_agent/
   if [ -f /usr/local/qcloud/tat_agent/log/tat_agent.log ]; then
@@ -2212,6 +2258,7 @@ build_app_layer() {
     finalize_hermes_runtime_pin
     curate_hermes_skills
     remove_hermes_find_skill_skillhub
+    install_deepseek_harness_installer
   else
     install_openclaw
     install_all_plugins

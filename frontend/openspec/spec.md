@@ -1,3 +1,68 @@
+# DeepSeek Harness 真实接入 Spec
+
+**最后更新：** 2026-08-21
+**状态：** 本地第一版与在线冻结依赖、五插件原子安装增强完成；北京 Sandbox 真实组合冒烟待确认
+
+## 1. 统一命令通道
+
+DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调用现有 `POST /v1/instances/{id}/debug/exec`，由现有 Repository、实例归属和 active pass 校验链路承接。
+
+| 动作 | 固定命令 |
+| --- | --- |
+| 状态 | `sudo systemctl status deepseek-harness.service --no-pager`，包装为始终返回 JSON 的条件命令 |
+| 安装 | `sudo systemd-run ... /usr/local/libexec/lightvela/install-deepseek-harness install --task-id <validated-id>` |
+| 任务查询 | `sudo /usr/local/libexec/lightvela/install-deepseek-harness installation --task-id <validated-id>` |
+| 重启 | `sudo systemctl restart deepseek-harness.service`，随后再次查询状态 |
+| 模型供应商列表 | `sudo /usr/local/libexec/lightvela/install-deepseek-harness providers --region <cn|global>` |
+| 模型供应商配置 | API Key 经 base64 shell 安全编码后写入 helper stdin，Provider ID 必须命中固定白名单 |
+| 模型供应商删除 | `sudo /usr/local/libexec/lightvela/install-deepseek-harness remove-provider --provider <allowlisted-id>` |
+
+## 2. 实例安装器
+
+- 固定运行用户 `agentuser`、`DSH_HOME=/home/agentuser/.dsh`、端口 `127.0.0.1:3080`。
+- 固定版本 `@deepseek-ai/dsh@0.1.0-rc.7`、`@cocofhu/skillhub@0.2.13`、`deepseek-harness-qqbot@0.1.5`、`deepseek-harness-weixin@0.2.5`、`deepseek-harness-wecom@0.1.5` 和 `deepseek-harness-lark@0.1.5`；不安装 `dsh-auth`。
+- 镜像只预置 root-owned 冻结安装清单，不预置 DSH 包体。DSH runtime 与 `web` profile 各自使用固定 `package.json`、`.pnpmfile.cjs` 和 `pnpm-lock.yaml`；hook 将整个 `@deepseek-ai/dsh-*` 依赖族保持在 `rc.7`，避免与后续 RC 混装。实例安装时执行 `pnpm install --frozen-lockfile`，不得解析或写回新版本。
+- `web` profile 复用 DSH 官方 `nodeLinker: hoisted`、`autoInstallPeers: false` workspace 约定，只直接安装五个插件；base/web-app bundles 由冻结 runtime 的 profile fallback 提供。
+- 四个渠道插件使用固定 COS revision 与 SHA256；SkillHub 和 registry 依赖使用固定版本及 lockfile integrity。下载配置有限重试、连接/总超时，校验失败不得进入安装阶段。
+- 固定插件来源如下；完整 SHA256 与 registry integrity 进入 root-owned `manifest.json`，实现不得仅依赖文件名或 URL：
+
+| 插件 | 固定版本 | 固定来源 |
+| --- | --- | --- |
+| SkillHub | `@cocofhu/skillhub@0.2.13` | npm tarball + `dist.integrity` |
+| QQBot | `deepseek-harness-qqbot@0.1.5` | COS revision `691af8ca2ffc9a1d67784d49744565b08d936f5e` + SHA256 |
+| 微信 | `deepseek-harness-weixin@0.2.5` | COS revision `361927d701f664074b1ea72096f8e61c121a602d` + SHA256 |
+| 企业微信 | `deepseek-harness-wecom@0.1.5` | COS revision `e241355f081c90cddfcc16d0e26020a5db30be25` + SHA256 |
+| Lark | `deepseek-harness-lark@0.1.5` | COS revision `b8c6f6ed8eab67a5b99be9b430ef19bea631fd4d` + SHA256 |
+
+- 下载最多尝试 5 次，单次连接超时 10 秒、单个请求总超时 300 秒，并使用有上限的退避。禁止执行宽泛的 `pnpm approve-builds --all`；构建脚本只允许 `@deepseek-ai/dsh-subprocess-local`、`koffi`、`node-pty`，明确忽略无需运行的 `@google/genai`、`protobufjs` 安装脚本。
+- DSH 版本目录 `/opt/lightvela/dsh/releases/0.1.0-rc.7`，当前链接 `/opt/lightvela/dsh/current`。
+- 系统服务文件 `/etc/systemd/system/deepseek-harness.service`，通过 `User=agentuser`、`Group=agentuser` 降权运行，设置 `Restart=always`、`RestartSec=5`、`UMask=0077`。
+- SkillHub、QQBot、微信、企业微信和 Lark 全部安装到 DSH `web` profile。五个插件必须同时满足准确包名/版本、声明 `dsh.bundle`、进入 `dsh.profile.bundles`、出现在 `dsh plugin --profile web list --depth 0 --json`，且 `dsh --profile web --dump-config` 成功；任一失败都将整个任务判定失败。
+- 安装使用 `flock`，状态以 root-owned JSON 原子写入 `/var/lib/lightvela/dsh/installations/`。下载、冻结安装和静态检查先在任务临时目录完成；正式切换前再次比较旧 profile 指纹，检测到并发修改则不覆盖。
+- 切换前备份旧 runtime、完整旧 `web` profile 和旧 unit；切换后明确 enable、restart，并验证 systemd active 与回环 HTTP 200。失败时恢复三者并重启旧服务；首次安装失败清理临时目录和半成品。
+- 重装或升级时保留原 `web/cordis.patch.yml`；`$DSH_HOME` 下的 credentials、settings、storage 和其他用户数据不参与替换或清理。成功或失败后删除任务工作目录，但保留安装任务 JSON 状态记录。
+- 已经收敛到目标 runtime、五插件和服务配置时幂等成功。检测到非 LightVela 管理的额外 profile 依赖或 bundle 时保持原状并失败，不删除未知插件、不放弃冻结保证。
+
+## 3. 模型供应商配置 helper
+
+前端不再直连 DSH 配置 RPC。实例侧 `configure-deepseek-harness.py` 只允许调用 `llm.providers`、`settings.describe`、`credentials.describe`、`settings.mutate`、`credentials.set`、`credentials.unset`，并校验 RPC envelope 与 `result.ok`。非 DeepSeek Provider 在对应 settings path 写入派生的 `<ROUTE>_API_KEY` 引用，DeepSeek 直接写 `DEEPSEEK_API_KEY`。helper 只从 stdin 读取密钥，响应不包含密钥值。
+
+删除遵循 DSH WebUI 的窄范围清理：DeepSeek 只清除可写的 `DEEPSEEK_API_KEY`，凭据已配置但来自不可写环境时明确拒绝删除；其他供应商删除 profile，且仅在 profile 引用 LightVela 派生的 `<ROUTE>_API_KEY` 并确认凭据可写时清除凭据。环境变量密钥、自定义引用与不可识别凭据保持不变。凭据清理和 profile `unset` 均为幂等操作，部分失败允许原位重试。
+
+## 4. 页面状态
+
+- 状态查询 loading、error、未安装、安装中、安装失败、运行中、未运行完整覆盖。
+- dsh 已安装即展示模型配置卡片和 WebUI/重启操作；运行状态如实展示，不增加诊断分支。
+- 模型配置卡片上方持续展示已配置模型供应商，每行提供编辑和删除；同一时间只展开一个编辑区。
+- 配置区始终展示当前站点完整白名单，字段标签使用“模型供应商”；重复保存同一 Provider 通过原固定命令覆盖更新。
+- API Key 输入始终为空；编辑时留空表示保留已有密钥。
+- 保存请求未完成时，按钮显示“保存中...”并禁用供应商选择、密钥输入和其他配置操作。
+- 保存成功或失败通过顶部居中 Toast 反馈并自动消失；成功时保留当前 Provider 选择并清空密钥，失败时保留密钥以便重试。
+- 删除前二次确认；成功后刷新列表，失败时保留弹窗并允许重试。
+- WebUI 使用同源 Service Worker 前缀和独立 DSH broker identity，目标固定为回环 3080，Hermes 9119 行为保持不变。
+
+---
+
 # 个人助理运行时概览页重构 Spec
 
 **最后更新：** 2026-08-11

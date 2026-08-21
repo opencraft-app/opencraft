@@ -1119,6 +1119,27 @@ export const createFakeRepositories = (): Repositories => {
 
 const createBotRepository = (): BotRepository => {
   const fakeConnectedChannels = new Set<string>();
+  const fakeConfiguredDshProviders = new Set<string>();
+  let fakeDshInstalled = false;
+  let fakeDshInstallationPollCount = 0;
+  let fakeDshTaskId = "";
+
+  const fakeDshProviders = {
+    cn: ["deepseek", "minimax-cn", "moonshotai-cn", "qwen-token-plan-cn", "openrouter"],
+    global: ["deepseek", "minimax", "minimax-cn", "moonshotai", "moonshotai-cn", "openrouter", "anthropic", "groq", "openai"],
+  } as const;
+  const fakeDshProviderNames: Record<string, string> = {
+    deepseek: "DeepSeek",
+    minimax: "MiniMax",
+    "minimax-cn": "MiniMax CN",
+    moonshotai: "Moonshot AI",
+    "moonshotai-cn": "Moonshot AI CN",
+    "qwen-token-plan-cn": "Qwen Token Plan CN",
+    openrouter: "OpenRouter",
+    anthropic: "Anthropic",
+    groq: "Groq",
+    openai: "OpenAI",
+  };
 
   const fakeChannelStatusOutput = () => JSON.stringify({
     success: true,
@@ -1140,6 +1161,81 @@ const createBotRepository = (): BotRepository => {
     if (command.includes("SLACK_BOT_TOKEN") && command.includes("SLACK_APP_TOKEN")) {
       fakeConnectedChannels.add("slack");
     }
+  };
+
+  const maybeHandleFakeDshCommand = (command: string) => {
+    if (command.includes("sudo systemctl status deepseek-harness.service --no-pager")) {
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify(fakeDshInstalled
+          ? { installed: true, status: "running", service_status: "active", healthy: true }
+          : { installed: false, status: "not-installed", service_status: "inactive", healthy: false }),
+      };
+    }
+
+    if (command.includes("systemd-run") && command.includes("install-deepseek-harness install --task-id")) {
+      fakeDshTaskId = command.match(/--task-id (dshi-[0-9a-f]{32})/)?.[1] ?? "";
+      fakeDshInstallationPollCount = 0;
+      return { status: "Succeeded", exitCode: 0, output: "" };
+    }
+
+    if (command.includes("install-deepseek-harness installation --task-id")) {
+      fakeDshInstallationPollCount += 1;
+      const completed = fakeDshInstallationPollCount >= 2;
+      if (completed) fakeDshInstalled = true;
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({
+          task_id: fakeDshTaskId,
+          status: completed ? "succeeded" : "running",
+          stage: completed ? "completed" : "installing",
+          progress: completed ? 100 : 62,
+          message: completed ? "DeepSeek Harness 安装完成" : "正在安装 DeepSeek Harness",
+          updated_at: nowIso(),
+        }),
+      };
+    }
+
+    if (command.includes("sudo systemctl restart deepseek-harness.service")) {
+      return { status: "Succeeded", exitCode: fakeDshInstalled ? 0 : 1, output: "" };
+    }
+
+    const region = command.match(/install-deepseek-harness providers --region (cn|global)/)?.[1] as "cn" | "global" | undefined;
+    if (region) {
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({
+          providers: fakeDshProviders[region].map((id) => ({
+            id,
+            displayName: fakeDshProviderNames[id],
+            configured: fakeConfiguredDshProviders.has(id),
+            active: id === "deepseek",
+            writable: true,
+          })),
+        }),
+      };
+    }
+
+    const provider = command.match(/install-deepseek-harness configure --provider ([a-z0-9-]+)/)?.[1];
+    if (provider) {
+      fakeConfiguredDshProviders.add(provider);
+      return { status: "Succeeded", exitCode: 0, output: "" };
+    }
+
+    const removedProvider = command.match(/install-deepseek-harness remove-provider --provider ([a-z0-9-]+)/)?.[1];
+    if (removedProvider) {
+      fakeConfiguredDshProviders.delete(removedProvider);
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({ ok: true, provider: removedProvider, configured: false }),
+      };
+    }
+
+    return null;
   };
 
   return {
@@ -1512,6 +1608,8 @@ const createBotRepository = (): BotRepository => {
       if (command.includes("acli channel status")) {
         return { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() };
       }
+      const dshResult = maybeHandleFakeDshCommand(command);
+      if (dshResult) return dshResult;
       return { status: "Succeeded", exitCode: 0, output: "" };
     },
 
@@ -1522,7 +1620,7 @@ const createBotRepository = (): BotRepository => {
         ? { status: "Succeeded", exitCode: 0, output: JSON.stringify({ models: {}, channels: {}, gateway: {} }) }
         : command.includes("acli channel status")
           ? { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() }
-          : { status: "Succeeded", exitCode: 0, output: "" };
+          : maybeHandleFakeDshCommand(command) ?? { status: "Succeeded", exitCode: 0, output: "" };
       if (result.output) onChunk({ stream: DEBUG_EXEC_STDOUT_STREAM, chunk: result.output });
       return result;
     },
