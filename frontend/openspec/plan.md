@@ -1,6 +1,6 @@
 # 国际站自动任务上游 Context Implementation Plan
 
-**Status:** 实现与验证完成，等待用户确认提交和推送；不得自动创建 MR。
+**Status:** MR !3162 CR 修复与验证完成，等待用户确认提交和推送。
 
 **Goal:** 将已经在国内站上线的自动任务上游 Context 能力同步到国际站，并保持其他既有区域差异不变。
 
@@ -47,6 +47,28 @@
 - GREEN：相关 4 个测试文件共 226 个用例通过，包含国际站创建、编辑、展示、删除和既有终止任务回归。
 - `pnpm check`、`pnpm i18n:check`、`pnpm build:global`、`git diff --check` 通过。
 - 已登录浏览器确认当前线上国际站尚未展示 `Upstream task`；本地新版本因 `localhost` 无登录态无法完成同一页面的交互式截图，改由国际站组件集成测试留证。
+
+### Task 4: 补齐印尼语上游任务文案
+
+**Files:**
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Add: `frontend/src/pages/marketing/__tests__/automation-upstream-picker.id-ID.test.tsx`
+- Modify: `frontend/openspec/plan.md`
+
+**Acceptance:**
+- `id-ID` 下上游任务能力状态、选择器标签与空状态均渲染为非空印尼语。
+- 当前创建、展示、校验与安全删除链路涉及的上游/下游关系文案均有非空印尼语翻译。
+- 不修改全局 `returnEmptyString`、fallback 或 `i18n:check` 规则，不扩大本 MR 范围。
+
+- [x] 先补印尼语渲染与字典完整性测试并确认 RED。
+- [x] 只补本功能实际使用的印尼语 key，让定向测试 GREEN。
+- [x] 运行相关回归、类型检查、i18n 检查、国际站构建和 `git diff --check`。
+
+**Verification:**
+- 新增测试先确认 RED：31/31 失败；补齐翻译后 31/31 通过。
+- 上游 Context 相关 5 个测试文件共 257 个测试通过。
+- `pnpm check`、`pnpm i18n:check`、`pnpm build:global` 通过。
+- 印尼语空翻译由 208 条降至 178 条，本次实际使用的 30 条文案全部补齐。
 
 ---
 
