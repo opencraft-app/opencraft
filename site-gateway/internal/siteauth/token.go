@@ -12,7 +12,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const tokenType = "LV-Site-Access"
+const (
+	tokenType        = "LV-Site-Access"
+	MaxTokenLifetime = 5 * time.Minute
+)
 
 var (
 	errInvalidConfig = errors.New("invalid site access verifier config")
@@ -108,10 +111,23 @@ func (v *Verifier) Verify(rawToken, expectedHost, expectedState string) (*Claims
 	if claims.IssuedAt == nil || claims.ExpiresAt == nil || strings.TrimSpace(claims.ID) == "" {
 		return nil, fmt.Errorf("%w: required claims", errInvalidToken)
 	}
+	lifetime := claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time)
+	if lifetime <= 0 || lifetime > MaxTokenLifetime {
+		return nil, fmt.Errorf("%w: token lifetime", errInvalidToken)
+	}
 	if normalizeHost(claims.SiteHost) != expectedHost || strings.TrimSpace(claims.State) == "" || (expectedState != "" && claims.State != expectedState) {
 		return nil, fmt.Errorf("%w: target binding", errInvalidToken)
 	}
 	return claims, nil
+}
+
+// RemainingLifetime uses the verifier clock so callback cookies cannot outlive
+// the signed ticket, including in callers with an injected test clock.
+func (v *Verifier) RemainingLifetime(claims *Claims) time.Duration {
+	if v == nil || claims == nil || claims.ExpiresAt == nil {
+		return 0
+	}
+	return claims.ExpiresAt.Time.Sub(v.clock())
 }
 
 func normalizeHost(raw string) string {

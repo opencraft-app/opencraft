@@ -230,12 +230,28 @@ type CommandResult struct {
 	ExecutionTime string `json:"executionTime,omitempty"`
 }
 
+type CommandInvocationMetadata struct {
+	CommandInvocation
+	ExitCode      int64  `json:"exitCode"`
+	StartTime     string `json:"startTime,omitempty"`
+	EndTime       string `json:"endTime,omitempty"`
+	ExecutionTime string `json:"executionTime,omitempty"`
+}
+
 var ErrInvocationNotFound = errors.New("command invocation not found")
 
 // CommandRunner is an optional capability for cloud providers that can execute remote commands.
 type CommandRunner interface {
 	RunCommand(ctx context.Context, region, instanceID, script string) (CommandInvocation, error)
 	GetCommandInvocation(ctx context.Context, region, invocationID, instanceID string) (CommandResult, error)
+}
+
+// CommandInvoker invokes an existing TAT command with runtime parameters. The
+// command content remains managed in Tencent TAT, so callers never need to put
+// secret parameter values in scripts, logs, or task payloads.
+type CommandInvoker interface {
+	InvokeCommand(ctx context.Context, region, instanceID, commandID string, parameters map[string]string) (CommandInvocation, error)
+	GetCommandInvocationMetadata(ctx context.Context, region, invocationID, instanceID string) (CommandInvocationMetadata, error)
 }
 
 // InstanceDeliveryVerifier can reject a stale TAT agent heartbeat from a

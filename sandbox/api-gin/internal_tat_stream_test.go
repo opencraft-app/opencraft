@@ -159,9 +159,50 @@ func TestInternalTATExecStreamEmitsErrorAfterStarted(t *testing.T) {
 	}
 }
 
+func TestInternalTATRoutesRequireConfiguredAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name        string
+		expectedKey string
+		providedKey string
+	}{
+		{name: "missing", expectedKey: internalTATTestAPIKey},
+		{name: "wrong", expectedKey: internalTATTestAPIKey, providedKey: "wrong-key"},
+		{name: "server unconfigured", providedKey: internalTATTestAPIKey},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := gin.New()
+			internal := r.Group("/internal")
+			internal.Use(internalAPIKeyAuth(tt.expectedKey))
+			registerInternalTATInvocationRoutes(internal, &handler{})
+			req := httptest.NewRequest(http.MethodPost, "/internal/sandboxes/sbx-1/tat/invocations", strings.NewReader(`{}`))
+			if tt.providedKey != "" {
+				req.Header.Set("X-API-Key", tt.providedKey)
+			}
+			rec := httptest.NewRecorder()
+
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+const internalTATTestAPIKey = "test-sandbox-api-key"
+
+func authorizeInternalTATRequest(req *http.Request) {
+	req.Header.Set("X-API-Key", internalTATTestAPIKey)
+}
+
 func newInternalTATTestRouter(h *handler) *gin.Engine {
 	r := gin.New()
 	internal := r.Group("/internal")
-	registerInternalTATRoutes(internal, h)
+	registerInternalTATStreamRoute(internal, h)
+	internalInvocations := internal.Group("")
+	internalInvocations.Use(internalAPIKeyAuth(internalTATTestAPIKey))
+	registerInternalTATInvocationRoutes(internalInvocations, h)
 	return r
 }

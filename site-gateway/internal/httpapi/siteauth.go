@@ -41,8 +41,13 @@ func (h *SiteHandler) handleAuthPath(w http.ResponseWriter, r *http.Request) boo
 }
 
 func (h *SiteHandler) startSiteAuth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeAuthFailure(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	host, ok := h.trustedSiteHost(r.Host)
+	if !ok {
+		writeAuthFailure(w, http.StatusNotFound, "site not found")
 		return
 	}
 	if strings.TrimSpace(h.auth.StartURL) == "" {
@@ -71,16 +76,21 @@ func (h *SiteHandler) startSiteAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := target.Query()
-	query.Set("redirect_uri", siteAuthCallbackURL(r))
+	query.Set("redirect_uri", siteAuthCallbackURL(host))
 	query.Set("state", state)
 	query.Set("return_to", safeReturnTo(r.URL.RequestURI()))
 	target.RawQuery = query.Encode()
-	http.Redirect(w, r, target.String(), http.StatusFound)
+	writeAuthRedirect(w, r, target.String())
 }
 
 func (h *SiteHandler) finishSiteAuth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAuthFailure(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	host, ok := h.trustedSiteHost(r.Host)
+	if !ok {
+		writeAuthFailure(w, http.StatusNotFound, "site not found")
 		return
 	}
 	stateCookie, err := r.Cookie(siteStateCookie)
@@ -94,13 +104,22 @@ func (h *SiteHandler) finishSiteAuth(w http.ResponseWriter, r *http.Request) {
 		writeAuthFailure(w, http.StatusForbidden, "invalid site authentication ticket")
 		return
 	}
-	if _, err := h.auth.Verifier.Verify(ticket, r.Host, state); err != nil {
+	claims, err := h.auth.Verifier.Verify(ticket, host, state)
+	if err != nil {
 		writeAuthFailure(w, http.StatusForbidden, "invalid site authentication ticket")
 		return
 	}
 	ttl := h.auth.SessionTTL
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
+	}
+	remaining := h.auth.Verifier.RemainingLifetime(claims)
+	if remaining <= 0 {
+		writeAuthFailure(w, http.StatusForbidden, "invalid site authentication ticket")
+		return
+	}
+	if remaining < ttl {
+		ttl = remaining
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     siteSessionCookie,
@@ -120,16 +139,21 @@ func (h *SiteHandler) finishSiteAuth(w http.ResponseWriter, r *http.Request) {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, safeReturnTo(r.URL.Query().Get("return_to")), http.StatusFound)
+	writeAuthRedirect(w, r, safeReturnTo(r.URL.Query().Get("return_to")))
 }
 
 func (h *SiteHandler) authorizeSiteRequest(w http.ResponseWriter, r *http.Request) bool {
+	host, ok := h.trustedSiteHost(r.Host)
+	if !ok {
+		writeAuthFailure(w, http.StatusNotFound, "site not found")
+		return false
+	}
 	cookie, err := r.Cookie(siteSessionCookie)
 	if err != nil || strings.TrimSpace(cookie.Value) == "" || h.auth.Verifier == nil {
 		h.redirectToSiteAuth(w, r)
 		return false
 	}
-	if _, err := h.auth.Verifier.Verify(cookie.Value, r.Host, ""); err != nil {
+	if _, err := h.auth.Verifier.Verify(cookie.Value, host, ""); err != nil {
 		h.redirectToSiteAuth(w, r)
 		return false
 	}
@@ -145,28 +169,53 @@ func (h *SiteHandler) redirectToSiteAuth(w http.ResponseWriter, r *http.Request)
 	h.startSiteAuth(w, r)
 }
 
-func siteAuthCallbackURL(r *http.Request) string {
-	scheme := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
-	if scheme != "http" && scheme != "https" {
-		if r.TLS != nil {
-			scheme = "https"
-		} else {
-			scheme = "http"
-		}
+func (h *SiteHandler) trustedSiteHost(rawHost string) (string, bool) {
+	if h == nil || h.resolver == nil {
+		return "", false
 	}
-	return scheme + "://" + r.Host + siteAuthCallbackPath
+	_, host, ok := h.resolver.Resolve(rawHost)
+	return host, ok
+}
+
+func siteAuthCallbackURL(host string) string {
+	return "https://" + host + siteAuthCallbackPath
 }
 
 func safeReturnTo(raw string) string {
 	raw = strings.TrimSpace(raw)
-	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") || containsUnsafeReturnToChars(raw) {
 		return "/"
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.IsAbs() || parsed.Host != "" {
 		return "/"
 	}
+	decoded := parsed.EscapedPath()
+	for range 3 {
+		decoded, err = url.PathUnescape(decoded)
+		if err != nil || containsUnsafeReturnToChars(decoded) {
+			return "/"
+		}
+	}
 	return raw
+}
+
+func containsUnsafeReturnToChars(value string) bool {
+	for _, char := range value {
+		if char == '\\' || char < 0x20 || char == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+func writeAuthRedirect(w http.ResponseWriter, r *http.Request, target string) {
+	if r.Method == http.MethodHead {
+		w.Header().Set("Location", target)
+		w.WriteHeader(http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 func writeAuthFailure(w http.ResponseWriter, status int, message string) {

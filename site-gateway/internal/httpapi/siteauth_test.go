@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func signAuthTestToken(t *testing.T, key ed25519.PrivateKey, now time.Time, host
 			Audience:  jwt.ClaimStrings{"lightvela-site-gateway"},
 			Subject:   "user-1",
 			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Second)),
-			ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(4*time.Minute + 59*time.Second)),
 			ID:        "ticket-1",
 		},
 		SiteHost: host,
@@ -121,6 +122,34 @@ func TestRequiredModeRedirectsBeforeSiteLookupWithoutSession(t *testing.T) {
 	}
 }
 
+func TestRequiredModeHEADRedirectsWithoutBody(t *testing.T) {
+	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	verifier, _ := newAuthVerifier(t, now)
+	rec := httptest.NewRecorder()
+	req := requestWithHost(http.MethodHead, "ws-abc."+domesticRootDomain, "/about")
+	newRequiredHandler(activeSite("ws-abc"), &fakeOrigin{}, verifier).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") == "" {
+		t.Fatalf("HEAD challenge = %d Location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("HEAD challenge body = %q", rec.Body.String())
+	}
+}
+
+func TestRequiredModeRejectsUntrustedHostBeforeAuthRedirect(t *testing.T) {
+	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	verifier, _ := newAuthVerifier(t, now)
+	rec := httptest.NewRecorder()
+	req := requestWithHost(http.MethodGet, "attacker.example", "/")
+	req.Header.Set("X-Forwarded-Proto", "http")
+	newRequiredHandler(activeSite("ws-abc"), &fakeOrigin{}, verifier).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound || rec.Header().Get("Location") != "" {
+		t.Fatalf("untrusted Host response = %d Location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
 func TestValidCallbackSetsSessionAndServesPrivateContent(t *testing.T) {
 	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
 	verifier, privateKey := newAuthVerifier(t, now)
@@ -153,6 +182,9 @@ func TestValidCallbackSetsSessionAndServesPrivateContent(t *testing.T) {
 	if !sessionCookie.HttpOnly || !sessionCookie.Secure || sessionCookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("session cookie = %+v", sessionCookie)
 	}
+	if sessionCookie.MaxAge <= 0 || sessionCookie.MaxAge > 5*60 {
+		t.Fatalf("session cookie MaxAge = %d", sessionCookie.MaxAge)
+	}
 
 	contentReq := requestWithHost(http.MethodGet, host, "/about")
 	contentReq.AddCookie(sessionCookie)
@@ -169,6 +201,44 @@ func TestValidCallbackSetsSessionAndServesPrivateContent(t *testing.T) {
 	}
 	if len(obj.requests) != 2 || obj.requests[1] != "sites/ws-abc/current/about/index.html" {
 		t.Fatalf("origin requests = %v", obj.requests)
+	}
+}
+
+func TestSafeReturnToRejectsBrowserNormalizedCrossOriginForms(t *testing.T) {
+	for _, candidate := range []string{
+		`/\\evil.example/path`,
+		`/%5cevil.example/path`,
+		`/%255cevil.example/path`,
+		"/safe\nLocation: https://evil.example",
+	} {
+		if got := safeReturnTo(candidate); got != "/" {
+			t.Fatalf("safeReturnTo(%q) = %q", candidate, got)
+		}
+	}
+	if got := safeReturnTo("/about?q=1"); got != "/about?q=1" {
+		t.Fatalf("safe path = %q", got)
+	}
+}
+
+func TestAuthRedirectUsesCanonicalHTTPSHost(t *testing.T) {
+	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	verifier, _ := newAuthVerifier(t, now)
+	host := "ws-abc." + domesticRootDomain
+	req := requestWithHost(http.MethodGet, strings.ToUpper(host)+":443", "/")
+	req.Header.Set("X-Forwarded-Proto", "http")
+	rec := httptest.NewRecorder()
+	newRequiredHandler(activeSite("ws-abc"), &fakeOrigin{}, verifier).ServeHTTP(rec, req)
+
+	location, err := url.Parse(rec.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback, err := url.Parse(location.Query().Get("redirect_uri"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if callback.Scheme != "https" || callback.Host != host || callback.Path != siteAuthCallbackPath {
+		t.Fatalf("callback URL = %q", callback.String())
 	}
 }
 

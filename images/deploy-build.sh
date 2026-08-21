@@ -124,6 +124,7 @@ AGENT_BINARY="${SCRIPT_DIR}/bin/envd"
 SSH_LIB="${LIB_DIR}/ssh.sh"
 RUNTIME_DIR="${SCRIPT_DIR}/runtime"
 WEIXIN_PROTOCOL_SCRIPT="${RUNTIME_DIR}/openclaw-weixin-login-session.sh"
+WEBSITE_BUILDER_SKILL_FILE="${SCRIPT_DIR}/../.agents/skills/website-builder/SKILL.md"
 
 if [ ! -f "${SSH_LIB}" ]; then
   log_error "ssh library not found: ${SSH_LIB}"
@@ -258,6 +259,11 @@ if [ ! -f "${WEIXIN_PROTOCOL_SCRIPT}" ]; then
   exit 1
 fi
 
+if [ ! -f "${WEBSITE_BUILDER_SKILL_FILE}" ]; then
+  log_error "website-builder Skill not found: ${WEBSITE_BUILDER_SKILL_FILE}"
+  exit 1
+fi
+
 if [ "${SKIP_BUILD_AGENT}" = false ]; then
   log_info "building local envd binary"
   bash "${BUILD_AGENT_SCRIPT}" --output "${AGENT_BINARY}"
@@ -286,9 +292,9 @@ sshlib_ensure_ready
 
 log_info "ensuring remote directory exists: ${REMOTE_DIR}"
 if [ "${SSHLIB_REMOTE_USER:-}" = "root" ]; then
-  sshlib_run_raw_retry_transport_safe "mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime'"
+  sshlib_run_raw_retry_transport_safe "mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime' '${REMOTE_DIR}/skills/website-builder'"
 else
-  sshlib_run_raw_retry_transport_safe "sudo mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime'"
+  sshlib_run_raw_retry_transport_safe "sudo mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime' '${REMOTE_DIR}/skills/website-builder'"
 fi
 
 log_info "uploading build assets"
@@ -298,6 +304,7 @@ upload_file_via_ssh "${HERMES_BACKEND_BLUEPRINT_RESOLVER}" "${REMOTE_DIR}/helper
 upload_file_via_ssh "${RUNNER_SCRIPT}" "${REMOTE_DIR}/remote-build-runner.sh"
 upload_file_via_ssh "${AGENT_BINARY}" "${REMOTE_DIR}/bin/envd"
 upload_file_via_ssh "${WEIXIN_PROTOCOL_SCRIPT}" "${REMOTE_DIR}/runtime/openclaw-weixin-login-session.sh"
+upload_file_via_ssh "${WEBSITE_BUILDER_SKILL_FILE}" "${REMOTE_DIR}/skills/website-builder/SKILL.md"
 
 if [ "${UPLOAD_ONLY}" = true ]; then
   log_info "upload-only mode finished host=${REMOTE_HOST} remote_dir=${REMOTE_DIR}"

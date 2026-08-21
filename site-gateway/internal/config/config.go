@@ -110,6 +110,9 @@ func FromEnv() (Config, error) {
 	if cfg.AuthSessionTTL, err = getDuration("SITE_GATEWAY_AUTH_SESSION_TTL", 5*time.Minute); err != nil {
 		return Config{}, err
 	}
+	if cfg.AuthSessionTTL > 5*time.Minute {
+		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_SESSION_TTL must not exceed 5m")
+	}
 	// 根域是配置项而非常量：测试和正式用不同的域，正式根域后续还会更换。
 	if len(cfg.RootDomains) == 0 {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_ROOT_DOMAINS is required")

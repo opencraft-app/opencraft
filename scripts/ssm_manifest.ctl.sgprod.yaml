@@ -24,6 +24,8 @@ items:
   kubernetes_resource_kind: Secret
   output_path: argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml
   secret_type: Opaque
+  required_keys:
+  - SANDBOX_API_KEY
   plaintext_keys:
   - CTL_LLMGATEWAY_BASE_URL
   - CTL_LLMGATEWAY_DEFAULT_BASE_URL

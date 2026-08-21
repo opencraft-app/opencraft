@@ -171,6 +171,12 @@ func parseAdapterConf() {
 	if ServerConf.AdapterConfig.Sandbox.ProcessBaseURL == "" {
 		ServerConf.AdapterConfig.Sandbox.ProcessBaseURL = ServerConf.AdapterConfig.Sandbox.BaseURL
 	}
+	if value := strings.TrimSpace(os.Getenv("WEBSITE_CREDENTIAL_TAT_COMMAND_ID")); value != "" {
+		ServerConf.AdapterConfig.Sandbox.WebsiteCredentialTATCommandID = value
+	}
+	if value := strings.TrimSpace(os.Getenv("WEBSITE_AGENT_API_BASE")); value != "" {
+		ServerConf.AdapterConfig.Sandbox.WebsiteAgentAPIBase = value
+	}
 	if ServerConf.AdapterConfig.Sandbox.Timeout <= 0 {
 		ServerConf.AdapterConfig.Sandbox.Timeout = 30
 	}

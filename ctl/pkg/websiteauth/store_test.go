@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -23,6 +26,35 @@ func redisClusterHashTag(key string) string {
 	return key[start+1 : start+1+end]
 }
 
+type blockAfterSMembersHook struct {
+	once    sync.Once
+	seen    chan struct{}
+	release chan struct{}
+}
+
+func (h *blockAfterSMembersHook) DialHook(next redis.DialHook) redis.DialHook {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return next(ctx, network, addr)
+	}
+}
+
+func (h *blockAfterSMembersHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		err := next(ctx, cmd)
+		if cmd.Name() == "smembers" {
+			h.once.Do(func() {
+				close(h.seen)
+				<-h.release
+			})
+		}
+		return err
+	}
+}
+
+func (h *blockAfterSMembersHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
 func TestCredentialKeysShareRedisClusterSlot(t *testing.T) {
 	credentialKey := credentialKeyPrefix + "key-id"
 	instanceIndexKey := instanceIndexPrefix + "instance-id"
@@ -34,7 +66,7 @@ func TestCredentialKeysShareRedisClusterSlot(t *testing.T) {
 	}
 }
 
-func newTestStore(t *testing.T) (Store, *redis.Client, *miniredis.Miniredis) {
+func newTestStore(t *testing.T) (ProvisionalStore, *redis.Client, *miniredis.Miniredis) {
 	t.Helper()
 
 	mr, err := miniredis.Run()
@@ -46,7 +78,7 @@ func newTestStore(t *testing.T) (Store, *redis.Client, *miniredis.Miniredis) {
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
 
-	return New(client), client, mr
+	return New(client).(ProvisionalStore), client, mr
 }
 
 func TestStoreIssueAndValidate(t *testing.T) {
@@ -106,6 +138,90 @@ func TestStoreDoesNotPersistPlaintextAndDoesNotExpire(t *testing.T) {
 	}
 	if len(members) != 1 || members[0] != binding.KeyID {
 		t.Fatalf("instance index = %v, want [%s]", members, binding.KeyID)
+	}
+}
+
+func TestStoreProvisionalCredentialExpiresWithoutActivation(t *testing.T) {
+	store, _, mr := newTestStore(t)
+	ctx := context.Background()
+
+	token, binding, err := store.IssueProvisional(ctx, "user-1", "ins-1", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("IssueProvisional: %v", err)
+	}
+	if ttl := mr.TTL(credentialKeyPrefix + binding.KeyID); ttl != 10*time.Minute {
+		t.Fatalf("credential TTL = %s, want 10m", ttl)
+	}
+	if ttl := mr.TTL(instanceIndexPrefix + "ins-1"); ttl != 0 {
+		t.Fatalf("instance index TTL = %s, want no expiry", ttl)
+	}
+
+	mr.FastForward(11 * time.Minute)
+	if _, err := store.Validate(ctx, token); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("Validate expired provisional credential error = %v, want ErrInvalidCredential", err)
+	}
+}
+
+func TestStoreActivateMakesProvisionalCredentialPermanent(t *testing.T) {
+	store, _, mr := newTestStore(t)
+	ctx := context.Background()
+
+	token, binding, err := store.IssueProvisional(ctx, "user-1", "ins-1", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("IssueProvisional: %v", err)
+	}
+	if err := store.Activate(ctx, "ins-1", binding.KeyID); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	if ttl := mr.TTL(credentialKeyPrefix + binding.KeyID); ttl != 0 {
+		t.Fatalf("activated credential TTL = %s, want no expiry", ttl)
+	}
+	mr.FastForward(11 * time.Minute)
+	if _, err := store.Validate(ctx, token); err != nil {
+		t.Fatalf("Validate activated credential: %v", err)
+	}
+}
+
+func TestStoreProvisionalExpiryPreservesConcurrentPermanentCredentialIndex(t *testing.T) {
+	store, _, mr := newTestStore(t)
+	ctx := context.Background()
+
+	if _, _, err := store.IssueProvisional(ctx, "user-1", "ins-1", 10*time.Minute); err != nil {
+		t.Fatalf("IssueProvisional: %v", err)
+	}
+	permanentToken, _, err := store.Issue(ctx, "user-1", "ins-1")
+	if err != nil {
+		t.Fatalf("Issue permanent credential: %v", err)
+	}
+
+	mr.FastForward(11 * time.Minute)
+	if _, err := store.Validate(ctx, permanentToken); err != nil {
+		t.Fatalf("Validate permanent credential after provisional expiry: %v", err)
+	}
+	if err := store.RevokeInstance(ctx, "ins-1"); err != nil {
+		t.Fatalf("RevokeInstance: %v", err)
+	}
+	if _, err := store.Validate(ctx, permanentToken); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("permanent credential lost reverse index: %v", err)
+	}
+}
+
+func TestStoreActivateRejectsMissingInstanceIndex(t *testing.T) {
+	store, client, mr := newTestStore(t)
+	ctx := context.Background()
+
+	_, binding, err := store.IssueProvisional(ctx, "user-1", "ins-1", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("IssueProvisional: %v", err)
+	}
+	if err := client.Del(ctx, instanceIndexPrefix+"ins-1").Err(); err != nil {
+		t.Fatalf("delete instance index: %v", err)
+	}
+	if err := store.Activate(ctx, "ins-1", binding.KeyID); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("Activate without instance index error = %v, want ErrInvalidCredential", err)
+	}
+	if ttl := mr.TTL(credentialKeyPrefix + binding.KeyID); ttl != 10*time.Minute {
+		t.Fatalf("rejected credential TTL = %s, want 10m", ttl)
 	}
 }
 
@@ -213,6 +329,34 @@ func TestStoreRevokeInstance(t *testing.T) {
 	}
 	if _, err := store.Validate(ctx, otherToken); err != nil {
 		t.Fatalf("Validate other instance token: %v", err)
+	}
+}
+
+func TestStoreRevokeInstanceRetriesConcurrentIssue(t *testing.T) {
+	store, client, _ := newTestStore(t)
+	ctx := context.Background()
+
+	if _, _, err := store.Issue(ctx, "user-1", "ins-1"); err != nil {
+		t.Fatalf("Issue seed credential: %v", err)
+	}
+	hook := &blockAfterSMembersHook{seen: make(chan struct{}), release: make(chan struct{})}
+	client.AddHook(hook)
+
+	revokeDone := make(chan error, 1)
+	go func() {
+		revokeDone <- store.RevokeInstance(ctx, "ins-1")
+	}()
+	<-hook.seen
+	concurrentToken, _, err := store.Issue(ctx, "user-1", "ins-1")
+	if err != nil {
+		t.Fatalf("Issue concurrent credential: %v", err)
+	}
+	close(hook.release)
+	if err := <-revokeDone; err != nil {
+		t.Fatalf("RevokeInstance: %v", err)
+	}
+	if _, err := store.Validate(ctx, concurrentToken); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("concurrent credential survived atomic instance revoke: %v", err)
 	}
 }
 

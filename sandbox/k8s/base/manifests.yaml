@@ -34,6 +34,7 @@ data:
   TENCENT_PUBLIC_EGRESS_MBPS: "0"
   INGRESSPROXY_BASE_URL: "http://ingressproxy-router.sandbox.svc.cluster.local"
   AUTH_SERVICE_URL: "http://lightclaw-auth.user-auth.svc.cluster.local"
+  WEBSITE_CREDENTIAL_TAT_COMMAND_ID: ""
   SANDBOX_VPC_ID: "REPLACE_SANDBOX_VPC_ID"
   SANDBOX_POOL_INSTANCE_TYPE: SA5.LARGE8
   SANDBOX_POOL_DESIRED_CAPACITY: "24"

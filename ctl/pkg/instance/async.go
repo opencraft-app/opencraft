@@ -1,6 +1,7 @@
 package instance
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -30,6 +31,7 @@ import (
 	"ctl/pkg/resource"
 	"ctl/pkg/taskruntime/common"
 	"ctl/pkg/tracing"
+	"ctl/pkg/websiteauth"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -38,6 +40,9 @@ import (
 const (
 	defaultTaskExecuteIntervalSeconds = 30
 	defaultTaskMaxExecuteCount        = 20
+	websiteCredentialDeliveryTimeout  = 180
+	websiteCredentialCleanupTimeout   = 5 * time.Second
+	websiteCredentialProvisionalTTL   = 15 * time.Minute
 )
 
 const (
@@ -809,7 +814,6 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 			zap.String("soul_template_id", payload.SoulTemplateID),
 		)
 	}
-
 	if err := l.instanceDao.UpdateWithStatusPrecondition(ctx, entity.Id, []string{modelinstance.InstanceStatusCreating}, map[string]interface{}{
 		modelinstance.ColumnStatus: modelinstance.InstanceStatusRunning,
 	}); err != nil {
@@ -824,8 +828,110 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 			zap.String("instance_id", entity.InstanceId),
 		)
 	}
+	l.deliverWebsiteCredentialOnCreate(ctx, entity, sandboxResp.SandboxID)
 
 	return nil
+}
+
+// deliverWebsiteCredentialOnCreate is intentionally best-effort. Website
+// bootstrap can be retried after provisioning, while failing the instance
+// create task here would strand a usable machine behind an optional feature.
+func (l *logic) deliverWebsiteCredentialOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) {
+	commandID := strings.TrimSpace(l.websiteCredentialTATCommandID)
+	apiBase := strings.TrimSpace(l.websiteAgentAPIBase)
+	if commandID == "" || apiBase == "" {
+		return
+	}
+	if entity == nil || strings.TrimSpace(entity.InstanceId) == "" || strings.TrimSpace(entity.UserId) == "" || strings.TrimSpace(sandboxID) == "" {
+		l.logger.Warn("skip website credential delivery because target is incomplete")
+		return
+	}
+	invoker, ok := l.sandboxAdapter.(psandbox.CommandInvoker)
+	credentialStore, storeOK := l.websiteCredentialStore.(websiteauth.ProvisionalStore)
+	if !ok || !storeOK {
+		l.logger.Warn("skip website credential delivery because dependencies are unavailable",
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+
+	if err := credentialStore.RevokeInstance(ctx, entity.InstanceId); err != nil {
+		l.logger.Warn("revoke stale website credentials before create delivery failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	plainToken, binding, err := credentialStore.IssueProvisional(ctx, entity.UserId, entity.InstanceId, websiteCredentialProvisionalTTL)
+	if err != nil {
+		l.logger.Warn("issue website credential during instance create failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	succeeded := false
+	defer func() {
+		if succeeded {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), websiteCredentialCleanupTimeout)
+		defer cancel()
+		if revokeErr := credentialStore.Revoke(cleanupCtx, entity.InstanceId, binding.KeyID); revokeErr != nil {
+			l.logger.Warn("revoke website credential after create delivery failure failed",
+				zap.Error(revokeErr),
+				zap.String("instance_id", entity.InstanceId),
+				zap.String("key_id", binding.KeyID),
+			)
+		}
+	}()
+
+	result, err := invoker.InvokeCommand(ctx, sandboxID, commandID, map[string]string{
+		"website_key": plainToken,
+		"api_base":    apiBase,
+	}, websiteCredentialDeliveryTimeout)
+	if err != nil {
+		l.logger.Warn("invoke website credential command during instance create failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	if result == nil || strings.ToUpper(strings.TrimSpace(result.Status)) != "SUCCESS" || result.ExitCode != 0 {
+		status := "UNKNOWN"
+		exitCode := int64(-1)
+		if result != nil {
+			status = strings.TrimSpace(result.Status)
+			exitCode = result.ExitCode
+		}
+		l.logger.Warn("website credential command during instance create did not succeed",
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+			zap.String("status", status),
+			zap.Int64("exit_code", exitCode),
+		)
+		return
+	}
+	if err := credentialStore.Activate(ctx, entity.InstanceId, binding.KeyID); err != nil {
+		l.logger.Warn("activate website credential after create delivery failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+			zap.String("key_id", binding.KeyID),
+		)
+		return
+	}
+
+	succeeded = true
+	l.logger.Info("website credential delivered during instance create",
+		zap.String("instance_id", entity.InstanceId),
+		zap.String("sandbox_id", sandboxID),
+		zap.String("key_id", binding.KeyID),
+	)
 }
 
 func (l *logic) selectCreateCandidatePools(ctx pctx.Context, candidates []string) orderedCandidatePools {

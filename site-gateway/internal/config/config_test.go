@@ -46,17 +46,25 @@ func TestFromEnvRequiredAuthParsesPublicKeys(t *testing.T) {
 	t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "lightvela-site-gateway")
 	t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/site-access/start")
 	t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString(publicKey))
-	t.Setenv("SITE_GATEWAY_AUTH_SESSION_TTL", "7m")
+	t.Setenv("SITE_GATEWAY_AUTH_SESSION_TTL", "5m")
 
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if cfg.AuthMode != AuthModeRequired || cfg.AuthIssuer != "lightvela-auth" || cfg.AuthAudience != "lightvela-site-gateway" || cfg.AuthSessionTTL != 7*time.Minute {
+	if cfg.AuthMode != AuthModeRequired || cfg.AuthIssuer != "lightvela-auth" || cfg.AuthAudience != "lightvela-site-gateway" || cfg.AuthSessionTTL != 5*time.Minute {
 		t.Fatalf("auth config = %+v", cfg)
 	}
 	if len(cfg.AuthPublicKeys) != 1 || len(cfg.AuthPublicKeys["key-1"]) != ed25519.PublicKeySize {
 		t.Fatalf("public keys = %+v", cfg.AuthPublicKeys)
+	}
+}
+
+func TestFromEnvRejectsAuthSessionTTLOverFiveMinutes(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_SESSION_TTL", "5m1s")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("auth session TTL over five minutes unexpectedly succeeded")
 	}
 }
 

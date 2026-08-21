@@ -86,6 +86,12 @@ func TestVerifierRejectsInvalidSiteAccessTokens(t *testing.T) {
 		{name: "wrong issuer", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: func() Claims { c := baseClaims; c.Issuer = "other"; return c }(), host: "abc.lightvela.tech", state: "state-1"},
 		{name: "wrong audience", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: func() Claims { c := baseClaims; c.Audience = jwt.ClaimStrings{"other"}; return c }(), host: "abc.lightvela.tech", state: "state-1"},
 		{name: "expired", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: func() Claims { c := baseClaims; c.ExpiresAt = jwt.NewNumericDate(now.Add(-time.Second)); return c }(), host: "abc.lightvela.tech", state: "state-1"},
+		{name: "lifetime exceeds five minutes", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: func() Claims {
+			c := baseClaims
+			c.IssuedAt = jwt.NewNumericDate(now)
+			c.ExpiresAt = jwt.NewNumericDate(now.Add(MaxTokenLifetime + time.Second))
+			return c
+		}(), host: "abc.lightvela.tech", state: "state-1"},
 		{name: "wrong host", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: baseClaims, host: "other.lightvela.tech", state: "state-1"},
 		{name: "wrong state", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: baseClaims, host: "abc.lightvela.tech", state: "other"},
 	}
