@@ -479,6 +479,20 @@ const globalDocs = [
     description: { 'en-US': '', 'zh-CN': '' },
   },
   {
+    slug: 'use-cases/discord-community-agent',
+    title: { 'en-US': 'Meet LightVela for Discord: Your AI Agent Discord Bot Serving Your Channel', 'zh-CN': 'Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot' },
+    file: 'use-cases/discord-community-agent.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': 'Configure a shared Discord Agent for community questions, onboarding, and event support.', 'zh-CN': '配置共享 Discord Agent，处理社群问答、新成员引导和活动支持。' },
+  },
+  {
+    slug: 'use-cases/discord-event-agent',
+    title: { 'en-US': 'Empower your Discord Event Bot with AI-Agentic Capabilities', 'zh-CN': '如何用 AI Agent 能力增强 Discord 活动机器人？' },
+    file: 'use-cases/discord-event-agent.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': 'Use a Discord Agent to answer event questions, support reminders, and keep event operations consistent.', 'zh-CN': '使用 Discord Agent 回答活动问题、支持提醒，并让活动运营信息保持一致。' },
+  },
+  {
     slug: 'compare/lightvela-vs-localhost-ai-agent',
     title: { 'en-US': 'LightVela vs Selfhost Agent: Which is best?', 'zh-CN': 'LightVela vs 本地部署 Agent：哪个更好？' },
     file: 'compare/lightvela-vs-localhost-ai-agent.md',
