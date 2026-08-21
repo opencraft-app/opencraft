@@ -14,8 +14,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useState, useRef, useMemo, useId, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/agent-context";
@@ -40,6 +39,7 @@ import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-st
 import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { SavedCardsSection } from "./saved-cards-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
 
@@ -74,101 +74,6 @@ const InfoRow = ({
     <div className="text-right text-sm font-medium" style={{ color: "#333" }}>{children}</div>
   </div>
 );
-
-const ACCOUNT_TOOLTIP_ARROW_CLASS =
-  "absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white";
-
-const ACCOUNT_TOOLTIP_CLASS =
-  "fixed z-50 max-w-[240px] -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text";
-
-const AccountRenewComingSoonButton = ({ label, tooltip }: { label: string; tooltip: string }) => {
-  const tooltipId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const closeTimerRef = useRef<number | null>(null);
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0 });
-
-  const clearCloseTimer = useCallback(() => {
-    if (closeTimerRef.current === null) return;
-    window.clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = null;
-  }, []);
-
-  const updatePosition = useCallback(() => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setPosition({
-      left: rect.left + rect.width / 2,
-      top: Math.max(12, rect.top - 8),
-    });
-  }, []);
-
-  const showTooltip = useCallback(() => {
-    clearCloseTimer();
-    updatePosition();
-    setOpen(true);
-  }, [clearCloseTimer, updatePosition]);
-
-  const scheduleClose = useCallback(() => {
-    clearCloseTimer();
-    closeTimerRef.current = window.setTimeout(() => {
-      setOpen(false);
-      closeTimerRef.current = null;
-    }, 120);
-  }, [clearCloseTimer]);
-
-  useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
-
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open, updatePosition]);
-
-  return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-disabled="true"
-        aria-describedby={open ? tooltipId : undefined}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          showTooltip();
-        }}
-        onMouseEnter={showTooltip}
-        onMouseLeave={scheduleClose}
-        onFocus={showTooltip}
-        onBlur={scheduleClose}
-        className="inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-full bg-black/10 px-5 py-2.5 text-sm font-semibold text-black/35 transition-colors"
-      >
-        <CreditCard className="h-4 w-4" aria-hidden="true" />
-        {label}
-      </button>
-      {open && typeof document !== "undefined"
-        ? createPortal(
-          <span
-            id={tooltipId}
-            role="tooltip"
-            className={ACCOUNT_TOOLTIP_CLASS}
-            style={{ left: position.left, top: position.top }}
-            onMouseEnter={showTooltip}
-            onMouseLeave={scheduleClose}
-          >
-            {tooltip}
-            <span aria-hidden="true" className={ACCOUNT_TOOLTIP_ARROW_CLASS} />
-          </span>,
-          document.body,
-        )
-        : null}
-    </>
-  );
-};
 
 /* ─── Change Phone Modal ─── */
 
@@ -898,6 +803,7 @@ const SubscriptionSection = ({
   /** 可操作的 pass：优先 active，其次 fallback */
   const operablePass = pass ?? fallbackPass;
   const passStatus = operablePass ? getPassStatus(operablePass) : null;
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
   const canRenew = paidBillingActive && operablePass != null && canRenewPass(operablePass);
   const canDelete = paidBillingActive && operablePass != null && canDeletePass(operablePass);
 
@@ -1114,8 +1020,12 @@ const SubscriptionSection = ({
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
               {canRenew && (
-                isGlobal ? (
-                  <AccountRenewComingSoonButton label={t("立即续费")} tooltip={t("敬请期待")} />
+                !renewalAvailable ? (
+                  <RenewComingSoonButton
+                    label={t("立即续费")}
+                    tooltip={t("敬请期待")}
+                    icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
+                  />
                 ) : (
                   <button
                     type="button"
@@ -1140,12 +1050,16 @@ const SubscriptionSection = ({
               )}
               {passStatus === "isolated" && (
                 <p className="basis-full text-xs" style={{ color: "#C67B1E" }}>
-                  {t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
+                  {isGlobal
+                    ? t("续费功能敬请期待。你仍可销毁当前套餐后重新购买。")
+                    : t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
                 </p>
               )}
               {passStatus === "expired" && (
                 <p className="basis-full text-xs" style={{ color: "#cf3d4c" }}>
-                  {t("套餐已过期，请及时续费以免进入隔离期。")}
+                  {isGlobal
+                    ? t("续费功能敬请期待。套餐已过期，暂时无法发起续费。")
+                    : t("套餐已过期，请及时续费以免进入隔离期。")}
                 </p>
               )}
             </div>
@@ -1155,7 +1069,7 @@ const SubscriptionSection = ({
 
       {/* 续费 / 销毁弹窗 — 国际站续费入口置灰，续费弹窗仅国内站触发。 */}
       <AnimatePresence>
-        {renewModalOpen && !isGlobal && operablePass && (
+        {renewModalOpen && renewalAvailable && operablePass && (
           <RenewPassModal
             key="renew"
             pass={operablePass}

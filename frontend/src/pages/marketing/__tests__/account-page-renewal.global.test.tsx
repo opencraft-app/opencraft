@@ -46,7 +46,15 @@ vi.mock("@tencent/universal-report", () => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
-  useT: () => (text: string) => (text === "敬请期待" ? "Coming Soon" : text),
+  useT: () => (text: string) => {
+    const translations: Record<string, string> = {
+      "敬请期待": "Coming Soon",
+      "续费功能敬请期待。套餐已过期，暂时无法发起续费。": "Renewals are coming soon. This plan has expired and cannot be renewed yet.",
+      "续费功能敬请期待。你仍可销毁当前套餐后重新购买。": "Renewals are coming soon. You can still destroy this plan and subscribe again.",
+    };
+
+    return translations[text] ?? text;
+  },
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
@@ -137,6 +145,16 @@ const buildActivePass = (): Pass => ({
   credit_available: 900,
 });
 
+const buildExpiredPass = (): Pass => ({
+  ...buildActivePass(),
+  expired_time: "2026-06-10T00:00:00Z",
+});
+
+const buildIsolatedPass = (): Pass => ({
+  ...buildExpiredPass(),
+  isolated_time: "2026-06-17T00:00:00Z",
+});
+
 const renderAccountPage = () => {
   render(
     <MemoryRouter>
@@ -164,6 +182,7 @@ describe("AccountPage global renewal action", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("greys out the global renew action and explains that it is coming soon", async () => {
@@ -198,5 +217,22 @@ describe("AccountPage global renewal action", () => {
     expect(screen.queryByRole("heading", { name: "续费套餐" })).not.toBeInTheDocument();
     expect(getRenewPrice).not.toHaveBeenCalled();
     expect(createRenewOrder).not.toHaveBeenCalled();
+  });
+
+  it("shows global unavailable wording for expired and isolated passes", () => {
+    vi.setSystemTime(new Date("2026-06-12T00:00:00.000Z"));
+    activePass = buildExpiredPass();
+    renderAccountPage();
+
+    expect(screen.getByText("Renewals are coming soon. This plan has expired and cannot be renewed yet.")).toBeInTheDocument();
+    expect(screen.queryByText("套餐已过期，请及时续费以免进入隔离期。")).not.toBeInTheDocument();
+
+    cleanup();
+    vi.setSystemTime(new Date("2026-06-18T00:00:00.000Z"));
+    activePass = buildIsolatedPass();
+    renderAccountPage();
+
+    expect(screen.getByText("Renewals are coming soon. You can still destroy this plan and subscribe again.")).toBeInTheDocument();
+    expect(screen.queryByText("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")).not.toBeInTheDocument();
   });
 });
