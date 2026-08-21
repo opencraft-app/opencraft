@@ -1,10 +1,28 @@
 package httpapi
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
+
+func TestFederationBodyCaptureRejectsOversizedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(federationBodyCaptureMiddleware())
+	router.POST("/auth/federation/exchange", func(ctx *gin.Context) {
+		ctx.Status(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/auth/federation/exchange", bytes.NewReader(bytes.Repeat([]byte("x"), (1<<20)+1)))
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized federation body status = %d, want 413", recorder.Code)
+	}
+}
 
 func TestCORSPreflightDoesNotExposeCORSHeaders(t *testing.T) {
 	t.Parallel()

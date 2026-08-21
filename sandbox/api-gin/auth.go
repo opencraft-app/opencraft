@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,8 +24,9 @@ type authSessionEnvelope struct {
 	} `json:"session"`
 }
 
-func userSessionAuth(authServiceURL string) gin.HandlerFunc {
+func userSessionAuth(authServiceURL string, internalServiceToken string) gin.HandlerFunc {
 	authServiceURL = strings.TrimRight(strings.TrimSpace(authServiceURL), "/")
+	internalServiceToken = strings.TrimSpace(internalServiceToken)
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	return func(c *gin.Context) {
@@ -34,6 +36,16 @@ func userSessionAuth(authServiceURL string) gin.HandlerFunc {
 		}
 		if authServiceURL == "" {
 			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "auth service unavailable"})
+			return
+		}
+		if internalServiceToken != "" && internalServiceIdentity(c.Request, internalServiceToken) {
+			userID := strings.TrimSpace(c.Request.Header.Get("X-User-Id"))
+			if userID == "" {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+				return
+			}
+			c.Set("lightclaw_user_id", userID)
+			c.Next()
 			return
 		}
 
@@ -53,6 +65,18 @@ func userSessionAuth(authServiceURL string) gin.HandlerFunc {
 		c.Set("lightclaw_user_email", session.Session.User.Email)
 		c.Next()
 	}
+}
+
+func internalServiceIdentity(r *http.Request, expected string) bool {
+	if r == nil || expected == "" {
+		return false
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+		return false
+	}
+	token := strings.TrimSpace(auth[len("Bearer "):])
+	return len(token) == len(expected) && subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
 }
 
 func extractSessionAuth(r *http.Request) (string, string) {

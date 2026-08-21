@@ -37,6 +37,25 @@
 
 ---
 
+## 独立站联合登录（默认禁用）
+
+| 变量 | 说明 |
+|------|------|
+| `LIGHTCLAW_FEDERATION_ENABLED` | 总开关；只有下列配置完整时才能设为 `true` |
+| `LIGHTCLAW_FEDERATION_ENVIRONMENT` | 票据环境绑定，例如 `shprod` / `sgprod`，不同环境不可复用 |
+| `LIGHTCLAW_FEDERATION_ACTIVE_AEAD_KEY_ID` | 当前签发使用的 AEAD key ID |
+| `LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON` | `kid -> base64 AES key` JSON keyring，支持轮换 |
+| `LIGHTCLAW_FEDERATION_NONCE_KEY` | 独立的 32 字节以上 base64 nonce 派生密钥 |
+| `LIGHTCLAW_FEDERATION_CLIENTS_JSON` | client、回调 host/path、可选本地 exact callback、HMAC keyring 的 JSON 注册表 |
+| `LIGHTCLAW_FEDERATION_CTL_BASE_URL` | CTL 内部地址，例如 `http://ctl-api.ctl.svc.cluster.local` |
+| `LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN` | Auth 调 CTL 的内部 bearer；必须和 CTL、sandbox 的 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 对齐 |
+| `LIGHTCLAW_FEDERATION_TAT_TIMEOUT_SECONDS` | TAT 建连控制面超时，必须为 `1..5`，默认 `5` |
+| `LIGHTCLAW_FEDERATION_DELEGATED_SESSION_TTL_SECONDS` | 独立站 delegated session 上限，默认 `28800`；不会超过源 Session 到期时间 |
+
+生产 callback 仅允许注册的 `lightvela.site` / `lightvela.tech` 根域及子域，且 path 固定为 `/auth/lightvela/callback`。本地 HTTP callback 必须通过 `exact_callback_urls` 显式列出，不继承生产通配规则。
+
+---
+
 ## 内容安全审核（昵称）
 
 | 变量 | 默认值 | 说明 |
