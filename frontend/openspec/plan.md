@@ -380,6 +380,21 @@
 - [x] Step 2 — 实现国际站置灰续费按钮与 Tooltip。
 - [x] Step 3 — 运行定向测试、类型检查、i18n 检查和 diff 检查。
 
+### Task 2: 补齐印尼语续费文案
+
+**Files:**
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Test: `frontend/src/pages/marketing/__tests__/renewal-id-ID.test.ts`
+
+**Acceptance:**
+- 新增续费、到期标签、倒计时和账号页不可续费状态文案在 `id-ID` 下均为非空印尼语。
+- 插值文案保留 `{{days}}` / `{{hours}}` / `{{time}}` 占位符，运行时能渲染 `/agents` 到期 aria-label。
+- 不修改全局 i18n fallback、`returnEmptyString` 或其他语言资源。
+
+- [x] Step 1 — 增加印尼语字典完整性和运行时插值失败测试并确认 RED。
+- [x] Step 2 — 补齐本次续费相关 9 条 `id-ID` 文案并确认 GREEN。
+- [x] Step 3 — 运行续费相关回归、类型检查、i18n 检查和 diff 检查。
+
 ---
 
 # 首页计费公告下线 Implementation Plan
