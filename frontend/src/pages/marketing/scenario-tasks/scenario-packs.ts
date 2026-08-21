@@ -3347,6 +3347,17 @@ const OVERVIEW_COPY_BY_LOCALE: Record<
   "ko-KR": null,
 };
 
+/**
+ * 该语种是否提供了独立的场景任务文案。
+ *
+ * 供 `scenario-job-presentation` 等消费方判断「是否走本地化分支」，
+ * 避免在多处重复写 `locale !== 'en-US' && locale !== 'id-ID'` 这类
+ * 排除式条件——排除式条件新增语种时不报错，会让新语种静默走错分支。
+ */
+export function hasLocalizedOverviewCopy(locale: PublicSiteLocaleCode): boolean {
+  return OVERVIEW_COPY_BY_LOCALE[locale] !== null;
+}
+
 export function getOverviewScenarioTaskPacks(
   locale: PublicSiteLocaleCode,
 ): readonly ScenarioTaskPack[] {
