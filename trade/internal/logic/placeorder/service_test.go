@@ -1115,7 +1115,7 @@ func TestGeneratePayURL_IntlCreateTreatsPaymentContextFailureAsUnbound(t *testin
 	}
 }
 
-func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testing.T) {
+func TestGeneratePayURL_IntlRenewWithoutSavedCardCreatesContractOrder(t *testing.T) {
 	d := newStdDeps()
 	d.service = New(Deps{
 		CTLClient:              d.ctl,
@@ -1139,8 +1139,8 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 		}, nil
 	}
 	d.billing.createPayURLFn = func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
-		if req.ContractOrder != 0 {
-			t.Errorf("ContractOrder = %d, want 0", req.ContractOrder)
+		if req.ContractOrder != 1 {
+			t.Errorf("ContractOrder = %d, want 1 for missing saved card", req.ContractOrder)
 		}
 		if req.PayScene != "credit_card" {
 			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
@@ -1172,8 +1172,8 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
 		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
 	}
-	if d.paymentContext.calls.Load() != 0 {
-		t.Errorf("payment context queries = %d, want 0 for renew", d.paymentContext.calls.Load())
+	if d.paymentContext.calls.Load() != 1 {
+		t.Errorf("payment context queries = %d, want 1", d.paymentContext.calls.Load())
 	}
 }
 
@@ -1219,8 +1219,9 @@ func TestResolvePayRedirectURLs(t *testing.T) {
 	}
 }
 
-func TestGeneratePayURL_IntlRenewNeverCreatesContractOrder(t *testing.T) {
+func TestGeneratePayURL_IntlRenewWithSavedCardDoesNotCreateContractOrder(t *testing.T) {
 	d := newStdDeps()
+	d.paymentContext.hasPaymentMethod = true
 	d.service = New(Deps{
 		CTLClient:              d.ctl,
 		BundleStore:            d.bundle,
@@ -1276,8 +1277,48 @@ func TestGeneratePayURL_IntlRenewNeverCreatesContractOrder(t *testing.T) {
 	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
 		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
 	}
-	if d.paymentContext.calls.Load() != 0 {
-		t.Errorf("payment context queries = %d, want 0 for renew", d.paymentContext.calls.Load())
+	if d.paymentContext.calls.Load() != 1 {
+		t.Errorf("payment context queries = %d, want 1", d.paymentContext.calls.Load())
+	}
+}
+
+func TestGeneratePayURL_IntlRenewTreatsPaymentContextFailureAsUnbound(t *testing.T) {
+	d := newStdDeps()
+	d.paymentContext.err = errors.New("auth unavailable")
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       dealName,
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeRenew,
+		}, nil
+	}
+	d.billing.createPayURLFn = func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ContractOrder != 1 {
+			t.Errorf("ContractOrder = %d, want 1 after payment context failure", req.ContractOrder)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/fallback?dealName=deal-1"}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if d.paymentContext.calls.Load() != 1 {
+		t.Errorf("payment context queries = %d, want 1", d.paymentContext.calls.Load())
+	}
+	if d.shadowCredentials.calls.Load() != 1 {
+		t.Errorf("shadow credential queries = %d, want 1 fallback", d.shadowCredentials.calls.Load())
 	}
 }
 
