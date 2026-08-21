@@ -194,12 +194,14 @@ type AdapterApiV3Config struct {
 
 // SandboxConfig defines sandbox adapter settings.
 type SandboxConfig struct {
-	BaseURL        string `toml:"baseUrl"`
-	ProcessBaseURL string `toml:"processBaseUrl"`
-	APIKey         string `toml:"apiKey"`
-	Timeout        int    `toml:"timeout"`
-	MaxRetries     int    `toml:"maxRetries"`
-	RetryInterval  int    `toml:"retryInterval"`
+	BaseURL                       string `toml:"baseUrl"`
+	ProcessBaseURL                string `toml:"processBaseUrl"`
+	APIKey                        string `toml:"apiKey"`
+	Timeout                       int    `toml:"timeout"`
+	MaxRetries                    int    `toml:"maxRetries"`
+	RetryInterval                 int    `toml:"retryInterval"`
+	WebsiteCredentialTATCommandID string `toml:"websiteCredentialTATCommandID"`
+	WebsiteAgentAPIBase           string `toml:"websiteAgentAPIBase"`
 }
 
 // AiGatewayConfig AI-Gateway 适配器配置

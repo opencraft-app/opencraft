@@ -195,7 +195,7 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 }
 
-func TestDeployConfigsScopeWebsiteInstanceRoutes(t *testing.T) {
+func TestDeployConfigsScopeWebsiteInstanceCredentials(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
@@ -207,14 +207,14 @@ func TestDeployConfigsScopeWebsiteInstanceRoutes(t *testing.T) {
 		"argocd/services/service-gateway/sgprod/config.yaml",
 	}
 	wantInstancePaths := map[string]struct{}{
-		http.MethodGet + " /v1/instance/websites/capability":                          {},
-		http.MethodGet + " /v1/instance/websites":                                     {},
-		http.MethodPost + " /v1/instance/websites":                                    {},
-		http.MethodGet + " /v1/instance/websites/{site_id}":                           {},
-		http.MethodDelete + " /v1/instance/websites/{site_id}":                        {},
-		http.MethodGet + " /v1/instance/websites/{site_id}/releases":                  {},
-		http.MethodPost + " /v1/instance/websites/{site_id}/releases":                 {},
-		http.MethodGet + " /v1/instance/websites/{site_id}/operations/{operation_id}": {},
+		http.MethodGet + " /v1/websites/capability":                          {},
+		http.MethodGet + " /v1/websites":                                     {},
+		http.MethodPost + " /v1/websites":                                    {},
+		http.MethodGet + " /v1/websites/{site_id}":                           {},
+		http.MethodDelete + " /v1/websites/{site_id}":                        {},
+		http.MethodGet + " /v1/websites/{site_id}/releases":                  {},
+		http.MethodPost + " /v1/websites/{site_id}/releases":                 {},
+		http.MethodGet + " /v1/websites/{site_id}/operations/{operation_id}": {},
 	}
 
 	for _, configPath := range configPaths {
@@ -223,33 +223,27 @@ func TestDeployConfigsScopeWebsiteInstanceRoutes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load config: %v", err)
 			}
-			var browserRoute, instanceRoute *Route
+			var websiteRoute *Route
 			for i := range cfg.Routes {
 				route := &cfg.Routes[i]
-				switch route.Prefix {
-				case "/v1/websites":
-					browserRoute = route
-				case "/v1/instance/websites":
-					instanceRoute = route
+				if route.Prefix == "/v1/instance/websites" {
+					t.Fatal("legacy /v1/instance/websites route must not be exposed")
+				}
+				if route.Prefix == "/v1/websites" {
+					websiteRoute = route
 				}
 			}
-			if browserRoute == nil || browserRoute.Access != AccessAuthenticated {
-				t.Fatalf("authenticated browser website route is required: %+v", browserRoute)
+			if websiteRoute == nil || websiteRoute.Access != AccessAuthenticated {
+				t.Fatalf("authenticated website route is required: %+v", websiteRoute)
 			}
-			if len(browserRoute.PublicAllow) != 0 {
-				t.Fatalf("browser website route must not contain public exceptions: %+v", browserRoute.PublicAllow)
+			if len(websiteRoute.PublicAllow) != 0 {
+				t.Fatalf("website route must not contain public exceptions: %+v", websiteRoute.PublicAllow)
 			}
-			if instanceRoute == nil {
-				t.Fatal("instance website route is required")
+			if !websiteRoute.AllowVelaInstanceKey {
+				t.Fatal("website route must enable scoped Vela instance credentials")
 			}
-			if instanceRoute.Access != AccessPublic || instanceRoute.PathPolicy != PathPolicyAllowlist {
-				t.Fatalf("instance website route must be public + allowlist: %+v", *instanceRoute)
-			}
-			if instanceRoute.RewritePrefix != "/v1/websites" {
-				t.Fatalf("rewrite_prefix = %q, want /v1/websites", instanceRoute.RewritePrefix)
-			}
-			got := make(map[string]struct{}, len(instanceRoute.PathAllow))
-			for _, rule := range instanceRoute.PathAllow {
+			got := make(map[string]struct{}, len(websiteRoute.VelaInstanceKeyAllow))
+			for _, rule := range websiteRoute.VelaInstanceKeyAllow {
 				got[rule.Method+" "+rule.Path] = struct{}{}
 			}
 			if len(got) != len(wantInstancePaths) {

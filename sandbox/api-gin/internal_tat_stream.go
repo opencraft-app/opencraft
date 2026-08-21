@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -54,8 +56,27 @@ type internalTATErrorEvent struct {
 	Message     string `json:"message"`
 }
 
-func registerInternalTATRoutes(r gin.IRouter, h *handler) {
+func registerInternalTATStreamRoute(r gin.IRouter, h *handler) {
 	r.POST(internalTATExecStreamRoutePath, h.postInternalTATExecStream)
+}
+
+func registerInternalTATInvocationRoutes(r gin.IRouter, h *handler) {
+	r.POST(internalTATInvokeRoutePath, h.postInternalTATInvoke)
+	r.GET(internalTATInvokeRoutePath+"/:invocationID", h.getInternalTATInvocation)
+}
+
+func internalAPIKeyAuth(expected string) gin.HandlerFunc {
+	expectedDigest := sha256.Sum256([]byte(strings.TrimSpace(expected)))
+	configured := strings.TrimSpace(expected) != ""
+	return func(c *gin.Context) {
+		provided := strings.TrimSpace(c.GetHeader("X-API-Key"))
+		providedDigest := sha256.Sum256([]byte(provided))
+		if !configured || provided == "" || subtle.ConstantTimeCompare(expectedDigest[:], providedDigest[:]) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+			return
+		}
+		c.Next()
+	}
 }
 
 func (h *handler) postInternalTATExecStream(c *gin.Context) {

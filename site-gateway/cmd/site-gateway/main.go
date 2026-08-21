@@ -14,6 +14,7 @@ import (
 	"git.woa.com/wisp/mono/site-gateway/internal/hostroute"
 	"git.woa.com/wisp/mono/site-gateway/internal/httpapi"
 	"git.woa.com/wisp/mono/site-gateway/internal/origin"
+	"git.woa.com/wisp/mono/site-gateway/internal/siteauth"
 	"git.woa.com/wisp/mono/site-gateway/internal/sitemeta"
 	"git.woa.com/wisp/mono/site-gateway/internal/usage"
 )
@@ -50,6 +51,17 @@ func main() {
 		NegativeTTL:   cfg.SiteNegativeTTL,
 		MaxEntries:    cfg.SiteCacheMaxEntries,
 	})
+	var authVerifier *siteauth.Verifier
+	if cfg.AuthMode == config.AuthModeRequired {
+		authVerifier, err = siteauth.NewVerifier(siteauth.Config{
+			Issuer:     cfg.AuthIssuer,
+			Audience:   cfg.AuthAudience,
+			PublicKeys: cfg.AuthPublicKeys,
+		})
+		if err != nil {
+			log.Fatalf("build site auth verifier: %v", err)
+		}
+	}
 
 	siteHandler := httpapi.NewSiteHandler(httpapi.Options{
 		Resolver:     hostroute.New(cfg.RootDomains),
@@ -57,6 +69,12 @@ func main() {
 		DomainLookup: siteMetaClient,
 		Origin:       fetcher,
 		Usage:        meter,
+		Auth: httpapi.AuthOptions{
+			Required:   cfg.AuthMode == config.AuthModeRequired,
+			StartURL:   cfg.AuthStartURL,
+			SessionTTL: cfg.AuthSessionTTL,
+			Verifier:   authVerifier,
+		},
 	})
 
 	siteServer := &http.Server{
