@@ -62,6 +62,8 @@ describe("global changelog skill package entry", () => {
     );
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "自动任务支持关联上游任务" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "LightVela 支持钉钉通道" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "技能页面支持批量安装与来源查看" })).toBeInTheDocument();
     expect(screen.getByText("安装多个 Skill 时可以查看实时进度，并从技能页面直接打开 ClawHub 或 skills.sh 的原始来源页面。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "自动任务模板" })).toBeInTheDocument();
