@@ -34,9 +34,14 @@ export function useModelConfig({
   botId: string;
   execDebugCommand: HermesModelConfigExecDebugCommand;
 }) {
+  const execDebugCommandRef = useRef(execDebugCommand);
+  execDebugCommandRef.current = execDebugCommand;
   const client = useMemo(
-    () => createHermesModelConfigClient(execDebugCommand, botId),
-    [botId, execDebugCommand],
+    () => createHermesModelConfigClient(
+      (targetBotId, command, options) => execDebugCommandRef.current(targetBotId, command, options),
+      botId,
+    ),
+    [botId],
   );
   const requestRevision = useRef(0);
   const probeRevision = useRef(0);

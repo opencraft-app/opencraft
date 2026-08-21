@@ -185,9 +185,13 @@ def probe_api_models(api_key, base_url, timeout=5, api_mode=None):
   const acliPath = join(directory, "acli");
   writeFileSync(acliPath, String.raw`#!/usr/bin/env python3
 import json
+import os
 import sys
+from pathlib import Path
 
 args = sys.argv[1:]
+root = Path(os.environ["HERMES_HOME"])
+(root / "acli-argv.json").write_text(json.dumps(args))
 if args[:2] != ["model", "probe"]:
     print(json.dumps({"success": False, "error": {"code": "UNSUPPORTED", "message": "unsupported command"}}))
     raise SystemExit(1)
@@ -240,7 +244,12 @@ function runHelper(
     if (inputAction.type === "probe" || inputAction.type === "connectivityProbe" || inputAction.type === "add") {
       const preparationResult = spawnAction({ type: "prepareCredentialEnvelope" });
       preparationOutput = `${preparationResult.stdout}${preparationResult.stderr}`;
-      const preparation = parseHermesCredentialEnvelopePreparation(preparationOutput);
+      let preparation: ReturnType<typeof parseHermesCredentialEnvelopePreparation>;
+      try {
+        preparation = parseHermesCredentialEnvelopePreparation(preparationOutput);
+      } catch (error) {
+        throw new Error(`Credential envelope preparation failed:\n${preparationOutput}`, { cause: error });
+      }
       const credentialEnvelope = {
         token: preparation.token,
         ciphertext: envelopeMutation === "corrupt" ? "invalid-ciphertext" : encryptCredential(preparation.publicKey, inputAction.apiKey),
@@ -274,6 +283,9 @@ function runHelper(
       command,
       preparationOutput,
       remainingEnvelopeFiles: existsSync(envelopeDirectory) ? readdirSync(envelopeDirectory) : [],
+      acliArgv: existsSync(join(directory, "acli-argv.json"))
+        ? JSON.parse(readFileSync(join(directory, "acli-argv.json"), "utf8")) as string[]
+        : [],
       status: result.status,
     };
   } finally {
@@ -349,10 +361,12 @@ describe("Hermes model configuration client", () => {
       provider: model.providerKey,
       model: model.id,
       baseUrl: model.baseUrl,
-      timeMs: 128,
+      timeMs: expect.any(Number),
     });
     expect(probed.command).not.toContain(apiKey);
+    expect(probed.acliArgv.join("\n")).not.toContain(apiKey);
     expect(probed.output).not.toContain(apiKey);
+    expect(probed.events).toContain("probe");
     expect(probed.remainingEnvelopeFiles).toEqual([]);
   });
 

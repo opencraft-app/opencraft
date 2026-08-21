@@ -2,14 +2,33 @@ import type { IModelProvider } from "@/pages/marketing/agent-config";
 
 import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config-client";
 
+function decodeHtmlEntity(entity: string) {
+  const normalized = entity.toLowerCase();
+  if (normalized === "amp") return "&";
+  if (normalized === "lt") return "<";
+  if (normalized === "gt") return ">";
+  if (normalized === "quot") return "\"";
+  if (normalized === "apos") return "'";
+  if (normalized === "nbsp") return " ";
+  if (normalized.startsWith("#x")) {
+    const codePoint = Number.parseInt(normalized.slice(2), 16);
+    return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : `&${entity};`;
+  }
+  if (normalized.startsWith("#")) {
+    const codePoint = Number.parseInt(normalized.slice(1), 10);
+    return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : `&${entity};`;
+  }
+  return `&${entity};`;
+}
+
 function toPlainText(value: string) {
   if (!value) return "";
-  if (typeof document !== "undefined") {
-    const container = document.createElement("div");
-    container.innerHTML = value;
-    return (container.textContent ?? "").replace(/\s+/g, " ").trim();
-  }
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&([a-z0-9#]+);/gi, (_, entity: string) => decodeHtmlEntity(entity))
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function toHermesApiMode(value: string): HermesCanonicalApiMode | null {

@@ -74,8 +74,6 @@ import json
 import os
 import re
 import secrets
-import shutil
-import subprocess
 import sys
 import time
 
@@ -241,6 +239,13 @@ def sanitize_probe_error(value, credential):
     message = str(value or "").replace(credential, "[REDACTED]").strip()
     return message[:300] if message else "Model connectivity check failed"
 
+def probed_model_ids(value):
+    models = []
+    for item in (value.get("models", []) if isinstance(value, dict) else []):
+        model_id = str(item or "").strip()
+        if model_id and model_id not in models: models.append(model_id)
+    return models
+
 def probe_model_connection(credential, model):
     provider = model["providerKey"]
     model_id = model["id"]
@@ -252,44 +257,20 @@ def probe_model_connection(credential, model):
         "baseUrl": base_url,
         "errorMessage": "Model connectivity check failed",
     }
+    started_at = time.time()
     try:
-        executable = shutil.which("acli")
-        if not executable: return fallback
-        completed = subprocess.run([
-            executable, "model", "probe",
-            "--provider", provider,
-            "--model", model_id,
-            "--base-url", base_url,
-            "--api-key", credential,
-            "--api", model["apiMode"],
-        ], capture_output=True, text=True, timeout=60, check=False)
-        raw = json.loads((completed.stdout or "").strip())
-        if not isinstance(raw, dict): return fallback
-        data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
-        results = data.get("results") if isinstance(data.get("results"), list) else []
-        successful_item = next((item for item in results if isinstance(item, dict) and item.get("success") is True), None)
-        failed_item = next((item for item in results if isinstance(item, dict) and item.get("success") is False), None)
-        success = (
-            completed.returncode == 0 and raw.get("success") is True and data.get("success") is True
-            and (data.get("error_code") or 0) == 0 and successful_item is not None
-        )
-        details = successful_item if success else (failed_item or {})
-        time_ms = details.get("time_ms") if isinstance(details.get("time_ms"), (int, float)) else data.get("time_ms")
-        error = raw.get("error") if isinstance(raw.get("error"), dict) else {}
-        result = {
-            "success": success,
+        result = probe_api_models(credential, base_url, timeout=60, mode=model["apiMode"])
+        models = probed_model_ids(result)
+        if not models: return fallback
+        return {
+            "success": True,
             "provider": provider,
             "model": model_id,
             "baseUrl": base_url,
+            "timeMs": int((time.time() - started_at) * 1000),
         }
-        if isinstance(time_ms, (int, float)) and time_ms >= 0: result["timeMs"] = time_ms
-        if not success:
-            error_code = details.get("error_code") or data.get("error_code") or error.get("code")
-            error_message = details.get("error_message") or data.get("error_message") or data.get("message") or error.get("message")
-            if error_code is not None: result["errorCode"] = error_code
-            result["errorMessage"] = sanitize_probe_error(error_message, credential)
-        return result
-    except Exception:
+    except Exception as error:
+        fallback["errorMessage"] = sanitize_probe_error(error, credential)
         return fallback
 
 def provider_schema_supported(config):
@@ -482,10 +463,7 @@ def execute(action):
     if kind == "read": return {"snapshot": read_snapshot(config)}
     if kind == "probe":
         result = probe_api_models(credential, text(action.get("baseUrl"), "baseUrl"), timeout=90, mode=api_mode(action.get("apiMode") or "chat_completions", "apiMode"))
-        models = []
-        for value in result.get("models", []) if isinstance(result, dict) else []:
-            item = str(value or "").strip()
-            if item and item not in models: models.append(item)
+        models = probed_model_ids(result)
         snapshot = read_snapshot(config)
         snapshot["probedModels"] = models
         return {"snapshot": snapshot}

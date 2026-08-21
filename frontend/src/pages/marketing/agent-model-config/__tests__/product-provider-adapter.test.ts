@@ -61,6 +61,36 @@ describe("adaptProductModelProviders", () => {
     ]);
   });
 
+  it("extracts untrusted provider HTML without writing through element innerHTML", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+    if (!descriptor?.configurable) throw new Error("innerHTML descriptor must be configurable in this test environment");
+    Object.defineProperty(Element.prototype, "innerHTML", {
+      configurable: true,
+      get: descriptor.get,
+      set() {
+        throw new Error("innerHTML sink should not be used");
+      },
+    });
+    try {
+      const [provider] = adaptProductModelProviders([{
+        value: "unsafe",
+        category: "api",
+        provider: "unsafe",
+        provider_name: "Unsafe <strong>Provider</strong><img src=x onerror=alert(1)>",
+        description: "<p>Fast &amp; safe</p><script>alert(1)</script>",
+        api_key_url: "",
+        base_url: "https://unsafe.example.com/v1",
+        api: "openai-completions",
+        models: [],
+      }]);
+
+      expect(provider.providerName).toBe("Unsafe Provider");
+      expect(provider.description).toBe("Fast & safe");
+    } finally {
+      Object.defineProperty(Element.prototype, "innerHTML", descriptor);
+    }
+  });
+
   it("filters OAuth-only and non-probeable entries without changing source order", () => {
     const providers = adaptProductModelProviders([
       {

@@ -59,6 +59,37 @@ function decodeAction(command: string): HermesModelConfigAction {
 }
 
 describe("useModelConfig", () => {
+  it("does not reload when only the execDebugCommand reference changes", async () => {
+    const execDebugCommandA = vi.fn(async () => ({
+      status: "Succeeded",
+      exitCode: 0,
+      output: output(initialSnapshot),
+    }));
+    const execDebugCommandB = vi.fn(async () => ({
+      status: "Succeeded",
+      exitCode: 0,
+      output: output(initialSnapshot),
+    }));
+
+    function Harness({ execDebugCommand }: {
+      execDebugCommand: typeof execDebugCommandA;
+    }) {
+      useModelConfig({ botId: "bot-1", execDebugCommand });
+      return <span>ready</span>;
+    }
+
+    const { rerender } = render(<Harness execDebugCommand={execDebugCommandA} />);
+    await waitFor(() => expect(execDebugCommandA).toHaveBeenCalledTimes(1));
+
+    rerender(<Harness execDebugCommand={execDebugCommandB} />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(execDebugCommandA).toHaveBeenCalledTimes(1);
+    expect(execDebugCommandB).not.toHaveBeenCalled();
+  });
+
   it("synchronously rejects overlapping mutations before React can render the busy state", async () => {
     let resolveMutation: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
     const pendingMutation = new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
