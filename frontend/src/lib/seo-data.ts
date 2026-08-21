@@ -226,7 +226,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/quickstart":
       "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord / Slack) and have your first AI conversation.",
     "/docs/plans":
-      "Compare LightVela's Launch and Cruise plans for isolated Hermes runtime resources, storage, monthly credits, paid plan availability, and the new-user 14-day Launch trial.",
+      "Compare LightVela's Launch, Cruise, Launch AI, and Cruise AI plans for isolated Hermes runtime resources, storage, monthly AI credits, refund rules, and the email-based refund application process.",
     "/docs/announcements/public-beta":
       "LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch free for 14 days after public beta and billing start.",
     "/docs/credits":
