@@ -12,8 +12,8 @@
 
 | 参数 | 说明 |
 |---|---|
-| `--quick` | S 级快速修复。保留 git / plan / 最小验证门禁，跳过 Figma、多 Agent、完整 proposal/spec。 |
-| `--full` | L 级完整流程。优先启用完整 proposal/spec、关键门禁和多 Agent 建议。 |
+| `--quick` | 请求 S 级快速修复。先做 S 级准入校验；不满足时自动升级并说明原因。保持 git / plan / 最小验证门禁；仍为 S 级时跳过 Figma、多 Agent、完整 proposal/spec，升级后按 M/L 级规则执行。 |
+| `--full` | 显式选择 L 级完整流程。启用完整 proposal/spec、关键门禁和 Leader 串行调度。 |
 | `--yes` | 信任模式。减少低风险确认，但不跳过需求确认、工作区/分支/plan 状态决策点。 |
 
 ---
@@ -81,7 +81,10 @@ plan 状态处理：
 
 ### 阶段 4：需求澄清
 
-默认使用 `brainstorming` skill 明确：
+先按 `.workflow/rules/flow-cost.md` 完成需求路由，再选择澄清深度：
+
+- **S 级**：一次简短确认目标、局部范围和验收；不调用 brainstorming，不因为缺少完整 PRD、目标文件暂不明确或需要一次补充确认而升级。
+- **M/L 级**：调用 `brainstorming` skill，明确目标、成功标准、范围与非目标、约束、验证口径和英文 kebab-case slug。
 
 > ⚠️ **产物路径覆盖**：brainstorming skill v6+ 默认保存到 `docs/superpowers/specs/`，feai 工作流必须保存到 `openspec/`（proposal.md / spec.md），不使用 skill 默认路径。
 
@@ -92,21 +95,21 @@ plan 状态处理：
 - 验证口径
 - 英文 kebab-case slug
 
-`--quick` 可简化为一次确认，但仍必须得到上述最小信息。
+`--quick` 是优先采用 S 级轻流程的显式提示；只有命中 M/L 的明确边界或风险条件时才升级，并说明原因。
 
-S 级 plan 只允许 1–3 条任务级 checkbox；RED/GREEN、读取文件、运行测试、提交等执行步骤写在任务正文中，不得各自展开为 checkbox。一个小 bug 不得生成十几到几十条 pending 项。
+S 级 plan 通常保留 1–3 条任务级 checkbox；RED/GREEN、读取文件、运行测试、提交等执行步骤写在任务正文中，不得各自展开为 checkbox。任务稍多时应优先合并，不因 checkbox 数量单独升级。
 
 ### 阶段 5：规模与执行模式
 
-按用户参数和实际影响范围判定 S/M/L：
+按 `.workflow/rules/flow-cost.md` 的唯一判定顺序，依据需求边界、业务风险和验收复杂度判定 S/M/L；实际影响文件只在定位、计划和验证阶段记录，不参与规模判定：
 
 | 规模 | 默认产物 | 默认执行 |
 |---|---|---|
 | S | `plan.md` | 单 Agent，`/feai-review --quick`，`/feai-archive --light` |
 | M | `proposal.md` + `spec.md` + `plan.md` | 单 Agent 或轻量 Leader，最终 review 可 full |
-| L | `proposal.md` + `spec.md` + `plan.md` | 建议 Leader 调度，多 Agent 串行交接 |
+| L | `proposal.md` + `spec.md` + `plan.md` | Leader 调度，多 Agent 串行交接 |
 
-规模升级条件：高风险、影响文件 > 5、连续失败 >= 2、用户显式要求完整流程。
+规模升级只使用 `flow-cost.md` 的升级条件。文件数量、普通需求描述长度、模型不确定或“看起来可能复杂”都不能单独改变流程级别；需要升级时必须记录对应的业务边界或风险触发项。
 
 ### 阶段 6：分支与 metrics 归位
 
@@ -141,7 +144,7 @@ feai workflow usage-context write --provider <provider> --change-name <change-na
 
 ### 阶段 7：条件能力分析
 
-- Figma URL 或 UI 还原需求：派发 `figma-analyzer` sub-agent，主上下文只接收摘要和产物路径。
+- Figma URL 或明确要求按设计稿逐像素还原：派发 `figma-analyzer` sub-agent，主上下文只接收摘要和产物路径。已有页面的普通文案、样式、间距或小交互调整不触发 Figma。
 - 只读调查 / 追问反证：按 `.workflow/rules/agent-dispatch.md` 生成 Investigation Brief，提供候选范围和成本检查点；证据不足时允许扩展。
 - 多 Agent 写入前：读取 `.workflow/rules/team-state.md`，声明文件归属和共享状态单写者。
 
