@@ -213,6 +213,8 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ClientIP = ctx.ClientIP()
+	identity.ClientUA = ctx.Request.UserAgent()
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(

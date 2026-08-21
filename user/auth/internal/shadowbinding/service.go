@@ -194,9 +194,23 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 		return Binding{}, err
 	}
 	if err == nil && !in.Force {
-		if s.siteKind == SiteKindIntl && existing.Uin > 0 &&
-			(existing.Status == StatusPending || existing.Status == StatusFailed) {
-			return s.openBillingAccount(ctx, existing, false)
+		if s.siteKind == SiteKindIntl && existing.Uin > 0 {
+			if existing.Status == StatusActive && existing.AppID <= 0 {
+				s.startAppIDRepair(existing, in.ClientIP, in.ClientUA)
+				return existing, nil
+			}
+			if existing.Status == StatusPending || existing.Status == StatusFailed {
+				resolved, resolveErr := s.ensureBindingAppID(ctx, existing, in.ClientIP, in.ClientUA)
+				if resolveErr != nil {
+					slog.WarnContext(ctx, "international shadow app id lookup before billing retry failed",
+						"user_id", existing.UserID,
+						"uin", existing.Uin,
+						"err", resolveErr,
+					)
+					resolved = existing
+				}
+				return s.openBillingAccount(ctx, resolved, false)
+			}
 		}
 		switch existing.Status {
 		case StatusActive, StatusPending, StatusDisabled:
@@ -274,6 +288,18 @@ func (s *Service) startBillingAccountOpening(binding Binding, clientIP, clientUA
 		}
 		if _, err = s.openBillingAccount(ctx, resolved, true); err != nil {
 			slog.Warn("international shadow billing activation failed",
+				"user_id", binding.UserID,
+				"uin", binding.Uin,
+				"err", err,
+			)
+		}
+	})
+}
+
+func (s *Service) startAppIDRepair(binding Binding, clientIP, clientUA string) {
+	s.runAsync(func() {
+		if _, err := s.ensureBindingAppID(context.Background(), binding, clientIP, clientUA); err != nil {
+			slog.Warn("international shadow app id repair after sign-in failed",
 				"user_id", binding.UserID,
 				"uin", binding.Uin,
 				"err", err,
