@@ -8,6 +8,8 @@
  *
  * ID 采用宽松的 string 类型，便于持续新增卡片而不必维护联合字面量。
  */
+import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
+
 export type ScenarioTaskId = string;
 
 export type ScenarioTaskFieldType =
@@ -142,8 +144,13 @@ export interface ScenarioTaskPack {
   quickPrompt: string;
   /** 快速启用时展示的自然语言模板；field 片段与真实 Cron 参数双向绑定。 */
   quickPromptTemplate?: ScenarioQuickPromptPart[];
-  /** 仅控制快速任务句里的日期与列表显示，不参与 Cron 解析。 */
-  quickPromptLocale?: "zh-CN" | "en-US" | "id-ID";
+  /**
+   * 仅控制快速任务句里的日期与列表显示，不参与 Cron 解析。
+   *
+   * 使用注册表的 `PublicSiteLocaleCode`，新增语种无需改此类型；
+   * 未提供专属格式化规则的语种会走 `scenario-task-builder` 中的默认分支。
+   */
+  quickPromptLocale?: PublicSiteLocaleCode;
   category: ScenarioCategoryId;
   /** 二级子类（须属于所在分类的 subCategories） */
   subCategory: string;
@@ -3282,7 +3289,7 @@ const OVERVIEW_INDONESIAN_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[numbe
 function localizeOverviewField(
   field: ScenarioTaskField,
   copy: OverviewEnglishPackCopy,
-  locale: "en-US" | "id-ID",
+  locale: PublicSiteLocaleCode,
 ): ScenarioTaskField {
   const defaultValue = copy.fieldDefaults?.[field.key] ?? field.defaultValue;
   const optionLabels = copy.optionLabels?.[field.key];
@@ -3313,12 +3320,38 @@ function localizeOverviewField(
   return { ...field, defaultValue, options };
 }
 
-export function getOverviewScenarioTaskPacks(
-  locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID",
-): readonly ScenarioTaskPack[] {
-  if (locale !== "en-US" && locale !== "id-ID") return OVERVIEW_SCENARIO_TASK_PACKS;
+/**
+ * 场景任务卡片的本地化文案表。
+ *
+ * `null` 表示该语种尚未提供独立文案，将回退到中文原稿
+ * （`OVERVIEW_SCENARIO_TASK_PACKS`）。
+ *
+ * ⚠️ 刻意使用 `Record<PublicSiteLocaleCode, …>` 而非
+ * `locale !== 'en-US' && locale !== 'id-ID'` 的排除式判断：排除式判断在
+ * 新增语种时**不会报错**，会让新语种静默显示中文；改为全量查表后，
+ * 注册表新增语种而此处未声明时 `tsc` 直接失败，迫使开发者显式决定
+ * 「提供翻译」还是「明确标记为回退」。
+ */
+const OVERVIEW_COPY_BY_LOCALE: Record<
+  PublicSiteLocaleCode,
+  typeof OVERVIEW_ENGLISH_COPY | null
+> = {
+  "zh-CN": null,
+  "zh-SG": null,
+  "zh-Hant": null,
+  "en-US": OVERVIEW_ENGLISH_COPY,
+  "id-ID": OVERVIEW_INDONESIAN_COPY,
+  /* 西语 / 日语 / 韩语场景任务文案待补齐，当前显式回退中文原稿。 */
+  es: null,
+  "ja-JP": null,
+  "ko-KR": null,
+};
 
-  const localizedCopy = locale === "id-ID" ? OVERVIEW_INDONESIAN_COPY : OVERVIEW_ENGLISH_COPY;
+export function getOverviewScenarioTaskPacks(
+  locale: PublicSiteLocaleCode,
+): readonly ScenarioTaskPack[] {
+  const localizedCopy = OVERVIEW_COPY_BY_LOCALE[locale];
+  if (!localizedCopy) return OVERVIEW_SCENARIO_TASK_PACKS;
 
   return OVERVIEW_SCENARIO_TASK_PACKS.map((pack) => {
     const copy = localizedCopy[pack.id as (typeof OVERVIEW_SCENARIO_TASK_IDS)[number]];
