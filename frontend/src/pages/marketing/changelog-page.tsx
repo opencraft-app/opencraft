@@ -47,8 +47,8 @@ type ChangelogEntry = {
   id: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -61,7 +61,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -94,6 +94,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? useGlobalChineseAsset
         ? "/assets/changelog/lightvela-skills-bulk-install-global-zh.png"
         : "/assets/changelog/lightvela-skills-bulk-install-global-en.png"
+      : variant === "automationUpstream"
+      ? "/assets/changelog/lightvela-automation-upstream-task.png"
       : variant === "automationTemplates"
       ? useGlobalChineseAsset
         ? "/assets/changelog/lightvela-automation-templates-global-zh.png"
@@ -112,6 +114,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         : "/assets/changelog/lightvela-diagnostics-domestic-zh.webp"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
+      : variant === "dingtalk"
+      ? "/assets/changelog/lightvela-dingtalk-channel.png"
       : variant === "chat"
       ? useGlobalAssets
         ? "/assets/changelog/agentchat-web-chat-en.png"
@@ -152,6 +156,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("LightVela 支持技能包")
       : variant === "skillsBulkInstall"
       ? t("技能页面支持批量安装与来源查看")
+      : variant === "automationUpstream"
+      ? t("自动任务支持关联上游任务")
       : variant === "automationTemplates"
       ? t("自动任务模板")
       : variant === "qqGroupMentions"
@@ -164,6 +170,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("LightVela 支持成就模块")
       : variant === "wecom"
       ? t("LightVela 支持企业微信通道")
+      : variant === "dingtalk"
+      ? t("LightVela 支持钉钉通道")
       : variant === "chat"
       ? t("LightVela 支持网页内对话")
       : variant === "memory"
@@ -194,6 +202,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         : "1166 / 680"
       : variant === "skillsBulkInstall"
       ? useGlobalChineseAsset ? "1284 / 806" : "1270 / 805"
+      : variant === "automationUpstream"
+      ? "816 / 356"
       : variant === "automationTemplates"
       ? useGlobalChineseAsset ? "1629 / 1090" : "1657 / 1117"
       : variant === "qqGroupMentions"
@@ -206,6 +216,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         : "1454 / 1045"
       : variant === "wecom"
       ? "2160 / 844"
+      : variant === "dingtalk"
+      ? "816 / 356"
       : variant === "chat"
       ? useGlobalAssets ? "1677 / 938" : "1742 / 903"
       : variant === "memory"
@@ -297,10 +309,16 @@ function ChangelogContent() {
             month: t("2026 年 8 月"),
             entries: [
               {
-                id: "automation-templates",
-                title: t("自动任务模板"),
-                desc: t("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。"),
-                visual: "automationTemplates" as const,
+                id: "automation-upstream-task",
+                title: t("自动任务支持关联上游任务"),
+                desc: t("创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
+                visual: "automationUpstream" as const,
+              },
+              {
+                id: "dingtalk-channel",
+                title: t("LightVela 支持钉钉通道"),
+                desc: t("现在可以将 Hermes Agent 接入钉钉，在钉钉会话中直接与云端智能伙伴对话。"),
+                visual: "dingtalk" as const,
               },
               {
                 id: "qq-group-mentions",

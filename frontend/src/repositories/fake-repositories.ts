@@ -64,10 +64,13 @@ const fakeFaceIdAttempts = new Map<string, FakeFaceIdAttemptRecord>();
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
-const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode) => {
+const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode, switchAccount = false) => {
   const startURL = new URL(`https://lightclaw.tech/auth/oauth/${provider}/start`);
   if (provider === "wechat" && wechatMode) {
     startURL.searchParams.set("mode", wechatMode);
+  }
+  if (switchAccount) {
+    startURL.searchParams.set("switch_account", "true");
   }
   if (typeof window !== "undefined" && window.location?.href) {
     startURL.searchParams.set("return_to", window.location.href);
@@ -861,8 +864,46 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
         paymentMethods = paymentMethods.filter((method) => method.contractCode !== contractCode);
       },
+      async getFederationAuthorizationContext(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const session = readStoredAuthSession();
+        return {
+          ...input,
+          clientDisplayName: "LightVela Personal Site",
+          currentSession: session ? {
+            user: {
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+              phone: session.user.phone,
+              avatarUrl: session.user.avatarUrl,
+            },
+          } : null,
+        };
+      },
+      async issueFederationTicket(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        if (!readStoredAuthSession()) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL(input.redirectUri);
+        redirectUrl.searchParams.set("ticket", "fake-federation-ticket");
+        if (input.state) {
+          redirectUrl.searchParams.set("state", input.state);
+        }
+        return {
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 5_000).toISOString(),
+        };
+      },
+      async prepareFederationSwitch() {
+        await wait(NETWORK_DELAY_MS / 2);
+      },
+      async cancelFederationSwitch() {
+        await wait(NETWORK_DELAY_MS / 2);
+      },
       getOAuthStartUrl(provider: OAuthProvider, options) {
-        return fakeOAuthStartURL(provider, options?.wechatMode);
+        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount);
       },
       async signInAsGuest() {
         await wait(NETWORK_DELAY_MS);

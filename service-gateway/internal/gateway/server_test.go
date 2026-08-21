@@ -1654,42 +1654,18 @@ func TestAuthenticatedRouteUsesSessionCookieWhenBearerMissing(t *testing.T) {
 	}
 }
 
-func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testing.T) {
+func TestLegacySandboxAllowlistRejectsTatSessionBeforeAuth(t *testing.T) {
+	authCalls := 0
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("lc_session")
-		if err != nil {
-			t.Fatalf("expected lc_session cookie during introspection: %v", err)
-		}
-		if cookie.Value != "tok-cookie" {
-			t.Fatalf("expected lc_session cookie to be forwarded to auth, got %q", cookie.Value)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"session": map[string]any{
-				"user": map[string]any{
-					"id":    "usr_cookie",
-					"email": "cookie@example.com",
-				},
-			},
-		})
+		authCalls++
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer auth.Close()
 
+	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("unexpected upstream method: %s", r.Method)
-		}
-		if r.URL.Path != "/sandboxes/sbx-1/tat/session" {
-			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
-		}
-		if got := r.Header.Get("X-User-Id"); got != "usr_cookie" {
-			t.Fatalf("expected injected user id, got %q", got)
-		}
-		if _, err := r.Cookie("lc_session"); err != nil {
-			t.Fatalf("expected lc_session cookie to reach sandbox-api: %v", err)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"sessionId":"sess-1"}`))
+		upstreamCalls++
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer upstream.Close()
 
@@ -1697,11 +1673,15 @@ func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testi
 		AuthServiceURL: auth.URL,
 		Routes: []Route{
 			{
-				Name:     "sandbox-legacy",
-				Prefix:   "/sandboxes",
-				Methods:  []string{http.MethodPost, http.MethodOptions},
-				Upstream: upstream.URL,
-				Access:   AccessAuthenticated,
+				Name:       "sandbox-legacy",
+				Prefix:     "/sandboxes",
+				Methods:    []string{http.MethodPost, http.MethodOptions},
+				Upstream:   upstream.URL,
+				Access:     AccessAuthenticated,
+				PathPolicy: PathPolicyAllowlist,
+				PathAllow: []PublicRule{
+					{Method: http.MethodPost, Path: "/sandboxes"},
+				},
 			},
 		},
 	})
@@ -1714,8 +1694,14 @@ func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testi
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "route_not_allowed") {
+		t.Fatalf("expected route_not_allowed body, got %s", rec.Body.String())
+	}
+	if authCalls != 0 || upstreamCalls != 0 {
+		t.Fatalf("blocked legacy TAT route reached auth=%d upstream=%d", authCalls, upstreamCalls)
 	}
 }
 

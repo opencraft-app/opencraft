@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
@@ -28,6 +29,7 @@ type commandSandboxAdapterStub struct {
 	errs            []error
 	terminalSession *psandbox.TerminalSession
 	terminalErr     error
+	terminalFunc    func(context.Context, string) (*psandbox.TerminalSession, error)
 	terminalCalls   []string
 	calls           []commandSandboxCall
 	processErr      error
@@ -77,8 +79,11 @@ func (s *commandSandboxAdapterStub) ExecCommand(_ context.Context, sandboxID, ba
 	return nil, nil
 }
 
-func (s *commandSandboxAdapterStub) StartTerminalSession(_ context.Context, sandboxID string) (*psandbox.TerminalSession, error) {
+func (s *commandSandboxAdapterStub) StartTerminalSession(ctx context.Context, sandboxID string) (*psandbox.TerminalSession, error) {
 	s.terminalCalls = append(s.terminalCalls, sandboxID)
+	if s.terminalFunc != nil {
+		return s.terminalFunc(ctx, sandboxID)
+	}
 	if s.terminalErr != nil {
 		return nil, s.terminalErr
 	}
@@ -146,15 +151,25 @@ func (s *commandSandboxAdapterStub) StreamPtyCommand(_ context.Context, _ string
 type commandInstanceDaoStub struct {
 	modelinstance.Dao
 	entity       *modelinstance.Entity
+	entities     []*modelinstance.Entity
+	getFunc      func(pctx.Context, string) (*modelinstance.Entity, error)
 	err          error
 	updated      map[string]interface{}
 	updateID     int64
 	updateStates []string
 }
 
-func (s *commandInstanceDaoStub) GetByInstanceID(_ pctx.Context, _ string) (*modelinstance.Entity, error) {
+func (s *commandInstanceDaoStub) GetByInstanceID(ctx pctx.Context, instanceID string) (*modelinstance.Entity, error) {
+	if s.getFunc != nil {
+		return s.getFunc(ctx, instanceID)
+	}
 	if s.err != nil {
 		return nil, s.err
+	}
+	if len(s.entities) > 0 {
+		entity := s.entities[0]
+		s.entities = s.entities[1:]
+		return entity, nil
 	}
 	return s.entity, nil
 }
@@ -307,6 +322,117 @@ func TestStartTerminalSessionDoesNotCallSandboxWhenInstanceLookupFails(t *testin
 	}
 	if len(adapter.terminalCalls) != 0 {
 		t.Fatalf("sandbox must not be called for inaccessible instance, got %+v", adapter.terminalCalls)
+	}
+}
+
+func TestStartTerminalSessionRejectsNonRunningInstance(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1",
+			SandboxId:  "sbx-1",
+			Status:     modelinstance.InstanceStatusPaused,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	_, err := logic.StartTerminalSession(pctx.NewContext(nil).WithUserID("user-1"), "ins-1")
+	if !errors.Is(err, errcode.ErrInstanceStatusInvalid) {
+		t.Fatalf("expected invalid instance status, got %v", err)
+	}
+	if len(adapter.terminalCalls) != 0 {
+		t.Fatalf("sandbox must not be called for paused instance, got %+v", adapter.terminalCalls)
+	}
+}
+
+func TestStartTerminalSessionRejectsBotMappingChangedDuringSandboxCall(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	adapter := &commandSandboxAdapterStub{
+		terminalFunc: func(context.Context, string) (*psandbox.TerminalSession, error) {
+			close(started)
+			<-release
+			return &psandbox.TerminalSession{SessionID: "late-session"}, nil
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entities: []*modelinstance.Entity{
+			{InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning},
+			{InstanceId: "ins-1", SandboxId: "sbx-2", Status: modelinstance.InstanceStatusRunning},
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := logic.StartTerminalSession(pctx.NewContext(nil).WithUserID("user-1"), "ins-1")
+		result <- err
+	}()
+	<-started
+	close(release)
+
+	if err := <-result; !errors.Is(err, errcode.ErrInstanceOperationConflict) {
+		t.Fatalf("expected mapping conflict, got %v", err)
+	}
+}
+
+func TestStartTerminalSessionDiscardsResultAfterRequestDeadline(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		terminalFunc: func(context.Context, string) (*psandbox.TerminalSession, error) {
+			time.Sleep(40 * time.Millisecond)
+			return &psandbox.TerminalSession{SessionID: "late-session"}, nil
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	base, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	resp, err := logic.StartTerminalSession(pctx.NewContext(base).WithUserID("user-1"), "ins-1")
+	if resp != nil {
+		t.Fatalf("late terminal result must be discarded, got %+v", resp)
+	}
+	if !errors.Is(err, errcode.ErrSandboxTimeout) {
+		t.Fatalf("expected sandbox timeout, got %v", err)
+	}
+}
+
+func TestStartTerminalSessionDeadlineIncludesOwnershipCheck(t *testing.T) {
+	entity := &modelinstance.Entity{
+		InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+	}
+	lookupCount := 0
+	adapter := &commandSandboxAdapterStub{terminalSession: &psandbox.TerminalSession{SessionID: "late-session"}}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{getFunc: func(pctx.Context, string) (*modelinstance.Entity, error) {
+			lookupCount++
+			if lookupCount == 1 {
+				time.Sleep(40 * time.Millisecond)
+			}
+			return entity, nil
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	base, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	resp, err := logic.StartTerminalSession(pctx.NewContext(base).WithUserID("user-1"), "ins-1")
+	if resp != nil {
+		t.Fatalf("result after ownership-check deadline must be discarded, got %+v", resp)
+	}
+	if !errors.Is(err, errcode.ErrSandboxTimeout) {
+		t.Fatalf("expected sandbox timeout, got %v", err)
+	}
+	if len(adapter.terminalCalls) != 0 {
+		t.Fatalf("sandbox must not be called after ownership-check deadline, got %+v", adapter.terminalCalls)
 	}
 }
 

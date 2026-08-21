@@ -6,7 +6,20 @@ import * as oauthModule from "@/lib/oauth";
 import { LoginModal } from "@/components/site/login-modal";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 
+vi.mock("@/observability/posthog", () => ({
+  captureProductEvent: vi.fn(),
+  PRODUCT_ANALYTICS_EVENTS: {
+    LOGIN_MODAL_OPENED: "login_modal_opened",
+    OAUTH_PROVIDER_CLICKED: "oauth_provider_clicked",
+  },
+  PRODUCT_ANALYTICS_LOCATIONS: { LOGIN_MODAL: "login_modal" },
+}));
+
 const signInWithCode = vi.fn();
+let currentSession: {
+  stage: "anonymous" | "authenticated";
+  user: { id: string; name: string } | null;
+};
 
 const repositories = {
   auth: {
@@ -34,14 +47,16 @@ vi.mock("@/contexts/repository-context", () => ({
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
-    session: { stage: "anonymous", user: null },
+    session: currentSession,
     signInWithCode,
   }),
 }));
 
 describe("LoginModal (国内站 默认 isGlobal=false)", () => {
   beforeEach(() => {
+    currentSession = { stage: "anonymous", user: null };
     signInWithCode.mockReset().mockResolvedValue(undefined);
+    repositories.auth.getOAuthStartUrl.mockClear();
     setGitHubLoginVisible(false);
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
@@ -211,5 +226,68 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "GitHub 登录" })).toBeInTheDocument();
     });
+  });
+
+  it("普通登录保持已登录即关闭的既有行为", async () => {
+    currentSession = { stage: "authenticated", user: { id: "usr_current", name: "当前账号" } };
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+
+    render(<LoginModal open onClose={onClose} onSuccess={onSuccess} />);
+
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("授权页登录成功不会误触发取消回调", async () => {
+    currentSession = { stage: "authenticated", user: { id: "usr_current", name: "当前账号" } };
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+
+    render(
+      <LoginModal
+        open
+        closeOnSuccess={false}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    );
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("切换账号模式保留当前会话并为 OAuth 添加切换意图", async () => {
+    currentSession = { stage: "authenticated", user: { id: "usr_current", name: "当前账号" } };
+    const onClose = vi.fn();
+    const onReturnToCurrentAccount = vi.fn();
+    const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
+
+    render(
+      <LoginModal
+        open
+        mode="switch-account"
+        onClose={onClose}
+        onReturnToCurrentAccount={onReturnToCurrentAccount}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "切换其他账号" })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "返回使用当前账号" }));
+    expect(onReturnToCurrentAccount).toHaveBeenCalledTimes(1);
+
+    const [agreeCheckbox] = screen.getAllByRole("checkbox");
+    fireEvent.click(agreeCheckbox as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "微信账号登录" }));
+
+    expect(repositories.auth.getOAuthStartUrl).toHaveBeenLastCalledWith("wechat", {
+      switchAccount: true,
+      wechatMode: "website",
+    });
+    expect(redirectSpy).toHaveBeenCalledWith("https://lightclaw.tech/auth/oauth/wechat/start?mode=website");
+    redirectSpy.mockRestore();
   });
 });

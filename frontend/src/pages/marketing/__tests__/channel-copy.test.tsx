@@ -110,7 +110,7 @@ describe("marketing channel copy", () => {
     );
   });
 
-  it("shows only the Chinese automation updates in the domestic August changelog", () => {
+  it("shows the domestic August updates with upstream tasks first and no automation template", () => {
     render(
       <MemoryRouter>
         <ChangelogPage />
@@ -118,12 +118,38 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "自动任务模板" })).toBeInTheDocument();
-    expect(screen.getByText("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。")).toBeInTheDocument();
-    expect(screen.getByAltText("自动任务模板")).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: "自动任务支持关联上游任务" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。",
+      ),
+    ).toBeInTheDocument();
+    const upstreamImage = screen.getByAltText("自动任务支持关联上游任务");
+    expect(upstreamImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.png"),
     );
+    expect(upstreamImage.parentElement).toHaveStyle({ aspectRatio: "816 / 356" });
+    expect(screen.getByRole("heading", { name: "LightVela 支持钉钉通道" })).toBeInTheDocument();
+    expect(
+      screen.getByText("现在可以将 Hermes Agent 接入钉钉，在钉钉会话中直接与云端智能伙伴对话。"),
+    ).toBeInTheDocument();
+    const dingtalkImage = screen.getByAltText("LightVela 支持钉钉通道");
+    expect(dingtalkImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-dingtalk-channel.png"),
+    );
+    expect(dingtalkImage.parentElement).toHaveStyle({ aspectRatio: "816 / 356" });
+    const augustHeadings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+    expect(augustHeadings.indexOf("自动任务支持关联上游任务")).toBeLessThan(
+      augustHeadings.indexOf("LightVela 支持钉钉通道"),
+    );
+    expect(augustHeadings.indexOf("LightVela 支持钉钉通道")).toBeLessThan(
+      augustHeadings.indexOf("支持在 QQ 群聊中 @ 机器人"),
+    );
+    expect(screen.queryByRole("heading", { name: "自动任务模板" })).not.toBeInTheDocument();
+    expect(screen.queryByText("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。")).not.toBeInTheDocument();
+    expect(screen.queryByAltText("自动任务模板")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 机器人" })).toBeInTheDocument();
     expect(screen.getByText("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。")).toBeInTheDocument();
     expect(screen.getByAltText("支持在 QQ 群聊中 @ 机器人")).toHaveAttribute(

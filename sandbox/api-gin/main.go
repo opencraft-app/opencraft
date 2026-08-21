@@ -65,7 +65,7 @@ func main() {
 
 	api.RegisterHandlers(r, h)
 	authenticated := r.Group("/")
-	authenticated.Use(userSessionAuth(cfg.AuthServiceURL))
+	authenticated.Use(userSessionAuth(cfg.AuthServiceURL, cfg.InternalServiceToken))
 	registerTATRoutes(authenticated, h)
 
 	internal := r.Group("/internal")

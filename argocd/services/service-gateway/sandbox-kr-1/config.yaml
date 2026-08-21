@@ -26,14 +26,15 @@ routes:
 - name: sandbox
   prefix: /sandboxes
   methods:
-  - GET
   - POST
-  - PUT
-  - DELETE
   - OPTIONS
   upstream: http://sandbox-api.lightvela-playground-sandbox-kr-1.svc.cluster.local
   access: authenticated
   auth_strategy: session
+  path_policy: allowlist
+  path_allow:
+  - method: POST
+    path: /sandboxes
 - name: ctl
   prefix: /v1/instances
   methods:
@@ -157,6 +158,14 @@ routes:
   access: authenticated
   auth_strategy: session
   public_allow:
+  - method: GET
+    path: /auth/federation/context
+  - method: POST
+    path: /auth/federation/tickets
+  - method: POST
+    path: /auth/federation/exchange
+  - method: POST
+    path: /auth/federation/bots/{bot_id}/tat/session
   - method: POST
     path: /auth/password/sign-in
   - method: POST

@@ -35,7 +35,34 @@ import type {
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 
 export interface OAuthStartOptions {
+  switchAccount?: boolean;
   wechatMode?: WeChatOAuthMode;
+}
+
+export interface FederationAuthorizationInput {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+}
+
+export interface FederationSessionSummary {
+  user: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface FederationAuthorizationContext extends FederationAuthorizationInput {
+  clientDisplayName: string;
+  currentSession: FederationSessionSummary | null;
+}
+
+export interface FederationTicketResult {
+  redirectUrl: string;
+  expiresAt: string;
 }
 
 export interface RealnameVerifyResult {
@@ -161,6 +188,10 @@ export interface AuthRepository {
   createPaymentMethodSignOrder(languageCode: PaymentMethodLanguageCode): Promise<PaymentMethodSignOrder>;
   setDefaultPaymentMethod(contractCode: string): Promise<void>;
   deletePaymentMethod(contractCode: string): Promise<void>;
+  getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext>;
+  issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult>;
+  prepareFederationSwitch(): Promise<void>;
+  cancelFederationSwitch(): Promise<void>;
   getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;
   signOut(): Promise<void>;

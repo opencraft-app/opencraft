@@ -179,6 +179,147 @@ paths:
       responses:
         '204':
           description: Signed out
+  /auth/federation/context:
+    get:
+      operationId: getFederationContext
+      summary: Validate a federation authorization request
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+      responses:
+        '200':
+          description: Validated federation context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationContextResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/federation/tickets:
+    post:
+      operationId: issueFederationTicket
+      summary: Issue a short-lived federation handoff ticket
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederationTicketRequest'
+      responses:
+        '200':
+          description: Validated callback redirect containing the opaque ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationTicketResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/federation/exchange:
+    post:
+      operationId: exchangeFederationTicket
+      summary: Exchange a handoff ticket for an opaque delegated session
+      security:
+        - FederationServiceSignature: []
+      parameters:
+        - $ref: '#/components/parameters/FederationClientId'
+        - $ref: '#/components/parameters/FederationKeyId'
+        - $ref: '#/components/parameters/FederationTimestamp'
+        - $ref: '#/components/parameters/FederationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederationExchangeRequest'
+      responses:
+        '200':
+          description: Delegated session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationExchangeResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/federation/bots/{bot_id}/tat/session:
+    post:
+      operationId: createFederationTatSession
+      summary: Create a fresh Bot-scoped TAT transport
+      security:
+        - FederationServiceSignature: []
+      parameters:
+        - $ref: '#/components/parameters/FederationClientId'
+        - $ref: '#/components/parameters/FederationKeyId'
+        - $ref: '#/components/parameters/FederationTimestamp'
+        - $ref: '#/components/parameters/FederationRequestId'
+        - name: bot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederationTatSessionRequest'
+      responses:
+        '200':
+          description: Sanitized TAT bootstrap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationTatBootstrap'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '504':
+          $ref: '#/components/responses/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/ErrorResponse'
   /auth/profile:
     get:
       operationId: getProfile
@@ -784,6 +925,33 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
 components:
   parameters:
+    FederationClientId:
+      name: X-LightVela-Client-Id
+      in: header
+      required: true
+      schema:
+        type: string
+    FederationKeyId:
+      name: X-LightVela-Key-Id
+      in: header
+      required: true
+      schema:
+        type: string
+    FederationTimestamp:
+      name: X-LightVela-Timestamp
+      in: header
+      required: true
+      schema:
+        type: string
+        format: date-time
+    FederationRequestId:
+      name: X-LightVela-Request-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
     PaymentMethodContractCode:
       name: contractCode
       in: path
@@ -801,6 +969,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque-session
+    FederationServiceSignature:
+      type: apiKey
+      in: header
+      name: X-LightVela-Signature
   responses:
     ErrorResponse:
       description: Request failed
@@ -809,6 +981,144 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    FederationClient:
+      type: object
+      required:
+        - id
+        - display_name
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+    FederationSessionSummary:
+      type: object
+      required:
+        - authenticated
+      properties:
+        authenticated:
+          type: boolean
+        user:
+          $ref: '#/components/schemas/User'
+    FederationContextResponse:
+      type: object
+      required:
+        - client
+        - redirect_uri
+        - state
+        - session
+      properties:
+        client:
+          $ref: '#/components/schemas/FederationClient'
+        redirect_uri:
+          type: string
+          format: uri
+        state:
+          type: string
+        session:
+          $ref: '#/components/schemas/FederationSessionSummary'
+    FederationTicketRequest:
+      type: object
+      required:
+        - client_id
+        - redirect_uri
+        - state
+      properties:
+        client_id:
+          type: string
+        redirect_uri:
+          type: string
+          format: uri
+        state:
+          type: string
+          minLength: 1
+          maxLength: 2048
+    FederationTicketResponse:
+      type: object
+      required:
+        - redirect_url
+        - expires_at
+      properties:
+        redirect_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+    FederationExchangeRequest:
+      type: object
+      required:
+        - ticket
+        - redirect_uri
+      properties:
+        ticket:
+          type: string
+        redirect_uri:
+          type: string
+          format: uri
+    FederationExchangeResponse:
+      type: object
+      required:
+        - delegated_session
+        - expires_at
+      properties:
+        delegated_session:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    FederationTatSessionRequest:
+      type: object
+      required:
+        - delegated_session
+      additionalProperties: false
+      properties:
+        delegated_session:
+          type: string
+    FederationTatBootstrap:
+      type: object
+      required:
+        - sessionId
+        - region
+        - instanceId
+        - ownerUin
+        - loginUin
+        - appId
+        - wsUrl
+        - cols
+        - rows
+        - timeoutSeconds
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        region:
+          type: string
+        instanceId:
+          type: string
+        ownerUin:
+          type: string
+        loginUin:
+          type: string
+        appId:
+          type: integer
+          format: int64
+        wsUrl:
+          type: string
+          format: uri
+        cols:
+          type: integer
+          format: int64
+        rows:
+          type: integer
+          format: int64
+        timeoutSeconds:
+          type: integer
+          format: int64
+        username:
+          type: string
+        workingDirectory:
+          type: string
     User:
       type: object
       required:

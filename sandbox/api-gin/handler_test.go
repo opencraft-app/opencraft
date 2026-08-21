@@ -48,6 +48,7 @@ type stubCommandRunner struct {
 
 	sessionResp provider.TerminalSession
 	sessionErr  error
+	sessionFunc func(context.Context, string, string) (provider.TerminalSession, error)
 	sessionReq  struct {
 		region     string
 		instanceID string
@@ -101,9 +102,12 @@ func (s *stubCommandRunner) GetCommandInvocation(_ context.Context, region, invo
 	return s.getResp, s.getErr
 }
 
-func (s *stubCommandRunner) StartTerminalSession(_ context.Context, region, instanceID string) (provider.TerminalSession, error) {
+func (s *stubCommandRunner) StartTerminalSession(ctx context.Context, region, instanceID string) (provider.TerminalSession, error) {
 	s.sessionReq.region = region
 	s.sessionReq.instanceID = instanceID
+	if s.sessionFunc != nil {
+		return s.sessionFunc(ctx, region, instanceID)
+	}
 	return s.sessionResp, s.sessionErr
 }
 
@@ -115,7 +119,7 @@ func newHandlerTestRouterWithAuth(h *handler, authServiceURL string) *gin.Engine
 	r := gin.New()
 	api.RegisterHandlers(r, h)
 	authenticated := r.Group("/")
-	authenticated.Use(userSessionAuth(authServiceURL))
+	authenticated.Use(userSessionAuth(authServiceURL, ""))
 	registerTATRoutes(authenticated, h)
 	internal := r.Group("/internal")
 	registerPoolRoutes(internal, h)
@@ -1487,6 +1491,96 @@ func TestPostSandboxTATSessionReturnsTerminalBootstrap(t *testing.T) {
 	}
 	if got := resp["workingDirectory"]; got != "/home/agentuser" {
 		t.Fatalf("expected workingDirectory /home/agentuser, got %v", got)
+	}
+}
+
+func TestPostSandboxTATSessionRejectsNonAllocatedInstance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	if _, err := svc.Release(context.Background(), inst.ID); err != nil {
+		t.Fatalf("release instance: %v", err)
+	}
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	commands := &stubCommandRunner{}
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, terminals: commands}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if commands.sessionReq.instanceID != "" {
+		t.Fatalf("provider must not be called for non-allocated instance")
+	}
+}
+
+func TestPostSandboxTATSessionRejectsMappingRemovedDuringStart(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	commands := &stubCommandRunner{sessionFunc: func(context.Context, string, string) (provider.TerminalSession, error) {
+		close(started)
+		<-release
+		return provider.TerminalSession{SessionID: "stale-session"}, nil
+	}}
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, terminals: commands}, authServer.URL)
+
+	result := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+		req.Header.Set("Authorization", "Bearer session-good")
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		result <- rr
+	}()
+	<-started
+	if err := svc.DeleteSandbox(context.Background(), sb.ID); err != nil {
+		t.Fatalf("delete sandbox mapping: %v", err)
+	}
+	close(release)
+
+	rr := <-result
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409 after mapping removal, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPostSandboxTATSessionDiscardsLateProviderResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	commands := &stubCommandRunner{sessionFunc: func(context.Context, string, string) (provider.TerminalSession, error) {
+		time.Sleep(40 * time.Millisecond)
+		return provider.TerminalSession{SessionID: "late-session"}, nil
+	}}
+	router := newHandlerTestRouterWithAuth(&handler{
+		svc: svc, terminals: commands, tatSessionTimeout: 10 * time.Millisecond,
+	}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected 504, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "late-session") {
+		t.Fatalf("late provider result must be discarded, body=%s", rr.Body.String())
 	}
 }
 
