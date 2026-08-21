@@ -82,6 +82,8 @@ LightVela 也会为其他受支持的通道提供配置页面。
 
 ![不同通道之间共享同一个 Hermes Agent 的上下文](../images/use-case-messaging-memory.png)
 
+如果你希望使用 Discord 服务社群，可以继续阅读 [Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot](./discord-community-agent.md)。
+
 ## 常见问题
 
 ### 我可以把多个消息平台连接到同一个 Hermes Agent 吗？
