@@ -1245,6 +1245,20 @@ describe("parseEnabledHermesChannels", () => {
     expect(parseEnabledHermesChannels(output)).toEqual(new Set(["weixin"]));
   });
 
+  it("normalizes the OpenClaw DingTalk alias to the dingtalk notification key", () => {
+    const output = JSON.stringify({
+      success: true,
+      data: {
+        platforms: [
+          { name: "openclaw-dingtalk", status: "connected" },
+        ],
+      },
+      error: null,
+    });
+
+    expect(parseEnabledHermesChannels(output)).toEqual(new Set(["dingtalk"]));
+  });
+
   it("normalizes international channel aliases to notification keys", () => {
     const output = JSON.stringify({
       success: true,
@@ -1300,18 +1314,48 @@ describe("isHermesNotificationChannelConfigured", () => {
 });
 
 describe("automation notification channel options", () => {
-  it("keeps unconfigured domestic channels visible and disables their checkboxes", () => {
+  it("shows the domestic empty state when no notification channel is configured", () => {
     if (isGlobal) return;
     renderAutomationForm({
       enabledChannels: new Set(),
       channelStatus: "ready",
     });
 
-    for (const channelName of ["微信", "QQ", "企业微信", "飞书"]) {
-      expect(screen.getByRole("checkbox", { name: new RegExp(`^${channelName}.*未配置`) })).toBeDisabled();
-    }
-    expect(screen.queryByText("暂无已配置的通知通道。")).toBeNull();
-    expect(screen.queryByRole("link", { name: "去通道配置" })).toBeNull();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
+    expect(screen.queryByText("如不选，智能体只会在后台执行任务，不发通知。")).toBeNull();
+  });
+
+  it("shows only configured domestic channels including DingTalk", () => {
+    if (isGlobal) return;
+    renderAutomationForm({
+      enabledChannels: new Set(["dingtalk", "feishu"]),
+      channelStatus: "ready",
+    });
+
+    expect(screen.getByRole("checkbox", { name: "钉钉" })).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: "飞书" })).toBeEnabled();
+    expect(screen.queryByRole("checkbox", { name: "微信" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "QQ" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "企业微信" })).toBeNull();
+    expect(screen.getByText("如不选，智能体只会在后台执行任务，不发通知。")).toBeTruthy();
+  });
+
+  it("renders all configured domestic channels in the required order", () => {
+    if (isGlobal) return;
+    renderAutomationForm({
+      enabledChannels: new Set(["weixin", "qqbot", "wecom", "feishu", "dingtalk"]),
+      channelStatus: "ready",
+    });
+
+    expect(screen.getAllByRole("checkbox").map((checkbox) => checkbox.closest("label")?.textContent?.trim())).toEqual([
+      "微信",
+      "QQ",
+      "企业微信",
+      "飞书",
+      "钉钉",
+    ]);
   });
 
   it("hides the background-only hint in the global channel empty state", () => {
@@ -1572,6 +1616,19 @@ describe("getLastAgentRunForJob", () => {
       .toBe("2026-06-06T13:20:37+08:00");
   });
 
+  it("localizes DingTalk in task details", async () => {
+    const job = makeCronJob({ id: "dingtalk-job", name: "钉钉通知任务", deliver: "dingtalk" });
+    cronClientMocks.listCronJobs.mockResolvedValue([job]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("钉钉通知任务")).getByRole("button", { name: "查看" }));
+    const dialog = screen.getByRole("dialog");
+    const notificationRow = within(dialog).getByText("通知方式").closest("div");
+    expect(notificationRow).not.toBeNull();
+    expect(within(notificationRow!).getByText("钉钉")).toBeTruthy();
+    expect(within(notificationRow!).queryByText("dingtalk")).toBeNull();
+  });
+
   it("returns null when no confirmed Agent run is available for the job", () => {
     expect(getLastAgentRunForJob(makeCronJob({ id: "job-1" }), [
       makeCronRun({ job_id: "other-job" }),
@@ -1647,14 +1704,13 @@ function renderAutomationForm(overrides: Partial<Parameters<typeof AutomationFor
 }
 
 describe("automation notification channel options", () => {
-  it("keeps unconfigured channels visible and disables their checkboxes", () => {
+  it("keeps the domestic empty-state guard", () => {
+    if (isGlobal) return;
     renderAutomationForm({ enabledChannels: new Set(), channelStatus: "ready" });
 
-    for (const channelName of ["微信", "QQ", "企业微信", "飞书"]) {
-      expect(screen.getByRole("checkbox", { name: new RegExp(`^${channelName}.*未配置`) })).toBeDisabled();
-    }
-    expect(screen.queryByText("暂无已配置的通知通道。")).toBeNull();
-    expect(screen.queryByRole("link", { name: "去通道配置" })).toBeNull();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
   });
 });
 

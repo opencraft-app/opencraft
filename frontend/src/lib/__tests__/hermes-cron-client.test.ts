@@ -1689,6 +1689,13 @@ describe("pickFallbackChannelFromStatusOutput", () => {
     ]))).toBe("slack");
   });
 
+  it("normalizes OpenClaw DingTalk and prefers it over international fallback channels", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "telegram", status: "connected" },
+      { name: "openclaw-dingtalk", status: "connected" },
+    ]))).toBe("dingtalk");
+  });
+
   it("falls back to Slack after Telegram, WhatsApp, and Discord", () => {
     expect(pickFallbackChannelFromStatusOutput(buildStatus([
       { name: "slack", status: "connected" },

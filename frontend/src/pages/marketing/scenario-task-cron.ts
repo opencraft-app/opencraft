@@ -3,6 +3,7 @@ import { shellQuote, type CronJob } from "@/lib/hermes-cron-client";
 const CONNECTED_CHANNEL_STATUSES = new Set(["connected", "enabled", "running", "ready"]);
 
 const CHANNEL_LABELS: Record<string, string> = {
+  dingtalk: "钉钉",
   discord: "Discord",
   feishu: "飞书",
   lark: "飞书",
@@ -124,6 +125,7 @@ function normalizeScenarioChannelKey(channel: string): string {
   if (["wechat", "weixin", "openclaw-weixin", "openclaw-wechat"].includes(normalized)) return "weixin";
   if (["qq", "qqbot", "qq-bot", "qqbotplugin", "openclaw-qqbot", "openclaw-qq"].includes(normalized)) return "qqbot";
   if (["wecom", "wework", "work-weixin", "work-wechat", "openclaw-wecom"].includes(normalized)) return "wecom";
+  if (["dingtalk", "openclaw-dingtalk"].includes(normalized)) return "dingtalk";
   if (["feishu", "lark", "larksuite", "openclaw-feishu", "openclaw-lark"].includes(normalized)) return "feishu";
   if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
   if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
