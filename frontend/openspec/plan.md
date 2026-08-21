@@ -1,3 +1,173 @@
+# 国际站通知空态隐藏后台运行说明 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，用户已确认提交并创建 CR。
+
+**Goal:** 国际站没有任何已配置通知通道时，将空态文案精简为 `No channels configured.`，并隐藏不适用的后台运行说明及其占位高度。
+
+**Architecture:** `AutomationFormModal` 继续使用现有国际站通道清单和配置判定，新增一个与空态共用的“存在可用通知通道”布尔值。该值只控制空态与说明行的互斥渲染，不改变通道加载、选择、提交或测试发送链路。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、react-i18next。
+
+## Global Constraints
+
+- 仅影响国际站自动任务弹窗的通知空态和英文翻译。
+- 无通道时保留 `Configure channels`，不展示后台运行说明，也不保留 spacer/占位行。
+- 有已配置通道但未选择时，继续展示后台运行说明。
+- 国内站、通知通道范围、Hermes 命令、任务提交和后端接口保持不变。
+- 不同步 MR !2961 的“展示全部未配置国际站通道”行为。
+
+---
+
+### Task 1: 条件隐藏国际站通知空态说明
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx:2956-2963,3477-3506,3671-3682`
+- Test: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts:1302-1328`
+- Modify: `frontend/src/i18n/generated/en-US.json`
+- Reference: `frontend/openspec/changes/2026-08-21-hide-empty-notification-hint-design.md`
+
+**Interfaces:**
+- Consumes: `GLOBAL_NOTIFICATION_CHANNELS`、`isGlobal`、`enabledChannels`、`channelStatus`、`isHermesNotificationChannelConfigured(...)`。
+- Produces: 组件内布尔值 `hasAvailableNotificationChannel: boolean`；不新增导出、公共类型或 API。
+
+- [x] **Step 1 — 写失败回归测试**
+
+  将现有国际站空态测试改为锁定新文案和说明隐藏，并增加“已有通道但未选择”正向用例：
+
+  ```tsx
+  it("hides the background-only hint in the global channel empty state", () => {
+    if (!isGlobal) return;
+    renderAutomationForm({
+      enabledChannels: new Set(),
+      channelStatus: "ready",
+    });
+
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getByText("No channels configured.")).toBeTruthy();
+    expect(screen.queryByText("No notification channels are configured yet.")).toBeNull();
+    expect(screen.queryByText(
+      "If none are selected, the agent will only run the task in the background without sending notifications.",
+    )).toBeNull();
+    expect(screen.getByRole("link", { name: "Configure channels" })).toHaveAttribute("href", "/agents/channels/");
+  });
+
+  it("keeps the background-only hint when a global channel is available", () => {
+    if (!isGlobal) return;
+    renderAutomationForm({
+      enabledChannels: new Set(["telegram"]),
+      channelStatus: "ready",
+    });
+
+    expect(screen.getByRole("checkbox", { name: "Telegram" })).toBeEnabled();
+    expect(screen.getByText(
+      "If none are selected, the agent will only run the task in the background without sending notifications.",
+    )).toBeTruthy();
+  });
+  ```
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/agent-automations-panel.test.ts \
+    -t "hides the background-only hint in the global channel empty state|keeps the background-only hint when a global channel is available" \
+    --api.host 127.0.0.1
+  ```
+
+  Expected: 新空态测试失败，旧实现仍渲染长文案和后台运行说明；正向用例通过。
+
+- [x] **Step 3 — 完成最小实现与英文翻译**
+
+  在现有派生状态附近增加单一判断：
+
+  ```tsx
+  const hasAvailableNotificationChannel = !isGlobal || GLOBAL_NOTIFICATION_CHANNELS.some(
+    ({ key, comingSoon }) => isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon),
+  );
+  ```
+
+  用 `!hasAvailableNotificationChannel` 进入现有国际站空态，并仅在该值为 `true` 时渲染 spacer 与后台运行说明/等高占位：
+
+  ```tsx
+  {hasAvailableNotificationChannel ? (
+    <>
+      <div aria-hidden="true" style={{ height: 4 }} />
+      {deliverPlatforms.length === 0 ? (
+        <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+          {t("如不选，智能体只会在后台执行任务，不发通知。")}
+        </p>
+      ) : (
+        <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+          {"\u00A0"}
+        </p>
+      )}
+    </>
+  ) : null}
+  ```
+
+  将 `k_2efe0742` 的英文翻译更新为：
+
+  ```json
+  "k_2efe0742": "No channels configured."
+  ```
+
+- [x] **Step 4 — 运行精准双区域回归**
+
+  Run:
+
+  ```bash
+  cd frontend
+  VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/agent-automations-panel.test.ts \
+    -t "hides the background-only hint in the global channel empty state|keeps the background-only hint when a global channel is available" \
+    --api.host 127.0.0.1
+  VITE_REGION=cn pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/agent-automations-panel.test.ts \
+    -t "keeps unconfigured domestic channels visible and disables their checkboxes" \
+    --api.host 127.0.0.1
+  ```
+
+  Expected: 国际站 2 个用例、国内站 1 个用例全部通过。
+
+- [x] **Step 5 — 运行质量门禁**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  pnpm build:global
+  cd ..
+  git diff --check
+  git status --short
+  ```
+
+  Expected: 类型检查、i18n 检查、国际站构建与 diff 检查通过；最终范围仅包含计划、组件、测试和英文翻译，不包含构建生成物。
+
+  Evidence:
+
+  - RED：国际站精准用例首次运行 `1 failed / 1 passed`，失败点为新短文案尚未渲染。
+  - GREEN：国际站 `2 passed`；国内站保护用例 `1 passed`。
+  - `pnpm check`：通过，包含繁中一致性、Fumadocs 同步与 TypeScript 检查。
+  - `pnpm i18n:check`：通过，英文 `2323/2323`，无缺失；印尼语 `208` 条既有待翻译项。
+  - `pnpm build:global`：通过，完成 TypeScript、369 个静态页面生成及 SEO 检查。
+  - 浏览器冒烟：本地国际站 `/agents/` 可加载；未登录环境停在 `Please sign in first`，无法进入自动任务弹窗，因此不作为弹窗验收证据。
+  - `git diff --check`：通过；构建生成文件已清理。
+
+- [x] **Step 6 — 验收与提交门禁**
+
+  汇总 RED/GREEN、双区域回归、构建和最终 diff；等待用户明确确认后才允许 `git commit`、`git push` 或创建 MR。
+
+---
+
 # 技能包 ACLI 原生批量安装 Implementation Plan
 
 **Status:** MR !3125 CR 修复与验证完成，等待用户确认提交和推送。
