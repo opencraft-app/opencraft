@@ -1994,6 +1994,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "trade signs the original billing host, so it must match CloudLadder's trusted upstream host",
         )
 
+    def test_sgprod_trade_uses_configured_inquiry_fallback_account(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertEqual(values["TRADE_INQUIRY_FALLBACK_UIN"], "450850000019")
+        self.assertEqual(values["TRADE_INQUIRY_FALLBACK_APP_ID"], "1472039146")
+
     def test_korea_trade_uses_international_billing_test_route(self) -> None:
         env_path = (
             REPO_ROOT
