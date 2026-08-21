@@ -2947,6 +2947,9 @@ export function AutomationFormModal({
   const weixinBlockedByFrequency = kind === "interval"
     && intervalMinutes < 15
     && isHermesNotificationChannelConfigured(enabledChannels, "weixin");
+  const hasAvailableNotificationChannel = !isGlobal || GLOBAL_NOTIFICATION_CHANNELS.some(
+    ({ key, comingSoon }) => isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon),
+  );
 
   useEffect(() => {
     if (!weixinBlockedByFrequency) return;
@@ -3475,7 +3478,7 @@ export function AutomationFormModal({
                     { key: "feishu", label: t("飞书"), comingSoon: false },
                   ] as const);
 
-                if (isGlobal && channels.length === 0) {
+                if (!hasAvailableNotificationChannel) {
                   return (
                     <div className="flex flex-wrap items-center gap-2 text-sm text-black/45" style={MODAL_HELP_TEXT_STYLE}>
                       <span>{t("暂无已配置的通知通道。")}</span>
@@ -3652,18 +3655,22 @@ export function AutomationFormModal({
               })()}
             </div>
           )}
-          {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
-          <div aria-hidden="true" style={{ height: 4 }} />
-          {deliverPlatforms.length === 0 ? (
-            <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              {t("如不选，智能体只会在后台执行任务，不发通知。")}
-            </p>
-          ) : (
-            // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
-            <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              {"\u00A0"}
-            </p>
-          )}
+          {hasAvailableNotificationChannel ? (
+            <>
+              {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
+              <div aria-hidden="true" style={{ height: 4 }} />
+              {deliverPlatforms.length === 0 ? (
+                <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                  {t("如不选，智能体只会在后台执行任务，不发通知。")}
+                </p>
+              ) : (
+                // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
+                <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                  {"\u00A0"}
+                </p>
+              )}
+            </>
+          ) : null}
         </div>
 
         {/* 操作 */}
