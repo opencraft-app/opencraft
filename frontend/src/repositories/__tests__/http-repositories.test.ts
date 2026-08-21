@@ -1588,4 +1588,106 @@ describe("http repositories auth token bootstrap", () => {
       vi.useRealTimers();
     }
   });
+
+  it("loads a validated federation authorization context", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      client: {
+        id: "personal-site",
+        display_name: "LightVela Personal Site",
+      },
+      redirect_uri: "https://notes.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      session: {
+        authenticated: true,
+        user: {
+          id: "usr_123",
+          name: "Ada",
+          email: "ada@example.com",
+          avatarUrl: "https://cdn.example.com/ada.png",
+          inviteRequired: false,
+          realnameVerified: false,
+          emailVerified: true,
+          createdAt: "2026-08-21T00:00:00Z",
+        },
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.getFederationAuthorizationContext({
+      clientId: "personal-site",
+      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+    })).resolves.toEqual({
+      clientId: "personal-site",
+      clientDisplayName: "LightVela Personal Site",
+      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      currentSession: {
+        user: {
+          id: "usr_123",
+          name: "Ada",
+          email: "ada@example.com",
+          avatarUrl: "https://cdn.example.com/ada.png",
+        },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/federation/context?client_id=personal-site&redirect_uri=https%3A%2F%2Fnotes.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=opaque+state",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("issues a federation ticket without constructing the callback in the client", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      redirect_url: "https://notes.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      expires_at: "2026-08-21T10:00:05Z",
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.issueFederationTicket({
+      clientId: "personal-site",
+      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+      state: "state-1",
+    })).resolves.toEqual({
+      redirectUrl: "https://notes.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      expiresAt: "2026-08-21T10:00:05Z",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/federation/tickets",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          client_id: "personal-site",
+          redirect_uri: "https://notes.lightvela.site/auth/lightvela/callback",
+          state: "state-1",
+        }),
+      }),
+    );
+  });
+
+  it("prepares and cancels federation account switching with cookie-authenticated requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await repositories.auth.prepareFederationSwitch();
+    await repositories.auth.cancelFederationSwitch();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1,
+      "https://lightclaw.tech/auth/federation/switch/prepare",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(2,
+      "https://lightclaw.tech/auth/federation/switch",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
+  });
 });

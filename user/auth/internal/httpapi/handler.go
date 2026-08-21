@@ -39,6 +39,7 @@ type Handler struct {
 	deviceBindTokens  *deviceBindTokenCodec
 	publicBaseURL     string
 	frontendBaseURL   string
+	federation        *FederationConfig
 }
 
 type invitePrepareRequest struct {
@@ -155,6 +156,7 @@ func (h *Handler) SignInWithPassword(ctx context.Context, request api.SignInWith
 
 	if gctx := ginContext(ctx); gctx != nil {
 		h.setSessionCookie(gctx, session.Token)
+		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
 	}
 
@@ -195,6 +197,7 @@ func (h *Handler) SignUpWithPassword(ctx context.Context, request api.SignUpWith
 
 	if gctx := ginContext(ctx); gctx != nil {
 		h.setSessionCookie(gctx, session.Token)
+		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
 	}
 
@@ -1039,6 +1042,7 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 
 	if gctx := ginContext(ctx); gctx != nil {
 		h.setSessionCookie(gctx, session.Token)
+		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
 	}
 	return api.VerifySmsCode200JSONResponse(h.toSessionResponse(ctx, session)), nil

@@ -32,6 +32,9 @@ import type {
   AuthRepository,
   BotRepository,
   DashboardSnapshot,
+  FederationAuthorizationContext,
+  FederationAuthorizationInput,
+  FederationTicketResult,
   PlanRepository,
   RealnameVerifyResult,
   Repositories,
@@ -122,6 +125,24 @@ interface APIEnvelope<T> {
   message: string;
   data: T;
   request_id?: string;
+}
+
+interface FederationContextPayload {
+  client: {
+    id: string;
+    display_name: string;
+  };
+  redirect_uri: string;
+  state: string;
+  session: {
+    authenticated: boolean;
+    user?: User;
+  };
+}
+
+interface FederationTicketPayload {
+  redirect_url: string;
+  expires_at: string;
 }
 
 interface CtlInstancePayload {
@@ -1519,12 +1540,62 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       method: "DELETE",
     });
   },
+  async getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext> {
+    const query = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      state: input.state,
+    });
+    const payload = await request<FederationContextPayload>(
+      baseUrl,
+      `/auth/federation/context?${query.toString()}`,
+      { method: "GET" },
+    );
+    return {
+      clientId: payload.client.id,
+      clientDisplayName: payload.client.display_name,
+      redirectUri: payload.redirect_uri,
+      state: payload.state,
+      currentSession: payload.session.authenticated && payload.session.user ? {
+        user: {
+          id: payload.session.user.id,
+          name: payload.session.user.name,
+          email: payload.session.user.email,
+          phone: payload.session.user.phone,
+          avatarUrl: payload.session.user.avatarUrl,
+        },
+      } : null,
+    };
+  },
+  async issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult> {
+    const payload = await request<FederationTicketPayload>(baseUrl, "/auth/federation/tickets", {
+      method: "POST",
+      body: {
+        client_id: input.clientId,
+        redirect_uri: input.redirectUri,
+        state: input.state,
+      },
+    });
+    return {
+      redirectUrl: payload.redirect_url,
+      expiresAt: payload.expires_at,
+    };
+  },
+  async prepareFederationSwitch() {
+    await request(baseUrl, "/auth/federation/switch/prepare", { method: "POST" });
+  },
+  async cancelFederationSwitch() {
+    await request(baseUrl, "/auth/federation/switch", { method: "DELETE" });
+  },
   getOAuthStartUrl(provider, options) {
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
     const oauthStartBaseURL = resolveOAuthStartBaseURL(baseUrl);
     const startURL = new URL(buildUrl(oauthStartBaseURL, `/auth/oauth/${provider}/start`), base);
     if (provider === "wechat" && options?.wechatMode) {
       startURL.searchParams.set("mode", options.wechatMode);
+    }
+    if (options?.switchAccount) {
+      startURL.searchParams.set("switch_account", "true");
     }
     const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
     if (relayIssuerBaseURL) {

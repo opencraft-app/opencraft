@@ -26,6 +26,7 @@ type handler struct {
 	invocations         provider.CommandInvoker
 	terminals           provider.TerminalSessionStarter
 	terminalCommands    provider.TerminalCommandStreamer
+	tatSessionTimeout   time.Duration
 	cloud               provider.CloudProvider
 	metrics             *observability.APIMetrics
 	allowedTATCommandID string
