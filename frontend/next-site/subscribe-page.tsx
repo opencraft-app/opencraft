@@ -59,7 +59,71 @@ const LAUNCH_BUNDLE_NAME_KEYWORDS = {
 } as const;
 /** AI 增强版套餐类型标识（首月折扣付费，不在免费试用范围内） */
 const BUNDLE_TYPE_AI = "ai";
+/** 巡游版套餐名匹配关键字（后端可能返回「巡游」中文名或「cruise」英文名） */
+const CRUISE_BUNDLE_NAME_KEYWORDS = {
+  zh: "巡游",
+  en: "cruise",
+} as const;
 const CN_REFUND_RULES_PATH = "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99";
+
+/** 按套餐名判定所属档位（启航 / 巡游）；中英文名与中英混排均可命中。 */
+const matchBundleTier = (bundleName: string | undefined) => {
+  const nm = bundleName ?? "";
+  const lower = nm.toLowerCase();
+  return {
+    isLaunch:
+      nm.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.zh) || lower.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.en),
+    isCruise:
+      nm.includes(CRUISE_BUNDLE_NAME_KEYWORDS.zh) || lower.includes(CRUISE_BUNDLE_NAME_KEYWORDS.en),
+  };
+};
+
+/**
+ * AI 增强版档位的促销标签文案。
+ *
+ * 前端按「档位 + bundle_type」直接判定，不依赖后端 `bundle.price.discount`
+ * —— 该字段在本文件内存在两套单位口径（小数 `0<d<1` 与百分数 `50`），
+ * 依赖它会让国际站 AI 档位在后端下发百分数时丢标签。
+ *
+ * 站点口径差异（本次需求仅调整国际站，国内站维持现状）：
+ *   - 国际站启航 AI：`首单免费 3 天`
+ *   - 国际站巡游 AI：`首月 6 折`
+ *   - 国内站启航 / 巡游 AI：`首月 6 折`（与改动前一致）
+ *
+ * 仅返回文案，不改价格、不改 CTA、不改计费链路。
+ */
+const aiPromoTagText = (
+  tier: { isLaunch: boolean; isCruise: boolean },
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+): string | undefined => {
+  if (isGlobal && tier.isLaunch) return t("首单免费 3 天");
+  if (tier.isLaunch || tier.isCruise) return t("首月 6 折");
+  return undefined;
+};
+
+/**
+ * 折扣角标文案（季付「8.5折」这类按实际折扣计算的标签）。
+ *
+ * 必须走 i18n：改动前此处用模板字符串直接拼中文「折」，
+ * 导致 en-US / id-ID 环境下也输出「9.8折」这类中文文案。
+ *
+ * 同一条 key 下发两套口径，靠插值变量区分（i18next 会忽略译文里未引用的变量）：
+ *   - zh-CN / zh-Hant：`{{discount}}折`   → 9.8折（折扣率，保留 1 位小数，中式表达）
+ *   - en-US / id-ID：  `Save {{percent}}%` → Save 2%（节省比例，取整，西式表达）
+ *
+ * @param rate 折后价 / 原价的比值，取值区间 (0, 1)
+ */
+const discountTagText = (
+  rate: number,
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+): string =>
+  t("{{discount}}折", {
+    /* 中式折扣率，保留 1 位小数：0.85 → 8.5、0.9 → 9（整数不补 .0）、0.9827 → 9.8。
+       乘 100 再除 10（而非 ×1000/100）确保只保留 1 位小数，与改动前的展示精度一致。 */
+    discount: Math.round(rate * 100) / 10,
+    /* 西式节省比例，取整：0.85 → 15（Math.round 同时规避浮点误差，如 15.000000000000002） */
+    percent: Math.round((1 - rate) * 100),
+  });
 
 const shadows = {
   card: "rgba(0,0,0,0.04) 0px 4px 18px, rgba(0,0,0,0.027) 0px 2.025px 7.85px, rgba(0,0,0,0.02) 0px 0.8px 2.93px, rgba(0,0,0,0.01) 0px 0.175px 1.04px",
@@ -543,44 +607,42 @@ const mapBundleToPlan = (
          无原价删除线（即无折扣）时不展示角标。 */
       promoTag =
         originalPriceYuan != null && displayPriceYuan != null && originalPriceYuan > displayPriceYuan
-          ? `${Math.round((displayPriceYuan / originalPriceYuan) * 100) / 10}折`
+          ? discountTagText(displayPriceYuan / originalPriceYuan, t)
           : undefined;
     } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
-      /* 国际站 AI 增强版月付有真实折扣时展示「首月 6 折」；其他场景按比值展示「X折」。
-         无折扣（d=0/1/undefined）时不进入本分支，由 else 兜底为 undefined — 满足「有折扣才展示」。 */
-      const nm = bundle.bundle_name ?? "";
-      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
-      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
-      const isAi = bundle.bundle_type === "ai";
-      if (isGlobal && (isLaunch || isCruise) && isAi) {
-        promoTag = t("首月 6 折");
+      /* 国际站 AI 增强版月付有真实折扣时展示档位促销标签（启航「首单免费 3 天」/ 巡游「首月 6 折」）；
+         其他场景按比值展示「X折」。
+         无折扣（d=0/1/undefined）时不进入本分支，由 else 兜底为 undefined — 满足「有折扣才展示」。
+         保留 isGlobal 条件：国内站在本分支仍按比值展示「X折」，与改动前一致。 */
+      const tier = matchBundleTier(bundle.bundle_name);
+      const isAi = bundle.bundle_type === BUNDLE_TYPE_AI;
+      if (isGlobal && (tier.isLaunch || tier.isCruise) && isAi) {
+        promoTag = aiPromoTagText(tier, t);
       } else {
-        promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
+        promoTag = discountTagText(backendDiscount, t);
       }
     } else {
-      const nm = bundle.bundle_name ?? "";
-      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
-      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
-      const withToken = bundle.bundle_type === "ai";
-      if (isLaunch) {
+      const tier = matchBundleTier(bundle.bundle_name);
+      const withToken = bundle.bundle_type === BUNDLE_TYPE_AI;
+      if (tier.isLaunch) {
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          /* 国内站保持原样总是展示「首月 6 折」；国际站依赖后端真实 discount（在前面 0<d<1 分支处理） */
-          if (!isGlobal) {
-            promoTag = t("首月 6 折");
-          }
+          /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
+             国际站启航 AI「首单免费 3 天」，国内站启航 AI「首月 6 折」（与改动前一致）。
+             改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。 */
+          promoTag = aiPromoTagText(tier, t);
         } else if (!isLoggedIn || backendDiscount === 0) {
           /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
           promoTag = t("首单免费 14 天");
           isZeroDownFreeTrial = true;
         }
-      } else if (isCruise) {
+      } else if (tier.isCruise) {
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          /* 国内站保持原样总是展示「首月 6 折」；国际站依赖后端真实 discount（在前面 0<d<1 分支处理） */
-          if (!isGlobal) {
-            promoTag = t("首月 6 折");
-          }
+          /* 巡游 AI 档位国内外一致展示「首月 6 折」。
+             改动前此处被 `if (!isGlobal)` 拦截，且后端 discount 单位不一致（0<d<1 与 50 两套口径），
+             导致国际站巡游 AI 档位丢失「首月 6 折」标签 —— 本次需求要修的即此问题。 */
+          promoTag = aiPromoTagText(tier, t);
         } else if (!isLoggedIn || backendDiscount === 50) {
           /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
@@ -590,9 +652,21 @@ const mapBundleToPlan = (
       }
     }
   } else {
-    /* 国际站：保持当前限时免费视觉 */
+    /* 国际站：保持当前限时免费视觉。
+       价格锚点本次不改（需求明确「不改价格」），仍为 $7.5 / ¥49。 */
     price = isGlobal ? "$7.5" : "¥49";
-    promoTag = soldOut ? undefined : t("限时免费");
+    if (soldOut) {
+      promoTag = undefined;
+    } else if (isGlobal && bundle.bundle_type === BUNDLE_TYPE_AI) {
+      /* 国际站未登录（paid=false，见上方 `paid` 定义：国际站未登录恒不进入付费展示）时，
+         改动前四个档位统一落到「限时免费」，切到 AI 增强版档位也不变。
+         此处为 AI 增强版档位补上与登录态一致的促销标签（启航「首单免费 3 天」/ 巡游「首月 6 折」），
+         标准版档位维持「限时免费」不变；价格不受影响。
+         国内站不进入本分支的 AI 判定，保持原「限时免费」口径。 */
+      promoTag = aiPromoTagText(matchBundleTier(bundle.bundle_name), t) ?? t("限时免费");
+    } else {
+      promoTag = t("限时免费");
+    }
   }
 
   /** 国内站价格不可用时按「暂无报价」展示禁用 CTA，避免点击后报错。
@@ -615,14 +689,22 @@ const mapBundleToPlan = (
     CURRENT_BUNDLE_ALIASES[bundle.bundle_id]?.includes(currentBundleId) === true
   );
   /* 启航版（标准版，非 AI 增强版）识别。需求：新用户（未订阅任何套餐）无论登录态 / 未登录态，
-     启航版订阅按钮统一展示「免费订阅」，并在 hover 时提示「免费试用到期后不自动扣款、需手动续费」。
-     AI 增强版（bundle_type === "ai"）为付费首月折扣，不在此免费试用范围内。 */
-  const _launchBundleName = bundle.bundle_name ?? "";
-  const isLaunchStandard =
-    (_launchBundleName.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.zh) ||
-      _launchBundleName.toLowerCase().includes(LAUNCH_BUNDLE_NAME_KEYWORDS.en)) &&
-    bundle.bundle_type !== BUNDLE_TYPE_AI;
-  const isNewUserFreeLaunch = isLaunchStandard && !isSubscribed && !isCurrentPlan;
+     启航版订阅按钮统一展示「免费订阅」，并在 hover 时提示「免费试用到期后不自动扣款、需手动续费」。 */
+  const bundleTier = matchBundleTier(bundle.bundle_name);
+  const isLaunchStandard = bundleTier.isLaunch && bundle.bundle_type !== BUNDLE_TYPE_AI;
+  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 3 天」（见 aiPromoTagText），
+     CTA 与同卡标准版档位对齐为「免费订阅」（en-US 显示 "Free Trial"）。
+     国内站启航 AI 不进入本判定，CTA 维持「立即订阅」，与改动前一致。 */
+  const isIntlLaunchAi =
+    isGlobal && bundleTier.isLaunch && bundle.bundle_type === BUNDLE_TYPE_AI;
+  /* 季付不含首期免费试用（季付价即实付价，见上方 durationKey === "quarterly" 的促销分支：
+     月付首期促销一律不生效，只按实际折扣展示角标）。
+     因此季付一律不展示「免费订阅」引导，CTA 维持「立即订阅」，也不展示免费试用 hover 提示。 */
+  const freeTrialEligibleDuration = durationKey !== "quarterly";
+  const isNewUserFreeLaunch =
+    isLaunchStandard && !isSubscribed && !isCurrentPlan && freeTrialEligibleDuration;
+  const isNewUserFreeLaunchAi =
+    isIntlLaunchAi && !isSubscribed && !isCurrentPlan && freeTrialEligibleDuration;
   const ctaLabel = isCurrentPlan
     ? t("当前订阅")
     : soldOut
@@ -633,8 +715,12 @@ const mapBundleToPlan = (
         ? t("暂无报价")
         : /* 需求4：可享免费 14 天 0 元下单，或内测「免费订阅」引导态，一律显示「免费订阅」。
              需求（新用户启航版）：无论登录 / 未登录，新用户启航版一律展示「免费订阅」。
-             已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。 */
-          !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide || isNewUserFreeLaunch)
+             需求（国际站启航 AI 档位）：CTA 与同卡标准版档位对齐，同样展示「免费订阅」。
+             已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。
+             季付无首期免费试用，freeTrialEligibleDuration=false 时统一收口为「立即订阅」。 */
+          !isSubscribed &&
+          freeTrialEligibleDuration &&
+          (isZeroDownFreeTrial || isFeaturedFreeGuide || isNewUserFreeLaunch || isNewUserFreeLaunchAi)
           ? t("免费订阅")
           : t("立即订阅");
   /* 免费试用提示：仅当按钮实际展示「免费订阅」且为新用户启航版时才展示。
@@ -673,7 +759,10 @@ const mapBundleToPlan = (
     features,
     ctaLabel,
     freeTrialHint,
-    ctaStyle: index === 0 ? "primary" : "outline",
+    /* 国际站两张卡 CTA 统一黑底白字（primary），视觉权重一致；
+       国内站维持原样（仅主推卡 index===0 为 primary，其余 outline），本次不改国内站。
+       featured（卡片描边 / 圆角强调）仍只由 tier 顺序决定，不随配色统一而变。 */
+    ctaStyle: isGlobal || index === 0 ? "primary" : "outline",
     featured: index === 0,
     maxBots: bundle.agent_quota || 1,
     /* 真实缺价走 priceUnavailable（触发徽章 + CTA 禁用 + 点击拦截）；
