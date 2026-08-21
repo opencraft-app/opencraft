@@ -1,3 +1,77 @@
+# 国际站自动任务上游 Context Implementation Plan
+
+**Status:** MR !3162 CR 修复与验证完成，等待用户确认提交和推送。
+
+**Goal:** 将已经在国内站上线的自动任务上游 Context 能力同步到国际站，并保持其他既有区域差异不变。
+
+**Architecture:** 复用现有 Hermes `context_from` 探测、关系水合、单上游表单、关系展示和带回滚删除链路；仅移除这些能力上的 `isGlobal` 隔离，不改终止任务、场景任务、通知渠道或技能选择器的区域行为。
+
+### Task 1: 用国际站测试锁定能力对齐
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-automations-panel.global.test.ts`
+
+**Acceptance:**
+- 国际站加载自动任务时探测 `context_from` 并水合任务关系。
+- 卡片、详情和创建/编辑表单展示英文上游任务信息。
+- 选择上游时走结构化创建/编辑；删除被引用任务时走依赖解绑与回滚链路。
+- 国际站既有终止任务行为不变。
+
+- [x] 先补国际站失败测试并确认 RED。
+
+### Task 2: 移除上游 Context 的国际站隔离
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
+
+**Acceptance:**
+- 国际站与国内站共用上游任务读写、展示、能力探测和安全删除逻辑。
+- 只移除 `context_from` 相关区域判断；保留其他 `isGlobal` 产品差异。
+
+- [x] 完成最小实现并让定向测试 GREEN。
+
+### Task 3: 同步产品范围并完成质量门禁
+
+**Files:**
+- Modify: `wiki/prd-docs/2026-08-13-自动任务支持获取上游任务的Context.md`
+- Modify: `frontend/openspec/plan.md`
+
+**Acceptance:**
+- PRD 将发布范围更新为国内站与国际站，并保留技能选择器的区域差异说明。
+- 定向测试、TypeScript 检查、i18n 检查、国际站构建和 `git diff --check` 通过；浏览器冒烟在登录态允许时执行，否则记录阻塞。
+
+- [x] 同步文档、完成验证并展示证据。
+
+**Verification:**
+- RED：国际站专属测试先出现 3 个预期失败，分别命中关系水合、详情/安全删除和结构化创建隔离。
+- GREEN：相关 4 个测试文件共 226 个用例通过，包含国际站创建、编辑、展示、删除和既有终止任务回归。
+- `pnpm check`、`pnpm i18n:check`、`pnpm build:global`、`git diff --check` 通过。
+- 已登录浏览器确认当前线上国际站尚未展示 `Upstream task`；本地新版本因 `localhost` 无登录态无法完成同一页面的交互式截图，改由国际站组件集成测试留证。
+
+### Task 4: 补齐印尼语上游任务文案
+
+**Files:**
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Add: `frontend/src/pages/marketing/__tests__/automation-upstream-picker.id-ID.test.tsx`
+- Modify: `frontend/openspec/plan.md`
+
+**Acceptance:**
+- `id-ID` 下上游任务能力状态、选择器标签与空状态均渲染为非空印尼语。
+- 当前创建、展示、校验与安全删除链路涉及的上游/下游关系文案均有非空印尼语翻译。
+- 不修改全局 `returnEmptyString`、fallback 或 `i18n:check` 规则，不扩大本 MR 范围。
+
+- [x] 先补印尼语渲染与字典完整性测试并确认 RED。
+- [x] 只补本功能实际使用的印尼语 key，让定向测试 GREEN。
+- [x] 运行相关回归、类型检查、i18n 检查、国际站构建和 `git diff --check`。
+
+**Verification:**
+- 新增测试先确认 RED：31/31 失败；补齐翻译后 31/31 通过。
+- 上游 Context 相关 5 个测试文件共 257 个测试通过。
+- `pnpm check`、`pnpm i18n:check`、`pnpm build:global` 通过。
+- 印尼语空翻译由 208 条降至 178 条，本次实际使用的 30 条文案全部补齐。
+
+---
+
 # 国际站通知空态隐藏后台运行说明 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
