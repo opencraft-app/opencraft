@@ -203,7 +203,7 @@ func (a *internalAPI) handleGetShadowBinding(ctx *gin.Context) {
 		userID = externalUserID
 	}
 
-	binding, err := a.service.InternalShadowBinding(ctx.Request.Context(), userID)
+	binding, err := a.service.InternalShadowBinding(ctx.Request.Context(), userID, ctx.ClientIP(), ctx.Request.UserAgent())
 	if err != nil {
 		body, status := toErrorBody(err)
 		if status == http.StatusNotFound {
