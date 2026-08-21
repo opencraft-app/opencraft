@@ -2,6 +2,37 @@
 
 本文记录前端调用 CTL 计费接口时需要遵守的请求协议。字段名以公网 HTTP JSON 为准，后端会在 ctl -> trade -> jifei 链路中转换成计费协议字段。
 
+## 点石零元活动下单并支付
+
+询价返回 `bundles[].price.real_total_cost = 0` 时，前端调用点石活动专用入口：
+
+`POST /v1/passes/dianshi/order-and-pay`
+
+```json
+{
+  "bundle_id": "bundle_launch_01",
+  "period": 1,
+  "time_unit": "m"
+}
+```
+
+响应：
+
+```json
+{
+  "deal_name": "20260810207021863965541",
+  "big_order_id": "20260810207021863965540"
+}
+```
+
+约束：
+
+- 前端只根据本次询价原始字段 `real_total_cost === 0` 选择该入口，不解析展示价格字符串。
+- 请求不传支付方式、绑卡信息或 `auto_renew_flag`，订单保持手动续费。
+- 本入口完成点石 `do_goods_and_pay` 后直接等待 Pass 发货，不再调用 `/v1/passes/order-url`。
+- CTL 不重复校验金额为零；trade 会强制校验套餐命中有效点石活动，未命中时拒绝请求，不回退普通计费下单。
+- 本入口与联调测试用 `/v1/passes/order-and-pay` 相互独立，前端现网代码不得混用。
+
 ## 支付 URL 接口
 
 ### 新购支付 URL

@@ -1,3 +1,18 @@
+# 点石零元下单并支付 Implementation Plan
+
+**Status:** 实现与定向验证完成，用户已授权直接提交并推送新远程分支。
+
+**Goal:** 询价为零元的活动套餐通过独立点石 `do_goods_and_pay` 链路完成下单与发货，不展示绑卡或自动续费。
+
+- [x] 新增 Trade 点石 `do_goods_and_pay` 客户端、业务方法和内部路由。
+- [x] 新增 CTL 点石专用 adapter、逻辑方法和用户 API。
+- [x] 新增前端 repository 方法并锁定请求路径。
+- [x] 以 `real_total_cost === 0` 分流确认交互，并复用 Pass 发货轮询。
+- [x] 完成定向测试、类型检查与 i18n 检查；全量前端测试因 Node 2 GB 堆内存耗尽中断。
+- [ ] 提交并推送新远程分支。
+
+---
+
 # 国际站自动任务上游 Context Implementation Plan
 
 **Status:** MR !3162 CR 修复与验证完成，等待用户确认提交和推送。

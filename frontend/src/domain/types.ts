@@ -459,6 +459,12 @@ export interface CreatePassOrderAndPayResult {
   big_order_id: string;
 }
 
+/** 点石活动专用下单并支付结果。 */
+export interface CreateDianshiPassOrderAndPayResult {
+  deal_name: string;
+  big_order_id: string;
+}
+
 /**
  * 续费询价结果（POST /v1/passes/{pass_id}/renew/price）— 联调文档 §3.1
  *

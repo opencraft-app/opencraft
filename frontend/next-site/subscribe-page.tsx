@@ -142,6 +142,9 @@ interface PlanInfo {
   raw: Bundle;
 }
 
+const isDianshiZeroAmountPlan = (plan: PlanInfo, paidBillingActive: boolean): boolean =>
+  paidBillingActive && plan.raw.price?.real_total_cost === 0;
+
 /* ─── 套餐分类 Tab 配置 ─── */
 
 /**
@@ -1743,11 +1746,15 @@ const modalCloseStyle: React.CSSProperties = {
 const ConfirmOrderModal = ({
   plan,
   billingPeriodLabel,
+  showPaymentMethod = true,
+  actionLabel,
   onCancel,
   onPay,
 }: {
   plan: PlanInfo;
   billingPeriodLabel: string;
+  showPaymentMethod?: boolean;
+  actionLabel?: string;
   onCancel: () => void;
   onPay: () => void;
 }) => {
@@ -1775,6 +1782,7 @@ const ConfirmOrderModal = ({
         <button
           style={modalCloseStyle}
           onClick={onCancel}
+          aria-label={t("关闭")}
           onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; e.currentTarget.style.color = colors.primary; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = colors.warmGray300; }}
         >
@@ -1810,38 +1818,40 @@ const ConfirmOrderModal = ({
             </div>
           </div>
 
-          <div
-            style={{
-              border: `1px solid ${colors.border}`,
-              borderRadius: 12,
-              padding: "16px 20px",
-              marginBottom: 24,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
+          {showPaymentMethod && (
             <div
               style={{
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                border: `2px solid ${colors.primary}`,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 12,
+                padding: "16px 20px",
+                marginBottom: 24,
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
+                gap: 10,
               }}
             >
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.primary }} />
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  border: `2px solid ${colors.primary}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.primary }} />
+              </div>
+              <svg viewBox="0 0 24 24" style={{ width: 22, height: 22, flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="12" fill="#07C160" />
+                <path d="M17.2 10.8c-.4-2.1-2.5-3.6-5-3.6-2.8 0-5.1 1.9-5.1 4.3 0 1.4.8 2.6 2 3.5l-.5 1.5 1.8-1c.6.2 1.2.3 1.8.3.3 0 .5 0 .8-.1-.2-.4-.2-.8-.2-1.2 0-2.1 2-3.7 4.4-3.7z" fill="#fff" />
+                <path d="M19.5 14.5c0-1.7-1.7-3.1-3.8-3.1s-3.8 1.4-3.8 3.1 1.7 3.1 3.8 3.1c.4 0 .9-.1 1.3-.2l1.2.7-.3-1.1c1-0.6 1.6-1.5 1.6-2.5z" fill="#fff" />
+              </svg>
+              <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("微信支付")}</span>
             </div>
-            <svg viewBox="0 0 24 24" style={{ width: 22, height: 22, flexShrink: 0 }}>
-              <circle cx="12" cy="12" r="12" fill="#07C160" />
-              <path d="M17.2 10.8c-.4-2.1-2.5-3.6-5-3.6-2.8 0-5.1 1.9-5.1 4.3 0 1.4.8 2.6 2 3.5l-.5 1.5 1.8-1c.6.2 1.2.3 1.8.3.3 0 .5 0 .8-.1-.2-.4-.2-.8-.2-1.2 0-2.1 2-3.7 4.4-3.7z" fill="#fff" />
-              <path d="M19.5 14.5c0-1.7-1.7-3.1-3.8-3.1s-3.8 1.4-3.8 3.1 1.7 3.1 3.8 3.1c.4 0 .9-.1 1.3-.2l1.2.7-.3-1.1c1-0.6 1.6-1.5 1.6-2.5z" fill="#fff" />
-            </svg>
-            <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("微信支付")}</span>
-          </div>
+          )}
 
           <div style={{ display: "flex", gap: 12 }}>
             <button
@@ -1880,7 +1890,7 @@ const ConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              {t("支付")} {currencySymbol}{priceNum}
+              {actionLabel ?? `${t("支付")} ${currencySymbol}${priceNum}`}
             </button>
           </div>
         </div>
@@ -2128,6 +2138,7 @@ const PaymentPendingModal = ({
   onRefresh,
   refreshing,
   timedOut = false,
+  provisioningOnly = false,
   t,
 }: {
   /** 国内站：中转页绝对 URL，用作 QRCode value */
@@ -2141,6 +2152,8 @@ const PaymentPendingModal = ({
   refreshing: boolean;
   /** 轮询已超时：后台发货延迟，改为提示用户稍后重试而不是一直转圈 */
   timedOut?: boolean;
+  /** 点石零元单已完成下单并支付，只等待 Pass 发货。 */
+  provisioningOnly?: boolean;
   t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
   return (
@@ -2172,11 +2185,13 @@ const PaymentPendingModal = ({
 
         <div style={{ padding: "28px 28px 24px" }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
-            {timedOut ? t("正在开通，请稍候") : t("请完成支付")}
+            {timedOut ? t("正在开通，请稍候") : provisioningOnly ? t("正在开通套餐") : t("请完成支付")}
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
             {timedOut
               ? t("已收到你的支付，套餐开通稍有延迟，本页会自动完成开通，请勿关闭。")
+              : provisioningOnly
+                ? t("订单已提交，正在等待套餐开通，完成后将自动跳转")
               : bridgeUrl
                 ? t("请使用微信扫描下方二维码完成支付")
                 /* 支付回跳场景没有 redirectUrl（原窗口已被替换），此时是在等后台发货，
@@ -2642,6 +2657,8 @@ export const SubscribePage = ({
     bridgeUrl?: string;
     /** 国际站：信用卡 hosted page URL（getPassOrderUrl 返回的 pay_url） */
     redirectUrl?: string;
+    /** 点石零元下单已完成，仅等待发货。 */
+    provisioningOnly?: boolean;
   } | null>(null);
 
   /* 轮询超时标记：后台发货延迟超过 PAY_POLL_TIMEOUT_MS 时不静默停住，
@@ -2813,6 +2830,35 @@ export const SubscribePage = ({
     setSelectedPlan(plan);
     setModalStep("paying");
   }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration]);
+
+  const startDianshiOrderAndPay = useCallback(async (plan: PlanInfo) => {
+    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        plan: plan.id,
+        plan_name: plan.name,
+        billing_period: aiDuration.period,
+      },
+    });
+    if (isSubscribed) {
+      await finalizeBot(plan);
+      return;
+    }
+
+    const order = await repositories.plans.createDianshiPassOrderAndPay({
+      bundle_id: plan.raw.bundle_id,
+      period: aiDuration.period,
+      time_unit: aiDuration.time_unit,
+    });
+    setPaymentContext({
+      plan,
+      dealNames: [order.deal_name],
+      provisioningOnly: true,
+    });
+    setSelectedPlan(plan);
+    setModalStep("paying");
+    await refreshPasses();
+  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans]);
 
   /**
    * 国际站信用卡支付链路（正式）。
@@ -3009,7 +3055,9 @@ export const SubscribePage = ({
     try {
       /* 国内站一律走付费下单链路（plan.skipPayment 已在 mapBundleToPlan 中按站点置为 false）；
          国际站维持「paidBillingActive 开关 + skipPayment」组合控制。 */
-      if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
+      if (isDianshiZeroAmountPlan(plan, paidBillingActive)) {
+        await startDianshiOrderAndPay(plan);
+      } else if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
         if (isGlobal) {
           /* 国际站付费链路：信用卡 hosted page 跳转（createPassOrder + getPassOrderUrl）。
              startIntlCardPay 内部新窗口打开支付页 + 进入 paying 轮询接棒 finalizeBot，
@@ -3080,7 +3128,7 @@ export const SubscribePage = ({
     } finally {
       setSubscribingPlanId(null);
     }
-  }, [paidBillingActive, startPaidPassOrder, startIntlCardPay, startTrialPass, t]);
+  }, [paidBillingActive, startDianshiOrderAndPay, startPaidPassOrder, startIntlCardPay, startTrialPass, t]);
 
   const handleSubscribe = useCallback((planId: string) => {
     const plan = planList.find((p) => p.id === planId);
@@ -3463,7 +3511,17 @@ export const SubscribePage = ({
       {/* Payment Modals */}
       <AnimatePresence>
         {modalStep === "confirm" && selectedPlan && (
-          isGlobal ? (
+          isDianshiZeroAmountPlan(selectedPlan, paidBillingActive) ? (
+            <ConfirmOrderModal
+              key="confirm-dianshi"
+              plan={selectedPlan}
+              billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
+              showPaymentMethod={false}
+              actionLabel={t("确认开通")}
+              onCancel={handleCloseModal}
+              onPay={() => handlePay(false)}
+            />
+          ) : isGlobal ? (
             <CreditCardConfirmOrderModal
               key="confirm"
               plan={selectedPlan}
@@ -3493,6 +3551,7 @@ export const SubscribePage = ({
             onRefresh={() => void handleRefreshPayment()}
             refreshing={paymentRefreshing}
             timedOut={payPollTimedOut}
+            provisioningOnly={paymentContext.provisioningOnly}
             t={t}
           />
         )}

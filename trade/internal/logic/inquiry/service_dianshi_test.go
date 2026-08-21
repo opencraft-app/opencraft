@@ -63,6 +63,10 @@ func (f *fakeDianshi) DoGoods(_ context.Context, req *dianshiclient.DoGoodsReque
 	return f.doGoodsResp, f.doGoodsErr
 }
 
+func (f *fakeDianshi) DoGoodsAndPay(context.Context, *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
+	return nil, errors.New("DoGoodsAndPay not used in inquiry tests")
+}
+
 func newFakeDianshiSuccess() *fakeDianshi {
 	return &fakeDianshi{
 		priceResp: &dianshiclient.GetPriceResponse{

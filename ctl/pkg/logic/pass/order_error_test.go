@@ -31,6 +31,17 @@ func TestMapTradePlaceOrderErrorBillingAccountOpenFailed(t *testing.T) {
 	}
 }
 
+func TestMapTradePlaceOrderErrorDianshiActivityRequired(t *testing.T) {
+	err := mapTradePlaceOrderError(&tradeadapter.Error{
+		Status:  http.StatusUnprocessableEntity,
+		Code:    "DianshiActivityRequired",
+		Message: "bundle is not eligible for the Dianshi activity",
+	})
+	if !errors.Is(err, errcode.ErrPassInvalidParam) {
+		t.Fatalf("expected PASS_INVALID_PARAM, got %v", err)
+	}
+}
+
 func TestMapTradePlaceOrderErrorKeepsOtherErrors(t *testing.T) {
 	err := mapTradePlaceOrderError(&tradeadapter.Error{
 		Status:  http.StatusBadGateway,

@@ -1151,6 +1151,41 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("creates zero-price activity orders through the dedicated Dianshi endpoint", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: { deal_name: "dianshi-deal-1", big_order_id: "dianshi-big-1" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.plans.createDianshiPassOrderAndPay({
+      bundle_id: "bundle_launch_zero",
+      period: 1,
+      time_unit: "m",
+    });
+
+    expect(result.deal_name).toBe("dianshi-deal-1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/passes/dianshi/order-and-pay",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          bundle_id: "bundle_launch_zero",
+          period: 1,
+          time_unit: "m",
+        }),
+      }),
+    );
+  });
+
   it("uses pass-scoped renew and delete endpoints", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi
