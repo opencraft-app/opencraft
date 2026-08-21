@@ -458,6 +458,42 @@ func (c *TencentCloudSDKClient) GetTemporaryCredentialsForSaaS(ctx context.Conte
 	return credentials, nil
 }
 
+func (c *TencentCloudSDKClient) DescribeAccountInfo(ctx context.Context, credentials CloudTemporaryCredentials) (CloudAccountInfo, error) {
+	accountClient, err := newCommonClient(
+		common.NewTokenCredential(credentials.TmpSecretID, credentials.TmpSecretKey, credentials.Token),
+		c.region,
+		c.accountProfile,
+		c.cloudLadder,
+		c.cloudLadder.RouteID,
+	)
+	if err != nil {
+		return CloudAccountInfo{}, fmt.Errorf("build DescribeAccountInfo client: %w", err)
+	}
+	req := tchttp.NewCommonRequest("account", "2018-12-25", "DescribeAccountInfo")
+	req.SetContext(ctx)
+	resp := tchttp.NewCommonResponse()
+	if err := accountClient.Send(req, resp); err != nil {
+		return CloudAccountInfo{}, fmt.Errorf("send DescribeAccountInfo: %w", err)
+	}
+	var payload struct {
+		Response struct {
+			OwnerUin  int64  `json:"OwnerUin"`
+			LoginUin  int64  `json:"LoginUin"`
+			AppID     int64  `json:"AppId"`
+			RequestID string `json:"RequestId"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp.GetBody(), &payload); err != nil {
+		return CloudAccountInfo{}, fmt.Errorf("decode DescribeAccountInfo response: %w", err)
+	}
+	return CloudAccountInfo{
+		LoginUin:  payload.Response.LoginUin,
+		OwnerUin:  payload.Response.OwnerUin,
+		AppID:     payload.Response.AppID,
+		RequestID: strings.TrimSpace(payload.Response.RequestID),
+	}, nil
+}
+
 func (c *TencentCloudSDKClient) getSaaSAccessToken(ctx context.Context, token CloudSaaSTokenResult, clientIP, clientUA string) (CloudTemporaryCredentials, error) {
 	req := tchttp.NewCommonRequest("sts", "2018-08-13", "GetSaaSAccessToken")
 	if err := req.SetActionParameters(map[string]any{

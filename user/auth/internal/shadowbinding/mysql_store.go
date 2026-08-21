@@ -100,6 +100,28 @@ func (s *MySQLStore) MarkBindingActive(ctx context.Context, userID string, uin, 
 	return s.GetBindingByUserID(ctx, userID)
 }
 
+func (s *MySQLStore) SetBindingAppIDIfMissing(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error) {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE shadow_bindings
+		SET app_id = ?, updated_at = ?
+		WHERE user_id = ? AND uin = ? AND owner_uin = ? AND COALESCE(app_id, 0) = 0
+	`, appID, now, userID, uin, ownerUin)
+	if err != nil {
+		return Binding{}, fmt.Errorf("set shadow binding app id: %w", err)
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		binding, getErr := s.GetBindingByUserID(ctx, userID)
+		if getErr != nil {
+			return Binding{}, getErr
+		}
+		if binding.Uin != uin || binding.OwnerUin != ownerUin || binding.AppID != appID {
+			return Binding{}, fmt.Errorf("shadow binding identity changed while setting app id")
+		}
+		return binding, nil
+	}
+	return s.GetBindingByUserID(ctx, userID)
+}
+
 func (s *MySQLStore) MarkBindingRegistered(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error) {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE shadow_bindings

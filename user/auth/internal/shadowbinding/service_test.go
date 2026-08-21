@@ -33,6 +33,7 @@ type recordingClient struct {
 	updateCalls            int
 	basicAuthCalls         int
 	temporaryCalls         int
+	accountInfoCalls       int
 	recoveryCalls          int
 	lastRegister           CloudRegisterInput
 	lastUpdate             CloudUpdatePhoneInput
@@ -40,6 +41,7 @@ type recordingClient struct {
 	lastTemporary          CloudTemporaryCredentialsInput
 	result                 CloudRegisterResult
 	temporaryResult        CloudTemporaryCredentials
+	accountInfoResult      CloudAccountInfo
 	recoveryResult         CloudSaaSTokenResult
 	err                    error
 	updateErr              error
@@ -106,6 +108,20 @@ func (c *recordingClient) GetTemporaryCredentialsForSaaS(_ context.Context, in C
 	c.temporaryCalls++
 	c.lastTemporary = in
 	return c.temporaryResult, c.temporaryCredentialErr
+}
+
+func (c *recordingClient) DescribeAccountInfo(_ context.Context, credentials CloudTemporaryCredentials) (CloudAccountInfo, error) {
+	c.accountInfoCalls++
+	result := c.accountInfoResult
+	if reflect.DeepEqual(result, CloudAccountInfo{}) {
+		result.LoginUin = credentials.Uin
+		result.OwnerUin = credentials.OwnerUin
+		result.AppID = c.result.AppID
+		if result.AppID == 0 {
+			result.AppID = 1374210036
+		}
+	}
+	return result, nil
 }
 
 func (c *recordingClient) RecoverShadowIdentityForSaaS(_ context.Context, in CloudTemporaryCredentialsInput) (CloudSaaSTokenResult, error) {
@@ -316,6 +332,56 @@ func TestBindShadowAccountOpensBillingBeforeActivatingIntlBinding(t *testing.T) 
 	active, err := svc.GetBindingByUserID(context.Background(), "usr_intl")
 	if err != nil || active.Status != StatusActive || billing.calls != 1 || billing.lastUin != 450860000002 {
 		t.Fatalf("expected async billing-open active binding, binding=%+v billing=%+v err=%v", active, billing, err)
+	}
+}
+
+func TestEnsureBindingAppIDRepairsActiveInternationalBinding(t *testing.T) {
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore()
+	if _, err := store.SavePendingBinding(context.Background(), "usr_intl", "sgprod_u1", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkBindingActive(context.Background(), "usr_intl", 450850000004, 450850000004, 0, now); err != nil {
+		t.Fatal(err)
+	}
+	client := &recordingClient{
+		temporaryResult: CloudTemporaryCredentials{
+			Uin: 450850000004, OwnerUin: 450850000004,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoResult: CloudAccountInfo{LoginUin: 450850000004, OwnerUin: 450850000004, AppID: 1471748557},
+	}
+	svc := New(store, client, Options{Enabled: true, SiteKind: SiteKindIntl, Now: func() time.Time { return now }})
+
+	binding, err := svc.EnsureBindingAppID(context.Background(), "usr_intl", "192.0.2.1", "lightvela-trade")
+	if err != nil {
+		t.Fatalf("EnsureBindingAppID: %v", err)
+	}
+	if binding.AppID != 1471748557 || client.temporaryCalls != 1 || client.accountInfoCalls != 1 {
+		t.Fatalf("unexpected repaired binding=%+v temporary_calls=%d account_info_calls=%d", binding, client.temporaryCalls, client.accountInfoCalls)
+	}
+}
+
+func TestEnsureBindingAppIDRejectsMismatchedShadowIdentity(t *testing.T) {
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore()
+	_, _ = store.SavePendingBinding(context.Background(), "usr_intl", "sgprod_u1", now)
+	_, _ = store.MarkBindingActive(context.Background(), "usr_intl", 450850000004, 450850000004, 0, now)
+	client := &recordingClient{
+		temporaryResult: CloudTemporaryCredentials{
+			Uin: 450850000004, OwnerUin: 450850000004,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoResult: CloudAccountInfo{LoginUin: 450850000099, OwnerUin: 450850000099, AppID: 1471748557},
+	}
+	svc := New(store, client, Options{Enabled: true, SiteKind: SiteKindIntl, Now: func() time.Time { return now }})
+
+	if _, err := svc.EnsureBindingAppID(context.Background(), "usr_intl", "", "lightvela-trade"); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
+		t.Fatalf("EnsureBindingAppID error = %v, want identity mismatch", err)
+	}
+	binding, _ := store.GetBindingByUserID(context.Background(), "usr_intl")
+	if binding.AppID != 0 {
+		t.Fatalf("mismatched AppID was persisted: %+v", binding)
 	}
 }
 

@@ -1601,8 +1601,17 @@ func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowB
 	return toShadowBindingResult(binding), nil
 }
 
-func (s *Service) InternalShadowBinding(ctx context.Context, userID string) (ShadowBindingResult, error) {
-	return s.activeShadowBindingByUserID(ctx, userID)
+func (s *Service) InternalShadowBinding(ctx context.Context, userID, clientIP, clientUA string) (ShadowBindingResult, error) {
+	binding, err := s.activeShadowBindingByUserID(ctx, userID)
+	if err != nil || binding.AppID > 0 {
+		return binding, err
+	}
+	repaired, err := s.shadowBinding.EnsureBindingAppID(ctx, strings.TrimSpace(userID), clientIP, clientUA)
+	if err != nil {
+		slog.WarnContext(ctx, "shadow app id self-heal failed", "user_id", userID, "uin", binding.Uin, "err", err)
+		return ShadowBindingResult{}, newError("shadow_appid_unavailable", "腾讯云账号信息暂不可用。", http.StatusBadGateway)
+	}
+	return toShadowBindingResult(repaired), nil
 }
 
 func (s *Service) InternalShadowBindingState(ctx context.Context, userID string) (ShadowBindingResult, error) {

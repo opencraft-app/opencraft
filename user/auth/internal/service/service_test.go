@@ -17,6 +17,33 @@ func fixedVerificationCode(code string) func(int) (string, error) {
 	return func(int) (string, error) { return code, nil }
 }
 
+func TestInternalShadowBindingRepairsMissingInternationalAppID(t *testing.T) {
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	shadowStore := shadowbinding.NewMemoryStore()
+	_, _ = shadowStore.SavePendingBinding(context.Background(), "usr_intl", "sgprod_u1", now)
+	_, _ = shadowStore.MarkBindingActive(context.Background(), "usr_intl", 450850000004, 450850000004, 0, now)
+	client := &stubShadowRegisterClient{
+		temporaryResult: shadowbinding.CloudTemporaryCredentials{
+			Uin: 450850000004, OwnerUin: 450850000004,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoResult: shadowbinding.CloudAccountInfo{LoginUin: 450850000004, OwnerUin: 450850000004, AppID: 1471748557},
+	}
+	shadowSvc := shadowbinding.New(shadowStore, client, shadowbinding.Options{Enabled: true, SiteKind: shadowbinding.SiteKindIntl, Now: func() time.Time { return now }})
+	svc := NewWithStore(NewMemoryStore(StoreOptions{Now: func() time.Time { return now }}), Options{Now: func() time.Time { return now }, ShadowBinding: shadowSvc})
+
+	binding, err := svc.InternalShadowBinding(context.Background(), "usr_intl", "192.0.2.1", "lightvela-trade")
+	if err != nil {
+		t.Fatalf("InternalShadowBinding: %v", err)
+	}
+	if binding.AppID != 1471748557 || client.temporaryCalls != 1 || client.accountInfoCalls != 1 {
+		t.Fatalf("binding was not repaired: binding=%+v temporary_calls=%d account_info_calls=%d", binding, client.temporaryCalls, client.accountInfoCalls)
+	}
+	if client.lastTemporary.ClientIP != "192.0.2.1" || client.lastTemporary.ClientUA != "lightvela-trade" {
+		t.Fatalf("client metadata was not forwarded: %+v", client.lastTemporary)
+	}
+}
+
 func TestSharedStoreEnforcesCooldownAcrossServiceInstances(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{
 		Now:                fixedNow,
@@ -2444,17 +2471,33 @@ func (stubRealnameCipher) Decrypt(ciphertext string) (string, error) {
 }
 
 type stubShadowRegisterClient struct {
-	calls          int
-	smsCalls       int
-	updateCalls    int
-	basicAuthCalls int
-	lastSMS        shadowbinding.CloudSendSMSInput
-	lastRegister   shadowbinding.CloudRegisterInput
-	lastUpdate     shadowbinding.CloudUpdatePhoneInput
-	lastBasicAuth  shadowbinding.CloudSaveBasicAuthInput
-	result         shadowbinding.CloudRegisterResult
-	err            error
-	basicAuthErr   error
+	calls             int
+	smsCalls          int
+	updateCalls       int
+	basicAuthCalls    int
+	temporaryCalls    int
+	accountInfoCalls  int
+	lastSMS           shadowbinding.CloudSendSMSInput
+	lastRegister      shadowbinding.CloudRegisterInput
+	lastUpdate        shadowbinding.CloudUpdatePhoneInput
+	lastBasicAuth     shadowbinding.CloudSaveBasicAuthInput
+	lastTemporary     shadowbinding.CloudTemporaryCredentialsInput
+	result            shadowbinding.CloudRegisterResult
+	temporaryResult   shadowbinding.CloudTemporaryCredentials
+	accountInfoResult shadowbinding.CloudAccountInfo
+	err               error
+	basicAuthErr      error
+}
+
+func (c *stubShadowRegisterClient) GetTemporaryCredentialsForSaaS(_ context.Context, in shadowbinding.CloudTemporaryCredentialsInput) (shadowbinding.CloudTemporaryCredentials, error) {
+	c.temporaryCalls++
+	c.lastTemporary = in
+	return c.temporaryResult, nil
+}
+
+func (c *stubShadowRegisterClient) DescribeAccountInfo(context.Context, shadowbinding.CloudTemporaryCredentials) (shadowbinding.CloudAccountInfo, error) {
+	c.accountInfoCalls++
+	return c.accountInfoResult, nil
 }
 
 func (c *stubShadowRegisterClient) SendSMSVerifyCode(_ context.Context, in shadowbinding.CloudSendSMSInput) error {
