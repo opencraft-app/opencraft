@@ -1245,6 +1245,20 @@ describe("parseEnabledHermesChannels", () => {
     expect(parseEnabledHermesChannels(output)).toEqual(new Set(["weixin"]));
   });
 
+  it("normalizes the OpenClaw DingTalk alias to the dingtalk notification key", () => {
+    const output = JSON.stringify({
+      success: true,
+      data: {
+        platforms: [
+          { name: "openclaw-dingtalk", status: "connected" },
+        ],
+      },
+      error: null,
+    });
+
+    expect(parseEnabledHermesChannels(output)).toEqual(new Set(["dingtalk"]));
+  });
+
   it("normalizes international channel aliases to notification keys", () => {
     const output = JSON.stringify({
       success: true,

@@ -1508,4 +1508,26 @@
 - [x] 调整国内候选常量和邻近说明并确认 GREEN。
 - [x] 运行国内完整面板测试、国际专项测试、类型检查和 diff 检查。
 
+### Task 3: 补齐钉钉通道别名归一化与兜底优先级
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
+- Modify: `frontend/src/lib/hermes-cron-client.ts`
+- Modify: `frontend/src/pages/marketing/scenario-task-cron.ts`
+- Test: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts`
+- Test: `frontend/src/lib/__tests__/hermes-cron-client.test.ts`
+- Test: `frontend/src/pages/marketing/scenario-tasks/__tests__/scenario-task-cron.test.ts`
+
+**Acceptance:**
+- 自动任务与场景任务都将 `openclaw-dingtalk` 归一化为 `dingtalk`。
+- 场景任务将归一化后的 `dingtalk` 展示为“钉钉”，不暴露内部 key。
+- canonical `dingtalk` 行为保持不变；不增加未经真实上报验证的 `ding` / `dingding` 别名。
+- deliver fallback 在钉钉和国际通道同时在线时优先选择钉钉；钉钉位于飞书之后、Telegram 之前。
+- 不改变其他通道别名、区域候选列表或发送协议。
+
+- [x] 分别增加自动任务、场景任务与 fallback 的失败用例并确认 RED。
+- [x] 最小修改三处归一化逻辑与 fallback priority 并确认 GREEN。
+- [x] 运行相关测试、类型检查、i18n 检查和双区域构建。
+- [x] 展示修复 diff 与验证结果，等待提交确认后更新 !3180。
+
 ---
