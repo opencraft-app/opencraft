@@ -1263,3 +1263,249 @@
 - `git diff --check`
 
 ---
+# 国内站自动任务仅展示已配置通知通道 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 国内站自动任务弹窗只展示已配置的微信、QQ、企业微信、飞书和钉钉通道，并在无配置时展示新的国内空态入口。
+
+**Architecture:** 在自动任务模块内维护独立的国内候选通道常量，与国际站候选常量按区域选择后，共用配置状态过滤、空态和辅助说明判断。钉钉继续复用现有通用保存与测试发送链路，只补候选入口和中文展示名称。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、react-i18next。
+
+## Global Constraints
+
+- 国内候选范围及顺序固定为微信、QQ、企业微信、飞书、钉钉；不加入 Telegram、WhatsApp、Discord、Slack 或元宝。
+- 国内站只展示 Hermes 已配置通道，未配置项不渲染。
+- 国内站无配置时展示 `暂无已配置的通知通道。` 与 `前往通道配置`，链接仍为 `/agents/channels/`。
+- 无配置时隐藏后台运行说明及占位高度；有通道但未选择时继续展示说明。
+- 国际站通道范围、英文 `Configure channels`、空态和发送行为保持不变。
+- 不修改 Hermes 状态解析、连接流程、发送命令、任务保存协议或后端接口。
+
+---
+
+### Task 1: 对齐国内站通知通道过滤并接入钉钉
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx:2009-2019,2495-2504,2946-2952,3464-3495`
+- Test: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts:1302-1345,1649-1659`
+- Modify (generated): `frontend/src/i18n/generated/zh-to-key.json`
+- Modify (generated): `frontend/src/i18n/generated/zh-CN.json`
+- Modify (generated): `frontend/src/i18n/generated/zh-Hant.json`
+- Modify: `frontend/src/i18n/generated/en-US.json`
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Reference: `frontend/openspec/changes/2026-08-21-domestic-automation-configured-channels-design.md`
+
+**Interfaces:**
+- Consumes: `isGlobal`、`enabledChannels`、`channelStatus`、`isHermesNotificationChannelConfigured(...)`、`t(...)`。
+- Produces: module-local `DOMESTIC_NOTIFICATION_CHANNELS` and component-local `availableNotificationChannels`; no new exports, APIs, command formats, or persisted fields.
+
+- [x] **Step 1: 写国内空态、已配置钉钉和详情名称的失败测试**
+
+  将区域感知测试更新为新契约：
+
+  ```tsx
+  it("shows the domestic empty state when no notification channel is configured", () => {
+    if (isGlobal) return;
+    renderAutomationForm({
+      enabledChannels: new Set(),
+      channelStatus: "ready",
+    });
+
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
+    expect(screen.queryByText("如不选，智能体只会在后台执行任务，不发通知。")).toBeNull();
+  });
+
+  it("shows only configured domestic channels including DingTalk", () => {
+    if (isGlobal) return;
+    renderAutomationForm({
+      enabledChannels: new Set(["dingtalk", "feishu"]),
+      channelStatus: "ready",
+    });
+
+    expect(screen.getByRole("checkbox", { name: "钉钉" })).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: "飞书" })).toBeEnabled();
+    expect(screen.queryByRole("checkbox", { name: "微信" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "QQ" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "企业微信" })).toBeNull();
+    expect(screen.getByText("如不选，智能体只会在后台执行任务，不发通知。")).toBeTruthy();
+  });
+  ```
+
+  同步更新文件后部的同名国内站保护测试，使其断言空态并加 `if (isGlobal) return;`，避免它继续守护旧的“未配置项置灰”契约。
+
+  增加钉钉任务详情回归：
+
+  ```tsx
+  it("localizes DingTalk in task details", async () => {
+    const job = makeCronJob({ id: "dingtalk-job", name: "钉钉通知任务", deliver: "dingtalk" });
+    cronClientMocks.listCronJobs.mockResolvedValue([job]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("钉钉通知任务")).getByRole("button", { name: "查看" }));
+    const dialog = screen.getByRole("dialog");
+    const notificationRow = within(dialog).getByText("通知方式").closest("div");
+    expect(notificationRow).not.toBeNull();
+    expect(within(notificationRow!).getByText("钉钉")).toBeTruthy();
+    expect(within(notificationRow!).queryByText("dingtalk")).toBeNull();
+  });
+  ```
+
+- [x] **Step 2: 运行精准用例并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  VITE_REGION=cn pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/agent-automations-panel.test.ts \
+    -t "shows the domestic empty state|shows only configured domestic channels including DingTalk|localizes DingTalk in task details" \
+    --api.host 127.0.0.1
+  ```
+
+  Expected: 三个用例均失败；旧代码仍渲染四个未配置复选框、没有钉钉候选，并在详情中显示原始 `dingtalk` key。
+
+- [x] **Step 3: 增加国内候选常量并统一过滤**
+
+  在 `GLOBAL_NOTIFICATION_CHANNELS` 附近增加：
+
+  ```tsx
+  const DOMESTIC_NOTIFICATION_CHANNELS = [
+    { key: "weixin", labelKey: "微信", comingSoon: false },
+    { key: "qqbot", label: "QQ", comingSoon: false },
+    { key: "wecom", labelKey: "企业微信", comingSoon: false },
+    { key: "feishu", labelKey: "飞书", comingSoon: false },
+    { key: "dingtalk", labelKey: "钉钉", comingSoon: false },
+  ] as const;
+  ```
+
+  在 `AutomationFormModal` 中用当前区域候选派生可见列表：
+
+  ```tsx
+  const availableNotificationChannels = (isGlobal
+    ? GLOBAL_NOTIFICATION_CHANNELS
+    : DOMESTIC_NOTIFICATION_CHANNELS
+  ).map((channel) => ({
+    key: channel.key,
+    label: "label" in channel ? channel.label : t(channel.labelKey),
+    comingSoon: channel.comingSoon,
+  })).filter(({ key, comingSoon }) => (
+    isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon)
+  ));
+  const hasAvailableNotificationChannel = availableNotificationChannels.length > 0;
+  ```
+
+  通知区域直接渲染 `availableNotificationChannels.map(...)`，删除国内站硬编码未过滤数组。保留现有 loading、选择、Chat ID、测试发送和微信限频分支。
+
+  在详情名称映射中增加：
+
+  ```tsx
+  if (platform === "dingtalk") return t("钉钉");
+  ```
+
+- [x] **Step 4: 更新空态入口文案与 i18n 字典**
+
+  将组件中的：
+
+  ```tsx
+  {t("去通道配置")}
+  ```
+
+  改为：
+
+  ```tsx
+  {t("前往通道配置")}
+  ```
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:zh-hant
+  ```
+
+  新 key 固定为 `k_3a42a311`。补齐：
+
+  ```json
+  // en-US.json
+  "k_3a42a311": "Configure channels"
+
+  // id-ID.json
+  "k_3a42a311": "Konfigurasi kanal"
+  ```
+
+  `zh-to-key.json`、`zh-CN.json` 和 `zh-Hant.json` 只使用脚本生成结果，不手工改写。
+
+- [x] **Step 5: 运行双区域 GREEN 回归**
+
+  Run:
+
+  ```bash
+  cd frontend
+  VITE_REGION=cn pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/agent-automations-panel.test.ts \
+    --api.host 127.0.0.1
+  VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/agent-automations-panel.global.test.ts \
+    --api.host 127.0.0.1
+  VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/agent-automations-panel.test.ts \
+    -t "hides the background-only hint in the global channel empty state|keeps the background-only hint when a global channel is available" \
+    --api.host 127.0.0.1
+  ```
+
+  Expected: 国内站主文件、国际站专项文件和国际站空态 2 个精准用例全部通过。
+
+- [x] **Step 6: 运行质量门禁并清理生成物**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  pnpm build
+  pnpm build:global
+  cd ..
+  git diff --check
+  git status --short
+  ```
+
+  Expected: 类型、i18n、国内/国际构建和 diff 检查通过；最终范围只包含设计/计划、自动任务组件、对应测试和必要 i18n 字典，不包含 `next-env.d.ts`、字体或构建输出。
+
+- [x] **Step 7: 提交门禁**
+
+  展示最终 diff、测试和构建证据，等待用户明确确认后再执行：
+
+  ```bash
+  git add frontend/openspec/plan.md \
+    frontend/src/pages/marketing/agent-automations-panel.tsx \
+    frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts \
+    frontend/src/i18n/generated/zh-to-key.json \
+    frontend/src/i18n/generated/zh-CN.json \
+    frontend/src/i18n/generated/zh-Hant.json \
+    frontend/src/i18n/generated/en-US.json \
+    frontend/src/i18n/generated/id-ID.json
+  git commit -m "对齐国内站自动任务通知通道展示 / feat: filter domestic automation channels"
+  ```
+
+### Task 2: 调整国内站通知通道展示顺序
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts`
+- Modify: `frontend/openspec/changes/2026-08-21-domestic-automation-configured-channels-design.md`
+
+**Acceptance:**
+- 国内站已配置通道按微信、QQ、企业微信、飞书、钉钉展示。
+- 过滤未配置通道后，剩余通道仍保持上述相对顺序。
+- 国际站顺序保持不变。
+
+- [x] 先增加国内五通道顺序断言并确认 RED。
+- [x] 调整国内候选常量和邻近说明并确认 GREEN。
+- [x] 运行国内完整面板测试、国际专项测试、类型检查和 diff 检查。
+
+---
