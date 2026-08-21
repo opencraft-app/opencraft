@@ -256,13 +256,23 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 	if err != nil {
 		return binding, err
 	}
-	s.startBillingAccountOpening(registered)
+	s.startBillingAccountOpening(registered, in.ClientIP, in.ClientUA)
 	return registered, nil
 }
 
-func (s *Service) startBillingAccountOpening(binding Binding) {
+func (s *Service) startBillingAccountOpening(binding Binding, clientIP, clientUA string) {
 	s.runAsync(func() {
-		if _, err := s.openBillingAccount(context.Background(), binding, true); err != nil {
+		ctx := context.Background()
+		resolved, err := s.ensureBindingAppID(ctx, binding, clientIP, clientUA)
+		if err != nil {
+			slog.Warn("international shadow app id lookup after registration failed",
+				"user_id", binding.UserID,
+				"uin", binding.Uin,
+				"err", err,
+			)
+			resolved = binding
+		}
+		if _, err = s.openBillingAccount(ctx, resolved, true); err != nil {
 			slog.Warn("international shadow billing activation failed",
 				"user_id", binding.UserID,
 				"uin", binding.Uin,
