@@ -383,6 +383,57 @@ func TestGitHubOAuthCallbackCreatesSessionAndRedirectsToDashboard(t *testing.T) 
 	}
 }
 
+func TestGitHubOAuthCallbackCompletesPreparedAccountSwitch(t *testing.T) {
+	client := &stubGitHubOAuthClient{identity: service.OAuthSignInInput{
+		Provider: "github", ProviderSubject: "github-switch-user", Email: "new-switch@example.com",
+		EmailVerified: true, Name: "New User",
+	}}
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{Now: fixedHTTPTestNow, SeedDefaultInvites: true})
+	svc := service.NewWithStore(store, service.Options{Now: fixedHTTPTestNow, SessionTTL: 30 * 24 * time.Hour})
+	router := NewRouter(svc, ServerConfig{
+		CookieSecure: true, CookieSameSite: http.SameSiteNoneMode, SessionTTL: 30 * 24 * time.Hour,
+		Federation: newSwitchTestFederationConfig(t),
+		GitHubOAuth: &GitHubOAuthConfig{
+			ClientID: "github-client-id-test", ClientSecret: "secret",
+			RedirectURI:     "https://lightclaw.tech/auth/oauth/github/callback",
+			FrontendBaseURL: "https://lightclaw.pages.dev", PublicBaseURL: "https://lightclaw.tech",
+			Client: client, StateTTL: 10 * time.Minute,
+		},
+	})
+	oldLogin := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name": "Old User", "email": "old-oauth-switch@example.com", "password": "password123", "inviteCode": "VALID2026",
+	})
+	oldSession := sessionCookieFromRecorder(t, oldLogin)
+	prepare := performJSONRequest(t, router, http.MethodPost, "/auth/federation/switch/prepare", nil, oldSession)
+	switchCookie := cookieFromRecorderByName(t, prepare, federationSwitchCookieName)
+	start := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/github/start", nil)
+	stateCookie := cookieFromRecorderByName(t, start, githubOAuthStateCookieName)
+	location, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callback := performJSONRequest(t, router, http.MethodGet,
+		"/auth/oauth/github/callback?code=code&state="+url.QueryEscape(location.Query().Get("state")), nil,
+		stateCookie, switchCookie,
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("callback = %d %s", callback.Code, callback.Body.String())
+	}
+	newSession := sessionCookieFromRecorder(t, callback)
+	if current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, newSession); current.Code != http.StatusOK {
+		t.Fatalf("new session is not valid: %d %s", current.Code, current.Body.String())
+	}
+	if current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, oldSession); current.Code != http.StatusUnauthorized {
+		t.Fatalf("old session remains valid: %d %s", current.Code, current.Body.String())
+	}
+	cleared := cookieFromRecorderByName(t, callback, federationSwitchCookieName)
+	if cleared.MaxAge >= 0 {
+		t.Fatalf("switch cookie was not cleared: %+v", cleared)
+	}
+}
+
 func TestGitHubOAuthCallbackPrefersReturnToRedirect(t *testing.T) {
 	t.Parallel()
 

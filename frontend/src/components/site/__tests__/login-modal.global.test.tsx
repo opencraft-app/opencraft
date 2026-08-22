@@ -13,6 +13,15 @@ import * as oauthModule from "@/lib/oauth";
 import { LoginModal } from "@/components/site/login-modal";
 import type { OAuthProvider } from "@/lib/oauth";
 
+vi.mock("@/observability/posthog", () => ({
+  captureProductEvent: vi.fn(),
+  PRODUCT_ANALYTICS_EVENTS: {
+    LOGIN_MODAL_OPENED: "login_modal_opened",
+    OAUTH_PROVIDER_CLICKED: "oauth_provider_clicked",
+  },
+  PRODUCT_ANALYTICS_LOCATIONS: { LOGIN_MODAL: "login_modal" },
+}));
+
 vi.mock("@/lib/region", () => ({
   REGION: "global",
   isCN: false,

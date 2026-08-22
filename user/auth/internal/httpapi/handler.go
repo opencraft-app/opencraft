@@ -39,6 +39,7 @@ type Handler struct {
 	deviceBindTokens  *deviceBindTokenCodec
 	publicBaseURL     string
 	frontendBaseURL   string
+	federation        *FederationConfig
 }
 
 type invitePrepareRequest struct {
@@ -155,6 +156,7 @@ func (h *Handler) SignInWithPassword(ctx context.Context, request api.SignInWith
 
 	if gctx := ginContext(ctx); gctx != nil {
 		h.setSessionCookie(gctx, session.Token)
+		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
 	}
 
@@ -163,14 +165,22 @@ func (h *Handler) SignInWithPassword(ctx context.Context, request api.SignInWith
 
 func (h *Handler) SignUpWithPassword(ctx context.Context, request api.SignUpWithPasswordRequestObject) (api.SignUpWithPasswordResponseObject, error) {
 	inviteCode := optionalStringValue(request.Body.InviteCode)
-	if gctx := ginContext(ctx); gctx != nil && inviteCode == "" {
-		inviteCode = h.inviteTicketFromRequest(gctx)
+	clientIP := ""
+	clientUA := ""
+	if gctx := ginContext(ctx); gctx != nil {
+		if inviteCode == "" {
+			inviteCode = h.inviteTicketFromRequest(gctx)
+		}
+		clientIP = gctx.ClientIP()
+		clientUA = gctx.Request.UserAgent()
 	}
 	session, err := h.service.SignUpWithPassword(ctx, service.PasswordSignUpInput{
 		Name:       request.Body.Name,
 		Email:      request.Body.Email,
 		Password:   request.Body.Password,
 		InviteCode: inviteCode,
+		ClientIP:   clientIP,
+		ClientUA:   clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -187,6 +197,7 @@ func (h *Handler) SignUpWithPassword(ctx context.Context, request api.SignUpWith
 
 	if gctx := ginContext(ctx); gctx != nil {
 		h.setSessionCookie(gctx, session.Token)
+		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
 	}
 
@@ -1031,6 +1042,7 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 
 	if gctx := ginContext(ctx); gctx != nil {
 		h.setSessionCookie(gctx, session.Token)
+		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
 	}
 	return api.VerifySmsCode200JSONResponse(h.toSessionResponse(ctx, session)), nil

@@ -5,10 +5,76 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+func deployConfigPaths(t *testing.T, repoRoot string) []string {
+	t.Helper()
+
+	matches, err := filepath.Glob(filepath.Join(repoRoot, "argocd/services/service-gateway/*/config.yaml"))
+	if err != nil {
+		t.Fatalf("find deploy configs: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("no service-gateway deploy configs found")
+	}
+	sort.Strings(matches)
+	return matches
+}
+
+func TestDeployConfigsExposeOnlyExactFederationPublicPaths(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	want := map[string]struct{}{
+		http.MethodGet + " /auth/federation/context":                    {},
+		http.MethodPost + " /auth/federation/tickets":                   {},
+		http.MethodPost + " /auth/federation/exchange":                  {},
+		http.MethodPost + " /auth/federation/bots/{bot_id}/tat/session": {},
+	}
+
+	for _, configFile := range deployConfigPaths(t, repoRoot) {
+		configFile := configFile
+		t.Run(filepath.Base(filepath.Dir(configFile)), func(t *testing.T) {
+			cfg, err := LoadConfigFile(configFile)
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+
+			got := make(map[string]struct{}, len(want))
+			for _, route := range cfg.Routes {
+				if route.Prefix != "/auth" {
+					continue
+				}
+				for _, rule := range route.PublicAllow {
+					if !strings.HasPrefix(rule.Path, "/auth/federation") {
+						continue
+					}
+					key := rule.Method + " " + rule.Path
+					if _, allowed := want[key]; !allowed {
+						t.Fatalf("unexpected federation public path %s", key)
+					}
+					got[key] = struct{}{}
+				}
+			}
+
+			if len(got) != len(want) {
+				t.Fatalf("federation public allowlist has %d rules, want %d: %+v", len(got), len(want), got)
+			}
+			for key := range want {
+				if _, ok := got[key]; !ok {
+					t.Fatalf("federation public allowlist missing %s", key)
+				}
+			}
+		})
+	}
+}
 
 func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
@@ -265,16 +331,10 @@ func TestLegacySandboxProxyRoutesStayRestricted(t *testing.T) {
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 
-	configPaths := []string{
-		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
-		"argocd/services/service-gateway/beijing-sandbox-2/config.yaml",
-		"argocd/services/service-gateway/sgprod/config.yaml",
-		"argocd/services/service-gateway/shprod/config.yaml",
-	}
-
-	for _, configPath := range configPaths {
-		t.Run(configPath, func(t *testing.T) {
-			cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
+	for _, configFile := range deployConfigPaths(t, repoRoot) {
+		configFile := configFile
+		t.Run(filepath.Base(filepath.Dir(configFile)), func(t *testing.T) {
+			cfg, err := LoadConfigFile(configFile)
 			if err != nil {
 				t.Fatalf("load config: %v", err)
 			}
@@ -289,9 +349,19 @@ func TestLegacySandboxProxyRoutesStayRestricted(t *testing.T) {
 				if len(route.Methods) != 2 || !containsString(route.Methods, http.MethodPost) || !containsString(route.Methods, http.MethodOptions) {
 					t.Fatalf("legacy sandbox proxy route must stay limited to POST/OPTIONS: %+v", route)
 				}
+				if route.PathPolicy != PathPolicyAllowlist {
+					t.Fatalf("legacy sandbox proxy path_policy = %q, want allowlist", route.PathPolicy)
+				}
+				if len(route.PathAllow) != 1 || route.PathAllow[0].Method != http.MethodPost || route.PathAllow[0].Path != "/sandboxes" {
+					t.Fatalf("legacy sandbox proxy must allow only POST /sandboxes: %+v", route.PathAllow)
+				}
+				for _, rule := range route.PathAllow {
+					if rule.Path == "/sandboxes/{id}/tat/session" || rule.Path == "/sandboxes/{sandbox_id}/tat/session" {
+						t.Fatalf("legacy sandbox proxy must not expose TAT session creation: %+v", rule)
+					}
+				}
 				return
 			}
-			t.Fatal("legacy sandbox proxy route is required until old frontend is fully rolled out")
 		})
 	}
 }

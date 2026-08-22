@@ -185,8 +185,8 @@ const globalDocs = [
     file: 'plans.md',
     group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
     description: {
-      'en-US': 'Compare LightVela plans, isolated cloud resources, monthly model credits, and the current international beta activation flow.',
-      'zh-CN': '对比 LightVela 套餐、独立云端资源、每月模型积分与当前国际站内测开通流程。',
+      'en-US': 'Compare LightVela plans, isolated cloud resources, monthly AI credits, refund rules, and email-based refund application steps.',
+      'zh-CN': '对比 LightVela 套餐、独立云端资源、每月 AI 积分，并了解退款规则与邮件申请步骤。',
     },
   },
   {

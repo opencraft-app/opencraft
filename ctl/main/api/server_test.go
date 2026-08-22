@@ -47,6 +47,7 @@ type stubLogic struct {
 	terminalSessionResp                    *transport.TerminalSessionResponse
 	terminalSessionErr                     error
 	terminalSessionInstanceID              string
+	terminalSessionUserID                  string
 	workspaceResp                          *transport.WorkspaceFilesResponse
 	workspaceErr                           error
 	workspaceFile                          string
@@ -182,6 +183,7 @@ func (s *stubLogic) GetInstance(ctx pctx.Context, instanceID string) (*transport
 func (s *stubLogic) StartTerminalSession(ctx pctx.Context, instanceID string) (*transport.TerminalSessionResponse, error) {
 	if s.terminalSessionResp != nil || s.terminalSessionErr != nil {
 		s.terminalSessionInstanceID = instanceID
+		s.terminalSessionUserID = ctx.GetUserID()
 		return s.terminalSessionResp, s.terminalSessionErr
 	}
 	return nil, errors.New("unexpected call")
@@ -1503,6 +1505,51 @@ func TestStartTerminalSessionUsesBotScopedRoute(t *testing.T) {
 	}
 	if data["username"] != "agentuser" || data["workingDirectory"] != "/home/agentuser" {
 		t.Fatalf("unexpected terminal identity data: %s", rec.Body.String())
+	}
+}
+
+func TestInternalBotTerminalSessionRequiresServiceBearerAndTrustedUser(t *testing.T) {
+	t.Setenv("CTL_INTERNAL_TOKEN", "internal-token")
+	response := &transport.TerminalSessionResponse{
+		SessionID: "sess-1", Region: "ap-beijing", InstanceID: "i-123",
+		OwnerUin: "10001", LoginUin: "10002", AppID: 123,
+		WsURL: "wss://tat.example.test/ws", Cols: 120, Rows: 30, TimeoutSeconds: 3600,
+	}
+	handler := &instanceHandler{logic: &stubLogic{terminalSessionResp: response}}
+	router := newRouter(handler, &bundleHandler{}, &passHandler{})
+
+	unauthorized := httptest.NewRequest(http.MethodPost, "/internal/bots/ins-1/tat/session", nil)
+	unauthorized.Header.Set(headerUserID, "user-1")
+	unauthorizedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(unauthorizedRecorder, unauthorized)
+	if unauthorizedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d body=%s", unauthorizedRecorder.Code, unauthorizedRecorder.Body.String())
+	}
+
+	authorized := httptest.NewRequest(http.MethodPost, "/internal/bots/ins-1/tat/session", nil)
+	authorized.Header.Set("Authorization", "Bearer internal-token")
+	authorized.Header.Set(headerUserID, "user-1")
+	authorizedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(authorizedRecorder, authorized)
+	if authorizedRecorder.Code != http.StatusOK {
+		t.Fatalf("authorized status = %d body=%s", authorizedRecorder.Code, authorizedRecorder.Body.String())
+	}
+	stub := handler.logic.(*stubLogic)
+	if stub.terminalSessionInstanceID != "ins-1" || stub.terminalSessionUserID != "user-1" {
+		t.Fatalf("terminal call instance=%q user=%q", stub.terminalSessionInstanceID, stub.terminalSessionUserID)
+	}
+}
+
+func TestInternalBotTerminalSessionFailsClosedWithoutConfiguredToken(t *testing.T) {
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "")
+	t.Setenv("CTL_INTERNAL_TOKEN", "")
+	handler := &instanceHandler{logic: &stubLogic{terminalSessionResp: &transport.TerminalSessionResponse{SessionID: "must-not-run"}}}
+	req := httptest.NewRequest(http.MethodPost, "/internal/bots/ins-1/tat/session", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("missing configured token status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

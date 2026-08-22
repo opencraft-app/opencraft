@@ -39,6 +39,7 @@ import (
 const resourceNameOpenClawInstance = "OPENCLAW_INSTANCE"
 const defaultOpenClawInstanceQuota = 5
 const maxInstanceDisplayNameRunes = 64
+const terminalSessionDeadline = 5 * time.Second
 
 var expectedPauseConflictMessages = []string{
 	"already paused",
@@ -855,20 +856,63 @@ func (l *logic) StartTerminalSession(ctx pctx.Context, instanceID string) (*tran
 	if strings.TrimSpace(instanceID) == "" {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
+	deadlineCtx, cancel := stdctx.WithTimeout(ctx, terminalSessionDeadline)
+	defer cancel()
+	opCtx := ctx.WithContext(deadlineCtx)
+
+	entity, err := l.instanceDao.GetByInstanceID(opCtx, instanceID)
 	if err != nil {
+		if deadlineCtx.Err() != nil {
+			return nil, errcode.ErrSandboxTimeout
+		}
 		return nil, err
 	}
-	if err := l.requireActivePass(ctx); err != nil {
+	if deadlineCtx.Err() != nil {
+		return nil, errcode.ErrSandboxTimeout
+	}
+	if entity.Status != modelinstance.InstanceStatusRunning {
+		return nil, errcode.ErrInstanceStatusInvalid
+	}
+	if err := l.requireActivePass(opCtx); err != nil {
+		if deadlineCtx.Err() != nil {
+			return nil, errcode.ErrSandboxTimeout
+		}
 		return nil, activePassGuardError("start terminal session", err)
+	}
+	if deadlineCtx.Err() != nil {
+		return nil, errcode.ErrSandboxTimeout
 	}
 	if strings.TrimSpace(entity.SandboxId) == "" {
 		return nil, errcode.ErrSandboxNotFound
 	}
 
-	session, err := l.sandboxAdapter.StartTerminalSession(ctx, entity.SandboxId)
+	sandboxID := entity.SandboxId
+	session, err := l.sandboxAdapter.StartTerminalSession(opCtx, sandboxID)
 	if err != nil {
+		if deadlineCtx.Err() != nil {
+			return nil, errcode.ErrSandboxTimeout
+		}
 		return nil, err
+	}
+	if deadlineCtx.Err() != nil {
+		return nil, errcode.ErrSandboxTimeout
+	}
+
+	current, err := l.instanceDao.GetByInstanceID(opCtx, instanceID)
+	if err != nil {
+		if deadlineCtx.Err() != nil {
+			return nil, errcode.ErrSandboxTimeout
+		}
+		return nil, err
+	}
+	if deadlineCtx.Err() != nil {
+		return nil, errcode.ErrSandboxTimeout
+	}
+	if current.Status != modelinstance.InstanceStatusRunning {
+		return nil, errcode.ErrInstanceStatusInvalid
+	}
+	if current.InstanceId != entity.InstanceId || current.SandboxId != sandboxID {
+		return nil, errcode.ErrInstanceOperationConflict
 	}
 	return &transport.TerminalSessionResponse{
 		PoolID:         session.PoolID,

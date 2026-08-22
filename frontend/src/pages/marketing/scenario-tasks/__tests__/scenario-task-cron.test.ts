@@ -25,6 +25,20 @@ describe("scenario task cron helpers", () => {
     expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["weixin", "qqbot", "feishu"]));
   });
 
+  it("normalizes the OpenClaw DingTalk alias for scenario notifications", () => {
+    const output = JSON.stringify({
+      success: true,
+      data: {
+        platforms: [
+          { name: "openclaw-dingtalk", status: "connected" },
+        ],
+      },
+    });
+
+    expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["dingtalk"]));
+    expect(formatScenarioChannelLabel("openclaw-dingtalk")).toBe("钉钉");
+  });
+
   it("parses object-shaped channel payloads and normalizes labels", () => {
     const output = JSON.stringify({
       data: {

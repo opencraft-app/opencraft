@@ -141,20 +141,22 @@ func Install(d *jifei.Dispatcher, deps Deps) {
 //   - dealName / appId / uin / subProductCode / bundleId / goodsNum / goodsDetail
 //
 // 字段类型说明（每个字段都标注 PDF 协议类型，铁律见 jifei/envelope.go 包注释）：
-//   - DealName: PDF "string" — 计费订单号。
+//   - DealName / BigDealID / BillingActivityID: PDF "string"；SG 国际站真实回调同样返回。
 //   - AppID: PDF "long"（int）— 云平台应用 ID；jifei 实测发 number。**v1.7.28 BUG-06
 //     同模式修复 (2026-05-21)**：原定义 string，与 PDF 不符；FlowStore 接口签名仍是
 //     appID string（DB 列存 string），handler 内调用时用 strconv.FormatInt 转一次。
 //   - Uin: PDF "string"（quoted）— 主账号。
 //   - GoodsNum: PDF "int" — 商品数量。
 type callbackPara struct {
-	DealName       string                 `json:"dealName"`       // PDF: string
-	AppID          int64                  `json:"appId"`          // PDF: long (number); v1.7.28 BUG-06 同模式修复
-	Uin            string                 `json:"uin"`            // PDF: string (quoted)
-	SubProductCode string                 `json:"subProductCode"` // PDF: string
-	BundleID       string                 `json:"bundleId"`       // 业务字段（trade 自家落库）
-	GoodsNum       int                    `json:"goodsNum"`       // PDF: int
-	GoodsDetail    map[string]interface{} `json:"goodsDetail"`    // PDF: object
+	DealName          string                 `json:"dealName"`          // PDF: string
+	AppID             int64                  `json:"appId"`             // PDF: long (number); v1.7.28 BUG-06 同模式修复
+	Uin               string                 `json:"uin"`               // PDF: string (quoted)
+	SubProductCode    string                 `json:"subProductCode"`    // PDF: string
+	BundleID          string                 `json:"bundleId"`          // 业务字段（trade 自家落库）
+	GoodsNum          int                    `json:"goodsNum"`          // PDF: int
+	GoodsDetail       map[string]interface{} `json:"goodsDetail"`       // PDF: object
+	BigDealID         string                 `json:"bigDealId"`         // PDF: string；点石 big_deal_no
+	BillingActivityID string                 `json:"billingActivityId"` // PDF: string；非零表示活动订单
 }
 
 // makeHandler 构造闭包 handler；导出便于单元测试直接构造而无需走 dispatcher。
@@ -399,26 +401,28 @@ func runMainFlow(
 		}
 	}
 
-	// Step T5：source=='dianshi' 时 INSERT trade_user_activity_participation（设计稿 §5.6.1 step 4）。
+	// Step T5：点石活动单 INSERT trade_user_activity_participation（设计稿 §5.6.1 step 4）。
 	//
 	// 触发条件（全部满足才走 INSERT）：
 	//   - deps.ActivityStore != nil（启动期注入了点石依赖）
-	//   - order != nil（T2 反查命中 trade_order；jifei 回调在 trade_order 落库之后到达的正常时序）
-	//   - order.Source == "dianshi"（jifei 路径 trade_order 这里不会命中）
+	//   - para.BillingActivityID 非空且不为 "0"（计费回调标识活动订单）
+	//
+	// do_goods_and_pay 会同步触发 createResource，回调可能早于 trade_order INSERT。
+	// 因此点石判定和参与记录字段必须来自 callback para，不能依赖 order.Source。
 	//
 	// 失败语义：INSERT 失败 / 唯一键冲突 / 反查 trade_bundle_activity 失败均**不阻塞 jifei 响应**
 	// （与 T4 MarkOrderProvisioned 同款风格）—ctl pass 已落地、点石 deal 已发出，错误仅日志告警供运维补充。
 	// 唯一键 (uin, activity_id) 冲突 = jifei 重复回调 / 跨会话重复领取，本身就是幂等体现，
 	// 同样不报错。
-	if deps.ActivityStore != nil && order != nil && order.Source == store.OrderSourceDianshi {
-		insertErr := insertDianshiParticipation(ctx, deps, order, pass.PassID)
+	if deps.ActivityStore != nil && para.BillingActivityID != "" && para.BillingActivityID != "0" {
+		insertErr := insertDianshiParticipation(ctx, deps, para, pass.PassID)
 		if insertErr != nil {
 			// 不阻塞 jifei 响应；记日志供运维补充。
-			log.Printf("[dianshi-cb] insert participation failed (non-blocking) dealName=%s uin=%s bundleId=%s err=%v",
-				order.DealName, order.Uin, order.BundleID, insertErr)
+			log.Printf("[dianshi-cb] insert participation failed (non-blocking) dealName=%s uin=%s billingActivityId=%s err=%v",
+				para.DealName, para.Uin, para.BillingActivityID, insertErr)
 		} else {
-			log.Printf("[dianshi-cb] insert participation ok dealName=%s uin=%s bundleId=%s",
-				order.DealName, order.Uin, order.BundleID)
+			log.Printf("[dianshi-cb] insert participation ok dealName=%s uin=%s billingActivityId=%s",
+				para.DealName, para.Uin, para.BillingActivityID)
 		}
 	}
 
@@ -676,10 +680,10 @@ func parseInt64(s string) (int64, error) {
 // insertDianshiParticipation 把点石下单成功事实写入 trade_user_activity_participation
 // （设计稿 §5.6.1 step 4）。
 //
-// 触发条件由调用方保证：trade_order.source == 'dianshi' && order != nil。
+// 触发条件由调用方保证：callback para.billingActivityId 非空且不为 "0"。
 //
 // 步骤：
-//  1. 反查 trade_bundle_activity（按 order.bundle_id）拿 activity_id / act_id
+//  1. 反查 trade_bundle_activity（按 callback bundleId）拿 activity_id / act_id
 //  2. BEGIN TX → INSERT trade_user_activity_participation → COMMIT
 //  3. 唯一键 (uin, activity_id) 冲突 = jifei 重复回调 / 跨会话重复领取，视为幂等成功（不报错）
 //
@@ -687,7 +691,7 @@ func parseInt64(s string) (int64, error) {
 func insertDianshiParticipation(
 	ctx context.Context,
 	deps Deps,
-	order *store.TradeOrder,
+	para *callbackPara,
 	passID string,
 ) error {
 	if deps.ActivityStore == nil {
@@ -697,10 +701,19 @@ func insertDianshiParticipation(
 		return fmt.Errorf("DB is nil (required for participation INSERT tx)")
 	}
 
+	bundleID := strings.TrimSpace(para.BundleID)
+	if bundleID == "" {
+		bundleID = extractStringFromGoodsDetail(para.GoodsDetail, "bundleId")
+	}
+	if bundleID == "" {
+		return fmt.Errorf("bundleId missing in para and goodsDetail")
+	}
+	externalUserID := extractStringFromGoodsDetail(para.GoodsDetail, "externalUserId")
+
 	// Step 1: 反查 trade_bundle_activity 拿 activity_id / act_id
-	mapping, err := deps.ActivityStore.GetBundleActivityByBundleID(ctx, order.BundleID)
+	mapping, err := deps.ActivityStore.GetBundleActivityByBundleID(ctx, bundleID)
 	if err != nil {
-		return fmt.Errorf("get bundle_activity bundleID=%s: %w", order.BundleID, err)
+		return fmt.Errorf("get bundle_activity bundleID=%s: %w", bundleID, err)
 	}
 
 	// Step 2: 开事务 INSERT
@@ -713,21 +726,20 @@ func insertDianshiParticipation(
 		_ = tx.Rollback()
 	}()
 
-	// big_deal_no：优先从 goods_detail 取（placeOrderDianshi 写入时塞进去），
-	// 兜底用 trade_order.big_order_id（点石路径下二者同源）。
-	bigDealNo := extractStringFromGoodsDetail(order.GoodsDetail, "dianshi_big_deal_no")
+	// 国际站真实回调在 para 顶层返回 bigDealId；兼容旧回调从 goodsDetail 兜底。
+	bigDealNo := strings.TrimSpace(para.BigDealID)
 	if bigDealNo == "" {
-		bigDealNo = order.BigOrderID
+		bigDealNo = extractStringFromGoodsDetail(para.GoodsDetail, "dianshi_big_deal_no")
 	}
 
 	row := &store.UserActivityParticipation{
-		Uin:            order.Uin,
-		AppID:          order.AppID,
-		ExternalUserID: order.ExternalUserID,
+		Uin:            para.Uin,
+		AppID:          strconv.FormatInt(para.AppID, 10),
+		ExternalUserID: externalUserID,
 		ActivityID:     mapping.ActivityID,
-		BundleID:       order.BundleID,
+		BundleID:       bundleID,
 		ActID:          mapping.ActID,
-		DealName:       order.DealName,
+		DealName:       para.DealName,
 		BigDealNo:      bigDealNo,
 	}
 
@@ -739,11 +751,11 @@ func insertDianshiParticipation(
 				return fmt.Errorf("commit empty tx after duplicate: %w", commitErr)
 			}
 			log.Printf("[dianshi-cb] participation already exists (idempotent) uin=%s activityId=%d dealName=%s passID=%s",
-				order.Uin, mapping.ActivityID, order.DealName, passID)
+				para.Uin, mapping.ActivityID, para.DealName, passID)
 			return nil
 		}
 		return fmt.Errorf("insert participation uin=%s activityID=%d: %w",
-			order.Uin, mapping.ActivityID, err)
+			para.Uin, mapping.ActivityID, err)
 	}
 
 	if err := tx.Commit(); err != nil {

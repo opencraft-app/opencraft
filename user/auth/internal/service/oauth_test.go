@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
@@ -77,10 +78,15 @@ func TestOAuthSignInCreatesUserAndKeepsSubscriptionOutOfSession(t *testing.T) {
 func TestIntlOAuthSignInProvisionsShadowAccountAndBilling(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow})
 	shadowStore := shadowbinding.NewMemoryStore()
+	now := fixedNow()
 	cloud := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
 		Uin:      450860000002,
 		OwnerUin: 450860000002,
-		AppID:    1374210036,
+	}, temporaryResult: shadowbinding.CloudTemporaryCredentials{
+		Uin: 450860000002, OwnerUin: 450860000002,
+		TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+	}, accountInfoResult: shadowbinding.CloudAccountInfo{
+		LoginUin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036,
 	}}
 	billing := &oauthBillingClient{result: shadowbinding.BillingAccountResult{IsOpen: true}}
 	shadowSvc := shadowbinding.New(shadowStore, cloud, shadowbinding.Options{
@@ -88,6 +94,7 @@ func TestIntlOAuthSignInProvisionsShadowAccountAndBilling(t *testing.T) {
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
 		RunAsync:       runShadowTaskInline,
+		Now:            fixedNow,
 	})
 	svc := NewWithStore(store, Options{
 		Now:           fixedNow,
@@ -101,6 +108,8 @@ func TestIntlOAuthSignInProvisionsShadowAccountAndBilling(t *testing.T) {
 		Email:           "verified@example.com",
 		EmailVerified:   true,
 		Name:            "Intl User",
+		ClientIP:        "198.51.100.23",
+		ClientUA:        "oauth-client/1.0",
 	})
 	if err != nil {
 		t.Fatalf("international oauth sign-in: %v", err)
@@ -109,21 +118,91 @@ func TestIntlOAuthSignInProvisionsShadowAccountAndBilling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get international shadow binding: %v", err)
 	}
-	if binding.Status != shadowbinding.StatusActive || cloud.calls != 1 || billing.calls != 1 {
+	if binding.Status != shadowbinding.StatusActive || binding.AppID != 1374210036 || cloud.calls != 1 || billing.calls != 1 {
 		t.Fatalf("expected active international binding, binding=%+v cloud_calls=%d billing_calls=%d", binding, cloud.calls, billing.calls)
 	}
 	if cloud.lastRegister.Email != "verified@example.com" {
 		t.Fatalf("expected oauth email to be used for registration, got %+v", cloud.lastRegister)
+	}
+	if cloud.lastTemporary.ClientIP != "198.51.100.23" || cloud.lastTemporary.ClientUA != "oauth-client/1.0" {
+		t.Fatalf("expected oauth client metadata to reach AppID lookup, got %+v", cloud.lastTemporary)
+	}
+}
+
+func TestIntlOAuthSignInRepairsExistingActiveBindingWithoutAppID(t *testing.T) {
+	now := fixedNow()
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	seedService := NewWithStore(store, Options{Now: fixedNow})
+	seedSession, err := seedService.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "google",
+		ProviderSubject: "google-intl-existing",
+		Email:           "existing@example.com",
+		EmailVerified:   true,
+		Name:            "Existing Intl User",
+	})
+	if err != nil {
+		t.Fatalf("seed oauth user: %v", err)
+	}
+
+	shadowStore := shadowbinding.NewMemoryStore()
+	if _, err := shadowStore.SavePendingBinding(context.Background(), seedSession.User.ID, "sgprod_existing", now); err != nil {
+		t.Fatalf("save pending binding: %v", err)
+	}
+	if _, err := shadowStore.MarkBindingActive(context.Background(), seedSession.User.ID, 450860000099, 450860000099, 0, now); err != nil {
+		t.Fatalf("mark active binding: %v", err)
+	}
+	cloud := &stubShadowRegisterClient{
+		temporaryResult: shadowbinding.CloudTemporaryCredentials{
+			Uin: 450860000099, OwnerUin: 450860000099,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoResult: shadowbinding.CloudAccountInfo{
+			LoginUin: 450860000099, OwnerUin: 450860000099, AppID: 1472999999,
+		},
+	}
+	shadowSvc := shadowbinding.New(shadowStore, cloud, shadowbinding.Options{
+		Enabled: true, SiteKind: shadowbinding.SiteKindIntl, RunAsync: runShadowTaskInline, Now: fixedNow,
+	})
+	svc := NewWithStore(store, Options{
+		Now: fixedNow, SiteKind: shadowbinding.SiteKindIntl, ShadowBinding: shadowSvc,
+	})
+
+	if _, err := svc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "google",
+		ProviderSubject: "google-intl-existing",
+		Email:           "existing@example.com",
+		EmailVerified:   true,
+		Name:            "Existing Intl User",
+		ClientIP:        "203.0.113.45",
+		ClientUA:        "oauth-client/2.0",
+	}); err != nil {
+		t.Fatalf("repeat oauth sign-in: %v", err)
+	}
+
+	binding, err := shadowStore.GetBindingByUserID(context.Background(), seedSession.User.ID)
+	if err != nil {
+		t.Fatalf("get repaired binding: %v", err)
+	}
+	if binding.AppID != 1472999999 || cloud.temporaryCalls != 1 || cloud.accountInfoCalls != 1 {
+		t.Fatalf("expected existing binding repair, binding=%+v temporary_calls=%d account_info_calls=%d", binding, cloud.temporaryCalls, cloud.accountInfoCalls)
+	}
+	if cloud.lastTemporary.ClientIP != "203.0.113.45" || cloud.lastTemporary.ClientUA != "oauth-client/2.0" {
+		t.Fatalf("expected repair to use current oauth client metadata, got %+v", cloud.lastTemporary)
 	}
 }
 
 func TestIntlPasswordSignUpProvisionsShadowAccountAndBillingWhenEnabled(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow})
 	shadowStore := shadowbinding.NewMemoryStore()
+	now := fixedNow()
 	cloud := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
 		Uin:      450860000003,
 		OwnerUin: 450860000003,
-		AppID:    1374210037,
+	}, temporaryResult: shadowbinding.CloudTemporaryCredentials{
+		Uin: 450860000003, OwnerUin: 450860000003,
+		TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+	}, accountInfoResult: shadowbinding.CloudAccountInfo{
+		LoginUin: 450860000003, OwnerUin: 450860000003, AppID: 1374210037,
 	}}
 	billing := &oauthBillingClient{result: shadowbinding.BillingAccountResult{IsOpen: true}}
 	shadowSvc := shadowbinding.New(shadowStore, cloud, shadowbinding.Options{
@@ -131,6 +210,7 @@ func TestIntlPasswordSignUpProvisionsShadowAccountAndBillingWhenEnabled(t *testi
 		SiteKind:       shadowbinding.SiteKindIntl,
 		BillingAccount: billing,
 		RunAsync:       runShadowTaskInline,
+		Now:            fixedNow,
 	})
 	svc := NewWithStore(store, Options{
 		Now:                         fixedNow,
@@ -143,6 +223,8 @@ func TestIntlPasswordSignUpProvisionsShadowAccountAndBillingWhenEnabled(t *testi
 		Name:     "Password Test User",
 		Email:    "skipzhang@tencent.com",
 		Password: "password-test-123",
+		ClientIP: "198.51.100.24",
+		ClientUA: "password-client/1.0",
 	})
 	if err != nil {
 		t.Fatalf("international password sign-up: %v", err)
@@ -151,11 +233,14 @@ func TestIntlPasswordSignUpProvisionsShadowAccountAndBillingWhenEnabled(t *testi
 	if err != nil {
 		t.Fatalf("get international shadow binding: %v", err)
 	}
-	if binding.Status != shadowbinding.StatusActive || cloud.calls != 1 || billing.calls != 1 {
+	if binding.Status != shadowbinding.StatusActive || binding.AppID != 1374210037 || cloud.calls != 1 || billing.calls != 1 {
 		t.Fatalf("expected active international binding, binding=%+v cloud_calls=%d billing_calls=%d", binding, cloud.calls, billing.calls)
 	}
 	if cloud.lastRegister.Email != "skipzhang@tencent.com" {
 		t.Fatalf("expected password email to be used for test registration, got %+v", cloud.lastRegister)
+	}
+	if cloud.lastTemporary.ClientIP != "198.51.100.24" || cloud.lastTemporary.ClientUA != "password-client/1.0" {
+		t.Fatalf("expected password sign-up client metadata to reach AppID lookup, got %+v", cloud.lastTemporary)
 	}
 }
 

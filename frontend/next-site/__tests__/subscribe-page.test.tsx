@@ -49,12 +49,14 @@ vi.mock("@/contexts/session-context", () => ({
 
 /* 登录态会走 listBundles 拉真实套餐；回跳用例要靠它拿到 planList 才能解析 pay_plan。 */
 const listBundlesMock = vi.fn();
+const createPassOrderMock = vi.fn();
 const createDianshiPassOrderAndPayMock = vi.fn();
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     plans: {
       listBundles: listBundlesMock,
+      createPassOrder: createPassOrderMock,
       createDianshiPassOrderAndPay: createDianshiPassOrderAndPayMock,
     },
   }),
@@ -138,6 +140,11 @@ const resetState = () => {
   sessionState.isAuthenticated = false;
   sessionState.user = null;
   listBundlesMock.mockReset();
+  createPassOrderMock.mockReset();
+  createPassOrderMock.mockResolvedValue({
+    deal_names: ["legacy-deal-1"],
+    auth_code: "legacy-auth-code",
+  });
   createDianshiPassOrderAndPayMock.mockReset();
   createDianshiPassOrderAndPayMock.mockResolvedValue({
     deal_name: "dianshi-deal-1",
@@ -208,7 +215,7 @@ describe("SubscribePage", () => {
     );
   });
 
-  it("uses the dedicated Dianshi flow for a quoted zero-price bundle", async () => {
+  it("keeps quoted zero-price bundles on the legacy order flow in CN", async () => {
     openClawState.isLoggedIn = true;
     sessionState.isAuthenticated = true;
     sessionState.user = { realnameVerified: true };
@@ -242,18 +249,17 @@ describe("SubscribePage", () => {
 
     await user.click(await screen.findByRole("button", { name: "免费订阅" }));
     expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
-    expect(screen.queryByText("微信支付")).not.toBeInTheDocument();
+    expect(screen.getByText("微信支付")).toBeInTheDocument();
     expect(screen.queryByText("信用卡支付")).not.toBeInTheDocument();
-    expect(screen.queryByText(/自动续费/)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "确认开通" }));
+    await user.click(screen.getByRole("button", { name: /支付/ }));
     await waitFor(() => {
-      expect(createDianshiPassOrderAndPayMock).toHaveBeenCalledWith({
+      expect(createPassOrderMock).toHaveBeenCalledWith({
         bundle_id: "bundle_launch_zero",
         period: 1,
         time_unit: "m",
       });
     });
-    expect(screen.getByRole("heading", { name: "正在开通套餐" })).toBeInTheDocument();
+    expect(createDianshiPassOrderAndPayMock).not.toHaveBeenCalled();
   });
 });
