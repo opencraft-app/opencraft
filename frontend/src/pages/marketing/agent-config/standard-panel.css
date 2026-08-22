@@ -1442,6 +1442,11 @@ input.lh-std-input::placeholder {
   transition: all 0.15s ease;
 }
 
+.lh-std-channel-panel__btn-outline,
+.lh-std-channel-panel__btn-primary {
+  border-radius: var(--lh-std-radius-lg);
+}
+
 .lh-std-channel-panel__btn-primary:hover:not(:disabled),
 .lh-std-skill-panel__btn-primary:hover:not(:disabled) {
   background: #111827;
