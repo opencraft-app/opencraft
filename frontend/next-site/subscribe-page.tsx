@@ -143,7 +143,7 @@ interface PlanInfo {
 }
 
 const isDianshiZeroAmountPlan = (plan: PlanInfo, paidBillingActive: boolean): boolean =>
-  paidBillingActive && plan.raw.price?.real_total_cost === 0;
+  isGlobal && paidBillingActive && plan.raw.price?.real_total_cost === 0;
 
 /* ─── 套餐分类 Tab 配置 ─── */
 
