@@ -1204,6 +1204,66 @@
 - `git diff --check`
 
 ---
+
+# 模型配置页 CR 问题修复 Implementation Plan
+
+**Status:** FE-AI 复审打回，正在修复 route 身份、Provider/凭据生命周期与探测三态问题。
+
+**Goal:** 修复 MR !3181 最新评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性和 Tooltip 被裁剪问题。
+
+**Architecture:** 保持现有页面、Hermes debug/exec 通道和 Provider 产品配置边界不变。Hermes helper 在实例内原位修改 fallback 原始条目；前端只消费不含凭据的快照。模型列表优先采用实时探测，实时结果为空时仅以产品静态目录补充可选项；Tooltip 复用现有 Portal/fixed 浮层模式。
+
+**Scope:** 仅修改 `agent-model-config` 模块、对应定向测试和本计划；不改 SDK、Provider 产品配置、后端接口、i18n 文案或页面整体结构。
+
+### Task 1: 保留备用模型原始凭据字段
+
+- [x] 在 `model-config-client.test.ts` 先增加失败测试，覆盖追加、取消和 legacy 迁移时已有 fallback 的 `api_key`、`key_env`、`api_key_env` 与未知扩展字段保持不变。
+- [x] 修改 `hermes-model-config-command.ts`，让 fallback 增删直接基于实例内原始配置条目，只把脱敏后的模型视图返回前端。
+- [x] 运行客户端定向测试确认 GREEN，且命令、输出与前端响应不包含明文 Key。
+
+### Task 2: 连通性检测校验选中模型
+
+- [x] 在 `model-config-client.test.ts` 先增加失败测试，覆盖 Provider 返回其他模型但不含当前 `model_id` 时检测失败。
+- [x] 修改 Hermes helper，仅在探测结果包含选中模型 ID 时返回成功；空结果和不匹配结果返回就近错误。
+- [x] 运行客户端定向测试确认 GREEN，并保留现有加密凭据传输断言。
+
+### Task 3: 静态模型目录作为获取结果兜底
+
+- [x] 先增加失败测试，覆盖 MiniMax 类 Provider 实时探测为空或 Hermes 返回 `models: None` 时，使用 `catalogModels` 填充下拉并允许添加。
+- [x] 将面板模型选项统一为带 `id`、`name`、`source` 的结构；实时结果优先，只有实时结果为空且非自定义 Provider 时使用静态目录。
+- [x] 覆盖无实时结果且无静态目录时仍不可添加、自定义 Provider 不使用静态兜底，并运行面板定向测试确认 GREEN。
+
+### Task 4: 操作 Tooltip 脱离裁剪容器
+
+- [x] 在 `model-config-panel.test.tsx` 先增加失败测试，断言 Tooltip 渲染到 `document.body`，支持 hover/focus、鼠标进入气泡和文本选择。
+- [x] 将 `ModelActionTooltip` 改为 `createPortal` + `fixed` 定位，复用项目现有浮层定位模式；监听 resize 和 capture scroll 更新位置，保留短暂关闭缓冲。
+- [x] 运行面板定向测试确认 GREEN，并检查按钮可访问名称、焦点状态和禁用原因提示不回退到原生 `title`。
+
+### Task 5: 独立 CR 补充边界
+
+- [x] 将模型 route 身份对齐 Hermes `(provider, model, normalized_base_url)`，同 Provider/模型的不同 endpoint 可独立删除且保留各自凭据。
+- [x] 复用 Hermes fallback 链并按三元组去重，legacy 重复 route 不再写入 `fallback_providers`。
+- [x] 将连通性请求绑定 Provider 指纹与 revision，Provider 变化后忽略延迟响应。
+- [x] 解除两个 Dialog 的手工 description ID 覆盖，交由 Radix 自动关联并消除可访问性警告。
+
+### Task 6: 修复 FE-AI 复审问题
+
+- [x] 保留 Hermes `models: None` 的探测失败语义，仅在探测成功但模型列表为空时使用静态目录。
+- [x] 拆分原始 route 身份与 Hermes runtime deployment 判定，精确增删 fallback 并拒绝无效主备组合。
+- [x] 删除模型前检查 Provider、模型与 key env 的剩余引用，避免破坏兄弟 endpoint。
+- [x] 将新增凭据失败回滚收窄为本次 `.env` 写入，不清理操作前已有的凭据池或镜像状态。
+- [x] 补齐失败测试、真实 Hermes smoke、类型、i18n 与 diff 门禁后重新执行 FE-AI review。
+
+## Verification
+
+- `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx`
+- `pnpm check`
+- `pnpm i18n:check`
+- `git diff --check`
+
+**Task 6 verification:** 7 个回归断言先按预期失败；模型配置相关 52 个测试通过、1 个环境测试跳过，真实 Hermes 源码 smoke 1/1 通过；`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。本地新进程 `http://127.0.0.1:5175/agents/models/` 返回 200。全仓测试另有 4 个未改动模块失败，随后一个 worker 持续满 CPU 无输出而终止，未作为本轮通过依据。
+
+---
 # My creations show() reveal Implementation Plan
 
 **Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。

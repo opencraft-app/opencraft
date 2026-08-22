@@ -127,6 +127,8 @@ describe("useModelConfig", () => {
       type: "assign",
       providerKey: model.providerKey,
       modelId: model.id,
+      baseUrl: model.baseUrl,
+      routeBaseUrl: model.baseUrl,
       purpose: "fallback",
     }]);
 
@@ -161,6 +163,8 @@ describe("useModelConfig", () => {
       type: "removeFallback",
       providerKey: model.providerKey,
       modelId: model.id,
+      baseUrl: model.baseUrl,
+      routeBaseUrl: model.baseUrl,
     }));
   });
 

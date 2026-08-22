@@ -19,8 +19,9 @@ export type ModelConfigOperation =
   | "remove-fallback"
   | "remove";
 
-export function getHermesModelIdentity(model: Pick<HermesConfiguredModel, "providerKey" | "id">) {
-  return `${model.providerKey}:${model.id}`;
+export function getHermesModelIdentity(model: Pick<HermesConfiguredModel, "providerKey" | "id" | "baseUrl" | "routeBaseUrl">) {
+  return JSON.stringify([model.providerKey, model.id, model.routeBaseUrl ?? model.baseUrl]
+    .map((value) => value.trim().replace(/\/+$/, "").toLowerCase()));
 }
 
 function getErrorMessage(error: unknown) {
@@ -117,8 +118,8 @@ export function useModelConfig({
     setOperationError(null);
     setOperationErrorOperation(null);
     try {
-      const models = await client.probe(input);
-      return revision === probeRevision.current && activeOperation.current?.token === token ? models : null;
+      const result = await client.probe(input);
+      return revision === probeRevision.current && activeOperation.current?.token === token ? result : null;
     } catch (error) {
       if (revision === probeRevision.current && activeOperation.current?.token === token) {
         setOperationError(getErrorMessage(error));
@@ -187,19 +188,35 @@ export function useModelConfig({
   const assign = useCallback((model: HermesConfiguredModel, purpose: "primary" | "fallback") =>
     runMutation(
       purpose === "primary" ? "assign-primary" : "assign-fallback",
-      () => client.assign({ providerKey: model.providerKey, modelId: model.id, purpose }),
+      () => client.assign({
+        providerKey: model.providerKey,
+        modelId: model.id,
+        baseUrl: model.baseUrl,
+        routeBaseUrl: model.routeBaseUrl ?? model.baseUrl,
+        purpose,
+      }),
     ), [client, runMutation]);
 
   const removeFallback = useCallback((model: HermesConfiguredModel) =>
     runMutation(
       "remove-fallback",
-      () => client.removeFallback({ providerKey: model.providerKey, modelId: model.id }),
+      () => client.removeFallback({
+        providerKey: model.providerKey,
+        modelId: model.id,
+        baseUrl: model.baseUrl,
+        routeBaseUrl: model.routeBaseUrl ?? model.baseUrl,
+      }),
     ), [client, runMutation]);
 
   const remove = useCallback((model: HermesConfiguredModel) =>
     runMutation(
       "remove",
-      () => client.remove({ providerKey: model.providerKey, modelId: model.id }),
+      () => client.remove({
+        providerKey: model.providerKey,
+        modelId: model.id,
+        baseUrl: model.baseUrl,
+        routeBaseUrl: model.routeBaseUrl ?? model.baseUrl,
+      }),
     ), [client, runMutation]);
 
   return {

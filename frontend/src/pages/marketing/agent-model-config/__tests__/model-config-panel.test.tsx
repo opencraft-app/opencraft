@@ -127,7 +127,11 @@ function decodeAction(command: string): HermesModelConfigAction {
   return JSON.parse(Buffer.from(match[1], "base64").toString("utf8")) as HermesModelConfigAction;
 }
 
-function createRemote(initial: HermesModelConfigSnapshot, probedModels = ["model-new", "shared-model"]) {
+function createRemote(
+  initial: HermesModelConfigSnapshot,
+  probedModels = ["model-new", "shared-model"],
+  probeSucceeded = true,
+) {
   let snapshot = structuredClone(initial);
   let readFailure = false;
   let nextFailure: HermesModelConfigAction["type"] | null = null;
@@ -151,7 +155,7 @@ function createRemote(initial: HermesModelConfigSnapshot, probedModels = ["model
       return {
         status: "SUCCESS",
         exitCode: 0,
-        output: successOutput({ ...snapshot, probedModels }),
+        output: successOutput({ ...snapshot, probedModels, probeSucceeded }),
       };
     }
     if ((action.type as string) === "connectivityProbe") {
@@ -270,9 +274,26 @@ describe("AgentModelConfigPanel", () => {
     expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
     expect(within(primaryRow).getByRole("button", { name: "设为备用模型" })).toBeDisabled();
     expect(within(primaryRow).getByRole("button", { name: "删除" })).toBeDisabled();
-    expect(within(primaryRow).getByText("当前模型已经是主模型").closest("[role=tooltip]")).toBeInTheDocument();
-    expect(within(primaryRow).getByText("主模型不能同时设为备用模型").closest("[role=tooltip]")).toBeInTheDocument();
-    expect(within(primaryRow).getByText("请先切换主模型后再删除").closest("[role=tooltip]")).toBeInTheDocument();
+    const primaryTooltipTrigger = within(primaryRow).getByRole("group", { name: "当前模型已经是主模型" });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    await userEvent.hover(primaryTooltipTrigger);
+    const primaryTooltip = await screen.findByRole("tooltip");
+    expect(primaryTooltip).toHaveTextContent("当前模型已经是主模型");
+    expect(primaryTooltip.parentElement).toBe(document.body);
+    expect(within(primaryRow).queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(primaryTooltip).toHaveClass("fixed", "pointer-events-auto", "select-text");
+    await userEvent.hover(primaryTooltip);
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+    await userEvent.unhover(primaryTooltip);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+
+    primaryTooltipTrigger.focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("当前模型已经是主模型");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    expect(within(primaryRow).getByRole("group", { name: "主模型不能同时设为备用模型" })).toBeInTheDocument();
+    expect(within(primaryRow).getByRole("group", { name: "请先切换主模型后再删除" })).toBeInTheDocument();
     expect(within(fallbackRow).getByRole("button", { name: "取消备用" })).toBeEnabled();
     expect(primaryRow.querySelector("[title]")).toBeNull();
     expect(screen.queryByRole("button", { name: /上移|下移/ })).not.toBeInTheDocument();
@@ -421,6 +442,104 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.queryByText("shared-model")).not.toBeInTheDocument();
   });
 
+  it("uses the Provider catalog when live model discovery returns no models", async () => {
+    const catalogProvider: ModelProviderOption = {
+      ...providers[1],
+      providerKey: "minimax-plan",
+      providerName: "MiniMax Token Plan",
+      catalogModels: [
+        { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+        { id: "MiniMax-M2.1-lightning", name: "MiniMax M2.1 Lightning" },
+      ],
+    };
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, []);
+    render(
+      <AgentModelConfigPanel
+        botId="bot-1"
+        execDebugCommand={remote.execDebugCommand}
+        providers={[catalogProvider]}
+      />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "catalog-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    const modelSelect = screen.getByRole("combobox", { name: "模型" });
+    expect(modelSelect).toBeEnabled();
+    expect(modelSelect).toHaveTextContent("MiniMax M2.1");
+    await selectOption("模型", "MiniMax M2.1 Lightning");
+    await userEvent.click(screen.getByRole("button", { name: "添加模型" }));
+
+    expect(remote.actions).toContainEqual(expect.objectContaining({
+      type: "add",
+      model: expect.objectContaining({
+        id: "MiniMax-M2.1-lightning",
+        providerName: "MiniMax Token Plan",
+      }),
+    }));
+  });
+
+  it("does not present catalog models when Hermes model discovery fails", async () => {
+    const catalogProvider: ModelProviderOption = {
+      ...providers[1],
+      catalogModels: [{ id: "catalog-only-model", name: "Catalog Only Model" }],
+    };
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, [], false);
+    render(
+      <AgentModelConfigPanel
+        botId="bot-1"
+        execDebugCommand={remote.execDebugCommand}
+        providers={[catalogProvider]}
+      />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "invalid-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
+    expect(screen.queryByText("Catalog Only Model")).not.toBeInTheDocument();
+    expect(screen.getByText("未检测到可用模型")).toBeInTheDocument();
+  });
+
+  it("keeps model selection disabled when neither live nor catalog models are available", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, []);
+    renderPanel(remote);
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "empty-provider-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
+    expect(screen.getByText("未检测到可用模型")).toBeInTheDocument();
+  });
+
+  it("does not use a product catalog for a custom Provider", async () => {
+    const catalogProvider: ModelProviderOption = {
+      ...providers[1],
+      catalogModels: [{ id: "catalog-only-model", name: "Catalog Only Model" }],
+    };
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, []);
+    render(
+      <AgentModelConfigPanel
+        botId="bot-1"
+        execDebugCommand={remote.execDebugCommand}
+        providers={[catalogProvider]}
+      />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    await userEvent.type(screen.getByLabelText("Provider 名称"), "Private Relay");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
+    await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
+    expect(screen.queryByText("Catalog Only Model")).not.toBeInTheDocument();
+  });
+
   it("adds a probed model with the selected purpose and clears the key", async () => {
     const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel] });
     renderPanel(remote);
@@ -459,8 +578,8 @@ describe("AgentModelConfigPanel", () => {
 
     await userEvent.click(within(idleRow).getByRole("button", { name: "取消备用" }));
     await waitFor(() => expect(within(idleRow).getByText("未启用")).toBeInTheDocument());
-    expect(remote.actions).toContainEqual({ type: "assign", providerKey: idleModel.providerKey, modelId: idleModel.id, purpose: "fallback" });
-    expect(remote.actions).toContainEqual({ type: "removeFallback", providerKey: idleModel.providerKey, modelId: idleModel.id });
+    expect(remote.actions).toContainEqual({ type: "assign", providerKey: idleModel.providerKey, modelId: idleModel.id, baseUrl: idleModel.baseUrl, routeBaseUrl: idleModel.baseUrl, purpose: "fallback" });
+    expect(remote.actions).toContainEqual({ type: "removeFallback", providerKey: idleModel.providerKey, modelId: idleModel.id, baseUrl: idleModel.baseUrl, routeBaseUrl: idleModel.baseUrl });
     expect(screen.getByText("model-fallback").closest("li")).toHaveTextContent("备用模型");
   });
 
@@ -476,6 +595,7 @@ describe("AgentModelConfigPanel", () => {
     const idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
     await userEvent.click(within(idleRow).getByRole("button", { name: "删除" }));
     const dialog = screen.getByRole("dialog", { name: "删除模型" });
+    expect(dialog).toHaveAccessibleDescription("删除后将移除此模型配置；如果 Provider 下没有其他模型，也会移除对应凭据。");
     await userEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     expect(remote.actions.some((action) => action.type === "remove")).toBe(false);
 
@@ -483,7 +603,7 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.click(within(screen.getByRole("dialog", { name: "删除模型" })).getByRole("button", { name: "确认删除" }));
     await waitFor(() => expect(screen.queryByText("model-idle")).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole("heading", { name: "已配置模型" })).toHaveFocus());
-    expect(remote.actions).toContainEqual({ type: "remove", providerKey: idleModel.providerKey, modelId: idleModel.id });
+    expect(remote.actions).toContainEqual({ type: "remove", providerKey: idleModel.providerKey, modelId: idleModel.id, baseUrl: idleModel.baseUrl, routeBaseUrl: idleModel.baseUrl });
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     expect(within(primaryRow).getByRole("button", { name: "删除" })).toBeDisabled();
   });
@@ -583,6 +703,49 @@ describe("AgentModelConfigPanel", () => {
     expect(probeActions[0].credentialEnvelope.ciphertext).not.toBe(probeActions[1].credentialEnvelope.ciphertext);
     expect(JSON.stringify(actions)).not.toContain("provider-a-secret");
     expect(JSON.stringify(actions)).not.toContain("provider-b-secret");
+  });
+
+  it("ignores a deferred connectivity result after the Provider changes", async () => {
+    const initialProvider = providers[1];
+    const replacementProvider: ModelProviderOption = {
+      ...initialProvider,
+      providerKey: "replacement-plan",
+      providerName: "Replacement Plan",
+      baseUrl: "https://replacement.example.com/v1",
+    };
+    const initialSnapshot = { primary: primaryModel, fallbacks: [], configuredModels: [primaryModel] };
+    let resolveConnection: ((result: { status: string; exitCode: number; output: string }) => void) | undefined;
+    const pendingConnection = new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+      resolveConnection = resolve;
+    });
+    const execDebugCommand = vi.fn(async (_botId: string, command: string) => {
+      const action = decodeAction(command);
+      if (action.type === "prepareCredentialEnvelope") {
+        return { status: "Succeeded", exitCode: 0, output: preparationOutput };
+      }
+      if (action.type === "probe") {
+        return { status: "Succeeded", exitCode: 0, output: successOutput({ ...initialSnapshot, probedModels: ["shared-model"] }) };
+      }
+      if (action.type === "connectivityProbe") return pendingConnection;
+      return { status: "Succeeded", exitCode: 0, output: successOutput(initialSnapshot) };
+    });
+    const view = render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={execDebugCommand} providers={[initialProvider]} />,
+    );
+    await screen.findByText("model-primary");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "provider-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await userEvent.click(screen.getByRole("button", { name: "模型检测" }));
+    view.rerender(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={execDebugCommand} providers={[replacementProvider]} />,
+    );
+
+    await act(async () => {
+      resolveConnection?.({ status: "Succeeded", exitCode: 0, output: connectionOutput(initialSnapshot) });
+      await pendingConnection;
+    });
+    expect(screen.queryByRole("dialog", { name: "模型连接成功" })).not.toBeInTheDocument();
   });
 
   it("uses a collision-safe identity for custom Providers", async () => {

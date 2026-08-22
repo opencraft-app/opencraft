@@ -13,7 +13,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,10 +43,12 @@ import type {
   HermesModelConfigExecDebugCommand,
   ModelProviderOption,
 } from "./model-config-client";
+import { ModelActionTooltip } from "./model-action-tooltip";
 import { getHermesModelIdentity, useModelConfig } from "./use-model-config";
 
 type ProviderCategory = "coding_plan" | "api" | "custom";
 type ConfigurePurpose = "primary" | "fallback" | "idle";
+type ModelOption = { id: string; name: string; source: "live" | "catalog" };
 
 const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
   { id: "coding_plan", label: "模型 Coding Plan" },
@@ -61,29 +63,6 @@ const MODEL_SELECT_CONTENT_STYLE = {
   width: "var(--radix-select-trigger-width)",
   minWidth: "var(--radix-select-trigger-width)",
 } as const;
-
-function ModelActionTooltip({ children, content }: { children: ReactNode; content?: string }) {
-  const tooltipId = useId();
-  if (!content) return <>{children}</>;
-
-  return (
-    <span
-      className="group relative inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
-      tabIndex={0}
-      aria-describedby={tooltipId}
-    >
-      {children}
-      <span
-        id={tooltipId}
-        role="tooltip"
-        className="invisible pointer-events-none absolute bottom-full right-0 z-20 mb-2 w-max max-w-64 rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus:visible group-focus:opacity-100 group-hover:visible group-hover:opacity-100"
-      >
-        {content}
-        <span className="absolute right-4 top-full size-2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-      </span>
-    </span>
-  );
-}
 
 function managedProviderKey(value: string) {
   const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -157,7 +136,7 @@ export function AgentModelConfigPanel({
   const [customProviderName, setCustomProviderName] = useState("");
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customApiMode, setCustomApiMode] = useState("chat_completions");
-  const [detectedModels, setDetectedModels] = useState<string[]>([]);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [purpose, setPurpose] = useState<ConfigurePurpose>("primary");
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -186,7 +165,7 @@ export function AgentModelConfigPanel({
 
   const resetProbeResult = () => {
     probeUiRevision.current += 1;
-    setDetectedModels([]);
+    setModelOptions([]);
     setSelectedModelId("");
     setSuccessMessage(null);
     setConnectionResult(null);
@@ -232,7 +211,7 @@ export function AgentModelConfigPanel({
     setApiKey("");
     setApiKeyTarget("");
     setShowApiKey(false);
-    setDetectedModels([]);
+    setModelOptions([]);
     setSelectedModelId("");
     setSuccessMessage(null);
     setConnectionResult(null);
@@ -257,15 +236,21 @@ export function AgentModelConfigPanel({
     const requestFingerprint = providerFingerprint;
     resetProbeResult();
     const revision = probeUiRevision.current;
-    const models = await controller.probe({
+    const catalogModels = category === "custom" ? [] : activeProvider?.catalogModels ?? [];
+    const probeResult = await controller.probe({
       apiKey: apiKey.trim(),
       baseUrl: providerDraft.baseUrl,
       apiMode: providerDraft.apiMode,
     });
-    if (!models || revision !== probeUiRevision.current || requestFingerprint !== providerFingerprintRef.current) return;
-    setDetectedModels(models);
-    setSelectedModelId(models[0] ?? "");
-    setSuccessMessage(models.length > 0
+    if (!probeResult || revision !== probeUiRevision.current || requestFingerprint !== providerFingerprintRef.current) return;
+    const nextOptions: ModelOption[] = probeResult.models.length > 0
+      ? probeResult.models.map((id) => ({ id, name: id, source: "live" }))
+      : probeResult.succeeded
+        ? catalogModels.map(({ id, name }) => ({ id, name, source: "catalog" }))
+        : [];
+    setModelOptions(nextOptions);
+    setSelectedModelId(nextOptions[0]?.id ?? "");
+    setSuccessMessage(nextOptions.length > 0
       ? t("已获取可用模型")
       : t("未检测到可用模型"));
   };
@@ -281,7 +266,7 @@ export function AgentModelConfigPanel({
     setApiKey("");
     setApiKeyTarget("");
     setShowApiKey(false);
-    setDetectedModels([]);
+    setModelOptions([]);
     setSelectedModelId("");
     setSuccessMessage(t("模型已添加"));
     setConnectionResult(null);
@@ -289,12 +274,16 @@ export function AgentModelConfigPanel({
 
   const handleConnectivityTest = async () => {
     if (!selectedModel || !apiKey.trim() || !credentialMatchesProvider) return;
+    const requestFingerprint = providerFingerprint;
+    const revision = probeUiRevision.current;
     setConnectionResult(null);
     const result = await controller.testConnection({
       apiKey: apiKey.trim(),
       model: selectedModel,
     });
-    if (result) setConnectionResult(result);
+    if (result && revision === probeUiRevision.current && requestFingerprint === providerFingerprintRef.current) {
+      setConnectionResult(result);
+    }
   };
 
   const focusAddSection = () => {
@@ -602,10 +591,10 @@ export function AgentModelConfigPanel({
             <label className="text-sm font-medium text-black/70" htmlFor="detected-model">
               {t("模型")}
             </label>
-            <div className={cn(detectedModels.length > 0 && "flex flex-col gap-2 sm:flex-row sm:items-center")}>
+            <div className={cn(modelOptions.length > 0 && "flex flex-col gap-2 sm:flex-row sm:items-center")}>
               <Select
                 value={selectedModelId}
-                disabled={busy || detectedModels.length === 0}
+                disabled={busy || modelOptions.length === 0}
                 onValueChange={(value) => {
                   setSelectedModelId(value);
                   setConnectionResult(null);
@@ -615,21 +604,21 @@ export function AgentModelConfigPanel({
                 <SelectTrigger
                   id="detected-model"
                   aria-label={t("模型")}
-                  className={cn(MODEL_CONTROL_CLASS, detectedModels.length > 0 && "min-w-0 flex-1")}
+                  className={cn(MODEL_CONTROL_CLASS, modelOptions.length > 0 && "min-w-0 flex-1")}
                 >
-                  <SelectValue placeholder={detectedModels.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
+                  <SelectValue placeholder={modelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
                 </SelectTrigger>
                 <SelectContent
                   position="popper"
                   className={MODEL_SELECT_CONTENT_CLASS}
                   style={MODEL_SELECT_CONTENT_STYLE}
                 >
-                  {detectedModels.map((modelId) => (
-                    <SelectItem key={modelId} value={modelId}>{modelId}</SelectItem>
+                  {modelOptions.map((modelOption) => (
+                    <SelectItem key={modelOption.id} value={modelOption.id}>{modelOption.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {detectedModels.length > 0 ? (
+              {modelOptions.length > 0 ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -644,7 +633,7 @@ export function AgentModelConfigPanel({
                 </Button>
               ) : null}
             </div>
-            {detectedModels.length === 0 ? (
+            {modelOptions.length === 0 ? (
               <Button
                 type="button"
                 variant="outline"
@@ -753,7 +742,7 @@ export function AgentModelConfigPanel({
           if (!open) setConnectionResult(null);
         }}
       >
-        <DialogContent className="rounded-md md:rounded-md" aria-describedby="model-connection-description">
+        <DialogContent className="rounded-md md:rounded-md">
           <DialogHeader className="mb-5">
             <DialogTitle className="flex items-center gap-2">
               {connectionResult?.success
@@ -761,7 +750,7 @@ export function AgentModelConfigPanel({
                 : <XCircle className="size-5 text-red-600" aria-hidden="true" />}
               {connectionResult?.success ? t("模型连接成功") : t("模型连接失败")}
             </DialogTitle>
-            <DialogDescription id="model-connection-description">
+            <DialogDescription>
               {connectionResult?.success
                 ? t("当前模型可以正常连接。")
                 : t("当前模型暂时无法连接，请检查配置后重试。")}
@@ -820,7 +809,6 @@ export function AgentModelConfigPanel({
       >
         <DialogContent
           className="rounded-md md:rounded-md"
-          aria-describedby="delete-model-description"
           onCloseAutoFocus={(event) => {
             if (!restoreFocusAfterDelete.current) return;
             event.preventDefault();
@@ -830,7 +818,7 @@ export function AgentModelConfigPanel({
         >
           <DialogHeader>
             <DialogTitle>{t("删除模型")}</DialogTitle>
-            <DialogDescription id="delete-model-description">
+            <DialogDescription>
               {t("删除后将移除此模型配置；如果 Provider 下没有其他模型，也会移除对应凭据。")}
             </DialogDescription>
           </DialogHeader>

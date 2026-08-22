@@ -10,7 +10,7 @@ import {
   type HermesModelConfigSnapshot,
 } from "./hermes-model-config-command";
 
-export type { HermesCanonicalApiMode, HermesConfiguredModel, HermesConnectionProbeResult, HermesModelConfigAction, HermesModelConfigSnapshot, ModelProviderOption } from "./hermes-model-config-command";
+export type { HermesCanonicalApiMode, HermesConfiguredModel, HermesConnectionProbeResult, HermesModelConfigAction, HermesModelConfigSnapshot, HermesModelProbeResult, ModelProviderOption } from "./hermes-model-config-command";
 export { buildHermesModelConfigCommand } from "./hermes-model-config-command";
 
 interface DebugCommandResult {
@@ -54,7 +54,7 @@ function parseModel(value: unknown, field: string): HermesConfiguredModel {
   if (!isRecord(value)) {
     throw new HermesModelConfigResponseError("invalid_response", `${field} must be an object`);
   }
-  return {
+  const model: HermesConfiguredModel = {
     id: readText(value.id, `${field}.id`),
     providerKey: readText(value.providerKey, `${field}.providerKey`),
     providerName: readText(value.providerName, `${field}.providerName`),
@@ -62,6 +62,10 @@ function parseModel(value: unknown, field: string): HermesConfiguredModel {
     apiMode: readText(value.apiMode, `${field}.apiMode`, false),
     keyEnv: readText(value.keyEnv, `${field}.keyEnv`, false),
   };
+  if (value.routeBaseUrl !== undefined) {
+    model.routeBaseUrl = readText(value.routeBaseUrl, `${field}.routeBaseUrl`, false);
+  }
+  return model;
 }
 
 function parseSnapshot(value: unknown): HermesModelConfigSnapshot {
@@ -85,6 +89,10 @@ function parseSnapshot(value: unknown): HermesModelConfigSnapshot {
       throw new HermesModelConfigResponseError("invalid_response", "probedModels must be an array of model IDs");
     }
     snapshot.probedModels = [...new Set(value.probedModels.map((model) => model.trim()))];
+    snapshot.probeSucceeded = value.probeSucceeded === undefined ? true : value.probeSucceeded;
+  }
+  if (value.probeSucceeded !== undefined && typeof value.probeSucceeded !== "boolean") {
+    throw new HermesModelConfigResponseError("invalid_response", "probeSucceeded must be a boolean");
   }
   return snapshot;
 }
@@ -250,11 +258,15 @@ export function createHermesModelConfigClient(execDebugCommand: HermesModelConfi
 
   return {
     read: () => execute({ type: "read" }),
-    probe: async (input: { apiKey: string; baseUrl: string; apiMode?: string }) => (
-      await executeWithCredential(input.apiKey, (credentialEnvelope) => ({
+    probe: async (input: { apiKey: string; baseUrl: string; apiMode?: string }) => {
+      const snapshot = await executeWithCredential(input.apiKey, (credentialEnvelope) => ({
         type: "probe", credentialEnvelope, baseUrl: input.baseUrl, apiMode: input.apiMode,
-      }))
-    ).probedModels ?? [],
+      }));
+      return {
+        models: snapshot.probedModels ?? [],
+        succeeded: snapshot.probeSucceeded ?? true,
+      };
+    },
     testConnection: async (input: { apiKey: string; model: HermesConfiguredModel }) => {
       try {
         const credentialEnvelope = await prepareCredentialEnvelope(input.apiKey);

@@ -8,6 +8,7 @@ export interface HermesConfiguredModel {
   providerKey: string;
   providerName: string;
   baseUrl: string;
+  routeBaseUrl?: string;
   apiMode: string;
   keyEnv: string;
 }
@@ -17,6 +18,12 @@ export interface HermesModelConfigSnapshot {
   fallbacks: HermesConfiguredModel[];
   configuredModels: HermesConfiguredModel[];
   probedModels?: string[];
+  probeSucceeded?: boolean;
+}
+
+export interface HermesModelProbeResult {
+  models: string[];
+  succeeded: boolean;
 }
 
 export interface HermesCredentialEnvelope {
@@ -56,9 +63,9 @@ export type HermesModelConfigAction =
   | { type: "probe"; credentialEnvelope: HermesCredentialEnvelope; baseUrl: string; apiMode?: string }
   | { type: "connectivityProbe"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel }
   | { type: "add"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel; purpose: "primary" | "fallback" | "idle" }
-  | { type: "assign"; providerKey: string; modelId: string; purpose: "primary" | "fallback" | "idle" }
-  | { type: "removeFallback"; providerKey: string; modelId: string }
-  | { type: "remove"; providerKey: string; modelId: string };
+  | { type: "assign"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string; purpose: "primary" | "fallback" | "idle" }
+  | { type: "removeFallback"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string }
+  | { type: "remove"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string };
 
 function encodeBase64(value: string): string {
   const bytes = new TextEncoder().encode(value);
@@ -91,6 +98,13 @@ try:
     from hermes_cli import fallback_config as fallback_config
 except ImportError:
     fallback_config = None
+
+try:
+    from agent.backend_identity import BackendIdentity as HermesBackendIdentity
+    from agent.backend_identity import same_deployment as hermes_same_deployment
+except ImportError:
+    HermesBackendIdentity = None
+    hermes_same_deployment = None
 
 load_config = hermes_config.load_config
 save_config = hermes_config.save_config
@@ -210,6 +224,11 @@ def remove_provider_env_credential(key):
     if not callable(helper): raise RuntimeError("Hermes credential remover is unavailable")
     return helper(key)
 
+def remove_env_credential_only(key):
+    helper = getattr(hermes_config, "remove_env_value", None)
+    if not callable(helper): raise RuntimeError("Hermes environment credential remover is unavailable")
+    return helper(key)
+
 def get_fallback_chain(config):
     helper = getattr(fallback_config, "get_fallback_chain", None) if fallback_config else None
     if callable(helper): return helper(config)
@@ -241,7 +260,8 @@ def sanitize_probe_error(value, credential):
 
 def probed_model_ids(value):
     models = []
-    for item in (value.get("models", []) if isinstance(value, dict) else []):
+    raw_models = value.get("models") if isinstance(value, dict) else None
+    for item in (raw_models if isinstance(raw_models, list) else []):
         model_id = str(item or "").strip()
         if model_id and model_id not in models: models.append(model_id)
     return models
@@ -262,6 +282,9 @@ def probe_model_connection(credential, model):
         result = probe_api_models(credential, base_url, timeout=60, mode=model["apiMode"])
         models = probed_model_ids(result)
         if not models: return fallback
+        if model_id not in models:
+            fallback["errorMessage"] = "Selected model is unavailable"
+            return fallback
         return {
             "success": True,
             "provider": provider,
@@ -307,11 +330,14 @@ def new_product_key(value):
 def normalized_model(value, field="model", product_key=False):
     value = as_dict(value, field)
     key = text(value.get("providerKey"), field + ".providerKey")
+    base_url = text(value.get("baseUrl"), field + ".baseUrl")
+    route_base_url = value.get("routeBaseUrl") if "routeBaseUrl" in value else base_url
     return {
         "id": text(value.get("id"), field + ".id"),
         "providerKey": new_product_key(key) if product_key else key,
         "providerName": text(value.get("providerName"), field + ".providerName"),
-        "baseUrl": text(value.get("baseUrl"), field + ".baseUrl"),
+        "baseUrl": base_url,
+        "routeBaseUrl": text(route_base_url, field + ".routeBaseUrl", required=False),
         "apiMode": api_mode(value.get("apiMode"), field + ".apiMode"),
         "keyEnv": text(value.get("keyEnv"), field + ".keyEnv", required=False),
     }
@@ -327,17 +353,62 @@ def model_from_route(config, route):
     if not provider_key or not model_id: return None
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
     provider = providers.get(provider_key) if isinstance(providers.get(provider_key), dict) else {}
+    route_base_url = text(route.get("base_url"), "route.base_url", required=False)
     return {
         "id": model_id,
         "providerKey": provider_key,
         "providerName": text(provider.get("name") or provider.get("display_name") or provider_key, "providerName"),
-        "baseUrl": text(route.get("base_url") or provider.get("api") or provider.get("base_url"), "baseUrl", required=False),
+        "baseUrl": text(route_base_url or provider.get("api") or provider.get("base_url"), "baseUrl", required=False),
+        "routeBaseUrl": route_base_url,
         "apiMode": provider_mode(provider, route),
-        "keyEnv": text(provider.get("key_env"), "keyEnv", required=False),
+        "keyEnv": text(provider.get("key_env") or provider.get("api_key_env"), "keyEnv", required=False),
     }
 
-def same_model(left, right):
-    return bool(left and right and left["id"] == right["id"] and left["providerKey"] == right["providerKey"])
+def normalized_route_base_url(value):
+    return str(value or "").strip().rstrip("/").lower()
+
+def route_identity(model):
+    if not model: return ("", "", "")
+    route_base_url = model.get("routeBaseUrl") if "routeBaseUrl" in model else model.get("baseUrl")
+    return (
+        str(model.get("providerKey") or "").strip().lower(),
+        str(model.get("id") or "").strip().lower(),
+        normalized_route_base_url(route_base_url),
+    )
+
+def same_route(left, right):
+    return bool(left and right and route_identity(left) == route_identity(right))
+
+def same_provider_model(left, right):
+    return bool(
+        left and right
+        and left["id"].strip().lower() == right["id"].strip().lower()
+        and left["providerKey"].strip().lower() == right["providerKey"].strip().lower()
+    )
+
+def same_runtime_deployment(left, right):
+    if not left or not right: return False
+    left_base_url = left.get("routeBaseUrl") if "routeBaseUrl" in left else left.get("baseUrl")
+    right_base_url = right.get("routeBaseUrl") if "routeBaseUrl" in right else right.get("baseUrl")
+    if HermesBackendIdentity and callable(hermes_same_deployment):
+        return hermes_same_deployment(
+            HermesBackendIdentity.build(provider=left.get("providerKey"), model=left.get("id"), base_url=left_base_url),
+            HermesBackendIdentity.build(provider=right.get("providerKey"), model=right.get("id"), base_url=right_base_url),
+        )
+    left_provider, left_model = route_identity(left)[:2]
+    right_provider, right_model = route_identity(right)[:2]
+    left_url = normalized_route_base_url(left_base_url)
+    right_url = normalized_route_base_url(right_base_url)
+    if left_provider != right_provider:
+        if not (left_url and left_url == right_url and left_model and left_model == right_model): return False
+        try:
+            from hermes_cli.auth import PROVIDER_REGISTRY
+            if left_provider in PROVIDER_REGISTRY and right_provider in PROVIDER_REGISTRY: return False
+        except Exception:
+            pass
+        return True
+    if not left_provider or not left_model or left_model != right_model: return False
+    return not (left_url and right_url and left_url != right_url)
 
 def model_config(config):
     lightvela = config.get("lightvela") if isinstance(config.get("lightvela"), dict) else {}
@@ -360,7 +431,7 @@ def fallback_models(config):
     for route in get_fallback_chain(config) or []:
         try: model = model_from_route(config, route)
         except (TypeError, ValueError): continue
-        if model and not any(same_model(model, saved) for saved in values): values.append(model)
+        if model and not any(same_route(model, saved) for saved in values): values.append(model)
     return values
 
 def read_snapshot(config):
@@ -368,12 +439,23 @@ def read_snapshot(config):
     primary = model_from_route(config, config.get("model") if isinstance(config.get("model"), dict) else {})
     fallbacks = fallback_models(config)
     for candidate in [primary] + fallbacks:
-        if candidate and not any(same_model(candidate, saved) for saved in configured): configured.append(candidate)
+        if candidate and not any(same_route(candidate, saved) for saved in configured): configured.append(candidate)
     return {"primary": primary, "fallbacks": fallbacks, "configuredModels": configured}
 
-def find_configured(config, provider_key, model_id):
-    for model in read_snapshot(config)["configuredModels"]:
-        if model["providerKey"] == provider_key and model["id"] == model_id: return model
+def find_configured(config, provider_key, model_id, base_url=None, route_base_url=None):
+    matches = [
+        model for model in read_snapshot(config)["configuredModels"]
+        if model["providerKey"].strip().lower() == provider_key.strip().lower()
+        and model["id"].strip().lower() == model_id.strip().lower()
+    ]
+    if route_base_url is not None:
+        target_url = normalized_route_base_url(route_base_url)
+        matches = [model for model in matches if route_identity(model)[2] == target_url]
+    elif base_url:
+        target_url = normalized_route_base_url(base_url)
+        matches = [model for model in matches if normalized_route_base_url(model.get("baseUrl")) == target_url]
+    if len(matches) == 1: return matches[0]
+    if len(matches) > 1: raise ValueError("model identity is ambiguous")
     raise ValueError("model is not saved")
 
 def save_and_reload(config):
@@ -391,7 +473,7 @@ def current_credential(key):
 
 def restore_credential(key, previous):
     try:
-        if previous is None: remove_provider_env_credential(key)
+        if previous is None: remove_env_credential_only(key)
         else: save_provider_env_credential(key, previous)
     except Exception:
         pass
@@ -419,38 +501,97 @@ def remove_provider_model(provider, model_id):
     elif isinstance(existing, list): provider["models"] = [item for item in existing if model_entry_id(item) != model_id]
     else: provider["models"] = []
 
+def snapshot_models(config):
+    snapshot = read_snapshot(config)
+    return [snapshot["primary"]] + snapshot["fallbacks"] + snapshot["configuredModels"]
+
+def provider_model_referenced(config, model):
+    return any(same_provider_model(candidate, model) for candidate in snapshot_models(config))
+
+def provider_referenced(config, provider_key):
+    target = provider_key.strip().lower()
+    return any(
+        candidate and candidate["providerKey"].strip().lower() == target
+        for candidate in snapshot_models(config)
+    )
+
+def credential_key_referenced(value, target):
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if key in ("key_env", "api_key_env", "keyEnv") and isinstance(nested, str) and nested == target: return True
+            if credential_key_referenced(nested, target): return True
+    elif isinstance(value, list):
+        return any(credential_key_referenced(item, target) for item in value)
+    return False
+
 def apply_primary(config, model):
     current = config.get("model") if isinstance(config.get("model"), dict) else {}
     current.pop("api_key", None)
     current.pop("api", None)
-    current.update({"provider": model["providerKey"], "default": model["id"], "base_url": model["baseUrl"], "api_mode": model["apiMode"]})
+    current.update({"provider": model["providerKey"], "default": model["id"], "api_mode": model["apiMode"]})
+    route_base_url = model.get("routeBaseUrl") if "routeBaseUrl" in model else model.get("baseUrl")
+    if route_base_url: current["base_url"] = route_base_url
+    else: current.pop("base_url", None)
     config["model"] = current
 
 def fallback_entry(model):
-    return {"provider": model["providerKey"], "model": model["id"], "base_url": model["baseUrl"], "api_mode": model["apiMode"]}
+    entry = {"provider": model["providerKey"], "model": model["id"], "api_mode": model["apiMode"]}
+    route_base_url = model.get("routeBaseUrl") if "routeBaseUrl" in model else model.get("baseUrl")
+    if route_base_url: entry["base_url"] = route_base_url
+    return entry
 
-def write_fallbacks(config, models):
-    entries = [fallback_entry(model) for model in models]
+def raw_fallback_routes(config):
+    entries = []
+    seen = set()
+    for value in get_fallback_chain(config) or []:
+        if not isinstance(value, dict): continue
+        identity = (
+            str(value.get("provider") or "").strip().lower(),
+            str(value.get("model") or "").strip().lower(),
+            normalized_route_base_url(value.get("base_url")),
+        )
+        if not identity[0] or not identity[1] or identity in seen: continue
+        seen.add(identity)
+        entries.append(copy.deepcopy(value))
+    return entries
+
+def route_matches_model(route, model):
+    if not isinstance(route, dict): return False
+    return (
+        str(route.get("provider") or "").strip().lower() == model["providerKey"].strip().lower()
+        and str(route.get("model") or route.get("default") or "").strip().lower() == model["id"].strip().lower()
+        and normalized_route_base_url(route.get("base_url")) == route_identity(model)[2]
+    )
+
+def write_fallback_routes(config, entries):
     if entries: config["fallback_providers"] = entries
     else: config.pop("fallback_providers", None)
     config.pop("fallback_model", None)
 
 def apply_fallback(config, model):
-    models = fallback_models(config)
-    if not any(same_model(item, model) for item in models): models.append(model)
-    write_fallbacks(config, models)
+    entries = raw_fallback_routes(config)
+    if not any(route_matches_model(entry, model) for entry in entries): entries.append(fallback_entry(model))
+    write_fallback_routes(config, entries)
 
 def remove_fallback(config, model):
-    write_fallbacks(config, [item for item in fallback_models(config) if not same_model(item, model)])
+    write_fallback_routes(config, [entry for entry in raw_fallback_routes(config) if not route_matches_model(entry, model)])
+
+def remove_runtime_fallbacks(config, model):
+    retained = []
+    for entry in raw_fallback_routes(config):
+        try: candidate = model_from_route(config, entry)
+        except (TypeError, ValueError): candidate = None
+        if not same_runtime_deployment(candidate, model): retained.append(entry)
+    write_fallback_routes(config, retained)
 
 def is_fallback(snapshot, model):
-    return any(same_model(item, model) for item in snapshot["fallbacks"])
+    return any(same_route(item, model) for item in snapshot["fallbacks"])
 
 def expect_role(saved, purpose, model):
     snapshot = read_snapshot(saved)
-    if purpose == "primary" and not same_model(snapshot["primary"], model): raise ValueError("primary was not saved")
+    if purpose == "primary" and not same_route(snapshot["primary"], model): raise ValueError("primary was not saved")
     if purpose == "fallback" and not is_fallback(snapshot, model): raise ValueError("fallback was not saved")
-    if purpose == "idle" and (same_model(snapshot["primary"], model) or is_fallback(snapshot, model)): raise ValueError("idle role was not saved")
+    if purpose == "idle" and (same_route(snapshot["primary"], model) or is_fallback(snapshot, model)): raise ValueError("idle role was not saved")
     return snapshot
 
 def execute(action):
@@ -466,6 +607,7 @@ def execute(action):
         models = probed_model_ids(result)
         snapshot = read_snapshot(config)
         snapshot["probedModels"] = models
+        snapshot["probeSucceeded"] = isinstance(result, dict) and isinstance(result.get("models"), list)
         return {"snapshot": snapshot}
     if kind == "connectivityProbe":
         model = normalized_model(action.get("model"))
@@ -476,7 +618,7 @@ def execute(action):
         if purpose not in ("primary", "fallback", "idle"): raise ValueError("purpose is invalid")
         original_config = copy.deepcopy(config)
         before = read_snapshot(config)
-        if purpose == "fallback" and same_model(before["primary"], model): raise ValueError("role conflict")
+        if purpose == "fallback" and same_runtime_deployment(before["primary"], model): raise ValueError("role conflict")
         if not provider_schema_supported(config): raise ValueError("Hermes provider schema is unavailable")
         model["keyEnv"] = custom_endpoint_key_env(model["providerKey"])
         previous_credential = current_credential(model["keyEnv"])
@@ -489,7 +631,7 @@ def execute(action):
             config = load_config() or {}
             if not isinstance(config, dict): raise ValueError("Hermes config must be an object")
             before = read_snapshot(config)
-            if purpose == "fallback" and same_model(before["primary"], model): raise ValueError("role conflict")
+            if purpose == "fallback" and same_runtime_deployment(before["primary"], model): raise ValueError("role conflict")
             providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
             provider = dict(providers.get(model["providerKey"]) if isinstance(providers.get(model["providerKey"]), dict) else {})
             for alias in ("display_name", "base_url", "url", "api_mode", "api_key", "api_key_env"):
@@ -499,10 +641,10 @@ def execute(action):
             providers[model["providerKey"]] = provider
             config["providers"] = providers
             saved_models = configured_models(config)
-            saved_models[:] = [item for item in saved_models if not same_model(item, model)] + [model]
+            saved_models[:] = [item for item in saved_models if not same_route(item, model)] + [model]
             if purpose == "primary":
                 apply_primary(config, model)
-                remove_fallback(config, model)
+                remove_runtime_fallbacks(config, model)
             elif purpose == "fallback": apply_fallback(config, model)
             else: remove_fallback(config, model)
             save_config(config)
@@ -515,14 +657,15 @@ def execute(action):
             restore_credential(model["keyEnv"], previous_credential)
             raise
     if kind == "assign":
-        model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"))
+        route_base_url = text(action.get("routeBaseUrl"), "routeBaseUrl", required=False) if "routeBaseUrl" in action else None
+        model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         purpose = text(action.get("purpose"), "purpose")
         before = read_snapshot(config)
-        if purpose == "fallback" and same_model(before["primary"], model): raise ValueError("role conflict")
-        if purpose == "idle" and same_model(before["primary"], model): raise ValueError("cannot idle primary")
+        if purpose == "fallback" and same_runtime_deployment(before["primary"], model): raise ValueError("role conflict")
+        if purpose == "idle" and same_route(before["primary"], model): raise ValueError("cannot idle primary")
         if purpose == "primary":
             apply_primary(config, model)
-            remove_fallback(config, model)
+            remove_runtime_fallbacks(config, model)
         elif purpose == "fallback": apply_fallback(config, model)
         elif purpose == "idle":
             if is_fallback(before, model): remove_fallback(config, model)
@@ -531,42 +674,44 @@ def execute(action):
         saved = save_and_reload(config)
         return {"snapshot": expect_role(saved, purpose, model)}
     if kind == "removeFallback":
-        model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"))
+        route_base_url = text(action.get("routeBaseUrl"), "routeBaseUrl", required=False) if "routeBaseUrl" in action else None
+        model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         remove_fallback(config, model)
         saved = save_and_reload(config)
         if is_fallback(read_snapshot(saved), model): raise ValueError("fallback was not removed")
         return {"snapshot": read_snapshot(saved)}
     if kind == "remove":
         original_config = copy.deepcopy(config)
-        model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"))
+        route_base_url = text(action.get("routeBaseUrl"), "routeBaseUrl", required=False) if "routeBaseUrl" in action else None
+        model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         before = read_snapshot(config)
-        if same_model(before["primary"], model): raise ValueError("cannot remove primary")
+        if same_route(before["primary"], model): raise ValueError("cannot remove primary")
         remove_fallback(config, model)
         saved_models = configured_models(config)
-        saved_models[:] = [item for item in saved_models if not same_model(item, model)]
+        saved_models[:] = [item for item in saved_models if not same_route(item, model)]
         providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
         provider = providers.get(model["providerKey"]) if isinstance(providers.get(model["providerKey"]), dict) else None
-        remove_key = None
+        remove_key = model["keyEnv"]
         if provider is not None:
             provider = dict(provider)
-            remove_provider_model(provider, model["id"])
-            if not provider["models"]:
+            remove_key = model["keyEnv"] or text(provider.get("key_env") or provider.get("api_key_env"), "keyEnv", required=False) or custom_endpoint_key_env(model["providerKey"])
+            if not provider_model_referenced(config, model): remove_provider_model(provider, model["id"])
+            if not provider.get("models") and not provider_referenced(config, model["providerKey"]):
                 providers.pop(model["providerKey"], None)
-                remove_key = model["keyEnv"] or custom_endpoint_key_env(model["providerKey"])
             else:
                 providers[model["providerKey"]] = provider
         config["providers"] = providers
         previous_credential = current_credential(remove_key) if remove_key else None
         try:
             saved = save_and_reload(config)
-            if any(same_model(item, model) for item in read_snapshot(saved)["configuredModels"]): raise ValueError("model was not removed")
-            if remove_key:
+            if any(same_route(item, model) for item in read_snapshot(saved)["configuredModels"]): raise ValueError("model was not removed")
+            if remove_key and not credential_key_referenced(saved, remove_key):
                 remove_provider_env_credential(remove_key)
             return {"snapshot": read_snapshot(saved)}
         except Exception:
             try: save_config(original_config)
             except Exception: pass
-            if remove_key and previous_credential is not None: restore_credential(remove_key, previous_credential)
+            if previous_credential is not None: restore_credential(remove_key, previous_credential)
             raise
     raise ValueError("unsupported action")
 
