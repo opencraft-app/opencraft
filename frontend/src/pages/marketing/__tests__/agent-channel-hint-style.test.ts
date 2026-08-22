@@ -11,15 +11,52 @@ const channelPanelSource = readFileSync(
   "utf8",
 );
 
-function getRuleBody(selectorList: string): string | undefined {
-  const escapedSelectorList = selectorList.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:^|\\})\\s*${escapedSelectorList}\\s*\\{([^}]*)\\}`)
-    .exec(standardPanelStyles)?.[1];
+function getRuleBody(styles: string, requiredSelectors: string[]): string | undefined {
+  const styleRules = styles
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .matchAll(/([^{}]+)\{([^{}]*)\}/g);
+
+  for (const [, selectorList, ruleBody] of styleRules) {
+    const selectors = selectorList.split(",").map((selector) => selector.trim());
+    if (
+      selectors.length === requiredSelectors.length &&
+      requiredSelectors.every((selector) => selectors.includes(selector))
+    ) {
+      return ruleBody;
+    }
+  }
+
+  return undefined;
 }
 
 describe("Channel panel hint", () => {
-  it("shows a semantic channel title with the same hierarchy as the Skills page", () => {
-    const titleRule = getRuleBody(".lh-std-channel-panel__title");
+  it("finds a shared rule regardless of selector order and formatting", () => {
+    const reorderedStyles = `
+      .lh-std-skill-panel__hint-bar,
+      .lh-std-channel-panel__hint-bar { color: red; }
+    `;
+
+    expect(
+      getRuleBody(reorderedStyles, [
+        ".lh-std-channel-panel__hint-bar",
+        ".lh-std-skill-panel__hint-bar",
+      ]),
+    ).toContain("color: red;");
+    expect(
+      getRuleBody(
+        ".lh-std-channel-panel__hint-bar { color: red; } .lh-std-skill-panel__hint-bar { color: red; }",
+        [
+          ".lh-std-channel-panel__hint-bar",
+          ".lh-std-skill-panel__hint-bar",
+        ],
+      ),
+    ).toBeUndefined();
+  });
+
+  it("uses the explicit 18px channel heading specification", () => {
+    const titleRule = getRuleBody(standardPanelStyles, [
+      ".lh-std-channel-panel__title",
+    ]);
 
     expect(channelPanelSource).toMatch(
       /<h2 className=\{`\$\{CLS\}__title`\}>\{t\('通道'\)\}<\/h2>/,
@@ -32,14 +69,18 @@ describe("Channel panel hint", () => {
     expect(titleRule).toContain("line-height: 24px;");
   });
 
-  it("reuses the lightweight Skills hint treatment", () => {
-    const hintRule = getRuleBody(
-      ".lh-std-channel-panel__hint-bar,\n.lh-std-skill-panel__hint-bar",
-    );
-    const iconRule = getRuleBody(
-      ".lh-std-channel-panel__hint-icon,\n.lh-std-skill-panel__hint-icon",
-    );
-    const channelSpacingRule = getRuleBody(".lh-std-channel-panel__hint-bar");
+  it("uses the explicit lightweight channel hint specification", () => {
+    const hintRule = getRuleBody(standardPanelStyles, [
+      ".lh-std-channel-panel__hint-bar",
+      ".lh-std-skill-panel__hint-bar",
+    ]);
+    const iconRule = getRuleBody(standardPanelStyles, [
+      ".lh-std-channel-panel__hint-icon",
+      ".lh-std-skill-panel__hint-icon",
+    ]);
+    const channelSpacingRule = getRuleBody(standardPanelStyles, [
+      ".lh-std-channel-panel__hint-bar",
+    ]);
 
     expect(hintRule).toBeDefined();
     expect(hintRule).toContain("background: transparent;");
