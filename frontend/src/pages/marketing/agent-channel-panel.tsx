@@ -2,7 +2,7 @@
  * @fileoverview ChannelPanel — Standard 变体通道配置面板
  *
  * 交互设计：
- *  - 顶部提示条
+ *  - 顶部标题与提示文案
  *  - 通道卡片平铺（微信/QQ/飞书），每张卡含 icon + 名称 + 描述 + 连接按钮
  *  - 微信/飞书：触发 HermesQrCodeModal 扫码
  *  - QQ：弹出表单 Modal（App ID + App Secret）
@@ -294,6 +294,8 @@ export function ChannelPanel(props: ChannelPanelProps) {
 
   return (
     <div className={`${CLS} ${className || ''}`}>
+      <h2 className={`${CLS}__title`}>{t('通道')}</h2>
+
       {/* 提示条 */}
       <div className={`${CLS}__hint-bar`}>
         <span className={`${CLS}__hint-icon`}>

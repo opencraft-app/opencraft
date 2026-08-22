@@ -149,6 +149,7 @@
   line-height: 1;
 }
 
+.lh-std-channel-panel__hint-bar,
 .lh-std-skill-panel__hint-bar {
   align-items: center;
   gap: 0;
@@ -162,6 +163,19 @@
   margin-bottom: 16px;
 }
 
+.lh-std-channel-panel__title {
+  margin: 0 0 4px;
+  color: rgba(0, 0, 0, 0.95);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.lh-std-channel-panel__hint-bar {
+  margin-bottom: 12px;
+}
+
+.lh-std-channel-panel__hint-icon,
 .lh-std-skill-panel__hint-icon {
   display: none;
 }
