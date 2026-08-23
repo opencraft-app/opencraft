@@ -47,8 +47,8 @@ type ChangelogEntry = {
   id: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -61,7 +61,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -116,6 +116,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "dingtalk"
       ? "/assets/changelog/lightvela-dingtalk-channel.png"
+      : variant === "personaUpload"
+      ? "/assets/changelog/lightvela-persona-upload.png"
       : variant === "chat"
       ? useGlobalAssets
         ? "/assets/changelog/agentchat-web-chat-en.png"
@@ -172,6 +174,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("LightVela 支持企业微信通道")
       : variant === "dingtalk"
       ? t("LightVela 支持钉钉通道")
+      : variant === "personaUpload"
+      ? t("LightVela 支持上传自定义人设文件")
       : variant === "chat"
       ? t("LightVela 支持网页内对话")
       : variant === "memory"
@@ -218,6 +222,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? "2160 / 844"
       : variant === "dingtalk"
       ? "816 / 356"
+      : variant === "personaUpload"
+      ? "1410 / 642"
       : variant === "chat"
       ? useGlobalAssets ? "1677 / 938" : "1742 / 903"
       : variant === "memory"
@@ -308,6 +314,12 @@ function ChangelogContent() {
             id: "2026-08",
             month: t("2026 年 8 月"),
             entries: [
+              {
+                id: "persona-file-upload",
+                title: t("LightVela 支持上传自定义人设文件"),
+                desc: t("上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。"),
+                visual: "personaUpload" as const,
+              },
               {
                 id: "automation-upstream-task",
                 title: t("自动任务支持关联上游任务"),

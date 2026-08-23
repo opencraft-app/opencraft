@@ -62,6 +62,9 @@ describe("global changelog skill package entry", () => {
     );
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "自动任务支持关联上游任务" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "LightVela 支持钉钉通道" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "技能页面支持批量安装与来源查看" })).toBeInTheDocument();
@@ -99,6 +102,9 @@ describe("global changelog skill package entry", () => {
       </MemoryRouter>,
     );
 
+    expect(
+      screen.queryByRole("heading", { name: "LightVela Now Supports Custom Persona File Uploads" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Skills Page Gets Faster Installs and Clearer Sources" })).toBeInTheDocument();
     expect(screen.getByText("Install multiple Skills with live progress and open their original ClawHub or skills.sh source pages directly from the Skills page.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ready-Made Automation Templates" })).toBeInTheDocument();
@@ -133,6 +139,9 @@ describe("global changelog skill package entry", () => {
       </MemoryRouter>,
     );
 
+    expect(
+      screen.queryByRole("heading", { name: "LightVela 支持上傳自定義人設文件" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "技能頁面支持批量安裝與來源查看" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "自動任務模板" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 機器人" })).toBeInTheDocument();
@@ -154,6 +163,18 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
     );
+
+    cleanup();
+    await i18n.changeLanguage("id-ID");
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.queryByRole("heading", { name: "LightVela kini mendukung unggahan file persona kustom" }),
+    ).not.toBeInTheDocument();
   });
 
   it("uses locale-specific skill package copy and screenshots", async () => {

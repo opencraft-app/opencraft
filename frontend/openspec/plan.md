@@ -37,6 +37,126 @@
 
 ---
 
+# 国内站上传人设文件产品动态 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 在国内站 2026 年 8 月更新日志中发布“上传自定义人设文件”动态，并确保国际站不展示该条目。
+
+**Status:** 实现与验证完成，等待提交与 MR 授权。
+
+**Architecture:** 沿用 `changelog-page.tsx` 的静态月份数据与 `VisualCard` 图片映射，在 `!isGlobal` 的 2026 年 8 月条目首位增加国内专属动态。使用真实的初始上传弹窗截图作为独立图片资源，通过国内和国际站组件测试锁定展示边界。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、现有 i18n 与静态图片资源。
+
+## Global Constraints
+
+- 标题固定为 `LightVela 支持上传自定义人设文件`。
+- 描述固定为 `上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。`。
+- 仅国内站展示，国际站所有语言均不新增该条目。
+- 使用“上传人设文件”初始弹窗真实截图，不包含账号、Agent 名称、文件内容或其他用户数据。
+- 不调整 changelog 页面布局、其他条目顺序或其他月份内容。
+
+---
+
+### Task 1: 发布国内站上传人设文件动态
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/channel-copy.test.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/global-changelog.test.tsx`
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx`
+- Create: `frontend/public/assets/changelog/lightvela-persona-upload.png`
+- Modify: `frontend/src/i18n/generated/en-US.json`
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Modify: `frontend/src/i18n/generated/zh-CN.json`
+- Modify: `frontend/src/i18n/generated/zh-Hant.json`
+- Modify: `frontend/src/i18n/generated/zh-to-key.json`
+- Create: `frontend/openspec/changes/2026-08-23-domestic-persona-upload-changelog-design.md`
+- Modify: `frontend/openspec/plan.md`
+
+**Interfaces:**
+- Consumes: `ChangelogEntry`、国内站 `2026-08` 分组、`VisualCard` 和编译期 `isGlobal` 分支。
+- Produces: `personaUpload` 图片 variant，以及仅国内站可见的 `persona-file-upload` 更新条目。
+
+- [x] **Step 1: 写失败测试锁定国内展示和国际排除**
+
+  国内站测试增加：
+
+  ```tsx
+  expect(screen.getByRole("heading", { name: "LightVela 支持上传自定义人设文件" })).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.getByAltText("LightVela 支持上传自定义人设文件")).toHaveAttribute(
+    "src",
+    expect.stringContaining("/assets/changelog/lightvela-persona-upload.png"),
+  );
+  ```
+
+  国际站测试增加：
+
+  ```tsx
+  expect(
+    screen.queryByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
+  ).not.toBeInTheDocument();
+  ```
+
+- [x] **Step 2: 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/channel-copy.test.tsx \
+    src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
+
+  Expected: 国内站新增标题、描述和图片断言失败；国际站排除断言保持通过。
+
+- [x] **Step 3: 接入真实截图和最小页面实现**
+
+  - 从已合入功能的国内站本地页面打开“上传人设文件”初始弹窗，截取不含用户数据的真实 UI。
+  - 将截图保存为 `frontend/public/assets/changelog/lightvela-persona-upload.png`。
+  - 为 `ChangelogEntry.visual` 和 `VisualCard` 增加 `personaUpload`，配置图片路径、alt 和截图真实宽高比。
+  - 将 `persona-file-upload` 放在国内站 2026 年 8 月分组首位，使用固定标题与描述。
+
+- [x] **Step 4: 生成 i18n 并确认 GREEN**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:zh-hant
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/channel-copy.test.tsx \
+    src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
+
+  Expected: 国内和国际站相关测试全部通过。
+
+- [x] **Step 5: 完成静态与页面验证**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  git diff --check
+  ```
+
+  浏览器检查国内站 `/changelog/` 的月份、顺序、文案和图片比例；检查国际站 `/en-us/changelog/` 不出现该条目。
+
+- [ ] **Step 6: 等待提交和 MR 授权**
+
+  展示 staged diff、验证结果、拟提交信息和拟 MR 信息；用户确认后再执行 `git commit`、`git push` 和创建 MR。
+
+---
+
 # 通道页标题与提示样式对齐 Implementation Plan
 
 **Status:** 实现与验证完成。
