@@ -76,6 +76,7 @@ const providers: [ModelProviderOption, ModelProviderOption] = [
     category: "api",
     baseUrl: "https://alpha.example.com/v1",
     apiMode: "chat_completions",
+    discoveryStrategy: "live",
     apiKeyUrl: "https://alpha.example.com/keys",
   },
   {
@@ -84,6 +85,7 @@ const providers: [ModelProviderOption, ModelProviderOption] = [
     category: "coding_plan",
     baseUrl: "https://beta.example.com/v1",
     apiMode: "chat_completions",
+    discoveryStrategy: "live",
   },
 ];
 const { publicKey: testPublicKey } = generateKeyPairSync("rsa", {
@@ -445,17 +447,18 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.queryByText("shared-model")).not.toBeInTheDocument();
   });
 
-  it("uses the Provider catalog when live model discovery returns no models", async () => {
+  it("loads the MiniMax Provider catalog without calling live model discovery", async () => {
     const catalogProvider: ModelProviderOption = {
       ...providers[1],
       providerKey: "minimax-plan",
       providerName: "MiniMax Token Plan",
+      discoveryStrategy: "catalog",
       catalogModels: [
         { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
         { id: "MiniMax-M2.1-lightning", name: "MiniMax M2.1 Lightning" },
       ],
     };
-    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, []);
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, [], false);
     render(
       <AgentModelConfigPanel
         botId="bot-1"
@@ -471,6 +474,7 @@ describe("AgentModelConfigPanel", () => {
     const modelSelect = screen.getByRole("combobox", { name: "模型" });
     expect(modelSelect).toBeEnabled();
     expect(modelSelect).toHaveTextContent("MiniMax M2.1");
+    expect(remote.actions.some((action) => action.type === "probe")).toBe(false);
     await selectOption("模型", "MiniMax M2.1 Lightning");
     await userEvent.click(screen.getByRole("button", { name: "添加模型" }));
 
@@ -486,6 +490,7 @@ describe("AgentModelConfigPanel", () => {
   it("does not present catalog models when Hermes model discovery fails", async () => {
     const catalogProvider: ModelProviderOption = {
       ...providers[1],
+      discoveryStrategy: "live",
       catalogModels: [{ id: "catalog-only-model", name: "Catalog Only Model" }],
     };
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, [], false);

@@ -10,7 +10,7 @@ import {
   type HermesModelConfigSnapshot,
 } from "./hermes-model-config-command";
 
-export type { HermesCanonicalApiMode, HermesConfiguredModel, HermesConnectionProbeResult, HermesModelConfigAction, HermesModelConfigSnapshot, HermesModelProbeResult, ModelProviderOption } from "./hermes-model-config-command";
+export type { HermesCanonicalApiMode, HermesConfiguredModel, HermesConnectionProbeResult, HermesConnectionProbeStrategy, HermesModelConfigAction, HermesModelConfigSnapshot, HermesModelProbeResult, ModelDiscoveryStrategy, ModelProviderOption } from "./hermes-model-config-command";
 export { buildHermesModelConfigCommand } from "./hermes-model-config-command";
 
 interface DebugCommandResult {
@@ -268,10 +268,15 @@ export function createHermesModelConfigClient(execDebugCommand: HermesModelConfi
         succeeded: snapshot.probeSucceeded ?? true,
       };
     },
-    testConnection: async (input: { apiKey: string; model: HermesConfiguredModel }) => {
+    testConnection: async (input: { apiKey: string; model: HermesConfiguredModel; strategy?: "model_list" | "model_request" }) => {
       try {
         const credentialEnvelope = await prepareCredentialEnvelope(input.apiKey);
-        const result = await executeCommand({ type: "connectivityProbe", credentialEnvelope, model: input.model });
+        const result = await executeCommand({
+          type: "connectivityProbe",
+          credentialEnvelope,
+          model: input.model,
+          strategy: input.strategy,
+        });
         return parseHermesConnectionProbeResponse(result.output);
       } catch (error) {
         if (error instanceof HermesModelConfigResponseError) throw error;

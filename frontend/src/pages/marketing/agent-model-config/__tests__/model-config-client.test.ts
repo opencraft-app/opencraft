@@ -41,7 +41,7 @@ const envelopePreparation = { token: "a".repeat(48), publicKey: testPublicKey };
 type PlaintextTestAction =
   | Exclude<HermesModelConfigAction, Extract<HermesModelConfigAction, { type: "probe" | "connectivityProbe" | "add" }>>
   | { type: "probe"; apiKey: string; baseUrl: string; apiMode?: string }
-  | { type: "connectivityProbe"; apiKey: string; model: typeof model }
+  | { type: "connectivityProbe"; apiKey: string; model: typeof model; strategy?: "model_list" | "model_request" }
   | { type: "add"; apiKey: string; model: typeof model; purpose: "primary" | "fallback" | "idle" };
 
 function response(payload: unknown): string {
@@ -168,6 +168,17 @@ def probe_api_models(api_key, base_url, timeout=5, api_mode=None):
     events.write_text(json.dumps(values))
     return {"models": None if os.environ.get("PROBE_MODELS_NONE") else ["alpha", "alpha", "beta"]}
 `, { encoding: "utf8" });
+  writeFileSync(join(packageDir, "urllib_security.py"), String.raw`
+import json, os, urllib.request
+from pathlib import Path
+def open_credentialed_url(request, *, timeout):
+    root = Path(os.environ["HERMES_HOME"])
+    events = root / "events.json"
+    values = json.loads(events.read_text()) if events.exists() else []
+    values.append("open_credentialed_url")
+    events.write_text(json.dumps(values))
+    return urllib.request.urlopen(request, timeout=timeout)
+`, { encoding: "utf8" });
 
   const acliPath = join(directory, "acli");
   writeFileSync(acliPath, String.raw`#!/usr/bin/env python3
@@ -201,6 +212,36 @@ print(json.dumps({
 }))
 `, { encoding: "utf8" });
   chmodSync(acliPath, 0o755);
+
+  writeFileSync(join(directory, "sitecustomize.py"), String.raw`
+import json, os, urllib.error, urllib.request
+from io import BytesIO
+from pathlib import Path
+
+if os.environ.get("MODEL_REQUEST_STATUS"):
+    class FakeResponse:
+        def __init__(self, status): self.status = status
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return b'{"id":"probe-response"}'
+
+    def fake_urlopen(request, timeout=None):
+        root = Path(os.environ["HERMES_HOME"])
+        payload = json.loads(request.data.decode()) if request.data else None
+        (root / "model-request.json").write_text(json.dumps({
+            "url": request.full_url,
+            "method": request.get_method(),
+            "headerNames": sorted(name.lower() for name, _ in request.header_items()),
+            "payload": payload,
+            "timeout": timeout,
+        }))
+        status = int(os.environ["MODEL_REQUEST_STATUS"])
+        if status >= 400:
+            raise urllib.error.HTTPError(request.full_url, status, "probe failure", {}, BytesIO(b'{"error":{"message":"request rejected"}}'))
+        return FakeResponse(status)
+
+    urllib.request.urlopen = fake_urlopen
+`, { encoding: "utf8" });
 }
 
 function runHelper(
@@ -248,7 +289,7 @@ function runHelper(
       remoteAction = inputAction.type === "probe"
         ? { type: "probe", credentialEnvelope, baseUrl: inputAction.baseUrl, apiMode: inputAction.apiMode }
         : inputAction.type === "connectivityProbe"
-          ? { type: "connectivityProbe", credentialEnvelope, model: inputAction.model }
+          ? { type: "connectivityProbe", credentialEnvelope, model: inputAction.model, strategy: inputAction.strategy }
           : { type: "add", credentialEnvelope, model: inputAction.model, purpose: inputAction.purpose };
     }
     const command = buildHermesModelConfigCommand(remoteAction);
@@ -273,6 +314,9 @@ function runHelper(
       acliArgv: existsSync(join(directory, "acli-argv.json"))
         ? JSON.parse(readFileSync(join(directory, "acli-argv.json"), "utf8")) as string[]
         : [],
+      modelRequest: existsSync(join(directory, "model-request.json"))
+        ? JSON.parse(readFileSync(join(directory, "model-request.json"), "utf8")) as Record<string, unknown>
+        : null,
       status: result.status,
     };
   } finally {
@@ -290,6 +334,7 @@ describe("Hermes model configuration client", () => {
     description: "DeepSeek coding model",
     apiKeyUrl: "https://platform.deepseek.com/api_keys",
     catalogModels: [{ id: model.id, name: "DeepSeek V3" }],
+    discoveryStrategy: "live",
   };
 
   it("encodes action payloads and selects the Hermes runtime without exposing API keys", () => {
@@ -380,6 +425,83 @@ describe("Hermes model configuration client", () => {
       baseUrl: model.baseUrl,
       errorMessage: "Selected model is unavailable",
     });
+    expect(probed.output).not.toContain(apiKey);
+  });
+
+  it("checks a catalog model with a minimal model request instead of the models endpoint", () => {
+    const minimaxModel = {
+      ...model,
+      id: "MiniMax-M2.7",
+      providerKey: "minimax_coding",
+      providerName: "MiniMax Token Plan",
+      baseUrl: "https://api.minimaxi.com/anthropic",
+      apiMode: "anthropic_messages",
+    };
+    const probed = runHelper(
+      { type: "connectivityProbe", apiKey, model: minimaxModel, strategy: "model_request" },
+      {},
+      { MODEL_REQUEST_STATUS: "200" },
+    );
+
+    expect(parseHermesConnectionProbeResponse(probed.output)).toEqual(expect.objectContaining({
+      success: true,
+      provider: minimaxModel.providerKey,
+      model: minimaxModel.id,
+    }));
+    expect(probed.modelRequest).toEqual(expect.objectContaining({
+      url: "https://api.minimaxi.com/anthropic/v1/messages",
+      method: "POST",
+      headerNames: expect.arrayContaining(["anthropic-version", "x-api-key"]),
+      payload: expect.objectContaining({ model: minimaxModel.id, max_tokens: 1 }),
+    }));
+    expect(probed.command).not.toContain(apiKey);
+    expect(probed.output).not.toContain(apiKey);
+    expect(probed.events).not.toContain("probe");
+    expect(probed.events).toContain("open_credentialed_url");
+  });
+
+  it("uses the OpenAI-compatible request path for the international MiniMax catalog", () => {
+    const minimaxModel = {
+      ...model,
+      id: "MiniMax-M2.7",
+      providerKey: "minimax_international",
+      providerName: "MiniMax International",
+      baseUrl: "https://api.minimax.io/v1",
+      apiMode: "chat_completions",
+    };
+    const probed = runHelper(
+      { type: "connectivityProbe", apiKey, model: minimaxModel, strategy: "model_request" },
+      {},
+      { MODEL_REQUEST_STATUS: "200" },
+    );
+
+    expect(parseHermesConnectionProbeResponse(probed.output).success).toBe(true);
+    expect(probed.modelRequest).toEqual(expect.objectContaining({
+      url: "https://api.minimax.io/v1/chat/completions",
+      headerNames: expect.arrayContaining(["authorization"]),
+      payload: expect.objectContaining({ model: minimaxModel.id, max_tokens: 1 }),
+    }));
+  });
+
+  it("reports a rejected catalog model request without exposing the credential", () => {
+    const minimaxModel = {
+      ...model,
+      id: "MiniMax-M2.7",
+      providerKey: "minimax_coding",
+      providerName: "MiniMax Token Plan",
+      baseUrl: "https://api.minimaxi.com/anthropic",
+      apiMode: "anthropic_messages",
+    };
+    const probed = runHelper(
+      { type: "connectivityProbe", apiKey, model: minimaxModel, strategy: "model_request" },
+      {},
+      { MODEL_REQUEST_STATUS: "401" },
+    );
+
+    expect(parseHermesConnectionProbeResponse(probed.output)).toEqual(expect.objectContaining({
+      success: false,
+      errorCode: 401,
+    }));
     expect(probed.output).not.toContain(apiKey);
   });
 

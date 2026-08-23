@@ -142,6 +142,7 @@ export function useModelConfig({
   const testConnection = useCallback(async (input: {
     apiKey: string;
     model: HermesConfiguredModel;
+    strategy?: "model_list" | "model_request";
   }): Promise<HermesConnectionProbeResult | null> => {
     if (activeOperation.current) return null;
     const token = Symbol("connectivity-probe");

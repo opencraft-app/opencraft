@@ -241,6 +241,13 @@ export function AgentModelConfigPanel({
     resetProbeResult();
     const revision = probeUiRevision.current;
     const catalogModels = category === "custom" ? [] : activeProvider?.catalogModels ?? [];
+    if (activeProvider?.discoveryStrategy === "catalog") {
+      const nextOptions = catalogModels.map(({ id, name }) => ({ id, name, source: "catalog" as const }));
+      setModelOptions(nextOptions);
+      setSelectedModelId(nextOptions[0]?.id ?? "");
+      setSuccessMessage(nextOptions.length > 0 ? t("已获取可用模型") : t("未检测到可用模型"));
+      return;
+    }
     const probeResult = await controller.probe({
       apiKey: apiKey.trim(),
       baseUrl: providerDraft.baseUrl,
@@ -284,6 +291,7 @@ export function AgentModelConfigPanel({
     const result = await controller.testConnection({
       apiKey: apiKey.trim(),
       model: selectedModel,
+      strategy: activeProvider?.discoveryStrategy === "catalog" ? "model_request" : "model_list",
     });
     if (result && revision === probeUiRevision.current && requestFingerprint === providerFingerprintRef.current) {
       setConnectionResult(result);

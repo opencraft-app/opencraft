@@ -2,6 +2,8 @@ export const HERMES_MODEL_CONFIG_JSON_START = "__LIGHTVELA_HERMES_MODEL_CONFIG_J
 export const HERMES_MODEL_CONFIG_JSON_END = "__LIGHTVELA_HERMES_MODEL_CONFIG_JSON_END__";
 
 export type HermesCanonicalApiMode = "chat_completions" | "codex_responses" | "anthropic_messages" | "bedrock_converse";
+export type HermesConnectionProbeStrategy = "model_list" | "model_request";
+export type ModelDiscoveryStrategy = "live" | "catalog";
 
 export interface HermesConfiguredModel {
   id: string;
@@ -52,6 +54,7 @@ export interface ModelProviderOption {
   category: "coding_plan" | "api";
   baseUrl: string;
   apiMode: HermesCanonicalApiMode;
+  discoveryStrategy: ModelDiscoveryStrategy;
   description?: string;
   apiKeyUrl?: string;
   catalogModels?: Array<{ id: string; name: string }>;
@@ -61,7 +64,7 @@ export type HermesModelConfigAction =
   | { type: "prepareCredentialEnvelope" }
   | { type: "read" }
   | { type: "probe"; credentialEnvelope: HermesCredentialEnvelope; baseUrl: string; apiMode?: string }
-  | { type: "connectivityProbe"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel }
+  | { type: "connectivityProbe"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel; strategy?: HermesConnectionProbeStrategy }
   | { type: "add"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel; purpose: "primary" | "fallback" | "idle" }
   | { type: "assign"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string; purpose: "primary" | "fallback" | "idle" }
   | { type: "removeFallback"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string }
@@ -83,11 +86,18 @@ import re
 import secrets
 import sys
 import time
+import urllib.error
+import urllib.request
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from hermes_cli import config as hermes_config
 from hermes_cli import models as hermes_models
+
+try:
+    from hermes_cli.urllib_security import open_credentialed_url
+except ImportError:
+    open_credentialed_url = None
 
 try:
     from hermes_cli import credential_lifecycle as credential_lifecycle
@@ -266,7 +276,56 @@ def probed_model_ids(value):
         if model_id and model_id not in models: models.append(model_id)
     return models
 
-def probe_model_connection(credential, model):
+def model_request_url(model):
+    base_url = model["baseUrl"].rstrip("/")
+    mode = model["apiMode"]
+    if mode == "anthropic_messages":
+        return (base_url if base_url.endswith("/v1") else base_url + "/v1") + "/messages"
+    if mode == "chat_completions":
+        return base_url + "/chat/completions"
+    raise ValueError("Model request probe is unavailable for this API mode")
+
+def probe_model_request(credential, model, fallback, started_at):
+    mode = model["apiMode"]
+    headers = {"Content-Type": "application/json", "User-Agent": "lightvela-model-config"}
+    if mode == "anthropic_messages":
+        headers.update({"x-api-key": credential, "anthropic-version": "2023-06-01"})
+    else:
+        headers["Authorization"] = "Bearer " + credential
+    payload = {
+        "model": model["id"],
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "ping"}],
+    }
+    request = urllib.request.Request(
+        model_request_url(model),
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        if not callable(open_credentialed_url):
+            raise RuntimeError("Hermes credential-safe HTTP transport is unavailable")
+        with open_credentialed_url(request, timeout=60) as response:
+            status = int(getattr(response, "status", 200))
+            if status < 200 or status >= 300:
+                raise RuntimeError("Model endpoint returned HTTP " + str(status))
+        return {
+            "success": True,
+            "provider": model["providerKey"],
+            "model": model["id"],
+            "baseUrl": model["baseUrl"],
+            "timeMs": int((time.time() - started_at) * 1000),
+        }
+    except urllib.error.HTTPError as error:
+        fallback["errorCode"] = error.code
+        if error.code in (401, 403): fallback["errorMessage"] = "Model credential was rejected"
+        elif error.code == 404: fallback["errorMessage"] = "Model endpoint is unavailable"
+        elif error.code == 429: fallback["errorMessage"] = "Model request was rate limited"
+        else: fallback["errorMessage"] = "Model endpoint returned HTTP " + str(error.code)
+        return fallback
+
+def probe_model_connection(credential, model, strategy="model_list"):
     provider = model["providerKey"]
     model_id = model["id"]
     base_url = model["baseUrl"]
@@ -279,6 +338,9 @@ def probe_model_connection(credential, model):
     }
     started_at = time.time()
     try:
+        if strategy == "model_request":
+            return probe_model_request(credential, model, fallback, started_at)
+        if strategy != "model_list": raise ValueError("Model connectivity strategy is invalid")
         result = probe_api_models(credential, base_url, timeout=60, mode=model["apiMode"])
         models = probed_model_ids(result)
         if not models: return fallback
@@ -611,7 +673,8 @@ def execute(action):
         return {"snapshot": snapshot}
     if kind == "connectivityProbe":
         model = normalized_model(action.get("model"))
-        return {"connection": probe_model_connection(credential, model)}
+        strategy = str(action.get("strategy") or "model_list").strip()
+        return {"connection": probe_model_connection(credential, model, strategy)}
     if kind == "add":
         model = normalized_model(action.get("model"), product_key=True)
         purpose = text(action.get("purpose"), "purpose")

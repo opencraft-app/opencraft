@@ -2,6 +2,8 @@ import type { IModelProvider } from "@/pages/marketing/agent-config";
 
 import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config-client";
 
+const CATALOG_DISCOVERY_PROVIDERS = new Set(["minimax", "minimax-cn"]);
+
 function decodeHtmlEntity(entity: string) {
   const normalized = entity.toLowerCase();
   if (normalized === "amp") return "&";
@@ -55,6 +57,7 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
       category: provider.category,
       baseUrl,
       apiMode,
+      discoveryStrategy: CATALOG_DISCOVERY_PROVIDERS.has(provider.provider.trim().toLowerCase()) ? "catalog" : "live",
       description: toPlainText(provider.description) || undefined,
       apiKeyUrl: provider.api_key_url.trim() || undefined,
       catalogModels: provider.models

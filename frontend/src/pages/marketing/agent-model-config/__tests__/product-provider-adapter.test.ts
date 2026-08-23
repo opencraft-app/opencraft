@@ -51,6 +51,7 @@ describe("adaptProductModelProviders", () => {
         apiKeyUrl: "https://alpha.example.com/keys",
         baseUrl: "https://alpha.example.com/v1",
         apiMode: "chat_completions",
+        discoveryStrategy: "live",
         catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
       },
       expect.objectContaining({
@@ -59,6 +60,25 @@ describe("adaptProductModelProviders", () => {
         apiMode: "anthropic_messages",
       }),
     ]);
+  });
+
+  it("uses the static product catalog for MiniMax providers", () => {
+    const [adaptedProvider] = adaptProductModelProviders([{
+      value: "minimax_coding",
+      category: "coding_plan",
+      provider: "minimax",
+      provider_name: "MiniMax Token Plan",
+      description: "",
+      api_key_url: "https://platform.minimaxi.com/keys",
+      base_url: "https://api.minimaxi.com/anthropic",
+      api: "anthropic-messages",
+      models: [{ id: "MiniMax-M2.7", name: "MiniMax-M2.7" }],
+    }]);
+
+    expect(adaptedProvider).toEqual(expect.objectContaining({
+      providerKey: "minimax_coding",
+      discoveryStrategy: "catalog",
+    }));
   });
 
   it("extracts untrusted provider HTML without writing through element innerHTML", () => {
