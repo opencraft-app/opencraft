@@ -2,6 +2,8 @@ export const PERSONA_MARKDOWN_MAX_BYTES = 20 * 1024;
 export const PERSONA_DISPLAY_NAME_MAX_BYTES = 80;
 export const PERSONA_CONTENT_SHORT_THRESHOLD = 100;
 export const CUSTOM_PERSONA_SLUG = "custom-upload";
+export const CUSTOM_PERSONA_SOURCE_FIELD = "LightVela-Source";
+export const CUSTOM_PERSONA_SOURCE = "custom-upload";
 
 export type PersonaMarkdownErrorCode =
   | "invalid_extension"
@@ -153,37 +155,45 @@ export function buildCustomSoulMarkdown(
   const displayName = getPersonaDisplayName(normalized, fileName);
   const lines = normalized.split("\n");
   const soulHeadingIndex = lines.findIndex((line) => /^#\s+Soul\s*$/i.test(line));
-  const contentHeadingIndex = lines.findIndex(
-    (line, index) => index > soulHeadingIndex && /^##\s+Content\s*$/i.test(line),
-  );
-
-  if (soulHeadingIndex >= 0 && contentHeadingIndex > soulHeadingIndex) {
-    const firstSectionIndex = lines.findIndex(
-      (line, index) => index > soulHeadingIndex && /^##\s+/.test(line),
+  if (soulHeadingIndex >= 0 && lines.slice(0, soulHeadingIndex).every((line) => !line.trim())) {
+    const soulLines = lines.slice(soulHeadingIndex);
+    const firstSectionIndex = soulLines.findIndex(
+      (line, index) => index > 0 && /^##\s+/.test(line),
     );
-    const metadataEnd = firstSectionIndex >= 0 ? firstSectionIndex : lines.length;
-    const metadata = lines.slice(soulHeadingIndex + 1, metadataEnd);
-    const slugIndex = metadata.findIndex((line) => /^\s*Slug\s*:/i.test(line));
-
-    if (slugIndex >= 0) {
-      metadata[slugIndex] = `Slug: ${CUSTOM_PERSONA_SLUG}`;
-    } else {
-      metadata.unshift(`Slug: ${CUSTOM_PERSONA_SLUG}`);
+    const metadataEnd = firstSectionIndex >= 0 ? firstSectionIndex : soulLines.length;
+    const metadata = soulLines.slice(1, metadataEnd);
+    while (metadata.length > 0 && !metadata[metadata.length - 1]!.trim()) {
+      metadata.pop();
     }
     const nameIndex = metadata.findIndex((line) => /^\s*Name\s*:/i.test(line));
     if (nameIndex < 0) {
-      const insertedSlugIndex = metadata.findIndex((line) => /^Slug\s*:/i.test(line));
-      metadata.splice(insertedSlugIndex + 1, 0, `Name: ${displayName}`);
+      metadata.unshift(`Name: ${displayName}`);
     } else {
       metadata[nameIndex] = `Name: ${displayName}`;
+    }
+    const sourceIndexes = metadata.reduce<number[]>((indexes, line, index) => {
+      if (new RegExp(`^\\s*${CUSTOM_PERSONA_SOURCE_FIELD}\\s*:`, "i").test(line)) {
+        indexes.push(index);
+      }
+      return indexes;
+    }, []);
+    const sourceIndex = sourceIndexes[0];
+    if (sourceIndex === undefined) {
+      metadata.push(`${CUSTOM_PERSONA_SOURCE_FIELD}: ${CUSTOM_PERSONA_SOURCE}`);
+    } else {
+      metadata[sourceIndex] = `${CUSTOM_PERSONA_SOURCE_FIELD}: ${CUSTOM_PERSONA_SOURCE}`;
+      for (let index = sourceIndexes.length - 1; index > 0; index -= 1) {
+        metadata.splice(sourceIndexes[index]!, 1);
+      }
     }
 
     return {
       displayName,
       markdown: [
-        ...lines.slice(0, soulHeadingIndex + 1),
+        soulLines[0]!,
         ...metadata,
-        ...lines.slice(metadataEnd),
+        ...(firstSectionIndex >= 0 ? [""] : []),
+        ...soulLines.slice(metadataEnd),
       ].join("\n").trimEnd() + "\n",
     };
   }
@@ -192,7 +202,7 @@ export function buildCustomSoulMarkdown(
     displayName,
     markdown: [
       "# Soul",
-      `Slug: ${CUSTOM_PERSONA_SLUG}`,
+      `${CUSTOM_PERSONA_SOURCE_FIELD}: ${CUSTOM_PERSONA_SOURCE}`,
       `Name: ${displayName}`,
       "",
       "## Content",

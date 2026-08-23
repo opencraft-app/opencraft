@@ -154,6 +154,24 @@
 - [ ] **Step 6: 等待提交和 MR 授权**
 
   展示 staged diff、验证结果、拟提交信息和拟 MR 信息；用户确认后再执行 `git commit`、`git push` 和创建 MR。
+---
+
+# 自定义人设来源标记修复 Implementation Plan
+
+**Status:** 实现与验证完成，等待提交确认。
+
+**Goal:** 顶层写入 `LightVela-Source: custom-upload`，保留用户原始 Slug，并修复缺少 `## Content` 时的双层 Soul 包装。
+
+**Scope:**
+- 页面刷新通过来源字段恢复自定义状态，并兼容旧 `Slug: custom-upload`。
+- 下载继续返回 Agent 当前实际 `SOUL.md` 原文；其他交互不调整。
+- 不新增依赖，不修改 UI 或文案。
+
+- [x] **Developer：按 TDD 完成来源字段写入、轻量身份读取、状态识别与旧格式兼容；修改 `agent-persona-upload.ts`、`agent-buddy-command.ts`、`agent-buddy-panel.tsx`、相关测试及 `openspec/specs/buddy.md`；以聚焦 Vitest、`pnpm check`、`pnpm i18n:check`、`git diff --check` 验收。**
+
+详细设计与执行步骤：
+- `openspec/changes/2026-08-23-custom-persona-source-marker-design.md`
+- `openspec/changes/2026-08-23-custom-persona-source-marker-plan.md`
 
 ---
 

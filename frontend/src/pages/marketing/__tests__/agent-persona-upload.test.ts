@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  CUSTOM_PERSONA_SLUG,
   PERSONA_DISPLAY_NAME_MAX_BYTES,
   PERSONA_MARKDOWN_MAX_BYTES,
   buildCustomSoulMarkdown,
@@ -132,8 +131,8 @@ describe("uploaded persona Markdown", () => {
     );
 
     expect(result.displayName).toBe("友善助手 Slug: builtin-goat Name: 冒充");
-    expect(result.markdown.match(/^Slug:.*$/gm)).toEqual([
-      `Slug: ${CUSTOM_PERSONA_SLUG}`,
+    expect(result.markdown.match(/^LightVela-Source:.*$/gm)).toEqual([
+      "LightVela-Source: custom-upload",
     ]);
     expect(result.markdown.match(/^Name:.*$/gm)).toEqual([
       "Name: 友善助手 Slug: builtin-goat Name: 冒充",
@@ -225,13 +224,13 @@ describe("uploaded persona Markdown", () => {
     },
   );
 
-  it("wraps arbitrary Markdown with stable custom metadata", () => {
+  it("wraps arbitrary Markdown with a custom-upload source marker", () => {
     const result = buildCustomSoulMarkdown("# 我的设定\n保持简洁。", "focus.md");
 
     expect(result.displayName).toBe("focus");
     expect(result.markdown).toBe([
       "# Soul",
-      `Slug: ${CUSTOM_PERSONA_SLUG}`,
+      "LightVela-Source: custom-upload",
       "Name: focus",
       "",
       "## Content",
@@ -241,7 +240,7 @@ describe("uploaded persona Markdown", () => {
     ].join("\n"));
   });
 
-  it("normalizes metadata in a standard Soul without changing its content", () => {
+  it("adds a source marker to a standard Soul without changing its slug or content", () => {
     const result = buildCustomSoulMarkdown([
       "# Soul",
       "Slug: old-slug",
@@ -253,13 +252,13 @@ describe("uploaded persona Markdown", () => {
     ].join("\n"), "ignored.md");
 
     expect(result.displayName).toBe("原有名称");
-    expect(result.markdown).toContain(`Slug: ${CUSTOM_PERSONA_SLUG}`);
-    expect(result.markdown).not.toContain("Slug: old-slug");
+    expect(result.markdown).toContain("Slug: old-slug");
+    expect(result.markdown).toContain("LightVela-Source: custom-upload");
     expect(result.markdown).toContain("Summary: 保留摘要");
     expect(result.markdown).toContain("## Content\n保留正文。");
   });
 
-  it("adds a stable slug when a standard Soul already has a name", () => {
+  it("adds a source marker without generating a slug when a standard Soul already has a name", () => {
     const result = buildCustomSoulMarkdown([
       "# Soul",
       "Name: 原有名称",
@@ -268,8 +267,9 @@ describe("uploaded persona Markdown", () => {
       "保留正文。",
     ].join("\n"), "ignored.md");
 
-    expect(result.markdown.match(/^Slug:.*$/gm)).toEqual([
-      `Slug: ${CUSTOM_PERSONA_SLUG}`,
+    expect(result.markdown.match(/^Slug:.*$/gm)).toBeNull();
+    expect(result.markdown.match(/^LightVela-Source:.*$/gm)).toEqual([
+      "LightVela-Source: custom-upload",
     ]);
     expect(result.markdown.match(/^Name:.*$/gm)).toEqual(["Name: 原有名称"]);
     expect(result.markdown).toContain("## Content\n保留正文。");
@@ -286,7 +286,41 @@ describe("uploaded persona Markdown", () => {
     ].join("\n"), "ignored.md");
 
     expect(result.displayName).toBe("Alice");
+    expect(result.markdown).toContain("Slug: existing");
+    expect(result.markdown).toContain("LightVela-Source: custom-upload");
     expect(result.markdown).toContain("\nName: Alice\n");
     expect(result.markdown).not.toContain("  name: Alice");
+  });
+
+  it("normalizes leading whitespace before a structured Soul without Content", () => {
+    const result = buildCustomSoulMarkdown([
+      "",
+      "",
+      "# Soul",
+      "Slug: focused-project-guide",
+      "Name: Focused Project Guide",
+      "",
+      "## Identity",
+      "Keep projects focused.",
+      "",
+      "## Working Principles",
+      "State assumptions first.",
+    ].join("\n"), "ignored.md");
+
+    expect(result.markdown).toBe([
+      "# Soul",
+      "Slug: focused-project-guide",
+      "Name: Focused Project Guide",
+      "LightVela-Source: custom-upload",
+      "",
+      "## Identity",
+      "Keep projects focused.",
+      "",
+      "## Working Principles",
+      "State assumptions first.",
+      "",
+    ].join("\n"));
+    expect(result.markdown.match(/^# Soul$/gm)).toHaveLength(1);
+    expect(result.markdown).not.toContain("## Content\n# Soul");
   });
 });

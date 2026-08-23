@@ -72,6 +72,7 @@ import {
 } from "@/pages/marketing/agent-custom-persona-file-modal";
 import { PersonaUploadModal } from "@/pages/marketing/agent-persona-upload-modal";
 import {
+  CUSTOM_PERSONA_SOURCE,
   CUSTOM_PERSONA_SLUG,
   encodeUtf8Base64,
 } from "@/pages/marketing/agent-persona-upload";
@@ -783,7 +784,7 @@ export function BuddyPanel({
       setEquippedStatus("ready");
       return;
     }
-    // 只读取存在性、Slug 和 Name，避免把整份 markdown 扛到前端。
+    // 只读取顶层 Soul 元数据区的存在性、Slug、Source 和 Name，避免把整份 markdown 扛到前端。
     const bash = buildHermesSoulReadCommand();
     try {
       const result = await executeHermesPersonaCommand(
@@ -795,7 +796,7 @@ export function BuddyPanel({
       if (equippedReqIdRef.current !== reqId) return;
       const identity = parseHermesSoulIdentity(result?.output ?? "");
       setHasExistingSoul(identity.exists);
-      if (identity.slug === CUSTOM_PERSONA_SLUG) {
+      if (identity.source === CUSTOM_PERSONA_SOURCE || identity.slug === CUSTOM_PERSONA_SLUG) {
         setAppliedSlug(null);
         setCustomPersonaName(identity.name ?? t("自定义人设"));
       } else {
