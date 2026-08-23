@@ -4,8 +4,6 @@ export type OAuthProvider = "qq" | "wechat" | "google" | "github";
 export type WeChatOAuthMode = "website" | "official_account";
 export type WeChatOAuthStartTarget = WeChatOAuthMode | "unsupported_mobile_browser";
 
-export const WECHAT_MOBILE_BROWSER_PROMPT = "请在微信中打开当前页面后继续登录。";
-
 /**
  * 当前区域允许展示的 OAuth 登录渠道（编译期常量）。
  * - 国内站：QQ / 微信（GitHub 彩蛋走 useGitHubLoginVisibility 动态开启）

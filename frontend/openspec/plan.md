@@ -1,3 +1,42 @@
+# 移动端微信登录复制链接引导 Implementation Plan
+
+**Status:** 实现与验证完成，已提交 MR。
+
+**Size:** S。单一目标、局部登录交互调整，不改变 OAuth 后端、公共 API、鉴权或发布流程。
+
+**Goal:** 普通移动浏览器打开登录弹窗后默认展示明确的微信打开提示和复制链接按钮，并保持微信内与桌面端既有 OAuth 行为。
+
+**Architecture:** 新增一个供登录弹窗与 `/auth/sign-in` 共用的展示组件；两个入口继续使用现有 UA 分类和 Repository URL 生成逻辑，仅把普通移动浏览器分支从错误提示改为复制 `official_account` URL 的引导态。
+
+**Scope:**
+- 修改 `frontend/src/components/site/login-modal.tsx` 和 `frontend/src/pages/auth/sign-in-page.tsx` 的普通移动浏览器分支。
+- 新增 `frontend/src/components/site/wechat-mobile-browser-guide.tsx`，负责图标、复制动作及可访问状态播报。
+- 更新对应 Vitest，并按生成流程同步 i18n 字典。
+- 不修改 OAuth 后端、Repository 接口、桌面扫码、微信内授权及其他登录方式。
+
+- [x] 先补登录弹窗与登录页的移动端复制引导测试，并确认 RED。
+- [x] 实现共用引导组件和两个入口的最小状态接入，让定向测试 GREEN。
+- [x] 完成第一版 i18n、类型检查、差异检查和 390 x 844 浏览器交互验收。
+- [x] 按用户验收反馈移除移动端二次点击，统一复制按钮圆角、字号、字重及弹窗标题间距。
+- [x] 完成调整后的全量检查和移动视口浏览器复验。
+- [x] 按 MR review 补齐协议待确认态的视觉与 `aria-disabled` 语义，并同步最终文案和验证记录。
+
+**Acceptance:**
+- 普通移动浏览器打开登录弹窗即展示 `复制链接，前往「微信」打开` 和 `复制链接`，不需要再次点击微信登录按钮且不发生重定向。
+- 复制的是 `wechatMode: "official_account"` 生成的 OAuth start URL；切换账号时保留 `switchAccount: true`。
+- 引导默认可见；未勾选协议时复制按钮显示待确认样式并设置 `aria-disabled="true"`，点击仍提示 `请先勾选同意服务协议`，且不写入剪贴板。
+- 复制按钮和引导提示统一使用弹窗主按钮的 `text-sm font-medium`，按钮使用 `rounded-full`；标题区显式承担底部间距。
+- 成功显示 `已复制，请打开微信粘贴访问`；Clipboard API 和兼容复制均失败时显示 `复制失败，请长按复制下方链接` 并展示可选中的原始链接。
+- 微信内使用 `official_account` 直接跳转，桌面使用 `website` 直接跳转，QQ/手机入口保持不变。
+
+**Verification:**
+- RED：两个入口先因缺少复制引导失败；失败复制与取消协议用例也按预期失败。
+- GREEN：登录弹窗、登录页、国际站入口和 Repository 共 5 个测试文件、86 个用例通过；移动端弹窗默认展示引导，复制按钮接收焦点并关联操作提示，从引导切换到手机号时清除旧状态。
+- `pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过；新增英文文案无空翻译，繁体字典与简体字典一致。
+- Chrome 在 390 x 844 移动模拟环境从首页点击一次登录后直接进入真实引导，无横向溢出或遮挡；复制按钮和提示计算样式均为 14px/500，按钮为 42px 高胶囊圆角。iPhone/Android User-Agent 分流、协议门禁和 OAuth URL 由组件集成测试闭环。
+
+---
+
 # 国内站上传人设文件产品动态 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
