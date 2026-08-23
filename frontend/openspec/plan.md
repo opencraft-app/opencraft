@@ -78,7 +78,739 @@
 - RED：新增的国内、国际公告文案与到期撤下断言共 3 条按预期失败。
 - GREEN：公告相关 2 个测试文件共 4 个用例通过。
 - `pnpm check`、`pnpm i18n:check`、四语言公告翻译完整性检查与 `git diff --check` 通过。
+---
 
+# Agent 人设 Markdown 上传 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development and superpowers:executing-plans. This repository is configured for single-agent execution.
+
+**Status:** Task 21 实现、相关回归和本地冒烟完成，等待用户验收与提交确认。
+
+**Goal:** 在国内站已有 Agent 的人设页提供“上传人设文件”，支持本地 Markdown 校验、预览编辑、安全覆盖和刷新后状态恢复。
+
+**Architecture:** 浏览器本地读取和严格校验 `.md`，通过独立上传弹窗编辑；标准化为带固定自定义 slug 的 `SOUL.md` 后复用现有 `execDebugCommand` 注入。现有写命令升级为备份加临时文件原子替换，读取命令只回传存在性、slug 与名称。BuddyPanel 将自定义状态与推荐人设卡片状态分离。
+
+**Tech Stack:** React 19、TypeScript 5.9、Radix Dialog、Tailwind CSS 4、Vitest 4、Testing Library、现有 BotRepository/Hermes 命令。
+
+## Global Constraints
+
+- 只开放国内站已有 Agent 页面；国际站和新建 Agent 流程不变。
+- 只支持 UTF-8 `.md`，实际字节不超过 20 KB；软结构问题不阻止注入。
+- 不新增后端 API、npm 依赖、原始文件存储或自定义抽卡卡片。
+- 覆盖现有人设前必须确认并备份；失败不得破坏旧 `SOUL.md`。
+- 所有新增中文源文案纳入现有 i18n；不得绕过翻译检查。
+
+### Task 1: 用纯函数和命令测试锁定文件与写入契约
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Add: `frontend/src/pages/marketing/agent-persona-upload.ts`
+- Add: `frontend/src/pages/marketing/__tests__/agent-persona-upload.test.ts`
+- Modify: `frontend/src/pages/marketing/agent-buddy-command.ts`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-buddy-command.test.ts`
+
+**Acceptance:**
+- 严格覆盖扩展名、UTF-8、20 KB 字节边界、空内容、控制字符和编辑后再校验。
+- 名称、软提示和标准化输出符合 Spec，原始文件不被另存。
+- 写命令先备份、再写临时文件并原子替换；读取命令只输出并解析身份字段。
+- 先新增失败测试并确认 RED，再做最小实现让定向测试 GREEN。
+
+- [x] 完成校验/标准化纯函数与 Hermes 命令的 RED → GREEN。
+
+### Task 2: 接入上传弹窗和自定义已注入状态
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Add: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Add: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-buddy-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+
+**Acceptance:**
+- 国内站显示“上传人设文件”，选择合法文件后可预览、编辑并看到实时字节数和软提示。
+- 无人设时直接注入；已有人设时必须确认覆盖，取消不丢内容。
+- 注入失败保留内容并可重试；成功显示自定义名称和 `/new` 提示。
+- 刷新可从真实 `SOUL.md` 恢复自定义状态；自定义不生成卡片，推荐人设流程不回归。
+- 切换 Agent 时忽略旧读取/注入结果。
+
+- [x] 完成上传交互、状态接入及组件级 RED → GREEN。
+
+### Task 3: 完成区域、翻译、文档与端到端质量门禁
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/i18n/generated/en-US.json`
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Modify: `frontend/src/i18n/generated/zh-Hant.json`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `frontend/openspec/plan.md`
+- Add: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 国际站不显示上传入口；国内站文案与交互完整。
+- PRD、当前 OpenSpec 和 Buddy 长期规格与真实实现一致。
+- 定向测试、`pnpm check`、`pnpm i18n:check`、国内站构建、区域回归和 `git diff --check` 通过。
+- 本地浏览器验证桌面、移动端、键盘、非法文件、编辑超限、覆盖确认、失败重试与成功状态；无法完成的外部条件必须留证说明。
+
+- [x] 补齐 i18n / 长期规格并完成全套验证与用户验收交接。
+
+### Task 4: 抽卡结果支持直接注入
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-buddy-draw-modal.tsx`
+- Modify: `frontend/src/pages/marketing/agent-buddy-panel.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-buddy-draw-modal.test.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 揭晓卡片并列提供左侧“注入此人设”和右侧“添加，暂不注入”，两侧按钮字号统一为 14px，处理中防止重复操作。
+- 直接注入复用推荐人设详情获取、标准化、备份和原子写入链路，不复制第二套命令。
+- 只有 Agent 写入成功才入盘、选中、标记已注入并关闭抽卡弹窗；失败或下载兜底时弹窗与人设盘保持不变。
+- 普通抽卡追加卡片，重抽时仍替换原槽位；“添加，暂不注入”和操作区注入流程不回归。
+
+- [x] 先新增按钮回调和成功/失败状态测试并确认 RED。
+- [x] 提取最小可复用注入函数，接入抽卡结果动作并让定向测试 GREEN。
+- [x] 更新 i18n，完成相关测试、`pnpm check`、`pnpm i18n:check` 与 `git diff --check`。
+
+### Task 5: 对齐上传弹窗文案与操作布局
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Modify: `frontend/src/pages/marketing/agent-buddy-draw-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-buddy-draw-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Consumes: 现有 `PersonaUploadModal` 的文件选择、编辑、覆盖确认和注入回调；现有 `DrawSoulModal` 的添加与直接注入回调。
+- Produces: 用户可见入口和标题“上传人设文件”、固定编辑态说明、与自动任务一致的编辑框样式、右下角上传操作区，以及左注入/右添加的抽卡操作区。
+
+- [x] **Step 1 — 写失败测试锁定文案、编辑框和按钮顺序**
+
+  在上传弹窗测试中断言：
+
+  ```tsx
+  const dialog = await screen.findByRole("dialog", { name: "上传人设文件" });
+  expect(within(dialog).getByText(
+    "说明：仅支持 UTF-8 Markdown 文件，最大 20 KB。上传后可以在此处进行编辑。",
+  )).toBeInTheDocument();
+  const editor = within(dialog).getByLabelText("人设内容");
+  expect(editor).toHaveClass("mt-1.5", "rounded-md", "border-black/10", "focus:border-black/30", "focus:outline-none");
+  const reselect = within(dialog).getByRole("button", { name: "重新上传文件" });
+  const inject = within(dialog).getByRole("button", { name: "注入人设" });
+  expect(reselect.parentElement).toHaveClass("justify-end");
+  expect(reselect.nextElementSibling).toBe(inject);
+  ```
+
+  在抽卡弹窗测试中断言：
+
+  ```tsx
+  expect(injectButton.nextElementSibling).toBe(addButton);
+  ```
+
+- [x] **Step 2 — 运行定向测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+    src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+    src/pages/marketing/__tests__/agent-buddy-draw-modal.test.tsx
+  ```
+
+  Expected: FAIL，旧实现仍显示“上传人设”、旧说明、编辑框聚焦 ring，以及左添加/右注入。
+
+- [x] **Step 3 — 实现最小文案与样式调整**
+
+  - 入口和弹窗标题统一使用 `t("上传人设文件")`。
+  - 编辑态说明使用 `t("说明：仅支持 UTF-8 Markdown 文件，最大 20 KB。上传后可以在此处进行编辑。")`。
+  - 编辑框保留 `h-64`、`resize-y` 和等宽字体，仅将视觉 token 对齐为 `mt-1.5 rounded-md border-black/10 focus:border-black/30 focus:outline-none`，移除聚焦 ring。
+  - 编辑态与覆盖确认态操作区均使用 `flex items-center justify-end gap-2`，次操作在左、主操作在右。
+  - 抽卡结果 JSX 调整为左侧“注入此人设”、右侧“添加，暂不注入”，事件、禁用态和 14px 字号保持不变。
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run: Step 2 相同命令。
+
+  Expected: 相关测试全部 PASS。
+
+- [x] **Step 5 — 更新翻译并运行完整质量门禁**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:zh-hant
+  pnpm check
+  pnpm i18n:check
+  git diff --check
+  ```
+
+  补齐英文 `Upload persona file` 和 `Note: Only UTF-8 Markdown files up to 20 KB are supported. You can edit the content here after uploading.`，以及对应印尼语；最终相关 5 个测试文件、49 个用例保持通过。
+
+- [x] **Step 6 — 等待提交授权**
+
+  展示变更文件、验证结果和拟提交信息；只有用户明确确认后才执行 `git commit`。
+
+### Task 6: 精简操作区注入按钮文案
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-buddy-panel.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Consumes: 已选中推荐人设时显示的操作区注入按钮。
+- Produces: 未注入状态显示“注入”；处理中“注入中…”、已注入状态“重新注入”、抽卡弹窗“注入此人设”和上传弹窗“注入人设”均保持不变。
+
+- [x] **Step 1 — 将操作区组件测试期望改为“注入”**
+
+  ```tsx
+  expect(screen.queryByRole("button", { name: "注入" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "选中此人设" }));
+  fireEvent.click(screen.getByRole("button", { name: "注入" }));
+  ```
+
+- [x] **Step 2 — 运行面板测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/agent-buddy-panel.test.tsx
+  ```
+
+  Expected: 3 个用例因旧按钮仍显示“注入人设”而失败。
+
+- [x] **Step 3 — 最小替换操作区按钮文案**
+
+  ```tsx
+  {toast.kind === "applying"
+    ? t("注入中…")
+    : isApplied
+      ? t("重新注入")
+      : t("注入")}
+  ```
+
+- [x] **Step 4 — 运行面板测试并确认 GREEN**
+
+  Run: Step 2 相同命令。
+
+  Expected: 15 个用例全部 PASS。
+
+- [x] **Step 5 — 更新翻译并运行完整质量门禁**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:zh-hant
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/agent-buddy-draw-modal.test.tsx \
+    src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+    src/pages/marketing/__tests__/agent-buddy-command.test.ts \
+    src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+    src/pages/marketing/__tests__/agent-persona-upload.test.ts
+  pnpm check
+  pnpm i18n:check
+  git diff --check
+  ```
+
+  补齐英文 `Inject` 和印尼语 `Terapkan`；最终保持 5 个测试文件、49 个用例通过。
+
+### Task 7: 精简上传弹窗文件重选文案
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Consumes: 上传弹窗中重新打开隐藏文件选择器的次操作按钮。
+- Produces: 按钮显示“重新上传文件”，点击行为、禁用状态和右下角位置保持不变。
+
+- [x] **Step 1 — 将上传弹窗测试期望改为“重新上传文件”**
+
+  ```tsx
+  const reuploadButton = within(dialog).getByRole("button", { name: "重新上传文件" });
+  const injectButton = within(dialog).getByRole("button", { name: "注入人设" });
+  expect(reuploadButton.parentElement).toHaveClass("justify-end");
+  expect(reuploadButton.nextElementSibling).toBe(injectButton);
+  ```
+
+- [x] **Step 2 — 运行上传弹窗测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx
+  ```
+
+  Expected: 预览编辑用例因旧按钮仍显示“重新选择文件”而失败。
+
+- [x] **Step 3 — 最小替换次按钮文案**
+
+  ```tsx
+  {t("重新上传文件")}
+  ```
+
+- [x] **Step 4 — 运行上传弹窗测试并确认 GREEN**
+
+  Run: Step 2 相同命令。
+
+  Expected: 7 个用例全部 PASS。
+
+- [x] **Step 5 — 更新翻译并运行完整质量门禁**
+
+  补齐英文 `Upload another file` 和印尼语 `Unggah ulang file`，然后执行：
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:zh-hant
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/agent-buddy-draw-modal.test.tsx \
+    src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+    src/pages/marketing/__tests__/agent-buddy-command.test.ts \
+    src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+    src/pages/marketing/__tests__/agent-persona-upload.test.ts
+  pnpm check
+  pnpm i18n:check
+  git diff --check
+  ```
+
+  Expected: 5 个测试文件、49 个用例及全部质量门禁通过。
+
+### Task 8: 精简人设结构建议提示
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Consumes: 上传人设编辑态已有的 `warnings` 弱结构校验结果。
+- Produces: 提示区顶部统一显示“提示：”，每条建议移除“（仍可继续注入）”，注入行为保持不变。
+
+- [x] **Step 1 — 增加提示标题与精简建议文案断言**
+
+  ```tsx
+  expect(within(dialog).getByText("提示：")).toBeInTheDocument();
+  expect(within(dialog).getByText("建议补充 Name 字段")).toBeInTheDocument();
+  expect(within(dialog).queryByText(/仍可继续注入/)).not.toBeInTheDocument();
+  ```
+
+- [x] **Step 2 — 运行上传弹窗测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx
+  ```
+
+  Expected: 因缺少“提示：”且旧建议仍含“仍可继续注入”而失败。
+
+- [x] **Step 3 — 最小调整提示区渲染和 6 条建议文案**
+
+  ```tsx
+  <p className="mb-1 text-sm font-medium text-amber-900">{t("提示：")}</p>
+  <ul className="space-y-1 text-sm text-amber-900">
+    {warnings.map((warning) => (
+      <li key={warning}>• {warningMessage(t, warning)}</li>
+    ))}
+  </ul>
+  ```
+
+- [x] **Step 4 — 运行上传弹窗测试并确认 GREEN**
+
+  Run: Step 2 相同命令。
+
+  Expected: 7 个用例全部 PASS。
+
+- [x] **Step 5 — 更新翻译并运行完整质量门禁**
+
+  执行 i18n 提取并补齐新文案翻译，然后运行相关 5 个测试文件、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 9: 增加上传弹窗初始空白态
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Consumes: 页面操作区“上传人设文件”入口、隐藏 `input[type=file]` 和现有文件读取/校验函数。
+- Produces: `view` 扩展为 `"upload" | "edit" | "confirm"`；入口只打开 `upload` 视图，弹窗内“选择文件”才调用 `inputRef.current?.click()`，有效文件进入 `edit`，无效文件留在 `upload`。
+
+- [x] **Step 1 — 增加入口与初始上传态组件测试**
+
+  ```tsx
+  const fileInput = screen.getByLabelText("选择 Markdown 人设文件");
+  const inputClick = vi.spyOn(fileInput, "click");
+
+  fireEvent.click(screen.getByRole("button", { name: "上传人设文件" }));
+
+  const dialog = await screen.findByRole("dialog", { name: "上传人设文件" });
+  expect(inputClick).not.toHaveBeenCalled();
+  expect(within(dialog).getByText("选择 Markdown 人设文件")).toBeInTheDocument();
+  expect(within(dialog).getByText("仅支持 UTF-8 Markdown 文件，最大 20 KB。")).toBeInTheDocument();
+  expect(within(dialog).queryByLabelText("人设内容")).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole("button", { name: "注入人设" })).not.toBeInTheDocument();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "选择文件" }));
+  expect(inputClick).toHaveBeenCalledTimes(1);
+  ```
+
+- [x] **Step 2 — 增加失败留在上传态、成功进入编辑态断言**
+
+  ```tsx
+  selectFile(new File(["hello"], "persona.txt"));
+  expect(await within(dialog).findByText("仅支持 .md 文件")).toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "重新上传文件" })).toBeInTheDocument();
+  expect(within(dialog).queryByLabelText("人设内容")).not.toBeInTheDocument();
+
+  selectFile(new File(["# 我的助手"], "persona.md"));
+  expect(await within(dialog).findByLabelText("人设内容")).toHaveValue("# 我的助手");
+  ```
+
+- [x] **Step 3 — 运行上传弹窗测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx
+  ```
+
+  Expected: 入口仍直接调用文件选择器，无法找到初始上传弹窗和“选择文件”。
+
+- [x] **Step 4 — 最小实现三态视图与初始上传 UI**
+
+  ```tsx
+  const [view, setView] = useState<"upload" | "edit" | "confirm">("upload");
+
+  view === "upload" ? (
+    <div className="flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-black/10 bg-black/[0.02] px-6 py-10 text-center">
+      <Upload className="size-8 text-[var(--text-tertiary)]" aria-hidden="true" />
+      <p className="mt-3 text-sm font-medium text-[var(--text-primary)]">{t("选择 Markdown 人设文件")}</p>
+      <p className="mt-1 text-sm text-[var(--text-secondary)]">{t("仅支持 UTF-8 Markdown 文件，最大 20 KB。")}</p>
+      {selectionError && (
+        <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span>{errorMessage(t, selectionError)}</span>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="mt-4 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
+      >
+        {selectionError ? t("重新上传文件") : t("选择文件")}
+      </button>
+    </div>
+  )
+  ```
+
+  页面入口 `onClick` 仅执行 `setOpen(true)`；文件读取成功后执行 `setView("edit")`，失败则保持 `setView("upload")`。
+
+- [x] **Step 5 — 运行上传弹窗测试并确认 GREEN**
+
+  Run: Step 3 相同命令。
+
+  Expected: 新增用例与现有 7 个用例全部 PASS。
+
+- [x] **Step 6 — 更新翻译并运行完整质量门禁**
+
+  执行 `pnpm i18n:extract`、`pnpm i18n:zh-hant`，补齐英文和印尼语新文案；随后运行相关 5 个测试文件、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 10: 精简上传弹窗说明文案
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Consumes: 上传弹窗非覆盖确认态的 `DialogDescription`。
+- Produces: 初始上传态与编辑态统一显示“上传人设文件后，你可以在此处继续编辑。”；覆盖确认态说明不变。
+
+- [x] **Step 1 — 将组件测试期望改为新说明文案**
+
+  ```tsx
+  expect(await within(dialog).findByText(
+    "上传人设文件后，你可以在此处继续编辑。",
+  )).toBeInTheDocument();
+  ```
+
+- [x] **Step 2 — 运行上传弹窗测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --api.host 127.0.0.1 \
+    src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx
+  ```
+
+  Expected: 编辑态用例因弹窗仍显示旧说明文案而失败。
+
+- [x] **Step 3 — 最小替换非覆盖确认态说明文案**
+
+  ```tsx
+  {view === "confirm"
+    ? t("确认后会替换 Agent 当前人设，旧文件会自动备份。")
+    : t("上传人设文件后，你可以在此处继续编辑。")}
+  ```
+
+- [x] **Step 4 — 运行上传弹窗测试并确认 GREEN**
+
+  Run: Step 2 相同命令。
+
+  Expected: 8 个上传弹窗用例全部 PASS。
+
+- [x] **Step 5 — 更新翻译并运行完整质量门禁**
+
+  执行 `pnpm i18n:extract`、`pnpm i18n:zh-hant`，补齐英文和印尼语翻译；随后运行相关 5 个测试文件、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 11: 区分上传态与编辑态弹窗标题
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 页面入口与初始上传态标题保持“上传人设文件”。
+- 合法文件读取成功进入编辑态后，标题显示“编辑人设文件”。
+- 覆盖确认态标题保持现有文案不变。
+- 无效文件与读取失败仍停留在上传态，标题保持“上传人设文件”。
+
+- [x] 先增加状态标题断言并确认 RED。
+- [x] 最小实现条件标题并确认 GREEN。
+- [x] 更新 i18n，运行定向测试、类型检查、i18n 检查和差异检查。
+
+### Task 12: 移除上传与编辑态可见说明文案
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 初始上传态和编辑态不再显示“上传人设文件后，你可以在此处继续编辑。”。
+- 弹窗保留随状态变化的隐藏无障碍描述，不产生 Radix 描述缺失警告。
+- 覆盖确认态原有说明保持不变。
+
+- [x] 先增加说明缺失断言并确认 RED。
+- [x] 最小实现可见说明移除与隐藏无障碍描述并确认 GREEN。
+- [x] 清理未使用 i18n 文案，运行定向测试、类型检查、i18n 检查和差异检查。
+
+### Task 13: 明确人设建议区标题
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Consumes: 编辑态现有 `warnings` 建议列表与黄色提示区样式。
+- Produces: 建议区标题显示“人设完善建议”，不带冒号；建议条目、触发规则、视觉样式和注入行为保持不变。
+
+- [x] **Step 1: 将组件测试标题期望改为“人设完善建议”并确认 RED**
+- [x] **Step 2: 最小替换建议区标题并确认 GREEN**
+- [x] **Step 3: 更新 i18n，运行相关测试、类型检查、i18n 检查和差异检查**
+
+### Task 14: 统一沟通风格建议与结构识别
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload.ts`
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload.test.ts`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 缺少相关内容时，建议文案显示“建议补充沟通风格”。
+- `## 沟通风格` 与 `## Communication Style` 均可满足沟通风格结构建议，不再触发 `missing_tone`。
+- 现有 `语气`、`表达`、`Tone`、`Voice`、`Style` 识别保持不变；软建议仍不阻止注入。
+
+- [x] **Step 1: 先增加沟通风格文案与中英文标题识别测试，并确认 RED**
+- [x] **Step 2: 最小更新提示文案与 `missing_tone` 匹配规则，并确认 GREEN**
+- [x] **Step 3: 同步 i18n、OpenSpec 与 PRD，完成相关测试和质量门禁**
+
+### Task 15: 调整人设建议区标题
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 编辑态建议区标题显示“人设内容建议”，不带冒号。
+- 建议条目、触发规则、视觉样式和注入行为保持不变。
+
+- [x] **Step 1: 先将组件测试标题期望改为“人设内容建议”并确认 RED**
+- [x] **Step 2: 最小替换建议区标题并确认 GREEN**
+- [x] **Step 3: 同步 i18n、OpenSpec 与 PRD，完成相关测试和质量门禁**
+
+### Task 16: 为专业建议增加英文对照并补齐英文标题识别
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload.ts`
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload.test.ts`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 四条专业建议显示为“建议补充角色定位（Identity）”“建议补充沟通风格（Communication Style）”“建议补充工作原则（Working Principles）”“建议补充行为边界（Behavioral Boundaries）”。
+- `## Working Principles` 不再触发 `missing_principles`。
+- `## Behavior Boundaries` 与 `## Behavioral Boundaries` 均不再触发 `missing_boundaries`。
+- 现有中文与英文短标题识别、非阻断语义和注入行为保持不变。
+
+- [x] **Step 1: 先增加四条新文案与英文标题识别测试，并确认 RED**
+- [x] **Step 2: 最小更新建议文案与结构匹配规则，并确认 GREEN**
+- [x] **Step 3: 同步 i18n、OpenSpec 与 PRD，完成相关测试和质量门禁**
+
+### Task 17: 精简覆盖确认弹窗
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 仅当前 Agent 存在非空 `SOUL.md` 时进入覆盖确认态；无人设时仍直接注入。
+- 覆盖确认态标题显示“覆盖当前人设？”。
+- 可见说明仅保留“旧人设会自动备份，然后注入新内容。”，移除重复黄色提示框。
+- 操作按钮保持右下角布局，文案为“返回编辑”和“覆盖并注入”。
+
+- [x] **Step 1: 先更新组件测试锁定标题、单行说明和按钮文案，并确认 RED**
+- [x] **Step 2: 最小精简覆盖确认态并确认 GREEN**
+- [x] **Step 3: 同步 i18n、OpenSpec 与 PRD，完成相关测试和质量门禁**
+
+### Task 18: 调整覆盖确认说明文案
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 覆盖确认说明由“旧人设会自动备份，然后注入新内容。”改为“旧人设会自动备份，然后注入新人设。”。
+- 标题、按钮、覆盖条件与备份注入行为保持不变。
+
+- [x] **Step 1: 先更新组件测试并确认 RED**
+- [x] **Step 2: 最小替换说明文案并确认 GREEN**
+- [x] **Step 3: 同步 i18n、OpenSpec 与 PRD，完成质量门禁**
+
+### Task 19: 明确上传文件的写入目标
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 初始上传态中央文案由“选择 Markdown 人设文件”改为“选择 Markdown 人设文件，将其内容填入 SOUL.md”。
+- 弹窗标题、文件选择按钮、格式限制和文件输入无障碍名称保持不变。
+
+- [x] **Step 1: 先更新组件测试并确认 RED**
+- [x] **Step 2: 最小替换中央文案并确认 GREEN**
+- [x] **Step 3: 同步 i18n、OpenSpec 与 PRD，完成质量门禁**
+
+### Task 20: 精简上传限制说明并优化编码错误提示
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 初始上传态限制说明显示“仅支持 Markdown 文件，文件名不限，扩展名须为 .md，大小不超过 20 KB。”。
+- 非 UTF-8 文件显示“文件编码需为 UTF-8，请转换后重新上传。”。
+- 文件校验规则、20 KB 上限和其他错误提示保持不变。
+
+- [x] **Step 1: 先更新提示与错误测试并确认 RED**
+- [x] **Step 2: 最小替换两处文案并确认 GREEN**
+- [x] **Step 3: 同步 i18n、OpenSpec 与 PRD，完成质量门禁**
+
+### Task 21: 增加当前自定义人设文件编辑与下载
+
+**Role:** Developer / Reviewer（single-agent）
+
+**Detailed Plan:** `frontend/openspec/changes/2026-08-23-custom-persona-file-actions-plan.md`
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-buddy-command.ts`
+- Add: `frontend/src/pages/marketing/agent-custom-persona-file-modal.tsx`
+- Modify: `frontend/src/pages/marketing/agent-buddy-panel.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-buddy-command.test.ts`
+- Add test: `frontend/src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/openspec/specs/buddy.md`
+- Modify: `wiki/prd-docs/2026-08-22-agent-persona-markdown-upload.md`
+
+**Acceptance:**
+- 自定义人设已注入状态文字后显示编辑和下载图标，状态文字本身不可点击；推荐人设和国际站不显示。
+- 编辑图标按需读取当前 Agent 实际 `SOUL.md`，在“编辑人设文件”弹窗中修改，并复用备份加原子替换链路安全保存。
+- 下载图标直接下载当前 Agent 实际原文为 `soul.md`，不打开编辑弹窗，也不改写内容。
+- 页面初始化仍只读取身份字段；文件缺失、超限、格式异常、网络失败和 Agent 切换竞态均有明确且安全的处理。
+- 保存成功刷新真实名称并提示发送 `/new`；相关测试、类型、i18n 和差异检查通过。
+
+- [x] **Step 1: TDD 新增全文读取命令、严格解析器与编辑弹窗**
+- [x] **Step 2: 接入状态图标、直接下载、安全保存和 Agent 切换竞态保护**
+- [x] **Step 3: 同步 i18n / OpenSpec / PRD，完成相关回归、质量门禁与本地验收**
+
+## Verification
+
+- 相关 Vitest：5 个文件、58 个用例通过；包含入口和初始上传态标题“上传人设文件”、初始限制说明及非 UTF-8 恢复提示、成功读取后的编辑态标题“编辑人设文件”、覆盖确认态标题“覆盖当前人设？”及单行说明/“覆盖并注入”按钮、无人设直接注入、初始上传态与编辑态不显示额外说明行、弹窗内选择文件、失败留在上传态、“重新上传文件”文案、结构建议区“人设内容建议”标题、四条中英文对照建议及角色定位/沟通风格/工作原则/行为边界中英文标题识别、编辑框和右下角按钮布局、操作区“注入”文案、抽卡按钮顺序/条件显示、直接注入成功/失败、重抽替换、切 Agent 竞态、处理中锁定和真实 Bash 解码失败时旧 `SOUL.md` 与备份保护。
+- 国际站区域定向测试：1 个用例通过，确认不渲染“上传人设文件”。
+- `pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。
+- Task 21 相关 Vitest：6 个文件、73 个用例通过；包含全文读取协议、严格解析、编辑弹窗、直接下载、安全保存、失败提示、读取锁定、Agent 切换竞态和原上传/抽卡回归。
+- Task 21 国际站隔离定向测试：1 个用例通过，确认自定义状态不渲染编辑与下载图标。
+- Task 21 本地服务返回 `200`，但浏览器会话未登录且认证服务暂时不可用，未在真实 Agent 上执行远端编辑和下载；对应链路由组件与命令测试覆盖。
+- `pnpm build:cn` 生成 118 个静态页面，`pnpm build:global` 生成 378 个静态页面。
+- 独立代码复审：Critical 0、Important 0，结论 Ready。
+- 本地浏览器成功打开 `/agents/persona/` 且无构建错误；该账号没有已有 Agent，只显示创建 Agent 空态，因此无法在浏览器完成真实上传和远端写入。文件交互、失败重试、覆盖确认与状态恢复由组件/命令测试覆盖，未伪造线上写入结果。
 ---
 
 # 通道连接弹窗按钮圆角修复 Implementation Plan
