@@ -1238,13 +1238,13 @@
 
 # 模型配置页 CR 问题修复 Implementation Plan
 
-**Status:** FE-AI 复审打回，正在修复 route 身份、Provider/凭据生命周期与探测三态问题。
+**Status:** 最新评审意见已修复并通过验证，等待用户验收；不自动提交或推送。
 
-**Goal:** 修复 MR !3181 最新评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性和 Tooltip 被裁剪问题。
+**Goal:** 修复 MR !3181 评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性、Tooltip 被裁剪、印尼语文案为空和模型列表探测被表述为真实连接的问题。
 
 **Architecture:** 保持现有页面、Hermes debug/exec 通道和 Provider 产品配置边界不变。Hermes helper 在实例内原位修改 fallback 原始条目；前端只消费不含凭据的快照。模型列表优先采用实时探测，实时结果为空时仅以产品静态目录补充可选项；Tooltip 复用现有 Portal/fixed 浮层模式。
 
-**Scope:** 仅修改 `agent-model-config` 模块、对应定向测试和本计划；不改 SDK、Provider 产品配置、后端接口、i18n 文案或页面整体结构。
+**Scope:** 仅修改 `agent-model-config` 模块、该页面四语言资源、对应定向测试和本计划；不改 SDK、Provider 产品配置、后端接口、Hermes 命令行为或页面整体结构。
 
 ### Task 1: 保留备用模型原始凭据字段
 
@@ -1285,6 +1285,12 @@
 - [x] 将新增凭据失败回滚收窄为本次 `.env` 写入，不清理操作前已有的凭据池或镜像状态。
 - [x] 补齐失败测试、真实 Hermes smoke、类型、i18n 与 diff 门禁后重新执行 FE-AI review。
 
+### Task 7: 修复最新评审的本地化与探测语义问题
+
+- [x] 先补模型配置页印尼语完整性测试，以及模型可用性检测成功文案测试并确认 RED。
+- [x] 补齐本页面新增的 35 条印尼语翻译，并将连接成功/失败文案收紧为模型列表可用性语义。
+- [x] 运行模型配置定向测试、类型检查、i18n 检查和 diff 门禁后重新执行 FE-AI review。
+
 ## Verification
 
 - `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx`
@@ -1293,6 +1299,8 @@
 - `git diff --check`
 
 **Task 6 verification:** 7 个回归断言先按预期失败；模型配置相关 52 个测试通过、1 个环境测试跳过，真实 Hermes 源码 smoke 1/1 通过；`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。本地新进程 `http://127.0.0.1:5175/agents/models/` 返回 200。全仓测试另有 4 个未改动模块失败，随后一个 worker 持续满 CPU 无输出而终止，未作为本轮通过依据。
+
+**Task 7 verification:** 新增本地化资源与检测语义断言先出现 38 个预期失败；实现后模型配置模块 90 个测试通过、1 个真实 Hermes 环境测试跳过。`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过；英文待翻译为 0，印尼语待翻译由 213 条降至 178 条。本轮仅调整模型列表可用性文案与四语言资源，不改 Hermes 探测行为。
 
 ---
 # My creations show() reveal Implementation Plan

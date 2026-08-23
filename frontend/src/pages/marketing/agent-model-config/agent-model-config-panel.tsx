@@ -748,12 +748,12 @@ export function AgentModelConfigPanel({
               {connectionResult?.success
                 ? <CheckCircle2 className="size-5 text-emerald-600" aria-hidden="true" />
                 : <XCircle className="size-5 text-red-600" aria-hidden="true" />}
-              {connectionResult?.success ? t("模型连接成功") : t("模型连接失败")}
+              {connectionResult?.success ? t("模型可用性检测通过") : t("模型可用性检测未通过")}
             </DialogTitle>
             <DialogDescription>
               {connectionResult?.success
-                ? t("当前模型可以正常连接。")
-                : t("当前模型暂时无法连接，请检查配置后重试。")}
+                ? t("当前凭据可以访问该模型。")
+                : t("未能确认当前凭据可以访问该模型，请检查配置后重试。")}
             </DialogDescription>
           </DialogHeader>
           {connectionResult ? (

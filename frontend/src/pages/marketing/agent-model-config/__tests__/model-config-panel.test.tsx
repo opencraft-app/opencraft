@@ -432,7 +432,9 @@ describe("AgentModelConfigPanel", () => {
     expect(connectivityButton).toBeEnabled();
 
     await userEvent.click(connectivityButton);
-    expect(await screen.findByRole("dialog", { name: "模型连接成功" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "模型可用性检测通过" })).toBeInTheDocument();
+    expect(screen.getByText("当前凭据可以访问该模型。")).toBeInTheDocument();
+    expect(screen.queryByText("当前模型可以正常连接。")).not.toBeInTheDocument();
     expect(screen.getByText("128 ms")).toBeInTheDocument();
     expect(remote.actions.some((action) => (action.type as string) === "connectivityProbe")).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: "确定" }));
@@ -745,7 +747,7 @@ describe("AgentModelConfigPanel", () => {
       resolveConnection?.({ status: "Succeeded", exitCode: 0, output: connectionOutput(initialSnapshot) });
       await pendingConnection;
     });
-    expect(screen.queryByRole("dialog", { name: "模型连接成功" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "模型可用性检测通过" })).not.toBeInTheDocument();
   });
 
   it("uses a collision-safe identity for custom Providers", async () => {
