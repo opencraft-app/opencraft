@@ -5,6 +5,7 @@ import { PhoneLoginForm } from "@/components/auth/phone-login-form";
 import { WeChatMobileBrowserGuide } from "@/components/site/wechat-mobile-browser-guide";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
+import { useT } from "@/i18n/t";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import { installShowPhoneLoginHelper, usePhoneLoginVisibility } from "@/lib/phone-login-visibility";
 import {
@@ -12,7 +13,6 @@ import {
   oauthErrorMessage,
   redirectToOAuthStart,
   VISIBLE_OAUTH_PROVIDERS,
-  WECHAT_MOBILE_BROWSER_PROMPT,
   wechatOAuthStartTargetForUserAgent,
   type OAuthProvider,
 } from "@/lib/oauth";
@@ -59,6 +59,7 @@ export const SignInPage = () => {
   const navigate = useNavigate();
   const repositories = useRepositories();
   const { signInAsGuest } = useSession();
+  const t = useT();
   const showGitHubLoginEgg = useGitHubLoginVisibility();
   const showPhoneLogin = usePhoneLoginVisibility();
   const oauthError = new URLSearchParams(location.search).get("oauth_error");
@@ -90,7 +91,7 @@ export const SignInPage = () => {
         wechatMode: "official_account",
       });
       if (!loginUrl) {
-        setOAuthPrompt(WECHAT_MOBILE_BROWSER_PROMPT);
+        setOAuthPrompt(t("请在微信中打开当前页面后继续登录。"));
         return;
       }
       setOAuthPrompt(null);
@@ -144,6 +145,7 @@ export const SignInPage = () => {
                 key={provider}
                 loginUrl={wechatMobileGuideUrl}
                 className="py-2"
+                autoFocus
               />
             );
           }

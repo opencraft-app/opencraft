@@ -5,6 +5,10 @@ import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import * as oauthModule from "@/lib/oauth";
 import { LoginModal } from "@/components/site/login-modal";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
+import {
+  captureProductEvent,
+  PRODUCT_ANALYTICS_EVENTS,
+} from "@/observability/posthog";
 
 vi.mock("@/observability/posthog", () => ({
   captureProductEvent: vi.fn(),
@@ -17,6 +21,7 @@ vi.mock("@/observability/posthog", () => ({
 
 const signInWithCode = vi.fn();
 const writeClipboardText = vi.fn();
+const execCommandCopy = vi.fn();
 let currentSession: {
   stage: "anonymous" | "authenticated";
   user: { id: string; name: string } | null;
@@ -70,8 +75,14 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
       configurable: true,
     });
     writeClipboardText.mockReset().mockResolvedValue(undefined);
+    execCommandCopy.mockReset().mockReturnValue(false);
+    vi.mocked(captureProductEvent).mockClear();
     Object.defineProperty(window.navigator, "clipboard", {
       value: { writeText: writeClipboardText },
+      configurable: true,
+    });
+    Object.defineProperty(document, "execCommand", {
+      value: execCommandCopy,
       configurable: true,
     });
   });
@@ -195,6 +206,10 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
       );
     });
     expect(screen.getByRole("status")).toHaveTextContent("已复制，请打开微信粘贴访问");
+    expect(captureProductEvent).toHaveBeenCalledWith(
+      PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED,
+      { provider: "wechat", action: "copy_link" },
+    );
     redirectSpy.mockRestore();
   });
 
@@ -213,12 +228,13 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     expect(writeClipboardText).not.toHaveBeenCalled();
   });
 
-  it("复制失败时就近展示可重试状态", async () => {
+  it("Clipboard API 失败时降级使用 execCommand 复制", async () => {
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Mobile Safari/537.36",
       configurable: true,
     });
     writeClipboardText.mockRejectedValueOnce(new Error("clipboard denied"));
+    execCommandCopy.mockReturnValueOnce(true);
 
     render(<LoginModal open onClose={vi.fn()} />);
 
@@ -226,8 +242,31 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "复制链接" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("status")).toHaveTextContent("复制失败，请重试");
+      expect(screen.getByRole("status")).toHaveTextContent("已复制，请打开微信粘贴访问");
     });
+    expect(execCommandCopy).toHaveBeenCalledWith("copy");
+    expect(screen.queryByRole("textbox", { name: "微信登录链接" })).not.toBeInTheDocument();
+  });
+
+  it("两种复制方式都失败时展示可长按复制的原始链接", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Mobile Safari/537.36",
+      configurable: true,
+    });
+    writeClipboardText.mockRejectedValueOnce(new Error("clipboard denied"));
+    execCommandCopy.mockReturnValueOnce(false);
+
+    render(<LoginModal open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(await screen.findByRole("button", { name: "复制链接" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("复制失败，请长按复制下方链接");
+    });
+    expect(screen.getByRole("textbox", { name: "微信登录链接" })).toHaveValue(
+      "https://lightclaw.tech/auth/oauth/wechat/start?mode=official_account",
+    );
   });
 
   it("进入引导后取消勾选协议会阻止复制", async () => {
@@ -287,7 +326,9 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     fireEvent.click(screen.getByRole("button", { name: "手机" }));
     fireEvent.click(screen.getByRole("button", { name: "微信" }));
 
-    expect(await screen.findByRole("button", { name: "复制链接" })).toBeInTheDocument();
+    const restoredCopyButton = await screen.findByRole("button", { name: "复制链接" });
+    expect(restoredCopyButton).toBeInTheDocument();
+    expect(restoredCopyButton).not.toHaveFocus();
     expect(screen.queryByRole("button", { name: "微信账号登录" })).not.toBeInTheDocument();
   });
 

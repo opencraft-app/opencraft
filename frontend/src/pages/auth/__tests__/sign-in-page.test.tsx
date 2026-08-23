@@ -6,6 +6,7 @@ import { setPhoneLoginVisible } from "@/lib/phone-login-visibility";
 import * as oauthModule from "@/lib/oauth";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import { SignInPage } from "@/pages/auth/sign-in-page";
+import i18n from "@/i18n";
 
 const repositories = {
   auth: {
@@ -33,7 +34,8 @@ vi.mock("@/contexts/repository-context", () => ({
 }));
 
 describe("SignInPage (国内站 默认 isGlobal=false)", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh-CN");
     setGitHubLoginVisible(false);
     setPhoneLoginVisible(false);
     Object.defineProperty(window.navigator, "userAgent", {
@@ -151,6 +153,26 @@ describe("SignInPage (国内站 默认 isGlobal=false)", () => {
     });
     expect(screen.getByRole("status")).toHaveTextContent("已复制，请打开微信粘贴访问");
     redirectSpy.mockRestore();
+  });
+
+  it("OAuth URL 不可用时使用当前语言展示回退提示", async () => {
+    await i18n.changeLanguage("en-US");
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile/15E148 Safari/604.1",
+      configurable: true,
+    });
+    repositories.auth.getOAuthStartUrl.mockReturnValue(null);
+
+    render(
+      <MemoryRouter>
+        <SignInPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "使用微信登录" }));
+
+    expect(await screen.findByText("Open this page in WeChat to continue signing in.")).toBeInTheDocument();
+    expect(screen.queryByText("请在微信中打开当前页面后继续登录。")).not.toBeInTheDocument();
   });
 
   it("从微信复制引导切换到手机号时清除引导状态", async () => {
