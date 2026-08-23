@@ -6,7 +6,10 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { PhoneLoginForm } from "@/components/auth/phone-login-form";
 import { AuthDialogFrame } from "@/components/site/auth-dialog-frame";
-import { AUTH_DIALOG_PRIMARY_BUTTON_CLASS } from "@/components/site/auth-dialog-styles";
+import {
+  AUTH_DIALOG_PENDING_BUTTON_CLASS,
+  AUTH_DIALOG_PRIMARY_BUTTON_CLASS,
+} from "@/components/site/auth-dialog-styles";
 import { WeChatMobileBrowserGuide } from "@/components/site/wechat-mobile-browser-guide";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
@@ -73,7 +76,6 @@ const clearLoginProvider = () => {
  * - QQ / WeChat：沿用国内站原有的渐变底 + 品牌 logo 图
  * - Google / GitHub：沿用同款圆角浅色风格，图标用 SVG 占位（后续可换官方 brand assets）
  */
-const AGREEMENT_PENDING_BUTTON_CLASS = "cursor-not-allowed opacity-50 hover:shadow-none active:scale-100";
 const METHOD_BUTTON_CLASS =
   "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300";
 const METHOD_ICON_SLOT_CLASS = "flex size-5 shrink-0 items-center justify-center";
@@ -549,7 +551,7 @@ export const LoginModal = ({
                         type="button"
                         onClick={() => handleOAuthLogin(provider)}
                         aria-disabled={!agreed}
-                        className={`${AUTH_DIALOG_PRIMARY_BUTTON_CLASS} ${!agreed ? AGREEMENT_PENDING_BUTTON_CLASS : ""}`}
+                        className={`${AUTH_DIALOG_PRIMARY_BUTTON_CLASS} ${!agreed ? AUTH_DIALOG_PENDING_BUTTON_CLASS : ""}`}
                         style={visual.style}
                       >
                         {visual.renderIcon()}
@@ -566,6 +568,7 @@ export const LoginModal = ({
                     <WeChatMobileBrowserGuide
                       loginUrl={wechatMobileGuideUrl}
                       beforeCopy={checkAgreed}
+                      blocked={!agreed}
                       autoFocus={shouldFocusWechatMobileGuide}
                       onCopySuccess={() => {
                         captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, {
@@ -579,7 +582,7 @@ export const LoginModal = ({
                       type="button"
                       onClick={() => handleOAuthLogin("wechat")}
                       aria-disabled={!agreed}
-                      className={cn(AUTH_DIALOG_PRIMARY_BUTTON_CLASS, !agreed && AGREEMENT_PENDING_BUTTON_CLASS)}
+                      className={cn(AUTH_DIALOG_PRIMARY_BUTTON_CLASS, !agreed && AUTH_DIALOG_PENDING_BUTTON_CLASS)}
                       style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
                     >
                       {PROVIDER_BUTTON_VISUALS.wechat.renderIcon()}
@@ -602,7 +605,7 @@ export const LoginModal = ({
                     type="button"
                     onClick={() => handleOAuthLogin("qq")}
                     aria-disabled={!agreed}
-                    className={cn(AUTH_DIALOG_PRIMARY_BUTTON_CLASS, !agreed && AGREEMENT_PENDING_BUTTON_CLASS)}
+                    className={cn(AUTH_DIALOG_PRIMARY_BUTTON_CLASS, !agreed && AUTH_DIALOG_PENDING_BUTTON_CLASS)}
                     style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
                   >
                     {PROVIDER_BUTTON_VISUALS.qq.renderIcon()}

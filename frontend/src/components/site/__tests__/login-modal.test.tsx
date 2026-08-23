@@ -222,10 +222,17 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     render(<LoginModal open onClose={vi.fn()} />);
 
     expect(await screen.findByText("复制链接，前往「微信」打开")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "复制链接" }));
+    const copyButton = screen.getByRole("button", { name: "复制链接" });
+    expect(copyButton).toHaveAttribute("aria-disabled", "true");
+    expect(copyButton).toHaveClass("cursor-not-allowed", "opacity-50");
+    fireEvent.click(copyButton);
 
     expect(screen.getByText("请先勾选同意服务协议")).toBeInTheDocument();
     expect(writeClipboardText).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(copyButton).toHaveAttribute("aria-disabled", "false");
+    expect(copyButton).not.toHaveClass("cursor-not-allowed", "opacity-50");
   });
 
   it("Clipboard API 失败时降级使用 execCommand 复制", async () => {

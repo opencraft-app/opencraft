@@ -1,6 +1,9 @@
 import { useId, useState } from "react";
 
-import { AUTH_DIALOG_PRIMARY_BUTTON_CLASS } from "@/components/site/auth-dialog-styles";
+import {
+  AUTH_DIALOG_PENDING_BUTTON_CLASS,
+  AUTH_DIALOG_PRIMARY_BUTTON_CLASS,
+} from "@/components/site/auth-dialog-styles";
 import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
@@ -12,6 +15,7 @@ type CopyState = "idle" | "success" | "error";
 interface WeChatMobileBrowserGuideProps {
   autoFocus?: boolean;
   beforeCopy?: () => boolean;
+  blocked?: boolean;
   className?: string;
   loginUrl: string;
   onCopySuccess?: () => void;
@@ -45,6 +49,7 @@ const copyWithExecCommand = (text: string) => {
 export function WeChatMobileBrowserGuide({
   autoFocus = false,
   beforeCopy,
+  blocked = false,
   className,
   loginUrl,
   onCopySuccess,
@@ -106,10 +111,12 @@ export function WeChatMobileBrowserGuide({
         type="button"
         autoFocus={autoFocus}
         onClick={() => void handleCopy()}
+        aria-disabled={blocked}
         aria-describedby={statusMessage ? `${promptId} ${statusId}` : promptId}
         className={cn(
           AUTH_DIALOG_PRIMARY_BUTTON_CLASS,
           "mt-6 border-black bg-black text-white hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2",
+          blocked && AUTH_DIALOG_PENDING_BUTTON_CLASS,
         )}
       >
         {t("复制链接")}
