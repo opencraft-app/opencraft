@@ -44,7 +44,11 @@ import type {
   ModelProviderOption,
 } from "./model-config-client";
 import { ModelActionTooltip } from "./model-action-tooltip";
-import { getHermesModelIdentity, useModelConfig } from "./use-model-config";
+import {
+  getHermesModelIdentity,
+  type HermesModelIdentityInput,
+  useModelConfig,
+} from "./use-model-config";
 
 type ProviderCategory = "coding_plan" | "api" | "custom";
 type ConfigurePurpose = "primary" | "fallback" | "idle";
@@ -83,8 +87,8 @@ function customManagedProviderKey(name: string, baseUrl: string) {
 }
 
 function sameModel(
-  left: Pick<HermesConfiguredModel, "providerKey" | "id"> | null | undefined,
-  right: Pick<HermesConfiguredModel, "providerKey" | "id"> | null | undefined,
+  left: HermesModelIdentityInput | null | undefined,
+  right: HermesModelIdentityInput | null | undefined,
 ) {
   return !!left && !!right && getHermesModelIdentity(left) === getHermesModelIdentity(right);
 }

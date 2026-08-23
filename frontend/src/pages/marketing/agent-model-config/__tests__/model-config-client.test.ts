@@ -48,19 +48,6 @@ function response(payload: unknown): string {
   return ["transport diagnostic", HERMES_MODEL_CONFIG_JSON_START, JSON.stringify(payload), HERMES_MODEL_CONFIG_JSON_END].join("\n");
 }
 
-function action(type: PlaintextTestAction["type"]): PlaintextTestAction {
-  switch (type) {
-    case "prepareCredentialEnvelope": return { type };
-    case "read": return { type };
-    case "probe": return { type, apiKey, baseUrl: model.baseUrl, apiMode: model.apiMode };
-    case "connectivityProbe": return { type, apiKey, model };
-    case "add": return { type, apiKey, model, purpose: "primary" };
-    case "assign": return { type, providerKey: configuredModel.providerKey, modelId: model.id, purpose: "fallback" };
-    case "removeFallback": return { type, providerKey: configuredModel.providerKey, modelId: model.id };
-    case "remove": return { type, providerKey: configuredModel.providerKey, modelId: model.id };
-  }
-}
-
 function encryptCredential(publicKey: string, credential: string) {
   const bytes = Buffer.from(credential, "utf8");
   const chunks: string[] = [];
@@ -345,12 +332,24 @@ describe("Hermes model configuration client", () => {
 
   it("parses valid marker-wrapped snapshots and rejects invalid payloads", () => {
     expect(parseHermesModelConfigResponse(response({ ok: true, snapshot }))).toEqual(snapshot);
+    expect(parseHermesModelConfigResponse(response({
+      ok: true,
+      snapshot: { ...snapshot, probedModels: ["alpha"] },
+    })).probeSucceeded).toBe(true);
+    expect(parseHermesModelConfigResponse(response({
+      ok: true,
+      snapshot: { ...snapshot, probedModels: [], probeSucceeded: false },
+    })).probeSucceeded).toBe(false);
     expect(() => parseHermesModelConfigResponse("not structured")).toThrow("markers");
     expect(() => parseHermesModelConfigResponse(response({ ok: false, error: "generic helper failure" }))).toThrow("generic helper failure");
     expect(() => parseHermesModelConfigResponse(`${HERMES_MODEL_CONFIG_JSON_START}\n{bad}\n${HERMES_MODEL_CONFIG_JSON_END}`)).toThrow("invalid JSON");
     expect(() => parseHermesModelConfigResponse(response({ ok: true, snapshot: { ...snapshot, primary: { ...configuredModel, id: "" } } }))).toThrow("primary.id");
     expect(() => parseHermesModelConfigResponse(response({ ok: true, snapshot: { ...snapshot, fallbacks: {} } }))).toThrow("fallbacks");
     expect(() => parseHermesModelConfigResponse(response({ ok: true, snapshot: { ...snapshot, configuredModels: {} } }))).toThrow("configuredModels");
+    expect(() => parseHermesModelConfigResponse(response({
+      ok: true,
+      snapshot: { ...snapshot, probedModels: [], probeSucceeded: "yes" },
+    }))).toThrow("probeSucceeded");
     expect(() => parseHermesCredentialEnvelopePreparation(response({ ok: true, credentialEnvelope: { token: "", publicKey: "bad" } }))).toThrow("token");
   });
 
@@ -393,7 +392,7 @@ describe("Hermes model configuration client", () => {
   });
 
   it("passes every action with bounded timeouts and redacts command failures", async () => {
-    const execDebugCommand = vi.fn(async (_botId: string, command: string) => {
+    const execDebugCommand = vi.fn(async (_botId: string, command: string, _options: { timeoutMs: number }) => {
       const encoded = command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/)?.[1];
       const remoteAction = encoded ? JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as HermesModelConfigAction : null;
       if (remoteAction?.type === "prepareCredentialEnvelope") {
@@ -651,6 +650,7 @@ describe("Hermes model configuration client", () => {
   it("supports older helper APIs on Hermes runtimes that implement the provider schema", () => {
     const added = runHelper({ type: "add", apiKey, model, purpose: "idle" }, {}, {}, {}, true);
     const provider = (added.config.providers as Record<string, Record<string, unknown>>)["lightvela-deepseek"];
+    if (!provider) throw new Error("Expected lightvela-deepseek provider");
     expect(provider.key_env).toBe("HERMES_CUSTOM_LIGHTVELA_DEEPSEEK_API_KEY");
     expect(provider).not.toHaveProperty("api_key");
     expect(added.credentials).toEqual({ HERMES_CUSTOM_LIGHTVELA_DEEPSEEK_API_KEY: apiKey });
@@ -805,7 +805,9 @@ describe("Hermes model configuration client", () => {
       lightvela: { model_config: { configured_models: [{ ...configuredModel }] } },
       providers: { "lightvela-deepseek": { ...provider, models: { retained: existingProvider.models.retained, [model.id]: { reasoning: true } } } },
     });
-    expect(((removed.config.providers as Record<string, Record<string, unknown>>)["lightvela-deepseek"]).models).toEqual({ retained: existingProvider.models.retained });
+    const remainingProvider = (removed.config.providers as Record<string, Record<string, unknown>>)["lightvela-deepseek"];
+    if (!remainingProvider) throw new Error("Expected lightvela-deepseek provider after model removal");
+    expect(remainingProvider.models).toEqual({ retained: existingProvider.models.retained });
   });
 
   it("reloads lifecycle changes, rolls credentials back after config failure, and applies idle role semantics", () => {

@@ -79,6 +79,10 @@ function parseSnapshot(value: unknown): HermesModelConfigSnapshot {
   if (!Array.isArray(value.fallbacks)) {
     throw new HermesModelConfigResponseError("invalid_response", "fallbacks must be an array");
   }
+  const probeSucceeded = value.probeSucceeded;
+  if (probeSucceeded !== undefined && typeof probeSucceeded !== "boolean") {
+    throw new HermesModelConfigResponseError("invalid_response", "probeSucceeded must be a boolean");
+  }
   const snapshot: HermesModelConfigSnapshot = {
     primary: parseOptionalModel(value.primary, "primary"),
     fallbacks: value.fallbacks.map((model, index) => parseModel(model, `fallbacks.${index}`)),
@@ -89,10 +93,7 @@ function parseSnapshot(value: unknown): HermesModelConfigSnapshot {
       throw new HermesModelConfigResponseError("invalid_response", "probedModels must be an array of model IDs");
     }
     snapshot.probedModels = [...new Set(value.probedModels.map((model) => model.trim()))];
-    snapshot.probeSucceeded = value.probeSucceeded === undefined ? true : value.probeSucceeded;
-  }
-  if (value.probeSucceeded !== undefined && typeof value.probeSucceeded !== "boolean") {
-    throw new HermesModelConfigResponseError("invalid_response", "probeSucceeded must be a boolean");
+    snapshot.probeSucceeded = probeSucceeded ?? true;
   }
   return snapshot;
 }

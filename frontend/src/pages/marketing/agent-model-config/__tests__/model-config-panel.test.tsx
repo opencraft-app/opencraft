@@ -69,7 +69,7 @@ const autoModel: HermesConfiguredModel = {
   keyEnv: "HERMES_CUSTOM_LIGHTVELA_AUTO_API_KEY",
 };
 
-const providers: ModelProviderOption[] = [
+const providers: [ModelProviderOption, ModelProviderOption] = [
   {
     providerKey: "alpha",
     providerName: "Alpha API",
@@ -123,8 +123,9 @@ const preparationOutput = [
 
 function decodeAction(command: string): HermesModelConfigAction {
   const match = command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/);
-  if (!match) throw new Error("Missing action payload");
-  return JSON.parse(Buffer.from(match[1], "base64").toString("utf8")) as HermesModelConfigAction;
+  const encodedAction = match?.[1];
+  if (!encodedAction) throw new Error("Missing action payload");
+  return JSON.parse(Buffer.from(encodedAction, "base64").toString("utf8")) as HermesModelConfigAction;
 }
 
 function createRemote(
@@ -702,7 +703,9 @@ describe("AgentModelConfigPanel", () => {
       expect.objectContaining({ credentialEnvelope: expect.any(Object), baseUrl: initialProvider.baseUrl }),
       expect.objectContaining({ credentialEnvelope: expect.any(Object), baseUrl: replacementProvider.baseUrl }),
     ]);
-    expect(probeActions[0].credentialEnvelope.ciphertext).not.toBe(probeActions[1].credentialEnvelope.ciphertext);
+    const [initialProbeAction, replacementProbeAction] = probeActions;
+    if (!initialProbeAction || !replacementProbeAction) throw new Error("Expected both Provider probe actions");
+    expect(initialProbeAction.credentialEnvelope.ciphertext).not.toBe(replacementProbeAction.credentialEnvelope.ciphertext);
     expect(JSON.stringify(actions)).not.toContain("provider-a-secret");
     expect(JSON.stringify(actions)).not.toContain("provider-b-secret");
   });

@@ -33,7 +33,7 @@ describe("agent settings TEA SDK boundary", () => {
     expect(page).toContain('import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";');
     expect(page).toContain('import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";');
     expect(page).toMatch(/useModelProviders\(\{ isI18n: isGlobal, useEnglish \}\)/);
-    expect(page).toMatch(/resolveProductModelProviderOptions\(productConfig, modelProviders, \{[\s\S]*regionId: instance\.RegionId/);
+    expect(page).toMatch(/resolveProductModelProviderOptions\(productConfig, modelProviders, \{[\s\S]*region: instance\.Zone,[\s\S]*regionId: instance\.RegionId/);
     expect(page).toMatch(/<AgentModelConfigPanel[\s\S]*botId=\{instance\.InstanceId\}[\s\S]*execDebugCommand=\{execDebugCommand\}/);
     expect(page).not.toContain("AgentModelConfigPrototypePanel");
     expect(page).not.toContain("sdk.ModelPanel");

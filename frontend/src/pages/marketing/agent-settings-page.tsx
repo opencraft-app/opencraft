@@ -168,6 +168,7 @@ const AgentChannelPanel = lazy(() =>
 type TeaSdkInstanceInfo = {
   InstanceId: string;
   RegionId: number;
+  Zone?: string;
 };
 
 type TeaSdkFeatureFlags = {
@@ -246,6 +247,7 @@ function TeaSdkSettingsPanel({
         botId={instance.InstanceId}
         execDebugCommand={execDebugCommand}
         providers={resolveProductModelProviderOptions(productConfig, modelProviders, {
+          region: instance.Zone,
           regionId: instance.RegionId,
         })}
       />

@@ -1238,7 +1238,7 @@
 
 # 模型配置页 CR 问题修复 Implementation Plan
 
-**Status:** 最新评审意见已修复并通过验证，等待用户验收；不自动提交或推送。
+**Status:** Task 8 评审修复与验证完成，等待用户验收；不自动提交或推送。
 
 **Goal:** 修复 MR !3181 评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性、Tooltip 被裁剪、印尼语文案为空和模型列表探测被表述为真实连接的问题。
 
@@ -1291,6 +1291,12 @@
 - [x] 补齐本页面新增的 35 条印尼语翻译，并将连接成功/失败文案收紧为模型列表可用性语义。
 - [x] 运行模型配置定向测试、类型检查、i18n 检查和 diff 门禁后重新执行 FE-AI review。
 
+### Task 8: 修复类型门禁与模型身份契约
+
+- [x] 建立真实执行 `tsconfig.app.json` 的无新增错误门禁，并接入前端 CI，避免 solution-style `tsconfig.json` 导致类型检查空跑。
+- [x] 统一模型身份输入类型、先收窄 `probeSucceeded` 再写入快照，并清零模型配置模块源代码与测试代码的类型错误。
+- [x] 删除 `regionId === 5` 的失效地域推导，改为只透传明确的 region/Zone，并完成定向测试、类型基线、i18n 与 diff 验证。
+
 ## Verification
 
 - `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx`
@@ -1301,6 +1307,8 @@
 **Task 6 verification:** 7 个回归断言先按预期失败；模型配置相关 52 个测试通过、1 个环境测试跳过，真实 Hermes 源码 smoke 1/1 通过；`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。本地新进程 `http://127.0.0.1:5175/agents/models/` 返回 200。全仓测试另有 4 个未改动模块失败，随后一个 worker 持续满 CPU 无输出而终止，未作为本轮通过依据。
 
 **Task 7 verification:** 新增本地化资源与检测语义断言先出现 38 个预期失败；实现后模型配置模块 90 个测试通过、1 个真实 Hermes 环境测试跳过。`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过；英文待翻译为 0，印尼语待翻译由 213 条降至 178 条。本轮仅调整模型列表可用性文案与四语言资源，不改 Hermes 探测行为。
+
+**Task 8 verification:** 地域适配 2 个回归断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、94 个测试全部通过。真实类型门禁对空的根 `tsconfig.json` 和临时注入的 2 条诊断均按预期失败，最终 `pnpm check` 报告 276 条历史基线、0 条新增诊断。国内构建与 `frontsandbox/*` 预览流水线均接入 `set -euo pipefail` 质量步骤；独立 CR 指出的 3 个 P1 与 2 个可立即处理的 P2 已修复。实例 API 尚不提供 Zone，当前只移除失效推导并保留显式透传契约。
 
 ---
 # My creations show() reveal Implementation Plan

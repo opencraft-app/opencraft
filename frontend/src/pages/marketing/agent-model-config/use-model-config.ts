@@ -19,7 +19,12 @@ export type ModelConfigOperation =
   | "remove-fallback"
   | "remove";
 
-export function getHermesModelIdentity(model: Pick<HermesConfiguredModel, "providerKey" | "id" | "baseUrl" | "routeBaseUrl">) {
+export type HermesModelIdentityInput = Pick<
+  HermesConfiguredModel,
+  "providerKey" | "id" | "baseUrl" | "routeBaseUrl"
+>;
+
+export function getHermesModelIdentity(model: HermesModelIdentityInput) {
   return JSON.stringify([model.providerKey, model.id, model.routeBaseUrl ?? model.baseUrl]
     .map((value) => value.trim().replace(/\/+$/, "").toLowerCase()));
 }

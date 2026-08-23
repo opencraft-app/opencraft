@@ -72,7 +72,7 @@ export function resolveProductModelProviderOptions(
   liveProviders: IModelProvider[] | undefined,
   instance: { region?: string; regionId?: number } = {},
 ) {
-  const region = instance.region ?? (instance.regionId === 5 ? "ap-hongkong" : undefined);
+  const region = instance.region?.trim().replace(/-\d+$/, "") || undefined;
   const source = productConfig.getFilteredModelProviders?.(region, instance.regionId)
     ?? productConfig.modelProviders
     ?? liveProviders

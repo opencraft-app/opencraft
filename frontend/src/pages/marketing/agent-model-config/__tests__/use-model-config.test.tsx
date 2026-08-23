@@ -54,8 +54,9 @@ function payloadOutput(payload: Record<string, unknown>) {
 
 function decodeAction(command: string): HermesModelConfigAction {
   const match = command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/);
-  if (!match) throw new Error("Missing action payload");
-  return JSON.parse(Buffer.from(match[1], "base64").toString("utf8")) as HermesModelConfigAction;
+  const encodedAction = match?.[1];
+  if (!encodedAction) throw new Error("Missing action payload");
+  return JSON.parse(Buffer.from(encodedAction, "base64").toString("utf8")) as HermesModelConfigAction;
 }
 
 describe("useModelConfig", () => {

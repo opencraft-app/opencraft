@@ -70,8 +70,10 @@ describe("Agent model configuration Indonesian localization", () => {
 
     render(createElement(
       LocaleOverrideProvider,
-      { locale: "id-ID" },
-      createElement(AgentModelConfigPanel, { botId: "bot-id", execDebugCommand, providers: [] }),
+      {
+        locale: "id-ID",
+        children: createElement(AgentModelConfigPanel, { botId: "bot-id", execDebugCommand, providers: [] }),
+      },
     ));
 
     expect(await screen.findByText("Belum ada model yang dikonfigurasi")).toBeInTheDocument();

@@ -72,7 +72,7 @@ describe("adaptProductModelProviders", () => {
       },
     });
     try {
-      const [provider] = adaptProductModelProviders([{
+      const [adaptedProvider] = adaptProductModelProviders([{
         value: "unsafe",
         category: "api",
         provider: "unsafe",
@@ -84,8 +84,9 @@ describe("adaptProductModelProviders", () => {
         models: [],
       }]);
 
-      expect(provider.providerName).toBe("Unsafe Provider");
-      expect(provider.description).toBe("Fast & safe");
+      if (!adaptedProvider) throw new Error("Expected the Provider to be adapted");
+      expect(adaptedProvider.providerName).toBe("Unsafe Provider");
+      expect(adaptedProvider.description).toBe("Fast & safe");
     } finally {
       Object.defineProperty(Element.prototype, "innerHTML", descriptor);
     }
@@ -156,11 +157,24 @@ describe("adaptProductModelProviders", () => {
         filterArgs = [region, regionId];
         return filtered;
       },
-    }, live, { regionId: 5 }).map((item) => item.providerKey)).toEqual(["filtered"]);
+    }, live, { region: "ap-hongkong-3", regionId: 5 }).map((item) => item.providerKey)).toEqual(["filtered"]);
     expect(filterArgs).toEqual(["ap-hongkong", 5]);
     expect(resolveProductModelProviderOptions({ modelProviders: configured }, live)
       .map((item) => item.providerKey)).toEqual(["configured"]);
     expect(resolveProductModelProviderOptions({}, live)
       .map((item) => item.providerKey)).toEqual(["live"]);
+  });
+
+  it("does not infer an instance region from a numeric region ID", () => {
+    let filterArgs: [string | undefined, number | undefined] | null = null;
+
+    resolveProductModelProviderOptions({
+      getFilteredModelProviders: (region, regionId) => {
+        filterArgs = [region, regionId];
+        return [];
+      },
+    }, undefined, { regionId: 5 });
+
+    expect(filterArgs).toEqual([undefined, 5]);
   });
 });
