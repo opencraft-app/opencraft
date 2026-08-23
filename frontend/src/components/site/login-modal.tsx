@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Smartphone, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { PhoneLoginForm } from "@/components/auth/phone-login-form";
 import { AuthDialogFrame } from "@/components/site/auth-dialog-frame";
+import { WeChatMobileBrowserGuide } from "@/components/site/wechat-mobile-browser-guide";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
 import {
@@ -19,6 +20,7 @@ import {
   ALLOW_GITHUB_EASTER_EGG,
   redirectToOAuthStart,
   VISIBLE_OAUTH_PROVIDERS,
+  WECHAT_MOBILE_BROWSER_PROMPT,
   wechatOAuthStartTargetForUserAgent,
   type OAuthProvider,
 } from "@/lib/oauth";
@@ -275,8 +277,22 @@ export const LoginModal = ({
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [domesticLoginMethod, setDomesticLoginMethod] = useState<DomesticLoginMethod>("wechat");
+  const [wechatMobileGuideUrl, setWechatMobileGuideUrl] = useState<string | null>(null);
   // 确保 login_success 只上报一次（session.stage 变化可能触发多次 useEffect）
   const loginReportedRef = useRef(false);
+
+  const buildWechatMobileGuideUrl = useCallback(() => {
+    if (
+      typeof window === "undefined" ||
+      wechatOAuthStartTargetForUserAgent(window.navigator.userAgent) !== "unsupported_mobile_browser"
+    ) {
+      return null;
+    }
+    return repositories.auth.getOAuthStartUrl("wechat", {
+      ...(mode === "switch-account" ? { switchAccount: true } : {}),
+      wechatMode: "official_account",
+    });
+  }, [mode, repositories.auth]);
 
   useEffect(() => installShowGitHubLoginHelper(), []);
 
@@ -290,7 +306,8 @@ export const LoginModal = ({
   useEffect(() => {
     if (!open || isGlobal) return;
     setDomesticLoginMethod("wechat");
-  }, [open]);
+    setWechatMobileGuideUrl(buildWechatMobileGuideUrl());
+  }, [buildWechatMobileGuideUrl, open]);
 
   // 当用户已登录时自动关闭弹窗并触发 onSuccess
   useEffect(() => {
@@ -335,7 +352,13 @@ export const LoginModal = ({
     if (provider === "wechat") {
       const target = wechatOAuthStartTargetForUserAgent(window.navigator.userAgent);
       if (target === "unsupported_mobile_browser") {
-        setError(t("请在微信中打开当前页面后继续登录。"));
+        const loginUrl = buildWechatMobileGuideUrl();
+        if (!loginUrl) {
+          setError(WECHAT_MOBILE_BROWSER_PROMPT);
+          return;
+        }
+        setError(null);
+        setWechatMobileGuideUrl(loginUrl);
         return;
       }
       const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
@@ -486,7 +509,7 @@ export const LoginModal = ({
       ariaLabel={mode === "switch-account" ? t("切换其他账号") : t("登录")}
     >
             {/* Header — 标题（按设计稿不展示 Logo） */}
-            <div className="flex w-full flex-col items-center px-9 pt-10">
+            <div className="flex w-full flex-col items-center px-9 pb-6 pt-10">
               <h2
                 className="text-[28px] font-medium leading-none"
                 style={{ color: "rgba(0,0,0,0.9)" }}
@@ -504,7 +527,7 @@ export const LoginModal = ({
             </div>
 
             {isGlobal ? (
-              <div className="flex w-full flex-col gap-4 px-9 pt-8">
+              <div className="flex w-full flex-col gap-4 px-9 pt-2">
                 {(() => {
                   const providers: OAuthProvider[] = [...VISIBLE_OAUTH_PROVIDERS];
                   if (
@@ -535,18 +558,25 @@ export const LoginModal = ({
                 })()}
               </div>
             ) : (
-              <div className="flex w-full flex-col gap-5 px-9 pb-6 pt-6">
+              <div className="flex w-full flex-col gap-5 px-9 pb-6 pt-0">
                 {domesticLoginMethod === "wechat" ? (
-                  <button
-                    type="button"
-                    onClick={() => handleOAuthLogin("wechat")}
-                    aria-disabled={!agreed}
-                    className={cn(BUTTON_BASE_CLASS, !agreed && AGREEMENT_PENDING_BUTTON_CLASS)}
-                    style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
-                  >
-                    {PROVIDER_BUTTON_VISUALS.wechat.renderIcon()}
-                    <span>{t("微信账号登录")}</span>
-                  </button>
+                  wechatMobileGuideUrl ? (
+                    <WeChatMobileBrowserGuide
+                      loginUrl={wechatMobileGuideUrl}
+                      beforeCopy={checkAgreed}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOAuthLogin("wechat")}
+                      aria-disabled={!agreed}
+                      className={cn(BUTTON_BASE_CLASS, !agreed && AGREEMENT_PENDING_BUTTON_CLASS)}
+                      style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
+                    >
+                      {PROVIDER_BUTTON_VISUALS.wechat.renderIcon()}
+                      <span>{t("微信账号登录")}</span>
+                    </button>
+                  )
                 ) : null}
 
                 {domesticLoginMethod === "phone" ? (
@@ -594,6 +624,7 @@ export const LoginModal = ({
                               onClick={() => {
                                 setError(null);
                                 setShowAgreeHint(false);
+                                setWechatMobileGuideUrl(method === "wechat" ? buildWechatMobileGuideUrl() : null);
                                 setDomesticLoginMethod(method);
                               }}
                             >

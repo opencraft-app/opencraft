@@ -16,6 +16,7 @@ vi.mock("@/observability/posthog", () => ({
 }));
 
 const signInWithCode = vi.fn();
+const writeClipboardText = vi.fn();
 let currentSession: {
   stage: "anonymous" | "authenticated";
   user: { id: string; name: string } | null;
@@ -23,13 +24,19 @@ let currentSession: {
 
 const repositories = {
   auth: {
-    getOAuthStartUrl: vi.fn((provider: OAuthProvider, options?: { wechatMode?: WeChatOAuthMode }) => {
-      const modeSuffix = provider === "wechat" && options?.wechatMode ? `?mode=${options.wechatMode}` : "";
+    getOAuthStartUrl: vi.fn((
+      provider: OAuthProvider,
+      options?: { switchAccount?: boolean; wechatMode?: WeChatOAuthMode },
+    ) => {
+      const query = new URLSearchParams();
+      if (provider === "wechat" && options?.wechatMode) query.set("mode", options.wechatMode);
+      if (options?.switchAccount) query.set("switch_account", "true");
+      const querySuffix = query.size > 0 ? `?${query.toString()}` : "";
       switch (provider) {
         case "qq":
           return "https://lightclaw.tech/auth/oauth/qq/start";
         case "wechat":
-          return `https://lightclaw.tech/auth/oauth/wechat/start${modeSuffix}`;
+          return `https://lightclaw.tech/auth/oauth/wechat/start${querySuffix}`;
         case "google":
           return "https://lightclaw.tech/auth/oauth/google/start";
         case "github":
@@ -60,6 +67,11 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     setGitHubLoginVisible(false);
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      configurable: true,
+    });
+    writeClipboardText.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText: writeClipboardText },
       configurable: true,
     });
   });
@@ -151,7 +163,7 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     redirectSpy.mockRestore();
   });
 
-  it("普通移动浏览器点击微信登录展示微信内打开提示且不跳转", () => {
+  it("普通移动浏览器展示复制引导并复制公众号 OAuth 链接", async () => {
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
       configurable: true,
@@ -160,13 +172,123 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
 
     render(<LoginModal open onClose={vi.fn()} />);
 
-    const [agreeCheckbox] = screen.getAllByRole("checkbox");
-    fireEvent.click(agreeCheckbox as HTMLElement);
-    fireEvent.click(screen.getByRole("button", { name: "微信账号登录" }));
-
-    expect(screen.getByText("请在微信中打开当前页面后继续登录。")).toBeInTheDocument();
+    const guidePrompt = await screen.findByText("复制链接，前往「微信」打开");
+    const copyButton = await screen.findByRole("button", { name: "复制链接" });
+    expect(guidePrompt).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "微信账号登录" })).not.toBeInTheDocument();
+    expect(copyButton).toHaveFocus();
+    expect(copyButton).toHaveAttribute("aria-describedby", expect.stringContaining(guidePrompt.id));
+    expect(copyButton).toHaveClass("rounded-full", "text-sm", "font-medium");
+    expect(copyButton).not.toHaveClass("rounded-lg", "text-base");
+    expect(guidePrompt).toHaveClass("text-sm", "font-medium");
+    expect(guidePrompt).not.toHaveClass("text-base");
+    expect(repositories.auth.getOAuthStartUrl).toHaveBeenLastCalledWith("wechat", {
+      wechatMode: "official_account",
+    });
     expect(redirectSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(copyButton);
+    await waitFor(() => {
+      expect(writeClipboardText).toHaveBeenCalledWith(
+        "https://lightclaw.tech/auth/oauth/wechat/start?mode=official_account",
+      );
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("已复制，请打开微信粘贴访问");
     redirectSpy.mockRestore();
+  });
+
+  it("普通移动浏览器默认展示引导，但未勾选协议时不能复制", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
+      configurable: true,
+    });
+
+    render(<LoginModal open onClose={vi.fn()} />);
+
+    expect(await screen.findByText("复制链接，前往「微信」打开")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "复制链接" }));
+
+    expect(screen.getByText("请先勾选同意服务协议")).toBeInTheDocument();
+    expect(writeClipboardText).not.toHaveBeenCalled();
+  });
+
+  it("复制失败时就近展示可重试状态", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Mobile Safari/537.36",
+      configurable: true,
+    });
+    writeClipboardText.mockRejectedValueOnce(new Error("clipboard denied"));
+
+    render(<LoginModal open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(await screen.findByRole("button", { name: "复制链接" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("复制失败，请重试");
+    });
+  });
+
+  it("进入引导后取消勾选协议会阻止复制", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile/15E148 Safari/604.1",
+      configurable: true,
+    });
+
+    render(<LoginModal open onClose={vi.fn()} />);
+
+    const agreeCheckbox = screen.getByRole("checkbox");
+    fireEvent.click(agreeCheckbox);
+    fireEvent.click(agreeCheckbox);
+    fireEvent.click(await screen.findByRole("button", { name: "复制链接" }));
+
+    expect(screen.getByText("请先勾选同意服务协议")).toBeInTheDocument();
+    expect(writeClipboardText).not.toHaveBeenCalled();
+  });
+
+  it("切换账号模式的移动端复制链接保留切换意图", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile/15E148 Safari/604.1",
+      configurable: true,
+    });
+
+    render(
+      <LoginModal
+        open
+        mode="switch-account"
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(await screen.findByRole("button", { name: "复制链接" }));
+
+    expect(repositories.auth.getOAuthStartUrl).toHaveBeenCalledWith("wechat", {
+      switchAccount: true,
+      wechatMode: "official_account",
+    });
+    await waitFor(() => {
+      expect(writeClipboardText).toHaveBeenCalledWith(
+        "https://lightclaw.tech/auth/oauth/wechat/start?mode=official_account&switch_account=true",
+      );
+    });
+  });
+
+  it("普通移动浏览器切回微信时直接恢复复制引导", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile/15E148 Safari/604.1",
+      configurable: true,
+    });
+
+    render(<LoginModal open onClose={vi.fn()} />);
+
+    expect(await screen.findByRole("button", { name: "复制链接" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "手机" }));
+    fireEvent.click(screen.getByRole("button", { name: "微信" }));
+
+    expect(await screen.findByRole("button", { name: "复制链接" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "微信账号登录" })).not.toBeInTheDocument();
   });
 
   it("切换到 QQ 并勾选协议后，点击主按钮跳转后端下发的 start URL", () => {
@@ -287,7 +409,9 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
       switchAccount: true,
       wechatMode: "website",
     });
-    expect(redirectSpy).toHaveBeenCalledWith("https://lightclaw.tech/auth/oauth/wechat/start?mode=website");
+    expect(redirectSpy).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/oauth/wechat/start?mode=website&switch_account=true",
+    );
     redirectSpy.mockRestore();
   });
 });
