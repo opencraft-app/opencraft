@@ -118,6 +118,20 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。",
+      ),
+    ).toBeInTheDocument();
+    const personaImage = screen.getByAltText("LightVela 支持上传自定义人设文件");
+    expect(personaImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload.png"),
+    );
+    expect(personaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
     expect(screen.getByRole("heading", { name: "自动任务支持关联上游任务" })).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -141,6 +155,9 @@ describe("marketing channel copy", () => {
     );
     expect(dingtalkImage.parentElement).toHaveStyle({ aspectRatio: "816 / 356" });
     const augustHeadings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+    expect(augustHeadings.indexOf("LightVela 支持上传自定义人设文件")).toBeLessThan(
+      augustHeadings.indexOf("自动任务支持关联上游任务"),
+    );
     expect(augustHeadings.indexOf("自动任务支持关联上游任务")).toBeLessThan(
       augustHeadings.indexOf("LightVela 支持钉钉通道"),
     );
