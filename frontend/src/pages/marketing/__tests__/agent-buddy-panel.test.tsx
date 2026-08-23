@@ -13,6 +13,7 @@ import {
   type SkillHubSoul,
 } from "@/lib/skillhub-api";
 import { isGlobal } from "@/lib/region";
+import { encodeUtf8Base64 } from "@/pages/marketing/agent-persona-upload";
 
 const fixtures = vi.hoisted(() => {
   const soul = (id: number, slug: string, displayName: string) => ({
@@ -116,13 +117,6 @@ const successResult = (output = "") => ({
   exitCode: 0,
   output,
 });
-
-const encodeUtf8Base64 = (value: string) => {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-};
 
 const soulContentResult = (markdown: string) => successResult([
   "Exists: yes",
@@ -514,7 +508,9 @@ describe("BuddyPanel P1 stability", () => {
       return "blob:current-soul";
     });
     const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click() {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click(
+      this: HTMLAnchorElement,
+    ) {
       downloadedName = this.download;
     });
     mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });

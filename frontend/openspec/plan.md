@@ -181,7 +181,7 @@
 
   ```bash
   cd frontend
-  pnpm exec vitest run --config vitest.persona-local.config.ts \
+  pnpm exec vitest run --api.host 127.0.0.1 \
     src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
     src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
     src/pages/marketing/__tests__/agent-buddy-draw-modal.test.tsx
@@ -247,7 +247,7 @@
 
   ```bash
   cd frontend
-  pnpm exec vitest run --config vitest.persona-local.config.ts \
+  pnpm exec vitest run --api.host 127.0.0.1 \
     src/pages/marketing/__tests__/agent-buddy-panel.test.tsx
   ```
 
@@ -277,7 +277,7 @@
   cd frontend
   pnpm i18n:extract
   pnpm i18n:zh-hant
-  pnpm exec vitest run --config vitest.persona-local.config.ts \
+  pnpm exec vitest run --api.host 127.0.0.1 \
     src/pages/marketing/__tests__/agent-buddy-draw-modal.test.tsx \
     src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
     src/pages/marketing/__tests__/agent-buddy-command.test.ts \
@@ -316,7 +316,7 @@
 
   ```bash
   cd frontend
-  pnpm exec vitest run --config vitest.persona-local.config.ts \
+  pnpm exec vitest run --api.host 127.0.0.1 \
     src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx
   ```
 
@@ -342,7 +342,7 @@
   cd frontend
   pnpm i18n:extract
   pnpm i18n:zh-hant
-  pnpm exec vitest run --config vitest.persona-local.config.ts \
+  pnpm exec vitest run --api.host 127.0.0.1 \
     src/pages/marketing/__tests__/agent-buddy-draw-modal.test.tsx \
     src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
     src/pages/marketing/__tests__/agent-buddy-command.test.ts \
@@ -380,7 +380,7 @@
 
   ```bash
   cd frontend
-  pnpm exec vitest run --config vitest.persona-local.config.ts \
+  pnpm exec vitest run --api.host 127.0.0.1 \
     src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx
   ```
 
@@ -455,7 +455,7 @@
 
   ```bash
   cd frontend
-  pnpm exec vitest run --config vitest.persona-local.config.ts \
+  pnpm exec vitest run --api.host 127.0.0.1 \
     src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx
   ```
 
@@ -525,7 +525,7 @@
 
   ```bash
   cd frontend
-  pnpm exec vitest run --config vitest.persona-local.config.ts \
+  pnpm exec vitest run --api.host 127.0.0.1 \
     src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx
   ```
 

@@ -49,6 +49,13 @@ const forbiddenControlCharacters = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007
 
 const stripBom = (text: string) => text.replace(/^\uFEFF/, "");
 
+export function encodeUtf8Base64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 function truncateUtf8(text: string, maxBytes: number): string {
   let result = "";
   let byteLength = 0;
@@ -108,7 +115,10 @@ export async function readPersonaMarkdownFile(
 export function getPersonaDisplayName(markdown: string, fileName: string): string {
   const metadataName = markdown.match(/^\s*Name\s*:\s*(.*?)\s*$/im)?.[1]?.trim();
   const fileNameWithoutExtension = fileName.replace(/\.md$/i, "").trim();
-  const displayName = metadataName || fileNameWithoutExtension || "自定义人设";
+  const rawDisplayName = metadataName || fileNameWithoutExtension || "自定义人设";
+  const displayName = rawDisplayName
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")
+    .trim() || "自定义人设";
   return truncateUtf8(displayName, PERSONA_DISPLAY_NAME_MAX_BYTES);
 }
 
@@ -154,13 +164,13 @@ export function buildCustomSoulMarkdown(
     const metadataEnd = firstSectionIndex >= 0 ? firstSectionIndex : lines.length;
     const metadata = lines.slice(soulHeadingIndex + 1, metadataEnd);
     const slugIndex = metadata.findIndex((line) => /^\s*Slug\s*:/i.test(line));
-    const nameIndex = metadata.findIndex((line) => /^\s*Name\s*:/i.test(line));
 
     if (slugIndex >= 0) {
       metadata[slugIndex] = `Slug: ${CUSTOM_PERSONA_SLUG}`;
     } else {
       metadata.unshift(`Slug: ${CUSTOM_PERSONA_SLUG}`);
     }
+    const nameIndex = metadata.findIndex((line) => /^\s*Name\s*:/i.test(line));
     if (nameIndex < 0) {
       const insertedSlugIndex = metadata.findIndex((line) => /^Slug\s*:/i.test(line));
       metadata.splice(insertedSlugIndex + 1, 0, `Name: ${displayName}`);

@@ -71,7 +71,10 @@ import {
   type CustomPersonaSavePayload,
 } from "@/pages/marketing/agent-custom-persona-file-modal";
 import { PersonaUploadModal } from "@/pages/marketing/agent-persona-upload-modal";
-import { CUSTOM_PERSONA_SLUG } from "@/pages/marketing/agent-persona-upload";
+import {
+  CUSTOM_PERSONA_SLUG,
+  encodeUtf8Base64,
+} from "@/pages/marketing/agent-persona-upload";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
@@ -87,13 +90,6 @@ const UNAPPLIED_TOOLTIP_CLASS = "pointer-events-auto select-text absolute bottom
 
 /** 抽卡槽位数上限（4 列 × 2 行 = 8 张） */
 const MAX_DRAWS = 8;
-
-function encodeUtf8Base64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
 
 // Drawn cards are persisted by slug, but EN and CN use different slugs for the
 // same archetype (GOAT vs YYDS, …). When the active language changes, we

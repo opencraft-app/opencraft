@@ -20,17 +20,11 @@ import {
 import {
   PERSONA_MARKDOWN_MAX_BYTES,
   buildCustomSoulMarkdown,
+  encodeUtf8Base64,
   validateCustomSoulMarkdown,
 } from "../agent-persona-upload";
 
 const execFileAsync = promisify(execFile);
-
-function encodeUtf8Base64(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
 
 describe("Hermes persona commands", () => {
   it.each([

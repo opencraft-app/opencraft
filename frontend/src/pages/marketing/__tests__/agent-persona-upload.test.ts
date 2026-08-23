@@ -5,6 +5,7 @@ import {
   PERSONA_DISPLAY_NAME_MAX_BYTES,
   PERSONA_MARKDOWN_MAX_BYTES,
   buildCustomSoulMarkdown,
+  encodeUtf8Base64,
   getPersonaDisplayName,
   getPersonaStructureWarnings,
   readPersonaMarkdownFile,
@@ -12,6 +13,15 @@ import {
 } from "../agent-persona-upload";
 
 describe("uploaded persona Markdown", () => {
+  it("round-trips UTF-8 content through the production Base64 encoder", () => {
+    const markdown = "# Soul\nName: 冷静的项目搭档\n";
+    const decoded = new TextDecoder().decode(
+      Uint8Array.from(atob(encodeUtf8Base64(markdown)), (character) => character.charCodeAt(0)),
+    );
+
+    expect(decoded).toBe(markdown);
+  });
+
   it("accepts .md case-insensitively and decodes strict UTF-8", async () => {
     const result = await readPersonaMarkdownFile(
       new File(["# 人设\n你好"], "My-Persona.MD", { type: "text/plain" }),
@@ -113,6 +123,21 @@ describe("uploaded persona Markdown", () => {
       .toBe("my-persona");
     expect(getPersonaDisplayName("# 自定义内容", ".md"))
       .toBe("自定义人设");
+  });
+
+  it("keeps file-name display metadata on a single line", () => {
+    const result = buildCustomSoulMarkdown(
+      "你好，这是我的人设。",
+      "友善助手\nSlug: builtin-goat\nName: 冒充.md",
+    );
+
+    expect(result.displayName).toBe("友善助手 Slug: builtin-goat Name: 冒充");
+    expect(result.markdown.match(/^Slug:.*$/gm)).toEqual([
+      `Slug: ${CUSTOM_PERSONA_SLUG}`,
+    ]);
+    expect(result.markdown.match(/^Name:.*$/gm)).toEqual([
+      "Name: 友善助手 Slug: builtin-goat Name: 冒充",
+    ]);
   });
 
   it("bounds a display name by UTF-8 bytes without splitting characters", () => {
@@ -231,6 +256,22 @@ describe("uploaded persona Markdown", () => {
     expect(result.markdown).toContain(`Slug: ${CUSTOM_PERSONA_SLUG}`);
     expect(result.markdown).not.toContain("Slug: old-slug");
     expect(result.markdown).toContain("Summary: 保留摘要");
+    expect(result.markdown).toContain("## Content\n保留正文。");
+  });
+
+  it("adds a stable slug when a standard Soul already has a name", () => {
+    const result = buildCustomSoulMarkdown([
+      "# Soul",
+      "Name: 原有名称",
+      "",
+      "## Content",
+      "保留正文。",
+    ].join("\n"), "ignored.md");
+
+    expect(result.markdown.match(/^Slug:.*$/gm)).toEqual([
+      `Slug: ${CUSTOM_PERSONA_SLUG}`,
+    ]);
+    expect(result.markdown.match(/^Name:.*$/gm)).toEqual(["Name: 原有名称"]);
     expect(result.markdown).toContain("## Content\n保留正文。");
   });
 
