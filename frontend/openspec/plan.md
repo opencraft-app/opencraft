@@ -1,3 +1,593 @@
+# MR !3248 CR 国际化补强 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 修复 MR !3248 评审确认的繁中 / 印尼语结构误报、中文默认名泄漏和一处国际站测试空过，并如实记录国际站整文件既有失败。
+
+**Architecture:** 保持单一、区域无关的 Persona 解析链路；为结构识别补充明确的繁中 / 印尼语关键词，并把调用方本地化兜底名作为参数传入现有纯函数。测试先证明现状失败，再做最小实现；推荐人设 slug、读取失败重试和仓库级类型脚本不在本计划内。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、现有 `useT` i18n。
+
+## Global Constraints
+
+- 不改变 `SOUL.md` 的来源标记、Slug、正文、备份或原子写入协议。
+- 结构建议仍是软提示，不阻止上传或注入。
+- 不增加语言检测、区域分支、翻译服务、配置词库或依赖。
+- 不修改推荐人设 / 抽卡逻辑、`equippedStatus` 重试策略或 `pnpm check` 脚本。
+- 国内站默认名继续使用 `t("自定义人设")`，国际站按当前语言使用同一词条。
+- 未经用户再次确认，不执行 `git commit` 或 `git push`；MR !3248 更新前必须展示差异和验证结果。
+
+---
+
+### Task 1: 多语言结构识别与本地化默认名
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-persona-upload.test.ts`
+- Modify: `frontend/src/pages/marketing/agent-persona-upload.ts`
+
+**Interfaces:**
+- Consumes: `getPersonaStructureWarnings(markdown)`、`getPersonaDisplayName(markdown, fileName, fallbackDisplayName?)`。
+- Produces: `buildCustomSoulMarkdown(markdown, fileName, fallbackDisplayName?)` 与 `validateCustomSoulMarkdown(markdown, fileName, fallbackDisplayName?)` 向下传递相同兜底名。
+
+- [x] **Step 1: 添加繁中 / 印尼语结构识别失败测试**
+
+在 `agent-persona-upload.test.ts` 添加两个完整 Markdown 用例：
+
+```ts
+it.each([
+  ["繁體中文", ["## 角色定位", "## 溝通風格", "## 工作原則", "## 行為邊界"]],
+  ["印尼语", ["## Identitas", "## Gaya Komunikasi", "## Prinsip Kerja", "## Batasan Perilaku"]],
+])("recognizes complete %s persona structure", (_language, headings) => {
+  expect(getPersonaStructureWarnings([
+    "# Soul",
+    "Name: Project Partner",
+    headings[0]!,
+    "Identity content.",
+    headings[1]!,
+    "Tone content.",
+    headings[2]!,
+    "Principles content.",
+    headings[3]!,
+    "Boundary content that is intentionally long enough to avoid the short-content warning.",
+  ].join("\n"))).toEqual([]);
+});
+```
+
+- [x] **Step 2: 添加可传入默认展示名的失败测试**
+
+```ts
+it("uses the caller-provided localized display-name fallback", () => {
+  expect(getPersonaDisplayName("Keep answers short.", ".md", "Persona kustom"))
+    .toBe("Persona kustom");
+
+  const result = buildCustomSoulMarkdown(
+    "Keep answers short.",
+    ".md",
+    "Custom persona",
+  );
+  expect(result.displayName).toBe("Custom persona");
+  expect(result.markdown).toContain("Name: Custom persona");
+});
+```
+
+- [x] **Step 3: 运行纯函数测试并确认 RED**
+
+Run:
+
+```bash
+cd frontend
+pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  -t 'recognizes complete|caller-provided localized'
+```
+
+Expected: 繁中 / 印尼语用例因 `missing_*` 提示失败，默认名用例因函数尚不接受第三个参数而失败；不得出现测试环境或语法错误。
+
+- [x] **Step 4: 最小扩充结构关键词**
+
+只在 `getPersonaStructureWarnings` 的四组现有正则中增加已确认词：
+
+```ts
+// identity: Identitas | Posisi Peran
+// tone: 溝通風格 | 語氣 | 表達 | Gaya Komunikasi | Nada
+// principles: 工作原則 | 原則 | 優先級 | Prinsip Kerja | Prioritas
+// boundaries: 行為邊界 | 邊界 | Batasan Perilaku | Batasan；正文兼容 Jangan
+```
+
+不得重写为语言分支或新增配置表。
+
+- [x] **Step 5: 最小传递本地化兜底名**
+
+签名统一为：
+
+```ts
+export function getPersonaDisplayName(
+  markdown: string,
+  fileName: string,
+  fallbackDisplayName = "Custom persona",
+): string;
+
+export function buildCustomSoulMarkdown(
+  markdown: string,
+  fileName: string,
+  fallbackDisplayName = "Custom persona",
+): { markdown: string; displayName: string };
+
+export function validateCustomSoulMarkdown(
+  markdown: string,
+  fileName: string,
+  fallbackDisplayName = "Custom persona",
+): CustomSoulMarkdownValidation;
+```
+
+名称优先级保持 `Name:` → 文件名 → `fallbackDisplayName`，并继续执行控制字符清理和 80 字节截断。
+
+- [x] **Step 6: 运行纯函数测试并确认 GREEN**
+
+Run:
+
+```bash
+cd frontend
+pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts
+```
+
+Expected: 该测试文件全部 PASS，现有简中 / 英文识别和 `SOUL.md` 标准化行为不回归。
+
+---
+
+### Task 2: 弹窗调用方与国际站真实测试覆盖
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Modify: `frontend/src/pages/marketing/agent-custom-persona-file-modal.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+
+**Interfaces:**
+- Consumes: Task 1 的 `validateCustomSoulMarkdown(markdown, fileName, fallbackDisplayName?)`。
+- Produces: 两个弹窗始终传入 `t("自定义人设")`；`shows inject only after selecting a persona` 在 global 环境真实执行。
+
+- [x] **Step 1: 添加上传弹窗本地化兜底失败测试**
+
+把测试中的 `useT` mock 对“自定义人设”返回 `Persona kustom`，从而与纯函数的语言中立默认值区分：
+
+```tsx
+vi.mock("@/i18n/t", () => ({
+  useT: () => (text: string, options?: Record<string, unknown>) => (
+    text === "自定义人设"
+      ? "Persona kustom"
+      : text.replace(
+          /\{\{\s*([\w$]+)\s*\}\}/g,
+          (raw, key: string) => options?.[key] === undefined ? raw : String(options[key]),
+        )
+  ),
+}));
+```
+
+再添加完整上传用例：
+
+```tsx
+it("uses the localized display-name fallback", async () => {
+  const onInject = vi.fn().mockResolvedValue(undefined);
+  render(
+    <PersonaUploadModal
+      disabled={false}
+      hasExistingSoul={false}
+      onInject={onInject}
+    />,
+  );
+
+  selectFile(new File(["Keep answers short."], ".md"));
+  fireEvent.click(await screen.findByRole("button", { name: "注入人设" }));
+
+  await waitFor(() => expect(onInject).toHaveBeenCalledWith({
+    displayName: "Persona kustom",
+    markdown: expect.stringContaining("Name: Persona kustom"),
+  }));
+});
+```
+
+- [x] **Step 2: 运行弹窗测试并确认 RED**
+
+Run:
+
+```bash
+cd frontend
+pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  -t 'localized display-name fallback'
+```
+
+Expected: FAIL，收到的 `displayName` / `Name:` 仍为现有中文兜底。
+
+- [x] **Step 3: 两个弹窗显式传入翻译兜底**
+
+`agent-persona-upload-modal.tsx` 的预览校验与注入时校验都改为：
+
+```ts
+validateCustomSoulMarkdown(markdown, fileName, t("自定义人设"));
+```
+
+`agent-custom-persona-file-modal.tsx` 改为：
+
+```ts
+validateCustomSoulMarkdown(markdown, "SOUL.md", t("自定义人设"));
+```
+
+同步补齐 `useMemo` 依赖，不改变弹窗状态机。
+
+- [x] **Step 4: 删除纯遗留国际站测试守卫**
+
+仅删除以下用例开头的早退：
+
+```ts
+it("shows inject only after selecting a persona", async () => {
+  // 删除：if (isGlobal) return;
+```
+
+保留另外两处依赖推荐人设 global-ready 的早退。
+
+- [x] **Step 5: 运行弹窗和区域测试并确认 GREEN**
+
+Run:
+
+```bash
+cd frontend
+pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx
+
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  -t 'shows inject only after selecting a persona|renders the upload entry in both regions|uploads a custom persona'
+```
+
+Expected: 两条命令全部 PASS；global 下 `shows inject...` 不再空过。
+
+---
+
+### Task 3: 文档、全量门禁与 MR 更新检查点
+
+**Files:**
+- Modify: `frontend/openspec/changes/2026-08-24-global-custom-persona-upload-design.md`
+- Modify: `frontend/openspec/plan.md`
+
+**Interfaces:**
+- Consumes: Tasks 1–2 的实现和验证证据。
+- Produces: 如实的验证边界与可提交差异。
+
+- [x] **Step 1: 更新设计状态与验证边界**
+
+把状态改为“CR 增量已实施并通过定向双区域验证，待提交”，并明确：自定义人设定向链路通过；`agent-buddy-panel.test.tsx` 的 8 个推荐人设 global 失败来自 `master` 既有基线，本 MR 未触碰。
+
+- [x] **Step 2: 运行双区域 Persona 回归**
+
+Run:
+
+```bash
+cd frontend
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-buddy-command.test.ts
+
+NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-buddy-command.test.ts
+```
+
+Expected: 两组命令全部 PASS；jsdom 下载导航提示不计为失败。
+
+- [x] **Step 3: 运行静态与区域构建门禁**
+
+Run:
+
+```bash
+cd frontend
+pnpm i18n:check
+pnpm check
+pnpm build:cn
+pnpm build:global
+cd ..
+git diff --check
+git status --short
+```
+
+Expected: 全部 exit 0；构建生成的字体子集恢复到 `HEAD`，最终只保留规格、计划、纯函数、两个弹窗和对应测试的预期变更。
+
+- [x] **Step 4: 展示提交检查点并等待确认**
+
+建议追加 commit message：
+
+```text
+补齐国际站人设语言边界 / fix(persona): localize global persona validation
+```
+
+展示 `git status --short`、`git diff --stat`、完整业务 diff 和验证结果；未经确认不得 commit / push。推送后通过工蜂 API 回查 MR !3248 的 source commit、文件列表和 commit check。
+
+---
+
+# 国际站开放自定义人设文件 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 让 LightVela 国际站完整开放现有自定义人设 Markdown 的上传、编辑和下载能力，同时保持国内站行为不变。
+
+**Architecture:** 继续复用 `BuddyPanel`、Persona 上传/编辑弹窗、Markdown 校验和 Hermes `SOUL.md` 安全读写链路。只移除 `agent-buddy-panel.tsx` 中三个国际站展示门禁，并把自定义人设生命周期测试改为在 `cn` 与 `global` 环境下共同执行；不新增接口、组件副本或 capability flag。国际站整文件测试在 `origin/master` 上已有与预设人设英文 slug mock 相关的基线失败，因此本需求使用自定义人设定向用例作为国际站门禁，预设人设用例保持原区域策略。
+
+**Tech Stack:** React 19、TypeScript 5.9、Next.js 16、Vitest 4、Testing Library、现有 Hermes `debug/exec` Repository。
+
+## Global Constraints
+
+- 国内站行为保持不变；国际站新增完整的自定义人设上传、编辑和下载能力。
+- 不改变 `SOUL.md` 格式、`LightVela-Source: custom-upload` 来源标记、备份目录或安全写入协议。
+- 不新增 API、运行时命令、组件副本、依赖或区域 capability flag。
+- 不调整预设人设、抽卡、答题测试或 `/new` 生效提示。
+- 不新增或修改用户可见文案；复用现有中英文字典。
+- 必须先在国际站环境观察到测试因现有 `!isGlobal` 门禁失败，再修改生产代码。
+- 未经用户明确确认，不执行 `git commit`、`git push` 或创建 MR。
+
+---
+
+### Task 1: 国际站开放自定义人设完整生命周期
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-buddy-panel.tsx`
+- Modify: `frontend/openspec/plan.md`
+- Reference: `frontend/openspec/changes/2026-08-24-global-custom-persona-upload-design.md`
+
+**Interfaces:**
+- Consumes: `PersonaUploadModal`, `CustomPersonaFileModal`, `handleCustomPersonaInject`, `handleEditCustomPersona`, `handleDownloadCustomPersona`, `handleCustomPersonaSave` 的现有签名和行为。
+- Produces: `BuddyPanel` 在 `isGlobal === true` 与 `isGlobal === false` 时统一暴露上传入口、编辑/下载操作和编辑弹窗；不产生新导出接口。
+
+- [x] **Step 1: 把区域可见性测试改成双区域共同要求**
+
+在 `agent-buddy-panel.test.tsx` 中保留 `isGlobal` 导入（仍用于预设人设相关测试），并把“仅国内站显示上传入口”的条件断言改为两个区域都必须显示：
+
+```tsx
+it("renders the upload entry in both regions", async () => {
+  mockedLoadBuddyState.mockResolvedValue({
+    drawnSouls: [fixtures.agentA],
+    appliedSlug: null,
+  });
+  repositoryMocks.execDebugCommand.mockResolvedValue(successResult("Exists: no"));
+
+  render(<BuddyPanel botId="agent-a" />);
+  await screen.findByText("Agent A Soul");
+
+  expect(await screen.findByRole("button", { name: "上传人设文件" })).toBeEnabled();
+});
+```
+
+把自定义人设状态测试中的区域分支改为统一断言：
+
+```tsx
+const editButton = screen.getByRole("button", { name: "编辑自定义人设" });
+expect(editButton).toBeInTheDocument();
+expect(screen.getByRole("button", { name: "下载自定义人设" })).toBeInTheDocument();
+expect(editButton.parentElement?.parentElement).toHaveClass("gap-0");
+```
+
+删除以下自定义人设测试开头的 `if (isGlobal) return;`，让它们在国际站环境真实执行：
+
+- `reads the current Soul, edits it, and saves through the safe write command`
+- `downloads the exact current Soul directly without opening the editor`
+- `reports an actionable error for an unreadable current Soul: %s`
+- `reports a network error while reading the current Soul`
+- `disables both file actions and ignores an old content read after switching Agents`
+- `cancels a pending current-persona download when the panel unmounts`
+- `clears a pending file action when a new persona write supersedes its read`
+- `keeps Agent B editor open when Agent A save finishes stale`
+- `uploads a custom persona through the existing Hermes command`
+
+以下用例依赖预设人设选择和国际站英文 slug 映射，保持现有 `if (isGlobal) return;`，不纳入本需求：
+
+- `shows inject only after selecting a persona`
+- `discards an old custom-persona read when a recommended persona is injected`
+- `keeps the real custom status when a recommended persona write falls back`
+
+- [x] **Step 2: 运行国际站测试并确认 RED**
+
+Run:
+
+```bash
+cd frontend
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  -t 'renders the upload entry in both regions|restores a custom uploaded persona|reads the current Soul|downloads the exact current Soul|reports an actionable error|reports a network error|disables both file actions|cancels a pending current-persona download|clears a pending file action|keeps Agent B editor open|uploads a custom persona'
+```
+
+Expected:
+
+- FAIL。
+- 首个业务失败明确指出找不到“上传人设文件”按钮，或找不到“编辑自定义人设”/“下载自定义人设”按钮。
+- 失败原因来自 `agent-buddy-panel.tsx` 的现有 `!isGlobal` 展示门禁，不是语法错误、测试环境错误或 mock 缺失。
+
+- [x] **Step 3: 最小移除编辑与下载操作的国际站门禁**
+
+在 `customPersonaName` 状态区域保留现有按钮、loading、disabled 和 tooltip 内容，只移除外层 `!isGlobal` 条件：
+
+```tsx
+<div className="inline-flex items-center gap-0">
+  <div className="group relative inline-flex">
+    <button
+      type="button"
+      aria-label={t("编辑自定义人设")}
+      disabled={customPersonaFileAction !== "idle"}
+      onClick={() => void handleEditCustomPersona()}
+      className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {customPersonaFileAction === "editing" ? (
+        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <Pencil className="size-3.5" aria-hidden="true" />
+      )}
+    </button>
+    <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+      {t("编辑自定义人设")}
+      <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+    </div>
+  </div>
+  <div className="group relative inline-flex">
+    <button
+      type="button"
+      aria-label={t("下载自定义人设")}
+      disabled={customPersonaFileAction !== "idle"}
+      onClick={() => void handleDownloadCustomPersona()}
+      className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {customPersonaFileAction === "downloading" ? (
+        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <Download className="size-3.5" aria-hidden="true" />
+      )}
+    </button>
+    <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+      {t("下载自定义人设")}
+      <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+    </div>
+  </div>
+</div>
+```
+
+不得修改 `handleEditCustomPersona`、`handleDownloadCustomPersona`、读文件命令或下载文件名。
+
+- [x] **Step 4: 最小移除上传与编辑弹窗的国际站门禁**
+
+把操作区的上传弹窗直接渲染，保留原 disabled 条件：
+
+```tsx
+<PersonaUploadModal
+  key={botId ?? "no-agent"}
+  disabled={
+    !botId
+    || loadStatus !== "loaded"
+    || equippedStatus !== "ready"
+  }
+  hasExistingSoul={hasExistingSoul}
+  onInject={handleCustomPersonaInject}
+/>
+```
+
+把页面尾部的编辑弹窗直接渲染：
+
+```tsx
+<CustomPersonaFileModal
+  open={customPersonaEditorMarkdown !== null}
+  initialMarkdown={customPersonaEditorMarkdown ?? ""}
+  onClose={() => setCustomPersonaEditorMarkdown(null)}
+  onSave={handleCustomPersonaSave}
+/>
+```
+
+不得修改两个弹窗组件、Markdown 校验函数、Hermes 写入命令或状态回读逻辑。
+
+- [x] **Step 5: 运行国际站 Persona 回归并确认 GREEN**
+
+Run:
+
+```bash
+cd frontend
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  -t 'renders the upload entry in both regions|restores a custom uploaded persona|reads the current Soul|downloads the exact current Soul|reports an actionable error|reports a network error|disables both file actions|cancels a pending current-persona download|clears a pending file action|keeps Agent B editor open|uploads a custom persona'
+
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-buddy-command.test.ts
+```
+
+Expected: 两条命令全部 PASS，0 个失败；`agent-buddy-panel.test.tsx` 不再因为 `isGlobal` 跳过自定义人设生命周期。整文件国际站基线中的预设人设 slug mock 失败不属于本需求，不作为此处门禁。
+
+- [x] **Step 6: 运行国内站 Persona 回归并确认无回归**
+
+Run:
+
+```bash
+cd frontend
+NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-buddy-command.test.ts
+```
+
+Expected: 5 个测试文件全部 PASS，0 个失败；国内站上传、编辑、下载和安全写入行为保持不变。
+
+- [x] **Step 7: 运行静态、i18n 和差异门禁**
+
+Run:
+
+```bash
+cd frontend
+pnpm i18n:check
+pnpm check
+cd ..
+git diff --check
+git status --short
+```
+
+Expected:
+
+- `pnpm i18n:check` exit 0，英文缺失 0 条。
+- `pnpm check` exit 0，TypeScript 无错误，繁体字典一致。
+- `git diff --check` 无输出。
+- 变更范围仅包含设计文档、`frontend/openspec/plan.md`、`agent-buddy-panel.tsx` 和对应测试；构建产生的文件不得混入差异。
+
+- [x] **Step 8: 运行国内与国际区域构建**
+
+Run:
+
+```bash
+cd frontend
+pnpm build:cn
+pnpm build:global
+```
+
+Expected: 两个命令均 exit 0，Next 静态导出、SEO 和静态资产检查全部完成。
+
+构建后运行：
+
+```bash
+cd ..
+git status --short
+git diff --check
+```
+
+Expected: 没有新增需要提交的构建产物；若 `frontend/next-env.d.ts` 或字体子集等生成文件发生变化，恢复到 `HEAD` 后重新检查差异。
+
+- [x] **Step 9: 准备提交检查点并等待用户确认**
+
+展示以下内容，未经确认不得执行命令：
+
+```bash
+git status --short
+git diff --stat
+git diff -- frontend/src/pages/marketing/agent-buddy-panel.tsx \
+  frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  frontend/openspec/plan.md \
+  frontend/openspec/changes/2026-08-24-global-custom-persona-upload-design.md
+```
+
+建议 commit message：
+
+```text
+国际站开放自定义人设文件 / feat(persona): enable custom persona files globally
+```
+
+只有用户明确确认后，才能执行 `git add` 和 `git commit`；push 与 MR 仍需单独展示并确认。
+
+---
+
 # 人设页标题与说明文案调整 Implementation Plan
 
 **Status:** 按用户视觉反馈增量调整完成，已验证。
