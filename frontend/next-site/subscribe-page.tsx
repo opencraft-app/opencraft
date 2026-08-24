@@ -145,25 +145,14 @@ const discountTagText = (
     percent: Math.round((1 - rate) * 100),
   });
 
-/** 只接受后端可计费的正数折扣价；零元权益只由新用户资格分支处理，已订阅零元询价视为异常且不展示促销。
- *  两站字段语义不同（国际站税费拆分后）：
- *    国际站：price=原价、total_cost=折后价（税前）、real_total_cost=税后价 → 折扣率 = total_cost / price；
- *    国内站：total_cost=原价、real_total_cost=折后实付 → 折扣率 = real_total_cost / total_cost。 */
-const actualDiscountRate = (price?: BundlePrice | null): number | undefined => {
-  if (!price) return undefined;
-  if (isGlobal) {
-    return price.price > 0 &&
-      price.total_cost > 0 &&
-      price.total_cost < price.price
-      ? price.total_cost / price.price
-      : undefined;
-  }
-  return price.total_cost > 0 &&
-    price.real_total_cost > 0 &&
-    price.real_total_cost < price.total_cost
+/** 只接受后端可计费的正数折扣价；零元权益只由新用户资格分支处理，已订阅零元询价视为异常且不展示促销。 */
+const actualDiscountRate = (price?: BundlePrice | null): number | undefined =>
+  price &&
+  price.total_cost > 0 &&
+  price.real_total_cost > 0 &&
+  price.real_total_cost < price.total_cost
     ? price.real_total_cost / price.total_cost
     : undefined;
-};
 
 const shadows = {
   card: "rgba(0,0,0,0.04) 0px 4px 18px, rgba(0,0,0,0.027) 0px 2.025px 7.85px, rgba(0,0,0,0.02) 0px 0.8px 2.93px, rgba(0,0,0,0.01) 0px 0.175px 1.04px",
@@ -582,15 +571,18 @@ const mapBundleToPlan = (
   /* 新用户（未订阅任何套餐）：决定是否展示「首单」类权益文案。
      未登录一律视为新用户（未登录必然还没有订阅），与登录后的新用户展示口径保持一致。 */
   const isNewUser = !isSubscribed;
-  /** 套餐卡展示的「价格基准」：产品口径为折后价（税前实付，价签模式：卡片标税前，付款实付含税）。
-   *  国际站后端（2692ca1ca 税费拆分）四字段直接下发，直接展示、不做前端换算：
-   *    price = 原价；total_cost = 折后价（税前）；tax_price = 税费；real_total_cost = 税后价（= total + tax）。
-   *  卡片价直接读 total_cost（折后价）；国内站无税费拆分，维持 real_total_cost（= 折后实付）。
-   *  确认订单弹窗三行（小计=total_cost / 税费=tax_price / 合计=real_total_cost）与本口径天然一致。
-   *  单位转换后端给的是分，centsToYuan 内部乘 0.01；后端 price 为 null 时返回 null。 */
+  /** 套餐卡展示的「价格基准」：产品口径为税前实付价（价签模式：卡片标税前，付款实付含税）。
+   *  注意与后端 2692ca1ca 询价税费拆分的语义：
+   *    real_total_cost = 含税实付；total_cost = 税前原价；tax_price = 实付税额。
+   *  卡片价 = real_total_cost - tax_price = 税前实付价（含折扣）：
+   *    - 有税数据：从含税实付中扣除税额，与弹窗「小计（税前）」同口径，避免
+   *      「卡片 $52、弹窗小计 $45」被用户当成变价；
+   *    - 无税数据（tax_price 缺失 / 静态价表）：等于 real_total_cost 直显，
+   *      与静态新用户实付价（如启航月付 $0、巡游 AI $13.8）的展示设计兼容。
+   *  单位转换后端给的是分，cent...Yuan 内部乘 0.01；后端 price 为 null 时返回 null。 */
   const realPriceYuan =
     paid && bundle.price
-      ? centsToYuan(isGlobal ? bundle.price.total_cost : bundle.price.real_total_cost)
+      ? centsToYuan(bundle.price.real_total_cost - (bundle.price.tax_price ?? 0))
       : null;
   const priceUnavailable = paid && !bundle.price && !soldOut;
   /* 询价中中间态：用户已切换 durationKey、但新时长的询价尚未返回。此时 bundle.price 仍是旧时长的价。
@@ -612,12 +604,12 @@ const mapBundleToPlan = (
     /* 原价（折扣前）：未登录时即 realPriceYuan（后端下发的原价）；已登录时取后端 total_cost。 */
     let originalPriceYuan: number | null = null;
     if (isGlobal && bundle.price) {
-      /* 国际站（登录与未登录同一口径）：total_cost 即折后价（新用户实付，税前）、price 为原价。
-         未登录静态价来自 STATIC_INTL_PRICE_USD，已内置新用户折后价（如启航 AI 月付 $0、
+      /* 国际站（登录与未登录同一口径）：real_total_cost 即新用户实付价、total_cost 为原价。
+         未登录静态价来自 STATIC_INTL_PRICE_USD，已内置新用户实付价（如启航 AI 月付 $0、
          巡游 AI 月付 $13.8），**不能再套用下方未登录分支的 ×0.5 / ×0.6 / 置 0 二次折算**，
          否则会出现 $13.8 再打 6 折这类错误金额。
          这样未登录展示与登录后新用户完全一致（需求：未登录整页按登录后新用户呈现）。 */
-      const intlOriginalYuan = centsToYuan(bundle.price.price);
+      const intlOriginalYuan = centsToYuan(bundle.price.total_cost);
       if (
         intlOriginalYuan != null &&
         displayPriceYuan != null &&
@@ -842,14 +834,15 @@ const mapBundleToPlan = (
     /* 价格：中间态保留旧价原样展示，视觉稳定不跳变；CTA 由 pricingLoading 兜底禁用。 */
     price,
     /* 结构化价格（分）：确认订单弹窗三行金额真源（后端 2692ca1ca 询价税费拆分）。
-       口径（产品确认）：小计=total_cost（税前价）、税费=tax_price、合计=real_total_cost（含税实付）。
-       注意含折扣时小计+税≠合计（差额为折扣，弹窗不单列折扣行）。
+       口径（产品确认 2026-08-24）：小计=折后价（税前实付 = real_total_cost - tax_price，
+       与卡片价同源同值，避免「卡片 $7、弹窗小计 $14」变价错觉）、税费=tax_price、
+       合计=real_total_cost（含税实付）。原价/折扣差不单列展示。
        仅在登录态真实计费（paid && bundle.price）时填充；
        询价中间态沿用旧 bundle.price，与新时长无关——弹窗在 CTA 禁用期间不可打开，无误导窗口。 */
     priceDetail:
       paid && bundle.price
         ? {
-            subtotalCents: bundle.price.total_cost,
+            subtotalCents: bundle.price.real_total_cost - (bundle.price.tax_price ?? 0),
             taxCents: bundle.price.tax_price ?? 0,
             totalCents: bundle.price.real_total_cost,
           }
@@ -1035,18 +1028,14 @@ const buildStaticPrice = (yuan: number, discount = 1.0): BundlePrice => {
  */
 const buildIntlStaticPrice = (entry: { original: number; real: number }): BundlePrice => {
   const originalCents = Math.round(entry.original * 100);
-  /* entry.real 为新用户折后价（税前实付）。静态价模拟无税场景：
-     按国际站后端口径构造（price=原价 / total_cost=折后价 / tax_price=0 / real_total_cost=税后价），
-     税后价 = 折后价 + 0 = 折后价，与真实询价字段语义完全一致。 */
-  const discountedCents = Math.round(entry.real * 100);
+  const realCents = Math.round(entry.real * 100);
   return {
     price: originalCents,
-    total_cost: discountedCents,
-    real_total_cost: discountedCents,
+    total_cost: originalCents,
+    real_total_cost: realCents,
     currency: "USD",
     /* 比值口径（0~1 小数），与本文件 discountTagText 的入参口径一致；原价为 0 时兜底 1。 */
-    discount: originalCents > 0 ? discountedCents / originalCents : 1,
-    tax_price: 0,
+    discount: originalCents > 0 ? realCents / originalCents : 1,
   };
 };
 
@@ -2197,9 +2186,9 @@ const ConfirmOrderModal = ({
  *   - 绑卡为前端演示：卡片状态仅在弹窗生命周期内维护，不落库、不发请求
  *
  * 金额三行口径（后端计费字段，单位分，见 BundlePrice.tax_price 注释）：
- *   小计 ← total_cost（税前价）；税费 ← tax_price（未下发视为 0）；
+ *   小计 ← 折后价（real_total_cost - tax_price，与卡片价同源）；税费 ← tax_price（未下发视为 0）；
  *   合计 ← real_total_cost（含税实付）直接展示，不做前端加总。
- * 含折扣时小计+税≠合计（差额为折扣，不单列折扣行）。
+ * 原价与折扣差不展示（不单列折扣行），弹窗内不出现原价。
  */
 
 const CreditCardConfirmOrderModal = ({
@@ -2224,7 +2213,8 @@ const CreditCardConfirmOrderModal = ({
   const [view, setView] = useState<"order" | "success">("order");
 
   /* 有 priceDetail（登录态真实计费）时三行全部用后端真源：
-     小计=total_cost 税前价、税费=tax_price、合计=real_total_cost（含税）直显。
+     小计=折后价（real_total_cost - tax_price，与卡片价同源）、税费=tax_price、
+     合计=real_total_cost（含税实付）直显。
      合计不做前端加总——分转元的舍入误差与后端未来的调整项都会让加总对不上实付。
      无 priceDetail（demoMode 占位卡 / 静态价）时退化为旧视觉：tax=0、合计=小计。 */
   const subtotal = plan.priceDetail
@@ -2326,7 +2316,7 @@ const CreditCardConfirmOrderModal = ({
             <div style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
                 <span>{t("「{{plan}}」套餐", { plan: plan.name })}</span>
-                {/* 套餐行展示税前价 total_cost（产品口径：套餐行与小计行同为税前价）。 */}
+                {/* 套餐行展示折后价（与小计行同源同值，= real_total_cost - tax_price）。 */}
                 <span style={{ fontWeight: 600, color: colors.black }}>{fmt(subtotal)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>

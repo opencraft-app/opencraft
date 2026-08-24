@@ -264,29 +264,20 @@ export interface BundleDescriptionEntry {
  * 与联调文档 codesign/ctl-frontend-billing-api.md §1.1 对齐
  */
 export interface BundlePrice {
-  /**
-   * 标价（分）。国际站语义为「原价」（折扣前）；国内站与 total_cost 同值。
-   */
+  /** 标价（分） */
   price: number;
-  /**
-   * 国内站：原价（real_total_cost 为折后实付，折扣率 = real / total）。
-   * 国际站（后端 2692ca1ca 税费拆分后）：折后价（税前实付），四字段关系
-   * real_total_cost = total_cost + tax_price，折扣率 = total_cost / price。
-   */
+  /** 成本价（分） */
   total_cost: number;
-  /**
-   * 国内站：实付价（分，含折扣）。
-   * 国际站：税后实付价（分）= total_cost + tax_price，含折扣与税费。
-   */
+  /** 实付价（分，含折扣） */
   real_total_cost: number;
-  /** 币种，固定 "CNY"（国际站为 "USD" 等） */
+  /** 币种，固定 "CNY" */
   currency: string;
-  /** 折扣率（1.0 = 不打折，0.9 = 9 折）。国际站后端存在小数与百分数两套口径，展示层勿直接依赖 */
+  /** 折扣率（1.0 = 不打折，0.9 = 9 折） */
   discount: number;
   /**
-   * 税额（分）。国际站「询价税费拆分」下发（2692ca1ca）：实付金额对应的税额。
+   * 税额（分）。后端「国际站询价税费拆分」下发（2692ca1ca）：实付金额对应的税额。
+   * real_total_cost 为含税实付，税前实付 = real_total_cost - tax_price。
    * 国内站与未下发场景为 0/缺失，前端按税额 0 处理。
-   * 税前折后价直接读 total_cost，勿用 real_total_cost - tax_price 前端换算。
    */
   tax_price?: number;
 }
