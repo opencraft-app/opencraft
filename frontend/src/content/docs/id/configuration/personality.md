@@ -3,7 +3,9 @@
 ## Ringkasan
 
 **Soul menentukan peran, gaya komunikasi, prioritas, dan batas perilaku yang stabil untuk satu Hermes Agent.**
+
 **Di pengaturan Personality Agent, Anda dapat memilih Soul rekomendasi atau mengunggah file Markdown Anda sendiri, lalu menerapkannya ke `SOUL.md` Agent tersebut.**
+
 **Satu Agent hanya dapat memiliki satu Soul aktif pada satu waktu, dan Anda perlu memulai percakapan baru setelah mengubahnya agar aturan baru dimuat.**
 
 ![Kartu persona Soul di konsol LightVela](../images/soul-1.png)

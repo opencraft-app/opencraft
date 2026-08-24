@@ -1,5 +1,11 @@
 # Credits
 
+## Summary
+
+**Model credits are the unit LightVela uses to meter how much your Hermes Agent spends on model calls, counting both input and output. Credits come with your plan on a monthly basis, are not sold separately, and reset each billing cycle: Launch includes 100 credits per month, and Cruise offers a larger allowance. Credits are consumed whenever the agent talks with you, runs an automated task, or executes a skill — all of which ultimately call the model — and longer conversations with more context burn through them faster. If you run out mid-cycle, model-dependent features are limited until the next allocation, or you can switch to your own model API key in the model settings and keep going.**
+
+---
+
 Model credits are the units LightVela uses to measure model usage by a Hermes Agent. Each plan includes a monthly credit allocation. Whenever your Agent calls a language model during a conversation or task, credits are deducted according to usage. This page explains what credits are, how they are allocated and consumed, and how they relate to plans.
 
 ## What this page covers

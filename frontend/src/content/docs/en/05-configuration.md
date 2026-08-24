@@ -1,5 +1,11 @@
 # Configuration Overview
 
+## Summary
+
+**All LightVela configuration lives in the "My Hermes" console, which you open from the top-right corner after signing in. Agent instance tabs sit at the top, and below them are three configuration buttons: Models (choose a Model Coding Plan, Model API, or a custom OpenAI-compatible endpoint), Channels (entry points for each messaging platform — some connect by QR code, others need a token or app ID), and Skills (install reusable capability packs). Beyond those three, the console also offers Chat, Tasks, memory management, cloud storage, model switching, and a diagnostics center. Once the three basics are set, your agent is ready to talk in your messaging channels.**
+
+---
+
 All LightVela configuration is centralized in the "My Hermes" console and consists of three configuration buttons:
 
 1. Models

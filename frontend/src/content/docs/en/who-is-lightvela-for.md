@@ -1,5 +1,11 @@
 # Who Is LightVela For?
 
+## Summary
+
+**LightVela is for people who want a long-lived AI companion that knows them and gets better the more they talk to it, but who do not want to manage servers, containers, or API authentication — especially those who prefer talking to AI inside the messaging apps they already use rather than yet another standalone app, and who need memory that persists so they never have to reintroduce themselves. LightVela handles deployment, operations, and 24/7 uptime in the cloud; all you do is configure it in the browser. It is not the right fit if you require fully local execution with data never leaving your device, need to train or fine-tune the underlying model, or want to embed the agent into your own website or app.**
+
+---
+
 LightVela is a cloud-hosted Agent product from the Tencent Cloud Lighthouse team. It is designed for **people who want a personal AI companion that stays online, learns their context, and becomes more helpful over time—without having to manage servers, containers, or API authentication**. LightVela handles deployment, operations, and 24/7 availability in the cloud. You configure your Agent in a web console, then talk to your Hermes Agent through Telegram, WhatsApp, Discord, Slack, or WeChat.
 
 If you are still getting oriented, start with [What is LightVela](./01-overview.md).

@@ -12,8 +12,11 @@ import {
  * 站点区域常量
  * ──────────────────────────────────────────────────────────────
  * 通过 NEXT_PUBLIC_REGION / VITE_REGION 兼容环境变量区分国内 / 国际站点：
- *   - `cn`     ：国内站（lightvela.cn，默认）
- *   - `global` ：国际站（lightvela.com）
+ *   - `cn`     ：国内站（lightvela.com，默认）
+ *   - `global` ：国际站（lightvela.ai）
+ *
+ * 域名真源见 `@next-site/seo` 的 siteUrl() 与 `@/lib/seo-data` 的 SITE_BY_REGION，
+ * 事实口径见 `wiki/product-state/geo-fact-table.md`。
  *
  * 使用场景：
  *   1. 条件渲染（编译期常量在构建时会被折叠）：

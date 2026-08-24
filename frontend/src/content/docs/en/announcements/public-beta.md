@@ -1,5 +1,11 @@
 # LightVela Paid Version Announcement
 
+## Summary
+
+**LightVela plans to enter public beta with billing enabled on August 18, 2026 (Singapore time). Once that happens, existing closed-beta plans will be extended by one additional month, and new users can try the Launch plan free for 14 days. Two plans are currently offered, Launch and Cruise, differing in cloud runtime specs, dedicated storage, and monthly model credits; core agent capabilities are identical across tiers. Live pricing, availability, and exact entitlements are whatever the subscribe page shows.**
+
+---
+
 LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month.
 
 We launched LightVela to make it easier for everyone to own a long-running personal AI Agent. You do not need to manage servers, runtime environments, or daily operations, and you do not need to keep a local device online. LightVela lets you create a 24/7 cloud Agent that can keep memory, run tasks, and stay ready for conversation.

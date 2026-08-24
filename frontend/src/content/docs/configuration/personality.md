@@ -3,7 +3,9 @@
 ## 摘要
 
 **Soul 决定一个 Hermes Agent 稳定的角色、语气、优先级和行为边界。**
+
 **你可以在 Agent 的「人设」设置中选择推荐 Soul，或上传自己的 Markdown 人设文件，再将内容注入到该 Agent 的 `SOUL.md`。**
+
 **同一个 Agent 同一时间只会有一个生效中的 Soul，修改后需要开启新会话，让新的规则被加载。**
 
 ![LightVela 控制台中的人设卡片](../images/cn-soul-1.png)

@@ -1,5 +1,11 @@
 # Configure Channel - Lark
 
+## Summary
+
+**The Lark channel suits workplace use, supporting rich-text messages and @mentioning the bot in group chats, and connects the same way as WeChat: pick Lark in the console Channels section, click to authorize and generate a QR code, then scan it with Lark to start talking. You need Lark on your phone (or signed in on desktop) and a configured model (or simply the monthly model credits included with your plan). One agent can be connected to several channels at once, sharing the same persona and long-term memory.**
+
+---
+
 The Lark channel is suited for office scenarios. It supports rich-text messages and @mentions of the bot in group chats. The integration uses QR-code authorization, similar to WeChat.
 
 ## This page covers

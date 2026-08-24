@@ -30,6 +30,13 @@ describe("build release artifacts", () => {
     const calls: string[] = [];
     const root = mkdtempSync(join(tmpdir(), "frontend-next-artifact-"));
     const outputDir = join(root, "eo-cn-lightvela-prod-next");
+    // ⚠️ 必须给一个临时 workspaceRoot：被测函数会 rmSync('.next') 与 rmSync('out')。
+    // 之前这里没传，测试直接把仓库根的 .next/dev 删了 —— 正在跑的 dev server
+    // 从此所有请求返回 500（ENOENT: .next/dev/routes-manifest.json），
+    // 而且报错里完全看不出是测试干的。实测踩过一次。
+    const workspaceRoot = join(root, "workspace");
+    const workspaceOut = join(workspaceRoot, "out");
+    mkdirSync(workspaceRoot, { recursive: true });
 
     try {
       await runFrontendArtifactBuildCommand("build:next", {
@@ -39,17 +46,21 @@ describe("build release artifacts", () => {
       }, async (command: string, args: string[]) => {
         calls.push(`${command} ${args.join(" ")}`);
         if (command === "pnpm-bin" && args.join(" ") === "exec next build") {
-          mkdirSync("out/api", { recursive: true });
-          writeFileSync("out/index.html", "<html></html>");
-          writeFileSync("out/api/search", "{}");
+          mkdirSync(join(workspaceOut, "api"), { recursive: true });
+          writeFileSync(join(workspaceOut, "index.html"), "<html></html>");
+          writeFileSync(join(workspaceOut, "api/search"), "{}");
         }
         if (command === "node-bin" && args.join(" ") === "scripts/fix-next-static-html-lang.mjs") {
-          mkdirSync("out/.edgeone/assets", { recursive: true });
-          mkdirSync("out/.edgeone/cloud-functions/ssr-node", { recursive: true });
-          writeFileSync("out/.edgeone/assets/index.html", "<html></html>");
-          writeFileSync("out/.edgeone/cloud-functions/ssr-node/config.json", "{}");
+          mkdirSync(join(workspaceOut, ".edgeone/assets"), { recursive: true });
+          mkdirSync(join(workspaceOut, ".edgeone/cloud-functions/ssr-node"), { recursive: true });
+          writeFileSync(join(workspaceOut, ".edgeone/assets/index.html"), "<html></html>");
+          writeFileSync(join(workspaceOut, ".edgeone/cloud-functions/ssr-node/config.json"), "{}");
         }
-      });
+        if (command === "node-bin" && args.join(" ") === "scripts/write-edgeone-config.mjs") {
+          // 真实脚本会写进 out/.edgeone（即被上传的目录）
+          writeFileSync(join(workspaceOut, ".edgeone/edgeone.json"), '{"redirects":[]}');
+        }
+      }, workspaceRoot);
 
       expect(calls).toEqual([
         "node-bin scripts/subset-fonts.mjs",
@@ -60,14 +71,52 @@ describe("build release artifacts", () => {
         "node-bin scripts/fix-next-static-html-lang.mjs",
         "node-bin scripts/format-next-static-html.mjs",
         "node-bin scripts/check-versioned-next-static-assets.mjs",
+        "node-bin scripts/write-edgeone-config.mjs",
       ]);
       expect(existsSync(join(outputDir, "index.html"))).toBe(true);
       expect(existsSync(join(outputDir, "api", "search"))).toBe(true);
       expect(existsSync(join(outputDir, ".edgeone", "assets", "index.html"))).toBe(true);
       expect(existsSync(join(outputDir, ".edgeone", "cloud-functions", "ssr-node", "config.json"))).toBe(true);
+      // edgeone.json 必须在 cpSync 之前生成，才能进入 artifact
+      expect(existsSync(join(outputDir, ".edgeone", "edgeone.json"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
-      rmSync("out", { recursive: true, force: true });
+    }
+  });
+
+  it("scopes the .next / out cleanup to the given workspace root (dev server safety)", async () => {
+    // 这条是一次真实事故的专用防线：被测函数会 rmSync('.next')，
+    // 原先测试没传 workspaceRoot，于是把仓库根的 .next/dev 删了 ——
+    // 正在跑的 dev server 从此所有请求 500，报错里看不出与测试有关。
+    const root = mkdtempSync(join(tmpdir(), "frontend-artifact-guard-"));
+    const workspaceRoot = join(root, "workspace");
+    const outsideRoot = join(root, "not-the-workspace");
+    const scopedNext = join(workspaceRoot, ".next", "dev", "routes-manifest.json");
+    const outsideNext = join(outsideRoot, ".next", "dev", "routes-manifest.json");
+    mkdirSync(join(workspaceRoot, ".next", "dev"), { recursive: true });
+    mkdirSync(join(outsideRoot, ".next", "dev"), { recursive: true });
+    writeFileSync(scopedNext, "{}");
+    writeFileSync(outsideNext, "{}");
+
+    try {
+      await runFrontendArtifactBuildCommand(
+        "build:next",
+        { FRONTEND_BUILD_OUTPUT_DIR: join(root, "artifact"), NODE_BIN: "n", PNPM_BIN: "p" },
+        async () => {
+          mkdirSync(join(workspaceRoot, "out"), { recursive: true });
+          writeFileSync(join(workspaceRoot, "out", "index.html"), "<html></html>");
+        },
+        workspaceRoot,
+      );
+
+      // 指定 workspace 内的 .next 被清掉（真实构建期望的行为）
+      expect(existsSync(scopedNext)).toBe(false);
+      // workspace 之外的 .next 绝不能被碰到
+      expect(existsSync(outsideNext)).toBe(true);
+      // 产物仍正常拷贝
+      expect(existsSync(join(root, "artifact", "index.html"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

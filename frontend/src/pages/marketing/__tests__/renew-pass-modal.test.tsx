@@ -145,14 +145,16 @@ describe("RenewPassModal", () => {
   });
 
   it("keeps automatic payment status polling serial while a request is still in flight", async () => {
-    let resolveFirstCheck: ((passes: Pass[]) => void) | null = null;
+    let resolveFirstCheck: (passes: Pass[]) => void = () => {
+      throw new Error("listMyPasses resolver was not initialized");
+    };
     const intervalCallbacks: Array<() => void> = [];
-    vi.spyOn(window, "setInterval").mockImplementation((handler, timeout) => {
+    vi.spyOn(window, "setInterval").mockImplementation(((handler: TimerHandler, timeout?: number) => {
       if (timeout === 3_000) {
         intervalCallbacks.push(handler as () => void);
       }
-      return 1;
-    });
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof window.setInterval);
     vi.spyOn(window, "clearInterval").mockImplementation(() => undefined);
     listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>((resolve) => {
       resolveFirstCheck = resolve;
@@ -178,7 +180,7 @@ describe("RenewPassModal", () => {
     intervalCallbacks[0]!();
     expect(listMyPasses).toHaveBeenCalledTimes(1);
 
-    resolveFirstCheck?.([]);
+    resolveFirstCheck([]);
     await Promise.resolve();
     intervalCallbacks[0]!();
     expect(listMyPasses).toHaveBeenCalledTimes(2);

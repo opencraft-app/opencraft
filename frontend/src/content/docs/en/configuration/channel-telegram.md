@@ -1,5 +1,11 @@
 # Configure Channel - Telegram
 
+## Summary
+
+**The Telegram channel connects with a bot token, making it a quick way to bring your Hermes Agent into Telegram direct messages or groups: create a bot through BotFather in Telegram, copy its bot token, and paste it into the Channels section of the LightVela console. You need a Telegram account and a configured model (or simply the monthly model credits included with your plan). The bot token is a sensitive credential — never share it publicly. Once connected, the agent in Telegram shares the same persona and long-term memory as your other channels.**
+
+---
+
 The Telegram channel uses Bot Token access and is suitable for quickly connecting Hermes Agent to Telegram private chats or groups.
 
 ## This page covers

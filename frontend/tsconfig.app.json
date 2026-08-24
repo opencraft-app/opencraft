@@ -21,7 +21,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@next-site/*": ["next-site/*"]
+      "@next-site/*": ["next-site/*"],
+      "collections/*": [".source/*"]
     }
   },
   "include": ["src"],

@@ -1,5 +1,11 @@
 # Kanal Lark
 
+## Ringkasan
+
+**Kanal Lark cocok untuk lingkungan kerja, mendukung pesan rich text dan @mention bot di obrolan grup, serta dihubungkan dengan cara yang sama seperti WeChat: pilih Lark di bagian Kanal pada konsol, klik untuk memberi otorisasi dan menghasilkan kode QR, lalu pindai dengan Lark untuk mulai berbicara. Anda memerlukan Lark di ponsel (atau sudah masuk di desktop) dan model yang sudah dikonfigurasi (atau cukup kredit model bulanan dari paket Anda). Satu Agent dapat terhubung ke beberapa kanal sekaligus dengan persona dan memori jangka panjang yang sama.**
+
+---
+
 Kanal Lark cocok untuk skenario perkantoran. Kanal ini mendukung pesan rich text dan mention bot di chat grup. Integrasinya memakai otorisasi kode QR, serupa dengan WeChat.
 
 ## Yang dibahas di halaman ini
