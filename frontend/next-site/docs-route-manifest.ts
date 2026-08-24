@@ -75,6 +75,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "personality"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -287,6 +291,34 @@ export const DOCS_ROUTE_SLUGS = {
       "skill"
     ],
     [
+      "configuration",
+      "personality"
+    ],
+    [
+      "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
+      "automation"
+    ],
+    [
+      "configuration",
+      "files"
+    ],
+    [
+      "configuration",
+      "agent-chat"
+    ],
+    [
+      "configuration",
+      "diagnostics"
+    ],
+    [
+      "configuration",
+      "multiple-models"
+    ],
+    [
       "hermes-agent",
       "hermes-vs-openclaw"
     ],
@@ -422,6 +454,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "skill"
+    ],
+    [
+      "configuration",
+      "personality"
     ],
     [
       "configuration",
@@ -655,6 +691,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "personality"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -882,6 +922,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "skill"
+    ],
+    [
+      "configuration",
+      "personality"
     ],
     [
       "configuration",
