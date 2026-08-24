@@ -114,13 +114,20 @@ export async function readPersonaMarkdownFile(
   return validatePersonaMarkdownText(text);
 }
 
-export function getPersonaDisplayName(markdown: string, fileName: string): string {
+export function getPersonaDisplayName(
+  markdown: string,
+  fileName: string,
+  fallbackDisplayName = "Custom persona",
+): string {
   const metadataName = markdown.match(/^\s*Name\s*:\s*(.*?)\s*$/im)?.[1]?.trim();
   const fileNameWithoutExtension = fileName.replace(/\.md$/i, "").trim();
-  const rawDisplayName = metadataName || fileNameWithoutExtension || "自定义人设";
+  const fallback = fallbackDisplayName
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")
+    .trim() || "Custom persona";
+  const rawDisplayName = metadataName || fileNameWithoutExtension || fallback;
   const displayName = rawDisplayName
     .replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")
-    .trim() || "自定义人设";
+    .trim() || fallback;
   return truncateUtf8(displayName, PERSONA_DISPLAY_NAME_MAX_BYTES);
 }
 
@@ -129,16 +136,16 @@ export function getPersonaStructureWarnings(
 ): PersonaStructureWarning[] {
   const warnings: PersonaStructureWarning[] = [];
   if (!/^\s*Name\s*:\s*\S+/im.test(markdown)) warnings.push("missing_name");
-  if (!/(^#{1,6}\s*(身份|角色定位|角色|identity|role)(?:\s|$|[:：])|身份\s*[:：]|角色\s*[:：])/im.test(markdown)) {
+  if (!/(^#{1,6}\s*(身份|角色定位|角色|identity|role|identitas|posisi\s+peran)(?:\s|$|[:：])|身份\s*[:：]|角色\s*[:：])/im.test(markdown)) {
     warnings.push("missing_identity");
   }
-  if (!/(^#{1,6}\s*(沟通风格|语气|表达|communication\s+style|tone|voice|style)(?:\s|$|[:：])|语气\s*[:：]|表达\s*[:：])/im.test(markdown)) {
+  if (!/(^#{1,6}\s*(沟通风格|溝通風格|语气|語氣|表达|表達|communication\s+style|tone|voice|style|gaya\s+komunikasi|nada)(?:\s|$|[:：])|[语語][气氣]\s*[:：]|表[达達]\s*[:：])/im.test(markdown)) {
     warnings.push("missing_tone");
   }
-  if (!/(^#{1,6}\s*(工作原则|原则|优先级|working\s+principles?|principles?|priorit(?:y|ies))(?:\s|$|[:：])|原则\s*[:：]|优先级\s*[:：])/im.test(markdown)) {
+  if (!/(^#{1,6}\s*(工作原则|工作原則|原则|原則|优先级|優先級|working\s+principles?|principles?|priorit(?:y|ies)|prinsip\s+kerja|prioritas)(?:\s|$|[:：])|原[则則]\s*[:：]|[优優]先[级級]\s*[:：])/im.test(markdown)) {
     warnings.push("missing_principles");
   }
-  if (!/(^#{1,6}\s*(行为边界|边界|禁止|behaviou?r(?:al)?\s+boundar(?:y|ies)|boundar(?:y|ies)|limits?)(?:\s|$|[:：])|不得|不要|禁止|do not|never)/im.test(markdown)) {
+  if (!/(^#{1,6}\s*(行为边界|行為邊界|边界|邊界|禁止|behaviou?r(?:al)?\s+boundar(?:y|ies)|boundar(?:y|ies)|limits?|batasan\s+perilaku|batasan)(?:\s|$|[:：])|不得|不要|禁止|do not|never|jangan)/im.test(markdown)) {
     warnings.push("missing_boundaries");
   }
   if ([...markdown.trim()].length < PERSONA_CONTENT_SHORT_THRESHOLD) {
@@ -150,9 +157,10 @@ export function getPersonaStructureWarnings(
 export function buildCustomSoulMarkdown(
   markdown: string,
   fileName: string,
+  fallbackDisplayName = "Custom persona",
 ): { markdown: string; displayName: string } {
   const normalized = stripBom(markdown).replace(/\r\n?/g, "\n").trimEnd();
-  const displayName = getPersonaDisplayName(normalized, fileName);
+  const displayName = getPersonaDisplayName(normalized, fileName, fallbackDisplayName);
   const lines = normalized.split("\n");
   const soulHeadingIndex = lines.findIndex((line) => /^#\s+Soul\s*$/i.test(line));
   if (soulHeadingIndex >= 0 && lines.slice(0, soulHeadingIndex).every((line) => !line.trim())) {
@@ -215,11 +223,16 @@ export function buildCustomSoulMarkdown(
 export function validateCustomSoulMarkdown(
   markdown: string,
   fileName: string,
+  fallbackDisplayName = "Custom persona",
 ): CustomSoulMarkdownValidation {
   const sourceValidation = validatePersonaMarkdownText(markdown);
   if (!sourceValidation.valid) return sourceValidation;
 
-  const payload = buildCustomSoulMarkdown(sourceValidation.text, fileName);
+  const payload = buildCustomSoulMarkdown(
+    sourceValidation.text,
+    fileName,
+    fallbackDisplayName,
+  );
   const finalValidation = validatePersonaMarkdownText(payload.markdown);
   if (!finalValidation.valid) return finalValidation;
 

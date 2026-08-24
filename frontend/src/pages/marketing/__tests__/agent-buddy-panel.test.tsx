@@ -290,7 +290,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("shows inject only after selecting a persona", async () => {
-    if (isGlobal) return;
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [fixtures.agentA],
       appliedSlug: null,
