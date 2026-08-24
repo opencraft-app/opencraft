@@ -3331,3 +3331,104 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] **Step 3: 运行国际站 Changelog 回归、类型、i18n 与 diff 检查。**
 
 ---
+
+# 国际站新增自定义人设文件动态 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development to implement this S-level task.
+
+**Status:** 实现与验证完成，用户已确认提交、推送和创建 MR。
+
+**Size:** S。单一国际站静态 Changelog 条目与区域化截图调整，不涉及接口、权限、计费或发布。
+
+**Goal:** 在国际站 2026 年 8 月更新日志中新增“上传自定义人设文件”，沿用国内站文案结构并展示真实英文上传弹窗截图。
+
+**Architecture:** 继续使用 `changelog-page.tsx` 的 `isGlobal` 编译期分支；国际站 8 月复用现有标题和描述翻译键，同时让 `personaUpload` 在国际站选择新的英文截图、国内站继续选择原中文截图。先修改国际站专项测试并确认因条目缺失而失败，再添加最小页面数据与图片分支使其通过。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、现有中文即 key i18n、真实国际站英文 UI 截图。
+
+## Global Constraints
+
+- 国际站条目放在 2026 年 8 月首位，国内站条目、文案、顺序与中文截图保持不变。
+- 英文标题固定沿用现有翻译 `LightVela Now Supports Custom Persona File Uploads`。
+- 英文描述固定沿用现有翻译 `Upload a Markdown persona file, then continue editing it or inject it directly into your Agent. Injected persona files can also be edited or downloaded at any time.`。
+- 新图固定使用真实英文上传弹窗，路径为 `/assets/changelog/lightvela-persona-upload-global-en.png`；国际站四语言共用该国际版截图。
+- 不手改生成字典；`pnpm i18n:extract` 若无变化，不提交 i18n 文件。
+
+### Task 1: 新增国际站自定义人设文件动态
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/global-changelog.test.tsx`
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx`
+- Create: `frontend/public/assets/changelog/lightvela-persona-upload-global-en.png`
+- Verify: `frontend/src/i18n/generated/{en-US,id-ID,zh-CN,zh-Hant,zh-to-key}.json`
+
+**Interfaces:**
+- Consumes: 现有 `personaUpload` visual、标题/描述翻译键和国际站上传人设弹窗。
+- Produces: 国际站 8 月首条 `persona-file-upload` 数据和区域化图片选择；国内站保持原路径。
+
+- [x] **Step 1: 修改国际站专项测试，断言四语言条目、英文截图与 8 月首位。**
+
+  将原有“不展示人设上传”断言改为展示断言，并验证英文标题、描述、图片路径与 `1410 / 642` 比例；同时保留钉钉排除和 7 月自动任务模板归属断言。
+
+- [x] **Step 2: 运行专项测试并确认 RED。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
+
+  Expected: FAIL，原因是国际站 8 月尚无 `persona-file-upload` 条目，而不是测试环境或语法错误。
+
+- [x] **Step 3: 捕获真实英文上传弹窗截图并加入 Changelog 资源。**
+
+  在国际站英文界面打开 `/agents/persona` 的上传弹窗，保留标题、说明、文件限制和 `Choose file` 按钮，输出为 `1410 × 642` PNG：
+
+  ```text
+  frontend/public/assets/changelog/lightvela-persona-upload-global-en.png
+  ```
+
+- [x] **Step 4: 添加最小页面数据与区域化图片选择。**
+
+  在国际站 8 月 `entries` 首位加入：
+
+  ```ts
+  {
+    id: "persona-file-upload",
+    title: t("LightVela 支持上传自定义人设文件"),
+    desc: t("上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。"),
+    visual: "personaUpload" as const,
+  }
+  ```
+
+  `personaUpload` 图片路径按区域选择：国际站使用 `lightvela-persona-upload-global-en.png`，国内站继续使用 `lightvela-persona-upload.png`。
+
+- [x] **Step 5: 运行国际站专项测试与国内站 Changelog 回归并确认 GREEN。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/global-changelog.test.tsx \
+    src/pages/marketing/__tests__/channel-copy.test.tsx
+  ```
+
+  Expected: 国际站四语言展示人设条目与英文截图；国内站仍展示原中文截图；其他区域条目不回归。
+
+- [x] **Step 6: 运行完整质量门禁并展示提交范围。**
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:check
+  pnpm check
+  cd ..
+  git diff --check
+  git status --short
+  ```
+
+  Expected: i18n、类型与 diff 检查通过，最终仅包含计划、国际站 Changelog 测试、页面数据和英文截图。
+
+- [x] **Step 7: 展示 diff、验证证据、提交信息和 MR 配置，等待用户确认。**
+
+---

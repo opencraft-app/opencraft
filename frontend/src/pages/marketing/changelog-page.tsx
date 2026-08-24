@@ -117,7 +117,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "dingtalk"
       ? "/assets/changelog/lightvela-dingtalk-channel.png"
       : variant === "personaUpload"
-      ? "/assets/changelog/lightvela-persona-upload.png"
+      ? isGlobal
+        ? "/assets/changelog/lightvela-persona-upload-global-en.png"
+        : "/assets/changelog/lightvela-persona-upload.png"
       : variant === "chat"
       ? useGlobalAssets
         ? "/assets/changelog/agentchat-web-chat-en.png"
@@ -282,6 +284,12 @@ function ChangelogContent() {
             id: "2026-08",
             month: t("2026 年 8 月"),
             entries: [
+              {
+                id: "persona-file-upload",
+                title: t("LightVela 支持上传自定义人设文件"),
+                desc: t("上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。"),
+                visual: "personaUpload" as const,
+              },
               {
                 id: "automation-upstream-task",
                 title: t("自动任务支持关联上游任务"),
