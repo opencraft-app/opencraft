@@ -136,18 +136,21 @@ const buildBillingError = (code: string, message: string) => Object.assign(new E
 /**
  * 组件按嵌套结构读 bundle.price（见 BundlePrice 类型），金额用例必须用嵌套 mock
  * 才能走到真实计费分支。
- * 口径（后端 2692ca1ca 询价税费拆分）：real_total_cost 含税、tax_price 为税额、
- * 小计 = real_total_cost - tax_price。total_cost 刻意构造成 4500（≠ 小计 4800），
- * 若实现误用 total_cost 做小计，断言 $48.00 会失败。
+ * 口径（后端 2692ca1ca 询价税费拆分，四字段直接下发）：
+ *   price=原价；total_cost=折后价（税前）；tax_price=税费；real_total_cost=税后价（= total + tax）。
+ * 本构造：price=5100（原价 $51）、total_cost=4800（折后 $48）、tax_price=400（$4）、
+ * real_total_cost=5200（税后 $52 = 4800 + 400），字段间满足恒等关系。
+ * 卡片价/小计 = total_cost → $48.00；误用 real_total_cost（税后）会显示 $52.00、
+ * 误用 price（原价）会显示 $51.00，均被断言抓住。
  */
 const buildNestedBundle = () => ({
   ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
   price: {
-    price: 4900,
-    total_cost: 4500,
+    price: 5100,
+    total_cost: 4800,
     real_total_cost: 5200,
     currency: "USD",
-    discount: 0,
+    discount: 4800 / 5100,
     tax_price: 400,
   },
 });
@@ -250,28 +253,35 @@ describe("SubscribePage intl AI promo tags", () => {
     expect(card).toHaveTextContent(originalPrice);
   };
 
-  const buildLaunchAiQuote = (realTotalCost: number) => ({
+  /* 已登录询价 mock：入参为「折后价」（新用户实付，税前）。按后端四字段口径构造：
+     price=1000（原价 $10）、total_cost=折后价、real_total_cost=折后价（无税场景税后=折后）、tax_price=0。
+     零元新用户单也会带 tax_price: 0，刻意带上锁定「零元 + 有税字段」时免费订阅链路
+     （ConfirmOrderModal 零元确认弹窗、点石零元下单）不被税费展示改动波及。 */
+  const buildLaunchAiQuote = (discountedTotalCost: number) => ({
     ...buildBundle("bundle_launch_ai_01", "启航 Launch"),
     credit: 4500,
     price: {
       price: 1000,
-      total_cost: 1000,
-      real_total_cost: realTotalCost,
+      total_cost: discountedTotalCost,
+      real_total_cost: discountedTotalCost,
       currency: "USD",
-      discount: realTotalCost / 1000,
+      discount: discountedTotalCost / 1000,
+      tax_price: 0,
     },
   });
 
-  const buildLaunchStandardQuote = (realTotalCost: number) => ({
+  /* 标准版询价 mock：入参为折后价，口径同 buildLaunchAiQuote（price=650 原价 / total=real=折后 / 无税）。 */
+  const buildLaunchStandardQuote = (discountedTotalCost: number) => ({
     ...buildBundle("bundle_launch_01", "启航 Launch"),
     bundle_type: "general",
     credit: 100,
     price: {
       price: 650,
-      total_cost: 650,
-      real_total_cost: realTotalCost,
+      total_cost: discountedTotalCost,
+      real_total_cost: discountedTotalCost,
       currency: "USD",
-      discount: realTotalCost / 650,
+      discount: discountedTotalCost / 650,
+      tax_price: 0,
     },
   });
 
@@ -466,12 +476,14 @@ describe("SubscribePage intl AI promo tags", () => {
       {
         ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
         price: {
+          /* 新口径：price=原价 4900、total_cost=折后 2940（6 折）、real=税后（无税=折后）。
+             discount 刻意用百分数口径（60），标签计算不依赖它。 */
           price: 4900,
-          total_cost: 4900,
+          total_cost: 2940,
           real_total_cost: 2940,
           currency: "USD",
-          /* 百分数口径（非 0<d<1），改动前会导致标签丢失 */
           discount: 60,
+          tax_price: 0,
         },
       },
     ]);
@@ -614,15 +626,12 @@ describe("SubscribePage confirm order amounts", () => {
   afterEach(cleanup);
 
   /**
-   * 卡片价口径（价签模式：卡片标税前实付，付款实付含税）：
-   *   卡片展示价 = real_total_cost - tax_price = 税前实付价（含折扣）。
-   *   误用 real_total_cost（含税实付）直显会让卡片出现 $52，
-   *   用户看到「卡片 $52、弹窗小计 $45」会以为变价。本用例锁定税前口径。
+   * 卡片价口径（价签模式：卡片标折后价税前，付款实付含税）：
+   *   卡片展示价 = total_cost（折后价），后端直接下发、前端不做换算。
    *
-   * buildNestedBundle（刻意构造 real - tax ≠ total_cost，两类误用都会被抓住）：
-   *   real_total_cost=5200、tax_price=400 → 卡片价 = 4800 分 → $48.00；
-   *   误用 total_cost（税前原价）会显示 $45.00；
-   *   误用 real_total_cost（含税实付）会显示 $52.00。
+   * buildNestedBundle：price=5100（原价）、total_cost=4800（折后）、tax_price=400、real=5200（税后）。
+   *   误用 real_total_cost（税后价）会让卡片显示 $52.00；
+   *   误用 price（原价）会显示 $51.00。均被否定断言抓住。
    */
   it("shows the tax-exclusive discounted price on the plan card", async () => {
     (globalThis as { React?: typeof React }).React = React;
@@ -637,21 +646,22 @@ describe("SubscribePage confirm order amounts", () => {
     await screen.findByText("巡游 Cruise");
 
     /**
-     * 卡片价口径锁定：税前实付价而非含税实付。
+     * 卡片价口径锁定：折后价（total_cost）而非税后价（real_total_cost）。
      * 卡片价格渲染为「$ 符号 + 数字」分离节点（formatYuan 拼接），故断言纯数字文本。
-     * 弹窗三行用 fmt() 生成完整 "$45.00" 文本，与卡片的分离节点格式不同——两处口径
+     * 弹窗三行用 fmt() 生成完整 "$48.00" 文本，与卡片的分离节点格式不同——两处口径
      * 分别由本用例与「renders subtotal, tax and total」用例锁定。
      */
     expect(screen.getByText("48.00")).toBeInTheDocument();
     expect(screen.queryByText("52.00")).not.toBeInTheDocument();
+    expect(screen.queryByText("51.00")).not.toBeInTheDocument();
   });
 
   /**
-   * 税费展示三行口径（产品确认，后端 2692ca1ca）：
-   *   小计 ← total_cost（税前价）
+   * 税费展示三行口径（产品确认，后端 2692ca1ca 四字段直接下发）：
+   *   小计 ← total_cost（折后价，税前）
    *   税费 ← tax_price（缺失视为 0）
-   *   合计 ← real_total_cost 直接展示（含税实付真源，不做前端加总）
-   * 含折扣时小计+税≠合计（4500+400=4900≠5200，差额 300 为折扣，不单列折扣行）。
+   *   合计 ← real_total_cost（税后价）直接展示，不做前端加总
+   * 折扣体现在原价 price 与折后价 total_cost 之间（删除线），不单列折扣行。
    */
   it("renders subtotal, tax and total from the backend price fields", async () => {
     (globalThis as { React?: typeof React }).React = React;
@@ -665,13 +675,14 @@ describe("SubscribePage confirm order amounts", () => {
     fireEvent.click(await screen.findByRole("button", { name: "立即订阅" }));
 
     expect(await screen.findByText("确认订单")).toBeInTheDocument();
-    /* 小计 = total_cost 4500 分 → $45.00；套餐行同为税前价，共两处 */
-    expect(screen.getAllByText("$45.00").length).toBeGreaterThanOrEqual(2);
+    /* 小计 = total_cost 4800 分 → $48.00；套餐行同为折后价，共两处 */
+    expect(screen.getAllByText("$48.00").length).toBeGreaterThanOrEqual(2);
     /* 税费 = tax_price 400 分 → $4.00 */
     expect(screen.getByText("$4.00")).toBeInTheDocument();
-    /* 合计 = real_total_cost 5200 分 → $52.00（含税实付真源直显，≠ 45+4=49） */
+    /* 合计 = real_total_cost 5200 分 → $52.00（税后价直显 = 4800 + 400，不做前端加总） */
     expect(screen.getByText("$52.00")).toBeInTheDocument();
-    expect(screen.queryByText("$48.00")).not.toBeInTheDocument();
+    /* $45.00 不再是任何合法字段值，防实现回退到旧的「total_cost=税前原价」口径 */
+    expect(screen.queryByText("$45.00")).not.toBeInTheDocument();
   });
 
   it("treats a missing tax field as zero tax", async () => {
@@ -682,12 +693,12 @@ describe("SubscribePage confirm order amounts", () => {
       {
         ...buildNestedBundle(),
         price: {
-          price: 4900,
-          total_cost: 4500,
-          real_total_cost: 5200,
+          /* tax_price 缺失：视为税额 0；无税场景 real_total_cost = total_cost（折后价） */
+          price: 5100,
+          total_cost: 4800,
+          real_total_cost: 4800,
           currency: "USD",
-          discount: 0,
-          /* tax_price 缺失：视为税额 0，小计=合计=含税实付（国内站/免税场景现状） */
+          discount: 4800 / 5100,
         },
       },
     ]);
@@ -698,10 +709,10 @@ describe("SubscribePage confirm order amounts", () => {
     fireEvent.click(await screen.findByRole("button", { name: "立即订阅" }));
 
     expect(await screen.findByText("确认订单")).toBeInTheDocument();
+    /* 税费行兜底 $0.00 */
     expect(screen.getByText("$0.00")).toBeInTheDocument();
-    /* 合计 = real_total_cost（含税），tax 缺失时小计仍为税前 total_cost $45.00 */
-    expect(screen.getAllByText("$45.00").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("$52.00")).toBeInTheDocument();
+    /* 小计 = total_cost $48.00；合计 = real_total_cost（无税 = 折后价）同为 $48.00 */
+    expect(screen.getAllByText("$48.00").length).toBeGreaterThanOrEqual(2);
   });
 });
 
