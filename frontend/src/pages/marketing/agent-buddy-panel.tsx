@@ -1125,48 +1125,46 @@ export function BuddyPanel({
             <Check className="size-4" aria-hidden="true" />
             <span>{t("已注入：自定义人设 · {{name}}", { name: customPersonaName })}</span>
           </div>
-          {!isGlobal && (
-            <div className="inline-flex items-center gap-0">
-              <div className="group relative inline-flex">
-                <button
-                  type="button"
-                  aria-label={t("编辑自定义人设")}
-                  disabled={customPersonaFileAction !== "idle"}
-                  onClick={() => void handleEditCustomPersona()}
-                  className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {customPersonaFileAction === "editing" ? (
-                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Pencil className="size-3.5" aria-hidden="true" />
-                  )}
-                </button>
-                <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
-                  {t("编辑自定义人设")}
-                  <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
-                </div>
-              </div>
-              <div className="group relative inline-flex">
-                <button
-                  type="button"
-                  aria-label={t("下载自定义人设")}
-                  disabled={customPersonaFileAction !== "idle"}
-                  onClick={() => void handleDownloadCustomPersona()}
-                  className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {customPersonaFileAction === "downloading" ? (
-                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Download className="size-3.5" aria-hidden="true" />
-                  )}
-                </button>
-                <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
-                  {t("下载自定义人设")}
-                  <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
-                </div>
+          <div className="inline-flex items-center gap-0">
+            <div className="group relative inline-flex">
+              <button
+                type="button"
+                aria-label={t("编辑自定义人设")}
+                disabled={customPersonaFileAction !== "idle"}
+                onClick={() => void handleEditCustomPersona()}
+                className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {customPersonaFileAction === "editing" ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Pencil className="size-3.5" aria-hidden="true" />
+                )}
+              </button>
+              <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+                {t("编辑自定义人设")}
+                <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
               </div>
             </div>
-          )}
+            <div className="group relative inline-flex">
+              <button
+                type="button"
+                aria-label={t("下载自定义人设")}
+                disabled={customPersonaFileAction !== "idle"}
+                onClick={() => void handleDownloadCustomPersona()}
+                className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {customPersonaFileAction === "downloading" ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Download className="size-3.5" aria-hidden="true" />
+                )}
+              </button>
+              <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+                {t("下载自定义人设")}
+                <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1229,18 +1227,16 @@ export function BuddyPanel({
               </div>
             )}
           </div>
-          {!isGlobal && (
-            <PersonaUploadModal
-              key={botId ?? "no-agent"}
-              disabled={
-                !botId
-                || loadStatus !== "loaded"
-                || equippedStatus !== "ready"
-              }
-              hasExistingSoul={hasExistingSoul}
-              onInject={handleCustomPersonaInject}
-            />
-          )}
+          <PersonaUploadModal
+            key={botId ?? "no-agent"}
+            disabled={
+              !botId
+              || loadStatus !== "loaded"
+              || equippedStatus !== "ready"
+            }
+            hasExistingSoul={hasExistingSoul}
+            onInject={handleCustomPersonaInject}
+          />
           {selectedSlug && (
             <div className="group relative inline-flex">
               <button
@@ -1321,14 +1317,12 @@ export function BuddyPanel({
         useIndonesianSoulData={useIndonesianSoulData}
       />
 
-      {!isGlobal && (
-        <CustomPersonaFileModal
-          open={customPersonaEditorMarkdown !== null}
-          initialMarkdown={customPersonaEditorMarkdown ?? ""}
-          onClose={() => setCustomPersonaEditorMarkdown(null)}
-          onSave={handleCustomPersonaSave}
-        />
-      )}
+      <CustomPersonaFileModal
+        open={customPersonaEditorMarkdown !== null}
+        initialMarkdown={customPersonaEditorMarkdown ?? ""}
+        onClose={() => setCustomPersonaEditorMarkdown(null)}
+        onSave={handleCustomPersonaSave}
+      />
 
       {previewSoulSlug && (
         <SoulPreviewModal

@@ -276,7 +276,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(screen.getByText("Agent B Soul")).toBeInTheDocument();
   });
 
-  it("renders the upload entry only for the domestic region", async () => {
+  it("renders the upload entry in both regions", async () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [fixtures.agentA],
       appliedSlug: null,
@@ -286,11 +286,7 @@ describe("BuddyPanel P1 stability", () => {
     render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
 
-    if (isGlobal) {
-      expect(screen.queryByRole("button", { name: "上传人设文件" })).not.toBeInTheDocument();
-    } else {
-      expect(await screen.findByRole("button", { name: "上传人设文件" })).toBeEnabled();
-    }
+    expect(await screen.findByRole("button", { name: "上传人设文件" })).toBeEnabled();
   });
 
   it("shows inject only after selecting a persona", async () => {
@@ -511,15 +507,10 @@ describe("BuddyPanel P1 stability", () => {
 
     expect(await screen.findByText("已注入：自定义人设 · 冷静的项目搭档"))
       .toBeInTheDocument();
-    if (isGlobal) {
-      expect(screen.queryByRole("button", { name: "编辑自定义人设" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "下载自定义人设" })).not.toBeInTheDocument();
-    } else {
-      const editButton = screen.getByRole("button", { name: "编辑自定义人设" });
-      expect(editButton).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "下载自定义人设" })).toBeInTheDocument();
-      expect(editButton.parentElement?.parentElement).toHaveClass("gap-0");
-    }
+    const editButton = screen.getByRole("button", { name: "编辑自定义人设" });
+    expect(editButton).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载自定义人设" })).toBeInTheDocument();
+    expect(editButton.parentElement?.parentElement).toHaveClass("gap-0");
     expect(screen.queryByRole("button", { name: "已注入：自定义人设 · 冷静的项目搭档" }))
       .not.toBeInTheDocument();
     expect(screen.queryByLabelText("当前已注入到 Agent")).not.toBeInTheDocument();
@@ -543,7 +534,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("reads the current Soul, edits it, and saves through the safe write command", async () => {
-    if (isGlobal) return;
     const currentMarkdown = "# Soul\nSlug: custom-upload\nName: 冷静的项目搭档\n\n## Identity\n先给结论。\n";
     let saved = false;
     mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });
@@ -591,7 +581,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("downloads the exact current Soul directly without opening the editor", async () => {
-    if (isGlobal) return;
     const currentMarkdown = "# Soul\nSlug: custom-upload\nName: 下载测试\n\n原始内容保留。\n";
     let downloadedBlob: Blob | null = null;
     let downloadedName = "";
@@ -628,7 +617,6 @@ describe("BuddyPanel P1 stability", () => {
     ["Exists: yes\nTooLarge: yes\nByteLength: 20481", "当前人设文件超过 20 KB，暂不支持在线编辑或下载"],
     ["unexpected output", "无法读取人设文件，请重试"],
   ])("reports an actionable error for an unreadable current Soul: %s", async (output, message) => {
-    if (isGlobal) return;
     mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => (
       command.includes("ContentBase64:")
@@ -645,7 +633,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("reports a network error while reading the current Soul", async () => {
-    if (isGlobal) return;
     mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => {
       if (command.includes("ContentBase64:")) throw new Error("network unavailable");
@@ -661,7 +648,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("disables both file actions and ignores an old content read after switching Agents", async () => {
-    if (isGlobal) return;
     const agentARead = deferred<ReturnType<typeof successResult>>();
     mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });
     repositoryMocks.execDebugCommand.mockImplementation(async (botId, command) => {
@@ -691,7 +677,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("cancels a pending current-persona download when the panel unmounts", async () => {
-    if (isGlobal) return;
     const currentSoulRead = deferred<ReturnType<typeof successResult>>();
     const createObjectURL = vi.spyOn(URL, "createObjectURL");
     mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });
@@ -718,7 +703,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("clears a pending file action when a new persona write supersedes its read", async () => {
-    if (isGlobal) return;
     const oldRead = deferred<ReturnType<typeof successResult>>();
     let written = false;
     mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });
@@ -799,7 +783,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("keeps Agent B editor open when Agent A save finishes stale", async () => {
-    if (isGlobal) return;
     const agentAWrite = deferred<ReturnType<typeof successResult>>();
     const markdownFor = (name: string) => [
       "# Soul",
@@ -851,7 +834,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("uploads a custom persona through the existing Hermes command", async () => {
-    if (isGlobal) return;
     let installed = false;
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [fixtures.agentA],
