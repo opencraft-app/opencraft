@@ -320,7 +320,7 @@ export function AgentCommonSettingsPanel({
 
   return (
     <section className="min-w-0">
-      <AgentSectionHeader title={t("常用设置")} description={null} />
+      <AgentSectionHeader title={t("高级设置")} description={null} />
       {agentStopped && <p className="mt-5 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Agent 未运行，启动后才能修改设置。")}</p>}
       {loading && <div className="flex items-center justify-center py-16 text-sm text-black/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("正在读取当前配置…")}</div>}
       {!loading && loadError && (

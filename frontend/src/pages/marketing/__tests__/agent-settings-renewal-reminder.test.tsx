@@ -188,6 +188,12 @@ describe("AgentSettingsPage renewal reminder", () => {
     expect(screen.getByRole("main")).toHaveClass("pb-6");
   });
 
+  it("labels the domestic navigation entry as advanced settings", () => {
+    renderAgentSettingsPage();
+
+    expect(screen.getByRole("link", { name: "高级设置" })).toBeInTheDocument();
+  });
+
   it("shows an orange renewal reminder near the active agent status and opens the renewal modal", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderAgentSettingsPage();

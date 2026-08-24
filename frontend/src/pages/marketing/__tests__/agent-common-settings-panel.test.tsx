@@ -37,6 +37,21 @@ afterEach(() => {
 });
 
 describe("AgentCommonSettingsPanel", () => {
+  it("labels the page as advanced settings", () => {
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "高级设置" })).toBeTruthy();
+  });
+
   it("renders six flat rows and saves a switch only after confirmation", async () => {
     const user = userEvent.setup();
     const saveSetting = vi.fn().mockImplementation(async ({ key, value }) => ({
