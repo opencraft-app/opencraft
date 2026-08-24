@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -133,6 +133,25 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
 
+/**
+ * 组件按嵌套结构读 bundle.price（见 BundlePrice 类型），金额用例必须用嵌套 mock
+ * 才能走到真实计费分支。
+ * 口径（后端 2692ca1ca 询价税费拆分）：real_total_cost 含税、tax_price 为税额、
+ * 小计 = real_total_cost - tax_price。total_cost 刻意构造成 4500（≠ 小计 4800），
+ * 若实现误用 total_cost 做小计，断言 $48.00 会失败。
+ */
+const buildNestedBundle = () => ({
+  ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
+  price: {
+    price: 4900,
+    total_cost: 4500,
+    real_total_cost: 5200,
+    currency: "USD",
+    discount: 0,
+    tax_price: 400,
+  },
+});
+
 const resetState = () => {
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
@@ -157,8 +176,6 @@ const resetState = () => {
   });
   createDianshiPassOrderAndPayMock.mockResolvedValue({ deal_name: "deal-zero-01" });
   navigateMock.mockReset();
-  window.sessionStorage.clear();
-  delete (window as Window & { show?: unknown }).show;
   window.history.replaceState({}, "", "/subscribe");
 };
 
@@ -166,18 +183,19 @@ describe("SubscribePage paid billing visibility", () => {
   beforeEach(resetState);
   afterEach(cleanup);
 
-  it("keeps the Cruise placeholder disabled before paid billing is revealed", async () => {
+  it("shows the paid plans immediately without a reveal gate", async () => {
     (globalThis as { React?: typeof React }).React = React;
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
 
-    await screen.findByText("巡游 Cruise");
-    expect(screen.getByRole("button", { name: "即将上线" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "立即订阅" })).not.toBeInTheDocument();
+    /* 全量放开后不再有 reveal 门禁：未登录直接展示付费套餐
+       （静态定价 + 可点击 CTA），「即将上线」占位卡消失。 */
+    expect(await screen.findByText("巡游 Cruise")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "即将上线" })).not.toBeInTheDocument();
   });
 
-  it("keeps the international paid order flow behind show()", async () => {
+  it("shows the international paid order flow by default", async () => {
     (globalThis as { React?: typeof React }).React = React;
     sessionState.isAuthenticated = true;
     openClawState.isLoggedIn = true;
@@ -185,13 +203,7 @@ describe("SubscribePage paid billing visibility", () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
 
-    await waitFor(() => expect(listBundlesMock).toHaveBeenCalled());
-    expect(screen.queryByRole("tablist", { name: "付费时长" })).not.toBeInTheDocument();
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-
+    /* 全量放开：登录后无需 show() 即展示付费时长与可订阅 CTA。 */
     expect(await screen.findByRole("tablist", { name: "付费时长" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即订阅" })).toBeEnabled();
   });
@@ -207,8 +219,8 @@ describe("SubscribePage paid billing visibility", () => {
  *   1. `if (!isGlobal)` 把国际站排除在硬编码 AI 标签之外；
  *   2. 后端 discount 单位不一致（`0<d<1` 与 `50` 两套口径），百分数下发时两分支均不命中。
  *
- * 现口径：show() 门禁打开后，未登录使用静态美元价；国际站启航 AI「首单免费 3 天」、
- * 巡游 AI「首月 6 折」，登录后仍使用后端询价。
+ * 现口径：国际站付费已全量放开（无 reveal 门禁），未登录使用静态美元价；
+ * 国际站启航 AI「首单免费 3 天」、巡游 AI「首月 6 折」，登录后仍使用后端询价。
  */
 describe("SubscribePage intl AI promo tags", () => {
   beforeEach(resetState);
@@ -269,24 +281,17 @@ describe("SubscribePage intl AI promo tags", () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
     await waitFor(() => expect(listBundlesMock).toHaveBeenCalled());
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-    /* 等真实询价替换掉 show() 前占位套餐，避免后续否定断言在 loading 阶段假绿。 */
+    /* 等真实询价就绪，避免后续否定断言在 loading 阶段假绿。 */
     await waitFor(() => expect(getTierCard("启航 Launch")).toHaveTextContent(expectedPrice));
   };
 
-  /* show() 只负责公开付费定价；公开后未登录不请求后端，月付四档全部消费前端静态美元表。 */
-  it("shows the anonymous monthly static pricing matrix after show()", async () => {
+  /* 未登录不请求后端，月付四档全部消费前端静态美元表。 */
+  it("shows the anonymous monthly static pricing matrix", async () => {
     (globalThis as { React?: typeof React }).React = React;
     const user = userEvent.setup();
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
     expect(listBundlesMock).not.toHaveBeenCalled();
@@ -312,16 +317,12 @@ describe("SubscribePage intl AI promo tags", () => {
   });
 
   /* 季付四档只展示静态季付折后价，不继承月付首期免费/首购标签。 */
-  it("shows the anonymous quarterly static pricing matrix after show()", async () => {
+  it("shows the anonymous quarterly static pricing matrix", async () => {
     (globalThis as { React?: typeof React }).React = React;
     const user = userEvent.setup();
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     await user.click(await screen.findByRole("tab", { name: "季付" }));
 
@@ -354,10 +355,6 @@ describe("SubscribePage intl AI promo tags", () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
 
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-
     /* 启航标准版档位基线：CTA 已为「免费订阅」 */
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "免费订阅" })).toBeInTheDocument();
@@ -384,10 +381,6 @@ describe("SubscribePage intl AI promo tags", () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
 
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
 
     await user.click(getCreditTab("4500"));
@@ -409,10 +402,6 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     /* 月付基线：启航标准版为「免费订阅」 */
     expect(await screen.findByRole("button", { name: "免费订阅" })).toBeInTheDocument();
@@ -446,10 +435,6 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
     await user.click(screen.getByRole("tab", { name: "季付" }));
@@ -493,10 +478,6 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     expect(await screen.findByText("首月 6 折")).toBeInTheDocument();
   });
@@ -625,6 +606,105 @@ describe("SubscribePage intl AI promo tags", () => {
 
     expect(await screen.findByText("5折")).toBeInTheDocument();
     expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+  });
+});
+
+describe("SubscribePage confirm order amounts", () => {
+  beforeEach(resetState);
+  afterEach(cleanup);
+
+  /**
+   * 卡片价口径（价签模式：卡片标税前实付，付款实付含税）：
+   *   卡片展示价 = real_total_cost - tax_price = 税前实付价（含折扣）。
+   *   误用 real_total_cost（含税实付）直显会让卡片出现 $52，
+   *   用户看到「卡片 $52、弹窗小计 $45」会以为变价。本用例锁定税前口径。
+   *
+   * buildNestedBundle（刻意构造 real - tax ≠ total_cost，两类误用都会被抓住）：
+   *   real_total_cost=5200、tax_price=400 → 卡片价 = 4800 分 → $48.00；
+   *   误用 total_cost（税前原价）会显示 $45.00；
+   *   误用 real_total_cost（含税实付）会显示 $52.00。
+   */
+  it("shows the tax-exclusive discounted price on the plan card", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([buildNestedBundle()]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    /* 等套餐列表渲染完成（listBundles 异步，套餐卡片非同步出现） */
+    await screen.findByText("巡游 Cruise");
+
+    /**
+     * 卡片价口径锁定：税前实付价而非含税实付。
+     * 卡片价格渲染为「$ 符号 + 数字」分离节点（formatYuan 拼接），故断言纯数字文本。
+     * 弹窗三行用 fmt() 生成完整 "$48.00" 文本，与卡片的分离节点格式不同——两处口径
+     * 分别由本用例与「renders subtotal, tax and total」用例锁定。
+     */
+    expect(screen.getByText("48.00")).toBeInTheDocument();
+    expect(screen.queryByText("52.00")).not.toBeInTheDocument();
+  });
+
+  /**
+   * 税费展示三行口径（产品确认 2026-08-24，后端 2692ca1ca）：
+   *   小计 ← 折后价（real_total_cost - tax_price，与卡片价同源同值）
+   *   税费 ← tax_price（缺失视为 0）
+   *   合计 ← real_total_cost 直接展示（含税实付真源，不做前端加总）
+   * 原价 total_cost 不出现在弹窗（原价/折扣差不单列）。
+   */
+  it("renders subtotal, tax and total from the backend price fields", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([buildNestedBundle()]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "立即订阅" }));
+
+    expect(await screen.findByText("确认订单")).toBeInTheDocument();
+    /* 小计 = 折后价 5200-400 = 4800 分 → $48.00；套餐行同价，共两处（与卡片 $48.00 同源） */
+    expect(screen.getAllByText("$48.00").length).toBeGreaterThanOrEqual(2);
+    /* 税费 = tax_price 400 分 → $4.00 */
+    expect(screen.getByText("$4.00")).toBeInTheDocument();
+    /* 合计 = real_total_cost 5200 分 → $52.00（含税实付真源直显，= 48+4） */
+    expect(screen.getByText("$52.00")).toBeInTheDocument();
+    /* 原价 total_cost 4500 分 → $45.00 不应出现（防回退到「小计=原价」旧口径） */
+    expect(screen.queryByText("$45.00")).not.toBeInTheDocument();
+  });
+
+  it("treats a missing tax field as zero tax", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([
+      {
+        ...buildNestedBundle(),
+        price: {
+          price: 4900,
+          total_cost: 4500,
+          real_total_cost: 5200,
+          currency: "USD",
+          discount: 0,
+          /* tax_price 缺失：视为税额 0，小计=合计=含税实付（国内站/免税场景现状） */
+        },
+      },
+    ]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "立即订阅" }));
+
+    expect(await screen.findByText("确认订单")).toBeInTheDocument();
+    expect(screen.getByText("$0.00")).toBeInTheDocument();
+    /* tax 缺失视为 0：小计 = real - 0 = 5200 分 → $52.00（套餐行+小计行），
+       合计 = real_total_cost 同为 $52.00，共 ≥3 处 */
+    expect(screen.getAllByText("$52.00").length).toBeGreaterThanOrEqual(3);
+    /* 原价 total_cost $45.00 不应出现 */
+    expect(screen.queryByText("$45.00")).not.toBeInTheDocument();
   });
 });
 

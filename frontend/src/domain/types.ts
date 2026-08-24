@@ -274,6 +274,12 @@ export interface BundlePrice {
   currency: string;
   /** 折扣率（1.0 = 不打折，0.9 = 9 折） */
   discount: number;
+  /**
+   * 税额（分）。后端「国际站询价税费拆分」下发（2692ca1ca）：实付金额对应的税额。
+   * real_total_cost 为含税实付，税前实付 = real_total_cost - tax_price。
+   * 国内站与未下发场景为 0/缺失，前端按税额 0 处理。
+   */
+  tax_price?: number;
 }
 
 export interface Bundle {

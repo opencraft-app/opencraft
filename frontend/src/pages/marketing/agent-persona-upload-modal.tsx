@@ -67,8 +67,8 @@ export function PersonaUploadModal({
   const validation = useMemo(
     () => selectionError
       ? { valid: false as const, code: selectionError, byteLength: 0 }
-      : validateCustomSoulMarkdown(markdown, fileName),
-    [fileName, markdown, selectionError],
+      : validateCustomSoulMarkdown(markdown, fileName, t("自定义人设")),
+    [fileName, markdown, selectionError, t],
   );
   const warnings = useMemo(
     () => validation.valid ? getPersonaStructureWarnings(markdown) : [],
@@ -117,7 +117,7 @@ export function PersonaUploadModal({
     if (inputRef.current) inputRef.current.value = "";
   };
   const runInject = async () => {
-    const current = validateCustomSoulMarkdown(markdown, fileName);
+    const current = validateCustomSoulMarkdown(markdown, fileName, t("自定义人设"));
     if (!current.valid) {
       setSelectionError(current.code);
       return;

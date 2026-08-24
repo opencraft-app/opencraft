@@ -63,8 +63,19 @@ describe("global changelog skill package entry", () => {
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。",
+      ),
+    ).toBeInTheDocument();
+    const zhPersonaImage = screen.getByAltText("LightVela 支持上传自定义人设文件");
+    expect(zhPersonaImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
+    );
+    expect(zhPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
     expect(screen.getByRole("heading", { name: "自动任务支持关联上游任务" })).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -122,8 +133,22 @@ describe("global changelog skill package entry", () => {
       within(julySection!).getByRole("heading", { name: "Ready-Made Automation Templates" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "LightVela Now Supports Custom Persona File Uploads" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { name: "LightVela Now Supports Custom Persona File Uploads" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Upload a Markdown persona file, then continue editing it or inject it directly into your Agent. Injected persona files can also be edited or downloaded at any time.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(augustSection!).getAllByRole("heading")[0]).toHaveTextContent(
+      "LightVela Now Supports Custom Persona File Uploads",
+    );
+    const enPersonaImage = screen.getByAltText("LightVela Now Supports Custom Persona File Uploads");
+    expect(enPersonaImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
+    );
+    expect(enPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
     expect(
       screen.getByRole("heading", { name: "Automation Tasks Can Now Link to Upstream Tasks" }),
     ).toBeInTheDocument();
@@ -171,8 +196,17 @@ describe("global changelog skill package entry", () => {
     );
 
     expect(
-      screen.queryByRole("heading", { name: "LightVela 支持上傳自定義人設文件" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { name: "LightVela 支持上傳自定義人設文件" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "上傳 Markdown 人設文件後，可繼續編輯或直接注入 Agent；已注入的人設文件也支持隨時編輯和下載。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByAltText("LightVela 支持上傳自定義人設文件")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
+    );
     expect(screen.getByRole("heading", { name: "自動任務支持關聯上游任務" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "技能頁面支持批量安裝與來源查看" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "自動任務模板" })).toBeInTheDocument();
@@ -205,8 +239,17 @@ describe("global changelog skill package entry", () => {
     );
 
     expect(
-      screen.queryByRole("heading", { name: "LightVela kini mendukung unggahan file persona kustom" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { name: "LightVela kini mendukung unggahan file persona kustom" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Unggah file persona Markdown, lalu lanjutkan mengeditnya atau terapkan langsung ke Agent. File persona yang telah diterapkan juga dapat diedit atau diunduh kapan saja.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByAltText("LightVela kini mendukung unggahan file persona kustom")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
+    );
     expect(
       screen.getByRole("heading", { name: "Tugas Otomatis Kini Dapat Ditautkan ke Tugas Hulu" }),
     ).toBeInTheDocument();

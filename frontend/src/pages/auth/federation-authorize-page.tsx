@@ -10,27 +10,51 @@ import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import type {
-  FederationAuthorizationContext,
-  FederationAuthorizationInput,
+  OIDCAuthorizationContext,
+  OIDCAuthorizationInput,
 } from "@/repositories/types";
 
 interface FederationAuthorizePageProps {
   navigate?: (url: string) => void;
 }
 
-const readAuthorizationInput = (): FederationAuthorizationInput | null => {
+const readAuthorizationInput = (): OIDCAuthorizationInput | null => {
   const query = new URLSearchParams(window.location.search);
   const clientId = query.get("client_id")?.trim() ?? "";
   const redirectUri = query.get("redirect_uri")?.trim() ?? "";
-  if (!clientId || !redirectUri) return null;
+  const state = query.get("state")?.trim() ?? "";
+  const responseType = query.get("response_type")?.trim();
+  const scope = query.get("scope")?.trim() ?? "";
+  const codeChallenge = query.get("code_challenge")?.trim() ?? "";
+  const codeChallengeMethod = query.get("code_challenge_method")?.trim();
+  const nonce = query.get("nonce")?.trim() ?? "";
+  const hasOpenIDScope = scope.split(/\s+/).includes("openid");
+  if (
+    !clientId
+    || !redirectUri
+    || !state
+    || responseType !== "code"
+    || !scope
+    || !hasOpenIDScope
+    || !codeChallenge
+    || codeChallengeMethod !== "S256"
+    || !nonce
+  ) {
+    return null;
+  }
   return {
     clientId,
     redirectUri,
-    state: query.get("state") ?? "",
+    state,
+    responseType,
+    scope,
+    codeChallenge,
+    codeChallengeMethod,
+    nonce,
   };
 };
 
-const buildCancellationUrl = (context: FederationAuthorizationContext) => {
+const buildCancellationUrl = (context: OIDCAuthorizationContext) => {
   const target = new URL(context.redirectUri);
   target.searchParams.set("error", "access_denied");
   if (context.state) {
@@ -45,8 +69,8 @@ export function FederationAuthorizePage({
   const repositories = useRepositories();
   const { authReady } = useSession();
   const t = useT();
-  const [input, setInput] = useState<FederationAuthorizationInput | null>();
-  const [context, setContext] = useState<FederationAuthorizationContext | null>(null);
+  const [input, setInput] = useState<OIDCAuthorizationInput | null>();
+  const [context, setContext] = useState<OIDCAuthorizationContext | null>(null);
   const [switchingAccount, setSwitchingAccount] = useState(false);
   const [loadingContext, setLoadingContext] = useState(true);
   const [issuingTicket, setIssuingTicket] = useState(false);
@@ -71,7 +95,7 @@ export function FederationAuthorizePage({
       };
     }
 
-    repositories.auth.getFederationAuthorizationContext(input).then((result) => {
+    repositories.auth.getOIDCAuthorizationContext(input).then((result) => {
       if (!cancelled) setContext(result);
     }).catch(() => {
       if (!cancelled) {
@@ -123,10 +147,15 @@ export function FederationAuthorizePage({
     setIssuingTicket(true);
     setError(null);
     try {
-      const result = await repositories.auth.issueFederationTicket({
+      const result = await repositories.auth.authorizeOIDC({
         clientId: context.clientId,
         redirectUri: context.redirectUri,
         state: context.state,
+        responseType: context.responseType,
+        scope: context.scope,
+        codeChallenge: context.codeChallenge,
+        codeChallengeMethod: context.codeChallengeMethod,
+        nonce: context.nonce,
       });
       navigate(result.redirectUrl);
     } catch (caught) {
@@ -139,7 +168,7 @@ export function FederationAuthorizePage({
   const handleLoginSuccess = useCallback(async () => {
     if (!input) return;
     try {
-      const refreshedContext = await repositories.auth.getFederationAuthorizationContext(input);
+      const refreshedContext = await repositories.auth.getOIDCAuthorizationContext(input);
       setContext(refreshedContext);
       setSwitchingAccount(false);
     } catch {

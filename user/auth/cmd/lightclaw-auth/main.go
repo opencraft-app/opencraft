@@ -120,7 +120,8 @@ func main() {
 		ShadowBindingInternalToken: envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
 		ShadowTencentCallbackToken: envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
 		TrustedProxyCIDRs:          parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
-		Federation:                buildFederationConfig(logger),
+		Federation:                 buildFederationConfig(logger),
+		OIDC:                       buildOIDCConfig(logger, stores.auth),
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")

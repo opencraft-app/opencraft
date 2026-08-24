@@ -56,6 +56,29 @@
 
 ---
 
+## 站点 OIDC（默认禁用）
+
+| 变量 | 说明 |
+|------|------|
+| `LIGHTCLAW_OIDC_ENABLED` | 最小 OIDC provider 总开关；只有下列配置完整时才能设为 `true` |
+| `LIGHTCLAW_OIDC_ISSUER` | OIDC issuer，例如 `https://auth.lightclaw.tech` |
+| `LIGHTCLAW_OIDC_SIGNING_KEY_ID` | 当前 Ed25519 签名 key 的 `kid` |
+| `LIGHTCLAW_OIDC_SIGNING_KEYS_JSON` | `kid -> base64 Ed25519 seed/private-key` JSON keyring，支持轮换 |
+| `LIGHTCLAW_OIDC_CLIENTS_JSON` | 逻辑 client 注册表；当前仅支持 exact redirect URI 列表，不支持 host 通配 |
+| `LIGHTCLAW_OIDC_AUTHORIZATION_CODE_TTL_SECONDS` | 授权码 TTL；必须固定为 `5`，非 `5` 时 OIDC 会 fail-closed 禁用 |
+| `LIGHTCLAW_OIDC_ID_TOKEN_TTL_SECONDS` | ID Token TTL，默认 `300` |
+| `LIGHTCLAW_OIDC_ACCESS_TOKEN_TTL_SECONDS` | access token TTL，默认 `300` |
+| `LIGHTCLAW_OIDC_ACCESS_TOKEN_AUDIENCE` | access token audience；留空则回落到 client ID |
+
+首批逻辑 client 固定为 `site-gateway`，redirect allowlist 仅接受两个完整 URL：
+
+- `https://sites-auth.lightvela.tech/auth/lightvela/callback`
+- `https://sites-auth.lightvela.site/auth/lightvela/callback`
+
+不得复用 Federation 的 `callback_hosts` 或任何前缀/通配匹配；`redirect_uri` 必须完整字符串精确相等。
+
+---
+
 ## 内容安全审核（昵称）
 
 | 变量 | 默认值 | 说明 |

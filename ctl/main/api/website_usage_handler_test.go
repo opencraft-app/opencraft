@@ -19,6 +19,8 @@ type fakeUsageLogic struct {
 	gotSiteID      string
 	gotStorage     int64
 	storageCalled  bool
+	getSiteCalled  bool
+	siteView       *websitelogic.SiteStatusView
 	usageCallCount int
 	err            error
 }
@@ -37,6 +39,15 @@ func (f *fakeUsageLogic) UpdateSiteStorage(siteID string, storageBytes int64) er
 	f.gotSiteID = siteID
 	f.gotStorage = storageBytes
 	return f.err
+}
+
+func (f *fakeUsageLogic) GetSiteInternal(siteID string) (*websitelogic.SiteStatusView, error) {
+	f.getSiteCalled = true
+	f.gotSiteID = siteID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.siteView, nil
 }
 
 func newUsageRequest(t *testing.T, method, path, token, body string) *http.Request {
@@ -234,5 +245,39 @@ func TestUnknownSiteSubpathIsRejected(t *testing.T) {
 	}
 	if fake.storageCalled {
 		t.Fatal("未知子路径不应触达逻辑层")
+	}
+}
+
+func TestInternalSiteStatusReturnsUserID(t *testing.T) {
+	t.Setenv("WEBSITE_INTERNAL_API_TOKEN", "expected-token")
+	fake := &fakeUsageLogic{siteView: &websitelogic.SiteStatusView{
+		SiteID:              "ws-1",
+		UserID:              "user-1",
+		Status:              "active",
+		CloudPath:           "sites/ws-1/releases/wr-1/",
+		MonthlyTrafficBytes: 1000,
+		UsedTrafficBytes:    400,
+	}}
+	h := &websiteHandler{logic: fake}
+
+	rec := httptest.NewRecorder()
+	h.handleInternalSite(rec, newUsageRequest(t, http.MethodGet,
+		"/internal/ctl/websites/sites/ws-1", "expected-token", ""))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d，body %s", rec.Code, rec.Body.String())
+	}
+	if !fake.getSiteCalled || fake.gotSiteID != "ws-1" {
+		t.Fatalf("逻辑层调用 = (%v, %q)，期望查询 ws-1", fake.getSiteCalled, fake.gotSiteID)
+	}
+
+	var resp struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Data["user_id"] != "user-1" {
+		t.Fatalf("data.user_id = %#v，期望 user-1；body=%s", resp.Data["user_id"], rec.Body.String())
 	}
 }
