@@ -1589,14 +1589,19 @@ describe("http repositories auth token bootstrap", () => {
     }
   });
 
-  it("loads a validated federation authorization context", async () => {
+  it("loads a validated oidc authorization context", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       client: {
-        id: "personal-site",
-        display_name: "LightVela Personal Site",
+        id: "site-gateway",
+        display_name: "LightVela Sites",
       },
-      redirect_uri: "https://notes.lightvela.site/auth/lightvela/callback",
+      redirect_uri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
       state: "opaque state",
+      response_type: "code",
+      scope: "openid profile",
+      code_challenge: "challenge-1",
+      code_challenge_method: "S256",
+      nonce: "nonce-1",
       session: {
         authenticated: true,
         user: {
@@ -1617,15 +1622,25 @@ describe("http repositories auth token bootstrap", () => {
     vi.stubGlobal("fetch", fetchMock);
     const repositories = createHttpRepositories("https://lightclaw.tech");
 
-    await expect(repositories.auth.getFederationAuthorizationContext({
-      clientId: "personal-site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    await expect(repositories.auth.getOIDCAuthorizationContext({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
       state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
     })).resolves.toEqual({
-      clientId: "personal-site",
-      clientDisplayName: "LightVela Personal Site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+      clientId: "site-gateway",
+      clientDisplayName: "LightVela Sites",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
       state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
       currentSession: {
         user: {
           id: "usr_123",
@@ -1636,14 +1651,14 @@ describe("http repositories auth token bootstrap", () => {
       },
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://lightclaw.tech/auth/federation/context?client_id=personal-site&redirect_uri=https%3A%2F%2Fnotes.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=opaque+state",
+      "https://lightclaw.tech/oauth2/authorize/context?client_id=site-gateway&redirect_uri=https%3A%2F%2Fsites-auth.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=opaque+state&response_type=code&scope=openid+profile&code_challenge=challenge-1&code_challenge_method=S256&nonce=nonce-1",
       expect.objectContaining({ method: "GET" }),
     );
   });
 
-  it("issues a federation ticket without constructing the callback in the client", async () => {
+  it("posts oidc authorization confirmation without constructing the callback in the client", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      redirect_url: "https://notes.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      redirect_url: "https://sites-auth.lightvela.site/auth/lightvela/callback?code=opaque&state=state-1",
       expires_at: "2026-08-21T10:00:05Z",
     }), {
       status: 200,
@@ -1652,25 +1667,75 @@ describe("http repositories auth token bootstrap", () => {
     vi.stubGlobal("fetch", fetchMock);
     const repositories = createHttpRepositories("https://lightclaw.tech");
 
-    await expect(repositories.auth.issueFederationTicket({
-      clientId: "personal-site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    await expect(repositories.auth.authorizeOIDC({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
       state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
     })).resolves.toEqual({
-      redirectUrl: "https://notes.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      redirectUrl: "https://sites-auth.lightvela.site/auth/lightvela/callback?code=opaque&state=state-1",
       expiresAt: "2026-08-21T10:00:05Z",
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://lightclaw.tech/auth/federation/tickets",
+      "https://lightclaw.tech/oauth2/authorize",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          client_id: "personal-site",
-          redirect_uri: "https://notes.lightvela.site/auth/lightvela/callback",
+          client_id: "site-gateway",
+          redirect_uri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
           state: "state-1",
+          response_type: "code",
+          scope: "openid profile",
+          code_challenge: "challenge-1",
+          code_challenge_method: "S256",
+          nonce: "nonce-1",
         }),
       }),
     );
+  });
+
+  it("keeps the fixed tech callback contract visible in oidc context requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      client: {
+        id: "site-gateway",
+        display_name: "LightVela Sites",
+      },
+      redirect_uri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      state: "opaque state",
+      response_type: "code",
+      scope: "openid profile",
+      code_challenge: "challenge-1",
+      code_challenge_method: "S256",
+      nonce: "nonce-1",
+      session: {
+        authenticated: false,
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.getOIDCAuthorizationContext({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
+    })).resolves.toMatchObject({
+      clientId: "site-gateway",
+      clientDisplayName: "LightVela Sites",
+      redirectUri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      currentSession: null,
+    });
   });
 
   it("prepares and cancels federation account switching with cookie-authenticated requests", async () => {

@@ -40,6 +40,7 @@ type Handler struct {
 	publicBaseURL     string
 	frontendBaseURL   string
 	federation        *FederationConfig
+	oidc              *OIDCConfig
 }
 
 type invitePrepareRequest struct {
