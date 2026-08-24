@@ -553,7 +553,7 @@ const mapBundleToPlan = (
    *   - `paidBillingEnabled=true`（开关已开启，新逻辑）：
    *       国内站（isGlobal=false）消费后端真实价格 bundle.price.real_total_cost；
    *         无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章。
-   *       国际站（isGlobal=true）在 show() 门禁打开后进入付费定价展示：
+   *       国际站（isGlobal=true）已全量放开付费定价展示：
    *         登录后消费后端 bundle.price（单位分 + USD），未登录消费前端静态美元价表。
    */
   const soldOut = bundle.bundle_sales_state === "SOLD_OUT";
@@ -899,7 +899,7 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
  * 表现为「打开啥也没有」），改用下面写死的静态 Bundle 列表，喂给同一套 mapBundleToPlan / planTiers
  * 渲染，保证「未登录静态展示」与「登录后询价展示」的结构、文案、促销角标完全一致；
  * 仅在点击订阅按钮时才引导登录（见 handleSubscribe 的 !isLoggedIn → login()）。
- * 国际站仍保留 show() 展示门禁：门禁打开前 planList 只展示旧免费/占位套餐，不提前公开本价表。
+ * 国际站付费已全量放开：planList 直接展示付费套餐，无 reveal 门禁。
  *
  * 价格为线上确认值（金额敏感），此处均为「原价」：
  *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3）
@@ -2606,29 +2606,6 @@ const PAY_POLL_TIMEOUT_MS = 180_000;
  */
 const PAY_RETURN_QUERY_KEY = "pay_return";
 const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
-const INTL_PAID_BILLING_REVEAL_KEY = "lightvela:features.intlPaidBillingRevealed";
-
-type RevealPaidBillingHost = Window & {
-  show?: (...args: unknown[]) => unknown;
-};
-
-const readIntlPaidBillingReveal = (): boolean => {
-  if (!isGlobal || typeof window === "undefined") return false;
-  if (new URLSearchParams(window.location.search).get(PAY_RETURN_QUERY_KEY) === "1") return true;
-  try {
-    return window.sessionStorage.getItem(INTL_PAID_BILLING_REVEAL_KEY) === "true";
-  } catch {
-    return false;
-  }
-};
-
-const persistIntlPaidBillingReveal = (): void => {
-  try {
-    window.sessionStorage.setItem(INTL_PAID_BILLING_REVEAL_KEY, "true");
-  } catch {
-    // The current render still reveals billing when sessionStorage is unavailable.
-  }
-};
 
 export const SubscribePage = ({
   authControls,
@@ -2658,34 +2635,6 @@ export const SubscribePage = ({
   const [bundles, setBundles] = useState<Bundle[] | null>(null);
   const [bundlesLoading, setBundlesLoading] = useState(false);
   const [bundlesError, setBundlesError] = useState<string | null>(null);
-  const [intlPaidBillingRevealed, setIntlPaidBillingRevealed] = useState(readIntlPaidBillingReveal);
-
-  useEffect(() => {
-    if (!isGlobal) return;
-    const host = window as RevealPaidBillingHost;
-    const originalShow = host.show;
-    let mounted = true;
-    const revealPaidBilling = (...args: unknown[]) => {
-      persistIntlPaidBillingReveal();
-      if (mounted) setIntlPaidBillingRevealed(true);
-      if (typeof originalShow === "function") {
-        const originalResult = originalShow.apply(host, args);
-        return originalResult === undefined ? true : originalResult;
-      }
-      return true;
-    };
-
-    host.show = revealPaidBilling;
-    return () => {
-      mounted = false;
-      if (host.show !== revealPaidBilling) return;
-      if (originalShow === undefined) {
-        delete host.show;
-      } else {
-        host.show = originalShow;
-      }
-    };
-  }, []);
 
   /* 付费时长（月付 / 季付）；切换时会触发 listBundles 用新时长重拉价格。默认月付。
      作用于所有可购买套餐（general / ai），与卡内积分档位切换正交。 */
@@ -2696,11 +2645,10 @@ export const SubscribePage = ({
   );
 
   const paidBillingEnabled = usePaidBillingEnabled();
-  const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled)
-    && (!isGlobal || intlPaidBillingRevealed);
+  const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
-     国际站未执行 show() 时 paidBillingActive=false，展示口径和执行路径都回到免费阶段；
+     国际站已全量放开，付费开关只由后端 features 熔断；
      任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
   const freeGuideAllowed = !paidBillingActive && !realnamePhoneVerificationEnabled;
   const header = (
@@ -2878,7 +2826,7 @@ export const SubscribePage = ({
       const sorted = [...variants].sort((a, b) => (a.raw.credit ?? 0) - (b.raw.credit ?? 0));
       /* AI 增强版可见性：启航 / 巡游的 AI 档位（月付 / 季付）均展示价格 + 下单入口。
          - 已登录：保留后端真实价格 / 促销 / 下单入口，积分取后端 bundle.credit。
-         - 未登录：show() 门禁打开后走 buildStaticBundles 的国际站静态美元价，展示新用户
+         - 未登录：走 buildStaticBundles 的国际站静态美元价，展示新用户
            实付价 + 原价删除线 + 对应促销标签；CTA 点击仍只引导登录。 */
       groups.push({ key: tk, variants: sorted });
     }

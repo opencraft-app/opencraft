@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -157,8 +157,6 @@ const resetState = () => {
   });
   createDianshiPassOrderAndPayMock.mockResolvedValue({ deal_name: "deal-zero-01" });
   navigateMock.mockReset();
-  window.sessionStorage.clear();
-  delete (window as Window & { show?: unknown }).show;
   window.history.replaceState({}, "", "/subscribe");
 };
 
@@ -166,18 +164,19 @@ describe("SubscribePage paid billing visibility", () => {
   beforeEach(resetState);
   afterEach(cleanup);
 
-  it("keeps the Cruise placeholder disabled before paid billing is revealed", async () => {
+  it("shows the paid plans immediately without a reveal gate", async () => {
     (globalThis as { React?: typeof React }).React = React;
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
 
-    await screen.findByText("巡游 Cruise");
-    expect(screen.getByRole("button", { name: "即将上线" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "立即订阅" })).not.toBeInTheDocument();
+    /* 全量放开后不再有 reveal 门禁：未登录直接展示付费套餐
+       （静态定价 + 可点击 CTA），「即将上线」占位卡消失。 */
+    expect(await screen.findByText("巡游 Cruise")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "即将上线" })).not.toBeInTheDocument();
   });
 
-  it("keeps the international paid order flow behind show()", async () => {
+  it("shows the international paid order flow by default", async () => {
     (globalThis as { React?: typeof React }).React = React;
     sessionState.isAuthenticated = true;
     openClawState.isLoggedIn = true;
@@ -185,13 +184,7 @@ describe("SubscribePage paid billing visibility", () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
 
-    await waitFor(() => expect(listBundlesMock).toHaveBeenCalled());
-    expect(screen.queryByRole("tablist", { name: "付费时长" })).not.toBeInTheDocument();
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-
+    /* 全量放开：登录后无需 show() 即展示付费时长与可订阅 CTA。 */
     expect(await screen.findByRole("tablist", { name: "付费时长" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即订阅" })).toBeEnabled();
   });
@@ -207,8 +200,8 @@ describe("SubscribePage paid billing visibility", () => {
  *   1. `if (!isGlobal)` 把国际站排除在硬编码 AI 标签之外；
  *   2. 后端 discount 单位不一致（`0<d<1` 与 `50` 两套口径），百分数下发时两分支均不命中。
  *
- * 现口径：show() 门禁打开后，未登录使用静态美元价；国际站启航 AI「首单免费 3 天」、
- * 巡游 AI「首月 6 折」，登录后仍使用后端询价。
+ * 现口径：国际站付费已全量放开（无 reveal 门禁），未登录使用静态美元价；
+ * 国际站启航 AI「首单免费 3 天」、巡游 AI「首月 6 折」，登录后仍使用后端询价。
  */
 describe("SubscribePage intl AI promo tags", () => {
   beforeEach(resetState);
@@ -269,24 +262,17 @@ describe("SubscribePage intl AI promo tags", () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
     await waitFor(() => expect(listBundlesMock).toHaveBeenCalled());
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-    /* 等真实询价替换掉 show() 前占位套餐，避免后续否定断言在 loading 阶段假绿。 */
+    /* 等真实询价就绪，避免后续否定断言在 loading 阶段假绿。 */
     await waitFor(() => expect(getTierCard("启航 Launch")).toHaveTextContent(expectedPrice));
   };
 
-  /* show() 只负责公开付费定价；公开后未登录不请求后端，月付四档全部消费前端静态美元表。 */
-  it("shows the anonymous monthly static pricing matrix after show()", async () => {
+  /* 未登录不请求后端，月付四档全部消费前端静态美元表。 */
+  it("shows the anonymous monthly static pricing matrix", async () => {
     (globalThis as { React?: typeof React }).React = React;
     const user = userEvent.setup();
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
     expect(listBundlesMock).not.toHaveBeenCalled();
@@ -312,16 +298,12 @@ describe("SubscribePage intl AI promo tags", () => {
   });
 
   /* 季付四档只展示静态季付折后价，不继承月付首期免费/首购标签。 */
-  it("shows the anonymous quarterly static pricing matrix after show()", async () => {
+  it("shows the anonymous quarterly static pricing matrix", async () => {
     (globalThis as { React?: typeof React }).React = React;
     const user = userEvent.setup();
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     await user.click(await screen.findByRole("tab", { name: "季付" }));
 
@@ -354,10 +336,6 @@ describe("SubscribePage intl AI promo tags", () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
 
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-
     /* 启航标准版档位基线：CTA 已为「免费订阅」 */
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "免费订阅" })).toBeInTheDocument();
@@ -384,10 +362,6 @@ describe("SubscribePage intl AI promo tags", () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
 
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
 
     await user.click(getCreditTab("4500"));
@@ -409,10 +383,6 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     /* 月付基线：启航标准版为「免费订阅」 */
     expect(await screen.findByRole("button", { name: "免费订阅" })).toBeInTheDocument();
@@ -446,10 +416,6 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
     await user.click(screen.getByRole("tab", { name: "季付" }));
@@ -493,10 +459,6 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
 
     expect(await screen.findByText("首月 6 折")).toBeInTheDocument();
   });
