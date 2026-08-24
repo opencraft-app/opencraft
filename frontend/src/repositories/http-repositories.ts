@@ -32,9 +32,9 @@ import type {
   AuthRepository,
   BotRepository,
   DashboardSnapshot,
-  FederationAuthorizationContext,
-  FederationAuthorizationInput,
-  FederationTicketResult,
+  OIDCAuthorizationContext,
+  OIDCAuthorizationInput,
+  OIDCAuthorizationResult,
   PlanRepository,
   RealnameVerifyResult,
   Repositories,
@@ -127,20 +127,25 @@ interface APIEnvelope<T> {
   request_id?: string;
 }
 
-interface FederationContextPayload {
+interface OIDCContextPayload {
   client: {
     id: string;
     display_name: string;
   };
   redirect_uri: string;
   state: string;
+  response_type: "code";
+  scope: string;
+  code_challenge: string;
+  code_challenge_method: "S256";
+  nonce: string;
   session: {
     authenticated: boolean;
     user?: User;
   };
 }
 
-interface FederationTicketPayload {
+interface OIDCAuthorizationPayload {
   redirect_url: string;
   expires_at: string;
 }
@@ -1540,15 +1545,20 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       method: "DELETE",
     });
   },
-  async getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext> {
+  async getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext> {
     const query = new URLSearchParams({
       client_id: input.clientId,
       redirect_uri: input.redirectUri,
       state: input.state,
+      response_type: input.responseType,
+      scope: input.scope,
+      code_challenge: input.codeChallenge,
+      code_challenge_method: input.codeChallengeMethod,
+      nonce: input.nonce,
     });
-    const payload = await request<FederationContextPayload>(
+    const payload = await request<OIDCContextPayload>(
       baseUrl,
-      `/auth/federation/context?${query.toString()}`,
+      `/oauth2/authorize/context?${query.toString()}`,
       { method: "GET" },
     );
     return {
@@ -1556,6 +1566,11 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       clientDisplayName: payload.client.display_name,
       redirectUri: payload.redirect_uri,
       state: payload.state,
+      responseType: payload.response_type,
+      scope: payload.scope,
+      codeChallenge: payload.code_challenge,
+      codeChallengeMethod: payload.code_challenge_method,
+      nonce: payload.nonce,
       currentSession: payload.session.authenticated && payload.session.user ? {
         user: {
           id: payload.session.user.id,
@@ -1567,13 +1582,18 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       } : null,
     };
   },
-  async issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult> {
-    const payload = await request<FederationTicketPayload>(baseUrl, "/auth/federation/tickets", {
+  async authorizeOIDC(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationResult> {
+    const payload = await request<OIDCAuthorizationPayload>(baseUrl, "/oauth2/authorize", {
       method: "POST",
       body: {
         client_id: input.clientId,
         redirect_uri: input.redirectUri,
         state: input.state,
+        response_type: input.responseType,
+        scope: input.scope,
+        code_challenge: input.codeChallenge,
+        code_challenge_method: input.codeChallengeMethod,
+        nonce: input.nonce,
       },
     });
     return {
