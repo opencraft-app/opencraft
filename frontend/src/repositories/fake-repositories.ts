@@ -864,12 +864,12 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
         paymentMethods = paymentMethods.filter((method) => method.contractCode !== contractCode);
       },
-      async getFederationAuthorizationContext(input) {
+      async getOIDCAuthorizationContext(input) {
         await wait(NETWORK_DELAY_MS / 2);
         const session = readStoredAuthSession();
         return {
           ...input,
-          clientDisplayName: "LightVela Personal Site",
+          clientDisplayName: "LightVela Sites",
           currentSession: session ? {
             user: {
               id: session.user.id,
@@ -881,13 +881,13 @@ export const createFakeRepositories = (): Repositories => {
           } : null,
         };
       },
-      async issueFederationTicket(input) {
+      async authorizeOIDC(input) {
         await wait(NETWORK_DELAY_MS / 2);
         if (!readStoredAuthSession()) {
           throw new Error("未登录或登录已失效。");
         }
         const redirectUrl = new URL(input.redirectUri);
-        redirectUrl.searchParams.set("ticket", "fake-federation-ticket");
+        redirectUrl.searchParams.set("code", "fake-oidc-code");
         if (input.state) {
           redirectUrl.searchParams.set("state", input.state);
         }

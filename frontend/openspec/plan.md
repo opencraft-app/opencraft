@@ -657,6 +657,19 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 
 ---
 
+# 统一 OIDC 站点鉴权 Active Plan
+
+**Status:** 实现中。
+
+**Confirmed callbacks:**
+
+- `https://sites-auth.lightvela.tech/auth/lightvela/callback`
+- `https://sites-auth.lightvela.site/auth/lightvela/callback`
+
+- [x] 完成 `changes/2026-08-24-oidc-site-auth-plan.md` 的 UserAuth、frontend、site-gateway、CTL 实现和验证。
+
+---
+
 # 移动端微信登录复制链接引导 Implementation Plan
 
 **Status:** 实现与验证完成，已提交 MR。

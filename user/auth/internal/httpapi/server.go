@@ -14,6 +14,7 @@ import (
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/federation"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/oidc"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
@@ -42,6 +43,7 @@ type ServerConfig struct {
 	ShadowTencentCallbackToken string
 	TrustedProxyCIDRs          []string
 	Federation                 *FederationConfig
+	OIDC                       *OIDCConfig
 }
 
 type FederationConfig struct {
@@ -53,6 +55,10 @@ type FederationConfig struct {
 	DelegatedSessionTTL time.Duration
 	SwitchTTL           time.Duration
 	Now                 func() time.Time
+}
+
+type OIDCConfig struct {
+	Provider *oidc.Provider
 }
 
 func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
@@ -77,6 +83,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.tatRegisterIssuer = config.TATRegisterIssuer
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	handler.federation = config.Federation
+	handler.oidc = config.OIDC
 	registerOAuthRoutes(router, handler)
 	registerFederationSwitchRoutes(router, handler)
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)
