@@ -1,6 +1,6 @@
 import React from "react";
 import { MemoryRouter } from "react-router-dom";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import i18n from "@/i18n";
@@ -111,6 +111,16 @@ describe("global changelog skill package entry", () => {
       </MemoryRouter>,
     );
 
+    const augustSection = screen.getByText("August 2026").closest("section");
+    const julySection = screen.getByText("July 2026").closest("section");
+    expect(augustSection).not.toBeNull();
+    expect(julySection).not.toBeNull();
+    expect(
+      within(augustSection!).queryByRole("heading", { name: "Ready-Made Automation Templates" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(julySection!).getByRole("heading", { name: "Ready-Made Automation Templates" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "LightVela Now Supports Custom Persona File Uploads" }),
     ).not.toBeInTheDocument();
