@@ -21,6 +21,7 @@ vi.mock("@/lib/region", () => ({
   isCN: false,
   isGlobal: true,
   DEFAULT_LOCALE: "en-US",
+  readLocaleFromPath: vi.fn(() => "en-US"),
 }));
 
 const repositories = {

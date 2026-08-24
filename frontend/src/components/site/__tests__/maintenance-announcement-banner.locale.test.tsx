@@ -39,7 +39,25 @@ afterEach(() => {
 });
 
 describe("MaintenanceAnnouncementBanner route locale", () => {
+  it("renders the Aug 22 maintenance window in English on the global homepage", async () => {
+    vi.mocked(Date.now).mockReturnValue(Date.UTC(2026, 7, 22, 12, 0, 0));
+
+    render(
+      <LocaleOverrideProvider locale="en-US">
+        <MaintenanceAnnouncementBanner />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        /LightVela will upgrade the Hermes Agent version from 22:00 on Aug 22, 2026 to 06:00 the next day \(SGT\)/,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders the global homepage announcement from the route locale", async () => {
+    vi.mocked(Date.now).mockReturnValue(Date.UTC(2026, 7, 23, 0, 0, 0));
+
     render(
       <LocaleOverrideProvider locale="en-US">
         <MaintenanceAnnouncementBanner />

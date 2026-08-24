@@ -34,7 +34,8 @@ export const RESET_BLOCK_REASON = {
 
 export type ResetBlockReason = (typeof RESET_BLOCK_REASON)[keyof typeof RESET_BLOCK_REASON];
 
-export const ACLI_RESET_COMMAND = "acli backend upgrade-start --blueprint-id lhbp-lyx28qje --wait=true --force=true";
+export const ACLI_RESET_COMMAND =
+  "acli bundle-update && acli backend upgrade-start --blueprint-id latest --wait=true --force=true";
 
 export function getResetBlockReason(
   activeBot: ResettableBot | undefined,

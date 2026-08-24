@@ -2026,6 +2026,7 @@ function formatDeliverFallback(deliver: string, t: ReturnType<typeof useT>): str
 function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): string {
   if (platform === "qqbot") return "QQ";
   if (platform === "wecom") return t("企业微信");
+  if (platform === "dingtalk") return t("钉钉");
   if (platform === "feishu") return t("飞书");
   if (platform === "weixin") return isGlobal ? "WeChat" : t("微信");
   if (platform === "telegram") return "Telegram";
@@ -2519,6 +2520,13 @@ const GLOBAL_NOTIFICATION_CHANNELS = [
   { key: "wecom", labelKey: "企业微信", comingSoon: false },
   { key: "feishu", labelKey: "飞书", comingSoon: false },
 ] as const;
+const DOMESTIC_NOTIFICATION_CHANNELS = [
+  { key: "weixin", labelKey: "微信", comingSoon: false },
+  { key: "qqbot", label: "QQ", comingSoon: false },
+  { key: "wecom", labelKey: "企业微信", comingSoon: false },
+  { key: "feishu", labelKey: "飞书", comingSoon: false },
+  { key: "dingtalk", labelKey: "钉钉", comingSoon: false },
+] as const;
 
 function getWeekdayLabels(t: ReturnType<typeof useT>): Record<number, string> {
   return {
@@ -2964,9 +2972,17 @@ export function AutomationFormModal({
   const weixinBlockedByFrequency = kind === "interval"
     && intervalMinutes < 15
     && isHermesNotificationChannelConfigured(enabledChannels, "weixin");
-  const hasAvailableNotificationChannel = !isGlobal || GLOBAL_NOTIFICATION_CHANNELS.some(
-    ({ key, comingSoon }) => isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon),
-  );
+  const availableNotificationChannels = (isGlobal
+    ? GLOBAL_NOTIFICATION_CHANNELS
+    : DOMESTIC_NOTIFICATION_CHANNELS
+  ).map((channel) => ({
+    key: channel.key,
+    label: "label" in channel ? channel.label : t(channel.labelKey),
+    comingSoon: channel.comingSoon,
+  })).filter(({ key, comingSoon }) => (
+    isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon)
+  ));
+  const hasAvailableNotificationChannel = availableNotificationChannels.length > 0;
 
   useEffect(() => {
     if (!weixinBlockedByFrequency) return;
@@ -3465,7 +3481,7 @@ export function AutomationFormModal({
         {/* 通知方式（多选；不勾任何 = 仅本地写日志）
          *
          * 区域可见性：
-         *   - 国内站（isCN）：weixin / qqbot / feishu
+         *   - 国内站（isCN）：weixin / qqbot / wecom / feishu / dingtalk
          *   - 国际站（isGlobal）：telegram / whatsapp / discord / slack / weixin / qqbot / wecom / feishu
          */}
         <div className="mt-4">
@@ -3479,37 +3495,17 @@ export function AutomationFormModal({
             </div>
           ) : (
             <div className="mt-2 space-y-1">
-              {(() => {
-                const channels = isGlobal
-                  ? GLOBAL_NOTIFICATION_CHANNELS.map((channel) => ({
-                    key: channel.key,
-                    label: "label" in channel ? channel.label : t(channel.labelKey),
-                    comingSoon: channel.comingSoon,
-                  })).filter(({ key, comingSoon }) => (
-                    isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon)
-                  ))
-                  : ([
-                    { key: "weixin", label: t("微信"), comingSoon: false },
-                    { key: "qqbot", label: "QQ", comingSoon: false },
-                    { key: "wecom", label: t("企业微信"), comingSoon: false },
-                    { key: "feishu", label: t("飞书"), comingSoon: false },
-                  ] as const);
-
-                if (!hasAvailableNotificationChannel) {
-                  return (
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-black/45" style={MODAL_HELP_TEXT_STYLE}>
-                      <span>{t("暂无已配置的通知通道。")}</span>
-                      <a
-                        href="/agents/channels/"
-                        className="inline-flex items-center rounded-md border border-black/10 px-2 py-1 text-[12px] font-medium text-black/70 transition hover:bg-black/[0.04]"
-                      >
-                        {t("去通道配置")}
-                      </a>
-                    </div>
-                  );
-                }
-
-                return channels.map(({ key, label, comingSoon }) => {
+              {!hasAvailableNotificationChannel ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-black/45" style={MODAL_HELP_TEXT_STYLE}>
+                  <span>{t("暂无已配置的通知通道。")}</span>
+                  <a
+                    href="/agents/channels/"
+                    className="inline-flex items-center rounded-md border border-black/10 px-2 py-1 text-[12px] font-medium text-black/70 transition hover:bg-black/[0.04]"
+                  >
+                    {t("前往通道配置")}
+                  </a>
+                </div>
+              ) : availableNotificationChannels.map(({ key, label, comingSoon }) => {
               // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
               const configured = isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon);
               const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
@@ -3668,8 +3664,7 @@ export function AutomationFormModal({
 
                 </div>
               );
-            });
-              })()}
+              })}
             </div>
           )}
           {hasAvailableNotificationChannel ? (
@@ -4799,6 +4794,7 @@ function normalizeHermesChannelKey(channel: string): string {
   if (["wechat", "weixin", "openclaw-weixin", "openclaw-wechat"].includes(normalized)) return "weixin";
   if (["qq", "qqbot", "qq-bot", "qqbotplugin", "openclaw-qqbot", "openclaw-qq"].includes(normalized)) return "qqbot";
   if (["wecom", "wework", "work-weixin", "work-wechat", "openclaw-wecom"].includes(normalized)) return "wecom";
+  if (["dingtalk", "openclaw-dingtalk"].includes(normalized)) return "dingtalk";
   if (["feishu", "lark", "larksuite", "openclaw-feishu", "openclaw-lark"].includes(normalized)) return "feishu";
   if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
   if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";

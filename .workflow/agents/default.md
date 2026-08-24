@@ -44,15 +44,16 @@ model: glm-5.2-ioa
 
 ### 阶段一：规划（Planning）
 
-**绑定 Skill：** `brainstorming` → `writing-plans`
+**绑定 Skill：** S 级使用最小确认 → `writing-plans`；M/L 级使用 `brainstorming` → `writing-plans`
 
 1. 上下文加载 + 状态检测（按 G18 启动拦截执行）
 2. 分支管理（按 G8 确保不在主分支上开发）
 3. 需求规模判定（S / M / L）
-   - S：单文件改动 / bug 修复，可在当前 single_agent 模式继续
-   - M / L：建议切换到多 Agent 模式（参见 `.workflow/agents/leader.md`）
-4. 调用 `brainstorming` skill 进行需求分析
-5. 调用 `writing-plans` skill 输出 OpenSpec 文件：`proposal.md` / `spec.md` / `plan.md`
+   - S：默认用于单一目标、局部边界内的低风险修复、文案、样式或小交互；不按文件数量或 checkbox 数量机械判断
+   - M：确实需要正式方案、多个阶段验证或相互依赖状态/接口时使用，默认单 Agent；命中团队协作条件时才切换
+   - L：切换到多 Agent 模式（参见 `.workflow/agents/leader.md`）
+4. S 级完成一次最小需求确认；M/L 级调用 `brainstorming` skill 进行需求分析
+5. 调用 `writing-plans` skill 输出 OpenSpec 文件：S 级仅 `plan.md`，M/L 级输出 `proposal.md` / `spec.md` / `plan.md`
 6. 等待用户确认 plan.md
 7. **通过 `.workflow/checklists/gate-planning.md` 门禁检查**
 
@@ -93,10 +94,10 @@ model: glm-5.2-ioa
 
 ## M / L 级需求升级提示
 
-当判定需求为 M 级或 L 级时，应提示用户切换到多 Agent 模式：
+当判定需求为 L 级时，必须切换到多 Agent 模式；M 级默认继续单 Agent，只有命中团队协作条件或用户明确要求时才切换：
 
-> 📊 需求规模判定为 **{M/L} 级**。
-> 根据 `.workflow/project.yaml` 工作流策略，M/L 级需求建议使用多 Agent 模式（leader + planner + developer + reviewer）。
+> 📊 需求规模判定为 **L 级**。
+> 根据 `.workflow/project.yaml` 工作流策略，L 级需求使用多 Agent 模式（leader + planner + developer + reviewer）。
 > 请确认是否切换：
 >
 > 1. 切换到多 Agent 模式（推荐，符合工作流定义）
@@ -119,7 +120,7 @@ model: glm-5.2-ioa
 | # | 检查项 |
 |---|--------|
 | 1 | 已按优先级加载初始化文件 |
-| 2 | brainstorming / writing-plans skill 已真实调用（G12） |
+| 2 | M/L 级 brainstorming（如适用）与 writing-plans skill 已真实调用（G12） |
 | 3 | plan.md 含有效任务列表（G3） |
 | 4 | 每个任务都有对应的测试（如适用） |
 | 5 | 所有测试 / 类型检查 / lint 通过 |

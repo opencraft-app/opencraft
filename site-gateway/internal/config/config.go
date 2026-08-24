@@ -2,7 +2,6 @@
 package config
 
 import (
-	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -31,12 +30,17 @@ type Config struct {
 	CTLInternalToken string
 	CTLTimeout       time.Duration
 
-	AuthMode       AuthMode
-	AuthIssuer     string
-	AuthAudience   string
-	AuthStartURL   string
-	AuthPublicKeys map[string]ed25519.PublicKey
-	AuthSessionTTL time.Duration
+	AuthMode             AuthMode
+	AuthEndpointsEnabled bool
+	AuthFixedHost        string
+	AuthOIDCIssuer       string
+	AuthOIDCAuthorizeURL string
+	AuthOIDCTokenURL     string
+	AuthOIDCJWKSURL      string
+	AuthOIDCClientID     string
+	AuthAEADActiveKeyID  string
+	AuthAEADKeys         map[string][]byte
+	AuthSessionTTL       time.Duration
 
 	SitePositiveTTL time.Duration
 	SiteNegativeTTL time.Duration
@@ -61,16 +65,25 @@ const (
 
 func FromEnv() (Config, error) {
 	cfg := Config{
-		Addr:             getEnv("SITE_GATEWAY_ADDR", ":8080"),
-		AdminAddr:        getEnv("SITE_GATEWAY_ADMIN_ADDR", ":8081"),
-		RootDomains:      splitList(os.Getenv("SITE_GATEWAY_ROOT_DOMAINS")),
-		COSBucket:        strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_BUCKET")),
-		COSRegion:        strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_REGION")),
-		CTLBaseURL:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_CTL_BASE_URL")),
-		CTLInternalToken: strings.TrimSpace(os.Getenv("WEBSITE_INTERNAL_API_TOKEN")),
-		AuthIssuer:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_ISSUER")),
-		AuthAudience:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_AUDIENCE")),
-		AuthStartURL:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_START_URL")),
+		Addr:                 getEnv("SITE_GATEWAY_ADDR", ":8080"),
+		AdminAddr:            getEnv("SITE_GATEWAY_ADMIN_ADDR", ":8081"),
+		RootDomains:          splitList(os.Getenv("SITE_GATEWAY_ROOT_DOMAINS")),
+		COSBucket:            strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_BUCKET")),
+		COSRegion:            strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_REGION")),
+		CTLBaseURL:           strings.TrimSpace(os.Getenv("SITE_GATEWAY_CTL_BASE_URL")),
+		CTLInternalToken:     strings.TrimSpace(os.Getenv("WEBSITE_INTERNAL_API_TOKEN")),
+		AuthEndpointsEnabled: false,
+		AuthFixedHost:        strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_FIXED_HOST")),
+		AuthOIDCIssuer:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_ISSUER")),
+		AuthOIDCAuthorizeURL: strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL")),
+		AuthOIDCTokenURL:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL")),
+		AuthOIDCJWKSURL:      strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL")),
+		AuthOIDCClientID:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID")),
+		AuthAEADActiveKeyID:  strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID")),
+	}
+	var err error
+	if cfg.AuthEndpointsEnabled, err = getBool("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", false); err != nil {
+		return Config{}, err
 	}
 	switch AuthMode(getEnv("SITE_GATEWAY_AUTH_MODE", string(AuthModePublic))) {
 	case AuthModePublic:
@@ -80,8 +93,7 @@ func FromEnv() (Config, error) {
 	default:
 		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_MODE must be public or required")
 	}
-	var err error
-	if cfg.AuthPublicKeys, err = parseAuthPublicKeys(os.Getenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS")); err != nil {
+	if cfg.AuthAEADKeys, err = parseAuthAEADKeys(os.Getenv("SITE_GATEWAY_AUTH_AEAD_KEYS")); err != nil {
 		return Config{}, err
 	}
 	cfg.COSSecretID, cfg.COSSecretKey = cosSecrets()
@@ -129,29 +141,64 @@ func FromEnv() (Config, error) {
 	if cfg.CTLBaseURL == "" {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_CTL_BASE_URL is required")
 	}
-	if cfg.AuthMode == AuthModeRequired {
-		if cfg.AuthIssuer == "" {
-			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_ISSUER is required when auth mode is required")
+	if cfg.AuthMode == AuthModeRequired && !cfg.AuthEndpointsEnabled {
+		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_MODE=required requires SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED=true")
+	}
+	if cfg.AuthEndpointsEnabled {
+		if cfg.AuthFixedHost == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_FIXED_HOST is required when auth endpoints are enabled")
 		}
-		if cfg.AuthAudience == "" {
-			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_AUDIENCE is required when auth mode is required")
+		if !isBareHost(cfg.AuthFixedHost) {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_FIXED_HOST must be a bare host when auth endpoints are enabled")
 		}
-		if cfg.AuthStartURL == "" {
-			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_START_URL is required when auth mode is required")
+		if !isAllowedFixedAuthHost(cfg.AuthFixedHost) {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_FIXED_HOST must be one of sites-auth.lightvela.tech or sites-auth.lightvela.site")
 		}
-		startURL, err := url.Parse(cfg.AuthStartURL)
-		if err != nil || startURL.Scheme != "https" || startURL.Host == "" {
-			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_START_URL must be an https URL when auth mode is required")
+		if cfg.AuthOIDCIssuer == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_ISSUER is required when auth endpoints are enabled")
 		}
-		if len(cfg.AuthPublicKeys) == 0 {
-			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS is required when auth mode is required")
+		if !isHTTPSURL(cfg.AuthOIDCIssuer) {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_ISSUER must be an https URL when auth endpoints are enabled")
+		}
+		if cfg.AuthOIDCAuthorizeURL == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL is required when auth endpoints are enabled")
+		}
+		if !isHTTPSURL(cfg.AuthOIDCAuthorizeURL) {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL must be an https URL when auth endpoints are enabled")
+		}
+		if cfg.AuthOIDCTokenURL == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL is required when auth endpoints are enabled")
+		}
+		if !isHTTPSURL(cfg.AuthOIDCTokenURL) {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL must be an https URL when auth endpoints are enabled")
+		}
+		if cfg.AuthOIDCJWKSURL == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_JWKS_URL is required when auth endpoints are enabled")
+		}
+		if !isHTTPSURL(cfg.AuthOIDCJWKSURL) {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_JWKS_URL must be an https URL when auth endpoints are enabled")
+		}
+		if cfg.AuthOIDCClientID == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID is required when auth endpoints are enabled")
+		}
+		if cfg.AuthOIDCClientID != "site-gateway" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID must equal site-gateway")
+		}
+		if cfg.AuthAEADActiveKeyID == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID is required when auth endpoints are enabled")
+		}
+		if len(cfg.AuthAEADKeys) == 0 {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_AEAD_KEYS is required when auth endpoints are enabled")
+		}
+		if _, ok := cfg.AuthAEADKeys[cfg.AuthAEADActiveKeyID]; !ok {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID %q missing from SITE_GATEWAY_AUTH_AEAD_KEYS", cfg.AuthAEADActiveKeyID)
 		}
 	}
 	return cfg, nil
 }
 
-func parseAuthPublicKeys(raw string) (map[string]ed25519.PublicKey, error) {
-	keys := make(map[string]ed25519.PublicKey)
+func parseAuthAEADKeys(raw string) (map[string][]byte, error) {
+	keys := make(map[string][]byte)
 	for _, entry := range strings.Split(raw, ",") {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
@@ -159,19 +206,41 @@ func parseAuthPublicKeys(raw string) (map[string]ed25519.PublicKey, error) {
 		}
 		parts := strings.SplitN(entry, "=", 2)
 		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS entry must be kid=base64url-public-key")
+			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_AEAD_KEYS entry must be kid=base64url-key")
 		}
 		kid := strings.TrimSpace(parts[0])
 		if _, exists := keys[kid]; exists {
-			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS contains duplicate kid %q", kid)
+			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_AEAD_KEYS contains duplicate kid %q", kid)
 		}
 		decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(parts[1]))
-		if err != nil || len(decoded) != ed25519.PublicKeySize {
-			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_PUBLIC_KEYS key %q must be a base64url Ed25519 public key", kid)
+		if err != nil || len(decoded) < 32 {
+			return nil, fmt.Errorf("SITE_GATEWAY_AUTH_AEAD_KEYS key %q must be a base64url key with at least 32 bytes", kid)
 		}
-		keys[kid] = ed25519.PublicKey(decoded)
+		keys[kid] = decoded
 	}
 	return keys, nil
+}
+
+func isHTTPSURL(raw string) bool {
+	parsed, err := url.Parse(raw)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != ""
+}
+
+func isBareHost(raw string) bool {
+	if raw == "" || strings.Contains(raw, "/") || strings.Contains(raw, "://") {
+		return false
+	}
+	parsed, err := url.Parse("https://" + raw)
+	return err == nil && parsed.Host == raw
+}
+
+func isAllowedFixedAuthHost(raw string) bool {
+	switch raw {
+	case "sites-auth.lightvela.tech", "sites-auth.lightvela.site":
+		return true
+	default:
+		return false
+	}
 }
 
 // cosSecrets 读取站点桶的访问凭据。
@@ -239,6 +308,18 @@ func getDuration(key string, fallback time.Duration) (time.Duration, error) {
 	}
 	if value <= 0 {
 		return 0, fmt.Errorf("%s must be positive", key)
+	}
+	return value, nil
+}
+
+func getBool(key string, fallback bool) (bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", key, err)
 	}
 	return value, nil
 }

@@ -226,6 +226,44 @@ class ReleaseBundleContractTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertRegex(values.get(key, ""), r"^ENC\[")
 
+    def test_sgprod_ctl_routes_new_users_and_bot_creates_to_johor_velagw(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BASE_URL"), "https://token-admin.lightvela.ai")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_BASE_URL"), "https://token.lightvela.ai/v1")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"), "auto")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "*")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST"), "*")
+        for key in ("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN"):
+            with self.subTest(key=key):
+                self.assertRegex(values.get(key, ""), r"^ENC\[")
+
+        kustomization = yaml.safe_load(
+            (REPO_ROOT / "argocd/services/ctl/sgprod/kustomization.yaml").read_text()
+        )
+        forbidden = {
+            "CTL_LLMGATEWAY_BASE_URL",
+            "CTL_LLMGATEWAY_NEW_USER_ALLOWLIST",
+            "CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST",
+        }
+        for patch in kustomization.get("patches") or []:
+            if not isinstance(patch, dict) or "patch" not in patch:
+                continue
+            target_name = (patch.get("target") or {}).get("name")
+            operations = yaml.safe_load(patch["patch"]) or []
+            overridden = {
+                (operation.get("value") or {}).get("name")
+                for operation in operations
+                if isinstance(operation.get("value"), dict)
+            }
+            self.assertTrue(
+                forbidden.isdisjoint(overridden),
+                f"{target_name} must consume sgprod VelaGW settings from ctl-runtime-secrets",
+            )
+
     def test_playground_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
 
@@ -452,7 +490,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
             deploy_kustomization["patches"],
         )
 
-        deploy_patch = yaml.safe_load((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        deploy_documents = list(
+            yaml.safe_load_all((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        )
+        deploy_config_map = next(
+            document for document in deploy_documents if document.get("kind") == "ConfigMap"
+        )
+        self.assertEqual(deploy_config_map["data"], data)
+
+        deploy_patch = next(
+            document for document in deploy_documents if document.get("kind") == "Deployment"
+        )
         token_env = next(
             env
             for env in deploy_patch["spec"]["template"]["spec"]["containers"][0]["env"]

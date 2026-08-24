@@ -51,15 +51,25 @@ func main() {
 		NegativeTTL:   cfg.SiteNegativeTTL,
 		MaxEntries:    cfg.SiteCacheMaxEntries,
 	})
-	var authVerifier *siteauth.Verifier
-	if cfg.AuthMode == config.AuthModeRequired {
-		authVerifier, err = siteauth.NewVerifier(siteauth.Config{
-			Issuer:     cfg.AuthIssuer,
-			Audience:   cfg.AuthAudience,
-			PublicKeys: cfg.AuthPublicKeys,
+	var authCodec *siteauth.TokenCodec
+	var idTokenVerifier *siteauth.IDTokenVerifier
+	if cfg.AuthEndpointsEnabled {
+		authCodec, err = siteauth.NewTokenCodec(siteauth.TokenCodecConfig{
+			ActiveKeyID: cfg.AuthAEADActiveKeyID,
+			Keys:        cfg.AuthAEADKeys,
+			SessionTTL:  cfg.AuthSessionTTL,
 		})
 		if err != nil {
-			log.Fatalf("build site auth verifier: %v", err)
+			log.Fatalf("build site auth token codec: %v", err)
+		}
+		idTokenVerifier, err = siteauth.NewIDTokenVerifier(siteauth.IDTokenVerifierConfig{
+			Issuer:     cfg.AuthOIDCIssuer,
+			ClientID:   cfg.AuthOIDCClientID,
+			JWKSURL:    cfg.AuthOIDCJWKSURL,
+			HTTPClient: &http.Client{Timeout: cfg.CTLTimeout},
+		})
+		if err != nil {
+			log.Fatalf("build site auth id token verifier: %v", err)
 		}
 	}
 
@@ -70,10 +80,16 @@ func main() {
 		Origin:       fetcher,
 		Usage:        meter,
 		Auth: httpapi.AuthOptions{
-			Required:   cfg.AuthMode == config.AuthModeRequired,
-			StartURL:   cfg.AuthStartURL,
-			SessionTTL: cfg.AuthSessionTTL,
-			Verifier:   authVerifier,
+			Required:         cfg.AuthMode == config.AuthModeRequired,
+			EndpointsEnabled: cfg.AuthEndpointsEnabled,
+			FixedAuthHost:    cfg.AuthFixedHost,
+			AuthorizeURL:     cfg.AuthOIDCAuthorizeURL,
+			TokenURL:         cfg.AuthOIDCTokenURL,
+			ClientID:         cfg.AuthOIDCClientID,
+			SessionTTL:       cfg.AuthSessionTTL,
+			TokenCodec:       authCodec,
+			IDTokens:         idTokenVerifier,
+			HTTPClient:       &http.Client{Timeout: cfg.CTLTimeout},
 		},
 	})
 

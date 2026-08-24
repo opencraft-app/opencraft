@@ -131,9 +131,10 @@ import {
 } from "@/pages/marketing/agent-reset-config";
 import { toast } from "@/lib/toast";
 import { isPaidBillingEnabled } from "@/lib/billing-flow";
-import { getPassExpiryReminder } from "@/lib/pass-renewal";
+import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renewal";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
@@ -165,6 +166,27 @@ const AgentChannelPanel = lazy(() =>
 const AgentModelPanel = lazy(() =>
   import("@/pages/marketing/agent-model-panel").then((module) => ({ default: module.ModelPanel })),
 );
+
+type Translate = (text: string, options?: Record<string, unknown>) => string;
+
+function getPassExpiryReminderCopy(reminder: PassExpiryReminder, t: Translate) {
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const oneHourMs = 60 * 60 * 1000;
+  const label = reminder.label === "临近到期" ? t("临近到期") : t("即将到期");
+
+  if (reminder.remainingMs < oneDayMs) {
+    const hours = Math.ceil(reminder.remainingMs / oneHourMs);
+    return {
+      label,
+      tooltip: hours < 1 ? t("剩余不足 1 小时到期") : t("剩余 {{hours}} 小时到期", { hours }),
+    };
+  }
+
+  return {
+    label,
+    tooltip: t("剩余 {{days}} 天到期", { days: Math.ceil(reminder.remainingMs / oneDayMs) }),
+  };
+}
 
 type TeaSdkInstanceInfo = {
   InstanceId: string;
@@ -860,7 +882,7 @@ const MemoryPanel = ({
             </div>
             <MemoryEntries
               entries={visibleEntries}
-              emptyText={activeTab === "memory" ? t("暂无 Agent 记忆。") : t("暂无用户画像。")}
+              emptyText={activeTab === "memory" ? t("MEMORY.md 文件为空") : t("USER.md 文件为空")}
             />
           </div>
         </>
@@ -2878,7 +2900,8 @@ export const AgentSettingsPage = ({
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
-  const paidBillingActive = isCN && isPaidBillingEnabled(paidBillingEnabled);
+  const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
   const {
     commandLifecycle: automationModelCommandLifecycle,
     confirmationDialog: automationModelSwitchDialog,
@@ -2974,6 +2997,7 @@ export const AgentSettingsPage = ({
     () => (paidBillingActive ? getPassExpiryReminder(activePass) : null),
     [activePass, paidBillingActive],
   );
+  const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
   const passExpiryTooltipId = useId();
   const handleRenewPassSuccess = useCallback(async () => {
     setRenewPassModalOpen(false);
@@ -4717,7 +4741,7 @@ export const AgentSettingsPage = ({
       )}
 
       <AnimatePresence>
-        {renewPassModalOpen && activePass && (
+        {renewPassModalOpen && renewalAvailable && activePass && (
           <RenewPassModal
             key="renew-pass"
             pass={activePass}
@@ -4738,7 +4762,7 @@ export const AgentSettingsPage = ({
         <BirthCertificateModal bot={activeBot} onClose={() => setShowBirthCert(false)} />
       )}
 
-      <main className="lw-app-top-pad flex-grow bg-white">
+      <main className="lw-app-top-pad flex-grow bg-white pb-6">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
           {isInitialBotsLoading && (
@@ -4868,50 +4892,63 @@ export const AgentSettingsPage = ({
                               )}
                               {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                             </span>
-                            {passExpiryReminder && activePass && (
-                              <span className="group relative inline-flex">
-                                <button
-                                  type="button"
-                                  className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
-                                  aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminder.tooltip })}
-                                  aria-describedby={passExpiryTooltipId}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setRenewPassModalOpen(true);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter" || event.key === " ") {
+                            {passExpiryReminder && passExpiryReminderCopy && activePass && (
+                              renewalAvailable ? (
+                                <span className="group relative inline-flex">
+                                  <button
+                                    type="button"
+                                    className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
+                                    aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminderCopy.tooltip })}
+                                    aria-describedby={passExpiryTooltipId}
+                                    onClick={(event) => {
                                       event.stopPropagation();
-                                    }
-                                  }}
-                                >
-                                  <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                                  {passExpiryReminder.label}
-                                </button>
-                                <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-                                  <span
-                                    id={passExpiryTooltipId}
-                                    role="tooltip"
-                                    className="pointer-events-auto relative whitespace-nowrap rounded-[6px] border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
-                                  >
-                                    {passExpiryReminder.tooltip}
-                                    <button
-                                      type="button"
-                                      className="ml-2 cursor-pointer font-semibold text-[#A86108] underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A86108]/30"
-                                      onClick={(event) => {
+                                      setRenewPassModalOpen(true);
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter" || event.key === " ") {
                                         event.stopPropagation();
-                                        setRenewPassModalOpen(true);
-                                      }}
-                                    >
-                                      {t("立即续费")}
-                                    </button>
+                                      }
+                                    }}
+                                  >
+                                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                    {passExpiryReminderCopy.label}
+                                  </button>
+                                  <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                                     <span
-                                      aria-hidden="true"
-                                      className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
-                                    />
+                                      id={passExpiryTooltipId}
+                                      role="tooltip"
+                                      className="pointer-events-auto relative whitespace-nowrap rounded-[6px] border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
+                                    >
+                                      {passExpiryReminderCopy.tooltip}
+                                      <button
+                                        type="button"
+                                        className="ml-2 cursor-pointer font-semibold text-[#A86108] underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A86108]/30"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setRenewPassModalOpen(true);
+                                        }}
+                                      >
+                                        {t("立即续费")}
+                                      </button>
+                                      <span
+                                        aria-hidden="true"
+                                        className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
+                                      />
+                                    </span>
                                   </span>
                                 </span>
-                              </span>
+                              ) : (
+                                <span className="relative inline-flex">
+                                  <RenewComingSoonButton
+                                    label={passExpiryReminderCopy.label}
+                                    tooltip={t("敬请期待")}
+                                    ariaLabel={t("套餐{{time}}，敬请期待", { time: passExpiryReminderCopy.tooltip })}
+                                    icon={<AlertTriangle className="h-3 w-3" aria-hidden="true" />}
+                                    className={cn("lv-agent-renewal-badge cursor-not-allowed is-disabled", `is-${passExpiryReminder.level}`)}
+                                    tooltipClassName="whitespace-nowrap"
+                                  />
+                                </span>
+                              )
                             )}
                           </span>
                         </span>

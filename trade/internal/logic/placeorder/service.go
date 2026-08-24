@@ -1469,7 +1469,7 @@ func (s *Service) generatePayURLByCloudAPI(
 	}
 	contractOrder := 0
 	var shadowCredentials *shadowclient.TemporaryCredentials
-	if order.OrderType == store.OrderTypeCreate {
+	if order.OrderType == store.OrderTypeCreate || order.OrderType == store.OrderTypeRenew {
 		if s.deps.PaymentContextClient != nil {
 			paymentContextCtx, paymentContextCancel := context.WithTimeout(ctx, paymentContextLookupTimeout)
 			paymentContext, contextErr := s.deps.PaymentContextClient.GetPaymentContextByExternalUserID(paymentContextCtx, externalUserID)

@@ -10,6 +10,10 @@ const channelPanelSource = readFileSync(
   join(process.cwd(), "src/pages/marketing/agent-channel-panel.tsx"),
   "utf8",
 );
+const standardPanelStyles = readFileSync(
+  join(process.cwd(), "src/pages/marketing/agent-config/standard-panel.css"),
+  "utf8",
+);
 
 // hermes 侧 `gateway qr-url` 的 platform enum 已含 dingtalk（lib/dingtalk_qr.sh 设备码流），
 // 前端需保证钉钉扫码入口不被 fallback、且保留手动 Client ID / Secret 绑定路径。
@@ -35,5 +39,17 @@ describe("DingTalk channel QR binding", () => {
     expect(channelPanelSource).toContain(
       "dingtalk: 'https://lightvela.ai/docs/configuration/channel-dingtalk',",
     );
+  });
+
+  it("uses the standard dialog radius instead of the Skills panel private token", () => {
+    const channelButtonRule = standardPanelStyles.match(
+      /\.lh-std-channel-panel__btn-outline,\s*\.lh-std-channel-panel__btn-primary\s*\{([^}]*)\}/,
+    )?.[1];
+
+    expect(channelButtonRule).toBeDefined();
+    expect(channelButtonRule).toMatch(
+      /border-radius\s*:\s*var\(--lh-std-radius-lg\)\s*;/,
+    );
+    expect(channelButtonRule).not.toContain("--lh-std-skill-radius");
   });
 });

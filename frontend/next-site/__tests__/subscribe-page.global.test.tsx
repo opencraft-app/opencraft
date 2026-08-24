@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /* 国际站（isGlobal）专属用例。
@@ -54,11 +55,23 @@ vi.mock("@/contexts/session-context", () => ({
 
 /* 登录态会走 listBundles 拉真实套餐；回跳用例要靠它拿到 planList 才能解析 pay_plan。 */
 const listBundlesMock = vi.fn();
+const createPassOrderMock = vi.fn();
+const getPassOrderUrlMock = vi.fn();
+const createDianshiPassOrderAndPayMock = vi.fn();
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
+    auth: {
+      /* master 新版 LoginModal 会在渲染时读取国际站 OAuth 地址；本组用例不触发登录跳转。 */
+      getOAuthStartUrl: vi.fn((provider: string) =>
+        `https://lightvela.ai/auth/oauth/${provider}/start`,
+      ),
+    },
     plans: {
       listBundles: listBundlesMock,
+      createPassOrder: createPassOrderMock,
+      getPassOrderUrl: getPassOrderUrlMock,
+      createDianshiPassOrderAndPay: createDianshiPassOrderAndPayMock,
     },
   }),
 }));
@@ -70,7 +83,10 @@ vi.mock("@/contexts/runtime-config-context", () => ({
 
 vi.mock("@/i18n/t", () => ({
   useLocaleOverride: () => null,
-  useT: () => (zh: string) => zh,
+  useT: () => (zh: string, opts?: Record<string, unknown>) =>
+    zh.replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) =>
+      opts?.[key] == null ? placeholder : String(opts[key]),
+    ),
 }));
 
 const navigateMock = vi.fn();
@@ -115,6 +131,8 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
   bundle_sales_total_count: 100,
 });
 
+const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
+
 const resetState = () => {
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
@@ -127,8 +145,17 @@ const resetState = () => {
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
   listBundlesMock.mockReset();
+  createPassOrderMock.mockReset();
+  getPassOrderUrlMock.mockReset();
+  createDianshiPassOrderAndPayMock.mockReset();
   /* listBundles 直接返回 Bundle[]，不是 { bundles } 包装。 */
   listBundlesMock.mockResolvedValue([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
+  createPassOrderMock.mockResolvedValue({ deal_names: ["deal-01"], auth_code: "auth-01" });
+  getPassOrderUrlMock.mockResolvedValue({
+    need_charge: 1,
+    pay_url: "https://pay.example.com/order-01",
+  });
+  createDianshiPassOrderAndPayMock.mockResolvedValue({ deal_name: "deal-zero-01" });
   navigateMock.mockReset();
   window.sessionStorage.clear();
   delete (window as Window & { show?: unknown }).show;
@@ -167,6 +194,437 @@ describe("SubscribePage paid billing visibility", () => {
 
     expect(await screen.findByRole("tablist", { name: "付费时长" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即订阅" })).toBeEnabled();
+  });
+});
+
+/**
+ * 国际站 AI 增强版档位促销标签。
+ *
+ * 背景：定价页是 2 张卡（启航 / 巡游），标准版与 AI 增强版是**卡内积分档位切换**
+ * （启航 100 ⇄ 4500、巡游 200 ⇄ 10000），切换即整份 PlanInfo 替换，promoTag 随之联动。
+ *
+ * 改动前国际站 AI 档位无任何标签，成因两处：
+ *   1. `if (!isGlobal)` 把国际站排除在硬编码 AI 标签之外；
+ *   2. 后端 discount 单位不一致（`0<d<1` 与 `50` 两套口径），百分数下发时两分支均不命中。
+ *
+ * 现口径：show() 门禁打开后，未登录使用静态美元价；国际站启航 AI「首单免费 3 天」、
+ * 巡游 AI「首月 6 折」，登录后仍使用后端询价。
+ */
+describe("SubscribePage intl AI promo tags", () => {
+  beforeEach(resetState);
+  afterEach(cleanup);
+
+  const getCreditTab = (credit: string) => {
+    const tab = screen
+      .getAllByRole("tab")
+      .find((item) => (item.textContent?.trim() ?? "").startsWith(credit));
+    if (!tab) throw new Error(`Missing ${credit} credit tab`);
+    return tab;
+  };
+
+  const getTierCard = (name: string): HTMLElement => {
+    const heading = screen.getByRole("heading", { name });
+    const cardContent = heading.parentElement?.parentElement?.parentElement;
+    if (!cardContent) throw new Error(`Missing ${name} card content`);
+    return cardContent;
+  };
+
+  const expectTierPrice = (
+    card: HTMLElement,
+    displayedPrice: string,
+    originalPrice: string,
+  ): void => {
+    expect(card).toHaveTextContent(displayedPrice);
+    expect(card).toHaveTextContent(originalPrice);
+  };
+
+  const buildLaunchAiQuote = (realTotalCost: number) => ({
+    ...buildBundle("bundle_launch_ai_01", "启航 Launch"),
+    credit: 4500,
+    price: {
+      price: 1000,
+      total_cost: 1000,
+      real_total_cost: realTotalCost,
+      currency: "USD",
+      discount: realTotalCost / 1000,
+    },
+  });
+
+  const buildLaunchStandardQuote = (realTotalCost: number) => ({
+    ...buildBundle("bundle_launch_01", "启航 Launch"),
+    bundle_type: "general",
+    credit: 100,
+    price: {
+      price: 650,
+      total_cost: 650,
+      real_total_cost: realTotalCost,
+      currency: "USD",
+      discount: realTotalCost / 650,
+    },
+  });
+
+  const renderLoggedPricing = async (expectedPrice: string): Promise<void> => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await waitFor(() => expect(listBundlesMock).toHaveBeenCalled());
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+    /* 等真实询价替换掉 show() 前占位套餐，避免后续否定断言在 loading 阶段假绿。 */
+    await waitFor(() => expect(getTierCard("启航 Launch")).toHaveTextContent(expectedPrice));
+  };
+
+  /* show() 只负责公开付费定价；公开后未登录不请求后端，月付四档全部消费前端静态美元表。 */
+  it("shows the anonymous monthly static pricing matrix after show()", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
+    expect(listBundlesMock).not.toHaveBeenCalled();
+
+    const launchCard = getTierCard("启航 Launch");
+    const cruiseCard = getTierCard("巡游 Cruise");
+
+    /* 默认标准版：启航新用户 14 天免费；巡游首购 5 折。 */
+    expectTierPrice(launchCard, "$0.00", "$6.50");
+    expect(within(launchCard).getByText("首单免费 14 天")).toBeInTheDocument();
+    expectTierPrice(cruiseCard, "$7.00", "$14.00");
+    expect(within(cruiseCard).getByText("首月 5 折")).toBeInTheDocument();
+
+    /* AI 版：启航新用户 3 天免费；巡游首购 6 折。 */
+    await user.click(getCreditTab("4500"));
+    await user.click(getCreditTab("10000"));
+    await waitFor(() => {
+      expectTierPrice(launchCard, "$0.00", "$10.00");
+      expectTierPrice(cruiseCard, "$13.80", "$23.00");
+    });
+    expect(within(launchCard).getByText("首单免费 3 天")).toBeInTheDocument();
+    expect(within(cruiseCard).getByText("首月 6 折")).toBeInTheDocument();
+  });
+
+  /* 季付四档只展示静态季付折后价，不继承月付首期免费/首购标签。 */
+  it("shows the anonymous quarterly static pricing matrix after show()", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "季付" }));
+
+    const launchCard = getTierCard("启航 Launch");
+    const cruiseCard = getTierCard("巡游 Cruise");
+    await waitFor(() => {
+      expectTierPrice(launchCard, "$18.07", "$19.50");
+      expectTierPrice(cruiseCard, "$38.92", "$42.00");
+    });
+    expect(within(launchCard).getByText("9.3折")).toBeInTheDocument();
+    expect(within(cruiseCard).getByText("9.3折")).toBeInTheDocument();
+
+    await user.click(getCreditTab("4500"));
+    await user.click(getCreditTab("10000"));
+    await waitFor(() => {
+      expectTierPrice(launchCard, "$29.43", "$30.00");
+      expectTierPrice(cruiseCard, "$67.69", "$69.00");
+    });
+    expect(within(launchCard).getByText("9.8折")).toBeInTheDocument();
+    expect(within(cruiseCard).getByText("9.8折")).toBeInTheDocument();
+    expect(listBundlesMock).not.toHaveBeenCalled();
+  });
+
+  /* 启航 AI 档位 CTA 与同卡标准版档位对齐为「免费订阅」（en-US 显示 "Free Trial"）；
+     巡游 AI 档位不在此范围，维持「立即订阅」。 */
+  it("aligns the Launch AI tier CTA with the standard tier", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    /* 启航标准版档位基线：CTA 已为「免费订阅」 */
+    await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "免费订阅" })).toBeInTheDocument();
+
+    /* 切到启航 AI 档位：CTA 仍为「免费订阅」，不得回落到「立即订阅」 */
+    await user.click(getCreditTab("4500"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "免费订阅" })).toBeInTheDocument(),
+    );
+    expect(await screen.findByText("首单免费 3 天")).toBeInTheDocument();
+
+    /* 巡游 AI 档位不对齐「免费订阅」，维持「立即订阅」 */
+    await user.click(getCreditTab("10000"));
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "立即订阅" }).length).toBeGreaterThan(0),
+    );
+  });
+
+  /* 切回标准版档位后标签必须还原，避免 promoTag 残留。 */
+  it("restores the standard tier label when switching back", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
+
+    await user.click(getCreditTab("4500"));
+    expect(await screen.findByText("首单免费 3 天")).toBeInTheDocument();
+
+    await user.click(getCreditTab("100"));
+    await waitFor(() =>
+      expect(screen.queryByText("首单免费 3 天")).not.toBeInTheDocument(),
+    );
+  });
+
+  /**
+   * 季付无首期免费试用（季付价即实付价），CTA 必须收口为「立即订阅」，
+   * 且不展示免费试用 hover 提示；月付促销标签也不得出现。
+   */
+  it("drops the free-trial CTA on the quarterly duration", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    /* 月付基线：启航标准版为「免费订阅」 */
+    expect(await screen.findByRole("button", { name: "免费订阅" })).toBeInTheDocument();
+
+    /* 切季付：全部卡 CTA 收口为「立即订阅」，不得再有「免费订阅」 */
+    await user.click(screen.getByRole("tab", { name: "季付" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "免费订阅" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getAllByRole("button", { name: "立即订阅" }).length).toBeGreaterThan(0);
+
+    /* 季付不得出现月付首期促销标签 */
+    expect(screen.queryByText("首单免费 3 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+
+    /* 切到启航 AI 档位，季付下同样不得回落到「免费订阅」 */
+    await user.click(getCreditTab("4500"));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "免费订阅" })).not.toBeInTheDocument(),
+    );
+  });
+
+  /**
+   * 折扣角标必须走 i18n，不能用模板字符串拼中文「折」。
+   * 本文件 useT 桩直接回显中文 key，故断言 key 形态 `{{discount}}折` 已被插值，
+   * 且不出现未经 t() 处理的裸中文折扣（改动前为 `9.8折` 这类硬编码）。
+   */
+  it("routes the quarterly discount tag through i18n", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
+    await user.click(screen.getByRole("tab", { name: "季付" }));
+
+    /* 源码不得再出现 `${...}折` 这类模板字符串拼接（会绕过 i18n 直接输出中文）。
+       只匹配插值紧接「折」的形态，避免误伤注释里的「季付统一享 8.5 折优惠」等说明文字。 */
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const source = readFileSync(join(process.cwd(), "next-site/subscribe-page.tsx"), "utf8");
+    expect(source).not.toMatch(/\$\{[^}]*\}折/);
+    /* 折扣角标改为经 t() 的插值 key */
+    expect(source).toContain('t("{{discount}}折"');
+    /* 中文折扣率必须保留 1 位小数（×100/10），不得写成 ×1000/100 引入第 2 位小数：
+       否则会出现「9.83折」这类与改动前不一致的展示精度。 */
+    expect(source).toContain("discount: Math.round(rate * 100) / 10");
+    expect(source).not.toContain("Math.round(rate * 1000) / 100");
+  });
+
+  /**
+   * 已登录态：走后端询价。后端下发**百分数** discount=60 —— 改动前该值
+   * 既不命中 `0<d<1` 分支、也不命中 `=== 50` 分支，落到 else 后被 `!isGlobal` 拦掉，
+   * 导致巡游 AI 丢标签。现在标签不依赖 discount，必须稳定展示。
+   */
+  it("labels the Cruise AI tier regardless of the backend discount unit", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([
+      {
+        ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
+        price: {
+          price: 4900,
+          total_cost: 4900,
+          real_total_cost: 2940,
+          currency: "USD",
+          /* 百分数口径（非 0<d<1），改动前会导致标签丢失 */
+          discount: 60,
+        },
+      },
+    ]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    expect(await screen.findByText("首月 6 折")).toBeInTheDocument();
+  });
+
+  it("does not promise a free trial for a chargeable logged-in Launch AI quote", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+    listBundlesMock.mockResolvedValue([buildLaunchAiQuote(1000)]);
+
+    await renderLoggedPricing("10.00");
+
+    const subscribeButton = await screen.findByRole("button", { name: "立即订阅" });
+    expect(subscribeButton).toBeEnabled();
+    expect(screen.queryByText("首单免费 3 天")).not.toBeInTheDocument();
+    await user.click(subscribeButton);
+    expect(await screen.findByText("信用卡")).toBeInTheDocument();
+    expect(createDianshiPassOrderAndPayMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the free-trial label and zero-order confirmation for a zero-amount Launch AI quote", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+    listBundlesMock.mockResolvedValue([buildLaunchAiQuote(0)]);
+
+    await renderLoggedPricing("0.00");
+
+    expect(await screen.findByText("首单免费 3 天")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "免费订阅" }));
+    expect(await screen.findByRole("button", { name: "确认开通" })).toBeInTheDocument();
+    expect(screen.queryByText("信用卡")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认开通" }));
+    await waitFor(() => expect(createDianshiPassOrderAndPayMock).toHaveBeenCalledWith({
+      bundle_id: "bundle_launch_ai_01",
+      period: 1,
+      time_unit: "m",
+    }));
+    expect(createPassOrderMock).not.toHaveBeenCalled();
+  });
+
+  it("does not invent a discount for a subscribed full-price Launch AI quote", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    openClawState.isSubscribed = true;
+    listBundlesMock.mockResolvedValue([buildLaunchAiQuote(1000)]);
+
+    await renderLoggedPricing("10.00");
+
+    expect(screen.queryByText("首单免费 3 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首月 6 折")).not.toBeInTheDocument();
+  });
+
+  it("keeps a real backend discount for a subscribed Launch AI quote", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    openClawState.isSubscribed = true;
+    listBundlesMock.mockResolvedValue([buildLaunchAiQuote(600)]);
+
+    await renderLoggedPricing("6.00");
+
+    expect(screen.queryByText("首单免费 3 天")).not.toBeInTheDocument();
+    expect(await screen.findByText("首月 6 折")).toBeInTheDocument();
+  });
+
+  it("does not invent a first-order benefit for a subscribed full-price standard quote", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    openClawState.isSubscribed = true;
+    listBundlesMock.mockResolvedValue([buildLaunchStandardQuote(650)]);
+
+    await renderLoggedPricing("6.50");
+
+    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("5折")).not.toBeInTheDocument();
+  });
+
+  it("falls back to paid checkout for a chargeable new-user standard quote", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+    listBundlesMock.mockResolvedValue([buildLaunchStandardQuote(650)]);
+
+    await renderLoggedPricing("6.50");
+
+    const subscribeButton = screen.getByRole("button", { name: "立即订阅" });
+    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+    await user.click(subscribeButton);
+    expect(await screen.findByText("信用卡")).toBeInTheDocument();
+  });
+
+  it("guides global isolated pass users to manage the plan instead of renewing", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+    listBundlesMock.mockResolvedValue([buildLaunchAiQuote(1000)]);
+    createPassOrderMock.mockRejectedValueOnce(buildBillingError("PASS_ISOLATED", "pass isolated"));
+
+    await renderLoggedPricing("10.00");
+
+    await user.click(await screen.findByRole("button", { name: "立即订阅" }));
+    expect(await screen.findByText("信用卡")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "支付 $10.00" }));
+
+    expect(await screen.findByText("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByRole("link", { name: "前往续费" })).not.toBeInTheDocument();
+  });
+
+  it("does not promise renewal for global expired pass users", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+    listBundlesMock.mockResolvedValue([buildLaunchAiQuote(1000)]);
+    createPassOrderMock.mockRejectedValueOnce(buildBillingError("PASS_EXPIRED", "pass expired"));
+
+    await renderLoggedPricing("10.00");
+
+    await user.click(await screen.findByRole("button", { name: "立即订阅" }));
+    expect(await screen.findByText("信用卡")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "支付 $10.00" }));
+
+    expect(await screen.findByText("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByRole("link", { name: "前往续费" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a real backend discount for a subscribed standard quote", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    openClawState.isSubscribed = true;
+    listBundlesMock.mockResolvedValue([buildLaunchStandardQuote(325)]);
+
+    await renderLoggedPricing("3.25");
+
+    expect(await screen.findByText("5折")).toBeInTheDocument();
+    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
   });
 });
 

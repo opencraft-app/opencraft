@@ -1,7 +1,6 @@
 package config
 
 import (
-	"crypto/ed25519"
 	"encoding/base64"
 	"testing"
 	"time"
@@ -21,42 +20,92 @@ func setRequired(t *testing.T) {
 func TestFromEnvAuthDefaultsToPublic(t *testing.T) {
 	setRequired(t)
 	t.Setenv("SITE_GATEWAY_AUTH_MODE", "")
-	t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "")
-	t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "")
-	t.Setenv("SITE_GATEWAY_AUTH_START_URL", "")
-	t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "")
 
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if cfg.AuthMode != AuthModePublic || cfg.AuthSessionTTL != 5*time.Minute {
+	if cfg.AuthMode != AuthModePublic || cfg.AuthSessionTTL != 5*time.Minute || cfg.AuthEndpointsEnabled {
 		t.Fatalf("auth config = %+v", cfg)
 	}
 }
 
-func TestFromEnvRequiredAuthParsesPublicKeys(t *testing.T) {
+func TestFromEnvRequiredAuthParsesOIDCAndAEADConfig(t *testing.T) {
 	setRequired(t)
-	publicKey, _, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
-	t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "lightvela-auth")
-	t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "lightvela-site-gateway")
-	t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/site-access/start")
-	t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString(publicKey))
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
 	t.Setenv("SITE_GATEWAY_AUTH_SESSION_TTL", "5m")
 
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if cfg.AuthMode != AuthModeRequired || cfg.AuthIssuer != "lightvela-auth" || cfg.AuthAudience != "lightvela-site-gateway" || cfg.AuthSessionTTL != 5*time.Minute {
+	if cfg.AuthMode != AuthModeRequired || !cfg.AuthEndpointsEnabled || cfg.AuthFixedHost != "sites-auth.lightvela.tech" || cfg.AuthOIDCIssuer != "https://userauth.lightvela.tech" || cfg.AuthOIDCClientID != "site-gateway" || cfg.AuthAEADActiveKeyID != "key-1" || cfg.AuthSessionTTL != 5*time.Minute {
 		t.Fatalf("auth config = %+v", cfg)
 	}
-	if len(cfg.AuthPublicKeys) != 1 || len(cfg.AuthPublicKeys["key-1"]) != ed25519.PublicKeySize {
-		t.Fatalf("public keys = %+v", cfg.AuthPublicKeys)
+	if len(cfg.AuthAEADKeys) != 1 || len(cfg.AuthAEADKeys["key-1"]) != 32 {
+		t.Fatalf("aead keys = %+v", cfg.AuthAEADKeys)
+	}
+}
+
+func TestFromEnvRequiredAuthAcceptsSiteFixedHost(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.site")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.site")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.site/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.site/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.site/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.AuthFixedHost != "sites-auth.lightvela.site" {
+		t.Fatalf("fixed host = %q", cfg.AuthFixedHost)
+	}
+}
+
+func TestFromEnvPublicModeCanEnableOIDCEndpoints(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "public")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.site")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.site")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.site/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.site/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.site/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.AuthMode != AuthModePublic || !cfg.AuthEndpointsEnabled || cfg.AuthFixedHost != "sites-auth.lightvela.site" {
+		t.Fatalf("auth config = %+v", cfg)
 	}
 }
 
@@ -71,37 +120,93 @@ func TestFromEnvRejectsAuthSessionTTLOverFiveMinutes(t *testing.T) {
 func TestFromEnvRequiredAuthRejectsIncompleteConfig(t *testing.T) {
 	setRequired(t)
 	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
 	for _, tc := range []struct {
 		name string
 		set  func()
 	}{
+		{name: "fixed host", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+		}},
 		{name: "issuer", set: func() {
-			t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "aud")
-			t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/start")
-			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1=bad")
+			t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
 		}},
-		{name: "audience", set: func() {
-			t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "iss")
-			t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/start")
-			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1=bad")
+		{name: "authorize url", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
 		}},
-		{name: "start url", set: func() {
-			t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "iss")
-			t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "aud")
-			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1=bad")
+		{name: "token url", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
 		}},
-		{name: "public keys", set: func() {
-			t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "iss")
-			t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "aud")
-			t.Setenv("SITE_GATEWAY_AUTH_START_URL", "https://lightvela.com/start")
-			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "bad")
+		{name: "jwks url", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+		}},
+		{name: "client id", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+		}},
+		{name: "active key id", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+		}},
+		{name: "aead keys", set: func() {
+			t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "")
-			t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "")
-			t.Setenv("SITE_GATEWAY_AUTH_START_URL", "")
-			t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "")
+			t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "")
+			t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "")
+			t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "")
 			tc.set()
 			if _, err := FromEnv(); err == nil {
 				t.Fatal("incomplete required auth config unexpectedly succeeded")
@@ -110,20 +215,75 @@ func TestFromEnvRequiredAuthRejectsIncompleteConfig(t *testing.T) {
 	}
 }
 
-func TestFromEnvRequiredAuthRejectsInsecureStartURL(t *testing.T) {
+func TestFromEnvRequiredAuthRejectsInsecureOIDCConfig(t *testing.T) {
 	setRequired(t)
-	publicKey, _, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
-	t.Setenv("SITE_GATEWAY_AUTH_ISSUER", "lightvela-auth")
-	t.Setenv("SITE_GATEWAY_AUTH_AUDIENCE", "lightvela-site-gateway")
-	t.Setenv("SITE_GATEWAY_AUTH_START_URL", "http://lightvela.com/site-access/start")
-	t.Setenv("SITE_GATEWAY_AUTH_PUBLIC_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString(publicKey))
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "https://sites-auth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "http://userauth.lightvela.tech/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
 
 	if _, err := FromEnv(); err == nil {
-		t.Fatal("insecure auth start URL unexpectedly succeeded")
+		t.Fatal("insecure auth config unexpectedly succeeded")
+	}
+}
+
+func TestFromEnvRequiredAuthRejectsUnexpectedFixedHost(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.example.com")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("unexpected fixed host unexpectedly succeeded")
+	}
+}
+
+func TestFromEnvRequiredAuthRejectsUnexpectedClientID(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "another-client")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("unexpected client id unexpectedly succeeded")
+	}
+}
+
+func TestFromEnvRejectsRequiredModeWhenAuthEndpointsAreDisabled(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "false")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://userauth.lightvela.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://userauth.lightvela.tech/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://userauth.lightvela.tech/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://userauth.lightvela.tech/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("required mode without auth endpoints unexpectedly succeeded")
 	}
 }
 

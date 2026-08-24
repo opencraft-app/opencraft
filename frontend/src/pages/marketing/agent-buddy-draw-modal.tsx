@@ -83,8 +83,10 @@ interface DrawSoulModalProps {
   /** 印尼语：在英文体系内替换展示文案，未覆盖的条目回退英文 */
   useIndonesianSoulData?: boolean;
   onClose: () => void;
-  /** 抽中并点击 "使用此人设" 时回调 */
+  /** 抽中并点击“添加，暂不注入”时回调 */
   onPick: (soul: SkillHubSoul) => void;
+  /** 抽中并点击“注入此人设”时回调；返回是否真实写入 Agent 成功 */
+  onInject: (soul: SkillHubSoul) => Promise<boolean>;
 }
 
 export function DrawSoulModal({
@@ -96,6 +98,7 @@ export function DrawSoulModal({
   useIndonesianSoulData = false,
   onClose,
   onPick,
+  onInject,
 }: DrawSoulModalProps) {
   const t = useT();
   const [phase, setPhase] = useState<Phase>("idle");
@@ -105,6 +108,7 @@ export function DrawSoulModal({
   const [winnerIdx, setWinnerIdx] = useState<number>(0);
   /** 抽中的 Soul */
   const [winnerSoul, setWinnerSoul] = useState<SkillHubSoul | null>(null);
+  const [isInjecting, setIsInjecting] = useState(false);
 
   const stepRef = useRef(0);
   const tickerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -115,6 +119,7 @@ export function DrawSoulModal({
       setPhase("idle");
       setActiveIdx(-1);
       setWinnerSoul(null);
+      setIsInjecting(false);
       stepRef.current = 0;
       if (tickerRef.current) {
         clearTimeout(tickerRef.current);
@@ -192,6 +197,21 @@ export function DrawSoulModal({
     }
   }, [onPick, winnerSoul]);
 
+  const handleInject = useCallback(async () => {
+    if (!winnerSoul || isInjecting) return;
+    setIsInjecting(true);
+    try {
+      const injected = await onInject(winnerSoul);
+      if (!injected) setIsInjecting(false);
+    } catch {
+      setIsInjecting(false);
+    }
+  }, [isInjecting, onInject, winnerSoul]);
+
+  const handleClose = useCallback(() => {
+    if (!isInjecting) onClose();
+  }, [isInjecting, onClose]);
+
   if (!open) return null;
 
   const isRevealed = phase === "revealed" && winnerSoul !== null;
@@ -200,7 +220,7 @@ export function DrawSoulModal({
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
-      onClick={onClose}
+      onClick={handleClose}
     >
       {/* 弹窗主体：reveal 阶段切换为 soul.color 全屏渐变背景 */}
       <motion.div
@@ -213,7 +233,11 @@ export function DrawSoulModal({
         transition={{ duration: 0.4, ease: "easeOut" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <CloseButton onClick={onClose} variant={isRevealed ? "light" : "default"} />
+        <CloseButton
+          onClick={handleClose}
+          disabled={isInjecting}
+          variant={isRevealed ? "light" : "default"}
+        />
 
         <AnimatePresence mode="wait">
           {!isRevealed ? (
@@ -283,6 +307,8 @@ export function DrawSoulModal({
             <RevealPanel
               soul={winnerSoul!}
               onConfirm={handleConfirm}
+              onInject={handleInject}
+              isInjecting={isInjecting}
               useEnglishSoulData={useEnglishSoulData}
               useGlobalChineseSoulData={useGlobalChineseSoulData}
               useIndonesianSoulData={useIndonesianSoulData}
@@ -298,9 +324,11 @@ export function DrawSoulModal({
 
 function CloseButton({
   onClick,
+  disabled = false,
   variant = "default",
 }: {
   onClick: () => void;
+  disabled?: boolean;
   variant?: "default" | "light";
 }) {
   const t = useT();
@@ -308,8 +336,9 @@ function CloseButton({
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-label={t("关闭")}
-      className="absolute right-4 top-4 z-20 transition-opacity hover:opacity-60"
+      className="absolute right-4 top-4 z-20 transition-opacity hover:opacity-60 disabled:cursor-not-allowed disabled:opacity-50"
       style={{
         color: variant === "light" ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.55)",
       }}
@@ -439,12 +468,16 @@ function FlipCard({ isActive, soul }: { isActive: boolean; soul: SkillHubSoul | 
 function RevealPanel({
   soul,
   onConfirm,
+  onInject,
+  isInjecting,
   useEnglishSoulData,
   useGlobalChineseSoulData,
   useIndonesianSoulData = false,
 }: {
   soul: SkillHubSoul;
   onConfirm: () => void;
+  onInject: () => void;
+  isInjecting: boolean;
   useEnglishSoulData: boolean;
   useGlobalChineseSoulData: boolean;
   useIndonesianSoulData?: boolean;
@@ -482,19 +515,30 @@ function RevealPanel({
           onInterpret={() => setInterpretOpen(true)}
         />
 
-        <div className="mt-3 flex w-full justify-center">
+        <div className="mt-3 grid w-full max-w-[336px] grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={onConfirm}
-            className="h-12 w-full max-w-[336px] rounded-full font-semibold transition-colors hover:bg-black"
+            onClick={onInject}
+            disabled={isInjecting}
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full font-semibold transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
             style={{
               background: "#202020",
               color: "#ffffff",
               boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
-              fontSize: "16px",
+              fontSize: "14px",
             }}
           >
-            {t("添加此人设")}
+            {isInjecting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isInjecting ? t("注入中…") : t("注入此人设")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isInjecting}
+            className="h-12 w-full rounded-full border border-black/15 bg-white font-semibold text-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ fontSize: "14px" }}
+          >
+            {t("添加，暂不注入")}
           </button>
         </div>
       </div>

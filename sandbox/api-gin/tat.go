@@ -1,17 +1,21 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"cvm-mock-e2b/internal/core"
 	"cvm-mock-e2b/internal/provider"
 )
+
+const defaultTATSessionDeadline = 5 * time.Second
 
 const (
 	maxTATScriptBytes          = 64 * 1024
@@ -102,6 +106,10 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if inst.State != core.StateAllocated || inst.PoolID != sb.PoolID {
+		c.JSON(http.StatusConflict, gin.H{"error": "sandbox instance is not allocated"})
+		return
+	}
 	if strings.TrimSpace(inst.CloudID) == "" {
 		c.JSON(http.StatusConflict, gin.H{"error": "sandbox instance missing cloud id"})
 		return
@@ -111,11 +119,30 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 		return
 	}
 
-	session, err := h.terminals.StartTerminalSession(c.Request.Context(), sb.Region, inst.CloudID)
+	deadlineCtx, cancel := context.WithTimeout(c.Request.Context(), h.terminalSessionTimeout())
+	defer cancel()
+	session, err := h.terminals.StartTerminalSession(deadlineCtx, sb.Region, inst.CloudID)
 	if err != nil {
+		if deadlineCtx.Err() != nil {
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "tat session start timed out"})
+			return
+		}
 		log.Printf("[api] tat session start failed sandbox=%s pool=%s instance=%s cloud=%s region=%s err=%v",
 			sb.ID, pool.ID, inst.ID, inst.CloudID, sb.Region, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if deadlineCtx.Err() != nil {
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "tat session start timed out"})
+		return
+	}
+	allocationUnchanged := h.sameSandboxAllocation(deadlineCtx, sb, inst)
+	if deadlineCtx.Err() != nil {
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "tat session start timed out"})
+		return
+	}
+	if !allocationUnchanged {
+		c.JSON(http.StatusConflict, gin.H{"error": "sandbox allocation changed"})
 		return
 	}
 	if strings.TrimSpace(session.Region) == "" {
@@ -144,6 +171,28 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 		Username:       session.Username,
 		WorkingDir:     session.WorkingDir,
 	})
+}
+
+func (h *handler) terminalSessionTimeout() time.Duration {
+	if h.tatSessionTimeout > 0 {
+		return h.tatSessionTimeout
+	}
+	return defaultTATSessionDeadline
+}
+
+func (h *handler) sameSandboxAllocation(ctx context.Context, expectedSandbox core.Sandbox, expectedInstance core.Instance) bool {
+	sb, err := h.svc.GetSandbox(ctx, expectedSandbox.ID)
+	if err != nil || sb.InstanceID != expectedSandbox.InstanceID || sb.PoolID != expectedSandbox.PoolID {
+		return false
+	}
+	inst, err := h.svc.GetInstance(ctx, sb.InstanceID)
+	if err != nil {
+		return false
+	}
+	return inst.State == core.StateAllocated &&
+		inst.ID == expectedInstance.ID &&
+		inst.PoolID == expectedInstance.PoolID &&
+		inst.CloudID == expectedInstance.CloudID
 }
 
 func (h *handler) postSandboxTATCommand(c *gin.Context) {

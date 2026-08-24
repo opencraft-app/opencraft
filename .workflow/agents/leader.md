@@ -4,7 +4,7 @@ model: glm-5.2-ioa
 
 # Leader Agent — 多 Agent 模式总控
 
-> 适用于：M / L 级需求的多 Agent 模式
+> 适用于：L 级需求，或 M 级明确选择团队协作时的多 Agent 模式
 > 定位：总控调度、阶段审核、团队协调
 
 ---
