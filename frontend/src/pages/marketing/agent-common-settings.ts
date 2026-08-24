@@ -54,15 +54,6 @@ export type HermesCommonSettingValidation =
   | { ok: true; value: HermesCommonSettingValue }
   | { ok: false; reason: "empty" | "number" | "integer" | "range" | "type" };
 
-export const HERMES_COMMON_SETTING_DEFAULTS: HermesCommonSettingsValues = {
-  persistentMemory: true,
-  userProfile: true,
-  autoCompression: true,
-  compressionThreshold: 0.5,
-  compressionTarget: 0.2,
-  protectedRecentMessages: 20,
-};
-
 const HERMES_CONFIG_KEY_BY_SETTING: Record<HermesCommonSettingKey, string> = {
   persistentMemory: "memory.memory_enabled",
   userProfile: "memory.user_profile_enabled",

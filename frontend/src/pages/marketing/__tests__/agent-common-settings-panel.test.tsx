@@ -182,6 +182,30 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.queryByText("管理常用的记忆与上下文行为。修改后会自动重启 Gateway 并验证结果。")).toBeNull();
   });
 
+  it("uses theme tokens for product-blue actions and focus rings", async () => {
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    const memorySwitch = await screen.findByRole("switch", { name: "长期记忆" });
+    expect(memorySwitch).toHaveClass("bg-[var(--lw-accent)]");
+
+    const memoryLink = screen.getAllByRole("link", { name: "查看内容" })[0]!;
+    expect(memoryLink).toHaveClass("text-[var(--lw-accent)]", "focus-visible:ring-[var(--ring)]");
+
+    const editButton = screen.getByRole("button", { name: "编辑压缩触发阈值" });
+    expect(editButton).toHaveClass("focus-visible:ring-[var(--ring)]");
+    expect(document.body.innerHTML).not.toContain("#0052D9");
+    expect(document.body.innerHTML).not.toContain("#003cab");
+  });
+
   it("separates memory and context groups with one divider without adding row dividers", async () => {
     render(
       <AgentCommonSettingsPanel
@@ -482,6 +506,30 @@ describe("AgentCommonSettingsPanel", () => {
     })));
   });
 
+  it("exits numeric edit mode when Enter normalizes to the current value", async () => {
+    const user = userEvent.setup();
+    const saveSetting = vi.fn();
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "编辑保留最近消息" }));
+    const input = screen.getByRole("spinbutton", { name: "保留最近消息" });
+    await user.clear(input);
+    await user.type(input, "020{Enter}");
+
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(screen.queryByRole("spinbutton", { name: "保留最近消息" })).toBeNull();
+    expect(screen.getByTestId("common-setting-value-protectedRecentMessages")).toHaveTextContent("20");
+  });
+
   it("keeps invalid numeric input in edit mode and prevents saving", async () => {
     const user = userEvent.setup();
     const saveSetting = vi.fn();
@@ -528,7 +576,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.getByTestId("common-setting-value-compressionThreshold")).toHaveTextContent("0.5");
   });
 
-  it("keeps defaulted values visually quiet and makes unsupported values readonly", async () => {
+  it("keeps defaulted values visually quiet and does not present fallback values for unsupported settings", async () => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
@@ -537,7 +585,7 @@ describe("AgentCommonSettingsPanel", () => {
         getGatewayRestartCommand={async () => "restart"}
         loadSettings={async () => baseSnapshot({
           defaultedKeys: ["compressionThreshold"],
-          unsupportedKeys: ["userProfile"],
+          unsupportedKeys: ["userProfile", "compressionThreshold"],
         })}
         saveSetting={vi.fn()}
       />,
@@ -545,8 +593,11 @@ describe("AgentCommonSettingsPanel", () => {
 
     await screen.findByRole("heading", { name: "压缩触发阈值" });
     expect(screen.queryByText("沿用系统默认")).toBeNull();
-    expect(screen.getByRole("switch", { name: "用户画像" })).toBeDisabled();
-    expect(screen.getByText("当前 Agent 版本不支持")).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: "用户画像" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "编辑压缩触发阈值" })).toBeNull();
+    expect(screen.getByTestId("common-setting-unsupported-userProfile")).toHaveTextContent("—");
+    expect(screen.getByTestId("common-setting-unsupported-compressionThreshold")).toHaveTextContent("—");
+    expect(screen.getAllByText("当前 Agent 版本不支持")).toHaveLength(2);
   });
 
   it("allows a defaulted setting to be saved without showing a default hint", async () => {
@@ -596,11 +647,51 @@ describe("AgentCommonSettingsPanel", () => {
     const profileSwitch = screen.getByRole("switch", { name: "用户画像" });
     await user.click(memorySwitch);
     await user.click(screen.getByRole("button", { name: "确认关闭" }));
+
+    expect(memorySwitch).toBeDisabled();
+    expect(profileSwitch).toBeDisabled();
     fireEvent.click(profileSwitch);
+    expect(screen.queryByRole("heading", { name: "确认关闭「用户画像」？" })).toBeNull();
 
     expect(saveSetting).toHaveBeenCalledTimes(1);
     resolveSave?.({ status: "success", snapshot: baseSnapshot() });
     await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith("已保存"));
     expect(screen.queryByText("已保存")).toBeNull();
+  });
+
+  it("clears in-flight save state when switching to another Agent", async () => {
+    const user = userEvent.setup();
+    const saveSetting = vi.fn().mockImplementation(() => new Promise<HermesCommonSettingSaveResult>(() => {}));
+    const loadSettings = vi.fn().mockResolvedValue(baseSnapshot());
+    const { rerender } = render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    await user.click(await screen.findByRole("switch", { name: "长期记忆" }));
+    await user.click(screen.getByRole("button", { name: "确认关闭" }));
+    await waitFor(() => expect(saveSetting).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("switch", { name: "用户画像" })).toBeDisabled();
+
+    rerender(
+      <AgentCommonSettingsPanel
+        botId="bot-b"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    await waitFor(() => expect(loadSettings).toHaveBeenCalledWith(bots, "bot-b"));
+    expect(await screen.findByRole("switch", { name: "用户画像" })).toBeEnabled();
+    expect(screen.queryByText("保存中…")).toBeNull();
   });
 });

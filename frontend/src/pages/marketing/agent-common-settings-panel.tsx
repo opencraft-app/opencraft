@@ -138,9 +138,11 @@ export function AgentCommonSettingsPanel({
     setLoading(true);
     setLoadError(null);
     setSnapshot(null);
+    setSavingKey(null);
     setEditingKey(null);
     setPendingSwitchChange(null);
     setPendingResetGroup(null);
+    setResettingGroup(null);
     setFeedback(emptyFeedback());
     try {
       const next = await loadSettings(bots, botId);
@@ -223,7 +225,12 @@ export function AgentCommonSettingsPanel({
       setFieldFeedback(key, { kind: "error", message });
       return false;
     }
-    if (Object.is(snapshot.values[key], validation.value)) return false;
+    if (Object.is(snapshot.values[key], validation.value)) {
+      setDrafts((current) => ({ ...current, [key]: String(snapshot.values[key]) }));
+      setFieldFeedback(key, null);
+      setEditingKey(null);
+      return false;
+    }
     const saved = await commit(key, validation.value);
     if (saved) setEditingKey(null);
     return saved;
@@ -350,7 +357,7 @@ export function AgentCommonSettingsPanel({
                 <div className="mt-2">
                 {group.settings.map((setting) => {
                   const unsupported = snapshot.unsupportedKeys.includes(setting.key);
-                  const compressionDisabled = setting.kind === "number" && !snapshot.values.autoCompression;
+                  const compressionDisabled = !unsupported && setting.kind === "number" && !snapshot.values.autoCompression;
                   const disabled = allControlsDisabled || unsupported || compressionDisabled;
                   const fieldFeedback = feedback[setting.key];
                   const editing = editingKey === setting.key;
@@ -376,7 +383,7 @@ export function AgentCommonSettingsPanel({
                           {setting.descriptionHref && (
                             <Link
                               href={setting.descriptionHref}
-                              className="ml-2 whitespace-nowrap text-[#0052D9] hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0052D9]/25"
+                              className="ml-2 whitespace-nowrap text-[var(--lw-accent)] hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                             >
                               {t("查看内容")}
                             </Link>
@@ -384,7 +391,14 @@ export function AgentCommonSettingsPanel({
                         </p>
                       </div>
                       <div className="flex min-w-0 flex-col items-end gap-1.5">
-                        {setting.kind === "switch" ? (
+                        {unsupported ? (
+                          <span
+                            data-testid={`common-setting-unsupported-${setting.key}`}
+                            className="inline-flex min-h-6 items-center text-sm text-black/35"
+                          >
+                            —
+                          </span>
+                        ) : setting.kind === "switch" ? (
                           <button
                             type="button"
                             role="switch"
@@ -396,7 +410,7 @@ export function AgentCommonSettingsPanel({
                               label: setting.label,
                               nextValue: !Boolean(snapshot.values[setting.key]),
                             })}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${snapshot.values[setting.key] ? "bg-[#0052D9]" : "bg-black/15"} disabled:cursor-not-allowed disabled:opacity-45`}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${snapshot.values[setting.key] ? "bg-[var(--lw-accent)]" : "bg-black/15"} disabled:cursor-not-allowed disabled:opacity-45`}
                           >
                             <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition ${snapshot.values[setting.key] ? "translate-x-[1.375rem]" : "translate-x-0.5"}`} />
                           </button>
@@ -422,7 +436,7 @@ export function AgentCommonSettingsPanel({
                               aria-label={`${t("保存")}${setting.label}`}
                               disabled={disabled || !numberChanged}
                               onClick={() => void commitNumber(setting.key)}
-                              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-[#0052D9] text-white transition hover:bg-[#003cab] disabled:cursor-not-allowed disabled:opacity-35"
+                              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-[var(--lw-accent)] text-white transition hover:bg-[var(--lw-accent-hover)] disabled:cursor-not-allowed disabled:opacity-35"
                             >
                               {savingKey === setting.key ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                             </button>
@@ -462,7 +476,7 @@ export function AgentCommonSettingsPanel({
                                 setFieldFeedback(setting.key, null);
                                 setEditingKey(setting.key);
                               }}
-                              className="absolute right-2 top-0 inline-flex size-7 items-center justify-center rounded-md border border-black/10 bg-white text-black/45 opacity-100 shadow-sm transition-opacity hover:text-black/75 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0052D9]/25 disabled:cursor-not-allowed disabled:opacity-0 sm:opacity-0 sm:group-hover/value:opacity-100"
+                              className="absolute right-2 top-0 inline-flex size-7 items-center justify-center rounded-md border border-black/10 bg-white text-black/45 opacity-100 shadow-sm transition-opacity hover:text-black/75 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-0 sm:opacity-0 sm:group-hover/value:opacity-100"
                             >
                               <Pencil className="size-3.5" />
                             </button>
