@@ -4738,7 +4738,7 @@ export const AgentSettingsPage = ({
         <BirthCertificateModal bot={activeBot} onClose={() => setShowBirthCert(false)} />
       )}
 
-      <main className="lw-app-top-pad flex-grow bg-white">
+      <main className="lw-app-top-pad flex-grow bg-white pb-6">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
           {isInitialBotsLoading && (
