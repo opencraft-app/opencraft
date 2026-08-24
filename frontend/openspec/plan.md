@@ -2479,3 +2479,46 @@
 - [x] 展示修复 diff 与验证结果，等待提交确认后更新 !3180。
 
 ---
+
+# 国际站 8 月新增自动任务上游任务动态 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development to implement this S-level task.
+
+**Status:** 实现与验证完成，用户已确认提交、推送并创建 MR。
+
+**Size:** S。单一目标、静态 Changelog 局部调整，不涉及接口、权限、计费、发布或跨服务变更。
+
+**Goal:** 在国际站 2026 年 8 月更新日志中新增“自动任务支持关联上游任务”，复用国内站现有文案、四语翻译和真实功能截图。
+
+**Architecture:** 继续使用 `changelog-page.tsx` 的 `isGlobal` 编译期分支，只在国际站 8 月条目数组中复用现有 `automationUpstream` 视觉卡片。先修改国际站专项测试并确认因条目缺失而失败，再添加最小页面数据使其通过；国内站条目和其他国际站动态保持不变。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、现有中文即 key i18n。
+
+## Global Constraints
+
+- 仅新增国际站 2026 年 8 月条目；不改国内站内容、条目顺序或其他月份。
+- 英文标题沿用现有 Title Case 翻译 `Automation Tasks Can Now Link to Upstream Tasks`。
+- 复用 `lightvela-automation-upstream-task.png`，不新增或修改图片资源。
+- 生成字典只允许通过 i18n 脚本处理；若抽取后无变化，不提交字典。
+
+### Task 1: 新增国际站自动任务上游任务动态
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/global-changelog.test.tsx`
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx`
+- Verify: `frontend/src/i18n/generated/{en-US,id-ID,zh-CN,zh-Hant,zh-to-key}.json`
+
+**Acceptance:**
+- 国际站 2026 年 8 月展示上游任务标题、描述与 `automationUpstream` 图片。
+- en-US、id-ID、zh-CN、zh-Hant 均使用现有正确翻译。
+- 国际站仍不展示自定义人设和钉钉条目；国内站原有 8 月内容不回归。
+
+- [x] **Step 1: 修改国际站专项测试，断言四语言标题和现有图片，并确认 RED 原因为条目缺失。**
+- [x] **Step 2: 在国际站 8 月数组中加入 `automation-upstream-task`，复用现有中文源文案和 `automationUpstream`。**
+- [x] **Step 3: 运行国际站专项测试和国内站 Changelog 回归，确认 GREEN。**
+- [x] **Step 4: 运行 `pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`，确认最终范围。**
+- [x] **Step 5: 展示 diff 与验证证据，等待用户确认后再进入提交/MR。**
+
+---

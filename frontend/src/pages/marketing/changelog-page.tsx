@@ -283,6 +283,12 @@ function ChangelogContent() {
             month: t("2026 年 8 月"),
             entries: [
               {
+                id: "automation-upstream-task",
+                title: t("自动任务支持关联上游任务"),
+                desc: t("创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
+                visual: "automationUpstream" as const,
+              },
+              {
                 id: "skills-install-and-sources",
                 title: t("技能页面支持批量安装与来源查看"),
                 desc: t("安装多个 Skill 时可以查看实时进度，并从技能页面直接打开 ClawHub 或 skills.sh 的原始来源页面。"),
