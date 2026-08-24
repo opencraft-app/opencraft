@@ -17,6 +17,8 @@ vi.mock("@/observability/rum-user-bridge", () => ({ RumUserBridge: () => null })
 vi.mock("next/navigation", () => ({ usePathname: navigationMock.usePathname }));
 vi.mock("@/lib/region", () => ({
   DEFAULT_LOCALE: "en-US",
+  isCN: false,
+  isGlobal: true,
   readLocaleFromPath: (pathname: string) => {
     if (pathname.startsWith("/zh-hant")) return "zh-Hant";
     if (pathname.startsWith("/zh")) return "zh-CN";
@@ -63,7 +65,7 @@ describe("PublicSiteAppProviders", () => {
     expect(screen.getByTestId("cookie-consent-banner")).toBeInTheDocument();
   });
 
-  it("mounts the announcement banner with the current route locale", () => {
+  it("does not mount the announcement banner on public Next routes", () => {
     navigationMock.usePathname.mockReturnValue("/zh-hant/");
 
     render(
@@ -72,6 +74,6 @@ describe("PublicSiteAppProviders", () => {
       </PublicSiteAppProviders>,
     );
 
-    expect(screen.getByTestId("maintenance-announcement-locale")).toHaveTextContent("zh-Hant");
+    expect(screen.queryByTestId("maintenance-announcement-locale")).not.toBeInTheDocument();
   });
 });

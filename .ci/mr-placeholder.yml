@@ -62,6 +62,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
+              enableVirtualMergeBranch: false
           - name: 校验并修复 MR checkout
             shell: bash
             env:

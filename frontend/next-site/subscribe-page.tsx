@@ -3344,14 +3344,18 @@ export const SubscribePage = ({
       }
       /* 特例 3：需要走续费路径（expired/isolated） → 引导到账号页 */
       if (isPassRequiresRenewError(code)) {
-        const message = code === "PASS_ISOLATED"
-          ? t("当前套餐已进入隔离期，请前往我的账号续费恢复使用，或在账号页销毁后重新购买。")
-          : t("当前套餐已到期，请前往我的账号续费后继续使用。");
+        const message = isGlobal
+          ? code === "PASS_ISOLATED"
+            ? t("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")
+            : t("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")
+          : code === "PASS_ISOLATED"
+            ? t("当前套餐已进入隔离期，请前往我的账号续费恢复使用，或在账号页销毁后重新购买。")
+            : t("当前套餐已到期，请前往我的账号续费后继续使用。");
         setError({
           code,
           message,
           action: {
-            label: t("前往续费"),
+            label: isGlobal ? t("管理套餐") : t("前往续费"),
             href: ACCOUNT_PATH,
           },
         });

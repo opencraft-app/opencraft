@@ -1390,6 +1390,73 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 
 ---
 
+# 国际站续费入口 Coming Soon Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 国际站账号页的续费按钮置灰，不触发续费弹窗；hover/focus 时显示符合 `DESIGN.md` 的自定义 Tooltip，英文为 `Coming Soon`，中文为 `敬请期待`。
+
+**Scope:** 仅调整账号页订阅卡片续费入口和对应定向测试；国内站续费逻辑、续费弹窗、销毁套餐逻辑不变。
+
+### Task 1: 国际站续费入口置灰并增加自定义 Tooltip
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/i18n/generated/en-US.json`
+- Test: `frontend/src/pages/marketing/__tests__/account-page-renewal.global.test.tsx`
+
+**Acceptance:**
+- 国际站有可续费 pass 时仍展示续费入口，但按钮为置灰不可操作状态。
+- 国际站续费入口 hover/focus 显示自定义 Tooltip，文案随 i18n 对应为 `Coming Soon` / `敬请期待`，不使用浏览器原生 `title`。
+- 点击国际站置灰续费入口不会打开续费弹窗或发起续费请求。
+- 国内站现有“立即续费”按钮和弹窗行为保持不变。
+
+- [x] Step 1 — 增加国际站失败回归测试并确认 RED。
+- [x] Step 2 — 实现国际站置灰续费按钮与 Tooltip。
+- [x] Step 3 — 运行定向测试、类型检查、i18n 检查和 diff 检查。
+
+### Task 2: 补齐印尼语续费文案
+
+**Files:**
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Test: `frontend/src/pages/marketing/__tests__/renewal-id-ID.test.ts`
+
+**Acceptance:**
+- 新增续费、到期标签、倒计时和账号页不可续费状态文案在 `id-ID` 下均为非空印尼语。
+- 插值文案保留 `{{days}}` / `{{hours}}` / `{{time}}` 占位符，运行时能渲染 `/agents` 到期 aria-label。
+- 不修改全局 i18n fallback、`returnEmptyString` 或其他语言资源。
+
+- [x] Step 1 — 增加印尼语字典完整性和运行时插值失败测试并确认 RED。
+- [x] Step 2 — 补齐本次续费相关 9 条 `id-ID` 文案并确认 GREEN。
+- [x] Step 3 — 运行续费相关回归、类型检查、i18n 检查和 diff 检查。
+
+---
+
+# 首页计费公告下线 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 下线首页顶部 public beta / billing 公告条，不再在公共站点 provider 中挂载该公告。
+
+**Scope:** 仅移除全站公告挂载和对应 provider 测试；保留公告文档页面及 SEO/docs 链接，不删除历史公告组件文件。
+
+### Task 1: 移除 PublicSiteAppProviders 中的公告挂载
+
+**Files:**
+- Modify: `frontend/next-site/public-site-providers.tsx`
+- Modify: `frontend/next-site/__tests__/public-site-providers.test.tsx`
+
+**Acceptance:**
+- 首页和公共站点 provider 不再渲染 `MaintenanceAnnouncementBanner`。
+- Cookie consent、locale bridge 和业务 children 仍正常挂载。
+- 不修改文档公告页、不删除 i18n 资源、不影响订阅页详情链接。
+
+- [x] Step 1 — 增加失败回归测试并确认 RED。
+- [x] Step 2 — 移除公告挂载。
+- [x] Step 3 — 运行定向测试、类型检查、i18n 检查和 diff 检查。
+
+---
+
 # Agent 导航 CR 修正 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认提交和推送。

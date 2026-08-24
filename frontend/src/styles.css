@@ -360,10 +360,21 @@ a {
   background: rgb(198 123 30 / 8%);
 }
 
+.lv-agent-renewal-badge.is-disabled {
+  border-color: rgb(0 0 0 / 8%);
+  color: rgb(0 0 0 / 35%);
+  background: rgb(0 0 0 / 6%);
+}
+
 .lv-agent-renewal-badge:hover,
 .lv-agent-renewal-badge:focus-visible {
   outline: none;
   filter: saturate(1.08);
+}
+
+.lv-agent-renewal-badge.is-disabled:hover,
+.lv-agent-renewal-badge.is-disabled:focus-visible {
+  filter: none;
 }
 
 .lv-agent-actions {

@@ -131,6 +131,8 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
   bundle_sales_total_count: 100,
 });
 
+const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
+
 const resetState = () => {
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
@@ -578,6 +580,40 @@ describe("SubscribePage intl AI promo tags", () => {
     expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
     await user.click(subscribeButton);
     expect(await screen.findByText("信用卡")).toBeInTheDocument();
+  });
+
+  it("guides global isolated pass users to manage the plan instead of renewing", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+    listBundlesMock.mockResolvedValue([buildLaunchAiQuote(1000)]);
+    createPassOrderMock.mockRejectedValueOnce(buildBillingError("PASS_ISOLATED", "pass isolated"));
+
+    await renderLoggedPricing("10.00");
+
+    await user.click(await screen.findByRole("button", { name: "立即订阅" }));
+    expect(await screen.findByText("信用卡")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "支付 $10.00" }));
+
+    expect(await screen.findByText("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByRole("link", { name: "前往续费" })).not.toBeInTheDocument();
+  });
+
+  it("does not promise renewal for global expired pass users", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    const user = userEvent.setup();
+    listBundlesMock.mockResolvedValue([buildLaunchAiQuote(1000)]);
+    createPassOrderMock.mockRejectedValueOnce(buildBillingError("PASS_EXPIRED", "pass expired"));
+
+    await renderLoggedPricing("10.00");
+
+    await user.click(await screen.findByRole("button", { name: "立即订阅" }));
+    expect(await screen.findByText("信用卡")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "支付 $10.00" }));
+
+    expect(await screen.findByText("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByRole("link", { name: "前往续费" })).not.toBeInTheDocument();
   });
 
   it("keeps a real backend discount for a subscribed standard quote", async () => {
