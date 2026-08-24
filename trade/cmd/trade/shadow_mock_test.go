@@ -11,7 +11,7 @@ import (
 func TestMockShadowClient_AnyExternalUserIDReturnsFixedBinding(t *testing.T) {
 	t.Parallel()
 
-	client := newMockShadowClient()
+	client := newMockShadowClient("", "")
 	cases := []string{
 		"uin_test_001",
 		"uin_test_002",
@@ -32,16 +32,32 @@ func TestMockShadowClient_AnyExternalUserIDReturnsFixedBinding(t *testing.T) {
 			if binding.UserID != externalUserID {
 				t.Errorf("UserID echo mismatch: got %q, want %q", binding.UserID, externalUserID)
 			}
-			if binding.Uin != mockShadowUin {
-				t.Errorf("Uin: got %q, want %q", binding.Uin, mockShadowUin)
+			if binding.Uin != defaultMockShadowUin {
+				t.Errorf("Uin: got %q, want %q", binding.Uin, defaultMockShadowUin)
 			}
-			if binding.OwnerUin != mockShadowUin {
-				t.Errorf("OwnerUin: got %q, want %q", binding.OwnerUin, mockShadowUin)
+			if binding.OwnerUin != defaultMockShadowUin {
+				t.Errorf("OwnerUin: got %q, want %q", binding.OwnerUin, defaultMockShadowUin)
 			}
-			if binding.AppID != mockShadowAppID {
-				t.Errorf("AppID: got %q, want %q", binding.AppID, mockShadowAppID)
+			if binding.AppID != defaultMockShadowAppID {
+				t.Errorf("AppID: got %q, want %q", binding.AppID, defaultMockShadowAppID)
 			}
 		})
+	}
+}
+
+func TestMockShadowClient_ConfigurableBinding(t *testing.T) {
+	t.Parallel()
+
+	client := newMockShadowClient("800000294207", "251221987")
+	binding, err := client.GetBindingByExternalUserID(context.Background(), "usr_29d65f3d3692b2082e6ccbbc")
+	if err != nil {
+		t.Fatalf("GetBindingByExternalUserID() returned err: %v", err)
+	}
+	if binding.Uin != "800000294207" || binding.OwnerUin != "800000294207" {
+		t.Fatalf("mock uin mismatch: got uin=%q owner=%q", binding.Uin, binding.OwnerUin)
+	}
+	if binding.AppID != "251221987" {
+		t.Fatalf("mock appID mismatch: got %q", binding.AppID)
 	}
 }
 
@@ -50,10 +66,10 @@ func TestMockShadowClient_AnyExternalUserIDReturnsFixedBinding(t *testing.T) {
 func TestMockShadowClient_FixedConstants(t *testing.T) {
 	t.Parallel()
 
-	if mockShadowUin != "700000164995" {
-		t.Errorf("mockShadowUin changed: got %q, want %q", mockShadowUin, "700000164995")
+	if defaultMockShadowUin != "700000164995" {
+		t.Errorf("defaultMockShadowUin changed: got %q, want %q", defaultMockShadowUin, "700000164995")
 	}
-	if mockShadowAppID != "251202221" {
-		t.Errorf("mockShadowAppID changed: got %q, want %q", mockShadowAppID, "251202221")
+	if defaultMockShadowAppID != "251202221" {
+		t.Errorf("defaultMockShadowAppID changed: got %q, want %q", defaultMockShadowAppID, "251202221")
 	}
 }

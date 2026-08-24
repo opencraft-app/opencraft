@@ -237,6 +237,94 @@ func TestGetBindingByExternalUserID_CustomHTTPClient(t *testing.T) {
 	}
 }
 
+func TestResolveBindingWithBillingRetryAllowsInquiryWithRegisteredIdentity(t *testing.T) {
+	var retryCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/internal/shadow/binding":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":"shadow_binding_not_found","message":"not found"}`))
+		case "/internal/shadow/binding/state":
+			_, _ = w.Write([]byte(`{"code":"OK","data":{"user_id":"usr_1","uin":450860000003,"owner_uin":450860000003,"app_id":1374211120,"status":"failed","last_error_code":"billing_account_open_failed"}}`))
+		case "/internal/shadow/binding/retry":
+			retryCalls++
+			_, _ = w.Write([]byte(`{"code":"OK","data":{"user_id":"usr_1","uin":450860000003,"owner_uin":450860000003,"app_id":1374211120,"status":"failed","last_error_code":"billing_account_open_failed"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	binding, err := ResolveBindingWithBillingRetry(context.Background(), New(srv.URL, "token"), "usr_1", true)
+	if err != nil {
+		t.Fatalf("inquiry recovery: %v", err)
+	}
+	if binding.Uin != "450860000003" || binding.AppID != "1374211120" || retryCalls != 1 {
+		t.Fatalf("binding=%+v retry_calls=%d", binding, retryCalls)
+	}
+}
+
+func TestResolveBindingWithBillingRetryFailsClosedForOrder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/internal/shadow/binding":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":"shadow_binding_not_found","message":"not found"}`))
+		case "/internal/shadow/binding/state", "/internal/shadow/binding/retry":
+			_, _ = w.Write([]byte(`{"code":"OK","data":{"user_id":"usr_1","uin":450860000003,"owner_uin":450860000003,"app_id":1374211120,"status":"failed","last_error_code":"billing_account_open_failed"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := ResolveBindingWithBillingRetry(context.Background(), New(srv.URL, "token"), "usr_1", false)
+	if !errors.Is(err, ErrBillingAccountOpenFailed) {
+		t.Fatalf("err=%v, want ErrBillingAccountOpenFailed", err)
+	}
+}
+
+func TestResolveBindingWithBillingRetryDoesNotRetryOtherFailures(t *testing.T) {
+	var retryCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/internal/shadow/binding":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":"shadow_binding_not_found","message":"not found"}`))
+		case "/internal/shadow/binding/state":
+			_, _ = w.Write([]byte(`{"code":"OK","data":{"user_id":"usr_1","status":"failed","last_error_code":"tencentcloud_register_failed"}}`))
+		case "/internal/shadow/binding/retry":
+			retryCalls++
+			_, _ = w.Write([]byte(`{"code":"OK"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := ResolveBindingWithBillingRetry(context.Background(), New(srv.URL, "token"), "usr_1", true)
+	if !errors.Is(err, ErrBindingNotFound) || retryCalls != 0 {
+		t.Fatalf("err=%v retry_calls=%d, want binding not found without retry", err, retryCalls)
+	}
+}
+
+func TestNewUsesSeparateCredentialExchangeTimeout(t *testing.T) {
+	client := New("http://shadow.test", "token")
+	httpClient, ok := client.(*httpClient)
+	if !ok {
+		t.Fatalf("New returned %T, want *httpClient", client)
+	}
+	if httpClient.httpClient.Timeout != 4*time.Second {
+		t.Fatalf("binding timeout = %s, want 4s", httpClient.httpClient.Timeout)
+	}
+	if httpClient.credentialHTTPClient.Timeout != 20*time.Second {
+		t.Fatalf("credential timeout = %s, want 20s", httpClient.credentialHTTPClient.Timeout)
+	}
+}
+
 // 验证 Binding JSON tag 与 shadow 内部 storage.Binding 字段命名对齐。
 // 这是一个静态断言测试，主要预防字段重构时漏改。
 func TestBinding_JSONFieldNames(t *testing.T) {
@@ -250,5 +338,111 @@ func TestBinding_JSONFieldNames(t *testing.T) {
 		if !strings.Contains(str, key) {
 			t.Errorf("marshaled JSON missing %s: %s", key, str)
 		}
+	}
+}
+
+func TestGetTemporaryCredentialsByExternalUserID_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotBody   map[string]string
+	)
+	body := `{"code":"OK","data":{"uin":300000000053,"owner_uin":300000000053,"tmp_secret_id":"tmp-id","tmp_secret_key":"tmp-key","token":"tmp-token","expired_at":"2099-08-13T04:00:00Z"}}`
+	srv := newTestServer(t, http.StatusOK, body, func(r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+	})
+	defer srv.Close()
+
+	c := New(srv.URL, "token-xyz")
+	got, err := c.GetTemporaryCredentialsByExternalUserID(context.Background(), "usr_1")
+	if err != nil {
+		t.Fatalf("GetTemporaryCredentialsByExternalUserID: %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/internal/shadow/credentials" {
+		t.Fatalf("request = %s %s, want POST /internal/shadow/credentials", gotMethod, gotPath)
+	}
+	if gotAuth != "Bearer token-xyz" {
+		t.Fatalf("Authorization = %q", gotAuth)
+	}
+	if gotBody["external_user_id"] != "usr_1" || gotBody["client_ua"] != "lightvela-trade" {
+		t.Fatalf("request body = %+v", gotBody)
+	}
+	if got.Uin != "300000000053" || got.OwnerUin != "300000000053" ||
+		got.SecretID != "tmp-id" || got.SecretKey != "tmp-key" || got.Token != "tmp-token" {
+		t.Fatalf("credentials = %+v", got)
+	}
+	if got.ExpiredAt.Format(time.RFC3339) != "2099-08-13T04:00:00Z" {
+		t.Fatalf("ExpiredAt = %s", got.ExpiredAt)
+	}
+}
+
+func TestGetPaymentContextByExternalUserID_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotBody   map[string]string
+	)
+	srv := newTestServer(t, http.StatusOK,
+		`{"code":"OK","data":{"has_payment_method":true,"uin":300000000053,"owner_uin":300000000053,"tmp_secret_id":"tmp-id","tmp_secret_key":"tmp-key","token":"tmp-token","expired_at":"2099-08-13T04:00:00Z"}}`,
+		func(r *http.Request) {
+			gotMethod = r.Method
+			gotPath = r.URL.Path
+			gotAuth = r.Header.Get("Authorization")
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Errorf("decode request body: %v", err)
+			}
+		})
+	defer srv.Close()
+
+	client := New(srv.URL, "token-xyz")
+	paymentContext, err := client.GetPaymentContextByExternalUserID(context.Background(), "usr_1")
+	if err != nil {
+		t.Fatalf("GetPaymentContextByExternalUserID: %v", err)
+	}
+	if !paymentContext.HasPaymentMethod || paymentContext.Credentials.SecretID != "tmp-id" || paymentContext.Credentials.Token != "tmp-token" {
+		t.Fatalf("unexpected payment context: %+v", paymentContext)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/internal/payment-methods/context" {
+		t.Fatalf("request = %s %s", gotMethod, gotPath)
+	}
+	if gotBody["external_user_id"] != "usr_1" || gotBody["client_ua"] != "lightvela-trade" {
+		t.Fatalf("request body = %+v", gotBody)
+	}
+	if gotAuth != "Bearer token-xyz" {
+		t.Fatalf("Authorization = %q", gotAuth)
+	}
+}
+
+func TestGetTemporaryCredentialsByExternalUserID_RejectsIncompleteResponseWithoutLeakingSecrets(t *testing.T) {
+	body := `{"code":"OK","data":{"uin":300000000053,"owner_uin":300000000053,"tmp_secret_id":"tmp-id","tmp_secret_key":"sensitive-key","token":""}}`
+	srv := newTestServer(t, http.StatusOK, body, nil)
+	defer srv.Close()
+
+	c := New(srv.URL, "token-xyz")
+	_, err := c.GetTemporaryCredentialsByExternalUserID(context.Background(), "usr_1")
+	if err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("error = %v, want incomplete credentials", err)
+	}
+	if strings.Contains(err.Error(), "sensitive-key") {
+		t.Fatalf("error leaked temporary credential: %v", err)
+	}
+}
+
+func TestGetTemporaryCredentialsByExternalUserID_RejectsExpiredResponse(t *testing.T) {
+	body := `{"code":"OK","data":{"uin":300000000053,"owner_uin":300000000053,"tmp_secret_id":"tmp-id","tmp_secret_key":"tmp-key","token":"tmp-token","expired_at":"2020-01-01T00:00:00Z"}}`
+	srv := newTestServer(t, http.StatusOK, body, nil)
+	defer srv.Close()
+
+	c := New(srv.URL, "token-xyz")
+	_, err := c.GetTemporaryCredentialsByExternalUserID(context.Background(), "usr_1")
+	if err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("error = %v, want expired credentials", err)
 	}
 }

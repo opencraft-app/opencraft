@@ -31,6 +31,17 @@ TAG="${BUNDLE_SERVICE}-${SHORT_SHA}"
 
 IFS=',' read -r -a TARGET_ENVS <<<"$TARGET_ENV"
 PROMOTED_COUNT=0
+PROMOTION_WORKTREE_ROOT="$(mktemp -d)"
+PROMOTION_WORKTREES=()
+
+cleanup_promotion_worktrees() {
+  local worktree
+  for worktree in "${PROMOTION_WORKTREES[@]}"; do
+    git -C "$REPO_ROOT" worktree remove --force "$worktree" >/dev/null 2>&1 || true
+  done
+  rmdir "$PROMOTION_WORKTREE_ROOT" >/dev/null 2>&1 || true
+}
+trap cleanup_promotion_worktrees EXIT
 
 for ENV_NAME in "${TARGET_ENVS[@]}"; do
   ENV_NAME="$(printf '%s' "$ENV_NAME" | xargs)"
@@ -56,7 +67,10 @@ for ENV_NAME in "${TARGET_ENVS[@]}"; do
     exit 1
   fi
 
-  bash "$PIN_SCRIPT" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$ENV_NAME" "$BUILD_IMAGE" "$SOURCE_SHA"
+  ENV_WORKTREE="$PROMOTION_WORKTREE_ROOT/${PROMOTED_COUNT}-${ENV_NAME}"
+  git -C "$REPO_ROOT" worktree add --detach "$ENV_WORKTREE" "$SOURCE_SHA"
+  PROMOTION_WORKTREES+=("$ENV_WORKTREE")
+  REPO_ROOT="$ENV_WORKTREE" bash "$PIN_SCRIPT" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$ENV_NAME" "$BUILD_IMAGE" "$SOURCE_SHA"
   PROMOTED_COUNT=$((PROMOTED_COUNT + 1))
 done
 

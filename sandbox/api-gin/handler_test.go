@@ -48,10 +48,44 @@ type stubCommandRunner struct {
 
 	sessionResp provider.TerminalSession
 	sessionErr  error
+	sessionFunc func(context.Context, string, string) (provider.TerminalSession, error)
 	sessionReq  struct {
 		region     string
 		instanceID string
 	}
+}
+
+type stubCommandInvoker struct {
+	resp         provider.CommandInvocation
+	err          error
+	metadataResp provider.CommandInvocationMetadata
+	metadataErr  error
+	req          struct {
+		region     string
+		instanceID string
+		commandID  string
+		parameters map[string]string
+	}
+	metadataReq struct {
+		region       string
+		invocationID string
+		instanceID   string
+	}
+}
+
+func (s *stubCommandInvoker) InvokeCommand(_ context.Context, region, instanceID, commandID string, parameters map[string]string) (provider.CommandInvocation, error) {
+	s.req.region = region
+	s.req.instanceID = instanceID
+	s.req.commandID = commandID
+	s.req.parameters = parameters
+	return s.resp, s.err
+}
+
+func (s *stubCommandInvoker) GetCommandInvocationMetadata(_ context.Context, region, invocationID, instanceID string) (provider.CommandInvocationMetadata, error) {
+	s.metadataReq.region = region
+	s.metadataReq.invocationID = invocationID
+	s.metadataReq.instanceID = instanceID
+	return s.metadataResp, s.metadataErr
 }
 
 func (s *stubCommandRunner) RunCommand(_ context.Context, region, instanceID, script string) (provider.CommandInvocation, error) {
@@ -68,9 +102,12 @@ func (s *stubCommandRunner) GetCommandInvocation(_ context.Context, region, invo
 	return s.getResp, s.getErr
 }
 
-func (s *stubCommandRunner) StartTerminalSession(_ context.Context, region, instanceID string) (provider.TerminalSession, error) {
+func (s *stubCommandRunner) StartTerminalSession(ctx context.Context, region, instanceID string) (provider.TerminalSession, error) {
 	s.sessionReq.region = region
 	s.sessionReq.instanceID = instanceID
+	if s.sessionFunc != nil {
+		return s.sessionFunc(ctx, region, instanceID)
+	}
 	return s.sessionResp, s.sessionErr
 }
 
@@ -82,7 +119,7 @@ func newHandlerTestRouterWithAuth(h *handler, authServiceURL string) *gin.Engine
 	r := gin.New()
 	api.RegisterHandlers(r, h)
 	authenticated := r.Group("/")
-	authenticated.Use(userSessionAuth(authServiceURL))
+	authenticated.Use(userSessionAuth(authServiceURL, ""))
 	registerTATRoutes(authenticated, h)
 	internal := r.Group("/internal")
 	registerPoolRoutes(internal, h)
@@ -215,6 +252,113 @@ func createAllocatedSandbox(t *testing.T, svc *service.Service) (core.Pool, core
 		t.Fatalf("create sandbox: %v", err)
 	}
 	return pool, inst, sb
+}
+
+func TestPostInternalTATInvokeUsesAllocatedCloudInstance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	invoker := &stubCommandInvoker{resp: provider.CommandInvocation{InvocationID: "inv-website-1"}}
+	router := newInternalTATTestRouter(&handler{svc: svc, invocations: invoker, allowedTATCommandID: "cmd-website1"})
+	req := httptest.NewRequest(http.MethodPost, "/internal/sandboxes/"+sb.ID+"/tat/invocations", bytes.NewBufferString(
+		`{"command_id":"cmd-website1","parameters":{"website_key":"vik_secret_value","api_base":"https://api.lightvela.ai"}}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	authorizeInternalTATRequest(req)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if invoker.req.region != "ap-beijing" || invoker.req.instanceID != "ins-test-1" || invoker.req.commandID != "cmd-website1" {
+		t.Fatalf("invoke request = %+v", invoker.req)
+	}
+	if invoker.req.parameters["website_key"] != "vik_secret_value" || invoker.req.parameters["api_base"] != "https://api.lightvela.ai" {
+		t.Fatalf("invoke parameters = %#v", invoker.req.parameters)
+	}
+	if strings.Contains(rec.Body.String(), "vik_secret_value") {
+		t.Fatalf("response leaked runtime parameter: %s", rec.Body.String())
+	}
+}
+
+func TestPostInternalTATInvokeRejectsInvalidParametersWithoutEchoingValues(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	router := newInternalTATTestRouter(&handler{
+		svc: svc, invocations: &stubCommandInvoker{}, allowedTATCommandID: "cmd-website1",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/sandboxes/"+sb.ID+"/tat/invocations", bytes.NewBufferString(
+		`{"command_id":"cmd-website1","parameters":{"bad-name":"vik_secret_value"}}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	authorizeInternalTATRequest(req)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest || strings.Contains(rec.Body.String(), "vik_secret_value") {
+		t.Fatalf("response = %d/%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPostInternalTATInvokeRejectsCommandOutsideAllowlist(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	invoker := &stubCommandInvoker{}
+	router := newInternalTATTestRouter(&handler{svc: svc, invocations: invoker, allowedTATCommandID: "cmd-website1"})
+	req := httptest.NewRequest(http.MethodPost, "/internal/sandboxes/"+sb.ID+"/tat/invocations", bytes.NewBufferString(
+		`{"command_id":"cmd-other1","parameters":{"website_key":"vik_secret_value"}}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	authorizeInternalTATRequest(req)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if invoker.req.commandID != "" {
+		t.Fatalf("unexpected TAT invocation: %+v", invoker.req)
+	}
+}
+
+func TestGetInternalTATInvocationReturnsMetadataOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	invoker := &stubCommandInvoker{metadataResp: provider.CommandInvocationMetadata{
+		CommandInvocation: provider.CommandInvocation{
+			CommandID: "cmd-website1", InvocationID: "inv-website-1", Status: "SUCCESS",
+		},
+		ExitCode: 0, StartTime: "start", EndTime: "end", ExecutionTime: "1.0",
+	}}
+	router := newInternalTATTestRouter(&handler{svc: svc, invocations: invoker, allowedTATCommandID: "cmd-website1"})
+	req := httptest.NewRequest(http.MethodGet, "/internal/sandboxes/"+sb.ID+"/tat/invocations/inv-website-1", nil)
+	authorizeInternalTATRequest(req)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	for _, forbidden := range []string{"output", "errorInfo", "outputURL", "dropped"} {
+		if _, ok := resp[forbidden]; ok {
+			t.Fatalf("response includes forbidden field %q: %s", forbidden, rec.Body.String())
+		}
+	}
+	if invoker.metadataReq.region != "ap-beijing" || invoker.metadataReq.instanceID != "ins-test-1" || invoker.metadataReq.invocationID != "inv-website-1" {
+		t.Fatalf("metadata query = %+v", invoker.metadataReq)
+	}
 }
 
 func TestPostSandboxesWithoutTemplateIDAllocatesFromAnyPool(t *testing.T) {
@@ -1347,6 +1491,96 @@ func TestPostSandboxTATSessionReturnsTerminalBootstrap(t *testing.T) {
 	}
 	if got := resp["workingDirectory"]; got != "/home/agentuser" {
 		t.Fatalf("expected workingDirectory /home/agentuser, got %v", got)
+	}
+}
+
+func TestPostSandboxTATSessionRejectsNonAllocatedInstance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	if _, err := svc.Release(context.Background(), inst.ID); err != nil {
+		t.Fatalf("release instance: %v", err)
+	}
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	commands := &stubCommandRunner{}
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, terminals: commands}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if commands.sessionReq.instanceID != "" {
+		t.Fatalf("provider must not be called for non-allocated instance")
+	}
+}
+
+func TestPostSandboxTATSessionRejectsMappingRemovedDuringStart(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	commands := &stubCommandRunner{sessionFunc: func(context.Context, string, string) (provider.TerminalSession, error) {
+		close(started)
+		<-release
+		return provider.TerminalSession{SessionID: "stale-session"}, nil
+	}}
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, terminals: commands}, authServer.URL)
+
+	result := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+		req.Header.Set("Authorization", "Bearer session-good")
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		result <- rr
+	}()
+	<-started
+	if err := svc.DeleteSandbox(context.Background(), sb.ID); err != nil {
+		t.Fatalf("delete sandbox mapping: %v", err)
+	}
+	close(release)
+
+	rr := <-result
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409 after mapping removal, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPostSandboxTATSessionDiscardsLateProviderResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	commands := &stubCommandRunner{sessionFunc: func(context.Context, string, string) (provider.TerminalSession, error) {
+		time.Sleep(40 * time.Millisecond)
+		return provider.TerminalSession{SessionID: "late-session"}, nil
+	}}
+	router := newHandlerTestRouterWithAuth(&handler{
+		svc: svc, terminals: commands, tatSessionTimeout: 10 * time.Millisecond,
+	}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected 504, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "late-session") {
+		t.Fatalf("late provider result must be discarded, body=%s", rr.Body.String())
 	}
 }
 

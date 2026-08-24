@@ -81,6 +81,10 @@ data:
     base_url = "http://shadow-api.shadow.svc.cluster.local"
     timeout = 10
 
+    [adapter.trade]
+    base_url = "http://trade.trade.svc.cluster.local"
+    timeout = 55
+
     [log.api]
     enable_color = false
 

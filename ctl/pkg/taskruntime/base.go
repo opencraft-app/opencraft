@@ -140,15 +140,19 @@ func (t *BaseTask) CheckTask(ctx context.Context) (string, error) {
 func (t *BaseTask) UpdateTaskExecute(ctx context.Context) (string, error) {
 	now := time.Now().UTC()
 	prevExecuteCount := t.TaskEntity.ExecuteCount
-	err := daoFactory.DefaultDaoFactory.TaskDao(ctx).DB().
+	result := daoFactory.DefaultDaoFactory.TaskDao(ctx).DB().
 		Where("task_id = ?", t.TaskId).
+		Where("task_state IN ?", task.UnCompletedTaskStates()).
 		Updates(map[string]interface{}{
 			task.ColumnExecuteCount:    gorm.Expr("execute_count + ?", 1),
 			task.ColumnLastExecuteTime: now.Format(timeGeneralLayout),
 			task.ColumnTaskState:       task.StateRunning,
-		}).Error
-	if err != nil {
-		return "", fmt.Errorf("TaskDao.UpdateTaskExecute error: %w", err)
+		})
+	if result.Error != nil {
+		return "", fmt.Errorf("TaskDao.UpdateTaskExecute error: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return "", fmt.Errorf("TaskDao.UpdateTaskExecute rejected: task %s is missing or terminal", t.TaskId)
 	}
 
 	t.TaskEntity.ExecuteCount++

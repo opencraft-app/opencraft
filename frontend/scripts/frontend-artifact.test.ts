@@ -406,6 +406,58 @@ describe("frontend artifact helpers", () => {
     }
   });
 
+  it("reuses an existing same-source artifact on identity conflict when configured", () => {
+    const firstDist = createDist();
+    const secondDist = createDist();
+    const existingWorkDir = mkdtempSync(join(tmpdir(), "frontend-artifact-existing-"));
+    const publishWorkDir = mkdtempSync(join(tmpdir(), "frontend-artifact-publish-"));
+    try {
+      writeFileSync(join(secondDist, "_next", "static", "chunks", "main-app-test.js"), "console.log('changed identity');\n");
+      const existing = archiveFrontendArtifact({
+        combo,
+        projectName: "lightvela-intl",
+        comboEnv: { ...comboEnv, EDGEONE_PAGES_DIR: firstDist },
+        env: {
+          FRONTEND_ARTIFACT_REPOSITORY: "registry.example.com/lightclaw/frontend-pages",
+          FRONTEND_ARTIFACT_SOURCE_SHA: sourceSha,
+        },
+        dryRun: true,
+        workDir: existingWorkDir,
+        log: () => {},
+      });
+      const fakeOras = createFakeOras(publishWorkDir);
+
+      const result = archiveFrontendArtifact({
+        combo,
+        projectName: "lightvela-intl",
+        comboEnv: { ...comboEnv, EDGEONE_PAGES_DIR: secondDist },
+        env: {
+          FRONTEND_ARTIFACT_REPOSITORY: "registry.example.com/lightclaw/frontend-pages",
+          FRONTEND_ARTIFACT_SOURCE_SHA: sourceSha,
+          FRONTEND_ARTIFACT_EXISTING_POLICY: "reuse",
+          ORAS_BIN: fakeOras.binPath,
+          ORAS_PULL_MANIFEST: existing.manifestPath,
+          ORAS_PULL_ARCHIVE: existing.archivePath,
+          ORAS_PUSH_MARKER: fakeOras.pushMarker,
+          REGISTRY_USERNAME: "user",
+          REGISTRY_PASSWORD: "password",
+        },
+        workDir: publishWorkDir,
+        log: () => {},
+      });
+
+      expect(result.skippedPush).toBe(true);
+      expect(result.reusedExisting).toBe(true);
+      expect(result.manifest.identity).toEqual(existing.manifest.identity);
+      expect(existsSync(fakeOras.pushMarker)).toBe(false);
+    } finally {
+      rmSync(firstDist, { recursive: true, force: true });
+      rmSync(secondDist, { recursive: true, force: true });
+      rmSync(existingWorkDir, { recursive: true, force: true });
+      rmSync(publishWorkDir, { recursive: true, force: true });
+    }
+  });
+
   it("fails before push when existing artifact inspection has a transient error", () => {
     const dist = createDist();
     const publishWorkDir = mkdtempSync(join(tmpdir(), "frontend-artifact-publish-"));

@@ -5,6 +5,7 @@ import sys
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -155,6 +156,17 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_ctl_production_schema_versions_match_environment_policy(self) -> None:
+        manifest = load_manifest()
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                contract = load_bundle(manifest, "ctl", env).db_contract
+                self.assertEqual(
+                    contract.get("expected_migration_version_by_env"),
+                    {"shprod": 27, "sgprod": 28},
+                )
+
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
         rendered = dump_manifest(merge_bundle_sources(RUNTIME_DIR / "bundles"))
 
@@ -213,6 +225,44 @@ class ReleaseBundleContractTests(unittest.TestCase):
         for key in ("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN"):
             with self.subTest(key=key):
                 self.assertRegex(values.get(key, ""), r"^ENC\[")
+
+    def test_sgprod_ctl_routes_new_users_and_bot_creates_to_johor_velagw(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BASE_URL"), "https://token-admin.lightvela.ai")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_BASE_URL"), "https://token.lightvela.ai/v1")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"), "auto")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "*")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST"), "*")
+        for key in ("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN"):
+            with self.subTest(key=key):
+                self.assertRegex(values.get(key, ""), r"^ENC\[")
+
+        kustomization = yaml.safe_load(
+            (REPO_ROOT / "argocd/services/ctl/sgprod/kustomization.yaml").read_text()
+        )
+        forbidden = {
+            "CTL_LLMGATEWAY_BASE_URL",
+            "CTL_LLMGATEWAY_NEW_USER_ALLOWLIST",
+            "CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST",
+        }
+        for patch in kustomization.get("patches") or []:
+            if not isinstance(patch, dict) or "patch" not in patch:
+                continue
+            target_name = (patch.get("target") or {}).get("name")
+            operations = yaml.safe_load(patch["patch"]) or []
+            overridden = {
+                (operation.get("value") or {}).get("name")
+                for operation in operations
+                if isinstance(operation.get("value"), dict)
+            }
+            self.assertTrue(
+                forbidden.isdisjoint(overridden),
+                f"{target_name} must consume sgprod VelaGW settings from ctl-runtime-secrets",
+            )
 
     def test_playground_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
@@ -344,10 +394,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
         config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
         for key in (
             "SITE_GATEWAY_AUTH_MODE",
-            "SITE_GATEWAY_AUTH_ISSUER",
-            "SITE_GATEWAY_AUTH_AUDIENCE",
-            "SITE_GATEWAY_AUTH_START_URL",
-            "SITE_GATEWAY_AUTH_PUBLIC_KEYS",
+            "SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED",
+            "SITE_GATEWAY_AUTH_FIXED_HOST",
+            "SITE_GATEWAY_AUTH_OIDC_ISSUER",
+            "SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL",
+            "SITE_GATEWAY_AUTH_OIDC_TOKEN_URL",
+            "SITE_GATEWAY_AUTH_OIDC_JWKS_URL",
+            "SITE_GATEWAY_AUTH_OIDC_CLIENT_ID",
+            "SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID",
             "SITE_GATEWAY_AUTH_SESSION_TTL",
         ):
             self.assertIn(key, config_map.get("data", {}))
@@ -373,7 +427,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         deployment = next(doc for doc in documents if doc.get("kind") == "Deployment")
         data = config_map.get("data", {})
         self.assertEqual(data.get("SITE_GATEWAY_DSH_DOMAINS"), "")
-        self.assertEqual(data.get("SITE_GATEWAY_DSH_TARGET_URL"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_BASE_URL"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_KEY_ID"), "")
         for key in (
             "SITE_GATEWAY_DSH_TAT_START_TIMEOUT",
             "SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT",
@@ -389,13 +445,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
             self.assertIn(key, data)
 
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
-        tencent_refs = {
+        federation_refs = {
             item["name"]: item["valueFrom"]["secretKeyRef"]
             for item in env
-            if item["name"] in {"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY"}
+            if item["name"] == "SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY"
         }
-        self.assertEqual(set(tencent_refs), {"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY"})
-        self.assertTrue(all(ref.get("optional") is True for ref in tencent_refs.values()))
+        self.assertEqual(set(federation_refs), {"SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY"})
+        self.assertTrue(all(ref.get("optional") is True for ref in federation_refs.values()))
 
         for platform_file in (
             REPO_ROOT / "site-gateway" / "k8s" / "overlays" / "sgprod" / "generated" / "platform.env.example",
@@ -409,7 +465,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 if separator
             }
             self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_DOMAINS"), "")
-            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_TARGET_URL"), "")
+            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_FEDERATION_BASE_URL"), "")
+            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"), "")
+            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_FEDERATION_KEY_ID"), "")
 
         source_root = REPO_ROOT / "site-gateway" / "internal"
         for relative in (
@@ -421,6 +479,94 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "httpapi/dispatcher.go",
         ):
             self.assertTrue((source_root / relative).is_file(), relative)
+
+    def test_sgprod_oidc_runtime_contract_is_enabled_with_persistent_secrets(self) -> None:
+        def env_values(path: Path) -> dict[str, str]:
+            return {
+                key: value
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+
+        auth_root = REPO_ROOT / "argocd/services/lightclaw-auth/sgprod"
+        auth_values = env_values(auth_root / "auth-platform.env")
+        self.assertEqual(auth_values["AUTH_OIDC_ENABLED"], "true")
+        self.assertEqual(auth_values["AUTH_OIDC_ISSUER"], "https://api.lightvela.ai")
+        self.assertEqual(auth_values["AUTH_OIDC_SIGNING_KEY_ID"], "oidc-sg-20260824-1")
+        self.assertEqual(auth_values["AUTH_OIDC_AUTHORIZATION_CODE_TTL_SECONDS"], "5")
+        self.assertNotIn("AUTH_OIDC_SIGNING_KEYS_JSON", auth_values)
+        auth_kustomization = yaml.safe_load((auth_root / "kustomization.yaml").read_text())
+        auth_replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in auth_kustomization["replacements"]
+        }
+        for field in (
+            "AUTH_OIDC_ENABLED",
+            "AUTH_OIDC_ISSUER",
+            "AUTH_OIDC_SIGNING_KEY_ID",
+            "AUTH_OIDC_CLIENTS_JSON",
+            "AUTH_OIDC_AUTHORIZATION_CODE_TTL_SECONDS",
+            "AUTH_OIDC_ID_TOKEN_TTL_SECONDS",
+            "AUTH_OIDC_ACCESS_TOKEN_TTL_SECONDS",
+            "AUTH_OIDC_ACCESS_TOKEN_AUDIENCE",
+        ):
+            self.assertIn(f"data.{field}", auth_replacement_sources)
+
+        auth_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sgprod.yaml").read_text()
+        )
+        self.assertIn(
+            "LIGHTCLAW_OIDC_SIGNING_KEYS_JSON",
+            auth_ssm["items"][0]["required_keys"],
+        )
+        auth_secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/lightclaw-auth-secrets.sops.yaml").read_text()
+        )
+        self.assertIn("LIGHTCLAW_OIDC_SIGNING_KEYS_JSON", auth_secret["stringData"])
+
+        gateway_root = REPO_ROOT / "argocd/services/site-gateway/sgprod"
+        gateway_values = env_values(gateway_root / "site-gateway-platform.env")
+        self.assertEqual(gateway_values["SITE_GATEWAY_AUTH_MODE"], "public")
+        self.assertEqual(gateway_values["SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED"], "true")
+        self.assertEqual(gateway_values["SITE_GATEWAY_AUTH_FIXED_HOST"], "sites-auth.lightvela.site")
+        self.assertEqual(
+            gateway_values["SITE_GATEWAY_AUTH_OIDC_ISSUER"],
+            "https://api.lightvela.ai",
+        )
+        self.assertEqual(gateway_values["SITE_GATEWAY_AUTH_OIDC_CLIENT_ID"], "site-gateway")
+        self.assertEqual(
+            gateway_values["SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID"],
+            "site-gateway-sg-20260824-1",
+        )
+        gateway_kustomization = yaml.safe_load((gateway_root / "kustomization.yaml").read_text())
+        gateway_replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in gateway_kustomization["replacements"]
+        }
+        for field in (
+            "SITE_GATEWAY_AUTH_MODE",
+            "SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED",
+            "SITE_GATEWAY_AUTH_FIXED_HOST",
+            "SITE_GATEWAY_AUTH_OIDC_ISSUER",
+            "SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL",
+            "SITE_GATEWAY_AUTH_OIDC_TOKEN_URL",
+            "SITE_GATEWAY_AUTH_OIDC_JWKS_URL",
+            "SITE_GATEWAY_AUTH_OIDC_CLIENT_ID",
+            "SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID",
+            "SITE_GATEWAY_AUTH_SESSION_TTL",
+        ):
+            self.assertIn(f"data.{field}", gateway_replacement_sources)
+
+        gateway_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.site-gateway.sgprod.yaml").read_text()
+        )
+        self.assertIn("SITE_GATEWAY_AUTH_AEAD_KEYS", gateway_ssm["items"][0]["required_keys"])
+        gateway_secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/site-gateway-secrets.sops.yaml").read_text()
+        )
+        self.assertIn("SITE_GATEWAY_AUTH_AEAD_KEYS", gateway_secret["stringData"])
 
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
@@ -464,6 +610,60 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(
             deploy_patch["data"]["SHADOW_USER_NAME_PREFIX"],
             source_patch["data"]["SHADOW_USER_NAME_PREFIX"],
+        )
+
+    def test_sgprod_auth_uses_international_production_shadow_contract(self) -> None:
+        source_path = REPO_ROOT / "user/auth/k8s/overlays/sgprod/patch-shadowbinding.yaml"
+        self.assertTrue(source_path.exists())
+
+        documents = list(yaml.safe_load_all(source_path.read_text()))
+        config_map = next(document for document in documents if document.get("kind") == "ConfigMap")
+        data = config_map["data"]
+
+        self.assertEqual(data["LIGHTVELA_SITE_KIND"], "intl")
+        self.assertEqual(data["SHADOW_BINDING_ENABLED"], "true")
+        self.assertEqual(data["SHADOW_AUTH_CODE_PREFIX"], "sgprod")
+        self.assertEqual(data["SHADOW_USER_NAME_PREFIX"], "sgprod_")
+        self.assertEqual(data["SHADOW_PLATFORM"], "intlSaaSLightvela")
+        self.assertEqual(data["SHADOW_ACCOUNT_ENDPOINT"], "account.tencentcloudapi.com")
+        self.assertEqual(data["SHADOW_BILLING_REGION"], "ap-singapore")
+        self.assertEqual(
+            data["SHADOW_BILLING_ENDPOINT"],
+            "billing.ap-singapore.tencentcloudapi.woa.com",
+        )
+        self.assertEqual(data["SHADOW_CLOUDLADDER_ROUTE_ID"], "tcapi-account-intl-prod")
+        self.assertEqual(data["SHADOW_BILLING_CLOUDLADDER_ROUTE_ID"], "tcapi-billing-intl-prod")
+        self.assertEqual(data["LIGHTCLAW_PAYMENT_METHODS_ENABLED"], "true")
+
+        deploy_root = REPO_ROOT / "argocd/services/lightclaw-auth/sgprod"
+        deploy_kustomization = yaml.safe_load((deploy_root / "kustomization.yaml").read_text())
+        self.assertIn(
+            {"path": "patch-shadow-internal-token.yaml"},
+            deploy_kustomization["patches"],
+        )
+
+        deploy_documents = list(
+            yaml.safe_load_all((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        )
+        deploy_config_map = next(
+            document for document in deploy_documents if document.get("kind") == "ConfigMap"
+        )
+        self.assertEqual(deploy_config_map["data"], data)
+
+        deploy_patch = next(
+            document for document in deploy_documents if document.get("kind") == "Deployment"
+        )
+        token_env = next(
+            env
+            for env in deploy_patch["spec"]["template"]["spec"]["containers"][0]["env"]
+            if env["name"] == "SHADOW_BINDING_INTERNAL_TOKEN"
+        )
+        self.assertEqual(
+            token_env["valueFrom"]["secretKeyRef"],
+            {
+                "name": "lightclaw-auth-secrets",
+                "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
         )
 
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
@@ -1962,6 +2162,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = load_manifest()
         bundle = require_build_metadata(load_bundle(manifest, "trade", "beijing-sandbox"))
         shprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "shprod"))
+        sgprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "sgprod"))
         playground_bundle = require_build_metadata(load_bundle(manifest, "trade", PLAYGROUND_ENV))
         workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
 
@@ -1985,6 +2186,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
             shprod_bundle.publish_paths,
         )
         self.assertIn("trade/k8s/base/**", shprod_bundle.publish_paths)
+        # sgprod（新加坡正式）承载国际站计费与点石活动，形态对齐 shprod。
+        self.assertEqual(sgprod_bundle.image_repo, "lightclaw-sgprod.tencentcloudcr.com/lightclaw/trade")
+        self.assertIn("argocd/services/trade/sgprod/**", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/services/trade/common/**", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/apps/sgprod/trade.yaml", sgprod_bundle.publish_paths)
+        self.assertIn("argocd/projects/sgprod-trade.yaml", sgprod_bundle.publish_paths)
+        self.assertIn(
+            "argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml",
+            sgprod_bundle.publish_paths,
+        )
+        self.assertIn("trade/k8s/base/**", sgprod_bundle.publish_paths)
         self.assertEqual(playground_bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
         self.assertIn(f"argocd/services/trade/{PLAYGROUND_ENV}/**", playground_bundle.publish_paths)
         self.assertIn(
@@ -1995,10 +2207,113 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow,
             expected_service="trade",
             expected_pin_targets="trade",
-            expected_master_build_envs="beijing-sandbox,shprod",
+            expected_master_build_envs="beijing-sandbox,shprod,sgprod",
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
+        )
+
+    def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        cloudladder = yaml.safe_load(
+            (REPO_ROOT / "cloudladdergateway/config.example.yaml").read_text()
+        )
+        route_id = values["TRADE_BILLING_CLOUDLADDER_ROUTE_ID"]
+        route = next(route for route in cloudladder["routes"] if route["id"] == route_id)
+        backend_alias = route["upstream"]["backend"]
+        backend = next(
+            backend
+            for backend in cloudladder["backends"]
+            if backend["alias"] == backend_alias
+        )
+        trusted_host = urlparse(backend["upstream"]["base_url"]).hostname
+
+        self.assertEqual(route_id, "tcapi-billing-trade-intl-prod")
+        self.assertEqual(
+            values["TRADE_BILLING_ENDPOINT"],
+            trusted_host,
+            "trade signs the original billing host, so it must match CloudLadder's trusted upstream host",
+        )
+
+    def test_sgprod_trade_uses_configured_inquiry_fallback_account(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertEqual(values["TRADE_INQUIRY_FALLBACK_UIN"], "450850000019")
+        self.assertEqual(values["TRADE_INQUIRY_FALLBACK_APP_ID"], "1472039146")
+
+    def test_korea_trade_uses_international_billing_test_route(self) -> None:
+        env_path = (
+            REPO_ROOT
+            / "argocd/services/trade"
+            / KOREA_PLAYGROUND_ENV
+            / "trade-platform.env"
+        )
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertEqual(
+            values["TRADE_BILLING_ENDPOINT"],
+            "billing.test.tencentcloudapi.com",
+        )
+        self.assertEqual(
+            values["TRADE_BILLING_CLOUDLADDER_ROUTE_ID"],
+            "tcapi-billing-trade-intl-test",
+        )
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_CALLER", values)
+        billing_client_source = (
+            REPO_ROOT / "trade/internal/cloudbillingclient/client.go"
+        ).read_text()
+        self.assertIn('cloudLadderCaller      = "lightvela-trade"', billing_client_source)
+        self.assertEqual(
+            values["JIFEI_CGW_X_QCLOUD_USER_ID"],
+            "450860000002",
+        )
+
+        common = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/trade/common/kustomization.yaml"
+            ).read_text()
+        )
+        redeploy_replacement = next(
+            replacement
+            for replacement in common["replacements"]
+            if replacement["source"].get("fieldPath") == "data.TRADE_DEPLOYED_AT"
+        )
+        self.assertEqual(
+            redeploy_replacement["targets"][0]["fieldPaths"],
+            ["spec.template.metadata.annotations.[trade.clawhub.dev/redeploy-at]"],
+        )
+
+        manifests = list(
+            yaml.safe_load_all((REPO_ROOT / "trade/k8s/base/manifests.yaml").read_text())
+        )
+        deployment = next(doc for doc in manifests if doc and doc.get("kind") == "Deployment")
+        self.assertEqual(
+            deployment["spec"]["template"]["metadata"]["annotations"][
+                "trade.clawhub.dev/redeploy-at"
+            ],
+            "REPLACE_TRADE_DEPLOYED_AT",
         )
 
     def test_standard_service_extends_stays_on_v2_local_template_contract(self) -> None:

@@ -26,7 +26,7 @@ The current LightVela product is **Hermes Agent**, an AI Agent powered by large 
 
 * Users who want to use an AI Agent but do not have technical knowledge of servers, containers, API authentication, and related infrastructure
 
-* Users who prefer interacting with AI through everyday messaging platforms (WeChat / Telegram / WhatsApp / Discord) instead of a standalone app
+* Users who prefer interacting with AI through everyday messaging platforms (Telegram / WhatsApp / Discord / Slack / WeChat) instead of a standalone app
 
 * Users who want to choose from multiple large language model providers (including ChatGPT, Claude, Gemini, Deepseek, Qwen, Zhipu, Hunyuan, and more)
 
@@ -50,7 +50,7 @@ The current LightVela product is **Hermes Agent**, an AI Agent powered by large 
 
 * **Multi-model support**: Connect to mainstream Chinese large language models, provider Coding Plan subscriptions, or any OpenAI-compatible endpoint. See [Configure Models](./configuration/model.md)
 
-* **Multi-channel access**: Chat with Hermes Agent through WeChat, Telegram, WhatsApp, and Discord
+* **Multi-channel access**: Chat with Hermes Agent through Telegram, WhatsApp, Discord, Slack, and WeChat
 
 * **Skill extensions**: Install skill packages from [SkillHub](https://skillhub.tencent.com) to extend Hermes Agent capabilities
 
@@ -65,7 +65,7 @@ The current LightVela product is **Hermes Agent**, an AI Agent powered by large 
 LightVela runs a dedicated Hermes Agent instance for each user in the cloud, then connects it to the messaging platform selected by the user through an adapter layer.
 
 ```
-User (sends a message in WeChat / Telegram / WhatsApp / Discord)
+User (sends a message in Telegram / WhatsApp / Discord / Slack / WeChat)
       ↓
 User-dedicated Hermes Agent instance in the LightVela cloud
       ↓
@@ -78,7 +78,7 @@ A complete conversation loop requires three configurations:
 
 1. **Model**: The large language model called by Hermes Agent. The Launch plan includes trial credits and can be used directly; you can also configure your own API Key
 
-2. **Channel**: The messaging platform used to chat with Hermes Agent (WeChat / Telegram / WhatsApp / Discord)
+2. **Channel**: The messaging platform used to chat with Hermes Agent (Telegram / WhatsApp / Discord / Slack / WeChat)
 
 3. **Skill** (optional): Additional capabilities for Hermes Agent
 

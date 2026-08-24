@@ -7,6 +7,7 @@ import type {
   BotVersion,
   Bundle,
   BundlePrice,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlResult,
@@ -24,6 +25,7 @@ import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
   DashboardSnapshot,
+  PaymentMethod,
   RealnameFaceIdAttempt,
   RealnameFaceIdAttemptState,
   Repositories,
@@ -62,10 +64,13 @@ const fakeFaceIdAttempts = new Map<string, FakeFaceIdAttemptRecord>();
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
-const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode) => {
+const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode, switchAccount = false) => {
   const startURL = new URL(`https://lightclaw.tech/auth/oauth/${provider}/start`);
   if (provider === "wechat" && wechatMode) {
     startURL.searchParams.set("mode", wechatMode);
+  }
+  if (switchAccount) {
+    startURL.searchParams.set("switch_account", "true");
   }
   if (typeof window !== "undefined" && window.location?.href) {
     startURL.searchParams.set("return_to", window.location.href);
@@ -437,6 +442,8 @@ const computeExpiredIso = (bundle: Bundle): string => {
 };
 
 export const createFakeRepositories = (): Repositories => {
+  let paymentMethods: PaymentMethod[] = [];
+
   return {
     auth: {
       async signInWithCode({ phone }) {
@@ -833,8 +840,70 @@ export const createFakeRepositories = (): Repositories => {
           expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         };
       },
+      async listPaymentMethods() {
+        await wait(NETWORK_DELAY_MS / 2);
+        return { total: paymentMethods.length, items: paymentMethods };
+      },
+      async createPaymentMethodSignOrder(languageCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const redirectUrl = new URL("https://sandbox-card.centauriglobal.com/sign/fake-contract");
+        redirectUrl.searchParams.set("language_code", languageCode);
+        return {
+          contractCode: "fake-contract",
+          redirectUrl: redirectUrl.toString(),
+        };
+      },
+      async setDefaultPaymentMethod(contractCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        paymentMethods = paymentMethods.map((method) => ({
+          ...method,
+          isDefault: method.contractCode === contractCode,
+        }));
+      },
+      async deletePaymentMethod(contractCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        paymentMethods = paymentMethods.filter((method) => method.contractCode !== contractCode);
+      },
+      async getOIDCAuthorizationContext(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const session = readStoredAuthSession();
+        return {
+          ...input,
+          clientDisplayName: "LightVela Sites",
+          currentSession: session ? {
+            user: {
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+              phone: session.user.phone,
+              avatarUrl: session.user.avatarUrl,
+            },
+          } : null,
+        };
+      },
+      async authorizeOIDC(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        if (!readStoredAuthSession()) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL(input.redirectUri);
+        redirectUrl.searchParams.set("code", "fake-oidc-code");
+        if (input.state) {
+          redirectUrl.searchParams.set("state", input.state);
+        }
+        return {
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 5_000).toISOString(),
+        };
+      },
+      async prepareFederationSwitch() {
+        await wait(NETWORK_DELAY_MS / 2);
+      },
+      async cancelFederationSwitch() {
+        await wait(NETWORK_DELAY_MS / 2);
+      },
       getOAuthStartUrl(provider: OAuthProvider, options) {
-        return fakeOAuthStartURL(provider, options?.wechatMode);
+        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount);
       },
       async signInAsGuest() {
         await wait(NETWORK_DELAY_MS);
@@ -990,6 +1059,19 @@ export const createFakeRepositories = (): Repositories => {
           big_order_id: `${Date.now()}`,
         };
       },
+      async createDianshiPassOrderAndPay(input): Promise<CreateDianshiPassOrderAndPayResult> {
+        await wait(NETWORK_DELAY_MS);
+        const bundle = FAKE_BUNDLES.find((b) => b.bundle_id === input.bundle_id);
+        if (!bundle) {
+          const err = new Error("套餐已下架") as Error & { code?: string };
+          err.code = "BUNDLE_NOT_FOUND";
+          throw err;
+        }
+        return {
+          deal_name: `mock-dianshi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          big_order_id: `${Date.now()}`,
+        };
+      },
       async getRenewPrice(passId, input): Promise<PassRenewPrice> {
         // mock 代替联调文档 §3.1：返回分为单位的价格
         await wait(NETWORK_DELAY_MS);
@@ -1091,6 +1173,30 @@ export const createFakeRepositories = (): Repositories => {
 };
 
 const createBotRepository = (): BotRepository => {
+  const fakeConnectedChannels = new Set<string>();
+
+  const fakeChannelStatusOutput = () => JSON.stringify({
+    success: true,
+    data: {
+      platforms: Array.from(fakeConnectedChannels).map((name) => ({
+        name,
+        status: "connected",
+      })),
+    },
+    error: null,
+  });
+
+  const maybeApplyFakeChannelCommand = (command: string) => {
+    if (command.includes("strip_slack_env") && command.includes("SLACK_BOT_TOKEN")) {
+      fakeConnectedChannels.delete("slack");
+      return;
+    }
+
+    if (command.includes("SLACK_BOT_TOKEN") && command.includes("SLACK_APP_TOKEN")) {
+      fakeConnectedChannels.add("slack");
+    }
+  };
+
   return {
     async getDashboardSnapshot(mode = "live") {
       await assertMode(mode);
@@ -1457,14 +1563,21 @@ const createBotRepository = (): BotRepository => {
           output: JSON.stringify({ models: {}, channels: {}, gateway: {} }),
         };
       }
+      maybeApplyFakeChannelCommand(command);
+      if (command.includes("acli channel status")) {
+        return { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() };
+      }
       return { status: "Succeeded", exitCode: 0, output: "" };
     },
 
     async execDebugCommandStream(_botId, command, onChunk) {
       await wait(NETWORK_DELAY_MS);
+      maybeApplyFakeChannelCommand(command);
       const result = command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND
         ? { status: "Succeeded", exitCode: 0, output: JSON.stringify({ models: {}, channels: {}, gateway: {} }) }
-        : { status: "Succeeded", exitCode: 0, output: "" };
+        : command.includes("acli channel status")
+          ? { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() }
+          : { status: "Succeeded", exitCode: 0, output: "" };
       if (result.output) onChunk({ stream: DEBUG_EXEC_STDOUT_STREAM, chunk: result.output });
       return result;
     },

@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightclaw-auth-config
+  namespace: user-auth
+data:
+  LIGHTVELA_SITE_KIND: "intl"
+  SHADOW_BINDING_ENABLED: "true"
+  LIGHTCLAW_PASSWORD_SIGNUP_SHADOW_PROVISIONING_ENABLED: "true"
+  SHADOW_BASIC_AUTH_SYNC_ENABLED: "true"
+  SHADOW_AUTH_CODE_PREFIX: "sgprod"
+  SHADOW_USER_NAME_PREFIX: "sgprod_"
+  SHADOW_CLOUDLADDER_ENABLED: "true"
+  SHADOW_CLOUDLADDER_GATEWAY_BASE_URL: "http://43.153.236.65"
+  SHADOW_CLOUDLADDER_ROUTE_ID: "tcapi-account-intl-prod"
+  SHADOW_CLOUDLADDER_CAM_ROUTE_ID: "tcapi-cam-intl-prod"
+  SHADOW_CLOUDLADDER_STS_ROUTE_ID: "tcapi-sts-intl-prod"
+  SHADOW_CLOUDLADDER_CALLER: "shadow"
+  SHADOW_ACCOUNT_ENDPOINT: "account.tencentcloudapi.com"
+  SHADOW_CAM_ENDPOINT: "cam.tencentcloudapi.com"
+  SHADOW_STS_ENDPOINT: "sts.tencentcloudapi.com"
+  SHADOW_REGION: "ap-singapore"
+  SHADOW_PLATFORM: "intlSaaSLightvela"
+  SHADOW_REQUEST_TIMEOUT: "15s"
+  SHADOW_AUTH_CODE_TTL: "10m"
+  SHADOW_BILLING_REGION: "ap-singapore"
+  SHADOW_BILLING_ENDPOINT: "billing.ap-singapore.tencentcloudapi.woa.com"
+  SHADOW_BILLING_REQUEST_TIMEOUT: "15s"
+  SHADOW_BILLING_INITIAL_DELAY: "10s"
+  SHADOW_BILLING_OPEN_TIMEOUT: "30s"
+  SHADOW_BILLING_POLL_INTERVAL: "1s"
+  SHADOW_BILLING_CLOUDLADDER_ROUTE_ID: "tcapi-billing-intl-prod"
+  LIGHTCLAW_GITHUB_REGISTRATION_ENABLED: "true"
+  LIGHTCLAW_PAYMENT_METHODS_ENABLED: "true"
+  LIGHTCLAW_PAYMENT_METHOD_SIGN_ORDER_LIMIT: "5"
+  LIGHTCLAW_PAYMENT_METHOD_SIGN_ORDER_WINDOW: "10m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lightclaw-auth
+  namespace: user-auth
+spec:
+  template:
+    spec:
+      containers:
+        - name: auth
+          env:
+            - name: SHADOW_BINDING_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lightclaw-auth-secrets
+                  key: LIGHTCLAW_INTERNAL_SERVICE_TOKEN

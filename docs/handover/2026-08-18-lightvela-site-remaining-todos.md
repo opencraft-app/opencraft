@@ -28,7 +28,7 @@
 | 状态 | 事项 | 完成证据 |
 |---|---|---|
 | [ ] | 受保护环境核验现有 SOPS 是否对应当前 SSM | `scan_secrets.py` 通过、KSOPS render 成功；只有 SSM 变更或 SOPS 过期/无效时才按 manifest 重新导出；不输出明文 |
-| [ ] | 核对三组件内部 token 一致性 | 在受保护环境或 live Secret 内完成键级一致性检查，只输出一致/不一致 |
+| [ ] | 核对服务间 token 一致性 | 在受保护环境或 live Secret 内确认 CTL/site-gateway/deployer 的 `WEBSITE_INTERNAL_API_TOKEN` 一致，同时 CTL/Sandbox 的 `SANDBOX_API_KEY` 一致；只输出一致/不一致 |
 | [ ] | 冻结国际站 frontend 生产发布 | 后端、TLS、TAT 和真实机器 E2E 完成前，不从当前 `master` 手动发布 frontend；如必须发布其他前端需求，先用独立前端 MR 增加默认关闭的建站 feature flag |
 | [ ] | 准备生产 wildcard TLS | `Secret/ctl/site-gateway-wildcard-tls` 存在，平台自动化负责续期和更新 `qcloud_cert_id`；GitOps 无证书 ID |
 | [ ] | 执行 CTL migration `000028` | 生产数据库版本、5 张 website 表、配额 seed 均核验 |
@@ -41,11 +41,20 @@
 
 | 状态 | 事项 | 完成证据 |
 |---|---|---|
-| [ ] | 在生产地域创建 TAT command | `ap-singapore` command 创建成功并记录 CommandId（不把凭据写入文档）。脚本默认区域已改为 `ap-singapore` ✅ |
+| [ ] | 在生产地域创建 TAT command | `ap-singapore` command 创建成功并把同一个真实 CommandId 配到 CTL 和 Sandbox 的 `WEBSITE_CREDENTIAL_TAT_COMMAND_ID`（不把凭据写入文档）。`WEBSITE_AGENT_API_BASE=https://api.lightvela.ai` 已准备，CommandId 未配置前自动下发保持关闭 |
 | [ ] | CTL 为真实 CVM 逐台签发实例凭据 | 每台实例得到独立 `vik_` token；只记录实例 ID、结果和错误摘要 |
 | [ ] | 通过 TAT 逐台下发凭据 | `/etc/vela/website-credential.env` 存在且权限正确，token 不出现在日志 |
 | [ ] | 验证 Hermes 进程重新读取凭据 | 目标机器上的 Hermes gateway 为 active，调用 capability API 返回成功 |
-| [ ] | 分发 `website-builder` Skill | Skill 文件版本与后端 API 契约一致，机器侧可发现并调用。已加入 `images/build.sh` `curate_hermes_skills` keep list ✅；SKILL.md 使用稳定机器入口 `/v1/websites` |
+| [ ] | 分发 `website-builder` Skill | 新 Hermes 镜像显式携带仓库 `.agents/skills/website-builder/SKILL.md`，镜像构建在来源或安装结果缺失时失败；存量机器按需手动补发 |
+
+自动凭据下发不属于实例创建成功条件。CTL 先把实例置为 `Running`，再签发 15 分钟
+临时 Key 并尝试下发；TAT 成功后才把 Key 转为永久。签发、提交、轮询、目标命令或
+永久化失败时主动撤销本次 Key，不删除 Sandbox；进程崩溃或撤销失败由 TTL 兜底。
+运维可为该实例重新签发一个新 Key，再补跑同一个 TAT Command。
+
+本次新增的参数化 Invoke/Query 路由始终校验 `SANDBOX_API_KEY`。既有
+`exec-stream` 先保持兼容，CTL 已开始携带同一 header；所有地域完成双端 Secret
+预置后，再单独把 `exec-stream` 切到强制校验，避免滚动发布顺序造成持续 401。
 
 ## 四、真实机器与前端验收
 

@@ -2,8 +2,10 @@ import type {
   AlertItem,
   AuthSessionSnapshot,
   AuditEvent,
+  AutoRenewFlag,
   BillingSummary,
   Bundle,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlInput,
@@ -33,7 +35,39 @@ import type {
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 
 export interface OAuthStartOptions {
+  switchAccount?: boolean;
   wechatMode?: WeChatOAuthMode;
+}
+
+export interface OIDCAuthorizationInput {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  responseType: "code";
+  scope: string;
+  codeChallenge: string;
+  codeChallengeMethod: "S256";
+  nonce: string;
+}
+
+export interface FederationSessionSummary {
+  user: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface OIDCAuthorizationContext extends OIDCAuthorizationInput {
+  clientDisplayName: string;
+  currentSession: FederationSessionSummary | null;
+}
+
+export interface OIDCAuthorizationResult {
+  redirectUrl: string;
+  expiresAt: string;
 }
 
 export interface RealnameVerifyResult {
@@ -102,6 +136,26 @@ export interface TencentCloudRedirectResult {
   expiresAt: string;
 }
 
+export type PaymentMethodLanguageCode = "en" | "zh" | "hk";
+
+export interface PaymentMethod {
+  contractCode: string;
+  maskedNumber: string;
+  payerName: string;
+  type: string;
+  isDefault: boolean;
+}
+
+export interface PaymentMethodList {
+  total: number;
+  items: PaymentMethod[];
+}
+
+export interface PaymentMethodSignOrder {
+  contractCode: string;
+  redirectUrl: string;
+}
+
 export interface AuthRepository {
   signInWithCode(input: { phone: string; code?: string; inviteCode?: string }): Promise<AuthSessionSnapshot>;
   prepareInviteCode(code: string): Promise<void>;
@@ -135,6 +189,14 @@ export interface AuthRepository {
   requestEmailBind(input: { email: string }): Promise<{ cooldownSeconds: number }>;
   createTatDeviceBind(input: { callbackUrl: string; deviceName?: string }): Promise<TatDeviceBindResult>;
   createTencentCloudRedirect(targetPath?: string): Promise<TencentCloudRedirectResult>;
+  listPaymentMethods(): Promise<PaymentMethodList>;
+  createPaymentMethodSignOrder(languageCode: PaymentMethodLanguageCode): Promise<PaymentMethodSignOrder>;
+  setDefaultPaymentMethod(contractCode: string): Promise<void>;
+  deletePaymentMethod(contractCode: string): Promise<void>;
+  getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext>;
+  authorizeOIDC(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationResult>;
+  prepareFederationSwitch(): Promise<void>;
+  cancelFederationSwitch(): Promise<void>;
   getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;
   signOut(): Promise<void>;
@@ -176,7 +238,13 @@ export interface PlanRepository {
    * 仅返 { deal_names }；拿到后需再调 getPassOrderUrl 拉支付 URL（§2.2）。
    * 拆分动机：前端需在拉支付 URL 前注入额外参数（如微信 wx_open_id、platform=mobile）。
    */
-  createPassOrder(input: { bundle_id: string; period: number; time_unit: BundleTimeUnit }): Promise<CreatePassOrderResult>;
+  createPassOrder(input: {
+    bundle_id: string;
+    period: number;
+    time_unit: BundleTimeUnit;
+    /** 自动续费标记（国际站支持）。取值：auto_renew / notify_and_manual_renew / no_notify_and_manual_renew；不传默认手动续费 */
+    auto_renew_flag?: AutoRenewFlag;
+  }): Promise<CreatePassOrderResult>;
   /**
    * 拉取新购支付 URL（POST /v1/passes/order-url）— 联调文档 §2.2（v1.7.31 + CodeBuddy AuthCode）
    *
@@ -197,6 +265,12 @@ export interface PlanRepository {
    * ⚠️ 仅联调测试用，现网禁止暴露给真实用户。
    */
   createPassOrderAndPay(input: { bundle_id: string; period: number; time_unit: BundleTimeUnit }): Promise<CreatePassOrderAndPayResult>;
+  /** 点石活动套餐专用下单并支付入口，不接受支付方式或自动续费参数。 */
+  createDianshiPassOrderAndPay(input: {
+    bundle_id: string;
+    period: number;
+    time_unit: BundleTimeUnit;
+  }): Promise<CreateDianshiPassOrderAndPayResult>;
   /**
    * 续费询价（POST /v1/passes/{pass_id}/renew/price）— 联调文档 §3.1
    *

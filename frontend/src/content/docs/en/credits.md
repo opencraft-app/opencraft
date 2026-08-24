@@ -41,7 +41,7 @@ Some plans may offer a **higher credit allocation**. Check the plan cards on the
 
 Credits are consumed in the following situations because each one requires Hermes to call a language model:
 
-- **Talking to your Agent** — Messaging through Telegram, WhatsApp, Discord, WeChat, or another supported channel
+- **Talking to your Agent** — Messaging through Telegram, WhatsApp, Discord, Slack, WeChat, or another supported channel
 
 - **Running automations** — Letting your Agent execute [scheduled tasks](./configuration/automation.md)
 

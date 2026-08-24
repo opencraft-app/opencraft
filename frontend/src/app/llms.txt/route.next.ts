@@ -42,7 +42,7 @@ const COPY = {
     tagline:
       'LightVela is a cloud hosting and management platform for personal AI Agents, keeping the Hermes Agent online around the clock.',
     intro:
-      'LightVela helps you configure models, connect channels like Telegram/WhatsApp/Discord, install skills, set up automations, and manage your Agent\u2019s memory and cloud files.',
+      'LightVela helps you configure models, connect channels like Telegram/WhatsApp/Discord/Slack, install skills, set up automations, and manage your Agent\u2019s memory and cloud files.',
     entryHeading: 'Official Entry Points',
     docsHeading: 'Documentation',
     channelHeading: 'Channel Configuration',

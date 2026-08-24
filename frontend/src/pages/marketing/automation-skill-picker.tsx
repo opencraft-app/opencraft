@@ -9,6 +9,7 @@ import {
   matchesInstalledSkillSearch,
   type InstalledSkillLoadState,
 } from "@/lib/hermes-skills-client";
+import { isGlobal } from "@/lib/region";
 
 export interface AutomationSkillPickerProps {
   value: string;
@@ -306,14 +307,21 @@ export function AutomationSkillPicker({
                     type="button"
                     role="option"
                     aria-selected={value === slug}
-                    onClick={() => choose(slug)}
-                    className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left transition hover:bg-black/[0.04]"
+                    onClick={() => choose(!isGlobal && value === slug ? "" : slug)}
+                    className={`${isGlobal ? "" : "group/option "}flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left transition hover:bg-black/[0.04]${isGlobal ? "" : " focus:outline-none focus-visible:bg-black/[0.04]"}`}
                   >
                     <span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
                       <span className="truncate text-sm font-medium text-black/80">{displayName}</span>
                       <span className="truncate font-mono text-xs text-black/40">{slug}</span>
                     </span>
-                    {value === slug && <Check className="h-4 w-4 shrink-0 text-black/70" />}
+                    {value === slug && (isGlobal ? (
+                      <Check className="size-4 shrink-0 text-black/70 opacity-100" />
+                    ) : (
+                      <span className="relative size-4 shrink-0" aria-hidden="true">
+                        <Check className="absolute inset-0 size-4 text-black/70 opacity-100 transition-opacity duration-150 group-hover/option:opacity-0 group-focus-visible/option:opacity-0" />
+                        <X className="absolute inset-0 size-4 text-black/70 opacity-0 transition-opacity duration-150 group-hover/option:opacity-100 group-focus-visible/option:opacity-100" />
+                      </span>
+                    ))}
                   </button>
                 );
               })}

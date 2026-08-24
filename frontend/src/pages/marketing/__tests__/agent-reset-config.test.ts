@@ -75,8 +75,10 @@ describe("getAcliResetClickAction", () => {
 });
 
 describe("ACLI_RESET_COMMAND", () => {
-  it("runs the requested backend upgrade command, waits, and forces existing installs", () => {
-    expect(ACLI_RESET_COMMAND).toBe("acli backend upgrade-start --blueprint-id lhbp-lyx28qje --wait=true --force=true");
+  it("updates the bundle and follows the release default for every site", () => {
+    expect(ACLI_RESET_COMMAND).toBe(
+      "acli bundle-update && acli backend upgrade-start --blueprint-id latest --wait=true --force=true",
+    );
   });
 });
 

@@ -980,6 +980,7 @@ func seedBundleForPass(t *testing.T, bundleID string, credit int64, aiGatewayPla
 		TimeUnit:              bundlemodel.TimeUnitDay,
 		AiGatewayPlanID:       aiGatewayPlanID,
 		AiGatewayPlans:        "[]",
+		StaticSiteQuota:       "{}",
 		StaticSoldOut:         false,
 		BundleSalesAvailCount: 10,
 		BundleSalesTotalCount: 10,
@@ -1034,7 +1035,7 @@ func TestCompletePassAPIIntegrationHappyPath(t *testing.T) {
 		t.Fatal("expected pass_id to be generated")
 	}
 
-	// 2) 落库校验：renew_flag 必须为 MANUAL_RENEW（v4 收敛：logic 内部写死，不读 req.RenewFlag）
+	// 2) 落库校验：显式手动续费保持 MANUAL_RENEW。
 	var renewFlag string
 	if err := resource.GormDB.Table("pass").
 		Where("user_id = ? AND bundle_id = ?", h.userID, bundleID).
@@ -1042,7 +1043,7 @@ func TestCompletePassAPIIntegrationHappyPath(t *testing.T) {
 		t.Fatalf("query renew_flag: %v", err)
 	}
 	if renewFlag != "MANUAL_RENEW" {
-		t.Fatalf("expected renew_flag=MANUAL_RENEW from logic hard-code, got %q", renewFlag)
+		t.Fatalf("expected renew_flag=MANUAL_RENEW, got %q", renewFlag)
 	}
 
 	// 3) bundle 销量必须扣 1
@@ -1068,6 +1069,29 @@ func TestCompletePassAPIIntegrationHappyPath(t *testing.T) {
 	dealName := body["deal_name"].(string)
 	if applyReq.IdempotencyKey != "trade:"+dealName {
 		t.Fatalf("idempotency_key = %q, want %q", applyReq.IdempotencyKey, "trade:"+dealName)
+	}
+}
+
+func TestCompletePassAPIIntegrationPersistsAutoRenew(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	bundleID := "bundle_complete_auto_renew"
+	seedBundleForPass(t, bundleID, 100, "plan-pro")
+
+	body := completePassReqDefaults(h.userID, bundleID)
+	body["renew_flag"] = "AUTO_RENEW"
+	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var renewFlag string
+	if err := resource.GormDB.Table("pass").
+		Where("user_id = ? AND bundle_id = ?", h.userID, bundleID).
+		Pluck("renew_flag", &renewFlag).Error; err != nil {
+		t.Fatalf("query renew_flag: %v", err)
+	}
+	if renewFlag != "AUTO_RENEW" {
+		t.Fatalf("expected renew_flag=AUTO_RENEW from request, got %q", renewFlag)
 	}
 }
 

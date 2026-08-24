@@ -1,8 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
 import { LegalFooter } from "@/components/site/legal-footer";
+import { useLocaleOverride } from "@/i18n/t";
 import { AppLink } from "@/lib/app-navigation";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
 
@@ -258,6 +258,117 @@ const zh: CookiePolicyCopy = {
   ],
 };
 
+const id: CookiePolicyCopy = {
+  backHome: "Kembali ke Beranda",
+  brand: "LightVela",
+  title: "Kebijakan Cookies",
+  tableHeaders: {
+    cookie: "Cookie",
+    name: "Nama Cookie",
+    purpose: "Tujuan",
+    duration: "Durasi",
+  },
+  intro: [
+    "Kebijakan Cookies ini berlaku untuk situs web LightVela (“Layanan”). Saat Anda menggunakan Layanan, kami dapat menggunakan cookies, file log, pixel tag, web beacon, skrip, eTags, ID perangkat seluler, plugin, local storage, dan file atau teknologi serupa (secara kolektif disebut “cookies”) untuk mengumpulkan dan menyimpan informasi yang kami kumpulkan otomatis tentang perangkat Anda dan penggunaan Layanan. Kebijakan Cookies ini menjelaskan apa itu cookies, jenis cookies yang dapat digunakan dalam Layanan, dan cara Anda mengelolanya.",
+    "Untuk tujuan Kebijakan Cookies ini, “kami” berarti Tencent Cloud International Pte. Limited, perusahaan yang didirikan di Singapura dengan alamat terdaftar 10 Anson Road, #21-07, International Plaza, Singapore 079903. Untuk setiap data pribadi yang kami kumpulkan melalui cookies, kami adalah pengendali data. Petugas perlindungan data kami dapat dihubungi di sini.",
+  ],
+  sections: [
+    {
+      title: "1. APA ITU COOKIES?",
+      paragraphs: [
+        "Cookies adalah file yang ditempatkan di perangkat Anda saat sebuah situs web dimuat di browser. Cookies banyak digunakan agar situs web dapat berjalan, berjalan lebih efisien, dan memberikan informasi kepada pemilik situs atau situs lain yang mengenali cookie tersebut.",
+        "Cookie pihak pertama dan pihak ketiga\n\nCookie dapat berupa cookie pihak pertama atau pihak ketiga. Cookie pihak pertama dipasang langsung oleh kami ke perangkat Anda, sedangkan cookie pihak ketiga dipasang oleh pihak ketiga, seperti penyedia analitik, pengiklan, atau mitra bisnis kami.",
+        "Cookie persisten dan cookie sesi\n\nCookie dapat berupa cookie persisten atau cookie sesi, tergantung berapa lama cookie tersebut tersimpan di perangkat Anda. Cookie persisten tetap tersimpan setelah browser ditutup atau sesi berakhir, dan dapat digunakan oleh Layanan untuk mengenali perangkat Anda saat Anda membuka browser dan menggunakan Layanan lagi. Cookie sesi hanya ada sementara saat browser terbuka dan otomatis dihapus saat Anda meninggalkan situs atau menutup browser.",
+        "Jika Anda tidak menerima penggunaan cookies, silakan nonaktifkan cookies menggunakan instruksi di bawah dan ubah pengaturan browser agar cookies tidak dapat ditempatkan di perangkat Anda.",
+      ],
+    },
+    {
+      title: "2. JENIS COOKIES APA YANG KAMI GUNAKAN?",
+      paragraphs: ["Tabel di bawah menjelaskan cookies yang digunakan oleh kami dan mitra kami sehubungan dengan Layanan."],
+    },
+    {
+      title: "Cookies yang Wajib Diperlukan",
+      paragraphs: [
+        "Cookies ini penting agar Layanan berfungsi, untuk menyediakan layanan yang Anda minta, atau untuk mematuhi hukum, misalnya persyaratan keamanan dalam hukum perlindungan data. Cookies ini akan dikumpulkan saat situs web kami dimuat di browser dan tidak dapat dimatikan karena tanpa cookies ini kami tidak dapat menyediakan Layanan.",
+      ],
+    },
+    {
+      title: "Cookies Fungsional",
+      paragraphs: ["Cookies ini memungkinkan kami mengingat preferensi dan pilihan yang Anda buat di situs."],
+      tableRows: [
+        { cookie: "github.com\n(Pihak ketiga)", name: "_gh_sess", purpose: "Cookie ini digunakan untuk status sementara aplikasi dan framework antarhalaman, misalnya langkah pengguna dalam formulir bertahap.", duration: "Sesi" },
+        { cookie: "github.com\n(Pihak ketiga)", name: "cpu_bucket", purpose: "Cookie ini digunakan untuk manajemen beban atau penentuan fitur.", duration: "Sesi" },
+        { cookie: "github.com\n(Pihak ketiga)", name: "tz", purpose: "Cookie ini memungkinkan kami menyesuaikan timestamp dengan zona waktu Anda.", duration: "Sesi" },
+        { cookie: "github.com\n(Pihak ketiga)", name: "_device_id", purpose: "Cookie ini digunakan untuk melacak perangkat yang dikenali demi tujuan keamanan.", duration: "1 tahun" },
+        { cookie: "github.com\n(Pihak ketiga)", name: "preferred_color_mode", purpose: "Cookie ini digunakan untuk menunjukkan preferensi tema yang dipilih pengguna.", duration: "Sesi" },
+        { cookie: "github.com\n(Pihak ketiga)", name: "logged_in", purpose: "Cookie ini digunakan untuk memberi sinyal kepada kami bahwa pengguna sudah login.", duration: "1 tahun" },
+        { cookie: "github.com\n(Pihak ketiga)", name: "_octo", purpose: "Cookie ini digunakan untuk manajemen sesi, termasuk cache konten dinamis, akses fitur bersyarat, metadata permintaan dukungan, dan analitik pihak pertama.", duration: "1 tahun" },
+      ],
+    },
+    {
+      title: "Cookies Performa",
+      paragraphs: [
+        "Cookies ini memungkinkan kami mengumpulkan informasi tentang aktivitas online Anda, termasuk data perilaku dan interaksi dengan konten. Cookies ini membantu kami memberi pengalaman pengguna yang lebih baik serta memelihara, mengoperasikan, dan terus meningkatkan Layanan.",
+      ],
+      tableRows: [
+        { cookie: "lightclaw.tech\n(Pihak ketiga)", name: "lc_session", purpose: "Cookie ini digunakan untuk memahami kunjungan situs, aktivitas formulir, dan konteks rujukan jika Anda menerima pelacakan opsional.", duration: "Sesi" },
+      ],
+    },
+    {
+      title: "Cookies Pemasaran",
+      paragraphs: [
+        "Cookies ini dapat dipasang melalui Layanan oleh kami dan/atau mitra periklanan kami untuk memberikan layanan yang lebih personal, menjalankan kampanye iklan, menampilkan iklan yang relevan, dan mengukur efektivitas kampanye iklan. Cookies ini juga dapat digunakan untuk menampilkan iklan yang relevan di situs lain. Cookies ini tidak secara langsung menyimpan informasi pribadi, tetapi didasarkan pada identifikasi unik browser dan perangkat internet Anda.",
+      ],
+    },
+    {
+      title: "3. BAGAIMANA CARA MENGELOLA ATAU MENGHAPUS COOKIES?",
+      paragraphs: [
+        "Kami menggunakan cookies saat menyediakan Layanan agar Anda dapat menggunakan dan menikmati Layanan dengan mudah. Sebagian cookies bersifat penting dan tanpa cookies tersebut kami tidak dapat menyediakan Layanan, tetapi ada cookies lain yang dapat dimatikan. Anda berhak memilih apakah akan menerima cookies non-esensial, dan kami menjelaskan caranya di bawah. Namun, jika Anda menolak atau kemudian memilih keluar dari cookies tertentu atau data yang disimpan secara lokal, Anda mungkin tidak dapat menggunakan seluruh fungsi Layanan.",
+        "Sebagian besar perangkat dan browser memungkinkan Anda mengubah pengaturan cookie. Pengaturan ini biasanya ada di menu “options” atau “preferences” pada browser. Dengan pengaturan tersebut, Anda dapat:",
+      ],
+      bullets: [
+        "melihat cookies atau data lokal lain yang digunakan dan menghapusnya satu per satu",
+        "memblokir cookies pihak ketiga",
+        "memblokir cookies dari situs tertentu",
+        "memblokir semua cookies agar tidak dipasang",
+        "menghapus semua cookies saat Anda menutup browser",
+      ],
+    },
+    {
+      title: "Untuk informasi lebih lanjut tentang cara mengelola browser populer, lihat tautan berikut:",
+      bullets: [
+        "Pengaturan Cookie di Chrome untuk web",
+        "Pengaturan Cookie di Chrome untuk Android",
+        "Pengaturan Cookie di Safari web",
+        "Pengaturan Cookie di Safari iOS",
+        "Pengaturan Cookie di Internet Explorer",
+        "Pengaturan Cookie di Firefox",
+      ],
+      paragraphs: [
+        "Anda dapat mengubah pengaturan cookies yang kami gunakan dalam Layanan kapan saja melalui pusat preferensi kami.",
+        "Cara keluar dari penggunaan cookie pihak ketiga\n\nJika Anda ingin mengurangi pengaturan kapan saja, misalnya setelah menerima semua cookies lalu memutuskan tidak ingin jenis cookie tertentu, Anda dapat menggunakan pengaturan browser untuk menghapus cookies pihak ketiga atau teknologi serupa yang tersimpan dari kunjungan sebelumnya. Untuk keluar dari penggunaan cookies oleh Google Analytics, tersedia add-on browser Chrome.",
+        "Jika Anda ingin mengetahui lebih lanjut tentang cookies dan penggunaannya di internet, tautan berikut dapat membantu: All About Cookies.",
+      ],
+    },
+    {
+      title: "4. PERUBAHAN ATAS KEBIJAKAN COOKIES INI",
+      paragraphs: [
+        "Kami akan memperbarui Kebijakan Cookies ini untuk mencerminkan perubahan praktik dan layanan kami. Saat kami memposting perubahan, kami akan memperbarui tanggal “Terakhir Diperbarui” di bagian atas Kebijakan Cookies ini. Jika kami melakukan perubahan material pada cara kami mengumpulkan, menggunakan, dan/atau membagikan informasi yang tersimpan dalam cookies, kami akan memberi tahu Anda dengan menampilkan pemberitahuan yang jelas saat Anda login atau menggunakan Layanan. Kami menyarankan Anda memeriksa halaman ini dari waktu ke waktu untuk mengetahui perubahan apa pun.",
+      ],
+    },
+    {
+      title: "5. COOKIES YANG PERNAH DIPASANG SEBELUMNYA",
+      paragraphs: [
+        "Jika Anda menonaktifkan satu atau lebih cookies, kami masih dapat menggunakan informasi yang dikumpulkan dari cookies sebelum preferensi penonaktifan Anda diterapkan. Namun, kami akan berhenti menggunakan cookie yang dinonaktifkan untuk mengumpulkan informasi lebih lanjut.",
+      ],
+    },
+    {
+      title: "6. HUBUNGI KAMI",
+      paragraphs: ["Jika Anda memiliki pertanyaan atau komentar tentang Kebijakan Cookies ini, silakan hubungi kami di lightvela@tencent.com."],
+    },
+  ],
+};
+
 const blueLinkStyle = { color: "#2563EB", WebkitTextFillColor: "#2563EB", textDecorationColor: "#2563EB" };
 
 const browserLinks: Record<string, string> = {
@@ -273,12 +384,18 @@ const browserLinks: Record<string, string> = {
   "Safari iOS 版 Cookie 设置": "https://support.apple.com/kb/HT1677",
   "Internet Explorer 的 Cookie 设置": "https://windows.microsoft.com/en-gb/windows7/how-to-manage-cookies-in-internet-explorer-9",
   "Firefox 的 Cookie 设置": "https://support.mozilla.org/en-US/kb/cookies",
+  "Pengaturan Cookie di Chrome untuk web": "https://support.google.com/chrome/answer/95647?co=GENIE.Platform%3DDesktop&hl=en",
+  "Pengaturan Cookie di Chrome untuk Android": "https://support.google.com/chrome/answer/95647?co=GENIE.Platform%3DAndroid&hl=en",
+  "Pengaturan Cookie di Safari web": "https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac",
+  "Pengaturan Cookie di Safari iOS": "https://support.apple.com/kb/HT1677",
+  "Pengaturan Cookie di Internet Explorer": "https://windows.microsoft.com/en-gb/windows7/how-to-manage-cookies-in-internet-explorer-9",
+  "Pengaturan Cookie di Firefox": "https://support.mozilla.org/en-US/kb/cookies",
 };
 
 const renderInlineLinks = (text: string): ReactNode[] => {
-  const tokenPattern = /(lightvela@tencent\.com|here|在此|Chrome browser add-on|Chrome 浏览器插件|All About Cookies|Cookie settings in Chrome for web|Cookie settings in Chrome for Android|Cookie settings in Safari web|Cookie settings in Safari iOS|Cookie settings in Internet Explorer|Cookie settings in Firefox|Chrome 网页版 Cookie 设置|Chrome Android 版 Cookie 设置|Safari 网页版 Cookie 设置|Safari iOS 版 Cookie 设置|Internet Explorer 的 Cookie 设置|Firefox 的 Cookie 设置)/g;
+  const tokenPattern = /(lightvela@tencent\.com|here|在此|di sini|Chrome browser add-on|Chrome 浏览器插件|add-on browser Chrome|All About Cookies|Cookie settings in Chrome for web|Cookie settings in Chrome for Android|Cookie settings in Safari web|Cookie settings in Safari iOS|Cookie settings in Internet Explorer|Cookie settings in Firefox|Chrome 网页版 Cookie 设置|Chrome Android 版 Cookie 设置|Safari 网页版 Cookie 设置|Safari iOS 版 Cookie 设置|Internet Explorer 的 Cookie 设置|Firefox 的 Cookie 设置|Pengaturan Cookie di Chrome untuk web|Pengaturan Cookie di Chrome untuk Android|Pengaturan Cookie di Safari web|Pengaturan Cookie di Safari iOS|Pengaturan Cookie di Internet Explorer|Pengaturan Cookie di Firefox)/g;
   return text.split(tokenPattern).filter(Boolean).map((part, index) => {
-    if (part === "lightvela@tencent.com" || part === "here" || part === "在此") {
+    if (part === "lightvela@tencent.com" || part === "here" || part === "在此" || part === "di sini") {
       return (
         <a key={`${part}-${index}`} href="mailto:lightvela@tencent.com" className="font-semibold underline underline-offset-2 hover:opacity-80" style={blueLinkStyle}>
           {part}
@@ -292,7 +409,7 @@ const renderInlineLinks = (text: string): ReactNode[] => {
         </a>
       );
     }
-    if (part === "Chrome browser add-on" || part === "Chrome 浏览器插件") {
+    if (part === "Chrome browser add-on" || part === "Chrome 浏览器插件" || part === "add-on browser Chrome") {
       return (
         <a key={`${part}-${index}`} href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2 hover:opacity-80" style={blueLinkStyle}>
           {part}
@@ -354,9 +471,9 @@ const CookieTable = ({ copy, rows }: { copy: CookiePolicyCopy; rows: CookieTable
 );
 
 export const CookiePolicyPage = () => {
-  const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
   // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
-  const copy = useZhHantDeep(isZhLocale(i18n.language) ? zh : en);
+  const copy = useZhHantDeep(localeOverride === "id-ID" ? id : isZhLocale(localeOverride) ? zh : en);
 
   return (
     <div className="min-h-dvh bg-[#F7F8FA] text-slate-950">

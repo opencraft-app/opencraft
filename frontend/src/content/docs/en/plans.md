@@ -1,16 +1,18 @@
 # Plans
 
-LightVela offers two plan tiers—**Launch and Cruise**—for needs ranging from a lightweight starting point to regular Agent use. Each plan provides an isolated cloud environment for a Hermes Agent and a monthly model-credit allocation. This page explains the positioning, resources, and benefits of each tier so you can choose the right fit.
+LightVela offers four plan tiers—**Launch, Cruise, Launch AI, and Cruise AI**—for needs ranging from a lightweight starting point to high-frequency Agent use. Each plan provides an isolated cloud environment for a Hermes Agent and a monthly AI-credit allocation. This page explains the positioning, resources, benefits, refund rules, and application steps so you can choose the right fit.
 
 ## What this page covers
 
 - Who each plan is designed for
 
-- Isolated runtime resources, storage, and model credits by tier
+- Isolated runtime resources, storage, and AI credits by tier
 
 - Core Agent capabilities shared by every plan
 
-- Public beta and billing, new-user trial benefits, and plan-selection guidance
+- Current pricing, promotions, and plan-selection guidance
+
+- Refund rules and email-based application steps
 
 ---
 
@@ -18,43 +20,47 @@ LightVela offers two plan tiers—**Launch and Cruise**—for needs ranging from
 
 A plan is the resource package that activates a Hermes Agent on LightVela. After you activate any currently available plan, LightVela assigns you a **dedicated cloud runtime** with its own CPU, memory, and storage. Your Hermes Agent can stay online 24/7 without requiring you to buy a server or deploy anything locally.
 
-The main differences between tiers are the **runtime resources, dedicated storage, and monthly model-credit allocation**. Core Agent capabilities—including adaptive behavior, multiple channels, skills, automations, and long-term memory—remain available across tiers.
+The main differences between tiers are the **runtime resources, dedicated storage, and monthly AI-credit allocation**. Core Agent capabilities—including adaptive behavior, multiple channels, skills, automations, and long-term memory—remain available across tiers.
 
-LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month, and new users can try the Launch plan free for 14 days. Check the [Subscribe page](/subscribe) for current availability and pricing, and see the [LightVela Paid Version Announcement](./announcements/public-beta.md) for details. The values below describe the current resource and credit structure.
+Real-time prices, inventory, discounts, and purchase availability are shown on the [Subscribe page](/subscribe). The values below describe the current resource structure, standard list prices, and AI-credit allocation.
 
 ---
 
-## The two plans
+## Plan details
 
-### Launch — Start light and get your Agent running
+Four plans are currently available: **Launch, Cruise, Launch AI, and Cruise AI**. Launch and Cruise are for users who already have their own large-model API Key. Launch AI and Cruise AI provide higher AI-credit allocations for more frequent conversations, skills, and automations.
 
-Launch is for **people trying a cloud Agent for the first time** and provides the baseline resources needed to use the complete Agent experience.
+Real-time prices, inventory, discounts, and purchase availability are shown on the [Subscribe page](/subscribe). The table below lists only the current standard list prices.
 
-| Item | Specification |
+### Plan benefits
+
+<div className="lv-plan-benefits-table">
+
+| Plan | Best for | Agent allowance | Isolated cloud runtime | Dedicated cloud storage | AI credits |
+|---|---|---|---|---|---|
+| Launch | Users who already have their own large-model API Key and want to get an Agent running at a lower cost | 1 | 2 CPU cores, 4 GB memory | 50 GB | 100 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
+| Cruise | Users who already have their own large-model API Key and want more resources for regular daily use | 1 | 4 CPU cores, 8 GB memory | 80 GB | 200 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
+| Launch AI | Lightweight usage with more AI credits | 1 | 2 CPU cores, 4 GB memory | 50 GB | 4,500 credits / month |
+| Cruise AI | High-frequency conversations, skills, and automations | 1 | 4 CPU cores, 8 GB memory | 80 GB | 10,000 credits / month |
+
+</div>
+
+### Plan pricing
+
+| Plan | Monthly standard list price |
 |---|---|
-| Number of Agents | 1 |
-| Isolated cloud runtime | 2 CPU cores, 4 GB memory |
-| Dedicated cloud storage | 50 GB |
-| Model credits | 100 credits / month |
-| Current access | 14-day free trial for new users after public beta and billing start; see Subscribe |
+| Launch | $6.5 / month |
+| Cruise | $14 / month |
+| Launch AI | $12 / month |
+| Cruise AI | $23 / month |
 
-Launch is a practical way to experience the full product before deciding what level of resources you need. To understand how model credits are measured and consumed, see [Credits](./credits.md).
+> ℹ️ **Price note**
+>
+> This page lists only monthly standard list prices. Prices, discounts, quotas, and plan availability may change because of campaigns or backend configuration. The price shown on the Subscribe page and the final amount confirmed on the payment page take precedence over this document. Taxes, if applicable, are calculated based on the account region, payment channel, and local rules. The final payable amount shown on the payment page prevails.
 
-### Cruise — A daily driver for regular Agent use
+### Agent capabilities included with every plan
 
-Cruise is for people who use an Agent as a **regular part of their day** and need more runtime capacity, storage, and monthly credits.
-
-| Item | Specification |
-|---|---|
-| Number of Agents | 1 |
-| Isolated cloud runtime | 4 CPU cores, 8 GB memory |
-| Dedicated cloud storage | 80 GB |
-| Model credits | 200 credits / month |
-| Current status | Availability is shown on the Subscribe page |
-
-## Agent capabilities included with every plan
-
-Every Hermes Agent has the same core capabilities; tiers differ only in runtime resources and credit allocation:
+Every Hermes Agent includes the following core capabilities:
 
 - **Adaptive Agent behavior** — Your Agent learns through use and becomes better aligned with your needs
 
@@ -62,31 +68,49 @@ Every Hermes Agent has the same core capabilities; tiers differ only in runtime 
 
 - **Simple configuration console** — Configure [models](./configuration/model.md), channels, and skills from the web
 
-- **Supported messaging channels** — Connect Telegram, WhatsApp, Discord, WeChat, QQ, WeCom, and Lark
+- **Supported messaging channels** — Chat with your Agent through supported channels, including WeChat, QQ, Lark, Telegram, WhatsApp, Discord, Slack, and WeCom
 
-- **Mainstream model APIs** — Choose the foundation model that fits your needs
+- **Mainstream model APIs** — Use plan AI credits or configure your own model API Key as needed
 
 - **Curated skills and skill packs** — Install reusable capabilities for your Agent
 
-- **Custom persona** — Define your Agent's role and communication style
+- **Custom persona, automations, long-term memory, and diagnostics** — Cover daily use, scheduled execution, context accumulation, and runtime troubleshooting
 
-- **Automations** — Run tasks on a schedule; see [Configure Automations](./configuration/automation.md)
+For how AI credits are allocated and consumed, see [Credits](./credits.md).
 
-- **Long-term memory** — Retain useful conversation history and preferences
+### Plan change rules
 
-- **Diagnostics** — Investigate runtime status and errors
+Direct upgrades, switches, or downgrades on an active plan are not currently supported. When an existing plan is active, the Subscribe page prioritizes marking your current plan. To continue using the same plan, renew it to extend the validity period. To change plans, refer to the actual options currently available on the account page and Subscribe page.
+
+### Plan lifecycle
+
+After a plan expires, plan benefits are suspended after 1 day. Data is retained for 14 days from the expiration date. After the retention period ends, the data is released and cannot be recovered.
 
 ---
 
-## Availability and plan selection
+## Refund guide
 
-- **Current phase**: LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users' existing plan validity will be extended by one additional month after public beta and billing officially start.
+LightVela international site orders support refund applications by email. The refund rules are shared with LightVela plan order refund rules. The rules and steps are below.
 
-- **Availability and pricing**: Available tiers, remaining quotas, and future pricing may change. Always check the [Subscribe page](/subscribe) for current information.
+### Refund rules
 
-- **Credit options**: Some plans may offer different credit allocations. The currently selectable options and included benefits are shown on the plan cards; see [Credits](./credits.md) for how credits work.
+- Each account can use the plan-order refund entitlement only **once**.
 
-- **Activation requirement**: Sign in with Google or GitHub and select an available plan. The international site does not require China real-name verification.
+- **Monthly plans**: You may apply within **24 hours** after the actual payment time, provided that no included AI credits have been used.
+
+- **Quarterly plans**: You may apply within **72 hours** after the actual payment time, provided that no included AI credits have been used.
+
+Whether a refund application is approved depends on the LightVela support team's review.
+
+### How to apply
+
+1. Check the refund rules and confirm that you meet the relevant conditions.
+
+2. Send an email to [lightvela@tencent.com](mailto:lightvela@tencent.com). In the email, clearly provide your account information, such as sign-in email / sign-in method, LightVela user ID, plan name, and order time; the reason for the refund; and the current usage status of your account, such as whether an Agent has been created or run, whether AI credits have been used, and whether channels, skills, or automations have been connected.
+
+3. The LightVela support team will process your application within **3 working days**.
+
+4. After the refund application is approved, the system will process the refund. Refunds are returned to the original payment method within **5-10 working days**. If the application is not approved, it is usually because the refund rules are not satisfied.
 
 ---
 
@@ -94,7 +118,7 @@ Every Hermes Agent has the same core capabilities; tiers differ only in runtime 
 
 ### How much does each plan cost?
 
-After billing starts, Launch is priced at $7.5 / month and Cruise at $15 / month. New users can try Launch free for 14 days. See the [Subscribe page](/subscribe) for current information.
+Real-time prices, inventory, discounts, taxes, and purchase availability are shown on the [Subscribe page](/subscribe) and payment page. The pricing table in this document lists only the current monthly standard list prices.
 
 ### Can I upgrade or switch plans?
 
@@ -102,7 +126,7 @@ Direct upgrades and plan changes are not currently supported for an active plan.
 
 ### How many Agents does one plan include?
 
-Launch and Cruise each include one Agent. The Agent allowance is the number of Hermes instances that can run at the same time.
+Launch, Cruise, Launch AI, and Cruise AI each include one Agent. The Agent allowance is the number of Hermes instances that can run at the same time.
 
 ### What happens when I run out of credits?
 

@@ -1,166 +1,147 @@
 package siteauth
 
 import (
-	"crypto/ed25519"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
-func TestVerifierAcceptsValidSiteAccessToken(t *testing.T) {
-	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	token := signTestToken(t, privateKey, jwt.SigningMethodEdDSA, "key-1", Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "lightvela-auth",
-			Audience:  jwt.ClaimStrings{"lightvela-site-gateway"},
-			Subject:   "user-1",
-			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
-			ID:        "ticket-1",
+func TestTokenCodecRoundTripsAllAuthArtifacts(t *testing.T) {
+	now := time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC)
+	codec, err := NewTokenCodec(TokenCodecConfig{
+		ActiveKeyID: "key-1",
+		Keys: map[string][]byte{
+			"key-1": []byte("0123456789abcdef0123456789abcdef"),
 		},
-		SiteHost: "abc.lightvela.tech",
-		State:    "state-1",
-	})
-
-	verifier, err := NewVerifier(Config{
-		Issuer:     "lightvela-auth",
-		Audience:   "lightvela-site-gateway",
-		PublicKeys: map[string]ed25519.PublicKey{"key-1": publicKey},
-		Clock:      func() time.Time { return now },
+		Clock: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	claims, err := verifier.Verify(token, "abc.lightvela.tech", "state-1")
+	launchRaw, err := codec.SealLaunch(LaunchClaims{
+		SiteID:      "ws-abc",
+		SiteHost:    "ws-abc.lightvela.tech",
+		ReturnTo:    "/about?tab=security",
+		CallbackURL: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+	})
 	if err != nil {
-		t.Fatalf("Verify() error = %v", err)
+		t.Fatal(err)
 	}
-	if claims.Subject != "user-1" || claims.SiteHost != "abc.lightvela.tech" {
-		t.Fatalf("claims = %+v", claims)
+	launch, err := codec.OpenLaunch(launchRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launch.SiteID != "ws-abc" || launch.SiteHost != "ws-abc.lightvela.tech" || launch.ReturnTo != "/about?tab=security" {
+		t.Fatalf("launch = %+v", launch)
+	}
+
+	stateRaw, err := codec.SealState(StateClaims{
+		SiteID:       launch.SiteID,
+		SiteHost:     launch.SiteHost,
+		ReturnTo:     launch.ReturnTo,
+		CallbackURL:  launch.CallbackURL,
+		State:        "state-1",
+		PKCEVerifier: "pkce-verifier-1",
+		Nonce:        "nonce-1",
+		LaunchDigest: DigestToken(launchRaw),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := codec.OpenState(stateRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.SiteID != "ws-abc" || state.State != "state-1" || state.PKCEVerifier != "pkce-verifier-1" || state.LaunchDigest != DigestToken(launchRaw) {
+		t.Fatalf("state = %+v", state)
+	}
+
+	handoffRaw, err := codec.SealHandoff(HandoffClaims{
+		SiteID:   "ws-abc",
+		SiteHost: "ws-abc.lightvela.tech",
+		UserID:   "user-1",
+		Nonce:    "nonce-1",
+		ReturnTo: "/about?tab=security",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handoff, err := codec.OpenHandoff(handoffRaw, "ws-abc.lightvela.tech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handoff.SiteID != "ws-abc" || handoff.UserID != "user-1" || handoff.ReturnTo != "/about?tab=security" {
+		t.Fatalf("handoff = %+v", handoff)
+	}
+
+	sessionRaw, err := codec.SealSession(SessionClaims{
+		SiteID:   "ws-abc",
+		SiteHost: "ws-abc.lightvela.tech",
+		UserID:   "user-1",
+		Nonce:    "nonce-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := codec.OpenSession(sessionRaw, "ws-abc.lightvela.tech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.SiteID != "ws-abc" || session.UserID != "user-1" || session.SiteHost != "ws-abc.lightvela.tech" {
+		t.Fatalf("session = %+v", session)
 	}
 }
 
-func TestVerifierRejectsInvalidSiteAccessTokens(t *testing.T) {
-	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, otherPrivateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	baseClaims := Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "lightvela-auth",
-			Audience:  jwt.ClaimStrings{"lightvela-site-gateway"},
-			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
-			ID:        "ticket-1",
+func TestTokenCodecRejectsTamperingAndSiblingHostReplay(t *testing.T) {
+	now := time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC)
+	codec, err := NewTokenCodec(TokenCodecConfig{
+		ActiveKeyID: "key-1",
+		Keys: map[string][]byte{
+			"key-1": []byte("0123456789abcdef0123456789abcdef"),
 		},
-		SiteHost: "abc.lightvela.tech",
-		State:    "state-1",
-	}
-
-	tests := []struct {
-		name  string
-		sign  ed25519.PrivateKey
-		alg   jwt.SigningMethod
-		kid   string
-		claim Claims
-		host  string
-		state string
-	}{
-		{name: "bad signature", sign: otherPrivateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: baseClaims, host: "abc.lightvela.tech", state: "state-1"},
-		{name: "unknown kid", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "unknown", claim: baseClaims, host: "abc.lightvela.tech", state: "state-1"},
-		{name: "wrong algorithm", sign: privateKey, alg: jwt.SigningMethodHS256, kid: "key-1", claim: baseClaims, host: "abc.lightvela.tech", state: "state-1"},
-		{name: "wrong issuer", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: func() Claims { c := baseClaims; c.Issuer = "other"; return c }(), host: "abc.lightvela.tech", state: "state-1"},
-		{name: "wrong audience", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: func() Claims { c := baseClaims; c.Audience = jwt.ClaimStrings{"other"}; return c }(), host: "abc.lightvela.tech", state: "state-1"},
-		{name: "expired", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: func() Claims { c := baseClaims; c.ExpiresAt = jwt.NewNumericDate(now.Add(-time.Second)); return c }(), host: "abc.lightvela.tech", state: "state-1"},
-		{name: "wrong host", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: baseClaims, host: "other.lightvela.tech", state: "state-1"},
-		{name: "wrong state", sign: privateKey, alg: jwt.SigningMethodEdDSA, kid: "key-1", claim: baseClaims, host: "abc.lightvela.tech", state: "other"},
-	}
-
-	verifier, err := NewVerifier(Config{
-		Issuer:     "lightvela-auth",
-		Audience:   "lightvela-site-gateway",
-		PublicKeys: map[string]ed25519.PublicKey{"key-1": publicKey},
-		Clock:      func() time.Time { return now },
+		Clock: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			token := signTestToken(t, tt.sign, tt.alg, tt.kid, tt.claim)
-			if _, err := verifier.Verify(token, tt.host, tt.state); err == nil {
-				t.Fatal("Verify() unexpectedly succeeded")
-			}
-		})
-	}
-}
-
-func TestVerifierRejectsWrongTokenType(t *testing.T) {
-	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	verifier, err := NewVerifier(Config{
-		Issuer:     "lightvela-auth",
-		Audience:   "lightvela-site-gateway",
-		PublicKeys: map[string]ed25519.PublicKey{"key-1": publicKey},
-		Clock:      func() time.Time { return now },
+	handoffRaw, err := codec.SealHandoff(HandoffClaims{
+		SiteID:   "ws-abc",
+		SiteHost: "ws-abc.lightvela.tech",
+		UserID:   "user-1",
+		Nonce:    "nonce-1",
+		ReturnTo: "/",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	token := signTestTokenWithType(t, privateKey, jwt.SigningMethodEdDSA, "key-1", Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "lightvela-auth",
-			Audience:  jwt.ClaimStrings{"lightvela-site-gateway"},
-			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
-			ID:        "ticket-1",
-		},
-		SiteHost: "abc.lightvela.tech",
-		State:    "state-1",
-	}, "JWT")
-	if _, err := verifier.Verify(token, "abc.lightvela.tech", "state-1"); err == nil {
-		t.Fatal("Verify() unexpectedly accepted the wrong typ")
+	if _, err := codec.OpenHandoff(handoffRaw, "ws-other.lightvela.tech"); err == nil {
+		t.Fatal("sibling-host replay unexpectedly succeeded")
+	}
+	if _, err := codec.OpenHandoff(tamperEncodedPayload(t, handoffRaw), "ws-abc.lightvela.tech"); err == nil {
+		t.Fatal("tampered handoff unexpectedly succeeded")
+	}
+	if _, err := codec.OpenSession(handoffRaw, "ws-abc.lightvela.tech"); err == nil {
+		t.Fatal("cross-scope replay unexpectedly succeeded")
 	}
 }
 
-func signTestToken(t *testing.T, key ed25519.PrivateKey, method jwt.SigningMethod, kid string, claims Claims) string {
-	return signTestTokenWithType(t, key, method, kid, claims, tokenType)
-}
-
-func signTestTokenWithType(t *testing.T, key ed25519.PrivateKey, method jwt.SigningMethod, kid string, claims Claims, typ string) string {
+func tamperEncodedPayload(t *testing.T, raw string) string {
 	t.Helper()
-	token := jwt.NewWithClaims(method, claims)
-	token.Header["typ"] = typ
-	token.Header["kid"] = kid
-	if method == jwt.SigningMethodHS256 {
-		// The verifier must reject this before trying to use an incompatible key.
-		signed, err := token.SignedString([]byte(strings.Repeat("x", 32)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return signed
+
+	parts := strings.SplitN(raw, ".", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		t.Fatalf("invalid token format: %q", raw)
 	}
-	signed, err := token.SignedString(key)
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("decode payload: %v", err)
 	}
-	return signed
+	if len(payload) == 0 {
+		t.Fatal("empty token payload")
+	}
+	payload[len(payload)-1] ^= 0x01
+	return parts[0] + "." + base64.RawURLEncoding.EncodeToString(payload)
 }

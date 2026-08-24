@@ -46,6 +46,16 @@ data:
   LIGHTCLAW_AUTH_DB: "lightclaw_auth"
   LIGHTCLAW_AUTH_DB_USER: "lightclaw_auth"
   LIGHTCLAW_EMAIL_BIND_ENABLED: "false"
+  LIGHTCLAW_FEDERATION_ENABLED: "false"
+  LIGHTCLAW_OIDC_ENABLED: "false"
+  LIGHTCLAW_OIDC_ISSUER: ""
+  LIGHTCLAW_OIDC_SIGNING_KEY_ID: ""
+  LIGHTCLAW_OIDC_CLIENTS_JSON: ""
+  LIGHTCLAW_OIDC_AUTHORIZATION_CODE_TTL_SECONDS: "5"
+  LIGHTCLAW_OIDC_ID_TOKEN_TTL_SECONDS: "300"
+  LIGHTCLAW_OIDC_ACCESS_TOKEN_TTL_SECONDS: "300"
+  LIGHTCLAW_OIDC_ACCESS_TOKEN_AUDIENCE: ""
+  LIGHTCLAW_PAYMENT_METHODS_ENABLED: "false"
   LIGHTCLAW_SES_REGION: "ap-guangzhou"
   LIGHTCLAW_SES_FROM: "LightVela <noreply@service.lightvela.com>"
   CONTENT_AUDIT_ENABLED: "false"
@@ -97,7 +107,7 @@ spec:
                 --port="${MYSQL_PORT}" \
                 --user="${LIGHTCLAW_AUTH_DB_USER}" \
                 --password="${LIGHTCLAW_AUTH_DB_PASSWORD}" \
-                -Nse "SELECT IF((SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME IN ('users','invites','auth_sessions','verification_rate_limits')) = 4 AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME='sms_challenges' AND COLUMN_NAME IN ('generation','reservation_id')) = 2 AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME='phone_auth_challenges' AND COLUMN_NAME IN ('generation','reservation_id')) = 2, 1, 0)" | grep -qx '1'; do
+                -Nse "SELECT IF((SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME IN ('users','invites','auth_sessions','verification_rate_limits','oidc_authorization_codes')) = 5 AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME='sms_challenges' AND COLUMN_NAME IN ('generation','reservation_id')) = 2 AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME='phone_auth_challenges' AND COLUMN_NAME IN ('generation','reservation_id')) = 2, 1, 0)" | grep -qx '1'; do
                 echo "waiting for auth schema"
                 sleep 3
               done

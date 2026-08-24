@@ -22,6 +22,7 @@
 package shadowclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	defaultBindingRequestTimeout    = 4 * time.Second
+	defaultCredentialRequestTimeout = 20 * time.Second
 )
 
 // Client 是 account-binding 内部反向调用契约。
@@ -46,6 +52,45 @@ type Client interface {
 	GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error)
 }
 
+type BillingRecoveryClient interface {
+	Client
+	GetBindingStateByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error)
+	RetryBillingAccountByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error)
+}
+
+// CredentialClient exchanges an external user binding for short-lived shadow
+// account credentials. Keep this separate from Client so binding-only callers
+// and their test fakes do not gain access to secrets.
+type CredentialClient interface {
+	GetTemporaryCredentialsByExternalUserID(ctx context.Context, externalUserID string) (*TemporaryCredentials, error)
+}
+
+// PaymentContextClient resolves both short-lived credentials and card binding
+// state in one auth call for international create-order payment URLs.
+type PaymentContextClient interface {
+	GetPaymentContextByExternalUserID(ctx context.Context, externalUserID string) (*PaymentContext, error)
+}
+
+type ResolverClient interface {
+	Client
+	CredentialClient
+	PaymentContextClient
+}
+
+type TemporaryCredentials struct {
+	Uin       string
+	OwnerUin  string
+	SecretID  string
+	SecretKey string
+	Token     string
+	ExpiredAt time.Time
+}
+
+type PaymentContext struct {
+	Credentials      TemporaryCredentials
+	HasPaymentMethod bool
+}
+
 // Binding 镜像 internal shadowbinding 反查响应。
 //
 // 字段语义：
@@ -58,10 +103,13 @@ type Client interface {
 // trade 内部统一 string 形态（与 jifei goodsDetail map / trade_order 列对齐），
 // 故本 client 在反序列化层做一次 int64 → string 转换。
 type Binding struct {
-	UserID   string `json:"user_id"`
-	Uin      string `json:"uin"`
-	OwnerUin string `json:"owner_uin"`
-	AppID    string `json:"app_id"`
+	UserID           string `json:"user_id"`
+	Uin              string `json:"uin"`
+	OwnerUin         string `json:"owner_uin"`
+	AppID            string `json:"app_id"`
+	Status           string `json:"status,omitempty"`
+	LastErrorCode    string `json:"last_error_code,omitempty"`
+	LastErrorMessage string `json:"last_error_message,omitempty"`
 }
 
 // ErrBindingNotFound 在 resolver 返回 404（externalUserId 未绑定）时返回。
@@ -69,6 +117,8 @@ type Binding struct {
 // trade 业务层应将其映射为"用户未绑定云账号，引导前往实名 / 绑定"流程，
 // 不应作为 5xx 上报。
 var ErrBindingNotFound = errors.New("shadowclient: binding not found")
+
+var ErrBillingAccountOpenFailed = errors.New("shadowclient: billing account open failed")
 
 // ErrUnauthorized 在 resolver 返回 401 时返回，通常意味着 internalServiceToken
 // 与服务端配置不一致 — 属于配置错而非业务错。
@@ -106,17 +156,21 @@ type envelope struct {
 //
 // 反序列化策略：先按 int64 解；任何字段失败时转 fallback 走 string 解。
 type rawBinding struct {
-	UserID   string `json:"user_id"`
-	Uin      int64  `json:"uin"`
-	OwnerUin int64  `json:"owner_uin"`
-	AppID    int64  `json:"app_id"`
+	UserID           string `json:"user_id"`
+	Uin              int64  `json:"uin"`
+	OwnerUin         int64  `json:"owner_uin"`
+	AppID            int64  `json:"app_id"`
+	Status           string `json:"status,omitempty"`
+	LastErrorCode    string `json:"last_error_code,omitempty"`
+	LastErrorMessage string `json:"last_error_message,omitempty"`
 }
 
 // httpClient 是 Client 的标准 HTTP 实现。
 type httpClient struct {
-	baseURL    string
-	token      string
-	httpClient *http.Client
+	baseURL              string
+	token                string
+	httpClient           *http.Client
+	credentialHTTPClient *http.Client
 }
 
 // Options 可选配置。空值走默认。
@@ -125,6 +179,9 @@ type Options struct {
 	// 默认为 &http.Client{Timeout: 4s}（与 ctlclient 一致，落 shadow 反查在询价/下单
 	// 同步链路里，预算 4s 足够）。
 	HTTPClient *http.Client
+	// CredentialHTTPClient has a longer default timeout because one auth call
+	// performs the CAM and STS exchanges sequentially.
+	CredentialHTTPClient *http.Client
 }
 
 // New 构造 shadowclient.Client。
@@ -134,7 +191,7 @@ type Options struct {
 //   - internalServiceToken：内部服务间互信 token（与 ctlclient 同源）
 //
 // 空 baseURL 不在 New 期 panic（保持与 ctlclient 一致行为）；调用时由 do() 报错。
-func New(baseURL, internalServiceToken string, opts ...Options) Client {
+func New(baseURL, internalServiceToken string, opts ...Options) ResolverClient {
 	c := &httpClient{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		token:   strings.TrimSpace(internalServiceToken),
@@ -142,9 +199,175 @@ func New(baseURL, internalServiceToken string, opts ...Options) Client {
 	if len(opts) > 0 && opts[0].HTTPClient != nil {
 		c.httpClient = opts[0].HTTPClient
 	} else {
-		c.httpClient = &http.Client{Timeout: 4 * time.Second}
+		c.httpClient = &http.Client{Timeout: defaultBindingRequestTimeout}
+	}
+	if len(opts) > 0 && opts[0].CredentialHTTPClient != nil {
+		c.credentialHTTPClient = opts[0].CredentialHTTPClient
+	} else if len(opts) > 0 && opts[0].HTTPClient != nil {
+		c.credentialHTTPClient = opts[0].HTTPClient
+	} else {
+		c.credentialHTTPClient = &http.Client{Timeout: defaultCredentialRequestTimeout}
 	}
 	return c
+}
+
+func (c *httpClient) GetTemporaryCredentialsByExternalUserID(ctx context.Context, externalUserID string) (*TemporaryCredentials, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("shadowclient: externalUserID is required")
+	}
+	if c.baseURL == "" {
+		return nil, fmt.Errorf("shadowclient: baseURL is empty")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"external_user_id": externalUserID,
+		"client_ua":        "lightvela-trade",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: marshal credentials request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/shadow/credentials", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: build credentials request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.credentialHTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: do credentials request: %w", err)
+	}
+	defer resp.Body.Close()
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: read credentials response: %w", err)
+	}
+	var env envelope
+	envParseErr := json.Unmarshal(rawBody, &env)
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%w: status=%d code=%s message=%q request_id=%s",
+			ErrUnauthorized, resp.StatusCode, env.Code, env.Message, env.RequestID)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		if envParseErr != nil {
+			return nil, &Error{HTTPStatus: resp.StatusCode, Message: "invalid error response"}
+		}
+		return nil, &Error{HTTPStatus: resp.StatusCode, Code: env.Code, Message: env.Message, RequestID: env.RequestID}
+	}
+	if envParseErr != nil || len(env.Data) == 0 || string(env.Data) == "null" {
+		return nil, errors.New("shadowclient: invalid credentials response envelope")
+	}
+	var raw struct {
+		Uin          int64  `json:"uin"`
+		OwnerUin     int64  `json:"owner_uin"`
+		TmpSecretID  string `json:"tmp_secret_id"`
+		TmpSecretKey string `json:"tmp_secret_key"`
+		Token        string `json:"token"`
+		ExpiredAt    string `json:"expired_at"`
+	}
+	if err := json.Unmarshal(env.Data, &raw); err != nil {
+		return nil, errors.New("shadowclient: invalid temporary credentials payload")
+	}
+	expiredAt, err := time.Parse(time.RFC3339, strings.TrimSpace(raw.ExpiredAt))
+	if raw.Uin == 0 || raw.OwnerUin == 0 || strings.TrimSpace(raw.TmpSecretID) == "" ||
+		strings.TrimSpace(raw.TmpSecretKey) == "" || strings.TrimSpace(raw.Token) == "" || err != nil {
+		return nil, errors.New("shadowclient: temporary credentials are incomplete")
+	}
+	if !expiredAt.After(time.Now()) {
+		return nil, errors.New("shadowclient: temporary credentials are expired")
+	}
+	return &TemporaryCredentials{
+		Uin:       strconv.FormatInt(raw.Uin, 10),
+		OwnerUin:  strconv.FormatInt(raw.OwnerUin, 10),
+		SecretID:  raw.TmpSecretID,
+		SecretKey: raw.TmpSecretKey,
+		Token:     raw.Token,
+		ExpiredAt: expiredAt,
+	}, nil
+}
+
+func (c *httpClient) GetPaymentContextByExternalUserID(ctx context.Context, externalUserID string) (*PaymentContext, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("shadowclient: externalUserID is required")
+	}
+	if c.baseURL == "" {
+		return nil, fmt.Errorf("shadowclient: baseURL is empty")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"external_user_id": externalUserID,
+		"client_ua":        "lightvela-trade",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: marshal payment context request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/payment-methods/context", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: build payment context request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.credentialHTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: do payment context request: %w", err)
+	}
+	defer resp.Body.Close()
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: read payment context response: %w", err)
+	}
+	var env envelope
+	envParseErr := json.Unmarshal(rawBody, &env)
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%w: status=%d code=%s message=%q request_id=%s",
+			ErrUnauthorized, resp.StatusCode, env.Code, env.Message, env.RequestID)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		if envParseErr != nil {
+			return nil, &Error{HTTPStatus: resp.StatusCode, Message: "invalid error response"}
+		}
+		return nil, &Error{HTTPStatus: resp.StatusCode, Code: env.Code, Message: env.Message, RequestID: env.RequestID}
+	}
+	if envParseErr != nil || len(env.Data) == 0 || string(env.Data) == "null" {
+		return nil, errors.New("shadowclient: invalid payment context response envelope")
+	}
+	var data struct {
+		HasPaymentMethod *bool  `json:"has_payment_method"`
+		Uin              int64  `json:"uin"`
+		OwnerUin         int64  `json:"owner_uin"`
+		TmpSecretID      string `json:"tmp_secret_id"`
+		TmpSecretKey     string `json:"tmp_secret_key"`
+		Token            string `json:"token"`
+		ExpiredAt        string `json:"expired_at"`
+	}
+	if err := json.Unmarshal(env.Data, &data); err != nil || data.HasPaymentMethod == nil {
+		return nil, errors.New("shadowclient: invalid payment context payload")
+	}
+	expiredAt, err := time.Parse(time.RFC3339, strings.TrimSpace(data.ExpiredAt))
+	if data.Uin == 0 || data.OwnerUin == 0 || strings.TrimSpace(data.TmpSecretID) == "" ||
+		strings.TrimSpace(data.TmpSecretKey) == "" || strings.TrimSpace(data.Token) == "" || err != nil {
+		return nil, errors.New("shadowclient: payment context credentials are incomplete")
+	}
+	if !expiredAt.After(time.Now()) {
+		return nil, errors.New("shadowclient: payment context credentials are expired")
+	}
+	return &PaymentContext{
+		Credentials: TemporaryCredentials{
+			Uin:       strconv.FormatInt(data.Uin, 10),
+			OwnerUin:  strconv.FormatInt(data.OwnerUin, 10),
+			SecretID:  data.TmpSecretID,
+			SecretKey: data.TmpSecretKey,
+			Token:     data.Token,
+			ExpiredAt: expiredAt,
+		},
+		HasPaymentMethod: *data.HasPaymentMethod,
+	}, nil
 }
 
 func (c *httpClient) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error) {
@@ -238,6 +461,132 @@ func (c *httpClient) GetBindingByExternalUserID(ctx context.Context, externalUse
 			truncate(env.Data, 256))
 	}
 	return &b, nil
+}
+
+func (c *httpClient) GetBindingStateByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("shadowclient: externalUserID is required")
+	}
+	q := url.Values{}
+	q.Set("external_user_id", externalUserID)
+	return c.doBindingStateRequest(ctx, http.MethodGet, "/internal/shadow/binding/state?"+q.Encode(), nil)
+}
+
+func (c *httpClient) RetryBillingAccountByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("shadowclient: externalUserID is required")
+	}
+	payload, err := json.Marshal(map[string]string{"external_user_id": externalUserID})
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: marshal billing retry request: %w", err)
+	}
+	return c.doBindingStateRequest(ctx, http.MethodPost, "/internal/shadow/binding/retry", payload)
+}
+
+func (c *httpClient) doBindingStateRequest(ctx context.Context, method, path string, payload []byte) (*Binding, error) {
+	if c.baseURL == "" {
+		return nil, fmt.Errorf("shadowclient: baseURL is empty")
+	}
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: build binding state request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: do binding state request: %w", err)
+	}
+	defer resp.Body.Close()
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: read binding state response: %w", err)
+	}
+	var env envelope
+	if err := json.Unmarshal(rawBody, &env); err != nil {
+		return nil, &Error{HTTPStatus: resp.StatusCode, Message: truncate(rawBody, 256)}
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%w: status=%d code=%s message=%q request_id=%s",
+			ErrUnauthorized, resp.StatusCode, env.Code, env.Message, env.RequestID)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: code=%s message=%q request_id=%s",
+			ErrBindingNotFound, env.Code, env.Message, env.RequestID)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, &Error{HTTPStatus: resp.StatusCode, Code: env.Code, Message: env.Message, RequestID: env.RequestID}
+	}
+	var raw rawBinding
+	if err := json.Unmarshal(env.Data, &raw); err != nil || strings.TrimSpace(raw.UserID) == "" {
+		return nil, fmt.Errorf("shadowclient: invalid binding state payload: body=%s", truncate(env.Data, 256))
+	}
+	return &Binding{
+		UserID:           raw.UserID,
+		Uin:              strconv.FormatInt(raw.Uin, 10),
+		OwnerUin:         strconv.FormatInt(raw.OwnerUin, 10),
+		AppID:            strconv.FormatInt(raw.AppID, 10),
+		Status:           raw.Status,
+		LastErrorCode:    raw.LastErrorCode,
+		LastErrorMessage: raw.LastErrorMessage,
+	}, nil
+}
+
+func ResolveBindingWithBillingRetry(ctx context.Context, client Client, externalUserID string, allowFailedBilling bool) (*Binding, error) {
+	binding, err := client.GetBindingByExternalUserID(ctx, externalUserID)
+	if err == nil {
+		return binding, nil
+	}
+	if !errors.Is(err, ErrBindingNotFound) {
+		return nil, err
+	}
+	recovery, ok := client.(BillingRecoveryClient)
+	if !ok {
+		return nil, err
+	}
+	state, stateErr := recovery.GetBindingStateByExternalUserID(ctx, externalUserID)
+	if stateErr != nil {
+		return nil, stateErr
+	}
+	if !isBillingAccountOpenFailure(state) || !hasRegisteredIdentity(state) {
+		return nil, err
+	}
+	retried, retryErr := recovery.RetryBillingAccountByExternalUserID(ctx, externalUserID)
+	if retryErr == nil && strings.EqualFold(strings.TrimSpace(retried.Status), "active") {
+		return retried, nil
+	}
+	if allowFailedBilling {
+		if retryErr == nil && hasRegisteredIdentity(retried) {
+			return retried, nil
+		}
+		return state, nil
+	}
+	if retryErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBillingAccountOpenFailed, retryErr)
+	}
+	return nil, fmt.Errorf("%w: externalUserID=%s status=%s code=%s",
+		ErrBillingAccountOpenFailed, externalUserID, retried.Status, retried.LastErrorCode)
+}
+
+func isBillingAccountOpenFailure(binding *Binding) bool {
+	return binding != nil && strings.EqualFold(strings.TrimSpace(binding.Status), "failed") &&
+		strings.TrimSpace(binding.LastErrorCode) == "billing_account_open_failed"
+}
+
+func hasRegisteredIdentity(binding *Binding) bool {
+	return binding != nil && strings.TrimSpace(binding.Uin) != "" && binding.Uin != "0" &&
+		strings.TrimSpace(binding.AppID) != "" && binding.AppID != "0"
 }
 
 // truncate 截断 byte slice 用于 error 日志，避免巨型 body 干扰排障。

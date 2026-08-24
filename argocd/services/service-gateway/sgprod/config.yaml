@@ -43,6 +43,11 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: public
+  - name: ctl-cloudapi
+    prefix: /cloudapi
+    methods: [POST, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: public
   - name: ctl
     prefix: /v1/instances
     methods: [GET, POST, DELETE, OPTIONS]
@@ -71,6 +76,9 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://sandbox-api.sandbox.svc.cluster.local
     access: authenticated
+    path_policy: allowlist
+    path_allow:
+      - { method: POST, path: "/sandboxes" }
     response_header_timeout: 60s
   - name: ctl-bundles
     prefix: /v1/bundles
@@ -99,6 +107,11 @@ routes:
     prefix: /contentaudit/callback
     methods: [POST, OPTIONS]
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+    access: public
+  - name: trade-jifei-callback
+    prefix: /trade/jifei/callback
+    methods: [POST, OPTIONS]
+    upstream: http://trade.trade.svc.cluster.local
     access: public
   - name: ctl-frontend
     prefix: /v1/frontend
@@ -131,6 +144,14 @@ routes:
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: authenticated
     public_allow:
+      - method: GET
+        path: /auth/federation/context
+      - method: POST
+        path: /auth/federation/tickets
+      - method: POST
+        path: /auth/federation/exchange
+      - method: POST
+        path: /auth/federation/bots/{bot_id}/tat/session
       - method: POST
         path: /auth/password/sign-in
       - method: POST
@@ -141,6 +162,8 @@ routes:
         path: /auth/invite/validate
       - method: POST
         path: /auth/invite/prepare
+      - method: POST
+        path: /auth/internal/tencentcloud/account
       - method: GET
         path: /auth/oauth/qq/start
       - method: GET

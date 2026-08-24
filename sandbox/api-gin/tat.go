@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,16 +15,31 @@ import (
 	"cvm-mock-e2b/internal/provider"
 )
 
+const defaultTATSessionDeadline = 5 * time.Second
+
 const (
-	maxTATScriptBytes   = 64 * 1024
-	defaultTATStatus    = "PENDING"
-	defaultTATRegion    = ""
-	tatCommandRoutePath = "/sandboxes/:sandboxID/tat/commands"
-	tatSessionRoutePath = "/sandboxes/:sandboxID/tat/session"
+	maxTATScriptBytes          = 64 * 1024
+	defaultTATStatus           = "PENDING"
+	defaultTATRegion           = ""
+	tatCommandRoutePath        = "/sandboxes/:sandboxID/tat/commands"
+	tatSessionRoutePath        = "/sandboxes/:sandboxID/tat/session"
+	internalTATInvokeRoutePath = "/sandboxes/:sandboxID/tat/invocations"
+	maxTATParameterCount       = 16
+	maxTATParameterValueBytes  = 8 * 1024
+)
+
+var (
+	tatCommandIDPattern     = regexp.MustCompile(`^cmd-[A-Za-z0-9]+$`)
+	tatParameterNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 )
 
 type postTATCommandRequest struct {
 	Bash string `json:"bash"`
+}
+
+type postTATInvocationRequest struct {
+	CommandID  string            `json:"command_id"`
+	Parameters map[string]string `json:"parameters"`
 }
 
 type tatCommandResponse struct {
@@ -41,6 +59,14 @@ type tatCommandResultResponse struct {
 	ErrorInfo     string `json:"errorInfo,omitempty"`
 	OutputURL     string `json:"outputURL,omitempty"`
 	Dropped       int64  `json:"dropped,omitempty"`
+	StartTime     string `json:"startTime,omitempty"`
+	EndTime       string `json:"endTime,omitempty"`
+	ExecutionTime string `json:"executionTime,omitempty"`
+}
+
+type tatCommandMetadataResponse struct {
+	tatCommandResponse
+	ExitCode      int64  `json:"exitCode"`
 	StartTime     string `json:"startTime,omitempty"`
 	EndTime       string `json:"endTime,omitempty"`
 	ExecutionTime string `json:"executionTime,omitempty"`
@@ -80,6 +106,10 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if inst.State != core.StateAllocated || inst.PoolID != sb.PoolID {
+		c.JSON(http.StatusConflict, gin.H{"error": "sandbox instance is not allocated"})
+		return
+	}
 	if strings.TrimSpace(inst.CloudID) == "" {
 		c.JSON(http.StatusConflict, gin.H{"error": "sandbox instance missing cloud id"})
 		return
@@ -89,11 +119,30 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 		return
 	}
 
-	session, err := h.terminals.StartTerminalSession(c.Request.Context(), sb.Region, inst.CloudID)
+	deadlineCtx, cancel := context.WithTimeout(c.Request.Context(), h.terminalSessionTimeout())
+	defer cancel()
+	session, err := h.terminals.StartTerminalSession(deadlineCtx, sb.Region, inst.CloudID)
 	if err != nil {
+		if deadlineCtx.Err() != nil {
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "tat session start timed out"})
+			return
+		}
 		log.Printf("[api] tat session start failed sandbox=%s pool=%s instance=%s cloud=%s region=%s err=%v",
 			sb.ID, pool.ID, inst.ID, inst.CloudID, sb.Region, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if deadlineCtx.Err() != nil {
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "tat session start timed out"})
+		return
+	}
+	allocationUnchanged := h.sameSandboxAllocation(deadlineCtx, sb, inst)
+	if deadlineCtx.Err() != nil {
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "tat session start timed out"})
+		return
+	}
+	if !allocationUnchanged {
+		c.JSON(http.StatusConflict, gin.H{"error": "sandbox allocation changed"})
 		return
 	}
 	if strings.TrimSpace(session.Region) == "" {
@@ -122,6 +171,28 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 		Username:       session.Username,
 		WorkingDir:     session.WorkingDir,
 	})
+}
+
+func (h *handler) terminalSessionTimeout() time.Duration {
+	if h.tatSessionTimeout > 0 {
+		return h.tatSessionTimeout
+	}
+	return defaultTATSessionDeadline
+}
+
+func (h *handler) sameSandboxAllocation(ctx context.Context, expectedSandbox core.Sandbox, expectedInstance core.Instance) bool {
+	sb, err := h.svc.GetSandbox(ctx, expectedSandbox.ID)
+	if err != nil || sb.InstanceID != expectedSandbox.InstanceID || sb.PoolID != expectedSandbox.PoolID {
+		return false
+	}
+	inst, err := h.svc.GetInstance(ctx, sb.InstanceID)
+	if err != nil {
+		return false
+	}
+	return inst.State == core.StateAllocated &&
+		inst.ID == expectedInstance.ID &&
+		inst.PoolID == expectedInstance.PoolID &&
+		inst.CloudID == expectedInstance.CloudID
 }
 
 func (h *handler) postSandboxTATCommand(c *gin.Context) {
@@ -182,6 +253,147 @@ func (h *handler) postSandboxTATCommand(c *gin.Context) {
 		InvocationID: inv.InvocationID,
 		Status:       inv.Status,
 	})
+}
+
+func (h *handler) postInternalTATInvoke(c *gin.Context) {
+	if h.invocations == nil {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "tat command invocation unavailable"})
+		return
+	}
+
+	sandboxID := strings.TrimSpace(c.Param("sandboxID"))
+	sb, inst, pool, ok := h.resolveSandboxContext(c, sandboxID)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(inst.CloudID) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "sandbox instance missing cloud id"})
+		return
+	}
+	if strings.TrimSpace(sb.Region) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "sandbox region missing"})
+		return
+	}
+
+	var req postTATInvocationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	req.CommandID = strings.TrimSpace(req.CommandID)
+	if !tatCommandIDPattern.MatchString(req.CommandID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid command_id"})
+		return
+	}
+	if h.allowedTATCommandID == "" || req.CommandID != h.allowedTATCommandID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "command_id is not allowed"})
+		return
+	}
+	if len(req.Parameters) == 0 || len(req.Parameters) > maxTATParameterCount {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid parameters"})
+		return
+	}
+	for name, value := range req.Parameters {
+		if !tatParameterNamePattern.MatchString(name) || value == "" || len(value) > maxTATParameterValueBytes {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid parameters"})
+			return
+		}
+	}
+
+	inv, err := h.invocations.InvokeCommand(c.Request.Context(), sb.Region, inst.CloudID, req.CommandID, req.Parameters)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "tat command invocation failed"})
+		return
+	}
+	if strings.TrimSpace(inv.InvocationID) == "" {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "tat command invocation returned empty invocation id"})
+		return
+	}
+	if strings.TrimSpace(inv.Status) == "" {
+		inv.Status = defaultTATStatus
+	}
+	if strings.TrimSpace(inv.Region) == "" {
+		inv.Region = sb.Region
+	}
+	if strings.TrimSpace(inv.InstanceID) == "" {
+		inv.InstanceID = inst.CloudID
+	}
+	c.JSON(http.StatusAccepted, tatCommandResponse{
+		SandboxID:    sb.ID,
+		PoolID:       pool.ID,
+		InstanceID:   inv.InstanceID,
+		Region:       inv.Region,
+		CommandID:    firstNonEmptyTAT(inv.CommandID, req.CommandID),
+		InvocationID: inv.InvocationID,
+		Status:       inv.Status,
+	})
+}
+
+func (h *handler) getInternalTATInvocation(c *gin.Context) {
+	if h.invocations == nil {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "tat command invocation unavailable"})
+		return
+	}
+
+	sandboxID := strings.TrimSpace(c.Param("sandboxID"))
+	invocationID := strings.TrimSpace(c.Param("invocationID"))
+	if invocationID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invocationID is required"})
+		return
+	}
+	sb, inst, pool, ok := h.resolveSandboxContext(c, sandboxID)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(inst.CloudID) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "sandbox instance missing cloud id"})
+		return
+	}
+	if strings.TrimSpace(sb.Region) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "sandbox region missing"})
+		return
+	}
+
+	result, err := h.invocations.GetCommandInvocationMetadata(c.Request.Context(), sb.Region, invocationID, inst.CloudID)
+	if err != nil {
+		if err == provider.ErrInvocationNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "invocation not found"})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": "tat command invocation query failed"})
+		return
+	}
+	if strings.TrimSpace(result.Region) == "" {
+		result.Region = sb.Region
+	}
+	if strings.TrimSpace(result.InstanceID) == "" {
+		result.InstanceID = inst.CloudID
+	}
+
+	c.JSON(http.StatusOK, tatCommandMetadataResponse{
+		tatCommandResponse: tatCommandResponse{
+			SandboxID:    sb.ID,
+			PoolID:       pool.ID,
+			InstanceID:   result.InstanceID,
+			Region:       result.Region,
+			CommandID:    result.CommandID,
+			InvocationID: result.InvocationID,
+			Status:       result.Status,
+		},
+		ExitCode:      result.ExitCode,
+		StartTime:     result.StartTime,
+		EndTime:       result.EndTime,
+		ExecutionTime: result.ExecutionTime,
+	})
+}
+
+func firstNonEmptyTAT(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (h *handler) getSandboxTATCommand(c *gin.Context) {

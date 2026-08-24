@@ -6,10 +6,18 @@ import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 
 const getRenewPrice = vi.fn();
 const createRenewOrder = vi.fn();
+const getRenewOrderUrl = vi.fn();
 const listMyPasses = vi.fn();
 const refreshProfile = vi.fn();
 let sessionUser: User | null = null;
 let realnamePhoneVerificationEnabled = false;
+let regionIsGlobal = false;
+
+vi.mock("@/lib/region", () => ({
+  get isGlobal() {
+    return regionIsGlobal;
+  },
+}));
 
 vi.mock("@/i18n/t", () => ({
   useT: () => (text: string, options?: Record<string, unknown>) => text.replace(/\{\{\s*(\w+)\s*\}\}/g, (raw, name: string) => {
@@ -23,6 +31,7 @@ vi.mock("@/contexts/repository-context", () => ({
     plans: {
       getRenewPrice,
       createRenewOrder,
+      getRenewOrderUrl,
       listMyPasses,
     },
   }),
@@ -76,6 +85,7 @@ describe("RenewPassModal", () => {
     vi.clearAllMocks();
     sessionUser = buildUser();
     realnamePhoneVerificationEnabled = false;
+    regionIsGlobal = false;
     refreshProfile.mockResolvedValue(undefined);
     getRenewPrice.mockResolvedValue({
       bundle_id: "bundle_launch",
@@ -97,6 +107,41 @@ describe("RenewPassModal", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("blocks intl renewal requests while the feature is coming soon", async () => {
+    regionIsGlobal = true;
+    getRenewPrice.mockResolvedValue({
+      bundle_id: "bundle_launch",
+      price: 4900,
+      total_cost: 4900,
+      real_total_cost: 4900,
+      currency: "USD",
+      discount: 100,
+    });
+    getRenewOrderUrl.mockResolvedValue({ need_charge: 1, pay_url: "https://pay.example.com/checkout" });
+    const payWindow = { location: { href: "" }, close: vi.fn() };
+    const openWindow = vi.spyOn(window, "open").mockReturnValue(payWindow as unknown as Window);
+    window.history.replaceState({}, "", "/account?tab=billing#renew");
+
+    render(
+      <RenewPassModal
+        pass={buildPass()}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    const confirmRenew = await screen.findByRole("button", { name: "确认续费" });
+    expect(confirmRenew).toBeDisabled();
+    expect(await screen.findByText("续费功能敬请期待。")).toBeInTheDocument();
+
+    fireEvent.click(confirmRenew);
+
+    expect(getRenewPrice).not.toHaveBeenCalled();
+    expect(createRenewOrder).not.toHaveBeenCalled();
+    expect(getRenewOrderUrl).not.toHaveBeenCalled();
+    expect(openWindow).not.toHaveBeenCalled();
   });
 
   it("keeps automatic payment status polling serial while a request is still in flight", async () => {

@@ -1,14 +1,10 @@
 # 如何用 LightVela 搭建个人 AI 助手？
 
-许多 AI 对话能解决一个问题，但很快就淹没在下一个标签页里。真正实用的个人助手，应当能出现在你平时已经在使用的聊天工具里，记住你的工作方式，并接手少量可重复的任务。
-
-LightVela 是一个云端托管的个人 AI Agent 平台：Hermes Agent 可以结合你选择的模型、通道、记忆、技能和自动任务持续工作。本指南会带你把这些基础能力组合成一个从第一周起就有用的助手，而不是一开始就把所有事情自动化。
-
-![通过 LightVela 跨通道使用个人 AI 助手](../images/use-case-personal-ai-assistant.webp)
-
 ## 摘要
 
 **搭建个人 AI 助手的正确顺序不是一次把所有事情自动化，而是先让一个云端 Hermes Agent 在你已经在用的聊天工具里可用，再逐步叠加记忆、技能与自动任务。** 五个基础组件各自解决一个问题：模型决定推理质量，通道决定你从哪里找到它，记忆让它记住你的工作方式，技能让它掌握可复用的方法，自动任务让它在你不在场时也完成约定工作。建议第一周只做三件事：配置一个模型、接入一个通道、验证记忆确实跨会话生效；确认这条链路可靠后再引入技能与自动任务，这样出问题时能快速定位是哪一层。
+
+![通过 LightVela 跨通道使用个人 AI 助手](../images/use-case-personal-ai-assistant.webp)
 
 ## 适合谁
 
@@ -20,7 +16,7 @@ LightVela 是一个云端托管的个人 AI Agent 平台：Hermes Agent 可以�
 
 - 一个 LightVela 账号和正在运行的 Hermes Agent。若尚未创建，请先完成[快速上手](https://lightvela.ai/zh-sg/docs/quickstart)。
 
-- 一个对话通道。Telegram、WhatsApp、Discord 和微信都是常见起点；优先选择你最常打开的那个。
+- 一个对话通道。Telegram、WhatsApp、Discord、Slack 和微信都是常见起点；优先选择你最常打开的那个。
 
 - 已配置可用模型，或仍有可用的试用额度。若 Hermes 还不能回复，可查看[配置模型](https://lightvela.ai/zh-sg/docs/configuration/model)。
 
@@ -30,7 +26,7 @@ LightVela 是一个云端托管的个人 AI Agent 平台：Hermes Agent 可以�
 
 ### 1. 让 Hermes 进入你的日常习惯
 
-先连接一个消息通道，再从你平时整理一天安排的地方发送前几条消息。通道不只是消息投递方式，更是让你愿意持续回到这个助手的使用习惯。可以按说明配置 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp)、[Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord) 或[微信](https://lightvela.ai/zh-sg/docs/configuration/channel-wechat)。
+先连接一个消息通道，再从你平时整理一天安排的地方发送前几条消息。通道不只是消息投递方式，更是让你愿意持续回到这个助手的使用习惯。可以按说明配置 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp)、[Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord)、[Slack](https://lightvela.ai/zh-sg/docs/configuration/channel-slack) 或[微信](https://lightvela.ai/zh-sg/docs/configuration/channel-wechat)。
 
 ![LightVela 控制台中的通道页面](../images/personal-ai-assistant-channel.webp)
 

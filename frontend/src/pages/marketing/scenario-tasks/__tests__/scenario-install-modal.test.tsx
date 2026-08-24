@@ -62,7 +62,7 @@ describe("ScenarioInstallModal notification apps", () => {
         pack={getScenarioTaskPack("stock-info-digest")}
         botId="bot-1"
         submitting={false}
-        enabledChannels={new Set(["wecom", "feishu"])}
+        enabledChannels={new Set(["wecom", "feishu", "slack"])}
         channelStatus="ready"
         onRefreshChannels={vi.fn().mockResolvedValue(undefined)}
         onClose={vi.fn()}
@@ -73,16 +73,18 @@ describe("ScenarioInstallModal notification apps", () => {
 
     expect(screen.getByRole("button", { name: /企业微信/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /飞书/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Slack/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^QQ$/ })).toBeNull();
     expect(screen.getByRole("link", { name: /更多通道/ })).toHaveAttribute("href", "/agents/channels");
 
     fireEvent.click(screen.getByRole("button", { name: /飞书/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Slack/ }));
     fireEvent.click(screen.getByRole("button", { name: "立即启用" }));
 
     expect(onEnableDirect).toHaveBeenCalledTimes(1);
     expect(onEnableDirect.mock.calls[0]?.[0]).toMatchObject({
-      generatedDeliver: "wecom,feishu",
-      generatedDeliverLabel: "企业微信、飞书",
+      generatedDeliver: "wecom,feishu,slack",
+      generatedDeliverLabel: "企业微信、飞书、Slack",
     });
   });
 

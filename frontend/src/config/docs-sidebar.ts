@@ -8,7 +8,7 @@
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
  *   - 国内站（CN_SIDEBAR）：微信 / 飞书 / QQ
- *   - 国际站（GLOBAL_SIDEBAR）：Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark
+ *   - 国际站（GLOBAL_SIDEBAR）：Telegram / WhatsApp / Discord / Slack / WeChat / QQ / WeCom / Lark
  */
 
 import { isGlobal } from "@/lib/region";
@@ -122,7 +122,7 @@ const CN_SIDEBAR: DocGroup[] = [
 
 /**
  * 国际站 sidebar：按 GEO 导航方案组织为 9 大分组。
- * 通道顺序固定为 Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark。
+ * 通道顺序固定为 Telegram / WhatsApp / Discord / Slack / WeChat / QQ / WeCom / Lark。
  */
 const GLOBAL_SIDEBAR: DocGroup[] = [
   {
@@ -163,6 +163,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-telegram", title: "Telegram", titleEn: "Telegram", indent: true },
       { slug: "configuration/channel-whatsapp", title: "WhatsApp", titleEn: "WhatsApp", indent: true },
       { slug: "configuration/channel-discord", title: "Discord", titleEn: "Discord", indent: true },
+      { slug: "configuration/channel-slack", title: "Slack", titleEn: "Slack", indent: true },
       { slug: "configuration/channel-wechat", title: "WeChat", titleEn: "WeChat", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", titleEn: "QQ", indent: true },
       { slug: "configuration/channel-wecom", title: "企业微信", titleEn: "WeCom", indent: true },
@@ -253,6 +254,17 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         slug: "use-cases/memory-and-knowledge",
         title: "如何用 Agent 管理长期记忆和个人知识？",
         titleEn: "How to Manage Long-Term Memory and Personal Knowledge with an Agent",
+      },
+      {
+        slug: "use-cases/discord-community-agent",
+        title: "Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot",
+        titleEn: "Meet LightVela for Discord: Your AI Agent Discord Bot Serving Your Channel",
+      },
+      {
+        slug: "use-cases/discord-event-agent",
+        title: "如何用 AI Agent 能力增强 Discord 活动机器人？",
+        titleEn: "Empower your Discord Event Bot with AI-Agentic Capabilities",
+        indent: true,
       },
     ],
   },
@@ -357,6 +369,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-telegram": "configuration/channel-telegram.md",
   "configuration/channel-whatsapp": "configuration/channel-whatsapp.md",
   "configuration/channel-discord": "configuration/channel-discord.md",
+  "configuration/channel-slack": "configuration/channel-slack.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/channel-wecom": "configuration/channel-wecom.md",
@@ -382,6 +395,8 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "use-cases/daily-summary": "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7": "use-cases/hermes-agent-24-7.md",
   "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",
+  "use-cases/discord-community-agent": "use-cases/discord-community-agent.md",
+  "use-cases/discord-event-agent": "use-cases/discord-event-agent.md",
   "hermes-agent/hermes-vs-openclaw": "hermes-agent/01-hermes-vs-openclaw.md",
   "hermes-agent/why-hermes-remembers-you": "hermes-agent/02-why-hermes-remembers-you.md",
   "hermes-agent/user-md-vs-memory-md": "hermes-agent/03-user-md-vs-memory-md.md",

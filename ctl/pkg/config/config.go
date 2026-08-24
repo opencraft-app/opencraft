@@ -171,6 +171,12 @@ func parseAdapterConf() {
 	if ServerConf.AdapterConfig.Sandbox.ProcessBaseURL == "" {
 		ServerConf.AdapterConfig.Sandbox.ProcessBaseURL = ServerConf.AdapterConfig.Sandbox.BaseURL
 	}
+	if value := strings.TrimSpace(os.Getenv("WEBSITE_CREDENTIAL_TAT_COMMAND_ID")); value != "" {
+		ServerConf.AdapterConfig.Sandbox.WebsiteCredentialTATCommandID = value
+	}
+	if value := strings.TrimSpace(os.Getenv("WEBSITE_AGENT_API_BASE")); value != "" {
+		ServerConf.AdapterConfig.Sandbox.WebsiteAgentAPIBase = value
+	}
 	if ServerConf.AdapterConfig.Sandbox.Timeout <= 0 {
 		ServerConf.AdapterConfig.Sandbox.Timeout = 30
 	}
@@ -189,6 +195,16 @@ func parseAdapterConf() {
 	}
 	if ServerConf.AdapterConfig.Shadow.Timeout <= 0 {
 		ServerConf.AdapterConfig.Shadow.Timeout = 10
+	}
+
+	if ServerConf.AdapterConfig.Trade == nil {
+		ServerConf.AdapterConfig.Trade = &TradeConfig{}
+	}
+	if value := firstNonEmptyEnv("CTL_TRADE_TOKEN", "LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "CTL_INTERNAL_TOKEN"); value != "" {
+		ServerConf.AdapterConfig.Trade.Token = value
+	}
+	if ServerConf.AdapterConfig.Trade.Timeout <= 0 {
+		ServerConf.AdapterConfig.Trade.Timeout = 10
 	}
 
 	if ServerConf.AdapterConfig.AiGateway == nil {

@@ -25,17 +25,37 @@ describe("http repositories auth token bootstrap", () => {
     window.history.replaceState({}, "", "/auth/sign-in");
   });
 
-  const stubHostname = (hostname: string) => {
+  const stubLocation = ({
+    hostname,
+    host = hostname,
+    protocol = "https:",
+    pathname = "/auth/sign-in",
+    search = "",
+    hash = "",
+  }: {
+    hostname: string;
+    host?: string;
+    protocol?: string;
+    pathname?: string;
+    search?: string;
+    hash?: string;
+  }) => {
     Object.defineProperty(window, "location", {
       configurable: true,
       value: {
         ...window.location,
         hostname,
-        host: hostname,
-        protocol: "https:",
+        host,
+        origin: `${protocol}//${host}`,
+        protocol,
+        pathname,
+        search,
+        hash,
       },
     });
   };
+
+  const stubHostname = (hostname: string) => stubLocation({ hostname });
 
   const expectOAuthStartURL = (actual: string | null, expectedBase: string, expectedReturnTo: string) => {
     expect(actual).not.toBeNull();
@@ -1131,6 +1151,41 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("creates zero-price activity orders through the dedicated Dianshi endpoint", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: { deal_name: "dianshi-deal-1", big_order_id: "dianshi-big-1" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.plans.createDianshiPassOrderAndPay({
+      bundle_id: "bundle_launch_zero",
+      period: 1,
+      time_unit: "m",
+    });
+
+    expect(result.deal_name).toBe("dianshi-deal-1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/passes/dianshi/order-and-pay",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          bundle_id: "bundle_launch_zero",
+          period: 1,
+          time_unit: "m",
+        }),
+      }),
+    );
+  });
+
   it("uses pass-scoped renew and delete endpoints", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi
@@ -1351,6 +1406,23 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("keeps OAuth start on the current origin when using local-proxy", () => {
+    stubLocation({
+      hostname: "127.0.0.1",
+      host: "127.0.0.1:5174",
+      protocol: "http:",
+      pathname: "/agents/channels/",
+    });
+
+    const repositories = createHttpRepositories("");
+
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("google"),
+      "http://127.0.0.1:5174/auth/oauth/google/start",
+      "http://127.0.0.1:5174/agents/channels/",
+    );
+  });
+
   it("adds relay params without changing the target auth backend when relay issuer is configured", () => {
     vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
     stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");
@@ -1515,5 +1587,172 @@ describe("http repositories auth token bootstrap", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("loads a validated oidc authorization context", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      client: {
+        id: "site-gateway",
+        display_name: "LightVela Sites",
+      },
+      redirect_uri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      response_type: "code",
+      scope: "openid profile",
+      code_challenge: "challenge-1",
+      code_challenge_method: "S256",
+      nonce: "nonce-1",
+      session: {
+        authenticated: true,
+        user: {
+          id: "usr_123",
+          name: "Ada",
+          email: "ada@example.com",
+          avatarUrl: "https://cdn.example.com/ada.png",
+          inviteRequired: false,
+          realnameVerified: false,
+          emailVerified: true,
+          createdAt: "2026-08-21T00:00:00Z",
+        },
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.getOIDCAuthorizationContext({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
+    })).resolves.toEqual({
+      clientId: "site-gateway",
+      clientDisplayName: "LightVela Sites",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
+      currentSession: {
+        user: {
+          id: "usr_123",
+          name: "Ada",
+          email: "ada@example.com",
+          avatarUrl: "https://cdn.example.com/ada.png",
+        },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/oauth2/authorize/context?client_id=site-gateway&redirect_uri=https%3A%2F%2Fsites-auth.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=opaque+state&response_type=code&scope=openid+profile&code_challenge=challenge-1&code_challenge_method=S256&nonce=nonce-1",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("posts oidc authorization confirmation without constructing the callback in the client", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      redirect_url: "https://sites-auth.lightvela.site/auth/lightvela/callback?code=opaque&state=state-1",
+      expires_at: "2026-08-21T10:00:05Z",
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.authorizeOIDC({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
+      state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
+    })).resolves.toEqual({
+      redirectUrl: "https://sites-auth.lightvela.site/auth/lightvela/callback?code=opaque&state=state-1",
+      expiresAt: "2026-08-21T10:00:05Z",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/oauth2/authorize",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          client_id: "site-gateway",
+          redirect_uri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
+          state: "state-1",
+          response_type: "code",
+          scope: "openid profile",
+          code_challenge: "challenge-1",
+          code_challenge_method: "S256",
+          nonce: "nonce-1",
+        }),
+      }),
+    );
+  });
+
+  it("keeps the fixed tech callback contract visible in oidc context requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      client: {
+        id: "site-gateway",
+        display_name: "LightVela Sites",
+      },
+      redirect_uri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      state: "opaque state",
+      response_type: "code",
+      scope: "openid profile",
+      code_challenge: "challenge-1",
+      code_challenge_method: "S256",
+      nonce: "nonce-1",
+      session: {
+        authenticated: false,
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.getOIDCAuthorizationContext({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
+    })).resolves.toMatchObject({
+      clientId: "site-gateway",
+      clientDisplayName: "LightVela Sites",
+      redirectUri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      currentSession: null,
+    });
+  });
+
+  it("prepares and cancels federation account switching with cookie-authenticated requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await repositories.auth.prepareFederationSwitch();
+    await repositories.auth.cancelFederationSwitch();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1,
+      "https://lightclaw.tech/auth/federation/switch/prepare",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(2,
+      "https://lightclaw.tech/auth/federation/switch",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
   });
 });

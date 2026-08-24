@@ -1,15 +1,10 @@
 # 如何在 Telegram 中配置一个具有独立人格的 Hermes Agent？
 
-Telegram 只是你与 Hermes Agent 对话的入口。
-真正决定它如何说话、如何做事以及哪些事情不能做的，是 Agent 的人设和长期上下文。
-
-本指南会带你把一个 Hermes Agent 接入 Telegram，再通过 LightVela 的人设能力为它选择一套稳定的角色、语气和行为边界。
-
-![在 Telegram 中使用具有独立人格的 Hermes Agent](../images/use-case-03-telegram-persona-agent.png)
-
 ## 摘要
 
 **Telegram 只是入口，真正决定 Agent 如何说话、如何做事、哪些事不能做的是它的人设与长期上下文。** 完整流程分两段：先按通道文档把 Hermes Agent 接入 Telegram（在 BotFather 侧创建机器人取得 Token，在管理台完成接入并确认显示为已接入），再通过管理台 Agent 设置页的「人设」区域选择一套稳定的角色、语气与行为边界并「注入人设」。三层分工要分清：人设写长期适用的行为原则，用户偏好写你希望被如何对待，长期记忆存已确认的事实与项目背景。注意 Telegram 通道当前不支持群聊，仅支持 1 对 1 对话。
+
+![在 Telegram 中使用具有独立人格的 Hermes Agent](../images/use-case-03-telegram-persona-agent.png)
 
 ## 适合谁
 

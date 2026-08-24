@@ -92,8 +92,9 @@ describe("billing-flow / 时间单位转换", () => {
     it("零值", () => {
       expect(formatYuan(0)).toBe("¥0.00");
     });
-    it("非 CNY 货币按通用格式", () => {
-      expect(formatYuan(7.5, "USD")).toBe("7.5 USD");
+    it("USD 用 $ 前缀，其他非 CNY 通用格式", () => {
+      expect(formatYuan(7.5, "USD")).toBe("$7.50");
+      expect(formatYuan(9, "EUR")).toBe("9 EUR");
     });
   });
 });

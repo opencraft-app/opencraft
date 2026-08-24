@@ -239,6 +239,16 @@ export type BundleState = "ONLINE" | "OFFLINE";
 export type BundleSalesState = "AVAILABLE" | "SOLD_OUT";
 export type BundleTimeUnit = "d" | "m" | "y";
 
+/**
+ * 自动续费标记（国际站支持）— 对应后端 CreatePassOrderRequest.auto_renew_flag
+ *
+ * 取值（与 ctl/pkg/transport/pass.go 对齐）：
+ *   - auto_renew：自动续费
+ *   - notify_and_manual_renew：通知 + 手动续费
+ *   - no_notify_and_manual_renew：不通知 + 手动续费
+ */
+export type AutoRenewFlag = "auto_renew" | "notify_and_manual_renew" | "no_notify_and_manual_renew";
+
 export interface BundleDescriptionEntry {
   Key: string;
   Value: string;
@@ -264,6 +274,12 @@ export interface BundlePrice {
   currency: string;
   /** 折扣率（1.0 = 不打折，0.9 = 9 折） */
   discount: number;
+  /**
+   * 税额（分）。后端「国际站询价税费拆分」下发（2692ca1ca）：实付金额对应的税额。
+   * real_total_cost 为含税实付，税前实付 = real_total_cost - tax_price。
+   * 国内站与未下发场景为 0/缺失，前端按税额 0 处理。
+   */
+  tax_price?: number;
 }
 
 export interface Bundle {
@@ -391,6 +407,18 @@ export interface CreatePassOrderUrlInput {
    * 用 auth_code 反查 user_id；TTL 同二维码 TTL（≤10 分钟）。
    */
   auth_code?: string;
+  /**
+   * 国际站信用卡/签约支付：用户取消支付后的前端回跳地址（完整 HTTPS URL）。
+   * ctl 不解析，仅透传给 trade → jifei cancelUrl。
+   * 约束：稳定页面地址，不含 query/hash（避免 OAuth code/openid/一次性 ticket 带入回跳地址）。
+   */
+  cancel_url?: string;
+  /**
+   * 国际站信用卡/签约支付：用户完成支付后的前端回跳地址（完整 HTTPS URL）。
+   * ctl 不解析，仅透传给 trade → jifei returnUrl。
+   * 约束同 cancel_url：稳定页面地址，不含 query/hash。
+   */
+  return_url?: string;
 }
 
 /**
@@ -434,6 +462,12 @@ export interface CreatePassOrderAndPayResult {
   /** jifei 订单号 */
   deal_name: string;
   /** jifei 大订单号（用于 jifei 控制台反查支付状态） */
+  big_order_id: string;
+}
+
+/** 点石活动专用下单并支付结果。 */
+export interface CreateDianshiPassOrderAndPayResult {
+  deal_name: string;
   big_order_id: string;
 }
 

@@ -1,7 +1,5 @@
 # LightVela vs 本地部署 Agent：哪个更好？
 
-![LightVela 云端设置与本地运行 Hermes 的对比](../images/lightvela-vs-self-hosted-hermes.webp)
-
 ## 摘要
 
 **如果你希望 Hermes Agent 始终在线，同时不想维护底层电脑，LightVela 更适合你。** 如果你希望亲自掌控运行环境、工具、更新和本地配置，那么在自己的电脑上运行 Hermes 会更合适。两者的区别，归根结底在于：你想负责运行这套环境，还是只想直接使用 Agent。
@@ -9,6 +7,8 @@
 Hermes 可以运行在 macOS、Windows、Linux、WSL2 等环境中。官方安装程序会完成运行环境配置，之后你可以自行选择模型提供商、工具和消息网关。[Hermes 安装指南](https://hermes-agent.nousresearch.com/docs/getting-started/installation) 让这条路径变得相当容易上手。
 
 > **容易上手，不等于完全没有维护成本。** 本地 Agent 给你更多控制权，也意味着你需要负责让这套环境持续可用。
+
+![LightVela 云端设置与本地运行 Hermes 的对比](../images/lightvela-vs-self-hosted-hermes.webp)
 
 ## 快速对比
 
@@ -42,7 +42,7 @@ Hermes 可以运行在 macOS、Windows、Linux、WSL2 等环境中。官方安�
 
 LightVela 会在云端运行独立的 Hermes Agent 实例。Agent 不依赖你的本地设备持续在线，而你可以通过管理台配置实际使用的部分，例如[模型](https://lightvela.ai/zh-sg/docs/configuration/model)、[通道](https://lightvela.ai/zh-sg/docs/configuration) 和[技能](https://lightvela.ai/zh-sg/docs/configuration/skill)。[LightVela 概览](https://lightvela.ai/zh-sg/docs/overview) 介绍了这种云端模式，包括隔离的运行环境和多通道访问。
 
-这会改变你使用 Hermes 的方式。你可以把 Agent 连接到自己平时使用的消息通道，例如 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp) 或 [Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord)，即使合上笔记本也可以继续使用。重要的选择仍然由你做出，只是不用再把个人电脑变成负责维持在线状态的地方。
+这会改变你使用 Hermes 的方式。你可以把 Agent 连接到自己平时使用的消息通道，例如 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp)、[Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord) 或 [Slack](https://lightvela.ai/zh-sg/docs/configuration/channel-slack)，即使合上笔记本也可以继续使用。重要的选择仍然由你做出，只是不用再把个人电脑变成负责维持在线状态的地方。
 
 对很多人来说，区别可以概括为一句话：
 

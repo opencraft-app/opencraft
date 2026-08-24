@@ -72,16 +72,18 @@ type DeleteSiteResult struct {
 	OperationID string `json:"operation_id"`
 }
 
-// SiteStatusView 是站点网关判定「是否对外服务」所需的最小视图。
+// SiteStatusView 是内部站点状态接口返回给受信调用方的最小视图。
 //
-// 站点网关是公网直连组件，这里只暴露它真正需要的字段：状态门禁两个，
-// 超额门禁两个。刻意不返回 user_id / pass_id / bundle_id——多一个字段就多一份暴露面。
+// 当前唯一调用方是带 X-Internal-Token 的内部 GET /internal/ctl/websites/sites/{siteID}：
+// 站点网关需要状态/流量门禁，Pages auth 链路还需要稳定的 user_id 归属。
+// 因而这里允许带 user_id，但仍刻意不返回 pass_id / bundle_id 等更多内部字段。
 //
 // 额度和已用量跟着状态一起返回，而不是让网关再查一次：网关已经为这个接口做了
 // 30 秒 TTL 缓存，把两个数字塞进同一次回源是零额外成本；新增一次回源则会让
 // 站点的全部流量再多打一遍 ctl。
 type SiteStatusView struct {
 	SiteID    string `json:"site_id"`
+	UserID    string `json:"user_id"`
 	Status    string `json:"status"`
 	CloudPath string `json:"cloud_path"`
 	// MonthlyTrafficBytes 为 0 表示不限额（额度未配置或查不到），网关按不拦截处理。
@@ -129,16 +131,16 @@ type Logic interface {
 // ---- 实现 ----
 
 type logic struct {
-	siteDao        website.SiteDao
-	releaseDao     website.ReleaseDao
-	operationDao   website.OperationDao
-	usageDao       website.UsageDao
+	siteDao         website.SiteDao
+	releaseDao      website.ReleaseDao
+	operationDao    website.OperationDao
+	usageDao        website.UsageDao
 	customDomainDao website.CustomDomainDao
-	passDao        pass.Dao
-	bundleDao      bundle.Dao
-	quotaDao       quota.Dao
-	idgenDao       idgen.Dao
-	logger         *zap.Logger
+	passDao         pass.Dao
+	bundleDao       bundle.Dao
+	quotaDao        quota.Dao
+	idgenDao        idgen.Dao
+	logger          *zap.Logger
 }
 
 const (
@@ -840,10 +842,10 @@ func (l *logic) GetOperation(userID, operationID string) (*website.OperationEnti
 
 // ---- GetSiteInternal (供站点网关按 siteID 查状态，无用户维度) ----
 
-// GetSiteInternal 返回站点网关判定「是否对外服务」所需的最小信息。
+// GetSiteInternal 返回内部站点状态接口所需的最小信息。
 //
-// 刻意只返回门禁需要的四个字段，不返回实体本身：站点网关是公网直连组件，
-// 泄露 user_id、pass_id 这类字段没有必要，多一个字段就多一份暴露面。
+// 刻意不返回实体本身：internal caller 只需要 user_id + 门禁字段，
+// pass_id、bundle_id 之类继续留在库表内，不扩大公开面。
 func (l *logic) GetSiteInternal(siteID string) (*SiteStatusView, error) {
 	site, err := l.siteDao.GetBySiteID(siteID)
 	if err != nil {
@@ -853,7 +855,12 @@ func (l *logic) GetSiteInternal(siteID string) (*SiteStatusView, error) {
 	if site == nil || site.DeletedTime != nil {
 		return nil, errcode.ErrWebsiteNotFound
 	}
-	view := &SiteStatusView{SiteID: site.SiteID, Status: site.Status, CloudPath: site.CloudPath}
+	view := &SiteStatusView{
+		SiteID:    site.SiteID,
+		UserID:    site.UserID,
+		Status:    site.Status,
+		CloudPath: site.CloudPath,
+	}
 	view.MonthlyTrafficBytes, view.UsedTrafficBytes = l.trafficBudgetForSite(site)
 	return view, nil
 }

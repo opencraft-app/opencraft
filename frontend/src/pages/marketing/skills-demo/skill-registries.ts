@@ -881,6 +881,13 @@ export type BatchInstallProgress = {
   message?: string;
 };
 
+export type NativeBatchInstallOptions = {
+  shouldCancel?: () => boolean;
+  buildBatchCommand?: (registry: Registry, skills: Skill[]) => string | null;
+  onSequentialFallback?: (registry: Registry, skills: Skill[]) => void;
+  onIncompleteResults?: (registry: Registry, skills: Skill[]) => void;
+};
+
 export async function installSkillsSequentially(
   dataLayer: Pick<SkillsDataLayer, "install">,
   skills: Skill[],
@@ -992,13 +999,13 @@ function findBatchResultSkill(
   return skills.find((skill) => !completed.has(skillIdentity(skill)));
 }
 
-async function installSkillsWithNativeBatch(
+export async function installSkillsWithNativeBatch(
   botId: string,
   execDebugCommandStream: SkillsExecDebugCommandStream,
   install: (skill: Skill) => Promise<InstallResult>,
   skills: Skill[],
   onProgress?: (progress: BatchInstallProgress) => void,
-  options?: { shouldCancel?: () => boolean },
+  options?: NativeBatchInstallOptions,
 ): Promise<BatchInstallResult> {
   const result: BatchInstallResult = { succeeded: [], failed: [], skipped: [] };
   const runs: Array<{ registry: Registry; skills: Skill[]; startIndex: number }> = [];
@@ -1020,8 +1027,11 @@ async function installSkillsWithNativeBatch(
       markRemainingSkipped(run.startIndex);
       break;
     }
-    const command = buildRegistryBatchInstallCommand(run.registry, run.skills);
+    const command = options?.buildBatchCommand
+      ? options.buildBatchCommand(run.registry, run.skills)
+      : buildRegistryBatchInstallCommand(run.registry, run.skills);
     if (!command) {
+      options?.onSequentialFallback?.(run.registry, run.skills);
       const sequential = await installSkillsSequentially(
         { install },
         run.skills,
@@ -1113,6 +1123,7 @@ async function installSkillsWithNativeBatch(
 
     const errorOutput = commandResult.output.trim();
     if (commandResult.exitCode !== 0 && completed.size === 0 && isAcliBatchUnsupported(errorOutput)) {
+      options?.onSequentialFallback?.(run.registry, run.skills);
       const sequential = await installSkillsSequentially(
         { install },
         run.skills,
@@ -1125,7 +1136,11 @@ async function installSkillsWithNativeBatch(
       continue;
     }
 
-    run.skills.filter((skill) => !completed.has(skillIdentity(skill))).forEach((skill) => {
+    const incompleteSkills = run.skills.filter((skill) => !completed.has(skillIdentity(skill)));
+    if (incompleteSkills.length > 0) {
+      options?.onIncompleteResults?.(run.registry, incompleteSkills);
+    }
+    incompleteSkills.forEach((skill) => {
       markInstalling(skill);
       const message = errorOutput || "未收到技能安装结果";
       result.failed.push({ skill, message });

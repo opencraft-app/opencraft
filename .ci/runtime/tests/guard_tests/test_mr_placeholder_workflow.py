@@ -23,12 +23,28 @@ class MRPlaceholderWorkflowTests(unittest.TestCase):
         self.assertIn("  cancel-in-progress: true", concurrency_block)
         self.assertIn("  queue-length: 1", concurrency_block)
 
+    def test_checkout_disables_virtual_merge_branch(self) -> None:
+        workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
+
+        checkout_block = workflow.split("checkout: self", 1)[1].split("          - name: 校验并修复 MR checkout", 1)[0]
+        self.assertIn("fetchDepth: 50", checkout_block)
+        self.assertIn("enableVirtualMergeBranch: false", checkout_block)
+
     def test_ci_only_candidate_guard_fallback_is_constrained(self) -> None:
         workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
 
         self.assertIn("GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}", workflow)
         self.assertIn("source .ci/init.sh", workflow)
         self.assertIn("ci_git_fetch_origin master", workflow)
+        self.assertIn("CI_EXPECTED_BRANCH='${{ ci.branch }}'", workflow)
+        self.assertIn("CI_EXPECTED_SHA='${{ ci.sha }}'", workflow)
+        self.assertIn('ci_git_fetch_origin master "$CI_EXPECTED_BRANCH"', workflow)
+        self.assertIn('CI_ACTUAL_SHA="$(git rev-parse HEAD)"', workflow)
+        self.assertIn('git reset --hard "$CI_EXPECTED_SHA"', workflow)
+        self.assertIn("git clean -ffd", workflow)
+        self.assertIn('test "$(git rev-parse HEAD)" = "$CI_EXPECTED_SHA"', workflow)
+        self.assertLess(workflow.index("checkout: self"), workflow.index("校验并修复 MR checkout"))
+        self.assertLess(workflow.index("校验并修复 MR checkout"), workflow.index("派发变更目录约束"))
         self.assertNotIn("git fetch origin master", workflow)
         init_script = (REPO_ROOT / ".ci/init.sh").read_text()
         self.assertIn("CI_GIT_FETCH_REMOTE_URL:-git@git.woa.com:wisp/mono2.git", init_script)

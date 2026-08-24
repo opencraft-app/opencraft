@@ -1,0 +1,909 @@
+LightVela Terms of Service
+
+Introduction
+
+Welcome and thank you for your interest in the LightVela service (the "Service").
+
+These LightVela Terms of Service (these "Terms") are a legally binding contract between you (the "User" or "you") and Tencent Cloud International Pte. Ltd., a Singapore registered entity with registered address at 10 Anson Road, #21-07, International Plaza, Singapore 079903 ("Tencent", "we", "us" or "our") regarding your use of the Service. In these Terms, "User" and "Tencent" are each a "Party" to these Terms and, together, the "Parties".
+
+BY USING THE SERVICE, YOU AGREE THAT YOU HAVE READ AND UNDERSTOOD, AND, YOU AGREE TO BE BOUND BY, THESE TERMS.
+
+If you are not eligible (see Section 1.2), or do not agree to these Terms, then you do not have Tencent's permission to use the Service. YOUR USE OF THE SERVICE, AND TENCENT'S PROVISION OF THE SERVICE TO YOU, CONSTITUTES AN AGREEMENT BY TENCENT AND BY YOU TO BE BOUND BY THESE TERMS. PLEASE READ THESE TERMS CAREFULLY.
+
+Eligibility
+
+You must be of a certain age to accept these Terms and use the Service. By agreeing to these Terms, you represent and warrant to us that:
+
+you are at the legal age of majority in your jurisdiction, and you have the requisite legal capacity to enter into these Terms and use the Service (or if you are under such age, or otherwise lack legal capacity for any reason, your parent or legal guardian has read and agreed to these Terms on your behalf);
+
+you have not previously been suspended or removed from the Service; and
+
+your registration and your use of the Service is in compliance with any and all Applicable Laws.
+
+By using the Service, you represent and warrant that you are eligible to use the Service.
+
+You may not enter into these Terms on behalf of an organization, company, or other entity unless you have the legal authority to bind that entity.
+
+Additional applicable terms
+
+.
+
+Depending on the country specified in your registration information, additional or different terms may apply. For example, if your use of the Services is subject to mandatory consumer protection regulations under Applicable Laws, such additional protections will apply. If you are accessing or using the Service from any jurisdiction covered in the Jurisdiction-specific Addendum at the end of these Terms, the provisions set out for your jurisdiction in the Jurisdiction-specific Addendum will apply to your access or use of the Service, and prevail over the rest of these Terms in case of any conflict or inconsistency.
+
+Changes or Modifications to these Terms
+
+We may need to change or update these Terms from time to time, to reflect changes in Applicable Laws or best practice, to improve the Service or to deal with additional features which we introduce. We will use reasonable efforts to notify you in advance when material changes to these Terms occur, such as by e-mail and/or by placing a prominent notice on our website. TO THE EXTENT THAT IT IS LEGALLY PERMITTED ACCORDING TO THE APPLICABLE LAWS IN YOUR APPLICABLE JURISDICTION, YOU WAIVE ANY RIGHT YOU MAY HAVE TO RECEIVE SPECIFIC NOTICE OF SUCH CHANGES OR MODIFICATIONS.
+
+IF YOU DO NOT OBJECT TO THE CHANGES OR TERMINATE THE USE OF THE SERVICE PRIOR TO THEIR TAKING EFFECT, YOU ARE DEEMED TO HAVE ACCEPTED THE CHANGES. IF YOU OBJECT TO THE CHANGES, YOU MUST STOP USING THE SERVICE AND NOTIFY US IN ADVANCE OF THE EFFECTIVE DATE OF THE CHANGES, AND WE MAY TERMINATE YOUR USE OF THE SERVICE BY THE EFFECTIVE DATE OF THE CHANGE. WE WILL POINT TO THIS CONSEQUENCE OF YOUR INACTIVITY AND OUR RIGHT TO TERMINATE IN CASE OF YOUR OBJECTION IN THE NOTIFICATION OF THE CHANGE.
+
+Definitions and Interpretation
+
+In these Terms:
+
+“Account” has the meaning given in Section 3.1.
+
+“Affiliate” means any entity that directly or indirectly Controls, is Controlled by, or is under common Control with the subject entity.
+
+“AI Agent” means any system, application, workflow, or service made available or hosted by the Service, that uses AI Functions to perform autonomous or semi-autonomous actions, decisions, or operations, including but not limited to tool-calling, function execution, API orchestration, data retrieval/modification, transaction processing, or multi-step reasoning chains (whether single-agent or multi-agent systems).
+
+“AI Functions” means artificial intelligence (“AI”) functionalities of the Service powered by Large Language Models (“LLM”).
+
+“AI Product” has the meaning given in Section 5.3(e).
+
+“Applicable Laws” means all laws, statutes, orders, rules, regulations, directives, rules and guidelines which, in each case, have legal effect, whether local, national, international or otherwise existing from time to time, including all Regulatory Authority's regulations, rules, instructions, requirements, standards, guidelines and directions, as applicable to Tencent and/or the User or the respective Party’s business that are either binding or expected by a Regulatory Authority to be complied with. For the purposes of this definition, "applicable" means as applicable: (a) to the relevant Party and/or any of its Affiliates; or (b) as applicable to the obligations under these Terms.
+
+“Content” has the meaning given in Section 11.2(a).
+
+“Control,” for purposes of this definition, means direct or indirect ownership or control of more than 50% of the voting rights or equitable interests of the subject entity.
+
+“Copyleft Licenses” has the meaning given in Section 4.8(a).
+
+“Documentation” means the applicable usage documentation relating to the Services, made available at [https://lightvela.ai/docs/overview/] or as notified to the User, and updated from time to time.
+
+“Fees” has the meaning given in Section 7.2.··1
+
+"Force Majeure" means uncontrollable, unforeseeable and insurmountable events of one Party, including but not limited to: natural disasters (earthquakes, floods, fires, etc.), acts of government, promulgation or change of Applicable Laws or policies (including trade laws, sanctions, restrictive measures or regulations), strikes or unrest, military conflicts or paramilitary conflicts, terrorist activities, martial law, riots, large-scale outbreaks of epidemic infectious diseases, or any significant change of circumstances (including changes in Applicable Laws which would render provision of Service potentially illegal or different from that contemplated by the Parties at time of the acceptance of these Terms or first download, install, access, or use the Service), foreseeable or otherwise.
+
+“Indirect Account” has the meaning given in Section 3.4.
+
+“Inherent AI Risks” has the meaning given in Section 4.1(b).
+
+“Input” has the meaning given in Section 11.2(a), and includes any User Data submitted, uploaded, or otherwise provided to the Service by you, including textual, verbal or graphic instruction or other interaction with the Service provided by you.
+
+"Intellectual Property Rights" means any and all registered and unregistered rights granted, applied for, or otherwise now or hereafter in existence under or related to any patent, utility model, copyright, trademark, trade secret, right in confidential information (including Tencent Confidential Information) or other intellectual property rights, and all similar or equivalent rights or forms of protection in any part of the world.
+
+"OFAC" means the U.S. Department of Treasury's Office of Foreign Assets Control.
+
+“Output” has the meaning given in Section 11.2(a), and includes any content, data, material, or information generated by the Service in response to or based on the Input.
+
+“Payment Method” has the meaning given in Section 7.3.
+
+“Privacy Policy” means Tencent’s privacy policy applicable to the Service, as hyperlinked: [https://lightvela.ai/zh-sg/privacy-policy/]
+
+“Regulatory Authority” means any competent regulatory, governmental and/or judicial authority (including any public prosecution service) or any self-regulatory organisation established under Applicable Laws or under the supervision of the legislative body of the country, securities exchange, securities association or agency charged with enforcing Applicable Laws.
+
+"Sanctions" means the economic sanctions laws and regulations of the People's Republic of China ("PRC"), the United States ("U.S."), the European Union ("EU"), EU member states, the United Kingdom, the United Nations ("UN"), and all applicable Regulatory Authorities including, without limitation, the economic sanctions rules and regulations implemented under statutory authority and/or the U.S. President's Executive Orders and administered by the OFAC, and the Anti-Foreign Sanctions Law of the People's Republic of China and relevant rules and regulations.
+
+"Sanctioned Jurisdiction" means the jurisdictions that are subject to comprehensive U.S. sanctions administered by OFAC (currently, Cuba, Iran, North Korea, Syria, the Crimea region, and the so-called Donetsk People's Republic and Luhansk People's Republic).
+
+"Sanctioned Person" means any individual, entity, or government that is the target of sanctions administered by: PRC, the U.S. (including, without limitation, those persons on OFAC's Specially Designated Nationals and Blocked Persons List as well as any individual or entity that is located or resident in or organized under the laws of a Sanctioned Jurisdiction), the EU, EU member states, the United Kingdom, the UN and/or any other relevant authority.
+
+“Service” has the meaning given in Section 1, and includes the Software and Documentation.
+
+“Software” means any tools, sample code, or other computer software made available to you by Tencent in relation to the Services, and any and all updates to and versions of the Software that Tencent may make available from time to time.
+
+“Taxes” means any duties, customs fees, or taxes (other than Tencent’s income tax) associated with the purchase of the Services, including any related penalties, interest or other additions thereto.
+
+“Tencent Logos” has the meaning given in Section 11.3.
+
+“Term” has the meaning given in Section 13.1.
+
+"Third Party AI Tools" has the meaning given in Section 4.7(a)(i)(1).
+
+“Third Party Content” has the meaning given in Section 4.7(a)(ii)(1).
+
+"Third Party Materials" has the meaning given in Section 4.7(b).
+
+"Third Party Output" has the meaning given in Section 4.7(a)(i)(2).
+
+“Third Party Platform” has the meaning given in Section 3.4.
+
+“User Data” means any data, information, media or other content that you submit to or otherwise make available to Tencent in connection with your access and use of the Services.
+
+The headings in these Terms are for purposes of reference only and will not in any way limit or affect the meaning or interpretation of any of the terms of these Terms.
+
+The words "includes" and "including" are to be construed without limitation, including with respect to any examples or listed matters that may follow.
+
+Your Account
+
+Account Registration
+
+When you register for an account to access the Service ("Account"), you are responsible for safeguarding any and all Account details and access credentials, and you shall be responsible for any use of the Account or Service and all activities, acts or omissions that occur under your Account, regardless of whether the activities, acts or omissions are authorized or undertaken by you, your employees or a third party, and including in circumstances due to your failure to properly safeguard such Account details and access credentials. Except to the extent caused by our breach of these Terms, Tencent and its Affiliates are not responsible for any unauthorized access to your Account. Any breach of these Terms or any use of your Account by anyone will be treated as if the breach or use had been carried out by you, and will not relieve you of your obligations to us. We may deny you the right to create an Account.
+
+Provision of Information
+
+To the extent you provide any User Data to us when using the Service (e.g. account information), you agree that the User Data you provide to us is true, accurate and complete. If any change occurs to the User Data you provide to us, you shall promptly notify Tencent of such change.
+
+Retrieve your Account
+
+If you request to retrieve your Account when your access to the Service is denied due to the loss of account information or forgotten password, you are required to provide certain information and verification documentation according to the account retrieval process published by us, and to ensure that all such information and documentation is legitimate, truthful and valid. Your Account may not be retrieved if the information or documentation provided by you fails our security verification, and you are solely liable for any and all risks and losses arising therefrom.
+
+Accounts Created via Third Party Platforms
+
+We have no obligation to retrieve Accounts created via third party platforms (“Indirect Account”), and we are not responsible for your accounts with such third party platforms (“Third Party Platform Account”). You acknowledge and agree that if your Account is not directly registered and created via the Service, and instead you register for an Indirect Account through your Third Party Platform Account (e.g., through your Google or Apple account), then the applicable third party who owns the third party platform and provides you with the Third Party Platform Account (e.g. the relevant entity providing the Google or Apple account service) (“Third Party Platform”) is responsible for that Third Party Platform Account and the information associated with that Third Party Platform Account, including the user ID or password used to create and access your Indirect Account. All requests to retrieve your Third Party Platform Account or your Indirect Account should be directed to the relevant Third Party Platform, provided that you shall inform us in the event that the Indirect Account or information regarding your Indirect Account (including your Indirect Account user ID or password) is hacked, misappropriated or stolen or otherwise not used in a legitimate or appropriate manner.
+
+Security of Service
+
+If you are aware of any illegal use of your Account or any Account security issues, please notify us immediately. You shall not circumvent our technical measures, including but not limited to the following:
+
+We may implement technical measures in the Service to prevent unauthorized use of the Service and to prevent any violation of these Terms. You acknowledge and agree that you will not, and will not seek to, circumvent such technical precautions in any manner.
+
+You must ensure that your device meets the requirements for the installation of the Software and use of the Service. The installation of the Software may disable other software or program running on your device. Your failure to install the Software or any updates in accordance with our installation instructions may result in malfunction of the Service in whole or in part.
+
+You must avoid (i) transmitting Content containing viruses, harmful code or destructive data, or any malware characteristics (including as defined by Applicable Laws) to the Service; or (ii) sending or store computer code, files, scripts, and programs that contain viruses, worms, Trojan horses, or other harmful programs, through the Service or by any other means.
+
+The Service
+
+Nature, risks and limitations of the Service
+
+Through the Service, Tencent may from time to time enable your access to AI Agent (such as OpenClaw), by hosting such AI Agent and providing computational infrastructure, and making available AI Functions powered by LLMs.
+
+BY ENABLING, ACCESSING, OR USING THE AI AGENT AND/OR AI FUNCTIONS THROUGH THE SERVICE, YOU EXPRESSLY ACKNOWLEDGE, UNDERSTAND, AND ACCEPT THE FOLLOWING INHERENT AND UNAVOIDABLE RISKS OF AI TECHNOLOGY, AND AGREE THAT YOU BEAR FULL RESPONSIBILITY FOR ALL CONSEQUENCES OF YOUR USE:
+
+OUTPUT RELIABILITY RISKS
+
+OUTPUT FREQUENTLY CONTAINS FACTUAL INACCURACIES, FABRICATIONS (KNOWN AS ‘HALLUCINATIONS’), OMISSIONS, OR BIASED CONTENT THAT MAY APPEAR AUTHORITATIVE.
+
+OUTPUTS MAY MISINTERPRET CONTEXT, INSTRUCTIONS, OR NUANCED QUERIES, LEADING TO UNRELIABLE OR MISLEADING RESULTS.
+
+NO OUTPUT IS INHERENTLY "SAFE," "ACCURATE," OR "COMPLETE" REGARDLESS OF SAFETY FILTERS OR REVIEW PROCESSES.
+
+AGENTIC EXECUTION RISKS
+
+AI AGENTS MAY INCORRECTLY EXECUTE TOOL CALLS, API REQUESTS, OR AUTONOMOUS ACTIONS (E.G., DELETING DATA, SENDING TRANSACTIONS, MODIFYING SYSTEMS).
+
+MULTI-STEP REASONING CHAINS AMPLIFY ERRORS THROUGH COMPOUNDING INACCURACIES ACROSS ITERATIONS.
+
+UNINTENDED ESCALATION MAY OCCUR WHEN AGENTS CHAIN ACTIONS WITHOUT ADEQUATE HUMAN CONTROLS.
+
+THIRD-PARTY INTEGRATION RISKS
+
+THIRD-PARTY LLMS, PLUGINS, OR APIS OPERATE UNDER THEIR OWN TERMS, POTENTIALLY RETAINING/TRAINING ON YOUR DATA WITHOUT TENCENT'S CONTROL OR OPT-OUT RIGHTS.
+
+JURISDICTIONAL AND COMPLIANCE MISMATCHES WHEN DATA ROUTES TO THIRD-PARTY PROVIDERS IN DIFFERENT REGIONS.
+
+CASCADING FAILURES WHEN AGENT WORKFLOWS DEPEND ON UNRELIABLE THIRD-PARTY COMPONENTS.
+
+SYSTEMIC LIMITATIONS
+
+AI LACKS HUMAN JUDGMENT, EMPATHY, COMMON SENSE, OR ETHICAL REASONING, EVEN FOR COMPLEX PROFESSIONAL SCENARIOS.
+
+PERFORMANCE DEGRADES ON EDGE CASES, NOVEL SITUATIONS, OR SPECIALIZED DOMAIN KNOWLEDGE.
+
+SAFETY SYSTEMS ARE NOT FOOLPROOF; CONTENT PASSING FILTERS MAY STILL VIOLATE APPLICABLE LAWS, POLICIES, OR YOUR RISK TOLERANCE.
+
+(collectively, “Inherent AI Risks”)
+
+You represent, warrant and undertake that:
+
+you have evaluated the Inherent AI Risks against your specific use case, industry regulations, and risk tolerance; and
+
+you have implemented appropriate technical and organizational safeguards against the Inherent AI Risks including but not limited to human oversight, validation workflows, testing protocols, etc.
+
+In addition, you expressly acknowledge, understand and accept the following nature and limitations of the Service:
+
+No Professional Advice
+
+The Output is provided for informational purposes only, and does not constitute legal, financial, medical, or other professional advice;.
+
+No Fully Automated Decision-Making
+
+The Service is not intended to help you make decisions that have legal or similarly significant effects on individuals without appropriate human oversight. This includes, without limitation, decisions relating to healthcare, employment, credit, finance, insurance, housing, or legal matters.
+
+No High-Risk Applications
+
+The Service is not designed for use in any critical infrastructure systems, life-support or medical diagnostic applications or law enforcement decision-making. You agree not to use the Service in any way, including to develop, deploy, provide, integrate or operate, with the aforementioned systems or with any systems or services that would be regarded a high-impact or high-risk AI (systems) under Applicable Laws.
+
+TENCENT BEARS NO RESPONSIBILITY FOR ANY LOSSES, LIABILITIES, OR DAMAGES ARISING FROM THE INHERENT AI RISKS AND THE NATURE AND LIMITATIONS OF THE SERVICE AS SET OUT IN THIS SECTION 4.1, REGARDLESS OF FORESEEABILITY. IF YOU DO NOT AGREE WITH THESE RISKS AND LIMITATIONS, YOU MUST NOT USE THE SERVICE.
+
+Limits on AI Output Volume
+
+Tencent may impose reasonable limits on the volume, frequency, or nature of Output you can generate using the AI Functions of the Service. These limits may include usage caps, rate limits, or restrictions based on your subscription plan. Tencent will notify you of any such limits via direct notice within the Service or your Account, or other communication channels you have opted for.
+
+Service Modification
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAWS, TENCENT MAY DISCONTINUE OR MAKE ANY CHANGES TO THE SERVICE (OR ANY PORTION THEREOF) AT ANY TIME WITHOUT INCURRING LIABILITY TO YOU. For instance, Tencent may choose to, without limitation, discontinue, limit, restrict, change or remove the Service, any Service component, or availability of the Service (or any portion or component thereof). If Tencent discontinues or makes any changes to the Service that would materially decrease the functionality of those Service, Tencent will use commercially reasonable efforts to inform you of the change with reasonable advance notice before it goes into effect (e.g. via in-app pop up). Tencent may make the change, and will not be obligated to provide notice, if the discontinuation or change is necessary to address an emergency or threat to the security or integrity of the Service or Tencent, comply with or respond to litigation, address Intellectual Property Rights concerns, or comply with Applicable Laws. Tencent may provide periodic updates to the Service from time to time. Tencent may also make new features or functionality available from time to time through the Service, the use of which may be contingent upon your agreement to additional requirements.
+
+Service Interruption
+
+We reserve the right to interrupt the availability of the Service or any part thereof from time to time on a regularly scheduled basis or otherwise with or without prior notice, including without limitation under the following circumstances:
+
+maintenance, updates and fixation of server, network, Software and/or hardware which are necessary to provide the access of the Service to you;
+
+in the event of Force Majeure;
+
+in accordance with the order of Regulatory Authorities; and
+
+in order to comply with Applicable Laws.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAWS, YOU AGREE THAT WE WILL NOT BE LIABLE FOR ANY INTERRUPTION OF THE SERVICE OR ANY PART THEREOF, DELAY OR FAILURE TO PERFORM RESULTING FROM THE CIRCUMSTANCES REFERRED TO IN THE PRECEDING PARAGRAPH, AND WE HAVE THE RIGHT AT ANY TIME WITH OR WITHOUT REASON TO CHANGE, REPLACE AND/OR DISCONTINUE ANY ASPECT(S) OF THE SERVICE (OR ANY PART THEREOF) AS WE SEE FIT IN OUR SOLE DISCRETION.
+
+Suspension of Service
+
+The Service may be updated, or your Account may be suspended under any of the following scenarios:
+
+Please note that regardless of any notice, we reserve the right to suspend your Account or to modify, adapt or update the Service, subject to these Terms, at any time in our sole discretion for any reason (to the fullest extent possible under Applicable Laws). When making such changes we will duly consider your reasonable interests.
+
+If your Account is suspected to be involved in illegal or improper activities (such as hacking, being hacked, etc.), you shall cooperate with  the relevant personnel designated by us (e.g., answer the questions truthfully) to solve the issue. You further acknowledge and agree that, if we determine that your Account is involved in any improper or illegal acts, we have the right to suspend or terminate your access to the Account, take remedial measures and to inform the relevant Regulatory Authorities and act in conformity with any Regulatory Authority's directions or guidance. You also acknowledge and agree that we are not obligated to provide you with evidence relating to the suspected improper or illegal acts of your Account.
+
+In the event that Tencent determines at its sole discretion that your use of the Service (including any of your Content could: (i) disrupt the Service; (ii) disrupt use of the Service by a third party; (iii) disrupt the Tencent network, systems or servers used to provide the Service; (iv) allow unauthorized third party access to the Service; or (v) otherwise pose a security risk or threat or result in any legal or regulatory liability to Tencent, then Tencent or its Affiliates may immediately and without prior notice to you, restrict or suspend your use of the Service, to the extent required to address such concern.
+
+Monitoring and Circumvention
+
+The Service includes functions to detect circumvention measures or unauthorized and malicious programs. Tencent may access, collect, monitor and/or remotely store information relating to hardware capacity, modifications related to Service, software, signatures, profiles or names of known unauthorized or malicious third party programs, files or processes that enable or facilitate circumvention of controls, unfair advantage or hacking of Service. If unauthorized or malicious programs are detected, the User's Account and user ID and information about the unauthorized or malicious program or its use may be logged. Details of the aforementioned measures, if any, are set out in the Privacy Policy.
+
+Third Party Materials
+
+Tencent uses third-party AI technology providers to enable the AI Functions, including large language models and machine learning services. Our Service may incorporate or enable you to access the following third party materials:
+
+Third Party AI Tools
+
+The AI Functions of the Service may enable you to: (A) access, call or route Input or Output to third‑party AI models, tools, APIs, or plugins (including LLMs, AI Agents, retrieval or vector services, and other machine learning services), whether made available by Tencent or separately configured by you; or (B) integrate the AI Functions with your own or third‑party applications, systems, or services (together, “Third Party AI Tools”).
+
+Tencent may also incorporate Third Party AI Tools into the Service, which may generate Output from those Third Party AI Tools ("Third Party Output"). In this case, by using the Service, you acknowledge that your Input (including any personal information you choose to include) may be shared with the providers of such Third Party AI Tools, solely to provide, operate, and improve the Service, in accordance with the Privacy Policy.
+
+Unless expressly stated in these Terms, Tencent does not develop, operate, or control Third‑Party AI Tools and is not responsible for their acts or omissions, performance, security, availability, or Third Party Output. Tencent Cloud makes no representations, warranties, or commitments and provides no indemnities in respect of any Third‑Party AI Tools or any Third Party Output or content generated, transmitted, or processed by them.
+
+You are solely responsible for: (A) selecting, enabling, configuring, and/or using any Third‑Party AI Tools; (B) entering into and complying with any applicable terms, licenses, or privacy policies of Third‑Party AI Tools; and (C) any data you submit to, or receive from, Third Party AI Tools and any processing of such data by the provider of the Third Party AI Tools.
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAWS, TENCENT HAVE NO LIABILITY (AND NO OBLIGATIONS UNDER ANY SERVICE LEVEL AGREEMENTS) ARISING FROM OR RELATED TO ANY UNAVAILABILITY, DELAY, FAILURE, ERROR, OR INACCURACY IN THE SERVICE THAT IS CAUSED BY THIRD PARTY AI TOOLS, INTEGRATIONS, OR YOUR CONFIGURATIONS OF THE SAME.
+
+You must obtain all required consents for data shared with Third Party AI Tools.
+
+Third Party Content
+
+Additionally, the Service and/or the Output may provide links or references to third-party websites, content, products, or services (“Third Party Content”). Such Third-Party Content is provided for only for your convenience and information, and does not constitute an endorsement, guarantee, or recommendation by Tencent of any kind. You acknowledge that Tencent has no control over, and is not responsible for, the accuracy, legality, availability, or appropriateness of any Third-Party Content.
+
+ACCESSING OR USING THIRD PARTY CONTENT IS AT YOUR OWN RISK, AND YOU ACKNOWLEDGE AND AGREE THAT TENCENT SHALL HAVE NO LIABILITY, DIRECT OR INDIRECT, ARISING FROM YOUR USE OF OR RELIANCE ON ANY SUCH THIRD PARTY CONTENT.
+
+These Third Party AI Tools, Third Party Output and Third Party Content (collectively, "Third Party Materials") are subject to their own terms which may differ from these Terms, and Tencent is not and shall not be held responsible for the Third Party Materials. We encourage you to review the terms of use of each Third Party Material before accessing or using them.
+
+IN ACCESSING OR USING THIRD PARTY MATERIALS, YOU DO SO AT YOUR OWN RISK AND YOU ASSUME ALL RESPONSIBILITY IN THAT REGARD. WE MAKE NO REPRESENTATIONS OR WARRANTIES REGARDING, AND DO NOT ENDORSE, ANY THIRD PARTY MATERIALS.
+
+Open Source Materials
+
+You must ensure that your use of Third Party Materials, in connection with your use of the Service, does not require any of the following, pursuant to the terms of such Third Party Materials: (i) disclosure or distribution of any Software in source code form; or (ii) licensing of any Software for the purpose of making derivative works; or (iii) redistribution of the Software at no charge. For the avoidance of doubt, you must not combine the Software with any software licensed under any version of or derivative of the GNU General Public License or Affero General Public License (collectively “Copyleft Licenses”) in any manner that could cause, or could be interpreted or asserted to cause, the Software or any modifications to the Software to become subject to the terms of any Copyleft Licenses.
+
+To the extent the Service has incorporated or distributed any open source software or products, the details regarding the relevant product open source agreements, the relevant open source software copyright statement and other relevant information [can be found here: [https://lightvela.ai/zh-sg/open-source-licenses/]. They may be titled "Software License Agreement", "Authorization Agreement", or “Open Source Agreement”, or have other document names. The aforementioned relevant agreements or other documents displayed are an integral part of these Terms. You must comply with these agreements to the extent applicable to your use of the Services.
+
+Your Use of the Service
+
+License
+
+You shall and shall ensure that your access and use of the Service is in accordance with these Terms during the Term. Your use of any Service shall be subject to these Terms. You acknowledge that Tencent or its licensors own all rights, titles and interest in and to the Service. Subject to your compliance with these Terms, Tencent grants, or shall procure the grant, to you a limited, non-exclusive, non-transferable, non-sublicensable and revocable license to:
+
+download a copy of the Software onto your device(s), and use the Service for your personal purposes; and
+
+use the Service in a manner not exceeding any applicable usage limitation or term, and within the designated territory for use or receipt of Service (where applicable), and only in connection with the Service.
+
+Other than as specified in the foregoing, no other rights are granted to you under these Terms to use the Service (including any Software offered in connection with the Service), whether by estoppel, implication or otherwise. The license granted under this Section 5.1 is revocable at any time with or without cause.
+
+No Transfer
+
+You may not transfer the Service to someone else. We are giving you personally the right to use the Service as set out above. You may not otherwise transfer or make available the Service to someone else, whether for money, for any other forms of consideration or for free. If you sell or gift any device on which the Software is installed, you must first remove the Software from the device.
+
+Use Restrictions and Conditions
+
+You shall use the Service in compliance with these Terms and Applicable Laws. You agree that you will not conduct or use the Service to engage in the following activities (nor will you facilitate or support your Affiliates, employees, contractors or any other person under your control, management, supervision or otherwise to do the following):
+
+reproduce, modify, adapt, alter, enhance, distribute, publicly display, retransmit, resell or sublicense, copy, create a derivative work of reverse engineer, decompile, translate, disassemble, or otherwise attempt to extract any or all of the source code of the Service;
+
+publish, transmit, disseminate, or store Content that infringes upon the legitimate rights of others, such as reputation rights, portrait rights, Intellectual Property Rights, and trade secrets;
+
+infringe our Intellectual Property Rights or those of any third party in relation to your use of the Service;
+
+use any data mining, robots or similar data gathering or extraction methods;
+
+use the Service in a way that could damage, disable, overburden, impair or compromise our systems or security or interfere with other users of the Service;
+
+collect or harvest any information or data from the Service or our systems or attempt to decipher any transmissions to or from the servers;
+
+use the Service other than for their intended purpose, in any unlawful manner, for any unlawful purpose, or in any manner inconsistent with these Terms, or act fraudulently or maliciously;
+
+disrupt or interfere with our Services, including by circumventing any restrictions or protective measures that we have implemented;
+
+other acts not expressly authorized by Tencent; and/or
+
+other behaviors that violate these Terms, Applicable Laws, or infringe upon the legitimate rights and interests of us, others and/or third parties.
+
+In addition, you shall not (nor shall you facilitate or support your Affiliates, employees, contractors or any other person under your control, management, supervision or otherwise to) do or attempt to do any act which is harmful to the AI Functions, AI Agent or the Service, including engaging in the following activities:
+
+generate professional advice, including legal, medical, financial, or other regulated advice, and disseminating or relying on the same;
+
+use the Services for fully automated decision-making without human oversight;
+
+use, develop, or deploy AI Agent via the Services to:
+
+perform actions with material real-world effects without continuous human oversight and approval (e.g. financial transactions, contract execution, system configuration changes, or content publication).
+
+access, modify, or control external systems, third-party services, or your production environments without explicit safeguards (e.g. sandboxing, dry-run modes, approval gates).
+
+chain or orchestrate multiple AI Functions or Service calls in loops or recursions that could cause excessive resource consumption, denial-of-service, or unintended escalation.use the Services to create or disseminate false, defamatory, harassing, or offensive content, or content that may cause harm to individuals or entities;
+
+deploy or facilitate any activity intended to compromise the integrity, security, or performance of the AI Functions, AI Agent or the Service, including but not limited to prompt injection, adversarial input generation, data poisoning, membership inference, or output manipulation to bypass safety systems;
+
+submit Input, or use or direct the Service in a manner, to generate or use Output that violates Applicable Laws, Intellectual Property Rights of third parties or these Terms;
+
+submit any Input that includes sensitive personal information;
+
+misrepresent the source of the Output, such as mispresenting that the Output was created by a human when it was actually generated by AI;
+
+use or generate any Output in a way that is misleading, deceptive, or likely to cause harm, including but not limited to manipulating content including those of individuals in a manner that is deceptive, misleading, intimidating, harassing, harmful or otherwise infringing on the rights of others;generate any pornographic, sexually explicit or obscene content;
+
+facilitate, promote, or incite violence, terrorism, hate speech, or content that threatens or intimidates individuals or groups;
+
+violate any Applicable Laws or terms of Third Party Materials;
+
+utilize Output to develop LLM that compete with Tencent, or build competing agentic platforms or services that replicate the AI Functions, the Services or Tencent's AI capabilities;
+
+access, extract, infer, or otherwise derive any component of the underlying models of the AI Functions, AI Agent or the Service, including but not limited to parameters, weights, embeddings, training data, or proprietary algorithms, through model inversion or any similar technique;
+
+decompile, disassemble, reverse engineer, or otherwise attempt to reconstruct the architecture, source code, or design of any models or software comprising the AI Functions, AI Agent or the Service, except as expressly permitted by Applicable Laws notwithstanding this restriction; and/or
+
+systematically probe, test, or benchmark the models or software comprising the AI Functions, AI Agent or the Service, in a manner that is intended to disclose confidential information, assess vulnerabilities, derive competitive insights not otherwise available through standard use of the Service, or not publish or disclose to any third party any performance or benchmark tests of the AI Functions, AI Agent or the Service or underlying models without Tencent’s prior written consent.
+
+You are solely responsible for:
+
+implementing all safety controls, including human-in-the-loop oversight, kill switches, rate limiting, and error handling for any AI Agent;
+
+testing, validating, and monitoring AI Agents for hallucinations, tool misuse, bias amplification, or unintended behaviors before deployment;
+
+ensuring AI Agents comply with Applicable Laws, including those governing autonomous systems;
+
+any liabilities arising from AI Agent actions, including third-party claims from erroneous tool calls or Outputs.
+
+If you share or publish Output publicly or to a third party, you must clearly disclose that the content is AI-generated in a manner that is easily visible and understandable to recipients.
+
+If you use the Service, in whole or in part, to develop, deploy, provide or operate an AI service (including but not limited to chatbot, virtual assistant, or other automated conversational interface) (“AI Product”), you must:
+
+clearly and prominently disclose, at the outset of each interaction, that your AI Product is powered by, or incorporates, a LLM or other generative AI technology. The disclosure must be in plain language and easily understandable by the intended audience.
+
+ensure that such disclosures and any associated labels, notices, or indicators comply with all Applicable Laws and industry standards governing AI system transparency, identification, or labelling in each jurisdiction where your AI Product is made available. This includes, without limitation, requirements for persistent or recurring notices during user interactions where mandated.
+
+maintain the accuracy of the disclosure over time and display it in a manner that is easily visible and accessible on all platforms or channels through which your AI Product operates.
+
+retain documentation sufficient to demonstrate compliance with these disclosure and labelling obligations, and provide such records to Tencent or Regulatory Authorities upon request.
+
+Your indemnification obligations mentioned in Section 12.4 below expressly covers any violation of prohibitions, restrictions and conditions set out under this Section 5.3.
+
+Reasonable Use
+
+We expect that Users will use the Service reasonably. If any User's use of the Service exceeds reasonable and normal standards, we may monitor the Service usage of such user in a manner that is in line with our Privacy Policy. If we, using general industry standards, identify any violating, abnormal or unreasonable use (at our reasonable and unilateral discretion), we shall have the right to take measures reasonably necessary to protect the Service (including its availability and security), you and/or other users, including without limitation, restriction or suspension of the Service, in part or in whole, to such user. In such cases, our termination rights set out in Section 13.2 may also apply.
+
+Consideration
+
+You expressly acknowledge and agree that the obligations under these Terms are supported by valid and adequate consideration.
+
+Fees and Payment
+
+Your access and use of any “trial” or “free” version of the Service is free-of-charge.
+
+However, in relation to your access and use of any subscription version of the Services, you may, from time to time, be required to make payments to us (“Fees”). Except as otherwise expressly provided, all Fees are exclusive of any Taxes. You agree that you are solely responsible for payment of all Fees and Taxes associated with any such payments. All payments made by you shall be made free and clear of and without deduction for any tax, set-off, withholding or counterclaim. To the extent that you are required by Applicable Laws to make such a deduction or withholding of tax, you shall provide us with an oﬃcial tax receipt or other appropriate supporting documentation within 30 days after payment of the deduction or withholding tax and increase the amount paid to us to the extent necessary to ensure that we receive a sum equal to the amount we would have received had no such deduction or withholding been made.
+
+At the time you create an Account to sign up for the Service, you may be asked to provide a credit card, and thereafter may be able to link alternative means of payment to your Account (each a “Payment Method”). You agree that (to the extent permissible under Applicable Laws):
+
+you authorize us to: (1) save your chosen Payment Method's information (e.g., credit card information) on our systems or that of our payment processor; and (2) to the extent you elect for the automatic renewal option, periodically bill your chosen Payment Method for Service consumed during the prior month or pursuant to an alternative payment structure we agree to; and
+
+if any payment made via your chosen Payment Method is rejected, denied, not received by us or returned unpaid for any reason: (1) we may restrict, suspend or terminate your access to the Service (in each case in whole or in part) until your payment is properly processed; (2) charges will continue to be incurred and you are liable to us for any Fees, costs, expenses or other amounts we incur arising from such rejection, denial or return (and we may charge you for such amounts); and (3) we may charge late fees up to the maximum amount permissible under Applicable Laws. [We will present you with an invoice on or about the second day of a given month for Services consumed during the prior month and will charge your Payment Method at the time we issue your invoice.]
+
+Your card issuer may charge you an online handling fee or processing fee in connection with your payment of Fees. We are not responsible for this fee.
+
+To the extent permitted under Applicable Laws, Tencent may increase or introduce new Fees and charges for the existing Service (even if it is currently provided to you free-of-charge) at any time after prior notice. Any new or changed charges will apply to the Service as of the date specified in the relevant notice, or if no such date is specified then with immediate effect.
+
+If you and Tencent agree to other payment terms or Payment Methods in writing (including email), then those alternative provisions shall apply in the event of a conﬂict with this Section.
+
+You shall provide such assistance, including any information, as is required by Tencent in order to determine and validate the extent to which Tencent is legally obliged to collect Taxes from you.
+
+Cancellation
+
+You can cancel your subscription to the Service at any time. You will have access to the Service until the date your paid-up subscription ceases. We do not issue partial refunds or credits for termination of Service mid-billing cycle. If you have signed up for the Service via a third party, you may need to terminate through that third party (for example, if you have subscribed through an Indirect Account). The method of terminating your service varies by provider, such as switching off ‘auto-renew’ in your third party account settings. If you select the automatic renewal option, in order to avoid further billing of charges for the Service, you must cancel your subscription at least 24 hours prior to the commencement of the relevant renewal period.
+
+Refunds
+
+Except as specifically provided for in these Terms or as required by Applicable Laws, payments are non-refundable. However, if you unsubscribe from the Service, you will have access to the Service until the end of your billing cycle. We may from time to time, at our sole and absolute discretion, elect to offer you or any other subscriber a refund, discount or other credit in relation to the Service.
+
+Compliance
+
+You are solely responsible for ensuring your use of the Service (including your Content) complies with these Terms and Applicable Laws. Without limiting the foregoing, you agree to provide any notices to, and obtain any necessary consents, authorizations or permissions from, any individuals in connection with any Input, as required under Applicable Laws.
+
+You acknowledge that Tencent provides the Service as a general‑purpose AI infrastructure and/or component and does not determine your specific use cases, deployment context, or integration of the AI Functions with your products, services, or systems.
+
+Except otherwise expressly agreed in writing, Tencent does not assume, and disclaims, any role or responsibility attributed to “provider”, “deployers”, “operators”, “importers”, “distributors”, or similar regulated roles under any AI‑specific Applicable Laws in connection with your AI Products or your downstream deployments.
+
+You are solely responsible for: (i) determining whether and how your use of the Service is subject to any AI‑specific or sector‑specific Applicable Laws; (ii) conducting and documenting any required risk assessments, impact assessments, human rights assessments, or conformity assessments; (iii) implementing and maintaining any required human oversight, export control, transparency, logging, or governance controls; and (iv) ensuring that your AI Products and related processes comply with such requirements.
+
+Tencent has no obligation to design or configure the AI Functions to meet the specific requirements applicable to your AI Products or your industry, nor to provide information or documentation beyond what Tencent makes generally available, unless otherwise expressly agreed in writing.
+
+Tencent’s Rights
+
+Adjustments by Tencent
+
+Without affecting your use of the Service under these Terms, Tencent has the right to adjust the name, domain name, function, product design, visual interface, etc. of the Service, related services and related functional modules at its own discretion. If the aforesaid work is likely to affect your normal use of the Service, we will notify you within a reasonable time before making relevant adjustments and inform you of the possible impact.
+
+Legal Rights
+
+All legal rights and interests to the Service (including but not limited to models, result data, analysis reports and other data contents, as well as pictures, charts, documents, text and interface design, etc.), and other data, materials or information related to the Service belong to Tencent, its Affiliates and third party licensors, including various documents related to the interface of the Service.
+
+Enforcement Measures
+
+You understand and agree that when using the Service, Tencent has the right to use technical means, such as implementing automated content filters, to review information generated as part of your use of the Service, including Content, for the purposes of detecting and removing any illegal or restricted content to comply with our legal obligations, including legal obligations outside your home jurisdiction. In this context, we may access, collect, monitor and/or remotely store information relating to Content you write, send, share, stream or transmit through the Services and your User Data and communications may be screened to detect any illegal or restricted content. Any illegal or restricted content may be removed without notice or explanation.
+
+User Data
+
+Legality of User Data
+
+You are solely responsible for the legality, reliability, integrity, accuracy and quality of the User Data. Without limiting the generality of the foregoing, you are responsible for ensuring that:
+
+the means by which you acquire User Data;
+
+its and Tencent’s use of User Data in connection with the Services; and
+
+the making available of User Data to Tencent in connection with these Terms,
+
+comply with Applicable Laws (including in relation to the provision of any requisite notifications and obtaining of any relevant consents).
+
+Privacy Policy
+
+Under data protection laws, we are required to provide you with certain information about who we are, how we process your personal data and for what purposes and your rights in relation to your personal data and how to exercise them. This information is provided in our Privacy Policy and it is important that you read that information.
+
+Transmission Security
+
+Please be aware that Internet transmissions are never completely private or secure and that, despite our commercially reasonable efforts, any User Data, message or information you send using the Service may be read or intercepted by others, even if there is a special notice that a particular transmission is encrypted.
+
+No Sensitive and Confidential Data
+
+The Service is not designed for the ingestion or processing of your most sensitive or regulated data (including, without limitation, trade secrets, highly confidential business information, classified information, or data subject to special legal or regulatory protections such as bank secrecy, state secrets, or export‑controlled technical data), unless expressly agreed in writing and configured accordingly.
+
+You must not include such data in Input unless: (i) you have implemented appropriate technical and organisational measures to mitigate the associated risks; and (ii) you have disabled model‑training and any data‑sharing options in the relevant AI Functions to the extent applicable.
+
+TO THE FULLEST EXTENT PERMITTED BY APPLICABLE LAWS, TENCENT SHALL HAVE NO LIABILITY FOR THE DISCLOSURE, USE, OR LOSS OF SUCH DATA RESULTING FROM YOUR DECISION TO SUBMIT IT AS INPUT CONTRARY TO THESE TERMS.
+
+Intellectual Property
+
+Intellectual Property Rights
+
+You agree that all Intellectual Property Rights in and to the Service, as between you and Tencent, are owned by Tencent, its Affiliates and/or Tencent's licensors, as the case may be. Except as expressly set forth in these Terms and to the extent permissible under Applicable Laws, Tencent does not grant to you any licenses or other rights, implied or otherwise, in or to Tencent's Intellectual Property Rights. The copyrights, patents and other intellectual property rights of the software on which Tencent relies in providing the Service are owned by Tencent and/or its Affiliates. Other legal rights related to or in the Service that are not mentioned in these Terms are also reserved by Tencent. Tencent, its Affiliates and our licensors reserve all rights in connection with the Service and its content (other than your Content), including, without limitation, the exclusive right to create derivative works.
+
+Input, Output and Content
+
+You may provide, transmit or upload content ("Input") to the Service, and will receive output from the Service based on your Input ("Output" and together with Input, "Content"). Your use of the Service, including any Output, may also be subject to license and use restrictions set forth in a Third Party AI Tool license, if applicable.
+
+You represent, warrant and undertake that:
+
+you either own or have obtained all rights, licenses, consents, permissions, and/or authorization necessary to submit and use (and allow us to use) such Input in connection with the Service;
+
+your Input will not contain material infringing any third party’s Intellectual Property Rights or other proprietary rights; and
+
+your Input and the generation of Output based on your Input, as well as the use of such Output, will not breach any Applicable Laws or any third party's terms and conditions associated with such Input.
+
+By using the Service and transmitting or uploading Content, you grant Tencent a license to access, use, host, cache, store, reproduce, transmit, display, publish, modify and adapt such Content as necessary for technical purposes to operate and provide the Service (including to distribute Output based on your Input). For clarity, Tencent's rights in such Content are solely as required to enable Tencent to operate and provide the Service (including to distribute Output based on your Input). We require this license to ensure that the actions we take in operating the Service are not considered legal violations (for example, copyright laws could prevent us from processing, storing, backing-up and distributing certain Content unless you give us these rights). You agree that these rights and licenses are royalty free, transferable, and sub-licensable, worldwide, irrevocable (for so long as Content is stored with us) and include a right for Tencent to make such Content available to, and pass these rights along to, service providers and others with whom we have contractual relationships as required for the operation and provision of the Service (e.g., cloud hosting providers), and to otherwise permit access to or disclose your Content to the extent specifically set forth in the Privacy Policy.
+
+As between you and Tencent and to the extent permitted by Applicable Laws, you retain ownership rights in Input and own the Output. We hereby assign to you all our right, title, and interest, if any, in and to Output. You acknowledge and agree that Tencent is not the source of, does not verify or endorse, and is not responsible in any manner for Content, that you are solely responsible to retain adequate back-ups of Content, that you assume all risk associated with Content and the transmission or other use of the Content, and that you have sole responsibility for the accuracy, quality, integrity, legality, reliability, and appropriateness of Content.
+
+The Service may include functions that facilitate your writing and generation of software code, and may return codes and other output to you based on your prompts. You acknowledge that it is entirely within your discretion and responsibility as to whether or not to use such Output generated, and how to use such Output. In the use of such Output, you should ensure that you have independent policies and mechanisms in place to review such Output, and to ensure that the Output is used in such a way that will not violate third party rights.
+
+You acknowledge and agree that Tencent may preserve Content, and may also disclose Content, in accordance with the Privacy Policy, if required to do so by Applicable Laws or in the good faith belief that that such preservation or disclosure is reasonably necessary to, among other things:
+
+comply with legal process, Applicable Laws or requests of competent Regulatory Authorities,
+
+enforce these Terms or our agreement(s),
+
+respond to claims that any content violates the rights of third parties, or
+
+protect the rights, property, or personal safety of Tencent, its users and/or the public.
+
+You acknowledge that Tencent reserves the right in its absolute discretion to delete, review, edit, filter or modify any Content for any reason and without notice to you, to the extent permitted by Applicable Laws.
+
+Tencent Logo
+
+You shall not use Tencent's trademarks service marks, trade names, domain names, website names or other distinctive brand features of Tencent under any circumstances, including "Tencent", "Tencent Cloud" and "LightVela" etc. (collectively, "Tencent Logos"). Without the prior written consent of the Tencent, you shall not display, use, or otherwise dispose of the aforesaid Tencent Logos in any way, either alone or in combination, without Tencent's prior written consent. You shall indemnify Tencent and its Affiliates for any losses caused to Tencent and/or its Affiliates by using the Tencent Logos in violation of these Terms.
+
+Copyright Infringement
+
+If you believe that any Content uploaded or generated by the Service infringes on your Intellectual Property Rights, please report the alleged infringement by filling in the Tencent Cloud International Portal Copyright Complaint Form. This will enable us to investigate your infringement complaint quickly and efficiently. For more information, please read our Copyright Policy, which forms part of these Terms.
+
+Disclaimers, Indemnities, Limitation of Liabilities
+
+Disclaimer of Warranties
+
+TO THE MAXIMUM EXTENT PERMISSIBLE UNDER APPLICABLE LAWS, THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS, AND NEITHER TENCENT NOR ANY OF ITS LICENSORS OR AFFILIATES, PROVIDERS OR DISTRIBUTORS, MAKE, AND TENCENT HEREBY DISCLAIMS ON BEHALF OF ITSELF AND SUCH PERSONS, ANY REPRESENTATIONS OR WARRANTIES, WHETHER EXPRESS, IMPLIED, OR STATUTORY, REGARDING TENCENT, THIRD PARTY MATERIALS, ANY OTHER SERVICE OR SOFTWARE, OR ANY CONTENT SUBMITTED, UPLOADED, STORED, TRANSMITTED OR DISPLAYED BY OR THROUGH THE SERVICE, INCLUDING ANY REPRESENTATION, WARRANTY OR UNDERTAKING:
+
+THAT THE SERVICE WILL BE UNINTERRUPTED, TIMELY, SECURE, OR ERROR-FREE OR FREE FROM VIRUSES OR OTHER HARMFUL COMPONENTS;
+
+THAT YOUR USE OF THE SERVICE WILL MEET YOUR REQUIREMENTS;
+
+THAT ANY OUTPUT OR OTHER INFORMATION OBTAINED BY YOU AS A RESULT OF YOUR USE OF THE SERVICE WILL BE ACCURATE, UP TO DATE, RELIABLE, NON-INFRINGING OR SECURE;
+
+THAT DEFECTS IN THE OPERATION OR FUNCTIONALITY OF THE SERVICE WILL BE CORRECTED;
+
+ARISING OUT OF ANY COURSE OF DEALING OR USAGE OF TRADE;
+
+THAT CONTENT WILL NOT BE SUBJECT TO LOSS OR DAMAGE;
+
+THAT THE SERVICE WILL BE SECURE OR COMPATIBLE WITH YOUR OR YOUR NETWORKS, SYSTEMS, APPLICATIONS, HARDWARE, OR DEVICES;
+
+THAT THE SERVICE WILL BE OF MERCHANTABLE OR SATISFACTORY QUALITY OR FIT FOR ANY PARTICULAR PURPOSE. FOR THE AVOIDANCE OF DOUBT, THE SERVICE IS NOT DESIGNED OR INTENDED FOR HIGH RISK ACTIVITIES; OR
+
+WITH RESPECT TO THIRD PARTY MATERIALS.
+
+Disclaimer in relation to Output
+
+Due to the nature of LLM- / AI-powered functions and features and the Inherent AI Risks, the Service is not error-free and the Service may generate Output that contains errors, is incorrect, inaccurate and/or offensive, and Tencent shall not be responsible for such Output, nor does such Output represents Tencent's views. The Service does not offer advice on which you should rely. You must obtain professional or specialist advice before taking, or refraining from, any action on the basis of information obtained from the Service. Although we make reasonable efforts to update the information provided by the Service, we make no representations, warranties or guarantees, whether express or implied, that such information is accurate, complete or up to date. By using the Service and accepting these Terms, you acknowledge and agree that we shall not be responsible or liable for any Output generated by the Service. You also acknowledge that due to the nature of our Service and generative AI tools, the Service may generate output for other users that is similar or the same as your Output, because the same or similar prompts or input to your Input was provided, and you agree that such output may be used by other users for their own individual purposes.
+
+Limitation of Liability
+
+Cap on Liability. SUBJECT TO SECTION 12.3(c) BELOW, TO THE MAXIMUM EXTENT PERMISSIBLE UNDER APPLICABLE LAWS, THE TOTAL AGGREGATE LIABILITY OF TENCENT AND ITS AFFILIATES, ON THE ONE HAND, AND YOU ON THE OTHER, FOR ALL CLAIMS ARISING IN CONNECTION WITH THESE TERMS, THE SERVICE, AND THE SOFTWARE, UNDER ANY CAUSE OF ACTION OR THEORY OF LIABILITY, WILL BE LIMITED TO USD 100. HOWEVER, NOTHING LIMITS OR EXCLUDES EITHER PARTY'S LIABILITY FOR ANY MATTERS FOR WHICH LIABILITY CANNOT BE LIMITED OR EXCLUDED UNDER APPLICABLE LAWS.
+
+Disclaimer of Damages. TO THE MAXIMUM EXTENT PERMISSIBLE UNDER APPLICABLE LAWS, NEITHER TENCENT, NOR ITS AFFILIATES OR THEIR LICENSORS WILL BE LIABLE TO YOU UNDER ANY CAUSE OF ACTION OR THEORY OF LIABILITY, EVEN IF ADVISED OF THE POSSIBILITY OF THOSE DAMAGES, FOR: (i) ANY THIRD PARTY MATERIALS; (II) INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR EXEMPLARY DAMAGES, EVEN IF A PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH LOSS OR DAMAGE; (iii) UNAVAILABILITY OF THE SERVICE (EXCEPT AS PROVIDED UNDER THESE TERMS); (iv) YOUR APPLICATIONS OR INTELLECTUAL PROPERTY RIGHTS; OR (v) LOSS OF DATA, LOSS OF PROFIT, LOSS OF DATA, GOODWILL, REVENUE OR OPPORTUNITIES; IN EACH CASE, RELATING TO THE SERVICE AND THESE TERMS.
+
+Unlimited Liabilities. NOTHING IN THESE TERMS EXCLUDES OR LIMITS YOUR LIABILITY FOR:
+
+YOUR INDEMNIFICATION OBLIGATIONS UNDER SECTION 12.4;
+
+YOUR INFRINGEMENT OF OUR, OUR AFFILIATE'S OR LICENSOR'S INTELLECTUAL PROPERTY RIGHTS; OR
+
+ANY FRAUDULENT ACTIVITIES OR FRAUDULENT MISREPRESENTATION.
+
+Disclaimer of Certain Liabilities. Without limiting Section 12.3(a) or 12.3(b), if the Service is interrupted for any of the reasons set forth below, Tencent disclaims liability for any loss or damage to the extent caused by the following:
+
+causes attributable to or in connection with the provision, access or use of any Third Party Materials;
+
+causes attributable to infrastructure operators, including but not limited to technical adjustments made by telecommunications operators, damage to telecommunications/power lines, installation, modification or maintenance of telecommunications networks/power resources by telecommunications/power operators;
+
+your use of the Service in a manner not authorized by Tencent;
+
+improper operation by you or failures in your computer software, systems or hardware; or
+
+any other circumstances not attributable to the fault of, outside the control of, or not reasonably foreseeable by, Tencent.
+
+Disclaimer of AI-related Liabilities. Without limiting Section 12.3(a) or 12.3(b), to the fullest extent permitted by Applicable Laws and notwithstanding anything to the contrary in these Terms, Tencent disclaims liability in respect of, any claim, loss, or dispute alleging that:
+
+any AI Functions of the Services, AI Agent or LLM accessible through the Service, AI Output, or underlying training data infringe or misappropriate any Intellectual Property Rights;
+
+the collection, use, or disclosure of data in connection with the AI Functions of the Services violates any privacy, data protection, or similar law or rights;
+
+the outcomes, errors, or harms from AI Agent tool-calling, function execution or autonomous decisions; or
+
+the compatibility, performance, or security of external tools/APIs integrated with AI Agents.
+
+Your Indemnification
+
+You will defend, indemnify and hold harmless Tencent, its Affiliates, and each of their respective agents, licensors, employees, officers and directors from and against any claims to the extent they arise out of or in relation to:
+
+your Content, including without limitation, their alleged violation, infringement or misappropriation of the Intellectual Property Rights or other rights of any third party;
+
+your use (or misuse) of the Service, including without limitation any (A) alleged violation of applicable data protection laws by you, Tencent, or its Affiliate(s) in connection with such use; (B) alleged violation of any other Applicable Laws (including laws related to recording others) and regulations by you, Tencent, or its Affiliates in connection with such use; (C) alleged violation of third party rights by you, Tencent, or its Affiliates; and/or (D) such use that would constitute a violation of these Terms;
+
+your use or distribution of Output;
+
+your AI Products or any decisions or actions taken (or not taken) in reliance on Output;
+
+any AI Agent you deployed using the Services; and/or
+
+the use of any products, services, data, software, hardware or business processes not provided by or on behalf of Tencent or its Affiliates,
+
+(each a “Claim”, and collectively, “Claims”).
+
+Tencent will provide you with: (1) prompt written notice of any Claims; and (2) reasonable assistance, at your expense, to defend or settle the Claim. Tencent and its Affiliates retain the right to appoint additional counsel of their choice to participate in defending or settling the Claims, in which case the counsel retained by you will consult with the counsel appointed by Tencent or its Affiliates and will give them the opportunity to provide comments on defense and settlement strategies.
+
+At your option, you may settle any such Claims, provided that any settlement requiring Tencent or its Affiliates or their agents, licensors, employees, officers or directors to admit liability, pay money, or take or refrain from taking any action will require Tencent's or the Affiliate's prior written consent (not to be unreasonably withheld, conditioned, or delayed).
+
+Without limiting the foregoing, you agree to pay any final judgment entered against Tencent or its Affiliates or their licensors, employees, officers and directors including without limitation any damages, costs, penalties, fees, disgorgement, restitution, and interest, or in the event of settlement, any settlement amounts agreed to by you, as a result of those Claims. You also agree to reimburse us for any costs and reasonable attorney's fees spent responding to any third-party subpoena, legal order or other processes associated with such Claims.
+
+Independent Allocations of Risk
+
+EACH PROVISION OF THESE TERMS THAT PROVIDES FOR A LIMITATION OF LIABILITY, DISCLAIMER OF WARRANTIES, OR EXCLUSION OF DAMAGES IS INTENDED TO ALLOCATE THE RISKS OF THESE TERMS BETWEEN YOU AND TENCENT. THIS ALLOCATION IS REFLECTED IN THE FEES CHARGED BY TENCENT (IF ANY) TO YOU AND FORMS THE BASIS OF THE BARGAIN BETWEEN YOU AND TENCENT. EACH OF THESE PROVISIONS IS SEVERABLE AND INDEPENDENT OF ALL OTHER PROVISIONS OF THESE TERMS, AND EACH OF THESE PROVISIONS WILL APPLY EVEN IF THE LIMITED REMEDIES IN THESE TERMS HAVE FAILED OF THEIR ESSENTIAL PURPOSE.
+
+Term, Termination and Suspension
+
+Term
+
+The term for these Terms will commence when you accept these Terms, download the Software or begin using the Service (whichever occurs first) and shall continue until terminated as set forth below (the "Term").
+
+Termination by Tencent
+
+Termination for cause. To the extent permitted under Applicable Laws, Tencent may, at its sole discretion and without assuming any liability, terminate these Terms and your access to or use of the Service or any aspect of the Service, in whole or in part, immediately upon written notice to you if:
+
+you violate any provisions of these Terms, and the breach is incapable of being rectified or remedied; or your violation is capable of being rectified, and you failed to rectify the breach within 20 days after being notified by Tencent;
+
+you have not paid any Fees or other amounts owed to Tencent within 20 days after the relevant due date;
+
+Tencent reasonably believes that you have violated any Applicable Laws, or engaged in any illegal, fraudulent or deceptive activity, in connection with the use of the Service
+
+you enter into liquidation, administrative receivership, bankruptcy or make any voluntary agreement with your creditors or are unable to pay your debts as they fall due; or
+
+other circumstances stipulated in these Terms.
+
+Termination for convenience. Tencent has the right to terminate these Terms for convenience and without liability by providing written notice to you 30 days in advance of the termination.
+
+Effects of Termination
+
+If these Terms are terminated:
+
+your rights to use the Service will be revoked, and you must stop all activities authorized by these Terms, including your use of the Service;
+
+you must delete or remove the Service from your device;
+
+you will no longer have access to your Account;
+
+any rights, obligations or liabilities incurred or accrued prior to the termination of these Terms will not be affected;
+
+Sections 1, 2, 3, 4.1(b), 4.1(c), 4.1(d), 4.1(e), 4.3, 4.4(b), 4.7(a)(i)(3), 4.7(a)(i)(4), 4.7(a)(i)(5), 4.7(a)(ii)(2), 4.7(c), 4.8(a), 5.1(b), 5.2, 5.3, 6, 7.2, 7.9, 8, 9.2, 9.3, 10, 11, 12, this Section 13.3, Sections 15, 16, 17 and 18 will survive the termination of these Terms.
+
+Termination by you
+
+You may terminate your use of the Service and these Terms by uninstalling the Service and deleting your Account.
+
+Remedies
+
+Remedies for Breach
+
+You acknowledge and agree that if Tencent discovers, on its own or based on information provided by competent Regulatory Authorities or complaints filed by rights holders, that you have violated Applicable Laws, regulations or rules, or breached these Terms, Tencent will be entitled to take any remedial actions available under these Terms or by operation of law, including but not limited to one or more of the following actions at its own discretion:
+
+issue warnings;
+
+restrict your use of some or all of the functions of the Service;
+
+suspend or terminate your use of the corresponding Account (hereinafter referred to as "blocking the account") or prohibit you from re-registering an Account without prior notice to you;
+
+in case of serious violations or breaches, Tencent will have the right to terminate the provision of Service to you and terminate these Terms without prior notice to you; and
+
+pursuing other liabilities against you in accordance with any Applicable Laws.
+
+Discretion for other Remedies
+
+We will retain the sole discretion as to when and how to impose warnings and/or taking any remedial actions mentioned above. We consider the severity of the violation and the number of infractions in making our determination; however any determination shall be at our reasonable discretion.
+
+Export Control and Sanctions
+
+Compliance
+
+You agree not to engage in any activities in connection with these Terms that would breach any Applicable Laws in relation to sanctions or export control or risk placing Tencent or its Affiliates in breach of such laws, or becoming a target of sanctions.
+
+Further Covenants
+
+You hereby agree to the following representations and covenants, in each case below with respect to your use of the Service under these Terms:
+
+You hereby represent and warrant to Tencent that you are not, as of the date of these Terms, any of the following (i)-(iii) and that if, after the date of these Terms, you become any of the following (i)-(iii), you shall immediately notify Tencent in writing: (i) are or acting on behalf of a Sanctioned Person, (ii) controlled or owned 50% or more (directly or indirectly) in the aggregate by one or more Sanctioned Persons, or (iii) located or resident in or organized under the laws of a Sanctioned Jurisdiction.
+
+In your use of the Service, you shall not: (i) violate Sanctions, (ii) use the Service in any way that involve, relate to, or are conducted on behalf of or for the benefit of a Sanctioned Person, and (iii) without limiting any of the foregoing (i)-(ii), with respect to your use of the Service provided under these Terms, transact with or otherwise do business with or involving any (a) Sanctioned Jurisdiction or (b) Sanctioned Person.
+
+You covenant and agree that you shall immediately notify Tencent in writing if you, with respect to your use of Service under these Terms, become aware of any (i) actual or potential violation of Sanctions by you or (ii) the involvement of any (a) Sanctioned Jurisdiction or (b) Sanctioned Person, in each case relating to your use of the Service.
+
+To the extent that Tencent, in its sole discretion, determines that a breach of Section 13 of these Terms by you has occurred or will occur, Tencent shall be entitled, in its sole discretion, to terminate these Terms with you and cease its provision of Service to you, in each case with immediate effect, or take any other remedial actions at the discretion of Tencent. If Tencent terminates these Terms or take any other remedial actions pursuant to this provision, it shall not be obliged to make any payments, indemnify, or otherwise provide compensation to you for the termination or the remedial actions.
+
+Tencent has the right to perform its reporting obligations to any relevant Regulatory Authority pursuant to Applicable Laws.
+
+Governing Law and Dispute Resolution
+
+Governing Law
+
+These Terms, the rights and obligations of the Parties under these Terms, any matters arising out of or in connection with these Terms or their subject matter or formation, will be governed by and construed in accordance with the laws of Singapore (excluding any conflict of law rules).
+
+Dispute Resolution
+
+If a dispute, controversy or claim arising from or in connection with these Terms or your use of the Service cannot be resolved within thirty (30) days following the commencement of consultation or mediation, then the Parties agree to submit the dispute for arbitration by the Singapore International Arbitration Centre ("SIAC"). Except for the right of either Party to apply to any court of competent jurisdiction for a temporary restraining order, a preliminary injunction, or other equitable relief to preserve the status quo or prevent irreparable harm, both you and we agree that any dispute, controversy or claim arising out of or relating to these Terms, including the existence, validity, interpretation, performance, breach or termination thereof or any dispute regarding non-contractual obligations arising out of or relating to it shall be referred to and finally resolved by arbitration administered by the SIAC under the SIAC Arbitration Rules of the SIAC for the time being in force which rules are deemed to be incorporated by reference in this Section. The seat of arbitration shall be Singapore. The number of arbitrators shall be three (3). You and we shall each designate one (1) arbitrator and the President of SIAC shall appoint a person who is the third arbitrator to act as the presiding arbitrator of the arbitral tribunal. The arbitration proceedings shall be conducted in English. The arbitral award shall be final and binding upon you and us.
+
+Force Majeure
+
+If the performance of these Terms is prevented, delayed, hindered or restricted, or Tencent breaches these Terms due to an event of Force Majeure, in no case shall Tencent be liable for the breach of these Terms, or be otherwise liable for any such failure or delay in the performance of such obligations. If the Force Majeure persist for more than 15 consecutive days, Tencent may terminate these Terms, without assuming any liability, by immediate written notice to you.
+
+Miscellaneous
+
+Notice
+
+Any notice required or permitted to be given under these Terms will be effective if it is in writing and sent by certified or registered mail, or insured courier, return receipt requested, to Tencent’s address set forth above (in the case of Tencent) and any address you have registered with us (in your case) and with the appropriate postage affixed. Either Party may change its address for receipt of notice by notice to the other Party in accordance with this Section. Notwithstanding the foregoing, any notices, communications, or disclosures sent electronically by Tencent through the Service, email, web announcements, site messages, mobile phone text messages or regular mail transmission or otherwise, shall be deemed a valid and binding notice required or permitted to be given under these Terms and shall be deemed to have been delivered to you on the date of sending.
+
+Assignment
+
+Neither party may assign or otherwise transfer, by operation of law or otherwise, its rights or obligations under these Terms without the prior written consent of the other party, except that Tencent may freely assign or otherwise transfer these Terms without your consent: (i) in connection with a merger, acquisition or sale of all or substantially all of Tencent's assets; or (ii) to any Affiliate or as part of a corporate reorganization. Upon such assignment or transfer taking effect, the successor or permitted assigns (as the case may be) shall assume assignor/transferor's liability and assignor/transferor is released from the same. Any attempted assignment or transfer in violation of the foregoing restriction will be void. Subject to the foregoing, these Terms will be binding upon and inure to the benefit of the parties and their successors and permitted assigns.
+
+Waiver and Severability
+
+The waiver by either Party of any breach of these Terms does not waive any other breach. Neither Party will be treated as having waived any rights by not exercising (or delaying the exercise of) any rights under these Terms. If any part of these Terms is unenforceable, the remaining portions of these Terms will remain in full force and effect.
+
+No Third-Party Beneficiaries
+
+Unless expressly provided to the contrary and except a person who is a permitted successor or assignee under Section 18.2 of the rights or benefits of these Terms, a person who is not a Party has no right under the Contracts (Rights of Third Parties) Act (Cap. 53B) to enforce or to enjoy the benefit of any term of these Terms. No consent from the persons referred to in this Section is required for the Parties to vary or rescind these Terms (whether or not in a way that varies or extinguishes rights or benefits in favour of such third parties).
+
+Entire Agreement
+
+These Terms constitute the whole legal agreement between you and us and govern your use of the Service and supersede and extinguish any prior drafts, agreements, undertakings, representations, warranties, promises, assurances and arrangements of any nature whatsoever, whether or not in writing.
+
+Language
+
+We may translate these Terms into other languages. In the event of any inconsistency between this English language version and any other language version, this English language version shall prevail.
+
+Customer Support and Contact Us
+
+Support for the Service
+
+Except to the extent required by Applicable Laws with respect to consumers or as otherwise provided in these Terms, Tencent is under no obligation to provide technical support or other services.
+
+Customer support
+
+If you have any questions (including problem consultation, complaints, etc.) about these Terms or the use of the Service, you can contact us at [lightvela@tencent.com]. We will reply to you as soon as possible after receiving your feedback, and respond to your request, and if applicable, within the time limit stipulated by Applicable Laws.
+
+Feedback
+
+You acknowledge and agree that any feedback that you provide to Tencent becomes the sole and exclusive property of Tencent and we may use your feedback without restriction or compensation to you.
+
+Jurisdiction-specific Addendum
+
+Kenya
+
+These Kenya-specific provisions apply to Users who have selected Kenya as their country of registration and supplements the LightVela Terms of Service ("Terms"). In the event of any conflict between this Addendum and the Terms, this Addendum shall prevail to the extent of the inconsistency.
+
+Governing Consumer Protection Laws. Nothing in the Terms shall be construed as excluding or limiting any rights you may have under the Consumer Protection Act, 2012 (Kenya) that cannot be excluded or limited by contract.
+
+Minimum Age. You must be at least 18 years of age to use the Service, in accordance with the Age of Majority Act (Cap 33, Laws of Kenya).
+
+AI Disclosure. You acknowledge that the Service utilises artificial intelligence and large language models to generate outputs. Outputs may contain inaccuracies and do not constitute professional advice of any kind. You should independently verify any information or outputs before relying on them.
+
+Limitation of Liability. To the extent that the limitation of liability in the Terms is inconsistent with any mandatory consumer protection provisions under Kenyan law, such mandatory provisions shall apply. For the avoidance of doubt, nothing in the Terms excludes or limits liability for death or personal injury caused by negligence, or for fraud or fraudulent misrepresentation.
+
+Dispute Resolution. The dispute resolution mechanism in the Terms (SIAC arbitration, Singapore) shall apply. However, nothing in the Terms restricts your right to bring a complaint before the Competition Authority of Kenya or the Office of the Data Protection Commissioner in respect of matters within their respective jurisdictions.
+
+Content Compliance. You shall not use the Service to generate, transmit, or disseminate content that is prohibited under Kenyan law, including but not limited to content that is false, misleading, obscene, or that incites violence, hatred, or discrimination.”
+
+Vietnam
+
+These Vietnam-specific provisions (this "Addendum") supplements and forms part of the Lightvela Terms of Service (the "Terms"). If you access or use the service from Vietnam, this Addendum applies to you and takes precedence over the Terms to the extent of any inconsistency. Capitalised terms not defined in this Addendum have the meaning given to them in the Terms.
+
+SCOPE AND APPLICATION
+
+This Addendum applies to Users who access or use the Service from, or who are located in, the Socialist Republic of Vietnam ("Vietnam"). It sets out additional terms and conditions that apply under Vietnamese law, including the Law on Artificial Intelligence No. 134/2025/QH15 ("Law on AI"), Decree No. 142/2026/ND-CP guiding the Law on AI ("Decree 142"), Decision No. 33/2026/QĐ-TTg of the Prime Minister establishing the taxonomy of high-risk AI systems ("Decision 33"), the Law on Cybersecurity No. 116/2025/QH15 ("Law on Cybersecurity"), the Law on Data No. 60/2024/QH15 ("Law on Data"), the Law on Personal Data Protection No. 91/2025/QH15 ("PDPL") and Decree No. 356/2025/ND-CP implementing the PDPL ("Decree 356"), each as amended or replaced from time to time.
+
+MINIMUM AGE REQUIREMENT
+
+Notwithstanding Section 1.1 of the Terms, if you are accessing or using the Service from Vietnam, you must be at least 16 years of age. This minimum age restriction applies in addition to the general eligibility requirements set out in the Terms.
+
+By using the Service from Vietnam, you represent and warrant that you are at least 16 years of age.
+
+If you are aged 16 or 17 (i.e., under 18 but at least 16), your parent or legal guardian must read these Terms, including this Addendum, and consent to your use of the Service before you access it.
+
+TRANSPARENCY AND AI CONTENT LABELLING
+
+In accordance with Article 11 of the Law on AI and Articles 17 to 18 of Decree 142, you acknowledge that the Service is designed to enable you to identify that you are interacting with an AI system. Tencent implements technical measures to ensure the Service complies with its transparency obligations under Vietnamese law.
+
+When the Service generates or edits audio, image, or video content that:
+
+simulates or mimics the appearance or voice of a real person; or
+
+recreates or represents factual events in a manner that could be confused with authentic content,
+
+such content must be labelled in a manner that is easily recognisable as AI-generated. Where you publicly share or distribute such Output, you are responsible for ensuring that the required AI labels and disclosures are maintained and visible to recipients.
+
+If you use the Service to develop, deploy, or operate an AI Product (as defined in the Terms) in Vietnam, you must additionally comply with all applicable transparency and labelling requirements under Vietnamese law in relation to that AI Product, including those set out in the Law on AI and Decree 142.
+
+INCIDENT HANDLING AND REPORTING
+
+In accordance with Article 12 of the Law on AI and Article 19 of Decree 142, if a serious incident arising from the use of the Service occurs that results in (or has the potential to result in) loss of life, severe harm to human health, significant property damage, serious infringement of human rights, severe disruption to public or essential services, or impacts on national security or public order, Tencent will promptly apply technical measures to remedy the incident, which may include suspending or recalling the Service in Vietnam, and will notify the competent Vietnamese authorities as required by Vietnamese law.
+
+You must notify Tencent immediately if you become aware of any incident involving the Service that you reasonably believe constitutes or may constitute a serious incident under Vietnamese law. Notification should be made to: [lightvela@tencent.com].
+
+Tencent may suspend or restrict your access to the Service in Vietnam without prior notice where required to comply with an incident handling obligation or a direction from the Ministry of Science and Technology or another competent Vietnamese authority.
+
+DATA GOVERNANCE, LOCALISATION, AND CYBERSECURITY
+
+Data Classification
+
+You acknowledge that User Data you submit to the Service may be classified under the Law on Data as core, important, or general data. If your User Data is or includes core or important data (as defined under the Law on Data and its implementing regulations), you are responsible for implementing the applicable protective measures and for complying with the requirements for risk assessments and authority notifications that apply to such data under Vietnamese law. Tencent will exercise reasonable care in handling User Data consistent with its obligations as a data administrator under Article 3.13 of the Law on Data.
+
+Data Localisation
+
+Under Article 25.3 of the Law on Cybersecurity, Tencent may be required to store personal information of service users, data on relationships of service users, and data generated by Vietnamese service users (including prompts, interactions, generated outputs, and system logs) in Vietnam for the period to be prescribed by the Government. Tencent will comply with applicable data localisation requirements as they take effect. Tencent will notify you of any material changes to data storage arrangements required by Vietnamese law.
+
+Content Moderation
+
+Under the Law on Cybersecurity, Tencent is required to remove content that violates Vietnamese law within 24 hours (or within 6 hours in urgent cases) of a request by the Ministry of Public Security. Tencent reserves the right to remove or restrict any Content that is the subject of such a request, without prior notice to you. You must not use the Service to create, disseminate, or store content that violates Vietnamese cybersecurity laws, including content that uses AI or other technology to forge the images, voices, or videos of others for illegal purposes.
+
+PERSONAL DATA PROTECTION
+
+Tencent processes personal data of Vietnamese Users in its capacity as the personal data controller ("bên kiểm soát dữ liệu cá nhân") within the meaning of the PDPL. Details of how Tencent processes your personal data, the legal basis for such processing, your rights, and how to exercise them are set out in the Privacy Policy.
+
+By using the Service and accepting the Terms (including this Addendum), you provide your consent to the processing of your personal data as described in the Privacy Policy. You have the right to withdraw consent at any time by following the procedure set out in the Privacy Policy.
+
+Your sensitive personal data, which includes (among other categories) biometric data, health data, financial data (including bank account details and transaction history), and images of national identity documents should not be submitted as Input to the Service unless you have separately consented to such processing as required by Vietnamese law.
+
+USE RESTRICTIONS
+
+In addition to the use restrictions and prohibited activities set out in Sections 5.3 and 5.4 of the Terms, you must not use the Service in Vietnam to:
+
+create, process, store, transmit, or distribute content that violates Vietnamese law, including content that is deemed to undermine national security, social order, or the sovereignty of Vietnam;
+
+use AI technology to forge images, voices, or videos of others for illegal purposes, in violation of the Law on Cybersecurity;
+
+use for the purposes specified in Decision 33 as engaging high-risk AI characteristics in any of the following sectors:
+
+education (including in particular generating content for self-education from uncontrolled or unverified data sources);
+
+healthcare (including providing health, medical, or diagnostic guidance or advice);
+
+banking and finance (including generating investment, credit, or financial product advice);
+
+ethnic and religious relations (including generating content with the potential to influence, manipulate, or cause harm in relation to ethnic groups or religious communities); or
+
+communications and transportation (in a manner that may cause significant harm to infrastructure, operations, or public safety); or
+
+in any manner that violates applicable Vietnamese laws or regulations, including the Law on AI, Decree 142, Decision 33, the Law on Cybersecurity, the Law on Data, the PDPL, and Decree 356.
+
+You acknowledge that Tencent is a general-purpose AI platform provider and that Tencent cannot monitor all end-user prompts in real time. You are solely responsible for ensuring that your use of the Service complies with the restrictions in this paragraph 7 and with Decision 33.
+
+If the Service is required to be treated as high-risk for any use case under the Law on AI, Decree 142, or Decision 33, additional legal and compliance requirements will apply to that use case, and Tencent reserves the right to implement technical controls (including prompt filtering or output restrictions), additional contractual restrictions, or other measures to assist in preventing use for the purposes set out in paragraph 7.1 of this Addendum, but the existence or absence of such measures does not affect your obligations under this paragraph 7. Tencent will notify you of any material changes to these restrictions that affect your use of the Service.
+
+COMPLIANCE OBLIGATIONS — DEPLOYERS AND AI PRODUCT OPERATORS
+
+If you act as a "deployer" of the Service within the meaning of the Law on AI (i.e., you use the Service in professional, commercial, or service-provision activities under your own control in Vietnam), you acknowledge that you bear the following additional obligations under Vietnamese law:
+
+you must coordinate with Tencent to review and, if necessary, reclassify the risk level of the AI system if you modify its functions or change its intended use in a manner that may generate new or heightened risks, including use cases falling within the high-risk sector criteria of Decision 33;
+
+you must comply with all transparency and labelling obligations applicable to deployers under the Law on AI and Decree 142, including ensuring that AI-generated content that simulates real persons or recreates factual events is appropriately labelled;
+
+you must establish internal incident recording and escalation procedures and notify Tencent promptly if you identify a potential serious incident; and
+
+you must ensure that any AI Product you develop or deploy using the Service complies with applicable Vietnamese laws and regulations, including the sector-specific requirements set out in Decision 33, and that you do not use the Service to build AI Products that are used in the high-risk sectors and for the high-risk purposes specified in Decision 33.
+
+Tencent does not assume the role of "deployer" in relation to your downstream use of the Service to build AI Products, and disclaims any responsibilities or obligations attributable to a deployer under Vietnamese law in relation to such use.
+
+CONSUMER PROTECTION (INDIVIDUAL USERS)
+
+The consumer protection provisions of the Law No. 19/2023/QH15 on Protection of Consumer Rights dated 20 June 2023 ("Law on Consumer Protection", as amended from time to time) and its implementing regulations apply to the extent you use the Service as an individual for personal or household purposes other than trading. The following provisions apply in addition to, and shall prevail in case of inconsistency with, the corresponding provisions of the Terms.
+
+Liability limitations. The liability cap and exclusions set out in Section 12.3 of the Terms shall not apply to liability for damage caused to you by Tencent's own fault.
+
+User's rights to complain and seek remedies. Nothing in the Terms or this Addendum restricts your right to:
+
+submit complaints to Tencent via the channel set out in Section 13 of this Addendum;
+
+contact the Vietnam Competition Commission (the "VCC") under the Ministry of Industry and Trade ("MOIT") (hotline: 1800.6838; portal: www.bvntd.gov.vn), the relevant Department of Industry and Trade at the provincial level or any competent Vietnamese authority regarding a consumer rights concern. You may also contact the Ministry of Public Security (Department of Cybersecurity and High-Tech Crime Prevention — A05) in respect of matters arising under the PDPL;
+
+initiate legal proceedings before a competent Vietnamese court; or
+
+participate in collective dispute resolution mechanisms available under Vietnamese law.
+
+Unilateral amendment of terms. The deemed-acceptance mechanic in Section 1.3 of the Terms shall not deprive you of the right under the Law on Consumer Protection to refuse material amendments to the Terms and to terminate without penalty within the period provided under applicable law. Where any amendment materially affects your rights as a Vietnamese consumer, Tencent will notify you at least 30 days in advance and will clearly state your right to terminate before the amendment takes effect.
+
+Service modification. In the event of Service modification or interruption contemplated by Sections 4.3 and 4.4 of the Terms, Tencent will make all commercially reasonable efforts to provide you with at least 3 days' prior notice.
+
+Vulnerable Users. Tencent maintains appropriate mechanisms to assist vulnerable consumers as defined in Article 8 of the Law on Consumer Protection, including elderly users, users with disabilities, minors, pregnant women, nursing mothers, persons with serious illness, and members of poor households. If you consider yourself a vulnerable consumer and require assistance, please contact us using the details in paragraph 13 of this Addendum.
+
+Language. In deviation from Section 18.6 of the Terms, this Addendum and, to the extent applicable to you, the Terms are made available in the Vietnamese and English languages with equal validity. In case of discrepancies, the version most favourable to you as a consumer shall prevail.
+
+SANCTIONS AND PENALTIES
+
+You acknowledge that non-compliance with Vietnamese AI, cybersecurity, data, and personal data protection laws may result in:
+
+administrative sanctions under the Law on AI, the relevant implementing decree or under other applicable laws;
+
+criminal liability under applicable Vietnamese legislation;
+
+civil liability to compensate for damages;
+
+suspension of the use or provision of the AI system in Vietnam; and/or
+
+other remedial measures as directed by competent Vietnamese authorities.
+
+Tencent reserves the right to suspend or terminate your access to the Service in Vietnam immediately upon becoming aware of any violation by you of applicable Vietnamese law or of these Terms.
+
+GOVERNING LAW AND DISPUTE RESOLUTION
+
+Notwithstanding Section 16 of the Terms, to the extent required by mandatory provisions of Vietnamese law (including applicable consumer protection legislation), certain rights and protections afforded to Vietnamese Users under Vietnamese law will continue to apply irrespective of the governing law and dispute resolution provisions of the Terms.
+
+Nothing in the Terms or this Addendum limits or excludes any statutory right that cannot be waived or excluded under Vietnamese law. Where any provision of the Terms or this Addendum conflicts with a mandatory provision of Vietnamese law, the mandatory provision of Vietnamese law will prevail to the extent of the conflict.
+
+AMENDMENTS AND REGULATORY MONITORING
+
+Vietnamese AI, cybersecurity, data, and personal data protection laws are subject to ongoing development. Tencent will update this Addendum as and when required to reflect material changes in Vietnamese law that affect the Service or your rights and obligations.
+
+Amendments to this Addendum will be communicated to you in accordance with the notice provisions of the Terms.

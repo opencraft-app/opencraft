@@ -41,7 +41,7 @@
 | full | L 级关键批、最终批、用户指定 | 完整 gate、全量测试、必要 skill、E2E capability |
 | auto | CI / 只需机器检查 | 自动化命令，跳过人工判断项 |
 
-升级到 full：`--final`、影响文件 > 5、连续失败 >= 2、高风险模块、Reviewer 初筛发现 P0/P1 风险。
+升级到 full：`--final`、L 级路由、用户明确要求、连续失败 >= 2、命中 `.workflow/rules/flow-cost.md` 定义的高风险条件，或 Reviewer 初筛发现 P0/P1 风险。文件数量只能作为验证范围线索，不能单独改变流程级别或触发 full。
 
 ---
 

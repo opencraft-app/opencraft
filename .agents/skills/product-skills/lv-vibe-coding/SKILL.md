@@ -28,6 +28,8 @@ description: LightVela Vibe Coding / AI Coding 流程指南，适用于需求澄
         ↓
 【第 6 步】提 MR（target = master，关联 issue 编号）← 一个需求只开一个分支，一个 MR
         ↓
+【第 6B 步】（按需）产品/法务 PRD 沉淀到 wiki/prd-docs
+        ↓
 【第 7 步】Fanny 自动 CR → 人工 CR（@ owner）→ 找方明 第一步合并 → 找审批人批准
         ↓
 【第 8 步】分批发布（有周期，攒一批一起发）→ 回归验证
@@ -293,6 +295,25 @@ git push -u origin frontsandbox/<slug>
 > 💡 评审导致代码再改怎么办？追加改动 → 再跑一次 `/feai-archive`（增量归档）→ 追加 commit 到同一个 MR。
 
 > 📌 **MR 创建成功、拿到 MR 链接之后**：**下一步进入"六、第 7-8 步·CR → 合并 → 发布 → 回归验证"**。去找 Fanny 机器人触发自动初审，再 @ owner 做人工 CR。
+
+### 5.4 第 6B 步：产品/法务 PRD 沉淀（按需）
+
+**什么时候触发**：产品重大更新、新地域/新语言、法务/合规材料、计费、渠道、AgentChat、SkillHub/skills.sh 等用户可见范围变化，或用户明确说"写 PRD / 沉淀需求文档 / 放到 `wiki/prd-docs`"。
+
+**怎么做**：
+
+1. 读取 `product-skills/prd-creator/SKILL.md` 和 `references/prd-template.md`。
+2. 独立验收的目标拆成独立 PRD；关联但目标不同的事项不要硬塞到一个文件。
+3. 写入 `wiki/prd-docs/YYYY-MM-DD-<short-title>.md`。
+4. PRD 写清发布站点、同步策略、范围/非目标、影响面、验收标准和产物交接。
+
+**提交策略**：
+
+- 跟功能一起评审：把 PRD 加到当前 MR，MR 描述写明新增 PRD。
+- 用户说"直接放进去 / 不用提 MR"：从最新 `origin/master` 建干净 worktree，只提交 PRD Markdown 到 `master`；提交前用 `git diff --cached --stat` 确认只包含 `wiki/prd-docs/*.md`。
+- 禁止把功能分支 HEAD 直接推 `master`，避免把功能代码和本地调试改动一起带进去。
+
+> 📌 **PRD 沉淀完成之后**：回到当前 MR/发布流程继续推进；如果是直接放到 master，确认远端 `master` 的 `wiki/prd-docs` 已能看到新文件。
 
 ---
 
@@ -616,6 +637,22 @@ git add frontend/src/i18n/generated/zh-to-key.json
 **修法**：确认一个 MR 已合并后：
 1. 立刻在脑子里把这个源分支划掉——**以后不再动它**
 2. 后续的修改都在**目标分支（或新分支）**上做，对应那个分支的 MR 上提交
+
+---
+
+### 坑 12：PRD 写在功能分支，`master/wiki/prd-docs` 看不到
+
+**症状**：你已经新增了 PRD 文件，但用户打开工蜂 `master` 下的 `wiki/prd-docs` 说"没有"。
+
+**根因**：PRD 只提交在功能分支/MR 分支里，尚未进入 `master`；或者为了"直接放进去"误把功能分支 HEAD 推向 `master`，导致 PRD 和功能代码混在一起。
+
+**修法**：
+
+- PRD 跟功能一起走评审：保持在当前 MR，MR 描述里说明新增 PRD，等 MR 合并后再让用户看 `master`。
+- 用户明确说"直接放进去 / 不用提 MR"：从最新 `origin/master` 建干净 worktree，只提交 `wiki/prd-docs/*.md`，提交前用 `git diff --cached --stat` 和 `git diff --cached --check` 复核。
+- 禁止从功能分支直接 `git push origin HEAD:master`。
+
+**预防**：写 PRD 前先确认交付方式是"随当前 MR"还是"直接进 master"；直接进 master 时，工作区必须只包含 PRD Markdown。
 
 ---
 

@@ -30,11 +30,16 @@ describe("publicSiteHref", () => {
     expect(publicSiteHref("/", "en-US", { localized: true })).toBe("/");
     expect(publicSiteHref("/", "zh-CN", { localized: true })).toBe("/zh-sg");
     expect(publicSiteHref("/", "zh-SG", { localized: true })).toBe("/zh-sg");
+    expect(publicSiteHref("/", "id-ID", { localized: true })).toBe("/id-id");
     expect(publicSiteHref("/docs/overview", "en-US", { localized: true })).toBe("/docs/overview");
     expect(publicSiteHref("/docs/overview", "zh-CN", { localized: true })).toBe("/zh-sg/docs/overview");
     expect(publicSiteHref("/docs/overview", "zh-SG", { localized: true })).toBe("/zh-sg/docs/overview");
+    expect(publicSiteHref("/docs/overview", "id-ID", { localized: true })).toBe("/id-id/docs/overview");
     expect(publicSiteHref("/changelog", "en-US", { localized: true })).toBe("/changelog");
     expect(publicSiteHref("/changelog", "zh-CN", { localized: true })).toBe("/zh-sg/changelog");
+    expect(publicSiteHref("/changelog", "id-ID", { localized: true })).toBe("/id-id/changelog");
+    expect(publicSiteHref("/subscribe", "id-ID", { localized: true })).toBe("/id-id/subscribe");
+    expect(publicSiteHref("/support", "id-ID", { localized: true })).toBe("/id-id/support");
   });
 });
 

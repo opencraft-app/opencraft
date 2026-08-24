@@ -1,16 +1,10 @@
 # 如何把 AI Agent 接入消息平台？
 
-只有当你能在日常聊天发生的地方联系到 AI Agent，它才真正会成为你日常工作的一部分。
-把 Hermes 接入消息平台后，你可以通过熟悉的入口提问、跟进事项和接收定期更新，不必每次都打开单独的 AI 应用。
-
-LightVela 让一个云端 Hermes Agent 可以通过受支持的消息通道为你提供服务。
-无论你选择哪个平台，这个 Agent 都会保留已经配置的模型、技能和记忆，适配你想要支持的人群和使用场景。
-
-![LightVela 中的消息平台连接](../images/use-case-messaging-platforms.webp)
-
 ## 摘要
 
-**把 Hermes Agent 接入消息平台的关键，是理解通道只是入口、Agent 才是工作主体：同一个云端 Agent 会在所有已连接通道间共享同一套模型、技能与记忆，因此不需要为每个平台各建一个机器人。** 完整流程是四步：确认目标通道在你所在区域可用（国际站支持 Telegram、WhatsApp、Discord、WeChat、QQ、企业微信、飞书，国内站面向微信、飞书、QQ）；在平台侧完成授权取得凭据；在管理台连接并确认显示为已接入；最后发一条测试消息，确认回复落在你发消息的那一条会话里。凭据属于敏感信息，不要写入长期上下文或粘贴到聊天中。
+**把 Hermes Agent 接入消息平台的关键，是理解通道只是入口、Agent 才是工作主体：同一个云端 Agent 会在所有已连接通道间共享同一套模型、技能与记忆，因此不需要为每个平台各建一个机器人。** 完整流程是四步：确认目标通道在你所在区域可用（国际站支持 Telegram、WhatsApp、Discord、Slack、WeChat、QQ、企业微信、飞书，国内站面向微信、飞书、QQ）；在平台侧完成授权取得凭据；在管理台连接并确认显示为已接入；最后发一条测试消息，确认回复落在你发消息的那一条会话里。凭据属于敏感信息，不要写入长期上下文或粘贴到聊天中。
+
+![LightVela 中的消息平台连接](../images/use-case-messaging-platforms.webp)
 
 ## 适合谁
 
@@ -37,13 +31,14 @@ LightVela 让一个云端 Hermes Agent 可以通过受支持的消息通道为�
 ### 1. 选择适合对话场景的通道
 
 选择通道时，应根据你真正会在哪里使用助手来决定，而不是看能连接多少个平台。
-Telegram、WhatsApp、Discord 和 WeChat 是常见选项：
+Telegram、WhatsApp、Discord、Slack 和 WeChat 是常见选项：
 
 | 通道 | 适合场景 |
 | --- | --- |
 | Telegram | 个人消息、轻量日常任务和直接对话 |
 | WhatsApp | 日常沟通，以及你已经习惯使用 WhatsApp 接收的通知 |
 | Discord | 社群、开发者群组和结构化讨论空间 |
+| Slack | 团队协作、工作区通知和频道任务流转 |
 | WeChat | 经常使用微信进行个人沟通的场景 |
 
 LightVela 也会为其他受支持的通道提供配置页面。
@@ -57,6 +52,7 @@ LightVela 也会为其他受支持的通道提供配置页面。
 - [Telegram](../configuration/channel-telegram.md)
 - [WhatsApp](../configuration/channel-whatsapp.md)
 - [Discord](../configuration/channel-discord.md)
+- [Slack](../configuration/channel-slack.md)
 - [WeChat](../configuration/channel-wechat.md)
 
 请像保护密码一样保护机器人 Token、应用 ID 和密钥。
@@ -86,6 +82,8 @@ LightVela 也会为其他受支持的通道提供配置页面。
 
 ![不同通道之间共享同一个 Hermes Agent 的上下文](../images/use-case-messaging-memory.png)
 
+如果你希望使用 Discord 服务社群，可以继续阅读 [Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot](./discord-community-agent.md)。
+
 ## 常见问题
 
 ### 我可以把多个消息平台连接到同一个 Hermes Agent 吗？
@@ -97,7 +95,7 @@ LightVela 也会为其他受支持的通道提供配置页面。
 
 选择你最常使用的那个。
 当第一条消息很容易发出时，个人助手更容易真正融入你的日常。
-Telegram、WhatsApp、Discord 和 WeChat 都有对应的详细配置指南。
+Telegram、WhatsApp、Discord、Slack 和 WeChat 都有对应的详细配置指南。
 
 ### 为什么通道显示已连接，但 Hermes 没有回复？
 

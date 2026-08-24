@@ -167,6 +167,8 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Disc
 
 ## 下一步
 
+- [配置通道 - Slack](./channel-slack.md) — 团队协作、工作区通知和频道任务流转
+
 - [配置通道 - QQ](./channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
 
 - [配置通道 - 企业微信](./channel-wecom.md) — 企业内部协作与办公场景

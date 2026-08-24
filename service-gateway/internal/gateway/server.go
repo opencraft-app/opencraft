@@ -153,8 +153,9 @@ func WithWorkerActionBackend(backend workerActionBackend) Option {
 }
 
 type compiledRoute struct {
-	route Route
-	proxy *httputil.ReverseProxy
+	route          Route
+	proxy          *httputil.ReverseProxy
+	allowedOrigins originAllowlist
 }
 
 type sessionEnvelope struct {
@@ -204,9 +205,14 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 			return nil, fmt.Errorf("route %s response_header_timeout: %w", route.Name, err)
 		}
 
+		routeAllowedOrigins := cfg.AllowedOrigins
+		if len(route.AllowedOrigins) > 0 {
+			routeAllowedOrigins = route.AllowedOrigins
+		}
 		routes = append(routes, compiledRoute{
-			route: route,
-			proxy: newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs),
+			route:          route,
+			proxy:          newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs),
+			allowedOrigins: normalizeAllowedOrigins(routeAllowedOrigins),
 		})
 		if subscriptionServiceURL == "" && hasRoutePrefix("/subscriptions/current", route.Prefix) {
 			subscriptionServiceURL = strings.TrimRight(target.String(), "/")
@@ -397,7 +403,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	applyCORSHeaders(h.allowedOrigins, w.Header(), r, matched.route.Methods)
+	applyCORSHeaders(matched.allowedOrigins, w.Header(), r, matched.route.Methods)
 
 	if isCORSPreflight(r) {
 		if !matched.allowsPreflight(r) {

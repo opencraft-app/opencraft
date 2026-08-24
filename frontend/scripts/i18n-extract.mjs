@@ -144,15 +144,26 @@ for (const key of Object.keys(zhCN)) {
   enUS[key] = prevEn[key] ?? "";
 }
 
+/** 印尼语字典：保留已有翻译，新增 key 置空（待人工翻译） */
+const prevIdPath = join(OUT_DIR, "id-ID.json");
+const prevId = readJson(prevIdPath);
+const idID = {};
+for (const key of Object.keys(zhCN)) {
+  idID[key] = prevId[key] ?? "";
+}
+
 /* ── 输出统计 ─────────────────────────────────────────── */
 
 const totalZh = zhSet.size;
 const translatedEn = Object.values(enUS).filter((v) => v && v.length > 0).length;
 const missingEn = totalZh - translatedEn;
+const translatedId = Object.values(idID).filter((v) => v && v.length > 0).length;
+const missingId = totalZh - translatedId;
 
 console.log(`[i18n-extract] 扫描 ${files.length} 个源文件`);
 console.log(`[i18n-extract] 发现 ${totalZh} 条中文文案`);
 console.log(`[i18n-extract] 英文已翻译 ${translatedEn} 条，待翻译 ${missingEn} 条`);
+console.log(`[i18n-extract] 印尼语已翻译 ${translatedId} 条，待翻译 ${missingId} 条`);
 
 if (CHECK_ONLY) {
   /* CI 场景：英文有缺失则以非零退出码失败 */
@@ -167,8 +178,12 @@ if (CHECK_ONLY) {
 writeJson(join(OUT_DIR, "zh-to-key.json"), zhToKey);
 writeJson(join(OUT_DIR, "zh-CN.json"), zhCN);
 writeJson(join(OUT_DIR, "en-US.json"), enUS);
+writeJson(join(OUT_DIR, "id-ID.json"), idID);
 
 console.log(`[i18n-extract] ✅ 写入 ${OUT_DIR}`);
 if (missingEn > 0) {
   console.log(`[i18n-extract] 请打开 src/i18n/generated/en-US.json 补齐空字符串翻译`);
+}
+if (missingId > 0) {
+  console.log(`[i18n-extract] 请打开 src/i18n/generated/id-ID.json 补齐印尼语翻译`);
 }

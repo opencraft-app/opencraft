@@ -86,6 +86,12 @@ type Adapter interface {
 	GetSnapshotStatus(ctx context.Context, sandboxID, snapshotID string) (*GetSnapshotStatusResponse, error)
 }
 
+// CommandInvoker is the optional internal capability used for invoking a
+// pre-created TAT command with hidden runtime parameters.
+type CommandInvoker interface {
+	InvokeCommand(ctx context.Context, sandboxID string, commandID string, parameters map[string]string, timeoutSec int) (*ExecCommandResult, error)
+}
+
 // RetryConfig defines retry behavior for the sandbox adapter.
 type RetryConfig struct {
 	MaxRetries    int
@@ -918,6 +924,10 @@ type sandboxSessionAuthProvider interface {
 	GetSessionCookie() string
 }
 
+type sandboxUserProvider interface {
+	GetUserID() string
+}
+
 func applySandboxSessionAuth(ctx context.Context, req *http.Request, path string) {
 	if req == nil || !strings.Contains(path, "/tat/") {
 		return
@@ -931,6 +941,11 @@ func applySandboxSessionAuth(ctx context.Context, req *http.Request, path string
 	}
 	if cookie := strings.TrimSpace(provider.GetSessionCookie()); cookie != "" {
 		req.Header.Set("Cookie", cookie)
+	}
+	if userProvider, ok := ctx.(sandboxUserProvider); ok {
+		if userID := strings.TrimSpace(userProvider.GetUserID()); userID != "" {
+			req.Header.Set("X-User-Id", userID)
+		}
 	}
 }
 
@@ -972,7 +987,92 @@ func (a *SandboxAdapter) ExecCommand(ctx context.Context, sandboxID string, bash
 		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "empty invocation id from TAT")
 	}
 
-	// Step 2: Poll for the result with exponential backoff.
+	return a.waitCommandResult(ctx, sandboxID, invResp, timeoutSec)
+}
+
+// InvokeCommand invokes a pre-created TAT command with runtime parameters and
+// waits for its single-instance task to finish. Parameter values are passed only
+// in the HTTP request body and are intentionally absent from adapter logs.
+func (a *SandboxAdapter) InvokeCommand(ctx context.Context, sandboxID string, commandID string, parameters map[string]string, timeoutSec int) (*ExecCommandResult, error) {
+	if err := validateSandboxID(sandboxID); err != nil {
+		return nil, err
+	}
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" || len(parameters) == 0 {
+		return nil, errcode.ErrSandboxInvalidParam
+	}
+	if timeoutSec <= 0 {
+		timeoutSec = defaultExecTimeoutSec
+	}
+	if timeoutSec > maxExecTimeoutSec {
+		timeoutSec = maxExecTimeoutSec
+	}
+
+	invResp := new(TATCommandResponse)
+	if err := a.doRequest(
+		ctx, "tat_invoke", http.MethodPost,
+		"/internal/sandboxes/"+url.PathEscape(sandboxID)+"/tat/invocations",
+		nil, &InvokeCommandRequest{CommandID: commandID, Parameters: parameters},
+		http.StatusAccepted, invResp,
+	); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(invResp.InvocationID) == "" {
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "empty invocation id from TAT")
+	}
+	return a.waitCommandMetadataResult(ctx, sandboxID, invResp, timeoutSec)
+}
+
+func (a *SandboxAdapter) waitCommandMetadataResult(ctx context.Context, sandboxID string, invResp *TATCommandResponse, timeoutSec int) (*ExecCommandResult, error) {
+	invocationID := strings.TrimSpace(invResp.InvocationID)
+	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
+	pollInterval := initialPollInterval
+
+	for {
+		if err := sleepWithContext(ctx, pollInterval); err != nil {
+			return nil, err
+		}
+
+		if time.Now().After(deadline) {
+			return &ExecCommandResult{
+				InvocationID: invocationID,
+				CommandID:    invResp.CommandID,
+				Status:       "TIMEOUT",
+			}, errcode.ErrSandboxTimeout
+		}
+
+		result := new(TATCommandMetadataResult)
+		if err := a.doRequest(
+			ctx, "tat_invoke_query", http.MethodGet,
+			"/internal/sandboxes/"+url.PathEscape(sandboxID)+"/tat/invocations/"+url.PathEscape(invocationID),
+			nil, nil, http.StatusOK, result,
+		); err != nil {
+			return nil, err
+		}
+
+		switch result.Status {
+		case "SUCCESS", "FAILED":
+			return &ExecCommandResult{
+				InvocationID: result.InvocationID,
+				CommandID:    result.CommandID,
+				Status:       result.Status,
+				ExitCode:     result.ExitCode,
+				StartTime:    result.StartTime,
+				EndTime:      result.EndTime,
+			}, nil
+		}
+
+		if pollInterval < maxPollInterval {
+			pollInterval *= 2
+			if pollInterval > maxPollInterval {
+				pollInterval = maxPollInterval
+			}
+		}
+	}
+}
+
+func (a *SandboxAdapter) waitCommandResult(ctx context.Context, sandboxID string, invResp *TATCommandResponse, timeoutSec int) (*ExecCommandResult, error) {
+	invocationID := strings.TrimSpace(invResp.InvocationID)
 	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 	pollInterval := initialPollInterval
 
@@ -1079,6 +1179,9 @@ func (a *SandboxAdapter) StreamPtyCommand(
 	httpReq.Header.Set("User-Agent", defaultUserAgent)
 	httpReq.Header.Set("Accept", "application/x-ndjson")
 	httpReq.Header.Set("Content-Type", "application/json")
+	if a.apiKey != "" {
+		httpReq.Header.Set("X-API-Key", a.apiKey)
+	}
 	streamClient := &http.Client{Transport: a.httpClient.Transport}
 	resp, err := streamClient.Do(httpReq)
 	if err != nil {
@@ -1218,3 +1321,4 @@ func (a *SandboxAdapter) GetSnapshotStatus(
 }
 
 var _ Adapter = (*SandboxAdapter)(nil)
+var _ CommandInvoker = (*SandboxAdapter)(nil)

@@ -53,6 +53,7 @@ describe("global public SEO URL contract", () => {
       "en-US": "https://lightvela.ai/about/",
       "zh-SG": "https://lightvela.ai/zh-sg/about/",
       "zh-Hant": "https://lightvela.ai/zh-hant/about/",
+      "id-ID": "https://lightvela.ai/id-id/about/",
     });
   });
 
@@ -78,17 +79,19 @@ describe("global public SEO URL contract", () => {
     expect(absolutePageUrlForSeoRegion("cn", "/zh-cn/about")).toBe("https://lightvela.com/zh-cn/about/");
   });
 
-  it("uses unprefixed English and prefixed zh-SG URLs in docs hreflang", async () => {
+  it("uses unprefixed English and prefixed zh-SG/id-ID URLs in docs hreflang", async () => {
     const { buildDocsAlternates, canonicalDocsPath } = await importSeoWithRegion("global");
 
     expect(canonicalDocsPath("en-us", ["overview"])).toBe("/docs/overview");
     expect(canonicalDocsPath("zh-sg", ["overview"])).toBe("/zh-sg/docs/overview");
+    expect(canonicalDocsPath("id-id", ["overview"])).toBe("/id-id/docs/overview");
 
-    expect(buildDocsAlternates(["overview"], ["en-us", "zh-cn", "zh-sg"])).toEqual({
+    expect(buildDocsAlternates(["overview"], ["en-us", "zh-cn", "zh-sg", "id-id"])).toEqual({
       "x-default": "https://lightvela.ai/docs/overview/",
       "zh-CN": "https://lightvela.com/zh-cn/docs/overview/",
       "en-US": "https://lightvela.ai/docs/overview/",
       "zh-SG": "https://lightvela.ai/zh-sg/docs/overview/",
+      "id-ID": "https://lightvela.ai/id-id/docs/overview/",
     });
   });
 
@@ -100,8 +103,10 @@ describe("global public SEO URL contract", () => {
 
     expect(locations).toContain("https://lightvela.ai/about/");
     expect(locations).toContain("https://lightvela.ai/zh-sg/about/");
+    expect(locations).toContain("https://lightvela.ai/id-id/about/");
     expect(locations).toContain("https://lightvela.ai/docs/overview/");
     expect(locations).toContain("https://lightvela.ai/zh-sg/docs/overview/");
+    expect(locations).toContain("https://lightvela.ai/id-id/docs/overview/");
     expect(locations).not.toContain("https://lightvela.ai/en-us/about/");
     expect(locations).not.toContain("https://lightvela.ai/docs/");
     expect(locations).not.toContain("https://lightvela.ai/en-us/docs/overview/");

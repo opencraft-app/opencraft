@@ -101,27 +101,44 @@ type GetPriceResponse struct {
 // GetPriceData 是 returnValue.data 数组单条（与入参 ResInfo[] 1:1 对应）。
 //
 // 字段集与设计稿 §3.5.5 (5) 出参 schema 严格对齐；本期 trade 适配层只关心
-// price / totalCost / realTotalCost / currency / policyDetail.total（拍平为 discount）—
-// 其余字段（highPrecisionPrice / policy / partDetail / timeUnit / timeSpan 等）由 client
-// 透传后由调用方 / ELK 日志兜底（与 Q50 不持久化原则一致）。
+// price / totalCost / realTotalCost / currency / policyDetail.total（拍平为 discount）；
+// 国际站询价会消费 highPrecisionPrice.*High 并换算成对前端兼容的金额单位。其余字段
+// 由 client 透传后由调用方 / ELK 日志兜底（与 Q50 不持久化原则一致）。
 type GetPriceData struct {
-	Price              flexString             `json:"price"`
-	TotalCost          flexString             `json:"totalCost"`
-	RealTotalCost      flexString             `json:"realTotalCost"`
-	Currency           string                 `json:"currency"`
-	TimeUnit           string                 `json:"timeUnit,omitempty"`
-	TimeSpan           int                    `json:"timeSpan,omitempty"`
-	GoodsNum           int                    `json:"goodsNum,omitempty"`
-	ProductCode        string                 `json:"productCode,omitempty"`
-	SubProductCode     string                 `json:"subProductCode,omitempty"`
-	Pid                int64                  `json:"pid,omitempty"`    // Q71：PDF §4.4 pid 是 int
-	Policy             float64                `json:"policy,omitempty"` // jifei 实测返回 0.01 浮点（折扣率 1.0=不打折 / 0.01=1 折），不能用 int；本字段仅 ELK 兜底，业务层不消费
-	PolicyDetail       *PolicyDetail          `json:"policyDetail,omitempty"`
-	HighPrecisionPrice map[string]interface{} `json:"highPrecisionPrice,omitempty"`
+	Price              flexString          `json:"price"`
+	TotalCost          flexString          `json:"totalCost"`
+	RealTotalCost      flexString          `json:"realTotalCost"`
+	Currency           string              `json:"currency"`
+	TimeUnit           string              `json:"timeUnit,omitempty"`
+	TimeSpan           int                 `json:"timeSpan,omitempty"`
+	GoodsNum           int                 `json:"goodsNum,omitempty"`
+	ProductCode        string              `json:"productCode,omitempty"`
+	SubProductCode     string              `json:"subProductCode,omitempty"`
+	Pid                int64               `json:"pid,omitempty"`    // Q71：PDF §4.4 pid 是 int
+	Policy             float64             `json:"policy,omitempty"` // jifei 实测返回 0.01 浮点（折扣率 1.0=不打折 / 0.01=1 折），不能用 int；本字段仅 ELK 兜底，业务层不消费
+	PolicyDetail       *PolicyDetail       `json:"policyDetail,omitempty"`
+	TaxDetail          *TaxDetail          `json:"taxDetail,omitempty"`
+	HighPrecisionPrice *HighPrecisionPrice `json:"highPrecisionPrice,omitempty"`
 	// PartDetail jifei 沙箱实测回包是 object（如 `{"discount": ...}`），但 PDF
 	// §4.4 / 设计稿标 array。为兼容两种形态保留为 RawMessage（业务层不消费此字段，
 	// 仅 ELK 日志兜底，与 Q50 不持久化原则一致）。v1.7.18 B13.
 	PartDetail json.RawMessage `json:"partDetail,omitempty"`
+}
+
+// TaxDetail is the international tax metadata returned for one quoted item.
+type TaxDetail struct {
+	TaxRate flexString `json:"taxRate"`
+}
+
+// HighPrecisionPrice 是 jifei 国际站高精度金额字段。
+//
+// 实测国际站 USD 询价应优先消费 realTotalCostHigh 等高精度字段，字段单位为
+// 主币种 * 1e8。字段类型同 price / totalCost 一样存在 number/string 漂移，使用
+// flexString 容忍解码。
+type HighPrecisionPrice struct {
+	PriceHigh         flexString `json:"priceHigh,omitempty"`
+	TotalCostHigh     flexString `json:"totalCostHigh,omitempty"`
+	RealTotalCostHigh flexString `json:"realTotalCostHigh,omitempty"`
 }
 
 // PolicyDetail 是 GetPriceData.policyDetail 嵌套结构。

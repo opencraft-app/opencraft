@@ -263,6 +263,136 @@ func TestRoutePathAllowlistRejectsUnlistedRequestsBeforeAuth(t *testing.T) {
 	}
 }
 
+func TestPaymentMethodRouteDoesNotFallBackToGenericAuthRoute(t *testing.T) {
+	cardUpstreamCalls := 0
+	cardUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cardUpstreamCalls++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer cardUpstream.Close()
+
+	genericAuthCalls := 0
+	genericAuthUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		genericAuthCalls++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer genericAuthUpstream.Close()
+
+	authCalls := 0
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		authCalls++
+		_, _ = w.Write([]byte(`{"session":{"user":{"id":"usr_123","realnameVerified":false}}}`))
+	}))
+	defer auth.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{
+				Name:       "auth-payment-methods",
+				Prefix:     "/auth/payment-methods",
+				Methods:    []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+				Upstream:   cardUpstream.URL,
+				Access:     AccessAuthenticated,
+				PathPolicy: PathPolicyAllowlist,
+				PathAllow: []PublicRule{
+					{Method: http.MethodGet, Path: "/auth/payment-methods"},
+					{Method: http.MethodPost, Path: "/auth/payment-methods/sign-orders"},
+					{Method: http.MethodPut, Path: "/auth/payment-methods/{contract_code}/default"},
+					{Method: http.MethodDelete, Path: "/auth/payment-methods/{contract_code}"},
+				},
+			},
+			{
+				Name:     "auth",
+				Prefix:   "/auth",
+				Methods:  []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+				Upstream: genericAuthUpstream.URL,
+				Access:   AccessAuthenticated,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	unauthenticated := httptest.NewRequest(http.MethodGet, "/auth/payment-methods", nil)
+	unauthenticatedRec := httptest.NewRecorder()
+	handler.ServeHTTP(unauthenticatedRec, unauthenticated)
+	if unauthenticatedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthenticated request 401, got %d body=%s", unauthenticatedRec.Code, unauthenticatedRec.Body.String())
+	}
+
+	unknown := httptest.NewRequest(http.MethodGet, "/auth/payment-methods/export", nil)
+	unknown.Header.Set("Authorization", "Bearer tok-123")
+	unknownRec := httptest.NewRecorder()
+	handler.ServeHTTP(unknownRec, unknown)
+	if unknownRec.Code != http.StatusNotFound || !strings.Contains(unknownRec.Body.String(), "route_not_allowed") {
+		t.Fatalf("expected unknown payment method path 404, got %d body=%s", unknownRec.Code, unknownRec.Body.String())
+	}
+
+	allowed := httptest.NewRequest(http.MethodGet, "/auth/payment-methods", nil)
+	allowed.Header.Set("Authorization", "Bearer tok-123")
+	allowedRec := httptest.NewRecorder()
+	handler.ServeHTTP(allowedRec, allowed)
+	if allowedRec.Code != http.StatusNoContent {
+		t.Fatalf("expected allowlisted request 204, got %d body=%s", allowedRec.Code, allowedRec.Body.String())
+	}
+	if authCalls != 1 || cardUpstreamCalls != 1 || genericAuthCalls != 0 {
+		t.Fatalf("unexpected calls: auth=%d card=%d generic=%d", authCalls, cardUpstreamCalls, genericAuthCalls)
+	}
+}
+
+func TestRouteSpecificAllowedOriginsOverrideGlobalOrigins(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("CORS preflight must not reach upstream")
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.example.test",
+		AllowedOrigins: []string{"https://*.pages.dev"},
+		Routes: []Route{{
+			Name:           "auth-payment-methods",
+			Prefix:         "/auth/payment-methods",
+			Methods:        []string{http.MethodPost, http.MethodOptions},
+			Upstream:       upstream.URL,
+			Access:         AccessAuthenticated,
+			AllowedOrigins: []string{"https://sandbox-kr-1.lightclaw.tech"},
+			PathPolicy:     PathPolicyAllowlist,
+			PathAllow: []PublicRule{
+				{Method: http.MethodPost, Path: "/auth/payment-methods/sign-orders"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		origin     string
+		wantOrigin string
+	}{
+		{name: "route origin", origin: "https://sandbox-kr-1.lightclaw.tech", wantOrigin: "https://sandbox-kr-1.lightclaw.tech"},
+		{name: "global wildcard is narrowed", origin: "https://evil.pages.dev", wantOrigin: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodOptions, "/auth/payment-methods/sign-orders", nil)
+			req.Header.Set("Origin", tc.origin)
+			req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+			req.Header.Set("Access-Control-Request-Headers", "content-type")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != tc.wantOrigin {
+				t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, tc.wantOrigin)
+			}
+		})
+	}
+}
+
 func TestRoutePathAllowlistScopesCORSPreflight(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("preflight must not reach upstream")
@@ -1524,42 +1654,18 @@ func TestAuthenticatedRouteUsesSessionCookieWhenBearerMissing(t *testing.T) {
 	}
 }
 
-func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testing.T) {
+func TestLegacySandboxAllowlistRejectsTatSessionBeforeAuth(t *testing.T) {
+	authCalls := 0
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("lc_session")
-		if err != nil {
-			t.Fatalf("expected lc_session cookie during introspection: %v", err)
-		}
-		if cookie.Value != "tok-cookie" {
-			t.Fatalf("expected lc_session cookie to be forwarded to auth, got %q", cookie.Value)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"session": map[string]any{
-				"user": map[string]any{
-					"id":    "usr_cookie",
-					"email": "cookie@example.com",
-				},
-			},
-		})
+		authCalls++
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer auth.Close()
 
+	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("unexpected upstream method: %s", r.Method)
-		}
-		if r.URL.Path != "/sandboxes/sbx-1/tat/session" {
-			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
-		}
-		if got := r.Header.Get("X-User-Id"); got != "usr_cookie" {
-			t.Fatalf("expected injected user id, got %q", got)
-		}
-		if _, err := r.Cookie("lc_session"); err != nil {
-			t.Fatalf("expected lc_session cookie to reach sandbox-api: %v", err)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"sessionId":"sess-1"}`))
+		upstreamCalls++
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer upstream.Close()
 
@@ -1567,11 +1673,15 @@ func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testi
 		AuthServiceURL: auth.URL,
 		Routes: []Route{
 			{
-				Name:     "sandbox-legacy",
-				Prefix:   "/sandboxes",
-				Methods:  []string{http.MethodPost, http.MethodOptions},
-				Upstream: upstream.URL,
-				Access:   AccessAuthenticated,
+				Name:       "sandbox-legacy",
+				Prefix:     "/sandboxes",
+				Methods:    []string{http.MethodPost, http.MethodOptions},
+				Upstream:   upstream.URL,
+				Access:     AccessAuthenticated,
+				PathPolicy: PathPolicyAllowlist,
+				PathAllow: []PublicRule{
+					{Method: http.MethodPost, Path: "/sandboxes"},
+				},
 			},
 		},
 	})
@@ -1584,8 +1694,14 @@ func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testi
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "route_not_allowed") {
+		t.Fatalf("expected route_not_allowed body, got %s", rec.Body.String())
+	}
+	if authCalls != 0 || upstreamCalls != 0 {
+		t.Fatalf("blocked legacy TAT route reached auth=%d upstream=%d", authCalls, upstreamCalls)
 	}
 }
 

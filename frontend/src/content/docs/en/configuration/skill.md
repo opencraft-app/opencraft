@@ -71,7 +71,7 @@ Enter the recorded skill name in the search box (such as `gmail`) and click the 
 
 ### 3. Confirm availability in conversation
 
-Return to a connected channel (WeChat / Telegram / WhatsApp / Discord). First ask Hermes to update its skill list, then check the currently available skills:
+Return to a connected channel (Telegram / WhatsApp / Discord / Slack / WeChat). First ask Hermes to update its skill list, then check the currently available skills:
 
 ```
 Please update your skill list
@@ -91,7 +91,7 @@ In addition to using the console panel, you can also ask Hermes to install a ski
 
 ### 1. Confirm the conversation channel is available
 
-First make sure Hermes is connected to at least one channel (WeChat / Telegram / WhatsApp / Discord) and can currently chat normally.
+First make sure Hermes is connected to at least one channel (Telegram / WhatsApp / Discord / Slack / WeChat) and can currently chat normally.
 
 ### 2. Tell Hermes which skill to install
 
@@ -135,7 +135,7 @@ Using the `agent-browser` browser-operation skill as an example, after installat
 
 > ℹ️ **Note**
 > 
-> The following examples use the WeChat channel. Telegram, WhatsApp, and Discord work the same way.
+> The following examples use the WeChat channel. Telegram, WhatsApp, Discord, and Slack work the same way.
 
 ### Scenario 1: Browse a web page
 

@@ -43,7 +43,14 @@ func TestPlaceOrder_Success(t *testing.T) {
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		gotCT = r.Header.Get("Content-Type")
-		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		if !strings.Contains(string(body), `"auto_renew_flag":"auto_renew"`) {
+			t.Fatalf("request body missing auto_renew_flag=auto_renew: %s", string(body))
+		}
+		if err := json.Unmarshal(body, &gotReq); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -64,6 +71,7 @@ func TestPlaceOrder_Success(t *testing.T) {
 		TimeUnit:       "m",
 		GoodsNum:       1,
 		PayMode:        1,
+		AutoRenewFlag:  "auto_renew",
 	})
 	if err != nil {
 		t.Fatalf("PlaceOrder: %v", err)
@@ -84,6 +92,9 @@ func TestPlaceOrder_Success(t *testing.T) {
 	if gotReq.ExternalUserID != "usr_test" || gotReq.BundleID != "bundle_basic_monthly" ||
 		gotReq.Period != 1 || gotReq.TimeUnit != "m" {
 		t.Fatalf("unexpected request body: %+v", gotReq)
+	}
+	if gotReq.AutoRenewFlag != "auto_renew" {
+		t.Fatalf("expected auto_renew_flag to be forwarded, got %+v", gotReq)
 	}
 	if result == nil || result.DealName != "DEAL-2026-001" || result.BigOrderID != "BIG-2026-001" {
 		t.Fatalf("unexpected result: %+v", result)
@@ -197,6 +208,36 @@ func TestPlaceOrderAndPay_Success(t *testing.T) {
 	// 一体化接口下 PayURL/ExpireAt 应为空（trade 侧不返）
 	if result.PayURL != "" || result.ExpireAt != "" {
 		t.Fatalf("expected empty PayURL/ExpireAt, got %+v", result)
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_Success(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PlaceOrderResult{
+			DealName:   "DIANSHI-DEAL-001",
+			BigOrderID: "DIANSHI-BIG-001",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.PlaceDianshiOrderAndPay(context.Background(), &PlaceOrderRequest{
+		ExternalUserID: "usr_test",
+		BundleID:       "bundle_zero",
+		Period:         1,
+		TimeUnit:       "m",
+	})
+	if err != nil {
+		t.Fatalf("PlaceDianshiOrderAndPay: %v", err)
+	}
+	if gotPath != "/internal/trade/dianshi/orders/place-and-pay" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if result == nil || result.DealName != "DIANSHI-DEAL-001" || result.BigOrderID != "DIANSHI-BIG-001" {
+		t.Fatalf("unexpected result: %+v", result)
 	}
 }
 
@@ -350,6 +391,33 @@ func TestGeneratePayURL_Success(t *testing.T) {
 	}
 }
 
+func TestGeneratePayURL_WithRedirectURLsSendsBody(t *testing.T) {
+	var gotBody GeneratePayURLOptions
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PayURLResult{PayURL: "https://x"})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	_, err := adp.GeneratePayURL(context.Background(), "DEAL-2026-001", &GeneratePayURLOptions{
+		CancelURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel",
+		ReturnURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return",
+	})
+	if err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if gotBody.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
+		t.Fatalf("cancel_url mismatch: %q", gotBody.CancelURL)
+	}
+	if gotBody.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
+		t.Fatalf("return_url mismatch: %q", gotBody.ReturnURL)
+	}
+}
+
 func TestGeneratePayURL_DealNameRequired(t *testing.T) {
 	adp := newTestAdapter(t, "http://example.invalid", "")
 	for _, dealName := range []string{"", "   "} {
@@ -451,6 +519,7 @@ func TestInquiryBatch_Success(t *testing.T) {
 					BundleID:      "bundle_basic_monthly",
 					Price:         "9.90",
 					TotalCost:     "9.90",
+					TaxPrice:      "0.69",
 					RealTotalCost: "9.90",
 					Currency:      "CNY",
 					Discount:      1.0,
@@ -504,7 +573,7 @@ func TestInquiryBatch_Success(t *testing.T) {
 	if result == nil || len(result.Prices) != 2 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if result.Prices[0].BundleID != "bundle_basic_monthly" || result.Prices[0].RealTotalCost != "9.90" {
+	if result.Prices[0].BundleID != "bundle_basic_monthly" || result.Prices[0].TaxPrice != "0.69" || result.Prices[0].RealTotalCost != "9.90" {
 		t.Fatalf("unexpected first quote: %+v", result.Prices[0])
 	}
 	if result.Prices[1].Discount != 0.9 || result.Prices[1].Currency != "CNY" {
