@@ -1,6 +1,6 @@
 defaults:
   region: ap-singapore
-  version_id: auth-oidc-sg-20260824-0921
+  version_id: auth-federation-sg-20260824-2035
   age_recipients:
   - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
 items:
@@ -27,6 +27,9 @@ items:
   - SHADOW_TENCENT_CALLBACK_TOKEN
   - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
   - LIGHTCLAW_OIDC_SIGNING_KEYS_JSON
+  - LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON
+  - LIGHTCLAW_FEDERATION_NONCE_KEY
+  - LIGHTCLAW_FEDERATION_CLIENTS_JSON
   namespace: user-auth
   kubernetes_resource_name: lightclaw-auth-secrets
   kubernetes_resource_kind: Secret

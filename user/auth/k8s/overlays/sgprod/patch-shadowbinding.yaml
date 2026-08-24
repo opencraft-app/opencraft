@@ -51,3 +51,8 @@ spec:
                 secretKeyRef:
                   name: lightclaw-auth-secrets
                   key: LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+            - name: LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lightclaw-auth-secrets
+                  key: LIGHTCLAW_INTERNAL_SERVICE_TOKEN
