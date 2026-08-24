@@ -992,4 +992,3 @@ export const CUSTOM_JSON_PLACEHOLDER = t(`{
     "name": "model_name"
   }
 }`);
-

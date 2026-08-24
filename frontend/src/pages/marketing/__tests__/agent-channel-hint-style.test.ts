@@ -16,7 +16,11 @@ function getRuleBody(styles: string, requiredSelectors: string[]): string | unde
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .matchAll(/([^{}]+)\{([^{}]*)\}/g);
 
-  for (const [, selectorList, ruleBody] of styleRules) {
+  for (const match of styleRules) {
+    const selectorList = match[1];
+    const ruleBody = match[2];
+    if (selectorList === undefined || ruleBody === undefined) continue;
+
     const selectors = selectorList.split(",").map((selector) => selector.trim());
     if (
       selectors.length === requiredSelectors.length &&
