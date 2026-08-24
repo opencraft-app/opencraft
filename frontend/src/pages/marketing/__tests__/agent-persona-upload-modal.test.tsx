@@ -206,7 +206,7 @@ describe("PersonaUploadModal", () => {
 
     await waitFor(() => expect(onInject).toHaveBeenCalledWith({
       displayName: "focus",
-      markdown: expect.stringContaining("Slug: custom-upload"),
+      markdown: expect.stringContaining("LightVela-Source: custom-upload"),
     }));
     expect(screen.queryByRole("dialog", { name: "覆盖当前人设？" })).not.toBeInTheDocument();
   });

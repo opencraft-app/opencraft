@@ -258,6 +258,22 @@ describe("uploaded persona Markdown", () => {
     expect(result.markdown).toContain("## Content\n保留正文。");
   });
 
+  it("replaces duplicate source markers with one canonical custom-upload marker", () => {
+    const result = buildCustomSoulMarkdown([
+      "# Soul",
+      "LightVela-Source: hacked",
+      "Name: 我",
+      "LightVela-Source: hacked-again",
+      "",
+      "## Content",
+      "正文",
+    ].join("\n"), "duplicate-source.md");
+
+    expect(result.markdown.match(/^LightVela-Source:.*$/gm)).toEqual([
+      "LightVela-Source: custom-upload",
+    ]);
+  });
+
   it("adds a source marker without generating a slug when a standard Soul already has a name", () => {
     const result = buildCustomSoulMarkdown([
       "# Soul",
