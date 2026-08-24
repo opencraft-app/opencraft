@@ -110,6 +110,11 @@ export function RenewComingSoonButton({
     setOpen(true);
   }, [clearCloseTimer]);
 
+  const closeTooltip = useCallback(() => {
+    clearCloseTimer();
+    setOpen(false);
+  }, [clearCloseTimer]);
+
   const scheduleClose = useCallback(() => {
     clearCloseTimer();
     closeTimerRef.current = window.setTimeout(() => {
@@ -132,6 +137,18 @@ export function RenewComingSoonButton({
       window.removeEventListener("scroll", updatePosition, true);
     };
   }, [open, updatePosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      closeTooltip();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeTooltip, open]);
 
   useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
 

@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import React from "react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { getRenewComingSoonTooltipPosition } from "@/pages/marketing/renew-coming-soon";
+import { getRenewComingSoonTooltipPosition, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 
 const rect = (values: Partial<DOMRect>): DOMRect => ({
   x: values.left ?? 0,
@@ -40,5 +42,31 @@ describe("getRenewComingSoonTooltipPosition", () => {
 
     expect(position.left).toBe(102);
     expect(position.placement).toBe("top");
+  });
+});
+
+describe("RenewComingSoonButton", () => {
+  afterEach(cleanup);
+
+  it("closes a focus-opened tooltip with Escape", async () => {
+    render(React.createElement(RenewComingSoonButton, { label: "立即续费", tooltip: "Coming Soon" }));
+
+    fireEvent.focus(screen.getByRole("button", { name: "立即续费" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Coming Soon");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+  });
+
+  it("closes a hover-opened tooltip with Escape", async () => {
+    render(React.createElement(RenewComingSoonButton, { label: "立即续费", tooltip: "Coming Soon" }));
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "立即续费" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Coming Soon");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
   });
 });
