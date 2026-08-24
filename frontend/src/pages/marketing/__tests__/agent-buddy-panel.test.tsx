@@ -267,7 +267,7 @@ describe("BuddyPanel P1 stability", () => {
       appliedSlug: null,
     });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => {
-      if (command.includes('grep -m1 "^Name:"')) {
+      if (command.includes("in_metadata && /^Name:/")) {
         return successResult(installed
           ? "Exists: yes\nSlug: custom-persona-extra\nName: Extra Soul"
           : "Exists: no");
@@ -296,7 +296,7 @@ describe("BuddyPanel P1 stability", () => {
       appliedSlug: null,
     });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => {
-      if (command.includes('grep -m1 "^Name:"')) return successResult("Exists: no");
+      if (command.includes("in_metadata && /^Name:/")) return successResult("Exists: no");
       if (command.includes("base64 -d")) throw new Error("sandbox unavailable");
       return successResult();
     });
@@ -323,7 +323,7 @@ describe("BuddyPanel P1 stability", () => {
     }));
     repositoryMocks.execDebugCommand.mockImplementation(async (botId, command) => {
       if (botId === "agent-a" && command.includes("base64 -d")) return agentAWrite.promise;
-      if (command.includes('grep -m1 "^Name:"')) return successResult("Exists: no");
+      if (command.includes("in_metadata && /^Name:/")) return successResult("Exists: no");
       return successResult();
     });
 
@@ -353,7 +353,7 @@ describe("BuddyPanel P1 stability", () => {
       appliedSlug: null,
     });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => {
-      if (command.includes('grep -m1 "^Name:"')) return successResult("Exists: no");
+      if (command.includes("in_metadata && /^Name:/")) return successResult("Exists: no");
       if (command.includes("base64 -d")) throw new Error("sandbox unavailable");
       return successResult();
     });
@@ -380,7 +380,7 @@ describe("BuddyPanel P1 stability", () => {
       appliedSlug: null,
     });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => (
-      command.includes('grep -m1 "^Name:"')
+      command.includes("in_metadata && /^Name:/")
         ? successResult("Exists: no")
         : successResult()
     ));
@@ -401,7 +401,7 @@ describe("BuddyPanel P1 stability", () => {
       appliedSlug: null,
     });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => {
-      if (command.includes('grep -m1 "^Name:"')) return successResult("Exists: no");
+      if (command.includes("in_metadata && /^Name:/")) return successResult("Exists: no");
       if (command.includes("base64 -d")) throw new Error("sandbox unavailable");
       return successResult();
     });
@@ -421,14 +421,15 @@ describe("BuddyPanel P1 stability", () => {
     expect(screen.queryByText("Extra Soul")).not.toBeInTheDocument();
   });
 
-  it("restores a custom uploaded persona from the real SOUL.md identity", async () => {
+  it("restores a custom uploaded persona from the real SOUL.md source marker", async () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [fixtures.agentA],
       appliedSlug: fixtures.agentA.slug,
     });
     repositoryMocks.execDebugCommand.mockResolvedValue(successResult([
       "Exists: yes",
-      "Slug: custom-upload",
+      "Slug: focused-project-guide",
+      "LightVela-Source: custom-upload",
       "Name: 冷静的项目搭档",
     ].join("\n")));
 
@@ -450,6 +451,23 @@ describe("BuddyPanel P1 stability", () => {
     expect(screen.queryByLabelText("当前已注入到 Agent")).not.toBeInTheDocument();
   });
 
+  it("keeps recognizing legacy custom-upload Slug identities", async () => {
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [fixtures.agentA],
+      appliedSlug: fixtures.agentA.slug,
+    });
+    repositoryMocks.execDebugCommand.mockResolvedValue(successResult([
+      "Exists: yes",
+      "Slug: custom-upload",
+      "Name: 旧版自定义人设",
+    ].join("\n")));
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    expect(await screen.findByText("已注入：自定义人设 · 旧版自定义人设"))
+      .toBeInTheDocument();
+  });
+
   it("reads the current Soul, edits it, and saves through the safe write command", async () => {
     if (isGlobal) return;
     const currentMarkdown = "# Soul\nSlug: custom-upload\nName: 冷静的项目搭档\n\n## Identity\n先给结论。\n";
@@ -461,7 +479,7 @@ describe("BuddyPanel P1 stability", () => {
         saved = true;
         return successResult();
       }
-      if (command.includes('grep -m1 "^Name:"')) {
+      if (command.includes("in_metadata && /^Name:/")) {
         return successResult(saved
           ? "Exists: yes\nSlug: custom-upload\nName: 更新后的项目搭档"
           : "Exists: yes\nSlug: custom-upload\nName: 冷静的项目搭档");
@@ -574,7 +592,7 @@ describe("BuddyPanel P1 stability", () => {
     mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });
     repositoryMocks.execDebugCommand.mockImplementation(async (botId, command) => {
       if (botId === "agent-a" && command.includes("ContentBase64:")) return agentARead.promise;
-      if (command.includes('grep -m1 "^Name:"')) {
+      if (command.includes("in_metadata && /^Name:/")) {
         return successResult(`Exists: yes\nSlug: custom-upload\nName: ${botId === "agent-a" ? "Agent A 自定义" : "Agent B 自定义"}`);
       }
       return successResult();
@@ -723,7 +741,7 @@ describe("BuddyPanel P1 stability", () => {
       const name = botId === "agent-a" ? "Agent A 自定义" : "Agent B 自定义";
       if (command.includes("ContentBase64:")) return soulContentResult(markdownFor(name));
       if (botId === "agent-a" && command.includes("base64 -d")) return agentAWrite.promise;
-      if (command.includes('grep -m1 "^Name:"')) {
+      if (command.includes("in_metadata && /^Name:/")) {
         return successResult(`Exists: yes\nSlug: custom-upload\nName: ${name}`);
       }
       return successResult();
@@ -766,7 +784,7 @@ describe("BuddyPanel P1 stability", () => {
       appliedSlug: null,
     });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => {
-      if (command.includes('grep -m1 "^Name:"')) {
+      if (command.includes("in_metadata && /^Name:/")) {
         return successResult(installed
           ? "Exists: yes\nSlug: custom-upload\nName: 我的专属搭档"
           : "Exists: no");
@@ -807,7 +825,7 @@ describe("BuddyPanel P1 stability", () => {
       appliedSlug: null,
     });
     repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => {
-      if (command.includes('grep -m1 "^Name:"')) {
+      if (command.includes("in_metadata && /^Name:/")) {
         return successResult("Exists: yes\nSlug: custom-upload\nName: 真实自定义人设");
       }
       if (command.includes("base64 -d")) throw new Error("sandbox unavailable");

@@ -3,7 +3,10 @@ import {
   isExecCommandSucceeded,
   truncateExecOutput,
 } from "@/pages/marketing/agent-reset-config";
-import { PERSONA_MARKDOWN_MAX_BYTES } from "@/pages/marketing/agent-persona-upload";
+import {
+  CUSTOM_PERSONA_SOURCE_FIELD,
+  PERSONA_MARKDOWN_MAX_BYTES,
+} from "@/pages/marketing/agent-persona-upload";
 
 export const HERMES_PERSONA_COMMAND_TIMEOUT_MS = 120_000;
 export const HERMES_PERSONA_COMMAND_MAX_BYTES = 32 * 1024;
@@ -58,8 +61,18 @@ export function buildHermesSoulReadCommand(): string {
     'TARGET="$HERMES_ROOT/SOUL.md"',
     'if [ -s "$TARGET" ]; then',
     "  printf '%s\\n' 'Exists: yes'",
-    '  grep -m1 "^Slug:" "$TARGET" 2>/dev/null || printf \'%s\\n\' \'Slug:\'',
-    '  grep -m1 "^Name:" "$TARGET" 2>/dev/null || printf \'%s\\n\' \'Name:\'',
+    "  awk '",
+    "    tolower($0) ~ /^#[[:space:]]+soul[[:space:]]*$/ { in_metadata = 1; next }",
+    "    in_metadata && /^##[[:space:]]/ { exit }",
+    "    in_metadata && /^Slug:/ && !slug { slug = $0 }",
+    `    in_metadata && /^${CUSTOM_PERSONA_SOURCE_FIELD}:/ && !source { source = $0 }`,
+    "    in_metadata && /^Name:/ && !name { name = $0 }",
+    "    END {",
+    "      print (slug ? slug : \"Slug:\")",
+    `      print (source ? source : \"${CUSTOM_PERSONA_SOURCE_FIELD}:\")`,
+    "      print (name ? name : \"Name:\")",
+    "    }",
+    "  ' \"$TARGET\"",
     "else",
     "  printf '%s\\n' 'Exists: no'",
     "fi",
@@ -91,6 +104,7 @@ export function buildHermesSoulContentReadCommand(): string {
 export type HermesSoulIdentity = {
   exists: boolean;
   slug: string | null;
+  source: string | null;
   name: string | null;
 };
 
@@ -103,7 +117,7 @@ export type HermesSoulContentResult =
 export function parseHermesSoulIdentity(output: string): HermesSoulIdentity {
   const lines = output.split(/\r?\n/);
   if (!lines.some((line) => line.trim() === "Exists: yes")) {
-    return { exists: false, slug: null, name: null };
+    return { exists: false, slug: null, source: null, name: null };
   }
   const valueAfter = (prefix: string) => {
     const line = lines.find((candidate) => candidate.startsWith(prefix));
@@ -113,6 +127,7 @@ export function parseHermesSoulIdentity(output: string): HermesSoulIdentity {
   return {
     exists: true,
     slug: valueAfter("Slug:"),
+    source: valueAfter(`${CUSTOM_PERSONA_SOURCE_FIELD}:`),
     name: valueAfter("Name:"),
   };
 }

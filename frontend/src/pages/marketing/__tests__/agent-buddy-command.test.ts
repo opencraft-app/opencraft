@@ -154,16 +154,108 @@ describe("Hermes persona commands", () => {
     )).toThrow("exceeds the 32 KB limit");
   });
 
-  it("reads only SOUL.md existence, slug, and name", () => {
+  it("reads only SOUL.md identity metadata", () => {
     const command = buildHermesSoulReadCommand();
 
     expect(command).toContain("Exists: yes");
     expect(command).toContain("Exists: no");
-    expect(command).toContain('grep -m1 "^Slug:" "$TARGET"');
-    expect(command).toContain('grep -m1 "^Name:" "$TARGET"');
+    expect(command).toContain("tolower($0) ~ /^#[[:space:]]+soul[[:space:]]*$/");
+    expect(command).toContain("/^##[[:space:]]/");
     expect(command).not.toContain('cat "$TARGET"');
+    expect(command).not.toContain("grep -m1");
     expect(command).not.toContain("ContentBase64:");
+    expect(new TextEncoder().encode(command).byteLength)
+      .toBeLessThan(HERMES_PERSONA_COMMAND_MAX_BYTES);
   });
+
+  it("reads identity fields from the top-level Soul metadata through the real shell command", async () => {
+    const hermesHome = await mkdtemp(join(tmpdir(), "lightvela-persona-identity-"));
+    await writeFile(join(hermesHome, "SOUL.md"), [
+      "Slug: before-soul",
+      "# Soul",
+      "Slug: focused-project-guide",
+      "LightVela-Source: custom-upload",
+      "Name: Focused Project Guide",
+      "",
+      "## Identity",
+      "Slug: body-slug",
+      "LightVela-Source: body-source",
+      "Name: Body Name",
+    ].join("\n"), "utf8");
+
+    try {
+      const { stdout } = await execFileAsync("/bin/bash", ["-c", buildHermesSoulReadCommand()], {
+        env: { ...process.env, HERMES_HOME: hermesHome },
+      });
+
+      expect(stdout.trim()).toBe([
+        "Exists: yes",
+        "Slug: focused-project-guide",
+        "LightVela-Source: custom-upload",
+        "Name: Focused Project Guide",
+      ].join("\n"));
+    } finally {
+      await rm(hermesHome, { recursive: true, force: true });
+    }
+  });
+
+  it("does not read identity lookalikes that occur only in Soul content", async () => {
+    const hermesHome = await mkdtemp(join(tmpdir(), "lightvela-persona-identity-content-"));
+    await writeFile(join(hermesHome, "SOUL.md"), [
+      "# Soul",
+      "",
+      "## Identity",
+      "Slug: body-slug",
+      "LightVela-Source: body-source",
+      "Name: Body Name",
+    ].join("\n"), "utf8");
+
+    try {
+      const { stdout } = await execFileAsync("/bin/bash", ["-c", buildHermesSoulReadCommand()], {
+        env: { ...process.env, HERMES_HOME: hermesHome },
+      });
+
+      expect(stdout.trim()).toBe([
+        "Exists: yes",
+        "Slug:",
+        "LightVela-Source:",
+        "Name:",
+      ].join("\n"));
+    } finally {
+      await rm(hermesHome, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["# soul", "# SoUl", "#   Soul", "#\tSoUl"])(
+    "round-trips normalized %s metadata through the real lightweight Soul read command",
+    async (heading) => {
+      const hermesHome = await mkdtemp(join(tmpdir(), "lightvela-persona-identity-case-"));
+      const normalized = buildCustomSoulMarkdown([
+        heading,
+        "Slug: focused-project-guide",
+        "Name: Focused Project Guide",
+        "",
+        "## Identity",
+        "Keep projects focused.",
+      ].join("\n"), "ignored.md").markdown;
+      await writeFile(join(hermesHome, "SOUL.md"), normalized, "utf8");
+
+      try {
+        const { stdout } = await execFileAsync("/bin/bash", ["-c", buildHermesSoulReadCommand()], {
+          env: { ...process.env, HERMES_HOME: hermesHome },
+        });
+
+        expect(parseHermesSoulIdentity(stdout)).toEqual({
+          exists: true,
+          slug: "focused-project-guide",
+          source: "custom-upload",
+          name: "Focused Project Guide",
+        });
+      } finally {
+        await rm(hermesHome, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("reads the current Soul through a bounded single-line Base64 protocol", async () => {
     const hermesHome = await mkdtemp(join(tmpdir(), "lightvela-persona-read-"));
@@ -280,24 +372,28 @@ describe("Hermes persona commands", () => {
     }
   });
 
-  it("parses custom Soul identity without exposing Markdown content", () => {
+  it("parses custom Soul identity source without exposing Markdown content", () => {
     expect(parseHermesSoulIdentity([
       "Exists: yes",
-      "Slug: custom-upload",
+      "Slug: focused-project-guide",
+      "LightVela-Source: custom-upload",
       "Name: 冷静的项目搭档",
     ].join("\n"))).toEqual({
       exists: true,
-      slug: "custom-upload",
+      slug: "focused-project-guide",
+      source: "custom-upload",
       name: "冷静的项目搭档",
     });
     expect(parseHermesSoulIdentity("Exists: no\n")).toEqual({
       exists: false,
       slug: null,
+      source: null,
       name: null,
     });
     expect(parseHermesSoulIdentity("unexpected output")).toEqual({
       exists: false,
       slug: null,
+      source: null,
       name: null,
     });
   });
