@@ -16,7 +16,7 @@
 - 只允许已经在北京验证过的服务进入
 - secret 变更必须经过受保护流水线和受保护变更路径
 - bot PR 不能自动合并，必须有人审批准入
-- 这里的 leaf app 由 `root-sgprod` 统一扫描和接管
+- 这里的 leaf app 以及 `argocd/projects/sgprod*.yaml` 由 `root-sgprod` 统一扫描和接管
 - 当前新加坡先沿用按服务拆分的 cutover project 模式，而不是统一 `sgprod` project
 - 新加坡正式环境不启用 `syncPolicy.automated`
 - GitOps MR 合入 `gitops` 只代表发布批准；实际下发必须由人工或发布系统在发布窗口执行 Argo sync
@@ -80,7 +80,7 @@
 
 注意：
 
-- `apps/sgprod/` 是 `root-sgprod` 会直接扫描的 live 路径
+- `root-sgprod` 同时扫描 `apps/sgprod/` 和 `projects/sgprod*.yaml`；新增 leaf app 时无需再手工注册 AppProject
 - 如果后续要把新加坡收敛成单一 project 模型，需要成组调整：
   - `argocd/apps/sgprod/*.yaml`
   - `argocd/projects/sgprod*.yaml`
