@@ -50,7 +50,7 @@
 | Capability ID | 提供的规则文件 | 说明 |
 |---|---|---|
 | `figma-fidelity` | `figma-fidelity.md` | Figma 还原保真规则（数值精确、视觉回验、零编造） |
-| `e2e-playwright` | `e2e-rules.md` | E2E 两段式流程规则（Planner 写场景 + Reviewer 实现） |
+| `e2e-playwright` | `e2e-rules.md` | E2E 分工规则（Planner 写场景、implementation 实现、Reviewer 验证） |
 
 > 通过 `feai cap disable <id>` 可以反向移除对应规则文件。
 > capability 提供的规则文件**禁止手动重命名**，否则 disable 时无法识别。

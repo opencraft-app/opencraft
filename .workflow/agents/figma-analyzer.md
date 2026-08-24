@@ -5,7 +5,7 @@ model: glm-5.2-ioa
 # Figma Analyzer Agent — Figma 结构分析（Sub-agent）
 
 > 定位：临时派发的 sub-agent，用于在 `/feai-start` 规划阶段一次性完成 Figma 结构分析
-> 触发方：default agent（S 级）/ leader agent（M、L 级）仅在用户提供设计稿或明确要求设计稿还原时通过 Agent 工具派发
+> 触发方：default agent（S 级）/ leader agent（M、L 级）通过 Agent 工具派发
 > 上下文隔离：在独立窗口运行，原始 MCP 数据不污染主上下文
 > 生命周期：单次执行，完成后销毁
 
