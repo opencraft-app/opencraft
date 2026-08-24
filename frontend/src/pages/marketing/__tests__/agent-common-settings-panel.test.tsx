@@ -134,7 +134,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const rows = await screen.findAllByTestId("common-setting-row");
-    expect(rows[0].parentElement).not.toHaveClass("divide-y", "border-y");
+    expect(rows[0]!.parentElement).not.toHaveClass("divide-y", "border-y");
   });
 
   it("gives switch descriptions the remaining desktop width without narrowing numeric controls", async () => {
@@ -197,21 +197,21 @@ describe("AgentCommonSettingsPanel", () => {
     const groups = await screen.findAllByTestId("common-setting-group");
     expect(groups).toHaveLength(2);
 
-    expect(within(groups[0]).getByRole("heading", { name: "记忆" })).toBeTruthy();
-    expect(within(groups[0]).getByText("管理跨会话保留的长期信息与用户偏好。")).toBeTruthy();
-    expect(within(groups[0]).getAllByTestId("common-setting-row")).toHaveLength(2);
-    expect(within(groups[0]).getByRole("switch", { name: "长期记忆" })).toBeTruthy();
-    expect(within(groups[0]).getByRole("switch", { name: "用户画像" })).toBeTruthy();
+    expect(within(groups[0]!).getByRole("heading", { name: "记忆" })).toBeTruthy();
+    expect(within(groups[0]!).getByText("管理跨会话保留的长期信息与用户偏好。")).toBeTruthy();
+    expect(within(groups[0]!).getAllByTestId("common-setting-row")).toHaveLength(2);
+    expect(within(groups[0]!).getByRole("switch", { name: "长期记忆" })).toBeTruthy();
+    expect(within(groups[0]!).getByRole("switch", { name: "用户画像" })).toBeTruthy();
 
-    expect(within(groups[1]).getByRole("heading", { name: "上下文管理" })).toBeTruthy();
-    expect(within(groups[1]).getByText("管理长对话的上下文处理与压缩设置。")).toBeTruthy();
+    expect(within(groups[1]!).getByRole("heading", { name: "上下文管理" })).toBeTruthy();
+    expect(within(groups[1]!).getByText("管理长对话的上下文处理与压缩设置。")).toBeTruthy();
     expect(screen.queryByText("管理长对话压缩的触发时机与原文保留范围。")).toBeNull();
-    expect(within(groups[1]).getByText("压缩后保留多少近期对话原文；数值越大，保留越多，可填写 0.1 到 0.8。")).toBeTruthy();
+    expect(within(groups[1]!).getByText("压缩后保留多少近期对话原文；数值越大，保留越多，可填写 0.1 到 0.8。")).toBeTruthy();
     expect(screen.queryByText("压缩时为近期原文保留的 Token 比例，可填写 0.1 到 0.8。")).toBeNull();
-    expect(within(groups[1]).getAllByTestId("common-setting-row")).toHaveLength(4);
+    expect(within(groups[1]!).getAllByTestId("common-setting-row")).toHaveLength(4);
 
-    expect(groups[0]).not.toHaveClass("border-t");
-    expect(groups[1]).toHaveClass("border-t", "border-black/[0.08]", "pt-10");
+    expect(groups[0]!).not.toHaveClass("border-t");
+    expect(groups[1]!).toHaveClass("border-t", "border-black/[0.08]", "pt-10");
 
     for (const group of groups) {
       expect(group).not.toHaveClass("border", "divide-y", "rounded-md", "shadow");
@@ -234,8 +234,8 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const groups = await screen.findAllByTestId("common-setting-group");
-    const memoryReset = within(groups[0]).getByRole("button", { name: "恢复默认" });
-    const contextReset = within(groups[1]).getByRole("button", { name: "恢复默认" });
+    const memoryReset = within(groups[0]!).getByRole("button", { name: "恢复默认" });
+    const contextReset = within(groups[1]!).getByRole("button", { name: "恢复默认" });
 
     expect(memoryReset).toBeDisabled();
     expect(contextReset).toBeEnabled();
@@ -260,8 +260,8 @@ describe("AgentCommonSettingsPanel", () => {
         "hover:bg-black/[0.03]",
       );
     }
-    expect(within(groups[0]).getByRole("heading", { name: "记忆" }).parentElement).toContainElement(memoryReset);
-    expect(within(groups[1]).getByRole("heading", { name: "上下文管理" }).parentElement).toContainElement(contextReset);
+    expect(within(groups[0]!).getByRole("heading", { name: "记忆" }).parentElement).toContainElement(memoryReset);
+    expect(within(groups[1]!).getByRole("heading", { name: "上下文管理" }).parentElement).toContainElement(contextReset);
   });
 
   it("confirms and restores only the selected group with a red destructive action", async () => {
@@ -295,7 +295,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const groups = await screen.findAllByTestId("common-setting-group");
-    await user.click(within(groups[0]).getByRole("button", { name: "恢复默认" }));
+    await user.click(within(groups[0]!).getByRole("button", { name: "恢复默认" }));
     expect(screen.getByRole("heading", { name: "确认恢复「记忆」设置？" })).toBeTruthy();
     expect(screen.getByText("将重置「记忆」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。")).toBeTruthy();
     expect(screen.queryByText("将移除该分组的自定义配置，重新使用 Hermes 默认值。")).toBeNull();
@@ -304,7 +304,7 @@ describe("AgentCommonSettingsPanel", () => {
     await user.click(screen.getByRole("button", { name: "取消" }));
     expect(resetSettings).not.toHaveBeenCalled();
 
-    await user.click(within(groups[0]).getByRole("button", { name: "恢复默认" }));
+    await user.click(within(groups[0]!).getByRole("button", { name: "恢复默认" }));
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
 
     await waitFor(() => expect(resetSettings).toHaveBeenCalledWith(expect.objectContaining({
@@ -337,7 +337,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const groups = await screen.findAllByTestId("common-setting-group");
-    const contextReset = within(groups[1]).getByRole("button", { name: "恢复默认" });
+    const contextReset = within(groups[1]!).getByRole("button", { name: "恢复默认" });
     await user.click(contextReset);
     expect(screen.getByRole("heading", { name: "确认恢复「上下文管理」设置？" })).toBeTruthy();
     expect(screen.getByText("将重置「上下文管理」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。")).toBeTruthy();
@@ -371,12 +371,12 @@ describe("AgentCommonSettingsPanel", () => {
 
     const groups = await screen.findAllByTestId("common-setting-group");
     const resetButtons = screen.getAllByRole("button", { name: "恢复默认" });
-    await user.click(within(groups[1]).getByRole("button", { name: "编辑压缩触发阈值" }));
-    expect(resetButtons[0]).toBeDisabled();
-    expect(resetButtons[1]).toBeDisabled();
+    await user.click(within(groups[1]!).getByRole("button", { name: "编辑压缩触发阈值" }));
+    expect(resetButtons[0]!).toBeDisabled();
+    expect(resetButtons[1]!).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "取消编辑压缩触发阈值" }));
 
-    await user.click(resetButtons[0]);
+    await user.click(resetButtons[0]!);
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
     await waitFor(() => expect(resetSettings).toHaveBeenCalledTimes(1));
     for (const button of screen.getAllByRole("button", { name: "恢复默认" })) expect(button).toBeDisabled();

@@ -78,8 +78,9 @@ export async function resetHermesCommonSettingsGroup(
     }
 
     const verifiedSnapshot = await fetchHermesCommonSettingsSnapshot(bots, botId);
-    if (unsetErrors.length > 0) {
-      return { status: "partial", error: unsetErrors[0], snapshot: verifiedSnapshot };
+    const firstUnsetError = unsetErrors[0];
+    if (firstUnsetError) {
+      return { status: "partial", error: firstUnsetError, snapshot: verifiedSnapshot };
     }
     if (!targetKeys.every((key) => verifiedSnapshot.defaultedKeys.includes(key))) {
       return {
