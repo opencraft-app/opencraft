@@ -52,19 +52,6 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
               echo "STATICPAGES_API_URL=${{ variables.STATICPAGES_API_URL }}"
-          - name: 运行 frontend 预览质量门禁
-            shell: bash
-            run: |
-              set -euo pipefail
-              source .ci/init.sh
-              ci_init_repo_root
-              ci_export_gongfeng_defaults
-              ci_ensure_node
-              ci_ensure_pnpm
-              cd "$REPO_ROOT/frontend"
-              "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" check
-              "$PNPM_BIN" test:model-config
           - name: 构建并上传 frontend 预览站点
             shell: bash
             env:

@@ -70,23 +70,6 @@ stages:
               echo "FRONTEND_ARTIFACT_MATRIX=${{ variables.FRONTEND_ARTIFACT_MATRIX }}"
               echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
-          - name: 运行 frontend 质量门禁
-            shell: bash
-            run: |
-              set -euo pipefail
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
-                echo "skip source quality checks because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
-                exit 0
-              fi
-              source .ci/init.sh
-              ci_init_repo_root
-              ci_export_gongfeng_defaults
-              ci_ensure_node
-              ci_ensure_pnpm
-              cd "$REPO_ROOT/frontend"
-              "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" check
-              "$PNPM_BIN" test:model-config
           - id: prepare
             name: 准备 frontend 构建标签
             shell: bash

@@ -2155,7 +2155,7 @@
 
 # 模型配置页 CR 问题修复 Implementation Plan
 
-**Status:** Task 10 CI Runtime 递归 pnpm 修复与验证完成，等待用户验收；不自动提交或推送。
+**Status:** Task 11 MR 范围收敛与验证完成，等待用户验收；不自动提交或推送。
 
 **Goal:** 修复 MR !3181 评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性、Tooltip 被裁剪、印尼语文案为空和模型列表探测被表述为真实连接的问题。
 
@@ -2210,7 +2210,7 @@
 
 ### Task 8: 修复类型门禁与模型身份契约
 
-- [x] 建立真实执行 `tsconfig.app.json` 的无新增错误门禁，并接入前端 CI，避免 solution-style `tsconfig.json` 导致类型检查空跑。
+- [x] 建立真实执行 `tsconfig.app.json` 的无新增错误门禁，并接入 frontend `check` 命令，避免 solution-style `tsconfig.json` 导致类型检查空跑。
 - [x] 统一模型身份输入类型、先收窄 `probeSucceeded` 再写入快照，并清零模型配置模块源代码与测试代码的类型错误。
 - [x] 删除 `regionId === 5` 的失效地域推导，改为只透传明确的 region/Zone，并完成定向测试、类型基线、i18n 与 diff 验证。
 
@@ -2226,6 +2226,12 @@
 - [x] 保留独立 `typecheck` 命令，将两个质量脚本改为直接执行 `typecheck-baseline.mjs`。
 - [x] 运行 CI Runtime 定向契约、frontend 质量检查、模型配置测试与 diff 门禁。
 
+### Task 11: 撤销模型配置 MR 的 CI 工作流改动
+
+- [x] 删除 `.ci/frontend.yml` 与 `.ci/frontend-preview.yml` 中本分支新增的 frontend 质量门禁步骤。
+- [x] 以 MR merge-base 为基准确认 `.ci/**` 变更归零，保留模型配置业务实现与本地质量命令。
+- [x] 重新运行模型配置测试、frontend 质量检查与 diff 门禁。
+
 ## Verification
 
 - `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx`
@@ -2237,11 +2243,13 @@
 
 **Task 7 verification:** 新增本地化资源与检测语义断言先出现 38 个预期失败；实现后模型配置模块 90 个测试通过、1 个真实 Hermes 环境测试跳过。`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过；英文待翻译为 0，印尼语待翻译由 213 条降至 178 条。本轮仅调整模型列表可用性文案与四语言资源，不改 Hermes 探测行为。
 
-**Task 8 verification:** 地域适配 2 个回归断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、94 个测试全部通过。真实类型门禁对空的根 `tsconfig.json` 和临时注入的 2 条诊断均按预期失败，最终 `pnpm check` 报告 276 条历史基线、0 条新增诊断。国内构建与 `frontsandbox/*` 预览流水线均接入 `set -euo pipefail` 质量步骤；独立 CR 指出的 3 个 P1 与 2 个可立即处理的 P2 已修复。实例 API 尚不提供 Zone，当前只移除失效推导并保留显式透传契约。
+**Task 8 verification:** 地域适配 2 个回归断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、94 个测试全部通过。真实类型门禁对空的根 `tsconfig.json` 和临时注入的 2 条诊断均按预期失败，最终 `pnpm check` 报告 276 条历史基线、0 条新增诊断。独立 CR 指出的 3 个 P1 与 2 个可立即处理的 P2 已修复；Task 11 已按 MR 范围要求撤销正式与预览流水线改动。实例 API 尚不提供 Zone，当前只移除失效推导并保留显式透传契约。
 
 **Task 9 verification:** Provider 策略、MiniMax 静态目录、Anthropic/OpenAI 最小模型请求、凭据拒绝和安全 HTTP transport 共 6 个关键断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，真实 Hermes 源码 smoke 1/1 通过。`pnpm check` 报告 276 条历史基线、0 条新增诊断；`pnpm i18n:check`、`git diff --check` 通过；本地 `/agents/models/` 编译并返回 200。
 
 **Task 10 verification:** CI Runtime 定向契约在修改前稳定失败，改为直接执行 `node scripts/typecheck-baseline.mjs` 后通过；完整 `.ci/runtime/check_ci_runtime.sh` 运行 454 个测试全部通过。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断，`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过。
+
+**Task 11 verification:** 以当前 MR merge-base `7a9e26c73230` 比较后 `.ci/**` 变更文件数为 0。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断；`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，`git diff --check` 通过。
 
 ---
 # My creations show() reveal Implementation Plan
