@@ -1,5 +1,11 @@
 # 配置通道 - Slack
 
+## 摘要
+
+**Slack 通道采用 Bot Token 与 App Token 接入，适合把 Hermes Agent 接入团队频道、私信和自动任务通知场景：先在 Slack 应用管理后台创建应用、配置权限并获取这两个 Token，再填入 LightVela 管理台的「通道」完成接入。准备工作是一个有权限安装应用的 Slack 工作区，以及完成模型配置（或直接使用套餐按月提供的模型积分）。两个 Token 都属于敏感凭证，请勿公开分享；接入后 Agent 在 Slack 中与其他通道共享同一份人格与长期记忆。**
+
+---
+
 Slack 通道采用 Bot Token 和 App Token 接入方式，适合将 Hermes Agent 接入团队频道、私信和自动任务通知场景。
 
 ## 本页覆盖

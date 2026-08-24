@@ -1,5 +1,11 @@
 # Kanal WeCom
 
+## Ringkasan
+
+**Kanal WeCom dihubungkan dengan memindai kode QR dan bersama WeChat merupakan yang paling sederhana untuk disiapkan, cocok untuk memakai Hermes Agent di lingkungan kerja perusahaan: pilih WeCom di bagian Kanal pada konsol, klik untuk memberi otorisasi dan menghasilkan kode QR, lalu pindai dengan WeCom di ponsel Anda untuk mulai berbicara. Anda memerlukan ponsel dengan WeCom terpasang dan model yang sudah dikonfigurasi (atau cukup kredit model bulanan dari paket Anda). Satu Agent dapat terhubung ke beberapa kanal sekaligus dengan persona dan memori jangka panjang yang sama.**
+
+---
+
 Kanal WeCom memakai akses kode QR dan merupakan kanal yang paling sederhana untuk dikonfigurasi.
 
 ## Yang dibahas di halaman ini

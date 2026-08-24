@@ -1,5 +1,11 @@
 # Diagnostics
 
+## Summary
+
+**The diagnostics center is where you troubleshoot a misbehaving Hermes Agent. In one place you can view and export recent logs, reset the model configuration, or reinstall the agent while keeping your data. When the agent stops replying, replies strangely, or a channel connection fails, check here first: read the logs to determine whether it is a failed model call, a dropped channel, or a skill error, then take the matching action. Reinstalling preserves your data, so accumulated memory is not lost.**
+
+---
+
 Diagnostics helps you investigate an Agent that is not behaving as expected. From one place, you can review recent Hermes Agent logs, export them for sharing, reset model configuration, or reinstall the Agent while keeping its data.
 
 ## This page covers

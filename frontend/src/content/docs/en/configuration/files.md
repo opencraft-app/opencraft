@@ -1,5 +1,11 @@
 # Cloud Storage
 
+## Summary
+
+**Cloud storage is your Hermes Agent file workspace. You can keep task materials in one place, upload and organize files, or download what you need locally, all without leaving LightVela. Capacity comes from your plan — Launch includes 50 GB of dedicated cloud storage and Cruise offers more. Files the agent reads and writes while running tasks live here too, which makes it both your document library and the agent working directory.**
+
+---
+
 Cloud Storage is the file workspace for your Hermes Agent. Use it to keep the files an agent needs in one place, then upload, organize, download, or remove them from the Agent console without leaving LightVela.
 
 ## This page covers

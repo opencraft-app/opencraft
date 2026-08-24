@@ -1,5 +1,11 @@
 # Quickstart
 
+## Summary
+
+**Getting your first LightVela conversation running takes about 5 minutes: sign in to LightVela, activate a plan, let the platform create your Hermes Agent instance, configure a model (or just use the monthly model credits included with your plan), connect one messaging channel, then send a message and get a reply. Everything happens in the browser — no servers to buy, nothing to deploy locally. The fastest path is to use your plan credits together with WeChat, which connects by scanning a QR code, and add your own model API key and more channels later.**
+
+---
+
 This tutorial walks through the full process from signing in to receiving a Hermes reply in WeChat. It takes about 5 minutes.
 
 ## This page covers

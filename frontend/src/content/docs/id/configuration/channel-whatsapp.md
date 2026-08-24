@@ -1,5 +1,11 @@
 # Kanal WhatsApp
 
+## Ringkasan
+
+**Kanal WhatsApp dihubungkan dengan memindai kode QR, mirip WeChat, sehingga menjadi cara cepat membawa Hermes Agent ke percakapan WhatsApp: pilih WhatsApp di bagian Kanal pada konsol, hasilkan kode QR, lalu pindai dengan WhatsApp di ponsel Anda untuk mulai berbicara. Anda memerlukan ponsel dengan WhatsApp terpasang dan model yang sudah dikonfigurasi (atau cukup kredit model bulanan dari paket Anda). Satu Agent dapat terhubung ke beberapa kanal sekaligus dengan persona dan memori jangka panjang yang sama.**
+
+---
+
 Kanal WhatsApp memakai akses kode QR, serupa dengan WeChat, dan cocok untuk menghubungkan Hermes Agent dengan cepat ke percakapan WhatsApp.
 
 ## Yang dibahas di halaman ini

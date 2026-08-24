@@ -203,7 +203,7 @@ describe("FederationAuthorizePage", () => {
         `${OIDC_REDIRECT_URI}?error=access_denied&state=state-1`,
       );
     });
-    expect(cancelFederationSwitch.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
+    expect(cancelFederationSwitch.mock.invocationCallOrder[0]!).toBeLessThan(navigate.mock.invocationCallOrder[0]!);
   });
 
   it("取消切换接口失败时仍返回来源网站", async () => {

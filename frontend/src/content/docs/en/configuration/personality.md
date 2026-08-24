@@ -3,7 +3,9 @@
 ## Summary
 
 **Personality defines the stable role, voice, priorities, and behavioral boundaries for one Hermes Agent.**
+
 **Choose a Soul from the Agent's Personality settings, review its description, and inject it to update the Agent's `SOUL.md`.**
+
 **Only one Soul is active for an Agent at a time, and you should start a new conversation after changing it so the updated rules are loaded.**
 
 ![Soul personality cards in the LightVela console](../images/soul-1.png)

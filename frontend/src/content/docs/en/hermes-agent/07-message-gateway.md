@@ -104,7 +104,7 @@ Each platform has its own connection flow and credential shape: some require cre
 
 ### 5.2 Supported channels differ by region
 
-This is an easy trap when reading documentation: LightVela's global and China regions do not support the same channel set. The global channel order is Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark. The China region currently targets locally common platforms such as WeChat, Lark, and QQ.
+This is an easy trap when reading documentation: LightVela's global and China regions do not support the same channel set. The global channel order is Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark. The China region supports WeChat, QQ, WeCom, Lark, and DingTalk.
 
 So when you see a claim like "Telegram is supported," confirm which region it applies to rather than assuming it carries across.
 

@@ -25,7 +25,9 @@ export const source = loader({
 
           return {
             ...node,
-            name: node.name.split(/[:：]/, 1)[0] ?? node.name,
+            name: typeof node.name === 'string'
+              ? (node.name.split(/[:：]/, 1)[0] ?? node.name)
+              : node.name,
           };
         },
       },

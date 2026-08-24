@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { PublicCookiePolicyPage } from '@next-site/legal-pages';
-import { publicRouteLocaleFromLang, type PublicUrlLang } from '@next-site/public-locale';
-import { createPublicMetadata, localizedPublicPath, SEO_PUBLIC_URL_LANGS } from '@next-site/seo';
+import { type PublicUrlLang } from '@next-site/public-locale';
+import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
 
 const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -23,12 +23,12 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {
-  return SEO_PUBLIC_URL_LANGS.map((lang) => ({ lang }));
+  return SEO_PREFIXED_PUBLIC_URL_LANGS.map((lang) => ({ lang }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
-  const routeLocale = publicRouteLocaleFromLang(lang);
+  const routeLocale = prefixedPublicRouteLocale(lang);
   if (!routeLocale) notFound();
   return createPublicMetadata({
     path: localizedPublicPath('/cookie-policy', lang as PublicUrlLang),
@@ -43,7 +43,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
 
 export default async function LocalizedCookiePolicyRoute({ params }: { params: Promise<{ lang: string }> }) {
   const { lang } = await params;
-  const routeLocale = publicRouteLocaleFromLang(lang);
+  const routeLocale = prefixedPublicRouteLocale(lang);
   if (!routeLocale) notFound();
   return <PublicCookiePolicyPage {...routeLocale} />;
 }

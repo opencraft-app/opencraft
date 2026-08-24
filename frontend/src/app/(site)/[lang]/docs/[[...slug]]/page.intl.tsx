@@ -11,7 +11,7 @@ import {
 import { LightVelaDocsHeader } from '@next-site/docs-header';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { isGlobal } from '@/lib/region';
-import type { PublicSiteLocale } from '../../../../lib/public-site-navigation';
+import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS } from '@/lib/public-site-routing';
 
 const DOCS_LOCALE_TO_PUBLIC_LOCALE: Record<DocsRouteLocale, PublicSiteLocale> = {
@@ -22,10 +22,21 @@ const DOCS_LOCALE_TO_PUBLIC_LOCALE: Record<DocsRouteLocale, PublicSiteLocale> = 
   [PUBLIC_URL_LANGS.ID_ID]: PUBLIC_SITE_LOCALES.ID_ID,
 };
 
+/**
+ * 本站点需要生成「带语言前缀」文档路由的语言。
+ *
+ * ⚠️ **默认语言不在此列**，两站同理：
+ * - 国内站唯一语言 zh-CN → 裸路径 `/docs/xxx/` 即正式 URL；
+ * - 国际站默认语言 en-US → 裸路径 `/docs/xxx/` 即正式 URL。
+ *
+ * 过去两站都会为默认语言额外生成一整套前缀页面（返回 200），
+ * 与裸路径构成重复内容。现改为不再生成，由 CDN 层 301 → 裸路径
+ * （规则见 `scripts/write-edgeone-config.mjs`，说明见 `wiki/product-state/seo-url-migration.md`）。
+ */
 const REGION_DOCS_ROUTE_LOCALES = (
   isGlobal
-    ? [PUBLIC_URL_LANGS.EN_US, PUBLIC_URL_LANGS.ZH_SG, PUBLIC_URL_LANGS.ZH_HANT, PUBLIC_URL_LANGS.ID_ID]
-    : [PUBLIC_URL_LANGS.ZH_CN]
+    ? [PUBLIC_URL_LANGS.ZH_SG, PUBLIC_URL_LANGS.ZH_HANT, PUBLIC_URL_LANGS.ID_ID]
+    : []
 ) as readonly DocsRouteLocale[];
 
 function docsRouteLocale(lang: string): DocsRouteLocale {

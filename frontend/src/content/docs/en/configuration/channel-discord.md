@@ -1,5 +1,11 @@
 # Configure Channel - Discord
 
+## Summary
+
+**The Discord channel connects through bot authorization, which suits bringing your Hermes Agent into a Discord server to answer questions, assist, or drive community interaction: create an application and bot in the Discord developer portal, get the credentials, paste them into the Channels section of the LightVela console, then invite the bot to your target server. You need a Discord server where you have admin rights and a configured model (or simply the monthly model credits included with your plan). Once connected, the agent in Discord shares the same persona and long-term memory as your other channels.**
+
+---
+
 The Discord channel uses Bot authorization access and is suitable for connecting Hermes Agent to a Discord server, providing Q&A, assistant, or community-interaction capabilities in channels.
 
 ## This page covers

@@ -1,5 +1,11 @@
 # Pengumuman Versi Berbayar LightVela
 
+## Ringkasan
+
+**LightVela berencana masuk tahap public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura). Setelah itu berlaku, masa aktif paket pengguna closed beta akan diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba paket Launch gratis selama 14 hari. Saat ini tersedia dua paket, Launch dan Cruise, yang berbeda pada spesifikasi lingkungan cloud, penyimpanan khusus, dan kredit model bulanan; kemampuan inti Agent sama di semua paket. Harga, ketersediaan, dan rincian hak pemakaian terkini mengacu pada halaman langganan.**
+
+---
+
 LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket yang sudah dimiliki pengguna beta akan diperpanjang satu bulan tambahan.
 
 Kami meluncurkan LightVela agar setiap orang lebih mudah memiliki AI Agent pribadi yang berjalan dalam jangka panjang. Anda tidak perlu mengelola server, lingkungan runtime, atau operasional harian, dan Anda tidak perlu membiarkan perangkat lokal tetap online. LightVela membuat Anda dapat membuat Agent cloud 24/7 yang dapat mempertahankan memori, menjalankan tugas, dan selalu siap untuk percakapan.

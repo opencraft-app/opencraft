@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { publicRouteLocaleFromLang, type PublicUrlLang } from '@next-site/public-locale';
+import { type PublicUrlLang } from '@next-site/public-locale';
 import { PublicChangelogPage } from '@next-site/public-pages';
-import { createPublicMetadata, localizedPublicPath, SEO_PUBLIC_URL_LANGS } from '@next-site/seo';
+import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
 
 /**
@@ -28,12 +28,12 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {
-  return SEO_PUBLIC_URL_LANGS.map((lang) => ({ lang }));
+  return SEO_PREFIXED_PUBLIC_URL_LANGS.map((lang) => ({ lang }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
-  const routeLocale = publicRouteLocaleFromLang(lang);
+  const routeLocale = prefixedPublicRouteLocale(lang);
   if (!routeLocale) notFound();
   return createPublicMetadata({
     path: localizedPublicPath('/changelog', lang as PublicUrlLang),
@@ -45,7 +45,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
 
 export default async function LocalizedChangelogPage({ params }: { params: Promise<{ lang: string }> }) {
   const { lang } = await params;
-  const routeLocale = publicRouteLocaleFromLang(lang);
+  const routeLocale = prefixedPublicRouteLocale(lang);
   if (!routeLocale) notFound();
   return <PublicChangelogPage {...routeLocale} />;
 }

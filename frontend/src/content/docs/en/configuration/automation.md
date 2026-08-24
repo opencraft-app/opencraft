@@ -1,5 +1,11 @@
 # Automations
 
+## Summary
+
+**Automated tasks let your Hermes Agent do specified work on a schedule or trigger, with no repeated manual effort — useful for reminders, daily reports, news tracking, and content publishing. Each task has its own frequency and run rules, so the agent works proactively rather than only answering when asked. Task runs call the model too, so they consume your plan model credits, and results can be pushed to you through whichever messaging channels you have connected.**
+
+---
+
 Automations let Hermes Agent run specified work on a preset schedule or trigger condition, so you don't have to repeat the same operations manually. Typical scenarios include scheduled reminders, daily report generation, news tracking, and content publishing.
 
 Every task supports flexible scheduling and run rules, keeping your AI assistant proactively working in the background.

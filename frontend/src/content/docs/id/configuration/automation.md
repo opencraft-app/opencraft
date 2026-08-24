@@ -1,5 +1,11 @@
 # Otomasi
 
+## Ringkasan
+
+**Tugas otomatis membuat Hermes Agent menjalankan pekerjaan tertentu sesuai jadwal atau pemicu yang ditetapkan, tanpa pekerjaan manual berulang, cocok untuk pengingat berjadwal, laporan harian, pemantauan berita, dan publikasi konten. Setiap tugas dapat diatur frekuensi dan aturan jalannya, sehingga Agent bekerja proaktif alih-alih hanya menjawab saat ditanya. Menjalankan tugas juga memanggil model sehingga mengonsumsi kredit model dari paket Anda, dan hasilnya dapat dikirim melalui kanal pesan yang sudah terhubung.**
+
+---
+
 Otomasi memungkinkan Hermes Agent menjalankan pekerjaan tertentu sesuai jadwal atau kondisi pemicu yang sudah Anda tetapkan, sehingga Anda tidak perlu mengulang operasi yang sama secara manual. Skenario umumnya mencakup pengingat terjadwal, pembuatan laporan harian, pemantauan berita, dan publikasi konten.
 
 Setiap tugas mendukung penjadwalan dan aturan eksekusi yang fleksibel, sehingga asisten AI Anda tetap bekerja secara proaktif di latar belakang.
