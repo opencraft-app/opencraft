@@ -1,3 +1,72 @@
+# 人设页标题与说明文案调整 Implementation Plan
+
+**Status:** 按用户视觉反馈增量调整完成，已验证。
+
+**Size:** S。单一页面内的标题与文案层级调整，不改变人设数据、抽卡、注入、自定义上传或公共接口。
+
+**Goal:** 在人设内容卡片上方展示“人设”页面标题和“为你的 Agent 解锁独特灵魂，让它从此与众不同”说明文案。
+
+**Architecture:** 仅调整 `BuddyPanel` 的展示层级：新增页面级标题区，移除卡片内部原有的渐变 slogan；继续复用现有人设卡片及其状态逻辑，不抽取新的共享组件。
+
+**Scope:**
+- 标题固定为「人设」，18px、600 字重、24px 行高，标题与说明间距 4px。
+- 说明固定为「为你的 Agent 解锁独特灵魂，让它从此与众不同」，14px、500 字重、24px 行高，内容卡片上间距 12px。
+- “灵感来自 SkillHub”入口与说明文案放在同一行并靠右，不再占用卡片内部顶部位置。
+- 卡片内部原 slogan 位置新增三级标题「人设卡片」，使用 16px 字号并复用历史 slogan 的字重、字距和渐变文字色，不恢复图标或动画。
+- Agent 设置页主内容增加 24px 底部留白，避免高内容面板的下边框与产品 footer 顶部分隔线贴合。
+- 标题与说明使用普通文本色，不保留旧的 Sparkles 图标、动画或渐变文字。
+- 人设卡片、SkillHub 来源入口、抽卡、测试、上传、注入和删除行为保持不变。
+
+### Task 1: 调整人设页顶部层级
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-buddy-panel.tsx`
+- Modify: `frontend/src/styles.css`
+- Modify: `frontend/openspec/plan.md`
+
+**Acceptance:**
+- 页面存在一个二级标题「人设」，说明文案紧随其后且只出现一次。
+- 说明文案与“灵感来自 SkillHub”入口位于同一个布局容器，入口靠右。
+- 人设卡片内部顶部存在三级标题「人设卡片」，字体和颜色与历史 slogan 一致。
+- 设置页主内容与产品 footer 之间保留 24px 间距，卡片边框不与 footer 分隔线重合。
+- 标题、说明和卡片按文档流从上到下排列；说明与卡片间距为 12px。
+- 标题和说明应用上述明确字号、字重、行高及文本色。
+- 原卡片内的渐变 slogan 与 Sparkles 图标不再渲染。
+
+- [x] **Developer：按用户反馈补失败测试，确认来源入口移至说明行右侧且卡片标题为「人设卡片」并复用历史 slogan 字体与颜色；最小调整 `BuddyPanel`，再运行定向回归、i18n、TypeScript、差异检查和页面 smoke。**
+
+**Test-first target:**
+
+```tsx
+expect(screen.getByRole("heading", { level: 2, name: "人设" })).toBeInTheDocument();
+expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众不同")).toHaveClass(
+  "text-sm",
+  "font-medium",
+  "leading-6",
+);
+```
+
+**Minimal implementation shape:**
+
+```tsx
+<>
+  <header>
+    <h2>{t("人设")}</h2>
+    <p>{t("为你的 Agent 解锁独特灵魂，让它从此与众不同")}</p>
+  </header>
+  <div className="lv-buddy-panel">...</div>
+</>
+```
+
+**Verification:**
+- RED：新增用例因找不到二级标题「人设」而失败，并确认旧说明仍是卡片内渐变 `h2`。
+- GREEN：`agent-buddy-panel.test.tsx` 共 30 个用例通过。
+- `pnpm i18n:extract`、`pnpm i18n:zh-hant`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check` 通过；新增「人设卡片」的简中、繁中、英文和印尼语字典项。
+- 本地 `/agents/persona/` 返回 200，页面有内容、无 Next/Vite 错误浮层和浏览器错误；当前本地及 Chrome 均无可复用登录态，因此未把登录前页面截图冒充成人设面板视觉验收。
+
+---
+
 # 移动端微信登录复制链接引导 Implementation Plan
 
 **Status:** 实现与验证完成，已提交 MR。

@@ -182,6 +182,12 @@ describe("AgentSettingsPage renewal reminder", () => {
     vi.useRealTimers();
   });
 
+  it("keeps bottom spacing between settings content and the product footer", () => {
+    renderAgentSettingsPage();
+
+    expect(screen.getByRole("main")).toHaveClass("pb-6");
+  });
+
   it("shows an orange renewal reminder near the active agent status and opens the renewal modal", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderAgentSettingsPage();

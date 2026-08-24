@@ -171,6 +171,80 @@ describe("BuddyPanel P1 stability", () => {
     vi.restoreAllMocks();
   });
 
+  it("renders the page title and description above the persona card", () => {
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [],
+      appliedSlug: null,
+    });
+
+    const { container } = render(<BuddyPanel botId="agent-a" />);
+
+    const title = screen.getByRole("heading", { level: 2, name: "人设" });
+    const description = screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众不同");
+    const card = container.querySelector(".lv-buddy-panel");
+
+    expect(title).toHaveClass(
+      "mb-1",
+      "text-lg",
+      "font-semibold",
+      "leading-6",
+      "text-balance",
+      "text-black/95",
+    );
+    expect(description).toHaveClass(
+      "text-sm",
+      "font-medium",
+      "leading-6",
+      "text-pretty",
+      "text-black/50",
+    );
+    expect(title.parentElement).toHaveClass("mb-3");
+    expect(card).not.toBeNull();
+    expect(title.compareDocumentPosition(card as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(description.compareDocumentPosition(card as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector(".lv-buddy-panel__title")).not.toBeInTheDocument();
+  });
+
+  it("places the SkillHub source to the right of the page description", () => {
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [],
+      appliedSlug: null,
+    });
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    const description = screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众不同");
+    const source = screen.getByRole("link", { name: "灵感来自 SkillHub" });
+
+    expect(description.parentElement).toHaveClass("flex", "items-center", "justify-between");
+    expect(source.parentElement).toBe(description.parentElement);
+    expect(source).toHaveClass("ml-auto", "shrink-0");
+  });
+
+  it("renders the persona card heading with the historical slogan typography", () => {
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [],
+      appliedSlug: null,
+    });
+
+    const { container } = render(<BuddyPanel botId="agent-a" />);
+    const card = container.querySelector(".lv-buddy-panel");
+
+    expect(card).not.toBeNull();
+    const cardHeading = within(card as HTMLElement).getByRole("heading", { level: 3, name: "人设卡片" });
+
+    expect(cardHeading).toHaveClass(
+      "text-base",
+      "font-semibold",
+      "text-balance",
+    );
+    expect(cardHeading).not.toHaveClass("text-lg", "text-xl");
+    expect(cardHeading.style.letterSpacing).toBe("-0.2px");
+    expect(cardHeading.style.backgroundImage).toContain("linear-gradient");
+    expect(cardHeading.style.backgroundClip).toBe("text");
+    expect(cardHeading.style.color).toBe("transparent");
+  });
+
   it("ignores an old Agent injection result after the user switches Agents", async () => {
     const agentAWrite = deferred<ReturnType<typeof successResult>>();
     mockedLoadBuddyState.mockImplementation(async (botId) => ({

@@ -15,7 +15,7 @@
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, Trash2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -1028,12 +1028,33 @@ export function BuddyPanel({
   const isApplyDisabled = !selectedSlug || toast.kind === "applying" || loadStatus !== "loaded";
 
   return (
-    <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
+    <>
+      <header className="mb-3">
+        <h2 className="mb-1 text-balance text-lg font-semibold leading-6 text-black/95">
+          {t("人设")}
+        </h2>
+        <div className="flex items-center justify-between gap-4">
+          <p className="min-w-0 text-pretty text-sm font-medium leading-6 text-black/50">
+            {t("为你的 Agent 解锁独特灵魂，让它从此与众不同")}
+          </p>
+          <a
+            href="https://skillhub.cn/soul"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="lv-buddy-panel__source ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+            style={{ color: "rgba(0,0,0,0.55)" }}
+          >
+            {t("灵感来自 SkillHub")}
+            <ExternalLink className="size-3" />
+          </a>
+        </div>
+      </header>
+
+      <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
-      {/* 顶部标题 slogan + 右上角 SkillHub 入口 */}
-      <div className="lv-buddy-panel__header relative flex items-center justify-center px-6 pt-5 pb-3">
-        <h2
-          className="lv-buddy-panel__title flex items-center gap-2 text-xl font-semibold"
+      <div className="lv-buddy-panel__toolbar flex items-center justify-center px-6 pt-5 pb-3">
+        <h3
+          className="text-balance text-base font-semibold"
           style={{
             letterSpacing: "-0.2px",
             backgroundImage:
@@ -1044,23 +1065,9 @@ export function BuddyPanel({
             WebkitTextFillColor: "transparent",
           }}
         >
-          <Sparkles
-            className="h-5 w-5 animate-pulse"
-            style={{ color: "#6B4FE0" }}
-          />
-          {t("为你的 Agent 解锁独特灵魂，让它从此与众不同")}
-        </h2>
+          {t("人设卡片")}
+        </h3>
       </div>
-      <a
-        href="https://skillhub.cn/soul"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="lv-buddy-panel__source inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
-        style={{ color: "rgba(0,0,0,0.55)" }}
-      >
-        {t("灵感来自 SkillHub")}
-        <ExternalLink className="h-3 w-3" />
-      </a>
 
       {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}
       <div className="lv-buddy-panel__body px-6 pt-2 pb-2">
@@ -1370,7 +1377,8 @@ export function BuddyPanel({
           />
         )}
       </AnimatePresence>
-    </div>
+      </div>
+    </>
   );
 }
 
