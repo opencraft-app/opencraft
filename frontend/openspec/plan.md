@@ -2155,7 +2155,7 @@
 
 # 模型配置页 CR 问题修复 Implementation Plan
 
-**Status:** Task 9 MiniMax 模型发现与检测修复完成，等待用户验收；不自动提交或推送。
+**Status:** Task 10 CI Runtime 递归 pnpm 修复与验证完成，等待用户验收；不自动提交或推送。
 
 **Goal:** 修复 MR !3181 评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性、Tooltip 被裁剪、印尼语文案为空和模型列表探测被表述为真实连接的问题。
 
@@ -2220,6 +2220,12 @@
 - [x] 将模型发现与模型可用性检测解耦；MiniMax 仅在用户主动点击“模型检测”时发送最小模型请求，验证当前 Key、endpoint 与所选模型。
 - [x] 补齐 `models: None`、无效凭据、模型请求成功、其他 Provider 探测失败不回退目录等回归测试，并完成模型配置、类型、i18n 与 diff 门禁。
 
+### Task 10: 修复 frontend 质量脚本递归调用 pnpm
+
+- [x] 使用 CI Runtime 契约测试复现 `check` 与 `check:next` 递归调用 `pnpm typecheck` 的失败。
+- [x] 保留独立 `typecheck` 命令，将两个质量脚本改为直接执行 `typecheck-baseline.mjs`。
+- [x] 运行 CI Runtime 定向契约、frontend 质量检查、模型配置测试与 diff 门禁。
+
 ## Verification
 
 - `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx`
@@ -2234,6 +2240,8 @@
 **Task 8 verification:** 地域适配 2 个回归断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、94 个测试全部通过。真实类型门禁对空的根 `tsconfig.json` 和临时注入的 2 条诊断均按预期失败，最终 `pnpm check` 报告 276 条历史基线、0 条新增诊断。国内构建与 `frontsandbox/*` 预览流水线均接入 `set -euo pipefail` 质量步骤；独立 CR 指出的 3 个 P1 与 2 个可立即处理的 P2 已修复。实例 API 尚不提供 Zone，当前只移除失效推导并保留显式透传契约。
 
 **Task 9 verification:** Provider 策略、MiniMax 静态目录、Anthropic/OpenAI 最小模型请求、凭据拒绝和安全 HTTP transport 共 6 个关键断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，真实 Hermes 源码 smoke 1/1 通过。`pnpm check` 报告 276 条历史基线、0 条新增诊断；`pnpm i18n:check`、`git diff --check` 通过；本地 `/agents/models/` 编译并返回 200。
+
+**Task 10 verification:** CI Runtime 定向契约在修改前稳定失败，改为直接执行 `node scripts/typecheck-baseline.mjs` 后通过；完整 `.ci/runtime/check_ci_runtime.sh` 运行 454 个测试全部通过。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断，`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过。
 
 ---
 # My creations show() reveal Implementation Plan
