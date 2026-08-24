@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useLocaleOverride } from "@/i18n/t";
 import { AppLink } from "@/lib/app-navigation";
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
 
 type CookieTableRow = {
@@ -146,6 +147,14 @@ const en: CookiePolicyCopy = {
     },
   ],
 };
+
+const esChrome = {
+  backHome: "Volver al inicio",
+  brand: "LightVela",
+  title: "Política de cookies",
+} satisfies Pick<CookiePolicyCopy, "backHome" | "brand" | "title">;
+
+const spanishLegalLanguageNote = "El contenido legal de esta página se ofrece en inglés.";
 
 const zh: CookiePolicyCopy = {
   backHome: "返回首页",
@@ -470,19 +479,32 @@ const CookieTable = ({ copy, rows }: { copy: CookiePolicyCopy; rows: CookieTable
   </div>
 );
 
+export function cookiePolicyHomePath(locale: PublicSiteLocaleCode | null): string {
+  return locale === PUBLIC_SITE_LOCALES.ES ? '/es/' : '/';
+}
+
+export function getCookiePolicyChrome(
+  locale: PublicSiteLocaleCode | null,
+): Pick<CookiePolicyCopy, "backHome" | "brand" | "title"> {
+  if (locale === PUBLIC_SITE_LOCALES.ES) return esChrome;
+  const source = locale === PUBLIC_SITE_LOCALES.ID_ID ? id : isZhLocale(locale) ? zh : en;
+  return { backHome: source.backHome, brand: source.brand, title: source.title };
+}
+
 export const CookiePolicyPage = () => {
   const localeOverride = useLocaleOverride();
   // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
-  const copy = useZhHantDeep(localeOverride === "id-ID" ? id : isZhLocale(localeOverride) ? zh : en);
+  const baseCopy = localeOverride === "id-ID" ? id : isZhLocale(localeOverride) ? zh : en;
+  const copy = useZhHantDeep({ ...baseCopy, ...getCookiePolicyChrome(localeOverride) });
 
   return (
     <div className="min-h-dvh bg-[#F7F8FA] text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-5 sm:px-8">
-          <AppLink to="/" className="text-xl font-semibold tracking-[-0.04em] text-slate-950">
+          <AppLink to={cookiePolicyHomePath(localeOverride)} className="text-xl font-semibold tracking-[-0.04em] text-slate-950">
             {copy.brand}
           </AppLink>
-          <AppLink to="/" className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-950">
+          <AppLink to={cookiePolicyHomePath(localeOverride)} className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-950">
             {copy.backHome}
           </AppLink>
         </div>
@@ -492,6 +514,9 @@ export const CookiePolicyPage = () => {
         <article className="rounded-[2rem] border border-slate-200 bg-white px-5 py-8 shadow-[0_24px_80px_-56px_rgba(15,23,42,0.35)] sm:px-8 sm:py-10 lg:px-12">
           <div className="border-b border-slate-200 pb-12 sm:pb-14">
             <h1 className="text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-5xl">{copy.title}</h1>
+            {localeOverride === PUBLIC_SITE_LOCALES.ES ? (
+              <p className="mt-4 text-sm leading-7 text-slate-500">{spanishLegalLanguageNote}</p>
+            ) : null}
             <div className="mt-12 space-y-6">
               {copy.intro.map((paragraph) => (
                 <p key={paragraph} className="text-base leading-9 text-slate-700">

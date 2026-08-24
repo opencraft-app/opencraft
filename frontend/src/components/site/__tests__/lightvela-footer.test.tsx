@@ -11,7 +11,7 @@ vi.mock("@/i18n/t", () => ({
   useLocaleOverride: () => null,
 }));
 
-// 当前语言可变，供不同用例切换（en-US / zh-CN / zh-SG / zh-Hant / id-ID）
+// 当前语言可变，供不同用例切换。
 let mockLanguage = "en-US";
 
 vi.mock("react-i18next", () => ({
@@ -26,7 +26,7 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/lib/region", () => ({
   isGlobal: true,
-  localizedPath: (path: string, locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID") => {
+  localizedPath: (path: string, locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID" | "es") => {
     const lang =
       locale === "zh-CN"
         ? "zh"
@@ -36,7 +36,10 @@ vi.mock("@/lib/region", () => ({
             ? "zh-hant"
             : locale === "id-ID"
               ? "id-id"
-              : "en";
+              : locale === "es"
+                ? "es"
+                : null;
+    if (!lang) return path;
     return path === "/" ? `/${lang}/` : `/${lang}${path}`;
   },
 }));
@@ -63,22 +66,22 @@ describe("LightVelaFooter", () => {
     expect(companySection).not.toBeNull();
     expect(within(companySection as HTMLElement).getByRole("link", { name: "关于我们" })).toHaveAttribute(
       "href",
-      "/en/about",
+      "/about",
     );
 
     const legalSection = screen.getByRole("heading", { name: "法律" }).closest("section");
     expect(legalSection).not.toBeNull();
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "隐私政策" })).toHaveAttribute(
       "href",
-      "/en/privacy-policy",
+      "/privacy-policy",
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "服务条款" })).toHaveAttribute(
       "href",
-      "/en/terms-of-service",
+      "/terms-of-service",
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "开源声明" })).toHaveAttribute(
       "href",
-      "/en/open-source-licenses",
+      "/open-source-licenses",
     );
 
     const communitySection = screen.getByRole("heading", { name: "社区" }).closest("section");
@@ -128,6 +131,41 @@ describe("LightVelaFooter", () => {
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "开源声明" })).toHaveAttribute(
       "href",
       "/zh-hant/open-source-licenses",
+    );
+  });
+
+  it("keeps every Spanish footer link, including the logo, under /es", () => {
+    mockLanguage = "es";
+    render(
+      <MemoryRouter>
+        <LightVelaFooter />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/es/");
+
+    const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
+    expect(within(companySection as HTMLElement).getByRole("link", { name: "关于我们" })).toHaveAttribute(
+      "href",
+      "/es/about",
+    );
+    expect(within(companySection as HTMLElement).getByRole("link", { name: "帮助与反馈" })).toHaveAttribute(
+      "href",
+      "/es/support",
+    );
+
+    const legalSection = screen.getByRole("heading", { name: "法律" }).closest("section");
+    expect(within(legalSection as HTMLElement).getByRole("link", { name: "隐私政策" })).toHaveAttribute(
+      "href",
+      "/es/privacy-policy",
+    );
+    expect(within(legalSection as HTMLElement).getByRole("link", { name: "服务条款" })).toHaveAttribute(
+      "href",
+      "/es/terms-of-service",
+    );
+    expect(within(legalSection as HTMLElement).getByRole("link", { name: "开源声明" })).toHaveAttribute(
+      "href",
+      "/es/open-source-licenses",
     );
   });
 });

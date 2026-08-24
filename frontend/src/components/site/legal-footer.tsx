@@ -16,7 +16,7 @@ import {
 } from "@/constants/community";
 import { useLocaleOverride, useT } from "@/i18n/t";
 import { isCN, isGlobal, localizedPath } from "@/lib/region";
-import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
+import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 
 interface LegalFooterProps {
   icpPlacement?: "inline" | "right";
@@ -27,14 +27,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
   const t = useT();
   const { i18n } = useTranslation();
   const localeOverride = useLocaleOverride();
-  const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.ID_ID || i18n.language === PUBLIC_SITE_LOCALES.ID_ID
-      ? PUBLIC_SITE_LOCALES.ID_ID
-      : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT || i18n.language === PUBLIC_SITE_LOCALES.ZH_HANT
-        ? PUBLIC_SITE_LOCALES.ZH_HANT
-        : localeOverride?.startsWith("zh") || i18n.language?.startsWith("zh")
-          ? PUBLIC_SITE_LOCALES.ZH_SG
-          : PUBLIC_SITE_LOCALES.EN_US;
+  const currentLocale = resolveVisiblePublicSiteLocale(localeOverride, i18n.language);
   const showICP = shouldShowICP();
   const [showQR, setShowQR] = useState(false);
   const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);

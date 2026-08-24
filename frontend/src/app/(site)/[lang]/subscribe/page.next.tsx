@@ -12,6 +12,9 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: '选择套餐',
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '選擇套餐',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Pilih Paket',
+  [PUBLIC_SITE_LOCALES.ES]: 'Elige un plan',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'Choose a Plan',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'Choose a Plan',
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -20,6 +23,9 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: '选择适合你的 LightVela 套餐。',
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '選擇適合你的 LightVela 套餐。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Pilih paket LightVela yang sesuai untuk Hermes Agent Anda.',
+  [PUBLIC_SITE_LOCALES.ES]: 'Elige el plan de LightVela que mejor se adapte a tu Hermes Agent.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'Choose the LightVela plan that fits your Hermes Agent.',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'Choose the LightVela plan that fits your Hermes Agent.',
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {
@@ -35,10 +41,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
     locale: routeLocale.locale,
     title: TITLE_BY_LOCALE[routeLocale.locale] ?? TITLE_BY_LOCALE[PUBLIC_SITE_LOCALES.EN_US],
     description: DESCRIPTION_BY_LOCALE[routeLocale.locale] ?? DESCRIPTION_BY_LOCALE[PUBLIC_SITE_LOCALES.EN_US],
-    robots: {
-      index: false,
-      follow: false,
-    },
+    index: false,
   });
 }
 

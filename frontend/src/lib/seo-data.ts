@@ -160,6 +160,65 @@ const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
   ].join(", "),
 };
 
+const SPANISH_DEFAULT_SEO_TITLE = "LightVela | Tu agente personal de IA en la nube";
+const SPANISH_SEO_TITLE_SUFFIX = "LightVela · Tu agente personal de IA en la nube";
+const SPANISH_SEO_DESCRIPTION =
+  "LightVela es una plataforma gestionada para crear y alojar un agente personal de IA en la nube, siempre disponible y conectado a tus canales.";
+const SPANISH_SEO_KEYWORDS = [
+  "LightVela",
+  "agente de IA en la nube",
+  "agente de IA personal",
+  "asistente de IA",
+  "Hermes Agent",
+  "alojamiento de agentes",
+  "automatizaciones",
+].join(", ");
+
+const SPANISH_STATIC_PAGE_TITLES: Record<string, string> = {
+  "/about": "Acerca de LightVela",
+  "/changelog": "Novedades",
+  "/cookie-policy": "Política de cookies",
+  "/open-source-licenses": "Aviso de código abierto",
+  "/privacy-policy": "Política de privacidad",
+  "/subscribe": "Elige un plan",
+  "/support": "Ayuda y comentarios",
+  "/terms-of-service": "Términos del servicio",
+};
+
+const SPANISH_DOC_PAGE_TITLES: Record<string, string> = {
+  "/docs": "Documentación",
+  "/docs/overview": "Qué es LightVela",
+  "/docs/quickstart": "Inicio rápido",
+  "/docs/core-concepts": "Conceptos básicos",
+  "/docs/configuration": "Configuración",
+  "/docs/configuration/model": "Configurar modelos",
+  "/docs/configuration/skill": "Configurar habilidades",
+  "/docs/configuration/automation": "Automatizaciones",
+  "/docs/configuration/agent-chat": "Chat",
+  "/docs/faq": "Preguntas frecuentes",
+};
+
+const SPANISH_PAGE_DESCRIPTIONS: Record<string, string> = {
+  "/about":
+    "Conoce cómo LightVela acerca los agentes de IA en la nube a más personas mediante una experiencia gestionada y sencilla.",
+  "/changelog":
+    "Consulta las actualizaciones del producto, las nuevas funciones y las mejoras de experiencia de LightVela.",
+  "/cookie-policy":
+    "Política de cookies de LightVela, incluidos sus tipos, finalidades y opciones de control.",
+  "/open-source-licenses":
+    "Atribuciones y avisos de licencia del software de código abierto utilizado por LightVela.",
+  "/privacy-policy":
+    "Política de privacidad de LightVela sobre el tratamiento, almacenamiento y uso compartido de datos personales y los derechos del usuario.",
+  "/subscribe": "Elige el plan de LightVela que mejor se adapte a tu Hermes Agent.",
+  "/support": "Envía comentarios, informa de problemas o solicita nuevas funciones para LightVela.",
+  "/terms-of-service":
+    "Términos del servicio de LightVela aplicables al acceso y uso de la plataforma.",
+  "/docs":
+    "Documentación de LightVela con inicio rápido, conceptos básicos y guías para configurar modelos, canales, habilidades y automatizaciones.",
+  "/docs/overview":
+    "Descubre cómo LightVela aloja Hermes Agent en la nube para ofrecerte un agente personal de IA siempre disponible, con memoria y canales conectados.",
+};
+
 /**
  * 页面级 description 覆盖表：仅列出需要"按页面内容定制 description"的路径。
  *
@@ -473,10 +532,10 @@ function normalizePathname(pathname: string): string {
  * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id";
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "es";
 
 function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|en|zh)(?:\/(.*))?$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|es|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
@@ -494,6 +553,7 @@ const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
   "zh-sg": "zh-SG",
   "zh-hant": "zh-Hant",
   "id-id": "id-ID",
+  es: "es",
 };
 const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   en: "en_US",
@@ -504,6 +564,7 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
   "zh-hant": "zh_HK",
   "id-id": "id_ID",
+  es: "es_ES",
 };
 
 function safeDecodeURIComponent(value: string): string {
@@ -569,6 +630,19 @@ export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
   /* 国际站剥掉 /en /zh URL 前缀后查表；国内站 stripUrlLangPrefix 对裸路径返回
      { bare: pathname, urlLang: null }，行为与改造前等价。 */
   const { bare, urlLang } = stripUrlLangPrefix(normalizePathname(pathname));
+  if (r === "global" && urlLang === "es") {
+    const pageTitle =
+      bare === "/"
+        ? null
+        : SPANISH_STATIC_PAGE_TITLES[bare] ??
+          SPANISH_DOC_PAGE_TITLES[bare] ??
+          (bare.startsWith("/docs/") ? "Documentación de LightVela" : "Página no encontrada");
+    return {
+      title: pageTitle ? `${pageTitle} | ${SPANISH_SEO_TITLE_SUFFIX}` : SPANISH_DEFAULT_SEO_TITLE,
+      description: SPANISH_PAGE_DESCRIPTIONS[bare] ?? SPANISH_SEO_DESCRIPTION,
+      keywords: SPANISH_SEO_KEYWORDS,
+    };
+  }
   const lookupRegion = effectiveRegionForLookup(r, urlLang);
   const pageTitle =
     bare === "/"
@@ -618,8 +692,9 @@ function joinUrl(origin: string, path: string): string {
 /** 路径是否默认应被搜索引擎索引。 */
 export function isPathIndexable(pathname: string): boolean {
   const p = normalizePathname(pathname);
+  const bare = stripUrlLangPrefix(p).bare;
   return !NON_INDEXABLE_PREFIXES.some(
-    (prefix) => p === trimTrailingSlash(prefix) || p.startsWith(prefix),
+    (prefix) => bare === trimTrailingSlash(prefix) || bare.startsWith(prefix),
   );
 }
 

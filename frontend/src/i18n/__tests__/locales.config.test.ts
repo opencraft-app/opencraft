@@ -22,6 +22,7 @@ import {
   TRANSLATION_REQUIRED_DICT_KEYS,
   urlLangMatchCandidates,
 } from "../locales.config";
+import { SWITCHER_VISIBLE_LOCALES } from "@/lib/public-site-routing";
 
 /**
  * 数据（locales.json）与类型层（locales.config.ts 手写联合类型）的
@@ -211,6 +212,31 @@ describe("不可信输入的白名单收敛", () => {
 });
 
 describe("新增语种的已知约束", () => {
+  it("西语定义提供 Español、ES 与 /es 映射", () => {
+    expect(localeDefinition("es")).toMatchObject({
+      code: "es",
+      urlLang: "es",
+      i18nKey: "es",
+      displayName: "Español",
+      shortLabel: "ES",
+      switcherVisible: true,
+      translationRequired: true,
+    });
+    expect(resolveUrlLangToLocale("es")).toBe("es");
+  });
+
+  it("生产切换器开放西语并继续隐藏日语与韩语", () => {
+    expect(SWITCHER_VISIBLE_LOCALES).toEqual([
+      "en-US",
+      "zh-CN",
+      "zh-SG",
+      "zh-Hant",
+      "id-ID",
+      "es",
+    ]);
+    expect(SWITCHER_VISIBLE_LOCALES).not.toEqual(expect.arrayContaining(["ja-JP", "ko-KR"]));
+  });
+
   it("日语、韩语、西语标记为需要字体回退", () => {
     /* 实测 HYRuiYiSong-45J 与 chuangji-hei 均不含假名/谚文/ñÑ¿¡。 */
     for (const code of ["ja-JP", "ko-KR", "es"] as const) {

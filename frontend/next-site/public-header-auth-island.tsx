@@ -16,9 +16,19 @@ import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
 import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
+import { parseLocaleCode } from '@/i18n/locales.config';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
-import { EN_US_LOCALE, ID_ID_LOCALE, ZH_CN_LOCALE, ZH_HANT_LOCALE, ZH_SG_LOCALE } from './public-locale';
+import {
+  EN_US_LOCALE,
+  ES_LOCALE,
+  ID_ID_LOCALE,
+  JA_JP_LOCALE,
+  KO_KR_LOCALE,
+  ZH_CN_LOCALE,
+  ZH_HANT_LOCALE,
+  ZH_SG_LOCALE,
+} from './public-locale';
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
@@ -51,6 +61,21 @@ const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: str
     freeTrial: 'Coba Gratis',
     login: 'Masuk',
   },
+  [ES_LOCALE]: {
+    createNow: 'Crear ahora',
+    freeTrial: 'Prueba gratis',
+    login: 'Iniciar sesión',
+  },
+  [JA_JP_LOCALE]: {
+    createNow: '今すぐ作成',
+    freeTrial: '無料で試す',
+    login: 'ログイン',
+  },
+  [KO_KR_LOCALE]: {
+    createNow: '지금 만들기',
+    freeTrial: '무료 체험',
+    login: '로그인',
+  },
 };
 
 /**
@@ -61,10 +86,10 @@ const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: str
  * 而非「立即創建/登入」）。
  */
 function inferLocaleFromI18n(language: string | undefined): PublicSiteLocale {
-  if (language === ID_ID_LOCALE || language?.startsWith('id')) return ID_ID_LOCALE;
-  if (language === ZH_HANT_LOCALE || language?.startsWith('zh-Hant')) return ZH_HANT_LOCALE;
-  if (language?.startsWith('zh')) return ZH_SG_LOCALE;
-  return EN_US_LOCALE;
+  const locale = parseLocaleCode(language);
+  if (!locale) return EN_US_LOCALE;
+  if (locale === ZH_CN_LOCALE || locale === ZH_SG_LOCALE) return ZH_SG_LOCALE;
+  return locale;
 }
 
 type PublicHeaderAuthIslandProps = {
@@ -93,7 +118,7 @@ function PublicHeaderAuthControls({
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale: PublicSiteLocale = locale ?? inferLocaleFromI18n(i18n.language);
-  const copy = copyByLocale[activeLocale] || copyByLocale[EN_US_LOCALE];
+  const copy = copyByLocale[activeLocale];
   // 未登录转化引导：主按钮文案改为当前 locale 的「免费试用」。
   const createLabel = promoteFreeTrial ? copy.freeTrial : copy.createNow;
   const subscribePath = publicSiteHref('/subscribe', activeLocale, { localized: isGlobal });

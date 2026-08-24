@@ -76,6 +76,7 @@ import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-swi
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
+import { shouldUseEnglishProviderData } from "@/pages/marketing/agent-provider-locale";
 import {
   fetchHermesMemorySnapshot,
   getHermesMemoryLimitBounds,
@@ -3759,7 +3760,7 @@ export const AgentSettingsPage = ({
   }), []);
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
-  const useEnglish = !!i18n.language?.startsWith("en");
+  const useEnglish = shouldUseEnglishProviderData(i18n.language);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
     isGlobalRegion: isGlobal,
     hiddenToolsRevealed: showHiddenAgentTools,

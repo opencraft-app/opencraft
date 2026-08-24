@@ -1,15 +1,26 @@
-# 国际站 Locale 注册表收敛与新增西语（拉美）、日语、韩语
+# 国际站 Locale 注册表收敛与西语首批上线（日语/韩语保留）
 
 ## 基本信息
 - 当前产品：LightVela（国际站 lightvela.ai）
-- 需求单状态：草稿
+- 需求单状态：研发与双区域整体验收完成，待提交审批
 - 创建人：jasminzhao
-- 创建日期 / 最后更新时间：2026-08-21 / 2026-08-21
+- 创建日期 / 最后更新时间：2026-08-21 / 2026-08-24
 - 需求类型：国际化与地域拓展 + 多语言扩展机制治理
 - 发布范围：国际站 only
 - 优先级：P0
 - 关联 PRD：`wiki/prd-docs/2026-08-18-intl-bahasa-indonesia-locale.md`（本需求的直接前置，`id-ID` 的落地经验与遗留问题由本需求承接）
 - 关联分支：`jasminzhao-821-language`
+
+## 2026-08-24 当前交付决策
+
+> 本节是当前分支的最终交付口径，覆盖下文 2026-08-21 草稿中“三语同时上线”和 `es-419` 的历史规划；历史分析保留用于解释 locale 注册表治理背景。
+
+- 本次只开放国际站 `lightvela.ai` 的西班牙语，locale 与 URL 前缀统一为 `es` / `/es`；不发布 `es-419` 路由。
+- `es.switcherVisible` 与 `es.translationRequired` 在全部前置门禁完成后同时开启；西语字典为当前基准 2403/2403 条。
+- `ja-JP`、`ko-KR` 仅保留注册表和空字典骨架，继续保持 `switcherVisible: false`、`translationRequired: false`，不进入切换器、SEO、sitemap 或字体子集。
+- Docs 仅提供西语导航、分组、title/description、搜索显示、manifest、路由和 metadata；59 篇正文继续回退英文，不创建西语正文副本。
+- 法务正文继续使用英文，只提供西语页面展示与 metadata；Tea SDK 内嵌区域和 Models 模块不在本次本地化范围。
+- 国内站 `lightvela.com` 不新增西语入口、路由或用户可见文案；共享代码只接受有双区域负向测试保护的机制改动。
 
 ## 需求背景
 

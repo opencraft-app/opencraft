@@ -8,7 +8,7 @@ const COMPARISON_FILE_PREFIX = 'compare/lightvela-vs-';
 
 export const docsI18n = defineI18n({
   defaultLanguage: DEFAULT_PUBLIC_DOCS_LOCALE,
-  languages: ['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id'],
+  languages: ['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id', 'es'],
   parser: 'dir',
   hideLocale: 'default-locale',
 });

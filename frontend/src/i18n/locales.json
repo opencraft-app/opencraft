@@ -85,8 +85,8 @@
     "docsSourcePrefix": "es",
     "docsFallbackPrefixes": ["en", "global"],
     "seoPrefixed": true,
-    "switcherVisible": false,
-    "translationRequired": false,
+    "switcherVisible": true,
+    "translationRequired": true,
     "requiresFontFallback": true
   },
   {

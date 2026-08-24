@@ -1,7 +1,7 @@
 /**
  * Support / LightVela Product Feedback — 用户端问卷表单页面
  * ──────────────────────────────────────────────────────────────
- * 本期仅上线国内站，暂不做多语言支持。
+ * 国内站保留原有体验；国际站按公开语言注册表提供本地化版本。
  */
 'use client';
 
@@ -297,10 +297,61 @@ const SUPPORT_LABELS_HANT: Record<string, string> = {
   '微信号如：lightvela_demo，邮箱如：1234@gmail.com': '微信號如：lightvela_demo，郵箱如：1234@gmail.com',
 };
 
-function localizeSupportLabel(label: string, locale: PublicSiteLocale): string {
+const SUPPORT_LABELS_ES: Record<string, string> = {
+  '每次必现': 'Siempre ocurre',
+  '经常发生': 'Ocurre con frecuencia',
+  '偶尔发生': 'Ocurre ocasionalmente',
+  '仅出现一次': 'Solo ocurrió una vez',
+  '搜索引擎': 'Motor de búsqueda',
+  '朋友/同事推荐': 'Recomendación de amigos o compañeros',
+  '社交媒体': 'Redes sociales',
+  '官网/文档': 'Sitio web oficial o documentación',
+  '社区/论坛': 'Comunidad o foro',
+  '广告投放': 'Publicidad',
+  '新闻/媒体': 'Noticias o medios',
+  '其他': 'Otro',
+  '学生': 'Estudiante',
+  '开发者': 'Desarrollador',
+  '设计师': 'Diseñador',
+  '产品经理': 'Gerente de producto',
+  '创业者': 'Emprendedor',
+  '运营/其他': 'Operaciones / otro',
+  '科研/学术': 'Investigación / ámbito académico',
+  '工程师（非开发）': 'Ingeniero (no desarrollador)',
+  '市场/营销': 'Marketing',
+  '销售/商务': 'Ventas / negocios',
+  '人力/招聘': 'Recursos humanos / contratación',
+  '写作/内容': 'Redacción / contenido',
+  '教师/教育': 'Docente / educación',
+  '自由职业者': 'Profesional independiente',
+  '分析师/咨询': 'Analista / consultoría',
+  '团队负责人/管理者': 'Líder de equipo / gerente',
+  '几乎每天': 'Casi todos los días',
+  '每周几次': 'Varias veces por semana',
+  '每月几次': 'Varias veces al mes',
+  '偶尔用用': 'Ocasionalmente',
+  '刚接触': 'Acabo de empezar',
+  '互联网/软件': 'Internet / software',
+  'AI/科技': 'IA / tecnología',
+  '教育': 'Educación',
+  '金融/保险': 'Finanzas / seguros',
+  '媒体/内容': 'Medios / contenido',
+  '电商/零售': 'Comercio electrónico / venta minorista',
+  '医疗/生物': 'Salud / biotecnología',
+  '制造/硬件': 'Manufactura / hardware',
+  '游戏/文娱': 'Videojuegos / entretenimiento',
+  '政府/公共': 'Gobierno / sector público',
+  '自由职业/个体': 'Trabajo independiente / autónomo',
+  '调研问卷': 'Encuesta',
+  '可留下微信号或邮箱；': 'Puedes dejar tu ID de WeChat o correo electrónico;',
+  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': 'Por ejemplo: WeChat lightvela_demo o correo 1234@gmail.com',
+};
+
+export function localizeSupportLabel(label: string, locale: PublicSiteLocale): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return SUPPORT_LABELS_ID[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.EN_US) return SUPPORT_LABELS_EN[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return SUPPORT_LABELS_HANT[label] ?? label;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return SUPPORT_LABELS_ES[label] ?? label;
   return label;
 }
 
@@ -1214,4 +1265,3 @@ export function SupportPage({
     </div>
   );
 }
-

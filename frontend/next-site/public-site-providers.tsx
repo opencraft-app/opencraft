@@ -12,16 +12,14 @@ import { DatongTrackerBridge } from '@/observability/datong-tracker-bridge';
 import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
 import { CookieConsentBanner } from '@/components/site/cookie-consent-banner';
-import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
+import { localeDefinition } from '@/i18n/locales.config';
 
 import type { PublicRouteLocale } from './public-locale';
 
 type Locale = PublicRouteLocale['locale'];
 
 function i18nLocaleForPublicLocale(locale: Locale): I18nLocale {
-  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
-  if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
-  return locale.startsWith('zh') ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.EN_US;
+  return localeDefinition(locale).i18nKey;
 }
 
 /**

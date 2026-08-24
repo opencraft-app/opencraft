@@ -39,7 +39,20 @@ const copy = {
     description: "Ketentuan ini mengatur akses dan penggunaan Anda atas layanan LightVela.",
     note: "Ketentuan hukum di bawah ini berasal dari dokumen resmi LightVela Terms of Service.",
   },
-} satisfies Record<"en" | "zh" | "id", TermsCopy>;
+  es: {
+    backHome: "Volver al inicio",
+    brand: "LightVela",
+    title: "Términos del servicio",
+    description: "Estos Términos rigen tu acceso y uso del servicio LightVela.",
+    note: "El contenido legal que aparece a continuación se ofrece en inglés y procede del documento oficial de Términos del servicio de LightVela.",
+  },
+} satisfies Record<"en" | "zh" | "id" | "es", TermsCopy>;
+
+export function getTermsOfServiceChrome(locale: PublicSiteLocaleCode): TermsCopy {
+  if (locale === PUBLIC_SITE_LOCALES.ES) return copy.es;
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return copy.id;
+  return isZhLocale(locale) ? copy.zh : copy.en;
+}
 
 const primaryHeadings = new Set([
   "Introduction",
@@ -275,16 +288,17 @@ function withTrailingSlash(path: string): string {
 function publicLocalePrefix(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}`;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}`;
   return `/${PUBLIC_URL_LANGS.EN_US}`;
 }
 
-function localizedLegalPath(path: string, locale: PublicSiteLocaleCode, forceLocalePrefix: boolean): string {
+export function localizedLegalPath(path: string, locale: PublicSiteLocaleCode, forceLocalePrefix: boolean): string {
   if (!forceLocalePrefix) return withTrailingSlash(localizedPath(path, locale));
   return withTrailingSlash(`${publicLocalePrefix(locale)}${path}`);
 }
 
-function localizedLightVelaUrl(
+export function localizedLightVelaUrl(
   url: string,
   locale: PublicSiteLocaleCode,
   forceLocalePrefix: boolean,
@@ -373,12 +387,14 @@ export const TermsOfServicePage = () => {
   const currentLocale: PublicSiteLocaleCode =
     localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID
+      : localeOverride === PUBLIC_SITE_LOCALES.ES
+        ? PUBLIC_SITE_LOCALES.ES
       : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT
         ? PUBLIC_SITE_LOCALES.ZH_HANT
         : localeOverride?.startsWith("zh")
           ? PUBLIC_SITE_LOCALES.ZH_SG
           : PUBLIC_SITE_LOCALES.EN_US;
-  const selectedCopy = useZhHantDeep(currentLocale === "id-ID" ? copy.id : isZhLocale(currentLocale) ? copy.zh : copy.en);
+  const selectedCopy = useZhHantDeep(getTermsOfServiceChrome(currentLocale));
   const englishBlocks = useMemo(() => parseTermsBlocks(termsOfServiceText), []);
   const localizedBlocks =
     currentLocale === PUBLIC_SITE_LOCALES.ID_ID ? idTermsBlocks : isZhLocale(currentLocale) ? zhTermsBlocks : englishBlocks;

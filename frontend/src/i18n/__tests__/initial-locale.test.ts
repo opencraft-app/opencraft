@@ -39,6 +39,15 @@ describe("i18n initial locale", () => {
     expect(i18n.language).toBe("id-ID");
   });
 
+  it("keeps explicit global Spanish routes in Spanish and persists the locale", async () => {
+    window.localStorage.setItem("lw-locale", "en-US");
+
+    const { default: i18n } = await loadI18n("global", "/es/subscribe");
+
+    expect(i18n.language).toBe("es");
+    expect(window.localStorage.getItem("lw-locale")).toBe("es");
+  });
+
   it("keeps the domestic site in Chinese when localStorage has stale English", async () => {
     window.localStorage.setItem("lw-locale", "en-US");
 

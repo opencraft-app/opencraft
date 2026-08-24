@@ -20,13 +20,28 @@ const DOCS_LOCALE_TO_PUBLIC_LOCALE: Record<DocsRouteLocale, PublicSiteLocale> = 
   [PUBLIC_URL_LANGS.ZH_SG]: PUBLIC_SITE_LOCALES.ZH_SG,
   [PUBLIC_URL_LANGS.ZH_HANT]: PUBLIC_SITE_LOCALES.ZH_HANT,
   [PUBLIC_URL_LANGS.ID_ID]: PUBLIC_SITE_LOCALES.ID_ID,
+  [PUBLIC_URL_LANGS.ES]: PUBLIC_SITE_LOCALES.ES,
 };
 
-const REGION_DOCS_ROUTE_LOCALES = (
-  isGlobal
-    ? [PUBLIC_URL_LANGS.EN_US, PUBLIC_URL_LANGS.ZH_SG, PUBLIC_URL_LANGS.ZH_HANT, PUBLIC_URL_LANGS.ID_ID]
-    : [PUBLIC_URL_LANGS.ZH_CN]
-) as readonly DocsRouteLocale[];
+const GLOBAL_DOCS_ROUTE_LOCALES = [
+  PUBLIC_URL_LANGS.EN_US,
+  PUBLIC_URL_LANGS.ZH_SG,
+  PUBLIC_URL_LANGS.ZH_HANT,
+  PUBLIC_URL_LANGS.ID_ID,
+  PUBLIC_URL_LANGS.ES,
+] as const satisfies readonly DocsRouteLocale[];
+
+const CN_DOCS_ROUTE_LOCALES = [PUBLIC_URL_LANGS.ZH_CN] as const satisfies readonly DocsRouteLocale[];
+
+export function docsRouteLocalesForRegion(region: 'cn' | 'global'): readonly DocsRouteLocale[] {
+  return region === 'global' ? GLOBAL_DOCS_ROUTE_LOCALES : CN_DOCS_ROUTE_LOCALES;
+}
+
+export function publicLocaleForDocsRoute(locale: DocsRouteLocale): PublicSiteLocale {
+  return DOCS_LOCALE_TO_PUBLIC_LOCALE[locale];
+}
+
+const REGION_DOCS_ROUTE_LOCALES = docsRouteLocalesForRegion(isGlobal ? 'global' : 'cn');
 
 function docsRouteLocale(lang: string): DocsRouteLocale {
   if ((REGION_DOCS_ROUTE_LOCALES as readonly string[]).includes(lang)) return lang as DocsRouteLocale;
@@ -41,7 +56,7 @@ export default async function Page({
   const { lang, slug } = await params;
   const contentLocale = docsRouteLocale(lang);
   if (!isDocsRouteSlug(contentLocale, slug)) notFound();
-  const locale = DOCS_LOCALE_TO_PUBLIC_LOCALE[contentLocale];
+  const locale = publicLocaleForDocsRoute(contentLocale);
 
   return (
     <PublicSiteLocaleBridge locale={locale}>

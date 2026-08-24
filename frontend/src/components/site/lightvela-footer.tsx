@@ -6,6 +6,7 @@ import {
   CN_TERMS_OF_SERVICE_URL,
 } from "@/constants/legal";
 import { DISCORD_INVITE_URL } from "@/constants/community";
+import { localeDefinition, parseLocaleCode } from "@/i18n/locales.config";
 import { useLocaleOverride, useT } from "@/i18n/t";
 import { isGlobal, localizedPath } from "@/lib/region";
 import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
@@ -102,9 +103,15 @@ function DefaultFooterLink({ children, ...props }: Parameters<RenderFooterLink>[
   return <a {...props}>{children}</a>;
 }
 
-function LightVelaFooterLogo({ renderLink }: { renderLink: RenderFooterLink }) {
+function LightVelaFooterLogo({
+  locale,
+  renderLink,
+}: {
+  locale: PublicSiteLocaleCode;
+  renderLink: RenderFooterLink;
+}) {
   return renderLink({
-    href: "/",
+    href: localizedPath("/", locale),
     className: "inline-flex shrink-0 items-center",
     "aria-label": "LightVela",
     children: (
@@ -118,18 +125,17 @@ function LightVelaFooterLogo({ renderLink }: { renderLink: RenderFooterLink }) {
   });
 }
 
-function FooterTextLink({ link, className, renderLink }: { link: FooterLink; className?: string; renderLink: RenderFooterLink }) {
-  const { i18n } = useTranslation();
-  const localeOverride = useLocaleOverride();
-  // 将当前 i18n 语言映射到公开站点合法 locale，繁体保留 zh-Hant 以生成 /zh-hant 前缀
-  const lang = localeOverride ?? i18n.language;
-  const locale: PublicSiteLocaleCode =
-    lang === PUBLIC_SITE_LOCALES.ZH_CN
-      || lang === PUBLIC_SITE_LOCALES.ZH_SG
-      || lang === PUBLIC_SITE_LOCALES.ZH_HANT
-      || lang === PUBLIC_SITE_LOCALES.ID_ID
-      ? lang
-      : PUBLIC_SITE_LOCALES.EN_US;
+function FooterTextLink({
+  link,
+  locale,
+  className,
+  renderLink,
+}: {
+  link: FooterLink;
+  locale: PublicSiteLocaleCode;
+  className?: string;
+  renderLink: RenderFooterLink;
+}) {
   const linkClassName = cn(footerLinkClassName, className);
   const label = link.label;
 
@@ -155,6 +161,12 @@ function FooterTextLink({ link, className, renderLink }: { link: FooterLink; cla
 
 export function LightVelaFooter({ renderLink = DefaultFooterLink }: { renderLink?: RenderFooterLink }) {
   const t = useT();
+  const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
+  const parsedLocale = parseLocaleCode(localeOverride ?? i18n.language);
+  const locale = parsedLocale && localeDefinition(parsedLocale).switcherVisible
+    ? parsedLocale
+    : PUBLIC_SITE_LOCALES.EN_US;
   const sections = getFooterSections(t);
 
   return (
@@ -174,7 +186,7 @@ export function LightVelaFooter({ renderLink = DefaultFooterLink }: { renderLink
               </h3>
               <div className="flex min-h-6 flex-col items-center gap-2.5">
                 {section.links.map((link) => (
-                  <FooterTextLink key={link.label} link={link} renderLink={renderLink} />
+                  <FooterTextLink key={link.label} link={link} locale={locale} renderLink={renderLink} />
                 ))}
               </div>
             </section>
@@ -183,7 +195,7 @@ export function LightVelaFooter({ renderLink = DefaultFooterLink }: { renderLink
       </div>
 
       <div className="mt-10 flex flex-col gap-4 px-12 pb-10 md:flex-row md:items-center md:justify-between md:px-[140px] md:pb-12 lg:px-[280px] lg:pb-14">
-        <LightVelaFooterLogo renderLink={renderLink} />
+        <LightVelaFooterLogo locale={locale} renderLink={renderLink} />
         <p className="text-sm leading-6 text-black/45 md:text-right">
           {t("© 2026 LightVela 版权所有，由腾讯轻量云团队出品")}
         </p>

@@ -98,17 +98,33 @@ const copy = {
     updated: "Terakhir diperbarui: Agustus 2026",
     description: "Halaman ini memuat atribusi dan pemberitahuan lisensi untuk perangkat lunak open source yang digunakan LightVela.",
   },
+  es: {
+    backHome: "Volver al inicio",
+    brand: "LightVela",
+    title: "Aviso de código abierto",
+    updated: "Última actualización: agosto de 2026",
+    description: "Esta página incluye los avisos de atribución y licencia del software de código abierto utilizado por LightVela.",
+  },
 };
 
-function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
+const spanishLegalLanguageNote = "El contenido legal que aparece a continuación se ofrece en inglés.";
+
+export function getOpenSourceLicensesChrome(locale: PublicSiteLocaleCode) {
+  if (locale === PUBLIC_SITE_LOCALES.ES) return copy.es;
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return copy.id;
+  return isZhLocale(locale) ? copy.zh : copy.en;
+}
+
+export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}/`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}/`;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}/`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}/`;
   return `/${PUBLIC_URL_LANGS.EN_US}/`;
 }
 
-function translateNoticeText(text: string, locale: PublicSiteLocaleCode): string {
-  if (locale === PUBLIC_SITE_LOCALES.EN_US) return text;
+export function translateNoticeText(text: string, locale: PublicSiteLocaleCode): string {
+  if (locale === PUBLIC_SITE_LOCALES.EN_US || locale === PUBLIC_SITE_LOCALES.ES) return text;
 
   const licenseGroup = text.match(/^Open Source Software Licensed under the (.+):$/);
   if (licenseGroup) {
@@ -155,13 +171,15 @@ export const OpenSourceLicensesPage = () => {
   const currentLocale: PublicSiteLocaleCode =
     localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID
+      : localeOverride === PUBLIC_SITE_LOCALES.ES
+        ? PUBLIC_SITE_LOCALES.ES
       : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT
         ? PUBLIC_SITE_LOCALES.ZH_HANT
         : localeOverride?.startsWith("zh")
           ? PUBLIC_SITE_LOCALES.ZH_SG
           : PUBLIC_SITE_LOCALES.EN_US;
   // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
-  const text = useZhHantDeep(currentLocale === PUBLIC_SITE_LOCALES.ID_ID ? copy.id : isZhLocale(currentLocale) ? copy.zh : copy.en);
+  const text = useZhHantDeep(getOpenSourceLicensesChrome(currentLocale));
   const homePath = localeOverride ? publicLocaleHomePath(currentLocale) : localizedPath("/", currentLocale);
 
   return (
@@ -184,6 +202,9 @@ export const OpenSourceLicensesPage = () => {
               <h1 className="text-4xl font-bold tracking-tight text-slate-950 sm:text-5xl">{text.title}</h1>
               <p className="mt-4 text-[13px] font-medium leading-relaxed text-slate-500">{text.updated}</p>
               <p className="mt-5 text-[14px] leading-relaxed text-slate-500 sm:text-[15px]">{text.description}</p>
+              {currentLocale === PUBLIC_SITE_LOCALES.ES ? (
+                <p className="mt-3 text-[13px] leading-relaxed text-slate-500">{spanishLegalLanguageNote}</p>
+              ) : null}
             </div>
           </div>
 

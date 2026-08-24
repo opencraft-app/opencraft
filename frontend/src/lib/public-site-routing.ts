@@ -16,6 +16,7 @@ import {
   LOCALE_DEFINITIONS,
   type LocaleCode,
   localeDefinition,
+  parseLocaleCode,
   resolveUrlLangToLocale,
   type UrlLang,
 } from "@/i18n/locales.config";
@@ -60,6 +61,18 @@ export const PUBLIC_URL_LANGS = {
   JA_JP: "ja-jp",
   KO_KR: "ko-kr",
 } as const satisfies Record<string, CanonicalPublicUrlLang>;
+
+/** Resolve untrusted i18n values through the registry while keeping hidden locales inaccessible. */
+export function resolveVisiblePublicSiteLocale(
+  localeOverride: string | null | undefined,
+  i18nLanguage: string | null | undefined,
+): PublicSiteLocaleCode {
+  for (const value of [localeOverride, i18nLanguage]) {
+    const locale = parseLocaleCode(value);
+    if (locale && localeDefinition(locale).switcherVisible) return locale;
+  }
+  return PUBLIC_SITE_LOCALES.EN_US;
+}
 
 export const PUBLIC_LOCALIZED_PATH_PREFIXES = [
   "/docs",

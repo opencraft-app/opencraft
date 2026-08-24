@@ -17,6 +17,7 @@ import {
   type PublicSiteSection,
 } from "@/lib/public-site-navigation";
 import { PUBLIC_SITE_LOCALES } from "@/lib/public-site-routing";
+import { parseLocaleCode } from "@/i18n/locales.config";
 import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
@@ -165,10 +166,12 @@ function defaultHeaderLocale(): PublicSiteLocale {
 }
 
 function headerLocaleFromLanguage(language: string | undefined): PublicSiteLocale {
-  if (language === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
-  if (language === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
-  if (language?.startsWith("zh")) return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
-  return PUBLIC_SITE_LOCALES.EN_US;
+  const locale = parseLocaleCode(language);
+  if (!locale) return PUBLIC_SITE_LOCALES.EN_US;
+  if (locale === PUBLIC_SITE_LOCALES.ZH_CN || locale === PUBLIC_SITE_LOCALES.ZH_SG) {
+    return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
+  }
+  return locale;
 }
 
 function useCurrentPath(explicitPath?: string): string {

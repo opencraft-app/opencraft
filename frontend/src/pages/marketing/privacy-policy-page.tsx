@@ -201,6 +201,15 @@ const en: PolicyCopy = {
   languageParagraph: "Except as otherwise prescribed by law, in the event of any discrepancy or inconsistency between the English version and local language version of this Privacy Policy, the English version shall prevail.",
 };
 
+const esChrome = {
+  backHome: "Volver al inicio",
+  brand: "LightVela",
+  title: "Política de privacidad",
+  updated: "Última actualización: agosto de 2026",
+} satisfies Pick<PolicyCopy, "backHome" | "brand" | "title" | "updated">;
+
+const spanishLegalLanguageNote = "El contenido legal de esta página se ofrece en inglés.";
+
 const zh: PolicyCopy = {
   backHome: "返回首页",
   brand: "LightVela",
@@ -801,11 +810,25 @@ const TextSection = ({ id, title, paragraphs, bullets }: { id?: string; title: s
   </section>
 );
 
-function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
+export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}/`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}/`;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}/`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}/`;
   return `/${PUBLIC_URL_LANGS.EN_US}/`;
+}
+
+export function getPrivacyPolicyChrome(
+  locale: PublicSiteLocaleCode,
+): Pick<PolicyCopy, "backHome" | "brand" | "title" | "updated"> {
+  if (locale === PUBLIC_SITE_LOCALES.ES) return esChrome;
+  const source = locale === PUBLIC_SITE_LOCALES.ID_ID ? id : isZhLocale(locale) ? zh : en;
+  return {
+    backHome: source.backHome,
+    brand: source.brand,
+    title: source.title,
+    updated: source.updated,
+  };
 }
 
 export const PrivacyPolicyPage = () => {
@@ -813,6 +836,8 @@ export const PrivacyPolicyPage = () => {
   const currentLocale: PublicSiteLocaleCode =
     localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID
+      : localeOverride === PUBLIC_SITE_LOCALES.ES
+        ? PUBLIC_SITE_LOCALES.ES
       : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT
         ? PUBLIC_SITE_LOCALES.ZH_HANT
         : localeOverride?.startsWith("zh")
@@ -821,7 +846,8 @@ export const PrivacyPolicyPage = () => {
   const isZh = isZhLocale(currentLocale);
   const isId = currentLocale === PUBLIC_SITE_LOCALES.ID_ID;
   // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
-  const copy = useZhHantDeep(isId ? id : isZh ? zh : en);
+  const baseCopy = isId ? id : isZh ? zh : en;
+  const copy = useZhHantDeep({ ...baseCopy, ...getPrivacyPolicyChrome(currentLocale) });
   const security = useZhHantDeep(isId ? sectionFour.id : isZh ? sectionFour.zh : sectionFour.en);
   const homePath = localeOverride ? publicLocaleHomePath(currentLocale) : localizedPath("/", currentLocale);
 
@@ -843,6 +869,9 @@ export const PrivacyPolicyPage = () => {
           <div className="border-b border-slate-200 pb-12 sm:pb-14">
             <h1 className="text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-5xl">{copy.title}</h1>
             <p className="mt-5 text-sm font-medium leading-7 text-slate-500">{copy.updated}</p>
+            {currentLocale === PUBLIC_SITE_LOCALES.ES ? (
+              <p className="mt-4 text-sm leading-7 text-slate-500">{spanishLegalLanguageNote}</p>
+            ) : null}
             <div className="mt-12 space-y-6">
               {copy.intro.map((paragraph) => (
                 <p key={paragraph} className="text-base leading-9 text-slate-700">

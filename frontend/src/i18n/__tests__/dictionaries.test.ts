@@ -32,6 +32,12 @@ const DICTS: Record<I18nDictKey, Record<string, string>> = {
 };
 
 const BASE_KEYS = Object.keys(zhCN);
+const CJK_RE = /[\u4e00-\u9fff]/;
+const PLACEHOLDER_RE = /\{\{\s*[\w.]+\s*\}\}/g;
+
+function placeholdersOf(value: string): string[] {
+  return (value.match(PLACEHOLDER_RE) ?? []).map((placeholder) => placeholder.replace(/\s/g, "")).sort();
+}
 
 describe("字典文件完备性", () => {
   it("注册表登记的每个字典语种都有对应字典对象", () => {
@@ -125,13 +131,30 @@ describe("翻译进度与注册表标记一致", () => {
     }
   });
 
-  it("新增语种字典已创建，条目齐全（翻译可后续补齐）", () => {
-    /* es / ja-JP / ko-KR 目前处于翻译进行中状态：
-       字典文件必须已存在且 key 齐全，译文可以为空并回退中文。 */
+  it("新增语种字典已创建且 key 齐全", () => {
+    /* es 已完成全量翻译；ja-JP / ko-KR 仍处于隐藏准备状态。
+       本用例只锁定三份字典结构，西语零空值由下方独立发布门禁负责。 */
     for (const dictKey of ["es", "ja-JP", "ko-KR"] as const) {
       const stat = progress.get(dictKey);
       expect(stat, `${dictKey} 字典未生成`).toBeDefined();
       expect(Object.keys(DICTS[dictKey]).length).toBe(BASE_KEYS.length);
+    }
+  });
+});
+
+describe("西语翻译完成门禁", () => {
+  it("es 不含空译文", () => {
+    const emptyKeys = Object.entries(es).flatMap(([key, value]) => (value === "" ? [key] : []));
+    expect(emptyKeys, `es 仍有 ${emptyKeys.length} 条未翻译`).toEqual([]);
+  });
+
+  it("es 的每条非空译文保持占位符且不直接保留含汉字原文", () => {
+    for (const [key, value] of Object.entries(es)) {
+      if (!value) continue;
+
+      const source = zhCN[key as keyof typeof zhCN];
+      expect(placeholdersOf(value), `es ${key} 的占位符与中文原文不一致`).toEqual(placeholdersOf(source));
+      expect(value === source && CJK_RE.test(source), `es ${key} 不得直接保留含汉字原文`).toBe(false);
     }
   });
 });
