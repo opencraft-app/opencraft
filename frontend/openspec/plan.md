@@ -2646,3 +2646,18 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] **Step 5: 展示 diff 与验证证据，等待用户确认后再进入提交/MR。**
 
 ---
+
+# 国际站自动任务模板动态移至 7 月 Implementation Plan
+
+**Size:** S。仅调整一条国际站静态 Changelog 的月份归属，不改文案、配图、国内站或其他条目。
+
+**Acceptance:**
+- `Ready-Made Automation Templates` 归入国际站 `July 2026`。
+- 国际站 `August 2026` 不再包含该条目。
+- 国内站与其他国际站动态保持不变。
+
+- [x] **Step 1: 增加国际站月份归属断言并确认 RED。**
+- [x] **Step 2: 将 `automation-templates` 从国际站 8 月移到 7 月并确认 GREEN。**
+- [x] **Step 3: 运行国际站 Changelog 回归、类型、i18n 与 diff 检查。**
+
+---

@@ -295,12 +295,6 @@ function ChangelogContent() {
                 visual: "skillsBulkInstall" as const,
               },
               {
-                id: "automation-templates",
-                title: t("自动任务模板"),
-                desc: t("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。"),
-                visual: "automationTemplates" as const,
-              },
-              {
                 id: "qq-group-mentions",
                 title: t("支持在 QQ 群聊中 @ 机器人"),
                 desc: t("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。"),
@@ -364,6 +358,12 @@ function ChangelogContent() {
                 title: t("LightVela 支持技能包"),
                 desc: t("快速安装技能组合，让 Agent 从单点技能走向完整工作流。"),
                 visual: "skillPackagesRevamp" as const,
+              },
+              {
+                id: "automation-templates",
+                title: t("自动任务模板"),
+                desc: t("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。"),
+                visual: "automationTemplates" as const,
               },
             ]
           : []),
