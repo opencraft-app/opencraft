@@ -100,10 +100,18 @@ CTA 文案优先级：`当前订阅` > `已售罄` > `询价中...` > `暂无报
 
 ```
 未登录            → 弹登录引导（handleSubscribe 内下沉）
+点石零元套餐      → startDianshiOrderAndPay（点石零元下单并支付链路，1e94b536f）
 国内站 / 付费开启  → startPaidPassOrder   （付费下单链路）
 免费 / 国际站      → startTrialPass       （免费试用链路，POST /v1/passes）
 已有有效 pass      → 直接 finalizeBot     （跳过下单，直接建实例）
 ```
+
+**点石零元链路**（1e94b536f，判定 `isDianshiZeroAmountPlan(plan, paidBillingActive)`）：
+
+- 一步到位：`createDianshiPassOrderAndPay` → `POST /v1/passes/dianshi/order-and-pay`（do_goods_and_pay），下单即支付，**没有二维码/中转页环节**。
+- 确认弹窗走 `confirm-dianshi` 特化分支：零元确认流程**不展示支付方式与自动续费**。
+- 发货复用 paying 阶段的 `listMyPasses` 轮询接棒，与付费链路一致。
+- 国内站非点石零元单保持 legacy 链路（中转页判定 `need_charge === 0`，4db0f258c）。
 
 ### 阶段 3：付费下单（CodeBuddy AuthCode 两阶段）
 
@@ -171,6 +179,7 @@ CTA 文案优先级：`当前订阅` > `已售罄` > `询价中...` > `暂无报
 | `/v1/passes` | POST | 免费试用（国际站 / 老 pass 场景） | `createPass` |
 | `/v1/passes/{id}/renew/price\|order\|order-url` | POST | 续费询价 / 下单 / 拉 URL | `getRenewPrice` / `createRenewOrder` / `getRenewOrderUrl` |
 | `/v1/passes/order-and-pay` | POST | 下单+支付一体化（**仅联调，现网禁用**） | `createPassOrderAndPay` |
+| `/v1/passes/dianshi/order-and-pay` | POST | 点石零元下单并支付（1e94b536f，do_goods_and_pay） | `createDianshiPassOrderAndPay` |
 
 ---
 

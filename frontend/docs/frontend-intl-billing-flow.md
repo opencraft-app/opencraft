@@ -13,7 +13,7 @@
 | 概念 | 说明 | 代码位置 |
 |---|---|---|
 | **站点分流** | `isGlobal=true` 为国际站。编译期常量（`REGION=global` 构建），构建时折叠 | `src/lib/region.ts` |
-| **计费灰度** | 国际站默认走「免费试用」老逻辑；运行时计费能力可用且当前会话执行 `show()` 后，才展示真实计费 | `runtime-config-context.tsx` + `subscribe-page.tsx` |
+| **计费灰度** | 国际站默认走「免费试用」老逻辑；后端计费开关 + 显式开启（localStorage/构建期）+ 当前会话执行 `show()` 三层串联后，才展示真实计费 | `runtime-config-context.tsx` + `subscribe-page.tsx` + `lib/billing-flow.ts` |
 | **强制订阅制** | 确认订单弹窗的自动续费为**只读说明**（非开关），`auto_renew_flag` 固定 `auto_renew` | `CreditCardConfirmOrderModal` |
 | **价格单位** | 后端返回**分**，币种跟随 `bundle.price?.currency`（USD / KRW 等，缺失兜底 CNY），展示时按币种换算；确认订单弹窗币种符号跟随 `plan.price`（7a6bf73ee 修复，曾硬编码 `$` 导致 KRW 环境错显）；折扣仅后端有真实 `discount` 时展示 | `mapBundleToPlan` / `formatYuan` / `centsToYuan` |
 | **支付回跳** | 弹窗拦截兜底走 `location.assign` 替换当前页，付款后 `return_url` 回到全新页面，需 `pay_return` 标记重建轮询 | `subscribe-page.tsx` → `PAY_RETURN_QUERY_KEY` |
@@ -32,17 +32,19 @@ show()
 config.features.paidBillingEnabled !== true  → 关（后端可一键熔断，本地钥匙打不开）
                 ↓ true
 国内站 → 开（全量，零影响）
-国际站 → 运行时/构建期计费配置允许？
+国际站 → 显式开启？（localStorage "lightclaw:features.paidBillingEnabled"="true"
+           或构建期环境变量显式 true；未配置时即使后端下发 true 也不放量）
            否 → 免费试用链路
-           是 → 当前会话执行过 show()？
+           是 → 当前会话执行过 show()（或 pay_return=1 回跳）？
                   否 → 免费试用链路
                   是 → 付费下单链路
 ```
 
-三个关键点：
-1. 运行时/构建期配置是后端熔断与能力资格，`show()` 是国际站产品曝光门控；两者同时满足才进入付费链路。
-2. `show()` 状态写入 `sessionStorage`，只在当前浏览器会话内保留，不把付费入口永久暴露给普通用户。
+四个关键点：
+1. 后端 `features.paidBillingEnabled` 是熔断与资格开关；「显式开启」（localStorage / 构建期环境变量）是放量信号——**后端目前对所有站点硬编码下发 `true`**，所以它自己不能作为国际站放量依据（`resolvePaidBillingEnabled`，构建期判断用「显式配置过」而非「解析结果为 true」，兜底值 `true` 不算显式）。
+2. `show()` 是国际站产品曝光门控，状态写入 `sessionStorage`，只在当前浏览器会话内保留；新开标签页需重新执行。**只 `show()` 不设 localStorage 钥匙仍进不了付费**——三层是串联关系。
 3. 支付回跳携带 `pay_return=1` 时会自动恢复付费状态，保证付款后的发货轮询可以接棒；默认访问订阅页仍走免费链路。
+4. 灰度关闭（任一层未满足）时 `freeGuideAllowed` 生效：免费试用引导与 `createPass` 链路整体回归，不只是隐藏价格。
 
 ## 三、时序图
 
@@ -85,6 +87,7 @@ sequenceDiagram
 
 ### 阶段 1：确认订单（`CreditCardConfirmOrderModal`）
 
+- 点石零元套餐（`isDianshiZeroAmountPlan`）走 `confirm-dianshi` 特化分支：`startDianshiOrderAndPay` 一步下单并支付（`POST /v1/passes/dianshi/order-and-pay`），不展示支付方式与自动续费，详见国内站文档「阶段 2」。
 - 自动续费为只读说明行（`RefreshCw` 图标 + 「可随时在账号管理页取消」），**无开关**——商业决策为订阅制后，不给一个点了会被拦的假开关。
 - `onPay(true)`：`auto_renew_flag` 固定 `auto_renew`。
 - **`auto_renew_flag` 与 `ContractOrder` 完全解耦**（契约文档「国际站支付模式」）：该字段只写入新购订单 `goodsDetail.autoRenewFlag`；是否发起签约由 trade 查用户绑卡状态决定（未绑卡 `ContractOrder=1` 签约并支付，已绑卡直接用现有卡）。前端不需要、也不应该干预签约。
@@ -153,7 +156,7 @@ closed ──选套餐下单──▶ paying ──轮询到 pass──▶ final
 | 支付方式 | bridge 中转页 + 微信扫码 | 信用卡 hosted page 新窗口 |
 | 自动续费 | 米大师签约模板 | 强制订阅制（只读说明） |
 | 实名 | 手机号实名（`realnamePhoneVerificationEnabled`） | 无 |
-| 计费开关 | 全量开启 | 灰度默认关闭（localStorage 显式开启） |
+| 计费开关 | 全量开启 | 默认免费试用；显式开启（localStorage / 构建期）+ 会话内 `show()` 揭示后才展示付费 |
 | 免费试用 | 走 `createPassOrder` 真实下单 | 灰度未开时走 `createPass` 直接领 |
 | 轮询超时 | 同左 | 同左（两站共用同一 effect） |
 
@@ -173,7 +176,8 @@ closed ──选套餐下单──▶ paying ──轮询到 pass──▶ final
 |---|---|
 | `next-site/subscribe-page.tsx` | 主流程：`startIntlCardPay` / 支付回跳 / 轮询 / `finalizeBot` / `CreditCardConfirmOrderModal` |
 | `src/pages/marketing/renew-pass-modal.tsx` | 账号页续费（国际站分支：`createRenewOrder` + `getRenewOrderUrl` + 回跳地址） |
-| `src/contexts/runtime-config-context.tsx` | 灰度开关 `resolvePaidBillingEnabled` / `hasExplicitPaidBillingOptIn` |
+| `src/contexts/runtime-config-context.tsx` | 灰度开关 `resolvePaidBillingEnabled` / `hasExplicitPaidBillingOptIn`（显式开启层） |
+| `src/lib/billing-flow.ts` | `isPaidBillingEnabled` 布尔化；`subscribe-page.tsx` 内叠加 `show()` reveal 层组成 `paidBillingActive` |
 | `release-matrix.json` | 各环境构建期环境变量（付费开关已全部 unset） |
 | `src/lib/region.ts` | `isGlobal` 编译期站点常量 |
 | `src/repositories/http-repositories.ts` | `createPassOrder` / `getPassOrderUrl` / `createRenewOrder` / `getRenewOrderUrl` / `listMyPasses` / `createPass` |
