@@ -52,6 +52,22 @@ func TestBySiteIDParsesCloudPath(t *testing.T) {
 	}
 }
 
+func TestBySiteIDParsesUserID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"code":"OK","message":"success","data":{` +
+			`"site_id":"ws-abc","status":"active","user_id":"user-1"}}`))
+	}))
+	defer server.Close()
+
+	site, err := NewClient(Options{BaseURL: server.URL}).BySiteID(context.Background(), "ws-abc")
+	if err != nil {
+		t.Fatalf("BySiteID: %v", err)
+	}
+	if site.UserID != "user-1" {
+		t.Fatalf("user_id = %q", site.UserID)
+	}
+}
+
 func TestBySiteIDNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -80,6 +96,55 @@ func TestBySiteIDCachesHit(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("回源 %d 次，期望 1 次", got)
+	}
+}
+
+func TestBySiteIDFreshBypassesStaleCacheAndRefreshesEntry(t *testing.T) {
+	var calls int32
+	var userID atomic.Value
+	userID.Store("user-1")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		_, _ = w.Write([]byte(`{"code":"OK","message":"success","data":{"site_id":"ws-abc","status":"active","user_id":"` + userID.Load().(string) + `"}}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(Options{BaseURL: server.URL, PositiveTTL: time.Minute})
+	site, err := c.BySiteID(context.Background(), "ws-abc")
+	if err != nil {
+		t.Fatalf("首次 BySiteID: %v", err)
+	}
+	if site.UserID != "user-1" {
+		t.Fatalf("首次 user_id = %q", site.UserID)
+	}
+
+	userID.Store("user-2")
+
+	cachedSite, err := c.BySiteID(context.Background(), "ws-abc")
+	if err != nil {
+		t.Fatalf("缓存 BySiteID: %v", err)
+	}
+	if cachedSite.UserID != "user-1" {
+		t.Fatalf("缓存 user_id = %q, 期望旧值 user-1", cachedSite.UserID)
+	}
+
+	freshSite, err := c.BySiteIDFresh(context.Background(), "ws-abc")
+	if err != nil {
+		t.Fatalf("BySiteIDFresh: %v", err)
+	}
+	if freshSite.UserID != "user-2" {
+		t.Fatalf("fresh user_id = %q, 期望新值 user-2", freshSite.UserID)
+	}
+
+	refreshedSite, err := c.BySiteID(context.Background(), "ws-abc")
+	if err != nil {
+		t.Fatalf("刷新后 BySiteID: %v", err)
+	}
+	if refreshedSite.UserID != "user-2" {
+		t.Fatalf("刷新后 user_id = %q, 期望新值 user-2", refreshedSite.UserID)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("回源 %d 次，期望 2 次", got)
 	}
 }
 
@@ -303,9 +368,9 @@ func TestSiteIDByDomainCached(t *testing.T) {
 	defer server.Close()
 
 	c := NewClient(Options{
-		BaseURL:     server.URL,
+		BaseURL:       server.URL,
 		InternalToken: "secret",
-		PositiveTTL: 30 * time.Second,
+		PositiveTTL:   30 * time.Second,
 	})
 
 	// First call hits the server

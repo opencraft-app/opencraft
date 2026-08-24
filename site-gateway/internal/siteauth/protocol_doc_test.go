@@ -21,14 +21,22 @@ func TestProtocolDocumentContainsRequiredContract(t *testing.T) {
 		}
 		doc := string(data)
 		for _, required := range []string{
-			"EdDSA",
-			"kid",
-			"site_host",
-			"state",
+			"/auth/lightvela/start",
+			"/auth/lightvela/callback",
+			"/__lightvela/auth/start",
+			"/__lightvela/auth/callback",
+			"PKCE",
+			"nonce",
+			"openid",
+			"__Host-lv_oidc_state",
 			"lv_site_session",
-			"__Host-lv_site_state",
+			"handoff",
+			"launch",
+			"SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED",
 			"lightvela.tech",
 			"lightvela.site",
+			"Domain=",
+			"site-gateway-secrets",
 		} {
 			if !strings.Contains(doc, required) {
 				t.Fatalf("%s missing %q", name, required)

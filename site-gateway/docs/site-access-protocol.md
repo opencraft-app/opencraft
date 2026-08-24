@@ -1,117 +1,149 @@
-# LightVela Domestic Site Access Protocol
+# LightVela Site Gateway Fixed-Host OIDC Protocol
 
-This contract protects user sites under `*.lightvela.tech`. Sites under
-`*.lightvela.site` remain anonymous when their gateway is configured with public
-mode.
+This contract protects `*.lightvela.tech` user sites with a fixed-host OIDC
+client. `*.lightvela.site` remains public when `SITE_GATEWAY_AUTH_MODE=public`.
 
-## Roles
+## Flow
 
-The trusted Auth integration is the issuer. It owns the existing `lc_session`
-cookie and decides whether the browser is logged in. It must never copy that
-cookie to the domestic site or expose it to browser JavaScript.
+1. A concrete site host such as `ws-abc.lightvela.tech` either detects that
+   `lv_site_session` is missing or invalid for protected content, or the user
+   explicitly opens:
 
-The site-gateway is the verifier. It only receives a short-lived signed access
-ticket and verifies it locally. It does not render a login page, store user
-sessions in Redis, or call Auth for every static asset.
+   ```text
+   https://ws-abc.lightvela.tech/__lightvela/auth/start?return_to=%2Fabout
+   ```
 
-## Signed Ticket
+2. The site host validates itself through the configured site namespace,
+   creates an encrypted `launch` token, and redirects to:
 
-The issuer creates a compact JWS using Ed25519 with `alg=EdDSA`:
+   ```text
+   https://sites-auth.lightvela.tech/auth/lightvela/start?launch=<opaque-launch>
+   ```
 
-Header:
+3. The fixed host validates `launch`, generates PKCE and `nonce`, stores the
+   transaction in `__Host-lv_oidc_state`, and redirects to the OIDC
+   authorization endpoint with `response_type=code`, `scope=openid`,
+   `code_challenge_method=S256`, exact fixed callback, and browser `state`.
+4. The OIDC provider redirects only to:
 
-```json
-{
-  "typ": "LV-Site-Access",
-  "alg": "EdDSA",
-  "kid": "<key-id>"
-}
-```
+   ```text
+   https://sites-auth.lightvela.tech/auth/lightvela/callback
+   ```
 
-Payload:
+5. The fixed callback validates the `__Host-lv_oidc_state` cookie and query
+   `state`, exchanges the code with PKCE, validates the Ed25519 ID token using
+   JWKS (`alg=EdDSA`, `kid`, `iss`, `aud`, `nonce`), then issues a 5 second
+   encrypted `handoff`.
+6. The browser returns to the concrete host:
 
-```json
-{
-  "iss": "lightvela-auth",
-  "aud": "lightvela-site-gateway",
-  "sub": "<lightvela-user-id>",
-  "site_host": "<site-id>.lightvela.tech",
-  "state": "<browser-state>",
-  "iat": 0,
-  "exp": 0,
-  "jti": "<unique-ticket-id>"
-}
-```
+   ```text
+   https://ws-abc.lightvela.tech/__lightvela/auth/start?return_to=%2Fabout
+   https://ws-abc.lightvela.tech/__lightvela/auth/callback?handoff=<opaque-handoff>
+   ```
 
-`site_host` is mandatory and binds the ticket to one domestic site host.
-`state` is mandatory and must copy the state supplied by the gateway challenge.
-`exp` must be no more than five minutes after `iat`. `jti` is an audit value;
-the stateless verifier does not persist it.
+7. The site host validates `handoff`, sets host-only `lv_site_session`, and
+   redirects to the safe relative `return_to`.
 
-The gateway accepts only EdDSA and the configured issuer, audience, `kid`, and
-Ed25519 public key. It rejects missing required claims, expired or future-dated
-tickets, a different Host, or a different state.
+## Endpoint and content gating
 
-## Browser Handoff
-
-When a required-mode gateway receives a GET or HEAD without a valid
-`lv_site_session`, it sets a host-only, Secure, HttpOnly, SameSite=Lax cookie
-named `__Host-lv_site_state`, then redirects to the configured Auth start URL:
+`SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED` controls whether the OIDC endpoints exist
+at all:
 
 ```text
-https://<auth-origin>/site-access/start
-  ?redirect_uri=https%3A%2F%2F<site-host>%2F__lightvela%2Fauth%2Fcallback
-  &state=<browser-state>
-  &return_to=%2Frequested%2Fpath
+fixed host                -> /auth/lightvela/start + /auth/lightvela/callback
+concrete site             -> /__lightvela/auth/start + /__lightvela/auth/callback
 ```
 
-The Auth integration validates `lc_session`, signs the ticket, and redirects
-back to the supplied callback:
+`SITE_GATEWAY_AUTH_MODE` still controls ordinary static content:
 
 ```text
-https://<site-host>/__lightvela/auth/callback
-  ?ticket=<signed-jws>
-  &state=<browser-state>
-  &return_to=%2Frequested%2Fpath
+endpoints disabled + public    -> current public behavior
+endpoints enabled  + public    -> public content, explicit auth endpoints work
+endpoints enabled  + required  -> static content auto-redirects into auth
+endpoints disabled + required  -> invalid startup config
 ```
 
-The gateway verifies the ticket and state, sets a host-only, Secure, HttpOnly,
-SameSite=Lax `lv_site_session` cookie containing the signed ticket, clears the
-state cookie, and redirects to the validated relative `return_to` path. It
-never accepts an absolute or cross-origin return URL.
+When `/__lightvela/auth/start` is used explicitly, `return_to` must remain a
+safe relative path on the same concrete host. Missing or invalid values fall
+back to `/`.
 
-Every later GET or HEAD must carry a valid `lv_site_session` before metadata or
-COS lookup. Authenticated responses use `Cache-Control: private, no-store` and
-`X-Robots-Tag: noindex, nofollow, noarchive`. Invalid authentication fails
-closed with HTTP 403 and never reads COS.
+## Token Types
 
-## Key Configuration and Rotation
+- `launch`: AEAD payload containing `site_host`, relative `return_to`, and the
+  exact fixed callback URL; TTL 5 minutes.
+- `__Host-lv_oidc_state`: AEAD cookie payload containing `state`,
+  `pkce_verifier`, `nonce`, `launch_digest`, `site_host`, `return_to`, and the
+  fixed callback URL; TTL 5 minutes.
+- `handoff`: AEAD payload bound to `site_host + user_id + nonce`; TTL 5
+  seconds.
+- `lv_site_session`: AEAD payload bound to the concrete site host; TTL at most
+  5 minutes.
 
-The gateway receives public keys as non-secret platform configuration:
+Each artifact uses a distinct AEAD scope under the dedicated
+`SITE_GATEWAY_AUTH_AEAD_KEYS` keyring. These keys must not be reused for
+federation, signing, or any UserAuth secret. The AEAD key material must live
+only in `site-gateway-secrets`; it must not appear in a ConfigMap or generated
+`platform.env.example`.
+
+## Cookie Rules
+
+- `__Host-lv_oidc_state`: `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, and
+  no `Domain=`.
+- `lv_site_session`: `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, and no
+  `Domain=`.
+
+Set-Cookie headers for this flow must not contain `Domain=`. Parent-domain
+cookies are forbidden.
+
+## Validation Rules
+
+- `return_to` must stay a relative path on the concrete host. Absolute URLs,
+  protocol-relative URLs, control characters, and browser-normalized cross-site
+  forms are rejected.
+- `handoff` replay on a sibling host such as `ws-other.lightvela.tech` must be
+  rejected.
+- State tampering, launch tampering, invalid `kid`, wrong `alg`, wrong `iss`,
+  wrong `aud`, wrong `nonce`, or expired ID tokens fail closed with `403`.
+- OIDC token endpoint or JWKS fetch failures fail closed with `502`/`503`.
+
+## Runtime Configuration
+
+Endpoint-enabled ConfigMap values use:
 
 ```text
-SITE_GATEWAY_AUTH_PUBLIC_KEYS=<kid>=<base64url-ed25519-public-key>,<kid2>=<base64url-key2>
+SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED=true
+SITE_GATEWAY_AUTH_FIXED_HOST=sites-auth.lightvela.tech
+SITE_GATEWAY_AUTH_OIDC_ISSUER=https://<userauth-origin>
+SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL=https://<userauth-origin>/oauth2/authorize
+SITE_GATEWAY_AUTH_OIDC_TOKEN_URL=https://<userauth-origin>/oauth2/token
+SITE_GATEWAY_AUTH_OIDC_JWKS_URL=https://<userauth-origin>/.well-known/jwks.json
+SITE_GATEWAY_AUTH_OIDC_CLIENT_ID=site-gateway
+SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID=<kid>
+SITE_GATEWAY_AUTH_SESSION_TTL=5m
 ```
 
-The signing private key stays in the trusted Auth control plane and never enters
-Git, frontend assets, SOPS plaintext, or a site container. During rotation,
-publish the new public key under a new `kid`, keep the old public key until all
-old tickets have expired, then remove it.
-
-## Stateless Boundary
-
-This protocol has no server-side session state. Therefore it intentionally does
-not provide strict one-time ticket consumption, an immediate logout revocation,
-or a persisted deny-list. The short `exp`, Host binding, state cookie, private
-COS bucket, and HttpOnly site cookie limit the exposure window. A future strict
-revocation requirement would need a state store keyed by `jti`.
-
-## Environment Policy
+Required content mode adds:
 
 ```text
-*.lightvela.tech -> SITE_GATEWAY_AUTH_MODE=required
-*.lightvela.site -> SITE_GATEWAY_AUTH_MODE=public
+SITE_GATEWAY_AUTH_MODE=required
 ```
 
-The international site behavior must remain unchanged when its deployment is
-public mode.
+Public content mode with enabled endpoints uses:
+
+```text
+SITE_GATEWAY_AUTH_MODE=public
+```
+
+Endpoint-enabled Secret values use:
+
+```text
+site-gateway-secrets:
+  SITE_GATEWAY_AUTH_AEAD_KEYS=<kid>=<base64url-key>
+```
+
+Environment policy:
+
+```text
+*.lightvela.tech  -> required mode with endpoints enabled and sites-auth.lightvela.tech
+*.lightvela.site  -> public mode, endpoints optional, sites-auth.lightvela.site when enabled
+```
