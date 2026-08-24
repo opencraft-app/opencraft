@@ -61,6 +61,12 @@ const HERMES_DEEP_DIVE_FILES = [
   "hermes-agent/12-skills-self-improvement.md",
 ] as const;
 
+const FULLY_LOCALIZED_CONFIGURATION_FILES = [
+  "configuration/personality.md",
+] as const;
+
+const PUBLISHED_INTERNATIONAL_LOCALES = ["en-us", "zh-sg", "zh-hant", "id-id"] as const;
+
 const STASHED_SHARED_FILES = [
   "07-faq.md",
   "advanced/agent-workflow-design.md",
@@ -100,10 +106,10 @@ const toRouteSlug = (file: string) => {
   return segments.at(-1) === "index" ? segments.slice(0, -1) : segments;
 };
 
-const hasRoute = (locale: "en-us" | "zh-sg", file: string) =>
+const hasRoute = (locale: "en-us" | "zh-sg" | "zh-hant" | "id-id", file: string) =>
   DOCS_ROUTE_SLUGS[locale].some((slug) => slug.join("/") === toRouteSlug(file).join("/"));
 
-const hasStaticRoute = (locale: "en-us" | "zh-sg", file: string) =>
+const hasStaticRoute = (locale: "en-us" | "zh-sg" | "zh-hant" | "id-id", file: string) =>
   DOCS_STATIC_ROUTE_SLUGS[locale].some((slug) => slug.join("/") === toRouteSlug(file).join("/"));
 
 describe("international docs publication inventory", () => {
@@ -122,6 +128,18 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(docsContentRoot, "en", file)), `missing en/${file}`).toBe(true);
       expect(hasRoute("zh-sg", file), `missing zh-sg route for ${file}`).toBe(true);
       expect(hasRoute("en-us", file), `missing en-us route for ${file}`).toBe(true);
+    }
+  });
+
+  it("publishes fully localized configuration pages in every international locale", () => {
+    for (const file of FULLY_LOCALIZED_CONFIGURATION_FILES) {
+      expect(existsSync(join(docsContentRoot, "en", file)), `missing en/${file}`).toBe(true);
+      expect(existsSync(join(docsContentRoot, "global", file)), `missing global/${file}`).toBe(true);
+      expect(existsSync(join(docsContentRoot, "id", file)), `missing id/${file}`).toBe(true);
+      for (const locale of PUBLISHED_INTERNATIONAL_LOCALES) {
+        expect(hasRoute(locale, file), `missing ${locale} route for ${file}`).toBe(true);
+        expect(hasStaticRoute(locale, file), `missing static ${locale} route for ${file}`).toBe(true);
+      }
     }
   });
 

@@ -91,6 +91,13 @@ const cnDocs = [
   { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '功能与配置', description: '通过飞书与 Hermes Agent 对话。' },
   { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '功能与配置', description: '通过 QQ 与 Hermes Agent 对话。' },
   { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。' },
+  { slug: 'configuration/personality', title: '人设', file: 'configuration/personality.md', group: '功能与配置', description: '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。' },
+  { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '功能与配置', description: '了解 Hermes 如何保存和管理长期记忆与用户画像。' },
+  { slug: 'configuration/automation', title: '自动任务', file: 'configuration/automation.md', group: '功能与配置', description: '为 Hermes Agent 创建定时自动任务。' },
+  { slug: 'configuration/files', title: '云存储', file: 'configuration/files.md', group: '功能与配置', description: '管理 Agent 使用的云端文件和工作资料。' },
+  { slug: 'configuration/agent-chat', title: '对话', file: 'configuration/agent-chat.md', group: '功能与配置', description: '通过聊天窗口与 Hermes Agent 交互。' },
+  { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '查看日志并排查 Hermes Agent 的异常情况。' },
+  { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。' },
   // Hermes Agent 解读（长文科普，帮助用户理解 Hermes Agent 的设计与原理）
   { slug: 'hermes-agent/hermes-vs-openclaw', title: 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别', file: 'hermes-agent/01-hermes-vs-openclaw.md', group: 'Hermes Agent 解读', description: '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。', hideDescription: true },
   { slug: 'hermes-agent/why-hermes-remembers-you', title: 'Hermes Agent 是怎么"记住你"的？', file: 'hermes-agent/02-why-hermes-remembers-you.md', group: 'Hermes Agent 解读', description: '揭秘 Hermes Agent 长期记忆背后的四层分工系统：USER.md、MEMORY.md、SQLite+FTS5 会话档案与 Skills，以及写入/召回时机的工程实现。', hideDescription: true },
@@ -327,6 +334,16 @@ const globalDocs = [
     description: {
       'en-US': 'Install skills to extend Hermes capabilities.',
       'zh-CN': '安装技能包，扩展 Hermes 能力。',
+    },
+  },
+  {
+    slug: 'configuration/personality',
+    title: { 'en-US': 'Souls', 'zh-CN': '人设' },
+    file: 'configuration/personality.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Choose and apply a Soul to define a Hermes Agent\'s role, voice, priorities, and behavioral boundaries.',
+      'zh-CN': '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。',
     },
   },
   {
@@ -787,6 +804,10 @@ const ID_DOC_METADATA = {
   'configuration/skill': {
     title: 'Konfigurasi Skill',
     description: 'Pelajari cara memasang, melihat, dan mengelola Skill yang dapat digunakan Hermes Agent.',
+  },
+  'configuration/personality': {
+    title: 'Soul',
+    description: 'Pilih, unggah, dan terapkan Soul untuk menentukan peran, gaya komunikasi, prioritas, dan batas perilaku Hermes Agent.',
   },
   'configuration/memory': {
     title: 'Pengelolaan Memori',
