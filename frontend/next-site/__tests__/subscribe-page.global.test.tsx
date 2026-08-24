@@ -639,7 +639,7 @@ describe("SubscribePage confirm order amounts", () => {
     /**
      * 卡片价口径锁定：税前实付价而非含税实付。
      * 卡片价格渲染为「$ 符号 + 数字」分离节点（formatYuan 拼接），故断言纯数字文本。
-     * 弹窗三行用 fmt() 生成完整 "$45.00" 文本，与卡片的分离节点格式不同——两处口径
+     * 弹窗三行用 fmt() 生成完整 "$48.00" 文本，与卡片的分离节点格式不同——两处口径
      * 分别由本用例与「renders subtotal, tax and total」用例锁定。
      */
     expect(screen.getByText("48.00")).toBeInTheDocument();
@@ -647,11 +647,11 @@ describe("SubscribePage confirm order amounts", () => {
   });
 
   /**
-   * 税费展示三行口径（产品确认，后端 2692ca1ca）：
-   *   小计 ← total_cost（税前价）
+   * 税费展示三行口径（产品确认 2026-08-24，后端 2692ca1ca）：
+   *   小计 ← 折后价（real_total_cost - tax_price，与卡片价同源同值）
    *   税费 ← tax_price（缺失视为 0）
    *   合计 ← real_total_cost 直接展示（含税实付真源，不做前端加总）
-   * 含折扣时小计+税≠合计（4500+400=4900≠5200，差额 300 为折扣，不单列折扣行）。
+   * 原价 total_cost 不出现在弹窗（原价/折扣差不单列）。
    */
   it("renders subtotal, tax and total from the backend price fields", async () => {
     (globalThis as { React?: typeof React }).React = React;
@@ -665,13 +665,14 @@ describe("SubscribePage confirm order amounts", () => {
     fireEvent.click(await screen.findByRole("button", { name: "立即订阅" }));
 
     expect(await screen.findByText("确认订单")).toBeInTheDocument();
-    /* 小计 = total_cost 4500 分 → $45.00；套餐行同为税前价，共两处 */
-    expect(screen.getAllByText("$45.00").length).toBeGreaterThanOrEqual(2);
+    /* 小计 = 折后价 5200-400 = 4800 分 → $48.00；套餐行同价，共两处（与卡片 $48.00 同源） */
+    expect(screen.getAllByText("$48.00").length).toBeGreaterThanOrEqual(2);
     /* 税费 = tax_price 400 分 → $4.00 */
     expect(screen.getByText("$4.00")).toBeInTheDocument();
-    /* 合计 = real_total_cost 5200 分 → $52.00（含税实付真源直显，≠ 45+4=49） */
+    /* 合计 = real_total_cost 5200 分 → $52.00（含税实付真源直显，= 48+4） */
     expect(screen.getByText("$52.00")).toBeInTheDocument();
-    expect(screen.queryByText("$48.00")).not.toBeInTheDocument();
+    /* 原价 total_cost 4500 分 → $45.00 不应出现（防回退到「小计=原价」旧口径） */
+    expect(screen.queryByText("$45.00")).not.toBeInTheDocument();
   });
 
   it("treats a missing tax field as zero tax", async () => {
@@ -699,9 +700,11 @@ describe("SubscribePage confirm order amounts", () => {
 
     expect(await screen.findByText("确认订单")).toBeInTheDocument();
     expect(screen.getByText("$0.00")).toBeInTheDocument();
-    /* 合计 = real_total_cost（含税），tax 缺失时小计仍为税前 total_cost $45.00 */
-    expect(screen.getAllByText("$45.00").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("$52.00")).toBeInTheDocument();
+    /* tax 缺失视为 0：小计 = real - 0 = 5200 分 → $52.00（套餐行+小计行），
+       合计 = real_total_cost 同为 $52.00，共 ≥3 处 */
+    expect(screen.getAllByText("$52.00").length).toBeGreaterThanOrEqual(3);
+    /* 原价 total_cost $45.00 不应出现 */
+    expect(screen.queryByText("$45.00")).not.toBeInTheDocument();
   });
 });
 
