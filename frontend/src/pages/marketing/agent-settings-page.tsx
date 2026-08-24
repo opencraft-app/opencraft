@@ -31,6 +31,7 @@ import {
   UserRound,
   Wand2,
   Wrench,
+  SlidersHorizontal,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
@@ -157,6 +158,9 @@ const TerminalPanel = lazy(() =>
 );
 const AgentWebsitePanel = lazy(() =>
   import("@/pages/marketing/agent-website-panel").then((module) => ({ default: module.AgentWebsitePanel })),
+);
+const AgentCommonSettingsPanel = lazy(() =>
+  import("@/pages/marketing/agent-common-settings-panel").then((module) => ({ default: module.AgentCommonSettingsPanel })),
 );
 
 // ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
@@ -4842,6 +4846,9 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                     { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+                    ...(!isGlobal
+                      ? [{ id: "settings" as const, label: t("常用设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings }]
+                      : []),
                   ],
                 },
               ];
@@ -5266,6 +5273,16 @@ export const AgentSettingsPage = ({
                               savingLimitTarget={savingMemoryLimitTarget}
                               limitSaveError={memoryLimitSaveError}
                               t={t}
+                            />
+                          )}
+                          {!isGlobal && activeSection === "settings" && (
+                            <AgentCommonSettingsPanel
+                              botId={activeBot.id}
+                              botStatus={activeBot.status}
+                              bots={repositories.bots}
+                              getGatewayRestartCommand={async () => {
+                                return (await getHermesScriptCommands()).getGatewayRestartCommand();
+                              }}
                             />
                           )}
                           {activeSection === "files" && (
