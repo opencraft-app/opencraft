@@ -1,5 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -26,8 +25,6 @@ vi.mock("@/i18n/t", () => {
       "剩余 {{days}} 天到期": "{{days}} days left",
       "剩余 {{hours}} 小时到期": "{{hours}} hours left",
       "剩余不足 1 小时到期": "Less than 1 hour left",
-      "套餐{{time}}，敬请期待": "Plan {{time}}, Coming Soon",
-      "敬请期待": "Coming Soon",
     };
     const mapped = translations[text] ?? text;
     return mapped.replace(/\{\{\s*(\w+)\s*\}\}/g, (raw, name: string) => {
@@ -194,23 +191,23 @@ describe("AgentSettingsPage global renewal reminder", () => {
     vi.useRealTimers();
   });
 
-  it("greys out the reminder renewal entry and does not open the renewal modal", async () => {
+  it("renders the global renewal reminder as a static compact badge", () => {
     renderAgentSettingsPage();
 
-    const reminder = screen.getByRole("button", { name: "Plan 3 days left, Coming Soon" });
+    const reminder = screen.getByText("Expiring Soon").closest(".lv-agent-renewal-badge") as HTMLElement | null;
+    expect(reminder).not.toBeNull();
+    expect(reminder?.tagName).toBe("SPAN");
     expect(reminder).toHaveTextContent("Expiring Soon");
-    expect(reminder).toHaveAttribute("aria-disabled", "true");
-    expect(reminder).toHaveClass("cursor-not-allowed");
+    expect(reminder).toHaveTextContent("3 days left");
+    expect(reminder).toHaveClass("lv-agent-renewal-badge");
+    expect(reminder).not.toHaveAttribute("aria-label");
+    expect(reminder).not.toHaveAttribute("aria-disabled");
+    expect(reminder).not.toHaveAttribute("aria-describedby");
+    expect(reminder).not.toHaveAttribute("role");
     expect(reminder).not.toHaveAttribute("title");
-
-    fireEvent.focus(reminder);
-    const tooltip = await screen.findByRole("tooltip");
-    expect(tooltip).toHaveTextContent("Coming Soon");
-    expect(reminder).toHaveAttribute("aria-describedby", tooltip.id);
-    expect(within(tooltip).queryByRole("button", { name: "立即续费" })).not.toBeInTheDocument();
-
-    await userEvent.click(reminder);
-
+    expect(reminder?.querySelector("svg")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Expiring Soon|Coming Soon/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "续费套餐" })).not.toBeInTheDocument();
     expect(getRenewPrice).not.toHaveBeenCalled();
     expect(createRenewOrder).not.toHaveBeenCalled();
