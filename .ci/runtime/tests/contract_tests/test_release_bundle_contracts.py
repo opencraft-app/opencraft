@@ -508,6 +508,77 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("SITE_GATEWAY_AUTH_AEAD_KEYS", gateway_secret["stringData"])
 
+    def test_sgprod_federation_runtime_contract_is_complete(self) -> None:
+        def env_values(path: Path) -> dict[str, str]:
+            return {
+                key: value
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+
+        deploy_root = REPO_ROOT / "argocd/services/lightclaw-auth/sgprod"
+        values = env_values(deploy_root / "auth-platform.env")
+        self.assertEqual(values["AUTH_FEDERATION_ENABLED"], "true")
+        self.assertEqual(values["AUTH_FEDERATION_ENVIRONMENT"], "sgprod")
+        self.assertEqual(values["AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID"], "federation-sg-20260824-1")
+        self.assertEqual(values["AUTH_FEDERATION_CTL_BASE_URL"], "http://ctl-api.ctl.svc.cluster.local")
+        self.assertEqual(values["AUTH_FEDERATION_TAT_TIMEOUT_SECONDS"], "5")
+        self.assertEqual(values["AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS"], "28800")
+        self.assertNotIn("AUTH_FEDERATION_AEAD_KEYS_JSON", values)
+        self.assertNotIn("AUTH_FEDERATION_NONCE_KEY", values)
+        self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
+
+        kustomization = yaml.safe_load((deploy_root / "kustomization.yaml").read_text())
+        replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in kustomization["replacements"]
+        }
+        for field in (
+            "AUTH_FEDERATION_ENABLED",
+            "AUTH_FEDERATION_ENVIRONMENT",
+            "AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID",
+            "AUTH_FEDERATION_CTL_BASE_URL",
+            "AUTH_FEDERATION_TAT_TIMEOUT_SECONDS",
+            "AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS",
+        ):
+            self.assertIn(f"data.{field}", replacement_sources)
+
+        ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sgprod.yaml").read_text()
+        )
+        required = set(ssm["items"][0]["required_keys"])
+        for key in (
+            "LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON",
+            "LIGHTCLAW_FEDERATION_NONCE_KEY",
+            "LIGHTCLAW_FEDERATION_CLIENTS_JSON",
+        ):
+            self.assertIn(key, required)
+
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/lightclaw-auth-secrets.sops.yaml").read_text()
+        )
+        for key in (
+            "LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON",
+            "LIGHTCLAW_FEDERATION_NONCE_KEY",
+            "LIGHTCLAW_FEDERATION_CLIENTS_JSON",
+        ):
+            self.assertIn(key, secret["stringData"])
+
+        patch_documents = list(
+            yaml.safe_load_all((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        )
+        deployment = next(doc for doc in patch_documents if doc.get("kind") == "Deployment")
+        env = {
+            item["name"]: item
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual(
+            env["LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "lightclaw-auth-secrets", "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"},
+        )
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
