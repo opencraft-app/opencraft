@@ -15,7 +15,7 @@
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -59,10 +59,23 @@ import {
 } from "@/lib/buddy-storage";
 import {
   buildHermesSoulClearCommand,
+  buildHermesSoulContentReadCommand,
   buildHermesSoulReadCommand,
   buildHermesSoulWriteCommand,
   executeHermesPersonaCommand,
+  parseHermesSoulContent,
+  parseHermesSoulIdentity,
 } from "@/pages/marketing/agent-buddy-command";
+import {
+  CustomPersonaFileModal,
+  type CustomPersonaSavePayload,
+} from "@/pages/marketing/agent-custom-persona-file-modal";
+import { PersonaUploadModal } from "@/pages/marketing/agent-persona-upload-modal";
+import {
+  CUSTOM_PERSONA_SOURCE,
+  CUSTOM_PERSONA_SLUG,
+  encodeUtf8Base64,
+} from "@/pages/marketing/agent-persona-upload";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
@@ -166,6 +179,8 @@ export function BuddyPanel({
   const activeBotIdRef = useRef(botId);
   activeBotIdRef.current = botId;
   const operationReqIdRef = useRef(0);
+  const customPersonaFileReqIdRef = useRef(0);
+  const mountedRef = useRef(false);
   const saveReqIdRef = useRef(0);
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
   const useEnglishSoulData = isGlobal && !i18n.language.startsWith("zh");
@@ -189,6 +204,14 @@ export function BuddyPanel({
   const [drawOpen, setDrawOpen] = useState(false);
   /** Soul 人格测试弹窗开关 */
   const [soulTestOpen, setSoulTestOpen] = useState(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      customPersonaFileReqIdRef.current += 1;
+    };
+  }, []);
 
   /** 注入结果 toast。idle 不显示；applying 期间禁掉重复点击。
    *  fallback: botId 缺失 / sandbox 写入失败，降级浏览器下载。
@@ -328,6 +351,24 @@ export function BuddyPanel({
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   /** 上一次成功应用到 Agent 的 slug —— 用于按钮上展示「已应用」反馈 */
   const [appliedSlug, setAppliedSlug] = useState<string | null>(null);
+  const [customPersonaName, setCustomPersonaName] = useState<string | null>(null);
+  const [customPersonaFileAction, setCustomPersonaFileAction] = useState<
+    "idle" | "editing" | "downloading"
+  >("idle");
+  const [customPersonaEditorMarkdown, setCustomPersonaEditorMarkdown] = useState<string | null>(null);
+  const invalidateCustomPersonaFileRead = useCallback(() => {
+    customPersonaFileReqIdRef.current += 1;
+    setCustomPersonaFileAction("idle");
+  }, []);
+  const [hasExistingSoul, setHasExistingSoul] = useState(false);
+  const [equippedStatus, setEquippedStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  type ConfirmState =
+    | { kind: "idle" }
+    | { kind: "deleteOne"; slug: string; soulName: string; isApplied: boolean }
+    | { kind: "applySuccess" }
+    | { kind: "customSaveSuccess" };
+  const [confirmState, setConfirmState] = useState<ConfirmState>({ kind: "idle" });
 
   /** 自增计数器：apply / clear 成功后 +1，驱动重新读取真实 SOUL.md。 */
   const [equippedRefreshTick, setEquippedRefreshTick] = useState(0);
@@ -366,11 +407,19 @@ export function BuddyPanel({
   useEffect(() => {
     const reqId = ++loadReqIdRef.current;
     operationReqIdRef.current += 1;
+    customPersonaFileReqIdRef.current += 1;
     saveReqIdRef.current += 1;
     setToast({ kind: "idle" });
+    setDrawOpen(false);
+    setRerollingSlug(null);
     setLoadStatus("loading");
     setDrawnSouls([]);
     setAppliedSlug(null);
+    setCustomPersonaName(null);
+    setCustomPersonaFileAction("idle");
+    setCustomPersonaEditorMarkdown(null);
+    setHasExistingSoul(false);
+    setEquippedStatus("loading");
     setSelectedSlug(null);
 
     loadBuddyState(botId)
@@ -510,18 +559,18 @@ export function BuddyPanel({
    *  - 无 botId → 浏览器下载 soul.md（兜底）
    *  内容：用 SkillHub /api/v1/souls/<slug> 的 content 拼装，对齐 zip 包格式。
    */
-  const handleApply = useCallback(async () => {
-    if (!selectedSlug) return; // 按钮已 disabled，理论上点不到
-    if (toast.kind === "applying") return; // 防重复点击
+  const injectRecommendedSoul = useCallback(async (
+    soul: SkillHubSoul,
+  ): Promise<boolean> => {
+    if (toast.kind === "applying") return false;
+    invalidateCustomPersonaFileRead();
     const requestId = ++operationReqIdRef.current;
     const requestBotId = botId;
     const isCurrentRequest = () => (
       operationReqIdRef.current === requestId
       && activeBotIdRef.current === requestBotId
     );
-    const canonical = toCanonicalSlug(selectedSlug);
-    const soul = localizedDrawnSouls.find((s) => toCanonicalSlug(s.slug) === canonical);
-    if (!soul) return;
+    const canonical = toCanonicalSlug(soul.slug);
 
     trackDatongClick("persona_inject_btn", {
       pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
@@ -562,12 +611,12 @@ export function BuddyPanel({
       // eslint-disable-next-line no-console
       console.error("[buddy] fetch soul detail failed:", err);
       await ensureMinSpin();
-      if (!isCurrentRequest()) return;
+      if (!isCurrentRequest()) return false;
       showToast({
         kind: "error",
         message: t("拉取人设详情失败，请检查网络后重试"),
       });
-      return;
+      return false;
     }
 
     // 路径 A：写入到当前 bot 工作区的 SOUL.md（覆盖前先备份）
@@ -589,21 +638,23 @@ export function BuddyPanel({
         const bash = buildHermesSoulWriteCommand(mdBase64, ts);
         await executeHermesPersonaCommand(repositories.bots, requestBotId, bash);
         await ensureMinSpin();
-        if (!isCurrentRequest()) return;
+        if (!isCurrentRequest()) return false;
         trackDatongEvent(DATONG_EVENTS.PERSONA_INJECT_SUCCESS, {
           pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
           params: { bot_id: requestBotId, persona_id: canonical, persona_source: "draw" },
         });
-        setAppliedSlug(selectedSlug);
+        setAppliedSlug(canonical);
+        setCustomPersonaName(null);
+        setHasExistingSoul(true);
         // 文件已写入 → 触发重新读取真实 SOUL.md，同步 Equipped 指示器。
         setEquippedRefreshTick((n) => n + 1);
         // hermes-agent 在 session 启动时一次性快照 SOUL.md，已存在 session 不感知
         // 文件变化，弹一个确认对话框提示用户在 Hermes Agent 里输入 /new，让新的人设生效。
         setToast({ kind: "idle" });
         setConfirmState({ kind: "applySuccess" });
-        return;
+        return true;
       } catch (err) {
-        if (!isCurrentRequest()) return;
+        if (!isCurrentRequest()) return false;
         // eslint-disable-next-line no-console
         console.error("[buddy] inject SOUL.md to bot failed, fallback to download:", err);
         trackDatongEvent(DATONG_EVENTS.PERSONA_INJECT_FAIL, {
@@ -616,25 +667,66 @@ export function BuddyPanel({
 
     // 路径 B：浏览器下载兜底
     await ensureMinSpin();
-    if (!isCurrentRequest()) return;
-    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "soul.md";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setAppliedSlug(selectedSlug);
-    // 区分两种降级原因：botId 为空（用户未选 bot） vs sandbox 写入失败
-    showToast({
-      kind: "fallback",
-      message: requestBotId
-        ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
-        : t("当前未选中 Agent，已下载 soul.md 到本地"),
-    });
-  }, [selectedSlug, localizedDrawnSouls, botId, repositories, toast.kind, showToast, t, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
+    if (!isCurrentRequest()) return false;
+    let downloadUrl: string | null = null;
+    let downloadAnchor: HTMLAnchorElement | null = null;
+    try {
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      downloadUrl = URL.createObjectURL(blob);
+      downloadAnchor = document.createElement("a");
+      downloadAnchor.href = downloadUrl;
+      downloadAnchor.download = "soul.md";
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      if (!requestBotId) {
+        setAppliedSlug(canonical);
+      } else {
+        // 下载只是一份本地兜底文件，真实 Agent 人设并未改变。
+        setEquippedRefreshTick((tick) => tick + 1);
+      }
+      // 区分两种降级原因：botId 为空（用户未选 bot） vs sandbox 写入失败
+      showToast({
+        kind: "fallback",
+        message: requestBotId
+          ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
+          : t("当前未选中 Agent，已下载 soul.md 到本地"),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[buddy] download soul.md fallback failed:", err);
+      showToast({
+        kind: "error",
+        message: t("注入失败，请检查网络后重试"),
+      });
+    } finally {
+      downloadAnchor?.remove();
+      if (downloadUrl) {
+        try {
+          URL.revokeObjectURL(downloadUrl);
+        } catch {
+          // 清理失败不覆盖已经展示给用户的注入结果。
+        }
+      }
+    }
+    return false;
+  }, [botId, invalidateCustomPersonaFileRead, repositories, toast.kind, showToast, t, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
+
+  const handleApply = useCallback(() => {
+    if (!selectedSlug) return;
+    const canonical = toCanonicalSlug(selectedSlug);
+    const soul = localizedDrawnSouls.find((item) => toCanonicalSlug(item.slug) === canonical);
+    if (!soul) return;
+    void injectRecommendedSoul(soul);
+  }, [injectRecommendedSoul, localizedDrawnSouls, selectedSlug]);
+
+  const handleInjectFromDraw = useCallback(async (soul: SkillHubSoul): Promise<boolean> => {
+    const canonicalSoul = canonicalizeSoulSlug(soul);
+    const injected = await injectRecommendedSoul(soul);
+    if (!injected) return false;
+    handlePickFromDraw(canonicalSoul);
+    setSelectedSlug(canonicalSoul.slug);
+    return true;
+  }, [handlePickFromDraw, injectRecommendedSoul]);
 
   /**
    * 清除 Bot 沙箱里当前的 SOUL.md（让 hermes-agent 回到无人设状态）。
@@ -644,6 +736,7 @@ export function BuddyPanel({
    */
   const clearSandboxSoul = useCallback(async (): Promise<boolean> => {
     if (!botId) return true;
+    invalidateCustomPersonaFileRead();
     const requestId = ++operationReqIdRef.current;
     const requestBotId = botId;
     const isCurrentRequest = () => (
@@ -671,7 +764,7 @@ export function BuddyPanel({
       });
       return false;
     }
-  }, [botId, repositories, showToast, t]);
+  }, [botId, invalidateCustomPersonaFileRead, repositories, showToast, t]);
 
   /**
    * 从 Bot 沙箱读取实际生效的 SOUL.md，解析出 Slug，同时把 appliedSlug 收敛到真实值，
@@ -682,12 +775,16 @@ export function BuddyPanel({
   const refreshEquippedSoul = useCallback(async () => {
     const reqId = ++equippedReqIdRef.current;
     const activeBotId = botId;
+    setEquippedStatus("loading");
     if (!activeBotId) {
       if (equippedReqIdRef.current !== reqId) return;
       setAppliedSlug(null);
+      setCustomPersonaName(null);
+      setHasExistingSoul(false);
+      setEquippedStatus("ready");
       return;
     }
-    // 只 cat 出 Slug 行，避免把整份 markdown（可能合中文）扛到前端。
+    // 只读取顶层 Soul 元数据区的存在性、Slug、Source 和 Name，避免把整份 markdown 扛到前端。
     const bash = buildHermesSoulReadCommand();
     try {
       const result = await executeHermesPersonaCommand(
@@ -697,38 +794,197 @@ export function BuddyPanel({
       );
       // 切 bot 超车：丢弃旧结果，不覆盖新 bot 的状态。
       if (equippedReqIdRef.current !== reqId) return;
-      const out = result?.output ?? '';
-      const slugLine = out.split('\n').find((l) => l.startsWith('Slug:'));
-      const rawSlug = slugLine ? slugLine.replace(/^Slug:\s*/, '').trim() : '';
-      if (rawSlug) {
-        const canonical = toCanonicalSlug(rawSlug);
-        setAppliedSlug(canonical);
-      } else {
+      const identity = parseHermesSoulIdentity(result?.output ?? "");
+      setHasExistingSoul(identity.exists);
+      if (identity.source === CUSTOM_PERSONA_SOURCE || identity.slug === CUSTOM_PERSONA_SLUG) {
         setAppliedSlug(null);
+        setCustomPersonaName(identity.name ?? t("自定义人设"));
+      } else {
+        setCustomPersonaName(null);
+        setAppliedSlug(identity.slug ? toCanonicalSlug(identity.slug) : null);
       }
+      setEquippedStatus("ready");
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[buddy] refreshEquippedSoul failed:', err);
       // 读取失败时不清空已有状态，避免网络抖动导致指示器闪烁成「无」。
+      if (equippedReqIdRef.current === reqId) setEquippedStatus("error");
     }
-  }, [botId, repositories]);
+  }, [botId, repositories, t]);
+
+  const writeCustomPersona = useCallback(async (
+    { markdown, displayName }: CustomPersonaSavePayload,
+    source: "upload" | "edit",
+  ): Promise<boolean> => {
+    if (!botId) throw new Error("Agent is required");
+    invalidateCustomPersonaFileRead();
+    const requestId = ++operationReqIdRef.current;
+    const requestBotId = botId;
+    const isCurrentRequest = () => (
+      operationReqIdRef.current === requestId
+      && activeBotIdRef.current === requestBotId
+      && mountedRef.current
+    );
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .replace("T", "_")
+      .replace("Z", "");
+    const command = buildHermesSoulWriteCommand(
+      encodeUtf8Base64(markdown),
+      timestamp,
+    );
+    const startedAt = Date.now();
+
+    try {
+      await executeHermesPersonaCommand(repositories.bots, requestBotId, command);
+      if (!isCurrentRequest()) return false;
+      trackDatongEvent(DATONG_EVENTS.PERSONA_INJECT_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
+        params: {
+          bot_id: requestBotId,
+          persona_id: CUSTOM_PERSONA_SLUG,
+          persona_source: source,
+          duration_ms: Date.now() - startedAt,
+        },
+      });
+      setAppliedSlug(null);
+      setCustomPersonaName(displayName);
+      setHasExistingSoul(true);
+      setEquippedRefreshTick((tick) => tick + 1);
+      setConfirmState({
+        kind: source === "edit" ? "customSaveSuccess" : "applySuccess",
+      });
+      return true;
+    } catch (err) {
+      if (!isCurrentRequest()) return false;
+      // eslint-disable-next-line no-console
+      console.error("[buddy] inject uploaded SOUL.md failed:", err);
+      trackDatongEvent(DATONG_EVENTS.PERSONA_INJECT_FAIL, {
+        pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
+        params: {
+          bot_id: requestBotId,
+          persona_id: CUSTOM_PERSONA_SLUG,
+          error_code: "inject_failed",
+          duration_ms: Date.now() - startedAt,
+        },
+      });
+      throw err;
+    }
+  }, [botId, invalidateCustomPersonaFileRead, repositories]);
+
+  const handleCustomPersonaInject = useCallback(
+    async (payload: CustomPersonaSavePayload) => {
+      await writeCustomPersona(payload, "upload");
+    },
+    [writeCustomPersona],
+  );
+
+  const handleCustomPersonaSave = useCallback(
+    (payload: CustomPersonaSavePayload) => writeCustomPersona(payload, "edit"),
+    [writeCustomPersona],
+  );
+
+  const readCurrentCustomPersona = useCallback(async (
+    action: "editing" | "downloading",
+  ) => {
+    if (!botId) return null;
+    const requestId = ++customPersonaFileReqIdRef.current;
+    const requestBotId = botId;
+    const isCurrentRequest = () => (
+      customPersonaFileReqIdRef.current === requestId
+      && activeBotIdRef.current === requestBotId
+      && mountedRef.current
+    );
+    setCustomPersonaFileAction(action);
+    try {
+      const result = await executeHermesPersonaCommand(
+        repositories.bots,
+        requestBotId,
+        buildHermesSoulContentReadCommand(),
+      );
+      if (!isCurrentRequest()) return null;
+      const content = parseHermesSoulContent(result.output ?? "");
+      if (content.status === "ready") return content;
+      if (content.status === "missing") {
+        showToast({
+          kind: "error",
+          message: t("当前 Agent 没有可用的人设文件"),
+        });
+        setEquippedRefreshTick((tick) => tick + 1);
+        return null;
+      }
+      if (content.status === "too_large") {
+        showToast({
+          kind: "error",
+          message: t("当前人设文件超过 20 KB，暂不支持在线编辑或下载"),
+        });
+        return null;
+      }
+      showToast({
+        kind: "error",
+        message: t("无法读取人设文件，请重试"),
+      });
+      return null;
+    } catch (err) {
+      if (!isCurrentRequest()) return null;
+      // eslint-disable-next-line no-console
+      console.error("[buddy] read current SOUL.md failed:", err);
+      showToast({
+        kind: "error",
+        message: t("无法读取人设文件，请检查网络后重试"),
+      });
+      return null;
+    } finally {
+      if (isCurrentRequest()) setCustomPersonaFileAction("idle");
+    }
+  }, [botId, repositories, showToast, t]);
+
+  const handleEditCustomPersona = useCallback(async () => {
+    const content = await readCurrentCustomPersona("editing");
+    if (content?.status === "ready") {
+      setCustomPersonaEditorMarkdown(content.markdown);
+    }
+  }, [readCurrentCustomPersona]);
+
+  const handleDownloadCustomPersona = useCallback(async () => {
+    const content = await readCurrentCustomPersona("downloading");
+    if (content?.status !== "ready") return;
+    let downloadUrl: string | null = null;
+    let downloadAnchor: HTMLAnchorElement | null = null;
+    try {
+      const blob = new Blob([content.markdown], {
+        type: "text/markdown;charset=utf-8",
+      });
+      downloadUrl = URL.createObjectURL(blob);
+      downloadAnchor = document.createElement("a");
+      downloadAnchor.href = downloadUrl;
+      downloadAnchor.download = "soul.md";
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[buddy] download current SOUL.md failed:", err);
+      showToast({
+        kind: "error",
+        message: t("无法下载人设文件，请重试"),
+      });
+    } finally {
+      downloadAnchor?.remove();
+      if (downloadUrl) {
+        try {
+          URL.revokeObjectURL(downloadUrl);
+        } catch {
+          // 下载已经触发，清理失败无需覆盖用户可见结果。
+        }
+      }
+    }
+  }, [readCurrentCustomPersona, showToast, t]);
 
   // mount / 切 botId / apply / clear 后读取真实 SOUL.md，让卡片的已注入状态与文件事实一致。
   useEffect(() => {
     void refreshEquippedSoul();
   }, [refreshEquippedSoul, equippedRefreshTick]);
-
-  /**
-   * 弹窗状态机：
-   * - idle：无弹窗
-   * - deleteOne：删除单张卡（带 slug，记是否已注入用于显示文案差异）
-   * - applySuccess：注入成功后提示用户 /new 开启新会话
-   */
-  type ConfirmState =
-    | { kind: "idle" }
-    | { kind: "deleteOne"; slug: string; soulName: string; isApplied: boolean }
-    | { kind: "applySuccess" };
-  const [confirmState, setConfirmState] = useState<ConfirmState>({ kind: "idle" });
 
   /**
    * 删除单张抽到的人设（弹 confirm）。
@@ -757,6 +1013,8 @@ export function BuddyPanel({
       if (isAppliedTarget) {
         const cleared = await clearSandboxSoul();
         if (!cleared) return;
+        setCustomPersonaName(null);
+        setHasExistingSoul(false);
         // SOUL.md 已删除 → 触发重新读取，让 Equipped 指示器回到「无」。
         setEquippedRefreshTick((n) => n + 1);
       }
@@ -852,6 +1110,59 @@ export function BuddyPanel({
         )}
       </div>
 
+      {customPersonaName && (
+        <div
+          className="mx-auto mt-3 flex max-w-[816px] items-center justify-center gap-2 px-6 text-sm text-[var(--text-secondary)]"
+        >
+          <div role="status" className="inline-flex items-center gap-2">
+            <Check className="size-4" aria-hidden="true" />
+            <span>{t("已注入：自定义人设 · {{name}}", { name: customPersonaName })}</span>
+          </div>
+          {!isGlobal && (
+            <div className="inline-flex items-center gap-0">
+              <div className="group relative inline-flex">
+                <button
+                  type="button"
+                  aria-label={t("编辑自定义人设")}
+                  disabled={customPersonaFileAction !== "idle"}
+                  onClick={() => void handleEditCustomPersona()}
+                  className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {customPersonaFileAction === "editing" ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Pencil className="size-3.5" aria-hidden="true" />
+                  )}
+                </button>
+                <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+                  {t("编辑自定义人设")}
+                  <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+                </div>
+              </div>
+              <div className="group relative inline-flex">
+                <button
+                  type="button"
+                  aria-label={t("下载自定义人设")}
+                  disabled={customPersonaFileAction !== "idle"}
+                  onClick={() => void handleDownloadCustomPersona()}
+                  className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {customPersonaFileAction === "downloading" ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download className="size-3.5" aria-hidden="true" />
+                  )}
+                </button>
+                <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+                  {t("下载自定义人设")}
+                  <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent；小屏时进度操作自然换行 */}
       <div className="lv-buddy-panel__actions relative mx-auto flex max-w-[816px] items-center justify-center gap-3 px-0 py-5">
         <div className="lv-buddy-panel__action-buttons flex flex-wrap items-center justify-center gap-3">
@@ -911,53 +1222,54 @@ export function BuddyPanel({
               </div>
             )}
           </div>
-          <div className="group relative inline-flex">
-            <button
-              type="button"
-              onClick={handleApply}
-              disabled={isApplyDisabled}
-              className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
-              style={
-                isApplyDisabled
-                  ? {
-                      background: "rgba(0,0,0,0.04)",
-                      color: "rgba(0,0,0,0.85)",
-                      border: "1px solid rgba(0,0,0,0.06)",
-                    }
-                  : {
-                      background: "rgba(0,0,0,0.90)",
-                      color: "#ffffff",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
-                    }
+          {!isGlobal && (
+            <PersonaUploadModal
+              key={botId ?? "no-agent"}
+              disabled={
+                !botId
+                || loadStatus !== "loaded"
+                || equippedStatus !== "ready"
               }
-            >
-              {toast.kind === "applying" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : isApplied ? (
-                <RotateCcw className="h-4 w-4" />
-              ) : (
-                <Zap className="h-4 w-4" />
-              )}
-              {toast.kind === "applying"
-                ? t("注入中…")
-                : isApplied
-                  ? t("重新注入")
-                  : t("注入人设")}
-            </button>
-            {/* 自定义浮卡：仅 disabled 因「未选中」时立即浮出，避开原生 title 延迟 */}
-            {!selectedSlug && (
-              <div
-                className={ACTION_TOOLTIP_CLASS}
-                role="tooltip"
+              hasExistingSoul={hasExistingSoul}
+              onInject={handleCustomPersonaInject}
+            />
+          )}
+          {selectedSlug && (
+            <div className="group relative inline-flex">
+              <button
+                type="button"
+                onClick={handleApply}
+                disabled={isApplyDisabled}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+                style={
+                  isApplyDisabled
+                    ? {
+                        background: "rgba(0,0,0,0.04)",
+                        color: "rgba(0,0,0,0.85)",
+                        border: "1px solid rgba(0,0,0,0.06)",
+                      }
+                    : {
+                        background: "rgba(0,0,0,0.90)",
+                        color: "#ffffff",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+                      }
+                }
               >
-                {t("请先选择人设，再注入")}
-                <span
-                  className={ACTION_TOOLTIP_ARROW_CLASS}
-                  aria-hidden
-                />
-              </div>
-            )}
-          </div>
+                {toast.kind === "applying" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : isApplied ? (
+                  <RotateCcw className="h-4 w-4" />
+                ) : (
+                  <Zap className="h-4 w-4" />
+                )}
+                {toast.kind === "applying"
+                  ? t("注入中…")
+                  : isApplied
+                    ? t("重新注入")
+                    : t("注入")}
+              </button>
+            </div>
+          )}
         </div>
         {drawnSouls.length > 0 && (
           <div className="lv-buddy-panel__progress absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
@@ -979,6 +1291,7 @@ export function BuddyPanel({
           setRerollingSlug(null);
         }}
         onPick={handlePickFromDraw}
+        onInject={handleInjectFromDraw}
         useEnglishSoulData={useEnglishSoulData}
         useGlobalChineseSoulData={useGlobalChineseSoulData}
         useIndonesianSoulData={useIndonesianSoulData}
@@ -1000,6 +1313,15 @@ export function BuddyPanel({
         useGlobalChineseSoulData={useGlobalChineseSoulData}
         useIndonesianSoulData={useIndonesianSoulData}
       />
+
+      {!isGlobal && (
+        <CustomPersonaFileModal
+          open={customPersonaEditorMarkdown !== null}
+          initialMarkdown={customPersonaEditorMarkdown ?? ""}
+          onClose={() => setCustomPersonaEditorMarkdown(null)}
+          onSave={handleCustomPersonaSave}
+        />
+      )}
 
       {previewSoulSlug && (
         <SoulPreviewModal
@@ -1034,6 +1356,15 @@ export function BuddyPanel({
             key="info-apply-success"
             title={t("人设已注入")}
             message={t("请在与 Hermes Agent 的对话中输入 /new 开启新会话，让新的人设生效。")}
+            buttonLabel={t("我知道了")}
+            onClose={() => setConfirmState({ kind: "idle" })}
+          />
+        )}
+        {confirmState.kind === "customSaveSuccess" && (
+          <InfoDialog
+            key="info-custom-save-success"
+            title={t("人设已更新")}
+            message={t("人设已更新，请发送 /new 开始新会话以生效")}
             buttonLabel={t("我知道了")}
             onClose={() => setConfirmState({ kind: "idle" })}
           />

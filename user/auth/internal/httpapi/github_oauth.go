@@ -250,6 +250,7 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "github", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
+	h.completeFederationSwitch(ctx, session.Token)
 	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 

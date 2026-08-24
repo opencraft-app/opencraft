@@ -924,6 +924,10 @@ type sandboxSessionAuthProvider interface {
 	GetSessionCookie() string
 }
 
+type sandboxUserProvider interface {
+	GetUserID() string
+}
+
 func applySandboxSessionAuth(ctx context.Context, req *http.Request, path string) {
 	if req == nil || !strings.Contains(path, "/tat/") {
 		return
@@ -937,6 +941,11 @@ func applySandboxSessionAuth(ctx context.Context, req *http.Request, path string
 	}
 	if cookie := strings.TrimSpace(provider.GetSessionCookie()); cookie != "" {
 		req.Header.Set("Cookie", cookie)
+	}
+	if userProvider, ok := ctx.(sandboxUserProvider); ok {
+		if userID := strings.TrimSpace(userProvider.GetUserID()); userID != "" {
+			req.Header.Set("X-User-Id", userID)
+		}
 	}
 }
 

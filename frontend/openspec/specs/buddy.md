@@ -1,49 +1,114 @@
-# Buddy 伙伴系统 (Buddy)
+# Buddy 人设系统
 
 ## 概述
 
-Buddy（AI 搭子）是 Lightclaw 的人设抽卡玩法模块。在 Hermes 实例 Settings 内，从 SkillHub 公共接口拉取 Soul（人设）目录，渲染成 9 张抽卡槽（3×3 网格）。每抽到一张人设填入下一格，视觉对齐 SkillHub `/hermes/edit-soul`。
+Buddy 是 Agent 人设页的 Soul 浏览、抽取、测试与注入模块。推荐人设来自 SkillHub 或区域内置数据；国内站额外支持用户上传本地 Markdown 人设，并按需编辑或下载当前 Agent 实际 `SOUL.md`。
 
-当前版本（v0.8）仅保留 Soul（人设）浏览与抽卡能力。
+## 页面与入口
 
-## 页面 / 路由
-
-- 入口：Agent 控制台 `/agents` 下对应 section 承载（具体 section slug 见 `agent-settings-page.tsx`）
-- 数据来源：跨域直连 `https://api.skillhub.cn` 公共接口（经 `@/lib/skillhub-api`）
+- 路由：已有 Agent 的 `/agents/persona/`。
+- 主组件：`src/pages/marketing/agent-buddy-panel.tsx`。
+- 推荐人设：国内站读取 SkillHub 公共接口，国际站使用英文、中文或印尼语区域数据。
+- 上传人设：仅国内站渲染“上传人设文件”，国际站不开放。
 
 ## 核心组件
 
-| 组件 | 文件 | 职责 |
-|------|------|------|
-| `OpenClawBuddyPanel` | `hermes-agent-buddy-panel.tsx`（65KB，v0.8） | 抽卡面板主入口，3×3 网格渲染 9 张槽位 |
-| `OpenClawBuddyCards` | `openclaw-buddy-cards.tsx` | 卡片列表渲染 |
-| `OpenClawBuddyDrawModal` | `openclaw-buddy-draw-modal.tsx` | 抽卡弹窗 |
-| `OpenClawBuddySoulTestModal` | `openclaw-buddy-soul-test-modal.tsx` | 灵魂测试弹窗 |
-| 数据层 | `openclaw-buddy-soul-test-data.ts` | 灵魂测试题库（中文） |
-| 数据层（英文） | `openclaw-buddy-soul-test-data.en.ts` | 灵魂测试题库（英文，国际站） |
-| 存储工具 | `lib/buddy-storage.ts` | Buddy 本地存储读写 |
+| 组件 / 模块 | 文件 | 职责 |
+| --- | --- | --- |
+| `BuddyPanel` | `agent-buddy-panel.tsx` | 8 格人设盘、推荐人设状态、真实 SOUL 身份同步和上传入口接入。 |
+| `PersonaUploadModal` | `agent-persona-upload-modal.tsx` | 选文件、预览编辑、错误/提示、覆盖确认和失败重试。 |
+| `CustomPersonaFileModal` | `agent-custom-persona-file-modal.tsx` | 编辑当前 Agent 实际 SOUL、实时校验、保存失败保留与重试。 |
+| 上传纯函数 | `agent-persona-upload.ts` | UTF-8/字节/内容校验、名称解析、软结构提示和标准化。 |
+| Hermes 命令 | `agent-buddy-command.ts` | SOUL 备份、原子写入、清除、身份读取和执行结果判定。 |
+| `DrawSoulModal` | `agent-buddy-draw-modal.tsx` | 推荐人设抽取与重抽。 |
+| `SoulTestModal` | `agent-buddy-soul-test-modal.tsx` | 人格答题与推荐人设选择。 |
+| 卡片组件 | `agent-buddy-cards.tsx` | 人设卡片、卡背和预览内容。 |
+| 用户状态 | `lib/buddy-storage.ts` | 已抽卡片与推荐人设 slug 的用户级持久化。 |
 
-## 数据流
+## 推荐人设规则
 
-- 抽卡数据策略：**前端从公共 souls 池 `Math.random`**，自动剔除已抽到的 slug，每次抽出新一张。
-- **不调** SkillHub 的 draw 接口（鉴权方案待落地）。
-- 抽到的卡用 `SoulFaceCard`（bgUrl 全卡面），未抽到的用 `CardBack`（灰底 + 拼图 icon）。
-- 国际站灵魂测试题库走 `.en.ts` 变体，由 `isGlobal` 编译期分支选择。
+1. 人设盘最多保留 8 张推荐卡片。
+2. 国内站从 SkillHub souls 池抽取并自动排除重复 slug。
+3. 国际站按语言选择区域内置数据，内部状态统一使用 canonical slug。
+4. 选中推荐卡后可注入当前 Agent；成功写入后该卡显示单一“已注入”徽章。
+   未选中推荐卡时不渲染“注入”，选中后才在操作区末尾显示。
+5. 抽卡揭晓后可选择左侧“注入此人设”或右侧“添加，暂不注入”，两个按钮使用较小字号。直接注入只有在 Agent 写入成功后才入盘、选中并标记已注入；写入失败或仅下载兜底时保持揭晓弹窗和原人设盘不变。
+6. 删除已注入卡时先备份并清除 `SOUL.md`；失败时保留卡片和状态。
+7. 推荐人设写入失败时保留既有下载兜底行为。
 
-## 业务规则
+## 上传人设规则
 
-1. **抽卡逻辑**：前端 `Math.random` 从公共 souls 池抽取，自动去重已抽到的 slug；9 格抽满即止。
-2. **数据来源**：跨域直连 `https://api.skillhub.cn` 公共接口，经 `@/lib/skillhub-api`。
-3. **鉴权**：当前不调 SkillHub draw 接口（鉴权方案待落地）。
-4. **灵魂测试**：题库分中英文两份（`soul-test-data.ts` / `.en.ts`），按 `isGlobal` 编译期选择。
-5. **范围**：v0.8 仅保留 Soul 浏览与抽卡能力。
+### 文件硬校验
+
+- 文件最后扩展名大小写不敏感等于 `.md`。
+- 使用严格 UTF-8 解码；允许并移除 UTF-8 BOM。
+- 原始文件和编辑文本按 UTF-8 实际字节计算，最大 `20 * 1024` 字节。
+- 去除首尾空白后不能为空。
+- 允许制表、换行和回车；拒绝 NUL 及其他 C0/C1 控制字符。
+
+任何硬校验失败都不得调用 Agent 写入命令。
+
+### 软结构提示
+
+缺少以下内容时仅提示，用户仍可继续注入：
+
+- `Name:`；
+- 角色定位（`Identity`）；
+- 沟通风格（`Communication Style`）；
+- 工作原则（`Working Principles`）；
+- 行为边界（`Behavioral Boundaries`）。
+
+内容少于 100 个 Unicode 字符时也提示“内容较短”。所有提示都不阻止注入。
+提示区标题显示“人设内容建议”，不带冒号。
+四条专业建议在中文名称后使用全角括号显示英文标题。结构识别支持这些中英文标题；行为边界同时兼容 `Behavior Boundaries` 与 `Behavioral Boundaries`，并保留原有短标题兼容。
+
+### 标准化
+
+- 自定义上传使用 `LightVela-Source: custom-upload` 作为独立来源标记；保留用户已有的 `Slug:`，新上传不生成 `Slug: custom-upload`。
+- 展示名优先读取首个 `Name:`，缺失时使用去掉 `.md` 的文件名，再回退“自定义人设”；最终限制为 80 个 UTF-8 字节且不截断字符。
+- 顶层 `# Soul`（可忽略其前的空白行）即视为结构化输入，无论是否含 `## Content`；在第一个二级标题前的元数据区写入或替换唯一来源标记，来源字段后保留空行，并保留现有结构和正文。
+- 任意其他合法 Markdown 包装到标准 Soul 的 `## Content` 下。
+- 原始上传文件不单独保存，也不加入推荐人设卡片或 Buddy 用户状态。
+
+### 交互与状态
+
+1. 入口与初始上传态标题显示“上传人设文件”，中央文案显示“选择 Markdown 人设文件，将其内容填入 SOUL.md”，限制说明显示“仅支持 Markdown 文件，文件名不限，扩展名须为 .md，大小不超过 20 KB。”；编辑态标题显示“编辑人设文件”；初始上传态和编辑态不显示可见说明行；覆盖确认态标题显示“覆盖当前人设？”，可见说明仅保留“旧人设会自动备份，然后注入新人设。”。
+2. 选择文件后立即打开读取态；合法时进入可编辑预览，显示实际字节数和软提示，读取失败可重新选择；非 UTF-8 文件提示“文件编码需为 UTF-8，请转换后重新上传。”。
+3. 编辑框复用自动任务“任务说明”的细灰边框、圆角与聚焦样式；“人设内容”和编辑框间距为 6px。
+4. 编辑态和覆盖确认态的两个操作按钮均位于弹窗右下角，次操作在左、主操作在右；覆盖确认按钮显示“覆盖并注入”。
+5. 若当前 Agent 已有非空 `SOUL.md`，注入前必须确认覆盖；取消后保留编辑内容。
+6. 注入失败时保留编辑器并允许重试，不降级下载。
+7. 成功后显示“已注入：自定义人设 · <名称>”，并提示发送 `/new`。
+8. 刷新页面后从真实 `SOUL.md` 的 `Exists`、`Slug`、`LightVela-Source`、`Name` 恢复自定义状态；来源为 `custom-upload` 时识别为自定义人设，并继续兼容旧 `Slug: custom-upload` 文件。
+9. 自定义状态文字后显示编辑和下载图标；编辑按需读取实际全文并安全保存，下载直接获取原始全文为 `soul.md`，状态文字本身不可点击。
+10. 编辑弹窗标题为“编辑人设文件”，只显示 `SOUL.md`、编辑器、字节数及右下角“取消”“保存修改”，不放上传或下载入口。
+11. 文件缺失、超限、解析异常或网络失败时不打开空编辑器、不生成空文件；全文读取期间两个图标同时禁用。
+12. 切换 Agent 时使用请求序号和组件 key 丢弃旧 Agent 的延迟读写、弹窗和下载结果。
+
+## Hermes 写入契约
+
+- 目标路径：`${HERMES_HOME:-$HOME/.hermes}/SOUL.md`。
+- 覆盖前将非空旧文件复制到 `.soul-backups/<timestamp>.md`。
+- 新内容先 base64 解码到同目录唯一临时文件，校验非空后用 `mv` 原子替换目标。
+- `trap` 负责清理失败后的临时文件；解码失败不得截断旧目标。
+- 完整 UTF-8 命令执行前必须严格小于 32 KB。
+- 身份读取只回传存在性和顶层 `# Soul` 元数据区内首个 `Slug:`、首个 `LightVela-Source:`、首个 `Name:`，不回传完整 Markdown，也不把正文同名行误作元数据。
+- 全文读取使用独立按需命令，合法文件回传实际字节数与单行 Base64；超过 20 KB 时不回传正文。解析器严格验证 Base64、UTF-8 和字节数一致性。
+- 下载仍返回 Agent 当前实际 `SOUL.md` 原文，不重写为上传时的标准化内容。
+- 上传和保存时应在标准化后再次校验最终 `SOUL.md` 的 UTF-8 字节数不超过 20 KB，避免写入成功后立即无法编辑或下载。
+
+## 区域差异
+
+| 能力 | 国内站 | 国际站 |
+| --- | --- | --- |
+| 推荐人设抽取 / 测试 / 注入 | 支持 | 支持，使用区域数据 |
+| 上传 Markdown 人设 | 支持 | 不显示入口 |
+| 上传相关翻译 | 进入统一字典 | 预先补齐，但功能未开放 |
 
 ## 测试覆盖
 
-<待用户补充>（当前未识别到 buddy 专属测试文件，需确认测试覆盖情况）
-
-## 待用户补充
-
-- Buddy 模块国内 / 国际站差异（是否双站都开放、是否有 region 分支）
-- 抽卡次数限制 / 冷却 / 稀有度规则（若后端后续接入）
-- 本地存储 key 命名与同步策略（纯本地 vs 后端）
+- `agent-persona-upload.test.ts`：扩展名、严格 UTF-8、20 KB 边界、空内容、控制字符、名称截断、六类提示和标准化。
+- `agent-persona-upload-modal.test.tsx`：非法/读取失败文件、迟到读取、编辑、提示、覆盖确认、失败保留和重试。
+- `agent-buddy-command.test.ts`：备份、原子写入、真实解码失败保护、32 KB 上限、身份/全文读取解析和执行错误。
+- `agent-custom-persona-file-modal.test.tsx`：未修改禁用、硬校验、标准化保存、失败重试和保存中防关闭。
+- `agent-buddy-panel.test.tsx`：Agent 切换竞态、删除失败、上传入口区域隔离、刷新恢复、当前文件编辑/下载和真实写入接入。

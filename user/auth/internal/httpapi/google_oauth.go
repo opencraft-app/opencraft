@@ -232,6 +232,7 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "google", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
+	h.completeFederationSwitch(ctx, session.Token)
 	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.googleOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 

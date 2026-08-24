@@ -570,7 +570,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                 textwrap.dedent(
                     """\
                     #!/bin/bash
-                    migration_count="$(find "$REPO_ROOT/ctl/migrations" -maxdepth 1 -name '*.up.sql' 2>/dev/null | wc -l)"
+                    migration_count="$(find "$REPO_ROOT/ctl/migrations" -maxdepth 1 -name '*.up.sql' 2>/dev/null | wc -l | tr -d '[:space:]')"
                     printf '%s\t%s\t%s\n' "$3" "$REPO_ROOT" "$migration_count" >> "$PIN_LOG_FILE"
                     mv "$REPO_ROOT/ctl/migrations" "$REPO_ROOT/ctl/migrations.promoted" 2>/dev/null || true
                     """

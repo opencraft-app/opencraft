@@ -1,10 +1,16 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Smartphone, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { PhoneLoginForm } from "@/components/auth/phone-login-form";
+import { AuthDialogFrame } from "@/components/site/auth-dialog-frame";
+import {
+  AUTH_DIALOG_PENDING_BUTTON_CLASS,
+  AUTH_DIALOG_PRIMARY_BUTTON_CLASS,
+} from "@/components/site/auth-dialog-styles";
+import { WeChatMobileBrowserGuide } from "@/components/site/wechat-mobile-browser-guide";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
 import {
@@ -70,9 +76,6 @@ const clearLoginProvider = () => {
  * - QQ / WeChat：沿用国内站原有的渐变底 + 品牌 logo 图
  * - Google / GitHub：沿用同款圆角浅色风格，图标用 SVG 占位（后续可换官方 brand assets）
  */
-const BUTTON_BASE_CLASS =
-  "group relative flex w-full items-center justify-center gap-2 rounded-full border px-8 py-[10px] text-sm font-medium transition-all duration-200 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none";
-const AGREEMENT_PENDING_BUTTON_CLASS = "cursor-not-allowed opacity-50 hover:shadow-none active:scale-100";
 const METHOD_BUTTON_CLASS =
   "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300";
 const METHOD_ICON_SLOT_CLASS = "flex size-5 shrink-0 items-center justify-center";
@@ -234,12 +237,24 @@ interface LoginModalProps {
   onClose: () => void;
   /** 登录成功后的回调（可选），默认仅关闭弹窗 */
   onSuccess?: () => void;
+  /** Federation keeps dismissal separate from successful authentication. */
+  closeOnSuccess?: boolean;
+  mode?: "login" | "switch-account";
+  onReturnToCurrentAccount?: () => void;
   initialError?: string | null;
 }
 
 /* ─── Login Modal Component ─── */
 
-export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: LoginModalProps) => {
+export const LoginModal = ({
+  open,
+  onClose,
+  onSuccess,
+  closeOnSuccess = true,
+  mode = "login",
+  onReturnToCurrentAccount,
+  initialError = null,
+}: LoginModalProps) => {
   const repositories = useRepositories();
   const { session } = useSession();
   const t = useT();
@@ -258,15 +273,28 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
   const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
 
-  const [mounted, setMounted] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [domesticLoginMethod, setDomesticLoginMethod] = useState<DomesticLoginMethod>("wechat");
+  const [wechatMobileGuideUrl, setWechatMobileGuideUrl] = useState<string | null>(null);
+  const [shouldFocusWechatMobileGuide, setShouldFocusWechatMobileGuide] = useState(false);
   // 确保 login_success 只上报一次（session.stage 变化可能触发多次 useEffect）
   const loginReportedRef = useRef(false);
 
-  useEffect(() => setMounted(true), []);
+  const buildWechatMobileGuideUrl = useCallback(() => {
+    if (
+      typeof window === "undefined" ||
+      wechatOAuthStartTargetForUserAgent(window.navigator.userAgent) !== "unsupported_mobile_browser"
+    ) {
+      return null;
+    }
+    return repositories.auth.getOAuthStartUrl("wechat", {
+      ...(mode === "switch-account" ? { switchAccount: true } : {}),
+      wechatMode: "official_account",
+    });
+  }, [mode, repositories.auth]);
+
   useEffect(() => installShowGitHubLoginHelper(), []);
 
   // modal 关闭时重置 loginReportedRef，确保登出后再次登录能正常上报 login_success
@@ -278,12 +306,15 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
 
   useEffect(() => {
     if (!open || isGlobal) return;
+    const guideUrl = buildWechatMobileGuideUrl();
     setDomesticLoginMethod("wechat");
-  }, [open]);
+    setWechatMobileGuideUrl(guideUrl);
+    setShouldFocusWechatMobileGuide(Boolean(guideUrl));
+  }, [buildWechatMobileGuideUrl, open]);
 
   // 当用户已登录时自动关闭弹窗并触发 onSuccess
   useEffect(() => {
-    if (!open) return;
+    if (!open || mode === "switch-account") return;
     if (session.stage === "authenticated" && session.user) {
       if (!loginReportedRef.current) {
         loginReportedRef.current = true;
@@ -295,10 +326,10 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
         });
         clearLoginProvider();
       }
-      onClose();
+      if (closeOnSuccess) onClose();
       onSuccess?.();
     }
-  }, [open, session.stage, session.user, onClose, onSuccess]);
+  }, [closeOnSuccess, mode, open, session.stage, session.user, onClose, onSuccess]);
 
   useEffect(() => {
     if (!open) return;
@@ -324,10 +355,20 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     if (provider === "wechat") {
       const target = wechatOAuthStartTargetForUserAgent(window.navigator.userAgent);
       if (target === "unsupported_mobile_browser") {
-        setError(t("请在微信中打开当前页面后继续登录。"));
+        const loginUrl = buildWechatMobileGuideUrl();
+        if (!loginUrl) {
+          setError(t("请在微信中打开当前页面后继续登录。"));
+          return;
+        }
+        setError(null);
+        setWechatMobileGuideUrl(loginUrl);
+        setShouldFocusWechatMobileGuide(true);
         return;
       }
-      const loginUrl = repositories.auth.getOAuthStartUrl("wechat", { wechatMode: target });
+      const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
+        ...(mode === "switch-account" ? { switchAccount: true } : {}),
+        wechatMode: target,
+      });
       if (!loginUrl) return;
       setError(null);
       captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, { provider });
@@ -335,7 +376,10 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
       redirectToOAuthStart(loginUrl);
       return;
     }
-    const loginUrl = repositories.auth.getOAuthStartUrl(provider);
+    const loginUrl = repositories.auth.getOAuthStartUrl(
+      provider,
+      mode === "switch-account" ? { switchAccount: true } : undefined,
+    );
     if (!loginUrl) return;
     setError(null);
     captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, { provider });
@@ -349,7 +393,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
         method: "phone",
       },
     });
-    onClose();
+    if (closeOnSuccess) onClose();
     onSuccess?.();
   };
 
@@ -462,49 +506,19 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     </div>
   );
 
-  const modal = (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.25 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.96 }}
-            transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("登录")}
-            className="relative mx-4 flex w-full max-w-[412px] flex-col overflow-hidden shadow-2xl"
-            style={{
-              background: "#fff",
-              borderRadius: 12,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close button */}
-            <button
-              onClick={onClose}
-              className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[rgba(0,0,0,0.05)]"
-              style={{ color: "rgba(0,0,0,0.5)" }}
-              aria-label={t("关闭")}
-            >
-              <X className="h-5 w-5" />
-            </button>
-
+  return (
+    <AuthDialogFrame
+      open={open}
+      onClose={onClose}
+      ariaLabel={mode === "switch-account" ? t("切换其他账号") : t("登录")}
+    >
             {/* Header — 标题（按设计稿不展示 Logo） */}
-            <div className="flex w-full flex-col items-center px-9 pt-10">
+            <div className="flex w-full flex-col items-center px-9 pb-6 pt-10">
               <h2
                 className="text-[28px] font-medium leading-none"
                 style={{ color: "rgba(0,0,0,0.9)" }}
               >
-                {isGlobal ? t("登录") : domesticTitle}
+                {mode === "switch-account" ? t("切换其他账号") : isGlobal ? t("登录") : domesticTitle}
               </h2>
               {isGlobal ? (
                 <p
@@ -517,7 +531,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
             </div>
 
             {isGlobal ? (
-              <div className="flex w-full flex-col gap-4 px-9 pt-8">
+              <div className="flex w-full flex-col gap-4 px-9 pt-2">
                 {(() => {
                   const providers: OAuthProvider[] = [...VISIBLE_OAUTH_PROVIDERS];
                   if (
@@ -537,7 +551,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                         type="button"
                         onClick={() => handleOAuthLogin(provider)}
                         aria-disabled={!agreed}
-                        className={`${BUTTON_BASE_CLASS} ${!agreed ? AGREEMENT_PENDING_BUTTON_CLASS : ""}`}
+                        className={`${AUTH_DIALOG_PRIMARY_BUTTON_CLASS} ${!agreed ? AUTH_DIALOG_PENDING_BUTTON_CLASS : ""}`}
                         style={visual.style}
                       >
                         {visual.renderIcon()}
@@ -548,18 +562,33 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                 })()}
               </div>
             ) : (
-              <div className="flex w-full flex-col gap-5 px-9 pb-6 pt-6">
+              <div className="flex w-full flex-col gap-5 px-9 pb-6 pt-0">
                 {domesticLoginMethod === "wechat" ? (
-                  <button
-                    type="button"
-                    onClick={() => handleOAuthLogin("wechat")}
-                    aria-disabled={!agreed}
-                    className={cn(BUTTON_BASE_CLASS, !agreed && AGREEMENT_PENDING_BUTTON_CLASS)}
-                    style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
-                  >
-                    {PROVIDER_BUTTON_VISUALS.wechat.renderIcon()}
-                    <span>{t("微信账号登录")}</span>
-                  </button>
+                  wechatMobileGuideUrl ? (
+                    <WeChatMobileBrowserGuide
+                      loginUrl={wechatMobileGuideUrl}
+                      beforeCopy={checkAgreed}
+                      blocked={!agreed}
+                      autoFocus={shouldFocusWechatMobileGuide}
+                      onCopySuccess={() => {
+                        captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, {
+                          provider: "wechat",
+                          action: "copy_link",
+                        });
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOAuthLogin("wechat")}
+                      aria-disabled={!agreed}
+                      className={cn(AUTH_DIALOG_PRIMARY_BUTTON_CLASS, !agreed && AUTH_DIALOG_PENDING_BUTTON_CLASS)}
+                      style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
+                    >
+                      {PROVIDER_BUTTON_VISUALS.wechat.renderIcon()}
+                      <span>{t("微信账号登录")}</span>
+                    </button>
+                  )
                 ) : null}
 
                 {domesticLoginMethod === "phone" ? (
@@ -576,7 +605,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                     type="button"
                     onClick={() => handleOAuthLogin("qq")}
                     aria-disabled={!agreed}
-                    className={cn(BUTTON_BASE_CLASS, !agreed && AGREEMENT_PENDING_BUTTON_CLASS)}
+                    className={cn(AUTH_DIALOG_PRIMARY_BUTTON_CLASS, !agreed && AUTH_DIALOG_PENDING_BUTTON_CLASS)}
                     style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
                   >
                     {PROVIDER_BUTTON_VISUALS.qq.renderIcon()}
@@ -607,6 +636,8 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                               onClick={() => {
                                 setError(null);
                                 setShowAgreeHint(false);
+                                setShouldFocusWechatMobileGuide(false);
+                                setWechatMobileGuideUrl(method === "wechat" ? buildWechatMobileGuideUrl() : null);
                                 setDomesticLoginMethod(method);
                               }}
                             >
@@ -661,16 +692,18 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
               )}
             </AnimatePresence>
 
+            {mode === "switch-account" && onReturnToCurrentAccount ? (
+              <div className="flex justify-center px-9 pb-5">
+                <Button type="button" variant="ghost" onClick={onReturnToCurrentAccount}>
+                  {t("返回使用当前账号")}
+                </Button>
+              </div>
+            ) : null}
+
             {/* Bottom spacing when no error */}
             {!error && <div className="pb-2" />}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </AuthDialogFrame>
   );
-
-  if (!mounted) return null;
-  return createPortal(modal, document.body);
 };
 
 /* ═══════════════════════════════════════════════════════════════

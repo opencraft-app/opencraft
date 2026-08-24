@@ -177,6 +177,9 @@ func TestStartTerminalSessionForwardsUserSessionAuth(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer user-session-token" {
 			t.Fatalf("unexpected authorization header: %q", got)
 		}
+		if got := r.Header.Get("X-User-Id"); got != "user-1" {
+			t.Fatalf("unexpected user header: %q", got)
+		}
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(TerminalSession{
 			SandboxID: "sbx-123",
@@ -191,7 +194,7 @@ func TestStartTerminalSessionForwardsUserSessionAuth(t *testing.T) {
 		APIKey:  "test-api-key",
 		Timeout: 1,
 	}, zap.NewNop())
-	ctx := pctx.NewContext(t.Context()).WithSessionAuth("Bearer user-session-token", "")
+	ctx := pctx.NewContext(t.Context()).WithUserID("user-1").WithSessionAuth("Bearer user-session-token", "")
 	if _, err := adapter.StartTerminalSession(ctx, "sbx-123"); err != nil {
 		t.Fatalf("start terminal session: %v", err)
 	}

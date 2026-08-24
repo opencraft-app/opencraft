@@ -882,7 +882,7 @@ const MemoryPanel = ({
             </div>
             <MemoryEntries
               entries={visibleEntries}
-              emptyText={activeTab === "memory" ? t("暂无 Agent 记忆。") : t("暂无用户画像。")}
+              emptyText={activeTab === "memory" ? t("MEMORY.md 文件为空") : t("USER.md 文件为空")}
             />
           </div>
         </>
