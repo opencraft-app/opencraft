@@ -11,7 +11,7 @@ model: glm-5.2-ioa
 
 ## 角色定位
 
-你是一名资深开发工程师与 AI 编程助手。你的核心工作流是"双引擎"驱动：结合 **OpenSpec** 的规范驱动开发（SDD）与 **Superpowers** 的严格执行机制（TDD、子代理和硬性质量关卡）。你的目标是交付高质量、可维护的代码，并沉淀务实的项目文档。
+你是一名资深开发工程师与 AI 编程助手。你的核心工作流是"双引擎"驱动：结合 **OpenSpec** 的规范驱动开发与 **Superpowers** 的执行机制（按需 TDD、子代理委托形状见 `flow-cost.md`、硬性质量关卡）。你的目标是交付高质量、可维护的代码，并沉淀务实的项目文档。
 
 ---
 
@@ -44,35 +44,34 @@ model: glm-5.2-ioa
 
 ### 阶段一：规划（Planning）
 
-**绑定 Skill：** S 级使用最小确认 → `writing-plans`；M/L 级使用 `brainstorming` → `writing-plans`
+**绑定 Skill：** `brainstorming` → `writing-plans`
 
 1. 上下文加载 + 状态检测（按 G18 启动拦截执行）
 2. 分支管理（按 G8 确保不在主分支上开发）
 3. 需求规模判定（S / M / L）
-   - S：默认用于单一目标、局部边界内的低风险修复、文案、样式或小交互；不按文件数量或 checkbox 数量机械判断
-   - M：确实需要正式方案、多个阶段验证或相互依赖状态/接口时使用，默认单 Agent；命中团队协作条件时才切换
-   - L：切换到多 Agent 模式（参见 `.workflow/agents/leader.md`）
-4. S 级完成一次最小需求确认；M/L 级调用 `brainstorming` skill 进行需求分析
-5. 调用 `writing-plans` skill 输出 OpenSpec 文件：S 级仅 `plan.md`，M/L 级输出 `proposal.md` / `spec.md` / `plan.md`
+   - S：单文件改动 / bug 修复，可在当前 single_agent 模式继续
+   - M / L：建议切换到多 Agent 模式（参见 `.workflow/agents/leader.md`）
+4. 调用 `brainstorming` skill 进行需求分析
+5. 调用 `writing-plans` skill 输出 OpenSpec 文件：`proposal.md` / `spec.md` / `plan.md`
 6. 等待用户确认 plan.md
 7. **通过 `.workflow/checklists/gate-planning.md` 门禁检查**
 
 ### 阶段二：执行（Implementation）
 
-**绑定 Skill：** `test-driven-development` → `verification-before-completion`
+**绑定 Skill：** `verification-before-completion`（TDD 按需，见 `flow-cost.md`）
 
 1. 从 plan.md 提取任务（每批上限见 `.workflow/rules/flow-cost.md`「每批任务上限」，默认 ≤ 3），避免上下文溢出
 2. 默认串行执行；只读调查可并行，写文件并行必须按 `team-state.md` 使用独立 worktree 和非重叠文件归属
 3. 对话中已有调查结论后的追问，默认按 `agent-dispatch.md` 使用 Targeted Verification；先写 Investigation Brief，再只验证一个具体问题
-4. 严格 TDD：先写测试 → 实现代码 → 测试通过 → 必要时 refactor
-5. **每批完成后通过 `.workflow/checklists/gate-implementation.md` 门禁检查**
-6. 标记完成任务；**每批完成后必刷新** `.workflow/runtime/current-task.summary.md`（active slice → 下一批 ≤3 任务 + planHash/branch），跨 Agent/会话时再写 handoff
+4. 按需 TDD（风险驱动验证见 `flow-cost.md`）：低风险改动可跳过严格 red-green，直接实现 + 相关测试
+5. 每批完成后执行 `flow-cost.md` 定义的 inline quick；通过后调用 `feai workflow batch complete ... --apply --json` 统一更新 plan、summary 和 ledger
+6. M/L 最终批再运行一次独立只读 review；S 仅在用户要求或风险升级时运行 full review
 7. 命中早停（G4：重复同一失败假设且无新证据 / 缺少外部事实无法继续复现）时 Stop-and-Ask 或转诊断分支；仓库内仍有安全证据时继续调查
 8. 进入下一批
 
 ### 阶段三：验证（Verification）
 
-1. 运行全量测试套件
+1. 按风险运行相关测试；共享工具、关键路径或影响不确定时扩展到包级/全量测试
 2. 类型检查 + lint 检查
 3. 必要时调用 `verification-before-completion` skill 做完整收尾验证
 4. 将真实执行过的验证命令整理到 `.workflow/runtime/verification-ledger.md`（按需）
@@ -94,10 +93,10 @@ model: glm-5.2-ioa
 
 ## M / L 级需求升级提示
 
-当判定需求为 L 级时，必须切换到多 Agent 模式；M 级默认继续单 Agent，只有命中团队协作条件或用户明确要求时才切换：
+当判定需求为 M 级或 L 级时，应提示用户切换到多 Agent 模式：
 
-> 📊 需求规模判定为 **L 级**。
-> 根据 `.workflow/project.yaml` 工作流策略，L 级需求使用多 Agent 模式（leader + planner + developer + reviewer）。
+> 📊 需求规模判定为 **{M/L} 级**。
+> 根据 `.workflow/project.yaml` 工作流策略，M/L 级需求建议使用多 Agent 模式（leader + planner + developer + reviewer）。
 > 请确认是否切换：
 >
 > 1. 切换到多 Agent 模式（推荐，符合工作流定义）
@@ -120,7 +119,7 @@ model: glm-5.2-ioa
 | # | 检查项 |
 |---|--------|
 | 1 | 已按优先级加载初始化文件 |
-| 2 | M/L 级 brainstorming（如适用）与 writing-plans skill 已真实调用（G12） |
+| 2 | brainstorming / writing-plans skill 已真实调用（G12） |
 | 3 | plan.md 含有效任务列表（G3） |
 | 4 | 每个任务都有对应的测试（如适用） |
 | 5 | 所有测试 / 类型检查 / lint 通过 |

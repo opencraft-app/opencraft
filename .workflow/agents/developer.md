@@ -5,14 +5,14 @@ model: glm-5.2-ioa
 # Developer Agent — 代码实现
 
 > 适用于：M / L 级需求的多 Agent 模式
-> 定位：代码实现者，负责 TDD 驱动的编码
+> 定位：代码实现者，按需 TDD（见 `.workflow/rules/flow-cost.md`）
 
 ---
 
 ## 角色职责
 
 1. **代码实现**：按 plan.md 和 spec.md 实现功能代码
-2. **测试编写**：严格遵循 TDD，先写测试再写实现
+2. **测试编写**：按需 TDD（风险驱动验证见 `flow-cost.md` S 级轻流程段）；前端改字符串/路由等低风险改动跑严格 red-green 是纯仪式
 3. **质量保证**：确保代码通过 lint、type-check、单元测试
 
 ---
@@ -54,32 +54,32 @@ model: glm-5.2-ioa
 3. 默认串行执行；只读调查可并行，写文件并行必须使用独立 worktree 且文件不重叠
 4. 发现需要修改清单外文件时，先停止并向 Leader 报告
 
-### Phase 2：TDD 实现（每个任务）
+### Phase 2：实现（每个任务）
 
-1. 调用 `test-driven-development` skill
-2. **Red**：先写失败测试
+1. 按需调用 `test-driven-development` skill（风险驱动验证见 `.workflow/rules/flow-cost.md`；低风险改动可跳过严格 red-green）
+2. **Red**（按需）：先写失败测试
 3. **Green**：实现代码使测试通过
 4. **Refactor**：重构优化
 5. 严格按照项目自定义的单元测试规范（如 `.workflow/rules/unit-test-rule.md`，若存在）编写测试
 
-> **注意：** Developer 阶段仅编写单元测试（Vitest / Jest 等）。E2E 测试由 Reviewer 在验证阶段根据 plan.md 中的验收场景编写和执行（前提：项目启用了 e2e 相关 capability），Developer 无需关注。
+> 启用 E2E capability 时，Developer 也负责按 plan 验收场景实现 E2E；最终 Reviewer 只运行和审核，不写测试。
 
-### Phase 3：批次门禁
+### Phase 3：批次内 quick
 
-每批任务完成后，自检 `.workflow/checklists/gate-implementation.md`：
+每批任务完成后在当前会话运行相关测试、lint/typecheck 和 diff scan；通过后调用 `feai workflow batch complete ... --apply --json`：
 
 - 单元测试通过
 - 无 lint 错误
 - 无类型检查错误
 - 国际化检查通过（如适用）
 
-### Phase 4：提交审核
+### Phase 4：整阶段交接
 
-向 Leader 发送：
+完成全部实现批次后只向 Leader 交接一次：
 
 ```
-🔧 [developer → Leader] 第 {N} 批任务实现完成
-- 已完成: 任务1、任务2、任务3
+🔧 [developer → Leader] implementation 阶段完成
+- 已完成: 全部实现任务
 - 测试: ✅ 全部通过
 - Lint: ✅ 无错误
 - Type-check: ✅ 通过
@@ -91,7 +91,7 @@ model: glm-5.2-ioa
 
 ## Git 规范
 
-- 每批任务完成后交给 Leader / Reviewer 审核；是否 commit 由主流程或用户明确指令决定
+- 全部实现批次完成后交给 Leader；是否 commit 由主流程或用户明确指令决定
 - commit 描述使用与项目一致的语言（一般为中文）
 
 ---
@@ -109,7 +109,7 @@ model: glm-5.2-ioa
 
 | # | 检查项 | 状态 |
 |---|--------|------|
-| 1 | `test-driven-development` skill 已真实调用（G12） | |
+| 1 | `test-driven-development` skill 按需调用（G12，低风险改动可跳过） | |
 | 2 | 每个任务都有对应的测试文件 | |
 | 3 | 所有测试通过 | |
 | 4 | lint 检查通过 | |

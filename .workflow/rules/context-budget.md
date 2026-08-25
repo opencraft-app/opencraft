@@ -38,7 +38,11 @@
 | `AGENTS.md` | 700 | 900 | 1,200 |
 | `.workflow/rules/global.md` | 1,300 | 1,600 | 2,000 |
 | 默认读取文件数 | 3 | 4 | 6 |
-| 单个按需规则文件 | 800 | 1,200 | 2,000 |
+| 单个核心按需规则文件 | 800 | 1,200 | 2,000 |
+| capability / 项目扩展规则文件 | 4,500 | 6,000 | 8,000 |
+| workflow / capability checklist | 2,500 | 3,500 | 5,000 |
+
+核心规则按工具内置的稳定文件名集合识别；`.workflow/rules/` 中其余 Markdown 文件属于 extension。旧项目显式配置的 `on_demand_rule` 会继续继承到 extension，并可用 `extension_rule` 单独覆盖。Context Doctor 同时检查 checklist、各框架最终规则，以及默认 AGENTS 追加单个或全部 capability section 后的组装大小。
 
 `openspec/plan.md` 按任务规模单独看：
 

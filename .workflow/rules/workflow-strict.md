@@ -21,7 +21,7 @@
 
 ## 每批与停机
 
-- 每完成一批任务（`/feai-review` 结论后）刷新 `.workflow/runtime/current-task.summary.md` 的 Active Slice 与 Freshness（G27 / `context-recovery.md`）。
+- 每批 inline quick 通过后用 `feai workflow batch complete` 统一刷新 plan、summary 与 ledger（G27 / `context-recovery.md`）。
 - 命中 G4 早停条件（含"无法本地复现且历史提交无明确复现路径"）立即停机询问或转诊断分支，不扩大搜索面。
 
 ## 验收确认点

@@ -26,7 +26,7 @@ S 级默认 `--light`，不因业务 bug 自动升级或新增 `docs/`；仅用�
 ## 推荐时机
 
 ```text
-最后一批 /feai-review 通过（plan.md 全 [x]）
+plan.md 全 [x]，且 M/L 最终 `/feai-review --final` 已通过（S 为 inline quick 已通过）
         ↓
 输出验收摘要，等待用户确认
         ↓
@@ -68,7 +68,7 @@ feai archive preflight --json
 - 当前 CLI ≥ `0.45.0`，且同一 wrapper 支持 archive/report
 - `projectRoot` / `<base>` 解析
 - 当前分支与 `change-name`
-- plan 任务完成、跳过、待完成数
+- plan完成度；M/L 评审须新鲜通过
 - `git status --short`
 - 是否存在旧版 `current_state.md` 会话态
 
@@ -152,8 +152,10 @@ render 直接消费 runtime investigation、deviations 和 ledger，不回读聊
 payload、用量审计、诊断降级、自检和异步上报必须由单一 pipeline 完成，不允许拆成多轮试探，不允许手写 JSON 或自行拼 jq 模板：
 
 ```bash
-feai report archive-pipeline --project <base> --change-name <change-name> --score <score> [--feedback "<feedback>"] --submit --json
+feai report archive-pipeline --project <projectRoot> --change-name <change-name> --score <score> [--feedback "<feedback>"] --submit --json
 ```
+
+`<projectRoot>` 必须是项目根目录绝对路径，不是 Git base 分支名；CLI 会校验其与仓库配置的真实项目根完全一致。`ok` 表示评分 payload/归档流程成功；token 是否真实统计必须读取 `tokenReported` 与 `usageStatus`。`usageStatus=unavailable` 时评分仍可提交，但不得表述为 token 已上报。
 
 仅当 pipeline 返回的 `audit.reason` / `validation.errors` 无法解释时，才单独运行 `feai report doctor --verbose`。`localUsageAudit=null` 是已定义降级结果，不触发重复修复 usage-context 或重复审计。
 

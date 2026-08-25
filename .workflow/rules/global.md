@@ -40,7 +40,7 @@ Planning、Implementation、Verification、Archive 完成后对照 `.workflow/ch
 
 ## G11：角色不越权
 
-多 Agent 模式只使用 `.workflow/agents/` 中定义的角色。Leader 负责调度与审核，禁止直接实现业务代码；各角色必须串行交接。多人 / 并行边界见 `.workflow/rules/team-state.md`。
+多 Agent 模式只使用 `.workflow/agents/` 中定义的角色。Leader 负责调度与审核，禁止直接实现业务代码（inline 委托形状除外，见 `.workflow/rules/flow-cost.md` 委托形状段）；各角色必须串行交接。多人 / 并行边界见 `.workflow/rules/team-state.md`。
 
 ## G12：Skill 调用真实发生
 
@@ -56,6 +56,8 @@ Planning、Implementation、Verification、Archive 完成后对照 `.workflow/ch
 
 提交、MR、CR 相关文案按 `.workflow/rules/quality.md` 与 `ai-usage-tracking` skill 执行。沟通保持简明透明，需要用户决策时提供 2-3 个可行方案。
 
+commit message 优先遵循项目自身的提交规范（`commit-msg` hook / `CONTRIBUTING.md` / `commitlint` 配置等定义的格式）；项目无明确规范时，默认使用 Conventional Commits 格式（`type(scope): [FE-AI] 简要描述`，type 限 feat / fix / docs / style / refactor / test / chore / perf / build / ci），描述语言跟随项目惯例。禁止用 feai 默认格式覆盖项目已有规范。
+
 ## G15：外部系统边界
 
 TAPD、工蜂、CI、发布等外部系统动作只在配置齐全且用户意图明确时执行；缺少配置或权限时停止并说明，不得伪造完成状态。
@@ -66,7 +68,7 @@ TAPD、工蜂、CI、发布等外部系统动作只在配置齐全且用户意�
 
 ## G17：Leader 禁止直写代码
 
-多 Agent / L 级需求中，Leader 只负责调度、审核和决策收敛；禁止直接创建或修改组件、hooks、页面、样式等业务代码。
+多 Agent / L 级需求中，Leader 只负责调度、审核和决策收敛；禁止直接创建或修改组件、hooks、页面、样式等业务代码。inline 委托形状（探索型 / 需中途交互 / S 级短任务）除外，见 `.workflow/rules/flow-cost.md` 委托形状段。
 
 ## G18：严格流程启动拦截
 
