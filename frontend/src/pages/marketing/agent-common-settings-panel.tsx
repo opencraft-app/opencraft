@@ -162,6 +162,10 @@ export function AgentCommonSettingsPanel({
     setPendingResetGroup(null);
     setResettingGroup(null);
     setFeedback(emptyFeedback());
+    if (botStatus !== "running") {
+      setLoading(false);
+      return;
+    }
     try {
       const next = await loadSettings(bots, botId);
       if (requestIdRef.current !== requestId) return;
@@ -173,7 +177,7 @@ export function AgentCommonSettingsPanel({
     } finally {
       if (requestIdRef.current === requestId) setLoading(false);
     }
-  }, [botId, bots, loadSettings]);
+  }, [botId, botStatus, bots, loadSettings]);
 
   useEffect(() => {
     void refresh();
@@ -352,15 +356,15 @@ export function AgentCommonSettingsPanel({
   return (
     <section className="min-w-0">
       <AgentSectionHeader title={t("高级设置")} description={null} />
-      {agentStopped && <p className="mt-5 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Agent 未运行，启动后才能修改设置。")}</p>}
-      {loading && <div className="flex items-center justify-center py-16 text-sm text-black/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("正在读取当前配置…")}</div>}
-      {!loading && loadError && (
+      {agentStopped && <p className="mt-5 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Agent 未运行，启动后才能查看和修改设置。")}</p>}
+      {!agentStopped && loading && <div className="flex items-center justify-center py-16 text-sm text-black/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("正在读取当前配置…")}</div>}
+      {!agentStopped && !loading && loadError && (
         <div className="mt-6 border-y border-black/[0.08] py-10 text-center">
           <p role="alert" className="text-sm text-red-600">{t("读取配置失败：{{detail}}", { detail: loadError })}</p>
           <button type="button" onClick={() => void refresh()} className="mt-4 inline-flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm hover:bg-black/[0.03]"><RefreshCw className="h-4 w-4" />{t("重试")}</button>
         </div>
       )}
-      {!loading && snapshot && (
+      {!agentStopped && !loading && snapshot && (
         <div className="mt-8 flex flex-col gap-10">
           {settingGroups.map((group, groupIndex) => {
             const groupAlreadyDefault = getHermesCommonSettingKeysForGroup(group.id)

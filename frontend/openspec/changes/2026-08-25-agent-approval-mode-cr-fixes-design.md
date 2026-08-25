@@ -60,6 +60,12 @@ Python reader 遇到 `approvals.mode` 非 `smart | manual | off` 时，将 `appr
 
 曾考虑只在国际站开放审批模式一项，或复制一套国际站面板。前者会让同一路由在两站产生不一致的信息架构，后者会引入重复状态和后续漂移，因此均不采用。
 
+### Agent 暂停态
+
+Hermes 配置读取依赖运行中实例的 debug command。Agent 未运行时，统一刷新入口只清空旧快照和交互状态，不下发读取命令，也不展示原始 `DEBUG_NOT_SUPPORTED` 错误；页面改为提示“Agent 未运行，启动后才能查看和修改设置。”。当状态恢复为 `running` 时，`botStatus` 依赖变化会触发同一刷新入口并正常加载配置。
+
+该保护由国内站与国际站共用，不增加错误码字符串匹配，也不吞掉运行态下的真实读取错误。
+
 ## 测试
 
 - reader：未知审批模式返回正常快照，且仅 `approvalMode` 在 `unsupportedKeys`。
@@ -69,6 +75,7 @@ Python reader 遇到 `approvals.mode` 非 `smart | manual | off` 时，将 `appr
 - panel：安全分组、审批模式设置项与关闭审批弹窗正文均展示「高风险操作」新说明，三句旧说明不再出现。
 - region boundary：国内站与国际站都生成并解析 `settings` 路由；国际站继续生成其既有区域页面。
 - navigation：国际站左侧「管理」分组展示本地化后的高级设置入口，点击目标仍为 `/agents/settings`。
+- paused state：Agent 未运行时不调用配置读取、不展示错误和重试；恢复运行后自动读取并启用表单。
 - 运行审批模式焦点测试、i18n、类型检查、双区域构建和 diff 检查。
 
 ## 非目标

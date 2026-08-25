@@ -391,3 +391,21 @@
 - [x] **Step 6: 展示增量提交范围并等待确认。**
 
   提交信息建议：`开放国际站高级设置 / feat(frontend): expose advanced settings globally`。确认前不提交、不推送；确认后更新现有 MR !3309，不创建重复 MR。
+
+### Task 7: Agent 暂停时延迟读取高级设置
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-common-settings-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-common-settings-panel.tsx`
+- Generated: `frontend/src/i18n/generated/{en-US,id-ID,zh-CN,zh-Hant,zh-to-key}.json`
+
+**Acceptance:**
+- Agent 未运行时不调用 Hermes 配置读取命令，不展示加载态、错误详情、重试按钮或旧配置。
+- 暂停态明确提示“Agent 未运行，启动后才能查看和修改设置。”。
+- Agent 恢复运行后自动读取配置，并恢复可操作的高级设置表单。
+- 国内站与国际站复用同一状态逻辑，不新增区域专用行为。
+
+- [x] **Step 1: 将暂停态用例改为读取延迟回归，并确认旧实现 RED。**
+- [x] **Step 2: 在刷新和同步渲染入口增加运行态保护，更新提示文案并确认 GREEN。**
+- [x] **Step 3: 更新四语字典，运行 panel、区域边界、i18n、类型和双区域构建门禁。**
+- [x] **Step 4: 展示最终范围和验证结果，等待用户确认后更新 MR !3318。**
