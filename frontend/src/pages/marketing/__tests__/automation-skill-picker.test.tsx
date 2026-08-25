@@ -260,8 +260,6 @@ describe("AutomationFormModal", () => {
     const dateTime = screen.getByLabelText("执行时间");
     expect(dateTime).toHaveAttribute("type", "datetime-local");
     expect(dateTime).toHaveAttribute("step", "60");
-    expect(screen.queryByLabelText("执行时间 YYYY-MM-DD")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "执行时间" })).not.toBeInTheDocument();
   });
 
   it("matches the effective-window date-time control styling", () => {

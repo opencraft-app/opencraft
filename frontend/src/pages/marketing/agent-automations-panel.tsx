@@ -4388,10 +4388,10 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
       type="datetime-local"
       step={60}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(e) => onChange(e.target.value)}
       aria-label={t("执行时间")}
       style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-      className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm tabular-nums focus:border-black/30 focus:outline-none"
+      className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
     />
   );
 }

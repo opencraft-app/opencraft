@@ -1,9 +1,3 @@
-# 自动任务单次日期时间选择器一致性 S 级计划
-
-- [x] 单次执行保留现有 `YYYY-MM-DDTHH:mm` 数据协议，复用“生效时间段”的一体式日期时间控件样式，显式使用分钟粒度，并补充回归测试、类型检查和桌面端视觉验证。
-
----
-
 # MR !3248 CR 国际化补强 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
