@@ -42,7 +42,7 @@ type PlaintextTestAction =
   | Exclude<HermesModelConfigAction, Extract<HermesModelConfigAction, { type: "probe" | "connectivityProbe" | "add" }>>
   | { type: "probe"; apiKey: string; baseUrl: string; apiMode?: string }
   | { type: "connectivityProbe"; apiKey: string; model: typeof model; strategy?: "model_list" | "model_request" }
-  | { type: "add"; apiKey: string; model: typeof model; purpose: "primary" | "fallback" | "idle" };
+  | { type: "add"; apiKey: string; model: typeof model; purpose: "primary" | "fallback" | "idle"; discoverModels?: boolean };
 
 function response(payload: unknown): string {
   return ["transport diagnostic", HERMES_MODEL_CONFIG_JSON_START, JSON.stringify(payload), HERMES_MODEL_CONFIG_JSON_END].join("\n");
@@ -290,7 +290,13 @@ function runHelper(
         ? { type: "probe", credentialEnvelope, baseUrl: inputAction.baseUrl, apiMode: inputAction.apiMode }
         : inputAction.type === "connectivityProbe"
           ? { type: "connectivityProbe", credentialEnvelope, model: inputAction.model, strategy: inputAction.strategy }
-          : { type: "add", credentialEnvelope, model: inputAction.model, purpose: inputAction.purpose };
+          : {
+              type: "add",
+              credentialEnvelope,
+              model: inputAction.model,
+              purpose: inputAction.purpose,
+              discoverModels: inputAction.discoverModels,
+            };
     }
     const command = buildHermesModelConfigCommand(remoteAction);
     const result = spawnSync(command, {
@@ -553,19 +559,150 @@ describe("Hermes model configuration client", () => {
     expect(error).toContain("Model configuration command failed");
   });
 
+  it("projects runtime, saved, legacy, historical, and default custom models without promoting provider catalogs", () => {
+    const historyModel = {
+      ...configuredModel,
+      id: "history-model",
+      providerKey: "history-provider",
+      providerName: "History Provider",
+      baseUrl: "https://history.example.com/v1",
+    };
+    const config = {
+      model: {
+        provider: "main-provider",
+        default: "main-model",
+        base_url: "https://main.example.com/v1",
+        api_mode: "chat_completions",
+      },
+      fallback_providers: [{
+        provider: "fallback-provider",
+        model: "fallback-model",
+        base_url: "https://fallback.example.com/v1",
+      }],
+      fallback_model: {
+        provider: "legacy-fallback-provider",
+        model: "legacy-fallback-model",
+        base_url: "https://legacy-fallback.example.com/v1",
+      },
+      providers: {
+        "main-provider": {
+          name: "Main Provider",
+          base_url: "https://main.example.com/v1",
+          model: "main-model",
+          models: ["main-model", "main-catalog-only"],
+        },
+        "fallback-provider": {
+          name: "Fallback Provider",
+          base_url: "https://fallback.example.com/v1",
+          model: "fallback-model",
+          models: ["fallback-model", "fallback-catalog-only"],
+        },
+        "saved-provider": {
+          name: "Saved Provider",
+          api: "https://saved.example.com/v1",
+          default_model: "saved-model",
+          models: ["saved-model", "saved-catalog-only"],
+          key_env: "SAVED_PROVIDER_KEY",
+        },
+        custom: {
+          name: "Custom",
+          base_url: "https://custom.example.com/v1",
+          models: ["custom-catalog-only"],
+        },
+        damaged: {
+          name: "Damaged Provider",
+          base_url: "https://damaged.example.com/v1",
+          model: "damaged-model",
+          transport: "unknown_transport",
+        },
+      },
+      custom_providers: [
+        {
+          name: "Legacy Endpoint",
+          base_url: "https://legacy-endpoint.example.com/v1",
+          model: "legacy-saved-model",
+          api_mode: "openai",
+          key_env: "LEGACY_ENDPOINT_KEY",
+        },
+        { base_url: "https://missing-name.example.com/v1", model: "broken-model" },
+      ],
+      lightvela: { model_config: { configured_models: [historyModel] } },
+    };
+    config.lightvela.model_config.configured_models.push({
+      ...configuredModel,
+      id: "saved-model",
+      providerKey: "saved-provider-alias",
+      providerName: "Saved Provider Alias",
+      baseUrl: "https://saved.example.com/v1",
+    });
+
+    const result = runHelper({ type: "read" }, config);
+    const projected = parseHermesModelConfigResponse(result.output);
+
+    expect(projected.primary).toMatchObject({ providerKey: "main-provider", id: "main-model" });
+    expect(projected.fallbacks.map((item) => item.id)).toEqual([
+      "fallback-model",
+      "legacy-fallback-model",
+    ]);
+    expect(projected.configuredModels.map((item) => item.id)).toEqual([
+      "main-model",
+      "fallback-model",
+      "legacy-fallback-model",
+      "saved-model",
+      "legacy-saved-model",
+      "history-model",
+      "",
+    ]);
+    expect(projected.configuredModels).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "main-catalog-only" }),
+      expect.objectContaining({ id: "fallback-catalog-only" }),
+      expect.objectContaining({ id: "saved-catalog-only" }),
+      expect.objectContaining({ id: "custom-catalog-only" }),
+    ]));
+    expect(projected.configuredModels.find((item) => item.id === "saved-model")).toMatchObject({ canDelete: false });
+    expect(projected.configuredModels.find((item) => item.id === "history-model")).toMatchObject({ canDelete: true });
+    expect(projected.configuredModels.at(-1)).toMatchObject({
+      id: "",
+      providerKey: "custom",
+      providerName: "Custom",
+      canDelete: false,
+      requiresSetup: true,
+    });
+    expect(result.config).toEqual(config);
+    expect(result.events).toEqual([]);
+  });
+
   it("preserves existing route provider IDs and uses providerKey to disambiguate duplicate model IDs", () => {
+    const firstSaved = {
+      ...configuredModel,
+      id: "shared",
+      providerKey: "lightvela-one",
+      baseUrl: "https://one.example.com/v1",
+    };
+    const secondSaved = {
+      ...configuredModel,
+      id: "shared",
+      providerKey: "lightvela-two",
+      baseUrl: "https://two.example.com/v1",
+    };
     const config = {
       model: { provider: "openai", default: "shared", base_url: "https://api.openai.com/v1", api_mode: "chat_completions" },
       providers: { openai: { name: "OpenAI", api: "https://api.openai.com/v1", key_env: "OPENAI_API_KEY", transport: "openai_chat", models: ["shared"] } },
       lightvela: { model_config: { configured_models: [
-        { ...configuredModel, id: "shared", providerKey: "lightvela-one" },
-        { ...configuredModel, id: "shared", providerKey: "lightvela-two" },
+        firstSaved,
+        secondSaved,
       ] } },
     };
     const read = runHelper({ type: "read" }, config);
     expect(parseHermesModelConfigResponse(read.output).primary?.providerKey).toBe("openai");
 
-    const assigned = runHelper({ type: "assign", providerKey: "lightvela-two", modelId: "shared", purpose: "primary" }, config);
+    const assigned = runHelper({
+      type: "assign",
+      providerKey: "lightvela-two",
+      modelId: "shared",
+      baseUrl: secondSaved.baseUrl,
+      purpose: "primary",
+    }, config);
     expect((assigned.config.model as Record<string, unknown>).provider).toBe("lightvela-two");
   });
 
@@ -577,8 +714,16 @@ describe("Hermes model configuration client", () => {
     });
     const provider = (added.config.providers as Record<string, Record<string, unknown>>)["lightvela-deepseek"];
     expect(provider).toEqual(expect.objectContaining({
-      name: "DeepSeek", api: model.baseUrl, key_env: "KEY_lightvela_deepseek", transport: "openai_chat", models: [model.id],
+      name: "DeepSeek",
+      base_url: model.baseUrl,
+      model: model.id,
+      key_env: "KEY_lightvela_deepseek",
+      transport: "openai_chat",
+      discover_models: true,
+      models: { [model.id]: {} },
     }));
+    expect(provider).not.toHaveProperty("api");
+    expect(added.config).not.toHaveProperty("lightvela");
     expect((added.config.model as Record<string, unknown>).api_mode).not.toBe("openai");
     expect(added.config.fallback_providers).toEqual([
       expect.objectContaining({ provider: "old", model: "old-model" }),
@@ -594,6 +739,67 @@ describe("Hermes model configuration client", () => {
     expect(parseHermesModelConfigResponse(probe.output).probedModels).toEqual(["alpha", "beta"]);
     expect(probe.config).toEqual({ marker: "unchanged" });
     expect(probe.events).toEqual(["probe"]);
+
+    const catalog = runHelper({
+      type: "add",
+      apiKey,
+      model,
+      purpose: "idle",
+      discoverModels: false,
+    } as PlaintextTestAction, {});
+    const catalogProviders = catalog.config.providers as Record<string, Record<string, unknown>>;
+    const catalogEntry = catalogProviders["lightvela-deepseek"];
+    if (!catalogEntry) throw new Error("Expected lightvela-deepseek provider");
+    expect(catalogEntry.discover_models).toBe(false);
+  });
+
+  it("blocks destructive deletion of imported Hermes Providers", () => {
+    const importedConfig = {
+      providers: {
+        manual: {
+          name: "Manual Provider",
+          base_url: "https://manual.example.com/v1",
+          default_model: "manual-model",
+          models: ["manual-model"],
+          key_env: "MANUAL_PROVIDER_KEY",
+        },
+      },
+    };
+    const removed = runHelper({ type: "remove", providerKey: "manual", modelId: "manual-model" }, importedConfig, {}, {
+      MANUAL_PROVIDER_KEY: "manual-secret",
+    });
+
+    expect(() => parseHermesModelConfigResponse(removed.output)).toThrow("Model configuration operation failed");
+    expect(removed.config).toEqual(importedConfig);
+    expect(removed.credentials).toEqual({ MANUAL_PROVIDER_KEY: "manual-secret" });
+    expect(removed.events).toEqual([]);
+  });
+
+  it("does not append a fallback alias for the same runtime deployment", () => {
+    const sharedUrl = "https://shared-fallback.example.com/v1";
+    const added = runHelper({
+      type: "add",
+      apiKey,
+      model: {
+        ...model,
+        providerKey: "proxy-b",
+        providerName: "Proxy B",
+        baseUrl: sharedUrl,
+      },
+      purpose: "fallback",
+    }, {
+      providers: {
+        "proxy-a": { name: "Proxy A", base_url: sharedUrl, model: model.id, models: [model.id] },
+        "proxy-b": { name: "Proxy B", base_url: sharedUrl, model: model.id, models: [model.id] },
+      },
+      fallback_providers: [
+        { provider: "proxy-a", model: model.id, base_url: sharedUrl },
+        { provider: "proxy-b", model: model.id, base_url: sharedUrl },
+      ],
+    });
+
+    expect(added.config.fallback_providers).toHaveLength(1);
+    expect(parseHermesModelConfigResponse(added.output).fallbacks).toHaveLength(1);
   });
 
   it("normalizes an unavailable Hermes model catalog to an empty probe result", () => {
@@ -708,7 +914,7 @@ describe("Hermes model configuration client", () => {
     expect(removed.output).not.toContain("SECOND_API_KEY_ENV");
   });
 
-  it("distinguishes an inherited fallback URL from an explicitly configured URL", () => {
+  it("removes every fallback alias that resolves to the same inherited deployment", () => {
     const inheritedRoute = {
       provider: configuredModel.providerKey,
       model: configuredModel.id,
@@ -739,7 +945,7 @@ describe("Hermes model configuration client", () => {
       fallback_providers: [inheritedRoute, explicitRoute],
     });
 
-    expect(removed.config.fallback_providers).toEqual([explicitRoute]);
+    expect(removed.config).not.toHaveProperty("fallback_providers");
   });
 
   it("deduplicates legacy fallback routes by normalized route identity", () => {
@@ -798,6 +1004,35 @@ describe("Hermes model configuration client", () => {
     expect(blocked.events).toEqual([]);
     expect(blocked.credentials).toEqual({});
     expect(blocked.config).toEqual({});
+  });
+
+  it("fails closed before legacy models are normalized on pre-provider-schema Hermes runtimes", () => {
+    const legacyConfig = {
+      fallback_model: {
+        provider: configuredModel.providerKey,
+        model: configuredModel.id,
+        base_url: configuredModel.baseUrl,
+      },
+      lightvela: { model_config: { configured_models: [configuredModel] } },
+    };
+    const assigned = runHelper({
+      type: "assign",
+      providerKey: configuredModel.providerKey,
+      modelId: configuredModel.id,
+      purpose: "primary",
+    }, legacyConfig, {}, {}, true, false);
+    expect(() => parseHermesModelConfigResponse(assigned.output)).toThrow("Model configuration operation failed");
+    expect(assigned.events).toEqual([]);
+    expect(assigned.config).toEqual(legacyConfig);
+
+    const detached = runHelper({
+      type: "removeFallback",
+      providerKey: configuredModel.providerKey,
+      modelId: configuredModel.id,
+    }, legacyConfig, {}, {}, true, false);
+    expect(() => parseHermesModelConfigResponse(detached.output)).toThrow("Model configuration operation failed");
+    expect(detached.events).toEqual([]);
+    expect(detached.config).toEqual(legacyConfig);
   });
 
   it("rejects role conflicts before saving credentials and saves config before removing an unused credential", () => {
@@ -908,16 +1143,17 @@ describe("Hermes model configuration client", () => {
     const provider = (added.config.providers as Record<string, Record<string, unknown>>)["lightvela-deepseek"];
     expect(provider).toMatchObject({
       name: model.providerName,
-      api: model.baseUrl,
+      base_url: model.baseUrl,
+      model: model.id,
       key_env: "KEY_lightvela_deepseek",
       transport: "openai_chat",
+      discover_models: true,
       extra_headers: existingProvider.extra_headers,
       ssl_verify: false,
       request_overrides: existingProvider.request_overrides,
       models: { retained: existingProvider.models.retained, [model.id]: {} },
     });
     expect(provider).not.toHaveProperty("display_name");
-    expect(provider).not.toHaveProperty("base_url");
     expect(provider).not.toHaveProperty("url");
     expect(provider).not.toHaveProperty("api_mode");
     expect(provider).not.toHaveProperty("api_key");
@@ -975,7 +1211,7 @@ describe("Hermes model configuration client", () => {
     expect(parseHermesModelConfigResponse(idleFallback.output).fallbacks).toEqual([]);
   });
 
-  it("persists imported route models when they are first assigned or detached", () => {
+  it("normalizes imported route models when assigned or detached and blocks destructive deletion", () => {
     const imported = {
       id: "imported-backup",
       providerKey: "existing-provider",
@@ -1018,8 +1254,12 @@ describe("Hermes model configuration client", () => {
     expect(assignedSnapshot.fallbacks).toEqual([
       expect.objectContaining({ providerKey: "second-provider", id: "second-backup" }),
     ]);
-    expect((((assigned.config.lightvela as Record<string, unknown>).model_config as Record<string, unknown>).configured_models as unknown[]))
-      .toContainEqual(expect.objectContaining({ providerKey: imported.providerKey, id: imported.id }));
+    expect((assigned.config.providers as Record<string, Record<string, unknown>>)[imported.providerKey]).toMatchObject({
+      model: imported.id,
+      base_url: imported.baseUrl,
+      key_env: imported.keyEnv,
+    });
+    expect(assigned.config).not.toHaveProperty("lightvela");
 
     const detached = runHelper({
       type: "removeFallback",
@@ -1034,14 +1274,99 @@ describe("Hermes model configuration client", () => {
       providerKey: imported.providerKey,
       id: imported.id,
     }));
+    expect((detached.config.providers as Record<string, Record<string, unknown>>)[imported.providerKey]).toMatchObject({
+      model: imported.id,
+      base_url: imported.baseUrl,
+      key_env: imported.keyEnv,
+    });
+    expect(detached.config).not.toHaveProperty("lightvela");
 
     const removed = runHelper({
       type: "remove",
       providerKey: imported.providerKey,
       modelId: imported.id,
     }, config);
-    expect(parseHermesModelConfigResponse(removed.output).fallbacks).toEqual([
-      expect.objectContaining({ providerKey: "second-provider", id: "second-backup" }),
+    expect(() => parseHermesModelConfigResponse(removed.output)).toThrow("Model configuration operation failed");
+    expect(removed.config).toEqual(config);
+  });
+
+  it("migrates only the assigned LightVela history model into the Hermes provider schema", () => {
+    const selected = {
+      ...configuredModel,
+      id: "selected-history",
+      providerKey: "history-selected",
+      providerName: "Selected History",
+      baseUrl: "https://selected-history.example.com/v1",
+      keyEnv: "SELECTED_HISTORY_KEY",
+    };
+    const retained = {
+      ...configuredModel,
+      id: "retained-history",
+      providerKey: "history-retained",
+      providerName: "Retained History",
+      baseUrl: "https://retained-history.example.com/v1",
+      keyEnv: "RETAINED_HISTORY_KEY",
+    };
+    const assigned = runHelper({
+      type: "assign",
+      providerKey: selected.providerKey,
+      modelId: selected.id,
+      baseUrl: selected.baseUrl,
+      purpose: "fallback",
+    }, {
+      providers: {
+        [selected.providerKey]: {
+          name: "Old Selected History",
+          base_url: selected.baseUrl,
+          default_model: "old-default-model",
+          models: ["old-default-model"],
+        },
+      },
+      lightvela: { model_config: { configured_models: [selected, retained] } },
+    });
+
+    expect((assigned.config.providers as Record<string, Record<string, unknown>>)[selected.providerKey]).toMatchObject({
+      name: selected.providerName,
+      base_url: selected.baseUrl,
+      model: selected.id,
+      key_env: selected.keyEnv,
+      models: expect.objectContaining({ [selected.id]: {} }),
+    });
+    expect((assigned.config.providers as Record<string, Record<string, unknown>>)[selected.providerKey]).not.toHaveProperty("default_model");
+    expect(assigned.config.fallback_providers).toEqual([
+      expect.objectContaining({ provider: selected.providerKey, model: selected.id }),
     ]);
+    expect((((assigned.config.lightvela as Record<string, unknown>).model_config as Record<string, unknown>).configured_models as unknown[]))
+      .toEqual([retained]);
+  });
+
+  it("migrates a selected legacy custom Provider without leaving a duplicate source", () => {
+    const legacyEntry = {
+      name: "Legacy Endpoint",
+      base_url: "https://legacy-endpoint.example.com/v1",
+      model: "legacy-model",
+      key_env: "LEGACY_ENDPOINT_KEY",
+      api_mode: "openai",
+      models: { "legacy-model": { context_length: 64_000 } },
+    };
+    const assigned = runHelper({
+      type: "assign",
+      providerKey: "legacy-endpoint",
+      modelId: "legacy-model",
+      baseUrl: legacyEntry.base_url,
+      purpose: "primary",
+    }, { custom_providers: [legacyEntry] });
+
+    expect(assigned.config.custom_providers).toEqual([]);
+    expect((assigned.config.providers as Record<string, Record<string, unknown>>)["legacy-endpoint"]).toMatchObject({
+      name: legacyEntry.name,
+      base_url: legacyEntry.base_url,
+      model: legacyEntry.model,
+      key_env: legacyEntry.key_env,
+    });
+    expect((assigned.config.model as Record<string, unknown>)).toMatchObject({
+      provider: "legacy-endpoint",
+      default: legacyEntry.model,
+    });
   });
 });

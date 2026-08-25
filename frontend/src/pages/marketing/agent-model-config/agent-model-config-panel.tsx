@@ -4,6 +4,7 @@ import {
   Activity,
   Check,
   CheckCircle2,
+  CircleHelp,
   Eye,
   EyeOff,
   Loader2,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -94,7 +96,7 @@ function sameModel(
 }
 
 function displayConfiguredModelId(modelId: string) {
-  return ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? "Auto" : modelId;
+  return !modelId.trim() || ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? "Auto" : modelId;
 }
 
 function displayError(message: string, localizedFallback: string) {
@@ -204,6 +206,12 @@ export function AgentModelConfigPanel({
   const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
+  const pageHeader = (
+    <AgentSectionHeader
+      title={t("模型")}
+      description={t("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")}
+    />
+  );
 
   useEffect(() => {
     if (previousProviderFingerprintRef.current === providerFingerprint) return;
@@ -272,6 +280,7 @@ export function AgentModelConfigPanel({
       apiKey: apiKey.trim(),
       model: selectedModel,
       purpose,
+      discoverModels: category === "custom" || activeProvider?.discoveryStrategy !== "catalog",
     });
     if (!nextSnapshot) return;
     setApiKey("");
@@ -305,23 +314,33 @@ export function AgentModelConfigPanel({
     providerTriggerRef.current?.focus();
   };
 
-  if (controller.loading && !controller.snapshot) return <ModelConfigLoading />;
+  if (controller.loading && !controller.snapshot) {
+    return (
+      <div className="space-y-5 pb-12 md:pb-16">
+        {pageHeader}
+        <ModelConfigLoading />
+      </div>
+    );
+  }
 
   if (controller.loadError && !controller.snapshot) {
     return (
-      <div className="rounded-md border border-red-100 bg-red-50 px-5 py-5 text-sm text-red-700" role="alert">
-        <p className="font-medium">{t("读取模型配置失败")}</p>
-        <p className="mt-1 text-pretty text-red-600/80">{displayError(controller.loadError, t("模型配置操作失败，请重试。"))}</p>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="mt-4 rounded-md"
-          onClick={() => void controller.reload()}
-        >
-          <RefreshCw className="size-3.5" aria-hidden="true" />
-          {t("重试")}
-        </Button>
+      <div className="space-y-5 pb-12 md:pb-16">
+        {pageHeader}
+        <div className="rounded-md border border-red-100 bg-red-50 px-5 py-5 text-sm text-red-700" role="alert">
+          <p className="font-medium">{t("读取模型配置失败")}</p>
+          <p className="mt-1 text-pretty text-red-600/80">{displayError(controller.loadError, t("模型配置操作失败，请重试。"))}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="mt-4 rounded-md"
+            onClick={() => void controller.reload()}
+          >
+            <RefreshCw className="size-3.5" aria-hidden="true" />
+            {t("重试")}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -330,15 +349,16 @@ export function AgentModelConfigPanel({
 
   return (
     <div className="space-y-5 pb-12 md:pb-16" aria-busy={busy || controller.loading}>
+      {pageHeader}
       <section className="overflow-hidden rounded-md border border-black/[0.06] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
         <div className="flex items-start justify-between gap-4 border-b border-black/[0.06] px-5 py-4">
-          <div>
+          <div className="flex items-center gap-1.5">
             <h2 ref={configuredHeadingRef} tabIndex={-1} className="text-base font-semibold text-black/85 focus:outline-none">
               {t("已配置模型")}
             </h2>
-            <p className="mt-1 text-pretty text-sm text-black/45">
-              {t("选择一个主模型，并可设置多个备用模型。配置将在新会话中生效。")}
-            </p>
+            <ModelActionTooltip content={t("选择一个主模型，并可设置多个备用模型。")}>
+              <CircleHelp className="size-3.5 text-black/35" aria-hidden="true" />
+            </ModelActionTooltip>
           </div>
           <span className="shrink-0 text-xs font-medium text-black/35">
             {t("共 {{count}} 个", { count: snapshot.configuredModels.length })}
@@ -367,6 +387,8 @@ export function AgentModelConfigPanel({
             {snapshot.configuredModels.map((model) => {
               const primary = sameModel(snapshot.primary, model);
               const fallback = snapshot.fallbacks.some((candidate) => sameModel(candidate, model));
+              const requiresSetup = model.requiresSetup === true;
+              const canDelete = model.canDelete !== false;
               const role = primary ? "primary" : fallback ? "fallback" : "idle";
               return (
                 <li
@@ -384,26 +406,26 @@ export function AgentModelConfigPanel({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <ModelActionTooltip content={primary ? t("当前模型已经是主模型") : undefined}>
+                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("当前模型已经是主模型") : undefined}>
                       <Button
                         type="button"
                         size="sm"
                         variant={primary ? "secondary" : "outline"}
                         className="rounded-md"
-                        disabled={busy || primary}
+                        disabled={busy || primary || requiresSetup}
                         onClick={() => void controller.assign(model, "primary")}
                       >
                         <Check className="size-3.5" aria-hidden="true" />
                         {t("设为主模型")}
                       </Button>
                     </ModelActionTooltip>
-                    <ModelActionTooltip content={primary ? t("主模型不能同时设为备用模型") : undefined}>
+                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("主模型不能同时设为备用模型") : undefined}>
                       <Button
                         type="button"
                         size="sm"
                         variant={fallback ? "secondary" : "outline"}
                         className="rounded-md"
-                        disabled={busy || primary}
+                        disabled={busy || primary || requiresSetup}
                         onClick={() => void (fallback
                           ? controller.removeFallback(model)
                           : controller.assign(model, "fallback"))}
@@ -411,13 +433,13 @@ export function AgentModelConfigPanel({
                         {fallback ? t("取消备用") : t("设为备用模型")}
                       </Button>
                     </ModelActionTooltip>
-                    <ModelActionTooltip content={primary ? t("请先切换主模型后再删除") : undefined}>
+                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("请先切换主模型后再删除") : !canDelete ? t("请在 Hermes 中管理此模型") : undefined}>
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
                         className="rounded-md"
-                        disabled={busy || primary}
+                        disabled={busy || primary || requiresSetup || !canDelete}
                         onClick={() => {
                           controller.clearOperationError();
                           setDeleteTarget(model);

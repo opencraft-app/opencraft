@@ -54,8 +54,12 @@ function parseModel(value: unknown, field: string): HermesConfiguredModel {
   if (!isRecord(value)) {
     throw new HermesModelConfigResponseError("invalid_response", `${field} must be an object`);
   }
+  if (value.requiresSetup !== undefined && typeof value.requiresSetup !== "boolean") {
+    throw new HermesModelConfigResponseError("invalid_response", `${field}.requiresSetup must be a boolean`);
+  }
+  const requiresSetup = value.requiresSetup === true;
   const model: HermesConfiguredModel = {
-    id: readText(value.id, `${field}.id`),
+    id: readText(value.id, `${field}.id`, !requiresSetup),
     providerKey: readText(value.providerKey, `${field}.providerKey`),
     providerName: readText(value.providerName, `${field}.providerName`),
     baseUrl: readText(value.baseUrl, `${field}.baseUrl`, false),
@@ -65,6 +69,13 @@ function parseModel(value: unknown, field: string): HermesConfiguredModel {
   if (value.routeBaseUrl !== undefined) {
     model.routeBaseUrl = readText(value.routeBaseUrl, `${field}.routeBaseUrl`, false);
   }
+  if (value.canDelete !== undefined) {
+    if (typeof value.canDelete !== "boolean") {
+      throw new HermesModelConfigResponseError("invalid_response", `${field}.canDelete must be a boolean`);
+    }
+    model.canDelete = value.canDelete;
+  }
+  if (value.requiresSetup !== undefined) model.requiresSetup = value.requiresSetup;
   return model;
 }
 
@@ -283,9 +294,9 @@ export function createHermesModelConfigClient(execDebugCommand: HermesModelConfi
         throw new HermesModelConfigResponseError("command_failed", "Model configuration command failed");
       }
     },
-    add: (input: { apiKey: string; model: HermesConfiguredModel; purpose: "primary" | "fallback" | "idle" }) => (
+    add: (input: { apiKey: string; model: HermesConfiguredModel; purpose: "primary" | "fallback" | "idle"; discoverModels?: boolean }) => (
       executeWithCredential(input.apiKey, (credentialEnvelope) => ({
-        type: "add", credentialEnvelope, model: input.model, purpose: input.purpose,
+        type: "add", credentialEnvelope, model: input.model, purpose: input.purpose, discoverModels: input.discoverModels,
       }))
     ),
     assign: (input: Omit<Extract<HermesModelConfigAction, { type: "assign" }>, "type">) => execute({ type: "assign", ...input }),

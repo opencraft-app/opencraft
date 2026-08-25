@@ -670,6 +670,110 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 
 ---
 
+# 模型配置多源兼容读取与 Hermes 归一化写入 Implementation Plan
+
+**Status:** 多源归一化与页面标题增量均已实现并验证，等待用户验收。尚未提交或推送。
+
+**Size:** M。改动集中在模型配置域，但同时影响多源读取投影、主备角色识别、历史记录迁移、删除清理与 Hermes 配置写入契约，需要分批验证。
+
+**Goal:** 已配置模型列表完整展示运行中的主模型、备用模型、仅保存模型、有效历史模型和默认 `custom` 配置；所有新增和角色变更只写 Hermes 官方三层结构。
+
+**Architecture:** 保留内嵌 Python helper 作为 Agent 本地配置适配层，从 `model`、fallback、`providers`、legacy `custom_providers` 和 `lightvela.model_config.configured_models` 收集候选模型，再按运行部署身份统一去重。读取兼容层不写配置；新增、设主和设为备用分别归一到 `providers.<id>`、`model.provider + model.default` 与 `fallback_providers`，只在目标旧记录被迁移或删除时定向清理 LightVela 兼容数据。
+
+**Product Spec:** `wiki/prd-docs/2026-08-25-agent-model-config-normalization.md`
+
+**Scope:**
+- 读取 `model`、`fallback_providers`、legacy `fallback_model`、`providers.*.model/default_model`、legacy `custom_providers`、`lightvela.model_config.configured_models` 和默认 `custom` 配置。
+- `providers.*.models` 只补充目录信息，不把全部目录模型视为已配置模型。
+- 同一运行部署只展示一次；主模型优先于备用模型，备用模型保持原顺序，其后展示仅保存、历史和默认 `custom`。
+- 新增 Provider 按 Hermes Custom Endpoint 字段写入 `providers.<id>`，不再新增或双写 `configured_models`。
+- 历史模型首次设置主备时确保对应 `providers.<id>` 存在，再写运行槽位；删除时只清理目标模型及不再被引用的 Provider/凭据。
+- 不修改页面整体视觉、Provider 产品列表、模型探测和连通性检测协议。
+
+### Task 1: 多源读取与统一投影
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/model-config-client.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+**Acceptance:**
+- 主模型、多个备用模型、`providers` 仅保存模型、legacy `custom_providers`、LightVela 历史模型和默认 `custom` 均进入 `configuredModels`。
+- 同一部署跨来源只保留一条，角色由 `model` 与 fallback 动态计算，备用顺序不变。
+- `providers.models` 中非当前模型不进入已配置列表。
+- 默认 `custom` 信息不完整时仍展示为待补全项，页面不允许直接设主、设为备用或删除运行配置。
+
+- [x] 先补多源矩阵、去重、目录排除和默认 `custom` 待补全测试并确认 RED。
+- [x] 实现最小候选收集、字段合并和统一投影，让定向测试 GREEN。
+
+### Task 2: 写入 Hermes 官方三层并渐进归一化
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/hermes-model-config-real-smoke.test.ts`
+
+**Acceptance:**
+- “仅添加”写入 `providers.<id>` 的 `base_url`、`model`、`models`、`key_env`、`discover_models` 和协议字段，不修改主备槽位。
+- “设为主模型”写入 `model.provider + model.default`；“设为备用模型”写入有序 `fallback_providers`，并归并 legacy `fallback_model`。
+- 新操作不创建或追加 `lightvela.model_config.configured_models`；从旧列表首次设置角色时定向迁移目标 Provider，其他旧记录保持不变。
+- 删除只清理目标旧记录、目标 Provider 模型和无引用凭据，保留 Provider 扩展字段及无关模型。
+
+- [x] 先更新新增、角色切换、迁移、删除和回滚测试并确认 RED。
+- [x] 实现官方字段写入与定向旧记录清理，让 Python helper 测试 GREEN。
+
+### Task 3: 回归验证与双站验收准备
+
+**Role:** Reviewer
+
+**Files:**
+- Modify: `frontend/openspec/plan.md`
+- Modify: `wiki/prd-docs/2026-08-25-agent-model-config-normalization.md`（仅在实现发现需要澄清时）
+
+**Acceptance:**
+- 模型配置定向 Vitest、真实 Hermes helper smoke、`pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
+- 既有探测、连通性检测、主备冲突、凭据密封、回滚和扩展字段保留测试无回归。
+- 本地页面能展示多源存量配置；外部真实 Agent 或双站预览依赖留到用户验收阶段，不自动推送或发布。
+
+- [x] 完成定向、回归、类型、i18n 与差异检查。
+- [x] 完成本地页面冒烟并整理用户验收清单，等待提交、推送和 MR 的独立确认。
+
+**Verification:**
+- 模型配置域回归：8 个测试文件，106 passed / 1 skipped；真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed。
+- `tsc -p tsconfig.app.json --noEmit`、`pnpm check`、`pnpm i18n:check`、`git diff --check` 全部通过。
+- 本地 `http://127.0.0.1:5179/agents/models/` 可正常加载且无运行时 error；隔离浏览器无登录态，只验证登录门禁，不把登录后页面计为浏览器通过。多源列表与操作状态由组件和 helper 集成测试兜底。
+
+### Task 4: 对齐 Agent 页面顶部标题样式
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/agent-model-config.id-ID.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 模型页复用 `AgentSectionHeader` 展示标题“模型”和描述“模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。”。
+- 加载、错误和正常状态均保留页面标题。
+- “已配置模型”后的信息图标通过项目 `ModelActionTooltip` 展示“选择一个主模型，并可设置多个备用模型。”，不使用浏览器原生 `title`，不再常驻展示说明，也不出现“配置将在新会话中生效。”。
+
+- [x] 先补页面标题、卡片文案和旧文案移除测试并确认 RED。
+- [x] 复用公共标题组件完成最小实现并同步 i18n，让定向测试 GREEN。
+- [x] 完成模型配置域回归、类型、i18n 与本地页面复验。
+
+**Task 4 Verification:**
+- RED：页面标题在加载、错误和正常状态缺失，两条新文案未进入多语言字典，共 5 个断言按预期失败。
+- GREEN：标题与印尼语定向测试 61 passed；模型配置域回归 108 passed / 1 skipped。
+- `tsc -p tsconfig.app.json --noEmit`、`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。
+- Chrome 已登录本地预览确认标题、描述、卡片短文案与四条存量模型正常展示；无新增 error，控制台仅保留既有动态目录 i18n warning。
+- 用户增量调整后，Tooltip 与新顶部描述定向测试再次经历 RED -> GREEN；Chrome 聚焦信息图标确认气泡挂载到 `BODY`、原生 `title` 为 null、控制台无 error。
+
+---
+
 # 移动端微信登录复制链接引导 Implementation Plan
 
 **Status:** 实现与验证完成，已提交 MR。

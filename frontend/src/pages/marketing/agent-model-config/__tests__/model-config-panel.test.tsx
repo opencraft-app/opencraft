@@ -264,6 +264,8 @@ describe("AgentModelConfigPanel", () => {
     });
     renderPanel(remote);
 
+    expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
+    expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")).toBeInTheDocument();
     expect(screen.getByText("正在读取模型配置")).toBeInTheDocument();
     expect(await screen.findByText("model-primary")).toBeInTheDocument();
 
@@ -318,6 +320,50 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions).not.toContainEqual(expect.objectContaining({ type: "assign" }));
   });
 
+  it("keeps an incomplete default custom configuration visible but blocks model actions", async () => {
+    const incompleteCustom = {
+      ...idleModel,
+      id: "",
+      providerKey: "custom",
+      providerName: "Custom",
+      baseUrl: "",
+      routeBaseUrl: "",
+      keyEnv: "",
+      requiresSetup: true,
+    };
+    const remote = createRemote({
+      primary: null,
+      fallbacks: [],
+      configuredModels: [incompleteCustom],
+    });
+    renderPanel(remote);
+
+    const customRow = (await screen.findByText("Auto")).closest("li") as HTMLElement;
+    expect(within(customRow).getByText("Custom")).toBeInTheDocument();
+    expect(within(customRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
+    expect(within(customRow).getByRole("button", { name: "设为备用模型" })).toBeDisabled();
+    expect(within(customRow).getByRole("button", { name: "删除" })).toBeDisabled();
+    expect(within(customRow).getAllByRole("group", { name: "请先获取可用模型" })).toHaveLength(3);
+  });
+
+  it("allows role changes but blocks deletion for an imported Hermes Provider", async () => {
+    const importedModel = {
+      ...idleModel,
+      id: "manual-model",
+      providerKey: "manual",
+      providerName: "Manual Provider",
+      canDelete: false,
+    };
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [importedModel] });
+    renderPanel(remote);
+
+    const importedRow = (await screen.findByText("manual-model")).closest("li") as HTMLElement;
+    expect(within(importedRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
+    expect(within(importedRow).getByRole("button", { name: "设为备用模型" })).toBeEnabled();
+    expect(within(importedRow).getByRole("button", { name: "删除" })).toBeDisabled();
+    expect(within(importedRow).getByRole("group", { name: "请在 Hermes 中管理此模型" })).toBeInTheDocument();
+  });
+
   it("uses the production-style lower form without changing the configured-model list", async () => {
     const remote = createRemote({
       primary: primaryModel,
@@ -327,6 +373,15 @@ describe("AgentModelConfigPanel", () => {
     renderPanel(remote);
     await screen.findByText("model-primary");
 
+    expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
+    expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")).toBeInTheDocument();
+    const configuredHelp = screen.getByRole("group", { name: "选择一个主模型，并可设置多个备用模型。" });
+    expect(configuredHelp).not.toHaveAttribute("title");
+    expect(screen.queryByText("选择一个主模型，并可设置多个备用模型。")).not.toBeInTheDocument();
+    await userEvent.hover(configuredHelp);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("选择一个主模型，并可设置多个备用模型。");
+    await userEvent.unhover(configuredHelp);
+    expect(screen.queryByText("选择一个主模型，并可设置多个备用模型。配置将在新会话中生效。")).not.toBeInTheDocument();
     const configuredSection = screen.getByRole("heading", { name: "已配置模型" }).closest("section");
     expect(configuredSection).toHaveClass("bg-white", "shadow-[0_10px_30px_rgba(15,23,42,0.04)]");
     expect(configuredSection?.parentElement).toHaveClass("pb-12", "md:pb-16");
@@ -402,6 +457,7 @@ describe("AgentModelConfigPanel", () => {
     renderPanel(remote);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("读取模型配置失败");
+    expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(await screen.findByText("暂未配置模型")).toBeInTheDocument();
 
@@ -480,6 +536,7 @@ describe("AgentModelConfigPanel", () => {
 
     expect(remote.actions).toContainEqual(expect.objectContaining({
       type: "add",
+      discoverModels: false,
       model: expect.objectContaining({
         id: "MiniMax-M2.1-lightning",
         providerName: "MiniMax Token Plan",
@@ -771,6 +828,7 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "添加模型" }));
 
     const addAction = remote.actions.find((item): item is Extract<HermesModelConfigAction, { type: "add" }> => item.type === "add");
+    expect(addAction?.discoverModels).toBe(true);
     expect(addAction?.model.providerKey).not.toBe("lightvela-alpha");
     expect(addAction?.model.providerKey).toMatch(/^lightvela-custom-alpha-/);
   });
