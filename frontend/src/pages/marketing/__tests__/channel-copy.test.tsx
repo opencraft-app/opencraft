@@ -110,7 +110,7 @@ describe("marketing channel copy", () => {
     );
   });
 
-  it("shows the domestic August updates with upstream tasks first and no automation template", () => {
+  it("shows the domestic August updates with advanced settings first and no automation template", () => {
     render(
       <MemoryRouter>
         <ChangelogPage />
@@ -118,6 +118,14 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela 新增 Hermes Agent 高级设置" })).toBeInTheDocument();
+    expect(screen.getByText("自定义 Hermes Agent 管理长期记忆、用户画像和长对话上下文的方式，并灵活调整压缩设置。")).toBeInTheDocument();
+    const advancedSettingsImage = screen.getByAltText("LightVela 新增 Hermes Agent 高级设置");
+    expect(advancedSettingsImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
+    );
+    expect(advancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1165 / 930" });
     expect(
       screen.getByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
     ).toBeInTheDocument();
@@ -175,6 +183,10 @@ describe("marketing channel copy", () => {
     );
     expect(screen.queryByRole("heading", { name: "技能页面支持批量安装与来源查看" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "支持繁体中文" })).not.toBeInTheDocument();
+    const augustHeadingsWithAdvancedSettings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+    expect(augustHeadingsWithAdvancedSettings.indexOf("LightVela 新增 Hermes Agent 高级设置")).toBeLessThan(
+      augustHeadingsWithAdvancedSettings.indexOf("LightVela 支持上传自定义人设文件"),
+    );
   });
 
   it("shows WeCom as a supported homepage channel", () => {
