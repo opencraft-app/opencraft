@@ -2,65 +2,74 @@
 
 ## Ringkasan
 
-**Tugas otomatis membuat Hermes Agent menjalankan pekerjaan tertentu sesuai jadwal atau pemicu yang ditetapkan, tanpa pekerjaan manual berulang, cocok untuk pengingat berjadwal, laporan harian, pemantauan berita, dan publikasi konten. Setiap tugas dapat diatur frekuensi dan aturan jalannya, sehingga Agent bekerja proaktif alih-alih hanya menjawab saat ditanya. Menjalankan tugas juga memanggil model sehingga mengonsumsi kredit model dari paket Anda, dan hasilnya dapat dikirim melalui kanal pesan yang sudah terhubung.**
+Otomasi membuat Hermes Agent menjalankan pekerjaan secara proaktif pada waktu tetap, interval, atau jadwal satu kali, lalu mengirimkan hasilnya ke kanal notifikasi yang dipilih. Anda dapat mulai dari templat, atau menyesuaikan nama, aturan eksekusi, instruksi tugas, periode berlaku, dan pengaturan notifikasi, lalu terus mengelola statusnya dari daftar tugas.
 
----
+Saat membuat atau mengedit otomasi, Anda juga dapat menghubungkannya dengan tugas upstream. Eksekusi berikutnya akan memakai output selesai terbaru dari tugas upstream sebagai konteks tambahan. Ini cocok untuk memecah alur berurutan seperti “kumpulkan informasi terlebih dahulu, lalu buat ringkasan” menjadi beberapa langkah.
 
-Otomasi memungkinkan Hermes Agent menjalankan pekerjaan tertentu sesuai jadwal atau kondisi pemicu yang sudah Anda tetapkan, sehingga Anda tidak perlu mengulang operasi yang sama secara manual. Skenario umumnya mencakup pengingat terjadwal, pembuatan laporan harian, pemantauan berita, dan publikasi konten.
+Otomasi memungkinkan Hermes Agent menjalankan pekerjaan tertentu sesuai jadwal atau kondisi pemicu yang sudah ditetapkan, sehingga Anda tidak perlu mengulang operasi yang sama secara manual. Skenario umumnya mencakup pengingat terjadwal, pembuatan laporan harian, pemantauan berita, dan publikasi konten.
 
-Setiap tugas mendukung penjadwalan dan aturan eksekusi yang fleksibel, sehingga asisten AI Anda tetap bekerja secara proaktif di latar belakang.
+Setiap tugas dapat mengatur penjadwalan dan aturan eksekusi secara fleksibel, sehingga asisten AI Anda dapat terus bekerja secara proaktif.
 
-## Yang dibahas di halaman ini
+## Yang Dibahas di Halaman Ini
 
 - Menambahkan otomasi
-
-- Menggunakan templat tugas bawaan
-
+- Menghubungkan tugas upstream
+- Menggunakan templat tugas
 - Mengelola otomasi
 
----
+## Menambahkan Otomasi
 
-## Menambahkan otomasi
+- **Nama**: Nama rencana otomasi.
+- **Jadwal**: Atur siklus eksekusi tugas. Pilih salah satu dari hari tetap, interval tetap, atau eksekusi satu kali.
+- **Instruksi tugas**: Tulis prompt yang digunakan agen untuk menjalankan otomasi.
+- **Tugas upstream**: Opsional. Setelah dihubungkan, tugas ini memakai output selesai terbaru dari tugas upstream sebagai konteks saat berjalan.
+- **Periode berlaku**: Batasi rentang waktu saat tugas dapat berjalan. Biarkan kosong agar tugas berjalan sepanjang waktu.
+- **Notifikasi**: Pengalih opsional untuk memilih kanal yang menerima notifikasi eksekusi tugas.
 
-Buka tab "Automations" di sisi kiri Hermes Agent untuk melihat tugas yang sudah ada, lalu klik "+ Add" di kanan atas untuk membuat tugas baru.
+## Menghubungkan Tugas Upstream
 
-![](../images/automation-1-global-en.webp)
+Tugas upstream cocok untuk memecah satu pekerjaan menjadi alur multi-langkah yang stabil:
 
-Setelah terbuka, Anda dapat mengedit otomasi Anda.
+1. Tugas pertama mengumpulkan atau menghasilkan materi dasar.
+2. Tugas kedua terhubung ke tugas pertama, lalu melanjutkan pengorganisasian, penyaringan, atau penulisan ulang berdasarkan output selesai terbarunya.
+3. Tugas berikutnya dapat terus terhubung ke langkah sebelumnya untuk membentuk rantai pemrosesan yang jelas.
 
-![](../images/automation-2-global-en.webp)
+Contoh umum:
 
-- **Nama**: Nama untuk rencana otomasi.
+- Mengambil kandidat informasi setiap pagi, lalu tugas downstream membuat laporan harian yang ringkas.
+- Merangkum progres proyek mingguan terlebih dahulu, lalu tugas downstream membuat versi untuk tim.
+- Merangkum daftar tugas terlebih dahulu, lalu tugas downstream mengurutkannya berdasarkan prioritas dan membuat teks pengingat.
 
-- **Jadwal**: Irama eksekusi (pilih salah satu: hari tetap dalam seminggu, interval tetap, atau jalankan sekali).
+Menghubungkan tugas upstream tidak menyalin atau menggabungkan dua konfigurasi tugas. Tugas saat ini tetap berjalan sesuai jadwal, instruksi tugas, periode berlaku, dan pengaturan notifikasinya sendiri; tugas ini hanya menerima konteks tambahan dari output selesai terbaru tugas upstream. Hermes `context_from` mendukung referensi ke satu atau beberapa ID tugas. Jika halaman produk saat ini hanya menyediakan satu pilihan tugas upstream, ikuti batas yang tersedia di halaman tersebut. Tugas berantai tidak menunggu tugas upstream yang masih berjalan pada tick scheduler yang sama, jadi waktu eksekusi upstream dan downstream perlu dibuat berurutan.
 
-- **Instruksi tugas**: Prompt yang dipakai Agent untuk menjalankan otomasi. Contoh:
-  - Rangkum email yang belum dibaca setiap hari pukul 21.00
-  - Arsipkan email langganan yang lebih tua dari 30 hari
-  - Ingatkan saya menyiram tanaman setiap hari Minggu
+Instruksi tugas tetap perlu menjelaskan cara memakai output upstream. Contohnya: “Berdasarkan kandidat berita dari tugas upstream, simpan hanya lima item yang terkait dengan produk AI Agent dan tulis ringkasan dalam bahasa Mandarin.” Hindari hanya menulis “lanjutkan pemrosesan”, karena tugas downstream akan sulit menentukan apa yang harus diproses.
 
-- **Periode berlaku**: Rentang tanggal/waktu opsional saat tugas diizinkan berjalan (biarkan kosong agar berjalan terus).
+## Templat Tugas
 
-- **Notifikasi**: Kotak centang opsional — pilih kanal yang akan menerima notifikasi saat tugas dijalankan.
+Jika belum yakin otomasi apa yang perlu dikonfigurasi, klik “Templates” untuk memilih rencana otomasi siap pakai.
 
----
+## Mengelola Otomasi
 
-## Templat tugas bawaan
+Setelah otomasi dibuat, Anda dapat melihat tugas yang sudah diaktifkan di halaman “Automations”.
 
-Jika Anda belum yakin apa yang ingin diotomasikan, klik "Templates" untuk memilih dari rencana otomasi yang sudah tersedia.
+Dari halaman ini, Anda dapat melihat detail otomasi, mengedit tugas, menjedanya, atau menghapusnya sesuai kebutuhan.
 
-![](../images/automation-3-global-en.webp)
+Untuk tugas yang saling terhubung, periksa apakah ada tugas downstream yang masih bergantung pada output selesai terbaru tugas upstream sebelum menghapus tugas upstream tersebut.
 
----
+## Validasi
 
-## Mengelola otomasi
+Setelah membuat atau mengedit otomasi, jangan berhenti pada “berhasil disimpan”. Konfirmasi hal-hal berikut:
 
-Setelah tugas dibuat, halaman "Automations" akan menampilkan seluruh tugas yang Anda aktifkan.
+1. Tugas muncul di daftar otomasi, dan statusnya sesuai harapan.
+2. Jadwal, periode berlaku, dan pengaturan notifikasi sudah benar.
+3. Jika tugas upstream dihubungkan, tugas upstream sudah memiliki output selesai terbaru.
+4. Setelah satu eksekusi nyata, periksa catatan eksekusi terbaru.
+5. Periksa apakah output benar-benar memakai hasil tugas upstream, bukan menebak konteks yang hilang.
 
-![](../images/automation-4-global-en.webp)
+## Penanganan Kegagalan Umum
 
-Dari halaman ini Anda dapat memeriksa detail tugas, mengeditnya, menjedanya, atau menghapusnya sesuai kebutuhan.
-
-![](../images/automation-5-global-en.webp)
-
----
+| Gejala | Kemungkinan Penyebab | Penanganan yang Disarankan |
+|---|---|---|
+| Tugas downstream tidak memakai hasil upstream | Tugas upstream belum dihubungkan, tugas upstream belum memiliki output selesai, atau upstream dan downstream berjalan pada tick scheduler yang sama | Pilih ulang tugas upstream, jalankan tugas upstream hingga berhasil sekali, lalu jadwalkan tugas downstream setelahnya |
+| Output tidak sesuai harapan | Instruksi tugas terlalu bergantung pada rujukan samar seperti “barusan” atau “konten di atas” | Tulis tujuan, cakupan, format output, dan cara memakai output upstream dengan jelas |
+| Rantai tugas makin berantakan | Satu tugas memuat terlalu banyak langkah, atau tanggung jawab upstream dan downstream tidak jelas | Pecah alur agar setiap tugas hanya menangani satu langkah yang jelas |

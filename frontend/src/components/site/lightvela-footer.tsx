@@ -6,6 +6,7 @@ import {
   CN_TERMS_OF_SERVICE_URL,
 } from "@/constants/legal";
 import { DISCORD_INVITE_URL } from "@/constants/community";
+import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useLocaleOverride, useT } from "@/i18n/t";
 import { SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { isGlobal, localizedPath } from "@/lib/region";
@@ -124,7 +125,17 @@ const getFooterSections = (t: (zh: string) => string): FooterSection[] => {
       title: t("公司"),
       links: [
         { label: t("关于我们"), to: "/about" },
-        { label: t("帮助与反馈"), to: "/support" },
+        ...(
+          isGlobal
+            ? []
+            : [
+                {
+                  label: t("帮助与反馈"),
+                  href: PRODUCT_FEEDBACK_URL,
+                  external: true,
+                } satisfies FooterLink,
+              ]
+        ),
         isGlobal
           ? { label: t("隐私政策"), to: "/privacy-policy" }
           : { label: t("隐私政策"), href: CN_PRIVACY_POLICY_URL, external: true },
