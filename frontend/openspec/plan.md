@@ -748,6 +748,29 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `tsc -p tsconfig.app.json --noEmit`、`pnpm check`、`pnpm i18n:check`、`git diff --check` 全部通过。
 - 本地 `http://127.0.0.1:5179/agents/models/` 可正常加载且无运行时 error；隔离浏览器无登录态，只验证登录门禁，不把登录后页面计为浏览器通过。多源列表与操作状态由组件和 helper 集成测试兜底。
 
+### Task 5: 处理本轮 CR 的投影与归一化完整性问题
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/hermes-model-config-real-smoke.test.ts`
+
+**Acceptance:**
+- `providers.custom` 与 `model.provider=custom` 同时缺少模型 ID 时，同一 endpoint 只投影一个待补全项；两个明确不同的 endpoint 不误合并。
+- 真实 Hermes smoke 明确断言新增模型不会创建或扩张 `lightvela.model_config.configured_models`。
+- legacy `custom_providers` 最后一条记录迁移后移除空键，不保留 `custom_providers: []`。
+
+- [x] 先补三条 CR 回归断言并确认待补全去重、空键清理用例 RED。
+- [x] 完成最小修复，让定向测试、真实 Hermes smoke 与项目质量检查 GREEN。
+
+**Task 5 Verification:**
+- RED：`model-config-client.test.ts` 新增断言稳定复现两条失败：同 endpoint 的双待补全 `custom` 未合并；legacy 迁移后残留 `custom_providers: []`。
+- GREEN：模型配置 client 34 passed；模型配置域 106 passed / 1 skipped。
+- 真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed，并明确断言连续 `add` 后既有 `configured_models` 数组保持不变。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+
 ### Task 4: 对齐 Agent 页面顶部标题样式
 
 **Files:**

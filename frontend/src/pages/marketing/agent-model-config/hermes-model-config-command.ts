@@ -547,6 +547,15 @@ def same_runtime_deployment(left, right):
     if not left_provider or not left_model or left_model != right_model: return False
     return not (left_url and right_url and left_url != right_url)
 
+def same_incomplete_setup(left, right):
+    if not left or not right or not left.get("requiresSetup") or not right.get("requiresSetup"): return False
+    left_provider, left_model, _ = route_identity(left)
+    right_provider, right_model, _ = route_identity(right)
+    if not left_provider or left_provider != right_provider or left_model or right_model: return False
+    left_url = normalized_route_base_url(left.get("routeBaseUrl") or left.get("baseUrl"))
+    right_url = normalized_route_base_url(right.get("routeBaseUrl") or right.get("baseUrl"))
+    return not (left_url and right_url and left_url != right_url)
+
 def model_config(config):
     lightvela = config.get("lightvela") if isinstance(config.get("lightvela"), dict) else {}
     managed = lightvela.get("model_config") if isinstance(lightvela.get("model_config"), dict) else {}
@@ -595,7 +604,9 @@ def remove_legacy_custom_provider(config, model):
             continue
         if candidate and same_runtime_deployment(candidate, model): removed = True
         else: retained.append(raw)
-    if removed: config["custom_providers"] = retained
+    if removed:
+        if retained: config["custom_providers"] = retained
+        else: config.pop("custom_providers", None)
 
 def fallback_models(config):
     values = []
@@ -608,8 +619,8 @@ def fallback_models(config):
 def append_projected(values, candidate):
     if not candidate: return
     for current in values:
-        if not same_runtime_deployment(current, candidate): continue
-        for field in ("providerName", "baseUrl", "apiMode", "keyEnv"):
+        if not (same_runtime_deployment(current, candidate) or same_incomplete_setup(current, candidate)): continue
+        for field in ("providerName", "baseUrl", "routeBaseUrl", "apiMode", "keyEnv"):
             if not current.get(field) and candidate.get(field): current[field] = candidate[field]
         if "canDelete" in candidate:
             current["canDelete"] = bool(current.get("canDelete", True) and candidate["canDelete"])

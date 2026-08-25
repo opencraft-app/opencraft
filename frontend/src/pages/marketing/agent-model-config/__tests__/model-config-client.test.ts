@@ -672,6 +672,48 @@ describe("Hermes model configuration client", () => {
     expect(result.events).toEqual([]);
   });
 
+  it("deduplicates matching incomplete custom setup sources without hiding endpoint conflicts", () => {
+    const matching = runHelper({ type: "read" }, {
+      model: {
+        provider: "custom",
+        default: "",
+        base_url: "https://custom.example.com/v1/",
+      },
+      providers: {
+        custom: {
+          name: "Custom Endpoint",
+          base_url: "https://custom.example.com/v1",
+          models: [],
+        },
+      },
+    });
+    const matchingModels = parseHermesModelConfigResponse(matching.output).configuredModels;
+    expect(matchingModels).toEqual([
+      expect.objectContaining({
+        id: "",
+        providerKey: "custom",
+        baseUrl: "https://custom.example.com/v1",
+        requiresSetup: true,
+      }),
+    ]);
+
+    const conflicting = runHelper({ type: "read" }, {
+      model: {
+        provider: "custom",
+        default: "",
+        base_url: "https://active-custom.example.com/v1",
+      },
+      providers: {
+        custom: {
+          name: "Saved Custom Endpoint",
+          base_url: "https://saved-custom.example.com/v1",
+          models: [],
+        },
+      },
+    });
+    expect(parseHermesModelConfigResponse(conflicting.output).configuredModels).toHaveLength(2);
+  });
+
   it("preserves existing route provider IDs and uses providerKey to disambiguate duplicate model IDs", () => {
     const firstSaved = {
       ...configuredModel,
@@ -1357,7 +1399,7 @@ describe("Hermes model configuration client", () => {
       purpose: "primary",
     }, { custom_providers: [legacyEntry] });
 
-    expect(assigned.config.custom_providers).toEqual([]);
+    expect(assigned.config).not.toHaveProperty("custom_providers");
     expect((assigned.config.providers as Record<string, Record<string, unknown>>)["legacy-endpoint"]).toMatchObject({
       name: legacyEntry.name,
       base_url: legacyEntry.base_url,

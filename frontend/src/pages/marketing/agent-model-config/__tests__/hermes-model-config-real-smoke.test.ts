@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { constants, publicEncrypt } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -46,10 +46,31 @@ function runAction(source: string, home: string, input: PlaintextAction) {
   return parseHermesModelConfigResponse(runCommand(source, home, action));
 }
 
+function readHermesConfig(source: string, home: string): Record<string, unknown> {
+  const result = spawnSync("python3", ["-c", "import json; from hermes_cli.config import load_config; print(json.dumps(load_config()))"], {
+    cwd: source,
+    encoding: "utf8",
+    env: { ...process.env, HERMES_HOME: home, PYTHONPATH: source },
+  });
+  if (result.status !== 0) throw new Error(`Hermes config read exited with ${result.status}: ${result.stderr}`);
+  return JSON.parse(result.stdout) as Record<string, unknown>;
+}
+
 describe.skipIf(!hermesSource)("Hermes model configuration real-source smoke", () => {
   it("persists an ordered fallback chain and removes one fallback without leaking keys into config.yaml", () => {
     const home = mkdtempSync(join(tmpdir(), "lightvela-hermes-real-smoke-"));
     try {
+      const legacyConfiguredModel = {
+        id: "legacy-smoke-model",
+        providerKey: "legacy-smoke-provider",
+        providerName: "Legacy Smoke Provider",
+        baseUrl: "https://legacy-smoke.invalid/v1",
+        apiMode: "chat_completions",
+        keyEnv: "LEGACY_SMOKE_API_KEY",
+      };
+      writeFileSync(join(home, "config.yaml"), JSON.stringify({
+        lightvela: { model_config: { configured_models: [legacyConfiguredModel] } },
+      }), "utf8");
       const primary = {
         id: "smoke-primary",
         providerKey: "smoke-primary-provider",
@@ -106,6 +127,9 @@ describe.skipIf(!hermesSource)("Hermes model configuration real-source smoke", (
       expect(configText).not.toContain("smoke-second-fallback-secret");
       expect(configText).toContain("fallback_providers:");
       expect(configText).not.toMatch(/^\s*fallback_model:/m);
+      const persistedConfig = readHermesConfig(hermesSource!, home);
+      expect((((persistedConfig.lightvela as Record<string, unknown>).model_config as Record<string, unknown>).configured_models))
+        .toEqual([legacyConfiguredModel]);
 
       const envText = readFileSync(join(home, ".env"), "utf8");
       expect(envText).toContain("HERMES_CUSTOM_LIGHTVELA_SMOKE_PRIMARY_PROVIDER_API_KEY=");
