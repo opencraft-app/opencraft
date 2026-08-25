@@ -43,6 +43,7 @@ type Config struct {
 	AuthSessionTTL       time.Duration
 
 	DSHDomains                   []string
+	DSHFederationAuthorizeURL    string
 	DSHFederationBaseURL         string
 	DSHFederationClientID        string
 	DSHFederationKeyID           string
@@ -81,25 +82,26 @@ const (
 
 func FromEnv() (Config, error) {
 	cfg := Config{
-		Addr:                  getEnv("SITE_GATEWAY_ADDR", ":8080"),
-		AdminAddr:             getEnv("SITE_GATEWAY_ADMIN_ADDR", ":8081"),
-		RootDomains:           splitList(os.Getenv("SITE_GATEWAY_ROOT_DOMAINS")),
-		COSBucket:             strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_BUCKET")),
-		COSRegion:             strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_REGION")),
-		CTLBaseURL:            strings.TrimSpace(os.Getenv("SITE_GATEWAY_CTL_BASE_URL")),
-		CTLInternalToken:      strings.TrimSpace(os.Getenv("WEBSITE_INTERNAL_API_TOKEN")),
-		AuthEndpointsEnabled:  false,
-		AuthFixedHost:         strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_FIXED_HOST")),
-		AuthOIDCIssuer:        strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_ISSUER")),
-		AuthOIDCAuthorizeURL:  strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL")),
-		AuthOIDCTokenURL:      strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL")),
-		AuthOIDCJWKSURL:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL")),
-		AuthOIDCClientID:      strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID")),
-		AuthAEADActiveKeyID:   strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID")),
-		DSHDomains:            splitList(os.Getenv("SITE_GATEWAY_DSH_DOMAINS")),
-		DSHFederationBaseURL:  strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_BASE_URL")),
-		DSHFederationClientID: strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID")),
-		DSHFederationKeyID:    strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_KEY_ID")),
+		Addr:                      getEnv("SITE_GATEWAY_ADDR", ":8080"),
+		AdminAddr:                 getEnv("SITE_GATEWAY_ADMIN_ADDR", ":8081"),
+		RootDomains:               splitList(os.Getenv("SITE_GATEWAY_ROOT_DOMAINS")),
+		COSBucket:                 strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_BUCKET")),
+		COSRegion:                 strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_REGION")),
+		CTLBaseURL:                strings.TrimSpace(os.Getenv("SITE_GATEWAY_CTL_BASE_URL")),
+		CTLInternalToken:          strings.TrimSpace(os.Getenv("WEBSITE_INTERNAL_API_TOKEN")),
+		AuthEndpointsEnabled:      false,
+		AuthFixedHost:             strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_FIXED_HOST")),
+		AuthOIDCIssuer:            strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_ISSUER")),
+		AuthOIDCAuthorizeURL:      strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL")),
+		AuthOIDCTokenURL:          strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL")),
+		AuthOIDCJWKSURL:           strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL")),
+		AuthOIDCClientID:          strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID")),
+		AuthAEADActiveKeyID:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID")),
+		DSHDomains:                splitList(os.Getenv("SITE_GATEWAY_DSH_DOMAINS")),
+		DSHFederationAuthorizeURL: strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL")),
+		DSHFederationBaseURL:      strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_BASE_URL")),
+		DSHFederationClientID:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID")),
+		DSHFederationKeyID:        strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_KEY_ID")),
 	}
 	var err error
 	if cfg.AuthEndpointsEnabled, err = getBool("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", false); err != nil {
@@ -247,14 +249,18 @@ func FromEnv() (Config, error) {
 			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID %q missing from SITE_GATEWAY_AUTH_AEAD_KEYS", cfg.AuthAEADActiveKeyID)
 		}
 	}
-	dshFederationConfigured := cfg.DSHFederationBaseURL != "" || cfg.DSHFederationClientID != "" ||
+	dshFederationConfigured := cfg.DSHFederationAuthorizeURL != "" || cfg.DSHFederationBaseURL != "" || cfg.DSHFederationClientID != "" ||
 		cfg.DSHFederationKeyID != "" || len(cfg.DSHFederationHMACKey) > 0
 	if len(cfg.DSHDomains) == 0 && dshFederationConfigured {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_DOMAINS is required when DSH federation is configured")
 	}
 	if len(cfg.DSHDomains) > 0 {
-		if cfg.DSHFederationBaseURL == "" || cfg.DSHFederationClientID == "" || cfg.DSHFederationKeyID == "" || len(cfg.DSHFederationHMACKey) == 0 {
-			return Config{}, fmt.Errorf("DSH federation base URL and client credentials are required when DSH domains are configured")
+		if cfg.DSHFederationAuthorizeURL == "" || cfg.DSHFederationBaseURL == "" || cfg.DSHFederationClientID == "" || cfg.DSHFederationKeyID == "" || len(cfg.DSHFederationHMACKey) == 0 {
+			return Config{}, fmt.Errorf("DSH federation authorize URL, API base URL, and client credentials are required when DSH domains are configured")
+		}
+		authorizeURL, err := url.Parse(cfg.DSHFederationAuthorizeURL)
+		if err != nil || authorizeURL.Scheme != "https" || authorizeURL.Host == "" || authorizeURL.User != nil || authorizeURL.RawQuery != "" || authorizeURL.Fragment != "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL must be an https URL without userinfo, query, or fragment")
 		}
 		federationURL, err := url.Parse(cfg.DSHFederationBaseURL)
 		if err != nil || (federationURL.Scheme != "http" && federationURL.Scheme != "https") || federationURL.Host == "" {

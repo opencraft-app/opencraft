@@ -16,6 +16,7 @@ items:
   - WEBSITE_COS_SECRET_ID
   - WEBSITE_COS_SECRET_KEY
   - SITE_GATEWAY_AUTH_AEAD_KEYS
+  - SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY
   labels:
     app.kubernetes.io/name: site-gateway
     app.kubernetes.io/managed-by: argocd

@@ -24,6 +24,7 @@ data:
   SITE_GATEWAY_AUTH_SESSION_TTL: "5m"
   # DSH data-plane routing is opt-in. Empty domains and federation settings keep it disabled.
   SITE_GATEWAY_DSH_DOMAINS: ""
+  SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL: ""
   SITE_GATEWAY_DSH_FEDERATION_BASE_URL: ""
   SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID: ""
   SITE_GATEWAY_DSH_FEDERATION_KEY_ID: ""

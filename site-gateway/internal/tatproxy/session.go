@@ -25,6 +25,8 @@ var (
 	ErrOpenTimeout     = fmt.Errorf("TAT proxy open timeout: %w", context.DeadlineExceeded)
 )
 
+const sessionAuthDelay = 200 * time.Millisecond
+
 type ManagerOptions struct {
 	Starter                   Starter
 	Dialer                    *websocket.Dialer
@@ -53,6 +55,7 @@ type Manager struct {
 
 type sessionEntry struct {
 	ready   chan struct{}
+	cancel  context.CancelFunc
 	session *session
 	err     error
 }
@@ -104,6 +107,30 @@ func (m *Manager) DialContext(ctx context.Context, target Target) (net.Conn, err
 	return s.openConn(ctx)
 }
 
+// CloseTarget releases a cached TAT session when its owning HTTP proxy entry is
+// evicted. This keeps the two bounded pools on the same lifecycle.
+func (m *Manager) CloseTarget(target Target) {
+	key := target.Key()
+	m.mu.Lock()
+	entry := m.sessions[key]
+	if entry != nil {
+		delete(m.sessions, key)
+		entry.cancel()
+	}
+	var cached *session
+	if entry != nil {
+		select {
+		case <-entry.ready:
+			cached = entry.session
+		default:
+		}
+	}
+	m.mu.Unlock()
+	if cached != nil {
+		cached.close(io.EOF)
+	}
+}
+
 func (m *Manager) getSession(ctx context.Context, target Target) (*session, error) {
 	key := target.Key()
 	for {
@@ -129,6 +156,9 @@ func (m *Manager) getSession(ctx context.Context, target Target) (*session, erro
 					delete(m.sessions, key)
 				}
 				m.mu.Unlock()
+				if existing.session != nil {
+					existing.session.close(io.EOF)
+				}
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-m.done:
@@ -140,23 +170,27 @@ func (m *Manager) getSession(ctx context.Context, target Target) (*session, erro
 			m.mu.Unlock()
 			return nil, ErrTargetLimit
 		}
-		entry := &sessionEntry{ready: make(chan struct{})}
+		entryCtx, cancelEntry := context.WithCancel(ctx)
+		entry := &sessionEntry{ready: make(chan struct{}), cancel: cancelEntry}
 		m.sessions[key] = entry
 		m.mu.Unlock()
 
-		s, err := m.openSession(ctx, target)
+		s, err := m.openSession(entryCtx, target)
+		cancelEntry()
 		m.mu.Lock()
-		if current := m.sessions[key]; current == entry {
-			entry.session = s
-			entry.err = err
-			if err != nil || m.closed {
-				delete(m.sessions, key)
-			}
-			close(entry.ready)
+		owned := m.sessions[key] == entry
+		entry.session = s
+		entry.err = err
+		if !owned && entry.err == nil {
+			entry.err = net.ErrClosed
 		}
+		if owned && (err != nil || m.closed) {
+			delete(m.sessions, key)
+		}
+		close(entry.ready)
 		closed := m.closed
 		m.mu.Unlock()
-		if closed {
+		if !owned || closed {
 			if s != nil {
 				s.close(net.ErrClosed)
 			}
@@ -209,13 +243,26 @@ func (m *Manager) openSession(ctx context.Context, target Target) (*session, err
 		"Data": map[string]any{
 			"Uin":         bootstrap.OwnerUIN,
 			"AppId":       bootstrap.AppID,
-			"InstanceId":  target.InstanceID,
+			"InstanceId":  bootstrap.InstanceID,
 			"SessionId":   bootstrap.SessionID,
 			"MaxIdleTime": int(m.opts.IdleTimeout.Seconds()),
 		},
 	}); err != nil {
 		_ = ws.Close()
 		return nil, fmt.Errorf("authenticate TAT websocket: %w", err)
+	}
+	// TAT does not acknowledge SessionAuth. Match the existing browser client by
+	// giving the service a short processing window before opening proxy streams.
+	timer := time.NewTimer(sessionAuthDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		_ = ws.Close()
+		return nil, ctx.Err()
+	case <-m.done:
+		_ = ws.Close()
+		return nil, net.ErrClosed
 	}
 	return s, nil
 }
@@ -265,6 +312,7 @@ func (m *Manager) Close() error {
 		close(m.done)
 		var sessions []*session
 		for _, entry := range m.sessions {
+			entry.cancel()
 			if entry.session != nil {
 				sessions = append(sessions, entry.session)
 			}

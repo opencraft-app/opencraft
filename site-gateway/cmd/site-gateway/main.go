@@ -100,9 +100,15 @@ func main() {
 		dshManager    *tatproxy.Manager
 	)
 	if len(cfg.DSHDomains) > 0 {
-		starter, err := tatproxy.NewCloudStarter(cfg.DSHSecretID, cfg.DSHSecretKey)
+		starter, err := tatproxy.NewFederationStarter(tatproxy.FederationStarterOptions{
+			BaseURL:    cfg.DSHFederationBaseURL,
+			ClientID:   cfg.DSHFederationClientID,
+			KeyID:      cfg.DSHFederationKeyID,
+			HMACKey:    cfg.DSHFederationHMACKey,
+			HTTPClient: &http.Client{Timeout: cfg.DSHTATStartTimeout},
+		})
 		if err != nil {
-			log.Fatalf("build DSH TAT starter: %v", err)
+			log.Fatalf("build DSH federation TAT starter: %v", err)
 		}
 		dshManager, err = tatproxy.NewManager(tatproxy.ManagerOptions{
 			Starter:                   starter,
@@ -120,15 +126,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("build DSH TAT manager: %v", err)
 		}
-		targetResolver, err := dshproxy.NewHTTPResolver(cfg.DSHTargetURL, &http.Client{Timeout: cfg.DSHTargetTimeout})
-		if err != nil {
-			log.Fatalf("build DSH target resolver: %v", err)
-		}
 		dshHandler, err = dshproxy.NewHandler(dshproxy.HandlerOptions{
-			Resolver:   targetResolver,
-			Dialer:     dshManager,
-			MaxTargets: cfg.DSHMaxTargets,
-			IdleTTL:    cfg.DSHTATIdleTimeout,
+			Dialer:                dshManager,
+			Domains:               cfg.DSHDomains,
+			MaxTargets:            cfg.DSHMaxTargets,
+			IdleTTL:               cfg.DSHTATIdleTimeout,
+			ResponseHeaderTimeout: cfg.DSHTATOpenTimeout,
+			Federation:            starter,
+			AuthorizeURL:          cfg.DSHFederationAuthorizeURL,
 		})
 		if err != nil {
 			log.Fatalf("build DSH reverse proxy: %v", err)

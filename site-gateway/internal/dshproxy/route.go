@@ -1,13 +1,11 @@
 package dshproxy
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net"
 	"strings"
 )
 
-const routeHashBytes = 8
+const maxBotRouteIDLength = 59 // The complete "<bot-id>-dsh" DNS label is at most 63 bytes.
 
 type routeMatcher map[string]struct{}
 
@@ -35,13 +33,33 @@ func (m routeMatcher) matches(host, botID string) bool {
 	return false
 }
 
+// botID derives the only allowed Bot selector from the public DSH hostname.
+func (m routeMatcher) botID(host string) (string, bool) {
+	host = canonicalHostname(host)
+	for domain := range m {
+		prefix, ok := strings.CutSuffix(host, "-"+domain)
+		if ok && botRouteID(prefix) != "" {
+			return prefix, true
+		}
+	}
+	return "", false
+}
+
 func botRouteID(botID string) string {
 	botID = strings.TrimSpace(botID)
-	if botID == "" {
+	if botID == "" || len(botID) > maxBotRouteIDLength || !isRouteAlphaNumeric(botID[0]) || !isRouteAlphaNumeric(botID[len(botID)-1]) {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(botID))
-	return hex.EncodeToString(sum[:routeHashBytes])
+	for index := range len(botID) {
+		if value := botID[index]; !isRouteAlphaNumeric(value) && value != '-' {
+			return ""
+		}
+	}
+	return botID
+}
+
+func isRouteAlphaNumeric(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
 }
 
 func canonicalHostname(authority string) string {

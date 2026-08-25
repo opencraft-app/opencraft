@@ -23,9 +23,19 @@ type fixedStarter struct {
 	calls atomic.Int32
 }
 
-func (s *fixedStarter) Start(_ context.Context, target Target) (Bootstrap, error) {
+type blockingStarter struct {
+	started chan struct{}
+}
+
+func (s *blockingStarter) Start(ctx context.Context, _ Target) (Bootstrap, error) {
+	close(s.started)
+	<-ctx.Done()
+	return Bootstrap{}, ctx.Err()
+}
+
+func (s *fixedStarter) Start(_ context.Context, _ Target) (Bootstrap, error) {
 	s.calls.Add(1)
-	return Bootstrap{SessionID: "session-1", Region: target.Region, InstanceID: target.InstanceID, OwnerUIN: "10001", AppID: 1250000000, WSURL: s.wsURL}, nil
+	return Bootstrap{SessionID: "session-1", Region: "ap-beijing", InstanceID: "ins-test123", OwnerUIN: "10001", AppID: 1250000000, WSURL: s.wsURL}, nil
 }
 
 func TestManagerMultiplexesTATProxyConnections(t *testing.T) {
@@ -92,7 +102,7 @@ func TestManagerMultiplexesTATProxyConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer manager.Close()
-	target := Target{Region: "ap-beijing", InstanceID: "ins-test123"}
+	target := Target{BotID: "bot-1", DelegatedSession: "delegated-1"}
 	conn1, err := manager.DialContext(context.Background(), target)
 	if err != nil {
 		t.Fatalf("dial first: %v", err)
@@ -133,11 +143,58 @@ func TestManagerMultiplexesTATProxyConnections(t *testing.T) {
 	mu.Unlock()
 	_ = conn1.Close()
 	_ = conn2.Close()
+	manager.CloseTarget(target)
+	manager.mu.Lock()
+	_, cached := manager.sessions[target.Key()]
+	manager.mu.Unlock()
+	if cached {
+		t.Fatal("target session remained cached after CloseTarget")
+	}
 	_ = manager.Close()
 	select {
 	case <-handlerDone:
 	case <-time.After(time.Second):
 		t.Fatal("TAT test server did not stop")
+	}
+}
+
+func TestCloseTargetCancelsPendingSessionCreation(t *testing.T) {
+	starter := &blockingStarter{started: make(chan struct{})}
+	manager, err := NewManager(ManagerOptions{
+		Starter: starter, StartTimeout: time.Minute, OpenTimeout: time.Second,
+		IdleTimeout: time.Minute, MaxTargets: 1, MaxConnectionsPerTarget: 1, QueueDepth: 1,
+		MaxFrameBytes: 1024, MaxBufferedBytesPerConn: 2048,
+		MaxBufferedBytesPerTarget: 4096, MaxBufferedBytesTotal: 8192,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	target := Target{BotID: "bot-1", DelegatedSession: "delegated-1"}
+	result := make(chan error, 1)
+	go func() {
+		_, err := manager.DialContext(context.Background(), target)
+		result <- err
+	}()
+	select {
+	case <-starter.started:
+	case <-time.After(time.Second):
+		t.Fatal("session creation did not start")
+	}
+	manager.CloseTarget(target)
+	select {
+	case err := <-result:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("dial error = %v, want closed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending session creation was not canceled")
+	}
+	manager.mu.Lock()
+	_, cached := manager.sessions[target.Key()]
+	manager.mu.Unlock()
+	if cached {
+		t.Fatal("canceled target remained cached")
 	}
 }
 
@@ -172,7 +229,7 @@ func TestTatConnReadDeadlineUnblocks(t *testing.T) {
 		MaxBufferedBytesPerTarget: 4096, MaxBufferedBytesTotal: 8192,
 	})
 	defer manager.Close()
-	conn, err := manager.DialContext(context.Background(), Target{Region: "ap-beijing", InstanceID: "ins-test123"})
+	conn, err := manager.DialContext(context.Background(), Target{BotID: "bot-1", DelegatedSession: "delegated-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +277,7 @@ func TestManagerReconnectsAfterImmediateSessionClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer manager.Close()
-	target := Target{Region: "ap-beijing", InstanceID: "ins-test123"}
+	target := Target{BotID: "bot-1", DelegatedSession: "delegated-1"}
 	firstCtx, cancelFirst := context.WithTimeout(context.Background(), time.Second)
 	defer cancelFirst()
 	if conn, err := manager.DialContext(firstCtx, target); err == nil {
@@ -277,7 +334,7 @@ func TestManagerDropsSessionOnGlobalErrorFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer manager.Close()
-	target := Target{Region: "ap-beijing", InstanceID: "ins-test123"}
+	target := Target{BotID: "bot-1", DelegatedSession: "delegated-1"}
 	if conn, err := manager.DialContext(context.Background(), target); err == nil {
 		_ = conn.Close()
 		t.Fatal("dial unexpectedly survived global TAT error")

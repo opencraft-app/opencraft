@@ -88,13 +88,43 @@ replacements:
   - source:
       kind: ConfigMap
       name: site-gateway-platform-values
-      fieldPath: data.SITE_GATEWAY_DSH_TARGET_URL
+      fieldPath: data.SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL
     targets:
       - select:
           kind: ConfigMap
           name: site-gateway-config
         fieldPaths:
-          - data.SITE_GATEWAY_DSH_TARGET_URL
+          - data.SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_DSH_FEDERATION_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_DSH_FEDERATION_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_DSH_FEDERATION_KEY_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_DSH_FEDERATION_KEY_ID
   - source:
       kind: ConfigMap
       name: site-gateway-platform-values

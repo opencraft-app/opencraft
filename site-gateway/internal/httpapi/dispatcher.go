@@ -19,12 +19,39 @@ func NewDispatcher(site, dsh http.Handler, dshDomains []string) http.Handler {
 		return site
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := domains[canonicalHostname(r.Host)]; ok {
+		if isDSHHost(canonicalHostname(r.Host), domains) {
 			dsh.ServeHTTP(w, r)
 			return
 		}
 		site.ServeHTTP(w, r)
 	})
+}
+
+func isDSHHost(host string, domains map[string]struct{}) bool {
+	for domain := range domains {
+		prefix, ok := strings.CutSuffix(host, "-"+domain)
+		if ok && validDSHBotID(prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func validDSHBotID(botID string) bool {
+	if len(botID) == 0 || len(botID) > 59 || !isDSHAlphaNumeric(botID[0]) || !isDSHAlphaNumeric(botID[len(botID)-1]) {
+		return false
+	}
+	for index := range len(botID) {
+		value := botID[index]
+		if !isDSHAlphaNumeric(value) && value != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func isDSHAlphaNumeric(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
 }
 
 func canonicalHostname(authority string) string {

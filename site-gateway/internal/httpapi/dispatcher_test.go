@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDispatcherRoutesExactDSHHosts(t *testing.T) {
+func TestDispatcherRoutesPrefixedDSHHosts(t *testing.T) {
 	site := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("site")) })
 	dsh := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("dsh")) })
 	handler := NewDispatcher(site, dsh, []string{"dsh.lightvela.site", "dsh.lightvela.tech"})
@@ -15,10 +15,15 @@ func TestDispatcherRoutesExactDSHHosts(t *testing.T) {
 		host string
 		want string
 	}{
-		{host: "dsh.lightvela.site", want: "dsh"},
-		{host: "dsh.lightvela.tech:443", want: "dsh"},
-		{host: "DSH.LIGHTVELA.SITE.", want: "dsh"},
-		{host: "BOT-1.DSH.LIGHTVELA.SITE.", want: "site"},
+		{host: "bot-1-dsh.lightvela.site", want: "dsh"},
+		{host: "bot-1-dsh.lightvela.tech:443", want: "dsh"},
+		{host: "BOT-1-DSH.LIGHTVELA.SITE.", want: "dsh"},
+		{host: "Bot-1-dsh.lightvela.site", want: "dsh"},
+		{host: "dsh.lightvela.site", want: "site"},
+		{host: "-bot-dsh.lightvela.site", want: "site"},
+		{host: "bot_-dsh.lightvela.site", want: "site"},
+		{host: "bot--dsh.lightvela.site", want: "site"},
+		{host: "nested.bot-1-dsh.lightvela.site", want: "site"},
 		{host: "bot-1.dsh.lightvela.site", want: "site"},
 		{host: "notdsh.lightvela.site", want: "site"},
 		{host: "dsh.lightvela.site.attacker.example", want: "site"},

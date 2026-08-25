@@ -23,11 +23,16 @@ type TunnelDialer interface {
 	DialContext(context.Context, tatproxy.Target) (net.Conn, error)
 }
 
+type targetCloser interface {
+	CloseTarget(tatproxy.Target)
+}
+
 type proxyPool struct {
-	dialer     TunnelDialer
-	maxTargets int
-	idleTTL    time.Duration
-	logger     *log.Logger
+	dialer                TunnelDialer
+	maxTargets            int
+	idleTTL               time.Duration
+	responseHeaderTimeout time.Duration
+	logger                *log.Logger
 
 	mu      sync.Mutex
 	entries map[string]*proxyEntry
@@ -38,18 +43,20 @@ type proxyPool struct {
 type proxyEntry struct {
 	proxy     *httputil.ReverseProxy
 	transport *http.Transport
+	target    Target
 	active    int
 	lastUsed  time.Time
 }
 
-func newProxyPool(dialer TunnelDialer, maxTargets int, idleTTL time.Duration, logger *log.Logger) *proxyPool {
+func newProxyPool(dialer TunnelDialer, maxTargets int, idleTTL, responseHeaderTimeout time.Duration, logger *log.Logger) *proxyPool {
 	p := &proxyPool{
-		dialer:     dialer,
-		maxTargets: maxTargets,
-		idleTTL:    idleTTL,
-		logger:     logger,
-		entries:    make(map[string]*proxyEntry),
-		done:       make(chan struct{}),
+		dialer:                dialer,
+		maxTargets:            maxTargets,
+		idleTTL:               idleTTL,
+		responseHeaderTimeout: responseHeaderTimeout,
+		logger:                logger,
+		entries:               make(map[string]*proxyEntry),
+		done:                  make(chan struct{}),
 	}
 	go p.reapIdle()
 	return p
@@ -98,6 +105,7 @@ func (p *proxyPool) newEntry(target Target) *proxyEntry {
 		MaxIdleConns:          64,
 		MaxIdleConnsPerHost:   32,
 		IdleConnTimeout:       90 * time.Second,
+		ResponseHeaderTimeout: p.responseHeaderTimeout,
 		ExpectContinueTimeout: time.Second,
 	}
 	proxy := &httputil.ReverseProxy{
@@ -108,7 +116,10 @@ func (p *proxyPool) newEntry(target Target) *proxyEntry {
 				request.Out.Header.Set("X-Forwarded-Proto", proto)
 			}
 			request.Out.Host = upstream.Host
-			request.Out.Header.Del("Key")
+			request.Out.Header.Del(HeaderBotID)
+			request.Out.Header.Del(HeaderDelegatedSession)
+			stripGatewayCookies(request.Out)
+			request.Out.Header.Del("Proxy-Authorization")
 			if request.Out.Header.Get("Origin") != "" {
 				request.Out.Header.Set("Origin", upstream.String())
 			}
@@ -118,16 +129,35 @@ func (p *proxyPool) newEntry(target Target) *proxyEntry {
 		ErrorLog:      log.New(io.Discard, "", 0),
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			status := http.StatusServiceUnavailable
-			if errors.Is(err, tatproxy.ErrConnectionLimit) {
+			switch {
+			case errors.Is(err, tatproxy.ErrConnectionLimit):
 				status = http.StatusTooManyRequests
-			} else if isTimeout(err) {
+			case errors.Is(err, tatproxy.ErrFederationUnauthorized):
+				status = http.StatusUnauthorized
+				clearDelegatedSessionCookie(w)
+			case errors.Is(err, tatproxy.ErrFederationNotFound):
+				status = http.StatusNotFound
+			case errors.Is(err, tatproxy.ErrFederationConflict):
+				status = http.StatusConflict
+			case errors.Is(err, tatproxy.ErrFederationTimeout), isTimeout(err):
 				status = http.StatusGatewayTimeout
 			}
 			p.logger.Printf("DSH upstream unavailable (status=%d, error_type=%T)", status, err)
 			writeProxyError(w, status)
 		},
 	}
-	return &proxyEntry{proxy: proxy, transport: transport}
+	return &proxyEntry{proxy: proxy, transport: transport, target: target}
+}
+
+func stripGatewayCookies(request *http.Request) {
+	cookies := request.Cookies()
+	request.Header.Del("Cookie")
+	for _, cookie := range cookies {
+		if cookie.Name == delegatedSessionCookie || cookie.Name == loginStateCookieName {
+			continue
+		}
+		request.AddCookie(cookie)
+	}
 }
 
 func forwardedProto(raw string) string {
@@ -149,7 +179,7 @@ func isTimeout(err error) bool {
 func (p *proxyPool) evictLocked(now time.Time) {
 	for key, entry := range p.entries {
 		if entry.active == 0 && now.Sub(entry.lastUsed) >= p.idleTTL {
-			entry.transport.CloseIdleConnections()
+			p.closeEntry(entry)
 			delete(p.entries, key)
 		}
 	}
@@ -167,8 +197,15 @@ func (p *proxyPool) evictLocked(now time.Time) {
 		}
 	}
 	if oldest != nil {
-		oldest.transport.CloseIdleConnections()
+		p.closeEntry(oldest)
 		delete(p.entries, oldestKey)
+	}
+}
+
+func (p *proxyPool) closeEntry(entry *proxyEntry) {
+	entry.transport.CloseIdleConnections()
+	if closer, ok := p.dialer.(targetCloser); ok {
+		closer.CloseTarget(entry.target)
 	}
 }
 
@@ -209,6 +246,6 @@ func (p *proxyPool) close() {
 	p.entries = make(map[string]*proxyEntry)
 	p.mu.Unlock()
 	for _, entry := range entries {
-		entry.transport.CloseIdleConnections()
+		p.closeEntry(entry)
 	}
 }
