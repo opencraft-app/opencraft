@@ -12,15 +12,18 @@ import { resetHermesCommonSettingsGroup } from "../agent-common-settings-reset";
 const snapshot = (
   defaultedKeys: HermesCommonSettingsSnapshot["defaultedKeys"] = [],
   unsupportedKeys: HermesCommonSettingsSnapshot["unsupportedKeys"] = [],
+  values: Partial<HermesCommonSettingsSnapshot["values"]> = {},
 ): HermesCommonSettingsSnapshot => ({
   values: {
     approvalMode: "off",
+    destructiveSlashConfirm: false,
     persistentMemory: true,
     userProfile: true,
     autoCompression: true,
     compressionThreshold: 0.5,
     compressionTarget: 0.2,
     protectedRecentMessages: 20,
+    ...values,
   },
   defaultedKeys,
   unsupportedKeys,
@@ -29,9 +32,10 @@ const snapshot = (
 const snapshotOutput = (
   defaultedKeys: HermesCommonSettingsSnapshot["defaultedKeys"],
   unsupportedKeys: HermesCommonSettingsSnapshot["unsupportedKeys"] = [],
+  values: Partial<HermesCommonSettingsSnapshot["values"]> = {},
 ) => [
   HERMES_COMMON_SETTINGS_JSON_START,
-  JSON.stringify(snapshot(defaultedKeys, unsupportedKeys)),
+  JSON.stringify(snapshot(defaultedKeys, unsupportedKeys, values)),
   HERMES_COMMON_SETTINGS_JSON_END,
 ].join("\n");
 
@@ -42,10 +46,10 @@ const botsWith = (execDebugCommand: ReturnType<typeof vi.fn>) => (
 );
 
 describe("resetHermesCommonSettingsGroup", () => {
-  it("restores the security group without restarting Gateway", async () => {
-    const verified = snapshot(["approvalMode"]);
-    verified.values.approvalMode = "smart";
+  it("restores Security to the LightVela preset without restarting Gateway", async () => {
+    const verified = snapshot();
     const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce(succeeded())
       .mockResolvedValueOnce(succeeded())
       .mockResolvedValueOnce(succeeded([
         HERMES_COMMON_SETTINGS_JSON_START,
@@ -58,41 +62,79 @@ describe("resetHermesCommonSettingsGroup", () => {
       bots: botsWith(execDebugCommand),
       botId: "bot-a",
       group: "security",
-      snapshot: snapshot(),
+      snapshot: snapshot([], [], {
+        approvalMode: "smart",
+        destructiveSlashConfirm: true,
+      }),
       getGatewayRestartCommand,
     });
 
-    expect(result).toMatchObject({ status: "success", snapshot: { values: { approvalMode: "smart" } } });
+    expect(result).toMatchObject({
+      status: "success",
+      snapshot: { values: { approvalMode: "off", destructiveSlashConfirm: false } },
+    });
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config unset approvals.mode",
+      "hermes config set approvals.mode off",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
-    expect(execDebugCommand).toHaveBeenCalledTimes(2);
+    expect(execDebugCommand).toHaveBeenNthCalledWith(
+      2,
+      "bot-a",
+      "hermes config set approvals.destructive_slash_confirm false",
+      { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
+    );
+    expect(execDebugCommand).toHaveBeenCalledTimes(3);
     expect(getGatewayRestartCommand).not.toHaveBeenCalled();
   });
 
-  it("returns partial when Security reread is defaulted but approval mode is not effectively smart", async () => {
+  it("writes only the Security setting that differs from the LightVela preset", async () => {
     const execDebugCommand = vi.fn()
       .mockResolvedValueOnce(succeeded())
-      .mockResolvedValueOnce(succeeded(snapshotOutput(["approvalMode"])));
+      .mockResolvedValueOnce(succeeded(snapshotOutput([])));
 
     const result = await resetHermesCommonSettingsGroup({
       bots: botsWith(execDebugCommand),
       botId: "bot-a",
       group: "security",
-      snapshot: snapshot(),
-      getGatewayRestartCommand: vi.fn(async () => "hermes gateway restart"),
+      snapshot: snapshot([], [], { destructiveSlashConfirm: true }),
+      getGatewayRestartCommand: vi.fn(async () => "restart"),
+    });
+
+    expect(result).toMatchObject({ status: "success" });
+    expect(execDebugCommand).toHaveBeenNthCalledWith(
+      1,
+      "bot-a",
+      "hermes config set approvals.destructive_slash_confirm false",
+      { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
+    );
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns partial when Security reread does not match the LightVela preset", async () => {
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded(snapshotOutput([], [], {
+        destructiveSlashConfirm: true,
+      })));
+
+    const result = await resetHermesCommonSettingsGroup({
+      bots: botsWith(execDebugCommand),
+      botId: "bot-a",
+      group: "security",
+      snapshot: snapshot([], [], {
+        approvalMode: "manual",
+        destructiveSlashConfirm: true,
+      }),
+      getGatewayRestartCommand: vi.fn(async () => "restart"),
     });
 
     expect(result).toMatchObject({
       status: "partial",
       error: { message: expect.stringContaining("did not return to defaults") },
-      snapshot: {
-        defaultedKeys: ["approvalMode"],
-        values: { approvalMode: "off" },
-      },
+      snapshot: { values: { approvalMode: "off", destructiveSlashConfirm: true } },
     });
   });
 

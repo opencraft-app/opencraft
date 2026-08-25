@@ -12,6 +12,7 @@ import { saveHermesCommonSetting } from "../agent-common-settings-save";
 const snapshot = (threshold = 0.65): HermesCommonSettingsSnapshot => ({
   values: {
     approvalMode: "off",
+    destructiveSlashConfirm: false,
     persistentMemory: true,
     userProfile: true,
     autoCompression: true,
@@ -59,6 +60,42 @@ describe("saveHermesCommonSetting", () => {
       1,
       "bot-a",
       "hermes config set approvals.mode smart",
+      { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
+    );
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
+    expect(getGatewayRestartCommand).not.toHaveBeenCalled();
+  });
+
+  it("writes and verifies session operation confirmation without restarting Gateway", async () => {
+    const confirmedSnapshot: HermesCommonSettingsSnapshot = {
+      ...snapshot(),
+      values: { ...snapshot().values, destructiveSlashConfirm: true },
+    };
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded([
+        HERMES_COMMON_SETTINGS_JSON_START,
+        JSON.stringify(confirmedSnapshot),
+        HERMES_COMMON_SETTINGS_JSON_END,
+      ].join("\n")));
+    const getGatewayRestartCommand = vi.fn(async () => "hermes gateway restart");
+
+    const result = await saveHermesCommonSetting({
+      bots: { execDebugCommand } as Pick<BotRepository, "execDebugCommand"> as BotRepository,
+      botId: "bot-a",
+      key: "destructiveSlashConfirm",
+      value: true,
+      getGatewayRestartCommand,
+    });
+
+    expect(result).toMatchObject({
+      status: "success",
+      snapshot: { values: { destructiveSlashConfirm: true } },
+    });
+    expect(execDebugCommand).toHaveBeenNthCalledWith(
+      1,
+      "bot-a",
+      "hermes config set approvals.destructive_slash_confirm true",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenCalledTimes(2);

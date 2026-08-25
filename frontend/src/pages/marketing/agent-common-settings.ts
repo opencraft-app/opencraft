@@ -10,6 +10,7 @@ export type HermesApprovalMode = (typeof HERMES_APPROVAL_MODES)[number];
 
 export const HERMES_COMMON_SETTING_KEYS = [
   "approvalMode",
+  "destructiveSlashConfirm",
   "persistentMemory",
   "userProfile",
   "autoCompression",
@@ -22,7 +23,7 @@ export type HermesCommonSettingKey = (typeof HERMES_COMMON_SETTING_KEYS)[number]
 export type HermesCommonSettingValue = boolean | number | HermesApprovalMode;
 
 export const HERMES_COMMON_SETTING_KEYS_BY_GROUP = {
-  security: ["approvalMode"],
+  security: ["approvalMode", "destructiveSlashConfirm"],
   memory: ["persistentMemory", "userProfile"],
   context: [
     "autoCompression",
@@ -42,6 +43,7 @@ export function getHermesCommonSettingKeysForGroup(
 
 export interface HermesCommonSettingsValues {
   approvalMode: HermesApprovalMode;
+  destructiveSlashConfirm: boolean;
   persistentMemory: boolean;
   userProfile: boolean;
   autoCompression: boolean;
@@ -62,6 +64,7 @@ export type HermesCommonSettingValidation =
 
 const HERMES_CONFIG_KEY_BY_SETTING: Record<HermesCommonSettingKey, string> = {
   approvalMode: "approvals.mode",
+  destructiveSlashConfirm: "approvals.destructive_slash_confirm",
   persistentMemory: "memory.memory_enabled",
   userProfile: "memory.user_profile_enabled",
   autoCompression: "compression.enabled",
@@ -73,7 +76,7 @@ const HERMES_CONFIG_KEY_BY_SETTING: Record<HermesCommonSettingKey, string> = {
 export function requiresHermesCommonSettingGatewayRestart(
   key: HermesCommonSettingKey,
 ): boolean {
-  return key !== "approvalMode";
+  return key !== "approvalMode" && key !== "destructiveSlashConfirm";
 }
 
 const PYTHON_COMMON_SETTINGS_READER = String.raw`import json, os, subprocess
@@ -108,6 +111,7 @@ if not isinstance(config_payload, dict):
 
 fields = {
     "approvalMode": ("approvals.mode", "smart"),
+    "destructiveSlashConfirm": ("approvals.destructive_slash_confirm", True),
     "persistentMemory": ("memory.memory_enabled", True),
     "userProfile": ("memory.user_profile_enabled", True),
     "autoCompression": ("compression.enabled", True),
@@ -131,7 +135,7 @@ unsupported_keys = []
 def valid_value(field, value):
     if field == "approvalMode":
         return isinstance(value, str) and value in ("smart", "manual", "off")
-    if field in ("persistentMemory", "userProfile", "autoCompression"):
+    if field in ("destructiveSlashConfirm", "persistentMemory", "userProfile", "autoCompression"):
         return isinstance(value, bool)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
@@ -226,7 +230,12 @@ export function validateHermesCommonSetting(
       : { ok: false, reason: "type" };
   }
 
-  if (key === "persistentMemory" || key === "userProfile" || key === "autoCompression") {
+  if (
+    key === "destructiveSlashConfirm"
+    || key === "persistentMemory"
+    || key === "userProfile"
+    || key === "autoCompression"
+  ) {
     return typeof input === "boolean" ? { ok: true, value: input } : { ok: false, reason: "type" };
   }
 
@@ -294,6 +303,25 @@ export function buildHermesCommonSettingCommand(
 
 export function buildHermesCommonSettingUnsetCommand(key: HermesCommonSettingKey): string {
   return `hermes config unset ${HERMES_CONFIG_KEY_BY_SETTING[key]}`;
+}
+
+export function getHermesCommonSettingResetValue(
+  key: HermesCommonSettingKey,
+): HermesCommonSettingValue | undefined {
+  if (key === "approvalMode") return "off";
+  if (key === "destructiveSlashConfirm") return false;
+  return undefined;
+}
+
+export function isHermesCommonSettingAtResetTarget(
+  key: HermesCommonSettingKey,
+  snapshot: HermesCommonSettingsSnapshot,
+): boolean {
+  if (snapshot.unsupportedKeys.includes(key)) return true;
+  const resetValue = getHermesCommonSettingResetValue(key);
+  return resetValue === undefined
+    ? snapshot.defaultedKeys.includes(key)
+    : Object.is(snapshot.values[key], resetValue);
 }
 
 export async function fetchHermesCommonSettingsSnapshot(

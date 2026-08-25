@@ -2,9 +2,12 @@ import type { BotRepository } from "@/repositories/types";
 import { isExecCommandSucceeded, truncateExecOutput } from "@/pages/marketing/agent-reset-config";
 import {
   HERMES_COMMON_SETTINGS_TIMEOUT_MS,
+  buildHermesCommonSettingCommand,
   buildHermesCommonSettingUnsetCommand,
   fetchHermesCommonSettingsSnapshot,
   getHermesCommonSettingKeysForGroup,
+  getHermesCommonSettingResetValue,
+  isHermesCommonSettingAtResetTarget,
   requiresHermesCommonSettingGatewayRestart,
   type HermesCommonSettingGroup,
   type HermesCommonSettingKey,
@@ -28,7 +31,7 @@ function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-function commandError(stage: "unset" | "restart", output: string, status: string): Error {
+function commandError(stage: "set" | "unset" | "restart", output: string, status: string): Error {
   return new Error(`Hermes common settings ${stage} command failed: ${truncateExecOutput(output, status)}`);
 }
 
@@ -37,35 +40,39 @@ export async function resetHermesCommonSettingsGroup(
 ): Promise<HermesCommonSettingsResetResult> {
   const { bots, botId, group, snapshot, getGatewayRestartCommand } = options;
   const targetKeys = getHermesCommonSettingKeysForGroup(group)
-    .filter((key) => !snapshot.unsupportedKeys.includes(key))
-    .filter((key) => !snapshot.defaultedKeys.includes(key));
+    .filter((key) => !isHermesCommonSettingAtResetTarget(key, snapshot));
 
   if (targetKeys.length === 0) {
     return { status: "success", snapshot };
   }
 
   const succeededKeys: HermesCommonSettingKey[] = [];
-  const unsetErrors: Error[] = [];
+  const configErrors: Error[] = [];
 
   for (const key of targetKeys) {
     try {
+      const resetValue = getHermesCommonSettingResetValue(key);
+      const stage = resetValue === undefined ? "unset" : "set";
+      const command = resetValue === undefined
+        ? buildHermesCommonSettingUnsetCommand(key)
+        : buildHermesCommonSettingCommand(key, resetValue);
       const result = await bots.execDebugCommand(
         botId,
-        buildHermesCommonSettingUnsetCommand(key),
+        command,
         { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
       );
       if (isExecCommandSucceeded(result)) {
         succeededKeys.push(key);
       } else {
-        unsetErrors.push(commandError("unset", result.output, result.status));
+        configErrors.push(commandError(stage, result.output, result.status));
       }
     } catch (error) {
-      unsetErrors.push(toError(error));
+      configErrors.push(toError(error));
     }
   }
 
   if (succeededKeys.length === 0) {
-    return { status: "failed", error: unsetErrors[0] ?? new Error("No settings were restored") };
+    return { status: "failed", error: configErrors[0] ?? new Error("No settings were restored") };
   }
 
   try {
@@ -82,14 +89,11 @@ export async function resetHermesCommonSettingsGroup(
     }
 
     const verifiedSnapshot = await fetchHermesCommonSettingsSnapshot(bots, botId);
-    const firstUnsetError = unsetErrors[0];
-    if (firstUnsetError) {
-      return { status: "partial", error: firstUnsetError, snapshot: verifiedSnapshot };
+    const firstConfigError = configErrors[0];
+    if (firstConfigError) {
+      return { status: "partial", error: firstConfigError, snapshot: verifiedSnapshot };
     }
-    if (!targetKeys.every((key) => (
-      verifiedSnapshot.defaultedKeys.includes(key)
-      && (key !== "approvalMode" || verifiedSnapshot.values.approvalMode === "smart")
-    ))) {
+    if (!targetKeys.every((key) => isHermesCommonSettingAtResetTarget(key, verifiedSnapshot))) {
       return {
         status: "partial",
         error: new Error("Hermes common settings did not return to defaults"),
