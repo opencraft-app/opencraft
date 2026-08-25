@@ -4877,7 +4877,7 @@ export const AgentSettingsPage = ({
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-                  <aside className="lv-agents-sidebar lg:sticky lg:top-[84px]">
+                  <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
@@ -5176,7 +5176,7 @@ export const AgentSettingsPage = ({
                     ) : null}
                   </aside>
 
-                  <section className="min-w-0">
+                  <section className="min-w-0 lg:col-start-2">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
                         fallback={sectionFallback}

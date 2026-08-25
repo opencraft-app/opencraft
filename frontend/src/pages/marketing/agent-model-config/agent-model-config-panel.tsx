@@ -1,20 +1,21 @@
 "use client";
 
 import {
-  Activity,
   Check,
   CheckCircle2,
+  CircleHelp,
+  ExternalLink,
   Eye,
   EyeOff,
   Loader2,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/i18n/t";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 import type {
@@ -62,11 +64,21 @@ const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
 
 const MODEL_FIELD_CLASS = "grid gap-y-2";
 const MODEL_CONTROL_CLASS = "h-12 rounded-md border-black/10 bg-white shadow-none outline-none transition-colors focus:border-[#2F6BFF] focus:outline-none focus:ring-0 focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-0";
+const MODEL_COMPOUND_CONTROL_CLASS = "flex h-12 min-w-0 overflow-hidden rounded-md border border-black/10 bg-white shadow-none transition-colors focus-within:border-[#2F6BFF]";
+const MODEL_COMPOUND_FIELD_CLASS = "h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none outline-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0";
+const MODEL_COMPOUND_ACTION_CLASS = "h-full w-28 shrink-0 rounded-none border-0 border-l border-black/10 bg-white px-3 shadow-none hover:translate-y-0 hover:border-black/10 hover:bg-black/[0.025] focus-visible:ring-inset sm:w-36";
 const MODEL_SELECT_CONTENT_CLASS = "max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-md";
 const MODEL_SELECT_CONTENT_STYLE = {
   width: "var(--radix-select-trigger-width)",
   minWidth: "var(--radix-select-trigger-width)",
 } as const;
+
+function captureAgentSidebarPosition() {
+  const sidebar = document.querySelector<HTMLElement>(".lv-agents-sidebar-scroll-isolated");
+  if (sidebar) {
+    sidebar.style.setProperty("--lv-agents-sidebar-locked-top", `${sidebar.getBoundingClientRect().top}px`);
+  }
+}
 
 function managedProviderKey(value: string) {
   const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -94,7 +106,7 @@ function sameModel(
 }
 
 function displayConfiguredModelId(modelId: string) {
-  return ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? "Auto" : modelId;
+  return !modelId.trim() || ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? "Auto" : modelId;
 }
 
 function displayError(message: string, localizedFallback: string) {
@@ -143,7 +155,6 @@ export function AgentModelConfigPanel({
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [purpose, setPurpose] = useState<ConfigurePurpose>("primary");
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [connectionResult, setConnectionResult] = useState<HermesConnectionProbeResult | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<HermesConfiguredModel | null>(null);
   const probeUiRevision = useRef(0);
@@ -171,7 +182,6 @@ export function AgentModelConfigPanel({
     probeUiRevision.current += 1;
     setModelOptions([]);
     setSelectedModelId("");
-    setSuccessMessage(null);
     setConnectionResult(null);
     controller.clearOperationError();
   };
@@ -204,6 +214,12 @@ export function AgentModelConfigPanel({
   const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
+  const pageHeader = (
+    <AgentSectionHeader
+      title={t("模型")}
+      description={t("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")}
+    />
+  );
 
   useEffect(() => {
     if (previousProviderFingerprintRef.current === providerFingerprint) return;
@@ -217,7 +233,6 @@ export function AgentModelConfigPanel({
     setShowApiKey(false);
     setModelOptions([]);
     setSelectedModelId("");
-    setSuccessMessage(null);
     setConnectionResult(null);
   }, [controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
 
@@ -245,7 +260,12 @@ export function AgentModelConfigPanel({
       const nextOptions = catalogModels.map(({ id, name }) => ({ id, name, source: "catalog" as const }));
       setModelOptions(nextOptions);
       setSelectedModelId(nextOptions[0]?.id ?? "");
-      setSuccessMessage(nextOptions.length > 0 ? t("已获取可用模型") : t("未检测到可用模型"));
+      if (nextOptions.length > 0) setPurpose("primary");
+      if (nextOptions.length > 0) {
+        toast.success(t("已获取可用模型"));
+      } else {
+        toast.error(t("未获取到可用模型，请检查API Key是否正确或有效"));
+      }
       return;
     }
     const probeResult = await controller.probe({
@@ -253,7 +273,11 @@ export function AgentModelConfigPanel({
       baseUrl: providerDraft.baseUrl,
       apiMode: providerDraft.apiMode,
     });
-    if (!probeResult || revision !== probeUiRevision.current || requestFingerprint !== providerFingerprintRef.current) return;
+    if (revision !== probeUiRevision.current || requestFingerprint !== providerFingerprintRef.current) return;
+    if (!probeResult) {
+      toast.error(t("模型配置操作失败，请重试。"));
+      return;
+    }
     const nextOptions: ModelOption[] = probeResult.models.length > 0
       ? probeResult.models.map((id) => ({ id, name: id, source: "live" }))
       : probeResult.succeeded
@@ -261,9 +285,12 @@ export function AgentModelConfigPanel({
         : [];
     setModelOptions(nextOptions);
     setSelectedModelId(nextOptions[0]?.id ?? "");
-    setSuccessMessage(nextOptions.length > 0
-      ? t("已获取可用模型")
-      : t("未检测到可用模型"));
+    if (nextOptions.length > 0) setPurpose("primary");
+    if (nextOptions.length > 0) {
+      toast.success(t("已获取可用模型"));
+    } else {
+      toast.error(t("未获取到可用模型，请检查API Key是否正确或有效"));
+    }
   };
 
   const handleAdd = async () => {
@@ -272,6 +299,7 @@ export function AgentModelConfigPanel({
       apiKey: apiKey.trim(),
       model: selectedModel,
       purpose,
+      discoverModels: category === "custom" || activeProvider?.discoveryStrategy !== "catalog",
     });
     if (!nextSnapshot) return;
     setApiKey("");
@@ -279,7 +307,7 @@ export function AgentModelConfigPanel({
     setShowApiKey(false);
     setModelOptions([]);
     setSelectedModelId("");
-    setSuccessMessage(t("模型已添加"));
+    toast.success(t("模型已添加"));
     setConnectionResult(null);
   };
 
@@ -305,23 +333,33 @@ export function AgentModelConfigPanel({
     providerTriggerRef.current?.focus();
   };
 
-  if (controller.loading && !controller.snapshot) return <ModelConfigLoading />;
+  if (controller.loading && !controller.snapshot) {
+    return (
+      <div className="space-y-5 pb-12 md:pb-16">
+        {pageHeader}
+        <ModelConfigLoading />
+      </div>
+    );
+  }
 
   if (controller.loadError && !controller.snapshot) {
     return (
-      <div className="rounded-md border border-red-100 bg-red-50 px-5 py-5 text-sm text-red-700" role="alert">
-        <p className="font-medium">{t("读取模型配置失败")}</p>
-        <p className="mt-1 text-pretty text-red-600/80">{displayError(controller.loadError, t("模型配置操作失败，请重试。"))}</p>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="mt-4 rounded-md"
-          onClick={() => void controller.reload()}
-        >
-          <RefreshCw className="size-3.5" aria-hidden="true" />
-          {t("重试")}
-        </Button>
+      <div className="space-y-5 pb-12 md:pb-16">
+        {pageHeader}
+        <div className="rounded-md border border-red-100 bg-red-50 px-5 py-5 text-sm text-red-700" role="alert">
+          <p className="font-medium">{t("读取模型配置失败")}</p>
+          <p className="mt-1 text-pretty text-red-600/80">{displayError(controller.loadError, t("模型配置操作失败，请重试。"))}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="mt-4 rounded-md"
+            onClick={() => void controller.reload()}
+          >
+            <RefreshCw className="size-3.5" aria-hidden="true" />
+            {t("重试")}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -330,15 +368,16 @@ export function AgentModelConfigPanel({
 
   return (
     <div className="space-y-5 pb-12 md:pb-16" aria-busy={busy || controller.loading}>
+      {pageHeader}
       <section className="overflow-hidden rounded-md border border-black/[0.06] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
         <div className="flex items-start justify-between gap-4 border-b border-black/[0.06] px-5 py-4">
-          <div>
+          <div className="flex items-center gap-1.5">
             <h2 ref={configuredHeadingRef} tabIndex={-1} className="text-base font-semibold text-black/85 focus:outline-none">
               {t("已配置模型")}
             </h2>
-            <p className="mt-1 text-pretty text-sm text-black/45">
-              {t("选择一个主模型，并可设置多个备用模型。配置将在新会话中生效。")}
-            </p>
+            <ModelActionTooltip content={t("选择一个主模型，并可设置多个备用模型。")}>
+              <CircleHelp className="size-3.5 text-black/35" aria-hidden="true" />
+            </ModelActionTooltip>
           </div>
           <span className="shrink-0 text-xs font-medium text-black/35">
             {t("共 {{count}} 个", { count: snapshot.configuredModels.length })}
@@ -367,6 +406,8 @@ export function AgentModelConfigPanel({
             {snapshot.configuredModels.map((model) => {
               const primary = sameModel(snapshot.primary, model);
               const fallback = snapshot.fallbacks.some((candidate) => sameModel(candidate, model));
+              const requiresSetup = model.requiresSetup === true;
+              const canDelete = model.canDelete !== false;
               const role = primary ? "primary" : fallback ? "fallback" : "idle";
               return (
                 <li
@@ -384,26 +425,26 @@ export function AgentModelConfigPanel({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <ModelActionTooltip content={primary ? t("当前模型已经是主模型") : undefined}>
+                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("当前模型已经是主模型") : undefined}>
                       <Button
                         type="button"
                         size="sm"
                         variant={primary ? "secondary" : "outline"}
                         className="rounded-md"
-                        disabled={busy || primary}
+                        disabled={busy || primary || requiresSetup}
                         onClick={() => void controller.assign(model, "primary")}
                       >
                         <Check className="size-3.5" aria-hidden="true" />
                         {t("设为主模型")}
                       </Button>
                     </ModelActionTooltip>
-                    <ModelActionTooltip content={primary ? t("主模型不能同时设为备用模型") : undefined}>
+                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("主模型不能同时设为备用模型") : undefined}>
                       <Button
                         type="button"
                         size="sm"
                         variant={fallback ? "secondary" : "outline"}
                         className="rounded-md"
-                        disabled={busy || primary}
+                        disabled={busy || primary || requiresSetup}
                         onClick={() => void (fallback
                           ? controller.removeFallback(model)
                           : controller.assign(model, "fallback"))}
@@ -411,13 +452,13 @@ export function AgentModelConfigPanel({
                         {fallback ? t("取消备用") : t("设为备用模型")}
                       </Button>
                     </ModelActionTooltip>
-                    <ModelActionTooltip content={primary ? t("请先切换主模型后再删除") : undefined}>
+                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("请先切换主模型后再删除") : !canDelete ? t("请在 Hermes 中管理此模型") : undefined}>
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
                         className="rounded-md"
-                        disabled={busy || primary}
+                        disabled={busy || primary || requiresSetup || !canDelete}
                         onClick={() => {
                           controller.clearOperationError();
                           setDeleteTarget(model);
@@ -504,7 +545,13 @@ export function AgentModelConfigPanel({
                     resetProbeResult();
                   }}
                 >
-                  <SelectTrigger id="custom-api-mode" aria-label={t("兼容协议")} className={MODEL_CONTROL_CLASS}>
+                  <SelectTrigger
+                    id="custom-api-mode"
+                    aria-label={t("兼容协议")}
+                    className={MODEL_CONTROL_CLASS}
+                    onPointerDownCapture={captureAgentSidebarPosition}
+                    onKeyDownCapture={captureAgentSidebarPosition}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent
@@ -512,9 +559,15 @@ export function AgentModelConfigPanel({
                     className={MODEL_SELECT_CONTENT_CLASS}
                     style={MODEL_SELECT_CONTENT_STYLE}
                   >
-                    <SelectItem value="chat_completions">OpenAI Chat Completions</SelectItem>
-                    <SelectItem value="anthropic_messages">Anthropic Messages</SelectItem>
-                    <SelectItem value="codex_responses">OpenAI Responses</SelectItem>
+                    <SelectItem value="chat_completions">
+                      OpenAI Chat Completions
+                    </SelectItem>
+                    <SelectItem value="anthropic_messages">
+                      Anthropic Messages
+                    </SelectItem>
+                    <SelectItem value="codex_responses">
+                      OpenAI Responses
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -540,6 +593,8 @@ export function AgentModelConfigPanel({
                   id="model-provider"
                   aria-label={category === "coding_plan" ? t("Coding Plan 套餐") : t("模型服务商")}
                   className={MODEL_CONTROL_CLASS}
+                  onPointerDownCapture={captureAgentSidebarPosition}
+                  onKeyDownCapture={captureAgentSidebarPosition}
                 >
                   <SelectValue placeholder={t("请选择 Provider")} />
                 </SelectTrigger>
@@ -562,48 +617,63 @@ export function AgentModelConfigPanel({
           )}
 
           <div className={MODEL_FIELD_CLASS}>
-            <label className="text-sm font-medium text-black/70" htmlFor="model-api-key">API Key</label>
-            <div className="relative min-w-0">
-              <Input
-                id="model-api-key"
-                type={showApiKey ? "text" : "password"}
-                autoComplete="new-password"
-                value={apiKey}
-                disabled={busy}
-                placeholder={t("请输入 API Key")}
-                className={cn(MODEL_CONTROL_CLASS, "pr-11")}
-                onChange={(event) => {
-                  setApiKey(event.target.value);
-                  setApiKeyTarget(providerFingerprint);
-                  resetProbeResult();
-                }}
-              />
-              <button
+            <label id="model-api-key-label" className="text-sm font-medium text-black/70" htmlFor="model-api-key">API Key</label>
+            <div data-slot="model-api-key-control" className={MODEL_COMPOUND_CONTROL_CLASS}>
+              <div className="relative min-w-0 flex-1">
+                <Input
+                  id="model-api-key"
+                  type={showApiKey ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={apiKey}
+                  disabled={busy}
+                  placeholder={t("请输入 API Key")}
+                  className={cn(MODEL_COMPOUND_FIELD_CLASS, "pr-11")}
+                  onChange={(event) => {
+                    setApiKey(event.target.value);
+                    setApiKeyTarget(providerFingerprint);
+                    resetProbeResult();
+                  }}
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-black/35 hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  aria-label={showApiKey ? t("隐藏 API Key") : t("显示 API Key")}
+                  onClick={() => setShowApiKey((visible) => !visible)}
+                >
+                  {showApiKey ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                </button>
+              </div>
+              <Button
                 type="button"
-                className="absolute right-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-black/35 hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                aria-label={showApiKey ? t("隐藏 API Key") : t("显示 API Key")}
-                onClick={() => setShowApiKey((visible) => !visible)}
+                variant="outline"
+                className={MODEL_COMPOUND_ACTION_CLASS}
+                disabled={!canProbe || busy}
+                onClick={() => void handleProbe()}
               >
-                {showApiKey ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
-              </button>
+                {controller.operation === "probe" ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : null}
+                {controller.operation === "probe" ? t("获取中...") : t("获取可用模型")}
+              </Button>
             </div>
             {activeProvider?.apiKeyUrl ? (
               <a
-                className="w-fit text-sm font-medium text-black/55 underline-offset-4 hover:text-black/80 hover:underline"
+                className="inline-flex w-fit items-center gap-1 text-sm font-medium text-black/55 underline-offset-4 hover:text-black/80 hover:underline"
                 href={activeProvider.apiKeyUrl}
                 target="_blank"
                 rel="noreferrer"
               >
-                {t("获取 API Key")}
+                {t("点此获取 API Key")}
+                <ExternalLink className="size-3.5" aria-hidden="true" />
               </a>
             ) : null}
           </div>
 
           <div className={MODEL_FIELD_CLASS}>
-            <label className="text-sm font-medium text-black/70" htmlFor="detected-model">
+            <label id="detected-model-label" className="text-sm font-medium text-black/70" htmlFor="detected-model">
               {t("模型")}
             </label>
-            <div className={cn(modelOptions.length > 0 && "flex flex-col gap-2 sm:flex-row sm:items-center")}>
+            <div data-slot="model-option-control" className={MODEL_COMPOUND_CONTROL_CLASS}>
               <Select
                 value={selectedModelId}
                 disabled={busy || modelOptions.length === 0}
@@ -616,7 +686,9 @@ export function AgentModelConfigPanel({
                 <SelectTrigger
                   id="detected-model"
                   aria-label={t("模型")}
-                  className={cn(MODEL_CONTROL_CLASS, modelOptions.length > 0 && "min-w-0 flex-1")}
+                  className={MODEL_COMPOUND_FIELD_CLASS}
+                  onPointerDownCapture={captureAgentSidebarPosition}
+                  onKeyDownCapture={captureAgentSidebarPosition}
                 >
                   <SelectValue placeholder={modelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
                 </SelectTrigger>
@@ -626,39 +698,25 @@ export function AgentModelConfigPanel({
                   style={MODEL_SELECT_CONTENT_STYLE}
                 >
                   {modelOptions.map((modelOption) => (
-                    <SelectItem key={modelOption.id} value={modelOption.id}>{modelOption.name}</SelectItem>
+                    <SelectItem key={modelOption.id} value={modelOption.id}>
+                      {modelOption.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {modelOptions.length > 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full shrink-0 rounded-md sm:min-w-36 sm:w-auto"
-                  disabled={!canProbe || busy}
-                  onClick={() => void handleProbe()}
-                >
-                  {controller.operation === "probe"
-                    ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    : <Search className="size-4" aria-hidden="true" />}
-                  {controller.operation === "probe" ? t("获取中...") : t("获取可用模型")}
-                </Button>
-              ) : null}
-            </div>
-            {modelOptions.length === 0 ? (
               <Button
                 type="button"
                 variant="outline"
-                className="w-full rounded-md sm:min-w-36 sm:w-auto"
-                disabled={!canProbe || busy}
-                onClick={() => void handleProbe()}
+                className={MODEL_COMPOUND_ACTION_CLASS}
+                disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy}
+                onClick={() => void handleConnectivityTest()}
               >
-                {controller.operation === "probe"
-                  ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  : <Search className="size-4" aria-hidden="true" />}
-                {controller.operation === "probe" ? t("获取中...") : t("获取可用模型")}
+                {controller.operation === "connectivity-probe" ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : null}
+                {controller.operation === "connectivity-probe" ? t("检测中...") : t("检测模型状态")}
               </Button>
-            ) : null}
+            </div>
           </div>
 
           <fieldset>
@@ -706,35 +764,18 @@ export function AgentModelConfigPanel({
             ) : null}
           </fieldset>
 
-          <div aria-live="polite">
-            {controller.operationError && ["probe", "connectivity-probe", "add"].includes(controller.operationErrorOperation ?? "") ? (
+          {controller.operationError && ["connectivity-probe", "add"].includes(controller.operationErrorOperation ?? "") ? (
+            <div aria-live="polite">
               <p className="mb-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
                 {displayError(controller.operationError, t("模型配置操作失败，请重试。"))}
               </p>
-            ) : null}
-            {successMessage ? (
-              <p className="rounded-md border border-black/[0.06] bg-black/[0.025] px-3 py-2 text-sm text-black/60">
-                {successMessage}
-              </p>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
-          <div className="flex flex-col gap-2 border-t border-black/[0.06] pt-5 sm:flex-row sm:justify-end">
+          <div className="flex justify-start border-t border-black/[0.06] pt-5">
             <Button
               type="button"
-              variant="outline"
-              className="w-full rounded-md sm:w-auto"
-              disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy}
-              onClick={() => void handleConnectivityTest()}
-            >
-              {controller.operation === "connectivity-probe"
-                ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                : <Activity className="size-4" aria-hidden="true" />}
-              {controller.operation === "connectivity-probe" ? t("检测中...") : t("模型检测")}
-            </Button>
-            <Button
-              type="button"
-              className="w-full rounded-md sm:w-auto"
+              className="rounded-md"
               disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (purpose === "fallback" && fallbackPurposeDisabled)}
               onClick={() => void handleAdd()}
             >
