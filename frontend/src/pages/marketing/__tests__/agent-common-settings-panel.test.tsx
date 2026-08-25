@@ -1,6 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { PropsWithChildren, ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { cleanup, fireEvent, render as testingLibraryRender, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { LocaleOverrideProvider, useT, type I18nLocale } from "@/i18n/t";
 import type { BotRepository } from "@/repositories/types";
 
 import { AgentCommonSettingsPanel } from "../agent-common-settings-panel";
@@ -41,12 +44,30 @@ const baseSnapshot = (patch?: Partial<HermesCommonSettingsSnapshot>): HermesComm
 
 const bots = {} as BotRepository;
 
+const render = (ui: ReactElement, locale: I18nLocale = "zh-CN") => {
+  const Wrapper = ({ children }: PropsWithChildren) => (
+    <LocaleOverrideProvider locale={locale}>{children}</LocaleOverrideProvider>
+  );
+  return testingLibraryRender(ui, { wrapper: Wrapper });
+};
+
+const SavedFeedbackProbe = () => {
+  const t = useT();
+  return <span>{t("已保存")}</span>;
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
 describe("AgentCommonSettingsPanel", () => {
+  it("provides non-empty Indonesian saved feedback", () => {
+    render(<SavedFeedbackProbe />, "id-ID");
+
+    expect(screen.getByText("Tersimpan")).toBeTruthy();
+  });
+
   it("labels the page as advanced settings", () => {
     render(
       <AgentCommonSettingsPanel
@@ -975,19 +996,92 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.queryByText("已保存")).toBeNull();
   });
 
-  it("disables approval mode while the Agent is stopped", async () => {
-    render(
+  it("defers loading settings until the Agent starts", async () => {
+    const loadSettings = vi.fn().mockResolvedValue(baseSnapshot());
+    const saveSetting = vi.fn();
+    const { rerender } = render(
       <AgentCommonSettingsPanel
         botId="bot-a"
         botStatus="stopped"
         bots={bots}
         getGatewayRestartCommand={async () => "restart"}
-        loadSettings={async () => baseSnapshot()}
+        loadSettings={loadSettings}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    expect(loadSettings).not.toHaveBeenCalled();
+    expect(screen.queryByText("正在读取当前配置…")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+    expect(screen.getByText("Agent 未运行，启动后才能查看和修改设置。")).toBeTruthy();
+
+    rerender(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    await waitFor(() => expect(loadSettings).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("combobox", { name: "审批模式" })).toBeEnabled();
+
+    rerender(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="stopped"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    expect(screen.queryByRole("combobox", { name: "审批模式" })).toBeNull();
+    expect(screen.queryByText("正在读取当前配置…")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+  });
+
+  it("hides loading content on the first stopped render", () => {
+    const loadSettings = vi.fn().mockResolvedValue(baseSnapshot());
+    const html = renderToStaticMarkup(
+      <LocaleOverrideProvider locale="zh-CN">
+        <AgentCommonSettingsPanel
+          botId="bot-a"
+          botStatus="stopped"
+          bots={bots}
+          getGatewayRestartCommand={async () => "restart"}
+          loadSettings={loadSettings}
+          saveSetting={vi.fn()}
+        />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(loadSettings).not.toHaveBeenCalled();
+    expect(html).toContain("Agent 未运行，启动后才能查看和修改设置。");
+    expect(html).not.toContain("正在读取当前配置…");
+  });
+
+  it("keeps running-state load errors visible", async () => {
+    const loadSettings = vi.fn().mockRejectedValue(new Error("读取命令失败"));
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
         saveSetting={vi.fn()}
       />,
     );
 
-    expect(await screen.findByRole("combobox", { name: "审批模式" })).toBeDisabled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("读取配置失败：读取命令失败");
+    expect(screen.getByRole("button", { name: "重试" })).toBeTruthy();
   });
 
   it("clears in-flight save state when switching to another Agent", async () => {

@@ -15,13 +15,13 @@ export const metadata: Metadata = {
 
 export function generateStaticParams(): Array<{ section: string }> {
   return Object.keys(AGENT_SECTION_ID_BY_SLUG)
-    .filter((section) => (isGlobal ? section !== 'settings' : section !== 'websites'))
+    .filter((section) => isGlobal || section !== 'websites')
     .map((section) => ({ section }));
 }
 
 export default async function AgentsSectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
   const sectionId = AGENT_SECTION_ID_BY_SLUG[section];
-  if (!sectionId || (!isGlobal && sectionId === 'website') || (isGlobal && sectionId === 'settings')) notFound();
+  if (!sectionId || (!isGlobal && sectionId === 'website')) notFound();
   return <AgentsPageClient initialSectionSlug={section} sectionId={sectionId} />;
 }
