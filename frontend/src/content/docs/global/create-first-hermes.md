@@ -1,5 +1,11 @@
 # 如何开通第一个 Hermes 实例？
 
+## 摘要
+
+**开通第一个 Hermes 实例的流程是：使用 Google 或 GitHub 登录 → 选择可用套餐 → 按当前套餐规则开通 → 平台自动创建实例 → 配置模型与通道。全程在网页完成，无需购买服务器或做本地部署。Hermes 实例即运行在 LightVela 云端的 Agent 运行环境，创建后可 7×24 小时在线。创建完成后进入「我的 Hermes」管理台，即可配置模型、接入聊天通道并安装技能；若暂时没有自有模型 API Key，可直接使用套餐按月提供的模型积分开始对话。**
+
+---
+
 Hermes 实例是运行在 LightVela 云端的 Agent 运行环境——你的专属 AI 伙伴就住在这里。开通第一个 Hermes 实例的过程是：**使用 Google 或 GitHub 登录 → 选择可用套餐 → 按当前套餐规则开通 → 平台自动创建实例 → 配置模型与通道**。整个流程都在网页上完成，无需购买服务器或进行本地部署。本页按顺序说明每一步。
 
 ## 本页覆盖
@@ -16,7 +22,7 @@ Hermes 实例是运行在 LightVela 云端的 Agent 运行环境——你的专�
 
 - 在[订阅页](/subscribe)选择一个当前可用的套餐；国际站不要求完成中国实名认证
 
-- 至少一个准备接入的聊天通道，例如 Telegram、WhatsApp、Discord 或 WeChat
+- 至少一个准备接入的聊天通道，例如 Telegram、WhatsApp、Discord、Slack 或 WeChat
 
 ---
 
@@ -46,7 +52,7 @@ LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测
 
 1. **配置模型** — 选择底层大模型，见[模型配置](./configuration/model.md)
 
-2. **连接通道** — 接入 Telegram、WhatsApp、Discord、WeChat 或其他支持的聊天通道，之后即可在聊天软件中直接与 Agent 对话
+2. **连接通道** — 接入 Telegram、WhatsApp、Discord、Slack、WeChat 或其他支持的聊天通道，之后即可在聊天软件中直接与 Agent 对话
 
 3. **（可选）安装技能与设置自动任务** — 为 Agent 扩展能力，见[自动任务配置](./configuration/automation.md)
 

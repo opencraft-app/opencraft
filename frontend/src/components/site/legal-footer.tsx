@@ -5,7 +5,6 @@ import {
   BEIAN_URL,
   CN_PRIVACY_POLICY_URL,
   CN_TERMS_OF_SERVICE_URL,
-  getGlobalTermsOfServiceUrl,
   ICP_LICENSE,
   shouldShowICP,
 } from "@/constants/legal";
@@ -15,20 +14,40 @@ import {
   DISCORD_INVITE_URL,
   DISCORD_QR_IMAGE,
 } from "@/constants/community";
-import { useT } from "@/i18n/t";
-import { isCN, isGlobal } from "@/lib/region";
+import { useLocaleOverride, useT } from "@/i18n/t";
+import { isCN, isGlobal, localizedPath } from "@/lib/region";
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 
 interface LegalFooterProps {
   icpPlacement?: "inline" | "right";
+  /**
+   * 是否展示「隐私政策 · 服务条款 · 产品反馈 · 加入交流群」链接行。
+   *
+   * 默认 true，保持其他页面（文档站、账户页、更新日志等 12+ 处）现状不变。
+   * 首页传 false：这些链接已在上方 `FooterLinkColumns` 的分栏里出现，
+   * 同页重复会让页脚出现两套相同入口。
+   */
+  showLinks?: boolean;
 }
 
-export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
+export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: LegalFooterProps) => {
   const currentYear = new Date().getFullYear();
   const t = useT();
   const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
+  const currentLocale: PublicSiteLocaleCode =
+    localeOverride === PUBLIC_SITE_LOCALES.ID_ID || i18n.language === PUBLIC_SITE_LOCALES.ID_ID
+      ? PUBLIC_SITE_LOCALES.ID_ID
+      : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT || i18n.language === PUBLIC_SITE_LOCALES.ZH_HANT
+        ? PUBLIC_SITE_LOCALES.ZH_HANT
+        : localeOverride?.startsWith("zh") || i18n.language?.startsWith("zh")
+          ? PUBLIC_SITE_LOCALES.ZH_SG
+          : PUBLIC_SITE_LOCALES.EN_US;
   const showICP = shouldShowICP();
   const [showQR, setShowQR] = useState(false);
-  const globalTermsOfServiceUrl = getGlobalTermsOfServiceUrl(i18n.language);
+  const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
+  const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
+  const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
   const footerLinkClass = "lw-site-link lw-site-link--muted transition-colors";
   const showInlineICP = showICP && icpPlacement === "inline";
   const showRightICP = showICP && icpPlacement === "right";
@@ -56,9 +75,10 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </>
             )}
           </span>
+          {showLinks && (
           <span>
             {isGlobal ? (
-              <a href="/privacy-policy" className={footerLinkClass}>
+              <a href={privacyPolicyPath} className={footerLinkClass}>
                 {t("隐私政策")}
               </a>
             ) : (
@@ -73,12 +93,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
             )}
             ·
             {isGlobal ? (
-              <a
-                href={globalTermsOfServiceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={footerLinkClass}
-              >
+              <a href={termsOfServicePath} className={footerLinkClass}>
                 {t("服务条款")}
               </a>
             ) : (
@@ -105,13 +120,15 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
             {isGlobal ? (
               <>
                 ·
-                <a href="/open-source-licenses" className={footerLinkClass}>
+                <a href={openSourceLicensesPath} className={footerLinkClass}>
                   {t("开源声明")}
                 </a>
               </>
             ) : null}
           </span>
+          )}
           {/* 加入交流群 — hover 展示二维码；国际站文案与二维码均可点击直达 Discord */}
+          {showLinks && (
           <span
             className="relative"
             onMouseEnter={() => setShowQR(true)}
@@ -175,6 +192,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               )}
             </AnimatePresence>
           </span>
+          )}
           {showRightICP && (
             <a
               href={BEIAN_URL}

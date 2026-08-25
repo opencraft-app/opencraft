@@ -99,8 +99,8 @@ _artifacts/{siteID}/{releaseID}.zip      上传的制品
 
 **工程待办**
 
-1. **HTTPS 未收口**（为什么是上线阻断见下面阻断项第 2 条，这里只记怎么做）。Let's Encrypt 通配符证书已签发（`*.sites.lightclaw.tech`，**90 天，2026-11-04 到期**），文件在 `/tmp/sites-wildcard-cert/`（`/tmp` 会被清理，需尽快转移）。腾讯云 CLB **只认带 `qcloud_cert_id` 的 Opaque secret**，`kubernetes.io/tls` 会报 `E4011`——正确做法是 `tccli ssl UploadCertificate` 导入拿 certId、secret 里只放 certId。参照 `frontend-preview` ns 里已工作 94 天的 `preview-lightclaw-tech-wildcard-tls` 照抄形式。目前 Ingress 无 TLS 段、`WEBSITE_SITE_URL_SCHEME=http`。
-2. **证书续期无自动化。** 90 天到期，需要集群内 CronJob 跑 acme.sh + DNSPod API 自动更新 secret。
+1. **HTTPS 未收口**（为什么是上线阻断见下面阻断项第 2 条，这里只记怎么做）。Let's Encrypt 通配符证书已签发（`*.sites.lightclaw.tech`，**90 天，2026-11-04 到期**），文件在 `/tmp/sites-wildcard-cert/`（`/tmp` 会被清理，需尽快转移）。腾讯云 CLB **只认带 `qcloud_cert_id` 的 Opaque Secret**，`kubernetes.io/tls` 会报 `E4011`。平台证书自动化负责签发/续期、调用 `tccli ssl UploadCertificate` 导入腾讯云 SSL，并更新稳定 Secret `site-gateway-wildcard-tls` 的 live `qcloud_cert_id`；证书 ID 不写入 GitOps。当前 Ingress 无 TLS 段、`WEBSITE_SITE_URL_SCHEME=http`。
+2. **证书自动化需完成接入验收。** 续期后可能生成新的腾讯云证书 ID，平台必须更新 live Secret 并触发 qcloud Ingress controller 重新同步；GitOps 只维护 Secret 名。
 3. **销毁侧可观测性未做**：`dead` operation 数、`deleting` 超期站点数的指标告警。这是销毁侧 best-effort 的唯一兜底。
 4. **测试库不再定义生产迁移历史。** 北京库的手工 DDL 与记账漂移按测试数据处理；需要继续使用时清理建站表/列后重跑合并后的 000028。生产只接受 `version=27, dirty=0` 且不存在建站表/列的前置状态，再执行一次最终态迁移。
 5. **`ctl-service` 由 ArgoCD 自愈托管**，`set image` 一分钟内被拉回 master 镜像。所以 pass 隔离/销毁钩子的改动**在测试环境要等分支通过 GitOps 才长期生效**，目前长期生效的只有 `ctl-api-cloudbase` 和 `website-deployer`。但**验证不需要等 GitOps**：按第七节那套 SOP 暂停自愈（关键是先按住 ApplicationSet `sandbox-family`，只 patch leaf Application 无效），就能直接换镜像验真实发布对象，实测暂停可稳定维持 75 秒以上，本次 `creating` 隔离修复就是这么验的。
@@ -118,7 +118,7 @@ _artifacts/{siteID}/{releaseID}.zip      上传的制品
 上面两组是「要做的事」，这一组是「不做完不能上线」。按阻断程度排序，每条先说清为什么它是阻断，而不只是「有这个问题」。
 
 1. **生产实例 key 尚未实际签发和下发。** 代码、脚本与 Agent 交付文档已具备，但在真实生产实例收到各自的 key 前，对话建站主链路仍不可用。下发必须按 `docs/handover/2026-08-07-hermes-website-token-delivery-for-agent.md` 执行，不能复用浏览器 session。
-2. **正式域名和 HTTPS 云资源尚未提供。** sgprod GitOps 已预留根域、泛域名和 `qcloud_cert_id`，但正式域名、DNS、证书与续期未落值前禁止 sync。
+2. **正式域名和 HTTPS 云资源尚未提供。** sgprod GitOps 已预留根域、泛域名和稳定 TLS Secret 名，但正式域名、DNS、证书与平台证书自动化未落值前禁止 sync。
 3. **腾讯云欠费——挡住的是后续全部采购动作。** 所有新购被拒，付费证书当初就是因此下不了单，而 API 只报笼统的 `InvalidParam`，误导性极强，会让人顺着参数白查很久。**买正式域名之前必须先解决欠费**，否则会以同样的方式被拒、同样看不出原因。这条没有工程绕法。
 4. **站点生命周期钩子未上线——到期不下线是计费口子。** 测试环境当前 master 镜像里整个 website 钩子都不存在，套餐隔离后所有站点继续对外服务（见第二节表格与第六节验证结论第 6 条）。逻辑本身已验证有效，缺的只是把 ctl 镜像滚上去这一步（见工程待办第 5 条）。
 5. **生产一次性 000028 尚未执行。** 上线前必须确认目标生产库仍为 `version=27, dirty=0`、不存在建站表/列并已有快照，再通过受控 DB job 执行一次；测试库的历史漂移不进入生产迁移链。

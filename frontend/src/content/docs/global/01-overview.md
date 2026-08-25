@@ -1,5 +1,11 @@
 # LightVela 是什么
 
+## 摘要
+
+**LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，当前提供的产品是 Hermes Agent——一个基于大语言模型的 AI Agent。它把 Agent 的部署、运维与 7×24 小时运行全部交给云端托管，你无需写配置文件或登录服务器，在可视化面板上点选即可完成搭建，然后通过日常聊天软件与自己的 Agent 对话。它跨会话持续记忆，模型、工具、人设都由你决定。LightVela 计划于 2026 年 8 月 18 日（新加坡时间）起转入公测并开启计费，内测用户现有套餐有效期将额外延长 1 个月，新用户可免费体验启航版 14 天，实时状态以订阅页为准。**
+
+---
+
 > 云端托管 Hermes Agent，越聊越懂的智能伙伴。
 
 > ℹ️ **公测及计费安排说明**
@@ -26,7 +32,7 @@ LightVela 目前提供的产品是 **Hermes Agent**，一个基于大语言模�
 
 * 希望使用 AI Agent，但不具备服务器、容器、API 鉴权等技术背景的用户
 
-* 希望通过日常聊天软件（WeChat / Telegram / WhatsApp / Discord）与 AI 交互，而非独立 App 的用户
+* 希望通过日常聊天软件（Telegram / WhatsApp / Discord / Slack / WeChat）与 AI 交互，而非独立 App 的用户
 
 * 偏好使用多种大语言模型服务商的用户（支持 ChatGPT、Claude、Gemini、Deepseek、Qwen、Zhipu、Hunyuan 等）
 
@@ -50,7 +56,7 @@ LightVela 目前提供的产品是 **Hermes Agent**，一个基于大语言模�
 
 * **多模型支持**：支持接入国内主流大语言模型、各家 Coding Plan 包月套餐，以及任何 OpenAI 兼容端点，具体见 [配置模型](./configuration/model.md)
 
-* **多通道接入**：支持通过 WeChat、Telegram、WhatsApp、Discord 与 Hermes Agent 进行对话
+* **多通道接入**：支持通过 Telegram、WhatsApp、Discord、Slack、WeChat、QQ、企业微信、飞书与 Hermes Agent 进行对话
 
 * **技能扩展**：通过 [SkillHub](https://skillhub.tencent.com) 安装技能包，扩展 Hermes Agent 的能力边界
 
@@ -65,7 +71,7 @@ LightVela 目前提供的产品是 **Hermes Agent**，一个基于大语言模�
 LightVela 在云端为用户运行一个专属的 Hermes Agent 实例，并通过适配层接入用户指定的聊天平台。
 
 ```
-用户（在 WeChat / Telegram / WhatsApp / Discord 中发送消息）
+用户（在 Telegram / WhatsApp / Discord / Slack / WeChat 中发送消息）
       ↓
 LightVela 云端的 Hermes Agent 实例（用户专属）
       ↓
@@ -78,7 +84,7 @@ LightVela 云端的 Hermes Agent 实例（用户专属）
 
 1. **模型**：Hermes Agent 调用的大语言模型。启航套餐预置体验积分，可直接使用；也可配置自有 API Key
 
-2. **通道**：与 Hermes Agent 对话的聊天平台（WeChat / Telegram / WhatsApp / Discord）
+2. **通道**：与 Hermes Agent 对话的聊天平台（Telegram / WhatsApp / Discord / Slack / WeChat）
 
 3. **技能**（可选）：扩展 Hermes Agent 的能力
 

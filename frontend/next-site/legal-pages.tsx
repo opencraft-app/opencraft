@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { CookiePolicyPage } from '@/pages/marketing/cookie-policy-page';
 import { OpenSourceLicensesPage } from '@/pages/marketing/open-source-licenses-page';
 import { PrivacyPolicyPage } from '@/pages/marketing/privacy-policy-page';
+import { TermsOfServicePage } from '@/pages/marketing/terms-of-service-page';
 
 import {
   DEFAULT_PUBLIC_ROUTE_LOCALE,
@@ -35,4 +36,8 @@ export function PublicCookiePolicyPage(props: LegalPageProps = {}) {
 
 export function PublicOpenSourceLicensesPage(props: LegalPageProps = {}) {
   return withLegalLocale({ ...props, children: <OpenSourceLicensesPage /> });
+}
+
+export function PublicTermsOfServicePage(props: LegalPageProps = {}) {
+  return withLegalLocale({ ...props, children: <TermsOfServicePage /> });
 }

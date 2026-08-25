@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log"
@@ -26,6 +27,7 @@ type Options struct {
 	// Usage 为 nil 表示不计量，请求路径不需要额外判空。
 	Usage  *usage.Meter
 	Logger *log.Logger
+	Auth   AuthOptions
 }
 
 type SiteHandler struct {
@@ -35,6 +37,12 @@ type SiteHandler struct {
 	origin       origin.Fetcher
 	usage        *usage.Meter
 	logger       *log.Logger
+	auth         AuthOptions
+}
+
+type resolvedSiteHost struct {
+	SiteID string
+	Host   string
 }
 
 func NewSiteHandler(opts Options) *SiteHandler {
@@ -49,6 +57,7 @@ func NewSiteHandler(opts Options) *SiteHandler {
 		origin:       opts.Origin,
 		usage:        opts.Usage,
 		logger:       logger,
+		auth:         opts.Auth,
 	}
 }
 
@@ -57,6 +66,20 @@ func NewSiteHandler(opts Options) *SiteHandler {
 // 网关不再保留任何命名空间：站点是纯静态托管，没有需要与页面同源的服务端接口，
 // 保留前缀只会白白占用用户的路径。所有路径一视同仁地走候选 key 回源，命不中就 404。
 func (h *SiteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.auth.EndpointsEnabled {
+		if h.handleAuthPath(w, r) {
+			return
+		}
+	}
+	if h.auth.Required {
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			if !h.authorizeSiteRequest(w, r) {
+				return
+			}
+		}
+	}
 	h.serveStatic(w, r)
 }
 
@@ -125,30 +148,25 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 // siteID 只能由 Host 推导，不接受任何请求参数：这是多租户隔离的唯一入口，
 // 一旦允许请求影响 siteID，站点之间的边界就没了。
 func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (string, string, bool) {
-	siteID, host, ok := h.resolver.Resolve(r.Host)
-	if !ok && h.domainLookup != nil {
-		// Host 未命中根域，查自定义域名绑定表。
-		// 查到 site_id 后走与随机子域完全相同的后续校验链路，
-		// 查不到仍然返回 404——绝不回落到任何默认站点。
-		resolvedID, err := h.domainLookup.SiteIDByDomain(r.Context(), host)
-		if err == nil && resolvedID != "" {
-			siteID = resolvedID
-			ok = true
-		}
-	}
-	if !ok {
-		h.logger.Printf("unresolved host: %q", host)
+	resolved, err := h.resolveSiteHost(r.Context(), r.Host)
+	if errors.Is(err, sitemeta.ErrNotFound) {
+		h.logger.Printf("unresolved host: %q", normalizeHost(r.Host))
 		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
 		return "", "", false
 	}
+	if err != nil {
+		h.logger.Printf("resolve host %q failed: %v", r.Host, err)
+		writeErrorPage(w, http.StatusBadGateway, msgUpstream)
+		return "", "", false
+	}
 
-	site, err := h.sites.BySiteID(r.Context(), siteID)
+	site, err := h.sites.BySiteID(r.Context(), resolved.SiteID)
 	if errors.Is(err, sitemeta.ErrNotFound) {
 		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
 		return "", "", false
 	}
 	if err != nil {
-		h.logger.Printf("lookup site %q failed: %v", siteID, err)
+		h.logger.Printf("lookup site %q failed: %v", resolved.SiteID, err)
 		writeErrorPage(w, http.StatusBadGateway, msgUpstream)
 		return "", "", false
 	}
@@ -164,13 +182,13 @@ func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (strin
 			writeErrorPage(w, http.StatusForbidden, msgTrafficExhausted)
 			return "", "", false
 		}
-		publishedPrefix, ok := objectkey.ValidatePublishedPrefix(siteID, site.CloudPath)
+		publishedPrefix, ok := objectkey.ValidatePublishedPrefix(resolved.SiteID, site.CloudPath)
 		if !ok {
-			h.logger.Printf("invalid cloud_path for site %q", siteID)
+			h.logger.Printf("invalid cloud_path for site %q", resolved.SiteID)
 			writeErrorPage(w, http.StatusBadGateway, msgUpstream)
 			return "", "", false
 		}
-		return siteID, publishedPrefix, true
+		return resolved.SiteID, publishedPrefix, true
 	case sitemeta.StatusSuspended:
 		writeErrorPage(w, http.StatusForbidden, msgSiteSuspended)
 	case sitemeta.StatusBlocked:
@@ -180,6 +198,29 @@ func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (strin
 		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
 	}
 	return "", "", false
+}
+
+func (h *SiteHandler) resolveSiteHost(ctx context.Context, rawHost string) (resolvedSiteHost, error) {
+	if h == nil || h.resolver == nil {
+		return resolvedSiteHost{}, sitemeta.ErrNotFound
+	}
+	siteID, host, ok := h.resolver.Resolve(rawHost)
+	if !ok && h.domainLookup != nil {
+		resolvedID, err := h.domainLookup.SiteIDByDomain(ctx, host)
+		switch {
+		case err == nil && strings.TrimSpace(resolvedID) != "":
+			siteID = resolvedID
+			ok = true
+		case errors.Is(err, sitemeta.ErrNotFound):
+		case err != nil:
+			return resolvedSiteHost{}, err
+		}
+	}
+	siteID = strings.TrimSpace(siteID)
+	if !ok || siteID == "" || host == "" {
+		return resolvedSiteHost{}, sitemeta.ErrNotFound
+	}
+	return resolvedSiteHost{SiteID: siteID, Host: host}, nil
 }
 
 const (
@@ -202,7 +243,12 @@ func (h *SiteHandler) writeSiteNotFound(w http.ResponseWriter, r *http.Request, 
 	defer obj.Body.Close()
 
 	w.Header().Set("Content-Type", contentTypeOrDefault(obj.ContentType, "text/html; charset=utf-8"))
-	w.Header().Set("Cache-Control", "no-cache")
+	if h.auth.Required {
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	w.WriteHeader(http.StatusNotFound)
 	if r.Method != http.MethodHead {
 		_, _ = io.Copy(w, obj.Body)
@@ -214,7 +260,12 @@ func (h *SiteHandler) writeObject(w http.ResponseWriter, r *http.Request, key st
 
 	header := w.Header()
 	header.Set("Content-Type", contentTypeOrDefault(obj.ContentType, "application/octet-stream"))
-	header.Set("Cache-Control", cacheControlFor(key, obj.CacheControl))
+	if h.auth.Required {
+		header.Set("Cache-Control", "private, no-store")
+		header.Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+	} else {
+		header.Set("Cache-Control", cacheControlFor(key, obj.CacheControl))
+	}
 	if obj.ETag != "" {
 		header.Set("ETag", obj.ETag)
 	}
@@ -282,7 +333,9 @@ func etagMatches(ifNoneMatch string, etag string) bool {
 
 func writeErrorPage(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"+
 		"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"+

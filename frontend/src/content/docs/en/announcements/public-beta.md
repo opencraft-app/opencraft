@@ -1,5 +1,11 @@
 # LightVela Paid Version Announcement
 
+## Summary
+
+**LightVela plans to enter public beta with billing enabled on August 18, 2026 (Singapore time). Once that happens, existing closed-beta plans will be extended by one additional month, and new users can try the Launch plan free for 14 days. Two plans are currently offered, Launch and Cruise, differing in cloud runtime specs, dedicated storage, and monthly model credits; core agent capabilities are identical across tiers. Live pricing, availability, and exact entitlements are whatever the subscribe page shows.**
+
+---
+
 LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month.
 
 We launched LightVela to make it easier for everyone to own a long-running personal AI Agent. You do not need to manage servers, runtime environments, or daily operations, and you do not need to keep a local device online. LightVela lets you create a 24/7 cloud Agent that can keep memory, run tasks, and stay ready for conversation.
@@ -20,7 +26,7 @@ Since beta access opened, we have received many suggestions and real usage repor
 - Automations: run reminders, summaries, notifications, and other tasks on a schedule or interval.
 - Memory and context: review and manage the memories and context accumulated by your Agent.
 - Cloud storage and files: view and manage cloud files used by your Agent.
-- Web chat and messaging channels: chat on the web and connect channels such as Telegram, WhatsApp, Discord, WeChat, QQ, WeCom, and Lark.
+- Web chat and messaging channels: chat on the web and connect channels such as Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark.
 - Skills, tools, and plugin extensions: SkillHub integration supports browsing, information lookup, daily reports, image generation, and other capabilities.
 - Diagnostics and recovery: diagnose and recover issues related to channels, models, or Agent runtime.
 

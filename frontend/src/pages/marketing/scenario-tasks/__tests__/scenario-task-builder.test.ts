@@ -168,6 +168,40 @@ describe("scenario task builder", () => {
     expect(draft.generatedPrompt).not.toContain("输出要求：");
   });
 
+  it("uses English field labels inside English overview task prompts", () => {
+    const pack = getOverviewScenarioTaskPacks("en-US").find((item) => item.id === "rent-reminder");
+    expect(pack).toBeTruthy();
+
+    const draft = buildScenarioTaskDraft({
+      pack: pack!,
+      values: {
+        rentInfo: "Internet bill, paid by bank transfer",
+      },
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.generatedPrompt).toContain("User-provided details:");
+    expect(draft.generatedPrompt).toContain("billing details: Internet bill, paid by bank transfer.");
+    expect(draft.generatedPrompt).not.toContain("detail tagihan:");
+  });
+
+  it("uses Indonesian field labels inside Indonesian overview task prompts", () => {
+    const pack = getOverviewScenarioTaskPacks("id-ID").find((item) => item.id === "rent-reminder");
+    expect(pack).toBeTruthy();
+
+    const draft = buildScenarioTaskDraft({
+      pack: pack!,
+      values: {
+        rentInfo: "Tagihan internet, dibayar lewat transfer bank",
+      },
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.generatedPrompt).toContain("Detail dari pengguna:");
+    expect(draft.generatedPrompt).toContain("detail tagihan: Tagihan internet, dibayar lewat transfer bank.");
+    expect(draft.generatedPrompt).not.toContain("billing details:");
+  });
+
   it("formats scenario-specific field values for prompts", () => {
     const pack = getScenarioTaskPack("todo-focus-brief");
     const draft = buildScenarioTaskDraft({

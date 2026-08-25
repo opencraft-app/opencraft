@@ -1,10 +1,16 @@
 # 记忆管理
 
+## 摘要
+
+**记忆（Memory）让 Hermes 记住跨对话、跨设备的关键信息——你的偏好、身份、正在推进的事项，以及在长期协作中沉淀的经验。它是 Hermes 从「一次性问答」变成「越用越懂你的长期助理」的基础。记忆存放在 Agent 之内、模型之外，因此切换模型不会让它遗忘。你可以在管理台的记忆与用户画像页面查看、编辑或清理已沉淀的内容，多个聊天通道共享同一份记忆。**
+
+---
+
 记忆（Memory）让 Hermes 记住跨对话、跨设备的关键信息——你的偏好、身份、正在推进的事项，以及它在长期协作中沉淀下来的经验。它是 Hermes 从“一次性问答”变成“越用越懂你的长期助理”的基础。
 
 ![LightVela 管理台中的记忆与用户画像页面](../images/memory-management-overview.png)
 
-LightVela 采用云端托管：这些记忆保存在你的 Hermes 云端实例中，不会因为你更换手机或切换通道（Telegram、WhatsApp、Discord、WeChat）而丢失。今天在 Telegram 告诉它的事，明天在 WhatsApp 对话时它依然记得。
+LightVela 采用云端托管：这些记忆保存在你的 Hermes 云端实例中，不会因为你更换手机或切换通道（Telegram、WhatsApp、Discord、Slack、WeChat）而丢失。今天在 Telegram 告诉它的事，明天在 WhatsApp 对话时它依然记得。
 
 ## 本页覆盖
 
@@ -32,7 +38,7 @@ LightVela 采用云端托管：这些记忆保存在你的 Hermes 云端实例�
 
 - **少重复交代**：说过一次“我在新加坡、习惯早上收简报”，之后就不用再说。
 
-- **跨通道一致**：Telegram、WhatsApp、Discord 和 WeChat 共享同一份记忆，换个入口，它还是同一个懂你的助理。
+- **跨通道一致**：Telegram、WhatsApp、Discord、Slack 和 WeChat 共享同一份记忆，换个入口，它还是同一个懂你的助理。
 
 - **越用越顺手**：随着协作深入，Hermes 会记住你的工作习惯、常用称呼和正在跟进的项目，回答会越来越贴合你。
 
@@ -128,7 +134,7 @@ Hermes 会理解你的意图，更新对应的记忆条目并告知结果。
 
 ### 换了手机或通道，记忆还在吗
 
-在。记忆保存在云端实例中，与设备和通道无关。Telegram、WhatsApp、Discord 和 WeChat 共享同一份记忆。
+在。记忆保存在云端实例中，与设备和通道无关。Telegram、WhatsApp、Discord、Slack 和 WeChat 共享同一份记忆。
 
 ### 记忆占用满了会怎样
 

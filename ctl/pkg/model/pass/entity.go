@@ -22,8 +22,8 @@ const (
 )
 
 // RenewFlag 取值枚举（v4 收敛：billing-integration 子需求 B2）
-//   - MANUAL_RENEW：手动续费（默认）。试用走默认值；付费 pass CompletePass logic 内部写死该值
-//   - AUTO_RENEW：自动续费。本期不对外暴露，预留供未来扩展
+//   - MANUAL_RENEW：手动续费（默认）。试用、国内站及异常续费标记均使用该值
+//   - AUTO_RENEW：自动续费。国际站新购明确选择自动续费时使用
 const (
 	RenewFlagManual = "MANUAL_RENEW"
 	RenewFlagAuto   = "AUTO_RENEW"

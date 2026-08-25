@@ -1,7 +1,9 @@
 package instance
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -30,6 +32,7 @@ import (
 	"ctl/pkg/resource"
 	"ctl/pkg/taskruntime/common"
 	"ctl/pkg/tracing"
+	"ctl/pkg/websiteauth"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -38,6 +41,9 @@ import (
 const (
 	defaultTaskExecuteIntervalSeconds = 30
 	defaultTaskMaxExecuteCount        = 20
+	websiteCredentialDeliveryTimeout  = 180
+	websiteCredentialCleanupTimeout   = 5 * time.Second
+	websiteCredentialProvisionalTTL   = 15 * time.Minute
 )
 
 const (
@@ -228,8 +234,8 @@ type RenewInstanceTaskPayload = common.RenewInstanceTaskPayload
 //     · originalExpiredTime：续费前的 pass.expired_time（active / isolated 续费均为 entity.ExpiredTime）
 //     · originalIsolatedTime：续费前的 pass.isolated_time（active 分支传 nil；isolated 分支传 entity.IsolatedTime
 //     的副本指针）；决定回滚目标状态：nil → active；非 nil → isolated
-//   - executeInterval / maxExecuteCount：默认 30s × 5 次（R-MR-5：父 task 失败有限重试 +
-//     失败后派发 RollbackRenewPassTask 回滚副作用）
+//   - executeInterval / maxExecuteCount：由 caller 显式传入；当前 RenewPass worker 使用
+//     30s + 1<<30，保证父 task 覆盖 RenewInstance 子 task 的完整重试窗口
 func EnqueueRenewPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, timeSpan int, timeUnit string, originalExpiredTime time.Time, originalIsolatedTime *time.Time, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	if passID == "" {
 		return "", errors.New("passID is required")
@@ -283,8 +289,8 @@ func EnqueueRenewPassTask(ctx pctx.Context, passID, userID, operationID string, 
 // RollbackRenewPassTaskPayload 是回滚 task payload 的类型别名
 type RollbackRenewPassTaskPayload = common.RollbackRenewPassTaskPayload
 
-// EnqueueRollbackRenewPassTask 由 renewPassTask.finalizeFailure 在 max_execute_count
-// 用尽（=5）时调用，派发回滚父 task。
+// EnqueueRollbackRenewPassTask 由 renewPassTask.finalizeFailure 在确定性失败或最大次数
+// 兜底触发时调用，派发回滚父 task。
 //
 // 入参（payload 字段透传 + execute schedule 参数）：
 //   - passID / userID / operationID：业务标识（继承自原 RenewPass payload）
@@ -292,7 +298,8 @@ type RollbackRenewPassTaskPayload = common.RollbackRenewPassTaskPayload
 //   - originalExpiredTime / originalIsolatedTime：续费前基线，决定 RollbackRenewal 写回的目标值
 //   - failureReason：原父 task 最后一次 execute 错误（写入 trade.CompleteFlow message 字段）
 //   - originalParentTaskID：原 RenewPass 父 task 的 task_id（回滚 task 步骤 1 等子 task 终态时反查用）
-//   - executeInterval / maxExecuteCount：默认 30s × 5 次（与父 task 同节奏；失败即终态由人工介入）
+//   - executeInterval / maxExecuteCount：由 caller 显式传入；当前 rollback worker 使用
+//     30s + 1<<30，由 checkTasks 持续补偿
 func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, originalExpiredTime time.Time, originalIsolatedTime *time.Time, failureReason, originalParentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	if passID == "" {
 		return "", errors.New("passID is required")
@@ -326,14 +333,20 @@ func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID 
 		ctx = pctx.NewContext(nil)
 	}
 	ctx = ctx.WithUserID(userID)
-	return NewLogic().(*logic).enqueueTaskWithSchedule(
+	return NewLogic().(*logic).enqueueTaskWithScheduleAndID(
 		ctx,
+		rollbackRenewPassTaskID(originalParentTaskID),
 		common.TaskNameRollbackRenewPass,
 		payload,
-		"",
+		originalParentTaskID,
 		executeInterval,
 		maxExecuteCount,
 	)
+}
+
+func rollbackRenewPassTaskID(originalParentTaskID string) string {
+	sum := sha256.Sum256([]byte(common.TaskNameRollbackRenewPass + ":" + originalParentTaskID))
+	return fmt.Sprintf("task-rb-renew-%x", sum[:16])
 }
 
 // EnqueueRenewInstanceTask 由父 task RenewPassTask 调用，派发一个续费子 task
@@ -578,6 +591,13 @@ func (l *logic) enqueueTask(ctx pctx.Context, taskName string, payload interface
 //
 // 与 enqueueTask 共享其余 schema（task_id 自生成 / state=CREATED / params=json marshal / MQ.Send）
 func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, payload interface{}, parentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	return l.enqueueTaskWithScheduleAndID(ctx, "", taskName, payload, parentTaskID, executeInterval, maxExecuteCount)
+}
+
+// enqueueTaskWithScheduleAndID allows workflows with a stable business identity to supply
+// their own task ID. A duplicate ID is an idempotent success: the existing CREATED task is
+// picked up by the regular checkTasks recovery loop if its original MQ send was interrupted.
+func (l *logic) enqueueTaskWithScheduleAndID(ctx pctx.Context, suppliedTaskID, taskName string, payload interface{}, parentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	ctx, span := tracing.StartTrace(ctx, "Instance.EnqueueTaskWithSchedule")
 	defer func() { span.EndWithError(err) }()
 
@@ -593,7 +613,10 @@ func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, paylo
 		return "", fmt.Errorf("marshal task payload: %w", err)
 	}
 
-	taskID = l.generateTaskID()
+	taskID = suppliedTaskID
+	if taskID == "" {
+		taskID = l.generateTaskID()
+	}
 	taskEntity := &taskmodel.Entity{
 		TaskId:          taskID,
 		ParentTaskId:    parentTaskID,
@@ -610,22 +633,27 @@ func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, paylo
 	taskEntity.UserID = ctx.GetUserID()
 
 	if err := l.taskDao.Insert(taskEntity); err != nil {
+		if suppliedTaskID != "" && isDuplicateKeyError(err) {
+			return taskID, nil
+		}
 		return "", fmt.Errorf("insert task: %w", err)
 	}
 
 	messageData, err := common.GenerateMessageData(ctx, taskName, taskID, payload)
 	if err != nil {
-		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
-			taskmodel.ColumnTaskMessage: err.Error(),
-		}, taskID)
+		updates := map[string]interface{}{taskmodel.ColumnTaskMessage: err.Error()}
+		if suppliedTaskID == "" {
+			updates[taskmodel.ColumnTaskState] = taskmodel.StateFailed
+		}
+		_ = l.taskDao.UpdateByKeyColumn(updates, taskID)
 		return taskID, fmt.Errorf("generate task message: %w", err)
 	}
 	if err := l.producer.Send(&mq.Message{Data: messageData}); err != nil {
-		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
-			taskmodel.ColumnTaskMessage: err.Error(),
-		}, taskID)
+		updates := map[string]interface{}{taskmodel.ColumnTaskMessage: err.Error()}
+		if suppliedTaskID == "" {
+			updates[taskmodel.ColumnTaskState] = taskmodel.StateFailed
+		}
+		_ = l.taskDao.UpdateByKeyColumn(updates, taskID)
 		return taskID, fmt.Errorf("send task message: %w", err)
 	}
 	return taskID, nil
@@ -809,7 +837,6 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 			zap.String("soul_template_id", payload.SoulTemplateID),
 		)
 	}
-
 	if err := l.instanceDao.UpdateWithStatusPrecondition(ctx, entity.Id, []string{modelinstance.InstanceStatusCreating}, map[string]interface{}{
 		modelinstance.ColumnStatus: modelinstance.InstanceStatusRunning,
 	}); err != nil {
@@ -824,8 +851,110 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 			zap.String("instance_id", entity.InstanceId),
 		)
 	}
+	l.deliverWebsiteCredentialOnCreate(ctx, entity, sandboxResp.SandboxID)
 
 	return nil
+}
+
+// deliverWebsiteCredentialOnCreate is intentionally best-effort. Website
+// bootstrap can be retried after provisioning, while failing the instance
+// create task here would strand a usable machine behind an optional feature.
+func (l *logic) deliverWebsiteCredentialOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) {
+	commandID := strings.TrimSpace(l.websiteCredentialTATCommandID)
+	apiBase := strings.TrimSpace(l.websiteAgentAPIBase)
+	if commandID == "" || apiBase == "" {
+		return
+	}
+	if entity == nil || strings.TrimSpace(entity.InstanceId) == "" || strings.TrimSpace(entity.UserId) == "" || strings.TrimSpace(sandboxID) == "" {
+		l.logger.Warn("skip website credential delivery because target is incomplete")
+		return
+	}
+	invoker, ok := l.sandboxAdapter.(psandbox.CommandInvoker)
+	credentialStore, storeOK := l.websiteCredentialStore.(websiteauth.ProvisionalStore)
+	if !ok || !storeOK {
+		l.logger.Warn("skip website credential delivery because dependencies are unavailable",
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+
+	if err := credentialStore.RevokeInstance(ctx, entity.InstanceId); err != nil {
+		l.logger.Warn("revoke stale website credentials before create delivery failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	plainToken, binding, err := credentialStore.IssueProvisional(ctx, entity.UserId, entity.InstanceId, websiteCredentialProvisionalTTL)
+	if err != nil {
+		l.logger.Warn("issue website credential during instance create failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	succeeded := false
+	defer func() {
+		if succeeded {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), websiteCredentialCleanupTimeout)
+		defer cancel()
+		if revokeErr := credentialStore.Revoke(cleanupCtx, entity.InstanceId, binding.KeyID); revokeErr != nil {
+			l.logger.Warn("revoke website credential after create delivery failure failed",
+				zap.Error(revokeErr),
+				zap.String("instance_id", entity.InstanceId),
+				zap.String("key_id", binding.KeyID),
+			)
+		}
+	}()
+
+	result, err := invoker.InvokeCommand(ctx, sandboxID, commandID, map[string]string{
+		"website_key": plainToken,
+		"api_base":    apiBase,
+	}, websiteCredentialDeliveryTimeout)
+	if err != nil {
+		l.logger.Warn("invoke website credential command during instance create failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	if result == nil || strings.ToUpper(strings.TrimSpace(result.Status)) != "SUCCESS" || result.ExitCode != 0 {
+		status := "UNKNOWN"
+		exitCode := int64(-1)
+		if result != nil {
+			status = strings.TrimSpace(result.Status)
+			exitCode = result.ExitCode
+		}
+		l.logger.Warn("website credential command during instance create did not succeed",
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+			zap.String("status", status),
+			zap.Int64("exit_code", exitCode),
+		)
+		return
+	}
+	if err := credentialStore.Activate(ctx, entity.InstanceId, binding.KeyID); err != nil {
+		l.logger.Warn("activate website credential after create delivery failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+			zap.String("key_id", binding.KeyID),
+		)
+		return
+	}
+
+	succeeded = true
+	l.logger.Info("website credential delivered during instance create",
+		zap.String("instance_id", entity.InstanceId),
+		zap.String("sandbox_id", sandboxID),
+		zap.String("key_id", binding.KeyID),
+	)
 }
 
 func (l *logic) selectCreateCandidatePools(ctx pctx.Context, candidates []string) orderedCandidatePools {
@@ -1935,7 +2064,10 @@ func isDuplicateKeyError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "1062")
+	return errors.Is(err, gorm.ErrDuplicatedKey) ||
+		strings.Contains(err.Error(), "Duplicate entry") ||
+		strings.Contains(err.Error(), "UNIQUE constraint failed") ||
+		strings.Contains(err.Error(), "1062")
 }
 
 func isAiGatewayKeyNotFound(err error) bool {

@@ -1,5 +1,11 @@
 # 配置总览
 
+## 摘要
+
+**LightVela 的所有配置集中在「我的 Hermes」管理台，登录后点击右上角进入。管理台顶部是 Hermes Agent 实例页签，下方由三个配置按键组成：模型（选择模型 Coding Plan 包月、模型 API 按量或自定义 OpenAI 兼容端点）、通道（各聊天平台的接入入口，部分扫码授权、部分需填 Token 或 AppID）、技能（安装可复用的能力扩展包）。除三项基础配置外，管理台还提供对话、自动任务、记忆管理、云存储、模型切换与诊断中心。三项配置完成后 Agent 即可在聊天通道中对话。**
+
+---
+
 LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配置按键组成：
 
 1. 模型（Models）
@@ -70,13 +76,14 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 | Telegram | Bot Token 接入 | 通过 BotFather 创建 Telegram Bot，并获取 Bot Token |
 | WhatsApp | WhatsApp Business API 接入 | 需要 Meta 开发者账号、WhatsApp Business Account，并完成 Cloud API 基础配置 |
 | Discord | Bot Token 接入 | 在 Discord Developer Portal 创建 Application，添加 Bot，并邀请到服务器 |
+| Slack | Bot Token / App Token 接入 | 创建 Slack App，开启 Socket Mode，并获取 Bot/App Token |
 | QQ | AppID / AppSecret 接入 | 一个 QQ 账号；在 QQ 开放平台创建机器人并获取 AppID / AppSecret |
 | 企业微信（WeCom） | 扫码授权 | 一台装有企业微信的手机 |
 | 飞书（Lark） | 扫码授权 | 一台装有飞书的手机或已登录飞书的桌面端 |
 
 **按键提供**：通道下拉、「授权接入」按钮、所选通道的介绍与「查看详情」链接、「已接入通道」列表。
 
-详细操作请参见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)。
+详细操作请参见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)。
 
 ---
 
@@ -148,7 +155,7 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 - [配置模型](./configuration/model.md) — 模型来源、API Key 获取、选型建议
 
-- [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)
+- [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)
 
 - [配置技能](./configuration/skill.md) — SkillHub 使用与技能安装
 

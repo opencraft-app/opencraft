@@ -1,5 +1,11 @@
 # Configure Skills
 
+## Summary
+
+**Skills are add-on capability packs your Hermes Agent can call, extending it beyond basic conversation to concrete tasks such as organizing to-dos, generating daily reports, browsing the web, searching news, and generating images. They come from Skills.sh and ClawHub, the skill marketplaces shared by OpenClaw and Hermes. Skills are optional: an agent ships with none installed and still converses normally, so the recommended approach is to install one only after you hit a capability limit. There are two ways to install — search by name in the console Skills section, or simply ask the agent to install it in conversation. Installed skills can be removed from the console.**
+
+---
+
 Skills are additional capability packages callable by Hermes. They extend concrete task handling beyond basic conversation, such as automatically organizing to-dos, generating daily reports, browsing web pages, searching news, generating images, and more.
 
 All skills come from [**Skills.sh**](https://skills.sh/) and [**ClawHub**](https://clawhub.ai/) — the skill marketplaces shared by OpenClaw and Hermes.
@@ -71,7 +77,7 @@ Enter the recorded skill name in the search box (such as `gmail`) and click the 
 
 ### 3. Confirm availability in conversation
 
-Return to a connected channel (WeChat / Telegram / WhatsApp / Discord). First ask Hermes to update its skill list, then check the currently available skills:
+Return to a connected channel (Telegram / WhatsApp / Discord / Slack / WeChat). First ask Hermes to update its skill list, then check the currently available skills:
 
 ```
 Please update your skill list
@@ -91,7 +97,7 @@ In addition to using the console panel, you can also ask Hermes to install a ski
 
 ### 1. Confirm the conversation channel is available
 
-First make sure Hermes is connected to at least one channel (WeChat / Telegram / WhatsApp / Discord) and can currently chat normally.
+First make sure Hermes is connected to at least one channel (Telegram / WhatsApp / Discord / Slack / WeChat) and can currently chat normally.
 
 ### 2. Tell Hermes which skill to install
 
@@ -135,7 +141,7 @@ Using the `agent-browser` browser-operation skill as an example, after installat
 
 > ℹ️ **Note**
 > 
-> The following examples use the WeChat channel. Telegram, WhatsApp, and Discord work the same way.
+> The following examples use the WeChat channel. Telegram, WhatsApp, Discord, and Slack work the same way.
 
 ### Scenario 1: Browse a web page
 

@@ -25,7 +25,7 @@ type AnnouncementItem = {
 };
 
 /** 公告顺序即轮播顺序。 */
-const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0731-hermes-agent-upgrade";
+const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0822-hermes-agent-upgrade";
 const GLOBAL_PUBLIC_BETA_BILLING_ANNOUNCEMENT_ID =
   "0818-global-public-beta-billing-announcement";
 const ANNOUNCEMENT_IDS = [
@@ -33,12 +33,12 @@ const ANNOUNCEMENT_IDS = [
   GLOBAL_PUBLIC_BETA_BILLING_ANNOUNCEMENT_ID,
 ] as const;
 
-/** 北京时间 / 新加坡时间 2026-08-01 02:00:00 = UTC 2026-07-31 18:00:00 */
+/** 北京时间 / 新加坡时间 2026-08-23 06:00:00 = UTC 2026-08-22 22:00:00 */
 const HERMES_UPGRADE_EXPIRES_AT = Date.UTC(
   2026,
-  6 /* 0-indexed: July */,
-  31,
-  18,
+  7 /* 0-indexed: August */,
+  22,
+  22,
   0,
   0,
 );
@@ -73,10 +73,10 @@ export function MaintenanceAnnouncementBanner() {
       expiresAt: HERMES_UPGRADE_EXPIRES_AT,
       message: isGlobal
         ? t(
-            "LightVela 将于新加坡时间 2026 年 7 月 31 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+            "LightVela 将于新加坡时间 2026 年 8 月 22 日 22:00-次日 06:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
           )
         : t(
-            "LightVela 将于北京时间 2026 年 7 月 31 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+            "LightVela 将于北京时间 2026 年 8 月 22 日 22:00-次日 06:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
           ),
     },
     ...(isGlobal

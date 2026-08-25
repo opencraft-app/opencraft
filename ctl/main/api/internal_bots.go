@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"os"
@@ -20,7 +21,7 @@ import (
 )
 
 func requireInternalBearer(r *http.Request) bool {
-	expected := strings.TrimSpace(os.Getenv("CTL_INTERNAL_TOKEN"))
+	expected := firstNonEmptyEnv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "CTL_INTERNAL_TOKEN")
 	if expected == "" {
 		return true
 	}
@@ -30,6 +31,28 @@ func requireInternalBearer(r *http.Request) bool {
 	}
 	token := strings.TrimSpace(strings.TrimSpace(auth[len("Bearer "):]))
 	return token == expected
+}
+
+func requireConfiguredInternalBearer(r *http.Request) bool {
+	expected := strings.TrimSpace(firstNonEmptyEnv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "CTL_INTERNAL_TOKEN"))
+	if expected == "" || r == nil {
+		return false
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+		return false
+	}
+	token := strings.TrimSpace(auth[len("Bearer "):])
+	return len(token) == len(expected) && subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (h *instanceHandler) handleInternalBots(w http.ResponseWriter, r *http.Request) {
@@ -114,11 +137,44 @@ func (h *instanceHandler) handleInternalBots(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *instanceHandler) handleInternalBotSubresource(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/tat/session") {
+		h.handleInternalBotTATSession(w, r)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/borncard") {
 		h.handleInternalBotBornCard(w, r)
 		return
 	}
 	h.handleInternalBot(w, r)
+}
+
+func (h *instanceHandler) handleInternalBotTATSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	if !requireConfiguredInternalBearer(r) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/internal/bots/"), "/")
+	instanceID := strings.TrimSpace(strings.TrimSuffix(path, "/tat/session"))
+	if instanceID == "" || strings.Contains(instanceID, "/") {
+		writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+		return
+	}
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+		return
+	}
+	resp, err := h.logic.StartTerminalSession(ctx, instanceID)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, resp)
 }
 
 func (h *instanceHandler) handleInternalInstanceSubresource(w http.ResponseWriter, r *http.Request) {

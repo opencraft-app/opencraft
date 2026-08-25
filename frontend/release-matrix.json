@@ -36,6 +36,7 @@
       "authApiBaseUrl": "https://api-sandbox-kr-1.lightclaw.tech",
       "appEnv": "staging",
       "outputDir": "out",
+      "deployEnv": {},
       "observability": {
         "aegis": {
           "enabled": "true",

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { useT } from "@/i18n/t";
 import type { Bot } from "@/domain/types";
 import type { BotRepository } from "@/repositories/types";
 import type {
@@ -63,13 +64,14 @@ export function VelaWorkbenchDesktopHost({
   getTerminalSession,
   onReloadBots,
 }: VelaWorkbenchDesktopHostProps) {
+  const t = useT();
   const hostStateStores = useMemo(() => createWorkbenchDesktopHostStateStores(), []);
   const [transport, setTransport] = useState<ResolvedWorkbenchVeladTransport | null>(
     null,
   );
   const [bootstrap, setBootstrap] = useState<WorkbenchBootstrap>({
     status: "starting",
-    message: botLoading ? "Loading bot..." : "",
+    message: botLoading ? t("正在加载 Agent…") : "",
   });
   const [connectAttempt, setConnectAttempt] = useState(0);
   const [autoVeladBootstrap, setAutoVeladBootstrap] =
@@ -141,7 +143,7 @@ export function VelaWorkbenchDesktopHost({
       setTransport(null);
       setBootstrap({
         status: "starting",
-        message: botLoading ? "Loading bot..." : "No bot is available.",
+        message: botLoading ? t("正在加载 Agent…") : t("暂无可用的 Agent。"),
       });
       return undefined;
     }
@@ -156,7 +158,7 @@ export function VelaWorkbenchDesktopHost({
       }
       setBootstrap({
         status: "starting",
-        message: "Starting velad in VM...",
+        message: t("正在虚拟机中启动 velad…"),
       });
       return undefined;
     }
@@ -236,6 +238,7 @@ function WorkbenchEmbeddedReadyApp({
   hostStateStores,
   transport,
 }: WorkbenchEmbeddedReadyAppProps) {
+  const t = useT();
   const [activeSessionId, setActiveSessionId] = useState(
     () => hostStateStores.sessionSelectionStore?.read()?.sessionId ?? "",
   );
@@ -329,13 +332,13 @@ function WorkbenchEmbeddedReadyApp({
       const nextSetup = await resolveNewSessionSetup();
       const backend = nextSetup.resolvedSelectedBackend;
       if (!backend) {
-        setError("No backend is available yet. Please try again after velad finishes starting.");
+        setError(t("暂无可用后端，请等待 velad 启动完成后重试。"));
         return;
       }
       const created = await client.createSession({
         backend,
         agentConfig: nextSetup.setupAgentConfig,
-        title: "New chat",
+        title: t("新对话"),
         workingDirectory: DEFAULT_WORKING_DIRECTORY,
       });
       setActiveSessionId(created.session.id);
@@ -418,6 +421,7 @@ function WorkbenchHostSurface({
   onSelectSession?: (sessionId: string) => void;
   sessions?: SessionListItemWire[];
 }) {
+  const t = useT();
   const visibleSessions = sessions ?? [];
 
   return (
@@ -426,16 +430,17 @@ function WorkbenchHostSurface({
       data-vela-embedded-workbench
       aria-busy={isLoading && !error ? "true" : undefined}
     >
+      {/* aria-label 固定为 "Vela sessions"：该字面量被 workbench-desktop-shell-boundary 测试锁定 */}
       <aside className={styles.sessionRail} aria-label="Vela sessions">
         <div className={styles.sessionRailTop}>
           <div>
-            <div className={styles.eyebrow}>Workbench</div>
-            <h2 className={styles.railTitle}>Hermes宝宝</h2>
+            <div className={styles.eyebrow}>{t("工作台")}</div>
+            <h2 className={styles.railTitle}>{t("Hermes宝宝")}</h2>
           </div>
           <button
             className={styles.iconButton}
             type="button"
-            aria-label="Refresh sessions"
+            aria-label={t("刷新会话")}
             onClick={onRetry}
           >
             ↻
@@ -448,7 +453,7 @@ function WorkbenchHostSurface({
           onClick={() => void onCreateSession?.()}
         >
           <span aria-hidden>+</span>
-          <span>New chat</span>
+          <span>{t("新对话")}</span>
         </button>
 
         <div className={styles.sessionListRegion}>

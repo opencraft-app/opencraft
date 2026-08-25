@@ -1,5 +1,11 @@
 # How Do I Activate My First Hermes Instance?
 
+## Summary
+
+**Creating your first Hermes instance goes like this: sign in with Google or GitHub, choose an available plan, activate it under the current plan rules, let the platform create the instance automatically, then configure a model and a channel. Everything happens in the browser — no servers to buy, nothing to deploy locally. A Hermes instance is the cloud runtime your agent lives in, and once created it stays online 24/7. After it is ready, open the "My Hermes" console to configure your model, connect messaging channels, and install skills; if you do not have your own model API key yet, you can start talking right away using the model credits included with your plan.**
+
+---
+
 A Hermes instance is the cloud runtime where your LightVela Agent lives. Activating your first instance follows five steps: **sign in with Google or GitHub → select an available plan → activate it through the current activation flow → let LightVela provision the instance → configure a model and channel**. Everything happens in the browser, with no server purchase or local deployment required. This page walks through the process in order.
 
 ## What this page covers
@@ -16,7 +22,7 @@ A Hermes instance is the cloud runtime where your LightVela Agent lives. Activat
 
 - A currently available plan selected from the [Subscribe page](/subscribe); the international site does not require China real-name verification
 
-- At least one messaging account you plan to connect, such as Telegram, WhatsApp, Discord, or WeChat
+- At least one messaging account you plan to connect, such as Telegram, WhatsApp, Discord, Slack, or WeChat
 
 ---
 
@@ -46,7 +52,7 @@ Once the instance is ready, open the console and complete the basic setup:
 
 1. **Configure a model** — Choose the underlying language model; see [Configure Models](./configuration/model.md)
 
-2. **Connect a channel** — Add Telegram, WhatsApp, Discord, WeChat, or another supported channel, then talk to your Agent from the messaging app
+2. **Connect a channel** — Add Telegram, WhatsApp, Discord, Slack, WeChat, or another supported channel, then talk to your Agent from the messaging app
 
 3. **Optionally add skills and automations** — Extend what your Agent can do; see [Configure Automations](./configuration/automation.md)
 

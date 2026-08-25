@@ -17,8 +17,10 @@ import (
 const rootDomain = "sites.lightclaw.tech"
 
 type fakeSites struct {
-	sites map[string]*sitemeta.Site
-	err   error
+	sites      map[string]*sitemeta.Site
+	freshSites map[string]*sitemeta.Site
+	err        error
+	freshErr   error
 }
 
 func (f *fakeSites) BySiteID(_ context.Context, siteID string) (*sitemeta.Site, error) {
@@ -30,6 +32,20 @@ func (f *fakeSites) BySiteID(_ context.Context, siteID string) (*sitemeta.Site, 
 		return nil, sitemeta.ErrNotFound
 	}
 	return site, nil
+}
+
+func (f *fakeSites) BySiteIDFresh(_ context.Context, siteID string) (*sitemeta.Site, error) {
+	if f.freshErr != nil {
+		return nil, f.freshErr
+	}
+	if f.freshSites != nil {
+		site, ok := f.freshSites[siteID]
+		if !ok {
+			return nil, sitemeta.ErrNotFound
+		}
+		return site, nil
+	}
+	return f.BySiteID(context.Background(), siteID)
 }
 
 type fakeOrigin struct {
@@ -66,7 +82,7 @@ func newHandler(sites *fakeSites, obj *fakeOrigin) *SiteHandler {
 
 func activeSite(siteID string) *fakeSites {
 	return &fakeSites{sites: map[string]*sitemeta.Site{
-		siteID: {SiteID: siteID, Status: sitemeta.StatusActive},
+		siteID: {SiteID: siteID, Status: sitemeta.StatusActive, UserID: "user-1"},
 	}}
 }
 

@@ -19,6 +19,7 @@ from gates.db_contract_verifier import (  # noqa: E402
     apply_playground_ctl_runtime_env,
     build_check_script,
     build_job_manifest,
+    expected_migration_version,
     kubectl,
     main,
     max_migration_version,
@@ -50,6 +51,45 @@ class DbContractVerifierTests(unittest.TestCase):
             (migrations / "12_add_plan.down.sql").write_text("select 1;\n")
 
             self.assertEqual(max_migration_version(repo_root, "payment/migrations"), 12)
+
+    def test_expected_migration_version_uses_environment_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            migrations = repo_root / "ctl" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000027_add_index.up.sql").write_text("select 1;\n")
+            (migrations / "000028_create_websites.up.sql").write_text("select 1;\n")
+            contract = {
+                "expected_migration_source": "ctl/migrations",
+                "expected_migration_version_by_env": {
+                    "shprod": 27,
+                    "sgprod": 28,
+                },
+            }
+            self.assertEqual(
+                expected_migration_version(repo_root, contract, "shprod"),
+                27,
+            )
+            self.assertEqual(
+                expected_migration_version(repo_root, contract, "sgprod"),
+                28,
+            )
+            self.assertEqual(
+                expected_migration_version(repo_root, contract, "beijing-sandbox"),
+                28,
+            )
+
+    def test_expected_migration_version_rejects_non_mapping_override(self) -> None:
+        contract = {
+            "expected_migration_source": "ctl/migrations",
+            "expected_migration_version_by_env": [],
+        }
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "expected_migration_version_by_env must be a mapping",
+        ):
+            expected_migration_version(Path("/tmp"), contract, "shprod")
 
     def test_check_script_is_shell_parseable_and_checks_baseline_without_secret_values(self) -> None:
         verifier = {
@@ -128,6 +168,36 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertEqual(env_values["CTL_DB_PASSWORD"], "test-password")
         self.assertEqual(env_secret_values, {})
         self.assertEqual(node_selector, {"pool": "general-bj8"})
+
+    def test_korea_playground_catalog_resolves_namespace_and_cluster(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            catalog = repo_root / "argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: trade",
+                        "env: sandbox-kr-1",
+                        "destinationName: seoul-sandbox",
+                        "playgroundCluster: seoul-sandbox",
+                        "namespace: lightvela-playground-sandbox-kr-1",
+                        "sourcePath: argocd/services/trade/sandbox-kr-1",
+                        "",
+                    ]
+                )
+            )
+
+            cluster_name = resolve_kubeconfig_cluster_name(repo_root, "sandbox-kr-1", "trade")
+            namespace = resolve_verifier_namespace(
+                repo_root,
+                "sandbox-kr-1",
+                "trade",
+                {"namespace": "trade"},
+            )
+
+        self.assertEqual(cluster_name, "seoul-sandbox")
+        self.assertEqual(namespace, "lightvela-playground-sandbox-kr-1")
 
     def test_ctl_runtime_env_can_use_secret_resolver_without_inline_password(self) -> None:
         verifier = {
@@ -269,6 +339,85 @@ class DbContractVerifierTests(unittest.TestCase):
             summary = json.loads(output.read_text())
             self.assertEqual(summary["expected_schema_version"], 12)
             self.assertEqual(summary["status"], "rendered")
+
+    def test_main_resolves_playground_namespace_from_deploy_root_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as deploy_tmp:
+            source_root = Path(source_tmp)
+            deploy_root = Path(deploy_tmp)
+            migrations = source_root / "trade" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000007_trade_bundle_activity_time_span_unit.up.sql").write_text("select 1;\n")
+
+            catalog = deploy_root / "argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: trade",
+                        "env: sandbox-kr-1",
+                        "destinationName: seoul-sandbox",
+                        "namespace: lightvela-playground-sandbox-kr-1",
+                        "sourcePath: argocd/services/trade/sandbox-kr-1",
+                        "",
+                    ]
+                )
+            )
+            env_file = deploy_root / "argocd/services/trade/sandbox-kr-1/trade-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text(
+                "TRADE_MYSQL_HOST=mysql.lightvela-playground-sandbox-kr-1.svc.cluster.local\n"
+                "TRADE_MYSQL_PORT=3306\n"
+            )
+            bundle = mock.Mock(
+                db_contract={
+                    "mode": "migration",
+                    "expected_migration_source": "trade/migrations",
+                    "verifier": {
+                        "namespace": "trade",
+                        "service_platform_env_file": "argocd/services/trade/{env}/trade-platform.env",
+                        "database_env": "TRADE_DB",
+                        "user_env": "TRADE_DB_USER",
+                        "password_env": "TRADE_DB_PASSWORD",
+                        "static_env": {
+                            "TRADE_DB": "trade_sandbox_kr_1",
+                            "TRADE_DB_USER": "trade",
+                        },
+                        "env_from_service_platform": {
+                            "MYSQL_HOST": "TRADE_MYSQL_HOST",
+                            "MYSQL_PORT": "TRADE_MYSQL_PORT",
+                        },
+                    },
+                }
+            )
+
+            with (
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "verify_db_contract.py",
+                        "--repo-root",
+                        str(source_root),
+                        "--deploy-root",
+                        str(deploy_root),
+                        "--service",
+                        "trade",
+                        "--env",
+                        "sandbox-kr-1",
+                        "--apply",
+                    ],
+                ),
+                mock.patch("gates.db_contract_verifier.load_manifest", return_value={}),
+                mock.patch("gates.db_contract_verifier.load_bundle", return_value=bundle),
+                mock.patch(
+                    "gates.db_contract_verifier.resolve_kubeconfig",
+                    return_value=("/tmp/kubeconfig", None),
+                ),
+                mock.patch("gates.db_contract_verifier.apply_manifest") as apply,
+                mock.patch("gates.db_contract_verifier.delete_manifest"),
+            ):
+                self.assertEqual(main(), 0)
+
+        self.assertEqual(apply.call_args.args[1]["metadata"]["namespace"], "lightvela-playground-sandbox-kr-1")
 
     def test_job_manifest_supports_runtime_env_and_host_network(self) -> None:
         verifier = {
@@ -482,7 +631,30 @@ class DbContractVerifierTests(unittest.TestCase):
 
         self.assertEqual(resolver.call_args.args[3], "lightclaw-auth")
 
-    def test_playground_ctl_runtime_env_uses_catalog_database_and_runtime_root_secret(self) -> None:
+    def test_playground_ctl_runtime_env_preserves_resolved_ctl_db_secret(self) -> None:
+        env_values = {
+            "MYSQL_HOST": "10.15.224.4",
+            "MYSQL_PORT": "3306",
+            "CTL_DB": "ctl",
+            "CTL_DB_USER": "root",
+        }
+        env_secret_values = {"CTL_DB_PASSWORD": "business-password"}
+
+        with mock.patch("gates.db_contract_verifier.kubectl") as kubectl:
+            apply_playground_ctl_runtime_env(
+                kubeconfig="/tmp/kubeconfig",
+                namespace="lightvela-playground-sandbox-bj-7",
+                env="sandbox-bj-7",
+                service="ctl",
+                env_values=env_values,
+                env_secret_values=env_secret_values,
+            )
+
+        self.assertEqual(env_values["CTL_DB"], "ctl_sandbox_bj_7")
+        self.assertEqual(env_secret_values["CTL_DB_PASSWORD"], "business-password")
+        kubectl.assert_not_called()
+
+    def test_playground_ctl_runtime_env_falls_back_to_runtime_root_secret(self) -> None:
         secret_json = {
             "data": {
                 "MYSQL_ROOT_PASSWORD": "cm9vdC1wYXNzd29yZA==",
@@ -494,7 +666,7 @@ class DbContractVerifierTests(unittest.TestCase):
             "CTL_DB": "ctl",
             "CTL_DB_USER": "root",
         }
-        env_secret_values = {"CTL_DB_PASSWORD": "business-password"}
+        env_secret_values: dict[str, str] = {}
 
         with mock.patch(
             "gates.db_contract_verifier.kubectl",

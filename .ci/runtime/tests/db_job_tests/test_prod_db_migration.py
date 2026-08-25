@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
@@ -16,6 +17,78 @@ from harness_ci import prod_db_migration  # noqa: E402
 
 
 class ProdDbMigrationTests(unittest.TestCase):
+    def test_version_probe_uses_environment_specific_expected_version(self) -> None:
+        contract = {
+            "expected_migration_source": "ctl/migrations",
+            "expected_migration_version_by_env": {"shprod": 27, "sgprod": 28},
+            "verifier": {"namespace": "ctl"},
+        }
+        job = {"metadata": {"name": "db-version-ctl-shprod"}}
+
+        with (
+            tempfile.TemporaryDirectory() as source_tmp,
+            tempfile.TemporaryDirectory() as deploy_tmp,
+            mock.patch.object(
+                prod_db_migration,
+                "load_db_contract",
+                return_value=contract,
+            ),
+            mock.patch.object(
+                prod_db_migration.db_contract_verifier,
+                "expected_migration_version",
+                return_value=27,
+            ) as expected_version,
+            mock.patch.object(
+                prod_db_migration.db_contract_verifier,
+                "resolve_runtime_env",
+                return_value=({}, {}, {}),
+            ),
+            mock.patch.object(
+                prod_db_migration,
+                "build_version_probe_job",
+                return_value=job,
+            ),
+            mock.patch.object(
+                prod_db_migration.db_contract_verifier,
+                "resolve_kubeconfig",
+                return_value=("/tmp/kubeconfig", None),
+            ),
+            mock.patch.object(
+                prod_db_migration.db_contract_verifier,
+                "apply_manifest",
+            ),
+            mock.patch.object(
+                prod_db_migration.db_contract_verifier,
+                "wait_for_job",
+                return_value="succeeded",
+            ),
+            mock.patch.object(
+                prod_db_migration.db_contract_verifier,
+                "collect_job_logs",
+                return_value="MIGRATION_VERSION current=27 dirty=false table_exists=true expected=27\n",
+            ),
+            mock.patch.object(
+                prod_db_migration.db_contract_verifier,
+                "delete_manifest",
+            ),
+            mock.patch.object(
+                prod_db_migration,
+                "pending_migration_files",
+                return_value=[],
+            ),
+        ):
+            source_dir = Path(source_tmp)
+            result = prod_db_migration.probe_db_version(
+                source_dir=source_dir,
+                deploy_root=Path(deploy_tmp),
+                bundle_service="ctl",
+                env="shprod",
+                timeout_seconds=30,
+            )
+
+        expected_version.assert_called_once_with(source_dir, contract, "shprod")
+        self.assertEqual(result["expected"], 27)
+
     def test_maps_user_auth_bundle_to_lightclaw_auth_db_job_service(self) -> None:
         self.assertEqual(prod_db_migration.map_service("user-auth"), ("user-auth", "lightclaw-auth"))
         self.assertEqual(prod_db_migration.map_service("lightclaw-auth"), ("user-auth", "lightclaw-auth"))
@@ -77,11 +150,15 @@ class ProdDbMigrationTests(unittest.TestCase):
             "example.com/sandbox-migrate:tag",
         )
 
-    def test_diff_hint_does_not_gate_when_source_sha_does_not_touch_migration_paths(self) -> None:
+    def test_diff_hint_keeps_production_migration_contract_when_source_sha_does_not_touch_migration_paths(self) -> None:
         with mock.patch.object(
             prod_db_migration,
             "plan_release_gates",
-            return_value=SimpleNamespace(db_mode="migration", requires_db_job=True, migration_changed=False),
+            return_value=SimpleNamespace(db_mode="migration", requires_db_job=False, migration_changed=False),
+        ), mock.patch.object(
+            prod_db_migration,
+            "load_db_contract",
+            return_value={"migration_operation": "migration"},
         ):
             hint = prod_db_migration.migration_diff_hint(
                 "payment",

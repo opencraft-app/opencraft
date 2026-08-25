@@ -39,6 +39,7 @@ import (
 const resourceNameOpenClawInstance = "OPENCLAW_INSTANCE"
 const defaultOpenClawInstanceQuota = 5
 const maxInstanceDisplayNameRunes = 64
+const terminalSessionDeadline = 5 * time.Second
 
 var expectedPauseConflictMessages = []string{
 	"already paused",
@@ -108,28 +109,30 @@ type Logic interface {
 }
 
 type logic struct {
-	instanceDao                  modelinstance.Dao
-	passLister                   userPassLister
-	taskDao                      taskmodel.Dao
-	channelLoginSessionDao       channelloginsession.Dao
-	quotaDao                     quota.Dao
-	sandboxAdapter               psandbox.Adapter
-	aiGatewayAdapter             paigateway.Adapter
-	llmGatewayAdapter            pllmgateway.Adapter
-	openclawGatewayAdapter       popenclawgateway.Adapter
-	producer                     mq.Producer
-	operationHistoryDao          operationhistory.Dao
-	objectIdLogic                objectid.Logic
-	logger                       *zap.Logger
-	defaultTemplateClass         string
-	defaultTemplate              string
-	defaultSKUID                 string
-	candidateTemplates           []string
-	executeTasksInline           bool
-	weixinHub                    *weixinLoginHub
-	churnGuard                   *createChurnGuard
-	legacyPassEntitlementEnsurer func(stdctx.Context, string, time.Time) error
-	websiteCredentialStore       websiteauth.Store
+	instanceDao                   modelinstance.Dao
+	passLister                    userPassLister
+	taskDao                       taskmodel.Dao
+	channelLoginSessionDao        channelloginsession.Dao
+	quotaDao                      quota.Dao
+	sandboxAdapter                psandbox.Adapter
+	aiGatewayAdapter              paigateway.Adapter
+	llmGatewayAdapter             pllmgateway.Adapter
+	openclawGatewayAdapter        popenclawgateway.Adapter
+	producer                      mq.Producer
+	operationHistoryDao           operationhistory.Dao
+	objectIdLogic                 objectid.Logic
+	logger                        *zap.Logger
+	defaultTemplateClass          string
+	defaultTemplate               string
+	defaultSKUID                  string
+	candidateTemplates            []string
+	executeTasksInline            bool
+	weixinHub                     *weixinLoginHub
+	churnGuard                    *createChurnGuard
+	legacyPassEntitlementEnsurer  func(stdctx.Context, string, time.Time) error
+	websiteCredentialStore        websiteauth.Store
+	websiteCredentialTATCommandID string
+	websiteAgentAPIBase           string
 }
 
 func NewLogic() Logic {
@@ -141,28 +144,44 @@ func NewLogic() Logic {
 	defaultTemplateClass := defaultTemplateClassIDFromConfig(instanceConf)
 	defaultTemplate := defaultTemplateIDFromConfig(instanceConf)
 	return &logic{
-		instanceDao:            modelfactory.DefaultDaoFactory.InstanceDao(nil),
-		passLister:             modelfactory.DefaultDaoFactory.PassDao(nil),
-		channelLoginSessionDao: modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
-		taskDao:                modelfactory.DefaultDaoFactory.TaskDao(nil),
-		quotaDao:               modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),
-		sandboxAdapter:         adapterfactory.DefaultAdapterFactory.SandboxAdapter(),
-		aiGatewayAdapter:       adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(),
-		llmGatewayAdapter:      adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter(),
-		openclawGatewayAdapter: adapterfactory.DefaultAdapterFactory.OpenClawGatewayAdapter(),
-		producer:               defaultProducer(),
-		operationHistoryDao:    modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
-		objectIdLogic:          objectid.NewLogic(),
-		logger:                 logger,
-		defaultTemplateClass:   defaultTemplateClass,
-		defaultTemplate:        defaultTemplate,
-		defaultSKUID:           defaultSKUIDFromConfig(instanceConf),
-		candidateTemplates:     candidateTemplateIDsFromConfig(instanceConf, defaultTemplateClass, defaultTemplate),
-		executeTasksInline:     false,
-		weixinHub:              newWeixinLoginHub(),
-		churnGuard:             newCreateChurnGuard(instanceConf, logger),
-		websiteCredentialStore: websiteauth.New(resource.RedisMainClient),
+		instanceDao:                   modelfactory.DefaultDaoFactory.InstanceDao(nil),
+		passLister:                    modelfactory.DefaultDaoFactory.PassDao(nil),
+		channelLoginSessionDao:        modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
+		taskDao:                       modelfactory.DefaultDaoFactory.TaskDao(nil),
+		quotaDao:                      modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),
+		sandboxAdapter:                adapterfactory.DefaultAdapterFactory.SandboxAdapter(),
+		aiGatewayAdapter:              adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(),
+		llmGatewayAdapter:             adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter(),
+		openclawGatewayAdapter:        adapterfactory.DefaultAdapterFactory.OpenClawGatewayAdapter(),
+		producer:                      defaultProducer(),
+		operationHistoryDao:           modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
+		objectIdLogic:                 objectid.NewLogic(),
+		logger:                        logger,
+		defaultTemplateClass:          defaultTemplateClass,
+		defaultTemplate:               defaultTemplate,
+		defaultSKUID:                  defaultSKUIDFromConfig(instanceConf),
+		candidateTemplates:            candidateTemplateIDsFromConfig(instanceConf, defaultTemplateClass, defaultTemplate),
+		executeTasksInline:            false,
+		weixinHub:                     newWeixinLoginHub(),
+		churnGuard:                    newCreateChurnGuard(instanceConf, logger),
+		websiteCredentialStore:        websiteauth.New(resource.RedisMainClient),
+		websiteCredentialTATCommandID: websiteCredentialTATCommandIDFromConfig(),
+		websiteAgentAPIBase:           websiteAgentAPIBaseFromConfig(),
 	}
+}
+
+func websiteCredentialTATCommandIDFromConfig() string {
+	if config.ServerConf == nil || config.ServerConf.AdapterConfig == nil || config.ServerConf.AdapterConfig.Sandbox == nil {
+		return ""
+	}
+	return strings.TrimSpace(config.ServerConf.AdapterConfig.Sandbox.WebsiteCredentialTATCommandID)
+}
+
+func websiteAgentAPIBaseFromConfig() string {
+	if config.ServerConf == nil || config.ServerConf.AdapterConfig == nil || config.ServerConf.AdapterConfig.Sandbox == nil {
+		return ""
+	}
+	return strings.TrimSpace(config.ServerConf.AdapterConfig.Sandbox.WebsiteAgentAPIBase)
 }
 
 func NewLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter pllmgateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, defaultTemplate string, candidateTemplates ...string) Logic {
@@ -837,20 +856,63 @@ func (l *logic) StartTerminalSession(ctx pctx.Context, instanceID string) (*tran
 	if strings.TrimSpace(instanceID) == "" {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
+	deadlineCtx, cancel := stdctx.WithTimeout(ctx, terminalSessionDeadline)
+	defer cancel()
+	opCtx := ctx.WithContext(deadlineCtx)
+
+	entity, err := l.instanceDao.GetByInstanceID(opCtx, instanceID)
 	if err != nil {
+		if deadlineCtx.Err() != nil {
+			return nil, errcode.ErrSandboxTimeout
+		}
 		return nil, err
 	}
-	if err := l.requireActivePass(ctx); err != nil {
+	if deadlineCtx.Err() != nil {
+		return nil, errcode.ErrSandboxTimeout
+	}
+	if entity.Status != modelinstance.InstanceStatusRunning {
+		return nil, errcode.ErrInstanceStatusInvalid
+	}
+	if err := l.requireActivePass(opCtx); err != nil {
+		if deadlineCtx.Err() != nil {
+			return nil, errcode.ErrSandboxTimeout
+		}
 		return nil, activePassGuardError("start terminal session", err)
+	}
+	if deadlineCtx.Err() != nil {
+		return nil, errcode.ErrSandboxTimeout
 	}
 	if strings.TrimSpace(entity.SandboxId) == "" {
 		return nil, errcode.ErrSandboxNotFound
 	}
 
-	session, err := l.sandboxAdapter.StartTerminalSession(ctx, entity.SandboxId)
+	sandboxID := entity.SandboxId
+	session, err := l.sandboxAdapter.StartTerminalSession(opCtx, sandboxID)
 	if err != nil {
+		if deadlineCtx.Err() != nil {
+			return nil, errcode.ErrSandboxTimeout
+		}
 		return nil, err
+	}
+	if deadlineCtx.Err() != nil {
+		return nil, errcode.ErrSandboxTimeout
+	}
+
+	current, err := l.instanceDao.GetByInstanceID(opCtx, instanceID)
+	if err != nil {
+		if deadlineCtx.Err() != nil {
+			return nil, errcode.ErrSandboxTimeout
+		}
+		return nil, err
+	}
+	if deadlineCtx.Err() != nil {
+		return nil, errcode.ErrSandboxTimeout
+	}
+	if current.Status != modelinstance.InstanceStatusRunning {
+		return nil, errcode.ErrInstanceStatusInvalid
+	}
+	if current.InstanceId != entity.InstanceId || current.SandboxId != sandboxID {
+		return nil, errcode.ErrInstanceOperationConflict
 	}
 	return &transport.TerminalSessionResponse{
 		PoolID:         session.PoolID,

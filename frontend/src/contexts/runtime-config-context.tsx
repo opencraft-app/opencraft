@@ -26,12 +26,30 @@ interface RuntimeConfigState {
   refresh: () => Promise<void>;
 }
 
+const readBooleanLike = (value: string | undefined): boolean | null => {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "true" || normalized === "1" || normalized === "on") return true;
+  if (normalized === "false" || normalized === "0" || normalized === "off") return false;
+  return null;
+};
+
+/** 构建期付费开关的原始取值，未配置时为 undefined。 */
+const readBuildTimePaidBillingRaw = (): boolean | null =>
+  readBooleanLike(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_PAID_BILLING_ENABLED : undefined) ??
+  readBooleanLike(import.meta.env?.VITE_PAID_BILLING_ENABLED);
+
+const readBuildTimePaidBillingDefault = (): boolean => readBuildTimePaidBillingRaw() ?? true;
+
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
-    paidBillingEnabled: true,
+    paidBillingEnabled: readBuildTimePaidBillingDefault(),
     realnamePhoneVerificationEnabled: true,
   },
 };
+
+const PAID_BILLING_OVERRIDE_STORAGE_KEY = "lightclaw:features.paidBillingEnabled";
+const REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY = "lightclaw:features.realnamePhoneVerificationEnabled";
 
 const RuntimeConfigContext = createContext<RuntimeConfigState>({
   config: DEFAULT_RUNTIME_CONFIG,
@@ -58,6 +76,32 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
   };
 };
 
+const readBooleanOverride = (storageKey: string): boolean | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(storageKey)?.trim().toLowerCase();
+    if (!value) return null;
+    return readBooleanLike(value);
+  } catch {
+    return null;
+  }
+};
+
+const applyRuntimeOverrides = (config: RuntimeConfig): RuntimeConfig => {
+  const paidBillingOverride = readBooleanOverride(PAID_BILLING_OVERRIDE_STORAGE_KEY);
+  const realnamePhoneVerificationOverride = readBooleanOverride(REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY);
+  if (paidBillingOverride == null && realnamePhoneVerificationOverride == null) return config;
+  return {
+    ...config,
+    features: {
+      ...config.features,
+      paidBillingEnabled: paidBillingOverride ?? config.features.paidBillingEnabled,
+      realnamePhoneVerificationEnabled:
+        realnamePhoneVerificationOverride ?? config.features.realnamePhoneVerificationEnabled,
+    },
+  };
+};
+
 const shouldSkipRemoteRuntimeConfig = (): boolean => {
   if (typeof window === "undefined") return false;
   return isLightVelaEdgeOnePreviewHostname(window.location.hostname);
@@ -65,7 +109,7 @@ const shouldSkipRemoteRuntimeConfig = (): boolean => {
 
 const fetchRuntimeConfig = async (): Promise<RuntimeConfig> => {
   if (shouldSkipRemoteRuntimeConfig()) {
-    return DEFAULT_RUNTIME_CONFIG;
+    return applyRuntimeOverrides(DEFAULT_RUNTIME_CONFIG);
   }
   const baseUrl = resolveConfiguredAuthApiBaseUrl();
   if (baseUrl === null) {
@@ -80,7 +124,7 @@ const fetchRuntimeConfig = async (): Promise<RuntimeConfig> => {
   if (!response.ok) {
     throw new Error(`runtime config request failed: ${response.status}`);
   }
-  return normalizeRuntimeConfig(await response.json());
+  return applyRuntimeOverrides(normalizeRuntimeConfig(await response.json()));
 };
 
 export const RuntimeConfigProvider = ({ children }: PropsWithChildren) => {
@@ -94,7 +138,7 @@ export const RuntimeConfigProvider = ({ children }: PropsWithChildren) => {
     try {
       setConfig(await fetchRuntimeConfig());
     } catch (err) {
-      setConfig(DEFAULT_RUNTIME_CONFIG);
+      setConfig(applyRuntimeOverrides(DEFAULT_RUNTIME_CONFIG));
       setError(err instanceof Error ? err.message : "runtime config request failed");
     } finally {
       setLoading(false);
@@ -115,15 +159,21 @@ export const RuntimeConfigProvider = ({ children }: PropsWithChildren) => {
 
 export const useRuntimeConfig = () => useContext(RuntimeConfigContext);
 
-const resolvePaidBillingEnabled = (config: RuntimeConfig, cn: boolean): boolean =>
-  cn && config.features.paidBillingEnabled === true;
+/**
+ * 付费计费总开关：国内站与国际站均已全量，口径一致——
+ * 统一由后端 runtime config `features.paidBillingEnabled` 决定（后端可一键熔断），
+ * 构建期环境变量默认值与 localStorage override（applyRuntimeOverrides）
+ * 仍作为本地覆盖 / 紧急关闭通道，与国内站共用同一套 key。
+ */
+const resolvePaidBillingEnabled = (config: RuntimeConfig): boolean =>
+  config.features.paidBillingEnabled === true;
 
 const resolveRealnamePhoneVerificationEnabled = (config: RuntimeConfig, cn: boolean): boolean =>
   cn && config.features.realnamePhoneVerificationEnabled === true;
 
 export const usePaidBillingEnabled = (): boolean => {
   const { config } = useRuntimeConfig();
-  return resolvePaidBillingEnabled(config, isCN);
+  return resolvePaidBillingEnabled(config);
 };
 
 export const useRealnamePhoneVerificationEnabled = (): boolean => {
@@ -133,6 +183,9 @@ export const useRealnamePhoneVerificationEnabled = (): boolean => {
 
 export const __runtimeConfigTestHooks = {
   DEFAULT_RUNTIME_CONFIG,
+  PAID_BILLING_OVERRIDE_STORAGE_KEY,
+  REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY,
+  applyRuntimeOverrides,
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,

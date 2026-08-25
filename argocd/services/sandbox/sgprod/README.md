@@ -45,6 +45,12 @@ Secret 键：
 - `REDIS_PASSWORD`
 - `TENCENT_SECRET_ID`
 - `TENCENT_SECRET_KEY`
+- `SANDBOX_API_KEY`：参数化内部 TAT 路由鉴权，必须与 CTL `ctl-runtime-secrets` 中同名值一致
+
+内部参数化 TAT 调用还要求 Sandbox 运行时配置
+`WEBSITE_CREDENTIAL_TAT_COMMAND_ID`，并与 CTL 使用的值一致。缺少 API Key、缺少
+CommandId 或 CommandId 不匹配时接口默认拒绝；该失败只影响凭据下发，CTL 仍将
+已创建实例置为 `Running`。
 
 ## Note
 

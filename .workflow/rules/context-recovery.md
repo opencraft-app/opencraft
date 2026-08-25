@@ -18,7 +18,7 @@
 生命周期（固定协议，非主观判断）：
 
 - **初始化**：文件缺失时，单向 `cp .workflow/runtime/current-task.summary.template.md .workflow/runtime/current-task.summary.md` 生成，再填 active slice。
-- **每批刷新**：每完成一批任务（`/feai-review` 结论产出后）必须刷新 summary 的 Active Slice 与 Freshness，使其只反映当前/下一批。
+- **每批刷新**：inline quick 通过后调用 `feai workflow batch complete`，统一刷新 plan、summary 与 ledger。
 - **规划产出后**：`/feai-start` 计划确认后写入首个 active slice（当前批次 ≤ 3 任务）。
 
 推荐结构见 `current-task.summary.template.md`（Freshness: branch/planHash/updatedAt/status + Active Slice）。
@@ -90,7 +90,7 @@ handoff 默认写入 `.workflow/runtime/*handoff*.md` 或直接发给下游 agen
 CodeBuddy CLI 可用且当前上下文已明显膨胀、跨阶段事实稳定或需要独立 review 时，planning → implementation → review → archive 可使用新进程、新 session 执行重型阶段，避免主会话历史持续回灌。S 级短任务和上下文健康的阶段不强制切断：
 
 ```bash
-feai workflow handoff write --from <from> --to <to> --apply --json
+feai workflow handoff write --from <from> --to <to> --spec-ready --apply --json # 进入 implementation 时
 feai workflow handoff validate --phase <to> --json
 feai workflow phase run --phase <to> --execute --json
 ```
@@ -98,10 +98,12 @@ feai workflow phase run --phase <to> --execute --json
 约束：
 
 - `phase run` 禁止使用 CodeBuddy 的 `--resume` / `--continue`，必须创建全新 session。
-- handoff 必须先通过 branch、planHash、worktree fingerprint、非空计划和目标阶段自检；12KB 仅为健康告警，不得因大小删除必要事实。失效时重新生成，不带病恢复。
+- handoff 必须先通过 branch、planHash、worktree fingerprint、非空计划和目标阶段自检；8KB 为健康目标，10KB 为模型可见硬上限。超长事实完整保留在 runtime 文件中，handoff 只带有界预览、hash 和 `loadPolicy=on_demand` 引用。
 - 新阶段把 handoff 作为事实索引，读取 P0-Min、引用文件及保证正确性所需的代码、规则、技能和测试。memory、历史 changes 默认不读；任务明确依赖历史决策且当前证据不足时可按需读取并说明原因。
-- handoff 必须保留目标、成功标准、范围/非目标、关键决策、风险、计划、验证要求和可校验引用；不得静默截断。缺失必要事实时子阶段返回 `status=needs_context` 和 `requiredContext`，由主流程补充 handoff 后重试，禁止猜测。
+- handoff 必须保留目标、成功标准、范围/非目标、关键决策、风险、计划、验证要求和可校验引用；预览被裁剪时必须写入 `contextTruncations`，不得静默丢失来源。缺失必要事实时子阶段返回 `status=needs_context` 和 `requiredContext`，由主流程补充 handoff 后重试，禁止猜测。
 - 子阶段不得自行启动下一阶段；返回 `phase-result.<phase>.json` 后由主流程决定是否继续。
-- `phase run` 使用 `--append-system-prompt` 保留 CodeBuddy 默认能力，不用固定工具白名单削减 Skill/MCP；review 仍通过只读 permission mode 约束写入。
+- `phase run` 使用 `--append-system-prompt` 保留默认能力；review 禁用 Agent/Task 工具、主进程与子进程均用 plan 权限，并在执行后校验工作区指纹未变化。
+- phase 原始输出完整落盘；返回主流程的结构化结果设总字节硬上限。最终 review 必须返回 `verdict`，并把 branch、planHash、worktree fingerprint 写入 `phase-result.review.json`，供 archive preflight 校验新鲜度。
+- implementation 仅接受带 `--spec-ready` 的 handoff；该标记表示 `flow-cost.md` readiness checklist 已逐项确认。
 - 实现方案发生变化时用 `feai workflow deviation add` 记录结构化偏差，归档直接消费，不把偏差过程回灌到后续会话。
 - CodeBuddy CLI 不可用时只做同会话软恢复，并明确标记 `contextIsolation=soft`；不得宣称已降低 provider 输入上下文。

@@ -1,6 +1,6 @@
-export type PublicSiteLocaleCode = "zh-CN" | "zh-SG" | "zh-Hant" | "en-US";
-export type PublicUrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant";
-export type CanonicalPublicUrlLang = "en-us" | "zh-cn" | "zh-sg" | "zh-hant";
+export type PublicSiteLocaleCode = "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID";
+export type PublicUrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id";
+export type CanonicalPublicUrlLang = "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id";
 
 /**
  * 官网前端所有 locale / URL-lang 字符串的**唯一常量来源**。
@@ -15,6 +15,7 @@ export const PUBLIC_SITE_LOCALES = {
   ZH_CN: "zh-CN",
   ZH_SG: "zh-SG",
   ZH_HANT: "zh-Hant",
+  ID_ID: "id-ID",
 } as const satisfies Record<string, PublicSiteLocaleCode>;
 
 /** URL 前缀（小写连字符）—— 与 `next-site/source.ts` 的 `docsI18n.languages` 一一对应。 */
@@ -23,24 +24,29 @@ export const PUBLIC_URL_LANGS = {
   ZH_CN: "zh-cn",
   ZH_SG: "zh-sg",
   ZH_HANT: "zh-hant",
+  ID_ID: "id-id",
 } as const satisfies Record<string, CanonicalPublicUrlLang>;
 
 export const PUBLIC_LOCALIZED_PATH_PREFIXES = [
   "/docs",
   "/about",
+  "/subscribe",
+  "/support",
   "/changelog",
   "/privacy-policy",
+  "/terms-of-service",
   "/cookie-policy",
   "/open-source-licenses",
 ] as const;
 
-export const PUBLIC_URL_LANG_TO_LOCALE: Record<PublicUrlLang, "zh-CN" | "en-US" | "zh-Hant"> = {
+export const PUBLIC_URL_LANG_TO_LOCALE: Record<PublicUrlLang, "zh-CN" | "en-US" | "zh-Hant" | "id-ID"> = {
   en: "en-US",
   "en-us": "en-US",
   zh: "zh-CN",
   "zh-cn": "zh-CN",
   "zh-sg": "zh-CN",
   "zh-hant": "zh-Hant",
+  "id-id": "id-ID",
 };
 
 const LOCALE_TO_PUBLIC_URL_LANG: Record<PublicSiteLocaleCode, CanonicalPublicUrlLang> = {
@@ -48,6 +54,7 @@ const LOCALE_TO_PUBLIC_URL_LANG: Record<PublicSiteLocaleCode, CanonicalPublicUrl
   "zh-CN": "zh-cn",
   "zh-SG": "zh-sg",
   "zh-Hant": "zh-hant",
+  "id-ID": "id-id",
 };
 
 export function publicUrlLangForLocale(locale: PublicSiteLocaleCode): CanonicalPublicUrlLang {
@@ -59,7 +66,7 @@ export function defaultPublicUrlLang(defaultLocale: "zh-CN" | "en-US"): "en-us" 
 }
 
 export function matchPublicLangPrefix(pathname: string): { lang: PublicUrlLang; rest: string } | null {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|en|zh)(\/|$)(.*)$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|en|zh)(\/|$)(.*)$/);
   if (!m) return null;
   const lang = m[1] as PublicUrlLang;
   const rest = "/" + (m[3] ?? "");

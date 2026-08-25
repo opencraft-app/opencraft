@@ -20,7 +20,7 @@ export const UserAvatarMenu = () => {
   const t = useT();
   const user = session.user;
   const [open, setOpen] = useState(false);
-  const [workbenchRevealed, setWorkbenchRevealed] = useState(false);
+  const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
   const [workbenchHostname, setWorkbenchHostname] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -45,7 +45,7 @@ export const UserAvatarMenu = () => {
     let mounted = true;
     const revealWorkbench = (...args: unknown[]) => {
       if (mounted) {
-        setWorkbenchRevealed(true);
+        setHiddenEntriesRevealed(true);
       }
       if (typeof originalShow === "function") {
         const originalResult = originalShow.apply(host, args);
@@ -85,7 +85,7 @@ export const UserAvatarMenu = () => {
   } as CSSProperties;
   const showWorkbenchEntry = shouldShowWorkbenchEntry({
     hostname: workbenchHostname,
-    revealed: workbenchRevealed,
+    revealed: hiddenEntriesRevealed,
   });
 
   return (
@@ -176,7 +176,7 @@ export const UserAvatarMenu = () => {
                 <User className={menuIconClass} />
                 {t("账号管理")}
               </Link>
-              {isGlobal ? (
+              {isGlobal && hiddenEntriesRevealed ? (
                 <Link
                   href={WEBSITES_PATH}
                   onClick={() => setOpen(false)}
@@ -186,7 +186,7 @@ export const UserAvatarMenu = () => {
                   {t("我的工作台")}
                 </Link>
               ) : null}
-              {workbenchRevealed ? (
+              {hiddenEntriesRevealed ? (
                 <Link
                   href="/support"
                   onClick={() => setOpen(false)}

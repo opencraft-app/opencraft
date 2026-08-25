@@ -1,5 +1,11 @@
 # Configure Models
 
+## Summary
+
+**Configuring a model is optional: your plan includes monthly model credits, so once you create an agent and connect a channel you can start talking immediately and only configure a model after those credits run out. The Models section of the console offers three options: Model Coding Plan (monthly or annual, best for heavy use), Model API (pay as you go, best for light use or trials), and Custom model (connect an OpenAI-compatible endpoint). All three require your own API key from the corresponding provider. The steps are: pick a source, pick a specific model, paste the API key, and set it as the default. You can switch models later without losing memory. API keys are sensitive credentials — never post them in chat groups or on public pages, never commit them to a Git repository, and revoke or rotate them in the provider console immediately if one leaks.**
+
+---
+
 This page explains how to configure a large language model for Hermes Agent, including the differences between the three configuration methods, how to obtain an API Key, console configuration steps, supported models, and model selection guidance.
 
 > 💡 **Configuration is optional**
@@ -205,6 +211,8 @@ When this happens, check the model configuration again.
 - [Configure Channel - WhatsApp](./channel-whatsapp.md)
 
 - [Configure Channel - Discord](./channel-discord.md)
+
+- [Configure Channel - Slack](./channel-slack.md)
 
 - [Configure Channel - QQ](./channel-qq.md)
 

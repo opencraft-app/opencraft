@@ -11,10 +11,13 @@ import (
 	"time"
 
 	"git.woa.com/wisp/mono/site-gateway/internal/config"
+	"git.woa.com/wisp/mono/site-gateway/internal/dshproxy"
 	"git.woa.com/wisp/mono/site-gateway/internal/hostroute"
 	"git.woa.com/wisp/mono/site-gateway/internal/httpapi"
 	"git.woa.com/wisp/mono/site-gateway/internal/origin"
+	"git.woa.com/wisp/mono/site-gateway/internal/siteauth"
 	"git.woa.com/wisp/mono/site-gateway/internal/sitemeta"
+	"git.woa.com/wisp/mono/site-gateway/internal/tatproxy"
 	"git.woa.com/wisp/mono/site-gateway/internal/usage"
 )
 
@@ -50,6 +53,27 @@ func main() {
 		NegativeTTL:   cfg.SiteNegativeTTL,
 		MaxEntries:    cfg.SiteCacheMaxEntries,
 	})
+	var authCodec *siteauth.TokenCodec
+	var idTokenVerifier *siteauth.IDTokenVerifier
+	if cfg.AuthEndpointsEnabled {
+		authCodec, err = siteauth.NewTokenCodec(siteauth.TokenCodecConfig{
+			ActiveKeyID: cfg.AuthAEADActiveKeyID,
+			Keys:        cfg.AuthAEADKeys,
+			SessionTTL:  cfg.AuthSessionTTL,
+		})
+		if err != nil {
+			log.Fatalf("build site auth token codec: %v", err)
+		}
+		idTokenVerifier, err = siteauth.NewIDTokenVerifier(siteauth.IDTokenVerifierConfig{
+			Issuer:     cfg.AuthOIDCIssuer,
+			ClientID:   cfg.AuthOIDCClientID,
+			JWKSURL:    cfg.AuthOIDCJWKSURL,
+			HTTPClient: &http.Client{Timeout: cfg.CTLTimeout},
+		})
+		if err != nil {
+			log.Fatalf("build site auth id token verifier: %v", err)
+		}
+	}
 
 	siteHandler := httpapi.NewSiteHandler(httpapi.Options{
 		Resolver:     hostroute.New(cfg.RootDomains),
@@ -57,11 +81,69 @@ func main() {
 		DomainLookup: siteMetaClient,
 		Origin:       fetcher,
 		Usage:        meter,
+		Auth: httpapi.AuthOptions{
+			Required:         cfg.AuthMode == config.AuthModeRequired,
+			EndpointsEnabled: cfg.AuthEndpointsEnabled,
+			FixedAuthHost:    cfg.AuthFixedHost,
+			AuthorizeURL:     cfg.AuthOIDCAuthorizeURL,
+			TokenURL:         cfg.AuthOIDCTokenURL,
+			ClientID:         cfg.AuthOIDCClientID,
+			SessionTTL:       cfg.AuthSessionTTL,
+			TokenCodec:       authCodec,
+			IDTokens:         idTokenVerifier,
+			HTTPClient:       &http.Client{Timeout: cfg.CTLTimeout},
+		},
 	})
+	var (
+		publicHandler http.Handler = siteHandler
+		dshHandler    *dshproxy.Handler
+		dshManager    *tatproxy.Manager
+	)
+	if len(cfg.DSHDomains) > 0 {
+		starter, err := tatproxy.NewFederationStarter(tatproxy.FederationStarterOptions{
+			BaseURL:    cfg.DSHFederationBaseURL,
+			ClientID:   cfg.DSHFederationClientID,
+			KeyID:      cfg.DSHFederationKeyID,
+			HMACKey:    cfg.DSHFederationHMACKey,
+			HTTPClient: &http.Client{Timeout: cfg.DSHTATStartTimeout},
+		})
+		if err != nil {
+			log.Fatalf("build DSH federation TAT starter: %v", err)
+		}
+		dshManager, err = tatproxy.NewManager(tatproxy.ManagerOptions{
+			Starter:                   starter,
+			StartTimeout:              cfg.DSHTATStartTimeout,
+			OpenTimeout:               cfg.DSHTATOpenTimeout,
+			IdleTimeout:               cfg.DSHTATIdleTimeout,
+			MaxTargets:                cfg.DSHMaxTargets,
+			MaxConnectionsPerTarget:   cfg.DSHMaxConnectionsPerTarget,
+			QueueDepth:                cfg.DSHQueueDepth,
+			MaxFrameBytes:             cfg.DSHMaxFrameBytes,
+			MaxBufferedBytesPerConn:   cfg.DSHMaxBufferedBytesPerConn,
+			MaxBufferedBytesPerTarget: cfg.DSHMaxBufferedBytesPerTarget,
+			MaxBufferedBytesTotal:     cfg.DSHMaxBufferedBytesTotal,
+		})
+		if err != nil {
+			log.Fatalf("build DSH TAT manager: %v", err)
+		}
+		dshHandler, err = dshproxy.NewHandler(dshproxy.HandlerOptions{
+			Dialer:                dshManager,
+			Domains:               cfg.DSHDomains,
+			MaxTargets:            cfg.DSHMaxTargets,
+			IdleTTL:               cfg.DSHTATIdleTimeout,
+			ResponseHeaderTimeout: cfg.DSHTATOpenTimeout,
+			Federation:            starter,
+			AuthorizeURL:          cfg.DSHFederationAuthorizeURL,
+		})
+		if err != nil {
+			log.Fatalf("build DSH reverse proxy: %v", err)
+		}
+		publicHandler = httpapi.NewDispatcher(siteHandler, dshHandler, cfg.DSHDomains)
+	}
 
 	siteServer := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           siteHandler,
+		Handler:           publicHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	adminServer := &http.Server{
@@ -71,7 +153,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("site-gateway serving sites on %s for root domains %v", cfg.Addr, cfg.RootDomains)
+		log.Printf("site-gateway serving sites on %s for root domains %v and DSH domains %v", cfg.Addr, cfg.RootDomains, cfg.DSHDomains)
 		if err := siteServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("serve sites: %v", err)
 		}
@@ -102,6 +184,12 @@ func main() {
 	}
 	if err := adminServer.Shutdown(ctx); err != nil {
 		log.Printf("shutdown admin: %v", err)
+	}
+	if dshHandler != nil {
+		dshHandler.Close()
+	}
+	if dshManager != nil {
+		_ = dshManager.Close()
 	}
 	// 先停站点服务再停上报：这个顺序保证最后一次 Flush 看到的是已经不再增长的计数，
 	// 不会漏掉关服过程中仍在处理的那几个请求。

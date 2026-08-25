@@ -1,5 +1,11 @@
 # 配置技能
 
+## 摘要
+
+**技能（Skills）是 Hermes 的附加能力包，在基础对话之上扩展具体任务处理能力，例如自动整理待办、生成日报、浏览网页、搜索新闻、图像生成等，来自 OpenClaw 与 Hermes 共享的技能市场 Skills.sh 与 ClawHub。技能是可选配置：Agent 默认不预装任何技能，未安装时仍可正常对话，建议在使用中发现能力边界后再针对性安装。有两种安装方式——在管理台「技能」中按名称搜索安装，或直接在对话中让 Agent 安装；已安装的技能可在管理台删除。**
+
+---
+
 技能（Skills）是 Hermes 可调用的附加能力包，在基础对话能力之上扩展具体任务的处理能力，例如自动整理待办、生成日报、浏览网页、搜索新闻、图像生成等。
 
 所有技能均来自 [**Skills.sh**](https://skills.sh/) 与 [**ClawHub**](https://clawhub.ai/) ——OpenClaw 与 Hermes 共享的技能市场。
@@ -71,7 +77,7 @@ LightVela 管理台在「技能」按键中提供可视化的技能配置入口�
 
 ### 3. 在对话中确认可用
 
-回到已接入的通道（WeChat / Telegram / WhatsApp / Discord），首先让 Hermes 更新一下技能列表，再查看当前可用技能：
+回到已接入的通道（Telegram / WhatsApp / Discord / Slack / WeChat），首先让 Hermes 更新一下技能列表，再查看当前可用技能：
 
 ```
 更新一下你的技能列表
@@ -91,7 +97,7 @@ LightVela 管理台在「技能」按键中提供可视化的技能配置入口�
 
 ### 1. 确认对话通道可用
 
-首先确保 Hermes 已接入至少一个通道（WeChat / Telegram / WhatsApp / Discord），且当前能够正常对话。
+首先确保 Hermes 已接入至少一个通道（Telegram / WhatsApp / Discord / Slack / WeChat），且当前能够正常对话。
 
 ### 2. 告诉 Hermes 要安装的技能
 
@@ -135,7 +141,7 @@ LightVela 管理台在「技能」按键中提供可视化的技能配置入口�
 
 > ℹ️ **说明**
 > 
-> 以下示例以 WeChat 通道为例展示效果，Telegram、WhatsApp、Discord 通道用法一致。
+> 以下示例以 WeChat 通道为例展示效果，Telegram、WhatsApp、Discord、Slack 通道用法一致。
 
 ### 场景一：浏览网页
 

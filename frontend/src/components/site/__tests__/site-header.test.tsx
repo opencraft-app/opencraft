@@ -27,7 +27,7 @@ describe("PublicSiteHeader", () => {
     render(<PublicSiteHeader locale="zh-CN" onLoginClick={onLoginClick} onCreateClick={onLoginClick} />);
 
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("link", { name: "概览" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "首页" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "更新日志" })).toHaveAttribute("href", "/changelog");
     expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("href", "/docs/overview");
     expect(screen.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/about");
@@ -53,6 +53,22 @@ describe("PublicSiteHeader", () => {
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("data-next-link", "true");
     expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("data-next-link", "true");
   });
+
+  it("uses Home wording for international homepage navigation", () => {
+    const { rerender } = render(<PublicSiteHeader locale="zh-SG" />);
+
+    expect(screen.getByRole("link", { name: "首页" })).toHaveAttribute("href", "/");
+
+    rerender(<PublicSiteHeader locale="zh-Hant" />);
+    expect(screen.getByRole("link", { name: "首頁" })).toHaveAttribute("href", "/");
+
+    rerender(<PublicSiteHeader locale="en-US" />);
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
+
+    rerender(<PublicSiteHeader locale="id-ID" />);
+    expect(screen.getByRole("link", { name: "Beranda" })).toHaveAttribute("href", "/");
+  });
+
 
   it("links anonymous login actions to the sign-in page by default", () => {
     render(<PublicSiteHeader locale="zh-CN" />);
@@ -84,7 +100,7 @@ describe("PublicSiteHeader", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "打开菜单" }));
 
-    expect(screen.getAllByRole("link", { name: "概览" }).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByRole("link", { name: "首页" }).length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByRole("link", { name: "关于我们" }).length).toBeGreaterThanOrEqual(2);
 
     fireEvent.click(screen.getByTestId("site-header-mobile-create"));

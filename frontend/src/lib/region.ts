@@ -12,8 +12,11 @@ import {
  * 站点区域常量
  * ──────────────────────────────────────────────────────────────
  * 通过 NEXT_PUBLIC_REGION / VITE_REGION 兼容环境变量区分国内 / 国际站点：
- *   - `cn`     ：国内站（lightvela.cn，默认）
- *   - `global` ：国际站（lightvela.com）
+ *   - `cn`     ：国内站（lightvela.com，默认）
+ *   - `global` ：国际站（lightvela.ai）
+ *
+ * 域名真源见 `@next-site/seo` 的 siteUrl() 与 `@/lib/seo-data` 的 SITE_BY_REGION，
+ * 事实口径见 `wiki/product-state/geo-fact-table.md`。
  *
  * 使用场景：
  *   1. 条件渲染（编译期常量在构建时会被折叠）：
@@ -72,7 +75,7 @@ export const DEFAULT_LOCALE: "zh-CN" | "en-US" = isGlobal ? "en-US" : "zh-CN";
  * 从浏览器路径中读取语言（仅国际站；国内站固定返回 null）。
  * - 不在白名单的路径或没有前缀都返回 null（调用方应回退到 localStorage / DEFAULT_LOCALE）
  */
-export const readLocaleFromPath = (pathname: string): "zh-CN" | "en-US" | "zh-Hant" | null => {
+export const readLocaleFromPath = (pathname: string): "zh-CN" | "en-US" | "zh-Hant" | "id-ID" | null => {
   if (!isGlobal) return null;
   const m = matchPublicLangPrefix(pathname);
   if (!m) return null;
@@ -102,7 +105,9 @@ export const localizedPath = (path: string, locale: PublicSiteLocaleCode): strin
 
   // 国际站：繁体走独立前缀 zh-hant；其余中文（简体 zh-CN / zh-SG）统一用 SEO 别名 zh-sg。
   const lang = isGlobal
-    ? locale === PUBLIC_SITE_LOCALES.ZH_HANT
+    ? locale === PUBLIC_SITE_LOCALES.ID_ID
+      ? PUBLIC_URL_LANGS.ID_ID
+      : locale === PUBLIC_SITE_LOCALES.ZH_HANT
       ? PUBLIC_URL_LANGS.ZH_HANT
       : locale.startsWith("zh")
         ? PUBLIC_URL_LANGS.ZH_SG

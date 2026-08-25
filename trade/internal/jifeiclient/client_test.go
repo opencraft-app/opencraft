@@ -117,6 +117,7 @@ func TestGetPrice_Success(t *testing.T) {
 				RealTotalCost: "80.00",
 				Currency:      "CNY",
 				PolicyDetail:  &PolicyDetail{Total: 0.8, User: 0.9, Common: 1.0},
+				TaxDetail:     &TaxDetail{TaxRate: "0.07"},
 			},
 		}))
 	}))
@@ -161,6 +162,9 @@ func TestGetPrice_Success(t *testing.T) {
 	}
 	if resp.Data[0].PolicyDetail == nil || resp.Data[0].PolicyDetail.Total != 0.8 {
 		t.Errorf("PolicyDetail.Total: got %+v want 0.8", resp.Data[0].PolicyDetail)
+	}
+	if resp.Data[0].TaxDetail == nil || resp.Data[0].TaxDetail.TaxRate != "0.07" {
+		t.Errorf("TaxDetail.TaxRate: got %+v want 0.07", resp.Data[0].TaxDetail)
 	}
 
 	// 请求字段断言
@@ -949,6 +953,8 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 		OwnerUin:  "100012345678",
 		Uin:       "100012345678",
 		DealNames: []string{"20260509000000001-001"},
+		CancelURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel",
+		ReturnURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return",
 	})
 	if err != nil {
 		t.Fatalf("GetMidasEarmarking: %v", err)
@@ -964,6 +970,12 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 	}
 	if len(seenPara.DealNames) != 1 || seenPara.DealNames[0] != "20260509000000001-001" {
 		t.Errorf("para DealNames: %v", seenPara.DealNames)
+	}
+	if seenPara.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
+		t.Errorf("para CancelURL: %q", seenPara.CancelURL)
+	}
+	if seenPara.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
+		t.Errorf("para ReturnURL: %q", seenPara.ReturnURL)
 	}
 	if resp.URL != "https://buy.cloud.tencent.com/midas/cashier?token=xyz" {
 		t.Errorf("response URL: %q", resp.URL)
@@ -990,6 +1002,73 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 	if len(resp.BigDealIDs) != 1 || resp.BigDealIDs[0] != "20260509000000001" {
 		t.Errorf("response BigDealIDs: %v", resp.BigDealIDs)
 	}
+}
+
+func TestGetMidasEarmarking_ContractPayFieldsUseCGWLowerCamelCase(t *testing.T) {
+	var body string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		_, _ = w.Write(envelopeForSuccess(t, GetMidasEarmarkingResponse{
+			URL:        "https://buy.cloud.tencent.com/midas/contract",
+			NeedCharge: 1,
+		}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin", Options{
+		EventIDProvider: fixedEventIDProvider,
+		NowProvider:     fixedNowProvider,
+	})
+	_, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin:      "100012345678",
+		Uin:           "100012345678",
+		DealNames:     []string{"20260509000000001-001"},
+		ContractOrder: 1,
+		PayScene:      "credit_card",
+	})
+	if err != nil {
+		t.Fatalf("GetMidasEarmarking: %v", err)
+	}
+	if !jsonBodyHasField(t, body, "contractOrder") {
+		t.Fatalf("request body missing contractOrder: %s", body)
+	}
+	if !jsonBodyHasField(t, body, "payScene") {
+		t.Fatalf("request body missing payScene: %s", body)
+	}
+	if jsonBodyHasField(t, body, "ContractOrder") || jsonBodyHasField(t, body, "PayScene") {
+		t.Fatalf("CGW fields must use lowerCamelCase, got body: %s", body)
+	}
+}
+
+func jsonBodyHasField(t *testing.T, body, field string) bool {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal([]byte(body), &v); err != nil {
+		t.Fatalf("unmarshal json body: %v", err)
+	}
+	return jsonValueHasField(v, field)
+}
+
+func jsonValueHasField(v any, field string) bool {
+	switch typed := v.(type) {
+	case map[string]any:
+		for k, child := range typed {
+			if k == field {
+				return true
+			}
+			if jsonValueHasField(child, field) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if jsonValueHasField(child, field) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // TestGetMidasEarmarking_RealProductionPayload 用一份 2026-05-23 北京 trade 联调环境

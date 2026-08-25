@@ -1,14 +1,10 @@
 # How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills
 
-Skills extend what Hermes Agent can do, while SOUL.md defines its stable role, voice, and behavioral boundaries.
-
-Together, they can make the same IM Agent better suited to customer support, community operations, or long-term personal companionship.
-
-![Turning an IM Agent into a customer-service, community, or companion assistant with Skills](../images/use-case-06-im-agent-skill-scenarios.png)
-
 ## Summary
 
 **Turning one IM Agent into a support agent, community assistant, or AI companion comes down to the division between Skills and persona: Skills extend what it can do, while `SOUL.md` defines who it is and within what limits it acts.** Both are required — Skills without a persona produce inconsistent answers, and a persona without Skills lacks reusable methods. On LightVela, skills come from the Skills.sh and ClawHub public marketplaces; today you install or remove them by telling Hermes in conversation (console-panel installation is coming soon), then verify availability in chat. The three scenarios differ mainly in boundary design: support needs explicit escalation conditions, community assistants need to know when to stay silent, and companion use needs clear off-limits topics. Work through the safety checklist before going live.
+
+![Turning an IM Agent into a customer-service, community, or companion assistant with Skills](../images/use-case-06-im-agent-skill-scenarios.png)
 
 ## Who this is for
 

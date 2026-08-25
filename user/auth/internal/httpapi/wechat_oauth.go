@@ -345,6 +345,7 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 		}
 	}
 	h.setSessionCookie(ctx, session.Token)
+	h.completeFederationSwitch(ctx, session.Token)
 	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.wechatOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 

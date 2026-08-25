@@ -1,5 +1,11 @@
 # 快速开始
 
+## 摘要
+
+**在 LightVela 跑通第一个对话预计约 5 分钟：登录 LightVela → 开通一档套餐 → 平台自动创建 Hermes Agent 实例 → 配置模型（或直接使用套餐按月提供的模型积分）→ 接入一个聊天通道 → 发送消息并收到回复。全程在网页完成，无需购买服务器或做本地部署。若只想先跑起来，最快的路径是使用套餐自带的模型积分，加上扫码即可接入的 WeChat 通道，之后再按需配置自有模型 API Key 与更多通道。**
+
+---
+
 本教程介绍从登录到在 WeChat 中收到 Hermes 回复的完整流程，预计耗时约 5 分钟。
 
 ## 本页覆盖
@@ -8,7 +14,7 @@
 
 - 开通启航套餐并创建 Hermes 实例
 
-- 接入 WeChat / Telegram / WhatsApp / Discord 通道
+- 接入 Telegram / WhatsApp / Discord / Slack / WeChat 通道
 
 - 在 WeChat 中发送消息并接收回复
 

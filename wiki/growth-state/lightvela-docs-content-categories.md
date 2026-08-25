@@ -53,6 +53,7 @@
 - 【CN 待核实 | GLOBAL ✓】云存储
 - 【CN 待核实 | GLOBAL ✓】聊天
 - 【CN 待核实 | GLOBAL ✓】诊断
+- 【CN ✓ | GLOBAL ✓】高级设置
 - 【CN 待核实 | GLOBAL ✓】模型切换
 
 # Hermes Agent 科普

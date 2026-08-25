@@ -315,7 +315,7 @@ bash images/tests/test-envd-agent.sh ubuntu@<host>
 
 ## Website Credential TAT Delivery
 
-每个 Hermes 实例通过腾讯云 TAT 接收一个永久的、per-instance 的建站凭据（`vwk_<key_id>_<secret>`）。
+每个 Hermes 实例通过腾讯云 TAT 接收一个永久的、per-instance 的建站凭据（`vik_<key_id>_<secret>`）。
 凭据写入 `/etc/vela/website-credential.env` 并通过 systemd drop-in 注入 Hermes gateway 服务环境变量。
 
 ### 脚本
@@ -340,8 +340,8 @@ HERMES_TAT_REGION=ap-shanghai   bash .ci/runtime/commands/create_hermes_website_
 2. **准备实例清单**（JSONL，每行一个实例）：
 
 ```jsonl
-{"cloud_id":"ins-xxx","website_key":"vwk_xxx_yyy"}
-{"cloud_id":"ins-zzz","website_key":"vwk_aaa_bbb"}
+{"cloud_id":"ins-xxx","website_key":"vik_xxx_yyy"}
+{"cloud_id":"ins-zzz","website_key":"vik_aaa_bbb"}
 ```
 
 3. **逐实例下发**：

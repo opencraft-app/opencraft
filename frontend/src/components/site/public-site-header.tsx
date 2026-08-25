@@ -133,6 +133,12 @@ const headerCopy: Record<PublicSiteLocale, {
     login: "登入",
     openMenu: "開啟選單",
   },
+  [PUBLIC_SITE_LOCALES.ID_ID]: {
+    closeMenu: "Tutup menu",
+    createNow: "Buat Sekarang",
+    login: "Masuk",
+    openMenu: "Buka menu",
+  },
 };
 
 function defaultHeaderLocale(): PublicSiteLocale {
@@ -141,6 +147,7 @@ function defaultHeaderLocale(): PublicSiteLocale {
 }
 
 function headerLocaleFromLanguage(language: string | undefined): PublicSiteLocale {
+  if (language === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
   if (language === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
   if (language?.startsWith("zh")) return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
   return PUBLIC_SITE_LOCALES.EN_US;

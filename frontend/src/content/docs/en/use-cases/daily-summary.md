@@ -1,14 +1,10 @@
 # How to Create Daily Summaries with Hermes Agent
 
-The useful part of a daily summary is not that it is long. It is that it gives you the right context before you have to ask for it: what changed, what needs attention, and what can wait.
-
-Hermes can turn a repeatable review into a daily AI assistant routine. LightVela provides the cloud-hosted Agent, a channel for delivery, optional skills for the information you need, and automations for the schedule. You decide what counts as “today’s useful summary.”
-
-![A daily summary delivered by Hermes Agent](../images/use-case-daily-summaries.webp)
-
 ## Summary
 
 **A daily summary earns its value not by length but by handing you the right context before you ask for it, and the way to get there is turning a manual review into a saved automation.** You need four things: a cloud Hermes Agent with a configured model, a connected channel to receive results, optional skills for gathering information, and an automation (its fields are name, schedule, task instructions, active time window, and notification channels). Success hinges on the task instructions: since nobody is present to clarify at run time, the prompt must carry its own goal, scope boundaries (time range and item caps), output format, and what to do when there is nothing to report. Test the prompt manually in chat first, then create the automation, and review the output after its first real run.
+
+![A daily summary delivered by Hermes Agent](../images/use-case-daily-summaries.webp)
 
 ## Who this is for
 

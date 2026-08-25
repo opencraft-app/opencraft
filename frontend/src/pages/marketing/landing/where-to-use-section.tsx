@@ -122,7 +122,22 @@ function useCnCards(): UseCaseCard[] {
   ];
 }
 
-/* ── 国际站卡片生成（WeChat / Telegram / WhatsApp / Discord，真·品牌 Logo） ── */
+function SlackLogo() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-full w-full">
+      <path d="M9.2 2.4a2.1 2.1 0 0 0 0 4.2h2.1V4.5a2.1 2.1 0 0 0-2.1-2.1Z" fill="#36C5F0" />
+      <path d="M9.2 8H3.6a2.1 2.1 0 1 0 0 4.2h5.6A2.1 2.1 0 0 0 9.2 8Z" fill="#36C5F0" />
+      <path d="M21.6 10.1A2.1 2.1 0 0 0 17.4 10v2.1h2.1a2.1 2.1 0 0 0 2.1-2Z" fill="#2EB67D" />
+      <path d="M16 10.1V4.5a2.1 2.1 0 1 0-4.2 0v5.6a2.1 2.1 0 0 0 4.2 0Z" fill="#2EB67D" />
+      <path d="M13.9 21.6a2.1 2.1 0 0 0 0-4.2h-2.1v2.1a2.1 2.1 0 0 0 2.1 2.1Z" fill="#ECB22E" />
+      <path d="M13.9 16h5.6a2.1 2.1 0 1 0 0-4.2h-5.6a2.1 2.1 0 0 0 0 4.2Z" fill="#ECB22E" />
+      <path d="M2.4 13.9A2.1 2.1 0 0 0 6.6 14v-2.1H4.5a2.1 2.1 0 0 0-2.1 2Z" fill="#E01E5A" />
+      <path d="M8 13.9v5.6a2.1 2.1 0 1 0 4.2 0v-5.6a2.1 2.1 0 0 0-4.2 0Z" fill="#E01E5A" />
+    </svg>
+  );
+}
+
+/* ── 国际站卡片生成（WeChat / Telegram / WhatsApp / Discord / Slack） ── */
 function useGlobalCards(): UseCaseCard[] {
   const t = useT();
   return [
@@ -153,6 +168,13 @@ function useGlobalCards(): UseCaseCard[] {
       icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/discord-logo.png"), alt: "Discord" },
       title: t("Discord"),
       desc: t("连接 Discord 社群频道，让实时交流与协作更加自由。"),
+    },
+    {
+      key: "slack",
+      glow: "#4A154B",
+      icon: { kind: "node", render: () => <SlackLogo /> },
+      title: t("Slack"),
+      desc: t("把 Hermes Agent 接入 Slack 工作区，在团队频道里接收通知、协作处理任务。"),
     },
   ];
 }
@@ -253,14 +275,14 @@ export function WhereToUseSection() {
           </motion.h2>
         </motion.div>
 
-        {/* 四卡片区域：移动端 1列 → 平板 2列 → 桌面 4列
-         * 数据按区域（isGlobal）选择：国内站 QQ/微信/飞书/企微，国际站 WeChat/Telegram/WhatsApp/Discord */}
+        {/* 卡片区域：移动端 1列 → 平板 2列 → 桌面 4/5列
+         * 数据按区域（isGlobal）选择：国内站 QQ/微信/飞书/企微，国际站 WeChat/Telegram/WhatsApp/Discord/Slack */}
         <motion.div
           variants={staggerContainer}
           initial="hidden"
           whileInView="visible"
           viewport={viewportConfig}
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6 lg:grid-cols-4"
+          className={`grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6 ${isGlobal ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}
         >
           {cards.map((card) => (
             <UseCaseCardView key={card.key} card={card} />

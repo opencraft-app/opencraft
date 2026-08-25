@@ -7,8 +7,8 @@
  * 区域差异：
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
- *   - 国内站（CN_SIDEBAR）：微信 / 飞书 / QQ
- *   - 国际站（GLOBAL_SIDEBAR）：Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark
+ *   - 国内站（CN_SIDEBAR）：微信 / QQ / 企业微信 / 飞书
+ *   - 国际站（GLOBAL_SIDEBAR）：Telegram / WhatsApp / Discord / Slack / WeChat / QQ / WeCom / Lark
  */
 
 import { isGlobal } from "@/lib/region";
@@ -26,7 +26,7 @@ export interface DocItem {
   availableLocales?: Array<"zh" | "en">;
   /**
    * 是否作为二级目录项（视觉上缩进）。
-   * 用于在"配置通道"下挂具体通道（国内：微信/飞书/QQ；国际：Telegram/WhatsApp/...）。
+   * 用于在"配置通道"下挂具体通道（国内：微信/QQ/企业微信/飞书；国际：Telegram/WhatsApp/...）。
    */
   indent?: boolean;
   /**
@@ -73,12 +73,21 @@ const CN_SIDEBAR: DocGroup[] = [
     items: [
       { slug: "configuration", title: "配置总览" },
       { slug: "configuration/model", title: "配置模型" },
-      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂三个具体 channel 作为二级项
+      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂四个具体 channel 作为二级项
       { slug: null, title: "配置通道", defaultChildSlug: "configuration/channel-wechat" },
       { slug: "configuration/channel-wechat", title: "微信", indent: true },
-      { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", indent: true },
+      { slug: "configuration/channel-wecom", title: "企业微信", indent: true },
+      { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/skill", title: "配置技能" },
+      { slug: "configuration/personality", title: "人设" },
+      { slug: "configuration/memory", title: "记忆管理" },
+      { slug: "configuration/automation", title: "自动任务" },
+      { slug: "configuration/files", title: "云存储" },
+      { slug: "configuration/agent-chat", title: "对话" },
+      { slug: "configuration/diagnostics", title: "诊断中心" },
+      { slug: "configuration/advanced-settings", title: "高级设置" },
+      { slug: "configuration/multiple-models", title: "模型切换" },
     ],
   },
   {
@@ -122,7 +131,7 @@ const CN_SIDEBAR: DocGroup[] = [
 
 /**
  * 国际站 sidebar：按 GEO 导航方案组织为 9 大分组。
- * 通道顺序固定为 Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark。
+ * 通道顺序固定为 Telegram / WhatsApp / Discord / Slack / WeChat / QQ / WeCom / Lark。
  */
 const GLOBAL_SIDEBAR: DocGroup[] = [
   {
@@ -163,16 +172,19 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-telegram", title: "Telegram", titleEn: "Telegram", indent: true },
       { slug: "configuration/channel-whatsapp", title: "WhatsApp", titleEn: "WhatsApp", indent: true },
       { slug: "configuration/channel-discord", title: "Discord", titleEn: "Discord", indent: true },
+      { slug: "configuration/channel-slack", title: "Slack", titleEn: "Slack", indent: true },
       { slug: "configuration/channel-wechat", title: "WeChat", titleEn: "WeChat", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", titleEn: "QQ", indent: true },
       { slug: "configuration/channel-wecom", title: "企业微信", titleEn: "WeCom", indent: true },
       { slug: "configuration/channel-feishu", title: "飞书", titleEn: "Lark", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
+      { slug: "configuration/personality", title: "人设", titleEn: "Souls" },
       { slug: "configuration/memory", title: "记忆管理", titleEn: "Memory Management" },
       { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
       { slug: "configuration/files", title: "云存储", titleEn: "Cloud Storage" },
       { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
       { slug: "configuration/diagnostics", title: "诊断中心", titleEn: "Diagnostics" },
+      { slug: "configuration/advanced-settings", title: "高级设置", titleEn: "Advanced Settings" },
       {
         slug: "configuration/multiple-models",
         title: "模型切换",
@@ -254,6 +266,17 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         title: "如何用 Agent 管理长期记忆和个人知识？",
         titleEn: "How to Manage Long-Term Memory and Personal Knowledge with an Agent",
       },
+      {
+        slug: "use-cases/discord-community-agent",
+        title: "Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot",
+        titleEn: "Meet LightVela for Discord: Your AI Agent Discord Bot Serving Your Channel",
+      },
+      {
+        slug: "use-cases/discord-event-agent",
+        title: "如何用 AI Agent 能力增强 Discord 活动机器人？",
+        titleEn: "Empower your Discord Event Bot with AI-Agentic Capabilities",
+        indent: true,
+      },
     ],
   },
   {
@@ -317,9 +340,18 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   configuration: "05-configuration.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
-  "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
+  "configuration/channel-wecom": "configuration/channel-wecom.md",
+  "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/skill": "configuration/skill.md",
+  "configuration/personality": "configuration/personality.md",
+  "configuration/memory": "configuration/memory.md",
+  "configuration/automation": "configuration/automation.md",
+  "configuration/files": "configuration/files.md",
+  "configuration/agent-chat": "configuration/agent-chat.md",
+  "configuration/diagnostics": "configuration/diagnostics.md",
+  "configuration/advanced-settings": "configuration/advanced-settings.md",
+  "configuration/multiple-models": "configuration/multiple-models.md",
   // 问题排查
   faq: "07-faq.md",
   // 联系与支持
@@ -357,15 +389,18 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-telegram": "configuration/channel-telegram.md",
   "configuration/channel-whatsapp": "configuration/channel-whatsapp.md",
   "configuration/channel-discord": "configuration/channel-discord.md",
+  "configuration/channel-slack": "configuration/channel-slack.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/channel-wecom": "configuration/channel-wecom.md",
   "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/skill": "configuration/skill.md",
+  "configuration/personality": "configuration/personality.md",
   "configuration/memory": "configuration/memory.md",
   "configuration/files": "configuration/files.md",
   "configuration/automation": "configuration/automation.md",
   "configuration/diagnostics": "configuration/diagnostics.md",
+  "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",
@@ -382,6 +417,8 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "use-cases/daily-summary": "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7": "use-cases/hermes-agent-24-7.md",
   "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",
+  "use-cases/discord-community-agent": "use-cases/discord-community-agent.md",
+  "use-cases/discord-event-agent": "use-cases/discord-event-agent.md",
   "hermes-agent/hermes-vs-openclaw": "hermes-agent/01-hermes-vs-openclaw.md",
   "hermes-agent/why-hermes-remembers-you": "hermes-agent/02-why-hermes-remembers-you.md",
   "hermes-agent/user-md-vs-memory-md": "hermes-agent/03-user-md-vs-memory-md.md",

@@ -26,7 +26,7 @@ type CompletePassRequest struct {
 	Uin       int64  `json:"uin"`                  // 腾讯云主账号 uin（必填）
 	AppID     int64  `json:"app_id"`               // 腾讯云 appId（必填）
 	DealName  string `json:"deal_name"`            // jifei 订单号（必填，用于生成 ai-gateway 订阅幂等键；pass 表不持久化）
-	RenewFlag string `json:"renew_flag,omitempty"` // 续费标记，v4 收敛：协议层预留字段，本期 logic 内部写死 MANUAL_RENEW，trade 透传值暂不生效
+	RenewFlag string `json:"renew_flag,omitempty"` // 续费标记；AUTO_RENEW 生效，缺失或其它值按 MANUAL_RENEW 处理
 }
 
 // PassBillingMigrationRequest 通知 ctl 尝试把存量免费 pass 迁移到计费资源。
@@ -107,7 +107,7 @@ type PassResponse struct {
 
 	// RenewFlag 续费标记（billing-integration B11A 新增；§11 Q10 拍板 2026-05-11）
 	//   - "MANUAL_RENEW"（手动续费，默认）
-	//   - "AUTO_RENEW"（自动续费，本期未启用）
+	//   - "AUTO_RENEW"（自动续费）
 	// 反查侧透传 pass.renew_flag 真值，trade 端按映射规则转换为 jifei renewFlag (0/1)
 	RenewFlag string `json:"renew_flag"`
 }
@@ -126,7 +126,7 @@ type ListPassesResponse struct {
 //   - uin / app_id：腾讯云主账号 / 应用 ID，用户不感知（lightclaw 内部 SaaS 用户与
 //     腾讯云账号的映射只在服务端审计 / jifei 反查链路中使用）
 //   - deleted_time：DB 字段后期会删除（pass 销毁后会迁到 history_pass 表）
-//   - renew_flag：本期未启用自动续费（§11 Q5 拍板，待支持自动续费时再加回）
+//   - renew_flag：内部计费状态，不在用户面响应中暴露
 //
 // 保留：pass_id / user_id / bundle_id / bundle_name / 时间字段（除 deleted_time）/
 // agent_quota_total / agent_quota_available / credit_total / credit_available
@@ -227,10 +227,20 @@ type ListPassesByResourceIDsRequest struct {
 //   - BundleID：必填，付费 bundle 的标识
 //   - Period / TimeUnit：用户选择的购买时长（如 1 个月、3 个月）；trade 持有此参数
 //     用于回调时透传到 ctl.CompletePass 计算 expired_time
+//   - AutoRenewFlag：可选，国际站支持；取值 notify_and_manual_renew / auto_renew / no_notify_and_manual_renew
 type CreatePassOrderRequest struct {
+	BundleID      string `json:"bundle_id"`
+	Period        int    `json:"period"`
+	TimeUnit      string `json:"time_unit"` // "m"（月）/ "d"（天）
+	AutoRenewFlag string `json:"auto_renew_flag,omitempty"`
+}
+
+// CreateDianshiPassOrderAndPayRequest is intentionally narrower than
+// CreatePassOrderRequest: the Dianshi activity flow has no renewal option.
+type CreateDianshiPassOrderAndPayRequest struct {
 	BundleID string `json:"bundle_id"`
 	Period   int    `json:"period"`
-	TimeUnit string `json:"time_unit"` // "m"（月）/ "d"（天）
+	TimeUnit string `json:"time_unit"`
 }
 
 // CreatePassOrderResult 创建付费 pass 订单响应（v1.7.31 接口拆分：仅返 deal_names）
@@ -253,6 +263,8 @@ type CreatePassOrderResult struct {
 //   - DealNames：必填，来自 CreatePassOrder 返回的订单号列表
 //   - Platform：可选，默认 "pc"；可选值 "pc" / "mobile"（透传给 jifei getMidasEarmarking.platform）
 //   - WxOpenID：可选，微信公众号/小程序场景必填（透传给 jifei getMidasEarmarking.wxOpenId）
+//   - CancelURL / ReturnURL：可选，国际站信用卡/签约支付页取消/完成后的前端回跳地址；
+//     ctl 不解析，仅透传给 trade → jifei getMidasEarmarking.cancelUrl / returnUrl
 //   - AuthCode：v1.7.32 新增，可选；中转页（无 Bearer）必填，由 ctl 解析后反查
 //     user_id 进行鉴权；PC 端 Bearer 链路忽略此字段。详见设计稿
 //     .tmp/ctl-authcode-codebuddy-design.md A2 / A5 不变量
@@ -260,6 +272,8 @@ type CreatePassOrderUrlRequest struct {
 	DealNames []string `json:"deal_names"`
 	Platform  string   `json:"platform,omitempty"`
 	WxOpenID  string   `json:"wx_open_id,omitempty"`
+	CancelURL string   `json:"cancel_url,omitempty"`
+	ReturnURL string   `json:"return_url,omitempty"`
 	AuthCode  string   `json:"auth_code,omitempty"`
 }
 
@@ -295,6 +309,13 @@ type CreatePassOrderUrlResult struct {
 //
 // 复用 CreatePassOrderRequest 作为入参（字段集完全相同：bundle_id / period / time_unit）。
 type CreatePassOrderAndPayResult struct {
+	DealName   string `json:"deal_name"`
+	BigOrderID string `json:"big_order_id"`
+}
+
+// CreateDianshiPassOrderAndPayResult is returned by the dedicated Dianshi
+// order-and-pay flow. It intentionally has no payment URL or renewal fields.
+type CreateDianshiPassOrderAndPayResult struct {
 	DealName   string `json:"deal_name"`
 	BigOrderID string `json:"big_order_id"`
 }
@@ -343,6 +364,8 @@ type RenewPassOrderResult struct {
 //   - DealNames：必填，来自 RenewPassOrder 返回的订单号列表
 //   - Platform：可选，默认 "pc"；可选值 "pc" / "mobile"（透传给 jifei getMidasEarmarking.platform）
 //   - WxOpenID：可选，微信公众号/小程序场景必填（透传给 jifei getMidasEarmarking.wxOpenId）
+//   - CancelURL / ReturnURL：可选，国际站信用卡/签约支付页取消/完成后的前端回跳地址；
+//     ctl 不解析，仅透传给 trade → jifei getMidasEarmarking.cancelUrl / returnUrl
 //
 // 关键约束：
 //   - pass_id 走 path param，不在 body 中（与 IsolatePass 的 path param 设计一致）
@@ -355,6 +378,8 @@ type RenewPassOrderUrlRequest struct {
 	DealNames []string `json:"deal_names"`
 	Platform  string   `json:"platform,omitempty"`
 	WxOpenID  string   `json:"wx_open_id,omitempty"`
+	CancelURL string   `json:"cancel_url,omitempty"`
+	ReturnURL string   `json:"return_url,omitempty"`
 	AuthCode  string   `json:"auth_code,omitempty"`
 }
 
@@ -433,7 +458,7 @@ type RenewPassPriceRequest struct {
 // RenewPassPriceResult 续费询价响应（v1.7.21 B16 / R-C-4 / v1.7.28 BUG-04 C 路径精简）
 //
 // **字段集精简（v1.7.28 拍板）**：与新购询价 transport.BundlePrice 字段集严格对齐 — 前端
-// UI 续费询价 / 新购询价共用同一价格展示组件，只需要价格 5 字段 + bundle_id 即可。
+// UI 续费询价 / 新购询价共用同一价格展示组件，只需要价格 6 字段 + bundle_id 即可。
 //
 // 删除的字段（jifei 协议层死字段，ctl 不应感知）：
 //   - bundle_name：续费时前端已有 pass，可从 pass.bundle_id → bundle 拿名称
@@ -445,6 +470,7 @@ type RenewPassPriceResult struct {
 	BundleID      string  `json:"bundle_id"`
 	Price         float64 `json:"price"`           // CGW data[].price，标价（单位分）
 	TotalCost     float64 `json:"total_cost"`      // CGW totalCost，成本价（单位分）
+	TaxPrice      float64 `json:"tax_price"`       // 实付金额对应税额（单位分）
 	RealTotalCost float64 `json:"real_total_cost"` // CGW realTotalCost，实付价（单位分）
 	Currency      string  `json:"currency"`        // 币种，如 CNY
 	Discount      float64 `json:"discount"`        // 总折扣率，policyDetail.total 拍平；100 = 无折扣

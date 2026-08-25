@@ -153,8 +153,9 @@ func WithWorkerActionBackend(backend workerActionBackend) Option {
 }
 
 type compiledRoute struct {
-	route Route
-	proxy *httputil.ReverseProxy
+	route          Route
+	proxy          *httputil.ReverseProxy
+	allowedOrigins originAllowlist
 }
 
 type sessionEnvelope struct {
@@ -204,9 +205,14 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 			return nil, fmt.Errorf("route %s response_header_timeout: %w", route.Name, err)
 		}
 
+		routeAllowedOrigins := cfg.AllowedOrigins
+		if len(route.AllowedOrigins) > 0 {
+			routeAllowedOrigins = route.AllowedOrigins
+		}
 		routes = append(routes, compiledRoute{
-			route: route,
-			proxy: newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs),
+			route:          route,
+			proxy:          newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs),
+			allowedOrigins: normalizeAllowedOrigins(routeAllowedOrigins),
 		})
 		if subscriptionServiceURL == "" && hasRoutePrefix("/subscriptions/current", route.Prefix) {
 			subscriptionServiceURL = strings.TrimRight(target.String(), "/")
@@ -341,6 +347,27 @@ func validateRoute(route Route) error {
 	default:
 		return fmt.Errorf("route %s path_policy %q is invalid", route.Name, route.PathPolicy)
 	}
+	if route.AllowVelaInstanceKey {
+		if route.Access != AccessAuthenticated {
+			return fmt.Errorf("route %s allow_vela_instance_key requires authenticated access", route.Name)
+		}
+		if len(route.VelaInstanceKeyAllow) == 0 {
+			return fmt.Errorf("route %s vela_instance_key_allow is required when allow_vela_instance_key is enabled", route.Name)
+		}
+		for i, rule := range route.VelaInstanceKeyAllow {
+			if strings.TrimSpace(rule.Method) == "" {
+				return fmt.Errorf("route %s vela_instance_key_allow[%d] method is required", route.Name, i)
+			}
+			if !strings.HasPrefix(strings.TrimSpace(rule.Path), "/") {
+				return fmt.Errorf("route %s vela_instance_key_allow[%d] path must start with /", route.Name, i)
+			}
+			if !hasRoutePrefix(rule.Path, route.Prefix) {
+				return fmt.Errorf("route %s vela_instance_key_allow[%d] path must be under route prefix", route.Name, i)
+			}
+		}
+	} else if len(route.VelaInstanceKeyAllow) > 0 {
+		return fmt.Errorf("route %s vela_instance_key_allow requires allow_vela_instance_key", route.Name)
+	}
 	return nil
 }
 
@@ -376,7 +403,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	applyCORSHeaders(h.allowedOrigins, w.Header(), r, matched.route.Methods)
+	applyCORSHeaders(matched.allowedOrigins, w.Header(), r, matched.route.Methods)
 
 	if isCORSPreflight(r) {
 		if !matched.allowsPreflight(r) {
@@ -410,6 +437,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clearIdentityHeaders(r.Header)
+
+	if matched.allowsVelaInstanceKey(r) {
+		rec := newStatusRecorder(w)
+		matched.proxy.ServeHTTP(rec, r)
+		h.observeRequest(start, matched.route.Name, r, rec.statusCode())
+		h.logRequest(start, matched, nil, r, rec.statusCode(), "")
+		return
+	}
 
 	if matched.isPublicAllowed(r) {
 		rec := newStatusRecorder(w)
@@ -967,6 +1002,22 @@ func (r compiledRoute) isPublicAllowed(req *http.Request) bool {
 
 func (r compiledRoute) isOptionalAuthAllowed(req *http.Request) bool {
 	for _, rule := range r.route.OptionalAuthAllow {
+		if pathRuleMatches(rule, req) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r compiledRoute) allowsVelaInstanceKey(req *http.Request) bool {
+	if !r.route.AllowVelaInstanceKey {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(req.Header.Get("Authorization")))
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Vela-Instance-Key") {
+		return false
+	}
+	for _, rule := range r.route.VelaInstanceKeyAllow {
 		if pathRuleMatches(rule, req) {
 			return true
 		}

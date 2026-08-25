@@ -1,12 +1,12 @@
 ## Summary
 
-**One Agent can appear across several messaging apps because the apps are only entry points — the Agent is the thing that actually works. The message gateway does three jobs: it normalises structurally different messages from Telegram, WhatsApp, Discord, WeChat and others into one request format; it routes each request to the same Agent based on your connection configuration, instead of cloning a personality and memory per platform; and after execution it delivers the result back to the exact conversation it came from. Because identity (`SOUL.md`), memory (`USER.md`, `MEMORY.md`), skills (`skills/`), and automations all live outside the channel layer, something you mentioned on Telegram is still known when you follow up on WhatsApp. But unified does not mean unbounded: every channel has its own authorisation flow, message format, and delivery limits, the supported channel set differs between the global and China regions, and after connecting a new channel you must send a test message to confirm replies land in the expected conversation.**
+**One Agent can appear across several messaging apps because the apps are only entry points — the Agent is the thing that actually works. The message gateway does three jobs: it normalises structurally different messages from Telegram, WhatsApp, Discord, Slack, WeChat and others into one request format; it routes each request to the same Agent based on your connection configuration, instead of cloning a personality and memory per platform; and after execution it delivers the result back to the exact conversation it came from. Because identity (`SOUL.md`), memory (`USER.md`, `MEMORY.md`), skills (`skills/`), and automations all live outside the channel layer, something you mentioned on Telegram is still known when you follow up on WhatsApp. But unified does not mean unbounded: every channel has its own authorisation flow, message format, and delivery limits, the supported channel set differs between the global and China regions, and after connecting a new channel you must send a test message to confirm replies land in the expected conversation.**
 
 ---
 
 ## The scenario this solves
 
-Picture a single day of use. On Telegram you ask your Agent to summarise where a project stands. Heading out at midday, you follow up on WhatsApp: "what was the risk in the second option you mentioned?" In the evening you ask it to post the conclusion in a team Discord channel.
+Picture a single day of use. On Telegram you ask your Agent to summarise where a project stands. Heading out at midday, you follow up on WhatsApp: "what was the risk in the second option you mentioned?" In the evening you ask it to post the conclusion in a team Slack or Discord channel.
 
 If those three interactions behaved like three unrelated bots, multi-platform access would be worthless — you would re-explain the context every time. The useful shape is different: three entry points, one assistant.
 
@@ -20,7 +20,7 @@ This distinction is the prerequisite for everything else.
 
 | Concept | What it is | Cardinality |
 |---|---|---|
-| **Channel** | An entry point for messages, e.g. Telegram, WhatsApp, Discord, WeChat | One Agent can connect many |
+| **Channel** | An entry point for messages, e.g. Telegram, WhatsApp, Discord, Slack, WeChat | One Agent can connect many |
 | **Agent** | The persistent working subject holding identity, memory, skills, tasks | Shared by many channels |
 
 People instinctively treat "my Telegram bot" as a standalone entity, which naturally raises the question "so is my WhatsApp bot a different one?" Once channels are understood as entry points rather than subjects, the question dissolves.
@@ -104,7 +104,7 @@ Each platform has its own connection flow and credential shape: some require cre
 
 ### 5.2 Supported channels differ by region
 
-This is an easy trap when reading documentation: LightVela's global and China regions do not support the same channel set. The global channel order is Telegram, WhatsApp, Discord, WeChat, QQ, WeCom, Lark. The China region currently targets locally common platforms such as WeChat, Lark, and QQ.
+This is an easy trap when reading documentation: LightVela's global and China regions do not support the same channel set. The global channel order is Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark. The China region supports WeChat, QQ, WeCom, Lark, and DingTalk.
 
 So when you see a claim like "Telegram is supported," confirm which region it applies to rather than assuming it carries across.
 
@@ -167,4 +167,3 @@ Hermes separates channels from the Agent at the mechanism level, but connecting 
 - Identity, memory, skills, and automations live outside the channel layer, so cross-channel continuity is an architectural consequence, not an added sync feature.
 - Unified does not mean unbounded: authorisation, regional support, group context, and delivery limits differ per channel.
 - After connecting a channel, verify two things: that replies land in the expected conversation, and that it genuinely shares the same memory.
-

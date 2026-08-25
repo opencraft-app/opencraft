@@ -1,5 +1,11 @@
 # Core Concepts
 
+## Summary
+
+**LightVela has four core concepts. A Hermes Agent is the cloud-run conversational entity, with its own isolated runtime, memory that persists across conversations, and 24/7 availability. The model is the large language model it calls — either a Model Coding Plan (monthly), Model API (pay as you go), or a custom OpenAI-compatible endpoint. Channels are the messaging platforms you talk to it through; multiple channels can connect to the same agent and share one persona and memory. Skills are installable capability packs that extend what it can do. A full conversation flows like this: a channel receives your message, the agent decides whether to invoke a skill, it calls the model to generate a response, and the reply comes back through the same channel.**
+
+---
+
 LightVela involves four core concepts: Hermes Agent, models, channels, and skills. This page explains their roles. For detailed configuration steps, see the corresponding configuration pages.
 
 ## This page covers
@@ -27,7 +33,7 @@ LightVela involves four core concepts: Hermes Agent, models, channels, and skill
 ┌───────┐                   ┌────────┐                   ┌────────┐
 │ Model │                   │Channel │                   │ Skill  │
 └───────┘                   └────────┘                   └────────┘
- Model provider    WeChat/Telegram/WhatsApp/Discord            SkillHub
+ Model provider    Telegram/WhatsApp/Discord/Slack/WeChat      SkillHub
 ```
 
 | Concept | Role | Description |
@@ -87,12 +93,11 @@ Channels are the messaging platform entry points where users chat with Hermes Ag
 | Telegram | Bot Token access | Personal or team messaging, simple setup, suitable for lightweight automation |
 | WhatsApp | WhatsApp Business API access | International user communication, customer service, notifications, and reminders |
 | Discord | Bot Token access | Community operations, developer communities, gaming or interest groups |
+| Slack | Bot Token / App Token access | Team collaboration, workspace notifications, and channel-based workflows |
 
 For WeChat, choose the channel and click "Authorize Access" to generate a QR code. Scan it with your phone to complete authorization.
 
-Telegram, WhatsApp, and Discord configuration channels are still under construction and will be available soon.
-
-Detailed access steps for each channel: [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md).
+Detailed access steps for each channel: [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md).
 
 > 💡 **Multiple channels can coexist**
 >

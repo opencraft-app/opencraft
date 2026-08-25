@@ -1,6 +1,6 @@
-# `/feai-review` — 批次审核门禁
+# `/feai-review` — 独立审核门禁
 
-> 执行阶段的批次审核入口。每批任务完成后调用，运行适用检查、对照 implementation gate，只有审核通过后才标记 plan 任务完成。
+> 独立审核入口。M/L 最终调用；批次内流程按 `flow-cost.md`。
 
 ---
 
@@ -38,10 +38,10 @@
 | 模式 | 默认场景 | 必做 |
 |---|---|---|
 | quick | S 级、M 级普通批次 | diff scan、相关测试、可用 lint/typecheck、关键门禁 |
-| full | L 级关键批、最终批、用户指定 | 完整 gate、全量测试、必要 skill、E2E capability |
+| full | M/L 最终批、用户指定 | 完整 gate、全量测试、必要 skill、E2E capability |
 | auto | CI / 只需机器检查 | 自动化命令，跳过人工判断项 |
 
-升级到 full：`--final`、影响文件 > 5、连续失败 >= 2、高风险模块、Reviewer 初筛发现 P0/P1 风险。
+升级到 full：`--final`、用户指定，或独立审核发现 P0/P1 风险后重跑。
 
 ---
 
@@ -55,20 +55,24 @@
 feai workflow start-inspect --json
 ```
 
-2. 读取 `<base>/openspec/plan.md`，识别本批已实现但未标记 `[x]` 的任务。
+2. 普通模式识别已实现但未标记的任务；`--final` 审核完整 change 与全部 plan 任务，不要求存在未标记项。
 3. 输出本批任务、涉及文件和预期验证范围。
 4. 写入 usage-context，统一走脚本单源：
 
 ```bash
 feai workflow change-name --json
-feai workflow usage-context write --change-name <change-name> --project-base <base> --json
+feai workflow usage-context write --project-base <projectRoot> --json
 ```
 
-provider 以 metrics 目录内唯一的 `usage-context.json` 已确认值为准；如本次确认了新 provider，设置 `USAGE_PROVIDER=<provider>` 由脚本补写。CLI 自行计算 canonical metrics 路径；根目录已有同名文件完全忽略，由用户自行清理。脚本会保留已存在的审计窗口，旧上下文缺少 `window.start` 时补齐开始时间。禁止静默依赖 `project.local.json` 猜测 provider。
+`<projectRoot>` 必须是项目根目录绝对路径，不是 Git base 分支名；CLI 会校验其与仓库配置的真实项目根完全一致。
+
+`usage-context write` 缺省即用分支推断的 `change-name`（与 start/归档同源），**禁止手传完整分支名**；`change-name --json` 仅用于核对推断值。
+
+provider 以 metrics 目录内唯一的 `usage-context.json` 已确认值为准；如本次确认了新 provider，设置 `USAGE_PROVIDER=<provider>` 由脚本补写。CLI 自行计算 canonical metrics 路径；根目录已有同名文件完全忽略，由用户自行清理。脚本会保留已存在的审计窗口；旧上下文缺少 `window.start` 时仅允许从 `timeline.log` 恢复，否则保留现场并失败，不会用当前时间覆盖。禁止静默依赖 `project.local.json` 猜测 provider。
 
 usage-context 写入失败不阻塞 review，但必须在结论里标注。
 
-从 implementation 切入 review 前，按 `context-recovery.md` 判断是否需要独立审核 session；长实现会话、高风险改动或需要独立审查视角时使用：
+`--final` 必须按 `context-recovery.md` 使用独立只读 review session；其他模式仅在长实现会话或高风险改动时使用：
 
 ```bash
 feai workflow handoff write --from implementation --to review --apply --json
@@ -125,13 +129,15 @@ quick 模式的早停纪律：
 
 ### 阶段 5：输出结论并更新进度
 
-通过时：
+通过时（非 `--final`）：
 
 - 使用 `feai workflow plan-task set --task <ID> --status done --apply --json`，仅标记本批通过任务。
 - 跳过任务必须使用 `--status skipped --reason "<原因>"`；禁止批量替换全部 checkbox。
 - 刷新 `.workflow/runtime/current-task.summary.md`：下一批 active slice ≤ 3 任务、branch、planHash、updatedAt、status。
 - 追加 `.workflow/runtime/verification-ledger.md`：命令、范围、结果、失败摘要、结论；不复制完整终端输出。
 - 若全部任务完成，输出 `templates/workflow/cards/feai-review.md` 的“全部完成”卡片。
+
+`--final` 不修改 plan、summary 或 ledger。审核必须返回 `verdict`；runner 将 verdict + branch/planHash/worktree fingerprint 写入 `phase-result.review.json`，仅新鲜 `pass` 可通过 archive preflight。
 
 失败时：
 
@@ -174,7 +180,7 @@ quick 模式的早停纪律：
 1. ...
 2. ...
 
-任务保持未标记，请修复后重新运行 /feai-review。
+普通模式任务保持未标记；`--final` 不改任务状态。修复后以原模式重新审核。
 ```
 
 ---
@@ -184,13 +190,13 @@ quick 模式的早停纪律：
 ```text
 /feai-start  → plan.md 通过门禁
       ↓
-执行阶段（每批 ≤ 3 任务）
+执行阶段（每批 inline quick + batch complete）
       ↓
-/feai-review（每批）
+/feai-review --final（M/L 最终一次；S 按需）
       ↓
 全部完成后输出验收摘要，等待用户确认
       ↓
 用户明确要求后 /feai-archive / commit / push / MR
 ```
 
-`/feai-review` 是批次门禁；最终提交前的 CR / MR 检查仍按 `/feai-start` 后续发布流程执行。
+`/feai-review` 是独立门禁；最终提交前的 CR / MR 检查仍按 `/feai-start` 后续发布流程执行。

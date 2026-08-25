@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import { source } from './source';
 import type { DocsLocalePrefix } from './docs-page';
-import { EN_US_URL_LANG, ZH_CN_URL_LANG, ZH_HANT_URL_LANG } from './public-locale';
+import { EN_US_URL_LANG, ID_ID_URL_LANG, ZH_CN_URL_LANG, ZH_HANT_URL_LANG } from './public-locale';
 
 const ZH_FUMADOCS_TRANSLATIONS = {
   'Close Search(search dialog)(aria-label)': '关闭搜索',
@@ -26,8 +26,19 @@ const ZH_HANT_FUMADOCS_TRANSLATIONS = {
   'Search(search trigger)': '搜尋文件',
 };
 
+const ID_FUMADOCS_TRANSLATIONS = {
+  'Close Search(search dialog)(aria-label)': 'Tutup pencarian',
+  'No Headings(table of contents)': 'Belum ada daftar isi',
+  'No results found(search dialog)': 'Tidak ada hasil',
+  'On this page(table of contents)': 'Di halaman ini',
+  'Open Search(search trigger)(aria-label)': 'Buka pencarian',
+  'Search(search dialog)': 'Cari',
+  'Search(search trigger)': 'Cari dokumentasi',
+};
+
 function fumadocsTranslations(docsLocale: DocsLocalePrefix) {
   if (docsLocale === EN_US_URL_LANG) return undefined;
+  if (docsLocale === ID_ID_URL_LANG) return ID_FUMADOCS_TRANSLATIONS;
   if (docsLocale === ZH_HANT_URL_LANG) return ZH_HANT_FUMADOCS_TRANSLATIONS;
   return ZH_FUMADOCS_TRANSLATIONS;
 }

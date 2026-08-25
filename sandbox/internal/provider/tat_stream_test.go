@@ -35,6 +35,8 @@ func TestTencentTerminalCommandStreamUsesPtyExecCmdStreamAndOrdersChunks(t *test
 		start := readJSONFrame(t, conn)
 		assertFrameData(t, start, "PtyStart", map[string]any{
 			"SessionId":   "session-1",
+			"Cols":        float64(defaultTerminalCols),
+			"Rows":        float64(defaultTerminalRows),
 			"UserName":    terminalCommandUsername,
 			"NoShell":     true,
 			"MaxIdleTime": float64(30),

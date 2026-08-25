@@ -8,6 +8,7 @@ resources:
 
 patches:
   - path: patch-oauth-registration.yaml
+  - path: patch-shadowbinding.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -23,6 +24,66 @@ secretGenerator:
       - generated/lightclaw-auth-secrets.env
 
 replacements:
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_FEDERATION_ENABLED
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_FEDERATION_ENABLED
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_FEDERATION_ENVIRONMENT
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_FEDERATION_ENVIRONMENT
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_FEDERATION_ACTIVE_AEAD_KEY_ID
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_FEDERATION_CTL_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_FEDERATION_CTL_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_FEDERATION_TAT_TIMEOUT_SECONDS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_FEDERATION_TAT_TIMEOUT_SECONDS
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_FEDERATION_DELEGATED_SESSION_TTL_SECONDS
   - source:
       kind: ConfigMap
       name: auth-platform-values
@@ -200,3 +261,83 @@ replacements:
           name: lightclaw-auth-internal
         fieldPaths:
           - metadata.annotations.[service.kubernetes.io/qcloud-loadbalancer-internal-subnetid]
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_OIDC_ENABLED
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OIDC_ENABLED
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_OIDC_ISSUER
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OIDC_ISSUER
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_OIDC_SIGNING_KEY_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OIDC_SIGNING_KEY_ID
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_OIDC_CLIENTS_JSON
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OIDC_CLIENTS_JSON
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_OIDC_AUTHORIZATION_CODE_TTL_SECONDS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OIDC_AUTHORIZATION_CODE_TTL_SECONDS
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_OIDC_ID_TOKEN_TTL_SECONDS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OIDC_ID_TOKEN_TTL_SECONDS
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_OIDC_ACCESS_TOKEN_TTL_SECONDS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OIDC_ACCESS_TOKEN_TTL_SECONDS
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_OIDC_ACCESS_TOKEN_AUDIENCE
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OIDC_ACCESS_TOKEN_AUDIENCE

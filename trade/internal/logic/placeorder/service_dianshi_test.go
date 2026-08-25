@@ -42,13 +42,17 @@ func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string, _ in
 
 // fakeDianshi 是 dianshiclient.Client 的测试替身。
 type fakeDianshi struct {
-	doGoodsResp    *dianshiclient.DoGoodsResponse
-	doGoodsErr     error
-	doGoodsCalls   atomic.Int32
-	lastDoGoodsReq *dianshiclient.DoGoodsRequest
-	priceResp      *dianshiclient.GetPriceResponse
-	priceErr       error
-	priceCalls     atomic.Int32
+	doGoodsResp        *dianshiclient.DoGoodsResponse
+	doGoodsErr         error
+	doGoodsCalls       atomic.Int32
+	lastDoGoodsReq     *dianshiclient.DoGoodsRequest
+	doGoodsAndPayResp  *dianshiclient.DoGoodsResponse
+	doGoodsAndPayErr   error
+	doGoodsAndPayCalls atomic.Int32
+	lastDoGoodsAndPay  *dianshiclient.DoGoodsRequest
+	priceResp          *dianshiclient.GetPriceResponse
+	priceErr           error
+	priceCalls         atomic.Int32
 }
 
 func (f *fakeDianshi) GetActivityPrice(_ context.Context, _ *dianshiclient.GetPriceRequest) (*dianshiclient.GetPriceResponse, error) {
@@ -59,6 +63,15 @@ func (f *fakeDianshi) GetActivityPrice(_ context.Context, _ *dianshiclient.GetPr
 func (f *fakeDianshi) DoGoods(_ context.Context, req *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
 	f.doGoodsCalls.Add(1)
 	f.lastDoGoodsReq = req
+	return f.doGoodsResp, f.doGoodsErr
+}
+
+func (f *fakeDianshi) DoGoodsAndPay(_ context.Context, req *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
+	f.doGoodsAndPayCalls.Add(1)
+	f.lastDoGoodsAndPay = req
+	if f.doGoodsAndPayResp != nil || f.doGoodsAndPayErr != nil {
+		return f.doGoodsAndPayResp, f.doGoodsAndPayErr
+	}
 	return f.doGoodsResp, f.doGoodsErr
 }
 
@@ -332,6 +345,70 @@ func TestPlaceOrderAndPay_DianshiBranch_HappyPath(t *testing.T) {
 	}
 	if d.jifei.generateDealsAndPayCalls.Load() != 0 {
 		t.Errorf("jifei generateDealsAndPay should NOT be called, calls=%d", d.jifei.generateDealsAndPayCalls.Load())
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+
+	res, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if err != nil {
+		t.Fatalf("PlaceDianshiOrderAndPay err=%v", err)
+	}
+	if res == nil || res.DealName != "20260624000000000000001" {
+		t.Fatalf("DealName=%+v", res)
+	}
+	if r.resolvePlaceCalls.Load() != 1 {
+		t.Errorf("ResolveForPlaceOrder calls=%d want 1", r.resolvePlaceCalls.Load())
+	}
+	if dc.doGoodsAndPayCalls.Load() != 1 {
+		t.Errorf("DoGoodsAndPay calls=%d want 1", dc.doGoodsAndPayCalls.Load())
+	}
+	if dc.doGoodsCalls.Load() != 0 {
+		t.Errorf("DoGoods calls=%d want 0", dc.doGoodsCalls.Load())
+	}
+	if dc.priceCalls.Load() != 0 {
+		t.Errorf("GetActivityPrice calls=%d want 0", dc.priceCalls.Load())
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 || d.jifei.generateDealsAndPayCalls.Load() != 0 {
+		t.Errorf("jifei calls generate=%d generateAndPay=%d want 0/0",
+			d.jifei.generateDealsCalls.Load(), d.jifei.generateDealsAndPayCalls.Load())
+	}
+	if d.writer.createOrderCalls.Load() != 1 {
+		t.Fatalf("CreateOrder calls=%d want 1", d.writer.createOrderCalls.Load())
+	}
+	if got := d.writer.lastCreateOrderInput; got.Source != store.OrderSourceDianshi || got.Status != store.OrderStatusPaidPendingProvision {
+		t.Errorf("persisted order source/status=%q/%q", got.Source, got.Status)
+	}
+	if dc.lastDoGoodsAndPay == nil || dc.lastDoGoodsAndPay.Goods[0].PreferenceParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
+		t.Errorf("DoGoodsAndPay request=%+v", dc.lastDoGoodsAndPay)
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_RejectsNonActivityBundle(t *testing.T) {
+	d := newStdDeps()
+	r := &fakeResolver{useDianshi: false}
+	dc := newFakeDianshiSuccess()
+	d.service = New(Deps{
+		CTLClient:        d.ctl,
+		BundleStore:      d.bundle,
+		JifeiClient:      d.jifei,
+		OrderWriter:      d.writer,
+		OrderStore:       d.store,
+		ActivityResolver: r,
+		DianshiClient:    dc,
+	})
+
+	_, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrDianshiActivityRequired) {
+		t.Fatalf("err=%v want ErrDianshiActivityRequired", err)
+	}
+	if dc.doGoodsAndPayCalls.Load() != 0 || dc.doGoodsCalls.Load() != 0 {
+		t.Errorf("dianshi calls andPay=%d goods=%d want 0/0", dc.doGoodsAndPayCalls.Load(), dc.doGoodsCalls.Load())
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 || d.jifei.generateDealsAndPayCalls.Load() != 0 {
+		t.Errorf("jifei calls generate=%d generateAndPay=%d want 0/0",
+			d.jifei.generateDealsCalls.Load(), d.jifei.generateDealsAndPayCalls.Load())
 	}
 }
 

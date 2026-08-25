@@ -1,5 +1,11 @@
 # 核心概念
 
+## 摘要
+
+**LightVela 有四个核心概念。Hermes Agent 是云端运行的对话主体，拥有独立运行环境、跨会话持续记忆、7×24 小时在线；模型是它调用的大语言模型，可选模型 Coding Plan（包月）、模型 API（按量）或自定义 OpenAI 兼容端点；通道是你与它对话的聊天平台入口，多个通道可同时接入同一个 Agent 并共享同一份人格与记忆；技能是可安装的能力扩展包，用于扩展具体任务的处理能力。一次完整对话的流程是：通道收到消息 → Agent 判断是否调用技能 → 调用模型生成响应 → 经原通道返回。**
+
+---
+
 LightVela 涉及四个核心概念：Hermes Agent、模型、通道、技能。本页对四者进行说明，具体的配置流程请参见对应的配置子页。
 
 ## 本页覆盖
@@ -27,7 +33,7 @@ LightVela 涉及四个核心概念：Hermes Agent、模型、通道、技能。�
 ┌───────┐                   ┌────────┐                   ┌────────┐
 │  模型  │                   │  通道  │                   │  技能   │
 └───────┘                   └────────┘                   └────────┘
- 模型服务商       WeChat/Telegram/WhatsApp/Discord            SkillHub
+ 模型服务商       Telegram/WhatsApp/Discord/Slack/WeChat      SkillHub
 ```
 
 | 概念 | 角色 | 说明 |
@@ -79,7 +85,7 @@ Hermes Agent 具有以下特性：
 
 ## 通道（Channels）
 
-通道指用户与 Hermes Agent 进行对话的聊天平台入口。LightVela 当前支持三个通道：
+通道指用户与 Hermes Agent 进行对话的聊天平台入口。LightVela 当前支持以下通道：
 
 | 通道 | 接入方式 | 适用场景 |
 |---|---|---|
@@ -87,12 +93,11 @@ Hermes Agent 具有以下特性：
 | Telegram | Bot Token 接入 | 个人或团队消息场景，配置简单，适合轻量自动化 |
 | WhatsApp | WhatsApp Business API 接入 | 海外用户沟通、客户服务、通知提醒等场景 |
 | Discord | Bot Token 接入 | 社群运营、开发者社区、游戏/兴趣群组互动 |
+| Slack | Bot Token / App Token 接入 | 团队协作、工作区通知、频道内任务流转 |
 
 WeChat 选择通道后点击「授权接入」生成二维码，使用手机扫码完成授权即可。
 
-Telegram、WhatsApp、Discord 的相关配置通道仍在搭建中，即将上线启用。
-
-各通道的详细接入步骤见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md)。
+各通道的详细接入步骤见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md)。
 
 > 💡 **多通道并存**
 >

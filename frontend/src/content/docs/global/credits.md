@@ -1,5 +1,11 @@
 # 体验积分说明
 
+## 摘要
+
+**模型积分（Credits）是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，输入与输出都计入消耗。积分随套餐按月提供、不单独售卖、按月度周期重置：启航 Launch 为 100 积分 / 月，巡游 Cruise 提供更充裕的额度。消耗场景包括与 Agent 对话、执行自动任务、运行技能，本质都是调用了大模型；对话越长、上下文越多则消耗越快。若当期积分用尽，依赖模型调用的功能会受限，可等待下期发放，或在模型配置中改用自己的大模型 API Key 继续使用。**
+
+---
+
 模型积分（Credits）是 LightVela 用来计量 Hermes Agent 模型调用消耗的额度单位。每档套餐按月提供一定数量的积分；Agent 在对话或执行任务时调用大模型，会按用量扣减积分。本页说明积分是什么、如何发放与消耗，以及积分和套餐的关系。
 
 ## 本页覆盖
@@ -41,7 +47,7 @@
 
 积分会在以下场景中消耗，本质上都是 Hermes Agent 调用了大模型：
 
-- **和 Agent 对话** — 通过 Telegram、WhatsApp、Discord 或 WeChat 等通道与 Agent 交流
+- **和 Agent 对话** — 通过 Telegram、WhatsApp、Discord、Slack 或 WeChat 等通道与 Agent 交流
 
 - **执行自动任务** — Agent 按计划运行[定时任务](./configuration/automation.md)
 

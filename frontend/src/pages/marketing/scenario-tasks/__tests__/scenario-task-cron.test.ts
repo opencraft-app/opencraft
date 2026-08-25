@@ -25,21 +25,36 @@ describe("scenario task cron helpers", () => {
     expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["weixin", "qqbot", "feishu"]));
   });
 
+  it("normalizes the OpenClaw DingTalk alias for scenario notifications", () => {
+    const output = JSON.stringify({
+      success: true,
+      data: {
+        platforms: [
+          { name: "openclaw-dingtalk", status: "connected" },
+        ],
+      },
+    });
+
+    expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["dingtalk"]));
+    expect(formatScenarioChannelLabel("openclaw-dingtalk")).toBe("钉钉");
+  });
+
   it("parses object-shaped channel payloads and normalizes labels", () => {
     const output = JSON.stringify({
       data: {
         channels: {
           "openclaw-whatsapp": { enabled: true },
           "openclaw-discord": "connected",
-          slack: { enabled: false },
+          "openclaw-slack": { enabled: true },
         },
       },
     });
 
-    expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["whatsapp", "discord"]));
+    expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["whatsapp", "discord", "slack"]));
     expect(formatScenarioChannelLabel("weixin")).toBe("微信");
     expect(formatScenarioChannelLabel("qqbot")).toBe("QQ");
     expect(formatScenarioChannelLabel("telegram")).toBe("Telegram");
+    expect(formatScenarioChannelLabel("slack")).toBe("Slack");
   });
 
   it("does not treat array value channel names as connected statuses", () => {

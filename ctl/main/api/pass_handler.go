@@ -369,6 +369,35 @@ func (h *passHandler) handleUserPassesOrderAndPay(w http.ResponseWriter, r *http
 	writeSuccess(w, r, http.StatusOK, result)
 }
 
+// handleUserDianshiPassesOrderAndPay serves the dedicated Dianshi
+// do_goods_and_pay flow used by zero-price activity bundles.
+func (h *passHandler) handleUserDianshiPassesOrderAndPay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	var req transport.CreateDianshiPassOrderAndPayRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	result, err := h.logic.CreateDianshiPassOrderAndPay(ctx.GetUserID(), &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
 // handleUserPassesOrderUrl POST /v1/passes/order-url — 用户可见拉取支付 URL 入口（v1.7.31 接口拆分）
 //
 // 用途：前端拿到 deal_names 后调本接口获取支付页 URL。
@@ -808,7 +837,7 @@ func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 // 与 detailToPassResponse 的关键差异（删除 lightclaw / 腾讯云内部概念字段）：
 //   - 不返 uin / app_id（用户不感知腾讯云账号）
 //   - 不返 deleted_time（DB 字段后期会删除）
-//   - 不返 renew_flag（本期未启用自动续费，待支持自动续费时再加回）
+//   - 不返 renew_flag（内部计费状态，用户面不直接暴露）
 func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassResponse {
 	return &transport.UserPassResponse{
 		PassID:              d.PassID,
