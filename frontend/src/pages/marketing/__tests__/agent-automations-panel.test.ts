@@ -757,6 +757,19 @@ describe("cron context panel integration", () => {
     expect(screen.queryByText("本次已使用")).toBeNull();
   });
 
+  it("uses the upstream-task prefix when the configured upstream is unavailable", async () => {
+    const downstream = makeCronJob({
+      id: "downstream",
+      name: "下游任务",
+      context_from: ["missing-upstream"],
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([downstream]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    expect(await screen.findByText("上游任务：已不可用")).toBeTruthy();
+    expect(screen.queryByText("来自：上游任务已不可用")).toBeNull();
+  });
+
   it("shows an unconfigured upstream task in task details", async () => {
     const ordinary = makeCronJob({ id: "ordinary", name: "普通任务" });
     cronClientMocks.listCronJobs.mockResolvedValue([ordinary]);
@@ -950,8 +963,8 @@ describe("terminal cron card visibility", () => {
       id: "running-once",
       name: "cron-3",
       state: "active",
-      next_run_at: new Date(Date.now() - 60_000).toISOString(),
-      execution_status: "running",
+      next_run_at: new Date(Date.now() - 11 * 60_000).toISOString(),
+      execution_status: " Running ",
     });
     cronClientMocks.listCronJobs.mockResolvedValue([running]);
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));

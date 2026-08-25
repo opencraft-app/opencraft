@@ -1774,7 +1774,7 @@ describe("parseCronListOutput execution status", () => {
     Schedule:  once at 2026-08-25 19:45
     Next run:  2026-08-25T19:45:00+08:00
     Deliver:   qqbot
-    Execution: running  8e441aecfe934d36a840d8eb6f02771c
+    Execution: RUNNING  8e441aecfe934d36a840d8eb6f02771c
 `);
 
     expect(jobs[0]?.execution_status).toBe("running");

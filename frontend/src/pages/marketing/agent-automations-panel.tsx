@@ -528,7 +528,10 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     [confirmDeleteJob, jobs],
   );
   const visibleJobs = useMemo(
-    () => jobs.filter((job) => (isGlobal || !isCronJobTerminalState(job)) && !isCronJobExpiredBeyondGrace(job)),
+    () => jobs.filter((job) =>
+      (isGlobal || !isCronJobTerminalState(job))
+      && (isCronJobRunning(job) || !isCronJobExpiredBeyondGrace(job)),
+    ),
     [jobs],
   );
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
@@ -1487,9 +1490,8 @@ function CronJobCard({
 }) {
   const t = useT();
   const { i18n } = useTranslation();
-  const terminal = !isGlobal && isCronJobTerminalState(job);
   const paused = isCronJobPaused(job);
-  const running = job.execution_status?.trim().toLowerCase() === "running";
+  const running = isCronJobRunning(job);
   const expired = !running && isCronJobExpired(job);
   const effectiveStatus = getEffectiveWindowStatus(job.effective_window);
   const hasEffectiveWindow = effectiveStatus !== "always";
@@ -1542,9 +1544,11 @@ function CronJobCard({
           {upstream
             ? isGlobal
               ? t("来自：{{name}}", { name: upstream.name })
-              : `${t("上游任务")}：${upstream.name}`
+              : t("上游任务：{{name}}", { name: upstream.name })
             : upstreamMissing
-              ? t("来自：上游任务已不可用")
+              ? isGlobal
+                ? t("来自：上游任务已不可用")
+                : t("上游任务：已不可用")
               : null}
           {upstream && isCronJobPaused(upstream) ? t("（已暂停）") : ""}
         </p>
@@ -1578,7 +1582,7 @@ function CronJobCard({
           <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
             <Pencil className="h-3 w-3" />
           </CronActionButton>
-          {!terminal && (paused ? (
+          {paused ? (
             <CronActionButton label={t("恢复")} onClick={onResume} disabled={busy}>
               <Play className="h-3 w-3" />
             </CronActionButton>
@@ -1586,7 +1590,7 @@ function CronJobCard({
             <CronActionButton label={t("暂停")} onClick={onPause} disabled={busy}>
               <Pause className="h-3 w-3" />
             </CronActionButton>
-          ))}
+          )}
           <CronActionButton label={t("删除")} onClick={onRemove} disabled={busy}>
             <Trash2 className="h-3 w-3" />
           </CronActionButton>
@@ -1630,6 +1634,10 @@ function isCronJobPaused(job: CronJob): boolean {
   if (isGlobal) return !job.enabled || job.state === "paused";
   return !isCronJobTerminalState(job)
     && (!job.enabled || job.state.trim().toLowerCase() === "paused");
+}
+
+export function isCronJobRunning(job: CronJob): boolean {
+  return job.execution_status?.trim().toLowerCase() === "running";
 }
 
 function isCronJobTerminalState(job: CronJob): boolean {
