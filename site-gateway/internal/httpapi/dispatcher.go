@@ -29,7 +29,7 @@ func NewDispatcher(site, dsh http.Handler, dshDomains []string) http.Handler {
 
 func isDSHHost(host string, domains map[string]struct{}) bool {
 	for domain := range domains {
-		prefix, ok := strings.CutSuffix(host, "-"+domain)
+		prefix, ok := strings.CutSuffix(host, "."+domain)
 		if ok && validDSHBotID(prefix) {
 			return true
 		}
@@ -38,7 +38,7 @@ func isDSHHost(host string, domains map[string]struct{}) bool {
 }
 
 func validDSHBotID(botID string) bool {
-	if len(botID) == 0 || len(botID) > 59 || !isDSHAlphaNumeric(botID[0]) || !isDSHAlphaNumeric(botID[len(botID)-1]) {
+	if len(botID) == 0 || len(botID) > 63 || !isDSHAlphaNumeric(botID[0]) || !isDSHAlphaNumeric(botID[len(botID)-1]) {
 		return false
 	}
 	for index := range len(botID) {
