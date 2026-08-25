@@ -527,7 +527,10 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     () => confirmDeleteJob ? getDirectCronDependents(jobs, confirmDeleteJob.id) : [],
     [confirmDeleteJob, jobs],
   );
-  const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
+  const visibleJobs = useMemo(
+    () => jobs.filter((job) => (isGlobal || !isCronJobTerminalState(job)) && !isCronJobExpiredBeyondGrace(job)),
+    [jobs],
+  );
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getAutomationTemplates(t), [t]);
@@ -1486,7 +1489,8 @@ function CronJobCard({
   const { i18n } = useTranslation();
   const terminal = !isGlobal && isCronJobTerminalState(job);
   const paused = isCronJobPaused(job);
-  const expired = isCronJobExpired(job);
+  const running = job.execution_status?.trim().toLowerCase() === "running";
+  const expired = !running && isCronJobExpired(job);
   const effectiveStatus = getEffectiveWindowStatus(job.effective_window);
   const hasEffectiveWindow = effectiveStatus !== "always";
   const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
@@ -1505,8 +1509,13 @@ function CronJobCard({
             {fullName}
           </span>
         </div>
-        {(expired || paused || effectiveStatus === "ended") && (
+        {(running || expired || paused || effectiveStatus === "ended") && (
           <div className="flex shrink-0 items-center gap-1">
+            {running && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {t("执行中")}
+              </span>
+            )}
             {effectiveStatus === "ended" && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("已过生效期")}
@@ -1531,7 +1540,9 @@ function CronJobCard({
       {job.context_from?.length === 1 && (
         <p className="mt-2 truncate text-xs text-black/45">
           {upstream
-            ? t("来自：{{name}}", { name: upstream.name })
+            ? isGlobal
+              ? t("来自：{{name}}", { name: upstream.name })
+              : `${t("上游任务")}：${upstream.name}`
             : upstreamMissing
               ? t("来自：上游任务已不可用")
               : null}
