@@ -1140,6 +1140,7 @@ const createBotRepository = (): BotRepository => {
     groq: "Groq",
     openai: "OpenAI",
   };
+  const fakeDshSecretTransportPublicKey = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlfPhpfKnEnuYvdgdhoS//1lLcu4FH8xtRFSAhF6JJO27KYZI6UfhC09cdp+cKq5AyLxONpY6XWg8ozZptWu5xHDZQ9zjT2HPB20Alvb/ekO46RFL9tq7u7QlG6IRDGSRzFPboOH2VxmzpqPmuLs3jnBuUidatqjmKSmkP3tWgp/ztQR2MaNi/M07yqEBHuHFKsaSBn5yE1k18+6ER5J9GR0jJFF+QpvF/mnNKoSFkELvcy6C89nYTVMBMh+NbNLkVu7fTpbmu7JegAEMm1GSFgRcuF2uYADaRxJX8b4un7qRh6fISNECU0p7LwDvllUp6Nox7mYTEW74qTiusFwgLQIDAQAB";
 
   const fakeChannelStatusOutput = () => JSON.stringify({
     success: true,
@@ -1174,13 +1175,17 @@ const createBotRepository = (): BotRepository => {
       };
     }
 
-    if (command.includes("systemd-run") && command.includes("install-deepseek-harness install --task-id")) {
-      fakeDshTaskId = command.match(/--task-id (dshi-[0-9a-f]{32})/)?.[1] ?? "";
+    if (command.includes("/tmp/lightvela-dsh-upload-") && !command.includes("systemd-run")) {
+      return { status: "Succeeded", exitCode: 0, output: "" };
+    }
+
+    if (command.includes("systemd-run") && command.includes("install-deepseek-harness.sh")) {
+      fakeDshTaskId = command.match(/--unit=lightvela-dsh-install-(dshi-[0-9a-f]{32})/)?.[1] ?? "";
       fakeDshInstallationPollCount = 0;
       return { status: "Succeeded", exitCode: 0, output: "" };
     }
 
-    if (command.includes("install-deepseek-harness installation --task-id")) {
+    if (command.includes("sudo -n cat /var/lib/lightvela/dsh/installations/")) {
       fakeDshInstallationPollCount += 1;
       const completed = fakeDshInstallationPollCount >= 2;
       if (completed) fakeDshInstalled = true;
@@ -1202,7 +1207,11 @@ const createBotRepository = (): BotRepository => {
       return { status: "Succeeded", exitCode: fakeDshInstalled ? 0 : 1, output: "" };
     }
 
-    const region = command.match(/install-deepseek-harness providers --region (cn|global)/)?.[1] as "cn" | "global" | undefined;
+    if (command.includes("openssl genpkey") && command.includes(".lightvela-secret-transport")) {
+      return { status: "Succeeded", exitCode: 0, output: fakeDshSecretTransportPublicKey };
+    }
+
+    const region = command.match(/providers --region (cn|global)/)?.[1] as "cn" | "global" | undefined;
     if (region) {
       return {
         status: "Succeeded",
@@ -1219,13 +1228,13 @@ const createBotRepository = (): BotRepository => {
       };
     }
 
-    const provider = command.match(/install-deepseek-harness configure --provider ([a-z0-9-]+)/)?.[1];
+    const provider = command.match(/configure --provider ([a-z0-9-]+)/)?.[1];
     if (provider) {
       fakeConfiguredDshProviders.add(provider);
       return { status: "Succeeded", exitCode: 0, output: "" };
     }
 
-    const removedProvider = command.match(/install-deepseek-harness remove-provider --provider ([a-z0-9-]+)/)?.[1];
+    const removedProvider = command.match(/remove-provider --provider ([a-z0-9-]+)/)?.[1];
     if (removedProvider) {
       fakeConfiguredDshProviders.delete(removedProvider);
       return {
@@ -1596,6 +1605,8 @@ const createBotRepository = (): BotRepository => {
     },
 
     async execDebugCommand(_botId, command) {
+      const dshResult = maybeHandleFakeDshCommand(command);
+      if (dshResult) return dshResult;
       await wait(NETWORK_DELAY_MS);
       if (command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND) {
         return {
@@ -1608,8 +1619,6 @@ const createBotRepository = (): BotRepository => {
       if (command.includes("acli channel status")) {
         return { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() };
       }
-      const dshResult = maybeHandleFakeDshCommand(command);
-      if (dshResult) return dshResult;
       return { status: "Succeeded", exitCode: 0, output: "" };
     },
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `test-driven-development` before implementation and `verification-before-completion` before claiming completion. This FE-AI plan is the execution source for the DeepSeek Harness lab entry; do not commit, push, create MR, or archive until user acceptance.
 
-**Status:** 真实接入、方案 A、运行态卡片高度收紧及模型配置覆盖反馈均已完成并通过本地验证，等待用户验收。未安装远端实例、未提交、未推送、未创建 MR。
+**Status:** npm 渠道插件迁移与钉钉接入已通过本地自动化及用户授权 Ubuntu 24.04 主机的首次安装、同快照重装与六插件复验。北京 Hermes Sandbox 共存与 TAT 链路仍待验证；未提交、未推送、未创建 MR。
 
 **Goal:** 在 `/agents` 控制台中新增“管理 > 实验室 > DeepSeek Harness”二级入口，并提供真实安装、运行状态、WebUI 访问和 Provider 配置体验。
 
@@ -20,10 +20,10 @@
 - 已安装态移除简介，不展示静态 WebUI 地址，只展示 Logo、标题、`Beta`、运行状态，以及右侧“访问 WebUI”和“重启”。
 - 不展示安装时间、最近启动时间、异常态主按钮置灰或查看诊断。
 - 当前接入现有 `debug/exec`、TAT 同源代理与回环健康检查；真实 `xxxxx.dsh.lightvela.site` 域名仍不在本期范围。
-- 本阶段只开发代码与本地测试；不得安装目标实例、重启远端服务或接入真实凭据。
+- 远端操作必须由用户明确授权；验证记录不得写入机器地址或凭据。当前仅已验证用户提供的通用 Ubuntu 24.04 主机，不等同于北京 Hermes Sandbox 联调。
 - 模型配置按 Provider + API Key 实现；本期不提供具体 model ID 选择。
 - LightVela `deepseek` 固定映射到 DSH 原生 `deepseek-official`。
-- 固定版本为 `@deepseek-ai/dsh@0.1.0-rc.7`、`@cocofhu/skillhub@0.2.13`、`deepseek-harness-qqbot@0.1.5`、`deepseek-harness-weixin@0.2.5`、`deepseek-harness-wecom@0.1.5` 与 `deepseek-harness-lark@0.1.5`，真实安装前必须完成北京 Sandbox 组合冒烟。
+- DSH、SkillHub、QQBot、微信、企业微信、Lark 与钉钉均请求 npm `@latest`，每次安装开始时解析并固定本次快照的精确版本与 integrity；正式开放前必须完成北京 Hermes Sandbox 共存与 TAT 链路冒烟。
 - 首批真实安装只进入北京 Sandbox；`debug/exec` 已是现有通道，本需求不新增 service-gateway allowlist。
 - `*.dsh.lightvela.site` 就绪前，WebUI 使用登录态下的同源 TAT 虚拟代理。
 - Logo 使用产品提供的 SVG：`https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/ae53bb41-9387-4f31-b264-0e4fd747e20b.svg`。
@@ -498,11 +498,74 @@
 - [x] Batch 3 / candidate install：安装器读取 root-owned manifest，在 task 私有目录下载四个渠道包并校验 SHA256，将 SkillHub 交给 lockfile integrity；把 runtime 和完整 `web` profile 安装到候选目录，保留旧 `cordis.patch.yml`，拒绝未知依赖或 bundle，候选校验失败时只清理 task 目录并记录失败。
 - [x] Batch 3 / atomic switch：记录旧 profile 指纹，候选验证后再次比对；停服前备份 current symlink、完整旧 profile 和 unit，再一次性切换 runtime/profile/unit。后置的五插件清单、配置解析、systemd active、回环端口和 HTTP 200 任一失败时恢复三者并重启旧服务；首次安装失败不残留 release/profile/unit。
 - [x] Batch 4 / GREEN and regression：覆盖首次安装、重复安装、未知插件、下载校验失败、插件验证失败、profile 并发修改、切换中途失败、服务健康失败、服务 enable 状态恢复和成功清理；运行 `bash images/tests/test-deepseek-harness-installer.sh`、`bash images/tests/test-hermes-build-script.sh`、lockfile 再生成差异检查、`bash -n` 与 `git diff --check`。
-- [x] Batch 4 / docs：同步规格、PRD 和当前任务摘要，记录本地验证证据。北京 Sandbox 真实组合冒烟仍需用户另行确认后执行，不在本批次自动触发。
+- [x] Batch 4 / docs：同步规格、PRD 和当前任务摘要，记录本地验证证据；后续远端操作仍需用户明确授权。
 
 **Planning Gate:** M 级安装可靠性增强。用户已选择在线冻结方案，并确认五个 `web` profile 插件全量成功才算完成；方案不新增后端接口或 UI，不启用额外 capability。书面规格和原子切换边界已经用户确认，按上述四个批次进入 TDD 实现。
 
-**Status:** 本地实现与验证完成，等待用户验收；确认前不 commit / push / MR，也不执行北京 Sandbox 远端安装。
+**Status:** 本地验证与用户提供的通用 Ubuntu 24.04 远端冒烟完成；北京 Hermes Sandbox 共存与 TAT 链路仍待验证。确认前不 commit / push / MR。
+
+---
+
+### Task 14: 改为 debug/exec 实时下发安装与模型配置脚本
+
+**Goal:** 消除对 Hermes 镜像内 `/usr/local/libexec/lightvela/*` 文件的依赖，让存量实例无需刷新镜像即可安装和配置 DSH。
+
+**Files:**
+
+- Create: `frontend/scripts/generate-deepseek-harness-runtime-assets.mjs`, `frontend/src/lib/generated/deepseek-harness-runtime-assets.ts`
+- Modify: `frontend/src/lib/deepseek-harness-command.ts`, `frontend/src/repositories/fake-repositories.ts`
+- Modify: `images/helpers/install-deepseek-harness.sh`, `images/build.sh`
+- Modify: DSH command、payload、installer 和 Hermes build 测试
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`, `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Acceptance:**
+
+- [x] 先确认旧实现因目标实例缺少预置安装器而失败，并补 RED 测试禁止固定公共安装器路径。
+- [x] 构建时将安装脚本和冻结依赖生成带 SHA256 的压缩 payload；安装时分片实时上传，全部成功后才由 `systemd-run` 异步执行。
+- [x] 任务轮询直接读取 root-owned task JSON；Provider helper 以内联 Python 执行，所有操作继续复用 `debug/exec`。
+- [x] Hermes 镜像不再复制 DSH 安装器、Provider helper 或冻结清单。
+- [x] 全局 pnpm 缺失或版本不符时，在候选目录引导 `pnpm@10.33.0`，校验后原子持久化到 root-owned tooling 并写入服务 PATH；不修改全局环境，任务目录清理后插件管理仍可执行。
+- [x] 解包前原子发布任务状态，显式校验 payload 并覆盖校验失败、路径穿越和成功 handoff 的真实 Bash/Python 执行测试。
+- [x] 模型 API Key 改为实例一次性 RSA-4096 公钥 + 浏览器 RSA-OAEP/SHA-256 密文传输，命令正文不携带明文或可直接还原的 base64 明文。
+- [x] 完成完整前端检查、脚本检查与生成物一致性检查。
+- [x] 在用户提供的通用 Ubuntu 24.04 主机完成全新安装、覆盖重装、服务重启、回环 HTTP、五插件和任务目录清理后插件管理复验。
+- [ ] 完成北京 Hermes Sandbox 共存与 TAT 链路复验。
+
+**Status:** 本地自动化与通用 Ubuntu 24.04 远端安装冒烟完成，等待北京 Hermes Sandbox 共存与 TAT 链路复验。
+
+---
+
+### Task 15: 渠道插件迁移 npm latest 并新增钉钉
+
+**Goal:** 消除实例安装阶段对 GitHub 的依赖，将 SkillHub、QQBot、微信、企业微信、Lark 和钉钉统一纳入 npm 快照安装；六个 profile 插件全量成功才算安装完成。
+
+**Files:**
+
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Modify: `images/tests/test-deepseek-harness-standalone-contract.sh`, `images/tests/test-deepseek-harness-release-retention.sh`
+- Regenerate: `frontend/src/lib/generated/deepseek-harness-runtime-assets.ts`
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`, `frontend/openspec/plan.md`
+- Modify: `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Architecture:**
+
+- 每次任务开始时通过 npm registry 分别解析 DSH、SkillHub 与五个渠道包的 `version`、`dist.integrity` 和 HTTPS tarball。
+- 将解析结果写入 schema v3 manifest；snapshot hash 排除时间字段但包含所有精确版本与 integrity，相同上游输入复用 runtime，上游任一包变化即生成新快照。
+- runtime/profile `package.json` 只写精确版本；先生成 lockfile，再执行 `--frozen-lockfile`，并要求每个 npm integrity 都出现在对应 lockfile 中。
+- 删除 GitHub repository、branch archive、SHA256 下载和本地 file dependency 路径；保留 npm/pnpm 有限重试、候选验证、原子切换、失败回滚、服务健康检查及 release 保留策略。
+
+**Acceptance:**
+
+- [x] 从 npm 官方 registry 确认五个渠道包均已发布，且包内声明有效 `dsh.bundle.patch`。
+- [x] RED：契约测试要求五个 npm `@latest` 坐标并禁止 GitHub/codeload；锁文件测试要求渠道 integrity 缺失时失败。
+- [x] 安装器生成 npm-only schema v3 快照，profile 使用本次解析的六个精确版本，并新增钉钉到受管依赖、bundle 与插件清单。
+- [x] 重新生成前端安装 payload，完成脚本语法、契约、快照复用、生成物一致性和前端相关检查。
+- [x] 在用户授权的 Ubuntu 24.04 主机完成首次安装、同快照重装、六插件、systemd、回环 HTTP 和 release 保留复验。
+- [ ] 完成北京 Hermes Sandbox 共存与 TAT 链路复验。
+
+**Planning Gate:** 用户确认采用方案 A：所有渠道从 npm 获取 `latest` 元数据，但安装期间使用任务开始时解析出的精确版本；钉钉作为第五个渠道插件纳入全量成功门槛。
+
+**Status:** 本地与通用 Ubuntu 24.04 复验完成，等待北京 Hermes Sandbox 共存与 TAT 链路复验；未 commit、未 push、未创建 MR。
 
 ---
 

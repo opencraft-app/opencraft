@@ -3,7 +3,7 @@
 ## 基本信息
 
 - 当前产品：LightVela Agent 控制台
-- 需求状态：本地实现及验证完成，等待 Sandbox 联调确认
+- 需求状态：npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机的首次安装、同快照重装和服务健康复验，等待北京 Hermes Sandbox 共存与 TAT 链路联调
 - 创建日期：2026-08-20
 - 最后更新时间：2026-08-21
 - 需求类型：实验室能力 / 实例侧运行时集成
@@ -38,9 +38,9 @@ DeepSeek Harness（简称 dsh）是由 DeepSeek 开发的开源智能体框架�
 ## 产品目标
 
 - 保持 DeepSeek Harness 为“实验室”下的二级能力，不占用一级导航。
-- 将 dsh 以及 SkillHub、QQBot、微信、企业微信、Lark 五个 Web profile 插件安装到当前 Hermes 实例的同一运行环境中。
+- 将 dsh 以及 SkillHub、QQBot、微信、企业微信、Lark、钉钉六个 Web profile 插件安装到当前 Hermes 实例的同一运行环境中。
 - 让用户在 LightVela 内完成受控 Provider 的凭据配置，无需进入 dsh 设置页。
-- 保证 API Key 只写、不回显、不进入 URL、日志、TAPD 或前端持久化；通过 `debug/exec` 时只使用 base64 进行 shell 安全编码，不以明文拼接。
+- 保证 API Key 只写、不回显、不进入 URL、日志、TAPD 或前端持久化；通过 `debug/exec` 保存时使用实例一次性 RSA 公钥与 RSA-OAEP/SHA-256 加密，命令只携带密文。
 - dsh 只监听实例回环地址，通过 TAT 或受鉴权的代理访问，不开放实例公网端口。
 
 ## 范围
@@ -58,9 +58,9 @@ DeepSeek Harness（简称 dsh）是由 DeepSeek 开发的开源智能体框架�
 - 支持多 Provider 逐个配置、覆盖修改和删除 API Key 配置；空配置时默认选中 DeepSeek。
 - 已配置模型供应商持续展示，删除成功后重新进入添加下拉；删除失败时保留确认弹窗并允许重试。
 - 国内站和国际站使用不同的 Provider 白名单。
-- 安装动作通过 `debug/exec` 启动实例侧异步任务，前端继续通过 `debug/exec` 轮询任务状态。
-- 实例侧安装固定版本的 dsh 和 `@cocofhu/skillhub`，以 `agentuser` 身份长期运行。
-- 安装器校验 dsh 与五个 Web profile 插件的准确版本、bundle 声明、配置组合、systemd 服务状态、回环监听和本地 HTTP 健康状态；页面运行态直接以 systemd 状态为准。
+- 安装动作通过 `debug/exec` 实时分片下发单文件安装脚本，再启动实例侧异步任务；依赖快照由脚本在实例内从 npm 解析，不依赖 Hermes 镜像预置安装器或冻结资源。前端继续通过 `debug/exec` 轮询任务状态。
+- 实例侧在安装任务开始时从 npm 解析 dsh、SkillHub 与五个渠道插件的 `latest` 精确版本和 integrity，以快照方式安装，并由 `agentuser` 身份长期运行。
+- 安装器校验 dsh 与六个 Web profile 插件的快照版本、bundle 声明、配置组合、systemd 服务状态、回环监听和本地 HTTP 健康状态；页面运行态直接以 systemd 状态为准。
 - 重启操作通过 `debug/exec` 下发固定的 `sudo systemctl restart deepseek-harness.service`。
 - WebUI 使用独立 DSH broker 的同源代理路径；静态演示地址从产品逻辑中移除。
 
@@ -72,7 +72,7 @@ DeepSeek Harness（简称 dsh）是由 DeepSeek 开发的开源智能体框架�
 - 安装时间、最近启动时间和完整异常诊断面板。
 - “查看诊断”按钮。
 - dsh 与 Hermes 之间的 Agent 调度或工具调用集成。
-- 自动升级到 npm `latest`。
+- 服务启动时静默升级依赖；版本解析只发生在用户发起的安装或重装任务中。
 
 ## 信息架构
 
@@ -194,7 +194,7 @@ DeepSeek Harness（简称 dsh）是由 DeepSeek 开发的开源智能体框架�
 - `credentials.set`：将 API Key 写入独立凭据存储。
 - `credentials.unset`：删除时仅清理能够确认由 LightVela 创建且当前可写的凭据。
 
-helper 固定使用本地 `Host` 和 `Origin`，目标端口固定为 3080。前端将 API Key 做 UTF-8 base64 shell 安全编码后，经 `debug/exec` 管道写入 helper stdin；base64 不是加密，因此后端与 TAT 日志不得记录命令正文。前端不得将 API Key 写入埋点、缓存、localStorage 或错误详情。
+helper 固定使用本地 `Host` 和 `Origin`，目标端口固定为 3080。保存时先经 `debug/exec` 在 `agentuser` 私有目录生成一次性 RSA-4096 密钥并返回公钥，前端使用 RSA-OAEP/SHA-256 加密 API Key；后续命令只携带密文，在实例内通过 OpenSSL 解密并管道写入 helper stdin。一次性私钥在命令退出时删除，超过 15 分钟的遗留私钥在下一次保存前清理。前端不得将 API Key 写入埋点、缓存、localStorage 或错误详情。
 
 ### 写入顺序
 
@@ -225,18 +225,18 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 ### 调研基线
 
-- DSH 官方启动命令为 `npx @deepseek-ai/dsh web`，默认监听 `127.0.0.1:3080`；本方案固定 `@deepseek-ai/dsh@0.1.0-rc.7`。
-- DSH runtime 与 `web` profile 的依赖分别通过仓库内 `pnpm-lock.yaml` 冻结，实例安装使用镜像固定的 `pnpm@10.33.0` 和 `--frozen-lockfile`，不跟随 `latest`。两份 `.pnpmfile.cjs` 将整个 `@deepseek-ai/dsh-*` 依赖族保持在 `rc.7`，避免主包与新 RC 子包混装。
-- `web` profile 采用 DSH 官方 `nodeLinker: hoisted`、`autoInstallPeers: false` workspace 约定，只直接安装五个插件；base/web-app bundles 由 runtime fallback 提供，不在 profile 中重复安装整套 DSH peer 依赖。
-- DSH `web` profile 固定安装 `@cocofhu/skillhub@0.2.13`、`deepseek-harness-qqbot@0.1.5`、`deepseek-harness-weixin@0.2.5`、`deepseek-harness-wecom@0.1.5`、`deepseek-harness-lark@0.1.5`；五个插件全量成功才算安装完成。
-- 四个渠道插件使用参考脚本中的固定 COS revision 与 SHA256，SkillHub 和 registry 依赖使用 lockfile integrity；不安装 `dsh-auth`。
-- 下载最多尝试 5 次，单次连接超时 10 秒、单个请求总超时 300 秒；不执行 `pnpm approve-builds --all`。构建脚本只允许 `@deepseek-ai/dsh-subprocess-local`、`koffi`、`node-pty`，明确忽略无需运行的 `@google/genai`、`protobufjs` 安装脚本。
+- DSH 官方启动命令为 `npx @deepseek-ai/dsh web`，默认监听 `127.0.0.1:3080`；本方案请求 `@deepseek-ai/dsh@latest`，但在单次安装任务内固定任务开始时解析出的精确版本。
+- DSH runtime 与 `web` profile 在任务开始时通过 npm registry 解析 `version`、`dist.integrity` 与 HTTPS tarball，并生成 schema v3 快照。实例安装使用固定的 `pnpm@10.33.0`，先生成 lockfile、再执行 `--frozen-lockfile`；若实例全局 pnpm 缺失或版本不符，先在候选目录引导固定版本，校验后原子持久化到 root-owned `/opt/lightvela/dsh/tooling/pnpm-10.33.0` 并写入服务 PATH。两份 `.pnpmfile.cjs` 将整个 `@deepseek-ai/dsh-*` 依赖族保持在本次解析出的 DSH 版本。
+- `web` profile 采用 DSH 官方 `nodeLinker: hoisted`、`autoInstallPeers: false` workspace 约定，只直接安装 SkillHub 与五个渠道插件；base/web-app bundles 由 runtime fallback 提供，不在 profile 中重复安装整套 DSH peer 依赖。
+- DSH `web` profile 请求 `@cocofhu/skillhub@latest`、`deepseek-harness-qqbot@latest`、`deepseek-harness-weixin@latest`、`deepseek-harness-wecom@latest`、`deepseek-harness-lark@latest`、`deepseek-harness-dingtalk@latest`；六个插件全量成功才算安装完成。
+- 六个 profile 插件全部从 npm registry 获取，精确版本、tarball 和 integrity 进入任务快照并通过 lockfile integrity 复核；实例安装不再依赖 GitHub，不安装 `dsh-auth`。
+- npm/pnpm 解析与安装配置有限重试和单次总超时 300 秒；不执行 `pnpm approve-builds --all`。构建脚本只允许 `@deepseek-ai/dsh-subprocess-local`、`koffi`、`node-pty`，明确忽略无需运行的 `@google/genai`、`protobufjs` 安装脚本。
 - Hermes CVM 镜像使用 `agentuser` 和 Node 22；系统服务通过 `User=agentuser` 降权运行，不依赖 user linger。
 - 最小 Ubuntu 安装 dsh 的原生依赖可能需要 `build-essential`，安装前必须检查。
 
 ### 方案比较
 
-1. **独立版本目录 + systemd 系统服务（采用）**：将固定版本安装到 `/opt/lightvela/dsh/releases/<version>`，通过 `/opt/lightvela/dsh/current` 切换；系统服务使用 `User=agentuser`。支持版本审计和快速回滚，DSH 依赖不写入 Hermes runtime 包树，共用的 pnpm 由镜像版本清单固定。
+1. **实时脚本 + npm 快照 + 独立版本目录 + systemd 系统服务（采用）**：前端经 `debug/exec` 实时下发带校验的安装 payload，安装器解析一次 `latest` 后将精确快照安装到 `/opt/lightvela/dsh/releases/<snapshot-id>-<task-prefix>`，通过 `/opt/lightvela/dsh/current` 切换；系统服务使用 `User=agentuser`。支持存量实例直接安装、版本审计、同快照复用和快速回滚，DSH 依赖不写入 Hermes runtime 包树。
 2. **镜像内离线预置 runtime 与插件包体**：实例激活最稳定，但每次 DSH 升级都要求重建镜像；首版先不采用。
 3. **独立 COS 安装 bundle**：可以脱离 Hermes 镜像升级，但需要新增产物构建和发布链路；首版先不采用。
 4. **systemd 每次直接运行未固定版本的 npx**：会把启动稳定性绑定到 npm 网络和 `latest`，不采用。
@@ -245,11 +245,11 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 - 运行用户：`agentuser`，与 Hermes 位于同一 OS 用户环境。
 - DSH_HOME：`/home/agentuser/.dsh`，目录权限 `0700`。
-- 安装目录：`/opt/lightvela/dsh/releases/<pinned-version>`。
+- 安装目录：`/opt/lightvela/dsh/releases/<snapshot-id>-<task-prefix>`。
 - 当前版本链接：`/opt/lightvela/dsh/current`。
 - 系统服务：`/etc/systemd/system/deepseek-harness.service`，运行身份为 `agentuser:agentuser`。
 - 工作目录：`/home/agentuser`。
-- 启动参数：`dsh web --host 127.0.0.1 --port 3080 --no-open`。
+- 启动参数：`dsh web --host 127.0.0.1 --port 3080`。当前固定版本不支持 `--no-open`。
 - 服务策略：`Restart=always`、`RestartSec=5`、`UMask=0077`，输出进入 journald。
 - 网络策略：只监听回环地址，不监听 `0.0.0.0`，实例安全组不开放 3080。
 
@@ -257,16 +257,16 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 不新增 DeepSeek Harness 专用后端接口。状态、安装、任务查询、重启和 Provider 配置均复用 `POST /v1/instances/{id}/debug/exec`。前端只生成固定模板命令，任务 ID 与 Provider 均在前端和实例 helper 两侧校验。
 
-安装脚本通过 `debug/exec` 使用 `sudo systemd-run` 异步启动。脚本中的包名、版本、目录、用户和端口均由实例侧 helper 固定：
+前端构建时只把单文件安装脚本压缩为带 SHA256 的固定 payload。点击安装后，前端通过 `debug/exec` 顺序创建私有上传目录、追加不超过 24,000 字符的分片并等待每次成功；最后通过 `sudo systemd-run` 显式校验编码包上限、SHA256、文件路径和解压上限，再异步执行。wrapper 在解包前原子写入 `pending`，准备失败或安装器未写终态便退出时原子覆盖为 `failed`；启动响应不确定时使用只读命令延迟检查任务文件和 systemd unit，对账通道同样不可用时保留 task ID 和上传资源，只有明确确认任务未启动后才单独清理。临时上传目录在任务结束后自动清理。包坐标、目录、用户和端口由安装器固定，精确版本由每次任务开始时的 npm metadata 决定：
 
 1. 使用 `flock` 获取实例安装锁，拒绝同实例并发安装。
-2. 检查实例归属、运行状态、架构、磁盘、Node >=22、固定 pnpm、编译工具和 3080 端口占用。
-3. 在任务临时目录按有限重试策略下载固定来源，校验四个渠道插件 SHA256，并通过 lockfile integrity 校验 registry 依赖。
-4. 分别对 DSH runtime 和 `web` profile 执行 `pnpm install --frozen-lockfile`；lockfile 不匹配、被改写或依赖缺失均立即失败。
-5. 校验五个插件准确包名/版本与 `dsh.bundle` 声明，确认全部进入 `dsh.profile.bundles`；执行 `dsh plugin --profile web list --depth 0 --json` 和 `dsh --profile web --dump-config`。
+2. 检查实例归属、运行状态、架构、磁盘、Node >=22、固定 pnpm、编译工具和 3080 端口占用；必要时在候选目录引导固定 pnpm。
+3. 在任务临时目录按有限重试策略解析 DSH、SkillHub 和五渠道 npm `latest` 元数据，校验版本、HTTPS tarball 与 `dist.integrity`，生成不含时间漂移的内容快照 ID。
+4. 分别为 DSH runtime 和 `web` profile 写入精确版本 package，先生成 lockfile、再执行 `pnpm install --frozen-lockfile`；要求每个 npm integrity 都出现在对应 lockfile，缺失或不匹配立即失败。
+5. 校验六个插件准确包名/快照版本与 `dsh.bundle` 声明，确认全部进入 `dsh.profile.bundles`；执行 `dsh plugin --profile web list --depth 0 --json` 和 `dsh --profile web --dump-config`。
 6. 正式切换前比较旧 profile 指纹；出现并发修改或非 LightVela 管理插件时保持原状并失败。
 7. 备份旧 runtime、完整 `web` profile 和旧 unit 后原子切换，执行 daemon-reload、enable 和明确 restart。
-8. 校验 dsh 版本、五插件版本、服务 active、回环监听和 HTTP 200；任何失败恢复三份备份和旧服务，首次安装失败清理临时目录及半成品。原 `web/cordis.patch.yml` 以及 `$DSH_HOME` 下 credentials、settings、storage 均保留。
+8. 校验 dsh 版本、六插件版本和服务 active，等待回环 HTTP 200 后再确认只监听 `127.0.0.1:3080`；任何失败恢复 runtime、完整 profile、固定 pnpm tooling、unit 和旧服务，首次安装失败清理临时目录及半成品。原 `web/cordis.patch.yml` 以及 `$DSH_HOME` 下 credentials、settings、storage 均保留。
 
 ### 为什么不照搬参考机公网配置
 
@@ -295,13 +295,13 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 ## 方案风险检查
 
 1. **Provider 与具体模型不是同一配置对象。** 当前清单只能确定 Provider。直接修改 dsh 默认模型还缺少具体 model ID，需求确认前不能据此实现“默认模型”。
-2. **候选组合尚未完成 Sandbox 冒烟。** 五个插件的包管理器安装成功不能替代 bundle 组合、启动和渠道初始化验证。
-3. **pnpm 必须保持一致。** 冻结清单以镜像 `pnpm@10.33.0` 生成和安装；镜像构建不得再无版本安装 pnpm，实例安装器也不得临时升级全局 pnpm。
-4. **参考机不能证明与 Hermes 共存稳定。** 参考机验证了 DSH 的 systemd、回环 HTTP 和代理，未运行 Hermes。CPU、内存、进程数和端口冲突必须在真实 Hermes Sandbox 验证。
+2. **通用 Ubuntu 冒烟不能替代 Hermes Sandbox 联调。** 已验证 SkillHub 加五个渠道插件的 npm-only 组合、systemd、回环 HTTP、同快照重装、服务重启和 release 保留；Hermes 共存资源占用、TAT 实时下发及 WebUI 代理仍需在北京 Sandbox 验证。
+3. **pnpm 必须保持一致且跨任务存活。** 冻结清单以 `pnpm@10.33.0` 生成和安装；实例版本不符时使用 root-owned 固定 tooling，不得临时升级全局 pnpm，也不得依赖会随任务清理的临时 PATH。
+4. **目标镜像前置条件必须满足。** 安装器要求实例已存在 `agentuser` 与 Node >=22；通用全新 Ubuntu 验证时需先补齐这些 Hermes 镜像前置条件。
 5. **DSH 配置 API 属于高权限面。** 前端不直接暴露该能力；实例 helper 仅调用固定的 Provider 与凭据 RPC，WebUI 仍位于已验证实例归属的 TAT 代理链路内。
 6. **冻结清单与用户自装插件存在边界。** 安装器在切换前比较 profile 指纹，并对未知依赖或 bundle 安全失败；只有确认未发生并发修改后才允许以完整备份执行原子回滚。
 
-自检结论：交互、命令通道和安装架构已完成本地实现与验证；上述 Sandbox 兼容性冒烟完成前，不启动真实实例安装。
+自检结论：交互、命令通道和安装架构已完成本地验证；npm-only 六插件方案已在通用 Ubuntu 24.04 主机完成首次安装与同快照重装。远端现存未知插件 `dsh-remote` 时安装器会在修改服务前安全失败，清理并备份测试 profile 后完成受管组合验证；因此本轮不等同于对任意用户自装插件的无损迁移证明。北京 Hermes Sandbox 共存与 TAT 链路仍待验证。
 
 ## 安全与非功能要求
 
@@ -319,7 +319,7 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 1. 原有“管理 > 实验室 > DeepSeek Harness”入口和三态布局保持不变。
 2. 安装动作使用真实异步任务，同实例重复点击不会创建并发安装。
-3. 安装完成后 dsh 与 SkillHub、QQBot、微信、企业微信、Lark 五个插件均等于固定版本并进入 `web` profile；配置组合检查通过，系统级 `deepseek-harness.service` active，`127.0.0.1:3080` 返回 HTTP 200。
+3. 安装完成后 dsh 与 SkillHub、QQBot、微信、企业微信、Lark、钉钉六个插件均等于任务快照版本并进入 `web` profile；配置组合检查通过，系统级 `deepseek-harness.service` active，`127.0.0.1:3080` 返回 HTTP 200。
 4. 实例公网不监听 3080，安全组不新增 3080 入站规则。
 5. 已安装页面下方出现模型配置卡片；无配置时 DeepSeek 默认选中。
 6. 国内站只展示 `deepseek`、`minimax-cn`、`moonshotai-cn`、`qwen-token-plan-cn`、`openrouter`。
@@ -327,7 +327,7 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 8. 用户可以配置多个白名单模型供应商；下拉始终展示完整白名单，重复保存同一供应商会覆盖更新；已配置项持续展示，并支持展开修改 API Key。
 9. 删除操作有二次确认；DeepSeek 只清理 LightVela 写入的密钥，其他供应商删除 profile，并且只清理由 LightVela 派生且可写的凭据；环境管理的 DeepSeek 凭据拒绝删除并说明原因。
 10. 删除成功后供应商从已配置列表移除，但仍保留在配置下拉；部分失败可原位重试。
-11. API Key 不回显，不进入日志、URL、浏览器持久化或 TAPD；`debug/exec` 命令只携带 base64 shell 安全编码并通过 stdin 交给 helper。
+11. API Key 不回显，不进入日志、URL、浏览器持久化或 TAPD；`debug/exec` 命令只携带 RSA-OAEP/SHA-256 密文，实例内解密后通过 stdin 交给 helper。
 12. 模型供应商配置在下一次 dsh 模型请求生效，无需重启服务。
 13. “访问 WebUI”使用受当前登录态和实例权限保护的地址，页面不展示静态 IP。
 14. 安装失败只展示轻量错误和重新安装，不增加“查看诊断”按钮。
@@ -335,11 +335,11 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 ## 发布与观测
 
-- 联调前必须先构建同时包含安装器和 Provider helper 的 Hermes CVM 镜像，并刷新北京 Sandbox 目标实例池；缺少任一 helper 的存量实例不进入首批灰度。本需求没有新增 ctl 或 service-gateway 路由。
+- 联调不要求先刷新 Hermes CVM 镜像；安装 payload 和 Provider helper 都随当前前端版本实时下发，因此存量实例可直接进入北京 Sandbox 验证。本需求没有新增 ctl 或 service-gateway 路由。
 - 先在北京 Sandbox 选择少量实例验证安装、重装、重启、Provider 配置和 WebUI 访问。
 - 观测安装成功率、各阶段耗时、服务存活率、回环 HTTP 健康、重启次数、Provider 保存成功率和 TAT 错误码。
 - 国内站验证通过后再开放国际站白名单。
-- dsh 与 SkillHub 升级必须先完成兼容性测试并修改服务端固定版本，不自动追随 `latest`。
+- dsh 与插件仅在用户发起安装或重装时解析 npm `latest`；服务启动不会自动升级。发布新 npm 版本前仍需完成组合兼容性测试。
 - 回滚时关闭实验室真实安装开关；已安装实例可保留服务，也可通过独立卸载方案处理，本需求不自动删除用户数据。
 
 ## 事实来源
@@ -354,10 +354,10 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 1. 本轮“模型选择”按 Provider + API Key 实现，不提供具体 model ID 选择。
 2. DeepSeek 产品标识 `deepseek` 映射到 DSH 原生路由 `deepseek-official`。
-3. 下一开发批次固定采用 `@deepseek-ai/dsh@0.1.0-rc.7` 与五个已列明版本的 `web` profile 插件，真实安装前完成完整组合冒烟。
+3. DSH、SkillHub 与五个渠道插件采用 npm `@latest` 入口，并在每次安装任务开始时冻结为精确版本和 integrity；真实开放前完成完整组合冒烟。
 4. 第一批真实安装只开放北京 Sandbox；国内站和国际站代码及 Provider 白名单同时完成，正式环境暂不开放真实安装。
 5. `*.dsh.lightvela.site` 就绪前，“访问 WebUI”复用登录态下的同源 TAT 虚拟代理。
 6. 安装、状态、重启和模型配置全部复用现有 `debug/exec`，不新增 DeepSeek Harness 专用后端接口。
 7. 模型配置采用“已配置列表 + 单项展开编辑区 + 完整白名单配置区”；支持覆盖修改和删除，删除语义遵循 DSH WebUI 的窄范围凭据清理原则。
 8. 配置结果复用全局顶部居中 Toast；保存期间等待 `debug/exec` 返回并锁定配置交互。
-9. DSH runtime 与五个插件采用在线冻结依赖安装，有限重试耗尽或任一插件验证失败时整体失败并恢复旧版本；不安装 `dsh-auth`。
+9. DSH runtime 与六个 profile 插件采用 npm 在线快照安装，有限重试耗尽或任一插件验证失败时整体失败并恢复旧版本；实例安装不依赖 GitHub，不安装 `dsh-auth`。

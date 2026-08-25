@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_SCRIPT="${ROOT_DIR}/images/build.sh"
 
+if grep -Fq 'install_deepseek_harness_installer' "${BUILD_SCRIPT}"; then
+  echo "Hermes image must not preload the DeepSeek Harness installer" >&2
+  exit 1
+fi
+
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
@@ -31,12 +36,6 @@ HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
 HERMES_BACKEND_BLUEPRINT_RESOLVER="${TMPDIR}/resolve-hermes-backend-blueprint-id.py"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
 HERMES_ENV_PROFILE_PATH="${TMPDIR}/etc/profile.d/hermes-env.sh"
-HERMES_DSH_INSTALLER_SOURCE="${ROOT_DIR}/images/helpers/install-deepseek-harness.sh"
-HERMES_DSH_INSTALLER_TARGET="${TMPDIR}/usr/local/libexec/lightvela/install-deepseek-harness"
-HERMES_DSH_CONFIG_HELPER_SOURCE="${ROOT_DIR}/images/helpers/configure-deepseek-harness.py"
-HERMES_DSH_CONFIG_HELPER_TARGET="${TMPDIR}/usr/local/libexec/lightvela/configure-deepseek-harness.py"
-HERMES_DSH_ASSETS_SOURCE="${ROOT_DIR}/images/runtime/deepseek-harness"
-HERMES_DSH_ASSETS_TARGET="${TMPDIR}/usr/local/share/lightvela/deepseek-harness"
 HERMES_SOURCE_CACHE_DIR="${TMPDIR}/var/cache/lightclaw/hermes"
 HERMES_SYSTEM_BIN_DIR="${TMPDIR}/usr-local-bin"
 HERMES_SYSTEM_LINK_DIR="${TMPDIR}/usr-bin"
@@ -412,7 +411,6 @@ upgrade_hermes_backend_blueprint
 finalize_hermes_runtime_pin
 curate_hermes_skills
 remove_hermes_find_skill_skillhub
-install_deepseek_harness_installer
 
 grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
@@ -486,15 +484,6 @@ grep -q '^product: lightvela$' "${ACLI_IDENTITY_PATH}"
 grep -q '^run_as: agentuser$' "${ACLI_IDENTITY_PATH}"
 grep -q "^runtime_bin: ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes$" "${ACLI_IDENTITY_PATH}"
 grep -q "^runtime_home: ${RUNTIME_HOME}/.hermes$" "${ACLI_IDENTITY_PATH}"
-test -f "${HERMES_DSH_ASSETS_TARGET}/manifest.json"
-test -f "${HERMES_DSH_ASSETS_TARGET}/runtime/package.json"
-test -f "${HERMES_DSH_ASSETS_TARGET}/runtime/pnpm-lock.yaml"
-test -f "${HERMES_DSH_ASSETS_TARGET}/runtime/.pnpmfile.cjs"
-test -f "${HERMES_DSH_ASSETS_TARGET}/web-profile/package.json"
-test -f "${HERMES_DSH_ASSETS_TARGET}/web-profile/pnpm-lock.yaml"
-test -f "${HERMES_DSH_ASSETS_TARGET}/web-profile/.pnpmfile.cjs"
-test -f "${HERMES_DSH_ASSETS_TARGET}/web-profile/pnpm-workspace.yaml"
-test "$(stat -f '%Lp' "${HERMES_DSH_ASSETS_TARGET}/manifest.json" 2>/dev/null || stat -c '%a' "${HERMES_DSH_ASSETS_TARGET}/manifest.json")" = "644"
 grep -q '^runtime_version: 0.14.0$' "${ACLI_IDENTITY_PATH}"
 grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes " "${HERMES_SYSTEM_BIN_DIR}/hermes"
 grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes-agent " "${HERMES_SYSTEM_BIN_DIR}/hermes-agent"
@@ -503,9 +492,5 @@ grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes-agent " 
 test -f "${RUNTIME_HOME}/.hermes/skills/software-development/plan/SKILL.md"
 test ! -e "${RUNTIME_HOME}/.hermes/skills/software-development/noisy-skill"
 test ! -e "${RUNTIME_HOME}/.hermes/skills/empty-category"
-test -x "${HERMES_DSH_INSTALLER_TARGET}"
-cmp -s "${HERMES_DSH_INSTALLER_SOURCE}" "${HERMES_DSH_INSTALLER_TARGET}"
-test -x "${HERMES_DSH_CONFIG_HELPER_TARGET}"
-cmp -s "${HERMES_DSH_CONFIG_HELPER_SOURCE}" "${HERMES_DSH_CONFIG_HELPER_TARGET}"
 
 echo "ok"

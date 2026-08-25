@@ -3,130 +3,61 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INSTALLER="${ROOT_DIR}/images/helpers/install-deepseek-harness.sh"
-ASSETS_DIR="${ROOT_DIR}/images/runtime/deepseek-harness"
 TMPDIR="$(mktemp -d)"
-trap 'rm -rf "${TMPDIR}"' EXIT
+trap 'if [ "${LIGHTVELA_DSH_KEEP_TEST_TMP:-0}" = "1" ]; then printf "kept test tmp: %s\n" "${TMPDIR}"; else rm -rf "${TMPDIR}"; fi' EXIT
 
-for required in \
-  manifest.json \
-  runtime/package.json \
-  runtime/pnpm-lock.yaml \
-  runtime/.pnpmfile.cjs \
-  web-profile/package.json \
-  web-profile/pnpm-lock.yaml \
-  web-profile/.pnpmfile.cjs \
-  web-profile/pnpm-workspace.yaml; do
-  test -s "${ASSETS_DIR}/${required}" || {
-    echo "missing frozen DeepSeek Harness input: ${required}" >&2
-    exit 1
-  }
-done
-
-python3 - "${ASSETS_DIR}/manifest.json" "${ASSETS_DIR}/runtime/package.json" "${ASSETS_DIR}/web-profile/package.json" "${ASSETS_DIR}/runtime/pnpm-lock.yaml" "${ASSETS_DIR}/web-profile/pnpm-lock.yaml" <<'PY'
-import json
-import re
-import sys
-
-manifest_path, runtime_path, profile_path, runtime_lock_path, profile_lock_path = sys.argv[1:]
-with open(manifest_path, encoding="utf-8") as handle:
-    manifest = json.load(handle)
-with open(runtime_path, encoding="utf-8") as handle:
-    runtime = json.load(handle)
-with open(profile_path, encoding="utf-8") as handle:
-    profile = json.load(handle)
-
-assert manifest["pnpmVersion"] == "10.33.0", manifest
-assert runtime["dependencies"] == {"@deepseek-ai/dsh": "0.1.0-rc.7"}, runtime
-expected_plugins = {
-    "@cocofhu/skillhub": "0.2.13",
-    "deepseek-harness-qqbot": "0.1.5",
-    "deepseek-harness-weixin": "0.2.5",
-    "deepseek-harness-wecom": "0.1.5",
-    "deepseek-harness-lark": "0.1.5",
-}
-managed = {item["package"]: item["version"] for item in manifest["profile"]["plugins"]}
-assert managed == expected_plugins, managed
-assert "dsh-auth" not in json.dumps(manifest), manifest
-assert profile["dsh"]["profile"]["bundles"] == [
-    "@deepseek-ai/dsh-base",
-    "@deepseek-ai/dsh-web-app",
-    *expected_plugins,
-], profile
-assert set(profile["dependencies"]) == set(expected_plugins), profile
-
-for lock_path in (runtime_lock_path, profile_lock_path):
-    text = open(lock_path, encoding="utf-8").read()
-    versions = {
-        version
-        for _, version in re.findall(r"\s+'?(@deepseek-ai/dsh[^'@: ]*)@([^':( ]+)", text)
-    }
-    assert versions == {"0.1.0-rc.7"}, (lock_path, versions)
-assert manifest["runtime"]["integrity"] in open(runtime_lock_path, encoding="utf-8").read()
-skillhub = next(item for item in manifest["profile"]["plugins"] if item["id"] == "skillhub")
-assert skillhub["integrity"] in open(profile_lock_path, encoding="utf-8").read()
-PY
+if grep -Eq '^  (providers|configure|remove-provider)\)' "${INSTALLER}"; then
+  echo "installer must not expose Provider helper actions" >&2
+  exit 1
+fi
 
 FAKE_BIN="${TMPDIR}/bin"
 TEST_ROOT="${TMPDIR}/root"
 CALLS="${TMPDIR}/calls.log"
-ARCHIVES="${TMPDIR}/archives"
-mkdir -p "${FAKE_BIN}" "${ARCHIVES}"
-
-make_archive() {
-  local id="$1"
-  local package_name="$2"
-  local version="$3"
-  local source_dir="${TMPDIR}/archive-source-${id}/fixture-${id}"
-  mkdir -p "${source_dir}"
-  python3 - "${source_dir}/package.json" "${package_name}" "${version}" <<'PY'
-import json
-import sys
-
-path, name, version = sys.argv[1:]
-with open(path, "w", encoding="utf-8") as handle:
-    json.dump(
-        {
-            "name": name,
-            "version": version,
-            "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
-        },
-        handle,
-        separators=(",", ":"),
-    )
-PY
-  printf '%s\n' '- $patch: bundle' >"${source_dir}/cordis.patch.yml"
-  tar -czf "${ARCHIVES}/${id}.tar.gz" -C "$(dirname "${source_dir}")" "$(basename "${source_dir}")"
-}
-
-make_archive qqbot deepseek-harness-qqbot 0.1.5
-make_archive weixin deepseek-harness-weixin 0.2.5
-make_archive wecom deepseek-harness-wecom 0.1.5
-make_archive lark deepseek-harness-lark 0.1.5
-
-CONFIG_HELPER="${TMPDIR}/configure-deepseek-harness.py"
-cat >"${CONFIG_HELPER}" <<'EOF'
-#!/usr/bin/env python3
-import json
-import sys
-
-if sys.argv[1:3] == ["providers", "--region"]:
-    print(json.dumps({"providers": [{"id": "deepseek", "displayName": "DeepSeek", "configured": False, "active": True, "writable": True}]}))
-elif sys.argv[1:3] == ["configure", "--provider"]:
-    value = sys.stdin.read()
-    if not value:
-        raise SystemExit(2)
-    print(json.dumps({"ok": True, "provider": sys.argv[3], "configured": True}))
-elif sys.argv[1:3] == ["remove-provider", "--provider"]:
-    print(json.dumps({"ok": True, "provider": sys.argv[3], "configured": False}))
-else:
-    raise SystemExit(2)
-EOF
-chmod +x "${CONFIG_HELPER}"
+mkdir -p "${FAKE_BIN}"
 
 cat >"${FAKE_BIN}/npm" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'npm %s\n' "$*" >>"${LIGHTVELA_DSH_TEST_CALLS}"
+prefix=""
+args=("$@")
+for ((index = 0; index < ${#args[@]}; index++)); do
+  if [ "${args[$index]}" = "--prefix" ]; then
+    prefix="${args[$((index + 1))]}"
+  fi
+done
+if [ -n "${prefix}" ] && [[ "$*" == *"pnpm@10.33.0"* ]]; then
+  mkdir -p "${prefix}/node_modules/.bin"
+  cat >"${prefix}/node_modules/.bin/pnpm" <<'INNER'
+#!/usr/bin/env bash
+LIGHTVELA_DSH_TEST_PNPM_VERSION=10.33.0 exec "${LIGHTVELA_DSH_TEST_FAKE_PNPM}" "$@"
+INNER
+  chmod +x "${prefix}/node_modules/.bin/pnpm"
+  exit 0
+fi
+if [ "${1:-}" = "view" ]; then
+  specification="${2:-}"
+  if [ "${LIGHTVELA_DSH_TEST_METADATA_FAILURE_SPEC:-}" = "${specification}" ]; then
+    exit 69
+  fi
+  case "${specification}" in
+    '@deepseek-ai/dsh@latest') package_name='@deepseek-ai/dsh'; version='0.1.1-rc.2'; integrity='sha512-runtime' ;;
+    '@cocofhu/skillhub@latest') package_name='@cocofhu/skillhub'; version='0.2.16'; integrity='sha512-skillhub' ;;
+    'deepseek-harness-qqbot@latest') package_name='deepseek-harness-qqbot'; version='0.1.5'; integrity='sha512-qqbot' ;;
+    'deepseek-harness-weixin@latest') package_name='deepseek-harness-weixin'; version='0.2.5'; integrity='sha512-weixin' ;;
+    'deepseek-harness-wecom@latest') package_name='deepseek-harness-wecom'; version='0.1.5'; integrity='sha512-wecom' ;;
+    'deepseek-harness-lark@latest') package_name='deepseek-harness-lark'; version='0.1.5'; integrity='sha512-lark' ;;
+    'deepseek-harness-dingtalk@latest') package_name='deepseek-harness-dingtalk'; version='0.1.5'; integrity='sha512-dingtalk' ;;
+    *) exit 97 ;;
+  esac
+  if [ "${LIGHTVELA_DSH_TEST_MISSING_INTEGRITY_SPEC:-}" = "${specification}" ]; then
+    integrity=""
+  fi
+  printf '{"version":"%s","dist.integrity":"%s","dist.tarball":"https://registry.npmjs.org/%s.tgz"}\n' \
+    "${version}" "${integrity}" "${package_name##*/}"
+  exit 0
+fi
 exit 97
 EOF
 
@@ -135,7 +66,7 @@ cat >"${FAKE_BIN}/pnpm" <<'EOF'
 set -euo pipefail
 printf 'pnpm %s\n' "$*" >>"${LIGHTVELA_DSH_TEST_CALLS}"
 if [ "${1:-}" = "--version" ]; then
-  printf '10.33.0\n'
+  printf '%s\n' "${LIGHTVELA_DSH_TEST_PNPM_VERSION:-10.33.0}"
   exit 0
 fi
 directory=""
@@ -147,19 +78,26 @@ for ((index = 0; index < ${#args[@]}; index++)); do
 done
 test -n "${directory}"
 case "${directory}" in
-  */candidate-runtime)
+  */releases/.staging-dshi-*)
+    if [[ "$*" == *"--lockfile-only"* ]]; then
+      printf '%s\n' 'sha512-runtime' >"${directory}/pnpm-lock.yaml"
+    fi
     mkdir -p "${directory}/node_modules/.bin" "${directory}/node_modules/@deepseek-ai/dsh"
     cat >"${directory}/node_modules/.bin/dsh" <<'INNER'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'dsh %s\n' "$*" >>"${LIGHTVELA_DSH_TEST_CALLS}"
 if [ "${1:-}" = "--version" ]; then
-  printf '0.1.0-rc.7\n'
+  printf '0.1.1-rc.2\n'
   exit 0
 fi
 if [ "${1:-}" = "plugin" ]; then
+  if [ "$(pnpm --version | head -n 1 | tr -d '\r')" != "10.33.0" ]; then
+    echo "dsh: pnpm 10.33.0 not found on PATH" >&2
+    exit 127
+  fi
   cat <<'JSON'
-[{"name":"@lightvela/deepseek-harness-web-profile","dependencies":{"@cocofhu/skillhub":{"version":"0.2.13"},"deepseek-harness-qqbot":{"version":"0.1.5"},"deepseek-harness-weixin":{"version":"0.2.5"},"deepseek-harness-wecom":{"version":"0.1.5"},"deepseek-harness-lark":{"version":"0.1.5"}}}]
+[{"name":"@lightvela/deepseek-harness-web-profile","dependencies":{"@cocofhu/skillhub":{"version":"0.2.16"},"deepseek-harness-qqbot":{"version":"0.1.5"},"deepseek-harness-weixin":{"version":"0.2.5"},"deepseek-harness-wecom":{"version":"0.1.5"},"deepseek-harness-lark":{"version":"0.1.5"},"deepseek-harness-dingtalk":{"version":"0.1.5"}}}]
 JSON
   exit 0
 fi
@@ -183,9 +121,18 @@ fi
 exit 0
 INNER
     chmod +x "${directory}/node_modules/.bin/dsh"
-    printf '%s\n' '{"name":"@deepseek-ai/dsh","version":"0.1.0-rc.7"}' >"${directory}/node_modules/@deepseek-ai/dsh/package.json"
+    printf '%s\n' '{"name":"@deepseek-ai/dsh","version":"0.1.1-rc.2"}' >"${directory}/node_modules/@deepseek-ai/dsh/package.json"
     ;;
   */profiles/web)
+    if [[ "$*" == *"--lockfile-only"* ]]; then
+      printf '%s\n' \
+        'sha512-skillhub' \
+        'sha512-qqbot' \
+        'sha512-weixin' \
+        'sha512-wecom' \
+        'sha512-lark' \
+        'sha512-dingtalk' >"${directory}/pnpm-lock.yaml"
+    fi
     python3 - "${directory}" "${LIGHTVELA_DSH_TEST_MISSING_PLUGIN:-}" <<'PY'
 import json
 import os
@@ -193,11 +140,12 @@ import sys
 
 root, missing = sys.argv[1:]
 plugins = {
-    "@cocofhu/skillhub": "0.2.13",
+    "@cocofhu/skillhub": "0.2.16",
     "deepseek-harness-qqbot": "0.1.5",
     "deepseek-harness-weixin": "0.2.5",
     "deepseek-harness-wecom": "0.1.5",
     "deepseek-harness-lark": "0.1.5",
+    "deepseek-harness-dingtalk": "0.1.5",
 }
 for name, version in plugins.items():
     if name == missing:
@@ -219,49 +167,21 @@ cat >"${FAKE_BIN}/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'curl %s\n' "$*" >>"${LIGHTVELA_DSH_TEST_CALLS}"
-output=""
 url=""
 args=("$@")
 for ((index = 0; index < ${#args[@]}; index++)); do
   case "${args[$index]}" in
-    --output|-o) output="${args[$((index + 1))]}" ;;
     http://*|https://*) url="${args[$index]}" ;;
   esac
 done
 if [[ "${url}" == http://127.0.0.1:* ]]; then
-  [ "${LIGHTVELA_DSH_TEST_FAIL_HEALTH:-0}" != "1" ]
+  [ "${LIGHTVELA_DSH_TEST_FAIL_HEALTH:-0}" != "1" ] || exit 1
+  if [ -n "${LIGHTVELA_DSH_TEST_HEALTH_READY_FILE:-}" ]; then
+    : >"${LIGHTVELA_DSH_TEST_HEALTH_READY_FILE}"
+  fi
   exit
 fi
-id=""
-case "${url}" in
-  */qqbot/*) id="qqbot" ;;
-  */weixin/*) id="weixin" ;;
-  */wecom/*) id="wecom" ;;
-  */lark/*) id="lark" ;;
-esac
-test -n "${id}"
-if [ "${LIGHTVELA_DSH_TEST_DOWNLOAD_FAILURE_ID:-}" = "${id}" ]; then
-  exit 22
-fi
-cp "${LIGHTVELA_DSH_TEST_ARCHIVES}/${id}.tar.gz" "${output}"
-EOF
-
-cat >"${FAKE_BIN}/sha256sum" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-path="$1"
-id=""
-case "$(basename "${path}")" in
-  qqbot-*) id="qqbot"; expected="4d2e5c06dc3934569e7a19137c99dabfdbdafb9b6fb0bb7b87167a6ea69be68a" ;;
-  weixin-*) id="weixin"; expected="20369d311752211550b178e6e519b80cbd949148d37cbde38ff1974af5afe6b0" ;;
-  wecom-*) id="wecom"; expected="870194ca4055afae87ff8b25261ab1d10d5604c2b0c07e17a961128c84ebe6ac" ;;
-  lark-*) id="lark"; expected="e3a0aacdd3c2f4926cc5d976d32f152c8e76af204d4315a4c57ccb69b120c153" ;;
-  *) exec shasum -a 256 "${path}" ;;
-esac
-if [ "${LIGHTVELA_DSH_TEST_BAD_SHA_FOR:-}" = "${id}" ]; then
-  expected="0000000000000000000000000000000000000000000000000000000000000000"
-fi
-printf '%s  %s\n' "${expected}" "${path}"
+exit 64
 EOF
 
 cat >"${FAKE_BIN}/mv" <<'EOF'
@@ -270,7 +190,7 @@ set -euo pipefail
 printf 'mv %s\n' "$*" >>"${LIGHTVELA_DSH_TEST_CALLS}"
 if [ "${LIGHTVELA_DSH_TEST_FAIL_PROFILE_BACKUP:-0}" = "1" ] \
   && [ "${1:-}" = "${LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH:-}" ] \
-  && [[ "${2:-}" == */backup/profile ]]; then
+  && [[ "${2:-}" == */profiles/.backup-dshi-* ]]; then
   exit 73
 fi
 exec /bin/mv "$@"
@@ -295,14 +215,26 @@ cat >"${FAKE_BIN}/systemctl" <<'EOF'
 set -euo pipefail
 printf 'systemctl %s\n' "$*" >>"${LIGHTVELA_DSH_TEST_CALLS}"
 case "$*" in
-  *is-active*) printf 'active\n' ;;
+  *'show --property=MainPID'*) printf '1234\n' ;;
+  *'show --property=NRestarts'*) printf '0\n' ;;
+  *'show --property=ControlGroup'*) printf '/system.slice/deepseek-harness.service\n' ;;
+  *'stop deepseek-harness.service'*) rm -f "${LIGHTVELA_DSH_TEST_HEALTH_READY_FILE:-}" ;;
+  *is-active*) exit 0 ;;
   *is-enabled*) [ "${LIGHTVELA_DSH_TEST_SERVICE_ENABLED:-1}" = "1" ] ;;
 esac
 EOF
 
 cat >"${FAKE_BIN}/ss" <<'EOF'
 #!/usr/bin/env bash
-printf 'LISTEN 0 128 127.0.0.1:3080 0.0.0.0:*\n'
+if [ -z "${LIGHTVELA_DSH_TEST_HEALTH_READY_FILE:-}" ] \
+  || [ -f "${LIGHTVELA_DSH_TEST_HEALTH_READY_FILE}" ]; then
+  printf 'LISTEN 0 128 127.0.0.1:3080 0.0.0.0:*\n'
+fi
+EOF
+
+cat >"${FAKE_BIN}/flock" <<'EOF'
+#!/usr/bin/env bash
+exit 0
 EOF
 
 chmod +x "${FAKE_BIN}"/*
@@ -310,24 +242,25 @@ chmod +x "${FAKE_BIN}"/*
 export LIGHTVELA_DSH_TEST_MODE=1
 export LIGHTVELA_DSH_TEST_ROOT="${TEST_ROOT}"
 export LIGHTVELA_DSH_TEST_CALLS="${CALLS}"
-export LIGHTVELA_DSH_TEST_ARCHIVES="${ARCHIVES}"
-export LIGHTVELA_DSH_CONFIG_HELPER="${CONFIG_HELPER}"
-export LIGHTVELA_DSH_ASSETS_DIR="${ASSETS_DIR}"
+export LIGHTVELA_DSH_TEST_FAKE_PNPM="${FAKE_BIN}/pnpm"
+export LIGHTVELA_DSH_TEST_HEALTH_READY_FILE="${TMPDIR}/health-ready"
 export LIGHTVELA_DSH_HEALTH_ATTEMPTS=2
 export PATH="${FAKE_BIN}:${PATH}"
 
 reset_instance() {
   rm -rf "${TEST_ROOT}"
+  rm -f "${LIGHTVELA_DSH_TEST_HEALTH_READY_FILE}"
   mkdir -p "${TEST_ROOT}/home/agentuser" "${TEST_ROOT}/run/user/1000"
   : >"${CALLS}"
-  unset LIGHTVELA_DSH_TEST_DOWNLOAD_FAILURE_ID
-  unset LIGHTVELA_DSH_TEST_BAD_SHA_FOR
+  unset LIGHTVELA_DSH_TEST_METADATA_FAILURE_SPEC
+  unset LIGHTVELA_DSH_TEST_MISSING_INTEGRITY_SPEC
   unset LIGHTVELA_DSH_TEST_MISSING_PLUGIN
   unset LIGHTVELA_DSH_TEST_FAIL_HEALTH
   unset LIGHTVELA_DSH_TEST_MUTATE_ON_DUMP
   unset LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH
   unset LIGHTVELA_DSH_TEST_FAIL_PROFILE_BACKUP
   unset LIGHTVELA_DSH_TEST_SERVICE_ENABLED
+  unset LIGHTVELA_DSH_TEST_PNPM_VERSION
 }
 
 assert_task_status() {
@@ -359,12 +292,17 @@ first_task="dshi-0123456789abcdef0123456789abcdef"
 ${INSTALLER} install --task-id "${first_task}"
 
 current="${TEST_ROOT}/opt/lightvela/dsh/current"
-release="${TEST_ROOT}/opt/lightvela/dsh/releases/0.1.0-rc.7"
 profile="${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
 unit="${TEST_ROOT}/etc/systemd/system/deepseek-harness.service"
 test -L "${current}"
+release="$(readlink "${current}")"
 test "$(readlink "${current}")" = "${release}"
-grep -Fq 'ExecStart=/opt/lightvela/dsh/current/node_modules/.bin/dsh web --host 127.0.0.1 --port 3080 --no-open' "${unit}"
+grep -Fq 'ExecStart=/opt/lightvela/dsh/current/node_modules/.bin/dsh web --host 127.0.0.1 --port 3080' "${unit}"
+if grep -Fq -- '--no-open' "${unit}"; then
+  echo 'unsupported DSH web option --no-open was written to the service unit' >&2
+  exit 1
+fi
+grep -Fq 'Environment=PATH=/opt/lightvela/dsh/current/node_modules/.bin:/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules/.bin:/usr/local/bin:/usr/bin:/bin' "${unit}"
 grep -Fq 'Environment=DSH_HOME=/home/agentuser/.dsh' "${unit}"
 grep -Fq 'User=agentuser' "${unit}"
 grep -Fq 'Group=agentuser' "${unit}"
@@ -375,15 +313,15 @@ for package_name in \
   deepseek-harness-qqbot \
   deepseek-harness-weixin \
   deepseek-harness-wecom \
-  deepseek-harness-lark; do
+  deepseek-harness-lark \
+  deepseek-harness-dingtalk; do
   test -f "${profile}/node_modules/${package_name}/package.json"
 done
 ! grep -Fq 'npm install' "${CALLS}"
-test "$(grep -Ec '^pnpm --dir' "${CALLS}")" -eq 2
+test "$(grep -Ec '^pnpm --dir' "${CALLS}")" -eq 4
 test "$(grep -Ec '^pnpm .*install --frozen-lockfile' "${CALLS}")" -eq 2
 grep -Fq -- '--fetch-retries 4' "${CALLS}"
 grep -Fq -- '--fetch-timeout 300000' "${CALLS}"
-grep -Fq -- '--connect-timeout 10 --max-time 300' "${CALLS}"
 grep -Fq 'plugin --profile web list --depth 0 --json' "${CALLS}"
 grep -Fq -- '--profile web --dump-config' "${CALLS}"
 grep -Fq 'systemctl enable deepseek-harness.service' "${CALLS}"
@@ -437,30 +375,30 @@ assert_task_status "${unknown_task}" failed
 assert_no_worktree
 
 reset_instance
-export LIGHTVELA_DSH_TEST_DOWNLOAD_FAILURE_ID=weixin
-download_task="dshi-4123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${download_task}"; then
-  echo 'failed plugin download unexpectedly completed installation' >&2
+export LIGHTVELA_DSH_TEST_METADATA_FAILURE_SPEC='deepseek-harness-weixin@latest'
+metadata_task="dshi-4123456789abcdef0123456789abcdef"
+if ${INSTALLER} install --task-id "${metadata_task}"; then
+  echo 'failed npm metadata lookup unexpectedly completed installation' >&2
   exit 1
 fi
-test "$(grep -Fc '/plugins/weixin/' "${CALLS}")" -eq 5
+grep -Fq 'npm view deepseek-harness-weixin@latest' "${CALLS}"
 test ! -e "${TEST_ROOT}/opt/lightvela/dsh/current"
 test ! -e "${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
 test ! -e "${TEST_ROOT}/etc/systemd/system/deepseek-harness.service"
-assert_task_status "${download_task}" failed
+assert_task_status "${metadata_task}" failed
 assert_no_worktree
 
 reset_instance
-export LIGHTVELA_DSH_TEST_BAD_SHA_FOR=wecom
-checksum_task="dshi-8123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${checksum_task}"; then
-  echo 'checksum mismatch unexpectedly completed installation' >&2
+export LIGHTVELA_DSH_TEST_MISSING_INTEGRITY_SPEC='deepseek-harness-wecom@latest'
+integrity_task="dshi-8123456789abcdef0123456789abcdef"
+if ${INSTALLER} install --task-id "${integrity_task}"; then
+  echo 'missing npm integrity unexpectedly completed installation' >&2
   exit 1
 fi
-test "$(grep -Fc '/plugins/wecom/' "${CALLS}")" -eq 5
+grep -Fq 'npm view deepseek-harness-wecom@latest' "${CALLS}"
 test ! -e "${TEST_ROOT}/opt/lightvela/dsh/current"
 test ! -e "${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
-assert_task_status "${checksum_task}" failed
+assert_task_status "${integrity_task}" failed
 assert_no_worktree
 
 reset_instance
@@ -479,7 +417,7 @@ assert_no_worktree
 reset_instance
 partial_baseline_task="dshi-9123456789abcdef0123456789abcdef"
 ${INSTALLER} install --task-id "${partial_baseline_task}"
-release="${TEST_ROOT}/opt/lightvela/dsh/releases/0.1.0-rc.7"
+release="$(readlink "${TEST_ROOT}/opt/lightvela/dsh/current")"
 profile="${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
 unit="${TEST_ROOT}/etc/systemd/system/deepseek-harness.service"
 printf '%s\n' 'partial-old-release' >"${release}/rollback-marker"
@@ -503,7 +441,7 @@ assert_no_worktree
 reset_instance
 baseline_task="dshi-6123456789abcdef0123456789abcdef"
 ${INSTALLER} install --task-id "${baseline_task}"
-release="${TEST_ROOT}/opt/lightvela/dsh/releases/0.1.0-rc.7"
+release="$(readlink "${TEST_ROOT}/opt/lightvela/dsh/current")"
 profile="${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
 unit="${TEST_ROOT}/etc/systemd/system/deepseek-harness.service"
 printf '%s\n' 'old-release' >"${release}/rollback-marker"
@@ -531,40 +469,24 @@ if ${INSTALLER} installation --task-id '../../etc/passwd' >/dev/null 2>&1; then
   exit 1
 fi
 
-providers="$(${INSTALLER} providers --region cn)"
-python3 - "${providers}" <<'PY'
-import json
-import sys
+reset_instance
+export LIGHTVELA_DSH_TEST_PNPM_VERSION=9.0.0
+fallback_task="dshi-b123456789abcdef0123456789abcdef"
+${INSTALLER} install --task-id "${fallback_task}"
+grep -Fq 'npm install --prefix' "${CALLS}"
+grep -Fq 'pnpm@10.33.0' "${CALLS}"
+stable_pnpm="${TEST_ROOT}/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules/.bin/pnpm"
+test -x "${stable_pnpm}"
+test "$("${stable_pnpm}" --version | head -n 1 | tr -d '\r')" = "10.33.0"
+grep -Fq '/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules/.bin/pnpm --dir' "${CALLS}"
+PATH="$(dirname "${stable_pnpm}"):${PATH}" \
+  "${TEST_ROOT}/opt/lightvela/dsh/current/node_modules/.bin/dsh" \
+  plugin --profile web list --depth 0 --json >/dev/null
+assert_task_status "${fallback_task}" succeeded
+unset LIGHTVELA_DSH_TEST_PNPM_VERSION
 
-data = json.loads(sys.argv[1])
-assert [item["id"] for item in data["providers"]] == ["deepseek"], data
-PY
-
-configured="$(printf '%s' 'secret-value' | ${INSTALLER} configure --provider deepseek)"
-python3 - "${configured}" <<'PY'
-import json
-import sys
-
-data = json.loads(sys.argv[1])
-assert data == {"ok": True, "provider": "deepseek", "configured": True}, data
-PY
-
-if printf '%s' 'secret-value' | ${INSTALLER} configure --provider unsupported >/dev/null 2>&1; then
-  echo 'unsupported provider unexpectedly accepted' >&2
-  exit 1
-fi
-
-removed="$(${INSTALLER} remove-provider --provider deepseek)"
-python3 - "${removed}" <<'PY'
-import json
-import sys
-
-data = json.loads(sys.argv[1])
-assert data == {"ok": True, "provider": "deepseek", "configured": False}, data
-PY
-
-if ${INSTALLER} remove-provider --provider unsupported >/dev/null 2>&1; then
-  echo 'unsupported provider removal unexpectedly accepted' >&2
+if ${INSTALLER} providers --region cn >/dev/null 2>&1; then
+  echo 'installer unexpectedly accepted a Provider helper action' >&2
   exit 1
 fi
 

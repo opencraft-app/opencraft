@@ -1,7 +1,7 @@
 # DeepSeek Harness 真实接入 Spec
 
-**最后更新：** 2026-08-21
-**状态：** 本地第一版与在线冻结依赖、五插件原子安装增强完成；北京 Sandbox 真实组合冒烟待确认
+**最后更新：** 2026-08-25
+**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机的首次安装、同快照重装和服务健康复验；北京 Hermes Sandbox 共存与 TAT 链路仍待验证
 
 ## 1. 统一命令通道
 
@@ -10,42 +10,49 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 | 动作 | 固定命令 |
 | --- | --- |
 | 状态 | `sudo systemctl status deepseek-harness.service --no-pager`，包装为始终返回 JSON 的条件命令 |
-| 安装 | `sudo systemd-run ... /usr/local/libexec/lightvela/install-deepseek-harness install --task-id <validated-id>` |
-| 任务查询 | `sudo /usr/local/libexec/lightvela/install-deepseek-harness installation --task-id <validated-id>` |
+| 安装 | 依次下发“创建私有上传目录、追加固定 payload 分片、`sudo systemd-run` 校验并执行实时脚本”命令；payload 和任务 ID 均由前端固定生成及校验 |
+| 任务查询 | `sudo cat /var/lib/lightvela/dsh/installations/<validated-id>.json` |
 | 重启 | `sudo systemctl restart deepseek-harness.service`，随后再次查询状态 |
-| 模型供应商列表 | `sudo /usr/local/libexec/lightvela/install-deepseek-harness providers --region <cn|global>` |
-| 模型供应商配置 | API Key 经 base64 shell 安全编码后写入 helper stdin，Provider ID 必须命中固定白名单 |
-| 模型供应商删除 | `sudo /usr/local/libexec/lightvela/install-deepseek-harness remove-provider --provider <allowlisted-id>` |
+| 模型供应商列表 | 以 `agentuser` 身份执行前端内联的固定 Provider helper：`providers --region <cn|global>` |
+| 模型供应商配置 | 首个命令在实例生成一次性 RSA 密钥并返回公钥；浏览器用 RSA-OAEP/SHA-256 加密 API Key，第二个命令只携带密文并在实例解密到 helper stdin；Provider ID 必须命中固定白名单 |
+| 模型供应商删除 | 以 `agentuser` 身份执行同一内联 helper：`remove-provider --provider <allowlisted-id>` |
 
-## 2. 实例安装器
+## 2. 实时安装 payload
 
 - 固定运行用户 `agentuser`、`DSH_HOME=/home/agentuser/.dsh`、端口 `127.0.0.1:3080`。
-- 固定版本 `@deepseek-ai/dsh@0.1.0-rc.7`、`@cocofhu/skillhub@0.2.13`、`deepseek-harness-qqbot@0.1.5`、`deepseek-harness-weixin@0.2.5`、`deepseek-harness-wecom@0.1.5` 和 `deepseek-harness-lark@0.1.5`；不安装 `dsh-auth`。
-- 镜像只预置 root-owned 冻结安装清单，不预置 DSH 包体。DSH runtime 与 `web` profile 各自使用固定 `package.json`、`.pnpmfile.cjs` 和 `pnpm-lock.yaml`；hook 将整个 `@deepseek-ai/dsh-*` 依赖族保持在 `rc.7`，避免与后续 RC 混装。实例安装时执行 `pnpm install --frozen-lockfile`，不得解析或写回新版本。
-- `web` profile 复用 DSH 官方 `nodeLinker: hoisted`、`autoInstallPeers: false` workspace 约定，只直接安装五个插件；base/web-app bundles 由冻结 runtime 的 profile fallback 提供。
-- 四个渠道插件使用固定 COS revision 与 SHA256；SkillHub 和 registry 依赖使用固定版本及 lockfile integrity。下载配置有限重试、连接/总超时，校验失败不得进入安装阶段。
-- 固定插件来源如下；完整 SHA256 与 registry integrity 进入 root-owned `manifest.json`，实现不得仅依赖文件名或 URL：
+- DSH、SkillHub 与五个渠道插件均请求 npm `@latest`；安装任务开始时一次性解析并校验精确版本、`dist.integrity` 和 HTTPS tarball，将结果写入 root-owned 安装快照；不安装 `dsh-auth`。
+- Hermes 镜像不预置 DSH 安装器、Provider helper 或冻结清单。前端构建脚本仅将单文件实时安装器压缩为确定性 payload，记录压缩内容 SHA256，并拆成不超过 24,000 字符的命令分片；Provider helper 使用独立内联资源。
+- 用户点击安装后，分片通过 `debug/exec` 顺序写入 `/tmp/lightvela-dsh-upload-<task-id>`；每一步等待执行成功。最终由 `systemd-run` 以 root 身份显式校验编码包上限、base64、gzip、SHA256、解压后大小、文件数量与大小、文件相对路径和文件模式后执行；gzip 使用有界读取，任务结束自动清理上传目录。
+- `systemd-run` wrapper 在解包前原子写入 `pending` 任务 JSON；准备阶段或安装器尚未写终态便退出时原子覆盖为 `failed`，避免轮询只得到文件不存在或永久停在 pending。启动请求结果不确定时，前端通过只读命令对任务文件与 systemd unit 延迟重试对账；对账通道同样不可用时保留 task ID 和上传资源，只有明确收到“任务未启动”后才以独立命令清理。
+- DSH runtime 与 `web` profile 根据本次安装快照生成精确版本的 `package.json`、`.pnpmfile.cjs` 和 `pnpm-lock.yaml`；hook 将整个 `@deepseek-ai/dsh-*` 依赖族保持在本次解析出的 DSH 版本，避免安装过程中混装其他版本。候选目录先执行 `--lockfile-only`，再执行 `pnpm install --frozen-lockfile`。
+- 若实例全局 pnpm 不存在或不是 `10.33.0`，安装任务先在候选目录引导固定版本，校验通过后原子持久化到 root-owned `/opt/lightvela/dsh/tooling/pnpm-10.33.0`；服务通过固定 PATH 使用该版本，任务目录清理后仍可执行插件管理。不得替换或升级实例全局 pnpm。
+- `web` profile 复用 DSH 官方 `nodeLinker: hoisted`、`autoInstallPeers: false` workspace 约定，只直接安装 SkillHub 与五个渠道插件；base/web-app bundles 由快照 runtime 的 profile fallback 提供。
+- 六个 profile 插件全部使用 npm registry；解析和安装配置有限重试与总超时。所有包的精确版本、tarball 和 integrity 进入 root-owned `manifest.json`，任一 metadata 或 lockfile integrity 校验失败不得进入切换阶段。
+- 插件请求来源如下；“版本”均表示安装任务开始时由 `@latest` 解析出的精确版本：
 
-| 插件 | 固定版本 | 固定来源 |
+| 插件 | 请求版本 | 来源与校验 |
 | --- | --- | --- |
-| SkillHub | `@cocofhu/skillhub@0.2.13` | npm tarball + `dist.integrity` |
-| QQBot | `deepseek-harness-qqbot@0.1.5` | COS revision `691af8ca2ffc9a1d67784d49744565b08d936f5e` + SHA256 |
-| 微信 | `deepseek-harness-weixin@0.2.5` | COS revision `361927d701f664074b1ea72096f8e61c121a602d` + SHA256 |
-| 企业微信 | `deepseek-harness-wecom@0.1.5` | COS revision `e241355f081c90cddfcc16d0e26020a5db30be25` + SHA256 |
-| Lark | `deepseek-harness-lark@0.1.5` | COS revision `b8c6f6ed8eab67a5b99be9b430ef19bea631fd4d` + SHA256 |
+| SkillHub | `@cocofhu/skillhub@latest` | npm tarball + `dist.integrity` + lockfile integrity |
+| QQBot | `deepseek-harness-qqbot@latest` | npm tarball + `dist.integrity` + lockfile integrity |
+| 微信 | `deepseek-harness-weixin@latest` | npm tarball + `dist.integrity` + lockfile integrity |
+| 企业微信 | `deepseek-harness-wecom@latest` | npm tarball + `dist.integrity` + lockfile integrity |
+| Lark | `deepseek-harness-lark@latest` | npm tarball + `dist.integrity` + lockfile integrity |
+| 钉钉 | `deepseek-harness-dingtalk@latest` | npm tarball + `dist.integrity` + lockfile integrity |
 
 - 下载最多尝试 5 次，单次连接超时 10 秒、单个请求总超时 300 秒，并使用有上限的退避。禁止执行宽泛的 `pnpm approve-builds --all`；构建脚本只允许 `@deepseek-ai/dsh-subprocess-local`、`koffi`、`node-pty`，明确忽略无需运行的 `@google/genai`、`protobufjs` 安装脚本。
-- DSH 版本目录 `/opt/lightvela/dsh/releases/0.1.0-rc.7`，当前链接 `/opt/lightvela/dsh/current`。
-- 系统服务文件 `/etc/systemd/system/deepseek-harness.service`，通过 `User=agentuser`、`Group=agentuser` 降权运行，设置 `Restart=always`、`RestartSec=5`、`UMask=0077`。
-- SkillHub、QQBot、微信、企业微信和 Lark 全部安装到 DSH `web` profile。五个插件必须同时满足准确包名/版本、声明 `dsh.bundle`、进入 `dsh.profile.bundles`、出现在 `dsh plugin --profile web list --depth 0 --json`，且 `dsh --profile web --dump-config` 成功；任一失败都将整个任务判定失败。
+- DSH 版本目录 `/opt/lightvela/dsh/releases/<snapshot-id>-<task-prefix>`，当前链接 `/opt/lightvela/dsh/current`；相同快照复用已有 runtime，成功后仅保留当前与一个上一版本。
+- 系统服务文件 `/etc/systemd/system/deepseek-harness.service`，通过 `User=agentuser`、`Group=agentuser` 降权运行，启动命令固定为 `dsh web --host 127.0.0.1 --port 3080`，设置 `Restart=always`、`RestartSec=5`、`UMask=0077`。
+- SkillHub、QQBot、微信、企业微信、Lark 和钉钉全部安装到 DSH `web` profile。六个插件必须同时满足快照包名/版本、声明 `dsh.bundle`、进入 `dsh.profile.bundles`、出现在 `dsh plugin --profile web list --depth 0 --json`，且 `dsh --profile web --dump-config` 成功；任一失败都将整个任务判定失败。
 - 安装使用 `flock`，状态以 root-owned JSON 原子写入 `/var/lib/lightvela/dsh/installations/`。下载、冻结安装和静态检查先在任务临时目录完成；正式切换前再次比较旧 profile 指纹，检测到并发修改则不覆盖。
-- 切换前备份旧 runtime、完整旧 `web` profile 和旧 unit；切换后明确 enable、restart，并验证 systemd active 与回环 HTTP 200。失败时恢复三者并重启旧服务；首次安装失败清理临时目录和半成品。
+- 切换前备份旧 runtime、完整旧 `web` profile、固定 pnpm tooling 和旧 unit；切换后明确 enable、restart，先等待回环 HTTP 200，再确认只监听 `127.0.0.1:3080`。失败时恢复备份并重启旧服务；首次安装失败清理临时目录和半成品。
 - 重装或升级时保留原 `web/cordis.patch.yml`；`$DSH_HOME` 下的 credentials、settings、storage 和其他用户数据不参与替换或清理。成功或失败后删除任务工作目录，但保留安装任务 JSON 状态记录。
-- 已经收敛到目标 runtime、五插件和服务配置时幂等成功。检测到非 LightVela 管理的额外 profile 依赖或 bundle 时保持原状并失败，不删除未知插件、不放弃冻结保证。
+- 已经收敛到相同 npm 快照、六插件和服务配置时幂等复用 runtime。检测到非 LightVela 管理的额外 profile 依赖或 bundle 时保持原状并失败，不删除未知插件、不放弃快照一致性保证。
 
 ## 3. 模型供应商配置 helper
 
-前端不再直连 DSH 配置 RPC。实例侧 `configure-deepseek-harness.py` 只允许调用 `llm.providers`、`settings.describe`、`credentials.describe`、`settings.mutate`、`credentials.set`、`credentials.unset`，并校验 RPC envelope 与 `result.ok`。非 DeepSeek Provider 在对应 settings path 写入派生的 `<ROUTE>_API_KEY` 引用，DeepSeek 直接写 `DEEPSEEK_API_KEY`。helper 只从 stdin 读取密钥，响应不包含密钥值。
+前端不再直连 DSH 配置 RPC。`configure-deepseek-harness.py` 在构建时编码为固定前端资源，每次操作经 `debug/exec` 以内联 Python 脚本实时执行，不落到实例公共路径。helper 只允许调用 `llm.providers`、`settings.describe`、`credentials.describe`、`settings.mutate`、`credentials.set`、`credentials.unset`，并校验 RPC envelope 与 `result.ok`。非 DeepSeek Provider 在对应 settings path 写入派生的 `<ROUTE>_API_KEY` 引用，DeepSeek 直接写 `DEEPSEEK_API_KEY`。helper 只从 stdin 读取密钥，响应不包含密钥值。
+
+保存密钥分两次调用同一 `debug/exec`：第一次在 `agentuser` 私有目录生成一次性 RSA-4096 密钥并仅返回 DER 公钥；浏览器使用 RSA-OAEP/SHA-256 加密用户输入；第二次命令只携带 base64 密文，由 OpenSSL 在实例内解密并通过管道写入 helper stdin。私钥权限为 0600，命令退出时删除；未完成的旧私钥在下一次保存时按 15 分钟 TTL 清理。API Key 明文不会进入命令正文、进程参数、响应或浏览器持久化。
 
 删除遵循 DSH WebUI 的窄范围清理：DeepSeek 只清除可写的 `DEEPSEEK_API_KEY`，凭据已配置但来自不可写环境时明确拒绝删除；其他供应商删除 profile，且仅在 profile 引用 LightVela 派生的 `<ROUTE>_API_KEY` 并确认凭据可写时清除凭据。环境变量密钥、自定义引用与不可识别凭据保持不变。凭据清理和 profile `unset` 均为幂等操作，部分失败允许原位重试。
 
