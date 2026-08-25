@@ -42,6 +42,23 @@ type Config struct {
 	AuthAEADKeys         map[string][]byte
 	AuthSessionTTL       time.Duration
 
+	DSHDomains                   []string
+	DSHFederationAuthorizeURL    string
+	DSHFederationBaseURL         string
+	DSHFederationClientID        string
+	DSHFederationKeyID           string
+	DSHFederationHMACKey         []byte
+	DSHTATStartTimeout           time.Duration
+	DSHTATOpenTimeout            time.Duration
+	DSHTATIdleTimeout            time.Duration
+	DSHMaxTargets                int
+	DSHMaxConnectionsPerTarget   int
+	DSHQueueDepth                int
+	DSHMaxFrameBytes             int64
+	DSHMaxBufferedBytesPerConn   int64
+	DSHMaxBufferedBytesPerTarget int64
+	DSHMaxBufferedBytesTotal     int64
+
 	SitePositiveTTL time.Duration
 	SiteNegativeTTL time.Duration
 	// SiteCacheMaxEntries 是站点元信息缓存的条目上界。
@@ -65,21 +82,26 @@ const (
 
 func FromEnv() (Config, error) {
 	cfg := Config{
-		Addr:                 getEnv("SITE_GATEWAY_ADDR", ":8080"),
-		AdminAddr:            getEnv("SITE_GATEWAY_ADMIN_ADDR", ":8081"),
-		RootDomains:          splitList(os.Getenv("SITE_GATEWAY_ROOT_DOMAINS")),
-		COSBucket:            strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_BUCKET")),
-		COSRegion:            strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_REGION")),
-		CTLBaseURL:           strings.TrimSpace(os.Getenv("SITE_GATEWAY_CTL_BASE_URL")),
-		CTLInternalToken:     strings.TrimSpace(os.Getenv("WEBSITE_INTERNAL_API_TOKEN")),
-		AuthEndpointsEnabled: false,
-		AuthFixedHost:        strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_FIXED_HOST")),
-		AuthOIDCIssuer:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_ISSUER")),
-		AuthOIDCAuthorizeURL: strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL")),
-		AuthOIDCTokenURL:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL")),
-		AuthOIDCJWKSURL:      strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL")),
-		AuthOIDCClientID:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID")),
-		AuthAEADActiveKeyID:  strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID")),
+		Addr:                      getEnv("SITE_GATEWAY_ADDR", ":8080"),
+		AdminAddr:                 getEnv("SITE_GATEWAY_ADMIN_ADDR", ":8081"),
+		RootDomains:               splitList(os.Getenv("SITE_GATEWAY_ROOT_DOMAINS")),
+		COSBucket:                 strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_BUCKET")),
+		COSRegion:                 strings.TrimSpace(os.Getenv("SITE_GATEWAY_COS_REGION")),
+		CTLBaseURL:                strings.TrimSpace(os.Getenv("SITE_GATEWAY_CTL_BASE_URL")),
+		CTLInternalToken:          strings.TrimSpace(os.Getenv("WEBSITE_INTERNAL_API_TOKEN")),
+		AuthEndpointsEnabled:      false,
+		AuthFixedHost:             strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_FIXED_HOST")),
+		AuthOIDCIssuer:            strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_ISSUER")),
+		AuthOIDCAuthorizeURL:      strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL")),
+		AuthOIDCTokenURL:          strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL")),
+		AuthOIDCJWKSURL:           strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL")),
+		AuthOIDCClientID:          strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID")),
+		AuthAEADActiveKeyID:       strings.TrimSpace(os.Getenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID")),
+		DSHDomains:                splitList(os.Getenv("SITE_GATEWAY_DSH_DOMAINS")),
+		DSHFederationAuthorizeURL: strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL")),
+		DSHFederationBaseURL:      strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_BASE_URL")),
+		DSHFederationClientID:     strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID")),
+		DSHFederationKeyID:        strings.TrimSpace(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_KEY_ID")),
 	}
 	var err error
 	if cfg.AuthEndpointsEnabled, err = getBool("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", false); err != nil {
@@ -94,6 +116,9 @@ func FromEnv() (Config, error) {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_MODE must be public or required")
 	}
 	if cfg.AuthAEADKeys, err = parseAuthAEADKeys(os.Getenv("SITE_GATEWAY_AUTH_AEAD_KEYS")); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHFederationHMACKey, err = parseDSHHMACKey(os.Getenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY")); err != nil {
 		return Config{}, err
 	}
 	cfg.COSSecretID, cfg.COSSecretKey = cosSecrets()
@@ -124,6 +149,36 @@ func FromEnv() (Config, error) {
 	}
 	if cfg.AuthSessionTTL > 5*time.Minute {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_SESSION_TTL must not exceed 5m")
+	}
+	if cfg.DSHTATStartTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_START_TIMEOUT", 10*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHTATOpenTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT", 15*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHTATIdleTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT", time.Hour); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxTargets, err = getPositiveInt("SITE_GATEWAY_DSH_MAX_TARGETS", 16); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxConnectionsPerTarget, err = getPositiveInt("SITE_GATEWAY_DSH_MAX_CONNECTIONS_PER_TARGET", 64); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHQueueDepth, err = getPositiveInt("SITE_GATEWAY_DSH_QUEUE_DEPTH", 64); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxFrameBytes, err = getPositiveInt64("SITE_GATEWAY_DSH_MAX_FRAME_BYTES", 256<<10); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxBufferedBytesPerConn, err = getPositiveInt64("SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION", 2<<20); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxBufferedBytesPerTarget, err = getPositiveInt64("SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_TARGET", 16<<20); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHMaxBufferedBytesTotal, err = getPositiveInt64("SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_TOTAL", 64<<20); err != nil {
+		return Config{}, err
 	}
 	// 根域是配置项而非常量：测试和正式用不同的域，正式根域后续还会更换。
 	if len(cfg.RootDomains) == 0 {
@@ -194,7 +249,53 @@ func FromEnv() (Config, error) {
 			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID %q missing from SITE_GATEWAY_AUTH_AEAD_KEYS", cfg.AuthAEADActiveKeyID)
 		}
 	}
+	dshFederationConfigured := cfg.DSHFederationAuthorizeURL != "" || cfg.DSHFederationBaseURL != "" || cfg.DSHFederationClientID != "" ||
+		cfg.DSHFederationKeyID != ""
+	if len(cfg.DSHDomains) == 0 && dshFederationConfigured {
+		return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_DOMAINS is required when DSH federation is configured")
+	}
+	if len(cfg.DSHDomains) > 0 {
+		if cfg.DSHFederationAuthorizeURL == "" || cfg.DSHFederationBaseURL == "" || cfg.DSHFederationClientID == "" || cfg.DSHFederationKeyID == "" || len(cfg.DSHFederationHMACKey) == 0 {
+			return Config{}, fmt.Errorf("DSH federation authorize URL, API base URL, and client credentials are required when DSH domains are configured")
+		}
+		authorizeURL, err := url.Parse(cfg.DSHFederationAuthorizeURL)
+		if err != nil || authorizeURL.Scheme != "https" || authorizeURL.Host == "" || authorizeURL.User != nil || authorizeURL.RawQuery != "" || authorizeURL.Fragment != "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL must be an https URL without userinfo, query, or fragment")
+		}
+		federationURL, err := url.Parse(cfg.DSHFederationBaseURL)
+		if err != nil || (federationURL.Scheme != "http" && federationURL.Scheme != "https") || federationURL.Host == "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_FEDERATION_BASE_URL must be an http or https URL")
+		}
+		if federationURL.User != nil || federationURL.RawQuery != "" || federationURL.Fragment != "" {
+			return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_FEDERATION_BASE_URL must not contain userinfo, query, or fragment")
+		}
+		if cfg.DSHMaxFrameBytes > cfg.DSHMaxBufferedBytesPerConn ||
+			cfg.DSHMaxBufferedBytesPerConn > cfg.DSHMaxBufferedBytesPerTarget ||
+			cfg.DSHMaxBufferedBytesPerTarget > cfg.DSHMaxBufferedBytesTotal {
+			return Config{}, fmt.Errorf("DSH byte limits must satisfy frame <= connection <= target <= total")
+		}
+		if int64(cfg.DSHMaxTargets) > (cfg.DSHMaxBufferedBytesTotal/4)/cfg.DSHMaxFrameBytes {
+			return Config{}, fmt.Errorf("DSH target and frame limits exceed the transient memory budget")
+		}
+		for _, domain := range cfg.DSHDomains {
+			if strings.ContainsAny(domain, "/:@") || strings.Trim(domain, ". ") != domain || !strings.Contains(domain, ".") {
+				return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_DOMAINS contains invalid domain %q", domain)
+			}
+		}
+	}
 	return cfg, nil
+}
+
+func parseDSHHMACKey(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	key, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil || len(key) < 32 {
+		return nil, fmt.Errorf("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY must be base64 with at least 32 decoded bytes")
+	}
+	return key, nil
 }
 
 func parseAuthAEADKeys(raw string) (map[string][]byte, error) {
@@ -288,6 +389,21 @@ func getPositiveInt(key string, fallback int) (int, error) {
 		return fallback, nil
 	}
 	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("%s must be positive", key)
+	}
+	return value, nil
+}
+
+func getPositiveInt64(key string, fallback int64) (int64, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", key, err)
 	}

@@ -1,5 +1,11 @@
 # Paket
 
+## Ringkasan
+
+**LightVela menyediakan dua paket, Launch dan Cruise, mencakup kebutuhan dari percobaan ringan hingga pemakaian utama harian. Paket adalah bundel sumber daya untuk mengaktifkan Hermes Agent: setelah aktif, platform mengalokasikan lingkungan cloud khusus (CPU, memori, dan penyimpanan tersendiri) tempat Agent Anda daring 24/7, tanpa perlu membeli server atau melakukan deployment lokal. Perbedaan antar paket hanya pada spesifikasi lingkungan, kapasitas penyimpanan, dan kredit model bulanan — Launch memberi 2 core 4G memori, penyimpanan 50G, dan 100 kredit per bulan, sementara Cruise menawarkan 4 core 8G memori dengan penyimpanan serta kuota bulanan lebih besar. Kemampuan inti Agent (evolusi mandiri, akses multi-kanal, skill, tugas otomatis, dan memori jangka panjang) sama di semua paket. LightVela berencana masuk public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura); masa aktif paket pengguna closed beta diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba Launch gratis 14 hari. Harga dan ketersediaan terkini mengacu pada halaman langganan.**
+
+---
+
 LightVela menyediakan dua tingkat paket, **Launch** dan **Cruise**, untuk kebutuhan mulai dari percobaan ringan sampai penggunaan Agent harian. Setiap paket menyediakan lingkungan cloud terisolasi untuk satu Hermes Agent dan alokasi kredit model bulanan. Halaman ini menjelaskan posisi, sumber daya, dan manfaat tiap paket agar Anda bisa memilih yang paling sesuai.
 
 ## Yang dibahas di halaman ini

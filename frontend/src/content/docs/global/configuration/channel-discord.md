@@ -1,5 +1,11 @@
 # 配置通道 - Discord
 
+## 摘要
+
+**Discord 通道采用 Bot 授权接入，适合把 Hermes Agent 接入 Discord 服务器，在频道中提供问答、助手或社区互动能力：先在 Discord 开发者后台创建应用与 Bot 并获取凭证，再填入 LightVela 管理台的「通道」，然后把 Bot 邀请进目标服务器。准备工作是一个有管理权限的 Discord 服务器，以及完成模型配置（或直接使用套餐按月提供的模型积分）。接入后 Agent 在 Discord 中与其他通道共享同一份人格与长期记忆。**
+
+---
+
 Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Discord 服务器，在频道中提供问答、助手或社区互动能力。
 
 ## 本页覆盖

@@ -1,5 +1,11 @@
 # Konfigurasi Skill
 
+## Ringkasan
+
+**Skill adalah paket kemampuan tambahan yang dapat dipanggil Hermes, memperluas kemampuannya di luar percakapan dasar ke tugas konkret seperti merapikan daftar tugas, membuat laporan harian, menjelajah web, mencari berita, dan menghasilkan gambar. Semuanya berasal dari Skills.sh dan ClawHub, pasar skill yang dipakai bersama oleh OpenClaw dan Hermes. Skill bersifat opsional: Agent tidak memasang skill apa pun secara bawaan dan tetap dapat berbicara normal, sehingga sebaiknya pasang skill hanya setelah Anda menemukan batas kemampuannya. Ada dua cara memasang — cari berdasarkan nama di bagian Skill pada konsol, atau langsung minta Agent memasangnya lewat percakapan. Skill yang sudah terpasang dapat dihapus dari konsol.**
+
+---
+
 Skill adalah paket kemampuan tambahan yang dapat dipanggil Hermes. Skill memperluas penanganan tugas konkret di luar percakapan dasar, seperti menyusun to-do secara otomatis, membuat laporan harian, menjelajahi halaman web, mencari berita, menghasilkan gambar, dan lainnya.
 
 Semua Skill berasal dari [**Skills.sh**](https://skills.sh/) dan [**ClawHub**](https://clawhub.ai/) — marketplace Skill yang digunakan bersama oleh OpenClaw dan Hermes.

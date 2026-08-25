@@ -1,5 +1,11 @@
 # Kanal Telegram
 
+## Ringkasan
+
+**Kanal Telegram dihubungkan dengan bot token, sehingga menjadi cara cepat membawa Hermes Agent ke pesan pribadi atau grup Telegram: buat bot melalui BotFather di Telegram, salin bot token-nya, lalu tempelkan ke bagian Kanal pada konsol LightVela. Anda memerlukan akun Telegram dan model yang sudah dikonfigurasi (atau cukup kredit model bulanan dari paket Anda). Bot token adalah kredensial sensitif — jangan dibagikan secara publik. Setelah terhubung, Agent di Telegram berbagi persona dan memori jangka panjang yang sama dengan kanal lain.**
+
+---
+
 Kanal Telegram memakai akses Bot Token dan cocok untuk menghubungkan Hermes Agent dengan cepat ke chat pribadi atau grup Telegram.
 
 ## Yang dibahas di halaman ini

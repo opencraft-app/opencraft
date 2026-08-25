@@ -1,6 +1,6 @@
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { MDXComponents } from 'mdx/types';
-import React, { Children, isValidElement, type ReactNode } from 'react';
+import { Children, isValidElement, type ReactNode } from 'react';
 
 type CalloutKind = 'info' | 'tip' | 'warn';
 

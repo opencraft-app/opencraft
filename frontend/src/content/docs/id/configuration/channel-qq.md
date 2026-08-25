@@ -1,5 +1,11 @@
 # Kanal QQ
 
+## Ringkasan
+
+**Kanal QQ adalah satu-satunya yang memerlukan pengisian parameter secara manual: buat bot di QQ Open Platform, ambil AppID dan AppSecret-nya, lalu tempelkan ke bagian Kanal pada konsol LightVela. Prosesnya sekitar 5–10 menit. Anda memerlukan akun QQ sebagai administrator bot dan model yang sudah dikonfigurasi (atau cukup kredit model bulanan dari paket Anda). Sebagai perbandingan, WeChat, WeCom, dan Lark semuanya cukup dihubungkan dengan memindai kode QR. Setelah terhubung, Agent di QQ berbagi persona dan memori jangka panjang yang sama dengan kanal lain.**
+
+---
+
 Kanal QQ memerlukan pembuatan bot di QQ Open Platform, lalu memasukkan **AppID** dan **AppSecret** yang dihasilkan ke LightVela. Seluruh prosesnya memakan waktu sekitar 5–10 menit.
 
 ## Yang dibahas di halaman ini

@@ -31,6 +31,7 @@ import {
   UserRound,
   Wand2,
   Wrench,
+  SlidersHorizontal,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
@@ -57,6 +58,8 @@ import {
   type ICommandExecutor,
   type IProductConfig,
 } from "@/pages/marketing/agent-config";
+import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";
+import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
 import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
@@ -69,7 +72,7 @@ import {
   getAgentSectionHref,
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
-import type { WorkerActionStatusResult } from "@/repositories/types";
+import type { Repositories, WorkerActionStatusResult } from "@/repositories/types";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
@@ -156,15 +159,15 @@ const TerminalPanel = lazy(() =>
 const AgentWebsitePanel = lazy(() =>
   import("@/pages/marketing/agent-website-panel").then((module) => ({ default: module.AgentWebsitePanel })),
 );
+const AgentCommonSettingsPanel = lazy(() =>
+  import("@/pages/marketing/agent-common-settings-panel").then((module) => ({ default: module.AgentCommonSettingsPanel })),
+);
 
 // ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
 // 与其他面板一致。内部依赖全部指向本地 config/hooks，仅 scripts 命令生成走
 // SDK `/scripts` 子入口（纯 TS、无浏览器副作用）。
 const AgentChannelPanel = lazy(() =>
   import("@/pages/marketing/agent-channel-panel").then((module) => ({ default: module.ChannelPanel })),
-);
-const AgentModelPanel = lazy(() =>
-  import("@/pages/marketing/agent-model-panel").then((module) => ({ default: module.ModelPanel })),
 );
 
 type Translate = (text: string, options?: Record<string, unknown>) => string;
@@ -191,6 +194,7 @@ function getPassExpiryReminderCopy(reminder: PassExpiryReminder, t: Translate) {
 type TeaSdkInstanceInfo = {
   InstanceId: string;
   RegionId: number;
+  Zone?: string;
 };
 
 type TeaSdkFeatureFlags = {
@@ -227,12 +231,14 @@ function TeaSdkSettingsPanel({
   instance,
   featureFlags,
   commandExecutor,
+  execDebugCommand,
   useEnglish,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
   commandExecutor?: ICommandExecutor;
+  execDebugCommand?: Repositories["bots"]["execDebugCommand"];
   /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
 }) {
@@ -254,7 +260,25 @@ function TeaSdkSettingsPanel({
     };
   }, [modelProviders]);
 
-  const Panel = kind === "channel" ? AgentChannelPanel : AgentModelPanel;
+  if (kind === "model") {
+    if (!execDebugCommand) {
+      return (
+        <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {rawT("未找到当前 Hermes Agent 实例。")}
+        </div>
+      );
+    }
+    return (
+      <AgentModelConfigPanel
+        botId={instance.InstanceId}
+        execDebugCommand={execDebugCommand}
+        providers={resolveProductModelProviderOptions(productConfig, modelProviders, {
+          region: instance.Zone,
+          regionId: instance.RegionId,
+        })}
+      />
+    );
+  }
 
   // 面板经 lazy() 动态加载，SSR 静态导出预渲染时走 Suspense fallback、不求值
   // 面板模块；客户端 hydrate 后才真正 import。scripts SDK 的 window 副作用也已
@@ -269,7 +293,7 @@ function TeaSdkSettingsPanel({
           </div>
         }
       >
-        <Panel
+        <AgentChannelPanel
           instance={instance}
           featureFlags={featureFlags}
           productConfig={productConfig}
@@ -4822,6 +4846,9 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                     { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+                    ...(!isGlobal
+                      ? [{ id: "settings" as const, label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings }]
+                      : []),
                   ],
                 },
               ];
@@ -5172,6 +5199,7 @@ export const AgentSettingsPage = ({
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               commandExecutor={teaSdkCommandExecutor}
+                              execDebugCommand={repositories.bots.execDebugCommand}
                               useEnglish={useEnglish}
                             />
                           )}
@@ -5244,6 +5272,16 @@ export const AgentSettingsPage = ({
                               savingLimitTarget={savingMemoryLimitTarget}
                               limitSaveError={memoryLimitSaveError}
                               t={t}
+                            />
+                          )}
+                          {!isGlobal && activeSection === "settings" && (
+                            <AgentCommonSettingsPanel
+                              botId={activeBot.id}
+                              botStatus={activeBot.status}
+                              bots={repositories.bots}
+                              getGatewayRestartCommand={async () => {
+                                return (await getHermesScriptCommands()).getGatewayRestartCommand();
+                              }}
                             />
                           )}
                           {activeSection === "files" && (

@@ -1,5 +1,11 @@
 # File
 
+## Ringkasan
+
+**Penyimpanan cloud adalah ruang kerja berkas Hermes Agent. Anda dapat menyimpan materi tugas di satu tempat, mengunggah dan merapikan berkas, atau mengunduh yang diperlukan ke perangkat lokal, semuanya tanpa keluar dari LightVela. Kapasitasnya ditentukan paket — Launch menyediakan 50G penyimpanan cloud khusus dan Cruise lebih besar. Berkas yang dibaca dan ditulis Agent saat menjalankan tugas juga tersimpan di sini, sehingga tempat ini sekaligus menjadi pustaka dokumen Anda dan direktori kerja Agent.**
+
+---
+
 Cloud Storage adalah ruang kerja file untuk Hermes Agent Anda. Gunakan fitur ini untuk menyimpan file yang dibutuhkan Agent di satu tempat, lalu unggah, tata, unduh, atau hapus file tersebut dari konsol Agent tanpa harus meninggalkan LightVela.
 
 ## Yang dibahas di halaman ini

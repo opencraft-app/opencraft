@@ -1,5 +1,11 @@
 # Cara Mengaktifkan Instans Hermes Pertama
 
+## Ringkasan
+
+**Alur membuat instance Hermes pertama: masuk dengan Google atau GitHub → pilih paket yang tersedia → aktifkan sesuai aturan paket saat ini → platform otomatis membuat instance → konfigurasikan model dan kanal. Semuanya dilakukan di browser, tanpa perlu membeli server atau melakukan deployment lokal. Instance Hermes adalah lingkungan runtime Agent di cloud LightVela, dan setelah dibuat ia daring 24/7. Setelah siap, buka konsol "My Hermes" untuk mengatur model, menghubungkan kanal pesan, dan memasang skill; jika belum memiliki API key model sendiri, Anda bisa langsung mulai berbicara memakai kredit model dari paket.**
+
+---
+
 Instans Hermes adalah runtime cloud tempat LightVela Agent Anda berjalan. Aktivasi instans pertama dilakukan dalam lima langkah: **masuk dengan Google atau GitHub → pilih paket yang tersedia → aktifkan melalui alur aktivasi saat ini → biarkan LightVela menyiapkan instans → atur model dan kanal**. Semua dilakukan di browser, tanpa membeli server atau melakukan deployment lokal. Halaman ini memandu prosesnya secara berurutan.
 
 ## Yang dibahas di halaman ini

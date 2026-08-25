@@ -76,6 +76,55 @@ func TestDeployConfigsExposeOnlyExactFederationPublicPaths(t *testing.T) {
 	}
 }
 
+func TestProductionOIDCRoutesExposeOnlyProtocolEndpoints(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	wantPaths := map[string]struct{}{
+		http.MethodGet + " /oauth2/authorize":                 {},
+		http.MethodGet + " /oauth2/authorize/context":         {},
+		http.MethodPost + " /oauth2/authorize":                {},
+		http.MethodPost + " /oauth2/token":                    {},
+		http.MethodGet + " /.well-known/openid-configuration": {},
+		http.MethodGet + " /.well-known/jwks.json":            {},
+	}
+	for _, env := range []string{"sgprod", "shprod"} {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load %s config: %v", env, err)
+			}
+
+			gotPaths := map[string]struct{}{}
+			for _, route := range cfg.Routes {
+				if route.Name != "oidc" && route.Name != "oidc-discovery" {
+					continue
+				}
+				if route.Access != AccessPublic {
+					t.Fatalf("OIDC protocol routes must be public and defer session checks to UserAuth: %+v", route)
+				}
+				if route.PathPolicy != PathPolicyAllowlist {
+					t.Fatalf("OIDC route must use an exact path allowlist: %+v", route)
+				}
+				for _, rule := range route.PathAllow {
+					gotPaths[rule.Method+" "+rule.Path] = struct{}{}
+				}
+			}
+
+			if len(gotPaths) != len(wantPaths) {
+				t.Fatalf("OIDC path allowlist = %+v, want %+v", gotPaths, wantPaths)
+			}
+			for key := range wantPaths {
+				if _, ok := gotPaths[key]; !ok {
+					t.Fatalf("OIDC path allowlist missing %s", key)
+				}
+			}
+		})
+	}
+}
+
 func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {

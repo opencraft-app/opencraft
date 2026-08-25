@@ -2909,6 +2909,106 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `git diff --check`
 
 ---
+
+# 模型配置页 CR 问题修复 Implementation Plan
+
+**Status:** Task 11 MR 范围收敛与验证完成，等待用户验收；不自动提交或推送。
+
+**Goal:** 修复 MR !3181 评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性、Tooltip 被裁剪、印尼语文案为空和模型列表探测被表述为真实连接的问题。
+
+**Architecture:** 保持现有页面、Hermes debug/exec 通道和 Provider 产品配置边界不变。Hermes helper 在实例内原位修改 fallback 原始条目；前端只消费不含凭据的快照。模型列表优先采用实时探测，实时结果为空时仅以产品静态目录补充可选项；Tooltip 复用现有 Portal/fixed 浮层模式。
+
+**Scope:** 仅修改 `agent-model-config` 模块、该页面四语言资源、对应定向测试和本计划；不改 SDK、Provider 产品配置、后端接口、Hermes 命令行为或页面整体结构。
+
+### Task 1: 保留备用模型原始凭据字段
+
+- [x] 在 `model-config-client.test.ts` 先增加失败测试，覆盖追加、取消和 legacy 迁移时已有 fallback 的 `api_key`、`key_env`、`api_key_env` 与未知扩展字段保持不变。
+- [x] 修改 `hermes-model-config-command.ts`，让 fallback 增删直接基于实例内原始配置条目，只把脱敏后的模型视图返回前端。
+- [x] 运行客户端定向测试确认 GREEN，且命令、输出与前端响应不包含明文 Key。
+
+### Task 2: 连通性检测校验选中模型
+
+- [x] 在 `model-config-client.test.ts` 先增加失败测试，覆盖 Provider 返回其他模型但不含当前 `model_id` 时检测失败。
+- [x] 修改 Hermes helper，仅在探测结果包含选中模型 ID 时返回成功；空结果和不匹配结果返回就近错误。
+- [x] 运行客户端定向测试确认 GREEN，并保留现有加密凭据传输断言。
+
+### Task 3: 静态模型目录作为获取结果兜底
+
+- [x] 先增加失败测试，覆盖 MiniMax 类 Provider 实时探测为空或 Hermes 返回 `models: None` 时，使用 `catalogModels` 填充下拉并允许添加。
+- [x] 将面板模型选项统一为带 `id`、`name`、`source` 的结构；实时结果优先，只有实时结果为空且非自定义 Provider 时使用静态目录。
+- [x] 覆盖无实时结果且无静态目录时仍不可添加、自定义 Provider 不使用静态兜底，并运行面板定向测试确认 GREEN。
+
+### Task 4: 操作 Tooltip 脱离裁剪容器
+
+- [x] 在 `model-config-panel.test.tsx` 先增加失败测试，断言 Tooltip 渲染到 `document.body`，支持 hover/focus、鼠标进入气泡和文本选择。
+- [x] 将 `ModelActionTooltip` 改为 `createPortal` + `fixed` 定位，复用项目现有浮层定位模式；监听 resize 和 capture scroll 更新位置，保留短暂关闭缓冲。
+- [x] 运行面板定向测试确认 GREEN，并检查按钮可访问名称、焦点状态和禁用原因提示不回退到原生 `title`。
+
+### Task 5: 独立 CR 补充边界
+
+- [x] 将模型 route 身份对齐 Hermes `(provider, model, normalized_base_url)`，同 Provider/模型的不同 endpoint 可独立删除且保留各自凭据。
+- [x] 复用 Hermes fallback 链并按三元组去重，legacy 重复 route 不再写入 `fallback_providers`。
+- [x] 将连通性请求绑定 Provider 指纹与 revision，Provider 变化后忽略延迟响应。
+- [x] 解除两个 Dialog 的手工 description ID 覆盖，交由 Radix 自动关联并消除可访问性警告。
+
+### Task 6: 修复 FE-AI 复审问题
+
+- [x] 保留 Hermes `models: None` 的探测失败语义，仅在探测成功但模型列表为空时使用静态目录。
+- [x] 拆分原始 route 身份与 Hermes runtime deployment 判定，精确增删 fallback 并拒绝无效主备组合。
+- [x] 删除模型前检查 Provider、模型与 key env 的剩余引用，避免破坏兄弟 endpoint。
+- [x] 将新增凭据失败回滚收窄为本次 `.env` 写入，不清理操作前已有的凭据池或镜像状态。
+- [x] 补齐失败测试、真实 Hermes smoke、类型、i18n 与 diff 门禁后重新执行 FE-AI review。
+
+### Task 7: 修复最新评审的本地化与探测语义问题
+
+- [x] 先补模型配置页印尼语完整性测试，以及模型可用性检测成功文案测试并确认 RED。
+- [x] 补齐本页面新增的 35 条印尼语翻译，并将连接成功/失败文案收紧为模型列表可用性语义。
+- [x] 运行模型配置定向测试、类型检查、i18n 检查和 diff 门禁后重新执行 FE-AI review。
+
+### Task 8: 修复类型门禁与模型身份契约
+
+- [x] 建立真实执行 `tsconfig.app.json` 的无新增错误门禁，并接入 frontend `check` 命令，避免 solution-style `tsconfig.json` 导致类型检查空跑。
+- [x] 统一模型身份输入类型、先收窄 `probeSucceeded` 再写入快照，并清零模型配置模块源代码与测试代码的类型错误。
+- [x] 删除 `regionId === 5` 的失效地域推导，改为只透传明确的 region/Zone，并完成定向测试、类型基线、i18n 与 diff 验证。
+
+### Task 9: 修复 MiniMax 静态发现与模型检测
+
+- [x] 为 Provider 适配结果增加显式 `live | catalog` 模型发现策略，MiniMax 使用产品静态目录，其他预设和自定义 Provider 保持实时发现。
+- [x] 将模型发现与模型可用性检测解耦；MiniMax 仅在用户主动点击“模型检测”时发送最小模型请求，验证当前 Key、endpoint 与所选模型。
+- [x] 补齐 `models: None`、无效凭据、模型请求成功、其他 Provider 探测失败不回退目录等回归测试，并完成模型配置、类型、i18n 与 diff 门禁。
+
+### Task 10: 修复 frontend 质量脚本递归调用 pnpm
+
+- [x] 使用 CI Runtime 契约测试复现 `check` 与 `check:next` 递归调用 `pnpm typecheck` 的失败。
+- [x] 保留独立 `typecheck` 命令，将两个质量脚本改为直接执行 `typecheck-baseline.mjs`。
+- [x] 运行 CI Runtime 定向契约、frontend 质量检查、模型配置测试与 diff 门禁。
+
+### Task 11: 撤销模型配置 MR 的 CI 工作流改动
+
+- [x] 删除 `.ci/frontend.yml` 与 `.ci/frontend-preview.yml` 中本分支新增的 frontend 质量门禁步骤。
+- [x] 以 MR merge-base 为基准确认 `.ci/**` 变更归零，保留模型配置业务实现与本地质量命令。
+- [x] 重新运行模型配置测试、frontend 质量检查与 diff 门禁。
+
+## Verification
+
+- `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx`
+- `pnpm check`
+- `pnpm i18n:check`
+- `git diff --check`
+
+**Task 6 verification:** 7 个回归断言先按预期失败；模型配置相关 52 个测试通过、1 个环境测试跳过，真实 Hermes 源码 smoke 1/1 通过；`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。本地新进程 `http://127.0.0.1:5175/agents/models/` 返回 200。全仓测试另有 4 个未改动模块失败，随后一个 worker 持续满 CPU 无输出而终止，未作为本轮通过依据。
+
+**Task 7 verification:** 新增本地化资源与检测语义断言先出现 38 个预期失败；实现后模型配置模块 90 个测试通过、1 个真实 Hermes 环境测试跳过。`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过；英文待翻译为 0，印尼语待翻译由 213 条降至 178 条。本轮仅调整模型列表可用性文案与四语言资源，不改 Hermes 探测行为。
+
+**Task 8 verification:** 地域适配 2 个回归断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、94 个测试全部通过。真实类型门禁对空的根 `tsconfig.json` 和临时注入的 2 条诊断均按预期失败，最终 `pnpm check` 报告 276 条历史基线、0 条新增诊断。独立 CR 指出的 3 个 P1 与 2 个可立即处理的 P2 已修复；Task 11 已按 MR 范围要求撤销正式与预览流水线改动。实例 API 尚不提供 Zone，当前只移除失效推导并保留显式透传契约。
+
+**Task 9 verification:** Provider 策略、MiniMax 静态目录、Anthropic/OpenAI 最小模型请求、凭据拒绝和安全 HTTP transport 共 6 个关键断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，真实 Hermes 源码 smoke 1/1 通过。`pnpm check` 报告 276 条历史基线、0 条新增诊断；`pnpm i18n:check`、`git diff --check` 通过；本地 `/agents/models/` 编译并返回 200。
+
+**Task 10 verification:** CI Runtime 定向契约在修改前稳定失败，改为直接执行 `node scripts/typecheck-baseline.mjs` 后通过；完整 `.ci/runtime/check_ci_runtime.sh` 运行 454 个测试全部通过。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断，`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过。
+
+**Task 11 verification:** 以当前 MR merge-base `7a9e26c73230` 比较后 `.ci/**` 变更文件数为 0。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断；`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，`git diff --check` 通过。
+
+---
 # My creations show() reveal Implementation Plan
 
 **Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
@@ -3329,5 +3429,125 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] **Step 1: 增加国际站月份归属断言并确认 RED。**
 - [x] **Step 2: 将 `automation-templates` 从国际站 8 月移到 7 月并确认 GREEN。**
 - [x] **Step 3: 运行国际站 Changelog 回归、类型、i18n 与 diff 检查。**
+
+---
+
+# 国际站新增自定义人设文件动态 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development to implement this S-level task.
+
+**Status:** 实现与验证完成，用户已确认提交、推送和创建 MR。
+
+**Size:** S。单一国际站静态 Changelog 条目与区域化截图调整，不涉及接口、权限、计费或发布。
+
+**Goal:** 在国际站 2026 年 8 月更新日志中新增“上传自定义人设文件”，沿用国内站文案结构并展示真实英文上传弹窗截图。
+
+**Architecture:** 继续使用 `changelog-page.tsx` 的 `isGlobal` 编译期分支；国际站 8 月复用现有标题和描述翻译键，同时让 `personaUpload` 在国际站选择新的英文截图、国内站继续选择原中文截图。先修改国际站专项测试并确认因条目缺失而失败，再添加最小页面数据与图片分支使其通过。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、现有中文即 key i18n、真实国际站英文 UI 截图。
+
+## Global Constraints
+
+- 国际站条目放在 2026 年 8 月首位，国内站条目、文案、顺序与中文截图保持不变。
+- 英文标题固定沿用现有翻译 `LightVela Now Supports Custom Persona File Uploads`。
+- 英文描述固定沿用现有翻译 `Upload a Markdown persona file, then continue editing it or inject it directly into your Agent. Injected persona files can also be edited or downloaded at any time.`。
+- 新图固定使用真实英文上传弹窗，路径为 `/assets/changelog/lightvela-persona-upload-global-en.png`；国际站四语言共用该国际版截图。
+- 不手改生成字典；`pnpm i18n:extract` 若无变化，不提交 i18n 文件。
+
+### Task 1: 新增国际站自定义人设文件动态
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/global-changelog.test.tsx`
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx`
+- Create: `frontend/public/assets/changelog/lightvela-persona-upload-global-en.png`
+- Verify: `frontend/src/i18n/generated/{en-US,id-ID,zh-CN,zh-Hant,zh-to-key}.json`
+
+**Interfaces:**
+- Consumes: 现有 `personaUpload` visual、标题/描述翻译键和国际站上传人设弹窗。
+- Produces: 国际站 8 月首条 `persona-file-upload` 数据和区域化图片选择；国内站保持原路径。
+
+- [x] **Step 1: 修改国际站专项测试，断言四语言条目、英文截图与 8 月首位。**
+
+  将原有“不展示人设上传”断言改为展示断言，并验证英文标题、描述、图片路径与 `1410 / 642` 比例；同时保留钉钉排除和 7 月自动任务模板归属断言。
+
+- [x] **Step 2: 运行专项测试并确认 RED。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
+
+  Expected: FAIL，原因是国际站 8 月尚无 `persona-file-upload` 条目，而不是测试环境或语法错误。
+
+- [x] **Step 3: 捕获真实英文上传弹窗截图并加入 Changelog 资源。**
+
+  在国际站英文界面打开 `/agents/persona` 的上传弹窗，保留标题、说明、文件限制和 `Choose file` 按钮，输出为 `1410 × 642` PNG：
+
+  ```text
+  frontend/public/assets/changelog/lightvela-persona-upload-global-en.png
+  ```
+
+- [x] **Step 4: 添加最小页面数据与区域化图片选择。**
+
+  在国际站 8 月 `entries` 首位加入：
+
+  ```ts
+  {
+    id: "persona-file-upload",
+    title: t("LightVela 支持上传自定义人设文件"),
+    desc: t("上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。"),
+    visual: "personaUpload" as const,
+  }
+  ```
+
+  `personaUpload` 图片路径按区域选择：国际站使用 `lightvela-persona-upload-global-en.png`，国内站继续使用 `lightvela-persona-upload.png`。
+
+- [x] **Step 5: 运行国际站专项测试与国内站 Changelog 回归并确认 GREEN。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/global-changelog.test.tsx \
+    src/pages/marketing/__tests__/channel-copy.test.tsx
+  ```
+
+  Expected: 国际站四语言展示人设条目与英文截图；国内站仍展示原中文截图；其他区域条目不回归。
+
+- [x] **Step 6: 运行完整质量门禁并展示提交范围。**
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:check
+  pnpm check
+  cd ..
+  git diff --check
+  git status --short
+  ```
+
+  Expected: i18n、类型与 diff 检查通过，最终仅包含计划、国际站 Changelog 测试、页面数据和英文截图。
+
+- [x] **Step 7: 展示 diff、验证证据、提交信息和 MR 配置，等待用户确认。**
+
+---
+
+# Agent 审批模式 CR 修复 Implementation Plan
+
+**Goal:** 修复 MR !3288 评审确认的恢复默认说明、未知枚举失败半径和关闭审批状态提示，并锁定 reset/save 保护。
+
+**Design:** `openspec/changes/2026-08-25-agent-approval-mode-cr-fixes-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-25-agent-approval-mode-cr-fixes-plan.md`
+
+## Tasks
+
+- [x] 未知 `approvals.mode` 仅降级审批字段，不阻塞整页读取。
+- [x] 安全组恢复弹窗明确 `关闭审批 → 智能审批`，现有 `off` 展示低强度风险提示。
+- [x] 补齐 unsupported reset 过滤与同步保存互斥测试，并用定向 mutation 验证测试有效。
+- [x] 完成 i18n、焦点测试、类型检查、双区域构建和 diff 门禁。
+- [x] 展示最终范围、提交信息和 MR 配置，等待用户确认。
+- [x] 将安全分组、审批模式和关闭审批弹窗正文改为「高风险操作」，完成测试、i18n 和静态门禁后追加到 MR !3309。
 
 ---

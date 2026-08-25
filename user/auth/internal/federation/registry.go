@@ -11,8 +11,8 @@ import (
 var ErrInvalidClient = errors.New("invalid federation client")
 
 type CallbackHost struct {
-	Host              string
-	IncludeSubdomains bool
+	Host              string `json:"host"`
+	IncludeSubdomains bool   `json:"include_subdomains"`
 }
 
 type Client struct {

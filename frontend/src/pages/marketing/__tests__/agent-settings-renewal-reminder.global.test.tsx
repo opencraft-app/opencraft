@@ -191,6 +191,12 @@ describe("AgentSettingsPage global renewal reminder", () => {
     vi.useRealTimers();
   });
 
+  it("does not expose the domestic common settings navigation entry", () => {
+    renderAgentSettingsPage();
+
+    expect(screen.queryByText("高级设置")).not.toBeInTheDocument();
+  });
+
   it("renders the global renewal reminder as a static compact badge", () => {
     renderAgentSettingsPage();
 

@@ -1,5 +1,11 @@
 # Kanal Discord
 
+## Ringkasan
+
+**Kanal Discord dihubungkan melalui otorisasi bot, cocok untuk membawa Hermes Agent ke server Discord guna menjawab pertanyaan, membantu, atau menggerakkan interaksi komunitas: buat aplikasi dan bot di portal pengembang Discord, ambil kredensialnya, tempelkan ke bagian Kanal pada konsol LightVela, lalu undang bot ke server tujuan. Anda memerlukan server Discord tempat Anda memiliki hak admin dan model yang sudah dikonfigurasi (atau cukup kredit model bulanan dari paket Anda). Setelah terhubung, Agent di Discord berbagi persona dan memori jangka panjang yang sama dengan kanal lain.**
+
+---
+
 Kanal Discord memakai akses otorisasi Bot dan cocok untuk menghubungkan Hermes Agent ke sebuah server Discord, sehingga tersedia kemampuan tanya-jawab, asisten, atau interaksi komunitas di dalam channel.
 
 ## Yang dibahas di halaman ini

@@ -2,7 +2,7 @@
  * 社群入口常量（Discord / 微信群二维码与邀请链接）
  *
  * 集中定义原因：Discord 邀请链接与二维码图片同时出现在
- * legal-footer / landing-cta-footer-links / about-page / lightvela-footer
+ * legal-footer / about-page / lightvela-footer
  * 等多个位置，散落硬编码时换群链接容易漏改，导致「二维码」与「点击跳转」
  * 指向不同的服务器。
  */

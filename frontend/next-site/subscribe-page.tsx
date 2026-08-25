@@ -3,7 +3,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
+import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
@@ -295,10 +295,10 @@ interface AiDurationTabDef {
   zhLabel: string;
 }
 
-const AI_DURATION_TABS: AiDurationTabDef[] = [
+const AI_DURATION_TABS = [
   { key: "monthly", period: 1, time_unit: "m", zhLabel: "月付" },
   { key: "quarterly", period: 3, time_unit: "m", zhLabel: "季付" },
-];
+] as const satisfies readonly AiDurationTabDef[];
 
 const getBillingPriceUnit = (
   durationKey: AiDurationTabDef["key"],
@@ -609,7 +609,7 @@ const mapBundleToPlan = (
          巡游 AI 月付 $13.8），**不能再套用下方未登录分支的 ×0.5 / ×0.6 / 置 0 二次折算**，
          否则会出现 $13.8 再打 6 折这类错误金额。
          这样未登录展示与登录后新用户完全一致（需求：未登录整页按登录后新用户呈现）。 */
-      const intlOriginalYuan = centsToYuan(bundle.price.total_cost);
+      const intlOriginalYuan = centsToYuan(bundle.price?.total_cost);
       if (
         intlOriginalYuan != null &&
         displayPriceYuan != null &&
@@ -628,7 +628,9 @@ const mapBundleToPlan = (
            不套用月付促销（免费14天 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
            折扣角标（如「8.5折」）由后续 promoTag 分支按 price.discount 计算。标准版与 AI 增强版一致。 */
         if (isLaunch || isCruise) {
-          const staticOriginalYuan = centsToYuan(bundle.price.total_cost);
+          const staticOriginalYuan = bundle.price
+            ? centsToYuan(bundle.price.total_cost)
+            : null;
           if (
             staticOriginalYuan != null &&
             displayPriceYuan != null &&
@@ -2659,7 +2661,10 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass, latestPass } = useOpenClaw();
+  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, refreshPasses, activePass, latestPass } = useOpenClaw();
+  void BUNDLE_TYPE_FALLBACK_KEY;
+  void BUNDLE_TYPE_TABS;
+  __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
@@ -3135,7 +3140,7 @@ export const SubscribePage = ({
          window.location.assign 替换掉当前页，付款后回跳到的是一个全新页面，
          原窗口的 paying 轮询已随之销毁。有标记才能在回跳页重新接棒
          「等发货 → 自动建实例 → 跳管理页」，否则用户会停在订阅页且实例没建。 */
-      const payRedirectBase = window.location.href.split("#")[0].split("?")[0];
+      const payRedirectBase = (window.location.href.split("#")[0] ?? '').split("?")[0] ?? '';
       const payReturnUrl = `${payRedirectBase}?${PAY_RETURN_QUERY_KEY}=1&${PAY_RETURN_PLAN_QUERY_KEY}=${encodeURIComponent(plan.id)}`;
       const orderUrl = await repositories.plans.getPassOrderUrl({
         deal_names: order.deal_names,
@@ -3762,7 +3767,6 @@ export const SubscribePage = ({
               paying={subscribingPlanId === selectedPlan.id}
               onCancel={handleCloseModal}
               onPay={handlePay}
-              t={t}
             />
           ) : (
             <ConfirmOrderModal
@@ -3770,7 +3774,7 @@ export const SubscribePage = ({
               plan={selectedPlan}
               billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
               onCancel={handleCloseModal}
-              onPay={handlePay}
+              onPay={() => handlePay(false)}
             />
           )
         )}
