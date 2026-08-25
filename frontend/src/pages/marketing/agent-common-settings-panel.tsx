@@ -117,12 +117,12 @@ export function AgentCommonSettingsPanel({
     {
       id: "security",
       title: t("安全"),
-      description: t("管理 Agent 执行危险命令时的审批方式。"),
+      description: t("管理 Agent 执行高风险操作时的审批方式。"),
       settings: [
         {
           key: "approvalMode",
           label: t("审批模式"),
-          description: t("设置 Agent 遇到危险命令时如何请求审批。"),
+          description: t("设置 Agent 执行高风险操作时的审批方式。"),
           kind: "select",
         },
       ],
@@ -590,7 +590,7 @@ export function AgentCommonSettingsPanel({
                 {t("确认关闭命令审批？")}
               </DialogTitle>
               <DialogDescription className="mt-1 text-pretty text-sm leading-6 text-black/55">
-                {t("关闭后，Agent 执行危险命令时将不再请求你的批准。请仅在可信环境中使用。")}
+                {t("关闭后，Agent 执行高风险操作时将不再请求你的批准。请仅在可信环境中使用。")}
               </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end gap-2">

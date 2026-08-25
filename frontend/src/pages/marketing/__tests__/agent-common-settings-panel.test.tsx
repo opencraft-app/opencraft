@@ -164,6 +164,30 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.getByRole("option", { name: "关闭审批" })).toBeTruthy();
   });
 
+  it("uses high-risk operation copy for approval descriptions", async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("管理 Agent 执行高风险操作时的审批方式。")).toBeTruthy();
+    expect(screen.getByText("设置 Agent 执行高风险操作时的审批方式。")).toBeTruthy();
+    expect(screen.queryByText("管理 Agent 执行危险命令时的审批方式。")).toBeNull();
+    expect(screen.queryByText("设置 Agent 遇到危险命令时如何请求审批。")).toBeNull();
+
+    await user.click(screen.getByRole("combobox", { name: "审批模式" }));
+    await user.click(screen.getByRole("option", { name: "关闭审批" }));
+    expect(screen.getByText("关闭后，Agent 执行高风险操作时将不再请求你的批准。请仅在可信环境中使用。")).toBeTruthy();
+    expect(screen.queryByText("关闭后，Agent 执行危险命令时将不再请求你的批准。请仅在可信环境中使用。")).toBeNull();
+  });
+
   it("saves smart and manual approval modes without confirmation", async () => {
     const user = userEvent.setup();
     const saveSetting = vi.fn().mockResolvedValue({
@@ -238,7 +262,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     expect(saveSetting).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "确认关闭命令审批？" })).toBeTruthy();
-    expect(screen.getByText("关闭后，Agent 执行危险命令时将不再请求你的批准。请仅在可信环境中使用。")).toBeTruthy();
+    expect(screen.getByText("关闭后，Agent 执行高风险操作时将不再请求你的批准。请仅在可信环境中使用。")).toBeTruthy();
     expect(screen.getByRole("button", { name: "确认关闭" })).toHaveClass("bg-red-600");
 
     await user.click(screen.getByRole("button", { name: "取消" }));

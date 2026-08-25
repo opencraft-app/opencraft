@@ -224,3 +224,66 @@
 - [x] **Step 4: 展示最终范围并等待提交/MR确认。**
 
   展示改动文件、测试结果、commit message、MR 标题和描述；确认前不提交实现、不推送、不创建 MR。
+
+### Task 5: 审批说明改为高风险操作
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-common-settings-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-common-settings-panel.tsx:116-128`
+- Generated: `frontend/src/i18n/generated/{en-US,id-ID,zh-CN,zh-Hant,zh-to-key}.json`
+
+**Interfaces:**
+- Consumes: `SETTING_GROUPS` 中安全分组和 `approvalMode` 设置项的 `description`。
+- Produces: 两句中性说明与关闭审批弹窗正文统一使用「高风险操作」，不改变 `off` 常驻提示、弹窗标题或操作按钮。
+
+- [x] **Step 1: 写文案失败测试。**
+
+  在 panel 首屏测试中断言：
+
+  ```ts
+  expect(screen.getByText("管理 Agent 执行高风险操作时的审批方式。")).toBeTruthy();
+  expect(screen.getByText("设置 Agent 执行高风险操作时的审批方式。")).toBeTruthy();
+  expect(screen.getByText("关闭后，Agent 执行高风险操作时将不再请求你的批准。请仅在可信环境中使用。")).toBeTruthy();
+  expect(screen.queryByText("管理 Agent 执行危险命令时的审批方式。")).toBeNull();
+  expect(screen.queryByText("设置 Agent 遇到危险命令时如何请求审批。")).toBeNull();
+  expect(screen.queryByText("关闭后，Agent 执行危险命令时将不再请求你的批准。请仅在可信环境中使用。")).toBeNull();
+  ```
+
+- [x] **Step 2: 运行 panel 测试确认 RED。**
+
+  ```bash
+  cd frontend
+  pnpm vitest run src/pages/marketing/__tests__/agent-common-settings-panel.test.tsx -t "uses high-risk operation copy"
+  ```
+
+  Expected: 两句新文案尚未渲染，测试失败。
+
+- [x] **Step 3: 最小替换两句源文案。**
+
+  ```tsx
+  description: t("管理 Agent 执行高风险操作时的审批方式。")
+  description: t("设置 Agent 执行高风险操作时的审批方式。")
+  t("关闭后，Agent 执行高风险操作时将不再请求你的批准。请仅在可信环境中使用。")
+  ```
+
+  不修改「当前不会请求危险命令审批」、弹窗标题或操作按钮。
+
+- [x] **Step 4: 提取翻译并完成回归。**
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:check
+  pnpm i18n:zh-hant:check
+  pnpm vitest run src/pages/marketing/__tests__/agent-common-settings-panel.test.tsx
+  pnpm typecheck
+  pnpm check
+  cd ..
+  git diff --check
+  ```
+
+  Expected: panel 全部通过，i18n 与静态门禁退出 0，生成字典仅替换两句本需求文案。
+
+- [x] **Step 5: 展示增量提交范围并等待确认。**
+
+  提交信息建议：`优化审批模式说明文案 / copy(frontend): refine approval mode descriptions`。确认前不提交、不推送。
