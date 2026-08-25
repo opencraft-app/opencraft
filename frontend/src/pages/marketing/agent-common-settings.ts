@@ -5,7 +5,11 @@ export const HERMES_COMMON_SETTINGS_TIMEOUT_MS = 120_000;
 export const HERMES_COMMON_SETTINGS_JSON_START = "__LIGHTVELA_HERMES_COMMON_SETTINGS_JSON_START__";
 export const HERMES_COMMON_SETTINGS_JSON_END = "__LIGHTVELA_HERMES_COMMON_SETTINGS_JSON_END__";
 
+export const HERMES_APPROVAL_MODES = ["smart", "manual", "off"] as const;
+export type HermesApprovalMode = (typeof HERMES_APPROVAL_MODES)[number];
+
 export const HERMES_COMMON_SETTING_KEYS = [
+  "approvalMode",
   "persistentMemory",
   "userProfile",
   "autoCompression",
@@ -15,9 +19,10 @@ export const HERMES_COMMON_SETTING_KEYS = [
 ] as const;
 
 export type HermesCommonSettingKey = (typeof HERMES_COMMON_SETTING_KEYS)[number];
-export type HermesCommonSettingValue = boolean | number;
+export type HermesCommonSettingValue = boolean | number | HermesApprovalMode;
 
 export const HERMES_COMMON_SETTING_KEYS_BY_GROUP = {
+  security: ["approvalMode"],
   memory: ["persistentMemory", "userProfile"],
   context: [
     "autoCompression",
@@ -36,6 +41,7 @@ export function getHermesCommonSettingKeysForGroup(
 }
 
 export interface HermesCommonSettingsValues {
+  approvalMode: HermesApprovalMode;
   persistentMemory: boolean;
   userProfile: boolean;
   autoCompression: boolean;
@@ -55,6 +61,7 @@ export type HermesCommonSettingValidation =
   | { ok: false; reason: "empty" | "number" | "integer" | "range" | "type" };
 
 const HERMES_CONFIG_KEY_BY_SETTING: Record<HermesCommonSettingKey, string> = {
+  approvalMode: "approvals.mode",
   persistentMemory: "memory.memory_enabled",
   userProfile: "memory.user_profile_enabled",
   autoCompression: "compression.enabled",
@@ -62,6 +69,12 @@ const HERMES_CONFIG_KEY_BY_SETTING: Record<HermesCommonSettingKey, string> = {
   compressionTarget: "compression.target_ratio",
   protectedRecentMessages: "compression.protect_last_n",
 };
+
+export function requiresHermesCommonSettingGatewayRestart(
+  key: HermesCommonSettingKey,
+): boolean {
+  return key !== "approvalMode";
+}
 
 const PYTHON_COMMON_SETTINGS_READER = String.raw`import json, os, subprocess
 from pathlib import Path
@@ -94,6 +107,7 @@ if not isinstance(config_payload, dict):
     raise ValueError("Hermes config root must be a mapping")
 
 fields = {
+    "approvalMode": ("approvals.mode", "smart"),
     "persistentMemory": ("memory.memory_enabled", True),
     "userProfile": ("memory.user_profile_enabled", True),
     "autoCompression": ("compression.enabled", True),
@@ -115,6 +129,8 @@ defaulted_keys = []
 unsupported_keys = []
 
 def valid_value(field, value):
+    if field == "approvalMode":
+        return isinstance(value, str) and value in ("smart", "manual", "off")
     if field in ("persistentMemory", "userProfile", "autoCompression"):
         return isinstance(value, bool)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -144,6 +160,8 @@ for field, (dotted_key, fallback) in fields.items():
             continue
         resolved_value = json.loads(result.stdout.strip())
         if not valid_value(field, resolved_value):
+            if field == "approvalMode":
+                raise ValueError("Hermes approvals.mode returned an invalid value")
             unsupported_keys.append(field)
             continue
         values[field] = resolved_value
@@ -204,6 +222,12 @@ export function validateHermesCommonSetting(
   key: HermesCommonSettingKey,
   input: string | HermesCommonSettingValue,
 ): HermesCommonSettingValidation {
+  if (key === "approvalMode") {
+    return typeof input === "string" && HERMES_APPROVAL_MODES.includes(input as HermesApprovalMode)
+      ? { ok: true, value: input as HermesApprovalMode }
+      : { ok: false, reason: "type" };
+  }
+
   if (key === "persistentMemory" || key === "userProfile" || key === "autoCompression") {
     return typeof input === "boolean" ? { ok: true, value: input } : { ok: false, reason: "type" };
   }
