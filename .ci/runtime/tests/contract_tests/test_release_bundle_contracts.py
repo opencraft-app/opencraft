@@ -164,7 +164,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 27, "sgprod": 28},
+                    {"shprod": 28, "sgprod": 28},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -328,7 +328,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         workflow_config = yaml.safe_load(workflow) or {}
         workflow_parameters = (workflow_config.get("extends") or {}).get("parameters") or {}
         self.assertIs(workflow_parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
-        self.assertIs(workflow_parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), False)
+        self.assertIs(workflow_parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), True)
         self.assertIs(workflow_parameters.get("ENABLE_MASTER_SGPROD_DB_MIGRATION"), True)
 
         for env in ("shprod", "sgprod"):
@@ -350,23 +350,39 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/secrets/*/ctl-agentchat-secrets.sops.yaml", workflow)
         self.assertIn("argocd/secrets/*/ctl-website-runtime-secrets.sops.yaml", workflow)
 
-    def test_sgprod_website_cos_lifecycle_only_expires_temporary_artifacts(self) -> None:
-        lifecycle_path = (
-            REPO_ROOT
-            / "argocd"
-            / "services"
-            / "workers-website-deployer"
-            / "sgprod"
-            / "website-cos-lifecycle.xml"
-        )
-        self.assertTrue(lifecycle_path.is_file(), f"missing desired COS lifecycle: {lifecycle_path}")
+    def test_prod_website_cos_lifecycle_only_expires_temporary_artifacts(self) -> None:
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                lifecycle_path = (
+                    REPO_ROOT
+                    / "argocd"
+                    / "services"
+                    / "workers-website-deployer"
+                    / env
+                    / "website-cos-lifecycle.xml"
+                )
+                self.assertTrue(lifecycle_path.is_file(), f"missing desired COS lifecycle: {lifecycle_path}")
 
-        rule = ET.parse(lifecycle_path).getroot().find("Rule")
-        self.assertIsNotNone(rule)
-        self.assertEqual(rule.findtext("Status"), "Enabled")
-        self.assertEqual(rule.findtext("Filter/Prefix"), "_artifacts/")
-        self.assertEqual(rule.findtext("Expiration/Days"), "2")
-        self.assertEqual(rule.findtext("AbortIncompleteMultipartUpload/DaysAfterInitiation"), "1")
+                rule = ET.parse(lifecycle_path).getroot().find("Rule")
+                self.assertIsNotNone(rule)
+                self.assertEqual(rule.findtext("Status"), "Enabled")
+                self.assertEqual(rule.findtext("Filter/Prefix"), "_artifacts/")
+                self.assertEqual(rule.findtext("Expiration/Days"), "2")
+                self.assertEqual(rule.findtext("AbortIncompleteMultipartUpload/DaysAfterInitiation"), "1")
+
+    def test_website_deployer_builds_both_production_environments(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/workers-website-deployer.yml").read_text()) or {}
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "shprod,sgprod")
+        manifest = load_manifest()
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                bundle = require_build_metadata(load_bundle(manifest, "workers", env))
+                self.assertIn(
+                    f"argocd/services/workers-website-deployer/{env}/**",
+                    bundle.publish_paths,
+                )
 
     def test_sgprod_site_gateway_tls_binding_is_platform_owned(self) -> None:
         service_root = REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod"

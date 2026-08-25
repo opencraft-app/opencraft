@@ -21,11 +21,14 @@ value used by CTL and website-deployer. The AEAD keyring must contain
 
 Do not promote or sync this Application until all of the following are true:
 
-1. `SITE_GATEWAY_COS_BUCKET` points to the dedicated private Shanghai website bucket.
-2. `site-gateway-secrets` exists in `ctl` and its four required keys have been verified by name.
-3. Shanghai UserAuth exposes the configured OIDC issuer, authorize, token, and JWKS endpoints.
-4. `site-gateway-wildcard-tls` references the Tencent Cloud certificate covering `*.lightvela.tech`.
-5. DNS for `*.lightvela.tech` points to the Shanghai CLB created by this Ingress.
+1. CTL migration `000028` has completed and the Shanghai database is clean at schema version 28.
+2. CTL, UserAuth, and website-deployer have been promoted, synced, and verified healthy.
+3. `SITE_GATEWAY_COS_BUCKET` points to the dedicated private Shanghai website bucket, whose
+   `_artifacts/` lifecycle rule has been applied and read back.
+4. `site-gateway-secrets` exists in `ctl` and its four required keys have been verified by name.
+5. Shanghai UserAuth exposes the configured OIDC issuer, authorize, token, and JWKS endpoints.
+6. `site-gateway-wildcard-tls` references the Tencent Cloud certificate covering `*.lightvela.tech`.
+7. DNS for `*.lightvela.tech` points to the Shanghai CLB created by this Ingress.
 
 This environment deliberately leaves DSH disabled. Domestic DSH requires its own wildcard TLS,
 Federation, and HMAC prerequisites and must not be enabled as a side effect of Pages rollout.

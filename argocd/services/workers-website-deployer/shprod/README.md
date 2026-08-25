@@ -58,10 +58,15 @@ python3 scripts/export_ssm_to_sops.py \
 python3 scripts/scan_secrets.py argocd/secrets/shprod/website-deployer-secrets.sops.yaml
 ```
 
-> 当前仓库里的 `website-deployer-secrets.sops.yaml` 全部是
-> `REPLACE_ME_VIA_PROTECTED_PIPELINE` 占位符。**在完成上面的 SSM 导出之前不要执行
-> Argo sync**，否则 worker 会带着占位符启动并对 ctl 全量 401。
-> 详见 `docs/runbooks/website-deployer-shprod-rollout.md`。
+当前 SOPS snapshot 已从上海 SSM 导出。生产同步前仍需通过流水线的 SOPS/KSOPS
+渲染检查，并核对它与 CTL 使用同一个内部 Token 和 COS 凭据。
+
+## COS 生命周期门禁
+
+首次生产同步前，先读取桶的现有生命周期规则，将 `website-cos-lifecycle.xml` 中仅匹配
+`_artifacts/` 的规则合并后写入，再读回确认：临时 ZIP 两天过期，未完成分块上传一天终止。
+`PutBucketLifecycle` 会覆盖桶的完整生命周期配置，因此禁止直接覆盖已有规则，也禁止让
+`sites/` 前缀进入过期范围。
 
 ## 与 source overlay 的同步义务
 

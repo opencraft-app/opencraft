@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LifecycleConfiguration>
+  <Rule>
+    <ID>cleanup-abandoned-website-artifacts</ID>
+    <Status>Enabled</Status>
+    <Filter>
+      <Prefix>_artifacts/</Prefix>
+    </Filter>
+    <Expiration>
+      <Days>2</Days>
+    </Expiration>
+    <AbortIncompleteMultipartUpload>
+      <DaysAfterInitiation>1</DaysAfterInitiation>
+    </AbortIncompleteMultipartUpload>
+  </Rule>
+</LifecycleConfiguration>
