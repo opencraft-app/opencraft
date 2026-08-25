@@ -461,7 +461,10 @@ type placeOrderResponse struct {
 
 type grantDianshiSubscriptionRequest struct {
 	placeOrderRequest
-	ActID int64 `json:"actId"`
+	ActivityID   int64  `json:"activityId"`
+	ActID        int64  `json:"actId"`
+	TimeSpanUnit string `json:"timeSpanUnit"`
+	SecretKey    string `json:"secretKey"`
 }
 
 type grantDianshiSubscriptionResponse struct {
@@ -590,7 +593,12 @@ func grantDianshiSubscriptionHandler(svc *placeorder.Service) gin.HandlerFunc {
 			TimeUnit:       req.TimeUnit,
 			GoodsNum:       req.GoodsNum,
 			PayMode:        req.PayMode,
-		}, req.ActID)
+		}, placeorder.DianshiGrantCampaign{
+			ActivityID:   req.ActivityID,
+			ActID:        req.ActID,
+			TimeSpanUnit: req.TimeSpanUnit,
+			SecretKey:    req.SecretKey,
+		})
 		if err != nil {
 			code, status := classifyPlaceOrderError(err)
 			c.JSON(status, gin.H{"code": code, "message": err.Error()})

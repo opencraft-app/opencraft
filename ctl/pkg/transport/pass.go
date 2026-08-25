@@ -323,7 +323,10 @@ type CreateDianshiPassOrderAndPayResult struct {
 type GrantDianshiSubscriptionRequest struct {
 	ExternalUserID string `json:"external_user_id"`
 	BundleID       string `json:"bundle_id"`
+	ActivityID     int64  `json:"activity_id"`
 	ActID          int64  `json:"act_id"`
+	TimeSpanUnit   string `json:"time_span_unit"`
+	SecretKey      string `json:"secret_key"`
 }
 
 type GrantDianshiSubscriptionResult struct {

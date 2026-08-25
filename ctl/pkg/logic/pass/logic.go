@@ -1876,13 +1876,23 @@ func (l *logic) GrantDianshiSubscription(userID string, req *transport.GrantDian
 	if req == nil {
 		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
 	}
+	if req.ActivityID <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "activity_id must be > 0")
+	}
 	if req.ActID <= 0 {
 		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "act_id must be > 0")
 	}
+	if strings.TrimSpace(req.SecretKey) == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "secret_key is required")
+	}
+	period, timeUnit, err := parseDianshiTimeSpanUnit(req.TimeSpanUnit)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "%s", err.Error())
+	}
 	placeReq, logger, err := l.prepareCreatePassOrder(userID, &transport.CreatePassOrderRequest{
 		BundleID: req.BundleID,
-		Period:   1,
-		TimeUnit: bundlemodel.TimeUnitMonth,
+		Period:   period,
+		TimeUnit: timeUnit,
 	}, "grant_dianshi_subscription")
 	if err != nil {
 		if errors.Is(err, errcode.ErrPassAlreadyExists) {
@@ -1899,7 +1909,10 @@ func (l *logic) GrantDianshiSubscription(userID string, req *transport.GrantDian
 	defer cancel()
 	result, err := tradeAdapter.GrantDianshiSubscription(grantCtx, &tradeadapter.GrantDianshiSubscriptionRequest{
 		PlaceOrderRequest: *placeReq,
+		ActivityID:        req.ActivityID,
 		ActID:             req.ActID,
+		TimeSpanUnit:      fmt.Sprintf("%d%s", period, timeUnit),
+		SecretKey:         strings.TrimSpace(req.SecretKey),
 	})
 	if err != nil {
 		logger.Warn("grant Dianshi subscription failed", zap.Error(err))
@@ -1916,6 +1929,31 @@ func (l *logic) GrantDianshiSubscription(userID string, req *transport.GrantDian
 		DealName:   result.DealName,
 		BigOrderID: result.BigOrderID,
 	}, nil
+}
+
+func parseDianshiTimeSpanUnit(value string) (int, string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, "", fmt.Errorf("time_span_unit is required")
+	}
+	digitEnd := 0
+	for digitEnd < len(value) && value[digitEnd] >= '0' && value[digitEnd] <= '9' {
+		digitEnd++
+	}
+	if digitEnd == 0 || digitEnd == len(value) {
+		return 0, "", fmt.Errorf("time_span_unit must look like 1m or 14d")
+	}
+	period, err := strconv.Atoi(value[:digitEnd])
+	if err != nil || period <= 0 {
+		return 0, "", fmt.Errorf("time_span_unit period must be positive")
+	}
+	unit := strings.ToLower(value[digitEnd:])
+	for _, char := range unit {
+		if char < 'a' || char > 'z' {
+			return 0, "", fmt.Errorf("time_span_unit must look like 1m or 14d")
+		}
+	}
+	return period, unit, nil
 }
 
 // prepareCreatePassOrder CreatePassOrder / CreatePassOrderAndPay 共享前置流程。

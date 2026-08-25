@@ -16,9 +16,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, TextIO
 
 
-DEFAULT_BUNDLE_ID = "bundle_launch_ai_01"
-DEFAULT_ACT_ID = 142123551192174
 USER_ID_RE = re.compile(r"^usr_[0-9a-f]+$")
+TIME_SPAN_UNIT_RE = re.compile(r"^[1-9][0-9]*[A-Za-z]+$")
 TERMINAL_AUTH_STATUSES = {"failed", "disabled"}
 
 
@@ -108,11 +107,26 @@ class InternalClient:
         query = urllib.parse.urlencode({"external_user_id": user_id})
         return self._request("GET", self.auth_base_url + "/internal/shadow/binding/state?" + query)
 
-    def grant(self, user_id: str, bundle_id: str, act_id: int) -> dict[str, Any]:
+    def grant(
+        self,
+        user_id: str,
+        bundle_id: str,
+        activity_id: int,
+        act_id: int,
+        time_span_unit: str,
+        campaign_key: str,
+    ) -> dict[str, Any]:
         return self._request(
             "POST",
             self.ctl_base_url + "/internal/ctl/subscriptions/dianshi/grant",
-            {"external_user_id": user_id, "bundle_id": bundle_id, "act_id": act_id},
+            {
+                "external_user_id": user_id,
+                "bundle_id": bundle_id,
+                "activity_id": activity_id,
+                "act_id": act_id,
+                "time_span_unit": time_span_unit,
+                "secret_key": campaign_key,
+            },
         )
 
 
@@ -145,7 +159,10 @@ def process_user(
     client: InternalClient,
     user_id: str,
     bundle_id: str,
+    activity_id: int,
     act_id: int,
+    time_span_unit: str,
+    campaign_key: str,
     *,
     timeout: float,
     poll_interval: float,
@@ -160,7 +177,7 @@ def process_user(
         raise UserPhaseError("auth", str(exc)) from exc
 
     try:
-        granted = client.grant(user_id, bundle_id, act_id)
+        granted = client.grant(user_id, bundle_id, activity_id, act_id, time_span_unit, campaign_key)
     except Exception as exc:
         raise UserPhaseError("grant", str(exc)) from exc
     status = str(granted.get("status", "")).strip().lower()
@@ -178,7 +195,10 @@ def run_batch(
     user_ids: list[str],
     invalid_user_ids: list[str],
     bundle_id: str,
+    activity_id: int,
     act_id: int,
+    time_span_unit: str,
+    campaign_key: str,
     *,
     timeout: float,
     poll_interval: float,
@@ -195,7 +215,10 @@ def run_batch(
                 client,
                 user_id,
                 bundle_id,
+                activity_id,
                 act_id,
+                time_span_unit,
+                campaign_key,
                 timeout=timeout,
                 poll_interval=poll_interval,
                 sleep=sleep,
@@ -213,18 +236,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--auth-base-url", default=os.getenv("AUTH_INTERNAL_BASE_URL", ""))
     parser.add_argument("--ctl-base-url", default=os.getenv("CTL_INTERNAL_BASE_URL", ""))
     parser.add_argument("--token", default=os.getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", ""))
-    parser.add_argument("--bundle-id", default=DEFAULT_BUNDLE_ID)
-    parser.add_argument("--act-id", type=int, default=DEFAULT_ACT_ID)
+    parser.add_argument("--bundle-id", required=True)
+    parser.add_argument("--activity-id", type=int, required=True)
+    parser.add_argument("--act-id", type=int, required=True)
+    parser.add_argument("--time-span-unit", required=True)
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--poll-interval", type=float, default=2)
     parser.add_argument("--request-timeout", type=float, default=30)
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.campaign_key = os.getenv("DIANSHI_ACTIVITY_SECRET_KEY", "").strip()
+    return args
 
 
 def main() -> int:
     args = parse_args()
-    if args.act_id <= 0 or args.timeout <= 0 or args.poll_interval < 0 or args.request_timeout <= 0:
-        raise SystemExit("act-id and timeouts must be positive; poll-interval may be zero")
+    if args.activity_id <= 0 or args.act_id <= 0:
+        raise SystemExit("activity-id and act-id must be positive")
+    if not TIME_SPAN_UNIT_RE.fullmatch(args.time_span_unit.strip()):
+        raise SystemExit("time-span-unit must look like 1m or 14d")
+    if not args.campaign_key:
+        raise SystemExit("DIANSHI_ACTIVITY_SECRET_KEY is required")
+    if args.timeout <= 0 or args.poll_interval < 0 or args.request_timeout <= 0:
+        raise SystemExit("timeouts must be positive; poll-interval may be zero")
     with args.input.open("r", encoding="utf-8") as source:
         user_ids, invalid = parse_user_ids(source)
     client = InternalClient(
@@ -238,7 +271,10 @@ def main() -> int:
         user_ids,
         invalid,
         args.bundle_id,
+        args.activity_id,
         args.act_id,
+        args.time_span_unit.strip(),
+        args.campaign_key,
         timeout=args.timeout,
         poll_interval=args.poll_interval,
     )
