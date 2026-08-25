@@ -420,7 +420,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         bundle = (REPO_ROOT / ".ci" / "runtime" / "bundles" / "site-gateway.bundle").read_text()
         self.assertIn("site-gateway/docs", bundle)
 
-    def test_site_gateway_dsh_tat_proxy_is_shipped_disabled(self) -> None:
+    def test_site_gateway_dsh_tat_proxy_is_opt_in_for_sgprod(self) -> None:
         base_manifest = REPO_ROOT / "site-gateway" / "k8s" / "base" / "manifests.yaml"
         documents = list(yaml.safe_load_all(base_manifest.read_text()))
         config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
@@ -464,10 +464,44 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 for key, separator, value in [line.partition("=")]
                 if separator
             }
-            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_DOMAINS"), "")
-            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_FEDERATION_BASE_URL"), "")
-            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"), "")
-            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_FEDERATION_KEY_ID"), "")
+            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_DOMAINS"), "dsh.lightvela.site")
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_BASE_URL"),
+                "http://lightclaw-auth.user-auth.svc.cluster.local",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"),
+                "personal-site",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_KEY_ID"),
+                "federation-client-sg-20260824-1",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_WILDCARD_HOST"),
+                "*.dsh.lightvela.site",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_TLS_SECRET_NAME"),
+                "site-gateway-dsh-wildcard-tls",
+            )
+
+        deploy_kustomization = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd"
+                / "services"
+                / "site-gateway"
+                / "sgprod"
+                / "kustomization.yaml"
+            ).read_text()
+        )
+        replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in deploy_kustomization["replacements"]
+        }
+        self.assertIn("data.SITE_GATEWAY_DSH_WILDCARD_HOST", replacement_sources)
+        self.assertIn("data.SITE_GATEWAY_DSH_TLS_SECRET_NAME", replacement_sources)
 
         source_root = REPO_ROOT / "site-gateway" / "internal"
         for relative in (
