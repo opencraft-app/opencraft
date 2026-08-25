@@ -11,6 +11,7 @@ import { saveHermesCommonSetting } from "../agent-common-settings-save";
 
 const snapshot = (threshold = 0.65): HermesCommonSettingsSnapshot => ({
   values: {
+    approvalMode: "off",
     persistentMemory: true,
     userProfile: true,
     autoCompression: true,
@@ -31,6 +32,39 @@ const succeeded = (output = "") => ({ status: "Succeeded", exitCode: 0, output }
 const failed = (output: string) => ({ status: "Failed", exitCode: 1, output });
 
 describe("saveHermesCommonSetting", () => {
+  it("writes and verifies approval mode without restarting Gateway", async () => {
+    const approvalSnapshot: HermesCommonSettingsSnapshot = {
+      ...snapshot(),
+      values: { ...snapshot().values, approvalMode: "smart" },
+    };
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded([
+        HERMES_COMMON_SETTINGS_JSON_START,
+        JSON.stringify(approvalSnapshot),
+        HERMES_COMMON_SETTINGS_JSON_END,
+      ].join("\n")));
+    const getGatewayRestartCommand = vi.fn(async () => "hermes gateway restart");
+
+    const result = await saveHermesCommonSetting({
+      bots: { execDebugCommand } as Pick<BotRepository, "execDebugCommand"> as BotRepository,
+      botId: "bot-a",
+      key: "approvalMode",
+      value: "smart",
+      getGatewayRestartCommand,
+    });
+
+    expect(result).toMatchObject({ status: "success", snapshot: { values: { approvalMode: "smart" } } });
+    expect(execDebugCommand).toHaveBeenNthCalledWith(
+      1,
+      "bot-a",
+      "hermes config set approvals.mode smart",
+      { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
+    );
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
+    expect(getGatewayRestartCommand).not.toHaveBeenCalled();
+  });
+
   it("writes config, restarts Gateway, and rereads before reporting success", async () => {
     const execDebugCommand = vi.fn()
       .mockResolvedValueOnce(succeeded())

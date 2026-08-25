@@ -13,6 +13,7 @@ const snapshot = (
   defaultedKeys: HermesCommonSettingsSnapshot["defaultedKeys"] = [],
 ): HermesCommonSettingsSnapshot => ({
   values: {
+    approvalMode: "off",
     persistentMemory: true,
     userProfile: true,
     autoCompression: true,
@@ -37,6 +38,37 @@ const botsWith = (execDebugCommand: ReturnType<typeof vi.fn>) => (
 );
 
 describe("resetHermesCommonSettingsGroup", () => {
+  it("restores the security group without restarting Gateway", async () => {
+    const verified = snapshot(["approvalMode"]);
+    verified.values.approvalMode = "smart";
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded([
+        HERMES_COMMON_SETTINGS_JSON_START,
+        JSON.stringify(verified),
+        HERMES_COMMON_SETTINGS_JSON_END,
+      ].join("\n")));
+    const getGatewayRestartCommand = vi.fn(async () => "hermes gateway restart");
+
+    const result = await resetHermesCommonSettingsGroup({
+      bots: botsWith(execDebugCommand),
+      botId: "bot-a",
+      group: "security",
+      snapshot: snapshot(),
+      getGatewayRestartCommand,
+    });
+
+    expect(result).toMatchObject({ status: "success", snapshot: { values: { approvalMode: "smart" } } });
+    expect(execDebugCommand).toHaveBeenNthCalledWith(
+      1,
+      "bot-a",
+      "hermes config unset approvals.mode",
+      { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
+    );
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
+    expect(getGatewayRestartCommand).not.toHaveBeenCalled();
+  });
+
   it("resets only the memory group, restarts once, and verifies defaults", async () => {
     const execDebugCommand = vi.fn()
       .mockResolvedValueOnce(succeeded())

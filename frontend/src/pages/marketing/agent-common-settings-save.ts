@@ -4,6 +4,7 @@ import {
   HERMES_COMMON_SETTINGS_TIMEOUT_MS,
   buildHermesCommonSettingCommand,
   fetchHermesCommonSettingsSnapshot,
+  requiresHermesCommonSettingGatewayRestart,
   type HermesCommonSettingKey,
   type HermesCommonSettingValue,
   type HermesCommonSettingsSnapshot,
@@ -47,14 +48,16 @@ export async function saveHermesCommonSetting(
     }
     configSaved = true;
 
-    const restartCommand = await getGatewayRestartCommand();
-    const restartResult = await bots.execDebugCommand(
-      botId,
-      restartCommand,
-      { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
-    );
-    if (!isExecCommandSucceeded(restartResult)) {
-      throw commandError("restart", restartResult.output, restartResult.status);
+    if (requiresHermesCommonSettingGatewayRestart(key)) {
+      const restartCommand = await getGatewayRestartCommand();
+      const restartResult = await bots.execDebugCommand(
+        botId,
+        restartCommand,
+        { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
+      );
+      if (!isExecCommandSucceeded(restartResult)) {
+        throw commandError("restart", restartResult.output, restartResult.status);
+      }
     }
 
     const snapshot = await fetchHermesCommonSettingsSnapshot(bots, botId);
