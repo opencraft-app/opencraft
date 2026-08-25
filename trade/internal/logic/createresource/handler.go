@@ -731,6 +731,13 @@ func insertDianshiParticipation(
 	if bigDealNo == "" {
 		bigDealNo = extractStringFromGoodsDetail(para.GoodsDetail, "dianshi_big_deal_no")
 	}
+	actID := int64(extractIntFromGoodsDetail(para.GoodsDetail, "dianshiActId"))
+	if actID <= 0 {
+		actID = int64(extractIntFromGoodsDetail(para.GoodsDetail, "dianshi_act_id"))
+	}
+	if actID <= 0 {
+		actID = mapping.ActID
+	}
 
 	row := &store.UserActivityParticipation{
 		Uin:            para.Uin,
@@ -738,7 +745,7 @@ func insertDianshiParticipation(
 		ExternalUserID: externalUserID,
 		ActivityID:     mapping.ActivityID,
 		BundleID:       bundleID,
-		ActID:          mapping.ActID,
+		ActID:          actID,
 		DealName:       para.DealName,
 		BigDealNo:      bigDealNo,
 	}

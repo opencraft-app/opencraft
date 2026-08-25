@@ -250,7 +250,7 @@ type fakeOrderStore struct {
 	getProvisionedCreateOrderByResourceIDFn func(ctx context.Context, resourceID string) (*store.TradeOrder, error)
 }
 
-func (f *fakeOrderStore) FindReusableDianshiOrder(context.Context, string, int64, string, time.Time) (*store.TradeOrder, error) {
+func (f *fakeOrderStore) FindReusableDianshiOrder(context.Context, string, int64, string, int64, time.Time) (*store.TradeOrder, error) {
 	return nil, store.ErrTradeOrderNotFound
 }
 
@@ -867,6 +867,49 @@ func TestPlaceDianshiOrderAndPay_RequiresActivity(t *testing.T) {
 func TestPlaceDianshiOrderAndPay_AuthRequired(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/place-and-pay", map[string]any{}, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGrantDianshiSubscription_HappyPath(t *testing.T) {
+	env := newTestEnv(t)
+	env.activity.mapping = &activity.Mapping{
+		BundleID:         "b1",
+		ActivityID:       1001,
+		ActID:            2001,
+		Active:           true,
+		TimeSpanUnit:     "1m",
+		OrderExpiredTime: 1,
+	}
+	env.activity.use = true
+
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/subscriptions/grant", map[string]any{
+		"externalUserId": "user-1",
+		"uin":            "1000",
+		"appId":          "10001",
+		"bundleId":       "b1",
+		"period":         1,
+		"timeUnit":       "m",
+		"goodsNum":       1,
+		"payMode":        1,
+		"actId":          142123551192174,
+	}, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	resp := decodeBody(t, rec)
+	if resp["status"] != "granted" || resp["dealName"] != "dianshi-deal-1" || resp["bigOrderId"] != "dianshi-big-1" {
+		t.Fatalf("unexpected response: %v", resp)
+	}
+	if got := env.orderWriter.lastCreateOrderInput.ActID; got != 142123551192174 {
+		t.Fatalf("persisted actID=%d", got)
+	}
+}
+
+func TestGrantDianshiSubscription_AuthRequired(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/subscriptions/grant", map[string]any{}, false)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}

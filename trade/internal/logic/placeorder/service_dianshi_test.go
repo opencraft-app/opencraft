@@ -194,11 +194,14 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	if prefParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
 		t.Errorf("preference_param.externalUserId=%v want %s", prefParam["externalUserId"], stdPlaceOrderReq().ExternalUserID)
 	}
+	if got, _ := prefParam["dianshiActId"].(int64); got != stdActivityMapping().ActID {
+		t.Errorf("preference_param.dianshiActId=%v want %d", prefParam["dianshiActId"], stdActivityMapping().ActID)
+	}
 }
 
 func TestPlaceOrder_DianshiBranch_ReusesPendingOrder(t *testing.T) {
 	d, _, dc := newDianshiDeps()
-	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*store.TradeOrder, error) {
+	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, createdAfter time.Time) (*store.TradeOrder, error) {
 		if externalUserID != stdPlaceOrderReq().ExternalUserID {
 			t.Errorf("externalUserID=%q", externalUserID)
 		}
@@ -207,6 +210,9 @@ func TestPlaceOrder_DianshiBranch_ReusesPendingOrder(t *testing.T) {
 		}
 		if bundleID != stdPlaceOrderReq().BundleID {
 			t.Errorf("bundleID=%q", bundleID)
+		}
+		if actID != stdActivityMapping().ActID {
+			t.Errorf("actID=%d", actID)
 		}
 		return &store.TradeOrder{
 			DealName:    "20260629004153859479231",
@@ -239,7 +245,7 @@ func TestPlaceOrder_DianshiBranch_OrderExpiredTimeHalfHour(t *testing.T) {
 	d, r, dc := newDianshiDeps()
 	r.mapping.OrderExpiredTime = 0.5
 	var createdAfter time.Time
-	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, ca time.Time) (*store.TradeOrder, error) {
+	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, ca time.Time) (*store.TradeOrder, error) {
 		createdAfter = ca
 		return nil, store.ErrTradeOrderNotFound
 	}
@@ -448,6 +454,45 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	}
 	if dc.lastDoGoodsAndPay == nil || dc.lastDoGoodsAndPay.Goods[0].PreferenceParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
 		t.Errorf("DoGoodsAndPay request=%+v", dc.lastDoGoodsAndPay)
+	}
+}
+
+func TestGrantDianshiSubscriptionOverridesOnlyActID(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+	original := *r.mapping
+	const grantActID int64 = 142123551192174
+
+	res, err := d.service.GrantDianshiSubscription(context.Background(), stdPlaceOrderReq(), grantActID)
+	if err != nil {
+		t.Fatalf("GrantDianshiSubscription err=%v", err)
+	}
+	if res == nil || res.Status != DianshiGrantStatusGranted || res.DealName == "" {
+		t.Fatalf("unexpected grant result: %+v", res)
+	}
+	if *r.mapping != original {
+		t.Fatalf("resolver mapping was mutated: got=%+v want=%+v", r.mapping, original)
+	}
+	if got := dc.lastDoGoodsAndPay.Goods[0].ActID; got != grantActID {
+		t.Fatalf("Dianshi actID=%d want %d", got, grantActID)
+	}
+	if got := d.writer.lastCreateOrderInput.ActID; got != grantActID {
+		t.Fatalf("persisted actID=%d want %d", got, grantActID)
+	}
+}
+
+func TestGrantDianshiSubscriptionSkipsExistingParticipation(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+	r.useDianshi = false
+
+	res, err := d.service.GrantDianshiSubscription(context.Background(), stdPlaceOrderReq(), 142123551192174)
+	if err != nil {
+		t.Fatalf("GrantDianshiSubscription err=%v", err)
+	}
+	if res == nil || res.Status != DianshiGrantStatusSkipped {
+		t.Fatalf("unexpected grant result: %+v", res)
+	}
+	if dc.doGoodsAndPayCalls.Load() != 0 || d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("skip must not place or persist order")
 	}
 }
 
