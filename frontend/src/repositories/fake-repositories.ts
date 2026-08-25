@@ -864,6 +864,38 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
         paymentMethods = paymentMethods.filter((method) => method.contractCode !== contractCode);
       },
+      async getFederationAuthorizationContext(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const session = readStoredAuthSession();
+        return {
+          ...input,
+          clientDisplayName: "Personal Site",
+          currentSession: session ? {
+            user: {
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+              phone: session.user.phone,
+              avatarUrl: session.user.avatarUrl,
+            },
+          } : null,
+        };
+      },
+      async issueFederationTicket(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        if (!readStoredAuthSession()) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL(input.redirectUri);
+        redirectUrl.searchParams.set("ticket", "fake-federation-ticket");
+        if (input.state) {
+          redirectUrl.searchParams.set("state", input.state);
+        }
+        return {
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 5_000).toISOString(),
+        };
+      },
       async getOIDCAuthorizationContext(input) {
         await wait(NETWORK_DELAY_MS / 2);
         const session = readStoredAuthSession();
