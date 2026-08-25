@@ -2,18 +2,20 @@
 
 ## Summary
 
-**Advanced Settings lets you control how your Hermes Agent manages memory and conversation context.**
-You can manage persistent memory, user profile, and automatic compression for long conversations, then choose when compression starts, how much recent content it keeps, and how many recent messages always remain intact.
-After a setting is saved successfully, LightVela restarts the Gateway and reads the configuration again to confirm the new value.
+**Advanced Settings lets you control how your Hermes Agent manages safety, memory, and conversation context.**
+You can choose how the Agent requests approval for high-risk operations, manage persistent memory, user profile, and automatic compression for long conversations, then choose when compression starts, how much recent content it keeps, and how many recent messages always remain intact.
+After Approval Mode is saved, LightVela reads the configuration back to confirm the new value.
+After a Memory or Context Management setting is saved, LightVela restarts the related service and reads the configuration back to confirm the new value.
 
 ![Advanced Settings in the LightVela console](../images/setting-1-en.png)
 
 ## This page covers
 
+- Managing how the Agent requests approval for high-risk operations.
 - Managing persistent memory and user profile.
 - Managing automatic compression for long conversations.
 - Setting the compression threshold, retained-content ratio, and protected recent-message count.
-- Restoring the defaults for either the Memory or Context Management group.
+- Restoring the defaults for the Security, Memory, or Context Management group.
 
 ## Before you start
 
@@ -27,6 +29,7 @@ When an Agent is not running, you can view its current values but cannot change 
 
 | Group | Setting | What it does |
 | --- | --- | --- |
+| Security | Approval Mode | Choose Smart, Always Ask, or Off to control how the Agent requests approval for high-risk operations. |
 | Memory | Persistent Memory | Lets the Agent read and update its long-term memory in later conversations. |
 | Memory | User Profile | Lets the Agent record and use your preferences, communication style, and habits. |
 | Context Management | Automatic Compression | Summarizes older content when a long conversation approaches the context limit. |
@@ -35,6 +38,15 @@ When an Agent is not running, you can view its current values but cannot change 
 | Context Management | Protected Recent Messages | Sets the number of recent messages that stay intact during compression, with a minimum of 1. |
 
 ## Change a setting
+
+### Approval Mode
+
+1. In the **Approval Mode** list, select Smart, Always Ask, or Off.
+2. If you select Off, read the risk warning and confirm that you want to turn approvals off.
+3. Wait for the page to read the configuration back and confirm that it shows the mode you selected.
+
+When approvals are Off, the Agent no longer requests your approval for high-risk operations and the page continues to show a risk warning.
+Use Off only in a trusted environment.
 
 ### Switch settings
 
@@ -56,18 +68,21 @@ You can change the compression threshold, retention ratio, and protected-message
 
 ## Restore defaults
 
-Advanced Settings provides **Restore defaults** separately for the **Memory** and **Context Management** groups.
+Advanced Settings provides **Restore defaults** separately for the **Security**, **Memory**, and **Context Management** groups.
 
 1. In the group you want to reset, select **Restore defaults**.
 2. Read the confirmation message.
 3. Confirm the restore.
 
 Restoring defaults removes custom values only from the selected group and returns that group to the Hermes Agent defaults.
-It does not affect the other group or delete existing Agent memory.
+Restoring the Security group returns Approval Mode to **Smart**.
+It does not affect the other groups or delete existing Agent memory.
 
 ## Confirm the change
 
 After a save or restore succeeds, the page shows the values read back from the Agent.
+Saving Approval Mode does not restart the related service, and the page reads the value back directly.
+Saving or restoring Memory and Context Management settings restarts the related service and reads the configuration back.
 After changing automatic compression, continue a longer conversation to confirm that the Agent follows the new context-management rules.
 After changing memory settings, observe later conversations to confirm that the Agent uses memory and preferences as expected.
 
@@ -94,7 +109,13 @@ The protected recent-message count must be an integer of at least 1.
 Those values apply only while Automatic Compression is on.
 Turn it back on before changing them.
 
+### When should I turn off approvals?
+
+When approvals are Off, high-risk operations no longer request your approval.
+Unless you are performing deliberate automation in a trusted environment, keep Smart selected or choose Always Ask.
+
 ### What should I do if saving reports a restart or verification failure?
 
-The configuration may already be written, but the Gateway restart or configuration read-back did not finish.
+If you changed a Memory or Context Management setting, the configuration may already be written, but the related service restart or configuration read-back did not finish.
+If you changed Approval Mode, the configuration may already be written, but the page may not have finished verifying the read-back value.
 Refresh the page to check the displayed value, then decide whether to try again.

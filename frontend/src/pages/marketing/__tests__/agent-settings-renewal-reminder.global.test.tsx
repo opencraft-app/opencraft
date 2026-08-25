@@ -25,6 +25,7 @@ vi.mock("@/i18n/t", () => {
       "剩余 {{days}} 天到期": "{{days}} days left",
       "剩余 {{hours}} 小时到期": "{{hours}} hours left",
       "剩余不足 1 小时到期": "Less than 1 hour left",
+      "高级设置": "Advanced Settings",
     };
     const mapped = translations[text] ?? text;
     return mapped.replace(/\{\{\s*(\w+)\s*\}\}/g, (raw, name: string) => {
@@ -114,6 +115,10 @@ vi.mock("@/pages/marketing/agent-skills-panel", () => ({
   HermesAgentSkillsPanel: () => <div>Skills panel</div>,
 }));
 
+vi.mock("@/pages/marketing/agent-common-settings-panel", () => ({
+  AgentCommonSettingsPanel: () => <div>Global common settings panel</div>,
+}));
+
 const createNavigation = (): AppNavigationValue => ({
   Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>,
   navigate: vi.fn(),
@@ -147,9 +152,9 @@ const buildPass = (): Pass => ({
   credit_available: 900,
 });
 
-const renderAgentSettingsPage = () => render(
+const renderAgentSettingsPage = (sectionId: "skill" | "settings" = "skill") => render(
   <AppNavigationProvider value={createNavigation()}>
-    <AgentSettingsPage sectionId="skill" showHeader={false} />
+    <AgentSettingsPage sectionId={sectionId} showHeader={false} />
   </AppNavigationProvider>,
 );
 
@@ -191,10 +196,16 @@ describe("AgentSettingsPage global renewal reminder", () => {
     vi.useRealTimers();
   });
 
-  it("does not expose the domestic common settings navigation entry", () => {
+  it("exposes the advanced settings navigation entry", () => {
     renderAgentSettingsPage();
 
-    expect(screen.queryByText("高级设置")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Advanced Settings" })).toHaveAttribute("href", "/agents/settings");
+  });
+
+  it("mounts the advanced settings panel on the global site", async () => {
+    renderAgentSettingsPage("settings");
+
+    expect(await screen.findByText("Global common settings panel")).toBeInTheDocument();
   });
 
   it("renders the global renewal reminder as a static compact badge", () => {

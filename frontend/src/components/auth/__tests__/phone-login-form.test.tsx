@@ -127,8 +127,8 @@ describe("PhoneLoginForm", () => {
     const phoneError = screen.getByText("请输入正确的中国大陆手机号。");
     expect(phoneInput).toHaveAttribute("aria-invalid", "true");
     expect(phoneInput).toHaveAttribute("aria-describedby", phoneError.id);
-    expect(phoneInput).toHaveClass("!border-[#D92D20]/60");
-    expect(phoneInput).toHaveStyle({ borderColor: "rgba(217, 45, 32, 0.6)" });
+    expect(phoneInput).toHaveClass("!border-[color-mix(in_oklab,var(--danger)_60%,transparent)]");
+    expect(phoneInput).toHaveStyle({ borderColor: "rgba(207, 61, 76, 0.6)" });
     expect(phoneInput.parentElement).toContainElement(phoneError);
   });
 
@@ -143,8 +143,8 @@ describe("PhoneLoginForm", () => {
     const codeError = screen.getByText("请输入正确的短信验证码。");
     expect(codeInput).toHaveAttribute("aria-invalid", "true");
     expect(codeInput).toHaveAttribute("aria-describedby", codeError.id);
-    expect(codeInput).toHaveClass("!border-[#D92D20]/60");
-    expect(codeInput).toHaveStyle({ borderColor: "rgba(217, 45, 32, 0.6)" });
+    expect(codeInput).toHaveClass("!border-[color-mix(in_oklab,var(--danger)_60%,transparent)]");
+    expect(codeInput).toHaveStyle({ borderColor: "rgba(207, 61, 76, 0.6)" });
     expect(codeInput.parentElement?.parentElement).toContainElement(codeError);
   });
 });

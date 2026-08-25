@@ -138,6 +138,7 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/orders", placeOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/place-and-pay", placeOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/dianshi/orders/place-and-pay", placeDianshiOrderAndPayHandler(deps.PlaceOrder))
+	group.POST("/dianshi/subscriptions/grant", grantDianshiSubscriptionHandler(deps.PlaceOrder))
 	group.POST("/orders/move-in", moveInOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew", placeRenewOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew/place-and-pay", placeRenewOrderAndPayHandler(deps.PlaceOrder))
@@ -458,6 +459,17 @@ type placeOrderResponse struct {
 	ExpireAt   string `json:"expireAt,omitempty"`
 }
 
+type grantDianshiSubscriptionRequest struct {
+	placeOrderRequest
+	ActID int64 `json:"actId"`
+}
+
+type grantDianshiSubscriptionResponse struct {
+	Status     string `json:"status"`
+	DealName   string `json:"dealName,omitempty"`
+	BigOrderID string `json:"bigOrderId,omitempty"`
+}
+
 func placeOrderHandler(svc *placeorder.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req placeOrderRequest
@@ -556,6 +568,36 @@ func placeDianshiOrderAndPayHandler(svc *placeorder.Service) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, placeOrderResponse{
+			DealName:   res.DealName,
+			BigOrderID: res.BigOrderID,
+		})
+	}
+}
+
+func grantDianshiSubscriptionHandler(svc *placeorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req grantDianshiSubscriptionRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "decode JSON: " + err.Error()})
+			return
+		}
+		res, err := svc.GrantDianshiSubscription(c.Request.Context(), placeorder.PlaceOrderRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleID:       req.BundleID,
+			Period:         req.Period,
+			TimeUnit:       req.TimeUnit,
+			GoodsNum:       req.GoodsNum,
+			PayMode:        req.PayMode,
+		}, req.ActID)
+		if err != nil {
+			code, status := classifyPlaceOrderError(err)
+			c.JSON(status, gin.H{"code": code, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, grantDianshiSubscriptionResponse{
+			Status:     res.Status,
 			DealName:   res.DealName,
 			BigOrderID: res.BigOrderID,
 		})

@@ -13,6 +13,7 @@ vi.mock("@/i18n/t", () => ({
 
 // 当前语言可变，供不同用例切换（en-US / zh-CN / zh-SG / zh-Hant / id-ID）
 let mockLanguage = "en-US";
+let mockIsGlobal = true;
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -25,7 +26,9 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("@/lib/region", () => ({
-  isGlobal: true,
+  get isGlobal() {
+    return mockIsGlobal;
+  },
   localizedPath: (path: string, locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID") => {
     const lang =
       locale === "zh-CN"
@@ -43,6 +46,7 @@ vi.mock("@/lib/region", () => ({
 
 beforeEach(() => {
   mockLanguage = "en-US";
+  mockIsGlobal = true;
 });
 
 afterEach(() => {
@@ -86,7 +90,7 @@ describe("LightVelaFooter", () => {
     expect(companySection).not.toBeNull();
     const company = within(companySection as HTMLElement);
     expect(company.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/en/about");
-    expect(company.getByRole("link", { name: "帮助与反馈" })).toHaveAttribute("href", "/en/support");
+    expect(company.queryByRole("link", { name: "帮助与反馈" })).not.toBeInTheDocument();
     expect(company.getByRole("link", { name: "隐私政策" })).toHaveAttribute("href", "/en/privacy-policy");
     expect(company.getByRole("link", { name: "服务条款" })).toHaveAttribute("href", "/en/terms-of-service");
     expect(company.getByRole("link", { name: "开源声明" })).toHaveAttribute(
@@ -161,6 +165,7 @@ describe("LightVelaFooter", () => {
     const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
     const company = within(companySection as HTMLElement);
     expect(company.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/zh-hant/about");
+    expect(company.queryByRole("link", { name: "帮助与反馈" })).not.toBeInTheDocument();
     expect(company.getByRole("link", { name: "隐私政策" })).toHaveAttribute(
       "href",
       "/zh-hant/privacy-policy",
@@ -179,5 +184,22 @@ describe("LightVelaFooter", () => {
       "href",
       "/zh-hant/subscribe",
     );
+  });
+
+  it("keeps the domestic Help and Feedback footer link on the Tencent questionnaire", () => {
+    mockIsGlobal = false;
+    mockLanguage = "zh-CN";
+    render(
+      <MemoryRouter>
+        <LightVelaFooter />
+      </MemoryRouter>,
+    );
+
+    const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
+    expect(companySection).not.toBeNull();
+    const supportLink = within(companySection as HTMLElement).getByRole("link", { name: "帮助与反馈" });
+    expect(supportLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
+    expect(supportLink).toHaveAttribute("target", "_blank");
+    expect(supportLink).toHaveAttribute("rel", "noopener noreferrer");
   });
 });

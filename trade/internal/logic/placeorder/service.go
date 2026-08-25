@@ -154,6 +154,19 @@ type PlaceOrderResult struct {
 	BigOrderID string `json:"big_order_id"`
 	PayURL     string `json:"pay_url,omitempty"` // 本期始终为空字符串，留作向后兼容
 	ExpireAt   string `json:"expire_at,omitempty"`
+	Reused     bool   `json:"-"`
+}
+
+const (
+	DianshiGrantStatusGranted = "granted"
+	DianshiGrantStatusReused  = "reused"
+	DianshiGrantStatusSkipped = "skipped"
+)
+
+type DianshiGrantResult struct {
+	Status     string
+	DealName   string
+	BigOrderID string
 }
 
 const moveInGoodsCategoryID int64 = 176262
@@ -983,13 +996,67 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 // 本入口不复用通用 PlaceOrderAndPay，也不回落 jifei。调用方根据已完成的询价结果决定
 // 是否进入本链路；trade 只校验 bundle 确实配置了有效的点石活动映射。
 func (s *Service) PlaceDianshiOrderAndPay(ctx context.Context, req PlaceOrderRequest) (*PlaceOrderResult, error) {
-	if err := s.validatePlaceOrderRequest(&req); err != nil {
+	preparedReq, def, mapping, useDianshi, err := s.prepareDianshiOrderAndPay(ctx, req)
+	if err != nil {
 		return nil, err
+	}
+	if !useDianshi || mapping == nil {
+		return nil, fmt.Errorf("%w: bundleId=%s", ErrDianshiActivityRequired, req.BundleID)
+	}
+
+	log.Printf("[activity-resolver] dianshi-order-and-pay bundleId=%s uin=%s activityId=%d actId=%d",
+		preparedReq.BundleID, preparedReq.Uin, mapping.ActivityID, mapping.ActID)
+	return s.placeOrderDianshiAndPay(ctx, preparedReq, def, mapping)
+}
+
+// GrantDianshiSubscription uses the bundle's activity credentials with a
+// request-scoped product override. The inventory mapping is never mutated.
+func (s *Service) GrantDianshiSubscription(ctx context.Context, req PlaceOrderRequest, actID int64) (*DianshiGrantResult, error) {
+	if actID <= 0 {
+		return nil, fmt.Errorf("%w: act_id must be > 0", ErrInvalidInput)
+	}
+	if req.Period != 1 || req.TimeUnit != "m" {
+		return nil, fmt.Errorf("%w: Dianshi grant period must be 1m", ErrInvalidInput)
+	}
+	preparedReq, def, mapping, useDianshi, err := s.prepareDianshiOrderAndPay(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if mapping == nil || !mapping.Active {
+		return nil, fmt.Errorf("%w: bundleId=%s", ErrDianshiActivityRequired, req.BundleID)
+	}
+	if !useDianshi {
+		return &DianshiGrantResult{Status: DianshiGrantStatusSkipped}, nil
+	}
+
+	effective := *mapping
+	effective.ActID = actID
+	placed, err := s.placeOrderDianshiAndPay(ctx, preparedReq, def, &effective)
+	if err != nil {
+		return nil, err
+	}
+	status := DianshiGrantStatusGranted
+	if placed.Reused {
+		status = DianshiGrantStatusReused
+	}
+	return &DianshiGrantResult{
+		Status:     status,
+		DealName:   placed.DealName,
+		BigOrderID: placed.BigOrderID,
+	}, nil
+}
+
+func (s *Service) prepareDianshiOrderAndPay(
+	ctx context.Context,
+	req PlaceOrderRequest,
+) (PlaceOrderRequest, *store.BundleDefinition, *activity.Mapping, bool, error) {
+	if err := s.validatePlaceOrderRequest(&req); err != nil {
+		return PlaceOrderRequest{}, nil, nil, false, err
 	}
 
 	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
 		if strings.TrimSpace(req.ExternalUserID) == "" {
-			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
+			return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
 		}
 		var binding *shadowclient.Binding
 		var err error
@@ -1000,15 +1067,15 @@ func (s *Service) PlaceDianshiOrderAndPay(ctx context.Context, req PlaceOrderReq
 		}
 		if err != nil {
 			if errors.Is(err, shadowclient.ErrBillingAccountOpenFailed) {
-				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBillingAccountOpenFailed, req.ExternalUserID)
+				return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: externalUserId=%s", ErrBillingAccountOpenFailed, req.ExternalUserID)
 			}
 			if errors.Is(err, shadowclient.ErrBindingNotFound) {
-				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+				return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
 			}
-			return nil, fmt.Errorf("placeorder: shadow GetBindingByExternalUserID: %w", err)
+			return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("placeorder: shadow GetBindingByExternalUserID: %w", err)
 		}
 		if strings.TrimSpace(binding.Uin) == "" {
-			return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
+			return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
 				ErrBindingNotFound, req.ExternalUserID)
 		}
 		req.Uin = binding.Uin
@@ -1020,37 +1087,31 @@ func (s *Service) PlaceDianshiOrderAndPay(ctx context.Context, req PlaceOrderReq
 	bundle, err := s.deps.CTLClient.GetBundleByID(ctx, req.BundleID)
 	if err != nil {
 		if errors.Is(err, ctlclient.ErrNotFound) {
-			return nil, fmt.Errorf("%w: ctl bundleId=%s", ErrBundleNotFound, req.BundleID)
+			return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: ctl bundleId=%s", ErrBundleNotFound, req.BundleID)
 		}
-		return nil, fmt.Errorf("placeorder: ctl GetBundleByID: %w", err)
+		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("placeorder: ctl GetBundleByID: %w", err)
 	}
 	if !strings.EqualFold(bundle.BundleState, "ONLINE") {
-		return nil, fmt.Errorf("%w: bundleId=%s state=%s", ErrBundleOffline, req.BundleID, bundle.BundleState)
+		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: bundleId=%s state=%s", ErrBundleOffline, req.BundleID, bundle.BundleState)
 	}
 
 	def, err := s.deps.BundleStore.GetBundleDefinitionByID(ctx, req.BundleID)
 	if err != nil {
 		if errors.Is(err, store.ErrBundleDefinitionNotFound) {
-			return nil, fmt.Errorf("%w: trade_bundle_definition bundleId=%s", ErrBundleNotFound, req.BundleID)
+			return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: trade_bundle_definition bundleId=%s", ErrBundleNotFound, req.BundleID)
 		}
-		return nil, fmt.Errorf("placeorder: get bundle definition: %w", err)
+		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("placeorder: get bundle definition: %w", err)
 	}
 	if s.deps.ActivityResolver == nil {
-		return nil, fmt.Errorf("%w: resolver is not configured", ErrDianshiActivityRequired)
+		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: resolver is not configured", ErrDianshiActivityRequired)
 	}
 	mapping, useDianshi, err := s.deps.ActivityResolver.ResolveForPlaceOrder(
 		ctx, req.BundleID, req.Uin, req.Period, req.TimeUnit,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w", req.BundleID, req.Uin, err)
+		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w", req.BundleID, req.Uin, err)
 	}
-	if !useDianshi || mapping == nil {
-		return nil, fmt.Errorf("%w: bundleId=%s", ErrDianshiActivityRequired, req.BundleID)
-	}
-
-	log.Printf("[activity-resolver] dianshi-order-and-pay bundleId=%s uin=%s activityId=%d actId=%d",
-		req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID)
-	return s.placeOrderDianshiAndPay(ctx, req, def, mapping)
+	return req, def, mapping, useDianshi, nil
 }
 
 // shouldPersistOrderAfterPay 判定 generateDealsAndPay 同步响应是否满足"一次到位落
@@ -2025,7 +2086,7 @@ func (s *Service) placeOrderDianshiWith(
 	}
 	reuseWindow := time.Duration(reuseHours * float64(time.Hour))
 	createdAfter := time.Now().UTC().Add(-reuseWindow)
-	order, err := reusableStore.FindReusableDianshiOrder(ctx, req.ExternalUserID, mapping.ActivityID, req.BundleID, createdAfter)
+	order, err := reusableStore.FindReusableDianshiOrder(ctx, req.ExternalUserID, mapping.ActivityID, req.BundleID, mapping.ActID, createdAfter)
 	if err != nil && !errors.Is(err, store.ErrTradeOrderNotFound) {
 		return nil, fmt.Errorf("placeorder: find reusable dianshi order bundleId=%s activityId=%d externalUserId=%s: %w",
 			req.BundleID, mapping.ActivityID, req.ExternalUserID, err)
@@ -2037,8 +2098,16 @@ func (s *Service) placeOrderDianshiWith(
 			DealName:   order.DealName,
 			BigOrderID: order.BigOrderID,
 			PayURL:     order.PayURL,
+			Reused:     true,
 		}, nil
 	}
+
+	effectivePeriod, effectiveTimeUnit, err := parseDianshiTimeSpanUnit(mapping.TimeSpanUnit)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: invalid dianshi activity time_span_unit bundleId=%s activityId=%d: %w",
+			req.BundleID, mapping.ActivityID, err)
+	}
+	effectiveTimeSpanUnit := strconv.Itoa(effectivePeriod) + effectiveTimeUnit
 
 	// 1. check_sum：mapping.SecretKey 为空 → 不发字段（dianshiclient.CalcCheckSum 返空字符串触发 omitempty）
 	checkSum := dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey)
@@ -2061,10 +2130,11 @@ func (s *Service) placeOrderDianshiWith(
 				// "哪个业务用户下了哪个商品"记到点石侧履约链路里。
 				PreferenceParam: map[string]interface{}{
 					"regionId":       s.region.RegionID,
-					"timeSpanUnit":   mapping.TimeSpanUnit,
+					"timeSpanUnit":   effectiveTimeSpanUnit,
 					"subProductCode": def.SubProductCode,
 					"bundleId":       mapping.BundleID,
 					"externalUserId": req.ExternalUserID,
+					"dianshiActId":   mapping.ActID,
 				},
 			},
 		},
@@ -2094,7 +2164,10 @@ func (s *Service) placeOrderDianshiWith(
 	// 4. 落 trade_order（source='dianshi'，status='paid_pending_provision' 与 PlaceOrderAndPay 同款——
 	// 点石下单同步链路与 jifei generateDealsAndPay 一体化语义对齐：拿到 deal_name 即视为"已下单已扣款待发货"，
 	// 等 jifei 反向回调 createResource 把 status 推进到 'provisioned'）。
-	goodsDetail := buildGoodsDetail(def, req)
+	effectiveReq := req
+	effectiveReq.Period = effectivePeriod
+	effectiveReq.TimeUnit = effectiveTimeUnit
+	goodsDetail := buildGoodsDetail(def, effectiveReq)
 	// 把活动元信息塞入 goodsDetail，便于 createResource handler 反查 / 排障日志
 	goodsDetail["dianshi_activity_id"] = mapping.ActivityID
 	goodsDetail["dianshi_act_id"] = mapping.ActID
@@ -2108,8 +2181,8 @@ func (s *Service) placeOrderDianshiWith(
 		AppID:          req.AppID,
 		SubProductCode: def.SubProductCode,
 		BundleID:       req.BundleID,
-		Period:         req.Period,
-		TimeUnit:       req.TimeUnit,
+		Period:         effectivePeriod,
+		TimeUnit:       effectiveTimeUnit,
 		GoodsNum:       req.GoodsNum,
 		RegionID:       s.region.RegionID,
 		PayMode:        req.PayMode,
@@ -2134,4 +2207,30 @@ func (s *Service) placeOrderDianshiWith(
 		DealName:   dealName,
 		BigOrderID: bigDealNo,
 	}, nil
+}
+
+func parseDianshiTimeSpanUnit(value string) (int, string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if len(normalized) < 2 {
+		return 0, "", fmt.Errorf("must be a positive integer followed by d, m, or y, got %q", value)
+	}
+
+	timeUnit := normalized[len(normalized)-1:]
+	switch timeUnit {
+	case "d", "m", "y":
+	default:
+		return 0, "", fmt.Errorf("unsupported time unit in %q; expected d, m, or y", value)
+	}
+
+	periodText := normalized[:len(normalized)-1]
+	for _, ch := range periodText {
+		if ch < '0' || ch > '9' {
+			return 0, "", fmt.Errorf("period must be a positive integer in %q", value)
+		}
+	}
+	period, err := strconv.Atoi(periodText)
+	if err != nil || period <= 0 {
+		return 0, "", fmt.Errorf("period must be a positive integer in %q", value)
+	}
+	return period, timeUnit, nil
 }

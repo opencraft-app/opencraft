@@ -1607,6 +1607,36 @@ func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowB
 	return toShadowBindingResult(binding), nil
 }
 
+// RegisterOrRetryInternalShadowBinding exposes the user-facing shadow binding
+// retry semantics to trusted services that only have a LightVela user ID.
+func (s *Service) RegisterOrRetryInternalShadowBinding(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return ShadowBindingResult{}, newError("invalid_user_id", "用户 ID 不能为空。", http.StatusBadRequest)
+	}
+	user, err := s.store.FindUserByID(ctx, trimmedUserID)
+	if err != nil {
+		return ShadowBindingResult{}, err
+	}
+	if s.shadowBinding == nil {
+		return ShadowBindingResult{UserID: user.ID, Status: shadowbinding.StatusDisabled}, nil
+	}
+	email := ""
+	if user.EmailVerified {
+		email = user.Email
+	}
+	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
+		UserID: user.ID,
+		Email:  email,
+		Phone:  user.Phone,
+	})
+	if err != nil && binding.UserID == "" {
+		return ShadowBindingResult{}, err
+	}
+	s.notifyPassBillingMigration(ctx, binding)
+	return toShadowBindingResult(binding), nil
+}
+
 func (s *Service) InternalShadowBinding(ctx context.Context, userID, clientIP, clientUA string) (ShadowBindingResult, error) {
 	binding, err := s.activeShadowBindingByUserID(ctx, userID)
 	if err != nil || binding.AppID > 0 {

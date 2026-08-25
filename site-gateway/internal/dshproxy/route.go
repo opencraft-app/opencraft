@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const maxBotRouteIDLength = 59 // The complete "<bot-id>-dsh" DNS label is at most 63 bytes.
+const maxBotRouteIDLength = 63
 
 type routeMatcher map[string]struct{}
 
@@ -26,7 +26,7 @@ func (m routeMatcher) matches(host, botID string) bool {
 	}
 	host = canonicalHostname(host)
 	for domain := range m {
-		if host == routeID+"-"+domain {
+		if host == routeID+"."+domain {
 			return true
 		}
 	}
@@ -37,7 +37,7 @@ func (m routeMatcher) matches(host, botID string) bool {
 func (m routeMatcher) botID(host string) (string, bool) {
 	host = canonicalHostname(host)
 	for domain := range m {
-		prefix, ok := strings.CutSuffix(host, "-"+domain)
+		prefix, ok := strings.CutSuffix(host, "."+domain)
 		if ok && botRouteID(prefix) != "" {
 			return prefix, true
 		}

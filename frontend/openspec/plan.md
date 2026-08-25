@@ -1,3 +1,14 @@
+# Advanced Settings 审批模式文档补充 Implementation Plan
+
+**Goal:** 让国内站和国际站的高级设置文档准确说明安全分组、审批模式、恢复默认和保存行为。
+
+**Scope:** 更新国内中文、国际中文、英文、印尼语源文档与既有文档元描述，并同步生成 Fumadocs 产物。
+
+- [x] 文档内容：补充审批模式和安全分组，并修正保存与恢复默认说明。
+- [x] 文档同步与验证：更新最后更新时间、生成各语言 Fumadocs 产物，并验证图片和文档链接。
+
+---
+
 # MR !3248 CR 国际化补强 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -3800,5 +3811,25 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - 模型配置域 7 个测试文件、115 passed；Agent 设置页侧栏回归 6 passed。
 - `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
 - Chrome 本地预览验证：Provider 下拉展开后侧栏固定为 `top=84px`、导航 `top=161px`；模型下拉展开后侧栏固定为交互前捕获的 `top=40px`、导航 `top=117px`。右侧触发器和弹层保持原网格列与相同宽度。
+
+---
+
+# Agent 会话操作确认 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development. The repository remains single-agent unless the user explicitly authorizes subagents.
+
+**Goal:** 在高级设置「安全」分组增加「会话操作确认」，并让安全分组恢复到 LightVela 预置 `approvals.mode=off`、`approvals.destructive_slash_confirm=false`。
+
+**Design:** `openspec/changes/2026-08-25-session-operation-confirmation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-25-session-operation-confirmation-plan.md`
+
+## Tasks
+
+- [x] 扩展 typed settings、reader 与即时保存链路，接入 `approvals.destructive_slash_confirm`。
+- [x] 将安全分组 reset 改为 `config set` 写回 LightVela `off/false`，不得 unset 成 Hermes `smart/true`。
+- [x] 增加「会话操作确认」开关、风险确认、LightVela 恢复说明和四语言资源。
+- [x] 完成焦点测试、i18n、类型检查、双区域构建和 diff 门禁。
+- [x] 展示最终范围、验证证据、提交信息和 MR 配置，等待用户确认。
 
 ---

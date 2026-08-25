@@ -41,7 +41,7 @@ type exchangeCall struct {
 
 var testDSHDomains = []string{"dsh.lightvela.site", "dsh.lightvela.tech"}
 
-const testBotHost = "bot-1-dsh.lightvela.site"
+const testBotHost = "bot-1.dsh.lightvela.site"
 
 func (f *fakeFederation) ClientID() string { return f.clientID }
 
@@ -192,7 +192,7 @@ func TestHandlerRejectsStateCookieOnDifferentDSHHost(t *testing.T) {
 	handler.ServeHTTP(loginRec, loginReq)
 	stateCookie := onlyCookie(t, loginRec.Result().Cookies(), loginStateCookieName)
 	state := queryValue(t, loginRec.Result().Header.Get("Location"), "state")
-	callbackReq := httptest.NewRequest(http.MethodGet, "https://bot-2-dsh.lightvela.site"+federationCallbackPath+"?state="+url.QueryEscape(state)+"&ticket=ticket-1", nil)
+	callbackReq := httptest.NewRequest(http.MethodGet, "https://bot-2.dsh.lightvela.site"+federationCallbackPath+"?state="+url.QueryEscape(state)+"&ticket=ticket-1", nil)
 	callbackReq.AddCookie(stateCookie)
 	callbackRec := httptest.NewRecorder()
 

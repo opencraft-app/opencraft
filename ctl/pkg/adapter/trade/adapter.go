@@ -64,6 +64,23 @@ type PlaceOrderRequest struct {
 	// 注：Q41 修订 2026-05-11 删除 RegionID 字段。trade 内部固定 1（广州），ctl 不再透传。
 }
 
+type GrantDianshiSubscriptionRequest struct {
+	PlaceOrderRequest
+	ActID int64 `json:"actId"`
+}
+
+type GrantDianshiSubscriptionResult struct {
+	Status     string `json:"status"`
+	DealName   string `json:"dealName,omitempty"`
+	BigOrderID string `json:"bigOrderId,omitempty"`
+}
+
+// DianshiGrantAdapter is kept separate from Adapter so existing consumers and
+// test doubles do not need to implement the one-off campaign capability.
+type DianshiGrantAdapter interface {
+	GrantDianshiSubscription(ctx context.Context, req *GrantDianshiSubscriptionRequest) (*GrantDianshiSubscriptionResult, error)
+}
+
 // PlaceOrderResult 与 trade placeOrderResponse 字段集对齐。
 //
 // PayURL / ExpireAt 在 trade 单步 PlaceOrder（非 PlaceOrderAndPay）流程中始终为空，
@@ -696,6 +713,22 @@ func (a *adapter) PlaceDianshiOrderAndPay(ctx context.Context, req *PlaceOrderRe
 
 	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/orders/place-and-pay"
 	var result PlaceOrderResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (a *adapter) GrantDianshiSubscription(ctx context.Context, req *GrantDianshiSubscriptionRequest) (*GrantDianshiSubscriptionResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: GrantDianshiSubscription request is nil")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/subscriptions/grant"
+	var result GrantDianshiSubscriptionResult
 	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
 		return nil, err
 	}

@@ -2,7 +2,7 @@
 
 ## 背景
 
-MR !3288 已将 Hermes `approvals.mode` 接入国内站 Agent 高级设置。事后评审确认三个用户可见问题：LightVela 出厂值 `off` 与 Hermes 默认值 `smart` 的差异未在恢复弹窗说明；未知审批模式会拖垮整页读取；已处于 `off` 时缺少持续风险提示。
+MR !3288 已将 Hermes `approvals.mode` 接入国内站 Agent 高级设置。事后评审确认三个用户可见问题：LightVela 出厂值 `off` 与 Hermes 默认值 `smart` 的差异未在恢复弹窗说明；未知审批模式会拖垮整页读取；已处于 `off` 时缺少持续风险提示。评审修复完成后，产品范围进一步确认：国际站也开放完整高级设置页，不再保留仅国内站可见的区域限制。
 
 ## 目标
 
@@ -10,6 +10,7 @@ MR !3288 已将 Hermes `approvals.mode` 接入国内站 Agent 高级设置。事
 - Hermes 返回未知审批模式时，只将该字段降级为不支持，不影响其他高级设置。
 - 当前审批模式为 `off` 时，展示低强度、非阻断的风险提示。
 - 锁定不支持字段不会被恢复操作写入，以及同步重复保存会被互斥保护。
+- 国际站导航展示「Advanced Settings」，`/agents/settings` 可生成并直接访问，页面内容与国内站保持一致。
 
 ## 方案
 
@@ -47,6 +48,24 @@ Python reader 遇到 `approvals.mode` 非 `smart | manual | off` 时，将 `appr
 
 弹窗标题「确认关闭命令审批？」、操作按钮和 `off` 常驻提示保持不变。
 
+### 国际站开放完整高级设置
+
+采用完整同构开放方案，复用现有 `AgentCommonSettingsPanel`，不创建国际站专用面板，也不拆分其中的安全、记忆与上下文设置。具体只解除三层区域限制：
+
+1. Agent 左侧「管理」分组在国内站和国际站都展示高级设置入口；
+2. 动态路由在国际站也生成并接受 `/agents/settings`；
+3. `activeSection === "settings"` 时，两站都渲染同一个高级设置面板。
+
+共享 i18n 字典继续按当前 locale 展示中文、英文、繁体中文或印尼语。设置读取、保存、恢复、审批关闭二次确认及即时生效行为均复用现有逻辑，不新增 API、Hermes 命令或重启操作。
+
+曾考虑只在国际站开放审批模式一项，或复制一套国际站面板。前者会让同一路由在两站产生不一致的信息架构，后者会引入重复状态和后续漂移，因此均不采用。
+
+### Agent 暂停态
+
+Hermes 配置读取依赖运行中实例的 debug command。Agent 未运行时，统一刷新入口只清空旧快照和交互状态，不下发读取命令，也不展示原始 `DEBUG_NOT_SUPPORTED` 错误；页面改为提示“Agent 未运行，启动后才能查看和修改设置。”。当状态恢复为 `running` 时，`botStatus` 依赖变化会触发同一刷新入口并正常加载配置。
+
+该保护由国内站与国际站共用，不增加错误码字符串匹配，也不吞掉运行态下的真实读取错误。
+
 ## 测试
 
 - reader：未知审批模式返回正常快照，且仅 `approvalMode` 在 `unsupportedKeys`。
@@ -54,6 +73,9 @@ Python reader 遇到 `approvals.mode` 非 `smart | manual | off` 时，将 `appr
 - reset：同组混合支持状态只 unset 受支持字段，不返回误报 partial。
 - panel：同一 React flush 内的重复保存只调用一次保存函数，锁定 `saveInFlightRef` 互斥。
 - panel：安全分组、审批模式设置项与关闭审批弹窗正文均展示「高风险操作」新说明，三句旧说明不再出现。
+- region boundary：国内站与国际站都生成并解析 `settings` 路由；国际站继续生成其既有区域页面。
+- navigation：国际站左侧「管理」分组展示本地化后的高级设置入口，点击目标仍为 `/agents/settings`。
+- paused state：Agent 未运行时不调用配置读取、不展示错误和重试；恢复运行后自动读取并启用表单。
 - 运行审批模式焦点测试、i18n、类型检查、双区域构建和 diff 检查。
 
 ## 非目标
@@ -61,3 +83,4 @@ Python reader 遇到 `approvals.mode` 非 `smart | manual | off` 时，将 `appr
 - 不修改 LightVela 镜像的出厂 `approvals.mode: off`。
 - 不接入 `approvals.destructive_slash_confirm`、`cron_mode` 或 `mcp_reload_confirm`。
 - 不重构通用设置类型体系、测试 polyfill 或历史计划文档。
+- 不为国际站新增独立设置字段、独立文案或独立后端协议。

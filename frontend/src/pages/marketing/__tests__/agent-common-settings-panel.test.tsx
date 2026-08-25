@@ -1,6 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { PropsWithChildren, ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { cleanup, fireEvent, render as testingLibraryRender, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { LocaleOverrideProvider, useT, type I18nLocale } from "@/i18n/t";
 import type { BotRepository } from "@/repositories/types";
 
 import { AgentCommonSettingsPanel } from "../agent-common-settings-panel";
@@ -27,6 +30,7 @@ beforeAll(() => {
 const baseSnapshot = (patch?: Partial<HermesCommonSettingsSnapshot>): HermesCommonSettingsSnapshot => ({
   values: {
     approvalMode: "smart",
+    destructiveSlashConfirm: false,
     persistentMemory: true,
     userProfile: true,
     autoCompression: true,
@@ -41,12 +45,30 @@ const baseSnapshot = (patch?: Partial<HermesCommonSettingsSnapshot>): HermesComm
 
 const bots = {} as BotRepository;
 
+const render = (ui: ReactElement, locale: I18nLocale = "zh-CN") => {
+  const Wrapper = ({ children }: PropsWithChildren) => (
+    <LocaleOverrideProvider locale={locale}>{children}</LocaleOverrideProvider>
+  );
+  return testingLibraryRender(ui, { wrapper: Wrapper });
+};
+
+const SavedFeedbackProbe = () => {
+  const t = useT();
+  return <span>{t("已保存")}</span>;
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
 describe("AgentCommonSettingsPanel", () => {
+  it("provides non-empty Indonesian saved feedback", () => {
+    render(<SavedFeedbackProbe />, "id-ID");
+
+    expect(screen.getByText("Tersimpan")).toBeTruthy();
+  });
+
   it("labels the page as advanced settings", () => {
     render(
       <AgentCommonSettingsPanel
@@ -62,7 +84,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.getByRole("heading", { name: "高级设置" })).toBeTruthy();
   });
 
-  it("renders seven flat rows and saves a switch only after confirmation", async () => {
+  it("renders eight flat rows and saves a switch only after confirmation", async () => {
     const user = userEvent.setup();
     const saveSetting = vi.fn().mockImplementation(async ({ key, value }) => ({
       status: "success",
@@ -81,7 +103,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const memorySwitch = await screen.findByRole("switch", { name: "长期记忆" });
-    expect(screen.getAllByTestId("common-setting-row")).toHaveLength(7);
+    expect(screen.getAllByTestId("common-setting-row")).toHaveLength(8);
     await user.click(memorySwitch);
 
     expect(saveSetting).not.toHaveBeenCalled();
@@ -177,7 +199,7 @@ describe("AgentCommonSettingsPanel", () => {
       />,
     );
 
-    expect(await screen.findByText("管理 Agent 执行高风险操作时的审批方式。")).toBeTruthy();
+    expect(await screen.findByText("管理 Agent 的命令审批与会话操作确认方式。")).toBeTruthy();
     expect(screen.getByText("设置 Agent 执行高风险操作时的审批方式。")).toBeTruthy();
     expect(screen.queryByText("管理 Agent 执行危险命令时的审批方式。")).toBeNull();
     expect(screen.queryByText("设置 Agent 遇到危险命令时如何请求审批。")).toBeNull();
@@ -186,6 +208,86 @@ describe("AgentCommonSettingsPanel", () => {
     await user.click(screen.getByRole("option", { name: "关闭审批" }));
     expect(screen.getByText("关闭后，Agent 执行高风险操作时将不再请求你的批准。请仅在可信环境中使用。")).toBeTruthy();
     expect(screen.queryByText("关闭后，Agent 执行危险命令时将不再请求你的批准。请仅在可信环境中使用。")).toBeNull();
+  });
+
+  it("renders session operation confirmation after approval mode and saves it after confirmation", async () => {
+    const user = userEvent.setup();
+    const saveSetting = vi.fn().mockResolvedValue({
+      status: "success",
+      snapshot: baseSnapshot({
+        values: { ...baseSnapshot().values, destructiveSlashConfirm: true },
+      }),
+    } satisfies HermesCommonSettingSaveResult);
+
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    const rows = await screen.findAllByTestId("common-setting-row");
+    expect(within(rows[0]!).getByText("审批模式")).toBeTruthy();
+    expect(within(rows[1]!).getByText("会话操作确认")).toBeTruthy();
+    expect(screen.getByText("新建会话，或清空、撤销、删除会话内容前，先向你确认。")).toBeTruthy();
+
+    await user.click(screen.getByRole("switch", { name: "会话操作确认" }));
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "确认开启「会话操作确认」？" })).toBeTruthy();
+    expect(screen.getByText("开启后，新建会话，或清空、撤销、删除会话内容前，将先向你确认。")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "确认开启" }));
+
+    await waitFor(() => expect(saveSetting).toHaveBeenCalledWith(expect.objectContaining({
+      key: "destructiveSlashConfirm",
+      value: true,
+    })));
+  });
+
+  it("uses a high-risk confirmation when disabling session operation confirmation", async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot({
+          values: { ...baseSnapshot().values, destructiveSlashConfirm: true },
+        })}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("switch", { name: "会话操作确认" }));
+    expect(screen.getByText("关闭后，新建会话，或清空、撤销、删除会话内容时将直接执行。")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认关闭" })).toHaveClass("bg-red-600");
+  });
+
+  it("uses neutral reread feedback when session operation confirmation save is partial", async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={vi.fn().mockResolvedValue({
+          status: "partial",
+          error: new Error("reread failed"),
+        } satisfies HermesCommonSettingSaveResult)}
+      />,
+    );
+
+    await user.click(await screen.findByRole("switch", { name: "会话操作确认" }));
+    await user.click(screen.getByRole("button", { name: "确认开启" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("配置已保存，但回读验证失败，请刷新确认。");
+    expect(screen.queryByText("配置已保存，但重启或回读验证失败，请刷新确认。")).toBeNull();
   });
 
   it("saves smart and manual approval modes without confirmation", async () => {
@@ -294,14 +396,16 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("disables Security reset when approval mode is unsupported", async () => {
+  it("disables Security reset when both Security settings are unsupported", async () => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
         botStatus="running"
         bots={bots}
         getGatewayRestartCommand={async () => "restart"}
-        loadSettings={async () => baseSnapshot({ unsupportedKeys: ["approvalMode"] })}
+        loadSettings={async () => baseSnapshot({
+          unsupportedKeys: ["approvalMode", "destructiveSlashConfirm"],
+        })}
         saveSetting={vi.fn()}
         resetSettings={vi.fn()}
       />,
@@ -311,17 +415,20 @@ describe("AgentCommonSettingsPanel", () => {
     const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
     expect(securityGroup).toBeTruthy();
     expect(within(securityGroup!).queryByRole("combobox", { name: "审批模式" })).toBeNull();
-    expect(within(securityGroup!).getByText("当前 Agent 版本不支持")).toBeTruthy();
+    expect(within(securityGroup!).getAllByText("当前 Agent 版本不支持")).toHaveLength(2);
     expect(within(securityGroup!).getByRole("button", { name: "恢复默认" })).toBeDisabled();
   });
 
-  it("restores Security to smart approval", async () => {
+  it("restores Security to the LightVela preset", async () => {
     const user = userEvent.setup();
     const resetSettings = vi.fn().mockResolvedValue({
       status: "success",
       snapshot: baseSnapshot({
-        values: { ...baseSnapshot().values, approvalMode: "smart" },
-        defaultedKeys: ["approvalMode"],
+        values: {
+          ...baseSnapshot().values,
+          approvalMode: "off",
+          destructiveSlashConfirm: false,
+        },
       }),
     } satisfies HermesCommonSettingsResetResult);
 
@@ -332,7 +439,11 @@ describe("AgentCommonSettingsPanel", () => {
         bots={bots}
         getGatewayRestartCommand={async () => "restart"}
         loadSettings={async () => baseSnapshot({
-          values: { ...baseSnapshot().values, approvalMode: "off" },
+          values: {
+            ...baseSnapshot().values,
+            approvalMode: "manual",
+            destructiveSlashConfirm: true,
+          },
         })}
         saveSetting={vi.fn()}
         resetSettings={resetSettings}
@@ -342,39 +453,37 @@ describe("AgentCommonSettingsPanel", () => {
     const groups = await screen.findAllByTestId("common-setting-group");
     const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
     await user.click(within(securityGroup!).getByRole("button", { name: "恢复默认" }));
-    expect(screen.getByText("恢复后审批模式将变为「智能审批」（当前为「关闭审批」）。")).toBeTruthy();
+    expect(screen.getByText("恢复后审批模式将变为「关闭审批」，会话操作确认将关闭。")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
 
     await waitFor(() => expect(resetSettings).toHaveBeenCalledWith(expect.objectContaining({ group: "security" })));
-    expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("智能审批");
+    expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("关闭审批");
+    expect(screen.getByRole("switch", { name: "会话操作确认" })).toHaveAttribute("aria-checked", "false");
   });
 
-  it.each(["smart", "manual"] as const)(
-    "describes the Security reset result without implying that %s always changes",
-    async (approvalMode) => {
-      const user = userEvent.setup();
-      render(
-        <AgentCommonSettingsPanel
-          botId="bot-a"
-          botStatus="running"
-          bots={bots}
-          getGatewayRestartCommand={async () => "restart"}
-          loadSettings={async () => baseSnapshot({
-            values: { ...baseSnapshot().values, approvalMode },
-          })}
-          saveSetting={vi.fn()}
-          resetSettings={vi.fn()}
-        />,
-      );
+  it("disables Security reset when both values already match the LightVela preset", async () => {
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot({
+          values: {
+            ...baseSnapshot().values,
+            approvalMode: "off",
+            destructiveSlashConfirm: false,
+          },
+        })}
+        saveSetting={vi.fn()}
+        resetSettings={vi.fn()}
+      />,
+    );
 
-      const groups = await screen.findAllByTestId("common-setting-group");
-      const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
-      await user.click(within(securityGroup!).getByRole("button", { name: "恢复默认" }));
-
-      expect(screen.getByText("恢复后将使用「智能审批」。")).toBeTruthy();
-      expect(screen.queryByText("恢复后审批模式将变为「智能审批」。")).toBeNull();
-    },
-  );
+    const groups = await screen.findAllByTestId("common-setting-group");
+    const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
+    expect(within(securityGroup!).getByRole("button", { name: "恢复默认" })).toBeDisabled();
+  });
 
   it.each([
     ["长期记忆", "persistentMemory", false, "开启", "开启后，Agent 将在后续会话中读取和更新 MEMORY.md。"],
@@ -445,10 +554,10 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const rows = await screen.findAllByTestId("common-setting-row");
-    for (const row of rows.slice(1, 4)) {
+    for (const row of rows.slice(1, 5)) {
       expect(row).toHaveClass("sm:grid-cols-[minmax(0,1fr)_auto]");
     }
-    for (const row of [rows[0]!, ...rows.slice(4)]) {
+    for (const row of [rows[0]!, ...rows.slice(5)]) {
       expect(row).toHaveClass("sm:grid-cols-[minmax(0,1fr)_17rem]");
     }
   });
@@ -523,7 +632,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(securityGroup).toBeTruthy();
     expect(memoryGroup).toBeTruthy();
     expect(contextGroup).toBeTruthy();
-    expect(within(securityGroup!).getAllByTestId("common-setting-row")).toHaveLength(1);
+    expect(within(securityGroup!).getAllByTestId("common-setting-row")).toHaveLength(2);
     expect(within(memoryGroup!).getAllByTestId("common-setting-row")).toHaveLength(2);
     expect(within(contextGroup!).getAllByTestId("common-setting-row")).toHaveLength(4);
 
@@ -975,19 +1084,92 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.queryByText("已保存")).toBeNull();
   });
 
-  it("disables approval mode while the Agent is stopped", async () => {
-    render(
+  it("defers loading settings until the Agent starts", async () => {
+    const loadSettings = vi.fn().mockResolvedValue(baseSnapshot());
+    const saveSetting = vi.fn();
+    const { rerender } = render(
       <AgentCommonSettingsPanel
         botId="bot-a"
         botStatus="stopped"
         bots={bots}
         getGatewayRestartCommand={async () => "restart"}
-        loadSettings={async () => baseSnapshot()}
+        loadSettings={loadSettings}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    expect(loadSettings).not.toHaveBeenCalled();
+    expect(screen.queryByText("正在读取当前配置…")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+    expect(screen.getByText("Agent 未运行，启动后才能查看和修改设置。")).toBeTruthy();
+
+    rerender(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    await waitFor(() => expect(loadSettings).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("combobox", { name: "审批模式" })).toBeEnabled();
+
+    rerender(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="stopped"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    expect(screen.queryByRole("combobox", { name: "审批模式" })).toBeNull();
+    expect(screen.queryByText("正在读取当前配置…")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+  });
+
+  it("hides loading content on the first stopped render", () => {
+    const loadSettings = vi.fn().mockResolvedValue(baseSnapshot());
+    const html = renderToStaticMarkup(
+      <LocaleOverrideProvider locale="zh-CN">
+        <AgentCommonSettingsPanel
+          botId="bot-a"
+          botStatus="stopped"
+          bots={bots}
+          getGatewayRestartCommand={async () => "restart"}
+          loadSettings={loadSettings}
+          saveSetting={vi.fn()}
+        />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(loadSettings).not.toHaveBeenCalled();
+    expect(html).toContain("Agent 未运行，启动后才能查看和修改设置。");
+    expect(html).not.toContain("正在读取当前配置…");
+  });
+
+  it("keeps running-state load errors visible", async () => {
+    const loadSettings = vi.fn().mockRejectedValue(new Error("读取命令失败"));
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
         saveSetting={vi.fn()}
       />,
     );
 
-    expect(await screen.findByRole("combobox", { name: "审批模式" })).toBeDisabled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("读取配置失败：读取命令失败");
+    expect(screen.getByRole("button", { name: "重试" })).toBeTruthy();
   });
 
   it("clears in-flight save state when switching to another Agent", async () => {
