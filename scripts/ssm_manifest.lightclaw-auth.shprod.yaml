@@ -15,6 +15,8 @@ items:
   kubernetes_resource_kind: Secret
   output_path: argocd/secrets/shprod/lightclaw-auth-secrets.sops.yaml
   secret_type: Opaque
+  required_keys:
+  - LIGHTCLAW_OIDC_SIGNING_KEYS_JSON
   labels:
     app.kubernetes.io/name: lightclaw-auth
     app.kubernetes.io/managed-by: argocd

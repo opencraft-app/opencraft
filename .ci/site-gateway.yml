@@ -8,9 +8,9 @@ on:
     paths:
       - site-gateway/**
       - argocd/services/site-gateway/**
-      - argocd/apps/sgprod/site-gateway.yaml
-      - argocd/projects/sgprod-site-gateway.yaml
-      - argocd/secrets/sgprod/site-gateway-secrets.sops.yaml
+      - argocd/apps/*/site-gateway.yaml
+      - argocd/projects/*-site-gateway.yaml
+      - argocd/secrets/*/site-gateway-secrets.sops.yaml
     paths-ignore:
       - OWNERS
       - "**/OWNERS"
@@ -29,7 +29,7 @@ extends:
     BUNDLE: site-gateway
     DISPLAY_NAME: site-gateway
     DEFAULT_TARGET_ENV: sgprod
-    MASTER_BUILD_ENVS: sgprod
+    MASTER_BUILD_ENVS: shprod,sgprod
     MASTER_AUTO_PIN_ENVS: none
     ENABLE_MASTER_PROD_PROMOTE: true
     ENABLE_MASTER_PROD_DB_MIGRATION: false
