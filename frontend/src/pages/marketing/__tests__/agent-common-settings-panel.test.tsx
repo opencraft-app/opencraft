@@ -106,6 +106,42 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.queryByText("已保存")).toBeNull();
   });
 
+  it("blocks synchronous duplicate saves before React disables the controls", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (result: HermesCommonSettingSaveResult) => void;
+    const saveSetting = vi.fn(() => new Promise<HermesCommonSettingSaveResult>((resolve) => {
+      resolveSave = resolve;
+    }));
+
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "编辑压缩触发阈值" }));
+    const input = screen.getByRole("spinbutton", { name: "压缩触发阈值" });
+    await user.clear(input);
+    await user.type(input, "0.65");
+    const saveButton = screen.getByRole("button", { name: "保存压缩触发阈值" });
+    saveButton.click();
+    saveButton.click();
+
+    expect(saveSetting).toHaveBeenCalledTimes(1);
+    resolveSave({
+      status: "success",
+      snapshot: baseSnapshot({
+        values: { ...baseSnapshot().values, compressionThreshold: 0.65 },
+      }),
+    });
+    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith("已保存"));
+  });
+
   it("renders approval mode first with all three choices", async () => {
     const user = userEvent.setup();
     render(
@@ -121,6 +157,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     const trigger = await screen.findByRole("combobox", { name: "审批模式" });
     expect(trigger).toHaveTextContent("智能审批");
+    expect(screen.queryByText("当前不会请求危险命令审批")).toBeNull();
     await user.click(trigger);
     expect(screen.getByRole("option", { name: "智能审批" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "始终询问" })).toBeTruthy();
@@ -229,6 +266,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("关闭审批");
+    expect(screen.getByText("当前不会请求危险命令审批")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -280,11 +318,39 @@ describe("AgentCommonSettingsPanel", () => {
     const groups = await screen.findAllByTestId("common-setting-group");
     const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
     await user.click(within(securityGroup!).getByRole("button", { name: "恢复默认" }));
+    expect(screen.getByText("恢复后审批模式将变为「智能审批」（当前为「关闭审批」）。")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
 
     await waitFor(() => expect(resetSettings).toHaveBeenCalledWith(expect.objectContaining({ group: "security" })));
     expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("智能审批");
   });
+
+  it.each(["smart", "manual"] as const)(
+    "describes the Security reset result without implying that %s always changes",
+    async (approvalMode) => {
+      const user = userEvent.setup();
+      render(
+        <AgentCommonSettingsPanel
+          botId="bot-a"
+          botStatus="running"
+          bots={bots}
+          getGatewayRestartCommand={async () => "restart"}
+          loadSettings={async () => baseSnapshot({
+            values: { ...baseSnapshot().values, approvalMode },
+          })}
+          saveSetting={vi.fn()}
+          resetSettings={vi.fn()}
+        />,
+      );
+
+      const groups = await screen.findAllByTestId("common-setting-group");
+      const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
+      await user.click(within(securityGroup!).getByRole("button", { name: "恢复默认" }));
+
+      expect(screen.getByText("恢复后将使用「智能审批」。")).toBeTruthy();
+      expect(screen.queryByText("恢复后审批模式将变为「智能审批」。")).toBeNull();
+    },
+  );
 
   it.each([
     ["长期记忆", "persistentMemory", false, "开启", "开启后，Agent 将在后续会话中读取和更新 MEMORY.md。"],

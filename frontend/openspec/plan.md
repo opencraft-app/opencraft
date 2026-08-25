@@ -3532,3 +3532,21 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] **Step 7: 展示 diff、验证证据、提交信息和 MR 配置，等待用户确认。**
 
 ---
+
+# Agent 审批模式 CR 修复 Implementation Plan
+
+**Goal:** 修复 MR !3288 评审确认的恢复默认说明、未知枚举失败半径和关闭审批状态提示，并锁定 reset/save 保护。
+
+**Design:** `openspec/changes/2026-08-25-agent-approval-mode-cr-fixes-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-25-agent-approval-mode-cr-fixes-plan.md`
+
+## Tasks
+
+- [x] 未知 `approvals.mode` 仅降级审批字段，不阻塞整页读取。
+- [x] 安全组恢复弹窗明确 `关闭审批 → 智能审批`，现有 `off` 展示低强度风险提示。
+- [x] 补齐 unsupported reset 过滤与同步保存互斥测试，并用定向 mutation 验证测试有效。
+- [x] 完成 i18n、焦点测试、类型检查、双区域构建和 diff 门禁。
+- [x] 展示最终范围、提交信息和 MR 配置，等待用户确认。
+
+---

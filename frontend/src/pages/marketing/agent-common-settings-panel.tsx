@@ -530,6 +530,11 @@ export function AgentCommonSettingsPanel({
                         )}
                         {savingKey === setting.key && <span className="text-xs text-black/45">{t("保存中…")}</span>}
                         {fieldFeedback && <span role="alert" className="text-right text-xs text-red-600">{fieldFeedback.message}</span>}
+                        {!unsupported && setting.key === "approvalMode" && snapshot.values.approvalMode === "off" && (
+                          <span className="text-right text-xs text-amber-700">
+                            {t("当前不会请求危险命令审批")}
+                          </span>
+                        )}
                         {compressionDisabled && <span className="text-xs text-black/35">{t("开启自动压缩后可修改")}</span>}
                       </div>
                     </div>
@@ -620,9 +625,13 @@ export function AgentCommonSettingsPanel({
                 {t("确认恢复「{{group}}」设置？", { group: pendingResetGroupTitle })}
               </DialogTitle>
               <DialogDescription className="mt-1 text-pretty text-sm leading-6 text-black/55">
-                {t("将重置「{{group}}」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。", {
-                  group: pendingResetGroupTitle,
-                })}
+                {pendingResetGroup === "security"
+                  ? snapshot?.values.approvalMode === "off"
+                    ? t("恢复后审批模式将变为「智能审批」（当前为「关闭审批」）。")
+                    : t("恢复后将使用「智能审批」。")
+                  : t("将重置「{{group}}」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。", {
+                      group: pendingResetGroupTitle,
+                    })}
               </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end gap-2">

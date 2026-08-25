@@ -11,6 +11,7 @@ import { resetHermesCommonSettingsGroup } from "../agent-common-settings-reset";
 
 const snapshot = (
   defaultedKeys: HermesCommonSettingsSnapshot["defaultedKeys"] = [],
+  unsupportedKeys: HermesCommonSettingsSnapshot["unsupportedKeys"] = [],
 ): HermesCommonSettingsSnapshot => ({
   values: {
     approvalMode: "off",
@@ -22,12 +23,15 @@ const snapshot = (
     protectedRecentMessages: 20,
   },
   defaultedKeys,
-  unsupportedKeys: [],
+  unsupportedKeys,
 });
 
-const snapshotOutput = (defaultedKeys: HermesCommonSettingsSnapshot["defaultedKeys"]) => [
+const snapshotOutput = (
+  defaultedKeys: HermesCommonSettingsSnapshot["defaultedKeys"],
+  unsupportedKeys: HermesCommonSettingsSnapshot["unsupportedKeys"] = [],
+) => [
   HERMES_COMMON_SETTINGS_JSON_START,
-  JSON.stringify(snapshot(defaultedKeys)),
+  JSON.stringify(snapshot(defaultedKeys, unsupportedKeys)),
   HERMES_COMMON_SETTINGS_JSON_END,
 ].join("\n");
 
@@ -131,6 +135,35 @@ describe("resetHermesCommonSettingsGroup", () => {
       .filter((command) => command.startsWith("hermes config unset"));
     expect(unsetCommands.some((command) => command.includes("compression."))).toBe(false);
     expect(execDebugCommand).toHaveBeenCalledTimes(4);
+  });
+
+  it("skips unsupported settings while resetting the rest of a group", async () => {
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded(snapshotOutput(["persistentMemory"], ["userProfile"])));
+    const getGatewayRestartCommand = vi.fn(async () => "hermes gateway restart");
+
+    const result = await resetHermesCommonSettingsGroup({
+      bots: botsWith(execDebugCommand),
+      botId: "bot-a",
+      group: "memory",
+      snapshot: snapshot([], ["userProfile"]),
+      getGatewayRestartCommand,
+    });
+
+    expect(result).toMatchObject({ status: "success" });
+    expect(execDebugCommand).toHaveBeenNthCalledWith(
+      1,
+      "bot-a",
+      "hermes config unset memory.memory_enabled",
+      { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
+    );
+    expect(execDebugCommand.mock.calls.some(([, command]) => (
+      String(command) === "hermes config unset memory.user_profile_enabled"
+    ))).toBe(false);
+    expect(getGatewayRestartCommand).toHaveBeenCalledTimes(1);
+    expect(execDebugCommand).toHaveBeenCalledTimes(3);
   });
 
   it("resets only the context group", async () => {

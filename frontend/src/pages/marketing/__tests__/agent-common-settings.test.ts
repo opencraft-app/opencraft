@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { BotRepository } from "@/repositories/types";
 
@@ -66,6 +70,55 @@ describe("Hermes common settings reader", () => {
       defaultedKeys: ["compressionThreshold"],
       unsupportedKeys: ["userProfile"],
     });
+  });
+
+  it("keeps other settings readable when Hermes returns an unknown approval mode", () => {
+    const root = mkdtempSync(join(tmpdir(), "lightvela-hermes-settings-"));
+    const binDir = join(root, "bin");
+    const configPath = join(root, "config.yaml");
+    const hermesPath = join(binDir, "hermes");
+    mkdirSync(binDir);
+    writeFileSync(configPath, "approvals:\n  mode: auto\n", "utf8");
+    writeFileSync(join(root, "yaml.py"), "def safe_load(_text):\n    return {'approvals': {'mode': 'auto'}}\n", "utf8");
+    writeFileSync(hermesPath, `#!/bin/sh
+if [ "$1" = "config" ] && [ "$2" = "path" ]; then
+  printf '%s\\n' "$FAKE_HERMES_CONFIG_PATH"
+  exit 0
+fi
+if [ "$1" = "config" ] && [ "$2" = "get" ]; then
+  case "$3" in
+    approvals.mode) printf '%s\\n' '"auto"' ;;
+    memory.memory_enabled|memory.user_profile_enabled|compression.enabled) printf '%s\\n' 'true' ;;
+    compression.threshold) printf '%s\\n' '0.5' ;;
+    compression.target_ratio) printf '%s\\n' '0.2' ;;
+    compression.protect_last_n) printf '%s\\n' '20' ;;
+    *) exit 1 ;;
+  esac
+  exit 0
+fi
+exit 1
+`, "utf8");
+    chmodSync(hermesPath, 0o755);
+
+    try {
+      const output = execFileSync("/bin/sh", ["-c", buildHermesCommonSettingsReadCommand()], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          FAKE_HERMES_CONFIG_PATH: configPath,
+          HERMES_HOME: root,
+          PATH: `${binDir}:${process.env.PATH ?? ""}`,
+          PYTHONPATH: root,
+        },
+      });
+
+      expect(parseHermesCommonSettingsSnapshot(output)).toMatchObject({
+        values: { approvalMode: "smart", persistentMemory: true },
+        unsupportedKeys: ["approvalMode"],
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("rejects malformed or out-of-range snapshots", () => {
