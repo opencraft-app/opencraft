@@ -26,6 +26,14 @@ func TestUserSessionAuthAcceptsNarrowInternalServiceIdentity(t *testing.T) {
 		t.Fatalf("wrong token status = %d", unauthorizedRecorder.Code)
 	}
 
+	missingUserID := httptest.NewRequest(http.MethodPost, "/sandboxes/sbx-1/tat/session", nil)
+	missingUserID.Header.Set("Authorization", "Bearer internal-token")
+	missingUserIDRecorder := httptest.NewRecorder()
+	router.ServeHTTP(missingUserIDRecorder, missingUserID)
+	if missingUserIDRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("missing user id status = %d", missingUserIDRecorder.Code)
+	}
+
 	authorized := httptest.NewRequest(http.MethodPost, "/sandboxes/sbx-1/tat/session", nil)
 	authorized.Header.Set("Authorization", "Bearer internal-token")
 	authorized.Header.Set("X-User-Id", "user-1")
