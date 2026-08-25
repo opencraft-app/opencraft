@@ -207,7 +207,9 @@ export function AgentCommonSettingsPanel({
         saved = true;
       } else {
         const message = result.status === "partial"
-          ? t("配置已保存，但重启或回读验证失败，请刷新确认。")
+          ? key === "approvalMode"
+            ? t("配置已保存，但回读验证失败，请刷新确认。")
+            : t("配置已保存，但重启或回读验证失败，请刷新确认。")
           : t("保存失败：{{detail}}", { detail: result.error.message });
         setFieldFeedback(key, { kind: "error", message });
       }

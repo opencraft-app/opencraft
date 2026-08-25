@@ -86,7 +86,10 @@ export async function resetHermesCommonSettingsGroup(
     if (firstUnsetError) {
       return { status: "partial", error: firstUnsetError, snapshot: verifiedSnapshot };
     }
-    if (!targetKeys.every((key) => verifiedSnapshot.defaultedKeys.includes(key))) {
+    if (!targetKeys.every((key) => (
+      verifiedSnapshot.defaultedKeys.includes(key)
+      && (key !== "approvalMode" || verifiedSnapshot.values.approvalMode === "smart")
+    ))) {
       return {
         status: "partial",
         error: new Error("Hermes common settings did not return to defaults"),

@@ -69,6 +69,29 @@ describe("resetHermesCommonSettingsGroup", () => {
     expect(getGatewayRestartCommand).not.toHaveBeenCalled();
   });
 
+  it("returns partial when Security reread is defaulted but approval mode is not effectively smart", async () => {
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded(snapshotOutput(["approvalMode"])));
+
+    const result = await resetHermesCommonSettingsGroup({
+      bots: botsWith(execDebugCommand),
+      botId: "bot-a",
+      group: "security",
+      snapshot: snapshot(),
+      getGatewayRestartCommand: vi.fn(async () => "hermes gateway restart"),
+    });
+
+    expect(result).toMatchObject({
+      status: "partial",
+      error: { message: expect.stringContaining("did not return to defaults") },
+      snapshot: {
+        defaultedKeys: ["approvalMode"],
+        values: { approvalMode: "off" },
+      },
+    });
+  });
+
   it("resets only the memory group, restarts once, and verifies defaults", async () => {
     const execDebugCommand = vi.fn()
       .mockResolvedValueOnce(succeeded())

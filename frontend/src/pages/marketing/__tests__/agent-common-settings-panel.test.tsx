@@ -155,6 +155,31 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("uses neutral reread feedback when an approval mode save is partial", async () => {
+    const user = userEvent.setup();
+    const saveSetting = vi.fn().mockResolvedValue({
+      status: "partial",
+      error: new Error("reread failed"),
+    } satisfies HermesCommonSettingSaveResult);
+
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    await user.click(await screen.findByRole("combobox", { name: "审批模式" }));
+    await user.click(screen.getByRole("option", { name: "始终询问" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("配置已保存，但回读验证失败，请刷新确认。");
+    expect(screen.queryByText("配置已保存，但重启或回读验证失败，请刷新确认。")).toBeNull();
+  });
+
   it("confirms before turning approvals off and restores the controlled value on cancel", async () => {
     const user = userEvent.setup();
     const saveSetting = vi.fn();
@@ -604,6 +629,7 @@ describe("AgentCommonSettingsPanel", () => {
     await waitFor(() => expect(resetSettings).toHaveBeenCalledTimes(1));
     for (const button of screen.getAllByRole("button", { name: "恢复默认" })) expect(button).toBeDisabled();
     for (const control of screen.getAllByRole("switch")) expect(control).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "审批模式" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "编辑压缩触发阈值" })).toBeDisabled();
 
     resolveReset?.({ status: "success", snapshot: baseSnapshot({ defaultedKeys: ["persistentMemory", "userProfile"] }) });
@@ -849,6 +875,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     expect(memorySwitch).toBeDisabled();
     expect(profileSwitch).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "审批模式" })).toBeDisabled();
     fireEvent.click(profileSwitch);
     expect(screen.queryByRole("heading", { name: "确认关闭「用户画像」？" })).toBeNull();
 
@@ -856,6 +883,21 @@ describe("AgentCommonSettingsPanel", () => {
     resolveSave?.({ status: "success", snapshot: baseSnapshot() });
     await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith("已保存"));
     expect(screen.queryByText("已保存")).toBeNull();
+  });
+
+  it("disables approval mode while the Agent is stopped", async () => {
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="stopped"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole("combobox", { name: "审批模式" })).toBeDisabled();
   });
 
   it("clears in-flight save state when switching to another Agent", async () => {
