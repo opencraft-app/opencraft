@@ -744,7 +744,7 @@ describe("cron context panel integration", () => {
     cronClientMocks.listRecentCronRuns.mockResolvedValue([makeCronRun({ job_id: "downstream", job_name: "下游任务" })]);
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByText("来自：上游任务 A")).toBeTruthy();
+    expect(await screen.findByText("上游任务：上游任务 A")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "查看" })[0]!);
     expect(screen.getByText(/最近完成时间/)).toBeTruthy();
     expect(screen.getByText("本任务执行时，将使用上游任务最近一次的输出作为上下文。")).toBeTruthy();
@@ -755,6 +755,19 @@ describe("cron context panel integration", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "查看任务详情" }))[0]!);
     expect(screen.getByText("当前关联上游")).toBeTruthy();
     expect(screen.queryByText("本次已使用")).toBeNull();
+  });
+
+  it("uses the upstream-task prefix when the configured upstream is unavailable", async () => {
+    const downstream = makeCronJob({
+      id: "downstream",
+      name: "下游任务",
+      context_from: ["missing-upstream"],
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([downstream]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    expect(await screen.findByText("上游任务：已不可用")).toBeTruthy();
+    expect(screen.queryByText("来自：上游任务已不可用")).toBeNull();
   });
 
   it("shows an unconfigured upstream task in task details", async () => {
@@ -893,7 +906,7 @@ describe("cron context dependent deletion", () => {
     });
     expect(cronClientMocks.removeCronJob).not.toHaveBeenCalled();
     expect(await getCronJobCard("直接下游 B")).toBeTruthy();
-    expect(await getCronJobCard("间接下游 C")).toHaveTextContent("来自：直接下游 B");
+    expect(await getCronJobCard("间接下游 C")).toHaveTextContent("上游任务：直接下游 B");
     expect(screen.queryByText("上游 A")).toBeNull();
   });
 
@@ -944,9 +957,25 @@ describe("cron context dependent deletion", () => {
   });
 });
 
-describe("terminal cron card actions", () => {
+describe("terminal cron card visibility", () => {
+  it("shows a past-due one-shot job as running while Hermes is still executing it", async () => {
+    const running = makeCronJob({
+      id: "running-once",
+      name: "cron-3",
+      state: "active",
+      next_run_at: new Date(Date.now() - 11 * 60_000).toISOString(),
+      execution_status: " Running ",
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([running]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const card = await getCronJobCard("cron-3");
+    expect(card).toHaveTextContent("执行中");
+    expect(card).not.toHaveTextContent("已执行");
+  });
+
   it.each(["completed", "done", "expired", "cancelled", "disabled"])(
-    "does not present the %s terminal state as paused or recoverable",
+    "hides the %s terminal state from active jobs",
     async (state) => {
       const terminal = makeCronJob({
         id: `terminal-${state}`,
@@ -959,11 +988,8 @@ describe("terminal cron card actions", () => {
       cronClientMocks.listCronJobs.mockResolvedValue([terminal]);
       render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-      const card = await getCronJobCard(`终态任务 ${state}`);
-      expect(card).not.toHaveTextContent("已暂停");
-      expect(within(card).queryByRole("button", { name: "恢复" })).toBeNull();
-      expect(within(card).queryByRole("button", { name: "暂停" })).toBeNull();
-      expect(within(card).getByRole("button", { name: "查看" })).toBeTruthy();
+      expect(await screen.findByRole("button", { name: "参考模板添加" })).toBeTruthy();
+      expect(screen.queryByText(`终态任务 ${state}`)).toBeNull();
     },
   );
 });
