@@ -4827,7 +4827,7 @@ export const AgentSettingsPage = ({
                       : []),
                     { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
                     ...(isGlobal && showHiddenAgentTools
-                      ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
+                      ? [{ id: "website" as const, label: t("工作台"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
                       : []),
                   ],
                 },

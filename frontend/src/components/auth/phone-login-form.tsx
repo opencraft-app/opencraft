@@ -20,9 +20,9 @@ const errorMessage = (error: unknown, fallback: string) =>
 const MODAL_INPUT_CLASS =
   "h-11 rounded-md border-black/[0.08] bg-white px-3.5 font-normal shadow-none placeholder:text-black/35 focus-visible:border-black/[0.12] focus-visible:ring-1 focus-visible:ring-black/[0.08]";
 const INVALID_INPUT_CLASS =
-  "!border-[#D92D20]/60 focus-visible:!border-[#D92D20]/75 focus-visible:ring-1 focus-visible:!ring-[rgba(217,45,32,0.18)]";
+  "!border-[color-mix(in_oklab,var(--danger)_60%,transparent)] focus-visible:!border-[color-mix(in_oklab,var(--danger)_75%,transparent)] focus-visible:ring-1 focus-visible:!ring-[color-mix(in_oklab,var(--danger)_18%,transparent)]";
 const FIELD_ERROR_CLASS = "mt-1.5 text-xs font-medium leading-5 text-[var(--danger)]";
-const INVALID_INPUT_STYLE = { borderColor: "rgba(217, 45, 32, 0.6)" };
+const INVALID_INPUT_STYLE = { borderColor: "rgba(207, 61, 76, 0.6)" };
 const MODAL_OUTLINE_BUTTON_CLASS =
   "h-11 shrink-0 rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-[var(--text-primary)] shadow-none hover:border-black/15 hover:bg-black/[0.025] focus-visible:ring-[var(--ring)]";
 const MODAL_SUBMIT_BUTTON_CLASS =

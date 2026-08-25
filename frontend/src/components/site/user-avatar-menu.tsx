@@ -184,7 +184,7 @@ export const UserAvatarMenu = () => {
                   className={menuItemClass}
                 >
                   <Globe className={menuIconClass} />
-                  {t("我的作品")}
+                  {t("我的工作台")}
                 </Link>
               ) : null}
               {hiddenEntriesRevealed && !isGlobal ? (
