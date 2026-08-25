@@ -38,6 +38,24 @@ func (s *fixedStarter) Start(_ context.Context, _ Target) (Bootstrap, error) {
 	return Bootstrap{SessionID: "session-1", Region: "ap-beijing", InstanceID: "ins-test123", OwnerUIN: "10001", AppID: 1250000000, WSURL: s.wsURL}, nil
 }
 
+func TestMarshalFramePreservesEmptyCustomData(t *testing.T) {
+	raw, err := marshalFrame("PtyProxyNew", "session-1", "proxy-1", payload{
+		ProxyID: "proxy-1",
+		IP:      remoteIP,
+		Port:    remotePort,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := bson.Raw(raw).LookupErr("Data", "CustomData")
+	if err != nil {
+		t.Fatalf("CustomData missing from TAT frame: %v", err)
+	}
+	if customData, ok := value.StringValueOK(); !ok || customData != "" {
+		t.Fatalf("CustomData = %v, %t; want explicit empty string", customData, ok)
+	}
+}
+
 func TestManagerMultiplexesTATProxyConnections(t *testing.T) {
 	var (
 		wsConnections atomic.Int32
