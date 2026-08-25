@@ -250,7 +250,7 @@ func FromEnv() (Config, error) {
 		}
 	}
 	dshFederationConfigured := cfg.DSHFederationAuthorizeURL != "" || cfg.DSHFederationBaseURL != "" || cfg.DSHFederationClientID != "" ||
-		cfg.DSHFederationKeyID != "" || len(cfg.DSHFederationHMACKey) > 0
+		cfg.DSHFederationKeyID != ""
 	if len(cfg.DSHDomains) == 0 && dshFederationConfigured {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_DSH_DOMAINS is required when DSH federation is configured")
 	}

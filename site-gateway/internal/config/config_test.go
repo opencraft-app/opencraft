@@ -433,6 +433,19 @@ func TestFromEnvDSHDefaultsDisabled(t *testing.T) {
 	}
 }
 
+func TestFromEnvDSHDisabledAllowsPreprovisionedHMACKey(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY", base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DSHDomains) != 0 {
+		t.Fatalf("DSH unexpectedly enabled: %+v", cfg.DSHDomains)
+	}
+}
+
 func TestFromEnvDSHRequiresCompleteConfiguration(t *testing.T) {
 	setRequired(t)
 	t.Setenv("SITE_GATEWAY_DSH_DOMAINS", "dsh.lightvela.site")
