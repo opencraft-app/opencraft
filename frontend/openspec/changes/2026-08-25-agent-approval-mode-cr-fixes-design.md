@@ -33,12 +33,23 @@ Python reader 遇到 `approvals.mode` 非 `smart | manual | off` 时，将 `appr
 
 提示不使用阻断弹窗，不改变现有从其他模式切到 `off` 时的二次确认。
 
+### 审批模式说明文案
+
+将安全分组和审批模式设置项的两句中性说明分别调整为：
+
+> 管理 Agent 执行高风险操作时的审批方式。
+
+> 设置 Agent 执行高风险操作时的审批方式。
+
+安全分组说明、`off` 常驻提示和关闭审批二次确认继续保留「危险命令」，避免削弱真实风险状态的警示强度。
+
 ## 测试
 
 - reader：未知审批模式返回正常快照，且仅 `approvalMode` 在 `unsupportedKeys`。
 - panel：安全恢复弹窗展示实际 `off → smart` 结果；现有 `off` 展示风险提示，其他模式不展示。
 - reset：同组混合支持状态只 unset 受支持字段，不返回误报 partial。
 - panel：同一 React flush 内的重复保存只调用一次保存函数，锁定 `saveInFlightRef` 互斥。
+- panel：安全分组与审批模式设置项均展示「高风险操作」新说明，两句旧说明不再出现。
 - 运行审批模式焦点测试、i18n、类型检查、双区域构建和 diff 检查。
 
 ## 非目标
