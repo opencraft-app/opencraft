@@ -1,9 +1,11 @@
 import importlib.util
 import io
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "scripts").is_dir())
@@ -67,7 +69,10 @@ class GrantDianshiSubscriptionsTests(unittest.TestCase):
             client,
             "usr_abc123",
             "bundle_launch_ai_01",
-            142123551192174,
+            165523570799387,
+            142163399386388,
+            "1m",
+            "campaign-secret",
             timeout=5,
             poll_interval=0,
             sleep=lambda _seconds: None,
@@ -79,6 +84,15 @@ class GrantDianshiSubscriptionsTests(unittest.TestCase):
         self.assertIn("/internal/shadow/binding/register-or-retry", opener.requests[0][0].full_url)
         self.assertIn("/internal/shadow/binding/state?external_user_id=usr_abc123", opener.requests[1][0].full_url)
         self.assertIn("/internal/ctl/subscriptions/dianshi/grant", opener.requests[2][0].full_url)
+        grant_body = json.loads(opener.requests[2][0].data.decode("utf-8"))
+        self.assertEqual(grant_body, {
+            "external_user_id": "usr_abc123",
+            "bundle_id": "bundle_launch_ai_01",
+            "activity_id": 165523570799387,
+            "act_id": 142163399386388,
+            "time_span_unit": "1m",
+            "secret_key": "campaign-secret",
+        })
 
     def test_run_batch_continues_after_terminal_auth_failure(self) -> None:
         opener = QueueOpener([
@@ -93,7 +107,10 @@ class GrantDianshiSubscriptionsTests(unittest.TestCase):
             ["usr_bad1", "usr_good2"],
             [],
             "bundle_launch_ai_01",
-            142123551192174,
+            165523570799387,
+            142163399386388,
+            "1m",
+            "campaign-secret",
             timeout=5,
             poll_interval=0,
             output=output,
@@ -104,6 +121,40 @@ class GrantDianshiSubscriptionsTests(unittest.TestCase):
         self.assertEqual(rows[0]["phase"], "auth")
         self.assertEqual(rows[0]["status"], "failed")
         self.assertEqual(rows[1]["status"], "skipped")
+
+    def test_parse_args_requires_explicit_campaign_parameters(self) -> None:
+        argv = [
+            str(SCRIPT_PATH),
+            "/tmp/users.txt",
+            "--bundle-id", "bundle_launch_ai_01",
+            "--activity-id", "165523570799387",
+            "--act-id", "142163399386388",
+            "--time-span-unit", "1m",
+        ]
+        with mock.patch.object(sys, "argv", argv), mock.patch.dict(
+            os.environ,
+            {"DIANSHI_ACTIVITY_SECRET_KEY": "campaign-secret"},
+        ):
+            args = module.parse_args()
+
+        self.assertEqual(args.bundle_id, "bundle_launch_ai_01")
+        self.assertEqual(args.activity_id, 165523570799387)
+        self.assertEqual(args.act_id, 142163399386388)
+        self.assertEqual(args.time_span_unit, "1m")
+        self.assertEqual(args.campaign_key, "campaign-secret")
+
+    def test_main_rejects_missing_campaign_secret_before_opening_input(self) -> None:
+        argv = [
+            str(SCRIPT_PATH),
+            "/path/that/must/not/be/opened.txt",
+            "--bundle-id", "bundle_launch_ai_01",
+            "--activity-id", "165523570799387",
+            "--act-id", "142163399386388",
+            "--time-span-unit", "1m",
+        ]
+        with mock.patch.object(sys, "argv", argv), mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(SystemExit, "DIANSHI_ACTIVITY_SECRET_KEY is required"):
+                module.main()
 
 
 if __name__ == "__main__":

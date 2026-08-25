@@ -40,7 +40,10 @@ func TestInternalDianshiGrantForwardsUserAndCampaignProduct(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/internal/ctl/subscriptions/dianshi/grant", strings.NewReader(`{
 		"external_user_id":"usr_grant",
 		"bundle_id":"bundle_launch_ai_01",
-		"act_id":142123551192174
+		"activity_id":165523570799387,
+		"act_id":142163399386388,
+		"time_span_unit":"1m",
+		"secret_key":"campaign-secret"
 	}`))
 	req.Header.Set("Authorization", "Bearer internal-token")
 	req.Header.Set("Content-Type", "application/json")
@@ -49,7 +52,12 @@ func TestInternalDianshiGrantForwardsUserAndCampaignProduct(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("got %d want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	if logic.userID != "usr_grant" || logic.req == nil || logic.req.BundleID != "bundle_launch_ai_01" || logic.req.ActID != 142123551192174 {
+	if logic.userID != "usr_grant" || logic.req == nil ||
+		logic.req.BundleID != "bundle_launch_ai_01" ||
+		logic.req.ActivityID != 165523570799387 ||
+		logic.req.ActID != 142163399386388 ||
+		logic.req.TimeSpanUnit != "1m" ||
+		logic.req.SecretKey != "campaign-secret" {
 		t.Fatalf("unexpected forwarded request user=%q req=%+v", logic.userID, logic.req)
 	}
 	if !strings.Contains(rec.Body.String(), `"status":"granted"`) {

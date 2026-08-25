@@ -683,7 +683,7 @@ func parseInt64(s string) (int64, error) {
 // 触发条件由调用方保证：callback para.billingActivityId 非空且不为 "0"。
 //
 // 步骤：
-//  1. 反查 trade_bundle_activity（按 callback bundleId）拿 activity_id / act_id
+//  1. 优先从 callback goodsDetail 取 activity_id / act_id；旧订单缺字段时回退查 trade_bundle_activity
 //  2. BEGIN TX → INSERT trade_user_activity_participation → COMMIT
 //  3. 唯一键 (uin, activity_id) 冲突 = jifei 重复回调 / 跨会话重复领取，视为幂等成功（不报错）
 //
@@ -710,10 +710,25 @@ func insertDianshiParticipation(
 	}
 	externalUserID := extractStringFromGoodsDetail(para.GoodsDetail, "externalUserId")
 
-	// Step 1: 反查 trade_bundle_activity 拿 activity_id / act_id
-	mapping, err := deps.ActivityStore.GetBundleActivityByBundleID(ctx, bundleID)
-	if err != nil {
-		return fmt.Errorf("get bundle_activity bundleID=%s: %w", bundleID, err)
+	activityID := int64(extractIntFromGoodsDetail(para.GoodsDetail, "dianshi_activity_id"))
+	actID := int64(extractIntFromGoodsDetail(para.GoodsDetail, "dianshiActId"))
+	if actID <= 0 {
+		actID = int64(extractIntFromGoodsDetail(para.GoodsDetail, "dianshi_act_id"))
+	}
+	if activityID <= 0 || actID <= 0 {
+		mapping, err := deps.ActivityStore.GetBundleActivityByBundleID(ctx, bundleID)
+		if err != nil {
+			return fmt.Errorf("get bundle_activity bundleID=%s: %w", bundleID, err)
+		}
+		if activityID <= 0 {
+			activityID = mapping.ActivityID
+		}
+		if actID <= 0 {
+			actID = mapping.ActID
+		}
+	}
+	if activityID <= 0 || actID <= 0 {
+		return fmt.Errorf("dianshi campaign IDs missing: activityID=%d actID=%d", activityID, actID)
 	}
 
 	// Step 2: 开事务 INSERT
@@ -731,19 +746,11 @@ func insertDianshiParticipation(
 	if bigDealNo == "" {
 		bigDealNo = extractStringFromGoodsDetail(para.GoodsDetail, "dianshi_big_deal_no")
 	}
-	actID := int64(extractIntFromGoodsDetail(para.GoodsDetail, "dianshiActId"))
-	if actID <= 0 {
-		actID = int64(extractIntFromGoodsDetail(para.GoodsDetail, "dianshi_act_id"))
-	}
-	if actID <= 0 {
-		actID = mapping.ActID
-	}
-
 	row := &store.UserActivityParticipation{
 		Uin:            para.Uin,
 		AppID:          strconv.FormatInt(para.AppID, 10),
 		ExternalUserID: externalUserID,
-		ActivityID:     mapping.ActivityID,
+		ActivityID:     activityID,
 		BundleID:       bundleID,
 		ActID:          actID,
 		DealName:       para.DealName,
@@ -758,11 +765,11 @@ func insertDianshiParticipation(
 				return fmt.Errorf("commit empty tx after duplicate: %w", commitErr)
 			}
 			log.Printf("[dianshi-cb] participation already exists (idempotent) uin=%s activityId=%d dealName=%s passID=%s",
-				para.Uin, mapping.ActivityID, para.DealName, passID)
+				para.Uin, activityID, para.DealName, passID)
 			return nil
 		}
 		return fmt.Errorf("insert participation uin=%s activityID=%d: %w",
-			para.Uin, mapping.ActivityID, err)
+			para.Uin, activityID, err)
 	}
 
 	if err := tx.Commit(); err != nil {

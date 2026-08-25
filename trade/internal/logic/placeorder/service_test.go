@@ -361,6 +361,7 @@ type stdDeps struct {
 	paymentContext    *fakePaymentContext
 	writer            *fakeOrderWriter
 	store             *fakeOrderStore
+	participation     *fakeParticipationReader
 	service           *Service
 }
 
@@ -388,6 +389,7 @@ func newStdDeps() *stdDeps {
 		paymentContext:    &fakePaymentContext{},
 		writer:            &fakeOrderWriter{},
 		store:             &fakeOrderStore{},
+		participation:     &fakeParticipationReader{},
 	}
 	d.service = New(Deps{
 		CTLClient:              d.ctl,
@@ -398,6 +400,7 @@ func newStdDeps() *stdDeps {
 		PaymentContextClient:   d.paymentContext,
 		OrderWriter:            d.writer,
 		OrderStore:             d.store,
+		ParticipationReader:    d.participation,
 	})
 	return d
 }

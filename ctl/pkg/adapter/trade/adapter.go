@@ -66,7 +66,10 @@ type PlaceOrderRequest struct {
 
 type GrantDianshiSubscriptionRequest struct {
 	PlaceOrderRequest
-	ActID int64 `json:"actId"`
+	ActivityID   int64  `json:"activityId"`
+	ActID        int64  `json:"actId"`
+	TimeSpanUnit string `json:"timeSpanUnit"`
+	SecretKey    string `json:"secretKey"`
 }
 
 type GrantDianshiSubscriptionResult struct {

@@ -883,12 +883,19 @@ func TestGrantDianshiSubscription_Success(t *testing.T) {
 			GoodsNum:       1,
 			PayMode:        1,
 		},
-		ActID: 142123551192174,
+		ActivityID:   165523570799387,
+		ActID:        142163399386388,
+		TimeSpanUnit: "1m",
+		SecretKey:    "campaign-secret",
 	})
 	if err != nil {
 		t.Fatalf("GrantDianshiSubscription: %v", err)
 	}
-	if gotReq.ExternalUserID != "usr_grant" || gotReq.ActID != 142123551192174 {
+	if gotReq.ExternalUserID != "usr_grant" ||
+		gotReq.ActivityID != 165523570799387 ||
+		gotReq.ActID != 142163399386388 ||
+		gotReq.TimeSpanUnit != "1m" ||
+		gotReq.SecretKey != "campaign-secret" {
 		t.Fatalf("unexpected request: %+v", gotReq)
 	}
 	if result.Status != "granted" || result.DealName != "deal-grant-1" {

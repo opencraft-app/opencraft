@@ -272,6 +272,34 @@ func TestRunMainFlow_DianshiCallbackWithoutTradeOrderInsertsParticipation(t *tes
 	}
 }
 
+func TestInsertDianshiParticipation_RequestScopedCampaignSkipsMappingLookup(t *testing.T) {
+	act := &fakeActivityStoreCR{getErr: errors.New("trade_bundle_activity must not be queried")}
+	deps := Deps{ActivityStore: act, DB: newActivityTxTestDB(t)}
+	para := &callbackPara{
+		DealName:          "deal-request-scoped",
+		BigDealID:         "big-request-scoped",
+		BillingActivityID: "16552",
+		AppID:             1472039146,
+		Uin:               "450850002074",
+		BundleID:          "bundle_launch_ai_01",
+		GoodsDetail: map[string]interface{}{
+			"externalUserId":      "usr_e7dffa50f167a72ae0a9a0d6",
+			"dianshi_activity_id": float64(165523570799387),
+			"dianshiActId":        float64(142163399386388),
+		},
+	}
+
+	if err := insertDianshiParticipation(context.Background(), deps, para, "pass-request-scoped"); err != nil {
+		t.Fatalf("insertDianshiParticipation: %v", err)
+	}
+	if act.getCalls.Load() != 0 || act.insertCalls.Load() != 1 {
+		t.Fatalf("activity store calls get/insert=%d/%d want 0/1", act.getCalls.Load(), act.insertCalls.Load())
+	}
+	if got := act.lastParticipation; got == nil || got.ActivityID != 165523570799387 || got.ActID != 142163399386388 {
+		t.Fatalf("unexpected participation: %+v", got)
+	}
+}
+
 func TestIsMySQLDuplicateError(t *testing.T) {
 	tests := []struct {
 		name string
