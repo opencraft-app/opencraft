@@ -409,3 +409,23 @@
 - [x] **Step 2: 在刷新和同步渲染入口增加运行态保护，更新提示文案并确认 GREEN。**
 - [x] **Step 3: 更新四语字典，运行 panel、区域边界、i18n、类型和双区域构建门禁。**
 - [x] **Step 4: 展示最终范围和验证结果，等待用户确认后更新 MR !3318。**
+
+### Task 8: 修正 MR !3318 国际站评审问题
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-common-settings-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.global.test.tsx`
+- Generated: `frontend/src/i18n/generated/id-ID.json`
+
+**Acceptance:**
+- 面板测试在任意 `VITE_REGION` 下都固定使用用例声明的 locale，不依赖全局站点语言。
+- 印尼语“已保存”反馈非空并展示为 `Tersimpan`。
+- 国际站测试名准确表达其只验证面板挂载，不暗示完整功能断言。
+- 不引入与本 MR 无关的企业微信 SDK shim 或大范围历史翻译修复。
+
+- [x] **Step 1: 复现国际站面板测试语言漂移，并核实 SDK shim 建议不适用于当前依赖。**
+- [x] **Step 2: 固定测试 locale，新增印尼语反馈回归并确认 RED。**
+- [x] **Step 3: 修复印尼语词条、重命名国际站测试并运行相关门禁。**
+
+  验证结果：CN/global 面板测试各 40/40，区域与导航测试 15/15；i18n、zh-Hant、typecheck（0 new）、`pnpm check`、CN/global build 与 `git diff --check` 均退出 0。全量 `pnpm test` 为 181 files / 1980 tests 通过，但受当前环境缺少 Python `cryptography`、既有 docs 大图/MDX/Node test 配置问题及 4 GiB Node heap OOM 影响，最终 4 files / 25 tests 失败；失败文件均不在本任务 diff 中。
+- [x] **Step 4: 展示最终提交范围，确认后更新 MR !3318。**

@@ -1,8 +1,9 @@
+import type { PropsWithChildren, ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render as testingLibraryRender, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { LocaleOverrideProvider } from "@/i18n/t";
+import { LocaleOverrideProvider, useT, type I18nLocale } from "@/i18n/t";
 import type { BotRepository } from "@/repositories/types";
 
 import { AgentCommonSettingsPanel } from "../agent-common-settings-panel";
@@ -43,12 +44,30 @@ const baseSnapshot = (patch?: Partial<HermesCommonSettingsSnapshot>): HermesComm
 
 const bots = {} as BotRepository;
 
+const render = (ui: ReactElement, locale: I18nLocale = "zh-CN") => {
+  const Wrapper = ({ children }: PropsWithChildren) => (
+    <LocaleOverrideProvider locale={locale}>{children}</LocaleOverrideProvider>
+  );
+  return testingLibraryRender(ui, { wrapper: Wrapper });
+};
+
+const SavedFeedbackProbe = () => {
+  const t = useT();
+  return <span>{t("已保存")}</span>;
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
 describe("AgentCommonSettingsPanel", () => {
+  it("provides non-empty Indonesian saved feedback", () => {
+    render(<SavedFeedbackProbe />, "id-ID");
+
+    expect(screen.getByText("Tersimpan")).toBeTruthy();
+  });
+
   it("labels the page as advanced settings", () => {
     render(
       <AgentCommonSettingsPanel

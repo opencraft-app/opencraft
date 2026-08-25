@@ -202,7 +202,7 @@ describe("AgentSettingsPage global renewal reminder", () => {
     expect(screen.getByRole("link", { name: "Advanced Settings" })).toHaveAttribute("href", "/agents/settings");
   });
 
-  it("renders the complete advanced settings panel", async () => {
+  it("mounts the advanced settings panel on the global site", async () => {
     renderAgentSettingsPage("settings");
 
     expect(await screen.findByText("Global common settings panel")).toBeInTheDocument();
