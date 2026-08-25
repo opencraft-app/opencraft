@@ -17,6 +17,9 @@ items:
   secret_type: Opaque
   required_keys:
   - LIGHTCLAW_OIDC_SIGNING_KEYS_JSON
+  - LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON
+  - LIGHTCLAW_FEDERATION_NONCE_KEY
+  - LIGHTCLAW_FEDERATION_CLIENTS_JSON
   labels:
     app.kubernetes.io/name: lightclaw-auth
     app.kubernetes.io/managed-by: argocd

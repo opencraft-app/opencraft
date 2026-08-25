@@ -618,6 +618,148 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("SITE_GATEWAY_AUTH_AEAD_KEYS", gateway_secret["stringData"])
 
+    def test_shprod_dsh_runtime_contract_matches_the_singapore_topology(self) -> None:
+        def env_values(path: Path) -> dict[str, str]:
+            return {
+                key: value
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+
+        for platform_file in (
+            REPO_ROOT
+            / "site-gateway"
+            / "k8s"
+            / "overlays"
+            / "shprod"
+            / "generated"
+            / "platform.env.example",
+            REPO_ROOT
+            / "argocd"
+            / "services"
+            / "site-gateway"
+            / "shprod"
+            / "site-gateway-platform.env",
+        ):
+            values = env_values(platform_file)
+            self.assertEqual(values["SITE_GATEWAY_DSH_DOMAINS"], "dsh.lightvela.tech")
+            self.assertEqual(
+                values["SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL"],
+                "https://lightvela.com/auth/federation/authorize",
+            )
+            self.assertEqual(
+                values["SITE_GATEWAY_DSH_FEDERATION_BASE_URL"],
+                "http://lightclaw-auth.user-auth.svc.cluster.local",
+            )
+            self.assertEqual(values["SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"], "personal-site")
+            self.assertEqual(
+                values["SITE_GATEWAY_DSH_FEDERATION_KEY_ID"],
+                "federation-client-sh-20260825-1",
+            )
+            self.assertEqual(values["SITE_GATEWAY_DSH_WILDCARD_HOST"], "*.dsh.lightvela.tech")
+            self.assertEqual(
+                values["SITE_GATEWAY_DSH_TLS_SECRET_NAME"],
+                "site-gateway-dsh-wildcard-tls",
+            )
+
+        for kustomization_path in (
+            REPO_ROOT / "site-gateway/k8s/overlays/shprod/kustomization.yaml",
+            REPO_ROOT / "argocd/services/site-gateway/shprod/kustomization.yaml",
+        ):
+            kustomization = yaml.safe_load(kustomization_path.read_text())
+            replacement_sources = {
+                replacement["source"]["fieldPath"]
+                for replacement in kustomization["replacements"]
+            }
+            for field in (
+                "SITE_GATEWAY_DSH_DOMAINS",
+                "SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL",
+                "SITE_GATEWAY_DSH_FEDERATION_BASE_URL",
+                "SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID",
+                "SITE_GATEWAY_DSH_FEDERATION_KEY_ID",
+                "SITE_GATEWAY_DSH_WILDCARD_HOST",
+                "SITE_GATEWAY_DSH_TLS_SECRET_NAME",
+            ):
+                self.assertIn(f"data.{field}", replacement_sources)
+            patch = "\n".join(item.get("patch", "") for item in kustomization["patches"])
+            self.assertIn("REPLACE_SITE_GATEWAY_DSH_WILDCARD_HOST", patch)
+            self.assertIn("REPLACE_SITE_GATEWAY_DSH_TLS_SECRET_NAME", patch)
+
+        ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.site-gateway.shprod.yaml").read_text()
+        )
+        self.assertIn(
+            "SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY",
+            ssm["items"][0]["required_keys"],
+        )
+
+    def test_shprod_federation_runtime_contract_is_complete(self) -> None:
+        values = {
+            key: value
+            for line in (
+                REPO_ROOT / "argocd/services/lightclaw-auth/shprod/auth-platform.env"
+            ).read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(values["AUTH_FEDERATION_ENABLED"], "true")
+        self.assertEqual(values["AUTH_FEDERATION_ENVIRONMENT"], "shprod")
+        self.assertEqual(values["AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID"], "federation-sh-20260825-1")
+        self.assertEqual(values["AUTH_FEDERATION_CTL_BASE_URL"], "http://ctl-api.ctl.svc.cluster.local")
+        self.assertEqual(values["AUTH_FEDERATION_TAT_TIMEOUT_SECONDS"], "5")
+        self.assertEqual(values["AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS"], "28800")
+        self.assertNotIn("AUTH_FEDERATION_AEAD_KEYS_JSON", values)
+        self.assertNotIn("AUTH_FEDERATION_NONCE_KEY", values)
+        self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
+
+        for kustomization_path in (
+            REPO_ROOT / "user/auth/k8s/overlays/shprod/kustomization.yaml",
+            REPO_ROOT / "argocd/services/lightclaw-auth/shprod/kustomization.yaml",
+        ):
+            kustomization = yaml.safe_load(kustomization_path.read_text())
+            replacement_sources = {
+                replacement["source"]["fieldPath"]
+                for replacement in kustomization["replacements"]
+            }
+            for field in (
+                "AUTH_FEDERATION_ENABLED",
+                "AUTH_FEDERATION_ENVIRONMENT",
+                "AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID",
+                "AUTH_FEDERATION_CTL_BASE_URL",
+                "AUTH_FEDERATION_TAT_TIMEOUT_SECONDS",
+                "AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS",
+            ):
+                self.assertIn(f"data.{field}", replacement_sources)
+
+        ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.shprod.yaml").read_text()
+        )
+        required = set(ssm["items"][0]["required_keys"])
+        for key in (
+            "LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON",
+            "LIGHTCLAW_FEDERATION_NONCE_KEY",
+            "LIGHTCLAW_FEDERATION_CLIENTS_JSON",
+        ):
+            self.assertIn(key, required)
+
+        patch_documents = list(
+            yaml.safe_load_all(
+                (REPO_ROOT / "argocd/services/lightclaw-auth/shprod/patch-shadowbinding.yaml").read_text()
+            )
+        )
+        deployment = next(doc for doc in patch_documents if doc.get("kind") == "Deployment")
+        env = {
+            item["name"]: item
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual(
+            env["LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "lightclaw-auth-secrets", "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"},
+        )
+
     def test_sgprod_federation_runtime_contract_is_complete(self) -> None:
         def env_values(path: Path) -> dict[str, str]:
             return {
