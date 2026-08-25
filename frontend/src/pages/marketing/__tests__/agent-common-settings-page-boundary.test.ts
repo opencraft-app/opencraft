@@ -24,11 +24,27 @@ describe("Agent common settings region boundary", () => {
     expect(notFound).not.toHaveBeenCalled();
   });
 
-  it("omits the settings route and rejects direct access on the global site", async () => {
+  it("generates and resolves the settings route on the global site", async () => {
     const { notFound, route } = await loadRoute(true);
 
-    expect(route.generateStaticParams()).not.toContainEqual({ section: "settings" });
-    await expect(route.default({ params: Promise.resolve({ section: "settings" }) })).rejects.toThrow("NEXT_NOT_FOUND");
-    expect(notFound).toHaveBeenCalledOnce();
+    expect(route.generateStaticParams()).toContainEqual({ section: "settings" });
+    await expect(route.default({ params: Promise.resolve({ section: "settings" }) })).resolves.toBeTruthy();
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it("keeps websites global-only without filtering ordinary routes", async () => {
+    const domestic = await loadRoute(false);
+
+    expect(domestic.route.generateStaticParams()).toContainEqual({ section: "channels" });
+    expect(domestic.route.generateStaticParams()).not.toContainEqual({ section: "websites" });
+    await expect(domestic.route.default({ params: Promise.resolve({ section: "websites" }) })).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(domestic.notFound).toHaveBeenCalledOnce();
+
+    const global = await loadRoute(true);
+
+    expect(global.route.generateStaticParams()).toContainEqual({ section: "channels" });
+    expect(global.route.generateStaticParams()).toContainEqual({ section: "websites" });
+    await expect(global.route.default({ params: Promise.resolve({ section: "websites" }) })).resolves.toBeTruthy();
+    expect(global.notFound).not.toHaveBeenCalled();
   });
 });

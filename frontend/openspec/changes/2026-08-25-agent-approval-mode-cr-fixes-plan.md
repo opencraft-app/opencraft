@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. This S-level follow-up runs inline in the current isolated worktree; no subagent dispatch.
 
-**Goal:** 修复 MR !3288 事后评审确认的审批模式兼容性与安全提示问题，并补齐关键保护测试。
+**Goal:** 修复 MR !3288 事后评审确认的审批模式兼容性与安全提示问题，补齐关键保护测试，并在国际站开放完整高级设置页。
 
-**Architecture:** 保留现有 `approvals.mode` 命令、即时生效与 reset/save 边界，只收窄 Python reader 的未知枚举失败半径，并在现有 panel 状态上增加安全组专属文案和 `off` 状态提示。测试直接锁定生成 reader、reset 命令序列和 panel 用户行为，不引入新抽象或依赖。
+**Architecture:** 保留现有 `approvals.mode` 命令、即时生效与 reset/save 边界，只收窄 Python reader 的未知枚举失败半径，并在现有 panel 状态上增加安全组专属文案和 `off` 状态提示。国际站直接复用同一个高级设置面板，只解除导航、路由与面板渲染的区域限制。测试直接锁定生成 reader、reset 命令序列、panel 用户行为和双区域可达性，不引入新抽象或依赖。
 
 **Tech Stack:** React 19、TypeScript、Vitest、Testing Library、Radix Select、i18next、嵌入式 Python reader。
 
 ## Global Constraints
 
-- 仅国内站既有 Agent 高级设置入口可见，国际站边界不变。
+- 国内站与国际站都展示 Agent 高级设置入口，并解析 `/agents/settings` 为同一个完整面板。
 - `approvalMode` 保存与恢复仍不重启 Gateway。
 - 未知审批模式不得显示为 `smart`、`manual` 或 `off`，也不得阻塞其他设置。
 - 不修改镜像出厂 `approvals.mode: off`，不接入其他 `approvals.*` 字段。
@@ -287,3 +287,107 @@
 - [x] **Step 5: 展示增量提交范围并等待确认。**
 
   提交信息建议：`优化审批模式说明文案 / copy(frontend): refine approval mode descriptions`。确认前不提交、不推送。
+
+### Task 6: 国际站开放完整高级设置
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-common-settings-page-boundary.test.ts`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.global.test.tsx`
+- Modify: `frontend/src/app/(site)/agents/[section]/page.next.tsx:16-25`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:4846-4853,5278-5287`
+
+**Interfaces:**
+- Consumes: `AGENT_SECTION_ID_BY_SLUG.settings`、`AGENT_SECTION_PATH_BY_ID.settings`、现有 `AgentCommonSettingsPanel`。
+- Produces: 国际站生成并解析 `/agents/settings`，左侧「管理」分组展示本地化入口，激活后渲染完整高级设置面板。
+
+- [x] **Step 1: 将国际站区域边界改写为期望行为。**
+
+  把 global route 用例改为：
+
+  ```ts
+  it("generates and resolves the settings route on the global site", async () => {
+    const { notFound, route } = await loadRoute(true);
+
+    expect(route.generateStaticParams()).toContainEqual({ section: "settings" });
+    await expect(route.default({ params: Promise.resolve({ section: "settings" }) })).resolves.toBeTruthy();
+    expect(notFound).not.toHaveBeenCalled();
+  });
+  ```
+
+  在 global 页面测试中 mock `AgentCommonSettingsPanel`，把渲染 helper 扩展为接受 `"skill" | "settings"`，并断言：
+
+  ```tsx
+  const settingsLink = screen.getByRole("link", { name: "Advanced Settings" });
+  expect(settingsLink).toHaveAttribute("href", "/agents/settings");
+
+  renderAgentSettingsPage("settings");
+  expect(await screen.findByText("Global common settings panel")).toBeInTheDocument();
+  ```
+
+- [x] **Step 2: 运行聚焦测试确认 RED。**
+
+  ```bash
+  cd frontend
+  pnpm vitest run \
+    src/pages/marketing/__tests__/agent-common-settings-page-boundary.test.ts \
+    src/pages/marketing/__tests__/agent-settings-renewal-reminder.global.test.tsx
+  ```
+
+  Expected: global route 仍被过滤和 `notFound`，导航入口与面板仍被区域条件隐藏，因此新增断言失败；不得出现测试环境或语法错误。
+
+- [x] **Step 3: 解除三层区域限制。**
+
+  路由只继续排除国内站的 `websites`：
+
+  ```ts
+  return Object.keys(AGENT_SECTION_ID_BY_SLUG)
+    .filter((section) => isGlobal || section !== "websites")
+    .map((section) => ({ section }));
+
+  if (!sectionId || (!isGlobal && sectionId === "website")) notFound();
+  ```
+
+  导航始终包含：
+
+  ```tsx
+  { id: "settings", label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings }
+  ```
+
+  面板渲染条件只保留：
+
+  ```tsx
+  {activeSection === "settings" && <AgentCommonSettingsPanel ... />}
+  ```
+
+- [x] **Step 4: 运行聚焦测试确认 GREEN。**
+
+  ```bash
+  cd frontend
+  pnpm vitest run \
+    src/pages/marketing/__tests__/agent-common-settings-page-boundary.test.ts \
+    src/pages/marketing/__tests__/agent-settings-renewal-reminder.global.test.tsx \
+    src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx \
+    src/pages/marketing/__tests__/agent-settings-nav-order.test.ts
+  ```
+
+  Expected: 两站路由和导航断言全部通过，国内站既有入口和管理分组顺序不回归。
+
+- [x] **Step 5: 完成区域与静态验证。**
+
+  ```bash
+  cd frontend
+  pnpm i18n:check
+  pnpm i18n:zh-hant:check
+  pnpm typecheck
+  pnpm check
+  pnpm build:cn
+  pnpm build:global
+  cd ..
+  git diff --check
+  ```
+
+  Expected: 所有命令退出 0；本任务不新增源文案，生成字典不应变化。构建只允许既有 MDX `jsxRuntime: classic` deprecated warning。
+
+- [x] **Step 6: 展示增量提交范围并等待确认。**
+
+  提交信息建议：`开放国际站高级设置 / feat(frontend): expose advanced settings globally`。确认前不提交、不推送；确认后更新现有 MR !3309，不创建重复 MR。
