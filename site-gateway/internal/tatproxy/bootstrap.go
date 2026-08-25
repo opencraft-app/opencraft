@@ -61,7 +61,7 @@ func (t Target) Validate() error {
 }
 
 func validBotID(botID string) bool {
-	if len(botID) == 0 || len(botID) > 59 || !isBotAlphaNumeric(botID[0]) || !isBotAlphaNumeric(botID[len(botID)-1]) {
+	if len(botID) == 0 || len(botID) > 63 || !isBotAlphaNumeric(botID[0]) || !isBotAlphaNumeric(botID[len(botID)-1]) {
 		return false
 	}
 	for index := range len(botID) {

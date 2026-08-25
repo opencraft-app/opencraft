@@ -209,6 +209,12 @@ func TestFederationStarterSignsAndExchangesDelegatedSession(t *testing.T) {
 }
 
 func TestTargetRejectsNonDNSBotIDAndPreservesOpaqueSession(t *testing.T) {
+	if target := (Target{BotID: strings.Repeat("a", 63), DelegatedSession: "delegated-1"}); target.Validate() != nil {
+		t.Fatal("63-byte Bot ID was rejected")
+	}
+	if target := (Target{BotID: strings.Repeat("a", 64), DelegatedSession: "delegated-1"}); target.Validate() == nil {
+		t.Fatal("64-byte Bot ID unexpectedly validated")
+	}
 	for _, target := range []Target{
 		{BotID: "Bot-1", DelegatedSession: "delegated-1"},
 		{BotID: "bot_1", DelegatedSession: "delegated-1"},
