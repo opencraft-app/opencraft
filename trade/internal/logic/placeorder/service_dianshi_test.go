@@ -159,6 +159,13 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	if in.Status != store.OrderStatusPaidPendingProvision {
 		t.Errorf("trade_order.status=%q want %q", in.Status, store.OrderStatusPaidPendingProvision)
 	}
+	if in.Period != 14 || in.TimeUnit != "d" {
+		t.Errorf("trade_order period/time_unit=%d/%q want 14/d", in.Period, in.TimeUnit)
+	}
+	if in.GoodsDetail["timeSpan"] != 14 || in.GoodsDetail["timeUnit"] != "d" {
+		t.Errorf("goods_detail timeSpan/timeUnit=%v/%v want 14/d",
+			in.GoodsDetail["timeSpan"], in.GoodsDetail["timeUnit"])
+	}
 	if in.DealName != res.DealName {
 		t.Errorf("DealName mismatch in/out")
 	}
@@ -277,6 +284,61 @@ func TestPlaceOrder_DianshiBranch_DoGoodsBusinessError(t *testing.T) {
 	}
 }
 
+func TestPlaceOrder_DianshiBranch_RejectsInvalidTimeSpanUnitBeforeDoGoods(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+	r.mapping.TimeSpanUnit = "14days"
+
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if err == nil {
+		t.Fatal("expect invalid activity time_span_unit error")
+	}
+	if dc.doGoodsCalls.Load() != 0 {
+		t.Errorf("dianshi DoGoods should NOT be called for invalid time_span_unit, calls=%d", dc.doGoodsCalls.Load())
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Errorf("CreateOrder should NOT be called for invalid time_span_unit, calls=%d", d.writer.createOrderCalls.Load())
+	}
+}
+
+func TestParseDianshiTimeSpanUnit(t *testing.T) {
+	tests := []struct {
+		name       string
+		value      string
+		wantPeriod int
+		wantUnit   string
+		wantErr    bool
+	}{
+		{name: "days", value: "14d", wantPeriod: 14, wantUnit: "d"},
+		{name: "months", value: "1m", wantPeriod: 1, wantUnit: "m"},
+		{name: "normalizes whitespace and case", value: " 1Y ", wantPeriod: 1, wantUnit: "y"},
+		{name: "empty", value: "", wantErr: true},
+		{name: "missing unit", value: "14", wantErr: true},
+		{name: "zero", value: "0d", wantErr: true},
+		{name: "negative", value: "-1m", wantErr: true},
+		{name: "unsupported unit", value: "14h", wantErr: true},
+		{name: "long unit", value: "14days", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			period, unit, err := parseDianshiTimeSpanUnit(tc.value)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseDianshiTimeSpanUnit(%q) expected error", tc.value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseDianshiTimeSpanUnit(%q) err=%v", tc.value, err)
+			}
+			if period != tc.wantPeriod || unit != tc.wantUnit {
+				t.Fatalf("parseDianshiTimeSpanUnit(%q)=%d/%q want %d/%q",
+					tc.value, period, unit, tc.wantPeriod, tc.wantUnit)
+			}
+		})
+	}
+}
+
 func TestPlaceOrder_NonActivityBundle_StillJifei(t *testing.T) {
 	d := newStdDeps()
 	r := &fakeResolver{useDianshi: false} // mapping=nil 表示非活动 bundle
@@ -379,6 +441,10 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	}
 	if got := d.writer.lastCreateOrderInput; got.Source != store.OrderSourceDianshi || got.Status != store.OrderStatusPaidPendingProvision {
 		t.Errorf("persisted order source/status=%q/%q", got.Source, got.Status)
+	} else if got.Period != 14 || got.TimeUnit != "d" ||
+		got.GoodsDetail["timeSpan"] != 14 || got.GoodsDetail["timeUnit"] != "d" {
+		t.Errorf("persisted order duration=%d/%q goods_detail=%v/%v want 14/d",
+			got.Period, got.TimeUnit, got.GoodsDetail["timeSpan"], got.GoodsDetail["timeUnit"])
 	}
 	if dc.lastDoGoodsAndPay == nil || dc.lastDoGoodsAndPay.Goods[0].PreferenceParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
 		t.Errorf("DoGoodsAndPay request=%+v", dc.lastDoGoodsAndPay)

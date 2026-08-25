@@ -2040,6 +2040,13 @@ func (s *Service) placeOrderDianshiWith(
 		}, nil
 	}
 
+	effectivePeriod, effectiveTimeUnit, err := parseDianshiTimeSpanUnit(mapping.TimeSpanUnit)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: invalid dianshi activity time_span_unit bundleId=%s activityId=%d: %w",
+			req.BundleID, mapping.ActivityID, err)
+	}
+	effectiveTimeSpanUnit := strconv.Itoa(effectivePeriod) + effectiveTimeUnit
+
 	// 1. check_sum：mapping.SecretKey 为空 → 不发字段（dianshiclient.CalcCheckSum 返空字符串触发 omitempty）
 	checkSum := dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey)
 
@@ -2061,7 +2068,7 @@ func (s *Service) placeOrderDianshiWith(
 				// "哪个业务用户下了哪个商品"记到点石侧履约链路里。
 				PreferenceParam: map[string]interface{}{
 					"regionId":       s.region.RegionID,
-					"timeSpanUnit":   mapping.TimeSpanUnit,
+					"timeSpanUnit":   effectiveTimeSpanUnit,
 					"subProductCode": def.SubProductCode,
 					"bundleId":       mapping.BundleID,
 					"externalUserId": req.ExternalUserID,
@@ -2094,7 +2101,10 @@ func (s *Service) placeOrderDianshiWith(
 	// 4. 落 trade_order（source='dianshi'，status='paid_pending_provision' 与 PlaceOrderAndPay 同款——
 	// 点石下单同步链路与 jifei generateDealsAndPay 一体化语义对齐：拿到 deal_name 即视为"已下单已扣款待发货"，
 	// 等 jifei 反向回调 createResource 把 status 推进到 'provisioned'）。
-	goodsDetail := buildGoodsDetail(def, req)
+	effectiveReq := req
+	effectiveReq.Period = effectivePeriod
+	effectiveReq.TimeUnit = effectiveTimeUnit
+	goodsDetail := buildGoodsDetail(def, effectiveReq)
 	// 把活动元信息塞入 goodsDetail，便于 createResource handler 反查 / 排障日志
 	goodsDetail["dianshi_activity_id"] = mapping.ActivityID
 	goodsDetail["dianshi_act_id"] = mapping.ActID
@@ -2108,8 +2118,8 @@ func (s *Service) placeOrderDianshiWith(
 		AppID:          req.AppID,
 		SubProductCode: def.SubProductCode,
 		BundleID:       req.BundleID,
-		Period:         req.Period,
-		TimeUnit:       req.TimeUnit,
+		Period:         effectivePeriod,
+		TimeUnit:       effectiveTimeUnit,
 		GoodsNum:       req.GoodsNum,
 		RegionID:       s.region.RegionID,
 		PayMode:        req.PayMode,
@@ -2134,4 +2144,30 @@ func (s *Service) placeOrderDianshiWith(
 		DealName:   dealName,
 		BigOrderID: bigDealNo,
 	}, nil
+}
+
+func parseDianshiTimeSpanUnit(value string) (int, string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if len(normalized) < 2 {
+		return 0, "", fmt.Errorf("must be a positive integer followed by d, m, or y, got %q", value)
+	}
+
+	timeUnit := normalized[len(normalized)-1:]
+	switch timeUnit {
+	case "d", "m", "y":
+	default:
+		return 0, "", fmt.Errorf("unsupported time unit in %q; expected d, m, or y", value)
+	}
+
+	periodText := normalized[:len(normalized)-1]
+	for _, ch := range periodText {
+		if ch < '0' || ch > '9' {
+			return 0, "", fmt.Errorf("period must be a positive integer in %q", value)
+		}
+	}
+	period, err := strconv.Atoi(periodText)
+	if err != nil || period <= 0 {
+		return 0, "", fmt.Errorf("period must be a positive integer in %q", value)
+	}
+	return period, timeUnit, nil
 }
