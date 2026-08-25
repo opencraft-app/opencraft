@@ -22,6 +22,24 @@ data:
   SITE_GATEWAY_AUTH_OIDC_CLIENT_ID: ""
   SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID: ""
   SITE_GATEWAY_AUTH_SESSION_TTL: "5m"
+  # DSH data-plane routing is opt-in. Empty domains and federation settings keep it disabled.
+  SITE_GATEWAY_DSH_DOMAINS: ""
+  SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL: ""
+  SITE_GATEWAY_DSH_FEDERATION_BASE_URL: ""
+  SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID: ""
+  SITE_GATEWAY_DSH_FEDERATION_KEY_ID: ""
+  SITE_GATEWAY_DSH_TAT_START_TIMEOUT: "10s"
+  SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT: "15s"
+  SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT: "1h"
+  SITE_GATEWAY_DSH_MAX_TARGETS: "16"
+  SITE_GATEWAY_DSH_MAX_CONNECTIONS_PER_TARGET: "64"
+  SITE_GATEWAY_DSH_QUEUE_DEPTH: "64"
+  # Bound TAT buffering by bytes as well as frames. The aggregate 64 MiB cap
+  # leaves headroom inside the Pod's 256 MiB memory limit.
+  SITE_GATEWAY_DSH_MAX_FRAME_BYTES: "262144"
+  SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION: "2097152"
+  SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_TARGET: "16777216"
+  SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_TOTAL: "67108864"
   SITE_GATEWAY_SITE_CACHE_TTL: "30s"
   SITE_GATEWAY_SITE_MISS_CACHE_TTL: "5s"
 ---
@@ -77,6 +95,13 @@ spec:
                 secretKeyRef:
                   name: site-gateway-secrets
                   key: SITE_GATEWAY_AUTH_AEAD_KEYS
+                  optional: true
+            # Optional while DSH routing is disabled. Auth and site-gateway use the same client key.
+            - name: SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY
                   optional: true
           ports:
             - name: http
