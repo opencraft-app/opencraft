@@ -335,11 +335,11 @@ a {
 .lv-agent-renewal-badge {
   display: inline-flex;
   height: 18px;
-  max-width: 92px;
+  max-width: 112px;
   align-items: center;
   gap: 3px;
   overflow: hidden;
-  padding: 0 6px;
+  padding: 0 8px;
   border: 1px solid transparent;
   border-radius: 999px;
   font-size: 11px;

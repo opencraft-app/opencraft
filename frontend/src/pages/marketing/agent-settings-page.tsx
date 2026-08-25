@@ -137,7 +137,7 @@ import { isPaidBillingEnabled } from "@/lib/billing-flow";
 import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renewal";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
-import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
+import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
@@ -4965,15 +4965,14 @@ export const AgentSettingsPage = ({
                                   </span>
                                 </span>
                               ) : (
-                                <span className="relative inline-flex">
-                                  <RenewComingSoonButton
-                                    label={passExpiryReminderCopy.label}
-                                    tooltip={t("敬请期待")}
-                                    ariaLabel={t("套餐{{time}}，敬请期待", { time: passExpiryReminderCopy.tooltip })}
-                                    icon={<AlertTriangle className="h-3 w-3" aria-hidden="true" />}
-                                    className={cn("lv-agent-renewal-badge cursor-not-allowed is-disabled", `is-${passExpiryReminder.level}`)}
-                                    tooltipClassName="whitespace-nowrap"
-                                  />
+                                <span
+                                  className={cn(
+                                    "lv-agent-renewal-badge is-disabled",
+                                    `is-${passExpiryReminder.level}`,
+                                  )}
+                                >
+                                  {passExpiryReminderCopy.label}
+                                  <span className="sr-only"> {passExpiryReminderCopy.tooltip}</span>
                                 </span>
                               )
                             )}
