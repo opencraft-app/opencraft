@@ -86,6 +86,7 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/files", title: "云存储" },
       { slug: "configuration/agent-chat", title: "对话" },
       { slug: "configuration/diagnostics", title: "诊断中心" },
+      { slug: "configuration/advanced-settings", title: "高级设置" },
       { slug: "configuration/multiple-models", title: "模型切换" },
     ],
   },
@@ -183,6 +184,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/files", title: "云存储", titleEn: "Cloud Storage" },
       { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
       { slug: "configuration/diagnostics", title: "诊断中心", titleEn: "Diagnostics" },
+      { slug: "configuration/advanced-settings", title: "高级设置", titleEn: "Advanced Settings" },
       {
         slug: "configuration/multiple-models",
         title: "模型切换",
@@ -348,6 +350,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/files": "configuration/files.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "configuration/diagnostics": "configuration/diagnostics.md",
+  "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   // 问题排查
   faq: "07-faq.md",
@@ -397,6 +400,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/files": "configuration/files.md",
   "configuration/automation": "configuration/automation.md",
   "configuration/diagnostics": "configuration/diagnostics.md",
+  "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",

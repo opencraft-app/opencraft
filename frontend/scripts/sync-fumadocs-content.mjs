@@ -102,6 +102,7 @@ const cnDocs = [
   { slug: 'configuration/files', title: '云存储', file: 'configuration/files.md', group: '功能与配置', description: '管理 Agent 使用的云端文件和工作资料。', hideDescription: true },
   { slug: 'configuration/agent-chat', title: '对话', file: 'configuration/agent-chat.md', group: '功能与配置', description: '通过聊天窗口与 Hermes Agent 交互。', hideDescription: true },
   { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '查看日志并排查 Hermes Agent 的异常情况。', hideDescription: true },
+  { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '功能与配置', description: '查看并调整 Hermes Agent 的记忆和上下文管理配置。', hideDescription: true },
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
   // Hermes Agent 解读（长文科普，帮助用户理解 Hermes Agent 的设计与原理）
   { slug: 'hermes-agent/hermes-vs-openclaw', title: 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别', file: 'hermes-agent/01-hermes-vs-openclaw.md', group: 'Hermes Agent 解读', description: '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。', hideDescription: true },
@@ -418,6 +419,17 @@ const globalDocs = [
     file: 'configuration/diagnostics.md',
     group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
+    slug: 'configuration/advanced-settings',
+    title: { 'en-US': 'Advanced Settings', 'zh-CN': '高级设置' },
+    file: 'configuration/advanced-settings.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Review and adjust Hermes Agent memory and context-management settings.',
+      'zh-CN': '查看并调整 Hermes Agent 的记忆和上下文管理配置。',
+    },
     hideDescription: true,
   },
   {
@@ -881,6 +893,10 @@ const ID_DOC_METADATA = {
   'configuration/diagnostics': {
     title: 'Diagnostik',
     description: 'Gunakan pusat diagnostik untuk memeriksa status Agent, kanal, dan konfigurasi penting.',
+  },
+  'configuration/advanced-settings': {
+    title: 'Pengaturan Lanjutan',
+    description: 'Tinjau dan sesuaikan pengaturan memori serta pengelolaan konteks Hermes Agent.',
   },
   'configuration/multiple-models': {
     title: 'Beberapa Model',

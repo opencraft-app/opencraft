@@ -99,6 +99,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "advanced-settings"
+    ],
+    [
+      "configuration",
       "multiple-models"
     ],
     [
@@ -320,6 +324,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "advanced-settings"
+    ],
+    [
+      "configuration",
       "multiple-models"
     ],
     [
@@ -482,6 +490,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "diagnostics"
+    ],
+    [
+      "configuration",
+      "advanced-settings"
     ],
     [
       "configuration",
@@ -719,6 +731,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "advanced-settings"
+    ],
+    [
+      "configuration",
       "multiple-models"
     ],
     [
@@ -953,6 +969,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "advanced-settings"
+    ],
+    [
+      "configuration",
       "multiple-models"
     ],
     [
@@ -1132,6 +1152,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/files": "2026-08-20",
     "configuration/agent-chat": "2026-08-20",
     "configuration/diagnostics": "2026-08-20",
+    "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-20",
     "use-cases/personal-ai-assistant": "2026-08-18",
     "use-cases/chinese-messaging-channels": "2026-08-21",
@@ -1192,6 +1213,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/files": "2026-08-24",
     "configuration/agent-chat": "2026-08-24",
     "configuration/diagnostics": "2026-08-24",
+    "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-24",
     "hermes-agent/hermes-vs-openclaw": "2026-08-12",
     "hermes-agent/why-hermes-remembers-you": "2026-08-12",
@@ -1238,6 +1260,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/files": "2026-08-20",
     "configuration/agent-chat": "2026-08-20",
     "configuration/diagnostics": "2026-08-20",
+    "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-20",
     "use-cases/personal-ai-assistant": "2026-08-18",
     "use-cases/chinese-messaging-channels": "2026-08-21",
@@ -1301,6 +1324,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/files": "2026-08-20",
     "configuration/agent-chat": "2026-08-20",
     "configuration/diagnostics": "2026-08-20",
+    "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-20",
     "use-cases/personal-ai-assistant": "2026-08-18",
     "use-cases/chinese-messaging-channels": "2026-08-21",
@@ -1364,6 +1388,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/files": "2026-08-20",
     "configuration/agent-chat": "2026-08-20",
     "configuration/diagnostics": "2026-08-20",
+    "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-20",
     "use-cases/personal-ai-assistant": "2026-08-18",
     "use-cases/chinese-messaging-channels": "2026-08-20",
