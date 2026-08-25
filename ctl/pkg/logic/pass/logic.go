@@ -1870,6 +1870,54 @@ func (l *logic) CreateDianshiPassOrderAndPay(userID string, req *transport.Creat
 	}, nil
 }
 
+// GrantDianshiSubscription prepares the same one-user Pass purchase invariant
+// as the normal flow and delegates the request-scoped product override to Trade.
+func (l *logic) GrantDianshiSubscription(userID string, req *transport.GrantDianshiSubscriptionRequest) (*transport.GrantDianshiSubscriptionResult, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	if req.ActID <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "act_id must be > 0")
+	}
+	placeReq, logger, err := l.prepareCreatePassOrder(userID, &transport.CreatePassOrderRequest{
+		BundleID: req.BundleID,
+		Period:   1,
+		TimeUnit: bundlemodel.TimeUnitMonth,
+	}, "grant_dianshi_subscription")
+	if err != nil {
+		if errors.Is(err, errcode.ErrPassAlreadyExists) {
+			return &transport.GrantDianshiSubscriptionResult{Status: "skipped"}, nil
+		}
+		return nil, err
+	}
+
+	tradeAdapter, ok := adapterfactory.DefaultAdapterFactory.TradeAdapter().(tradeadapter.DianshiGrantAdapter)
+	if !ok {
+		return nil, fmt.Errorf("trade adapter: Dianshi grant capability is not configured")
+	}
+	grantCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := tradeAdapter.GrantDianshiSubscription(grantCtx, &tradeadapter.GrantDianshiSubscriptionRequest{
+		PlaceOrderRequest: *placeReq,
+		ActID:             req.ActID,
+	})
+	if err != nil {
+		logger.Warn("grant Dianshi subscription failed", zap.Error(err))
+		if mapped := mapTradePlaceOrderError(err); mapped != nil {
+			return nil, mapped
+		}
+		return nil, fmt.Errorf("trade grant Dianshi subscription: %w", err)
+	}
+	if result == nil || result.Status == "" {
+		return nil, fmt.Errorf("trade grant Dianshi subscription: empty status")
+	}
+	return &transport.GrantDianshiSubscriptionResult{
+		Status:     result.Status,
+		DealName:   result.DealName,
+		BigOrderID: result.BigOrderID,
+	}, nil
+}
+
 // prepareCreatePassOrder CreatePassOrder / CreatePassOrderAndPay 共享前置流程。
 //
 // 步骤覆盖：

@@ -237,6 +237,7 @@ func TestRunMainFlow_DianshiCallbackWithoutTradeOrderInsertsParticipation(t *tes
 		"goodsDetail": map[string]interface{}{
 			"bundleId":       "bundle_cruise_01",
 			"externalUserId": "usr_bb753c9a0c8cc53a3e9df172",
+			"dianshiActId":   142123551192174,
 			"timeSpan":       1,
 			"timeUnit":       "m",
 			"goodsNum":       1,
@@ -263,7 +264,7 @@ func TestRunMainFlow_DianshiCallbackWithoutTradeOrderInsertsParticipation(t *tes
 	if got.Uin != "450850000019" || got.AppID != "1472039146" || got.ExternalUserID != "usr_bb753c9a0c8cc53a3e9df172" {
 		t.Errorf("participation identity=%q/%q/%q", got.Uin, got.AppID, got.ExternalUserID)
 	}
-	if got.ActivityID != 165523570799387 || got.ActID != 142062575174494 || got.BundleID != "bundle_cruise_01" {
+	if got.ActivityID != 165523570799387 || got.ActID != 142123551192174 || got.BundleID != "bundle_cruise_01" {
 		t.Errorf("participation activity=%d/%d/%q", got.ActivityID, got.ActID, got.BundleID)
 	}
 	if got.DealName != "20260821019013005816971" || got.BigDealNo != "20260821019013005816961" {
