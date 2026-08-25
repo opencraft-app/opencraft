@@ -13,4 +13,3 @@ CREATE TABLE IF NOT EXISTS oidc_authorization_codes (
     KEY idx_oidc_authorization_codes_user_id (user_id),
     KEY idx_oidc_authorization_codes_expires_at (expires_at)
 );
-
