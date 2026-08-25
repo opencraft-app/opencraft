@@ -13,6 +13,8 @@ import type { BotRepository } from "@/repositories/types";
 import {
   fetchHermesCommonSettingsSnapshot,
   getHermesCommonSettingKeysForGroup,
+  isHermesCommonSettingAtResetTarget,
+  requiresHermesCommonSettingGatewayRestart,
   validateHermesCommonSetting,
   type HermesApprovalMode,
   type HermesCommonSettingGroup,
@@ -71,6 +73,7 @@ interface SettingGroup {
 
 const emptyFeedback = (): Record<HermesCommonSettingKey, FieldFeedback> => ({
   approvalMode: null,
+  destructiveSlashConfirm: null,
   persistentMemory: null,
   userProfile: null,
   autoCompression: null,
@@ -117,13 +120,19 @@ export function AgentCommonSettingsPanel({
     {
       id: "security",
       title: t("安全"),
-      description: t("管理 Agent 执行高风险操作时的审批方式。"),
+      description: t("管理 Agent 的命令审批与会话操作确认方式。"),
       settings: [
         {
           key: "approvalMode",
           label: t("审批模式"),
           description: t("设置 Agent 执行高风险操作时的审批方式。"),
           kind: "select",
+        },
+        {
+          key: "destructiveSlashConfirm",
+          label: t("会话操作确认"),
+          description: t("新建会话，或清空、撤销、删除会话内容前，先向你确认。"),
+          kind: "switch",
         },
       ],
     },
@@ -211,7 +220,7 @@ export function AgentCommonSettingsPanel({
         saved = true;
       } else {
         const message = result.status === "partial"
-          ? key === "approvalMode"
+          ? !requiresHermesCommonSettingGatewayRestart(key)
             ? t("配置已保存，但回读验证失败，请刷新确认。")
             : t("配置已保存，但重启或回读验证失败，请刷新确认。")
           : t("保存失败：{{detail}}", { detail: result.error.message });
@@ -273,6 +282,11 @@ export function AgentCommonSettingsPanel({
   };
 
   const switchConfirmationDescription = (change: PendingSwitchChange): string => {
+    if (change.key === "destructiveSlashConfirm") {
+      return change.nextValue
+        ? t("开启后，新建会话，或清空、撤销、删除会话内容前，将先向你确认。")
+        : t("关闭后，新建会话，或清空、撤销、删除会话内容时将直接执行。");
+    }
     if (change.key === "persistentMemory") {
       return change.nextValue
         ? t("开启后，Agent 将在后续会话中读取和更新 MEMORY.md。")
@@ -368,7 +382,7 @@ export function AgentCommonSettingsPanel({
         <div className="mt-8 flex flex-col gap-10">
           {settingGroups.map((group, groupIndex) => {
             const groupAlreadyDefault = getHermesCommonSettingKeysForGroup(group.id)
-              .every((key) => snapshot.defaultedKeys.includes(key) || snapshot.unsupportedKeys.includes(key));
+              .every((key) => isHermesCommonSettingAtResetTarget(key, snapshot));
 
             return (
               <section
@@ -576,7 +590,12 @@ export function AgentCommonSettingsPanel({
               <button
                 type="button"
                 onClick={confirmSwitchChange}
-                className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white transition hover:opacity-90"
+                className={cn(
+                  "inline-flex h-9 min-w-[104px] items-center justify-center rounded-md px-4 text-sm font-semibold text-white transition",
+                  pendingSwitchChange.key === "destructiveSlashConfirm" && !pendingSwitchChange.nextValue
+                    ? "bg-red-600 hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                    : "bg-[var(--text-primary)] hover:opacity-90",
+                )}
               >
                 {pendingSwitchChange.nextValue ? t("确认开启") : t("确认关闭")}
               </button>
@@ -630,9 +649,7 @@ export function AgentCommonSettingsPanel({
               </DialogTitle>
               <DialogDescription className="mt-1 text-pretty text-sm leading-6 text-black/55">
                 {pendingResetGroup === "security"
-                  ? snapshot?.values.approvalMode === "off"
-                    ? t("恢复后审批模式将变为「智能审批」（当前为「关闭审批」）。")
-                    : t("恢复后将使用「智能审批」。")
+                  ? t("恢复后审批模式将变为「关闭审批」，会话操作确认将关闭。")
                   : t("将重置「{{group}}」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。", {
                       group: pendingResetGroupTitle,
                     })}

@@ -3551,3 +3551,23 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] 将安全分组、审批模式和关闭审批弹窗正文改为「高风险操作」，完成测试、i18n 和静态门禁后追加到 MR !3309。
 
 ---
+
+# Agent 会话操作确认 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development. The repository remains single-agent unless the user explicitly authorizes subagents.
+
+**Goal:** 在高级设置「安全」分组增加「会话操作确认」，并让安全分组恢复到 LightVela 预置 `approvals.mode=off`、`approvals.destructive_slash_confirm=false`。
+
+**Design:** `openspec/changes/2026-08-25-session-operation-confirmation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-25-session-operation-confirmation-plan.md`
+
+## Tasks
+
+- [x] 扩展 typed settings、reader 与即时保存链路，接入 `approvals.destructive_slash_confirm`。
+- [x] 将安全分组 reset 改为 `config set` 写回 LightVela `off/false`，不得 unset 成 Hermes `smart/true`。
+- [x] 增加「会话操作确认」开关、风险确认、LightVela 恢复说明和四语言资源。
+- [x] 完成焦点测试、i18n、类型检查、双区域构建和 diff 门禁。
+- [x] 展示最终范围、验证证据、提交信息和 MR 配置，等待用户确认。
+
+---
