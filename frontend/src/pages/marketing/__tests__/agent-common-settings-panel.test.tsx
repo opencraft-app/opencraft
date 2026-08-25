@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotRepository } from "@/repositories/types";
 
 import { AgentCommonSettingsPanel } from "../agent-common-settings-panel";
@@ -15,8 +15,18 @@ const toastMocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/toast", () => ({ toast: toastMocks }));
 
+beforeAll(() => {
+  Object.defineProperties(HTMLElement.prototype, {
+    hasPointerCapture: { configurable: true, value: () => false },
+    releasePointerCapture: { configurable: true, value: () => undefined },
+    scrollIntoView: { configurable: true, value: () => undefined },
+    setPointerCapture: { configurable: true, value: () => undefined },
+  });
+});
+
 const baseSnapshot = (patch?: Partial<HermesCommonSettingsSnapshot>): HermesCommonSettingsSnapshot => ({
   values: {
+    approvalMode: "smart",
     persistentMemory: true,
     userProfile: true,
     autoCompression: true,
@@ -52,7 +62,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.getByRole("heading", { name: "高级设置" })).toBeTruthy();
   });
 
-  it("renders six flat rows and saves a switch only after confirmation", async () => {
+  it("renders seven flat rows and saves a switch only after confirmation", async () => {
     const user = userEvent.setup();
     const saveSetting = vi.fn().mockImplementation(async ({ key, value }) => ({
       status: "success",
@@ -71,7 +81,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const memorySwitch = await screen.findByRole("switch", { name: "长期记忆" });
-    expect(screen.getAllByTestId("common-setting-row")).toHaveLength(6);
+    expect(screen.getAllByTestId("common-setting-row")).toHaveLength(7);
     await user.click(memorySwitch);
 
     expect(saveSetting).not.toHaveBeenCalled();
@@ -94,6 +104,161 @@ describe("AgentCommonSettingsPanel", () => {
     })));
     await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith("已保存"));
     expect(screen.queryByText("已保存")).toBeNull();
+  });
+
+  it("renders approval mode first with all three choices", async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    const trigger = await screen.findByRole("combobox", { name: "审批模式" });
+    expect(trigger).toHaveTextContent("智能审批");
+    await user.click(trigger);
+    expect(screen.getByRole("option", { name: "智能审批" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "始终询问" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "关闭审批" })).toBeTruthy();
+  });
+
+  it("saves smart and manual approval modes without confirmation", async () => {
+    const user = userEvent.setup();
+    const saveSetting = vi.fn().mockResolvedValue({
+      status: "success",
+      snapshot: baseSnapshot({ values: { ...baseSnapshot().values, approvalMode: "manual" } }),
+    } satisfies HermesCommonSettingSaveResult);
+
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    await user.click(await screen.findByRole("combobox", { name: "审批模式" }));
+    await user.click(screen.getByRole("option", { name: "始终询问" }));
+
+    await waitFor(() => expect(saveSetting).toHaveBeenCalledWith(expect.objectContaining({
+      key: "approvalMode",
+      value: "manual",
+    })));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("confirms before turning approvals off and restores the controlled value on cancel", async () => {
+    const user = userEvent.setup();
+    const saveSetting = vi.fn();
+
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot()}
+        saveSetting={saveSetting}
+      />,
+    );
+
+    const trigger = await screen.findByRole("combobox", { name: "审批模式" });
+    await user.click(trigger);
+    await user.click(screen.getByRole("option", { name: "关闭审批" }));
+
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "确认关闭命令审批？" })).toBeTruthy();
+    expect(screen.getByText("关闭后，Agent 执行危险命令时将不再请求你的批准。请仅在可信环境中使用。")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认关闭" })).toHaveClass("bg-red-600");
+
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(trigger).toHaveTextContent("智能审批");
+
+    await user.click(trigger);
+    await user.click(screen.getByRole("option", { name: "关闭审批" }));
+    await user.click(screen.getByRole("button", { name: "确认关闭" }));
+    expect(saveSetting).toHaveBeenCalledWith(expect.objectContaining({ key: "approvalMode", value: "off" }));
+  });
+
+  it("shows an existing off mode without opening a confirmation dialog", async () => {
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot({
+          values: { ...baseSnapshot().values, approvalMode: "off" },
+        })}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("关闭审批");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("disables Security reset when approval mode is unsupported", async () => {
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot({ unsupportedKeys: ["approvalMode"] })}
+        saveSetting={vi.fn()}
+        resetSettings={vi.fn()}
+      />,
+    );
+
+    const groups = await screen.findAllByTestId("common-setting-group");
+    const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
+    expect(securityGroup).toBeTruthy();
+    expect(within(securityGroup!).queryByRole("combobox", { name: "审批模式" })).toBeNull();
+    expect(within(securityGroup!).getByText("当前 Agent 版本不支持")).toBeTruthy();
+    expect(within(securityGroup!).getByRole("button", { name: "恢复默认" })).toBeDisabled();
+  });
+
+  it("restores Security to smart approval", async () => {
+    const user = userEvent.setup();
+    const resetSettings = vi.fn().mockResolvedValue({
+      status: "success",
+      snapshot: baseSnapshot({
+        values: { ...baseSnapshot().values, approvalMode: "smart" },
+        defaultedKeys: ["approvalMode"],
+      }),
+    } satisfies HermesCommonSettingsResetResult);
+
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot({
+          values: { ...baseSnapshot().values, approvalMode: "off" },
+        })}
+        saveSetting={vi.fn()}
+        resetSettings={resetSettings}
+      />,
+    );
+
+    const groups = await screen.findAllByTestId("common-setting-group");
+    const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
+    await user.click(within(securityGroup!).getByRole("button", { name: "恢复默认" }));
+    await user.click(screen.getByRole("button", { name: "确认恢复" }));
+
+    await waitFor(() => expect(resetSettings).toHaveBeenCalledWith(expect.objectContaining({ group: "security" })));
+    expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("智能审批");
   });
 
   it.each([
@@ -165,10 +330,10 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const rows = await screen.findAllByTestId("common-setting-row");
-    for (const row of rows.slice(0, 3)) {
+    for (const row of rows.slice(1, 4)) {
       expect(row).toHaveClass("sm:grid-cols-[minmax(0,1fr)_auto]");
     }
-    for (const row of rows.slice(3)) {
+    for (const row of [rows[0]!, ...rows.slice(4)]) {
       expect(row).toHaveClass("sm:grid-cols-[minmax(0,1fr)_17rem]");
     }
   });
@@ -221,7 +386,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(document.body.innerHTML).not.toContain("#003cab");
   });
 
-  it("separates memory and context groups with one divider without adding row dividers", async () => {
+  it("separates security, memory, and context groups without adding row dividers", async () => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
@@ -234,23 +399,31 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const groups = await screen.findAllByTestId("common-setting-group");
-    expect(groups).toHaveLength(2);
+    expect(groups).toHaveLength(3);
 
-    expect(within(groups[0]!).getByRole("heading", { name: "记忆" })).toBeTruthy();
-    expect(within(groups[0]!).getByText("管理跨会话保留的长期信息与用户偏好。")).toBeTruthy();
-    expect(within(groups[0]!).getAllByTestId("common-setting-row")).toHaveLength(2);
-    expect(within(groups[0]!).getByRole("switch", { name: "长期记忆" })).toBeTruthy();
-    expect(within(groups[0]!).getByRole("switch", { name: "用户画像" })).toBeTruthy();
+    const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
+    const memoryGroup = groups.find((group) => within(group).queryByRole("heading", { name: "记忆" }));
+    const contextGroup = groups.find((group) => within(group).queryByRole("heading", { name: "上下文管理" }));
 
-    expect(within(groups[1]!).getByRole("heading", { name: "上下文管理" })).toBeTruthy();
-    expect(within(groups[1]!).getByText("管理长对话的上下文处理与压缩设置。")).toBeTruthy();
+    expect(securityGroup).toBeTruthy();
+    expect(memoryGroup).toBeTruthy();
+    expect(contextGroup).toBeTruthy();
+    expect(within(securityGroup!).getAllByTestId("common-setting-row")).toHaveLength(1);
+    expect(within(memoryGroup!).getAllByTestId("common-setting-row")).toHaveLength(2);
+    expect(within(contextGroup!).getAllByTestId("common-setting-row")).toHaveLength(4);
+
+    expect(within(memoryGroup!).getByText("管理跨会话保留的长期信息与用户偏好。")).toBeTruthy();
+    expect(within(memoryGroup!).getByRole("switch", { name: "长期记忆" })).toBeTruthy();
+    expect(within(memoryGroup!).getByRole("switch", { name: "用户画像" })).toBeTruthy();
+
+    expect(within(contextGroup!).getByText("管理长对话的上下文处理与压缩设置。")).toBeTruthy();
     expect(screen.queryByText("管理长对话压缩的触发时机与原文保留范围。")).toBeNull();
-    expect(within(groups[1]!).getByText("压缩后保留多少近期对话原文；数值越大，保留越多，可填写 0.1 到 0.8。")).toBeTruthy();
+    expect(within(contextGroup!).getByText("压缩后保留多少近期对话原文；数值越大，保留越多，可填写 0.1 到 0.8。")).toBeTruthy();
     expect(screen.queryByText("压缩时为近期原文保留的 Token 比例，可填写 0.1 到 0.8。")).toBeNull();
-    expect(within(groups[1]!).getAllByTestId("common-setting-row")).toHaveLength(4);
 
-    expect(groups[0]!).not.toHaveClass("border-t");
-    expect(groups[1]!).toHaveClass("border-t", "border-black/[0.08]", "pt-10");
+    expect(securityGroup!).not.toHaveClass("border-t");
+    expect(memoryGroup!).toHaveClass("border-t", "border-black/[0.08]", "pt-10");
+    expect(contextGroup!).toHaveClass("border-t", "border-black/[0.08]", "pt-10");
 
     for (const group of groups) {
       expect(group).not.toHaveClass("border", "divide-y", "rounded-md", "shadow");
@@ -273,12 +446,17 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const groups = await screen.findAllByTestId("common-setting-group");
-    const memoryReset = within(groups[0]!).getByRole("button", { name: "恢复默认" });
-    const contextReset = within(groups[1]!).getByRole("button", { name: "恢复默认" });
+    const securityGroup = groups.find((group) => within(group).queryByRole("heading", { name: "安全" }));
+    const memoryGroup = groups.find((group) => within(group).queryByRole("heading", { name: "记忆" }));
+    const contextGroup = groups.find((group) => within(group).queryByRole("heading", { name: "上下文管理" }));
+    const securityReset = within(securityGroup!).getByRole("button", { name: "恢复默认" });
+    const memoryReset = within(memoryGroup!).getByRole("button", { name: "恢复默认" });
+    const contextReset = within(contextGroup!).getByRole("button", { name: "恢复默认" });
 
+    expect(securityReset).toBeEnabled();
     expect(memoryReset).toBeDisabled();
     expect(contextReset).toBeEnabled();
-    for (const resetButton of [memoryReset, contextReset]) {
+    for (const resetButton of [securityReset, memoryReset, contextReset]) {
       expect(resetButton).toHaveClass(
         "rounded-md",
         "border",
@@ -299,8 +477,9 @@ describe("AgentCommonSettingsPanel", () => {
         "hover:bg-black/[0.03]",
       );
     }
-    expect(within(groups[0]!).getByRole("heading", { name: "记忆" }).parentElement).toContainElement(memoryReset);
-    expect(within(groups[1]!).getByRole("heading", { name: "上下文管理" }).parentElement).toContainElement(contextReset);
+    expect(within(securityGroup!).getByRole("heading", { name: "安全" }).parentElement).toContainElement(securityReset);
+    expect(within(memoryGroup!).getByRole("heading", { name: "记忆" }).parentElement).toContainElement(memoryReset);
+    expect(within(contextGroup!).getByRole("heading", { name: "上下文管理" }).parentElement).toContainElement(contextReset);
   });
 
   it("confirms and restores only the selected group with a red destructive action", async () => {
@@ -334,7 +513,8 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const groups = await screen.findAllByTestId("common-setting-group");
-    await user.click(within(groups[0]!).getByRole("button", { name: "恢复默认" }));
+    const memoryGroup = groups.find((group) => within(group).queryByRole("heading", { name: "记忆" }));
+    await user.click(within(memoryGroup!).getByRole("button", { name: "恢复默认" }));
     expect(screen.getByRole("heading", { name: "确认恢复「记忆」设置？" })).toBeTruthy();
     expect(screen.getByText("将重置「记忆」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。")).toBeTruthy();
     expect(screen.queryByText("将移除该分组的自定义配置，重新使用 Hermes 默认值。")).toBeNull();
@@ -343,7 +523,7 @@ describe("AgentCommonSettingsPanel", () => {
     await user.click(screen.getByRole("button", { name: "取消" }));
     expect(resetSettings).not.toHaveBeenCalled();
 
-    await user.click(within(groups[0]!).getByRole("button", { name: "恢复默认" }));
+    await user.click(within(memoryGroup!).getByRole("button", { name: "恢复默认" }));
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
 
     await waitFor(() => expect(resetSettings).toHaveBeenCalledWith(expect.objectContaining({
@@ -376,7 +556,8 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const groups = await screen.findAllByTestId("common-setting-group");
-    const contextReset = within(groups[1]!).getByRole("button", { name: "恢复默认" });
+    const contextGroup = groups.find((group) => within(group).queryByRole("heading", { name: "上下文管理" }));
+    const contextReset = within(contextGroup!).getByRole("button", { name: "恢复默认" });
     await user.click(contextReset);
     expect(screen.getByRole("heading", { name: "确认恢复「上下文管理」设置？" })).toBeTruthy();
     expect(screen.getByText("将重置「上下文管理」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。")).toBeTruthy();
@@ -410,12 +591,15 @@ describe("AgentCommonSettingsPanel", () => {
 
     const groups = await screen.findAllByTestId("common-setting-group");
     const resetButtons = screen.getAllByRole("button", { name: "恢复默认" });
-    await user.click(within(groups[1]!).getByRole("button", { name: "编辑压缩触发阈值" }));
+    const memoryGroup = groups.find((group) => within(group).queryByRole("heading", { name: "记忆" }));
+    const contextGroup = groups.find((group) => within(group).queryByRole("heading", { name: "上下文管理" }));
+    await user.click(within(contextGroup!).getByRole("button", { name: "编辑压缩触发阈值" }));
     expect(resetButtons[0]!).toBeDisabled();
     expect(resetButtons[1]!).toBeDisabled();
+    expect(resetButtons[2]!).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "取消编辑压缩触发阈值" }));
 
-    await user.click(resetButtons[0]!);
+    await user.click(within(memoryGroup!).getByRole("button", { name: "恢复默认" }));
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
     await waitFor(() => expect(resetSettings).toHaveBeenCalledTimes(1));
     for (const button of screen.getAllByRole("button", { name: "恢复默认" })) expect(button).toBeDisabled();
