@@ -4,6 +4,7 @@ import { Check, Loader2, Pencil, RefreshCw, X } from "lucide-react";
 
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/i18n/t";
 import { AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { toast } from "@/lib/toast";
@@ -13,6 +14,7 @@ import {
   fetchHermesCommonSettingsSnapshot,
   getHermesCommonSettingKeysForGroup,
   validateHermesCommonSetting,
+  type HermesApprovalMode,
   type HermesCommonSettingGroup,
   type HermesCommonSettingKey,
   type HermesCommonSettingValue,
@@ -54,7 +56,7 @@ interface SettingCopy {
   label: string;
   description: string;
   descriptionHref?: string;
-  kind: "switch" | "number";
+  kind: "switch" | "number" | "select";
   step?: string;
   min?: string;
   max?: string;
@@ -68,6 +70,7 @@ interface SettingGroup {
 }
 
 const emptyFeedback = (): Record<HermesCommonSettingKey, FieldFeedback> => ({
+  approvalMode: null,
   persistentMemory: null,
   userProfile: null,
   autoCompression: null,
@@ -101,6 +104,7 @@ export function AgentCommonSettingsPanel({
   const [savingKey, setSavingKey] = useState<HermesCommonSettingKey | null>(null);
   const [editingKey, setEditingKey] = useState<HermesCommonSettingKey | null>(null);
   const [pendingSwitchChange, setPendingSwitchChange] = useState<PendingSwitchChange | null>(null);
+  const [pendingApprovalMode, setPendingApprovalMode] = useState<HermesApprovalMode | null>(null);
   const [pendingResetGroup, setPendingResetGroup] = useState<HermesCommonSettingGroup | null>(null);
   const [resettingGroup, setResettingGroup] = useState<HermesCommonSettingGroup | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -110,6 +114,19 @@ export function AgentCommonSettingsPanel({
   const resetInFlightRef = useRef(false);
 
   const settingGroups: SettingGroup[] = [
+    {
+      id: "security",
+      title: t("安全"),
+      description: t("管理 Agent 执行危险命令时的审批方式。"),
+      settings: [
+        {
+          key: "approvalMode",
+          label: t("审批模式"),
+          description: t("设置 Agent 遇到危险命令时如何请求审批。"),
+          kind: "select",
+        },
+      ],
+    },
     {
       id: "memory",
       title: t("记忆"),
@@ -141,6 +158,7 @@ export function AgentCommonSettingsPanel({
     setSavingKey(null);
     setEditingKey(null);
     setPendingSwitchChange(null);
+    setPendingApprovalMode(null);
     setPendingResetGroup(null);
     setResettingGroup(null);
     setFeedback(emptyFeedback());
@@ -189,7 +207,9 @@ export function AgentCommonSettingsPanel({
         saved = true;
       } else {
         const message = result.status === "partial"
-          ? t("配置已保存，但重启或回读验证失败，请刷新确认。")
+          ? key === "approvalMode"
+            ? t("配置已保存，但回读验证失败，请刷新确认。")
+            : t("配置已保存，但重启或回读验证失败，请刷新确认。")
           : t("保存失败：{{detail}}", { detail: result.error.message });
         setFieldFeedback(key, { kind: "error", message });
       }
@@ -271,6 +291,17 @@ export function AgentCommonSettingsPanel({
     void commit(key, nextValue);
   };
 
+  const changeApprovalMode = (nextValue: string) => {
+    if (!snapshot || nextValue === snapshot.values.approvalMode) return;
+    const validation = validateHermesCommonSetting("approvalMode", nextValue);
+    if (!validation.ok || typeof validation.value !== "string") return;
+    if (validation.value === "off") {
+      setPendingApprovalMode(validation.value);
+      return;
+    }
+    void commit("approvalMode", validation.value);
+  };
+
   const confirmResetGroup = async () => {
     if (!pendingResetGroup || !snapshot || saveInFlightRef.current || resetInFlightRef.current || botStatus !== "running") return;
     const group = pendingResetGroup;
@@ -320,7 +351,7 @@ export function AgentCommonSettingsPanel({
 
   return (
     <section className="min-w-0">
-      <AgentSectionHeader title={t("常用设置")} description={null} />
+      <AgentSectionHeader title={t("高级设置")} description={null} />
       {agentStopped && <p className="mt-5 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Agent 未运行，启动后才能修改设置。")}</p>}
       {loading && <div className="flex items-center justify-center py-16 text-sm text-black/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("正在读取当前配置…")}</div>}
       {!loading && loadError && (
@@ -333,7 +364,7 @@ export function AgentCommonSettingsPanel({
         <div className="mt-8 flex flex-col gap-10">
           {settingGroups.map((group, groupIndex) => {
             const groupAlreadyDefault = getHermesCommonSettingKeysForGroup(group.id)
-              .every((key) => snapshot.defaultedKeys.includes(key));
+              .every((key) => snapshot.defaultedKeys.includes(key) || snapshot.unsupportedKeys.includes(key));
 
             return (
               <section
@@ -414,6 +445,21 @@ export function AgentCommonSettingsPanel({
                           >
                             <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition ${snapshot.values[setting.key] ? "translate-x-[1.375rem]" : "translate-x-0.5"}`} />
                           </button>
+                        ) : setting.kind === "select" ? (
+                          <Select
+                            value={snapshot.values.approvalMode}
+                            disabled={disabled}
+                            onValueChange={changeApprovalMode}
+                          >
+                            <SelectTrigger aria-label={setting.label} className="h-10 w-full max-w-[17rem] rounded-md">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="smart">{t("智能审批")}</SelectItem>
+                              <SelectItem value="manual">{t("始终询问")}</SelectItem>
+                              <SelectItem value="off">{t("关闭审批")}</SelectItem>
+                            </SelectContent>
+                          </Select>
                         ) : editing ? (
                           <div className="flex w-full max-w-[17rem] items-center gap-2">
                             <input
@@ -524,6 +570,41 @@ export function AgentCommonSettingsPanel({
                 className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white transition hover:opacity-90"
               >
                 {pendingSwitchChange.nextValue ? t("确认开启") : t("确认关闭")}
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+      {pendingApprovalMode === "off" && (
+        <Dialog open onOpenChange={(open) => {
+          if (!open) setPendingApprovalMode(null);
+        }}>
+          <DialogContent className="w-[calc(100vw-2rem)] max-w-[28rem] rounded-lg bg-white p-6 shadow-2xl md:w-[28rem]">
+            <DialogHeader className="mb-5 pr-8">
+              <DialogTitle className="text-balance text-lg font-semibold text-black/90">
+                {t("确认关闭命令审批？")}
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-pretty text-sm leading-6 text-black/55">
+                {t("关闭后，Agent 执行危险命令时将不再请求你的批准。请仅在可信环境中使用。")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingApprovalMode(null)}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-black/65 transition hover:bg-black/[0.04]"
+              >
+                {t("取消")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingApprovalMode(null);
+                  void commit("approvalMode", "off");
+                }}
+                className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+              >
+                {t("确认关闭")}
               </button>
             </div>
           </DialogContent>

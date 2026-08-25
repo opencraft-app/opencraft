@@ -197,7 +197,7 @@ describe("AgentSettingsPage global renewal reminder", () => {
   it("does not expose the domestic common settings navigation entry", () => {
     renderAgentSettingsPage();
 
-    expect(screen.queryByText("常用设置")).not.toBeInTheDocument();
+    expect(screen.queryByText("高级设置")).not.toBeInTheDocument();
   });
 
   it("greys out the reminder renewal entry and does not open the renewal modal", async () => {

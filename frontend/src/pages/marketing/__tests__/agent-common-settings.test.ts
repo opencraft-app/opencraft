@@ -11,6 +11,7 @@ import {
   fetchHermesCommonSettingsSnapshot,
   getHermesCommonSettingKeysForGroup,
   parseHermesCommonSettingsSnapshot,
+  requiresHermesCommonSettingGatewayRestart,
   validateHermesCommonSetting,
 } from "../agent-common-settings";
 
@@ -18,6 +19,7 @@ const snapshotOutput = () => [
   HERMES_COMMON_SETTINGS_JSON_START,
   JSON.stringify({
     values: {
+      approvalMode: "off",
       persistentMemory: true,
       userProfile: false,
       autoCompression: true,
@@ -32,7 +34,7 @@ const snapshotOutput = () => [
 ].join("\n");
 
 describe("Hermes common settings reader", () => {
-  it("reads the six allowlisted resolved values and detects raw YAML defaults", () => {
+  it("reads the seven allowlisted resolved values and detects raw YAML defaults", () => {
     const command = buildHermesCommonSettingsReadCommand();
 
     expect(command).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
@@ -45,6 +47,7 @@ describe("Hermes common settings reader", () => {
     expect(command).toContain('"compression.threshold"');
     expect(command).toContain('"compression.target_ratio"');
     expect(command).toContain('"compression.protect_last_n"');
+    expect(command).toContain('"approvals.mode"');
     expect(command).not.toContain("shell=True");
     expect(command).toContain("valid_value");
   });
@@ -52,6 +55,7 @@ describe("Hermes common settings reader", () => {
   it("parses values together with defaulted and unsupported field metadata", () => {
     expect(parseHermesCommonSettingsSnapshot(snapshotOutput())).toEqual({
       values: {
+        approvalMode: "off",
         persistentMemory: true,
         userProfile: false,
         autoCompression: true,
@@ -69,6 +73,7 @@ describe("Hermes common settings reader", () => {
       HERMES_COMMON_SETTINGS_JSON_START,
       JSON.stringify({
         values: {
+          approvalMode: "off",
           persistentMemory: true,
           userProfile: true,
           autoCompression: true,
@@ -104,6 +109,7 @@ describe("Hermes common settings reader", () => {
 
 describe("Hermes common setting validation", () => {
   it("keeps memory and context reset scopes isolated", () => {
+    expect(getHermesCommonSettingKeysForGroup("security")).toEqual(["approvalMode"]);
     expect(getHermesCommonSettingKeysForGroup("memory")).toEqual([
       "persistentMemory",
       "userProfile",
@@ -114,6 +120,39 @@ describe("Hermes common setting validation", () => {
       "compressionTarget",
       "protectedRecentMessages",
     ]);
+  });
+
+  it("reads approval mode and keeps security reset scope isolated", () => {
+    const command = buildHermesCommonSettingsReadCommand();
+
+    expect(command).toContain('"approvalMode": ("approvals.mode", "smart")');
+    expect(command).toContain('field == "approvalMode"');
+    expect(getHermesCommonSettingKeysForGroup("security")).toEqual(["approvalMode"]);
+    expect(parseHermesCommonSettingsSnapshot(snapshotOutput()).values.approvalMode).toBe("off");
+  });
+
+  it("accepts only the three documented approval modes", () => {
+    expect(validateHermesCommonSetting("approvalMode", "smart")).toEqual({ ok: true, value: "smart" });
+    expect(validateHermesCommonSetting("approvalMode", "manual")).toEqual({ ok: true, value: "manual" });
+    expect(validateHermesCommonSetting("approvalMode", "off")).toEqual({ ok: true, value: "off" });
+    expect(validateHermesCommonSetting("approvalMode", "always" as never)).toEqual({ ok: false, reason: "type" });
+    expect(validateHermesCommonSetting("approvalMode", true)).toEqual({ ok: false, reason: "type" });
+  });
+
+  it("builds approval commands from the static allowlist", () => {
+    expect(buildHermesCommonSettingCommand("approvalMode", "smart")).toBe(
+      "hermes config set approvals.mode smart",
+    );
+    expect(buildHermesCommonSettingUnsetCommand("approvalMode")).toBe(
+      "hermes config unset approvals.mode",
+    );
+    expect(() => buildHermesCommonSettingCommand("approvalMode", "always" as never)).toThrow("invalid");
+  });
+
+  it("marks only approval mode as immediate", () => {
+    expect(requiresHermesCommonSettingGatewayRestart("approvalMode")).toBe(false);
+    expect(requiresHermesCommonSettingGatewayRestart("persistentMemory")).toBe(true);
+    expect(requiresHermesCommonSettingGatewayRestart("compressionThreshold")).toBe(true);
   });
 
   it("builds unset commands only from the static setting allowlist", () => {

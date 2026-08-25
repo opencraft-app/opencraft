@@ -5,6 +5,7 @@ import {
   buildHermesCommonSettingUnsetCommand,
   fetchHermesCommonSettingsSnapshot,
   getHermesCommonSettingKeysForGroup,
+  requiresHermesCommonSettingGatewayRestart,
   type HermesCommonSettingGroup,
   type HermesCommonSettingKey,
   type HermesCommonSettingsSnapshot,
@@ -36,6 +37,7 @@ export async function resetHermesCommonSettingsGroup(
 ): Promise<HermesCommonSettingsResetResult> {
   const { bots, botId, group, snapshot, getGatewayRestartCommand } = options;
   const targetKeys = getHermesCommonSettingKeysForGroup(group)
+    .filter((key) => !snapshot.unsupportedKeys.includes(key))
     .filter((key) => !snapshot.defaultedKeys.includes(key));
 
   if (targetKeys.length === 0) {
@@ -67,14 +69,16 @@ export async function resetHermesCommonSettingsGroup(
   }
 
   try {
-    const restartCommand = await getGatewayRestartCommand();
-    const restartResult = await bots.execDebugCommand(
-      botId,
-      restartCommand,
-      { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
-    );
-    if (!isExecCommandSucceeded(restartResult)) {
-      return { status: "partial", error: commandError("restart", restartResult.output, restartResult.status) };
+    if (succeededKeys.some(requiresHermesCommonSettingGatewayRestart)) {
+      const restartCommand = await getGatewayRestartCommand();
+      const restartResult = await bots.execDebugCommand(
+        botId,
+        restartCommand,
+        { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
+      );
+      if (!isExecCommandSucceeded(restartResult)) {
+        return { status: "partial", error: commandError("restart", restartResult.output, restartResult.status) };
+      }
     }
 
     const verifiedSnapshot = await fetchHermesCommonSettingsSnapshot(bots, botId);
@@ -82,7 +86,10 @@ export async function resetHermesCommonSettingsGroup(
     if (firstUnsetError) {
       return { status: "partial", error: firstUnsetError, snapshot: verifiedSnapshot };
     }
-    if (!targetKeys.every((key) => verifiedSnapshot.defaultedKeys.includes(key))) {
+    if (!targetKeys.every((key) => (
+      verifiedSnapshot.defaultedKeys.includes(key)
+      && (key !== "approvalMode" || verifiedSnapshot.values.approvalMode === "smart")
+    ))) {
       return {
         status: "partial",
         error: new Error("Hermes common settings did not return to defaults"),
