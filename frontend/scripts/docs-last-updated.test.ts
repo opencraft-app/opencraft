@@ -353,4 +353,3 @@ describe('--from-git 不得进构建链', () => {
     expect(result.missing).toEqual(['src/content/docs/new.md']);
   });
 });
-

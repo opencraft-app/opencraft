@@ -160,8 +160,6 @@ for field, (dotted_key, fallback) in fields.items():
             continue
         resolved_value = json.loads(result.stdout.strip())
         if not valid_value(field, resolved_value):
-            if field == "approvalMode":
-                raise ValueError("Hermes approvals.mode returned an invalid value")
             unsupported_keys.append(field)
             continue
         values[field] = resolved_value
