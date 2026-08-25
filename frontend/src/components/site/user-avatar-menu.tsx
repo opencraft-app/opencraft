@@ -3,6 +3,7 @@ import { Bot, Globe, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown }
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect } from "react";
+import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
@@ -186,15 +187,17 @@ export const UserAvatarMenu = () => {
                   {t("我的作品")}
                 </Link>
               ) : null}
-              {hiddenEntriesRevealed ? (
-                <Link
-                  href="/support"
+              {hiddenEntriesRevealed && !isGlobal ? (
+                <a
+                  href={PRODUCT_FEEDBACK_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   onClick={() => setOpen(false)}
                   className={menuItemClass}
                 >
                   <MessageSquare className={menuIconClass} />
                   {t("产品反馈")}
-                </Link>
+                </a>
               ) : null}
 
             </div>

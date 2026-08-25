@@ -178,7 +178,6 @@ describe('[lang] 与裸路径的对应关系', () => {
       'open-source-licenses',
       'privacy-policy',
       'subscribe',
-      'support',
       'terms-of-service',
     ];
 
@@ -211,6 +210,6 @@ describe('约定的可追溯性', () => {
 
   it('[lang] 目录确实存在且非空（防止误删整个国际站语言路由）', async () => {
     expect(statSync(langRouteDir).isDirectory()).toBe(true);
-    expect(langRoutes().length).toBeGreaterThanOrEqual(10);
+    expect(langRoutes().length).toBeGreaterThanOrEqual(9);
   });
 });

@@ -40,9 +40,8 @@ export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
   { section: "changelog", href: "/changelog", label: label("更新日志", "更新日志", "更新日誌", "Changelog", "Catatan Rilis") },
   { section: "docs", href: "/docs/overview", label: label("产品文档", "产品文档", "產品文檔", "Docs", "Dokumentasi") },
   { section: "about", href: "/about", label: label("关于我们", "关于我们", "關於我們", "About", "Tentang") },
-  // 「产品反馈」不再作为顶部导航项，改为从用户头像菜单入口进入 /support。
-  // 页面本身与 legal-footer 链接保留；section 类型继续保留 "support"，
-  // 以兼容 /support 路径的 nav 高亮判定与其它引用。
+  // 「产品反馈」不作为顶部导航项；国内站反馈入口由页脚等组件指向问卷。
+  // section 类型继续保留 "support"，以兼容历史 /support 路径的高亮判定与其它引用。
 ] as const;
 
 const DEFAULT_PUBLIC_URL_LOCALE = defaultPublicUrlLang(DEFAULT_LOCALE);
