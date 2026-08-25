@@ -12,7 +12,12 @@ items:
   output_path: argocd/secrets/sgprod/sandbox-runtime-secrets.sops.yaml
   secret_type: Opaque
   required_keys:
-  - SANDBOX_API_KEY
+  - MYSQL_PASSWORD
+  - MYSQL_USER
+  - REDIS_PASSWORD
+  - TENCENT_SECRET_ID
+  - TENCENT_SECRET_KEY
+  - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
   labels:
     app.kubernetes.io/name: sandbox
     app.kubernetes.io/managed-by: argocd
