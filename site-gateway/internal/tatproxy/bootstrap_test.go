@@ -163,19 +163,19 @@ func TestFederationStarterSealsHostBoundExpiringLoginState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealed, err := starter.SealLoginState("BOT-1-DSH.LIGHTVELA.SITE:443", "/api/chat?q=1", "state-1", time.Minute)
+	sealed, err := starter.SealLoginState("BOT-1.DSH.LIGHTVELA.SITE:443", "/api/chat?q=1", "state-1", time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims, err := starter.OpenLoginState(sealed, "bot-1-dsh.lightvela.site")
-	if err != nil || claims.Host != "bot-1-dsh.lightvela.site" || claims.ReturnTo != "/api/chat?q=1" || claims.State != "state-1" {
+	claims, err := starter.OpenLoginState(sealed, "bot-1.dsh.lightvela.site")
+	if err != nil || claims.Host != "bot-1.dsh.lightvela.site" || claims.ReturnTo != "/api/chat?q=1" || claims.State != "state-1" {
 		t.Fatalf("claims=%+v err=%v", claims, err)
 	}
-	if _, err := starter.OpenLoginState(sealed, "bot-2-dsh.lightvela.site"); !errors.Is(err, ErrFederationUnauthorized) {
+	if _, err := starter.OpenLoginState(sealed, "bot-2.dsh.lightvela.site"); !errors.Is(err, ErrFederationUnauthorized) {
 		t.Fatalf("different host error=%v", err)
 	}
 	now = now.Add(time.Minute)
-	if _, err := starter.OpenLoginState(sealed, "bot-1-dsh.lightvela.site"); !errors.Is(err, ErrFederationUnauthorized) {
+	if _, err := starter.OpenLoginState(sealed, "bot-1.dsh.lightvela.site"); !errors.Is(err, ErrFederationUnauthorized) {
 		t.Fatalf("expired state error=%v", err)
 	}
 }
@@ -189,7 +189,7 @@ func TestFederationStarterSignsAndExchangesDelegatedSession(t *testing.T) {
 			t.Errorf("exchange request method=%s path=%s headers=%v", r.Method, r.URL.Path, r.Header)
 		}
 		var payload map[string]string
-		if json.Unmarshal(body, &payload) != nil || payload["ticket"] != "ticket-1" || payload["redirect_uri"] != "https://bot-1-dsh.lightvela.site/auth/lightvela/callback" {
+		if json.Unmarshal(body, &payload) != nil || payload["ticket"] != "ticket-1" || payload["redirect_uri"] != "https://bot-1.dsh.lightvela.site/auth/lightvela/callback" {
 			t.Errorf("exchange body=%s", body)
 		}
 		_, _ = io.WriteString(w, `{"delegated_session":"delegated-1","expires_at":"2026-08-24T12:05:00Z"}`)
@@ -202,7 +202,7 @@ func TestFederationStarterSignsAndExchangesDelegatedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := starter.Exchange(t.Context(), "ticket-1", "https://bot-1-dsh.lightvela.site/auth/lightvela/callback")
+	session, err := starter.Exchange(t.Context(), "ticket-1", "https://bot-1.dsh.lightvela.site/auth/lightvela/callback")
 	if err != nil || session.Value != "delegated-1" || !session.ExpiresAt.After(now) {
 		t.Fatalf("session=%+v err=%v", session, err)
 	}
