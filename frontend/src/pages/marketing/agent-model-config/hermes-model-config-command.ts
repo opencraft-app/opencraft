@@ -112,6 +112,11 @@ except ImportError:
     fallback_config = None
 
 try:
+    from hermes_cli import auth as hermes_auth
+except Exception:
+    hermes_auth = None
+
+try:
     from agent.backend_identity import BackendIdentity as HermesBackendIdentity
     from agent.backend_identity import same_deployment as hermes_same_deployment
 except ImportError:
@@ -134,6 +139,9 @@ TRANSPORTS = {
     "anthropic_messages": "anthropic_messages", "bedrock_converse": "bedrock_converse",
 }
 ENVELOPE_TTL_SECONDS = 600
+
+class ConfigurationRollbackError(RuntimeError):
+    pass
 
 def envelope_directory():
     root = os.environ.get("HERMES_HOME") or os.environ.get("HERMES_ROOT") or os.path.expanduser("~/.hermes")
@@ -368,9 +376,9 @@ def provider_schema_supported(config):
     except Exception:
         return False
 
-def fail():
+def fail(message="Model configuration operation failed"):
     print(START)
-    print(json.dumps({"ok": False, "error": "Model configuration operation failed"}))
+    print(json.dumps({"ok": False, "error": message}))
     print(END)
 
 def as_dict(value, field):
@@ -441,6 +449,84 @@ def provider_base_url(provider):
 
 def provider_model_id(provider):
     return text(provider.get("model") or provider.get("default_model"), "provider.model", required=False)
+
+def provider_catalog_model_ids(provider):
+    values = provider.get("models")
+    if isinstance(values, dict):
+        return [
+            str(key).strip() for key in values.keys()
+            if str(key).strip() and key != "__discovered_model_catalog__"
+        ]
+    if isinstance(values, list):
+        result = []
+        for value in values:
+            if isinstance(value, str): model_id = value.strip()
+            elif isinstance(value, dict): model_id = text(value.get("id"), "provider.models.id", required=False)
+            else: model_id = ""
+            if model_id: result.append(model_id)
+        return result
+    if isinstance(values, str) and values.strip(): return [values.strip()]
+    return []
+
+def provider_catalog_is_authoritative(provider, credential_state):
+    values = provider.get("models")
+    discovered = provider.get("models_discovered") is True or (
+        isinstance(values, dict) and values.get("__discovered_model_catalog__") is True
+    )
+    if discovered: return False
+    discover_models = provider.get("discover_models", True)
+    if isinstance(discover_models, str):
+        discover_models = discover_models.strip().lower() not in ("false", "no", "0")
+    if discover_models is False: return bool(provider_catalog_model_ids(provider))
+    return (
+        credential_state is False
+        and isinstance(values, (list, str))
+        and bool(provider_catalog_model_ids(provider))
+    )
+
+def provider_credential_pool_state(provider_key, provider):
+    helper = getattr(hermes_auth, "read_credential_pool", None) if hermes_auth else None
+    if not callable(helper): return None
+    try:
+        pool = helper(None)
+        if not isinstance(pool, dict): return False
+        provider_name = text(provider.get("name") or provider.get("display_name") or provider_key, "provider.name", required=False)
+        custom_pool_key = "custom:" + provider_name.strip().lower().replace(" ", "-") if provider_name else ""
+        normalized_provider_key = provider_key.strip().lower()
+        return any(
+            isinstance(pool.get(key), list) and bool(pool[key])
+            for key in (normalized_provider_key, custom_pool_key)
+            if key
+        )
+    except Exception:
+        return None
+
+def idle_provider_is_usable(provider_key, provider):
+    model_id = provider_model_id(provider)
+    key_env = text(provider.get("key_env") or provider.get("api_key_env"), "provider.key_env", required=False)
+    key_cmd = text(provider.get("key_cmd"), "provider.key_cmd", required=False)
+    inline_key = text(provider.get("api_key"), "provider.api_key", required=False)
+    credential_declared = bool(key_env or "api_key" in provider or "key_cmd" in provider)
+    credential_state = True if key_cmd or inline_key else False
+    env_read_failed = False
+    if credential_state is False and key_env:
+        try:
+            env_values = load_env()
+            credential_state = bool(
+                (isinstance(env_values, dict) and str(env_values.get(key_env) or "").strip())
+                or str(os.environ.get(key_env) or "").strip()
+            )
+        except Exception:
+            env_read_failed = True
+    pool_state = provider_credential_pool_state(provider_key, provider)
+    if pool_state is True: credential_state = True
+    elif credential_declared and (pool_state is None or env_read_failed) and credential_state is False:
+        credential_state = None
+
+    catalog = provider_catalog_model_ids(provider)
+    if provider_catalog_is_authoritative(provider, credential_state) and model_id not in catalog: return False
+    if credential_declared and credential_state is False: return False
+    return True
 
 def model_from_provider(provider_key, provider):
     if not isinstance(provider, dict): return None
@@ -637,7 +723,9 @@ def read_snapshot(config):
 
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
     for provider_key, provider in providers.items():
-        try: candidate = model_from_provider(str(provider_key), provider)
+        try:
+            candidate = model_from_provider(str(provider_key), provider)
+            if candidate and not idle_provider_is_usable(str(provider_key), provider): candidate = None
         except (KeyError, TypeError, ValueError): candidate = None
         append_projected(projected, candidate)
 
@@ -676,6 +764,16 @@ def save_and_reload(config):
     saved = load_config() or {}
     if not isinstance(saved, dict): raise ValueError("saved config is invalid")
     return saved
+
+def save_validate_or_rollback(original_config, config, validator):
+    try:
+        return validator(save_and_reload(config))
+    except Exception:
+        try:
+            save_config(original_config)
+        except Exception as rollback_error:
+            raise ConfigurationRollbackError("configuration rollback failed") from rollback_error
+        raise
 
 def current_credential(key):
     try:
@@ -824,6 +922,11 @@ def expect_role(saved, purpose, model):
     if purpose == "idle" and (same_route(snapshot["primary"], model) or is_fallback(snapshot, model)): raise ValueError("idle role was not saved")
     return snapshot
 
+def expect_fallback_removed(saved, model):
+    snapshot = read_snapshot(saved)
+    if is_fallback(snapshot, model): raise ValueError("fallback was not removed")
+    return snapshot
+
 def execute(action):
     action = as_dict(action, "action")
     kind = text(action.get("type"), "type")
@@ -879,6 +982,7 @@ def execute(action):
             restore_credential(model["keyEnv"], previous_credential)
             raise
     if kind == "assign":
+        original_config = copy.deepcopy(config)
         route_base_url = text(action.get("routeBaseUrl"), "routeBaseUrl", required=False) if "routeBaseUrl" in action else None
         model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         purpose = text(action.get("purpose"), "purpose")
@@ -898,9 +1002,10 @@ def execute(action):
             if is_fallback(before, model): remove_fallback(config, model)
             else: pass
         elif purpose != "idle": raise ValueError("purpose is invalid")
-        saved = save_and_reload(config)
-        return {"snapshot": expect_role(saved, purpose, model)}
+        snapshot = save_validate_or_rollback(original_config, config, lambda saved: expect_role(saved, purpose, model))
+        return {"snapshot": snapshot}
     if kind == "removeFallback":
+        original_config = copy.deepcopy(config)
         route_base_url = text(action.get("routeBaseUrl"), "routeBaseUrl", required=False) if "routeBaseUrl" in action else None
         model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         if model.get("requiresSetup"): raise ValueError("model setup is incomplete")
@@ -909,9 +1014,8 @@ def execute(action):
         remove_legacy_configured_model(config, model)
         remove_legacy_custom_provider(config, model)
         remove_fallback(config, model)
-        saved = save_and_reload(config)
-        if is_fallback(read_snapshot(saved), model): raise ValueError("fallback was not removed")
-        return {"snapshot": read_snapshot(saved)}
+        snapshot = save_validate_or_rollback(original_config, config, lambda saved: expect_fallback_removed(saved, model))
+        return {"snapshot": snapshot}
     if kind == "remove":
         original_config = copy.deepcopy(config)
         route_base_url = text(action.get("routeBaseUrl"), "routeBaseUrl", required=False) if "routeBaseUrl" in action else None
@@ -931,10 +1035,10 @@ def execute(action):
                 provider.pop("model", None)
                 provider.pop("default_model", None)
             remove_provider_model(provider, model["id"])
+            providers[model["providerKey"]] = provider
+            config["providers"] = providers
             if not provider.get("models") and not provider_referenced(config, model["providerKey"]):
                 providers.pop(model["providerKey"], None)
-            else:
-                providers[model["providerKey"]] = provider
         config["providers"] = providers
         previous_credential = current_credential(remove_key) if remove_key else None
         try:
@@ -956,6 +1060,8 @@ try:
     print(START)
     print(json.dumps({"ok": True, **result}, ensure_ascii=False))
     print(END)
+except ConfigurationRollbackError:
+    fail("Model configuration rollback failed")
 except Exception:
     fail()
 `;

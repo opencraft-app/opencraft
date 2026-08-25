@@ -771,6 +771,112 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - 真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed，并明确断言连续 `add` 后既有 `configured_models` 数组保持不变。
 - `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
 
+### Task 6: 处理 MR !3320 的配置事务与闲置 Provider 有效性问题
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+
+**Acceptance:**
+- `assign` 与 `removeFallback` 保存后语义校验失败时恢复操作前配置，不留下半成功状态。
+- 删除 Provider 的最后一个模型时，基于删除后的候选配置判断引用；无其他引用时删除 Provider，并在凭据未被复用时删除对应凭据。
+- 主模型和备用模型即使配置待修复也继续展示；仅由 `providers` 引入的闲置模型在明确模型目录不匹配或显式凭据无法解析时不投影。
+- 无 Key 自定义 Endpoint、`key_cmd`、本地环境凭据和 Hermes credential pool 均视为有效凭据来源；老 Hermes 缺少 auth helper 时读取不失败。
+
+- [x] 先补回滚、最后模型删除和闲置 Provider 有效性测试并确认 RED。
+- [x] 完成最小修复，让模型配置定向测试和真实 Hermes smoke GREEN。
+- [x] 完成类型、i18n 与差异检查，并记录验证结果。
+
+**Task 6 Verification:**
+- RED：新增用例稳定复现闲置 Provider 误投影、最后模型删除后 Provider/凭据残留，以及 `assign` / `removeFallback` 校验失败不回滚。
+- GREEN：client 定向测试 38 passed；模型配置域 7 个测试文件、113 passed；真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- 两轮独立复审后无剩余 P0/P1/P2；目录权威性按 Hermes discovery 语义判断，credential pool 同时兼容 canonical Provider key 与 legacy `custom:<name>`。
+
+### Task 7: 调整模型探测与选择控件布局
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+**Acceptance:**
+- “获取可用模型”按钮始终位于模型下拉框左侧，两者在同一行并保留 12px 间距。
+- 按钮在窄屏和常规屏分别为 112px、144px，保持在 100px 至 150px 范围内；模型下拉框以 `min-width: 0` 占满剩余空间。
+- 未探测和已探测状态共用同一布局；普通状态不显示搜索图标，探测中仍显示加载状态。
+- 不改变 Provider、探测、模型选择和添加模型的业务逻辑。
+
+- [x] 先补同行、宽度、剩余空间和图标断言并确认 RED。
+- [x] 合并未探测与已探测布局分支，完成最小实现并让定向测试 GREEN。
+
+**Task 7 Verification:**
+- 组件定向测试 21 passed；模型配置域 7 个测试文件、113 passed。
+- Chrome 实测：1280px 视口下按钮 144px、下拉框 610px；390px 视口下按钮 112px、下拉框 176px。两者均同行、间距 12px、无横向溢出且无搜索图标。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+
+### Task 8: 将模型探测与状态检测融合到表单控件
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- API Key 输入框尾部融合“获取可用模型”按钮；输入区保留凭据显隐按钮，复合控件共享外框与聚焦态。
+- 模型下拉框尾部融合“检测模型状态”按钮；检测结果继续通过现有项目 Dialog 展示。
+- 尾部按钮在窄屏和常规屏分别为 112px、144px，仅使用内部左分隔线，不形成独立圆角控件。
+- 获取到模型后默认选中首个模型，并将用途默认切换为“设为主模型”。
+- 底部仅保留左对齐的“添加模型”按钮；探测、检测、添加及错误反馈协议保持不变。
+
+- [x] 先补复合控件结构、入口位置、默认用途与结果弹窗测试并确认 RED。
+- [x] 完成复合输入框、复合下拉框和左对齐提交区，让组件测试 GREEN。
+- [x] 同步“检测模型状态”多语言文案，并恢复生成器带出的无关历史字典删除。
+
+**Task 8 Verification:**
+- 组件定向测试 21 passed；模型配置域 7 个测试文件、113 passed。
+- Chrome 实测：1280px 与 390px 视口下两个复合控件均共享 48px 外框，尾部按钮分别为 144px、112px，文字完整、无横向溢出；添加按钮与表单左边缘对齐，控制台无 error。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+
+### Task 9: 将模型获取结果迁移到顶部消息提示
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/lib/__tests__/toast.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 获取成功、空结果和获取失败使用站内顶部居中消息提示，默认 3 秒后消失，卡片底部不再展示获取结果。
+- 添加模型成功同样使用瞬时消息；添加与连通性检测的可操作错误仍保留在对应表单区域。
+- API Key 外链文案改为“点此获取 API Key”，尾部展示外链图标，继续在新窗口打开。
+
+- [x] 先补顶部消息、3 秒关闭、卡片无残留和 API Key 外链测试并确认 RED。
+- [x] 复用 `@/lib/toast` 完成最小实现，同步 i18n 后让定向测试 GREEN。
+- [x] 完成模型配置回归、类型、i18n、diff 与本地页面验证。
+
+**Task 9 Verification:**
+- RED：组件测试新增 7 个预期失败，分别命中顶部消息未调用、卡片仍保留结果文案和 API Key 外链文案未更新。
+- GREEN：组件与 toast 定向测试 25 passed；模型配置域 7 个文件、115 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+- Chrome 已登录本地页确认“点此获取 API Key”及外链图标可见；占位凭据只读探测结束后卡片底部无获取结果残留，输入已清空。
+
+### Task 10: 优化未获取到模型的错误文案
+
+**Acceptance:**
+- 空结果提示统一为“未获取到可用模型，请检查API Key是否正确或有效”。
+- 成功提示、命令执行失败提示和顶部消息交互保持不变。
+- 四语言生成字典同步更新且无无关资源漂移。
+
+- [x] 先更新组件与本地化断言并确认 RED。
+- [x] 替换业务文案并通过生成脚本同步字典。
+- [x] 完成模型配置定向回归、i18n 与 diff 检查。
+
+**Task 10 Verification:**
+- RED：2 条交互断言仍收到旧提示，1 条本地化断言找不到新文案 key。
+- GREEN：组件与印尼语定向测试 63 passed；模型配置域 7 个文件、115 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+
 ### Task 4: 对齐 Agent 页面顶部标题样式
 
 **Files:**
@@ -3676,5 +3782,23 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] 完成 i18n、焦点测试、类型检查、双区域构建和 diff 门禁。
 - [x] 展示最终范围、提交信息和 MR 配置，等待用户确认。
 - [x] 将安全分组、审批模式和关闭审批弹窗正文改为「高风险操作」，完成测试、i18n 和静态门禁后追加到 MR !3309。
+
+---
+
+# 模型配置下拉框滚动隔离 Implementation Plan
+
+**Goal:** 展开模型配置表单中的下拉框时隔离左侧导航布局，避免右侧操作引起的页面滚动改变导航位置。
+
+## Tasks
+
+- [x] 为桌面端侧栏滚动隔离和下拉触发前坐标捕获补充回归测试。
+- [x] 在滚动锁期间固定侧栏到交互前坐标，并保持右侧内容位于原网格列；移动端布局不变。
+- [x] 用 Chrome 验证 Provider 与模型下拉展开后侧栏不再滚到负坐标，触发器和弹层横向位置、宽度不变。
+- [x] 完成模型配置专项测试、i18n、类型检查和 diff 门禁。
+
+**Verification:**
+- 模型配置域 7 个测试文件、115 passed；Agent 设置页侧栏回归 6 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- Chrome 本地预览验证：Provider 下拉展开后侧栏固定为 `top=84px`、导航 `top=161px`；模型下拉展开后侧栏固定为交互前捕获的 `top=40px`、导航 `top=117px`。右侧触发器和弹层保持原网格列与相同宽度。
 
 ---
