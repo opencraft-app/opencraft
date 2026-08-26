@@ -132,4 +132,14 @@ describe("seo meta — global multi-URL language prefix", () => {
       expect(meta.canonical).toContain("https://lightvela.ai/es");
     }
   });
+
+  it("returns Spanish titles for locale-projected private product routes", () => {
+    const suffix = "LightVela · Tu agente personal de IA en la nube";
+
+    expect(getSeoMeta("/es/agents", "global").title).toBe(`Mis agentes | ${suffix}`);
+    expect(getSeoMeta("/es/agents/skills", "global").title).toBe(`Habilidades | ${suffix}`);
+    expect(getSeoMeta("/es/account", "global").title).toBe(`Cuenta | ${suffix}`);
+    expect(getSeoMeta("/es/account/orders", "global").title).toBe(`Pedidos | ${suffix}`);
+    expect(getSeoMeta("/es/plans/select", "global").title).toBe(`Elige un plan | ${suffix}`);
+  });
 });

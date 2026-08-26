@@ -39,6 +39,107 @@
 
 ---
 
+# 国际站西语代码可控内容全面收口 Implementation Plan
+
+**Goal:** 在 `jasminzhao-821-language` 分支完成国际站 `es` 下 mono2 可直接控制的一方产品内容西语适配；Docs 正文、法务正文、图片内嵌文字、第三方托管页面和运行时外部数据保持既定排除项。
+
+**Constraints:** 只改变国际站 `es` 行为；不修改 `node_modules` 或复制外部依赖源码；未经用户再次确认不执行 `git commit` / `git push`。
+
+### Task 1: 产品壳 metadata 与 HTML 语言
+
+- [x] 为西语产品路由补充标题映射，并让产品壳在西语运行时同步 `document.title`。
+- [x] 让公共站 locale bridge 同步 `document.documentElement.lang`。
+- [x] 添加并通过 SEO、app route shell、public provider 定向测试。
+
+### Task 2: Agent 人设卡、西语 Soul 详情与人格测试
+
+- [x] 为 16 个既有人设 slug 增加西语名称、摘要、详情和运行时配置展示文案。
+- [x] 增加西语人格测试题、结果说明和偏好标签，保持既有计分结构不变。
+- [x] 接入 panel、draw、test 三条读取链并通过数据/组件测试。
+
+### Task 3: 精选 Skills 西语结构化介绍
+
+- [x] 按 `lv-sitepage-skills` 约束为 30 个精选 Skill 增加西语结构化介绍。
+- [x] 增加四个西语分类标签并按 `es` 显式选择数据。
+- [x] 通过 Skills 数据完整性和面板集成测试。
+
+### Task 4: 西语日期格式
+
+- [x] 让 Agent 成就时间戳的 `es` / `es-ES` 使用西语 `Intl.DateTimeFormat` locale。
+- [x] 通过相关定向测试。
+
+### Task 5: AgentChat 外部包上游交接
+
+- [x] 确认当前 `@tencent/agentchat-lightvela-panel@1.2.6` 和 registry 最新版 `1.4.0` 均只有中英字典。
+- [x] 尝试通过工蜂定位真实上游；当前凭据返回 `401 Unauthorized`，记录为外部阻塞。
+- [ ] 上游发布西语资源和 locale contract 后升级依赖 pin，并补 host integration 测试。
+
+### Task 6: 回归与验收
+
+- [x] 运行全部受影响 Vitest：相关用例全部通过。
+- [x] 运行 `pnpm check`：2437/2437 西语词条完整，TypeScript 通过。
+- [x] 运行 `pnpm build:global`：454 个静态页面生成，SEO 与静态 HTML 检查通过。
+- [x] 尝试本地浏览器冒烟；预览服务已恢复，但浏览器 localhost URL 安全策略拒绝自动读取，未绕过。
+- [x] 记录整仓测试既有问题：Docs 大图重复引用、`node:test` 脚本不兼容 Vitest 收集，随后 worker OOM；本次受影响测试无失败。
+- [x] 展示最终 diff、验证证据与提交范围，等待用户确认 commit/push。
+
+### Task 7: 自动任务西语最终生成链路
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/scenario-tasks/__tests__/scenario-task-builder.test.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/__tests__/scenario-job-presentation.test.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/scenario-packs.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/scenario-task-builder.ts`
+
+**Approach:** 选择在现有 `quickPromptLocale` 分流中增加显式 `es` 分支，并复用现有字段取值逻辑。备选的“重构为全语言模板注册表”影响中英/印尼语范围过大；“西语回退英文”不能满足全站西语适配，因此均不采用。
+
+**Acceptance:** 西语 overview task 的 `oneShotJobName` 使用 `ejecución única`；`generatedPrompt` 的协议、任务名、用户要求、字段标签、复选值、实时检索规则和安全提示均为西语且不含汉字；中英印尼语结果不变。
+
+- [x] **Step 1: 添加西语 draft 与历史任务展示失败测试。**
+
+  在 `scenario-task-builder.test.ts` 断言 `getOverviewScenarioTaskPacks("es")` 生成的租金提醒：
+
+  ```ts
+  expect(draft.oneShotJobName).toBe(`${draft.generatedName} · ejecución única`);
+  expect(draft.generatedPrompt).toContain("Estás ejecutando una automatización de LightVela");
+  expect(draft.generatedPrompt).toContain("Detalles proporcionados por el usuario:");
+  expect(draft.generatedPrompt).toContain("detalles de facturación: Factura de internet");
+  expect(draft.generatedPrompt).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+  ```
+
+  在 `scenario-job-presentation.test.ts` 断言旧中文任务在 `es` 下展示为西语 Prompt 且不含中文协议。
+
+- [x] **Step 2: 运行两份定向测试并确认 RED。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/scenario-tasks/__tests__/scenario-task-builder.test.ts \
+    src/pages/marketing/scenario-tasks/__tests__/scenario-job-presentation.test.ts
+  ```
+
+  Expected: 西语任务后缀实际为“单次执行”，Prompt 命中中文模板，新增断言失败；既有中英印尼语用例继续通过。
+
+- [x] **Step 3: 添加最小西语 Prompt 与字段标签实现。**
+
+  在 `scenario-task-builder.ts`：
+
+  ```ts
+  if (pack.quickPromptLocale === "es") {
+    return buildSpanishUserFacingScenarioPrompt(pack, values, userPrompt);
+  }
+  ```
+
+  新增与英文/印尼语结构一致的 `buildSpanishUserFacingScenarioPrompt`、`SPANISH_SCENARIO_FIELD_LABELS` 和 `buildSpanishScenarioValueLines`；修复 `makePack` 丢失 `needsRealtime` 的既有映射缺口，并将西语复选值输出为 `sí/no`；不改变 schedule、deliver 或 skillIds。
+
+- [x] **Step 4: 重跑定向测试确认 GREEN，并执行 `pnpm check` 与 `git diff --check`。**
+
+- [x] **Step 5: 更新 runtime summary，展示差异和验证证据，停在 commit/push 用户确认点。**
+
+---
+
 ### Task 1: 多语言结构识别与本地化默认名
 
 **Files:**

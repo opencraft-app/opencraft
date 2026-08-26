@@ -176,14 +176,46 @@ const SPANISH_SEO_KEYWORDS = [
 
 const SPANISH_STATIC_PAGE_TITLES: Record<string, string> = {
   "/about": "Acerca de LightVela",
+  "/account": "Cuenta",
+  "/account/orders": "Pedidos",
+  "/auth/email-bind-result": "Resultado de vinculación del correo",
+  "/auth/forgot-password": "Restablecer contraseña",
+  "/auth/invite": "Código de invitación",
+  "/auth/sign-in": "Iniciar sesión",
+  "/auth/sign-up": "Crear una cuenta",
+  "/auth/sign-up-code": "Verificar código",
   "/changelog": "Novedades",
   "/cookie-policy": "Política de cookies",
+  "/dashboard/create": "Crear un agente",
+  "/dashboard/setup": "Configuración inicial",
+  "/dashboard/success": "Agente creado",
   "/open-source-licenses": "Aviso de código abierto",
+  "/plans/select": "Elige un plan",
   "/privacy-policy": "Política de privacidad",
   "/subscribe": "Elige un plan",
   "/support": "Ayuda y comentarios",
   "/terms-of-service": "Términos del servicio",
 };
+
+const SPANISH_AGENT_SECTION_TITLES: Record<string, string> = {
+  achievements: "Logros",
+  automations: "Automatizaciones",
+  channels: "Canales",
+  chat: "Chat",
+  files: "Archivos",
+  memory: "Memoria",
+  models: "Modelos",
+  persona: "Personalidad",
+  skills: "Habilidades",
+  workbench: "Espacio de trabajo",
+};
+
+function getSpanishProductPageTitle(pathname: string): string | null {
+  if (pathname === "/agents") return "Mis agentes";
+  const agentSection = pathname.match(/^\/agents\/([^/]+)$/)?.[1];
+  if (agentSection) return SPANISH_AGENT_SECTION_TITLES[agentSection] ?? "Mis agentes";
+  return SPANISH_STATIC_PAGE_TITLES[pathname] ?? null;
+}
 
 const SPANISH_DOC_PAGE_TITLES: Record<string, string> = {
   "/docs": "Documentación",
@@ -637,6 +669,7 @@ export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
         ? null
         : SPANISH_STATIC_PAGE_TITLES[bare] ??
           SPANISH_DOC_PAGE_TITLES[bare] ??
+          getSpanishProductPageTitle(bare) ??
           (bare.startsWith("/docs/") ? "Documentación de LightVela" : "Página no encontrada");
     return {
       title: pageTitle ? `${pageTitle} | ${SPANISH_SEO_TITLE_SUFFIX}` : SPANISH_DEFAULT_SEO_TITLE,

@@ -159,3 +159,61 @@
 4. 国内站自动测试与构建回归通过。
 5. 未处理项只允许是本 Spec 明确排除的 SDK、Models、法务正文和文档正文翻译。
 6. 输出验收摘要并等待用户确认；确认前不归档、不 commit、不 push、不创建 MR。
+
+## 12. 西语代码可控内容全面收口（增量规范）
+
+本节是 2026-08-24 用户确认的第二阶段增量规范。若本节与前文关于 SDK、Models 或英语 fallback 的排除描述冲突，以本节为准。
+
+### 12.1 内容归属
+
+内容按以下规则分类：
+
+- **必须西语化：** LightVela 仓库或其受控源包中维护的第一方界面文案、metadata、无障碍文本、内置人设、测试题、推荐数据、curated Skills 数据、日期格式和 locale 参数。
+- **允许保持源语言：** 用户输入、Agent/实例返回内容、第三方实时目录数据、品牌名、模型名、协议名、代码、命令、路径和文件名。
+- **本轮延后：** 图片内烘焙文字和第三方托管页。
+- **长期英文正文回退：** Docs 正文和四类法务正文；其页面壳、提示、导航、搜索与 metadata 不属于回退范围。
+
+### 12.2 产品壳 metadata
+
+1. `/agents`、`/account`、`/account/orders`、`/plans/select` 及其他无 locale 前缀产品页必须根据当前有效 locale 设置浏览器标题。
+2. `es` 标题必须为自然西语；未知 locale 回退国际站英文，国内站继续使用中文默认值。
+3. 客户端标题 helper 与 Next 静态 metadata 不得互相覆盖成中文；切换语言或恢复持久化 locale 后标题必须同步更新。
+
+### 12.3 内置人设与测试数据
+
+1. 第一方 Soul/persona 名称、说明、标签、测试题、答案和结果必须有显式 `es` 数据集。
+2. 西语不得通过 `es -> en` 选择英文池；缺少任一必填字段应由测试失败暴露。
+3. 人设 slug、内部标识、文件内容和用户自定义内容保持原样，不因显示语言变化而改写。
+
+### 12.4 Skills 与第三方动态数据
+
+1. curated Skills 的分类、受众、问题、能力、摘要和第一方说明必须有显式 `es` 数据。
+2. SkillHub 等第三方接口返回的名称、作者、仓库信息和动态描述按源数据展示；本地搜索、筛选、分页、安装、空状态和错误文案必须为西语。
+3. 若上游接口公开支持 `es` locale，请传递 `es`；不支持时不得伪造西语数据，也不得把第三方英文结果计入第一方残留失败。
+
+### 12.5 AgentChat、SDK 与内嵌面板
+
+1. 宿主必须把当前 `es` locale 通过消费包公开的 locale contract 传入 AgentChat/内嵌面板。
+2. 若受控源包缺少 `es` contract 或语言资源，修复必须发生在真实源包与 public/barrel export，并按仓库 pin 流程更新消费版本；禁止修改 `node_modules` 作为最终实现。
+3. 不允许在 `agent-settings-page.tsx` 等宿主页面复制 provider、模型或通道内部配置来伪造本地化。
+4. 第三方 iframe 或外部托管页面不在本轮；其宿主标题、加载态、错误态和返回操作仍必须为西语。
+
+### 12.6 Locale 格式化与 `html lang`
+
+1. 日期、时间和数字格式 helper 必须将 `es` 映射到标准西语 locale，不得把所有非中文语言统一映射为 `en-US`。
+2. `/es` 开发态、SSR/静态页面和构建后 HTML 均必须为 `html lang="es"`。
+3. `/es` 的 canonical、hreflang、Open Graph locale 和 sitemap 继续沿用前文既有规范。
+
+### 12.7 残留审计
+
+1. 自动审计覆盖第一方可见字符串来源，不以“西语字典完整”替代页面与结构化数据检查。
+2. 审计 allowlist 只能包含本节明确允许保持源语言的类别，并记录文件、字段和原因。
+3. 中文/CJK 残留必须为 0；英语残留按归属分类，第一方残留必须为 0。
+4. 浏览器矩阵至少覆盖 `/es`、`/es/about`、`/es/changelog`、`/es/support`、`/es/subscribe`、`/plans/select`、`/account`、`/agents` 及可到达的 Agent 分区。
+
+### 12.8 区域隔离与验证
+
+1. 本轮所有用户可见差异只在 `isGlobal` 且 locale 为 `es` 时生效；共享 helper 不得改变国内站默认输出。
+2. 每个行为修改必须遵循 RED -> GREEN -> REFACTOR，并保留预期失败与通过证据。
+3. 最终门禁包括相关 Vitest、`pnpm check`、`pnpm i18n:check`、`pnpm i18n:validate`、`pnpm build:global`、`pnpm build:cn` 和 `git diff --check`。
+4. Docs/法务正文、图片烘焙文字、第三方托管页和第三方动态数据不得被误报为本轮未完成。

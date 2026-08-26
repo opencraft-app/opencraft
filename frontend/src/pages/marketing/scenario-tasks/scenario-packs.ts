@@ -190,6 +190,8 @@ export interface ScenarioTaskPack {
   icon: ScenarioIcon;
   /** 今日必看：高频刚需，聚合到首页顶部 */
   featured?: boolean;
+  /** 是否需要联网检索实时信息。 */
+  needsRealtime?: boolean;
   fields: ScenarioTaskField[];
   safetyNote?: string;
   /** 给用户看的使用说明，解释这个模板如何工作。 */
@@ -1893,6 +1895,7 @@ function makePack(config: MakePackConfig): ScenarioTaskPack {
     requiredInfoLabel: config.requiredInfoLabel ?? "关注重点、提醒时间（均可选）",
     icon: config.icon,
     featured: config.featured,
+    needsRealtime: config.needsRealtime,
     fields,
     safetyNote: config.safetyNote,
     usageGuide: config.usageGuide,

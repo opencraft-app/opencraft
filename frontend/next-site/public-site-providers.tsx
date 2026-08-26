@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, type ReactNode } from 'react';
+import React, { Suspense, type ReactNode } from 'react';
 
 import { OpenClawProvider } from '@/contexts/agent-context';
 import { RepositoryProvider } from '@/contexts/repository-context';
@@ -35,6 +35,11 @@ function i18nLocaleForPublicLocale(locale: Locale): I18nLocale {
  */
 export function PublicSiteLocaleBridge({ locale, children }: { locale: Locale; children: ReactNode }) {
   const targetLocale = i18nLocaleForPublicLocale(locale);
+
+  React.useEffect(() => {
+    document.documentElement.lang = targetLocale;
+  }, [targetLocale]);
+
   return <LocaleOverrideProvider locale={targetLocale}>{children}</LocaleOverrideProvider>;
 }
 
