@@ -33,7 +33,8 @@
 
 - 一个可以正常使用的 WhatsApp 账号。
 
-- 了解 Telegram 和 WhatsApp 当前都以 1 对 1 对话为主要支持方式。
+- 了解 Telegram 支持群消息的前置条件：在 BotFather 中关闭 Group Privacy，将机器人加入群组后再通过 `@机器人用户名` 发起对话。
+- 了解 WhatsApp 的群聊支持范围仍以其通道文档为准。
 
 ## 操作步骤
 
@@ -141,9 +142,10 @@ Skill 属于 Agent 的能力配置，不需要为 Telegram 和 WhatsApp 各安�
 
 ### WhatsApp 群组可以和 Telegram 一起共享吗？
 
-当前 WhatsApp 文档明确说明不支持群聊，Telegram 也仍以 1 对 1 对话为支持范围。
+当前 WhatsApp 文档明确说明不支持群聊。
+Telegram 支持群消息，但需要先关闭 Group Privacy，将机器人加入群组并通过 `@机器人用户名` 发起对话。
 
-多通道共享解决的是 Agent 层的一致性，不会自动增加任一通道的群聊能力。
+多通道共享解决的是 Agent 层的一致性，不会改变各通道自身的接入条件和能力边界。
 
 ### 自动任务会同时发到两个通道吗？
 

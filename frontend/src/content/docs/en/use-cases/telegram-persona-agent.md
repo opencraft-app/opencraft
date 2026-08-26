@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Telegram is only an entry point. What determines how the Agent speaks, how it works, and what it will not do is its persona and long-term context.** The flow has two halves: first connect the Hermes Agent to Telegram following the channel guide (create a bot with BotFather to obtain a token, connect in the console, and confirm it shows as connected), then use the Persona section on the Agent's settings page to select a stable role, tone, and set of limits and inject it. Keep the three layers distinct: the persona holds durable behavioural principles, user preferences hold how you want to be treated, and long-term memory holds confirmed facts and project background. Note that the Telegram channel currently supports one-to-one conversations only, not group chats.
+**Telegram is only an entry point. What determines how the Agent speaks, how it works, and what it will not do is its persona and long-term context.** The flow has two halves: first connect the Hermes Agent to Telegram following the channel guide (create a bot with BotFather to obtain a token, connect in the console, and confirm it shows as connected), then use the Persona section on the Agent's settings page to select a stable role, tone, and set of limits and inject it. Keep the three layers distinct: the persona holds durable behavioural principles, user preferences hold how you want to be treated, and long-term memory holds confirmed facts and project background. Telegram supports group messages after you disable Group Privacy in BotFather, add the bot to the group, and start the conversation with `@bot_username`.
 
 ![A Hermes Agent with a distinct personality in Telegram](../images/use-case-03-telegram-persona-agent.png)
 
@@ -11,7 +11,7 @@
 This guide is for people who want a Hermes Agent with a consistent personality in Telegram over time.
 It works well for a personal assistant, research partner, study companion, or any everyday assistant that should communicate in a predictable way.
 
-Telegram is currently intended primarily for 1-to-1 conversations.
+Telegram supports direct conversations and group messages that mention the connected Bot after Group Privacy is disabled.
 If you need to connect Telegram, start with [Configure Channel - Telegram](../configuration/channel-telegram.md).
 
 ## Prerequisites
@@ -124,8 +124,10 @@ It does not delete the Agent's long-term memory or user profile.
 
 ### Can I add the Telegram Bot to a group?
 
-The current Telegram documentation treats 1-to-1 conversations as the primary supported mode, and group behavior is also affected by channel configuration and privacy settings.
-Do not use this guide as a group-chat setup; check [Configure Channel - Telegram](../configuration/channel-telegram.md) for the current support scope.
+Yes.
+In BotFather, send `/mybots`, select the Bot, then open "Bot Settings" → "Group Privacy" and turn privacy mode off.
+Add the Bot to the group and start the conversation with `@bot_username`.
+See [Configure Channel - Telegram](../configuration/channel-telegram.md) for the complete setup.
 
 ### Will changing the model make the Agent lose its personality?
 

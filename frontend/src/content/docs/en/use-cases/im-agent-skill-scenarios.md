@@ -158,7 +158,8 @@ By default, let the Agent look up the policy, draft a recommendation, and wait f
 
 ### Can a community assistant join a Telegram group directly?
 
-LightVela's current Telegram documentation still treats 1-to-1 conversations as the supported scope, so read [Telegram Group AI Community Assistant: Capability Boundaries](./telegram-group-community-assistant.md) before planning a group workflow.
+Telegram supports group messages after you disable Group Privacy in BotFather, add the Bot to the group, and mention it with `@bot_username`.
+See [How to Use a Telegram Group AI Community Assistant](./telegram-group-community-assistant.md) for group Q&A, summaries, and reminder drafts.
 
 ### Should I put all reference material into memory?
 
@@ -174,4 +175,4 @@ Long-term memory is for a small amount of stable context, while product FAQs, co
 
 - [How to Connect One Agent to Telegram and WhatsApp While Keeping One Personality and Long-Term Memory](./multi-channel-personality-memory.md) - Extend the same Agent capabilities to multiple entry points.
 
-- [How to Configure a Telegram Group AI Community Assistant](./telegram-group-community-assistant.md) - Review the current group-chat support boundary and preparation checklist.
+- [How to Use a Telegram Group AI Community Assistant](./telegram-group-community-assistant.md) - Complete the group-message setup and prepare Skills for group Q&A and summaries.
