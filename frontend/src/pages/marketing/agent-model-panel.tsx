@@ -1,4 +1,8 @@
 /**
+ * @deprecated 死代码：已被 agent-model-config/AgentModelConfigPanel 取代（零引用）。
+ * 本文件是 config-panel-migration（!3110）从 tea-sdk 迁移本地化后未删除的旧实现。
+ * 暂留作迁移期参考，待线上版本稳定后删除（2026-08-26 决策）。
+ *
  * @fileoverview ModelPanel — Standard 变体模型配置面板
  *
  * 交互设计：

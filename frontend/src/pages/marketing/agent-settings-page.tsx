@@ -65,6 +65,12 @@ import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+// 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
+import type {
+  LightVelaMultiSessionOptions,
+  LightVelaSession,
+  LightVelaSessionActions,
+} from "./agent-chat-panel";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -540,8 +546,16 @@ void _staggerContainer;
 
 /* ─── Navbar ─── */
 
-const SHOW_AGENTCHAT_ENTRY = true;
 const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "channel";
+
+/**
+ * 「前一个设置菜单」记忆（模块级）。
+ * Why 模块级而非 useRef：/agents/[section] 路由在 section 间切换时页面组件会重挂载，
+ * useRef 被重置回初始值，导致从对话切回设置时永远落在「通道」；模块级变量跨重挂载存活，
+ * 且仅在本组件的 effect / 点击 handler（纯客户端时机）读写，无 SSR 跨请求泄漏。
+ * 刷新页面自然回到初始值（channel），符合 tab 状态不做持久化的约定。
+ */
+let lastSettingsSection: AgentSettingsSectionId = DEFAULT_AGENT_SECTION;
 
 /* ─── Section Card Wrapper ─── */
 
@@ -2987,6 +3001,116 @@ export const AgentSettingsPage = ({
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [isAgentActionMenuOpen, setIsAgentActionMenuOpen] = useState(false);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
+
+  /* ── 侧边栏「对话/设置」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
+  /** tab 仅切侧边栏内容，右侧主区始终按当前路由渲染；初始值随路由推导，不做持久化。 */
+  const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
+  const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
+  const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
+  /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定（SDK 侧会驱动默认会话）。 */
+  const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
+  /** SDK 会话动作句柄（当前仅 renameSession；SDK 未提供删除 API）。 */
+  const [chatSessionActions, setChatSessionActions] = useState<LightVelaSessionActions | null>(null);
+  /** 行内重命名状态：renamingChatId 非空表示该项处于编辑态。 */
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renamingDraft, setRenamingDraft] = useState("");
+  /** 三点菜单当前展开的会话。 */
+  const [openSessionMenuChatId, setOpenSessionMenuChatId] = useState<string | null>(null);
+  const sessionMenuRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 记录「前一个点击的设置菜单」：切到「对话」再回「设置」时，主区回到该菜单而非固定通道。
+   * 写入模块级 lastSettingsSection（见其声明处的重挂载说明）。
+   */
+  useEffect(() => {
+    if (activeSection !== "chat") {
+      lastSettingsSection = activeSection;
+    }
+  }, [activeSection]);
+
+  /**
+   * tab 点击联动主区导航（对齐产品确认的交互）：
+   * - 点「设置」：若当前在对话页，回到前一个设置菜单（无记忆则通道）；
+   * - 点「对话」：若当前不在对话页，进入对话页，并默认选中第一个会话。
+   */
+  const handleSidebarSettingsTabClick = () => {
+    setSidebarTab("settings");
+    if (activeSection === "chat") {
+      navigate(
+        getAgentSectionHref(AGENT_SECTION_PATH_BY_ID[lastSettingsSection], searchParams),
+      );
+    }
+  };
+
+  const handleSidebarChatTabClick = () => {
+    setSidebarTab("chat");
+    if (activeSection !== "chat") {
+      navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
+      // 默认选中第一个对话；若 SDK 尚未回传会话列表，则保持 undefined 由 SDK 驱动默认会话。
+      if (selectedChatId == null && chatSessions.length > 0) {
+        setSelectedChatId(chatSessions[0]?.chatId);
+      }
+    }
+  };
+
+  /** 多会话受控桥接：回调引用保持稳定（仅依赖 selectedChatId），避免 SDK 内部 effect 循环。 */
+  const chatMultiSessionBridge = useMemo<LightVelaMultiSessionOptions>(
+    () => ({
+      selectedChatId,
+      onSessionStateChange: ({ sessions, loading }) => {
+        setChatSessions(sessions);
+        setChatSessionsLoading(loading);
+      },
+      onSelectedChatIdChange: (chatId) => {
+        setSelectedChatId(chatId);
+      },
+      onSessionActionsChange: (actions) => {
+        setChatSessionActions(actions);
+      },
+    }),
+    [selectedChatId],
+  );
+
+  const startSessionRename = (session: LightVelaSession) => {
+    setOpenSessionMenuChatId(null);
+    setRenamingChatId(session.chatId);
+    setRenamingDraft(session.title || "");
+  };
+
+  const commitSessionRename = () => {
+    const chatId = renamingChatId;
+    if (chatId == null) return;
+    const nextTitle = renamingDraft.trim();
+    setRenamingChatId(null);
+    setRenamingDraft("");
+    if (nextTitle) chatSessionActions?.renameSession(chatId, nextTitle);
+  };
+
+  const cancelSessionRename = () => {
+    setRenamingChatId(null);
+    setRenamingDraft("");
+  };
+
+  useEffect(() => {
+    if (!openSessionMenuChatId) return undefined;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!sessionMenuRef.current?.contains(event.target as Node)) {
+        setOpenSessionMenuChatId(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenSessionMenuChatId(null);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openSessionMenuChatId]);
+
   const agentActionMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isAgentActionMenuOpen) return undefined;
@@ -3341,10 +3465,10 @@ export const AgentSettingsPage = ({
     () =>
       activeBotId
         ? createLocalCommandExecutor({
-            repositories,
-            botId: activeBotId,
-            commandLifecycle: sdkCommandLifecycle,
-          })
+          repositories,
+          botId: activeBotId,
+          commandLifecycle: sdkCommandLifecycle,
+        })
         : undefined,
     [repositories, activeBotId, sdkCommandLifecycle],
   );
@@ -4315,38 +4439,38 @@ export const AgentSettingsPage = ({
       {workspaceDetailsOpen && (
         <div id="workspace-recovery-details" className="mt-4 max-h-[320px] overflow-y-auto pr-1">
           {workspaceTaskLogs.length === 0 ? (
-          <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
-            {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无 Agent 任务记录")}
-          </div>
-        ) : (
-          <ol className="space-y-0">
-            {workspaceTaskLogs.map((log, index, allLogs) => {
-              const isLast = index === allLogs.length - 1;
-              const tone = log.level === "error"
-                ? "bg-red-500"
-                : log.level === "success"
-                  ? "bg-emerald-500"
-                  : log.level === "warning"
-                    ? "bg-amber-500"
-                    : "bg-black/35";
-              return (
-                <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">
-                  <div className="pt-0.5 text-right text-[11px] text-black/35">
-                    {formatExportLogTime(log.time)}
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className={cn("mt-1.5 h-2.5 w-2.5 rounded-full", tone)} />
-                    {!isLast && <span className="absolute top-5 bottom-0 w-px bg-black/[0.08]" />}
-                  </div>
-                  <div className="pb-4">
-                    <p className="text-sm leading-relaxed text-black/78">{log.message}</p>
-                    {activeWorkspaceTask && log.phase && <p className="mt-0.5 text-[11px] text-black/35">{workspacePhaseLabel(activeWorkspaceTask.kind, log.phase)}</p>}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        )}
+            <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
+              {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无 Agent 任务记录")}
+            </div>
+          ) : (
+            <ol className="space-y-0">
+              {workspaceTaskLogs.map((log, index, allLogs) => {
+                const isLast = index === allLogs.length - 1;
+                const tone = log.level === "error"
+                  ? "bg-red-500"
+                  : log.level === "success"
+                    ? "bg-emerald-500"
+                    : log.level === "warning"
+                      ? "bg-amber-500"
+                      : "bg-black/35";
+                return (
+                  <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">
+                    <div className="pt-0.5 text-right text-[11px] text-black/35">
+                      {formatExportLogTime(log.time)}
+                    </div>
+                    <div className="relative flex justify-center">
+                      <span className={cn("mt-1.5 h-2.5 w-2.5 rounded-full", tone)} />
+                      {!isLast && <span className="absolute top-5 bottom-0 w-px bg-black/[0.08]" />}
+                    </div>
+                    <div className="pb-4">
+                      <p className="text-sm leading-relaxed text-black/78">{log.message}</p>
+                      {activeWorkspaceTask && log.phase && <p className="mt-0.5 text-[11px] text-black/35">{workspacePhaseLabel(activeWorkspaceTask.kind, log.phase)}</p>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </div>
       )}
     </section>
@@ -4822,9 +4946,6 @@ export const AgentSettingsPage = ({
                   id: "use",
                   label: t("使用"),
                   sections: [
-                    ...(SHOW_AGENTCHAT_ENTRY
-                      ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
-                      : []),
                     { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
                     ...(isGlobal && showHiddenAgentTools
                       ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
@@ -4871,11 +4992,11 @@ export const AgentSettingsPage = ({
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
-                    <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {t("正在加载页面…")}
-                    </div>
-                  );
+                  <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("正在加载页面…")}
+                  </div>
+                );
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -5083,89 +5204,215 @@ export const AgentSettingsPage = ({
                       )}
                     </div>
 
-                    <nav
-                      aria-label={t("实例配置导航")}
-                      className="lv-agents-nav"
-                    >
-                      {showHiddenAgentTools ? (
-                        <div className="lv-agents-nav-group">
+                    {/* ── 侧边栏顶层「设置/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
+                    <div className="lv-agents-sidebar-tabs" role="tablist" aria-label={t("侧边栏视图切换")}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sidebarTab === "settings"}
+                        className={cn("lv-agents-sidebar-tab", sidebarTab === "settings" && "is-active")}
+                        onClick={handleSidebarSettingsTabClick}
+                      >
+                        {t("设置")}
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sidebarTab === "chat"}
+                        className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && "is-active")}
+                        onClick={handleSidebarChatTabClick}
+                      >
+                        {t("对话")}
+                      </button>
+                    </div>
+
+                    {sidebarTab === "chat" ? (
+                      <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
+                        <div className="lv-agents-nav-group" role="group">
+                          <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
                           <ul className="lv-agents-nav-group-items">
-                            <li>
-                              <AppLink
-                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
-                                aria-current={activeSection === "terminal" ? "page" : undefined}
-                                className={cn(
-                                  "lw-settings-nav-item lv-agents-nav-item",
-                                  activeSection === "terminal"
-                                    ? "is-active"
-                                    : "text-black/70 hover:bg-black/[0.025]",
-                                )}
-                              >
-                                <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
-                                <span className="flex-1 text-left">{t("终端")}</span>
-                              </AppLink>
-                            </li>
-                            <li>
-                              <AppLink
-                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
-                                aria-current={activeSection === "browser" ? "page" : undefined}
-                                className={cn(
-                                  "lw-settings-nav-item lv-agents-nav-item",
-                                  activeSection === "browser"
-                                    ? "is-active"
-                                    : "text-black/70 hover:bg-black/[0.025]",
-                                )}
-                              >
-                                <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
-                                <span className="flex-1 text-left">{t("浏览器")}</span>
-                              </AppLink>
-                            </li>
-                          </ul>
-                        </div>
-                      ) : null}
-                      {settingsGroups.map((group) => {
-                        const groupLabelId = `agent-settings-nav-group-${group.id}`;
-                        return (
-                          <div
-                            key={group.id}
-                            className="lv-agents-nav-group"
-                            role="group"
-                            aria-labelledby={groupLabelId}
-                          >
-                            <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
-                            <ul className="lv-agents-nav-group-items">
-                              {group.sections.map((section) => {
-                                const isActive = section.id === activeSection;
+                            {chatSessionsLoading && chatSessions.length === 0 ? (
+                              <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
+                            ) : chatSessions.length === 0 ? (
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
+                                  aria-current={activeSection === "chat" ? "page" : undefined}
+                                  className={cn(
+                                    "lv-agents-session-item lv-agents-nav-item",
+                                    activeSection === "chat" && "is-active",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
+                                  <span className="lv-agents-session-title" title={t("默认对话")}>
+                                    {t("默认对话")}
+                                  </span>
+                                </AppLink>
+                              </li>
+                            ) : (
+                              chatSessions.map((session) => {
+                                const isSelected = selectedChatId === session.chatId;
+                                const isRenaming = renamingChatId === session.chatId;
+                                const isMenuOpen = openSessionMenuChatId === session.chatId;
                                 return (
-                                  <li key={section.id}>
-                                    <AppLink
-                                      to={getAgentSectionHref(section.path, searchParams)}
-                                      aria-current={isActive ? "page" : undefined}
-                                      className={cn(
-                                        "lw-settings-nav-item lv-agents-nav-item",
-                                        isActive
-                                          ? "is-active"
-                                          : "text-black/70 hover:bg-black/[0.025]",
-                                      )}
-                                    >
-                                      <span className="lv-agents-nav-icon">{section.icon}</span>
-                                      <span className="flex-1 text-left">{section.label}</span>
-                                      {section.badge && (
-                                        <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
-                                          {section.badge}
-                                        </span>
-                                      )}
-                                    </AppLink>
+                                  <li key={session.chatId} className="lv-agents-session-item-wrap">
+                                    {isRenaming ? (
+                                      <input
+                                        className="lv-agents-session-rename-input"
+                                        value={renamingDraft}
+                                        autoFocus
+                                        aria-label={t("会话名称")}
+                                        title={t("回车确认，Esc 取消")}
+                                        onChange={(event) => setRenamingDraft(event.target.value)}
+                                        onBlur={() => commitSessionRename()}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter") {
+                                            event.preventDefault();
+                                            commitSessionRename();
+                                          } else if (event.key === "Escape") {
+                                            event.preventDefault();
+                                            cancelSessionRename();
+                                          }
+                                        }}
+                                      />
+                                    ) : (
+                                      <>
+                                        <AppLink
+                                          to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
+                                          aria-current={isSelected ? "page" : undefined}
+                                          onClick={() => setSelectedChatId(session.chatId)}
+                                          className={cn(
+                                            "lv-agents-session-item lv-agents-nav-item",
+                                            isSelected && "is-active",
+                                          )}
+                                        >
+                                          <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
+                                          <span className="lv-agents-session-title" title={session.title || t("默认会话")}>
+                                            {session.title || t("默认会话")}
+                                          </span>
+                                        </AppLink>
+                                        <div ref={isMenuOpen ? sessionMenuRef : undefined} className="lv-agents-session-menu-anchor">
+                                          <button
+                                            type="button"
+                                            className="lv-agents-session-menu-btn"
+                                            aria-label={t("会话操作")}
+                                            aria-expanded={isMenuOpen}
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
+                                              setOpenSessionMenuChatId(isMenuOpen ? null : session.chatId);
+                                            }}
+                                          >
+                                            <MoreVertical className="h-3.5 w-3.5" />
+                                          </button>
+                                          {isMenuOpen ? (
+                                            <div className="lv-agents-session-menu" role="menu">
+                                              <button
+                                                type="button"
+                                                role="menuitem"
+                                                className="lv-agents-session-menu-item"
+                                                disabled={!chatSessionActions}
+                                                onClick={() => startSessionRename(session)}
+                                              >
+                                                {t("重命名")}
+                                              </button>
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </>
+                                    )}
                                   </li>
                                 );
-                              })}
+                              })
+                            )}
+                          </ul>
+                        </div>
+                      </nav>
+                    ) : (
+                      <nav
+                        aria-label={t("实例配置导航")}
+                        className="lv-agents-nav"
+                      >
+                        {showHiddenAgentTools ? (
+                          <div className="lv-agents-nav-group">
+                            <ul className="lv-agents-nav-group-items">
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
+                                  aria-current={activeSection === "terminal" ? "page" : undefined}
+                                  className={cn(
+                                    "lw-settings-nav-item lv-agents-nav-item",
+                                    activeSection === "terminal"
+                                      ? "is-active"
+                                      : "text-black/70 hover:bg-black/[0.025]",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
+                                  <span className="flex-1 text-left">{t("终端")}</span>
+                                </AppLink>
+                              </li>
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
+                                  aria-current={activeSection === "browser" ? "page" : undefined}
+                                  className={cn(
+                                    "lw-settings-nav-item lv-agents-nav-item",
+                                    activeSection === "browser"
+                                      ? "is-active"
+                                      : "text-black/70 hover:bg-black/[0.025]",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
+                                  <span className="flex-1 text-left">{t("浏览器")}</span>
+                                </AppLink>
+                              </li>
                             </ul>
                           </div>
-                        );
-                      })}
-                    </nav>
+                        ) : null}
+                        {settingsGroups.map((group) => {
+                          const groupLabelId = `agent-settings-nav-group-${group.id}`;
+                          return (
+                            <div
+                              key={group.id}
+                              className="lv-agents-nav-group"
+                              role="group"
+                              aria-labelledby={groupLabelId}
+                            >
+                              <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
+                              <ul className="lv-agents-nav-group-items">
+                                {group.sections.map((section) => {
+                                  const isActive = section.id === activeSection;
+                                  return (
+                                    <li key={section.id}>
+                                      <AppLink
+                                        to={getAgentSectionHref(section.path, searchParams)}
+                                        aria-current={isActive ? "page" : undefined}
+                                        className={cn(
+                                          "lw-settings-nav-item lv-agents-nav-item",
+                                          isActive
+                                            ? "is-active"
+                                            : "text-black/70 hover:bg-black/[0.025]",
+                                        )}
+                                      >
+                                        <span className="lv-agents-nav-icon">{section.icon}</span>
+                                        <span className="flex-1 text-left">{section.label}</span>
+                                        {section.badge && (
+                                          <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                            {section.badge}
+                                          </span>
+                                        )}
+                                      </AppLink>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          );
+                        })}
+                      </nav>
+                    )}
 
-                    {isCN ? (
+                    {sidebarTab === "settings" && isCN ? (
                       <a
                         href={PRODUCT_FEEDBACK_URL}
                         target="_blank"
@@ -5257,6 +5504,7 @@ export const AgentSettingsPage = ({
                               launchTokenStatus={launchTokenStatus}
                               onRetryLaunchToken={retryLaunchToken}
                               onRefreshLaunchToken={refreshLaunchToken}
+                              multiSession={chatMultiSessionBridge}
                             />
                           )}
                           {activeSection === "memory" && (

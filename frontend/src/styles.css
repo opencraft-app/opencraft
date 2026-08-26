@@ -485,6 +485,158 @@ a {
   margin-top: 16px;
 }
 
+/* ── 侧边栏顶层「对话/设置」双 tab（分段控制器）── */
+.lv-agents-sidebar-tabs {
+  display: flex;
+  gap: 4px;
+  width: 220px;
+  margin-top: 12px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 4%);
+}
+
+.lv-agents-sidebar-tab {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 6px;
+  color: rgb(0 0 0 / 55%);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.lv-agents-sidebar-tab:hover {
+  color: rgb(0 0 0 / 80%);
+}
+
+.lv-agents-sidebar-tab.is-active {
+  color: #1f1f1f;
+  background: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+
+.lv-agents-sidebar-tab:focus-visible {
+  outline: 2px solid rgb(0 0 0 / 30%);
+  outline-offset: 1px;
+}
+
+/* ── 「对话」tab 会话列表 ── */
+.lv-agents-session-hint {
+  padding: 8px 12px 8px 20px;
+  color: rgb(0 0 0 / 40%);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.lv-agents-session-item-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.lv-agents-session-item.lv-agents-nav-item {
+  padding-right: 8px;
+}
+
+.lv-agents-session-item .lv-agents-session-title {
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lv-agents-session-menu-anchor {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  height: 36px;
+}
+
+.lv-agents-session-menu-btn {
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: rgb(0 0 0 / 35%);
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.lv-agents-session-item-wrap:hover .lv-agents-session-menu-btn,
+.lv-agents-session-menu-btn:focus-visible,
+.lv-agents-session-menu-btn[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.lv-agents-session-menu-btn:hover {
+  color: rgb(0 0 0 / 70%);
+  background: rgb(0 0 0 / 5%);
+}
+
+.lv-agents-session-menu {
+  position: absolute;
+  top: 26px;
+  right: 0;
+  z-index: 30;
+  min-width: 112px;
+  padding: 4px;
+  border: 1px solid rgb(15 23 42 / 8%);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+}
+
+.lv-agents-session-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: rgb(0 0 0 / 75%);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+}
+
+.lv-agents-session-menu-item:hover:not(:disabled) {
+  background: rgb(0 0 0 / 4%);
+}
+
+.lv-agents-session-menu-item:disabled {
+  color: rgb(0 0 0 / 30%);
+  cursor: not-allowed;
+}
+
+.lv-agents-session-rename-input {
+  width: 100%;
+  height: 28px;
+  margin: 4px 0;
+  padding: 0 10px;
+  border: 1px solid rgb(0 0 0 / 15%);
+  border-radius: 6px;
+  background: #fff;
+  color: #1f1f1f;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.lv-agents-session-rename-input:focus {
+  border-color: rgb(0 0 0 / 40%);
+  outline: none;
+}
+
 .lv-agents-nav .lw-settings-nav-item + .lw-settings-nav-item {
   margin-top: 0;
 }
@@ -609,6 +761,10 @@ a {
   }
 
   .lv-agents-nav-item {
+    width: 100%;
+  }
+
+  .lv-agents-sidebar-tabs {
     width: 100%;
   }
 }

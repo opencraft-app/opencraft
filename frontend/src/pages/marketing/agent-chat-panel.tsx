@@ -1,5 +1,14 @@
 import { lazy, Suspense, useCallback, useRef, type ComponentProps } from "react";
 
+import type {
+  LightVelaMultiSessionOptions,
+  LightVelaSession,
+  LightVelaSessionActions,
+} from "@tencent/agentchat-lightvela-panel";
+// SDK 多会话类型单一事实源：宿主页面（agent-settings-page）统一从本模块导入，
+// 避免多处直接依赖 SDK 包导出（SDK 为 lazy chunk，此处仅 type re-export，编译后擦除）。
+export type { LightVelaMultiSessionOptions, LightVelaSession, LightVelaSessionActions };
+
 import { useT } from "@/i18n/t";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongEvent } from "@/observability/datong-tracker";
@@ -21,6 +30,11 @@ type AgentChatPanelProps = {
   onRetryLaunchToken: () => void;
   /** 拉取新 launch token（不写外层 state），由 SDK 续期机制调用。expiresAt 为 Unix 秒。 */
   onRefreshLaunchToken: () => Promise<{ token: string; expiresAt?: number }>;
+  /**
+   * 多会话受控桥接：由宿主（agent-settings-page）持有会话列表与选中会话状态，
+   * SDK 只回传状态并消费 selectedChatId。类型自 SDK 1.4.0-beta.0。
+   */
+  multiSession?: LightVelaMultiSessionOptions;
 };
 
 /**
@@ -38,6 +52,7 @@ export const AgentChatPanel = ({
   launchTokenStatus,
   onRetryLaunchToken,
   onRefreshLaunchToken,
+  multiSession,
 }: AgentChatPanelProps) => {
   const t = useT();
 
@@ -167,6 +182,7 @@ export const AgentChatPanel = ({
             refreshLightvelaApiParams={refreshLightvelaApiParams}
             commandExecutor={commandExecutor}
             report={handleReport}
+            multiSession={multiSession}
             features={{
               autoActivate: true,
               nativeWsGray: true,
