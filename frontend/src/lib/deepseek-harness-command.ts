@@ -1,6 +1,4 @@
 import {
-  DEEPSEEK_HARNESS_INSTALL_PAYLOAD_CHUNKS,
-  DEEPSEEK_HARNESS_INSTALL_PAYLOAD_SHA256,
   DEEPSEEK_HARNESS_PROVIDER_HELPER_BASE64,
 } from "@/lib/generated/deepseek-harness-runtime-assets";
 
@@ -63,20 +61,18 @@ export type DeepSeekHarnessExecDebugCommand = (
 interface DeepSeekHarnessCommandClientOptions {
   createTaskId?: () => string;
   createSecretId?: () => string;
-  installPayload?: {
-    chunks: readonly string[];
-    sha256: string;
-  };
   providerHelperBase64?: string;
   encryptSecret?: (publicKeyBase64: string, value: string) => Promise<string>;
 }
 
+export const DEEPSEEK_HARNESS_INSTALLER_URL =
+  "https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh";
+
 const SERVICE = "deepseek-harness.service";
 const TASK_ID_PATTERN = /^dshi-[0-9a-f]{32}$/;
 const SECRET_ID_PATTERN = /^dshk-[0-9a-f]{32}$/;
-const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
-const INSTALL_UPLOAD_PREFIX = "/tmp/lightvela-dsh-upload-";
+const INSTALL_WORK_PREFIX = "/tmp/lightvela-dsh-install-";
 const INSTALLATION_STATE_DIR = "/var/lib/lightvela/dsh/installations";
 const SECRET_TRANSPORT_DIR = "/home/agentuser/.dsh/.lightvela-secret-transport";
 const ALL_PROVIDERS = new Set<string>([
@@ -92,46 +88,6 @@ const STATUS_COMMAND = [
   "else",
   `  printf '%s\\n' '{"installed":false,"status":"not-installed","service_status":"inactive","healthy":false}'`,
   "fi",
-].join("\n");
-
-const INSTALL_PAYLOAD_EXTRACTOR = [
-  "import base64,gzip,hashlib,io,json,os,pathlib,sys",
-  "source,target,expected=sys.argv[1:]",
-  "def fail(message): raise ValueError(message)",
-  "encoded_path=pathlib.Path(source)",
-  "if encoded_path.stat().st_size>1048576: fail('encoded payload is too large')",
-  "try: compressed=base64.b64decode(encoded_path.read_bytes(),validate=True)",
-  "except Exception as exc: fail(f'invalid payload encoding: {exc}')",
-  "if hashlib.sha256(compressed).hexdigest()!=expected: fail('payload checksum mismatch')",
-  "try:",
-  " with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as archive: decoded=archive.read(16777217)",
-  "except Exception as exc: fail(f'invalid payload archive: {exc}')",
-  "if len(decoded)>16777216: fail('payload is too large')",
-  "try: payload=json.loads(decoded)",
-  "except Exception as exc: fail(f'invalid payload manifest: {exc}')",
-  "if not isinstance(payload,dict) or payload.get('schemaVersion')!=1: fail('unsupported payload schema')",
-  "files=payload.get('files')",
-  "if not isinstance(files,list) or not files or len(files)>256: fail('invalid payload file list')",
-  "root=pathlib.Path(target)",
-  "root.mkdir(parents=True,exist_ok=False)",
-  "seen=set()",
-  "total_size=0",
-  "for item in files:",
-  " if not isinstance(item,dict) or not isinstance(item.get('path'),str): fail('invalid payload file')",
-  " relative=pathlib.PurePosixPath(item['path'])",
-  " if relative.is_absolute() or '..' in relative.parts or not relative.parts: fail('unsafe payload path')",
-  " if item['path'] in seen or item.get('mode') not in (420,493): fail('invalid payload metadata')",
-  " try: content=base64.b64decode(item.get('content',''),validate=True)",
-  " except Exception as exc: fail(f'invalid file content: {exc}')",
-  " if len(content)>8388608: fail('payload file is too large')",
-  " total_size+=len(content)",
-  " if total_size>12582912: fail('payload contents are too large')",
-  " seen.add(item['path'])",
-  " destination=root.joinpath(*relative.parts)",
-  " destination.parent.mkdir(parents=True,exist_ok=True)",
-  " destination.write_bytes(content)",
-  " os.chmod(destination,item['mode'])",
-  "if 'installer/install-deepseek-harness.sh' not in seen: fail('installer is missing')",
 ].join("\n");
 
 const INSTALL_TASK_STATUS_CHECKER = [
@@ -209,16 +165,18 @@ export const encryptDeepSeekHarnessSecret = async (publicKeyBase64: string, valu
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`;
 
-export const createDeepSeekHarnessInstallLaunchScript = () => {
-  const extractorBase64 = encodeUtf8Base64(INSTALL_PAYLOAD_EXTRACTOR);
+export const createDeepSeekHarnessInstallLaunchScript = (
+  installerUrl = DEEPSEEK_HARNESS_INSTALLER_URL,
+) => {
   const taskStatusCheckerBase64 = encodeUtf8Base64(INSTALL_TASK_STATUS_CHECKER);
   const taskWriterBase64 = encodeUtf8Base64(INSTALL_TASK_WRITER);
   return [
     "set -Eeuo pipefail",
-    'upload_dir="$1"',
-    'task_id="$2"',
-    'expected_sha="$3"',
-    'state_dir="$4"',
+    "umask 077",
+    'task_id="$1"',
+    'state_dir="$2"',
+    'work_dir="$3"',
+    'installer_path="$work_dir/install-deepseek-harness.sh"',
     "installer_started=0",
     'write_task_state() { python3 -c "import base64;exec(base64.b64decode(\''
       + taskWriterBase64
@@ -226,15 +184,29 @@ export const createDeepSeekHarnessInstallLaunchScript = () => {
     'task_has_status() { python3 -c "import base64;exec(base64.b64decode(\''
       + taskStatusCheckerBase64
       + "'))\" \"$state_dir/$task_id.json\" \"$1\"; }",
-    'cleanup_upload() { rm -rf -- "$upload_dir"; }',
-    'on_exit() { rc=$?; trap - EXIT; if [ "$rc" -ne 0 ] && [ "$installer_started" -eq 0 ]; then write_task_state failed prepare 0 "Installation preparation failed" || true; fi; cleanup_upload; exit "$rc"; }',
+    'cleanup_work() { rm -rf -- "$work_dir"; }',
+    'on_exit() { rc=$?; trap - EXIT; if [ "$rc" -ne 0 ] && [ "$installer_started" -eq 0 ] && ! task_has_status failed; then write_task_state failed prepare 0 "Installation preparation failed" || true; fi; cleanup_work; exit "$rc"; }',
     "trap on_exit EXIT",
     'install -d -m 0700 -- "$state_dir"',
+    'rm -rf -- "$work_dir"',
+    'install -d -m 0700 -- "$work_dir"',
     'write_task_state pending prepare 0 "Preparing installation"',
-    `python3 -c "import base64;exec(base64.b64decode('${extractorBase64}'))" "$upload_dir/payload.b64" "$upload_dir/files" "$expected_sha"`,
+    [
+      "curl --silent --show-error --fail --location",
+      "--proto '=https' --tlsv1.2",
+      "--connect-timeout 10 --max-time 180",
+      "--retry 5 --retry-delay 2 --retry-max-time 120 --retry-all-errors",
+      '--output "$installer_path"',
+      shellQuote(installerUrl),
+    ].join(" "),
+    'installer_size="$(wc -c < "$installer_path" | tr -d \'[:space:]\')"',
+    'if ! [[ "$installer_size" =~ ^[0-9]+$ ]] || [ "$installer_size" -lt 1024 ] || [ "$installer_size" -gt 1048576 ]; then write_task_state failed prepare 0 "Invalid installer size"; exit 1; fi',
+    'if [ "$(head -n 1 "$installer_path")" != "#!/usr/bin/env bash" ]; then write_task_state failed prepare 0 "Invalid installer header"; exit 1; fi',
+    'if ! bash -n "$installer_path"; then write_task_state failed prepare 0 "Invalid installer syntax"; exit 1; fi',
+    'chmod 0700 "$installer_path"',
     "installer_started=1",
     "set +e",
-    'LIGHTVELA_DSH_ASSETS_DIR="$upload_dir/files/assets" "$upload_dir/files/installer/install-deepseek-harness.sh" install --task-id "$task_id"',
+    '"$installer_path" install --task-id "$task_id"',
     "installer_rc=$?",
     "set -e",
     'if [ "$installer_rc" -ne 0 ]; then if ! task_has_status failed; then write_task_state failed install 0 "Installation failed before reporting status"; fi; exit "$installer_rc"; fi',
@@ -280,7 +252,6 @@ const assertProvider = (provider: string): asserts provider is DeepSeekHarnessPr
 export class DeepSeekHarnessCommandClient {
   private readonly createTaskId: () => string;
   private readonly createSecretId: () => string;
-  private readonly installPayload: { chunks: readonly string[]; sha256: string };
   private readonly providerHelperBase64: string;
   private readonly encryptSecret: (publicKeyBase64: string, value: string) => Promise<string>;
 
@@ -291,10 +262,6 @@ export class DeepSeekHarnessCommandClient {
   ) {
     this.createTaskId = options.createTaskId ?? defaultTaskId;
     this.createSecretId = options.createSecretId ?? defaultSecretId;
-    this.installPayload = options.installPayload ?? {
-      chunks: DEEPSEEK_HARNESS_INSTALL_PAYLOAD_CHUNKS,
-      sha256: DEEPSEEK_HARNESS_INSTALL_PAYLOAD_SHA256,
-    };
     this.providerHelperBase64 = options.providerHelperBase64
       ?? DEEPSEEK_HARNESS_PROVIDER_HELPER_BASE64;
     this.encryptSecret = options.encryptSecret ?? encryptDeepSeekHarnessSecret;
@@ -308,33 +275,12 @@ export class DeepSeekHarnessCommandClient {
   async startInstall(): Promise<{ task_id: string }> {
     const taskId = this.createTaskId();
     assertTaskId(taskId);
-    if (!SHA256_PATTERN.test(this.installPayload.sha256) || this.installPayload.chunks.length === 0) {
-      throw new Error("Invalid DeepSeek Harness installation payload");
-    }
-    const uploadDir = `${INSTALL_UPLOAD_PREFIX}${taskId}`;
-    const payloadPath = `${uploadDir}/payload.b64`;
-    const cleanupCommand = `rm -rf -- ${shellQuote(uploadDir)}`;
     let launchRequested = false;
 
     try {
-      const prepareResult = await this.execDebugCommand(
-        this.botId,
-        `${cleanupCommand} && install -d -m 0700 -- ${shellQuote(uploadDir)} && : > ${shellQuote(payloadPath)}`,
-        { timeoutMs: 30_000 },
-      );
-      assertCommandSucceeded(prepareResult, "DeepSeek Harness payload preparation failed");
-
-      for (const chunk of this.installPayload.chunks) {
-        const uploadResult = await this.execDebugCommand(
-          this.botId,
-          `printf '%s' ${shellQuote(chunk)} >> ${shellQuote(payloadPath)}`,
-          { timeoutMs: 30_000 },
-        );
-        assertCommandSucceeded(uploadResult, "DeepSeek Harness payload upload failed");
-      }
-
       const launchScript = createDeepSeekHarnessInstallLaunchScript();
       const launchUnit = `lightvela-dsh-install-${taskId}.service`;
+      const workDir = `${INSTALL_WORK_PREFIX}${taskId}`;
       const launchCommand = [
         "sudo -n systemd-run",
         `--unit=${launchUnit}`,
@@ -345,10 +291,9 @@ export class DeepSeekHarnessCommandClient {
         "-c",
         shellQuote(launchScript),
         "lightvela-dsh-install",
-        shellQuote(uploadDir),
         taskId,
-        this.installPayload.sha256,
         shellQuote(INSTALLATION_STATE_DIR),
+        shellQuote(workDir),
       ].join(" ");
       launchRequested = true;
       const launchResult = await this.execDebugCommand(this.botId, launchCommand, {
@@ -383,14 +328,8 @@ export class DeepSeekHarnessCommandClient {
         } catch {
           return { task_id: taskId };
         }
-        await this.execDebugCommand(
-          this.botId,
-          cleanupCommand,
-          { timeoutMs: 30_000 },
-        ).catch(() => {});
         throw error;
       }
-      await this.execDebugCommand(this.botId, cleanupCommand, { timeoutMs: 30_000 }).catch(() => {});
       throw error;
     }
   }
@@ -461,10 +400,12 @@ export class DeepSeekHarnessCommandClient {
       `key_path=${shellQuote(keyPath)}`,
       'cleanup_secret_key() { rm -f -- "$key_path"; }',
       "trap cleanup_secret_key EXIT",
-      `printf '%s' ${shellQuote(encrypted)}`,
-      "| base64 --decode",
-      '| openssl pkeyutl -decrypt -inkey "$key_path" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256',
-      `| ${this.providerHelperCommand()} configure --provider ${provider}`,
+      [
+        `printf '%s' ${shellQuote(encrypted)}`,
+        "base64 --decode",
+        'openssl pkeyutl -decrypt -inkey "$key_path" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256',
+        `${this.providerHelperCommand()} configure --provider ${provider}`,
+      ].join(" | "),
     ].join("\n");
     const result = await this.execDebugCommand(this.botId, command, { timeoutMs: 30_000 });
     assertCommandSucceeded(result, "DeepSeek Harness provider configuration failed");

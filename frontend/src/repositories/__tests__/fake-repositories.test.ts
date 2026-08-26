@@ -112,8 +112,18 @@ describe("fake repositories FaceID flow", () => {
     ]));
 
     const task = await client.startInstall();
-    await expect(client.getInstallation(task.task_id)).resolves.toMatchObject({ status: "running" });
-    await expect(client.getInstallation(task.task_id)).resolves.toMatchObject({ status: "succeeded", progress: 100 });
+    const observedProgress: number[] = [];
+    let installation = await client.getInstallation(task.task_id);
+    while (installation.status === "running") {
+      observedProgress.push(installation.progress);
+      installation = await client.getInstallation(task.task_id);
+    }
+    observedProgress.push(installation.progress);
+    expect(observedProgress).toEqual([
+      10, 10, 20, 20, 28, 28, 35, 35, 48, 48, 56, 56,
+      68, 68, 75, 75, 85, 85, 95, 95, 99, 99, 100,
+    ]);
+    expect(installation).toMatchObject({ status: "succeeded", progress: 100 });
     await expect(client.getStatus()).resolves.toMatchObject({ installed: true, status: "running", healthy: true });
     await expect(client.restart()).resolves.toMatchObject({ installed: true, status: "running", healthy: true });
   });

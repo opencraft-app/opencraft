@@ -6,7 +6,7 @@
 
 **Goal:** 在 `/agents` 控制台中新增“管理 > 实验室 > DeepSeek Harness”二级入口，并提供真实安装、运行状态、WebUI 访问和 Provider 配置体验。
 
-**Architecture:** 安装、状态查询、安装进度、重启和模型配置全部复用现有 `BotRepository.execDebugCommand` 与 `/v1/instances/:id/debug/exec`，不新增 DeepSeek Harness 专用 ctl 或 gateway 接口。实例侧固定管理脚本负责版本、目录、Provider 白名单和 DSH 回环 RPC；dsh 以系统级 `deepseek-harness.service` 运行并监听 `127.0.0.1:3080`。API Key 只写、不回显、不进入 URL 或前端持久化。
+**Architecture:** 安装、状态查询、安装进度、重启和模型配置全部复用现有 `BotRepository.execDebugCommand` 与 `/v1/instances/:id/debug/exec`，不新增 DeepSeek Harness 专用 ctl 或 gateway 接口。实例侧固定管理脚本负责版本、目录、Provider 白名单和 DSH 回环 RPC；dsh 以系统级 `deepseek-harness.service` 运行并监听 `127.0.0.1:3080`。WebUI 直接使用当前 `Bot.id` 生成分站实例域名。API Key 只写、不回显、不进入 URL 或前端持久化。
 
 **Tech Stack:** Next.js 16 App Router、React 19、TypeScript 5.9、Tailwind CSS v4、lucide-react、Vitest 4、Testing Library。
 
@@ -16,16 +16,16 @@
 - 路由采用 `/agents/labs/deepseek-harness`；不新增 `/agents/deepseek-harness` 旁路。
 - 两条抢先体验公告位于 DeepSeek Harness 卡片上方，不嵌入卡片。
 - 未安装态必须展示 DeepSeek Harness Logo、标题后的 `Beta`、指定简介，以及简介下方的“即刻安装体验”按钮。
-- 安装中态在简介下方展示真实任务进度和“请稍等片刻，安装大约需要 1-3 分钟”，完成后通过淡出/淡入切换卡片内容。
+- 安装中态在简介下方展示任务阶段进度和“请稍等片刻，安装大约需要 1-3 分钟”；安装器写入 `10/20/28/35/48/56/68/75/85/95/99/100` 真实节点，同一节点停留时前端每轮最多补 1% 且不越过下一节点，完成后通过淡出/淡入切换卡片内容。
 - 已安装态移除简介，不展示静态 WebUI 地址，只展示 Logo、标题、`Beta`、运行状态，以及右侧“访问 WebUI”和“重启”。
 - 不展示安装时间、最近启动时间、异常态主按钮置灰或查看诊断。
-- 当前接入现有 `debug/exec`、TAT 同源代理与回环健康检查；真实 `xxxxx.dsh.lightvela.site` 域名仍不在本期范围。
+- 状态、安装、重启和模型配置接入现有 `debug/exec` 与回环健康检查；WebUI 按当前 `botId` 直接跳转实例专属域名。
 - 远端操作必须由用户明确授权；验证记录不得写入机器地址或凭据。当前仅已验证用户提供的通用 Ubuntu 24.04 主机，不等同于北京 Hermes Sandbox 联调。
 - 模型配置按 Provider + API Key 实现；本期不提供具体 model ID 选择。
 - LightVela `deepseek` 固定映射到 DSH 原生 `deepseek-official`。
 - DSH、SkillHub、QQBot、微信、企业微信、Lark 与钉钉均请求 npm `@latest`，每次安装开始时解析并固定本次快照的精确版本与 integrity；正式开放前必须完成北京 Hermes Sandbox 共存与 TAT 链路冒烟。
 - 首批真实安装只进入北京 Sandbox；`debug/exec` 已是现有通道，本需求不新增 service-gateway allowlist。
-- `*.dsh.lightvela.site` 就绪前，WebUI 使用登录态下的同源 TAT 虚拟代理。
+- 国内站 WebUI 链接为 `https://${botId}.dsh.lightvela.tech`，国际站为 `https://${botId}.dsh.lightvela.site`。
 - Logo 使用产品提供的 SVG：`https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/ae53bb41-9387-4f31-b264-0e4fd747e20b.svg`。
 - UI 保持 Agent 控制台工具型风格：页面卡片使用 `rounded-md`、轻边框和 `0 10px 30px rgba(15,23,42,0.04)` 级别阴影；不做营销 hero、不嵌套卡片。
 - 新增用户可见中文需走 `useT()`，实现后按影响范围运行 i18n 检查。
@@ -260,11 +260,11 @@
 - API Key 只写、不回显，不进入日志、URL、埋点或浏览器持久化；Task 8 改为经 `debug/exec` 的 base64 shell 安全编码传输。
 - 安装固定版本的 dsh 和 SkillHub；Task 8 改为系统级 `deepseek-harness.service`，通过 `User=agentuser` 降权并监听回环 3080。
 - Task 8 将安装、状态查询、重启和模型配置统一改走现有 `debug/exec`，安装任务仍幂等且支持失败回滚。
-- WebUI 访问地址由受鉴权链路返回，页面不展示静态 IP。
+- WebUI 访问地址由当前 `Bot.id` 和站点区域生成，页面不展示静态 IP。
 
 - [x] 用户确认“模型选择”按 Provider + API Key 理解，本期不提供具体 model ID 选择。
 - [x] 用户确认 `deepseek -> deepseek-official`、`dsh@0.1.0-rc.7`、`skillhub@0.2.13` 与北京 Sandbox 首批灰度。
-- [x] 用户确认真实域名前使用登录态下的同源 TAT 虚拟代理。
+- [x] 用户确认 WebUI 按当前 `Bot.id` 生成分站域名：国内站 `.dsh.lightvela.tech`，国际站 `.dsh.lightvela.site`。
 - [x] **历史批次 A：实例安装与状态接口。** 曾新增 DSH 专用 ctl 与 gateway 路由；用户评审后判定为重复设计，已在 Task 8 全部删除。
 - [x] **历史批次 B：DSH 配置与 WebUI 传输。** WebUI 的 3080 TAT broker 保留；前端直连 DSH 配置 RPC 已在 Task 8 替换为实例 helper + `debug/exec`。
 - [x] **批次 C：页面真实状态与模型卡片。** 页面交互保留，底层调用由 Task 8 统一切换为 `BotRepository.execDebugCommand`。
@@ -472,7 +472,7 @@
 
 **Interfaces:**
 
-- Preserves: 前端三态交互、`debug/exec` 异步任务、`agentuser`、系统级 `deepseek-harness.service`、回环 3080、Provider helper 和 TAT WebUI 代理。
+- Preserves: 前端三态交互、`debug/exec` 异步任务、`agentuser`、系统级 `deepseek-harness.service`、回环 3080 和 Provider helper；WebUI 改为实例专属域名跳转。
 - Produces: root-owned 冻结清单；固定 `pnpm@10.33.0`；DSH runtime 和 `web` profile 的 `--frozen-lockfile` 在线安装；四个渠道插件的固定 COS revision/SHA256；SkillHub 与 registry 依赖的 lockfile integrity；最多 5 次下载重试和有界超时。
 - Produces: 五插件准确版本、bundle 声明、profile bundle 列表、`dsh plugin ... list`、`dsh --profile web --dump-config`、systemd active 和 HTTP 200 的分层验收。
 
@@ -566,6 +566,31 @@
 **Planning Gate:** 用户确认采用方案 A：所有渠道从 npm 获取 `latest` 元数据，但安装期间使用任务开始时解析出的精确版本；钉钉作为第五个渠道插件纳入全量成功门槛。
 
 **Status:** 本地与通用 Ubuntu 24.04 复验完成，等待北京 Hermes Sandbox 共存与 TAT 链路复验；未 commit、未 push、未创建 MR。
+
+---
+
+### Task 16: 安装脚本切换至 COS 全球加速域名
+
+**Goal:** 用户点击安装后，由目标实例经 `debug/exec` 下载并运行 COS 上的完整单文件安装脚本，使用全球加速域名提升不同地域实例的下载可达性。
+
+**Files:**
+
+- Modify: `frontend/src/lib/deepseek-harness-command.ts`
+- Modify: `frontend/src/lib/__tests__/deepseek-harness-command.test.ts`
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`
+- Modify: `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Acceptance:**
+
+- [x] RED：安装命令必须包含 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh`，并禁止旧地域域名和前端 payload 上传。
+- [x] 实例以 HTTPS、有限重试、超时、文件大小和 Bash 语法检查下载脚本，再通过 `systemd-run` 异步执行；准备失败仍写入可轮询的失败任务状态。
+- [x] 删除安装 payload 的前端运行时依赖，Provider helper 的内联执行与密钥传输保持不变。
+- [x] 同步规格和 PRD，运行定向测试、类型检查、生成物检查及差异检查。
+- [ ] 将当前 npm-only 六插件安装器覆盖到 COS 对象并复验。2026-08-26 实测源站与加速域名均返回旧 GitHub 四插件脚本，ETag `64acd8e96c56a730e4041276604e7f47`，尚无钉钉支持。
+
+**Planning Gate:** 用户已明确指定 COS 全球加速域名；脚本路径保持 `/dsh/install-deepseek-harness.sh`，远端对象为完整单文件安装器，不再由前端上传安装 payload。
+
+**Status:** 前端实现与本地验证完成；真实安装仍等待 COS 对象更新后复验。未 commit、未 push、未创建 MR。
 
 ---
 

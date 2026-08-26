@@ -17,7 +17,7 @@ DeepSeek Harness（简称 dsh）是由 DeepSeek 开发的开源智能体框架�
 
 第一版已经形成“管理 > 实验室 > DeepSeek Harness”入口；本轮已将前端模拟状态替换为真实安装任务，并在已安装页面下方增加模型配置卡片。
 
-长期访问形态为类似 `xxxxx.dsh.lightvela.site` 的实例专属域名。域名、证书和代理服务就绪前，产品页面不展示任何静态 IP 地址；“访问 WebUI”使用受当前登录态和实例权限约束的同源 TAT 代理路径。
+WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightvela.tech`，国际站为 `https://${botId}.dsh.lightvela.site`。产品页面不展示任何静态 IP 地址；域名代理必须校验当前登录态和实例权限。
 
 ## 目标用户与场景
 
@@ -58,11 +58,11 @@ DeepSeek Harness（简称 dsh）是由 DeepSeek 开发的开源智能体框架�
 - 支持多 Provider 逐个配置、覆盖修改和删除 API Key 配置；空配置时默认选中 DeepSeek。
 - 已配置模型供应商持续展示，删除成功后重新进入添加下拉；删除失败时保留确认弹窗并允许重试。
 - 国内站和国际站使用不同的 Provider 白名单。
-- 安装动作通过 `debug/exec` 实时分片下发单文件安装脚本，再启动实例侧异步任务；依赖快照由脚本在实例内从 npm 解析，不依赖 Hermes 镜像预置安装器或冻结资源。前端继续通过 `debug/exec` 轮询任务状态。
+- 安装动作通过 `debug/exec` 启动实例侧异步任务，由实例从 COS 全球加速地址下载完整单文件安装器；依赖快照由脚本在实例内从 npm 解析，不依赖 Hermes 镜像预置安装器或前端 payload。前端继续通过 `debug/exec` 轮询任务状态。
 - 实例侧在安装任务开始时从 npm 解析 dsh、SkillHub 与五个渠道插件的 `latest` 精确版本和 integrity，以快照方式安装，并由 `agentuser` 身份长期运行。
 - 安装器校验 dsh 与六个 Web profile 插件的快照版本、bundle 声明、配置组合、systemd 服务状态、回环监听和本地 HTTP 健康状态；页面运行态直接以 systemd 状态为准。
 - 重启操作通过 `debug/exec` 下发固定的 `sudo systemctl restart deepseek-harness.service`。
-- WebUI 使用独立 DSH broker 的同源代理路径；静态演示地址从产品逻辑中移除。
+- WebUI 使用当前 `botId` 生成分站实例域名；静态演示地址从产品逻辑中移除。
 
 ### 本阶段不包含
 
@@ -104,7 +104,7 @@ DeepSeek Harness（简称 dsh）是由 DeepSeek 开发的开源智能体框架�
 
 - 保持 Logo、标题、Beta 和简介。
 - 简介下方展示进度条、百分比和“请稍等片刻，安装大约需要 1-3 分钟”。
-- 进度由实例侧任务阶段映射，不伪装成精确的包下载百分比：环境检查 10%、下载并校验插件 30%、候选安装与验证 70%、原子切换 80%、健康检查 95%、完成 100%。
+- 进度由实例侧任务阶段映射，不伪装成精确的包下载百分比：环境检查 10%、解析版本 20%、快照生成 28%、runtime 锁文件 35%、runtime 安装 48%、profile 锁文件 56%、六插件安装 68%、候选校验 75%、原子切换 85%、健康检查 95%、清理 99%、完成 100%。同一真实节点停留时，前端每 1.5 秒轮询成功后最多递增 1%，并始终低于下一真实节点；后端进度降低时页面不倒退。
 - 安装完成后使用淡出、内容切换、淡入进入已安装态。
 - 安装失败时恢复“重新安装”操作并展示简短错误；不增加“查看诊断”入口。
 
@@ -236,9 +236,9 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 ### 方案比较
 
-1. **实时脚本 + npm 快照 + 独立版本目录 + systemd 系统服务（采用）**：前端经 `debug/exec` 实时下发带校验的安装 payload，安装器解析一次 `latest` 后将精确快照安装到 `/opt/lightvela/dsh/releases/<snapshot-id>-<task-prefix>`，通过 `/opt/lightvela/dsh/current` 切换；系统服务使用 `User=agentuser`。支持存量实例直接安装、版本审计、同快照复用和快速回滚，DSH 依赖不写入 Hermes runtime 包树。
+1. **COS 单文件脚本 + npm 快照 + 独立版本目录 + systemd 系统服务（采用）**：前端经 `debug/exec` 启动实例下载并校验 COS 上的完整安装脚本，安装器解析一次 `latest` 后将精确快照安装到 `/opt/lightvela/dsh/releases/<snapshot-id>-<task-prefix>`，通过 `/opt/lightvela/dsh/current` 切换；系统服务使用 `User=agentuser`。支持存量实例直接安装、版本审计、同快照复用和快速回滚，DSH 依赖不写入 Hermes runtime 包树。
 2. **镜像内离线预置 runtime 与插件包体**：实例激活最稳定，但每次 DSH 升级都要求重建镜像；首版先不采用。
-3. **独立 COS 安装 bundle**：可以脱离 Hermes 镜像升级，但需要新增产物构建和发布链路；首版先不采用。
+3. **独立 COS 离线 runtime bundle**：可以进一步减少 npm 网络依赖，但需要额外的包体构建和发布链路；首版不采用。
 4. **systemd 每次直接运行未固定版本的 npx**：会把启动稳定性绑定到 npm 网络和 `latest`，不采用。
 
 ### 实例目录与服务
@@ -257,7 +257,7 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 不新增 DeepSeek Harness 专用后端接口。状态、安装、任务查询、重启和 Provider 配置均复用 `POST /v1/instances/{id}/debug/exec`。前端只生成固定模板命令，任务 ID 与 Provider 均在前端和实例 helper 两侧校验。
 
-前端构建时只把单文件安装脚本压缩为带 SHA256 的固定 payload。点击安装后，前端通过 `debug/exec` 顺序创建私有上传目录、追加不超过 24,000 字符的分片并等待每次成功；最后通过 `sudo systemd-run` 显式校验编码包上限、SHA256、文件路径和解压上限，再异步执行。wrapper 在解包前原子写入 `pending`，准备失败或安装器未写终态便退出时原子覆盖为 `failed`；启动响应不确定时使用只读命令延迟检查任务文件和 systemd unit，对账通道同样不可用时保留 task ID 和上传资源，只有明确确认任务未启动后才单独清理。临时上传目录在任务结束后自动清理。包坐标、目录、用户和端口由安装器固定，精确版本由每次任务开始时的 npm metadata 决定：
+点击安装后，前端通过 `debug/exec` 启动 `sudo systemd-run`，由实例从 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh` 下载完整单文件安装器。wrapper 使用 HTTPS/TLS 1.2、5 次有限重试和有界超时，下载到 root 私有临时目录后检查 1 KiB 至 1 MiB 的文件大小、Bash shebang 与 `bash -n`，通过后再执行，不使用 `curl | bash`。wrapper 在下载前原子写入 `pending`，准备失败或安装器未写终态便退出时原子覆盖为 `failed`；启动响应不确定时使用只读命令延迟检查任务文件和 systemd unit。临时下载目录在任务结束后自动清理。包坐标、目录、用户和端口由安装器固定，精确版本由每次任务开始时的 npm metadata 决定：
 
 1. 使用 `flock` 获取实例安装锁，拒绝同实例并发安装。
 2. 检查实例归属、运行状态、架构、磁盘、Node >=22、固定 pnpm、编译工具和 3080 端口占用；必要时在候选目录引导固定 pnpm。
@@ -274,9 +274,9 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 ## WebUI 访问设计
 
-- 近期复用 LightVela 已有的 TAT 虚拟 HTTP 能力访问实例 `127.0.0.1:3080`，并为 DSH 单独维护 HTML、资源、EventSource 和插件路径改写规则。
-- “访问 WebUI”只使用当前实例对应的同源受控路径，不在页面展示 URL 文本。
-- 长期由 `*.dsh.lightvela.site` 接入统一代理；代理必须校验 LightVela 登录态、实例归属和短期访问会话，再通过 TAT 访问实例回环端口。
+- 前端从现有 `GET /v1/instances` 结果取得当前 `Bot.id`，无需新增 WebUI URL 查询接口。
+- 国内站“访问 WebUI”跳转 `https://${botId}.dsh.lightvela.tech`；国际站跳转 `https://${botId}.dsh.lightvela.site`，均在新标签页打开且不展示 URL 文本。
+- 域名代理必须校验 LightVela 登录态、实例归属和短期访问会话，再访问实例回环端口 `127.0.0.1:3080`。
 - 代理不得把腾讯云长期凭据、TAT 会话凭据或实例内部端口暴露给未授权用户。
 
 ## 状态定义
@@ -295,10 +295,10 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 ## 方案风险检查
 
 1. **Provider 与具体模型不是同一配置对象。** 当前清单只能确定 Provider。直接修改 dsh 默认模型还缺少具体 model ID，需求确认前不能据此实现“默认模型”。
-2. **通用 Ubuntu 冒烟不能替代 Hermes Sandbox 联调。** 已验证 SkillHub 加五个渠道插件的 npm-only 组合、systemd、回环 HTTP、同快照重装、服务重启和 release 保留；Hermes 共存资源占用、TAT 实时下发及 WebUI 代理仍需在北京 Sandbox 验证。
+2. **通用 Ubuntu 冒烟不能替代 Hermes Sandbox 联调。** 已验证 SkillHub 加五个渠道插件的 npm-only 组合、systemd、回环 HTTP、同快照重装、服务重启和 release 保留；Hermes 共存资源占用、TAT 实时下发及实例域名代理仍需在北京 Sandbox 验证。
 3. **pnpm 必须保持一致且跨任务存活。** 冻结清单以 `pnpm@10.33.0` 生成和安装；实例版本不符时使用 root-owned 固定 tooling，不得临时升级全局 pnpm，也不得依赖会随任务清理的临时 PATH。
 4. **目标镜像前置条件必须满足。** 安装器要求实例已存在 `agentuser` 与 Node >=22；通用全新 Ubuntu 验证时需先补齐这些 Hermes 镜像前置条件。
-5. **DSH 配置 API 属于高权限面。** 前端不直接暴露该能力；实例 helper 仅调用固定的 Provider 与凭据 RPC，WebUI 仍位于已验证实例归属的 TAT 代理链路内。
+5. **DSH 配置 API 属于高权限面。** 前端不直接暴露该能力；实例 helper 仅调用固定的 Provider 与凭据 RPC，WebUI 域名代理必须在访问回环服务前验证实例归属。
 6. **冻结清单与用户自装插件存在边界。** 安装器在切换前比较 profile 指纹，并对未知依赖或 bundle 安全失败；只有确认未发生并发修改后才允许以完整备份执行原子回滚。
 
 自检结论：交互、命令通道和安装架构已完成本地验证；npm-only 六插件方案已在通用 Ubuntu 24.04 主机完成首次安装与同快照重装。远端现存未知插件 `dsh-remote` 时安装器会在修改服务前安全失败，清理并备份测试 profile 后完成受管组合验证；因此本轮不等同于对任意用户自装插件的无损迁移证明。北京 Hermes Sandbox 共存与 TAT 链路仍待验证。
@@ -335,7 +335,7 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 ## 发布与观测
 
-- 联调不要求先刷新 Hermes CVM 镜像；安装 payload 和 Provider helper 都随当前前端版本实时下发，因此存量实例可直接进入北京 Sandbox 验证。本需求没有新增 ctl 或 service-gateway 路由。
+- 联调不要求先刷新 Hermes CVM 镜像；安装器由存量实例直接从 COS 获取，Provider helper 随当前前端版本实时下发，因此可直接进入北京 Sandbox 验证。本需求没有新增 ctl 或 service-gateway 路由。
 - 先在北京 Sandbox 选择少量实例验证安装、重装、重启、Provider 配置和 WebUI 访问。
 - 观测安装成功率、各阶段耗时、服务存活率、回环 HTTP 健康、重启次数、Provider 保存成功率和 TAT 错误码。
 - 国内站验证通过后再开放国际站白名单。
@@ -356,7 +356,7 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 2. DeepSeek 产品标识 `deepseek` 映射到 DSH 原生路由 `deepseek-official`。
 3. DSH、SkillHub 与五个渠道插件采用 npm `@latest` 入口，并在每次安装任务开始时冻结为精确版本和 integrity；真实开放前完成完整组合冒烟。
 4. 第一批真实安装只开放北京 Sandbox；国内站和国际站代码及 Provider 白名单同时完成，正式环境暂不开放真实安装。
-5. `*.dsh.lightvela.site` 就绪前，“访问 WebUI”复用登录态下的同源 TAT 虚拟代理。
+5. “访问 WebUI”使用当前 `Bot.id` 生成分站域名：国内站 `https://${botId}.dsh.lightvela.tech`，国际站 `https://${botId}.dsh.lightvela.site`。
 6. 安装、状态、重启和模型配置全部复用现有 `debug/exec`，不新增 DeepSeek Harness 专用后端接口。
 7. 模型配置采用“已配置列表 + 单项展开编辑区 + 完整白名单配置区”；支持覆盖修改和删除，删除语义遵循 DSH WebUI 的窄范围凭据清理原则。
 8. 配置结果复用全局顶部居中 Toast；保存期间等待 `debug/exec` 返回并锁定配置交互。

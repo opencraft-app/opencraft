@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   AgentDeepSeekHarnessPanel,
+  buildDeepSeekHarnessWebUiUrl,
   DEEPSEEK_HARNESS_LOGO_URL,
 } from "@/pages/marketing/agent-deepseek-harness-panel";
 import type { DeepSeekHarnessCommandClient } from "@/lib/deepseek-harness-command";
@@ -21,13 +22,6 @@ const { api, execDebugCommand, translate } = vi.hoisted(() => ({
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({ bots: { execDebugCommand } }),
-}));
-vi.mock("@/components/domain/use-tat-hermes-proxy-broker", () => ({
-  useTatHermesProxyBroker: () => ({
-    frameUrl: "/__tat_hermes_proxy/dsh--ins-1/",
-    status: "ready",
-    error: null,
-  }),
 }));
 vi.mock("@/pages/marketing/agent-deepseek-harness-model-card", () => ({
   AgentDeepSeekHarnessModelCard: ({ botId, region }: { botId: string; region: string }) => (
@@ -54,6 +48,15 @@ const INSTALLED = {
   service_status: "active",
   healthy: true,
 };
+
+describe("buildDeepSeekHarnessWebUiUrl", () => {
+  it("builds the region-specific WebUI host from the Bot ID", () => {
+    expect(buildDeepSeekHarnessWebUiUrl("ins-1", "cn"))
+      .toBe("https://ins-1.dsh.lightvela.tech");
+    expect(buildDeepSeekHarnessWebUiUrl("ins-1", "global"))
+      .toBe("https://ins-1.dsh.lightvela.site");
+  });
+});
 
 describe("AgentDeepSeekHarnessPanel", () => {
   const clientFactory = vi.fn(() => api as unknown as DeepSeekHarnessCommandClient);
@@ -120,6 +123,11 @@ describe("AgentDeepSeekHarnessPanel", () => {
 
     await user.click(screen.getByRole("button", { name: "即刻安装体验" }));
     const progress = await screen.findByRole("progressbar", { name: "DeepSeek Harness 安装进度" });
+    const installationStatus = screen.getByRole("group", { name: "DeepSeek Harness 安装状态" });
+    expect(installationStatus).toHaveClass("w-full");
+    expect(installationStatus).not.toHaveClass("max-w-xl");
+    const installingLabel = within(installationStatus).getByText("正在安装 DeepSeek Harness");
+    expect(installingLabel.querySelector("svg")).toHaveClass("animate-spin", "motion-reduce:animate-none");
     expect(progress).toHaveAttribute("aria-valuenow", "37");
     expect(localStorage.getItem("lightvela:dsh:install-task:ins-1")).toBe("dshi-123");
     expect(screen.getByText("请稍等片刻，安装大约需要 1-3 分钟")).toBeInTheDocument();
@@ -141,7 +149,46 @@ describe("AgentDeepSeekHarnessPanel", () => {
     expect(localStorage.getItem("lightvela:dsh:install-task:ins-1")).toBeNull();
   });
 
-  it("renders the installed state with proxied WebUI access, restart, and model configuration", async () => {
+  it("softly advances within a real installation stage without crossing its ceiling or moving backward", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    api.getInstallation.mockResolvedValue({
+      task_id: "dshi-123",
+      status: "running",
+      stage: "resolve_latest",
+      progress: 20,
+      message: "Resolving latest versions",
+      updated_at: "2026-08-21T10:00:00Z",
+    });
+    render(<AgentDeepSeekHarnessPanel botId="ins-1" clientFactory={clientFactory} />);
+    await screen.findByRole("button", { name: "即刻安装体验" });
+
+    await user.click(screen.getByRole("button", { name: "即刻安装体验" }));
+    const progress = await screen.findByRole("progressbar", { name: "DeepSeek Harness 安装进度" });
+    expect(progress).toHaveAttribute("aria-valuenow", "20");
+
+    for (let index = 0; index < 9; index += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_500);
+      });
+    }
+    expect(progress).toHaveAttribute("aria-valuenow", "27");
+
+    api.getInstallation.mockResolvedValue({
+      task_id: "dshi-123",
+      status: "running",
+      stage: "preflight",
+      progress: 10,
+      message: "Checking environment",
+      updated_at: "2026-08-21T10:00:00Z",
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(progress).toHaveAttribute("aria-valuenow", "27");
+  });
+
+  it("renders the installed state with domestic WebUI access, restart, and model configuration", async () => {
     const user = userEvent.setup();
     let resolveRestart: (value: typeof INSTALLED) => void = () => undefined;
     api.restart.mockReturnValue(new Promise((resolve) => {
@@ -155,9 +202,8 @@ describe("AgentDeepSeekHarnessPanel", () => {
     expect(within(runtime).getByText("运行中")).toBeInTheDocument();
     expect(screen.queryByText(INTRO)).not.toBeInTheDocument();
     const webUi = within(runtime).getByRole("link", { name: "访问 WebUI" });
-    expect(webUi).toHaveAttribute("href", "/__tat_hermes_proxy/dsh--ins-1/");
+    expect(webUi).toHaveAttribute("href", "https://ins-1.dsh.lightvela.tech");
     expect(webUi).toHaveAttribute("target", "_blank");
-    expect(webUi.getAttribute("href")).not.toMatch(/^https?:/);
     expect(screen.getByRole("region", { name: "模型配置" })).toHaveAttribute("data-region", "cn");
 
     await user.click(within(runtime).getByRole("button", { name: "重启" }));

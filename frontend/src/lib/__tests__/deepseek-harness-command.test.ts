@@ -1,9 +1,8 @@
-import { createHash, webcrypto } from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { webcrypto } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { access, chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { gzipSync } from "node:zlib";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,6 +15,38 @@ import {
 } from "@/lib/deepseek-harness-command";
 
 const success = (output = "") => ({ status: "SUCCESS", exitCode: 0, output });
+
+const createFakeCurl = async (root: string, installer: string | null) => {
+  const binDir = path.join(root, "bin");
+  await mkdir(binDir);
+  const curlPath = path.join(binDir, "curl");
+  const sourcePath = path.join(root, "installer-source.sh");
+  if (installer !== null) await writeFile(sourcePath, installer, "utf8");
+  await writeFile(curlPath, installer === null
+    ? "#!/usr/bin/env bash\nexit 22\n"
+    : [
+        "#!/usr/bin/env bash",
+        "set -Eeuo pipefail",
+        "output=''",
+        "while [ \"$#\" -gt 0 ]; do",
+        "  case \"$1\" in",
+        "    --output) output=\"$2\"; shift 2 ;;",
+        "    *) shift ;;",
+        "  esac",
+        "done",
+        'cp -- "$TEST_INSTALLER_SOURCE" "$output"',
+      ].join("\n"), "utf8");
+  await chmod(curlPath, 0o755);
+  return { binDir, sourcePath };
+};
+
+const paddedInstaller = (body: readonly string[]) => [
+  "#!/usr/bin/env bash",
+  "set -Eeuo pipefail",
+  ...body,
+  `# ${"x".repeat(1100)}`,
+  "",
+].join("\n");
 
 describe("DeepSeekHarnessCommandClient", () => {
   it("checks the system service through debug/exec", async () => {
@@ -35,12 +66,8 @@ describe("DeepSeekHarnessCommandClient", () => {
     );
   });
 
-  it("uploads the installation payload in real time and polls its task file", async () => {
+  it("downloads the installer from the accelerated COS endpoint and polls its task file", async () => {
     const execDebugCommand = vi.fn()
-      .mockResolvedValue(success())
-      .mockResolvedValueOnce(success())
-      .mockResolvedValueOnce(success())
-      .mockResolvedValueOnce(success())
       .mockResolvedValueOnce(success())
       .mockResolvedValueOnce(success(JSON.stringify({
         task_id: "dshi-0123456789abcdef0123456789abcdef",
@@ -52,256 +79,177 @@ describe("DeepSeekHarnessCommandClient", () => {
       })));
     const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand, {
       createTaskId: () => "dshi-0123456789abcdef0123456789abcdef",
-      installPayload: {
-        chunks: ["payload-part-a", "payload-part-b"],
-        sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      },
       providerHelperBase64: "cHJpbnQoJ29rJyk=",
     });
 
     const task = await client.startInstall();
     expect(task.task_id).toBe("dshi-0123456789abcdef0123456789abcdef");
-    const installCommands = execDebugCommand.mock.calls.slice(0, 4).map((call) => String(call[1]));
-    expect(installCommands[0]).toContain("/tmp/lightvela-dsh-upload-dshi-0123456789abcdef0123456789abcdef");
-    expect(installCommands[1]).toContain("payload-part-a");
-    expect(installCommands[2]).toContain("payload-part-b");
-    expect(installCommands[3]).toContain("sudo -n systemd-run");
-    expect(installCommands[3]).toContain("LIGHTVELA_DSH_ASSETS_DIR");
-    expect(installCommands[3]).toContain("install-deepseek-harness.sh");
+    const installCommands = execDebugCommand.mock.calls.slice(0, 1).map((call) => String(call[1]));
+    expect(installCommands.join("\n")).toContain("sudo -n systemd-run");
+    expect(installCommands.join("\n")).toContain(
+      "https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh",
+    );
+    expect(installCommands.join("\n")).toContain("--retry 5");
+    expect(installCommands.join("\n")).toContain("bash -n");
+    expect(installCommands.join("\n")).not.toContain("cos.ap-beijing.myqcloud.com");
+    expect(installCommands.join("\n")).not.toContain("payload-part-a");
+    expect(installCommands.join("\n")).not.toContain("payload-part-b");
     expect(installCommands.join("\n")).not.toContain("/usr/local/libexec/lightvela");
     expect(installCommands.every((command) => Buffer.byteLength(command) < 64 * 1024)).toBe(true);
 
     await expect(client.getInstallation(task.task_id)).resolves.toMatchObject({ progress: 35 });
-    expect(execDebugCommand.mock.calls[4]?.[1]).toBe(
+    expect(execDebugCommand.mock.calls.at(-1)?.[1]).toBe(
       "sudo -n cat /var/lib/lightvela/dsh/installations/dshi-0123456789abcdef0123456789abcdef.json",
     );
   });
 
   it("keeps an indeterminate launch task when reconciliation is also unavailable", async () => {
     const execDebugCommand = vi.fn()
-      .mockResolvedValueOnce(success())
-      .mockResolvedValueOnce(success())
       .mockRejectedValueOnce(new Error("launch response lost"))
       .mockRejectedValueOnce(new Error("reconciliation unavailable"));
     const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand, {
       createTaskId: () => "dshi-0123456789abcdef0123456789abcdef",
-      installPayload: {
-        chunks: ["payload-part-a"],
-        sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      },
     });
 
     await expect(client.startInstall()).resolves.toEqual({
       task_id: "dshi-0123456789abcdef0123456789abcdef",
     });
-    expect(execDebugCommand).toHaveBeenCalledTimes(4);
-    expect(String(execDebugCommand.mock.calls[3]?.[1])).toContain("systemctl show");
-    expect(String(execDebugCommand.mock.calls[3]?.[1])).not.toContain("rm -rf");
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
+    expect(String(execDebugCommand.mock.calls[1]?.[1])).toContain("systemctl show");
   });
 
-  it("cleans an upload only after read-only reconciliation confirms no task was launched", async () => {
+  it("rejects when read-only reconciliation confirms no task was launched", async () => {
     const execDebugCommand = vi.fn()
-      .mockResolvedValueOnce(success())
-      .mockResolvedValueOnce(success())
       .mockRejectedValueOnce(new Error("launch response lost"))
-      .mockResolvedValueOnce({ status: "Failed", exitCode: 3, output: "" })
-      .mockResolvedValueOnce(success());
+      .mockResolvedValueOnce({ status: "Failed", exitCode: 3, output: "" });
     const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand, {
       createTaskId: () => "dshi-0123456789abcdef0123456789abcdef",
-      installPayload: {
-        chunks: ["payload-part-a"],
-        sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      },
     });
 
     await expect(client.startInstall()).rejects.toThrow("launch response lost");
-    expect(execDebugCommand).toHaveBeenCalledTimes(5);
-    expect(String(execDebugCommand.mock.calls[3]?.[1])).not.toContain("rm -rf");
-    expect(execDebugCommand.mock.calls[4]?.[1]).toBe(
-      "rm -rf -- '/tmp/lightvela-dsh-upload-dshi-0123456789abcdef0123456789abcdef'",
-    );
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps an upload when reconciliation returns an inconclusive nonzero result", async () => {
+  it("keeps an indeterminate task when reconciliation returns an inconclusive result", async () => {
     const execDebugCommand = vi.fn()
-      .mockResolvedValueOnce(success())
-      .mockResolvedValueOnce(success())
       .mockRejectedValueOnce(new Error("launch response lost"))
       .mockResolvedValueOnce({ status: "Timeout", exitCode: -1, output: "" });
     const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand, {
       createTaskId: () => "dshi-0123456789abcdef0123456789abcdef",
-      installPayload: {
-        chunks: ["payload-part-a"],
-        sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      },
     });
 
     await expect(client.startInstall()).resolves.toEqual({
       task_id: "dshi-0123456789abcdef0123456789abcdef",
     });
-    expect(execDebugCommand).toHaveBeenCalledTimes(4);
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
   });
 
-  it("publishes a failed task atomically when payload extraction fails before installation", async () => {
+  it("publishes a failed task atomically when the installer download fails", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-launch-"));
-    const uploadDir = path.join(root, "upload");
     const stateDir = path.join(root, "tasks");
-    await writeFile(path.join(root, "placeholder"), "", "utf8");
-    await mkdir(uploadDir);
-    await writeFile(path.join(uploadDir, "payload.b64"), Buffer.from("invalid").toString("base64"));
+    const workDir = path.join(root, "work");
+    const { binDir, sourcePath } = await createFakeCurl(root, null);
 
     const taskId = "dshi-0123456789abcdef0123456789abcdef";
-    const launchScript = createDeepSeekHarnessInstallLaunchScript();
-    expect(() => execFileSync(
+    const result = spawnSync(
       "/bin/bash",
-      ["-c", launchScript, "lightvela-dsh-install", uploadDir, taskId, "0".repeat(64), stateDir],
-      { env: { ...process.env, PYTHONOPTIMIZE: "2" }, stdio: "pipe" },
-    )).toThrow();
+      ["-c", createDeepSeekHarnessInstallLaunchScript(), "lightvela-dsh-install", taskId, stateDir, workDir],
+      {
+        env: { ...process.env, PATH: `${binDir}:${process.env.PATH}`, TEST_INSTALLER_SOURCE: sourcePath },
+        encoding: "utf8",
+      },
+    );
 
+    expect(result.status).not.toBe(0);
     const task = JSON.parse(await readFile(path.join(stateDir, `${taskId}.json`), "utf8")) as {
       status: string;
       stage: string;
     };
     expect(task).toMatchObject({ status: "failed", stage: "prepare" });
-    await expect(access(uploadDir)).rejects.toThrow();
+    await expect(access(workDir)).rejects.toThrow();
   });
 
-  it("rejects traversal paths while really executing the payload extractor", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-traversal-"));
-    const uploadDir = path.join(root, "upload");
-    const stateDir = path.join(root, "tasks");
-    await mkdir(uploadDir);
-    const compressed = gzipSync(Buffer.from(JSON.stringify({
-      schemaVersion: 1,
-      files: [{ path: "../escaped", mode: 0o755, content: Buffer.from("bad").toString("base64") }],
-    })));
-    await writeFile(path.join(uploadDir, "payload.b64"), compressed.toString("base64"));
-
-    const taskId = "dshi-0123456789abcdef0123456789abcdef";
-    expect(() => execFileSync(
-      "/bin/bash",
-      [
-        "-c",
-        createDeepSeekHarnessInstallLaunchScript(),
-        "lightvela-dsh-install",
-        uploadDir,
-        taskId,
-        createHash("sha256").update(compressed).digest("hex"),
-        stateDir,
-      ],
-      { env: { ...process.env, PYTHONOPTIMIZE: "2" }, stdio: "pipe" },
-    )).toThrow();
-
-    await expect(access(path.join(root, "escaped"))).rejects.toThrow();
-    const task = JSON.parse(await readFile(path.join(stateDir, `${taskId}.json`), "utf8")) as {
-      status: string;
-    };
-    expect(task.status).toBe("failed");
-  });
-
-  it("extracts a valid payload, hands off to its installer, and removes the upload", async () => {
+  it("downloads a valid script, hands off to the installer, and removes its work directory", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-success-"));
-    const uploadDir = path.join(root, "upload");
     const stateDir = path.join(root, "tasks");
-    await mkdir(uploadDir);
-    const installer = [
-      "#!/usr/bin/env bash",
-      "set -Eeuo pipefail",
+    const workDir = path.join(root, "work");
+    const installer = paddedInstaller([
       'task_id="$3"',
       'printf \'{"task_id":"%s","status":"succeeded"}\\n\' "$task_id" > "$TEST_TASK_DIR/$task_id.json"',
-    ].join("\n");
-    const compressed = gzipSync(Buffer.from(JSON.stringify({
-      schemaVersion: 1,
-      files: [{
-        path: "installer/install-deepseek-harness.sh",
-        mode: 0o755,
-        content: Buffer.from(installer).toString("base64"),
-      }],
-    })));
-    await writeFile(path.join(uploadDir, "payload.b64"), compressed.toString("base64"));
+    ]);
+    const { binDir, sourcePath } = await createFakeCurl(root, installer);
 
     const taskId = "dshi-0123456789abcdef0123456789abcdef";
-    execFileSync(
+    const result = spawnSync(
       "/bin/bash",
-      [
-        "-c",
-        createDeepSeekHarnessInstallLaunchScript(),
-        "lightvela-dsh-install",
-        uploadDir,
-        taskId,
-        createHash("sha256").update(compressed).digest("hex"),
-        stateDir,
-      ],
-      { env: { ...process.env, TEST_TASK_DIR: stateDir }, stdio: "pipe" },
+      ["-c", createDeepSeekHarnessInstallLaunchScript(), "lightvela-dsh-install", taskId, stateDir, workDir],
+      {
+        env: {
+          ...process.env,
+          PATH: `${binDir}:${process.env.PATH}`,
+          TEST_INSTALLER_SOURCE: sourcePath,
+          TEST_TASK_DIR: stateDir,
+        },
+        encoding: "utf8",
+      },
     );
 
     const task = JSON.parse(await readFile(path.join(stateDir, `${taskId}.json`), "utf8")) as {
       status: string;
+      message: string;
     };
+    expect(result.status, `${JSON.stringify(task)}\n${result.stdout}\n${result.stderr}`).toBe(0);
     expect(task.status).toBe("succeeded");
-    await expect(access(uploadDir)).rejects.toThrow();
+    await expect(access(workDir)).rejects.toThrow();
   });
 
-  it("replaces pending with failed when the extracted installer exits before writing a task", async () => {
+  it("replaces pending with failed when the downloaded installer exits before writing a task", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-installer-failure-"));
-    const uploadDir = path.join(root, "upload");
     const stateDir = path.join(root, "tasks");
-    await mkdir(uploadDir);
-    const compressed = gzipSync(Buffer.from(JSON.stringify({
-      schemaVersion: 1,
-      files: [{
-        path: "installer/install-deepseek-harness.sh",
-        mode: 0o755,
-        content: Buffer.from("#!/usr/bin/env bash\nexit 42\n").toString("base64"),
-      }],
-    })));
-    await writeFile(path.join(uploadDir, "payload.b64"), compressed.toString("base64"));
+    const workDir = path.join(root, "work");
+    const { binDir, sourcePath } = await createFakeCurl(root, paddedInstaller(["exit 42"]));
 
     const taskId = "dshi-0123456789abcdef0123456789abcdef";
-    expect(() => execFileSync(
+    const result = spawnSync(
       "/bin/bash",
-      [
-        "-c",
-        createDeepSeekHarnessInstallLaunchScript(),
-        "lightvela-dsh-install",
-        uploadDir,
-        taskId,
-        createHash("sha256").update(compressed).digest("hex"),
-        stateDir,
-      ],
-      { stdio: "pipe" },
-    )).toThrow();
+      ["-c", createDeepSeekHarnessInstallLaunchScript(), "lightvela-dsh-install", taskId, stateDir, workDir],
+      {
+        env: { ...process.env, PATH: `${binDir}:${process.env.PATH}`, TEST_INSTALLER_SOURCE: sourcePath },
+        encoding: "utf8",
+      },
+    );
 
     const task = JSON.parse(await readFile(path.join(stateDir, `${taskId}.json`), "utf8")) as {
       status: string;
       stage: string;
+      message: string;
     };
+    expect(result.status, `${JSON.stringify(task)}\n${result.stdout}\n${result.stderr}`).toBe(42);
     expect(task).toMatchObject({ status: "failed", stage: "install" });
   });
 
-  it("rejects an oversized encoded payload before attempting decompression", async () => {
+  it("rejects an oversized downloaded installer before executing it", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-oversized-"));
-    const uploadDir = path.join(root, "upload");
     const stateDir = path.join(root, "tasks");
-    await mkdir(uploadDir);
-    await writeFile(path.join(uploadDir, "payload.b64"), "A".repeat(1024 * 1024 + 4));
+    const workDir = path.join(root, "work");
+    const oversizedInstaller = "#!/usr/bin/env bash\n" + `# ${"x".repeat(1024 * 1024)}`;
+    const { binDir, sourcePath } = await createFakeCurl(root, oversizedInstaller);
 
     const result = spawnSync(
       "/bin/bash",
-      [
-        "-c",
-        createDeepSeekHarnessInstallLaunchScript(),
-        "lightvela-dsh-install",
-        uploadDir,
-        "dshi-0123456789abcdef0123456789abcdef",
-        "0".repeat(64),
-        stateDir,
-      ],
-      { encoding: "utf8" },
+      ["-c", createDeepSeekHarnessInstallLaunchScript(), "lightvela-dsh-install", "dshi-0123456789abcdef0123456789abcdef", stateDir, workDir],
+      {
+        env: { ...process.env, PATH: `${binDir}:${process.env.PATH}`, TEST_INSTALLER_SOURCE: sourcePath },
+        encoding: "utf8",
+      },
     );
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("encoded payload is too large");
+    const task = JSON.parse(await readFile(
+      path.join(stateDir, "dshi-0123456789abcdef0123456789abcdef.json"),
+      "utf8",
+    )) as { status: string; message: string };
+    expect(task).toMatchObject({ status: "failed", message: "Invalid installer size" });
   });
 
   it("restarts the system service and refreshes status through debug/exec", async () => {
@@ -356,6 +304,8 @@ describe("DeepSeekHarnessCommandClient", () => {
     expect(saveCommand).toContain("ZW5jcnlwdGVkLXNlY3JldA==");
     expect(saveCommand).toContain("rsa_padding_mode:oaep");
     expect(saveCommand).toContain("rm -f");
+    const syntaxCheck = spawnSync("/bin/bash", ["-n", "-c", saveCommand], { encoding: "utf8" });
+    expect(syntaxCheck.status, syntaxCheck.stderr).toBe(0);
     expect([keyCommand, saveCommand].every((command) => Buffer.byteLength(command) < 64 * 1024))
       .toBe(true);
   });

@@ -24,6 +24,11 @@ for marker in \
   'deepseek-harness-wecom@latest' \
   'deepseek-harness-lark@latest' \
   'deepseek-harness-dingtalk@latest' \
+  'write_task running snapshot_resolved 28' \
+  'write_task running runtime_lockfile 35' \
+  'write_task running runtime_install 48' \
+  'write_task running profile_lockfile 56' \
+  'write_task running profile_install 68' \
   'plugin --profile web list --depth 0 --json' \
   '--profile web --dump-config' \
   'ControlGroup' \

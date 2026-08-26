@@ -1,12 +1,12 @@
 import { AlertCircle, CheckCircle2, Download, ExternalLink, Info, Loader2, RefreshCw, RotateCw } from "lucide-react";
 import { type TransitionEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useTatHermesProxyBroker } from "@/components/domain/use-tat-hermes-proxy-broker";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
 import {
   DeepSeekHarnessCommandClient,
   type DeepSeekHarnessExecDebugCommand,
+  type DeepSeekHarnessRegion,
   type DeepSeekHarnessStatus,
 } from "@/lib/deepseek-harness-command";
 import { isCN } from "@/lib/region";
@@ -16,9 +16,33 @@ import { AgentDeepSeekHarnessModelCard } from "@/pages/marketing/agent-deepseek-
 export const DEEPSEEK_HARNESS_LOGO_URL =
   "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/ae53bb41-9387-4f31-b264-0e4fd747e20b.svg";
 
+export const buildDeepSeekHarnessWebUiUrl = (botId: string, region: DeepSeekHarnessRegion) =>
+  `https://${botId}.dsh.${region === "cn" ? "lightvela.tech" : "lightvela.site"}`;
+
 const INSTALLATION_POLL_INTERVAL_MS = 1_500;
 const INSTALLATION_COMPLETE_HOLD_MS = 250;
 const MAX_POLL_ERRORS = 4;
+const INSTALLATION_STAGE_SOFT_CEILING: Readonly<Record<string, number>> = {
+  preflight: 19,
+  resolve_latest: 27,
+  snapshot_resolved: 34,
+  runtime_lockfile: 47,
+  runtime_install: 55,
+  profile_lockfile: 67,
+  profile_install: 74,
+  validate_candidate: 84,
+  activate: 94,
+  health_check: 98,
+  cleanup: 99,
+  completed: 100,
+};
+
+const advanceInstallationProgress = (current: number, actual: number, stage: string) => {
+  const normalizedActual = Math.max(1, Math.min(100, actual));
+  const ceiling = Math.max(normalizedActual, INSTALLATION_STAGE_SOFT_CEILING[stage] ?? normalizedActual);
+  const next = Math.min(ceiling, Math.max(normalizedActual, current + 1));
+  return Math.max(current, next);
+};
 
 type ViewStatus = "loading" | "error" | "not-installed" | "installing" | "installed";
 type RestartPhase = "idle" | "restarting" | "completed";
@@ -97,7 +121,7 @@ export const AgentDeepSeekHarnessPanel = ({
 }: AgentDeepSeekHarnessPanelProps) => {
   const t = useT();
   const repositories = useRepositories();
-  const { frameUrl: webUiUrl } = useTatHermesProxyBroker(botId, "deepseek-harness");
+  const webUiUrl = buildDeepSeekHarnessWebUiUrl(botId, isCN ? "cn" : "global");
   const client = useMemo(
     () => clientFactory(botId, repositories.bots.execDebugCommand),
     [botId, clientFactory, repositories.bots.execDebugCommand],
@@ -163,7 +187,7 @@ export const AgentDeepSeekHarnessPanel = ({
     try {
       const task = await client.getInstallation(taskId);
       if (!mountedRef.current) return;
-      setInstallationProgress(Math.max(1, Math.min(100, task.progress)));
+      setInstallationProgress((current) => advanceInstallationProgress(current, task.progress, task.stage));
 
       if (task.status === "failed") {
         clearTaskId(botId);
@@ -437,10 +461,13 @@ export const AgentDeepSeekHarnessPanel = ({
                   role="group"
                   aria-label={t("DeepSeek Harness 安装状态")}
                   tabIndex={-1}
-                  className="mt-5 max-w-xl focus:outline-none"
+                  className="mt-5 w-full focus:outline-none"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-black/75">{t("正在安装 DeepSeek Harness")}</span>
+                    <span className="inline-flex items-center gap-2 text-sm font-semibold text-black/75">
+                      <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      {t("正在安装 DeepSeek Harness")}
+                    </span>
                     <span className="text-xs tabular-nums text-black/45">{installationProgress}%</span>
                   </div>
                   <div

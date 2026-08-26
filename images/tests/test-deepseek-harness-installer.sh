@@ -246,6 +246,11 @@ export LIGHTVELA_DSH_TEST_FAKE_PNPM="${FAKE_BIN}/pnpm"
 export LIGHTVELA_DSH_TEST_HEALTH_READY_FILE="${TMPDIR}/health-ready"
 export LIGHTVELA_DSH_HEALTH_ATTEMPTS=2
 export PATH="${FAKE_BIN}:${PATH}"
+umask 077
+
+mode_of() {
+  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+}
 
 reset_instance() {
   rm -rf "${TEST_ROOT}"
@@ -330,6 +335,14 @@ grep -Fq 'systemctl restart deepseek-harness.service' "${CALLS}"
 assert_task_status "${first_task}" succeeded
 assert_no_worktree
 test "$(stat -f '%Lp' "${TEST_ROOT}/var/lib/lightvela/dsh/work" 2>/dev/null || stat -c '%a' "${TEST_ROOT}/var/lib/lightvela/dsh/work")" = "711"
+for runtime_root in \
+  "${TEST_ROOT}/opt/lightvela/dsh" \
+  "${TEST_ROOT}/opt/lightvela/dsh/releases" \
+  "${TEST_ROOT}/opt/lightvela/dsh/tooling"; do
+  test "$(mode_of "${runtime_root}")" = "755"
+done
+test "$(mode_of "${release}")" = "755"
+test "$(mode_of "${release}/node_modules/.bin/dsh")" = "755"
 
 printf '%s\n' 'custom-provider-patch' >"${profile}/cordis.patch.yml"
 : >"${CALLS}"
@@ -478,11 +491,41 @@ grep -Fq 'pnpm@10.33.0' "${CALLS}"
 stable_pnpm="${TEST_ROOT}/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules/.bin/pnpm"
 test -x "${stable_pnpm}"
 test "$("${stable_pnpm}" --version | head -n 1 | tr -d '\r')" = "10.33.0"
+for tooling_path in \
+  "${TEST_ROOT}/opt/lightvela/dsh/tooling/pnpm-10.33.0" \
+  "${TEST_ROOT}/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules" \
+  "${TEST_ROOT}/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules/.bin" \
+  "${stable_pnpm}"; do
+  test "$(mode_of "${tooling_path}")" = "755"
+done
 grep -Fq '/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules/.bin/pnpm --dir' "${CALLS}"
 PATH="$(dirname "${stable_pnpm}"):${PATH}" \
   "${TEST_ROOT}/opt/lightvela/dsh/current/node_modules/.bin/dsh" \
   plugin --profile web list --depth 0 --json >/dev/null
 assert_task_status "${fallback_task}" succeeded
+unset LIGHTVELA_DSH_TEST_PNPM_VERSION
+
+reset_instance
+export LIGHTVELA_DSH_TEST_PNPM_VERSION=9.0.0
+legacy_pnpm_root="${TEST_ROOT}/opt/lightvela/dsh/tooling/pnpm-10.33.0"
+legacy_pnpm="${legacy_pnpm_root}/node_modules/.bin/pnpm"
+mkdir -p "$(dirname "${legacy_pnpm}")"
+cat >"${legacy_pnpm}" <<'EOF'
+#!/usr/bin/env bash
+LIGHTVELA_DSH_TEST_PNPM_VERSION=10.33.0 exec "${LIGHTVELA_DSH_TEST_FAKE_PNPM}" "$@"
+EOF
+chmod -R 0700 "${legacy_pnpm_root}"
+legacy_tooling_task="dshi-c123456789abcdef0123456789abcdef"
+${INSTALLER} install --task-id "${legacy_tooling_task}"
+for tooling_path in \
+  "${legacy_pnpm_root}" \
+  "${legacy_pnpm_root}/node_modules" \
+  "${legacy_pnpm_root}/node_modules/.bin" \
+  "${legacy_pnpm}"; do
+  test "$(mode_of "${tooling_path}")" = "755"
+done
+! grep -Fq 'npm install --prefix' "${CALLS}"
+assert_task_status "${legacy_tooling_task}" succeeded
 unset LIGHTVELA_DSH_TEST_PNPM_VERSION
 
 if ${INSTALLER} providers --region cn >/dev/null 2>&1; then

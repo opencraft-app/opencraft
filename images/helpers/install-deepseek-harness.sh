@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 022
 
 readonly PNPM_VERSION="10.33.0"
 readonly RUNTIME_USER="agentuser"
@@ -201,6 +202,11 @@ ensure_build_toolchain() {
   apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends build-essential
 }
 
+normalize_pnpm_tooling_permissions() {
+  [ -d "${PNPM_TOOLING_DIR}" ] || return 0
+  chmod -R a+rX,u+w,go-w "${PNPM_TOOLING_DIR}"
+}
+
 ensure_pnpm_runtime() {
   local tooling_stage="$1"
   if command -v pnpm >/dev/null 2>&1 \
@@ -209,6 +215,7 @@ ensure_pnpm_runtime() {
     return 0
   fi
   PNPM_BIN="${PNPM_TOOLING_DIR}/node_modules/.bin/pnpm"
+  normalize_pnpm_tooling_permissions
   if [ -x "${PNPM_BIN}" ] \
     && [ "$("${PNPM_BIN}" --version | head -n 1 | tr -d '\r')" = "${PNPM_VERSION}" ]; then
     return 0
@@ -226,8 +233,8 @@ ensure_pnpm_runtime() {
   mv "${tooling_stage}" "${PNPM_TOOLING_DIR}"
   if [ "${TEST_MODE}" != "1" ]; then
     chown -R root:root "${PNPM_TOOLING_DIR}"
-    chmod -R go-w "${PNPM_TOOLING_DIR}"
   fi
+  normalize_pnpm_tooling_permissions
   PNPM_BIN="${PNPM_TOOLING_DIR}/node_modules/.bin/pnpm"
 }
 
@@ -780,6 +787,8 @@ prepare_candidate() {
   resolve_latest_snapshot "${work_dir}" "${manifest_path}"
   finalize_snapshot "${manifest_path}"
   test -f "${manifest_path}" || fail "resolved installation manifest is missing"
+  CURRENT_STAGE="snapshot_resolved"
+  write_task running snapshot_resolved 28 "已锁定安装版本" "" "${manifest_path}"
   CANDIDATE_RUNTIME="${runtime_dir}"
   RUNTIME_REUSED=false
   reusable_release="$(find_reusable_release "${manifest_path}" 2>/dev/null)"
@@ -804,16 +813,24 @@ prepare_candidate() {
     fi
   fi
   if [ "${RUNTIME_REUSED}" != true ]; then
+    CURRENT_STAGE="runtime_lockfile"
+    write_task running runtime_lockfile 35 "正在生成 DSH 依赖锁" "" "${manifest_path}"
     run_as_runtime_user_in "${candidate_home}" "${runtime_dir}" \
       "${PNPM_BIN}" --dir "${runtime_dir}" install --lockfile-only --prod --ignore-scripts \
         --fetch-retries 4 --fetch-timeout 300000
+    CURRENT_STAGE="runtime_install"
+    write_task running runtime_install 48 "正在安装 DSH 运行环境" "" "${manifest_path}"
     run_as_runtime_user_in "${candidate_home}" "${runtime_dir}" \
       "${PNPM_BIN}" --dir "${runtime_dir}" install --frozen-lockfile --prod \
         --fetch-retries 4 --fetch-timeout 300000
   fi
+  CURRENT_STAGE="profile_lockfile"
+  write_task running profile_lockfile 56 "正在生成插件依赖锁" "" "${manifest_path}"
   run_as_runtime_user_in "${candidate_home}" "${CANDIDATE_RUNTIME}" \
     "${PNPM_BIN}" --dir "${profile_dir}" install --lockfile-only --prod --ignore-scripts \
       --fetch-retries 4 --fetch-timeout 300000
+  CURRENT_STAGE="profile_install"
+  write_task running profile_install 68 "正在安装 SkillHub 与渠道插件" "" "${manifest_path}"
   run_as_runtime_user_in "${candidate_home}" "${CANDIDATE_RUNTIME}" \
     "${PNPM_BIN}" --dir "${profile_dir}" install --frozen-lockfile --prod --ignore-scripts \
       --fetch-retries 4 --fetch-timeout 300000
@@ -937,6 +954,7 @@ do_install() {
   mkdir -p \
     "$(dirname "${LOCK_FILE}")" "${RELEASES_DIR}" "${TOOLING_ROOT}" \
     "${DSH_HOME}/profiles" "${STATE_DIR}" "${WORK_ROOT}" "$(dirname "${UNIT_PATH}")"
+  chmod 0755 "$(dirname "${RELEASES_DIR}")" "${RELEASES_DIR}" "${TOOLING_ROOT}"
   chmod 0700 "${DSH_HOME}" "${STATE_DIR}"
   chmod 0711 "${WORK_ROOT}"
   if [ "${TEST_MODE}" != "1" ]; then

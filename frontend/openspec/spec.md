@@ -1,7 +1,7 @@
 # DeepSeek Harness 真实接入 Spec
 
 **最后更新：** 2026-08-25
-**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机的首次安装、同快照重装和服务健康复验；北京 Hermes Sandbox 共存与 TAT 链路仍待验证
+**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机复验；前端已切换 COS 全球加速安装地址，但该对象当前仍需覆盖为最新版，之后再进行北京 Hermes Sandbox 与 TAT 复验
 
 ## 1. 统一命令通道
 
@@ -10,20 +10,20 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 | 动作 | 固定命令 |
 | --- | --- |
 | 状态 | `sudo systemctl status deepseek-harness.service --no-pager`，包装为始终返回 JSON 的条件命令 |
-| 安装 | 依次下发“创建私有上传目录、追加固定 payload 分片、`sudo systemd-run` 校验并执行实时脚本”命令；payload 和任务 ID 均由前端固定生成及校验 |
+| 安装 | 下发固定 `sudo systemd-run` 命令，由实例经 HTTPS 从 COS 全球加速地址下载、校验并执行单文件安装器；任务 ID 由前端生成并校验 |
 | 任务查询 | `sudo cat /var/lib/lightvela/dsh/installations/<validated-id>.json` |
 | 重启 | `sudo systemctl restart deepseek-harness.service`，随后再次查询状态 |
 | 模型供应商列表 | 以 `agentuser` 身份执行前端内联的固定 Provider helper：`providers --region <cn|global>` |
 | 模型供应商配置 | 首个命令在实例生成一次性 RSA 密钥并返回公钥；浏览器用 RSA-OAEP/SHA-256 加密 API Key，第二个命令只携带密文并在实例解密到 helper stdin；Provider ID 必须命中固定白名单 |
 | 模型供应商删除 | 以 `agentuser` 身份执行同一内联 helper：`remove-provider --provider <allowlisted-id>` |
 
-## 2. 实时安装 payload
+## 2. COS 单文件安装器
 
 - 固定运行用户 `agentuser`、`DSH_HOME=/home/agentuser/.dsh`、端口 `127.0.0.1:3080`。
 - DSH、SkillHub 与五个渠道插件均请求 npm `@latest`；安装任务开始时一次性解析并校验精确版本、`dist.integrity` 和 HTTPS tarball，将结果写入 root-owned 安装快照；不安装 `dsh-auth`。
-- Hermes 镜像不预置 DSH 安装器、Provider helper 或冻结清单。前端构建脚本仅将单文件实时安装器压缩为确定性 payload，记录压缩内容 SHA256，并拆成不超过 24,000 字符的命令分片；Provider helper 使用独立内联资源。
-- 用户点击安装后，分片通过 `debug/exec` 顺序写入 `/tmp/lightvela-dsh-upload-<task-id>`；每一步等待执行成功。最终由 `systemd-run` 以 root 身份显式校验编码包上限、base64、gzip、SHA256、解压后大小、文件数量与大小、文件相对路径和文件模式后执行；gzip 使用有界读取，任务结束自动清理上传目录。
-- `systemd-run` wrapper 在解包前原子写入 `pending` 任务 JSON；准备阶段或安装器尚未写终态便退出时原子覆盖为 `failed`，避免轮询只得到文件不存在或永久停在 pending。启动请求结果不确定时，前端通过只读命令对任务文件与 systemd unit 延迟重试对账；对账通道同样不可用时保留 task ID 和上传资源，只有明确收到“任务未启动”后才以独立命令清理。
+- Hermes 镜像不预置 DSH 安装器、Provider helper 或冻结清单。安装器固定从 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh` 获取；Provider helper 继续使用独立内联资源。
+- 用户点击安装后，前端只通过一次 `debug/exec` 请求启动 `systemd-run`。wrapper 使用 HTTPS/TLS 1.2、5 次有限重试、连接和总超时下载脚本到 root 私有临时目录，并校验文件大小为 1 KiB 至 1 MiB、首行为 Bash shebang 且 `bash -n` 通过后再执行；不使用 `curl | bash`。任务结束自动清理下载目录。
+- `systemd-run` wrapper 在下载前原子写入 `pending` 任务 JSON；下载、校验或安装器尚未写终态便退出时原子覆盖为 `failed`，避免轮询只得到文件不存在或永久停在 pending。启动请求结果不确定时，前端通过只读命令对任务文件与 systemd unit 延迟重试对账；对账通道同样不可用时保留 task ID，明确确认任务未启动后向用户返回原始错误。
 - DSH runtime 与 `web` profile 根据本次安装快照生成精确版本的 `package.json`、`.pnpmfile.cjs` 和 `pnpm-lock.yaml`；hook 将整个 `@deepseek-ai/dsh-*` 依赖族保持在本次解析出的 DSH 版本，避免安装过程中混装其他版本。候选目录先执行 `--lockfile-only`，再执行 `pnpm install --frozen-lockfile`。
 - 若实例全局 pnpm 不存在或不是 `10.33.0`，安装任务先在候选目录引导固定版本，校验通过后原子持久化到 root-owned `/opt/lightvela/dsh/tooling/pnpm-10.33.0`；服务通过固定 PATH 使用该版本，任务目录清理后仍可执行插件管理。不得替换或升级实例全局 pnpm。
 - `web` profile 复用 DSH 官方 `nodeLinker: hoisted`、`autoInstallPeers: false` workspace 约定，只直接安装 SkillHub 与五个渠道插件；base/web-app bundles 由快照 runtime 的 profile fallback 提供。
@@ -66,7 +66,7 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 - 保存请求未完成时，按钮显示“保存中...”并禁用供应商选择、密钥输入和其他配置操作。
 - 保存成功或失败通过顶部居中 Toast 反馈并自动消失；成功时保留当前 Provider 选择并清空密钥，失败时保留密钥以便重试。
 - 删除前二次确认；成功后刷新列表，失败时保留弹窗并允许重试。
-- WebUI 使用同源 Service Worker 前缀和独立 DSH broker identity，目标固定为回环 3080，Hermes 9119 行为保持不变。
+- WebUI 使用当前 `Bot.id` 生成实例专属外链：国内站 `https://${botId}.dsh.lightvela.tech`，国际站 `https://${botId}.dsh.lightvela.site`；链接在新标签页打开，不展示静态 IP。
 
 ---
 

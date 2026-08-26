@@ -1123,6 +1123,20 @@ const createBotRepository = (): BotRepository => {
   let fakeDshInstalled = false;
   let fakeDshInstallationPollCount = 0;
   let fakeDshTaskId = "";
+  const fakeDshInstallationSteps = [
+    { stage: "preflight", progress: 10, message: "正在检查实例环境" },
+    { stage: "resolve_latest", progress: 20, message: "正在获取最新版本" },
+    { stage: "snapshot_resolved", progress: 28, message: "已锁定安装版本" },
+    { stage: "runtime_lockfile", progress: 35, message: "正在生成 DSH 依赖锁" },
+    { stage: "runtime_install", progress: 48, message: "正在安装 DSH 运行环境" },
+    { stage: "profile_lockfile", progress: 56, message: "正在生成插件依赖锁" },
+    { stage: "profile_install", progress: 68, message: "正在安装 SkillHub 与渠道插件" },
+    { stage: "validate_candidate", progress: 75, message: "正在检查安装内容" },
+    { stage: "activate", progress: 85, message: "正在切换运行环境" },
+    { stage: "health_check", progress: 95, message: "正在检查运行状态" },
+    { stage: "cleanup", progress: 99, message: "正在清理旧运行环境" },
+    { stage: "completed", progress: 100, message: "DeepSeek Harness 安装完成" },
+  ] as const;
 
   const fakeDshProviders = {
     cn: ["deepseek", "minimax-cn", "moonshotai-cn", "qwen-token-plan-cn", "openrouter"],
@@ -1175,10 +1189,6 @@ const createBotRepository = (): BotRepository => {
       };
     }
 
-    if (command.includes("/tmp/lightvela-dsh-upload-") && !command.includes("systemd-run")) {
-      return { status: "Succeeded", exitCode: 0, output: "" };
-    }
-
     if (command.includes("systemd-run") && command.includes("install-deepseek-harness.sh")) {
       fakeDshTaskId = command.match(/--unit=lightvela-dsh-install-(dshi-[0-9a-f]{32})/)?.[1] ?? "";
       fakeDshInstallationPollCount = 0;
@@ -1187,7 +1197,12 @@ const createBotRepository = (): BotRepository => {
 
     if (command.includes("sudo -n cat /var/lib/lightvela/dsh/installations/")) {
       fakeDshInstallationPollCount += 1;
-      const completed = fakeDshInstallationPollCount >= 2;
+      const stepIndex = Math.min(
+        Math.floor((fakeDshInstallationPollCount - 1) / 2),
+        fakeDshInstallationSteps.length - 1,
+      );
+      const step = fakeDshInstallationSteps[stepIndex];
+      const completed = step.stage === "completed";
       if (completed) fakeDshInstalled = true;
       return {
         status: "Succeeded",
@@ -1195,9 +1210,9 @@ const createBotRepository = (): BotRepository => {
         output: JSON.stringify({
           task_id: fakeDshTaskId,
           status: completed ? "succeeded" : "running",
-          stage: completed ? "completed" : "installing",
-          progress: completed ? 100 : 62,
-          message: completed ? "DeepSeek Harness 安装完成" : "正在安装 DeepSeek Harness",
+          stage: step.stage,
+          progress: step.progress,
+          message: step.message,
           updated_at: nowIso(),
         }),
       };
