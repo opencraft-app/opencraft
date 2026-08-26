@@ -6,6 +6,7 @@ defaults:
 items:
 - id: lightclaw-auth-secrets
   secret_name: mono-shprod-lightclaw-auth-secrets
+  version_id: federation-sh-20260826-auth
   # Required real-name keys in SSM payload:
   # TENCENT_REALNAME_SECRET_ID, TENCENT_REALNAME_SECRET_KEY,
   # TENCENT_REALNAME_ENDPOINT, REALNAME_ENCRYPTION_KEY,
@@ -16,6 +17,7 @@ items:
   output_path: argocd/secrets/shprod/lightclaw-auth-secrets.sops.yaml
   secret_type: Opaque
   required_keys:
+  - LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN
   - LIGHTCLAW_OIDC_SIGNING_KEYS_JSON
   - LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON
   - LIGHTCLAW_FEDERATION_NONCE_KEY
