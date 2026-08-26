@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_SCRIPT="${ROOT_DIR}/images/build.sh"
 
+if grep -Fq 'install_deepseek_harness_installer' "${BUILD_SCRIPT}"; then
+  echo "Hermes image must not preload the DeepSeek Harness installer" >&2
+  exit 1
+fi
+
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
@@ -26,6 +31,7 @@ HERMES_VERSION=""
 HERMES_SRC_VERSION=""
 HERMES_GIT_COMMIT=""
 HERMES_QWEN_CODE_VERSION="latest"
+PNPM_VERSION="10.33.0"
 HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
 HERMES_BACKEND_BLUEPRINT_RESOLVER="${TMPDIR}/resolve-hermes-backend-blueprint-id.py"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
@@ -458,7 +464,7 @@ grep -Fq 'index-url = "https://mirrors.tencent.com/pypi/simple"' "${RUNTIME_HOME
 grep -Fq 'extra-index-url = ["https://mirrors.cloud.tencent.com/pypi/simple"]' "${RUNTIME_HOME}/.config/uv/uv.toml"
 grep -Fq "chown agentuser:agentuser ${RUNTIME_HOME}/.config" "${LOG_FILE}"
 grep -Fq "chmod 0700 ${RUNTIME_HOME}/.config" "${LOG_FILE}"
-grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
+grep -Fq "sudo-npm-install pnpm@10.33.0" "${LOG_FILE}"
 grep -q "sudo-user agentuser" "${LOG_FILE}"
 grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"
 test "$(grep -c "pnpm-add-whatsapp-bridge" "${LOG_FILE}")" -ge 2

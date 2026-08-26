@@ -23,6 +23,7 @@ import {
   TerminalSquare,
   Download,
   Files,
+  FlaskConical,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -137,6 +138,7 @@ import { isPaidBillingEnabled } from "@/lib/billing-flow";
 import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renewal";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
 import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -4801,14 +4803,14 @@ export const AgentSettingsPage = ({
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
             (() => {
-              type SettingsSection = {
+              type SettingsSectionLink = {
                 id: AgentSettingsSectionId;
                 label: string;
                 icon: React.ReactNode;
                 path: string;
                 badge?: string;
               };
-              const settingsGroups: { id: string; label: string; sections: SettingsSection[] }[] = [
+              const settingsGroups: { id: string; label: string; sections: SettingsSectionLink[] }[] = [
                 {
                   id: "setup",
                   label: t("配置"),
@@ -4847,6 +4849,19 @@ export const AgentSettingsPage = ({
                     { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                     { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
                     { id: "settings", label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings },
+                  ],
+                },
+                {
+                  id: "labs",
+                  label: t("实验室"),
+                  sections: [
+                    {
+                      id: "deepseek-harness",
+                      label: "DeepSeek Harness",
+                      icon: <FlaskConical className="h-4 w-4" />,
+                      path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
+                      badge: "Beta",
+                    },
                   ],
                 },
               ];
@@ -5138,18 +5153,20 @@ export const AgentSettingsPage = ({
                                   <li key={section.id}>
                                     <AppLink
                                       to={getAgentSectionHref(section.path, searchParams)}
+                                      aria-label={section.badge ? section.label : undefined}
                                       aria-current={isActive ? "page" : undefined}
                                       className={cn(
                                         "lw-settings-nav-item lv-agents-nav-item",
+                                        section.badge && "has-badge",
                                         isActive
                                           ? "is-active"
                                           : "text-black/70 hover:bg-black/[0.025]",
                                       )}
                                     >
                                       <span className="lv-agents-nav-icon">{section.icon}</span>
-                                      <span className="flex-1 text-left">{section.label}</span>
+                                      <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
                                       {section.badge && (
-                                        <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                        <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
                                           {section.badge}
                                         </span>
                                       )}
@@ -5284,6 +5301,9 @@ export const AgentSettingsPage = ({
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "deepseek-harness" && (
+                            <AgentDeepSeekHarnessPanel botId={activeBot.id} />
                           )}
                           {isGlobal && activeSection === "website" && (
                             <AgentWebsitePanel />
