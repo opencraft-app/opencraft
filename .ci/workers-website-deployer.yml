@@ -22,11 +22,12 @@ on:
       - workers/go.mod
       - workers/go.sum
       - workers/Dockerfile
+      - workers/k8s/overlays/shprod/**
       - workers/k8s/overlays/sgprod/**
       - argocd/services/workers-website-deployer/**
-      - argocd/apps/sgprod/workers-website-deployer.yaml
-      - argocd/projects/sgprod-workers-website-deployer.yaml
-      - argocd/secrets/sgprod/website-deployer-secrets.sops.yaml
+      - argocd/apps/*/workers-website-deployer.yaml
+      - argocd/projects/*-workers-website-deployer.yaml
+      - argocd/secrets/*/website-deployer-secrets.sops.yaml
     paths-ignore:
       - OWNERS
       - "**/OWNERS"
@@ -47,8 +48,8 @@ extends:
     BUNDLE: workers-website-deployer
     DISPLAY_NAME: workers-website-deployer
     DEFAULT_TARGET_ENV: sgprod
-    MASTER_BUILD_ENVS: sgprod
-    # none => sgprod 只走人工审批 + 人工 promote，不自动 pin。
+    MASTER_BUILD_ENVS: shprod,sgprod
+    # none => shprod / sgprod 都只走人工审批 + 人工 promote，不自动 pin。
     MASTER_AUTO_PIN_ENVS: none
     ENABLE_MASTER_PROD_PROMOTE: true
     # 迁移归 ctl 的发布通道（.ci/ctl.yml / .ci/db-migration.yml），worker 通道不碰 DB。

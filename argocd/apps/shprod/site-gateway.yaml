@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: site-gateway-shprod
+  namespace: argocd
+spec:
+  project: shprod-site-gateway
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/site-gateway/shprod
+  destination:
+    namespace: ctl
+    name: shprod
