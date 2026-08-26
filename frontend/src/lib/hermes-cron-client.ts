@@ -33,6 +33,8 @@ export interface CronJob {
   next_run_at: string | null;
   last_run_at: string | null;
   last_status: string | null;
+  /** `hermes cron list --all` 返回的当前执行状态，如 running/completed/failed。 */
+  execution_status?: string | null;
   created_at: string | null;
   script: string;
   effective_window: CronEffectiveWindow | null;
@@ -1033,7 +1035,7 @@ export function parseCronListOutput(text: string): CronJob[] {
       current = {
         id: headerMatch[1],
         state: stateRaw,
-        enabled: stateRaw.toLowerCase() !== "paused",
+        enabled: !["paused", "disabled"].includes(stateRaw.toLowerCase()),
         skills: [],
       };
       continue;
@@ -1052,6 +1054,7 @@ export function parseCronListOutput(text: string): CronJob[] {
       current.last_run_at = parsed.lastRunAt;
       if (parsed.lastStatus) current.last_status = parsed.lastStatus;
     }
+    else if (key === "execution") current.execution_status = value.split(/\s+/, 1)[0]?.toLowerCase() || null;
     else if (key === "last status") current.last_status = value;
     else if (key === "deliver") current.deliver = value;
     else if (key === "script") current.script = value;
@@ -1091,6 +1094,7 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     next_run_at: p.next_run_at || null,
     last_run_at: p.last_run_at || null,
     last_status: p.last_status || null,
+    execution_status: p.execution_status || null,
     created_at: p.created_at || null,
     script: p.script || "",
     effective_window: p.effective_window || null,

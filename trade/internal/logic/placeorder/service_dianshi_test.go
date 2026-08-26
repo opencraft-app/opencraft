@@ -30,6 +30,21 @@ type fakeResolver struct {
 	resolvePlaceCalls   atomic.Int32
 }
 
+type fakeParticipationReader struct {
+	hit       bool
+	err       error
+	calls     atomic.Int32
+	lastUin   string
+	lastActID int64
+}
+
+func (f *fakeParticipationReader) HasUserParticipated(_ context.Context, uin string, activityID int64) (bool, error) {
+	f.calls.Add(1)
+	f.lastUin = uin
+	f.lastActID = activityID
+	return f.hit, f.err
+}
+
 func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.resolveInquiryCalls.Add(1)
 	return f.mapping, f.useDianshi, f.err
@@ -78,8 +93,9 @@ func (f *fakeDianshi) DoGoodsAndPay(_ context.Context, req *dianshiclient.DoGood
 func newFakeDianshiSuccess() *fakeDianshi {
 	return &fakeDianshi{
 		doGoodsResp: &dianshiclient.DoGoodsResponse{
-			DealNames: []string{"20260624000000000000001"},
-			BigDealNo: "20260624000000000000999",
+			DealNames:   []string{"20260624000000000000001"},
+			BigDealNo:   "20260624000000000000999",
+			ResourceIDs: map[string][]string{"20260624000000000000001": {"pass-dianshi-paid-1"}},
 		},
 	}
 }
@@ -103,13 +119,14 @@ func newDianshiDeps() (*stdDeps, *fakeResolver, *fakeDianshi) {
 	r := &fakeResolver{mapping: stdActivityMapping(), useDianshi: true}
 	dc := newFakeDianshiSuccess()
 	d.service = New(Deps{
-		CTLClient:        d.ctl,
-		BundleStore:      d.bundle,
-		JifeiClient:      d.jifei,
-		OrderWriter:      d.writer,
-		OrderStore:       d.store,
-		ActivityResolver: r,
-		DianshiClient:    dc,
+		CTLClient:           d.ctl,
+		BundleStore:         d.bundle,
+		JifeiClient:         d.jifei,
+		OrderWriter:         d.writer,
+		OrderStore:          d.store,
+		ParticipationReader: d.participation,
+		ActivityResolver:    r,
+		DianshiClient:       dc,
 	})
 	return d, r, dc
 }
@@ -445,8 +462,11 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	if d.writer.createOrderCalls.Load() != 1 {
 		t.Fatalf("CreateOrder calls=%d want 1", d.writer.createOrderCalls.Load())
 	}
-	if got := d.writer.lastCreateOrderInput; got.Source != store.OrderSourceDianshi || got.Status != store.OrderStatusPaidPendingProvision {
-		t.Errorf("persisted order source/status=%q/%q", got.Source, got.Status)
+	if got := d.writer.lastCreateOrderInput; got.Source != store.OrderSourceDianshi || got.Status != store.OrderStatusProvisioned {
+		t.Errorf("persisted order source/status=%q/%q want %q/%q", got.Source, got.Status,
+			store.OrderSourceDianshi, store.OrderStatusProvisioned)
+	} else if got.ResourceID != "pass-dianshi-paid-1" {
+		t.Errorf("persisted order resource_id=%q want pass-dianshi-paid-1", got.ResourceID)
 	} else if got.Period != 14 || got.TimeUnit != "d" ||
 		got.GoodsDetail["timeSpan"] != 14 || got.GoodsDetail["timeUnit"] != "d" {
 		t.Errorf("persisted order duration=%d/%q goods_detail=%v/%v want 14/d",
@@ -457,34 +477,70 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	}
 }
 
-func TestGrantDianshiSubscriptionOverridesOnlyActID(t *testing.T) {
+func TestGrantDianshiSubscriptionUsesExplicitCampaignWithoutResolver(t *testing.T) {
 	d, r, dc := newDianshiDeps()
-	original := *r.mapping
-	const grantActID int64 = 142123551192174
+	r.err = errors.New("grant path must not resolve trade_bundle_activity")
+	campaign := DianshiGrantCampaign{
+		ActivityID:   165523570799387,
+		ActID:        142163399386388,
+		TimeSpanUnit: "1m",
+		SecretKey:    "campaign-secret",
+	}
 
-	res, err := d.service.GrantDianshiSubscription(context.Background(), stdPlaceOrderReq(), grantActID)
+	res, err := d.service.GrantDianshiSubscription(context.Background(), stdPlaceOrderReq(), campaign)
 	if err != nil {
 		t.Fatalf("GrantDianshiSubscription err=%v", err)
 	}
 	if res == nil || res.Status != DianshiGrantStatusGranted || res.DealName == "" {
 		t.Fatalf("unexpected grant result: %+v", res)
 	}
-	if *r.mapping != original {
-		t.Fatalf("resolver mapping was mutated: got=%+v want=%+v", r.mapping, original)
+	if r.resolvePlaceCalls.Load() != 0 {
+		t.Fatalf("grant path resolved trade_bundle_activity %d times", r.resolvePlaceCalls.Load())
 	}
-	if got := dc.lastDoGoodsAndPay.Goods[0].ActID; got != grantActID {
-		t.Fatalf("Dianshi actID=%d want %d", got, grantActID)
+	if d.participation.calls.Load() != 1 || d.participation.lastActID != campaign.ActivityID {
+		t.Fatalf("participation lookup calls=%d uin=%q activityID=%d", d.participation.calls.Load(), d.participation.lastUin, d.participation.lastActID)
 	}
-	if got := d.writer.lastCreateOrderInput.ActID; got != grantActID {
-		t.Fatalf("persisted actID=%d want %d", got, grantActID)
+	if got := dc.lastDoGoodsAndPay.Goods[0].ActID; got != campaign.ActID {
+		t.Fatalf("Dianshi actID=%d want %d", got, campaign.ActID)
+	}
+	pref := dc.lastDoGoodsAndPay.Goods[0].PreferenceParam
+	if pref["timeSpanUnit"] != "1m" || pref["bundleId"] != stdPlaceOrderReq().BundleID {
+		t.Fatalf("unexpected preference_param=%+v", pref)
+	}
+	if dc.lastDoGoodsAndPay.ActivityID != campaign.ActivityID || dc.lastDoGoodsAndPay.CheckSum == "" {
+		t.Fatalf("unexpected Dianshi request=%+v", dc.lastDoGoodsAndPay)
+	}
+	if got := d.writer.lastCreateOrderInput; got.ActivityID != campaign.ActivityID || got.ActID != campaign.ActID {
+		t.Fatalf("persisted campaign activityID/actID=%d/%d", got.ActivityID, got.ActID)
+	} else if got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted grant status/resource_id=%q/%q want %q/pass-dianshi-paid-1",
+			got.Status, got.ResourceID, store.OrderStatusProvisioned)
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_RejectsMissingResourceID(t *testing.T) {
+	d, _, dc := newDianshiDeps()
+	dc.doGoodsAndPayResp = &dianshiclient.DoGoodsResponse{
+		DealNames: []string{"20260624000000000000001"},
+		BigDealNo: "20260624000000000000999",
+	}
+
+	_, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrJifeiResponseInvalid) {
+		t.Fatalf("err=%v want ErrJifeiResponseInvalid", err)
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("CreateOrder calls=%d want 0", d.writer.createOrderCalls.Load())
 	}
 }
 
 func TestGrantDianshiSubscriptionSkipsExistingParticipation(t *testing.T) {
 	d, r, dc := newDianshiDeps()
-	r.useDianshi = false
+	d.participation.hit = true
 
-	res, err := d.service.GrantDianshiSubscription(context.Background(), stdPlaceOrderReq(), 142123551192174)
+	res, err := d.service.GrantDianshiSubscription(context.Background(), stdPlaceOrderReq(), DianshiGrantCampaign{
+		ActivityID: 165523570799387, ActID: 142163399386388, TimeSpanUnit: "1m", SecretKey: "campaign-secret",
+	})
 	if err != nil {
 		t.Fatalf("GrantDianshiSubscription err=%v", err)
 	}
@@ -493,6 +549,9 @@ func TestGrantDianshiSubscriptionSkipsExistingParticipation(t *testing.T) {
 	}
 	if dc.doGoodsAndPayCalls.Load() != 0 || d.writer.createOrderCalls.Load() != 0 {
 		t.Fatalf("skip must not place or persist order")
+	}
+	if r.resolvePlaceCalls.Load() != 0 {
+		t.Fatalf("skip path must not resolve trade_bundle_activity")
 	}
 }
 

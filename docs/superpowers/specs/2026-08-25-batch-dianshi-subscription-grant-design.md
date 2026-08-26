@@ -2,19 +2,19 @@
 
 ## Goal
 
-Provide a one-off batch tool that accepts LightVela user IDs, ensures every user has an international shadow account with billing account opening attempted, and grants a free `bundle_launch_ai_01` subscription through Dianshi `do_goods_and_pay`.
+Provide a one-off batch tool that accepts LightVela user IDs and explicit Dianshi campaign parameters, ensures every user has an international shadow account with billing account opening attempted, and grants the requested subscription through Dianshi `do_goods_and_pay`.
 
-The campaign product ID is `142123551192174`. The existing `trade_bundle_activity` row remains unchanged; its activity ID, API secret, time-span configuration, and expiry configuration remain the source of truth.
+Campaign activity ID, product ID, time-span unit, and API secret are request-scoped inputs. The grant flow does not read or mutate `trade_bundle_activity`.
 
 ## Constraints
 
 - The batch tool must not require a user login token.
 - All new service endpoints are internal-token protected.
-- The product ID override exists only in the grant request and in-memory mapping copy.
+- Campaign parameters exist only in the batch process, internal request chain, and effective order metadata.
 - Existing user inquiry, purchase, and domestic-site behavior must remain unchanged.
 - A repeated batch run must not create a second active Pass or a second Dianshi order for the campaign product.
 - One user's failure must not stop the remaining users.
-- Secrets must be read from environment variables and must not be printed.
+- The campaign API secret must be read from `DIANSHI_ACTIVITY_SECRET_KEY`, must not appear in command arguments, logs, persistence, or responses, and must be rejected when empty.
 
 ## Architecture
 
@@ -22,10 +22,10 @@ The flow is split across the services that own each invariant:
 
 1. Auth owns user lookup, verified-email validation, shadow-account binding, and billing account opening.
 2. CTL owns Pass eligibility and subscription provisioning input.
-3. Trade owns Dianshi inventory credentials, campaign participation, order idempotency, order persistence, and Dianshi calls.
+3. Trade owns campaign participation, order idempotency, order persistence, and Dianshi calls. The dedicated grant path receives its campaign configuration explicitly.
 4. A Python script orchestrates Auth followed by CTL for each input user and emits a machine-readable result.
 
-The script never reads databases directly and never copies the Dianshi secret. CTL does not receive the secret. Trade loads the active `bundle_launch_ai_01` mapping and replaces only `ActID` in an in-memory copy.
+The script never reads databases directly. It reads the Dianshi API secret from its environment and sends it through the internal-token-protected CTL and Trade requests. CTL treats it as an opaque field. Trade uses it only to calculate `check_sum` and never persists or returns it.
 
 ## Internal APIs
 
@@ -59,16 +59,19 @@ Request:
 {
   "external_user_id":"usr_xxx",
   "bundle_id":"bundle_launch_ai_01",
-  "act_id":142123551192174
+  "activity_id":165523570799387,
+  "act_id":142163399386388,
+  "time_span_unit":"1m",
+  "secret_key":"request-scoped secret"
 }
 ```
 
 Behavior:
 
 - Authenticate with the existing internal service token.
-- Restrict this endpoint to an explicit bundle ID and positive product ID.
+- Require an explicit bundle ID, positive activity and product IDs, a valid time-span unit, and a non-empty secret.
 - Reuse CTL's normal Pass preparation logic so bundle state, capacity, and user ownership rules stay consistent.
-- Use `period=1`, `time_unit=m`, `goods_num=1`, and the normal zero-price Dianshi pay mode for Pass creation. Trade still uses the inventory row's `time_span_unit` for the Dianshi request.
+- Parse `time_span_unit` into the Pass `period` and `time_unit`; for this campaign `1m` becomes `period=1`, `time_unit=m`. Use `goods_num=1` and the normal zero-price Dianshi pay mode.
 - If the user already has an active Pass, return `skipped` as an idempotent success.
 - Otherwise call Trade's dedicated grant endpoint and return `granted`, `reused`, or `skipped` with the deal identifiers.
 
@@ -76,14 +79,14 @@ Behavior:
 
 `POST /internal/trade/dianshi/subscriptions/grant`
 
-The request contains CTL's prepared order fields plus `actId`.
+The request contains CTL's prepared order fields plus `activityId`, `actId`, `timeSpanUnit`, and `secretKey`.
 
 Behavior:
 
-- Validate the active shadow binding, online bundle definition, and active Dianshi inventory mapping.
-- Load `trade_bundle_activity` by bundle ID and copy it in memory.
-- Replace only the copied mapping's `ActID`; retain `ActivityID`, `SecretKey`, `TimeSpanUnit`, and `OrderExpiredTime` from inventory.
-- Treat any existing participation for the same user and activity as a successful skip, matching the database's `(uin, activity_id)` uniqueness contract.
+- Validate the active shadow binding, online CTL bundle, Trade bundle definition, and all explicit campaign fields.
+- Do not call `GetBundleActivityByBundleID` or `ActivityResolver.ResolveForPlaceOrder` in this dedicated grant path.
+- Build an effective in-memory campaign mapping from the request. Use a fixed one-hour reusable-order window because order expiry is an internal idempotency policy, not a campaign parameter.
+- Query `trade_user_activity_participation` directly with the resolved UIN and requested activity ID. Treat an existing participation as a successful skip, matching the database's `(uin, activity_id)` uniqueness contract.
 - Check reusable orders using user, activity, bundle, and overridden product ID.
 - Call the existing `placeOrderDianshiAndPay` implementation with the copied mapping.
 - Persist `trade_order.activity_id` and `trade_order.act_id` using the effective mapping.
@@ -96,10 +99,10 @@ Dianshi may synchronously invoke `createResource` before Trade persists `trade_o
 
 For grant orders, Trade adds `dianshiActId` to `preference_param`. The callback participation writer resolves fields in this order:
 
-- `activity_id`: the inventory mapping's activity ID; `callback.billingActivityId` remains the activity-order trigger used by the existing callback contract.
-- `act_id`: `callback.goodsDetail.dianshiActId`, then `callback.goodsDetail.dianshi_act_id`, then the inventory mapping's product ID.
+- `activity_id`: request-scoped order metadata `dianshi_activity_id`, with the existing callback billing activity ID fallback.
+- `act_id`: `callback.goodsDetail.dianshiActId`, then `callback.goodsDetail.dianshi_act_id`, then request-scoped order metadata.
 
-The writer validates positive numeric values. Legacy callbacks without the new field continue to use the inventory mapping. This ensures campaign participation records use product `142123551192174` even when the callback arrives before local order persistence.
+The writer validates positive numeric values. The pointstone callback carries the request-scoped IDs in `goodsDetail`, so callback handling does not need the campaign mapping row even when the callback arrives before local order persistence.
 
 ## Idempotency
 
@@ -120,8 +123,11 @@ Configuration is supplied through arguments or environment variables:
 - Auth internal base URL
 - CTL internal base URL
 - `LIGHTCLAW_INTERNAL_SERVICE_TOKEN`
-- bundle ID, defaulting to `bundle_launch_ai_01`
-- product ID, defaulting to `142123551192174`
+- required bundle ID
+- required activity ID
+- required product ID
+- required pointstone time-span unit such as `1m`
+- required campaign API secret from `DIANSHI_ACTIVITY_SECRET_KEY`
 
 For each user, the script:
 
@@ -136,14 +142,14 @@ Processing continues after per-user errors. The process exits nonzero if any use
 
 - Missing user, missing verified email, terminal shadow registration failure, or billing account opening failure: report the Auth phase and do not call CTL.
 - Existing active Pass or campaign participation: successful skip.
-- Invalid bundle/product parameters: reject before any external call.
+- Invalid bundle/activity/product/time-span parameters or missing secret: reject before any external call.
 - Dianshi or persistence error: return a structured Trade error through CTL; the script records it and continues.
 - Timeout while waiting for Auth: mark the user failed without guessing whether registration completed.
 
 ## Testing
 
 - Auth service and HTTP tests cover missing binding creation, verified-email enforcement, active idempotency, and internal authentication.
-- CTL tests cover grant preparation, active-Pass skip, and propagation of the fixed one-month Pass period and requested product ID.
-- Trade tests cover in-memory override, unchanged inventory object, product-scoped order reuse, request `preference_param`, order persistence, and callback fallback behavior.
+- CTL tests cover grant preparation, active-Pass skip, time-span parsing, and propagation of all campaign fields.
+- Trade tests prove the dedicated grant path never resolves `trade_bundle_activity`, preserves participation and reusable-order idempotency, sends explicit campaign fields, persists non-secret order metadata, and never exposes the secret.
 - Script tests use an HTTP test server to cover parsing, Auth polling, success/skip/failure output, continuation, and exit status.
 - Existing Auth, CTL, and Trade targeted test suites must remain green.

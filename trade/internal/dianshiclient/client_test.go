@@ -213,7 +213,11 @@ func TestDoGoodsAndPay_Success(t *testing.T) {
 	const sampleResp = `{
 		"version":1,"componentName":"qcact-logic","eventId":966200588,
 		"returnValue":0,"returnCode":0,"returnMessage":"成功",
-		"data":{"deal_names":["20240809794064572803152"],"big_deal_no":"20240809794064572803142"}
+		"data":{
+			"deal_names":["20240809794064572803152"],
+			"big_deal_no":"20240809794064572803142",
+			"resource_ids":{"20240809794064572803152":["pass-paid-1"]}
+		}
 	}`
 
 	var gotBody []byte
@@ -255,6 +259,9 @@ func TestDoGoodsAndPay_Success(t *testing.T) {
 	}
 	if got.BigDealNo != "20240809794064572803142" {
 		t.Errorf("BigDealNo=%s", got.BigDealNo)
+	}
+	if len(got.ResourceIDs["20240809794064572803152"]) != 1 || got.ResourceIDs["20240809794064572803152"][0] != "pass-paid-1" {
+		t.Fatalf("ResourceIDs=%v", got.ResourceIDs)
 	}
 
 	var sent envelope
