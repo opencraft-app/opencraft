@@ -1,6 +1,8 @@
 import { ArrowUpRight } from "lucide-react";
 import { imgHeroAvatars, imgHeroElement01, imgHeroElement02, imgHeroElement03 } from "../assets";
 import { useT } from "@/i18n/t";
+import { isCN } from "@/lib/region";
+import { cn } from "@/lib/utils";
 
 const heroBackground = [
   "radial-gradient(ellipse at 54% 38%, rgba(255,255,255,0.96) 0%, rgba(250,252,255,0.9) 32%, rgba(255,255,255,0) 58%)",
@@ -76,12 +78,21 @@ export default function HeroSection({ onCreateClick, ctaLabel }: HeroSectionProp
             draggable={false}
           />
           <p className="m-0 max-w-[270px] break-words [word-break:normal] sm:max-w-[620px]">
-            {t("云端托管 Hermes Agent，越聊越懂你的智能伙伴")}
+            {isCN
+              ? "LightVela · Hermes Agent"
+              : t("云端托管 Hermes Agent，越聊越懂你的智能伙伴")}
           </p>
         </div>
 
-        <h1 className="m-0 w-full max-w-[320px] min-w-0 break-words text-balance font-['PingFang_SC','HarmonyOS_Sans_SC',sans-serif] text-[30px] font-semibold leading-[1.2] text-black/90 sm:max-w-[960px] sm:text-[52px] lg:text-[64px]">
-          {t("灵感随时发生，思考自由流动")}
+        <h1
+          className={cn(
+            "m-0 w-full max-w-[320px] min-w-0 break-words text-balance font-['PingFang_SC','HarmonyOS_Sans_SC',sans-serif] text-[30px] font-semibold leading-[1.2] text-black/90 sm:max-w-[960px]",
+            isCN ? "sm:text-[48px] lg:text-[56px]" : "sm:text-[52px] lg:text-[64px]",
+          )}
+        >
+          {isCN
+            ? "越用越懂你，长期在线的 AI 伙伴"
+            : t("灵感随时发生，思考自由流动")}
         </h1>
 
         <button
