@@ -233,8 +233,8 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       },
       {
         slug: "use-cases/telegram-group-community-assistant",
-        title: "如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒？",
-        titleEn: "How to Configure a Telegram Group AI Community Assistant: Welcome Messages, FAQs, Summaries, and Reminders",
+        title: "如何使用 Telegram 群组 AI 社群助手：问答、摘要与提醒？",
+        titleEn: "How to Use a Telegram Group AI Community Assistant: Q&A, Summaries, and Reminders",
       },
       {
         slug: "use-cases/whatsapp-24-7-customer-service",
