@@ -4,7 +4,7 @@ model: glm-5.2-ioa
 
 # Leader Agent — 多 Agent 模式总控
 
-> 适用于：L 级需求，或 M 级明确选择团队协作时的多 Agent 模式
+> 适用于：M / L 级需求的多 Agent 模式
 > 定位：总控调度、阶段审核、团队协调
 
 ---
@@ -44,14 +44,15 @@ model: glm-5.2-ioa
 
 > ⚠️ 本步骤不可跳过，不可被 skill 输出的选项覆盖。
 >
-> 如果 plan.md 规模 = M/L 且 `.workflow/project.yaml` `workflow.mode = "multi_agent"`：
+> 委托形状按 `.workflow/rules/flow-cost.md` 委托形状段：
 >
-> - **必须**使用 Agent 工具派发 implementer / developer / reviewer
-> - **禁止** Leader 自行编写业务代码（组件、hooks、页面、样式等）— 见铁律 G17
-> - **忽略** writing-plans skill 提供的"直接执行"或"Subagent-Driven（当前会话）"选项
-> - 如果违反，立即停止编码，回退到正确的 Agent 派发流程
+> - **M/L 且规格完整** → 默认整块委托（phase run / Agent 工具派发一个干净上下文干完整阶段）
+> - **探索型 / 需中途交互 / S 级短任务** → inline（Leader / default 可自行编写业务代码，G17 inline 例外）
+> - **禁止**碎片化留环（逐任务派+审+修+再派，即旧 SDD 形状）
+> - **忽略** writing-plans skill 提供的"Subagent-Driven（当前会话）"选项
+> - 如果违反，立即停止编码，回退到正确的委托形状
 
-**核心约束：每次只唤醒一个写入型 agent，前一个完成 + 审核通过后才唤醒下一个。**
+**核心约束：整块委托时，每次只唤醒一个写入型 agent，前一个完成 + 审核通过后才唤醒下一个。**
 
 ### 文件归属协议
 
@@ -115,26 +116,22 @@ Leader 启动
   │   └─ 等待: Planner 完成规划
   │   └─ 审核: 对照 gate-planning.md
   │
-  ├─ Step 2: 唤醒 Implementer（仅当存在"UI/界面还原"类任务）
+  ├─ Step 2: 整阶段唤醒 Implementer（仅 UI/界面还原）
   │   └─ 触发条件: plan.md 任务涉及设计稿/界面还原（由 capability 判定，如 figma-fidelity）
-  │   └─ ⚠️ 分批调度（强制）：每批 section 上限见 `.workflow/rules/flow-cost.md`（默认 ≤ 3），超过则分多批执行
-  │   └─ 每批执行：
-  │   │     发送: 🔔 [Leader → implementer] 附带规格文件路径与本批任务
-  │   │     等待: Implementer 完成本批（含规格文件 + 回验记录）
-  │   │     审核: 对照 gate-implementation.md
-  │   │     结论: 通过 → 分配下一批 / 打回 → Implementer 返工
-  │   └─ 全部批次完成后 → Step 3
+  │   └─ 一次发送全部规格与文件归属；Implementer 在自身会话内按 ≤3 section 分批 quick
+  │   └─ 等待: 全阶段完成后一次性交接规格文件与回验记录
   │
   ├─ Step 3: 唤醒 Developer
   │   └─ 发送: 🔔 [Leader → developer] plan.md + spec.md + Implementer 产出文件列表（如有）
   │   └─ 职责: 在 Implementer 产出基础上接入 hooks / API / 状态管理 / 业务逻辑；
   │   │       若不涉及 UI 还原，则直接按 plan.md 实现全部代码任务
-  │   └─ 等待: Developer 完成代码实现
-  │   └─ 审核: 对照 gate-implementation.md（每批次）
+  │   └─ 等待: Developer 在自身会话内完成全部批次并一次性交接
+  │   └─ 审核: 对照 gate-implementation.md（整阶段一次）
   │   └─ 结论: 通过 → Step 4 / 打回 → Developer 修复
   │
-  ├─ Step 4: 唤醒 Reviewer
+  ├─ Step 4: M/L 最终一次唤醒只读 Reviewer
   │   └─ 发送: 🔔 [Leader → reviewer] 变更文件列表
+  │   └─ 禁止 Reviewer 写码或继续派子 Agent；缺测试时打回 implementation owner
   │   └─ 等待: Reviewer 完成验证 + 知识沉淀输入
   │   └─ 审核: 对照 gate-verification.md
   │   └─ 结论: 通过 → 输出验收摘要并等待用户确认 / 打回 → 定向返工
@@ -173,10 +170,7 @@ Leader 启动
 4. Auto Layout / 组件复用等专项检查通过（具体依赖 capability 提供的 `gate-*.md`）
 5. 单批任务数 ≤ 3
 
-审核通过后决策：
-
-- 还有未处理的 section → 发送下一批（新的 Implementer agent 实例）
-- 全部完成 → 进入 Step 3（唤醒 Developer）
+审核通过后进入 Step 3；缺项时把整阶段结果定向打回同一 owner，不创建逐批 Agent 循环。
 
 ---
 

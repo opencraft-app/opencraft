@@ -1589,6 +1589,71 @@ describe("http repositories auth token bootstrap", () => {
     }
   });
 
+  it("loads a validated federation authorization context", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      client: {
+        id: "personal-site",
+        display_name: "Personal Site",
+      },
+      redirect_uri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      session: { authenticated: false },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.getFederationAuthorizationContext({
+      clientId: "personal-site",
+      redirectUri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+    })).resolves.toEqual({
+      clientId: "personal-site",
+      clientDisplayName: "Personal Site",
+      redirectUri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      currentSession: null,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/federation/context?client_id=personal-site&redirect_uri=https%3A%2F%2Fprobe-dsh.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=opaque+state",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("requests a federation ticket without constructing the callback in the client", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      redirect_url: "https://probe-dsh.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      expires_at: "2026-08-25T10:00:05Z",
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.issueFederationTicket({
+      clientId: "personal-site",
+      redirectUri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+      state: "state-1",
+    })).resolves.toEqual({
+      redirectUrl: "https://probe-dsh.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      expiresAt: "2026-08-25T10:00:05Z",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/federation/tickets",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          client_id: "personal-site",
+          redirect_uri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+          state: "state-1",
+        }),
+      }),
+    );
+  });
+
   it("loads a validated oidc authorization context", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       client: {

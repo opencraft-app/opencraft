@@ -1,5 +1,11 @@
 # Pengelolaan Memori
 
+## Ringkasan
+
+**Memori membuat Hermes mengingat hal penting lintas percakapan dan lintas perangkat — preferensi Anda, identitas Anda, hal yang sedang Anda kerjakan, serta pengalaman yang terkumpul dalam kolaborasi jangka panjang. Inilah dasar yang mengubah Hermes dari tanya-jawab sekali pakai menjadi asisten yang makin memahami Anda. Memori tersimpan di dalam Agent dan di luar model, sehingga berganti model tidak membuatnya lupa. Anda dapat meninjau, menyunting, atau membersihkan isi yang terkumpul pada halaman memori dan profil pengguna di konsol, dan semua kanal pesan berbagi satu memori yang sama.**
+
+---
+
 Memori membantu Hermes mempertahankan informasi penting lintas percakapan dan lintas perangkat—preferensi Anda, identitas, pekerjaan yang sedang berjalan, dan pengalaman yang terbentuk melalui kolaborasi jangka panjang. Inilah yang mengubah Hermes dari alat tanya-jawab sekali pakai menjadi asisten jangka panjang yang makin memahami Anda seiring waktu.
 
 ![Halaman Memory dan User Profile di konsol LightVela](../images/memory-management-overview-en.png)

@@ -238,10 +238,12 @@ function WorkbenchEmbeddedReadyApp({
   hostStateStores,
   transport,
 }: WorkbenchEmbeddedReadyAppProps) {
+  const t = useT();
   const [activeSessionId, setActiveSessionId] = useState(
     () => hostStateStores.sessionSelectionStore?.read()?.sessionId ?? "",
   );
-  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
+  // setter 省略：分支的内嵌组件结构暂未提供后端切换 UI，仅消费当前值。
+  const [selectedBackendKind] = useState<BackendKindWire | "">(
     readDefaultBackendPreference,
   );
   const [sessions, setSessions] = useState<SessionListItemWire[]>([]);
@@ -335,7 +337,8 @@ function WorkbenchEmbeddedReadyApp({
         return;
       }
       const created = await client.createSession({
-        backend,
+        // setup 选择器的返回被推断为 string，此处收窄断言回字面量联合。
+        backend: backend as BackendKindWire,
         agentConfig: nextSetup.setupAgentConfig,
         title: t("新对话"),
         workingDirectory: DEFAULT_WORKING_DIRECTORY,
@@ -383,7 +386,6 @@ function WorkbenchEmbeddedReadyApp({
           isRespondingToRequest={controller.isRespondingToRequest}
           isUpdatingComposerControls={controller.isUpdatingAgentConfig}
           layout="contained"
-          messageFollowToken={controller.messageFollowToken}
           model={controller.model}
           onAgentConfigChange={controller.updateAgentConfig}
           onAttachImages={controller.attachImages}

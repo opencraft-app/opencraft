@@ -420,6 +420,100 @@ class ReleaseBundleContractTests(unittest.TestCase):
         bundle = (REPO_ROOT / ".ci" / "runtime" / "bundles" / "site-gateway.bundle").read_text()
         self.assertIn("site-gateway/docs", bundle)
 
+    def test_site_gateway_dsh_tat_proxy_is_opt_in_for_sgprod(self) -> None:
+        base_manifest = REPO_ROOT / "site-gateway" / "k8s" / "base" / "manifests.yaml"
+        documents = list(yaml.safe_load_all(base_manifest.read_text()))
+        config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
+        deployment = next(doc for doc in documents if doc.get("kind") == "Deployment")
+        data = config_map.get("data", {})
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_DOMAINS"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_BASE_URL"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_KEY_ID"), "")
+        for key in (
+            "SITE_GATEWAY_DSH_TAT_START_TIMEOUT",
+            "SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT",
+            "SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT",
+            "SITE_GATEWAY_DSH_MAX_TARGETS",
+            "SITE_GATEWAY_DSH_MAX_CONNECTIONS_PER_TARGET",
+            "SITE_GATEWAY_DSH_QUEUE_DEPTH",
+            "SITE_GATEWAY_DSH_MAX_FRAME_BYTES",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_TARGET",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_TOTAL",
+        ):
+            self.assertIn(key, data)
+
+        env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        federation_refs = {
+            item["name"]: item["valueFrom"]["secretKeyRef"]
+            for item in env
+            if item["name"] == "SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY"
+        }
+        self.assertEqual(set(federation_refs), {"SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY"})
+        self.assertTrue(all(ref.get("optional") is True for ref in federation_refs.values()))
+
+        for platform_file in (
+            REPO_ROOT / "site-gateway" / "k8s" / "overlays" / "sgprod" / "generated" / "platform.env.example",
+            REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod" / "site-gateway-platform.env",
+        ):
+            platform_values = {
+                key: value
+                for line in platform_file.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_DOMAINS"), "dsh.lightvela.site")
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_BASE_URL"),
+                "http://lightclaw-auth.user-auth.svc.cluster.local",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"),
+                "personal-site",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_KEY_ID"),
+                "federation-client-sg-20260824-1",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_WILDCARD_HOST"),
+                "*.dsh.lightvela.site",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_TLS_SECRET_NAME"),
+                "site-gateway-dsh-wildcard-tls",
+            )
+
+        deploy_kustomization = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd"
+                / "services"
+                / "site-gateway"
+                / "sgprod"
+                / "kustomization.yaml"
+            ).read_text()
+        )
+        replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in deploy_kustomization["replacements"]
+        }
+        self.assertIn("data.SITE_GATEWAY_DSH_WILDCARD_HOST", replacement_sources)
+        self.assertIn("data.SITE_GATEWAY_DSH_TLS_SECRET_NAME", replacement_sources)
+
+        source_root = REPO_ROOT / "site-gateway" / "internal"
+        for relative in (
+            "dshproxy/handler.go",
+            "dshproxy/target.go",
+            "tatproxy/bootstrap.go",
+            "tatproxy/session.go",
+            "tatproxy/conn.go",
+            "httpapi/dispatcher.go",
+        ):
+            self.assertTrue((source_root / relative).is_file(), relative)
+
     def test_sgprod_oidc_runtime_contract_is_enabled_with_persistent_secrets(self) -> None:
         def env_values(path: Path) -> dict[str, str]:
             return {
@@ -578,6 +672,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
             env["LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN"]["valueFrom"]["secretKeyRef"],
             {"name": "lightclaw-auth-secrets", "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"},
         )
+
+    def test_sgprod_sandbox_internal_service_token_is_shipped(self) -> None:
+        manifest = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.sandbox.sgprod.yaml").read_text()
+        )
+        item = manifest["items"][0]
+        self.assertEqual(item["id"], "sandbox-runtime-secrets")
+        self.assertEqual(
+            item["required_keys"],
+            [
+                "MYSQL_PASSWORD",
+                "MYSQL_USER",
+                "REDIS_PASSWORD",
+                "TENCENT_SECRET_ID",
+                "TENCENT_SECRET_KEY",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            ],
+        )
+
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/sandbox-runtime-secrets.sops.yaml").read_text()
+        )
+        self.assertIn("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", secret["stringData"])
 
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):

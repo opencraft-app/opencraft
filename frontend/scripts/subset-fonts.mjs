@@ -34,7 +34,6 @@ export function getSubsetTextInputs(frontendRoot, localeDefinitions = readLocale
   const codeInputs = [
     join(frontendRoot, 'src', 'imports', 'Frame2147230025'),
     join(frontendRoot, 'src', 'pages', 'marketing', 'landing-page.tsx'),
-    join(frontendRoot, 'src', 'components', 'site', 'landing-cta-footer-links.tsx'),
   ];
   const dictionaryInputs = publishedDictionaryKeys(localeDefinitions).map((locale) =>
     join(frontendRoot, 'src', 'i18n', 'generated', `${locale}.json`),

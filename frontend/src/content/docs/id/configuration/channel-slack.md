@@ -1,5 +1,11 @@
 # Kanal Slack
 
+## Ringkasan
+
+**Kanal Slack dihubungkan dengan bot token dan app token, cocok untuk membawa Hermes Agent ke kanal tim, pesan pribadi, dan notifikasi tugas otomatis: buat aplikasi di konsol manajemen aplikasi Slack, atur izinnya, ambil kedua token tersebut, lalu tempelkan ke bagian Kanal pada konsol LightVela. Anda memerlukan workspace Slack tempat Anda dapat memasang aplikasi dan model yang sudah dikonfigurasi (atau cukup kredit model bulanan dari paket Anda). Kedua token adalah kredensial sensitif — jangan dibagikan secara publik. Setelah terhubung, Agent di Slack berbagi persona dan memori jangka panjang yang sama dengan kanal lain.**
+
+---
+
 Slack memakai Bot Token dan App Token untuk menghubungkan Hermes Agent ke channel tim, pesan langsung, dan notifikasi tugas otomatis.
 
 ## Yang dibahas di halaman ini

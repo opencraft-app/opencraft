@@ -1,5 +1,11 @@
 # Ringkasan Konfigurasi
 
+## Ringkasan
+
+**Seluruh konfigurasi LightVela terpusat di konsol "My Hermes", yang dibuka dari sudut kanan atas setelah Anda masuk. Tab instance Hermes Agent berada di bagian atas, dan di bawahnya terdapat tiga tombol konfigurasi: Model (pilih Model Coding Plan bulanan, Model API sesuai pemakaian, atau endpoint kustom yang kompatibel dengan OpenAI), Kanal (pintu masuk tiap platform pesan — sebagian dihubungkan dengan kode QR, sebagian memerlukan token atau AppID), dan Skill (memasang paket kemampuan yang dapat dipakai ulang). Selain ketiganya, konsol juga menyediakan Percakapan, Tugas Otomatis, manajemen memori, penyimpanan cloud, penggantian model, dan pusat diagnostik. Setelah tiga konfigurasi dasar selesai, Agent siap dipakai di kanal pesan Anda.**
+
+---
+
 Semua konfigurasi LightVela dipusatkan di konsol "My Hermes" dan terbagi ke tiga tombol konfigurasi:
 
 1. Model

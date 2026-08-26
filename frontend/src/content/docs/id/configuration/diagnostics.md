@@ -1,5 +1,11 @@
 # Diagnostik
 
+## Ringkasan
+
+**Pusat diagnostik dipakai untuk menelusuri masalah pada Hermes Agent. Dalam satu tempat Anda dapat melihat dan mengekspor log terbaru, menyetel ulang konfigurasi model, atau memasang ulang Agent tanpa kehilangan data. Ketika Agent tidak menjawab, menjawab dengan aneh, atau koneksi kanal gagal, periksa di sini lebih dulu: baca log untuk menentukan apakah penyebabnya pemanggilan model yang gagal, kanal yang terputus, atau skill yang error, lalu ambil tindakan yang sesuai. Pemasangan ulang mempertahankan data sehingga memori yang sudah terkumpul tidak hilang.**
+
+---
+
 Diagnostik membantu Anda menyelidiki Agent yang tidak berperilaku seperti yang diharapkan. Dari satu tempat, Anda dapat meninjau log Hermes Agent terbaru, mengekspornya untuk dibagikan, mereset konfigurasi model, atau memasang ulang Agent tanpa menghapus datanya.
 
 ## Yang dibahas di halaman ini

@@ -27,6 +27,20 @@ describe("agent settings TEA SDK boundary", () => {
     expect(page).not.toMatch(/const sdkProductConfigArgs = useMemo/);
   });
 
+  it("uses the product provider catalog but routes model configuration through the real Hermes panel", () => {
+    const page = readSource("src/pages/marketing/agent-settings-page.tsx");
+
+    expect(page).toContain('import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";');
+    expect(page).toContain('import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";');
+    expect(page).toMatch(/useModelProviders\(\{ isI18n: isGlobal, useEnglish \}\)/);
+    expect(page).toMatch(/resolveProductModelProviderOptions\(productConfig, modelProviders, \{[\s\S]*region: instance\.Zone,[\s\S]*regionId: instance\.RegionId/);
+    expect(page).toMatch(/<AgentModelConfigPanel[\s\S]*botId=\{instance\.InstanceId\}[\s\S]*execDebugCommand=\{execDebugCommand\}/);
+    expect(page).not.toContain("AgentModelConfigPrototypePanel");
+    expect(page).not.toContain("sdk.ModelPanel");
+    expect(page).not.toContain("runtime.ModelPanel");
+    expect(page).not.toMatch(/const AgentModelPanel = lazy/);
+  });
+
   it("uses the real debug exec adapter whenever an auth API backend is configured", () => {
     const tatAdapter = readSource("src/pages/marketing/agent-tat-adapter.ts");
     const repositories = readSource("src/repositories/http-repositories.ts");

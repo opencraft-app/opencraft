@@ -1,3 +1,23 @@
+# 国内站首页 Hero 两句文案替换 Implementation Plan
+
+**Goal:** 仅替换国内站首页 Hero 的小标题与主标题，其他文案、布局、SEO 和国际站保持不变。
+
+- [x] 测试先行完成两句文案替换，并通过国内/国际区域测试、类型检查和本地预览；i18n 生成文件保持原样。
+- [x] 仅缩小国内站 Hero 主标题桌面字号至 `48/56px`，移动端与国际站保持原样。
+
+---
+
+# Advanced Settings 审批模式文档补充 Implementation Plan
+
+**Goal:** 让国内站和国际站的高级设置文档准确说明安全分组、审批模式、恢复默认和保存行为。
+
+**Scope:** 更新国内中文、国际中文、英文、印尼语源文档与既有文档元描述，并同步生成 Fumadocs 产物。
+
+- [x] 文档内容：补充审批模式和安全分组，并修正保存与恢复默认说明。
+- [x] 文档同步与验证：更新最后更新时间、生成各语言 Fumadocs 产物，并验证图片和文档链接。
+
+---
+
 # MR !3248 CR 国际化补强 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -1014,6 +1034,239 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `https://sites-auth.lightvela.site/auth/lightvela/callback`
 
 - [x] 完成 `changes/2026-08-24-oidc-site-auth-plan.md` 的 UserAuth、frontend、site-gateway、CTL 实现和验证。
+
+---
+
+# 模型配置多源兼容读取与 Hermes 归一化写入 Implementation Plan
+
+**Status:** 多源归一化与页面标题增量均已实现并验证，等待用户验收。尚未提交或推送。
+
+**Size:** M。改动集中在模型配置域，但同时影响多源读取投影、主备角色识别、历史记录迁移、删除清理与 Hermes 配置写入契约，需要分批验证。
+
+**Goal:** 已配置模型列表完整展示运行中的主模型、备用模型、仅保存模型、有效历史模型和默认 `custom` 配置；所有新增和角色变更只写 Hermes 官方三层结构。
+
+**Architecture:** 保留内嵌 Python helper 作为 Agent 本地配置适配层，从 `model`、fallback、`providers`、legacy `custom_providers` 和 `lightvela.model_config.configured_models` 收集候选模型，再按运行部署身份统一去重。读取兼容层不写配置；新增、设主和设为备用分别归一到 `providers.<id>`、`model.provider + model.default` 与 `fallback_providers`，只在目标旧记录被迁移或删除时定向清理 LightVela 兼容数据。
+
+**Product Spec:** `wiki/prd-docs/2026-08-25-agent-model-config-normalization.md`
+
+**Scope:**
+- 读取 `model`、`fallback_providers`、legacy `fallback_model`、`providers.*.model/default_model`、legacy `custom_providers`、`lightvela.model_config.configured_models` 和默认 `custom` 配置。
+- `providers.*.models` 只补充目录信息，不把全部目录模型视为已配置模型。
+- 同一运行部署只展示一次；主模型优先于备用模型，备用模型保持原顺序，其后展示仅保存、历史和默认 `custom`。
+- 新增 Provider 按 Hermes Custom Endpoint 字段写入 `providers.<id>`，不再新增或双写 `configured_models`。
+- 历史模型首次设置主备时确保对应 `providers.<id>` 存在，再写运行槽位；删除时只清理目标模型及不再被引用的 Provider/凭据。
+- 不修改页面整体视觉、Provider 产品列表、模型探测和连通性检测协议。
+
+### Task 1: 多源读取与统一投影
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/model-config-client.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+**Acceptance:**
+- 主模型、多个备用模型、`providers` 仅保存模型、legacy `custom_providers`、LightVela 历史模型和默认 `custom` 均进入 `configuredModels`。
+- 同一部署跨来源只保留一条，角色由 `model` 与 fallback 动态计算，备用顺序不变。
+- `providers.models` 中非当前模型不进入已配置列表。
+- 默认 `custom` 信息不完整时仍展示为待补全项，页面不允许直接设主、设为备用或删除运行配置。
+
+- [x] 先补多源矩阵、去重、目录排除和默认 `custom` 待补全测试并确认 RED。
+- [x] 实现最小候选收集、字段合并和统一投影，让定向测试 GREEN。
+
+### Task 2: 写入 Hermes 官方三层并渐进归一化
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/hermes-model-config-real-smoke.test.ts`
+
+**Acceptance:**
+- “仅添加”写入 `providers.<id>` 的 `base_url`、`model`、`models`、`key_env`、`discover_models` 和协议字段，不修改主备槽位。
+- “设为主模型”写入 `model.provider + model.default`；“设为备用模型”写入有序 `fallback_providers`，并归并 legacy `fallback_model`。
+- 新操作不创建或追加 `lightvela.model_config.configured_models`；从旧列表首次设置角色时定向迁移目标 Provider，其他旧记录保持不变。
+- 删除只清理目标旧记录、目标 Provider 模型和无引用凭据，保留 Provider 扩展字段及无关模型。
+
+- [x] 先更新新增、角色切换、迁移、删除和回滚测试并确认 RED。
+- [x] 实现官方字段写入与定向旧记录清理，让 Python helper 测试 GREEN。
+
+### Task 3: 回归验证与双站验收准备
+
+**Role:** Reviewer
+
+**Files:**
+- Modify: `frontend/openspec/plan.md`
+- Modify: `wiki/prd-docs/2026-08-25-agent-model-config-normalization.md`（仅在实现发现需要澄清时）
+
+**Acceptance:**
+- 模型配置定向 Vitest、真实 Hermes helper smoke、`pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
+- 既有探测、连通性检测、主备冲突、凭据密封、回滚和扩展字段保留测试无回归。
+- 本地页面能展示多源存量配置；外部真实 Agent 或双站预览依赖留到用户验收阶段，不自动推送或发布。
+
+- [x] 完成定向、回归、类型、i18n 与差异检查。
+- [x] 完成本地页面冒烟并整理用户验收清单，等待提交、推送和 MR 的独立确认。
+
+**Verification:**
+- 模型配置域回归：8 个测试文件，106 passed / 1 skipped；真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed。
+- `tsc -p tsconfig.app.json --noEmit`、`pnpm check`、`pnpm i18n:check`、`git diff --check` 全部通过。
+- 本地 `http://127.0.0.1:5179/agents/models/` 可正常加载且无运行时 error；隔离浏览器无登录态，只验证登录门禁，不把登录后页面计为浏览器通过。多源列表与操作状态由组件和 helper 集成测试兜底。
+
+### Task 5: 处理本轮 CR 的投影与归一化完整性问题
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/hermes-model-config-real-smoke.test.ts`
+
+**Acceptance:**
+- `providers.custom` 与 `model.provider=custom` 同时缺少模型 ID 时，同一 endpoint 只投影一个待补全项；两个明确不同的 endpoint 不误合并。
+- 真实 Hermes smoke 明确断言新增模型不会创建或扩张 `lightvela.model_config.configured_models`。
+- legacy `custom_providers` 最后一条记录迁移后移除空键，不保留 `custom_providers: []`。
+
+- [x] 先补三条 CR 回归断言并确认待补全去重、空键清理用例 RED。
+- [x] 完成最小修复，让定向测试、真实 Hermes smoke 与项目质量检查 GREEN。
+
+**Task 5 Verification:**
+- RED：`model-config-client.test.ts` 新增断言稳定复现两条失败：同 endpoint 的双待补全 `custom` 未合并；legacy 迁移后残留 `custom_providers: []`。
+- GREEN：模型配置 client 34 passed；模型配置域 106 passed / 1 skipped。
+- 真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed，并明确断言连续 `add` 后既有 `configured_models` 数组保持不变。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+
+### Task 6: 处理 MR !3320 的配置事务与闲置 Provider 有效性问题
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+
+**Acceptance:**
+- `assign` 与 `removeFallback` 保存后语义校验失败时恢复操作前配置，不留下半成功状态。
+- 删除 Provider 的最后一个模型时，基于删除后的候选配置判断引用；无其他引用时删除 Provider，并在凭据未被复用时删除对应凭据。
+- 主模型和备用模型即使配置待修复也继续展示；仅由 `providers` 引入的闲置模型在明确模型目录不匹配或显式凭据无法解析时不投影。
+- 无 Key 自定义 Endpoint、`key_cmd`、本地环境凭据和 Hermes credential pool 均视为有效凭据来源；老 Hermes 缺少 auth helper 时读取不失败。
+
+- [x] 先补回滚、最后模型删除和闲置 Provider 有效性测试并确认 RED。
+- [x] 完成最小修复，让模型配置定向测试和真实 Hermes smoke GREEN。
+- [x] 完成类型、i18n 与差异检查，并记录验证结果。
+
+**Task 6 Verification:**
+- RED：新增用例稳定复现闲置 Provider 误投影、最后模型删除后 Provider/凭据残留，以及 `assign` / `removeFallback` 校验失败不回滚。
+- GREEN：client 定向测试 38 passed；模型配置域 7 个测试文件、113 passed；真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- 两轮独立复审后无剩余 P0/P1/P2；目录权威性按 Hermes discovery 语义判断，credential pool 同时兼容 canonical Provider key 与 legacy `custom:<name>`。
+
+### Task 7: 调整模型探测与选择控件布局
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+**Acceptance:**
+- “获取可用模型”按钮始终位于模型下拉框左侧，两者在同一行并保留 12px 间距。
+- 按钮在窄屏和常规屏分别为 112px、144px，保持在 100px 至 150px 范围内；模型下拉框以 `min-width: 0` 占满剩余空间。
+- 未探测和已探测状态共用同一布局；普通状态不显示搜索图标，探测中仍显示加载状态。
+- 不改变 Provider、探测、模型选择和添加模型的业务逻辑。
+
+- [x] 先补同行、宽度、剩余空间和图标断言并确认 RED。
+- [x] 合并未探测与已探测布局分支，完成最小实现并让定向测试 GREEN。
+
+**Task 7 Verification:**
+- 组件定向测试 21 passed；模型配置域 7 个测试文件、113 passed。
+- Chrome 实测：1280px 视口下按钮 144px、下拉框 610px；390px 视口下按钮 112px、下拉框 176px。两者均同行、间距 12px、无横向溢出且无搜索图标。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+
+### Task 8: 将模型探测与状态检测融合到表单控件
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- API Key 输入框尾部融合“获取可用模型”按钮；输入区保留凭据显隐按钮，复合控件共享外框与聚焦态。
+- 模型下拉框尾部融合“检测模型状态”按钮；检测结果继续通过现有项目 Dialog 展示。
+- 尾部按钮在窄屏和常规屏分别为 112px、144px，仅使用内部左分隔线，不形成独立圆角控件。
+- 获取到模型后默认选中首个模型，并将用途默认切换为“设为主模型”。
+- 底部仅保留左对齐的“添加模型”按钮；探测、检测、添加及错误反馈协议保持不变。
+
+- [x] 先补复合控件结构、入口位置、默认用途与结果弹窗测试并确认 RED。
+- [x] 完成复合输入框、复合下拉框和左对齐提交区，让组件测试 GREEN。
+- [x] 同步“检测模型状态”多语言文案，并恢复生成器带出的无关历史字典删除。
+
+**Task 8 Verification:**
+- 组件定向测试 21 passed；模型配置域 7 个测试文件、113 passed。
+- Chrome 实测：1280px 与 390px 视口下两个复合控件均共享 48px 外框，尾部按钮分别为 144px、112px，文字完整、无横向溢出；添加按钮与表单左边缘对齐，控制台无 error。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+
+### Task 9: 将模型获取结果迁移到顶部消息提示
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/lib/__tests__/toast.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 获取成功、空结果和获取失败使用站内顶部居中消息提示，默认 3 秒后消失，卡片底部不再展示获取结果。
+- 添加模型成功同样使用瞬时消息；添加与连通性检测的可操作错误仍保留在对应表单区域。
+- API Key 外链文案改为“点此获取 API Key”，尾部展示外链图标，继续在新窗口打开。
+
+- [x] 先补顶部消息、3 秒关闭、卡片无残留和 API Key 外链测试并确认 RED。
+- [x] 复用 `@/lib/toast` 完成最小实现，同步 i18n 后让定向测试 GREEN。
+- [x] 完成模型配置回归、类型、i18n、diff 与本地页面验证。
+
+**Task 9 Verification:**
+- RED：组件测试新增 7 个预期失败，分别命中顶部消息未调用、卡片仍保留结果文案和 API Key 外链文案未更新。
+- GREEN：组件与 toast 定向测试 25 passed；模型配置域 7 个文件、115 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+- Chrome 已登录本地页确认“点此获取 API Key”及外链图标可见；占位凭据只读探测结束后卡片底部无获取结果残留，输入已清空。
+
+### Task 10: 优化未获取到模型的错误文案
+
+**Acceptance:**
+- 空结果提示统一为“未获取到可用模型，请检查API Key是否正确或有效”。
+- 成功提示、命令执行失败提示和顶部消息交互保持不变。
+- 四语言生成字典同步更新且无无关资源漂移。
+
+- [x] 先更新组件与本地化断言并确认 RED。
+- [x] 替换业务文案并通过生成脚本同步字典。
+- [x] 完成模型配置定向回归、i18n 与 diff 检查。
+
+**Task 10 Verification:**
+- RED：2 条交互断言仍收到旧提示，1 条本地化断言找不到新文案 key。
+- GREEN：组件与印尼语定向测试 63 passed；模型配置域 7 个文件、115 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+
+### Task 4: 对齐 Agent 页面顶部标题样式
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/agent-model-config.id-ID.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 模型页复用 `AgentSectionHeader` 展示标题“模型”和描述“模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。”。
+- 加载、错误和正常状态均保留页面标题。
+- “已配置模型”后的信息图标通过项目 `ModelActionTooltip` 展示“选择一个主模型，并可设置多个备用模型。”，不使用浏览器原生 `title`，不再常驻展示说明，也不出现“配置将在新会话中生效。”。
+
+- [x] 先补页面标题、卡片文案和旧文案移除测试并确认 RED。
+- [x] 复用公共标题组件完成最小实现并同步 i18n，让定向测试 GREEN。
+- [x] 完成模型配置域回归、类型、i18n 与本地页面复验。
+
+**Task 4 Verification:**
+- RED：页面标题在加载、错误和正常状态缺失，两条新文案未进入多语言字典，共 5 个断言按预期失败。
+- GREEN：标题与印尼语定向测试 61 passed；模型配置域回归 108 passed / 1 skipped。
+- `tsc -p tsconfig.app.json --noEmit`、`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。
+- Chrome 已登录本地预览确认标题、描述、卡片短文案与四条存量模型正常展示；无新增 error，控制台仅保留既有动态目录 i18n warning。
+- 用户增量调整后，Tooltip 与新顶部描述定向测试再次经历 RED -> GREEN；Chrome 聚焦信息图标确认气泡挂载到 `BODY`、原生 `title` 为 null、控制台无 error。
 
 ---
 
@@ -3256,6 +3509,106 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `git diff --check`
 
 ---
+
+# 模型配置页 CR 问题修复 Implementation Plan
+
+**Status:** Task 11 MR 范围收敛与验证完成，等待用户验收；不自动提交或推送。
+
+**Goal:** 修复 MR !3181 评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性、Tooltip 被裁剪、印尼语文案为空和模型列表探测被表述为真实连接的问题。
+
+**Architecture:** 保持现有页面、Hermes debug/exec 通道和 Provider 产品配置边界不变。Hermes helper 在实例内原位修改 fallback 原始条目；前端只消费不含凭据的快照。模型列表优先采用实时探测，实时结果为空时仅以产品静态目录补充可选项；Tooltip 复用现有 Portal/fixed 浮层模式。
+
+**Scope:** 仅修改 `agent-model-config` 模块、该页面四语言资源、对应定向测试和本计划；不改 SDK、Provider 产品配置、后端接口、Hermes 命令行为或页面整体结构。
+
+### Task 1: 保留备用模型原始凭据字段
+
+- [x] 在 `model-config-client.test.ts` 先增加失败测试，覆盖追加、取消和 legacy 迁移时已有 fallback 的 `api_key`、`key_env`、`api_key_env` 与未知扩展字段保持不变。
+- [x] 修改 `hermes-model-config-command.ts`，让 fallback 增删直接基于实例内原始配置条目，只把脱敏后的模型视图返回前端。
+- [x] 运行客户端定向测试确认 GREEN，且命令、输出与前端响应不包含明文 Key。
+
+### Task 2: 连通性检测校验选中模型
+
+- [x] 在 `model-config-client.test.ts` 先增加失败测试，覆盖 Provider 返回其他模型但不含当前 `model_id` 时检测失败。
+- [x] 修改 Hermes helper，仅在探测结果包含选中模型 ID 时返回成功；空结果和不匹配结果返回就近错误。
+- [x] 运行客户端定向测试确认 GREEN，并保留现有加密凭据传输断言。
+
+### Task 3: 静态模型目录作为获取结果兜底
+
+- [x] 先增加失败测试，覆盖 MiniMax 类 Provider 实时探测为空或 Hermes 返回 `models: None` 时，使用 `catalogModels` 填充下拉并允许添加。
+- [x] 将面板模型选项统一为带 `id`、`name`、`source` 的结构；实时结果优先，只有实时结果为空且非自定义 Provider 时使用静态目录。
+- [x] 覆盖无实时结果且无静态目录时仍不可添加、自定义 Provider 不使用静态兜底，并运行面板定向测试确认 GREEN。
+
+### Task 4: 操作 Tooltip 脱离裁剪容器
+
+- [x] 在 `model-config-panel.test.tsx` 先增加失败测试，断言 Tooltip 渲染到 `document.body`，支持 hover/focus、鼠标进入气泡和文本选择。
+- [x] 将 `ModelActionTooltip` 改为 `createPortal` + `fixed` 定位，复用项目现有浮层定位模式；监听 resize 和 capture scroll 更新位置，保留短暂关闭缓冲。
+- [x] 运行面板定向测试确认 GREEN，并检查按钮可访问名称、焦点状态和禁用原因提示不回退到原生 `title`。
+
+### Task 5: 独立 CR 补充边界
+
+- [x] 将模型 route 身份对齐 Hermes `(provider, model, normalized_base_url)`，同 Provider/模型的不同 endpoint 可独立删除且保留各自凭据。
+- [x] 复用 Hermes fallback 链并按三元组去重，legacy 重复 route 不再写入 `fallback_providers`。
+- [x] 将连通性请求绑定 Provider 指纹与 revision，Provider 变化后忽略延迟响应。
+- [x] 解除两个 Dialog 的手工 description ID 覆盖，交由 Radix 自动关联并消除可访问性警告。
+
+### Task 6: 修复 FE-AI 复审问题
+
+- [x] 保留 Hermes `models: None` 的探测失败语义，仅在探测成功但模型列表为空时使用静态目录。
+- [x] 拆分原始 route 身份与 Hermes runtime deployment 判定，精确增删 fallback 并拒绝无效主备组合。
+- [x] 删除模型前检查 Provider、模型与 key env 的剩余引用，避免破坏兄弟 endpoint。
+- [x] 将新增凭据失败回滚收窄为本次 `.env` 写入，不清理操作前已有的凭据池或镜像状态。
+- [x] 补齐失败测试、真实 Hermes smoke、类型、i18n 与 diff 门禁后重新执行 FE-AI review。
+
+### Task 7: 修复最新评审的本地化与探测语义问题
+
+- [x] 先补模型配置页印尼语完整性测试，以及模型可用性检测成功文案测试并确认 RED。
+- [x] 补齐本页面新增的 35 条印尼语翻译，并将连接成功/失败文案收紧为模型列表可用性语义。
+- [x] 运行模型配置定向测试、类型检查、i18n 检查和 diff 门禁后重新执行 FE-AI review。
+
+### Task 8: 修复类型门禁与模型身份契约
+
+- [x] 建立真实执行 `tsconfig.app.json` 的无新增错误门禁，并接入 frontend `check` 命令，避免 solution-style `tsconfig.json` 导致类型检查空跑。
+- [x] 统一模型身份输入类型、先收窄 `probeSucceeded` 再写入快照，并清零模型配置模块源代码与测试代码的类型错误。
+- [x] 删除 `regionId === 5` 的失效地域推导，改为只透传明确的 region/Zone，并完成定向测试、类型基线、i18n 与 diff 验证。
+
+### Task 9: 修复 MiniMax 静态发现与模型检测
+
+- [x] 为 Provider 适配结果增加显式 `live | catalog` 模型发现策略，MiniMax 使用产品静态目录，其他预设和自定义 Provider 保持实时发现。
+- [x] 将模型发现与模型可用性检测解耦；MiniMax 仅在用户主动点击“模型检测”时发送最小模型请求，验证当前 Key、endpoint 与所选模型。
+- [x] 补齐 `models: None`、无效凭据、模型请求成功、其他 Provider 探测失败不回退目录等回归测试，并完成模型配置、类型、i18n 与 diff 门禁。
+
+### Task 10: 修复 frontend 质量脚本递归调用 pnpm
+
+- [x] 使用 CI Runtime 契约测试复现 `check` 与 `check:next` 递归调用 `pnpm typecheck` 的失败。
+- [x] 保留独立 `typecheck` 命令，将两个质量脚本改为直接执行 `typecheck-baseline.mjs`。
+- [x] 运行 CI Runtime 定向契约、frontend 质量检查、模型配置测试与 diff 门禁。
+
+### Task 11: 撤销模型配置 MR 的 CI 工作流改动
+
+- [x] 删除 `.ci/frontend.yml` 与 `.ci/frontend-preview.yml` 中本分支新增的 frontend 质量门禁步骤。
+- [x] 以 MR merge-base 为基准确认 `.ci/**` 变更归零，保留模型配置业务实现与本地质量命令。
+- [x] 重新运行模型配置测试、frontend 质量检查与 diff 门禁。
+
+## Verification
+
+- `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx`
+- `pnpm check`
+- `pnpm i18n:check`
+- `git diff --check`
+
+**Task 6 verification:** 7 个回归断言先按预期失败；模型配置相关 52 个测试通过、1 个环境测试跳过，真实 Hermes 源码 smoke 1/1 通过；`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。本地新进程 `http://127.0.0.1:5175/agents/models/` 返回 200。全仓测试另有 4 个未改动模块失败，随后一个 worker 持续满 CPU 无输出而终止，未作为本轮通过依据。
+
+**Task 7 verification:** 新增本地化资源与检测语义断言先出现 38 个预期失败；实现后模型配置模块 90 个测试通过、1 个真实 Hermes 环境测试跳过。`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过；英文待翻译为 0，印尼语待翻译由 213 条降至 178 条。本轮仅调整模型列表可用性文案与四语言资源，不改 Hermes 探测行为。
+
+**Task 8 verification:** 地域适配 2 个回归断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、94 个测试全部通过。真实类型门禁对空的根 `tsconfig.json` 和临时注入的 2 条诊断均按预期失败，最终 `pnpm check` 报告 276 条历史基线、0 条新增诊断。独立 CR 指出的 3 个 P1 与 2 个可立即处理的 P2 已修复；Task 11 已按 MR 范围要求撤销正式与预览流水线改动。实例 API 尚不提供 Zone，当前只移除失效推导并保留显式透传契约。
+
+**Task 9 verification:** Provider 策略、MiniMax 静态目录、Anthropic/OpenAI 最小模型请求、凭据拒绝和安全 HTTP transport 共 6 个关键断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，真实 Hermes 源码 smoke 1/1 通过。`pnpm check` 报告 276 条历史基线、0 条新增诊断；`pnpm i18n:check`、`git diff --check` 通过；本地 `/agents/models/` 编译并返回 200。
+
+**Task 10 verification:** CI Runtime 定向契约在修改前稳定失败，改为直接执行 `node scripts/typecheck-baseline.mjs` 后通过；完整 `.ci/runtime/check_ci_runtime.sh` 运行 454 个测试全部通过。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断，`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过。
+
+**Task 11 verification:** 以当前 MR merge-base `7a9e26c73230` 比较后 `.ci/**` 变更文件数为 0。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断；`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，`git diff --check` 通过。
+
+---
 # My creations show() reveal Implementation Plan
 
 **Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
@@ -3777,5 +4130,62 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
   Expected: i18n、类型与 diff 检查通过，最终仅包含计划、国际站 Changelog 测试、页面数据和英文截图。
 
 - [x] **Step 7: 展示 diff、验证证据、提交信息和 MR 配置，等待用户确认。**
+
+---
+
+# Agent 审批模式 CR 修复 Implementation Plan
+
+**Goal:** 修复 MR !3288 评审确认的恢复默认说明、未知枚举失败半径和关闭审批状态提示，并锁定 reset/save 保护。
+
+**Design:** `openspec/changes/2026-08-25-agent-approval-mode-cr-fixes-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-25-agent-approval-mode-cr-fixes-plan.md`
+
+## Tasks
+
+- [x] 未知 `approvals.mode` 仅降级审批字段，不阻塞整页读取。
+- [x] 安全组恢复弹窗明确 `关闭审批 → 智能审批`，现有 `off` 展示低强度风险提示。
+- [x] 补齐 unsupported reset 过滤与同步保存互斥测试，并用定向 mutation 验证测试有效。
+- [x] 完成 i18n、焦点测试、类型检查、双区域构建和 diff 门禁。
+- [x] 展示最终范围、提交信息和 MR 配置，等待用户确认。
+- [x] 将安全分组、审批模式和关闭审批弹窗正文改为「高风险操作」，完成测试、i18n 和静态门禁后追加到 MR !3309。
+
+---
+
+# 模型配置下拉框滚动隔离 Implementation Plan
+
+**Goal:** 展开模型配置表单中的下拉框时隔离左侧导航布局，避免右侧操作引起的页面滚动改变导航位置。
+
+## Tasks
+
+- [x] 为桌面端侧栏滚动隔离和下拉触发前坐标捕获补充回归测试。
+- [x] 在滚动锁期间固定侧栏到交互前坐标，并保持右侧内容位于原网格列；移动端布局不变。
+- [x] 用 Chrome 验证 Provider 与模型下拉展开后侧栏不再滚到负坐标，触发器和弹层横向位置、宽度不变。
+- [x] 完成模型配置专项测试、i18n、类型检查和 diff 门禁。
+
+**Verification:**
+- 模型配置域 7 个测试文件、115 passed；Agent 设置页侧栏回归 6 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- Chrome 本地预览验证：Provider 下拉展开后侧栏固定为 `top=84px`、导航 `top=161px`；模型下拉展开后侧栏固定为交互前捕获的 `top=40px`、导航 `top=117px`。右侧触发器和弹层保持原网格列与相同宽度。
+
+---
+
+# Agent 会话操作确认 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development. The repository remains single-agent unless the user explicitly authorizes subagents.
+
+**Goal:** 在高级设置「安全」分组增加「会话操作确认」，并让安全分组恢复到 LightVela 预置 `approvals.mode=off`、`approvals.destructive_slash_confirm=false`。
+
+**Design:** `openspec/changes/2026-08-25-session-operation-confirmation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-25-session-operation-confirmation-plan.md`
+
+## Tasks
+
+- [x] 扩展 typed settings、reader 与即时保存链路，接入 `approvals.destructive_slash_confirm`。
+- [x] 将安全分组 reset 改为 `config set` 写回 LightVela `off/false`，不得 unset 成 Hermes `smart/true`。
+- [x] 增加「会话操作确认」开关、风险确认、LightVela 恢复说明和四语言资源。
+- [x] 完成焦点测试、i18n、类型检查、双区域构建和 diff 门禁。
+- [x] 展示最终范围、验证证据、提交信息和 MR 配置，等待用户确认。
 
 ---

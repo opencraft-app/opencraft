@@ -419,7 +419,9 @@ export function getEnglishPackageFrontmatterValue(content: string | undefined, k
   const lineIndex = lines.findIndex((line) => keyPattern.test(line));
   if (lineIndex < 0) return undefined;
 
-  const match = lines[lineIndex].match(keyPattern);
+  const matchingLine = lines[lineIndex];
+  if (!matchingLine) return undefined;
+  const match = matchingLine.match(keyPattern);
   const rawValue = match?.[1]?.trim() ?? "";
   if ([">", ">-", ">+", "|", "|-", "|+"].includes(rawValue)) {
     const continuation: string[] = [];
@@ -439,7 +441,7 @@ function formatEnglishPackageSlug(slug: string): string {
     .replace(/[\/_-]+/g, " ")
     .split(/\s+/)
     .filter((part) => part.toLowerCase() !== "en")
-    .map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part)
+    .map((part) => part ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part)
     .join(" ");
 }
 
@@ -948,7 +950,8 @@ async function fetchAllExpertPackages(keyword: string, lang?: string): Promise<S
     }
   }));
 
-  return [...visiblePackages, ...fetchedMissingPackages.filter((pkg): pkg is SkillHubSkillSet => Boolean(pkg))]
+  const availableMissingPackages = fetchedMissingPackages.flatMap((pkg) => pkg ? [pkg] : []);
+  return [...visiblePackages, ...availableMissingPackages]
     .sort(sortByInternationalOrder);
 }
 

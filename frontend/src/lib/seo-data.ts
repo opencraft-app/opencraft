@@ -264,6 +264,8 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "微信通道接入指南：在 LightVela 生成二维码 → 手机微信扫码授权 → 在微信中与 Hermes 对话。所有通道中配置最简单的一种。",
     "/docs/configuration/channel-feishu":
       "飞书通道接入指南：扫码授权方式接入，适用于办公场景，支持富文本消息与群聊 @机器人。",
+    "/docs/configuration/channel-wecom":
+      "企业微信通道接入指南：在 LightVela 生成二维码 → 手机企业微信扫码授权 → 在企业微信中与 Hermes Agent 对话，支持文本、图片、文件、语音与主动消息。",
     "/docs/configuration/channel-qq":
       "QQ 通道接入指南：在 QQ 开放平台创建机器人、获取 AppID 与 AppSecret、填入 LightVela 完成接入，约 5–10 分钟。",
     "/docs/configuration/skill":
@@ -355,7 +357,6 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/auth/sign-in": "登录",
     "/auth/sign-up": "注册",
     "/auth/sign-up-code": "输入验证码",
-    "/auth/invite": "邀请码",
     "/auth/forgot-password": "找回密码",
     "/plans/select": "选择套餐",
     "/settings/account": "账号设置",
@@ -380,7 +381,6 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/auth/sign-in": "Sign In",
     "/auth/sign-up": "Sign Up",
     "/auth/sign-up-code": "Verify Code",
-    "/auth/invite": "Invite Code",
     "/auth/forgot-password": "Forgot Password",
     "/plans/select": "Select Plan",
     "/settings/account": "Account Settings",
@@ -450,8 +450,9 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration": "配置总览",
     "/docs/configuration/model": "配置模型",
     "/docs/configuration/channel-wechat": "微信",
-    "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/channel-qq": "QQ",
+    "/docs/configuration/channel-wecom": "企业微信",
+    "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/skill": "配置技能",
     "/docs/plans": "套餐管理",
     "/docs/announcements/public-beta": "LightVela 付费版本公告",

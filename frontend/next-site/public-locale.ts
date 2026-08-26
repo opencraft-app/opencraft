@@ -34,7 +34,9 @@ export const KO_KR_URL_LANG = 'ko-kr' satisfies PublicUrlLang;
 
 export const DEFAULT_PUBLIC_URL_LANG: PublicUrlLang = isGlobal ? EN_US_URL_LANG : ZH_CN_URL_LANG;
 export const DEFAULT_PUBLIC_SITE_LOCALE: PublicSiteLocale = isGlobal ? EN_US_LOCALE : ZH_CN_LOCALE;
-export const DEFAULT_PUBLIC_DOCS_LOCALE: PublicUrlLang = DEFAULT_PUBLIC_URL_LANG;
+export const DEFAULT_PUBLIC_DOCS_LOCALE: typeof EN_US_URL_LANG | typeof ZH_CN_URL_LANG = isGlobal
+  ? EN_US_URL_LANG
+  : ZH_CN_URL_LANG;
 
 export const DEFAULT_PUBLIC_ROUTE_LOCALE: PublicRouteLocale = {
   locale: DEFAULT_PUBLIC_SITE_LOCALE,

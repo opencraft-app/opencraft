@@ -713,6 +713,7 @@ metadata:
       remark: "",
       scene: "finance",
       skillCount: 1,
+      skillSlugs: [],
       createdAt: 0,
       updatedAt: 0,
     };
@@ -724,6 +725,7 @@ metadata:
       remark: "",
       scene: "tech",
       skillCount: 1,
+      skillSlugs: [],
       createdAt: 0,
       updatedAt: 0,
     };

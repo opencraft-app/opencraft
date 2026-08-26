@@ -432,6 +432,60 @@ func TestRetryShadowBindingUsesVerifiedSessionEmail(t *testing.T) {
 	}
 }
 
+func TestRegisterOrRetryInternalShadowBindingUsesVerifiedUserEmail(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	seedSvc := NewWithStore(store, Options{Now: fixedNow})
+	session, err := seedSvc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "github",
+		ProviderSubject: "github-internal-shadow-retry",
+		Email:           "verified-internal@example.com",
+		EmailVerified:   true,
+		Name:            "Internal Retry User",
+	})
+	if err != nil {
+		t.Fatalf("seed oauth user: %v", err)
+	}
+	store.mu.Lock()
+	user := store.usersByID[session.User.ID]
+	user.EmailVerified = true
+	store.usersByID[session.User.ID] = user
+	store.mu.Unlock()
+
+	shadowStore := shadowbinding.NewMemoryStore()
+	cloud := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
+		Uin:      450860000099,
+		OwnerUin: 450860000099,
+		AppID:    1374211199,
+	}}
+	billing := &oauthBillingClient{result: shadowbinding.BillingAccountResult{IsOpen: true}}
+	shadowSvc := shadowbinding.New(shadowStore, cloud, shadowbinding.Options{
+		Enabled:        true,
+		SiteKind:       shadowbinding.SiteKindIntl,
+		BillingAccount: billing,
+		RunAsync:       runShadowTaskInline,
+	})
+	svc := NewWithStore(store, Options{
+		Now:           fixedNow,
+		SiteKind:      shadowbinding.SiteKindIntl,
+		ShadowBinding: shadowSvc,
+	})
+
+	binding, err := svc.RegisterOrRetryInternalShadowBinding(context.Background(), session.User.ID)
+	if err != nil {
+		t.Fatalf("register or retry internal shadow binding: %v", err)
+	}
+	if binding.UserID != session.User.ID || binding.Status != shadowbinding.StatusPending {
+		t.Fatalf("binding=%+v, want immediate pending result", binding)
+	}
+	active, err := shadowStore.GetBindingByUserID(context.Background(), session.User.ID)
+	if err != nil || active.Status != shadowbinding.StatusActive {
+		t.Fatalf("stored binding=%+v, want async active: %v", active, err)
+	}
+	if cloud.lastRegister.Email != "verified-internal@example.com" {
+		t.Fatalf("registration email=%q, want verified user email", cloud.lastRegister.Email)
+	}
+}
+
 func TestOAuthSignInRejectsMissingProviderSubject(t *testing.T) {
 	t.Parallel()
 

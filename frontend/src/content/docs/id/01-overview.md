@@ -1,5 +1,11 @@
 # Apa Itu LightVela
 
+## Ringkasan
+
+**LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse, dan produk yang tersedia saat ini adalah Hermes Agent — sebuah AI Agent yang dibangun di atas model bahasa besar. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Agent Anda melalui aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. LightVela berencana masuk tahap public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura); masa aktif paket pengguna closed beta akan diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba paket Launch gratis selama 14 hari. Status terkini mengacu pada halaman langganan.**
+
+---
+
 > Hermes Agent berbasis cloud yang makin memahami Anda seiring waktu.
 
 > ℹ️ **Info beta publik dan penagihan**
@@ -50,7 +56,7 @@ Produk LightVela saat ini adalah **Hermes Agent**, AI Agent yang didukung large 
 
 * **Dukungan multi-model**: Hubungkan model besar arus utama dari Tiongkok, langganan Coding Plan penyedia model, atau endpoint yang kompatibel dengan OpenAI. Lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model)
 
-* **Akses multi-kanal**: Chat dengan Hermes Agent lewat Telegram, WhatsApp, Discord, Slack, dan WeChat
+* **Akses multi-kanal**: Chat dengan Hermes Agent lewat Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, dan Lark
 
 * **Ekstensi Skill**: Instal paket Skill dari [SkillHub](https://skillhub.tencent.com) untuk memperluas kemampuan Hermes Agent
 

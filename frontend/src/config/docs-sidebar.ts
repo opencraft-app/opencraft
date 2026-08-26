@@ -7,7 +7,7 @@
  * 区域差异：
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
- *   - 国内站（CN_SIDEBAR）：微信 / 飞书 / QQ
+ *   - 国内站（CN_SIDEBAR）：微信 / QQ / 企业微信 / 飞书
  *   - 国际站（GLOBAL_SIDEBAR）：Telegram / WhatsApp / Discord / Slack / WeChat / QQ / WeCom / Lark
  */
 
@@ -26,7 +26,7 @@ export interface DocItem {
   availableLocales?: Array<"zh" | "en">;
   /**
    * 是否作为二级目录项（视觉上缩进）。
-   * 用于在"配置通道"下挂具体通道（国内：微信/飞书/QQ；国际：Telegram/WhatsApp/...）。
+   * 用于在"配置通道"下挂具体通道（国内：微信/QQ/企业微信/飞书；国际：Telegram/WhatsApp/...）。
    */
   indent?: boolean;
   /**
@@ -73,11 +73,12 @@ const CN_SIDEBAR: DocGroup[] = [
     items: [
       { slug: "configuration", title: "配置总览" },
       { slug: "configuration/model", title: "配置模型" },
-      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂三个具体 channel 作为二级项
+      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂四个具体 channel 作为二级项
       { slug: null, title: "配置通道", defaultChildSlug: "configuration/channel-wechat" },
       { slug: "configuration/channel-wechat", title: "微信", indent: true },
-      { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", indent: true },
+      { slug: "configuration/channel-wecom", title: "企业微信", indent: true },
+      { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/skill", title: "配置技能" },
       { slug: "configuration/personality", title: "人设" },
       { slug: "configuration/memory", title: "记忆管理" },
@@ -85,6 +86,7 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/files", title: "云存储" },
       { slug: "configuration/agent-chat", title: "对话" },
       { slug: "configuration/diagnostics", title: "诊断中心" },
+      { slug: "configuration/advanced-settings", title: "高级设置" },
       { slug: "configuration/multiple-models", title: "模型切换" },
     ],
   },
@@ -182,6 +184,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/files", title: "云存储", titleEn: "Cloud Storage" },
       { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
       { slug: "configuration/diagnostics", title: "诊断中心", titleEn: "Diagnostics" },
+      { slug: "configuration/advanced-settings", title: "高级设置", titleEn: "Advanced Settings" },
       {
         slug: "configuration/multiple-models",
         title: "模型切换",
@@ -337,8 +340,9 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   configuration: "05-configuration.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
-  "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
+  "configuration/channel-wecom": "configuration/channel-wecom.md",
+  "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/skill": "configuration/skill.md",
   "configuration/personality": "configuration/personality.md",
   "configuration/memory": "configuration/memory.md",
@@ -346,6 +350,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/files": "configuration/files.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "configuration/diagnostics": "configuration/diagnostics.md",
+  "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   // 问题排查
   faq: "07-faq.md",
@@ -395,6 +400,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/files": "configuration/files.md",
   "configuration/automation": "configuration/automation.md",
   "configuration/diagnostics": "configuration/diagnostics.md",
+  "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",

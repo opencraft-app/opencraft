@@ -32,6 +32,9 @@ import type {
   AuthRepository,
   BotRepository,
   DashboardSnapshot,
+  FederationAuthorizationContext,
+  FederationAuthorizationInput,
+  FederationTicketResult,
   OIDCAuthorizationContext,
   OIDCAuthorizationInput,
   OIDCAuthorizationResult,
@@ -125,6 +128,24 @@ interface APIEnvelope<T> {
   message: string;
   data: T;
   request_id?: string;
+}
+
+interface FederationContextPayload {
+  client: {
+    id: string;
+    display_name: string;
+  };
+  redirect_uri: string;
+  state: string;
+  session: {
+    authenticated: boolean;
+    user?: User;
+  };
+}
+
+interface FederationTicketPayload {
+  redirect_url: string;
+  expires_at: string;
 }
 
 interface OIDCContextPayload {
@@ -1544,6 +1565,47 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
     await request<void>(baseUrl, `/auth/payment-methods/${encodeURIComponent(contractCode)}`, {
       method: "DELETE",
     });
+  },
+  async getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext> {
+    const query = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      state: input.state,
+    });
+    const payload = await request<FederationContextPayload>(
+      baseUrl,
+      `/auth/federation/context?${query.toString()}`,
+      { method: "GET" },
+    );
+    return {
+      clientId: payload.client.id,
+      clientDisplayName: payload.client.display_name,
+      redirectUri: payload.redirect_uri,
+      state: payload.state,
+      currentSession: payload.session.authenticated && payload.session.user ? {
+        user: {
+          id: payload.session.user.id,
+          name: payload.session.user.name,
+          email: payload.session.user.email,
+          phone: payload.session.user.phone,
+          avatarUrl: payload.session.user.avatarUrl,
+        },
+      } : null,
+    };
+  },
+  async issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult> {
+    const payload = await request<FederationTicketPayload>(baseUrl, "/auth/federation/tickets", {
+      method: "POST",
+      body: {
+        client_id: input.clientId,
+        redirect_uri: input.redirectUri,
+        state: input.state,
+      },
+    });
+    return {
+      redirectUrl: payload.redirect_url,
+      expiresAt: payload.expires_at,
+    };
   },
   async getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext> {
     const query = new URLSearchParams({

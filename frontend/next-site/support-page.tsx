@@ -473,13 +473,13 @@ export function SupportPage({
   const [description, setDescription] = useState('');
   const [contactInfo, setContactInfo] = useState('');
   // 用户画像（调研问卷，必填）——仅收集高信号字段，建议/反馈类使用
-  const [profileSource, setProfileSource] = useState('');
-  const [profileRole, setProfileRole] = useState('');
+  const [profileSource, setProfileSource] = useState<ProfileSource | ''>('');
+  const [profileRole, setProfileRole] = useState<ProfileRole | ''>('');
   const [profileAiGoal, setProfileAiGoal] = useState('');
-  const [profileFrequency, setProfileFrequency] = useState('');
-  const [profileIndustry, setProfileIndustry] = useState('');
+  const [profileFrequency, setProfileFrequency] = useState<ProfileFrequency | ''>('');
+  const [profileIndustry, setProfileIndustry] = useState<ProfileIndustry | ''>('');
   // Bug 类排障信息
-  const [bugFrequency, setBugFrequency] = useState('');
+  const [bugFrequency, setBugFrequency] = useState<BugFrequency | ''>('');
   const [bugExpected, setBugExpected] = useState('');
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [submitted, setSubmitted] = useState(false);
@@ -733,6 +733,7 @@ export function SupportPage({
     const newFiles: UploadedFile[] = [];
     for (let i = 0; i < selected.length; i++) {
       const f = selected[i];
+      if (!f) continue;
       if (f.size > MAX_FILE_SIZE) continue; // skip oversized
       newFiles.push({
         name: f.name,
@@ -927,7 +928,7 @@ export function SupportPage({
                           <Label className="text-xs text-[var(--text-tertiary)]">{t('您从哪里了解到 LightVela？')}</Label>
                           <select
                             value={profileSource}
-                            onChange={(e) => setProfileSource(e.target.value)}
+                            onChange={(e) => setProfileSource(e.target.value as ProfileSource | '')}
                             className={cn(
                               'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-[var(--text-primary)]',
                               errors.profileSource ? 'border-red-400' : 'border-[var(--border-strong)]',
@@ -944,7 +945,7 @@ export function SupportPage({
                           <Label className="text-xs text-[var(--text-tertiary)]">{t('您的角色是？')}</Label>
                           <select
                             value={profileRole}
-                            onChange={(e) => setProfileRole(e.target.value)}
+                            onChange={(e) => setProfileRole(e.target.value as ProfileRole | '')}
                             className={cn(
                               'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-[var(--text-primary)]',
                               errors.profileRole ? 'border-red-400' : 'border-[var(--border-strong)]',
@@ -963,7 +964,7 @@ export function SupportPage({
                           <Label className="text-xs text-[var(--text-tertiary)]">{t('您平时使用 LightVela 的频率？')}</Label>
                           <select
                             value={profileFrequency}
-                            onChange={(e) => setProfileFrequency(e.target.value)}
+                            onChange={(e) => setProfileFrequency(e.target.value as ProfileFrequency | '')}
                             className={cn(
                               'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-[var(--text-primary)]',
                               errors.profileFrequency ? 'border-red-400' : 'border-[var(--border-strong)]',
@@ -980,7 +981,7 @@ export function SupportPage({
                           <Label className="text-xs text-[var(--text-tertiary)]">{t('您所在的行业是？')}</Label>
                           <select
                             value={profileIndustry}
-                            onChange={(e) => setProfileIndustry(e.target.value)}
+                            onChange={(e) => setProfileIndustry(e.target.value as ProfileIndustry | '')}
                             className={cn(
                               'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-[var(--text-primary)]',
                               errors.profileIndustry ? 'border-red-400' : 'border-[var(--border-strong)]',

@@ -39,6 +39,12 @@ export interface OAuthStartOptions {
   wechatMode?: WeChatOAuthMode;
 }
 
+export interface FederationAuthorizationInput {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+}
+
 export interface OIDCAuthorizationInput {
   clientId: string;
   redirectUri: string;
@@ -58,6 +64,16 @@ export interface FederationSessionSummary {
     phone?: string;
     avatarUrl?: string;
   };
+}
+
+export interface FederationAuthorizationContext extends FederationAuthorizationInput {
+  clientDisplayName: string;
+  currentSession: FederationSessionSummary | null;
+}
+
+export interface FederationTicketResult {
+  redirectUrl: string;
+  expiresAt: string;
 }
 
 export interface OIDCAuthorizationContext extends OIDCAuthorizationInput {
@@ -193,6 +209,8 @@ export interface AuthRepository {
   createPaymentMethodSignOrder(languageCode: PaymentMethodLanguageCode): Promise<PaymentMethodSignOrder>;
   setDefaultPaymentMethod(contractCode: string): Promise<void>;
   deletePaymentMethod(contractCode: string): Promise<void>;
+  getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext>;
+  issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult>;
   getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext>;
   authorizeOIDC(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationResult>;
   prepareFederationSwitch(): Promise<void>;

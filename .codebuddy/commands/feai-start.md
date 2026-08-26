@@ -12,8 +12,8 @@
 
 | 参数 | 说明 |
 |---|---|
-| `--quick` | 请求 S 级快速修复。先做 S 级准入校验；不满足时自动升级并说明原因。保持 git / plan / 最小验证门禁；仍为 S 级时跳过 Figma、多 Agent、完整 proposal/spec，升级后按 M/L 级规则执行。 |
-| `--full` | 显式选择 L 级完整流程。启用完整 proposal/spec、关键门禁和 Leader 串行调度。 |
+| `--quick` | S 级快速修复。保留 git / plan / 最小验证门禁，跳过 Figma、多 Agent、完整 proposal/spec。 |
+| `--full` | L 级完整流程。优先启用完整 proposal/spec、关键门禁和多 Agent 建议。 |
 | `--yes` | 信任模式。减少低风险确认，但不跳过需求确认、工作区/分支/plan 状态决策点。 |
 
 ---
@@ -81,10 +81,7 @@ plan 状态处理：
 
 ### 阶段 4：需求澄清
 
-先按 `.workflow/rules/flow-cost.md` 完成需求路由，再选择澄清深度：
-
-- **S 级**：一次简短确认目标、局部范围和验收；不调用 brainstorming，不因为缺少完整 PRD、目标文件暂不明确或需要一次补充确认而升级。
-- **M/L 级**：调用 `brainstorming` skill，明确目标、成功标准、范围与非目标、约束、验证口径和英文 kebab-case slug。
+默认使用 `brainstorming` skill 明确：
 
 > ⚠️ **产物路径覆盖**：brainstorming skill v6+ 默认保存到 `docs/superpowers/specs/`，feai 工作流必须保存到 `openspec/`（proposal.md / spec.md），不使用 skill 默认路径。
 
@@ -95,21 +92,21 @@ plan 状态处理：
 - 验证口径
 - 英文 kebab-case slug
 
-`--quick` 是优先采用 S 级轻流程的显式提示；只有命中 M/L 的明确边界或风险条件时才升级，并说明原因。
+`--quick` 可简化为一次确认，但仍必须得到上述最小信息。
 
-S 级 plan 通常保留 1–3 条任务级 checkbox；RED/GREEN、读取文件、运行测试、提交等执行步骤写在任务正文中，不得各自展开为 checkbox。任务稍多时应优先合并，不因 checkbox 数量单独升级。
+S 级 plan 只允许 1–3 条任务级 checkbox；RED/GREEN、读取文件、运行测试、提交等执行步骤写在任务正文中，不得各自展开为 checkbox。一个小 bug 不得生成十几到几十条 pending 项。
 
 ### 阶段 5：规模与执行模式
 
-按 `.workflow/rules/flow-cost.md` 的唯一判定顺序，依据需求边界、业务风险和验收复杂度判定 S/M/L；实际影响文件只在定位、计划和验证阶段记录，不参与规模判定：
+按用户参数和实际影响范围判定 S/M/L：
 
 | 规模 | 默认产物 | 默认执行 |
 |---|---|---|
-| S | `plan.md` | 单 Agent，`/feai-review --quick`，`/feai-archive --light` |
+| S | `plan.md` | 单 Agent inline quick，`/feai-archive --light` |
 | M | `proposal.md` + `spec.md` + `plan.md` | 单 Agent 或轻量 Leader，最终 review 可 full |
-| L | `proposal.md` + `spec.md` + `plan.md` | Leader 调度，多 Agent 串行交接 |
+| L | `proposal.md` + `spec.md` + `plan.md` | 建议 Leader 调度，多 Agent 串行交接 |
 
-规模升级只使用 `flow-cost.md` 的升级条件。文件数量、普通需求描述长度、模型不确定或“看起来可能复杂”都不能单独改变流程级别；需要升级时必须记录对应的业务边界或风险触发项。
+规模升级条件：高风险、影响文件 > 5、连续失败 >= 2、用户显式要求完整流程。
 
 ### 阶段 6：分支与 metrics 归位
 
@@ -125,9 +122,13 @@ S 级 plan 通常保留 1–3 条任务级 checkbox；RED/GREEN、读取文件�
 
 ```bash
 feai workflow change-name --json
-feai workflow metrics merge --base <base> --change-name <change-name> --json
-feai workflow usage-context write --provider <provider> --change-name <change-name> --project-base <base> --json
+feai workflow metrics merge --project-base <projectRoot> --json
+feai workflow usage-context write --provider <provider> --project-base <projectRoot> --json
 ```
+
+`<projectRoot>` 必须是项目根目录绝对路径，不是 Git base 分支名；CLI 会校验其与仓库配置的真实项目根完全一致。
+
+`metrics merge` 与 `usage-context write` 缺省即用分支推断的 `change-name`（与归档端同源），**禁止手传完整分支名**；显式覆盖且与推断不一致时脚本输出 `changeNameWarning` 非阻断告警（归档仍用推断值，手传名会致用量审计读不到窗口）。`change-name --json` 仅用于核对。
 
 | 当前宿主 | provider |
 |---|---|
@@ -138,13 +139,13 @@ feai workflow usage-context write --provider <provider> --change-name <change-na
 
 每个需求都要为新的 change 重新确定 provider，但“CodeBuddy 存在三个 provider”不是询问理由。系统上下文已明确宿主时直接传 `--provider`，禁止再次弹选择框；确实无法判断时才询问一次。用户未明确选择暂不统计时，禁止设置 `USAGE_PROVIDER_SKIP=1`。项目默认和 session 环境变量不参与 provider 自动选择。
 
-未确认或写入非法 provider 时脚本会 `exit 1` 阻断。CLI 会自行计算 `.codebuddy/.cache/metrics/<change-name>/usage-context.json`，禁止把项目根目录作为 `--metrics-dir`。首次写入会初始化 `usage-context.window.start`，供归档阶段在没有 `timeline.log` 时仍能审计当前需求窗口。
+未确认或写入非法 provider 时脚本会 `exit 1` 阻断。CLI 会自行计算 `.codebuddy/.cache/metrics/<change-name>/usage-context.json`，禁止把项目根目录作为 `--metrics-dir`。首次写入会初始化 `usage-context.window.start`；已有 context 缺少 start 时仅允许从 `timeline.log` 恢复，否则保留现场并失败，不会用当前时间覆盖。
 
 命名漂移只做非阻断提示；业务正确性以 plan、代码和门禁为准。
 
 ### 阶段 7：条件能力分析
 
-- Figma URL 或明确要求按设计稿逐像素还原：派发 `figma-analyzer` sub-agent，主上下文只接收摘要和产物路径。已有页面的普通文案、样式、间距或小交互调整不触发 Figma。
+- Figma URL 或 UI 还原需求：派发 `figma-analyzer` sub-agent，主上下文只接收摘要和产物路径。
 - 只读调查 / 追问反证：按 `.workflow/rules/agent-dispatch.md` 生成 Investigation Brief，提供候选范围和成本检查点；证据不足时允许扩展。
 - 多 Agent 写入前：读取 `.workflow/rules/team-state.md`，声明文件归属和共享状态单写者。
 
@@ -189,9 +190,9 @@ feai workflow usage-context write --provider <provider> --change-name <change-na
 
 用户确认 plan 后：
 
-1. TDD / executing-plans 分批实现，每批 ≤ 3 个任务；CodeBuddy 阶段 runner 只执行 implementation，不自行进入 review。
+1. 按 `.workflow/rules/flow-cost.md` 选择 inline 或整阶段委托；使用 phase run 时先逐项确认 readiness，再给 `handoff write` 传 `--spec-ready`。每批 ≤ 3 个任务，TDD 与验证范围按风险决定。
 2. 实际方案偏离 plan 时，用 `feai workflow deviation add ... --apply --json` 记录 task/from/to/reason，不从聊天历史猜测。
-3. 每批完成后运行 `/feai-review`，通过后逐项标记任务并刷新 runtime summary。
+3. 每批 inline quick 通过后，运行 `feai workflow batch complete --tasks <ID,...> --evidence "<命令与结果>" --apply --json` 统一更新状态。M/L 最终批再运行一次独立只读 `/feai-review --final`；S 默认无需独立 review。
 4. 最后一批 review 通过后输出验收摘要，等待用户确认验收；确认前禁止自动 commit、push、MR/CR 或最终归档。
 5. 用户明确要求归档后运行 `/feai-archive`，归档产物与代码保持同一交付批次。
 6. 用户明确要求提交、push、MR、CR 后，再按 `AGENTS.md`、`.workflow/rules/global.md` 和团队 skills 执行。

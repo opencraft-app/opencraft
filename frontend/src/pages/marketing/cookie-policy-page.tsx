@@ -487,14 +487,14 @@ export function getCookiePolicyChrome(
   locale: PublicSiteLocaleCode | null,
 ): Pick<CookiePolicyCopy, "backHome" | "brand" | "title"> {
   if (locale === PUBLIC_SITE_LOCALES.ES) return esChrome;
-  const source = locale === PUBLIC_SITE_LOCALES.ID_ID ? id : isZhLocale(locale) ? zh : en;
+  const source = locale === PUBLIC_SITE_LOCALES.ID_ID ? id : isZhLocale(locale ?? undefined) ? zh : en;
   return { backHome: source.backHome, brand: source.brand, title: source.title };
 }
 
 export const CookiePolicyPage = () => {
   const localeOverride = useLocaleOverride();
   // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
-  const baseCopy = localeOverride === "id-ID" ? id : isZhLocale(localeOverride) ? zh : en;
+  const baseCopy = localeOverride === "id-ID" ? id : isZhLocale(localeOverride ?? undefined) ? zh : en;
   const copy = useZhHantDeep({ ...baseCopy, ...getCookiePolicyChrome(localeOverride) });
 
   return (

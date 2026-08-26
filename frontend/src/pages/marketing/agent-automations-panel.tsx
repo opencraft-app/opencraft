@@ -511,7 +511,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const [loadingRecentRuns, setLoadingRecentRuns] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
-  const [activeView, setActiveView] = useState<"created" | "recent">("created");
+  const [activeView, setActiveView] = useState<"created" | "ended" | "recent">("created");
   const [creating, setCreating] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
@@ -544,15 +544,23 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     () => confirmDeleteJob ? getDirectCronDependents(jobs, confirmDeleteJob.id) : [],
     [confirmDeleteJob, jobs],
   );
-  const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
+  const activeJobs = useMemo(
+    () => jobs.filter((job) => !isCronJobEnded(job)),
+    [jobs],
+  );
+  const endedJobs = useMemo(
+    () => jobs.filter(isCronJobEnded),
+    [jobs],
+  );
+  const displayedJobs = activeView === "ended" ? endedJobs : activeJobs;
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
-  const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
+  const jobLimitReached = activeJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getAutomationTemplates(t), [t]);
   // const installedScenarioIds = useMemo(() => new Set(
   //   SCENARIO_TASK_PACKS
-  //     .filter((pack) => visibleJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
+  //     .filter((pack) => activeJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
   //     .map((pack) => pack.id),
-  // ), [visibleJobs]);
+  // ), [activeJobs]);
 
   const refreshChannelStatus = useCallback(async () => {
     if (!botId) {
@@ -999,7 +1007,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         <ScenarioTaskGrid
           packs={SCENARIO_TASK_PACKS}
           installedScenarioIds={installedScenarioIds}
-          compact={visibleJobs.length > 0}
+          compact={activeJobs.length > 0}
           onRunOnce={openScenarioInstaller}
           onSchedule={openScenarioInstaller}
         />
@@ -1031,6 +1039,14 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           </button>
           <button
             type="button"
+            onClick={() => setActiveView("ended")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "ended" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
+            aria-pressed={activeView === "ended"}
+          >
+            {t("已结束任务")}
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveView("recent")}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "recent" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
             aria-pressed={activeView === "recent"}
@@ -1050,13 +1066,13 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         </button>
       </div>
 
-      <div className={(activeView === "created" && (loadingJobs || listError || visibleJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? "rounded-xl p-4" : ""} style={(activeView === "created" && (loadingJobs || listError || visibleJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? PANEL_CARD_STYLE : undefined}>
-        {activeView === "created" && loadingJobs ? (
+      <div className={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? "rounded-xl p-4" : ""} style={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? PANEL_CARD_STYLE : undefined}>
+        {activeView !== "recent" && loadingJobs ? (
           <div className="flex items-center justify-center py-8 text-sm text-black/50">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             {t("加载中…")}
           </div>
-        ) : activeView === "created" && listError ? (
+        ) : activeView !== "recent" && listError ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm">
             <AlertTriangle className="mb-2 h-6 w-6 text-[#B91C1C] opacity-80" />
             <p className="text-black/70">{t("加载自动任务失败")}</p>
@@ -1080,23 +1096,27 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             jobs={jobs}
             skillLoadState={installedSkillLoadState}
           />
-        ) : visibleJobs.length === 0 ? (
+        ) : displayedJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
             <Clock className="mb-2 h-6 w-6 opacity-50" />
-            <p>
-              {t("暂无自动任务，")}
-              <button
-                type="button"
-                onClick={() => requestCreate("template")}
-                className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
-              >
-                {t("参考模板添加")}
-              </button>
-            </p>
+            {activeView === "ended" ? (
+              <p>{t("暂无已结束任务")}</p>
+            ) : (
+              <p>
+                {t("暂无自动任务，")}
+                <button
+                  type="button"
+                  onClick={() => requestCreate("template")}
+                  className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
+                >
+                  {t("参考模板添加")}
+                </button>
+              </p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {[...visibleJobs]
+            {[...displayedJobs]
               .sort((a, b) => {
                 // 最新创建在前；缺 created_at 的丢到末尾
                 const ta = a.created_at ? Date.parse(a.created_at) : 0;
@@ -1145,6 +1165,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
               params: { bot_id: botId ?? "" },
             });
             setCreating(false);
+            setActiveView("created");
             await refreshAll();
           }}
           onError={showError}
@@ -1209,6 +1230,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
               params: { bot_id: botId ?? "" },
             });
             setCreatingFromTemplate(null);
+            setActiveView("created");
             await refreshAll();
           }}
           onError={showError}
@@ -1501,9 +1523,15 @@ function CronJobCard({
 }) {
   const t = useT();
   const { i18n } = useTranslation();
-  const terminal = !isGlobal && isCronJobTerminalState(job);
+  const terminal = isCronJobEnded(job);
   const paused = isCronJobPaused(job);
-  const expired = isCronJobExpired(job);
+  const running = isCronJobRunning(job);
+  const disabled = job.state.trim().toLowerCase() === "disabled";
+  const endedLabel = terminal ? getCronJobEndedLabel(job, t) : null;
+  const expired = !running && !terminal && isCronJobExpired(job);
+  const expiredLabel = expired
+    ? (isCronJobExecutionFailed(job) ? t("执行失败") : t("已执行"))
+    : null;
   const effectiveStatus = getEffectiveWindowStatus(job.effective_window);
   const hasEffectiveWindow = effectiveStatus !== "always";
   const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
@@ -1522,19 +1550,34 @@ function CronJobCard({
             {fullName}
           </span>
         </div>
-        {(expired || paused || effectiveStatus === "ended") && (
+        {(running || endedLabel || expiredLabel || paused || disabled || effectiveStatus === "ended") && (
           <div className="flex shrink-0 items-center gap-1">
+            {running && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {t("执行中")}
+              </span>
+            )}
             {effectiveStatus === "ended" && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("已过生效期")}
               </span>
             )}
-            {expired && (
+            {expiredLabel && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
-                {t("已执行")}
+                {expiredLabel}
               </span>
             )}
-            {paused && (
+            {endedLabel && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {endedLabel}
+              </span>
+            )}
+            {disabled && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {t("已停用")}
+              </span>
+            )}
+            {paused && !disabled && (
               <span className="rounded-full bg-[#FFF1D6] px-2 py-0.5 text-xs text-[#9A5A00]">
                 {t("已暂停")}
               </span>
@@ -1548,9 +1591,13 @@ function CronJobCard({
       {job.context_from?.length === 1 && (
         <p className="mt-2 truncate text-xs text-black/45">
           {upstream
-            ? t("来自：{{name}}", { name: upstream.name })
+            ? isGlobal
+              ? t("来自：{{name}}", { name: upstream.name })
+              : t("上游任务：{{name}}", { name: upstream.name })
             : upstreamMissing
-              ? t("来自：上游任务已不可用")
+              ? isGlobal
+                ? t("来自：上游任务已不可用")
+                : t("上游任务：已不可用")
               : null}
           {upstream && isCronJobPaused(upstream) ? t("（已暂停）") : ""}
         </p>
@@ -1633,14 +1680,41 @@ function CronActionButton({
 }
 
 function isCronJobPaused(job: CronJob): boolean {
-  if (isGlobal) return !job.enabled || job.state === "paused";
-  return !isCronJobTerminalState(job)
+  return !isCronJobEnded(job)
     && (!job.enabled || job.state.trim().toLowerCase() === "paused");
 }
 
+export function isCronJobRunning(job: CronJob): boolean {
+  return job.execution_status?.trim().toLowerCase() === "running";
+}
+
 function isCronJobTerminalState(job: CronJob): boolean {
-  return ["completed", "disabled", "done", "expired", "cancelled", "canceled"]
+  return ["completed", "error", "done", "expired", "cancelled", "canceled"]
     .includes(job.state.trim().toLowerCase());
+}
+
+function isCronJobEnded(job: CronJob): boolean {
+  return isCronJobTerminalState(job)
+    || (!isCronJobRunning(job) && isCronJobExpiredBeyondGrace(job));
+}
+
+function isCronJobExecutionFailed(job: CronJob): boolean {
+  const state = job.state.trim().toLowerCase();
+  const executionStatus = job.execution_status?.trim().toLowerCase();
+  return state === "error"
+    || executionStatus === "failed"
+    || executionStatus === "failure"
+    || executionStatus === "error";
+}
+
+function getCronJobEndedLabel(job: CronJob, t: ReturnType<typeof useT>): string {
+  const state = job.state.trim().toLowerCase();
+  if (isCronJobExecutionFailed(job)) return t("执行失败");
+  if (state === "expired" || (!isCronJobTerminalState(job) && isCronJobExpiredBeyondGrace(job))) {
+    return t("已过期");
+  }
+  if (state === "cancelled" || state === "canceled") return t("已取消");
+  return t("已完成");
 }
 
 function isOnceCronJob(job: CronJob): boolean {
@@ -4398,11 +4472,15 @@ function IntervalPicker({
 }
 
 function OncePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT();
+
   return (
     <input
       type="datetime-local"
+      step={60}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      aria-label={t("执行时间")}
       style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
       className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
     />

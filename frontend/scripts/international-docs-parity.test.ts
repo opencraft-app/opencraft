@@ -10,7 +10,7 @@ import * as DocsLayoutModule from "../next-site/docs-layout";
 import * as DocsPageModule from "../next-site/docs-page";
 import { DOCS_ROUTE_SLUGS } from "../next-site/docs-route-manifest";
 import { DOCS_STATIC_ROUTE_SLUGS } from "../next-site/docs-static-route-manifest";
-import * as DocsRouteModule from "../src/app/(site)/[lang]/docs/[[...slug]]/page.next";
+import * as DocsRouteModule from "../src/app/(site)/[lang]/docs/[[...slug]]/page.intl";
 import * as SyncDocsModule from "./sync-fumadocs-content.mjs";
 
 const ACTIVE_SHARED_FILES = [
@@ -228,28 +228,28 @@ describe("international docs publication inventory", () => {
   describe("Spanish docs fallback publication", () => {
     const esRoot = join(generatedDocsRoot, "es");
 
-    it("publishes the same 61 routes as international English without exposing hidden locales", () => {
+    it("publishes the same 62 routes as international English without exposing hidden locales", () => {
       expect(docsRouteSlugs.es).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs.es).toHaveLength(61);
+      expect(docsRouteSlugs.es).toHaveLength(62);
       expect(docsRouteSlugs.es).toContainEqual([]);
       expect(Object.keys(docsRouteSlugs)).not.toContain("ja-jp");
       expect(Object.keys(docsRouteSlugs)).not.toContain("ko-kr");
     });
 
     it("keeps all existing locale route inventories unchanged", () => {
-      expect(docsRouteSlugs["en-us"]).toHaveLength(61);
-      expect(docsRouteSlugs["zh-cn"]).toHaveLength(40);
-      expect(docsRouteSlugs["zh-sg"]).toHaveLength(61);
-      expect(docsRouteSlugs["zh-hant"]).toHaveLength(61);
-      expect(docsRouteSlugs["id-id"]).toHaveLength(59);
+      expect(docsRouteSlugs["en-us"]).toHaveLength(62);
+      expect(docsRouteSlugs["zh-cn"]).toHaveLength(42);
+      expect(docsRouteSlugs["zh-sg"]).toHaveLength(62);
+      expect(docsRouteSlugs["zh-hant"]).toHaveLength(62);
+      expect(docsRouteSlugs["id-id"]).toHaveLength(60);
     });
 
-    it("generates 60 Spanish metadata wrappers from English or global sources without Spanish body files", () => {
+    it("generates 61 Spanish metadata wrappers from English or global sources without Spanish body files", () => {
       expect(existsSync(join(docsContentRoot, "es"))).toBe(false);
       expect(existsSync(esRoot)).toBe(true);
 
       const generatedDocs = walkFiles(esRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(60);
+      expect(generatedDocs).toHaveLength(61);
 
       for (const path of generatedDocs) {
         const content = readFileSync(path, "utf8");
@@ -408,13 +408,12 @@ describe("international docs publication inventory", () => {
       if (!docsRouteApi.docsRouteLocalesForRegion || !docsRouteApi.publicLocaleForDocsRoute) return;
 
       expect(docsRouteApi.docsRouteLocalesForRegion("global")).toEqual([
-        "en-us",
         "zh-sg",
         "zh-hant",
         "id-id",
         "es",
       ]);
-      expect(docsRouteApi.docsRouteLocalesForRegion("cn")).toEqual(["zh-cn"]);
+      expect(docsRouteApi.docsRouteLocalesForRegion("cn")).toEqual([]);
       expect(docsRouteApi.publicLocaleForDocsRoute("es")).toBe("es");
       expect(docsRouteApi.docsRouteLocalesForRegion("global")).not.toContain("ja-jp");
       expect(docsRouteApi.docsRouteLocalesForRegion("global")).not.toContain("ko-kr");

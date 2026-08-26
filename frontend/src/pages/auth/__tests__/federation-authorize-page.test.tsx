@@ -14,6 +14,8 @@ vi.mock("@/observability/posthog", () => ({
 
 const authorizeOIDC = vi.fn();
 const getOIDCAuthorizationContext = vi.fn();
+const getFederationAuthorizationContext = vi.fn();
+const issueFederationTicket = vi.fn();
 const navigate = vi.fn();
 const prepareFederationSwitch = vi.fn();
 const cancelFederationSwitch = vi.fn();
@@ -37,8 +39,10 @@ vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     auth: {
       getOIDCAuthorizationContext,
+      getFederationAuthorizationContext,
       getOAuthStartUrl: (provider: string) => `https://lightclaw.tech/auth/oauth/${provider}/start`,
       authorizeOIDC,
+      issueFederationTicket,
       prepareFederationSwitch,
       cancelFederationSwitch,
     },
@@ -80,6 +84,8 @@ describe("FederationAuthorizePage", () => {
       redirectUrl: `${OIDC_REDIRECT_URI}?code=server-code&state=state-1`,
       expiresAt: "2026-08-21T10:00:05Z",
     });
+    getFederationAuthorizationContext.mockReset();
+    issueFederationTicket.mockReset();
     navigate.mockReset();
     prepareFederationSwitch.mockReset().mockResolvedValue(undefined);
     cancelFederationSwitch.mockReset().mockResolvedValue(undefined);
@@ -92,6 +98,57 @@ describe("FederationAuthorizePage", () => {
 
     expect(await screen.findByRole("dialog", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "微信账号登录" })).toBeInTheDocument();
+  });
+
+  it("Federation 三参数请求使用 Federation context 和 ticket 流程", async () => {
+    const federationRedirectUri = "https://probe-dsh.lightvela.site/auth/lightvela/callback";
+    window.history.replaceState(
+      {},
+      "",
+      `/auth/federation/authorize?client_id=personal-site&redirect_uri=${encodeURIComponent(federationRedirectUri)}&state=federation-state`,
+    );
+    sessionState = {
+      authReady: true,
+      session: {
+        stage: "authenticated",
+        user: { id: "usr_123", name: "Ada" },
+      },
+    };
+    getFederationAuthorizationContext.mockResolvedValue({
+      clientId: "personal-site",
+      clientDisplayName: "Personal Site",
+      redirectUri: federationRedirectUri,
+      state: "federation-state",
+      currentSession: { user: sessionState.session.user },
+    });
+    issueFederationTicket.mockResolvedValue({
+      redirectUrl: `${federationRedirectUri}?ticket=server-ticket&state=federation-state`,
+      expiresAt: "2026-08-25T10:00:05Z",
+    });
+
+    render(<FederationAuthorizePage navigate={navigate} />);
+
+    expect(await screen.findByRole("dialog", { name: "确认授权登录" })).toBeInTheDocument();
+    expect(getFederationAuthorizationContext).toHaveBeenCalledWith({
+      clientId: "personal-site",
+      redirectUri: federationRedirectUri,
+      state: "federation-state",
+    });
+    expect(getOIDCAuthorizationContext).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+
+    await waitFor(() => {
+      expect(issueFederationTicket).toHaveBeenCalledWith({
+        clientId: "personal-site",
+        redirectUri: federationRedirectUri,
+        state: "federation-state",
+      });
+      expect(authorizeOIDC).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(
+        `${federationRedirectUri}?ticket=server-ticket&state=federation-state`,
+      );
+    });
   });
 
   it("已登录时展示当前账号并只使用服务端签发的跳转地址", async () => {
@@ -203,7 +260,7 @@ describe("FederationAuthorizePage", () => {
         `${OIDC_REDIRECT_URI}?error=access_denied&state=state-1`,
       );
     });
-    expect(cancelFederationSwitch.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
+    expect(cancelFederationSwitch.mock.invocationCallOrder[0]!).toBeLessThan(navigate.mock.invocationCallOrder[0]!);
   });
 
   it("取消切换接口失败时仍返回来源网站", async () => {

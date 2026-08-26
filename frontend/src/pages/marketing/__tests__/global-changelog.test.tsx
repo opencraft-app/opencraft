@@ -63,6 +63,20 @@ describe("global changelog skill package entry", () => {
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
     expect(
+      screen.getByRole("heading", { name: "LightVela 新增 Hermes Agent 高级设置" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "自定义 Hermes Agent 管理长期记忆、用户画像和长对话上下文的方式，并灵活调整压缩设置。",
+      ),
+    ).toBeInTheDocument();
+    const zhAdvancedSettingsImage = screen.getByAltText("LightVela 新增 Hermes Agent 高级设置");
+    expect(zhAdvancedSettingsImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
+    );
+    expect(zhAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1059" });
+    expect(
       screen.getByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
     ).toBeInTheDocument();
     expect(
@@ -73,9 +87,9 @@ describe("global changelog skill package entry", () => {
     const zhPersonaImage = screen.getByAltText("LightVela 支持上传自定义人设文件");
     expect(zhPersonaImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-zh.png"),
     );
-    expect(zhPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
+    expect(zhPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1282 / 644" });
     expect(screen.getByRole("heading", { name: "自动任务支持关联上游任务" })).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -93,8 +107,9 @@ describe("global changelog skill package entry", () => {
     expect(screen.getByText("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。")).toBeInTheDocument();
     expect(screen.getByAltText("自动任务支持关联上游任务")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.png"),
     );
+    expect(screen.getByAltText("自动任务支持关联上游任务").parentElement).toHaveStyle({ aspectRatio: "718 / 234" });
     expect(screen.getByAltText("技能页面支持批量安装与来源查看")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
@@ -141,8 +156,19 @@ describe("global changelog skill package entry", () => {
       ),
     ).toBeInTheDocument();
     expect(within(augustSection!).getAllByRole("heading")[0]).toHaveTextContent(
-      "LightVela Now Supports Custom Persona File Uploads",
+      "LightVela Adds Advanced Settings for Hermes Agent",
     );
+    expect(
+      screen.getByText(
+        "Customize how Hermes Agent manages long-term memory, user profiles, and context during long conversations with flexible compression settings.",
+      ),
+    ).toBeInTheDocument();
+    const enAdvancedSettingsImage = screen.getByAltText("LightVela Adds Advanced Settings for Hermes Agent");
+    expect(enAdvancedSettingsImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-en.png"),
+    );
+    expect(enAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1055 / 1071" });
     const enPersonaImage = screen.getByAltText("LightVela Now Supports Custom Persona File Uploads");
     expect(enPersonaImage).toHaveAttribute(
       "src",
@@ -196,6 +222,13 @@ describe("global changelog skill package entry", () => {
     );
 
     expect(
+      screen.getByRole("heading", { name: "LightVela 新增 Hermes Agent 高級設置" }),
+    ).toBeInTheDocument();
+    expect(screen.getByAltText("LightVela 新增 Hermes Agent 高級設置")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
+    );
+    expect(
       screen.getByRole("heading", { name: "LightVela 支持上傳自定義人設文件" }),
     ).toBeInTheDocument();
     expect(
@@ -205,9 +238,19 @@ describe("global changelog skill package entry", () => {
     ).toBeInTheDocument();
     expect(screen.getByAltText("LightVela 支持上傳自定義人設文件")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-zh.png"),
     );
+    expect(screen.getByAltText("LightVela 支持上傳自定義人設文件").parentElement).toHaveStyle({
+      aspectRatio: "1282 / 644",
+    });
     expect(screen.getByRole("heading", { name: "自動任務支持關聯上游任務" })).toBeInTheDocument();
+    expect(screen.getByAltText("自動任務支持關聯上游任務")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.png"),
+    );
+    expect(screen.getByAltText("自動任務支持關聯上游任務").parentElement).toHaveStyle({
+      aspectRatio: "718 / 234",
+    });
     expect(screen.getByRole("heading", { name: "技能頁面支持批量安裝與來源查看" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "自動任務模板" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 機器人" })).toBeInTheDocument();
@@ -238,6 +281,18 @@ describe("global changelog skill package entry", () => {
       </MemoryRouter>,
     );
 
+    expect(
+      screen.getByRole("heading", { name: "LightVela Menambahkan Pengaturan Lanjutan untuk Hermes Agent" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Sesuaikan cara Hermes Agent mengelola memori jangka panjang, profil pengguna, dan konteks selama percakapan panjang dengan pengaturan kompresi yang fleksibel.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByAltText("LightVela Menambahkan Pengaturan Lanjutan untuk Hermes Agent")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-en.png"),
+    );
     expect(
       screen.getByRole("heading", { name: "LightVela kini mendukung unggahan file persona kustom" }),
     ).toBeInTheDocument();

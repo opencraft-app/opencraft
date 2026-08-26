@@ -24,9 +24,11 @@ const AGENT_SECTION_PGID: Record<AgentSectionId, DatongPageId> = {
   chat: DATONG_PAGE_IDS.AGENT_CHAT,
   workbench: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   achievement: DATONG_PAGE_IDS.AGENT_ACHIEVEMENT,
-  // 以下两项方案文档中作为兜底 pgid 归到 workbench，避免上报到未定义的 pgid。
+  // 以下页面方案文档中尚无独立 pgid，统一归到 workbench，避免上报到未定义的 pgid。
   browser: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   terminal: DATONG_PAGE_IDS.AGENT_WORKBENCH,
+  website: DATONG_PAGE_IDS.AGENT_WORKBENCH,
+  settings: DATONG_PAGE_IDS.AGENT_WORKBENCH,
 };
 
 /** 顶级路径前缀 → pgid，命中后立即返回。 */
@@ -76,7 +78,8 @@ export function resolveDatongPageId(pathname: string, search = ""): DatongPageId
     return DATONG_PAGE_IDS.AGENTS_HOME;
   }
   if (normalized.startsWith(`${AGENTS_HOME_PATH}/`)) {
-    const slug = normalized.slice(AGENTS_HOME_PATH.length + 1).split("/", 1)[0];
+    const [slug] = normalized.slice(AGENTS_HOME_PATH.length + 1).split("/", 1);
+    if (!slug) return DATONG_PAGE_IDS.AGENTS_HOME;
     const sectionId = AGENT_SECTION_ID_BY_SLUG[slug];
     if (sectionId) return AGENT_SECTION_PGID[sectionId];
     return DATONG_PAGE_IDS.AGENTS_HOME;

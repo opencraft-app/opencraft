@@ -5,6 +5,7 @@ export type AgentSettingsSectionId =
   | "buddy"
   | "automations"
   | "diagnostics"
+  | "settings"
   | "memory"
   | "achievement"
   | "chat"
@@ -55,6 +56,7 @@ export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   buddy: `${AGENTS_HOME_PATH}/persona`,
   automations: `${AGENTS_HOME_PATH}/automations`,
   diagnostics: `${AGENTS_HOME_PATH}/diagnostics`,
+  settings: `${AGENTS_HOME_PATH}/settings`,
   memory: `${AGENTS_HOME_PATH}/memory`,
   achievement: `${AGENTS_HOME_PATH}/achievements`,
   files: `${AGENTS_HOME_PATH}/files`,
@@ -73,6 +75,7 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
   persona: "buddy",
   automations: "automations",
   diagnostics: "diagnostics",
+  settings: "settings",
   memory: "memory",
   achievements: "achievement",
   workbench: "workbench",
@@ -105,5 +108,5 @@ export const getAgentSectionHref = (pathname: string, params: URLSearchParams): 
   return `${pathname}${search ? `?${search}` : ""}`;
 };
 
-/** 我的作品页路由（避免魔法字符串，统一引用） */
+/** 我的工作台页路由（避免魔法字符串，统一引用） */
 export const WEBSITES_PATH = "/agents/websites/";

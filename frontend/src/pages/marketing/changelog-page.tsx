@@ -48,7 +48,7 @@ type ChangelogEntry = {
   title: string;
   desc?: string;
   /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "none";
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -61,7 +61,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -95,7 +95,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         ? "/assets/changelog/lightvela-skills-bulk-install-global-zh.png"
         : "/assets/changelog/lightvela-skills-bulk-install-global-en.png"
       : variant === "automationUpstream"
-      ? "/assets/changelog/lightvela-automation-upstream-task.png"
+      ? isGlobal && useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-automation-upstream-task-global-zh.png"
+        : "/assets/changelog/lightvela-automation-upstream-task.png"
       : variant === "automationTemplates"
       ? useGlobalChineseAsset
         ? "/assets/changelog/lightvela-automation-templates-global-zh.png"
@@ -112,13 +114,21 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
           ? "/assets/changelog/lightvela-diagnostics-global-zh.webp"
           : "/assets/changelog/lightvela-diagnostics-global-en.webp"
         : "/assets/changelog/lightvela-diagnostics-domestic-zh.webp"
+      : variant === "advancedSettings"
+      ? isGlobal
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-advanced-settings-cn.png"
+          : "/assets/changelog/lightvela-advanced-settings-en.png"
+        : "/assets/changelog/lightvela-advanced-settings-cn.png"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "dingtalk"
       ? "/assets/changelog/lightvela-dingtalk-channel.png"
       : variant === "personaUpload"
       ? isGlobal
-        ? "/assets/changelog/lightvela-persona-upload-global-en.png"
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-persona-upload-global-zh.png"
+          : "/assets/changelog/lightvela-persona-upload-global-en.png"
         : "/assets/changelog/lightvela-persona-upload.png"
       : variant === "chat"
       ? useGlobalAssets
@@ -170,6 +180,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("支持繁体中文")
       : variant === "diagnosticsCenter"
       ? t("诊断中心上线，让 Agent 排查更简单")
+      : variant === "advancedSettings"
+      ? t("LightVela 新增 Hermes Agent 高级设置")
       : variant === "achievements"
       ? t("LightVela 支持成就模块")
       : variant === "wecom"
@@ -209,7 +221,7 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "skillsBulkInstall"
       ? useGlobalChineseAsset ? "1284 / 806" : "1270 / 805"
       : variant === "automationUpstream"
-      ? "816 / 356"
+      ? isGlobal && useGlobalChineseAsset ? "718 / 234" : "816 / 356"
       : variant === "automationTemplates"
       ? useGlobalChineseAsset ? "1629 / 1090" : "1657 / 1117"
       : variant === "qqGroupMentions"
@@ -220,12 +232,18 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? isGlobal
         ? useGlobalChineseAsset ? "1281 / 615" : "1283 / 638"
         : "1454 / 1045"
+      : variant === "advancedSettings"
+      ? isGlobal
+        ? useGlobalChineseAsset ? "1043 / 1059" : "1055 / 1071"
+        : "1043 / 1059"
       : variant === "wecom"
       ? "2160 / 844"
       : variant === "dingtalk"
       ? "816 / 356"
       : variant === "personaUpload"
-      ? "1410 / 642"
+      ? isGlobal
+        ? useGlobalChineseAsset ? "1282 / 644" : "1410 / 642"
+        : "1410 / 642"
       : variant === "chat"
       ? useGlobalAssets ? "1677 / 938" : "1742 / 903"
       : variant === "memory"
@@ -285,6 +303,12 @@ function ChangelogContent() {
             month: t("2026 年 8 月"),
             entries: [
               {
+                id: "advanced-settings",
+                title: t("LightVela 新增 Hermes Agent 高级设置"),
+                desc: t("自定义 Hermes Agent 管理长期记忆、用户画像和长对话上下文的方式，并灵活调整压缩设置。"),
+                visual: "advancedSettings" as const,
+              },
+              {
                 id: "persona-file-upload",
                 title: t("LightVela 支持上传自定义人设文件"),
                 desc: t("上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。"),
@@ -322,6 +346,12 @@ function ChangelogContent() {
             id: "2026-08",
             month: t("2026 年 8 月"),
             entries: [
+              {
+                id: "advanced-settings",
+                title: t("LightVela 新增 Hermes Agent 高级设置"),
+                desc: t("自定义 Hermes Agent 管理长期记忆、用户画像和长对话上下文的方式，并灵活调整压缩设置。"),
+                visual: "advancedSettings" as const,
+              },
               {
                 id: "persona-file-upload",
                 title: t("LightVela 支持上传自定义人设文件"),

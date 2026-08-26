@@ -21,12 +21,7 @@ import { parseLocaleCode } from '@/i18n/locales.config';
 import { renderNextLanguageSwitcher } from './language-switcher';
 import {
   EN_US_LOCALE,
-  ES_LOCALE,
-  ID_ID_LOCALE,
-  JA_JP_LOCALE,
-  KO_KR_LOCALE,
   ZH_CN_LOCALE,
-  ZH_HANT_LOCALE,
   ZH_SG_LOCALE,
 } from './public-locale';
 
@@ -36,42 +31,42 @@ const secondaryButtonClass: Record<HeaderAppearance, string> = {
 };
 
 const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: string; login: string }> = {
-  [EN_US_LOCALE]: {
+  'en-US': {
     createNow: 'Create Now',
     freeTrial: 'Free trial',
     login: 'Sign In',
   },
-  [ZH_CN_LOCALE]: {
+  'zh-CN': {
     createNow: '立即创建',
     freeTrial: '免费试用',
     login: '登录',
   },
-  [ZH_SG_LOCALE]: {
+  'zh-SG': {
     createNow: '立即创建',
     freeTrial: '免费试用',
     login: '登录',
   },
-  [ZH_HANT_LOCALE]: {
+  'zh-Hant': {
     createNow: '立即創建',
     freeTrial: '免費試用',
     login: '登入',
   },
-  [ID_ID_LOCALE]: {
+  'id-ID': {
     createNow: 'Buat Sekarang',
     freeTrial: 'Coba Gratis',
     login: 'Masuk',
   },
-  [ES_LOCALE]: {
+  es: {
     createNow: 'Crear ahora',
     freeTrial: 'Prueba gratis',
     login: 'Iniciar sesión',
   },
-  [JA_JP_LOCALE]: {
+  'ja-JP': {
     createNow: '今すぐ作成',
     freeTrial: '無料で試す',
     login: 'ログイン',
   },
-  [KO_KR_LOCALE]: {
+  'ko-KR': {
     createNow: '지금 만들기',
     freeTrial: '무료 체험',
     login: '로그인',

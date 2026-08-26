@@ -39,7 +39,7 @@ function useNextSearch() {
 const APP_SHELL_ROUTE_PREFIXES = ['/agents', '/account', '/plan-select'];
 
 function isAppShellRoute(to: string): boolean {
-  const path = to.split('?')[0].split('#')[0];
+  const path = (to.split('?')[0] ?? '').split('#')[0] ?? '';
   return APP_SHELL_ROUTE_PREFIXES.some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`),
   );
