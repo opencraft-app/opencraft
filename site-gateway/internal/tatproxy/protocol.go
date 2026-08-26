@@ -28,7 +28,7 @@ type frame struct {
 type envelope struct {
 	SessionID  string  `json:"SessionId,omitempty" bson:"SessionId,omitempty"`
 	ChannelID  string  `json:"ChannelId,omitempty" bson:"ChannelId,omitempty"`
-	CustomData string  `json:"CustomData,omitempty" bson:"CustomData,omitempty"`
+	CustomData string  `json:"CustomData" bson:"CustomData"`
 	Message    string  `json:"Message,omitempty" bson:"Message,omitempty"`
 	ErrMsg     string  `json:"ErrMsg,omitempty" bson:"ErrMsg,omitempty"`
 	Error      string  `json:"Error,omitempty" bson:"Error,omitempty"`

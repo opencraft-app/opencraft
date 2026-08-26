@@ -331,7 +331,7 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions).not.toContainEqual(expect.objectContaining({ type: "assign" }));
   });
 
-  it("keeps an incomplete default custom configuration visible but blocks model actions", async () => {
+  it("does not render an incomplete default custom configuration as a configured model", async () => {
     const incompleteCustom = {
       ...idleModel,
       id: "",
@@ -349,15 +349,12 @@ describe("AgentModelConfigPanel", () => {
     });
     renderPanel(remote);
 
-    const customRow = (await screen.findByText("Auto")).closest("li") as HTMLElement;
-    expect(within(customRow).getByText("Custom")).toBeInTheDocument();
-    expect(within(customRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
-    expect(within(customRow).getByRole("button", { name: "设为备用模型" })).toBeDisabled();
-    expect(within(customRow).getByRole("button", { name: "删除" })).toBeDisabled();
-    expect(within(customRow).getAllByRole("group", { name: "请先获取可用模型" })).toHaveLength(3);
+    expect(await screen.findByText("暂未配置模型")).toBeInTheDocument();
+    expect(screen.queryByText("Auto")).not.toBeInTheDocument();
+    expect(screen.queryByText("Custom")).not.toBeInTheDocument();
   });
 
-  it("allows role changes but blocks deletion for an imported Hermes Provider", async () => {
+  it("allows deletion for a complete model regardless of its legacy ownership flag", async () => {
     const importedModel = {
       ...idleModel,
       id: "manual-model",
@@ -371,8 +368,8 @@ describe("AgentModelConfigPanel", () => {
     const importedRow = (await screen.findByText("manual-model")).closest("li") as HTMLElement;
     expect(within(importedRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
     expect(within(importedRow).getByRole("button", { name: "设为备用模型" })).toBeEnabled();
-    expect(within(importedRow).getByRole("button", { name: "删除" })).toBeDisabled();
-    expect(within(importedRow).getByRole("group", { name: "请在 Hermes 中管理此模型" })).toBeInTheDocument();
+    expect(within(importedRow).getByRole("button", { name: "删除" })).toBeEnabled();
+    expect(within(importedRow).queryByRole("group", { name: /Hermes 中管理/ })).not.toBeInTheDocument();
   });
 
   it("uses the production-style lower form without changing the configured-model list", async () => {

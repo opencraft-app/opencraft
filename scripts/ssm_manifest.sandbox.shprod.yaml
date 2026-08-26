@@ -14,6 +14,7 @@ items:
   secret_type: Opaque
   required_keys:
   - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+  - SANDBOX_API_KEY
   labels:
     app.kubernetes.io/name: sandbox
     app.kubernetes.io/managed-by: argocd

@@ -164,7 +164,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 27, "sgprod": 28},
+                    {"shprod": 28, "sgprod": 28},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -328,7 +328,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         workflow_config = yaml.safe_load(workflow) or {}
         workflow_parameters = (workflow_config.get("extends") or {}).get("parameters") or {}
         self.assertIs(workflow_parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
-        self.assertIs(workflow_parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), False)
+        self.assertIs(workflow_parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), True)
         self.assertIs(workflow_parameters.get("ENABLE_MASTER_SGPROD_DB_MIGRATION"), True)
 
         for env in ("shprod", "sgprod"):
@@ -350,23 +350,39 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/secrets/*/ctl-agentchat-secrets.sops.yaml", workflow)
         self.assertIn("argocd/secrets/*/ctl-website-runtime-secrets.sops.yaml", workflow)
 
-    def test_sgprod_website_cos_lifecycle_only_expires_temporary_artifacts(self) -> None:
-        lifecycle_path = (
-            REPO_ROOT
-            / "argocd"
-            / "services"
-            / "workers-website-deployer"
-            / "sgprod"
-            / "website-cos-lifecycle.xml"
-        )
-        self.assertTrue(lifecycle_path.is_file(), f"missing desired COS lifecycle: {lifecycle_path}")
+    def test_prod_website_cos_lifecycle_only_expires_temporary_artifacts(self) -> None:
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                lifecycle_path = (
+                    REPO_ROOT
+                    / "argocd"
+                    / "services"
+                    / "workers-website-deployer"
+                    / env
+                    / "website-cos-lifecycle.xml"
+                )
+                self.assertTrue(lifecycle_path.is_file(), f"missing desired COS lifecycle: {lifecycle_path}")
 
-        rule = ET.parse(lifecycle_path).getroot().find("Rule")
-        self.assertIsNotNone(rule)
-        self.assertEqual(rule.findtext("Status"), "Enabled")
-        self.assertEqual(rule.findtext("Filter/Prefix"), "_artifacts/")
-        self.assertEqual(rule.findtext("Expiration/Days"), "2")
-        self.assertEqual(rule.findtext("AbortIncompleteMultipartUpload/DaysAfterInitiation"), "1")
+                rule = ET.parse(lifecycle_path).getroot().find("Rule")
+                self.assertIsNotNone(rule)
+                self.assertEqual(rule.findtext("Status"), "Enabled")
+                self.assertEqual(rule.findtext("Filter/Prefix"), "_artifacts/")
+                self.assertEqual(rule.findtext("Expiration/Days"), "2")
+                self.assertEqual(rule.findtext("AbortIncompleteMultipartUpload/DaysAfterInitiation"), "1")
+
+    def test_website_deployer_builds_both_production_environments(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/workers-website-deployer.yml").read_text()) or {}
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "shprod,sgprod")
+        manifest = load_manifest()
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                bundle = require_build_metadata(load_bundle(manifest, "workers", env))
+                self.assertIn(
+                    f"argocd/services/workers-website-deployer/{env}/**",
+                    bundle.publish_paths,
+                )
 
     def test_sgprod_site_gateway_tls_binding_is_platform_owned(self) -> None:
         service_root = REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod"
@@ -601,6 +617,151 @@ class ReleaseBundleContractTests(unittest.TestCase):
             (REPO_ROOT / "argocd/secrets/sgprod/site-gateway-secrets.sops.yaml").read_text()
         )
         self.assertIn("SITE_GATEWAY_AUTH_AEAD_KEYS", gateway_secret["stringData"])
+
+    def test_shprod_dsh_runtime_contract_matches_the_singapore_topology(self) -> None:
+        def env_values(path: Path) -> dict[str, str]:
+            return {
+                key: value
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+
+        for platform_file in (
+            REPO_ROOT
+            / "site-gateway"
+            / "k8s"
+            / "overlays"
+            / "shprod"
+            / "generated"
+            / "platform.env.example",
+            REPO_ROOT
+            / "argocd"
+            / "services"
+            / "site-gateway"
+            / "shprod"
+            / "site-gateway-platform.env",
+        ):
+            values = env_values(platform_file)
+            self.assertEqual(values["SITE_GATEWAY_DSH_DOMAINS"], "dsh.lightvela.tech")
+            self.assertEqual(
+                values["SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL"],
+                "https://lightvela.com/auth/federation/authorize",
+            )
+            self.assertEqual(
+                values["SITE_GATEWAY_DSH_FEDERATION_BASE_URL"],
+                "http://lightclaw-auth.user-auth.svc.cluster.local",
+            )
+            self.assertEqual(values["SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"], "personal-site")
+            self.assertEqual(
+                values["SITE_GATEWAY_DSH_FEDERATION_KEY_ID"],
+                "federation-client-sh-20260825-1",
+            )
+            self.assertEqual(values["SITE_GATEWAY_DSH_WILDCARD_HOST"], "*.dsh.lightvela.tech")
+            self.assertEqual(
+                values["SITE_GATEWAY_DSH_TLS_SECRET_NAME"],
+                "site-gateway-dsh-wildcard-tls",
+            )
+
+        for kustomization_path in (
+            REPO_ROOT / "site-gateway/k8s/overlays/shprod/kustomization.yaml",
+            REPO_ROOT / "argocd/services/site-gateway/shprod/kustomization.yaml",
+        ):
+            kustomization = yaml.safe_load(kustomization_path.read_text())
+            replacement_sources = {
+                replacement["source"]["fieldPath"]
+                for replacement in kustomization["replacements"]
+            }
+            for field in (
+                "SITE_GATEWAY_DSH_DOMAINS",
+                "SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL",
+                "SITE_GATEWAY_DSH_FEDERATION_BASE_URL",
+                "SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID",
+                "SITE_GATEWAY_DSH_FEDERATION_KEY_ID",
+                "SITE_GATEWAY_DSH_WILDCARD_HOST",
+                "SITE_GATEWAY_DSH_TLS_SECRET_NAME",
+            ):
+                self.assertIn(f"data.{field}", replacement_sources)
+            patch = "\n".join(item.get("patch", "") for item in kustomization["patches"])
+            self.assertIn("REPLACE_SITE_GATEWAY_DSH_WILDCARD_HOST", patch)
+            self.assertIn("REPLACE_SITE_GATEWAY_DSH_TLS_SECRET_NAME", patch)
+
+        ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.site-gateway.shprod.yaml").read_text()
+        )
+        self.assertIn(
+            "SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY",
+            ssm["items"][0]["required_keys"],
+        )
+
+    def test_shprod_federation_runtime_contract_is_complete(self) -> None:
+        values = {
+            key: value
+            for line in (
+                REPO_ROOT / "argocd/services/lightclaw-auth/shprod/auth-platform.env"
+            ).read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(values["AUTH_FEDERATION_ENABLED"], "true")
+        self.assertEqual(values["AUTH_FEDERATION_ENVIRONMENT"], "shprod")
+        self.assertEqual(values["AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID"], "federation-sh-20260825-1")
+        self.assertEqual(values["AUTH_FEDERATION_CTL_BASE_URL"], "http://ctl-api.ctl.svc.cluster.local")
+        self.assertEqual(values["AUTH_FEDERATION_TAT_TIMEOUT_SECONDS"], "5")
+        self.assertEqual(values["AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS"], "28800")
+        self.assertNotIn("AUTH_FEDERATION_AEAD_KEYS_JSON", values)
+        self.assertNotIn("AUTH_FEDERATION_NONCE_KEY", values)
+        self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
+
+        for kustomization_path in (
+            REPO_ROOT / "user/auth/k8s/overlays/shprod/kustomization.yaml",
+            REPO_ROOT / "argocd/services/lightclaw-auth/shprod/kustomization.yaml",
+        ):
+            kustomization = yaml.safe_load(kustomization_path.read_text())
+            replacement_sources = {
+                replacement["source"]["fieldPath"]
+                for replacement in kustomization["replacements"]
+            }
+            for field in (
+                "AUTH_FEDERATION_ENABLED",
+                "AUTH_FEDERATION_ENVIRONMENT",
+                "AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID",
+                "AUTH_FEDERATION_CTL_BASE_URL",
+                "AUTH_FEDERATION_TAT_TIMEOUT_SECONDS",
+                "AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS",
+            ):
+                self.assertIn(f"data.{field}", replacement_sources)
+
+        ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.shprod.yaml").read_text()
+        )
+        required = set(ssm["items"][0]["required_keys"])
+        for key in (
+            "LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON",
+            "LIGHTCLAW_FEDERATION_NONCE_KEY",
+            "LIGHTCLAW_FEDERATION_CLIENTS_JSON",
+        ):
+            self.assertIn(key, required)
+
+        patch_documents = list(
+            yaml.safe_load_all(
+                (REPO_ROOT / "argocd/services/lightclaw-auth/shprod/patch-shadowbinding.yaml").read_text()
+            )
+        )
+        deployment = next(doc for doc in patch_documents if doc.get("kind") == "Deployment")
+        env = {
+            item["name"]: item
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual(
+            env["LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {
+                "name": "lightclaw-auth-secrets",
+                "key": "LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN",
+            },
+        )
 
     def test_sgprod_federation_runtime_contract_is_complete(self) -> None:
         def env_values(path: Path) -> dict[str, str]:
@@ -1082,6 +1243,111 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
+
+    def test_shprod_website_credential_bootstrap_contract_is_complete(self) -> None:
+        def env_values(path: Path) -> dict[str, str]:
+            return {
+                key: value
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+
+        command_id = "cmd-c14avwti"
+        ctl_values = env_values(REPO_ROOT / "argocd/services/ctl/shprod/ctl-platform.env")
+        sandbox_root = REPO_ROOT / "argocd/services/sandbox/shprod"
+        sandbox_values = env_values(sandbox_root / "sandbox-platform.env")
+
+        self.assertEqual(ctl_values["WEBSITE_AGENT_API_BASE"], "https://api.lightvela.com")
+        self.assertEqual(ctl_values["WEBSITE_CREDENTIAL_TAT_COMMAND_ID"], command_id)
+        self.assertEqual(sandbox_values["WEBSITE_CREDENTIAL_TAT_COMMAND_ID"], command_id)
+
+        ctl_documents = [
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "ctl/k8s/base/manifests.yaml").read_text())
+            if document
+        ]
+        ctl_service = next(
+            document
+            for document in ctl_documents
+            if document.get("kind") == "Deployment"
+            and (document.get("metadata") or {}).get("name") == "ctl-service"
+        )
+        ctl_container = ctl_service["spec"]["template"]["spec"]["containers"][0]
+        ctl_secret_refs = {
+            source["secretRef"]["name"]
+            for source in ctl_container["envFrom"]
+            if "secretRef" in source
+        }
+        self.assertIn("ctl-runtime-secrets", ctl_secret_refs)
+        ctl_env = {item["name"]: item for item in ctl_container["env"]}
+        for variable in ("WEBSITE_AGENT_API_BASE", "WEBSITE_CREDENTIAL_TAT_COMMAND_ID"):
+            with self.subTest(variable=variable):
+                config_map_ref = ctl_env[variable]["valueFrom"]["configMapKeyRef"]
+                self.assertEqual(config_map_ref["name"], "ctl-platform-values")
+                self.assertEqual(config_map_ref["key"], variable)
+
+        sandbox_kustomization = yaml.safe_load((sandbox_root / "kustomization.yaml").read_text())
+        command_replacement = next(
+            replacement
+            for replacement in sandbox_kustomization["replacements"]
+            if replacement["source"]["fieldPath"] == "data.WEBSITE_CREDENTIAL_TAT_COMMAND_ID"
+        )
+        self.assertEqual(command_replacement["source"]["name"], "sandbox-platform-values")
+        self.assertEqual(command_replacement["targets"][0]["select"]["kind"], "ConfigMap")
+        self.assertEqual(command_replacement["targets"][0]["select"]["name"], "sandbox-runtime-config")
+        self.assertIn(
+            "data.WEBSITE_CREDENTIAL_TAT_COMMAND_ID",
+            command_replacement["targets"][0]["fieldPaths"],
+        )
+
+        sandbox_documents = [
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "sandbox/k8s/base/manifests.yaml").read_text())
+            if document
+        ]
+        sandbox_api = next(
+            document
+            for document in sandbox_documents
+            if document.get("kind") == "Deployment"
+            and (document.get("metadata") or {}).get("name") == "sandbox-api"
+        )
+        sandbox_container = sandbox_api["spec"]["template"]["spec"]["containers"][0]
+        sandbox_config_map_refs = {
+            source["configMapRef"]["name"]
+            for source in sandbox_container["envFrom"]
+            if "configMapRef" in source
+        }
+        sandbox_secret_refs = {
+            source["secretRef"]["name"]
+            for source in sandbox_container["envFrom"]
+            if "secretRef" in source
+        }
+        self.assertIn("sandbox-runtime-config", sandbox_config_map_refs)
+        self.assertIn("sandbox-runtime-secrets", sandbox_secret_refs)
+
+        secret_contracts = (
+            (
+                REPO_ROOT / "scripts/ssm_manifest.ctl.shprod.yaml",
+                "ctl-runtime-secrets",
+                REPO_ROOT / "argocd/secrets/shprod/ctl-runtime-secrets.sops.yaml",
+            ),
+            (
+                REPO_ROOT / "scripts/ssm_manifest.sandbox.shprod.yaml",
+                "sandbox-runtime-secrets",
+                REPO_ROOT / "argocd/secrets/shprod/sandbox-runtime-secrets.sops.yaml",
+            ),
+        )
+        for manifest_path, item_id, secret_path in secret_contracts:
+            with self.subTest(item_id=item_id):
+                manifest_doc = yaml.safe_load(manifest_path.read_text())
+                item = next(item for item in manifest_doc["items"] if item["id"] == item_id)
+                self.assertIn("SANDBOX_API_KEY", item["required_keys"])
+
+                secret = yaml.safe_load(secret_path.read_text())
+                encrypted_value = secret["stringData"]["SANDBOX_API_KEY"]
+                self.assertTrue(encrypted_value.startswith("ENC[AES256_GCM,"))
 
     def test_auto_release_master_envs_have_build_contracts(self) -> None:
         manifest = load_manifest()

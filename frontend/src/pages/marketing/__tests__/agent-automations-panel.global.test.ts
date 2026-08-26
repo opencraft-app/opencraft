@@ -207,15 +207,26 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
   });
 
-  it("keeps legacy terminal task card actions", async () => {
+  it("separates active and ended jobs with English tabs", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
-      makeCronJob({ id: "completed", name: "Completed task", state: "completed", enabled: true }),
+      makeCronJob({ id: "active", name: "Active task", state: "scheduled" }),
+      makeCronJob({ id: "completed", name: "Completed task", state: "completed", enabled: false }),
     ]);
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
+    expect(await screen.findByRole("button", { name: "Active Jobs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ended Jobs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Recent Runs" })).toBeInTheDocument();
+    expect(screen.getByText("Active task")).toBeInTheDocument();
+    expect(screen.queryByText("Completed task")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ended Jobs" }));
+
     const card = await getCronJobCard("Completed task");
-    expect(within(card).getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(within(card).getByText("Completed")).toBeInTheDocument();
+    expect(within(card).queryByText("Paused")).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Pause" })).toBeNull();
   });
 });
 

@@ -2075,7 +2075,8 @@ func jifeiAutoRenewFlagValue(flag string) (int, bool, error) {
 //  1. 计算 check_sum（mapping.SecretKey != "" 时；secret_key 空则不出现 check_sum 字段）
 //  2. 拼装 dianshiclient.DoGoodsRequest 调点石 do_goods
 //  3. 拿到 deal_names[0] / big_deal_no
-//  4. 落 trade_order(status='paid_pending_provision', source='dianshi')
+//  4. do_goods 落 paid_pending_provision；do_goods_and_pay 使用同步返回的 resource_ids
+//     直接落 provisioned
 //
 // 失败语义：
 //   - 点石下单失败 → 直接返业务错给 ctl，不留任何 trade 端落地（与 jifei generateDealsAndPay 失败同款）
@@ -2095,7 +2096,7 @@ func (s *Service) placeOrderDianshi(
 	if s.deps.DianshiClient == nil {
 		return nil, fmt.Errorf("placeorder: dianshi client not configured (ActivityResolver injected without DianshiClient)")
 	}
-	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoods", "do_goods", s.deps.DianshiClient.DoGoods)
+	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoods", dianshiclient.InterfaceNameDoGoods, s.deps.DianshiClient.DoGoods)
 }
 
 func (s *Service) placeOrderDianshiAndPay(
@@ -2107,7 +2108,7 @@ func (s *Service) placeOrderDianshiAndPay(
 	if s.deps.DianshiClient == nil {
 		return nil, fmt.Errorf("placeorder: dianshi client not configured (ActivityResolver injected without DianshiClient)")
 	}
-	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoodsAndPay", "do_goods_and_pay", s.deps.DianshiClient.DoGoodsAndPay)
+	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoodsAndPay", dianshiclient.InterfaceNameDoGoodsAndPay, s.deps.DianshiClient.DoGoodsAndPay)
 }
 
 func (s *Service) placeOrderDianshiWith(
@@ -2206,10 +2207,20 @@ func (s *Service) placeOrderDianshiWith(
 
 	dealName := doGoodsResp.DealNames[0]
 	bigDealNo := doGoodsResp.BigDealNo
+	status := store.OrderStatusPaidPendingProvision
+	resourceID := ""
+	if interfaceName == dianshiclient.InterfaceNameDoGoodsAndPay {
+		resourceIDs := doGoodsResp.ResourceIDs[dealName]
+		if len(resourceIDs) == 0 || strings.TrimSpace(resourceIDs[0]) == "" {
+			return nil, fmt.Errorf("%w: dianshi %s returned empty resource_ids for dealName=%s (bundleId=%s activityId=%d big_deal_no=%q)",
+				ErrJifeiResponseInvalid, interfaceName, dealName, req.BundleID, mapping.ActivityID, bigDealNo)
+		}
+		status = store.OrderStatusProvisioned
+		resourceID = strings.TrimSpace(resourceIDs[0])
+	}
 
-	// 4. 落 trade_order（source='dianshi'，status='paid_pending_provision' 与 PlaceOrderAndPay 同款——
-	// 点石下单同步链路与 jifei generateDealsAndPay 一体化语义对齐：拿到 deal_name 即视为"已下单已扣款待发货"，
-	// 等 jifei 反向回调 createResource 把 status 推进到 'provisioned'）。
+	// 4. 落 trade_order。do_goods 等后续支付回调推进完成态；do_goods_and_pay 返回时同步
+	// createResource 已完成，resource_ids 是最终发货结果，因此一次写入完成态和 pass ID。
 	effectiveReq := req
 	effectiveReq.Period = effectivePeriod
 	effectiveReq.TimeUnit = effectiveTimeUnit
@@ -2233,8 +2244,9 @@ func (s *Service) placeOrderDianshiWith(
 		RegionID:       s.region.RegionID,
 		PayMode:        req.PayMode,
 		GoodsDetail:    goodsDetail,
-		Status:         store.OrderStatusPaidPendingProvision,
+		Status:         status,
 		ResourceType:   "pass",
+		ResourceID:     resourceID,
 		Source:         store.OrderSourceDianshi,
 		ActivityID:     mapping.ActivityID,
 		ActID:          mapping.ActID,
