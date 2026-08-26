@@ -20,7 +20,8 @@ Panduan ini ditujukan bagi orang yang ingin IM Agent terasa lebih natural dan ko
 
 Ia cocok untuk asisten pribadi, mitra belajar, mitra riset, dan tim yang merancang asisten komunitas.
 
-Dokumentasi Telegram dan WhatsApp saat ini memperlakukan percakapan satu lawan satu sebagai mode utama yang didukung, sehingga bagian norma grup adalah checklist rancangan dan tidak berarti kanal mana pun saat ini mendukung chat grup.
+Telegram mendukung pesan grup setelah Anda menonaktifkan Group Privacy di BotFather, menambahkan Bot ke grup, dan menyebutnya dengan `@username_bot`.
+Kemampuan grup WhatsApp tetap mengikuti dokumentasi kanalnya sendiri, jadi terapkan norma grup ini pada Telegram setelah penyiapan dan verifikasi dukungan sebelum memakai kanal lain.
 
 ## Tentukan apa yang seharusnya tetap stabil
 
@@ -165,7 +166,8 @@ Simpan hanya informasi yang sudah dikonfirmasi dan membantu kolaborasi mendatang
 
 Dokumentasi saat ini untuk kedua kanal menyatakan chat grup tidak didukung, sehingga bagian norma grup adalah checklist rancangan dan pra-peluncuran.
 
-Validasi kepribadian, ritme, FAQ, dan pengingat dalam percakapan satu lawan satu lebih dulu, lalu tunggu dukungan grup yang eksplisit di kanal tujuan.
+Nonaktifkan Group Privacy, tambahkan Bot ke grup, lalu validasi kepribadian, ritme, FAQ, dan pengingat dengan menyebutnya melalui `@username_bot`.
+Untuk WhatsApp atau kanal lain, pastikan terlebih dahulu cakupan dukungan grup kanal tersebut.
 
 ### Mengapa sebagian balasan Agent panjang dan sebagian lainnya singkat?
 
@@ -181,4 +183,4 @@ Atur sebuah preferensi di profil pengguna, atau nyatakan di permintaan saat ini 
 
 - [Mengubah IM Agent Menjadi Asisten Layanan, Komunitas, atau Pendamping](./im-agent-skill-scenarios.md) — Perluas percakapan natural dengan kemampuan yang konkret.
 
-- [Asisten Komunitas AI untuk Grup Telegram](./telegram-group-community-assistant.md) — Tinjau batas saat ini terkait norma grup.
+- [Cara Menggunakan Asisten Komunitas AI Grup Telegram](./telegram-group-community-assistant.md) — Selesaikan penyiapan pesan grup dan terapkan norma grup dalam praktik.

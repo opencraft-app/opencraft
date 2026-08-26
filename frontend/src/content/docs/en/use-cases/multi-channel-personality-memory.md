@@ -33,7 +33,8 @@ Persona, long-term memory, and Skills belong to the Agent layer, while Bot token
 
 - A WhatsApp account that you can use normally.
 
-- An understanding that Telegram and WhatsApp are currently intended primarily for 1-to-1 conversations.
+- An understanding of Telegram group-message setup: disable Group Privacy in BotFather, add the Bot to the group, then start the conversation with `@bot_username`.
+- An understanding that WhatsApp group support remains subject to its own channel documentation.
 
 ## Steps
 
@@ -141,9 +142,10 @@ If you need completely different roles and memories, create different Agents and
 
 ### Can WhatsApp groups share memory with Telegram?
 
-The current WhatsApp documentation says group chats are not supported, and Telegram is also intended primarily for 1-to-1 conversations.
+The current WhatsApp documentation says group chats are not supported.
+Telegram supports group messages after you disable Group Privacy, add the Bot to the group, and start the conversation with `@bot_username`.
 
-Multi-channel sharing keeps the Agent layer consistent, but it does not add group-chat capability to either channel.
+Multi-channel sharing keeps the Agent layer consistent, but it does not change each channel's own setup conditions or capability boundaries.
 
 ### Will an automation send to both channels automatically?
 

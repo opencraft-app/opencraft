@@ -2,7 +2,7 @@
 
 ## Summary
 
-**An Agent's safety boundary is not determined by the model alone. It is built from four layers: channel credentials, conversation scope, memory policy, and rules for external actions.** A clear boundary lets you answer four questions definitively — who can reach this Agent, which messages get processed, what content must never be sent, and which actions require confirmation first. Key practices: credentials are sensitive and must never go into long-term context or be pasted into chat; the memory policy must avoid turning sensitive data into a permanent record; and anything that sends externally or is irreversible needs a confirmation step. Note that Telegram and WhatsApp currently support one-to-one conversations as the primary mode, so group-chat rules serve as design and pre-launch checks rather than configurable settings today. Work through the safety checklist before going live.
+**An Agent's safety boundary is not determined by the model alone. It is built from four layers: channel credentials, conversation scope, memory policy, and rules for external actions.** A clear boundary lets you answer four questions definitively — who can reach this Agent, which messages get processed, what content must never be sent, and which actions require confirmation first. Key practices: credentials are sensitive and must never go into long-term context or be pasted into chat; the memory policy must avoid turning sensitive data into a permanent record; and anything that sends externally or is irreversible needs a confirmation step. Telegram supports group messages after you disable Group Privacy in BotFather, add the Bot to the group, and start the conversation with `@bot_username`. WhatsApp group support remains subject to its own channel documentation. Work through the safety checklist before going live.
 
 ![Designing authorization, group rules, and sensitive-action boundaries for Telegram and WhatsApp Agents](../images/use-case-11-telegram-whatsapp-safety-boundaries.png)
 
@@ -17,7 +17,7 @@ It is useful for teams that want to define authorization scope, data boundaries,
 | Layer | Question to answer | Typical controls |
 |---|---|---|
 | Authorization | Who can connect to and use this Agent? | Bot token, QR-authorized account, connection records, account permissions |
-| Conversation | Which conversations are processed and answered? | 1-to-1 scope, group status, @mention triggers, allowlists |
+| Conversation | Which conversations are processed and answered? | Direct-message scope, Telegram Group Privacy and @mention triggers, allowed scope |
 | Data | Which content may be read or retained? | Redaction, Cloud Storage, memory, user profile, deletion policy |
 | Actions | Which actions can run automatically? | Least privilege, human confirmation, audit trail, human handoff |
 
@@ -39,13 +39,14 @@ After connecting, send a low-risk test message, confirm that the reply returns t
 
 ### 2. Limit the channel scope to current capabilities
 
-Telegram and WhatsApp currently do not support group chats and support 1-to-1 conversations only.
+Telegram supports group messages.
+Disable Group Privacy in BotFather, add the Bot to the group, and start the conversation with `@bot_username`.
+WhatsApp remains subject to the group-support scope in its own channel documentation.
 
-Do not infer LightVela group support from Telegram BotFather privacy settings or from the fact that WhatsApp itself can create groups.
+Disabling Telegram Group Privacy is required for the message-delivery setup, but it does not make group use safe by itself.
+Define allowed groups, admins, members, @mention behavior, and message-rate limits before using the workflow.
 
-If a target channel later adds group support, first define allowed groups, admins, members, @mention behavior, and message-rate limits.
-
-Before group launch, also confirm whether member messages enter shared memory and how one member's information is prevented from being shown to another.
+Before using a group, also confirm whether member messages enter shared memory and how one member's information is prevented from being shown to another.
 
 ### 3. Set message-content boundaries
 
@@ -107,7 +108,7 @@ If credentials may have been exposed, stop using the affected channel and revoke
 
 - Have you confirmed that credentials do not appear in chat, docs, code, or logs?
 
-- Have you confirmed that the current workflow uses 1-to-1 conversations instead of treating unsupported group chats as available?
+- Have you disabled Group Privacy, added the Bot to the group, and verified a Telegram group message with `@bot_username`?
 
 - Have you defined what memory may retain, which files may be accessed, and how deletion works?
 
@@ -129,7 +130,8 @@ Both should protect credentials, restrict sensitive content, and require confirm
 
 Not necessarily.
 
-Privacy mode changes how a Bot receives messages, but it does not replace LightVela support for group processing that is not currently exposed.
+Disabling privacy mode is required for the Telegram group-message setup.
+It allows the Bot to receive group messages that mention it, but it does not replace group rules, sensitive-information protection, or confirmation before high-risk actions.
 
 ### Can the Agent automatically delete memory or files?
 

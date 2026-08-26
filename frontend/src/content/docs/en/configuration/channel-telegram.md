@@ -52,6 +52,7 @@ Find the Telegram card and click "+ Connect".
 
 ![](../images/telegram-botfather-3-global.webp)
 
+
 ### 4. Paste the HTTP API token into Telegram
 
 Paste the HTTP API token into the token field.
@@ -78,6 +79,27 @@ You should receive a Hermes Agent reply within a few seconds.
 
 <img src="../images/telegram-botfather-6-global-en.webp" alt="" width="360" />
 
+### 6. Optional: Enable group messages in BotFather
+
+Only complete steps 6 and 7 if you want to use the bot in a group.
+Direct messages are already available after step 5.
+
+1. Open `@BotFather` in Telegram.
+2. Send `/mybots`.
+3. Select the Bot that is connected to your Hermes Agent.
+4. Open "Bot Settings".
+5. Select "Group Privacy".
+6. Choose "Turn off" or "Disable privacy mode".
+
+### 7. Optional: Add and test the Bot in a group
+
+1. Open the Telegram group you want to use.
+2. Choose "Add Members" or the equivalent group-management action.
+3. Search for the Bot by its username and add it to the group.
+4. Mention it with `@bot_username` and send a test message.
+
+After Group Privacy is disabled, the bot can receive and reply to group messages that mention it.
+
 ---
 
 ## Success state
@@ -87,6 +109,8 @@ You should receive a Hermes Agent reply within a few seconds.
 - The corresponding bot can be found in Telegram contacts
 
 - Hermes Agent replies after you send a message
+
+- Hermes Agent replies after you mention the bot and send a message in a group where it has been added
 
 
 ---
@@ -121,7 +145,7 @@ After access succeeds, the Telegram bot can receive and reply to basic text mess
 | No response after clicking access | Network delay or authorization not completed | Refresh the console to confirm status; if access did not succeed, try again |
 | Cannot find the bot in Telegram | You did not click the link provided by BotFather, or did not start the chat | Click the link provided by BotFather, then click Start on the bot page |
 | No reply after sending a message | Model is not configured, trial credits are exhausted, or the bot has not been connected successfully | Check the "Current model" status in the "1. Model" card and confirm the Telegram channel shows as connected |
-| Bot cannot receive group messages | Telegram group privacy mode restriction | Check Bot Settings in BotFather; if needed, disable Group Privacy or @ the bot in the group |
+| Bot cannot receive group messages | Group Privacy is still enabled, the bot has not been added to the group, or the message does not mention it | In BotFather, send `/mybots`, select the bot, then open "Bot Settings" → "Group Privacy" and turn privacy mode off. Add the bot to the group and send a test message with `@bot_username` |
 | How to unlink | — | Delete the corresponding Telegram record in the "Connected channels" list |
 | Can the same Telegram bot connect to multiple Hermes Agent instances | Not recommended; one Bot Token should be bound to one Hermes Agent | If you need multiple Hermes Agent instances, create separate Telegram bots |
 
@@ -131,7 +155,7 @@ After access succeeds, the Telegram bot can receive and reply to basic text mess
 
 - **Message types**: Supports text, images, videos, files, voice messages, and more. See "Supported message types" above
 
-- **Group chat support**: Group chats are not currently supported; only 1-to-1 conversations are supported
+- **Group chat support**: Group messages are supported after you disable Group Privacy in BotFather, add the bot to the group, and start the conversation with `@bot_username`
 
 - **Connection interruption**: Long periods of no response may indicate authorization was revoked. Return to the console and authorize access again
 
