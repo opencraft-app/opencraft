@@ -41,6 +41,7 @@ LOCK_FILE="$(root_path /var/lock/lightvela-deepseek-harness.lock)"
 UNIT_PATH="$(root_path "/etc/systemd/system/${SERVICE_NAME}")"
 
 TASK_ID=""
+TRUSTED_BROWSER_HOST=""
 CURRENT_STAGE="prepare"
 DSH_VERSION=""
 SKILLHUB_VERSION=""
@@ -81,6 +82,29 @@ parse_task_id() {
     esac
   done
   validate_task_id "${TASK_ID}"
+}
+
+validate_trusted_browser_host() {
+  [[ "$1" =~ ^ins-[0-9a-f]{32}\.dsh\.lightvela\.(site|tech)$ ]]
+}
+
+parse_install_arguments() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --task-id)
+        [ "$#" -ge 2 ] || return 1
+        TASK_ID="$2"
+        shift 2
+        ;;
+      --trusted-browser-host)
+        [ "$#" -ge 2 ] || return 1
+        TRUSTED_BROWSER_HOST="$2"
+        shift 2
+        ;;
+      *) return 1 ;;
+    esac
+  done
+  validate_task_id "${TASK_ID}" && validate_trusted_browser_host "${TRUSTED_BROWSER_HOST}"
 }
 
 task_file() {
@@ -326,7 +350,7 @@ resolve_latest_snapshot() {
   python3 - "${dsh_metadata}" "${skillhub_metadata}" \
     "${qqbot_metadata}" "${weixin_metadata}" "${wecom_metadata}" \
     "${lark_metadata}" "${dingtalk_metadata}" "${manifest_path}" \
-    "${PNPM_VERSION}" <<'PY'
+    "${PNPM_VERSION}" "${TRUSTED_BROWSER_HOST}" <<'PY'
 import json
 import re
 import sys
@@ -334,7 +358,7 @@ from datetime import datetime, timezone
 
 (
     dsh_path, skillhub_path, qqbot_path, weixin_path, wecom_path,
-    lark_path, dingtalk_path, output_path, pnpm_version,
+    lark_path, dingtalk_path, output_path, pnpm_version, trusted_browser_host,
 ) = sys.argv[1:]
 
 def registry(path, expected_name):
@@ -364,6 +388,10 @@ manifest = {
     "schemaVersion": 3,
     "resolvedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     "pnpmVersion": pnpm_version,
+    "browserTrustPatch": {
+        "version": 1,
+        "hostname": trusted_browser_host,
+    },
     "runtime": registry(dsh_path, "@deepseek-ai/dsh"),
     "profile": {
         "name": "web",
@@ -713,6 +741,85 @@ if not any(name == "@deepseek-ai/dsh" for name, _ in seen):
 PY
 }
 
+patch_browser_connection() {
+  local runtime_dir="$1"
+  local manifest_path="$2"
+  python3 - "${runtime_dir}" "${manifest_path}" <<'PY'
+import json
+import os
+import pathlib
+import sys
+import tempfile
+
+runtime_dir, manifest_path = sys.argv[1:]
+with open(manifest_path, encoding="utf-8") as handle:
+    patch = json.load(handle)["browserTrustPatch"]
+hostname = patch["hostname"]
+version = patch["version"]
+if version != 1:
+    raise SystemExit(f"unsupported browser trust patch version: {version}")
+
+old = "isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),"
+new = (
+    "isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname) "
+    f'|| pageLocation.hostname === {json.dumps(hostname)},'
+)
+targets = sorted(
+    path for path in pathlib.Path(runtime_dir, "node_modules").rglob("client.js")
+    if path.parts[-5:] == (
+        "node_modules", "@deepseek-ai", "dsh-client-connection", "lib", "client.js"
+    )
+)
+if not targets:
+    raise SystemExit("DeepSeek Harness browser connection client was not found")
+
+for path in targets:
+    source = path.read_text(encoding="utf-8")
+    if source.count(new) == 1 and old not in source:
+        continue
+    if source.count(old) != 1 or new in source:
+        raise SystemExit(f"unexpected browser connection source: {path}")
+    patched = source.replace(old, new, 1)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(patched)
+        os.chmod(temporary, path.stat().st_mode & 0o777)
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+print(len(targets))
+PY
+}
+
+validate_browser_connection_patch() {
+  local runtime_dir="$1"
+  local manifest_path="$2"
+  python3 - "${runtime_dir}" "${manifest_path}" <<'PY'
+import json
+import pathlib
+import sys
+
+runtime_dir, manifest_path = sys.argv[1:]
+with open(manifest_path, encoding="utf-8") as handle:
+    hostname = json.load(handle)["browserTrustPatch"]["hostname"]
+marker = f'pageLocation.hostname === {json.dumps(hostname)}'
+targets = sorted(
+    path for path in pathlib.Path(runtime_dir, "node_modules").rglob("client.js")
+    if path.parts[-5:] == (
+        "node_modules", "@deepseek-ai", "dsh-client-connection", "lib", "client.js"
+    )
+)
+if not targets or any(path.read_text(encoding="utf-8").count(marker) != 1 for path in targets):
+    raise SystemExit("DeepSeek Harness browser connection patch validation failed")
+PY
+}
+
 validate_plugin_list() {
   local list_path="$1"
   local manifest_path="$2"
@@ -766,6 +873,7 @@ validate_candidate() {
   test -x "${dsh_bin}"
   test "$(run_as_runtime_user_in "${candidate_home}" "${runtime_dir}" "${dsh_bin}" --version | head -n 1 | tr -d '\r')" = "${DSH_VERSION}"
   validate_dsh_family "${runtime_dir}" "${manifest_path}"
+  validate_browser_connection_patch "${runtime_dir}" "${manifest_path}"
   validate_profile_tree "${profile_dir}" "${manifest_path}"
   mkdir -p "${output_dir}"
   run_as_runtime_user_in "${candidate_home}" "${runtime_dir}" \
@@ -823,6 +931,9 @@ prepare_candidate() {
     run_as_runtime_user_in "${candidate_home}" "${runtime_dir}" \
       "${PNPM_BIN}" --dir "${runtime_dir}" install --frozen-lockfile --prod \
         --fetch-retries 4 --fetch-timeout 300000
+    CURRENT_STAGE="browser_trust_patch"
+    write_task running browser_trust_patch 52 "正在配置 WebUI 访问" "" "${manifest_path}"
+    patch_browser_connection "${runtime_dir}" "${manifest_path}" >/dev/null
   fi
   CURRENT_STAGE="profile_lockfile"
   write_task running profile_lockfile 56 "正在生成插件依赖锁" "" "${manifest_path}"
@@ -1132,7 +1243,7 @@ main() {
   shift || true
   case "${action}" in
     install)
-      parse_task_id "$@" || exit 2
+      parse_install_arguments "$@" || exit 2
       do_install
       ;;
     installation)
@@ -1144,7 +1255,7 @@ main() {
       cat "${file}"
       ;;
     *)
-      echo "usage: ${0##*/} {install --task-id ID|installation --task-id ID}" >&2
+      echo "usage: ${0##*/} {install --task-id ID --trusted-browser-host HOST|installation --task-id ID}" >&2
       exit 2
       ;;
   esac

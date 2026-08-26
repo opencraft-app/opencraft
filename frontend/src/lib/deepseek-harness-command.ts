@@ -1,6 +1,7 @@
 import {
   DEEPSEEK_HARNESS_PROVIDER_HELPER_BASE64,
 } from "@/lib/generated/deepseek-harness-runtime-assets";
+import { isCN } from "@/lib/region";
 
 export const DEEPSEEK_HARNESS_CN_PROVIDERS = [
   "deepseek",
@@ -63,6 +64,7 @@ interface DeepSeekHarnessCommandClientOptions {
   createSecretId?: () => string;
   providerHelperBase64?: string;
   encryptSecret?: (publicKeyBase64: string, value: string) => Promise<string>;
+  region?: DeepSeekHarnessRegion;
 }
 
 export const DEEPSEEK_HARNESS_INSTALLER_URL =
@@ -176,6 +178,7 @@ export const createDeepSeekHarnessInstallLaunchScript = (
     'task_id="$1"',
     'state_dir="$2"',
     'work_dir="$3"',
+    'trusted_browser_host="$4"',
     'installer_path="$work_dir/install-deepseek-harness.sh"',
     "installer_started=0",
     'write_task_state() { python3 -c "import base64;exec(base64.b64decode(\''
@@ -206,7 +209,7 @@ export const createDeepSeekHarnessInstallLaunchScript = (
     'chmod 0700 "$installer_path"',
     "installer_started=1",
     "set +e",
-    '"$installer_path" install --task-id "$task_id"',
+    '"$installer_path" install --task-id "$task_id" --trusted-browser-host "$trusted_browser_host"',
     "installer_rc=$?",
     "set -e",
     'if [ "$installer_rc" -ne 0 ]; then if ! task_has_status failed; then write_task_state failed install 0 "Installation failed before reporting status"; fi; exit "$installer_rc"; fi',
@@ -254,6 +257,7 @@ export class DeepSeekHarnessCommandClient {
   private readonly createSecretId: () => string;
   private readonly providerHelperBase64: string;
   private readonly encryptSecret: (publicKeyBase64: string, value: string) => Promise<string>;
+  private readonly region: DeepSeekHarnessRegion;
 
   constructor(
     private readonly botId: string,
@@ -265,6 +269,7 @@ export class DeepSeekHarnessCommandClient {
     this.providerHelperBase64 = options.providerHelperBase64
       ?? DEEPSEEK_HARNESS_PROVIDER_HELPER_BASE64;
     this.encryptSecret = options.encryptSecret ?? encryptDeepSeekHarnessSecret;
+    this.region = options.region ?? (isCN ? "cn" : "global");
   }
 
   async getStatus(): Promise<DeepSeekHarnessStatus> {
@@ -279,6 +284,7 @@ export class DeepSeekHarnessCommandClient {
 
     try {
       const launchScript = createDeepSeekHarnessInstallLaunchScript();
+      const trustedBrowserHost = `${this.botId}.dsh.${this.region === "cn" ? "lightvela.tech" : "lightvela.site"}`;
       const launchUnit = `lightvela-dsh-install-${taskId}.service`;
       const workDir = `${INSTALL_WORK_PREFIX}${taskId}`;
       const launchCommand = [
@@ -294,6 +300,7 @@ export class DeepSeekHarnessCommandClient {
         taskId,
         shellQuote(INSTALLATION_STATE_DIR),
         shellQuote(workDir),
+        shellQuote(trustedBrowserHost),
       ].join(" ");
       launchRequested = true;
       const launchResult = await this.execDebugCommand(this.botId, launchCommand, {

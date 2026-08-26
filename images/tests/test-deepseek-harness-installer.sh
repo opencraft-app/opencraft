@@ -82,7 +82,10 @@ case "${directory}" in
     if [[ "$*" == *"--lockfile-only"* ]]; then
       printf '%s\n' 'sha512-runtime' >"${directory}/pnpm-lock.yaml"
     fi
-    mkdir -p "${directory}/node_modules/.bin" "${directory}/node_modules/@deepseek-ai/dsh"
+    mkdir -p \
+      "${directory}/node_modules/.bin" \
+      "${directory}/node_modules/@deepseek-ai/dsh" \
+      "${directory}/node_modules/@deepseek-ai/dsh-client-connection/lib"
     cat >"${directory}/node_modules/.bin/dsh" <<'INNER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -122,6 +125,12 @@ exit 0
 INNER
     chmod +x "${directory}/node_modules/.bin/dsh"
     printf '%s\n' '{"name":"@deepseek-ai/dsh","version":"0.1.1-rc.2"}' >"${directory}/node_modules/@deepseek-ai/dsh/package.json"
+    cat >"${directory}/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js" <<'INNER'
+const handle = {
+  api,
+  isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),
+};
+INNER
     ;;
   */profiles/web)
     if [[ "$*" == *"--lockfile-only"* ]]; then
@@ -294,7 +303,8 @@ assert_no_worktree() {
 
 reset_instance
 first_task="dshi-0123456789abcdef0123456789abcdef"
-${INSTALLER} install --task-id "${first_task}"
+trusted_browser_host="ins-0123456789abcdef0123456789abcdef.dsh.lightvela.site"
+${INSTALLER} install --task-id "${first_task}" --trusted-browser-host "${trusted_browser_host}"
 
 current="${TEST_ROOT}/opt/lightvela/dsh/current"
 profile="${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
@@ -343,11 +353,22 @@ for runtime_root in \
 done
 test "$(mode_of "${release}")" = "755"
 test "$(mode_of "${release}/node_modules/.bin/dsh")" = "755"
+connection_client="${release}/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js"
+grep -Fq "pageLocation.hostname === \"${trusted_browser_host}\"" "${connection_client}"
+test "$(grep -Fc "pageLocation.hostname === \"${trusted_browser_host}\"" "${connection_client}")" -eq 1
+python3 - "${release}/install-manifest.json" "${trusted_browser_host}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    patch = json.load(handle)["browserTrustPatch"]
+assert patch == {"version": 1, "hostname": sys.argv[2]}, patch
+PY
 
 printf '%s\n' 'custom-provider-patch' >"${profile}/cordis.patch.yml"
 : >"${CALLS}"
 second_task="dshi-1123456789abcdef0123456789abcdef"
-${INSTALLER} install --task-id "${second_task}"
+${INSTALLER} install --task-id "${second_task}" --trusted-browser-host "${trusted_browser_host}"
 grep -Fq 'custom-provider-patch' "${profile}/cordis.patch.yml"
 assert_task_status "${second_task}" succeeded
 assert_no_worktree
@@ -356,7 +377,7 @@ assert_no_worktree
 export LIGHTVELA_DSH_TEST_MUTATE_ON_DUMP=1
 export LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH="${profile}"
 concurrent_task="dshi-2123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${concurrent_task}"; then
+if ${INSTALLER} install --task-id "${concurrent_task}" --trusted-browser-host "${trusted_browser_host}"; then
   echo 'profile mutation unexpectedly allowed installation' >&2
   exit 1
 fi
@@ -377,7 +398,7 @@ cat >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/package.json" <<'JSON'
 JSON
 printf '%s\n' 'keep-me' >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/unknown-marker"
 unknown_task="dshi-3123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${unknown_task}"; then
+if ${INSTALLER} install --task-id "${unknown_task}" --trusted-browser-host "${trusted_browser_host}"; then
   echo 'unknown profile plugin unexpectedly allowed installation' >&2
   exit 1
 fi
@@ -390,7 +411,7 @@ assert_no_worktree
 reset_instance
 export LIGHTVELA_DSH_TEST_METADATA_FAILURE_SPEC='deepseek-harness-weixin@latest'
 metadata_task="dshi-4123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${metadata_task}"; then
+if ${INSTALLER} install --task-id "${metadata_task}" --trusted-browser-host "${trusted_browser_host}"; then
   echo 'failed npm metadata lookup unexpectedly completed installation' >&2
   exit 1
 fi
@@ -404,7 +425,7 @@ assert_no_worktree
 reset_instance
 export LIGHTVELA_DSH_TEST_MISSING_INTEGRITY_SPEC='deepseek-harness-wecom@latest'
 integrity_task="dshi-8123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${integrity_task}"; then
+if ${INSTALLER} install --task-id "${integrity_task}" --trusted-browser-host "${trusted_browser_host}"; then
   echo 'missing npm integrity unexpectedly completed installation' >&2
   exit 1
 fi
@@ -417,7 +438,7 @@ assert_no_worktree
 reset_instance
 export LIGHTVELA_DSH_TEST_MISSING_PLUGIN=deepseek-harness-lark
 plugin_task="dshi-5123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${plugin_task}"; then
+if ${INSTALLER} install --task-id "${plugin_task}" --trusted-browser-host "${trusted_browser_host}"; then
   echo 'missing DSH plugin unexpectedly completed installation' >&2
   exit 1
 fi
@@ -429,7 +450,7 @@ assert_no_worktree
 
 reset_instance
 partial_baseline_task="dshi-9123456789abcdef0123456789abcdef"
-${INSTALLER} install --task-id "${partial_baseline_task}"
+${INSTALLER} install --task-id "${partial_baseline_task}" --trusted-browser-host "${trusted_browser_host}"
 release="$(readlink "${TEST_ROOT}/opt/lightvela/dsh/current")"
 profile="${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
 unit="${TEST_ROOT}/etc/systemd/system/deepseek-harness.service"
@@ -440,7 +461,7 @@ printf '%s\n' '# partial-old-unit' >>"${unit}"
 export LIGHTVELA_DSH_TEST_FAIL_PROFILE_BACKUP=1
 export LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH="${profile}"
 partial_task="dshi-a123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${partial_task}"; then
+if ${INSTALLER} install --task-id "${partial_task}" --trusted-browser-host "${trusted_browser_host}"; then
   echo 'partial profile backup failure unexpectedly completed installation' >&2
   exit 1
 fi
@@ -453,7 +474,7 @@ assert_no_worktree
 
 reset_instance
 baseline_task="dshi-6123456789abcdef0123456789abcdef"
-${INSTALLER} install --task-id "${baseline_task}"
+${INSTALLER} install --task-id "${baseline_task}" --trusted-browser-host "${trusted_browser_host}"
 release="$(readlink "${TEST_ROOT}/opt/lightvela/dsh/current")"
 profile="${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
 unit="${TEST_ROOT}/etc/systemd/system/deepseek-harness.service"
@@ -464,7 +485,7 @@ printf '%s\n' 'old-unit' >"${unit}"
 export LIGHTVELA_DSH_TEST_FAIL_HEALTH=1
 export LIGHTVELA_DSH_TEST_SERVICE_ENABLED=0
 rollback_task="dshi-7123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${rollback_task}"; then
+if ${INSTALLER} install --task-id "${rollback_task}" --trusted-browser-host "${trusted_browser_host}"; then
   echo 'failed health check unexpectedly completed installation' >&2
   exit 1
 fi
@@ -482,10 +503,30 @@ if ${INSTALLER} installation --task-id '../../etc/passwd' >/dev/null 2>&1; then
   exit 1
 fi
 
+invalid_host_task="dshi-d123456789abcdef0123456789abcdef"
+if ${INSTALLER} install --task-id "${invalid_host_task}" \
+  --trusted-browser-host 'attacker.example.com' >/dev/null 2>&1; then
+  echo 'invalid trusted browser host unexpectedly accepted' >&2
+  exit 1
+fi
+
+drift_runtime="${TMPDIR}/drift-runtime"
+drift_manifest="${TMPDIR}/drift-manifest.json"
+mkdir -p "${drift_runtime}/node_modules/@deepseek-ai/dsh-client-connection/lib"
+printf '%s\n' 'const handle = { isLoopback: false };' \
+  >"${drift_runtime}/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js"
+printf '{"browserTrustPatch":{"version":1,"hostname":"%s"}}\n' \
+  "${trusted_browser_host}" >"${drift_manifest}"
+if bash -c 'source "$1"; patch_browser_connection "$2" "$3"' \
+  lightvela-dsh-test "${INSTALLER}" "${drift_runtime}" "${drift_manifest}" >/dev/null 2>&1; then
+  echo 'unexpected DSH connection source was patched' >&2
+  exit 1
+fi
+
 reset_instance
 export LIGHTVELA_DSH_TEST_PNPM_VERSION=9.0.0
 fallback_task="dshi-b123456789abcdef0123456789abcdef"
-${INSTALLER} install --task-id "${fallback_task}"
+${INSTALLER} install --task-id "${fallback_task}" --trusted-browser-host "${trusted_browser_host}"
 grep -Fq 'npm install --prefix' "${CALLS}"
 grep -Fq 'pnpm@10.33.0' "${CALLS}"
 stable_pnpm="${TEST_ROOT}/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules/.bin/pnpm"
@@ -516,7 +557,7 @@ LIGHTVELA_DSH_TEST_PNPM_VERSION=10.33.0 exec "${LIGHTVELA_DSH_TEST_FAKE_PNPM}" "
 EOF
 chmod -R 0700 "${legacy_pnpm_root}"
 legacy_tooling_task="dshi-c123456789abcdef0123456789abcdef"
-${INSTALLER} install --task-id "${legacy_tooling_task}"
+${INSTALLER} install --task-id "${legacy_tooling_task}" --trusted-browser-host "${trusted_browser_host}"
 for tooling_path in \
   "${legacy_pnpm_root}" \
   "${legacy_pnpm_root}/node_modules" \

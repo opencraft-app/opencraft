@@ -15,6 +15,7 @@ import {
 } from "@/lib/deepseek-harness-command";
 
 const success = (output = "") => ({ status: "SUCCESS", exitCode: 0, output });
+const trustedBrowserHost = "ins-0123456789abcdef0123456789abcdef.dsh.lightvela.site";
 
 const createFakeCurl = async (root: string, installer: string | null) => {
   const binDir = path.join(root, "bin");
@@ -77,9 +78,10 @@ describe("DeepSeekHarnessCommandClient", () => {
         message: "installing",
         updated_at: "2026-08-21T00:00:00Z",
       })));
-    const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand, {
+    const client = new DeepSeekHarnessCommandClient("ins-0123456789abcdef0123456789abcdef", execDebugCommand, {
       createTaskId: () => "dshi-0123456789abcdef0123456789abcdef",
       providerHelperBase64: "cHJpbnQoJ29rJyk=",
+      region: "global",
     });
 
     const task = await client.startInstall();
@@ -90,6 +92,12 @@ describe("DeepSeekHarnessCommandClient", () => {
       "https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh",
     );
     expect(installCommands.join("\n")).toContain("--retry 5");
+    expect(installCommands.join("\n")).toContain(
+      '--trusted-browser-host "$trusted_browser_host"',
+    );
+    expect(installCommands.join("\n")).toContain(
+      "'ins-0123456789abcdef0123456789abcdef.dsh.lightvela.site'",
+    );
     expect(installCommands.join("\n")).toContain("bash -n");
     expect(installCommands.join("\n")).not.toContain("cos.ap-beijing.myqcloud.com");
     expect(installCommands.join("\n")).not.toContain("payload-part-a");
@@ -100,6 +108,28 @@ describe("DeepSeekHarnessCommandClient", () => {
     await expect(client.getInstallation(task.task_id)).resolves.toMatchObject({ progress: 35 });
     expect(execDebugCommand.mock.calls.at(-1)?.[1]).toBe(
       "sudo -n cat /var/lib/lightvela/dsh/installations/dshi-0123456789abcdef0123456789abcdef.json",
+    );
+  });
+
+  it("passes the domestic WebUI hostname to the installer", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue(success());
+    const client = new DeepSeekHarnessCommandClient(
+      "ins-0123456789abcdef0123456789abcdef",
+      execDebugCommand,
+      {
+        createTaskId: () => "dshi-0123456789abcdef0123456789abcdef",
+        region: "cn",
+      },
+    );
+
+    await client.startInstall();
+
+    const command = String(execDebugCommand.mock.calls[0]?.[1]);
+    expect(command).toContain(
+      "'ins-0123456789abcdef0123456789abcdef.dsh.lightvela.tech'",
+    );
+    expect(command).not.toContain(
+      "'ins-0123456789abcdef0123456789abcdef.dsh.lightvela.site'",
     );
   });
 
@@ -153,7 +183,15 @@ describe("DeepSeekHarnessCommandClient", () => {
     const taskId = "dshi-0123456789abcdef0123456789abcdef";
     const result = spawnSync(
       "/bin/bash",
-      ["-c", createDeepSeekHarnessInstallLaunchScript(), "lightvela-dsh-install", taskId, stateDir, workDir],
+      [
+        "-c",
+        createDeepSeekHarnessInstallLaunchScript(),
+        "lightvela-dsh-install",
+        taskId,
+        stateDir,
+        workDir,
+        trustedBrowserHost,
+      ],
       {
         env: { ...process.env, PATH: `${binDir}:${process.env.PATH}`, TEST_INSTALLER_SOURCE: sourcePath },
         encoding: "utf8",
@@ -182,7 +220,15 @@ describe("DeepSeekHarnessCommandClient", () => {
     const taskId = "dshi-0123456789abcdef0123456789abcdef";
     const result = spawnSync(
       "/bin/bash",
-      ["-c", createDeepSeekHarnessInstallLaunchScript(), "lightvela-dsh-install", taskId, stateDir, workDir],
+      [
+        "-c",
+        createDeepSeekHarnessInstallLaunchScript(),
+        "lightvela-dsh-install",
+        taskId,
+        stateDir,
+        workDir,
+        trustedBrowserHost,
+      ],
       {
         env: {
           ...process.env,
@@ -212,7 +258,15 @@ describe("DeepSeekHarnessCommandClient", () => {
     const taskId = "dshi-0123456789abcdef0123456789abcdef";
     const result = spawnSync(
       "/bin/bash",
-      ["-c", createDeepSeekHarnessInstallLaunchScript(), "lightvela-dsh-install", taskId, stateDir, workDir],
+      [
+        "-c",
+        createDeepSeekHarnessInstallLaunchScript(),
+        "lightvela-dsh-install",
+        taskId,
+        stateDir,
+        workDir,
+        trustedBrowserHost,
+      ],
       {
         env: { ...process.env, PATH: `${binDir}:${process.env.PATH}`, TEST_INSTALLER_SOURCE: sourcePath },
         encoding: "utf8",
@@ -237,7 +291,15 @@ describe("DeepSeekHarnessCommandClient", () => {
 
     const result = spawnSync(
       "/bin/bash",
-      ["-c", createDeepSeekHarnessInstallLaunchScript(), "lightvela-dsh-install", "dshi-0123456789abcdef0123456789abcdef", stateDir, workDir],
+      [
+        "-c",
+        createDeepSeekHarnessInstallLaunchScript(),
+        "lightvela-dsh-install",
+        "dshi-0123456789abcdef0123456789abcdef",
+        stateDir,
+        workDir,
+        trustedBrowserHost,
+      ],
       {
         env: { ...process.env, PATH: `${binDir}:${process.env.PATH}`, TEST_INSTALLER_SOURCE: sourcePath },
         encoding: "utf8",
