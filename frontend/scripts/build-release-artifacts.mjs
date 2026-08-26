@@ -95,7 +95,25 @@ export async function runFrontendArtifactTypecheck(env = process.env) {
   await runCommand(pnpmBin(env), ["run", "check"], env);
 }
 
-export async function runFrontendArtifactBuildCommand(scriptName, env = process.env, runner = runCommand) {
+/**
+ * @param scriptName 只允许 "build:next"
+ * @param env 需含 FRONTEND_BUILD_OUTPUT_DIR
+ * @param runner 命令执行器（测试会注入假的）
+ * @param workspaceRoot 工作区根目录，`.next` / `out` 相对它解析。
+ *
+ * ⚠️ `workspaceRoot` 存在的唯一理由是**测试隔离**。
+ * 本函数会 `rmSync('.next')` 与 `rmSync('out')` —— 在真实构建里这是必要的
+ * （避免上一次构建的产物串进 artifact），但测试若在仓库根跑，就会把开发者
+ * 正在运行的 dev server 的 `.next/dev` 删掉：dev server 不会崩，而是所有请求
+ * 变成 500（`ENOENT: .next/dev/routes-manifest.json`），且看不出与测试有关。
+ * 实测踩过一次。测试必须传临时目录。
+ */
+export async function runFrontendArtifactBuildCommand(
+  scriptName,
+  env = process.env,
+  runner = runCommand,
+  workspaceRoot = process.cwd(),
+) {
   const outputDir = env.FRONTEND_BUILD_OUTPUT_DIR?.trim();
   if (!outputDir) {
     throw new Error("FRONTEND_BUILD_OUTPUT_DIR is required for frontend artifact builds");
@@ -104,9 +122,12 @@ export async function runFrontendArtifactBuildCommand(scriptName, env = process.
     throw new Error(`frontend artifact builds only support build:next, got ${scriptName}`);
   }
 
+  const nextDir = resolve(workspaceRoot, ".next");
+  const outDir = resolve(workspaceRoot, "out");
+
   rmSync(outputDir, { recursive: true, force: true });
-  rmSync(".next", { recursive: true, force: true });
-  rmSync("out", { recursive: true, force: true });
+  rmSync(nextDir, { recursive: true, force: true });
+  rmSync(outDir, { recursive: true, force: true });
   await runner(nodeBin(env), ["scripts/subset-fonts.mjs"], env);
   await runner(nodeBin(env), ["scripts/sync-fumadocs-content.mjs"], env);
   await runner(pnpmBin(env), ["exec", "fumadocs-mdx"], env);
@@ -115,8 +136,12 @@ export async function runFrontendArtifactBuildCommand(scriptName, env = process.
   await runner(nodeBin(env), ["scripts/fix-next-static-html-lang.mjs"], env);
   await runner(nodeBin(env), ["scripts/format-next-static-html.mjs"], env);
   await runner(nodeBin(env), ["scripts/check-versioned-next-static-assets.mjs"], env);
-  if (resolve("out") !== resolve(outputDir)) {
-    cpSync("out", outputDir, { recursive: true });
+  // 必须在 cpSync 之前：edgeone.json 写进 `out`，再随产物整体拷到 outputDir，
+  // 这样 OCI artifact 里就带着当前 region 对应的 301 规则（静态导出下 Next 的
+  // redirects() 不生效，这是唯一能让 301 进版本控制的位置）。
+  await runner(nodeBin(env), ["scripts/write-edgeone-config.mjs"], env);
+  if (outDir !== resolve(outputDir)) {
+    cpSync(outDir, outputDir, { recursive: true });
   }
 }
 

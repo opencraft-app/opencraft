@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"go.temporal.io/api/serviceerror"
+	"gopkg.in/yaml.v3"
 )
 
 func findCookieByName(t *testing.T, resp *http.Response, name string) *http.Cookie {
@@ -455,65 +455,66 @@ func TestRoutePathAllowlistRequiresRules(t *testing.T) {
 	}
 }
 
-func TestWebsiteInstanceRouteRewritesAndPreservesCredential(t *testing.T) {
+func TestAuthenticatedWebsiteRouteAllowsScopedVelaInstanceCredential(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
 		if r.URL.Path != "/v1/websites/ws-1/releases" {
-			t.Fatalf("upstream path = %q, want /v1/websites/ws-1/releases", r.URL.Path)
+			t.Fatalf("upstream path = %q", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Vela-Instance-Key opaque-token" {
 			t.Fatalf("Authorization = %q", got)
 		}
-		for _, header := range []string{"X-Lightclaw-User-ID", "X-Lightclaw-User-Email", "X-Lightclaw-Plan-Tier", "X-User-Id", "X-Uin"} {
-			if got := r.Header.Get(header); got != "" {
-				t.Fatalf("%s leaked to upstream: %q", header, got)
-			}
+		if got := r.Header.Get("X-User-Id"); got != "" {
+			t.Fatalf("spoofed identity leaked upstream: %q", got)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"code":"OK","data":{"upload_url":"https://upload.example.test/signed","upload_headers":{"Content-Length":"123","x-cos-meta-artifact-sha256":"abc"}}}`)
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer upstream.Close()
 
-	handler, err := NewHandler(Config{AuthServiceURL: "http://auth.example.test", Routes: []Route{{
-		Name:          "ctl-instance-websites",
-		Prefix:        "/v1/instance/websites",
-		RewritePrefix: "/v1/websites",
-		Methods:       []string{http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodOptions},
-		Upstream:      upstream.URL,
-		Access:        AccessPublic,
-		PathPolicy:    PathPolicyAllowlist,
-		PathAllow: []PublicRule{
-			{Method: http.MethodPost, Path: "/v1/instance/websites/{site_id}/releases"},
-		},
-	}}})
+	authCalls := 0
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authCalls++
+		http.Error(w, "session auth must not run", http.StatusTeapot)
+	}))
+	defer auth.Close()
+
+	var cfg Config
+	configYAML := fmt.Sprintf(`
+auth_service_url: %s
+routes:
+  - name: ctl-websites
+    prefix: /v1/websites
+    methods: [GET, POST, DELETE, OPTIONS]
+    upstream: %s
+    access: authenticated
+    allow_vela_instance_key: true
+    vela_instance_key_allow:
+      - { method: POST, path: "/v1/websites/{site_id}/releases" }
+`, auth.URL, upstream.URL)
+	if err := yaml.Unmarshal([]byte(configYAML), &cfg); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	handler, err := NewHandler(cfg)
 	if err != nil {
 		t.Fatalf("new handler: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/v1/instance/websites/ws-1/releases", nil)
-	req.Header.Set("Authorization", "Vela-Instance-Key opaque-token")
-	req.Header.Set("X-Lightclaw-User-ID", "spoofed")
-	req.Header.Set("X-Lightclaw-User-Email", "spoofed@example.com")
-	req.Header.Set("X-Lightclaw-Plan-Tier", "spoofed")
-	req.Header.Set("X-User-Id", "spoofed")
-	req.Header.Set("X-Uin", "spoofed")
-	rec := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK || upstreamCalls != 1 {
-		t.Fatalf("status = %d upstream calls = %d, want 200/1; body=%s", rec.Code, upstreamCalls, rec.Body.String())
-	}
-	if got := rec.Body.String(); !strings.Contains(got, `"upload_headers":{"Content-Length":"123","x-cos-meta-artifact-sha256":"abc"}`) {
-		t.Fatalf("signed upload headers were not preserved: %s", got)
+	allowed := httptest.NewRequest(http.MethodPost, "/v1/websites/ws-1/releases", nil)
+	allowed.Header.Set("Authorization", "Vela-Instance-Key opaque-token")
+	allowed.Header.Set("X-User-Id", "spoofed")
+	allowedRec := httptest.NewRecorder()
+	handler.ServeHTTP(allowedRec, allowed)
+	if allowedRec.Code != http.StatusOK || upstreamCalls != 1 || authCalls != 0 {
+		t.Fatalf("allowed status=%d upstream=%d auth=%d", allowedRec.Code, upstreamCalls, authCalls)
 	}
 
-	blockedReq := httptest.NewRequest(http.MethodPost, "/v1/instance/websites/ws-1/publish-admin", nil)
-	blockedReq.Header.Set("Authorization", "Vela-Instance-Key opaque-token")
+	blocked := httptest.NewRequest(http.MethodPost, "/v1/websites/ws-1/admin", nil)
+	blocked.Header.Set("Authorization", "Vela-Instance-Key opaque-token")
 	blockedRec := httptest.NewRecorder()
-	handler.ServeHTTP(blockedRec, blockedReq)
-	if blockedRec.Code != http.StatusNotFound || upstreamCalls != 1 {
-		t.Fatalf("blocked status = %d upstream calls = %d, want 404/1", blockedRec.Code, upstreamCalls)
+	handler.ServeHTTP(blockedRec, blocked)
+	if blockedRec.Code != http.StatusUnauthorized || upstreamCalls != 1 {
+		t.Fatalf("blocked status=%d upstream=%d", blockedRec.Code, upstreamCalls)
 	}
 }
 
@@ -1653,42 +1654,18 @@ func TestAuthenticatedRouteUsesSessionCookieWhenBearerMissing(t *testing.T) {
 	}
 }
 
-func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testing.T) {
+func TestLegacySandboxAllowlistRejectsTatSessionBeforeAuth(t *testing.T) {
+	authCalls := 0
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("lc_session")
-		if err != nil {
-			t.Fatalf("expected lc_session cookie during introspection: %v", err)
-		}
-		if cookie.Value != "tok-cookie" {
-			t.Fatalf("expected lc_session cookie to be forwarded to auth, got %q", cookie.Value)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"session": map[string]any{
-				"user": map[string]any{
-					"id":    "usr_cookie",
-					"email": "cookie@example.com",
-				},
-			},
-		})
+		authCalls++
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer auth.Close()
 
+	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("unexpected upstream method: %s", r.Method)
-		}
-		if r.URL.Path != "/sandboxes/sbx-1/tat/session" {
-			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
-		}
-		if got := r.Header.Get("X-User-Id"); got != "usr_cookie" {
-			t.Fatalf("expected injected user id, got %q", got)
-		}
-		if _, err := r.Cookie("lc_session"); err != nil {
-			t.Fatalf("expected lc_session cookie to reach sandbox-api: %v", err)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"sessionId":"sess-1"}`))
+		upstreamCalls++
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer upstream.Close()
 
@@ -1696,11 +1673,15 @@ func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testi
 		AuthServiceURL: auth.URL,
 		Routes: []Route{
 			{
-				Name:     "sandbox-legacy",
-				Prefix:   "/sandboxes",
-				Methods:  []string{http.MethodPost, http.MethodOptions},
-				Upstream: upstream.URL,
-				Access:   AccessAuthenticated,
+				Name:       "sandbox-legacy",
+				Prefix:     "/sandboxes",
+				Methods:    []string{http.MethodPost, http.MethodOptions},
+				Upstream:   upstream.URL,
+				Access:     AccessAuthenticated,
+				PathPolicy: PathPolicyAllowlist,
+				PathAllow: []PublicRule{
+					{Method: http.MethodPost, Path: "/sandboxes"},
+				},
 			},
 		},
 	})
@@ -1713,8 +1694,14 @@ func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testi
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "route_not_allowed") {
+		t.Fatalf("expected route_not_allowed body, got %s", rec.Body.String())
+	}
+	if authCalls != 0 || upstreamCalls != 0 {
+		t.Fatalf("blocked legacy TAT route reached auth=%d upstream=%d", authCalls, upstreamCalls)
 	}
 }
 

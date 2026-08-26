@@ -64,6 +64,26 @@ type PlaceOrderRequest struct {
 	// 注：Q41 修订 2026-05-11 删除 RegionID 字段。trade 内部固定 1（广州），ctl 不再透传。
 }
 
+type GrantDianshiSubscriptionRequest struct {
+	PlaceOrderRequest
+	ActivityID   int64  `json:"activityId"`
+	ActID        int64  `json:"actId"`
+	TimeSpanUnit string `json:"timeSpanUnit"`
+	SecretKey    string `json:"secretKey"`
+}
+
+type GrantDianshiSubscriptionResult struct {
+	Status     string `json:"status"`
+	DealName   string `json:"dealName,omitempty"`
+	BigOrderID string `json:"bigOrderId,omitempty"`
+}
+
+// DianshiGrantAdapter is kept separate from Adapter so existing consumers and
+// test doubles do not need to implement the one-off campaign capability.
+type DianshiGrantAdapter interface {
+	GrantDianshiSubscription(ctx context.Context, req *GrantDianshiSubscriptionRequest) (*GrantDianshiSubscriptionResult, error)
+}
+
 // PlaceOrderResult 与 trade placeOrderResponse 字段集对齐。
 //
 // PayURL / ExpireAt 在 trade 单步 PlaceOrder（非 PlaceOrderAndPay）流程中始终为空，
@@ -358,6 +378,10 @@ type Adapter interface {
 	// 出参 PayURL/ExpireAt 永远为空（一体化接口跳过支付 URL 概念），调用方应仅
 	// 关心 DealName / BigOrderID。
 	PlaceOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
+
+	// PlaceDianshiOrderAndPay uses the dedicated Dianshi do_goods_and_pay path.
+	// Trade rejects bundles that are not eligible for the configured activity.
+	PlaceDianshiOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
 
 	// MoveInOrderAndPay 调 trade POST /internal/trade/orders/move-in，为存量 pass 创建外部资源迁入单。
 	MoveInOrderAndPay(ctx context.Context, req *MoveInOrderRequest) (*PlaceOrderResult, error)
@@ -676,6 +700,38 @@ func (a *adapter) PlaceOrderAndPay(ctx context.Context, req *PlaceOrderRequest) 
 
 	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/orders/place-and-pay"
 	var result PlaceOrderResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (a *adapter) PlaceDianshiOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: PlaceDianshiOrderAndPay request is nil")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/orders/place-and-pay"
+	var result PlaceOrderResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (a *adapter) GrantDianshiSubscription(ctx context.Context, req *GrantDianshiSubscriptionRequest) (*GrantDianshiSubscriptionResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: GrantDianshiSubscription request is nil")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/subscriptions/grant"
+	var result GrantDianshiSubscriptionResult
 	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
 		return nil, err
 	}

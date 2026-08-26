@@ -94,7 +94,7 @@ Handoff target: reviewer
 
 ## TS5：Reviewer 默认只读
 
-Reviewer 的默认职责是验证、补充测试建议、生成评审结论和知识沉淀输入。只有在归属清单明确授权时，Reviewer 才能写测试、文档或 E2E 文件。
+最终独立 Reviewer 只负责验证、测试建议、评审结论和知识沉淀输入；始终只读且不得派子 Agent。缺少测试或 E2E 时打回 implementation owner。
 
 Reviewer 不直接执行归档写入，不重置 `plan.md` / `proposal.md` / `spec.md`，不更新 `current_state.md`。归档统一交给 `/feai-archive` 或 Leader 触发的 archive 阶段。
 
@@ -102,11 +102,13 @@ Reviewer 不直接执行归档写入，不重置 `plan.md` / `proposal.md` / `sp
 
 ## TS6：并行技能使用边界
 
-`dispatching-parallel-agents`、`subagent-driven-development` 等并行技能只能用于：
+`dispatching-parallel-agents` 等并行技能只能用于：
 
 - 只读调查。
 - 独立 worktree 中的非重叠写任务。
 - Leader 已写清文件归属、合并顺序和回收方式。
+
+子 Agent / phase run 的**委托形状**（整块委托 vs inline vs 禁止碎片化留环）按 `.workflow/rules/flow-cost.md` 委托形状段，本条不重复。`subagent-driven-development` 不再推荐（见 `flow-cost.md` 委托形状段）。
 
 禁止多个 agent 在同一工作区并行修改业务代码、OpenSpec 产物、依赖清单或锁文件。
 

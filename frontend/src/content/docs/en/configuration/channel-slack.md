@@ -1,5 +1,11 @@
 # Configure Channel - Slack
 
+## Summary
+
+**The Slack channel connects with a bot token and an app token, which suits bringing your Hermes Agent into team channels, direct messages, and automated task notifications: create an app in the Slack app management console, configure its permissions, obtain both tokens, and paste them into the Channels section of the LightVela console. You need a Slack workspace where you can install apps and a configured model (or simply the monthly model credits included with your plan). Both tokens are sensitive credentials — never share them publicly. Once connected, the agent in Slack shares the same persona and long-term memory as your other channels.**
+
+---
+
 Slack uses a Bot Token and an App Token to connect Hermes Agent to team channels, direct messages, and automated task notifications.
 
 ## This page covers

@@ -20,9 +20,17 @@ import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-sit
 
 interface LegalFooterProps {
   icpPlacement?: "inline" | "right";
+  /**
+   * 是否展示「隐私政策 · 服务条款 · 产品反馈 · 加入交流群」链接行。
+   *
+   * 默认 true，保持其他页面（文档站、账户页、更新日志等 12+ 处）现状不变。
+   * 首页传 false：这些链接已在上方 `FooterLinkColumns` 的分栏里出现，
+   * 同页重复会让页脚出现两套相同入口。
+   */
+  showLinks?: boolean;
 }
 
-export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
+export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: LegalFooterProps) => {
   const currentYear = new Date().getFullYear();
   const t = useT();
   const { i18n } = useTranslation();
@@ -67,6 +75,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </>
             )}
           </span>
+          {showLinks && (
           <span>
             {isGlobal ? (
               <a href={privacyPolicyPath} className={footerLinkClass}>
@@ -101,7 +110,9 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               <>
                 ·
                 <a
-                  href="/support"
+                  href={PRODUCT_FEEDBACK_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className={footerLinkClass}
                 >
                   {t("产品反馈")}
@@ -117,7 +128,9 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </>
             ) : null}
           </span>
+          )}
           {/* 加入交流群 — hover 展示二维码；国际站文案与二维码均可点击直达 Discord */}
+          {showLinks && (
           <span
             className="relative"
             onMouseEnter={() => setShowQR(true)}
@@ -181,6 +194,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               )}
             </AnimatePresence>
           </span>
+          )}
           {showRightICP && (
             <a
               href={BEIAN_URL}

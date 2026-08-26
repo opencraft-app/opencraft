@@ -211,6 +211,36 @@ func TestPlaceOrderAndPay_Success(t *testing.T) {
 	}
 }
 
+func TestPlaceDianshiOrderAndPay_Success(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PlaceOrderResult{
+			DealName:   "DIANSHI-DEAL-001",
+			BigOrderID: "DIANSHI-BIG-001",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.PlaceDianshiOrderAndPay(context.Background(), &PlaceOrderRequest{
+		ExternalUserID: "usr_test",
+		BundleID:       "bundle_zero",
+		Period:         1,
+		TimeUnit:       "m",
+	})
+	if err != nil {
+		t.Fatalf("PlaceDianshiOrderAndPay: %v", err)
+	}
+	if gotPath != "/internal/trade/dianshi/orders/place-and-pay" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if result == nil || result.DealName != "DIANSHI-DEAL-001" || result.BigOrderID != "DIANSHI-BIG-001" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
 func TestPlaceOrderAndPay_NilRequest(t *testing.T) {
 	adp := newTestAdapter(t, "http://example.invalid", "")
 	_, err := adp.PlaceOrderAndPay(context.Background(), nil)
@@ -815,6 +845,60 @@ func TestPlaceRenewOrder_Success(t *testing.T) {
 		t.Fatalf("unexpected request body: %+v", gotReq)
 	}
 	if result.DealName != "DEAL-RENEW-001" || result.BigOrderID != "BIG-RENEW-001" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestGrantDianshiSubscription_Success(t *testing.T) {
+	var gotReq GrantDianshiSubscriptionRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/trade/dianshi/subscriptions/grant" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer internal-token" {
+			t.Fatalf("authorization=%q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(GrantDianshiSubscriptionResult{
+			Status:     "granted",
+			DealName:   "deal-grant-1",
+			BigOrderID: "big-grant-1",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	grantAdapter, ok := adp.(DianshiGrantAdapter)
+	if !ok {
+		t.Fatal("adapter does not implement DianshiGrantAdapter")
+	}
+	result, err := grantAdapter.GrantDianshiSubscription(context.Background(), &GrantDianshiSubscriptionRequest{
+		PlaceOrderRequest: PlaceOrderRequest{
+			ExternalUserID: "usr_grant",
+			BundleID:       "bundle_launch_ai_01",
+			Period:         1,
+			TimeUnit:       "m",
+			GoodsNum:       1,
+			PayMode:        1,
+		},
+		ActivityID:   165523570799387,
+		ActID:        142163399386388,
+		TimeSpanUnit: "1m",
+		SecretKey:    "campaign-secret",
+	})
+	if err != nil {
+		t.Fatalf("GrantDianshiSubscription: %v", err)
+	}
+	if gotReq.ExternalUserID != "usr_grant" ||
+		gotReq.ActivityID != 165523570799387 ||
+		gotReq.ActID != 142163399386388 ||
+		gotReq.TimeSpanUnit != "1m" ||
+		gotReq.SecretKey != "campaign-secret" {
+		t.Fatalf("unexpected request: %+v", gotReq)
+	}
+	if result.Status != "granted" || result.DealName != "deal-grant-1" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 }

@@ -213,6 +213,8 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ClientIP = ctx.ClientIP()
+	identity.ClientUA = ctx.Request.UserAgent()
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(
@@ -230,6 +232,7 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "google", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
+	h.completeFederationSwitch(ctx, session.Token)
 	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.googleOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 

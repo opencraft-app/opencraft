@@ -89,14 +89,14 @@ describe("parseCronListOutput", () => {
     });
   });
 
-  it.each(["completed", "disabled"])("preserves the legacy enabled flag for the %s state", (state) => {
+  it.each([["completed", true], ["disabled", false]] as const)("parses the enabled flag for the %s state", (state, enabled) => {
     const jobs = parseCronListOutput(`
   abcdef123456 [${state}]
     Name:      终态任务
     Schedule:  every 2h
 `);
 
-    expect(jobs[0]).toMatchObject({ state, enabled: true });
+    expect(jobs[0]).toMatchObject({ state, enabled });
   });
 });
 
@@ -1689,6 +1689,13 @@ describe("pickFallbackChannelFromStatusOutput", () => {
     ]))).toBe("slack");
   });
 
+  it("normalizes OpenClaw DingTalk and prefers it over international fallback channels", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "telegram", status: "connected" },
+      { name: "openclaw-dingtalk", status: "connected" },
+    ]))).toBe("dingtalk");
+  });
+
   it("falls back to Slack after Telegram, WhatsApp, and Discord", () => {
     expect(pickFallbackChannelFromStatusOutput(buildStatus([
       { name: "slack", status: "connected" },
@@ -1758,3 +1765,18 @@ function streamExec(chunks: string[]) {
     }),
   };
 }
+
+describe("parseCronListOutput execution status", () => {
+  it("parses the current execution status from Hermes output", () => {
+    const jobs = parseCronListOutput(`
+  b87da865766e [active]
+    Name:      cron-3
+    Schedule:  once at 2026-08-25 19:45
+    Next run:  2026-08-25T19:45:00+08:00
+    Deliver:   qqbot
+    Execution: RUNNING  8e441aecfe934d36a840d8eb6f02771c
+`);
+
+    expect(jobs[0]?.execution_status).toBe("running");
+  });
+});

@@ -137,6 +137,8 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/inquiry/renew", inquiryRenewHandler(deps.Inquiry))
 	group.POST("/orders", placeOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/place-and-pay", placeOrderAndPayHandler(deps.PlaceOrder))
+	group.POST("/dianshi/orders/place-and-pay", placeDianshiOrderAndPayHandler(deps.PlaceOrder))
+	group.POST("/dianshi/subscriptions/grant", grantDianshiSubscriptionHandler(deps.PlaceOrder))
 	group.POST("/orders/move-in", moveInOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew", placeRenewOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew/place-and-pay", placeRenewOrderAndPayHandler(deps.PlaceOrder))
@@ -457,6 +459,20 @@ type placeOrderResponse struct {
 	ExpireAt   string `json:"expireAt,omitempty"`
 }
 
+type grantDianshiSubscriptionRequest struct {
+	placeOrderRequest
+	ActivityID   int64  `json:"activityId"`
+	ActID        int64  `json:"actId"`
+	TimeSpanUnit string `json:"timeSpanUnit"`
+	SecretKey    string `json:"secretKey"`
+}
+
+type grantDianshiSubscriptionResponse struct {
+	Status     string `json:"status"`
+	DealName   string `json:"dealName,omitempty"`
+	BigOrderID string `json:"bigOrderId,omitempty"`
+}
+
 func placeOrderHandler(svc *placeorder.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req placeOrderRequest
@@ -514,8 +530,85 @@ func classifyPlaceOrderError(err error) (string, int) {
 		return "BindingNotFound", http.StatusUnprocessableEntity
 	case errors.Is(err, placeorder.ErrBillingAccountOpenFailed):
 		return "BillingAccountOpenFailed", http.StatusConflict
+	case errors.Is(err, placeorder.ErrDianshiActivityRequired):
+		return "DianshiActivityRequired", http.StatusUnprocessableEntity
 	default:
 		return "UpstreamError", http.StatusBadGateway
+	}
+}
+
+// placeDianshiOrderAndPayHandler is the dedicated zero-price Dianshi purchase
+// endpoint. Its schema matches placeOrderHandler, but it never falls back to
+// jifei when the requested bundle is not eligible for the Dianshi activity.
+func placeDianshiOrderAndPayHandler(svc *placeorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req placeOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": "decode JSON: " + err.Error(),
+			})
+			return
+		}
+
+		res, err := svc.PlaceDianshiOrderAndPay(c.Request.Context(), placeorder.PlaceOrderRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleID:       req.BundleID,
+			Period:         req.Period,
+			TimeUnit:       req.TimeUnit,
+			GoodsNum:       req.GoodsNum,
+			PayMode:        req.PayMode,
+		})
+		if err != nil {
+			code, status := classifyPlaceOrderError(err)
+			c.JSON(status, gin.H{
+				"code":    code,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, placeOrderResponse{
+			DealName:   res.DealName,
+			BigOrderID: res.BigOrderID,
+		})
+	}
+}
+
+func grantDianshiSubscriptionHandler(svc *placeorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req grantDianshiSubscriptionRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "decode JSON: " + err.Error()})
+			return
+		}
+		res, err := svc.GrantDianshiSubscription(c.Request.Context(), placeorder.PlaceOrderRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleID:       req.BundleID,
+			Period:         req.Period,
+			TimeUnit:       req.TimeUnit,
+			GoodsNum:       req.GoodsNum,
+			PayMode:        req.PayMode,
+		}, placeorder.DianshiGrantCampaign{
+			ActivityID:   req.ActivityID,
+			ActID:        req.ActID,
+			TimeSpanUnit: req.TimeSpanUnit,
+			SecretKey:    req.SecretKey,
+		})
+		if err != nil {
+			code, status := classifyPlaceOrderError(err)
+			c.JSON(status, gin.H{"code": code, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, grantDianshiSubscriptionResponse{
+			Status:     res.Status,
+			DealName:   res.DealName,
+			BigOrderID: res.BigOrderID,
+		})
 	}
 }
 

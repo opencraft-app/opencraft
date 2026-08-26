@@ -93,6 +93,14 @@ ENVD_SERVICE="envd.service"
 ENVD_LISTEN_PORT="${ENVD_LISTEN_PORT:-49983}"
 ENVD_LOCAL_BINARY="${ENVD_LOCAL_BINARY:-${SCRIPT_DIR}/bin/envd}"
 RUNTIME_ASSETS_DIR="${SCRIPT_DIR}/runtime"
+HERMES_WEBSITE_BUILDER_SKILL_FILE="${HERMES_WEBSITE_BUILDER_SKILL_FILE:-}"
+if [ -z "${HERMES_WEBSITE_BUILDER_SKILL_FILE}" ]; then
+  if [ -f "${SCRIPT_DIR}/../.agents/skills/website-builder/SKILL.md" ]; then
+    HERMES_WEBSITE_BUILDER_SKILL_FILE="${SCRIPT_DIR}/../.agents/skills/website-builder/SKILL.md"
+  else
+    HERMES_WEBSITE_BUILDER_SKILL_FILE="${SCRIPT_DIR}/skills/website-builder/SKILL.md"
+  fi
+fi
 NODE_INSTALL_DIR=""
 NODE_BIN_DIR=""
 NPM_GLOBAL_PREFIX="/usr/local"
@@ -1108,6 +1116,24 @@ remove_hermes_find_skill_skillhub() {
   fi
 }
 
+install_hermes_website_builder_skill() {
+  local source_file="${HERMES_WEBSITE_BUILDER_SKILL_FILE}"
+  local target_dir="${RUNTIME_HOME}/.hermes/skills/website-builder"
+
+  if [ ! -f "${source_file}" ]; then
+    log_error "website-builder Skill source is missing: ${source_file}"
+    return 1
+  fi
+  mkdir -p "${target_dir}"
+  install -m 0644 "${source_file}" "${target_dir}/SKILL.md"
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${target_dir}"
+  if [ ! -s "${target_dir}/SKILL.md" ]; then
+    log_error "website-builder Skill installation failed: ${target_dir}/SKILL.md"
+    return 1
+  fi
+  log_info "installed repository website-builder Skill"
+}
+
 curate_hermes_skills() {
   local skills_root="${RUNTIME_HOME}/.hermes/skills"
   local keep_list=(
@@ -1129,6 +1155,7 @@ curate_hermes_skills() {
     "productivity/maps"
     "creative/architecture-diagram"
     "creative/humanizer"
+    "website-builder"
   )
   local skill=""
   local skill_dir=""
@@ -2210,6 +2237,7 @@ build_app_layer() {
     install_hermes_acli
     upgrade_hermes_backend_blueprint
     finalize_hermes_runtime_pin
+    install_hermes_website_builder_skill
     curate_hermes_skills
     remove_hermes_find_skill_skillhub
   else

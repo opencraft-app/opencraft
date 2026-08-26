@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"bytes"
 	cryptorand "crypto/rand"
 	"encoding/hex"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/federation"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/oidc"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
@@ -38,6 +42,23 @@ type ServerConfig struct {
 	ShadowBindingInternalToken string
 	ShadowTencentCallbackToken string
 	TrustedProxyCIDRs          []string
+	Federation                 *FederationConfig
+	OIDC                       *OIDCConfig
+}
+
+type FederationConfig struct {
+	Registry            *federation.Registry
+	Codec               *federation.Codec
+	Verifier            *federation.Verifier
+	TATClient           *federation.TATClient
+	HandoffTTL          time.Duration
+	DelegatedSessionTTL time.Duration
+	SwitchTTL           time.Duration
+	Now                 func() time.Time
+}
+
+type OIDCConfig struct {
+	Provider *oidc.Provider
 }
 
 func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
@@ -47,6 +68,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	}
 	router.Use(
 		requestIDMiddleware(),
+		federationBodyCaptureMiddleware(),
 		requestLogMiddleware(config.Logger),
 		gin.Recovery(),
 	)
@@ -60,7 +82,10 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.avatarStore = config.AvatarStore
 	handler.tatRegisterIssuer = config.TATRegisterIssuer
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
+	handler.federation = config.Federation
+	handler.oidc = config.OIDC
 	registerOAuthRoutes(router, handler)
+	registerFederationSwitchRoutes(router, handler)
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)
 	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)
@@ -84,6 +109,28 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	}
 
 	return router
+}
+
+const federationBodyContextKey = "federation_raw_body"
+
+func federationBodyCaptureMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.Method == http.MethodPost && strings.HasPrefix(ctx.Request.URL.Path, "/auth/federation/") {
+			const maxFederationBodyBytes = 1 << 20
+			body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, maxFederationBodyBytes+1))
+			if err != nil {
+				ctx.AbortWithStatus(http.StatusBadRequest)
+				return
+			}
+			if len(body) > maxFederationBodyBytes {
+				ctx.AbortWithStatus(http.StatusRequestEntityTooLarge)
+				return
+			}
+			ctx.Set(federationBodyContextKey, body)
+			ctx.Request.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		ctx.Next()
+	}
 }
 
 func registerOAuthRoutes(router gin.IRoutes, handler *Handler) {

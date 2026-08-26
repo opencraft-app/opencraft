@@ -88,6 +88,13 @@ type ExecCommandRequest struct {
 	Bash string `json:"bash"`
 }
 
+// InvokeCommandRequest invokes an existing TAT command. Parameter values may
+// contain credentials and therefore must never be logged by callers.
+type InvokeCommandRequest struct {
+	CommandID  string            `json:"command_id"`
+	Parameters map[string]string `json:"parameters"`
+}
+
 // TATCommandResponse represents the sandbox TAT command submission response.
 type TATCommandResponse struct {
 	SandboxID    string `json:"sandboxID"`
@@ -105,6 +112,16 @@ type TATCommandResult struct {
 	ExitCode      int64  `json:"exitCode"`
 	Output        string `json:"output"`
 	ErrorInfo     string `json:"errorInfo,omitempty"`
+	StartTime     string `json:"startTime,omitempty"`
+	EndTime       string `json:"endTime,omitempty"`
+	ExecutionTime string `json:"executionTime,omitempty"`
+}
+
+// TATCommandMetadataResult is the output-free status contract used for
+// credential-bearing internal TAT invocations.
+type TATCommandMetadataResult struct {
+	TATCommandResponse
+	ExitCode      int64  `json:"exitCode"`
 	StartTime     string `json:"startTime,omitempty"`
 	EndTime       string `json:"endTime,omitempty"`
 	ExecutionTime string `json:"executionTime,omitempty"`

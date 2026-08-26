@@ -194,9 +194,23 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 		return Binding{}, err
 	}
 	if err == nil && !in.Force {
-		if s.siteKind == SiteKindIntl && existing.Uin > 0 &&
-			(existing.Status == StatusPending || existing.Status == StatusFailed) {
-			return s.openBillingAccount(ctx, existing, false)
+		if s.siteKind == SiteKindIntl && existing.Uin > 0 {
+			if existing.Status == StatusActive && existing.AppID <= 0 {
+				s.startAppIDRepair(existing, in.ClientIP, in.ClientUA)
+				return existing, nil
+			}
+			if existing.Status == StatusPending || existing.Status == StatusFailed {
+				resolved, resolveErr := s.ensureBindingAppID(ctx, existing, in.ClientIP, in.ClientUA)
+				if resolveErr != nil {
+					slog.WarnContext(ctx, "international shadow app id lookup before billing retry failed",
+						"user_id", existing.UserID,
+						"uin", existing.Uin,
+						"err", resolveErr,
+					)
+					resolved = existing
+				}
+				return s.openBillingAccount(ctx, resolved, false)
+			}
 		}
 		switch existing.Status {
 		case StatusActive, StatusPending, StatusDisabled:
@@ -256,14 +270,36 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 	if err != nil {
 		return binding, err
 	}
-	s.startBillingAccountOpening(registered)
+	s.startBillingAccountOpening(registered, in.ClientIP, in.ClientUA)
 	return registered, nil
 }
 
-func (s *Service) startBillingAccountOpening(binding Binding) {
+func (s *Service) startBillingAccountOpening(binding Binding, clientIP, clientUA string) {
 	s.runAsync(func() {
-		if _, err := s.openBillingAccount(context.Background(), binding, true); err != nil {
+		ctx := context.Background()
+		resolved, err := s.ensureBindingAppID(ctx, binding, clientIP, clientUA)
+		if err != nil {
+			slog.Warn("international shadow app id lookup after registration failed",
+				"user_id", binding.UserID,
+				"uin", binding.Uin,
+				"err", err,
+			)
+			resolved = binding
+		}
+		if _, err = s.openBillingAccount(ctx, resolved, true); err != nil {
 			slog.Warn("international shadow billing activation failed",
+				"user_id", binding.UserID,
+				"uin", binding.Uin,
+				"err", err,
+			)
+		}
+	})
+}
+
+func (s *Service) startAppIDRepair(binding Binding, clientIP, clientUA string) {
+	s.runAsync(func() {
+		if _, err := s.ensureBindingAppID(context.Background(), binding, clientIP, clientUA); err != nil {
+			slog.Warn("international shadow app id repair after sign-in failed",
 				"user_id", binding.UserID,
 				"uin", binding.Uin,
 				"err", err,
@@ -286,6 +322,60 @@ func (s *Service) RetryBillingAccountOpening(ctx context.Context, userID string)
 		return binding, nil
 	}
 	return s.openBillingAccount(ctx, binding, false)
+}
+
+func (s *Service) EnsureBindingAppID(ctx context.Context, userID, clientIP, clientUA string) (Binding, error) {
+	if s == nil || s.store == nil {
+		return Binding{}, errors.New("shadow binding is not configured")
+	}
+	binding, err := s.store.GetBindingByUserID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return Binding{}, err
+	}
+	return s.ensureBindingAppID(ctx, binding, clientIP, clientUA)
+}
+
+func (s *Service) ensureBindingAppID(ctx context.Context, binding Binding, clientIP, clientUA string) (Binding, error) {
+	if binding.AppID > 0 {
+		return binding, nil
+	}
+	if s.siteKind != SiteKindIntl {
+		return binding, nil
+	}
+	if binding.Uin <= 0 || binding.OwnerUin <= 0 {
+		return binding, errors.New("shadow binding app id is unavailable")
+	}
+	accountInfoClient, ok := s.client.(CloudAccountInfoClient)
+	if !ok {
+		return binding, errors.New("shadow account info client is not configured")
+	}
+	credentials, err := s.issueTemporaryCredentialsForBinding(ctx, binding, clientIP, clientUA)
+	if err != nil {
+		return binding, err
+	}
+	info, err := accountInfoClient.DescribeAccountInfo(ctx, credentials)
+	if err != nil {
+		return binding, err
+	}
+	if info.LoginUin != binding.Uin || info.OwnerUin != binding.OwnerUin {
+		err = fmt.Errorf("shadow account identity mismatch: binding_uin=%d binding_owner_uin=%d account_login_uin=%d account_owner_uin=%d", binding.Uin, binding.OwnerUin, info.LoginUin, info.OwnerUin)
+		return binding, err
+	}
+	if info.AppID <= 0 {
+		err = errors.New("DescribeAccountInfo returned empty app id")
+		return binding, err
+	}
+	resolved, err := s.store.SetBindingAppIDIfMissing(ctx, binding.UserID, binding.Uin, binding.OwnerUin, info.AppID, s.now())
+	if err != nil {
+		return binding, err
+	}
+	slog.InfoContext(ctx, "shadow app id resolved",
+		"user_id", binding.UserID,
+		"uin", binding.Uin,
+		"app_id", resolved.AppID,
+		"request_id", info.RequestID,
+	)
+	return resolved, nil
 }
 
 func (s *Service) openBillingAccount(ctx context.Context, binding Binding, waitBeforeFirstAttempt bool) (Binding, error) {
@@ -620,16 +710,20 @@ func (s *Service) IssueTemporaryCredentials(ctx context.Context, userID, clientI
 	if s == nil || s.store == nil || !s.enabled || s.client == nil {
 		return CloudTemporaryCredentials{}, errors.New("shadow binding is not configured")
 	}
-	credentialsClient, ok := s.client.(TemporaryCredentialsClient)
-	if !ok {
-		return CloudTemporaryCredentials{}, errors.New("shadow temporary credential client is not configured")
-	}
 	binding, err := s.store.GetBindingByUserID(ctx, strings.TrimSpace(userID))
 	if err != nil {
 		return CloudTemporaryCredentials{}, err
 	}
 	if !CanIssueTemporaryCredentials(binding) {
 		return CloudTemporaryCredentials{}, errors.New("shadow binding is not active")
+	}
+	return s.issueTemporaryCredentialsForBinding(ctx, binding, clientIP, clientUA)
+}
+
+func (s *Service) issueTemporaryCredentialsForBinding(ctx context.Context, binding Binding, clientIP, clientUA string) (CloudTemporaryCredentials, error) {
+	credentialsClient, ok := s.client.(TemporaryCredentialsClient)
+	if !ok {
+		return CloudTemporaryCredentials{}, errors.New("shadow temporary credential client is not configured")
 	}
 	authCode, err := s.IssueExternalAuthCode(ctx, binding.UserID, AuthCodePurposeSaaSCallback)
 	if err != nil {

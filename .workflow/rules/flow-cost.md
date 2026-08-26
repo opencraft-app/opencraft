@@ -18,9 +18,9 @@
 
 | 规模 | 启动 | Review | Archive | Metrics |
 |---|---|---|---|---|
-| S | P0 + 单任务 plan | quick，可在用户要求时 full | light，可按需跳过知识增强 | off |
-| M | 标准规划 + 分批实现 | 每批 quick，最终 full | standard | basic |
-| L | 完整规划 + 多 Agent 串行 | 每批 quick，关键批 full，最终 full | full | full |
+| S | P0 + 单任务 plan | inline quick，可在用户要求时 full | light，可按需跳过知识增强 | off |
+| M | 标准规划 + 分批实现 | 每批 inline quick，最终 full | standard | basic |
+| L | 完整规划 + 多 Agent 串行 | 每批 inline quick，最终 full | full | full |
 
 ## S 级轻流程
 
@@ -34,7 +34,7 @@ S 级必须同时满足：
 满足时允许：
 
 - 不调用多 Agent。
-- `/feai-review` 默认 quick。
+- 批次内使用 inline quick，不启动独立 Reviewer。
 - `/feai-archive` 使用 light，只写必要变更记录和状态清理。
 - **阶段门禁按 quick 降级**：S 级无需逐项对照四门禁全表，只核对与本次改动相关的关键项（对应 `global.md` G10 的 S 级降级）；不因流程强度对 S 级追加无关探索或全量测试。
 - **计划粒度**：S 级只保留 1–3 条任务级 checkbox；TDD 子步骤和机械命令不计为 plan 任务。
@@ -45,7 +45,7 @@ S 级必须同时满足：
 M 级默认保留标准规划与分批 review，但不强制每批 full review。
 
 - 每批最多 3 个任务。
-- 每批 quick review。
+- 每批 inline quick。
 - 最后一批或用户要求时 full review。
 - archive 使用 standard，写知识沉淀与基础诊断。
 
@@ -59,8 +59,24 @@ M 级默认保留标准规划与分批 review，但不强制每批 full review�
 L 级保留完整可靠性：
 
 - 允许 Leader 串行调度多 Agent。
-- 关键批次和最终批次使用 full review。
+- 每批 inline quick，最终批使用一次 full review。
 - archive 使用 full，包含 metrics、localUsageAudit、flowHealth、ruleEffectiveness。
+
+## 委托形状与子 Agent 政策
+
+> 本节是唯一政策源；其他入口只引用，不复述。
+
+| 形状 | 适用场景 |
+|---|---|
+| 整阶段委托一个干净上下文 | M/L、边界稳定，且 readiness 全部确认 |
+| inline 连续实现 | S 级、探索型或需要中途交互 |
+| 逐任务派发、审核、返工再派 | 禁止；这是旧 SDD 碎片化留环 |
+
+M/L 使用 headless `phase run` 前，必须逐项确认：目标/非目标、可测验收、批次范围、无待用户回答问题、文件边界、验证命令、风险与外部依赖。确认后给 `handoff write` 传 `--spec-ready`；任一缺失则 inline 或返回 `needs_context`。L 级独立块仅在 worktree 与文件归属隔离后并行。
+
+批次内 review 一律 inline quick：主 Agent 跑相关测试、扫 diff，再用 `feai workflow batch complete` 统一更新 plan、summary 和 ledger；不派 reviewer、不跑门禁全表。M/L 最终批才运行一次独立只读 `/feai-review --final`；其 pass 结果必须形成带 branch、planHash、worktree fingerprint 的 final-review marker，归档前由 preflight 校验。S 默认直接完成 inline quick，用户要求时才升级 full。
+
+独立调查与最终 review 子 Agent 只读；review phase 禁止继续派子 Agent。需要新增测试时打回 implementation owner，不在 review 中写码。调查细则见 `agent-dispatch.md`。
 
 ## 升级条件
 
@@ -99,10 +115,11 @@ L 级保留完整可靠性：
 - 决定隔离阶段且 CodeBuddy CLI 可用时，implementation / review / archive 使用 `handoff + phase run` 新 session；不使用 resume/continue。
 - 独立阶段的 handoff 以 3,000 tokens、首轮模型输入以 30,000 tokens 作为健康目标，不是拒绝必要上下文的硬上限；超目标时优先改用文件引用和证据索引，禁止静默删除成功标准、风险或验证事实。
 - S 级短任务且当前上下文健康时无需强制隔离；当阶段历史明显膨胀、跨阶段事实已稳定或需要独立 review 时再创建新 session。
-- 主流程接收结构化阶段结果并保持精炼；长度不设固定质量上限，必须完整包含状态、改动文件、真实验证、风险、缺失上下文和下一步。
+- phase 原始结果落盘到 runtime artifact；主流程只接收有硬上限的结构化摘要、hash 和产物路径。
 
 ## 禁止
 
 - 为省 token 跳过必要测试。
 - 把 S 级轻流程用于高风险代码。
 - 在 plan 为空或无有效任务时直接写业务代码。
+- 实现型委托碎片化留环（逐任务派+审+修+再派，即旧 SDD 形状）。

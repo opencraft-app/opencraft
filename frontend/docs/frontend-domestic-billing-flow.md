@@ -19,8 +19,8 @@
 
 | 概念 | 说明 | 代码位置 |
 |---|---|---|
-| **站点分流** | `isGlobal=false` 为国内站，全量真实计费；国际站已具备信用卡订阅制，由灰度开关默认关闭（详见 `runtime-config-context` 的 `resolvePaidBillingEnabled`） | `mapBundleToPlan` 内 `paid = paidBillingEnabled && !isGlobal` |
-| **计费开关** | 运行时配置 `paidBillingEnabled`：国内站全量生效；国际站需显式开启（localStorage `lightclaw:features.paidBillingEnabled` 或构建期环境变量） | `usePaidBillingEnabled()` / `isPaidBillingEnabled()` |
+| **站点分流** | `isGlobal=false` 为国内站，全量真实计费；国际站已全量放开信用卡订阅制，两站共用同一计费开关（详见 `runtime-config-context` 的 `resolvePaidBillingEnabled`）。注意 `mapBundleToPlan` 的形参名 `paidBillingEnabled` 实参是 `paidBillingActive`，函数内 `paid = 形参 && (!isGlobal || isLoggedIn)` 再叠登录门控 | `mapBundleToPlan` 内 `paid` 判定 |
+| **计费开关** | 运行时配置 `paidBillingEnabled`：国内站与国际站同口径全量生效，后端可一键熔断；localStorage override 仍可本地紧急关闭 | `usePaidBillingEnabled()` / `isPaidBillingEnabled()` |
 | **退款规则入口** | 国内站套餐卡片区底部「退款规则」链接（`isCN` 条件渲染），指向 `/docs/plans/#退款规则`（6c71f5764） | `CN_REFUND_RULES_PATH` / `subscribe-page.tsx` |
 | **付费时长** | 月付 `monthly` / 季付 `quarterly`，全局作用于所有可购买套餐；默认月付 | `aiDurationKey` / `AI_DURATION_TABS` |
 | **Pass（权益）** | 后端计费主体，一个 pass = 一份已生效的订阅权益 | `listMyPasses` / `createPassOrder` |
@@ -100,10 +100,16 @@ CTA 文案优先级：`当前订阅` > `已售罄` > `询价中...` > `暂无报
 
 ```
 未登录            → 弹登录引导（handleSubscribe 内下沉）
+点石零元套餐      → startDianshiOrderAndPay（仅国际站，判定含 isGlobal；链路详见国际站文档「阶段 1」）
 国内站 / 付费开启  → startPaidPassOrder   （付费下单链路）
 免费 / 国际站      → startTrialPass       （免费试用链路，POST /v1/passes）
 已有有效 pass      → 直接 finalizeBot     （跳过下单，直接建实例）
 ```
+
+**零元单分支**：
+
+- 点石零元（`isDianshiZeroAmountPlan = isGlobal && paidBillingActive && real_total_cost === 0`）是**国际站**活动链路：`POST /v1/passes/dianshi/order-and-pay` 一步下单并支付、无二维码/中转页，详见国际站文档。
+- 国内站零元单（`need_charge === 0`）**保持 legacy 链路**走中转页（4db0f258c，回归修复）。
 
 ### 阶段 3：付费下单（CodeBuddy AuthCode 两阶段）
 
@@ -171,6 +177,7 @@ CTA 文案优先级：`当前订阅` > `已售罄` > `询价中...` > `暂无报
 | `/v1/passes` | POST | 免费试用（国际站 / 老 pass 场景） | `createPass` |
 | `/v1/passes/{id}/renew/price\|order\|order-url` | POST | 续费询价 / 下单 / 拉 URL | `getRenewPrice` / `createRenewOrder` / `getRenewOrderUrl` |
 | `/v1/passes/order-and-pay` | POST | 下单+支付一体化（**仅联调，现网禁用**） | `createPassOrderAndPay` |
+| `/v1/passes/dianshi/order-and-pay` | POST | 点石零元下单并支付（1e94b536f，**国际站**链路，do_goods_and_pay；国内站零元走中转页 legacy） | `createDianshiPassOrderAndPay` |
 
 ---
 

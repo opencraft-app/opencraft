@@ -50,7 +50,11 @@ export const isAllowedPaymentRedirect = (value: string): boolean => {
   try {
     const redirect = new URL(value);
     return redirect.protocol === "https:"
-      && (redirect.hostname === "centauriglobal.com" || redirect.hostname.endsWith(".centauriglobal.com"));
+      && (
+        redirect.hostname === "card.harvestsharp.com"
+        || redirect.hostname === "centauriglobal.com"
+        || redirect.hostname.endsWith(".centauriglobal.com")
+      );
   } catch {
     return false;
   }

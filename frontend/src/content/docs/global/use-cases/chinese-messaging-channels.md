@@ -2,7 +2,7 @@
 
 ## 摘要
 
-**把 Hermes Agent 接入消息平台的关键，是理解通道只是入口、Agent 才是工作主体：同一个云端 Agent 会在所有已连接通道间共享同一套模型、技能与记忆，因此不需要为每个平台各建一个机器人。** 完整流程是四步：确认目标通道在你所在区域可用（国际站支持 Telegram、WhatsApp、Discord、Slack、WeChat、QQ、企业微信、飞书，国内站面向微信、飞书、QQ）；在平台侧完成授权取得凭据；在管理台连接并确认显示为已接入；最后发一条测试消息，确认回复落在你发消息的那一条会话里。凭据属于敏感信息，不要写入长期上下文或粘贴到聊天中。
+**把 Hermes Agent 接入消息平台的关键，是理解通道只是入口、Agent 才是工作主体：同一个云端 Agent 会在所有已连接通道间共享同一套模型、技能与记忆，因此不需要为每个平台各建一个机器人。** 完整流程是四步：确认目标通道在你所在区域可用（国际站支持 Telegram、WhatsApp、Discord、Slack、WeChat、QQ、企业微信、飞书，国内站支持微信、QQ、企业微信、飞书、钉钉）；在平台侧完成授权取得凭据；在管理台连接并确认显示为已接入；最后发一条测试消息，确认回复落在你发消息的那一条会话里。凭据属于敏感信息，不要写入长期上下文或粘贴到聊天中。
 
 ![LightVela 中的消息平台连接](../images/use-case-messaging-platforms.webp)
 
@@ -81,6 +81,8 @@ LightVela 也会为其他受支持的通道提供配置页面。
 如果某个通道面向不同受众，或需要完全不同的角色定位，可以考虑把它作为独立使用场景，而不是把无关的预期混入同一段对话历史。
 
 ![不同通道之间共享同一个 Hermes Agent 的上下文](../images/use-case-messaging-memory.png)
+
+如果你希望使用 Discord 服务社群，可以继续阅读 [Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot](./discord-community-agent.md)。
 
 ## 常见问题
 

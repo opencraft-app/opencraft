@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/site/public-site-header", () => ({
@@ -32,6 +33,7 @@ vi.mock("@/contexts/agent-context", () => ({
 const sessionState = {
   authReady: true,
   isAuthenticated: false,
+  user: null as { realnameVerified?: boolean } | null,
 };
 
 vi.mock("@/contexts/session-context", () => ({
@@ -40,18 +42,22 @@ vi.mock("@/contexts/session-context", () => ({
     isAuthenticated: sessionState.isAuthenticated,
     session: {
       stage: sessionState.isAuthenticated ? "authenticated" : "anonymous",
-      user: null,
+      user: sessionState.user,
     },
   }),
 }));
 
 /* 登录态会走 listBundles 拉真实套餐；回跳用例要靠它拿到 planList 才能解析 pay_plan。 */
 const listBundlesMock = vi.fn();
+const createPassOrderMock = vi.fn();
+const createDianshiPassOrderAndPayMock = vi.fn();
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     plans: {
       listBundles: listBundlesMock,
+      createPassOrder: createPassOrderMock,
+      createDianshiPassOrderAndPay: createDianshiPassOrderAndPayMock,
     },
   }),
 }));
@@ -132,7 +138,18 @@ const resetState = () => {
   openClawState.latestPass = null;
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
+  sessionState.user = null;
   listBundlesMock.mockReset();
+  createPassOrderMock.mockReset();
+  createPassOrderMock.mockResolvedValue({
+    deal_names: ["legacy-deal-1"],
+    auth_code: "legacy-auth-code",
+  });
+  createDianshiPassOrderAndPayMock.mockReset();
+  createDianshiPassOrderAndPayMock.mockResolvedValue({
+    deal_name: "dianshi-deal-1",
+    big_order_id: "dianshi-big-1",
+  });
   /* listBundles 直接返回 Bundle[]，不是 { bundles } 包装。 */
   listBundlesMock.mockResolvedValue([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
   navigateMock.mockReset();
@@ -196,5 +213,53 @@ describe("SubscribePage", () => {
       "href",
       "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99",
     );
+  });
+
+  it("keeps quoted zero-price bundles on the legacy order flow in CN", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { realnameVerified: true };
+    listBundlesMock.mockResolvedValue([
+      {
+        bundle_id: "bundle_launch_zero",
+        bundle_name: "启航 Launch",
+        description: [],
+        bundle_state: "ONLINE",
+        bundle_type: "general",
+        agent_quota: 1,
+        credit: 100,
+        price: {
+          price: 750,
+          total_cost: 750,
+          real_total_cost: 0,
+          currency: "CNY",
+          discount: 0,
+        },
+        time_span: 1,
+        time_unit: "m",
+        bundle_sales_available_count: 100,
+        bundle_sales_total_count: 100,
+        bundle_sales_state: "AVAILABLE",
+      },
+    ]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const user = userEvent.setup();
+    render(<SubscribePage />);
+
+    await user.click(await screen.findByRole("button", { name: "免费订阅" }));
+    expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
+    expect(screen.getByText("微信支付")).toBeInTheDocument();
+    expect(screen.queryByText("信用卡支付")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /支付/ }));
+    await waitFor(() => {
+      expect(createPassOrderMock).toHaveBeenCalledWith({
+        bundle_id: "bundle_launch_zero",
+        period: 1,
+        time_unit: "m",
+      });
+    });
+    expect(createDianshiPassOrderAndPayMock).not.toHaveBeenCalled();
   });
 });

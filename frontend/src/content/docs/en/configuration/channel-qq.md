@@ -1,5 +1,11 @@
 # Configure Channel - QQ
 
+## Summary
+
+**The QQ channel is the one that needs parameters entered by hand: create a bot on the QQ Open Platform, get its AppID and AppSecret, then paste them into the Channels section of the LightVela console. The whole thing takes about 5–10 minutes. You need a QQ account to act as the bot administrator and a configured model (or simply the monthly model credits included with your plan). By comparison, WeChat, WeCom, and Lark all connect by scanning a QR code. Once connected, the agent in QQ shares the same persona and long-term memory as your other channels.**
+
+---
+
 The QQ channel requires creating a bot on the QQ Open Platform, then filling the resulting **AppID** and **AppSecret** into LightVela. The whole process takes about 5–10 minutes.
 
 ## This page covers

@@ -221,6 +221,10 @@ type Logic interface {
 	// 与 CreatePassOrder 一致：**本接口不创建本地 pass**，pass 发货走相同的回调链路。
 	CreatePassOrderAndPay(userID string, req *transport.CreatePassOrderRequest) (*transport.CreatePassOrderAndPayResult, error)
 
+	// CreateDianshiPassOrderAndPay creates and pays through the dedicated
+	// Dianshi activity endpoint. It does not expose payment or renewal options.
+	CreateDianshiPassOrderAndPay(userID string, req *transport.CreateDianshiPassOrderAndPayRequest) (*transport.CreateDianshiPassOrderAndPayResult, error)
+
 	// GetPasses 查询所有 Pass（后台管理用）
 	GetPasses(userID *string, bundleID *string) ([]*PassDetail, error)
 	GetPassesPage(userID *string, bundleID *string, status *string, page, pageSize int) ([]*PassDetail, int64, error)
@@ -1688,6 +1692,8 @@ func mapTradePlaceOrderError(err error) error {
 			return errcode.ErrPassShadowBindingRequired
 		case "BillingAccountOpenFailed":
 			return errcode.ErrPassBillingAccountOpenFailed
+		case "DianshiActivityRequired":
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "%s", tradeErr.Message)
 		}
 	}
 	return nil
@@ -1823,6 +1829,131 @@ func (l *logic) CreatePassOrderAndPay(userID string, req *transport.CreatePassOr
 		DealName:   placeResp.DealName,
 		BigOrderID: placeResp.BigOrderID,
 	}, nil
+}
+
+// CreateDianshiPassOrderAndPay uses Dianshi do_goods_and_pay for activity
+// bundles. Trade enforces activity eligibility and never falls back to jifei.
+func (l *logic) CreateDianshiPassOrderAndPay(userID string, req *transport.CreateDianshiPassOrderAndPayRequest) (*transport.CreateDianshiPassOrderAndPayResult, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	placeReq, logger, err := l.prepareCreatePassOrder(userID, &transport.CreatePassOrderRequest{
+		BundleID: req.BundleID,
+		Period:   req.Period,
+		TimeUnit: req.TimeUnit,
+	}, "create_dianshi_pass_order_and_pay")
+	if err != nil {
+		return nil, err
+	}
+
+	placeCtx, placeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	placeResp, placeErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().PlaceDianshiOrderAndPay(placeCtx, placeReq)
+	placeCancel()
+	if placeErr != nil {
+		logger.Warn("create Dianshi pass order and pay failed", zap.Error(placeErr))
+		if err := mapTradePlaceOrderError(placeErr); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("trade place Dianshi order and pay: %w", placeErr)
+	}
+	if placeResp == nil || placeResp.DealName == "" {
+		return nil, fmt.Errorf("trade place Dianshi order and pay: empty deal_name")
+	}
+
+	logger.Info("create Dianshi pass order and pay succeeded",
+		zap.String("deal_name", placeResp.DealName),
+		zap.String("big_order_id", placeResp.BigOrderID),
+	)
+	return &transport.CreateDianshiPassOrderAndPayResult{
+		DealName:   placeResp.DealName,
+		BigOrderID: placeResp.BigOrderID,
+	}, nil
+}
+
+// GrantDianshiSubscription prepares the same one-user Pass purchase invariant
+// as the normal flow and delegates the request-scoped product override to Trade.
+func (l *logic) GrantDianshiSubscription(userID string, req *transport.GrantDianshiSubscriptionRequest) (*transport.GrantDianshiSubscriptionResult, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	if req.ActivityID <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "activity_id must be > 0")
+	}
+	if req.ActID <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "act_id must be > 0")
+	}
+	if strings.TrimSpace(req.SecretKey) == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "secret_key is required")
+	}
+	period, timeUnit, err := parseDianshiTimeSpanUnit(req.TimeSpanUnit)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "%s", err.Error())
+	}
+	placeReq, logger, err := l.prepareCreatePassOrder(userID, &transport.CreatePassOrderRequest{
+		BundleID: req.BundleID,
+		Period:   period,
+		TimeUnit: timeUnit,
+	}, "grant_dianshi_subscription")
+	if err != nil {
+		if errors.Is(err, errcode.ErrPassAlreadyExists) {
+			return &transport.GrantDianshiSubscriptionResult{Status: "skipped"}, nil
+		}
+		return nil, err
+	}
+
+	tradeAdapter, ok := adapterfactory.DefaultAdapterFactory.TradeAdapter().(tradeadapter.DianshiGrantAdapter)
+	if !ok {
+		return nil, fmt.Errorf("trade adapter: Dianshi grant capability is not configured")
+	}
+	grantCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := tradeAdapter.GrantDianshiSubscription(grantCtx, &tradeadapter.GrantDianshiSubscriptionRequest{
+		PlaceOrderRequest: *placeReq,
+		ActivityID:        req.ActivityID,
+		ActID:             req.ActID,
+		TimeSpanUnit:      fmt.Sprintf("%d%s", period, timeUnit),
+		SecretKey:         strings.TrimSpace(req.SecretKey),
+	})
+	if err != nil {
+		logger.Warn("grant Dianshi subscription failed", zap.Error(err))
+		if mapped := mapTradePlaceOrderError(err); mapped != nil {
+			return nil, mapped
+		}
+		return nil, fmt.Errorf("trade grant Dianshi subscription: %w", err)
+	}
+	if result == nil || result.Status == "" {
+		return nil, fmt.Errorf("trade grant Dianshi subscription: empty status")
+	}
+	return &transport.GrantDianshiSubscriptionResult{
+		Status:     result.Status,
+		DealName:   result.DealName,
+		BigOrderID: result.BigOrderID,
+	}, nil
+}
+
+func parseDianshiTimeSpanUnit(value string) (int, string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, "", fmt.Errorf("time_span_unit is required")
+	}
+	digitEnd := 0
+	for digitEnd < len(value) && value[digitEnd] >= '0' && value[digitEnd] <= '9' {
+		digitEnd++
+	}
+	if digitEnd == 0 || digitEnd == len(value) {
+		return 0, "", fmt.Errorf("time_span_unit must look like 1m or 14d")
+	}
+	period, err := strconv.Atoi(value[:digitEnd])
+	if err != nil || period <= 0 {
+		return 0, "", fmt.Errorf("time_span_unit period must be positive")
+	}
+	unit := strings.ToLower(value[digitEnd:])
+	for _, char := range unit {
+		if char < 'a' || char > 'z' {
+			return 0, "", fmt.Errorf("time_span_unit must look like 1m or 14d")
+		}
+	}
+	return period, unit, nil
 }
 
 // prepareCreatePassOrder CreatePassOrder / CreatePassOrderAndPay 共享前置流程。

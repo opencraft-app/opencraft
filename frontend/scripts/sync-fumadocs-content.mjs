@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import * as OpenCC from 'opencc-js';
 
+import { createLastUpdatedResolver } from './docs-last-updated.mjs';
+
 /**
  * 繁體中文（zh-Hant）文檔转换。
  *
@@ -64,6 +66,8 @@ const sourceRoot = join(frontendRoot, 'src', 'content', 'docs');
 const outputRoot = join(frontendRoot, '.fumadocs-content', 'docs');
 const publicImagesRoot = join(frontendRoot, 'public', 'docs-images');
 const routeManifestPath = join(frontendRoot, 'next-site', 'docs-route-manifest.ts');
+/** 只读清单，构建期绝不跑 git（CI 是浅克隆，git 时间不可信）。 */
+const resolveLastUpdated = createLastUpdatedResolver();
 const buildRegion = process.env.NEXT_PUBLIC_REGION || process.env.VITE_REGION || process.env.FRONTEND_RELEASE_REGION || 'cn';
 const defaultDocsOutputPrefix = buildRegion === 'global' ? 'en-us' : 'zh-cn';
 
@@ -74,23 +78,32 @@ const defaultDocsOutputPrefix = buildRegion === 'global' ? 'en-us' : 'zh-cn';
  */
 const cnDocs = [
   // 产品入门
-  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '产品入门', description: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。' },
-  { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '产品入门', description: '5 分钟跑通第一个 LightVela 对话。' },
-  { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '产品入门', description: '理解 Hermes、模型、通道和技能。' },
-  { slug: 'who-is-lightvela-for', title: 'LightVela 适合哪些人使用？', file: 'who-is-lightvela-for.md', group: '产品入门', description: 'LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件，帮你判断是否适合。' },
+  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '产品入门', description: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。', hideDescription: true },
+  { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '产品入门', description: '5 分钟跑通第一个 LightVela 对话。', hideDescription: true },
+  { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '产品入门', description: '理解 Hermes、模型、通道和技能。', hideDescription: true },
+  { slug: 'who-is-lightvela-for', title: 'LightVela 适合哪些人使用？', file: 'who-is-lightvela-for.md', group: '产品入门', description: 'LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件，帮你判断是否适合。', hideDescription: true },
   // 账号、套餐与开通
-  { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '账号、套餐与开通', description: '账号管理与实名认证流程。' },
-  { slug: 'announcements/public-beta', title: 'LightVela 付费版本公告', file: 'announcements/public-beta.md', group: '账号、套餐与开通', description: '' },
-  { slug: 'plans', title: '套餐管理', file: 'plans.md', group: '账号、套餐与开通', description: 'LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。' },
-  { slug: 'credits', title: 'AI 积分说明', file: 'credits.md', group: '账号、套餐与开通', description: 'AI 积分是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、发放、消耗方式及与套餐的关系。' },
-  { slug: 'create-first-hermes', title: '如何开通第一个 Hermes 智能体伙伴？', file: 'create-first-hermes.md', group: '账号、套餐与开通', description: '开通第一个 Hermes 智能体伙伴的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建，再配置模型与通道让 Agent 7×24 小时在线运行。' },
+  { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '账号、套餐与开通', description: '账号管理与实名认证流程。', hideDescription: true },
+  { slug: 'announcements/public-beta', title: 'LightVela 付费版本公告', file: 'announcements/public-beta.md', group: '账号、套餐与开通', description: '', hideDescription: true },
+  { slug: 'plans', title: '套餐管理', file: 'plans.md', group: '账号、套餐与开通', description: 'LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。', hideDescription: true },
+  { slug: 'credits', title: 'AI 积分说明', file: 'credits.md', group: '账号、套餐与开通', description: 'AI 积分是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、发放、消耗方式及与套餐的关系。', hideDescription: true },
+  { slug: 'create-first-hermes', title: '如何开通第一个 Hermes 智能体伙伴？', file: 'create-first-hermes.md', group: '账号、套餐与开通', description: '开通第一个 Hermes 智能体伙伴的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建，再配置模型与通道让 Agent 7×24 小时在线运行。', hideDescription: true },
   // 功能与配置
-  { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: '功能与配置', description: 'LightVela 管理台配置流程。' },
-  { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: '功能与配置', description: '接入和管理 Hermes 使用的大语言模型。' },
-  { slug: 'configuration/channel-wechat', title: '配置通道 - 微信', file: 'configuration/channel-wechat.md', group: '功能与配置', description: '通过微信与 Hermes Agent 对话。' },
-  { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '功能与配置', description: '通过飞书与 Hermes Agent 对话。' },
-  { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '功能与配置', description: '通过 QQ 与 Hermes Agent 对话。' },
-  { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。' },
+  { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: '功能与配置', description: 'LightVela 管理台配置流程。', hideDescription: true },
+  { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: '功能与配置', description: '接入和管理 Hermes 使用的大语言模型。', hideDescription: true },
+  { slug: 'configuration/channel-wechat', title: '配置通道 - 微信', file: 'configuration/channel-wechat.md', group: '功能与配置', description: '通过微信与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '功能与配置', description: '通过 QQ 与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/channel-wecom', title: '配置通道 - 企业微信', file: 'configuration/channel-wecom.md', group: '功能与配置', description: '通过企业微信与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '功能与配置', description: '通过飞书与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。', hideDescription: true },
+  { slug: 'configuration/personality', title: '人设', file: 'configuration/personality.md', group: '功能与配置', description: '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。', hideDescription: true },
+  { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '功能与配置', description: '了解 Hermes 如何保存和管理长期记忆与用户画像。', hideDescription: true },
+  { slug: 'configuration/automation', title: '自动任务', file: 'configuration/automation.md', group: '功能与配置', description: '为 Hermes Agent 创建定时自动任务。', hideDescription: true },
+  { slug: 'configuration/files', title: '云存储', file: 'configuration/files.md', group: '功能与配置', description: '管理 Agent 使用的云端文件和工作资料。', hideDescription: true },
+  { slug: 'configuration/agent-chat', title: '对话', file: 'configuration/agent-chat.md', group: '功能与配置', description: '通过聊天窗口与 Hermes Agent 交互。', hideDescription: true },
+  { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '查看日志并排查 Hermes Agent 的异常情况。', hideDescription: true },
+  { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '功能与配置', description: '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。', hideDescription: true },
+  { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
   // Hermes Agent 解读（长文科普，帮助用户理解 Hermes Agent 的设计与原理）
   { slug: 'hermes-agent/hermes-vs-openclaw', title: 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别', file: 'hermes-agent/01-hermes-vs-openclaw.md', group: 'Hermes Agent 解读', description: '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。', hideDescription: true },
   { slug: 'hermes-agent/why-hermes-remembers-you', title: 'Hermes Agent 是怎么"记住你"的？', file: 'hermes-agent/02-why-hermes-remembers-you.md', group: 'Hermes Agent 解读', description: '揭秘 Hermes Agent 长期记忆背后的四层分工系统：USER.md、MEMORY.md、SQLite+FTS5 会话档案与 Skills，以及写入/召回时机的工程实现。', hideDescription: true },
@@ -109,9 +122,9 @@ const cnDocs = [
   { slug: 'compare/lightvela-vs-localhost-ai-agent', title: 'LightVela vs 本地部署 Agent：哪个更好？', file: 'compare/lightvela-vs-localhost-ai-agent.md', group: '对比与选型', description: '' },
   { slug: 'compare/lightvela-vs-ai-chatbot', title: 'LightVela vs AI Chatbot：哪个更适合搭建个人 AI 助手？', file: 'compare/lightvela-vs-ai-chatbot.md', group: '对比与选型', description: '' },
   // 问题排查
-  { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '问题排查', description: '' },
+  { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '问题排查', description: '', hideDescription: true },
   // 联系与支持
-  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '联系与支持', description: '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。' },
+  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '联系与支持', description: '加入 LightVela 用户交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。', hideDescription: true },
 ];
 
 /** 国内站侧边栏分组顺序（GEO 导航方案的 9 大分组） */
@@ -148,6 +161,7 @@ const globalDocs = [
       'en-US': 'LightVela is a hosted Hermes Agent companion that keeps conversations and automations running in the cloud.',
       'zh-CN': '云端托管 Hermes Agent，越聊越懂的智能伙伴。',
     },
+    hideDescription: true,
   },
   {
     slug: 'quickstart',
@@ -158,6 +172,7 @@ const globalDocs = [
       'en-US': 'Set up your first LightVela conversation in a few minutes.',
       'zh-CN': '几分钟跑通第一个 LightVela 对话。',
     },
+    hideDescription: true,
   },
   {
     slug: 'core-concepts',
@@ -168,6 +183,7 @@ const globalDocs = [
       'en-US': 'Understand Hermes, models, channels, skills, and automations in LightVela.',
       'zh-CN': '理解 Hermes、模型、通道、技能和自动任务。',
     },
+    hideDescription: true,
   },
   {
     slug: 'who-is-lightvela-for',
@@ -178,6 +194,7 @@ const globalDocs = [
       'en-US': 'Learn who LightVela is designed for, including people who want a cloud-hosted personal AI companion without managing servers or infrastructure.',
       'zh-CN': '了解 LightVela 适合哪些用户，包括希望拥有云端托管个人 AI 伙伴、又不想管理服务器或基础设施的人。',
     },
+    hideDescription: true,
   },
   {
     slug: 'plans',
@@ -185,9 +202,10 @@ const globalDocs = [
     file: 'plans.md',
     group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
     description: {
-      'en-US': 'Compare LightVela plans, isolated cloud resources, monthly model credits, and the current international beta activation flow.',
-      'zh-CN': '对比 LightVela 套餐、独立云端资源、每月模型积分与当前国际站内测开通流程。',
+      'en-US': 'Compare LightVela plans, isolated cloud resources, monthly AI credits, refund rules, and email-based refund application steps.',
+      'zh-CN': '对比 LightVela 套餐、独立云端资源、每月 AI 积分，并了解退款规则与邮件申请步骤。',
     },
+    hideDescription: true,
   },
   {
     slug: 'announcements/public-beta',
@@ -198,6 +216,7 @@ const globalDocs = [
       'en-US': 'LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch free for 14 days after public beta and billing start.',
       'zh-CN': 'LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测并开启计费；正式转入公测并开启计费后，内测用户现有套餐的有效期将额外延长 1 个月。',
     },
+    hideDescription: true,
   },
   {
     slug: 'credits',
@@ -208,6 +227,7 @@ const globalDocs = [
       'en-US': 'Learn how LightVela model credits are allocated, consumed by token usage, and related to plans and models.',
       'zh-CN': '了解 LightVela 模型积分如何发放、如何随 token 用量消耗，以及与套餐、模型的关系。',
     },
+    hideDescription: true,
   },
   {
     slug: 'create-first-hermes',
@@ -218,6 +238,7 @@ const globalDocs = [
       'en-US': 'Activate your first Hermes instance with Google or GitHub, an available plan, automatic cloud provisioning, and an international messaging channel.',
       'zh-CN': '使用 Google 或 GitHub、当前可用套餐、云端自动创建和国际消息通道开通第一个 Hermes 实例。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/index',
@@ -228,6 +249,7 @@ const globalDocs = [
       'en-US': 'Review the LightVela console configuration flow.',
       'zh-CN': 'LightVela 管理台配置流程。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/model',
@@ -238,6 +260,7 @@ const globalDocs = [
       'en-US': 'Connect and manage the language models used by Hermes.',
       'zh-CN': '接入和管理 Hermes 使用的大语言模型。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/channel-telegram',
@@ -248,6 +271,7 @@ const globalDocs = [
       'en-US': 'Connect Telegram to your Hermes Agent.',
       'zh-CN': '通过 Telegram 与 Hermes Agent 对话。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/channel-whatsapp',
@@ -258,6 +282,7 @@ const globalDocs = [
       'en-US': 'Connect WhatsApp to your Hermes Agent.',
       'zh-CN': '通过 WhatsApp 与 Hermes Agent 对话。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/channel-discord',
@@ -268,6 +293,7 @@ const globalDocs = [
       'en-US': 'Connect Discord to your Hermes Agent.',
       'zh-CN': '通过 Discord 与 Hermes Agent 对话。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/channel-slack',
@@ -278,6 +304,7 @@ const globalDocs = [
       'en-US': 'Connect Slack to your Hermes Agent with a Slack Bot Token and App Token.',
       'zh-CN': '通过 Slack Bot Token 和 App Token 将 Hermes Agent 接入 Slack。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/channel-wechat',
@@ -288,6 +315,7 @@ const globalDocs = [
       'en-US': 'Connect WeChat to your Hermes Agent.',
       'zh-CN': '通过微信与 Hermes Agent 对话。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/channel-qq',
@@ -298,6 +326,7 @@ const globalDocs = [
       'en-US': 'Connect QQ to your Hermes Agent.',
       'zh-CN': '通过 QQ 与 Hermes Agent 对话。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/channel-wecom',
@@ -308,6 +337,7 @@ const globalDocs = [
       'en-US': 'Connect WeCom to your Hermes Agent.',
       'zh-CN': '通过企业微信与 Hermes Agent 对话。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/channel-feishu',
@@ -318,6 +348,7 @@ const globalDocs = [
       'en-US': 'Connect Lark to your Hermes Agent.',
       'zh-CN': '通过飞书与 Hermes Agent 对话。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/skill',
@@ -328,6 +359,18 @@ const globalDocs = [
       'en-US': 'Install skills to extend Hermes capabilities.',
       'zh-CN': '安装技能包，扩展 Hermes 能力。',
     },
+    hideDescription: true,
+  },
+  {
+    slug: 'configuration/personality',
+    title: { 'en-US': 'Souls', 'zh-CN': '人设' },
+    file: 'configuration/personality.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Choose and apply a Soul to define a Hermes Agent\'s role, voice, priorities, and behavioral boundaries.',
+      'zh-CN': '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。',
+    },
+    hideDescription: true,
   },
   {
     slug: 'configuration/memory',
@@ -338,6 +381,7 @@ const globalDocs = [
       'en-US': 'Learn how Hermes stores and manages long-term memories and user profiles across devices and messaging channels.',
       'zh-CN': '了解 Hermes 如何跨设备和消息通道存储、管理长期记忆与用户画像。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/automation',
@@ -348,6 +392,7 @@ const globalDocs = [
       'en-US': 'Create scheduled automations for your Hermes Agent.',
       'zh-CN': '为 Hermes Agent 创建定时自动任务。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/files',
@@ -355,6 +400,7 @@ const globalDocs = [
     file: 'configuration/files.md',
     group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'configuration/agent-chat',
@@ -365,6 +411,7 @@ const globalDocs = [
       'en-US': 'Chat with Hermes and inspect conversation behavior.',
       'zh-CN': '与 Hermes 对话并查看会话行为。',
     },
+    hideDescription: true,
   },
   {
     slug: 'configuration/diagnostics',
@@ -372,6 +419,18 @@ const globalDocs = [
     file: 'configuration/diagnostics.md',
     group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
+    slug: 'configuration/advanced-settings',
+    title: { 'en-US': 'Advanced Settings', 'zh-CN': '高级设置' },
+    file: 'configuration/advanced-settings.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Review and adjust Hermes Agent safety, memory, and context-management settings.',
+      'zh-CN': '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。',
+    },
+    hideDescription: true,
   },
   {
     slug: 'configuration/multiple-models',
@@ -379,6 +438,7 @@ const globalDocs = [
     file: 'configuration/multiple-models.md',
     group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/personal-ai-assistant',
@@ -386,6 +446,7 @@ const globalDocs = [
     file: 'use-cases/personal-ai-assistant.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/chinese-messaging-channels',
@@ -393,6 +454,7 @@ const globalDocs = [
     file: 'use-cases/chinese-messaging-channels.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/telegram-persona-agent',
@@ -400,6 +462,7 @@ const globalDocs = [
     file: 'use-cases/telegram-persona-agent.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/whatsapp-persona-agent',
@@ -407,6 +470,7 @@ const globalDocs = [
     file: 'use-cases/whatsapp-persona-agent.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/im-agent-persona-soul-md',
@@ -414,6 +478,7 @@ const globalDocs = [
     file: 'use-cases/im-agent-persona-soul-md.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/im-agent-skill-scenarios',
@@ -421,6 +486,7 @@ const globalDocs = [
     file: 'use-cases/im-agent-skill-scenarios.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/multi-channel-personality-memory',
@@ -428,6 +494,7 @@ const globalDocs = [
     file: 'use-cases/multi-channel-personality-memory.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/telegram-group-community-assistant',
@@ -435,6 +502,7 @@ const globalDocs = [
     file: 'use-cases/telegram-group-community-assistant.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/whatsapp-24-7-customer-service',
@@ -442,6 +510,7 @@ const globalDocs = [
     file: 'use-cases/whatsapp-24-7-customer-service.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/lifelike-im-agent-rhythm-social-memory',
@@ -449,6 +518,7 @@ const globalDocs = [
     file: 'use-cases/lifelike-im-agent-rhythm-social-memory.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/telegram-whatsapp-safety-boundaries',
@@ -456,6 +526,7 @@ const globalDocs = [
     file: 'use-cases/telegram-whatsapp-safety-boundaries.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/daily-summary',
@@ -463,6 +534,7 @@ const globalDocs = [
     file: 'use-cases/daily-summary.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/hermes-agent-24-7',
@@ -470,6 +542,7 @@ const globalDocs = [
     file: 'use-cases/hermes-agent-24-7.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'use-cases/memory-and-knowledge',
@@ -477,6 +550,23 @@ const globalDocs = [
     file: 'use-cases/memory-and-knowledge.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
+    slug: 'use-cases/discord-community-agent',
+    title: { 'en-US': 'Meet LightVela for Discord: Your AI Agent Discord Bot Serving Your Channel', 'zh-CN': 'Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot' },
+    file: 'use-cases/discord-community-agent.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': 'Configure a shared Discord Agent for community questions, onboarding, and event support.', 'zh-CN': '配置共享 Discord Agent，处理社群问答、新成员引导和活动支持。' },
+    hideDescription: true,
+  },
+  {
+    slug: 'use-cases/discord-event-agent',
+    title: { 'en-US': 'Empower your Discord Event Bot with AI-Agentic Capabilities', 'zh-CN': '如何用 AI Agent 能力增强 Discord 活动机器人？' },
+    file: 'use-cases/discord-event-agent.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': 'Use a Discord Agent to answer event questions, support reminders, and keep event operations consistent.', 'zh-CN': '使用 Discord Agent 回答活动问题、支持提醒，并让活动运营信息保持一致。' },
+    hideDescription: true,
   },
   {
     slug: 'compare/lightvela-vs-localhost-ai-agent',
@@ -484,6 +574,7 @@ const globalDocs = [
     file: 'compare/lightvela-vs-localhost-ai-agent.md',
     group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'compare/lightvela-vs-hostinger',
@@ -491,6 +582,7 @@ const globalDocs = [
     file: 'compare/lightvela-vs-hostinger.md',
     group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'compare/lightvela-vs-manus',
@@ -498,6 +590,7 @@ const globalDocs = [
     file: 'compare/lightvela-vs-manus.md',
     group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'compare/lightvela-vs-chatgpt',
@@ -505,6 +598,7 @@ const globalDocs = [
     file: 'compare/lightvela-vs-chatgpt.md',
     group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'compare/lightvela-vs-genspark',
@@ -512,6 +606,7 @@ const globalDocs = [
     file: 'compare/lightvela-vs-genspark.md',
     group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
   },
   {
     slug: 'hermes-agent/hermes-vs-openclaw',
@@ -690,6 +785,7 @@ const globalDocs = [
       'en-US': 'Join the LightVela beta community, talk to the product team directly, and keep sending us your usage questions, product suggestions, and real-world feedback.',
       'zh-CN': '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。',
     },
+    hideDescription: true,
   },
 ];
 
@@ -774,6 +870,10 @@ const ID_DOC_METADATA = {
     title: 'Konfigurasi Skill',
     description: 'Pelajari cara memasang, melihat, dan mengelola Skill yang dapat digunakan Hermes Agent.',
   },
+  'configuration/personality': {
+    title: 'Soul',
+    description: 'Pilih, unggah, dan terapkan Soul untuk menentukan peran, gaya komunikasi, prioritas, dan batas perilaku Hermes Agent.',
+  },
   'configuration/memory': {
     title: 'Pengelolaan Memori',
     description: 'Lihat cara Hermes Agent menyimpan memori jangka panjang dan bagaimana kapasitasnya ditampilkan.',
@@ -793,6 +893,10 @@ const ID_DOC_METADATA = {
   'configuration/diagnostics': {
     title: 'Diagnostik',
     description: 'Gunakan pusat diagnostik untuk memeriksa status Agent, kanal, dan konfigurasi penting.',
+  },
+  'configuration/advanced-settings': {
+    title: 'Pengaturan Lanjutan',
+    description: 'Tinjau dan sesuaikan pengaturan keamanan, memori, serta pengelolaan konteks Hermes Agent.',
   },
   'configuration/multiple-models': {
     title: 'Beberapa Model',
@@ -1135,6 +1239,16 @@ function writeDoc(docSet, doc) {
   const body = convert(
     normalizeMarkdownLinks(stripTitle(raw, rawTitle), doc.file, docSet.outputPrefix, docSet.locale),
   );
+  const sourcePath = relative(frontendRoot, inputPath);
+  /*
+   * 内容最后更新日期。来自 `src/content/docs/last-updated.json`（真源，进版本控制），
+   * **不是构建时间** —— 每天重新构建不会让日期变化。
+   *
+   * 注意 key 用的是 `sourcePathFor()` 解析后的**实际**源文件路径：
+   * 多语言 docSet 可能回退到共享源文件（`fallbackSourcePrefix`），
+   * 此时它与共享源文件的更新日期一致，这是正确语义 —— 内容确实是同一份。
+   */
+  const lastUpdated = resolveLastUpdated(sourcePath);
   const outputPath = join(outputRoot, docSet.outputPrefix, `${doc.slug}.mdx`);
   ensureDir(dirname(outputPath));
   writeFileSync(
@@ -1146,13 +1260,15 @@ function writeDoc(docSet, doc) {
       // 正文自带「摘要 / Summary」段的文章（如 Hermes Agent 解读系列），页面上不再
       // 重复渲染 description 段落；description 仍写入 frontmatter 供 SEO meta 使用。
       ...(doc.hideDescription ? ['hide_description: true'] : []),
-      `source_path: ${JSON.stringify(relative(frontendRoot, inputPath))}`,
+      `source_path: ${JSON.stringify(sourcePath)}`,
+      ...(lastUpdated ? [`last_updated: ${JSON.stringify(lastUpdated)}`] : []),
       '---',
       '',
       body,
       '',
     ].join('\n'),
   );
+  return { slug: doc.slug, locale: docSet.outputPrefix, lastUpdated };
 }
 
 function copyImages() {
@@ -1208,7 +1324,7 @@ function slugSegments(slug) {
   return slug.replace(/\/index$/, '').split('/').filter(Boolean);
 }
 
-function writeRouteManifest() {
+function writeRouteManifest(lastUpdatedByLocale) {
   const slugsByLocale = Object.fromEntries(
     docSets.map((docSet) => [
       docSet.outputPrefix,
@@ -1229,6 +1345,33 @@ function writeRouteManifest() {
       '',
       `export const DOCS_ROUTE_SLUGS = ${JSON.stringify(slugsByLocale, null, 2)} as const satisfies Record<DocsRouteLocale, readonly (readonly string[])[]>;`,
       '',
+      '/**',
+      ' * 每个文档路由的内容最后更新日期（YYYY-MM-DD），key 为 slug 段用 "/" 连接。',
+      ' *',
+      ' * ⚠️ 本常量是**生成产物**，由 `scripts/sync-fumadocs-content.mjs` 从',
+      ' * `src/content/docs/last-updated.json`（唯一真源）写出。**不要手工编辑**：',
+      ' * 下次 sync 会覆盖，且会与真源漂移。改日期请改真源后重跑 sync。',
+      ' *',
+      ' * 日期语义是「内容最后更新日」而**不是构建时间**：每天重新构建不会让它变化，',
+      ' * 只有内容真的改了才变（Google 要求 lastmod 一致准确，否则会忽略整个信号）。',
+      ' * 初始值由 `docs-last-updated.mjs --from-git` 从 git 历史逐篇生成，',
+      ' * 因此各篇日期不同、反映真实批次，而非全站同一天。',
+      ' *',
+      ' * 供 sitemap 的 `<lastmod>` 与文档页「最后更新于」共用，不存在第二处时间镜像。',
+      ' * 一致性由 `scripts/docs-last-updated.test.ts` 断言（产物 ↔ 真源逐条比对）。',
+      ' *',
+      ' * 类型用显式注解而非 `as const satisfies`：内层键是运行时拼出的 slug 字符串，',
+      ' * 字面量类型无法用 `string` 索引（TS7053），只能靠类型断言绕开。',
+      ' * 显式声明为 `Record<string, string | undefined>` 后既零断言，',
+      ' * 返回类型也诚实（key 不存在时确实是 undefined）。',
+      ' */',
+      `export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | undefined>> = ${JSON.stringify(lastUpdatedByLocale, null, 2)};`,
+      '',
+      'export function docsLastUpdated(locale: DocsRouteLocale, slug: readonly string[] = []): string | undefined {',
+      "  const key = slug.join('/');",
+      '  return DOCS_LAST_UPDATED[locale][key];',
+      '}',
+      '',
       'export function isDocsRouteSlug(locale: DocsRouteLocale, slug: readonly string[] = []) {',
       "  const key = slug.join('/');",
       "  return DOCS_ROUTE_SLUGS[locale].some((candidate) => candidate.join('/') === key);",
@@ -1241,11 +1384,25 @@ function writeRouteManifest() {
 rmSync(outputRoot, { recursive: true, force: true });
 ensureDir(outputRoot);
 copyImages();
+const lastUpdatedByLocale = Object.fromEntries(docSets.map((docSet) => [docSet.outputPrefix, {}]));
 for (const docSet of docSets) {
-  for (const doc of docSet.docs) writeDoc(docSet, doc);
+  for (const doc of docSet.docs) {
+    const written = writeDoc(docSet, doc);
+    if (written.lastUpdated) {
+      lastUpdatedByLocale[docSet.outputPrefix][slugSegments(doc.slug).join('/')] = written.lastUpdated;
+    }
+  }
   writeMetaForDocSet(docSet);
 }
-writeRouteManifest();
+/*
+ * `/docs/`（空 slug）渲染的是 overview 的内容，所以它的更新日期就是 overview 的日期。
+ * 不给它单独造一个日期，避免出现「同一份内容两个时间」的矛盾。
+ */
+for (const locale of Object.keys(lastUpdatedByLocale)) {
+  const overview = lastUpdatedByLocale[locale].overview;
+  if (overview) lastUpdatedByLocale[locale][''] = overview;
+}
+writeRouteManifest(lastUpdatedByLocale);
 
 const total = docSets.reduce((count, docSet) => count + docSet.docs.length, 0);
 console.log(`[sync-fumadocs-content] synced ${total} docs from ${relative(frontendRoot, sourceRoot)}`);

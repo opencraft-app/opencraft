@@ -22,6 +22,7 @@ import { isGlobal } from "@/lib/region";
 import { useT } from "@/i18n/t";
 import { RepositoryError } from "@/repositories/http-repositories";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
+import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 
 type RenewPassModalProps = {
   pass: Pass;
@@ -115,12 +116,20 @@ export const RenewPassModal = ({
   } = getRenewalRealnameFlowFlags(user, realnamePhoneVerificationEnabled);
   /* 国际站（lightvela.ai）无中国实名要求：短路实名门禁，避免续费按钮被 disabled。
      国内站续费仍需 PHONE_3FA 实名（renewal-realname.ts isRenewalRealnameVerified）。 */
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
   const realnameVerified = isGlobal || isRenewalRealnameVerified(user, realnamePhoneVerificationEnabled);
   const realnameSyncStatus = user?.realnameSyncStatus as RealnameSyncStatus | undefined;
-  const renewActionDisabled = submitting || pricing || !realnameVerified;
+  const renewActionDisabled = submitting || pricing || !realnameVerified || !renewalAvailable;
 
   useEffect(() => {
     if (step !== "confirm") return;
+    if (!renewalAvailable) {
+      setPricing(false);
+      setPriceInfo(null);
+      setPriceError(t("续费功能敬请期待。"));
+      setSubmitError(null);
+      return;
+    }
     if (!realnameVerified) {
       setPricing(false);
       setPriceInfo(null);
@@ -147,7 +156,7 @@ export const RenewPassModal = ({
     return () => {
       cancelled = true;
     };
-  }, [pass.pass_id, plans, realnameVerified, selected, step, t]);
+  }, [pass.pass_id, plans, realnameVerified, renewalAvailable, selected, step, t]);
 
   useEffect(() => {
     if (realnameVerified) {
@@ -214,6 +223,10 @@ export const RenewPassModal = ({
 
   const handleSubmit = useCallback(async () => {
     if (submitting) return;
+    if (!renewalAvailable) {
+      setSubmitError(t("续费功能敬请期待。"));
+      return;
+    }
     if (!user) {
       setSubmitError(t("请先登录后再续费。"));
       return;
@@ -288,7 +301,7 @@ export const RenewPassModal = ({
     } finally {
       setSubmitting(false);
     }
-  }, [isGlobal, onSuccess, pass.bundle_name, pass.pass_id, plans, realnameVerified, selected, submitting, t, user]);
+  }, [isGlobal, onSuccess, pass.bundle_name, pass.pass_id, plans, realnameVerified, renewalAvailable, selected, submitting, t, user]);
 
   const handleOpenRealnameGuide = useCallback(() => {
     setSubmitError(null);

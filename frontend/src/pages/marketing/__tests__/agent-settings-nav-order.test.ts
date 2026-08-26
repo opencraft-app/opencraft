@@ -46,7 +46,7 @@ describe("Agent settings navigation groups", () => {
     expect(use).toMatch(/id: "chat"[\s\S]*id: "automations"[\s\S]*id: "website"/);
     expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"[\s\S]*id: "achievement"/);
     expect(manage).toMatch(
-      /id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "labs"[\s\S]*id: "deepseek-harness"/,
+      /id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "settings"[\s\S]*id: "labs"[\s\S]*id: "deepseek-harness"/,
     );
   });
 

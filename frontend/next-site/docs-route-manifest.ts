@@ -75,6 +75,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "personality"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -92,6 +96,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "diagnostics"
+    ],
+    [
+      "configuration",
+      "advanced-settings"
     ],
     [
       "configuration",
@@ -152,6 +160,14 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "memory-and-knowledge"
+    ],
+    [
+      "use-cases",
+      "discord-community-agent"
+    ],
+    [
+      "use-cases",
+      "discord-event-agent"
     ],
     [
       "compare",
@@ -268,15 +284,51 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
-      "channel-feishu"
-    ],
-    [
-      "configuration",
       "channel-qq"
     ],
     [
       "configuration",
+      "channel-wecom"
+    ],
+    [
+      "configuration",
+      "channel-feishu"
+    ],
+    [
+      "configuration",
       "skill"
+    ],
+    [
+      "configuration",
+      "personality"
+    ],
+    [
+      "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
+      "automation"
+    ],
+    [
+      "configuration",
+      "files"
+    ],
+    [
+      "configuration",
+      "agent-chat"
+    ],
+    [
+      "configuration",
+      "diagnostics"
+    ],
+    [
+      "configuration",
+      "advanced-settings"
+    ],
+    [
+      "configuration",
+      "multiple-models"
     ],
     [
       "hermes-agent",
@@ -417,6 +469,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "personality"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -434,6 +490,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "diagnostics"
+    ],
+    [
+      "configuration",
+      "advanced-settings"
     ],
     [
       "configuration",
@@ -494,6 +554,14 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "memory-and-knowledge"
+    ],
+    [
+      "use-cases",
+      "discord-community-agent"
+    ],
+    [
+      "use-cases",
+      "discord-event-agent"
     ],
     [
       "compare",
@@ -639,6 +707,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "personality"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -656,6 +728,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "diagnostics"
+    ],
+    [
+      "configuration",
+      "advanced-settings"
     ],
     [
       "configuration",
@@ -716,6 +792,14 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "memory-and-knowledge"
+    ],
+    [
+      "use-cases",
+      "discord-community-agent"
+    ],
+    [
+      "use-cases",
+      "discord-event-agent"
     ],
     [
       "compare",
@@ -861,6 +945,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "personality"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -878,6 +966,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "diagnostics"
+    ],
+    [
+      "configuration",
+      "advanced-settings"
     ],
     [
       "configuration",
@@ -1012,6 +1104,332 @@ export const DOCS_ROUTE_SLUGS = {
     ]
   ]
 } as const satisfies Record<DocsRouteLocale, readonly (readonly string[])[]>;
+
+/**
+ * 每个文档路由的内容最后更新日期（YYYY-MM-DD），key 为 slug 段用 "/" 连接。
+ *
+ * ⚠️ 本常量是**生成产物**，由 `scripts/sync-fumadocs-content.mjs` 从
+ * `src/content/docs/last-updated.json`（唯一真源）写出。**不要手工编辑**：
+ * 下次 sync 会覆盖，且会与真源漂移。改日期请改真源后重跑 sync。
+ *
+ * 日期语义是「内容最后更新日」而**不是构建时间**：每天重新构建不会让它变化，
+ * 只有内容真的改了才变（Google 要求 lastmod 一致准确，否则会忽略整个信号）。
+ * 初始值由 `docs-last-updated.mjs --from-git` 从 git 历史逐篇生成，
+ * 因此各篇日期不同、反映真实批次，而非全站同一天。
+ *
+ * 供 sitemap 的 `<lastmod>` 与文档页「最后更新于」共用，不存在第二处时间镜像。
+ * 一致性由 `scripts/docs-last-updated.test.ts` 断言（产物 ↔ 真源逐条比对）。
+ *
+ * 类型用显式注解而非 `as const satisfies`：内层键是运行时拼出的 slug 字符串，
+ * 字面量类型无法用 `string` 索引（TS7053），只能靠类型断言绕开。
+ * 显式声明为 `Record<string, string | undefined>` 后既零断言，
+ * 返回类型也诚实（key 不存在时确实是 undefined）。
+ */
+export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | undefined>> = {
+  "en-us": {
+    "overview": "2026-08-20",
+    "quickstart": "2026-08-20",
+    "core-concepts": "2026-08-20",
+    "who-is-lightvela-for": "2026-08-20",
+    "plans": "2026-08-24",
+    "announcements/public-beta": "2026-08-20",
+    "credits": "2026-08-20",
+    "create-first-hermes": "2026-08-20",
+    "configuration": "2026-08-20",
+    "configuration/model": "2026-08-20",
+    "configuration/channel-telegram": "2026-08-20",
+    "configuration/channel-whatsapp": "2026-08-20",
+    "configuration/channel-discord": "2026-08-20",
+    "configuration/channel-slack": "2026-08-20",
+    "configuration/channel-wechat": "2026-08-20",
+    "configuration/channel-qq": "2026-08-20",
+    "configuration/channel-wecom": "2026-08-20",
+    "configuration/channel-feishu": "2026-08-20",
+    "configuration/skill": "2026-08-20",
+    "configuration/personality": "2026-08-24",
+    "configuration/memory": "2026-08-20",
+    "configuration/automation": "2026-08-20",
+    "configuration/files": "2026-08-20",
+    "configuration/agent-chat": "2026-08-20",
+    "configuration/diagnostics": "2026-08-20",
+    "configuration/advanced-settings": "2026-08-25",
+    "configuration/multiple-models": "2026-08-20",
+    "use-cases/personal-ai-assistant": "2026-08-18",
+    "use-cases/chinese-messaging-channels": "2026-08-21",
+    "use-cases/telegram-persona-agent": "2026-08-17",
+    "use-cases/whatsapp-persona-agent": "2026-08-17",
+    "use-cases/im-agent-persona-soul-md": "2026-08-17",
+    "use-cases/im-agent-skill-scenarios": "2026-08-17",
+    "use-cases/multi-channel-personality-memory": "2026-08-17",
+    "use-cases/telegram-group-community-assistant": "2026-08-17",
+    "use-cases/whatsapp-24-7-customer-service": "2026-08-17",
+    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-17",
+    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-17",
+    "use-cases/daily-summary": "2026-08-17",
+    "use-cases/hermes-agent-24-7": "2026-08-18",
+    "use-cases/memory-and-knowledge": "2026-08-17",
+    "use-cases/discord-community-agent": "2026-08-21",
+    "use-cases/discord-event-agent": "2026-08-21",
+    "compare/lightvela-vs-localhost-ai-agent": "2026-08-18",
+    "compare/lightvela-vs-hostinger": "2026-08-17",
+    "compare/lightvela-vs-manus": "2026-08-18",
+    "compare/lightvela-vs-chatgpt": "2026-08-18",
+    "compare/lightvela-vs-genspark": "2026-08-18",
+    "hermes-agent/hermes-vs-openclaw": "2026-08-03",
+    "hermes-agent/why-hermes-remembers-you": "2026-08-18",
+    "hermes-agent/user-md-vs-memory-md": "2026-08-12",
+    "hermes-agent/hermes-memory-curation": "2026-08-18",
+    "hermes-agent/memory-vs-skill": "2026-08-12",
+    "hermes-agent/model-vs-agent-layer": "2026-08-12",
+    "hermes-agent/message-gateway": "2026-08-20",
+    "hermes-agent/automation-scheduling": "2026-08-12",
+    "hermes-agent/model-switching-memory": "2026-08-12",
+    "hermes-agent/persona-user-memory": "2026-08-12",
+    "hermes-agent/workspace-context-storage": "2026-08-12",
+    "hermes-agent/skills-self-improvement": "2026-08-12",
+    "contact-us": "2026-08-20",
+    "": "2026-08-20"
+  },
+  "zh-cn": {
+    "overview": "2026-08-20",
+    "quickstart": "2026-08-20",
+    "core-concepts": "2026-08-20",
+    "who-is-lightvela-for": "2026-08-20",
+    "account": "2026-08-20",
+    "announcements/public-beta": "2026-08-20",
+    "plans": "2026-08-20",
+    "credits": "2026-08-20",
+    "create-first-hermes": "2026-08-20",
+    "configuration": "2026-08-20",
+    "configuration/model": "2026-08-20",
+    "configuration/channel-wechat": "2026-08-20",
+    "configuration/channel-qq": "2026-08-20",
+    "configuration/channel-wecom": "2026-08-20",
+    "configuration/channel-feishu": "2026-08-20",
+    "configuration/skill": "2026-08-20",
+    "configuration/personality": "2026-08-24",
+    "configuration/memory": "2026-08-24",
+    "configuration/automation": "2026-08-24",
+    "configuration/files": "2026-08-24",
+    "configuration/agent-chat": "2026-08-24",
+    "configuration/diagnostics": "2026-08-24",
+    "configuration/advanced-settings": "2026-08-25",
+    "configuration/multiple-models": "2026-08-24",
+    "hermes-agent/hermes-vs-openclaw": "2026-08-12",
+    "hermes-agent/why-hermes-remembers-you": "2026-08-12",
+    "hermes-agent/user-md-vs-memory-md": "2026-08-12",
+    "hermes-agent/hermes-memory-curation": "2026-08-12",
+    "hermes-agent/memory-vs-skill": "2026-08-12",
+    "hermes-agent/model-vs-agent-layer": "2026-08-12",
+    "hermes-agent/message-gateway": "2026-08-12",
+    "hermes-agent/automation-scheduling": "2026-08-12",
+    "hermes-agent/model-switching-memory": "2026-08-12",
+    "hermes-agent/persona-user-memory": "2026-08-12",
+    "hermes-agent/workspace-context-storage": "2026-08-12",
+    "hermes-agent/skills-self-improvement": "2026-08-12",
+    "compare/lightvela-vs-manus": "2026-08-12",
+    "compare/lightvela-vs-localhost-ai-agent": "2026-08-12",
+    "compare/lightvela-vs-ai-chatbot": "2026-08-12",
+    "faq": "2026-08-20",
+    "contact-us": "2026-08-20",
+    "": "2026-08-20"
+  },
+  "zh-sg": {
+    "overview": "2026-08-20",
+    "quickstart": "2026-08-20",
+    "core-concepts": "2026-08-20",
+    "who-is-lightvela-for": "2026-08-20",
+    "plans": "2026-08-24",
+    "announcements/public-beta": "2026-08-20",
+    "credits": "2026-08-20",
+    "create-first-hermes": "2026-08-20",
+    "configuration": "2026-08-20",
+    "configuration/model": "2026-08-20",
+    "configuration/channel-telegram": "2026-08-20",
+    "configuration/channel-whatsapp": "2026-08-20",
+    "configuration/channel-discord": "2026-08-20",
+    "configuration/channel-slack": "2026-08-20",
+    "configuration/channel-wechat": "2026-08-20",
+    "configuration/channel-qq": "2026-08-20",
+    "configuration/channel-wecom": "2026-08-20",
+    "configuration/channel-feishu": "2026-08-20",
+    "configuration/skill": "2026-08-20",
+    "configuration/personality": "2026-08-24",
+    "configuration/memory": "2026-08-20",
+    "configuration/automation": "2026-08-20",
+    "configuration/files": "2026-08-20",
+    "configuration/agent-chat": "2026-08-20",
+    "configuration/diagnostics": "2026-08-20",
+    "configuration/advanced-settings": "2026-08-25",
+    "configuration/multiple-models": "2026-08-20",
+    "use-cases/personal-ai-assistant": "2026-08-18",
+    "use-cases/chinese-messaging-channels": "2026-08-21",
+    "use-cases/telegram-persona-agent": "2026-08-17",
+    "use-cases/whatsapp-persona-agent": "2026-08-17",
+    "use-cases/im-agent-persona-soul-md": "2026-08-17",
+    "use-cases/im-agent-skill-scenarios": "2026-08-17",
+    "use-cases/multi-channel-personality-memory": "2026-08-17",
+    "use-cases/telegram-group-community-assistant": "2026-08-17",
+    "use-cases/whatsapp-24-7-customer-service": "2026-08-17",
+    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-17",
+    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-17",
+    "use-cases/daily-summary": "2026-08-17",
+    "use-cases/hermes-agent-24-7": "2026-08-18",
+    "use-cases/memory-and-knowledge": "2026-08-17",
+    "use-cases/discord-community-agent": "2026-08-21",
+    "use-cases/discord-event-agent": "2026-08-21",
+    "compare/lightvela-vs-localhost-ai-agent": "2026-08-18",
+    "compare/lightvela-vs-hostinger": "2026-08-17",
+    "compare/lightvela-vs-manus": "2026-08-18",
+    "compare/lightvela-vs-chatgpt": "2026-08-18",
+    "compare/lightvela-vs-genspark": "2026-08-18",
+    "hermes-agent/hermes-vs-openclaw": "2026-08-03",
+    "hermes-agent/why-hermes-remembers-you": "2026-08-18",
+    "hermes-agent/user-md-vs-memory-md": "2026-08-12",
+    "hermes-agent/hermes-memory-curation": "2026-08-18",
+    "hermes-agent/memory-vs-skill": "2026-08-12",
+    "hermes-agent/model-vs-agent-layer": "2026-08-12",
+    "hermes-agent/message-gateway": "2026-08-20",
+    "hermes-agent/automation-scheduling": "2026-08-12",
+    "hermes-agent/model-switching-memory": "2026-08-12",
+    "hermes-agent/persona-user-memory": "2026-08-12",
+    "hermes-agent/workspace-context-storage": "2026-08-12",
+    "hermes-agent/skills-self-improvement": "2026-08-12",
+    "contact-us": "2026-08-20",
+    "": "2026-08-20"
+  },
+  "zh-hant": {
+    "overview": "2026-08-20",
+    "quickstart": "2026-08-20",
+    "core-concepts": "2026-08-20",
+    "who-is-lightvela-for": "2026-08-20",
+    "plans": "2026-08-24",
+    "announcements/public-beta": "2026-08-20",
+    "credits": "2026-08-20",
+    "create-first-hermes": "2026-08-20",
+    "configuration": "2026-08-20",
+    "configuration/model": "2026-08-20",
+    "configuration/channel-telegram": "2026-08-20",
+    "configuration/channel-whatsapp": "2026-08-20",
+    "configuration/channel-discord": "2026-08-20",
+    "configuration/channel-slack": "2026-08-20",
+    "configuration/channel-wechat": "2026-08-20",
+    "configuration/channel-qq": "2026-08-20",
+    "configuration/channel-wecom": "2026-08-20",
+    "configuration/channel-feishu": "2026-08-20",
+    "configuration/skill": "2026-08-20",
+    "configuration/personality": "2026-08-24",
+    "configuration/memory": "2026-08-20",
+    "configuration/automation": "2026-08-20",
+    "configuration/files": "2026-08-20",
+    "configuration/agent-chat": "2026-08-20",
+    "configuration/diagnostics": "2026-08-20",
+    "configuration/advanced-settings": "2026-08-25",
+    "configuration/multiple-models": "2026-08-20",
+    "use-cases/personal-ai-assistant": "2026-08-18",
+    "use-cases/chinese-messaging-channels": "2026-08-21",
+    "use-cases/telegram-persona-agent": "2026-08-17",
+    "use-cases/whatsapp-persona-agent": "2026-08-17",
+    "use-cases/im-agent-persona-soul-md": "2026-08-17",
+    "use-cases/im-agent-skill-scenarios": "2026-08-17",
+    "use-cases/multi-channel-personality-memory": "2026-08-17",
+    "use-cases/telegram-group-community-assistant": "2026-08-17",
+    "use-cases/whatsapp-24-7-customer-service": "2026-08-17",
+    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-17",
+    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-17",
+    "use-cases/daily-summary": "2026-08-17",
+    "use-cases/hermes-agent-24-7": "2026-08-18",
+    "use-cases/memory-and-knowledge": "2026-08-17",
+    "use-cases/discord-community-agent": "2026-08-21",
+    "use-cases/discord-event-agent": "2026-08-21",
+    "compare/lightvela-vs-localhost-ai-agent": "2026-08-18",
+    "compare/lightvela-vs-hostinger": "2026-08-17",
+    "compare/lightvela-vs-manus": "2026-08-18",
+    "compare/lightvela-vs-chatgpt": "2026-08-18",
+    "compare/lightvela-vs-genspark": "2026-08-18",
+    "hermes-agent/hermes-vs-openclaw": "2026-08-03",
+    "hermes-agent/why-hermes-remembers-you": "2026-08-18",
+    "hermes-agent/user-md-vs-memory-md": "2026-08-12",
+    "hermes-agent/hermes-memory-curation": "2026-08-18",
+    "hermes-agent/memory-vs-skill": "2026-08-12",
+    "hermes-agent/model-vs-agent-layer": "2026-08-12",
+    "hermes-agent/message-gateway": "2026-08-20",
+    "hermes-agent/automation-scheduling": "2026-08-12",
+    "hermes-agent/model-switching-memory": "2026-08-12",
+    "hermes-agent/persona-user-memory": "2026-08-12",
+    "hermes-agent/workspace-context-storage": "2026-08-12",
+    "hermes-agent/skills-self-improvement": "2026-08-12",
+    "contact-us": "2026-08-20",
+    "": "2026-08-20"
+  },
+  "id-id": {
+    "overview": "2026-08-20",
+    "quickstart": "2026-08-20",
+    "core-concepts": "2026-08-20",
+    "who-is-lightvela-for": "2026-08-20",
+    "plans": "2026-08-20",
+    "announcements/public-beta": "2026-08-20",
+    "credits": "2026-08-20",
+    "create-first-hermes": "2026-08-20",
+    "configuration": "2026-08-20",
+    "configuration/model": "2026-08-20",
+    "configuration/channel-telegram": "2026-08-20",
+    "configuration/channel-whatsapp": "2026-08-20",
+    "configuration/channel-discord": "2026-08-20",
+    "configuration/channel-slack": "2026-08-20",
+    "configuration/channel-wechat": "2026-08-20",
+    "configuration/channel-qq": "2026-08-20",
+    "configuration/channel-wecom": "2026-08-20",
+    "configuration/channel-feishu": "2026-08-20",
+    "configuration/skill": "2026-08-20",
+    "configuration/personality": "2026-08-24",
+    "configuration/memory": "2026-08-20",
+    "configuration/automation": "2026-08-20",
+    "configuration/files": "2026-08-20",
+    "configuration/agent-chat": "2026-08-20",
+    "configuration/diagnostics": "2026-08-20",
+    "configuration/advanced-settings": "2026-08-25",
+    "configuration/multiple-models": "2026-08-20",
+    "use-cases/personal-ai-assistant": "2026-08-18",
+    "use-cases/chinese-messaging-channels": "2026-08-20",
+    "use-cases/telegram-persona-agent": "2026-08-18",
+    "use-cases/whatsapp-persona-agent": "2026-08-18",
+    "use-cases/im-agent-persona-soul-md": "2026-08-18",
+    "use-cases/im-agent-skill-scenarios": "2026-08-18",
+    "use-cases/multi-channel-personality-memory": "2026-08-18",
+    "use-cases/telegram-group-community-assistant": "2026-08-18",
+    "use-cases/whatsapp-24-7-customer-service": "2026-08-18",
+    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-18",
+    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-18",
+    "use-cases/daily-summary": "2026-08-18",
+    "use-cases/hermes-agent-24-7": "2026-08-18",
+    "use-cases/memory-and-knowledge": "2026-08-18",
+    "compare/lightvela-vs-localhost-ai-agent": "2026-08-18",
+    "compare/lightvela-vs-hostinger": "2026-08-18",
+    "compare/lightvela-vs-manus": "2026-08-18",
+    "compare/lightvela-vs-chatgpt": "2026-08-18",
+    "compare/lightvela-vs-genspark": "2026-08-18",
+    "hermes-agent/hermes-vs-openclaw": "2026-08-18",
+    "hermes-agent/why-hermes-remembers-you": "2026-08-18",
+    "hermes-agent/user-md-vs-memory-md": "2026-08-18",
+    "hermes-agent/hermes-memory-curation": "2026-08-18",
+    "hermes-agent/memory-vs-skill": "2026-08-18",
+    "hermes-agent/model-vs-agent-layer": "2026-08-18",
+    "hermes-agent/message-gateway": "2026-08-20",
+    "hermes-agent/automation-scheduling": "2026-08-18",
+    "hermes-agent/model-switching-memory": "2026-08-18",
+    "hermes-agent/persona-user-memory": "2026-08-18",
+    "hermes-agent/workspace-context-storage": "2026-08-18",
+    "hermes-agent/skills-self-improvement": "2026-08-18",
+    "contact-us": "2026-08-20",
+    "": "2026-08-20"
+  }
+};
+
+export function docsLastUpdated(locale: DocsRouteLocale, slug: readonly string[] = []): string | undefined {
+  const key = slug.join('/');
+  return DOCS_LAST_UPDATED[locale][key];
+}
 
 export function isDocsRouteSlug(locale: DocsRouteLocale, slug: readonly string[] = []) {
   const key = slug.join('/');

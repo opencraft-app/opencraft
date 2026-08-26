@@ -2,6 +2,7 @@ package shadowbinding
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -76,6 +77,27 @@ func (s *MemoryStore) MarkBindingActive(_ context.Context, userID string, uin, o
 	binding.LastErrorMessage = ""
 	binding.UpdatedAt = now
 	s.bindings[userID] = binding
+	return binding, nil
+}
+
+func (s *MemoryStore) SetBindingAppIDIfMissing(_ context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	binding, ok := s.bindings[userID]
+	if !ok {
+		return Binding{}, ErrNotFound
+	}
+	if binding.Uin != uin || binding.OwnerUin != ownerUin {
+		return Binding{}, fmt.Errorf("shadow binding identity changed")
+	}
+	if binding.AppID != 0 && binding.AppID != appID {
+		return Binding{}, fmt.Errorf("shadow binding app id changed")
+	}
+	if binding.AppID == 0 {
+		binding.AppID = appID
+		binding.UpdatedAt = now
+		s.bindings[userID] = binding
+	}
 	return binding, nil
 }
 

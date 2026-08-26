@@ -32,6 +32,7 @@ var ErrNotFound = errors.New("site not found")
 
 type Site struct {
 	SiteID    string `json:"site_id"`
+	UserID    string `json:"user_id"`
 	Status    string `json:"status"`
 	CloudPath string `json:"cloud_path"`
 	// MonthlyTrafficBytes 是该站点所属套餐的月流量额度，0 表示不限额。
@@ -61,6 +62,11 @@ func (s *Site) TrafficExhausted() bool {
 // Lookup 是服务端查询站点的能力，抽成接口便于测试替换。
 type Lookup interface {
 	BySiteID(ctx context.Context, siteID string) (*Site, error)
+}
+
+// FreshLookup 用于认证等必须绕过缓存的关键校验。
+type FreshLookup interface {
+	BySiteIDFresh(ctx context.Context, siteID string) (*Site, error)
 }
 
 // DomainLookup 在 Host 未命中根域时查询自定义域名→site_id。
@@ -102,10 +108,10 @@ type Client struct {
 	negativeTTL time.Duration
 	maxEntries  int
 
-	mu             sync.Mutex
-	cache          map[string]cacheEntry
-	lastSweep      time.Time
-	domainCache    map[string]cacheEntry
+	mu              sync.Mutex
+	cache           map[string]cacheEntry
+	lastSweep       time.Time
+	domainCache     map[string]cacheEntry
 	domainLastSweep time.Time
 }
 
@@ -133,15 +139,15 @@ func NewClient(opts Options) *Client {
 		opts.MaxEntries = defaultMaxEntries
 	}
 	return &Client{
-		baseURL:       strings.TrimRight(opts.BaseURL, "/"),
-		token:         opts.InternalToken,
-		httpClient:    client,
-		positiveTTL:   opts.PositiveTTL,
-		negativeTTL:   opts.NegativeTTL,
-		maxEntries:    opts.MaxEntries,
-		cache:         make(map[string]cacheEntry),
-		lastSweep:     time.Now(),
-		domainCache:   make(map[string]cacheEntry),
+		baseURL:         strings.TrimRight(opts.BaseURL, "/"),
+		token:           opts.InternalToken,
+		httpClient:      client,
+		positiveTTL:     opts.PositiveTTL,
+		negativeTTL:     opts.NegativeTTL,
+		maxEntries:      opts.MaxEntries,
+		cache:           make(map[string]cacheEntry),
+		lastSweep:       time.Now(),
+		domainCache:     make(map[string]cacheEntry),
 		domainLastSweep: time.Now(),
 	}
 }
@@ -161,6 +167,19 @@ func (c *Client) BySiteID(ctx context.Context, siteID string) (*Site, error) {
 	}
 	if err != nil {
 		// 查询失败不写缓存：ctl 短暂抖动不应该被固化成一段时间内的持续失败。
+		return nil, err
+	}
+	c.storeCache(siteID, cacheEntry{site: site, expiresAt: time.Now().Add(c.positiveTTL)})
+	return site, nil
+}
+
+func (c *Client) BySiteIDFresh(ctx context.Context, siteID string) (*Site, error) {
+	site, err := c.fetch(ctx, siteID)
+	if errors.Is(err, ErrNotFound) {
+		c.storeCache(siteID, cacheEntry{notFound: true, expiresAt: time.Now().Add(c.negativeTTL)})
+		return nil, ErrNotFound
+	}
+	if err != nil {
 		return nil, err
 	}
 	c.storeCache(siteID, cacheEntry{site: site, expiresAt: time.Now().Add(c.positiveTTL)})
@@ -267,7 +286,6 @@ func (c *Client) CacheSize() int {
 	defer c.mu.Unlock()
 	return len(c.cache)
 }
-
 
 // SiteIDByDomain 查询自定义域名绑定的 site_id。
 //

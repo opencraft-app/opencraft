@@ -1,5 +1,11 @@
 # 配置通道 - Telegram
 
+## 摘要
+
+**Telegram 通道采用 Bot Token 接入，适合快速把 Hermes Agent 接入 Telegram 私聊或群组：先在 Telegram 中通过 BotFather 创建机器人并获取 Bot Token，再填入 LightVela 管理台的「通道」完成接入。准备工作是一个 Telegram 账号，以及完成模型配置（或直接使用套餐按月提供的模型积分）。Bot Token 属于敏感凭证，请勿公开分享；接入后 Agent 在 Telegram 中与其他通道共享同一份人格与长期记忆。**
+
+---
+
 Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接入 Telegram 私聊或群组场景。
 
 ## 本页覆盖

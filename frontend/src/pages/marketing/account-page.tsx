@@ -39,6 +39,7 @@ import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-st
 import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { SavedCardsSection } from "./saved-cards-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
 
@@ -802,6 +803,7 @@ const SubscriptionSection = ({
   /** 可操作的 pass：优先 active，其次 fallback */
   const operablePass = pass ?? fallbackPass;
   const passStatus = operablePass ? getPassStatus(operablePass) : null;
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
   const canRenew = paidBillingActive && operablePass != null && canRenewPass(operablePass);
   const canDelete = paidBillingActive && operablePass != null && canDeletePass(operablePass);
 
@@ -1012,20 +1014,28 @@ const SubscriptionSection = ({
           </>
         )}
 
-        {/* 续费 / 销毁按钮区：仅国内站 + 可操作 pass 时展示 */}
+        {/* 续费 / 销毁按钮区：国际站续费暂置灰，国内站保留真实续费入口。 */}
         {(canRenew || canDelete) && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
               {canRenew && (
-                <button
-                  type="button"
-                  onClick={() => setRenewModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
-                >
-                  <CreditCard className="h-4 w-4" />
-                  {t("立即续费")}
-                </button>
+                !renewalAvailable ? (
+                  <RenewComingSoonButton
+                    label={t("立即续费")}
+                    tooltip={t("敬请期待")}
+                    icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setRenewModalOpen(true)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    {t("立即续费")}
+                  </button>
+                )
               )}
               {canDelete && (
                 <button
@@ -1040,12 +1050,16 @@ const SubscriptionSection = ({
               )}
               {passStatus === "isolated" && (
                 <p className="basis-full text-xs" style={{ color: "#C67B1E" }}>
-                  {t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
+                  {isGlobal
+                    ? t("续费功能敬请期待。你仍可销毁当前套餐后重新购买。")
+                    : t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
                 </p>
               )}
               {passStatus === "expired" && (
                 <p className="basis-full text-xs" style={{ color: "#cf3d4c" }}>
-                  {t("套餐已过期，请及时续费以免进入隔离期。")}
+                  {isGlobal
+                    ? t("续费功能敬请期待。套餐已过期，暂时无法发起续费。")
+                    : t("套餐已过期，请及时续费以免进入隔离期。")}
                 </p>
               )}
             </div>
@@ -1053,9 +1067,9 @@ const SubscriptionSection = ({
         )}
       </div>
 
-      {/* 续费 / 销毁弹窗 — 仅国内站有机会被触发（operablePass != null 且 isPaidBillingEnabled） */}
+      {/* 续费 / 销毁弹窗 — 国际站续费入口置灰，续费弹窗仅国内站触发。 */}
       <AnimatePresence>
-        {renewModalOpen && operablePass && (
+        {renewModalOpen && renewalAvailable && operablePass && (
           <RenewPassModal
             key="renew"
             pass={operablePass}
@@ -1861,13 +1875,13 @@ export const AccountPage = () => {
                             {realnameStatusLabel && (
                               <span
                                 className="text-sm"
-                                style={{ color: idCardSyncStatus === "failed" ? "var(--color-danger, #D92D20)" : "rgba(0,0,0,0.5)" }}
+                                style={{ color: idCardSyncStatus === "failed" ? "var(--color-danger, #cf3d4c)" : "rgba(0,0,0,0.5)" }}
                               >
                                 {realnameStatusLabel}
                               </span>
                             )}
                             {realnameSyncError && (
-                              <span className="max-w-[240px] text-right text-xs" style={{ color: "var(--color-danger, #D92D20)" }}>
+                              <span className="max-w-[240px] text-right text-xs" style={{ color: "var(--color-danger, #cf3d4c)" }}>
                                 {realnameSyncError}
                               </span>
                             )}

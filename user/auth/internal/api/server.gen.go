@@ -27,8 +27,9 @@ import (
 )
 
 const (
-	SessionBearerScopes = "SessionBearer.Scopes"
-	SessionCookieScopes = "SessionCookie.Scopes"
+	FederationServiceSignatureScopes = "FederationServiceSignature.Scopes"
+	SessionBearerScopes              = "SessionBearer.Scopes"
+	SessionCookieScopes              = "SessionCookie.Scopes"
 )
 
 // Defines values for InviteValidationState.
@@ -286,6 +287,72 @@ type ErrorResponse struct {
 	RetryAfterSeconds *int   `json:"retryAfterSeconds,omitempty"`
 }
 
+// FederationClient defines model for FederationClient.
+type FederationClient struct {
+	DisplayName string `json:"display_name"`
+	Id          string `json:"id"`
+}
+
+// FederationContextResponse defines model for FederationContextResponse.
+type FederationContextResponse struct {
+	Client      FederationClient         `json:"client"`
+	RedirectUri string                   `json:"redirect_uri"`
+	Session     FederationSessionSummary `json:"session"`
+	State       string                   `json:"state"`
+}
+
+// FederationExchangeRequest defines model for FederationExchangeRequest.
+type FederationExchangeRequest struct {
+	RedirectUri string `json:"redirect_uri"`
+	Ticket      string `json:"ticket"`
+}
+
+// FederationExchangeResponse defines model for FederationExchangeResponse.
+type FederationExchangeResponse struct {
+	DelegatedSession string    `json:"delegated_session"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
+// FederationSessionSummary defines model for FederationSessionSummary.
+type FederationSessionSummary struct {
+	Authenticated bool  `json:"authenticated"`
+	User          *User `json:"user,omitempty"`
+}
+
+// FederationTatBootstrap defines model for FederationTatBootstrap.
+type FederationTatBootstrap struct {
+	AppId            int64   `json:"appId"`
+	Cols             int64   `json:"cols"`
+	InstanceId       string  `json:"instanceId"`
+	LoginUin         string  `json:"loginUin"`
+	OwnerUin         string  `json:"ownerUin"`
+	Region           string  `json:"region"`
+	Rows             int64   `json:"rows"`
+	SessionId        string  `json:"sessionId"`
+	TimeoutSeconds   int64   `json:"timeoutSeconds"`
+	Username         *string `json:"username,omitempty"`
+	WorkingDirectory *string `json:"workingDirectory,omitempty"`
+	WsUrl            string  `json:"wsUrl"`
+}
+
+// FederationTatSessionRequest defines model for FederationTatSessionRequest.
+type FederationTatSessionRequest struct {
+	DelegatedSession string `json:"delegated_session"`
+}
+
+// FederationTicketRequest defines model for FederationTicketRequest.
+type FederationTicketRequest struct {
+	ClientId    string `json:"client_id"`
+	RedirectUri string `json:"redirect_uri"`
+	State       string `json:"state"`
+}
+
+// FederationTicketResponse defines model for FederationTicketResponse.
+type FederationTicketResponse struct {
+	ExpiresAt   time.Time `json:"expires_at"`
+	RedirectUrl string    `json:"redirect_url"`
+}
+
 // ForgotPasswordRequest defines model for ForgotPasswordRequest.
 type ForgotPasswordRequest struct {
 	Email string `json:"email"`
@@ -304,6 +371,85 @@ type InviteValidationState string
 // InviteValidationRequest defines model for InviteValidationRequest.
 type InviteValidationRequest struct {
 	Code string `json:"code"`
+}
+
+// OIDCAuthorizeContextResponse defines model for OIDCAuthorizeContextResponse.
+type OIDCAuthorizeContextResponse struct {
+	Client              FederationClient         `json:"client"`
+	CodeChallenge       string                   `json:"code_challenge"`
+	CodeChallengeMethod string                   `json:"code_challenge_method"`
+	Nonce               string                   `json:"nonce"`
+	RedirectUri         string                   `json:"redirect_uri"`
+	ResponseType        string                   `json:"response_type"`
+	Scope               string                   `json:"scope"`
+	Session             FederationSessionSummary `json:"session"`
+	State               string                   `json:"state"`
+}
+
+// OIDCAuthorizeRequest defines model for OIDCAuthorizeRequest.
+type OIDCAuthorizeRequest struct {
+	ClientId            string `json:"client_id"`
+	CodeChallenge       string `json:"code_challenge"`
+	CodeChallengeMethod string `json:"code_challenge_method"`
+	Nonce               string `json:"nonce"`
+	RedirectUri         string `json:"redirect_uri"`
+	ResponseType        string `json:"response_type"`
+	Scope               string `json:"scope"`
+	State               string `json:"state"`
+}
+
+// OIDCAuthorizeResponse defines model for OIDCAuthorizeResponse.
+type OIDCAuthorizeResponse struct {
+	ExpiresAt   time.Time `json:"expires_at"`
+	RedirectUrl string    `json:"redirect_url"`
+}
+
+// OIDCDiscoveryDocument defines model for OIDCDiscoveryDocument.
+type OIDCDiscoveryDocument struct {
+	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
+	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
+	GrantTypesSupported               []string `json:"grant_types_supported"`
+	IdTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported"`
+	Issuer                            string   `json:"issuer"`
+	JwksUri                           string   `json:"jwks_uri"`
+	ResponseTypesSupported            []string `json:"response_types_supported"`
+	ScopesSupported                   []string `json:"scopes_supported"`
+	SubjectTypesSupported             []string `json:"subject_types_supported"`
+	TokenEndpoint                     string   `json:"token_endpoint"`
+	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+}
+
+// OIDCJWK defines model for OIDCJWK.
+type OIDCJWK struct {
+	Alg string `json:"alg"`
+	Crv string `json:"crv"`
+	Kid string `json:"kid"`
+	Kty string `json:"kty"`
+	Use string `json:"use"`
+	X   string `json:"x"`
+}
+
+// OIDCJWKS defines model for OIDCJWKS.
+type OIDCJWKS struct {
+	Keys []OIDCJWK `json:"keys"`
+}
+
+// OIDCTokenRequest defines model for OIDCTokenRequest.
+type OIDCTokenRequest struct {
+	ClientId     string `json:"client_id"`
+	Code         string `json:"code"`
+	CodeVerifier string `json:"code_verifier"`
+	GrantType    string `json:"grant_type"`
+	RedirectUri  string `json:"redirect_uri"`
+}
+
+// OIDCTokenResponse defines model for OIDCTokenResponse.
+type OIDCTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"`
+	IdToken     string `json:"id_token"`
+	Scope       string `json:"scope"`
+	TokenType   string `json:"token_type"`
 }
 
 // PasswordSignInRequest defines model for PasswordSignInRequest.
@@ -542,8 +688,67 @@ type VerifySmsRequest struct {
 	Phone      string  `json:"phone"`
 }
 
+// FederationClientId defines model for FederationClientId.
+type FederationClientId = string
+
+// FederationKeyId defines model for FederationKeyId.
+type FederationKeyId = string
+
+// FederationRequestId defines model for FederationRequestId.
+type FederationRequestId = string
+
+// FederationTimestamp defines model for FederationTimestamp.
+type FederationTimestamp = time.Time
+
+// OIDCClientId defines model for OIDCClientId.
+type OIDCClientId = string
+
+// OIDCCodeChallenge defines model for OIDCCodeChallenge.
+type OIDCCodeChallenge = string
+
+// OIDCCodeChallengeMethod defines model for OIDCCodeChallengeMethod.
+type OIDCCodeChallengeMethod = string
+
+// OIDCNonce defines model for OIDCNonce.
+type OIDCNonce = string
+
+// OIDCRedirectUri defines model for OIDCRedirectUri.
+type OIDCRedirectUri = string
+
+// OIDCResponseType defines model for OIDCResponseType.
+type OIDCResponseType = string
+
+// OIDCScope defines model for OIDCScope.
+type OIDCScope = string
+
+// OIDCState defines model for OIDCState.
+type OIDCState = string
+
 // PaymentMethodContractCode defines model for PaymentMethodContractCode.
 type PaymentMethodContractCode = string
+
+// CreateFederationTatSessionParams defines parameters for CreateFederationTatSession.
+type CreateFederationTatSessionParams struct {
+	XLightVelaClientId  FederationClientId  `json:"X-LightVela-Client-Id"`
+	XLightVelaKeyId     FederationKeyId     `json:"X-LightVela-Key-Id"`
+	XLightVelaTimestamp FederationTimestamp `json:"X-LightVela-Timestamp"`
+	XLightVelaRequestId FederationRequestId `json:"X-LightVela-Request-Id"`
+}
+
+// GetFederationContextParams defines parameters for GetFederationContext.
+type GetFederationContextParams struct {
+	ClientId    string `form:"client_id" json:"client_id"`
+	RedirectUri string `form:"redirect_uri" json:"redirect_uri"`
+	State       string `form:"state" json:"state"`
+}
+
+// ExchangeFederationTicketParams defines parameters for ExchangeFederationTicket.
+type ExchangeFederationTicketParams struct {
+	XLightVelaClientId  FederationClientId  `json:"X-LightVela-Client-Id"`
+	XLightVelaKeyId     FederationKeyId     `json:"X-LightVela-Key-Id"`
+	XLightVelaTimestamp FederationTimestamp `json:"X-LightVela-Timestamp"`
+	XLightVelaRequestId FederationRequestId `json:"X-LightVela-Request-Id"`
+}
 
 // ListPaymentMethodsParams defines parameters for ListPaymentMethods.
 type ListPaymentMethodsParams struct {
@@ -561,8 +766,41 @@ type HandleRealnameFaceIDCallbackParams struct {
 	BizToken string `form:"BizToken" json:"BizToken"`
 }
 
+// GetOidcAuthorizeParams defines parameters for GetOidcAuthorize.
+type GetOidcAuthorizeParams struct {
+	ClientId            OIDCClientId            `form:"client_id" json:"client_id"`
+	RedirectUri         OIDCRedirectUri         `form:"redirect_uri" json:"redirect_uri"`
+	ResponseType        OIDCResponseType        `form:"response_type" json:"response_type"`
+	Scope               OIDCScope               `form:"scope" json:"scope"`
+	State               OIDCState               `form:"state" json:"state"`
+	Nonce               OIDCNonce               `form:"nonce" json:"nonce"`
+	CodeChallenge       OIDCCodeChallenge       `form:"code_challenge" json:"code_challenge"`
+	CodeChallengeMethod OIDCCodeChallengeMethod `form:"code_challenge_method" json:"code_challenge_method"`
+}
+
+// GetOidcAuthorizeContextParams defines parameters for GetOidcAuthorizeContext.
+type GetOidcAuthorizeContextParams struct {
+	ClientId            OIDCClientId            `form:"client_id" json:"client_id"`
+	RedirectUri         OIDCRedirectUri         `form:"redirect_uri" json:"redirect_uri"`
+	ResponseType        OIDCResponseType        `form:"response_type" json:"response_type"`
+	Scope               OIDCScope               `form:"scope" json:"scope"`
+	State               OIDCState               `form:"state" json:"state"`
+	Nonce               OIDCNonce               `form:"nonce" json:"nonce"`
+	CodeChallenge       OIDCCodeChallenge       `form:"code_challenge" json:"code_challenge"`
+	CodeChallengeMethod OIDCCodeChallengeMethod `form:"code_challenge_method" json:"code_challenge_method"`
+}
+
 // RequestEmailBindJSONRequestBody defines body for RequestEmailBind for application/json ContentType.
 type RequestEmailBindJSONRequestBody = EmailBindRequest
+
+// CreateFederationTatSessionJSONRequestBody defines body for CreateFederationTatSession for application/json ContentType.
+type CreateFederationTatSessionJSONRequestBody = FederationTatSessionRequest
+
+// ExchangeFederationTicketJSONRequestBody defines body for ExchangeFederationTicket for application/json ContentType.
+type ExchangeFederationTicketJSONRequestBody = FederationExchangeRequest
+
+// IssueFederationTicketJSONRequestBody defines body for IssueFederationTicket for application/json ContentType.
+type IssueFederationTicketJSONRequestBody = FederationTicketRequest
 
 // ActivateInviteCodeJSONRequestBody defines body for ActivateInviteCode for application/json ContentType.
 type ActivateInviteCodeJSONRequestBody = InviteValidationRequest
@@ -612,11 +850,35 @@ type VerifySmsCodeJSONRequestBody = VerifySmsRequest
 // CreateTencentCloudRedirectJSONRequestBody defines body for CreateTencentCloudRedirect for application/json ContentType.
 type CreateTencentCloudRedirectJSONRequestBody = TencentCloudRedirectRequest
 
+// AuthorizeOidcJSONRequestBody defines body for AuthorizeOidc for application/json ContentType.
+type AuthorizeOidcJSONRequestBody = OIDCAuthorizeRequest
+
+// ExchangeOidcTokenFormdataRequestBody defines body for ExchangeOidcToken for application/x-www-form-urlencoded ContentType.
+type ExchangeOidcTokenFormdataRequestBody = OIDCTokenRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Get OIDC signing keys
+	// (GET /.well-known/jwks.json)
+	GetOpenIdJwks(c *gin.Context)
+	// Get OIDC discovery metadata
+	// (GET /.well-known/openid-configuration)
+	GetOpenIdConfiguration(c *gin.Context)
 	// Send a magic-link email to bind an address to the current user
 	// (POST /auth/email/bind/request)
 	RequestEmailBind(c *gin.Context)
+	// Create a fresh Bot-scoped TAT transport
+	// (POST /auth/federation/bots/{bot_id}/tat/session)
+	CreateFederationTatSession(c *gin.Context, botId string, params CreateFederationTatSessionParams)
+	// Validate a federation authorization request
+	// (GET /auth/federation/context)
+	GetFederationContext(c *gin.Context, params GetFederationContextParams)
+	// Exchange a handoff ticket for an opaque delegated session
+	// (POST /auth/federation/exchange)
+	ExchangeFederationTicket(c *gin.Context, params ExchangeFederationTicketParams)
+	// Issue a short-lived federation handoff ticket
+	// (POST /auth/federation/tickets)
+	IssueFederationTicket(c *gin.Context)
 	// Activate the current authenticated user with an invite code
 	// (POST /auth/invite/activate)
 	ActivateInviteCode(c *gin.Context)
@@ -707,6 +969,18 @@ type ServerInterface interface {
 	// Create a one-time Tencent Cloud console login redirect for the current user
 	// (POST /auth/tencent-cloud/redirect)
 	CreateTencentCloudRedirect(c *gin.Context)
+	// Validate OIDC request and redirect to the authorization page
+	// (GET /oauth2/authorize)
+	GetOidcAuthorize(c *gin.Context, params GetOidcAuthorizeParams)
+	// Confirm an OIDC authorization request and issue a code
+	// (POST /oauth2/authorize)
+	AuthorizeOidc(c *gin.Context)
+	// Validate an OIDC authorization request and return session context
+	// (GET /oauth2/authorize/context)
+	GetOidcAuthorizeContext(c *gin.Context, params GetOidcAuthorizeContextParams)
+	// Exchange an OIDC authorization code for tokens
+	// (POST /oauth2/token)
+	ExchangeOidcToken(c *gin.Context)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -717,6 +991,32 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetOpenIdJwks operation middleware
+func (siw *ServerInterfaceWrapper) GetOpenIdJwks(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOpenIdJwks(c)
+}
+
+// GetOpenIdConfiguration operation middleware
+func (siw *ServerInterfaceWrapper) GetOpenIdConfiguration(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOpenIdConfiguration(c)
+}
 
 // RequestEmailBind operation middleware
 func (siw *ServerInterfaceWrapper) RequestEmailBind(c *gin.Context) {
@@ -733,6 +1033,315 @@ func (siw *ServerInterfaceWrapper) RequestEmailBind(c *gin.Context) {
 	}
 
 	siw.Handler.RequestEmailBind(c)
+}
+
+// CreateFederationTatSession operation middleware
+func (siw *ServerInterfaceWrapper) CreateFederationTatSession(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "bot_id" -------------
+	var botId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bot_id", c.Param("bot_id"), &botId, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter bot_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(FederationServiceSignatureScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateFederationTatSessionParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-LightVela-Client-Id" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-LightVela-Client-Id")]; found {
+		var XLightVelaClientId FederationClientId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-LightVela-Client-Id, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-LightVela-Client-Id", valueList[0], &XLightVelaClientId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-LightVela-Client-Id: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XLightVelaClientId = XLightVelaClientId
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-LightVela-Client-Id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-LightVela-Key-Id" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-LightVela-Key-Id")]; found {
+		var XLightVelaKeyId FederationKeyId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-LightVela-Key-Id, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-LightVela-Key-Id", valueList[0], &XLightVelaKeyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-LightVela-Key-Id: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XLightVelaKeyId = XLightVelaKeyId
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-LightVela-Key-Id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-LightVela-Timestamp" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-LightVela-Timestamp")]; found {
+		var XLightVelaTimestamp FederationTimestamp
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-LightVela-Timestamp, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-LightVela-Timestamp", valueList[0], &XLightVelaTimestamp, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "date-time"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-LightVela-Timestamp: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XLightVelaTimestamp = XLightVelaTimestamp
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-LightVela-Timestamp is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-LightVela-Request-Id" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-LightVela-Request-Id")]; found {
+		var XLightVelaRequestId FederationRequestId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-LightVela-Request-Id, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-LightVela-Request-Id", valueList[0], &XLightVelaRequestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-LightVela-Request-Id: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XLightVelaRequestId = XLightVelaRequestId
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-LightVela-Request-Id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateFederationTatSession(c, botId, params)
+}
+
+// GetFederationContext operation middleware
+func (siw *ServerInterfaceWrapper) GetFederationContext(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetFederationContextParams
+
+	// ------------- Required query parameter "client_id" -------------
+
+	if paramValue := c.Query("client_id"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument client_id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client_id", c.Request.URL.Query(), &params.ClientId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter client_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "redirect_uri" -------------
+
+	if paramValue := c.Query("redirect_uri"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument redirect_uri is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "redirect_uri", c.Request.URL.Query(), &params.RedirectUri, runtime.BindQueryParameterOptions{Type: "string", Format: "uri"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter redirect_uri: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "state" -------------
+
+	if paramValue := c.Query("state"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument state is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "state", c.Request.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter state: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetFederationContext(c, params)
+}
+
+// ExchangeFederationTicket operation middleware
+func (siw *ServerInterfaceWrapper) ExchangeFederationTicket(c *gin.Context) {
+
+	var err error
+
+	c.Set(FederationServiceSignatureScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExchangeFederationTicketParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-LightVela-Client-Id" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-LightVela-Client-Id")]; found {
+		var XLightVelaClientId FederationClientId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-LightVela-Client-Id, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-LightVela-Client-Id", valueList[0], &XLightVelaClientId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-LightVela-Client-Id: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XLightVelaClientId = XLightVelaClientId
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-LightVela-Client-Id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-LightVela-Key-Id" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-LightVela-Key-Id")]; found {
+		var XLightVelaKeyId FederationKeyId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-LightVela-Key-Id, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-LightVela-Key-Id", valueList[0], &XLightVelaKeyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-LightVela-Key-Id: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XLightVelaKeyId = XLightVelaKeyId
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-LightVela-Key-Id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-LightVela-Timestamp" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-LightVela-Timestamp")]; found {
+		var XLightVelaTimestamp FederationTimestamp
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-LightVela-Timestamp, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-LightVela-Timestamp", valueList[0], &XLightVelaTimestamp, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "date-time"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-LightVela-Timestamp: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XLightVelaTimestamp = XLightVelaTimestamp
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-LightVela-Timestamp is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-LightVela-Request-Id" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-LightVela-Request-Id")]; found {
+		var XLightVelaRequestId FederationRequestId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-LightVela-Request-Id, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-LightVela-Request-Id", valueList[0], &XLightVelaRequestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-LightVela-Request-Id: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XLightVelaRequestId = XLightVelaRequestId
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-LightVela-Request-Id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExchangeFederationTicket(c, params)
+}
+
+// IssueFederationTicket operation middleware
+func (siw *ServerInterfaceWrapper) IssueFederationTicket(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.IssueFederationTicket(c)
 }
 
 // ActivateInviteCode operation middleware
@@ -1324,6 +1933,312 @@ func (siw *ServerInterfaceWrapper) CreateTencentCloudRedirect(c *gin.Context) {
 	siw.Handler.CreateTencentCloudRedirect(c)
 }
 
+// GetOidcAuthorize operation middleware
+func (siw *ServerInterfaceWrapper) GetOidcAuthorize(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetOidcAuthorizeParams
+
+	// ------------- Required query parameter "client_id" -------------
+
+	if paramValue := c.Query("client_id"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument client_id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client_id", c.Request.URL.Query(), &params.ClientId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter client_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "redirect_uri" -------------
+
+	if paramValue := c.Query("redirect_uri"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument redirect_uri is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "redirect_uri", c.Request.URL.Query(), &params.RedirectUri, runtime.BindQueryParameterOptions{Type: "string", Format: "uri"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter redirect_uri: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "response_type" -------------
+
+	if paramValue := c.Query("response_type"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument response_type is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "response_type", c.Request.URL.Query(), &params.ResponseType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter response_type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "scope" -------------
+
+	if paramValue := c.Query("scope"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument scope is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "scope", c.Request.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter scope: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "state" -------------
+
+	if paramValue := c.Query("state"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument state is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "state", c.Request.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter state: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "nonce" -------------
+
+	if paramValue := c.Query("nonce"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument nonce is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "nonce", c.Request.URL.Query(), &params.Nonce, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter nonce: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "code_challenge" -------------
+
+	if paramValue := c.Query("code_challenge"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument code_challenge is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code_challenge", c.Request.URL.Query(), &params.CodeChallenge, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code_challenge: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "code_challenge_method" -------------
+
+	if paramValue := c.Query("code_challenge_method"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument code_challenge_method is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code_challenge_method", c.Request.URL.Query(), &params.CodeChallengeMethod, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code_challenge_method: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOidcAuthorize(c, params)
+}
+
+// AuthorizeOidc operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeOidc(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AuthorizeOidc(c)
+}
+
+// GetOidcAuthorizeContext operation middleware
+func (siw *ServerInterfaceWrapper) GetOidcAuthorizeContext(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetOidcAuthorizeContextParams
+
+	// ------------- Required query parameter "client_id" -------------
+
+	if paramValue := c.Query("client_id"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument client_id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client_id", c.Request.URL.Query(), &params.ClientId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter client_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "redirect_uri" -------------
+
+	if paramValue := c.Query("redirect_uri"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument redirect_uri is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "redirect_uri", c.Request.URL.Query(), &params.RedirectUri, runtime.BindQueryParameterOptions{Type: "string", Format: "uri"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter redirect_uri: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "response_type" -------------
+
+	if paramValue := c.Query("response_type"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument response_type is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "response_type", c.Request.URL.Query(), &params.ResponseType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter response_type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "scope" -------------
+
+	if paramValue := c.Query("scope"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument scope is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "scope", c.Request.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter scope: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "state" -------------
+
+	if paramValue := c.Query("state"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument state is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "state", c.Request.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter state: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "nonce" -------------
+
+	if paramValue := c.Query("nonce"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument nonce is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "nonce", c.Request.URL.Query(), &params.Nonce, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter nonce: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "code_challenge" -------------
+
+	if paramValue := c.Query("code_challenge"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument code_challenge is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code_challenge", c.Request.URL.Query(), &params.CodeChallenge, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code_challenge: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "code_challenge_method" -------------
+
+	if paramValue := c.Query("code_challenge_method"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument code_challenge_method is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code_challenge_method", c.Request.URL.Query(), &params.CodeChallengeMethod, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code_challenge_method: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOidcAuthorizeContext(c, params)
+}
+
+// ExchangeOidcToken operation middleware
+func (siw *ServerInterfaceWrapper) ExchangeOidcToken(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExchangeOidcToken(c)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -1351,7 +2266,13 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/.well-known/jwks.json", wrapper.GetOpenIdJwks)
+	router.GET(options.BaseURL+"/.well-known/openid-configuration", wrapper.GetOpenIdConfiguration)
 	router.POST(options.BaseURL+"/auth/email/bind/request", wrapper.RequestEmailBind)
+	router.POST(options.BaseURL+"/auth/federation/bots/:bot_id/tat/session", wrapper.CreateFederationTatSession)
+	router.GET(options.BaseURL+"/auth/federation/context", wrapper.GetFederationContext)
+	router.POST(options.BaseURL+"/auth/federation/exchange", wrapper.ExchangeFederationTicket)
+	router.POST(options.BaseURL+"/auth/federation/tickets", wrapper.IssueFederationTicket)
 	router.POST(options.BaseURL+"/auth/invite/activate", wrapper.ActivateInviteCode)
 	router.POST(options.BaseURL+"/auth/invite/validate", wrapper.ValidateInviteCode)
 	router.POST(options.BaseURL+"/auth/password/forgot", wrapper.ForgotPassword)
@@ -1382,9 +2303,63 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/sms/send", wrapper.SendSmsCode)
 	router.POST(options.BaseURL+"/auth/sms/verify", wrapper.VerifySmsCode)
 	router.POST(options.BaseURL+"/auth/tencent-cloud/redirect", wrapper.CreateTencentCloudRedirect)
+	router.GET(options.BaseURL+"/oauth2/authorize", wrapper.GetOidcAuthorize)
+	router.POST(options.BaseURL+"/oauth2/authorize", wrapper.AuthorizeOidc)
+	router.GET(options.BaseURL+"/oauth2/authorize/context", wrapper.GetOidcAuthorizeContext)
+	router.POST(options.BaseURL+"/oauth2/token", wrapper.ExchangeOidcToken)
 }
 
 type ErrorResponseJSONResponse ErrorResponse
+
+type GetOpenIdJwksRequestObject struct {
+}
+
+type GetOpenIdJwksResponseObject interface {
+	VisitGetOpenIdJwksResponse(w http.ResponseWriter) error
+}
+
+type GetOpenIdJwks200JSONResponse OIDCJWKS
+
+func (response GetOpenIdJwks200JSONResponse) VisitGetOpenIdJwksResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOpenIdJwks404JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetOpenIdJwks404JSONResponse) VisitGetOpenIdJwksResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOpenIdConfigurationRequestObject struct {
+}
+
+type GetOpenIdConfigurationResponseObject interface {
+	VisitGetOpenIdConfigurationResponse(w http.ResponseWriter) error
+}
+
+type GetOpenIdConfiguration200JSONResponse OIDCDiscoveryDocument
+
+func (response GetOpenIdConfiguration200JSONResponse) VisitGetOpenIdConfigurationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOpenIdConfiguration404JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetOpenIdConfiguration404JSONResponse) VisitGetOpenIdConfigurationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
 
 type RequestEmailBindRequestObject struct {
 	Body *RequestEmailBindJSONRequestBody
@@ -1462,6 +2437,239 @@ type RequestEmailBind503JSONResponse ErrorResponse
 func (response RequestEmailBind503JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateFederationTatSessionRequestObject struct {
+	BotId  string `json:"bot_id"`
+	Params CreateFederationTatSessionParams
+	Body   *CreateFederationTatSessionJSONRequestBody
+}
+
+type CreateFederationTatSessionResponseObject interface {
+	VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error
+}
+
+type CreateFederationTatSession200JSONResponse FederationTatBootstrap
+
+func (response CreateFederationTatSession200JSONResponse) VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateFederationTatSession400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response CreateFederationTatSession400JSONResponse) VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateFederationTatSession401JSONResponse ErrorResponse
+
+func (response CreateFederationTatSession401JSONResponse) VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateFederationTatSession404JSONResponse ErrorResponse
+
+func (response CreateFederationTatSession404JSONResponse) VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateFederationTatSession409JSONResponse ErrorResponse
+
+func (response CreateFederationTatSession409JSONResponse) VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateFederationTatSession413JSONResponse ErrorResponse
+
+func (response CreateFederationTatSession413JSONResponse) VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateFederationTatSession502JSONResponse ErrorResponse
+
+func (response CreateFederationTatSession502JSONResponse) VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateFederationTatSession504JSONResponse ErrorResponse
+
+func (response CreateFederationTatSession504JSONResponse) VisitCreateFederationTatSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(504)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetFederationContextRequestObject struct {
+	Params GetFederationContextParams
+}
+
+type GetFederationContextResponseObject interface {
+	VisitGetFederationContextResponse(w http.ResponseWriter) error
+}
+
+type GetFederationContext200JSONResponse FederationContextResponse
+
+func (response GetFederationContext200JSONResponse) VisitGetFederationContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetFederationContext400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetFederationContext400JSONResponse) VisitGetFederationContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetFederationContext404JSONResponse ErrorResponse
+
+func (response GetFederationContext404JSONResponse) VisitGetFederationContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeFederationTicketRequestObject struct {
+	Params ExchangeFederationTicketParams
+	Body   *ExchangeFederationTicketJSONRequestBody
+}
+
+type ExchangeFederationTicketResponseObject interface {
+	VisitExchangeFederationTicketResponse(w http.ResponseWriter) error
+}
+
+type ExchangeFederationTicket200JSONResponse FederationExchangeResponse
+
+func (response ExchangeFederationTicket200JSONResponse) VisitExchangeFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeFederationTicket400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response ExchangeFederationTicket400JSONResponse) VisitExchangeFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeFederationTicket401JSONResponse ErrorResponse
+
+func (response ExchangeFederationTicket401JSONResponse) VisitExchangeFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeFederationTicket404JSONResponse ErrorResponse
+
+func (response ExchangeFederationTicket404JSONResponse) VisitExchangeFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeFederationTicket413JSONResponse ErrorResponse
+
+func (response ExchangeFederationTicket413JSONResponse) VisitExchangeFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type IssueFederationTicketRequestObject struct {
+	Body *IssueFederationTicketJSONRequestBody
+}
+
+type IssueFederationTicketResponseObject interface {
+	VisitIssueFederationTicketResponse(w http.ResponseWriter) error
+}
+
+type IssueFederationTicket200JSONResponse FederationTicketResponse
+
+func (response IssueFederationTicket200JSONResponse) VisitIssueFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type IssueFederationTicket400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response IssueFederationTicket400JSONResponse) VisitIssueFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type IssueFederationTicket401JSONResponse ErrorResponse
+
+func (response IssueFederationTicket401JSONResponse) VisitIssueFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type IssueFederationTicket403JSONResponse ErrorResponse
+
+func (response IssueFederationTicket403JSONResponse) VisitIssueFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type IssueFederationTicket404JSONResponse ErrorResponse
+
+func (response IssueFederationTicket404JSONResponse) VisitIssueFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type IssueFederationTicket413JSONResponse ErrorResponse
+
+func (response IssueFederationTicket413JSONResponse) VisitIssueFederationTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -2947,11 +4155,177 @@ func (response CreateTencentCloudRedirect503JSONResponse) VisitCreateTencentClou
 	return json.NewEncoder(w).Encode(response)
 }
 
+type GetOidcAuthorizeRequestObject struct {
+	Params GetOidcAuthorizeParams
+}
+
+type GetOidcAuthorizeResponseObject interface {
+	VisitGetOidcAuthorizeResponse(w http.ResponseWriter) error
+}
+
+type GetOidcAuthorize302Response struct {
+}
+
+func (response GetOidcAuthorize302Response) VisitGetOidcAuthorizeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(302)
+	return nil
+}
+
+type GetOidcAuthorize400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetOidcAuthorize400JSONResponse) VisitGetOidcAuthorizeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOidcAuthorize404JSONResponse ErrorResponse
+
+func (response GetOidcAuthorize404JSONResponse) VisitGetOidcAuthorizeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AuthorizeOidcRequestObject struct {
+	Body *AuthorizeOidcJSONRequestBody
+}
+
+type AuthorizeOidcResponseObject interface {
+	VisitAuthorizeOidcResponse(w http.ResponseWriter) error
+}
+
+type AuthorizeOidc200JSONResponse OIDCAuthorizeResponse
+
+func (response AuthorizeOidc200JSONResponse) VisitAuthorizeOidcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AuthorizeOidc400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response AuthorizeOidc400JSONResponse) VisitAuthorizeOidcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AuthorizeOidc401JSONResponse ErrorResponse
+
+func (response AuthorizeOidc401JSONResponse) VisitAuthorizeOidcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AuthorizeOidc404JSONResponse ErrorResponse
+
+func (response AuthorizeOidc404JSONResponse) VisitAuthorizeOidcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOidcAuthorizeContextRequestObject struct {
+	Params GetOidcAuthorizeContextParams
+}
+
+type GetOidcAuthorizeContextResponseObject interface {
+	VisitGetOidcAuthorizeContextResponse(w http.ResponseWriter) error
+}
+
+type GetOidcAuthorizeContext200JSONResponse OIDCAuthorizeContextResponse
+
+func (response GetOidcAuthorizeContext200JSONResponse) VisitGetOidcAuthorizeContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOidcAuthorizeContext400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetOidcAuthorizeContext400JSONResponse) VisitGetOidcAuthorizeContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOidcAuthorizeContext404JSONResponse ErrorResponse
+
+func (response GetOidcAuthorizeContext404JSONResponse) VisitGetOidcAuthorizeContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeOidcTokenRequestObject struct {
+	Body *ExchangeOidcTokenFormdataRequestBody
+}
+
+type ExchangeOidcTokenResponseObject interface {
+	VisitExchangeOidcTokenResponse(w http.ResponseWriter) error
+}
+
+type ExchangeOidcToken200JSONResponse OIDCTokenResponse
+
+func (response ExchangeOidcToken200JSONResponse) VisitExchangeOidcTokenResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeOidcToken400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response ExchangeOidcToken400JSONResponse) VisitExchangeOidcTokenResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeOidcToken404JSONResponse ErrorResponse
+
+func (response ExchangeOidcToken404JSONResponse) VisitExchangeOidcTokenResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// Get OIDC signing keys
+	// (GET /.well-known/jwks.json)
+	GetOpenIdJwks(ctx context.Context, request GetOpenIdJwksRequestObject) (GetOpenIdJwksResponseObject, error)
+	// Get OIDC discovery metadata
+	// (GET /.well-known/openid-configuration)
+	GetOpenIdConfiguration(ctx context.Context, request GetOpenIdConfigurationRequestObject) (GetOpenIdConfigurationResponseObject, error)
 	// Send a magic-link email to bind an address to the current user
 	// (POST /auth/email/bind/request)
 	RequestEmailBind(ctx context.Context, request RequestEmailBindRequestObject) (RequestEmailBindResponseObject, error)
+	// Create a fresh Bot-scoped TAT transport
+	// (POST /auth/federation/bots/{bot_id}/tat/session)
+	CreateFederationTatSession(ctx context.Context, request CreateFederationTatSessionRequestObject) (CreateFederationTatSessionResponseObject, error)
+	// Validate a federation authorization request
+	// (GET /auth/federation/context)
+	GetFederationContext(ctx context.Context, request GetFederationContextRequestObject) (GetFederationContextResponseObject, error)
+	// Exchange a handoff ticket for an opaque delegated session
+	// (POST /auth/federation/exchange)
+	ExchangeFederationTicket(ctx context.Context, request ExchangeFederationTicketRequestObject) (ExchangeFederationTicketResponseObject, error)
+	// Issue a short-lived federation handoff ticket
+	// (POST /auth/federation/tickets)
+	IssueFederationTicket(ctx context.Context, request IssueFederationTicketRequestObject) (IssueFederationTicketResponseObject, error)
 	// Activate the current authenticated user with an invite code
 	// (POST /auth/invite/activate)
 	ActivateInviteCode(ctx context.Context, request ActivateInviteCodeRequestObject) (ActivateInviteCodeResponseObject, error)
@@ -3042,6 +4416,18 @@ type StrictServerInterface interface {
 	// Create a one-time Tencent Cloud console login redirect for the current user
 	// (POST /auth/tencent-cloud/redirect)
 	CreateTencentCloudRedirect(ctx context.Context, request CreateTencentCloudRedirectRequestObject) (CreateTencentCloudRedirectResponseObject, error)
+	// Validate OIDC request and redirect to the authorization page
+	// (GET /oauth2/authorize)
+	GetOidcAuthorize(ctx context.Context, request GetOidcAuthorizeRequestObject) (GetOidcAuthorizeResponseObject, error)
+	// Confirm an OIDC authorization request and issue a code
+	// (POST /oauth2/authorize)
+	AuthorizeOidc(ctx context.Context, request AuthorizeOidcRequestObject) (AuthorizeOidcResponseObject, error)
+	// Validate an OIDC authorization request and return session context
+	// (GET /oauth2/authorize/context)
+	GetOidcAuthorizeContext(ctx context.Context, request GetOidcAuthorizeContextRequestObject) (GetOidcAuthorizeContextResponseObject, error)
+	// Exchange an OIDC authorization code for tokens
+	// (POST /oauth2/token)
+	ExchangeOidcToken(ctx context.Context, request ExchangeOidcTokenRequestObject) (ExchangeOidcTokenResponseObject, error)
 }
 
 type StrictHandlerFunc = strictgin.StrictGinHandlerFunc
@@ -3054,6 +4440,56 @@ func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareF
 type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
+}
+
+// GetOpenIdJwks operation middleware
+func (sh *strictHandler) GetOpenIdJwks(ctx *gin.Context) {
+	var request GetOpenIdJwksRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOpenIdJwks(ctx, request.(GetOpenIdJwksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOpenIdJwks")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetOpenIdJwksResponseObject); ok {
+		if err := validResponse.VisitGetOpenIdJwksResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOpenIdConfiguration operation middleware
+func (sh *strictHandler) GetOpenIdConfiguration(ctx *gin.Context) {
+	var request GetOpenIdConfigurationRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOpenIdConfiguration(ctx, request.(GetOpenIdConfigurationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOpenIdConfiguration")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetOpenIdConfigurationResponseObject); ok {
+		if err := validResponse.VisitGetOpenIdConfigurationResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // RequestEmailBind operation middleware
@@ -3082,6 +4518,137 @@ func (sh *strictHandler) RequestEmailBind(ctx *gin.Context) {
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(RequestEmailBindResponseObject); ok {
 		if err := validResponse.VisitRequestEmailBindResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateFederationTatSession operation middleware
+func (sh *strictHandler) CreateFederationTatSession(ctx *gin.Context, botId string, params CreateFederationTatSessionParams) {
+	var request CreateFederationTatSessionRequestObject
+
+	request.BotId = botId
+	request.Params = params
+
+	var body CreateFederationTatSessionJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateFederationTatSession(ctx, request.(CreateFederationTatSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateFederationTatSession")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(CreateFederationTatSessionResponseObject); ok {
+		if err := validResponse.VisitCreateFederationTatSessionResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetFederationContext operation middleware
+func (sh *strictHandler) GetFederationContext(ctx *gin.Context, params GetFederationContextParams) {
+	var request GetFederationContextRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetFederationContext(ctx, request.(GetFederationContextRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetFederationContext")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetFederationContextResponseObject); ok {
+		if err := validResponse.VisitGetFederationContextResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ExchangeFederationTicket operation middleware
+func (sh *strictHandler) ExchangeFederationTicket(ctx *gin.Context, params ExchangeFederationTicketParams) {
+	var request ExchangeFederationTicketRequestObject
+
+	request.Params = params
+
+	var body ExchangeFederationTicketJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ExchangeFederationTicket(ctx, request.(ExchangeFederationTicketRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExchangeFederationTicket")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(ExchangeFederationTicketResponseObject); ok {
+		if err := validResponse.VisitExchangeFederationTicketResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// IssueFederationTicket operation middleware
+func (sh *strictHandler) IssueFederationTicket(ctx *gin.Context) {
+	var request IssueFederationTicketRequestObject
+
+	var body IssueFederationTicketJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.IssueFederationTicket(ctx, request.(IssueFederationTicketRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IssueFederationTicket")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(IssueFederationTicketResponseObject); ok {
+		if err := validResponse.VisitIssueFederationTicketResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -3988,71 +5555,221 @@ func (sh *strictHandler) CreateTencentCloudRedirect(ctx *gin.Context) {
 	}
 }
 
+// GetOidcAuthorize operation middleware
+func (sh *strictHandler) GetOidcAuthorize(ctx *gin.Context, params GetOidcAuthorizeParams) {
+	var request GetOidcAuthorizeRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOidcAuthorize(ctx, request.(GetOidcAuthorizeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOidcAuthorize")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetOidcAuthorizeResponseObject); ok {
+		if err := validResponse.VisitGetOidcAuthorizeResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthorizeOidc operation middleware
+func (sh *strictHandler) AuthorizeOidc(ctx *gin.Context) {
+	var request AuthorizeOidcRequestObject
+
+	var body AuthorizeOidcJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthorizeOidc(ctx, request.(AuthorizeOidcRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthorizeOidc")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AuthorizeOidcResponseObject); ok {
+		if err := validResponse.VisitAuthorizeOidcResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOidcAuthorizeContext operation middleware
+func (sh *strictHandler) GetOidcAuthorizeContext(ctx *gin.Context, params GetOidcAuthorizeContextParams) {
+	var request GetOidcAuthorizeContextRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOidcAuthorizeContext(ctx, request.(GetOidcAuthorizeContextRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOidcAuthorizeContext")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetOidcAuthorizeContextResponseObject); ok {
+		if err := validResponse.VisitGetOidcAuthorizeContextResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ExchangeOidcToken operation middleware
+func (sh *strictHandler) ExchangeOidcToken(ctx *gin.Context) {
+	var request ExchangeOidcTokenRequestObject
+
+	if err := ctx.Request.ParseForm(); err != nil {
+		ctx.Error(err)
+		return
+	}
+	var body ExchangeOidcTokenFormdataRequestBody
+	if err := runtime.BindForm(&body, ctx.Request.Form, nil, nil); err != nil {
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ExchangeOidcToken(ctx, request.(ExchangeOidcTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExchangeOidcToken")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(ExchangeOidcTokenResponseObject); ok {
+		if err := validResponse.VisitExchangeOidcTokenResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+w8W3PbNrN/BcNzZs6LZDmXnmn95jhN6/mSNmPF7UPGk4HIlYiaBBgAlKNk/N+/wY1X",
-	"gLrEku3GT4lFALvY+y4W+BbFLC8YBSpFdPItKjDHOUjg+q/3eJUDle9Apiw5Y1RyHMszloD6SGh0EhVY",
-	"ptEoojiH6CSKm0NGEYfPJeGQRCeSlzCKRJxCjtXcHH95C3Qh0+jk2fOfR1FOaPX3KJKrQq0mJCd0Ed3e",
-	"3qqlRMGoAI3Wr5wzfmF/UT8ouECl+i8uiozEWBJGJ/8IRtVvNdz/5TCPTqL/mdS7npivYtJeVUNNQMSc",
-	"FGqx6CS6gM8lCInmmGSQRGqAnauWPi1lOgUhiIFZcFYAl8RgjEuZApUKMUhONaJzxnMso5MowRLGkuSK",
-	"Yp2djyKSF8AFo2qemmUHzBjLAFM1QhiYH9g1aMBtnP8s8OcSkB2EpBqF5owjyug4ZuyaAIozoghx5INf",
-	"CuDrCHepxhgmOX5/NBNHvY13dnRVgWSzfyCWCuSvOSbZK0ITS+8+NUGNaNHQ/NKXnDZOZtQmMJvC1YYd",
-	"M5Yl7IZOIWY0EQ2eECph4aFEd4YXfleiu0CNyvXYk4MQeOH/xkHy1elcAm/gmhNK8jKPTo5H6/HWSuxA",
-	"+NB+w/iCyfdYiBvGN+DXruw5p0si4S+ckQRLr4LtRCEhsdRfgCqSfIxIkqktLxUgJarU/Q++FBpLrRBN",
-	"sQ1sxdLOABimYXdvQSoGtuiD7IPjuDQlC3pOt+bVKCrsApsysjFjHT6XxQ74EE24sxDjjUv6rn3oJUab",
-	"bqfhKn3MazvP/m7Ea5jjMpN+K59jcQ3JH2U+M/a4beXf6a8oxjxBVI9BHGTJKSRotkIfgMZAJXpFsozQ",
-	"hdfQF3gF/I8QzcwP3yL4gvMiU9/OLn59ff7h09npxetovTa0woLWXpqQ7TpNYqwl9VsyZK2JhLz9nyFH",
-	"1uZhte0Ic45X+m8mcbalGTVzRhaDtftR6vAnT4AHNSLDdFHiRSX5iZObCKiSVmvL9B9fVXCWXvsN1saI",
-	"hN3SGqHmkBAOsbzkbXddcrKt0DSX8hKRsznJIIzs90UyPpAXgDNlIt7gGM5fn0oJeTEgi9gMOE+8pDIe",
-	"RmwTG/bcVwE0Ud9G0RzH8EmUcQyQaLdVpIzCp3qASHHCbpo/NAbbALd2e1ce6EvgZG4jbcvfYYbW+3eo",
-	"ryfqe4W2koCgNuiN+YFvsva23nY0BHAjP9xGYioxlwNIUGHzmr5LIMkZ5sk2vs/v3uw6owraENaaaH8p",
-	"1q/2Fah4QYWUil37icPtIm9hCVnANpkR0xWNpxLLUoRUySpDrSE+dTAKpVIIQhf1esM0YNdRF1X/SkN0",
-	"Uhu4ULH+7lQ6KA2+I6nU9LKZpQf37Wm3RpLvWMU2wSQYyeglTKAXRGjgc0gEikrLrC2/qNDvRpl/pyBT",
-	"4EimrmaA8lJIpLiXgQT9Qa+Hpu+mSEgoEFb5Jzp/bWLTps9oRKFD6EyvSVH4sPnAS0A3KVANdobja6BJ",
-	"hUtiEWlCRKUgdGHQLzlX+Cs8M7Yg1FVI/FhtYk20CAWc+6aKYbD1V3p8qlCNb7F/1BaWJnJD/PZJ5xRo",
-	"Ms3FLt63iawZNghgi3rLVjWM9bUXW7QLoyDqqt6QxWoWALt4uCW88JvC4Qkbi8JIVRUUEir//2XU3/so",
-	"mmFBYoXHWyykrikFQ/P+0HcDlZJqdN9LbOgb6hVWNN6uBhpz2LZsmq3df7bJttkNBX5J6IbkN2quPFcw",
-	"kRYDXnFjOGWRbEsQ5TTPNyh5iLDPbMlpWFtmtSAPaUtb6rtouEV8eNhqxlnGyuTCZoVBAyUxX4B8j2Xa",
-	"9yAXkGFJloAKLFNEqCAJIBUEswyOYrX8kTSwjmKWHyFbkxBIMu1EcByzkkoUYxpDlhkfU+AFHEUbpdv+",
-	"jYToukOC+D3pd3NuMzv1ceRSy2OVgQdYsUXE5AVig8aOdVxiiflpmRBZm6Y2m0/1EGTPiJDAc5ArZAT9",
-	"qFEwqcPdAgvRTIR99swA9ie+O5mscKFTf/lrIDRQDn+gRNqM6PpTg3VS9WGQsH+Q+FoNumvS2tGnTQq3",
-	"Ib83I5BhArq8eIuWRJBZBojRbOUU1EV5yvihm5RkgG4wkWrmnPUkAhcFZ0uc+cujBqKz6350qCPIzlAC",
-	"4VQdgZ4KUXJlb95Zx+ZInMECxytb+slAqGyIzQTwJbh6EO9Hen0A2ybMbUqY3xGbI7GisYu2XZiK1BJj",
-	"TSGSAJVErrq2VKyEhNwvOxtGGryZUW0WTBMXQUc9nfGs19XIprr7LJdJ7YbC6GCxaeczjm3i8lGoFqNP",
-	"l+OSE7maKrdtkLUx7ivA3Fjkmf7fG2flmD5yHruQ1x6Sa/KbKRWcVMqiEYGf6ePoqrXAnE7XzQVZ/Kle",
-	"01XmC/IfWJnDekLnzCORKeaQIFzKFCltIDFotVRC95YsUhln+AbdwAwVnEmm1kWYJmheypK3z8aJ1Ccf",
-	"9SwVzqLT9+cmEzM5QnR89OzoWAePBVBckOgkenF0fPRCGz+ZahJOFDoTLUUTFepMeEMymPlXyYcOKVTY",
-	"5noPqnPqOqt7xZLV3fVAdM/eb9siI3kJ3W6M58fHe4M/1I7xDi9IPM4IvUaaksqGQKFSf8XfBDKyBK6P",
-	"bV4aDH2Aq5102z/UrGc7zfpll1nPd5n10077+un4+U6zXmw9q2E/opOP37p6/vHqdtQzJx+vbq+Uhc9z",
-	"zFdKf4EmCKO8y2zJkNIchCnCScJBCJ/X1zgYbTOmdIJjSZb23MSvaqd2xHlte/ejbKGT/wPrXPfkzKNq",
-	"jiSJMpJq8GG16i7kyG2hJSKt7iQbJhKZKqEy4oK0Z+wJ0dLwbECILFd/GCHqdeh4pKj+ijiIMrMRRsUi",
-	"R7Mw+V0HxmSuG4/C5G83Ju2J9P7up40I/9KTplrvtatqtUj5gZPFAjgydBo7uqF5xm5QkeEYUpYlLftY",
-	"0VaQBR2bWpSfuKaD6G8i0z0T2N+ydGDJ7paHPYKt8IMEEXp4s1j7SbJQWmPsl42HaIKqnqUQo8timNGX",
-	"xYEZXfeCPTxGX8CCCAk6oaAJEnfB918OFMK1pMVtZCNx0U1B41x3BWmqL8AjLG+JkK0GIqEznrqd/KPN",
-	"6z6XKiyv0roCLyBq9oZX/UzPRvVRzzPfUU94wSn5Glj0+fEoyvEXu+rx8RoYV/sMvIJ9bB7RO7Mhi5U5",
-	"yxV9rCoeR47zuPIOxY9eOvF/IkD/kLYYG8t4Yi9U+O3smS4f+bvv9mZxh3oOD52BDPcderThdyaka3hV",
-	"JCZ0gTSV/93p/mNSICPUCKM0xKuqDhfI2Lu69K3ZEnprrHoGJgtrK9Rr/Xu7nbfnjHwUqYdMwnefPE7B",
-	"E8+/b1gIZBBNngz13cuZ4TViFBCb+yw2ZXRs3b+z3uusdlvSJkndmV+UvjgZpD0bvl+Rs0i0nBOyzQJP",
-	"oreP2qQckLumrCEskJOihtjZYloopP4NpC3ORfdb/3PBZ6v6dz91vN+gH5Y18fIqaKtBYU8RlbcJ4uGV",
-	"cg2aj7iQazYwIANd9ZqYLoENtMx0HHR17YWxSd1KgGmPQZI5Ra+bEb7Har68F6I2t+MxZXZrWAiQmylZ",
-	"g5QhVcvLTJICczmZM56PEyxxW9LbZ+TOUlbdNDNCsc77h8+49TzP2faTYj4IH3pZZAybchoHXZkOC2BD",
-	"t11TxmSOYyDJxF4uGkiy7U0bz5WtPTmEgYs+B5a+4YtqvvM+MwTZvhbEOOKgbz4fOop8OhcPxZ5KnhBG",
-	"hqeNzqrWjQerFhsozsRq3JCbtGFgWIkeivy6eJVDzJbA8SyDmhSH9M2750HHBzwW+P7oASctq92kuxVQ",
-	"S/6q5tM/et9ESL9Vl0hvhwQ1JKG+44j2CzbNS6rh52u6EcfVQxR+R3Fz1/ZJ7Pcg9jGjMcnARi86jEHs",
-	"RiUDbanfUrQnc0JxRr4O9Je8sSN+aEnXROg4PNep9CTwDyZSWdE45YySr7qzx5klyZC5A6S1x/ENzXs8",
-	"3VZ5BNBkrDubx66vOpARAE0Czw3sW4P2nW303k247b+idre9E+1rnD63xBJARIjyPmrRLx64HXjKc9b0",
-	"/1pT0bL1Sru7BStz61sFmfg7fbAGtRpXNykCfZ722n5P+f4VFuSx1Cs0sqjgjM117sGTJyPzY5oLo48e",
-	"kyBTzspF6gyJvWC8raWIcZbNcHwdTD5/xzTJOlH5mZu0UT/cK/LVvOV5t2G5hC9ykso8a6uh56nVTm8r",
-	"ngOacXYjgLvXNdw95ztpVb6AGMgSEK6eqbPccEDdTWQfW8SKxhP90OXQ1Sn9Nk59efEQpar+ozzedlJX",
-	"tFP7QHofqL7c+EgM2L//nP/CMMbeaO0cTWx9udUnxybYaMpwV1LGopzlROprxeZRnfbTNvr0SHSqcD2E",
-	"VKp1DVAIc8dCAlfZVpxiugCUEiEZXx1Fo8EgZ8/HJe0nme4p8ui8xjSouy0+3KP2/vKjOPeOAvbFPKxh",
-	"24XzLpDfp7h7HtS7J5n3vbcXjLUfitA/uaxtVMWEwti4CZkS3vRacxxL1jyFabx7FWq01c3apefwz9Od",
-	"aG9JsVLeaeNn0+M5jG9H684wp9VLAvd5n+isj/dD6asTjZfMrDjozGnSeN8pROP22077JLH3SaoBQru0",
-	"zz5zdc/07minflhiCRlGop2kOmwDrNgoAXriyaZxfocr5tWZIHOaXMmFPnwYPnGY5mKP18E7DzYe/Arl",
-	"oY4BXhyoyH7br0VT/WporxLdEYR+RueLNPcrDL2Hhx7ejVr3iNLd3ad99njkyQZpSpz0WYaiQeyuTfUd",
-	"sH2McKyfJpxUZbE11wp9rwzuSd6GXmbc8wHk4FuKHrn7k5qX+Kqio57pXn+0bwLXlcfHkcvf80U/tg1N",
-	"Q5f/NEZ86SrkJc/sQ2Enk0nGYpylTMiTn49/fhbdXt3+NwAA//8S5UsQv2wAAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

@@ -85,6 +85,7 @@ func registerInternalShadowRoutes(router gin.IRoutes, authService *service.Servi
 	router.GET("/internal/shadow/binding", internal.handleGetShadowBinding)
 	router.GET("/internal/shadow/binding/state", internal.handleGetShadowBindingState)
 	router.POST("/internal/shadow/binding/retry", internal.handleRetryShadowBilling)
+	router.POST("/internal/shadow/binding/register-or-retry", internal.handleRegisterOrRetryShadowBinding)
 	router.POST("/internal/shadow/credentials", internal.handleIssueShadowCredentials)
 	router.POST("/internal/payment-methods/context", internal.handlePaymentContext)
 	router.POST("/internal/tencentcloud/account", internal.handleTencentCloudCallback)
@@ -203,7 +204,7 @@ func (a *internalAPI) handleGetShadowBinding(ctx *gin.Context) {
 		userID = externalUserID
 	}
 
-	binding, err := a.service.InternalShadowBinding(ctx.Request.Context(), userID)
+	binding, err := a.service.InternalShadowBinding(ctx.Request.Context(), userID, ctx.ClientIP(), ctx.Request.UserAgent())
 	if err != nil {
 		body, status := toErrorBody(err)
 		if status == http.StatusNotFound {
@@ -251,6 +252,30 @@ func (a *internalAPI) handleRetryShadowBilling(ctx *gin.Context) {
 		return
 	}
 	binding, err := a.service.RetryInternalShadowBilling(ctx.Request.Context(), userID)
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, internalEnvelope{Code: body.Code, Message: body.Message})
+		return
+	}
+	ctx.JSON(http.StatusOK, internalEnvelope{Code: "OK", Message: "ok", Data: toInternalShadowBinding(binding)})
+}
+
+func (a *internalAPI) handleRegisterOrRetryShadowBinding(ctx *gin.Context) {
+	if !isAuthorizedInternalToken(ctx, a.shadowBindingInternalToken) {
+		ctx.JSON(http.StatusUnauthorized, internalEnvelope{Code: "unauthorized", Message: "unauthorized"})
+		return
+	}
+	var req internalShadowCredentialsRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, internalEnvelope{Code: "invalid_request", Message: "invalid request body"})
+		return
+	}
+	userID := strings.TrimSpace(req.ExternalUserID)
+	if userID == "" {
+		ctx.JSON(http.StatusBadRequest, internalEnvelope{Code: "invalid_request", Message: "external_user_id is required"})
+		return
+	}
+	binding, err := a.service.RegisterOrRetryInternalShadowBinding(ctx.Request.Context(), userID)
 	if err != nil {
 		body, status := toErrorBody(err)
 		ctx.JSON(status, internalEnvelope{Code: body.Code, Message: body.Message})

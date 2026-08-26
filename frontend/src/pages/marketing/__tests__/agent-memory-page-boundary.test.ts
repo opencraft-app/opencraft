@@ -27,4 +27,13 @@ describe("Agent memory page async boundary", () => {
     expect(page).toContain("配置已保存，但后续步骤失败");
     expect(page).toContain("saveResult.status === \"partial\"");
   });
+
+  it("describes empty memory files directly", () => {
+    const page = readPageSource();
+
+    expect(page).toContain('t("MEMORY.md 文件为空")');
+    expect(page).toContain('t("USER.md 文件为空")');
+    expect(page).not.toContain('t("暂无 Agent 记忆。")');
+    expect(page).not.toContain('t("暂无用户画像。")');
+  });
 });

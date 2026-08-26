@@ -29,6 +29,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 )
@@ -54,6 +55,9 @@ const (
 	// `/activity_web/activity/do_goods` 区分；这里按设计稿明示 "do_goods" 让 trade 内部
 	// 日志可读，点石侧实测忽略此字段。
 	InterfaceNameDoGoods = "do_goods"
+
+	// InterfaceNameDoGoodsAndPay 是 0 元活动下单并支付接口名。
+	InterfaceNameDoGoodsAndPay = "do_goods_and_pay"
 
 	// ComponentNamePrice 是询价 envelope.componentName。
 	ComponentNamePrice = "opc-restriction-strategy"
@@ -199,11 +203,13 @@ type DoGoodsItem struct {
 
 // DoGoodsResponse 是下单响应 envelope.data 反序列化目标。
 //
-// 协议样例 data 是对象（不是数组）：{deal_names: [...], big_deal_no: "..."}。
+// 协议样例 data 是对象（不是数组）：
+// {deal_names: [...], big_deal_no: "...", resource_ids: {deal_name: [...]}}。
 // trade.placeorder.Service.placeOrderDianshi 取 DealNames[0] 作为主 deal_name。
 type DoGoodsResponse struct {
-	DealNames []string `json:"deal_names"`
-	BigDealNo string   `json:"big_deal_no"`
+	DealNames   []string            `json:"deal_names"`
+	BigDealNo   string              `json:"big_deal_no"`
+	ResourceIDs map[string][]string `json:"resource_ids"`
 }
 
 // Client 是 trade → 点石出向客户端对外接口（便于 mock）。
@@ -215,6 +221,9 @@ type Client interface {
 	//
 	// 入参 req 已经是 envelope.para 内层（含 check_sum）；client 内部负责拼 envelope。
 	DoGoods(ctx context.Context, req *DoGoodsRequest) (*DoGoodsResponse, error)
+
+	// DoGoodsAndPay 调用点石 `/activity_web/activity/do_goods_and_pay` 下单并支付接口。
+	DoGoodsAndPay(ctx context.Context, req *DoGoodsRequest) (*DoGoodsResponse, error)
 }
 
 // Options 是 Client 可选构造参数。
@@ -330,6 +339,40 @@ func (c *client) DoGoods(ctx context.Context, req *DoGoodsRequest) (*DoGoodsResp
 		return nil, err
 	}
 	return out, nil
+}
+
+// DoGoodsAndPay 调用点石 `/activity_web/activity/do_goods_and_pay`。
+func (c *client) DoGoodsAndPay(ctx context.Context, req *DoGoodsRequest) (*DoGoodsResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("dianshiclient: DoGoodsAndPay nil request")
+	}
+	targetURL, err := doGoodsAndPayURL(c.orderBaseURL)
+	if err != nil {
+		return nil, err
+	}
+	out := &DoGoodsResponse{}
+	outbound := *req
+	outbound.Preview = c.preview
+	if err := c.do(ctx, targetURL, InterfaceNameDoGoodsAndPay, ComponentNameOrder, &outbound, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func doGoodsAndPayURL(orderBaseURL string) (string, error) {
+	if orderBaseURL == "" {
+		return "", fmt.Errorf("dianshiclient: orderBaseURL is required")
+	}
+	u, err := neturl.Parse(orderBaseURL)
+	if err != nil {
+		return "", fmt.Errorf("dianshiclient: parse orderBaseURL: %w", err)
+	}
+	const doGoodsPath = "/do_goods"
+	if !strings.HasSuffix(u.Path, doGoodsPath) {
+		return "", fmt.Errorf("dianshiclient: orderBaseURL path must end with %s", doGoodsPath)
+	}
+	u.Path = strings.TrimSuffix(u.Path, doGoodsPath) + "/do_goods_and_pay"
+	return u.String(), nil
 }
 
 // do 是所有点石 CGW 请求的统一执行入口。

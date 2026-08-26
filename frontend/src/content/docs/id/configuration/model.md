@@ -1,5 +1,11 @@
 # Konfigurasi Model
 
+## Ringkasan
+
+**Mengonfigurasi model tidak wajib: paket Anda sudah menyertakan kredit model bulanan, sehingga setelah membuat Agent dan menghubungkan kanal Anda bisa langsung berbicara, dan baru mengatur model setelah kredit habis. Bagian Model pada konsol menyediakan tiga opsi: Model Coding Plan (bulanan atau tahunan, cocok untuk pemakaian intens), Model API (bayar sesuai pemakaian, cocok untuk pemakaian ringan atau uji coba), dan model kustom (menghubungkan endpoint yang kompatibel dengan OpenAI). Ketiganya memerlukan API key Anda sendiri dari penyedia terkait. Langkahnya: pilih sumber, pilih model, tempelkan API key, lalu jadikan default. Anda dapat berganti model nanti tanpa kehilangan memori. API key adalah kredensial sensitif — jangan dikirim ke grup obrolan atau halaman publik, jangan dimasukkan ke repositori Git, dan segera cabut atau ganti di konsol penyedia jika bocor.**
+
+---
+
 Halaman ini menjelaskan cara mengonfigurasi large language model untuk Hermes Agent, termasuk perbedaan antara tiga metode konfigurasi, cara mendapatkan API Key, langkah konfigurasi di konsol, model yang didukung, dan panduan memilih model.
 
 > 💡 **Konfigurasi bersifat opsional**

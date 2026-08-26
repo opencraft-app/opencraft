@@ -114,6 +114,22 @@ func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 	}
 }
 
+func TestCreatePayURLParamsAllowsZeroAmountChargePay(t *testing.T) {
+	params, err := createPayURLParams(&CreatePayURLRequest{
+		OrderIDs:     []string{"20260820019012978588001"},
+		ChargeAmount: 0,
+		PayScene:     "credit_card",
+		PayOption:    "chargePay",
+		Application:  "intlSaaSLightvela",
+	})
+	if err != nil {
+		t.Fatalf("createPayURLParams: %v", err)
+	}
+	if got, ok := params["ChargeAmount"]; !ok || got != int64(0) {
+		t.Fatalf("ChargeAmount = %#v, present = %t; want int64(0)", got, ok)
+	}
+}
+
 func TestDescribeOrderListParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 	params, err := describeOrderListParams(&DescribeOrderListRequest{
 		OrderIDs: []string{" 20260813002021864858631 ", ""},

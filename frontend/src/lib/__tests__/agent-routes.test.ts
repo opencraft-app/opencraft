@@ -13,10 +13,12 @@ import {
 describe("agent route constants", () => {
   it("keeps shareable agent section urls outside the deleted vite router", () => {
     expect(AGENT_SECTION_PATH_BY_ID.browser).toBe("/agents/browser");
+    expect(AGENT_SECTION_PATH_BY_ID.settings).toBe("/agents/settings");
     expect(AGENT_SECTION_PATH_BY_ID.workbench).toBe("/agents/workbench");
     expect(getAgentSectionFromSlug("browser")).toBe("browser");
     expect(getAgentSectionFromSlug("workbench")).toBe("workbench");
     expect(getAgentSectionFromSlug("session")).toBe("workbench");
+    expect(getAgentSectionFromSlug("settings")).toBe("settings");
     expect(getAgentSectionFromSlug("unknown")).toBeNull();
   });
 

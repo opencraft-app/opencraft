@@ -340,6 +340,8 @@ type PasswordSignUpInput struct {
 	Email      string
 	Password   string
 	InviteCode string
+	ClientIP   string
+	ClientUA   string
 }
 
 type OAuthSignInInput struct {
@@ -350,6 +352,8 @@ type OAuthSignInInput struct {
 	Name            string
 	AvatarURL       string
 	InviteCode      string
+	ClientIP        string
+	ClientUA        string
 	// RegistrationDisabled allows a provider to authenticate or link existing
 	// users without creating a new platform account.
 	RegistrationDisabled bool
@@ -951,7 +955,7 @@ func (s *Service) SignUpWithPassword(ctx context.Context, input PasswordSignUpIn
 	if err != nil {
 		return nil, err
 	}
-	s.ensureIntlPasswordSignupShadowBinding(ctx, session, input.Email)
+	s.ensureIntlPasswordSignupShadowBinding(ctx, session, input.Email, input.ClientIP, input.ClientUA)
 	return session, nil
 }
 
@@ -1047,10 +1051,10 @@ func (s *Service) ensureIntlShadowBinding(ctx context.Context, session *AuthSess
 		)
 		return
 	}
-	s.bindIntlShadowAccount(ctx, session, email, input.Provider)
+	s.bindIntlShadowAccount(ctx, session, email, input.Provider, input.ClientIP, input.ClientUA)
 }
 
-func (s *Service) ensureIntlPasswordSignupShadowBinding(ctx context.Context, session *AuthSession, email string) {
+func (s *Service) ensureIntlPasswordSignupShadowBinding(ctx context.Context, session *AuthSession, email, clientIP, clientUA string) {
 	if s == nil || !s.passwordSignupShadowEnabled || session == nil || s.siteKind != shadowbinding.SiteKindIntl || s.shadowBinding == nil || !s.shadowBinding.Enabled() {
 		return
 	}
@@ -1061,13 +1065,15 @@ func (s *Service) ensureIntlPasswordSignupShadowBinding(ctx context.Context, ses
 	slog.WarnContext(ctx, "international shadow provisioning enabled for test password sign-up",
 		"user_id", session.User.ID,
 	)
-	s.bindIntlShadowAccount(ctx, session, normalizedEmail, "password_signup_test")
+	s.bindIntlShadowAccount(ctx, session, normalizedEmail, "password_signup_test", clientIP, clientUA)
 }
 
-func (s *Service) bindIntlShadowAccount(ctx context.Context, session *AuthSession, email string, source string) {
+func (s *Service) bindIntlShadowAccount(ctx context.Context, session *AuthSession, email, source, clientIP, clientUA string) {
 	if _, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
-		UserID: session.User.ID,
-		Email:  email,
+		UserID:   session.User.ID,
+		Email:    email,
+		ClientIP: strings.TrimSpace(clientIP),
+		ClientUA: strings.TrimSpace(clientUA),
 	}); err != nil {
 		slog.WarnContext(ctx, "international shadow provisioning failed",
 			"user_id", session.User.ID,
@@ -1601,8 +1607,47 @@ func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowB
 	return toShadowBindingResult(binding), nil
 }
 
-func (s *Service) InternalShadowBinding(ctx context.Context, userID string) (ShadowBindingResult, error) {
-	return s.activeShadowBindingByUserID(ctx, userID)
+// RegisterOrRetryInternalShadowBinding exposes the user-facing shadow binding
+// retry semantics to trusted services that only have a LightVela user ID.
+func (s *Service) RegisterOrRetryInternalShadowBinding(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return ShadowBindingResult{}, newError("invalid_user_id", "用户 ID 不能为空。", http.StatusBadRequest)
+	}
+	user, err := s.store.FindUserByID(ctx, trimmedUserID)
+	if err != nil {
+		return ShadowBindingResult{}, err
+	}
+	if s.shadowBinding == nil {
+		return ShadowBindingResult{UserID: user.ID, Status: shadowbinding.StatusDisabled}, nil
+	}
+	email := ""
+	if user.EmailVerified {
+		email = user.Email
+	}
+	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
+		UserID: user.ID,
+		Email:  email,
+		Phone:  user.Phone,
+	})
+	if err != nil && binding.UserID == "" {
+		return ShadowBindingResult{}, err
+	}
+	s.notifyPassBillingMigration(ctx, binding)
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) InternalShadowBinding(ctx context.Context, userID, clientIP, clientUA string) (ShadowBindingResult, error) {
+	binding, err := s.activeShadowBindingByUserID(ctx, userID)
+	if err != nil || binding.AppID > 0 {
+		return binding, err
+	}
+	repaired, err := s.shadowBinding.EnsureBindingAppID(ctx, strings.TrimSpace(userID), clientIP, clientUA)
+	if err != nil {
+		slog.WarnContext(ctx, "shadow app id self-heal failed", "user_id", userID, "uin", binding.Uin, "err", err)
+		return ShadowBindingResult{}, newError("shadow_appid_unavailable", "腾讯云账号信息暂不可用。", http.StatusBadGateway)
+	}
+	return toShadowBindingResult(repaired), nil
 }
 
 func (s *Service) InternalShadowBindingState(ctx context.Context, userID string) (ShadowBindingResult, error) {

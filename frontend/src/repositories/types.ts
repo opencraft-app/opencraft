@@ -5,6 +5,7 @@ import type {
   AutoRenewFlag,
   BillingSummary,
   Bundle,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlInput,
@@ -34,7 +35,55 @@ import type {
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 
 export interface OAuthStartOptions {
+  switchAccount?: boolean;
   wechatMode?: WeChatOAuthMode;
+}
+
+export interface FederationAuthorizationInput {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+}
+
+export interface OIDCAuthorizationInput {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  responseType: "code";
+  scope: string;
+  codeChallenge: string;
+  codeChallengeMethod: "S256";
+  nonce: string;
+}
+
+export interface FederationSessionSummary {
+  user: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface FederationAuthorizationContext extends FederationAuthorizationInput {
+  clientDisplayName: string;
+  currentSession: FederationSessionSummary | null;
+}
+
+export interface FederationTicketResult {
+  redirectUrl: string;
+  expiresAt: string;
+}
+
+export interface OIDCAuthorizationContext extends OIDCAuthorizationInput {
+  clientDisplayName: string;
+  currentSession: FederationSessionSummary | null;
+}
+
+export interface OIDCAuthorizationResult {
+  redirectUrl: string;
+  expiresAt: string;
 }
 
 export interface RealnameVerifyResult {
@@ -160,6 +209,12 @@ export interface AuthRepository {
   createPaymentMethodSignOrder(languageCode: PaymentMethodLanguageCode): Promise<PaymentMethodSignOrder>;
   setDefaultPaymentMethod(contractCode: string): Promise<void>;
   deletePaymentMethod(contractCode: string): Promise<void>;
+  getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext>;
+  issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult>;
+  getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext>;
+  authorizeOIDC(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationResult>;
+  prepareFederationSwitch(): Promise<void>;
+  cancelFederationSwitch(): Promise<void>;
   getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;
   signOut(): Promise<void>;
@@ -228,6 +283,12 @@ export interface PlanRepository {
    * ⚠️ 仅联调测试用，现网禁止暴露给真实用户。
    */
   createPassOrderAndPay(input: { bundle_id: string; period: number; time_unit: BundleTimeUnit }): Promise<CreatePassOrderAndPayResult>;
+  /** 点石活动套餐专用下单并支付入口，不接受支付方式或自动续费参数。 */
+  createDianshiPassOrderAndPay(input: {
+    bundle_id: string;
+    period: number;
+    time_unit: BundleTimeUnit;
+  }): Promise<CreateDianshiPassOrderAndPayResult>;
   /**
    * 续费询价（POST /v1/passes/{pass_id}/renew/price）— 联调文档 §3.1
    *

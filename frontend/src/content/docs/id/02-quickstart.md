@@ -1,5 +1,11 @@
 # Panduan Cepat
 
+## Ringkasan
+
+**Menjalankan percakapan pertama di LightVela memerlukan sekitar 5 menit: masuk ke LightVela → aktifkan sebuah paket → platform otomatis membuat instance Hermes Agent → konfigurasikan model (atau langsung gunakan kredit model bulanan dari paket Anda) → hubungkan satu kanal pesan → kirim pesan dan terima balasan. Semuanya dilakukan di browser, tanpa perlu membeli server atau melakukan deployment lokal. Jalur tercepat adalah memakai kredit paket bersama kanal WeChat yang cukup dihubungkan dengan memindai kode QR, lalu menambahkan API key model sendiri dan kanal lain sesuai kebutuhan.**
+
+---
+
 Tutorial ini memandu Anda dari proses masuk sampai menerima balasan pertama dari Hermes lewat WeChat. Waktunya sekitar 5 menit.
 
 ## Yang dibahas di halaman ini

@@ -276,7 +276,7 @@ func (f *fakeOrderWriter) MarkOrderCancelled(ctx context.Context, dealName strin
 
 type fakeOrderStore struct {
 	getOrderByDealNameFn     func(ctx context.Context, dealName string) (*store.TradeOrder, error)
-	findReusableFn           func(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*store.TradeOrder, error)
+	findReusableFn           func(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, createdAfter time.Time) (*store.TradeOrder, error)
 	lastReusableCreatedAfter time.Time
 }
 
@@ -287,10 +287,10 @@ func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string
 	return nil, errors.New("fakeOrderStore: GetOrderByDealName not implemented")
 }
 
-func (f *fakeOrderStore) FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*store.TradeOrder, error) {
+func (f *fakeOrderStore) FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, createdAfter time.Time) (*store.TradeOrder, error) {
 	f.lastReusableCreatedAfter = createdAfter
 	if f.findReusableFn != nil {
-		return f.findReusableFn(ctx, externalUserID, activityID, bundleID, createdAfter)
+		return f.findReusableFn(ctx, externalUserID, activityID, bundleID, actID, createdAfter)
 	}
 	return nil, store.ErrTradeOrderNotFound
 }
@@ -361,6 +361,7 @@ type stdDeps struct {
 	paymentContext    *fakePaymentContext
 	writer            *fakeOrderWriter
 	store             *fakeOrderStore
+	participation     *fakeParticipationReader
 	service           *Service
 }
 
@@ -388,6 +389,7 @@ func newStdDeps() *stdDeps {
 		paymentContext:    &fakePaymentContext{},
 		writer:            &fakeOrderWriter{},
 		store:             &fakeOrderStore{},
+		participation:     &fakeParticipationReader{},
 	}
 	d.service = New(Deps{
 		CTLClient:              d.ctl,
@@ -398,6 +400,7 @@ func newStdDeps() *stdDeps {
 		PaymentContextClient:   d.paymentContext,
 		OrderWriter:            d.writer,
 		OrderStore:             d.store,
+		ParticipationReader:    d.participation,
 	})
 	return d
 }
@@ -952,6 +955,55 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 	}
 }
 
+func TestGeneratePayURL_IntlZeroAmountStillCallsCreatePayURL(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       "deal-1",
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeCreate,
+		}, nil
+	}
+	d.billing.describeOrderListFn = func(context.Context, cloudbillingclient.TemporaryCredentials, *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
+		return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
+			OrderID:                               "deal-1",
+			PriceDetailHighPrecisionRealTotalCost: "0",
+			TaxRate:                               "0.09",
+		}}}, nil
+	}
+	d.billing.createPayURLFn = func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ChargeAmount != 0 {
+			t.Fatalf("ChargeAmount = %d, want 0", req.ChargeAmount)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{
+			URL: "https://buy.cloud.tencent.com/midas/zero?dealName=deal-1",
+		}, nil
+	}
+
+	detail, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
+	if err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if detail.PayURL != "https://buy.cloud.tencent.com/midas/zero?dealName=deal-1" {
+		t.Fatalf("PayURL = %q", detail.PayURL)
+	}
+	if d.billing.createPayURLCalls.Load() != 1 {
+		t.Fatalf("CreatePayURL calls = %d, want 1", d.billing.createPayURLCalls.Load())
+	}
+}
+
 func TestGeneratePayURL_IntlCreateWithSavedCardDoesNotCreateContractOrder(t *testing.T) {
 	d := newStdDeps()
 	d.paymentContext.hasPaymentMethod = true
@@ -1066,7 +1118,7 @@ func TestGeneratePayURL_IntlCreateTreatsPaymentContextFailureAsUnbound(t *testin
 	}
 }
 
-func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testing.T) {
+func TestGeneratePayURL_IntlRenewWithoutSavedCardCreatesContractOrder(t *testing.T) {
 	d := newStdDeps()
 	d.service = New(Deps{
 		CTLClient:              d.ctl,
@@ -1090,8 +1142,8 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 		}, nil
 	}
 	d.billing.createPayURLFn = func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
-		if req.ContractOrder != 0 {
-			t.Errorf("ContractOrder = %d, want 0", req.ContractOrder)
+		if req.ContractOrder != 1 {
+			t.Errorf("ContractOrder = %d, want 1 for missing saved card", req.ContractOrder)
 		}
 		if req.PayScene != "credit_card" {
 			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
@@ -1123,8 +1175,8 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
 		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
 	}
-	if d.paymentContext.calls.Load() != 0 {
-		t.Errorf("payment context queries = %d, want 0 for renew", d.paymentContext.calls.Load())
+	if d.paymentContext.calls.Load() != 1 {
+		t.Errorf("payment context queries = %d, want 1", d.paymentContext.calls.Load())
 	}
 }
 
@@ -1170,8 +1222,9 @@ func TestResolvePayRedirectURLs(t *testing.T) {
 	}
 }
 
-func TestGeneratePayURL_IntlRenewNeverCreatesContractOrder(t *testing.T) {
+func TestGeneratePayURL_IntlRenewWithSavedCardDoesNotCreateContractOrder(t *testing.T) {
 	d := newStdDeps()
+	d.paymentContext.hasPaymentMethod = true
 	d.service = New(Deps{
 		CTLClient:              d.ctl,
 		BundleStore:            d.bundle,
@@ -1227,8 +1280,48 @@ func TestGeneratePayURL_IntlRenewNeverCreatesContractOrder(t *testing.T) {
 	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
 		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
 	}
-	if d.paymentContext.calls.Load() != 0 {
-		t.Errorf("payment context queries = %d, want 0 for renew", d.paymentContext.calls.Load())
+	if d.paymentContext.calls.Load() != 1 {
+		t.Errorf("payment context queries = %d, want 1", d.paymentContext.calls.Load())
+	}
+}
+
+func TestGeneratePayURL_IntlRenewTreatsPaymentContextFailureAsUnbound(t *testing.T) {
+	d := newStdDeps()
+	d.paymentContext.err = errors.New("auth unavailable")
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       dealName,
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeRenew,
+		}, nil
+	}
+	d.billing.createPayURLFn = func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ContractOrder != 1 {
+			t.Errorf("ContractOrder = %d, want 1 after payment context failure", req.ContractOrder)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/fallback?dealName=deal-1"}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if d.paymentContext.calls.Load() != 1 {
+		t.Errorf("payment context queries = %d, want 1", d.paymentContext.calls.Load())
+	}
+	if d.shadowCredentials.calls.Load() != 1 {
+		t.Errorf("shadow credential queries = %d, want 1 fallback", d.shadowCredentials.calls.Load())
 	}
 }
 
@@ -1382,6 +1475,7 @@ func TestChargeAmountFromOrderListIncludesTaxAndRoundsUpFractionalCents(t *testi
 		{name: "seven percent tax rounds up half cent", rawAmount: "650000000", taxRate: "0.07", wantAmount: 696},
 		{name: "ten percent tax is exact cents", rawAmount: "650000000", taxRate: "0.10", wantAmount: 715},
 		{name: "sub-cent paid amount rounds up after tax", rawAmount: "650000001", taxRate: "0.07", wantAmount: 696},
+		{name: "zero amount remains zero", rawAmount: "0", taxRate: "0.09", wantAmount: 0},
 		{name: "zero tax preserves paid cents", rawAmount: "650000000", taxRate: "0", wantAmount: 650},
 	}
 

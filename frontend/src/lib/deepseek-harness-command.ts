@@ -245,7 +245,7 @@ const assertSecretId = (secretId: string) => {
   if (!SECRET_ID_PATTERN.test(secretId)) throw new Error("Invalid secret transport id");
 };
 
-const assertProvider = (provider: string): asserts provider is DeepSeekHarnessProviderID => {
+const assertProvider = (provider: string): void => {
   if (!ALL_PROVIDERS.has(provider)) throw new Error("Unsupported DeepSeek Harness provider");
 };
 

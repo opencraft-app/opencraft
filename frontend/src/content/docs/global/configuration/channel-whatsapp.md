@@ -1,5 +1,11 @@
 # 配置通道 - WhatsApp
 
+## 摘要
+
+**WhatsApp 通道采用扫码接入，配置方式接近 WeChat，适合快速把 Hermes Agent 接入 WhatsApp 对话场景：在管理台「通道」中选择 WhatsApp、生成二维码后用手机 WhatsApp 扫码完成授权即可对话。准备工作是一台装有 WhatsApp 的手机，以及完成模型配置（或直接使用套餐按月提供的模型积分）。同一个 Agent 可同时接入多个通道并共享同一份人格与长期记忆。**
+
+---
+
 WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快速将 Hermes Agent 接入 WhatsApp 对话场景。
 
 ## 本页覆盖

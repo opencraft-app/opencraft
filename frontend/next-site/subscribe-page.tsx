@@ -3,7 +3,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
+import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
@@ -57,9 +57,102 @@ const LAUNCH_BUNDLE_NAME_KEYWORDS = {
   zh: "启航",
   en: "launch",
 } as const;
-/** AI 增强版套餐类型标识（首月折扣付费，不在免费试用范围内） */
+/** AI 增强版套餐类型标识（国际站启航 AI 对新用户提供 3 天免费，巡游 AI 为首购折扣） */
 const BUNDLE_TYPE_AI = "ai";
+/** 巡游版套餐名匹配关键字（后端可能返回「巡游」中文名或「cruise」英文名） */
+const CRUISE_BUNDLE_NAME_KEYWORDS = {
+  zh: "巡游",
+  en: "cruise",
+} as const;
 const CN_REFUND_RULES_PATH = "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99";
+
+/** 按套餐名判定所属档位（启航 / 巡游）；中英文名与中英混排均可命中。 */
+const matchBundleTier = (bundleName: string | undefined) => {
+  const nm = bundleName ?? "";
+  const lower = nm.toLowerCase();
+  return {
+    isLaunch:
+      nm.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.zh) || lower.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.en),
+    isCruise:
+      nm.includes(CRUISE_BUNDLE_NAME_KEYWORDS.zh) || lower.includes(CRUISE_BUNDLE_NAME_KEYWORDS.en),
+  };
+};
+
+/**
+ * AI 增强版档位的促销标签文案。
+ *
+ * 前端按「档位 + bundle_type」直接判定，不依赖后端 `bundle.price.discount`
+ * —— 该字段在本文件内存在两套单位口径（小数 `0<d<1` 与百分数 `50`），
+ * 依赖它会让国际站 AI 档位在后端下发百分数时丢标签。
+ *
+ * 站点口径差异（本次需求仅调整国际站，国内站维持现状）：
+ *   - 国际站启航 AI：`首单免费 3 天`（**仅新用户**，见下方 isNewUser 门禁）
+ *   - 国际站巡游 AI：`首月 6 折`
+ *   - 国内站启航 / 巡游 AI：`首月 6 折`（与改动前一致）
+ *
+ * 国际站标签必须同时匹配用户资格和真实询价：
+ *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 3 天」；
+ *   - 只有实付价低于原价时才展示折扣，避免后端异常全价询价仍承诺优惠。
+ * 未登录静态 Bundle 也携带同样的原价 / 实付价，因此继续稳定展示既定免费与折扣信息。
+ *
+ * 仅返回文案，不改价格、不改 CTA、不改计费链路。
+ */
+const aiPromoTagText = (
+  tier: { isLaunch: boolean; isCruise: boolean },
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+  /* 新用户（未订阅任何套餐）。已订阅用户不展示「首单」类文案。 */
+  isNewUser: boolean,
+  price?: BundlePrice | null,
+): string | undefined => {
+  if (isGlobal) {
+    if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
+      return t("首单免费 3 天");
+    }
+    const discountRate = actualDiscountRate(price);
+    if ((tier.isLaunch || tier.isCruise) && discountRate != null) {
+      /* 既有月付 AI 活动仍使用「首月 6 折」专属文案；异常的其他折扣率按真实比值展示。 */
+      return Math.abs(discountRate - 0.6) < 0.0001
+        ? t("首月 6 折")
+        : discountTagText(discountRate, t);
+    }
+    return undefined;
+  }
+  if (tier.isLaunch || tier.isCruise) return t("首月 6 折");
+  return undefined;
+};
+
+/**
+ * 折扣角标文案（季付「8.5折」这类按实际折扣计算的标签）。
+ *
+ * 必须走 i18n：改动前此处用模板字符串直接拼中文「折」，
+ * 导致 en-US / id-ID 环境下也输出「9.8折」这类中文文案。
+ *
+ * 同一条 key 下发两套口径，靠插值变量区分（i18next 会忽略译文里未引用的变量）：
+ *   - zh-CN / zh-Hant：`{{discount}}折`   → 9.8折（折扣率，保留 1 位小数，中式表达）
+ *   - en-US / id-ID：  `Save {{percent}}%` → Save 2%（节省比例，取整，西式表达）
+ *
+ * @param rate 折后价 / 原价的比值，取值区间 (0, 1)
+ */
+const discountTagText = (
+  rate: number,
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+): string =>
+  t("{{discount}}折", {
+    /* 中式折扣率，保留 1 位小数：0.85 → 8.5、0.9 → 9（整数不补 .0）、0.9827 → 9.8。
+       乘 100 再除 10（而非 ×1000/100）确保只保留 1 位小数，与改动前的展示精度一致。 */
+    discount: Math.round(rate * 100) / 10,
+    /* 西式节省比例，取整：0.85 → 15（Math.round 同时规避浮点误差，如 15.000000000000002） */
+    percent: Math.round((1 - rate) * 100),
+  });
+
+/** 只接受后端可计费的正数折扣价；零元权益只由新用户资格分支处理，已订阅零元询价视为异常且不展示促销。 */
+const actualDiscountRate = (price?: BundlePrice | null): number | undefined =>
+  price &&
+  price.total_cost > 0 &&
+  price.real_total_cost > 0 &&
+  price.real_total_cost < price.total_cost
+    ? price.real_total_cost / price.total_cost
+    : undefined;
 
 const shadows = {
   card: "rgba(0,0,0,0.04) 0px 4px 18px, rgba(0,0,0,0.027) 0px 2.025px 7.85px, rgba(0,0,0,0.02) 0px 0.8px 2.93px, rgba(0,0,0,0.01) 0px 0.175px 1.04px",
@@ -102,6 +195,13 @@ interface PlanInfo {
   badge?: string;
   badgeStyle?: "tag" | "popular";
   price: string;
+  /* 结构化价格（分）：确认订单弹窗三行金额的真源。登录态真实计费时填充；
+     demoMode 占位卡 / 静态价为 undefined，弹窗退化为旧视觉。 */
+  priceDetail?: {
+    subtotalCents: number;
+    taxCents: number;
+    totalCents: number;
+  };
   priceUnit?: string;
   priceNote?: string;
   /* 原价（折扣前价格）：有折扣时展在活动价右侧，小字删除线灰色。无折扣时为 undefined。 */
@@ -141,6 +241,9 @@ interface PlanInfo {
   bundleType?: string;
   raw: Bundle;
 }
+
+const isDianshiZeroAmountPlan = (plan: PlanInfo, paidBillingActive: boolean): boolean =>
+  isGlobal && paidBillingActive && plan.raw.price?.real_total_cost === 0;
 
 /* ─── 套餐分类 Tab 配置 ─── */
 
@@ -192,10 +295,10 @@ interface AiDurationTabDef {
   zhLabel: string;
 }
 
-const AI_DURATION_TABS: AiDurationTabDef[] = [
+const AI_DURATION_TABS = [
   { key: "monthly", period: 1, time_unit: "m", zhLabel: "月付" },
   { key: "quarterly", period: 3, time_unit: "m", zhLabel: "季付" },
-];
+] as const satisfies readonly AiDurationTabDef[];
 
 const getBillingPriceUnit = (
   durationKey: AiDurationTabDef["key"],
@@ -457,16 +560,30 @@ const mapBundleToPlan = (
    *   - `paidBillingEnabled=true`（开关已开启，新逻辑）：
    *       国内站（isGlobal=false）消费后端真实价格 bundle.price.real_total_cost；
    *         无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章。
-   *       国际站（isGlobal=true）登录后走真实计费展示（消费后端 bundle.price，单位分 + USD）；
-   *       未登录仍走「限时免费」免费试用视觉。
+   *       国际站（isGlobal=true）已全量放开付费定价展示：
+   *         登录后消费后端 bundle.price（单位分 + USD），未登录消费前端静态美元价表。
    */
   const soldOut = bundle.bundle_sales_state === "SOLD_OUT";
-  /* 计费开关开启后：国内站进入真实计费；国际站登录后进入真实计费（后端 bundle.price），未登录走免费视觉。 */
-  const paid = paidBillingEnabled && (!isGlobal || isLoggedIn);
-  /** 国内站要展示的真实金额（元）；后端 bundle.price.real_total_cost 单位是分，
-   *  展示前需调 centsToYuan 转为元；后端 price 为 null 时返回 null 并标记为「暂无报价」禁用 */
+  /* 计费开关开启后国内外一律进入真实计费展示。
+     国际站未登录不再走「限时免费 $7.5」兜底 —— 未登录消费 buildStaticBundles 下发的静态价，
+     与登录后新用户的价格 / 折扣 / 标签口径一致（需求：未登录展示纯静态页，信息等同登录后新用户）。 */
+  const paid = paidBillingEnabled;
+  /* 新用户（未订阅任何套餐）：决定是否展示「首单」类权益文案。
+     未登录一律视为新用户（未登录必然还没有订阅），与登录后的新用户展示口径保持一致。 */
+  const isNewUser = !isSubscribed;
+  /** 套餐卡展示的「价格基准」：产品口径为税前实付价（价签模式：卡片标税前，付款实付含税）。
+   *  注意与后端 2692ca1ca 询价税费拆分的语义：
+   *    real_total_cost = 含税实付；total_cost = 税前原价；tax_price = 实付税额。
+   *  卡片价 = real_total_cost - tax_price = 税前实付价（含折扣）：
+   *    - 有税数据：从含税实付中扣除税额，与弹窗「小计（税前）」同口径，避免
+   *      「卡片 $52、弹窗小计 $45」被用户当成变价；
+   *    - 无税数据（tax_price 缺失 / 静态价表）：等于 real_total_cost 直显，
+   *      与静态新用户实付价（如启航月付 $0、巡游 AI $13.8）的展示设计兼容。
+   *  单位转换后端给的是分，cent...Yuan 内部乘 0.01；后端 price 为 null 时返回 null。 */
   const realPriceYuan =
-    paid && bundle.price ? centsToYuan(bundle.price.real_total_cost) : null;
+    paid && bundle.price
+      ? centsToYuan(bundle.price.real_total_cost - (bundle.price.tax_price ?? 0))
+      : null;
   const priceUnavailable = paid && !bundle.price && !soldOut;
   /* 询价中中间态：用户已切换 durationKey、但新时长的询价尚未返回。此时 bundle.price 仍是旧时长的价。
      方案 B1：视觉上保留旧价 + 旧单位（不切成新单位，避免「旧价 + 新单位」的误导组合），
@@ -486,7 +603,21 @@ const mapBundleToPlan = (
     let displayPriceYuan = realPriceYuan;
     /* 原价（折扣前）：未登录时即 realPriceYuan（后端下发的原价）；已登录时取后端 total_cost。 */
     let originalPriceYuan: number | null = null;
-    if (!isLoggedIn && realPriceYuan != null) {
+    if (isGlobal && bundle.price) {
+      /* 国际站（登录与未登录同一口径）：real_total_cost 即新用户实付价、total_cost 为原价。
+         未登录静态价来自 STATIC_INTL_PRICE_USD，已内置新用户实付价（如启航 AI 月付 $0、
+         巡游 AI 月付 $13.8），**不能再套用下方未登录分支的 ×0.5 / ×0.6 / 置 0 二次折算**，
+         否则会出现 $13.8 再打 6 折这类错误金额。
+         这样未登录展示与登录后新用户完全一致（需求：未登录整页按登录后新用户呈现）。 */
+      const intlOriginalYuan = centsToYuan(bundle.price?.total_cost);
+      if (
+        intlOriginalYuan != null &&
+        displayPriceYuan != null &&
+        intlOriginalYuan > displayPriceYuan
+      ) {
+        originalPriceYuan = intlOriginalYuan;
+      }
+    } else if (!isLoggedIn && realPriceYuan != null) {
       const nm = bundle.bundle_name ?? "";
       const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
       const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
@@ -497,7 +628,9 @@ const mapBundleToPlan = (
            不套用月付促销（免费14天 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
            折扣角标（如「8.5折」）由后续 promoTag 分支按 price.discount 计算。标准版与 AI 增强版一致。 */
         if (isLaunch || isCruise) {
-          const staticOriginalYuan = centsToYuan(bundle.price.total_cost);
+          const staticOriginalYuan = bundle.price
+            ? centsToYuan(bundle.price.total_cost)
+            : null;
           if (
             staticOriginalYuan != null &&
             displayPriceYuan != null &&
@@ -540,44 +673,63 @@ const mapBundleToPlan = (
          无原价删除线（即无折扣）时不展示角标。 */
       promoTag =
         originalPriceYuan != null && displayPriceYuan != null && originalPriceYuan > displayPriceYuan
-          ? `${Math.round((displayPriceYuan / originalPriceYuan) * 100) / 10}折`
+          ? discountTagText(displayPriceYuan / originalPriceYuan, t)
           : undefined;
-    } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
-      /* 国际站 AI 增强版月付有真实折扣时展示「首月 6 折」；其他场景按比值展示「X折」。
-         无折扣（d=0/1/undefined）时不进入本分支，由 else 兜底为 undefined — 满足「有折扣才展示」。 */
-      const nm = bundle.bundle_name ?? "";
-      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
-      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
-      const isAi = bundle.bundle_type === "ai";
-      if (isGlobal && (isLaunch || isCruise) && isAi) {
-        promoTag = t("首月 6 折");
+    } else if (isGlobal) {
+      /* 国际站月付：标签统一按「档位 + bundle_type + 原价 / 实付价」判定，不依赖后端 discount 字段
+         （该字段在本文件内存在小数 `0<d<1` 与百分数 `50` 两套口径，依赖它会丢标签）。
+         未登录静态 Bundle 也携带既定原价 / 实付价，因此展示不变；登录态异常全价询价不承诺优惠。 */
+      const tier = matchBundleTier(bundle.bundle_name);
+      const isAi = bundle.bundle_type === BUNDLE_TYPE_AI;
+      const discountRate = actualDiscountRate(bundle.price);
+      if (isAi) {
+        /* AI 档位：启航零元新用户「首单免费 3 天」；有真实折扣时按询价展示。 */
+        promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
+      } else if (tier.isLaunch) {
+        /* 启航标准版：只有新用户实付为零才承诺 14 天免费；其他状态只展示真实折扣。 */
+        if (isNewUser && bundle.price?.real_total_cost === 0) {
+          promoTag = t("首单免费 14 天");
+          isZeroDownFreeTrial = true;
+        } else {
+          promoTag = discountRate == null ? undefined : discountTagText(discountRate, t);
+        }
+      } else if (tier.isCruise) {
+        /* 巡游标准版：新用户且真实五折时使用首购文案；其余真实折扣使用通用折扣标签。 */
+        promoTag =
+          discountRate == null
+            ? undefined
+            : isNewUser && Math.abs(discountRate - 0.5) < 0.0001
+              ? t("首月 5 折")
+              : discountTagText(discountRate, t);
       } else {
-        promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
+        promoTag = undefined;
       }
+    } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
+      /* 国内站：有真实折扣（小数口径）时按比值展示「X折」，与改动前一致。 */
+      promoTag = discountTagText(backendDiscount, t);
     } else {
-      const nm = bundle.bundle_name ?? "";
-      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
-      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
-      const withToken = bundle.bundle_type === "ai";
-      if (isLaunch) {
+      const tier = matchBundleTier(bundle.bundle_name);
+      const withToken = bundle.bundle_type === BUNDLE_TYPE_AI;
+      if (tier.isLaunch) {
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          /* 国内站保持原样总是展示「首月 6 折」；国际站依赖后端真实 discount（在前面 0<d<1 分支处理） */
-          if (!isGlobal) {
-            promoTag = t("首月 6 折");
-          }
+          /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
+             国际站启航 AI「首单免费 3 天」，国内站启航 AI「首月 6 折」（与改动前一致）。
+             改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。
+             已订阅用户由 aiPromoTagText 内部降级为「首月 6 折」，不展示首单权益。 */
+          promoTag = aiPromoTagText(tier, t, isNewUser);
         } else if (!isLoggedIn || backendDiscount === 0) {
           /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
           promoTag = t("首单免费 14 天");
           isZeroDownFreeTrial = true;
         }
-      } else if (isCruise) {
+      } else if (tier.isCruise) {
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          /* 国内站保持原样总是展示「首月 6 折」；国际站依赖后端真实 discount（在前面 0<d<1 分支处理） */
-          if (!isGlobal) {
-            promoTag = t("首月 6 折");
-          }
+          /* 巡游 AI 档位国内外一致展示「首月 6 折」。
+             改动前此处被 `if (!isGlobal)` 拦截，且后端 discount 单位不一致（0<d<1 与 50 两套口径），
+             导致国际站巡游 AI 档位丢失「首月 6 折」标签 —— 本次需求要修的即此问题。 */
+          promoTag = aiPromoTagText(tier, t, isNewUser);
         } else if (!isLoggedIn || backendDiscount === 50) {
           /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
@@ -587,7 +739,10 @@ const mapBundleToPlan = (
       }
     }
   } else {
-    /* 国际站：保持当前限时免费视觉 */
+    /* 计费开关整体关闭（paidBillingEnabled=false）时的限时免费视觉，国内外一致。
+       注意：国际站未登录**不再**落到这里 —— `paid` 已改为只看 paidBillingEnabled，
+       未登录会消费 buildStaticBundles 的静态价，与登录后新用户口径一致。
+       因此本分支只服务「开关未开启」的灰度兜底场景，保持改动前的原始行为不变。 */
     price = isGlobal ? "$7.5" : "¥49";
     promoTag = soldOut ? undefined : t("限时免费");
   }
@@ -611,15 +766,42 @@ const mapBundleToPlan = (
     bundle.bundle_id === currentBundleId ||
     CURRENT_BUNDLE_ALIASES[bundle.bundle_id]?.includes(currentBundleId) === true
   );
-  /* 启航版（标准版，非 AI 增强版）识别。需求：新用户（未订阅任何套餐）无论登录态 / 未登录态，
-     启航版订阅按钮统一展示「免费订阅」，并在 hover 时提示「免费试用到期后不自动扣款、需手动续费」。
-     AI 增强版（bundle_type === "ai"）为付费首月折扣，不在此免费试用范围内。 */
-  const _launchBundleName = bundle.bundle_name ?? "";
-  const isLaunchStandard =
-    (_launchBundleName.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.zh) ||
-      _launchBundleName.toLowerCase().includes(LAUNCH_BUNDLE_NAME_KEYWORDS.en)) &&
-    bundle.bundle_type !== BUNDLE_TYPE_AI;
-  const isNewUserFreeLaunch = isLaunchStandard && !isSubscribed && !isCurrentPlan;
+  /* 启航版（标准版，非 AI 增强版）识别。新用户只有在真实实付为零时展示「免费订阅」，
+     防止登录态异常全价询价仍承诺免费；未登录静态价为零，既定展示不受影响。 */
+  const bundleTier = matchBundleTier(bundle.bundle_name);
+  const isLaunchStandard = bundleTier.isLaunch && bundle.bundle_type !== BUNDLE_TYPE_AI;
+  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 3 天」（见 aiPromoTagText）。
+     国内站启航 AI 不进入本判定，CTA 维持「立即订阅」，与改动前一致。 */
+  const isIntlLaunchAi =
+    isGlobal && bundleTier.isLaunch && bundle.bundle_type === BUNDLE_TYPE_AI;
+  /* 季付不含首期免费试用（季付价即实付价，见上方 durationKey === "quarterly" 的促销分支：
+     月付首期促销一律不生效，只按实际折扣展示角标）。
+     因此季付一律不展示「免费订阅」引导，CTA 维持「立即订阅」，也不展示免费试用 hover 提示。 */
+  const freeTrialEligibleDuration = durationKey !== "quarterly";
+  const isZeroAmountBundle = paid && bundle.price?.real_total_cost === 0;
+  const isNewUserFreeLaunch =
+    isLaunchStandard &&
+    isZeroAmountBundle &&
+    !isSubscribed &&
+    !isCurrentPlan &&
+    freeTrialEligibleDuration;
+  /**
+   * 启航 AI 档位是否展示「免费订阅」CTA。
+   *
+   * 必须以**实付金额为 0** 为前提，不能只看档位 —— 否则会出现
+   * 「按钮承诺免费、点击后进入信用卡支付」的不一致（本次未实现 3 天试用能力，
+   * 权益与支付逻辑均未改动）。
+   *
+   * 金额为 0 时点击链路本身也是零元流程：`isDianshiZeroAmountPlan` 命中
+   * `real_total_cost === 0` 走点石零元下单，不进入信用卡支付，与 CTA 语义一致。
+   * 金额非 0 时（如首月 6 折）自动回落为「立即订阅」，与实际收费一致。
+   */
+  const isNewUserFreeLaunchAi =
+    isIntlLaunchAi &&
+    isZeroAmountBundle &&
+    !isSubscribed &&
+    !isCurrentPlan &&
+    freeTrialEligibleDuration;
   const ctaLabel = isCurrentPlan
     ? t("当前订阅")
     : soldOut
@@ -628,10 +810,13 @@ const mapBundleToPlan = (
       ? t("询价中...")
       : priceUnavailable
         ? t("暂无报价")
-        : /* 需求4：可享免费 14 天 0 元下单，或内测「免费订阅」引导态，一律显示「免费订阅」。
-             需求（新用户启航版）：无论登录 / 未登录，新用户启航版一律展示「免费订阅」。
-             已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。 */
-          !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide || isNewUserFreeLaunch)
+        : /* 可享免费 14 天的零元下单，或内测「免费订阅」引导态，显示「免费订阅」。
+             国际站启航标准版 / AI 版均须同时满足新用户、月付、实付为零。
+             已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。
+             季付无首期免费试用，freeTrialEligibleDuration=false 时统一收口为「立即订阅」。 */
+          !isSubscribed &&
+          freeTrialEligibleDuration &&
+          (isZeroDownFreeTrial || isFeaturedFreeGuide || isNewUserFreeLaunch || isNewUserFreeLaunchAi)
           ? t("免费订阅")
           : t("立即订阅");
   /* 免费试用提示：仅当按钮实际展示「免费订阅」且为新用户启航版时才展示。
@@ -650,6 +835,20 @@ const mapBundleToPlan = (
     badgeStyle: soldOut ? "tag" : undefined,
     /* 价格：中间态保留旧价原样展示，视觉稳定不跳变；CTA 由 pricingLoading 兜底禁用。 */
     price,
+    /* 结构化价格（分）：确认订单弹窗三行金额真源（后端 2692ca1ca 询价税费拆分）。
+       口径（产品确认 2026-08-24）：小计=折后价（税前实付 = real_total_cost - tax_price，
+       与卡片价同源同值，避免「卡片 $7、弹窗小计 $14」变价错觉）、税费=tax_price、
+       合计=real_total_cost（含税实付）。原价/折扣差不单列展示。
+       仅在登录态真实计费（paid && bundle.price）时填充；
+       询价中间态沿用旧 bundle.price，与新时长无关——弹窗在 CTA 禁用期间不可打开，无误导窗口。 */
+    priceDetail:
+      paid && bundle.price
+        ? {
+            subtotalCents: bundle.price.real_total_cost - (bundle.price.tax_price ?? 0),
+            taxCents: bundle.price.tax_price ?? 0,
+            totalCents: bundle.price.real_total_cost,
+          }
+        : undefined,
     /* 原价（折扣前）：有折扣时展在活动价右侧删除线；询价加载中不展示，避免误导。 */
     originalPrice: showPricingPlaceholder ? undefined : originalPrice,
     /* 价格单位需与当前 durationKey 一致，且中间态必须与旧价口径一致：
@@ -670,7 +869,10 @@ const mapBundleToPlan = (
     features,
     ctaLabel,
     freeTrialHint,
-    ctaStyle: index === 0 ? "primary" : "outline",
+    /* 国际站两张卡 CTA 统一黑底白字（primary），视觉权重一致；
+       国内站维持原样（仅主推卡 index===0 为 primary，其余 outline），本次不改国内站。
+       featured（卡片描边 / 圆角强调）仍只由 tier 顺序决定，不随配色统一而变。 */
+    ctaStyle: isGlobal || index === 0 ? "primary" : "outline",
     featured: index === 0,
     maxBots: bundle.agent_quota || 1,
     /* 真实缺价走 priceUnavailable（触发徽章 + CTA 禁用 + 点击拦截）；
@@ -729,6 +931,7 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
  * 表现为「打开啥也没有」），改用下面写死的静态 Bundle 列表，喂给同一套 mapBundleToPlan / planTiers
  * 渲染，保证「未登录静态展示」与「登录后询价展示」的结构、文案、促销角标完全一致；
  * 仅在点击订阅按钮时才引导登录（见 handleSubscribe 的 !isLoggedIn → login()）。
+ * 国际站付费已全量放开：planList 直接展示付费套餐，无 reveal 门禁。
  *
  * 价格为线上确认值（金额敏感），此处均为「原价」：
  *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3）
@@ -760,6 +963,52 @@ const STATIC_AI_MONTHLY_DISCOUNT = 0.6;
 /** AI 增强版季付折扣：9 折（0.9），展示「9折」角标（季付按实际折扣显示，不套月付首期促销）。 */
 const STATIC_AI_QUARTERLY_DISCOUNT = 0.9;
 
+/**
+ * 国际站未登录静态价（美元，面向新用户口径）。
+ *
+ * 需求：未登录整页按「登录后新用户」呈现，含美元与折扣。国际站美元价由腾讯云计费系统
+ * 实时询价返回（见 `trade/internal/logic/inquiry/service.go`，按 SiteKind 返回 USD），
+ * 代码中无权威价表，故此处按产品确认值硬编码。
+ *
+ * `original` = 原价（展示删除线）；`real` = 新用户实付价（展示主价）。
+ * **直接指定 real，不由 original × 折扣率乘算** —— 产品确认的折后价与乘算结果存在
+ * 分币差异（如季付 19.5 × 0.93 = 18.135，产品定价 18.07），乘算会导致展示与实际定价不一致。
+ *
+ * 折扣角标由 mapBundleToPlan 按 `real / original` 比值反算展示（en-US 为 `Save X%`）。
+ *
+ * ⚠️ 产品调整国际站线上价格 / 折扣时必须同步此表，否则未登录静态价与登录后询价不一致。
+ * 数据来源：产品 2026-08-21 确认。
+ */
+const STATIC_INTL_PRICE_USD: Record<
+  "launch" | "cruise",
+  Record<"general" | "ai", Record<"monthly" | "quarterly", { original: number; real: number }>>
+> = {
+  launch: {
+    /* 启航标准版：月付 $6.5，新用户 14 天免费（实付 $0）；季付 $19.5 → 9.3 折 $18.07 */
+    general: {
+      monthly: { original: 6.5, real: 0 },
+      quarterly: { original: 19.5, real: 18.07 },
+    },
+    /* 启航 AI 版：月付 $10，新用户 3 天免费（实付 $0）；季付 $30 → 9.8 折 $29.43 */
+    ai: {
+      monthly: { original: 10, real: 0 },
+      quarterly: { original: 30, real: 29.43 },
+    },
+  },
+  cruise: {
+    /* 巡游标准版：月付 $14，新用户首购 5 折 $7；季付 $42 → 9.3 折 $38.92 */
+    general: {
+      monthly: { original: 14, real: 7 },
+      quarterly: { original: 42, real: 38.92 },
+    },
+    /* 巡游 AI 版：月付 $23，新用户首购 6 折 $13.8；季付 $69 → 9.8 折 $67.69 */
+    ai: {
+      monthly: { original: 23, real: 13.8 },
+      quarterly: { original: 69, real: 67.69 },
+    },
+  },
+};
+
 /** 静态价格构造器：入参以「元」为单位的原价，可选 discount（0~1，默认 1.0 不打折）。
  *  内部转「分」并按 discount 计算折后价，与后端询价 BundlePrice 口径一致
  *  （total_cost=原价 / real_total_cost=折后价 / discount=折扣率）。 */
@@ -775,6 +1024,23 @@ const buildStaticPrice = (yuan: number, discount = 1.0): BundlePrice => {
   };
 };
 
+/**
+ * 国际站静态价构造器：原价与折后价均由 STATIC_INTL_PRICE_USD 直接给出（美元），
+ * 不做折扣率乘算，避免分币差异。`discount` 字段按比值回填，仅供折扣角标反算。
+ */
+const buildIntlStaticPrice = (entry: { original: number; real: number }): BundlePrice => {
+  const originalCents = Math.round(entry.original * 100);
+  const realCents = Math.round(entry.real * 100);
+  return {
+    price: originalCents,
+    total_cost: originalCents,
+    real_total_cost: realCents,
+    currency: "USD",
+    /* 比值口径（0~1 小数），与本文件 discountTagText 的入参口径一致；原价为 0 时兜底 1。 */
+    discount: originalCents > 0 ? realCents / originalCents : 1,
+  };
+};
+
 /** 标准版通用卖点（与后端 description 对齐；独立环境规格 / 存储 / 积分等具体展示由 mapBundleToPlan 内部统一处理）。 */
 const STATIC_GENERAL_DESC: BundleDescriptionEntry[] = [
   { Key: "独立环境", Value: "" },
@@ -785,14 +1051,36 @@ const STATIC_GENERAL_DESC: BundleDescriptionEntry[] = [
 /**
  * 生成未登录静态 Bundle 列表（覆盖启航/巡游 × 标准版/AI 增强版），
  * 走与后端相同的 mapBundleToPlan / planTiers 链路渲染。
- *   - 标准版：露真实价（启航/巡游随 durationKey 取月付/季付）
- *   - AI 增强版：露静态价（启航/巡游随 durationKey 取月付/季付，见 STATIC_AI_TIER_PRICE_YUAN；月付「首月 6 折」/季付「9折」角标），积分写死（启航 4500 / 巡游 10000）
+ *   - 国际站：使用 STATIC_INTL_PRICE_USD，直接指定原价与新用户实付价，避免分币误差。
+ *   - 国内站：沿用 STATIC_TIER_PRICE_YUAN / STATIC_AI_TIER_PRICE_YUAN 与既有折扣率。
+ * AI 增强版积分写死为启航 4500 / 巡游 10000。
  * bundle_id 与线上真实配置一致（见 scripts/seed_trade_shprod_bundle_definition.sql），
  * 但未登录不会触发下单（点订阅先引导登录），仅用于展示。
  */
 
 const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
   const span = durationKey === "quarterly" ? 3 : 1;
+  /**
+   * 静态价按站点分流：
+   *   - 国际站：STATIC_INTL_PRICE_USD（美元，原价 + 新用户实付价直接指定）
+   *   - 国内站：STATIC_TIER_PRICE_YUAN / STATIC_AI_TIER_PRICE_YUAN（人民币，原价 × 折扣率）
+   * 国内站分支保持改动前行为不变。
+   */
+  const staticPrice = (tier: "launch" | "cruise", kind: "general" | "ai"): BundlePrice => {
+    if (isGlobal) {
+      return buildIntlStaticPrice(STATIC_INTL_PRICE_USD[tier][kind][durationKey]);
+    }
+    if (kind === "ai") {
+      return buildStaticPrice(
+        STATIC_AI_TIER_PRICE_YUAN[tier][durationKey],
+        durationKey === "quarterly" ? STATIC_AI_QUARTERLY_DISCOUNT : 1.0,
+      );
+    }
+    return buildStaticPrice(
+      STATIC_TIER_PRICE_YUAN[tier][durationKey],
+      durationKey === "quarterly" ? STATIC_QUARTERLY_DISCOUNT : 1.0,
+    );
+  };
   const base = {
     bundle_state: "ONLINE" as const,
     time_unit: "m" as const,
@@ -826,10 +1114,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 100,
-      price: buildStaticPrice(
-        STATIC_TIER_PRICE_YUAN.launch[durationKey],
-        durationKey === "quarterly" ? STATIC_QUARTERLY_DISCOUNT : 1.0,
-      ),
+      price: staticPrice("launch", "general"),
       time_span: span,
     },
     {
@@ -840,10 +1125,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 4500,
-      price: buildStaticPrice(
-        STATIC_AI_TIER_PRICE_YUAN.launch[durationKey],
-        durationKey === "quarterly" ? STATIC_AI_QUARTERLY_DISCOUNT : 1.0,
-      ),
+      price: staticPrice("launch", "ai"),
       time_span: span,
     },
     /* 巡游 Cruise —— 标准版（促销「首月 5 折」）+ AI 增强版（敬请期待） */
@@ -855,10 +1137,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 200,
-      price: buildStaticPrice(
-        STATIC_TIER_PRICE_YUAN.cruise[durationKey],
-        durationKey === "quarterly" ? STATIC_QUARTERLY_DISCOUNT : 1.0,
-      ),
+      price: staticPrice("cruise", "general"),
       time_span: span,
     },
     {
@@ -869,10 +1148,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 10000,
-      price: buildStaticPrice(
-        STATIC_AI_TIER_PRICE_YUAN.cruise[durationKey],
-        durationKey === "quarterly" ? STATIC_AI_QUARTERLY_DISCOUNT : 1.0,
-      ),
+      price: staticPrice("cruise", "ai"),
       time_span: span,
     },
   ];
@@ -943,7 +1219,6 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     ctaStyle: "outline-dark",
     maxBots: 1,
     comingSoon: true,
-    releasedOnGlobal: true,
     agentQuota: 1,
     bundleType: "general",
   },
@@ -1744,11 +2019,15 @@ const modalCloseStyle: React.CSSProperties = {
 const ConfirmOrderModal = ({
   plan,
   billingPeriodLabel,
+  showPaymentMethod = true,
+  actionLabel,
   onCancel,
   onPay,
 }: {
   plan: PlanInfo;
   billingPeriodLabel: string;
+  showPaymentMethod?: boolean;
+  actionLabel?: string;
   onCancel: () => void;
   onPay: () => void;
 }) => {
@@ -1776,6 +2055,7 @@ const ConfirmOrderModal = ({
         <button
           style={modalCloseStyle}
           onClick={onCancel}
+          aria-label={t("关闭")}
           onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; e.currentTarget.style.color = colors.primary; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = colors.warmGray300; }}
         >
@@ -1811,38 +2091,40 @@ const ConfirmOrderModal = ({
             </div>
           </div>
 
-          <div
-            style={{
-              border: `1px solid ${colors.border}`,
-              borderRadius: 12,
-              padding: "16px 20px",
-              marginBottom: 24,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
+          {showPaymentMethod && (
             <div
               style={{
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                border: `2px solid ${colors.primary}`,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 12,
+                padding: "16px 20px",
+                marginBottom: 24,
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
+                gap: 10,
               }}
             >
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.primary }} />
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  border: `2px solid ${colors.primary}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.primary }} />
+              </div>
+              <svg viewBox="0 0 24 24" style={{ width: 22, height: 22, flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="12" fill="#07C160" />
+                <path d="M17.2 10.8c-.4-2.1-2.5-3.6-5-3.6-2.8 0-5.1 1.9-5.1 4.3 0 1.4.8 2.6 2 3.5l-.5 1.5 1.8-1c.6.2 1.2.3 1.8.3.3 0 .5 0 .8-.1-.2-.4-.2-.8-.2-1.2 0-2.1 2-3.7 4.4-3.7z" fill="#fff" />
+                <path d="M19.5 14.5c0-1.7-1.7-3.1-3.8-3.1s-3.8 1.4-3.8 3.1 1.7 3.1 3.8 3.1c.4 0 .9-.1 1.3-.2l1.2.7-.3-1.1c1-0.6 1.6-1.5 1.6-2.5z" fill="#fff" />
+              </svg>
+              <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("微信支付")}</span>
             </div>
-            <svg viewBox="0 0 24 24" style={{ width: 22, height: 22, flexShrink: 0 }}>
-              <circle cx="12" cy="12" r="12" fill="#07C160" />
-              <path d="M17.2 10.8c-.4-2.1-2.5-3.6-5-3.6-2.8 0-5.1 1.9-5.1 4.3 0 1.4.8 2.6 2 3.5l-.5 1.5 1.8-1c.6.2 1.2.3 1.8.3.3 0 .5 0 .8-.1-.2-.4-.2-.8-.2-1.2 0-2.1 2-3.7 4.4-3.7z" fill="#fff" />
-              <path d="M19.5 14.5c0-1.7-1.7-3.1-3.8-3.1s-3.8 1.4-3.8 3.1 1.7 3.1 3.8 3.1c.4 0 .9-.1 1.3-.2l1.2.7-.3-1.1c1-0.6 1.6-1.5 1.6-2.5z" fill="#fff" />
-            </svg>
-            <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("微信支付")}</span>
-          </div>
+          )}
 
           <div style={{ display: "flex", gap: 12 }}>
             <button
@@ -1881,7 +2163,7 @@ const ConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              {t("支付")} {currencySymbol}{priceNum}
+              {actionLabel ?? `${t("支付")} ${currencySymbol}${priceNum}`}
             </button>
           </div>
         </div>
@@ -1905,9 +2187,11 @@ const ConfirmOrderModal = ({
  *     提示绑卡并拦截支付，点击「Bind card」进入绑卡表单
  *   - 绑卡为前端演示：卡片状态仅在弹窗生命周期内维护，不落库、不发请求
  *
- * ⚠️ 税费为前端占位（TAX_RATE = 0），真实税额应由后端结算返回后替换。
+ * 金额三行口径（后端计费字段，单位分，见 BundlePrice.tax_price 注释）：
+ *   小计 ← 折后价（real_total_cost - tax_price，与卡片价同源）；税费 ← tax_price（未下发视为 0）；
+ *   合计 ← real_total_cost（含税实付）直接展示，不做前端加总。
+ * 原价与折扣差不展示（不单列折扣行），弹窗内不出现原价。
  */
-const TAX_RATE = 0; // 前端占位税率；接入后端结算后用真实税额替换
 
 const CreditCardConfirmOrderModal = ({
   plan,
@@ -1930,9 +2214,16 @@ const CreditCardConfirmOrderModal = ({
   const t = useT();
   const [view, setView] = useState<"order" | "success">("order");
 
-  const subtotal = parseFloat(plan.price.replace(/[^0-9.]/g, "")) || 0;
-  const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
-  const total = Math.round((subtotal + tax) * 100) / 100;
+  /* 有 priceDetail（登录态真实计费）时三行全部用后端真源：
+     小计=折后价（real_total_cost - tax_price，与卡片价同源）、税费=tax_price、
+     合计=real_total_cost（含税实付）直显。
+     合计不做前端加总——分转元的舍入误差与后端未来的调整项都会让加总对不上实付。
+     无 priceDetail（demoMode 占位卡 / 静态价）时退化为旧视觉：tax=0、合计=小计。 */
+  const subtotal = plan.priceDetail
+    ? plan.priceDetail.subtotalCents / 100
+    : parseFloat(plan.price.replace(/[^0-9.]/g, "")) || 0;
+  const tax = plan.priceDetail ? plan.priceDetail.taxCents / 100 : 0;
+  const total = plan.priceDetail ? plan.priceDetail.totalCents / 100 : subtotal + tax;
   /* 币种符号必须跟随 plan.price，不能硬编码 "$"：
      plan.price 由 formatYuan(displayPriceYuan, bundle.price.currency) 产出，
      而 currency 走 `bundle.price?.currency ?? "CNY"` 兜底。
@@ -2027,6 +2318,7 @@ const CreditCardConfirmOrderModal = ({
             <div style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
                 <span>{t("「{{plan}}」套餐", { plan: plan.name })}</span>
+                {/* 套餐行展示折后价（与小计行同源同值，= real_total_cost - tax_price）。 */}
                 <span style={{ fontWeight: 600, color: colors.black }}>{fmt(subtotal)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>
@@ -2129,6 +2421,7 @@ const PaymentPendingModal = ({
   onRefresh,
   refreshing,
   timedOut = false,
+  provisioningOnly = false,
   t,
 }: {
   /** 国内站：中转页绝对 URL，用作 QRCode value */
@@ -2142,6 +2435,8 @@ const PaymentPendingModal = ({
   refreshing: boolean;
   /** 轮询已超时：后台发货延迟，改为提示用户稍后重试而不是一直转圈 */
   timedOut?: boolean;
+  /** 点石零元单已完成下单并支付，只等待 Pass 发货。 */
+  provisioningOnly?: boolean;
   t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
   return (
@@ -2173,11 +2468,13 @@ const PaymentPendingModal = ({
 
         <div style={{ padding: "28px 28px 24px" }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
-            {timedOut ? t("正在开通，请稍候") : t("请完成支付")}
+            {timedOut ? t("正在开通，请稍候") : provisioningOnly ? t("正在开通套餐") : t("请完成支付")}
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
             {timedOut
               ? t("已收到你的支付，套餐开通稍有延迟，本页会自动完成开通，请勿关闭。")
+              : provisioningOnly
+                ? t("订单已提交，正在等待套餐开通，完成后将自动跳转")
               : bridgeUrl
                 ? t("请使用微信扫描下方二维码完成支付")
                 /* 支付回跳场景没有 redirectUrl（原窗口已被替换），此时是在等后台发货，
@@ -2364,7 +2661,10 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass, latestPass } = useOpenClaw();
+  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, refreshPasses, activePass, latestPass } = useOpenClaw();
+  void BUNDLE_TYPE_FALLBACK_KEY;
+  void BUNDLE_TYPE_TABS;
+  __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
@@ -2393,10 +2693,9 @@ export const SubscribePage = ({
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
-     对应 localStorage 覆盖 lightclaw:features.paidBillingEnabled=false
-     且 lightclaw:features.realnamePhoneVerificationEnabled=false 的场景。
-     任一开关开启时不做免费引导，CTA 维持「立即开通」。 */
-  const freeGuideAllowed = !paidBillingEnabled && !realnamePhoneVerificationEnabled;
+     国际站已全量放开，付费开关只由后端 features 熔断；
+     任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
+  const freeGuideAllowed = !paidBillingActive && !realnamePhoneVerificationEnabled;
   const header = (
     <SubscribePageHeader
       authControls={authControls}
@@ -2572,9 +2871,8 @@ export const SubscribePage = ({
       const sorted = [...variants].sort((a, b) => (a.raw.credit ?? 0) - (b.raw.credit ?? 0));
       /* AI 增强版可见性：启航 / 巡游的 AI 档位（月付 / 季付）均展示价格 + 下单入口。
          - 已登录：保留后端真实价格 / 促销 / 下单入口，积分取后端 bundle.credit。
-         - 未登录：走前端静态价（buildStaticBundles 已为 AI bundle 补上原价 + 折扣，
-           月付「首月 6 折」/季付 9 折无标签），展示折后价 + 原价删除线；CTA 点击引导登录，
-           与标准版未登录一致。 */
+         - 未登录：走 buildStaticBundles 的国际站静态美元价，展示新用户
+           实付价 + 原价删除线 + 对应促销标签；CTA 点击仍只引导登录。 */
       groups.push({ key: tk, variants: sorted });
     }
     for (const plan of uncategorized) {
@@ -2592,6 +2890,8 @@ export const SubscribePage = ({
     bridgeUrl?: string;
     /** 国际站：信用卡 hosted page URL（getPassOrderUrl 返回的 pay_url） */
     redirectUrl?: string;
+    /** 点石零元下单已完成，仅等待发货。 */
+    provisioningOnly?: boolean;
   } | null>(null);
 
   /* 轮询超时标记：后台发货延迟超过 PAY_POLL_TIMEOUT_MS 时不静默停住，
@@ -2764,6 +3064,35 @@ export const SubscribePage = ({
     setModalStep("paying");
   }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration]);
 
+  const startDianshiOrderAndPay = useCallback(async (plan: PlanInfo) => {
+    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        plan: plan.id,
+        plan_name: plan.name,
+        billing_period: aiDuration.period,
+      },
+    });
+    if (isSubscribed) {
+      await finalizeBot(plan);
+      return;
+    }
+
+    const order = await repositories.plans.createDianshiPassOrderAndPay({
+      bundle_id: plan.raw.bundle_id,
+      period: aiDuration.period,
+      time_unit: aiDuration.time_unit,
+    });
+    setPaymentContext({
+      plan,
+      dealNames: [order.deal_name],
+      provisioningOnly: true,
+    });
+    setSelectedPlan(plan);
+    setModalStep("paying");
+    await refreshPasses();
+  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans]);
+
   /**
    * 国际站信用卡支付链路（正式）。
    *
@@ -2811,7 +3140,7 @@ export const SubscribePage = ({
          window.location.assign 替换掉当前页，付款后回跳到的是一个全新页面，
          原窗口的 paying 轮询已随之销毁。有标记才能在回跳页重新接棒
          「等发货 → 自动建实例 → 跳管理页」，否则用户会停在订阅页且实例没建。 */
-      const payRedirectBase = window.location.href.split("#")[0].split("?")[0];
+      const payRedirectBase = (window.location.href.split("#")[0] ?? '').split("?")[0] ?? '';
       const payReturnUrl = `${payRedirectBase}?${PAY_RETURN_QUERY_KEY}=1&${PAY_RETURN_PLAN_QUERY_KEY}=${encodeURIComponent(plan.id)}`;
       const orderUrl = await repositories.plans.getPassOrderUrl({
         deal_names: order.deal_names,
@@ -2959,7 +3288,9 @@ export const SubscribePage = ({
     try {
       /* 国内站一律走付费下单链路（plan.skipPayment 已在 mapBundleToPlan 中按站点置为 false）；
          国际站维持「paidBillingActive 开关 + skipPayment」组合控制。 */
-      if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
+      if (isDianshiZeroAmountPlan(plan, paidBillingActive)) {
+        await startDianshiOrderAndPay(plan);
+      } else if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
         if (isGlobal) {
           /* 国际站付费链路：信用卡 hosted page 跳转（createPassOrder + getPassOrderUrl）。
              startIntlCardPay 内部新窗口打开支付页 + 进入 paying 轮询接棒 finalizeBot，
@@ -3006,14 +3337,18 @@ export const SubscribePage = ({
       }
       /* 特例 3：需要走续费路径（expired/isolated） → 引导到账号页 */
       if (isPassRequiresRenewError(code)) {
-        const message = code === "PASS_ISOLATED"
-          ? t("当前套餐已进入隔离期，请前往我的账号续费恢复使用，或在账号页销毁后重新购买。")
-          : t("当前套餐已到期，请前往我的账号续费后继续使用。");
+        const message = isGlobal
+          ? code === "PASS_ISOLATED"
+            ? t("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")
+            : t("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")
+          : code === "PASS_ISOLATED"
+            ? t("当前套餐已进入隔离期，请前往我的账号续费恢复使用，或在账号页销毁后重新购买。")
+            : t("当前套餐已到期，请前往我的账号续费后继续使用。");
         setError({
           code,
           message,
           action: {
-            label: t("前往续费"),
+            label: isGlobal ? t("管理套餐") : t("前往续费"),
             href: ACCOUNT_PATH,
           },
         });
@@ -3030,7 +3365,7 @@ export const SubscribePage = ({
     } finally {
       setSubscribingPlanId(null);
     }
-  }, [paidBillingActive, startPaidPassOrder, startIntlCardPay, startTrialPass, t]);
+  }, [paidBillingActive, startDianshiOrderAndPay, startPaidPassOrder, startIntlCardPay, startTrialPass, t]);
 
   const handleSubscribe = useCallback((planId: string) => {
     const plan = planList.find((p) => p.id === planId);
@@ -3413,7 +3748,17 @@ export const SubscribePage = ({
       {/* Payment Modals */}
       <AnimatePresence>
         {modalStep === "confirm" && selectedPlan && (
-          isGlobal ? (
+          isDianshiZeroAmountPlan(selectedPlan, paidBillingActive) ? (
+            <ConfirmOrderModal
+              key="confirm-dianshi"
+              plan={selectedPlan}
+              billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
+              showPaymentMethod={false}
+              actionLabel={t("确认开通")}
+              onCancel={handleCloseModal}
+              onPay={() => handlePay(false)}
+            />
+          ) : isGlobal ? (
             <CreditCardConfirmOrderModal
               key="confirm"
               plan={selectedPlan}
@@ -3422,7 +3767,6 @@ export const SubscribePage = ({
               paying={subscribingPlanId === selectedPlan.id}
               onCancel={handleCloseModal}
               onPay={handlePay}
-              t={t}
             />
           ) : (
             <ConfirmOrderModal
@@ -3430,7 +3774,7 @@ export const SubscribePage = ({
               plan={selectedPlan}
               billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
               onCancel={handleCloseModal}
-              onPay={handlePay}
+              onPay={() => handlePay(false)}
             />
           )
         )}
@@ -3443,6 +3787,7 @@ export const SubscribePage = ({
             onRefresh={() => void handleRefreshPayment()}
             refreshing={paymentRefreshing}
             timedOut={payPollTimedOut}
+            provisioningOnly={paymentContext.provisioningOnly}
             t={t}
           />
         )}

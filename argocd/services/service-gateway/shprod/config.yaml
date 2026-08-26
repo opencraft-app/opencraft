@@ -81,6 +81,9 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://sandbox-api.sandbox.svc.cluster.local
     access: authenticated
+    path_policy: allowlist
+    path_allow:
+      - { method: POST, path: "/sandboxes" }
     response_header_timeout: 60s
   - name: ctl-bundles
     prefix: /v1/bundles
@@ -132,25 +135,41 @@ routes:
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     auth_strategy: session
+    allow_vela_instance_key: true
+    vela_instance_key_allow:
+      - { method: GET, path: "/v1/websites/capability" }
+      - { method: GET, path: "/v1/websites" }
+      - { method: POST, path: "/v1/websites" }
+      - { method: GET, path: "/v1/websites/{site_id}" }
+      - { method: DELETE, path: "/v1/websites/{site_id}" }
+      - { method: GET, path: "/v1/websites/{site_id}/releases" }
+      - { method: POST, path: "/v1/websites/{site_id}/releases" }
+      - { method: GET, path: "/v1/websites/{site_id}/operations/{operation_id}" }
     response_header_timeout: 30s
 
-  - name: ctl-instance-websites
-    prefix: /v1/instance/websites
-    rewrite_prefix: /v1/websites
-    methods: [GET, POST, DELETE, OPTIONS]
-    upstream: http://ctl-api.ctl.svc.cluster.local
+  - name: oidc-discovery
+    prefix: /.well-known
+    methods: [GET, OPTIONS]
+    upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: public
     path_policy: allowlist
     path_allow:
-      - { method: GET, path: "/v1/instance/websites/capability" }
-      - { method: GET, path: "/v1/instance/websites" }
-      - { method: POST, path: "/v1/instance/websites" }
-      - { method: GET, path: "/v1/instance/websites/{site_id}" }
-      - { method: DELETE, path: "/v1/instance/websites/{site_id}" }
-      - { method: GET, path: "/v1/instance/websites/{site_id}/releases" }
-      - { method: POST, path: "/v1/instance/websites/{site_id}/releases" }
-      - { method: GET, path: "/v1/instance/websites/{site_id}/operations/{operation_id}" }
-    response_header_timeout: 30s
+      - { method: GET, path: "/.well-known/openid-configuration" }
+      - { method: GET, path: "/.well-known/jwks.json" }
+    response_header_timeout: 10s
+
+  - name: oidc
+    prefix: /oauth2
+    methods: [GET, POST, OPTIONS]
+    upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+    access: public
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/oauth2/authorize" }
+      - { method: GET, path: "/oauth2/authorize/context" }
+      - { method: POST, path: "/oauth2/authorize" }
+      - { method: POST, path: "/oauth2/token" }
+    response_header_timeout: 10s
 
   - name: auth
     prefix: /auth
@@ -158,6 +177,14 @@ routes:
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: authenticated
     public_allow:
+      - method: GET
+        path: /auth/federation/context
+      - method: POST
+        path: /auth/federation/tickets
+      - method: POST
+        path: /auth/federation/exchange
+      - method: POST
+        path: /auth/federation/bots/{bot_id}/tat/session
       - method: POST
         path: /auth/password/sign-in
       - method: POST

@@ -409,6 +409,7 @@ install_hermes_extra_tools
 install_hermes_acli
 upgrade_hermes_backend_blueprint
 finalize_hermes_runtime_pin
+install_hermes_website_builder_skill
 curate_hermes_skills
 remove_hermes_find_skill_skillhub
 
@@ -447,6 +448,16 @@ grep -q '^  cron_mode: approve$' "${RUNTIME_HOME}/.hermes/config.yaml"
 grep -q '^  destructive_slash_confirm: false$' "${RUNTIME_HOME}/.hermes/config.yaml"
 test ! -e "${RUNTIME_HOME}/.agents/skills/find-skill-skillhub"
 test ! -e "${RUNTIME_HOME}/.openclaw"
+test -s "${RUNTIME_HOME}/.hermes/skills/website-builder/SKILL.md"
+cmp -s "${HERMES_WEBSITE_BUILDER_SKILL_FILE}" "${RUNTIME_HOME}/.hermes/skills/website-builder/SKILL.md"
+ORIGINAL_WEBSITE_BUILDER_SKILL_FILE="${HERMES_WEBSITE_BUILDER_SKILL_FILE}"
+HERMES_WEBSITE_BUILDER_SKILL_FILE="${TMPDIR}/missing-website-builder-SKILL.md"
+if install_hermes_website_builder_skill >/dev/null 2>&1; then
+  echo "missing website-builder Skill source unexpectedly succeeded" >&2
+  exit 1
+fi
+HERMES_WEBSITE_BUILDER_SKILL_FILE="${ORIGINAL_WEBSITE_BUILDER_SKILL_FILE}"
+grep -Fq 'upload_file_via_ssh "${WEBSITE_BUILDER_SKILL_FILE}" "${REMOTE_DIR}/skills/website-builder/SKILL.md"' "${ROOT_DIR}/images/deploy-build.sh"
 grep -Fq "index-url = https://mirrors.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq "https://mirrors.cloud.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq 'index-url = "https://mirrors.tencent.com/pypi/simple"' "${RUNTIME_HOME}/.config/uv/uv.toml"

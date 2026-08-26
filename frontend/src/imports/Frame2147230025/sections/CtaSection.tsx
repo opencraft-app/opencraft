@@ -3,7 +3,6 @@ import {
   imgCtaDeco } from '../assets';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
-import { LandingCtaFooterLinks } from '@/components/site/landing-cta-footer-links';
 import { useT } from '@/i18n/t';
 
 function CreateButton({ onClick, label }: { onClick?: () => void; label?: string }) {
@@ -167,8 +166,6 @@ export default function CtaSection({ onCreateClick, ctaLabel }: CtaSectionProps 
           {/* 左侧 .journey-copy */}
           <div className="flex flex-col lv-reveal">
             <TitleBlock offsetX={offset.x} offsetY={offset.y} />
-            {/* 副文案：隐私政策 / 服务条款 / 加入用户交流群（业务组件，独立维护） */}
-            <LandingCtaFooterLinks />
           </div>
 
           {/* 右侧 .journey-action */}

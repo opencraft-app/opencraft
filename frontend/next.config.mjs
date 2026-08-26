@@ -1,6 +1,8 @@
 import { createMDX } from 'fumadocs-mdx/next';
 import { fileURLToPath } from 'node:url';
 
+import { isGlobalRegion, resolvePageExtensions } from './next-site/page-extensions.mjs';
+
 const teaThemeableResetCss = '@tencent/tea-component/dist/tea-themeable.css';
 const teaThemeableNoResetCss = '@tencent/tea-component/dist/tea-no-reset.css';
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -8,7 +10,7 @@ const isLocalProxy = (process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.V
 const localProxyTarget = (
   process.env.NEXT_PUBLIC_LOCAL_PROXY_TARGET
   || process.env.VITE_LOCAL_PROXY_TARGET
-  || (process.env.NEXT_PUBLIC_REGION === 'global' || process.env.VITE_REGION === 'global'
+  || (isGlobalRegion()
     ? 'https://api.lightvela.ai'
     : 'https://lightclaw.tech')
 ).replace(/\/$/, '');
@@ -48,7 +50,11 @@ const config = {
     VITE_AUTH_API_BASE_URL: process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.VITE_AUTH_API_BASE_URL || '',
   },
   allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev','intl-sandbox-kr-1.preview.lightclaw.tech'],
-  pageExtensions: ['next.tsx', 'next.ts'],
+  // `.intl.tsx` = 仅国际站存在的页面（当前是 src/app/(site)/[lang]/**）。
+  // 为什么不能用「generateStaticParams 返回空数组」表达国内站不需要 [lang]，
+  // 见 next-site/page-extensions.mjs 的注释（Next 在 output: 'export' 下会报
+  // missing "generateStaticParams()" 并中断构建）。
+  pageExtensions: resolvePageExtensions(),
   ...(isDevelopment
     ? {
         async rewrites() {

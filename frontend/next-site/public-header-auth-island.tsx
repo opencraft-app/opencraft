@@ -18,7 +18,7 @@ import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
-import { EN_US_LOCALE, ID_ID_LOCALE, ZH_CN_LOCALE, ZH_HANT_LOCALE, ZH_SG_LOCALE } from './public-locale';
+import { EN_US_LOCALE, ID_ID_LOCALE, ZH_HANT_LOCALE, ZH_SG_LOCALE } from './public-locale';
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
@@ -26,27 +26,27 @@ const secondaryButtonClass: Record<HeaderAppearance, string> = {
 };
 
 const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: string; login: string }> = {
-  [EN_US_LOCALE]: {
+  'en-US': {
     createNow: 'Create Now',
     freeTrial: 'Free trial',
     login: 'Sign In',
   },
-  [ZH_CN_LOCALE]: {
+  'zh-CN': {
     createNow: '立即创建',
     freeTrial: '免费试用',
     login: '登录',
   },
-  [ZH_SG_LOCALE]: {
+  'zh-SG': {
     createNow: '立即创建',
     freeTrial: '免费试用',
     login: '登录',
   },
-  [ZH_HANT_LOCALE]: {
+  'zh-Hant': {
     createNow: '立即創建',
     freeTrial: '免費試用',
     login: '登入',
   },
-  [ID_ID_LOCALE]: {
+  'id-ID': {
     createNow: 'Buat Sekarang',
     freeTrial: 'Coba Gratis',
     login: 'Masuk',

@@ -5,6 +5,7 @@ import sys
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -225,6 +226,44 @@ class ReleaseBundleContractTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertRegex(values.get(key, ""), r"^ENC\[")
 
+    def test_sgprod_ctl_routes_new_users_and_bot_creates_to_johor_velagw(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BASE_URL"), "https://token-admin.lightvela.ai")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_BASE_URL"), "https://token.lightvela.ai/v1")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"), "auto")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "*")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST"), "*")
+        for key in ("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN"):
+            with self.subTest(key=key):
+                self.assertRegex(values.get(key, ""), r"^ENC\[")
+
+        kustomization = yaml.safe_load(
+            (REPO_ROOT / "argocd/services/ctl/sgprod/kustomization.yaml").read_text()
+        )
+        forbidden = {
+            "CTL_LLMGATEWAY_BASE_URL",
+            "CTL_LLMGATEWAY_NEW_USER_ALLOWLIST",
+            "CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST",
+        }
+        for patch in kustomization.get("patches") or []:
+            if not isinstance(patch, dict) or "patch" not in patch:
+                continue
+            target_name = (patch.get("target") or {}).get("name")
+            operations = yaml.safe_load(patch["patch"]) or []
+            overridden = {
+                (operation.get("value") or {}).get("name")
+                for operation in operations
+                if isinstance(operation.get("value"), dict)
+            }
+            self.assertTrue(
+                forbidden.isdisjoint(overridden),
+                f"{target_name} must consume sgprod VelaGW settings from ctl-runtime-secrets",
+            )
+
     def test_playground_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
 
@@ -349,6 +388,314 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("TLS lifecycle is platform-owned", readme)
         self.assertIn("does not create, update, or rotate that Secret", readme)
 
+    def test_site_gateway_auth_contract_keeps_international_public(self) -> None:
+        base_manifest = REPO_ROOT / "site-gateway" / "k8s" / "base" / "manifests.yaml"
+        documents = list(yaml.safe_load_all(base_manifest.read_text()))
+        config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
+        for key in (
+            "SITE_GATEWAY_AUTH_MODE",
+            "SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED",
+            "SITE_GATEWAY_AUTH_FIXED_HOST",
+            "SITE_GATEWAY_AUTH_OIDC_ISSUER",
+            "SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL",
+            "SITE_GATEWAY_AUTH_OIDC_TOKEN_URL",
+            "SITE_GATEWAY_AUTH_OIDC_JWKS_URL",
+            "SITE_GATEWAY_AUTH_OIDC_CLIENT_ID",
+            "SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID",
+            "SITE_GATEWAY_AUTH_SESSION_TTL",
+        ):
+            self.assertIn(key, config_map.get("data", {}))
+
+        platform_values = {
+            key: value
+            for line in (
+                REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod" / "site-gateway-platform.env"
+            ).read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(platform_values.get("SITE_GATEWAY_AUTH_MODE"), "public")
+
+        bundle = (REPO_ROOT / ".ci" / "runtime" / "bundles" / "site-gateway.bundle").read_text()
+        self.assertIn("site-gateway/docs", bundle)
+
+    def test_site_gateway_dsh_tat_proxy_is_opt_in_for_sgprod(self) -> None:
+        base_manifest = REPO_ROOT / "site-gateway" / "k8s" / "base" / "manifests.yaml"
+        documents = list(yaml.safe_load_all(base_manifest.read_text()))
+        config_map = next(doc for doc in documents if doc.get("kind") == "ConfigMap")
+        deployment = next(doc for doc in documents if doc.get("kind") == "Deployment")
+        data = config_map.get("data", {})
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_DOMAINS"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_BASE_URL"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"), "")
+        self.assertEqual(data.get("SITE_GATEWAY_DSH_FEDERATION_KEY_ID"), "")
+        for key in (
+            "SITE_GATEWAY_DSH_TAT_START_TIMEOUT",
+            "SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT",
+            "SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT",
+            "SITE_GATEWAY_DSH_MAX_TARGETS",
+            "SITE_GATEWAY_DSH_MAX_CONNECTIONS_PER_TARGET",
+            "SITE_GATEWAY_DSH_QUEUE_DEPTH",
+            "SITE_GATEWAY_DSH_MAX_FRAME_BYTES",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_TARGET",
+            "SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_TOTAL",
+        ):
+            self.assertIn(key, data)
+
+        env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        federation_refs = {
+            item["name"]: item["valueFrom"]["secretKeyRef"]
+            for item in env
+            if item["name"] == "SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY"
+        }
+        self.assertEqual(set(federation_refs), {"SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY"})
+        self.assertTrue(all(ref.get("optional") is True for ref in federation_refs.values()))
+
+        for platform_file in (
+            REPO_ROOT / "site-gateway" / "k8s" / "overlays" / "sgprod" / "generated" / "platform.env.example",
+            REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod" / "site-gateway-platform.env",
+        ):
+            platform_values = {
+                key: value
+                for line in platform_file.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+            self.assertEqual(platform_values.get("SITE_GATEWAY_DSH_DOMAINS"), "dsh.lightvela.site")
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_BASE_URL"),
+                "http://lightclaw-auth.user-auth.svc.cluster.local",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID"),
+                "personal-site",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_FEDERATION_KEY_ID"),
+                "federation-client-sg-20260824-1",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_WILDCARD_HOST"),
+                "*.dsh.lightvela.site",
+            )
+            self.assertEqual(
+                platform_values.get("SITE_GATEWAY_DSH_TLS_SECRET_NAME"),
+                "site-gateway-dsh-wildcard-tls",
+            )
+
+        deploy_kustomization = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd"
+                / "services"
+                / "site-gateway"
+                / "sgprod"
+                / "kustomization.yaml"
+            ).read_text()
+        )
+        replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in deploy_kustomization["replacements"]
+        }
+        self.assertIn("data.SITE_GATEWAY_DSH_WILDCARD_HOST", replacement_sources)
+        self.assertIn("data.SITE_GATEWAY_DSH_TLS_SECRET_NAME", replacement_sources)
+
+        source_root = REPO_ROOT / "site-gateway" / "internal"
+        for relative in (
+            "dshproxy/handler.go",
+            "dshproxy/target.go",
+            "tatproxy/bootstrap.go",
+            "tatproxy/session.go",
+            "tatproxy/conn.go",
+            "httpapi/dispatcher.go",
+        ):
+            self.assertTrue((source_root / relative).is_file(), relative)
+
+    def test_sgprod_oidc_runtime_contract_is_enabled_with_persistent_secrets(self) -> None:
+        def env_values(path: Path) -> dict[str, str]:
+            return {
+                key: value
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+
+        auth_root = REPO_ROOT / "argocd/services/lightclaw-auth/sgprod"
+        auth_values = env_values(auth_root / "auth-platform.env")
+        self.assertEqual(auth_values["AUTH_OIDC_ENABLED"], "true")
+        self.assertEqual(auth_values["AUTH_OIDC_ISSUER"], "https://api.lightvela.ai")
+        self.assertEqual(auth_values["AUTH_OIDC_SIGNING_KEY_ID"], "oidc-sg-20260824-1")
+        self.assertEqual(auth_values["AUTH_OIDC_AUTHORIZATION_CODE_TTL_SECONDS"], "5")
+        self.assertNotIn("AUTH_OIDC_SIGNING_KEYS_JSON", auth_values)
+        auth_kustomization = yaml.safe_load((auth_root / "kustomization.yaml").read_text())
+        auth_replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in auth_kustomization["replacements"]
+        }
+        for field in (
+            "AUTH_OIDC_ENABLED",
+            "AUTH_OIDC_ISSUER",
+            "AUTH_OIDC_SIGNING_KEY_ID",
+            "AUTH_OIDC_CLIENTS_JSON",
+            "AUTH_OIDC_AUTHORIZATION_CODE_TTL_SECONDS",
+            "AUTH_OIDC_ID_TOKEN_TTL_SECONDS",
+            "AUTH_OIDC_ACCESS_TOKEN_TTL_SECONDS",
+            "AUTH_OIDC_ACCESS_TOKEN_AUDIENCE",
+        ):
+            self.assertIn(f"data.{field}", auth_replacement_sources)
+
+        auth_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sgprod.yaml").read_text()
+        )
+        self.assertIn(
+            "LIGHTCLAW_OIDC_SIGNING_KEYS_JSON",
+            auth_ssm["items"][0]["required_keys"],
+        )
+        auth_secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/lightclaw-auth-secrets.sops.yaml").read_text()
+        )
+        self.assertIn("LIGHTCLAW_OIDC_SIGNING_KEYS_JSON", auth_secret["stringData"])
+
+        gateway_root = REPO_ROOT / "argocd/services/site-gateway/sgprod"
+        gateway_values = env_values(gateway_root / "site-gateway-platform.env")
+        self.assertEqual(gateway_values["SITE_GATEWAY_AUTH_MODE"], "public")
+        self.assertEqual(gateway_values["SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED"], "true")
+        self.assertEqual(gateway_values["SITE_GATEWAY_AUTH_FIXED_HOST"], "sites-auth.lightvela.site")
+        self.assertEqual(
+            gateway_values["SITE_GATEWAY_AUTH_OIDC_ISSUER"],
+            "https://api.lightvela.ai",
+        )
+        self.assertEqual(gateway_values["SITE_GATEWAY_AUTH_OIDC_CLIENT_ID"], "site-gateway")
+        self.assertEqual(
+            gateway_values["SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID"],
+            "site-gateway-sg-20260824-1",
+        )
+        gateway_kustomization = yaml.safe_load((gateway_root / "kustomization.yaml").read_text())
+        gateway_replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in gateway_kustomization["replacements"]
+        }
+        for field in (
+            "SITE_GATEWAY_AUTH_MODE",
+            "SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED",
+            "SITE_GATEWAY_AUTH_FIXED_HOST",
+            "SITE_GATEWAY_AUTH_OIDC_ISSUER",
+            "SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL",
+            "SITE_GATEWAY_AUTH_OIDC_TOKEN_URL",
+            "SITE_GATEWAY_AUTH_OIDC_JWKS_URL",
+            "SITE_GATEWAY_AUTH_OIDC_CLIENT_ID",
+            "SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID",
+            "SITE_GATEWAY_AUTH_SESSION_TTL",
+        ):
+            self.assertIn(f"data.{field}", gateway_replacement_sources)
+
+        gateway_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.site-gateway.sgprod.yaml").read_text()
+        )
+        self.assertIn("SITE_GATEWAY_AUTH_AEAD_KEYS", gateway_ssm["items"][0]["required_keys"])
+        gateway_secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/site-gateway-secrets.sops.yaml").read_text()
+        )
+        self.assertIn("SITE_GATEWAY_AUTH_AEAD_KEYS", gateway_secret["stringData"])
+
+    def test_sgprod_federation_runtime_contract_is_complete(self) -> None:
+        def env_values(path: Path) -> dict[str, str]:
+            return {
+                key: value
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+
+        deploy_root = REPO_ROOT / "argocd/services/lightclaw-auth/sgprod"
+        values = env_values(deploy_root / "auth-platform.env")
+        self.assertEqual(values["AUTH_FEDERATION_ENABLED"], "true")
+        self.assertEqual(values["AUTH_FEDERATION_ENVIRONMENT"], "sgprod")
+        self.assertEqual(values["AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID"], "federation-sg-20260824-1")
+        self.assertEqual(values["AUTH_FEDERATION_CTL_BASE_URL"], "http://ctl-api.ctl.svc.cluster.local")
+        self.assertEqual(values["AUTH_FEDERATION_TAT_TIMEOUT_SECONDS"], "5")
+        self.assertEqual(values["AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS"], "28800")
+        self.assertNotIn("AUTH_FEDERATION_AEAD_KEYS_JSON", values)
+        self.assertNotIn("AUTH_FEDERATION_NONCE_KEY", values)
+        self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
+
+        kustomization = yaml.safe_load((deploy_root / "kustomization.yaml").read_text())
+        replacement_sources = {
+            replacement["source"]["fieldPath"]
+            for replacement in kustomization["replacements"]
+        }
+        for field in (
+            "AUTH_FEDERATION_ENABLED",
+            "AUTH_FEDERATION_ENVIRONMENT",
+            "AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID",
+            "AUTH_FEDERATION_CTL_BASE_URL",
+            "AUTH_FEDERATION_TAT_TIMEOUT_SECONDS",
+            "AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS",
+        ):
+            self.assertIn(f"data.{field}", replacement_sources)
+
+        ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sgprod.yaml").read_text()
+        )
+        required = set(ssm["items"][0]["required_keys"])
+        for key in (
+            "LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON",
+            "LIGHTCLAW_FEDERATION_NONCE_KEY",
+            "LIGHTCLAW_FEDERATION_CLIENTS_JSON",
+        ):
+            self.assertIn(key, required)
+
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/lightclaw-auth-secrets.sops.yaml").read_text()
+        )
+        for key in (
+            "LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON",
+            "LIGHTCLAW_FEDERATION_NONCE_KEY",
+            "LIGHTCLAW_FEDERATION_CLIENTS_JSON",
+        ):
+            self.assertIn(key, secret["stringData"])
+
+        patch_documents = list(
+            yaml.safe_load_all((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        )
+        deployment = next(doc for doc in patch_documents if doc.get("kind") == "Deployment")
+        env = {
+            item["name"]: item
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual(
+            env["LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "lightclaw-auth-secrets", "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"},
+        )
+
+    def test_sgprod_sandbox_internal_service_token_is_shipped(self) -> None:
+        manifest = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.sandbox.sgprod.yaml").read_text()
+        )
+        item = manifest["items"][0]
+        self.assertEqual(item["id"], "sandbox-runtime-secrets")
+        self.assertEqual(
+            item["required_keys"],
+            [
+                "MYSQL_PASSWORD",
+                "MYSQL_USER",
+                "REDIS_PASSWORD",
+                "TENCENT_SECRET_ID",
+                "TENCENT_SECRET_KEY",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            ],
+        )
+
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/sandbox-runtime-secrets.sops.yaml").read_text()
+        )
+        self.assertIn("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", secret["stringData"])
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
@@ -415,6 +762,37 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(data["SHADOW_CLOUDLADDER_ROUTE_ID"], "tcapi-account-intl-prod")
         self.assertEqual(data["SHADOW_BILLING_CLOUDLADDER_ROUTE_ID"], "tcapi-billing-intl-prod")
         self.assertEqual(data["LIGHTCLAW_PAYMENT_METHODS_ENABLED"], "true")
+
+        deploy_root = REPO_ROOT / "argocd/services/lightclaw-auth/sgprod"
+        deploy_kustomization = yaml.safe_load((deploy_root / "kustomization.yaml").read_text())
+        self.assertIn(
+            {"path": "patch-shadow-internal-token.yaml"},
+            deploy_kustomization["patches"],
+        )
+
+        deploy_documents = list(
+            yaml.safe_load_all((deploy_root / "patch-shadow-internal-token.yaml").read_text())
+        )
+        deploy_config_map = next(
+            document for document in deploy_documents if document.get("kind") == "ConfigMap"
+        )
+        self.assertEqual(deploy_config_map["data"], data)
+
+        deploy_patch = next(
+            document for document in deploy_documents if document.get("kind") == "Deployment"
+        )
+        token_env = next(
+            env
+            for env in deploy_patch["spec"]["template"]["spec"]["containers"][0]["env"]
+            if env["name"] == "SHADOW_BINDING_INTERNAL_TOKEN"
+        )
+        self.assertEqual(
+            token_env["valueFrom"]["secretKeyRef"],
+            {
+                "name": "lightclaw-auth-secrets",
+                "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
+        )
 
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()
@@ -1962,6 +2340,49 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
         )
+
+    def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        cloudladder = yaml.safe_load(
+            (REPO_ROOT / "cloudladdergateway/config.example.yaml").read_text()
+        )
+        route_id = values["TRADE_BILLING_CLOUDLADDER_ROUTE_ID"]
+        route = next(route for route in cloudladder["routes"] if route["id"] == route_id)
+        backend_alias = route["upstream"]["backend"]
+        backend = next(
+            backend
+            for backend in cloudladder["backends"]
+            if backend["alias"] == backend_alias
+        )
+        trusted_host = urlparse(backend["upstream"]["base_url"]).hostname
+
+        self.assertEqual(route_id, "tcapi-billing-trade-intl-prod")
+        self.assertEqual(
+            values["TRADE_BILLING_ENDPOINT"],
+            trusted_host,
+            "trade signs the original billing host, so it must match CloudLadder's trusted upstream host",
+        )
+
+    def test_sgprod_trade_uses_configured_inquiry_fallback_account(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertEqual(values["TRADE_INQUIRY_FALLBACK_UIN"], "450850000019")
+        self.assertEqual(values["TRADE_INQUIRY_FALLBACK_APP_ID"], "1472039146")
 
     def test_korea_trade_uses_international_billing_test_route(self) -> None:
         env_path = (

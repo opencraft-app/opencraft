@@ -1,5 +1,11 @@
 # Configure Skills
 
+## Summary
+
+**Skills are add-on capability packs your Hermes Agent can call, extending it beyond basic conversation to concrete tasks such as organizing to-dos, generating daily reports, browsing the web, searching news, and generating images. They come from Skills.sh and ClawHub, the skill marketplaces shared by OpenClaw and Hermes. Skills are optional: an agent ships with none installed and still converses normally, so the recommended approach is to install one only after you hit a capability limit. There are two ways to install — search by name in the console Skills section, or simply ask the agent to install it in conversation. Installed skills can be removed from the console.**
+
+---
+
 Skills are additional capability packages callable by Hermes. They extend concrete task handling beyond basic conversation, such as automatically organizing to-dos, generating daily reports, browsing web pages, searching news, generating images, and more.
 
 All skills come from [**Skills.sh**](https://skills.sh/) and [**ClawHub**](https://clawhub.ai/) — the skill marketplaces shared by OpenClaw and Hermes.

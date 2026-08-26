@@ -11,6 +11,7 @@ import type {
   BotRuntime,
   BotVersion,
   Bundle,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlResult,
@@ -31,6 +32,12 @@ import type {
   AuthRepository,
   BotRepository,
   DashboardSnapshot,
+  FederationAuthorizationContext,
+  FederationAuthorizationInput,
+  FederationTicketResult,
+  OIDCAuthorizationContext,
+  OIDCAuthorizationInput,
+  OIDCAuthorizationResult,
   PlanRepository,
   RealnameVerifyResult,
   Repositories,
@@ -121,6 +128,47 @@ interface APIEnvelope<T> {
   message: string;
   data: T;
   request_id?: string;
+}
+
+interface FederationContextPayload {
+  client: {
+    id: string;
+    display_name: string;
+  };
+  redirect_uri: string;
+  state: string;
+  session: {
+    authenticated: boolean;
+    user?: User;
+  };
+}
+
+interface FederationTicketPayload {
+  redirect_url: string;
+  expires_at: string;
+}
+
+interface OIDCContextPayload {
+  client: {
+    id: string;
+    display_name: string;
+  };
+  redirect_uri: string;
+  state: string;
+  response_type: "code";
+  scope: string;
+  code_challenge: string;
+  code_challenge_method: "S256";
+  nonce: string;
+  session: {
+    authenticated: boolean;
+    user?: User;
+  };
+}
+
+interface OIDCAuthorizationPayload {
+  redirect_url: string;
+  expires_at: string;
 }
 
 interface CtlInstancePayload {
@@ -1518,12 +1566,118 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       method: "DELETE",
     });
   },
+  async getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext> {
+    const query = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      state: input.state,
+    });
+    const payload = await request<FederationContextPayload>(
+      baseUrl,
+      `/auth/federation/context?${query.toString()}`,
+      { method: "GET" },
+    );
+    return {
+      clientId: payload.client.id,
+      clientDisplayName: payload.client.display_name,
+      redirectUri: payload.redirect_uri,
+      state: payload.state,
+      currentSession: payload.session.authenticated && payload.session.user ? {
+        user: {
+          id: payload.session.user.id,
+          name: payload.session.user.name,
+          email: payload.session.user.email,
+          phone: payload.session.user.phone,
+          avatarUrl: payload.session.user.avatarUrl,
+        },
+      } : null,
+    };
+  },
+  async issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult> {
+    const payload = await request<FederationTicketPayload>(baseUrl, "/auth/federation/tickets", {
+      method: "POST",
+      body: {
+        client_id: input.clientId,
+        redirect_uri: input.redirectUri,
+        state: input.state,
+      },
+    });
+    return {
+      redirectUrl: payload.redirect_url,
+      expiresAt: payload.expires_at,
+    };
+  },
+  async getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext> {
+    const query = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      state: input.state,
+      response_type: input.responseType,
+      scope: input.scope,
+      code_challenge: input.codeChallenge,
+      code_challenge_method: input.codeChallengeMethod,
+      nonce: input.nonce,
+    });
+    const payload = await request<OIDCContextPayload>(
+      baseUrl,
+      `/oauth2/authorize/context?${query.toString()}`,
+      { method: "GET" },
+    );
+    return {
+      clientId: payload.client.id,
+      clientDisplayName: payload.client.display_name,
+      redirectUri: payload.redirect_uri,
+      state: payload.state,
+      responseType: payload.response_type,
+      scope: payload.scope,
+      codeChallenge: payload.code_challenge,
+      codeChallengeMethod: payload.code_challenge_method,
+      nonce: payload.nonce,
+      currentSession: payload.session.authenticated && payload.session.user ? {
+        user: {
+          id: payload.session.user.id,
+          name: payload.session.user.name,
+          email: payload.session.user.email,
+          phone: payload.session.user.phone,
+          avatarUrl: payload.session.user.avatarUrl,
+        },
+      } : null,
+    };
+  },
+  async authorizeOIDC(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationResult> {
+    const payload = await request<OIDCAuthorizationPayload>(baseUrl, "/oauth2/authorize", {
+      method: "POST",
+      body: {
+        client_id: input.clientId,
+        redirect_uri: input.redirectUri,
+        state: input.state,
+        response_type: input.responseType,
+        scope: input.scope,
+        code_challenge: input.codeChallenge,
+        code_challenge_method: input.codeChallengeMethod,
+        nonce: input.nonce,
+      },
+    });
+    return {
+      redirectUrl: payload.redirect_url,
+      expiresAt: payload.expires_at,
+    };
+  },
+  async prepareFederationSwitch() {
+    await request(baseUrl, "/auth/federation/switch/prepare", { method: "POST" });
+  },
+  async cancelFederationSwitch() {
+    await request(baseUrl, "/auth/federation/switch", { method: "DELETE" });
+  },
   getOAuthStartUrl(provider, options) {
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
     const oauthStartBaseURL = resolveOAuthStartBaseURL(baseUrl);
     const startURL = new URL(buildUrl(oauthStartBaseURL, `/auth/oauth/${provider}/start`), base);
     if (provider === "wechat" && options?.wechatMode) {
       startURL.searchParams.set("mode", options.wechatMode);
+    }
+    if (options?.switchAccount) {
+      startURL.searchParams.set("switch_account", "true");
     }
     const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
     if (relayIssuerBaseURL) {
@@ -1646,6 +1800,12 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
   async createPassOrderAndPay(input) {
     // 联调文档 §2.2：仅联调测试用，现网禁止暴露给真实用户
     return requestEnvelope<CreatePassOrderAndPayResult>(baseUrl, "/v1/passes/order-and-pay", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async createDianshiPassOrderAndPay(input) {
+    return requestEnvelope<CreateDianshiPassOrderAndPayResult>(baseUrl, "/v1/passes/dianshi/order-and-pay", {
       method: "POST",
       body: input,
     });

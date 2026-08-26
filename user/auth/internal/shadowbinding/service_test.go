@@ -33,6 +33,7 @@ type recordingClient struct {
 	updateCalls            int
 	basicAuthCalls         int
 	temporaryCalls         int
+	accountInfoCalls       int
 	recoveryCalls          int
 	lastRegister           CloudRegisterInput
 	lastUpdate             CloudUpdatePhoneInput
@@ -40,11 +41,13 @@ type recordingClient struct {
 	lastTemporary          CloudTemporaryCredentialsInput
 	result                 CloudRegisterResult
 	temporaryResult        CloudTemporaryCredentials
+	accountInfoResult      CloudAccountInfo
 	recoveryResult         CloudSaaSTokenResult
 	err                    error
 	updateErr              error
 	basicAuthErr           error
 	temporaryCredentialErr error
+	accountInfoErr         error
 	recoveryErr            error
 }
 
@@ -106,6 +109,20 @@ func (c *recordingClient) GetTemporaryCredentialsForSaaS(_ context.Context, in C
 	c.temporaryCalls++
 	c.lastTemporary = in
 	return c.temporaryResult, c.temporaryCredentialErr
+}
+
+func (c *recordingClient) DescribeAccountInfo(_ context.Context, credentials CloudTemporaryCredentials) (CloudAccountInfo, error) {
+	c.accountInfoCalls++
+	result := c.accountInfoResult
+	if reflect.DeepEqual(result, CloudAccountInfo{}) {
+		result.LoginUin = credentials.Uin
+		result.OwnerUin = credentials.OwnerUin
+		result.AppID = c.result.AppID
+		if result.AppID == 0 {
+			result.AppID = 1374210036
+		}
+	}
+	return result, c.accountInfoErr
 }
 
 func (c *recordingClient) RecoverShadowIdentityForSaaS(_ context.Context, in CloudTemporaryCredentialsInput) (CloudSaaSTokenResult, error) {
@@ -294,10 +311,18 @@ func TestBindShadowAccountRecordsFailureAndAllowsRetry(t *testing.T) {
 }
 
 func TestBindShadowAccountOpensBillingBeforeActivatingIntlBinding(t *testing.T) {
-	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002}}
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	client := &recordingClient{
+		result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002},
+		temporaryResult: CloudTemporaryCredentials{
+			Uin: 450860000002, OwnerUin: 450860000002,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoResult: CloudAccountInfo{LoginUin: 450860000002, OwnerUin: 450860000002, AppID: 1471748557},
+	}
 	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true, RequestID: "billing-request-1"}}
 	async := &asyncCapture{}
-	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing, Wait: noBillingWait, RunAsync: async.run})
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing, Wait: noBillingWait, RunAsync: async.run, Now: func() time.Time { return now }})
 
 	binding, err := svc.BindShadowAccount(context.Background(), BindInput{
 		UserID: "usr_intl",
@@ -314,8 +339,88 @@ func TestBindShadowAccountOpensBillingBeforeActivatingIntlBinding(t *testing.T) 
 	}
 	async.runNext(t)
 	active, err := svc.GetBindingByUserID(context.Background(), "usr_intl")
-	if err != nil || active.Status != StatusActive || billing.calls != 1 || billing.lastUin != 450860000002 {
+	if err != nil || active.Status != StatusActive || active.AppID != 1471748557 || client.accountInfoCalls != 1 || billing.calls != 1 || billing.lastUin != 450860000002 {
 		t.Fatalf("expected async billing-open active binding, binding=%+v billing=%+v err=%v", active, billing, err)
+	}
+}
+
+func TestBindShadowAccountContinuesActivationWhenRegistrationAppIDLookupFails(t *testing.T) {
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	client := &recordingClient{
+		result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002},
+		temporaryResult: CloudTemporaryCredentials{
+			Uin: 450860000002, OwnerUin: 450860000002,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoErr: errors.New("account API unavailable"),
+	}
+	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true}}
+	async := &asyncCapture{}
+	svc := New(NewMemoryStore(), client, Options{
+		Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing,
+		Wait: noBillingWait, RunAsync: async.run, Now: func() time.Time { return now },
+	})
+
+	if _, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"}); err != nil {
+		t.Fatalf("BindShadowAccount: %v", err)
+	}
+	async.runNext(t)
+	binding, err := svc.GetBindingByUserID(context.Background(), "usr_intl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.Status != StatusActive || binding.AppID != 0 || client.accountInfoCalls != 1 || billing.calls != 1 {
+		t.Fatalf("AppID lookup failure must not block activation: binding=%+v account_info_calls=%d billing_calls=%d", binding, client.accountInfoCalls, billing.calls)
+	}
+}
+
+func TestEnsureBindingAppIDRepairsActiveInternationalBinding(t *testing.T) {
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore()
+	if _, err := store.SavePendingBinding(context.Background(), "usr_intl", "sgprod_u1", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkBindingActive(context.Background(), "usr_intl", 450850000004, 450850000004, 0, now); err != nil {
+		t.Fatal(err)
+	}
+	client := &recordingClient{
+		temporaryResult: CloudTemporaryCredentials{
+			Uin: 450850000004, OwnerUin: 450850000004,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoResult: CloudAccountInfo{LoginUin: 450850000004, OwnerUin: 450850000004, AppID: 1471748557},
+	}
+	svc := New(store, client, Options{Enabled: true, SiteKind: SiteKindIntl, Now: func() time.Time { return now }})
+
+	binding, err := svc.EnsureBindingAppID(context.Background(), "usr_intl", "192.0.2.1", "lightvela-trade")
+	if err != nil {
+		t.Fatalf("EnsureBindingAppID: %v", err)
+	}
+	if binding.AppID != 1471748557 || client.temporaryCalls != 1 || client.accountInfoCalls != 1 {
+		t.Fatalf("unexpected repaired binding=%+v temporary_calls=%d account_info_calls=%d", binding, client.temporaryCalls, client.accountInfoCalls)
+	}
+}
+
+func TestEnsureBindingAppIDRejectsMismatchedShadowIdentity(t *testing.T) {
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore()
+	_, _ = store.SavePendingBinding(context.Background(), "usr_intl", "sgprod_u1", now)
+	_, _ = store.MarkBindingActive(context.Background(), "usr_intl", 450850000004, 450850000004, 0, now)
+	client := &recordingClient{
+		temporaryResult: CloudTemporaryCredentials{
+			Uin: 450850000004, OwnerUin: 450850000004,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoResult: CloudAccountInfo{LoginUin: 450850000099, OwnerUin: 450850000099, AppID: 1471748557},
+	}
+	svc := New(store, client, Options{Enabled: true, SiteKind: SiteKindIntl, Now: func() time.Time { return now }})
+
+	if _, err := svc.EnsureBindingAppID(context.Background(), "usr_intl", "", "lightvela-trade"); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
+		t.Fatalf("EnsureBindingAppID error = %v, want identity mismatch", err)
+	}
+	binding, _ := store.GetBindingByUserID(context.Background(), "usr_intl")
+	if binding.AppID != 0 {
+		t.Fatalf("mismatched AppID was persisted: %+v", binding)
 	}
 }
 

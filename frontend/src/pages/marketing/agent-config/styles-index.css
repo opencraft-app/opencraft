@@ -1,0 +1,1735 @@
+/**
+ * @tencent/tea-sdk-lightclaw — 统一样式入口
+ *
+ * 消费方在入口处引入即可：
+ *   import '@tencent/tea-sdk-lightclaw/styles';
+ *
+ * 为防止样式污染，不使用如下方式全局引入
+ * @import '@tencent/tea-component/dist/tea-themeable.css';
+ * @import '@tencent/tea-component/dist/themes/default-pack.css';
+ * @import '@tencent/tea-style-lighthouse/index.css';
+ *
+ * ## 设计理念
+ *
+ * 本文件包含 SDK 组件（ModelCard / ChannelCard / SkillCard / HermesQrCodeModal 等）
+ * 渲染所需的**全部** CSS，不再 @import 任何全局 tea 样式表。这样可以：
+ *
+ *   1. 避免 tea-themeable / tea-style-lighthouse 等全局样式污染非 tea 宿主
+ *   2. 通过 `._lh-claw-bot-panel` 作用域 + 精确 `.tea-*` 类名，只影响 SDK 组件
+ *   3. 在 tea-scripts（控制台）和 Vite（独立项目）两边都能正常渲染
+ *
+ * ## 作用域规则
+ *
+ * - Part 1：`._lh-claw-bot-*` 私有样式 — SDK 自定义布局
+ * - Part 2：`._lh-claw-bot-panel .tea-*` — tea-component 在 SDK 内的表现
+ * - Part 3：`.tea-dropdown-box` / `._lh-confirm-modal` — portal 弹层（挂在 body 下）
+ * - Part 4：`.qrcode-*` / TokenUsage — SDK 组件自有样式
+ */
+
+/* StandardPanel（无 TEA 依赖的 Panel 变体）样式 —— 必须在此入口聚合，
+ * 否则消费方生产构建（Rollup）会 tree-shake 掉 StandardPanel/index.ts 内的
+ * 副作用 CSS import，导致 ModelPanel / ChannelPanel / SkillPanel 无样式。 */
+@import './standard-panel.css';
+
+/* ───────── CSS 变量兜底 ─────────
+ * tea-scripts 环境由 Buffet 框架 + theme pack 全局注入这些变量。
+ * 非 tea 环境（Vite 等）没有全局 tea 主题，在这里用 ._lh-claw-bot-panel
+ * 作用域内兜底，确保 SDK 组件有正确的颜色/间距/字体。
+ */
+._lh-claw-bot-panel {
+  --tea-color-text-primary: rgba(0, 0, 0, 0.9);
+  --tea-color-text-secondary: rgba(0, 0, 0, 0.7);
+  --tea-color-text-tertiary: rgba(0, 0, 0, 0.5);
+  --tea-color-text-placeholder: rgba(0, 0, 0, 0.3);
+  --tea-color-text-disabled: rgba(0, 0, 0, 0.3);
+  --tea-color-text-brand-default: #1d67e0;
+
+  --tea-color-bg-primary-default: #ffffff;
+  --tea-color-bg-primary-lighten: #f7f8fa;
+  --tea-color-bg-primary-hover: #f2f4f8;
+  --tea-color-bg-secondary-default: #f2f4f8;
+  --tea-color-bg-secondary-hover: #eef0f4;
+
+  --tea-color-border-primary-default: #e6e9ef;
+  --tea-color-border-secondary-default: #e9ecf1;
+  --tea-color-border-tertiary-default: #d6dbe3;
+
+  --tea-form-color-border-primary-default: #e6e9ef;
+  --tea-form-color-bg-primary-default: #ffffff;
+  --tea-form-height-default: 32px;
+  --tea-border-radius-default: 4px;
+
+  --tea-color-brand: #1d67e0;
+  --tea-color-success: #088f50;
+  --tea-color-danger: #eb1c26;
+
+  --tea-font-size-default: 12px;
+
+  color: var(--tea-color-text-primary);
+  font-family: "PingFang SC", -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* =================================================================
+ *  Part 1. SDK 私有样式（_lh-claw-bot-*）
+ * ================================================================= */
+
+/* ───────── 单张卡片 ───────── */
+/* 注意：容器布局（grid/flex、响应式断点）由业务侧的 ._lh-claw-bot-panel__cards 控制，
+   SDK 只定义单张卡片自身的样式。 */
+._lh-claw-bot-panel__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 300px;
+  min-height: 560px;
+  padding: 24px 0 20px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--tea-color-bg-primary-default);
+  border: 1px solid var(--tea-form-color-border-primary-default);
+  border-radius: 12px;
+}
+
+/* 顶部彩色光晕 */
+._lh-claw-bot-panel__card::before {
+  content: "";
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  right: calc(50% - 200px);
+  top: -380px;
+  border-radius: 400px;
+  background: #e3eaff;
+  filter: blur(80px);
+  transform: rotate(-90deg);
+}
+._lh-claw-bot-panel__card.model::before {
+  background: #e3eaff;
+}
+._lh-claw-bot-panel__card.channel::before {
+  background: #e8f8e9;
+}
+._lh-claw-bot-panel__card.skill::before,
+._lh-claw-bot-panel__card.skills::before {
+  background: #ede8ff;
+}
+
+/* ───────── 卡片头部 ───────── */
+._lh-claw-bot-panel__card-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  color: var(--tea-color-text-primary);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+._lh-claw-bot-panel__card-header ._lh-icon,
+._lh-claw-bot-panel__card-header svg {
+  width: 24px;
+  height: 24px;
+}
+
+._lh-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+._lh-icon.claw-bot-first-icon {
+  background-image: url("https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/7cf4d2b7-a964-46bb-8f3a-2a3a25476a5a.svg");
+}
+._lh-icon.claw-bot-second-icon {
+  background-image: url("https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/bf938000-5f1d-463a-9868-6ac9c59c2d70.svg");
+}
+._lh-icon.claw-bot-third-icon {
+  background-image: url("https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5860d3f5-2166-443b-a847-9a27b5647691.svg");
+}
+
+/* 副标题 */
+._lh-claw-bot-panel__card-desc {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 12px 20px 24px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--tea-color-border-primary-default) 50%, transparent);
+  color: var(--tea-color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+._lh-claw-bot-panel__cards
+  ._lh-claw-bot-panel__card.channel
+  ._lh-claw-bot-panel__card-desc {
+  padding-bottom: 10px;
+  border-bottom: none;
+}
+
+/* ───────── 操作区 ───────── */
+._lh-claw-bot-panel__card-action {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: stretch;
+  width: 100%;
+  flex-shrink: 0;
+  padding: 20px;
+  box-sizing: border-box;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--tea-color-border-primary-default) 50%, transparent);
+}
+
+._lh-claw-bot-panel__card-oper {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+._lh-claw-bot-panel__cards
+  ._lh-claw-bot-panel__card.channel
+  ._lh-claw-bot-panel__card-oper,
+._lh-claw-bot-panel__cards
+  ._lh-claw-bot-panel__card.model
+  ._lh-claw-bot-panel__card-oper {
+  flex-wrap: wrap;
+}
+._lh-claw-bot-panel__card-oper > .tea-dropdown,
+._lh-claw-bot-panel__card-oper > .tea-select,
+._lh-claw-bot-panel__card-oper > .tea-cascader,
+._lh-claw-bot-panel__card-oper > ._lh-claw-bot-panel__dropdown-wrap,
+._lh-claw-bot-panel__card-oper > .tea-form--search {
+  flex: 1 1 0%;
+  width: 100%;
+  min-width: 0;
+}
+._lh-claw-bot-panel .tea-form--search {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+._lh-claw-bot-panel .tea-form--search.size-full-width,
+._lh-claw-bot-panel .size-full-width {
+  width: 100%;
+}
+._lh-claw-bot-panel .tea-form--search > .tea-search {
+  width: 100%;
+}
+._lh-claw-bot-panel__card-oper
+  > ._lh-claw-bot-panel__dropdown-wrap
+  .tea-dropdown__value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* oper-form */
+._lh-claw-bot-panel__card-oper-form {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+}
+._lh-claw-bot-panel__card-oper-form .tea-form__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+._lh-claw-bot-panel__card-oper-form .tea-form__item:first-child {
+  margin-top: 0;
+}
+._lh-claw-bot-panel__card-oper-form .tea-form__label {
+  display: block;
+  flex-shrink: 0;
+  width: 100px;
+  padding: 0;
+}
+._lh-claw-bot-panel__card-oper-form .tea-form__label label {
+  word-wrap: break-word;
+  word-break: break-all;
+  white-space: normal;
+}
+._lh-claw-bot-panel__card-oper-form .tea-form__controls {
+  padding: 0;
+  flex: 1;
+}
+
+/* oper-edit（自定义模型 JSON TextArea） */
+._lh-claw-bot-panel__card-oper-edit {
+  width: 100%;
+  min-height: 205px;
+  margin-top: 16px;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--tea-color-bg-primary-default);
+  border: 1px solid var(--tea-color-border-primary-default);
+  border-radius: var(--tea-border-radius-default);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--tea-color-text-primary);
+}
+._lh-claw-bot-panel__card-oper-edit::placeholder {
+  color: var(--tea-color-text-placeholder);
+  font-size: 12px;
+}
+
+/* action-desc */
+._lh-claw-bot-panel__card-action-desc {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--tea-color-text-tertiary);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+._lh-claw-bot-panel__card-action-desc > span,
+._lh-claw-bot-panel__card-action-desc .tea-external-link,
+._lh-claw-bot-panel__card-action-desc .tea-btn-link,
+._lh-claw-bot-panel__card-action-desc a {
+  display: inline;
+  vertical-align: baseline;
+}
+._lh-claw-bot-panel__card-action-desc > span {
+  margin-right: 4px;
+}
+._lh-claw-bot-panel__card-action-desc .tea-btn {
+  color: var(--tea-color-text-tertiary);
+  position: relative;
+  transition: all 0.3s ease-in-out;
+  display: inline;
+  padding: 0;
+  height: auto;
+  line-height: inherit;
+  background: transparent;
+  border: none;
+}
+._lh-claw-bot-panel__card-action-desc .tea-btn::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-bottom: 1px dashed;
+}
+._lh-claw-bot-panel__card-action-desc .tea-btn:hover {
+  color: var(--tea-color-text-primary);
+  background: transparent;
+}
+
+/* 主 CTA */
+._lh-claw-bot__add-btn-action,
+._lh-claw-bot__add-btn-action > span {
+  width: 100%;
+}
+._lh-claw-bot-panel__card-action .tea-btn._lh-claw-bot__add-btn {
+  width: 100%;
+  gap: 8px;
+  margin-top: 16px;
+  font-weight: 500;
+}
+
+/* 对话按钮 */
+._lh-claw-bot-panel__card-btn-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 24px;
+  margin-top: 14px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--tea-color-border-primary-default) 50%, transparent);
+}
+._lh-claw-bot-panel__cards
+  ._lh-claw-bot-panel__card
+  .tea-btn._lh-claw-bot-panel__card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  width: 289px;
+  height: 36px;
+  padding: 0 24px;
+  border: none;
+  border-radius: 30px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  background: linear-gradient(90deg, #1d67e0 0%, #4a8ce8 100%);
+  box-shadow: 0 8px 24px -4px rgba(29, 103, 224, 0.24);
+  cursor: pointer;
+  justify-content: center;
+}
+._lh-claw-bot-panel__card-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 12px;
+  background: #fff;
+  color: #4769f5;
+  border-radius: 100%;
+  overflow: hidden;
+}
+
+/* ───────── 卡片底部 ───────── */
+._lh-claw-bot-panel__card-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  padding: 20px 20px 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+._lh-claw-bot-panel__card-title {
+  flex-shrink: 0;
+  color: var(--tea-color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* 技能卡列表 */
+._lh-claw-bot-skills {
+  flex: 1;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+._lh-claw-bot-skills::-webkit-scrollbar {
+  width: 4px;
+}
+._lh-claw-bot-skills::-webkit-scrollbar-thumb {
+  background: #a2acbb;
+  opacity: 0.6;
+  border-radius: 11px;
+}
+._lh-claw-bot-skills__item {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 16px;
+  box-sizing: border-box;
+  background: var(--tea-color-bg-primary-lighten);
+  color: var(--tea-color-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.3s ease-in-out;
+  border-radius: 4px;
+}
+._lh-claw-bot-skills__item:first-child {
+  margin-top: 0;
+}
+._lh-claw-bot-skills__item:hover {
+  background: var(--tea-color-bg-secondary-hover);
+}
+
+/* Collapse 列表 */
+._lh-claw-bot-panel__card-collapse {
+  flex: 1;
+  margin-top: 12px;
+  overflow: hidden;
+  overflow-y: auto;
+}
+._lh-claw-bot-panel__card-collapse::-webkit-scrollbar {
+  width: 4px;
+}
+._lh-claw-bot-panel__card-collapse::-webkit-scrollbar-thumb {
+  background: #a2acbb;
+  opacity: 0.6;
+  border-radius: 11px;
+}
+
+._lh-claw-bot-collapse__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  max-width: 100%;
+  overflow: hidden;
+}
+._lh-claw-bot-collapse__header-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--tea-color-text-primary);
+}
+._lh-claw-bot-collapse__header-left img {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+._lh-claw-bot-collapse__header-left .tea-text {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+._lh-claw-bot-collapse__header-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+._lh-claw-bot-collapse__header-actions .tea-btn._lh-claw-bot-delete-btn {
+  position: relative;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: 16px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+._lh-claw-bot-collapse__header-actions
+  .tea-btn._lh-claw-bot-delete-btn::before {
+  content: "";
+  position: absolute;
+  width: 1px;
+  height: 12px;
+  top: calc(50% - 6px);
+  left: -6px;
+  background-color: var(--tea-color-border-tertiary-default);
+}
+._lh-claw-bot-collapse__header-desc {
+  margin-top: 2px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--tea-color-text-tertiary);
+}
+
+/* =================================================================
+ *  Part 2. Tea 基础组件样式（限定在 ._lh-claw-bot-panel 内）
+ * ================================================================= */
+
+/* ───────── tea-btn ───────── */
+._lh-claw-bot-panel .tea-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--tea-color-text-primary);
+  background: #fff;
+  border: 1px solid var(--tea-form-color-border-primary-default);
+  border-radius: var(--tea-border-radius-default);
+  cursor: pointer;
+  outline: none;
+  text-decoration: none;
+  vertical-align: middle;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+._lh-claw-bot-panel .tea-btn:hover:not([disabled]):not(.is-disabled) {
+  border-color: var(--tea-color-brand);
+  color: var(--tea-color-brand);
+}
+._lh-claw-bot-panel .tea-btn[disabled],
+._lh-claw-bot-panel .tea-btn.is-disabled {
+  background: #f4f5f7;
+  color: #a2acbb;
+  cursor: not-allowed;
+  border-color: var(--tea-form-color-border-primary-default);
+}
+
+._lh-claw-bot-panel .tea-btn--solid.tea-btn--brand,
+._lh-claw-bot-panel .tea-btn--primary {
+  background: var(--tea-color-brand);
+  border-color: var(--tea-color-brand);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(29, 103, 224, 0.15);
+}
+._lh-claw-bot-panel
+  .tea-btn--solid.tea-btn--brand:hover:not([disabled]):not(.is-disabled),
+._lh-claw-bot-panel .tea-btn--primary:hover:not([disabled]):not(.is-disabled) {
+  background: #1555bd;
+  border-color: #1555bd;
+  color: #fff;
+}
+
+._lh-claw-bot-panel .tea-btn--solid.tea-btn--neutral {
+  background: var(--tea-color-bg-secondary-default);
+  border-color: var(--tea-color-bg-secondary-default);
+  color: var(--tea-color-text-primary);
+}
+._lh-claw-bot-panel
+  .tea-btn--solid.tea-btn--neutral:hover:not([disabled]):not(.is-disabled) {
+  background: var(--tea-color-bg-secondary-hover);
+  border-color: var(--tea-color-bg-secondary-hover);
+  color: var(--tea-color-text-primary);
+}
+
+._lh-claw-bot-panel .tea-btn--outline,
+._lh-claw-bot-panel .tea-btn--outline.tea-btn--neutral {
+  background: #fff;
+  border-color: var(--tea-form-color-border-primary-default);
+  color: var(--tea-color-text-primary);
+}
+._lh-claw-bot-panel .tea-btn--outline:hover:not([disabled]):not(.is-disabled) {
+  border-color: var(--tea-color-brand);
+  color: var(--tea-color-brand);
+}
+
+._lh-claw-bot-panel .tea-btn--text,
+._lh-claw-bot-panel .tea-btn--link {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--tea-color-brand);
+  padding: 0 4px;
+  min-height: 20px;
+}
+._lh-claw-bot-panel .tea-btn--text:hover:not([disabled]):not(.is-disabled),
+._lh-claw-bot-panel .tea-btn--link:hover:not([disabled]):not(.is-disabled) {
+  background: transparent;
+  color: #1555bd;
+  text-decoration: underline;
+}
+
+._lh-claw-bot-panel .tea-btn.tea-btn--circle {
+  border-radius: 50%;
+}
+._lh-claw-bot-panel .tea-btn.tea-btn--square {
+  padding: 0;
+}
+._lh-claw-bot-panel .tea-btn.is-loading {
+  position: relative;
+  cursor: not-allowed;
+  font-size: 0;
+}
+._lh-claw-bot-panel .tea-btn.is-loading [class*="loading"] {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  font-size: 16px;
+  animation: _lh-claw-spin 1s linear infinite;
+}
+@keyframes _lh-claw-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* ───────── tea-input ───────── */
+._lh-claw-bot-panel .tea-input {
+  display: inline-block;
+  width: 100%;
+  height: var(--tea-form-height-default);
+  padding: 6px 10px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--tea-color-text-primary);
+  background: var(--tea-form-color-bg-primary-default);
+  border: 1px solid var(--tea-form-color-border-primary-default);
+  border-radius: var(--tea-border-radius-default);
+  outline: none;
+  vertical-align: middle;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+._lh-claw-bot-panel .tea-input::placeholder {
+  color: var(--tea-color-text-placeholder);
+}
+._lh-claw-bot-panel .tea-input:hover:not([disabled]) {
+  border-color: #c3cbd6;
+}
+._lh-claw-bot-panel .tea-input:focus,
+._lh-claw-bot-panel .tea-input:focus-within {
+  border-color: var(--tea-color-brand);
+  box-shadow: 0 0 0 2px rgba(29, 103, 224, 0.12);
+}
+._lh-claw-bot-panel .tea-input[disabled] {
+  background: #f4f5f7;
+  color: #a2acbb;
+  cursor: not-allowed;
+}
+._lh-claw-bot-panel .tea-input.size-full-width,
+._lh-claw-bot-panel .tea-input.size-m {
+  width: 100%;
+}
+
+/* Password */
+._lh-claw-bot-panel .tea-input-password {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  font-size: 0;
+}
+._lh-claw-bot-panel .tea-input-password.size-full-width {
+  width: 100%;
+}
+._lh-claw-bot-panel .tea-input-password .tea-input {
+  padding-right: 56px;
+}
+._lh-claw-bot-panel .tea-input-password__op {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+._lh-claw-bot-panel .tea-input-password__op .tea-btn {
+  background: transparent;
+  border: none;
+  min-height: 20px;
+  padding: 0 4px;
+  color: var(--tea-color-text-tertiary);
+}
+._lh-claw-bot-panel .tea-input-password__op .tea-btn:hover {
+  background: transparent;
+}
+
+/* Input Group */
+._lh-claw-bot-panel .tea-input-group {
+  display: inline-flex;
+  width: 100%;
+  vertical-align: middle;
+}
+._lh-claw-bot-panel .tea-input-group .tea-input {
+  flex: 1;
+  border-radius: 0;
+}
+._lh-claw-bot-panel .tea-input-group__addon {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--tea-color-bg-primary-lighten);
+  border: 1px solid var(--tea-form-color-border-primary-default);
+  color: var(--tea-color-text-tertiary);
+  font-size: 12px;
+}
+._lh-claw-bot-panel .tea-input-group > *:first-child,
+._lh-claw-bot-panel .tea-input-group > *:first-child > .tea-input {
+  border-top-left-radius: var(--tea-border-radius-default);
+  border-bottom-left-radius: var(--tea-border-radius-default);
+}
+._lh-claw-bot-panel .tea-input-group > *:last-child,
+._lh-claw-bot-panel .tea-input-group > *:last-child > .tea-input {
+  border-top-right-radius: var(--tea-border-radius-default);
+  border-bottom-right-radius: var(--tea-border-radius-default);
+}
+
+/* ───────── tea-dropdown / tea-select ───────── */
+._lh-claw-bot-panel .tea-dropdown {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  vertical-align: middle;
+  position: relative;
+  gap: 0;
+}
+._lh-claw-bot-panel .tea-dropdown__header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: var(--tea-form-height-default);
+  padding: 0 26px 0 10px;
+  box-sizing: border-box;
+  background: var(--tea-form-color-bg-primary-default);
+  border: 1px solid var(--tea-color-border-primary-default);
+  border-radius: var(--tea-border-radius-default);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--tea-color-text-primary);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+._lh-claw-bot-panel .tea-dropdown__header:hover {
+  border-color: #c3cbd6;
+}
+._lh-claw-bot-panel .tea-dropdown.is-opened > .tea-dropdown__header,
+._lh-claw-bot-panel .tea-dropdown__header:focus {
+  border-color: var(--tea-color-brand);
+  box-shadow: 0 0 0 2px rgba(29, 103, 224, 0.12);
+}
+._lh-claw-bot-panel .tea-dropdown__value {
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: calc(var(--tea-form-height-default) - 2px);
+}
+._lh-claw-bot-panel .tea-dropdown__header > .tea-icon,
+._lh-claw-bot-panel .tea-dropdown__header > .ruyi-icon,
+._lh-claw-bot-panel .tea-dropdown__header > svg {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+._lh-claw-bot-panel .tea-dropdown.is-disabled .tea-dropdown__header {
+  background: #f4f5f7;
+  color: #a2acbb;
+  cursor: not-allowed;
+}
+
+/* ───────── tea-segment ───────── */
+._lh-claw-bot-panel .tea-segment {
+  display: inline-flex;
+  width: 100%;
+  padding: 2px;
+  box-sizing: border-box;
+  background: var(--tea-color-bg-primary-lighten);
+  border-radius: 4px;
+  gap: 2px;
+  vertical-align: middle;
+}
+._lh-claw-bot-panel .tea-segment > .tea-btn,
+._lh-claw-bot-panel .tea-segment > span .tea-btn {
+  flex: 1;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--tea-color-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  box-shadow: none;
+  font-weight: 400;
+}
+._lh-claw-bot-panel
+  .tea-segment
+  > .tea-btn:hover:not([disabled]):not(.is-disabled),
+._lh-claw-bot-panel
+  .tea-segment
+  > span
+  .tea-btn:hover:not([disabled]):not(.is-disabled) {
+  background: transparent;
+  color: var(--tea-color-text-primary);
+  border-color: transparent;
+}
+._lh-claw-bot-panel .tea-segment > .tea-btn.is-selected,
+._lh-claw-bot-panel .tea-segment > .tea-btn.tea-btn--selected,
+._lh-claw-bot-panel .tea-segment > .tea-btn[aria-selected="true"],
+._lh-claw-bot-panel .tea-segment > span .tea-btn.is-selected,
+._lh-claw-bot-panel .tea-segment > span .tea-btn.tea-btn--selected {
+  background: #fff;
+  color: var(--tea-color-text-primary);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  border-color: transparent;
+}
+
+/* ───────── tea-accordion ───────── */
+._lh-claw-bot-panel .tea-accordion-group {
+  display: block;
+  width: 100%;
+}
+._lh-claw-bot-panel .tea-accordion-group .tea-accordion {
+  margin-top: 8px;
+  background: var(--tea-color-bg-primary-lighten);
+  border: 1px solid var(--tea-color-bg-primary-lighten);
+  border-radius: 4px;
+  overflow: hidden;
+}
+._lh-claw-bot-panel .tea-accordion-group .tea-accordion:first-child {
+  margin-top: 0;
+}
+._lh-claw-bot-panel .tea-accordion-group .tea-accordion.is-active {
+  border-color: var(--tea-color-border-primary-default);
+  background: #fff;
+}
+._lh-claw-bot-panel .tea-accordion__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px 10px 12px;
+  box-sizing: border-box;
+  background: var(--tea-color-bg-primary-lighten);
+  cursor: pointer;
+  transition: all 0.3s ease-in-out;
+}
+._lh-claw-bot-panel .tea-accordion__header:hover {
+  background: var(--tea-color-bg-secondary-hover);
+}
+._lh-claw-bot-panel .tea-accordion.is-active .tea-accordion__header {
+  background: #fff;
+}
+._lh-claw-bot-panel .tea-accordion__header .ruyi-icon,
+._lh-claw-bot-panel .tea-accordion__header > svg {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+._lh-claw-bot-panel .tea-accordion__header-title {
+  flex: 1;
+  overflow: hidden;
+  margin-left: 2px;
+  color: inherit;
+  display: inline-block;
+  vertical-align: middle;
+}
+._lh-claw-bot-panel .tea-accordion__body {
+  display: none;
+  padding: 20px 16px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--tea-color-border-primary-default);
+  background: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--tea-color-text-primary);
+}
+._lh-claw-bot-panel .tea-accordion.is-active > .tea-accordion__body {
+  display: block;
+}
+._lh-claw-bot-panel .tea-accordion__body .tea-form-check-group .tea-form-check {
+  margin-bottom: 12px;
+}
+
+/* ───────── Hermes model radio list ───────── */
+._lh-hermes-model-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+._lh-hermes-model-radio-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--tea-color-text-primary);
+}
+._lh-hermes-model-radio-item input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--tea-color-brand, #1d67e0);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+._lh-hermes-model-radio-label {
+  line-height: 1.4;
+}
+._lh-claw-bot-panel
+  .tea-accordion__body
+  .tea-form-check--block
+  + .tea-form-check--block {
+  margin-top: 12px;
+}
+
+/* ───────── tea-form-check ───────── */
+._lh-claw-bot-panel .tea-form-check-group {
+  display: inline-block;
+  vertical-align: middle;
+  margin-bottom: -8px;
+}
+._lh-claw-bot-panel .tea-form-check-group .tea-form-check {
+  margin-bottom: 8px;
+}
+._lh-claw-bot-panel .tea-form-check {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  padding-left: 22px;
+  margin-top: 0;
+  margin-right: 18px;
+  min-height: 16px;
+  color: var(--tea-color-text-primary);
+}
+._lh-claw-bot-panel .tea-form-check:last-child {
+  margin-right: 0;
+}
+._lh-claw-bot-panel .tea-form-check--block {
+  display: block;
+}
+._lh-claw-bot-panel .tea-form-check--block + .tea-form-check--block {
+  margin-top: 8px;
+  margin-right: 0;
+}
+._lh-claw-bot-panel .tea-form-check__label {
+  line-height: 16px;
+  font-size: 12px;
+  cursor: pointer;
+}
+._lh-claw-bot-panel .tea-form-check .tea-radio-wrap,
+._lh-claw-bot-panel .tea-form-check .tea-checkbox-wrap {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  width: 14px;
+  height: 14px;
+}
+._lh-claw-bot-panel .tea-form-check input[type="radio"],
+._lh-claw-bot-panel .tea-form-check input[type="checkbox"] {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+._lh-claw-bot-panel .tea-form-check .tea-radio {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border: 1px solid #c3cbd6;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+._lh-claw-bot-panel .tea-form-check input[type="radio"]:checked + .tea-radio,
+._lh-claw-bot-panel .tea-form-check.is-checked .tea-radio {
+  border-color: var(--tea-color-brand);
+  position: relative;
+}
+._lh-claw-bot-panel
+  .tea-form-check
+  input[type="radio"]:checked
+  + .tea-radio::after,
+._lh-claw-bot-panel .tea-form-check.is-checked .tea-radio::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  background: var(--tea-color-brand);
+  border-radius: 50%;
+}
+._lh-claw-bot-panel .tea-form-check .tea-checkbox {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border: 1px solid #c3cbd6;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+._lh-claw-bot-panel
+  .tea-form-check
+  input[type="checkbox"]:checked
+  + .tea-checkbox,
+._lh-claw-bot-panel .tea-form-check.is-checked .tea-checkbox {
+  background: var(--tea-color-brand);
+  border-color: var(--tea-color-brand);
+  position: relative;
+}
+._lh-claw-bot-panel
+  .tea-form-check
+  input[type="checkbox"]:checked
+  + .tea-checkbox::after,
+._lh-claw-bot-panel .tea-form-check.is-checked .tea-checkbox::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 6px;
+  height: 9px;
+  border-right: 1.5px solid #fff;
+  border-bottom: 1.5px solid #fff;
+  transform: rotate(45deg);
+}
+
+/* ───────── tea-form ───────── */
+._lh-claw-bot-panel .tea-form {
+  width: 100%;
+}
+._lh-claw-bot-panel .tea-form__item {
+  margin-bottom: 12px;
+}
+._lh-claw-bot-panel .tea-form__item:last-child {
+  margin-bottom: 0;
+}
+._lh-claw-bot-panel .tea-form__label {
+  display: block;
+  color: var(--tea-color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  padding-bottom: 4px;
+}
+._lh-claw-bot-panel .tea-form__controls {
+  display: block;
+}
+
+/* ───────── tea-alert ───────── */
+._lh-claw-bot-panel .tea-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  color: #ad6800;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 20px;
+}
+._lh-claw-bot-panel .tea-alert__decoration {
+  color: inherit;
+  flex-shrink: 0;
+}
+
+/* ───────── tea-link ───────── */
+._lh-claw-bot-panel .tea-link,
+._lh-claw-bot-panel .tea-link-external {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tea-color-brand);
+  font-size: 12px;
+  line-height: 20px;
+  text-decoration: none;
+}
+._lh-claw-bot-panel .tea-link:hover,
+._lh-claw-bot-panel .tea-link-external:hover {
+  color: #1555bd;
+  text-decoration: underline;
+}
+
+/* ───────── tea-action-state ───────── */
+._lh-claw-bot-panel .tea-action-state,
+._lh-claw-bot-panel .tea-status-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--tea-color-success);
+  flex-shrink: 0;
+}
+._lh-claw-bot-panel .tea-action-state::before,
+._lh-claw-bot-panel .tea-status-tip[data-status="running"]::before,
+._lh-claw-bot-panel .tea-status-tip--running::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tea-color-success);
+  flex-shrink: 0;
+}
+._lh-claw-bot-panel .tea-action-state.is-closed,
+._lh-claw-bot-panel .tea-action-state[data-status="closed"],
+._lh-claw-bot-panel .tea-status-tip--closed {
+  color: var(--tea-color-text-tertiary);
+}
+._lh-claw-bot-panel .tea-action-state.is-closed::before,
+._lh-claw-bot-panel .tea-action-state[data-status="closed"]::before,
+._lh-claw-bot-panel .tea-status-tip--closed::before {
+  background: rgba(0, 0, 0, 0.3);
+}
+._lh-claw-bot-panel .tea-action-state.is-error,
+._lh-claw-bot-panel .tea-action-state[data-status="error"] {
+  color: var(--tea-color-danger);
+}
+._lh-claw-bot-panel .tea-action-state.is-error::before,
+._lh-claw-bot-panel .tea-action-state[data-status="error"]::before {
+  background: var(--tea-color-danger);
+}
+
+/* ───────── tea-text ───────── */
+._lh-claw-bot-panel .tea-text--strong,
+._lh-claw-bot-panel .tea-text[data-theme="strong"] {
+  color: var(--tea-color-text-primary);
+  font-weight: 500;
+}
+._lh-claw-bot-panel .tea-text--label,
+._lh-claw-bot-panel .tea-text[data-theme="label"] {
+  color: var(--tea-color-text-tertiary);
+  font-size: 12px;
+}
+._lh-claw-bot-panel .tea-text--secondary,
+._lh-claw-bot-panel .tea-text[data-theme="secondary"] {
+  color: var(--tea-color-text-secondary);
+}
+._lh-claw-bot-panel .tea-text--success {
+  color: var(--tea-color-success);
+}
+._lh-claw-bot-panel .tea-text--danger {
+  color: var(--tea-color-danger);
+}
+
+/* ───────── tea-icon ───────── */
+._lh-claw-bot-panel .tea-icon,
+._lh-claw-bot-panel .ruyi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+  flex-shrink: 0;
+}
+
+/* ───────── SearchBox ───────── */
+._lh-claw-bot-panel .tea-search {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: var(--tea-form-height-default);
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+._lh-claw-bot-panel .tea-search__inner {
+  position: relative;
+  flex: 1 1 0;
+  height: 100%;
+  cursor: text;
+}
+._lh-claw-bot-panel .tea-search__inner-prefix {
+  position: absolute;
+  z-index: 5;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  color: var(--tea-color-text-tertiary);
+  pointer-events: none;
+}
+._lh-claw-bot-panel .tea-search .tea-input,
+._lh-claw-bot-panel .tea-search .tea-input--search {
+  width: 100%;
+  height: var(--tea-form-height-default);
+  padding: 6px 32px;
+  box-sizing: border-box;
+  background: var(--tea-form-color-bg-primary-default);
+  border: 1px solid var(--tea-form-color-border-primary-default);
+  border-radius: var(--tea-border-radius-default);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--tea-color-text-primary);
+  outline: none;
+  -webkit-appearance: textfield; /* 禁止 Safari 默认 search 样式 */
+}
+/* 隐藏浏览器原生 search 清除按钮（× ），tea SearchBox 自带 dismiss 按钮 */
+._lh-claw-bot-panel .tea-search .tea-input::-webkit-search-cancel-button,
+._lh-claw-bot-panel
+  .tea-search
+  .tea-input--search::-webkit-search-cancel-button,
+._lh-claw-bot-panel .tea-search .tea-input::-webkit-search-decoration,
+._lh-claw-bot-panel .tea-search .tea-input--search::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+._lh-claw-bot-panel .tea-search .tea-input:hover,
+._lh-claw-bot-panel .tea-search .tea-input--search:hover {
+  border-color: #c3cbd6;
+}
+._lh-claw-bot-panel .tea-search .tea-input:focus,
+._lh-claw-bot-panel .tea-search .tea-input--search:focus {
+  border-color: var(--tea-color-brand);
+  box-shadow: 0 0 0 2px rgba(29, 103, 224, 0.12);
+}
+._lh-claw-bot-panel .tea-search__inner .tea-btn {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  min-height: 28px;
+  padding: 0 6px;
+  color: var(--tea-color-text-tertiary);
+}
+._lh-claw-bot-panel .tea-search__inner .tea-btn:hover {
+  background: transparent;
+  color: var(--tea-color-text-primary);
+}
+
+/* ───────── tea-status ───────── */
+._lh-claw-bot-panel .tea-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0;
+  color: var(--tea-color-text-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+._lh-claw-bot-panel .tea-status--s,
+._lh-claw-bot-panel .tea-status[data-size="s"] {
+  padding: 16px 0;
+}
+
+/* ───────── 间距工具类 ───────── */
+._lh-claw-bot-panel .tea-mt-1n {
+  margin-top: 4px !important;
+}
+._lh-claw-bot-panel .tea-mt-2n {
+  margin-top: 8px !important;
+}
+._lh-claw-bot-panel .tea-mt-3n {
+  margin-top: 12px !important;
+}
+._lh-claw-bot-panel .tea-mt-4n {
+  margin-top: 16px !important;
+}
+._lh-claw-bot-panel .tea-mt-5n {
+  margin-top: 20px !important;
+}
+._lh-claw-bot-panel .tea-mb-1n {
+  margin-bottom: 4px !important;
+}
+._lh-claw-bot-panel .tea-mb-2n {
+  margin-bottom: 8px !important;
+}
+._lh-claw-bot-panel .tea-mb-3n {
+  margin-bottom: 12px !important;
+}
+._lh-claw-bot-panel .tea-mb-4n {
+  margin-bottom: 16px !important;
+}
+._lh-claw-bot-panel .tea-mb-5n {
+  margin-bottom: 20px !important;
+}
+
+/* =================================================================
+ *  Part 3. 全局 portal 元素（Dropdown 弹层 / Modal）
+ *  这类元素被 React 通过 portal 渲染到 <body> 下，不在
+ *  ._lh-claw-bot-panel 作用域内，必须用全局选择器。
+ *  为了避免污染，使用精确类名 `.tea-dropdown-box` / `._lh-confirm-modal`。
+ * ================================================================= */
+
+.tea-dropdown-box {
+  min-width: 150px;
+  max-height: 304px;
+  padding: 4px 0;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #e6e9ef;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.9);
+  overflow: auto;
+}
+.tea-overlay {
+  z-index: 10000;
+}
+.tea-dropdown-box .tea-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tea-dropdown-box .tea-list > li,
+.tea-dropdown-box .tea-list--option > li {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  color: rgba(0, 0, 0, 0.9);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.tea-dropdown-box .tea-list--option > li:hover {
+  background-color: #f2f4f8;
+  color: rgba(0, 0, 0, 0.9);
+}
+.tea-dropdown-box .tea-list--option > li.is-selected {
+  background-color: #eaf1fd;
+  color: #1d67e0;
+}
+.tea-dropdown-box .tea-list--option > li.is-selected .tea-list__item {
+  color: #1d67e0;
+}
+.tea-dropdown-box .tea-list--option > li.is-disabled,
+.tea-dropdown-box .tea-list--option > li[aria-disabled="true"] {
+  color: rgba(0, 0, 0, 0.3);
+  cursor: not-allowed;
+  background-color: transparent;
+}
+.tea-dropdown-box .tea-list__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* EmptyTip（AutoComplete 下拉里的"没有匹配的 Skill"，portal 到 body） */
+.tea-dropdown-box .tea-action-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tea-color-text-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.tea-dropdown-box .tea-action-state__text {
+  color: inherit;
+}
+
+/* 子菜单箭头（与控制台 tea-style-lighthouse 保持一致） */
+.tea-dropdown-box .tea-list__submenu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding-right: 24px;
+}
+.tea-dropdown-box .tea-list__submenu > .ruyi-icon,
+.tea-dropdown-box .tea-list__submenu > svg {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translate3d(0, -50%, 0);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.tea-dropdown-box .tea-list__submenu:hover > .ruyi-icon,
+.tea-dropdown-box .tea-list__submenu:hover > svg {
+  color: rgba(0, 0, 0, 0.6);
+}
+.tea-dropdown-box .tea-list__submenu.is-selected > .ruyi-icon,
+.tea-dropdown-box .tea-list__submenu.is-selected > svg {
+  color: #1d67e0;
+}
+
+/* Bubble / Tooltip（portal 到 body） */
+.tea-bubble {
+  position: absolute;
+  z-index: 10010;
+  max-width: 280px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  word-break: break-word;
+  pointer-events: none;
+}
+.tea-bubble__arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+}
+.tea-bubble[data-placement^="top"] .tea-bubble__arrow {
+  bottom: -10px;
+  border-top-color: rgba(0, 0, 0, 0.8);
+}
+.tea-bubble[data-placement^="bottom"] .tea-bubble__arrow {
+  top: -10px;
+  border-bottom-color: rgba(0, 0, 0, 0.8);
+}
+.tea-bubble[data-placement^="left"] .tea-bubble__arrow {
+  right: -10px;
+  border-left-color: rgba(0, 0, 0, 0.8);
+}
+.tea-bubble[data-placement^="right"] .tea-bubble__arrow {
+  left: -10px;
+  border-right-color: rgba(0, 0, 0, 0.8);
+}
+
+/* ConfirmModals（createPortal 到 body） */
+._lh-confirm-modal__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+._lh-confirm-modal__dialog {
+  position: relative;
+  width: 420px;
+  max-width: 90vw;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+._lh-confirm-modal__header {
+  padding: 24px 24px 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  color: rgba(0, 0, 0, 0.9);
+}
+._lh-confirm-modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.35);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+._lh-confirm-modal__close:hover {
+  color: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.04);
+}
+._lh-confirm-modal__body {
+  padding: 16px 24px 24px;
+  font-size: 12px;
+  line-height: 20px;
+  color: rgba(0, 0, 0, 0.9);
+}
+._lh-confirm-modal__body .tea-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  color: #ad6800;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 20px;
+  margin-bottom: 12px;
+}
+._lh-confirm-modal__body .tea-alert__decoration {
+  flex-shrink: 0;
+  color: inherit;
+}
+._lh-confirm-modal__footer {
+  padding: 12px 24px;
+  border-top: 1px solid #e9ecf1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+._lh-confirm-modal__footer .tea-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 20px;
+  box-sizing: border-box;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: rgba(0, 0, 0, 0.9);
+  background: #fff;
+  border: 1px solid #e6e9ef;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+._lh-confirm-modal__footer .tea-btn:hover {
+  border-color: #1d67e0;
+  color: #1d67e0;
+}
+._lh-confirm-modal__footer .tea-btn--primary,
+._lh-confirm-modal__footer .tea-btn--solid.tea-btn--brand {
+  background: #1d67e0;
+  border-color: #1d67e0;
+  color: #fff;
+}
+._lh-confirm-modal__footer .tea-btn--primary:hover,
+._lh-confirm-modal__footer .tea-btn--solid.tea-btn--brand:hover {
+  background: #1555bd;
+  border-color: #1555bd;
+  color: #fff;
+}
+
+/* =================================================================
+ *  Part 4. SDK 组件自有样式
+ * ================================================================= */
+
+/* ───────── HermesQrCodeModal ───────── */
+._lh-hermes-qr-modal__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+._lh-hermes-qr-modal__dialog {
+  position: relative;
+  width: 480px;
+  max-width: 90vw;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+._lh-hermes-qr-modal__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #fff;
+}
+._lh-hermes-qr-modal__header-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+}
+._lh-hermes-qr-modal__header-content {
+  flex: 1;
+  min-width: 0;
+}
+._lh-hermes-qr-modal__title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  color: rgba(0, 0, 0, 0.9);
+}
+._lh-hermes-qr-modal__desc {
+  font-size: 12px;
+  line-height: 20px;
+  color: rgba(0, 0, 0, 0.5);
+  margin-top: 2px;
+}
+._lh-hermes-qr-modal__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.35);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+._lh-hermes-qr-modal__close:hover {
+  color: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.04);
+}
+._lh-hermes-qr-modal__body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 20px 20px;
+  padding: 40px 0;
+  background: #f7f8fa;
+  border-radius: 4px;
+}
+._lh-hermes-qr-modal__footer {
+  padding: 12px 20px;
+  border-top: 1px solid #e9ecf1;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  background: #fff;
+}
+._lh-hermes-qr-modal__footer .tea-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 20px;
+  box-sizing: border-box;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: rgba(0, 0, 0, 0.9);
+  background: #fff;
+  border: 1px solid #e6e9ef;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+._lh-hermes-qr-modal__footer .tea-btn:hover {
+  border-color: #1d67e0;
+  color: #1d67e0;
+}
+._lh-hermes-qr-modal__footer .tea-btn--primary,
+._lh-hermes-qr-modal__footer .tea-btn--solid.tea-btn--brand {
+  background: #1d67e0;
+  border-color: #1d67e0;
+  color: #fff;
+}
+._lh-hermes-qr-modal__footer .tea-btn--primary:hover,
+._lh-hermes-qr-modal__footer .tea-btn--solid.tea-btn--brand:hover {
+  background: #1555bd;
+  border-color: #1555bd;
+  color: #fff;
+}
+
+/* TokenUsage 图表覆盖 */
+._lh-claw-bot-token__sparkline-wrap .tea-chart-background {
+  fill: transparent !important;
+}
+[theme-mode="dark"] .tea-chart-tooltip {
+  background: #2c2f33 !important;
+  color: #e0e0e0 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}

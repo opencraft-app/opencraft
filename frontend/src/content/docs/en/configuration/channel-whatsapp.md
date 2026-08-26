@@ -1,5 +1,11 @@
 # Configure Channel - WhatsApp
 
+## Summary
+
+**The WhatsApp channel connects by QR code, much like WeChat, making it a quick way to bring your Hermes Agent into WhatsApp conversations: pick WhatsApp in the console Channels section, generate the QR code, and scan it with WhatsApp on your phone to start talking. You need a phone with WhatsApp installed and a configured model (or simply the monthly model credits included with your plan). One agent can be connected to several channels at once, sharing the same persona and long-term memory.**
+
+---
+
 The WhatsApp channel uses QR-code access, similar to WeChat, and is suitable for quickly connecting Hermes Agent to WhatsApp conversations.
 
 ## This page covers

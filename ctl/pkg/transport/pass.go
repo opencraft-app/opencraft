@@ -235,6 +235,14 @@ type CreatePassOrderRequest struct {
 	AutoRenewFlag string `json:"auto_renew_flag,omitempty"`
 }
 
+// CreateDianshiPassOrderAndPayRequest is intentionally narrower than
+// CreatePassOrderRequest: the Dianshi activity flow has no renewal option.
+type CreateDianshiPassOrderAndPayRequest struct {
+	BundleID string `json:"bundle_id"`
+	Period   int    `json:"period"`
+	TimeUnit string `json:"time_unit"`
+}
+
 // CreatePassOrderResult 创建付费 pass 订单响应（v1.7.31 接口拆分：仅返 deal_names）
 //
 // 字段语义：
@@ -303,6 +311,28 @@ type CreatePassOrderUrlResult struct {
 type CreatePassOrderAndPayResult struct {
 	DealName   string `json:"deal_name"`
 	BigOrderID string `json:"big_order_id"`
+}
+
+// CreateDianshiPassOrderAndPayResult is returned by the dedicated Dianshi
+// order-and-pay flow. It intentionally has no payment URL or renewal fields.
+type CreateDianshiPassOrderAndPayResult struct {
+	DealName   string `json:"deal_name"`
+	BigOrderID string `json:"big_order_id"`
+}
+
+type GrantDianshiSubscriptionRequest struct {
+	ExternalUserID string `json:"external_user_id"`
+	BundleID       string `json:"bundle_id"`
+	ActivityID     int64  `json:"activity_id"`
+	ActID          int64  `json:"act_id"`
+	TimeSpanUnit   string `json:"time_span_unit"`
+	SecretKey      string `json:"secret_key"`
+}
+
+type GrantDianshiSubscriptionResult struct {
+	Status     string `json:"status"`
+	DealName   string `json:"deal_name,omitempty"`
+	BigOrderID string `json:"big_order_id,omitempty"`
 }
 
 // === trade-pass-renew transport DTO（设计稿 §3.3 / §4.4 / R-D-5）===

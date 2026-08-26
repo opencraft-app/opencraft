@@ -33,6 +33,8 @@ export interface CronJob {
   next_run_at: string | null;
   last_run_at: string | null;
   last_status: string | null;
+  /** `hermes cron list --all` 返回的当前执行状态，如 running/completed/failed。 */
+  execution_status?: string | null;
   created_at: string | null;
   script: string;
   effective_window: CronEffectiveWindow | null;
@@ -1033,7 +1035,7 @@ export function parseCronListOutput(text: string): CronJob[] {
       current = {
         id: headerMatch[1],
         state: stateRaw,
-        enabled: stateRaw.toLowerCase() !== "paused",
+        enabled: !["paused", "disabled"].includes(stateRaw.toLowerCase()),
         skills: [],
       };
       continue;
@@ -1052,6 +1054,7 @@ export function parseCronListOutput(text: string): CronJob[] {
       current.last_run_at = parsed.lastRunAt;
       if (parsed.lastStatus) current.last_status = parsed.lastStatus;
     }
+    else if (key === "execution") current.execution_status = value.split(/\s+/, 1)[0]?.toLowerCase() || null;
     else if (key === "last status") current.last_status = value;
     else if (key === "deliver") current.deliver = value;
     else if (key === "script") current.script = value;
@@ -1091,6 +1094,7 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     next_run_at: p.next_run_at || null,
     last_run_at: p.last_run_at || null,
     last_status: p.last_status || null,
+    execution_status: p.execution_status || null,
     created_at: p.created_at || null,
     script: p.script || "",
     effective_window: p.effective_window || null,
@@ -1647,6 +1651,7 @@ function normalizeChannelKeyForDeliver(channel: string): string {
   if (["wechat", "weixin", "openclaw-weixin", "openclaw-wechat"].includes(normalized)) return "weixin";
   if (["qq", "qqbot", "qq-bot", "qqbotplugin", "openclaw-qqbot", "openclaw-qq"].includes(normalized)) return "qqbot";
   if (["wecom", "wework", "work-weixin", "work-wechat", "openclaw-wecom"].includes(normalized)) return "wecom";
+  if (["dingtalk", "openclaw-dingtalk"].includes(normalized)) return "dingtalk";
   if (["feishu", "lark", "larksuite", "openclaw-feishu", "openclaw-lark"].includes(normalized)) return "feishu";
   if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
   if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
@@ -1657,13 +1662,14 @@ function normalizeChannelKeyForDeliver(channel: string): string {
 
 /**
  * deliver=origin 但 origin 为空时，兜底选哪个 home channel 的优先级。
- * 排在前面的优先。国内 IM（企业微信/微信/QQ）优先，其次飞书，再是国际通道。
+ * 排在前面的优先。国内 IM（企业微信/微信/QQ）优先，其次飞书/钉钉，再是国际通道。
  */
 const DELIVER_FALLBACK_CHANNEL_PRIORITY = [
   "wecom",
   "weixin",
   "qqbot",
   "feishu",
+  "dingtalk",
   "telegram",
   "whatsapp",
   "discord",
