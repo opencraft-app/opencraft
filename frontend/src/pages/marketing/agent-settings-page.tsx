@@ -2983,14 +2983,6 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
-  const [isLabsExpanded, setIsLabsExpanded] = useState(activeSection === "deepseek-harness");
-  const labsNavigationId = useId();
-
-  useEffect(() => {
-    if (activeSection === "deepseek-harness") {
-      setIsLabsExpanded(true);
-    }
-  }, [activeSection]);
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
@@ -4818,14 +4810,7 @@ export const AgentSettingsPage = ({
                 path: string;
                 badge?: string;
               };
-              type SettingsExpandableSection = {
-                id: "labs";
-                label: string;
-                icon: React.ReactNode;
-                children: SettingsSectionLink[];
-              };
-              type SettingsNavigationItem = SettingsSectionLink | SettingsExpandableSection;
-              const settingsGroups: { id: string; label: string; sections: SettingsNavigationItem[] }[] = [
+              const settingsGroups: { id: string; label: string; sections: SettingsSectionLink[] }[] = [
                 {
                   id: "setup",
                   label: t("配置"),
@@ -4864,19 +4849,18 @@ export const AgentSettingsPage = ({
                     { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                     { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
                     { id: "settings", label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings },
+                  ],
+                },
+                {
+                  id: "labs",
+                  label: t("实验室"),
+                  sections: [
                     {
-                      id: "labs",
-                      label: t("实验室"),
+                      id: "deepseek-harness",
+                      label: "DeepSeek Harness",
                       icon: <FlaskConical className="h-4 w-4" />,
-                      children: [
-                        {
-                          id: "deepseek-harness",
-                          label: "DeepSeek Harness",
-                          icon: null,
-                          path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
-                          badge: "Beta",
-                        },
-                      ],
+                      path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
+                      badge: "Beta",
                     },
                   ],
                 },
@@ -5164,77 +5148,25 @@ export const AgentSettingsPage = ({
                             <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
                             <ul className="lv-agents-nav-group-items">
                               {group.sections.map((section) => {
-                                if ("children" in section) {
-                                  const hasActiveChild = section.children.some((child) => child.id === activeSection);
-                                  return (
-                                    <li key={section.id} className="lv-agents-nav-expandable">
-                                      <button
-                                        type="button"
-                                        aria-expanded={isLabsExpanded}
-                                        aria-controls={labsNavigationId}
-                                        onClick={() => setIsLabsExpanded((expanded) => !expanded)}
-                                        className={cn(
-                                          "lw-settings-nav-item lv-agents-nav-item lv-agents-nav-expand-toggle",
-                                          hasActiveChild
-                                            ? "is-parent-active"
-                                            : "text-black/70 hover:bg-black/[0.025]",
-                                        )}
-                                      >
-                                        <span className="lv-agents-nav-icon">{section.icon}</span>
-                                        <span className="min-w-0 flex-1 text-left">{section.label}</span>
-                                        <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
-                                      </button>
-                                      <ul
-                                        id={labsNavigationId}
-                                        className="lv-agents-nav-subitems"
-                                        hidden={!isLabsExpanded}
-                                      >
-                                        {section.children.map((child) => {
-                                          const isActive = child.id === activeSection;
-                                          return (
-                                            <li key={child.id}>
-                                              <AppLink
-                                                to={getAgentSectionHref(child.path, searchParams)}
-                                                aria-label={child.label}
-                                                aria-current={isActive ? "page" : undefined}
-                                                className={cn(
-                                                  "lv-agents-nav-subitem",
-                                                  isActive
-                                                    ? "is-active"
-                                                    : "text-black/60 hover:bg-black/[0.025] hover:text-black/80",
-                                                )}
-                                              >
-                                                <span className="min-w-0 flex-1 truncate text-left">{child.label}</span>
-                                                {child.badge ? (
-                                                  <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
-                                                    {child.badge}
-                                                  </span>
-                                                ) : null}
-                                              </AppLink>
-                                            </li>
-                                          );
-                                        })}
-                                      </ul>
-                                    </li>
-                                  );
-                                }
                                 const isActive = section.id === activeSection;
                                 return (
                                   <li key={section.id}>
                                     <AppLink
                                       to={getAgentSectionHref(section.path, searchParams)}
+                                      aria-label={section.badge ? section.label : undefined}
                                       aria-current={isActive ? "page" : undefined}
                                       className={cn(
                                         "lw-settings-nav-item lv-agents-nav-item",
+                                        section.badge && "has-badge",
                                         isActive
                                           ? "is-active"
                                           : "text-black/70 hover:bg-black/[0.025]",
                                       )}
                                     >
                                       <span className="lv-agents-nav-icon">{section.icon}</span>
-                                      <span className="flex-1 text-left">{section.label}</span>
+                                      <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
                                       {section.badge && (
-                                        <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                        <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
                                           {section.badge}
                                         </span>
                                       )}

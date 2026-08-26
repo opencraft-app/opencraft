@@ -548,54 +548,9 @@ a {
   font-weight: 600;
 }
 
-.lv-agents-nav-expand-toggle {
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-
-.lv-agents-nav-expand-toggle.is-parent-active {
-  color: #1f1f1f;
-  font-weight: 600;
-}
-
-.lv-agents-nav-expand-toggle:focus-visible,
-.lv-agents-nav-subitem:focus-visible {
-  outline: 2px solid rgb(0 0 0 / 28%);
-  outline-offset: 2px;
-}
-
-.lv-agents-nav-subitems {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.lv-agents-nav-subitems[hidden] {
-  display: none;
-}
-
-.lv-agents-nav-subitem {
-  display: flex;
-  width: var(--lv-agents-nav-width);
-  height: 32px;
-  align-items: center;
+.lv-agents-nav-item.has-badge {
   gap: 8px;
-  padding: 0 12px 0 48px;
-  border-radius: 6px;
   font-size: 13px;
-  font-weight: 400;
-  line-height: 20px;
-}
-
-.lv-agents-nav-subitem.is-active {
-  color: #1f1f1f;
-  background: #f7f8fb;
-  font-weight: 600;
 }
 
 .lv-agents-nav-icon {
@@ -682,20 +637,6 @@ a {
     width: 100%;
   }
 
-  .lv-agents-nav-expandable {
-    grid-column: 1 / -1;
-    min-width: 0;
-  }
-
-  .lv-agents-nav-subitems {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .lv-agents-nav-subitem {
-    width: 100%;
-    padding-left: 34px;
-  }
 }
 
 @media (max-width: 720px) {

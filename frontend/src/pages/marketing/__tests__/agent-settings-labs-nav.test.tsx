@@ -1,5 +1,4 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -141,36 +140,20 @@ describe("AgentSettingsPage 实验室导航", () => {
     cleanup();
   });
 
-  it("在管理分组中展开实验室并标记 DeepSeek Harness 当前页", async () => {
-    const user = userEvent.setup();
+  it("将实验室作为独立分组并标记 DeepSeek Harness 当前页", async () => {
     renderLabPage();
 
     const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
     const manageGroup = within(navigation).getByRole("group", { name: "管理" });
-    const labsToggle = within(manageGroup).getByRole("button", { name: "实验室" });
+    const labsGroup = within(navigation).getByRole("group", { name: "实验室" });
 
-    expect(labsToggle).toHaveAttribute("aria-expanded", "true");
-    expect(labsToggle).toHaveAttribute("aria-controls");
-    const controlledListId = labsToggle.getAttribute("aria-controls");
-    expect(controlledListId).toBeTruthy();
-    const controlledList = document.getElementById(controlledListId ?? "");
-    expect(controlledList).toBeInstanceOf(HTMLUListElement);
-    expect(controlledList).not.toHaveAttribute("hidden");
+    expect(labsGroup.parentElement).toBe(manageGroup.parentElement);
+    expect(within(manageGroup).queryByText("实验室")).not.toBeInTheDocument();
+    expect(within(labsGroup).queryByRole("button", { name: "实验室" })).not.toBeInTheDocument();
 
-    const deepSeekLink = within(manageGroup).getByRole("link", { name: "DeepSeek Harness" });
+    const deepSeekLink = within(labsGroup).getByRole("link", { name: "DeepSeek Harness" });
     expect(deepSeekLink).toHaveAttribute("href", "/agents/labs/deepseek-harness");
     expect(deepSeekLink).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("DeepSeek Harness panel")).toBeInTheDocument();
-
-    await user.click(labsToggle);
-    expect(labsToggle).toHaveAttribute("aria-expanded", "false");
-    expect(document.getElementById(controlledListId ?? "")).toBe(controlledList);
-    expect(controlledList).toHaveAttribute("hidden");
-    expect(within(manageGroup).queryByRole("link", { name: "DeepSeek Harness" })).not.toBeInTheDocument();
-
-    await user.click(labsToggle);
-    expect(labsToggle).toHaveAttribute("aria-expanded", "true");
-    expect(controlledList).not.toHaveAttribute("hidden");
-    expect(within(manageGroup).getByRole("link", { name: "DeepSeek Harness" })).toBeInTheDocument();
   });
 });
