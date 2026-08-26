@@ -1148,6 +1148,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
               params: { bot_id: botId ?? "" },
             });
             setCreating(false);
+            setActiveView("created");
             await refreshAll();
           }}
           onError={showError}
@@ -1212,6 +1213,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
               params: { bot_id: botId ?? "" },
             });
             setCreatingFromTemplate(null);
+            setActiveView("created");
             await refreshAll();
           }}
           onError={showError}
@@ -1510,6 +1512,9 @@ function CronJobCard({
   const disabled = job.state.trim().toLowerCase() === "disabled";
   const endedLabel = terminal ? getCronJobEndedLabel(job, t) : null;
   const expired = !running && !terminal && isCronJobExpired(job);
+  const expiredLabel = expired
+    ? (isCronJobExecutionFailed(job) ? t("执行失败") : t("已执行"))
+    : null;
   const effectiveStatus = getEffectiveWindowStatus(job.effective_window);
   const hasEffectiveWindow = effectiveStatus !== "always";
   const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
@@ -1528,7 +1533,7 @@ function CronJobCard({
             {fullName}
           </span>
         </div>
-        {(running || endedLabel || expired || paused || disabled || effectiveStatus === "ended") && (
+        {(running || endedLabel || expiredLabel || paused || disabled || effectiveStatus === "ended") && (
           <div className="flex shrink-0 items-center gap-1">
             {running && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
@@ -1540,9 +1545,9 @@ function CronJobCard({
                 {t("已过生效期")}
               </span>
             )}
-            {expired && (
+            {expiredLabel && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
-                {t("已执行")}
+                {expiredLabel}
               </span>
             )}
             {endedLabel && (
@@ -1676,12 +1681,18 @@ function isCronJobEnded(job: CronJob): boolean {
     || (!isCronJobRunning(job) && isCronJobExpiredBeyondGrace(job));
 }
 
-function getCronJobEndedLabel(job: CronJob, t: ReturnType<typeof useT>): string {
+function isCronJobExecutionFailed(job: CronJob): boolean {
   const state = job.state.trim().toLowerCase();
   const executionStatus = job.execution_status?.trim().toLowerCase();
-  if (state === "error" || executionStatus === "failed" || executionStatus === "failure" || executionStatus === "error") {
-    return t("执行失败");
-  }
+  return state === "error"
+    || executionStatus === "failed"
+    || executionStatus === "failure"
+    || executionStatus === "error";
+}
+
+function getCronJobEndedLabel(job: CronJob, t: ReturnType<typeof useT>): string {
+  const state = job.state.trim().toLowerCase();
+  if (isCronJobExecutionFailed(job)) return t("执行失败");
   if (state === "expired" || (!isCronJobTerminalState(job) && isCronJobExpiredBeyondGrace(job))) {
     return t("已过期");
   }

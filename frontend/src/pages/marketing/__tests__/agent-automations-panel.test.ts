@@ -974,6 +974,22 @@ describe("terminal cron card visibility", () => {
     expect(card).not.toHaveTextContent("已执行");
   });
 
+  it("shows a failed one-shot as failed during the expiration grace period", async () => {
+    const failed = makeCronJob({
+      id: "failed-once",
+      name: "刚刚运行的任务",
+      state: "active",
+      next_run_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      execution_status: "failed",
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([failed]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const card = await getCronJobCard("刚刚运行的任务");
+    expect(card).toHaveTextContent("执行失败");
+    expect(card).not.toHaveTextContent("已执行");
+  });
+
   it("keeps disabled jobs active and moves ended states into their own tab", async () => {
     const active = makeCronJob({ id: "active", name: "生效任务", state: "scheduled" });
     const disabled = makeCronJob({
@@ -1028,6 +1044,9 @@ describe("terminal cron card visibility", () => {
     expect(screen.getAllByText("执行失败")).toHaveLength(2);
     expect(screen.getByText("已过期")).toBeTruthy();
     expect(screen.getAllByText("已取消")).toHaveLength(2);
+    const endedCard = await getCronJobCard("结束任务 completed");
+    expect(within(endedCard).queryByRole("button", { name: "恢复" })).toBeNull();
+    expect(within(endedCard).queryByRole("button", { name: "暂停" })).toBeNull();
   });
 
   it("moves an overdue one-shot without a terminal state into ended jobs", async () => {
@@ -1046,6 +1065,60 @@ describe("terminal cron card visibility", () => {
     fireEvent.click(screen.getByRole("button", { name: "已结束任务" }));
     expect(await screen.findByText("错过执行时间的任务")).toBeTruthy();
     expect(screen.getByText("已过期")).toBeTruthy();
+  });
+
+  it("shows the ended-jobs empty state when only active jobs exist", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([
+      makeCronJob({ id: "active", name: "生效任务", state: "scheduled" }),
+    ]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    expect(await screen.findByText("生效任务")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "已结束任务" }));
+
+    expect(await screen.findByText("暂无已结束任务")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "参考模板添加" })).toBeNull();
+  });
+
+  it("returns to active jobs after creating from the ended-jobs tab", async () => {
+    const ended = makeCronJob({ id: "ended", name: "旧任务", state: "completed" });
+    const created = makeCronJob({ id: "created", name: "新任务", state: "scheduled" });
+    cronClientMocks.listCronJobs
+      .mockResolvedValueOnce([ended])
+      .mockResolvedValue([created]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "已结束任务" }));
+    expect(await screen.findByText("旧任务")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fillCreateFields();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("新任务")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "已生效任务" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("returns to active jobs after creating from a template on the ended-jobs tab", async () => {
+    const ended = makeCronJob({ id: "ended", name: "旧任务", state: "completed" });
+    const created = makeCronJob({ id: "created", name: "模板新任务", state: "scheduled" });
+    cronClientMocks.listCronJobs
+      .mockResolvedValueOnce([ended])
+      .mockResolvedValue([created]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "已结束任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "模板" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /每日工作小结/ }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("模板新任务")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "已生效任务" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
