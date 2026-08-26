@@ -438,9 +438,6 @@ def model_from_route(config, route):
         "keyEnv": text(provider.get("key_env") or provider.get("api_key_env"), "keyEnv", required=False),
     }
 
-def lightvela_managed_provider(provider_key):
-    return str(provider_key or "").strip().lower().startswith("lightvela-")
-
 def provider_base_url(provider):
     for key in ("base_url", "url", "api"):
         value = text(provider.get(key), "provider." + key, required=False)
@@ -541,7 +538,6 @@ def model_from_provider(provider_key, provider):
         "routeBaseUrl": "",
         "apiMode": provider_mode(provider, {}),
         "keyEnv": text(provider.get("key_env") or provider.get("api_key_env"), "keyEnv", required=False),
-        "canDelete": lightvela_managed_provider(provider_key),
     }
 
 def custom_provider_key(entry):
@@ -563,36 +559,7 @@ def model_from_custom_provider(entry):
         "routeBaseUrl": "",
         "apiMode": provider_mode(entry, {}),
         "keyEnv": text(entry.get("key_env") or entry.get("api_key_env"), "keyEnv", required=False),
-        "canDelete": False,
     }
-
-def incomplete_custom_models(config):
-    values = []
-    providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
-    custom = providers.get("custom") if isinstance(providers.get("custom"), dict) else None
-    model = config.get("model") if isinstance(config.get("model"), dict) else {}
-    model_provider = text(model.get("provider"), "model.provider", required=False).lower()
-    if custom is not None and not provider_model_id(custom):
-        values.append({
-            "id": "", "providerKey": "custom",
-            "providerName": text(custom.get("name") or "Custom", "providerName"),
-            "baseUrl": provider_base_url(custom), "routeBaseUrl": "",
-            "apiMode": provider_mode(custom, {}),
-            "keyEnv": text(custom.get("key_env") or custom.get("api_key_env"), "keyEnv", required=False),
-            "canDelete": False,
-            "requiresSetup": True,
-        })
-    if model_provider == "custom" and not text(model.get("default") or model.get("model"), "model.default", required=False):
-        values.append({
-            "id": "", "providerKey": "custom", "providerName": "Custom",
-            "baseUrl": text(model.get("base_url"), "model.base_url", required=False),
-            "routeBaseUrl": text(model.get("base_url"), "model.base_url", required=False),
-            "apiMode": api_mode(model.get("api_mode") or "chat_completions", "model.api_mode"),
-            "keyEnv": text(model.get("key_env"), "model.key_env", required=False),
-            "canDelete": False,
-            "requiresSetup": True,
-        })
-    return values
 
 def normalized_route_base_url(value):
     return str(value or "").strip().rstrip("/").lower()
@@ -633,15 +600,6 @@ def same_runtime_deployment(left, right):
     if not left_provider or not left_model or left_model != right_model: return False
     return not (left_url and right_url and left_url != right_url)
 
-def same_incomplete_setup(left, right):
-    if not left or not right or not left.get("requiresSetup") or not right.get("requiresSetup"): return False
-    left_provider, left_model, _ = route_identity(left)
-    right_provider, right_model, _ = route_identity(right)
-    if not left_provider or left_provider != right_provider or left_model or right_model: return False
-    left_url = normalized_route_base_url(left.get("routeBaseUrl") or left.get("baseUrl"))
-    right_url = normalized_route_base_url(right.get("routeBaseUrl") or right.get("baseUrl"))
-    return not (left_url and right_url and left_url != right_url)
-
 def model_config(config):
     lightvela = config.get("lightvela") if isinstance(config.get("lightvela"), dict) else {}
     managed = lightvela.get("model_config") if isinstance(lightvela.get("model_config"), dict) else {}
@@ -653,7 +611,6 @@ def configured_models(config):
     for entry in managed.get("configured_models", []):
         try:
             model = normalized_model(entry, "configuredModels")
-            model["canDelete"] = True
             values.append(model)
         except ValueError: continue
     return values
@@ -705,11 +662,9 @@ def fallback_models(config):
 def append_projected(values, candidate):
     if not candidate: return
     for current in values:
-        if not (same_runtime_deployment(current, candidate) or same_incomplete_setup(current, candidate)): continue
+        if not same_runtime_deployment(current, candidate): continue
         for field in ("providerName", "baseUrl", "routeBaseUrl", "apiMode", "keyEnv"):
             if not current.get(field) and candidate.get(field): current[field] = candidate[field]
-        if "canDelete" in candidate:
-            current["canDelete"] = bool(current.get("canDelete", True) and candidate["canDelete"])
         if not candidate.get("requiresSetup"): current.pop("requiresSetup", None)
         return
     values.append(dict(candidate))
@@ -736,11 +691,6 @@ def read_snapshot(config):
         append_projected(projected, candidate)
 
     for candidate in configured_models(config): append_projected(projected, candidate)
-    try: incomplete_custom = incomplete_custom_models(config)
-    except (KeyError, TypeError, ValueError): incomplete_custom = []
-    for candidate in incomplete_custom: append_projected(projected, candidate)
-    for candidate in projected:
-        candidate.setdefault("canDelete", lightvela_managed_provider(candidate.get("providerKey")))
     return {"primary": primary, "fallbacks": fallbacks, "configuredModels": projected}
 
 def find_configured(config, provider_key, model_id, base_url=None, route_base_url=None):
@@ -1022,9 +972,9 @@ def execute(action):
         model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         before = read_snapshot(config)
         if same_route(before["primary"], model): raise ValueError("cannot remove primary")
-        if model.get("canDelete") is False: raise ValueError("external model cannot be removed")
         remove_fallback(config, model)
         remove_legacy_configured_model(config, model)
+        remove_legacy_custom_provider(config, model)
         providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
         provider = providers.get(model["providerKey"]) if isinstance(providers.get(model["providerKey"]), dict) else None
         remove_key = model["keyEnv"]
