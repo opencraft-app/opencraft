@@ -1,3 +1,35 @@
+# 西语 Tencent Lighthouse 专有名词收口 Implementation Plan
+
+**Goal:** 所有西语一方内容完整保留团队名 `Tencent Lighthouse`，清除 `Tencent Cloud Light` / `Tencent Cloud Lighthouse` 误写。
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/i18n/__tests__/dictionaries.test.ts`
+- Modify: `frontend/src/i18n/generated/es.json`
+- Modify: `frontend/src/content/docs/es/who-is-lightvela-for.md`
+
+- [x] 测试先行修正西语页脚、关于文案、Legal Footer 与 Docs 中的团队名，并通过定向字典、Docs、i18n 与浏览器检查。
+
+---
+
+# 国际站模型表单操作按钮防裁切 Implementation Plan
+
+**Goal:** 国际站长语言操作按钮按内容完整显示，窄屏换到字段下方；国内站和模型业务逻辑保持不变。
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Verify: `frontend/openspec/changes/2026-08-26-international-model-actions-overflow-design.md`
+- Execute: `frontend/openspec/changes/2026-08-26-international-model-actions-overflow-plan.md`
+
+- [x] 测试先行完成国际站模型复合控件响应式布局，并通过组件测试、类型检查、差异检查与已登录西语浏览器尺寸验收。
+
+---
+
 # 国内站首页 Hero 两句文案替换 Implementation Plan
 
 **Goal:** 仅替换国内站首页 Hero 的小标题与主标题，其他文案、布局、SEO 和国际站保持不变。
@@ -4324,3 +4356,57 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check` 通过。
 
 ---
+
+# 国际站西语 Docs 正文全量适配 Implementation Plan
+
+**Goal:** 为国际站 61 篇 Docs 增加完整西语正文，最终不再依赖英文或中文正文 fallback，且不改动任何图片文件或图片引用路径。
+
+**Design:** `openspec/changes/2026-08-26-spanish-docs-body-translation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-spanish-docs-body-translation-plan.md`
+
+## Tasks
+
+- [x] 增加西语正文完整性、结构一致性、代码块和图片引用不变门禁。
+- [x] 第一批：完成 Getting Started、Plans & Activation、Features & Configuration、Support 共 28 篇。
+- [x] 第二批：完成 Use Cases 共 16 篇。
+- [x] 第三批：完成 Compare 5 篇与 Hermes Agent Deep Dive 12 篇，并移除正文 fallback。
+- [x] 同步 Fumadocs，完成 61 个 slug、last-updated、类型检查、构建和 diff 终验。
+
+---
+
+# 国际站西语法务页面适配 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development. The repository remains single-agent unless the user explicitly authorizes subagents.
+
+**Goal:** 完整适配国际站西语隐私政策、Cookie 政策和服务条款；开源许可证保持英文原文，只翻译页面说明与结构性文案，并明确英文版本优先效力。
+
+**Design:** `openspec/changes/2026-08-26-spanish-legal-pages-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-spanish-legal-pages-plan.md`
+
+## Tasks
+
+- [x] 建立西语正文、英文版本优先说明和开源许可证原文边界测试。
+- [x] 完成隐私政策完整西语正文与语言效力说明。
+- [x] 完成 Cookie 政策完整西语正文、链接 token 与语言效力说明。
+- [x] 完成服务条款完整西语正文、内部链接与语言效力说明。
+- [x] 完成开源声明结构文案翻译，并通过测试、类型、i18n、国际站构建和浏览器 smoke。
+
+---
+
+# 国际站渠道卡片操作按钮防溢出 Implementation Plan
+
+**Goal:** 修复国际站西语 Slack 已连接卡片三个操作按钮越过卡片边界的问题，并覆盖其他长文案语言的同类风险。
+
+**Design:** `openspec/changes/2026-08-26-international-channel-actions-overflow-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-international-channel-actions-overflow-plan.md`
+
+## Tasks
+
+- [x] 添加国际站作用域和已连接渠道卡片布局失败测试。
+- [x] 实现教程按钮可伸缩、右侧操作组整体换行的最小 CSS 修复。
+- [x] 通过相关 Vitest、`pnpm check`、`git diff --check` 和西语 Slack 浏览器 smoke。
+
+**Verification:** 4 个相关测试文件 / 10 个断言通过；`pnpm check` 和 `git diff --check` 退出码 0，西语 2589/2589 且 0 error / 0 warning。浏览器实测三个按钮最右侧距卡片右边界 21px，窄卡片下教程与右侧操作组自然分成两行，无相关控制台告警。

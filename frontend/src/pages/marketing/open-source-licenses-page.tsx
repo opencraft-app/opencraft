@@ -107,7 +107,8 @@ const copy = {
   },
 };
 
-const spanishLegalLanguageNote = "El contenido legal que aparece a continuación se ofrece en inglés.";
+const spanishLegalLanguageNote =
+  "Los términos de las licencias se conservan en su versión original en inglés. En caso de discrepancia, prevalecerá el texto original en inglés.";
 
 export function getOpenSourceLicensesChrome(locale: PublicSiteLocaleCode) {
   if (locale === PUBLIC_SITE_LOCALES.ES) return copy.es;
@@ -124,10 +125,13 @@ export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
 }
 
 export function translateNoticeText(text: string, locale: PublicSiteLocaleCode): string {
-  if (locale === PUBLIC_SITE_LOCALES.EN_US || locale === PUBLIC_SITE_LOCALES.ES) return text;
+  if (locale === PUBLIC_SITE_LOCALES.EN_US) return text;
 
   const licenseGroup = text.match(/^Open Source Software Licensed under the (.+):$/);
   if (licenseGroup) {
+    if (locale === PUBLIC_SITE_LOCALES.ES) {
+      return `Software de código abierto con licencia ${licenseGroup[1]}:`;
+    }
     return locale === PUBLIC_SITE_LOCALES.ID_ID
       ? `Perangkat lunak sumber terbuka yang dilisensikan berdasarkan ${licenseGroup[1]}:`
       : `根据 ${licenseGroup[1]} 许可证授权的开源软件：`;
@@ -135,6 +139,9 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
 
   const licenseTerms = text.match(/^Terms of the (.+):$/);
   if (licenseTerms) {
+    if (locale === PUBLIC_SITE_LOCALES.ES) {
+      return `Términos de la ${licenseTerms[1]}:`;
+    }
     return locale === PUBLIC_SITE_LOCALES.ID_ID
       ? `Ketentuan lisensi ${licenseTerms[1]}:`
       : `${licenseTerms[1]} 许可证条款：`;
@@ -142,24 +149,34 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
 
   const sourceInfo = text.match(/^You may obtain the source code and detailed information about this component at (.+)\.$/);
   if (sourceInfo) {
+    if (locale === PUBLIC_SITE_LOCALES.ES) {
+      return `Puede obtener el código fuente y la información detallada de este componente en ${sourceInfo[1]}.`;
+    }
     return locale === PUBLIC_SITE_LOCALES.ID_ID
       ? `Anda dapat memperoleh kode sumber dan informasi terperinci tentang komponen ini di ${sourceInfo[1]}.`
       : `您可在 ${sourceInfo[1]} 获取该组件的源代码和详细信息。`;
   }
 
   if (text === "The project is built on and with the aid of the following open source projects. Credits are given to these projects.") {
+    if (locale === PUBLIC_SITE_LOCALES.ES) {
+      return "El proyecto se ha creado con la ayuda de los siguientes proyectos de código abierto, a los que se reconoce expresamente.";
+    }
     return locale === PUBLIC_SITE_LOCALES.ID_ID
       ? "Proyek ini dibangun dengan bantuan proyek sumber terbuka berikut. Kami memberikan atribusi kepada proyek-proyek tersebut."
       : "本项目基于并借助以下开源项目构建，特此向这些项目致谢。";
   }
 
   if (text === "In case you believe there have been errors in the attribution below, you may submit the concerns to us for review and correction.") {
+    if (locale === PUBLIC_SITE_LOCALES.ES) {
+      return "Si considera que existe algún error en las atribuciones siguientes, puede comunicárnoslo para que lo revisemos y corrijamos.";
+    }
     return locale === PUBLIC_SITE_LOCALES.ID_ID
       ? "Jika Anda menemukan kesalahan dalam atribusi di bawah ini, Anda dapat menyampaikan laporan kepada kami untuk ditinjau dan diperbaiki."
       : "如您认为以下归属信息存在错误，可向我们反馈以便审核和更正。";
   }
 
   if (text === "license not found") {
+    if (locale === PUBLIC_SITE_LOCALES.ES) return "No se ha encontrado el texto de la licencia";
     return locale === PUBLIC_SITE_LOCALES.ID_ID ? "Teks lisensi tidak ditemukan" : "未找到许可证文本";
   }
 

@@ -157,4 +157,13 @@ describe("西语翻译完成门禁", () => {
       expect(value === source && CJK_RE.test(source), `es ${key} 不得直接保留含汉字原文`).toBe(false);
     }
   });
+
+  it("完整保留 Tencent Lighthouse 团队名", () => {
+    const teamCopy = Object.entries(zhCN)
+      .filter(([, source]) => source.includes("腾讯轻量云"))
+      .map(([key]) => es[key as keyof typeof es]);
+
+    expect(teamCopy).not.toContainEqual(expect.stringMatching(/Tencent Cloud Light/));
+    expect(teamCopy.every((value) => value.includes("Tencent Lighthouse"))).toBe(true);
+  });
 });

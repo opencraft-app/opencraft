@@ -46,9 +46,14 @@ function listFiles(dir: string): string[] {
   });
 }
 
+/** 只返回 Next 路由页面，排除与页面并置的 *.test.tsx 等辅助文件。 */
+function langPageFiles(): string[] {
+  return listFiles(langRouteDir).filter((file) => /(?:^|\/)page\.(?:intl|next)\.tsx$/.test(file));
+}
+
 /** `[lang]` 下的页面对应的路由（相对 `[lang]`，根页面记为 ''）。 */
 function langRoutes(): string[] {
-  return listFiles(langRouteDir)
+  return langPageFiles()
     .filter((file) => file.endsWith('page.intl.tsx'))
     .map((file) => file.replace(/\/?page\.intl\.tsx$/, ''))
     .sort();
@@ -108,7 +113,7 @@ describe('[lang] 目录下的页面文件命名', () => {
   it('全部页面用 .intl.tsx 后缀，一个 .next.tsx 都不能有', async () => {
     // 若有人把某个文件改回 page.next.tsx，国内站会重新把它当页面，
     // generateStaticParams 返回空数组 → next build 失败。
-    const files = listFiles(langRouteDir);
+    const files = langPageFiles();
 
     expect(files.filter((file) => file.endsWith('page.next.tsx'))).toEqual([]);
     expect(files.filter((file) => file.endsWith('page.intl.tsx'))).toHaveLength(files.length);
@@ -117,7 +122,7 @@ describe('[lang] 目录下的页面文件命名', () => {
   it('generateStaticParams 来自 SEO_PREFIXED_* 常量（默认语言已排除）', async () => {
     const offenders: string[] = [];
 
-    for (const file of listFiles(langRouteDir)) {
+    for (const file of langPageFiles()) {
       const source = readFileSync(join(langRouteDir, file), 'utf8');
       if (!source.includes('generateStaticParams')) {
         offenders.push(`${file}: 缺 generateStaticParams`);
@@ -136,7 +141,7 @@ describe('[lang] 目录下的页面文件命名', () => {
   it('运行时守卫与 generateStaticParams 同源（防 dev 与导出行为不一致）', async () => {
     const offenders: string[] = [];
 
-    for (const file of listFiles(langRouteDir)) {
+    for (const file of langPageFiles()) {
       // docs 页有自己的 locale 守卫，只检查公共页
       if (file.includes('docs')) continue;
       const source = readFileSync(join(langRouteDir, file), 'utf8');
@@ -178,6 +183,7 @@ describe('[lang] 与裸路径的对应关系', () => {
       'open-source-licenses',
       'privacy-policy',
       'subscribe',
+      'support',
       'terms-of-service',
     ];
 

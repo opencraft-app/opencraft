@@ -1398,7 +1398,6 @@ const docSets = [
   {
     outputPrefix: URL_LANGS.ES,
     sourcePrefix: 'es',
-    fallbackSourcePrefixes: ['en', 'global'],
     locale: LOCALES.ES,
     docs: globalDocsForEnglish,
     title: 'Documentación de LightVela',

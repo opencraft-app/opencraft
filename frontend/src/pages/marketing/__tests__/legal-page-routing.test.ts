@@ -1,13 +1,35 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { cookiePolicyHomePath, getCookiePolicyChrome } from '../cookie-policy-page';
+import {
+  cookiePolicyHomePath,
+  getCookiePolicyChrome,
+  getCookiePolicyCopy,
+  CookiePolicyParagraph,
+  renderCookiePolicyInlineLinks,
+} from '../cookie-policy-page';
 import {
   getOpenSourceLicensesChrome,
   publicLocaleHomePath as openSourceHomePath,
   translateNoticeText,
 } from '../open-source-licenses-page';
-import { getPrivacyPolicyChrome, publicLocaleHomePath as privacyHomePath } from '../privacy-policy-page';
-import { getTermsOfServiceChrome, localizedLegalPath, localizedLightVelaUrl } from '../terms-of-service-page';
+import {
+  getPrivacyPolicyChrome,
+  getPrivacyPolicyCopy,
+  getPrivacyPolicyTableHeaders,
+  PrivacyPolicyParagraph,
+  publicLocaleHomePath as privacyHomePath,
+} from '../privacy-policy-page';
+import {
+  getTermsOfServiceBlocks,
+  getTermsOfServiceChrome,
+  localizedLegalPath,
+  localizedLightVelaUrl,
+} from '../terms-of-service-page';
+
+const spanishEnglishPrevailsDisclaimer =
+  'En caso de discrepancia o incoherencia entre la versión en inglés y esta traducción al español, prevalecerá la versión en inglés, salvo que la legislación aplicable disponga lo contrario.';
 
 describe('Spanish legal page navigation', () => {
   it('keeps every legal page home link under /es', () => {
@@ -24,19 +46,73 @@ describe('Spanish legal page navigation', () => {
     });
   });
 
-  it('keeps the Open Source legal body in English for Spanish routes', () => {
-    const samples = [
-      'Open Source Software Licensed under the MIT License:',
-      'Terms of the Apache License 2.0:',
-      'You may obtain the source code and detailed information about this component at https://example.com.',
-      'The project is built on and with the aid of the following open source projects. Credits are given to these projects.',
-      'license not found',
-    ];
-
-    for (const sample of samples) expect(translateNoticeText(sample, 'es')).toBe(sample);
+  it('localizes Open Source structure while keeping license terms in English', () => {
+    expect(translateNoticeText('Open Source Software Licensed under the MIT License:', 'es')).toBe(
+      'Software de código abierto con licencia MIT License:',
+    );
+    expect(translateNoticeText('Terms of the Apache License 2.0:', 'es')).toBe(
+      'Términos de la Apache License 2.0:',
+    );
+    expect(
+      translateNoticeText(
+        'You may obtain the source code and detailed information about this component at https://example.com.',
+        'es',
+      ),
+    ).toBe('Puede obtener el código fuente y la información detallada de este componente en https://example.com.');
+    expect(translateNoticeText('Permission is hereby granted, free of charge, to any person obtaining a copy', 'es')).toBe(
+      'Permission is hereby granted, free of charge, to any person obtaining a copy',
+    );
   });
 
-  it('localizes legal page chrome while keeping the legal body on its English fallback', () => {
+  it('provides complete Spanish legal body selectors with an English-prevails disclaimer', () => {
+    const spanishPrivacy = getPrivacyPolicyCopy('es');
+    const englishPrivacy = getPrivacyPolicyCopy('en-US');
+    expect(spanishPrivacy).toMatchObject({
+      title: 'Política de privacidad',
+      languageTitle: '10. Idioma',
+      languageParagraph: spanishEnglishPrevailsDisclaimer,
+    });
+    expect(spanishPrivacy.intro[0]).toContain('Política de privacidad');
+    expect(spanishPrivacy.intro).toHaveLength(englishPrivacy.intro.length);
+    expect(spanishPrivacy.processRows.map((group) => group.data.length)).toEqual(
+      englishPrivacy.processRows.map((group) => group.data.length),
+    );
+    expect(spanishPrivacy.shareBullets).toHaveLength(englishPrivacy.shareBullets.length);
+    expect(spanishPrivacy.retentionRows).toHaveLength(englishPrivacy.retentionRows.length);
+    expect(spanishPrivacy.rightsBullets).toHaveLength(englishPrivacy.rightsBullets.length);
+    expect(getPrivacyPolicyTableHeaders('es')).toEqual({
+      personal: 'Información personal',
+      use: 'Uso',
+      legalBasis: 'Base jurídica (cuando corresponda)',
+      retentionPolicy: 'Política de conservación',
+    });
+
+    const spanishCookies = getCookiePolicyCopy('es');
+    const englishCookies = getCookiePolicyCopy('en-US');
+    expect(spanishCookies.sections.at(-1)).toEqual({
+      title: '7. IDIOMA',
+      paragraphs: [spanishEnglishPrevailsDisclaimer],
+    });
+    expect(spanishCookies.sections).toHaveLength(englishCookies.sections.length + 1);
+    expect(spanishCookies.sections.flatMap((section) => section.tableRows ?? [])).toHaveLength(
+      englishCookies.sections.flatMap((section) => section.tableRows ?? []).length,
+    );
+    expect(renderCookiePolicyInlineLinks(spanishEnglishPrevailsDisclaimer)).toEqual([
+      spanishEnglishPrevailsDisclaimer,
+    ]);
+
+    const spanishTerms = getTermsOfServiceBlocks('es', []);
+    const indonesianTerms = getTermsOfServiceBlocks('id-ID', []);
+    expect(spanishTerms).toHaveLength(indonesianTerms.length + 2);
+    expect(spanishTerms).toEqual(
+      expect.arrayContaining([
+        { kind: 'h2', text: 'Idioma' },
+        { kind: 'paragraph', text: spanishEnglishPrevailsDisclaimer },
+      ]),
+    );
+  });
+
+  it('localizes legal page chrome without claiming translated bodies are English-only', () => {
     expect(getPrivacyPolicyChrome('es')).toMatchObject({
       backHome: 'Volver al inicio',
       title: 'Política de privacidad',
@@ -49,12 +125,26 @@ describe('Spanish legal page navigation', () => {
     expect(getTermsOfServiceChrome('es')).toMatchObject({
       backHome: 'Volver al inicio',
       title: 'Términos del servicio',
-      note: expect.stringContaining('se ofrece en inglés'),
+      note: expect.not.stringContaining('se ofrece en inglés'),
     });
     expect(getOpenSourceLicensesChrome('es')).toMatchObject({
       backHome: 'Volver al inicio',
       title: 'Aviso de código abierto',
       updated: 'Última actualización: agosto de 2026',
     });
+  });
+
+  it('renders multiline legal copy without nesting block elements inside paragraphs', () => {
+    const privacyMarkup = renderToStaticMarkup(
+      React.createElement(PrivacyPolicyParagraph, { text: 'Primer párrafo.\n\nSegundo párrafo.' }),
+    );
+    const cookieMarkup = renderToStaticMarkup(
+      React.createElement(CookiePolicyParagraph, { text: 'Primer párrafo.\n\nSegundo párrafo.' }),
+    );
+
+    expect(privacyMarkup).not.toMatch(/<p[^>]*>\s*<div/);
+    expect(cookieMarkup).not.toMatch(/<p[^>]*>\s*<div/);
+    expect(privacyMarkup.match(/<p/g)).toHaveLength(2);
+    expect(cookieMarkup.match(/<p/g)).toHaveLength(2);
   });
 });

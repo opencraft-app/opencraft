@@ -245,12 +245,13 @@ function createRemote(
   };
 }
 
-function renderPanel(remote: ReturnType<typeof createRemote>) {
+function renderPanel(remote: ReturnType<typeof createRemote>, isGlobalRegion = false) {
   return render(
     <AgentModelConfigPanel
       botId="bot-1"
       execDebugCommand={remote.execDebugCommand}
       providers={providers}
+      isGlobalRegion={isGlobalRegion}
     />,
   );
 }
@@ -477,6 +478,46 @@ describe("AgentModelConfigPanel", () => {
       minWidth: "var(--radix-select-trigger-width)",
     });
     await userEvent.keyboard("{Escape}");
+  });
+
+  it("lets international model actions fit long localized labels", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
+    renderPanel(remote, true);
+    await screen.findByRole("heading", { name: "已配置模型" });
+
+    const apiKey = screen.getByLabelText("API Key");
+    const model = screen.getByRole("combobox", { name: "模型" });
+    const fetchButton = screen.getByRole("button", { name: "获取可用模型" });
+    const statusButton = screen.getByRole("button", { name: "检测模型状态" });
+    const apiKeyControl = apiKey.closest('[data-slot="model-api-key-control"]');
+    const modelControl = model.closest('[data-slot="model-option-control"]');
+
+    expect(apiKeyControl).toHaveClass(
+      "grid",
+      "h-auto",
+      "grid-cols-1",
+      "sm:h-12",
+      "sm:grid-cols-[minmax(0,1fr)_max-content]",
+    );
+    expect(modelControl).toHaveClass("grid", "grid-cols-1");
+    expect(fetchButton).toHaveClass(
+      "h-12",
+      "w-full",
+      "border-t",
+      "sm:h-full",
+      "sm:w-auto",
+      "sm:min-w-max",
+    );
+    expect(statusButton).toHaveClass(
+      "h-12",
+      "w-full",
+      "border-t",
+      "sm:h-full",
+      "sm:w-auto",
+      "sm:min-w-max",
+    );
+    expect(fetchButton).not.toHaveClass("w-28", "sm:w-36");
+    expect(statusButton).not.toHaveClass("w-28", "sm:w-36");
   });
 
   it("shows a retryable read error and an actionable empty state", async () => {

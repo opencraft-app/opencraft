@@ -277,6 +277,7 @@ function TeaSdkSettingsPanel({
           region: instance.Zone,
           regionId: instance.RegionId,
         })}
+        isGlobalRegion={isGlobal}
       />
     );
   }

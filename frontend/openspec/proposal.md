@@ -136,3 +136,16 @@
 3. 西语字典保持全量、占位符一致、0 error、0 warning。
 4. 国际站与国内站定向测试、`pnpm check`、`pnpm build:global`、`pnpm build:cn` 和 `git diff --check` 通过。
 5. 浏览器验收覆盖公开页、产品壳和可到达的 Agent 板块；登录态不可得的页面使用组件级行为测试兜底，不把登录门禁当作功能验收通过。
+
+---
+
+# 国际站西语 Docs 正文全量适配（增量提案）
+
+**确认日期：** 2026-08-26
+**目标区域：** 仅国际站 `lightvela.ai/es/docs/**`
+
+用户已解除上一轮对 Docs 正文的排除，要求在不修改图片的前提下完成全部国际站文档正文西语适配。当前 61 篇西语 Docs 仅有西语导航与 metadata，正文通过 `en/` 回退英文。
+
+采用显式 `src/content/docs/es/**` 源文件方案，按工具型文档 28 篇、Use Cases 16 篇、Compare 与 Hermes Agent Deep Dive 17 篇分三批完成。最终移除西语正文的英文/中文 fallback；不修改英文、中文、国内站、法务正文或图片资源。
+
+完成条件是 61 篇路径对等、正文源均为 `es/**`、图片目标和代码块保持、内部链接落到 `/es/docs/**`，并通过 Docs 同步、parity、图片、last-updated、类型和 diff 门禁。

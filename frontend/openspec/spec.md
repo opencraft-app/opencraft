@@ -217,3 +217,13 @@
 2. 每个行为修改必须遵循 RED -> GREEN -> REFACTOR，并保留预期失败与通过证据。
 3. 最终门禁包括相关 Vitest、`pnpm check`、`pnpm i18n:check`、`pnpm i18n:validate`、`pnpm build:global`、`pnpm build:cn` 和 `git diff --check`。
 4. Docs/法务正文、图片烘焙文字、第三方托管页和第三方动态数据不得被误报为本轮未完成。
+
+## 13. 国际站西语 Docs 正文
+
+1. 国际站 61 篇英文 Docs 必须在 `src/content/docs/es/**` 有同路径西语源；最终构建不得使用英文或中文正文 fallback。
+2. 译文采用自然拉美西语，保持标题层级、步骤顺序、表格、代码块、链接目标、事实、警告、限制和失败处理语义一致。
+3. 产品名、渠道名、模型名、协议名、文件名、命令、代码和 URL 保持原样。
+4. `src/content/docs/images/**` 与 `public/docs-images/**` 图片资源不得变化；Markdown/HTML 图片目标与英文源一致，alt 文本翻译为西语。
+5. 不修改 `en/**`、`global/**` 或国内站根目录正文，不借本任务修订其他语言内容。
+6. 三批范围固定为：工具型 28 篇、Use Cases 16 篇、Compare 与 Hermes Agent Deep Dive 17 篇。
+7. 自动门禁必须校验路径集合、`source_path`、图片目标、代码块、标题层级、表格结构、内部链接、last-updated 与 61 个西语 slug。

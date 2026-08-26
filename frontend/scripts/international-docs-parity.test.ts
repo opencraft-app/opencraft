@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
@@ -147,6 +147,46 @@ const walkFiles = (root: string): string[] =>
     return statSync(path).isDirectory() ? walkFiles(path) : [path];
   });
 
+const markdownFilesRelativeTo = (root: string): string[] =>
+  existsSync(root)
+    ? walkFiles(root)
+        .filter((path) => path.endsWith(".md"))
+        .map((path) => relative(root, path))
+        .sort()
+    : [];
+
+const fencedCodeBlocks = (content: string): string[] =>
+  Array.from(content.matchAll(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm), (match) => match[0]);
+
+const withoutFencedCode = (content: string): string =>
+  content.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm, "");
+
+const imageTargets = (content: string): string[] => {
+  const body = withoutFencedCode(content);
+  const markdownTargets = Array.from(body.matchAll(/!\[[^\]]*]\(([^\s)]+)(?:\s+[^)]*)?\)/g), (match) => match[1]);
+  const htmlTargets = Array.from(body.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi), (match) => match[1]);
+  return [...markdownTargets, ...htmlTargets].filter((target): target is string => Boolean(target));
+};
+
+const linkTargets = (content: string): string[] =>
+  Array.from(
+    withoutFencedCode(content).matchAll(/(?<!!)\[[^\]]*]\(([^\s)]+)(?:\s+[^)]*)?\)/g),
+    (match) => match[1],
+  ).filter((target): target is string => Boolean(target));
+
+const markdownStructure = (content: string) => {
+  const body = withoutFencedCode(content);
+  return {
+    headingLevels: Array.from(body.matchAll(/^(#{1,6})\s+/gm), (match) => match[1]?.length ?? 0),
+    tableSeparators: Array.from(body.matchAll(/^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*$/gm)).length,
+    tableRows: Array.from(body.matchAll(/^\s*\|.*\|\s*$/gm)).length,
+    unorderedListItems: Array.from(body.matchAll(/^\s*[-+*]\s+/gm)).length,
+    orderedListItems: Array.from(body.matchAll(/^\s*\d+[.)]\s+/gm)).length,
+    blockquoteLines: Array.from(body.matchAll(/^\s*>/gm)).length,
+    horizontalRules: Array.from(body.matchAll(/^\s*(?:---+|\*\*\*+|___+)\s*$/gm)).length,
+  };
+};
+
 const frontmatterValue = (content: string, key: string) => {
   const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
   if (!match?.[1]) return "";
@@ -166,6 +206,38 @@ const spanishDocsTargets = (content: string): string[] => {
 };
 
 describe("international docs publication inventory", () => {
+  describe("Spanish docs source parity", () => {
+    const enRoot = join(docsContentRoot, "en");
+    const esRoot = join(docsContentRoot, "es");
+
+    it("keeps a complete Spanish source file for every international English document", () => {
+      expect(markdownFilesRelativeTo(esRoot)).toEqual(markdownFilesRelativeTo(enRoot));
+    });
+
+    it("preserves images, fenced code, and document structure in every Spanish source", () => {
+      for (const file of markdownFilesRelativeTo(esRoot)) {
+        const english = readFileSync(join(enRoot, file), "utf8");
+        const spanish = readFileSync(join(esRoot, file), "utf8");
+
+        expect(imageTargets(spanish), `${file}: image targets changed`).toEqual(imageTargets(english));
+        expect(linkTargets(spanish), `${file}: link targets changed`).toEqual(linkTargets(english));
+        expect(fencedCodeBlocks(spanish), `${file}: fenced code changed`).toEqual(fencedCodeBlocks(english));
+        expect(markdownStructure(spanish), `${file}: heading or table structure changed`).toEqual(
+          markdownStructure(english),
+        );
+      }
+    });
+
+    it("keeps the Tencent Lighthouse team name unchanged in Spanish docs", () => {
+      for (const file of markdownFilesRelativeTo(esRoot)) {
+        const spanish = readFileSync(join(esRoot, file), "utf8");
+        expect(spanish, `${file}: Tencent Lighthouse team name was rewritten`).not.toMatch(
+          /Tencent Cloud Lighthouse|Tencent Cloud Light\b/,
+        );
+      }
+    });
+  });
+
   it("keeps completed shared documents active in both languages", () => {
     for (const file of ACTIVE_SHARED_FILES) {
       expect(existsSync(join(docsContentRoot, "global", file)), `missing global/${file}`).toBe(true);
@@ -225,7 +297,7 @@ describe("international docs publication inventory", () => {
     expect(DOCS_ROUTE_SLUGS["zh-sg"]).toContainEqual([]);
   });
 
-  describe("Spanish docs fallback publication", () => {
+  describe("Spanish docs source publication", () => {
     const esRoot = join(generatedDocsRoot, "es");
 
     it("publishes the same 62 routes as international English without exposing hidden locales", () => {
@@ -244,8 +316,8 @@ describe("international docs publication inventory", () => {
       expect(docsRouteSlugs["id-id"]).toHaveLength(60);
     });
 
-    it("generates 61 Spanish metadata wrappers from English or global sources without Spanish body files", () => {
-      expect(existsSync(join(docsContentRoot, "es"))).toBe(false);
+    it("generates 61 Spanish documents from explicit Spanish body sources", () => {
+      expect(existsSync(join(docsContentRoot, "es"))).toBe(true);
       expect(existsSync(esRoot)).toBe(true);
 
       const generatedDocs = walkFiles(esRoot).filter((path) => path.endsWith(".mdx"));
@@ -254,15 +326,14 @@ describe("international docs publication inventory", () => {
       for (const path of generatedDocs) {
         const content = readFileSync(path, "utf8");
         const sourcePath = frontmatterValue(content, "source_path");
-        expect(sourcePath, path).toMatch(/^src\/content\/docs\/(?:en|global)\//);
-        expect(sourcePath, path).not.toContain("/es/");
+        expect(sourcePath, path).toMatch(/^src\/content\/docs\/es\//);
         expect(frontmatterValue(content, "title"), path).not.toBe("");
         expect(frontmatterValue(content, "description"), path).not.toBe("");
       }
 
       for (const slug of ["overview", "configuration/model"]) {
         const content = readFileSync(join(esRoot, `${slug}.mdx`), "utf8");
-        expect(frontmatterValue(content, "source_path")).toMatch(/^src\/content\/docs\/en\//);
+        expect(frontmatterValue(content, "source_path")).toMatch(/^src\/content\/docs\/es\//);
       }
     });
 
@@ -295,13 +366,13 @@ describe("international docs publication inventory", () => {
       ]);
     });
 
-    it("strips the English source H1 while preserving the English fallback body", () => {
+    it("strips the Spanish source H1 while preserving the Spanish body", () => {
       const overview = readFileSync(join(esRoot, "overview.mdx"), "utf8");
       const model = readFileSync(join(esRoot, "configuration", "model.mdx"), "utf8");
       expect(overview).not.toMatch(/^# What is LightVela$/m);
       expect(model).not.toMatch(/^# Configure Models$/m);
-      expect(overview).toContain("A cloud-hosted Hermes Agent that understands you better over time.");
-      expect(model).toContain("## Three configuration methods");
+      expect(overview).toContain("Un Hermes Agent alojado en la nube que te entiende mejor con el tiempo.");
+      expect(model).toMatch(/## (Tres métodos de configuración|Tres formas de configuración)/);
     });
 
     it.each([
