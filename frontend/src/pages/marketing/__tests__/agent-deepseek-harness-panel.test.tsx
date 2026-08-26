@@ -149,6 +149,52 @@ describe("AgentDeepSeekHarnessPanel", () => {
     expect(localStorage.getItem("lightvela:dsh:install-task:ins-1")).toBeNull();
   });
 
+  it("only cancels pending animation frames on unmount", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let nextFrameId = 1;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      const frameId = nextFrameId;
+      nextFrameId += 1;
+      callbacks.set(frameId, callback);
+      return frameId;
+    });
+    const cancelAnimationFrame = vi.spyOn(window, "cancelAnimationFrame");
+    const runFrame = (frameId: number) => {
+      const callback = callbacks.get(frameId);
+      expect(callback).toBeDefined();
+      callbacks.delete(frameId);
+      callback?.(performance.now());
+    };
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    api.getInstallation.mockResolvedValue({
+      task_id: "dshi-123",
+      status: "succeeded",
+      stage: "complete",
+      progress: 100,
+      message: "Installed",
+      updated_at: "2026-08-21T10:01:00Z",
+    });
+    api.getStatus.mockResolvedValueOnce(NOT_INSTALLED).mockResolvedValueOnce(INSTALLED);
+    const { unmount } = render(
+      <AgentDeepSeekHarnessPanel botId="ins-1" clientFactory={clientFactory} />,
+    );
+    await screen.findByRole("button", { name: "即刻安装体验" });
+
+    await user.click(screen.getByRole("button", { name: "即刻安装体验" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(260);
+    });
+    const card = screen.getByRole("region", { name: "DeepSeek Harness" });
+    fireEvent.transitionEnd(card, { propertyName: "opacity" });
+    act(() => runFrame(1));
+
+    unmount();
+    expect(cancelAnimationFrame).not.toHaveBeenCalledWith(1);
+    expect(cancelAnimationFrame).toHaveBeenCalledOnce();
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(2);
+  });
+
   it("softly advances within a real installation stage without crossing its ceiling or moving backward", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

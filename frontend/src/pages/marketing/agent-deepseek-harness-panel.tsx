@@ -134,7 +134,7 @@ export const AgentDeepSeekHarnessPanel = ({
   const [cardTransition, setCardTransition] = useState<CardTransition>("idle");
   const pollTimerRef = useRef<number | null>(null);
   const transitionTimerRef = useRef<number | null>(null);
-  const animationFrameIdsRef = useRef<number[]>([]);
+  const animationFrameIdsRef = useRef<Set<number>>(new Set());
   const mountedRef = useRef(true);
   const installationStatusRef = useRef<HTMLDivElement | null>(null);
   const webUiLinkRef = useRef<HTMLAnchorElement | null>(null);
@@ -147,8 +147,12 @@ export const AgentDeepSeekHarnessPanel = ({
   }, []);
 
   const scheduleAnimationFrame = useCallback((callback: () => void) => {
-    const frameId = window.requestAnimationFrame(callback);
-    animationFrameIdsRef.current.push(frameId);
+    let frameId = 0;
+    frameId = window.requestAnimationFrame(() => {
+      animationFrameIdsRef.current.delete(frameId);
+      callback();
+    });
+    animationFrameIdsRef.current.add(frameId);
   }, []);
 
   useEffect(() => {
@@ -158,6 +162,7 @@ export const AgentDeepSeekHarnessPanel = ({
       clearPollTimer();
       if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
       animationFrameIdsRef.current.forEach((frameId) => window.cancelAnimationFrame(frameId));
+      animationFrameIdsRef.current.clear();
     };
   }, [clearPollTimer]);
 
