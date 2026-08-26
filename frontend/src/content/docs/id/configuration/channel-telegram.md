@@ -79,7 +79,10 @@ Anda semestinya menerima balasan Hermes Agent dalam beberapa detik.
 
 <img src="../images/telegram-botfather-6-global-en.webp" alt="" width="360" />
 
-### 6. Aktifkan pesan grup di BotFather
+### 6. Opsional: Aktifkan pesan grup di BotFather
+
+Selesaikan langkah 6 dan 7 hanya jika Anda ingin menggunakan Bot di grup.
+Pesan langsung sudah dapat digunakan setelah langkah 5.
 
 1. Buka `@BotFather` di Telegram.
 2. Kirim `/mybots`.
@@ -88,7 +91,7 @@ Anda semestinya menerima balasan Hermes Agent dalam beberapa detik.
 5. Pilih "Group Privacy".
 6. Pilih "Turn off" atau "Disable privacy mode".
 
-### 7. Tambahkan dan uji Bot di grup
+### 7. Opsional: Tambahkan dan uji Bot di grup
 
 1. Buka grup Telegram yang ingin digunakan.
 2. Pilih "Add Members" atau tindakan pengelolaan grup yang setara.

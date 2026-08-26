@@ -79,7 +79,10 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 
 <img src="../images/telegram-botfather-6-global.webp" alt="" width="360" />
 
-### 6. 在 BotFather 中开启群消息
+### 6. 可选：在 BotFather 中开启群消息
+
+仅当你需要在群组中使用机器人时，才需要完成第 6 步和第 7 步。
+完成第 5 步后，私聊已经可以正常使用。
 
 1. 在 Telegram 打开 `@BotFather`。
 2. 发送 `/mybots`。
@@ -88,7 +91,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 5. 选择「Group Privacy」。
 6. 选择关闭隐私模式。
 
-### 7. 将机器人加入群组并测试
+### 7. 可选：将机器人加入群组并测试
 
 1. 打开要使用的 Telegram 群组。
 2. 选择「添加成员」或对应的群管理操作。

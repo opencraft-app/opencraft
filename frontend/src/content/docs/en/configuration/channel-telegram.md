@@ -79,7 +79,10 @@ You should receive a Hermes Agent reply within a few seconds.
 
 <img src="../images/telegram-botfather-6-global-en.webp" alt="" width="360" />
 
-### 6. Enable group messages in BotFather
+### 6. Optional: Enable group messages in BotFather
+
+Only complete steps 6 and 7 if you want to use the bot in a group.
+Direct messages are already available after step 5.
 
 1. Open `@BotFather` in Telegram.
 2. Send `/mybots`.
@@ -88,7 +91,7 @@ You should receive a Hermes Agent reply within a few seconds.
 5. Select "Group Privacy".
 6. Choose "Turn off" or "Disable privacy mode".
 
-### 7. Add and test the Bot in a group
+### 7. Optional: Add and test the Bot in a group
 
 1. Open the Telegram group you want to use.
 2. Choose "Add Members" or the equivalent group-management action.
