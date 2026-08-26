@@ -30,6 +30,7 @@ items:
     managed-by: export_ssm_to_sops.py
 - id: ctl-runtime-secrets
   secret_name: mono-shprod-ctl-runtime-secrets
+  version_id: federation-sh-20260826-ctl
   namespace: ctl
   kubernetes_resource_name: ctl-runtime-secrets
   kubernetes_resource_kind: Secret
@@ -45,6 +46,7 @@ items:
   - CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST
   # CTL 通过 envFrom 读取 COS 单桶配置并签发上传预签名 URL。
   required_keys:
+  - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
   - WEBSITE_INTERNAL_API_TOKEN
   - WEBSITE_COS_BUCKET
   - WEBSITE_COS_REGION

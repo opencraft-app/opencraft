@@ -6,11 +6,14 @@ defaults:
 items:
 - id: sandbox-runtime-secrets
   secret_name: mono-shprod-sandbox-runtime-secrets
+  version_id: federation-sh-20260826-sandbox
   namespace: sandbox
   kubernetes_resource_name: sandbox-runtime-secrets
   kubernetes_resource_kind: Secret
   output_path: argocd/secrets/shprod/sandbox-runtime-secrets.sops.yaml
   secret_type: Opaque
+  required_keys:
+  - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
   labels:
     app.kubernetes.io/name: sandbox
     app.kubernetes.io/managed-by: argocd

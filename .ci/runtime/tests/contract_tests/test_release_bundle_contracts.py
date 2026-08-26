@@ -696,6 +696,64 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", secret["stringData"])
 
+    def test_shprod_federation_internal_service_token_is_aligned(self) -> None:
+        manifest_expectations = {
+            "lightclaw-auth": (
+                "scripts/ssm_manifest.lightclaw-auth.shprod.yaml",
+                "LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN",
+            ),
+            "ctl": (
+                "scripts/ssm_manifest.ctl.shprod.yaml",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            ),
+            "sandbox": (
+                "scripts/ssm_manifest.sandbox.shprod.yaml",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            ),
+        }
+        for service, (path, required_key) in manifest_expectations.items():
+            with self.subTest(service=service):
+                manifest = yaml.safe_load((REPO_ROOT / path).read_text())
+                runtime_item = next(
+                    item
+                    for item in manifest["items"]
+                    if item["id"] in {"lightclaw-auth-secrets", "ctl-runtime-secrets", "sandbox-runtime-secrets"}
+                )
+                self.assertIn(required_key, runtime_item["required_keys"])
+
+        secret_expectations = {
+            "argocd/secrets/shprod/lightclaw-auth-secrets.sops.yaml": (
+                "LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN"
+            ),
+            "argocd/secrets/shprod/ctl-runtime-secrets.sops.yaml": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            "argocd/secrets/shprod/sandbox-runtime-secrets.sops.yaml": (
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"
+            ),
+        }
+        for path, required_key in secret_expectations.items():
+            with self.subTest(path=path):
+                secret = yaml.safe_load((REPO_ROOT / path).read_text())
+                self.assertIn(required_key, secret["stringData"])
+
+        for path in (
+            "user/auth/k8s/overlays/shprod/patch-realname-faceid.yaml",
+            "argocd/services/lightclaw-auth/shprod/patch-shadowbinding.yaml",
+        ):
+            with self.subTest(path=path):
+                documents = list(yaml.safe_load_all((REPO_ROOT / path).read_text()))
+                deployment = next(doc for doc in documents if doc.get("kind") == "Deployment")
+                env = {
+                    item["name"]: item
+                    for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+                }
+                self.assertEqual(
+                    env["LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN"]["valueFrom"]["secretKeyRef"],
+                    {
+                        "name": "lightclaw-auth-secrets",
+                        "key": "LIGHTCLAW_FEDERATION_CTL_INTERNAL_TOKEN",
+                    },
+                )
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
