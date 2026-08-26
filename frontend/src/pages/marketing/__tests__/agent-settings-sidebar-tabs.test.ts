@@ -97,4 +97,21 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('activeSection === "chat" &&');
     expect(page).not.toContain('sidebarTab === "chat" && activeSection');
   });
+
+  it("resets session state when the agent instance switches", () => {
+    const page = readPageSource();
+
+    // SDK 对接注意事项 3：实例切换时重置会话受控状态，防旧实例数据闪现。
+    expect(page).toContain("[sdkInstance?.InstanceId]");
+    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+  });
+
+  it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {
+    const page = readPageSource();
+
+    // SDK 对接注意事项 1：chatId === "" 是合法默认会话，判定只能用 == null / ===。
+    expect(page).not.toMatch(/if \(chatId\)/);
+    expect(page).not.toMatch(/if \(selectedChatId\)/);
+    expect(page).toContain("if (chatId == null) return;");
+  });
 });

@@ -97,6 +97,18 @@ SDK 1.4.0-beta.0 的多会话 API 为**受控桥接**模式（`LightVelaPanelPro
 
 - 列表虚拟滚动（如 >20 项）— 现有侧边栏没有虚拟滚动，先按 50 项硬限，超过 50 提示「分页/搜索」，避免引入新依赖
 
+#### 5.4 SDK 对接注意事项核验清单（2026-08-26，SDK 开发者给出）
+
+| # | 注意事项 | 核验结论 |
+|---|---|---|
+| 1 | 判断会话有效用 `chatId == null`，**勿用真值判断**（`chatId === ""` 是合法默认会话） | ✅ 已合规：全部 `== null` / `===` 比较，无 `if (chatId)` |
+| 2 | `onSelectedChatIdChange` 收到值必须写回 `selectedChatId` | ✅ 已合规：回调内 `setSelectedChatId(chatId)` |
+| 3 | 切换 Agent/实例时会话列表与选中值需按 instanceId 分开保存或重置 | ✅ 已补：`useEffect` 监听 `sdkInstance?.InstanceId` 变化，清空 sessions/loading/selectedChatId/actions/重命名与菜单态；SDK 会按新实例重新下发默认会话 |
+| 4 | 面板右上角已有新建会话按钮，第一期宿主无需调用新建接口 | ✅ 已合规：侧边栏无新建入口 |
+| 5 | 删除会话暂未开放为宿主公共动作 | ✅ 已合规：三点菜单仅「重命名」 |
+| 6 | 首条消息后 SDK 自动更新默认标题，经 `onSessionStateChange` 下发 | ✅ 已兼容：列表直接渲染 `session.title`，自动反映 |
+| 7 | 会话列表请求超 5s SDK 返回当前列表并结束 loading；一直为空需查实例 Hermes 插件是否支持会话协议 | ✅ 已兼容：loading 结束+空列表走「默认对话」兜底入口。**排障指引**：若会话列表持续为空，检查实例 Hermes 插件版本是否支持会话协议（SDK 侧 5s 超时机制） |
+
 ### 6. i18n 新词条
 
 | zh-CN | en-US | id-ID | zh-Hant |

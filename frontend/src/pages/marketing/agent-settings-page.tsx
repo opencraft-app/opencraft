@@ -3890,6 +3890,23 @@ export const AgentSettingsPage = ({
       RegionId: 1,
     };
   }, [activeBot?.id]);
+
+  /**
+   * 实例切换时重置会话受控状态（SDK 对接注意事项 3）。
+   * Why：切换 Agent 走 setActiveTabId，组件不重挂载；旧实例的会话列表/选中值/actions
+   * 若不清理，会在新实例回调覆盖前闪现旧数据，且 rename 句柄可能指向旧实例。
+   * 重置后 selectedChatId 回到 undefined，SDK 按新实例重新下发默认会话。
+   */
+  useEffect(() => {
+    setChatSessions([]);
+    setChatSessionsLoading(false);
+    setSelectedChatId(undefined);
+    setChatSessionActions(null);
+    setRenamingChatId(null);
+    setRenamingDraft("");
+    setOpenSessionMenuChatId(null);
+  }, [sdkInstance?.InstanceId]);
+
   const sdkFeatureFlags = useMemo<TeaSdkFeatureFlags>(() => ({
     gateway: true,
     channel: true,
