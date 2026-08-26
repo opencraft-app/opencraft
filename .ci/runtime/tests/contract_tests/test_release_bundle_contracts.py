@@ -1160,6 +1160,111 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
 
+    def test_shprod_website_credential_bootstrap_contract_is_complete(self) -> None:
+        def env_values(path: Path) -> dict[str, str]:
+            return {
+                key: value
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+                for key, separator, value in [line.partition("=")]
+                if separator
+            }
+
+        command_id = "cmd-c14avwti"
+        ctl_values = env_values(REPO_ROOT / "argocd/services/ctl/shprod/ctl-platform.env")
+        sandbox_root = REPO_ROOT / "argocd/services/sandbox/shprod"
+        sandbox_values = env_values(sandbox_root / "sandbox-platform.env")
+
+        self.assertEqual(ctl_values["WEBSITE_AGENT_API_BASE"], "https://api.lightvela.com")
+        self.assertEqual(ctl_values["WEBSITE_CREDENTIAL_TAT_COMMAND_ID"], command_id)
+        self.assertEqual(sandbox_values["WEBSITE_CREDENTIAL_TAT_COMMAND_ID"], command_id)
+
+        ctl_documents = [
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "ctl/k8s/base/manifests.yaml").read_text())
+            if document
+        ]
+        ctl_service = next(
+            document
+            for document in ctl_documents
+            if document.get("kind") == "Deployment"
+            and (document.get("metadata") or {}).get("name") == "ctl-service"
+        )
+        ctl_container = ctl_service["spec"]["template"]["spec"]["containers"][0]
+        ctl_secret_refs = {
+            source["secretRef"]["name"]
+            for source in ctl_container["envFrom"]
+            if "secretRef" in source
+        }
+        self.assertIn("ctl-runtime-secrets", ctl_secret_refs)
+        ctl_env = {item["name"]: item for item in ctl_container["env"]}
+        for variable in ("WEBSITE_AGENT_API_BASE", "WEBSITE_CREDENTIAL_TAT_COMMAND_ID"):
+            with self.subTest(variable=variable):
+                config_map_ref = ctl_env[variable]["valueFrom"]["configMapKeyRef"]
+                self.assertEqual(config_map_ref["name"], "ctl-platform-values")
+                self.assertEqual(config_map_ref["key"], variable)
+
+        sandbox_kustomization = yaml.safe_load((sandbox_root / "kustomization.yaml").read_text())
+        command_replacement = next(
+            replacement
+            for replacement in sandbox_kustomization["replacements"]
+            if replacement["source"]["fieldPath"] == "data.WEBSITE_CREDENTIAL_TAT_COMMAND_ID"
+        )
+        self.assertEqual(command_replacement["source"]["name"], "sandbox-platform-values")
+        self.assertEqual(command_replacement["targets"][0]["select"]["kind"], "ConfigMap")
+        self.assertEqual(command_replacement["targets"][0]["select"]["name"], "sandbox-runtime-config")
+        self.assertIn(
+            "data.WEBSITE_CREDENTIAL_TAT_COMMAND_ID",
+            command_replacement["targets"][0]["fieldPaths"],
+        )
+
+        sandbox_documents = [
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "sandbox/k8s/base/manifests.yaml").read_text())
+            if document
+        ]
+        sandbox_api = next(
+            document
+            for document in sandbox_documents
+            if document.get("kind") == "Deployment"
+            and (document.get("metadata") or {}).get("name") == "sandbox-api"
+        )
+        sandbox_container = sandbox_api["spec"]["template"]["spec"]["containers"][0]
+        sandbox_config_map_refs = {
+            source["configMapRef"]["name"]
+            for source in sandbox_container["envFrom"]
+            if "configMapRef" in source
+        }
+        sandbox_secret_refs = {
+            source["secretRef"]["name"]
+            for source in sandbox_container["envFrom"]
+            if "secretRef" in source
+        }
+        self.assertIn("sandbox-runtime-config", sandbox_config_map_refs)
+        self.assertIn("sandbox-runtime-secrets", sandbox_secret_refs)
+
+        secret_contracts = (
+            (
+                REPO_ROOT / "scripts/ssm_manifest.ctl.shprod.yaml",
+                "ctl-runtime-secrets",
+                REPO_ROOT / "argocd/secrets/shprod/ctl-runtime-secrets.sops.yaml",
+            ),
+            (
+                REPO_ROOT / "scripts/ssm_manifest.sandbox.shprod.yaml",
+                "sandbox-runtime-secrets",
+                REPO_ROOT / "argocd/secrets/shprod/sandbox-runtime-secrets.sops.yaml",
+            ),
+        )
+        for manifest_path, item_id, secret_path in secret_contracts:
+            with self.subTest(item_id=item_id):
+                manifest_doc = yaml.safe_load(manifest_path.read_text())
+                item = next(item for item in manifest_doc["items"] if item["id"] == item_id)
+                self.assertIn("SANDBOX_API_KEY", item["required_keys"])
+
+                secret = yaml.safe_load(secret_path.read_text())
+                encrypted_value = secret["stringData"]["SANDBOX_API_KEY"]
+                self.assertTrue(encrypted_value.startswith("ENC[AES256_GCM,"))
+
     def test_auto_release_master_envs_have_build_contracts(self) -> None:
         manifest = load_manifest()
 
