@@ -93,8 +93,9 @@ func (f *fakeDianshi) DoGoodsAndPay(_ context.Context, req *dianshiclient.DoGood
 func newFakeDianshiSuccess() *fakeDianshi {
 	return &fakeDianshi{
 		doGoodsResp: &dianshiclient.DoGoodsResponse{
-			DealNames: []string{"20260624000000000000001"},
-			BigDealNo: "20260624000000000000999",
+			DealNames:   []string{"20260624000000000000001"},
+			BigDealNo:   "20260624000000000000999",
+			ResourceIDs: map[string][]string{"20260624000000000000001": {"pass-dianshi-paid-1"}},
 		},
 	}
 }
@@ -461,8 +462,11 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	if d.writer.createOrderCalls.Load() != 1 {
 		t.Fatalf("CreateOrder calls=%d want 1", d.writer.createOrderCalls.Load())
 	}
-	if got := d.writer.lastCreateOrderInput; got.Source != store.OrderSourceDianshi || got.Status != store.OrderStatusPaidPendingProvision {
-		t.Errorf("persisted order source/status=%q/%q", got.Source, got.Status)
+	if got := d.writer.lastCreateOrderInput; got.Source != store.OrderSourceDianshi || got.Status != store.OrderStatusProvisioned {
+		t.Errorf("persisted order source/status=%q/%q want %q/%q", got.Source, got.Status,
+			store.OrderSourceDianshi, store.OrderStatusProvisioned)
+	} else if got.ResourceID != "pass-dianshi-paid-1" {
+		t.Errorf("persisted order resource_id=%q want pass-dianshi-paid-1", got.ResourceID)
 	} else if got.Period != 14 || got.TimeUnit != "d" ||
 		got.GoodsDetail["timeSpan"] != 14 || got.GoodsDetail["timeUnit"] != "d" {
 		t.Errorf("persisted order duration=%d/%q goods_detail=%v/%v want 14/d",
@@ -508,6 +512,25 @@ func TestGrantDianshiSubscriptionUsesExplicitCampaignWithoutResolver(t *testing.
 	}
 	if got := d.writer.lastCreateOrderInput; got.ActivityID != campaign.ActivityID || got.ActID != campaign.ActID {
 		t.Fatalf("persisted campaign activityID/actID=%d/%d", got.ActivityID, got.ActID)
+	} else if got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted grant status/resource_id=%q/%q want %q/pass-dianshi-paid-1",
+			got.Status, got.ResourceID, store.OrderStatusProvisioned)
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_RejectsMissingResourceID(t *testing.T) {
+	d, _, dc := newDianshiDeps()
+	dc.doGoodsAndPayResp = &dianshiclient.DoGoodsResponse{
+		DealNames: []string{"20260624000000000000001"},
+		BigDealNo: "20260624000000000000999",
+	}
+
+	_, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrJifeiResponseInvalid) {
+		t.Fatalf("err=%v want ErrJifeiResponseInvalid", err)
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("CreateOrder calls=%d want 0", d.writer.createOrderCalls.Load())
 	}
 }
 

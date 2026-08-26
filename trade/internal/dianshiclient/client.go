@@ -203,11 +203,13 @@ type DoGoodsItem struct {
 
 // DoGoodsResponse 是下单响应 envelope.data 反序列化目标。
 //
-// 协议样例 data 是对象（不是数组）：{deal_names: [...], big_deal_no: "..."}。
+// 协议样例 data 是对象（不是数组）：
+// {deal_names: [...], big_deal_no: "...", resource_ids: {deal_name: [...]}}。
 // trade.placeorder.Service.placeOrderDianshi 取 DealNames[0] 作为主 deal_name。
 type DoGoodsResponse struct {
-	DealNames []string `json:"deal_names"`
-	BigDealNo string   `json:"big_deal_no"`
+	DealNames   []string            `json:"deal_names"`
+	BigDealNo   string              `json:"big_deal_no"`
+	ResourceIDs map[string][]string `json:"resource_ids"`
 }
 
 // Client 是 trade → 点石出向客户端对外接口（便于 mock）。
