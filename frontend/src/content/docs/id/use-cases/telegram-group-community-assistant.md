@@ -1,138 +1,101 @@
-# Asisten Komunitas AI untuk Grup Telegram
-
-Asisten komunitas AI umumnya perlu menangani empat jenis pekerjaan: menyambut anggota, menjawab pertanyaan umum, merangkum diskusi, dan mengirim pengingat terjadwal.
-
-Namun, dokumentasi kanal Telegram situs internasional LightVela saat ini menyatakan bahwa Telegram untuk sekarang hanya mendukung percakapan satu lawan satu, sehingga halaman ini bukan tutorial koneksi grup yang langsung dapat dijalankan.
-
-Halaman ini mencatat pendekatan rancangan, pemeriksaan pra-peluncuran, dan alternatif saat ini sampai dukungan grup memiliki jalur produk yang terdokumentasi dengan jelas.
+# Cara Menggunakan Asisten Komunitas AI Grup Telegram: Tanya Jawab, Ringkasan, dan Pengingat
 
 ## Ringkasan
 
-**Mulailah dari batas kemampuannya: halaman kanal Telegram menyatakan terang-terangan bahwa chat grup saat ini tidak didukung dan hanya percakapan satu lawan satu yang berfungsi, sehingga alur lengkap menambahkan bot ke grup Telegram dan menyambut anggota secara otomatis belum dapat diselesaikan di LightVela hari ini.** Baik mode privasi BotFather maupun menyebut bot dengan @mention di grup tidak menggantikan dukungan grup di tingkat kanal pada LightVela. Jalur yang dapat dikerjakan sekarang: hubungkan percakapan satu lawan satu sesuai panduan kanal, matangkan keempat alur konten — sambutan, FAQ, ringkasan, pengingat — di pesan langsung, lalu selesaikan checklist pra-peluncuran. Dengan begitu, ketika dukungan grup dirilis, Anda hanya mengganti konteks pemicunya; konten dan personanya tidak perlu dikerjakan ulang. Perlakukan halaman ini sebagai panduan rancangan dan persiapan alih-alih panduan implementasi.
+**LightVela mendukung pesan grup Telegram setelah Anda menonaktifkan Group Privacy untuk Bot di BotFather, menambahkan Bot ke grup, lalu memulai percakapan dengan menyebutnya melalui `@username_bot`.**
+Panduan ini menjelaskan penyiapan yang telah diverifikasi serta penggunaan Hermes Agent yang sama untuk tanya jawab, ringkasan, dan draf pengingat di grup.
+Panduan ini tidak menganggap event anggota bergabung, sambutan otomatis, atau balasan pasif tanpa penyebutan Bot sebagai fitur yang sudah dikonfigurasi.
 
-## Batas kemampuan saat ini
+![Asisten komunitas AI grup Telegram untuk tanya jawab, ringkasan, dan pengingat](../images/use-case-08-telegram-group-community-assistant.png)
 
-Catatan kanal pada halaman kanal Telegram saat ini secara eksplisit menyatakan bahwa chat grup untuk sekarang tidak didukung dan hanya percakapan satu lawan satu yang didukung.
+## Sebelum memulai
 
-Karena itu, LightVela saat ini tidak dapat menyelesaikan alur lengkap menambahkan Bot ke grup Telegram dan menyambut anggota baru secara otomatis melalui halaman ini.
+Hubungkan Bot Telegram ke Hermes Agent melalui [Kanal Telegram](../configuration/channel-telegram.md).
+Anda juga perlu memiliki izin untuk menambahkan Bot tersebut ke grup Telegram yang akan digunakan.
 
-Mode privasi BotFather atau pengaturan @mention grup Telegram tidak menggantikan dukungan LightVela untuk pemrosesan chat grup.
+## Mengaktifkan pesan grup Telegram
 
-Jika Anda membutuhkan Telegram sekarang, hubungkan percakapan satu lawan satu melalui [Kanal Telegram](../configuration/channel-telegram.md), lalu validasi alur kerja FAQ, ringkasan, dan pengingat di chat pribadi.
+### 1. Pilih Bot di BotFather
 
-![Asisten komunitas AI grup Telegram untuk pesan sambutan, FAQ, ringkasan, dan pengingat](../images/use-case-08-telegram-group-community-assistant.png)
+1. Buka `@BotFather` di Telegram.
+2. Kirim `/mybots`.
+3. Pilih Bot yang sudah terhubung ke Hermes Agent Anda.
 
-## Untuk siapa ini
+### 2. Nonaktifkan Group Privacy
 
-Panduan persiapan ini ditujukan bagi orang yang merancang asisten komunitas Telegram atau menata kebutuhan produk dan aturan operasional lebih awal.
+1. Buka "Bot Settings".
+2. Pilih "Group Privacy".
+3. Pilih "Turn off" atau "Disable privacy mode".
 
-Ia juga ditujukan bagi tim yang sudah memvalidasi Skill dan alur kerja konten dalam percakapan satu lawan satu dan sedang menunggu dukungan chat grup.
+Pengaturan ini memungkinkan Bot menerima pesan grup yang menyebutnya.
 
-## Rancang keempat kemampuan asisten komunitas
+### 3. Tambahkan Bot ke grup Telegram
 
-Sebelum mengonfigurasi kanal, tentukan pemicu, format keluaran, dan perilaku kegagalan untuk setiap kemampuan.
+1. Buka grup Telegram yang ingin digunakan.
+2. Pilih "Add Members" atau tindakan pengelolaan grup yang setara.
+3. Cari Bot berdasarkan username-nya lalu tambahkan ke grup.
 
-| Kemampuan | Pemicu yang disarankan | Persyaratan keluaran | Perilaku saat gagal |
-|---|---|---|---|
-| Pesan sambutan | Event anggota baru | Sambutan singkat, aturan komunitas, dan pintu masuk untuk bertanya | Jangan mengulang pesan ketika event-nya terduplikasi atau hilang |
-| FAQ | Pertanyaan anggota atau @mention | Pakai hanya material yang sudah dikonfirmasi dan sertakan sumber bila berguna | Alihkan dengan jelas ke manusia atau admin ketika jawabannya tidak tersedia |
-| Ringkasan diskusi | Permintaan admin atau waktu terjadwal | Pisahkan kesimpulan, item tindakan, penanggung jawab, dan pertanyaan terbuka | Nyatakan cakupan ringkasannya ketika konteksnya tidak lengkap |
-| Pengingat | Waktu terjadwal atau tugas yang dibuat admin | Sertakan waktu, audiens, tujuan, dan cara membatalkan | Beri tahu admin saat gagal alih-alih berulang kali mengirim spam |
+### 4. Sebut Bot untuk menguji pesan grup
 
-## Checklist persiapan
+Kirim pesan uji yang menyebut Bot, misalnya `@username_bot rangkum diskusi sejauh ini`.
 
-### 1. Tentukan kepribadian Agent dan aturan komunitas
+Hasil yang diharapkan adalah Hermes Agent membalas di grup yang sama.
 
-Gunakan [panduan kepribadian SOUL.md](./im-agent-persona-soul-md.md) untuk menentukan peran, suara, batas informasi, dan aturan pengalihan ke manusia bagi asisten tersebut.
+## Cakupan pesan yang telah diverifikasi
 
-Tentukan juga apakah ia boleh berbicara secara proaktif, apakah ia harus disebut dengan mention sebelum membalas, dan bagaimana ia seharusnya menyerahkan konten kontroversial kepada admin.
+| Interaksi | Cakupan dokumentasi saat ini | Cara memverifikasi |
+|---|---|---|
+| Percakapan grup | Didukung setelah Bot ditambahkan ke grup, Group Privacy dinonaktifkan, dan pesan menyebut Bot | Kirim `@username_bot halo` di grup dan pastikan balasan muncul di sana |
+| Percakapan pribadi | Didukung melalui Bot Telegram yang terhubung | Kirim pesan di chat pribadi Bot dan pastikan ada balasan |
+| Sambutan otomatis saat anggota bergabung atau balasan pasif | Belum ditetapkan oleh panduan ini | Uji perilaku tersebut secara terpisah sebelum memasukkannya ke alur operasional |
 
-Jangan memperlakukan arahan kepribadian sebagai pengganti otorisasi platform, privasi, atau batas laju pesan.
+## Menggunakan Bot sebagai asisten komunitas
 
-### 2. Siapkan FAQ dan material referensi
+Setelah uji grup berhasil, tentukan peran dan batas informasi melalui [panduan kepribadian SOUL.md](./im-agent-persona-soul-md.md).
+Gunakan prompt grup yang jelas agar anggota mengetahui kapan mereka meminta Agent untuk menjawab.
 
-Tata ringkasan produk, aturan komunitas, jam layanan, kontak admin, dan jalur eskalasi menjadi material referensi yang dapat dipelihara.
+| Alur kerja | Contoh prompt grup | Hasil yang perlu diperiksa |
+|---|---|---|
+| FAQ | `@username_bot jawab hanya dari FAQ yang sudah disiapkan` | Jawaban memakai materi yang disiapkan atau meminta pengalihan ke manusia |
+| Ringkasan diskusi | `@username_bot rangkum keputusan, tindakan, penanggung jawab, dan pertanyaan terbuka` | Balasan memisahkan keputusan yang telah dikonfirmasi dari hal yang belum selesai |
+| Draf pengingat | `@username_bot buat draf pengingat berisi waktu, audiens, tujuan, dan cara membatalkan` | Tinjau draf sebelum memakai otomasi untuk mengirimnya |
 
-Taruh material yang perlu dirujuk dari waktu ke waktu di [Cloud Storage](../configuration/files.md) alih-alih memasukkan kumpulan FAQ yang besar ke dalam memori jangka panjang.
+Untuk pengambilan referensi, ringkasan, atau konten terjadwal, pilih Skill tepercaya dan tinjau izinnya di [Konfigurasi Skill](../configuration/skill.md).
+Validasi otomasi secara terpisah di kanal tujuan yang didukung sebelum mengandalkannya untuk pesan terjadwal.
 
-Mulai dengan menguji permintaan ini dalam percakapan satu lawan satu:
+## Batas keamanan dan operasional
 
-    Jawab hanya dari FAQ yang sudah disiapkan. Jika tidak ada material pendukung, katakan bahwa informasinya tidak tersedia dan sarankan pengalihan ke manusia.
-
-### 3. Rancang templat ringkasan dan pengingat
-
-Sebuah ringkasan sebaiknya memisahkan kesimpulan yang sudah dikonfirmasi, item tindakan, penanggung jawab, dan pertanyaan yang belum tuntas.
-
-Sebuah pengingat sebaiknya memuat waktu, audiens, tujuan, dan cara membatalkan, dengan frekuensi yang wajar dan jam tenang.
-
-Validasi alur kerja ini melalui [Otomasi](../configuration/automation.md) di kanal tujuan yang didukung sebelum merencanakan penggelaran grup.
-
-### 4. Pilih Skill yang terpercaya
-
-Jika Anda memerlukan penelusuran referensi, ringkasan diskusi, atau konten terjadwal, pilih Skill dari [Skills.sh](https://skills.sh/) atau [ClawHub](https://clawhub.ai/).
-
-Baca panduan izin dan Skill berisiko tinggi di [Konfigurasi Skill](../configuration/skill.md) sebelum memasang apa pun.
-
-Validasi Skill tersebut dalam percakapan satu lawan satu sebelum mempertimbangkan penggelaran grup apa pun.
-
-## Yang perlu diverifikasi jika dukungan grup tersedia
-
-- Apakah Bot dapat menerima event anggota bergabung serta membedakan anggota, admin, dan identitas anonim.
-
-- Apakah pesan grup hanya terpicu pada @mention atau perintah yang eksplisit.
-
-- Apakah Anda dapat mengonfigurasi daftar grup, anggota, atau admin yang diizinkan.
-
-- Apakah pesan grup masuk ke memori jangka panjang bersama dan bagaimana ia dicegah bocor ke anggota lain.
-
-- Apakah pesan sambutan, FAQ, ringkasan, dan pengingat memiliki batas laju serta deduplikasi yang terpisah.
-
-- Apakah pesan eksternal, perubahan file, saran moderasi, dan tindakan berisiko tinggi lainnya membutuhkan konfirmasi admin.
-
-- Bagaimana seorang admin mengambil alih ketika Bot gagal, layanannya tidak tersedia, atau jawabannya tidak pasti.
-
-## Jalur validasi yang dapat dikerjakan saat ini
-
-Bagi rencananya menjadi dua tahap untuk sekarang.
-
-Pada tahap satu, validasi kepribadian, FAQ, ringkasan, pengingat, dan Skill dalam percakapan satu lawan satu di Telegram.
-
-Pada tahap dua, setelah dokumentasi produk secara eksplisit mendukung grup Telegram, tambahkan langkah nyata untuk Bot bergabung, izin grup, @mention, dan isolasi memori grup.
-
-Jika Anda membutuhkan asisten grup segera, pilih kanal yang dokumentasi produknya saat ini secara eksplisit memastikan dukungan grup lalu ikuti panduan akses dan izin kanal tersebut.
+Menonaktifkan Group Privacy membuka jalur pengiriman pesan grup Telegram.
+Hal itu tidak menggantikan aturan grup, perlindungan informasi sensitif, atau konfirmasi sebelum tindakan eksternal berisiko tinggi.
+Gunakan [panduan batas keamanan Telegram dan WhatsApp](./telegram-whatsapp-safety-boundaries.md) saat menentukan siapa yang dapat meminta Agent melakukan tindakan sensitif.
 
 ## FAQ
 
-### Bisakah saya menambahkan bot Telegram LightVela ke sebuah grup sekarang?
-
-Tidak, menurut dokumentasi kanal Telegram internasional saat ini.
-
-Cakupan dukungan saat ini tetap percakapan satu lawan satu, dan halaman ini tidak menyediakan langkah penyiapan untuk fitur grup yang belum tersedia.
-
-### Apakah menonaktifkan mode privasi di BotFather akan membuatnya berfungsi?
-
-Belum tentu.
-
-Mode privasi BotFather mengubah cara bot Telegram menerima pesan, tetapi ia tidak menambahkan kemampuan pemrosesan grup yang saat ini belum diekspos LightVela.
-
-### Bisakah saya menyiapkan Skill sambutan, FAQ, dan ringkasan sekarang?
+### Bisakah saya menambahkan Bot Telegram LightVela ke grup sekarang?
 
 Bisa.
+Nonaktifkan Group Privacy di BotFather, tambahkan Bot ke grup, lalu sebut Bot dengan `@username_bot` untuk memulai percakapan.
 
-Siapkan material referensinya, validasi keluarannya dalam percakapan satu lawan satu, lalu catat kebutuhan mendatang untuk pemicu, izin, privasi, dan batas laju.
+### Apakah menonaktifkan Group Privacy membuat Bot membalas di grup?
 
-### Bisakah grup WhatsApp dipakai sebagai alternatif?
+Itu adalah bagian wajib dari alur penyiapan yang didokumentasikan.
+Setelah menonaktifkannya, tambahkan Bot ke grup dan kirim pesan uji yang menyebutnya.
 
-Dokumentasi kanal WhatsApp saat ini juga menyatakan chat grup tidak didukung dan hanya percakapan satu lawan satu yang didukung.
+### Apakah panduan ini mengonfigurasi sambutan otomatis untuk anggota baru?
 
-Jika Anda membutuhkan kemampuan grup segera, rujuk dokumentasi resmi terkini untuk kanal lain alih-alih mengasumsikan dukungan satu lawan satu Telegram atau WhatsApp meluas ke grup.
+Tidak.
+Panduan ini mendokumentasikan percakapan grup yang dimulai dengan menyebut Bot.
+Uji event anggota bergabung dan alur sambutan otomatis secara terpisah sebelum menjanjikannya kepada komunitas.
+
+### Bisakah grup WhatsApp digunakan sebagai alternatif?
+
+Dokumentasi kanal WhatsApp saat ini masih menyatakan bahwa chat grup tidak didukung.
+Jangan menganggap dukungan pesan grup Telegram juga berlaku untuk WhatsApp.
 
 ## Langkah berikutnya
 
-- [Kanal Telegram](../configuration/channel-telegram.md) — Selesaikan penyiapan satu lawan satu Telegram yang saat ini didukung.
+- [Kanal Telegram](../configuration/channel-telegram.md) - Hubungkan Bot dan ulangi langkah penyiapan pesan grup.
 
-- [Mengubah IM Agent Menjadi Asisten Layanan, Komunitas, atau Pendamping](./im-agent-skill-scenarios.md) — Siapkan Skill untuk FAQ, ringkasan, dan pengingat.
+- [Mengubah IM Agent Menjadi Asisten Layanan, Komunitas, atau Pendamping](./im-agent-skill-scenarios.md) - Siapkan Skill dan konten untuk tanya jawab serta ringkasan di grup.
 
-- [Menentukan Peran, Kepribadian, dan Suara IM Agent](./im-agent-persona-soul-md.md) — Tentukan suara dan batasan asisten komunitas.
-
-- [Otomasi](../configuration/automation.md) — Validasi pengingat terjadwal di kanal yang didukung.
+- [Menentukan Peran, Kepribadian, dan Suara IM Agent](./im-agent-persona-soul-md.md) - Tentukan peran dan batas asisten.

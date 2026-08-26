@@ -512,7 +512,7 @@ const globalDocs = [
   },
   {
     slug: 'use-cases/telegram-group-community-assistant',
-    title: { 'en-US': 'How to Configure a Telegram Group AI Community Assistant: Welcome Messages, FAQs, Summaries, and Reminders', 'zh-CN': '如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒？' },
+    title: { 'en-US': 'How to Use a Telegram Group AI Community Assistant: Q&A, Summaries, and Reminders', 'zh-CN': '如何使用 Telegram 群组 AI 社群助手：问答、摘要与提醒？' },
     file: 'use-cases/telegram-group-community-assistant.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
@@ -1200,8 +1200,8 @@ const ID_DOC_METADATA = {
     description: 'Pelajari cara menjaga kepribadian dan memori Agent tetap konsisten saat digunakan di beberapa kanal.',
   },
   'use-cases/telegram-group-community-assistant': {
-    title: 'Asisten Komunitas AI untuk Grup Telegram',
-    description: 'Rancang sambutan, FAQ, ringkasan, dan pengingat komunitas dengan batas kemampuan grup yang jelas.',
+    title: 'Cara Menggunakan Asisten Komunitas AI Grup Telegram: Tanya Jawab, Ringkasan, dan Pengingat',
+    description: 'Siapkan pesan grup Telegram dengan Group Privacy, @mention, tanya jawab, ringkasan, dan draf pengingat.',
   },
   'use-cases/whatsapp-24-7-customer-service': {
     title: 'Layanan Pelanggan AI 24/7 di WhatsApp',

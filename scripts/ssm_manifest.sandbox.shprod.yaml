@@ -11,6 +11,8 @@ items:
   kubernetes_resource_kind: Secret
   output_path: argocd/secrets/shprod/sandbox-runtime-secrets.sops.yaml
   secret_type: Opaque
+  required_keys:
+  - SANDBOX_API_KEY
   labels:
     app.kubernetes.io/name: sandbox
     app.kubernetes.io/managed-by: argocd

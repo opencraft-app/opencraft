@@ -365,6 +365,7 @@ export function AgentModelConfigPanel({
   }
 
   const snapshot = controller.snapshot ?? { primary: null, fallbacks: [], configuredModels: [] };
+  const configuredModels = snapshot.configuredModels.filter((model) => model.id.trim() && model.requiresSetup !== true);
 
   return (
     <div className="space-y-5 pb-12 md:pb-16" aria-busy={busy || controller.loading}>
@@ -380,7 +381,7 @@ export function AgentModelConfigPanel({
             </ModelActionTooltip>
           </div>
           <span className="shrink-0 text-xs font-medium text-black/35">
-            {t("共 {{count}} 个", { count: snapshot.configuredModels.length })}
+            {t("共 {{count}} 个", { count: configuredModels.length })}
           </span>
         </div>
 
@@ -390,7 +391,7 @@ export function AgentModelConfigPanel({
           </div>
         ) : null}
 
-        {snapshot.configuredModels.length === 0 ? (
+        {configuredModels.length === 0 ? (
           <div className="px-5 py-10 text-center">
             <p className="text-sm font-medium text-black/65">{t("暂未配置模型")}</p>
             <p className="mt-1 text-pretty text-sm text-black/40">
@@ -403,11 +404,10 @@ export function AgentModelConfigPanel({
           </div>
         ) : (
           <ul className="divide-y divide-black/[0.06]">
-            {snapshot.configuredModels.map((model) => {
+            {configuredModels.map((model) => {
               const primary = sameModel(snapshot.primary, model);
               const fallback = snapshot.fallbacks.some((candidate) => sameModel(candidate, model));
               const requiresSetup = model.requiresSetup === true;
-              const canDelete = model.canDelete !== false;
               const role = primary ? "primary" : fallback ? "fallback" : "idle";
               return (
                 <li
@@ -452,13 +452,13 @@ export function AgentModelConfigPanel({
                         {fallback ? t("取消备用") : t("设为备用模型")}
                       </Button>
                     </ModelActionTooltip>
-                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("请先切换主模型后再删除") : !canDelete ? t("请在 Hermes 中管理此模型") : undefined}>
+                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("请先切换主模型后再删除") : undefined}>
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
                         className="rounded-md"
-                        disabled={busy || primary || requiresSetup || !canDelete}
+                        disabled={busy || primary || requiresSetup}
                         onClick={() => {
                           controller.clearOperationError();
                           setDeleteTarget(model);

@@ -162,7 +162,8 @@ Secara default, biarkan Agent mencari kebijakannya, menyusun rekomendasi, lalu m
 
 ### Bisakah asisten komunitas langsung bergabung ke grup Telegram?
 
-Dokumentasi Telegram LightVela saat ini masih memperlakukan percakapan satu lawan satu sebagai cakupan yang didukung, jadi baca [Asisten Komunitas AI untuk Grup Telegram](./telegram-group-community-assistant.md) sebelum merencanakan alur kerja grup.
+Telegram mendukung pesan grup setelah Anda menonaktifkan Group Privacy di BotFather, menambahkan Bot ke grup, dan menyebutnya dengan `@username_bot`.
+Baca [Cara Menggunakan Asisten Komunitas AI Grup Telegram](./telegram-group-community-assistant.md) untuk tanya jawab, ringkasan, dan draf pengingat di grup.
 
 ### Haruskah saya menaruh semua material referensi ke dalam memori?
 
@@ -178,4 +179,4 @@ Memori jangka panjang adalah untuk sejumlah kecil konteks yang stabil, sementara
 
 - [Satu Agent di Telegram dan WhatsApp dengan Persona dan Memori yang Sama](./multi-channel-personality-memory.md) — Perluas kemampuan Agent yang sama ke beberapa pintu masuk.
 
-- [Asisten Komunitas AI untuk Grup Telegram](./telegram-group-community-assistant.md) — Tinjau batas dukungan chat grup saat ini dan checklist persiapannya.
+- [Cara Menggunakan Asisten Komunitas AI Grup Telegram](./telegram-group-community-assistant.md) — Selesaikan penyiapan pesan grup dan siapkan Skill untuk tanya jawab serta ringkasan.

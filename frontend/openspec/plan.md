@@ -4290,3 +4290,37 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] 展示最终范围、验证证据、提交信息和 MR 配置，等待用户确认。
 
 ---
+
+# 模型配置统一删除语义 Implementation Plan
+
+**Goal:** 不再向用户暴露不可访问的 Hermes 管理入口，完整模型无论配置来源均可在模型页删除，未补全的 `custom` 配置骨架不进入已配置模型列表。
+
+**Architecture:** 保留多源读取与精确路由去重，但移除基于 Provider 命名前缀的删除权限推断。删除命令同时清理 `providers`、`custom_providers` 和历史 `configured_models` 中命中的模型，仅在 Provider 与凭据不再被其他配置引用时清理共享资源；主模型继续由页面与命令双重阻止直接删除。
+
+**Tech Stack:** React 19、TypeScript、Vitest、嵌入式 Hermes Python helper、项目 i18n 生成器。
+
+## Tasks
+
+- [x] **Task 1: 用失败测试锁定统一展示和删除契约。**
+  - 未补全的 `providers.custom` 和空 `model.provider=custom` 不进入 `configuredModels`。
+  - 非 `lightvela-` Provider、legacy `custom_providers` 与历史 `configured_models` 的完整模型均允许删除。
+  - 删除 legacy custom 模型会移除对应配置；共享 Provider 和共享凭据继续保留。
+  - 页面不再渲染“请在 Hermes 中管理此模型”，主模型仍提示先切换。
+
+- [x] **Task 2: 实现来源无关的精确删除。**
+  - 移除 `lightvela-` 前缀与 `canDelete=false` 对完整模型的限制。
+  - 从读取投影中排除未补全 `custom` 配置骨架。
+  - 删除操作同步清理命中的 `custom_providers`，并沿用候选配置引用检查保护共享 Provider 和凭据。
+  - 删除无效 Hermes 管理提示及对应翻译键。
+
+- [x] **Task 3: 完成回归与质量门禁。**
+  - 运行模型配置专项测试、Toast/设置页关联测试、i18n 检查、类型检查和 `git diff --check`。
+  - 核对最终差异只包含本轮模型删除策略、测试、i18n 与 OpenSpec。
+
+**Verification:**
+- RED：新增与调整测试首次运行命中 5 个预期失败，覆盖未补全 custom 展示、legacy ownership 禁删、普通 Provider 删除和 `custom_providers` 残留。
+- GREEN：模型配置域 7 个测试文件、117 passed；其中 helper 定向测试 40 passed，Toast/设置页关联测试 8 passed，续费印尼语回归 10 passed。
+- 真实 Hermes 源码 smoke：设置 `HERMES_AGENT_SOURCE=/Users/junweicao/Documents/zhihu/sources/hermes-agent` 后 1 passed。
+- `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check` 通过。
+
+---

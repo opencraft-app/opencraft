@@ -971,40 +971,42 @@ const STATIC_AI_QUARTERLY_DISCOUNT = 0.9;
  * 代码中无权威价表，故此处按产品确认值硬编码。
  *
  * `original` = 原价（展示删除线）；`real` = 新用户实付价（展示主价）。
- * **直接指定 real，不由 original × 折扣率乘算** —— 产品确认的折后价与乘算结果存在
- * 分币差异（如季付 19.5 × 0.93 = 18.135，产品定价 18.07），乘算会导致展示与实际定价不一致。
+ * **直接指定 real，不由 original × 折扣率乘算** —— 乘算存在分币舍入（如季付 19.5 × 0.85
+ * = 16.575 → 定价 $16.58 四舍五入到分），直接写 real 保证展示与登录后询价逐分一致。
  *
  * 折扣角标由 mapBundleToPlan 按 `real / original` 比值反算展示（en-US 为 `Save X%`）。
  *
  * ⚠️ 产品调整国际站线上价格 / 折扣时必须同步此表，否则未登录静态价与登录后询价不一致。
- * 数据来源：产品 2026-08-21 确认。
+ * 数据来源：产品 2026-08-21 确认（季付标准版 9.3 折 / AI 版 9.8 折）；2026-08-26 变更为
+ * 季付标准版 8.5 折、AI 增强版 9 折，与登录后询价下发折扣对齐
+ * （曾因未同步导致「未登录 Save 7% / 登录后 Save 15%」不一致）。
  */
 const STATIC_INTL_PRICE_USD: Record<
   "launch" | "cruise",
   Record<"general" | "ai", Record<"monthly" | "quarterly", { original: number; real: number }>>
 > = {
   launch: {
-    /* 启航标准版：月付 $6.5，新用户 14 天免费（实付 $0）；季付 $19.5 → 9.3 折 $18.07 */
+    /* 启航标准版：月付 $6.5，新用户 14 天免费（实付 $0）；季付 $19.5 → 8.5 折 $16.58 */
     general: {
       monthly: { original: 6.5, real: 0 },
-      quarterly: { original: 19.5, real: 18.07 },
+      quarterly: { original: 19.5, real: 16.58 },
     },
-    /* 启航 AI 版：月付 $10，新用户 3 天免费（实付 $0）；季付 $30 → 9.8 折 $29.43 */
+    /* 启航 AI 版：月付 $10，新用户 3 天免费（实付 $0）；季付 $30 → 9 折 $27.00 */
     ai: {
       monthly: { original: 10, real: 0 },
-      quarterly: { original: 30, real: 29.43 },
+      quarterly: { original: 30, real: 27 },
     },
   },
   cruise: {
-    /* 巡游标准版：月付 $14，新用户首购 5 折 $7；季付 $42 → 9.3 折 $38.92 */
+    /* 巡游标准版：月付 $14，新用户首购 5 折 $7；季付 $42 → 8.5 折 $35.70 */
     general: {
       monthly: { original: 14, real: 7 },
-      quarterly: { original: 42, real: 38.92 },
+      quarterly: { original: 42, real: 35.7 },
     },
-    /* 巡游 AI 版：月付 $23，新用户首购 6 折 $13.8；季付 $69 → 9.8 折 $67.69 */
+    /* 巡游 AI 版：月付 $23，新用户首购 6 折 $13.8；季付 $69 → 9 折 $62.10 */
     ai: {
       monthly: { original: 23, real: 13.8 },
-      quarterly: { original: 69, real: 67.69 },
+      quarterly: { original: 69, real: 62.1 },
     },
   },
 };

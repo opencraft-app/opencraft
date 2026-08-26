@@ -4,13 +4,14 @@ Setelah menghubungkan Agent ke Telegram atau WhatsApp, keamanan bergantung tidak
 
 Batas yang jelas seharusnya memberi tahu Anda siapa yang dapat menemukan Agent tersebut, pesan mana yang diproses, konten apa yang tidak boleh dikirim, dan tindakan mana yang membutuhkan konfirmasi.
 
-Dokumentasi Telegram dan WhatsApp saat ini memperlakukan percakapan satu lawan satu sebagai mode utama yang didukung, sehingga aturan grup untuk sekarang adalah checklist rancangan dan pra-peluncuran.
+Telegram mendukung pesan grup setelah Anda menonaktifkan Group Privacy di BotFather, menambahkan Bot ke grup, dan memulai percakapan dengan `@username_bot`.
+Dukungan grup WhatsApp tetap mengikuti dokumentasi kanalnya sendiri.
 
 ![Merancang otorisasi, aturan grup, dan batas tindakan sensitif untuk Agent Telegram dan WhatsApp](../images/use-case-11-telegram-whatsapp-safety-boundaries.png)
 
 ## Ringkasan
 
-**Batas keamanan sebuah Agent tidak ditentukan oleh modelnya saja. Ia dibangun dari empat lapisan: kredensial kanal, cakupan percakapan, kebijakan memori, dan aturan untuk tindakan eksternal.** Batas yang jelas membuat Anda dapat menjawab empat pertanyaan secara definitif — siapa yang dapat menjangkau Agent ini, pesan mana yang diproses, konten apa yang tidak boleh dikirim, dan tindakan mana yang membutuhkan konfirmasi lebih dulu. Praktik kuncinya: kredensial bersifat sensitif dan tidak boleh masuk ke konteks jangka panjang atau ditempelkan ke chat; kebijakan memori harus menghindari mengubah data sensitif menjadi catatan permanen; dan apa pun yang mengirim ke luar atau tak dapat dibalik membutuhkan langkah konfirmasi. Perhatikan bahwa Telegram dan WhatsApp saat ini mendukung percakapan satu lawan satu sebagai mode utama, sehingga aturan chat grup berperan sebagai pemeriksaan rancangan dan pra-peluncuran alih-alih pengaturan yang dapat dikonfigurasi hari ini. Selesaikan checklist keamanan sebelum ditayangkan.
+**Batas keamanan sebuah Agent tidak ditentukan oleh modelnya saja. Ia dibangun dari empat lapisan: kredensial kanal, cakupan percakapan, kebijakan memori, dan aturan untuk tindakan eksternal.** Batas yang jelas membuat Anda dapat menjawab empat pertanyaan secara definitif — siapa yang dapat menjangkau Agent ini, pesan mana yang diproses, konten apa yang tidak boleh dikirim, dan tindakan mana yang membutuhkan konfirmasi lebih dulu. Praktik kuncinya: kredensial bersifat sensitif dan tidak boleh masuk ke konteks jangka panjang atau ditempelkan ke chat; kebijakan memori harus menghindari mengubah data sensitif menjadi catatan permanen; dan apa pun yang mengirim ke luar atau tak dapat dibalik membutuhkan langkah konfirmasi. Telegram mendukung pesan grup setelah Anda menonaktifkan Group Privacy di BotFather, menambahkan Bot ke grup, dan memulai percakapan dengan `@username_bot`. Selesaikan checklist keamanan sebelum ditayangkan.
 
 ## Untuk siapa ini
 
@@ -23,7 +24,7 @@ Ia berguna bagi tim yang ingin menentukan cakupan otorisasi, batas data, dan pro
 | Lapisan | Pertanyaan yang dijawab | Kontrol yang tipikal |
 |---|---|---|
 | Otorisasi | Siapa yang dapat terhubung ke dan memakai Agent ini? | Bot token, akun terotorisasi via kode QR, catatan koneksi, izin akun |
-| Percakapan | Percakapan mana yang diproses dan dijawab? | Cakupan satu lawan satu, status grup, pemicu @mention, daftar izin |
+| Percakapan | Percakapan mana yang diproses dan dijawab? | Cakupan chat pribadi, Group Privacy Telegram dan pemicu @mention, cakupan yang diizinkan |
 | Data | Konten mana yang boleh dibaca atau dipertahankan? | Penyuntingan data sensitif, Cloud Storage, memori, profil pengguna, kebijakan penghapusan |
 | Tindakan | Tindakan mana yang dapat berjalan otomatis? | Hak akses minimum, konfirmasi manusia, jejak audit, pengalihan ke manusia |
 
@@ -45,7 +46,9 @@ Setelah terhubung, kirim pesan uji berisiko rendah, pastikan balasannya kembali 
 
 ### 2. Batasi cakupan kanal sesuai kemampuan saat ini
 
-Telegram dan WhatsApp saat ini tidak mendukung chat grup dan hanya mendukung percakapan satu lawan satu.
+Telegram mendukung pesan grup.
+Nonaktifkan Group Privacy di BotFather, tambahkan Bot ke grup, lalu mulai percakapan dengan `@username_bot`.
+WhatsApp tetap mengikuti cakupan dukungan grup dalam dokumentasi kanalnya sendiri.
 
 Jangan menyimpulkan dukungan grup LightVela dari pengaturan privasi BotFather Telegram atau dari kenyataan bahwa WhatsApp sendiri dapat membuat grup.
 
@@ -113,7 +116,7 @@ Jika kredensial mungkin sudah terekspos, hentikan pemakaian kanal yang terdampak
 
 - Sudahkah Anda memastikan kredensial tidak muncul di chat, dokumen, kode, atau log?
 
-- Sudahkah Anda memastikan alur kerja saat ini memakai percakapan satu lawan satu alih-alih memperlakukan chat grup yang belum didukung sebagai tersedia?
+- Sudahkah Anda menonaktifkan Group Privacy, menambahkan Bot ke grup, dan memverifikasi pesan grup Telegram dengan `@username_bot`?
 
 - Sudahkah Anda menentukan apa yang boleh dipertahankan memori, file mana yang boleh diakses, dan bagaimana penghapusan bekerja?
 

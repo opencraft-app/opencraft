@@ -1035,7 +1035,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "created" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
             aria-pressed={activeView === "created"}
           >
-            {t("已生效任务")}
+            {t("当前任务")}
           </button>
           <button
             type="button"

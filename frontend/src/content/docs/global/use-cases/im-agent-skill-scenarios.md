@@ -158,7 +158,9 @@ Skill 的提示和输出可能影响某次任务的表达方式，但不应替�
 
 ### 社群助手可以直接加入 Telegram 群组吗？
 
-当前 LightVela 的 Telegram 文档仍以 1 对 1 对话为支持范围，群聊方案请先阅读[Telegram 群组 AI 社群助手的能力边界说明](./telegram-group-community-assistant.md)。
+Telegram 支持群消息。
+先在 BotFather 中关闭 Group Privacy，将机器人加入群组后，用 `@机器人用户名` 发起对话。
+群内问答、摘要和提醒草稿的使用方式见[Telegram 群组 AI 社群助手](./telegram-group-community-assistant.md)。
 
 ### 我应该把所有资料都放进记忆吗？
 
@@ -174,4 +176,4 @@ Skill 的提示和输出可能影响某次任务的表达方式，但不应替�
 
 - [如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆](./multi-channel-personality-memory.md) - 将同一套 Agent 能力扩展到多个入口。
 
-- [如何在 Telegram 群组中配置 AI 社群助手](./telegram-group-community-assistant.md) - 查看群聊场景的当前支持边界和准备清单。
+- [如何使用 Telegram 群组 AI 社群助手](./telegram-group-community-assistant.md) - 完成群消息接入，并准备群内问答和摘要所需的 Skill。

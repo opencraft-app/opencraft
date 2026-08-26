@@ -669,7 +669,6 @@ describe("Hermes model configuration client", () => {
       "saved-model",
       "legacy-saved-model",
       "history-model",
-      "",
     ]);
     expect(projected.configuredModels).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "main-catalog-only" }),
@@ -677,15 +676,8 @@ describe("Hermes model configuration client", () => {
       expect.objectContaining({ id: "saved-catalog-only" }),
       expect.objectContaining({ id: "custom-catalog-only" }),
     ]));
-    expect(projected.configuredModels.find((item) => item.id === "saved-model")).toMatchObject({ canDelete: false });
-    expect(projected.configuredModels.find((item) => item.id === "history-model")).toMatchObject({ canDelete: true });
-    expect(projected.configuredModels.at(-1)).toMatchObject({
-      id: "",
-      providerKey: "custom",
-      providerName: "Custom",
-      canDelete: false,
-      requiresSetup: true,
-    });
+    expect(projected.configuredModels.find((item) => item.id === "saved-model")).toBeDefined();
+    expect(projected.configuredModels.find((item) => item.id === "history-model")).toBeDefined();
     expect(result.config).toEqual(config);
     expect(result.events).toEqual([]);
   });
@@ -843,7 +835,7 @@ describe("Hermes model configuration client", () => {
     }));
   });
 
-  it("deduplicates matching incomplete custom setup sources without hiding endpoint conflicts", () => {
+  it("does not project incomplete custom setup sources as configured models", () => {
     const matching = runHelper({ type: "read" }, {
       model: {
         provider: "custom",
@@ -859,14 +851,7 @@ describe("Hermes model configuration client", () => {
       },
     });
     const matchingModels = parseHermesModelConfigResponse(matching.output).configuredModels;
-    expect(matchingModels).toEqual([
-      expect.objectContaining({
-        id: "",
-        providerKey: "custom",
-        baseUrl: "https://custom.example.com/v1",
-        requiresSetup: true,
-      }),
-    ]);
+    expect(matchingModels).toEqual([]);
 
     const conflicting = runHelper({ type: "read" }, {
       model: {
@@ -882,7 +867,7 @@ describe("Hermes model configuration client", () => {
         },
       },
     });
-    expect(parseHermesModelConfigResponse(conflicting.output).configuredModels).toHaveLength(2);
+    expect(parseHermesModelConfigResponse(conflicting.output).configuredModels).toEqual([]);
   });
 
   it("preserves existing route provider IDs and uses providerKey to disambiguate duplicate model IDs", () => {
@@ -966,7 +951,7 @@ describe("Hermes model configuration client", () => {
     expect(catalogEntry.discover_models).toBe(false);
   });
 
-  it("blocks destructive deletion of imported Hermes Providers", () => {
+  it("deletes a complete imported Provider and its unshared credential", () => {
     const importedConfig = {
       providers: {
         manual: {
@@ -982,10 +967,36 @@ describe("Hermes model configuration client", () => {
       MANUAL_PROVIDER_KEY: "manual-secret",
     });
 
-    expect(() => parseHermesModelConfigResponse(removed.output)).toThrow("Model configuration operation failed");
-    expect(removed.config).toEqual(importedConfig);
-    expect(removed.credentials).toEqual({ MANUAL_PROVIDER_KEY: "manual-secret" });
-    expect(removed.events).toEqual([]);
+    expect(parseHermesModelConfigResponse(removed.output).configuredModels).toEqual([]);
+    expect(removed.config.providers).toEqual({});
+    expect(removed.credentials).toEqual({});
+    expect(removed.events).toEqual(["save_config", "remove_credential"]);
+  });
+
+  it("deletes a complete historical configured model", () => {
+    const historicalModel = {
+      ...configuredModel,
+      id: "historical-model",
+      providerKey: "historical-provider",
+      providerName: "Historical Provider",
+      baseUrl: "https://historical.example.com/v1",
+      keyEnv: "HISTORICAL_PROVIDER_KEY",
+    };
+    const removed = runHelper(
+      {
+        type: "remove",
+        providerKey: historicalModel.providerKey,
+        modelId: historicalModel.id,
+        baseUrl: historicalModel.baseUrl,
+      },
+      { lightvela: { model_config: { configured_models: [historicalModel] } } },
+      {},
+      { [historicalModel.keyEnv]: "historical-secret" },
+    );
+
+    expect(removed.config.lightvela).toEqual({ model_config: { configured_models: [] } });
+    expect(removed.credentials).toEqual({});
+    expect(parseHermesModelConfigResponse(removed.output).configuredModels).toEqual([]);
   });
 
   it("does not append a fallback alias for the same runtime deployment", () => {
@@ -1338,7 +1349,12 @@ describe("Hermes model configuration client", () => {
   });
 
   it("removes an unreferenced provider and credential after deleting its final model", () => {
-    const onlyModel = { ...configuredModel };
+    const onlyModel = {
+      ...configuredModel,
+      providerKey: "manual-provider",
+      providerName: "Manual Provider",
+      keyEnv: "MANUAL_PROVIDER_KEY",
+    };
     const config = {
       providers: {
         [onlyModel.providerKey]: {
@@ -1360,6 +1376,40 @@ describe("Hermes model configuration client", () => {
     expect((removed.config.providers as Record<string, unknown>)[onlyModel.providerKey]).toBeUndefined();
     expect(removed.credentials).toEqual({});
     expect(removed.events).toEqual(["save_config", "remove_credential"]);
+    expect(parseHermesModelConfigResponse(removed.output).configuredModels).toEqual([]);
+  });
+
+  it("removes a complete legacy custom provider and its unshared credential", () => {
+    const legacyModel = {
+      ...configuredModel,
+      id: "legacy-model",
+      providerKey: "legacy-endpoint",
+      providerName: "Legacy Endpoint",
+      baseUrl: "https://legacy.example.com/v1",
+      keyEnv: "LEGACY_ENDPOINT_KEY",
+    };
+    const removed = runHelper(
+      {
+        type: "remove",
+        providerKey: legacyModel.providerKey,
+        modelId: legacyModel.id,
+        baseUrl: legacyModel.baseUrl,
+      },
+      {
+        custom_providers: [{
+          provider_key: legacyModel.providerKey,
+          name: legacyModel.providerName,
+          base_url: legacyModel.baseUrl,
+          model: legacyModel.id,
+          key_env: legacyModel.keyEnv,
+        }],
+      },
+      {},
+      { [legacyModel.keyEnv]: "legacy-secret" },
+    );
+
+    expect(removed.config).not.toHaveProperty("custom_providers");
+    expect(removed.credentials).toEqual({});
     expect(parseHermesModelConfigResponse(removed.output).configuredModels).toEqual([]);
   });
 
@@ -1508,7 +1558,7 @@ describe("Hermes model configuration client", () => {
     expect(rollbackFailed.events).toEqual(["save_config", "save_config"]);
   });
 
-  it("normalizes imported route models when assigned or detached and blocks destructive deletion", () => {
+  it("normalizes imported route models when assigned or detached and supports precise deletion", () => {
     const imported = {
       id: "imported-backup",
       providerKey: "existing-provider",
@@ -1583,8 +1633,15 @@ describe("Hermes model configuration client", () => {
       providerKey: imported.providerKey,
       modelId: imported.id,
     }, config);
-    expect(() => parseHermesModelConfigResponse(removed.output)).toThrow("Model configuration operation failed");
-    expect(removed.config).toEqual(config);
+    const removedSnapshot = parseHermesModelConfigResponse(removed.output);
+    expect((removed.config.providers as Record<string, unknown>)[imported.providerKey]).toBeUndefined();
+    expect(removedSnapshot.fallbacks).toEqual([
+      expect.objectContaining({ providerKey: "second-provider", id: "second-backup" }),
+    ]);
+    expect(removedSnapshot.configuredModels).not.toContainEqual(expect.objectContaining({
+      providerKey: imported.providerKey,
+      id: imported.id,
+    }));
   });
 
   it("migrates only the assigned LightVela history model into the Hermes provider schema", () => {
