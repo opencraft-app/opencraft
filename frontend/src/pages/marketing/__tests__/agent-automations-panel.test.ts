@@ -1022,6 +1022,7 @@ describe("terminal cron card visibility", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
+    expect(await screen.findByRole("button", { name: "当前任务" })).toBeTruthy();
     expect(await screen.findByText("生效任务")).toBeTruthy();
     expect(screen.getByText("停用任务")).toBeTruthy();
     expect(screen.getByText("已停用")).toBeTruthy();
@@ -1098,7 +1099,7 @@ describe("terminal cron card visibility", () => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
     });
     expect(await screen.findByText("新任务")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "已生效任务" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "当前任务" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("returns to active jobs after creating from a template on the ended-jobs tab", async () => {
@@ -1118,7 +1119,7 @@ describe("terminal cron card visibility", () => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
     });
     expect(await screen.findByText("模板新任务")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "已生效任务" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "当前任务" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
