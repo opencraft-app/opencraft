@@ -1035,7 +1035,7 @@ export function parseCronListOutput(text: string): CronJob[] {
       current = {
         id: headerMatch[1],
         state: stateRaw,
-        enabled: stateRaw.toLowerCase() !== "paused",
+        enabled: !["paused", "disabled"].includes(stateRaw.toLowerCase()),
         skills: [],
       };
       continue;

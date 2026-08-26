@@ -89,14 +89,14 @@ describe("parseCronListOutput", () => {
     });
   });
 
-  it.each(["completed", "disabled"])("preserves the legacy enabled flag for the %s state", (state) => {
+  it.each([["completed", true], ["disabled", false]] as const)("parses the enabled flag for the %s state", (state, enabled) => {
     const jobs = parseCronListOutput(`
   abcdef123456 [${state}]
     Name:      终态任务
     Schedule:  every 2h
 `);
 
-    expect(jobs[0]).toMatchObject({ state, enabled: true });
+    expect(jobs[0]).toMatchObject({ state, enabled });
   });
 });
 
