@@ -324,7 +324,11 @@ func (f *fakeDianshiClient) DoGoods(context.Context, *dianshiclient.DoGoodsReque
 func (f *fakeDianshiClient) DoGoodsAndPay(_ context.Context, req *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
 	f.doGoodsAndPayCalls.Add(1)
 	f.lastRequest = req
-	return &dianshiclient.DoGoodsResponse{DealNames: []string{"dianshi-deal-1"}, BigDealNo: "dianshi-big-1"}, nil
+	return &dianshiclient.DoGoodsResponse{
+		DealNames:   []string{"dianshi-deal-1"},
+		BigDealNo:   "dianshi-big-1",
+		ResourceIDs: map[string][]string{"dianshi-deal-1": {"pass-dianshi-paid-1"}},
+	}, nil
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -858,6 +862,9 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	if env.dianshi.doGoodsAndPayCalls.Load() != 1 {
 		t.Fatalf("expected DoGoodsAndPay once, got %d", env.dianshi.doGoodsAndPayCalls.Load())
 	}
+	if got := env.orderWriter.lastCreateOrderInput; got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted status/resource_id=%q/%q", got.Status, got.ResourceID)
+	}
 }
 
 func TestPlaceDianshiOrderAndPay_RequiresActivity(t *testing.T) {
@@ -912,6 +919,9 @@ func TestGrantDianshiSubscription_HappyPath(t *testing.T) {
 	}
 	if got := env.orderWriter.lastCreateOrderInput.ActID; got != 142163399386388 {
 		t.Fatalf("persisted actID=%d", got)
+	}
+	if got := env.orderWriter.lastCreateOrderInput; got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted grant status/resource_id=%q/%q", got.Status, got.ResourceID)
 	}
 	if env.activity.err != nil && env.dianshi.doGoodsAndPayCalls.Load() != 1 {
 		t.Fatalf("grant path unexpectedly used activity resolver")
