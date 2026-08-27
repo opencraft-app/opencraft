@@ -191,3 +191,55 @@
 采用显式 `src/content/docs/es/**` 源文件方案，按工具型文档 28 篇、Use Cases 16 篇、Compare 与 Hermes Agent Deep Dive 17 篇分三批完成。最终移除西语正文的英文/中文 fallback；不修改英文、中文、国内站、法务正文或图片资源。
 
 完成条件是 61 篇路径对等、正文源均为 `es/**`、图片目标和代码块保持、内部链接落到 `/es/docs/**`，并通过 Docs 同步、parity、图片、last-updated、类型和 diff 门禁。
+
+---
+
+# 国内建站临时分享码 Proposal
+
+**状态：** 用户于 2026-08-27 批准从 MySQL 持久化方案改为 Redis 临时分享并授权后端实现；前端管理 UI 后续移交前端同学，本次不包含生产发布或 GitOps 变更。
+
+## 背景与目标
+
+国内 `site-gateway` 当前在 `required` 模式下只允许站点所有者通过 OIDC 访问。分享需求的产品语义是“临时开放 1 天、7 天或 30 天”，到期自动恢复仅所有者访问，而不是为站点永久保存一份分享策略。
+
+目标是在不改变国际站 `public` 行为、不复制 COS 回源链路的前提下，让所有者选择有效期并生成一次性可见的分享码；Redis TTL 是临时分享状态的唯一真源。
+
+## 范围
+
+- 撤销本功能新增的 `website_sites` 字段与 `000029` migration，不在 MySQL 保存分享策略、摘要或版本。
+- CTL 在 Redis 保存 bcrypt 分享码摘要、随机 `generation` 和绝对到期时间，TTL 只允许 1/7/30 天。
+- CTL 提供所有者开启/停止、重置和内部校验接口；重置保留原绝对到期时间，停止分享直接删除 Redis key。
+- CTL 继续使用 Redis 对分享码尝试做站点全局与站点+客户端 IP 的分布式限制。
+- site-gateway 在国内 `required` 模式下使用 `generation + expires_at` 校验分享会话；自动到期不能被站点元数据缓存延长。
+- 前端管理入口、工作台分享按钮、Dialog、测试与 i18n 资源不在本分支实现，后续按接口契约由前端同学接入。
+- 增加 CTL 与 site-gateway 聚焦测试，并运行 Go 和差异门禁。
+
+## 非目标
+
+- 不修改国际站 `SITE_GATEWAY_AUTH_MODE=public` 的公开访问行为。
+- 不新增 DNS、证书、域名、独立分享服务或带签名分享 URL。
+- 不把明文分享码写入 MySQL、Redis、日志、URL、localStorage 或可持久化前端状态。
+- 不保存永久分享历史、访问者列表、审计记录或找回旧分享码能力。
+- 不执行生产 Redis/数据库操作、镜像构建、GitOps promote、Argo 同步或真实环境发布。
+- 不修改国内工作台路由、菜单、页面样式或管理交互。
+
+## 方案与取舍
+
+采用“Redis 临时状态 + site-gateway 门禁”：Redis key 的存在表示分享有效，TTL 到期即恢复 `owner_only`；gateway 继续作为静态内容唯一入口，复用现有 Owner OIDC 和 COS 回源。
+
+- 不再采用 MySQL 持久化：1/7/30 天分享是有明确生命周期的临时凭证，DB 字段和 migration 会把临时状态错误建模成站点永久属性。
+- 不只信任签名 Cookie：停止或重置后必须废除旧会话，因此 Redis 状态包含随机 `generation`，Cookie 必须与当前 generation 匹配。
+- 不采用带签名分享 URL：链接泄露即可绕过输入，并可能进入历史记录、Referer 和日志。
+- 不保存 Redis 明文：6 位码仍只保存 bcrypt hash；Redis dump 或只读泄露不应直接得到可用分享码。
+
+## 用户验收标准
+
+1. Redis key 缺失、过期、损坏或不可读时按 `owner_only`；国际站 public 模式行为不变。
+2. 所有者可选择 1 天、7 天或 30 天开启分享，拿到一次性 6 位无歧义分享码，并看到准确到期时间。
+3. `PUT .../access` 仅接受 `duration_days=1|7|30`；停止分享删除 key；重置生成新码和新 generation，但保留原绝对到期时间。
+4. 访客输入正确分享码后获得 Host-only 安全 Cookie；Cookie 的到期时间不晚于分享状态的 `expires_at`。
+5. Cookie 绑定 site、host 和 generation；重置/停止后旧 Cookie 最多在现有 30 秒元数据缓存收敛后失效，自动到期不额外延迟。
+6. Redis 写入、校验或状态损坏时访客不得绕过；所有者 OIDC 仍然可用。
+7. 分享码尝试受站点+IP 5 次/10 分钟与站点全局 50 次/10 分钟限制；真实 IP 只接受显式配置的受信代理头。
+8. 前端接入时先选择“使用分享码访问”再展示 1/7/30 天，并用单个按钮复制包含说明、地址、分享码和有效期的完整分享信息；该 UI 不在本分支实现。
+9. CTL/site-gateway 聚焦测试和 `git diff --check` 给出最新命令证据；真实 Redis 和线上请求未执行时必须明确标注。

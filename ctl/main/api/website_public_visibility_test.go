@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	websitelogic "ctl/pkg/logic/website"
 	"ctl/pkg/model/website"
@@ -20,11 +21,14 @@ func (f *fakePublicWebsiteLogic) GetSite(_, _ string) (*website.SiteEntity, erro
 }
 
 func TestPublicGetSiteDoesNotExposeUserID(t *testing.T) {
+	expiresAt := time.Date(2026, 8, 28, 3, 0, 0, 0, time.UTC)
 	site := &website.SiteEntity{
-		SiteID:    "ws-1",
-		Status:    website.SiteStatusActive,
-		CloudPath: "sites/ws-1/releases/wr-1/",
-		PublicURL: "https://ws-1.example.test/",
+		SiteID:         "ws-1",
+		Status:         website.SiteStatusActive,
+		CloudPath:      "sites/ws-1/releases/wr-1/",
+		PublicURL:      "https://ws-1.example.test/",
+		AccessMode:     website.SiteAccessModeShareCode,
+		ShareExpiresAt: &expiresAt,
 	}
 	site.UserID = "user-1"
 
@@ -46,5 +50,11 @@ func TestPublicGetSiteDoesNotExposeUserID(t *testing.T) {
 	}
 	if _, exists := payload.Data["user_id"]; exists {
 		t.Fatalf("public site response must not expose user_id: %#v", payload.Data)
+	}
+	if _, exists := payload.Data["ShareGeneration"]; exists {
+		t.Fatalf("public site response must not expose share generation: %#v", payload.Data)
+	}
+	if _, exists := payload.Data["share_generation"]; exists {
+		t.Fatalf("public site response must not expose share generation: %#v", payload.Data)
 	}
 }

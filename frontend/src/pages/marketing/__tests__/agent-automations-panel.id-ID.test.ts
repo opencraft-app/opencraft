@@ -66,6 +66,7 @@ const JOB_COPY = [
   ["暂无完成记录，下游任务会在无上游上下文的情况下继续执行", "No completed run is available. The downstream job will continue without upstream context.", "Belum ada eksekusi yang selesai. Job downstream akan terus berjalan tanpa konteks upstream."],
   ["原对话（创建任务的聊天通道）", "Original chat (where the job was created)", "Obrolan asal (tempat job dibuat)"],
   ["任务名称与ID", "Job name and ID", "Nama dan ID job"],
+  ["删除后将解除上游绑定并继续独立执行", "After deletion, their upstream links will be removed and they will continue running independently.", "Setelah dihapus, tautan job upstream akan dilepas dan job downstream akan terus berjalan secara mandiri."],
   ["删除失败，请检查以下任务：{{names}}", "Deletion failed. Check these jobs: {{names}}", "Penghapusan gagal. Periksa job berikut: {{names}}"],
   ["删除自动任务", "Delete job", "Hapus Job"],
   ["受影响的直接下游任务", "Affected direct downstream jobs", "Job downstream langsung yang terdampak"],

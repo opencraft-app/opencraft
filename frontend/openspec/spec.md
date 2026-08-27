@@ -300,3 +300,104 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 5. 不修改 `en/**`、`global/**` 或国内站根目录正文，不借本任务修订其他语言内容。
 6. 三批范围固定为：工具型 28 篇、Use Cases 16 篇、Compare 与 Hermes Agent Deep Dive 17 篇。
 7. 自动门禁必须校验路径集合、`source_path`、图片目标、代码块、标题层级、表格结构、内部链接、last-updated 与 61 个西语 slug。
+
+---
+
+# 国内建站临时分享码 Spec
+
+**最后更新：** 2026-08-27
+**状态：** Redis TTL 后端已实现；前端管理 UI 已撤出本分支并移交前端同学
+
+## 1. Redis 状态与安全不变量
+
+本功能不新增 MySQL column 或 migration。Redis key 是临时分享状态的唯一真源：
+
+```text
+website:share:access:{site_id}
+```
+
+Value 为 JSON：
+
+```json
+{
+  "code_hash": "<bcrypt digest>",
+  "generation": "<crypto-random opaque id>",
+  "expires_at": "<RFC3339 UTC>"
+}
+```
+
+- Redis key TTL 只允许 1、7、30 天；`expires_at` 与 TTL 使用同一个服务端 UTC 基准计算。
+- 分享码由 `crypto/rand` 从 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` 中生成 6 位大写字符串。
+- Redis 只保存 bcrypt hash，不保存明文；明文只在开启或重置响应中返回一次。
+- `generation` 使用独立的加密随机值，不对用户接口暴露，用于废除旧分享 Cookie。
+- key 缺失、过期、JSON 损坏、hash/generation/expires_at 缺失或 `expires_at <= now` 均按 `owner_only`。
+- Redis 状态读取异常时，分享管理和验证返回不可用；站点元数据读取降级为 `owner_only`，不得破坏 Owner OIDC。
+
+## 2. CTL 契约
+
+所有者接口继续位于现有 `websiteInstanceAuthMiddleware` 后：
+
+```http
+PUT /v1/websites/{site_id}/access
+{"mode":"share_code","duration_days":7}
+
+PUT /v1/websites/{site_id}/access
+{"mode":"owner_only"}
+
+POST /v1/websites/{site_id}/share-code/reset
+```
+
+- `duration_days` 仅接受 `1|7|30`；`share_code` 缺失或非法时返回参数错误。
+- 开启分享生成新 code/hash/generation，以选择的天数重置 TTL，并返回 `mode`、一次性 `code`、`expires_at`。
+- `owner_only` 删除分享 key；key 已不存在时保持幂等。
+- 重置只允许当前有效分享：生成新 code/hash/generation，使用旧状态的绝对 `expires_at` 计算剩余 TTL，不延长有效期。
+- 用户站点列表和详情只返回派生的 `AccessMode`、`ShareExpiresAt`；不得返回 hash 或 generation。
+- `GetSiteInternal` 返回 gateway 所需的 `access_mode`、`share_generation`、`share_expires_at`；Redis 异常时返回 owner-only 空状态。
+
+内部接口复用 constant-time 校验的 `X-Internal-Token`：
+
+```http
+POST /internal/ctl/websites/sites/{site_id}/share-code/verify
+X-Site-Client-IP: <trusted-client-ip-or-empty>
+{"code":"7KQ9XM"}
+```
+
+成功返回 `verified=true`、`share_generation`、`share_expires_at`。错误码统一返回 403，不区分未分享、过期、状态损坏或摘要不匹配；命中限流返回 429；Redis 不可用返回 503。响应和日志均不得包含 code/hash。
+
+## 3. 分布式尝试限制
+
+CTL 在读取分享状态和执行 bcrypt 前通过 Redis Lua 原子预留尝试：
+
+- `website:share:attempts:site:{siteID}`：10 分钟 50 次。
+- 客户端 IP 非空时再使用 `website:share:attempts:site:{siteID}:ip:{sha256(ip)}`：10 分钟 5 次。
+- 成功验证后删除本次站点/IP 计数；失败保留到 TTL。
+- Redis client 为空或脚本失败时 fail-closed，不执行 bcrypt。
+
+IP 不进入 Redis key 明文、不写业务日志。只有 `SITE_GATEWAY_TRUST_PROXY_HEADERS=true` 时才读取受控入口追加的 `X-Forwarded-For` 首个合法地址；未显式信任时不发送客户端 IP，只保留站点全局上限。
+
+## 4. site-gateway 访问流程
+
+`sitemeta.Site` 使用 `access_mode`、`share_generation` 与 `share_expires_at`。gateway 不读取 hash，也不直接连接 Redis。
+
+- `public`：保持现有直接回源，不读取分享 Cookie、不展示分享页。
+- `required + owner_only`：保持现有 owner Cookie + OIDC 流程。
+- `required + active share_code`：有效 owner Cookie或 generation 匹配且未过期的分享 Cookie 放行；否则跳转同源分享页。
+- 元数据中的分享状态过期、缺失或未知时按 owner-only；自动到期使用本地 `expires_at` 判断，不等待 30 秒元数据缓存清除。
+
+分享页只接受 GET/HEAD 与 POST。POST 校验成功后写 `__Host-lv_site_share`，固定 `Secure; HttpOnly; SameSite=Lax; Path=/`、无 Domain，Cookie Max-Age 和 token exp 均为 `share_expires_at - now`，不得超过分享剩余有效期。
+
+`ShareSessionClaims` 为 `{SiteID, SiteHost, Generation, Nonce}`。站点 ID、Host、generation 不匹配或 token 到期均视为无效；重置/停止后的主动废除受现有 30 秒站点元数据缓存影响，自动到期不受该缓存延长。
+
+## 5. 前端交接边界
+
+- 本分支保持前端基线不变：不开放国内 `/agents/websites` 路由，不增加工作台分享按钮或 Dialog，不修改 Sarah 原工作台样式。
+- 后续前端交互应先选择“使用分享码访问”，再出现 1 天、7 天、30 天选项；不得在 owner-only 初始态提前展示时长。
+- 开启或重置后只提供一个“复制分享信息”按钮，不分别复制地址和分享码。建议复制内容为：`Hi，我使用 LightVela 给你分享了一个网站：\n<URL>\n分享码：<CODE>\n有效期至：<TIME>`。
+- 分享码明文仍只在开启或重置后展示一次；重置不延长到期时间，停止分享调用 owner-only 接口。
+
+## 6. 验证
+
+- CTL：1/7/30 天 TTL、非法时长、无 DB 字段/migration、只存 bcrypt、随机 generation、重置保留到期、停止删除、过期/损坏/Redis 异常、内部路由与限流。
+- site-gateway：owner-only/public 回归、分享页、动态 Cookie TTL、generation 失效、自动到期、错误/429/503、return_to 安全和受信代理头。
+- 前端：不在本分支验证，交由后续前端实现补充交互测试、类型检查、i18n 与浏览器验收。
+- 门禁：目标 Go 包测试、site-gateway `go test ./...`、`git diff --check`。

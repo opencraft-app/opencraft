@@ -398,6 +398,31 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it.each([
+    ["en-US", "High-risk operations run without approval"],
+    ["zh-Hant", "當前高風險操作無需審批"],
+    ["id-ID", "Operasi berisiko tinggi tanpa persetujuan"],
+    ["es", "Las operaciones de alto riesgo se ejecutan sin aprobación"],
+    ["ja-JP", "現在、高リスク操作は承認なしで実行されます"],
+    ["ko-KR", "현재 고위험 작업은 승인 없이 실행됩니다"],
+  ] as const)("localizes the approval-off warning for %s", async (locale, expectedCopy) => {
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot({
+          values: { ...baseSnapshot().values, approvalMode: "off" },
+        })}
+        saveSetting={vi.fn()}
+      />,
+      locale,
+    );
+
+    expect(await screen.findByText(expectedCopy)).toHaveClass("whitespace-nowrap", "text-right");
+  });
+
   it("disables Security reset when both Security settings are unsupported", async () => {
     render(
       <AgentCommonSettingsPanel

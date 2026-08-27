@@ -1,6 +1,6 @@
 # 西语自动任务 Job 术语统一
 
-> 日期：2026-08-27｜分支：`codex/lightvela-roadmap-2026-09`｜提交：`34c81154cf59e10054afb9a74e1cd967e922d876`｜MR：`wisp/mono2!3405`
+> 日期：2026-08-27｜分支：`codex/lightvela-roadmap-2026-09`｜基线提交：`34c81154cf59e10054afb9a74e1cd967e922d876`｜MR：`wisp/mono2!3405`
 
 ## 一、需求概要
 
@@ -13,6 +13,8 @@
 - [x] 西语以 `Ejecución` / `Ejecuciones` 表示单次执行记录，并保留 `tarea` 表达 Job 实际执行的工作内容。
 - [x] 新建、编辑、详情、ID、上下游关系和限制提示统一使用 Job 术语。
 - [x] 增加 92 条西语术语契约测试并完成相关回归。
+- [x] 根据 MR 评审补齐英文后台运行提示、印尼语下游 Job 文案和审批关闭提示的多语言断言。
+- [x] 合入最新 `master`，补齐新增会话侧边栏文案的西语和印尼语翻译，并同步全部语种字典结构。
 
 ## 三、关键决策
 
@@ -26,7 +28,9 @@
 - 更新 `frontend/src/i18n/generated/es.json` 中 92 条自动任务相关译文。
 - 新增 `agent-automations-panel.es.test.ts`，逐条校验中文源文案、hash key 与西语值。
 - 新增 `agent-automations-job-copy.es.json`，集中维护本次术语契约。
-- 在 `frontend/openspec/plan.md` 记录西语补充任务与 RED/GREEN 验证证据。
+- 修正全球站后台运行提示测试中的旧 `task` 文案，并为印尼语删除上游后的下游 Job 文案增加契约测试。
+- 为审批关闭提示增加英语、繁中、印尼语、西语、日语和韩语的 UI 文案与单行布局断言。
+- 本文档记录本次需求与验证结果；不提交仅供本地流程使用的 `frontend/openspec/plan.md` 改动。
 
 ## 五、规范沉淀
 
@@ -45,10 +49,10 @@
 
 验证结果：
 
-- 自动任务相关回归：14 个测试文件，377 条测试通过。
-- `pnpm i18n:check` 通过，西语 2639/2639 条完整。
-- `pnpm check` 通过，TypeScript diagnostics 为 221 current / 276 baseline / 0 new / 55 resolved。
-- `git diff --check` 通过。
-- 独立 final review 首轮发现 2 条 P2 残留，修复并补测后复核为 P0/P1/P2 均为 0，`verdict=pass`。
+- 本轮相关回归：8 个测试文件 285 条测试通过；全球站后台运行提示 2 条测试通过。
+- `pnpm i18n:check` 通过：英语、繁中和西语 2652/2652 条完整；印尼语保持 175 条既有翻译债务基线。
+- 字典完整性测试 10 条通过，最新 `master` 新增文案已同步到全部语种字典，过期反查 key 已由提取脚本清理。
+- `pnpm check` 通过，TypeScript diagnostics 为 214 current / 276 baseline / 0 new / 62 resolved。
+- MR 后续评审发现的全球站测试旧文案、印尼语 Job 残留、语言断言覆盖和本地过程文档范围问题均已修复。
 
-归档采用 scoped 降级：仓库共享的 `frontend/openspec/plan.md` 仍包含 9 个其他需求的待办项，未执行 `feai archive reset-state`，以免覆盖其他在研需求。该限制不影响本次西语术语变更及 MR 交付，但完整 archive gate 需等共享计划拆分后再通过。
+归档采用 scoped 方式：仅维护本次 change 文档，不改动仓库共享的 `frontend/openspec/plan.md`，避免把本地过程记录混入 MR 或覆盖其他在研需求。

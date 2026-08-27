@@ -27,14 +27,30 @@ const (
 	StatusDeleted   = "deleted"
 )
 
+const (
+	AccessModeOwnerOnly = "owner_only"
+	AccessModeShareCode = "share_code"
+)
+
+// NormalizeAccessMode 让空值和未知值安全降级为仅所有者访问。
+func NormalizeAccessMode(mode string) string {
+	if mode == AccessModeShareCode {
+		return AccessModeShareCode
+	}
+	return AccessModeOwnerOnly
+}
+
 // ErrNotFound 表示站点不存在。与「查询失败」区分开：前者返回 404，后者返回 502。
 var ErrNotFound = errors.New("site not found")
 
 type Site struct {
-	SiteID    string `json:"site_id"`
-	UserID    string `json:"user_id"`
-	Status    string `json:"status"`
-	CloudPath string `json:"cloud_path"`
+	SiteID          string     `json:"site_id"`
+	UserID          string     `json:"user_id"`
+	Status          string     `json:"status"`
+	CloudPath       string     `json:"cloud_path"`
+	AccessMode      string     `json:"access_mode"`
+	ShareGeneration string     `json:"share_generation"`
+	ShareExpiresAt  *time.Time `json:"share_expires_at"`
 	// MonthlyTrafficBytes 是该站点所属套餐的月流量额度，0 表示不限额。
 	//
 	// 额度和已用量跟着状态一起回来，而不是另开一次查询：这个接口已经有 30 秒
@@ -42,6 +58,13 @@ type Site struct {
 	MonthlyTrafficBytes int64 `json:"monthly_traffic_bytes"`
 	// UsedTrafficBytes 是所属用户当月已用流量（跨该用户的全部站点）。
 	UsedTrafficBytes int64 `json:"used_traffic_bytes"`
+}
+
+// ShareAccessActiveAt 只接受同时具备 generation 且绝对到期时间仍在未来的分享状态。
+// 即使 CTL 元数据仍在 30 秒缓存中，过期时间一到也不会继续放行旧 Cookie。
+func (s *Site) ShareAccessActiveAt(now time.Time) bool {
+	return s != nil && NormalizeAccessMode(s.AccessMode) == AccessModeShareCode &&
+		strings.TrimSpace(s.ShareGeneration) != "" && s.ShareExpiresAt != nil && s.ShareExpiresAt.After(now)
 }
 
 // TrafficExhausted 判断该站点是否应因当月流量用尽而停止服务。
