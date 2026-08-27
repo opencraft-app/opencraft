@@ -586,11 +586,11 @@
 - [x] 构建期根据仓库安装器生成 SHA-256；实例执行前必须匹配该值，合法 Bash 被替换后同样拒绝执行并写入 `verify_installer` 失败状态。
 - [x] 删除安装 payload 的前端运行时依赖，Provider helper 的内联执行与密钥传输保持不变。
 - [x] 同步规格和 PRD，运行定向测试、类型检查、生成物检查及差异检查。
-- [ ] 将当前 npm-only 六插件安装器覆盖到 COS 对象并复验。2026-08-26 实测源站与加速域名均返回旧 GitHub 四插件脚本，ETag `64acd8e96c56a730e4041276604e7f47`，尚无钉钉支持。
+- [x] 将当前 npm-only 六插件安装器与 COS 对象对齐并复验。2026-08-27 源站与加速域名均返回 ETag `4fec36772fbe755964e8ade2dad5bd1e`，仓库和远端 SHA-256 均为 `1025d54f38e3c82fed6195e318ef0c9e884c447431a6984af895c3bb89f4c2bc`。
 
 **Planning Gate:** 用户已明确指定 COS 全球加速域名；脚本路径保持 `/dsh/install-deepseek-harness.sh`，远端对象为完整单文件安装器，不再由前端上传安装 payload。
 
-**Status:** 前端实现与本地验证完成；真实安装仍等待 COS 对象更新后复验。未 commit、未 push、未创建 MR。
+**Status:** 前端实现与本地验证完成，COS 字节一致性门禁通过；北京 Hermes Sandbox 真实安装仍待复验。未 commit、未 push、未创建 MR。
 
 ---
 
@@ -610,6 +610,33 @@
 - [x] 运行 DSH 聚焦测试、安装器 shell 测试、生成物、类型、i18n 与 diff 门禁，等待用户验收后再提交。
 
 **Verification:** DSH 相关 10 个 Vitest 文件共 75 个测试通过；安装器、release retention、standalone contract 与 COS verifier 四组 shell 测试通过；`pnpm check` 为 232 current / 276 baseline / 0 new，i18n 英文待翻译 0；CI runtime 464 个测试通过。真实 COS 校验当前按预期失败：仓库安装器 SHA-256 为 `8873cd55452895b4e735904eda74f3357c3a8da936a580dcc3472773bd1a0531`，远端仍为 `d1fddc521cc3e5f35edcdeb569118283340f46f44fcb47183309e3f935e93214`，需覆盖对象后再复验。
+
+### Task 18: 修复 MR !3395 状态探测与 SHA 门禁评论
+
+**Goal:** 修复缺少 `curl` 且服务有自动重启记录时状态探测未 fail closed 的分支顺序，并闭合仓库安装器、前端生成 SHA 与 COS 对象的三方一致性校验。
+
+- [x] RED：补充 `NRestarts=2` 且缺少 `curl` 的状态回归测试，并增加 CI 必须先运行生成器 `--check` 再校验 COS 的契约测试。
+- [x] GREEN：将 `curl` 可用性检查移到重启状态分支之前，并在 Hermes 镜像流水线中初始化 Node 后执行前端运行时资源生成器检查。
+- [x] 运行 DSH 定向测试、COS verifier、CI runtime、类型检查及差异检查；COS 实际对象上传仍作为独立发布前置等待处理。
+
+**Verification:** 状态命令与生成器相关 4 个 Vitest 文件共 47 项通过；COS verifier 契约测试和生成器 `--check` 通过；CI runtime 465 项通过；`pnpm check` 为 232 current / 276 baseline / 0 new。后续 Task 19 已将仓库安装器和固定 SHA 对齐到 COS 当前对象。
+
+**Status:** 代码项完成，等待用户验收后提交；COS 发布前置已在 Task 19 完成。
+
+### Task 19: 增加 DeepSeek Harness 修复操作
+
+**Goal:** 在已安装卡片增加经过确认的“修复”操作，复用现有安装任务重装运行环境和 WebUI 插件环境，并准确说明保留与重置范围。
+
+- [x] RED：补充修复弹窗、准确文案、取消保护、任务类型持久化、刷新恢复和失败回滚后的页面状态测试。
+- [x] GREEN：实现独立确认弹窗、修复按钮、`install | repair` 操作状态及修复失败后的真实状态回读。
+- [x] 安装器契约：普通安装保留现有 profile；确认修复时 wrapper 隔离完整旧 profile，只将 `cordis.patch.yml` 带入干净 profile，再调用同一 `install` action；失败恢复完整备份，成功后清理备份。
+- [x] 同步 proposal/spec/PRD/i18n，并运行 DSH 定向测试、类型检查、CI runtime 与差异门禁。
+
+**Planning Gate:** 用户已确认按钮文案、两条弹窗正文和数据边界；修复继续调用安装器 `install` action，保留模型配置、DSH 设置与存储数据，标准 WebUI 插件环境重新安装，用户自定义插件与 profile 文件不保留。
+
+**Verification:** DSH 前端与运行时资源 4 个测试文件共 51 项通过；安装器、release 复用/保留、独立脚本契约、生成器检查、Bash 语法检查和 COS 实际对象一致性校验通过；`pnpm check` 为 232 current / 276 baseline / 0 new。仓库安装器与 COS 源站、加速域名对象的 SHA-256 均为 `1025d54f38e3c82fed6195e318ef0c9e884c447431a6984af895c3bb89f4c2bc`。
+
+**Status:** 本地实现与回归验证完成；等待用户确认后再提交。
 
 ---
 

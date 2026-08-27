@@ -166,6 +166,25 @@ for name, version in plugins.items():
         payload["dsh"] = {"bundle": {"patch": "./cordis.patch.yml"}}
     with open(os.path.join(package_dir, "package.json"), "w", encoding="utf-8") as handle:
         json.dump(payload, handle, separators=(",", ":"))
+    with open(os.path.join(package_dir, "cordis.patch.yml"), "w", encoding="utf-8") as handle:
+        handle.write("name: test-plugin\n")
+
+with open(os.path.join(root, "package.json"), encoding="utf-8") as handle:
+    profile = json.load(handle)
+for name, version in profile.get("dependencies", {}).items():
+    if name in plugins:
+        continue
+    package_dir = os.path.join(root, "node_modules", *name.split("/"))
+    os.makedirs(package_dir, exist_ok=True)
+    payload = {
+        "name": name,
+        "version": version,
+        "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
+    }
+    with open(os.path.join(package_dir, "package.json"), "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, separators=(",", ":"))
+    with open(os.path.join(package_dir, "cordis.patch.yml"), "w", encoding="utf-8") as handle:
+        handle.write("name: test-custom-plugin\n")
 PY
     ;;
   *) exit 98 ;;
@@ -397,15 +416,13 @@ cat >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/package.json" <<'JSON'
 {"dependencies":{"third-party-plugin":"1.0.0"},"dsh":{"profile":{"bundles":["third-party-plugin"]}}}
 JSON
 printf '%s\n' 'keep-me' >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/unknown-marker"
+printf '%s\n' 'custom-provider-patch' >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/cordis.patch.yml"
 unknown_task="dshi-3123456789abcdef0123456789abcdef"
-if ${INSTALLER} install --task-id "${unknown_task}" --trusted-browser-host "${trusted_browser_host}"; then
-  echo 'unknown profile plugin unexpectedly allowed installation' >&2
-  exit 1
-fi
+${INSTALLER} install --task-id "${unknown_task}" --trusted-browser-host "${trusted_browser_host}"
 test -f "${TEST_ROOT}/home/agentuser/.dsh/profiles/web/unknown-marker"
-! grep -Fq 'curl ' "${CALLS}"
-! grep -Fq 'pnpm ' "${CALLS}"
-assert_task_status "${unknown_task}" failed
+grep -Fq 'third-party-plugin' "${TEST_ROOT}/home/agentuser/.dsh/profiles/web/package.json"
+grep -Fq 'custom-provider-patch' "${profile}/cordis.patch.yml"
+assert_task_status "${unknown_task}" succeeded
 assert_no_worktree
 
 reset_instance

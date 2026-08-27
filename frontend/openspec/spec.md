@@ -1,7 +1,7 @@
 # DeepSeek Harness 真实接入 Spec
 
 **最后更新：** 2026-08-27
-**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机复验；仓库安装器新增中断残留清理，待覆盖 COS 对象并通过发布一致性门禁；北京 Hermes Sandbox 与 TAT 链路仍待复验
+**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机复验；仓库安装器已与 COS 对象逐字节对齐并通过发布一致性门禁；北京 Hermes Sandbox 与 TAT 链路仍待复验
 
 ## 1. 统一命令通道
 
@@ -11,6 +11,7 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 | --- | --- |
 | 状态 | `sudo -n systemctl status deepseek-harness.service --no-pager`、`NRestarts` 与三秒 `http://127.0.0.1:3080/` 探测；sudo 或 `curl` 不可用、探测命令异常时整体失败，不回落为未安装或误报服务异常 |
 | 安装 | 下发固定 `sudo -n systemd-run` 命令，由实例经 HTTPS 从 COS 全球加速地址下载单文件安装器，校验构建期固定 SHA-256 后执行；任务 ID 由前端生成并校验 |
+| 修复 | 用户二次确认后复用安装任务，固定传入 `repair` 操作类型；wrapper 隔离完整旧 Web profile，只保留 `cordis.patch.yml` 作为干净 profile 输入，再调用同一安装器 `install` action；失败时恢复旧 profile 和服务，成功后清理备份 |
 | 任务查询 | `sudo -n cat /var/lib/lightvela/dsh/installations/<validated-id>.json` |
 | 重启 | `sudo -n systemctl restart deepseek-harness.service`，先校验命令退出码，再查询组合健康状态 |
 | 模型供应商列表 | 以 `agentuser` 身份执行前端内联的固定 Provider helper：`providers --region <cn|global>` |
@@ -48,7 +49,7 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 - 取得全局安装锁后，安装器清理严格位于 LightVela 受管根目录且名称匹配 `dshi-[0-9a-f]{32}` 的遗留 runtime/profile/tooling/work staging、profile/unit backup 与 unit candidate；非受管名称和目录保持不变。
 - 切换前备份旧 runtime、完整旧 `web` profile、固定 pnpm tooling 和旧 unit；切换后明确 enable、restart，先等待回环 HTTP 200，再确认只监听 `127.0.0.1:3080`。失败时恢复备份并重启旧服务；首次安装失败清理临时目录和半成品。
 - 重装或升级时保留原 `web/cordis.patch.yml`；`$DSH_HOME` 下的 credentials、settings、storage 和其他用户数据不参与替换或清理。成功或失败后删除任务工作目录，但保留安装任务 JSON 状态记录。
-- 已经收敛到相同 npm 快照、六插件和服务配置时幂等复用 runtime。检测到非 LightVela 管理的额外 profile 依赖或 bundle 时保持原状并失败，不删除未知插件、不放弃快照一致性保证。
+- 已经收敛到相同 npm 快照、六插件和服务配置时幂等复用 runtime。普通安装保留现有 profile、额外依赖、bundle 和自定义文件。用户确认“修复”后，wrapper 隔离完整旧 profile，只将 `web/cordis.patch.yml` 放入干净 profile，再调用安装器；模型凭据、DSH settings 与 storage 保留，用户自行安装的插件及其他 profile 文件移除。任务失败时恢复完整旧 profile 和原服务状态。
 
 ## 3. 模型供应商配置 helper
 
@@ -62,6 +63,8 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 
 - 状态查询 loading、error、未安装、安装中、安装失败、运行中、运行异常、未运行完整覆盖。systemd active 但存在自动重启记录或回环 HTTP 不可达时为运行异常。
 - dsh 已安装即展示模型配置卡片和 WebUI/重启操作；运行状态如实展示，不增加诊断分支。
+- 已安装卡片在“重启”右侧展示“修复”。点击后显示 `修复 DeepSeek Harness` 确认弹窗并准确说明 WebUI 暂时不可用、数据保留范围和插件重置范围；取消、关闭或 Esc 均不启动任务。
+- 确认修复后显示 `正在修复 DeepSeek Harness` 和现有任务进度。任务类型与 task ID 一并持久化，刷新后优先恢复修复轮询；修复失败且安装器已回滚时重新读取真实状态，旧服务可用则保留已安装页面并展示错误。
 - 模型配置卡片上方持续展示已配置模型供应商，每行提供编辑和删除；同一时间只展开一个编辑区。
 - 配置区始终展示当前站点完整白名单，字段标签使用“模型供应商”；重复保存同一 Provider 通过原固定命令覆盖更新。
 - API Key 输入始终为空；编辑时留空表示保留已有密钥。

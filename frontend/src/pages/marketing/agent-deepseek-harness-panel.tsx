@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, Download, ExternalLink, Info, Loader2, RefreshCw, RotateCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, ExternalLink, Info, Loader2, RefreshCw, RotateCw, Wrench } from "lucide-react";
 import { type TransitionEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRepositories } from "@/contexts/repository-context";
@@ -12,6 +12,7 @@ import {
 import { isCN } from "@/lib/region";
 import { cn } from "@/lib/utils";
 import { AgentDeepSeekHarnessModelCard } from "@/pages/marketing/agent-deepseek-harness-model-card";
+import { DeepSeekHarnessRepairDialog } from "@/pages/marketing/agent-deepseek-harness-repair-dialog";
 
 export const DEEPSEEK_HARNESS_LOGO_URL =
   "/assets/deepseek-harness-logo.svg";
@@ -47,9 +48,11 @@ const advanceInstallationProgress = (current: number, actual: number, stage: str
 
 type ViewStatus = "loading" | "error" | "not-installed" | "installing" | "installed";
 type RestartPhase = "idle" | "restarting" | "completed";
+type InstallationOperation = "install" | "repair";
 type CardTransition = "idle" | "fading-out" | "fading-in-start" | "fading-in";
 
 const taskStorageKey = (botId: string) => `lightvela:dsh:install-task:${botId}`;
+const taskOperationStorageKey = (botId: string) => `lightvela:dsh:install-task-operation:${botId}`;
 
 const readTaskId = (botId: string) => {
   try {
@@ -59,9 +62,18 @@ const readTaskId = (botId: string) => {
   }
 };
 
-const saveTaskId = (botId: string, taskId: string) => {
+const readTaskOperation = (botId: string): InstallationOperation => {
+  try {
+    return window.localStorage.getItem(taskOperationStorageKey(botId)) === "repair" ? "repair" : "install";
+  } catch {
+    return "install";
+  }
+};
+
+const saveTask = (botId: string, taskId: string, operation: InstallationOperation) => {
   try {
     window.localStorage.setItem(taskStorageKey(botId), taskId);
+    window.localStorage.setItem(taskOperationStorageKey(botId), operation);
   } catch {
     // The running task remains recoverable through a fresh install request if storage is unavailable.
   }
@@ -70,6 +82,7 @@ const saveTaskId = (botId: string, taskId: string) => {
 const clearTaskId = (botId: string) => {
   try {
     window.localStorage.removeItem(taskStorageKey(botId));
+    window.localStorage.removeItem(taskOperationStorageKey(botId));
   } catch {
     // Storage cleanup is best effort only.
   }
@@ -132,6 +145,8 @@ export const AgentDeepSeekHarnessPanel = ({
   const [installationProgress, setInstallationProgress] = useState(0);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [restartPhase, setRestartPhase] = useState<RestartPhase>("idle");
+  const [installationOperation, setInstallationOperation] = useState<InstallationOperation>("install");
+  const [repairDialogOpen, setRepairDialogOpen] = useState(false);
   const [cardTransition, setCardTransition] = useState<CardTransition>("idle");
   const pollTimerRef = useRef<number | null>(null);
   const transitionTimerRef = useRef<number | null>(null);
@@ -188,7 +203,34 @@ export const AgentDeepSeekHarnessPanel = ({
     }, INSTALLATION_COMPLETE_HOLD_MS);
   }, [botId, scheduleAnimationFrame]);
 
-  const pollInstallation = useCallback(async (taskId: string, consecutiveErrors = 0): Promise<void> => {
+  const restoreAfterOperationFailure = useCallback(async (
+    operation: InstallationOperation,
+    message: string,
+  ) => {
+    if (operation === "install") {
+      setStatus("not-installed");
+      setOperationError(message);
+      return;
+    }
+    try {
+      const nextRuntime = await client.getStatus();
+      if (!mountedRef.current) return;
+      setRuntime(nextRuntime);
+      setStatus(nextRuntime.installed ? "installed" : "not-installed");
+      setOperationError(message);
+    } catch (statusError) {
+      if (!mountedRef.current) return;
+      setRuntime(null);
+      setStatus("error");
+      setOperationError(toErrorMessage(statusError, message));
+    }
+  }, [client]);
+
+  const pollInstallation = useCallback(async (
+    taskId: string,
+    operation: InstallationOperation,
+    consecutiveErrors = 0,
+  ): Promise<void> => {
     clearPollTimer();
     try {
       const task = await client.getInstallation(taskId);
@@ -197,8 +239,12 @@ export const AgentDeepSeekHarnessPanel = ({
 
       if (task.status === "failed") {
         clearTaskId(botId);
-        setStatus("not-installed");
-        setOperationError(task.error || task.message || t("DeepSeek Harness 安装失败，请重新尝试"));
+        await restoreAfterOperationFailure(
+          operation,
+          task.error || task.message || (operation === "repair"
+            ? t("DeepSeek Harness 修复失败，请稍后重试")
+            : t("DeepSeek Harness 安装失败，请重新尝试")),
+        );
         return;
       }
       if (task.status === "succeeded") {
@@ -210,21 +256,25 @@ export const AgentDeepSeekHarnessPanel = ({
       }
 
       pollTimerRef.current = window.setTimeout(() => {
-        void pollInstallation(taskId, 0);
+        void pollInstallation(taskId, operation, 0);
       }, INSTALLATION_POLL_INTERVAL_MS);
     } catch (pollError) {
       if (!mountedRef.current) return;
       if (consecutiveErrors + 1 < MAX_POLL_ERRORS) {
         pollTimerRef.current = window.setTimeout(() => {
-          void pollInstallation(taskId, consecutiveErrors + 1);
+          void pollInstallation(taskId, operation, consecutiveErrors + 1);
         }, INSTALLATION_POLL_INTERVAL_MS);
         return;
       }
       clearTaskId(botId);
-      setStatus("not-installed");
-      setOperationError(toErrorMessage(pollError, t("安装状态查询失败，请重新尝试")));
+      await restoreAfterOperationFailure(
+        operation,
+        toErrorMessage(pollError, operation === "repair"
+          ? t("修复状态查询失败，请稍后重试")
+          : t("安装状态查询失败，请重新尝试")),
+      );
     }
-  }, [botId, clearPollTimer, client, finishInstallation, t]);
+  }, [botId, clearPollTimer, client, finishInstallation, restoreAfterOperationFailure, t]);
 
   const loadStatus = useCallback(async () => {
     clearPollTimer();
@@ -232,21 +282,24 @@ export const AgentDeepSeekHarnessPanel = ({
     setRuntime(null);
     setOperationError(null);
     setRestartPhase("idle");
+    setRepairDialogOpen(false);
     setInstallationProgress(0);
     setCardTransition("idle");
+    const existingTaskId = readTaskId(botId);
+    if (existingTaskId) {
+      const operation = readTaskOperation(botId);
+      setInstallationOperation(operation);
+      setStatus("installing");
+      setInstallationProgress(1);
+      void pollInstallation(existingTaskId, operation);
+      return;
+    }
     try {
       const nextRuntime = await client.getStatus();
       if (!mountedRef.current) return;
       if (nextRuntime.installed) {
         setRuntime(nextRuntime);
         setStatus("installed");
-        return;
-      }
-      const existingTaskId = readTaskId(botId);
-      if (existingTaskId) {
-        setStatus("installing");
-        setInstallationProgress(1);
-        void pollInstallation(existingTaskId);
         return;
       }
       setStatus("not-installed");
@@ -265,18 +318,39 @@ export const AgentDeepSeekHarnessPanel = ({
   const handleInstall = async () => {
     if (status !== "not-installed") return;
     setOperationError(null);
+    setInstallationOperation("install");
     setInstallationProgress(1);
     setStatus("installing");
     try {
       const task = await client.startInstall();
       if (!mountedRef.current) return;
-      saveTaskId(botId, task.task_id);
-      await pollInstallation(task.task_id);
+      saveTask(botId, task.task_id, "install");
+      await pollInstallation(task.task_id, "install");
     } catch (installError) {
       if (!mountedRef.current) return;
       clearTaskId(botId);
       setStatus("not-installed");
       setOperationError(toErrorMessage(installError, t("DeepSeek Harness 安装启动失败，请重新尝试")));
+    }
+  };
+
+  const handleRepair = async () => {
+    if (status !== "installed") return;
+    setRepairDialogOpen(false);
+    setOperationError(null);
+    setInstallationOperation("repair");
+    setInstallationProgress(1);
+    setStatus("installing");
+    try {
+      const task = await client.startInstall("repair");
+      if (!mountedRef.current) return;
+      saveTask(botId, task.task_id, "repair");
+      await pollInstallation(task.task_id, "repair");
+    } catch (repairError) {
+      if (!mountedRef.current) return;
+      clearTaskId(botId);
+      setStatus("installed");
+      setOperationError(toErrorMessage(repairError, t("DeepSeek Harness 修复启动失败，请稍后重试")));
     }
   };
 
@@ -321,7 +395,9 @@ export const AgentDeepSeekHarnessPanel = ({
   const isRuntimeHealthy = runtime?.healthy === true && runtime.status === "running";
   const isRuntimeDegraded = runtime?.service_status === "active" && !isRuntimeHealthy;
   const liveAnnouncement = status === "installing"
-    ? t("正在安装 DeepSeek Harness")
+    ? installationOperation === "repair"
+      ? t("正在修复 DeepSeek Harness")
+      : t("正在安装 DeepSeek Harness")
     : restartPhase === "restarting"
       ? t("正在重启 DeepSeek Harness")
       : restartPhase === "completed"
@@ -449,6 +525,15 @@ export const AgentDeepSeekHarnessPanel = ({
                   )}
                   {restartPhase === "restarting" ? t("重启中...") : t("重启")}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setRepairDialogOpen(true)}
+                  disabled={restartPhase === "restarting"}
+                  className="inline-flex h-10 w-full shrink-0 items-center justify-center gap-2 rounded-md border border-black/[0.12] bg-white px-4 text-sm font-semibold text-black/80 hover:bg-black/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                >
+                  <Wrench className="size-4" aria-hidden="true" />
+                  {t("修复")}
+                </button>
               </div>
             </div>
             {operationError && <p role="alert" className="mt-4 text-sm text-red-600">{operationError}</p>}
@@ -482,20 +567,26 @@ export const AgentDeepSeekHarnessPanel = ({
                 <div
                   ref={installationStatusRef}
                   role="group"
-                  aria-label={t("DeepSeek Harness 安装状态")}
+                  aria-label={installationOperation === "repair"
+                    ? t("DeepSeek Harness 修复状态")
+                    : t("DeepSeek Harness 安装状态")}
                   tabIndex={-1}
                   className="mt-5 w-full focus:outline-none"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="inline-flex items-center gap-2 text-sm font-semibold text-black/75">
                       <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                      {t("正在安装 DeepSeek Harness")}
+                      {installationOperation === "repair"
+                        ? t("正在修复 DeepSeek Harness")
+                        : t("正在安装 DeepSeek Harness")}
                     </span>
                     <span className="text-xs tabular-nums text-black/45">{installationProgress}%</span>
                   </div>
                   <div
                     role="progressbar"
-                    aria-label={t("DeepSeek Harness 安装进度")}
+                    aria-label={installationOperation === "repair"
+                      ? t("DeepSeek Harness 修复进度")
+                      : t("DeepSeek Harness 安装进度")}
                     aria-valuemin={0}
                     aria-valuemax={100}
                     aria-valuenow={installationProgress}
@@ -519,6 +610,12 @@ export const AgentDeepSeekHarnessPanel = ({
       {status === "installed" && (
         <AgentDeepSeekHarnessModelCard botId={botId} region={isCN ? "cn" : "global"} />
       )}
+
+      <DeepSeekHarnessRepairDialog
+        open={repairDialogOpen}
+        onOpenChange={setRepairDialogOpen}
+        onConfirm={() => void handleRepair()}
+      />
     </div>
   );
 };

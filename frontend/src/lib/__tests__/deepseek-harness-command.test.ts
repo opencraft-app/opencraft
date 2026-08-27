@@ -139,7 +139,7 @@ describe("DeepSeekHarnessCommandClient", () => {
     });
   });
 
-  it("fails status detection instead of reporting degraded when curl is unavailable", async () => {
+  it("fails status detection when curl is unavailable even after automatic restarts", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-status-curl-"));
     const binDir = path.join(root, "bin");
     await mkdir(binDir);
@@ -154,7 +154,7 @@ describe("DeepSeekHarnessCommandClient", () => {
       "#!/bin/bash",
       "set -euo pipefail",
       "if [ \"${1:-}\" = \"status\" ]; then exit 0; fi",
-      "if [ \"${1:-}\" = \"show\" ]; then printf '0\\n'; exit 0; fi",
+      "if [ \"${1:-}\" = \"show\" ]; then printf '2\\n'; exit 0; fi",
       "exit 1",
       "",
     ].join("\n"), "utf8");
@@ -246,6 +246,35 @@ describe("DeepSeekHarnessCommandClient", () => {
     expect(command).not.toContain(
       "'ins-0123456789abcdef0123456789abcdef.dsh.lightvela.site'",
     );
+  });
+
+  it("isolates the Web profile before an explicitly confirmed repair", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue(success());
+    const client = new DeepSeekHarnessCommandClient(
+      "ins-0123456789abcdef0123456789abcdef",
+      execDebugCommand,
+      {
+        createTaskId: () => "dshi-0123456789abcdef0123456789abcdef",
+        region: "global",
+      },
+    );
+
+    await client.startInstall("repair");
+
+    const command = String(execDebugCommand.mock.calls[0]?.[1]);
+    expect(command).toMatch(/ 'repair'$/);
+    expect(command).toContain(".lightvela-repair-backup-$task_id");
+    expect(command).toContain("restore_repair_profile");
+    expect(command).not.toContain("--replace-web-profile");
+    const embeddedSources = Array.from(
+      createDeepSeekHarnessInstallLaunchScript().matchAll(/base64\.b64decode\('([^']+)'\)/g),
+      (match) => {
+        const payload = match[1];
+        if (!payload) throw new Error("missing embedded launch helper");
+        return Buffer.from(payload, "base64").toString("utf8");
+      },
+    );
+    expect(embeddedSources.join("\n")).toContain("cordis.patch.yml");
   });
 
   it("keeps an indeterminate launch task when reconciliation is also unavailable", async () => {

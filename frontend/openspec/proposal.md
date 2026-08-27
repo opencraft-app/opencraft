@@ -1,10 +1,10 @@
 # DeepSeek Harness 真实接入 Proposal
 
-**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机的首次安装、同快照重装和服务健康复验；仓库安装器新增中断残留清理，待覆盖 COS 对象并通过发布一致性门禁；北京 Hermes Sandbox 与 TAT 链路仍待复验。
+**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机的首次安装、同快照重装和服务健康复验；仓库安装器已与 COS 对象逐字节对齐并通过发布一致性门禁；北京 Hermes Sandbox 与 TAT 链路仍待复验。
 
 ## 背景与目标
 
-在现有独立“实验室 > DeepSeek Harness”能力页基础上，接入真实实例状态、幂等安装、重启、实例专属 WebUI 访问和页面内模型供应商配置。配置卡片采用“已配置列表 + 单项展开编辑 + 完整白名单配置区”，支持 API Key 新增、覆盖修改和删除。保存期间锁定配置交互并等待 `debug/exec` 返回，结果通过顶部居中 Toast 即时反馈。DSH 与 Hermes 运行在同一台实例、同一 `agentuser` 环境中，但使用独立版本目录、`DSH_HOME` 和系统级 `deepseek-harness.service`；DSH 依赖不写入 Hermes runtime 包树，安装任务使用固定 pnpm 版本且不修改实例全局 pnpm。
+在现有独立“实验室 > DeepSeek Harness”能力页基础上，接入真实实例状态、幂等安装、重启、确认后修复、实例专属 WebUI 访问和页面内模型供应商配置。配置卡片采用“已配置列表 + 单项展开编辑 + 完整白名单配置区”，支持 API Key 新增、覆盖修改和删除。保存期间锁定配置交互并等待 `debug/exec` 返回，结果通过顶部居中 Toast 即时反馈。DSH 与 Hermes 运行在同一台实例、同一 `agentuser` 环境中，但使用独立版本目录、`DSH_HOME` 和系统级 `deepseek-harness.service`；DSH 依赖不写入 Hermes runtime 包树，安装任务使用固定 pnpm 版本且不修改实例全局 pnpm。
 
 ## 范围
 
@@ -16,6 +16,7 @@
 - 国内站和国际站使用已确认的不同 Provider 白名单；DeepSeek 产品标识映射到 `deepseek-official`。
 - 配置下拉始终展示当前站点完整 Provider 白名单；重复保存已配置 Provider 等价于覆盖更新。
 - 配置保存使用同步 single-flight 锁，避免同一 React 提交批次内的重复点击发出多条凭据命令；DeepSeek Harness Logo 随前端静态资源发布，不依赖第三方图片域名。
+- 已安装卡片提供“修复”操作。用户确认后，wrapper 原子隔离完整旧 Web profile，只将 `web/cordis.patch.yml` 带入干净 profile，再复用同一安装任务；模型配置、DSH settings 与 storage 保留，标准 WebUI 插件环境重装，用户自行安装的插件及 profile 自定义文件移除。
 - 首批真实安装只进入北京 Sandbox；本需求不新增 service-gateway 路由。
 
 ## 非目标
@@ -33,7 +34,7 @@
 - DSH runtime 与 `web` profile 分别先生成 lockfile、再执行 `--frozen-lockfile` 安装；固定 `pnpm@10.33.0` 在候选阶段引导并于校验后持久化到 root-owned tooling，不替换实例全局 pnpm。所有 profile 插件均来自 npm registry，实例安装不依赖 GitHub；每个包的 registry integrity 均必须出现在对应 lockfile 中。
 - 安装在任务临时目录完成下载、依赖安装和配置组合检查后再原子切换；任一插件失败即恢复旧 runtime、完整旧 `web` profile 和旧 service unit。
 - 安装器取得全局 `flock` 后，先按严格 `dshi-*` 命名规则清理上次 SIGKILL、断电等异常遗留的 staging、backup、tooling、work 与 unit candidate；不扫描或删除受管目录外内容。COS 发布流水线必须逐字节比较远端对象与仓库安装器，SHA-256 不一致时阻止继续构建。
-- 已安装 profile 出现非 LightVela 管理的额外 DSH 插件时，安装器保持原状并安全失败，不删除未知插件或退化为非冻结安装。
+- 普通安装或升级保留现有 Web profile 及额外 DSH 插件。用户在确认弹窗中发起“修复”后，wrapper 先隔离完整旧 profile，以仅包含 `cordis.patch.yml` 的干净 profile 调用同一安装器 `install` action；任务失败时恢复完整旧 profile 和原服务状态，成功后才清理备份。
 - 包名、版本、目录、用户、端口和 Provider 白名单由实例侧 helper 固定；前端只选择固定动作与白名单 Provider ID。
 - API Key 使用实例一次性 RSA-4096 公钥与 RSA-OAEP/SHA-256 加密，密文经 `debug/exec` 传输，在实例内解密到 helper stdin 后由 DSH `credentials.set` 单向写入；生成私钥时同步创建 15 分钟 systemd 清理 timer，创建失败时立即删除，第二条命令退出时也会主动删除；设置写入携带 `expectedRevision`。
 - 删除经同一 `debug/exec` 通道调用固定 `remove-provider` 动作；只清理可确认由 LightVela 创建且当前可写的凭据，环境变量密钥和自定义引用保持不变。
