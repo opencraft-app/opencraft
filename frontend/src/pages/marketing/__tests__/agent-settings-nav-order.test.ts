@@ -43,7 +43,9 @@ describe("Agent settings navigation groups", () => {
     const manage = settingsGroups.slice(manageStart);
 
     expect(setup).toMatch(/id: "channel"[\s\S]*id: "model"[\s\S]*id: "skill"/);
-    expect(use).toMatch(/id: "chat"[\s\S]*id: "automations"[\s\S]*id: "website"/);
+    // 「对话」菜单项已移除：入口改由侧边栏顶部「对话/设置」双 tab 承担（sidebar-tabs 改造）。
+    expect(use).toMatch(/id: "automations"[\s\S]*id: "website"/);
+    expect(use).not.toContain('id: "chat"');
     expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"[\s\S]*id: "achievement"/);
     expect(manage).toMatch(
       /id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "settings"[\s\S]*id: "labs"[\s\S]*id: "deepseek-harness"/,
