@@ -29,21 +29,17 @@ describe('AgentChat CSS boundary', () => {
     expect(packageJson.pnpm?.patchedDependencies?.['@tencent/agentchat-claw-components@0.3.1']).toBeUndefined();
   });
 
-  // 回归防护：Tea 的全局 reset 由 SDK 深层依赖
-  // (@tencent/lightai-web-cloud-lighthouse-components 的 Assistant) 以无层样式引入，
-  // 会越过特异性盖掉宿主层内的链接色。global.css 末尾的无层中和规则一旦被删，
-  // 侧栏导航就会重新变成链接蓝，因此在此钉死。
-  it('neutralises the unlayered Tea link reset so host layers keep control', () => {
-    const neutraliser = globalCssSource.slice(globalCssSource.indexOf('html a {'));
-
-    expect(neutraliser).toContain('html a {');
-    expect(neutraliser).toContain('html a:hover {');
-    expect(neutraliser).toMatch(/html a \{[^}]*color:\s*revert-layer/);
-    expect(neutraliser).toMatch(/html a \{[^}]*text-decoration:\s*revert-layer/);
-    expect(neutraliser).toMatch(/html a:hover \{[^}]*text-decoration:\s*revert-layer/);
+  // SDK 1.4.2 起，next.config.mjs 的 alias 已能拦截 tea-themeable 污染（实测侧栏
+  // <a> 不再变蓝），global.css 里的 `html a { revert-layer }` 防护已移除。
+  // 这里钉死「防护不应回归」——若未来 SDK 退化、有人重新加回防护，需同步更新
+  // 此断言与 next.config.mjs 的 alias 说明，而不是无脑恢复旧代码。
+  it('no longer carries the obsolete html-a revert-layer guard', () => {
+    // 用行首正则匹配「实际生效的规则」：注释里的恢复示例带 ` * ` 前缀不会命中，
+    // 只有真正的顶层 `html a { ... }` 规则才会命中。
+    expect(globalCssSource).not.toMatch(/^html a(?::hover)?\s*\{/m);
   });
 
-  it('keeps styles.css inside the app layer that the neutraliser reverts to', () => {
+  it('keeps styles.css inside the app layer', () => {
     expect(globalCssSource).toContain("@import '../styles.css' layer(app);");
     expect(globalCssSource).toMatch(/@layer\s+theme,\s*base,\s*app,\s*components,\s*utilities;/);
   });

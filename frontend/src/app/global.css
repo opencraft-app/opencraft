@@ -26,36 +26,3 @@
     text-decoration: none;
   }
 }
-
-/* ───────── 第三方无层 reset 隔离（tea-themeable.css） ─────────
- *
- * 污染链路：
- *   @tencent/agentchat-lightvela-panel
- *     → @tencent/agentchat-claw-components（诊断中心 hospital/TroubleshootButton）
- *       → @tencent/lightai-web-cloud-lighthouse-components 的 Assistant
- *         → 模块顶层 import '@tencent/tea-component/dist/tea-themeable.css'
- *
- * 这份 Tea 控制台的全局 reset 里含 `a { color: var(--tea-color-text-link-default) }`
- * 与 `a:hover { text-decoration: underline }`，且**不在任何 @layer 内**。
- * 按 CSS 层叠层规则，无层声明的优先级高于所有 @layer —— 本项目的
- * theme / base / app / components / utilities 全部在层内（styles.css 由上方
- * `@import '../styles.css' layer(app)` 整体入层），所以它会**无视选择器特异性**
- * 盖掉 .lv-agents-nav-item 等宿主链接色，把侧栏导航整片染成链接蓝。
- *
- * 这里在同一无层作用域用更高特异性（`html a` = 0-0-2 > `a` = 0-0-1）把控制权
- * 交还给层叠层：`revert-layer` 表示回滚到层内的层叠结果，宿主样式照常生效，
- * 且不改变宿主各层之间的相对优先级。
- *
- * 注：next.config.mjs 已把 tea-themeable.css alias 到 tea-no-reset.css，但该
- * alias 只命中走源码/transpilePackages 的 import（产物中可见 tea-no-reset chunk），
- * 未覆盖上面这条 node_modules 深层依赖的 import（产物中仍有 tea-themeable chunk）。
- * 要从源头移除需在依赖侧处理（打补丁，或由 SDK 自身停止引入全局 reset）。 */
-html a {
-  color: revert-layer;
-  text-decoration: revert-layer;
-}
-
-html a:hover {
-  color: revert-layer;
-  text-decoration: revert-layer;
-}
