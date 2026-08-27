@@ -142,10 +142,10 @@ describe("global changelog skill package entry", () => {
     expect(augustSection).not.toBeNull();
     expect(julySection).not.toBeNull();
     expect(
-      within(augustSection!).queryByRole("heading", { name: "Ready-Made Automation Templates" }),
+      within(augustSection!).queryByRole("heading", { name: "Ready-Made Job Templates" }),
     ).not.toBeInTheDocument();
     expect(
-      within(julySection!).getByRole("heading", { name: "Ready-Made Automation Templates" }),
+      within(julySection!).getByRole("heading", { name: "Ready-Made Job Templates" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "LightVela Now Supports Custom Persona File Uploads" }),
@@ -176,23 +176,23 @@ describe("global changelog skill package entry", () => {
     );
     expect(enPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
     expect(
-      screen.getByRole("heading", { name: "Automation Tasks Can Now Link to Upstream Tasks" }),
+      screen.getByRole("heading", { name: "Jobs Can Now Link to Upstream Jobs" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "When creating or editing an automation task, you can link an upstream task. When the task runs later, it uses the upstream task's most recent output as context.",
+        "When creating or editing a job, you can link an upstream job. When the job runs later, it uses the upstream job's most recent output as context.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Skills Page Gets Faster Installs and Clearer Sources" })).toBeInTheDocument();
     expect(screen.getByText("Install multiple Skills with live progress and open their original ClawHub or skills.sh source pages directly from the Skills page.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ready-Made Automation Templates" })).toBeInTheDocument();
-    expect(screen.getByText("Choose a ready-made automation template, run it once, and turn it into an ongoing task when it works for you.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ready-Made Job Templates" })).toBeInTheDocument();
+    expect(screen.getByText("Choose a ready-made job template, run it once, and turn it into an ongoing job when it works for you.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "QQ Group @Mentions Are Now Supported" })).toBeInTheDocument();
     expect(screen.getByText("Add your Hermes Agent to a QQ group and @mention it to start a conversation.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Traditional Chinese Is Now Available" })).toBeInTheDocument();
     expect(screen.getByText("Browse LightVela's public pages, documentation, and account flows in Traditional Chinese.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Pricing Is Now Available with More Flexible Billing" })).not.toBeInTheDocument();
-    expect(screen.getByAltText("Automation Tasks Can Now Link to Upstream Tasks")).toHaveAttribute(
+    expect(screen.getByAltText("Jobs Can Now Link to Upstream Jobs")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.png"),
     );
@@ -200,7 +200,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-en.png"),
     );
-    expect(screen.getByAltText("Ready-Made Automation Templates")).toHaveAttribute(
+    expect(screen.getByAltText("Ready-Made Job Templates")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-en.png"),
     );
@@ -306,7 +306,7 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
     );
     expect(
-      screen.getByRole("heading", { name: "Tugas Otomatis Kini Dapat Ditautkan ke Tugas Hulu" }),
+      screen.getByRole("heading", { name: "Job Kini Dapat Ditautkan ke Job Upstream" }),
     ).toBeInTheDocument();
   });
 

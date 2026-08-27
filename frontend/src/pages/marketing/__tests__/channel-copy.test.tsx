@@ -290,7 +290,7 @@ describe("marketing channel copy", () => {
     expect(screen.getByRole("heading", { name: "Automations Now Support Skill Invocation" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "When creating or editing an automation, you can choose the Skill it should use. The Agent loads the Skill before running the task to make Skill invocation more reliable.",
+        "When creating or editing a job, you can choose the Skill it should use. The Agent loads the Skill before running the job to make Skill invocation more reliable.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByAltText("LightVela Supports Cloud Storage Management")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-cloud-storage-en.png"));
@@ -298,7 +298,7 @@ describe("marketing channel copy", () => {
     expect(screen.getByAltText("LightVela Now Supports Web Chat")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/agentchat-web-chat-en.png"));
     expect(screen.getByAltText("LightVela Now Supports Viewing Hermes Agent Memory")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/hermes-memory-en.png"));
     expect(screen.getByAltText("LightVela Now Supports Automations")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/scheduled-tasks-en.png"));
-    expect(screen.getByAltText("Automation Skill invocation settings")).toHaveAttribute(
+    expect(screen.getByAltText("Job Skill Invocation Settings")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/automation-skill-invocation-en.png"),
     );

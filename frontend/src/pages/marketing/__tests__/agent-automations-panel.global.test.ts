@@ -63,7 +63,7 @@ afterEach(() => {
 });
 
 describe("HermesAgentAutomationsPanel global upstream context", () => {
-  it("hydrates and exposes upstream task context on the global site", async () => {
+  it("hydrates and exposes upstream job context on the global site", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
       makeCronJob({ id: "downstream", name: "Downstream", context_from: ["upstream"] }),
       makeCronJob({ id: "upstream", name: "Upstream" }),
@@ -78,7 +78,9 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(await screen.findByText("From: Upstream")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Add|添加/ }));
-    expect(screen.getByRole("combobox", { name: "Upstream task" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toHaveTextContent("Create Job");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Instructions");
+    expect(screen.getByRole("combobox", { name: "Upstream Job" })).toBeInTheDocument();
   });
 
   it("shows relationship details and safely detaches dependents before deletion", async () => {
@@ -90,7 +92,8 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const upstreamCard = await getCronJobCard("Upstream");
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /View|查看/ }));
-    expect(within(screen.getByRole("dialog")).getByText("Upstream task")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Job Details")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Upstream Job")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Close|关闭/ }));
 
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /Delete|删除/ }));
@@ -116,13 +119,13 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
-    fireEvent.change(screen.getByPlaceholderText("Enter the automation name"), {
+    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
       target: { value: "Global downstream" },
     });
     fireEvent.change(screen.getByPlaceholderText(/Describe the task as a prompt/), {
       target: { value: "Summarize upstream output" },
     });
-    fireEvent.click(screen.getByRole("combobox", { name: "Upstream task" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Upstream Job" }));
     fireEvent.click(screen.getByRole("option", { name: /Upstream/ }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }));
 
@@ -153,7 +156,8 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const card = await getCronJobCard("Downstream");
     fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("combobox", { name: "Upstream task" })).toHaveTextContent("Upstream");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Job");
+    expect(screen.getByRole("combobox", { name: "Upstream Job" })).toHaveTextContent("Upstream");
     fireEvent.click(screen.getByRole("button", { name: "Deselect" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -169,7 +173,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
-    fireEvent.change(screen.getByPlaceholderText("Enter the automation name"), {
+    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
       target: { value: "Global task" },
     });
     fireEvent.change(screen.getByPlaceholderText(/Describe the task as a prompt/), {
@@ -192,7 +196,8 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const card = await getCronJobCard("Ordinary task");
     fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByPlaceholderText("Enter the automation name"), {
+    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Job");
+    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
       target: { value: "Updated global task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -215,7 +220,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByRole("button", { name: "Active Jobs" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Current Jobs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ended Jobs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Recent Runs" })).toBeInTheDocument();
     expect(screen.getByText("Active task")).toBeInTheDocument();

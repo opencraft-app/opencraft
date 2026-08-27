@@ -55,7 +55,7 @@ All complete articles end with the language-matched Community Ending unless the 
 ## Platform storage
 
 Resolve `storage_folder` from `references/publishing-contract.md` before writing files.
-Store every generated article MD beneath `product/longform-content/<storage_folder>/`, never directly at the content root.
+Store every generated article MD in the exact folder defined by the publishing contract. Techpedia uses `wiki/techpedia/`; other saved platform content remains under `product/longform-content/<storage_folder>/`. Never store files directly at either content root.
 
 ## 4. Final check
 

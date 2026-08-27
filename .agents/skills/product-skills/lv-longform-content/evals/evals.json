@@ -33,7 +33,7 @@
       "prompt": "Write a Techpedia tutorial about LightVela automations.",
       "expect": [
         "Resolved brief uses platform=techpedia, language=both, form=md, output_shape=markdown-files, attribution=social_techpedia.",
-        "A publication-ready .zh.md and .en.md file are created in product/longform-content/techpedia/.",
+        "A publication-ready .zh.md and .en.md file are created in wiki/techpedia/.",
         "Each file has language-localized LightVela links with from=social_techpedia and its own language-matched Community Ending."
       ]
     },

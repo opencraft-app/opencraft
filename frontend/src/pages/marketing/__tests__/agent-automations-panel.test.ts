@@ -1524,7 +1524,7 @@ describe("automation notification channel options", () => {
     expect(screen.getByText("No channels configured.")).toBeTruthy();
     expect(screen.queryByText("No notification channels are configured yet.")).toBeNull();
     expect(screen.queryByText(
-      "If none are selected, the agent will only run the task in the background without sending notifications.",
+      "If none are selected, the agent will only run the job in the background without sending notifications.",
     )).toBeNull();
     expect(screen.getByRole("link", { name: "Configure channels" })).toHaveAttribute("href", "/agents/channels/");
   });
@@ -1538,7 +1538,7 @@ describe("automation notification channel options", () => {
 
     expect(screen.getByRole("checkbox", { name: "Telegram" })).toBeEnabled();
     expect(screen.getByText(
-      "If none are selected, the agent will only run the task in the background without sending notifications.",
+      "If none are selected, the agent will only run the job in the background without sending notifications.",
     )).toBeTruthy();
   });
 });
