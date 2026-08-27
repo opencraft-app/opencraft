@@ -5020,7 +5020,11 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] **Task 3: 完成回归与质量门禁。**
   - 运行全球站自动任务定向测试、i18n 检查、`pnpm check` 和 `git diff --check`。
 
-**Verification:** RED 三轮分别命中 59、15、10 个预期失败，覆盖主面板、模型同步、场景入口与残留实体文案；GREEN 自动任务与更新日志相关 19 个测试文件 357 passed。`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 与 `git diff --check` 通过。
+- [x] **Task 4: 西语上线后同步 Job 术语。**
+  - 西语也以 `Job` 表示自动任务实体，`Automatizaciones` 仅表示模块能力，单次执行记录使用 `Ejecución`。
+  - 新建和编辑弹窗使用 `Crear Job`、`Editar Job`，详情、ID、上下游关系统一使用 `Job`。
+
+**Verification:** RED 三轮分别命中 59、15、10 个预期失败，覆盖主面板、模型同步、场景入口与残留实体文案；GREEN 自动任务与更新日志相关 19 个测试文件 357 passed。西语补充按 RED 84 + 5 + 1 条逐步锁定实体、模块与执行记录术语，最终西语契约 90 passed；相关回归 14 个测试文件 375 passed。`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 与 `git diff --check` 通过。
 
 ---
 
