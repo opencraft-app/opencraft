@@ -594,6 +594,16 @@
 
 ---
 
+# 双站首页 Hero 多语言文案更新 Implementation Plan
+
+**Goal:** 更新国内站与国际站首页 Hero 的 Eyebrow 和 Slogan，仅覆盖现有简中、繁中、英文、印尼语 locale，西班牙语不在本次范围内。
+
+- [x] 测试先行覆盖国内站简中与国际站四种现有语言的最终 Eyebrow、Slogan，并确认旧文案导致测试失败。
+- [x] 最小替换 Hero 文案，运行 i18n 提取与繁体生成，补齐英文和印尼语翻译。
+- [x] 通过国内/国际区域测试、i18n 检查、类型检查与首页浏览器 smoke。
+
+---
+
 # 国内站首页 Hero 两句文案替换 Implementation Plan
 
 **Goal:** 仅替换国内站首页 Hero 的小标题与主标题，其他文案、布局、SEO 和国际站保持不变。
