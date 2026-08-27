@@ -1804,14 +1804,23 @@ const TEST_RUN_ACK_MESSAGE = "已收到测试请求，正在唤起任务，请�
  * 每个目标独立 best-effort：任一目标发送失败（通道未配置/掉线等）都不影响其它目标，
  * 也不影响后续真正的测试运行主流程。
  */
-async function sendChatNotice(botId: string, deliver: string, message: string): Promise<void> {
+export interface HermesChatNoticeResult {
+  sent: number;
+  failed: number;
+}
+
+export async function sendHermesChatNotice(
+  botId: string,
+  deliver: string,
+  message: string,
+): Promise<HermesChatNoticeResult> {
   const targets = deliver
     .split(",")
     .map((token) => token.trim())
     .filter(Boolean);
-  if (targets.length === 0) return;
+  if (targets.length === 0) return { sent: 0, failed: 0 };
   const quotedMessage = shellQuote(message);
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     targets.map((target) =>
       execCommand(
         botId,
@@ -1819,6 +1828,8 @@ async function sendChatNotice(botId: string, deliver: string, message: string): 
       ),
     ),
   );
+  const failed = results.filter((result) => result.status === "rejected").length;
+  return { sent: results.length - failed, failed };
 }
 
 function delay(ms: number): Promise<void> {
@@ -1944,7 +1955,7 @@ export interface StartedCronTestRun {
  * 这样 UI 就能在发完 `hermes send` 回执后立刻撤掉转圈——用户看到 IM 里的「已收到」即可，
  * 剩下的执行在后台继续，不必再对着 loading 盲等两三分钟。
  *
- * 前置阶段里 `sendChatNotice` 是 best-effort（发不出去也不阻断）；但 `createCronJob` /
+ * 前置阶段里 `sendHermesChatNotice` 是 best-effort（发不出去也不阻断）；但 `createCronJob` /
  * 定位 tempId 若失败会 throw，让调用方能把「连任务都没挂上」这种真失败反馈出来。
  */
 export async function startCronTestRun(botId: string, job: CronJob): Promise<StartedCronTestRun> {
@@ -1953,7 +1964,7 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
   // `hermes send` 往同一个 IM 通道即时回一句「已收到」，让用户立刻知道请求已进入处理，
   // UI 随即就能撤掉转圈。这条回执是 best-effort：发不出去（比如通道未配置）也绝不能影响
   // 后面真正的测试运行，因此单独 try/catch 吞掉错误。
-  await sendChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
+  await sendHermesChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
     /* 即时回执发送失败不影响测试运行主流程 */
   });
   const marker = buildTestRunMarker(job.id, job.name);
