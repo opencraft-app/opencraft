@@ -131,7 +131,7 @@ func main() {
 			Domains:               cfg.DSHDomains,
 			MaxTargets:            cfg.DSHMaxTargets,
 			IdleTTL:               cfg.DSHTATIdleTimeout,
-			ResponseHeaderTimeout: cfg.DSHTATOpenTimeout,
+			ResponseHeaderTimeout: cfg.DSHResponseHeaderTimeout,
 			Federation:            starter,
 			AuthorizeURL:          cfg.DSHFederationAuthorizeURL,
 		})

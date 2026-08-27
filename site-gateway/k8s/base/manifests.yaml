@@ -30,6 +30,9 @@ data:
   SITE_GATEWAY_DSH_FEDERATION_KEY_ID: ""
   SITE_GATEWAY_DSH_TAT_START_TIMEOUT: "10s"
   SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT: "15s"
+  # Plugin installation can legitimately run for up to 15 minutes. Keep this
+  # separate from the short timeout used to open a TAT tunnel.
+  SITE_GATEWAY_DSH_RESPONSE_HEADER_TIMEOUT: "20m"
   SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT: "1h"
   SITE_GATEWAY_DSH_MAX_TARGETS: "16"
   SITE_GATEWAY_DSH_MAX_CONNECTIONS_PER_TARGET: "64"

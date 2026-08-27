@@ -454,19 +454,34 @@ func TestFromEnvDSHRequiresCompleteConfiguration(t *testing.T) {
 	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID", "dsh-site-gateway")
 	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_KEY_ID", "h1")
 	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY", base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	t.Setenv("SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT", "7s")
+	t.Setenv("SITE_GATEWAY_DSH_RESPONSE_HEADER_TIMEOUT", "20m")
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(cfg.DSHDomains) != 1 || cfg.DSHMaxTargets != 16 || cfg.DSHMaxConnectionsPerTarget != 64 || cfg.DSHQueueDepth != 64 ||
 		cfg.DSHMaxFrameBytes != 256<<10 || cfg.DSHMaxBufferedBytesPerConn != 2<<20 ||
-		cfg.DSHMaxBufferedBytesPerTarget != 16<<20 || cfg.DSHMaxBufferedBytesTotal != 64<<20 {
+		cfg.DSHMaxBufferedBytesPerTarget != 16<<20 || cfg.DSHMaxBufferedBytesTotal != 64<<20 ||
+		cfg.DSHTATOpenTimeout != 7*time.Second || cfg.DSHResponseHeaderTimeout != 20*time.Minute {
 		t.Fatalf("DSH config = %+v", cfg)
 	}
 
 	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY", "")
 	if _, err := FromEnv(); err == nil {
 		t.Fatal("DSH enabled without federation HMAC key unexpectedly succeeded")
+	}
+}
+
+func TestFromEnvDSHResponseHeaderTimeoutDefaultsLongerThanTunnelOpen(t *testing.T) {
+	setRequired(t)
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DSHTATOpenTimeout != 15*time.Second || cfg.DSHResponseHeaderTimeout != 20*time.Minute {
+		t.Fatalf("DSH timeouts: open=%s response_header=%s", cfg.DSHTATOpenTimeout, cfg.DSHResponseHeaderTimeout)
 	}
 }
 
