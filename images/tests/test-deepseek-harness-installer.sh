@@ -38,6 +38,13 @@ INNER
 fi
 if [ "${1:-}" = "view" ]; then
   specification="${2:-}"
+  if [ "${LIGHTVELA_DSH_TEST_SWAP_PROFILE_TO_SYMLINK_ON_VIEW:-0}" = "1" ] \
+    && [ ! -e "${LIGHTVELA_DSH_TEST_SWAP_MARKER:-}" ]; then
+    : >"${LIGHTVELA_DSH_TEST_SWAP_MARKER}"
+    rm -f "${LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH}/package.json"
+    ln -s "${LIGHTVELA_DSH_TEST_OUTSIDE_PROFILE_PATH}" \
+      "${LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH}/package.json"
+  fi
   if [ "${LIGHTVELA_DSH_TEST_METADATA_FAILURE_SPEC:-}" = "${specification}" ]; then
     exit 69
   fi
@@ -118,6 +125,10 @@ with open(path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, separators=(",", ":"))
 PY
   fi
+  if [ "${LIGHTVELA_DSH_TEST_MUTATE_DIST_ON_DUMP:-0}" = "1" ] && [ -n "${LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH:-}" ]; then
+    printf '%s\n' 'newer-concurrent-build' \
+      >"${LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH}/node_modules/dsh-desktop-pet/dist/client.js"
+  fi
   printf '%s\n' 'bundles: []'
   exit 0
 fi
@@ -167,24 +178,7 @@ for name, version in plugins.items():
     with open(os.path.join(package_dir, "package.json"), "w", encoding="utf-8") as handle:
         json.dump(payload, handle, separators=(",", ":"))
     with open(os.path.join(package_dir, "cordis.patch.yml"), "w", encoding="utf-8") as handle:
-        handle.write("name: test-plugin\n")
-
-with open(os.path.join(root, "package.json"), encoding="utf-8") as handle:
-    profile = json.load(handle)
-for name, version in profile.get("dependencies", {}).items():
-    if name in plugins:
-        continue
-    package_dir = os.path.join(root, "node_modules", *name.split("/"))
-    os.makedirs(package_dir, exist_ok=True)
-    payload = {
-        "name": name,
-        "version": version,
-        "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
-    }
-    with open(os.path.join(package_dir, "package.json"), "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, separators=(",", ":"))
-    with open(os.path.join(package_dir, "cordis.patch.yml"), "w", encoding="utf-8") as handle:
-        handle.write("name: test-custom-plugin\n")
+        handle.write("bundle: true\n")
 PY
     ;;
   *) exit 98 ;;
@@ -290,7 +284,11 @@ reset_instance() {
   unset LIGHTVELA_DSH_TEST_MISSING_PLUGIN
   unset LIGHTVELA_DSH_TEST_FAIL_HEALTH
   unset LIGHTVELA_DSH_TEST_MUTATE_ON_DUMP
+  unset LIGHTVELA_DSH_TEST_MUTATE_DIST_ON_DUMP
   unset LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH
+  unset LIGHTVELA_DSH_TEST_SWAP_PROFILE_TO_SYMLINK_ON_VIEW
+  unset LIGHTVELA_DSH_TEST_SWAP_MARKER
+  unset LIGHTVELA_DSH_TEST_OUTSIDE_PROFILE_PATH
   unset LIGHTVELA_DSH_TEST_FAIL_PROFILE_BACKUP
   unset LIGHTVELA_DSH_TEST_SERVICE_ENABLED
   unset LIGHTVELA_DSH_TEST_PNPM_VERSION
@@ -331,6 +329,20 @@ unit="${TEST_ROOT}/etc/systemd/system/deepseek-harness.service"
 test -L "${current}"
 release="$(readlink "${current}")"
 test "$(readlink "${current}")" = "${release}"
+python3 - "${release}/package.json" "${profile}/package.json" <<'PY'
+import json
+import sys
+
+runtime_path, profile_path = sys.argv[1:]
+with open(runtime_path, encoding="utf-8") as handle:
+    runtime = json.load(handle)
+with open(profile_path, encoding="utf-8") as handle:
+    profile = json.load(handle)
+if "onlyBuiltDependencies" not in runtime.get("pnpm", {}):
+    raise SystemExit("DSH runtime must keep its native build allowlist")
+if "onlyBuiltDependencies" in profile.get("pnpm", {}):
+    raise SystemExit("DSH web profile must leave dynamic plugin build policy to the workspace")
+PY
 grep -Fq 'ExecStart=/opt/lightvela/dsh/current/node_modules/.bin/dsh web --host 127.0.0.1 --port 3080' "${unit}"
 if grep -Fq -- '--no-open' "${unit}"; then
   echo 'unsupported DSH web option --no-open was written to the service unit' >&2
@@ -406,23 +418,116 @@ import sys
 
 assert json.load(open(sys.argv[1], encoding="utf-8"))["externalMutation"] is True
 PY
-! grep -Fq 'systemctl stop deepseek-harness.service' "${CALLS}"
+grep -Fq 'systemctl stop deepseek-harness.service' "${CALLS}"
+grep -Fq 'systemctl restart deepseek-harness.service' "${CALLS}"
 assert_task_status "${concurrent_task}" failed
 assert_no_worktree
 
 reset_instance
 mkdir -p "${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
 cat >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/package.json" <<'JSON'
-{"dependencies":{"third-party-plugin":"1.0.0"},"dsh":{"profile":{"bundles":["third-party-plugin"]}}}
+{"name":"@lightvela/deepseek-harness-web-profile","private":true,"dependencies":{"dsh-desktop-pet":"github:xiaoshihou514/dsh-desktop-pet#5f0060620d3b25c37c1d725af877f78708672ef5"},"dsh":{"profile":{"bundles":["dsh-desktop-pet"]}},"pnpm":{"onlyBuiltDependencies":["node-pty"],"ignoredBuiltDependencies":["protobufjs"]}}
 JSON
-printf '%s\n' 'keep-me' >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/unknown-marker"
-printf '%s\n' 'custom-provider-patch' >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/cordis.patch.yml"
-unknown_task="dshi-3123456789abcdef0123456789abcdef"
-${INSTALLER} install --task-id "${unknown_task}" --trusted-browser-host "${trusted_browser_host}"
-test -f "${TEST_ROOT}/home/agentuser/.dsh/profiles/web/unknown-marker"
-grep -Fq 'third-party-plugin' "${TEST_ROOT}/home/agentuser/.dsh/profiles/web/package.json"
-grep -Fq 'custom-provider-patch' "${profile}/cordis.patch.yml"
-assert_task_status "${unknown_task}" succeeded
+cat >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/pnpm-workspace.yaml" <<'YAML'
+packages:
+  - .
+
+nodeLinker: hoisted
+autoInstallPeers: false
+dangerouslyAllowAllBuilds: true
+YAML
+mkdir -p "${TEST_ROOT}/home/agentuser/.dsh/profiles/web/node_modules/dsh-desktop-pet/dist"
+printf '%s\n' '{"name":"dsh-desktop-pet","version":"0.1.0","dsh":{"bundle":{"patch":"./cordis.patch.yml"}}}' \
+  >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/node_modules/dsh-desktop-pet/package.json"
+printf '%s\n' 'bundle: desktop-pet' \
+  >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/node_modules/dsh-desktop-pet/cordis.patch.yml"
+printf '%s\n' 'compiled-pet-plugin' \
+  >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/node_modules/dsh-desktop-pet/dist/client.js"
+third_party_task="dshi-3123456789abcdef0123456789abcdef"
+${INSTALLER} install --task-id "${third_party_task}" --trusted-browser-host "${trusted_browser_host}"
+profile="${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
+python3 - "${profile}/package.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    profile = json.load(handle)
+expected = "github:xiaoshihou514/dsh-desktop-pet#5f0060620d3b25c37c1d725af877f78708672ef5"
+if profile.get("dependencies", {}).get("dsh-desktop-pet") != expected:
+    raise SystemExit("third-party DSH plugin dependency was not preserved")
+if "dsh-desktop-pet" not in profile.get("dsh", {}).get("profile", {}).get("bundles", []):
+    raise SystemExit("third-party DSH plugin bundle was not preserved")
+if "onlyBuiltDependencies" in profile.get("pnpm", {}):
+    raise SystemExit("legacy profile onlyBuiltDependencies was not migrated")
+PY
+grep -Fq 'dangerouslyAllowAllBuilds: true' "${profile}/pnpm-workspace.yaml"
+grep -Fq 'compiled-pet-plugin' "${profile}/node_modules/dsh-desktop-pet/dist/client.js"
+grep -Fq 'bundle: desktop-pet' "${profile}/node_modules/dsh-desktop-pet/cordis.patch.yml"
+assert_task_status "${third_party_task}" succeeded
+assert_no_worktree
+
+: >"${CALLS}"
+export LIGHTVELA_DSH_TEST_MUTATE_DIST_ON_DUMP=1
+export LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH="${profile}"
+dist_concurrent_task="dshi-3223456789abcdef0123456789abcdef"
+if ${INSTALLER} install --task-id "${dist_concurrent_task}" --trusted-browser-host "${trusted_browser_host}"; then
+  echo 'concurrent third-party build unexpectedly allowed installation' >&2
+  exit 1
+fi
+grep -Fq 'newer-concurrent-build' "${profile}/node_modules/dsh-desktop-pet/dist/client.js"
+grep -Fq 'systemctl stop deepseek-harness.service' "${CALLS}"
+grep -Fq 'systemctl restart deepseek-harness.service' "${CALLS}"
+assert_task_status "${dist_concurrent_task}" failed
+assert_no_worktree
+
+: >"${CALLS}"
+rm -f "${profile}/node_modules/dsh-desktop-pet/cordis.patch.yml"
+missing_bundle_patch_task="dshi-3323456789abcdef0123456789abcdef"
+if ${INSTALLER} install --task-id "${missing_bundle_patch_task}" --trusted-browser-host "${trusted_browser_host}"; then
+  echo 'missing third-party bundle patch unexpectedly allowed installation' >&2
+  exit 1
+fi
+test ! -e "${profile}/node_modules/dsh-desktop-pet/cordis.patch.yml"
+! grep -Fq 'systemctl stop deepseek-harness.service' "${CALLS}"
+assert_task_status "${missing_bundle_patch_task}" failed
+assert_no_worktree
+
+reset_instance
+outside_profile="${TMPDIR}/outside-profile.json"
+printf '%s\n' '{"name":"outside","dependencies":{},"dsh":{"profile":{"bundles":[]}}}' \
+  >"${outside_profile}"
+outside_fingerprint="$(shasum -a 256 "${outside_profile}" | awk '{print $1}')"
+mkdir -p "${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
+ln -s "${outside_profile}" "${TEST_ROOT}/home/agentuser/.dsh/profiles/web/package.json"
+symlink_task="dshi-e123456789abcdef0123456789abcdef"
+if ${INSTALLER} install --task-id "${symlink_task}" --trusted-browser-host "${trusted_browser_host}"; then
+  echo 'symlinked profile control file unexpectedly allowed installation' >&2
+  exit 1
+fi
+test "$(shasum -a 256 "${outside_profile}" | awk '{print $1}')" = "${outside_fingerprint}"
+! grep -Eq '^(npm|pnpm|curl) ' "${CALLS}"
+assert_task_status "${symlink_task}" failed
+assert_no_worktree
+
+reset_instance
+mkdir -p "${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
+printf '%s\n' '{"name":"@lightvela/deepseek-harness-web-profile","private":true,"dependencies":{},"dsh":{"profile":{"bundles":[]}}}' \
+  >"${TEST_ROOT}/home/agentuser/.dsh/profiles/web/package.json"
+outside_race_profile="${TMPDIR}/outside-race-profile.json"
+printf '%s\n' '{"name":"outside-race","sentinel":"unchanged"}' >"${outside_race_profile}"
+outside_race_fingerprint="$(shasum -a 256 "${outside_race_profile}" | awk '{print $1}')"
+export LIGHTVELA_DSH_TEST_SWAP_PROFILE_TO_SYMLINK_ON_VIEW=1
+export LIGHTVELA_DSH_TEST_SWAP_MARKER="${TMPDIR}/profile-swap-marker"
+export LIGHTVELA_DSH_TEST_OUTSIDE_PROFILE_PATH="${outside_race_profile}"
+export LIGHTVELA_DSH_TEST_LIVE_PROFILE_PATH="${TEST_ROOT}/home/agentuser/.dsh/profiles/web"
+race_task="dshi-f123456789abcdef0123456789abcdef"
+if ${INSTALLER} install --task-id "${race_task}" --trusted-browser-host "${trusted_browser_host}"; then
+  echo 'profile symlink swap unexpectedly allowed installation' >&2
+  exit 1
+fi
+test "$(shasum -a 256 "${outside_race_profile}" | awk '{print $1}')" = "${outside_race_fingerprint}"
+! grep -Fq 'systemctl stop deepseek-harness.service' "${CALLS}"
+assert_task_status "${race_task}" failed
 assert_no_worktree
 
 reset_instance

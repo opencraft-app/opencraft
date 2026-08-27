@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	launchTTL  = 5 * time.Minute
-	stateTTL   = 5 * time.Minute
-	handoffTTL = 5 * time.Second
-	maxTTL     = 5 * time.Minute
+	launchTTL        = 5 * time.Minute
+	stateTTL         = 5 * time.Minute
+	handoffTTL       = 5 * time.Second
+	maxTTL           = 5 * time.Minute
+	maxShareTokenTTL = 30 * 24 * time.Hour
 )
 
 var (
@@ -74,6 +75,13 @@ type SessionClaims struct {
 	SiteHost string `json:"site_host"`
 	UserID   string `json:"user_id"`
 	Nonce    string `json:"nonce"`
+}
+
+type ShareSessionClaims struct {
+	SiteID     string `json:"site_id"`
+	SiteHost   string `json:"site_host"`
+	Generation string `json:"generation"`
+	Nonce      string `json:"nonce"`
 }
 
 type tokenEnvelope struct {
@@ -213,19 +221,57 @@ func (c *TokenCodec) OpenSession(raw string, expectedHost string) (*SessionClaim
 	return &claims, nil
 }
 
+func (c *TokenCodec) SealShareSession(claims ShareSessionClaims, expiresAt time.Time) (string, error) {
+	if claims.SiteID = strings.TrimSpace(claims.SiteID); claims.SiteID == "" {
+		return "", ErrInvalidToken
+	}
+	claims.Generation = strings.TrimSpace(claims.Generation)
+	if claims.SiteHost = normalizeHost(claims.SiteHost); claims.SiteHost == "" || claims.Generation == "" || claims.Nonce == "" {
+		return "", ErrInvalidToken
+	}
+	return c.sealUntil("share_session", expiresAt, maxShareTokenTTL, claims)
+}
+
+func (c *TokenCodec) OpenShareSession(raw string, expectedHost string) (*ShareSessionClaims, error) {
+	var claims ShareSessionClaims
+	if err := c.open(raw, "share_session", &claims); err != nil {
+		return nil, err
+	}
+	if claims.SiteID == "" || claims.SiteHost != normalizeHost(expectedHost) || strings.TrimSpace(claims.Generation) == "" || claims.Nonce == "" {
+		return nil, ErrInvalidToken
+	}
+	return &claims, nil
+}
+
 func (c *TokenCodec) seal(kind string, ttl time.Duration, claims any) (string, error) {
 	if c == nil || ttl <= 0 {
 		return "", ErrInvalidToken
 	}
+	now := c.clock()
+	return c.sealEnvelope(kind, now, now.Add(ttl), claims)
+}
+
+func (c *TokenCodec) sealUntil(kind string, expiresAt time.Time, maxDuration time.Duration, claims any) (string, error) {
+	if c == nil || expiresAt.IsZero() {
+		return "", ErrInvalidToken
+	}
+	now := c.clock()
+	remaining := expiresAt.Sub(now)
+	if remaining <= 0 || remaining > maxDuration {
+		return "", ErrInvalidToken
+	}
+	return c.sealEnvelope(kind, now, expiresAt, claims)
+}
+
+func (c *TokenCodec) sealEnvelope(kind string, issuedAt, expiresAt time.Time, claims any) (string, error) {
 	claimsJSON, err := json.Marshal(claims)
 	if err != nil {
 		return "", err
 	}
-	now := c.clock()
 	env := tokenEnvelope{
 		Kind:       kind,
-		IssuedAt:   now.Unix(),
-		ExpiresAt:  now.Add(ttl).Unix(),
+		IssuedAt:   issuedAt.Unix(),
+		ExpiresAt:  expiresAt.Unix(),
 		ClaimsJSON: claimsJSON,
 	}
 	plaintext, err := json.Marshal(env)
@@ -272,7 +318,7 @@ func (c *TokenCodec) open(raw string, expectedKind string, out any) error {
 		return ErrInvalidToken
 	}
 	now := c.clock().Unix()
-	if now > env.ExpiresAt || now < env.IssuedAt-5 {
+	if now >= env.ExpiresAt || now < env.IssuedAt-5 {
 		return ErrInvalidToken
 	}
 	if err := json.Unmarshal(env.ClaimsJSON, out); err != nil {

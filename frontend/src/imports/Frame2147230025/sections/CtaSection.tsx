@@ -87,19 +87,22 @@ function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) 
     <div>
       {/* 开启旅程 — 带吉祥物装饰（吉祥物在文字右侧，避免遮盖英文标题） */}
       <div className="relative inline-flex items-center">
-        <h2 className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', height: '64px' }}>
+        <h2 className="lw-cta-display-title text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', height: '64px' }}>
           {t("开启旅程")}
         </h2>
         <MascotGroup offsetX={offsetX} offsetY={offsetY} />
       </div>
       {/* 准备好开启 探索之旅 了吗？ */}
-      <div className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', width: '768px', height: '64px' }}>
+      <div className="lw-cta-segmented-title text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', width: '768px', height: '64px' }}>
         {t("准备好开启")}
         <span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, rgb(53, 3, 255) 0%, rgb(213, 135, 255) 49.519%, rgb(255, 202, 128) 100%)' }}>
           {t("探索之旅")}
         </span>
         {t("了吗？")}
       </div>
+      <h2 className="lw-cta-spanish-title text-[#1a1a1a]">
+        {t("准备好开启探索之旅了吗？")}
+      </h2>
     </div>
   );
 }

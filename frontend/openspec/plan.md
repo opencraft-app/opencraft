@@ -1,3 +1,47 @@
+# MR !3385 CR：移除误复活的国际 Support 路由
+
+**Goal:** 恢复 !3316 已确认的产品边界，国际站不生成带语言前缀的 Support 页面；国内站反馈页及已存在的西语组件文案保持不变。
+
+**Files:**
+- Modify: `frontend/scripts/check-next-seo.mjs`
+- Modify: `frontend/scripts/check-next-seo.test.ts`
+- Modify: `frontend/scripts/intl-only-pages.test.ts`
+- Delete: `frontend/src/app/(site)/[lang]/support/page.intl.tsx`
+- Delete: `frontend/src/app/(site)/[lang]/support/page.intl.test.tsx`
+
+- [x] 测试先行移除 `support` 国际路由白名单，删除误复活页面，并通过路由守卫、前端检查与国际站构建验证。
+
+---
+
+# 西语 Tencent Lighthouse 专有名词收口 Implementation Plan
+
+**Goal:** 所有西语一方内容完整保留团队名 `Tencent Lighthouse`，清除 `Tencent Cloud Light` / `Tencent Cloud Lighthouse` 误写。
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/i18n/__tests__/dictionaries.test.ts`
+- Modify: `frontend/src/i18n/generated/es.json`
+- Modify: `frontend/src/content/docs/es/who-is-lightvela-for.md`
+
+- [x] 测试先行修正西语页脚、关于文案、Legal Footer 与 Docs 中的团队名，并通过定向字典、Docs、i18n 与浏览器检查。
+
+---
+
+# 国际站模型表单操作按钮防裁切 Implementation Plan
+
+**Goal:** 国际站长语言操作按钮按内容完整显示，窄屏换到字段下方；国内站和模型业务逻辑保持不变。
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Verify: `frontend/openspec/changes/2026-08-26-international-model-actions-overflow-design.md`
+- Execute: `frontend/openspec/changes/2026-08-26-international-model-actions-overflow-plan.md`
+
+- [x] 测试先行完成国际站模型复合控件响应式布局，并通过组件测试、类型检查、差异检查与已登录西语浏览器尺寸验收。
 # DeepSeek Harness 实验室入口 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `test-driven-development` before implementation and `verification-before-completion` before claiming completion. This FE-AI plan is the execution source for the DeepSeek Harness lab entry; do not commit, push, create MR, or archive until user acceptance.
@@ -67,6 +111,79 @@
   覆盖三态文案、Logo、按钮和 WebUI 链接。
 - Test: `frontend/src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
   覆盖“实验室”展开/收起、选中态和 DeepSeek Harness 页面渲染。
+
+---
+
+# 国际站续费付费开关 Implementation Plan
+
+**Design:** `openspec/changes/2026-08-27-global-renew-paid-billing-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-27-global-renew-paid-billing-plan.md`
+
+## Tasks
+
+- [x] 用失败测试锁定国际站开关关闭/开启和国内站不回归。
+- [x] 统一账号页、Agent 到期提醒与续费弹窗的 `paidBillingEnabled` 门控。
+- [x] 完成相关测试、类型检查、i18n 检查和 diff 门禁。
+
+**Verification:**
+- 续费相关聚焦回归 6 个测试文件、47 passed。
+- `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- `renewal-id-ID.test.ts` 仍有 2 条 `origin/master` 既有字典缺项失败，本变更未修改对应测试和生成字典。
+
+---
+
+# 国内建站临时分享码 Implementation Plan
+
+> **执行约束：** 用户已批准 Redis TTL 方案、后端实现以及提交分支并创建 MR；本次仍不改 GitOps、不发布生产。
+
+**Goal:** 将国内站分享码改为 Redis 临时状态，支持 1/7/30 天自动到期和 generation 主动废除，同时保持 Owner OIDC 与国际站 public 行为不变。
+
+**Architecture:** CTL 以 `website:share:access:{site_id}` Redis key 保存 bcrypt hash、随机 generation 和绝对到期时间，TTL 是分享生命周期；site-gateway 通过 CTL 元数据和校验接口获得 generation/expiry，并签发不超过剩余有效期的 Host-only Cookie。MySQL 不承载分享状态，不新增 migration；前端管理 UI 已按用户要求撤出本分支，后续交由前端同学实现。
+
+**Tech Stack:** Go 1.26、go-redis v9、bcrypt、site-gateway AES-GCM TokenCodec。
+
+## Global Constraints
+
+- Redis TTL 只允许 1/7/30 天；key 缺失、过期、损坏或 Redis 异常时访客 fail-closed 为 owner-only。
+- 分享码固定 6 位无歧义大写字母数字；Redis 只保存 bcrypt hash，明文仅在开启/重置响应返回一次。
+- generation 使用独立加密随机值；分享 Cookie 绑定 site/host/generation，且 token/cookie 到期不晚于分享 `expires_at`。
+- 重置保留原绝对到期时间；停止分享删除 key；自动到期不得被 gateway 30 秒元数据缓存延长。
+- Owner OIDC 与国际 `public` 完全不读取分享 Cookie；客户端 IP 只接受显式受信代理头。
+- 本分支不修改前端路由、工作台页面、分享按钮、Dialog 或 i18n 资源。
+
+## Active Tasks
+
+- [x] **Task WSR-1 — CTL Redis 临时状态、所有者接口与内部校验**
+  - **Role:** Developer（inline，现有隔离 worktree 单写者）
+  - **Files:** 删除 `ctl/migrations/000029_add_website_share_access.*.sql`；修改 `ctl/pkg/model/website/entity.go`、`dao.go`、`ctl/pkg/logic/website/share_access.go`、`logic.go`、`ctl/main/api/website_handler.go` 及相邻测试。
+  - **Interfaces:** `SetAccessPolicy(userID, siteID, mode string, durationDays int) (*ShareAccessResult, error)`；`ResetShareCode(userID, siteID string)`；`VerifyShareCode(siteID, code, clientIP string) (*ShareVerifyResult, error)`；Redis state `{code_hash,generation,expires_at}`。
+  - **RED/GREEN:** 先修改测试要求 1/7/30 TTL、非法时长、无 DB 字段、随机 generation、重置保留到期和停止删除；确认旧实现因契约不符失败后，再替换为 Redis 实现。
+  - **Acceptance:** `website_sites` 无分享字段/migration；用户 API 不返回 generation/hash；内部元数据仅返回 generation/expiry；Redis read 异常不阻断 Owner OIDC；限流仍在 bcrypt 前且 fail-closed。
+  - **Verify:** `cd ctl && go test -count=1 ./pkg/logic/website ./main/api`
+
+- [x] **Task WSR-2 — site-gateway generation/expiry 分享会话**
+  - **Role:** Developer（inline）
+  - **Files:** 修改 `site-gateway/internal/sitemeta/*`、`internal/siteauth/token*`、`internal/httpapi/shareauth*`、`siteauth.go`、`internal/config/*`、`cmd/site-gateway/main.go`。
+  - **Interfaces:** `ShareCodeVerifier.Verify(...) (ShareVerification, error)` 返回 generation/expiry；`ShareSessionClaims{SiteID,SiteHost,Generation,Nonce}`；`SealShareSession(claims, ttl)` 使用动态剩余 TTL。
+  - **RED/GREEN:** 先让 Cookie 动态 TTL、generation mismatch、自动到期、public/owner-only 回归测试失败，再实现最小 verifier/token/gateway 判断。
+  - **Acceptance:** Cookie Max-Age/exp 不超过 Redis 分享剩余时间；自动到期立即拒绝；重置/停止在元数据缓存收敛后拒绝；public 不触发 verifier。
+  - **Verify:** `cd site-gateway && go test -count=1 ./...`
+
+- [ ] **Task WSR-3 — 前端分享管理 UI（移交前端同学）**
+  - **状态:** 本分支已删除分享按钮、Dialog、国内路由入口、相关测试与 i18n 资源，不在当前实现范围内。
+  - **交互要求:** 先选择“使用分享码访问”再展示 1/7/30 天；只保留一个“复制分享信息”按钮，复制内容包含 LightVela 分享说明、站点地址、分享码和有效期。
+
+- [x] **Task WSR-4 — 后端跨服务回归与安全审查**
+  - **Role:** Developer + final Reviewer（最终一次只读 review）
+  - **Files:** 仅修正 WSR-1~2 暴露的后端缺陷；更新 `.workflow/runtime/verification-ledger.md`，不提交 runtime 文件。
+  - **Acceptance:** 目标 Go 测试、`git diff --check`、migration/DB 字段残留扫描、secret/hash/code 日志扫描均有最新证据；前端门禁不属于当前分支验收范围。
+  - **Verify:** `git status --short`, `git diff --check`, `git diff --stat`；明确真实 Redis、DB migration、登录态浏览器和线上请求均未执行。
+
+## Batches
+
+- Batch 1（当前）：WSR-1、WSR-2，主 Agent 串行实现，避免共享契约并发写入；WSR-3 移交前端同学。
+- Batch 2：WSR-4 最终验证和验收摘要。
 
 ---
 
@@ -640,6 +757,16 @@
 
 ---
 
+# 双站首页 Hero 多语言文案更新 Implementation Plan
+
+**Goal:** 更新国内站与国际站首页 Hero 的 Eyebrow 和 Slogan，仅覆盖现有简中、繁中、英文、印尼语 locale，西班牙语不在本次范围内。
+
+- [x] 测试先行覆盖国内站简中与国际站四种现有语言的最终 Eyebrow、Slogan，并确认旧文案导致测试失败。
+- [x] 最小替换 Hero 文案，运行 i18n 提取与繁体生成，补齐英文和印尼语翻译。
+- [x] 通过国内/国际区域测试、i18n 检查、类型检查与首页浏览器 smoke。
+
+---
+
 # 国内站首页 Hero 两句文案替换 Implementation Plan
 
 **Goal:** 仅替换国内站首页 Hero 的小标题与主标题，其他文案、布局、SEO 和国际站保持不变。
@@ -678,6 +805,107 @@
 - 不修改推荐人设 / 抽卡逻辑、`equippedStatus` 重试策略或 `pnpm check` 脚本。
 - 国内站默认名继续使用 `t("自定义人设")`，国际站按当前语言使用同一词条。
 - 未经用户再次确认，不执行 `git commit` 或 `git push`；MR !3248 更新前必须展示差异和验证结果。
+
+---
+
+# 国际站西语代码可控内容全面收口 Implementation Plan
+
+**Goal:** 在 `jasminzhao-821-language` 分支完成国际站 `es` 下 mono2 可直接控制的一方产品内容西语适配；Docs 正文、法务正文、图片内嵌文字、第三方托管页面和运行时外部数据保持既定排除项。
+
+**Constraints:** 只改变国际站 `es` 行为；不修改 `node_modules` 或复制外部依赖源码；未经用户再次确认不执行 `git commit` / `git push`。
+
+### Task 1: 产品壳 metadata 与 HTML 语言
+
+- [x] 为西语产品路由补充标题映射，并让产品壳在西语运行时同步 `document.title`。
+- [x] 让公共站 locale bridge 同步 `document.documentElement.lang`。
+- [x] 添加并通过 SEO、app route shell、public provider 定向测试。
+
+### Task 2: Agent 人设卡、西语 Soul 详情与人格测试
+
+- [x] 为 16 个既有人设 slug 增加西语名称、摘要、详情和运行时配置展示文案。
+- [x] 增加西语人格测试题、结果说明和偏好标签，保持既有计分结构不变。
+- [x] 接入 panel、draw、test 三条读取链并通过数据/组件测试。
+
+### Task 3: 精选 Skills 西语结构化介绍
+
+- [x] 按 `lv-sitepage-skills` 约束为 30 个精选 Skill 增加西语结构化介绍。
+- [x] 增加四个西语分类标签并按 `es` 显式选择数据。
+- [x] 通过 Skills 数据完整性和面板集成测试。
+
+### Task 4: 西语日期格式
+
+- [x] 让 Agent 成就时间戳的 `es` / `es-ES` 使用西语 `Intl.DateTimeFormat` locale。
+- [x] 通过相关定向测试。
+
+### Task 5: AgentChat 外部包上游交接
+
+- [x] 确认当前 `@tencent/agentchat-lightvela-panel@1.2.6` 和 registry 最新版 `1.4.0` 均只有中英字典。
+- [x] 尝试通过工蜂定位真实上游；当前凭据返回 `401 Unauthorized`，记录为外部阻塞。
+- [ ] 上游发布西语资源和 locale contract 后升级依赖 pin，并补 host integration 测试。
+
+### Task 6: 回归与验收
+
+- [x] 运行全部受影响 Vitest：相关用例全部通过。
+- [x] 运行 `pnpm check`：2437/2437 西语词条完整，TypeScript 通过。
+- [x] 运行 `pnpm build:global`：454 个静态页面生成，SEO 与静态 HTML 检查通过。
+- [x] 尝试本地浏览器冒烟；预览服务已恢复，但浏览器 localhost URL 安全策略拒绝自动读取，未绕过。
+- [x] 记录整仓测试既有问题：Docs 大图重复引用、`node:test` 脚本不兼容 Vitest 收集，随后 worker OOM；本次受影响测试无失败。
+- [x] 展示最终 diff、验证证据与提交范围，等待用户确认 commit/push。
+
+### Task 7: 自动任务西语最终生成链路
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/scenario-tasks/__tests__/scenario-task-builder.test.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/__tests__/scenario-job-presentation.test.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/scenario-packs.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/scenario-task-builder.ts`
+
+**Approach:** 选择在现有 `quickPromptLocale` 分流中增加显式 `es` 分支，并复用现有字段取值逻辑。备选的“重构为全语言模板注册表”影响中英/印尼语范围过大；“西语回退英文”不能满足全站西语适配，因此均不采用。
+
+**Acceptance:** 西语 overview task 的 `oneShotJobName` 使用 `ejecución única`；`generatedPrompt` 的协议、任务名、用户要求、字段标签、复选值、实时检索规则和安全提示均为西语且不含汉字；中英印尼语结果不变。
+
+- [x] **Step 1: 添加西语 draft 与历史任务展示失败测试。**
+
+  在 `scenario-task-builder.test.ts` 断言 `getOverviewScenarioTaskPacks("es")` 生成的租金提醒：
+
+  ```ts
+  expect(draft.oneShotJobName).toBe(`${draft.generatedName} · ejecución única`);
+  expect(draft.generatedPrompt).toContain("Estás ejecutando una automatización de LightVela");
+  expect(draft.generatedPrompt).toContain("Detalles proporcionados por el usuario:");
+  expect(draft.generatedPrompt).toContain("detalles de facturación: Factura de internet");
+  expect(draft.generatedPrompt).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+  ```
+
+  在 `scenario-job-presentation.test.ts` 断言旧中文任务在 `es` 下展示为西语 Prompt 且不含中文协议。
+
+- [x] **Step 2: 运行两份定向测试并确认 RED。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/scenario-tasks/__tests__/scenario-task-builder.test.ts \
+    src/pages/marketing/scenario-tasks/__tests__/scenario-job-presentation.test.ts
+  ```
+
+  Expected: 西语任务后缀实际为“单次执行”，Prompt 命中中文模板，新增断言失败；既有中英印尼语用例继续通过。
+
+- [x] **Step 3: 添加最小西语 Prompt 与字段标签实现。**
+
+  在 `scenario-task-builder.ts`：
+
+  ```ts
+  if (pack.quickPromptLocale === "es") {
+    return buildSpanishUserFacingScenarioPrompt(pack, values, userPrompt);
+  }
+  ```
+
+  新增与英文/印尼语结构一致的 `buildSpanishUserFacingScenarioPrompt`、`SPANISH_SCENARIO_FIELD_LABELS` 和 `buildSpanishScenarioValueLines`；修复 `makePack` 丢失 `needsRealtime` 的既有映射缺口，并将西语复选值输出为 `sí/no`；不改变 schedule、deliver 或 skillIds。
+
+- [x] **Step 4: 重跑定向测试确认 GREEN，并执行 `pnpm check` 与 `git diff --check`。**
+
+- [x] **Step 5: 更新 runtime summary，展示差异和验证证据，停在 commit/push 用户确认点。**
 
 ---
 
@@ -1247,6 +1475,353 @@ git diff -- frontend/src/pages/marketing/agent-buddy-panel.tsx \
 ```
 
 只有用户明确确认后，才能执行 `git add` 和 `git commit`；push 与 MR 仍需单独展示并确认。
+
+---
+
+# 国际站西班牙语完整上线 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: use `subagent-driven-development` when the user selects parallel execution, or `executing-plans` for inline execution. Follow `test-driven-development` for every behavior change and `verification-before-completion` before claiming completion.
+
+**Status:** Task 1–8 全部完成；质量门禁、双区域构建、浏览器验收与独立只读复审均通过，等待提交审批。
+
+**Size:** L。涉及国际站公开路由、全局 UI 字典、Docs 生成、SEO/metadata、字体和双区域回归；不涉及国内站产品行为、后端接口、法务正文或 Tea SDK 内部区域逻辑。
+
+**Goal:** 在 `lightvela.ai` 完整发布西班牙语 `/es`：公开页面和产品 UI 使用西语，Docs 导航与 metadata 使用西语、正文回退英文；日语和韩语继续隐藏，`lightvela.com` 不产生用户可见变化。
+
+**Architecture:** 以 `src/i18n/locales.json` 为语种能力源，先修复合并后的字典/校验基线，再让公开站路由、切换器、Docs、SEO 和字体按注册表能力消费 `es`。开发阶段保留 `switcherVisible: false` 与 `translationRequired: false`；字典、路由、SEO、Docs 与字体定向门禁通过后同时打开这两个标记，再执行 Task 8 双区域构建和浏览器最终验收，若最终门禁失败则回滚西语入口。生成文件只由对应脚本重建，不手工维护。
+
+**Scope boundaries:**
+
+- Included: 国际站公开页、登录后国际站 UI、`/es` 路由、语言切换器、Docs 西语导航/标题/描述、英文 Docs 正文回退、canonical/hreflang/Open Graph/sitemap、拉丁字体回退、国际/国内两套构建验证。
+- Excluded: 国内站可见内容与路由、Docs 正文翻译、隐私/条款/Cookie/开源许可正文翻译、Tea SDK 内部地区字段、Models 数据、日语与韩语上线。
+- Generated artifacts: `next-site/docs-route-manifest.ts` 与 `.fumadocs-content/` 只能通过 `pnpm docs:sync` 生成；i18n key 集合只能通过 `pnpm i18n:extract` 同步。
+- Commit gate: 本计划执行期间只做代码与验证；提交、推送、MR 必须另行展示 diff/标题并取得用户明确授权。
+
+## Task 1: 恢复 master 合并后的 i18n 可信基线
+
+**Files:**
+
+- Modify: `frontend/src/i18n/__tests__/dictionaries.test.ts`
+- Modify: `frontend/src/i18n/generated/en-US.json`
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Modify: `frontend/src/i18n/generated/es.json`
+- Modify: `frontend/src/i18n/generated/ja-JP.json`
+- Modify: `frontend/src/i18n/generated/ko-KR.json`
+- Regenerate if needed: `frontend/src/i18n/generated/zh-CN.json`
+- Regenerate if needed: `frontend/src/i18n/generated/zh-Hant.json`
+- Regenerate if needed: `frontend/src/i18n/generated/zh-to-key.json`
+
+**Acceptance:**
+
+- 七个实际字典的 key 集合与 `zh-CN` 完全一致；新增语种不再缺 85 个当前 key，也不保留 7 个过期 key。
+- `{{discount}}折` 的英文和印尼语译文使用与中文一致的 `{{discount}}` 占位符；不得通过放宽 validator 掩盖占位符错误。
+- 日语、韩语仅补齐空 key 骨架，不翻译、不开启；西语保留已有 142 条译文并补齐空 key。
+- `pnpm i18n:check`、`pnpm i18n:validate` 与字典定向测试通过。
+
+- [x] **1.1 RED：运行字典完备性与 validator，记录当前 key 数和占位符失败。**
+
+  Run: `cd frontend && pnpm test -- src/i18n/__tests__/dictionaries.test.ts && pnpm i18n:validate`
+  Expected: 字典测试因 es/ja/ko key 集不完整失败；validator 因 `discount`/`percent` 占位符不一致失败。
+
+- [x] **1.2 GREEN：使用 `pnpm i18n:extract` 同步所有注册字典 key，再仅修正真实翻译值。**
+
+  Run: `cd frontend && pnpm i18n:extract && pnpm i18n:zh-hant`
+  Then: 在 `en-US.json` 与 `id-ID.json` 将错误的 `{{percent}}` 改为 `{{discount}}`；不得改中文 source 或 validator 规则。
+
+- [x] **1.3 VERIFY：锁定 key 等价、占位符等价与隐藏语种状态。**
+
+  Run: `cd frontend && pnpm test -- src/i18n/__tests__/dictionaries.test.ts src/i18n/__tests__/locales.config.test.ts && pnpm i18n:check && pnpm i18n:validate && pnpm i18n:zh-hant:check`
+  Expected: 全部退出码为 0；`es/ja-JP/ko-KR` 仍未列入必填翻译集合。
+
+## Task 2: 让国际站运行时与语言切换器真正支持 `/es`
+
+**Files:**
+
+- Modify: `frontend/src/components/site/__tests__/language-switcher.test.tsx`
+- Modify: `frontend/src/components/site/language-switcher.tsx`
+- Modify: `frontend/src/lib/public-site-routing.ts`
+- Modify: `frontend/src/lib/public-site-navigation.ts`
+- Modify: `frontend/src/lib/region.ts`
+- Modify: `frontend/next-site/public-locale.ts`
+- Modify: `frontend/next-site/public-header-auth-island.tsx`
+- Modify as required by exhaustive locale types: `frontend/src/components/site/public-site-header.tsx`
+- Modify as required by exhaustive locale types: `frontend/src/pages/marketing/scenario-tasks/scenario-packs.ts`
+- Test: `frontend/src/i18n/__tests__/initial-locale.test.ts`
+- Test: `frontend/src/i18n/__tests__/locales.config.test.ts`
+
+**Acceptance:**
+
+- 国际站能解析 `/es` 为 locale `es`，公开页导航、登录入口与场景结构化文案不回退中文。
+- 语言切换器选项、标签与目标 URL 从注册表派生；最终开启前测试先以显式 fixture 验证 `es` 选项和 `/es/...` 路径，生产列表仍不暴露西语。
+- 切换语言保留当前可本地化路径；例如 `/zh-hant/about` 切换为西语得到 `https://lightvela.ai/es/about`。
+- 国内站选项顺序、目标 URL 和默认中文保持不变；日语、韩语不出现在菜单中。
+
+- [x] **2.1 RED：先补 `/es` 解析、路径保留、国际站菜单和国内站负向断言。**
+
+  Add assertions for `publicRouteLocaleFromLang('es')`, locale-to-URL mapping, `Español`, `/es`, hidden ja/ko, and unchanged CN menu.
+  Run: `cd frontend && pnpm test -- src/components/site/__tests__/language-switcher.test.tsx src/i18n/__tests__/initial-locale.test.ts src/i18n/__tests__/locales.config.test.ts`
+  Expected: hard-coded five-locale branches fail the Spanish assertions.
+
+- [x] **2.2 GREEN：以注册表派生公开站 locale/options，补齐所有 `Record<PublicSiteLocale, ...>` 的西语值。**
+
+  Implementation constraint: `language-switcher.tsx` 不再声明独立的五语种联合类型或条件链；URL、显示名、短标签和可见性读取 locale definition。国内/国际跨站入口仍作为区域选项单独保留。
+
+- [x] **2.3 VERIFY：定向测试与 TypeScript 通过，确认 ja/ko 仍隐藏。**
+
+  Run: `cd frontend && pnpm test -- src/components/site/__tests__/language-switcher.test.tsx src/i18n/__tests__/initial-locale.test.ts src/i18n/__tests__/locales.config.test.ts && pnpm exec tsc --noEmit`
+
+## Task 3: 生成西语 Docs 路由、导航与英文正文回退
+
+**Files:**
+
+- Modify: `frontend/scripts/international-docs-parity.test.ts`
+- Modify: `frontend/scripts/sync-fumadocs-content.mjs`
+- Modify: `frontend/next-site/source.ts`
+- Regenerate: `frontend/next-site/docs-route-manifest.ts`
+- Modify: `frontend/src/app/(site)/[lang]/docs/[[...slug]]/page.next.tsx`
+- Modify if consumed by the legacy docs shell: `frontend/src/config/docs-sidebar.ts`
+- Generated, do not commit unless already tracked: `frontend/.fumadocs-content/docs/es/**`
+
+**Acceptance:**
+
+- `/es/docs` 与每个英文国际站真实 slug 都存在；route manifest 的 `es` slug 集与 `en-us` 集一致。
+- 西语 Docs 页的标题、描述、分组和导航为西语；正文选择 `src/content/docs/en/`，缺失时回退 `src/content/docs/global/`，不创建西语正文源文件。
+- `source_path` 明确指向英文/国际源；内部链接保持 `/es/docs/...`，不存在指向未生成 slug 的链接。
+- 国内 `zh-cn` 文档集、国际现有 en/zh/id 文档集及其数量不变。
+
+- [x] **3.1 RED：为西语 slug 对等、英文 source_path、metadata 西语和链接前缀补测试。**
+
+  Run: `cd frontend && pnpm test -- scripts/international-docs-parity.test.ts`
+  Expected: 当前 docSets 缺少 `es`，测试失败。
+
+- [x] **3.2 GREEN：在 Docs 生成器增加 `ES` locale/docSet 与西语 metadata map。**
+
+  Use the same document list as `globalDocsForEnglish`; configure `sourcePrefix: 'es'` and `fallbackSourcePrefixes: ['en', 'global']`. Extend `allDocsForLinks` and generated route locales for `es`. Do not add Spanish body files.
+
+- [x] **3.3 REGENERATE + VERIFY：只通过脚本重建 manifest/content 并检查确定性。**
+
+  Run: `cd frontend && pnpm docs:sync && cp next-site/docs-route-manifest.ts /tmp/lightvela-es-docs-manifest.ts && pnpm docs:sync && diff -u /tmp/lightvela-es-docs-manifest.ts next-site/docs-route-manifest.ts && pnpm test -- scripts/international-docs-parity.test.ts scripts/docs-image-assets.test.ts`
+  Expected: 两次生成结果一致，测试全部通过。
+
+## Task 4: 补齐西语公开页 metadata、SEO、hreflang 与 sitemap
+
+**Files:**
+
+- Modify: `frontend/next-site/seo.test.ts`
+- Modify: `frontend/next-site/seo.tsx`
+- Modify: `frontend/src/lib/__tests__/seo.test.ts`
+- Modify: `frontend/src/lib/__tests__/seo-data.page-description.test.ts`
+- Modify: `frontend/src/lib/seo-data.ts`
+- Modify: `frontend/src/app/sitemap.xml/route.next.ts`
+- Modify localized metadata maps in:
+  - `frontend/src/app/(site)/[lang]/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/about/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/changelog/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/cookie-policy/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/open-source-licenses/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/privacy-policy/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/subscribe/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/support/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/terms-of-service/page.next.tsx`
+
+**Acceptance:**
+
+- 国际站每个真实西语公开页输出唯一西语 title/description、`html lang="es"`、`og:locale=es_ES`。
+- canonical 与 `og:url` 都指向 `https://lightvela.ai/es/...`；hreflang 包含 `es` 且只指向真实存在的等价页。
+- sitemap 包含 `/es` 公开页与 `/es/docs/...` 真实 slug，不包含 `/ja-jp`、`/ko-kr` 或国内站西语 URL。
+- 法务页正文继续沿用英文回退，但页面 title/description 与语言提示为西语；不伪造西语法务正文。
+
+- [x] **4.1 RED：新增 Spanish metadata/canonical/hreflang/sitemap 与 hidden-locale 负向用例。**
+
+  Run: `cd frontend && pnpm test -- next-site/seo.test.ts src/lib/__tests__/seo.test.ts src/lib/__tests__/seo-data.page-description.test.ts`
+  Expected: hard-coded locale maps and SEO arrays fail Spanish cases.
+
+- [x] **4.2 GREEN：按注册表数据扩展 SEO 公共集合，并补齐九个公开页面的西语 metadata。**
+
+  Constraint: `SEO_PUBLIC_URL_LANGS`/`SEO_DOCS_ROUTE_LOCALES` 只包含当前可发布语言；ja/ko 即使已注册也不得进入 alternates 或 sitemap。canonical 与 Open Graph URL 必须由同一 URL builder 生成。
+
+- [x] **4.3 VERIFY：运行 SEO 单测、同步 Docs 后检查静态 SEO。**
+
+  Run: `cd frontend && pnpm docs:sync && pnpm test -- next-site/seo.test.ts src/lib/__tests__/seo.test.ts src/lib/__tests__/seo-data.page-description.test.ts && node scripts/check-next-seo.mjs`
+  Note: 若 `check-next-seo.mjs` 依赖完整构建产物，则在 Task 8 的 global build 中执行最终断言，本步保留单测证据。
+
+## Task 5: 为西语提供完整且可审计的 UI 翻译
+
+**Files:**
+
+- Modify: `frontend/src/i18n/generated/es.json`
+- Modify: `frontend/src/i18n/__tests__/dictionaries.test.ts`
+- Runtime-only, do not commit: `frontend/.workflow/runtime/intl-spanish-translation/manifest.json`
+- Runtime-only, do not commit: `frontend/.workflow/runtime/intl-spanish-translation/batch-001.json` through `batch-012.json`
+
+**Batch protocol:**
+
+1. 从同步后的 `es.json` 取空值 key，按 key 升序生成 manifest；manifest 每项含 `key`、`source`、`placeholders`。
+2. 按 manifest 下标切成 12 个互斥批次：001–011 每批最多 200 条，012 接收余项。批次数随实际空值总数校验；若少于 2201 条则删除无内容的尾批，不制造空批。
+3. 翻译人员/agent 只写自己拥有的 runtime batch 文件，格式为 `{ "中文原文": "西班牙语译文" }`；不得直接并发编辑 `es.json`。
+4. 单一 writer 按批次顺序执行 `pnpm i18n:apply -- es <batch> --overwrite`，每批后运行 validator；保留占位符、URL、代码、品牌名 LightVela/Hermes/SkillHub 和产品套餐名。
+5. 使用中性国际西班牙语；语气清晰自然，按钮用简洁动作词。涉及账户、支付、删除、隐私和错误提示时忠实原意，不增加承诺。
+
+**Acceptance:**
+
+- `es.json` 与中文基准 key 数一致且 0 空值；所有 placeholder 集合逐条一致。
+- 西语值不得等于中文源（品牌名、纯数字、URL、代码/占位符-only 字符串除外）；例外必须由测试中的明确 allowlist 说明原因。
+- 对首页、登录、订阅、Agent 配置、通道、支付/错误提示、设置等高风险词汇做人工抽样复核；不存在简中 UI 回退。
+- 日语、韩语字典仍为空骨架，不顺带翻译。
+
+- [x] **5.1 RED：把西语加入完整翻译门禁测试，确认当前空值数量导致失败。**
+
+  Add a Spanish-specific assertion for zero missing translations and placeholder parity without yet changing `translationRequired`.
+  Run: `cd frontend && pnpm test -- src/i18n/__tests__/dictionaries.test.ts`
+
+- [x] **5.2 TRANSLATE：生成互斥批次并逐批应用。**
+
+  Per batch: `cd frontend && pnpm i18n:apply -- es .workflow/runtime/intl-spanish-translation/batch-NNN.json --overwrite && pnpm i18n:validate`
+  Expected after final batch: validator reports Spanish translated count equal to the Chinese baseline and zero missing.
+
+- [x] **5.3 REVIEW + VERIFY：对高风险域抽样并运行完整字典门禁。**
+
+  Run: `cd frontend && pnpm test -- src/i18n/__tests__/dictionaries.test.ts src/i18n/__tests__/locales.config.test.ts && pnpm i18n:check && pnpm i18n:validate`
+
+## Task 6: 增加西语/拉丁字符字体回退且不扩大中文字体子集
+
+**Files:**
+
+- Add: `frontend/scripts/subset-fonts.test.ts`
+- Modify: `frontend/scripts/subset-fonts.mjs`
+- Modify: `frontend/src/styles.css`
+- Test fixture only if required: `frontend/src/i18n/generated/es.json`
+
+**Acceptance:**
+
+- 字体子集输入由注册表/字典集合覆盖西语重音字符和 `ñ/Ñ/ü/Ü/¿/¡`，不遗漏真实译文字符。
+- `[lang="es"]` 的正文与标题优先使用支持 Latin Extended 的系统字体栈；不强制使用仅面向中文的装饰字体。
+- 国内站默认字体变量与现有中文 `@font-face` 行为不变，构建产物大小没有因把全部日/韩字符加入而异常增长。
+
+- [x] **6.1 RED：新增西语字符收集与 CSS fallback 测试。**
+
+  Run: `cd frontend && pnpm test -- scripts/subset-fonts.test.ts`
+  Expected: 当前 `textInputs` 未读取 Spanish dictionary，测试失败。
+
+- [x] **6.2 GREEN：让 subset 脚本读取可发布 locale 的真实字典，并增加 `[lang="es"]` 字体变量覆盖。**
+
+  Constraint: ja/ko 仍隐藏且没有完整翻译，不进入发布字体子集；不得修改国内站根字体默认值。
+
+- [x] **6.3 VERIFY：运行字体测试并执行一次 subset 生成，检查输出没有缺字错误。**
+
+  Run: `cd frontend && pnpm test -- scripts/subset-fonts.test.ts && node scripts/subset-fonts.mjs`
+
+## Task 7: 最后一次性开启西语，保持日语/韩语隐藏
+
+**Files:**
+
+- Modify: `frontend/src/i18n/locales.json`
+- Modify: `frontend/src/i18n/__tests__/locales.config.test.ts`
+- Modify if generated typing changes: `frontend/src/i18n/locales.config.ts`
+- Modify: `wiki/prd-docs/2026-08-21-intl-locale-registry-es-ja-ko.md`
+- Update: `frontend/openspec/proposal.md`
+- Update: `frontend/openspec/spec.md`
+- Update: `frontend/openspec/plan.md`
+
+**Acceptance:**
+
+- 只将 `es.switcherVisible` 和 `es.translationRequired` 改为 `true`；`ja-JP`、`ko-KR` 两项仍为 `false`。
+- registry 测试明确断言国际站发布集合包含 es、排除 ja/ko；西语 URL 统一为 `/es`，文档中不再保留其他西语区域前缀歧义。
+- PRD/OpenSpec 与最终实现、排除项、验证结果一致，不声称翻译了 Docs/法务正文。
+
+- [x] **7.1 RED：先把最终发布状态写入 registry 测试。**
+
+  Run: `cd frontend && pnpm exec vitest run --config vitest.config.ts src/i18n/__tests__/locales.config.test.ts src/components/site/__tests__/language-switcher.test.tsx`
+  Expected: es 仍隐藏/非必填，因此最终发布断言失败。
+
+- [x] **7.2 GREEN：仅翻转 es 两个开关，更新最终文档。**
+
+- [x] **7.3 VERIFY：确认可见/必填集合只有 Spanish 新增。**
+
+  Run: `cd frontend && pnpm exec vitest run --config vitest.config.ts src/i18n/__tests__/locales.config.test.ts src/i18n/__tests__/dictionaries.test.ts src/components/site/__tests__/language-switcher.test.tsx && pnpm i18n:check && pnpm i18n:validate`
+
+## Task 8: 双区域全量验证与浏览器验收
+
+**Files:**
+
+- No new implementation files unless a failing gate exposes an in-scope defect.
+- Update verification evidence in: `frontend/openspec/plan.md`
+
+**Acceptance:**
+
+- 全量 test/check 通过；分别以 global 和 cn 环境成功构建。
+- 国际站浏览器验收覆盖 `/es`、`/es/about`、`/es/subscribe`、`/es/support`、`/es/docs` 和至少一个深层 Docs slug；页面无中文 UI 回退、404、hydration error、横向溢出或缺字。
+- 页面源代码验证 `lang=es`、西语 metadata、canonical、hreflang、Open Graph 和 sitemap；Docs 正文确为英文回退且导航/metadata 为西语。
+- 国内站首页、公开导航、语言菜单、Docs 和 sitemap 与基线一致，且不出现西语入口或 `/es` URL。
+- 日语/韩语入口、hreflang、sitemap 始终不存在。
+
+- [x] **8.1 TEST/CHECK：运行全量质量门禁并完成既有失败归因。**
+
+  Run: `cd frontend && pnpm test && pnpm check && git diff --check`
+
+  Evidence (2026-08-24): `pnpm check` 与 `git diff --check` 退出码均为 0；西语为 2403/2403、0 error/0 warning。全量 Vitest 中与本次实现相关的 173 个文件 / 1822 个断言分片运行全部通过；最终核心门禁 7 文件 / 87 个断言、登录/页脚与国内负向 3 文件 / 29 个断言再次通过。仓库级命令仍暴露三个不在本 diff 内的既有测试基础设施问题：13 个超限 Docs PNG（39 处引用）、Vitest 错误收集 `node:test` 格式的 `scripts/next-config.test.mjs`（该文件用 `node --test` 为 1/1 通过）、未修改的 `plan-select-page.test.tsx` 单文件持续增长内存。未通过放宽断言或修改无关资产掩盖这些问题。
+
+- [x] **8.2 BUILD GLOBAL：以国际站环境构建并运行静态 SEO 检查。**
+
+  Run: `cd frontend && NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm build`
+  Expected: build、Next static generation、SEO/versioned assets checks 全部退出码 0。
+
+  Evidence (2026-08-24): `pnpm build:global` 退出码 0；448/448 static pages（含独立 `/api/search/es`），51 条公开静态路由通过 SEO checker，EdgeOne 路由配置 14 条。产物包含 69 个 `/es` HTML、66 条 canonical 西语 sitemap URL；`/es/docs/` 作为 canonical 到 `/es/docs/overview/` 的别名不进入 sitemap。产物不含 ja/ko，也不把 noindex 的 subscribe/support 写入 sitemap。
+
+- [x] **8.3 BUILD CN：以国内站环境构建，证明无区域回归。**
+
+  Run: `cd frontend && NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm build`
+  Expected: build 退出码 0；国内 sitemap/菜单测试仍排除 Spanish。
+
+  Evidence (2026-08-24): `pnpm build:cn` 退出码 0；119/119 static pages，16 条公开静态路由通过 SEO checker。`out/es`、`out/ja-jp`、`out/ko-kr` 均不存在，国内 sitemap 的 `/es` URL 为 0；新增 search artifact 未接入国内 UI，不产生用户可见入口。
+
+- [x] **8.4 BROWSER：启动 global build，按桌面与 390px 移动视口逐页截图/控制台验收。**
+
+  Evidence to record: URL、HTTP 状态、页面 title、`html[lang]`、canonical、hreflang 列表、控制台错误、视觉截图路径。Docs 页额外记录英文正文与西语导航/metadata 的同时存在。
+
+  Evidence (2026-08-24): 桌面逐页检查 `/es/`、`/es/about`、`/es/subscribe`、`/es/support`、`/es/docs/`、`/es/docs/overview`、`/es/docs/configuration/model`，并以 390×844 复查首页与深层 Docs。页面均为 `lang=es`、canonical/OG URL 指向对应 `lightvela.ai/es/...`，无 404、稳定复现的 hydration error、替换字符或横向溢出；语言菜单含 Español 且排除日本語/한국어。Docs 标题、摘要和导航为西语，article 正文为英文回退。额外通过浏览器 RED→GREEN 修复西语 Cookie banner、首页 CTA 完整标题、footer/LoginModal `/es` 链接，并展开 Support 问卷确认全部选项无汉字；四个法务页均为西语标题/说明、英文法律正文，header/footer 链接保持 `/es`。国内站桌面抽检保持 `lang=zh-CN`，无西语文案、路径、语言按钮或 Cookie banner。
+
+- [x] **8.5 FINAL REVIEW：对照 proposal/spec/plan 逐项核对并展示最终 diff；未取得用户授权前不 commit、不 push、不建 MR。**
+
+  Evidence (2026-08-24): 独立只读复审结论 PASS（Critical 0、Important 0、Minor 0，Ready to merge: Yes）；复审聚焦 10 文件 / 94 个断言、全部新增未跟踪测试 6 文件 / 23 个断言均通过。当前仍保持未提交状态，等待用户审批提交内容。
+
+## 西语深层页面补漏（2026-08-24）
+
+**Status:** 实现与验证完成，等待用户验收。用户确认按审计清单优先处理国际站 P0 项；不翻译 Docs/法务正文，不修改国内站产品行为。
+
+**Design:** 继续使用中文原文作为 `useT()` key，通过 locale override 让 `/es` 输出西语；国际站配置面板在西语下使用英文 provider 数据作为无西语数据源时的安全回退。旧 `ChannelModal` 仅由国内站封存组件触发，国际站主流程没有打开入口，本轮不改这段国内遗留代码。
+
+### Task 9: 首页流程步骤标签西语化
+
+- [x] **RED：渲染西语 `ProcessSection`，断言桌面端和移动端均显示 `Paso 1/2/3` 且不出现 `Step 1/2/3`。**
+- [x] **GREEN：将步骤标签改为 `t("步骤 {{step}}")`，保持布局和国内站中文输出不变。**
+- [x] **VERIFY：运行组件测试和 i18n 门禁。**
+
+### Task 10: 国际站套餐选择页西语化
+
+- [x] **RED：为 `/plans/select` 增加轻量 i18n 边界测试，覆盖页面标题、状态、说明、套餐卡和按钮；既有页面渲染测试因已记录的单文件内存增长不作为本批门禁。**
+- [x] **GREEN：页面固定文案、三档 plan catalog 展示数据和 `PlanCard` 状态文案全部接入 `useT()`；国内站继续显示中文。**
+- [x] **VERIFY：运行套餐选择页 i18n 边界测试和 TypeScript。**
+
+### Task 11: 国际订阅支付成功态西语化
+
+- [x] **RED：增加国际信用卡成功态 i18n 边界测试，断言标题、说明、关闭按钮和 aria-label 不再保留英文硬编码。**
+- [x] **GREEN：成功态所有英文硬编码改为 `t()`，金额和套餐名插值保持不变。**
+- [x] **VERIFY：运行国际订阅定向测试。**
+
+### Task 12: `/agents` 西语模型数据安全回退
+
+- [x] **RED：新增 locale 边界测试，断言 `es` 与英语使用英文 provider 数据，中文仍使用中文 provider 数据。**
+- [x] **GREEN：设置页使用 locale helper 传递 `useEnglish`；不改 Tea SDK/provider 数据结构。**
+- [x] **VERIFY：运行 locale、SDK boundary 和通道配置边界测试。**
+
+### Task 13: 补漏回归与国际站验收
+
+- [x] **DICTIONARY：执行 `pnpm i18n:extract`，补齐新 key 的 en-US、id-ID、es 翻译并生成 zh-Hant。**
+- [x] **QUALITY：运行定向测试、`pnpm i18n:check`、`pnpm i18n:validate`、`pnpm check` 与 `git diff --check`。**
+- [x] **SMOKE：复查本地 `/es` 首页、套餐选择页和订阅公开页；真实支付成功态与登录后设置页按安全边界使用组件测试兜底，不修改或发布国内站。**
+
+  Evidence (2026-08-24): 相关 7 个测试文件 / 67 个断言通过；`pnpm check`、`git diff --check`、i18n extract/validate/zh-Hant check 均退出 0。西语字典 2437/2437，0 error/0 warning。本地 `/es` 首页显示两套 `Paso 1/2/3` 且 body 无中文；`/es/subscribe` 公开内容无中文；未登录直达 `/plans/select` 显示西语登录门禁。HTML 报告：`/tmp/lightvela-spanish-p0-2026-08-24/report.html`。
 
 ---
 
@@ -4516,5 +5091,81 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - GREEN：模型配置域 7 个测试文件、117 passed；其中 helper 定向测试 40 passed，Toast/设置页关联测试 8 passed，续费印尼语回归 10 passed。
 - 真实 Hermes 源码 smoke：设置 `HERMES_AGENT_SOURCE=/Users/junweicao/Documents/zhihu/sources/hermes-agent` 后 1 passed。
 - `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check` 通过。
+
+---
+
+# 国际站西语 Docs 正文全量适配 Implementation Plan
+
+**Goal:** 为国际站 61 篇 Docs 增加完整西语正文，最终不再依赖英文或中文正文 fallback，且不改动任何图片文件或图片引用路径。
+
+**Design:** `openspec/changes/2026-08-26-spanish-docs-body-translation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-spanish-docs-body-translation-plan.md`
+
+## Tasks
+
+- [x] 增加西语正文完整性、结构一致性、代码块和图片引用不变门禁。
+- [x] 第一批：完成 Getting Started、Plans & Activation、Features & Configuration、Support 共 28 篇。
+- [x] 第二批：完成 Use Cases 共 16 篇。
+- [x] 第三批：完成 Compare 5 篇与 Hermes Agent Deep Dive 12 篇，并移除正文 fallback。
+- [x] 同步 Fumadocs，完成 61 个 slug、last-updated、类型检查、构建和 diff 终验。
+
+---
+
+# 国际站西语法务页面适配 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development. The repository remains single-agent unless the user explicitly authorizes subagents.
+
+**Goal:** 完整适配国际站西语隐私政策、Cookie 政策和服务条款；开源许可证保持英文原文，只翻译页面说明与结构性文案，并明确英文版本优先效力。
+
+**Design:** `openspec/changes/2026-08-26-spanish-legal-pages-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-spanish-legal-pages-plan.md`
+
+## Tasks
+
+- [x] 建立西语正文、英文版本优先说明和开源许可证原文边界测试。
+- [x] 完成隐私政策完整西语正文与语言效力说明。
+- [x] 完成 Cookie 政策完整西语正文、链接 token 与语言效力说明。
+- [x] 完成服务条款完整西语正文、内部链接与语言效力说明。
+- [x] 完成开源声明结构文案翻译，并通过测试、类型、i18n、国际站构建和浏览器 smoke。
+
+---
+
+# 国际站渠道卡片操作按钮防溢出 Implementation Plan
+
+**Goal:** 修复国际站西语 Slack 已连接卡片三个操作按钮越过卡片边界的问题，并覆盖其他长文案语言的同类风险。
+
+**Design:** `openspec/changes/2026-08-26-international-channel-actions-overflow-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-international-channel-actions-overflow-plan.md`
+
+## Tasks
+
+- [x] 添加国际站作用域和已连接渠道卡片布局失败测试。
+- [x] 实现教程按钮可伸缩、右侧操作组整体换行的最小 CSS 修复。
+- [x] 通过相关 Vitest、`pnpm check`、`git diff --check` 和西语 Slack 浏览器 smoke。
+
+**Verification:** 4 个相关测试文件 / 10 个断言通过；`pnpm check` 和 `git diff --check` 退出码 0，西语 2589/2589 且 0 error / 0 warning。浏览器实测三个按钮最右侧距卡片右边界 21px，窄卡片下教程与右侧操作组自然分成两行，无相关控制台告警。
+
+---
+
+# 模型配置融合按钮响应式宽度 Implementation Plan
+
+**Goal:** 修复国际站模型配置表单中“获取可用模型”和“检测模型状态”英文按钮被固定宽度裁切的问题，同时保持输入框与按钮融合的现有交互。
+
+**Architecture:** 融合控件继续使用单一 flex 容器；输入框和模型下拉保持 `min-w-0 flex-1`，尾部操作按钮改为按内容撑开、禁止换行且禁止收缩。加载态始终保留完整操作文案的占位宽度，避免请求过程中输入区域横向跳动。
+
+## Tasks
+
+- [x] 先调整组件测试，锁定融合按钮不再使用固定宽度，并具备内容自适应、禁止换行和禁止收缩约束。
+- [x] 实现两个融合按钮的响应式尺寸及稳定加载态，保持原有探测、检测、禁用和可访问语义。
+- [x] 运行模型配置定向测试、类型检查、i18n 检查和 `git diff --check`，并验证中英文及窄屏布局无裁切。
+
+**Verification:**
+- RED：组件测试命中固定 `w-28 sm:w-36` 的预期失败；GREEN：组件测试 24 passed，并显式覆盖探测加载态的文案与宽度占位。
+- 模型配置域 7 个测试文件，115 passed / 1 skipped。
+- `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- 使用本地 global + mock 预览完成英文布局验收：1440px 桌面与 900px 窄屏下两个操作按钮均完整显示，输入框和模型下拉保持剩余空间；临时 mock 已在验收后移除。
 
 ---

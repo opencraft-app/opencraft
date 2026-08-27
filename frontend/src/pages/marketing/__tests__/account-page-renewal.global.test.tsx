@@ -186,6 +186,7 @@ describe("AccountPage global renewal action", () => {
   });
 
   it("greys out the global renew action and explains that it is coming soon", async () => {
+    paidBillingEnabled = false;
     renderAccountPage();
 
     const renewButton = screen.getByRole("button", { name: "立即续费" });
@@ -219,7 +220,21 @@ describe("AccountPage global renewal action", () => {
     expect(createRenewOrder).not.toHaveBeenCalled();
   });
 
+  it("opens the global renewal flow when paid billing is enabled", async () => {
+    paidBillingEnabled = true;
+    renderAccountPage();
+
+    const renewButton = screen.getByRole("button", { name: "立即续费" });
+    expect(renewButton).not.toHaveAttribute("aria-disabled", "true");
+
+    await userEvent.click(renewButton);
+
+    expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
+    expect(getRenewPrice).toHaveBeenCalledWith("pass_global_renew", { period: 1, time_unit: "m" });
+  });
+
   it("shows global unavailable wording for expired and isolated passes", () => {
+    paidBillingEnabled = false;
     vi.setSystemTime(new Date("2026-06-12T00:00:00.000Z"));
     activePass = buildExpiredPass();
     renderAccountPage();

@@ -1,6 +1,6 @@
 import {
+  type CanonicalPublicUrlLang,
   type PublicSiteLocaleCode,
-  PUBLIC_SITE_LOCALES,
   PUBLIC_URL_LANGS,
   PUBLIC_URL_LANG_TO_LOCALE,
   matchPublicLangPrefix,
@@ -74,12 +74,38 @@ export const DEFAULT_LOCALE: "zh-CN" | "en-US" = isGlobal ? "en-US" : "zh-CN";
 /**
  * 从浏览器路径中读取语言（仅国际站；国内站固定返回 null）。
  * - 不在白名单的路径或没有前缀都返回 null（调用方应回退到 localStorage / DEFAULT_LOCALE）
+ *
+ * 返回类型为注册表的 `PublicSiteLocaleCode`，新增语种自动覆盖。
  */
-export const readLocaleFromPath = (pathname: string): "zh-CN" | "en-US" | "zh-Hant" | "id-ID" | null => {
+export const readLocaleFromPath = (pathname: string): PublicSiteLocaleCode | null => {
   if (!isGlobal) return null;
   const m = matchPublicLangPrefix(pathname);
   if (!m) return null;
   return PUBLIC_URL_LANG_TO_LOCALE[m.lang] ?? null;
+};
+
+/**
+ * 国际站「locale → SEO URL 前缀」映射。
+ *
+ * ⚠️ 刻意使用 `Record` 全量查表，而非三元链或 `startsWith('zh')` 猜测。
+ * 原因：三元链带 fallback 时，新增语种若漏配**不会编译报错**，只会静默
+ * 回退成英文或简体，用户侧表现为「切了语言但 URL 没变」。改为 `Record`
+ * 后，注册表新增语种而此处未补条目时 `tsc` 直接失败。
+ *
+ * 既有语义保持不变：
+ *   - 简体中文（`zh-CN` / `zh-SG`）统一使用 SEO 别名 `zh-sg`
+ *   - 繁体中文使用独立前缀 `zh-hant`
+ */
+const INTL_SEO_URL_LANG_BY_LOCALE: Record<PublicSiteLocaleCode, CanonicalPublicUrlLang> = {
+  "en-US": PUBLIC_URL_LANGS.EN_US,
+  /* 国际站简体统一走 zh-sg 别名，保持既有 SEO 产物路径不变。 */
+  "zh-CN": PUBLIC_URL_LANGS.ZH_SG,
+  "zh-SG": PUBLIC_URL_LANGS.ZH_SG,
+  "zh-Hant": PUBLIC_URL_LANGS.ZH_HANT,
+  "id-ID": PUBLIC_URL_LANGS.ID_ID,
+  es: PUBLIC_URL_LANGS.ES,
+  "ja-JP": PUBLIC_URL_LANGS.JA_JP,
+  "ko-KR": PUBLIC_URL_LANGS.KO_KR,
 };
 
 /**
@@ -103,16 +129,7 @@ export const localizedPath = (path: string, locale: PublicSiteLocaleCode): strin
 
   if (locale === DEFAULT_LOCALE) return bare;
 
-  // 国际站：繁体走独立前缀 zh-hant；其余中文（简体 zh-CN / zh-SG）统一用 SEO 别名 zh-sg。
-  const lang = isGlobal
-    ? locale === PUBLIC_SITE_LOCALES.ID_ID
-      ? PUBLIC_URL_LANGS.ID_ID
-      : locale === PUBLIC_SITE_LOCALES.ZH_HANT
-      ? PUBLIC_URL_LANGS.ZH_HANT
-      : locale.startsWith("zh")
-        ? PUBLIC_URL_LANGS.ZH_SG
-        : publicUrlLangForLocale(locale)
-    : publicUrlLangForLocale(locale);
+  const lang = isGlobal ? INTL_SEO_URL_LANG_BY_LOCALE[locale] : publicUrlLangForLocale(locale);
   // 根路径特殊处理：/{lang}/  ←  /
   if (bare === "/") return `/${lang}/`;
   return `/${lang}${bare}`;

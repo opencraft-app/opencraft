@@ -41,6 +41,7 @@ type Config struct {
 	AuthAEADActiveKeyID  string
 	AuthAEADKeys         map[string][]byte
 	AuthSessionTTL       time.Duration
+	TrustProxyHeaders    bool
 
 	DSHDomains                   []string
 	DSHFederationAuthorizeURL    string
@@ -50,6 +51,7 @@ type Config struct {
 	DSHFederationHMACKey         []byte
 	DSHTATStartTimeout           time.Duration
 	DSHTATOpenTimeout            time.Duration
+	DSHResponseHeaderTimeout     time.Duration
 	DSHTATIdleTimeout            time.Duration
 	DSHMaxTargets                int
 	DSHMaxConnectionsPerTarget   int
@@ -150,10 +152,16 @@ func FromEnv() (Config, error) {
 	if cfg.AuthSessionTTL > 5*time.Minute {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_SESSION_TTL must not exceed 5m")
 	}
+	if cfg.TrustProxyHeaders, err = getBool("SITE_GATEWAY_TRUST_PROXY_HEADERS", false); err != nil {
+		return Config{}, err
+	}
 	if cfg.DSHTATStartTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_START_TIMEOUT", 10*time.Second); err != nil {
 		return Config{}, err
 	}
 	if cfg.DSHTATOpenTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT", 15*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHResponseHeaderTimeout, err = getDuration("SITE_GATEWAY_DSH_RESPONSE_HEADER_TIMEOUT", 20*time.Minute); err != nil {
 		return Config{}, err
 	}
 	if cfg.DSHTATIdleTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT", time.Hour); err != nil {

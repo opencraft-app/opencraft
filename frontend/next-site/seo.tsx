@@ -14,8 +14,14 @@ import {
 import {
   EN_US_LOCALE,
   EN_US_URL_LANG,
+  ES_LOCALE,
+  ES_URL_LANG,
   ID_ID_LOCALE,
   ID_ID_URL_LANG,
+  JA_JP_LOCALE,
+  JA_JP_URL_LANG,
+  KO_KR_LOCALE,
+  KO_KR_URL_LANG,
   ZH_CN_URL_LANG,
   ZH_HANT_LOCALE,
   ZH_HANT_URL_LANG,
@@ -100,6 +106,9 @@ const LOCALE_TO_URL_LANG: Record<SeoLocale, PublicUrlLang> = {
   'zh-SG': 'zh-sg',
   'zh-Hant': 'zh-hant',
   'id-ID': 'id-id',
+  es: 'es',
+  'ja-JP': 'ja-jp',
+  'ko-KR': 'ko-kr',
 };
 
 const URL_LANG_TO_LOCALE: Record<PublicUrlLang, SeoLocale> = {
@@ -108,6 +117,9 @@ const URL_LANG_TO_LOCALE: Record<PublicUrlLang, SeoLocale> = {
   'zh-sg': 'zh-SG',
   'zh-hant': 'zh-Hant',
   'id-id': 'id-ID',
+  es: 'es',
+  'ja-jp': 'ja-JP',
+  'ko-kr': 'ko-KR',
 };
 
 const LOCALE_TO_OG_LOCALE: Record<SeoLocale, string> = {
@@ -117,6 +129,9 @@ const LOCALE_TO_OG_LOCALE: Record<SeoLocale, string> = {
   // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
   'zh-Hant': 'zh_HK',
   'id-ID': 'id_ID',
+  es: 'es_ES',
+  'ja-JP': 'ja_JP',
+  'ko-KR': 'ko_KR',
 };
 
 const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
@@ -181,20 +196,36 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
     'Discord bot',
     'Slack bot',
   ],
+  es: [
+    'LightVela',
+    'agente de IA en la nube',
+    'agente de IA personal',
+    'asistente de IA',
+    'Hermes Agent',
+    'alojamiento de agentes',
+    'automatizaciones',
+    'bot de Telegram',
+    'bot de WhatsApp',
+    'bot de Discord',
+  ],
+  // Hidden preparation locales are deliberately not part of any release array.
+  'ja-JP': ['LightVela'],
+  'ko-KR': ['LightVela'],
 };
 
 export const SEO_PUBLIC_URL_LANGS = (
-  isGlobal ? [EN_US_URL_LANG, ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG] : [ZH_CN_URL_LANG]
-) as readonly PublicUrlLang[];
+  isGlobal ? [EN_US_URL_LANG, ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG, ES_URL_LANG] : [ZH_CN_URL_LANG]
+) satisfies readonly PublicUrlLang[];
 export const SEO_DOCS_ROUTE_LOCALES = (
-  isGlobal ? [EN_US_URL_LANG, ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG] : [ZH_CN_URL_LANG]
-) as readonly DocsRouteLocale[];
+  isGlobal ? [EN_US_URL_LANG, ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG, ES_URL_LANG] : [ZH_CN_URL_LANG]
+) satisfies readonly DocsRouteLocale[];
 export const SEO_ALL_PUBLIC_URL_LANGS = [
   ZH_CN_URL_LANG,
   EN_US_URL_LANG,
   ZH_SG_URL_LANG,
   ZH_HANT_URL_LANG,
   ID_ID_URL_LANG,
+  ES_URL_LANG,
 ] as const satisfies readonly PublicUrlLang[];
 export const SEO_ALL_DOCS_ROUTE_LOCALES = [
   ZH_CN_URL_LANG,
@@ -202,6 +233,7 @@ export const SEO_ALL_DOCS_ROUTE_LOCALES = [
   ZH_SG_URL_LANG,
   ZH_HANT_URL_LANG,
   ID_ID_URL_LANG,
+  ES_URL_LANG,
 ] as const satisfies readonly DocsRouteLocale[];
 
 /**
@@ -224,13 +256,13 @@ export const SEO_ALL_DOCS_ROUTE_LOCALES = [
  * 国际站的非默认语言保持不变：`/zh-sg/`、`/zh-hant/`、`/id-id/` 均为真实语言版本。
  */
 export const SEO_PREFIXED_PUBLIC_URL_LANGS = (
-  isGlobal ? [ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG] : []
-) as readonly PublicUrlLang[];
+  isGlobal ? [ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG, ES_URL_LANG] : []
+) satisfies readonly PublicUrlLang[];
 
 /** 文档站版本，语义同 `SEO_PREFIXED_PUBLIC_URL_LANGS`。 */
 export const SEO_PREFIXED_DOCS_ROUTE_LOCALES = (
-  isGlobal ? [ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG] : []
-) as readonly DocsRouteLocale[];
+  isGlobal ? [ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG, ES_URL_LANG] : []
+) satisfies readonly DocsRouteLocale[];
 
 /**
  * `[lang]` 路由的运行时守卫：只接受**本站点真的生成前缀路由**的语言。
@@ -276,6 +308,9 @@ export function localeFromUrlLang(lang: PublicUrlLang): SeoLocale {
 }
 
 export function urlLangForLocale(locale: SeoLocale): PublicUrlLang {
+  if (locale === ES_LOCALE) return ES_URL_LANG;
+  if (locale === JA_JP_LOCALE) return JA_JP_URL_LANG;
+  if (locale === KO_KR_LOCALE) return KO_KR_URL_LANG;
   if (isGlobal && locale === ID_ID_LOCALE) return ID_ID_URL_LANG;
   if (isGlobal && locale === ZH_HANT_LOCALE) return ZH_HANT_URL_LANG;
   if (isGlobal && locale.startsWith('zh')) return ZH_SG_URL_LANG;
@@ -442,10 +477,13 @@ export function SiteJsonLd() {
 export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale }: { locale?: SeoLocale }) {
   const isEnglish = locale === EN_US_LOCALE;
   const isIndonesian = locale === ID_ID_LOCALE;
+  const isSpanish = locale === ES_LOCALE;
   const description = isEnglish
     ? 'LightVela is a cloud Agent hosting product for creating a long-term personal AI companion.'
     : isIndonesian
       ? 'LightVela adalah produk hosting Agent berbasis cloud untuk membuat pendamping AI pribadi jangka panjang.'
+      : isSpanish
+        ? 'LightVela es una plataforma de agentes de IA en la nube para crear un asistente personal siempre disponible.'
       : 'LightVela 是云端 Agent 托管产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。';
   return (
     <JsonLd

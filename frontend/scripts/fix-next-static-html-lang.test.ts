@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { DOCS_ROUTE_SLUGS } from "../next-site/docs-route-manifest";
+
 describe("fix-next-static-html-lang", () => {
   it("writes compact EdgeOne routes without intercepting ordinary text assets", () => {
     const root = mkdtempSync(join(tmpdir(), "next-edgeone-output-"));
@@ -87,6 +89,54 @@ describe("fix-next-static-html-lang", () => {
     }
   });
 
+  it("keeps the EdgeOne route config bounded for the real multilingual docs manifest", { timeout: 30_000 }, () => {
+    const root = mkdtempSync(join(tmpdir(), "next-edgeone-real-docs-budget-"));
+    const out = join(root, "out");
+    const script = resolve("scripts/fix-next-static-html-lang.mjs");
+
+    try {
+      const publicRoutes = [
+        "about",
+        "changelog",
+        "cookie-policy",
+        "open-source-licenses",
+        "privacy-policy",
+        "subscribe",
+        "support",
+        "terms-of-service",
+      ];
+      for (const [locale, slugs] of Object.entries(DOCS_ROUTE_SLUGS)) {
+        for (const route of publicRoutes) {
+          const dir = join(out, locale, route);
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, "index.html"), '<html lang="en"><body></body></html>');
+          writeFileSync(join(dir, "index.txt"), "flight");
+        }
+        for (const slug of slugs) {
+          const dir = join(out, locale, "docs", ...slug);
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, "index.html"), '<html lang="en"><body></body></html>');
+          writeFileSync(join(dir, "index.txt"), "flight");
+        }
+      }
+
+      execFileSync(process.execPath, [script], { cwd: root, stdio: "pipe" });
+
+      const config = JSON.parse(readFileSync(join(out, ".edgeone", "cloud-functions", "ssr-node", "config.json"), "utf8"));
+      expect(Buffer.byteLength(JSON.stringify(config))).toBeLessThan(16 * 1024);
+      const flightRoutes = config.routes.filter((route) => route.dest === "/$1/index.txt");
+      for (const path of [
+        "/es/docs/overview.txt",
+        "/es/docs/configuration/model.txt",
+        "/zh-cn/docs/faq.txt",
+      ]) {
+        expect(flightRoutes.some((route) => new RegExp(route.src).test(path))).toBe(true);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("can skip EdgeOne Build Output for StaticPages previews", () => {
     const root = mkdtempSync(join(tmpdir(), "next-staticpages-output-"));
     const out = join(root, "out");
@@ -116,8 +166,14 @@ describe("fix-next-static-html-lang", () => {
     try {
       mkdirSync(join(out, "about"), { recursive: true });
       mkdirSync(join(out, "zh-cn", "about"), { recursive: true });
+      mkdirSync(join(out, "es", "about"), { recursive: true });
+      mkdirSync(join(out, "ja-jp", "about"), { recursive: true });
+      mkdirSync(join(out, "ko-kr", "about"), { recursive: true });
       writeFileSync(join(out, "about", "index.html"), '<html lang="zh-CN"><body></body></html>');
       writeFileSync(join(out, "zh-cn", "about", "index.html"), '<html lang="en"><body></body></html>');
+      writeFileSync(join(out, "es", "about", "index.html"), '<html lang="en"><body></body></html>');
+      writeFileSync(join(out, "ja-jp", "about", "index.html"), '<html lang="sentinel"><body></body></html>');
+      writeFileSync(join(out, "ko-kr", "about", "index.html"), '<html lang="sentinel"><body></body></html>');
       execFileSync(process.execPath, [script], {
         cwd: root,
         env: { ...process.env, NEXT_PUBLIC_REGION: "global", NEXT_WRITE_EDGEONE_BUILD_OUTPUT: "0" },
@@ -126,6 +182,9 @@ describe("fix-next-static-html-lang", () => {
 
       expect(readFileSync(join(out, "about", "index.html"), "utf8")).toContain('<html lang="en-US"');
       expect(readFileSync(join(out, "zh-cn", "about", "index.html"), "utf8")).toContain('<html lang="zh-CN"');
+      expect(readFileSync(join(out, "es", "about", "index.html"), "utf8")).toContain('<html lang="es"');
+      expect(readFileSync(join(out, "ja-jp", "about", "index.html"), "utf8")).toContain('<html lang="en-US"');
+      expect(readFileSync(join(out, "ko-kr", "about", "index.html"), "utf8")).toContain('<html lang="en-US"');
 
       mkdirSync(join(out, "id-id", "about"), { recursive: true });
       writeFileSync(join(out, "id-id", "about", "index.html"), '<html lang="en"><body></body></html>');

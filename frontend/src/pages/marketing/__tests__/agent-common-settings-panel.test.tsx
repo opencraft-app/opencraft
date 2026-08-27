@@ -179,7 +179,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     const trigger = await screen.findByRole("combobox", { name: "审批模式" });
     expect(trigger).toHaveTextContent("智能审批");
-    expect(screen.queryByText("当前不会请求危险命令审批")).toBeNull();
+    expect(screen.queryByText("当前高风险操作无需审批")).toBeNull();
     await user.click(trigger);
     expect(screen.getByRole("option", { name: "智能审批" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "始终询问" })).toBeTruthy();
@@ -392,8 +392,35 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("关闭审批");
-    expect(screen.getByText("当前不会请求危险命令审批")).toBeTruthy();
+    const warning = screen.getByText("当前高风险操作无需审批");
+    expect(warning).toHaveClass("whitespace-nowrap", "text-right");
+    expect(screen.queryByText("当前不会请求危险命令审批")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it.each([
+    ["en-US", "High-risk operations run without approval"],
+    ["zh-Hant", "當前高風險操作無需審批"],
+    ["id-ID", "Operasi berisiko tinggi tanpa persetujuan"],
+    ["es", "Las operaciones de alto riesgo se ejecutan sin aprobación"],
+    ["ja-JP", "現在、高リスク操作は承認なしで実行されます"],
+    ["ko-KR", "현재 고위험 작업은 승인 없이 실행됩니다"],
+  ] as const)("localizes the approval-off warning for %s", async (locale, expectedCopy) => {
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={async () => baseSnapshot({
+          values: { ...baseSnapshot().values, approvalMode: "off" },
+        })}
+        saveSetting={vi.fn()}
+      />,
+      locale,
+    );
+
+    expect(await screen.findByText(expectedCopy)).toHaveClass("whitespace-nowrap", "text-right");
   });
 
   it("disables Security reset when both Security settings are unsupported", async () => {

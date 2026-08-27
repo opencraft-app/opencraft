@@ -76,6 +76,10 @@ const config = {
     resolveAlias: {
       // AgentChat pulls Tea UI styles as a side effect. Use Tea's no-reset
       // build so the chat page cannot globally reset host page elements.
+      // 历史：SDK @tencent/agentchat-lightvela-panel@1.4.2 已处理掉直接依赖，
+      // 实测侧栏 <a> 不再被 tea-themeable.css 染蓝（global.css 里的 revert-layer
+      // 防护已随之移除）。此 alias 保留作为构建层兜底，防止未来 SDK 任一环节
+      // 退化时污染再次进入产物。
       [teaThemeableResetCss]: teaThemeableNoResetCss,
     },
     rules: {

@@ -7,6 +7,7 @@ import {
 } from "@/constants/legal";
 import { DISCORD_INVITE_URL } from "@/constants/community";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
+import { localeDefinition, parseLocaleCode } from "@/i18n/locales.config";
 import { useLocaleOverride, useT } from "@/i18n/t";
 import { SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { isGlobal, localizedPath } from "@/lib/region";
@@ -43,6 +44,15 @@ export type RenderFooterLink = (props: {
 
 const footerLinkClassName =
   "inline-flex w-fit appearance-none rounded-md border-0 bg-transparent p-0 text-left text-sm font-normal leading-6 text-black/55 no-underline transition-colors duration-200 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black/40";
+
+function useFooterLocale(): PublicSiteLocaleCode {
+  const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
+  const parsedLocale = parseLocaleCode(localeOverride ?? i18n.language);
+  return parsedLocale && localeDefinition(parsedLocale).switcherVisible
+    ? parsedLocale
+    : PUBLIC_SITE_LOCALES.EN_US;
+}
 
 /**
  * 竞品对比栏链接。
@@ -171,9 +181,15 @@ function DefaultFooterLink({ children, ...props }: Parameters<RenderFooterLink>[
   return <a {...props}>{children}</a>;
 }
 
-function LightVelaFooterLogo({ renderLink }: { renderLink: RenderFooterLink }) {
+function LightVelaFooterLogo({
+  locale,
+  renderLink,
+}: {
+  locale: PublicSiteLocaleCode;
+  renderLink: RenderFooterLink;
+}) {
   return renderLink({
-    href: "/",
+    href: localizedPath("/", locale),
     className: "inline-flex shrink-0 items-center",
     "aria-label": "LightVela",
     children: (
@@ -187,18 +203,17 @@ function LightVelaFooterLogo({ renderLink }: { renderLink: RenderFooterLink }) {
   });
 }
 
-function FooterTextLink({ link, className, renderLink }: { link: FooterLink; className?: string; renderLink: RenderFooterLink }) {
-  const { i18n } = useTranslation();
-  const localeOverride = useLocaleOverride();
-  // 将当前 i18n 语言映射到公开站点合法 locale，繁体保留 zh-Hant 以生成 /zh-hant 前缀
-  const lang = localeOverride ?? i18n.language;
-  const locale: PublicSiteLocaleCode =
-    lang === PUBLIC_SITE_LOCALES.ZH_CN
-      || lang === PUBLIC_SITE_LOCALES.ZH_SG
-      || lang === PUBLIC_SITE_LOCALES.ZH_HANT
-      || lang === PUBLIC_SITE_LOCALES.ID_ID
-      ? lang
-      : PUBLIC_SITE_LOCALES.EN_US;
+function FooterTextLink({
+  link,
+  locale,
+  className,
+  renderLink,
+}: {
+  link: FooterLink;
+  locale: PublicSiteLocaleCode;
+  className?: string;
+  renderLink: RenderFooterLink;
+}) {
   const linkClassName = cn(footerLinkClassName, className);
   const label = link.label;
 
@@ -250,6 +265,7 @@ export function FooterLinkColumns({
   className?: string;
 }) {
   const t = useT();
+  const locale = useFooterLocale();
   const sections = getFooterSections(t);
 
   return (
@@ -272,7 +288,7 @@ export function FooterLinkColumns({
           </h3>
           <div className="flex min-h-6 flex-col items-start gap-2.5">
             {section.links.map((link) => (
-              <FooterTextLink key={link.label} link={link} renderLink={renderLink} />
+              <FooterTextLink key={link.label} link={link} locale={locale} renderLink={renderLink} />
             ))}
           </div>
         </section>
@@ -283,6 +299,7 @@ export function FooterLinkColumns({
 
 export function LightVelaFooter({ renderLink = DefaultFooterLink }: { renderLink?: RenderFooterLink }) {
   const t = useT();
+  const locale = useFooterLocale();
 
   return (
     <footer className={`w-full border-b border-black/8 ${FOOTER_SURFACE_CLASS}`} aria-labelledby="lightvela-footer-heading">
@@ -294,7 +311,7 @@ export function LightVelaFooter({ renderLink = DefaultFooterLink }: { renderLink
       </div>
 
       <div className="mt-10 flex flex-col gap-4 px-12 pb-10 md:flex-row md:items-center md:justify-between md:px-[140px] md:pb-12 lg:px-[280px] lg:pb-14">
-        <LightVelaFooterLogo renderLink={renderLink} />
+        <LightVelaFooterLogo locale={locale} renderLink={renderLink} />
         <p className="text-sm leading-6 text-black/45 md:text-right">
           {t("© 2026 LightVela 版权所有，由腾讯轻量云团队出品")}
         </p>

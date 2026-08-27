@@ -64,14 +64,40 @@ const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
 
 const MODEL_FIELD_CLASS = "grid gap-y-2";
 const MODEL_CONTROL_CLASS = "h-12 rounded-md border-black/10 bg-white shadow-none outline-none transition-colors focus:border-[#2F6BFF] focus:outline-none focus:ring-0 focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-0";
-const MODEL_COMPOUND_CONTROL_CLASS = "flex h-12 min-w-0 overflow-hidden rounded-md border border-black/10 bg-white shadow-none transition-colors focus-within:border-[#2F6BFF]";
-const MODEL_COMPOUND_FIELD_CLASS = "h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none outline-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0";
-const MODEL_COMPOUND_ACTION_CLASS = "h-full w-28 shrink-0 rounded-none border-0 border-l border-black/10 bg-white px-3 shadow-none hover:translate-y-0 hover:border-black/10 hover:bg-black/[0.025] focus-visible:ring-inset sm:w-36";
+const MODEL_COMPOUND_CONTROL_BASE_CLASS = "min-w-0 overflow-hidden rounded-md border border-black/10 bg-white shadow-none transition-colors focus-within:border-[#2F6BFF]";
+const MODEL_COMPOUND_FIELD_BASE_CLASS = "min-w-0 rounded-none border-0 bg-transparent shadow-none outline-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0";
+const MODEL_COMPOUND_ACTION_BASE_CLASS = "shrink-0 whitespace-nowrap rounded-none border-0 bg-white px-3 shadow-none hover:translate-y-0 hover:border-black/10 hover:bg-black/[0.025] focus-visible:ring-inset";
 const MODEL_SELECT_CONTENT_CLASS = "max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-md";
 const MODEL_SELECT_CONTENT_STYLE = {
   width: "var(--radix-select-trigger-width)",
   minWidth: "var(--radix-select-trigger-width)",
 } as const;
+
+function ModelCompoundActionContent({
+  idleLabel,
+  loadingLabel,
+  loading,
+}: {
+  idleLabel: string;
+  loadingLabel: string;
+  loading: boolean;
+}) {
+  return (
+    <span className="relative grid place-items-center">
+      <span
+        aria-hidden="true"
+        data-slot="model-compound-action-width-label"
+        className="invisible whitespace-nowrap"
+      >
+        {idleLabel}
+      </span>
+      <span className="absolute inset-0 inline-flex items-center justify-center gap-2 whitespace-nowrap">
+        {loading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+        {loading ? loadingLabel : idleLabel}
+      </span>
+    </span>
+  );
+}
 
 function captureAgentSidebarPosition() {
   const sidebar = document.querySelector<HTMLElement>(".lv-agents-sidebar-scroll-isolated");
@@ -133,10 +159,12 @@ export function AgentModelConfigPanel({
   botId,
   execDebugCommand,
   providers,
+  isGlobalRegion = false,
 }: {
   botId: string;
   execDebugCommand: HermesModelConfigExecDebugCommand;
   providers: ModelProviderOption[];
+  isGlobalRegion?: boolean;
 }) {
   const t = useT();
   const controller = useModelConfig({ botId, execDebugCommand });
@@ -166,6 +194,23 @@ export function AgentModelConfigPanel({
   const activeProvider = category === "custom"
     ? null
     : providerOptions.find((provider) => provider.providerKey === providerKey) ?? null;
+
+  const compoundControlClassName = cn(
+    MODEL_COMPOUND_CONTROL_BASE_CLASS,
+    isGlobalRegion
+      ? "grid h-auto grid-cols-1 sm:h-12 sm:grid-cols-[minmax(0,1fr)_max-content]"
+      : "flex h-12",
+  );
+  const compoundFieldClassName = cn(
+    MODEL_COMPOUND_FIELD_BASE_CLASS,
+    isGlobalRegion ? "h-12 w-full sm:h-full" : "h-full flex-1",
+  );
+  const compoundActionClassName = cn(
+    MODEL_COMPOUND_ACTION_BASE_CLASS,
+    isGlobalRegion
+      ? "h-12 w-full border-t border-black/10 sm:h-full sm:w-auto sm:min-w-max sm:border-l sm:border-t-0 sm:px-4"
+      : "h-full min-w-max border-l border-black/10 px-4",
+  );
 
   useEffect(() => {
     if (category === "custom") return;
@@ -618,8 +663,8 @@ export function AgentModelConfigPanel({
 
           <div className={MODEL_FIELD_CLASS}>
             <label id="model-api-key-label" className="text-sm font-medium text-black/70" htmlFor="model-api-key">API Key</label>
-            <div data-slot="model-api-key-control" className={MODEL_COMPOUND_CONTROL_CLASS}>
-              <div className="relative min-w-0 flex-1">
+            <div data-slot="model-api-key-control" className={compoundControlClassName}>
+              <div className={cn("relative min-w-0", isGlobalRegion ? "h-12 w-full sm:h-full" : "flex-1")}>
                 <Input
                   id="model-api-key"
                   type={showApiKey ? "text" : "password"}
@@ -627,7 +672,7 @@ export function AgentModelConfigPanel({
                   value={apiKey}
                   disabled={busy}
                   placeholder={t("请输入 API Key")}
-                  className={cn(MODEL_COMPOUND_FIELD_CLASS, "pr-11")}
+                  className={cn(compoundFieldClassName, "pr-11")}
                   onChange={(event) => {
                     setApiKey(event.target.value);
                     setApiKeyTarget(providerFingerprint);
@@ -646,14 +691,15 @@ export function AgentModelConfigPanel({
               <Button
                 type="button"
                 variant="outline"
-                className={MODEL_COMPOUND_ACTION_CLASS}
+                className={compoundActionClassName}
                 disabled={!canProbe || busy}
                 onClick={() => void handleProbe()}
               >
-                {controller.operation === "probe" ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                {controller.operation === "probe" ? t("获取中...") : t("获取可用模型")}
+                <ModelCompoundActionContent
+                  idleLabel={t("获取可用模型")}
+                  loadingLabel={t("获取中...")}
+                  loading={controller.operation === "probe"}
+                />
               </Button>
             </div>
             {activeProvider?.apiKeyUrl ? (
@@ -673,7 +719,7 @@ export function AgentModelConfigPanel({
             <label id="detected-model-label" className="text-sm font-medium text-black/70" htmlFor="detected-model">
               {t("模型")}
             </label>
-            <div data-slot="model-option-control" className={MODEL_COMPOUND_CONTROL_CLASS}>
+            <div data-slot="model-option-control" className={compoundControlClassName}>
               <Select
                 value={selectedModelId}
                 disabled={busy || modelOptions.length === 0}
@@ -686,7 +732,7 @@ export function AgentModelConfigPanel({
                 <SelectTrigger
                   id="detected-model"
                   aria-label={t("模型")}
-                  className={MODEL_COMPOUND_FIELD_CLASS}
+                  className={compoundFieldClassName}
                   onPointerDownCapture={captureAgentSidebarPosition}
                   onKeyDownCapture={captureAgentSidebarPosition}
                 >
@@ -707,14 +753,15 @@ export function AgentModelConfigPanel({
               <Button
                 type="button"
                 variant="outline"
-                className={MODEL_COMPOUND_ACTION_CLASS}
+                className={compoundActionClassName}
                 disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy}
                 onClick={() => void handleConnectivityTest()}
               >
-                {controller.operation === "connectivity-probe" ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                {controller.operation === "connectivity-probe" ? t("检测中...") : t("检测模型状态")}
+                <ModelCompoundActionContent
+                  idleLabel={t("检测模型状态")}
+                  loadingLabel={t("检测中...")}
+                  loading={controller.operation === "connectivity-probe"}
+                />
               </Button>
             </div>
           </div>

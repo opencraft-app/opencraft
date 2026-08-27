@@ -20,24 +20,31 @@ const DOCS_LOCALE_TO_PUBLIC_LOCALE: Record<DocsRouteLocale, PublicSiteLocale> = 
   [PUBLIC_URL_LANGS.ZH_SG]: PUBLIC_SITE_LOCALES.ZH_SG,
   [PUBLIC_URL_LANGS.ZH_HANT]: PUBLIC_SITE_LOCALES.ZH_HANT,
   [PUBLIC_URL_LANGS.ID_ID]: PUBLIC_SITE_LOCALES.ID_ID,
+  [PUBLIC_URL_LANGS.ES]: PUBLIC_SITE_LOCALES.ES,
 };
 
 /**
- * 本站点需要生成「带语言前缀」文档路由的语言。
- *
- * ⚠️ **默认语言不在此列**，两站同理：
- * - 国内站唯一语言 zh-CN → 裸路径 `/docs/xxx/` 即正式 URL；
- * - 国际站默认语言 en-US → 裸路径 `/docs/xxx/` 即正式 URL。
- *
- * 过去两站都会为默认语言额外生成一整套前缀页面（返回 200），
- * 与裸路径构成重复内容。现改为不再生成，由 CDN 层 301 → 裸路径
- * （规则见 `scripts/write-edgeone-config.mjs`，说明见 `wiki/product-state/seo-url-migration.md`）。
+ * 默认语言不生成带前缀的重复页面：国内站 zh-CN、国际站 en-US 均使用裸 `/docs`。
+ * 国际站其余已发布语言保留带语言前缀的正式路由。
  */
-const REGION_DOCS_ROUTE_LOCALES = (
-  isGlobal
-    ? [PUBLIC_URL_LANGS.ZH_SG, PUBLIC_URL_LANGS.ZH_HANT, PUBLIC_URL_LANGS.ID_ID]
-    : []
-) as readonly DocsRouteLocale[];
+const GLOBAL_DOCS_ROUTE_LOCALES = [
+  PUBLIC_URL_LANGS.ZH_SG,
+  PUBLIC_URL_LANGS.ZH_HANT,
+  PUBLIC_URL_LANGS.ID_ID,
+  PUBLIC_URL_LANGS.ES,
+] as const satisfies readonly DocsRouteLocale[];
+
+const CN_DOCS_ROUTE_LOCALES = [] as const satisfies readonly DocsRouteLocale[];
+
+export function docsRouteLocalesForRegion(region: 'cn' | 'global'): readonly DocsRouteLocale[] {
+  return region === 'global' ? GLOBAL_DOCS_ROUTE_LOCALES : CN_DOCS_ROUTE_LOCALES;
+}
+
+export function publicLocaleForDocsRoute(locale: DocsRouteLocale): PublicSiteLocale {
+  return DOCS_LOCALE_TO_PUBLIC_LOCALE[locale];
+}
+
+const REGION_DOCS_ROUTE_LOCALES = docsRouteLocalesForRegion(isGlobal ? 'global' : 'cn');
 
 function docsRouteLocale(lang: string): DocsRouteLocale {
   if ((REGION_DOCS_ROUTE_LOCALES as readonly string[]).includes(lang)) return lang as DocsRouteLocale;
@@ -52,7 +59,7 @@ export default async function Page({
   const { lang, slug } = await params;
   const contentLocale = docsRouteLocale(lang);
   if (!isDocsRouteSlug(contentLocale, slug)) notFound();
-  const locale = DOCS_LOCALE_TO_PUBLIC_LOCALE[contentLocale];
+  const locale = publicLocaleForDocsRoute(contentLocale);
 
   return (
     <PublicSiteLocaleBridge locale={locale}>
