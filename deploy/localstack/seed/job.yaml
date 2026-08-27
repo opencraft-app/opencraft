@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: localstack-seed
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: seed
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-infra-secrets
+                  key: MYSQL_ROOT_PASSWORD
+          command:
+            - sh
+            - -ec
+            - |
+              mysql -hmysql -uroot < /seed/005-auth-invites.sql
+              mysql -hmysql -uroot < /seed/010-subscription-plans.sql
+              mysql -hmysql -uroot < /seed/020-sandbox-mock-pool.sql
+              mysql -hmysql -uroot < /seed/025-ai-gateway-plans.sql
+              mysql -hmysql -uroot < /seed/030-ctl-bundles.sql
+              mysql -hmysql -uroot < /seed/040-trade-bundles.sql
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+      volumes:
+        - name: seed
+          configMap:
+            name: localstack-seed

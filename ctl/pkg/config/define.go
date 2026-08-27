@@ -194,12 +194,14 @@ type AdapterApiV3Config struct {
 
 // SandboxConfig defines sandbox adapter settings.
 type SandboxConfig struct {
-	BaseURL        string `toml:"baseUrl"`
-	ProcessBaseURL string `toml:"processBaseUrl"`
-	APIKey         string `toml:"apiKey"`
-	Timeout        int    `toml:"timeout"`
-	MaxRetries     int    `toml:"maxRetries"`
-	RetryInterval  int    `toml:"retryInterval"`
+	BaseURL                       string `toml:"baseUrl"`
+	ProcessBaseURL                string `toml:"processBaseUrl"`
+	APIKey                        string `toml:"apiKey"`
+	Timeout                       int    `toml:"timeout"`
+	MaxRetries                    int    `toml:"maxRetries"`
+	RetryInterval                 int    `toml:"retryInterval"`
+	WebsiteCredentialTATCommandID string `toml:"websiteCredentialTATCommandID"`
+	WebsiteAgentAPIBase           string `toml:"websiteAgentAPIBase"`
 }
 
 // AiGatewayConfig AI-Gateway 适配器配置
@@ -221,18 +223,18 @@ type AiGatewayConfig struct {
 // BaseURL 指向控制面（/api/admin 与 /api/internal）；DefaultBaseURL 指向
 // OpenAI 兼容流量面，通常带 /v1。
 type LLMGatewayConfig struct {
-	Enabled                       bool     `toml:"-"`
-	BaseURL                       string   `toml:"base_url"`
-	AdminToken                    string   `toml:"admin_token"`
-	InternalServiceToken          string   `toml:"internal_service_token"`
-	Timeout                       int      `toml:"timeout"`
-	DefaultBaseURL                string   `toml:"default_base_url"`
-	DefaultModelID                string   `toml:"default_model_id"`
-	DefaultCompatibility          string   `toml:"default_compatibility"`
-	DefaultGatewayPort            int      `toml:"default_gateway_port"`
-	DefaultProviderID             string   `toml:"default_provider_id"`
-	NewAllocationUserAllowlist    []string `toml:"-"`
-	RenewalMigrationUserAllowlist []string `toml:"-"`
+	Enabled                         bool     `toml:"-"`
+	BaseURL                         string   `toml:"base_url"`
+	AdminToken                      string   `toml:"admin_token"`
+	InternalServiceToken            string   `toml:"internal_service_token"`
+	Timeout                         int      `toml:"timeout"`
+	DefaultBaseURL                  string   `toml:"default_base_url"`
+	DefaultModelID                  string   `toml:"default_model_id"`
+	DefaultCompatibility            string   `toml:"default_compatibility"`
+	DefaultGatewayPort              int      `toml:"default_gateway_port"`
+	DefaultProviderID               string   `toml:"default_provider_id"`
+	NewAllocationUserAllowlist      []string `toml:"-"`
+	BotCreateMigrationUserAllowlist []string `toml:"-"`
 }
 
 // BundleConfig 套餐相关全局配置

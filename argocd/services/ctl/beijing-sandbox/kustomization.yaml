@@ -6,6 +6,54 @@ components:
 - ../profiles/sandbox
 resources:
 - ctl-conf-rewrite.yaml
+patches:
+- target:
+    kind: Deployment
+    name: ctl-api
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+        value: usr_31b0bd10d198d7aa7012fbf0,usr_cd57811ec414ce48e8d40c6c
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+        value: usr_31b0bd10d198d7aa7012fbf0
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: CTL_CLOUDAPI_ALLOWED_REGIONS
+        value: ap-beijing
+- target:
+    kind: Deployment
+    name: ctl-service
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+        value: usr_31b0bd10d198d7aa7012fbf0,usr_cd57811ec414ce48e8d40c6c
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+        value: usr_31b0bd10d198d7aa7012fbf0
+- target:
+    kind: Deployment
+    name: ctl-bypass
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+        value: usr_31b0bd10d198d7aa7012fbf0,usr_cd57811ec414ce48e8d40c6c
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+        value: usr_31b0bd10d198d7aa7012fbf0
 generators:
 - ksops-assets-generator.yaml
 configMapGenerator:

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,23 +37,25 @@ type GitHubOAuthToken struct {
 
 // GitHubOAuthConfig 是 GitHub OAuth 的配置结构体。
 type GitHubOAuthConfig struct {
-	ClientID        string
-	ClientSecret    string
-	RedirectURI     string
-	FrontendBaseURL string
-	PublicBaseURL   string
-	StateTTL        time.Duration
-	Client          GitHubOAuthClient
+	ClientID             string
+	ClientSecret         string
+	RedirectURI          string
+	FrontendBaseURL      string
+	PublicBaseURL        string
+	StateTTL             time.Duration
+	Client               GitHubOAuthClient
+	RegistrationDisabled bool
 }
 
 type githubOAuth struct {
-	clientID        string
-	clientSecret    string
-	redirectURI     string
-	frontendBaseURL string
-	publicBaseURL   string
-	stateTTL        time.Duration
-	client          GitHubOAuthClient
+	clientID             string
+	clientSecret         string
+	redirectURI          string
+	frontendBaseURL      string
+	publicBaseURL        string
+	stateTTL             time.Duration
+	client               GitHubOAuthClient
+	registrationDisabled bool
 }
 
 func newGitHubOAuth(config *GitHubOAuthConfig) *githubOAuth {
@@ -82,13 +85,14 @@ func newGitHubOAuth(config *GitHubOAuthConfig) *githubOAuth {
 	}
 
 	return &githubOAuth{
-		clientID:        clientID,
-		clientSecret:    clientSecret,
-		redirectURI:     redirectURI,
-		frontendBaseURL: strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
-		publicBaseURL:   strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
-		stateTTL:        stateTTL,
-		client:          client,
+		clientID:             clientID,
+		clientSecret:         clientSecret,
+		redirectURI:          redirectURI,
+		frontendBaseURL:      strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
+		publicBaseURL:        strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
+		stateTTL:             stateTTL,
+		client:               client,
+		registrationDisabled: config.RegistrationDisabled,
 	}
 }
 
@@ -212,6 +216,9 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.RegistrationDisabled = h.githubOAuth.registrationDisabled
+	identity.ClientIP = ctx.ClientIP()
+	identity.ClientUA = ctx.Request.UserAgent()
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(
@@ -221,6 +228,20 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 			"subject", identity.ProviderSubject,
 			"err", err,
 		)
+		var serviceErr *service.Error
+		if errors.As(err, &serviceErr) {
+			switch serviceErr.Code {
+			case "oauth_registration_disabled":
+				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_registration_disabled"))
+				return
+			case "registration_email_suffix_blocked":
+				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_email_suffix_blocked"))
+				return
+			case "oauth_registration_email_required":
+				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_email_required"))
+				return
+			}
+		}
 		ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_sign_in_failed"))
 		return
 	}
@@ -229,6 +250,7 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "github", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
+	h.completeFederationSwitch(ctx, session.Token)
 	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 

@@ -1,7 +1,10 @@
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { localeDefinition, localeDefinitionByUrlLang, parseLocaleCode } from "@/i18n/locales.config";
 import { isGlobal } from "@/lib/region";
+import { PUBLIC_SITE_LOCALES, SWITCHER_VISIBLE_LOCALES } from "@/lib/public-site-routing";
 import {
   readStoredCookieConsent,
   storeCookieConsent,
@@ -9,7 +12,7 @@ import {
 } from "@/lib/cookie-consent";
 
 const copy = {
-  "en-US": {
+  [PUBLIC_SITE_LOCALES.EN_US]: {
     title: "Cookie Policy",
     description:
       "We use cookies to keep LightVela reliable, understand how the site is used, and improve your experience. You can accept all cookies or continue with necessary cookies only.",
@@ -17,7 +20,7 @@ const copy = {
     accept: "Accept all",
     necessary: "Necessary only",
   },
-  "zh-CN": {
+  [PUBLIC_SITE_LOCALES.ZH_CN]: {
     title: "我们使用 Cookie",
     description:
       "我们使用 Cookie 来保障 LightVela 稳定运行、了解网站使用情况，并优化您的体验。您可以接受全部 Cookie，或仅使用必要 Cookie。详情请查看",
@@ -25,9 +28,39 @@ const copy = {
     accept: "接受全部",
     necessary: "仅必要 Cookie",
   },
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: {
+    title: "我們使用 Cookie",
+    description:
+      "我們使用 Cookie 來保障 LightVela 穩定運行、了解網站使用情況，並優化您的體驗。您可以接受全部 Cookie，或僅使用必要 Cookie。詳情請查看",
+    policy: "Cookie 政策",
+    accept: "接受全部",
+    necessary: "僅必要 Cookie",
+  },
+  [PUBLIC_SITE_LOCALES.ID_ID]: {
+    title: "Kami menggunakan Cookie",
+    description:
+      "Kami menggunakan Cookie untuk menjaga LightVela tetap stabil, memahami penggunaan situs, dan meningkatkan pengalaman Anda. Anda dapat menerima semua Cookie atau hanya Cookie yang diperlukan. Detail tersedia di",
+    policy: "Kebijakan Cookie",
+    accept: "Terima semua",
+    necessary: "Hanya yang diperlukan",
+  },
+  [PUBLIC_SITE_LOCALES.ES]: {
+    title: "Usamos cookies",
+    description:
+      "Usamos cookies para mantener LightVela estable, entender cómo se utiliza el sitio y mejorar tu experiencia. Puedes aceptar todas las cookies o continuar solo con las necesarias. Consulta los detalles en la",
+    policy: "Política de cookies",
+    accept: "Aceptar todas",
+    necessary: "Solo las necesarias",
+  },
 };
 
+type CookieCopyLocale = keyof typeof copy;
+
+const hasCookieCopy = (locale: string | undefined): locale is CookieCopyLocale =>
+  locale !== undefined && Object.prototype.hasOwnProperty.call(copy, locale);
+
 export const CookieConsentBanner = () => {
+  const pathname = usePathname();
   const { i18n } = useTranslation();
   const [visible, setVisible] = useState(false);
 
@@ -38,7 +71,33 @@ export const CookieConsentBanner = () => {
 
   if (!isGlobal || !visible) return null;
 
-  const locale = i18n.language === "zh-CN" ? "zh-CN" : "en-US";
+  const localePrefix = pathname?.split("/")[1]?.toLowerCase();
+  const routeDefinition = localePrefix ? localeDefinitionByUrlLang(localePrefix) : undefined;
+  const hasLocalizedRoute = Boolean(
+    routeDefinition &&
+      SWITCHER_VISIBLE_LOCALES.includes(routeDefinition.code) &&
+      hasCookieCopy(routeDefinition.i18nKey),
+  );
+
+  /**
+   * 语言判定优先级：
+   *   1. URL 语言前缀（公开页，如 /id-id/subscribe）
+   *   2. 当前 i18n 语言（控制台等刻意不做 URL 本地化的路径，如 /agents、/auth；
+   *      见 PUBLIC_LOCALIZED_PATH_PREFIXES）
+   *   3. 英文兜底
+   *
+   * 若只看 URL 前缀，在 /agents 下 localePrefix 会是 "agents"，
+   * 匹配不到任何语言而错误地回退英文。
+   */
+  const localeFromPrefix = hasCookieCopy(routeDefinition?.i18nKey) ? routeDefinition.i18nKey : null;
+
+  const currentI18nLanguage = i18n.language;
+  const currentLocaleCode = parseLocaleCode(currentI18nLanguage);
+  const currentI18nKey = currentLocaleCode ? localeDefinition(currentLocaleCode).i18nKey : undefined;
+  const localeFromI18n = hasCookieCopy(currentI18nKey) ? currentI18nKey : null;
+
+  const locale = localeFromPrefix ?? localeFromI18n ?? PUBLIC_SITE_LOCALES.EN_US;
+  const cookiePolicyPath = hasLocalizedRoute ? `/${localePrefix}/cookie-policy` : "/cookie-policy";
   const text = copy[locale];
   const handleChoice = (value: CookieConsentValue) => {
     storeCookieConsent(value);
@@ -53,7 +112,7 @@ export const CookieConsentBanner = () => {
           <p className="mt-2 text-sm leading-6 text-slate-600">
             {text.description}{" "}
             <Link
-              to="/cookie-policy"
+              href={cookiePolicyPath}
               className="font-semibold underline underline-offset-2 hover:opacity-80"
               style={{ color: "#2563EB", WebkitTextFillColor: "#2563EB", textDecorationColor: "#2563EB" }}
             >

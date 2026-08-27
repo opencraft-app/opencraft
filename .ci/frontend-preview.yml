@@ -44,6 +44,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
+              enableVirtualMergeBranch: false
           - name: 打印 frontend 预览上下文
             shell: bash
             run: |

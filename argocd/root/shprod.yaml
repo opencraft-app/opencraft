@@ -5,10 +5,15 @@ metadata:
   namespace: argocd
 spec:
   project: shprod-root
-  source:
-    repoURL: git@git.woa.com:wisp/mono2.git
-    targetRevision: gitops
-    path: argocd/apps/shprod
+  sources:
+    - repoURL: git@git.woa.com:wisp/mono2.git
+      targetRevision: gitops
+      path: argocd/apps/shprod
+    - repoURL: git@git.woa.com:wisp/mono2.git
+      targetRevision: gitops
+      path: argocd/projects
+      directory:
+        include: shprod*.yaml
   destination:
     namespace: argocd
     server: https://kubernetes.default.svc

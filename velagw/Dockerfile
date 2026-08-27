@@ -19,6 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway ./cmd/llmg
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-traffic ./cmd/llmgateway-traffic \
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-worker ./cmd/llmgateway-worker \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-set-manager ./cmd/llmgateway-set-manager \
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-shard-manager ./cmd/llmgateway-shard-manager \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/velagwset-controller ./cmd/velagwset-controller \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/velagwset-provisioner ./cmd/velagwset-provisioner \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-runtime-cleaner ./cmd/llmgateway-runtime-cleaner \
@@ -41,13 +42,15 @@ RUN pnpm run build
 FROM alpine:3.20
 
 LABEL org.opencontainers.image.title="velagw" \
-      org.opencontainers.image.description="LightVela LLM gateway control and traffic plane"
+      org.opencontainers.image.description="LightVela LLM gateway control and traffic plane" \
+      org.opencontainers.image.source="https://git.woa.com/wisp/mono2/tree/master/velagw"
 
 COPY --from=builder /out/llmgateway /usr/local/bin/llmgateway
 COPY --from=builder /out/llmgateway-control /usr/local/bin/llmgateway-control
 COPY --from=builder /out/llmgateway-traffic /usr/local/bin/llmgateway-traffic
 COPY --from=builder /out/llmgateway-worker /usr/local/bin/llmgateway-worker
 COPY --from=builder /out/llmgateway-set-manager /usr/local/bin/llmgateway-set-manager
+COPY --from=builder /out/llmgateway-shard-manager /usr/local/bin/llmgateway-shard-manager
 COPY --from=builder /out/velagwset-controller /usr/local/bin/velagwset-controller
 COPY --from=builder /out/velagwset-provisioner /usr/local/bin/velagwset-provisioner
 COPY --from=builder /out/llmgateway-runtime-cleaner /usr/local/bin/llmgateway-runtime-cleaner

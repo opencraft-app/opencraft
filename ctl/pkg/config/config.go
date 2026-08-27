@@ -171,6 +171,12 @@ func parseAdapterConf() {
 	if ServerConf.AdapterConfig.Sandbox.ProcessBaseURL == "" {
 		ServerConf.AdapterConfig.Sandbox.ProcessBaseURL = ServerConf.AdapterConfig.Sandbox.BaseURL
 	}
+	if value := strings.TrimSpace(os.Getenv("WEBSITE_CREDENTIAL_TAT_COMMAND_ID")); value != "" {
+		ServerConf.AdapterConfig.Sandbox.WebsiteCredentialTATCommandID = value
+	}
+	if value := strings.TrimSpace(os.Getenv("WEBSITE_AGENT_API_BASE")); value != "" {
+		ServerConf.AdapterConfig.Sandbox.WebsiteAgentAPIBase = value
+	}
 	if ServerConf.AdapterConfig.Sandbox.Timeout <= 0 {
 		ServerConf.AdapterConfig.Sandbox.Timeout = 30
 	}
@@ -189,6 +195,16 @@ func parseAdapterConf() {
 	}
 	if ServerConf.AdapterConfig.Shadow.Timeout <= 0 {
 		ServerConf.AdapterConfig.Shadow.Timeout = 10
+	}
+
+	if ServerConf.AdapterConfig.Trade == nil {
+		ServerConf.AdapterConfig.Trade = &TradeConfig{}
+	}
+	if value := firstNonEmptyEnv("CTL_TRADE_TOKEN", "LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "CTL_INTERNAL_TOKEN"); value != "" {
+		ServerConf.AdapterConfig.Trade.Token = value
+	}
+	if ServerConf.AdapterConfig.Trade.Timeout <= 0 {
+		ServerConf.AdapterConfig.Trade.Timeout = 10
 	}
 
 	if ServerConf.AdapterConfig.AiGateway == nil {
@@ -219,8 +235,8 @@ func parseAdapterConf() {
 	ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist = uniqueNonEmptyCSV(
 		os.Getenv("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"),
 	)
-	ServerConf.AdapterConfig.LLMGateway.RenewalMigrationUserAllowlist = uniqueNonEmptyCSV(
-		os.Getenv("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"),
+	ServerConf.AdapterConfig.LLMGateway.BotCreateMigrationUserAllowlist = uniqueNonEmptyCSV(
+		os.Getenv("CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST"),
 	)
 	ServerConf.AdapterConfig.LLMGateway.Enabled = llmGatewayBaseURL != "" &&
 		llmGatewayAdminToken != "" && llmGatewayInternalToken != ""
@@ -263,7 +279,7 @@ func resetLLMGatewayForLegacyFallback(conf *LLMGatewayConfig) {
 	conf.DefaultGatewayPort = 0
 	conf.DefaultProviderID = ""
 	conf.NewAllocationUserAllowlist = nil
-	conf.RenewalMigrationUserAllowlist = nil
+	conf.BotCreateMigrationUserAllowlist = nil
 }
 
 func LLMGatewayEnabled() bool {
@@ -280,14 +296,14 @@ func LLMGatewayAllowsNewUser(userID string) bool {
 	return userAllowlistMatches(ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist, userID)
 }
 
-// LLMGatewayAllowsRenewalMigration reports whether an existing legacy user may
-// move to LLMGateway when a pass renewal is processed. This gate is separate
-// from new allocation so operators can roll out both paths independently.
-func LLMGatewayAllowsRenewalMigration(userID string) bool {
+// LLMGatewayAllowsBotCreateMigration reports whether an existing legacy user
+// may move to LLMGateway while creating a new bot. It deliberately does not
+// affect pass renewal, reset, or other instance maintenance paths.
+func LLMGatewayAllowsBotCreateMigration(userID string) bool {
 	if !LLMGatewayEnabled() {
 		return false
 	}
-	return userAllowlistMatches(ServerConf.AdapterConfig.LLMGateway.RenewalMigrationUserAllowlist, userID)
+	return userAllowlistMatches(ServerConf.AdapterConfig.LLMGateway.BotCreateMigrationUserAllowlist, userID)
 }
 
 func userAllowlistMatches(allowlist []string, userID string) bool {

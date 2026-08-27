@@ -37,16 +37,14 @@ type BundleDetail struct {
 	// Tagline 一句话卖点，空串表示未配置。
 	Tagline string
 	// Promotion 促销角标 JSON 字符串（*DisplayPromotion，可空），空串表示无促销。
-	Promotion   string
-	BundleState string
-	AgentQuota  int64
+	Promotion       string
+	BundleState     string
+	AgentQuota      int64
 	Credit          int64  // 用户可见积分额度
 	TimeSpan        int    // 套餐周期数值
 	TimeUnit        string // 套餐周期单位 "m"=月 / "d"=天
 	AiGatewayPlanID string // ai-gateway Plan UUID（credit=0 时允许空）
-	// AiGatewayPlans 多对多 plan 列表（JSON 字符串），DB 内部字段。
-	// 唯一消费方：ctl/pass.CompletePaidPassFromJifei 按 period 选 plan_id；
-	// trade 不感知；ctl 任何 user-facing / internal-facing 出参一律不暴露（Q37/Q38 拍板）。
+	// AiGatewayPlans 是旧周期变体模型遗留字段。新运行时不读取、不写入。
 	AiGatewayPlans string
 	// InstanceSpecID 实例规格 ID。空字符串表示兼容期 fallback 到全局默认 spec-2c4g50g。
 	// 详见 .tmp/bundle-instance-spec-design.md（Q1=a / Q4=a）。
@@ -67,11 +65,11 @@ type ModifyBundleFields struct {
 	Description *string `json:"description,omitempty"`
 	// Features / Tagline / Promotion 展示化字段，nil = 不修改。
 	// Features / Promotion 为 raw JSON string。
-	Features    *string `json:"features,omitempty"`
-	Tagline     *string `json:"tagline,omitempty"`
-	Promotion   *string `json:"promotion,omitempty"`
-	BundleState *string `json:"bundle_state,omitempty"`
-	AgentQuota  *int64  `json:"agent_quota,omitempty"`
+	Features        *string `json:"features,omitempty"`
+	Tagline         *string `json:"tagline,omitempty"`
+	Promotion       *string `json:"promotion,omitempty"`
+	BundleState     *string `json:"bundle_state,omitempty"`
+	AgentQuota      *int64  `json:"agent_quota,omitempty"`
 	Credit          *int64  `json:"credit,omitempty"`
 	TimeSpan        *int    `json:"time_span,omitempty"`
 	TimeUnit        *string `json:"time_unit,omitempty"`
@@ -87,7 +85,8 @@ type ModifyBundleFields struct {
 // Logic Bundle 业务逻辑接口
 type Logic interface {
 	// ImportBundle 导入套餐：不存在则创建，存在则覆盖性更新
-	// 执行三项强一致性校验（credit / plan / period），校验不通过直接返回错误。
+	// 校验业务周期参数合法性，以及 credit 与 Plan 周期额度一致性。
+	// 业务有效期由 ctl/trade 管理，不参与 Plan 身份匹配。
 	//
 	// bundleType（必填）：free / general / ai，取值非法时返回 ErrBundleConfigInvalid。
 	//
@@ -129,18 +128,6 @@ func creditTokenRatio() int64 {
 	return 10000 // 默认 10000
 }
 
-// mapTimeUnitToPlanPeriodUnit 将 bundle.time_unit 映射到 ai-gateway Plan.period_unit
-func mapTimeUnitToPlanPeriodUnit(timeUnit string) string {
-	switch timeUnit {
-	case bundlemodel.TimeUnitMonth:
-		return "months"
-	case bundlemodel.TimeUnitDay:
-		return "days"
-	default:
-		return ""
-	}
-}
-
 // validateBundleType 校验 bundle_type 必填且取值 ∈ {free, general, ai}。
 //
 // 该字段是套餐分类标识，与 ai_gateway_plan_id / credit 等业务字段独立校验，
@@ -158,11 +145,14 @@ func validateBundleType(bundleType string) error {
 	}
 }
 
-// validateCreditPlanPeriod 执行 credit/plan/period 三项一致性校验
+// validateCreditPlanPeriod 校验套餐积分与 Plan 周期额度。
+// 函数名为兼容现有调用保留；业务有效期仅由 ctl/trade 管理，不参与 Plan 匹配。
 // 规则：
 //  1. time_unit ∈ {"m", "d"}，time_span > 0
 //  2. credit == 0 → ai_gateway_plan_id 必须为空
-//  3. credit > 0  → ai_gateway_plan_id 必须非空，且 Plan 的 monthly_tokens/period 与 bundle 字段对齐
+//  3. credit > 0  → ai_gateway_plan_id 必须非空，且 Plan 的 monthly_tokens 与 bundle 积分对齐
+//  4. LLMGateway Plan 必须可发放并已同步到全部 active Set；legacy ai-gateway
+//     在迁移期继续校验旧周期，避免改变存量用户语义。
 func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPlanID string) error {
 	// 规则 1
 	if timeUnit != bundlemodel.TimeUnitMonth && timeUnit != bundlemodel.TimeUnitDay {
@@ -190,12 +180,14 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var plan *llmgateway.Plan
+	isLLMGatewayPlan := false
 	if config.LLMGatewayEnabled() {
 		var err error
 		plan, err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetPlan(ctx, aiGatewayPlanID)
 		if err != nil && !errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
 			return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", err)
 		}
+		isLLMGatewayPlan = plan != nil
 	}
 	if plan == nil {
 		legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
@@ -218,6 +210,15 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 			return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", legacyErr)
 		}
 	}
+	if !plan.IsActive {
+		return errcode.Wrap(errcode.ErrBundlePlanMismatch,
+			"plan %s has stopped accepting new grants", aiGatewayPlanID)
+	}
+	if isLLMGatewayPlan && !plan.ReadyForAllSets {
+		return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable,
+			"plan %s is ready in %d/%d active sets",
+			aiGatewayPlanID, plan.ReadySetCount, plan.ActiveSetCount)
+	}
 
 	expectedTokens := credit * creditTokenRatio()
 	if plan.MonthlyTokens != expectedTokens {
@@ -225,17 +226,30 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 			"plan.monthly_tokens=%d, expected=%d (credit=%d × ratio=%d)",
 			plan.MonthlyTokens, expectedTokens, credit, creditTokenRatio())
 	}
-	if plan.PeriodValue != timeSpan {
-		return errcode.Wrap(errcode.ErrBundlePeriodMismatch,
-			"plan.period_value=%d, bundle.time_span=%d", plan.PeriodValue, timeSpan)
-	}
-	expectedUnit := mapTimeUnitToPlanPeriodUnit(timeUnit)
-	if plan.PeriodUnit != expectedUnit {
-		return errcode.Wrap(errcode.ErrBundlePeriodMismatch,
-			"plan.period_unit=%q, expected=%q (bundle.time_unit=%q)",
-			plan.PeriodUnit, expectedUnit, timeUnit)
+	if !isLLMGatewayPlan {
+		if plan.PeriodValue != timeSpan {
+			return errcode.Wrap(errcode.ErrBundlePeriodMismatch,
+				"legacy plan.period_value=%d, bundle.time_span=%d", plan.PeriodValue, timeSpan)
+		}
+		expectedUnit := mapLegacyTimeUnitToPlanPeriodUnit(timeUnit)
+		if plan.PeriodUnit != expectedUnit {
+			return errcode.Wrap(errcode.ErrBundlePeriodMismatch,
+				"legacy plan.period_unit=%q, expected=%q (bundle.time_unit=%q)",
+				plan.PeriodUnit, expectedUnit, timeUnit)
+		}
 	}
 	return nil
+}
+
+func mapLegacyTimeUnitToPlanPeriodUnit(timeUnit string) string {
+	switch timeUnit {
+	case bundlemodel.TimeUnitMonth:
+		return "months"
+	case bundlemodel.TimeUnitDay:
+		return "days"
+	default:
+		return ""
+	}
 }
 
 func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType string, description string,
@@ -258,7 +272,7 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType stri
 		return nil, err
 	}
 
-	// 三项一致性校验
+	// 校验业务周期参数，并确认积分与 Plan 周期额度一致。
 	if err := validateCreditPlanPeriod(credit, timeSpan, timeUnit, aiGatewayPlanID); err != nil {
 		return nil, err
 	}

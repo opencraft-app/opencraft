@@ -2,20 +2,29 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildEffectiveWindowScript,
+  buildDetectCronContextFromCapabilityCommand,
+  buildCronjobToolCommand,
   buildCreateCommand,
   buildEditCommand,
   buildTestRunMarker,
   createCronJob,
+  createCronJobWithContextAndScriptRollback,
   createCronJobWithScriptRollback,
+  detectCronContextFromCapability,
   execCommand,
   execCommandStream,
+  editCronJobWithContext,
   listCronJobs,
   listRecentCronRuns,
+  normalizeCronContextFrom,
+  parseCronjobToolOutput,
   parseCronRunFilesOutput,
+  parseCronContextCapabilityOutput,
   parseEffectiveWindowScript,
   parseLightVelaCronScript,
   parseCronListOutput,
   pickFallbackChannelFromStatusOutput,
+  removeCronJobWithDependentRollback,
   runCronJob,
   runCronJobAsTest,
   shellQuote,
@@ -78,6 +87,319 @@ describe("parseCronListOutput", () => {
       schedule: { kind: "", expr: "*/5 * * * *", display: "*/5 * * * *" },
       deliver: "origin",
     });
+  });
+
+  it.each([["completed", true], ["disabled", false]] as const)("parses the enabled flag for the %s state", (state, enabled) => {
+    const jobs = parseCronListOutput(`
+  abcdef123456 [${state}]
+    Name:      终态任务
+    Schedule:  every 2h
+`);
+
+    expect(jobs[0]).toMatchObject({ state, enabled });
+  });
+});
+
+describe("normalizeCronContextFrom", () => {
+  it("normalizes strings and preserves unique non-empty upstream ids", () => {
+    expect(normalizeCronContextFrom(" job-a ")).toEqual(["job-a"]);
+    expect(normalizeCronContextFrom(["job-a", "", "job-a", "job-b"])).toEqual(["job-a", "job-b"]);
+  });
+
+  it("returns null for empty or unsupported values", () => {
+    expect(normalizeCronContextFrom([])).toBeNull();
+    expect(normalizeCronContextFrom({ job: "job-a" })).toBeNull();
+  });
+});
+
+describe("cron context_from capability detection", () => {
+  it("parses supported, unsupported, and unknown capability markers", () => {
+    expect(parseCronContextCapabilityOutput('LIGHTVELA_CRON_CONTEXT_CAPABILITY={"supported":true}')).toBe("supported");
+    expect(parseCronContextCapabilityOutput('LIGHTVELA_CRON_CONTEXT_CAPABILITY={"supported":false}')).toBe("unsupported");
+    expect(parseCronContextCapabilityOutput("noise")).toBe("unknown");
+  });
+
+  it("builds an inspection command in the Hermes virtual environment", () => {
+    const command = buildDetectCronContextFromCapabilityCommand();
+
+    expect(command).toContain('cd "$HOME/.hermes/hermes-agent"');
+    expect(command).toContain("inspect.signature(cronjob)");
+    expect(command).toContain("context_from");
+    expect(command).toContain("./venv/bin/python");
+  });
+
+  it("returns unknown when the capability command cannot execute", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(failedExec("cannot import cronjob")));
+
+    await expect(detectCronContextFromCapability("bot-1")).resolves.toBe("unknown");
+  });
+});
+
+describe("cronjob structured tool wrapper", () => {
+  it("serializes the complete update payload for the official cronjob tool", () => {
+    const command = buildCronjobToolCommand({
+      action: "update",
+      job_id: "job-b",
+      context_from: ["job-a"],
+    });
+
+    expect(command).toContain('cd "$HOME/.hermes/hermes-agent"');
+    expect(command).toContain("./venv/bin/python");
+    expect(command).toContain("from tools.cronjob_tools import cronjob");
+    expect(command).toContain("payload = json.loads(");
+    expect(command).toContain("context_from");
+    expect(command).toContain("LIGHTVELA_CRON_CONTEXT_RESULT=");
+    expect(command).not.toContain("cronjob(action=");
+  });
+
+  it("parses the last successful result marker", () => {
+    expect(parseCronjobToolOutput([
+      'LIGHTVELA_CRON_CONTEXT_RESULT={"success":false}',
+      'LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job":{"id":"job-b"}}',
+    ].join("\n"))).toMatchObject({ success: true, job: { id: "job-b" } });
+  });
+
+  it("parses the official create result with a top-level job_id", () => {
+    expect(parseCronjobToolOutput(
+      'LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job_id":"job-official","name":"daily digest"}',
+    )).toMatchObject({ success: true, job_id: "job-official" });
+  });
+
+  it.each([
+    ['LIGHTVELA_CRON_CONTEXT_RESULT={"success":false,"error":"rejected"}'],
+    ["noise without marker"],
+    ["LIGHTVELA_CRON_CONTEXT_RESULT={not-json}"],
+  ])("rejects unsuccessful or invalid tool output", (output) => {
+    expect(() => parseCronjobToolOutput(output)).toThrow();
+  });
+});
+
+describe("cronjob structured create and update", () => {
+  it("uses the official top-level job_id result and pins that exact id", async () => {
+    const commands: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      if (command.includes("from tools.cronjob_tools import cronjob")) {
+        return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job_id":"job-official","name":"daily digest"}');
+      }
+      if (command.includes("cat ~/.hermes/cron/jobs.json")) {
+        return okExec(JSON.stringify([{ id: "job-official", provider: "openrouter", model: "deepseek-chat" }]));
+      }
+      if (command === "hermes cron edit 'job-official' --model 'openrouter/deepseek-chat'") return okExec("");
+      if (command.includes("lightvela-jobs-meta.json")) return okExec("");
+      return failedExec(`unexpected command: ${command}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createCronJobWithContextAndScriptRollback("bot-1", {
+      schedule: "0 8 * * *",
+      prompt: "write digest",
+      name: "daily digest",
+      pinCurrentModel: true,
+    }, "job-a")).resolves.toBe("job-official");
+
+    expect(commands).toContain("hermes cron edit 'job-official' --model 'openrouter/deepseek-chat'");
+  });
+
+  it("creates a related job and pins the returned job id without forwarding pinCurrentModel", async () => {
+    const commands: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      if (command.includes("from tools.cronjob_tools import cronjob")) {
+        return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job":{"id":"job-new"}}');
+      }
+      if (command.includes("cat ~/.hermes/cron/jobs.json")) {
+        return okExec(JSON.stringify([{ id: "job-new", provider: "openrouter", model: "deepseek-chat" }]));
+      }
+      if (command === "hermes cron edit 'job-new' --model 'openrouter/deepseek-chat'") return okExec("");
+      if (command.includes("lightvela-jobs-meta.json")) return okExec("");
+      return failedExec(`unexpected command: ${command}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createCronJobWithContextAndScriptRollback("bot-1", {
+      schedule: "0 8 * * *",
+      prompt: "write digest",
+      name: "daily digest",
+      skills: ["news"],
+      deliver: "local",
+      pinCurrentModel: true,
+    }, "job-a")).resolves.toBe("job-new");
+
+    const createCommand = commands.find((command) => command.includes("from tools.cronjob_tools import cronjob"));
+    expect(createCommand).toContain('\\"action\\":\\"create\\"');
+    expect(createCommand).toContain('\\"context_from\\":[\\"job-a\\"]');
+    expect(createCommand).toContain('\\"skills\\":[\\"news\\"]');
+    expect(createCommand).not.toContain("pinCurrentModel");
+    expect(commands).toContain("hermes cron edit 'job-new' --model 'openrouter/deepseek-chat'");
+  });
+
+  it.each([
+    ['LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}'],
+    ['LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job_id":"   "}'],
+    ['LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job_id":123}'],
+  ])("rejects a missing or invalid created job id without leaking output", async (output) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(okExec(output)));
+
+    await expect(createCronJobWithContextAndScriptRollback("bot-1", {
+      schedule: "0 8 * * *",
+      prompt: "private prompt",
+      name: "daily digest",
+    }, "job-a")).rejects.toThrow("missing created job id");
+  });
+
+  it("keeps undefined context on CLI and uses structured update for replace and clear", async () => {
+    const commands: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      return command.includes("from tools.cronjob_tools import cronjob")
+        ? okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job":{"id":"job-b"}}')
+        : okExec("");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await editCronJobWithContext("bot-1", "job-b", { name: "B2" }, undefined);
+    await editCronJobWithContext("bot-1", "job-b", { prompt: "new prompt", skills: ["news"] }, ["job-a"]);
+    await editCronJobWithContext("bot-1", "job-b", { deliver: "local" }, []);
+
+    expect(commands[0]).toBe("hermes cron edit 'job-b' --name 'B2'");
+    expect(commands[1]).toContain('\\"action\\":\\"update\\"');
+    expect(commands[1]).toContain('\\"job_id\\":\\"job-b\\"');
+    expect(commands[1]).toContain('\\"context_from\\":[\\"job-a\\"]');
+    expect(commands[1]).toContain('\\"prompt\\":\\"new prompt\\"');
+    expect(commands[1]).toContain('\\"skills\\":[\\"news\\"]');
+    expect(commands[2]).toContain('\\"context_from\\":[]');
+  });
+
+  it("removes a prepared LightVela script when related create fails", async () => {
+    const script = "lightvela-effective-window-job-2.py";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":false,"error":"rejected"}'))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createCronJobWithContextAndScriptRollback("bot-1", {
+      schedule: "0 8 * * *",
+      prompt: "private prompt",
+      name: "daily digest",
+      script,
+    }, "job-a", script)).rejects.toThrow("cronjob operation failed");
+
+    const cleanupBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { command: string };
+    expect(cleanupBody.command).toBe("rm -f ~/.hermes/scripts/lightvela-effective-window-job-2.py");
+  });
+
+  it("sanitizes structured exec failures without exposing prompts or command output", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(failedExec("PRIVATE OUTPUT: private prompt")));
+
+    const error = await createCronJobWithContextAndScriptRollback("bot-1", {
+      schedule: "0 8 * * *",
+      prompt: "private prompt",
+      name: "daily digest",
+    }, "job-a").then(() => null, (reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(Error);
+    const record = error as { message?: string; command?: string; output?: string };
+    expect(record.message).not.toContain("private prompt");
+    expect(record.command).not.toContain("private prompt");
+    expect(record.output).not.toContain("PRIVATE OUTPUT");
+  });
+});
+
+describe("cronjob dependent removal compensation", () => {
+  const dependents = [
+    { id: "job-b", name: "B", contextFrom: ["job-a"] },
+    { id: "job-c", name: "C", contextFrom: ["job-x", "job-a"] },
+  ] as const;
+
+  it("detaches every direct dependent before removing the target", async () => {
+    const commands: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}');
+    }));
+
+    await removeCronJobWithDependentRollback("bot-1", "job-a", dependents);
+
+    expect(commands).toHaveLength(3);
+    expect(commands[0]).toContain('\\"job_id\\":\\"job-b\\"');
+    expect(commands[0]).toContain('\\"context_from\\":[]');
+    expect(commands[1]).toContain('\\"job_id\\":\\"job-c\\"');
+    expect(commands[1]).toContain('\\"context_from\\":[\\"job-x\\"]');
+    expect(commands[2]).toContain('\\"action\\":\\"remove\\"');
+    expect(commands[2]).toContain('\\"job_id\\":\\"job-a\\"');
+  });
+
+  it("restores earlier dependents in reverse order when a later detach fails", async () => {
+    const commands: string[] = [];
+    const responses = [
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}'),
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":false,"error":"detach failed"}'),
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}'),
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      return responses[commands.length - 1];
+    }));
+
+    await expect(removeCronJobWithDependentRollback("bot-1", "job-a", dependents))
+      .rejects.toThrow("job-c");
+
+    expect(commands).toHaveLength(3);
+    expect(commands[2]).toContain('\\"job_id\\":\\"job-b\\"');
+    expect(commands[2]).toContain('\\"context_from\\":[\\"job-a\\"]');
+    expect(commands.some((command) => command.includes('\\"action\\":\\"remove\\"'))).toBe(false);
+  });
+
+  it("restores every dependent in reverse order when target removal fails", async () => {
+    const commands: string[] = [];
+    const responses = [
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}'),
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}'),
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":false,"error":"remove failed"}'),
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}'),
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}'),
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      return responses[commands.length - 1];
+    }));
+
+    await expect(removeCronJobWithDependentRollback("bot-1", "job-a", dependents))
+      .rejects.toThrow("job-a");
+
+    expect(commands).toHaveLength(5);
+    expect(commands[3]).toContain('\\"job_id\\":\\"job-c\\"');
+    expect(commands[3]).toContain('\\"context_from\\":[\\"job-x\\",\\"job-a\\"]');
+    expect(commands[4]).toContain('\\"job_id\\":\\"job-b\\"');
+    expect(commands[4]).toContain('\\"context_from\\":[\\"job-a\\"]');
+  });
+
+  it("reports rollback task ids without including task names or tool output", async () => {
+    const responses = [
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}'),
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":false,"error":"PRIVATE OUTPUT"}'),
+      okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":false,"error":"PRIVATE ROLLBACK OUTPUT"}'),
+    ];
+    let index = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => responses[index++]));
+
+    const error = await removeCronJobWithDependentRollback("bot-1", "job-a", dependents)
+      .then(() => null, (reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(Error);
+    const message = error instanceof Error ? error.message : "";
+    expect(message).toContain("job-b");
+    expect(message).toContain("job-c");
+    expect(message).not.toContain("PRIVATE");
+    expect(message).not.toContain("B");
+    expect(message).not.toContain("C");
   });
 });
 
@@ -449,6 +771,77 @@ describe("effective window script", () => {
 });
 
 describe("listCronJobs", () => {
+  it("hydrates context_from from jobs.json and defaults missing values to null", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      下游任务
+    Schedule:  every 2h
+    Deliver:   local
+
+  a1b2c3d4e5f6 [active]
+    Name:      独立任务
+    Schedule:  every 3h
+    Deliver:   local
+`))
+      .mockResolvedValueOnce(okExec(JSON.stringify([
+        { id: "6e8b6fc74896", context_from: ["job-a"] },
+        { id: "a1b2c3d4e5f6" },
+      ])))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs[0]?.context_from).toEqual(["job-a"]);
+    expect(jobs[1]?.context_from).toBeNull();
+    expect(jobs[0]?.context_from_hydrated).toBe(true);
+    expect(jobs[1]?.context_from_hydrated).toBe(true);
+  });
+
+  it("can skip context_from hydration while preserving other jobs.json metadata", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      Global task
+    Schedule:  every 2h
+    Deliver:   local
+`))
+      .mockResolvedValueOnce(okExec(JSON.stringify([{
+        id: "6e8b6fc74896",
+        prompt: "Keep this prompt",
+        context_from: ["job-a"],
+      }])))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1", { hydrateContextFrom: false });
+
+    expect(jobs[0]?.prompt).toBe("Keep this prompt");
+    expect(jobs[0]?.context_from).toBeNull();
+    expect(jobs[0]?.context_from_hydrated).toBe(false);
+  });
+
+  it("keeps the ordinary list usable but marks relationships untrusted when jobs.json cannot be parsed", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      普通任务
+    Schedule:  every 2h
+    Deliver:   local
+`))
+      .mockResolvedValueOnce(okExec("not-json"))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.name).toBe("普通任务");
+    expect(jobs[0]?.context_from).toBeNull();
+    expect(jobs[0]?.context_from_hydrated).toBe(false);
+  });
+
   it("hydrates task-level inference bindings from jobs.json", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(okExec(`
@@ -1291,6 +1684,26 @@ describe("pickFallbackChannelFromStatusOutput", () => {
     expect(pickFallbackChannelFromStatusOutput(buildStatus([
       { name: "openclaw-wecom", status: "ready" },
     ]))).toBe("wecom");
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "openclaw-slack", status: "connected" },
+    ]))).toBe("slack");
+  });
+
+  it("normalizes OpenClaw DingTalk and prefers it over international fallback channels", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "telegram", status: "connected" },
+      { name: "openclaw-dingtalk", status: "connected" },
+    ]))).toBe("dingtalk");
+  });
+
+  it("falls back to Slack after Telegram, WhatsApp, and Discord", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "slack", status: "connected" },
+      { name: "discord", status: "connected" },
+    ]))).toBe("discord");
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "slack", status: "connected" },
+    ]))).toBe("slack");
   });
 
   it("returns null when no channel is connected", () => {
@@ -1352,3 +1765,18 @@ function streamExec(chunks: string[]) {
     }),
   };
 }
+
+describe("parseCronListOutput execution status", () => {
+  it("parses the current execution status from Hermes output", () => {
+    const jobs = parseCronListOutput(`
+  b87da865766e [active]
+    Name:      cron-3
+    Schedule:  once at 2026-08-25 19:45
+    Next run:  2026-08-25T19:45:00+08:00
+    Deliver:   qqbot
+    Execution: RUNNING  8e441aecfe934d36a840d8eb6f02771c
+`);
+
+    expect(jobs[0]?.execution_status).toBe("running");
+  });
+});

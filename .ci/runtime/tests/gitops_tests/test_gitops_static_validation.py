@@ -49,6 +49,18 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_valid_tokyo_playground_catalog_passes_without_release_bundle_closure(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp, env="sandbox-jp-1")
+
+            errors = validate(
+                repo,
+                "sandbox-jp-1",
+                repo / ".ci/runtime/release-bundles.manifest",
+            )
+
+            self.assertEqual(errors, [])
+
     def test_explicit_catalog_publish_exemption_passes(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
@@ -134,6 +146,22 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertTrue(any("must use { .sourcePath }" in error for error in errors))
             self.assertTrue(any("must not use reserved git generator field" in error for error in errors))
+
+    def test_appset_requires_every_playground_catalog_family(self) -> None:
+        required_paths = (
+            "argocd/catalogs/playground/beijing-playground/*/*.yaml",
+            "argocd/catalogs/playground/seoul-playground/*/*.yaml",
+            "argocd/catalogs/playground/tokyo-playground/*/*.yaml",
+        )
+        for required_path in required_paths:
+            with self.subTest(required_path=required_path), self.repo() as tmp:
+                repo = self.write_valid_repo(tmp)
+                appset = repo / "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
+                appset.write_text(appset.read_text().replace(f"          - path: {required_path}\n", ""))
+
+                errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
+
+                self.assertTrue(any(required_path in error for error in errors), msg=errors)
 
     def test_catalog_path_field_fails(self) -> None:
         with self.repo() as tmp:
@@ -383,11 +411,14 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
     def write_valid_repo(self, raw_repo: str | Path, env: str = "beijing-sandbox") -> Path:
         repo = Path(raw_repo)
-        catalog_root = (
-            f"argocd/catalogs/playground/beijing-playground/{env}"
-            if env.startswith("sandbox-bj-")
-            else f"argocd/catalogs/sandbox/{env}"
-        )
+        if env.startswith("sandbox-bj-"):
+            catalog_root = f"argocd/catalogs/playground/beijing-playground/{env}"
+        elif env.startswith("sandbox-kr-"):
+            catalog_root = f"argocd/catalogs/playground/seoul-playground/{env}"
+        elif env.startswith("sandbox-jp-"):
+            catalog_root = f"argocd/catalogs/playground/tokyo-playground/{env}"
+        else:
+            catalog_root = f"argocd/catalogs/sandbox/{env}"
         (repo / ".ci/runtime").mkdir(parents=True)
         (repo / "argocd/apps/beijing-sandbox").mkdir(parents=True)
         (repo / catalog_root).mkdir(parents=True)
@@ -482,6 +513,8 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                     files:
                       - path: argocd/catalogs/sandbox/*/*.yaml
                       - path: argocd/catalogs/playground/beijing-playground/*/*.yaml
+                      - path: argocd/catalogs/playground/seoul-playground/*/*.yaml
+                      - path: argocd/catalogs/playground/tokyo-playground/*/*.yaml
               template:
                 spec:
                   source:

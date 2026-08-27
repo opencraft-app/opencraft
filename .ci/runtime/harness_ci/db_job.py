@@ -23,7 +23,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import (
+    DEFAULT_MANIFEST_PATH,
+    load_bundle,
+    load_manifest,
+    playground_catalog_root,
+)
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -250,10 +255,7 @@ def load_service_platform_env(spec: dict[str, Any], env_name: str, deploy_root: 
 def load_playground_catalog_value(deploy_root: Path, env_name: str, service: str, key: str) -> str:
     path = (
         deploy_root
-        / "argocd"
-        / "catalogs"
-        / "playground"
-        / "beijing-playground"
+        / playground_catalog_root(env_name)
         / env_name
         / f"{service}.yaml"
     )
@@ -513,13 +515,13 @@ def build_ctl_dynamic_resources(
     mysql_password = platform_env.get("CTL_TEST_MYSQL_PASSWORD", "").strip() or runtime_secret_value(
         "CTL_TEST_MYSQL_PASSWORD", env_name
     )
-    if kubeconfig and namespace.startswith("lightvela-playground-"):
+    if resolver_name:
+        mysql_password = resolved_secrets.get(resolver_name, "").strip() or mysql_password
+    if not mysql_password and kubeconfig and namespace.startswith("lightvela-playground-"):
         mysql_password = (
             kubectl_secret_value(kubeconfig, namespace, "playground-runtime-secrets", "MYSQL_ROOT_PASSWORD").strip()
             or mysql_password
         )
-    elif resolver_name:
-        mysql_password = resolved_secrets.get(resolver_name, "").strip() or mysql_password
     if not mysql_host:
         raise ValueError("missing CTL_TEST_MYSQL_HOST in ctl platform env")
     if not mysql_password:

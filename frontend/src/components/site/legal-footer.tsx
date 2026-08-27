@@ -1,19 +1,46 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BEIAN_URL, CN_PRIVACY_POLICY_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
+import { useTranslation } from "react-i18next";
+import {
+  BEIAN_URL,
+  CN_PRIVACY_POLICY_URL,
+  CN_TERMS_OF_SERVICE_URL,
+  ICP_LICENSE,
+  shouldShowICP,
+} from "@/constants/legal";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
-import { useT } from "@/i18n/t";
-import { isCN, isGlobal } from "@/lib/region";
+import {
+  CN_COMMUNITY_QR_IMAGE,
+  DISCORD_INVITE_URL,
+  DISCORD_QR_IMAGE,
+} from "@/constants/community";
+import { useLocaleOverride, useT } from "@/i18n/t";
+import { isCN, isGlobal, localizedPath } from "@/lib/region";
+import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 
 interface LegalFooterProps {
   icpPlacement?: "inline" | "right";
+  /**
+   * 是否展示「隐私政策 · 服务条款 · 产品反馈 · 加入交流群」链接行。
+   *
+   * 默认 true，保持其他页面（文档站、账户页、更新日志等 12+ 处）现状不变。
+   * 首页传 false：这些链接已在上方 `FooterLinkColumns` 的分栏里出现，
+   * 同页重复会让页脚出现两套相同入口。
+   */
+  showLinks?: boolean;
 }
 
-export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
+export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: LegalFooterProps) => {
   const currentYear = new Date().getFullYear();
   const t = useT();
+  const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
+  const currentLocale = resolveVisiblePublicSiteLocale(localeOverride, i18n.language);
   const showICP = shouldShowICP();
   const [showQR, setShowQR] = useState(false);
+  const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
+  const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
+  const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
   const footerLinkClass = "lw-site-link lw-site-link--muted transition-colors";
   const showInlineICP = showICP && icpPlacement === "inline";
   const showRightICP = showICP && icpPlacement === "right";
@@ -41,9 +68,10 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </>
             )}
           </span>
+          {showLinks && (
           <span>
             {isGlobal ? (
-              <a href="/privacy-policy" className={footerLinkClass}>
+              <a href={privacyPolicyPath} className={footerLinkClass}>
                 {t("隐私政策")}
               </a>
             ) : (
@@ -57,19 +85,27 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </a>
             )}
             ·
-            <a
-              href="https://cloud.tencent.com/document/product/301/48034"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={footerLinkClass}
-            >
-              {t("服务条款")}
-            </a>
+            {isGlobal ? (
+              <a href={termsOfServicePath} className={footerLinkClass}>
+                {t("服务条款")}
+              </a>
+            ) : (
+              <a
+                href={CN_TERMS_OF_SERVICE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={footerLinkClass}
+              >
+                {t("服务条款")}
+              </a>
+            )}
             {isCN ? (
               <>
                 ·
                 <a
-                  href="/support"
+                  href={PRODUCT_FEEDBACK_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className={footerLinkClass}
                 >
                   {t("产品反馈")}
@@ -79,21 +115,34 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
             {isGlobal ? (
               <>
                 ·
-                <a href="/open-source-licenses" className={footerLinkClass}>
+                <a href={openSourceLicensesPath} className={footerLinkClass}>
                   {t("开源声明")}
                 </a>
               </>
             ) : null}
           </span>
-          {/* 加入交流群 — hover 展示二维码 */}
+          )}
+          {/* 加入交流群 — hover 展示二维码；国际站文案与二维码均可点击直达 Discord */}
+          {showLinks && (
           <span
             className="relative"
             onMouseEnter={() => setShowQR(true)}
             onMouseLeave={() => setShowQR(false)}
           >
-            <span className="cursor-pointer transition-colors hover:text-black">
-              {t("加入交流群")}
-            </span>
+            {isGlobal ? (
+              <a
+                href={DISCORD_INVITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cursor-pointer transition-colors hover:text-black"
+              >
+                {t("加入交流群")}
+              </a>
+            ) : (
+              <span className="cursor-pointer transition-colors hover:text-black">
+                {t("加入交流群")}
+              </span>
+            )}
             <AnimatePresence>
               {showQR && (
                 <motion.div
@@ -104,19 +153,41 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
                   className="absolute bottom-full left-1/2 z-20 mb-3 -translate-x-1/2 flex flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-lg"
                   style={{ width: "200px" }}
                 >
-                  <img
-                    src={isGlobal ? "/assets/landing/about/International-Discord.png" : "/assets/landing/about/community-qr.png"}
-                    alt="加入交流群"
-                    className="rounded-lg"
-                    style={{ width: "168px", height: "168px" }}
-                  />
-                  <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
-                    {isGlobal ? t("扫码加入Discord交流群") : t("扫码加入交流群")}
-                  </span>
+                  {isGlobal ? (
+                    <a
+                      href={DISCORD_INVITE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-col items-center gap-2"
+                    >
+                      <img
+                        src={DISCORD_QR_IMAGE}
+                        alt={t("加入交流群")}
+                        className="rounded-lg"
+                        style={{ width: "168px", height: "168px" }}
+                      />
+                      <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+                        {t("扫码加入Discord交流群")}
+                      </span>
+                    </a>
+                  ) : (
+                    <>
+                      <img
+                        src={CN_COMMUNITY_QR_IMAGE}
+                        alt={t("加入交流群")}
+                        className="rounded-lg"
+                        style={{ width: "168px", height: "168px" }}
+                      />
+                      <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+                        {t("扫码加入交流群")}
+                      </span>
+                    </>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
           </span>
+          )}
           {showRightICP && (
             <a
               href={BEIAN_URL}

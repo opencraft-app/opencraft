@@ -176,7 +176,7 @@ type ReusableDianshiOrderStore interface {
 	//   - 命中 → (*TradeOrder, nil)
 	//   - 无可复用订单 → (nil, ErrTradeOrderNotFound)
 	//   - DB 错误 / JSON 解码错误 → (nil, err)
-	FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*TradeOrder, error)
+	FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, createdAfter time.Time) (*TradeOrder, error)
 }
 
 // ProvisionedCreateOrderStore 提供存量 Pass 迁移所需的原始购买快照。
@@ -244,6 +244,7 @@ func (s *MySQLStore) FindReusableDianshiOrder(
 	externalUserID string,
 	activityID int64,
 	bundleID string,
+	actID int64,
 	createdAfter time.Time,
 ) (*TradeOrder, error) {
 	if s == nil || s.db == nil {
@@ -253,6 +254,7 @@ func (s *MySQLStore) FindReusableDianshiOrder(
 		 WHERE external_user_id = ?
 		   AND activity_id = ?
 		   AND bundle_id = ?
+		   AND act_id = ?
 		   AND source = ?
 		   AND resource_type = 'pass'
 		   AND (resource_id IS NULL OR resource_id = '')
@@ -265,6 +267,7 @@ func (s *MySQLStore) FindReusableDianshiOrder(
 		externalUserID,
 		activityID,
 		bundleID,
+		actID,
 		OrderSourceDianshi,
 		OrderStatusCreated,
 		OrderStatusPendingPay,
@@ -275,8 +278,8 @@ func (s *MySQLStore) FindReusableDianshiOrder(
 		return nil, ErrTradeOrderNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("trade_order: query reusable dianshi externalUserID=%s activityID=%d bundleID=%s: %w",
-			externalUserID, activityID, bundleID, err)
+		return nil, fmt.Errorf("trade_order: query reusable dianshi externalUserID=%s activityID=%d bundleID=%s actID=%d: %w",
+			externalUserID, activityID, bundleID, actID, err)
 	}
 	return order, nil
 }

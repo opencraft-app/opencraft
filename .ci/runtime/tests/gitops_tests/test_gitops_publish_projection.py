@@ -23,6 +23,17 @@ def run_command(command: list[str], **kwargs: object):
 
 
 class ResolveReleaseBundleTests(unittest.TestCase):
+    def test_playground_publish_paths_exclude_shared_appset(self) -> None:
+        manifest = load_manifest()
+
+        for env in ("sandbox-bj-7", "sandbox-kr-1", "sandbox-jp-1"):
+            with self.subTest(env=env):
+                bundle = load_bundle(manifest, "user-auth", env)
+                self.assertNotIn(
+                    "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml",
+                    bundle.publish_paths,
+                )
+
     def test_bundle_rejects_publish_paths_for_unowned_gitops_services(self) -> None:
         manifest = {
             "bundles": {
@@ -497,18 +508,22 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             (repo / "demo" / "k8s" / "base").mkdir(parents=True)
             (repo / "demo" / "k8s" / "base" / "manifests.yaml").write_text("source-manifest\n")
             (repo / "argocd" / "apps" / "beijing-sandbox").mkdir(parents=True)
-            (repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").write_text("appset: new\n")
+            (repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").write_text(
+                "catalogs:\n  - seoul\n"
+            )
             git(repo, "add", ".")
             git(repo, "commit", "-m", "source")
             source_ref = git_output(repo, "rev-parse", "HEAD")
 
             git(repo, "checkout", "-b", "gitops")
-            (repo / "argocd" / "services" / "demo" / "sandbox-bj-7").mkdir(parents=True)
-            (repo / "argocd" / "services" / "demo" / "sandbox-bj-7" / "config.yaml").write_text("gitops-only-config\n")
-            (repo / "argocd" / "services" / "demo" / "sandbox-bj-7" / "stale-but-owned.yaml").write_text("keep\n")
-            (repo / "argocd" / "catalogs" / "playground" / "beijing-playground" / "sandbox-bj-7").mkdir(parents=True)
-            (repo / "argocd" / "catalogs" / "playground" / "beijing-playground" / "sandbox-bj-7" / "demo.yaml").write_text("catalog: gitops\n")
-            (repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").write_text("appset: old\n")
+            (repo / "argocd" / "services" / "demo" / "sandbox-kr-1").mkdir(parents=True)
+            (repo / "argocd" / "services" / "demo" / "sandbox-kr-1" / "config.yaml").write_text("gitops-only-config\n")
+            (repo / "argocd" / "services" / "demo" / "sandbox-kr-1" / "stale-but-owned.yaml").write_text("keep\n")
+            (repo / "argocd" / "catalogs" / "playground" / "seoul-playground" / "sandbox-kr-1").mkdir(parents=True)
+            (repo / "argocd" / "catalogs" / "playground" / "seoul-playground" / "sandbox-kr-1" / "demo.yaml").write_text("catalog: gitops\n")
+            (repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").write_text(
+                "catalogs:\n  - seoul\n  - tokyo\n"
+            )
             (repo / "demo" / "k8s" / "base" / "manifests.yaml").write_text("old-manifest\n")
             git(repo, "add", ".")
             git(repo, "commit", "-m", "gitops playground")
@@ -522,7 +537,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
                     "--service",
                     "demo",
                     "--env",
-                    "sandbox-bj-7",
+                    "sandbox-kr-1",
                     "--source-ref",
                     source_ref,
                 ],
@@ -533,15 +548,18 @@ class ProjectReleaseBundleTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertEqual(
-                (repo / "argocd" / "services" / "demo" / "sandbox-bj-7" / "config.yaml").read_text(),
+                (repo / "argocd" / "services" / "demo" / "sandbox-kr-1" / "config.yaml").read_text(),
                 "gitops-only-config\n",
             )
-            self.assertTrue((repo / "argocd" / "services" / "demo" / "sandbox-bj-7" / "stale-but-owned.yaml").exists())
+            self.assertTrue((repo / "argocd" / "services" / "demo" / "sandbox-kr-1" / "stale-but-owned.yaml").exists())
             self.assertEqual(
-                (repo / "argocd" / "catalogs" / "playground" / "beijing-playground" / "sandbox-bj-7" / "demo.yaml").read_text(),
+                (repo / "argocd" / "catalogs" / "playground" / "seoul-playground" / "sandbox-kr-1" / "demo.yaml").read_text(),
                 "catalog: gitops\n",
             )
-            self.assertEqual((repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").read_text(), "appset: new\n")
+            self.assertEqual(
+                (repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").read_text(),
+                "catalogs:\n  - seoul\n  - tokyo\n",
+            )
             self.assertEqual((repo / "demo" / "k8s" / "base" / "manifests.yaml").read_text(), "source-manifest\n")
             self.assertIn("deleted 0 stale files", result.stdout)
 

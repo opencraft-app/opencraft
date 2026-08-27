@@ -10,11 +10,14 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
+	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/logic/activity"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
 	"git.woa.com/wisp/mono/trade/internal/store"
@@ -98,8 +101,19 @@ func (f *fakeBundleStore) GetBundleDefinitionByID(ctx context.Context, bundleID 
 func (f *fakeBundleStore) ListBundleDefsBySubProductCode(_ context.Context, _, _ string) ([]*store.BundleDefinition, error) {
 	return nil, errors.New("ListBundleDefsBySubProductCode not used in internalapi handler test")
 }
-func (f *fakeBundleStore) GetBundleDefinitionsByIDs(_ context.Context, _ []string) (map[string]*store.BundleDefinition, error) {
-	return nil, errors.New("GetBundleDefinitionsByIDs not used in internalapi handler test")
+func (f *fakeBundleStore) GetBundleDefinitionsByIDs(ctx context.Context, bundleIDs []string) (map[string]*store.BundleDefinition, error) {
+	out := make(map[string]*store.BundleDefinition, len(bundleIDs))
+	for _, id := range bundleIDs {
+		def, err := f.GetBundleDefinitionByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, store.ErrBundleDefinitionNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		out[id] = def
+	}
+	return out, nil
 }
 
 type fakeJifei struct {
@@ -117,10 +131,19 @@ func (f *fakeJifei) GetPrice(ctx context.Context, req *jifeiclient.GetPriceReque
 	if f.getPriceFn != nil {
 		return f.getPriceFn(ctx, req)
 	}
+	data := make([]jifeiclient.GetPriceData, 0, len(req.ResInfo))
+	for range req.ResInfo {
+		data = append(data, jifeiclient.GetPriceData{
+			Price: "39.00", TotalCost: "39.00", RealTotalCost: "35.10", Currency: "CNY",
+		})
+	}
+	if len(data) == 0 {
+		data = append(data, jifeiclient.GetPriceData{
+			Price: "39.00", TotalCost: "39.00", RealTotalCost: "35.10", Currency: "CNY",
+		})
+	}
 	return &jifeiclient.GetPriceResponse{
-		Data: []jifeiclient.GetPriceData{
-			{Price: "39.00", TotalCost: "39.00", RealTotalCost: "35.10", Currency: "CNY"},
-		},
+		Data: data,
 	}, nil
 }
 func (f *fakeJifei) GenerateDeals(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error) {
@@ -227,6 +250,10 @@ type fakeOrderStore struct {
 	getProvisionedCreateOrderByResourceIDFn func(ctx context.Context, resourceID string) (*store.TradeOrder, error)
 }
 
+func (f *fakeOrderStore) FindReusableDianshiOrder(context.Context, string, int64, string, int64, time.Time) (*store.TradeOrder, error) {
+	return nil, store.ErrTradeOrderNotFound
+}
+
 func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 	if f.getOrderByDealNameFn != nil {
 		return f.getOrderByDealNameFn(ctx, dealName)
@@ -246,13 +273,62 @@ func (f *fakeOrderStore) GetProvisionedCreateOrderByResourceID(ctx context.Conte
 // ============================================================================
 
 type testEnv struct {
-	router      *gin.Engine
-	ctl         *fakeCTL
-	jifei       *fakeJifei
-	orderWriter *fakeOrderWriter
-	orderStore  *fakeOrderStore
-	bundle      *fakeBundleStore
-	token       string
+	router        *gin.Engine
+	ctl           *fakeCTL
+	jifei         *fakeJifei
+	orderWriter   *fakeOrderWriter
+	orderStore    *fakeOrderStore
+	bundle        *fakeBundleStore
+	activity      *fakeActivityResolver
+	dianshi       *fakeDianshiClient
+	participation *fakeParticipationReader
+	token         string
+}
+
+type fakeActivityResolver struct {
+	mapping *activity.Mapping
+	use     bool
+	err     error
+}
+
+type fakeParticipationReader struct {
+	hit bool
+	err error
+}
+
+func (f *fakeParticipationReader) HasUserParticipated(context.Context, string, int64) (bool, error) {
+	return f.hit, f.err
+}
+
+func (f *fakeActivityResolver) ResolveForInquiry(context.Context, string, string, int, string) (*activity.Mapping, bool, error) {
+	return f.mapping, f.use, f.err
+}
+
+func (f *fakeActivityResolver) ResolveForPlaceOrder(context.Context, string, string, int, string) (*activity.Mapping, bool, error) {
+	return f.mapping, f.use, f.err
+}
+
+type fakeDianshiClient struct {
+	doGoodsAndPayCalls atomic.Int32
+	lastRequest        *dianshiclient.DoGoodsRequest
+}
+
+func (f *fakeDianshiClient) GetActivityPrice(context.Context, *dianshiclient.GetPriceRequest) (*dianshiclient.GetPriceResponse, error) {
+	return nil, errors.New("GetActivityPrice not used in internalapi handler test")
+}
+
+func (f *fakeDianshiClient) DoGoods(context.Context, *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
+	return nil, errors.New("DoGoods must not be used by dedicated order-and-pay route")
+}
+
+func (f *fakeDianshiClient) DoGoodsAndPay(_ context.Context, req *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
+	f.doGoodsAndPayCalls.Add(1)
+	f.lastRequest = req
+	return &dianshiclient.DoGoodsResponse{
+		DealNames:   []string{"dianshi-deal-1"},
+		BigDealNo:   "dianshi-big-1",
+		ResourceIDs: map[string][]string{"dianshi-deal-1": {"pass-dianshi-paid-1"}},
+	}, nil
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -262,6 +338,9 @@ func newTestEnv(t *testing.T) *testEnv {
 	orderWriter := &fakeOrderWriter{}
 	orderStore := &fakeOrderStore{}
 	bundle := &fakeBundleStore{}
+	activityResolver := &fakeActivityResolver{}
+	dianshi := &fakeDianshiClient{}
+	participation := &fakeParticipationReader{}
 
 	inq := inquiry.New(inquiry.Deps{
 		CTLClient:   ctl,
@@ -269,11 +348,14 @@ func newTestEnv(t *testing.T) *testEnv {
 		JifeiClient: jifei,
 	})
 	po := placeorder.New(placeorder.Deps{
-		CTLClient:   ctl,
-		BundleStore: bundle,
-		JifeiClient: jifei,
-		OrderWriter: orderWriter,
-		OrderStore:  orderStore,
+		CTLClient:           ctl,
+		BundleStore:         bundle,
+		JifeiClient:         jifei,
+		OrderWriter:         orderWriter,
+		OrderStore:          orderStore,
+		ParticipationReader: participation,
+		ActivityResolver:    activityResolver,
+		DianshiClient:       dianshi,
 	})
 
 	r := gin.New()
@@ -288,13 +370,16 @@ func newTestEnv(t *testing.T) *testEnv {
 	})
 
 	return &testEnv{
-		router:      r,
-		ctl:         ctl,
-		jifei:       jifei,
-		orderWriter: orderWriter,
-		orderStore:  orderStore,
-		bundle:      bundle,
-		token:       "test-token",
+		router:        r,
+		ctl:           ctl,
+		jifei:         jifei,
+		orderWriter:   orderWriter,
+		orderStore:    orderStore,
+		bundle:        bundle,
+		activity:      activityResolver,
+		dianshi:       dianshi,
+		participation: participation,
+		token:         "test-token",
 	}
 }
 
@@ -402,6 +487,98 @@ func TestInquiryBatch_HappyPath(t *testing.T) {
 	prices, _ := resp["prices"].([]any)
 	if len(prices) != 2 {
 		t.Errorf("expected 2 prices, got %d", len(prices))
+	}
+}
+
+func TestInquiryBatch_UsesSingleJifeiGetPriceAndKeepsOrder(t *testing.T) {
+	env := newTestEnv(t)
+	env.bundle.getBundleDefinitionByIDFn = func(ctx context.Context, bundleID string) (*store.BundleDefinition, error) {
+		categories := map[string]int64{
+			"bundle_voyage": 300059,
+			"bundle_launch": 100059,
+			"bundle_cruise": 200059,
+		}
+		pids := map[string]int64{
+			"bundle_voyage": 3003,
+			"bundle_launch": 1001,
+			"bundle_cruise": 2002,
+		}
+		category, ok := categories[bundleID]
+		if !ok {
+			return nil, store.ErrBundleDefinitionNotFound
+		}
+		return &store.BundleDefinition{
+			BundleID:       bundleID,
+			ProductCode:    "p_lighthouse",
+			SubProductCode: "sp_test",
+			Pid:            pids[bundleID],
+			CategoryIDs:    []store.CategoryIDEntry{{Scene: "purchase", Category: category}},
+			SVList:         map[string]int64{"sv_cpu": 2},
+		}, nil
+	}
+
+	var getPriceCalls atomic.Int32
+	env.jifei.getPriceFn = func(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+		getPriceCalls.Add(1)
+		if len(req.ResInfo) != 3 {
+			t.Fatalf("GetPrice ResInfo len = %d, want 3", len(req.ResInfo))
+		}
+		gotCategories := []int64{
+			req.ResInfo[0].GoodsCategoryID,
+			req.ResInfo[1].GoodsCategoryID,
+			req.ResInfo[2].GoodsCategoryID,
+		}
+		wantCategories := []int64{300059, 100059, 200059}
+		for i := range wantCategories {
+			if gotCategories[i] != wantCategories[i] {
+				t.Fatalf("ResInfo[%d].GoodsCategoryID = %d, want %d; full=%v",
+					i, gotCategories[i], wantCategories[i], gotCategories)
+			}
+		}
+		return &jifeiclient.GetPriceResponse{Data: []jifeiclient.GetPriceData{
+			{Price: "65.00", TotalCost: "65.00", RealTotalCost: "65.00", Currency: "USD", Pid: 3003},
+			{Price: "12.00", TotalCost: "12.00", RealTotalCost: "12.00", Currency: "USD", Pid: 1001},
+			{Price: "23.00", TotalCost: "23.00", RealTotalCost: "23.00", Currency: "USD", Pid: 2002},
+		}}, nil
+	}
+
+	body := map[string]any{
+		"externalUserId": "user-1",
+		"uin":            "1000",
+		"appId":          "10001",
+		"bundleIds":      []string{"bundle_voyage", "bundle_launch", "bundle_cruise"},
+		"period":         1,
+		"timeUnit":       "m",
+		"goodsNum":       1,
+		"payMode":        1,
+	}
+	rec := env.doJSON(http.MethodPost, "/internal/trade/inquiry/batch", body, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if calls := getPriceCalls.Load(); calls != 1 {
+		t.Fatalf("GetPrice calls = %d, want 1", calls)
+	}
+	resp := decodeBody(t, rec)
+	prices, _ := resp["prices"].([]any)
+	if len(prices) != 3 {
+		t.Fatalf("expected 3 prices, got %d", len(prices))
+	}
+	want := []struct {
+		bundleID string
+		price    string
+		pid      float64
+	}{
+		{"bundle_voyage", "65.00", 3003},
+		{"bundle_launch", "12.00", 1001},
+		{"bundle_cruise", "23.00", 2002},
+	}
+	for i, w := range want {
+		item, _ := prices[i].(map[string]any)
+		if item["bundle_id"] != w.bundleID || item["price"] != w.price || item["pid"] != w.pid {
+			t.Fatalf("prices[%d] = %#v, want bundle_id=%q price=%q pid=%v",
+				i, item, w.bundleID, w.price, w.pid)
+		}
 	}
 }
 
@@ -650,6 +827,119 @@ func TestPlaceOrderAndPay_AuthRequired(t *testing.T) {
 }
 
 // ============================================================================
+// dedicated Dianshi order and pay tests
+// ============================================================================
+
+func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
+	env := newTestEnv(t)
+	env.activity.mapping = &activity.Mapping{
+		BundleID:         "b1",
+		ActivityID:       1001,
+		ActID:            2001,
+		Active:           true,
+		TimeSpanUnit:     "1m",
+		OrderExpiredTime: 1,
+	}
+	env.activity.use = true
+
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/place-and-pay", map[string]any{
+		"externalUserId": "user-1",
+		"uin":            "1000",
+		"appId":          "10001",
+		"bundleId":       "b1",
+		"period":         1,
+		"timeUnit":       "m",
+		"goodsNum":       1,
+		"payMode":        1,
+	}, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	resp := decodeBody(t, rec)
+	if resp["dealName"] != "dianshi-deal-1" || resp["bigOrderId"] != "dianshi-big-1" {
+		t.Fatalf("unexpected response: %v", resp)
+	}
+	if env.dianshi.doGoodsAndPayCalls.Load() != 1 {
+		t.Fatalf("expected DoGoodsAndPay once, got %d", env.dianshi.doGoodsAndPayCalls.Load())
+	}
+	if got := env.orderWriter.lastCreateOrderInput; got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted status/resource_id=%q/%q", got.Status, got.ResourceID)
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_RequiresActivity(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/place-and-pay", map[string]any{
+		"externalUserId": "user-1",
+		"uin":            "1000",
+		"bundleId":       "b1",
+		"period":         1,
+		"timeUnit":       "m",
+	}, true)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if code := decodeBody(t, rec)["code"]; code != "DianshiActivityRequired" {
+		t.Fatalf("expected DianshiActivityRequired, got %v", code)
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_AuthRequired(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/place-and-pay", map[string]any{}, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGrantDianshiSubscription_HappyPath(t *testing.T) {
+	env := newTestEnv(t)
+	env.activity.err = errors.New("grant path must not resolve activity mapping")
+
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/subscriptions/grant", map[string]any{
+		"externalUserId": "user-1",
+		"uin":            "1000",
+		"appId":          "10001",
+		"bundleId":       "b1",
+		"period":         1,
+		"timeUnit":       "m",
+		"goodsNum":       1,
+		"payMode":        1,
+		"activityId":     165523570799387,
+		"actId":          142163399386388,
+		"timeSpanUnit":   "1m",
+		"secretKey":      "campaign-secret",
+	}, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	resp := decodeBody(t, rec)
+	if resp["status"] != "granted" || resp["dealName"] != "dianshi-deal-1" || resp["bigOrderId"] != "dianshi-big-1" {
+		t.Fatalf("unexpected response: %v", resp)
+	}
+	if got := env.orderWriter.lastCreateOrderInput.ActID; got != 142163399386388 {
+		t.Fatalf("persisted actID=%d", got)
+	}
+	if got := env.orderWriter.lastCreateOrderInput; got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted grant status/resource_id=%q/%q", got.Status, got.ResourceID)
+	}
+	if env.activity.err != nil && env.dianshi.doGoodsAndPayCalls.Load() != 1 {
+		t.Fatalf("grant path unexpectedly used activity resolver")
+	}
+	if got := env.dianshi.lastRequest.Goods[0].PreferenceParam["timeSpanUnit"]; got != "1m" {
+		t.Fatalf("timeSpanUnit=%v", got)
+	}
+}
+
+func TestGrantDianshiSubscription_AuthRequired(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/subscriptions/grant", map[string]any{}, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+// ============================================================================
 // pay url tests
 // ============================================================================
 
@@ -705,6 +995,12 @@ func TestPayURL_PayURLNotCached_CallsJifei(t *testing.T) {
 	tokenID := "E-260522160125881056"
 	outTradeNo := "20260522995022875780461"
 	env.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
+			t.Errorf("CancelURL mismatch: %q", req.CancelURL)
+		}
+		if req.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
+			t.Errorf("ReturnURL mismatch: %q", req.ReturnURL)
+		}
 		return &jifeiclient.GetMidasEarmarkingResponse{
 			URL:        "https://buy.cloud.tencent.com/midas?token=real",
 			BillID:     "bill-1",
@@ -714,7 +1010,10 @@ func TestPayURL_PayURLNotCached_CallsJifei(t *testing.T) {
 			OutTradeNo: &outTradeNo,
 		}, nil
 	}
-	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/deal-1/pay-url", nil, true)
+	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/deal-1/pay-url", map[string]any{
+		"cancel_url": "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel",
+		"return_url": "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return",
+	}, true)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}

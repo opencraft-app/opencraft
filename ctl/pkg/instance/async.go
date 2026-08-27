@@ -1,7 +1,9 @@
 package instance
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -29,6 +31,7 @@ import (
 	"ctl/pkg/resource"
 	"ctl/pkg/taskruntime/common"
 	"ctl/pkg/tracing"
+	"ctl/pkg/websiteauth"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -37,6 +40,9 @@ import (
 const (
 	defaultTaskExecuteIntervalSeconds = 30
 	defaultTaskMaxExecuteCount        = 20
+	websiteCredentialDeliveryTimeout  = 180
+	websiteCredentialCleanupTimeout   = 5 * time.Second
+	websiteCredentialProvisionalTTL   = 15 * time.Minute
 )
 
 const (
@@ -225,8 +231,8 @@ type RenewInstanceTaskPayload = common.RenewInstanceTaskPayload
 //     · originalExpiredTime：续费前的 pass.expired_time（active / isolated 续费均为 entity.ExpiredTime）
 //     · originalIsolatedTime：续费前的 pass.isolated_time（active 分支传 nil；isolated 分支传 entity.IsolatedTime
 //     的副本指针）；决定回滚目标状态：nil → active；非 nil → isolated
-//   - executeInterval / maxExecuteCount：默认 30s × 5 次（R-MR-5：父 task 失败有限重试 +
-//     失败后派发 RollbackRenewPassTask 回滚副作用）
+//   - executeInterval / maxExecuteCount：由 caller 显式传入；当前 RenewPass worker 使用
+//     30s + 1<<30，保证父 task 覆盖 RenewInstance 子 task 的完整重试窗口
 func EnqueueRenewPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, timeSpan int, timeUnit string, originalExpiredTime time.Time, originalIsolatedTime *time.Time, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	if passID == "" {
 		return "", errors.New("passID is required")
@@ -280,8 +286,8 @@ func EnqueueRenewPassTask(ctx pctx.Context, passID, userID, operationID string, 
 // RollbackRenewPassTaskPayload 是回滚 task payload 的类型别名
 type RollbackRenewPassTaskPayload = common.RollbackRenewPassTaskPayload
 
-// EnqueueRollbackRenewPassTask 由 renewPassTask.finalizeFailure 在 max_execute_count
-// 用尽（=5）时调用，派发回滚父 task。
+// EnqueueRollbackRenewPassTask 由 renewPassTask.finalizeFailure 在确定性失败或最大次数
+// 兜底触发时调用，派发回滚父 task。
 //
 // 入参（payload 字段透传 + execute schedule 参数）：
 //   - passID / userID / operationID：业务标识（继承自原 RenewPass payload）
@@ -289,7 +295,8 @@ type RollbackRenewPassTaskPayload = common.RollbackRenewPassTaskPayload
 //   - originalExpiredTime / originalIsolatedTime：续费前基线，决定 RollbackRenewal 写回的目标值
 //   - failureReason：原父 task 最后一次 execute 错误（写入 trade.CompleteFlow message 字段）
 //   - originalParentTaskID：原 RenewPass 父 task 的 task_id（回滚 task 步骤 1 等子 task 终态时反查用）
-//   - executeInterval / maxExecuteCount：默认 30s × 5 次（与父 task 同节奏；失败即终态由人工介入）
+//   - executeInterval / maxExecuteCount：由 caller 显式传入；当前 rollback worker 使用
+//     30s + 1<<30，由 checkTasks 持续补偿
 func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, originalExpiredTime time.Time, originalIsolatedTime *time.Time, failureReason, originalParentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	if passID == "" {
 		return "", errors.New("passID is required")
@@ -323,14 +330,20 @@ func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID 
 		ctx = pctx.NewContext(nil)
 	}
 	ctx = ctx.WithUserID(userID)
-	return NewLogic().(*logic).enqueueTaskWithSchedule(
+	return NewLogic().(*logic).enqueueTaskWithScheduleAndID(
 		ctx,
+		rollbackRenewPassTaskID(originalParentTaskID),
 		common.TaskNameRollbackRenewPass,
 		payload,
-		"",
+		originalParentTaskID,
 		executeInterval,
 		maxExecuteCount,
 	)
+}
+
+func rollbackRenewPassTaskID(originalParentTaskID string) string {
+	sum := sha256.Sum256([]byte(common.TaskNameRollbackRenewPass + ":" + originalParentTaskID))
+	return fmt.Sprintf("task-rb-renew-%x", sum[:16])
 }
 
 // EnqueueRenewInstanceTask 由父 task RenewPassTask 调用，派发一个续费子 task
@@ -342,13 +355,6 @@ func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID 
 //   - parentTaskID 必传，用于父 task 反查 child_registry
 //   - executeInterval / maxExecuteCount：默认 60s × 60 = 1h 重试窗口（与 IsolateInstance 子 task 对偶）
 func EnqueueRenewInstanceTask(ctx pctx.Context, instanceID, passID, userID, operationID, parentTaskID string, executeInterval int64, maxExecuteCount int) error {
-	return EnqueueRenewInstanceTaskWithTarget(ctx, instanceID, passID, userID, operationID, parentTaskID, "", executeInterval, maxExecuteCount)
-}
-
-// EnqueueRenewInstanceTaskWithTarget adds an optional forward-only gateway
-// migration to the ordinary resume task. targetGateway must be empty or
-// llm_gateway.
-func EnqueueRenewInstanceTaskWithTarget(ctx pctx.Context, instanceID, passID, userID, operationID, parentTaskID, targetGateway string, executeInterval int64, maxExecuteCount int) error {
 	if instanceID == "" {
 		return errors.New("instanceID is required")
 	}
@@ -365,10 +371,9 @@ func EnqueueRenewInstanceTaskWithTarget(ctx pctx.Context, instanceID, passID, us
 		maxExecuteCount = defaultTaskMaxExecuteCount
 	}
 	payload := &common.RenewInstanceTaskPayload{
-		InstanceID:    instanceID,
-		PassID:        passID,
-		OperationID:   operationID,
-		TargetGateway: strings.TrimSpace(targetGateway),
+		InstanceID:  instanceID,
+		PassID:      passID,
+		OperationID: operationID,
 	}
 	// BUG-30 修订：注入 ctx user，让 enqueueTaskWithSchedule 写 task entity.UserID 不为空。
 	if ctx == nil {
@@ -583,6 +588,13 @@ func (l *logic) enqueueTask(ctx pctx.Context, taskName string, payload interface
 //
 // 与 enqueueTask 共享其余 schema（task_id 自生成 / state=CREATED / params=json marshal / MQ.Send）
 func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, payload interface{}, parentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	return l.enqueueTaskWithScheduleAndID(ctx, "", taskName, payload, parentTaskID, executeInterval, maxExecuteCount)
+}
+
+// enqueueTaskWithScheduleAndID allows workflows with a stable business identity to supply
+// their own task ID. A duplicate ID is an idempotent success: the existing CREATED task is
+// picked up by the regular checkTasks recovery loop if its original MQ send was interrupted.
+func (l *logic) enqueueTaskWithScheduleAndID(ctx pctx.Context, suppliedTaskID, taskName string, payload interface{}, parentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	ctx, span := tracing.StartTrace(ctx, "Instance.EnqueueTaskWithSchedule")
 	defer func() { span.EndWithError(err) }()
 
@@ -598,7 +610,10 @@ func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, paylo
 		return "", fmt.Errorf("marshal task payload: %w", err)
 	}
 
-	taskID = l.generateTaskID()
+	taskID = suppliedTaskID
+	if taskID == "" {
+		taskID = l.generateTaskID()
+	}
 	taskEntity := &taskmodel.Entity{
 		TaskId:          taskID,
 		ParentTaskId:    parentTaskID,
@@ -615,22 +630,27 @@ func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, paylo
 	taskEntity.UserID = ctx.GetUserID()
 
 	if err := l.taskDao.Insert(taskEntity); err != nil {
+		if suppliedTaskID != "" && isDuplicateKeyError(err) {
+			return taskID, nil
+		}
 		return "", fmt.Errorf("insert task: %w", err)
 	}
 
 	messageData, err := common.GenerateMessageData(ctx, taskName, taskID, payload)
 	if err != nil {
-		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
-			taskmodel.ColumnTaskMessage: err.Error(),
-		}, taskID)
+		updates := map[string]interface{}{taskmodel.ColumnTaskMessage: err.Error()}
+		if suppliedTaskID == "" {
+			updates[taskmodel.ColumnTaskState] = taskmodel.StateFailed
+		}
+		_ = l.taskDao.UpdateByKeyColumn(updates, taskID)
 		return taskID, fmt.Errorf("generate task message: %w", err)
 	}
 	if err := l.producer.Send(&mq.Message{Data: messageData}); err != nil {
-		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
-			taskmodel.ColumnTaskMessage: err.Error(),
-		}, taskID)
+		updates := map[string]interface{}{taskmodel.ColumnTaskMessage: err.Error()}
+		if suppliedTaskID == "" {
+			updates[taskmodel.ColumnTaskState] = taskmodel.StateFailed
+		}
+		_ = l.taskDao.UpdateByKeyColumn(updates, taskID)
 		return taskID, fmt.Errorf("send task message: %w", err)
 	}
 	return taskID, nil
@@ -802,7 +822,6 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 			zap.String("soul_template_id", payload.SoulTemplateID),
 		)
 	}
-
 	if err := l.instanceDao.UpdateWithStatusPrecondition(ctx, entity.Id, []string{modelinstance.InstanceStatusCreating}, map[string]interface{}{
 		modelinstance.ColumnStatus: modelinstance.InstanceStatusRunning,
 	}); err != nil {
@@ -811,8 +830,110 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 	}
 	metric.RecordInstanceCreate("success", sandboxResp.TemplateID, payload.InstanceSpecID, time.Since(entity.CreatedAt).Seconds())
 	l.recordCreateSuccessEvent(ctx, entity.InstanceId)
+	l.deliverWebsiteCredentialOnCreate(ctx, entity, sandboxResp.SandboxID)
 
 	return nil
+}
+
+// deliverWebsiteCredentialOnCreate is intentionally best-effort. Website
+// bootstrap can be retried after provisioning, while failing the instance
+// create task here would strand a usable machine behind an optional feature.
+func (l *logic) deliverWebsiteCredentialOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) {
+	commandID := strings.TrimSpace(l.websiteCredentialTATCommandID)
+	apiBase := strings.TrimSpace(l.websiteAgentAPIBase)
+	if commandID == "" || apiBase == "" {
+		return
+	}
+	if entity == nil || strings.TrimSpace(entity.InstanceId) == "" || strings.TrimSpace(entity.UserId) == "" || strings.TrimSpace(sandboxID) == "" {
+		l.logger.Warn("skip website credential delivery because target is incomplete")
+		return
+	}
+	invoker, ok := l.sandboxAdapter.(psandbox.CommandInvoker)
+	credentialStore, storeOK := l.websiteCredentialStore.(websiteauth.ProvisionalStore)
+	if !ok || !storeOK {
+		l.logger.Warn("skip website credential delivery because dependencies are unavailable",
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+
+	if err := credentialStore.RevokeInstance(ctx, entity.InstanceId); err != nil {
+		l.logger.Warn("revoke stale website credentials before create delivery failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	plainToken, binding, err := credentialStore.IssueProvisional(ctx, entity.UserId, entity.InstanceId, websiteCredentialProvisionalTTL)
+	if err != nil {
+		l.logger.Warn("issue website credential during instance create failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	succeeded := false
+	defer func() {
+		if succeeded {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), websiteCredentialCleanupTimeout)
+		defer cancel()
+		if revokeErr := credentialStore.Revoke(cleanupCtx, entity.InstanceId, binding.KeyID); revokeErr != nil {
+			l.logger.Warn("revoke website credential after create delivery failure failed",
+				zap.Error(revokeErr),
+				zap.String("instance_id", entity.InstanceId),
+				zap.String("key_id", binding.KeyID),
+			)
+		}
+	}()
+
+	result, err := invoker.InvokeCommand(ctx, sandboxID, commandID, map[string]string{
+		"website_key": plainToken,
+		"api_base":    apiBase,
+	}, websiteCredentialDeliveryTimeout)
+	if err != nil {
+		l.logger.Warn("invoke website credential command during instance create failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+		)
+		return
+	}
+	if result == nil || strings.ToUpper(strings.TrimSpace(result.Status)) != "SUCCESS" || result.ExitCode != 0 {
+		status := "UNKNOWN"
+		exitCode := int64(-1)
+		if result != nil {
+			status = strings.TrimSpace(result.Status)
+			exitCode = result.ExitCode
+		}
+		l.logger.Warn("website credential command during instance create did not succeed",
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+			zap.String("status", status),
+			zap.Int64("exit_code", exitCode),
+		)
+		return
+	}
+	if err := credentialStore.Activate(ctx, entity.InstanceId, binding.KeyID); err != nil {
+		l.logger.Warn("activate website credential after create delivery failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+			zap.String("sandbox_id", sandboxID),
+			zap.String("key_id", binding.KeyID),
+		)
+		return
+	}
+
+	succeeded = true
+	l.logger.Info("website credential delivered during instance create",
+		zap.String("instance_id", entity.InstanceId),
+		zap.String("sandbox_id", sandboxID),
+		zap.String("key_id", binding.KeyID),
+	)
 }
 
 func (l *logic) selectCreateCandidatePools(ctx pctx.Context, candidates []string) orderedCandidatePools {
@@ -870,11 +991,13 @@ func (l *logic) RunDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanc
 	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
 	if err != nil {
 		if errors.Is(err, errcode.ErrInstanceNotFound) {
+			l.revokeInstanceWebsiteCredentialsAfterDestroy(ctx, payload.InstanceID)
 			return nil
 		}
 		return err
 	}
 	if entity.Status == modelinstance.InstanceStatusDeleted {
+		l.revokeInstanceWebsiteCredentialsAfterDestroy(ctx, payload.InstanceID)
 		return nil
 	}
 	if entity.Status != modelinstance.InstanceStatusDeleting {
@@ -882,7 +1005,7 @@ func (l *logic) RunDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanc
 	}
 
 	if strings.TrimSpace(entity.AiGatewayKeyID) != "" {
-		if err := l.revokeAiGatewayApiKey(ctx, entity.AiGatewayKeyID); err != nil && !isAiGatewayKeyNotFound(err) {
+		if err := l.revokeInstanceGatewayAPIKey(ctx, entity); err != nil {
 			return fmt.Errorf("revoke ai-gateway api key: %w", err)
 		}
 	}
@@ -894,7 +1017,25 @@ func (l *logic) RunDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanc
 		}
 	}
 
-	return l.finalizeInstanceDeletion(ctx, entity, payload.ReleaseQuota)
+	if err := l.finalizeInstanceDeletion(ctx, entity, payload.ReleaseQuota); err != nil {
+		return err
+	}
+	l.revokeInstanceWebsiteCredentialsAfterDestroy(ctx, payload.InstanceID)
+	return nil
+}
+
+func (l *logic) revokeInstanceWebsiteCredentialsAfterDestroy(ctx pctx.Context, instanceID string) {
+	if l.websiteCredentialStore == nil {
+		return
+	}
+	if err := l.websiteCredentialStore.RevokeInstance(ctx, instanceID); err != nil {
+		if l.logger != nil {
+			l.logger.Warn("revoke website credentials after instance destruction failed",
+				zap.Error(err),
+				zap.String("instance_id", instanceID),
+			)
+		}
+	}
 }
 
 func (l *logic) FinalizeDestroyInstanceTaskFailure(ctx pctx.Context, payload *DestroyInstanceTaskPayload, taskErr error) {
@@ -1040,13 +1181,10 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 		}
 		return err
 	}
-	migrateGateway := strings.TrimSpace(payload.TargetGateway)
 	switch entity.Status {
 	case modelinstance.InstanceStatusRunning:
-		if migrateGateway == "" {
-			logger.Info("renew task: instance already running, short-circuit")
-			return nil
-		}
+		logger.Info("renew task: instance already running, short-circuit")
+		return nil
 	case modelinstance.InstanceStatusDeleted, modelinstance.InstanceStatusFailed:
 		logger.Info("renew task: instance in terminal state, no-op",
 			zap.String("status", entity.Status),
@@ -1110,45 +1248,6 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 		}
 	}
 
-	if migrateGateway != "" {
-		if migrateGateway != gatewayroute.GatewayLLMGateway {
-			return fmt.Errorf("unsupported renewal migration target gateway %q", migrateGateway)
-		}
-		if err := l.applyRenewalGatewayMigration(ctx, entity, gatewayBackendLLMGateway); err != nil {
-			return fmt.Errorf("apply renewal gateway migration: %w", err)
-		}
-	}
-	return nil
-}
-
-func (l *logic) applyRenewalGatewayMigration(ctx pctx.Context, entity *modelinstance.Entity, backend gatewayBackend) error {
-	if entity == nil {
-		return fmt.Errorf("instance is nil")
-	}
-	if strings.TrimSpace(entity.SandboxId) == "" || isPendingSandboxID(entity.SandboxId) {
-		return fmt.Errorf("instance has no usable sandbox")
-	}
-	userID := strings.TrimSpace(ctx.GetUserID())
-	if userID == "" {
-		userID = strings.TrimSpace(entity.UserId)
-	}
-	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, userID, entity.InstanceId)
-	if err != nil {
-		return err
-	}
-	gwConf, err := l.gatewayRuntimeConfig(backend)
-	if err != nil {
-		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return err
-	}
-	if err := l.configureGatewayRuntimeAndRestart(ctx, entity.SandboxId, apiKeyResp.APIKey, gwConf); err != nil {
-		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return err
-	}
-	if err := l.persistAiGatewayKeyIDWithStatuses(ctx, entity, apiKeyResp.KeyID, []string{modelinstance.InstanceStatusRunning}); err != nil {
-		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return fmt.Errorf("persist migrated gateway key id: %w", err)
-	}
 	return nil
 }
 
@@ -1157,15 +1256,11 @@ func (l *logic) revokeGatewayAPIKey(ctx pctx.Context, backend gatewayBackend, ke
 		return nil
 	}
 	if backend == gatewayBackendLLMGateway {
-		if l.llmGatewayAdapter == nil {
-			return fmt.Errorf("llmGatewayAdapter not configured")
-		}
-		return l.llmGatewayAdapter.RevokeApiKey(ctx, keyID)
+		// LLMGateway keys belong to the user, not an instance. Instance
+		// compensation, migration, reset, and destruction must preserve them.
+		return nil
 	}
-	if l.aiGatewayAdapter == nil {
-		return fmt.Errorf("aiGatewayAdapter not configured")
-	}
-	return l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
+	return l.revokeLegacyAiGatewayAPIKey(ctx, keyID)
 }
 
 // FinalizeRenewInstanceTaskFailure 子 task RenewInstance 失败兜底
@@ -1223,7 +1318,7 @@ var ErrSnapshotPermanentFailed = errors.New("snapshot permanent failed")
 //     完成快照和 sandbox 删除，snapshot 表保留原用户关联用于恢复
 //
 // 入参 taskID 用于 UpdatePayload 持久化进度位（写回 task.task_params 列）。
-func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, payload *common.DestroyInstanceForPassTaskPayload) error {
+func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, payload *common.DestroyInstanceForPassTaskPayload) (retErr error) {
 	if payload == nil || strings.TrimSpace(payload.InstanceID) == "" {
 		// 参数性致命错：payload 缺失 / InstanceID 为空 — 重试无法自愈，fail-fast 让父 task 重派。
 		return fmt.Errorf("%w: %v", ErrSnapshotPermanentFailed, errcode.ErrInstanceInvalidParam)
@@ -1236,6 +1331,11 @@ func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, p
 		// 0 值通常是父 task payload 没透传 — fail-fast 让父 task 重派（防止 snapshot 表脏数据 + 60min 重试空转）。
 		return fmt.Errorf("%w: payload.TradeFlowID must be > 0, got %d", ErrSnapshotPermanentFailed, payload.TradeFlowID)
 	}
+	defer func() {
+		if retErr == nil {
+			l.revokeInstanceWebsiteCredentialsAfterDestroy(ctx, payload.InstanceID)
+		}
+	}()
 
 	logger := l.logger.With(
 		zap.String("instance_id", payload.InstanceID),
@@ -1782,6 +1882,13 @@ func (l *logic) resolveProvisionGateway(ctx pctx.Context, userID, instanceID str
 	return gatewayBackendLLMGateway
 }
 
+func (l *logic) resolveCreateProvisionGateway(ctx pctx.Context, userID, instanceID string) gatewayBackend {
+	if config.LLMGatewayAllowsBotCreateMigration(userID) {
+		return gatewayBackendLLMGateway
+	}
+	return l.resolveProvisionGateway(ctx, userID, instanceID)
+}
+
 func (l *logic) gatewayRuntimeConfig(backend gatewayBackend) (*gatewayRuntimeConfig, error) {
 	if config.ServerConf == nil || config.ServerConf.AdapterConfig == nil {
 		return nil, fmt.Errorf("adapter config not configured")
@@ -1877,32 +1984,42 @@ func (l *logic) createAiGatewayApiKey(ctx pctx.Context, backend gatewayBackend, 
 	return &gatewayAPIKey{KeyID: keyID, APIKey: apiKey, KeyPrefix: keyPrefix}, nil
 }
 
-func (l *logic) revokeAiGatewayApiKey(ctx pctx.Context, keyID string) error {
+func (l *logic) revokeLegacyAiGatewayAPIKey(ctx pctx.Context, keyID string) error {
 	if strings.TrimSpace(keyID) == "" {
 		return nil
 	}
-	if l.aiGatewayAdapter != nil {
-		err := l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
-		if err == nil {
-			return nil
-		}
-		if !isLegacyGatewayDisabled(err) && !isAiGatewayKeyNotFound(err) {
-			l.logger.Warn("revoke ai-gateway api key failed, try llmgateway",
-				zap.String("key_id", keyID),
-				zap.Error(err))
-		}
+	if l.aiGatewayAdapter == nil {
+		return nil
 	}
-	if l.llmGatewayAdapter == nil {
-		return fmt.Errorf("llmGatewayAdapter not configured")
+	err := l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
+	if err == nil || isLegacyGatewayDisabled(err) || isAiGatewayKeyNotFound(err) {
+		return nil
 	}
-	return l.llmGatewayAdapter.RevokeApiKey(ctx, keyID)
+	return err
+}
+
+func (l *logic) revokeInstanceGatewayAPIKey(ctx pctx.Context, entity *modelinstance.Entity) error {
+	if entity == nil || strings.TrimSpace(entity.AiGatewayKeyID) == "" {
+		return nil
+	}
+	gateway, ok, err := gatewayroute.Get(entity.UserId)
+	if err != nil {
+		return fmt.Errorf("resolve instance gateway: %w", err)
+	}
+	if ok && gateway == gatewayroute.GatewayLLMGateway {
+		return nil
+	}
+	return l.revokeLegacyAiGatewayAPIKey(ctx, entity.AiGatewayKeyID)
 }
 
 func isDuplicateKeyError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "1062")
+	return errors.Is(err, gorm.ErrDuplicatedKey) ||
+		strings.Contains(err.Error(), "Duplicate entry") ||
+		strings.Contains(err.Error(), "UNIQUE constraint failed") ||
+		strings.Contains(err.Error(), "1062")
 }
 
 func isAiGatewayKeyNotFound(err error) bool {
@@ -1981,19 +2098,19 @@ func (l *logic) ensureAiGatewayUser(ctx pctx.Context, backend gatewayBackend, us
 }
 
 func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) error {
-	backend := l.resolveProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
+	backend := l.resolveCreateProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return err
 	}
 	gatewayAuthToken, err := generateGatewayAuthToken()
 	if err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return err
 	}
 
 	revokeIfNeeded := func(stageErr error) error {
-		revokeErr := l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		revokeErr := l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		if revokeErr != nil {
 			return fmt.Errorf("%w; revoke key %s: %v", stageErr, apiKeyResp.KeyID, revokeErr)
 		}
@@ -2031,7 +2148,7 @@ func (l *logic) ensureLegacyPassEntitlement(ctx pctx.Context, userID string) err
 const hermesRuntimeUser = "agentuser"
 const hermesDefaultProviderName = "custom"
 
-// configureOnboard 通过 envd process 在沙箱中完成 Hermes 的默认模型初始化。
+// configureOnboard 通过 TAT PTY 在沙箱中完成 Hermes 的默认模型初始化。
 //
 // 当前路径遵循 Hermes 镜像演进语义：
 // 1. 镜像内置 acli 时优先使用 acli
@@ -2065,10 +2182,15 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 	providerID := hermesDefaultProviderName
 	l.logHermesModelSetInput(sandboxID, providerID, modelID, baseURL, compat, apiKey)
 
-	installResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_ensure_model_cli", &psandbox.ProcessStartRequest{
-		Cmd:  "/bin/bash",
-		Args: []string{"-l", "-c", renderHermesEnsureModelCLICommand()},
-	}, 60)
+	installResult, err := l.execSandboxPtyCommandStream(
+		ctx,
+		sandboxID,
+		"hermes_ensure_model_cli",
+		renderHermesEnsureModelCLICommand(),
+		hermesRuntimeUser,
+		60,
+		nil,
+	)
 	l.logHermesCommandResult("hermes_ensure_model_cli", sandboxID, installResult, err)
 	if err != nil {
 		return fmt.Errorf("exec ensure hermes model cli command: %w", err)
@@ -2077,18 +2199,22 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 		return fmt.Errorf("ensure hermes model cli command failed: %s", sandboxCommandFailureDetail(installResult))
 	}
 
-	modelSetCommand := shellUserCommand(hermesRuntimeUser, renderHermesModelSetCommand(
+	modelSetCommand := renderHermesModelSetCommand(
 		modelID,
 		providerID,
 		baseURL,
 		apiKey,
 		compat,
-	))
-	modelSetResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_model_set", &psandbox.ProcessStartRequest{
-		Cmd:  "/bin/bash",
-		Args: []string{"-l", "-c", modelSetCommand},
-		Env:  shellUserEnv(hermesRuntimeUser),
-	}, 60)
+	)
+	modelSetResult, err := l.execSandboxPtyCommandStream(
+		ctx,
+		sandboxID,
+		"hermes_model_set",
+		modelSetCommand,
+		hermesRuntimeUser,
+		60,
+		nil,
+	)
 	l.logHermesCommandResult("hermes_model_set", sandboxID, modelSetResult, err)
 	if err != nil {
 		return fmt.Errorf("exec hermes model set command: %w", err)

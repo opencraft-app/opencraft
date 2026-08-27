@@ -40,7 +40,7 @@ export interface FullSeoMetaOptions {
   siteUrl?: string;
   /** 是否允许搜索引擎收录；默认 true。私域路径（/auth/*、/account/*）应传 false。 */
   indexable?: boolean;
-  /** 分享卡缩略图相对路径，默认 `/lightvela-logo.jpg`。 */
+  /** 分享卡缩略图相对路径，默认 `/lightvela-social-preview.png`。 */
   ogImagePath?: string;
 }
 
@@ -79,7 +79,7 @@ const NON_INDEXABLE_PREFIXES = [
   "/bots/",
 ];
 
-const DEFAULT_OG_IMAGE_PATH = "/lightvela-logo.jpg";
+const DEFAULT_OG_IMAGE_PATH = "/lightvela-social-preview.png";
 
 /* ──────────────────────────────────────────────────────────────
  * 区域差异（国内 cn / 国际 global）
@@ -155,8 +155,100 @@ const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
     "Telegram bot",
     "WhatsApp bot",
     "Discord bot",
+    "Slack bot",
     "personal agent",
   ].join(", "),
+};
+
+const SPANISH_DEFAULT_SEO_TITLE = "LightVela | Tu agente personal de IA en la nube";
+const SPANISH_SEO_TITLE_SUFFIX = "LightVela · Tu agente personal de IA en la nube";
+const SPANISH_SEO_DESCRIPTION =
+  "LightVela es una plataforma gestionada para crear y alojar un agente personal de IA en la nube, siempre disponible y conectado a tus canales.";
+const SPANISH_SEO_KEYWORDS = [
+  "LightVela",
+  "agente de IA en la nube",
+  "agente de IA personal",
+  "asistente de IA",
+  "Hermes Agent",
+  "alojamiento de agentes",
+  "automatizaciones",
+].join(", ");
+
+const SPANISH_STATIC_PAGE_TITLES: Record<string, string> = {
+  "/about": "Acerca de LightVela",
+  "/account": "Cuenta",
+  "/account/orders": "Pedidos",
+  "/auth/email-bind-result": "Resultado de vinculación del correo",
+  "/auth/forgot-password": "Restablecer contraseña",
+  "/auth/invite": "Código de invitación",
+  "/auth/sign-in": "Iniciar sesión",
+  "/auth/sign-up": "Crear una cuenta",
+  "/auth/sign-up-code": "Verificar código",
+  "/changelog": "Novedades",
+  "/cookie-policy": "Política de cookies",
+  "/dashboard/create": "Crear un agente",
+  "/dashboard/setup": "Configuración inicial",
+  "/dashboard/success": "Agente creado",
+  "/open-source-licenses": "Aviso de código abierto",
+  "/plans/select": "Elige un plan",
+  "/privacy-policy": "Política de privacidad",
+  "/subscribe": "Elige un plan",
+  "/support": "Ayuda y comentarios",
+  "/terms-of-service": "Términos del servicio",
+};
+
+const SPANISH_AGENT_SECTION_TITLES: Record<string, string> = {
+  achievements: "Logros",
+  automations: "Automatizaciones",
+  channels: "Canales",
+  chat: "Chat",
+  files: "Archivos",
+  memory: "Memoria",
+  models: "Modelos",
+  persona: "Personalidad",
+  skills: "Habilidades",
+  workbench: "Espacio de trabajo",
+};
+
+function getSpanishProductPageTitle(pathname: string): string | null {
+  if (pathname === "/agents") return "Mis agentes";
+  const agentSection = pathname.match(/^\/agents\/([^/]+)$/)?.[1];
+  if (agentSection) return SPANISH_AGENT_SECTION_TITLES[agentSection] ?? "Mis agentes";
+  return SPANISH_STATIC_PAGE_TITLES[pathname] ?? null;
+}
+
+const SPANISH_DOC_PAGE_TITLES: Record<string, string> = {
+  "/docs": "Documentación",
+  "/docs/overview": "Qué es LightVela",
+  "/docs/quickstart": "Inicio rápido",
+  "/docs/core-concepts": "Conceptos básicos",
+  "/docs/configuration": "Configuración",
+  "/docs/configuration/model": "Configurar modelos",
+  "/docs/configuration/skill": "Configurar habilidades",
+  "/docs/configuration/automation": "Automatizaciones",
+  "/docs/configuration/agent-chat": "Chat",
+  "/docs/faq": "Preguntas frecuentes",
+};
+
+const SPANISH_PAGE_DESCRIPTIONS: Record<string, string> = {
+  "/about":
+    "Conoce cómo LightVela acerca los agentes de IA en la nube a más personas mediante una experiencia gestionada y sencilla.",
+  "/changelog":
+    "Consulta las actualizaciones del producto, las nuevas funciones y las mejoras de experiencia de LightVela.",
+  "/cookie-policy":
+    "Política de cookies de LightVela, incluidos sus tipos, finalidades y opciones de control.",
+  "/open-source-licenses":
+    "Atribuciones y avisos de licencia del software de código abierto utilizado por LightVela.",
+  "/privacy-policy":
+    "Política de privacidad de LightVela sobre el tratamiento, almacenamiento y uso compartido de datos personales y los derechos del usuario.",
+  "/subscribe": "Elige el plan de LightVela que mejor se adapte a tu Hermes Agent.",
+  "/support": "Envía comentarios, informa de problemas o solicita nuevas funciones para LightVela.",
+  "/terms-of-service":
+    "Términos del servicio de LightVela aplicables al acceso y uso de la plataforma.",
+  "/docs":
+    "Documentación de LightVela con inicio rápido, conceptos básicos y guías para configurar modelos, canales, habilidades y automatizaciones.",
+  "/docs/overview":
+    "Descubre cómo LightVela aloja Hermes Agent en la nube para ofrecerte un agente personal de IA siempre disponible, con memoria y canales conectados.",
 };
 
 /**
@@ -187,9 +279,9 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/account":
       "了解 LightVela 的账号体系、登录方式（QQ / 微信）、实名认证流程、账号信息页结构，以及退出登录与注销说明。",
     "/docs/plans":
-      "LightVela 启航 Launch、巡游 Cruise、远航 Voyage 三档套餐说明：各含独立云端环境、专属存储与每月模型积分。本页讲各档定位、规格、权益与计费，帮你按需选择。",
+      "LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。",
     "/docs/credits":
-      "LightVela 模型积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐、模型的关系。",
+      "LightVela AI 积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐的关系。",
     "/docs/create-first-hermes":
       "开通第一个 Hermes 实例的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建实例，再配置模型与通道，让你的云端 AI Agent 7×24 小时在线运行。",
     "/docs/core-concepts":
@@ -204,6 +296,8 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "微信通道接入指南：在 LightVela 生成二维码 → 手机微信扫码授权 → 在微信中与 Hermes 对话。所有通道中配置最简单的一种。",
     "/docs/configuration/channel-feishu":
       "飞书通道接入指南：扫码授权方式接入，适用于办公场景，支持富文本消息与群聊 @机器人。",
+    "/docs/configuration/channel-wecom":
+      "企业微信通道接入指南：在 LightVela 生成二维码 → 手机企业微信扫码授权 → 在企业微信中与 Hermes Agent 对话，支持文本、图片、文件、语音与主动消息。",
     "/docs/configuration/channel-qq":
       "QQ 通道接入指南：在 QQ 开放平台创建机器人、获取 AppID 与 AppSecret、填入 LightVela 完成接入，约 5–10 分钟。",
     "/docs/configuration/skill":
@@ -223,9 +317,19 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/overview":
       "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team, built around Hermes Agent — a personal AI companion that stays online 24/7, knows you, remembers you, and understands you better over time.",
     "/docs/quickstart":
-      "A 5-minute walkthrough: sign in, complete identity verification, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord) and have your first AI conversation.",
+      "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord / Slack) and have your first AI conversation.",
+    "/docs/plans":
+      "Compare LightVela's Launch, Cruise, Launch AI, and Cruise AI plans for isolated Hermes runtime resources, storage, monthly AI credits, refund rules, and the email-based refund application process.",
+    "/docs/announcements/public-beta":
+      "LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch free for 14 days after public beta and billing start.",
+    "/docs/credits":
+      "Learn how LightVela model credits measure Hermes usage across conversations, automations, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
+    "/docs/create-first-hermes":
+      "Activate your first Hermes instance: sign in with Google or GitHub, choose an available plan on Subscribe, and let LightVela provision it. International beta access is limited and free while available, with no China real-name verification required.",
     "/docs/core-concepts":
       "LightVela's four core concepts: Hermes, Models, Channels, and Skills. This page explains how they relate and what happens inside a single conversation.",
+    "/docs/who-is-lightvela-for":
+      "Discover whether LightVela is right for you: a cloud-hosted personal AI Agent with long-term memory and channels including Telegram, WhatsApp, Discord, Slack, and WeChat. Sign in with Google or GitHub; no China real-name verification is required.",
     "/docs/configuration":
       "Overview of the Hermes admin console: the three configuration cards (Models / Channels / Skills), their entry points, and common operations like switching models, connecting multiple channels, and rebuilding Hermes.",
     "/docs/configuration/model":
@@ -238,6 +342,8 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "WhatsApp channel setup guide: connect Hermes to WhatsApp, complete authorization, and start a conversation through your WhatsApp account.",
     "/docs/configuration/channel-discord":
       "Discord channel setup guide: register a bot in the Discord Developer Portal, paste the token into LightVela, invite the bot to your server, and chat with Hermes.",
+    "/docs/configuration/channel-slack":
+      "Slack channel setup guide: create a Slack app, enable Socket Mode, paste the Bot Token and App Token into LightVela, and receive Hermes messages in your workspace.",
     "/docs/configuration/channel-qq":
       "QQ channel setup guide: register a bot on the QQ Open Platform, obtain AppID and AppSecret, fill them into LightVela — total time around 5–10 minutes.",
     "/docs/configuration/channel-wecom":
@@ -246,14 +352,20 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "Lark (Feishu) channel setup guide: scan-to-authorize onboarding for office scenarios, with rich-text messages and group @mentions of the bot.",
     "/docs/configuration/skill":
       "Configure Skills for Hermes: callable capability packs from Tencent SkillHub, covering to-do management, daily reports, web browsing, news search, image generation and more — installable from the admin console or directly inside chat.",
+    "/docs/configuration/memory":
+      "Learn how Hermes stores persistent memory and user profile information, reviews memory usage, and keeps context available across conversations.",
+    "/docs/configuration/files":
+      "Use Cloud Storage in LightVela to browse, upload, download, rename, and delete files in your Hermes workspace.",
+    "/docs/configuration/diagnostics":
+      "Use Diagnostics to query Hermes logs and run maintenance actions such as resetting model configuration or reinstalling the Agent while preserving data.",
+    "/docs/configuration/multiple-models":
+      "Switch between configured models in LightVela when you need a different balance of capability, speed, cost, or provider availability.",
     "/docs/configuration/automation":
       "Set up Hermes automations: schedule recurring tasks (reminders, daily reports, news tracking, content publishing) by time or trigger, with templates and lifecycle management.",
     "/docs/configuration/agent-chat":
       "Talk to Hermes in the Chat page: long-term memory accumulation, MEMORY.md / USER.md split, and how Hermes evolves with every conversation.",
     "/docs/faq":
       "Common questions about using LightVela: sign-in, identity verification, plan credits, model and channel configuration, conversation and memory mechanics.",
-    "/docs/faq/using-lightvela-safely":
-      "Safety guidance for using LightVela: avoid sharing passwords, secrets, or sensitive personal / financial / medical / business data with the AI; redact when in doubt.",
   },
 };
 
@@ -262,6 +374,7 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/about": "关于我们",
     "/changelog": "更新日志",
     "/privacy-policy": "隐私政策",
+    "/terms-of-service": "服务条款",
     "/cookie-policy": "Cookies 政策",
     "/open-source-licenses": "开源声明",
     "/dashboard/create": "创建 Agent",
@@ -276,7 +389,6 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/auth/sign-in": "登录",
     "/auth/sign-up": "注册",
     "/auth/sign-up-code": "输入验证码",
-    "/auth/invite": "邀请码",
     "/auth/forgot-password": "找回密码",
     "/plans/select": "选择套餐",
     "/settings/account": "账号设置",
@@ -286,8 +398,9 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/about": "About LightVela",
     "/changelog": "Changelog",
     "/privacy-policy": "Privacy Policy",
+    "/terms-of-service": "Terms of Service",
     "/cookie-policy": "Cookie Policy",
-    "/open-source-licenses": "Open Source Licenses",
+    "/open-source-licenses": "Open Source Notice",
     "/dashboard/create": "Create Agent",
     "/subscribe": "Subscribe",
     "/dashboard/setup": "Setup",
@@ -300,7 +413,6 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/auth/sign-in": "Sign In",
     "/auth/sign-up": "Sign Up",
     "/auth/sign-up-code": "Verify Code",
-    "/auth/invite": "Invite Code",
     "/auth/forgot-password": "Forgot Password",
     "/plans/select": "Select Plan",
     "/settings/account": "Account Settings",
@@ -370,9 +482,11 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration": "配置总览",
     "/docs/configuration/model": "配置模型",
     "/docs/configuration/channel-wechat": "微信",
-    "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/channel-qq": "QQ",
+    "/docs/configuration/channel-wecom": "企业微信",
+    "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/skill": "配置技能",
+    "/docs/plans": "套餐管理",
     "/docs/announcements/public-beta": "LightVela 付费版本公告",
     "/docs/faq": "常见问题 FAQ",
   },
@@ -383,10 +497,15 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/core-concepts": "Core Concepts",
     "/docs/configuration": "Configuration Overview",
     "/docs/configuration/model": "Configure Models",
+    "/docs/configuration/memory": "Memory Management",
+    "/docs/configuration/files": "Cloud Storage",
+    "/docs/configuration/diagnostics": "Diagnostics",
+    "/docs/configuration/multiple-models": "Model Switching",
     "/docs/configuration/channel-wechat": "WeChat",
     "/docs/configuration/channel-telegram": "Telegram",
     "/docs/configuration/channel-whatsapp": "WhatsApp",
     "/docs/configuration/channel-discord": "Discord",
+    "/docs/configuration/channel-slack": "Slack",
     "/docs/configuration/channel-qq": "QQ",
     "/docs/configuration/channel-wecom": "WeCom",
     "/docs/configuration/channel-feishu": "Lark",
@@ -394,7 +513,11 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/automation": "Automations",
     "/docs/configuration/agent-chat": "Chat",
     "/docs/faq": "FAQ",
-    "/docs/faq/using-lightvela-safely": "Using LightVela Safely",
+    "/docs/plans": "Plans",
+    "/docs/announcements/public-beta": "LightVela Paid Version Announcement",
+    "/docs/credits": "Credits",
+    "/docs/create-first-hermes": "How Do I Activate My First Hermes Instance?",
+    "/docs/who-is-lightvela-for": "Who Is LightVela For?",
   },
 };
 
@@ -442,10 +565,10 @@ function normalizePathname(pathname: string): string {
  * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg";
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "es";
 
 function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|en|zh)(?:\/(.*))?$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|es|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
@@ -461,6 +584,9 @@ const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
   zh: "zh-CN",
   "zh-cn": "zh-CN",
   "zh-sg": "zh-SG",
+  "zh-hant": "zh-Hant",
+  "id-id": "id-ID",
+  es: "es",
 };
 const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   en: "en_US",
@@ -468,6 +594,10 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   zh: "zh_CN",
   "zh-cn": "zh_CN",
   "zh-sg": "zh_SG",
+  // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
+  "zh-hant": "zh_HK",
+  "id-id": "id_ID",
+  es: "es_ES",
 };
 
 function safeDecodeURIComponent(value: string): string {
@@ -523,7 +653,9 @@ function getAppPageTitle(pathname: string, region: SeoRegion): string | null {
  */
 function effectiveRegionForLookup(region: SeoRegion, urlLang: UrlLang | null): SeoRegion {
   if (region !== "global") return region;
-  return urlLang === "zh" || urlLang === "zh-cn" || urlLang === "zh-sg" ? "cn" : "global";
+  // 中文语系（含短前缀 "zh" / 简体 / 新加坡简体 / 港澳繁体）都复用 cn 查表。
+  const ZH_URL_LANGS: readonly UrlLang[] = ["zh", "zh-cn", "zh-sg", "zh-hant"];
+  return urlLang !== null && (ZH_URL_LANGS as readonly string[]).includes(urlLang) ? "cn" : "global";
 }
 
 export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
@@ -531,6 +663,20 @@ export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
   /* 国际站剥掉 /en /zh URL 前缀后查表；国内站 stripUrlLangPrefix 对裸路径返回
      { bare: pathname, urlLang: null }，行为与改造前等价。 */
   const { bare, urlLang } = stripUrlLangPrefix(normalizePathname(pathname));
+  if (r === "global" && urlLang === "es") {
+    const pageTitle =
+      bare === "/"
+        ? null
+        : SPANISH_STATIC_PAGE_TITLES[bare] ??
+          SPANISH_DOC_PAGE_TITLES[bare] ??
+          getSpanishProductPageTitle(bare) ??
+          (bare.startsWith("/docs/") ? "Documentación de LightVela" : "Página no encontrada");
+    return {
+      title: pageTitle ? `${pageTitle} | ${SPANISH_SEO_TITLE_SUFFIX}` : SPANISH_DEFAULT_SEO_TITLE,
+      description: SPANISH_PAGE_DESCRIPTIONS[bare] ?? SPANISH_SEO_DESCRIPTION,
+      keywords: SPANISH_SEO_KEYWORDS,
+    };
+  }
   const lookupRegion = effectiveRegionForLookup(r, urlLang);
   const pageTitle =
     bare === "/"
@@ -580,8 +726,9 @@ function joinUrl(origin: string, path: string): string {
 /** 路径是否默认应被搜索引擎索引。 */
 export function isPathIndexable(pathname: string): boolean {
   const p = normalizePathname(pathname);
+  const bare = stripUrlLangPrefix(p).bare;
   return !NON_INDEXABLE_PREFIXES.some(
-    (prefix) => p === trimTrailingSlash(prefix) || p.startsWith(prefix),
+    (prefix) => bare === trimTrailingSlash(prefix) || bare.startsWith(prefix),
   );
 }
 

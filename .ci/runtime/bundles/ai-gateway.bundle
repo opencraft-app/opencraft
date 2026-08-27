@@ -62,3 +62,4 @@ bundles:
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ai-gateway
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/ai-gateway
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/ai-gateway
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/ai-gateway

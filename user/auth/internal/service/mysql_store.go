@@ -2461,6 +2461,10 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 		return User{}, false, fmt.Errorf("query oauth identity: %w", err)
 	}
 
+	if input.RegistrationDisabled {
+		return User{}, false, newError("oauth_registration_disabled", "该登录方式暂不接受新用户注册，已有用户仍可登录。", 403)
+	}
+
 	if strings.TrimSpace(input.Email) != "" {
 		existingUser, found, err := findUserByEmailTx(ctx, tx, input.Email)
 		if err != nil {
@@ -2475,6 +2479,10 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 			}
 			return existingUser, false, nil
 		}
+	}
+
+	if err := enforceOAuthNewUserRegistrationEmailPolicy(input); err != nil {
+		return User{}, false, err
 	}
 
 	userID, err := newPrefixedID("usr")

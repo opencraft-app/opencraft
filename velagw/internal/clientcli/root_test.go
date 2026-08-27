@@ -10,7 +10,6 @@ func TestRootCommandTopologyMirrorsGatewayPlanes(t *testing.T) {
 		"ctl tenant assignment get",
 		"ctl tenant assignment set",
 		"ctl subscription apply",
-		"ctl subscription extend",
 		"ctl subscription cancel",
 		"ctl subscription get",
 		"ctl credit get",

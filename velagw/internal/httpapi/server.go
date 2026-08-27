@@ -1634,7 +1634,7 @@ func (s *Server) adminCreateAPIKey(w http.ResponseWriter, r *http.Request, userI
 	}
 	key, command, err := s.svc.CreateExternalKeyManaged(r.Context(), userID, name)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeAPIKeyError(w, err)
 		return
 	}
 	if command != nil {
@@ -1783,50 +1783,11 @@ func (s *Server) planAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 2 && parts[1] == "periods" {
-		switch r.Method {
-		case http.MethodGet:
-			periods, err := s.svc.ListPlanPeriods(r.Context(), planID)
-			if err != nil {
-				if errors.Is(err, gateway.ErrPlanNotFound) {
-					writeError(w, http.StatusNotFound, "plan not found")
-					return
-				}
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, response{Success: true, Data: periods})
-		case http.MethodPost:
-			var req gateway.PlanPeriod
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid json")
-				return
-			}
-			req.PlanID = planID
-			if err := s.svc.RegisterPlanPeriod(r.Context(), req); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, response{Success: true})
-		default:
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		}
+		writeError(w, http.StatusGone, "plan period variants are retired; business validity is managed by ctl")
 		return
 	}
 	if len(parts) == 3 && parts[1] == "periods" && parts[2] == "sets" {
-		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-			return
-		}
-		states, err := s.svc.ListPlanPeriodSets(r.Context(), planID)
-		if err != nil {
-			if errors.Is(err, gateway.ErrPlanNotFound) {
-				writeError(w, http.StatusNotFound, "plan not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, response{Success: true, Data: states})
+		writeError(w, http.StatusGone, "plan period variants are retired; business validity is managed by ctl")
 		return
 	}
 	if len(parts) == 2 && parts[1] == "sync" {
@@ -1849,7 +1810,28 @@ func (s *Server) planAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, response{Success: true, Data: states})
 		return
 	}
-	if len(parts) != 1 || r.Method != http.MethodGet {
+	if len(parts) == 2 && parts[1] == "retire" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		plan, err := s.svc.RetirePlan(r.Context(), planID)
+		if err != nil {
+			if errors.Is(err, gateway.ErrPlanNotFound) {
+				writeError(w, http.StatusNotFound, "plan not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: plan})
+		return
+	}
+	if len(parts) != 1 {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
@@ -2238,6 +2220,8 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalSetUpgradeRuns(w, r, strings.TrimPrefix(path, "set-manager/set-upgrade-runs"))
 	case path == "set-manager/shards":
 		s.internalSetManagerShard(w, r)
+	case path == "shard-manager/shards":
+		s.internalShardManagerObservation(w, r)
 	case path == "set-manager/set-provision-requests":
 		s.setProvisionRequests(w, r, gateway.SetRuntimeBackendLLMFleet)
 	case path == "velagwset-provisioner/set-provision-requests":
@@ -2271,10 +2255,11 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalApplySubscription(w, r)
 	case r.Method == http.MethodPost && path == "subscriptions/cancel":
 		s.internalCancelSubscription(w, r)
-	case r.Method == http.MethodPost && path == "subscriptions/extend":
-		s.internalExtendSubscription(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "admin-commands/"):
 		s.internalGetAdminCommand(w, r, strings.TrimPrefix(path, "admin-commands/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions/active"):
+		userID := strings.TrimSuffix(strings.TrimPrefix(path, "users/"), "/subscriptions/active")
+		s.internalListActiveSubscriptions(w, r, userID)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions"):
 		userID := strings.TrimSuffix(strings.TrimPrefix(path, "users/"), "/subscriptions")
 		s.internalGetActiveSubscription(w, r, userID)
@@ -2397,6 +2382,27 @@ func (s *Server) internalSetManagerShard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.svc.UpsertShard(r.Context(), input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true})
+}
+
+func (s *Server) internalShardManagerObservation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var input gateway.UpsertShardInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := s.svc.ObserveShard(r.Context(), input); err != nil {
+		if errors.Is(err, gateway.ErrShardProjectionDrift) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -2740,7 +2746,7 @@ func (s *Server) internalMigrateUser(w http.ResponseWriter, r *http.Request, suf
 }
 
 func (s *Server) internalGetPlan(w http.ResponseWriter, r *http.Request, planID string) {
-	plan, err := s.svc.GetPlan(r.Context(), planID)
+	plan, err := s.svc.GetPlanReadiness(r.Context(), planID)
 	if err != nil {
 		if errors.Is(err, gateway.ErrPlanNotFound) {
 			writeOpenAIError(w, http.StatusNotFound, "not_found_error", "not_found", "Plan not found")
@@ -2818,30 +2824,6 @@ func (s *Server) internalCancelSubscription(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, response{Success: true, Data: map[string]string{"status": "ok"}})
 }
 
-func (s *Server) internalExtendSubscription(w http.ResponseWriter, r *http.Request) {
-	raw, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "invalid request body")
-		return
-	}
-	var req gateway.ExtendSubscriptionRequest
-	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&req); err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required fields: user_id, new_period_end")
-		return
-	}
-	result, command, err := s.svc.ExtendSubscriptionManaged(r.Context(), req)
-	if err != nil {
-		writeInternalServiceError(w, err)
-		return
-	}
-	if command != nil {
-		w.Header().Set("Location", "/api/internal/admin-commands/"+url.PathEscape(command.ID))
-		writeJSON(w, http.StatusAccepted, response{Success: true, Data: command})
-		return
-	}
-	writeJSON(w, http.StatusOK, response{Success: true, Data: result})
-}
-
 func (s *Server) internalGetActiveSubscription(w http.ResponseWriter, r *http.Request, userID string) {
 	sub, err := s.svc.GetActiveSubscription(r.Context(), userID)
 	if err != nil {
@@ -2849,6 +2831,20 @@ func (s *Server) internalGetActiveSubscription(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusOK, response{Success: true, Data: sub})
+}
+
+func (s *Server) internalListActiveSubscriptions(w http.ResponseWriter, r *http.Request, userID string) {
+	userID, err := url.PathUnescape(strings.TrimSpace(userID))
+	if err != nil || userID == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required field: user_id")
+		return
+	}
+	list, err := s.svc.ListActiveSubscriptions(r.Context(), userID)
+	if err != nil {
+		writeInternalServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true, Data: list})
 }
 
 func (s *Server) internalGetUserCredit(w http.ResponseWriter, r *http.Request, userID string) {
@@ -3090,12 +3086,30 @@ func keyPrefix(key string) string {
 
 type response struct {
 	Success bool   `json:"success"`
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	Data    any    `json:"data,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, response{Success: false, Message: message})
+}
+
+func writeAPIKeyError(w http.ResponseWriter, err error) {
+	code := ""
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, gateway.ErrAPIKeyProvisioning):
+		status = http.StatusConflict
+		code = "api_key_provision_in_progress"
+	case errors.Is(err, gateway.ErrAPIKeyMaterialMissing):
+		status = http.StatusConflict
+		code = "api_key_material_unavailable"
+	case errors.Is(err, gateway.ErrAPIKeyStateUnavailable):
+		status = http.StatusConflict
+		code = "api_key_state_unavailable"
+	}
+	writeJSON(w, status, response{Success: false, Code: code, Message: err.Error()})
 }
 
 func writeInternalServiceError(w http.ResponseWriter, err error) {
@@ -3114,6 +3128,8 @@ func writeInternalServiceError(w http.ResponseWriter, err error) {
 		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "idempotency_in_progress", err.Error())
 	case errors.Is(err, gateway.ErrSubscriptionOutcomeUnknown):
 		writeOpenAIError(w, http.StatusServiceUnavailable, "server_error", "delivery_outcome_unknown", err.Error())
+	case errors.Is(err, gateway.ErrSubscriptionNameConflict):
+		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "subscription_name_conflict", err.Error())
 	case errors.Is(err, gateway.ErrAdminCommandConflict):
 		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "idempotency_conflict", err.Error())
 	default:

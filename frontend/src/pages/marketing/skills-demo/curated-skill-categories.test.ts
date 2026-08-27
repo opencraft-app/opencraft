@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import { CURATED_SKILL_CATEGORIES } from "./curated-skill-categories";
-import { getCuratedSkillOverview } from "./curated-skill-overviews";
+import { CURATED_SKILL_OVERVIEWS, getCuratedSkillOverview } from "./curated-skill-overviews";
 
 describe("curated Discover categories", () => {
+  it("provides a complete Spanish overview for every curated international skill", () => {
+    for (const rawId of Object.keys(CURATED_SKILL_OVERVIEWS)) {
+      const english = getCuratedSkillOverview(rawId, "en-US");
+      const spanish = getCuratedSkillOverview(rawId, "es" as never);
+
+      expect(spanish, rawId).toBeTruthy();
+      expect(spanish.overview, rawId).not.toEqual(english.overview);
+      expect(spanish.basicUsage, rawId).not.toBe(english.basicUsage);
+      expect(spanish.examplePrompt, rawId).not.toBe(english.examplePrompt);
+      expect(JSON.stringify(spanish), rawId).not.toMatch(/[\u4e00-\u9fff]/);
+    }
+  });
+
   it("keeps the four fixed categories and their exact skills.sh IDs", () => {
     expect(CURATED_SKILL_CATEGORIES.map((category) => category.id)).toEqual([
       "market-analysis",
@@ -44,6 +57,15 @@ describe("curated Discover categories", () => {
     expect(CURATED_SKILL_CATEGORIES.flatMap((category) => category.skills).every(
       (entry) => typeof entry.skill.installs === "number",
     )).toBe(true);
+  });
+
+  it("provides Spanish labels for the four fixed categories", () => {
+    expect(CURATED_SKILL_CATEGORIES.map((category) => category.label.es)).toEqual([
+      "Análisis de mercado",
+      "Creación de contenido",
+      "Investigación",
+      "Herramientas de desarrollo",
+    ]);
   });
 
   it("provides the full recommendation structure for every curated skill", () => {

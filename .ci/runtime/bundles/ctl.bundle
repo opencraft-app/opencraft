@@ -9,6 +9,9 @@ bundles:
       migration_paths:
       - ctl/migrations/**
       expected_migration_source: ctl/migrations
+      expected_migration_version_by_env:
+        shprod: 28
+        sgprod: 28
       db_job_secret_resolver: ctl_db_password
       secret_resolvers:
         ctl_db_password:
@@ -50,6 +53,7 @@ bundles:
     - argocd/services/ctl/{env}/**
     - argocd/apps/{env}/ctl.yaml
     - argocd/secrets/{env}/ctl-conf-common.sops.yaml
+    - argocd/secrets/{env}/ctl-agentchat-secrets.sops.yaml
     - argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml
     - ctl/k8s/base/**
     - ctl/k8s/overlays/{env}/**
@@ -75,6 +79,15 @@ bundles:
       - ctl/k8s/base/**
       - ctl/k8s/overlays/beijing-sandbox-2/**
       - ctl/k8s/overlays/beijing-sandbox/**
+      sgprod:
+      - argocd/services/ctl/sgprod/**
+      - argocd/apps/sgprod/ctl.yaml
+      - argocd/secrets/sgprod/ctl-conf-common.sops.yaml
+      - argocd/secrets/sgprod/ctl-agentchat-secrets.sops.yaml
+      - argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml
+      - argocd/secrets/sgprod/ctl-website-runtime-secrets.sops.yaml
+      - ctl/k8s/base/**
+      - ctl/k8s/overlays/sgprod/**
     dockerfile: ctl/Dockerfile
     build_context: ctl
     image_repo:
@@ -83,3 +96,4 @@ bundles:
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/ctl
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/ctl
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/ctl

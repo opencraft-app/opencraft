@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
@@ -28,6 +29,7 @@ type commandSandboxAdapterStub struct {
 	errs            []error
 	terminalSession *psandbox.TerminalSession
 	terminalErr     error
+	terminalFunc    func(context.Context, string) (*psandbox.TerminalSession, error)
 	terminalCalls   []string
 	calls           []commandSandboxCall
 	processErr      error
@@ -39,6 +41,9 @@ type commandSandboxAdapterStub struct {
 	stdinCalls      []commandSandboxStdinCall
 	stdinResult     *psandbox.ExecCommandResult
 	stdinErr        error
+	ptyCalls        []psandbox.PtyExecStreamRequest
+	ptyEvents       []psandbox.PtyExecStreamEvent
+	ptyErr          error
 }
 
 type commandSandboxStdinCall struct {
@@ -74,8 +79,11 @@ func (s *commandSandboxAdapterStub) ExecCommand(_ context.Context, sandboxID, ba
 	return nil, nil
 }
 
-func (s *commandSandboxAdapterStub) StartTerminalSession(_ context.Context, sandboxID string) (*psandbox.TerminalSession, error) {
+func (s *commandSandboxAdapterStub) StartTerminalSession(ctx context.Context, sandboxID string) (*psandbox.TerminalSession, error) {
 	s.terminalCalls = append(s.terminalCalls, sandboxID)
+	if s.terminalFunc != nil {
+		return s.terminalFunc(ctx, sandboxID)
+	}
 	if s.terminalErr != nil {
 		return nil, s.terminalErr
 	}
@@ -128,18 +136,40 @@ func (s *commandSandboxAdapterStub) RunProcessWithStdin(_ context.Context, sandb
 	return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}, nil
 }
 
+func (s *commandSandboxAdapterStub) StreamPtyCommand(_ context.Context, _ string, req *psandbox.PtyExecStreamRequest, onEvent func(psandbox.PtyExecStreamEvent) error) error {
+	if req != nil {
+		s.ptyCalls = append(s.ptyCalls, *req)
+	}
+	for _, event := range s.ptyEvents {
+		if err := onEvent(event); err != nil {
+			return err
+		}
+	}
+	return s.ptyErr
+}
+
 type commandInstanceDaoStub struct {
 	modelinstance.Dao
 	entity       *modelinstance.Entity
+	entities     []*modelinstance.Entity
+	getFunc      func(pctx.Context, string) (*modelinstance.Entity, error)
 	err          error
 	updated      map[string]interface{}
 	updateID     int64
 	updateStates []string
 }
 
-func (s *commandInstanceDaoStub) GetByInstanceID(_ pctx.Context, _ string) (*modelinstance.Entity, error) {
+func (s *commandInstanceDaoStub) GetByInstanceID(ctx pctx.Context, instanceID string) (*modelinstance.Entity, error) {
+	if s.getFunc != nil {
+		return s.getFunc(ctx, instanceID)
+	}
 	if s.err != nil {
 		return nil, s.err
+	}
+	if len(s.entities) > 0 {
+		entity := s.entities[0]
+		s.entities = s.entities[1:]
+		return entity, nil
 	}
 	return s.entity, nil
 }
@@ -292,6 +322,117 @@ func TestStartTerminalSessionDoesNotCallSandboxWhenInstanceLookupFails(t *testin
 	}
 	if len(adapter.terminalCalls) != 0 {
 		t.Fatalf("sandbox must not be called for inaccessible instance, got %+v", adapter.terminalCalls)
+	}
+}
+
+func TestStartTerminalSessionRejectsNonRunningInstance(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1",
+			SandboxId:  "sbx-1",
+			Status:     modelinstance.InstanceStatusPaused,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	_, err := logic.StartTerminalSession(pctx.NewContext(nil).WithUserID("user-1"), "ins-1")
+	if !errors.Is(err, errcode.ErrInstanceStatusInvalid) {
+		t.Fatalf("expected invalid instance status, got %v", err)
+	}
+	if len(adapter.terminalCalls) != 0 {
+		t.Fatalf("sandbox must not be called for paused instance, got %+v", adapter.terminalCalls)
+	}
+}
+
+func TestStartTerminalSessionRejectsBotMappingChangedDuringSandboxCall(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	adapter := &commandSandboxAdapterStub{
+		terminalFunc: func(context.Context, string) (*psandbox.TerminalSession, error) {
+			close(started)
+			<-release
+			return &psandbox.TerminalSession{SessionID: "late-session"}, nil
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entities: []*modelinstance.Entity{
+			{InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning},
+			{InstanceId: "ins-1", SandboxId: "sbx-2", Status: modelinstance.InstanceStatusRunning},
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := logic.StartTerminalSession(pctx.NewContext(nil).WithUserID("user-1"), "ins-1")
+		result <- err
+	}()
+	<-started
+	close(release)
+
+	if err := <-result; !errors.Is(err, errcode.ErrInstanceOperationConflict) {
+		t.Fatalf("expected mapping conflict, got %v", err)
+	}
+}
+
+func TestStartTerminalSessionDiscardsResultAfterRequestDeadline(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		terminalFunc: func(context.Context, string) (*psandbox.TerminalSession, error) {
+			time.Sleep(40 * time.Millisecond)
+			return &psandbox.TerminalSession{SessionID: "late-session"}, nil
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	base, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	resp, err := logic.StartTerminalSession(pctx.NewContext(base).WithUserID("user-1"), "ins-1")
+	if resp != nil {
+		t.Fatalf("late terminal result must be discarded, got %+v", resp)
+	}
+	if !errors.Is(err, errcode.ErrSandboxTimeout) {
+		t.Fatalf("expected sandbox timeout, got %v", err)
+	}
+}
+
+func TestStartTerminalSessionDeadlineIncludesOwnershipCheck(t *testing.T) {
+	entity := &modelinstance.Entity{
+		InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+	}
+	lookupCount := 0
+	adapter := &commandSandboxAdapterStub{terminalSession: &psandbox.TerminalSession{SessionID: "late-session"}}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{getFunc: func(pctx.Context, string) (*modelinstance.Entity, error) {
+			lookupCount++
+			if lookupCount == 1 {
+				time.Sleep(40 * time.Millisecond)
+			}
+			return entity, nil
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	base, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	resp, err := logic.StartTerminalSession(pctx.NewContext(base).WithUserID("user-1"), "ins-1")
+	if resp != nil {
+		t.Fatalf("result after ownership-check deadline must be discarded, got %+v", resp)
+	}
+	if !errors.Is(err, errcode.ErrSandboxTimeout) {
+		t.Fatalf("expected sandbox timeout, got %v", err)
+	}
+	if len(adapter.terminalCalls) != 0 {
+		t.Fatalf("sandbox must not be called after ownership-check deadline, got %+v", adapter.terminalCalls)
 	}
 }
 
@@ -841,7 +982,94 @@ func TestExecDebugCommandRejectsUnsupportedRunAsUser(t *testing.T) {
 	}
 }
 
-func TestConfigureOnboardUsesProcessStream(t *testing.T) {
+func TestExecDebugCommandTATUsesPtyExecStream(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		ptyEvents: []psandbox.PtyExecStreamEvent{
+			{Type: "started", ExecutionID: "pty:test"},
+			{Type: "output", ExecutionID: "pty:test", Index: 0, Chunk: "hello\n"},
+			{Type: "finished", ExecutionID: "pty:test", Status: "SUCCESS", ExitCode: 0},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1",
+			SandboxId:  "sbx-1",
+			Status:     modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	ctx := pctx.NewContext(nil).WithUserID("user-1")
+
+	resp, err := logic.ExecDebugCommandWithBackend(ctx, "ins-1", "echo hello", "agentuser", "tat")
+	if err != nil {
+		t.Fatalf("exec TAT debug command: %v", err)
+	}
+	if resp.Status != "SUCCESS" || resp.Output != "hello\n" || resp.Stderr != "" {
+		t.Fatalf("unexpected TAT response: %+v", resp)
+	}
+	if len(adapter.ptyCalls) != 1 || len(adapter.processCalls) != 0 {
+		t.Fatalf("expected PTY only, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
+	}
+	call := adapter.ptyCalls[0]
+	if call.Username != "agentuser" || call.WorkingDirectory != "/home/agentuser" {
+		t.Fatalf("unexpected PTY identity: %+v", call)
+	}
+	if !strings.Contains(call.Command, `sudo -u "$target_user"`) ||
+		!strings.Contains(call.Command, `cd "$target_home"`) ||
+		!strings.Contains(call.Command, "/bin/bash -lc") ||
+		!strings.Contains(call.Command, "echo hello") {
+		t.Fatalf("expected agentuser login-shell command in its home, got %q", call.Command)
+	}
+}
+
+func TestStreamDebugCommandTATRelaysPtyOutput(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		ptyEvents: []psandbox.PtyExecStreamEvent{
+			{Type: "started", ExecutionID: "pty:test"},
+			{Type: "output", ExecutionID: "pty:test", Index: 0, Chunk: "one"},
+			{Type: "output", ExecutionID: "pty:test", Index: 1, Chunk: "two"},
+			{Type: "finished", ExecutionID: "pty:test", Status: "SUCCESS", ExitCode: 0},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1",
+			SandboxId:  "sbx-1",
+			Status:     modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	ctx := pctx.NewContext(nil).WithUserID("user-1")
+	var events []transport.ExecDebugCommandStreamEvent
+
+	err := logic.StreamDebugCommandWithBackend(ctx, "ins-1", "echo hello", "agentuser", "tat", func(event transport.ExecDebugCommandStreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream TAT debug command: %v", err)
+	}
+	if len(events) != 4 || events[0].Type != "started" || events[1].Chunk != "one" || events[2].Chunk != "two" || events[3].Type != "finished" {
+		t.Fatalf("unexpected events: %+v", events)
+	}
+	if events[3].Response == nil || events[3].Response.Output != "onetwo" {
+		t.Fatalf("unexpected final response: %+v", events[3].Response)
+	}
+}
+
+func TestExecDebugCommandRejectsUnknownBackend(t *testing.T) {
+	logic := &logic{logger: zap.NewNop()}
+	ctx := pctx.NewContext(nil).WithUserID("user-1")
+
+	_, err := logic.ExecDebugCommandWithBackend(ctx, "ins-1", "echo hello", "agentuser", "run-command")
+	if !errors.Is(err, errcode.ErrInstanceInvalidParam) {
+		t.Fatalf("expected invalid backend error, got %v", err)
+	}
+}
+
+func TestConfigureOnboardUsesTATPTY(t *testing.T) {
 	origAdapterConf := config.ServerConf.AdapterConfig
 	t.Cleanup(func() {
 		config.ServerConf.AdapterConfig = origAdapterConf
@@ -858,10 +1086,10 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	}
 
 	adapter := &commandSandboxAdapterStub{
-		processEvents: []psandbox.ProcessStreamEvent{
-			{PID: 9001},
-			{Stdout: "ok\n"},
-			{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+		ptyEvents: []psandbox.PtyExecStreamEvent{
+			{Type: "started", ExecutionID: "pty:onboard"},
+			{Type: "output", ExecutionID: "pty:onboard", Chunk: "ok\n"},
+			{Type: "finished", ExecutionID: "pty:onboard", Status: "SUCCESS", ExitCode: 0},
 		},
 	}
 	logic := &logic{
@@ -877,50 +1105,44 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("configure onboard: %v", err)
 	}
-	if len(adapter.calls) != 0 {
-		t.Fatalf("expected onboard to avoid TAT ExecCommand, got %d calls", len(adapter.calls))
+	if len(adapter.calls) != 0 || len(adapter.processCalls) != 0 {
+		t.Fatalf("expected onboard to avoid legacy command paths, exec=%d process=%d", len(adapter.calls), len(adapter.processCalls))
 	}
-	if len(adapter.processCalls) != 2 {
-		t.Fatalf("expected two process calls, got %d", len(adapter.processCalls))
+	if len(adapter.ptyCalls) != 2 {
+		t.Fatalf("expected two TAT PTY calls, got %d", len(adapter.ptyCalls))
 	}
-	ensureReq := adapter.processCalls[0]
-	if ensureReq.Cmd != "/bin/bash" {
-		t.Fatalf("expected bash process, got %q", ensureReq.Cmd)
+	ensureReq := adapter.ptyCalls[0]
+	if ensureReq.Username != hermesRuntimeUser || ensureReq.WorkingDirectory != "/home/agentuser" {
+		t.Fatalf("expected agentuser TAT identity, got %+v", ensureReq)
 	}
-	if len(ensureReq.Args) != 3 || ensureReq.Args[0] != "-l" || ensureReq.Args[1] != "-c" {
-		t.Fatalf("expected bash -l -c args, got %#v", ensureReq.Args)
+	if !strings.Contains(ensureReq.Command, "command -v acli") || !strings.Contains(ensureReq.Command, "curl -fsSL -z /usr/local/bin/harness") {
+		t.Fatalf("expected model cli ensure command, got %q", ensureReq.Command)
 	}
-	if !strings.Contains(ensureReq.Args[2], "command -v acli") || !strings.Contains(ensureReq.Args[2], "curl -fsSL -z /usr/local/bin/harness") {
-		t.Fatalf("expected model cli ensure command, got %q", ensureReq.Args[2])
+	modelReq := adapter.ptyCalls[1]
+	if modelReq.Username != hermesRuntimeUser || modelReq.WorkingDirectory != "/home/agentuser" {
+		t.Fatalf("expected agentuser TAT identity, got %+v", modelReq)
 	}
-	modelReq := adapter.processCalls[1]
-	if modelReq.Cmd != "/bin/bash" {
-		t.Fatalf("expected bash process for model set, got %q", modelReq.Cmd)
+	if !strings.Contains(modelReq.Command, "acli provider save") || !strings.Contains(modelReq.Command, "harness model set") {
+		t.Fatalf("expected acli-first provider save command, got %q", modelReq.Command)
 	}
-	if !strings.Contains(modelReq.Args[2], "acli provider save") || !strings.Contains(modelReq.Args[2], "harness model set") {
-		t.Fatalf("expected acli-first provider save command, got %q", modelReq.Args[2])
+	if !strings.Contains(modelReq.Command, "ACLI_SECRET_API_KEY=") ||
+		!strings.Contains(modelReq.Command, "sk-test") ||
+		!strings.Contains(modelReq.Command, "--api-key \"$ACLI_SECRET_API_KEY\"") {
+		t.Fatalf("expected api key flag in command, got %q", modelReq.Command)
 	}
-	if !strings.Contains(modelReq.Args[2], "ACLI_SECRET_API_KEY=") ||
-		!strings.Contains(modelReq.Args[2], "sk-test") ||
-		!strings.Contains(modelReq.Args[2], "--api-key \"$ACLI_SECRET_API_KEY\"") {
-		t.Fatalf("expected api key flag in command, got %q", modelReq.Args[2])
-	}
-	if !strings.Contains(modelReq.Args[2], "--name") ||
-		!strings.Contains(modelReq.Args[2], "acli model switch --model") ||
-		!strings.Contains(modelReq.Args[2], "--model-name") ||
-		!strings.Contains(modelReq.Args[2], "auto") ||
-		!strings.Contains(modelReq.Args[2], "switch_model=") ||
-		!strings.Contains(modelReq.Args[2], "model_name") ||
-		!strings.Contains(modelReq.Args[2], "--model \"$switch_model\"") ||
-		strings.Contains(modelReq.Args[2], "--agent") ||
-		!strings.Contains(modelReq.Args[2], "--api") ||
-		!strings.Contains(modelReq.Args[2], "--model-id") ||
-		!strings.Contains(modelReq.Args[2], "--model-name") ||
-		!strings.Contains(modelReq.Args[2], "custom") {
-		t.Fatalf("expected fixed custom provider in command, got %q", modelReq.Args[2])
-	}
-	if modelReq.Env["HOME"] != "/home/agentuser" {
-		t.Fatalf("expected HOME env for agentuser, got %+v", modelReq.Env)
+	if !strings.Contains(modelReq.Command, "--name") ||
+		!strings.Contains(modelReq.Command, "acli model switch --model") ||
+		!strings.Contains(modelReq.Command, "--model-name") ||
+		!strings.Contains(modelReq.Command, "auto") ||
+		!strings.Contains(modelReq.Command, "switch_model=") ||
+		!strings.Contains(modelReq.Command, "model_name") ||
+		!strings.Contains(modelReq.Command, "--model \"$switch_model\"") ||
+		strings.Contains(modelReq.Command, "--agent") ||
+		!strings.Contains(modelReq.Command, "--api") ||
+		!strings.Contains(modelReq.Command, "--model-id") ||
+		!strings.Contains(modelReq.Command, "--model-name") ||
+		!strings.Contains(modelReq.Command, "custom") {
+		t.Fatalf("expected fixed custom provider in command, got %q", modelReq.Command)
 	}
 }
 

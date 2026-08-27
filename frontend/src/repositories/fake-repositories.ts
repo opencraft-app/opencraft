@@ -7,6 +7,7 @@ import type {
   BotVersion,
   Bundle,
   BundlePrice,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlResult,
@@ -24,6 +25,7 @@ import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
   DashboardSnapshot,
+  PaymentMethod,
   RealnameFaceIdAttempt,
   RealnameFaceIdAttemptState,
   Repositories,
@@ -32,6 +34,8 @@ import type {
 } from "@/repositories/types";
 
 const NETWORK_DELAY_MS = 320;
+const DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND = "openclaw_config";
+const DEBUG_EXEC_STDOUT_STREAM = "stdout";
 const FAKE_AUTH_STORAGE_KEY = "lightclaw-fake-auth-v1";
 const LOCAL_PREVIEW_AUTH_ENABLED =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === "1")
@@ -60,10 +64,13 @@ const fakeFaceIdAttempts = new Map<string, FakeFaceIdAttemptRecord>();
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
-const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode) => {
+const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode, switchAccount = false) => {
   const startURL = new URL(`https://lightclaw.tech/auth/oauth/${provider}/start`);
   if (provider === "wechat" && wechatMode) {
     startURL.searchParams.set("mode", wechatMode);
+  }
+  if (switchAccount) {
+    startURL.searchParams.set("switch_account", "true");
   }
   if (typeof window !== "undefined" && window.location?.href) {
     startURL.searchParams.set("return_to", window.location.href);
@@ -371,10 +378,43 @@ const FAKE_BUNDLES: Bundle[] = [
 ];
 
 const FAKE_PASSES_STORAGE_KEY = "lightclaw-fake-passes-v1";
+const ACCOUNT_PREVIEW_PASS_STATE_QUERY_KEY = "passState";
+
+const readAccountPreviewPassStateKey = (): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = new URLSearchParams(window.location.search).get(ACCOUNT_PREVIEW_PASS_STATE_QUERY_KEY);
+    return key && key.trim().length > 0 ? key.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+const buildExpiringAccountPreviewPass = (): Pass => {
+  const now = Date.now();
+  return {
+    pass_id: "pass-preview-expiring",
+    user_id: ACCOUNT_PREVIEW_BASE_USER.id,
+    bundle_id: "bundle_launch_01",
+    bundle_name: "启航 Launch",
+    created_time: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+    expired_time: new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString(),
+    isolated_time: null,
+    deleted_time: null,
+    updated_time: new Date(now).toISOString(),
+    agent_quota_total: 1,
+    agent_quota_available: 0,
+    credit_total: 100,
+    credit_available: 88,
+  };
+};
 
 const readStoredPasses = (): Pass[] => {
   if (typeof window === "undefined") {
     return [];
+  }
+  if (readAccountPreviewPassStateKey() === "expiring") {
+    return [buildExpiringAccountPreviewPass()];
   }
   try {
     const raw = window.localStorage.getItem(FAKE_PASSES_STORAGE_KEY);
@@ -402,6 +442,8 @@ const computeExpiredIso = (bundle: Bundle): string => {
 };
 
 export const createFakeRepositories = (): Repositories => {
+  let paymentMethods: PaymentMethod[] = [];
+
   return {
     auth: {
       async signInWithCode({ phone }) {
@@ -783,8 +825,117 @@ export const createFakeRepositories = (): Repositories => {
           },
         };
       },
+      async createTencentCloudRedirect(targetPath = "/developer/security/cancel") {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL("https://cloud.tencent.com/login/saas/jumpLoginByCode");
+        redirectUrl.searchParams.set("code", "fake.auth-code");
+        redirectUrl.searchParams.set("platform", "Lightclaw");
+        redirectUrl.searchParams.set("s_url", `https://console.cloud.tencent.com${targetPath}`);
+        return {
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        };
+      },
+      async listPaymentMethods() {
+        await wait(NETWORK_DELAY_MS / 2);
+        return { total: paymentMethods.length, items: paymentMethods };
+      },
+      async createPaymentMethodSignOrder(languageCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const redirectUrl = new URL("https://sandbox-card.centauriglobal.com/sign/fake-contract");
+        redirectUrl.searchParams.set("language_code", languageCode);
+        return {
+          contractCode: "fake-contract",
+          redirectUrl: redirectUrl.toString(),
+        };
+      },
+      async setDefaultPaymentMethod(contractCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        paymentMethods = paymentMethods.map((method) => ({
+          ...method,
+          isDefault: method.contractCode === contractCode,
+        }));
+      },
+      async deletePaymentMethod(contractCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        paymentMethods = paymentMethods.filter((method) => method.contractCode !== contractCode);
+      },
+      async getFederationAuthorizationContext(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const session = readStoredAuthSession();
+        return {
+          ...input,
+          clientDisplayName: "Personal Site",
+          currentSession: session ? {
+            user: {
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+              phone: session.user.phone,
+              avatarUrl: session.user.avatarUrl,
+            },
+          } : null,
+        };
+      },
+      async issueFederationTicket(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        if (!readStoredAuthSession()) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL(input.redirectUri);
+        redirectUrl.searchParams.set("ticket", "fake-federation-ticket");
+        if (input.state) {
+          redirectUrl.searchParams.set("state", input.state);
+        }
+        return {
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 5_000).toISOString(),
+        };
+      },
+      async getOIDCAuthorizationContext(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const session = readStoredAuthSession();
+        return {
+          ...input,
+          clientDisplayName: "LightVela Sites",
+          currentSession: session ? {
+            user: {
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+              phone: session.user.phone,
+              avatarUrl: session.user.avatarUrl,
+            },
+          } : null,
+        };
+      },
+      async authorizeOIDC(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        if (!readStoredAuthSession()) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL(input.redirectUri);
+        redirectUrl.searchParams.set("code", "fake-oidc-code");
+        if (input.state) {
+          redirectUrl.searchParams.set("state", input.state);
+        }
+        return {
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 5_000).toISOString(),
+        };
+      },
+      async prepareFederationSwitch() {
+        await wait(NETWORK_DELAY_MS / 2);
+      },
+      async cancelFederationSwitch() {
+        await wait(NETWORK_DELAY_MS / 2);
+      },
       getOAuthStartUrl(provider: OAuthProvider, options) {
-        return fakeOAuthStartURL(provider, options?.wechatMode);
+        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount);
       },
       async signInAsGuest() {
         await wait(NETWORK_DELAY_MS);
@@ -940,6 +1091,19 @@ export const createFakeRepositories = (): Repositories => {
           big_order_id: `${Date.now()}`,
         };
       },
+      async createDianshiPassOrderAndPay(input): Promise<CreateDianshiPassOrderAndPayResult> {
+        await wait(NETWORK_DELAY_MS);
+        const bundle = FAKE_BUNDLES.find((b) => b.bundle_id === input.bundle_id);
+        if (!bundle) {
+          const err = new Error("套餐已下架") as Error & { code?: string };
+          err.code = "BUNDLE_NOT_FOUND";
+          throw err;
+        }
+        return {
+          deal_name: `mock-dianshi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          big_order_id: `${Date.now()}`,
+        };
+      },
       async getRenewPrice(passId, input): Promise<PassRenewPrice> {
         // mock 代替联调文档 §3.1：返回分为单位的价格
         await wait(NETWORK_DELAY_MS);
@@ -1041,6 +1205,150 @@ export const createFakeRepositories = (): Repositories => {
 };
 
 const createBotRepository = (): BotRepository => {
+  const fakeConnectedChannels = new Set<string>();
+  const fakeConfiguredDshProviders = new Set<string>();
+  let fakeDshInstalled = false;
+  let fakeDshInstallationPollCount = 0;
+  let fakeDshTaskId = "";
+  const fakeDshInstallationSteps = [
+    { stage: "preflight", progress: 10, message: "正在检查实例环境" },
+    { stage: "resolve_latest", progress: 20, message: "正在获取最新版本" },
+    { stage: "snapshot_resolved", progress: 28, message: "已锁定安装版本" },
+    { stage: "runtime_lockfile", progress: 35, message: "正在生成 DSH 依赖锁" },
+    { stage: "runtime_install", progress: 48, message: "正在安装 DSH 运行环境" },
+    { stage: "profile_lockfile", progress: 56, message: "正在生成插件依赖锁" },
+    { stage: "profile_install", progress: 68, message: "正在安装 SkillHub 与渠道插件" },
+    { stage: "validate_candidate", progress: 75, message: "正在检查安装内容" },
+    { stage: "activate", progress: 85, message: "正在切换运行环境" },
+    { stage: "health_check", progress: 95, message: "正在检查运行状态" },
+    { stage: "cleanup", progress: 99, message: "正在清理旧运行环境" },
+    { stage: "completed", progress: 100, message: "DeepSeek Harness 安装完成" },
+  ] as const;
+
+  const fakeDshProviders = {
+    cn: ["deepseek", "minimax-cn", "moonshotai-cn", "qwen-token-plan-cn", "openrouter"],
+    global: ["deepseek", "minimax", "minimax-cn", "moonshotai", "moonshotai-cn", "openrouter", "anthropic", "groq", "openai"],
+  } as const;
+  const fakeDshProviderNames: Record<string, string> = {
+    deepseek: "DeepSeek",
+    minimax: "MiniMax",
+    "minimax-cn": "MiniMax CN",
+    moonshotai: "Moonshot AI",
+    "moonshotai-cn": "Moonshot AI CN",
+    "qwen-token-plan-cn": "Qwen Token Plan CN",
+    openrouter: "OpenRouter",
+    anthropic: "Anthropic",
+    groq: "Groq",
+    openai: "OpenAI",
+  };
+  const fakeDshSecretTransportPublicKey = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlfPhpfKnEnuYvdgdhoS//1lLcu4FH8xtRFSAhF6JJO27KYZI6UfhC09cdp+cKq5AyLxONpY6XWg8ozZptWu5xHDZQ9zjT2HPB20Alvb/ekO46RFL9tq7u7QlG6IRDGSRzFPboOH2VxmzpqPmuLs3jnBuUidatqjmKSmkP3tWgp/ztQR2MaNi/M07yqEBHuHFKsaSBn5yE1k18+6ER5J9GR0jJFF+QpvF/mnNKoSFkELvcy6C89nYTVMBMh+NbNLkVu7fTpbmu7JegAEMm1GSFgRcuF2uYADaRxJX8b4un7qRh6fISNECU0p7LwDvllUp6Nox7mYTEW74qTiusFwgLQIDAQAB";
+
+  const fakeChannelStatusOutput = () => JSON.stringify({
+    success: true,
+    data: {
+      platforms: Array.from(fakeConnectedChannels).map((name) => ({
+        name,
+        status: "connected",
+      })),
+    },
+    error: null,
+  });
+
+  const maybeApplyFakeChannelCommand = (command: string) => {
+    if (command.includes("strip_slack_env") && command.includes("SLACK_BOT_TOKEN")) {
+      fakeConnectedChannels.delete("slack");
+      return;
+    }
+
+    if (command.includes("SLACK_BOT_TOKEN") && command.includes("SLACK_APP_TOKEN")) {
+      fakeConnectedChannels.add("slack");
+    }
+  };
+
+  const maybeHandleFakeDshCommand = (command: string) => {
+    if (command.includes("sudo systemctl status deepseek-harness.service --no-pager")) {
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify(fakeDshInstalled
+          ? { installed: true, status: "running", service_status: "active", healthy: true }
+          : { installed: false, status: "not-installed", service_status: "inactive", healthy: false }),
+      };
+    }
+
+    if (command.includes("systemd-run") && command.includes("install-deepseek-harness.sh")) {
+      fakeDshTaskId = command.match(/--unit=lightvela-dsh-install-(dshi-[0-9a-f]{32})/)?.[1] ?? "";
+      fakeDshInstallationPollCount = 0;
+      return { status: "Succeeded", exitCode: 0, output: "" };
+    }
+
+    if (command.includes("sudo -n cat /var/lib/lightvela/dsh/installations/")) {
+      fakeDshInstallationPollCount += 1;
+      const stepIndex = Math.min(
+        Math.floor((fakeDshInstallationPollCount - 1) / 2),
+        fakeDshInstallationSteps.length - 1,
+      );
+      const step = fakeDshInstallationSteps[stepIndex]!;
+      const completed = step.stage === "completed";
+      if (completed) fakeDshInstalled = true;
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({
+          task_id: fakeDshTaskId,
+          status: completed ? "succeeded" : "running",
+          stage: step.stage,
+          progress: step.progress,
+          message: step.message,
+          updated_at: nowIso(),
+        }),
+      };
+    }
+
+    if (command.includes("sudo systemctl restart deepseek-harness.service")) {
+      return { status: "Succeeded", exitCode: fakeDshInstalled ? 0 : 1, output: "" };
+    }
+
+    if (command.includes("openssl genpkey") && command.includes(".lightvela-secret-transport")) {
+      return { status: "Succeeded", exitCode: 0, output: fakeDshSecretTransportPublicKey };
+    }
+
+    const region = command.match(/providers --region (cn|global)/)?.[1] as "cn" | "global" | undefined;
+    if (region) {
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({
+          providers: fakeDshProviders[region].map((id) => ({
+            id,
+            displayName: fakeDshProviderNames[id],
+            configured: fakeConfiguredDshProviders.has(id),
+            active: id === "deepseek",
+            writable: true,
+          })),
+        }),
+      };
+    }
+
+    const provider = command.match(/configure --provider ([a-z0-9-]+)/)?.[1];
+    if (provider) {
+      fakeConfiguredDshProviders.add(provider);
+      return { status: "Succeeded", exitCode: 0, output: "" };
+    }
+
+    const removedProvider = command.match(/remove-provider --provider ([a-z0-9-]+)/)?.[1];
+    if (removedProvider) {
+      fakeConfiguredDshProviders.delete(removedProvider);
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({ ok: true, provider: removedProvider, configured: false }),
+      };
+    }
+
+    return null;
+  };
+
   return {
     async getDashboardSnapshot(mode = "live") {
       await assertMode(mode);
@@ -1372,15 +1680,33 @@ const createBotRepository = (): BotRepository => {
     },
 
     async execDebugCommand(_botId, command) {
+      const dshResult = maybeHandleFakeDshCommand(command);
+      if (dshResult) return dshResult;
       await wait(NETWORK_DELAY_MS);
-      if (command === "openclaw_config") {
+      if (command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND) {
         return {
           status: "Succeeded",
           exitCode: 0,
           output: JSON.stringify({ models: {}, channels: {}, gateway: {} }),
         };
       }
+      maybeApplyFakeChannelCommand(command);
+      if (command.includes("acli channel status")) {
+        return { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() };
+      }
       return { status: "Succeeded", exitCode: 0, output: "" };
+    },
+
+    async execDebugCommandStream(_botId, command, onChunk) {
+      await wait(NETWORK_DELAY_MS);
+      maybeApplyFakeChannelCommand(command);
+      const result = command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND
+        ? { status: "Succeeded", exitCode: 0, output: JSON.stringify({ models: {}, channels: {}, gateway: {} }) }
+        : command.includes("acli channel status")
+          ? { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() }
+          : maybeHandleFakeDshCommand(command) ?? { status: "Succeeded", exitCode: 0, output: "" };
+      if (result.output) onChunk({ stream: DEBUG_EXEC_STDOUT_STREAM, chunk: result.output });
+      return result;
     },
 
     async startRescueExport(botId) {

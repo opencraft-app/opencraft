@@ -1,15 +1,63 @@
 package sandbox
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"go.uber.org/zap"
 )
+
+func TestInvokeCommandPostsParametersAndPollsInternalInvocation(t *testing.T) {
+	const secret = "vik_secret_value"
+	var postCount, getCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "test-api-key" {
+			t.Fatalf("missing api key header")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/internal/sandboxes/sbx-123/tat/invocations":
+			postCount++
+			var req InvokeCommandRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode invoke request: %v", err)
+			}
+			if req.CommandID != "cmd-website1" || req.Parameters["website_key"] != secret {
+				t.Fatalf("invoke request = %+v", req)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(TATCommandResponse{CommandID: req.CommandID, InvocationID: "inv-1", Status: "PENDING"})
+		case r.Method == http.MethodGet && r.URL.Path == "/internal/sandboxes/sbx-123/tat/invocations/inv-1":
+			getCount++
+			_ = json.NewEncoder(w).Encode(TATCommandMetadataResult{TATCommandResponse: TATCommandResponse{
+				CommandID: "cmd-website1", InvocationID: "inv-1", Status: "SUCCESS",
+			}, ExitCode: 0})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	adapter := NewSandboxAdapter(&config.SandboxConfig{BaseURL: server.URL, APIKey: "test-api-key", Timeout: 2}, zap.NewNop())
+	result, err := adapter.InvokeCommand(t.Context(), "sbx-123", "cmd-website1", map[string]string{
+		"website_key": secret,
+		"api_base":    "https://api.lightvela.ai",
+	}, 2)
+	if err != nil {
+		t.Fatalf("InvokeCommand: %v", err)
+	}
+	if result.Status != "SUCCESS" || result.ExitCode != 0 || postCount != 1 || getCount != 1 {
+		t.Fatalf("result=%+v post=%d get=%d", result, postCount, getCount)
+	}
+	if strings.Contains(result.Output, secret) || strings.Contains(result.ErrorInfo, secret) {
+		t.Fatalf("result leaked secret: %+v", result)
+	}
+}
 
 func TestApplyProcessHeadersIncludesAccessTokenWhenPresent(t *testing.T) {
 	headers := make(http.Header)
@@ -129,6 +177,9 @@ func TestStartTerminalSessionForwardsUserSessionAuth(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer user-session-token" {
 			t.Fatalf("unexpected authorization header: %q", got)
 		}
+		if got := r.Header.Get("X-User-Id"); got != "user-1" {
+			t.Fatalf("unexpected user header: %q", got)
+		}
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(TerminalSession{
 			SandboxID: "sbx-123",
@@ -143,7 +194,7 @@ func TestStartTerminalSessionForwardsUserSessionAuth(t *testing.T) {
 		APIKey:  "test-api-key",
 		Timeout: 1,
 	}, zap.NewNop())
-	ctx := pctx.NewContext(t.Context()).WithSessionAuth("Bearer user-session-token", "")
+	ctx := pctx.NewContext(t.Context()).WithUserID("user-1").WithSessionAuth("Bearer user-session-token", "")
 	if _, err := adapter.StartTerminalSession(ctx, "sbx-123"); err != nil {
 		t.Fatalf("start terminal session: %v", err)
 	}
@@ -174,5 +225,52 @@ func TestStartTerminalSessionForwardsSessionCookieWhenBearerMissing(t *testing.T
 	ctx := pctx.NewContext(t.Context()).WithSessionAuth("", "lc_session=cookie-token")
 	if _, err := adapter.StartTerminalSession(ctx, "sbx-123"); err != nil {
 		t.Fatalf("start terminal session: %v", err)
+	}
+}
+
+func TestStreamPtyCommandConsumesNDJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/sandboxes/sbx-1/tat/exec-stream" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("X-API-Key") != "test-api-key" {
+			t.Fatalf("missing api key header")
+		}
+		var req PtyExecStreamRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if req.Username != "agentuser" || req.WorkingDirectory != "/home/agentuser" {
+			t.Fatalf("unexpected request: %+v", req)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(
+			"{\"type\":\"started\",\"execution_id\":\"pty:test\"}\n" +
+				"{\"type\":\"output\",\"execution_id\":\"pty:test\",\"chunk\":\"hello\\n\"}\n" +
+				"{\"type\":\"finished\",\"execution_id\":\"pty:test\",\"status\":\"SUCCESS\",\"exit_code\":0}\n",
+		))
+	}))
+	defer server.Close()
+
+	adapter := &SandboxAdapter{
+		baseURL:    server.URL,
+		apiKey:     "test-api-key",
+		httpClient: server.Client(),
+	}
+	var events []PtyExecStreamEvent
+	err := adapter.StreamPtyCommand(context.Background(), "sbx-1", &PtyExecStreamRequest{
+		Command:          "echo hello",
+		Username:         "agentuser",
+		WorkingDirectory: "/home/agentuser",
+		TimeoutSeconds:   30,
+	}, func(event PtyExecStreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream PTY command: %v", err)
+	}
+	if len(events) != 3 || events[1].Chunk != "hello\n" || events[2].Status != "SUCCESS" {
+		t.Fatalf("unexpected events: %+v", events)
 	}
 }

@@ -67,22 +67,40 @@ spec:
             secretKeyRef:
               name: cloudladdergateway-callback-secrets
               key: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+        - name: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_KRSBX_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudladdergateway-krsbx-callback-secrets
+              key: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
+        - name: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_JPSBX_BASE_URL
+          value: https://api-sandbox-jp-1.lightclaw.tech
+        - name: CLOUDLADDER_TENCENT_CALLBACK_JPSBX_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudladdergateway-jpsbx-callback-secrets
+              key: CLOUDLADDER_TENCENT_CALLBACK_JPSBX_TOKEN
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL
-          value: https://api-sandbox-kr-1.lightclaw.tech
+          value: https://api-sandbox-jp-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_HK_BASE_URL
-          value: https://api-sandbox-kr-1.lightclaw.tech
+          value: https://api-sandbox-jp-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_JP_BASE_URL
-          value: https://api-sandbox-kr-1.lightclaw.tech
+          value: https://api-sandbox-jp-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_KR_BASE_URL
-          value: https://api-sandbox-kr-1.lightclaw.tech
+          value: https://api-sandbox-jp-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_JKT_BASE_URL
-          value: https://api-sandbox-kr-1.lightclaw.tech
+          value: https://api-sandbox-jp-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_SG_BASE_URL
-          value: https://api-sandbox-kr-1.lightclaw.tech
+          value: https://api.lightvela.ai
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_TH_BASE_URL
-          value: https://api-sandbox-kr-1.lightclaw.tech
+          value: https://api-sandbox-jp-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER
           value: test.trade-intl.billing.tencentyun.com
+        - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_PRICE_BASE_URL
+          value: http://opc-activity-price.production.sgpolaris:10006
+        - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_ORDER_BASE_URL
+          value: http://opc-dianshi-activity.production.sgpolaris:80
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always
         name: lightvela-proxy

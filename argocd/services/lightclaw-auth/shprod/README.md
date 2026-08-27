@@ -38,7 +38,13 @@
 - `AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID`
 - `AUTH_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI`
 - `AUTH_DEPLOYED_AT`
-- `LIGHTCLAW_REALNAME_ASSURANCE_MODE=observe` enables the hidden FaceID flow without changing legacy verification semantics.
+- `AUTH_FEDERATION_ENABLED=true`
+- `AUTH_FEDERATION_ENVIRONMENT=shprod`
+- `AUTH_FEDERATION_ACTIVE_AEAD_KEY_ID=federation-sh-20260825-1`
+- `AUTH_FEDERATION_CTL_BASE_URL=http://ctl-api.ctl.svc.cluster.local`
+- `AUTH_FEDERATION_TAT_TIMEOUT_SECONDS=5`
+- `AUTH_FEDERATION_DELEGATED_SESSION_TTL_SECONDS=28800`
+- `LIGHTCLAW_REALNAME_ASSURANCE_MODE=faceless` keeps the FaceID attempt state machine while skipping face capture.
 - `SHADOW_BASIC_AUTH_SYNC_ENABLED=true` keeps phone proof and Shadow synchronization in the verification chain.
 
 Secret 键：
@@ -62,6 +68,14 @@ Secret 键：
 - `LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_SECRET`
 - `MYSQL_DSN`
 - `MYSQL_ROOT_PASSWORD`
+- `LIGHTCLAW_OIDC_SIGNING_KEYS_JSON`
+- `LIGHTCLAW_FEDERATION_AEAD_KEYS_JSON`
+- `LIGHTCLAW_FEDERATION_NONCE_KEY`
+- `LIGHTCLAW_FEDERATION_CLIENTS_JSON`
+
+Federation client `personal-site` must use key ID `federation-client-sh-20260825-1`, permit only
+the callback path `/auth/lightvela/callback` under `dsh.lightvela.tech` subdomains, and share its
+HMAC key with `mono-shprod-site-gateway-secrets`.
 
 Shadow runtime secret keys used by the reconciliation worker:
 

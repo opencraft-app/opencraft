@@ -38,6 +38,8 @@ import (
 	"strings"
 	"time"
 
+	"git.woa.com/wisp/mono/trade/internal/billingamount"
+	"git.woa.com/wisp/mono/trade/internal/cloudbillingclient"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/jifei"
@@ -46,6 +48,13 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/region"
 	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
+)
+
+const (
+	intlPayURLPayOption         = "chargePay"
+	intlPayURLApplication       = "intlSaaSLightvela"
+	intlDescribeOrderPayMode    = "prePay"
+	paymentContextLookupTimeout = 8 * time.Second
 )
 
 // 业务错误哨兵（上层 errors.Is 判定）。
@@ -72,6 +81,12 @@ var (
 	// ErrBindingNotFound externalUserId 在 shadow 没有绑定记录（用户未实名 / 未绑云账号）
 	// 上层应映射为引导用户实名 / 绑定的业务错，不上报 5xx
 	ErrBindingNotFound = errors.New("placeorder: binding not found")
+
+	// ErrBillingAccountOpenFailed 影子账号已注册但计费账户开户补偿仍失败。
+	ErrBillingAccountOpenFailed = errors.New("placeorder: billing account open failed")
+
+	// ErrDianshiActivityRequired 点石专用入口收到未配置活动映射的 bundle。
+	ErrDianshiActivityRequired = errors.New("placeorder: dianshi activity required")
 
 	// ErrPassNotFoundForRenew 续费场景下 ctl 反查 pass 失败（pass_id 在用户名下找不到 / 已销毁）。
 	//
@@ -108,6 +123,7 @@ type PlaceOrderRequest struct {
 	TimeUnit       string
 	GoodsNum       int
 	PayMode        int
+	AutoRenewFlag  string
 	// 注：Q41 修订 2026-05-11 删除 RegionID 字段。trade 内部固定 1（广州）/ 100001（广州一区），
 	// 不再由 ctl / 前端透传。如未来 bundle 按 region 差价，再放回入参 + 改用 trade_bundle_definition.region 元数据。
 }
@@ -138,9 +154,39 @@ type PlaceOrderResult struct {
 	BigOrderID string `json:"big_order_id"`
 	PayURL     string `json:"pay_url,omitempty"` // 本期始终为空字符串，留作向后兼容
 	ExpireAt   string `json:"expire_at,omitempty"`
+	Reused     bool   `json:"-"`
+}
+
+const (
+	DianshiGrantStatusGranted = "granted"
+	DianshiGrantStatusReused  = "reused"
+	DianshiGrantStatusSkipped = "skipped"
+)
+
+type DianshiGrantResult struct {
+	Status     string
+	DealName   string
+	BigOrderID string
+}
+
+type DianshiGrantCampaign struct {
+	ActivityID   int64
+	ActID        int64
+	TimeSpanUnit string
+	SecretKey    string
+}
+
+type participationReader interface {
+	HasUserParticipated(ctx context.Context, uin string, activityID int64) (bool, error)
 }
 
 const moveInGoodsCategoryID int64 = 176262
+
+const (
+	AutoRenewFlagNotifyAndManual   = "notify_and_manual_renew"
+	AutoRenewFlagAutoRenew         = "auto_renew"
+	AutoRenewFlagNoNotifyAndManual = "no_notify_and_manual_renew"
+)
 
 // Deps 是 Service 的依赖注入。
 //
@@ -157,13 +203,26 @@ const moveInGoodsCategoryID int64 = 176262
 //     由 main.go 从 cfg.RegionOverride（LIGHTVELA_TRADE_REGION env）透传；非空且命中
 //     region.regionTable 时优先于 SiteKind 兜底。空字符串 → 按 SiteKind 走。
 type Deps struct {
-	CTLClient    ctlclient.Client
-	BundleStore  store.BundleDefinitionStore
-	JifeiClient  jifeiclient.Client
-	OrderWriter  store.OrderWriter
-	OrderStore   store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
-	ShadowClient shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
-	SiteKind     string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
+	CTLClient   ctlclient.Client
+	BundleStore store.BundleDefinitionStore
+	JifeiClient jifeiclient.Client
+	// CloudBillingClient is used only by international pay-url generation. Domestic
+	// pay-url generation remains on jifei GetMidasEarmarking.
+	CloudBillingClient cloudbillingclient.Client
+	// ShadowCredentialClient resolves short-lived credentials for international
+	// Billing CloudAPI calls. It is deliberately separate from binding lookup.
+	ShadowCredentialClient shadowclient.CredentialClient
+	// PaymentContextClient resolves card binding state and short-lived
+	// credentials in one auth call for international create-order pay URLs.
+	PaymentContextClient shadowclient.PaymentContextClient
+	// BillingPayRedirectURL fills missing CancelUrl/ReturnUrl for international
+	// CreatePayUrl calls. Callers can still override either field explicitly.
+	BillingPayRedirectURL string
+	OrderWriter           store.OrderWriter
+	OrderStore            store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
+	ParticipationReader   participationReader // 专用赠送按请求 activity_id 做防重复检查
+	ShadowClient          shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
+	SiteKind              string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
 
 	// RegionOverride 是腾讯云 region 字面量 override（北京 2 预发布接入新增）。
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
@@ -227,8 +286,17 @@ func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Place
 		if strings.TrimSpace(req.ExternalUserID) == "" {
 			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
 		}
-		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		var binding *shadowclient.Binding
+		var err error
+		if isIntlSite(s.deps.SiteKind) {
+			binding, err = shadowclient.ResolveBindingWithBillingRetry(ctx, s.deps.ShadowClient, req.ExternalUserID, false)
+		} else {
+			binding, err = s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		}
 		if err != nil {
+			if errors.Is(err, shadowclient.ErrBillingAccountOpenFailed) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBillingAccountOpenFailed, req.ExternalUserID)
+			}
 			if errors.Is(err, shadowclient.ErrBindingNotFound) {
 				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
 			}
@@ -290,7 +358,7 @@ func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Place
 	}
 
 	// 4. 拼装 jifei generateDeals 入参
-	goodsDetail := buildGoodsDetail(def, req)
+	goodsDetail := s.buildJifeiGoodsDetail(def, req)
 	// AppID 类型转换（与 PlaceOrderAndPay 一致；jifei 协议 appId 是 int64，PDF §4.1 "appId Integer"
 	// 必填）。空字符串 → 0（omitempty 不传字段，jifei 通常会从 ownerUin 反查；trade 调用方
 	// 应该总是传非零值，从 shadowclient 拿）。v1.7.28 BUG-05 修复：本路径 v1.7.19 协议校准时
@@ -407,6 +475,7 @@ func (s *Service) MoveInOrderAndPay(ctx context.Context, req MoveInOrderRequest)
 	}
 
 	goodsDetail := buildMoveInGoodsDetail(def, req)
+	s.addIntlPointOfSale(goodsDetail)
 	dealsReq := &jifeiclient.GenerateDealsAndPayRequest{
 		OwnerUin:    req.Uin,
 		Uin:         req.Uin,
@@ -572,7 +641,7 @@ func (s *Service) PlaceRenewOrder(ctx context.Context, req PlaceRenewOrderReques
 	}
 
 	// 4. 拼装 jifei goodsDetail（基于 buildGoodsDetail 转化为 PlaceOrderRequest 形态复用，附加 resourceId）
-	goodsDetail := buildGoodsDetail(def, PlaceOrderRequest{
+	goodsDetail := s.buildJifeiGoodsDetail(def, PlaceOrderRequest{
 		Period:   req.Period,
 		TimeUnit: req.TimeUnit,
 		GoodsNum: req.GoodsNum,
@@ -748,8 +817,17 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 		if strings.TrimSpace(req.ExternalUserID) == "" {
 			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
 		}
-		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		var binding *shadowclient.Binding
+		var err error
+		if isIntlSite(s.deps.SiteKind) {
+			binding, err = shadowclient.ResolveBindingWithBillingRetry(ctx, s.deps.ShadowClient, req.ExternalUserID, false)
+		} else {
+			binding, err = s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		}
 		if err != nil {
+			if errors.Is(err, shadowclient.ErrBillingAccountOpenFailed) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBillingAccountOpenFailed, req.ExternalUserID)
+			}
 			if errors.Is(err, shadowclient.ErrBindingNotFound) {
 				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
 			}
@@ -820,7 +898,7 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 	}
 
 	// 5. 拼装 jifei generateDealsAndPay 入参
-	goodsDetail := buildGoodsDetail(def, req)
+	goodsDetail := s.buildJifeiGoodsDetail(def, req)
 	autoVoucher := 1 // 测试链路下默认自动扣代金券；如未来生产场景需要按业务参数化，再加 req 字段
 	dealsReq := &jifeiclient.GenerateDealsAndPayRequest{
 		OwnerUin:    req.Uin,
@@ -923,6 +1001,163 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 		DealName:   dealName,
 		BigOrderID: bigDealID,
 	}, nil
+}
+
+// PlaceDianshiOrderAndPay 执行点石 0 元商品的专用下单并支付流程。
+//
+// 本入口不复用通用 PlaceOrderAndPay，也不回落 jifei。调用方根据已完成的询价结果决定
+// 是否进入本链路；trade 只校验 bundle 确实配置了有效的点石活动映射。
+func (s *Service) PlaceDianshiOrderAndPay(ctx context.Context, req PlaceOrderRequest) (*PlaceOrderResult, error) {
+	preparedReq, def, mapping, useDianshi, err := s.prepareDianshiOrderAndPay(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if !useDianshi || mapping == nil {
+		return nil, fmt.Errorf("%w: bundleId=%s", ErrDianshiActivityRequired, req.BundleID)
+	}
+
+	log.Printf("[activity-resolver] dianshi-order-and-pay bundleId=%s uin=%s activityId=%d actId=%d",
+		preparedReq.BundleID, preparedReq.Uin, mapping.ActivityID, mapping.ActID)
+	return s.placeOrderDianshiAndPay(ctx, preparedReq, def, mapping)
+}
+
+// GrantDianshiSubscription places a request-scoped campaign grant without
+// resolving trade_bundle_activity. Ordinary Dianshi purchase paths are unchanged.
+func (s *Service) GrantDianshiSubscription(ctx context.Context, req PlaceOrderRequest, campaign DianshiGrantCampaign) (*DianshiGrantResult, error) {
+	if campaign.ActivityID <= 0 {
+		return nil, fmt.Errorf("%w: activity_id must be > 0", ErrInvalidInput)
+	}
+	if campaign.ActID <= 0 {
+		return nil, fmt.Errorf("%w: act_id must be > 0", ErrInvalidInput)
+	}
+	campaign.TimeSpanUnit = strings.TrimSpace(campaign.TimeSpanUnit)
+	if campaign.TimeSpanUnit == "" {
+		return nil, fmt.Errorf("%w: time_span_unit is required", ErrInvalidInput)
+	}
+	campaign.SecretKey = strings.TrimSpace(campaign.SecretKey)
+	if campaign.SecretKey == "" {
+		return nil, fmt.Errorf("%w: secret_key is required", ErrInvalidInput)
+	}
+	wantTimeSpanUnit := fmt.Sprintf("%d%s", req.Period, strings.ToLower(strings.TrimSpace(req.TimeUnit)))
+	if !strings.EqualFold(campaign.TimeSpanUnit, wantTimeSpanUnit) {
+		return nil, fmt.Errorf("%w: time_span_unit=%s does not match period/time_unit=%s", ErrInvalidInput, campaign.TimeSpanUnit, wantTimeSpanUnit)
+	}
+	preparedReq, def, err := s.prepareDianshiOrderBase(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if s.deps.ParticipationReader == nil {
+		return nil, fmt.Errorf("placeorder: participation reader is not configured")
+	}
+	participated, err := s.deps.ParticipationReader.HasUserParticipated(ctx, preparedReq.Uin, campaign.ActivityID)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: query participation uin=%s activityID=%d: %w", preparedReq.Uin, campaign.ActivityID, err)
+	}
+	if participated {
+		return &DianshiGrantResult{Status: DianshiGrantStatusSkipped}, nil
+	}
+
+	mapping := &activity.Mapping{
+		BundleID:         preparedReq.BundleID,
+		ActivityID:       campaign.ActivityID,
+		ActID:            campaign.ActID,
+		SecretKey:        campaign.SecretKey,
+		Active:           true,
+		TimeSpanUnit:     campaign.TimeSpanUnit,
+		OrderExpiredTime: 1,
+	}
+	placed, err := s.placeOrderDianshiAndPay(ctx, preparedReq, def, mapping)
+	if err != nil {
+		return nil, err
+	}
+	status := DianshiGrantStatusGranted
+	if placed.Reused {
+		status = DianshiGrantStatusReused
+	}
+	return &DianshiGrantResult{
+		Status:     status,
+		DealName:   placed.DealName,
+		BigOrderID: placed.BigOrderID,
+	}, nil
+}
+
+func (s *Service) prepareDianshiOrderAndPay(
+	ctx context.Context,
+	req PlaceOrderRequest,
+) (PlaceOrderRequest, *store.BundleDefinition, *activity.Mapping, bool, error) {
+	preparedReq, def, err := s.prepareDianshiOrderBase(ctx, req)
+	if err != nil {
+		return PlaceOrderRequest{}, nil, nil, false, err
+	}
+	if s.deps.ActivityResolver == nil {
+		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: resolver is not configured", ErrDianshiActivityRequired)
+	}
+	mapping, useDianshi, err := s.deps.ActivityResolver.ResolveForPlaceOrder(
+		ctx, preparedReq.BundleID, preparedReq.Uin, preparedReq.Period, preparedReq.TimeUnit,
+	)
+	if err != nil {
+		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w", preparedReq.BundleID, preparedReq.Uin, err)
+	}
+	return preparedReq, def, mapping, useDianshi, nil
+}
+
+func (s *Service) prepareDianshiOrderBase(
+	ctx context.Context,
+	req PlaceOrderRequest,
+) (PlaceOrderRequest, *store.BundleDefinition, error) {
+	if err := s.validatePlaceOrderRequest(&req); err != nil {
+		return PlaceOrderRequest{}, nil, err
+	}
+
+	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
+		if strings.TrimSpace(req.ExternalUserID) == "" {
+			return PlaceOrderRequest{}, nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
+		}
+		var binding *shadowclient.Binding
+		var err error
+		if isIntlSite(s.deps.SiteKind) {
+			binding, err = shadowclient.ResolveBindingWithBillingRetry(ctx, s.deps.ShadowClient, req.ExternalUserID, false)
+		} else {
+			binding, err = s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		}
+		if err != nil {
+			if errors.Is(err, shadowclient.ErrBillingAccountOpenFailed) {
+				return PlaceOrderRequest{}, nil, fmt.Errorf("%w: externalUserId=%s", ErrBillingAccountOpenFailed, req.ExternalUserID)
+			}
+			if errors.Is(err, shadowclient.ErrBindingNotFound) {
+				return PlaceOrderRequest{}, nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+			}
+			return PlaceOrderRequest{}, nil, fmt.Errorf("placeorder: shadow GetBindingByExternalUserID: %w", err)
+		}
+		if strings.TrimSpace(binding.Uin) == "" {
+			return PlaceOrderRequest{}, nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
+				ErrBindingNotFound, req.ExternalUserID)
+		}
+		req.Uin = binding.Uin
+		if req.AppID == "" {
+			req.AppID = binding.AppID
+		}
+	}
+
+	bundle, err := s.deps.CTLClient.GetBundleByID(ctx, req.BundleID)
+	if err != nil {
+		if errors.Is(err, ctlclient.ErrNotFound) {
+			return PlaceOrderRequest{}, nil, fmt.Errorf("%w: ctl bundleId=%s", ErrBundleNotFound, req.BundleID)
+		}
+		return PlaceOrderRequest{}, nil, fmt.Errorf("placeorder: ctl GetBundleByID: %w", err)
+	}
+	if !strings.EqualFold(bundle.BundleState, "ONLINE") {
+		return PlaceOrderRequest{}, nil, fmt.Errorf("%w: bundleId=%s state=%s", ErrBundleOffline, req.BundleID, bundle.BundleState)
+	}
+
+	def, err := s.deps.BundleStore.GetBundleDefinitionByID(ctx, req.BundleID)
+	if err != nil {
+		if errors.Is(err, store.ErrBundleDefinitionNotFound) {
+			return PlaceOrderRequest{}, nil, fmt.Errorf("%w: trade_bundle_definition bundleId=%s", ErrBundleNotFound, req.BundleID)
+		}
+		return PlaceOrderRequest{}, nil, fmt.Errorf("placeorder: get bundle definition: %w", err)
+	}
+	return req, def, nil
 }
 
 // shouldPersistOrderAfterPay 判定 generateDealsAndPay 同步响应是否满足"一次到位落
@@ -1045,7 +1280,7 @@ func (s *Service) PlaceRenewOrderAndPay(ctx context.Context, req PlaceRenewOrder
 
 	// 5. 拼装 jifei generateDealsAndPay 入参
 	//    与 PlaceOrderAndPay 关键差异：goodsDetail 注入 resourceId（续费目标 pass_id）
-	goodsDetail := buildGoodsDetail(def, PlaceOrderRequest{
+	goodsDetail := s.buildJifeiGoodsDetail(def, PlaceOrderRequest{
 		Period:   req.Period,
 		TimeUnit: req.TimeUnit,
 		GoodsNum: req.GoodsNum,
@@ -1221,9 +1456,11 @@ type PayURLDetail struct {
 // GeneratePayURLOptions 拉取支付 URL 时的可选参数（v1.7.31 接口拆分新增）。
 // 全部字段可选；空值时不透传（兼容现有行为）。
 type GeneratePayURLOptions struct {
-	Platform string `json:"platform,omitempty"`
-	WxOpenID string `json:"wx_open_id,omitempty"`
-	WxAppID  string `json:"wx_app_id,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+	WxOpenID  string `json:"wx_open_id,omitempty"`
+	WxAppID   string `json:"wx_app_id,omitempty"`
+	CancelURL string `json:"cancel_url,omitempty"`
+	ReturnURL string `json:"return_url,omitempty"`
 }
 
 func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *GeneratePayURLOptions) (*PayURLDetail, error) {
@@ -1260,14 +1497,20 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 		return nil, fmt.Errorf("placeorder: trade_order.uin missing for dealName=%s (data inconsistency)",
 			dealName)
 	}
-	resp, err := s.deps.JifeiClient.GetMidasEarmarking(ctx, &jifeiclient.GetMidasEarmarkingRequest{
+	if isIntlSite(s.deps.SiteKind) {
+		return s.generatePayURLByCloudAPI(ctx, dealName, order, opts)
+	}
+	midasReq := &jifeiclient.GetMidasEarmarkingRequest{
 		OwnerUin:  order.Uin,
 		Uin:       order.Uin,
 		DealNames: []string{dealName},
 		Platform:  optsPlatform(opts),
 		WxOpenID:  optsWxOpenID(opts),
 		WxAppID:   optsWxAppID(opts),
-	})
+		CancelURL: optsCancelURL(opts),
+		ReturnURL: optsReturnURL(opts),
+	}
+	resp, err := s.deps.JifeiClient.GetMidasEarmarking(ctx, midasReq)
 	if err != nil {
 		// Q-PAY-5：透传给上层（含 *CGWError / ErrCGWHTTPNon200 等），由 handler 映射 5xx
 		return nil, fmt.Errorf("placeorder: jifei GetMidasEarmarking dealName=%s: %w", dealName, err)
@@ -1313,6 +1556,157 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 		AppID:      order.AppID,
 		MidasAppID: midasAppID,
 	}, nil
+}
+
+func (s *Service) generatePayURLByCloudAPI(
+	ctx context.Context,
+	dealName string,
+	order *store.TradeOrder,
+	opts *GeneratePayURLOptions,
+) (*PayURLDetail, error) {
+	if s.deps.CloudBillingClient == nil {
+		return nil, fmt.Errorf("placeorder: billing CreatePayUrl client is not configured for intl site")
+	}
+	if s.deps.ShadowCredentialClient == nil {
+		return nil, fmt.Errorf("placeorder: shadow credential client is not configured for intl site")
+	}
+	externalUserID := strings.TrimSpace(order.ExternalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("placeorder: trade_order.external_user_id missing for dealName=%s (data inconsistency)", dealName)
+	}
+	contractOrder := 0
+	var shadowCredentials *shadowclient.TemporaryCredentials
+	if order.OrderType == store.OrderTypeCreate || order.OrderType == store.OrderTypeRenew {
+		if s.deps.PaymentContextClient != nil {
+			paymentContextCtx, paymentContextCancel := context.WithTimeout(ctx, paymentContextLookupTimeout)
+			paymentContext, contextErr := s.deps.PaymentContextClient.GetPaymentContextByExternalUserID(paymentContextCtx, externalUserID)
+			paymentContextCancel()
+			if contextErr == nil && paymentContext != nil {
+				shadowCredentials = &paymentContext.Credentials
+				if !paymentContext.HasPaymentMethod {
+					contractOrder = 1
+				}
+			} else if contextErr != nil {
+				log.Printf("[pay-url] payment context lookup failed, fallback to sign-and-pay dealName=%s err=%v", dealName, contextErr)
+			}
+		}
+		// If the card lookup endpoint is unavailable, preserve checkout by
+		// treating the user as unbound and using the credential-only endpoint.
+		if shadowCredentials == nil {
+			contractOrder = 1
+		}
+	}
+	if shadowCredentials == nil {
+		var err error
+		shadowCredentials, err = s.deps.ShadowCredentialClient.GetTemporaryCredentialsByExternalUserID(ctx, externalUserID)
+		if err != nil {
+			return nil, fmt.Errorf("placeorder: get shadow temporary credentials dealName=%s: %w", dealName, err)
+		}
+	}
+	if shadowCredentials == nil {
+		return nil, fmt.Errorf("placeorder: shadow temporary credentials are nil for dealName=%s", dealName)
+	}
+	if strings.TrimSpace(shadowCredentials.Uin) != strings.TrimSpace(order.Uin) {
+		return nil, fmt.Errorf(
+			"placeorder: shadow credential uin mismatch for dealName=%s order_uin=%s credential_uin=%s",
+			dealName, order.Uin, shadowCredentials.Uin,
+		)
+	}
+	billingCredentials := cloudbillingclient.TemporaryCredentials{
+		SecretID:  shadowCredentials.SecretID,
+		SecretKey: shadowCredentials.SecretKey,
+		Token:     shadowCredentials.Token,
+	}
+	orderList, err := s.deps.CloudBillingClient.DescribeOrderList(ctx, billingCredentials, &cloudbillingclient.DescribeOrderListRequest{
+		OrderIDs: []string{dealName},
+		Limit:    1,
+		Offset:   0,
+		PayMode:  intlDescribeOrderPayMode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: billing DescribeOrderList dealName=%s: %w", dealName, err)
+	}
+	chargeAmount, err := chargeAmountFromOrderList(dealName, orderList)
+	if err != nil {
+		return nil, err
+	}
+	cancelURL, returnURL := resolvePayRedirectURLs(opts, s.deps.BillingPayRedirectURL)
+	req := &cloudbillingclient.CreatePayURLRequest{
+		OrderIDs:      []string{dealName},
+		ChargeAmount:  chargeAmount,
+		Platform:      optsPlatform(opts),
+		ContractOrder: contractOrder,
+		CancelURL:     cancelURL,
+		ReturnURL:     returnURL,
+		PayScene:      "credit_card",
+		PayOption:     intlPayURLPayOption,
+		Application:   intlPayURLApplication,
+	}
+	resp, err := s.deps.CloudBillingClient.CreatePayURL(ctx, billingCredentials, req)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: billing CreatePayUrl dealName=%s: %w", dealName, err)
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("placeorder: billing CreatePayUrl returned nil response for dealName=%s", dealName)
+	}
+	if strings.TrimSpace(resp.URL) == "" {
+		return nil, fmt.Errorf("placeorder: billing CreatePayUrl returned empty url for dealName=%s", dealName)
+	}
+	if writeErr := s.deps.OrderWriter.UpdatePayURL(ctx, dealName, resp.URL); writeErr != nil {
+		fmt.Printf("WARN placeorder: cache pay_url failed dealName=%s url=%s err=%v\n",
+			dealName, resp.URL, writeErr)
+	}
+	tokenID, orderID, midasAppID := parsePayURLAuxFields(resp.URL)
+	return &PayURLDetail{
+		PayURL:     resp.URL,
+		TokenID:    tokenID,
+		OrderID:    orderID,
+		NeedCharge: 1,
+		Uin:        order.Uin,
+		AppID:      order.AppID,
+		MidasAppID: midasAppID,
+	}, nil
+}
+
+func chargeAmountFromOrderList(dealName string, resp *cloudbillingclient.DescribeOrderListResponse) (int64, error) {
+	if resp == nil {
+		return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned nil response for dealName=%s", dealName)
+	}
+	var matched *cloudbillingclient.OrderInfo
+	for i := range resp.Orders {
+		if strings.TrimSpace(resp.Orders[i].OrderID) != dealName {
+			continue
+		}
+		if matched != nil {
+			return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned duplicate order for dealName=%s", dealName)
+		}
+		matched = &resp.Orders[i]
+	}
+	if matched == nil {
+		return 0, fmt.Errorf("placeorder: billing DescribeOrderList did not return dealName=%s", dealName)
+	}
+	amountField := "PriceDetail.highPrecisionPrice.realTotalCostHigh"
+	amountText := strings.TrimSpace(matched.PriceDetailHighPrecisionRealTotalCost)
+	if amountText == "" {
+		amountField = "PriceDetail.realTotalCost"
+		amountText = strings.TrimSpace(matched.PriceDetailRealTotalCost)
+	}
+	taxRateText := strings.TrimSpace(matched.TaxRate)
+	chargeAmountText, err := billingamount.TaxInclusiveCents(amountText, taxRateText)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"placeorder: billing DescribeOrderList invalid %s=%q or taxRate=%q for dealName=%s: %w",
+			amountField, amountText, taxRateText, dealName, err,
+		)
+	}
+	chargeAmount, err := strconv.ParseInt(chargeAmountText, 10, 64)
+	if err != nil || chargeAmount < 0 {
+		return 0, fmt.Errorf(
+			"placeorder: billing DescribeOrderList tax-inclusive amount is out of range for dealName=%s",
+			dealName,
+		)
+	}
+	return chargeAmount, nil
 }
 
 // parsePayURLAuxFields 从 trade_order.pay_url 缓存值反解析协议外字段，仅供
@@ -1387,6 +1781,13 @@ func (s *Service) validatePlaceOrderRequest(req *PlaceOrderRequest) error {
 	if req.PayMode != 0 && req.PayMode != 1 && req.PayMode != 2 {
 		return fmt.Errorf("%w: pay_mode must be 0/1/2, got %d", ErrInvalidInput, req.PayMode)
 	}
+	_, autoRenewFlagSet, err := jifeiAutoRenewFlagValue(req.AutoRenewFlag)
+	if err != nil {
+		return err
+	}
+	if autoRenewFlagSet && !isIntlSite(s.deps.SiteKind) {
+		return fmt.Errorf("%w: auto_renew_flag is only supported for intl site", ErrInvalidInput)
+	}
 	return nil
 }
 
@@ -1444,6 +1845,9 @@ func buildGoodsDetail(def *store.BundleDefinition, req PlaceOrderRequest) map[st
 	if req.ExternalUserID != "" {
 		out["externalUserId"] = req.ExternalUserID
 	}
+	if v, ok, _ := jifeiAutoRenewFlagValue(req.AutoRenewFlag); ok {
+		out["autoRenewFlag"] = v
+	}
 	// 2026-05-13 起契约变更：运营录入 key 必须已带 sv_ 前缀，trade 不再自动补前缀。
 	for k, v := range def.SVList {
 		out[k] = v
@@ -1452,6 +1856,18 @@ func buildGoodsDetail(def *store.BundleDefinition, req PlaceOrderRequest) map[st
 		out["productInfo"] = def.ProductInfo
 	}
 	return out
+}
+
+func (s *Service) buildJifeiGoodsDetail(def *store.BundleDefinition, req PlaceOrderRequest) map[string]interface{} {
+	goodsDetail := buildGoodsDetail(def, req)
+	s.addIntlPointOfSale(goodsDetail)
+	return goodsDetail
+}
+
+func (s *Service) addIntlPointOfSale(goodsDetail map[string]interface{}) {
+	if isIntlSite(s.deps.SiteKind) {
+		jifei.AddIntlPointOfSale(goodsDetail)
+	}
 }
 
 func buildMoveInGoodsDetail(def *store.BundleDefinition, req MoveInOrderRequest) map[string]interface{} {
@@ -1598,6 +2014,56 @@ func optsWxAppID(opts *GeneratePayURLOptions) string {
 	return opts.WxAppID
 }
 
+func optsCancelURL(opts *GeneratePayURLOptions) string {
+	if opts == nil {
+		return ""
+	}
+	return opts.CancelURL
+}
+
+func optsReturnURL(opts *GeneratePayURLOptions) string {
+	if opts == nil {
+		return ""
+	}
+	return opts.ReturnURL
+}
+
+func resolvePayRedirectURLs(opts *GeneratePayURLOptions, fallback string) (string, string) {
+	cancelURL := strings.TrimSpace(optsCancelURL(opts))
+	returnURL := strings.TrimSpace(optsReturnURL(opts))
+	fallback = strings.TrimSpace(fallback)
+	if cancelURL == "" {
+		cancelURL = fallback
+	}
+	if returnURL == "" {
+		returnURL = fallback
+	}
+	return cancelURL, returnURL
+}
+
+func isIntlSite(siteKind string) bool {
+	return strings.EqualFold(strings.TrimSpace(siteKind), "intl")
+}
+
+func jifeiAutoRenewFlagValue(flag string) (int, bool, error) {
+	switch strings.ToLower(strings.TrimSpace(flag)) {
+	case "":
+		return 0, false, nil
+	case AutoRenewFlagNotifyAndManual:
+		return 0, true, nil
+	case AutoRenewFlagAutoRenew:
+		return 1, true, nil
+	case AutoRenewFlagNoNotifyAndManual:
+		return 2, true, nil
+	default:
+		return 0, false, fmt.Errorf("%w: auto_renew_flag must be %q, %q or %q",
+			ErrInvalidInput,
+			AutoRenewFlagNotifyAndManual,
+			AutoRenewFlagAutoRenew,
+			AutoRenewFlagNoNotifyAndManual)
+	}
+}
+
 // placeOrderDianshi 是点石活动下单分支（设计稿 §5.4 / v0.5 修订）。
 //
 // v0.5 拍板：点石下单底层就是 jifei 下单——点石把活动单透传给 jifei 计费体系，jifei
@@ -1609,7 +2075,8 @@ func optsWxAppID(opts *GeneratePayURLOptions) string {
 //  1. 计算 check_sum（mapping.SecretKey != "" 时；secret_key 空则不出现 check_sum 字段）
 //  2. 拼装 dianshiclient.DoGoodsRequest 调点石 do_goods
 //  3. 拿到 deal_names[0] / big_deal_no
-//  4. 落 trade_order(status='paid_pending_provision', source='dianshi')
+//  4. do_goods 落 paid_pending_provision；do_goods_and_pay 使用同步返回的 resource_ids
+//     直接落 provisioned
 //
 // 失败语义：
 //   - 点石下单失败 → 直接返业务错给 ctl，不留任何 trade 端落地（与 jifei generateDealsAndPay 失败同款）
@@ -1629,6 +2096,30 @@ func (s *Service) placeOrderDianshi(
 	if s.deps.DianshiClient == nil {
 		return nil, fmt.Errorf("placeorder: dianshi client not configured (ActivityResolver injected without DianshiClient)")
 	}
+	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoods", dianshiclient.InterfaceNameDoGoods, s.deps.DianshiClient.DoGoods)
+}
+
+func (s *Service) placeOrderDianshiAndPay(
+	ctx context.Context,
+	req PlaceOrderRequest,
+	def *store.BundleDefinition,
+	mapping *activity.Mapping,
+) (*PlaceOrderResult, error) {
+	if s.deps.DianshiClient == nil {
+		return nil, fmt.Errorf("placeorder: dianshi client not configured (ActivityResolver injected without DianshiClient)")
+	}
+	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoodsAndPay", dianshiclient.InterfaceNameDoGoodsAndPay, s.deps.DianshiClient.DoGoodsAndPay)
+}
+
+func (s *Service) placeOrderDianshiWith(
+	ctx context.Context,
+	req PlaceOrderRequest,
+	def *store.BundleDefinition,
+	mapping *activity.Mapping,
+	operationName string,
+	interfaceName string,
+	place func(context.Context, *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error),
+) (*PlaceOrderResult, error) {
 
 	reusableStore, ok := s.deps.OrderStore.(store.ReusableDianshiOrderStore)
 	if !ok {
@@ -1642,7 +2133,7 @@ func (s *Service) placeOrderDianshi(
 	}
 	reuseWindow := time.Duration(reuseHours * float64(time.Hour))
 	createdAfter := time.Now().UTC().Add(-reuseWindow)
-	order, err := reusableStore.FindReusableDianshiOrder(ctx, req.ExternalUserID, mapping.ActivityID, req.BundleID, createdAfter)
+	order, err := reusableStore.FindReusableDianshiOrder(ctx, req.ExternalUserID, mapping.ActivityID, req.BundleID, mapping.ActID, createdAfter)
 	if err != nil && !errors.Is(err, store.ErrTradeOrderNotFound) {
 		return nil, fmt.Errorf("placeorder: find reusable dianshi order bundleId=%s activityId=%d externalUserId=%s: %w",
 			req.BundleID, mapping.ActivityID, req.ExternalUserID, err)
@@ -1654,8 +2145,16 @@ func (s *Service) placeOrderDianshi(
 			DealName:   order.DealName,
 			BigOrderID: order.BigOrderID,
 			PayURL:     order.PayURL,
+			Reused:     true,
 		}, nil
 	}
+
+	effectivePeriod, effectiveTimeUnit, err := parseDianshiTimeSpanUnit(mapping.TimeSpanUnit)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: invalid dianshi activity time_span_unit bundleId=%s activityId=%d: %w",
+			req.BundleID, mapping.ActivityID, err)
+	}
+	effectiveTimeSpanUnit := strconv.Itoa(effectivePeriod) + effectiveTimeUnit
 
 	// 1. check_sum：mapping.SecretKey 为空 → 不发字段（dianshiclient.CalcCheckSum 返空字符串触发 omitempty）
 	checkSum := dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey)
@@ -1678,24 +2177,25 @@ func (s *Service) placeOrderDianshi(
 				// "哪个业务用户下了哪个商品"记到点石侧履约链路里。
 				PreferenceParam: map[string]interface{}{
 					"regionId":       s.region.RegionID,
-					"timeSpanUnit":   mapping.TimeSpanUnit,
+					"timeSpanUnit":   effectiveTimeSpanUnit,
 					"subProductCode": def.SubProductCode,
 					"bundleId":       mapping.BundleID,
 					"externalUserId": req.ExternalUserID,
+					"dianshiActId":   mapping.ActID,
 				},
 			},
 		},
 	}
 
-	// 3. 调点石 do_goods（失败直接返业务错，不写任何 trade 端记录）
-	doGoodsResp, err := s.deps.DianshiClient.DoGoods(ctx, doGoodsReq)
+	// 3. 调点石落单接口（失败直接返业务错，不写任何 trade 端记录）
+	doGoodsResp, err := place(ctx, doGoodsReq)
 	if err != nil {
-		return nil, fmt.Errorf("placeorder: dianshi DoGoods bundleId=%s activityId=%d actId=%d: %w",
-			req.BundleID, mapping.ActivityID, mapping.ActID, err)
+		return nil, fmt.Errorf("placeorder: dianshi %s bundleId=%s activityId=%d actId=%d: %w",
+			operationName, req.BundleID, mapping.ActivityID, mapping.ActID, err)
 	}
 	if doGoodsResp == nil || len(doGoodsResp.DealNames) == 0 || doGoodsResp.DealNames[0] == "" {
-		return nil, fmt.Errorf("%w: dianshi do_goods returned empty deal_names (bundleId=%s activityId=%d big_deal_no=%q)",
-			ErrJifeiResponseInvalid, req.BundleID, mapping.ActivityID,
+		return nil, fmt.Errorf("%w: dianshi %s returned empty deal_names (bundleId=%s activityId=%d big_deal_no=%q)",
+			ErrJifeiResponseInvalid, interfaceName, req.BundleID, mapping.ActivityID,
 			func() string {
 				if doGoodsResp == nil {
 					return ""
@@ -1707,11 +2207,24 @@ func (s *Service) placeOrderDianshi(
 
 	dealName := doGoodsResp.DealNames[0]
 	bigDealNo := doGoodsResp.BigDealNo
+	status := store.OrderStatusPaidPendingProvision
+	resourceID := ""
+	if interfaceName == dianshiclient.InterfaceNameDoGoodsAndPay {
+		resourceIDs := doGoodsResp.ResourceIDs[dealName]
+		if len(resourceIDs) == 0 || strings.TrimSpace(resourceIDs[0]) == "" {
+			return nil, fmt.Errorf("%w: dianshi %s returned empty resource_ids for dealName=%s (bundleId=%s activityId=%d big_deal_no=%q)",
+				ErrJifeiResponseInvalid, interfaceName, dealName, req.BundleID, mapping.ActivityID, bigDealNo)
+		}
+		status = store.OrderStatusProvisioned
+		resourceID = strings.TrimSpace(resourceIDs[0])
+	}
 
-	// 4. 落 trade_order（source='dianshi'，status='paid_pending_provision' 与 PlaceOrderAndPay 同款——
-	// 点石下单同步链路与 jifei generateDealsAndPay 一体化语义对齐：拿到 deal_name 即视为"已下单已扣款待发货"，
-	// 等 jifei 反向回调 createResource 把 status 推进到 'provisioned'）。
-	goodsDetail := buildGoodsDetail(def, req)
+	// 4. 落 trade_order。do_goods 等后续支付回调推进完成态；do_goods_and_pay 返回时同步
+	// createResource 已完成，resource_ids 是最终发货结果，因此一次写入完成态和 pass ID。
+	effectiveReq := req
+	effectiveReq.Period = effectivePeriod
+	effectiveReq.TimeUnit = effectiveTimeUnit
+	goodsDetail := buildGoodsDetail(def, effectiveReq)
 	// 把活动元信息塞入 goodsDetail，便于 createResource handler 反查 / 排障日志
 	goodsDetail["dianshi_activity_id"] = mapping.ActivityID
 	goodsDetail["dianshi_act_id"] = mapping.ActID
@@ -1725,14 +2238,15 @@ func (s *Service) placeOrderDianshi(
 		AppID:          req.AppID,
 		SubProductCode: def.SubProductCode,
 		BundleID:       req.BundleID,
-		Period:         req.Period,
-		TimeUnit:       req.TimeUnit,
+		Period:         effectivePeriod,
+		TimeUnit:       effectiveTimeUnit,
 		GoodsNum:       req.GoodsNum,
 		RegionID:       s.region.RegionID,
 		PayMode:        req.PayMode,
 		GoodsDetail:    goodsDetail,
-		Status:         store.OrderStatusPaidPendingProvision,
+		Status:         status,
 		ResourceType:   "pass",
+		ResourceID:     resourceID,
 		Source:         store.OrderSourceDianshi,
 		ActivityID:     mapping.ActivityID,
 		ActID:          mapping.ActID,
@@ -1751,4 +2265,30 @@ func (s *Service) placeOrderDianshi(
 		DealName:   dealName,
 		BigOrderID: bigDealNo,
 	}, nil
+}
+
+func parseDianshiTimeSpanUnit(value string) (int, string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if len(normalized) < 2 {
+		return 0, "", fmt.Errorf("must be a positive integer followed by d, m, or y, got %q", value)
+	}
+
+	timeUnit := normalized[len(normalized)-1:]
+	switch timeUnit {
+	case "d", "m", "y":
+	default:
+		return 0, "", fmt.Errorf("unsupported time unit in %q; expected d, m, or y", value)
+	}
+
+	periodText := normalized[:len(normalized)-1]
+	for _, ch := range periodText {
+		if ch < '0' || ch > '9' {
+			return 0, "", fmt.Errorf("period must be a positive integer in %q", value)
+		}
+	}
+	period, err := strconv.Atoi(periodText)
+	if err != nil || period <= 0 {
+		return 0, "", fmt.Errorf("period must be a positive integer in %q", value)
+	}
+	return period, timeUnit, nil
 }

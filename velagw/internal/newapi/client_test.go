@@ -167,6 +167,148 @@ func TestClientBootstrapAndCreateUserTokenFlow(t *testing.T) {
 	}
 }
 
+func TestClientGenerateAccessTokenUsesLoginBearer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"access_token": "login-access-token",
+				"user": map[string]any{
+					"id":       42,
+					"username": "managed-user",
+					"role":     1,
+					"status":   1,
+					"group":    "default",
+				},
+			}})
+		case "GET /api/user/token":
+			if r.Header.Get("Authorization") != "Bearer login-access-token" {
+				http.Error(w, `{"success":false,"message":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			if r.Header.Get("New-Api-User") != "42" {
+				t.Fatalf("New-Api-User = %q, want 42", r.Header.Get("New-Api-User"))
+			}
+			writeJSON(t, w, map[string]any{"success": true, "data": "generated-user-token"})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	session, err := client.Login(t.Context(), "managed-user", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.UserID != 42 || session.AccessToken != "login-access-token" {
+		t.Fatalf("session = %+v, want user 42 with login access token", session)
+	}
+	token, err := client.GenerateAccessToken(t.Context(), session.UserID, session.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "generated-user-token" {
+		t.Fatalf("token = %q, want generated-user-token", token)
+	}
+}
+
+func TestClientComplete2FALoginUsesFlowToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+				"flow_token":  "flow-123",
+			}})
+		case "POST /api/user/login/2fa":
+			var req TwoFALoginRequest
+			decodeJSON(t, r, &req)
+			if req.FlowToken != "flow-123" || req.Code != "123456" {
+				t.Fatalf("unexpected 2fa login request: %+v", req)
+			}
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id":       1,
+				"username": "set-root",
+				"role":     100,
+				"status":   1,
+				"group":    "default",
+			}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	session, err := client.Login(t.Context(), "set-root", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.Require2FA || session.TwoFAFlowToken != "flow-123" {
+		t.Fatalf("login session = %+v, want pending 2fa flow", session)
+	}
+	session, err = client.Complete2FALogin(t.Context(), session.TwoFAFlowToken, "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.UserID != 1 || session.Username != "set-root" {
+		t.Fatalf("completed session = %+v", session)
+	}
+}
+
+func TestClientComplete2FALoginUsesPendingSessionWithoutFlowToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "pending-root", Path: "/"})
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+			}})
+		case "POST /api/user/login/2fa":
+			session, err := r.Cookie("session")
+			if err != nil || session.Value != "pending-root" {
+				t.Fatalf("pending session cookie = %#v, err = %v", session, err)
+			}
+			var req TwoFALoginRequest
+			decodeJSON(t, r, &req)
+			if req.FlowToken != "" || req.Code != "123456" {
+				t.Fatalf("unexpected 2fa login request: %+v", req)
+			}
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id":       1,
+				"username": "set-root",
+				"role":     100,
+				"status":   1,
+				"group":    "default",
+			}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	session, err := client.Login(t.Context(), "set-root", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.Require2FA || session.TwoFAFlowToken != "" {
+		t.Fatalf("login session = %+v, want pending cookie-backed 2fa flow", session)
+	}
+	session, err = client.Complete2FALogin(t.Context(), session.TwoFAFlowToken, "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.UserID != 1 || session.Username != "set-root" {
+		t.Fatalf("completed session = %+v", session)
+	}
+}
+
 func TestClientConfirmPaymentComplianceUsesDashboardSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -414,6 +556,8 @@ func TestClientCreateUserTokenRetriesTransientMySQLDeadlock(t *testing.T) {
 
 func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 	var createdPlanID int
+	var createdName string
+	var createdRequestID string
 	var invalidatedID int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -426,13 +570,26 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 			var req AdminCreateUserSubscriptionRequest
 			decodeJSON(t, r, &req)
 			createdPlanID = req.PlanID
-			writeJSON(t, w, map[string]any{"success": true})
+			createdName = req.Name
+			createdRequestID = req.RequestID
+			writeJSON(t, w, map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"id":         9,
+					"name":       req.Name,
+					"request_id": req.RequestID,
+					"user_id":    42,
+					"plan_id":    req.PlanID,
+					"status":     "active",
+				},
+			})
 		case "GET /api/subscription/admin/users/42/subscriptions":
 			writeJSON(t, w, map[string]any{
 				"success": true,
 				"data": []map[string]any{{
 					"subscription": map[string]any{
 						"id":           9,
+						"name":         "package:user-1:pass-1",
 						"user_id":      42,
 						"plan_id":      7,
 						"amount_total": 1000,
@@ -455,18 +612,32 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 
 	client := NewClient(server.URL, server.Client())
 	auth := AdminAuth{UserID: 1, AccessToken: "admin-access-token"}
-	if err := client.AdminCreateUserSubscription(t.Context(), auth, 42, AdminCreateUserSubscriptionRequest{PlanID: 7}); err != nil {
+	created, err := client.AdminCreateUserSubscription(t.Context(), auth, 42, AdminCreateUserSubscriptionRequest{
+		PlanID:    7,
+		Name:      "package:user-1:pass-1",
+		RequestID: "trade:deal-1",
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if createdPlanID != 7 {
 		t.Fatalf("created plan id = %d, want 7", createdPlanID)
+	}
+	if createdName != "package:user-1:pass-1" {
+		t.Fatalf("created subscription name = %q", createdName)
+	}
+	if createdRequestID != "trade:deal-1" {
+		t.Fatalf("created subscription request id = %q", createdRequestID)
+	}
+	if created.ID != 9 || created.Name != "package:user-1:pass-1" || created.RequestID != "trade:deal-1" {
+		t.Fatalf("unexpected created subscription: %+v", created)
 	}
 
 	subs, err := client.AdminListUserSubscriptions(t.Context(), auth, 42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(subs) != 1 || subs[0].ID != 9 || subs[0].AmountTotal != 1000 || subs[0].AmountUsed != 125 {
+	if len(subs) != 1 || subs[0].ID != 9 || subs[0].Name != "package:user-1:pass-1" || subs[0].AmountTotal != 1000 || subs[0].AmountUsed != 125 {
 		t.Fatalf("unexpected subscriptions: %+v", subs)
 	}
 
@@ -475,6 +646,48 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 	}
 	if invalidatedID != 9 {
 		t.Fatalf("invalidated id = %d, want 9", invalidatedID)
+	}
+}
+
+func TestClientAdminCreateUserSubscriptionResolvesNullCreateResponse(t *testing.T) {
+	var listCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "Bearer admin-access-token" || r.Header.Get("New-Api-User") != "1" {
+			t.Fatalf("missing admin auth headers for %s %s", r.Method, r.URL.Path)
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/subscription/admin/users/42/subscriptions":
+			writeJSON(t, w, map[string]any{"success": true, "data": nil})
+		case "GET /api/subscription/admin/users/42/subscriptions":
+			listCalls++
+			writeJSON(t, w, map[string]any{
+				"success": true,
+				"data": []map[string]any{
+					{"subscription": map[string]any{"id": 8, "user_id": 42, "plan_id": 6, "status": "active"}},
+					{"subscription": map[string]any{"id": 9, "user_id": 42, "plan_id": 7, "status": "active"}},
+					{"subscription": map[string]any{"id": 11, "user_id": 42, "plan_id": 7, "status": "active"}},
+				},
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	created, err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 42, AdminCreateUserSubscriptionRequest{
+		PlanID:    7,
+		RequestID: "trade:deal-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID != 11 || created.PlanID != 7 {
+		t.Fatalf("resolved subscription = %+v", created)
+	}
+	if listCalls != 1 {
+		t.Fatalf("list calls = %d, want 1", listCalls)
 	}
 }
 
@@ -523,10 +736,10 @@ func TestClientAdminCreateUserSubscriptionRejectsInvalidIDsBeforeRequest(t *test
 	defer server.Close()
 
 	client := NewClient(server.URL, server.Client())
-	if err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 0, AdminCreateUserSubscriptionRequest{PlanID: 7}); err == nil {
+	if _, err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 0, AdminCreateUserSubscriptionRequest{PlanID: 7}); err == nil {
 		t.Fatal("expected invalid user id to fail")
 	}
-	if err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 42, AdminCreateUserSubscriptionRequest{PlanID: 0}); err == nil {
+	if _, err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 42, AdminCreateUserSubscriptionRequest{PlanID: 0}); err == nil {
 		t.Fatal("expected invalid plan id to fail")
 	}
 	if called {
@@ -832,6 +1045,21 @@ func TestClientListsAndDeletesUserTokensAndChannels(t *testing.T) {
 	}
 	if strings.Join(deleted, ",") != "/api/token/11,/api/token/12,/api/channel/31" {
 		t.Fatalf("deleted = %v", deleted)
+	}
+}
+
+func TestDeleteUserTokenTreatsNotFoundAsAlreadyDeleted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/token/99" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if err := client.DeleteUserToken(t.Context(), 42, "user-access-token", 99); err != nil {
+		t.Fatalf("delete missing token: %v", err)
 	}
 }
 

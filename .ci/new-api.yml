@@ -1,0 +1,102 @@
+version: v2.0
+name: 构建并推送 NewAPI 镜像
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - new-api/**
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-new-api-images
+  cancel-in-progress: false
+  queue-length: 3
+  queue-timeout-minutes: 480
+
+stages:
+  - name: 构建并推送镜像
+    jobs:
+      build-cn:
+        name: 构建并推送北京、上海 TCR
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        env:
+          TCR_BEIJING_LLMGATEWAY_PASSWORD: ${{ settings.TCR_BEIJING_LLMGATEWAY_PASSWORD }}
+          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 构建并推送 NewAPI 镜像
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_require_commands docker git python3
+              ci_generate_release_bundle_manifest "$PWD"
+
+              SHORT_SHA='${{ ci.sha }}'
+              if [[ -z "$SHORT_SHA" ]]; then
+                SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              if [[ -z "$SHORT_SHA" ]]; then
+                SHORT_SHA="$(git rev-parse HEAD)"
+              fi
+              SHORT_SHA="${SHORT_SHA:0:12}"
+              TAG="new-api-${SHORT_SHA}"
+
+              for ENV_NAME in beijing-llmgateway shprod; do
+                ci_set_registry_credentials "$ENV_NAME"
+                python3 .ci/runtime/commands/build_release_image.py \
+                  --service new-api \
+                  --env "$ENV_NAME" \
+                  --tag "$TAG" \
+                  --push \
+                  --reuse-existing
+              done
+      build-sg:
+        name: 构建并推送新山 TCR
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 构建并推送 NewAPI 镜像
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_require_commands docker git python3
+              ci_generate_release_bundle_manifest "$PWD"
+
+              SHORT_SHA='${{ ci.sha }}'
+              if [[ -z "$SHORT_SHA" ]]; then
+                SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              if [[ -z "$SHORT_SHA" ]]; then
+                SHORT_SHA="$(git rev-parse HEAD)"
+              fi
+              SHORT_SHA="${SHORT_SHA:0:12}"
+              TAG="new-api-${SHORT_SHA}"
+
+              ci_set_registry_credentials "sgprod"
+              python3 .ci/runtime/commands/build_release_image.py \
+                --service new-api \
+                --env "sgprod" \
+                --tag "$TAG" \
+                --push \
+                --reuse-existing

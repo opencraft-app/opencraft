@@ -125,9 +125,9 @@ type RenewPassTaskPayload struct {
 	// === R-MR-5 续费失败回滚扩展（2026-05-24 用户拍板）===
 	// 设计稿：.tmp/trade-pass-renew-design.md §3.4 失败回滚链路升级
 	//
-	// 续费父 task 失败时（renewPassTaskMaxExecuteCount=5 用尽），需要派发
-	// RollbackRenewPassTask 把已生效的副作用（pass 状态/到期时间、ai-gateway PeriodEnd、
-	// 已被子 task 改动 Paused→Running 的实例）回滚到续费前的基线状态。
+	// 续费父 task 检测到子 task 终态失败或触发最大次数兜底时，需要派发
+	// RollbackRenewPassTask 把已生效的副作用（pass 状态/到期时间、隔离用户恢复出的
+	// 长期 AI 权益、已被子 task 改动 Paused→Running 的实例）回滚到续费前的基线状态。
 	// 该回滚 task 的 payload 直接复用本结构体（透传），所以基线字段必须从入口 RenewPass
 	// 一路带到父 task，再带到回滚 task。
 	//
@@ -135,8 +135,8 @@ type RenewPassTaskPayload struct {
 	//   - active 续费分支：= 入口 entity.ExpiredTime
 	//   - isolated 续费分支：= 入口 entity.ExpiredTime（与 active 同；isolated 状态期间
 	//     expired_time 不被改动，所以入口快照即原值）
-	//   - 父 task 收尾失败 → 回滚 task 据此把 pass.expired_time 写回旧值 + 把 ai-gateway
-	//     subscription.period_end Align 回旧值（强一致语义）
+	//   - 父 task 收尾失败 → 回滚 task 据此把 pass.expired_time 写回旧值；
+	//     若原态是 isolated，同时撤销恢复阶段创建的长期 AI 权益
 	OriginalExpiredTime time.Time `json:"original_expired_time,omitempty"`
 
 	// OriginalIsolatedTime：续费前的 pass.isolated_time（决定回滚目标状态）
@@ -155,16 +155,14 @@ type RenewPassTaskPayload struct {
 //
 // RollbackRenewPassTaskPayload 是回滚 task 的 payload。
 //
-// 触发：renewPassTask.finalizeFailure（max_execute_count=5 用尽）。
+// 触发：renewPassTask.finalizeFailure 检测到 RenewInstance 终态失败，或最大次数兜底。
 //
-// 行为契约（max_execute_count=5，与父 task 同节奏；失败即终态，不做"回滚的回滚"）：
+// 行为契约（max_execute_count=1<<30，由 checkTasks 持续补偿，不做"回滚的回滚"）：
 //  1. 等原 RenewInstance 子 task 全部到达终态（防止与回滚同时操作同一 instance）
 //  2. 仅当 OriginalIsolatedTime != nil 时：为每个状态非终态、非 Paused 的 instance
 //     派发 IsolateInstance 子 task 把 Running→Paused
 //  3. 等步骤 2 派发的 IsolateInstance 子 task 全部到达终态
-//  4. Align ai-gateway subscription.period_end 回 OriginalExpiredTime（强一致；
-//     由于 ai-gateway ExtendSubscription 已升级"等值即 no-op、不等强制覆盖"语义，
-//     向前缩短同样安全）
+//  4. 原态为 isolated 时可靠取消长期 AI 权益
 //  5. 调 pass DAO RollbackRenewal 一次性 CAS：
 //     · OriginalIsolatedTime == nil → renewing→active + expired_time=Original + isolated_time=NULL
 //     · OriginalIsolatedTime != nil → renewing→isolated + expired_time=Original + isolated_time=Original
@@ -172,8 +170,7 @@ type RenewPassTaskPayload struct {
 //     落 failed，触发 jifei 自动退款（trade 端 R-MR-5 已升级 result 分发）
 //  7. markSuccess
 //
-// max_execute_count=5：与父 task 同节奏；回滚也需要"有限重试 + 失败即终态"避免雪崩
-// （如果回滚也失败 5 次，pass 卡在 renewing 状态，由 reconcile worker 兜底人工介入）
+// max_execute_count=1<<30：与父 task同样不提前放弃；真正达到兜底上限时才由人工介入。
 type RollbackRenewPassTaskPayload struct {
 	PassID      string `json:"pass_id"`
 	UserID      string `json:"user_id,omitempty"`
@@ -212,12 +209,6 @@ type RenewInstanceTaskPayload struct {
 	InstanceID  string `json:"instance_id"`
 	PassID      string `json:"pass_id"`
 	OperationID string `json:"operation_id,omitempty"`
-
-	// TargetGateway is empty for an ordinary renewal. During a forward-only
-	// gateway migration it is set to llm_gateway, which makes the child task
-	// save the new provider/key and restart the Agent even when it was already
-	// running.
-	TargetGateway string `json:"target_gateway,omitempty"`
 }
 
 // === trade-pass-destroy 设计稿落地（pass 销毁父 task payload）===
@@ -325,10 +316,10 @@ const (
 
 	// R-MR-5 续费失败回滚父 task（2026-05-24 用户拍板，trade-pass-renew §3.4 失败回滚链路升级）
 	//
-	// 触发：renewPassTask.finalizeFailure 在 max_execute_count=5 用尽后派发；
+	// 触发：renewPassTask.finalizeFailure 检测到 RenewInstance 终态失败或最大次数兜底后派发；
 	// 行为：等原子 task 终态 → IsolateInstance 回滚（仅 isolated 续费分支）→ Align ai-gateway
 	//       回旧值 → RollbackRenewal CAS pass 状态 → CompleteFlow(failed) → 触发 jifei 退款。
-	// max_execute_count=5（与父 task 同节奏；失败即终态由人工介入）。
+	// max_execute_count=1<<30（由 checkTasks 持续补偿，最大次数仅作理论兜底）。
 	TaskNameRollbackRenewPass = "RollbackRenewPass"
 
 	// trade-pass-destroy 父子 task（设计稿 §3.5 / §4.5.2 / §4.5.3 / §4.6 / §4.7）

@@ -1,12 +1,18 @@
 # 对话
 
+## 摘要
+
+**「对话」页面是 LightVela 管理台内置的聊天窗口，无需接入任何外部通道即可直接与 Hermes Agent 交互，适合在配置完模型后立即验证 Agent 是否正常工作。它与外部聊天通道共享同一个 Agent、同一份人格与长期记忆，因此在这里说过的偏好在其他通道中同样生效，反之亦然。**
+
+---
+
 前往「对话」页面，即可通过聊天窗口和 Hermes Agent 智能代理交互。
 
 > ℹ️ **温馨提示**
 >
 > AgentChat 当前内置提示语以中文为主，多语言文案正在补齐。
 
-![](../images/agentchat-1-global.webp)
+![LightVela 管理台中的对话页面](../images/chat-overview.png)
 
 ---
 
@@ -14,7 +20,7 @@
 
 Hermes Agent 智能代理具备随对话自主迭代进化的特性。前往「记忆」页面，查看更多记忆功能相关说明。
 
-![](../images/agentchat-2-global.webp)
+![记忆管理页面](../images/memory-management-overview.png)
 
 ### 记忆运行原理
 

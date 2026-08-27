@@ -1,14 +1,20 @@
 # What is LightVela
 
+## Summary
+
+**LightVela is a cloud-hosted agent platform from the Tencent Lighthouse team, and its current product is Hermes Agent — an AI agent built on large language models. LightVela takes care of deployment, operations, and 24/7 uptime in the cloud, so you never write config files or SSH into a server: you set everything up by pointing and clicking in a visual panel, then talk to your agent through the messaging apps you already use. It remembers you across conversations, and you choose the model, tools, and persona. LightVela plans to enter public beta with billing enabled on August 18, 2026 (Singapore time); existing closed-beta plans will be extended by one additional month, and new users can try the Launch plan free for 14 days. Check the subscribe page for current status.**
+
+---
+
 > A cloud-hosted Hermes Agent that understands you better over time.
 
-> ℹ️ **Beta notice**
+> ℹ️ **Public beta and billing notice**
 >
-> LightVela is currently in beta. Documentation and product capabilities are still evolving, and some descriptions may change as new versions are released.
+> LightVela is entering public beta and starting billing. Documentation and product capabilities are still evolving, and some descriptions may change as new versions are released.
 >
-> * **Free for a limited time**: During the beta period, the Launch plan is available for free to approved users. The free period is subject to future official announcements and may later become paid.
+> * **Public beta and billing**: LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 >
-> * **Limited availability**: Quotas are released according to official rules.
+> * **New-user benefit after public beta and billing start**: New users can try the Launch plan free for 14 days.
 
 LightVela is a cloud Agent hosting product from the Tencent Lighthouse team. It is designed to let everyone own an **AI companion that truly belongs to them**—not a tool that asks you to introduce yourself every time, but a long-term presence that **knows you, remembers you, and understands you better over time**.
 
@@ -26,7 +32,7 @@ The current LightVela product is **Hermes Agent**, an AI Agent powered by large 
 
 * Users who want to use an AI Agent but do not have technical knowledge of servers, containers, API authentication, and related infrastructure
 
-* Users who prefer interacting with AI through everyday messaging platforms (WeChat / Telegram / WhatsApp / Discord) instead of a standalone app
+* Users who prefer interacting with AI through everyday messaging platforms (Telegram / WhatsApp / Discord / Slack / WeChat) instead of a standalone app
 
 * Users who want to choose from multiple large language model providers (including ChatGPT, Claude, Gemini, Deepseek, Qwen, Zhipu, Hunyuan, and more)
 
@@ -50,7 +56,7 @@ The current LightVela product is **Hermes Agent**, an AI Agent powered by large 
 
 * **Multi-model support**: Connect to mainstream Chinese large language models, provider Coding Plan subscriptions, or any OpenAI-compatible endpoint. See [Configure Models](./configuration/model.md)
 
-* **Multi-channel access**: Chat with Hermes Agent through WeChat, Telegram, WhatsApp, and Discord
+* **Multi-channel access**: Chat with Hermes Agent through Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark
 
 * **Skill extensions**: Install skill packages from [SkillHub](https://skillhub.tencent.com) to extend Hermes Agent capabilities
 
@@ -65,7 +71,7 @@ The current LightVela product is **Hermes Agent**, an AI Agent powered by large 
 LightVela runs a dedicated Hermes Agent instance for each user in the cloud, then connects it to the messaging platform selected by the user through an adapter layer.
 
 ```
-User (sends a message in WeChat / Telegram / WhatsApp / Discord)
+User (sends a message in Telegram / WhatsApp / Discord / Slack / WeChat)
       ↓
 User-dedicated Hermes Agent instance in the LightVela cloud
       ↓
@@ -78,7 +84,7 @@ A complete conversation loop requires three configurations:
 
 1. **Model**: The large language model called by Hermes Agent. The Launch plan includes trial credits and can be used directly; you can also configure your own API Key
 
-2. **Channel**: The messaging platform used to chat with Hermes Agent (WeChat / Telegram / WhatsApp / Discord)
+2. **Channel**: The messaging platform used to chat with Hermes Agent (Telegram / WhatsApp / Discord / Slack / WeChat)
 
 3. **Skill** (optional): Additional capabilities for Hermes Agent
 
@@ -94,15 +100,14 @@ Currently available plans:
 
 | Plan | Original price | Current status |
 | --------- | ------- | ---- |
-| Launch | $7.5 / month | Free for a limited time |
-| Cruise | $15 / month | Coming soon |
-| Voyage | $42 / month | Coming soon |
+| Launch | $7.5 / month | 14-day free trial for new users after public beta and billing start |
+| Cruise | $15 / month | Paid plan |
 
 The Launch plan includes: 1 Hermes Agent instance, 2-core 4G isolated runtime environment, 50G dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
 
 > ℹ️ **Beta plan notice**
 >
-> During the beta period, the Launch plan is **free in limited quantity for a limited time**. Quotas are released in application order and may be adjusted or closed at any time. After the free period ends, the plan will be billed at the original price. You will be notified in advance through in-site notifications and email before paid billing officially starts.
+> LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month, and new users can try Launch free for 14 days. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 
 ***
 

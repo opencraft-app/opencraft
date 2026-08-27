@@ -24,27 +24,38 @@ func main() {
 		log.Fatalf("init redis route store: %v", err)
 	}
 	var commands provider.CommandRunner
+	var invocations provider.CommandInvoker
 	var terminals provider.TerminalSessionStarter
+	var terminalCommands provider.TerminalCommandStreamer
 	cp, err := provider.ResolveFromEnv()
 	if err != nil {
 		log.Printf("init provider failed; tat commands unavailable: %v", err)
-	} else if runner, ok := cp.(provider.CommandRunner); ok {
-		commands = runner
+	} else {
+		if runner, ok := cp.(provider.CommandRunner); ok {
+			commands = runner
+		}
+		if invoker, ok := cp.(provider.CommandInvoker); ok {
+			invocations = invoker
+		}
 		if starter, ok := cp.(provider.TerminalSessionStarter); ok {
 			terminals = starter
 		}
-	} else if starter, ok := cp.(provider.TerminalSessionStarter); ok {
-		terminals = starter
+		if streamer, ok := cp.(provider.TerminalCommandStreamer); ok {
+			terminalCommands = streamer
+		}
 	}
 	apiMetrics := observability.NewAPIMetrics(prometheus.NewRegistry())
 	h := &handler{
-		svc:              svc,
-		routes:           routes,
-		commands:         commands,
-		terminals:        terminals,
-		cloud:            cp,
-		metrics:          apiMetrics,
-		cloudPauseResume: cfg.CloudPauseResume,
+		svc:                 svc,
+		routes:              routes,
+		commands:            commands,
+		invocations:         invocations,
+		terminals:           terminals,
+		terminalCommands:    terminalCommands,
+		cloud:               cp,
+		metrics:             apiMetrics,
+		allowedTATCommandID: cfg.AllowedTATCommandID,
+		cloudPauseResume:    cfg.CloudPauseResume,
 	}
 
 	r := gin.New()
@@ -54,12 +65,16 @@ func main() {
 
 	api.RegisterHandlers(r, h)
 	authenticated := r.Group("/")
-	authenticated.Use(userSessionAuth(cfg.AuthServiceURL))
+	authenticated.Use(userSessionAuth(cfg.AuthServiceURL, cfg.InternalServiceToken))
 	registerTATRoutes(authenticated, h)
 
 	internal := r.Group("/internal")
 	registerPoolRoutes(internal, h)
 	registerTemplateClassRoutes(internal, h)
+	registerInternalTATStreamRoute(internal, h)
+	internalInvocations := internal.Group("")
+	internalInvocations.Use(internalAPIKeyAuth(cfg.InternalAPIKey))
+	registerInternalTATInvocationRoutes(internalInvocations, h)
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,

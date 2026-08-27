@@ -36,6 +36,7 @@ const TEXT_EXTENSIONS = new Set([
 const SECRET_KEY_RE = /(TOKEN|PASSWORD|SECRET|PRIVATE|CREDENTIAL)/i;
 const PLACEHOLDER_RE = /^\$\{\{.*\}\}$|^(changeme|change_me|placeholder|replace_me|todo|test|dummy)$/i;
 const ARTIFACT_NOT_FOUND_RE = /(not\s+found|404|manifest\s+unknown|name\s+unknown|repository\s+unknown|not\s+exist|does\s+not\s+exist|failed\s+to\s+resolve.*not\s+found)/i;
+const CLOUDFLARE_PAGES_MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 function shouldColor(env = process.env) {
   return !env.NO_COLOR && !env.CI_NO_COLOR;
@@ -216,6 +217,19 @@ export function collectFiles(rootDir) {
   }
   visit(root);
   return files;
+}
+
+export function assertCloudflarePagesFileSizeLimit(outputDir) {
+  const root = resolve(outputDir);
+  for (const filePath of collectFiles(root)) {
+    const bytes = statSync(filePath).size;
+    if (bytes <= CLOUDFLARE_PAGES_MAX_FILE_BYTES) continue;
+
+    const rel = relative(root, filePath).split(sep).join("/");
+    throw new Error(
+      `Cloudflare Pages single-file limit exceeded: ${rel} is ${bytes} bytes, limit is ${CLOUDFLARE_PAGES_MAX_FILE_BYTES} bytes`,
+    );
+  }
 }
 
 function sha256Buffer(buffer) {
@@ -619,6 +633,16 @@ export function artifactIdentitiesMatch(a, b) {
     && a?.identity?.provenanceIdentitySha256 === b?.identity?.provenanceIdentitySha256;
 }
 
+function artifactSourceAndComboMatch(a, b) {
+  return a?.sourceSha === b?.sourceSha
+    && a?.comboId === b?.comboId;
+}
+
+function shouldReuseExistingArtifactOnConflict(env) {
+  const raw = env.FRONTEND_ARTIFACT_EXISTING_POLICY?.trim().toLowerCase() ?? "";
+  return raw === "reuse" || raw === "reuse-existing";
+}
+
 export function archiveFrontendArtifact({ combo, projectName, comboEnv, env = process.env, log = console.log, dryRun = false, workDir } = {}) {
   const repository = env.FRONTEND_ARTIFACT_REPOSITORY?.trim();
   const sourceSha = env.FRONTEND_ARTIFACT_SOURCE_SHA?.trim();
@@ -626,6 +650,7 @@ export function archiveFrontendArtifact({ combo, projectName, comboEnv, env = pr
   if (!sourceSha) throw new Error("FRONTEND_ARTIFACT_SOURCE_SHA is required");
   const outputDir = resolve(comboEnv.EDGEONE_PAGES_DIR || comboEnv.CLOUDFLARE_PAGES_DIR || combo.outputDir);
   if (!existsSync(outputDir)) throw new Error(`frontend artifact output dir is missing: ${outputDir}`);
+  if (combo.channel === "cf") assertCloudflarePagesFileSizeLimit(outputDir);
 
   const tempDir = workDir || mkdtempSync(join(tmpdir(), "frontend-artifact-"));
   mkdirSync(tempDir, { recursive: true });
@@ -651,6 +676,10 @@ export function archiveFrontendArtifact({ combo, projectName, comboEnv, env = pr
         }
         const existing = readManifest(existingManifestPath);
         if (!artifactIdentitiesMatch(existing, manifest)) {
+          if (shouldReuseExistingArtifactOnConflict(env) && artifactSourceAndComboMatch(existing, manifest)) {
+            log(`${colorText("frontend artifact exists for same source/combo with different identity; reuse existing:", "yellow", env)} ${highlightArtifactRef(ref, env)}`);
+            return { manifest: existing, manifestPath: existingManifestPath, archivePath: join(existingDir, ARCHIVE_FILE), ref, skippedPush: true, reusedExisting: true };
+          }
           throw new Error(`frontend artifact ${ref} already exists with different identity`);
         }
         log(`${colorText("frontend artifact exists with matching identity; skip push:", "yellow", env)} ${highlightArtifactRef(ref, env)}`);

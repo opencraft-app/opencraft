@@ -1,10 +1,12 @@
 .PHONY: dev stop backend dashboard install setup precommit-check test-regression test-ctl-regression test-ctl-integration test-ai-gateway-regression \
+	local-stack-doctor local-stack-up local-stack-down local-stack-reset local-stack-render local-stack-status local-stack-logs \
 	velalink-server-release-linux-amd64 velalink-server-upload-cos velalink-server-vm-install-command velalink-server-vm-install-debug-exec \
 	help
 
 ROOT_DIR := $(shell pwd)
 PID_DIR  := $(ROOT_DIR)/.pids
 LOG_DIR  := $(ROOT_DIR)/logs
+LOCAL_STACK := bash $(ROOT_DIR)/deploy/localstack/localstack.sh
 
 # 一键启动所有服务（路由网关 + AI Gateway 后端 + Dashboard 前端）
 dev: install
@@ -132,6 +134,27 @@ test-ai-gateway-regression:
 test-regression: test-ai-gateway-regression test-ctl-regression
 	@echo "✅ 核心回归已通过"
 
+local-stack-doctor:
+	$(LOCAL_STACK) doctor
+
+local-stack-up:
+	$(LOCAL_STACK) up
+
+local-stack-down:
+	$(LOCAL_STACK) down
+
+local-stack-reset:
+	$(LOCAL_STACK) reset
+
+local-stack-render:
+	$(LOCAL_STACK) render
+
+local-stack-status:
+	$(LOCAL_STACK) status
+
+local-stack-logs:
+	$(LOCAL_STACK) logs
+
 velalink-server-release-linux-amd64:
 	@$(MAKE) -C velalink server-release-linux-amd64
 
@@ -157,6 +180,12 @@ help:
 	@echo "  make stop             - 停止所有服务"
 	@echo "  make backend          - 只启动 AI Gateway 后端"
 	@echo "  make dashboard        - 只启动 Dashboard 前端"
+	@echo "  make local-stack-doctor - 检查本地 Kubernetes 开发环境"
+	@echo "  make local-stack-up     - 构建并启动本地 Kubernetes 开发环境"
+	@echo "  make local-stack-down   - 停止本地 Kubernetes 工作负载，保留数据"
+	@echo "  make local-stack-reset  - 删除本地 Kubernetes 环境和数据"
+	@echo "  make local-stack-render - 渲染并校验 localstack Kustomize 清单"
+	@echo "  make local-stack-status - 查看 localstack Pod 状态"
 	@echo "  make install          - 安装依赖"
 	@echo ""
 	@echo "检查:"

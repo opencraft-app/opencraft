@@ -152,10 +152,10 @@ describe("LLMGatewayAPI", () => {
   it("defines an entitlement plan through the control API", async () => {
     const created = {
       id: "plan-generated",
-      name: "入门型 14 天",
+      name: "入门型",
       monthly_tokens: 1_000_000,
-      period_value: 14,
-      period_unit: "days",
+      quota_reset_period: "monthly",
+      quota_reset_custom_seconds: 0,
       is_active: true,
       fingerprint: "fingerprint",
     }
@@ -163,10 +163,9 @@ describe("LLMGatewayAPI", () => {
     const api = new LLMGatewayAPI(fetcher, () => "cluster-token")
 
     await expect(api.createPlan({
-      name: "入门型 14 天",
+      name: "入门型",
       monthly_tokens: 1_000_000,
-      period_value: 14,
-      period_unit: "days",
+      quota_reset_period: "monthly",
       is_active: true,
     })).resolves.toEqual(created)
     expect(fetcher).toHaveBeenCalledWith(
@@ -174,13 +173,32 @@ describe("LLMGatewayAPI", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          name: "入门型 14 天",
+          name: "入门型",
           monthly_tokens: 1_000_000,
-          period_value: 14,
-          period_unit: "days",
+          quota_reset_period: "monthly",
           is_active: true,
         }),
       }),
+    )
+  })
+
+  it("retires an entitlement plan without replacing its contents", async () => {
+    const retired = {
+      id: "starter",
+      name: "入门型",
+      monthly_tokens: 1_000_000,
+      quota_reset_period: "monthly",
+      quota_reset_custom_seconds: 0,
+      is_active: false,
+      fingerprint: "stable",
+    }
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ success: true, data: retired }))
+    const api = new LLMGatewayAPI(fetcher, () => "cluster-token")
+
+    await expect(api.retirePlan("starter")).resolves.toEqual(retired)
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/plans/starter/retire",
+      expect.objectContaining({ method: "POST" }),
     )
   })
 

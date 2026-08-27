@@ -156,6 +156,38 @@ stacks:
       security_groups:
         - __TKE_NODE_SECURITY_GROUP_ID__
 
+  notify:
+    enabled: true
+    manage_triggers: true
+    triggers_enabled: false
+    test_allowlist_enabled: true
+    db_user: ctl_notify_reader
+    db_host: 10.15.224.4
+    db_port: 3306
+    db_secret_name: mono-beijing-sandbox-notify-scan-probe-db
+    redis_host: 10.15.231.163
+    redis_port: 6379
+    redis_secret_name: mono-beijing-sandbox-notify-redis
+    vpc_id: vpc-21gzr2dc
+    subnet_id: subnet-ieszm71b
+    cls_logset_id: f2beae6b-a7e3-4093-a0b9-baf050841fbb
+    cls_topic_id: 687086c1-9f74-44ce-b103-06ea30fdf968
+    sms_sdk_app_id: "1401097405"
+    sms_sign_name: "腾讯云"
+    sms_template_id: "2701152"
+    expiry_windows_days: "7,0"
+    sms_qps: 15
+    sms_burst: 1
+    scan_page_size: 500
+    worker_batch_size: 200
+    worker_max_messages: 10000
+    scanner_cron: "0 0 9 * * * *"
+    worker_cron: "0 */15 * * * * *"
+    scanner_function_name: lightvela-notify-scanner-bj
+    worker_function_name: lightvela-notify-worker-bj
+    existing_scanner_function_id: default+lightvela-notify-scanner-bj
+    existing_worker_function_id: default+lightvela-notify-worker-bj
+
   tcr:
     instance_type: basic
     namespace_name: lightclaw

@@ -1,7 +1,9 @@
 import { MemoryRouter } from "react-router-dom";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LandingPage } from "@/pages/marketing/landing-page";
+import { LandingPage, LandingPageView } from "@/pages/marketing/landing-page";
+import i18n from "@/i18n";
+import { isGlobal } from "@/lib/region";
 
 const sessionState = vi.hoisted(() => ({
   authReady: true,
@@ -61,15 +63,69 @@ vi.mock("@/imports/Frame2147230025/sections/CtaSection", () => ({
 vi.mock("@/components/site/product-chrome", () => ({
   ProductFooter: () => <div>footer</div>,
 }));
+vi.mock("@/pages/marketing/scenario-tasks/OverviewAutomationTasksSection", () => ({
+  OverviewAutomationTasksSection: ({
+    onEnable,
+    packs,
+  }: {
+    onEnable: (pack: { name: string }) => void;
+    packs: Array<{ name: string }>;
+  }) => (
+    <div data-testid="overview-automations">
+      {packs.map((pack) => pack.name).join("|")}
+      <button type="button" onClick={() => onEnable(packs[0])}>open automation</button>
+    </div>
+  ),
+}));
 
-afterEach(() => {
+afterEach(async () => {
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
   sessionState.session = { stage: "anonymous", user: null };
+  await i18n.changeLanguage("zh-CN");
   cleanup();
 });
 
 describe("LandingPage", () => {
+  it("renders the overview automations on the public home page", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <LandingPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("overview-automations")).toHaveTextContent(
+      isGlobal ? "Water & medication reminders" : "喝水与吃药提醒",
+    );
+  });
+
+  it("navigates automation actions to the Agent page instead of operating an Agent on the landing page", () => {
+    const navigateTo = vi.fn();
+
+    render(<LandingPageView navigateTo={navigateTo} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "open automation" }));
+
+    expect(navigateTo).toHaveBeenCalledWith("/agents/automations");
+  });
+
+  it("renders overview automation cards in Traditional Chinese for zh-Hant", async () => {
+    await i18n.changeLanguage("zh-Hant");
+
+    render(
+      <LandingPageView
+        navigateTo={vi.fn()}
+        publicLocale="zh-Hant"
+        publicLocalized
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("overview-automations")).toHaveTextContent("喝水與吃藥提醒");
+    });
+    expect(screen.getByTestId("overview-automations")).not.toHaveTextContent("喝水与吃药提醒");
+  });
+
   it("renders the signed-in header state after the global session hydrates", () => {
     sessionState.isAuthenticated = true;
     sessionState.session = {

@@ -19,6 +19,7 @@ from contracts.build_release_image import (  # noqa: E402
     image_for_target,
     main,
     playground_frontend_auth_api_base_url,
+    playground_frontend_region,
     push_image_with_retry,
     resolve_docker_build_args,
     run_command,
@@ -39,7 +40,21 @@ class BuildReleaseImageTests(unittest.TestCase):
     def test_frontend_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
         self.assertEqual(
             resolve_docker_build_args("frontend", "sandbox-bj-7"),
-            {"VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech"},
+            {
+                "NEXT_PUBLIC_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech",
+                "NEXT_PUBLIC_REGION": "cn",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech",
+                "VITE_REGION": "cn",
+            },
+        )
+        self.assertEqual(
+            resolve_docker_build_args("frontend", "sandbox-kr-1"),
+            {
+                "NEXT_PUBLIC_AUTH_API_BASE_URL": "https://api-sandbox-kr-1.lightclaw.tech",
+                "NEXT_PUBLIC_REGION": "global",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-kr-1.lightclaw.tech",
+                "VITE_REGION": "global",
+            },
         )
 
     def test_playground_frontend_auth_api_base_uses_env_name(self) -> None:
@@ -51,6 +66,46 @@ class BuildReleaseImageTests(unittest.TestCase):
             playground_frontend_auth_api_base_url("sandbox-kr-1"),
             "https://api-sandbox-kr-1.lightclaw.tech",
         )
+        self.assertEqual(
+            playground_frontend_auth_api_base_url("sandbox-jp-1"),
+            "https://api-sandbox-jp-1.lightclaw.tech",
+        )
+
+    def test_frontend_japan_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
+        self.assertEqual(
+            resolve_docker_build_args("frontend", "sandbox-jp-1"),
+            {
+                "NEXT_PUBLIC_AUTH_API_BASE_URL": "https://api-sandbox-jp-1.lightclaw.tech",
+                "NEXT_PUBLIC_REGION": "global",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-jp-1.lightclaw.tech",
+                "VITE_REGION": "global",
+            },
+        )
+
+    def test_frontend_dockerfile_accepts_region_build_arguments(self) -> None:
+        dockerfile = (REPO_ROOT / "frontend/deploy/Dockerfile").read_text()
+
+        for name in ("VITE_REGION", "NEXT_PUBLIC_REGION"):
+            with self.subTest(name=name):
+                self.assertIn(f"ARG {name}=cn", dockerfile)
+                self.assertIn(f'ENV {name}="${{{name}}}"', dockerfile)
+
+    def test_frontend_dockerfile_includes_monorepo_file_dependency(self) -> None:
+        dockerfile = (REPO_ROOT / "frontend/deploy/Dockerfile").read_text()
+        dockerignore = (REPO_ROOT / "frontend/deploy/Dockerfile.dockerignore").read_text()
+
+        self.assertIn("COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./", dockerfile)
+        self.assertIn("COPY velalink /velalink", dockerfile)
+        self.assertIn("COPY frontend/deploy/nginx.conf /etc/nginx/conf.d/default.conf", dockerfile)
+        self.assertEqual(
+            dockerignore.splitlines(),
+            ["**", "!frontend/", "!frontend/**", "!velalink/", "!velalink/**"],
+        )
+
+    def test_playground_frontend_region_uses_cluster_region(self) -> None:
+        self.assertEqual(playground_frontend_region("sandbox-bj-7"), "cn")
+        self.assertEqual(playground_frontend_region("sandbox-kr-1"), "global")
+        self.assertEqual(playground_frontend_region("sandbox-jp-1"), "global")
 
     def test_frontend_non_playground_build_has_no_extra_build_args(self) -> None:
         self.assertEqual(resolve_docker_build_args("frontend", "shprod"), {})
@@ -63,7 +118,7 @@ class BuildReleaseImageTests(unittest.TestCase):
             name="frontend",
             image_key=None,
             dockerfile="frontend/deploy/Dockerfile",
-            build_context="frontend",
+            build_context=".",
             image_repo="registry.example.com/lightclaw/frontend",
         )
 
@@ -71,12 +126,21 @@ class BuildReleaseImageTests(unittest.TestCase):
             target,
             "registry.example.com/lightclaw/frontend:frontend-sandbox-bj-7-abc123",
             "linux/amd64",
-            {"VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech"},
+            {
+                "NEXT_PUBLIC_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech",
+                "NEXT_PUBLIC_REGION": "cn",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech",
+                "VITE_REGION": "cn",
+            },
         )
 
         self.assertIn("--build-arg", command)
+        self.assertIn("NEXT_PUBLIC_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
+        self.assertIn("NEXT_PUBLIC_REGION=cn", command)
         self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
-        self.assertEqual(command[-1], "frontend")
+        self.assertIn("VITE_REGION=cn", command)
+        self.assertIn("--force-rm", command)
+        self.assertEqual(command[-1], ".")
 
     def test_image_for_target_matches_docker_build_image_ref(self) -> None:
         target = ImageTarget(
@@ -126,6 +190,7 @@ class BuildReleaseImageTests(unittest.TestCase):
         with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
             mock.patch("contracts.build_release_image.push_image_with_retry") as push_image, \
             mock.patch("contracts.build_release_image.wait_for_remote_image") as wait, \
+            mock.patch("contracts.build_release_image.remove_local_image") as remove, \
             mock.patch("contracts.build_release_image.subprocess.run") as run:
             image = build_target(
                 target,
@@ -149,7 +214,45 @@ class BuildReleaseImageTests(unittest.TestCase):
             timeout_seconds=17,
             interval_seconds=3,
         )
+        remove.assert_called_once_with(image)
         self.assertEqual(run.call_args_list[-1].args[0][0:2], ["docker", "build"])
+
+    def test_build_target_removes_local_image_when_push_fails(self) -> None:
+        target = ImageTarget(
+            name="workers",
+            image_key=None,
+            dockerfile="workers/Dockerfile",
+            build_context="workers",
+            image_repo="registry.example.com/lightclaw/workers",
+        )
+        image = "registry.example.com/lightclaw/workers:workers-test"
+
+        with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
+            mock.patch(
+                "contracts.build_release_image.push_image_with_retry",
+                side_effect=RuntimeError("push failed"),
+            ), mock.patch("contracts.build_release_image.remove_local_image") as remove, \
+            mock.patch("contracts.build_release_image.run_command"):
+            with self.assertRaisesRegex(RuntimeError, "push failed"):
+                build_target(target, "workers-test", "linux/amd64", True, {})
+
+        remove.assert_called_once_with(image)
+
+    def test_build_target_keeps_local_image_without_push(self) -> None:
+        target = ImageTarget(
+            name="workers",
+            image_key=None,
+            dockerfile="workers/Dockerfile",
+            build_context="workers",
+            image_repo="registry.example.com/lightclaw/workers",
+        )
+
+        with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
+            mock.patch("contracts.build_release_image.remove_local_image") as remove, \
+            mock.patch("contracts.build_release_image.run_command"):
+            build_target(target, "workers-test", "linux/amd64", False, {})
+
+        remove.assert_not_called()
 
     def test_push_image_retries_after_connection_failure(self) -> None:
         image = "registry.example.com/lightclaw/workers:workers-test"
@@ -330,10 +433,11 @@ class BuildReleaseImageTests(unittest.TestCase):
             mock.patch("contracts.build_release_image.require_build_metadata", return_value=bundle), \
             mock.patch("contracts.build_release_image.verify_images", return_value=[
                 ImageCheckResult(expected_image, False),
-            ]), \
+            ]) as verify, \
             mock.patch("contracts.build_release_image.build_target", return_value=expected_image) as build:
             self.assertEqual(main(), 0)
 
+            verify.assert_called_once_with([expected_image])
             build.assert_called_once_with(
                 ImageTarget(
                     name="user-auth",

@@ -48,6 +48,7 @@ env_display_name() {
     beijing-llmgateway) printf '北京 LLMGateway 测试' ;;
     sandbox-bj-*) printf '北京 Playground %s' "$1" ;;
     sandbox-kr-*) printf '韩国 Playground %s' "$1" ;;
+    sandbox-jp-*) printf '东京 Playground %s' "$1" ;;
     shprod) printf '上海正式' ;;
     sgprod) printf '新加坡正式' ;;
     tkexgz) printf 'TKEx 广州内网' ;;
@@ -197,6 +198,38 @@ run_release_gates() {
   PIN_IMAGE="${GATE_IMAGE_PIN_PAYLOAD:-$IMAGE}"
   rm -f "$gate_env_file"
 }
+
+reset_known_build_side_effects_before_rewrite() {
+  if [[ "$BUNDLE_SERVICE" != "frontend" ]]; then
+    return
+  fi
+
+  local generated_paths=(
+    frontend/next-env.d.ts
+    frontend/public/fonts/HYRuiYiSong-45J.subset.woff2
+  )
+  local changed_paths=()
+  local path
+
+  for path in "${generated_paths[@]}"; do
+    if ! git -C "$REPO_ROOT" diff --quiet -- "$path" || ! git -C "$REPO_ROOT" diff --cached --quiet -- "$path"; then
+      changed_paths+=("$path")
+    fi
+  done
+
+  if [[ "${#changed_paths[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  echo "reset frontend build-generated tracked files before GitOps branch rewrite:"
+  printf '  %s\n' "${changed_paths[@]}"
+  if ! git -C "$REPO_ROOT" restore --worktree --staged -- "${changed_paths[@]}" 2>/dev/null; then
+    git -C "$REPO_ROOT" reset -q HEAD -- "${changed_paths[@]}"
+    git -C "$REPO_ROOT" checkout -- "${changed_paths[@]}"
+  fi
+}
+
+reset_known_build_side_effects_before_rewrite
 
 if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
   echo "repository has uncommitted changes; refuse to rewrite branch state" >&2

@@ -1,0 +1,130 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lightclaw-auth-migrate
+  namespace: user-auth
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: lightclaw-local/lightclaw-auth:dev
+          imagePullPolicy: IfNotPresent
+          command: [lightclaw-auth-migrate]
+          envFrom:
+            - configMapRef:
+                name: lightclaw-auth-config
+            - secretRef:
+                name: lightclaw-auth-secrets
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: payment-migrate
+  namespace: user-auth
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: lightclaw-local/payment:dev
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/payment-migrate]
+          envFrom:
+            - configMapRef:
+                name: payment-config
+            - secretRef:
+                name: payment-runtime-secrets
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: subscription-migrate
+  namespace: user-auth
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: lightclaw-local/subscription:dev
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/subscription-migrate]
+          envFrom:
+            - configMapRef:
+                name: subscription-config
+            - secretRef:
+                name: subscription-runtime-secrets
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-gateway-migrate
+  namespace: ai-gateway
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: lightclaw-local/ai-gateway:dev
+          imagePullPolicy: IfNotPresent
+          command: [ai-gateway-migrate]
+          envFrom:
+            - configMapRef:
+                name: ai-gateway-runtime-config
+            - secretRef:
+                name: ai-gateway-runtime-secrets
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sandbox-migrate
+  namespace: sandbox
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: lightclaw-local/sandbox-migrate:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              db_url="mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${MYSQL_DB}?multiStatements=true"
+              migrate -path /migrations -database "${db_url}" up
+          envFrom:
+            - configMapRef:
+                name: sandbox-runtime-config
+            - secretRef:
+                name: sandbox-runtime-secrets
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trade-migrate
+  namespace: trade
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: lightclaw-local/trade:dev
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/trade-migrate]
+          envFrom:
+            - configMapRef:
+                name: trade-config
+            - secretRef:
+                name: trade-runtime-secrets

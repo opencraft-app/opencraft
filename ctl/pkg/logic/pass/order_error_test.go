@@ -20,6 +20,28 @@ func TestMapTradePlaceOrderErrorBindingNotFound(t *testing.T) {
 	}
 }
 
+func TestMapTradePlaceOrderErrorBillingAccountOpenFailed(t *testing.T) {
+	err := mapTradePlaceOrderError(&tradeadapter.Error{
+		Status:  http.StatusConflict,
+		Code:    "BillingAccountOpenFailed",
+		Message: "billing account open failed",
+	})
+	if !errors.Is(err, errcode.ErrPassBillingAccountOpenFailed) {
+		t.Fatalf("expected PASS_BILLING_ACCOUNT_OPEN_FAILED, got %v", err)
+	}
+}
+
+func TestMapTradePlaceOrderErrorDianshiActivityRequired(t *testing.T) {
+	err := mapTradePlaceOrderError(&tradeadapter.Error{
+		Status:  http.StatusUnprocessableEntity,
+		Code:    "DianshiActivityRequired",
+		Message: "bundle is not eligible for the Dianshi activity",
+	})
+	if !errors.Is(err, errcode.ErrPassInvalidParam) {
+		t.Fatalf("expected PASS_INVALID_PARAM, got %v", err)
+	}
+}
+
 func TestMapTradePlaceOrderErrorKeepsOtherErrors(t *testing.T) {
 	err := mapTradePlaceOrderError(&tradeadapter.Error{
 		Status:  http.StatusBadGateway,

@@ -1,5 +1,7 @@
 import { planCatalog } from "@/domain/plan-catalog";
+import { t as translate } from "@/i18n/t";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 import type {
   AuthSessionSnapshot,
   BillingSummary,
@@ -9,6 +11,7 @@ import type {
   BotRuntime,
   BotVersion,
   Bundle,
+  CreateDianshiPassOrderAndPayResult,
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlResult,
@@ -25,16 +28,22 @@ import type {
   WorkspaceMessage,
 } from "@/domain/types";
 import { createFakeRepositories } from "@/repositories/fake-repositories";
-import { isGlobal } from "@/lib/region";
 import type {
   AuthRepository,
   BotRepository,
   DashboardSnapshot,
+  FederationAuthorizationContext,
+  FederationAuthorizationInput,
+  FederationTicketResult,
+  OIDCAuthorizationContext,
+  OIDCAuthorizationInput,
+  OIDCAuthorizationResult,
   PlanRepository,
   RealnameVerifyResult,
   Repositories,
   SettingsSnapshot,
   TatDeviceBindResult,
+  TencentCloudRedirectResult,
   WorkerActionStatusLog,
   WorkerActionStatusResult,
   WorkspaceSnapshot,
@@ -56,6 +65,35 @@ interface ApiErrorPayload {
   request_id?: string;
   requestId?: string;
   retryAfterSeconds?: number;
+}
+
+interface DebugExecStreamEvent {
+  type?: string;
+  stream?: string;
+  chunk?: string;
+  response?: {
+    status?: string;
+    exit_code?: number;
+    output?: string;
+  };
+}
+
+const DEBUG_EXEC_STREAM_EVENT = {
+  error: "error",
+  finished: "finished",
+  stderr: "stderr",
+  stdout: "stdout",
+} as const;
+
+function parseDebugExecSsePart(part: string): { eventType: string; data: string } | null {
+  let eventType = "";
+  const dataLines: string[] = [];
+  part.split("\n").forEach((rawLine) => {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+    if (line.startsWith("data: ")) dataLines.push(line.slice(6));
+  });
+  return dataLines.length > 0 ? { eventType, data: dataLines.join("\n") } : null;
 }
 
 interface CurrentSubscriptionPayload {
@@ -90,6 +128,47 @@ interface APIEnvelope<T> {
   message: string;
   data: T;
   request_id?: string;
+}
+
+interface FederationContextPayload {
+  client: {
+    id: string;
+    display_name: string;
+  };
+  redirect_uri: string;
+  state: string;
+  session: {
+    authenticated: boolean;
+    user?: User;
+  };
+}
+
+interface FederationTicketPayload {
+  redirect_url: string;
+  expires_at: string;
+}
+
+interface OIDCContextPayload {
+  client: {
+    id: string;
+    display_name: string;
+  };
+  redirect_uri: string;
+  state: string;
+  response_type: "code";
+  scope: string;
+  code_challenge: string;
+  code_challenge_method: "S256";
+  nonce: string;
+  session: {
+    authenticated: boolean;
+    user?: User;
+  };
+}
+
+interface OIDCAuthorizationPayload {
+  redirect_url: string;
+  expires_at: string;
 }
 
 interface CtlInstancePayload {
@@ -245,13 +324,11 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 });
 
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
-const DEFAULT_OAUTH_START_BASE_URL = "https://lightclaw.tech";
 
 const resolveOAuthStartBaseURL = (baseUrl: string) => {
-  // API calls may use a local dev proxy, but OAuth is a browser redirect flow.
-  // The start URL must live on the same host as the configured callback so the
-  // state cookie is available when QQ/WeChat redirects back to the auth service.
-  return baseUrl === "" ? DEFAULT_OAUTH_START_BASE_URL : baseUrl;
+  // local-proxy keeps OAuth start/callback on the dev server origin so the
+  // state cookie and returned session token survive the browser redirect flow.
+  return baseUrl === "" ? "" : baseUrl;
 };
 
 const configuredOAuthRelayIssuerBaseURL = (): string | null => {
@@ -622,7 +699,7 @@ const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
   }
 };
 
-const defaultHermesAgentName = () => (isGlobal ? "My Hermes" : "我的Hermes");
+const defaultHermesAgentName = () => translate("我的Hermes");
 
 const projectInstanceToBot = (instance: CtlInstancePayload, draft?: BotDraft): Bot => {
   return {
@@ -957,7 +1034,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           method: "POST",
           credentials: "include",
           headers,
-          body: JSON.stringify({ command, run_as_user: "agentuser" }),
+          body: JSON.stringify(createDebugExecRequestBody(command)),
           signal: abortController.signal,
         });
       } catch {
@@ -1018,6 +1095,108 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         exitCode: data?.exit_code ?? -1,
         output: data?.output ?? "",
       };
+    },
+
+    async execDebugCommandStream(botId, command, onChunk, options) {
+      const path = `/v1/instances/${encodeURIComponent(botId)}/debug/exec`;
+      const headers = new Headers({
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+      });
+      const authToken = readStoredAuthToken();
+      if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+
+      const abortController = new AbortController();
+      const timeoutMs = options?.timeoutMs;
+      const timeoutId = typeof timeoutMs === "number" && timeoutMs > 0
+        ? setTimeout(() => abortController.abort(), timeoutMs)
+        : undefined;
+      try {
+        const response = await fetch(buildUrl(baseUrl, path), {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: JSON.stringify(createDebugExecRequestBody(command)),
+          signal: abortController.signal,
+        });
+        if (!response.ok) {
+          if (response.status === 401) broadcastUnauthorized();
+          let message = `请求失败（${response.status}）`;
+          try {
+            const body = await response.json() as ApiErrorPayload;
+            message = body.message?.trim() || body.error?.trim() || message;
+          } catch {
+            // Keep the status-based fallback when the error body is not JSON.
+          }
+          throw new RepositoryError(message, response.status);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("Command output stream is not readable.");
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let output = "";
+        let finalResponse: DebugExecStreamEvent["response"];
+        let sawErrorEvent = false;
+
+        const consumePart = (part: string) => {
+          const parsed = parseDebugExecSsePart(part);
+          if (!parsed) return;
+          let event: DebugExecStreamEvent;
+          try {
+            event = JSON.parse(parsed.data) as DebugExecStreamEvent;
+          } catch {
+            return;
+          }
+          const eventType = event.type || parsed.eventType;
+          if ((eventType === DEBUG_EXEC_STREAM_EVENT.stdout || eventType === DEBUG_EXEC_STREAM_EVENT.stderr) && event.chunk) {
+            output += event.chunk;
+            onChunk({ stream: event.stream || eventType, chunk: event.chunk });
+          }
+          if ((eventType === DEBUG_EXEC_STREAM_EVENT.finished || eventType === DEBUG_EXEC_STREAM_EVENT.error) && event.response) {
+            finalResponse = event.response;
+          }
+          if (eventType === DEBUG_EXEC_STREAM_EVENT.error) sawErrorEvent = true;
+        };
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split(/\r?\n\r?\n/);
+            buffer = parts.pop() ?? "";
+            parts.forEach(consumePart);
+          }
+          buffer += decoder.decode();
+          if (buffer.trim()) consumePart(buffer);
+        } finally {
+          reader.releaseLock();
+        }
+
+        if (finalResponse) {
+          return {
+            status: finalResponse.status || "FAILED",
+            exitCode: typeof finalResponse.exit_code === "number" ? finalResponse.exit_code : -1,
+            output: finalResponse.output || output,
+          };
+        }
+        return {
+          status: output && !sawErrorEvent ? "SUCCESS" : "FAILED",
+          exitCode: output && !sawErrorEvent ? 0 : -1,
+          output,
+        };
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          throw new Error(`debug_exec_timeout:${timeoutMs ?? 0}`);
+        }
+        if (error instanceof RepositoryError || error instanceof Error && error.message === "Command output stream is not readable.") {
+          throw error;
+        }
+        throw createNetworkUnavailableError();
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+      }
     },
 
     async startRescueExport(botId: string) {
@@ -1327,12 +1506,145 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
         : undefined,
     };
   },
+  async createTencentCloudRedirect(targetPath): Promise<TencentCloudRedirectResult> {
+    return request<TencentCloudRedirectResult>(baseUrl, "/auth/tencent-cloud/redirect", {
+      method: "POST",
+      body: targetPath ? { targetPath } : {},
+    });
+  },
+  async listPaymentMethods() {
+    return request(baseUrl, "/auth/payment-methods?page=1&pageSize=100", {
+      method: "GET",
+    });
+  },
+  async createPaymentMethodSignOrder(languageCode) {
+    return request(baseUrl, "/auth/payment-methods/sign-orders", {
+      method: "POST",
+      body: { languageCode },
+    });
+  },
+  async setDefaultPaymentMethod(contractCode) {
+    await request<void>(baseUrl, `/auth/payment-methods/${encodeURIComponent(contractCode)}/default`, {
+      method: "PUT",
+    });
+  },
+  async deletePaymentMethod(contractCode) {
+    await request<void>(baseUrl, `/auth/payment-methods/${encodeURIComponent(contractCode)}`, {
+      method: "DELETE",
+    });
+  },
+  async getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext> {
+    const query = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      state: input.state,
+    });
+    const payload = await request<FederationContextPayload>(
+      baseUrl,
+      `/auth/federation/context?${query.toString()}`,
+      { method: "GET" },
+    );
+    return {
+      clientId: payload.client.id,
+      clientDisplayName: payload.client.display_name,
+      redirectUri: payload.redirect_uri,
+      state: payload.state,
+      currentSession: payload.session.authenticated && payload.session.user ? {
+        user: {
+          id: payload.session.user.id,
+          name: payload.session.user.name,
+          email: payload.session.user.email,
+          phone: payload.session.user.phone,
+          avatarUrl: payload.session.user.avatarUrl,
+        },
+      } : null,
+    };
+  },
+  async issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult> {
+    const payload = await request<FederationTicketPayload>(baseUrl, "/auth/federation/tickets", {
+      method: "POST",
+      body: {
+        client_id: input.clientId,
+        redirect_uri: input.redirectUri,
+        state: input.state,
+      },
+    });
+    return {
+      redirectUrl: payload.redirect_url,
+      expiresAt: payload.expires_at,
+    };
+  },
+  async getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext> {
+    const query = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      state: input.state,
+      response_type: input.responseType,
+      scope: input.scope,
+      code_challenge: input.codeChallenge,
+      code_challenge_method: input.codeChallengeMethod,
+      nonce: input.nonce,
+    });
+    const payload = await request<OIDCContextPayload>(
+      baseUrl,
+      `/oauth2/authorize/context?${query.toString()}`,
+      { method: "GET" },
+    );
+    return {
+      clientId: payload.client.id,
+      clientDisplayName: payload.client.display_name,
+      redirectUri: payload.redirect_uri,
+      state: payload.state,
+      responseType: payload.response_type,
+      scope: payload.scope,
+      codeChallenge: payload.code_challenge,
+      codeChallengeMethod: payload.code_challenge_method,
+      nonce: payload.nonce,
+      currentSession: payload.session.authenticated && payload.session.user ? {
+        user: {
+          id: payload.session.user.id,
+          name: payload.session.user.name,
+          email: payload.session.user.email,
+          phone: payload.session.user.phone,
+          avatarUrl: payload.session.user.avatarUrl,
+        },
+      } : null,
+    };
+  },
+  async authorizeOIDC(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationResult> {
+    const payload = await request<OIDCAuthorizationPayload>(baseUrl, "/oauth2/authorize", {
+      method: "POST",
+      body: {
+        client_id: input.clientId,
+        redirect_uri: input.redirectUri,
+        state: input.state,
+        response_type: input.responseType,
+        scope: input.scope,
+        code_challenge: input.codeChallenge,
+        code_challenge_method: input.codeChallengeMethod,
+        nonce: input.nonce,
+      },
+    });
+    return {
+      redirectUrl: payload.redirect_url,
+      expiresAt: payload.expires_at,
+    };
+  },
+  async prepareFederationSwitch() {
+    await request(baseUrl, "/auth/federation/switch/prepare", { method: "POST" });
+  },
+  async cancelFederationSwitch() {
+    await request(baseUrl, "/auth/federation/switch", { method: "DELETE" });
+  },
   getOAuthStartUrl(provider, options) {
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
     const oauthStartBaseURL = resolveOAuthStartBaseURL(baseUrl);
     const startURL = new URL(buildUrl(oauthStartBaseURL, `/auth/oauth/${provider}/start`), base);
     if (provider === "wechat" && options?.wechatMode) {
       startURL.searchParams.set("mode", options.wechatMode);
+    }
+    if (options?.switchAccount) {
+      startURL.searchParams.set("switch_account", "true");
     }
     const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
     if (relayIssuerBaseURL) {
@@ -1455,6 +1767,12 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
   async createPassOrderAndPay(input) {
     // 联调文档 §2.2：仅联调测试用，现网禁止暴露给真实用户
     return requestEnvelope<CreatePassOrderAndPayResult>(baseUrl, "/v1/passes/order-and-pay", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async createDianshiPassOrderAndPay(input) {
+    return requestEnvelope<CreateDianshiPassOrderAndPayResult>(baseUrl, "/v1/passes/dianshi/order-and-pay", {
       method: "POST",
       body: input,
     });

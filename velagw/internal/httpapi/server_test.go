@@ -568,7 +568,7 @@ func TestPlanEndpointGeneratesIDAndReturnsCreatedPlan(t *testing.T) {
 	svc := gateway.NewService(store, nil, gateway.Options{})
 	handler := NewServer(svc, Config{AdminToken: "cluster-token"})
 
-	body := `{"name":"入门型 14 天","monthly_tokens":1000000,"period_value":14,"period_unit":"days"}`
+	body := `{"name":"入门型","monthly_tokens":1000000,"quota_reset_period":"monthly"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/plans", bytes.NewBufferString(body))
 	req.Header.Set("Authorization", "Bearer cluster-token")
 	rec := httptest.NewRecorder()
@@ -583,7 +583,9 @@ func TestPlanEndpointGeneratesIDAndReturnsCreatedPlan(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if !payload.Success || !strings.HasPrefix(payload.Data.ID, "plan-") || payload.Data.PeriodValue != 14 || payload.Data.PeriodUnit != "days" {
+	if !payload.Success || !strings.HasPrefix(payload.Data.ID, "plan-") ||
+		payload.Data.QuotaResetPeriod != "monthly" ||
+		payload.Data.PeriodValue != 0 || payload.Data.PeriodUnit != "" {
 		t.Fatalf("unexpected response: %+v", payload)
 	}
 	if _, err := svc.GetPlan(t.Context(), payload.Data.ID); err != nil {
@@ -849,7 +851,12 @@ func TestInternalSubscriptionEndpointsUseAIGatewayCompatibleShapes(t *testing.T)
 		case "POST /api/subscription/admin/user_subscriptions/9/invalidate":
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
 		case "POST /api/subscription/admin/users/42/subscriptions":
-			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id": 10, "user_id": 42, "plan_id": 7,
+				"amount_total": 1000, "amount_used": 0,
+				"start_time": time.Now().Unix(), "end_time": time.Now().Add(31 * 24 * time.Hour).Unix(),
+				"status": "active", "source": "admin",
+			}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -885,11 +892,14 @@ func TestInternalSubscriptionEndpointsUseAIGatewayCompatibleShapes(t *testing.T)
 	planReq.Header.Set("Authorization", "Bearer cluster-token")
 	planRec := httptest.NewRecorder()
 	handler.ServeHTTP(planRec, planReq)
-	if planRec.Code != http.StatusOK || !bytes.Contains(planRec.Body.Bytes(), []byte(`"monthly_tokens":1000`)) {
+	if planRec.Code != http.StatusOK ||
+		!bytes.Contains(planRec.Body.Bytes(), []byte(`"monthly_tokens":1000`)) ||
+		!bytes.Contains(planRec.Body.Bytes(), []byte(`"ready_for_all_sets":true`)) ||
+		!bytes.Contains(planRec.Body.Bytes(), []byte(`"active_set_count":1`)) {
 		t.Fatalf("plan response status=%d body=%s", planRec.Code, planRec.Body.String())
 	}
 
-	applyReq := httptest.NewRequest(http.MethodPost, "/api/internal/subscriptions/apply", bytes.NewBufferString(`{"idempotency_key":"trade:deal-http-shape","user_id":"user-1","plan_id":"plan-pro"}`))
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/internal/subscriptions/apply", bytes.NewBufferString(`{"idempotency_key":"trade:deal-http-shape","user_id":"user-1","plan_id":"plan-pro","is_unique":true}`))
 	applyReq.Header.Set("Authorization", "Bearer cluster-token")
 	applyRec := httptest.NewRecorder()
 	handler.ServeHTTP(applyRec, applyReq)
@@ -1452,7 +1462,12 @@ func TestInternalMigrationCommitEndpointActivatesUser(t *testing.T) {
 				t.Fatal(err)
 			}
 			createdPlanID = body.PlanID
-			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id": 10, "user_id": 42, "plan_id": body.PlanID,
+				"amount_total": 1000, "amount_used": 0,
+				"start_time": time.Now().Unix(), "end_time": time.Now().Add(31 * 24 * time.Hour).Unix(),
+				"status": "active", "source": "admin",
+			}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1515,6 +1530,8 @@ func TestAIGatewayCompatibleAdminAPIKeyCreateAndRevoke(t *testing.T) {
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"items": []map[string]any{{"id": 7, "name": r.URL.Query().Get("keyword")}}}})
 		case "POST /api/token/7/key":
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-upstream"}})
+		case "DELETE /api/token/7":
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
 		case "POST /v1/chat/completions":
 			if got := r.Header.Get("Authorization"); got != "Bearer sk-upstream" {
 				t.Fatalf("proxy authorization = %q", got)
@@ -1572,6 +1589,26 @@ func TestAIGatewayCompatibleAdminAPIKeyCreateAndRevoke(t *testing.T) {
 	if createResp.Data.KeyPrefix == "" || !strings.HasPrefix(createResp.Data.APIKey, createResp.Data.KeyPrefix) {
 		t.Fatalf("key prefix %q does not match api key %q", createResp.Data.KeyPrefix, createResp.Data.APIKey)
 	}
+	reuseReq := httptest.NewRequest(http.MethodPost, "/api/admin/users/user-1/api-keys", bytes.NewBufferString(`{"name":"instance-key"}`))
+	reuseReq.Header.Set("Authorization", "Bearer cluster-token")
+	reuseRec := httptest.NewRecorder()
+	handler.ServeHTTP(reuseRec, reuseReq)
+	if reuseRec.Code != http.StatusOK {
+		t.Fatalf("reuse api-key status=%d body=%s", reuseRec.Code, reuseRec.Body.String())
+	}
+	var reuseResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			APIKey string `json:"api_key"`
+			KeyID  string `json:"key_id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(reuseRec.Body).Decode(&reuseResp); err != nil {
+		t.Fatal(err)
+	}
+	if !reuseResp.Success || reuseResp.Data.APIKey != createResp.Data.APIKey || reuseResp.Data.KeyID != createResp.Data.KeyID {
+		t.Fatalf("unexpected reused api-key response: %+v want key_id=%q", reuseResp, createResp.Data.KeyID)
+	}
 	assignment, err := svc.GetUserAssignment(t.Context(), "user-1")
 	if err != nil {
 		t.Fatal(err)
@@ -1602,6 +1639,38 @@ func TestAIGatewayCompatibleAdminAPIKeyCreateAndRevoke(t *testing.T) {
 	handler.ServeHTTP(proxyAfterRevokeRec, proxyAfterRevokeReq)
 	if proxyAfterRevokeRec.Code != http.StatusUnauthorized {
 		t.Fatalf("proxy after revoke status=%d body=%s", proxyAfterRevokeRec.Code, proxyAfterRevokeRec.Body.String())
+	}
+}
+
+func TestAdminAPIKeyStateErrorsUseStableConflictCodes(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{name: "provisioning", err: gateway.ErrAPIKeyProvisioning, code: "api_key_provision_in_progress"},
+		{name: "material", err: gateway.ErrAPIKeyMaterialMissing, code: "api_key_material_unavailable"},
+		{name: "state", err: gateway.ErrAPIKeyStateUnavailable, code: "api_key_state_unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			writeAPIKeyError(recorder, fmt.Errorf("%w: safe detail", test.err))
+			if recorder.Code != http.StatusConflict {
+				t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+			}
+			var payload struct {
+				Success bool   `json:"success"`
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			}
+			if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Success || payload.Code != test.code || payload.Message == "" {
+				t.Fatalf("payload = %+v, want code %q", payload, test.code)
+			}
+		})
 	}
 }
 

@@ -6,10 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
-	"net"
-	"net/http"
 	"os"
 	"sort"
 	"strconv"
@@ -106,98 +103,32 @@ type TencentCloudProvider struct {
 	cbsClient *cbs.Client
 	cred      *common.Credential
 	cfg       TencentConfig
+
+	startTerminalSessionFunc func(context.Context, string, string) (TerminalSession, error)
+	tatForwardURLFunc        func(string) string
 }
 
 const (
-	envdHealthPort = "49983"
-	envdHealthPath = "/health"
+	deliveryProbeTimeout      = 60 * time.Second
+	deliveryProbeInterval     = 5 * time.Second
+	deliveryProbeHeartbeatAge = 2 * time.Minute
+	deliveryProbeScript       = "true"
 )
 
-const (
-	healthLogEvery = 10
+var errDeliveryProbeCommandFailed = errors.New("TAT delivery probe command failed")
 
-	verifyTotalTimeout  = 60 * time.Second
-	verifyPerReqTimeout = 8 * time.Second
-	verifyInterval      = 5 * time.Second
-
-	downTotalTimeout  = 90 * time.Second
-	downPerReqTimeout = 600 * time.Millisecond
-)
-
-type envdProcessStartRequest struct {
-	Process struct {
-		Cmd  string   `json:"cmd"`
-		Args []string `json:"args"`
-	} `json:"process"`
+type tatAgentStatus struct {
+	Status            string
+	LastHeartbeatTime string
 }
 
-func isHealthyStatus(code int) bool {
-	return code == http.StatusOK || code == http.StatusNoContent
+type deliveryProbeOps struct {
+	describeInstance     func(context.Context, string) (string, error)
+	describeAgent        func(context.Context, string) (tatAgentStatus, error)
+	runCommand           func(context.Context, string, string) (CommandInvocation, error)
+	getCommandInvocation func(context.Context, string, string) (CommandResult, error)
+	now                  func() time.Time
 }
-
-// waitHealth waits until /health reaches the desired state (up/down) at least once.
-// For "up": require status 200/204.
-// For "down": treat any non-200/204 or any transport error as down.
-func waitHealth(ctx context.Context, verifyURL, hostOverride string, wantUp bool, totalTimeout, perReqTimeout, interval time.Duration, logEvery int) error {
-	start := time.Now()
-	deadline := start.Add(totalTimeout)
-	client := &http.Client{Timeout: perReqTimeout}
-	attempt := 0
-
-	for {
-		attempt++
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, verifyURL, nil)
-		if err != nil {
-			return err
-		}
-		if hostOverride != "" {
-			req.Host = hostOverride
-		}
-
-		resp, err := client.Do(req)
-		if err == nil {
-			_ = resp.Body.Close()
-			if wantUp {
-				if isHealthyStatus(resp.StatusCode) {
-					return nil
-				}
-				err = fmt.Errorf("unexpected health status=%d", resp.StatusCode)
-			} else {
-				// Down-gate: anything other than OK/NoContent is considered down.
-				if !isHealthyStatus(resp.StatusCode) {
-					return nil
-				}
-				err = fmt.Errorf("health still up status=%d", resp.StatusCode)
-			}
-		} else if !wantUp {
-			// Transport error counts as down for down-gate purposes.
-			return nil
-		}
-
-		if time.Now().After(deadline) {
-			if wantUp {
-				return fmt.Errorf("verify health timeout url=%s host=%s: %w", verifyURL, hostOverride, err)
-			}
-			return fmt.Errorf("did not observe health down url=%s host=%s within %s: %w", verifyURL, hostOverride, time.Since(start), err)
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(interval):
-		}
-	}
-}
-
-// waitDownProbeInterval is used for best-effort detection that a reinstall has actually started.
-// Keep it coarse to reduce load; readiness itself is handled by VerifyInstance.
-const waitDownProbeInterval = 2 * time.Second
 
 const (
 	rateLimitCode                   = "RequestLimitExceeded"
@@ -263,24 +194,6 @@ func retryRateLimit(ctx context.Context, op string, fn func() error) error {
 		case <-time.After(backoff):
 		}
 	}
-}
-
-func (p *TencentCloudProvider) buildHealthTarget(address string) (verifyURL string, hostOverride string, err error) {
-	if address == "" {
-		return "", "", errors.New("missing address for verification")
-	}
-	// Probe instance health directly. In private mode, workers can reach the CVM
-	// over the VPC, so there is no need to add ingressproxy as an extra hop.
-	verifyURL = fmt.Sprintf("http://%s:%s%s", address, envdHealthPort, envdHealthPath)
-	return verifyURL, "", nil
-}
-
-func (p *TencentCloudProvider) buildEnvdProcessTarget(address string) (targetURL string, hostOverride string, err error) {
-	if address == "" {
-		return "", "", errors.New("missing address for envd process target")
-	}
-	targetURL = fmt.Sprintf("http://%s:%s/process.Process/Start", address, envdHealthPort)
-	return targetURL, "", nil
 }
 
 // NewTencentCloudProvider constructs provider from config.
@@ -941,15 +854,128 @@ func (p *TencentCloudProvider) waitForAddress(ctx context.Context, instanceID st
 	return "", fmt.Errorf("timeout waiting for %s IP", p.cfg.AddressType)
 }
 
-func (p *TencentCloudProvider) VerifyInstance(ctx context.Context, address string) error {
-	verifyURL, hostOverride, err := p.buildHealthTarget(address)
-	if err != nil {
-		return err
+func (p *TencentCloudProvider) VerifyInstance(ctx context.Context, cloudID string) error {
+	return p.VerifyInstanceDelivery(ctx, cloudID, time.Time{})
+}
+
+func (p *TencentCloudProvider) VerifyInstanceDelivery(ctx context.Context, cloudID string, notBefore time.Time) error {
+	cloudID = strings.TrimSpace(cloudID)
+	if cloudID == "" {
+		return errors.New("missing cloud instance id for delivery verification")
 	}
-	if err := waitHealth(ctx, verifyURL, hostOverride, true, verifyTotalTimeout, verifyPerReqTimeout, verifyInterval, healthLogEvery); err != nil {
-		return err
+	probeCtx, cancel := context.WithTimeout(ctx, deliveryProbeTimeout)
+	defer cancel()
+	ops := deliveryProbeOps{
+		describeInstance: p.DescribeInstance,
+		describeAgent: func(ctx context.Context, cloudID string) (tatAgentStatus, error) {
+			return p.describeTATAgentStatus(ctx, p.cfg.Region, cloudID)
+		},
+		runCommand: func(ctx context.Context, cloudID, script string) (CommandInvocation, error) {
+			return p.RunCommand(ctx, p.cfg.Region, cloudID, script)
+		},
+		getCommandInvocation: func(ctx context.Context, invocationID, cloudID string) (CommandResult, error) {
+			return p.GetCommandInvocation(ctx, p.cfg.Region, invocationID, cloudID)
+		},
+		now: time.Now,
+	}
+	if err := verifyInstanceDeliveryWithOps(probeCtx, cloudID, notBefore, ops); err != nil {
+		return fmt.Errorf("verify instance delivery cloud_id=%s: %w", cloudID, err)
 	}
 	return nil
+}
+
+func verifyInstanceDeliveryWithOps(ctx context.Context, cloudID string, notBefore time.Time, ops deliveryProbeOps) error {
+	if strings.TrimSpace(cloudID) == "" {
+		return errors.New("missing cloud instance id for delivery verification")
+	}
+	if ops.describeInstance == nil || ops.describeAgent == nil || ops.runCommand == nil || ops.getCommandInvocation == nil {
+		return errors.New("incomplete delivery probe operations")
+	}
+	if ops.now == nil {
+		ops.now = time.Now
+	}
+
+	for {
+		status, err := ops.describeInstance(ctx, cloudID)
+		if err == nil && strings.EqualFold(strings.TrimSpace(status), "RUNNING") {
+			agent, agentErr := ops.describeAgent(ctx, cloudID)
+			if agentErr == nil {
+				if readyErr := validateTATAgentReady(agent, notBefore, ops.now()); readyErr == nil {
+					break
+				} else {
+					err = readyErr
+				}
+			} else {
+				err = agentErr
+			}
+		} else if err == nil {
+			err = fmt.Errorf("CVM state is %q, want RUNNING", status)
+		}
+		if waitErr := waitDeliveryProbe(ctx); waitErr != nil {
+			return fmt.Errorf("TAT agent did not become ready: %w (last error: %v)", waitErr, err)
+		}
+	}
+
+	invocation, err := ops.runCommand(ctx, cloudID, deliveryProbeScript)
+	if err != nil {
+		return fmt.Errorf("start TAT delivery probe: %w", err)
+	}
+	if strings.TrimSpace(invocation.InvocationID) == "" {
+		return errors.New("start TAT delivery probe: empty invocation id")
+	}
+	for {
+		result, err := ops.getCommandInvocation(ctx, invocation.InvocationID, cloudID)
+		if err != nil {
+			if waitErr := waitDeliveryProbe(ctx); waitErr != nil {
+				return fmt.Errorf("wait TAT delivery probe: %w (last error: %v)", waitErr, err)
+			}
+			continue
+		}
+		switch strings.ToUpper(strings.TrimSpace(result.Status)) {
+		case "SUCCESS":
+			if result.ExitCode != 0 {
+				return fmt.Errorf("%w: status=SUCCESS exit_code=%d", errDeliveryProbeCommandFailed, result.ExitCode)
+			}
+			return nil
+		case "PENDING", "DELIVERING", "DELIVER_DELAYED", "RUNNING":
+			if waitErr := waitDeliveryProbe(ctx); waitErr != nil {
+				return fmt.Errorf("wait TAT delivery probe: %w", waitErr)
+			}
+		default:
+			return fmt.Errorf("%w: status=%s exit_code=%d error=%s", errDeliveryProbeCommandFailed, result.Status, result.ExitCode, result.ErrorInfo)
+		}
+	}
+}
+
+func validateTATAgentReady(agent tatAgentStatus, notBefore, now time.Time) error {
+	if !strings.EqualFold(strings.TrimSpace(agent.Status), "Online") {
+		return fmt.Errorf("TAT agent status is %q, want Online", agent.Status)
+	}
+	heartbeat, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(agent.LastHeartbeatTime))
+	if err != nil {
+		return fmt.Errorf("invalid TAT agent heartbeat %q: %w", agent.LastHeartbeatTime, err)
+	}
+	// TAT reports heartbeat timestamps at second precision while DB state
+	// transitions may retain sub-second precision.
+	generationStart := notBefore.Truncate(time.Second)
+	if !generationStart.IsZero() && heartbeat.Before(generationStart) {
+		return fmt.Errorf("TAT agent heartbeat %s predates delivery generation %s", heartbeat.Format(time.RFC3339), notBefore.Format(time.RFC3339))
+	}
+	if age := now.Sub(heartbeat); age > deliveryProbeHeartbeatAge {
+		return fmt.Errorf("TAT agent heartbeat is stale by %s", age)
+	}
+	return nil
+}
+
+func waitDeliveryProbe(ctx context.Context) error {
+	timer := time.NewTimer(deliveryProbeInterval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (p *TencentCloudProvider) ProvisionCapacityBundle(ctx context.Context, req CapacityBundleProvisionRequest) (core.CapacityBundle, error) {
@@ -1540,73 +1566,44 @@ func exportedBlueprintSubnetIDsFromEnv() (support string, workloads []string) {
 	return support, workloads
 }
 
-// WaitForInstanceHealthDown best-effort waits until /health is NOT healthy at least once.
-// This helps avoid marking CLEAN immediately after requesting reinstall while the old system is still serving /health.
-func (p *TencentCloudProvider) WaitForInstanceHealthDown(ctx context.Context, address string) error {
-	verifyURL, hostOverride, err := p.buildHealthTarget(address)
-	if err != nil {
-		return err
+func (p *TencentCloudProvider) describeTATAgentStatus(ctx context.Context, region, instanceID string) (tatAgentStatus, error) {
+	region = p.resolveRegion(region)
+	instanceID = strings.TrimSpace(instanceID)
+	if instanceID == "" {
+		return tatAgentStatus{}, errors.New("missing instance id for TAT agent status")
 	}
-	if err := waitHealth(ctx, verifyURL, hostOverride, false, downTotalTimeout, downPerReqTimeout, waitDownProbeInterval, healthLogEvery); err != nil {
-		return err
+	req := tchttp.NewCommonRequest(tatService, tatVersion, "DescribeAutomationAgentStatus")
+	req.SetContext(ctx)
+	if err := req.SetActionParameters(map[string]interface{}{
+		"InstanceIds": []string{instanceID},
+		"Limit":       1,
+	}); err != nil {
+		return tatAgentStatus{}, err
 	}
-	return nil
-}
-
-// HupEnvd sends SIGHUP to envd inside the instance.
-// Best-effort: this is used to reduce false-positive health checks during reset.
-func (p *TencentCloudProvider) HupEnvd(ctx context.Context, address string) error {
-	if address == "" {
-		return errors.New("missing address for envd hup")
+	resp := tchttp.NewCommonResponse()
+	client := p.newCommonClient(region, p.cfg.TATEndpoint)
+	if err := retryRateLimit(ctx, "TAT.DescribeAutomationAgentStatus", func() error {
+		return client.Send(req, resp)
+	}); err != nil {
+		return tatAgentStatus{}, err
 	}
-	url, host, err := p.buildEnvdProcessTarget(address)
-	if err != nil {
-		return err
+	var payload struct {
+		Response struct {
+			AutomationAgentSet []struct {
+				InstanceID        string `json:"InstanceId"`
+				AgentStatus       string `json:"AgentStatus"`
+				LastHeartbeatTime string `json:"LastHeartbeatTime"`
+			} `json:"AutomationAgentSet"`
+		} `json:"Response"`
 	}
-
-	var body envdProcessStartRequest
-	body.Process.Cmd = "/bin/bash"
-	body.Process.Args = []string{"-l", "-c", "pkill -1 envd || true"}
-	b, _ := json.Marshal(body)
-
-	// Keep it short; we only need the request to reach envd.
-	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, strings.NewReader(string(b)))
-	if err != nil {
-		return err
+	if err := json.Unmarshal(resp.GetBody(), &payload); err != nil {
+		return tatAgentStatus{}, err
 	}
-	req.Host = host
-	req.Header.Set("Content-Type", "application/connect+json")
-	req.Header.Set("Accept", "application/connect+json")
-	req.Header.Set("Connect-Protocol-Version", "1")
-	// Match sandboxcli auth convention: Basic base64("root:")
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("root:")))
-
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-			ForceAttemptHTTP2:     false,
-			MaxIdleConns:          10,
-			IdleConnTimeout:       30 * time.Second,
-			TLSHandshakeTimeout:   2 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
+	if len(payload.Response.AutomationAgentSet) == 0 {
+		return tatAgentStatus{}, errors.New("TAT automation agent not found")
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		// envd might die quickly; treat errors as non-fatal signal failure.
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("hup envd failed status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(msg)))
-	}
-	return nil
+	agent := payload.Response.AutomationAgentSet[0]
+	return tatAgentStatus{Status: agent.AgentStatus, LastHeartbeatTime: agent.LastHeartbeatTime}, nil
 }
 
 func (p *TencentCloudProvider) RunCommand(ctx context.Context, region, instanceID, script string) (CommandInvocation, error) {
@@ -1661,6 +1658,141 @@ func (p *TencentCloudProvider) RunCommand(ctx context.Context, region, instanceI
 		InstanceID:   instanceID,
 		Region:       region,
 		Status:       defaultInvocationStatus,
+	}, nil
+}
+
+func (p *TencentCloudProvider) InvokeCommand(ctx context.Context, region, instanceID, commandID string, parameters map[string]string) (CommandInvocation, error) {
+	region = p.resolveRegion(region)
+	instanceID = strings.TrimSpace(instanceID)
+	commandID = strings.TrimSpace(commandID)
+	if instanceID == "" {
+		return CommandInvocation{}, errors.New("missing instance id for tat invocation")
+	}
+	if commandID == "" {
+		return CommandInvocation{}, errors.New("missing command id for tat invocation")
+	}
+	req := tchttp.NewCommonRequest(tatService, tatVersion, "InvokeCommand")
+	req.SetContext(ctx)
+	requestParameters, err := invokeCommandParameters(instanceID, commandID, parameters)
+	if err != nil {
+		return CommandInvocation{}, err
+	}
+	if err := req.SetActionParameters(requestParameters); err != nil {
+		return CommandInvocation{}, err
+	}
+
+	resp := tchttp.NewCommonResponse()
+	client := p.newCommonClient(region, p.cfg.TATEndpoint)
+	if err := retryRateLimit(ctx, "TAT.InvokeCommand", func() error {
+		return client.Send(req, resp)
+	}); err != nil {
+		return CommandInvocation{}, err
+	}
+
+	var payload struct {
+		Response struct {
+			InvocationID string `json:"InvocationId"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp.GetBody(), &payload); err != nil {
+		return CommandInvocation{}, err
+	}
+	if strings.TrimSpace(payload.Response.InvocationID) == "" {
+		return CommandInvocation{}, errors.New("tat InvokeCommand returned empty invocation id")
+	}
+	return CommandInvocation{
+		CommandID:    commandID,
+		InvocationID: payload.Response.InvocationID,
+		InstanceID:   instanceID,
+		Region:       region,
+		Status:       defaultInvocationStatus,
+	}, nil
+}
+
+func (p *TencentCloudProvider) GetCommandInvocationMetadata(ctx context.Context, region, invocationID, instanceID string) (CommandInvocationMetadata, error) {
+	region = p.resolveRegion(region)
+	if strings.TrimSpace(invocationID) == "" {
+		return CommandInvocationMetadata{}, errors.New("missing invocation id")
+	}
+	if strings.TrimSpace(instanceID) == "" {
+		return CommandInvocationMetadata{}, errors.New("missing instance id")
+	}
+
+	req := tchttp.NewCommonRequest(tatService, tatVersion, "DescribeInvocationTasks")
+	req.SetContext(ctx)
+	if err := req.SetActionParameters(commandInvocationQueryParameters(invocationID, instanceID, true)); err != nil {
+		return CommandInvocationMetadata{}, err
+	}
+
+	resp := tchttp.NewCommonResponse()
+	client := p.newCommonClient(region, p.cfg.TATEndpoint)
+	if err := retryRateLimit(ctx, "TAT.DescribeInvocationTasks", func() error {
+		return client.Send(req, resp)
+	}); err != nil {
+		return CommandInvocationMetadata{}, err
+	}
+	return decodeCommandInvocationMetadata(resp.GetBody(), region)
+}
+
+func decodeCommandInvocationMetadata(body []byte, region string) (CommandInvocationMetadata, error) {
+	var payload struct {
+		Response struct {
+			InvocationTaskSet []struct {
+				CommandID    string `json:"CommandId"`
+				InvocationID string `json:"InvocationId"`
+				TaskStatus   string `json:"TaskStatus"`
+				InstanceID   string `json:"InstanceId"`
+				StartTime    string `json:"StartTime"`
+				EndTime      string `json:"EndTime"`
+				TaskResult   struct {
+					ExitCode      int64  `json:"ExitCode"`
+					ExecutionTime string `json:"ExecutionTime"`
+				} `json:"TaskResult"`
+			} `json:"InvocationTaskSet"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return CommandInvocationMetadata{}, err
+	}
+	if len(payload.Response.InvocationTaskSet) == 0 {
+		return CommandInvocationMetadata{}, ErrInvocationNotFound
+	}
+	task := payload.Response.InvocationTaskSet[0]
+	return CommandInvocationMetadata{
+		CommandInvocation: CommandInvocation{
+			CommandID:    task.CommandID,
+			InvocationID: task.InvocationID,
+			InstanceID:   task.InstanceID,
+			Region:       region,
+			Status:       task.TaskStatus,
+		},
+		ExitCode:      task.TaskResult.ExitCode,
+		StartTime:     task.StartTime,
+		EndTime:       task.EndTime,
+		ExecutionTime: task.TaskResult.ExecutionTime,
+	}, nil
+}
+
+func commandInvocationQueryParameters(invocationID, instanceID string, hideOutput bool) map[string]interface{} {
+	return map[string]interface{}{
+		"HideOutput": hideOutput,
+		"Filters": []map[string]interface{}{
+			{"Name": "invocation-id", "Values": []string{invocationID}},
+			{"Name": "instance-id", "Values": []string{instanceID}},
+		},
+		"Limit": 1,
+	}
+}
+
+func invokeCommandParameters(instanceID, commandID string, parameters map[string]string) (map[string]interface{}, error) {
+	parameterJSON, err := json.Marshal(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tat invocation parameters: %w", err)
+	}
+	return map[string]interface{}{
+		"CommandId":   commandID,
+		"InstanceIds": []string{instanceID},
+		"Parameters":  string(parameterJSON),
 	}, nil
 }
 
@@ -1735,14 +1867,7 @@ func (p *TencentCloudProvider) GetCommandInvocation(ctx context.Context, region,
 
 	req := tchttp.NewCommonRequest(tatService, tatVersion, "DescribeInvocationTasks")
 	req.SetContext(ctx)
-	if err := req.SetActionParameters(map[string]interface{}{
-		"HideOutput": false,
-		"Filters": []map[string]interface{}{
-			{"Name": "invocation-id", "Values": []string{invocationID}},
-			{"Name": "instance-id", "Values": []string{instanceID}},
-		},
-		"Limit": 1,
-	}); err != nil {
+	if err := req.SetActionParameters(commandInvocationQueryParameters(invocationID, instanceID, false)); err != nil {
 		return CommandResult{}, err
 	}
 

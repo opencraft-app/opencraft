@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { __runtimeConfigTestHooks } from "@/contexts/runtime-config-context";
 
 const {
+  applyRuntimeOverrides,
   normalizeRuntimeConfig,
+  PAID_BILLING_OVERRIDE_STORAGE_KEY,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
   shouldSkipRemoteRuntimeConfig,
@@ -40,11 +42,39 @@ describe("runtime config normalization", () => {
     ).toBe(false);
   });
 
-  it("requires both cn site and runtime flag before paid billing is effective", () => {
+  it("keeps paid billing fully enabled on the cn site", () => {
     const enabledConfig = normalizeRuntimeConfig({ features: { paidBillingEnabled: true } });
-    expect(resolvePaidBillingEnabled(enabledConfig, true)).toBe(true);
-    expect(resolvePaidBillingEnabled(enabledConfig, false)).toBe(false);
-    expect(resolvePaidBillingEnabled(normalizeRuntimeConfig(null), true)).toBe(true);
+    expect(resolvePaidBillingEnabled(enabledConfig)).toBe(true);
+    expect(resolvePaidBillingEnabled(normalizeRuntimeConfig(null))).toBe(true);
+  });
+
+  it("enables intl paid billing at full scale without a local opt-in", () => {
+    /* 国际站已全量放开：与国内站口径一致，后端下发 true 即生效，
+       不再要求 localStorage「显式开启」。 */
+    const enabledConfig = normalizeRuntimeConfig({ features: { paidBillingEnabled: true } });
+    window.localStorage.removeItem(PAID_BILLING_OVERRIDE_STORAGE_KEY);
+
+    expect(resolvePaidBillingEnabled(enabledConfig)).toBe(true);
+
+    /* 显式关闭（紧急熔断）时，override 会先把 config 置 false，全量口径也拦截。 */
+    window.localStorage.setItem(PAID_BILLING_OVERRIDE_STORAGE_KEY, "false");
+    expect(
+      resolvePaidBillingEnabled(
+        applyRuntimeOverrides(normalizeRuntimeConfig({ features: { paidBillingEnabled: true } })),
+      ),
+    ).toBe(false);
+
+    window.localStorage.removeItem(PAID_BILLING_OVERRIDE_STORAGE_KEY);
+  });
+
+  it("never enables paid billing when the runtime flag is off", () => {
+    const disabledConfig = normalizeRuntimeConfig({ features: { paidBillingEnabled: false } });
+    window.localStorage.setItem(PAID_BILLING_OVERRIDE_STORAGE_KEY, "true");
+
+    /* config 为 false 时直接短路，本地开关不能绕过它。 */
+    expect(resolvePaidBillingEnabled(disabledConfig)).toBe(false);
+
+    window.localStorage.removeItem(PAID_BILLING_OVERRIDE_STORAGE_KEY);
   });
 
   it("requires both cn site and runtime flag before phone realname is effective", () => {

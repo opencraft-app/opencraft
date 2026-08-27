@@ -16,12 +16,10 @@ import (
 	"fmt"
 	"time"
 
-	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
-	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	instanceasync "ctl/pkg/instance"
-	"ctl/pkg/logic/gatewayroute"
+	logicpass "ctl/pkg/logic/pass"
 	"ctl/pkg/metric"
 	daoFactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
@@ -31,6 +29,8 @@ import (
 	"ctl/pkg/taskflow"
 	"ctl/pkg/taskruntime"
 	taskcommon "ctl/pkg/taskruntime/common"
+
+	websitelogic "ctl/pkg/logic/website"
 
 	"go.uber.org/zap"
 )
@@ -44,7 +44,6 @@ const (
 	destroyInstanceForPassTaskMaxExecuteCount = 60
 
 	// 收尾步骤外部调用超时
-	cancelSubscriptionCallTimeout   = 5 * time.Second         // 5a：与 ai-gateway internal API 一致
 	tradeCompleteFlowDestroyTimeout = 1500 * time.Millisecond // 5c：与 isolate 父 task 同 1.5s
 )
 
@@ -125,18 +124,31 @@ func (t *destroyPassTask) execute(ctx pctx.Context) (string, error) {
 	if err != nil {
 		// pass 已不在表 — 关键 Q6 场景：5b 已成功 + 5c 失败的重投
 		if t.in.PassDeleted {
+			if !t.in.SubscriptionDone {
+				if err := t.cancelAiGatewaySubscription(ctx, logger, t.in.UserID); err != nil {
+					return "", fmt.Errorf("repair 5a after pass migration: %w", err)
+				}
+				t.in.SubscriptionDone = true
+				if err := t.persistProgress(ctx); err != nil {
+					return "", fmt.Errorf("persist repaired 5a progress: %w", err)
+				}
+			}
 			logger.Info("destroy pass: pass already migrated to history, proceeding to 5c finalize")
 			return t.finalizePostPassDeleted(ctx, logger)
 		}
 		// pass 不在表但 PassDeleted=false：异常状态（pass 被外部清理或 D-2.3 之前的脏数据）
 		logger.Warn("destroy pass: pass not found and PassDeleted=false, defensive markSuccess",
 			zap.Error(err))
+		// 这条防御性分支跳过了整个收尾流程，站点钩子必须在这里补上，
+		// 否则 pass 已经不存在、站点却仍以 active 对外服务，且再无收敛机会。
+		t.suspendSitesBestEffort(logger, "")
 		return t.markSuccess(ctx)
 	}
 
 	if passEntity.Status != modelpass.StatusTerminating {
 		logger.Warn("destroy pass: pass status unexpected, treat as terminal and markSuccess",
 			zap.String("status", passEntity.Status))
+		t.suspendSitesBestEffort(logger, passEntity.UserID)
 		return t.markSuccess(ctx)
 	}
 
@@ -149,9 +161,11 @@ func (t *destroyPassTask) execute(ctx pctx.Context) (string, error) {
 
 	// === 阶段 5：步骤级幂等收尾（D-7 落地，Q6 重投幂等）===
 
-	// 5a：ai-gateway.CancelSubscription（best-effort，Q3 拍板不阻塞）
+	// 5a：可靠取消长期权益；失败时不推进 SubscriptionDone，也不删除 pass。
 	if !t.in.SubscriptionDone {
-		t.cancelAiGatewaySubscription(ctx, logger, passEntity.UserID)
+		if err := t.cancelAiGatewaySubscription(ctx, logger, passEntity.UserID); err != nil {
+			return "", fmt.Errorf("5a CancelSubscription: %w", err)
+		}
 		t.in.SubscriptionDone = true
 		if err := t.persistProgress(ctx); err != nil {
 			return "", fmt.Errorf("persist progress after 5a: %w", err)
@@ -186,7 +200,32 @@ func (t *destroyPassTask) finalizePostPassDeleted(ctx pctx.Context, logger *zap.
 		}
 	}
 	logger.Info("destroy pass parent task finalized successfully")
+
+	t.suspendSitesBestEffort(logger, "")
+
 	return t.markSuccess(ctx)
+}
+
+// suspendSitesBestEffort 把用户所有仍在服务的站点转为 suspended（文件保留，公网 403）。
+//
+// 一期刻意保持 best-effort（与隔离侧的阻塞步骤不同）：销毁由计费驱动，阻塞它会让
+// 计费侧的状态收敛跟着卡住。代价是万一失败，站点状态没跟上、可能仍然对外服务；
+// 但已经不再是过去那种「漏删 COS 对象、持续产生存储成本」的后果——销毁本就不删文件了。
+//
+// 每个「跳过后续流程直接 markSuccess」的分支都必须调它一次：那些分支是防御性的
+// 提前收尾，一旦漏掉钩子，这个用户的站点就再没有任何机制会把状态推下去。
+func (t *destroyPassTask) suspendSitesBestEffort(logger *zap.Logger, userIDFromEntity string) {
+	userID := t.in.UserID
+	if userID == "" {
+		userID = userIDFromEntity
+	}
+	if userID == "" {
+		logger.Warn("website suspend sites on pass destroyed skipped: user_id empty")
+		return
+	}
+	if err := websitelogic.SuspendAllSitesOnPassDestroyed(logger, userID); err != nil {
+		logger.Warn("website suspend sites on pass destroyed failed", zap.Error(err))
+	}
 }
 
 // dispatchChildTasksAndDetachInstances 阶段 1~4：列实例 / 反查 child_registry / 派子 task / 解除用户关联。
@@ -305,83 +344,27 @@ func detachInstancesForPassDestroy(userID string, instances []*modelinstance.Ent
 
 // === D-7 收尾步骤实现（5a / 5b / 5c）===
 
-// cancelAiGatewaySubscription 5a：调 ai-gateway.CancelSubscription（best-effort，Q3 拍板不阻塞）
-//
-// 设计稿 §11-A Q3 拍板（方案 A）：CancelSubscription 维持 best-effort，不阻塞销毁主流程。
-// 兜底依赖 ai-gateway Scheduler 按 period_end 自动过期 + 用户下次 Subscribe() 强制 CancelByUserID 覆盖。
-func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *zap.Logger, userIDFromEntity string) {
+// cancelAiGatewaySubscription 5a：可靠取消长期权益。失败必须让父任务重试，
+// 因为订阅不再跟随业务有效期自动过期。
+func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *zap.Logger, userIDFromEntity string) error {
 	userID := t.in.UserID
 	if userID == "" {
 		userID = userIDFromEntity
 	}
 	if userID == "" {
-		logger.Warn("destroy pass 5a: userID empty, skip CancelSubscription")
-		metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "skipped").Inc()
-		return
-	}
-	callCtx, cancel := context.WithTimeout(context.Background(), cancelSubscriptionCallTimeout)
-	defer cancel()
-	cancelSource := "ai-gateway"
-	if config.LLMGatewayEnabled() {
-		cancelSource = "llmgateway"
-	}
-	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
-		logger.Warn("destroy pass 5a: get recorded subscription gateway failed, fallback to probe",
-			zap.String("user_id", userID),
-			zap.Error(err))
-	} else if ok {
-		switch gateway {
-		case gatewayroute.GatewayAIGateway:
-			cancelSource = "ai-gateway"
-		case gatewayroute.GatewayLLMGateway:
-			if config.LLMGatewayEnabled() {
-				cancelSource = "llmgateway"
-			} else {
-				logger.Warn("destroy pass 5a: recorded llmgateway subscription ignored because llmgateway is disabled",
-					zap.String("user_id", userID))
-				cancelSource = "ai-gateway"
-			}
-		default:
-			logger.Warn("destroy pass 5a: unknown recorded subscription gateway, fallback to probe",
-				zap.String("user_id", userID),
-				zap.String("gateway", gateway))
-		}
-	} else if legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(); legacyAdapter != nil {
-		legacySub, legacyErr := legacyAdapter.GetActiveSubscription(callCtx, userID)
-		if legacyErr == nil && legacySub != nil {
-			cancelSource = "ai-gateway"
-			gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayAIGateway, legacySub.ID, legacySub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-		} else if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
-			logger.Warn("destroy pass 5a: get ai-gateway active subscription failed, try llmgateway cancel",
-				zap.String("user_id", userID),
-				zap.Error(legacyErr))
-		}
-	}
-
-	var err error
-	if cancelSource == "ai-gateway" {
-		err = adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().CancelSubscription(callCtx, userID)
-	} else {
-		err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSubscription(callCtx, userID)
-	}
-	if err != nil {
-		// best-effort：失败仅记 Warn，不阻塞后续 5b/5c
-		logger.Warn("destroy pass 5a: gateway CancelSubscription failed (best-effort, parent task still proceeds)",
-			zap.String("user_id", userID),
-			zap.String("gateway", cancelSource),
-			zap.Error(err))
 		metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "failed").Inc()
-		return
+		return errors.New("destroy pass 5a: userID empty")
+	}
+	if err := logicpass.CancelAiGatewayEntitlement(logger, userID); err != nil {
+		logger.Warn("destroy pass 5a: ai-gateway CancelSubscription failed",
+			zap.String("user_id", userID), zap.Error(err))
+		metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "failed").Inc()
+		return err
 	}
 	logger.Info("destroy pass 5a: gateway CancelSubscription succeeded",
-		zap.String("user_id", userID),
-		zap.String("gateway", cancelSource))
-	gatewayroute.ClearBestEffort(logger, userID, "destroy")
+		zap.String("user_id", userID))
 	metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "success").Inc()
-}
-
-func isLegacyGatewayDisabled(err error) bool {
-	return errors.Is(err, aigateway.ErrAiGatewayNotConfigured)
+	return nil
 }
 
 // movePassToHistory 5b：dao.MoveToHistory（删 pass 行 + 写 history_pass，单事务）
@@ -470,11 +453,14 @@ func (t *destroyPassTask) idempotentCheck(ctx pctx.Context) (string, error) {
 		}
 		ctx.Logger().Info("destroy pass idempotent check: pass not found, assume already migrated to history",
 			zap.Error(err), zap.String("pass_id", t.in.PassID))
+		// 锁竞争路径直接 markSuccess，跳过 execute 的全部收尾，站点钩子要在这里补。
+		t.suspendSitesBestEffort(ctx.Logger(), "")
 		return t.markSuccess(ctx)
 	}
 	if passEntity.Status != modelpass.StatusTerminating {
 		ctx.Logger().Warn("destroy pass idempotent check: status unexpected, markSuccess defensive",
 			zap.String("status", passEntity.Status))
+		t.suspendSitesBestEffort(ctx.Logger(), passEntity.UserID)
 		return t.markSuccess(ctx)
 	}
 	return "", fmt.Errorf("LockTask failed, pass still in terminating; retry next round")

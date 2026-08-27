@@ -30,6 +30,21 @@ type fakeResolver struct {
 	resolvePlaceCalls   atomic.Int32
 }
 
+type fakeParticipationReader struct {
+	hit       bool
+	err       error
+	calls     atomic.Int32
+	lastUin   string
+	lastActID int64
+}
+
+func (f *fakeParticipationReader) HasUserParticipated(_ context.Context, uin string, activityID int64) (bool, error) {
+	f.calls.Add(1)
+	f.lastUin = uin
+	f.lastActID = activityID
+	return f.hit, f.err
+}
+
 func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.resolveInquiryCalls.Add(1)
 	return f.mapping, f.useDianshi, f.err
@@ -42,13 +57,17 @@ func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string, _ in
 
 // fakeDianshi 是 dianshiclient.Client 的测试替身。
 type fakeDianshi struct {
-	doGoodsResp    *dianshiclient.DoGoodsResponse
-	doGoodsErr     error
-	doGoodsCalls   atomic.Int32
-	lastDoGoodsReq *dianshiclient.DoGoodsRequest
-	priceResp      *dianshiclient.GetPriceResponse
-	priceErr       error
-	priceCalls     atomic.Int32
+	doGoodsResp        *dianshiclient.DoGoodsResponse
+	doGoodsErr         error
+	doGoodsCalls       atomic.Int32
+	lastDoGoodsReq     *dianshiclient.DoGoodsRequest
+	doGoodsAndPayResp  *dianshiclient.DoGoodsResponse
+	doGoodsAndPayErr   error
+	doGoodsAndPayCalls atomic.Int32
+	lastDoGoodsAndPay  *dianshiclient.DoGoodsRequest
+	priceResp          *dianshiclient.GetPriceResponse
+	priceErr           error
+	priceCalls         atomic.Int32
 }
 
 func (f *fakeDianshi) GetActivityPrice(_ context.Context, _ *dianshiclient.GetPriceRequest) (*dianshiclient.GetPriceResponse, error) {
@@ -62,11 +81,21 @@ func (f *fakeDianshi) DoGoods(_ context.Context, req *dianshiclient.DoGoodsReque
 	return f.doGoodsResp, f.doGoodsErr
 }
 
+func (f *fakeDianshi) DoGoodsAndPay(_ context.Context, req *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
+	f.doGoodsAndPayCalls.Add(1)
+	f.lastDoGoodsAndPay = req
+	if f.doGoodsAndPayResp != nil || f.doGoodsAndPayErr != nil {
+		return f.doGoodsAndPayResp, f.doGoodsAndPayErr
+	}
+	return f.doGoodsResp, f.doGoodsErr
+}
+
 func newFakeDianshiSuccess() *fakeDianshi {
 	return &fakeDianshi{
 		doGoodsResp: &dianshiclient.DoGoodsResponse{
-			DealNames: []string{"20260624000000000000001"},
-			BigDealNo: "20260624000000000000999",
+			DealNames:   []string{"20260624000000000000001"},
+			BigDealNo:   "20260624000000000000999",
+			ResourceIDs: map[string][]string{"20260624000000000000001": {"pass-dianshi-paid-1"}},
 		},
 	}
 }
@@ -90,13 +119,14 @@ func newDianshiDeps() (*stdDeps, *fakeResolver, *fakeDianshi) {
 	r := &fakeResolver{mapping: stdActivityMapping(), useDianshi: true}
 	dc := newFakeDianshiSuccess()
 	d.service = New(Deps{
-		CTLClient:        d.ctl,
-		BundleStore:      d.bundle,
-		JifeiClient:      d.jifei,
-		OrderWriter:      d.writer,
-		OrderStore:       d.store,
-		ActivityResolver: r,
-		DianshiClient:    dc,
+		CTLClient:           d.ctl,
+		BundleStore:         d.bundle,
+		JifeiClient:         d.jifei,
+		OrderWriter:         d.writer,
+		OrderStore:          d.store,
+		ParticipationReader: d.participation,
+		ActivityResolver:    r,
+		DianshiClient:       dc,
 	})
 	return d, r, dc
 }
@@ -146,6 +176,13 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	if in.Status != store.OrderStatusPaidPendingProvision {
 		t.Errorf("trade_order.status=%q want %q", in.Status, store.OrderStatusPaidPendingProvision)
 	}
+	if in.Period != 14 || in.TimeUnit != "d" {
+		t.Errorf("trade_order period/time_unit=%d/%q want 14/d", in.Period, in.TimeUnit)
+	}
+	if in.GoodsDetail["timeSpan"] != 14 || in.GoodsDetail["timeUnit"] != "d" {
+		t.Errorf("goods_detail timeSpan/timeUnit=%v/%v want 14/d",
+			in.GoodsDetail["timeSpan"], in.GoodsDetail["timeUnit"])
+	}
 	if in.DealName != res.DealName {
 		t.Errorf("DealName mismatch in/out")
 	}
@@ -174,11 +211,14 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	if prefParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
 		t.Errorf("preference_param.externalUserId=%v want %s", prefParam["externalUserId"], stdPlaceOrderReq().ExternalUserID)
 	}
+	if got, _ := prefParam["dianshiActId"].(int64); got != stdActivityMapping().ActID {
+		t.Errorf("preference_param.dianshiActId=%v want %d", prefParam["dianshiActId"], stdActivityMapping().ActID)
+	}
 }
 
 func TestPlaceOrder_DianshiBranch_ReusesPendingOrder(t *testing.T) {
 	d, _, dc := newDianshiDeps()
-	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*store.TradeOrder, error) {
+	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, createdAfter time.Time) (*store.TradeOrder, error) {
 		if externalUserID != stdPlaceOrderReq().ExternalUserID {
 			t.Errorf("externalUserID=%q", externalUserID)
 		}
@@ -187,6 +227,9 @@ func TestPlaceOrder_DianshiBranch_ReusesPendingOrder(t *testing.T) {
 		}
 		if bundleID != stdPlaceOrderReq().BundleID {
 			t.Errorf("bundleID=%q", bundleID)
+		}
+		if actID != stdActivityMapping().ActID {
+			t.Errorf("actID=%d", actID)
 		}
 		return &store.TradeOrder{
 			DealName:    "20260629004153859479231",
@@ -219,7 +262,7 @@ func TestPlaceOrder_DianshiBranch_OrderExpiredTimeHalfHour(t *testing.T) {
 	d, r, dc := newDianshiDeps()
 	r.mapping.OrderExpiredTime = 0.5
 	var createdAfter time.Time
-	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, ca time.Time) (*store.TradeOrder, error) {
+	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, ca time.Time) (*store.TradeOrder, error) {
 		createdAfter = ca
 		return nil, store.ErrTradeOrderNotFound
 	}
@@ -261,6 +304,61 @@ func TestPlaceOrder_DianshiBranch_DoGoodsBusinessError(t *testing.T) {
 	// 失败链路：没有 trade_order 落地
 	if d.writer.createOrderCalls.Load() != 0 {
 		t.Errorf("CreateOrder should NOT be called when dianshi DoGoods fails, calls=%d", d.writer.createOrderCalls.Load())
+	}
+}
+
+func TestPlaceOrder_DianshiBranch_RejectsInvalidTimeSpanUnitBeforeDoGoods(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+	r.mapping.TimeSpanUnit = "14days"
+
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if err == nil {
+		t.Fatal("expect invalid activity time_span_unit error")
+	}
+	if dc.doGoodsCalls.Load() != 0 {
+		t.Errorf("dianshi DoGoods should NOT be called for invalid time_span_unit, calls=%d", dc.doGoodsCalls.Load())
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Errorf("CreateOrder should NOT be called for invalid time_span_unit, calls=%d", d.writer.createOrderCalls.Load())
+	}
+}
+
+func TestParseDianshiTimeSpanUnit(t *testing.T) {
+	tests := []struct {
+		name       string
+		value      string
+		wantPeriod int
+		wantUnit   string
+		wantErr    bool
+	}{
+		{name: "days", value: "14d", wantPeriod: 14, wantUnit: "d"},
+		{name: "months", value: "1m", wantPeriod: 1, wantUnit: "m"},
+		{name: "normalizes whitespace and case", value: " 1Y ", wantPeriod: 1, wantUnit: "y"},
+		{name: "empty", value: "", wantErr: true},
+		{name: "missing unit", value: "14", wantErr: true},
+		{name: "zero", value: "0d", wantErr: true},
+		{name: "negative", value: "-1m", wantErr: true},
+		{name: "unsupported unit", value: "14h", wantErr: true},
+		{name: "long unit", value: "14days", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			period, unit, err := parseDianshiTimeSpanUnit(tc.value)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseDianshiTimeSpanUnit(%q) expected error", tc.value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseDianshiTimeSpanUnit(%q) err=%v", tc.value, err)
+			}
+			if period != tc.wantPeriod || unit != tc.wantUnit {
+				t.Fatalf("parseDianshiTimeSpanUnit(%q)=%d/%q want %d/%q",
+					tc.value, period, unit, tc.wantPeriod, tc.wantUnit)
+			}
+		})
 	}
 }
 
@@ -332,6 +430,155 @@ func TestPlaceOrderAndPay_DianshiBranch_HappyPath(t *testing.T) {
 	}
 	if d.jifei.generateDealsAndPayCalls.Load() != 0 {
 		t.Errorf("jifei generateDealsAndPay should NOT be called, calls=%d", d.jifei.generateDealsAndPayCalls.Load())
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+
+	res, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if err != nil {
+		t.Fatalf("PlaceDianshiOrderAndPay err=%v", err)
+	}
+	if res == nil || res.DealName != "20260624000000000000001" {
+		t.Fatalf("DealName=%+v", res)
+	}
+	if r.resolvePlaceCalls.Load() != 1 {
+		t.Errorf("ResolveForPlaceOrder calls=%d want 1", r.resolvePlaceCalls.Load())
+	}
+	if dc.doGoodsAndPayCalls.Load() != 1 {
+		t.Errorf("DoGoodsAndPay calls=%d want 1", dc.doGoodsAndPayCalls.Load())
+	}
+	if dc.doGoodsCalls.Load() != 0 {
+		t.Errorf("DoGoods calls=%d want 0", dc.doGoodsCalls.Load())
+	}
+	if dc.priceCalls.Load() != 0 {
+		t.Errorf("GetActivityPrice calls=%d want 0", dc.priceCalls.Load())
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 || d.jifei.generateDealsAndPayCalls.Load() != 0 {
+		t.Errorf("jifei calls generate=%d generateAndPay=%d want 0/0",
+			d.jifei.generateDealsCalls.Load(), d.jifei.generateDealsAndPayCalls.Load())
+	}
+	if d.writer.createOrderCalls.Load() != 1 {
+		t.Fatalf("CreateOrder calls=%d want 1", d.writer.createOrderCalls.Load())
+	}
+	if got := d.writer.lastCreateOrderInput; got.Source != store.OrderSourceDianshi || got.Status != store.OrderStatusProvisioned {
+		t.Errorf("persisted order source/status=%q/%q want %q/%q", got.Source, got.Status,
+			store.OrderSourceDianshi, store.OrderStatusProvisioned)
+	} else if got.ResourceID != "pass-dianshi-paid-1" {
+		t.Errorf("persisted order resource_id=%q want pass-dianshi-paid-1", got.ResourceID)
+	} else if got.Period != 14 || got.TimeUnit != "d" ||
+		got.GoodsDetail["timeSpan"] != 14 || got.GoodsDetail["timeUnit"] != "d" {
+		t.Errorf("persisted order duration=%d/%q goods_detail=%v/%v want 14/d",
+			got.Period, got.TimeUnit, got.GoodsDetail["timeSpan"], got.GoodsDetail["timeUnit"])
+	}
+	if dc.lastDoGoodsAndPay == nil || dc.lastDoGoodsAndPay.Goods[0].PreferenceParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
+		t.Errorf("DoGoodsAndPay request=%+v", dc.lastDoGoodsAndPay)
+	}
+}
+
+func TestGrantDianshiSubscriptionUsesExplicitCampaignWithoutResolver(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+	r.err = errors.New("grant path must not resolve trade_bundle_activity")
+	campaign := DianshiGrantCampaign{
+		ActivityID:   165523570799387,
+		ActID:        142163399386388,
+		TimeSpanUnit: "1m",
+		SecretKey:    "campaign-secret",
+	}
+
+	res, err := d.service.GrantDianshiSubscription(context.Background(), stdPlaceOrderReq(), campaign)
+	if err != nil {
+		t.Fatalf("GrantDianshiSubscription err=%v", err)
+	}
+	if res == nil || res.Status != DianshiGrantStatusGranted || res.DealName == "" {
+		t.Fatalf("unexpected grant result: %+v", res)
+	}
+	if r.resolvePlaceCalls.Load() != 0 {
+		t.Fatalf("grant path resolved trade_bundle_activity %d times", r.resolvePlaceCalls.Load())
+	}
+	if d.participation.calls.Load() != 1 || d.participation.lastActID != campaign.ActivityID {
+		t.Fatalf("participation lookup calls=%d uin=%q activityID=%d", d.participation.calls.Load(), d.participation.lastUin, d.participation.lastActID)
+	}
+	if got := dc.lastDoGoodsAndPay.Goods[0].ActID; got != campaign.ActID {
+		t.Fatalf("Dianshi actID=%d want %d", got, campaign.ActID)
+	}
+	pref := dc.lastDoGoodsAndPay.Goods[0].PreferenceParam
+	if pref["timeSpanUnit"] != "1m" || pref["bundleId"] != stdPlaceOrderReq().BundleID {
+		t.Fatalf("unexpected preference_param=%+v", pref)
+	}
+	if dc.lastDoGoodsAndPay.ActivityID != campaign.ActivityID || dc.lastDoGoodsAndPay.CheckSum == "" {
+		t.Fatalf("unexpected Dianshi request=%+v", dc.lastDoGoodsAndPay)
+	}
+	if got := d.writer.lastCreateOrderInput; got.ActivityID != campaign.ActivityID || got.ActID != campaign.ActID {
+		t.Fatalf("persisted campaign activityID/actID=%d/%d", got.ActivityID, got.ActID)
+	} else if got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted grant status/resource_id=%q/%q want %q/pass-dianshi-paid-1",
+			got.Status, got.ResourceID, store.OrderStatusProvisioned)
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_RejectsMissingResourceID(t *testing.T) {
+	d, _, dc := newDianshiDeps()
+	dc.doGoodsAndPayResp = &dianshiclient.DoGoodsResponse{
+		DealNames: []string{"20260624000000000000001"},
+		BigDealNo: "20260624000000000000999",
+	}
+
+	_, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrJifeiResponseInvalid) {
+		t.Fatalf("err=%v want ErrJifeiResponseInvalid", err)
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("CreateOrder calls=%d want 0", d.writer.createOrderCalls.Load())
+	}
+}
+
+func TestGrantDianshiSubscriptionSkipsExistingParticipation(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+	d.participation.hit = true
+
+	res, err := d.service.GrantDianshiSubscription(context.Background(), stdPlaceOrderReq(), DianshiGrantCampaign{
+		ActivityID: 165523570799387, ActID: 142163399386388, TimeSpanUnit: "1m", SecretKey: "campaign-secret",
+	})
+	if err != nil {
+		t.Fatalf("GrantDianshiSubscription err=%v", err)
+	}
+	if res == nil || res.Status != DianshiGrantStatusSkipped {
+		t.Fatalf("unexpected grant result: %+v", res)
+	}
+	if dc.doGoodsAndPayCalls.Load() != 0 || d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("skip must not place or persist order")
+	}
+	if r.resolvePlaceCalls.Load() != 0 {
+		t.Fatalf("skip path must not resolve trade_bundle_activity")
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_RejectsNonActivityBundle(t *testing.T) {
+	d := newStdDeps()
+	r := &fakeResolver{useDianshi: false}
+	dc := newFakeDianshiSuccess()
+	d.service = New(Deps{
+		CTLClient:        d.ctl,
+		BundleStore:      d.bundle,
+		JifeiClient:      d.jifei,
+		OrderWriter:      d.writer,
+		OrderStore:       d.store,
+		ActivityResolver: r,
+		DianshiClient:    dc,
+	})
+
+	_, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrDianshiActivityRequired) {
+		t.Fatalf("err=%v want ErrDianshiActivityRequired", err)
+	}
+	if dc.doGoodsAndPayCalls.Load() != 0 || dc.doGoodsCalls.Load() != 0 {
+		t.Errorf("dianshi calls andPay=%d goods=%d want 0/0", dc.doGoodsAndPayCalls.Load(), dc.doGoodsCalls.Load())
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 || d.jifei.generateDealsAndPayCalls.Load() != 0 {
+		t.Errorf("jifei calls generate=%d generateAndPay=%d want 0/0",
+			d.jifei.generateDealsCalls.Load(), d.jifei.generateDealsAndPayCalls.Load())
 	}
 }
 

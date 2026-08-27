@@ -532,6 +532,7 @@ type RegisterSetInput struct {
 const (
 	SetOperationSubscriptionWrite = "subscription_write"
 	SetOperationGroupRatioWrite   = "group_ratio_write"
+	SetOperationPlanSync          = "plan_sync"
 	SetOperationBYOKSync          = "byok_sync"
 	SetOperationTenantObservation = "tenant_observation"
 )
@@ -1582,33 +1583,44 @@ const (
 	SetPlanStatusError   = "error"
 )
 
-// Plan 是平台侧不可变的周期权益模板。模型路由、倍率和限流由 new-api 管理。
+// Plan 是平台侧权益模板。业务有效期由 ctl/trade 管理，new-api 只负责周期额度重置。
 type Plan struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	MonthlyTokens int64     `json:"monthly_tokens"`
-	PeriodValue   int       `json:"period_value"`
-	PeriodUnit    string    `json:"period_unit"`
-	IsActive      bool      `json:"is_active"`
-	Fingerprint   string    `json:"fingerprint"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID                      string    `json:"id"`
+	Name                    string    `json:"name"`
+	MonthlyTokens           int64     `json:"monthly_tokens"`
+	QuotaResetPeriod        string    `json:"quota_reset_period"`
+	QuotaResetCustomSeconds int64     `json:"quota_reset_custom_seconds,omitempty"`
+	PeriodValue             int       `json:"period_value,omitempty"`
+	PeriodUnit              string    `json:"period_unit,omitempty"`
+	IsActive                bool      `json:"is_active"`
+	Fingerprint             string    `json:"fingerprint"`
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
+}
+
+// PlanReadiness 是 internal API 暴露给 ctl 的发放门禁快照。
+type PlanReadiness struct {
+	Plan
+	ReadyForAllSets bool `json:"ready_for_all_sets"`
+	ActiveSetCount  int  `json:"active_set_count"`
+	ReadySetCount   int  `json:"ready_set_count"`
 }
 
 // SetPlan 记录权益模板在单个 Set 中对应的 new-api subscription plan。
 type SetPlan struct {
-	PlanID         string    `json:"plan_id"`
-	SetID          string    `json:"set_id"`
-	UpstreamPlanID int       `json:"upstream_plan_id,omitempty"`
-	Status         string    `json:"status"`
-	Attempts       int       `json:"attempts"`
-	LastError      string    `json:"last_error,omitempty"`
-	SyncedAt       time.Time `json:"synced_at,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	PlanID             string    `json:"plan_id"`
+	SetID              string    `json:"set_id"`
+	UpstreamPlanID     int       `json:"upstream_plan_id,omitempty"`
+	AppliedFingerprint string    `json:"applied_fingerprint,omitempty"`
+	Status             string    `json:"status"`
+	Attempts           int       `json:"attempts"`
+	LastError          string    `json:"last_error,omitempty"`
+	SyncedAt           time.Time `json:"synced_at,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
-// PlanPeriod 是业务 Plan 允许使用的非默认周期。默认周期仍由 Plan 自身承载。
+// PlanPeriod 是旧业务周期变体模型，仅为兼容存量表和排障读取保留。
 type PlanPeriod struct {
 	PlanID      string    `json:"plan_id"`
 	PeriodValue int       `json:"period_value"`
@@ -1617,7 +1629,7 @@ type PlanPeriod struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// SetPlanPeriod 记录周期变体在单个 Set 中对应的 new-api subscription plan。
+// SetPlanPeriod 是旧周期变体的 Set 投影，仅为兼容存量表和排障读取保留。
 type SetPlanPeriod struct {
 	PlanID         string    `json:"plan_id"`
 	PeriodValue    int       `json:"period_value"`
@@ -1647,20 +1659,22 @@ type SetPlanListOptions struct {
 }
 
 type ApplySubscriptionRequest struct {
-	IdempotencyKey string     `json:"idempotency_key"`
-	UserID         string     `json:"user_id"`
-	PlanID         string     `json:"plan_id"`
-	Nickname       string     `json:"nickname,omitempty"`
-	Phone          string     `json:"phone,omitempty"`
-	PeriodStart    *time.Time `json:"period_start,omitempty"`
-	PeriodValue    int        `json:"period_value,omitempty"`
-	PeriodUnit     string     `json:"period_unit,omitempty"`
+	IdempotencyKey   string     `json:"idempotency_key"`
+	UserID           string     `json:"user_id"`
+	PlanID           string     `json:"plan_id"`
+	SubscriptionName string     `json:"subscription_name,omitempty"`
+	Nickname         string     `json:"nickname,omitempty"`
+	Phone            string     `json:"phone,omitempty"`
+	PeriodStart      *time.Time `json:"period_start,omitempty"`
+	PeriodValue      int        `json:"period_value,omitempty"`
+	PeriodUnit       string     `json:"period_unit,omitempty"`
+	PeriodEnd        *time.Time `json:"period_end,omitempty"`
+	IsUnique         bool       `json:"is_unique,omitempty"`
 }
 
 const (
 	AdminCommandKindApplySubscription  = "apply_subscription"
 	AdminCommandKindCancelSubscription = "cancel_subscription"
-	AdminCommandKindExtendSubscription = "extend_subscription"
 	AdminCommandKindCreateExternalKey  = "create_external_key"
 
 	AdminCommandStatusPending   = "pending"
@@ -1700,25 +1714,22 @@ type CancelSubscriptionRequest struct {
 	UserID string `json:"user_id"`
 }
 
-type ExtendSubscriptionRequest struct {
-	UserID       string    `json:"user_id"`
-	NewPeriodEnd time.Time `json:"new_period_end"`
-}
-
-type ExtendSubscriptionResponse struct {
-	Subscription *Subscription `json:"subscription"`
-	Updated      bool          `json:"updated"`
-}
-
 type Subscription struct {
 	ID           string `json:"id"`
+	Name         string `json:"name,omitempty"`
 	UserID       string `json:"user_id"`
 	PlanID       string `json:"plan_id"`
 	Status       string `json:"status"`
+	TokenTotal   int64  `json:"token_total,omitempty"`
 	TokenBalance int64  `json:"token_balance"`
 	Unlimited    bool   `json:"unlimited,omitempty"`
 	PeriodStart  string `json:"period_start"`
 	PeriodEnd    string `json:"period_end"`
+}
+
+type ActiveSubscriptionList struct {
+	UserID        string         `json:"user_id"`
+	Subscriptions []Subscription `json:"subscriptions"`
 }
 
 type UserCredit struct {
@@ -2070,6 +2081,18 @@ type SubscriptionPeriodOverlay struct {
 	PeriodEnd      time.Time `json:"period_end"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type SubscriptionProjection struct {
+	ExternalUserID         string    `json:"external_user_id"`
+	SetID                  string    `json:"set_id"`
+	UpstreamSubscriptionID int       `json:"upstream_subscription_id"`
+	SubscriptionName       string    `json:"subscription_name"`
+	PlanID                 string    `json:"plan_id"`
+	UpstreamPlanID         int       `json:"upstream_plan_id"`
+	PeriodEnd              time.Time `json:"period_end"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 const (

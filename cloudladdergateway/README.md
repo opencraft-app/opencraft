@@ -231,12 +231,18 @@ client.WithHttpTransport(transport)
 | --- | --- | --- |
 | `tcapi-account-cn-dev` | `account.dev.tencentcloudapi.com` | SaaS 注册开发联调文档 |
 | `tcapi-billing-cn-dev` | `billing.dev.tencentcloudapi.com` | `shadow` 默认 billing API endpoint |
+| `tcapi-billing-intl-test` | `billing.test.tencentcloudapi.com` | 国际站影子账号自动开户测试通道 |
+| `tcapi-billing-intl-prod` | `billing.ap-singapore.tencentcloudapi.woa.com` | 国际站影子账号自动开户生产内网通道 |
+| `tcapi-billing-trade-intl-test` | `billing.test.tencentcloudapi.com` | 国际站 trade 获取支付链接 `CreatePayUrl` 测试通道 |
 | `tcapi-account-cn-test` | `account.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-cam-cn-test` | `cam.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-sts-cn-test` | `sts.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-account-cn-prod` | `account.tencentcloudapi.com` | SaaS 注册/安全手机生产环境 |
 | `tcapi-cam-cn-prod` | `cam.tencentcloudapi.com` | SaaS BasicAuth 生产环境 |
 | `tcapi-sts-cn-prod` | `sts.tencentcloudapi.com` | SaaS BasicAuth 生产环境 |
+| `tcapi-account-intl-prod` | `account.tencentcloudapi.com` | 国际站 SaaS 注册生产通道 |
+| `tcapi-cam-intl-prod` | `cam.tencentcloudapi.com` | 国际站 authCode 换 SaaS token 生产通道 |
+| `tcapi-sts-intl-prod` | `sts.tencentcloudapi.com` | 国际站 SaaS token 换临时密钥生产通道 |
 
 ## TencentCloud SaaS callback 兼容入口
 
@@ -246,29 +252,44 @@ client.WithHttpTransport(transport)
 http://21.215.157.57:8080/internal/tencentcloud/account
 ```
 
-这不是 HTTP 302 场景。腾讯会用 `POST` 发送 JSON body，gateway 必须在服务端做 reverse proxy，保留 body、状态码和响应体。配置方式：
+这不是 HTTP 302 场景。腾讯会用 `POST` 发送 JSON body，gateway 必须在服务端做 reverse proxy，保留 body、状态码和响应体。
 
-当前腾讯侧 SaaS callback 配置服务于北京主沙箱绑定链路；即使 clgateway 运行在预发布/TKEx 环境，也必须回调 `https://lightclaw.tech/auth/internal/tencentcloud/account`，不要路由到 `sandbox-bj-7` 这类隔离 playground 环境。
+多个 LightVela 环境共用这个入口时，auth 服务必须给 Shadow 用户名和 auth code 加环境前缀。gateway 按前缀选择回调目标，并在转发 `checkSaaSAuthCode` 前移除 auth code 前缀：
+
+| 环境 | Shadow 用户名前缀 | auth code 前缀 | 回调目标 |
+| --- | --- | --- | --- |
+| 北京主沙箱 | `bjsbx_` | `bjsbx.` | `https://lightclaw.tech` |
+| 韩国沙箱 | `krsbx_` | `krsbx.` | `https://api-sandbox-kr-1.lightclaw.tech` |
+| 东京沙箱 | `jpsbx_` | `jpsbx.` | `https://api-sandbox-jp-1.lightclaw.tech` |
+| 上海生产 | 无（兼容存量） | `shprod.` | `https://api.lightvela.com` |
+
+未匹配前缀的请求继续进入上海生产默认 route，以兼容存量 Shadow 账号。
 
 ```yaml
 external_routes:
   - path: /internal/tencentcloud/account
     methods: ["POST"]
-    route_id: tencentcloud-account-callback-beijing-sandbox
+    route_id: tencentcloud-account-callback-shprod
     upstream_path: /auth/internal/tencentcloud/account
-
-routes:
-  - id: tencentcloud-account-callback-beijing-sandbox
-    condition: 'request.method == "POST"'
-    upstream:
-      base_url: "https://lightclaw.tech"
-      timeout: 10s
-      allowed_methods: ["POST"]
-      headers_from_env:
-        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+    auth_code_routes:
+      - prefix: "bjsbx."
+        route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "krsbx."
+        route_id: tencentcloud-account-callback-krsbx
+      - prefix: "jpsbx."
+        route_id: tencentcloud-account-callback-jpsbx
+      - prefix: "shprod."
+        route_id: tencentcloud-account-callback-shprod
+    user_id_prefix_routes:
+      - prefix: "bjsbx_"
+        route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "krsbx_"
+        route_id: tencentcloud-account-callback-krsbx
+      - prefix: "jpsbx_"
+        route_id: tencentcloud-account-callback-jpsbx
 ```
 
-`external_routes` 只注册 exact path，不允许调用方传任意 URL。这个 route 可加入 `auth.allow_unauthenticated`，因为腾讯侧无法生成 CloudLadder HMAC；真实安全边界由固定 upstream 和注入的 `X-Shadow-Callback-Token` 共同保证。`CLOUDLADDER_TENCENT_CALLBACK_TOKEN` 必须和 auth 服务的 `SHADOW_TENCENT_CALLBACK_TOKEN` 保持一致。
+`external_routes` 只注册 exact path，不允许调用方传任意 URL。这个 route 可加入 `auth.allow_unauthenticated`，因为腾讯侧无法生成 CloudLadder HMAC；真实安全边界由固定 upstream 和注入的 `X-Shadow-Callback-Token` 共同保证。北京/上海使用 `CLOUDLADDER_TENCENT_CALLBACK_TOKEN`，韩国和东京分别使用独立的 `CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN`、`CLOUDLADDER_TENCENT_CALLBACK_JPSBX_TOKEN`；目标 auth 服务中的 `SHADOW_TENCENT_CALLBACK_TOKEN` 必须与对应 route 的 token 一致。
 
 ## 上游连接池
 

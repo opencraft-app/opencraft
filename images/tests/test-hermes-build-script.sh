@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_SCRIPT="${ROOT_DIR}/images/build.sh"
 
+if grep -Fq 'install_deepseek_harness_installer' "${BUILD_SCRIPT}"; then
+  echo "Hermes image must not preload the DeepSeek Harness installer" >&2
+  exit 1
+fi
+
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
@@ -26,6 +31,7 @@ HERMES_VERSION=""
 HERMES_SRC_VERSION=""
 HERMES_GIT_COMMIT=""
 HERMES_QWEN_CODE_VERSION="latest"
+PNPM_VERSION="10.33.0"
 HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
 HERMES_BACKEND_BLUEPRINT_RESOLVER="${TMPDIR}/resolve-hermes-backend-blueprint-id.py"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
@@ -339,6 +345,9 @@ acli() {
   if [[ "${1:-}" == "backend" && "${2:-}" == "--help" && ! -f "${ACLI_BACKEND_MARKER}" ]]; then
     return 1
   fi
+  if [[ "${2:-}" == "batch-install" && "${3:-}" == "--help" && ! -f "${ACLI_BACKEND_MARKER}" ]]; then
+    return 1
+  fi
   if [[ "${1:-}" == "bundle-update" ]]; then
     touch "${ACLI_BACKEND_MARKER}"
   fi
@@ -400,6 +409,7 @@ install_hermes_extra_tools
 install_hermes_acli
 upgrade_hermes_backend_blueprint
 finalize_hermes_runtime_pin
+install_hermes_website_builder_skill
 curate_hermes_skills
 remove_hermes_find_skill_skillhub
 
@@ -438,13 +448,23 @@ grep -q '^  cron_mode: approve$' "${RUNTIME_HOME}/.hermes/config.yaml"
 grep -q '^  destructive_slash_confirm: false$' "${RUNTIME_HOME}/.hermes/config.yaml"
 test ! -e "${RUNTIME_HOME}/.agents/skills/find-skill-skillhub"
 test ! -e "${RUNTIME_HOME}/.openclaw"
+test -s "${RUNTIME_HOME}/.hermes/skills/website-builder/SKILL.md"
+cmp -s "${HERMES_WEBSITE_BUILDER_SKILL_FILE}" "${RUNTIME_HOME}/.hermes/skills/website-builder/SKILL.md"
+ORIGINAL_WEBSITE_BUILDER_SKILL_FILE="${HERMES_WEBSITE_BUILDER_SKILL_FILE}"
+HERMES_WEBSITE_BUILDER_SKILL_FILE="${TMPDIR}/missing-website-builder-SKILL.md"
+if install_hermes_website_builder_skill >/dev/null 2>&1; then
+  echo "missing website-builder Skill source unexpectedly succeeded" >&2
+  exit 1
+fi
+HERMES_WEBSITE_BUILDER_SKILL_FILE="${ORIGINAL_WEBSITE_BUILDER_SKILL_FILE}"
+grep -Fq 'upload_file_via_ssh "${WEBSITE_BUILDER_SKILL_FILE}" "${REMOTE_DIR}/skills/website-builder/SKILL.md"' "${ROOT_DIR}/images/deploy-build.sh"
 grep -Fq "index-url = https://mirrors.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq "https://mirrors.cloud.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq 'index-url = "https://mirrors.tencent.com/pypi/simple"' "${RUNTIME_HOME}/.config/uv/uv.toml"
 grep -Fq 'extra-index-url = ["https://mirrors.cloud.tencent.com/pypi/simple"]' "${RUNTIME_HOME}/.config/uv/uv.toml"
 grep -Fq "chown agentuser:agentuser ${RUNTIME_HOME}/.config" "${LOG_FILE}"
 grep -Fq "chmod 0700 ${RUNTIME_HOME}/.config" "${LOG_FILE}"
-grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
+grep -Fq "sudo-npm-install pnpm@10.33.0" "${LOG_FILE}"
 grep -q "sudo-user agentuser" "${LOG_FILE}"
 grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"
 test "$(grep -c "pnpm-add-whatsapp-bridge" "${LOG_FILE}")" -ge 2
@@ -463,6 +483,9 @@ grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
 grep -q "acli doctor" "${LOG_FILE}"
 grep -q "acli backend --help" "${LOG_FILE}"
 grep -q "acli bundle-update" "${LOG_FILE}"
+grep -q "acli skills batch-install --help" "${LOG_FILE}"
+grep -q "acli skills-sh batch-install --help" "${LOG_FILE}"
+grep -q "acli clawhub batch-install --help" "${LOG_FILE}"
 grep -q "acli backend upgrade-start --blueprint-id lhbp-lyx28qje --wait=true --force=true" "${LOG_FILE}"
 grep -q '\$HOME/.hermes/hermes-agent/venv/bin' "${PROFILE_FILE}"
 grep -q '\$HOME/.local/bin:\$PATH' "${PROFILE_FILE}"

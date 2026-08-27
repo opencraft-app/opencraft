@@ -1,0 +1,6 @@
+apiVersion: viaduct.ai/v1
+kind: ksops
+metadata:
+  name: cloudladdergateway-polaris-testing-service
+files:
+  - ../../../secrets/tkexsg/cloudladdergateway-polaris-testing-service.sops.yaml

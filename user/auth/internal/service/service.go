@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/paymentmethod"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
 
@@ -43,22 +44,27 @@ var (
 )
 
 type Options struct {
-	Now                       func() time.Time
-	SMSCooldown               time.Duration
-	SMSCodeTTL                time.Duration
-	SessionTTL                time.Duration
-	VerificationCodeGenerator func(int) (string, error)
-	PhoneAuth                 PhoneAuthConfig
-	Verification              VerificationPolicy
-	SeedDemoUser              bool
-	RealnameVerifier          RealnameVerifier
-	RealnameFaceIDVerifier    RealnameFaceIDVerifier
-	RealnameCipher            RealnameCipher
-	RealnameFaceID            RealnameFaceIDConfig
-	ContentAudit              ContentAuditConfig
-	ContentAuditClient        ContentAuditClient
-	ShadowBinding             *shadowbinding.Service
-	PassBillingMigration      PassBillingMigrationNotifier
+	Now                          func() time.Time
+	SiteKind                     string
+	SMSCooldown                  time.Duration
+	SMSCodeTTL                   time.Duration
+	SessionTTL                   time.Duration
+	VerificationCodeGenerator    func(int) (string, error)
+	PhoneAuth                    PhoneAuthConfig
+	Verification                 VerificationPolicy
+	SeedDemoUser                 bool
+	RealnameVerifier             RealnameVerifier
+	RealnameFaceIDVerifier       RealnameFaceIDVerifier
+	RealnameCipher               RealnameCipher
+	RealnameFaceID               RealnameFaceIDConfig
+	ContentAudit                 ContentAuditConfig
+	ContentAuditClient           ContentAuditClient
+	ShadowBinding                *shadowbinding.Service
+	PasswordSignupShadowEnabled  bool
+	PaymentMethods               paymentmethod.Client
+	PaymentMethodSignOrderLimit  int
+	PaymentMethodSignOrderWindow time.Duration
+	PassBillingMigration         PassBillingMigrationNotifier
 	// ShadowBasicAuthSyncEnabled gates the external SaveBasicAuthForSaaS side
 	// effect and the user-facing sync status. Keep it off by default so the
 	// shadow binding code can land before product rollout.
@@ -326,6 +332,7 @@ type VerifySMSInput struct {
 	Code       string
 	InviteCode string
 	ClientIP   string
+	ClientUA   string
 }
 
 type PasswordSignUpInput struct {
@@ -333,6 +340,8 @@ type PasswordSignUpInput struct {
 	Email      string
 	Password   string
 	InviteCode string
+	ClientIP   string
+	ClientUA   string
 }
 
 type OAuthSignInInput struct {
@@ -343,6 +352,17 @@ type OAuthSignInInput struct {
 	Name            string
 	AvatarURL       string
 	InviteCode      string
+	ClientIP        string
+	ClientUA        string
+	// RegistrationDisabled allows a provider to authenticate or link existing
+	// users without creating a new platform account.
+	RegistrationDisabled bool
+	// RegistrationEmailRequired is enforced only when a new platform account
+	// would be created for this OAuth identity.
+	RegistrationEmailRequired bool
+	// RegistrationEmailSuffixBlocked is enforced only when a new platform
+	// account would be created for this OAuth identity.
+	RegistrationEmailSuffixBlocked bool
 }
 
 type Service struct {
@@ -354,6 +374,7 @@ type Service struct {
 	verification                 VerificationPolicy
 	phoneAuth                    PhoneAuthConfig
 	store                        Store
+	siteKind                     string
 	realnameVerifier             RealnameVerifier
 	realnameFaceIDVerifier       RealnameFaceIDVerifier
 	realnameCipher               RealnameCipher
@@ -361,9 +382,14 @@ type Service struct {
 	contentAudit                 ContentAuditConfig
 	contentAuditClient           ContentAuditClient
 	shadowBinding                *shadowbinding.Service
+	passwordSignupShadowEnabled  bool
+	paymentMethods               paymentmethod.Client
+	paymentMethodSignOrderLimit  int
+	paymentMethodSignOrderWindow time.Duration
 	passBillingMigrationNotifier PassBillingMigrationNotifier
 	shadowBasicAuthSyncEnabled   bool
 	emailBind                    EmailBindConfig
+	registrationEmailSuffixes    registrationEmailSuffixBlacklist
 }
 
 type smsChallenge struct {
@@ -401,6 +427,10 @@ func New(opts Options) *Service {
 }
 
 func NewWithStore(store Store, opts Options) *Service {
+	return newWithStoreAndRegistrationEmailSuffixBlacklist(store, opts, defaultRegistrationEmailSuffixBlacklist)
+}
+
+func newWithStoreAndRegistrationEmailSuffixBlacklist(store Store, opts Options, registrationEmailSuffixes registrationEmailSuffixBlacklist) *Service {
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -417,6 +447,10 @@ func NewWithStore(store Store, opts Options) *Service {
 	if codeGenerator == nil {
 		codeGenerator = newNumericVerificationCode
 	}
+	siteKind, err := shadowbinding.ParseSiteKind(opts.SiteKind)
+	if err != nil {
+		siteKind = shadowbinding.SiteKindCN
+	}
 
 	return &Service{
 		now:                          now,
@@ -427,6 +461,7 @@ func NewWithStore(store Store, opts Options) *Service {
 		verification:                 verificationPolicy,
 		phoneAuth:                    opts.PhoneAuth,
 		store:                        store,
+		siteKind:                     siteKind,
 		realnameVerifier:             opts.RealnameVerifier,
 		realnameFaceIDVerifier:       opts.RealnameFaceIDVerifier,
 		realnameCipher:               opts.RealnameCipher,
@@ -434,9 +469,14 @@ func NewWithStore(store Store, opts Options) *Service {
 		contentAudit:                 opts.ContentAudit,
 		contentAuditClient:           opts.ContentAuditClient,
 		shadowBinding:                opts.ShadowBinding,
+		passwordSignupShadowEnabled:  opts.PasswordSignupShadowEnabled,
+		paymentMethods:               opts.PaymentMethods,
+		paymentMethodSignOrderLimit:  defaultInt(opts.PaymentMethodSignOrderLimit, 5),
+		paymentMethodSignOrderWindow: defaultDuration(opts.PaymentMethodSignOrderWindow, 10*time.Minute),
 		passBillingMigrationNotifier: opts.PassBillingMigration,
 		shadowBasicAuthSyncEnabled:   opts.ShadowBasicAuthSyncEnabled,
 		emailBind:                    opts.EmailBind,
+		registrationEmailSuffixes:    registrationEmailSuffixes,
 	}
 }
 
@@ -692,6 +732,8 @@ func (s *Service) verifyNewUserPhoneAuthSMS(ctx context.Context, input VerifySMS
 		UserID:     user.ID,
 		Phone:      input.Phone,
 		VerifyCode: input.Code,
+		ClientIP:   input.ClientIP,
+		ClientUA:   input.ClientUA,
 		Force:      true,
 	})
 	if err != nil {
@@ -901,12 +943,20 @@ func (s *Service) SignUpWithPassword(ctx context.Context, input PasswordSignUpIn
 	if len(input.Password) < 8 {
 		return nil, newError("invalid_password", "密码至少需要 8 位。", 400)
 	}
+	if s.registrationEmailSuffixes.blocksEmail(input.Email) {
+		return nil, registrationEmailSuffixBlockedError()
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
-	return s.store.CreatePasswordSession(ctx, input, hash, s.now(), s.sessionTTL)
+	session, err := s.store.CreatePasswordSession(ctx, input, hash, s.now(), s.sessionTTL)
+	if err != nil {
+		return nil, err
+	}
+	s.ensureIntlPasswordSignupShadowBinding(ctx, session, input.Email, input.ClientIP, input.ClientUA)
+	return session, nil
 }
 
 func (s *Service) SignInWithPassword(ctx context.Context, email string, password string) (*AuthSession, error) {
@@ -962,6 +1012,8 @@ func (s *Service) signInOrBindOAuth(ctx context.Context, currentToken string, in
 	input.Email = normalizeEmail(input.Email)
 	input.Name = strings.TrimSpace(input.Name)
 	input.AvatarURL = strings.TrimSpace(input.AvatarURL)
+	input.RegistrationEmailRequired = strings.EqualFold(input.Provider, "github")
+	input.RegistrationEmailSuffixBlocked = s.registrationEmailSuffixes.blocksEmail(input.Email)
 
 	if input.Provider == "" || input.ProviderSubject == "" {
 		return nil, newError("invalid_oauth_identity", "第三方登录信息不完整。", 400)
@@ -973,10 +1025,62 @@ func (s *Service) signInOrBindOAuth(ctx context.Context, currentToken string, in
 		input.Name = oauthFallbackName(input.Provider)
 	}
 
+	var session *AuthSession
+	var err error
 	if strings.TrimSpace(currentToken) != "" {
-		return s.store.BindOAuthSession(ctx, currentToken, input, s.now(), s.sessionTTL)
+		session, err = s.store.BindOAuthSession(ctx, currentToken, input, s.now(), s.sessionTTL)
+	} else {
+		session, err = s.store.CreateOAuthSession(ctx, input, s.now(), s.sessionTTL)
 	}
-	return s.store.CreateOAuthSession(ctx, input, s.now(), s.sessionTTL)
+	if err != nil {
+		return nil, err
+	}
+	s.ensureIntlShadowBinding(ctx, session, input)
+	return session, nil
+}
+
+func (s *Service) ensureIntlShadowBinding(ctx context.Context, session *AuthSession, input OAuthSignInInput) {
+	if s == nil || session == nil || s.siteKind != shadowbinding.SiteKindIntl || s.shadowBinding == nil || !s.shadowBinding.Enabled() {
+		return
+	}
+	email := normalizeEmail(input.Email)
+	if !input.EmailVerified || email == "" {
+		slog.WarnContext(ctx, "international shadow provisioning skipped without verified oauth email",
+			"user_id", session.User.ID,
+			"provider", input.Provider,
+		)
+		return
+	}
+	s.bindIntlShadowAccount(ctx, session, email, input.Provider, input.ClientIP, input.ClientUA)
+}
+
+func (s *Service) ensureIntlPasswordSignupShadowBinding(ctx context.Context, session *AuthSession, email, clientIP, clientUA string) {
+	if s == nil || !s.passwordSignupShadowEnabled || session == nil || s.siteKind != shadowbinding.SiteKindIntl || s.shadowBinding == nil || !s.shadowBinding.Enabled() {
+		return
+	}
+	normalizedEmail := normalizeEmail(email)
+	if normalizedEmail == "" {
+		return
+	}
+	slog.WarnContext(ctx, "international shadow provisioning enabled for test password sign-up",
+		"user_id", session.User.ID,
+	)
+	s.bindIntlShadowAccount(ctx, session, normalizedEmail, "password_signup_test", clientIP, clientUA)
+}
+
+func (s *Service) bindIntlShadowAccount(ctx context.Context, session *AuthSession, email, source, clientIP, clientUA string) {
+	if _, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
+		UserID:   session.User.ID,
+		Email:    email,
+		ClientIP: strings.TrimSpace(clientIP),
+		ClientUA: strings.TrimSpace(clientUA),
+	}); err != nil {
+		slog.WarnContext(ctx, "international shadow provisioning failed",
+			"user_id", session.User.ID,
+			"provider", source,
+			"err", err,
+		)
+	}
 }
 
 func (s *Service) ForgotPassword(_ context.Context, email string) error {
@@ -1056,8 +1160,8 @@ func (s *Service) CreateImpersonationSession(ctx context.Context, userID string,
 }
 
 func (s *Service) VerifyRealname(ctx context.Context, token string, input RealnameVerifyInput) (RealnameVerifyResult, error) {
-	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceRequired {
-		return RealnameVerifyResult{}, newError("realname_faceid_required", "请使用人脸实名认证流程完成认证。", http.StatusConflict)
+	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceRequired || s.realnameFaceID.Mode == RealnameAssuranceModeFaceless {
+		return RealnameVerifyResult{}, newError("realname_faceid_required", "请使用当前实名认证流程完成认证。", http.StatusConflict)
 	}
 	trimmedToken := strings.TrimSpace(token)
 	if trimmedToken == "" {
@@ -1456,6 +1560,29 @@ func (s *Service) CurrentShadowBinding(ctx context.Context, token string) (Shado
 	return toShadowBindingResult(binding), nil
 }
 
+func (s *Service) IssueTencentCloudConsoleAuthCode(ctx context.Context, token string) (shadowbinding.AuthCode, error) {
+	session, err := s.CurrentSession(ctx, token)
+	if err != nil {
+		return shadowbinding.AuthCode{}, err
+	}
+	if s.shadowBinding == nil || !s.shadowBinding.Enabled() {
+		return shadowbinding.AuthCode{}, newError("shadow_binding_disabled", "腾讯云账号绑定暂未启用。", http.StatusServiceUnavailable)
+	}
+
+	binding, err := s.shadowBinding.GetBindingByUserID(ctx, session.User.ID)
+	if err != nil {
+		if errors.Is(err, shadowbinding.ErrNotFound) {
+			return shadowbinding.AuthCode{}, newError("shadow_binding_not_ready", "腾讯云账号绑定尚未完成。", http.StatusConflict)
+		}
+		return shadowbinding.AuthCode{}, err
+	}
+	if binding.Status != shadowbinding.StatusActive {
+		return shadowbinding.AuthCode{}, newError("shadow_binding_not_ready", "腾讯云账号绑定尚未完成。", http.StatusConflict)
+	}
+
+	return s.shadowBinding.IssueExternalAuthCode(ctx, session.User.ID, shadowbinding.AuthCodePurposeSaaSCallback)
+}
+
 func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowBindingResult, error) {
 	session, err := s.CurrentSession(ctx, token)
 	if err != nil {
@@ -1464,7 +1591,15 @@ func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowB
 	if s.shadowBinding == nil {
 		return ShadowBindingResult{UserID: session.User.ID, Status: "disabled"}, nil
 	}
-	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{UserID: session.User.ID, Phone: session.User.Phone})
+	email := ""
+	if session.User.EmailVerified {
+		email = session.User.Email
+	}
+	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
+		UserID: session.User.ID,
+		Email:  email,
+		Phone:  session.User.Phone,
+	})
 	if err != nil && binding.UserID == "" {
 		return ShadowBindingResult{}, err
 	}
@@ -1472,8 +1607,86 @@ func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowB
 	return toShadowBindingResult(binding), nil
 }
 
-func (s *Service) InternalShadowBinding(ctx context.Context, userID string) (ShadowBindingResult, error) {
-	return s.activeShadowBindingByUserID(ctx, userID)
+// RegisterOrRetryInternalShadowBinding exposes the user-facing shadow binding
+// retry semantics to trusted services that only have a LightVela user ID.
+func (s *Service) RegisterOrRetryInternalShadowBinding(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return ShadowBindingResult{}, newError("invalid_user_id", "用户 ID 不能为空。", http.StatusBadRequest)
+	}
+	user, err := s.store.FindUserByID(ctx, trimmedUserID)
+	if err != nil {
+		return ShadowBindingResult{}, err
+	}
+	if s.shadowBinding == nil {
+		return ShadowBindingResult{UserID: user.ID, Status: shadowbinding.StatusDisabled}, nil
+	}
+	email := ""
+	if user.EmailVerified {
+		email = user.Email
+	}
+	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
+		UserID: user.ID,
+		Email:  email,
+		Phone:  user.Phone,
+	})
+	if err != nil && binding.UserID == "" {
+		return ShadowBindingResult{}, err
+	}
+	s.notifyPassBillingMigration(ctx, binding)
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) InternalShadowBinding(ctx context.Context, userID, clientIP, clientUA string) (ShadowBindingResult, error) {
+	binding, err := s.activeShadowBindingByUserID(ctx, userID)
+	if err != nil || binding.AppID > 0 {
+		return binding, err
+	}
+	repaired, err := s.shadowBinding.EnsureBindingAppID(ctx, strings.TrimSpace(userID), clientIP, clientUA)
+	if err != nil {
+		slog.WarnContext(ctx, "shadow app id self-heal failed", "user_id", userID, "uin", binding.Uin, "err", err)
+		return ShadowBindingResult{}, newError("shadow_appid_unavailable", "腾讯云账号信息暂不可用。", http.StatusBadGateway)
+	}
+	return toShadowBindingResult(repaired), nil
+}
+
+func (s *Service) InternalShadowBindingState(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	if s.shadowBinding == nil {
+		return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+	}
+	binding, err := s.shadowBinding.GetBindingByUserID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		if errors.Is(err, shadowbinding.ErrNotFound) {
+			return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+		}
+		return ShadowBindingResult{}, err
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) RetryInternalShadowBilling(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	if s.shadowBinding == nil {
+		return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+	}
+	binding, err := s.shadowBinding.RetryBillingAccountOpening(ctx, strings.TrimSpace(userID))
+	if err != nil && binding.UserID == "" {
+		if errors.Is(err, shadowbinding.ErrNotFound) {
+			return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+		}
+		return ShadowBindingResult{}, err
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) InternalShadowCredentials(ctx context.Context, userID, clientIP, clientUA string) (shadowbinding.CloudTemporaryCredentials, error) {
+	if _, err := s.activeShadowBindingByUserID(ctx, userID); err != nil {
+		return shadowbinding.CloudTemporaryCredentials{}, err
+	}
+	credentials, err := s.shadowBinding.IssueTemporaryCredentials(ctx, userID, clientIP, clientUA)
+	if err != nil {
+		return shadowbinding.CloudTemporaryCredentials{}, err
+	}
+	return credentials, nil
 }
 
 func (s *Service) CheckSaaSAccountExist(ctx context.Context, userID string) (bool, error) {
@@ -1545,7 +1758,7 @@ func (s *Service) activeShadowBindingByUserID(ctx context.Context, userID string
 		}
 		return ShadowBindingResult{}, err
 	}
-	if binding.Status != shadowbinding.StatusActive {
+	if binding.Status != shadowbinding.StatusActive && !shadowbinding.CanIssueTemporaryCredentials(binding) {
 		return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
 	}
 	return toShadowBindingResult(binding), nil
@@ -1811,6 +2024,13 @@ func defaultDuration(value time.Duration, fallback time.Duration) time.Duration 
 		return value
 	}
 	return fallback
+}
+
+func defaultInt(value int, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func isActiveAuditStatus(status string) bool {

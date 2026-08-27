@@ -1,0 +1,1 @@
+user/auth/internal/service/registration_email_suffix_blacklist.csv -text whitespace=-trailing-space

@@ -16,7 +16,12 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import (
+    DEFAULT_MANIFEST_PATH,
+    load_bundle,
+    load_manifest,
+    playground_catalog_root,
+)
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 
@@ -172,10 +177,7 @@ def resolve_runtime_env(
 def load_playground_catalog_value(repo_root: Path, env: str, service: str, key: str) -> str:
     path = (
         repo_root
-        / "argocd"
-        / "catalogs"
-        / "playground"
-        / "beijing-playground"
+        / playground_catalog_root(env)
         / env
         / f"{service}.yaml"
     )
@@ -217,7 +219,7 @@ def resolve_verifier_namespace(repo_root: Path, env: str, service: str, verifier
 
 
 def default_ctl_database(env: str) -> str:
-    if re.fullmatch(r"sandbox-(bj|kr)-\d+", env):
+    if re.fullmatch(r"sandbox-(bj|kr|jp)-\d+", env):
         return f"ctl_{env.replace('-', '_')}"
     return "ctl"
 
@@ -288,6 +290,8 @@ def apply_playground_ctl_runtime_env(
     if service != "ctl" or not is_playground_namespace(namespace):
         return
     env_values["CTL_DB"] = default_ctl_database(env)
+    if env_secret_values.get("CTL_DB_PASSWORD", "").strip():
+        return
     if not kubeconfig:
         return
     root_password = kubectl_secret_value(
@@ -310,6 +314,31 @@ def max_migration_version(repo_root: Path, source: str) -> int:
         if match:
             versions.append(int(match.group(1)))
     return max(versions) if versions else 0
+
+
+def expected_migration_version(
+    repo_root: Path,
+    contract: Mapping[str, Any],
+    env: str,
+) -> int:
+    source = str(contract.get("expected_migration_source") or "")
+    latest_version = max_migration_version(repo_root, source)
+    versions_by_env = contract.get("expected_migration_version_by_env")
+    if versions_by_env is None:
+        return latest_version
+    if not isinstance(versions_by_env, Mapping):
+        raise TypeError("expected_migration_version_by_env must be a mapping")
+    if env not in versions_by_env:
+        return latest_version
+
+    configured_version = versions_by_env[env]
+    if isinstance(configured_version, bool) or not isinstance(configured_version, int):
+        raise TypeError(f"expected migration version for {env} must be an integer")
+    if configured_version < 0 or configured_version > latest_version:
+        raise ValueError(
+            f"expected migration version for {env} must be between 0 and {latest_version}"
+        )
+    return configured_version
 
 
 def shell_single_quote(value: str) -> str:
@@ -571,8 +600,8 @@ def main() -> int:
     if not verifier:
         raise ValueError(f"bundle {args.service} does not define db_contract.verifier")
     catalog_service = resolve_catalog_service(args.service, contract)
-    verifier["namespace"] = resolve_verifier_namespace(repo_root, args.env, catalog_service, verifier)
-    expected_version = max_migration_version(repo_root, str(contract.get("expected_migration_source") or ""))
+    verifier["namespace"] = resolve_verifier_namespace(deploy_root, args.env, catalog_service, verifier)
+    expected_version = expected_migration_version(repo_root, contract, args.env)
     env_values, node_selector, env_secret_values = resolve_runtime_env(deploy_root, args.env, verifier, contract)
     kubeconfig = ""
     if args.apply:

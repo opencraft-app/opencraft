@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: localstack-system
+resources:
+  - manifests.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: mysql-init
+    files:
+      - 001-databases.sql=../../local/mysql/init/001-databases.sql
+  - name: fake-qq-oauth
+    files:
+      - server.mjs=../../local/mockservers/qq-oauth/server.mjs
+  - name: fake-jifei
+    files:
+      - server.mjs=../../local/mockservers/jifei/server.mjs
+  - name: fake-tencentcloud
+    files:
+      - server.mjs=../../local/mockservers/tencentcloud/server.mjs
+  - name: fake-wechat-pay-bridge
+    files:
+      - server.mjs=../../local/mockservers/wechat-pay-bridge/server.mjs
+secretGenerator:
+  - name: localstack-infra-secrets
+    envs:
+      - secrets.defaults.env
+  - name: fake-tencentcloud-tls
+    files:
+      - tls.crt=../../local/mockservers/tencentcloud/tls/server.crt
+      - tls.key=../../local/mockservers/tencentcloud/tls/server.key
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false

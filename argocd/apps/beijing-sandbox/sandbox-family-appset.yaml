@@ -15,6 +15,7 @@ spec:
           - path: argocd/catalogs/sandbox/*/*.yaml
           - path: argocd/catalogs/playground/beijing-playground/*/*.yaml
           - path: argocd/catalogs/playground/seoul-playground/*/*.yaml
+          - path: argocd/catalogs/playground/tokyo-playground/*/*.yaml
   template:
     metadata:
       name: '{{ .service }}-{{ .env }}'

@@ -180,7 +180,7 @@ feai install
   ↓
 /feai-start
   ↓
-/feai-review
+/feai-review --final（M/L；S 按需）
   ↓
 /feai-archive
 ```

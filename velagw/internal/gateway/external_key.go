@@ -57,15 +57,39 @@ func generateExternalKeyV2(reader io.Reader) (externalKeyMaterial, error) {
 }
 
 func prepareAPIKeyReservation(binding APIKeyBinding) (APIKeyBinding, error) {
-	if binding.ExternalKeyID == "" || binding.ExternalKeyHash == "" || binding.SecretHash == "" || binding.KeyVersion != externalKeyVersionV2 {
-		return APIKeyBinding{}, fmt.Errorf("external key reservation requires a complete v2 identity")
+	binding.Purpose = canonicalAPIKeyPurpose(binding.Purpose)
+	if err := validateStoredExternalKey(binding); err != nil {
+		return APIKeyBinding{}, fmt.Errorf("external key reservation requires valid v2 material: %w", err)
 	}
-	binding.ExternalKey = ""
 	binding.UpstreamKey = ""
 	binding.UpstreamKeyID = 0
 	binding.Status = APIKeyStatusReserved
 	binding.LastError = ""
 	return binding, nil
+}
+
+func validateStoredExternalKey(binding APIKeyBinding) error {
+	lookup := parseTrafficRouteLookup(binding.ExternalKey)
+	switch {
+	case !lookup.Valid:
+		return fmt.Errorf("external key is not valid v2 material")
+	case lookup.ExternalKeyID != binding.ExternalKeyID:
+		return fmt.Errorf("external key id does not match stored metadata")
+	case lookup.ExternalKeyHash != binding.ExternalKeyHash:
+		return fmt.Errorf("external key hash does not match stored metadata")
+	case !equalExternalKeySecretHash(lookup.SecretHash, binding.SecretHash):
+		return fmt.Errorf("external key secret hash does not match stored metadata")
+	case lookup.Version != binding.KeyVersion:
+		return fmt.Errorf("external key version does not match stored metadata")
+	case lookup.RouteSlot != binding.RouteSlot:
+		return fmt.Errorf("external key route slot does not match stored metadata")
+	default:
+		return nil
+	}
+}
+
+func canonicalAPIKeyPurpose(purpose string) string {
+	return strings.ToLower(strings.TrimSpace(purpose))
 }
 
 func parseTrafficRouteLookup(externalKey string) TrafficRouteLookup {

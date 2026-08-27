@@ -193,6 +193,9 @@ bash .ci/runtime/check_ci_runtime.sh
 - 远端机器上的 `/etc/lightclaw-ci/` 是 CI 本地 secret 优先读取目录；文件权限应为 `0600`。
 - 如果本地 shell 能连 Git / TCR / EdgeOne，不代表 CI runner 也能连；发布问题优先到这台构建机核对运行时文件和网络。
 - 远端修改 secret 后，只在日志里输出长度、trim 状态、hash fingerprint，不输出 secret 原文或前后缀。
+- release runtime 在远端镜像可见后删除本次构建的本地 image tag。不要在业务构建中运行全量
+  `docker system prune -af` 或 `docker image prune -af`，大规模历史元数据会长时间阻塞 Docker API。
+- 历史 Docker 数据清理必须先摘除/排空 CI 节点，再在维护窗口执行；在线流水线只清理自己产出的镜像。
 
 ## 本地 Secret 约定
 
@@ -202,6 +205,7 @@ CI runtime 会优先读取构建机本地文件，再回退到 Stream settings�
 
 - `/etc/lightclaw-ci/git_woa_private_token`
 - `/etc/lightclaw-ci/tcr_beijing_password`
+- `/etc/lightclaw-ci/tcr_jp1_password`
 - `/etc/lightclaw-ci/tcr_shprod_password`
 - `/etc/lightclaw-ci/tcr_sgprod_password`
 - `/etc/lightclaw-ci/cloudflare_api_token`
@@ -213,6 +217,7 @@ CI runtime 会优先读取构建机本地文件，再回退到 Stream settings�
 - `/etc/lightclaw-ci/kubeconfig_shprod`
 - `/etc/lightclaw-ci/kubeconfig_sgprod`
 - `/etc/lightclaw-ci/kubeconfig_singapore_sandbox`
+- `/etc/lightclaw-ci/kubeconfig_tokyo_playground`
 - `/etc/lightclaw-ci/tencentcloud_secret_id`
 - `/etc/lightclaw-ci/tencentcloud_secret_key`
 

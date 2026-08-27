@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.woa.com/wisp/mono/trade/internal/cloudbillingclient"
 	"git.woa.com/wisp/mono/trade/internal/config"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
@@ -47,7 +48,14 @@ func main() {
 	//   - 询价 (inquiry.Service.Quote) / 下单 (placeorder.Service.PlaceOrder) 在调用方
 	//     未显式提供 uin/app_id 时，按 externalUserId 反查云账号身份
 	//   - cfg.AccountBindingInternalBaseURL 已在 config.Load() 强校验非空
-	shadowClient := shadowclient.New(cfg.AccountBindingInternalBaseURL, cfg.InternalServiceToken)
+	shadowResolverClient := shadowclient.New(cfg.AccountBindingInternalBaseURL, cfg.InternalServiceToken)
+	var shadowClient shadowclient.Client = shadowResolverClient
+	var shadowCredentialClient shadowclient.CredentialClient = shadowResolverClient
+	if cfg.ShadowMockEnabled {
+		shadowClient = newMockShadowClient(cfg.ShadowMockUin, cfg.ShadowMockAppID)
+		shadowCredentialClient = nil
+		log.Printf("[shadow] mock enabled")
+	}
 
 	// jifei CGW 出向客户端（迭代 8A）：
 	//   - 询价：GetPrice
@@ -78,6 +86,27 @@ func main() {
 		},
 	)
 
+	var cloudBillingClient cloudbillingclient.Client
+	if cfg.SiteKind == "intl" {
+		billingClient, billingErr := cloudbillingclient.NewTencentCloudClient(cloudbillingclient.Config{
+			Region:        cfg.BillingCloudAPIRegion,
+			Endpoint:      cfg.BillingCloudAPIEndpoint,
+			XQCloudUserID: cfg.BillingCloudAPIXQCloudUserID,
+			CloudLadder: cloudbillingclient.CloudLadderConfig{
+				GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
+				RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
+				Secret:         cfg.BillingCloudAPICloudLadderHMACSecret,
+			},
+		})
+		if billingErr != nil {
+			log.Printf("[billing-cloudapi] unavailable: %v", billingErr)
+		} else {
+			cloudBillingClient = billingClient
+			log.Printf("[billing-cloudapi] activated: endpoint=%s routeID=%s",
+				cfg.BillingCloudAPIEndpoint, cfg.BillingCloudAPICloudLadderRouteID)
+		}
+	}
+
 	// 点石出向客户端 + 活动 Resolver（设计稿 .tmp/dianshi-activity-bundle-design.md §5.1 / §5.2）。
 	//
 	// 同进同退语义：仅在 cfg.DianshiPriceBaseURL + cfg.DianshiOrderBaseURL 同时非空时构造
@@ -89,7 +118,11 @@ func main() {
 		activityResolver activity.Resolver
 	)
 	if cfg.DianshiPriceBaseURL != "" && cfg.DianshiOrderBaseURL != "" {
-		dianshiClient = dianshiclient.New(cfg.DianshiPriceBaseURL, cfg.DianshiOrderBaseURL)
+		dianshiClient = dianshiclient.New(
+			cfg.DianshiPriceBaseURL,
+			cfg.DianshiOrderBaseURL,
+			dianshiclient.Options{Preview: cfg.DianshiPreview},
+		)
 		activityResolver = activity.NewResolver(mysqlStore)
 		log.Printf("[dianshi] activated: priceBaseURL=%s orderBaseURL=%s",
 			cfg.DianshiPriceBaseURL, cfg.DianshiOrderBaseURL)
@@ -117,12 +150,17 @@ func main() {
 		DianshiClient:    dianshiClient,
 	})
 	placeOrderSvc := placeorder.New(placeorder.Deps{
-		CTLClient:    ctlClient,
-		BundleStore:  mysqlStore,
-		JifeiClient:  jifeiClient,
-		OrderWriter:  mysqlStore,
-		OrderStore:   mysqlStore,
-		ShadowClient: shadowClient,
+		CTLClient:              ctlClient,
+		BundleStore:            mysqlStore,
+		JifeiClient:            jifeiClient,
+		CloudBillingClient:     cloudBillingClient,
+		ShadowCredentialClient: shadowCredentialClient,
+		PaymentContextClient:   shadowResolverClient,
+		BillingPayRedirectURL:  cfg.BillingCloudAPIPayRedirectURL,
+		OrderWriter:            mysqlStore,
+		OrderStore:             mysqlStore,
+		ParticipationReader:    mysqlStore,
+		ShadowClient:           shadowClient,
 		// v1.7.x 国际站接入 A6.1：出向 envelope.resInfo.region/zone + trade_order.region_id
 		// 同源同值，按 site 决定。
 		SiteKind: cfg.SiteKind,

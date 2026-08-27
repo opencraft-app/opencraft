@@ -616,6 +616,41 @@ func TestQQOAuthCallbackCreatesSessionAndRedirectsToDashboard(t *testing.T) {
 	}
 }
 
+func TestQQOAuthCallbackRejectsNewRegistrationWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithQQOptions(&stubQQOAuthClient{
+		identity: service.OAuthSignInInput{
+			Provider:        "qq",
+			ProviderSubject: "openid-qq-new-disabled",
+			Name:            "QQ New User",
+		},
+	}, nil, true)
+
+	start := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/qq/start", nil)
+	startLocation, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse start location: %v", err)
+	}
+	state := startLocation.Query().Get("state")
+	stateCookie := cookieFromRecorderByName(t, start, qqOAuthStateCookieName)
+
+	callback := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/auth/oauth/qq/callback?code=qq-code-disabled&state="+url.QueryEscape(state),
+		nil,
+		stateCookie,
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from qq oauth callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+	if !strings.Contains(callback.Header().Get("Location"), "oauth_error=qq_registration_disabled") {
+		t.Fatalf("expected qq_registration_disabled error in redirect, got %q", callback.Header().Get("Location"))
+	}
+}
+
 func TestWeChatOAuthCallbackCreatesSessionAndRedirectsToDashboard(t *testing.T) {
 	t.Parallel()
 
@@ -1414,6 +1449,10 @@ func newAuthTestRouterWithQQ(client QQOAuthClient) *gin.Engine {
 }
 
 func newAuthTestRouterWithQQAndAvatarStore(client QQOAuthClient, avatarStore AvatarStore) *gin.Engine {
+	return newAuthTestRouterWithQQOptions(client, avatarStore, false)
+}
+
+func newAuthTestRouterWithQQOptions(client QQOAuthClient, avatarStore AvatarStore, registrationDisabled bool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	store := service.NewMemoryStore(service.StoreOptions{
 		Now:                fixedHTTPTestNow,
@@ -1429,13 +1468,14 @@ func newAuthTestRouterWithQQAndAvatarStore(client QQOAuthClient, avatarStore Ava
 		SessionTTL:     30 * 24 * time.Hour,
 		AvatarStore:    avatarStore,
 		QQOAuth: &QQOAuthConfig{
-			AppID:           "1903611152",
-			AppKey:          "test-app-key",
-			RedirectURI:     "https://lightclaw.tech/auth/oauth/qq/callback",
-			FrontendBaseURL: "https://lightclaw.pages.dev",
-			PublicBaseURL:   "https://lightclaw.tech",
-			Client:          client,
-			StateTTL:        10 * time.Minute,
+			AppID:                "1903611152",
+			AppKey:               "test-app-key",
+			RedirectURI:          "https://lightclaw.tech/auth/oauth/qq/callback",
+			FrontendBaseURL:      "https://lightclaw.pages.dev",
+			PublicBaseURL:        "https://lightclaw.tech",
+			Client:               client,
+			StateTTL:             10 * time.Minute,
+			RegistrationDisabled: registrationDisabled,
 		},
 	})
 }

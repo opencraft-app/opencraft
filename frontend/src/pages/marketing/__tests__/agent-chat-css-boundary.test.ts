@@ -10,8 +10,7 @@ const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), '
   };
 };
 const nextConfigSource = readFileSync(resolve(repoRoot, 'next.config.mjs'), 'utf8');
-const clawPatchPath = 'patches/@tencent__agentchat-claw-components@0.3.1.patch';
-const clawPatchSource = readFileSync(resolve(repoRoot, clawPatchPath), 'utf8');
+const globalCssSource = readFileSync(resolve(repoRoot, 'src/app/global.css'), 'utf8');
 
 describe('AgentChat CSS boundary', () => {
   it('keeps the bundler alias pointed at the installed no-reset Tea build', () => {
@@ -26,16 +25,22 @@ describe('AgentChat CSS boundary', () => {
     expect(existsSync(resolve(teaRoot, 'dist/tea-no-reset.css'))).toBe(true);
   });
 
-  it('patches AgentChat imports away from Tea global reset CSS', () => {
-    expect(packageJson.pnpm?.patchedDependencies?.['@tencent/agentchat-claw-components@0.3.1']).toBe(
-      clawPatchPath,
-    );
+  it('does not retain a patch configuration for the removed AgentChat 0.3.1 build', () => {
+    expect(packageJson.pnpm?.patchedDependencies?.['@tencent/agentchat-claw-components@0.3.1']).toBeUndefined();
+  });
 
-    expect(clawPatchSource).toContain('diff --git a/dist/es/assistant/index.js');
-    expect(clawPatchSource).toContain('diff --git a/dist/es/clawbot/components/claw-messages-box.js');
-    expect(clawPatchSource).toContain("+import '@tencent/tea-component/dist/tea-no-reset.css';");
-    expect(clawPatchSource).not.toContain(
-      "+import '@tencent/tea-component/dist/tea-themeable.css';",
-    );
+  // SDK 1.4.2 起，next.config.mjs 的 alias 已能拦截 tea-themeable 污染（实测侧栏
+  // <a> 不再变蓝），global.css 里的 `html a { revert-layer }` 防护已移除。
+  // 这里钉死「防护不应回归」——若未来 SDK 退化、有人重新加回防护，需同步更新
+  // 此断言与 next.config.mjs 的 alias 说明，而不是无脑恢复旧代码。
+  it('no longer carries the obsolete html-a revert-layer guard', () => {
+    // 用行首正则匹配「实际生效的规则」：注释里的恢复示例带 ` * ` 前缀不会命中，
+    // 只有真正的顶层 `html a { ... }` 规则才会命中。
+    expect(globalCssSource).not.toMatch(/^html a(?::hover)?\s*\{/m);
+  });
+
+  it('keeps styles.css inside the app layer', () => {
+    expect(globalCssSource).toContain("@import '../styles.css' layer(app);");
+    expect(globalCssSource).toMatch(/@layer\s+theme,\s*base,\s*app,\s*components,\s*utilities;/);
   });
 });

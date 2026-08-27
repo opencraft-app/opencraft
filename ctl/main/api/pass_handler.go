@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,10 @@ import (
 // passHandler 用户权益 handler
 type passHandler struct {
 	logic passlogic.Logic
+}
+
+type dianshiGrantLogic interface {
+	GrantDianshiSubscription(userID string, req *transport.GrantDianshiSubscriptionRequest) (*transport.GrantDianshiSubscriptionResult, error)
 }
 
 // handleAdminPasses 处理后台管理接口 /admin/api/ctl/passes
@@ -236,6 +241,28 @@ func (h *passHandler) handleAdminPassesOrder(w http.ResponseWriter, r *http.Requ
 	writeSuccess(w, r, http.StatusOK, result)
 }
 
+// handleAdminPassesFreeCredit POST /admin/api/ctl/passes/free-credit — 后台发放免费/额外积分
+func (h *passHandler) handleAdminPassesFreeCredit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req transport.GrantFreeCreditRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	result, err := h.logic.GrantFreeCredit(&req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
 // handleUserPassesOrder POST /v1/passes/order — 用户可见付费 pass 下单入口
 //
 // 用途（billing-integration B2 新增）：
@@ -340,6 +367,69 @@ func (h *passHandler) handleUserPassesOrderAndPay(w http.ResponseWriter, r *http
 	}
 
 	result, err := h.logic.CreatePassOrderAndPay(ctx.GetUserID(), &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+// handleUserDianshiPassesOrderAndPay serves the dedicated Dianshi
+// do_goods_and_pay flow used by zero-price activity bundles.
+func (h *passHandler) handleUserDianshiPassesOrderAndPay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	var req transport.CreateDianshiPassOrderAndPayRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	result, err := h.logic.CreateDianshiPassOrderAndPay(ctx.GetUserID(), &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+func (h *passHandler) handleInternalDianshiGrant(w http.ResponseWriter, r *http.Request) {
+	if !requireConfiguredInternalBearer(r) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	var req transport.GrantDianshiSubscriptionRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	req.ExternalUserID = strings.TrimSpace(req.ExternalUserID)
+	req.BundleID = strings.TrimSpace(req.BundleID)
+	if req.ExternalUserID == "" || req.BundleID == "" || req.ActID <= 0 {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrPassInvalidParam, "external_user_id, bundle_id and positive act_id are required"))
+		return
+	}
+	logic, ok := h.logic.(dianshiGrantLogic)
+	if !ok {
+		writeHTTPError(w, r, fmt.Errorf("Dianshi grant logic is not configured"))
+		return
+	}
+	result, err := logic.GrantDianshiSubscription(req.ExternalUserID, &req)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return
@@ -773,6 +863,8 @@ func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 		Status:              d.Status,
 		CreditTotal:         d.CreditTotal,
 		CreditAvailable:     d.CreditAvailable,
+		FreeCreditTotal:     d.FreeCreditTotal,
+		FreeCreditAvailable: d.FreeCreditAvailable,
 		AgentQuotaTotal:     d.AgentQuotaTotal,
 		AgentQuotaAvailable: d.AgentQuotaAvailable,
 		RenewFlag:           d.RenewFlag,
@@ -784,7 +876,7 @@ func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 // 与 detailToPassResponse 的关键差异（删除 lightclaw / 腾讯云内部概念字段）：
 //   - 不返 uin / app_id（用户不感知腾讯云账号）
 //   - 不返 deleted_time（DB 字段后期会删除）
-//   - 不返 renew_flag（本期未启用自动续费，待支持自动续费时再加回）
+//   - 不返 renew_flag（内部计费状态，用户面不直接暴露）
 func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassResponse {
 	return &transport.UserPassResponse{
 		PassID:              d.PassID,
@@ -800,6 +892,8 @@ func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassRespon
 		AgentQuotaAvailable: d.AgentQuotaAvailable,
 		CreditTotal:         d.CreditTotal,
 		CreditAvailable:     d.CreditAvailable,
+		FreeCreditTotal:     d.FreeCreditTotal,
+		FreeCreditAvailable: d.FreeCreditAvailable,
 	}
 }
 
@@ -1174,7 +1268,7 @@ func (h *passHandler) adminRenewPassOrder(w http.ResponseWriter, r *http.Request
 //   - 400 PASS_INVALID_PARAM：缺 pass_id / period / time_unit 或 time_unit ∉ {m,d,y}
 //   - 401 UNAUTHORIZED：缺 X-User-Id
 //   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户（防越权续费）
-//   - 422 PASS_SHADOW_BINDING_NOT_FOUND：用户尚未实名 / 未绑云账号
+//   - 403 PASS_SHADOW_BINDING_REQUIRED：用户尚未实名 / 未绑云账号
 //   - 5xx：trade / shadow / DB 异常
 //
 // 注：v1.7.22 B17 后已废弃 409 PASS_BUNDLE_OFFLINE（套餐下架不阻断续费，仅阻断新购）
@@ -1274,6 +1368,7 @@ func (h *passHandler) adminRenewPassOrderUrl(w http.ResponseWriter, r *http.Requ
 //   - 400 PASS_INVALID_PARAM：缺 period / time_unit 或 time_unit ∉ {m,d,y}
 //   - 401 UNAUTHORIZED：缺 X-User-Id
 //   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户（防越权）
+//   - 403 PASS_SHADOW_BINDING_REQUIRED：用户尚未实名 / 未绑云账号
 //   - 5xx：trade / DB 异常
 //
 // 注：v1.7.22 B17 后已废弃 409 PASS_BUNDLE_OFFLINE（套餐下架不阻断续费询价，仅阻断新购询价）
@@ -1371,7 +1466,7 @@ func (h *passHandler) adminRenewPassPrice(w http.ResponseWriter, r *http.Request
 //   - 400 PASS_INVALID_PARAM：缺 period / time_unit 或 time_unit ∉ {m,d,y}
 //   - 401 UNAUTHORIZED：缺 X-User-Id
 //   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户（防越权续费）
-//   - 422 PASS_SHADOW_BINDING_NOT_FOUND：用户尚未实名 / 未绑云账号
+//   - 403 PASS_SHADOW_BINDING_REQUIRED：用户尚未实名 / 未绑云账号
 //   - 5xx：trade / shadow / DB 异常
 //
 // 注：v1.7.22 B17 后已废弃 409 PASS_BUNDLE_OFFLINE（套餐下架不阻断续费，仅阻断新购）

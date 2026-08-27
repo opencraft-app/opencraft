@@ -29,6 +29,33 @@ func TestCreateExternalKeyManagedRejectsPurposeTooLongBeforeQueueing(t *testing.
 	}
 }
 
+func TestCreateExternalKeyManagedReusesActiveKeyWhileAdminWritesPaused(t *testing.T) {
+	upstream := newKeyIssuanceUpstream(t, nil)
+	defer upstream.Close()
+
+	store := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, store, upstream.URL)
+	svc := NewService(store, nil, Options{KeyRouteCache: NewMemoryAPIKeyRouteCache(0, 100)})
+	first, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAdminWritesPaused(t.Context(), "set-a", true, "upgrade run-a", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	reused, command, err := svc.CreateExternalKeyManaged(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != nil {
+		t.Fatalf("command = %+v, want active key reuse without queue", command)
+	}
+	if reused.ExternalKeyID != first.ExternalKeyID || reused.ExternalKey != first.ExternalKey {
+		t.Fatalf("reused key = %+v, want original key id=%q", reused, first.ExternalKeyID)
+	}
+}
+
 func TestManagedSubscriptionQueuesWhileAdminWritesPausedAndExecutesOnce(t *testing.T) {
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
@@ -67,7 +94,7 @@ func TestManagedSubscriptionQueuesWhileAdminWritesPausedAndExecutesOnce(t *testi
 
 	req := ApplySubscriptionRequest{
 		IdempotencyKey: "trade:deal-paused", UserID: "user-1", PlanID: "plan-pro",
-		PeriodValue: 14, PeriodUnit: "days",
+		IsUnique: true, PeriodValue: 14, PeriodUnit: "days",
 	}
 	_, first, err := svc.ApplySubscriptionManaged(t.Context(), req)
 	if err != nil || first == nil || first.Status != AdminCommandStatusPending {
@@ -93,11 +120,8 @@ func TestManagedSubscriptionQueuesWhileAdminWritesPausedAndExecutesOnce(t *testi
 	if processed, err := svc.ProcessAdminCommandOnce(t.Context(), "worker-b", time.Minute); err != nil || processed {
 		t.Fatalf("completed command processed again=%v err=%v", processed, err)
 	}
-	if len(fixture.createdPlanIDs) != 1 {
-		t.Fatalf("upstream subscription writes = %d, want 1", len(fixture.createdPlanIDs))
-	}
-	if fixture.createdPlanIDs[0] != 37 {
-		t.Fatalf("upstream plan id = %d, want period plan 37", fixture.createdPlanIDs[0])
+	if len(fixture.createdPlanIDs) != 0 {
+		t.Fatalf("existing subscription should be reused, writes=%v", fixture.createdPlanIDs)
 	}
 	completed, ok, err := store.GetAdminCommand(t.Context(), first.ID)
 	if err != nil || !ok || completed.Status != AdminCommandStatusSucceeded {

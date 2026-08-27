@@ -8,8 +8,10 @@ import {
   parseInstalledSkillSlugs,
 } from "@/lib/hermes-skills-client";
 import { fetchSkillFile, fetchSkillDetail, fetchSkillFiles, fetchSkillSetDetail, fetchSkillSets } from "@/lib/skillhub-api";
+import { LocaleOverrideProvider } from "@/i18n/t";
 
 import {
+  buildInstallSkillsBatchCommand,
   buildInstallSkillCommand,
   buildSkillHubSelfUpgradeCommand,
   ExpertsPanel,
@@ -19,6 +21,7 @@ import {
   getSkillPackageInstallFailureMessage,
   getEnglishPackageFrontmatterValue,
   getExpertSkillDocumentPath,
+  getMissingExpertSkillDocumentMessage,
   isSkillInstallAlreadyExists,
   installSkillSlugs,
   resolveAvailablePackageSkillSlugs,
@@ -88,6 +91,198 @@ describe("hermes agent experts panel", () => {
 
   it("builds a single-skill acli install command", () => {
     expect(buildInstallSkillCommand("report's-helper")).toBe("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'report'\\''s-helper'");
+  });
+
+  it("builds a package-native acli batch install command", () => {
+    expect(buildInstallSkillsBatchCommand(["market-data", "backtest-engine"])).toBe(
+      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills batch-install --wait=true 'market-data backtest-engine'",
+    );
+  });
+
+  it("prefers one native batch command for a skill package", async () => {
+    const execDebugCommand = vi.fn();
+    const execDebugCommandStream = vi.fn().mockImplementation(async (
+      _botId: string,
+      _command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      onChunk({
+        stream: "stdout",
+        chunk: [
+          '{"event":"progress","name":"market-data","status":"installed"}',
+          '{"event":"progress","name":"backtest-engine","status":"installed"}',
+          '{"event":"summary","results":[{"name":"market-data","status":"installed"},{"name":"backtest-engine","status":"installed"}]}',
+        ].join("\n"),
+      });
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    });
+
+    await expect(installSkillSlugs(
+      "bot-1",
+      ["market-data", "backtest-engine"],
+      execDebugCommand,
+      undefined,
+      execDebugCommandStream,
+    )).resolves.toEqual({
+      succeeded: ["market-data", "backtest-engine"],
+      failed: [],
+    });
+    expect(execDebugCommandStream).toHaveBeenCalledWith(
+      "bot-1",
+      buildInstallSkillsBatchCommand(["market-data", "backtest-engine"]),
+      expect.any(Function),
+      { timeoutMs: 650_000 },
+    );
+    expect(execDebugCommand).not.toHaveBeenCalled();
+  });
+
+  it("falls back to per-skill installs when ACLI does not support batch-install", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = vi.fn().mockResolvedValue({
+      status: "FAILED",
+      exitCode: 1,
+      output: 'unknown command "batch-install"',
+    });
+
+    await expect(installSkillSlugs(
+      "bot-1",
+      ["market-data", "backtest-engine"],
+      execDebugCommand,
+      undefined,
+      execDebugCommandStream,
+    )).resolves.toEqual({
+      succeeded: ["market-data", "backtest-engine"],
+      failed: [],
+    });
+    expect(execDebugCommand.mock.calls.map((call) => call[1])).toEqual([
+      buildInstallSkillCommand("market-data"),
+      buildInstallSkillCommand("backtest-engine"),
+    ]);
+  });
+
+  it("retries only failed skills after a supported native batch command", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = vi.fn().mockImplementation(async (
+      _botId: string,
+      _command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","results":[{"name":"market-data","status":"installed"},{"name":"backtest-engine","status":"failed","message":"download failed"}]}\n',
+      });
+      return { status: "FAILED", exitCode: 1, output: "download failed" };
+    });
+
+    await expect(installSkillSlugs(
+      "bot-1",
+      ["market-data", "backtest-engine"],
+      execDebugCommand,
+      undefined,
+      execDebugCommandStream,
+    )).resolves.toEqual({
+      succeeded: ["market-data", "backtest-engine"],
+      failed: [],
+    });
+    expect(execDebugCommand.mock.calls.map((call) => call[1])).toEqual([
+      buildInstallSkillCommand("backtest-engine"),
+    ]);
+  });
+
+  it("keeps package progress monotonic while recovering an earlier failed skill", async () => {
+    const progress: number[] = [];
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = vi.fn().mockImplementation(async (
+      _botId: string,
+      _command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","results":[{"name":"first","status":"failed","message":"download failed"},{"name":"second","status":"installed"},{"name":"third","status":"installed"}]}\n',
+      });
+      return { status: "FAILED", exitCode: 1, output: "download failed" };
+    });
+
+    await expect(installSkillSlugs(
+      "bot-1",
+      ["first", "second", "third"],
+      execDebugCommand,
+      ({ current }) => progress.push(current),
+      execDebugCommandStream,
+    )).resolves.toEqual({
+      succeeded: ["first", "second", "third"],
+      failed: [],
+    });
+    expect(progress).toEqual([1, 1, 2, 2, 3, 3, 3]);
+  });
+
+  it("warns with uncovered slugs when ACLI omits package batch results", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "" });
+      const execDebugCommandStream = vi.fn().mockImplementation(async (
+        _botId: string,
+        _command: string,
+        onChunk: (event: { stream: string; chunk: string }) => void,
+      ) => {
+        onChunk({
+          stream: "stdout",
+          chunk: '{"event":"summary","results":[{"name":"market-data","status":"installed"}]}\n',
+        });
+        return { status: "SUCCESS", exitCode: 0, output: "" };
+      });
+
+      await expect(installSkillSlugs(
+        "bot-1",
+        ["market-data", "backtest-engine"],
+        execDebugCommand,
+        undefined,
+        execDebugCommandStream,
+      )).resolves.toEqual({
+        succeeded: ["market-data", "backtest-engine"],
+        failed: [],
+      });
+      expect(warn).toHaveBeenCalledWith(
+        "[experts] ACLI batch-install omitted results; retrying individually:",
+        ["backtest-engine"],
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("self-upgrades once and retries the native batch command", async () => {
+    const upgradeOutput = "发现新版本。运行 `skillhub self-upgrade` 进行升级。";
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "upgraded" });
+    const execDebugCommandStream = vi.fn()
+      .mockResolvedValueOnce({ status: "FAILED", exitCode: 1, output: upgradeOutput })
+      .mockImplementationOnce(async (
+        _botId: string,
+        _command: string,
+        onChunk: (event: { stream: string; chunk: string }) => void,
+      ) => {
+        onChunk({
+          stream: "stdout",
+          chunk: '{"event":"summary","results":[{"name":"market-data","status":"installed"},{"name":"backtest-engine","status":"installed"}]}\n',
+        });
+        return { status: "SUCCESS", exitCode: 0, output: "" };
+      });
+
+    await expect(installSkillSlugs(
+      "bot-1",
+      ["market-data", "backtest-engine"],
+      execDebugCommand,
+      undefined,
+      execDebugCommandStream,
+    )).resolves.toEqual({
+      succeeded: ["market-data", "backtest-engine"],
+      failed: [],
+    });
+    expect(execDebugCommandStream).toHaveBeenCalledTimes(2);
+    expect(execDebugCommand.mock.calls.map((call) => call[1])).toEqual([
+      buildSkillHubSelfUpgradeCommand(),
+    ]);
   });
 
   it("parses installed skill slugs from acli json and Hermes table output", () => {
@@ -213,6 +408,12 @@ describe("hermes agent experts panel", () => {
     expect(getExpertSkillDocumentPath(files, "en")).toBe("identify_en.md");
     expect(getExpertSkillDocumentPath(files, "zh")).toBe("identify.md");
     expect(getExpertSkillDocumentPath(["README.md"], "en")).toBe("README.md");
+  });
+
+  it("uses an English fallback when a Spanish expert document is missing", () => {
+    expect(getMissingExpertSkillDocumentMessage("es")).toBe(
+      "Could not find identify_en.md or a compatible skill document",
+    );
   });
 
   it("parses folded English package descriptions from frontmatter", () => {
@@ -512,6 +713,7 @@ metadata:
       remark: "",
       scene: "finance",
       skillCount: 1,
+      skillSlugs: [],
       createdAt: 0,
       updatedAt: 0,
     };
@@ -523,6 +725,7 @@ metadata:
       remark: "",
       scene: "tech",
       skillCount: 1,
+      skillSlugs: [],
       createdAt: 0,
       updatedAt: 0,
     };
@@ -545,6 +748,46 @@ metadata:
 
     await waitFor(() => expect(fetchSkillSets).toHaveBeenCalledWith(expect.objectContaining({ keyword: "quant" })));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Unmatched Test Package/ })).not.toBeInTheDocument());
+  });
+
+  it("keeps Experts-owned controls and roles in Spanish while using English package content", async () => {
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [{
+        id: 10,
+        slug: "academic-literature-review",
+        displayName: "文献综述",
+        displayNameEn: "Literature Review",
+        summary: "中文摘要",
+        summaryEn: "English package summary",
+        remark: "",
+        scene: "academic",
+        skillCount: 1,
+        createdAt: 0,
+        updatedAt: 0,
+      }],
+    });
+
+    render(
+      <LocaleOverrideProvider locale="es">
+        <ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} lang="es" />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(screen.getByPlaceholderText("Buscar paquetes de Skills")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lista" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tarjetas" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Todos" })).toBeInTheDocument();
+    const literatureButton = await screen.findByRole("button", { name: /Literature Review/ });
+    expect(literatureButton).toBeInTheDocument();
+    expect(await screen.findByText("Investigador académico")).toBeInTheDocument();
+    expect(screen.queryByText("学术研究员")).not.toBeInTheDocument();
+
+    const literatureCard = literatureButton.closest("article");
+    expect(literatureCard).not.toBeNull();
+    fireEvent.error(within(literatureCard!).getByTestId("skill-package-profile-image"));
+    fireEvent.error(within(literatureCard!).getByTestId("skill-package-profile-image"));
+    expect(within(literatureCard!).getByTestId("skill-package-profile-fallback")).toHaveTextContent("L");
+    expect(screen.queryByText("文献综述")).not.toBeInTheDocument();
   });
 
   it("loads SkillHub packages with scenes and filters local dev seed packages without a scene", async () => {

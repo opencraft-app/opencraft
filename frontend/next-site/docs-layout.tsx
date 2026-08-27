@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { source } from './source';
 import type { DocsLocalePrefix } from './docs-page';
+import { EN_US_URL_LANG, ES_URL_LANG, ID_ID_URL_LANG, ZH_CN_URL_LANG, ZH_HANT_URL_LANG } from './public-locale';
 
 const ZH_FUMADOCS_TRANSLATIONS = {
   'Close Search(search dialog)(aria-label)': '关闭搜索',
@@ -15,15 +16,53 @@ const ZH_FUMADOCS_TRANSLATIONS = {
   'Search(search trigger)': '搜索文档',
 };
 
+const ZH_HANT_FUMADOCS_TRANSLATIONS = {
+  'Close Search(search dialog)(aria-label)': '關閉搜尋',
+  'No Headings(table of contents)': '暫無目錄',
+  'No results found(search dialog)': '沒有找到結果',
+  'On this page(table of contents)': '本頁目錄',
+  'Open Search(search trigger)(aria-label)': '開啟搜尋',
+  'Search(search dialog)': '搜尋',
+  'Search(search trigger)': '搜尋文件',
+};
+
+const ID_FUMADOCS_TRANSLATIONS = {
+  'Close Search(search dialog)(aria-label)': 'Tutup pencarian',
+  'No Headings(table of contents)': 'Belum ada daftar isi',
+  'No results found(search dialog)': 'Tidak ada hasil',
+  'On this page(table of contents)': 'Di halaman ini',
+  'Open Search(search trigger)(aria-label)': 'Buka pencarian',
+  'Search(search dialog)': 'Cari',
+  'Search(search trigger)': 'Cari dokumentasi',
+};
+
+const ES_FUMADOCS_TRANSLATIONS = {
+  'Close Search(search dialog)(aria-label)': 'Cerrar búsqueda',
+  'No Headings(table of contents)': 'No hay encabezados',
+  'No results found(search dialog)': 'No se encontraron resultados',
+  'On this page(table of contents)': 'En esta página',
+  'Open Search(search trigger)(aria-label)': 'Abrir búsqueda',
+  'Search(search dialog)': 'Buscar',
+  'Search(search trigger)': 'Buscar documentación',
+};
+
+export function fumadocsTranslations(docsLocale: DocsLocalePrefix) {
+  if (docsLocale === EN_US_URL_LANG) return undefined;
+  if (docsLocale === ID_ID_URL_LANG) return ID_FUMADOCS_TRANSLATIONS;
+  if (docsLocale === ES_URL_LANG) return ES_FUMADOCS_TRANSLATIONS;
+  if (docsLocale === ZH_HANT_URL_LANG) return ZH_HANT_FUMADOCS_TRANSLATIONS;
+  return ZH_FUMADOCS_TRANSLATIONS;
+}
+
 export function LightVelaDocsLayout({
   children,
-  contentLocale = 'zh-cn',
+  contentLocale = ZH_CN_URL_LANG,
 }: {
   children: ReactNode;
   contentLocale?: DocsLocalePrefix;
 }) {
-  const docsLocale = contentLocale ?? 'zh-cn';
-  const translations = docsLocale === 'en-us' ? undefined : ZH_FUMADOCS_TRANSLATIONS;
+  const docsLocale = contentLocale ?? ZH_CN_URL_LANG;
+  const translations = fumadocsTranslations(docsLocale);
 
   return (
     <div className="lv-docs-shell">

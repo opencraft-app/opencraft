@@ -1,12 +1,17 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { LanguageSwitcher } from "@/components/site/language-switcher";
+import {
+  buildInternationalSiteUrl,
+  buildLanguageSwitcherOptions,
+  LanguageSwitcher,
+} from "@/components/site/language-switcher";
 import { isGlobal } from "@/lib/region";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("LanguageSwitcher", () => {
@@ -19,10 +24,23 @@ describe("LanguageSwitcher", () => {
     const options = screen.getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual(
       isGlobal
-        ? ["International Site - English", "International Site - 中文", "中国站"]
-        : ["中国站", "国际站 - 中文", "国际站 - English"],
+        ? [
+            "International Site - English",
+            "International Site - 简体中文",
+            "International Site - 繁體中文",
+            "International Site - Bahasa Indonesia",
+            "International Site - Español",
+            "中国站",
+          ]
+        : ["中国站", "国际站 - 简体中文", "国际站 - English"],
     );
     expect(options[0]).toHaveAttribute("aria-selected", "true");
+    expect(options.map((option) => option.textContent)).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("日本語"),
+        expect.stringContaining("한국어"),
+      ]),
+    );
 
     if (isGlobal) {
       cleanup();
@@ -32,12 +50,53 @@ describe("LanguageSwitcher", () => {
     }
   });
 
+  it("builds an explicit Spanish option fixture from the locale registry", () => {
+    expect(buildLanguageSwitcherOptions(["en-US", "es"], "International Site")).toEqual([
+      { value: "en-US", short: "EN", label: "International Site - English" },
+      { value: "es", short: "ES", label: "International Site - Español" },
+    ]);
+  });
+
+  it("adds Spanish to the global production menu while keeping Japanese and Korean hidden", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_REGION", "global");
+    const { LanguageSwitcher: GlobalLanguageSwitcher } = await import(
+      "@/components/site/language-switcher"
+    );
+
+    render(<GlobalLanguageSwitcher activeLocale="en-US" />);
+    fireEvent.click(screen.getByRole("button", { name: "Change language" }));
+
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "International Site - English",
+      "International Site - 简体中文",
+      "International Site - 繁體中文",
+      "International Site - Bahasa Indonesia",
+      "International Site - Español",
+      "中国站",
+    ]);
+    expect(screen.getByRole("option", { name: "International Site - Español" })).toBeInTheDocument();
+    expect(screen.queryByText(/日本語|한국어/)).not.toBeInTheDocument();
+  });
+
+  it("builds Spanish and English international URLs while preserving the public path", () => {
+    expect(buildInternationalSiteUrl("es", { pathname: "/zh-hant/about", search: "", hash: "" })).toBe(
+      "https://lightvela.ai/es/about",
+    );
+    expect(buildInternationalSiteUrl("en-US", { pathname: "/es/about", search: "?from=nav", hash: "#team" })).toBe(
+      "https://lightvela.ai/about?from=nav#team",
+    );
+    expect(buildInternationalSiteUrl("es", { pathname: "/agents", search: "?tab=chat", hash: "" })).toBe(
+      "https://lightvela.ai/agents?tab=chat",
+    );
+  });
+
   it("opens cross-site destinations in a new browser window", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     render(<LanguageSwitcher activeLocale={isGlobal ? "en-US" : "zh-CN"} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Change language" }));
-    fireEvent.click(screen.getByRole("option", { name: isGlobal ? "中国站" : "国际站 - 中文" }));
+    fireEvent.click(screen.getByRole("option", { name: isGlobal ? "中国站" : "国际站 - 简体中文" }));
 
     expect(openSpy).toHaveBeenCalledWith(
       isGlobal ? "https://lightvela.com" : "https://lightvela.ai/zh-sg/",

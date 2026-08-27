@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { t } from '@/i18n/t';
+import { useLocaleOverride, useT } from '@/i18n/t';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
 import {
@@ -14,6 +14,12 @@ import {
   imgRoundedRectangle, imgRoundedRectangle1, imgEllipse111566,
   imgVector919, imgImage1, imgImage2
 } from '../assets';
+
+function useFeatureLanguage() {
+  const routeLocale = useLocaleOverride();
+  const { i18n } = useTranslation();
+  return routeLocale ?? i18n.language;
+}
 
 function Container6() {
   return (
@@ -83,6 +89,7 @@ function Text20() {
 }
 
 function Text19() {
+  const t = useT();
   return (
     <div className="absolute content-stretch flex gap-[0.907px] h-[3.025px] items-center left-[12.45px] pt-[0.605px] top-[17px] w-[15.728px]" data-name="Text">
       <Text20 />
@@ -117,6 +124,7 @@ function Text21() {
 }
 
 function Text22() {
+  const t = useT();
   return (
     <div className="absolute h-[3.403px] left-[10.56px] top-[29.09px] w-[31.456px]" data-name="Text">
       <p className="[word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] left-0 not-italic text-[2.268px] text-[rgba(0,0,0,0.9)] top-[-0.08px] whitespace-nowrap">{t("通道")}</p>
@@ -164,6 +172,7 @@ function Text23() {
 }
 
 function Button9() {
+  const t = useT();
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[1.21px] top-[34.61px] w-[39.623px]" data-name="Button">
       <Text23 />
@@ -207,6 +216,7 @@ function Text24() {
 }
 
 function Button10() {
+  const t = useT();
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[41.65px] w-[39.623px]" data-name="Button">
       <Text24 />
@@ -244,6 +254,7 @@ function Text25() {
 }
 
 function Button11() {
+  const t = useT();
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[48.68px] w-[39.623px]" data-name="Button">
       <Text25 />
@@ -285,6 +296,7 @@ function Text26() {
 }
 
 function Button12() {
+  const t = useT();
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[55.71px] w-[39.623px]" data-name="Button">
       <Text26 />
@@ -323,6 +335,7 @@ function Text27() {
 }
 
 function Button13() {
+  const t = useT();
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[62.74px] w-[39.623px]" data-name="Button">
       <Text27 />
@@ -344,6 +357,7 @@ function Icon24() {
 }
 
 function Button14() {
+  const t = useT();
   return (
     <div className="absolute bg-white content-stretch flex h-[7.108px] items-center justify-between left-[51.85px] px-[2.571px] py-[1.966px] rounded-[1.21px] top-[62.67px] w-[164.238px]" data-name="Button">
       <div aria-hidden className="absolute border-[#e5e7eb] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[1.21px]" />
@@ -354,6 +368,7 @@ function Button14() {
 }
 
 function Container8() {
+  const t = useT();
   return (
     <div className="absolute contents left-[51.85px] top-[57.68px]" data-name="Container">
       <p className="-translate-x-1/2 [word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.176px] left-[59.5px] not-italic text-[1.815px] text-[rgba(0,0,0,0.7)] text-center top-[57.68px] whitespace-nowrap">{t("Coding Plan 套餐")}</p>
@@ -375,6 +390,7 @@ function Icon25() {
 }
 
 function Button15() {
+  const t = useT();
   return (
     <div className="absolute bg-white content-stretch flex h-[7.108px] items-center justify-between left-[51.85px] px-[2.571px] py-[1.966px] rounded-[1.21px] top-[78.4px] w-[164.238px]" data-name="Button">
       <div aria-hidden className="absolute border-[#e5e7eb] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[1.21px]" />
@@ -385,6 +401,7 @@ function Button15() {
 }
 
 function Container9() {
+  const t = useT();
   return (
     <div className="absolute contents left-[51.85px] top-[73.41px]" data-name="Container">
       <p className="-translate-x-1/2 [word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.176px] left-[53.85px] not-italic text-[1.815px] text-[rgba(0,0,0,0.7)] text-center top-[73.41px] whitespace-nowrap">{t("模型")}</p>
@@ -394,6 +411,7 @@ function Container9() {
 }
 
 function PasswordInput1() {
+  const t = useT();
   return (
     <div className="absolute bg-white h-[7.108px] left-[51.85px] rounded-[1.21px] top-[94.12px] w-[164.238px]" data-name="Password Input">
       <div className="content-stretch flex flex-col items-start justify-center overflow-clip px-[2.571px] py-[1.966px] relative rounded-[inherit] size-full">
@@ -405,6 +423,7 @@ function PasswordInput1() {
 }
 
 function Container10() {
+  const t = useT();
   return (
     <div className="absolute contents left-[51.85px] top-[89.13px]" data-name="Container">
       <p className="-translate-x-1/2 [word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.176px] left-[55.35px] not-italic text-[1.815px] text-[rgba(0,0,0,0.7)] text-center top-[89.13px] whitespace-nowrap">API Key</p>
@@ -415,6 +434,7 @@ function Container10() {
 }
 
 function Button16() {
+  const t = useT();
   return (
     <div className="bg-[#1f2937] h-full relative rounded-[0.907px] shrink-0" data-name="Button">
       <div aria-hidden className="absolute border-[#1f2937] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[0.907px]" />
@@ -472,6 +492,7 @@ function Container12() {
 }
 
 function Component7() {
+  const t = useT();
   return (
     <div className="backdrop-blur-[1.217px] bg-[rgba(245,245,245,0.5)] content-stretch flex gap-[0.605px] items-center px-[3.63px] py-[1.059px] relative rounded-[15.123px] shrink-0" data-name="Component 53">
       <div aria-hidden className="absolute border-[#e6e9ef] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[15.123px]" />
@@ -523,6 +544,7 @@ function Container15() {
 }
 
 function Container16() {
+  const t = useT();
   return (
     <div className="-translate-x-1/2 -translate-y-1/2 [word-break:break-word] absolute content-stretch flex font-['PingFang_SC:Medium',sans-serif] gap-[4.839px] h-[4.839px] items-center leading-[0] left-[calc(50%-0.07px)] not-italic text-[2px] text-[rgba(0,0,0,0.7)] top-[calc(50%-0.16px)] whitespace-nowrap" data-name="Container">
       <div className="flex flex-col justify-center relative shrink-0">
@@ -616,6 +638,7 @@ function Icon27() {
 }
 
 function Container19() {
+  const t = useT();
   return (
     <div className="content-stretch flex gap-[0.907px] items-center relative shrink-0" data-name="Container">
       <Icon27 />
@@ -642,6 +665,7 @@ function Icon28() {
 }
 
 function Container21() {
+  const t = useT();
   return (
     <div className="content-stretch flex gap-[0.907px] items-center relative shrink-0" data-name="Container">
       <Icon28 />
@@ -664,6 +688,7 @@ function Group13() {
 }
 
 function Container22() {
+  const t = useT();
   return (
     <div className="content-stretch flex gap-[0.907px] items-center relative shrink-0" data-name="Container">
       <div className="overflow-clip relative shrink-0 size-[2.42px]" data-name="Container">
@@ -810,6 +835,7 @@ function Container27() {
 }
 
 function Container23() {
+  const t = useT();
   return (
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[51.54px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
       <MaskGroup4 />
@@ -917,6 +943,7 @@ function Container34() {
 }
 
 function Container30() {
+  const t = useT();
   return (
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[106.29px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
       <MaskGroup5 />
@@ -1024,6 +1051,7 @@ function Container41() {
 }
 
 function Container37() {
+  const t = useT();
   return (
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[161.04px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
       <MaskGroup6 />
@@ -1063,6 +1091,7 @@ function ButtonApiKey1() {
 }
 
 function MainContent1() {
+  const t = useT();
   return (
     <div className="absolute bg-white h-[132px] left-[117px] opacity-97 rounded-[6px] top-[112px] w-[224px]" data-name="Main Content">
       <Image2 />
@@ -1181,6 +1210,7 @@ function Container46() {
 }
 
 function Container45() {
+  const t = useT();
   return (
     <div className="content-stretch flex gap-[8px] items-center relative shrink-0" data-name="Container">
       <Container46 />
@@ -1206,8 +1236,9 @@ function FeatureCardCopy({
   body: string;
   width?: number;
 }) {
-  const { i18n } = useTranslation();
-  const isEnglish = i18n.language.toLowerCase().startsWith('en');
+  const t = useT();
+  const featureLanguage = useFeatureLanguage();
+  const isEnglish = featureLanguage.toLowerCase().startsWith('en');
   return (
     <div
       className="[word-break:break-word] absolute content-stretch flex flex-col items-start left-[40px] not-italic"
@@ -1527,6 +1558,7 @@ function Container49() {
 }
 
 function Container58() {
+  const t = useT();
   return (
     <div className="content-stretch flex gap-[8px] items-center relative shrink-0" data-name="Container">
       <div className="relative shrink-0 size-[15px]" data-name="Subtract">
@@ -1791,6 +1823,7 @@ function Container74() {
 }
 
 function Container73() {
+  const t = useT();
   return (
     <div className="content-stretch flex gap-[8px] items-center relative shrink-0" data-name="Container">
       <Container74 />
@@ -1855,7 +1888,7 @@ function CardScaleWrapper({ children }: { children: React.ReactNode }) {
 }
 
 export function CardsSection() {
-  useTranslation(); // 订阅语言切换，驱动内部命令式 t() 重渲染
+  const t = useT();
   const ref = useScrollReveal();
   const _cardI18nAnchor = [
     t("原版 Hermes Agent，一键即用"),
@@ -1926,6 +1959,7 @@ const marqueeStyle = `
 
 /* 单个标签 pill */
 function TagPill({ img, label, bg }: { img: string; label: string; bg: string }) {
+  const t = useT();
   return (
     <span
       className="inline-flex items-center gap-[6px] px-10 py-3 rounded-[16px] shrink-0 font-['PingFang_SC:Medium',sans-serif] text-[16px] leading-6 text-black whitespace-nowrap lv-hover-lift-sm"
@@ -1980,7 +2014,7 @@ function MarqueeRow({ tags, direction }: { tags: typeof ROW1; direction: 'left' 
 }
 
 export default function FeatureSection() {
-  useTranslation(); // 订阅语言切换，驱动内部命令式 t() 重渲染
+  const t = useT();
   const ref = useScrollReveal();
   // i18n 提取锚点：跑马灯标签经 TagPill 的 t(label) 动态取词，i18n:extract 无法
   // 静态识别动态 key（也可能被 prune 脚本误删现有翻译）。这里以字面量显式列出

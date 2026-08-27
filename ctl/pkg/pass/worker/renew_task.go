@@ -24,6 +24,8 @@ import (
 	"ctl/pkg/taskruntime"
 	taskcommon "ctl/pkg/taskruntime/common"
 
+	websitelogic "ctl/pkg/logic/website"
+
 	"go.uber.org/zap"
 )
 
@@ -121,6 +123,42 @@ func (t *renewPassTask) StepConfigMap() map[string]*taskflow.StepConfig[pctx.Con
 	return stepMap
 }
 
+// ensureEntitlementBeforeResume 只为从 isolated 恢复的续费重建长期权益。
+// active 续费只推进 ctl 业务有效期，不调用 VelaGW。
+func (t *renewPassTask) ensureEntitlementBeforeResume(logger *zap.Logger, passEntity *modelpass.Entity) error {
+	if t.in == nil || t.in.OriginalIsolatedTime == nil {
+		return nil
+	}
+	if passEntity == nil {
+		return errors.New("ensure ai-gateway entitlement: pass is nil")
+	}
+
+	bundle, err := daoFactory.DefaultDaoFactory.BundleDao(nil).GetByBundleID(passEntity.BundleID)
+	if err != nil {
+		return fmt.Errorf("get bundle for ai-gateway entitlement: %w", err)
+	}
+	if bundle.Credit <= 0 {
+		return nil
+	}
+
+	idempotencyKey := fmt.Sprintf(
+		"renew:%s:%d:%d:%s",
+		t.in.PassID,
+		t.in.OriginalExpiredTime.UTC().UnixNano(),
+		t.in.TimeSpan,
+		t.in.TimeUnit,
+	)
+	if _, err := logicpass.EnsureAiGatewayEntitlement(
+		logger,
+		passEntity.UserID,
+		bundle.AiGatewayPlanID,
+		idempotencyKey,
+	); err != nil {
+		return fmt.Errorf("ensure ai-gateway entitlement before resume: %w", err)
+	}
+	return nil
+}
+
 // execute 是父 task 的核心：派发 + 等待 + 终态收尾
 func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	if t.in == nil || t.in.PassID == "" {
@@ -145,32 +183,27 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 		userID = passEntity.UserID
 	}
 
-	// 已经到达终态：上一次 execute 已 FinalizeRenewal 推进 active，本次只需 markSuccess
+	// 已经到达终态：上一次 execute 已完成权益恢复和 FinalizeRenewal，本次只需 markSuccess。
 	if passEntity.Status == modelpass.StatusActive {
 		logger.Info("pass already active, short-circuit parent task")
-
-		// === R-MR-5 ai-gateway short-circuit 修复（2026-05-24 用户拍板）===
-		//
-		// Bug 场景（用户报告 ai-gateway pipeline 报错）：
-		//  1. 上一轮 execute：FinalizeRenewal 成功（pass→active）→ AlignAiGatewaySubscriptionPeriodEnd
-		//     失败（ai-gateway 502/route 404 等）→ execute 返错让父 task 重投。
-		//  2. 本轮 execute：进入 short-circuit 分支（status==active 已成立）→ 旧代码直接
-		//     markSuccess 跳过 Align → ai-gateway PeriodEnd 永远停留在旧值 → scheduler 5min
-		//     内标 expired → AI 服务断档。
-		//
-		// 修复：short-circuit 分支也调一次 Align。幂等性由 ai-gateway ExtendSubscription
-		// 的 "等值即 no-op、不等强制覆盖" 语义保证（2026-05-24 升级）：
-		//  - 如果上一轮 Align 实际成功了 → 本轮 ExtendSubscription 看到等值返 updated=false（no-op）；
-		//  - 如果上一轮 Align 失败了    → 本轮强制覆盖到正确的 newExpired（即当前 pass.expired_time）。
-		//
-		// 失败处理：Align 仍失败 → return err 让父 task 继续重投到 max=5（与正常路径一致）；
-		// 不进 markSuccess short-circuit，避免 short-circuit 把 ai-gateway 失败"吞掉"。
-		if t.in.UserID != "" {
-			if err := logicpass.AlignAiGatewaySubscriptionPeriodEnd(logger, t.in.UserID, t.in.PassID, passEntity.ExpiredTime); err != nil {
-				return "", fmt.Errorf("short-circuit re-align ai-gateway subscription: %w", err)
+		// legacy ai-gateway 可能在上一轮 FinalizeRenewal 后对齐失败；重试时必须补齐。
+		// LLMGateway 的长期订阅会在 helper 内直接 no-op。
+		if userID != "" {
+			if err := logicpass.AlignAiGatewaySubscriptionPeriodEnd(
+				logger,
+				userID,
+				t.in.PassID,
+				passEntity.ExpiredTime,
+			); err != nil {
+				return "", fmt.Errorf("short-circuit re-align legacy ai-gateway subscription: %w", err)
 			}
 		}
-
+		// best-effort 恢复用户站点（失败不阻塞续费流程）
+		if userID != "" {
+			if err := websitelogic.ReactivateSitesOnPassRenewed(logger, userID); err != nil {
+				logger.Warn("website reactivate sites on pass renewed failed", zap.Error(err))
+			}
+		}
 		// pass 终态但 trade callback 上一轮可能没成功，best-effort 再补一次
 		t.notifyTradeFlowCompleted(ctx, logger)
 		return t.markSuccess(ctx)
@@ -186,26 +219,10 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("calc new expired_time: %w", err)
 	}
-	migration, err := logicpass.PrepareRenewalGatewayMigration(context.Background(), logicpass.RenewalGatewayMigrationInput{
-		UserID:      userID,
-		PassID:      t.in.PassID,
-		BundleID:    passEntity.BundleID,
-		TradeFlowID: t.in.TradeFlowID,
-		TimeSpan:    t.in.TimeSpan,
-		TimeUnit:    t.in.TimeUnit,
-		NewExpired:  newExpired,
-	})
-	if err != nil {
-		return "", fmt.Errorf("prepare renewal gateway migration: %w", err)
-	}
-	migrationRequired := migration != nil && migration.Required
-	targetGateway := ""
-	childMaxExecuteCount := renewInstanceTaskMaxExecuteCount
-	if migrationRequired {
-		targetGateway = logicpass.RenewalMigrationTargetGateway
-		// Migration is forward-only. Once one Agent has accepted the new key,
-		// failed siblings must keep retrying rather than rolling the user back.
-		childMaxExecuteCount = renewPassTaskMaxExecuteCount
+
+	// 权益恢复必须先于实例恢复，避免 Agent 先启动后命中零额度窗口。
+	if err := t.ensureEntitlementBeforeResume(logger, passEntity); err != nil {
+		return "", err
 	}
 
 	// 1. 列出该 user 下所有非 Deleted/Failed 的 instance
@@ -245,21 +262,20 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 		}
 		// instance 处于 Running/Deleted/Failed 终态时跳过派发
 		// 续费子 task 的目标是 Paused → Running（与 isolate 子 task 的 Running → Paused 对偶反向）
-		if (!migrationRequired && inst.Status == modelinstance.InstanceStatusRunning) ||
+		if inst.Status == modelinstance.InstanceStatusRunning ||
 			inst.Status == modelinstance.InstanceStatusDeleted ||
 			inst.Status == modelinstance.InstanceStatusFailed {
 			continue
 		}
-		if err := instanceasync.EnqueueRenewInstanceTaskWithTarget(
+		if err := instanceasync.EnqueueRenewInstanceTask(
 			ctx,
 			inst.InstanceId,
 			t.in.PassID,
 			userID,
 			t.in.OperationID,
 			t.TaskId,
-			targetGateway,
 			renewInstanceTaskExecuteInterval,
-			childMaxExecuteCount,
+			renewInstanceTaskMaxExecuteCount,
 		); err != nil {
 			// 派发失败让父 task 重试整轮（下一次 execute 会基于 child_registry 跳过已派发的）
 			return "", fmt.Errorf("enqueue renew instance task for %s: %w", inst.InstanceId, err)
@@ -316,22 +332,11 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	//     而 jifei 计算的是从隔离时刻起 1 个月的漂移）。
 	//   - "原到期时间" 是续费业务语义的真源（无论 pass active 还是 isolated 续费）；
 	//     isolated_time 只是 "什么时候被隔离的" 审计时刻，不参与续费时长计算。
-	//   - 两个 SoT（trade.curDeadline 用 expired_time / ctl finalize 用 isolated_time）会让
-	//     R-MR-4 ai-gateway ExtendSubscription 的 newExpired 与 jifei 实际计费时长漂移。
+	//   - 两个 SoT（trade.curDeadline 用 expired_time / ctl finalize 用 isolated_time）
+	//     会让 ctl 与 jifei 的实际计费时长漂移。
 	//
 	// 防御：passEntity.ExpiredTime 在 active / isolated 续费场景下必非零（DB NOT NULL 约束）
-	var updated bool
-	if migrationRequired {
-		updated, err = logicpass.CommitRenewalGatewayMigration(
-			t.in.PassID,
-			newExpired,
-			userID,
-			migration.SubscriptionID,
-			migration.PlanID,
-		)
-	} else {
-		updated, err = passDao.FinalizeRenewal(t.in.PassID, newExpired)
-	}
+	updated, err := passDao.FinalizeRenewal(t.in.PassID, newExpired)
 	if err != nil {
 		return "", fmt.Errorf("FinalizeRenewal: %w", err)
 	}
@@ -344,13 +349,17 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 		zap.Time("expired_time_baseline", passEntity.ExpiredTime), // v1.7.20 B15: 基线改用 expired_time
 	)
 
-	// R-MR-4 续费链路接 ai-gateway ExtendSubscription（强一致 + CAS 幂等）：
-	// 把 newExpired 镜像到 ai-gateway，让 ai-gateway 端 PeriodEnd 与 ctl pass.expired_time 完全对齐。
-	// 失败必须父 task fail 重试 — 否则 PeriodEnd 没推进 → ai-gateway scheduler 5min
-	// 内会标 expired → AI 服务断档。详见 logicpass.AlignAiGatewaySubscriptionPeriodEnd doc。
-	if !migrationRequired && t.in.UserID != "" {
+	// legacy ai-gateway 仍对齐结束时间；LLMGateway 的长期订阅在 helper 内直接 no-op。
+	if t.in.UserID != "" {
 		if err := logicpass.AlignAiGatewaySubscriptionPeriodEnd(logger, t.in.UserID, t.in.PassID, newExpired); err != nil {
 			return "", fmt.Errorf("extend ai-gateway subscription: %w", err)
+		}
+	}
+
+	// best-effort 恢复用户站点（失败不阻塞续费流程）
+	if t.in.UserID != "" {
+		if err := websitelogic.ReactivateSitesOnPassRenewed(logger, t.in.UserID); err != nil {
+			logger.Warn("website reactivate sites on pass renewed failed", zap.Error(err))
 		}
 	}
 
@@ -358,13 +367,6 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	t.notifyTradeFlowCompleted(ctx, logger)
 	return t.markSuccess(ctx)
 }
-
-// extendAiGatewaySubscription R-MR-4 续费链路另一个调用点已迁移到 logic/pass
-// 包内 AlignAiGatewaySubscriptionPeriodEnd helper，以便与同步 active 分支共享实现（续费同步分
-// 支原本漏调 ai-gateway 是 bug，见 .tmp/trade-pass-renew-integration-runbook.md §2.5）。
-//
-// 本处保留空阐述作为变更错错反面设计重点，帮助后续阅读者快速定位本次抽取出去的公
-// 用 helper。下一个跳过本 helper 独立重构切片可反向删除本注释。
 
 // notifyTradeFlowCompleted best-effort 调 trade /internal/trade/flows/{flow_id}/complete
 //

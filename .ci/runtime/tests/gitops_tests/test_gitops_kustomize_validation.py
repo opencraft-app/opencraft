@@ -13,10 +13,32 @@ if str(RUNTIME_DIR) not in sys.path:
 
 from tests.helpers import git
 
-from gitops.gitops_kustomize_validation import find_placeholders, main as kustomize_main
+from gitops.gitops_kustomize_validation import (
+    catalog_dir_for_env,
+    changed_direct_app_services_from_paths,
+    find_placeholders,
+    is_playground_env,
+    main as kustomize_main,
+)
 
 
 class GitOpsKustomizeValidationTests(unittest.TestCase):
+    def test_tokyo_playground_is_supported(self) -> None:
+        self.assertTrue(is_playground_env("sandbox-jp-1"))
+        self.assertEqual(
+            catalog_dir_for_env("sandbox-jp-1"),
+            "argocd/catalogs/playground/tokyo-playground/sandbox-jp-1",
+        )
+
+    def test_changed_velagw_base_selects_direct_production_app(self) -> None:
+        self.assertEqual(
+            changed_direct_app_services_from_paths(
+                ["velagw/deploy/k8s/prod/gitops-base/workloads.yaml"],
+                "sgprod",
+            ),
+            {"velagw"},
+        )
+
     def test_find_placeholders_detects_replace_tokens(self) -> None:
         self.assertEqual(find_placeholders("image: REPLACE_IMAGE\nvalue: REPLACE_IMAGE\n"), ["REPLACE_IMAGE"])
 

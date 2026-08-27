@@ -11,9 +11,9 @@ feai 把「需求 → 编码 → 验证 → 归档」做成一个可控状态机
 
 ```
 /feai-start   规划：澄清需求 → 产出 openspec/plan.md（任务清单）
-   ↓  按 plan 每批 ≤3 个任务编码
-/feai-review  验证：每批编码后跑门禁（测试/类型/lint），通过才勾 [x]
-   ↓  全部完成
+   ↓  每批 ≤3 个任务：inline quick + batch complete
+/feai-review  验证：M/L 最终一次独立只读审核（S 按需）
+   ↓  验收通过
 /feai-archive 归档：沉淀变更记录到 openspec/changes/，清理工作区
 ```
 
@@ -54,7 +54,7 @@ feai 把「需求 → 编码 → 验证 → 归档」做成一个可控状态机
 ## 4. 几条会影响体验的纪律
 
 - **成本分层**：小任务（S）走轻流程，不会被拖入最重门禁；中大任务（M/L）才逐项跑门禁。见 `.workflow/rules/flow-cost.md`。
-- **每批只做 ≤3 个任务**：完成一批 → `/feai-review` → 刷新 summary → 下一批。避免一次塞太多。
+- **每批只做 ≤3 个任务**：完成一批 → inline quick → `batch complete` 统一刷新状态；M/L 最终再独立 review。
 - **早停（Stop-and-Ask）**：重复同一失败假设且没有新证据，或缺少外部事实导致无法继续复现时，AI 会停下来问你；仓库内仍有安全证据时会继续调查。
 - **未归档提醒是非阻断的**：有未归档变更时 AI 会提醒并让你选择，不会硬性拦住你开新需求。
 - **用量审计默认非阻塞**：usage-context 只写本地 cache、失败静默，不影响业务流程。

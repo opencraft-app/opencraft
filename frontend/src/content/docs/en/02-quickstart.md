@@ -1,16 +1,20 @@
 # Quickstart
 
-This tutorial walks through the full process from signing in to receiving a Hermes Agent reply in WeChat. It takes about 5 minutes.
+## Summary
+
+**Getting your first LightVela conversation running takes about 5 minutes: sign in to LightVela, activate a plan, let the platform create your Hermes Agent instance, configure a model (or just use the monthly model credits included with your plan), connect one messaging channel, then send a message and get a reply. Everything happens in the browser — no servers to buy, nothing to deploy locally. The fastest path is to use your plan credits together with WeChat, which connects by scanning a QR code, and add your own model API key and more channels later.**
+
+---
+
+This tutorial walks through the full process from signing in to receiving a Hermes reply in WeChat. It takes about 5 minutes.
 
 ## This page covers
 
 - Signing in to LightVela
 
-- Completing real-name verification (required on first use)
+- Activating the Launch plan and creating a Hermes instance
 
-- Activating the Launch plan and creating a Hermes Agent instance
-
-- Connecting WeChat / Telegram / WhatsApp / Discord channels
+- Connecting Telegram / WhatsApp / Discord / Slack / WeChat channels
 
 - Sending a message in WeChat and receiving a reply
 
@@ -36,29 +40,29 @@ Return to the homepage, click "Create Now" to enter the plan page, select "Launc
 
 ![](./images/2-2.webp)
 
-> ⚠️ **The Launch plan is currently free for a limited time**
+> ⚠️ **Launch has a 14-day free trial for new users after billing starts**
 >
-> The original price is $7.5/month, and it is currently free for a limited time. If the quota is full or the campaign has ended, please follow official updates.
+> LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After billing starts, new users can try Launch free for 14 days. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 
 After activation succeeds, the top navigation shows "My Hermes" and the page automatically redirects to the console. For plan details, see [What is LightVela - About plans](./01-overview.md#about-plans).
 
 ---
 
-## 3. Create a Hermes Agent instance
+## 3. Create a Hermes instance
 
-When you enter the console, the page shows an empty state because no Hermes Agent has been created yet.
+When you enter the console, the page shows an empty state because no Hermes has been created yet.
 
 ![](./images/20260424-113103-70fi.webp)
 
-Click "Create Now". The page shows the creation transition animation "Preparing coffee for Hermes Agent and waking up its brain...". Wait for about a dozen seconds.
+Click "Create Now". The page shows the creation transition animation "Preparing coffee for Hermes and waking up its brain...". Wait for about a dozen seconds.
 
 ![](./images/20260424-113120-qvlx.webp)
 
-After creation completes, the top of the console shows the Hermes Agent basic information card, the status is ● Running, and the three configuration buttons for models, channels, and skills appear below.
+After creation completes, the top of the console shows the Hermes basic information card, the status is ● Running, and the three configuration buttons for models, channels, and skills appear below.
 
 ![](./images/2-5.webp)
 
-> 💡 **Rename Hermes Agent**
+> 💡 **Rename Hermes**
 >
 > Click the name or the pencil icon next to it, enter a new name, and press Enter to save. The name is only used as an identifier and does not affect Agent behavior.
 
@@ -74,7 +78,7 @@ Use "Scan" in WeChat on your phone to scan the QR code, then follow the prompts 
 
 > ⚠️ **After scanning**
 >
-> After scanning, WeChat will prompt you to add a bot account. After adding it, chatting with that account is equivalent to chatting with Hermes Agent.
+> After scanning, WeChat will prompt you to add a bot account. After adding it, chatting with that account is equivalent to chatting with Hermes.
 
 For more details, see [Configure Channel - WeChat](./configuration/channel-wechat.md).
 
@@ -90,7 +94,7 @@ Hi
 
 ![](./images/2-7.webp)
 
-You should receive a reply from Hermes Agent within a few seconds. Hermes Agent can now chat through WeChat.
+You should receive a reply from Hermes within a few seconds. Hermes can now chat through WeChat.
 
 > 💡 **Message billing**
 >
@@ -100,7 +104,7 @@ You should receive a reply from Hermes Agent within a few seconds. Hermes Agent 
 
 ## Advanced: configure your own model (optional)
 
-If you need to use a specific provider's model, or continue using Hermes Agent after credits run out, open the "1. Models" card in the console, choose a source and a model, enter the API Key, and click "Add as default". See [Configure Models](./configuration/model.md) for the full process.
+If you need to use a specific provider's model, or continue using Hermes after credits run out, open the "1. Models" card in the console, choose a source and a model, enter the API Key, and click "Add as default". See [Configure Models](./configuration/model.md) for the full process.
 
 ---
 
@@ -108,8 +112,8 @@ If you need to use a specific provider's model, or continue using Hermes Agent a
 
 | Issue | Possible cause | Solution |
 |---|---|---|
-| Unable to claim the Launch plan | Limited free quota is full | Follow official updates and wait for the next quota release |
-| Hermes Agent creation stays on the transition page for a long time | Cloud initialization is slow or the network is unstable | Refresh the page; if there is no response after 1 minute, click "+ Create Hermes Agent" again |
+| Unable to activate the Launch plan | The current offer or payment flow is unavailable | Check the [Subscribe page](/subscribe) and follow official updates |
+| Hermes creation stays on the transition page for a long time | Cloud initialization is slow or the network is unstable | Refresh the page; if there is no response after 1 minute, click "+ Create Hermes" again |
 | No response in the console after scanning the WeChat QR code | The QR code has expired | Close the dialog and click "Authorize Access" again to generate a new QR code |
 | No reply after sending a message | Trial credits are exhausted or the channel is not connected | Check the "Connected channels" status; configure your own API Key after credits run out |
 | The bot contact disappears in WeChat | Authorization was revoked or access was disconnected | Return to the console and authorize access again in the "Channel" card |
@@ -118,8 +122,8 @@ If you need to use a specific provider's model, or continue using Hermes Agent a
 
 ## Next steps
 
-- [Core Concepts](./04-core-concepts.md) — Understand the four core concepts: Hermes Agent, models, channels, and skills
+- [Core Concepts](./04-core-concepts.md) — Understand the four core concepts: Hermes, models, channels, and skills
 
 - [Configuration Overview](./05-configuration.md) — Overall console structure
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent through SkillHub
+- [Configure Skills](./configuration/skill.md) — Extend Hermes through SkillHub

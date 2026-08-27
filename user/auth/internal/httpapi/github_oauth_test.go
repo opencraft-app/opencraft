@@ -63,6 +63,10 @@ func newAuthTestRouterWithGitHub(client GitHubOAuthClient) *gin.Engine {
 }
 
 func newAuthTestRouterWithGitHubAndAvatarStore(client GitHubOAuthClient, avatarStore AvatarStore) *gin.Engine {
+	return newAuthTestRouterWithGitHubOptions(client, avatarStore, false)
+}
+
+func newAuthTestRouterWithGitHubOptions(client GitHubOAuthClient, avatarStore AvatarStore, registrationDisabled bool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	store := service.NewMemoryStore(service.StoreOptions{
 		Now:                fixedHTTPTestNow,
@@ -78,13 +82,14 @@ func newAuthTestRouterWithGitHubAndAvatarStore(client GitHubOAuthClient, avatarS
 		SessionTTL:     30 * 24 * time.Hour,
 		AvatarStore:    avatarStore,
 		GitHubOAuth: &GitHubOAuthConfig{
-			ClientID:        "github-client-id-test",
-			ClientSecret:    "github-client-secret-test",
-			RedirectURI:     "https://lightclaw.tech/auth/oauth/github/callback",
-			FrontendBaseURL: "https://lightclaw.pages.dev",
-			PublicBaseURL:   "https://lightclaw.tech",
-			Client:          client,
-			StateTTL:        10 * time.Minute,
+			ClientID:             "github-client-id-test",
+			ClientSecret:         "github-client-secret-test",
+			RedirectURI:          "https://lightclaw.tech/auth/oauth/github/callback",
+			FrontendBaseURL:      "https://lightclaw.pages.dev",
+			PublicBaseURL:        "https://lightclaw.tech",
+			Client:               client,
+			StateTTL:             10 * time.Minute,
+			RegistrationDisabled: registrationDisabled,
 		},
 	})
 }
@@ -262,6 +267,43 @@ func TestGitHubOAuthCallbackIdentityFailureRedirectsWithError(t *testing.T) {
 	}
 }
 
+func TestGitHubOAuthCallbackRejectsNewRegistrationWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithGitHubOptions(&stubGitHubOAuthClient{
+		identity: service.OAuthSignInInput{
+			Provider:        "github",
+			ProviderSubject: "github-id-new-disabled",
+			Email:           "new-disabled@example.com",
+			EmailVerified:   true,
+			Name:            "New Disabled User",
+		},
+	}, nil, true)
+
+	start := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/github/start", nil)
+	startLocation, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse start location: %v", err)
+	}
+	state := startLocation.Query().Get("state")
+	stateCookie := cookieFromRecorderByName(t, start, githubOAuthStateCookieName)
+
+	callback := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/auth/oauth/github/callback?code=github-code-disabled&state="+url.QueryEscape(state),
+		nil,
+		stateCookie,
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from github oauth callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+	if !strings.Contains(callback.Header().Get("Location"), "oauth_error=github_registration_disabled") {
+		t.Fatalf("expected github_registration_disabled error in redirect, got %q", callback.Header().Get("Location"))
+	}
+}
+
 func TestGitHubOAuthCallbackCreatesSessionAndRedirectsToDashboard(t *testing.T) {
 	t.Parallel()
 
@@ -338,6 +380,57 @@ func TestGitHubOAuthCallbackCreatesSessionAndRedirectsToDashboard(t *testing.T) 
 	decodeJSONResponse(t, current, &response)
 	if response.Session.User == nil || response.Session.User.Name != "GitHub漫游者" {
 		t.Fatalf("expected github callback to create session for provider user, got %+v", response.Session.User)
+	}
+}
+
+func TestGitHubOAuthCallbackCompletesPreparedAccountSwitch(t *testing.T) {
+	client := &stubGitHubOAuthClient{identity: service.OAuthSignInInput{
+		Provider: "github", ProviderSubject: "github-switch-user", Email: "new-switch@example.com",
+		EmailVerified: true, Name: "New User",
+	}}
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{Now: fixedHTTPTestNow, SeedDefaultInvites: true})
+	svc := service.NewWithStore(store, service.Options{Now: fixedHTTPTestNow, SessionTTL: 30 * 24 * time.Hour})
+	router := NewRouter(svc, ServerConfig{
+		CookieSecure: true, CookieSameSite: http.SameSiteNoneMode, SessionTTL: 30 * 24 * time.Hour,
+		Federation: newSwitchTestFederationConfig(t),
+		GitHubOAuth: &GitHubOAuthConfig{
+			ClientID: "github-client-id-test", ClientSecret: "secret",
+			RedirectURI:     "https://lightclaw.tech/auth/oauth/github/callback",
+			FrontendBaseURL: "https://lightclaw.pages.dev", PublicBaseURL: "https://lightclaw.tech",
+			Client: client, StateTTL: 10 * time.Minute,
+		},
+	})
+	oldLogin := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name": "Old User", "email": "old-oauth-switch@example.com", "password": "password123", "inviteCode": "VALID2026",
+	})
+	oldSession := sessionCookieFromRecorder(t, oldLogin)
+	prepare := performJSONRequest(t, router, http.MethodPost, "/auth/federation/switch/prepare", nil, oldSession)
+	switchCookie := cookieFromRecorderByName(t, prepare, federationSwitchCookieName)
+	start := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/github/start", nil)
+	stateCookie := cookieFromRecorderByName(t, start, githubOAuthStateCookieName)
+	location, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callback := performJSONRequest(t, router, http.MethodGet,
+		"/auth/oauth/github/callback?code=code&state="+url.QueryEscape(location.Query().Get("state")), nil,
+		stateCookie, switchCookie,
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("callback = %d %s", callback.Code, callback.Body.String())
+	}
+	newSession := sessionCookieFromRecorder(t, callback)
+	if current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, newSession); current.Code != http.StatusOK {
+		t.Fatalf("new session is not valid: %d %s", current.Code, current.Body.String())
+	}
+	if current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, oldSession); current.Code != http.StatusUnauthorized {
+		t.Fatalf("old session remains valid: %d %s", current.Code, current.Body.String())
+	}
+	cleared := cookieFromRecorderByName(t, callback, federationSwitchCookieName)
+	if cleared.MaxAge >= 0 {
+		t.Fatalf("switch cookie was not cleared: %+v", cleared)
 	}
 }
 

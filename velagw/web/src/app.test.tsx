@@ -218,8 +218,8 @@ describe("PlanManagementPage", () => {
         id: "starter-2026-07",
         name: "入门型",
         monthly_tokens: 10000,
-        period_value: 1,
-        period_unit: "months",
+        quota_reset_period: "monthly",
+        quota_reset_custom_seconds: 0,
         is_active: true,
         fingerprint: "abc",
       },
@@ -241,9 +241,12 @@ describe("PlanManagementPage", () => {
 
     expect(html).toContain("权益模板")
     expect(html).toContain("新增模板")
-    expect(html).toContain("复制模板")
+    expect(html).toContain("基于此创建新版")
     expect(html).toContain("入门型")
     expect(html).toContain("10,000")
+    expect(html).toContain("每月重置")
+    expect(html).toContain("停止新发放")
+    expect(html).not.toContain("编辑模板")
     expect(html).toContain("集群下发")
     expect(html).toContain("1 个集群已就绪")
     expect(html).toContain("待下发")

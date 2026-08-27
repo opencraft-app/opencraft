@@ -376,30 +376,12 @@ func (s *Service) syncManagedSetPlans(ctx context.Context, setID string) error {
 		if err != nil {
 			return err
 		}
-		if !ok || state.Status != SetPlanStatusReady || state.UpstreamPlanID <= 0 {
+		if !ok || state.Status != SetPlanStatusReady || state.UpstreamPlanID <= 0 ||
+			state.AppliedFingerprint != plan.Fingerprint {
 			if !ok {
 				state = SetPlan{PlanID: plan.ID, SetID: setID, Status: SetPlanStatusPending}
 			}
 			if err := s.syncSetPlan(ctx, set, plan, state); err != nil {
-				return err
-			}
-		}
-		periods, err := s.store.ListPlanPeriods(ctx, plan.ID)
-		if err != nil {
-			return err
-		}
-		for _, period := range periods {
-			periodState, ok, err := s.store.GetSetPlanPeriod(ctx, plan.ID, period.PeriodValue, period.PeriodUnit, setID)
-			if err != nil {
-				return err
-			}
-			if ok && periodState.Status == SetPlanStatusReady && periodState.UpstreamPlanID > 0 {
-				continue
-			}
-			if !ok {
-				periodState = SetPlanPeriod{PlanID: plan.ID, PeriodValue: period.PeriodValue, PeriodUnit: period.PeriodUnit, SetID: setID, Status: SetPlanStatusPending}
-			}
-			if err := s.syncSetPlanPeriod(ctx, set, plan, periodState); err != nil {
 				return err
 			}
 		}
@@ -408,106 +390,183 @@ func (s *Service) syncManagedSetPlans(ctx context.Context, setID string) error {
 }
 
 func (s *Service) syncSetPlan(ctx context.Context, set Set, plan Plan, state SetPlan) error {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(plan.ID)))
+	operation := fmt.Sprintf("%s_%x", SetOperationPlanSync, sum[:16])
+	return s.withSetOperationLease(ctx, set.ID, operation, 1, func(leaseCtx context.Context) error {
+		latest, ok, err := s.store.GetSetPlan(leaseCtx, plan.ID, set.ID)
+		if err != nil {
+			return err
+		}
+		if ok {
+			state = latest
+		}
+		return s.syncSetPlanLocked(leaseCtx, set, plan, state)
+	})
+}
+
+func (s *Service) syncSetPlanLocked(ctx context.Context, set Set, plan Plan, state SetPlan) error {
 	state.PlanID = plan.ID
 	state.SetID = set.ID
-	state.Status = SetPlanStatusSyncing
+	if state.UpstreamPlanID > 0 && strings.TrimSpace(state.AppliedFingerprint) != "" {
+		if state.Status != SetPlanStatusError {
+			state.Status = SetPlanStatusReady
+		}
+	} else {
+		state.Status = SetPlanStatusSyncing
+	}
 	state.Attempts++
-	state.LastError = ""
+	if state.Status != SetPlanStatusError {
+		state.LastError = ""
+	}
 	if err := s.store.SaveSetPlan(ctx, state); err != nil {
 		return err
 	}
 	client := s.newAPIClient(set.BaseURL)
 	auth := adminAuthForSet(set)
-	marker := managedPlanMarker(plan.ID)
+	marker := managedPlanMarker(plan)
 	upstreamPlans, err := client.AdminListSubscriptionPlans(ctx, auth)
 	if err != nil {
 		return s.failSetPlanSync(ctx, state, fmt.Errorf("list upstream plans: %w", err))
 	}
-	for _, upstreamPlan := range upstreamPlans {
-		if upstreamPlan.ID > 0 && strings.TrimSpace(upstreamPlan.Subtitle) == marker {
-			state.UpstreamPlanID = upstreamPlan.ID
-			state.Status = SetPlanStatusReady
-			state.SyncedAt = s.nowUTC()
-			return s.store.SaveSetPlan(ctx, state)
+
+	matches := matchingManagedPlans(upstreamPlans, marker)
+	if len(matches) > 1 {
+		return s.rejectSetPlanMapping(ctx, state,
+			fmt.Errorf("duplicate managed plan marker %q in set %q", marker, set.ID))
+	}
+	if len(matches) == 1 {
+		if err := validateManagedUpstreamPlan(plan, matches[0]); err != nil {
+			return s.rejectSetPlanMapping(ctx, state, fmt.Errorf("verify upstream plan: %w", err))
+		}
+		if state.UpstreamPlanID > 0 && state.AppliedFingerprint == plan.Fingerprint &&
+			state.UpstreamPlanID != matches[0].ID {
+			return s.rejectSetPlanMapping(ctx, state,
+				fmt.Errorf("managed plan identity changed from %d to %d", state.UpstreamPlanID, matches[0].ID))
+		}
+		return s.adoptManagedUpstreamPlan(ctx, state, plan, matches[0].ID)
+	}
+
+	if state.UpstreamPlanID > 0 && strings.TrimSpace(state.AppliedFingerprint) != "" {
+		var mapped *newapi.AdminSubscriptionPlan
+		for i := range upstreamPlans {
+			if upstreamPlans[i].ID == state.UpstreamPlanID {
+				mapped = &upstreamPlans[i]
+				break
+			}
+		}
+		if mapped == nil || strings.HasPrefix(strings.TrimSpace(mapped.Subtitle), "llmgateway plan:v3:") {
+			return s.rejectSetPlanMapping(ctx, state,
+				fmt.Errorf("managed upstream plan %d is missing or no longer matches marker %q", state.UpstreamPlanID, marker))
 		}
 	}
 
-	result, err := client.AdminCreateSubscriptionPlan(ctx, auth, newapi.AdminCreateSubscriptionPlanRequest{
-		Plan: newapi.AdminSubscriptionPlan{
-			Title:            plan.Name,
-			Subtitle:         marker,
-			PriceAmount:      0,
-			Currency:         "USD",
-			DurationUnit:     newAPISubscriptionDurationUnit(plan.PeriodUnit),
-			DurationValue:    firstPositive(plan.PeriodValue, 1),
-			Enabled:          true,
-			TotalAmount:      plan.MonthlyTokens,
-			AllowBalancePay:  true,
-			QuotaResetPeriod: "never",
-		},
+	result, createErr := client.AdminCreateSubscriptionPlan(ctx, auth, newapi.AdminCreateSubscriptionPlanRequest{
+		Plan: desiredManagedUpstreamPlan(plan),
 	})
-	if err != nil {
-		return s.failSetPlanSync(ctx, state, fmt.Errorf("create upstream plan %q in set %q: %w", plan.ID, set.ID, err))
+	if result.ID > 0 {
+		state.UpstreamPlanID = result.ID
 	}
-	state.UpstreamPlanID = result.ID
-	state.Status = SetPlanStatusReady
-	state.LastError = ""
-	state.SyncedAt = s.nowUTC()
-	if err := s.store.SaveSetPlan(ctx, state); err != nil {
-		return fmt.Errorf("save set plan %q for set %q: %w", plan.ID, set.ID, err)
+
+	confirmedPlans, confirmErr := client.AdminListSubscriptionPlans(ctx, auth)
+	if confirmErr == nil {
+		confirmedMatches := matchingManagedPlans(confirmedPlans, marker)
+		if len(confirmedMatches) > 1 {
+			return s.rejectSetPlanMapping(ctx, state,
+				fmt.Errorf("duplicate managed plan marker %q after create in set %q", marker, set.ID))
+		}
+		if len(confirmedMatches) == 1 {
+			if err := validateManagedUpstreamPlan(plan, confirmedMatches[0]); err != nil {
+				return s.rejectSetPlanMapping(ctx, state, fmt.Errorf("verify created upstream plan: %w", err))
+			}
+			if result.ID > 0 && result.ID != confirmedMatches[0].ID {
+				return s.rejectSetPlanMapping(ctx, state,
+					fmt.Errorf("created upstream plan id %d resolved to %d", result.ID, confirmedMatches[0].ID))
+			}
+			return s.adoptManagedUpstreamPlan(ctx, state, plan, confirmedMatches[0].ID)
+		}
+	}
+	if createErr != nil {
+		if confirmErr != nil {
+			createErr = errors.Join(createErr, fmt.Errorf("confirm create: %w", confirmErr))
+		}
+		return s.failSetPlanSync(ctx, state,
+			fmt.Errorf("create upstream plan %q in set %q: %w", plan.ID, set.ID, createErr))
+	}
+	if confirmErr != nil {
+		return s.failSetPlanSync(ctx, state,
+			fmt.Errorf("confirm upstream plan %q in set %q: %w", plan.ID, set.ID, confirmErr))
+	}
+	return s.failSetPlanSync(ctx, state,
+		fmt.Errorf("created upstream plan %q in set %q was not visible during confirmation", plan.ID, set.ID))
+}
+
+func managedPlanMarker(plan Plan) string {
+	planIDHash := sha256.Sum256([]byte(strings.TrimSpace(plan.ID)))
+	return fmt.Sprintf("llmgateway plan:v3:%x:%s", planIDHash, strings.TrimSpace(plan.Fingerprint))
+}
+
+func desiredManagedUpstreamPlan(plan Plan) newapi.AdminSubscriptionPlan {
+	return newapi.AdminSubscriptionPlan{
+		Title:                   plan.Name,
+		Subtitle:                managedPlanMarker(plan),
+		PriceAmount:             0,
+		Currency:                "USD",
+		DurationUnit:            "year",
+		DurationValue:           100,
+		Enabled:                 true,
+		TotalAmount:             plan.MonthlyTokens,
+		AllowBalancePay:         true,
+		QuotaResetPeriod:        plan.QuotaResetPeriod,
+		QuotaResetCustomSeconds: plan.QuotaResetCustomSeconds,
+	}
+}
+
+func matchingManagedPlans(plans []newapi.AdminSubscriptionPlan, marker string) []newapi.AdminSubscriptionPlan {
+	matches := make([]newapi.AdminSubscriptionPlan, 0, 1)
+	for _, upstreamPlan := range plans {
+		if upstreamPlan.ID > 0 && strings.TrimSpace(upstreamPlan.Subtitle) == marker {
+			matches = append(matches, upstreamPlan)
+		}
+	}
+	return matches
+}
+
+func validateManagedUpstreamPlan(plan Plan, upstream newapi.AdminSubscriptionPlan) error {
+	if upstream.ID <= 0 {
+		return fmt.Errorf("upstream plan id is empty")
+	}
+	if strings.TrimSpace(upstream.Subtitle) != managedPlanMarker(plan) {
+		return fmt.Errorf("marker does not match")
+	}
+	if !upstream.Enabled {
+		return fmt.Errorf("upstream plan is disabled")
+	}
+	if upstream.DurationUnit != "year" || upstream.DurationValue != 100 {
+		return fmt.Errorf("duration is %d %q, want 100 years", upstream.DurationValue, upstream.DurationUnit)
+	}
+	if upstream.TotalAmount != plan.MonthlyTokens {
+		return fmt.Errorf("total amount is %d, want %d", upstream.TotalAmount, plan.MonthlyTokens)
+	}
+	if upstream.QuotaResetPeriod != plan.QuotaResetPeriod {
+		return fmt.Errorf("quota reset period is %q, want %q", upstream.QuotaResetPeriod, plan.QuotaResetPeriod)
+	}
+	if upstream.QuotaResetCustomSeconds != plan.QuotaResetCustomSeconds {
+		return fmt.Errorf("quota reset custom seconds is %d, want %d",
+			upstream.QuotaResetCustomSeconds, plan.QuotaResetCustomSeconds)
 	}
 	return nil
 }
 
-func managedPlanMarker(planID string) string {
-	return "llmgateway plan:" + strings.TrimSpace(planID)
-}
-
-func managedPlanPeriodMarker(planID string, periodValue int, periodUnit string) string {
-	return fmt.Sprintf("llmgateway plan:%s:%d:%s", strings.TrimSpace(planID), periodValue, normalizePeriodUnit(periodUnit))
-}
-
-func (s *Service) syncSetPlanPeriod(ctx context.Context, set Set, plan Plan, state SetPlanPeriod) error {
-	state.Status = SetPlanStatusSyncing
-	state.Attempts++
+func (s *Service) adoptManagedUpstreamPlan(ctx context.Context, state SetPlan, plan Plan, upstreamPlanID int) error {
+	state.UpstreamPlanID = upstreamPlanID
+	state.AppliedFingerprint = plan.Fingerprint
+	state.Status = SetPlanStatusReady
 	state.LastError = ""
-	if err := s.store.SaveSetPlanPeriod(ctx, state); err != nil {
-		return err
-	}
-	client := s.newAPIClient(set.BaseURL)
-	auth := adminAuthForSet(set)
-	marker := managedPlanPeriodMarker(plan.ID, state.PeriodValue, state.PeriodUnit)
-	upstreamPlans, err := client.AdminListSubscriptionPlans(ctx, auth)
-	if err != nil {
-		return s.failSetPlanPeriodSync(ctx, state, fmt.Errorf("list upstream plans: %w", err))
-	}
-	for _, upstreamPlan := range upstreamPlans {
-		if upstreamPlan.ID > 0 && strings.TrimSpace(upstreamPlan.Subtitle) == marker {
-			state.UpstreamPlanID, state.Status, state.SyncedAt = upstreamPlan.ID, SetPlanStatusReady, s.nowUTC()
-			return s.store.SaveSetPlanPeriod(ctx, state)
-		}
-	}
-	result, err := client.AdminCreateSubscriptionPlan(ctx, auth, newapi.AdminCreateSubscriptionPlanRequest{Plan: newapi.AdminSubscriptionPlan{
-		Title: plan.Name, Subtitle: marker, PriceAmount: 0, Currency: "USD",
-		DurationUnit: newAPISubscriptionDurationUnit(state.PeriodUnit), DurationValue: state.PeriodValue,
-		Enabled: true, TotalAmount: plan.MonthlyTokens, AllowBalancePay: true, QuotaResetPeriod: "never",
-	}})
-	if err != nil {
-		return s.failSetPlanPeriodSync(ctx, state, fmt.Errorf("create upstream period plan %q in set %q: %w", plan.ID, set.ID, err))
-	}
-	state.UpstreamPlanID, state.Status, state.LastError, state.SyncedAt = result.ID, SetPlanStatusReady, "", s.nowUTC()
-	return s.store.SaveSetPlanPeriod(ctx, state)
+	state.SyncedAt = s.nowUTC()
+	return s.store.SaveSetPlan(ctx, state)
 }
 
-func (s *Service) failSetPlanPeriodSync(ctx context.Context, state SetPlanPeriod, cause error) error {
-	state.Status, state.LastError = SetPlanStatusError, cause.Error()
-	if err := s.store.SaveSetPlanPeriod(ctx, state); err != nil {
-		return errors.Join(cause, err)
-	}
-	return cause
-}
-
-func (s *Service) failSetPlanSync(ctx context.Context, state SetPlan, cause error) error {
+func (s *Service) rejectSetPlanMapping(ctx context.Context, state SetPlan, cause error) error {
 	state.Status = SetPlanStatusError
 	state.LastError = cause.Error()
 	if err := s.store.SaveSetPlan(ctx, state); err != nil {
@@ -516,10 +575,21 @@ func (s *Service) failSetPlanSync(ctx context.Context, state SetPlan, cause erro
 	return cause
 }
 
+func (s *Service) failSetPlanSync(ctx context.Context, state SetPlan, cause error) error {
+	if state.Status != SetPlanStatusError && state.UpstreamPlanID > 0 && state.AppliedFingerprint != "" {
+		state.Status = SetPlanStatusReady
+	} else {
+		state.Status = SetPlanStatusError
+	}
+	state.LastError = cause.Error()
+	if err := s.store.SaveSetPlan(ctx, state); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
+}
+
 func (s *Service) syncPlansJob(ctx context.Context) (int, int, error) {
-	states, err := s.store.ListSetPlans(ctx, SetPlanListOptions{
-		Statuses: []string{SetPlanStatusPending, SetPlanStatusError},
-	})
+	states, err := s.store.ListSetPlans(ctx, SetPlanListOptions{})
 	if err != nil {
 		return 0, 0, err
 	}
@@ -540,6 +610,10 @@ func (s *Service) syncPlansJob(ctx context.Context) (int, int, error) {
 		if err == nil && (!plan.IsActive || set.Status != SetStatusActive || !set.Setup || set.AdminUserID <= 0 || set.AdminAccessToken == "") {
 			continue
 		}
+		if err == nil && state.Status == SetPlanStatusReady && state.UpstreamPlanID > 0 &&
+			state.AppliedFingerprint == plan.Fingerprint && !state.SyncedAt.IsZero() {
+			continue
+		}
 		if err == nil {
 			err = s.syncSetPlan(ctx, set, plan, state)
 		}
@@ -552,59 +626,7 @@ func (s *Service) syncPlansJob(ctx context.Context) (int, int, error) {
 		}
 		synced++
 	}
-	periodStates, periodErr := s.store.ListSetPlanPeriods(ctx, SetPlanPeriodListOptions{Statuses: []string{SetPlanStatusPending, SetPlanStatusError}})
-	if periodErr != nil {
-		if firstErr == nil {
-			firstErr = periodErr
-		}
-		return synced, failed, firstErr
-	}
-	for _, state := range periodStates {
-		plan, ok, err := s.store.GetPlan(ctx, state.PlanID)
-		if err == nil && !ok {
-			err = fmt.Errorf("plan %q not found", state.PlanID)
-		}
-		set, setOK, setErr := s.store.GetSet(ctx, state.SetID)
-		if err == nil && setErr != nil {
-			err = setErr
-		}
-		if err == nil && !setOK {
-			err = fmt.Errorf("set %q not found", state.SetID)
-		}
-		if err == nil && (!plan.IsActive || set.Status != SetStatusActive || !set.Setup || set.AdminUserID <= 0 || set.AdminAccessToken == "") {
-			continue
-		}
-		if err == nil {
-			err = s.syncSetPlanPeriod(ctx, set, plan, state)
-		}
-		if err != nil {
-			failed++
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		synced++
-	}
 	return synced, failed, firstErr
-}
-
-func newAPISubscriptionDurationUnit(unit string) string {
-	switch strings.ToLower(strings.TrimSpace(unit)) {
-	case "day", "days", "d":
-		return "day"
-	case "year", "years", "y":
-		return "year"
-	default:
-		return "month"
-	}
-}
-
-func firstPositive(value int, fallback int) int {
-	if value > 0 {
-		return value
-	}
-	return fallback
 }
 
 func (s *Service) markProvisionRequestConfiguredForSetFact(ctx context.Context, fact SetReconcileFact) error {

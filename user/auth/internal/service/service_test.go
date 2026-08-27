@@ -17,6 +17,33 @@ func fixedVerificationCode(code string) func(int) (string, error) {
 	return func(int) (string, error) { return code, nil }
 }
 
+func TestInternalShadowBindingRepairsMissingInternationalAppID(t *testing.T) {
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	shadowStore := shadowbinding.NewMemoryStore()
+	_, _ = shadowStore.SavePendingBinding(context.Background(), "usr_intl", "sgprod_u1", now)
+	_, _ = shadowStore.MarkBindingActive(context.Background(), "usr_intl", 450850000004, 450850000004, 0, now)
+	client := &stubShadowRegisterClient{
+		temporaryResult: shadowbinding.CloudTemporaryCredentials{
+			Uin: 450850000004, OwnerUin: 450850000004,
+			TmpSecretID: "tmp-id", TmpSecretKey: "tmp-key", Token: "tmp-token", ExpiredTime: now.Add(time.Hour),
+		},
+		accountInfoResult: shadowbinding.CloudAccountInfo{LoginUin: 450850000004, OwnerUin: 450850000004, AppID: 1471748557},
+	}
+	shadowSvc := shadowbinding.New(shadowStore, client, shadowbinding.Options{Enabled: true, SiteKind: shadowbinding.SiteKindIntl, Now: func() time.Time { return now }})
+	svc := NewWithStore(NewMemoryStore(StoreOptions{Now: func() time.Time { return now }}), Options{Now: func() time.Time { return now }, ShadowBinding: shadowSvc})
+
+	binding, err := svc.InternalShadowBinding(context.Background(), "usr_intl", "192.0.2.1", "lightvela-trade")
+	if err != nil {
+		t.Fatalf("InternalShadowBinding: %v", err)
+	}
+	if binding.AppID != 1471748557 || client.temporaryCalls != 1 || client.accountInfoCalls != 1 {
+		t.Fatalf("binding was not repaired: binding=%+v temporary_calls=%d account_info_calls=%d", binding, client.temporaryCalls, client.accountInfoCalls)
+	}
+	if client.lastTemporary.ClientIP != "192.0.2.1" || client.lastTemporary.ClientUA != "lightvela-trade" {
+		t.Fatalf("client metadata was not forwarded: %+v", client.lastTemporary)
+	}
+}
+
 func TestSharedStoreEnforcesCooldownAcrossServiceInstances(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{
 		Now:                fixedNow,
@@ -40,6 +67,102 @@ func TestSharedStoreEnforcesCooldownAcrossServiceInstances(t *testing.T) {
 	}
 	if authErr.Code != "sms_cooldown" {
 		t.Fatalf("expected sms_cooldown, got %s", authErr.Code)
+	}
+}
+
+func TestFacelessRealnameSkipsFaceCaptureAndUsesFaceIDPhoneProofFlow(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	shadowClient := &stubShadowRegisterClient{
+		result: shadowbinding.CloudRegisterResult{Uin: 300000000071, OwnerUin: 300000000071, AppID: 1250000000},
+	}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), shadowClient, shadowbinding.Options{Enabled: true, Now: fixedNow})
+	svc := NewWithStore(store, Options{
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
+		RealnameVerifier:          stubRealnameVerifier{result: RealnameProviderResult{Result: "0"}},
+		RealnameCipher:            stubRealnameCipher{},
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:      RealnameAssuranceModeFaceless,
+			DigestKey: []byte("0123456789abcdef0123456789abcdef"),
+		},
+		ShadowBinding:              shadowSvc,
+		ShadowBasicAuthSyncEnabled: true,
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless@example.invalid", "13800138118")
+
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name: "张三", IDCard: "11010519491231002X", ClientIP: "127.0.0.1", ClientUA: "test", ConsentAccepted: true,
+	})
+	if err != nil {
+		t.Fatalf("start faceless realname: %v", err)
+	}
+	if started.VerifyURL != "" {
+		t.Fatalf("faceless flow must not issue a face-capture URL, got %+v", started)
+	}
+	attempt, err := store.GetRealnameFaceIDAttempt(context.Background(), started.AttemptID)
+	if err != nil {
+		t.Fatalf("load faceless attempt: %v", err)
+	}
+	if attempt.State != RealnameFaceIDStateFaceSucceeded || attempt.FaceVerifiedAt == nil {
+		t.Fatalf("faceless flow must enter the FaceID phone-proof stage, got %+v", attempt)
+	}
+
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID, ClientIP: "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID-flow shadow phone code: %v", err)
+	}
+	if shadowClient.smsCalls != 1 || shadowClient.lastSMS.Phone != "13800138118" {
+		t.Fatalf("expected Tencent safety-phone SMS for current user, got calls=%d input=%+v", shadowClient.smsCalls, shadowClient.lastSMS)
+	}
+
+	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
+		AttemptID: started.AttemptID, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "test",
+	})
+	if err != nil {
+		t.Fatalf("verify Tencent safety-phone code: %v", err)
+	}
+	if verified.State != RealnameFaceIDStateSucceeded {
+		t.Fatalf("expected faceless FaceID-flow verification to complete, got %+v", verified)
+	}
+}
+
+func TestFacelessRealnameRequiresTwoFactorVerifier(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	svc := NewWithStore(store, Options{
+		Now:            fixedNow,
+		RealnameCipher: stubRealnameCipher{},
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:      RealnameAssuranceModeFaceless,
+			DigestKey: []byte("0123456789abcdef0123456789abcdef"),
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless-no-verifier@example.invalid", "13800138119")
+
+	_, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name: "张三", IDCard: "11010519491231002X", ConsentAccepted: true,
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "realname_unavailable" {
+		t.Fatalf("faceless mode must fail closed without two-factor verifier, got %#v", err)
+	}
+}
+
+func TestFacelessRealnameRejectsLegacyVerifyEndpoint(t *testing.T) {
+	svc := New(Options{
+		Now:              fixedNow,
+		RealnameVerifier: stubRealnameVerifier{result: RealnameProviderResult{Result: "0"}},
+		RealnameCipher:   stubRealnameCipher{},
+		RealnameFaceID:   RealnameFaceIDConfig{Mode: RealnameAssuranceModeFaceless},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless-legacy-endpoint@example.invalid", "13800138120")
+
+	_, err := svc.VerifyRealname(context.Background(), session.Token, RealnameVerifyInput{
+		Name: "张三", IDCard: "11010519491231002X",
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "realname_faceid_required" {
+		t.Fatalf("faceless mode must use the attempt state machine, got %#v", err)
 	}
 }
 
@@ -704,6 +827,64 @@ func TestVerifyRealnamePhoneWithShadowRequiresBindingSuccess(t *testing.T) {
 	}
 	if current.User.RealnameLevel != RealnameLevelPhone3FA {
 		t.Fatalf("expected phone_3fa after active shadow binding, got %q", current.User.RealnameLevel)
+	}
+}
+
+func TestIssueTencentCloudConsoleAuthCodeUsesCurrentUsersActiveBinding(t *testing.T) {
+	shadowSvc := shadowbinding.New(
+		shadowbinding.NewMemoryStore(),
+		&stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}},
+		shadowbinding.Options{Enabled: true, Now: fixedNow, AuthCodePrefix: "bjsbx"},
+	)
+	svc := NewWithStore(
+		NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}),
+		Options{Now: fixedNow, ShadowBinding: shadowSvc},
+	)
+	session := mustPasswordSessionWithPhone(t, svc, "console-login@example.invalid", "13800138090")
+	if _, err := shadowSvc.BindShadowAccount(context.Background(), shadowbinding.BindInput{
+		UserID: session.User.ID,
+		Phone:  session.User.Phone,
+	}); err != nil {
+		t.Fatalf("seed active shadow binding: %v", err)
+	}
+
+	code, err := svc.IssueTencentCloudConsoleAuthCode(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("issue Tencent Cloud console auth code: %v", err)
+	}
+	if !strings.HasPrefix(code.Code, "bjsbx.") {
+		t.Fatalf("expected Beijing routing prefix, got %q", code.Code)
+	}
+	if got, want := code.ExpiresAt, fixedNow().Add(10*time.Minute); !got.Equal(want) {
+		t.Fatalf("expected expiry %s, got %s", want, got)
+	}
+
+	rawCode := strings.TrimPrefix(code.Code, "bjsbx.")
+	consumed, err := shadowSvc.ConsumeAuthCode(context.Background(), rawCode)
+	if err != nil {
+		t.Fatalf("consume issued raw auth code: %v", err)
+	}
+	if got, want := consumed.UserID, session.User.ID; got != want {
+		t.Fatalf("expected code for current user %q, got %q", want, got)
+	}
+}
+
+func TestIssueTencentCloudConsoleAuthCodeRequiresActiveBinding(t *testing.T) {
+	shadowSvc := shadowbinding.New(
+		shadowbinding.NewMemoryStore(),
+		&stubShadowRegisterClient{},
+		shadowbinding.Options{Enabled: true, Now: fixedNow},
+	)
+	svc := NewWithStore(
+		NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}),
+		Options{Now: fixedNow, ShadowBinding: shadowSvc},
+	)
+	session := mustPasswordSessionWithPhone(t, svc, "console-no-binding@example.invalid", "13800138091")
+
+	_, err := svc.IssueTencentCloudConsoleAuthCode(context.Background(), session.Token)
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "shadow_binding_not_ready" || authErr.Status != http.StatusConflict {
+		t.Fatalf("expected shadow_binding_not_ready 409, got %#v", err)
 	}
 }
 
@@ -2290,17 +2471,33 @@ func (stubRealnameCipher) Decrypt(ciphertext string) (string, error) {
 }
 
 type stubShadowRegisterClient struct {
-	calls          int
-	smsCalls       int
-	updateCalls    int
-	basicAuthCalls int
-	lastSMS        shadowbinding.CloudSendSMSInput
-	lastRegister   shadowbinding.CloudRegisterInput
-	lastUpdate     shadowbinding.CloudUpdatePhoneInput
-	lastBasicAuth  shadowbinding.CloudSaveBasicAuthInput
-	result         shadowbinding.CloudRegisterResult
-	err            error
-	basicAuthErr   error
+	calls             int
+	smsCalls          int
+	updateCalls       int
+	basicAuthCalls    int
+	temporaryCalls    int
+	accountInfoCalls  int
+	lastSMS           shadowbinding.CloudSendSMSInput
+	lastRegister      shadowbinding.CloudRegisterInput
+	lastUpdate        shadowbinding.CloudUpdatePhoneInput
+	lastBasicAuth     shadowbinding.CloudSaveBasicAuthInput
+	lastTemporary     shadowbinding.CloudTemporaryCredentialsInput
+	result            shadowbinding.CloudRegisterResult
+	temporaryResult   shadowbinding.CloudTemporaryCredentials
+	accountInfoResult shadowbinding.CloudAccountInfo
+	err               error
+	basicAuthErr      error
+}
+
+func (c *stubShadowRegisterClient) GetTemporaryCredentialsForSaaS(_ context.Context, in shadowbinding.CloudTemporaryCredentialsInput) (shadowbinding.CloudTemporaryCredentials, error) {
+	c.temporaryCalls++
+	c.lastTemporary = in
+	return c.temporaryResult, nil
+}
+
+func (c *stubShadowRegisterClient) DescribeAccountInfo(context.Context, shadowbinding.CloudTemporaryCredentials) (shadowbinding.CloudAccountInfo, error) {
+	c.accountInfoCalls++
+	return c.accountInfoResult, nil
 }
 
 func (c *stubShadowRegisterClient) SendSMSVerifyCode(_ context.Context, in shadowbinding.CloudSendSMSInput) error {

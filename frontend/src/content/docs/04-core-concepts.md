@@ -1,5 +1,11 @@
 # 核心概念
 
+## 摘要
+
+**LightVela 有四个核心概念。Hermes Agent 是云端运行的对话主体，每个实例拥有独立运行环境、跨会话持续记忆、7×24 小时在线；模型是它调用的大语言模型，可选模型 Coding Plan（包月）、模型 API（按量）或自定义 OpenAI 兼容端点，当前每个 Agent 仅一个模型生效；通道是你与它对话的聊天平台入口，国内站支持微信、QQ、企业微信、飞书、钉钉，多个通道可同时接入同一个 Agent 并共享记忆；技能是来自 SkillHub 的能力扩展包，按名称安装。一次完整对话的流程是：通道收到消息 → Agent 判断是否调用技能 → 调用模型生成响应 → 经原通道返回。**
+
+---
+
 LightVela 涉及四个核心概念：Hermes Agent、模型、通道、技能。本页对四者进行说明，具体的配置流程请参见对应的配置子页。
 
 ## 本页覆盖
@@ -27,7 +33,7 @@ LightVela 涉及四个核心概念：Hermes Agent、模型、通道、技能。�
        ┌───────┐           ┌────────┐          ┌────────┐
        │ 模型   │           │  通道  │          │  技能   │
        └───────┘           └────────┘          └────────┘
-        模型服务商          微信/QQ/飞书         SkillHub
+        模型服务商      微信/QQ/企微/飞书      SkillHub
 ```
 
 | 概念 | 角色 | 说明 |
@@ -53,7 +59,7 @@ Hermes Agent 具有以下特性：
 
 - **持续在线**：7×24 小时运行，不依赖用户本地设备
 
-当前启航套餐最多支持创建 1 个 Hermes Agent 实例。
+当前已上线套餐均支持创建 1 个 Hermes Agent 实例。
 
 ---
 
@@ -67,7 +73,7 @@ Hermes Agent 具有以下特性：
 | 模型 API | 按量 | 服务商 | 低频或试用 |
 | 自定义模型 | 取决于端点 | 用户自备 | 接入国外模型或 OpenAI 兼容端点 |
 
-此外，启航套餐预置 100 体验积分，无需任何配置即可开箱对话；体验积分耗尽后再配置自有 API Key 也可以。
+此外，套餐会按月发放模型积分，无需任何配置即可开箱对话；积分额度因套餐而异，耗尽后再配置自有 API Key 也可以。
 
 具体支持的模型列表、API Key 获取方式、选型建议等详见 [配置模型](./configuration/model.md)。
 
@@ -79,17 +85,19 @@ Hermes Agent 具有以下特性：
 
 ## 通道（Channels）
 
-通道指用户与 Hermes Agent 进行对话的聊天平台入口。LightVela 当前支持三个通道：
+通道指用户与 Hermes Agent 进行对话的聊天平台入口。LightVela 国内站当前支持五个通道：
 
 | 通道 | 接入方式 | 适用场景 |
 |---|---|---|
-| 微信 | 扫码自动绑定 | 日常个人使用 |
-| 飞书 | 扫码自动绑定 | 办公场景，支持富文本消息 |
-| QQ | 填写 AppID 与 AppSecret | 需要一定配置能力的场景 |
+| 微信 | 扫码授权连接 | 日常个人使用 |
+| QQ | 扫码，或填写 App ID / Secret | 需要一定配置能力的场景 |
+| 企业微信 | 扫码授权连接 | 企业内部协作场景 |
+| 飞书 | 扫码授权连接 | 办公场景，支持富文本消息 |
+| 钉钉 | 扫码，或填写 Client ID / Secret | 企业办公与协作场景 |
 
-微信与飞书选择通道后点击「授权接入」生成二维码，使用手机扫码完成授权即可；QQ 则需先在 [QQ 开放平台](https://q.qq.com) 创建一个机器人，再将获得的 AppID 与 AppSecret 填回 LightVela。
+微信、企业微信与飞书选择通道后点击「连接」生成二维码，使用手机扫码完成授权即可；QQ 与钉钉除扫码外，也可在对应开放平台创建应用后，把获得的凭证（QQ 为 App ID / Secret，钉钉为 Client ID / Secret）填回 LightVela。
 
-各通道的详细接入步骤见 [配置通道 - 微信](./configuration/channel-wechat.md) / [飞书](./configuration/channel-feishu.md) / [QQ](./configuration/channel-qq.md)。
+各通道的详细接入步骤见 [配置通道 - 微信](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)。钉钉通道的配置文档待补充。
 
 > 💡 **多通道并存**
 >

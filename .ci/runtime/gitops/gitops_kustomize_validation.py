@@ -91,7 +91,7 @@ def load_catalog_targets(repo_root: Path, env: str, service_names: set[str] | No
 
 
 def is_playground_env(env: str) -> bool:
-    return re.fullmatch(r"sandbox-(bj|kr)-\d+", env) is not None
+    return re.fullmatch(r"sandbox-(bj|kr|jp)-\d+", env) is not None
 
 
 def catalog_dir_for_env(env: str) -> str:
@@ -115,6 +115,10 @@ def changed_direct_app_services_from_paths(paths: list[str], env: str) -> set[st
                 services.add(parts[2])
         elif path.startswith(app_prefix) and path.endswith(".yaml"):
             services.add(Path(path).stem)
+        else:
+            source_service = source_service_for_path(path)
+            if source_service:
+                services.add(source_service)
     return services
 
 
@@ -212,6 +216,7 @@ def source_service_for_path(path: str) -> str:
         "session",
         "subscription",
         "trade",
+        "velagw",
         "workers",
     }:
         return first

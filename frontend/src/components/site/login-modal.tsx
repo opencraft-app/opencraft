@@ -1,15 +1,25 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Loader2, Smartphone, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { PhoneLoginForm } from "@/components/auth/phone-login-form";
+import { AuthDialogFrame } from "@/components/site/auth-dialog-frame";
+import {
+  AUTH_DIALOG_PENDING_BUTTON_CLASS,
+  AUTH_DIALOG_PRIMARY_BUTTON_CLASS,
+} from "@/components/site/auth-dialog-styles";
+import { WeChatMobileBrowserGuide } from "@/components/site/wechat-mobile-browser-guide";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
-import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
-import { useT } from "@/i18n/t";
+import {
+  CN_PRIVACY_POLICY_URL,
+  CN_TERMS_OF_SERVICE_URL,
+} from "@/constants/legal";
+import { useLocaleOverride, useT } from "@/i18n/t";
+import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
-import { installShowPhoneLoginHelper, usePhoneLoginVisibility } from "@/lib/phone-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
   redirectToOAuthStart,
@@ -18,7 +28,8 @@ import {
   type OAuthProvider,
 } from "@/lib/oauth";
 import { assetUrl } from "@/lib/asset-url";
-import { isGlobal } from "@/lib/region";
+import { isGlobal, localizedPath } from "@/lib/region";
+import { cn } from "@/lib/utils";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 import { trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS } from "@/observability/datong";
@@ -65,15 +76,67 @@ const clearLoginProvider = () => {
  * - QQ / WeChat：沿用国内站原有的渐变底 + 品牌 logo 图
  * - Google / GitHub：沿用同款圆角浅色风格，图标用 SVG 占位（后续可换官方 brand assets）
  */
-const BUTTON_BASE_CLASS =
-  "group relative flex w-full items-center justify-center gap-2 rounded-full border px-8 py-[10px] text-sm font-medium transition-all duration-200 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none";
-const AGREEMENT_PENDING_BUTTON_CLASS = "cursor-not-allowed opacity-50 hover:shadow-none active:scale-100";
+const METHOD_BUTTON_CLASS =
+  "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300";
+const METHOD_ICON_SLOT_CLASS = "flex size-5 shrink-0 items-center justify-center";
 
 type ProviderButtonVisual = {
   /** i18n key 原文（中文），渲染时由 useT() 转换 */
   label: string;
   style: React.CSSProperties;
   renderIcon: () => React.ReactNode;
+};
+
+type DomesticLoginMethod = "wechat" | "phone" | "qq";
+
+type DomesticLoginMethodVisual = {
+  renderIcon: () => React.ReactNode;
+};
+
+const DOMESTIC_LOGIN_METHODS: DomesticLoginMethod[] = ["wechat", "phone", "qq"];
+
+const DOMESTIC_LOGIN_METHOD_VISUALS: Record<DomesticLoginMethod, DomesticLoginMethodVisual> = {
+  wechat: {
+    renderIcon: () => (
+      <span className={METHOD_ICON_SLOT_CLASS} aria-hidden="true">
+        <img
+          src={wechatLogo}
+          alt=""
+          className="size-5 select-none object-contain pointer-events-none"
+        />
+      </span>
+    ),
+  },
+  phone: {
+    renderIcon: () => (
+      <span className={METHOD_ICON_SLOT_CLASS} aria-hidden="true">
+        <Smartphone className="size-4 text-[var(--lw-accent)] pointer-events-none" />
+      </span>
+    ),
+  },
+  qq: {
+    renderIcon: () => (
+      <span className={METHOD_ICON_SLOT_CLASS} aria-hidden="true">
+        <img
+          src={qqLogo}
+          alt=""
+          className="size-5 select-none object-contain pointer-events-none"
+        />
+      </span>
+    ),
+  },
+};
+
+const domesticLoginMethodLabel = (method: DomesticLoginMethod, t: (s: string) => string) => {
+  switch (method) {
+    case "phone":
+      return t("手机");
+    case "qq":
+      return "QQ";
+    case "wechat":
+    default:
+      return t("微信");
+  }
 };
 
 const PROVIDER_BUTTON_VISUALS: Record<OAuthProvider, ProviderButtonVisual> = {
@@ -87,7 +150,8 @@ const PROVIDER_BUTTON_VISUALS: Record<OAuthProvider, ProviderButtonVisual> = {
     renderIcon: () => (
       <img
         src={qqLogo}
-        alt="QQ"
+        alt=""
+        aria-hidden="true"
         className="h-8 w-8 select-none object-contain pointer-events-none"
       />
     ),
@@ -102,7 +166,8 @@ const PROVIDER_BUTTON_VISUALS: Record<OAuthProvider, ProviderButtonVisual> = {
     renderIcon: () => (
       <img
         src={wechatLogo}
-        alt="微信"
+        alt=""
+        aria-hidden="true"
         className="h-8 w-8 select-none object-contain pointer-events-none"
       />
     ),
@@ -172,29 +237,58 @@ interface LoginModalProps {
   onClose: () => void;
   /** 登录成功后的回调（可选），默认仅关闭弹窗 */
   onSuccess?: () => void;
+  /** Federation keeps dismissal separate from successful authentication. */
+  closeOnSuccess?: boolean;
+  mode?: "login" | "switch-account";
+  onReturnToCurrentAccount?: () => void;
   initialError?: string | null;
 }
 
 /* ─── Login Modal Component ─── */
 
-export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: LoginModalProps) => {
+export const LoginModal = ({
+  open,
+  onClose,
+  onSuccess,
+  closeOnSuccess = true,
+  mode = "login",
+  onReturnToCurrentAccount,
+  initialError = null,
+}: LoginModalProps) => {
   const repositories = useRepositories();
   const { session } = useSession();
   const t = useT();
+  const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
   const showGitHubLogin = useGitHubLoginVisibility();
-  const showPhoneLogin = usePhoneLoginVisibility();
+  const currentLocale = resolveVisiblePublicSiteLocale(localeOverride, i18n.language);
+  const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
+  const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
+  const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
 
-  const [mounted, setMounted] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [phoneLoginOpen, setPhoneLoginOpen] = useState(false);
+  const [domesticLoginMethod, setDomesticLoginMethod] = useState<DomesticLoginMethod>("wechat");
+  const [wechatMobileGuideUrl, setWechatMobileGuideUrl] = useState<string | null>(null);
+  const [shouldFocusWechatMobileGuide, setShouldFocusWechatMobileGuide] = useState(false);
   // 确保 login_success 只上报一次（session.stage 变化可能触发多次 useEffect）
   const loginReportedRef = useRef(false);
 
-  useEffect(() => setMounted(true), []);
+  const buildWechatMobileGuideUrl = useCallback(() => {
+    if (
+      typeof window === "undefined" ||
+      wechatOAuthStartTargetForUserAgent(window.navigator.userAgent) !== "unsupported_mobile_browser"
+    ) {
+      return null;
+    }
+    return repositories.auth.getOAuthStartUrl("wechat", {
+      ...(mode === "switch-account" ? { switchAccount: true } : {}),
+      wechatMode: "official_account",
+    });
+  }, [mode, repositories.auth]);
+
   useEffect(() => installShowGitHubLoginHelper(), []);
-  useEffect(() => installShowPhoneLoginHelper(), []);
 
   // modal 关闭时重置 loginReportedRef，确保登出后再次登录能正常上报 login_success
   useEffect(() => {
@@ -203,9 +297,17 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open || isGlobal) return;
+    const guideUrl = buildWechatMobileGuideUrl();
+    setDomesticLoginMethod("wechat");
+    setWechatMobileGuideUrl(guideUrl);
+    setShouldFocusWechatMobileGuide(Boolean(guideUrl));
+  }, [buildWechatMobileGuideUrl, open]);
+
   // 当用户已登录时自动关闭弹窗并触发 onSuccess
   useEffect(() => {
-    if (!open) return;
+    if (!open || mode === "switch-account") return;
     if (session.stage === "authenticated" && session.user) {
       if (!loginReportedRef.current) {
         loginReportedRef.current = true;
@@ -217,10 +319,10 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
         });
         clearLoginProvider();
       }
-      onClose();
+      if (closeOnSuccess) onClose();
       onSuccess?.();
     }
-  }, [open, session.stage, session.user, onClose, onSuccess]);
+  }, [closeOnSuccess, mode, open, session.stage, session.user, onClose, onSuccess]);
 
   useEffect(() => {
     if (!open) return;
@@ -240,25 +342,37 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     return true;
   };
 
-  const getOAuthStartUrlForProvider = (provider: OAuthProvider) => {
-    if (provider !== "wechat") {
-      return repositories.auth.getOAuthStartUrl(provider);
-    }
-    const target = wechatOAuthStartTargetForUserAgent(window.navigator.userAgent);
-    if (target === "unsupported_mobile_browser") {
-      return null;
-    }
-    return repositories.auth.getOAuthStartUrl("wechat", { wechatMode: target });
-  };
-
   /* 统一的 OAuth 登录跳转入口 */
   const handleOAuthLogin = (provider: OAuthProvider) => {
     if (!checkAgreed()) return;
-    if (provider === "wechat" && wechatOAuthStartTargetForUserAgent(window.navigator.userAgent) === "unsupported_mobile_browser") {
-      setError(t("请在微信中打开当前页面后继续登录。"));
+    if (provider === "wechat") {
+      const target = wechatOAuthStartTargetForUserAgent(window.navigator.userAgent);
+      if (target === "unsupported_mobile_browser") {
+        const loginUrl = buildWechatMobileGuideUrl();
+        if (!loginUrl) {
+          setError(t("请在微信中打开当前页面后继续登录。"));
+          return;
+        }
+        setError(null);
+        setWechatMobileGuideUrl(loginUrl);
+        setShouldFocusWechatMobileGuide(true);
+        return;
+      }
+      const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
+        ...(mode === "switch-account" ? { switchAccount: true } : {}),
+        wechatMode: target,
+      });
+      if (!loginUrl) return;
+      setError(null);
+      captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, { provider });
+      rememberLoginProvider(provider);
+      redirectToOAuthStart(loginUrl);
       return;
     }
-    const loginUrl = getOAuthStartUrlForProvider(provider);
+    const loginUrl = repositories.auth.getOAuthStartUrl(
+      provider,
+      mode === "switch-account" ? { switchAccount: true } : undefined,
+    );
     if (!loginUrl) return;
     setError(null);
     captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, { provider });
@@ -266,192 +380,296 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     redirectToOAuthStart(loginUrl);
   };
 
-  const modal = (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.25 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.96 }}
-            transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("登录")}
-            className="relative mx-4 flex w-full max-w-[412px] flex-col overflow-hidden shadow-2xl"
-            style={{
-              background: "#fff",
-              borderRadius: 12,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close button */}
-            <button
-              onClick={onClose}
-              className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[rgba(0,0,0,0.05)]"
-              style={{ color: "rgba(0,0,0,0.5)" }}
-              aria-label={t("关闭")}
-            >
-              <X className="h-5 w-5" />
-            </button>
+  const handlePhoneSignedIn = () => {
+    trackDatongEvent(DATONG_EVENTS.LOGIN_SUCCESS, {
+      params: {
+        method: "phone",
+      },
+    });
+    if (closeOnSuccess) onClose();
+    onSuccess?.();
+  };
 
-            {/* Header — 标题 + 副标题（按设计稿不展示 Logo） */}
-            <div className="flex w-full flex-col items-center px-9 pt-10">
+  const domesticTitle = (() => {
+    switch (domesticLoginMethod) {
+      case "phone":
+        return t("手机登录");
+      case "qq":
+        return t("QQ登录");
+      case "wechat":
+      default:
+        return t("微信登录");
+    }
+  })();
+
+  const renderAgreementBlock = (className: string) => (
+    <div className={cn("flex w-full flex-col items-center", className)}>
+      <label className="flex cursor-pointer items-start gap-2 select-none">
+        <div className="relative mt-0.5 flex-shrink-0">
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => {
+              setAgreed(e.target.checked);
+              if (e.target.checked) setShowAgreeHint(false);
+            }}
+            className="peer sr-only"
+          />
+          <div
+            className="flex size-4 items-center justify-center rounded-full border-[1.5px] transition-all duration-200 peer-checked:border-[var(--lw-accent)] peer-checked:bg-[var(--lw-accent)]"
+            style={{
+              borderColor: showAgreeHint ? "#cf3d4c" : "#ccc",
+            }}
+          >
+            {agreed && (
+              <svg viewBox="0 0 12 12" className="size-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 6l3 3 5-5" />
+              </svg>
+            )}
+          </div>
+        </div>
+        <span className="text-xs leading-relaxed text-[var(--text-tertiary)]">
+          {t("我已阅读并同意")}{" "}
+          {isGlobal ? (
+            <a
+              href={termsOfServicePath}
+              className="font-medium hover:underline"
+              style={{ color: "var(--lw-accent)" }}
+            >
+              {t("《服务协议》")}
+            </a>
+          ) : (
+            <a
+              href={CN_TERMS_OF_SERVICE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline"
+              style={{ color: "var(--lw-accent)" }}
+            >
+              {t("《服务协议》")}
+            </a>
+          )}{" "}
+          {t("与")}{" "}
+          {isGlobal ? (
+            <a
+              href={privacyPolicyPath}
+              className="font-medium hover:underline"
+              style={{ color: "var(--lw-accent)" }}
+            >
+              {t("《隐私保护协议》")}
+            </a>
+          ) : (
+            <a
+              href={CN_PRIVACY_POLICY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline"
+              style={{ color: "var(--lw-accent)" }}
+            >
+              {t("《隐私保护协议》")}
+            </a>
+          )}
+          {isGlobal ? (
+            <>
+              {" "}
+              {t("与")}{" "}
+              <a
+                href={openSourceLicensesPath}
+                className="font-medium hover:underline"
+                style={{ color: "var(--lw-accent)" }}
+              >
+                {t("《开源声明》")}
+              </a>
+            </>
+          ) : null}
+        </span>
+      </label>
+      <AnimatePresence>
+        {showAgreeHint && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="mt-2 text-xs font-medium text-[var(--danger)]"
+          >
+            {t("请先勾选同意服务协议")}
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+
+  return (
+    <AuthDialogFrame
+      open={open}
+      onClose={onClose}
+      ariaLabel={mode === "switch-account" ? t("切换其他账号") : t("登录")}
+    >
+            {/* Header — 标题（按设计稿不展示 Logo） */}
+            <div className="flex w-full flex-col items-center px-9 pb-6 pt-10">
               <h2
                 className="text-[28px] font-medium leading-none"
                 style={{ color: "rgba(0,0,0,0.9)" }}
               >
-                {t("登录")}
+                {mode === "switch-account" ? t("切换其他账号") : isGlobal ? t("登录") : domesticTitle}
               </h2>
-              <p
-                className="mt-4 text-sm"
-                style={{ color: "rgba(0,0,0,0.5)" }}
-              >
-                {t("使用社交软件一键登录")}
-              </p>
-            </div>
-
-            {/* OAuth Login buttons — 放在 radio 上方
-             *   - 国际站：Google / GitHub（由 VISIBLE_OAUTH_PROVIDERS 决定）
-             *   - 国内站：QQ / 微信；且支持通过 show_github_login() 彩蛋追加 GitHub 入口 */}
-            <div className="flex w-full flex-col gap-4 px-9 pt-8">
-              {(() => {
-                const providers: OAuthProvider[] = [...VISIBLE_OAUTH_PROVIDERS];
-                if (
-                  ALLOW_GITHUB_EASTER_EGG &&
-                  showGitHubLogin &&
-                  !providers.includes("github")
-                ) {
-                  providers.push("github");
-                }
-                return providers.map((provider) => {
-                  if (provider !== "wechat" && !getOAuthStartUrlForProvider(provider)) return null;
-                  const visual = PROVIDER_BUTTON_VISUALS[provider];
-                  return (
-                    <button
-                      key={provider}
-                      type="button"
-                      onClick={() => handleOAuthLogin(provider)}
-                      aria-disabled={!agreed}
-                      className={`${BUTTON_BASE_CLASS} ${!agreed ? AGREEMENT_PENDING_BUTTON_CLASS : ""}`}
-                      style={visual.style}
-                    >
-                      {visual.renderIcon()}
-                      <span>{t(visual.label)}</span>
-                    </button>
-                  );
-                });
-              })()}
-              {showPhoneLogin ? (
-                phoneLoginOpen ? (
-                  <PhoneLoginForm beforeAction={checkAgreed} />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setPhoneLoginOpen(true)}
-                    aria-disabled={!agreed}
-                    className={`${BUTTON_BASE_CLASS} ${!agreed ? AGREEMENT_PENDING_BUTTON_CLASS : ""}`}
-                    style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
-                  >
-                    <span>{t("手机号登录")}</span>
-                  </button>
-                )
+              {isGlobal ? (
+                <p
+                  className="mt-4 text-center text-sm text-pretty"
+                  style={{ color: "rgba(0,0,0,0.5)" }}
+                >
+                  {t("使用社交软件一键登录")}
+                </p>
               ) : null}
             </div>
 
-            {/* Agreement — 放在登录按钮下方，必须先同意 */}
-            <div className="flex w-full flex-col items-center px-9 pb-6 pt-5">
-              <label className="flex cursor-pointer items-start gap-2 select-none">
-                <div className="relative mt-0.5 flex-shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={agreed}
-                    onChange={(e) => {
-                      setAgreed(e.target.checked);
-                      if (e.target.checked) setShowAgreeHint(false);
-                    }}
-                    className="peer sr-only"
+            {isGlobal ? (
+              <div className="flex w-full flex-col gap-4 px-9 pt-2">
+                {(() => {
+                  const providers: OAuthProvider[] = [...VISIBLE_OAUTH_PROVIDERS];
+                  if (
+                    ALLOW_GITHUB_EASTER_EGG &&
+                    showGitHubLogin &&
+                    !providers.includes("github")
+                  ) {
+                    providers.push("github");
+                  }
+                  return providers.map((provider) => {
+                    const loginUrl = repositories.auth.getOAuthStartUrl(provider);
+                    if (!loginUrl) return null;
+                    const visual = PROVIDER_BUTTON_VISUALS[provider];
+                    return (
+                      <button
+                        key={provider}
+                        type="button"
+                        onClick={() => handleOAuthLogin(provider)}
+                        aria-disabled={!agreed}
+                        className={`${AUTH_DIALOG_PRIMARY_BUTTON_CLASS} ${!agreed ? AUTH_DIALOG_PENDING_BUTTON_CLASS : ""}`}
+                        style={visual.style}
+                      >
+                        {visual.renderIcon()}
+                        <span>{t(visual.label)}</span>
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+            ) : (
+              <div className="flex w-full flex-col gap-5 px-9 pb-6 pt-0">
+                {domesticLoginMethod === "wechat" ? (
+                  wechatMobileGuideUrl ? (
+                    <WeChatMobileBrowserGuide
+                      loginUrl={wechatMobileGuideUrl}
+                      beforeCopy={checkAgreed}
+                      blocked={!agreed}
+                      autoFocus={shouldFocusWechatMobileGuide}
+                      onCopySuccess={() => {
+                        captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, {
+                          provider: "wechat",
+                          action: "copy_link",
+                        });
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOAuthLogin("wechat")}
+                      aria-disabled={!agreed}
+                      className={cn(AUTH_DIALOG_PRIMARY_BUTTON_CLASS, !agreed && AUTH_DIALOG_PENDING_BUTTON_CLASS)}
+                      style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
+                    >
+                      {PROVIDER_BUTTON_VISUALS.wechat.renderIcon()}
+                      <span>{t("微信账号登录")}</span>
+                    </button>
+                  )
+                ) : null}
+
+                {domesticLoginMethod === "phone" ? (
+                  <PhoneLoginForm
+                    variant="modal"
+                    beforeAction={checkAgreed}
+                    beforeSubmit={renderAgreementBlock("pt-0")}
+                    onSignedIn={handlePhoneSignedIn}
                   />
-                  <div
-                    className="flex h-4 w-4 items-center justify-center rounded-full border-[1.5px] transition-all duration-200 peer-checked:border-[var(--lw-accent)] peer-checked:bg-[var(--lw-accent)]"
-                    style={{
-                      borderColor: showAgreeHint ? "#cf3d4c" : "#ccc",
-                    }}
+                ) : null}
+
+                {domesticLoginMethod === "qq" ? (
+                  <button
+                    type="button"
+                    onClick={() => handleOAuthLogin("qq")}
+                    aria-disabled={!agreed}
+                    className={cn(AUTH_DIALOG_PRIMARY_BUTTON_CLASS, !agreed && AUTH_DIALOG_PENDING_BUTTON_CLASS)}
+                    style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
                   >
-                    {agreed && (
-                      <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M2 6l3 3 5-5" />
-                      </svg>
-                    )}
+                    {PROVIDER_BUTTON_VISUALS.qq.renderIcon()}
+                    <span>{t("QQ账号登录")}</span>
+                  </button>
+                ) : null}
+
+                {domesticLoginMethod === "phone" ? null : renderAgreementBlock("pt-0")}
+
+                <div className="flex flex-col items-center gap-3 border-t border-slate-100 pt-4">
+                  <span className="text-xs text-slate-500">{t("其他登录方式")}</span>
+                  <div className="flex flex-wrap items-center justify-center">
+                    {DOMESTIC_LOGIN_METHODS
+                      .filter((method) => method !== domesticLoginMethod)
+                      .map((method, index) => {
+                        const visual = DOMESTIC_LOGIN_METHOD_VISUALS[method];
+                        return (
+                          <div key={method} className="flex items-center">
+                            {index > 0 ? (
+                              <span
+                                aria-hidden="true"
+                                className="mx-1.5 h-3 w-px bg-slate-200"
+                              />
+                            ) : null}
+                            <button
+                              type="button"
+                              className={METHOD_BUTTON_CLASS}
+                              onClick={() => {
+                                setError(null);
+                                setShowAgreeHint(false);
+                                setShouldFocusWechatMobileGuide(false);
+                                setWechatMobileGuideUrl(method === "wechat" ? buildWechatMobileGuideUrl() : null);
+                                setDomesticLoginMethod(method);
+                              }}
+                            >
+                              {visual.renderIcon()}
+                              <span>{domesticLoginMethodLabel(method, t)}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    {ALLOW_GITHUB_EASTER_EGG && showGitHubLogin ? (
+                      <div className="flex items-center">
+                        <span
+                          aria-hidden="true"
+                          className="mx-1.5 h-3 w-px bg-slate-200"
+                        />
+                        <button
+                          type="button"
+                          className={METHOD_BUTTON_CLASS}
+                          onClick={() => handleOAuthLogin("github")}
+                          aria-disabled={!agreed}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="size-4 select-none pointer-events-none"
+                            fill="#181717"
+                            aria-hidden="true"
+                          >
+                            <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.11.82-.26.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                          </svg>
+                          <span>{t("GitHub 登录")}</span>
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-                <span className="text-xs leading-relaxed text-[var(--text-tertiary)]">
-                  {t("我已阅读并同意")}{" "}
-                  <a
-                    href="https://cloud.tencent.com/document/product/301/48034"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium hover:underline"
-                    style={{ color: "var(--lw-accent)" }}
-                  >
-                    {t("《服务协议》")}
-                  </a>{" "}
-                  {t("与")}{" "}
-                  {isGlobal ? (
-                    <a
-                      href="/privacy-policy"
-                      className="font-medium hover:underline"
-                      style={{ color: "var(--lw-accent)" }}
-                    >
-                      {t("《隐私保护协议》")}
-                    </a>
-                  ) : (
-                    <a
-                      href={CN_PRIVACY_POLICY_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium hover:underline"
-                      style={{ color: "var(--lw-accent)" }}
-                    >
-                      {t("《隐私保护协议》")}
-                    </a>
-                  )}
-                  {isGlobal ? (
-                    <>
-                      {" "}
-                      {t("与")}{" "}
-                      <a
-                        href="/open-source-licenses"
-                        className="font-medium hover:underline"
-                        style={{ color: "var(--lw-accent)" }}
-                      >
-                        {t("《开源声明》")}
-                      </a>
-                    </>
-                  ) : null}
-                </span>
-              </label>
-              {/* Agree hint */}
-              <AnimatePresence>
-                {showAgreeHint && (
-                  <motion.p
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    className="mt-2 text-xs font-medium text-[var(--danger)]"
-                  >
-                    {t("请先勾选同意服务协议")}
-                  </motion.p>
-                )}
-              </AnimatePresence>
-            </div>
+              </div>
+            )}
+
+            {isGlobal ? renderAgreementBlock("px-9 pb-6 pt-5") : null}
 
             {/* Error */}
             <AnimatePresence>
@@ -467,16 +685,18 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
               )}
             </AnimatePresence>
 
+            {mode === "switch-account" && onReturnToCurrentAccount ? (
+              <div className="flex justify-center px-9 pb-5">
+                <Button type="button" variant="ghost" onClick={onReturnToCurrentAccount}>
+                  {t("返回使用当前账号")}
+                </Button>
+              </div>
+            ) : null}
+
             {/* Bottom spacing when no error */}
             {!error && <div className="pb-2" />}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </AuthDialogFrame>
   );
-
-  if (!mounted) return null;
-  return createPortal(modal, document.body);
 };
 
 /* ═══════════════════════════════════════════════════════════════

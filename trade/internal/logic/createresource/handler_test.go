@@ -364,6 +364,68 @@ func TestHandler_AcquireWins_HappyPath_ReturnsSuccessAndMarksCompleted(t *testin
 	}
 }
 
+func TestRenewFlagFromGoodsDetail(t *testing.T) {
+	tests := []struct {
+		name        string
+		goodsDetail map[string]interface{}
+		want        string
+	}{
+		{name: "missing_goods_detail", want: "MANUAL_RENEW"},
+		{name: "missing_flag", goodsDetail: map[string]interface{}{}, want: "MANUAL_RENEW"},
+		{name: "numeric_auto_renew", goodsDetail: map[string]interface{}{"autoRenewFlag": float64(1)}, want: "AUTO_RENEW"},
+		{name: "string_auto_renew", goodsDetail: map[string]interface{}{"autoRenewFlag": "1"}, want: "AUTO_RENEW"},
+		{name: "default_flag", goodsDetail: map[string]interface{}{"autoRenewFlag": float64(0)}, want: "MANUAL_RENEW"},
+		{name: "explicit_no_renew", goodsDetail: map[string]interface{}{"autoRenewFlag": float64(2)}, want: "MANUAL_RENEW"},
+		{name: "unknown_number", goodsDetail: map[string]interface{}{"autoRenewFlag": float64(9)}, want: "MANUAL_RENEW"},
+		{name: "invalid_string", goodsDetail: map[string]interface{}{"autoRenewFlag": "auto"}, want: "MANUAL_RENEW"},
+		{name: "padded_string", goodsDetail: map[string]interface{}{"autoRenewFlag": " 1 "}, want: "MANUAL_RENEW"},
+		{name: "signed_string", goodsDetail: map[string]interface{}{"autoRenewFlag": "+1"}, want: "MANUAL_RENEW"},
+		{name: "leading_zero_string", goodsDetail: map[string]interface{}{"autoRenewFlag": "01"}, want: "MANUAL_RENEW"},
+		{name: "invalid_type", goodsDetail: map[string]interface{}{"autoRenewFlag": true}, want: "MANUAL_RENEW"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := renewFlagFromGoodsDetail(tt.goodsDetail); got != tt.want {
+				t.Fatalf("renewFlagFromGoodsDetail() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandler_AutoRenewFlagPassesToCTL(t *testing.T) {
+	p := defaultPara()
+	p.GoodsDetail["autoRenewFlag"] = float64(1)
+
+	flow := &fakeFlowStore{
+		tryAcquireFunc: func(_ context.Context, _, _, _ string, _ []byte) (bool, *store.Flow, error) {
+			return true, nil, nil
+		},
+	}
+	ctl := &fakeCTLClient{
+		completePassFunc: func(_ context.Context, req *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
+			if req.RenewFlag != "AUTO_RENEW" {
+				t.Fatalf("CompletePass RenewFlag = %q, want AUTO_RENEW", req.RenewFlag)
+			}
+			return &ctlclient.PassDetail{PassID: "pass-auto-renew"}, nil
+		},
+	}
+	order := &fakeOrderStore{
+		getFunc: func(_ context.Context, _ string) (*store.TradeOrder, error) {
+			return nil, store.ErrTradeOrderNotFound
+		},
+	}
+	deps := newDeps(order, flow, ctl, nil)
+
+	resp, err := makeHandler(deps)(context.Background(), paraJSON(t, p))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if resp.ReturnCode != 0 {
+		t.Fatalf("returnCode = %d, want 0; message=%q", resp.ReturnCode, resp.ReturnMessage)
+	}
+}
+
 // ===== Q56 退款路径：A 类业务永久错 ============================================
 
 func TestHandler_CTLReturns4xx_ReturnsRefundMagic_AndMarksFailed(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestGetOrCreateTrafficProbeKeyReturnsOneTimeV2KeyWithoutPersistingPlaintext(t *testing.T) {
+func TestGetOrCreateTrafficProbeKeyPersistsV2KeyOnlyInStore(t *testing.T) {
 	var tokenCreates atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -61,7 +61,7 @@ func TestGetOrCreateTrafficProbeKeyReturnsOneTimeV2KeyWithoutPersistingPlaintext
 	if err != nil || !ok {
 		t.Fatalf("stored probe binding: ok=%v err=%v", ok, err)
 	}
-	if stored.ExternalKey != "" {
-		t.Fatalf("stored external key plaintext = %q", stored.ExternalKey)
+	if stored.ExternalKey != result.Binding.ExternalKey {
+		t.Fatalf("stored external key = %q, want issued key", stored.ExternalKey)
 	}
 }

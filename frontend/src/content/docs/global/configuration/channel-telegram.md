@@ -1,5 +1,11 @@
 # 配置通道 - Telegram
 
+## 摘要
+
+**Telegram 通道采用 Bot Token 接入，适合快速把 Hermes Agent 接入 Telegram 私聊或群组：先在 Telegram 中通过 BotFather 创建机器人并获取 Bot Token，再填入 LightVela 管理台的「通道」完成接入。准备工作是一个 Telegram 账号，以及完成模型配置（或直接使用套餐按月提供的模型积分）。Bot Token 属于敏感凭证，请勿公开分享；接入后 Agent 在 Telegram 中与其他通道共享同一份人格与长期记忆。**
+
+---
+
 Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接入 Telegram 私聊或群组场景。
 
 ## 本页覆盖
@@ -46,6 +52,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 
 ![](../images/telegram-botfather-3-global.webp)
 
+
 ### 4. 复制 HTTP API 进「Telegram」
 
 将 HTTP API Token 粘贴到 token 栏位中。
@@ -56,7 +63,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 >
 > 请将 token 安全存储。任何获得该 token 的人都可以用它来控制你的机器人！
 
-### 5. 与 Telegram 里新的机器人聊天
+### 5. 与 Telegram 里的新机器人聊天
 
 点击 BotFather 提供的链接，现在你就可以开始与它互动了。
 
@@ -72,6 +79,27 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 
 <img src="../images/telegram-botfather-6-global.webp" alt="" width="360" />
 
+### 6. 可选：在 BotFather 中开启群消息
+
+仅当你需要在群组中使用机器人时，才需要完成第 6 步和第 7 步。
+完成第 5 步后，私聊已经可以正常使用。
+
+1. 在 Telegram 打开 `@BotFather`。
+2. 发送 `/mybots`。
+3. 选择已经连接到 Hermes Agent 的机器人。
+4. 进入「Bot Settings」。
+5. 选择「Group Privacy」。
+6. 选择关闭隐私模式。
+
+### 7. 可选：将机器人加入群组并测试
+
+1. 打开要使用的 Telegram 群组。
+2. 选择「添加成员」或对应的群管理操作。
+3. 按机器人用户名搜索，并将机器人添加到群组。
+4. 在群内使用 `@机器人用户名` 提及机器人并发送测试消息。
+
+关闭 Group Privacy 后，机器人可以接收被提及的群消息并回复。
+
 ---
 
 ## 成功状态
@@ -81,6 +109,8 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 - Telegram 联系人中可查找到对应机器人
 
 - 发送消息后能收到 Hermes Agent 回复
+
+- 在已添加机器人的群组中 `@` 机器人发送消息后能收到 Hermes Agent 回复
 
 
 ---
@@ -115,7 +145,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 | 点击接入后无响应 | 网络延迟或授权未完成 | 刷新管理台页面确认状态；若未接入成功则重新操作 |
 | Telegram 中找不到机器人 | 未点击 BotFather 提供的机器人链接，或未开始对话 | 点击 BotFather 提供的链接，进入机器人页面后点击 Start |
 | 发送消息后无回复 | 模型未配置、体验积分耗尽，或机器人尚未成功接入 | 检查「1. 模型」卡片的「当前模型」状态，并确认 Telegram 通道显示为已接入 |
-| 机器人无法接收群消息 | Telegram 群组隐私模式限制 | 在 BotFather 中检查 Bot Settings，必要时关闭 Group Privacy，或在群内 @ 机器人发送消息 |
+| 机器人无法接收群消息 | Group Privacy 未关闭、机器人未加入群组，或消息未提及机器人 | 在 BotFather 中发送 `/mybots`，选择机器人后进入「Bot Settings」→「Group Privacy」并关闭隐私模式；将机器人添加到群组，再用 `@机器人用户名` 发送测试消息 |
 | 如何解除绑定 | — | 在「已接入通道」列表中删除该 Telegram 记录 |
 | 同一个 Telegram Bot 能否接入多个 Hermes Agent | 通常不建议，一个 Bot Token 应绑定一个 Hermes Agent | 如需多个 Hermes Agent，建议分别创建不同的 Telegram Bot |
 
@@ -125,7 +155,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 
 - **消息类型**：支持文本、图片、视频、文件、语音等多种类型，详见上方「支持的消息类型」
 
-- **群聊支持**：当前不支持群聊，仅支持 1 对 1 对话
+- **群聊支持**：支持群消息。先在 BotFather 中关闭 Group Privacy，再将机器人添加到群组，并通过 `@机器人用户名` 发起对话
 
 - **连接中断**：长时间无响应可能为授权被撤销，回管理台重新授权接入即可
 
@@ -136,6 +166,8 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 - [配置通道 - WhatsApp](./channel-whatsapp.md) — 国际用户沟通与客户服务
 
 - [配置通道 - Discord](./channel-discord.md) — 社群运营与开发者社区
+
+- [配置通道 - Slack](./channel-slack.md) — 团队协作、工作区通知和频道任务流转
 
 - [配置通道 - QQ](./channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
 

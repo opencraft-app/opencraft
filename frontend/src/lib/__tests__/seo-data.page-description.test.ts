@@ -83,8 +83,15 @@ describe("getSeoMeta — page-level description override", () => {
       "/docs/configuration/channel-feishu",
       "/docs/configuration/automation",
       "/docs/configuration/agent-chat",
+      "/docs/configuration/memory",
+      "/docs/configuration/files",
+      "/docs/configuration/diagnostics",
+      "/docs/configuration/multiple-models",
       "/docs/faq",
-      "/docs/faq/using-lightvela-safely",
+      "/docs/plans",
+      "/docs/credits",
+      "/docs/create-first-hermes",
+      "/docs/who-is-lightvela-for",
     ];
 
     for (const path of cnDocPaths) {
@@ -100,6 +107,25 @@ describe("getSeoMeta — page-level description override", () => {
         const meta = getSeoMeta(path, "global");
         expect(meta.description).not.toBe(getSeoMeta("/", "global").description);
         expect(meta.description.length).toBeGreaterThan(20);
+      });
+    }
+  });
+
+  describe("global docs pages have explicit titles", () => {
+    const paths = [
+      "/docs/plans",
+      "/docs/credits",
+      "/docs/create-first-hermes",
+      "/docs/who-is-lightvela-for",
+      "/docs/configuration/memory",
+      "/docs/configuration/files",
+      "/docs/configuration/diagnostics",
+      "/docs/configuration/multiple-models",
+    ];
+
+    for (const path of paths) {
+      it(`global: ${path} does not use the not-found title`, () => {
+        expect(getSeoMeta(path, "global").title).not.toContain("Page Not Found");
       });
     }
   });
@@ -175,6 +201,20 @@ describe("getSeoMeta — page-level description override", () => {
       const a = getSeoMeta("/docs/overview", "global");
       const b = getSeoMeta("/docs/overview/", "global");
       expect(b.description).toBe(a.description);
+    });
+  });
+
+  describe("Spanish URL metadata", () => {
+    it("uses Spanish descriptions for home, About, and Docs", () => {
+      const home = getSeoMeta("/es", "global");
+      const about = getSeoMeta("/es/about", "global");
+      const docs = getSeoMeta("/es/docs/overview", "global");
+
+      expect(home.description).toContain("agente personal de IA");
+      expect(about.description).toContain("LightVela");
+      expect(docs.description).toContain("Hermes Agent");
+      expect(new Set([home.description, about.description, docs.description]).size).toBe(3);
+      expect([home, about, docs].every((meta) => !meta.description.startsWith("LightVela is"))).toBe(true);
     });
   });
 });

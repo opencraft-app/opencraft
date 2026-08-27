@@ -1,0 +1,130 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../user/auth/k8s/base
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: lightclaw-auth-config
+    namespace: user-auth
+    behavior: merge
+    literals:
+      - LIGHTCLAW_COOKIE_SECURE=false
+      - LIGHTCLAW_COOKIE_SAME_SITE=lax
+      - LIGHTCLAW_FRONTEND_BASE_URL=http://localhost:5173
+      - LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS=localhost,127.0.0.1,::1,http://localhost:5173,http://127.0.0.1:5173
+      - LIGHTCLAW_PUBLIC_BASE_URL=http://localhost:8085
+      - LIGHTCLAW_QQ_APP_ID=local-qq-app-id
+      - LIGHTCLAW_QQ_REDIRECT_URI=http://localhost:8085/auth/oauth/qq/callback
+      - LIGHTCLAW_QQ_AUTHORIZE_URL=http://localhost:19010/oauth2.0/authorize
+      - LIGHTCLAW_QQ_API_BASE_URL=http://fake-qq-oauth.localstack-system.svc.cluster.local:19010
+      - LIGHTCLAW_WECHAT_APP_ID=
+      - LIGHTCLAW_WECHAT_REDIRECT_URI=http://localhost:8085/auth/oauth/wechat/callback
+      - LIGHTVELA_WECHAT_WEBSITE_APP_ID=
+      - LIGHTVELA_WECHAT_WEBSITE_REDIRECT_URI=http://localhost:8085/auth/oauth/wechat/callback
+      - LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_ID=
+      - LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI=http://localhost:8085/auth/oauth/wechat/callback
+      - LIGHTCLAW_GITHUB_CLIENT_ID=
+      - LIGHTCLAW_GITHUB_REDIRECT_URI=http://localhost:8085/auth/oauth/github/callback
+      - MYSQL_HOST=mysql.localstack-system.svc.cluster.local
+      - MYSQL_PORT=3306
+      - LIGHTCLAW_EMAIL_BIND_ENABLED=false
+      - CONTENT_AUDIT_ENABLED=false
+      - CONTENT_AUDIT_AVATAR_ENABLED=false
+      - LIGHTVELA_E2E_AUTH_ENABLED=true
+      - LIGHTCLAW_REALNAME_ASSURANCE_MODE=legacy
+      - TENCENT_REALNAME_ENDPOINT=fake-tencentcloud.localstack-system.svc.cluster.local:19443
+      - SSL_CERT_FILE=/etc/lightclaw/localstack-ca/ca.crt
+  - name: localstack-tencentcloud-ca
+    namespace: user-auth
+    files:
+      - ca.crt=../../local/mockservers/tencentcloud/tls/ca.crt
+secretGenerator:
+  - name: lightclaw-auth-secrets
+    namespace: user-auth
+    envs:
+      - secrets.defaults.env
+images:
+  - name: REPLACE_AUTH_IMAGE
+    newName: lightclaw-local/lightclaw-auth
+    newTag: dev
+patches:
+  - target:
+      kind: ServiceAccount
+      name: default
+      namespace: user-auth
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+        namespace: user-auth
+  - target:
+      kind: Deployment
+      name: lightclaw-auth
+      namespace: user-auth
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/topologySpreadConstraints
+      - op: replace
+        path: /spec/template/metadata/annotations/lightclaw-auth.clawhub.dev~1redeploy-at
+        value: localstack
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts
+        value:
+          - name: localstack-tencentcloud-ca
+            mountPath: /etc/lightclaw/localstack-ca
+            readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes
+        value:
+          - name: localstack-tencentcloud-ca
+            configMap:
+              name: localstack-tencentcloud-ca
+  - target:
+      kind: Deployment
+      name: lightclaw-auth-content-audit-worker
+      namespace: user-auth
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: lightclaw-auth-content-audit-worker
+        namespace: user-auth
+  - target:
+      kind: Service
+      name: lightclaw-auth-internal
+      namespace: user-auth
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: lightclaw-auth-internal
+        namespace: user-auth
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: lightclaw-auth
+      namespace: user-auth
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: lightclaw-auth
+        namespace: user-auth
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false
+    includeTemplates: true

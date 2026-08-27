@@ -67,6 +67,13 @@ spec:
             secretKeyRef:
               key: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
               name: cloudladdergateway-callback-secrets
+        - name: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_KRSBX_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudladdergateway-krsbx-callback-secrets
+              key: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BJ_BASE_URL
@@ -79,6 +86,14 @@ spec:
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_NJ_BASE_URL
           value: https://lightclaw.tech
+        # 按影子账号 uin 把 jifei 回调分派到各开发者的个人测试环境。
+        # 表里没有的 uin 走 jifei-callback 自身的 base_url 兜底（beijing-sandbox）。
+        # 加人时改这一行 + 对应 DEV_<N>_BASE_URL 即可，不需要重建镜像。
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_UIN_ROUTES
+          value: 700003135209=jifei-callback-dev-1
+        # 各开发者环境的可达地址（config.example.yaml 里是黑洞占位，必须在这里覆盖）。
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_1_BASE_URL
+          value: http://9.134.214.121:18084
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always
         name: gateway

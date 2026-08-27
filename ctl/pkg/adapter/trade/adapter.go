@@ -60,7 +60,28 @@ type PlaceOrderRequest struct {
 	TimeUnit       string `json:"timeUnit"`
 	GoodsNum       int    `json:"goodsNum"`
 	PayMode        int    `json:"payMode"`
+	AutoRenewFlag  string `json:"auto_renew_flag,omitempty"`
 	// 注：Q41 修订 2026-05-11 删除 RegionID 字段。trade 内部固定 1（广州），ctl 不再透传。
+}
+
+type GrantDianshiSubscriptionRequest struct {
+	PlaceOrderRequest
+	ActivityID   int64  `json:"activityId"`
+	ActID        int64  `json:"actId"`
+	TimeSpanUnit string `json:"timeSpanUnit"`
+	SecretKey    string `json:"secretKey"`
+}
+
+type GrantDianshiSubscriptionResult struct {
+	Status     string `json:"status"`
+	DealName   string `json:"dealName,omitempty"`
+	BigOrderID string `json:"bigOrderId,omitempty"`
+}
+
+// DianshiGrantAdapter is kept separate from Adapter so existing consumers and
+// test doubles do not need to implement the one-off campaign capability.
+type DianshiGrantAdapter interface {
+	GrantDianshiSubscription(ctx context.Context, req *GrantDianshiSubscriptionRequest) (*GrantDianshiSubscriptionResult, error)
 }
 
 // PlaceOrderResult 与 trade placeOrderResponse 字段集对齐。
@@ -135,9 +156,11 @@ type PayURLResult struct {
 // 透传给 trade pay-url 端点，trade 再透传给 jifei getMidasEarmarking。
 // 全部字段可选；空值时不透传（兼容现有行为）。
 type GeneratePayURLOptions struct {
-	Platform string `json:"platform,omitempty"`   // "pc" / "mobile"，默认 "pc"
-	WxOpenID string `json:"wx_open_id,omitempty"` // 微信场景必填
-	WxAppID  string `json:"wx_app_id,omitempty"`  // 微信场景必填，ctl 侧注入固定值
+	Platform  string `json:"platform,omitempty"`   // "pc" / "mobile"，默认 "pc"
+	WxOpenID  string `json:"wx_open_id,omitempty"` // 微信场景必填
+	WxAppID   string `json:"wx_app_id,omitempty"`  // 微信场景必填，ctl 侧注入固定值
+	CancelURL string `json:"cancel_url,omitempty"` // 取消支付后的前端回跳地址
+	ReturnURL string `json:"return_url,omitempty"` // 完成支付后的前端回跳地址
 }
 
 // CompleteFlowRequest 与 trade /internal/trade/flows/{flow_id}/complete 入参对齐。
@@ -242,7 +265,7 @@ type InquiryBatchRequest struct {
 // BundleQuote 是 trade 询价响应单条 bundle 报价（用于 ctl 端 JSON 反序列化）。
 //
 // **字段集精简（v1.7.28 BUG-04 拍板 = C 路径）**：仅保留 ctl 业务真消费的字段
-// （bundle 标识 + 价格 5 字段），删除 jifei 协议层死字段。设计原则:
+// （bundle 标识 + 价格 6 字段），删除 jifei 协议层死字段。设计原则:
 //
 //  1. ctl 是 lightclaw 业务层，**不应感知 jifei 协议层** product_code / sub_product_code / pid
 //     等字段（这些归 trade 持有 + ELK 落日志兜底，前端排障应看后端日志而不是 response body）
@@ -254,7 +277,7 @@ type InquiryBatchRequest struct {
 //
 // 字段语义：
 //   - BundleID：用于 fetchBundleQuotes map key + 审计
-//   - Price / TotalCost / RealTotalCost：价格（带小数字符串，单位分）
+//   - Price / TotalCost / TaxPrice / RealTotalCost：价格（带小数字符串，单位分）
 //   - Currency：币种（"CNY" 等）
 //   - Discount：policyDetail.total 拍平折扣率（100 = 无折扣）
 //
@@ -263,6 +286,7 @@ type BundleQuote struct {
 	BundleID      string  `json:"bundle_id"`
 	Price         string  `json:"price"`           // 单价（带小数字符串）
 	TotalCost     string  `json:"total_cost"`      // 折扣前总价
+	TaxPrice      string  `json:"tax_price"`       // 实付金额对应税额
 	RealTotalCost string  `json:"real_total_cost"` // 实付总价（折扣后）
 	Currency      string  `json:"currency"`        // 通常 "CNY"
 	Discount      float64 `json:"discount"`        // policyDetail.total 拍平
@@ -354,6 +378,10 @@ type Adapter interface {
 	// 出参 PayURL/ExpireAt 永远为空（一体化接口跳过支付 URL 概念），调用方应仅
 	// 关心 DealName / BigOrderID。
 	PlaceOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
+
+	// PlaceDianshiOrderAndPay uses the dedicated Dianshi do_goods_and_pay path.
+	// Trade rejects bundles that are not eligible for the configured activity.
+	PlaceDianshiOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
 
 	// MoveInOrderAndPay 调 trade POST /internal/trade/orders/move-in，为存量 pass 创建外部资源迁入单。
 	MoveInOrderAndPay(ctx context.Context, req *MoveInOrderRequest) (*PlaceOrderResult, error)
@@ -678,6 +706,38 @@ func (a *adapter) PlaceOrderAndPay(ctx context.Context, req *PlaceOrderRequest) 
 	return &result, nil
 }
 
+func (a *adapter) PlaceDianshiOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: PlaceDianshiOrderAndPay request is nil")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/orders/place-and-pay"
+	var result PlaceOrderResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (a *adapter) GrantDianshiSubscription(ctx context.Context, req *GrantDianshiSubscriptionRequest) (*GrantDianshiSubscriptionResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: GrantDianshiSubscription request is nil")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/subscriptions/grant"
+	var result GrantDianshiSubscriptionResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (a *adapter) MoveInOrderAndPay(ctx context.Context, req *MoveInOrderRequest) (*PlaceOrderResult, error) {
 	if a.config.BaseURL == "" {
 		return nil, fmt.Errorf("trade adapter: base_url not configured")
@@ -744,7 +804,8 @@ func (a *adapter) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 
 	// opts 非 nil 时作为 body 透传；否则传 nil 兼容现有行为（trade 端点接受空 body）。
 	var body interface{}
-	if opts != nil && (opts.Platform != "" || opts.WxOpenID != "" || opts.WxAppID != "") {
+	if opts != nil && (opts.Platform != "" || opts.WxOpenID != "" || opts.WxAppID != "" ||
+		opts.CancelURL != "" || opts.ReturnURL != "") {
 		body = opts
 	}
 

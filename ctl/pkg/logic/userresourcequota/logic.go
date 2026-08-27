@@ -7,11 +7,13 @@ import (
 
 const (
 	resourceNameOpenclawInstance = "OPENCLAW_INSTANCE"
+	ResourceNameWebsiteSite      = "WEBSITE_STATIC_SITE"
 )
 
 var (
 	defaultQuotaTotalMap = map[string]int64{
 		resourceNameOpenclawInstance: 5,
+		ResourceNameWebsiteSite:      0, // 默认0，由套餐配置决定
 	}
 )
 

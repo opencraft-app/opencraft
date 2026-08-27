@@ -4,8 +4,6 @@ export type OAuthProvider = "qq" | "wechat" | "google" | "github";
 export type WeChatOAuthMode = "website" | "official_account";
 export type WeChatOAuthStartTarget = WeChatOAuthMode | "unsupported_mobile_browser";
 
-export const WECHAT_MOBILE_BROWSER_PROMPT = "请在微信中打开当前页面后继续登录。";
-
 /**
  * 当前区域允许展示的 OAuth 登录渠道（编译期常量）。
  * - 国内站：QQ / 微信（GitHub 彩蛋走 useGitHubLoginVisibility 动态开启）
@@ -63,6 +61,19 @@ export const wechatOAuthStartTargetForUserAgent = (userAgent: string): WeChatOAu
 export const oauthErrorMessage = (oauthError: string | null) => {
   if (!oauthError) {
     return null;
+  }
+
+  if (oauthError === "github_registration_disabled") {
+    return "GitHub registration is unavailable. Please sign in with Google.";
+  }
+  if (oauthError === "github_email_suffix_blocked") {
+    return "This email domain is not supported for registration. Please use another email.";
+  }
+  if (oauthError === "github_email_required") {
+    return "GitHub needs a verified email to register. Please add or verify your primary email on GitHub, then try again.";
+  }
+  if (oauthError === "qq_registration_disabled") {
+    return "QQ 暂不开放新用户注册，请使用微信登录。";
   }
 
   for (const provider of ["qq", "wechat", "google", "github"] as const) {

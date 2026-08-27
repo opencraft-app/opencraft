@@ -1,12 +1,18 @@
 # Chat
 
+## Summary
+
+**The Chat page is a messaging window built into the LightVela console, letting you talk to your Hermes Agent directly without connecting any external channel — handy for verifying that the agent works right after you configure a model. It shares the same agent, the same persona, and the same long-term memory as your external messaging channels, so a preference you mention here also applies in those channels, and vice versa.**
+
+---
+
 Open the "Chat" page to interact with your Hermes Agent through a chat window.
 
 > ℹ️ **Heads-up**
 >
 > AgentChat's interface guide is currently primarily in Chinese; full localization is on the way.
 
-![](../images/agentchat-1-global-en.webp)
+![The Chat page in the LightVela console](../images/chat-overview-en.png)
 
 ---
 

@@ -13,7 +13,9 @@ on:
       - argocd/apps/*/ctl.yaml
       - argocd/secrets/*/ctl-conf-common.sops.yaml
       - argocd/secrets/*/ctl-conf-rewrite.sops.yaml
+      - argocd/secrets/*/ctl-agentchat-secrets.sops.yaml
       - argocd/secrets/*/ctl-runtime-secrets.sops.yaml
+      - argocd/secrets/*/ctl-website-runtime-secrets.sops.yaml
     paths-ignore:
       - OWNERS
       - "**/OWNERS"
@@ -36,5 +38,8 @@ extends:
     MASTER_BUILD_ENVS: beijing-sandbox,shprod,sgprod
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
     ENABLE_MASTER_PROD_DB_MIGRATION: true
+    # Static website schema 000028 is required by both domestic and international production.
+    ENABLE_MASTER_SHPROD_DB_MIGRATION: true
+    ENABLE_MASTER_SGPROD_DB_MIGRATION: true
     PLAYGROUND_BUILD_ENVS: auto
     PLAYGROUND_AUTO_PIN_ENVS: auto

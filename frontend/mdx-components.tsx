@@ -34,14 +34,34 @@ function calloutTitle(node: ReactNode): string {
     .trim();
 }
 
+function splitInlineCalloutTitle(node: ReactNode): { title: string; body: ReactNode[] } {
+  if (!isValidElement<{ children?: ReactNode }>(node)) {
+    return { title: calloutTitle(node), body: [] };
+  }
+
+  const children = Children.toArray(node.props.children);
+  const titleIndex = children.findIndex((child) => isValidElement(child) && child.type === 'strong');
+  if (titleIndex < 0) {
+    return { title: calloutTitle(node), body: [] };
+  }
+
+  return {
+    title: extractText(children[titleIndex]),
+    body: children.slice(titleIndex + 1),
+  };
+}
+
 function LightVelaCallout({ children, kind }: { children: ReactNode; kind: CalloutKind }) {
   const blocks = Children.toArray(children);
   const titleBlockIndex = blocks.findIndex((block) => detectCalloutKind(extractText(block)) === kind);
   const titleBlock = titleBlockIndex >= 0 ? blocks[titleBlockIndex] : blocks[0];
-  const title = calloutTitle(titleBlock);
+  const { title, body: inlineBody } = splitInlineCalloutTitle(titleBlock);
   const body = titleBlockIndex >= 0
     ? blocks.filter((_, index) => index !== titleBlockIndex)
     : blocks.slice(1);
+  if (inlineBody.length > 0) {
+    body.unshift(<p key="inline-callout-body">{inlineBody}</p>);
+  }
 
   return (
     <aside className={`lv-docs-callout lv-docs-callout--${kind}`}>

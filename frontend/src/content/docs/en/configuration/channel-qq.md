@@ -1,5 +1,11 @@
 # Configure Channel - QQ
 
+## Summary
+
+**The QQ channel is the one that needs parameters entered by hand: create a bot on the QQ Open Platform, get its AppID and AppSecret, then paste them into the Channels section of the LightVela console. The whole thing takes about 5–10 minutes. You need a QQ account to act as the bot administrator and a configured model (or simply the monthly model credits included with your plan). By comparison, WeChat, WeCom, and Lark all connect by scanning a QR code. Once connected, the agent in QQ shares the same persona and long-term memory as your other channels.**
+
+---
+
 The QQ channel requires creating a bot on the QQ Open Platform, then filling the resulting **AppID** and **AppSecret** into LightVela. The whole process takes about 5–10 minutes.
 
 ## This page covers
@@ -90,9 +96,9 @@ You'll receive a Hermes Agent reply within seconds.
 
 ![](../images/qq5.webp)
 
-> ⚠️ **Group chats are not yet recommended**
+> ✅ **QQ group mentions are supported**
 >
-> The current version does not recommend adding the QQ bot to group chats for multi-party conversation.
+> After QQ binding succeeds, LightVela enables Hermes' QQ group-chat policy by default. Add the bot to a QQ group, then mention it to start a conversation. The default policy is `open`, which means members of QQ groups that contain the bot can mention it to chat. Regular group messages without a mention do not trigger a conversation.
 
 ## Success state
 
@@ -101,6 +107,8 @@ You'll receive a Hermes Agent reply within seconds.
 - A "QQ" entry appears in the console's "Connected Channels" list
 
 - The bot in QQ replies properly using AI
+
+- The bot replies in QQ groups when mentioned
 
 
 ---
@@ -145,7 +153,7 @@ After integration, the QQ bot supports more than basic text. The full list:
 
 - **Message types**: Text, images, files, voice, and more — see "Supported message types" above
 
-- **Group chat support**: The current version does not recommend adding the bot to QQ group chats
+- **Group chat support**: Group mentions are enabled by default after binding. The console applies the `open` policy, allowing members of QQ groups containing the bot to mention it to chat. To restrict access to selected groups, switch the Hermes instance configuration to `allowlist` and maintain the allowlist there; the channel card does not expose this switch yet
 
 - **Credential management**: The AppSecret is only visible in plaintext at creation time; if lost or leaked, it must be reset
 

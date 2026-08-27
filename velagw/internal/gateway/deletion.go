@@ -260,7 +260,8 @@ func (s *Service) deleteTenantRemoteResources(ctx context.Context, externalUserI
 		return err
 	}
 	userClient := s.newAPIClient(set.BaseURL)
-	if _, err := userClient.Login(ctx, binding.Username, binding.Password); err != nil {
+	session, err := userClient.Login(ctx, binding.Username, binding.Password)
+	if err != nil {
 		existingUser, findErr := adminClient.FindUser(ctx, auth, binding.Username)
 		if errors.Is(findErr, newapi.ErrNotFound) {
 			return nil
@@ -270,7 +271,7 @@ func (s *Service) deleteTenantRemoteResources(ctx context.Context, externalUserI
 		}
 		return err
 	}
-	accessToken, err := userClient.GenerateAccessToken(ctx, binding.UpstreamUserID)
+	accessToken, err := userClient.GenerateAccessToken(ctx, binding.UpstreamUserID, session.AccessToken)
 	if err != nil {
 		return err
 	}

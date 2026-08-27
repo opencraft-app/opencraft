@@ -126,6 +126,8 @@
 
 - `/agents/automations` 由 `hermes-agent-automations-panel.tsx` 承载，复用
   `lib/hermes-cron-client.ts` 管理普通自动任务模板、创建、编辑、暂停、恢复、删除和最近执行。
+- 自动任务列表按任务生命周期分为“当前任务 / 已结束任务”，执行历史继续由“最近执行”承载：
+  `paused/disabled` 留在当前任务，`completed/error/done/expired/cancelled/canceled` 及超出宽限期的过时单次任务进入已结束任务；结束卡片必须区分完成、失败、过期和取消，不得把任务生命周期结束等同于某次执行成功。
 - `pages/marketing/scenario-tasks/` 保留场景配置、prompt/schedule builder、安装弹窗、启用确认弹窗和目标单测。
 - **当前产品状态（2026-07-14 起）**：国内站与国际站均不渲染 `ScenarioTaskGrid`，也不提供场景任务的用户可达入口；现有普通自动任务能力不受影响。不得仅根据目录仍存在就推断场景卡片已经上线。
 - 场景扫码实现调用 `acli gateway qr-url --platform <platform> --wait true`。由于命令会在扫码完成前持续运行，前端必须通过可取消的 SSE `debug/exec` 流式读取 stdout，在二维码 URL 出现后立即展示；关闭、刷新或重试时取消旧请求。

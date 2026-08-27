@@ -1,15 +1,47 @@
 import { createMDX } from 'fumadocs-mdx/next';
+import { fileURLToPath } from 'node:url';
+
+import { isGlobalRegion, resolvePageExtensions } from './next-site/page-extensions.mjs';
 
 const teaThemeableResetCss = '@tencent/tea-component/dist/tea-themeable.css';
 const teaThemeableNoResetCss = '@tencent/tea-component/dist/tea-no-reset.css';
 const isDevelopment = process.env.NODE_ENV === 'development';
+const isLocalProxy = (process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.VITE_AUTH_API_BASE_URL || '').trim().toLowerCase() === 'local-proxy';
+const localProxyTarget = (
+  process.env.NEXT_PUBLIC_LOCAL_PROXY_TARGET
+  || process.env.VITE_LOCAL_PROXY_TARGET
+  || (isGlobalRegion()
+    ? 'https://api.lightvela.ai'
+    : 'https://lightclaw.tech')
+).replace(/\/$/, '');
+
+const localProxyRewrites = isLocalProxy
+  ? [
+      {
+        source: '/auth/:path*',
+        destination: `${localProxyTarget}/auth/:path*`,
+      },
+      {
+        source: '/subscriptions/:path*',
+        destination: `${localProxyTarget}/subscriptions/:path*`,
+      },
+      {
+        source: '/v1/:path*',
+        destination: `${localProxyTarget}/v1/:path*`,
+      },
+      {
+        source: '/api/worker-actions/:path*',
+        destination: `${localProxyTarget}/api/worker-actions/:path*`,
+      },
+    ]
+  : [];
 
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
   devIndicators: false,
   transpilePackages: ['velachat'],
-  output: 'export',
+  output: isDevelopment ? undefined : 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,
   // 桥接 VITE_AUTH_API_BASE_URL 到客户端 bundle，供 datong.ts 推断部署环境使用。
@@ -17,12 +49,17 @@ const config = {
   env: {
     VITE_AUTH_API_BASE_URL: process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.VITE_AUTH_API_BASE_URL || '',
   },
-  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev'],
-  pageExtensions: ['next.tsx', 'next.ts'],
+  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev','intl-sandbox-kr-1.preview.lightclaw.tech'],
+  // `.intl.tsx` = 仅国际站存在的页面（当前是 src/app/(site)/[lang]/**）。
+  // 为什么不能用「generateStaticParams 返回空数组」表达国内站不需要 [lang]，
+  // 见 next-site/page-extensions.mjs 的注释（Next 在 output: 'export' 下会报
+  // missing "generateStaticParams()" 并中断构建）。
+  pageExtensions: resolvePageExtensions(),
   ...(isDevelopment
     ? {
         async rewrites() {
           return [
+            ...localProxyRewrites,
             {
               source: '/__skillhub_api/:path*',
               destination: 'https://api.skillhub.cn/:path*',
@@ -35,10 +72,14 @@ const config = {
     unoptimized: true,
   },
   turbopack: {
-    root: new URL('.', import.meta.url).pathname,
+    root: fileURLToPath(new URL('.', import.meta.url)),
     resolveAlias: {
       // AgentChat pulls Tea UI styles as a side effect. Use Tea's no-reset
       // build so the chat page cannot globally reset host page elements.
+      // 历史：SDK @tencent/agentchat-lightvela-panel@1.4.2 已处理掉直接依赖，
+      // 实测侧栏 <a> 不再被 tea-themeable.css 染蓝（global.css 里的 revert-layer
+      // 防护已随之移除）。此 alias 保留作为构建层兜底，防止未来 SDK 任一环节
+      // 退化时污染再次进入产物。
       [teaThemeableResetCss]: teaThemeableNoResetCss,
     },
     rules: {

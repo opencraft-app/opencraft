@@ -30,6 +30,7 @@ import {
   type SkillsDemoMode,
   type SkillsDemoTab,
 } from "@/pages/marketing/skills-demo/SkillsDemoPanel";
+import { ZhHantScope } from "@/pages/marketing/zh-hant-scope";
 
 type LearnSkillSourceKind = "cloud" | "url" | "notes" | "upload";
 type LearnSkillStatus = "idle" | "loading" | "learning" | "success" | "error";
@@ -1248,16 +1249,22 @@ export function HermesAgentSkillsPanel({
   execDebugCommand,
   initialSectionSlug,
 }: HermesAgentSkillsPanelProps) {
+  const repositories = useRepositories();
   const t = useT();
   const { i18n } = useTranslation();
-  const globalExpertLanguage = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+  const globalExpertLanguage = i18n.resolvedLanguage === "es"
+    ? "es"
+    : i18n.resolvedLanguage?.startsWith("zh")
+      ? "zh"
+      : "en";
   const initialGlobalSkillsTab: SkillsDemoTab = initialSectionSlug === "experts" || initialSectionSlug === "packages"
     ? "experts"
     : "discover";
   const [skillsPanelRevision, refreshSkillsPanel] = useState(0);
 
   return (
-    <Tabs value="skills" className="min-w-0">
+    <ZhHantScope className="min-w-0">
+      <Tabs value="skills" className="min-w-0">
       <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
         <TabsList
           aria-label={t("技能页面切换")}
@@ -1283,10 +1290,16 @@ export function HermesAgentSkillsPanel({
           key={`${botId}-${skillsPanelRevision}`}
           botId={botId}
           execDebugCommand={execDebugCommand}
+          execDebugCommandStream={repositories.bots.execDebugCommandStream}
           mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
           initialTab={initialGlobalSkillsTab}
           expertsPanel={(
-            <ExpertsPanel botId={botId} execDebugCommand={execDebugCommand} lang={isGlobal ? globalExpertLanguage : undefined} />
+            <ExpertsPanel
+              botId={botId}
+              execDebugCommand={execDebugCommand}
+              execDebugCommandStream={repositories.bots.execDebugCommandStream}
+              lang={isGlobal ? globalExpertLanguage : undefined}
+            />
           )}
           learnSkillPanel={(
             <LearnSkillDialog
@@ -1309,6 +1322,7 @@ export function HermesAgentSkillsPanel({
           )}
         />
       </TabsContent>
-    </Tabs>
+      </Tabs>
+    </ZhHantScope>
   );
 }

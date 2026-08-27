@@ -4,7 +4,7 @@
 
 ## Decision
 
-用于外部文章、社媒内容、Techpedia 和其他内容反链的 `lightvela.ai` 链接，统一通过 `from` 查询参数标记发布来源。
+用于外部文章、社媒内容、社区内容、邮件分发、Techpedia 和其他内容反链的 `lightvela.ai` 链接，统一通过 `from` 查询参数标记发布来源。
 
 一篇文章内的所有 `lightvela.ai` 链接必须使用同一个来源值，包括正文内链、官网 CTA、Community ending 和引用链接。
 
@@ -17,6 +17,21 @@
 | LinkedIn | `social_linkedin` |
 | Product Hunt | `social_producthunt` |
 | Tencent Techpedia / 技术百科 | `social_techpedia` |
+| LowEndTalk | `lowendtalk` |
+| Email / 邮件分发 | `email` |
+| Discord | `discord` |
+
+以上值是当前 LightVela 外部内容和分发渠道的已登记值。
+
+新增发布平台前，先在本表登记稳定的 `from` 值，再在对应 Skill 或内容模板中使用。
+
+`from` 值应保持小写，并优先使用本表中的固定值，不要在同一渠道下临时创建同义值。
+
+## 非内容归因参数
+
+仓库中还存在 `from=mcp`、`from=subscribe` 等内部工具或产品流程参数。
+
+这些参数不属于本页的外部内容渠道归因，不应加入发布平台映射表，也不能用于替代内容分发渠道值。
 
 未列入表格的平台不能自行猜测或复用其他来源值，应先补充渠道映射后再发布。
 
@@ -36,7 +51,7 @@
 
 具体执行规则：
 
-- [`lv-longform-content/SKILL.md`](../../../.agents/skills/lv-longform-content/SKILL.md)
+- [`lv-longform-content/SKILL.md`](../../../.agents/skills/product-skills/lv-longform-content/SKILL.md)
 - [`lv-seo-geo/SKILL.md`](../../../.agents/skills/product-skills/lv-seo-geo/SKILL.md)
 
 ## Context

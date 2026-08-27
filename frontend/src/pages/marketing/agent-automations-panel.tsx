@@ -17,9 +17,12 @@
 import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useT } from "@/i18n/t";
-import { isGlobal } from "@/lib/region";
+import { parseLocaleCode } from "@/i18n/locales.config";
+import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
+import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import {
   listInstalledSkillSlugs,
   type InstalledSkillLoadState,
@@ -28,8 +31,10 @@ import {
   AutomationSkillBindingSummary,
   AutomationSkillPicker,
 } from "./automation-skill-picker";
+import { AutomationUpstreamPicker } from "./automation-upstream-picker";
 import { ScenarioEnableConfirmModal } from "./scenario-tasks/ScenarioEnableConfirmModal";
 import { ScenarioInstallModal } from "./scenario-tasks/ScenarioInstallModal";
+import { getScenarioCronJobPresentation, getScenarioRunPresentation } from "./scenario-tasks/scenario-job-presentation";
 // 场景任务入口暂时下线，保留依赖便于后续恢复。
 // import { ScenarioTaskGrid } from "./scenario-tasks/ScenarioTaskGrid";
 // import { getScenarioTaskPack, SCENARIO_TASK_PACKS, type ScenarioTaskId, type ScenarioTaskPack } from "./scenario-tasks/scenario-packs";
@@ -38,19 +43,26 @@ import { getScenarioTaskPack, type ScenarioTaskPack } from "./scenario-tasks/sce
 import { buildScenarioTaskDraft, type ScenarioTaskDraft } from "./scenario-tasks/scenario-task-builder";
 import {
   CronCommandError,
+  createCronJobWithContextAndScriptRollback,
   createCronJobWithScriptRollback,
   createEffectiveWindowScriptName,
+  detectCronContextFromCapability,
   editCronJob,
+  editCronJobWithContext,
   execCommand,
   listCronJobs,
   listRecentCronRuns,
+  isTestRunMarkerName,
   pauseCronJob,
   writeEffectiveWindowScript,
   removeCronJob,
+  removeCronJobWithDependentRollback,
   resumeCronJob,
   shellQuote,
   startCronTestRun,
+  type CronDependentBinding,
   type CronEffectiveWindow,
+  type CronContextCapability,
   type CronJob,
   type CronLightVelaScriptConfig,
   type CronRunRecord,
@@ -72,11 +84,34 @@ const AUTOMATION_PROMPT_MAX_LENGTH = 1000;
 const CHAT_ID_MAX_LENGTH = 60;
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
+/**
+ * 自动任务展示所用的 locale，直接复用注册表类型。
+ *
+ * 此前本文件自持 `"zh-CN" | "zh-SG" | "en-US" | "id-ID"` 联合类型副本，
+ * 与 `scenario-job-presentation.ts` 中的同名类型构成镜像，新增语种时
+ * 两处都要改且漏改不报错。
+ */
+type AutomationDisplayLocale = PublicSiteLocaleCode;
 type ScenarioMutationStatus = "creating" | "enabling";
 type ScenarioReminderNotice = {
   draft: ScenarioTaskDraft;
   kind: "preview" | "recurring";
 };
+
+/**
+ * 把 i18next 的运行时语言收敛为自动任务展示 locale。
+ *
+ * ⚠️ 刻意使用注册表白名单校验（`parseLocaleCode`）而非
+ * `language?.startsWith("en")` 一类前缀猜测。前缀猜测的问题：
+ *   - 新增语种时不会报错，只会静默落到最后的 `return "zh-CN"`，
+ *     用户侧表现为「界面已切日语，自动任务区却仍是中文」；
+ *   - `startsWith("en")` 会把任何以 en 开头的值都当成英文。
+ *
+ * 无法识别的语言（含被篡改的 localStorage 值）回退到区域默认语言。
+ */
+function getAutomationDisplayLocale(language: string | undefined): AutomationDisplayLocale {
+  return parseLocaleCode(language) ?? DEFAULT_LOCALE;
+}
 
 export function toCreateCronSkills(selectedSkill: string): string[] | undefined {
   return selectedSkill ? [selectedSkill] : undefined;
@@ -86,6 +121,75 @@ export function toEditCronSkills(initialSkills: string[], selectedSkill: string)
   const initialSelectedSkill = initialSkills[0] ?? "";
   if (selectedSkill === initialSelectedSkill) return undefined;
   return selectedSkill ? [selectedSkill] : [];
+}
+
+export function wouldCreateCronContextCycle(
+  jobs: readonly CronJob[],
+  downstreamId: string,
+  upstreamId: string,
+): boolean {
+  if (downstreamId === upstreamId) return true;
+
+  const upstreamsByJob = new Map(jobs.map((job) => [job.id, job.context_from ?? []]));
+  const stack = [upstreamId];
+  const visited = new Set<string>();
+
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (id === downstreamId) return true;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    stack.push(...(upstreamsByJob.get(id) ?? []));
+  }
+
+  return false;
+}
+
+export function getEligibleCronUpstreams(
+  jobs: readonly CronJob[],
+  currentJobId: string | null,
+  now: number,
+): CronJob[] {
+  return jobs.filter((job) => {
+    if (job.id === currentJobId) return false;
+    if (isCronJobPaused(job) || isCronJobUnavailableAsUpstream(job, now)) return false;
+    if (isTestRunMarkerName(job.name) || isScenarioTrialJob(job)) return false;
+    return currentJobId === null
+      || !wouldCreateCronContextCycle(jobs, currentJobId, job.id);
+  });
+}
+
+function getDirectCronDependents(
+  jobs: readonly CronJob[],
+  targetId: string,
+): CronDependentBinding[] {
+  return jobs
+    .filter((job) => job.context_from?.includes(targetId))
+    .map((job) => ({
+      id: job.id,
+      name: job.name,
+      contextFrom: job.context_from ?? [],
+    }));
+}
+
+function haveSameCronDependents(
+  current: readonly CronDependentBinding[],
+  latest: readonly CronDependentBinding[],
+): boolean {
+  const signature = (bindings: readonly CronDependentBinding[]) => bindings
+    .map((binding) => `${binding.id}:${[...binding.contextFrom].sort().join(",")}`)
+    .sort()
+    .join("|");
+  return signature(current) === signature(latest);
+}
+
+export function toCronContextPatch(
+  _initial: readonly string[] | null,
+  selected: string,
+  changed: boolean,
+): undefined | string[] {
+  if (!changed) return undefined;
+  return selected ? [selected] : [];
 }
 
 export type AutomationSkillSelectionIssue = "unavailable" | "unverified";
@@ -392,6 +496,9 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
 export function HermesAgentAutomationsPanel({ botId }: { botId: string | null }) {
   const t = useT();
   const [jobs, setJobs] = useState<CronJob[]>([]);
+  const [contextCapability, setContextCapability] = useState<"loading" | CronContextCapability>(
+    "loading",
+  );
   const [enabledChannels, setEnabledChannels] = useState<Set<string> | null>(null);
   const [channelStatus, setChannelStatus] = useState<"loading" | "ready">("loading");
   const [installedSkillLoadState, setInstalledSkillLoadState] = useState<InstalledSkillLoadState>({
@@ -402,8 +509,9 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const installedSkillSlugsRef = useRef<string[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [loadingRecentRuns, setLoadingRecentRuns] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
-  const [activeView, setActiveView] = useState<"created" | "recent">("created");
+  const [activeView, setActiveView] = useState<"created" | "ended" | "recent">("created");
   const [creating, setCreating] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
@@ -419,6 +527,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const [editingJob, setEditingJob] = useState<CronJob | null>(null);
   /** 待确认删除的 job；非空时弹确认弹窗 */
   const [confirmDeleteJob, setConfirmDeleteJob] = useState<CronJob | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   /** 每个任务的测试运行状态：running=运行中，ok/fail=短暂结果态（1.8s 后自动回到 idle） */
   const [testState, setTestState] = useState<Record<string, "running" | "ok" | "fail">>({});
@@ -430,14 +539,28 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const [listError, setListError] = useState<string | null>(null);
   const errorTimerRef = useRef<number | null>(null);
   const jobsRef = useRef<CronJob[]>([]);
-  const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
-  const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
+  const contextCapabilityRequestRef = useRef(0);
+  const confirmDeleteDependents = useMemo<CronDependentBinding[]>(
+    () => confirmDeleteJob ? getDirectCronDependents(jobs, confirmDeleteJob.id) : [],
+    [confirmDeleteJob, jobs],
+  );
+  const activeJobs = useMemo(
+    () => jobs.filter((job) => !isCronJobEnded(job)),
+    [jobs],
+  );
+  const endedJobs = useMemo(
+    () => jobs.filter(isCronJobEnded),
+    [jobs],
+  );
+  const displayedJobs = activeView === "ended" ? endedJobs : activeJobs;
+  const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
+  const jobLimitReached = activeJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getAutomationTemplates(t), [t]);
   // const installedScenarioIds = useMemo(() => new Set(
   //   SCENARIO_TASK_PACKS
-  //     .filter((pack) => visibleJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
+  //     .filter((pack) => activeJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
   //     .map((pack) => pack.id),
-  // ), [visibleJobs]);
+  // ), [activeJobs]);
 
   const refreshChannelStatus = useCallback(async () => {
     if (!botId) {
@@ -451,7 +574,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       const result = await execCommand(botId, "acli channel status");
       setEnabledChannels(parseEnabledHermesChannels(result.output));
     } catch {
-      setEnabledChannels(null);
+      setEnabledChannels(new Set());
     } finally {
       setChannelStatus("ready");
     }
@@ -548,7 +671,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     if (manageLoading) setLoadingJobs(true);
     setListError(null);
     try {
-      const list = await listCronJobs(botId);
+      const list = await listCronJobs(botId, { hydrateContextFrom: true });
       jobsRef.current = list;
       setJobs(list);
       return list;
@@ -599,9 +722,38 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     }
   }, [botId, refreshCreatedJobs, refreshRecentRuns]);
 
+  const handleManualRefresh = useCallback(async () => {
+    setManualRefreshing(true);
+    try {
+      await refreshAll();
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [refreshAll]);
+
   useEffect(() => {
     void refreshAll();
   }, [refreshAll]);
+
+  const refreshContextCapability = useCallback(async () => {
+    const requestId = ++contextCapabilityRequestRef.current;
+    if (!botId) {
+      setContextCapability("unknown");
+      return;
+    }
+    setContextCapability("loading");
+    const capability = await detectCronContextFromCapability(botId);
+    if (contextCapabilityRequestRef.current === requestId) {
+      setContextCapability(capability);
+    }
+  }, [botId]);
+
+  useEffect(() => {
+    void refreshContextCapability();
+    return () => {
+      contextCapabilityRequestRef.current += 1;
+    };
+  }, [refreshContextCapability]);
 
   useEffect(() => {
     void refreshChannelStatus();
@@ -638,6 +790,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         prompt: nextDraft.generatedPrompt,
         schedule: nextDraft.oneShotSchedule,
         deliver: nextDraft.generatedDeliver,
+        pinCurrentModel: true,
       });
       void sendScenarioStartNotice(botId, nextDraft, t);
       const list = await refreshCreatedJobs(false);
@@ -678,6 +831,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         prompt: scenarioDraft.generatedPrompt,
         schedule: scenarioDraft.recurringSchedule,
         deliver: scenarioDraft.generatedDeliver,
+        pinCurrentModel: true,
       });
       setScenarioEnableConfirmOpen(false);
       await refreshAll();
@@ -694,15 +848,25 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const handleAction = useCallback(async (
     job: CronJob,
     action: "pause" | "resume" | "remove",
+    dependents: readonly CronDependentBinding[] = [],
   ) => {
     if (!botId) return;
     setBusyId(job.id);
     try {
       if (action === "pause") await pauseCronJob(botId, job.id);
       else if (action === "resume") await resumeCronJob(botId, job.id);
+      else if (dependents.length > 0) await removeCronJobWithDependentRollback(botId, job.id, dependents);
       else await removeCronJob(botId, job.id);
       await refreshAll();
+      if (action === "remove") {
+        setDeleteError(null);
+        setConfirmDeleteJob(null);
+      }
     } catch (err) {
+      if (action === "remove" && dependents.length > 0) {
+        setDeleteError(formatCronDependentRemovalError(err, job, dependents, t));
+        return;
+      }
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       const labels: Record<typeof action, string> = {
         pause: t("暂停"),
@@ -714,6 +878,36 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       setBusyId(null);
     }
   }, [botId, refreshAll, showError, t]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!botId || !confirmDeleteJob) return;
+    const previewDependents = confirmDeleteDependents;
+    setBusyId(confirmDeleteJob.id);
+    setDeleteError(null);
+    const latestJobs = await refreshCreatedJobs(false);
+    if (!latestJobs || latestJobs.some((job) => job.context_from_hydrated !== true)) {
+      setDeleteError(t("暂时无法确认最新依赖关系，请重试"));
+      setBusyId(null);
+      return;
+    }
+    const latestTarget = latestJobs.find((job) => job.id === confirmDeleteJob.id);
+    if (!latestTarget) {
+      setDeleteError(t("暂时无法确认最新依赖关系，请重试"));
+      setBusyId(null);
+      return;
+    }
+    const latestDependents = getDirectCronDependents(latestJobs, latestTarget.id);
+    if (!haveSameCronDependents(previewDependents, latestDependents)) {
+      setDeleteError(t("任务依赖关系已变化，请确认最新受影响任务后再次删除"));
+      setBusyId(null);
+      return;
+    }
+    trackDatongEvent(DATONG_EVENTS.AUTOMATION_DELETE, {
+      pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
+      params: { bot_id: botId, task_id: latestTarget.id },
+    });
+    await handleAction(latestTarget, "remove", latestDependents);
+  }, [botId, confirmDeleteDependents, confirmDeleteJob, handleAction, refreshCreatedJobs, t]);
 
   /**
    * 测试运行：立即真实执行一次（`startCronTestRun`）。
@@ -813,7 +1007,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         <ScenarioTaskGrid
           packs={SCENARIO_TASK_PACKS}
           installedScenarioIds={installedScenarioIds}
-          compact={visibleJobs.length > 0}
+          compact={activeJobs.length > 0}
           onRunOnce={openScenarioInstaller}
           onSchedule={openScenarioInstaller}
         />
@@ -841,7 +1035,15 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "created" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
             aria-pressed={activeView === "created"}
           >
-            {t("已生效任务")}
+            {t("当前任务")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView("ended")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "ended" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
+            aria-pressed={activeView === "ended"}
+          >
+            {t("已结束任务")}
           </button>
           <button
             type="button"
@@ -854,23 +1056,23 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         </div>
         <button
           type="button"
-          onClick={() => void refreshAll()}
-          disabled={loadingJobs || loadingRecentRuns}
+          onClick={() => void handleManualRefresh()}
+          disabled={loadingJobs || loadingRecentRuns || manualRefreshing}
           className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
           aria-label={t("刷新")}
           title={t("刷新")}
         >
-          <RefreshCw className={`h-4 w-4 ${loadingJobs || loadingRecentRuns ? "animate-spin" : ""}`} />
+          <RefreshCw className={`h-4 w-4 ${manualRefreshing ? "animate-spin" : ""}`} />
         </button>
       </div>
 
-      <div className={(activeView === "created" && (loadingJobs || listError || visibleJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? "rounded-xl p-4" : ""} style={(activeView === "created" && (loadingJobs || listError || visibleJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? PANEL_CARD_STYLE : undefined}>
-        {activeView === "created" && loadingJobs ? (
+      <div className={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? "rounded-xl p-4" : ""} style={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? PANEL_CARD_STYLE : undefined}>
+        {activeView !== "recent" && loadingJobs ? (
           <div className="flex items-center justify-center py-8 text-sm text-black/50">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             {t("加载中…")}
           </div>
-        ) : activeView === "created" && listError ? (
+        ) : activeView !== "recent" && listError ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm">
             <AlertTriangle className="mb-2 h-6 w-6 text-[#B91C1C] opacity-80" />
             <p className="text-black/70">{t("加载自动任务失败")}</p>
@@ -891,25 +1093,30 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         ) : activeView === "recent" ? (
           <RecentCronRunsPanel
             runs={recentRuns}
+            jobs={jobs}
             skillLoadState={installedSkillLoadState}
           />
-        ) : visibleJobs.length === 0 ? (
+        ) : displayedJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
             <Clock className="mb-2 h-6 w-6 opacity-50" />
-            <p>
-              {t("暂无自动任务，")}
-              <button
-                type="button"
-                onClick={() => requestCreate("template")}
-                className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
-              >
-                {t("参考模板添加")}
-              </button>
-            </p>
+            {activeView === "ended" ? (
+              <p>{t("暂无已结束任务")}</p>
+            ) : (
+              <p>
+                {t("暂无自动任务，")}
+                <button
+                  type="button"
+                  onClick={() => requestCreate("template")}
+                  className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
+                >
+                  {t("参考模板添加")}
+                </button>
+              </p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {[...visibleJobs]
+            {[...displayedJobs]
               .sort((a, b) => {
                 // 最新创建在前；缺 created_at 的丢到末尾
                 const ta = a.created_at ? Date.parse(a.created_at) : 0;
@@ -920,6 +1127,8 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
                 <CronJobCard
                   key={job.id}
                   job={job}
+                  upstream={job.context_from?.length === 1 ? jobsById.get(job.context_from[0]!) ?? null : null}
+                  upstreamMissing={job.context_from?.length === 1 && !jobsById.has(job.context_from[0]!)}
                   busy={busyId === job.id}
                   testState={testState[job.id] ?? "idle"}
                   onTestRun={() => handleTestRun(job)}
@@ -927,7 +1136,10 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
                   onEdit={() => setEditingJob(job)}
                   onPause={() => handleAction(job, "pause")}
                   onResume={() => handleAction(job, "resume")}
-                  onRemove={() => setConfirmDeleteJob(job)}
+                  onRemove={() => {
+                    setDeleteError(null);
+                    setConfirmDeleteJob(job);
+                  }}
                 />
               ))}
           </div>
@@ -938,10 +1150,14 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         <AutomationFormModal
           botId={botId}
           mode="create"
+          jobs={jobs}
+          contextCapability={contextCapability}
+          onRetryContextCapability={refreshContextCapability}
           enabledChannels={enabledChannels}
           channelStatus={channelStatus}
           skillLoadState={installedSkillLoadState}
           onRefreshSkills={refreshInstalledSkills}
+          onRefreshJobs={refreshCreatedJobs}
           onClose={() => setCreating(false)}
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
@@ -949,6 +1165,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
               params: { bot_id: botId ?? "" },
             });
             setCreating(false);
+            setActiveView("created");
             await refreshAll();
           }}
           onError={showError}
@@ -998,10 +1215,14 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           botId={botId}
           mode="create"
           template={creatingFromTemplate}
+          jobs={jobs}
+          contextCapability={contextCapability}
+          onRetryContextCapability={refreshContextCapability}
           enabledChannels={enabledChannels}
           channelStatus={channelStatus}
           skillLoadState={installedSkillLoadState}
           onRefreshSkills={refreshInstalledSkills}
+          onRefreshJobs={refreshCreatedJobs}
           onClose={() => setCreatingFromTemplate(null)}
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
@@ -1009,6 +1230,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
               params: { bot_id: botId ?? "" },
             });
             setCreatingFromTemplate(null);
+            setActiveView("created");
             await refreshAll();
           }}
           onError={showError}
@@ -1036,10 +1258,14 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           botId={botId}
           mode="edit"
           initialJob={editingJob}
+          jobs={jobs}
+          contextCapability={contextCapability}
+          onRetryContextCapability={refreshContextCapability}
           enabledChannels={enabledChannels}
           channelStatus={channelStatus}
           skillLoadState={installedSkillLoadState}
           onRefreshSkills={refreshInstalledSkills}
+          onRefreshJobs={refreshCreatedJobs}
           onClose={() => setEditingJob(null)}
           onSaved={async () => {
             setEditingJob(null);
@@ -1052,6 +1278,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       {viewingJob && (
         <CronJobDetailModal
           job={viewingJob}
+          jobsById={jobsById}
           lastAgentRun={getLastAgentRunForJob(viewingJob, recentRuns)}
           skillLoadState={installedSkillLoadState}
           onClose={() => setViewingJob(null)}
@@ -1061,16 +1288,15 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       {confirmDeleteJob && (
         <ConfirmDeleteModal
           jobName={confirmDeleteJob.name}
+          dependents={confirmDeleteDependents}
+          error={deleteError}
           busy={busyId === confirmDeleteJob.id}
-          onCancel={() => setConfirmDeleteJob(null)}
-          onConfirm={async () => {
-            const target = confirmDeleteJob;
+          onCancel={() => {
+            setDeleteError(null);
             setConfirmDeleteJob(null);
-            trackDatongEvent(DATONG_EVENTS.AUTOMATION_DELETE, {
-              pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-              params: { bot_id: botId ?? "", task_id: target.id },
-            });
-            await handleAction(target, "remove");
+          }}
+          onConfirm={async () => {
+            await handleDeleteConfirm();
           }}
         />
       )}
@@ -1084,72 +1310,85 @@ export function shouldShowRecentRunsLimitHint(runCount: number): boolean {
 
 export function RecentCronRunsPanel({
   runs,
+  jobs = [],
   skillLoadState,
 }: {
   runs: CronRunRecord[];
+  jobs?: CronJob[];
   skillLoadState: InstalledSkillLoadState;
 }) {
   const t = useT();
+  const { i18n } = useTranslation();
+  const displayLocale = getAutomationDisplayLocale(i18n.language);
   const [viewingRun, setViewingRun] = useState<CronRunRecord | null>(null);
+  const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
+  const viewingJob = viewingRun ? jobsById.get(viewingRun.job_id) : undefined;
+  const viewingUpstream = viewingJob?.context_from?.length === 1
+    ? jobsById.get(viewingJob.context_from[0]!)
+    : undefined;
   return (
     <div>
       <section className="overflow-hidden rounded-md bg-white" style={PANEL_CARD_STYLE}>
         {runs.length === 0 ? (
-          <div className="m-4 flex items-center gap-2 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/45">
+          <div className="m-4 flex items-center gap-2 px-3 py-2 text-xs text-black/45">
             <Clock className="h-3.5 w-3.5" />
             {t("暂无执行记录")}
           </div>
         ) : (
           <div className="divide-y divide-black/[0.06] px-4">
-            {runs.map((run) => (
-              <div key={run.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3">
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-sm font-medium text-black/85" title={run.job_name}>
-                      {run.job_name}
-                    </span>
+            {runs.map((run) => {
+              const presentation = getScenarioRunPresentation(run, displayLocale);
+              return (
+                <div key={run.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm font-medium text-black/85" title={presentation.name}>
+                        {presentation.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setViewingRun(run)}
+                        className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-black/45 transition hover:bg-black/[0.04] hover:text-black/75"
+                        aria-label={t("查看任务详情")}
+                        title={t("查看任务详情")}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {presentation.prompt && (
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-black/55" title={presentation.prompt}>
+                        {presentation.prompt}
+                      </p>
+                    )}
+                    {run.skip_reason === "model_changed" && (
+                      <p className="mt-1 text-xs leading-relaxed text-black/45">
+                        {t("问题原因：模型切换导致任务未执行")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
                     <button
                       type="button"
                       onClick={() => setViewingRun(run)}
-                      className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-black/45 transition hover:bg-black/[0.04] hover:text-black/75"
+                      className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
                       aria-label={t("查看任务详情")}
                       title={t("查看任务详情")}
                     >
-                      <Eye className="h-3.5 w-3.5" />
+                      {run.status ? formatLastStatus(run.status, t) : t("已执行")}
                     </button>
+                    <time className="text-right text-xs text-black/55" dateTime={run.run_at}>
+                      {formatTime(run.run_at)}
+                    </time>
                   </div>
-                  {run.job_prompt && (
-                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-black/55" title={run.job_prompt}>
-                      {run.job_prompt}
-                    </p>
-                  )}
-                  {run.skip_reason === "model_changed" && (
-                    <p className="mt-1 text-xs leading-relaxed text-black/45">
-                      {t("问题原因：模型切换导致任务未执行")}
-                    </p>
-                  )}
                 </div>
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setViewingRun(run)}
-                    className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
-                    aria-label={t("查看任务详情")}
-                    title={t("查看任务详情")}
-                  >
-                    {run.status ? formatLastStatus(run.status, t) : t("已执行")}
-                  </button>
-                  <time className="text-right text-xs text-black/55" dateTime={run.run_at}>
-                    {formatTime(run.run_at)}
-                  </time>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {viewingRun && (
           <RecentCronRunDetailModal
             run={viewingRun}
+            currentUpstream={viewingUpstream ?? null}
             skillLoadState={skillLoadState}
             onClose={() => setViewingRun(null)}
           />
@@ -1183,19 +1422,25 @@ function runToCronJob(run: CronRunRecord): CronJob {
     script: "",
     effective_window: null,
     lightvela_schedule: null,
+    context_from: null,
+    inference_config: null,
   };
 }
 
 function RecentCronRunDetailModal({
   run,
+  currentUpstream,
   skillLoadState,
   onClose,
 }: {
   run: CronRunRecord;
+  currentUpstream: CronJob | null;
   skillLoadState: InstalledSkillLoadState;
   onClose: () => void;
 }) {
   const t = useT();
+  const { i18n } = useTranslation();
+  const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -1217,14 +1462,14 @@ function RecentCronRunDetailModal({
         </button>
 
         <div className="flex items-center gap-2 pr-8">
-          <h2 className="truncate text-lg font-semibold text-black/90">{run.job_name || t("未命名任务")}</h2>
+          <h2 className="truncate text-lg font-semibold text-black/90">{presentation.name || t("未命名任务")}</h2>
           <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55">
             {run.status ? formatLastStatus(run.status, t) : t("已执行")}
           </span>
         </div>
 
         <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
-          <DetailRow label={t("任务说明")} value={run.job_prompt || "—"} pre />
+          <DetailRow label={t("任务说明")} value={presentation.prompt || "—"} pre />
           <DetailRow
             label={t("调用技能")}
             value={(
@@ -1236,6 +1481,12 @@ function RecentCronRunDetailModal({
           />
           <DetailRow label={t("执行时间")} value={run.schedule ? formatScheduleFriendly(runToCronJob(run), t) : "—"} />
           <DetailRow label={t("本次执行")} value={formatTime(run.run_at)} />
+          {currentUpstream && (
+            <DetailRow
+              label={t("当前关联上游")}
+              value={<UpstreamCurrentState job={currentUpstream} />}
+            />
+          )}
           <DeliverDetailRow deliver={run.deliver} />
           <DetailRow label={t("任务 ID")} value={run.job_id} />
         </dl>
@@ -1247,6 +1498,8 @@ function RecentCronRunDetailModal({
 
 function CronJobCard({
   job,
+  upstream,
+  upstreamMissing,
   busy,
   testState,
   onTestRun,
@@ -1257,6 +1510,8 @@ function CronJobCard({
   onRemove,
 }: {
   job: CronJob;
+  upstream: CronJob | null;
+  upstreamMissing: boolean;
   busy: boolean;
   testState: "idle" | "running" | "ok" | "fail";
   onTestRun: () => void;
@@ -1267,11 +1522,20 @@ function CronJobCard({
   onRemove: () => void;
 }) {
   const t = useT();
+  const { i18n } = useTranslation();
+  const terminal = isCronJobEnded(job);
   const paused = isCronJobPaused(job);
-  const expired = isCronJobExpired(job);
+  const running = isCronJobRunning(job);
+  const disabled = job.state.trim().toLowerCase() === "disabled";
+  const endedLabel = terminal ? getCronJobEndedLabel(job, t) : null;
+  const expired = !running && !terminal && isCronJobExpired(job);
+  const expiredLabel = expired
+    ? (isCronJobExecutionFailed(job) ? t("执行失败") : t("已执行"))
+    : null;
   const effectiveStatus = getEffectiveWindowStatus(job.effective_window);
   const hasEffectiveWindow = effectiveStatus !== "always";
-  const fullName = job.name || t("未命名任务");
+  const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
+  const fullName = presentation.name || t("未命名任务");
   const scheduleLabel = formatScheduleFriendly(job, t);
   const scheduleTooltipLabel = formatScheduleTooltip(job, t);
   return (
@@ -1286,19 +1550,34 @@ function CronJobCard({
             {fullName}
           </span>
         </div>
-        {(expired || paused || effectiveStatus === "ended") && (
+        {(running || endedLabel || expiredLabel || paused || disabled || effectiveStatus === "ended") && (
           <div className="flex shrink-0 items-center gap-1">
+            {running && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {t("执行中")}
+              </span>
+            )}
             {effectiveStatus === "ended" && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("已过生效期")}
               </span>
             )}
-            {expired && (
+            {expiredLabel && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
-                {t("已执行")}
+                {expiredLabel}
               </span>
             )}
-            {paused && (
+            {endedLabel && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {endedLabel}
+              </span>
+            )}
+            {disabled && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {t("已停用")}
+              </span>
+            )}
+            {paused && !disabled && (
               <span className="rounded-full bg-[#FFF1D6] px-2 py-0.5 text-xs text-[#9A5A00]">
                 {t("已暂停")}
               </span>
@@ -1307,7 +1586,22 @@ function CronJobCard({
         )}
       </div>
 
-      <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{job.prompt}</p>
+      <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{presentation.prompt}</p>
+
+      {job.context_from?.length === 1 && (
+        <p className="mt-2 truncate text-xs text-black/45">
+          {upstream
+            ? isGlobal
+              ? t("来自：{{name}}", { name: upstream.name })
+              : t("上游任务：{{name}}", { name: upstream.name })
+            : upstreamMissing
+              ? isGlobal
+                ? t("来自：上游任务已不可用")
+                : t("上游任务：已不可用")
+              : null}
+          {upstream && isCronJobPaused(upstream) ? t("（已暂停）") : ""}
+        </p>
+      )}
 
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/[0.04] pt-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
@@ -1337,7 +1631,7 @@ function CronJobCard({
           <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
             <Pencil className="h-3 w-3" />
           </CronActionButton>
-          {paused ? (
+          {!terminal && (paused ? (
             <CronActionButton label={t("恢复")} onClick={onResume} disabled={busy}>
               <Play className="h-3 w-3" />
             </CronActionButton>
@@ -1345,7 +1639,7 @@ function CronJobCard({
             <CronActionButton label={t("暂停")} onClick={onPause} disabled={busy}>
               <Pause className="h-3 w-3" />
             </CronActionButton>
-          )}
+          ))}
           <CronActionButton label={t("删除")} onClick={onRemove} disabled={busy}>
             <Trash2 className="h-3 w-3" />
           </CronActionButton>
@@ -1386,7 +1680,41 @@ function CronActionButton({
 }
 
 function isCronJobPaused(job: CronJob): boolean {
-  return !job.enabled || job.state === "paused";
+  return !isCronJobEnded(job)
+    && (!job.enabled || job.state.trim().toLowerCase() === "paused");
+}
+
+export function isCronJobRunning(job: CronJob): boolean {
+  return job.execution_status?.trim().toLowerCase() === "running";
+}
+
+function isCronJobTerminalState(job: CronJob): boolean {
+  return ["completed", "error", "done", "expired", "cancelled", "canceled"]
+    .includes(job.state.trim().toLowerCase());
+}
+
+function isCronJobEnded(job: CronJob): boolean {
+  return isCronJobTerminalState(job)
+    || (!isCronJobRunning(job) && isCronJobExpiredBeyondGrace(job));
+}
+
+function isCronJobExecutionFailed(job: CronJob): boolean {
+  const state = job.state.trim().toLowerCase();
+  const executionStatus = job.execution_status?.trim().toLowerCase();
+  return state === "error"
+    || executionStatus === "failed"
+    || executionStatus === "failure"
+    || executionStatus === "error";
+}
+
+function getCronJobEndedLabel(job: CronJob, t: ReturnType<typeof useT>): string {
+  const state = job.state.trim().toLowerCase();
+  if (isCronJobExecutionFailed(job)) return t("执行失败");
+  if (state === "expired" || (!isCronJobTerminalState(job) && isCronJobExpiredBeyondGrace(job))) {
+    return t("已过期");
+  }
+  if (state === "cancelled" || state === "canceled") return t("已取消");
+  return t("已完成");
 }
 
 function isOnceCronJob(job: CronJob): boolean {
@@ -1399,6 +1727,12 @@ export function isCronJobExpired(job: CronJob, now = Date.now()): boolean {
   if (!isOnceCronJob(job) || !job.next_run_at) return false;
   const d = parseCronDate(job.next_run_at);
   return !Number.isNaN(d.getTime()) && d.getTime() < now;
+}
+
+function isCronJobUnavailableAsUpstream(job: CronJob, now = Date.now()): boolean {
+  return isCronJobExpired(job, now)
+    || isCronJobTerminalState(job)
+    || getEffectiveWindowStatus(job.effective_window, now) === "ended";
 }
 
 export function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
@@ -1573,22 +1907,28 @@ export function parseOnceScheduleDate(display: string, nextRunAt: string | null)
 
 function CronJobDetailModal({
   job,
+  jobsById,
   lastAgentRun,
   skillLoadState,
   onClose,
 }: {
   job: CronJob;
+  jobsById: ReadonlyMap<string, CronJob>;
   lastAgentRun: CronRunRecord | null;
   skillLoadState: InstalledSkillLoadState;
   onClose: () => void;
 }) {
   const t = useT();
+  const { i18n } = useTranslation();
   const paused = isCronJobPaused(job);
   const isOnceJob = isOnceCronJob(job);
   const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
-  const name = job.name || t("未命名任务");
+  const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
+  const name = presentation.name || t("未命名任务");
   const showEffectiveWindow = !isOnceJob;
   const nextRunLabel = isOnceJob ? "—" : nextRunAt ? formatTime(nextRunAt) : "—";
+  const upstreamIds = job.context_from ?? [];
+  const upstreamJobs = upstreamIds.map((id) => jobsById.get(id) ?? null);
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -1622,7 +1962,7 @@ function CronJobDetailModal({
 
         <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <NameIdDetailRow name={name} id={job.id} />
-          <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
+          <DetailRow label={t("任务说明")} value={presentation.prompt || "—"} pre />
           <DetailRow
             label={t("调用技能")}
             value={(
@@ -1630,6 +1970,21 @@ function CronJobDetailModal({
                 value={job.skills[0] ?? ""}
                 loadState={skillLoadState}
               />
+            )}
+          />
+          <DetailRow
+            label={t("上游任务")}
+            value={upstreamIds.length === 0 ? t("未配置") : (
+              <div className="space-y-2">
+                {upstreamJobs.map((upstream, index) => (
+                  <div key={upstreamIds[index]}>
+                    {upstream ? <UpstreamCurrentState job={upstream} /> : t("上游任务已不可用")}
+                  </div>
+                ))}
+                <p className="text-pretty text-xs text-black/45">
+                  {t("本任务执行时，将使用上游任务最近一次的输出作为上下文。")}
+                </p>
+              </div>
             )}
           />
           <DetailRow label={t("执行时间")} value={formatScheduleDetailValue(job, t)} />
@@ -1652,6 +2007,44 @@ function CronJobDetailModal({
     </div>,
     document.body,
   );
+}
+
+function UpstreamCurrentState({ job }: { job: CronJob }) {
+  const t = useT();
+  const paused = isCronJobPaused(job);
+  const latestFailed = isFailedCronStatus(job.last_status);
+  return (
+    <div className="space-y-1">
+      <div>
+        <span>{job.name}</span>
+        {paused && <span className="ml-1 text-black/45">{t("（已暂停）")}</span>}
+      </div>
+      <div className="text-xs text-black/45">
+        <span>{t("状态")}：{paused ? t("已暂停") : t("正常")}</span>
+        <span className="mx-1.5">·</span>
+        <span>{t("最近完成时间")}：{job.last_run_at ? formatTime(job.last_run_at) : t("暂无")}</span>
+      </div>
+      {latestFailed && (
+        <p className="text-pretty text-xs text-amber-700">
+          {t("最近完成状态为失败，Hermes 不会回退到更早的成功输出")}
+        </p>
+      )}
+      {paused && job.last_run_at && (
+        <p className="text-pretty text-xs text-black/55">
+          {t("任务已暂停，但仍可能使用最近一次完成输出")}
+        </p>
+      )}
+      {!job.last_run_at && (
+        <p className="text-pretty text-xs text-black/55">
+          {t("暂无完成记录，下游任务会在无上游上下文的情况下继续执行")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function isFailedCronStatus(status: string | null): boolean {
+  return ["failed", "failure", "error"].includes((status ?? "").trim().toLowerCase());
 }
 
 function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
@@ -1707,11 +2100,13 @@ function formatDeliverFallback(deliver: string, t: ReturnType<typeof useT>): str
 function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): string {
   if (platform === "qqbot") return "QQ";
   if (platform === "wecom") return t("企业微信");
+  if (platform === "dingtalk") return t("钉钉");
   if (platform === "feishu") return t("飞书");
   if (platform === "weixin") return isGlobal ? "WeChat" : t("微信");
   if (platform === "telegram") return "Telegram";
   if (platform === "whatsapp") return "WhatsApp";
   if (platform === "discord") return "Discord";
+  if (platform === "slack") return "Slack";
   if (platform === "origin") return t("原对话（创建任务的聊天通道）");
   return platform;
 }
@@ -1847,13 +2242,40 @@ function formatTemplateSchedule(template: AutomationTemplate, t: ReturnType<type
   return t("单次");
 }
 
+function formatCronDependentRemovalError(
+  error: unknown,
+  target: CronJob,
+  dependents: readonly CronDependentBinding[],
+  t: ReturnType<typeof useT>,
+): string {
+  const safeDetails = error instanceof CronCommandError
+    ? error.output
+    : error instanceof Error
+      ? error.message
+      : "";
+  const affectedIds = new Set<string>();
+  for (const match of safeDetails.matchAll(/(?:update_failed|remove_failed|rollback_failed):([^;\s]+)/g)) {
+    match[1]?.split(",").filter(Boolean).forEach((id) => affectedIds.add(id));
+  }
+  const affectedNames = [target, ...dependents]
+    .filter((job) => affectedIds.has(job.id))
+    .map((job) => job.name || t("未命名任务"));
+
+  if (affectedNames.length === 0) return t("删除失败，请稍后重试。");
+  return t("删除失败，请检查以下任务：{{names}}", { names: affectedNames.join("、") });
+}
+
 function ConfirmDeleteModal({
   jobName,
+  dependents,
+  error,
   busy,
   onCancel,
   onConfirm,
 }: {
   jobName: string;
+  dependents: readonly CronDependentBinding[];
+  error: string | null;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -1864,16 +2286,32 @@ function ConfirmDeleteModal({
       className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 px-4 py-8"
       role="dialog"
       aria-modal="true"
-      onClick={onCancel}
+      onClick={busy ? undefined : onCancel}
     >
       <div
         className="relative w-full max-w-[400px] rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold text-black/90">{t("删除自动任务")}</h3>
-        <p className="mt-2 text-sm text-black/65">
+        <h3 className="text-balance text-base font-semibold text-black/90">{t("删除自动任务")}</h3>
+        <p className="mt-2 text-pretty text-sm text-black/65">
           {t("确定要删除「{{name}}」吗？此操作无法恢复。", { name: jobName || t("未命名任务") })}
         </p>
+        {dependents.length > 0 && (
+          <div className="mt-4 rounded-md border border-black/[0.08] bg-black/[0.02] p-3">
+            <p className="text-pretty text-xs font-medium text-black/65">{t("受影响的直接下游任务")}</p>
+            <ul className="mt-2 space-y-1 text-sm text-black/80">
+              {dependents.map((dependent) => <li key={dependent.id}>{dependent.name || t("未命名任务")}</li>)}
+            </ul>
+            <p className="mt-2 text-pretty text-xs leading-5 text-black/55">
+              {t("删除后将解除上游绑定并继续独立执行")}
+            </p>
+          </div>
+        )}
+        {error && (
+          <p className="mt-3 text-pretty text-xs leading-5 text-[#B91C1C]" role="alert">
+            {error}
+          </p>
+        )}
         <div className="mt-5 flex items-center justify-end gap-2">
           <button
             type="button"
@@ -2150,10 +2588,18 @@ const GLOBAL_NOTIFICATION_CHANNELS = [
   { key: "telegram", label: "Telegram", comingSoon: false },
   { key: "whatsapp", label: "WhatsApp", comingSoon: false },
   { key: "discord", label: "Discord", comingSoon: false },
+  { key: "slack", label: "Slack", comingSoon: false },
   { key: "weixin", label: "WeChat", comingSoon: false },
   { key: "qqbot", label: "QQ", comingSoon: false },
   { key: "wecom", labelKey: "企业微信", comingSoon: false },
   { key: "feishu", labelKey: "飞书", comingSoon: false },
+] as const;
+const DOMESTIC_NOTIFICATION_CHANNELS = [
+  { key: "weixin", labelKey: "微信", comingSoon: false },
+  { key: "qqbot", label: "QQ", comingSoon: false },
+  { key: "wecom", labelKey: "企业微信", comingSoon: false },
+  { key: "feishu", labelKey: "飞书", comingSoon: false },
+  { key: "dingtalk", labelKey: "钉钉", comingSoon: false },
 ] as const;
 
 function getWeekdayLabels(t: ReturnType<typeof useT>): Record<number, string> {
@@ -2433,10 +2879,14 @@ export function AutomationFormModal({
   mode,
   initialJob,
   template,
+  jobs,
+  contextCapability,
+  onRetryContextCapability,
   enabledChannels,
   channelStatus,
   skillLoadState,
   onRefreshSkills,
+  onRefreshJobs,
   onClose,
   onSaved,
   onError,
@@ -2445,10 +2895,14 @@ export function AutomationFormModal({
   mode: "create" | "edit";
   initialJob?: CronJob;
   template?: AutomationTemplate;
+  jobs: CronJob[];
+  contextCapability: "loading" | CronContextCapability;
+  onRetryContextCapability: () => void;
   enabledChannels: Set<string> | null;
   channelStatus: "loading" | "ready";
   skillLoadState: InstalledSkillLoadState;
   onRefreshSkills: () => Promise<InstalledSkillLoadState>;
+  onRefreshJobs: () => Promise<CronJob[] | null>;
   onClose: () => void;
   onSaved: () => void;
   onError: (message: string) => void;
@@ -2457,6 +2911,11 @@ export function AutomationFormModal({
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
   const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
+  const initialContextFrom = initialJob?.context_from ?? null;
+  const initialSelectedUpstream = initialContextFrom?.[0] ?? "";
+  const [selectedUpstream, setSelectedUpstream] = useState(initialSelectedUpstream);
+  const [upstreamChanged, setUpstreamChanged] = useState(false);
+  const [upstreamError, setUpstreamError] = useState<string | null>(null);
   const initialSelectedSkill = initialJob?.skills[0] ?? "";
   const [selectedSkill, setSelectedSkill] = useState(initialSelectedSkill);
   const initialSkillWasAvailableRef = useRef<boolean | null>(
@@ -2545,6 +3004,25 @@ export function AutomationFormModal({
 
   const [submitting, setSubmitting] = useState(false);
 
+  const eligibleUpstreams = useMemo(
+    () => getEligibleCronUpstreams(jobs, initialJob?.id ?? null, Date.now()),
+    [initialJob?.id, jobs],
+  );
+  const pickerUpstreams = useMemo(() => {
+    const optionsById = new Map(eligibleUpstreams.map((job) => [job.id, job]));
+    for (const upstreamId of initialContextFrom ?? []) {
+      const existing = jobs.find((job) => job.id === upstreamId);
+      if (existing) optionsById.set(existing.id, existing);
+    }
+    return [...optionsById.values()];
+  }, [eligibleUpstreams, initialContextFrom, jobs]);
+  const externalMultipleUpstreams = useMemo(
+    () => (initialContextFrom?.length ?? 0) > 1
+      ? initialContextFrom!.map((id) => jobs.find((job) => job.id === id) ?? null)
+      : null,
+    [initialContextFrom, jobs],
+  );
+
   const showTestSendToast = useCallback((tone: "success" | "error", message: string) => {
     if (testSendToastTimerRef.current) {
       window.clearTimeout(testSendToastTimerRef.current);
@@ -2568,6 +3046,17 @@ export function AutomationFormModal({
   const weixinBlockedByFrequency = kind === "interval"
     && intervalMinutes < 15
     && isHermesNotificationChannelConfigured(enabledChannels, "weixin");
+  const availableNotificationChannels = (isGlobal
+    ? GLOBAL_NOTIFICATION_CHANNELS
+    : DOMESTIC_NOTIFICATION_CHANNELS
+  ).map((channel) => ({
+    key: channel.key,
+    label: "label" in channel ? channel.label : t(channel.labelKey),
+    comingSoon: channel.comingSoon,
+  })).filter(({ key, comingSoon }) => (
+    isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon)
+  ));
+  const hasAvailableNotificationChannel = availableNotificationChannels.length > 0;
 
   useEffect(() => {
     if (!weixinBlockedByFrequency) return;
@@ -2578,6 +3067,13 @@ export function AutomationFormModal({
       return rest;
     });
   }, [weixinBlockedByFrequency]);
+
+  useEffect(() => {
+    if (channelStatus !== "ready") return;
+    setDeliverPlatforms((prev) => (
+      prev.filter((platform) => isHermesNotificationChannelConfigured(enabledChannels, platform))
+    ));
+  }, [channelStatus, enabledChannels]);
 
   const schedule = useMemo(() => buildScheduleString({
     kind,
@@ -2693,6 +3189,35 @@ export function AutomationFormModal({
     }
     setSubmitting(true);
     try {
+      const contextPatch = externalMultipleUpstreams
+        ? undefined
+        : toCronContextPatch(initialContextFrom, selectedUpstream, upstreamChanged);
+      setUpstreamError(null);
+      if (selectedUpstream && !externalMultipleUpstreams && (mode === "create" || upstreamChanged)) {
+        const latestJobs = await onRefreshJobs();
+        if (!latestJobs) {
+          setUpstreamError(t("暂时无法刷新上游任务，请重试"));
+          return;
+        }
+        if (latestJobs.some((job) => job.context_from_hydrated !== true)) {
+          setUpstreamError(t("暂时无法确认最新依赖关系，请重试"));
+          return;
+        }
+        const latestUpstream = latestJobs.find((job) => job.id === selectedUpstream);
+        if (!latestUpstream || isCronJobUnavailableAsUpstream(latestUpstream)) {
+          setUpstreamError(t("所选上游任务已删除或过期，请重新选择或解除关联"));
+          return;
+        }
+        if (isCronJobPaused(latestUpstream)) {
+          setUpstreamError(t("所选上游任务已暂停，请重新选择或解除关联"));
+          return;
+        }
+        if (initialJob && wouldCreateCronContextCycle(latestJobs, initialJob.id, selectedUpstream)) {
+          setUpstreamError(t("所选上游任务会形成循环，请重新选择或解除关联"));
+          return;
+        }
+      }
+
       const initialSkills = initialJob?.skills ?? [];
       const skillSelectionChanged = selectedSkill !== (initialSkills[0] ?? "");
       let verificationState = skillLoadState;
@@ -2731,14 +3256,20 @@ export function AutomationFormModal({
         if (script && scriptConfig) {
           await writeEffectiveWindowScript(botId, script, scriptConfig);
         }
-        await createCronJobWithScriptRollback(botId, {
+        const createInput = {
           name: name.trim(),
           prompt: prompt.trim(),
           schedule,
           deliver,
           script,
           skills: toCreateCronSkills(selectedSkill),
-        }, script);
+          pinCurrentModel: true,
+        };
+        if (selectedUpstream) {
+          await createCronJobWithContextAndScriptRollback(botId, createInput, selectedUpstream, script);
+        } else {
+          await createCronJobWithScriptRollback(botId, createInput, script);
+        }
       } else if (initialJob) {
         const patch: Parameters<typeof editCronJob>[2] = {};
         const nextName = name.trim();
@@ -2768,7 +3299,9 @@ export function AutomationFormModal({
             }
           }
         }
-        if (Object.keys(patch).length > 0) {
+        if (contextPatch !== undefined) {
+          await editCronJobWithContext(botId, initialJob.id, patch, contextPatch);
+        } else if (Object.keys(patch).length > 0) {
           await editCronJob(botId, initialJob.id, patch);
         }
       }
@@ -2783,7 +3316,7 @@ export function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, name, prompt, selectedSkill, skillLoadState, onRefreshSkills, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t]);
+  }, [botId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, selectedSkill, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
@@ -2907,6 +3440,43 @@ export function AutomationFormModal({
           onRetry={() => void onRefreshSkills()}
         />
 
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-black/80">
+            {t("上游任务")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
+          </label>
+          <div className="mt-2">
+            {externalMultipleUpstreams ? (
+              <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs text-amber-800">
+                <p className="font-medium">{t("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")}</p>
+                <ul className="mt-1 space-y-1 text-amber-800/75">
+                  {externalMultipleUpstreams.map((job, index) => (
+                    <li key={index} className="break-words">
+                      {job?.name ?? t("上游任务已不可用")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <AutomationUpstreamPicker
+                value={selectedUpstream}
+                options={pickerUpstreams}
+                state={contextCapability}
+                onRetry={onRetryContextCapability}
+                onChange={(jobId) => {
+                  setSelectedUpstream(jobId);
+                  setUpstreamChanged(true);
+                  setUpstreamError(null);
+                }}
+              />
+            )}
+          </div>
+          {upstreamError && (
+            <p role="alert" className="mt-2 text-pretty text-xs leading-5 text-[#B91C1C]">
+              {upstreamError}
+            </p>
+          )}
+        </div>
+
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (
           <div className="mt-4">
@@ -2985,8 +3555,8 @@ export function AutomationFormModal({
         {/* 通知方式（多选；不勾任何 = 仅本地写日志）
          *
          * 区域可见性：
-         *   - 国内站（isCN）：weixin / qqbot / feishu
-         *   - 国际站（isGlobal）：telegram / whatsapp / discord / weixin / qqbot / wecom / feishu
+         *   - 国内站（isCN）：weixin / qqbot / wecom / feishu / dingtalk
+         *   - 国际站（isGlobal）：telegram / whatsapp / discord / slack / weixin / qqbot / wecom / feishu
          */}
         <div className="mt-4">
           <label className="block text-sm font-medium text-black/80">
@@ -2999,20 +3569,17 @@ export function AutomationFormModal({
             </div>
           ) : (
             <div className="mt-2 space-y-1">
-              {(
-              isGlobal
-                ? GLOBAL_NOTIFICATION_CHANNELS.map((channel) => ({
-                  key: channel.key,
-                  label: "label" in channel ? channel.label : t(channel.labelKey),
-                  comingSoon: channel.comingSoon,
-                }))
-                : ([
-                  { key: "weixin", label: t("微信"), comingSoon: false },
-                  { key: "qqbot", label: "QQ", comingSoon: false },
-                  { key: "wecom", label: t("企业微信"), comingSoon: false },
-                  { key: "feishu", label: t("飞书"), comingSoon: false },
-                ] as const)
-            ).map(({ key, label, comingSoon }) => {
+              {!hasAvailableNotificationChannel ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-black/45" style={MODAL_HELP_TEXT_STYLE}>
+                  <span>{t("暂无已配置的通知通道。")}</span>
+                  <a
+                    href="/agents/channels/"
+                    className="inline-flex items-center rounded-md border border-black/10 px-2 py-1 text-[12px] font-medium text-black/70 transition hover:bg-black/[0.04]"
+                  >
+                    {t("前往通道配置")}
+                  </a>
+                </div>
+              ) : availableNotificationChannels.map(({ key, label, comingSoon }) => {
               // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
               const configured = isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon);
               const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
@@ -3078,7 +3645,7 @@ export function AutomationFormModal({
                     {selected && key === "wecom" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("通过默认的 home 对话发送通知")}</span>
                     )}
-                    {selected && (key === "telegram" || key === "discord") && (
+                    {selected && (key === "telegram" || key === "discord" || key === "slack") && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("请先在")}
                         {label}
@@ -3171,21 +3738,25 @@ export function AutomationFormModal({
 
                 </div>
               );
-            })}
+              })}
             </div>
           )}
-          {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
-          <div aria-hidden="true" style={{ height: 4 }} />
-          {deliverPlatforms.length === 0 ? (
-            <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              {t("如不选，智能体只会在后台执行任务，不发通知。")}
-            </p>
-          ) : (
-            // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
-            <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              {"\u00A0"}
-            </p>
-          )}
+          {hasAvailableNotificationChannel ? (
+            <>
+              {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
+              <div aria-hidden="true" style={{ height: 4 }} />
+              {deliverPlatforms.length === 0 ? (
+                <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                  {t("如不选，智能体只会在后台执行任务，不发通知。")}
+                </p>
+              ) : (
+                // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
+                <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                  {"\u00A0"}
+                </p>
+              )}
+            </>
+          ) : null}
         </div>
 
         {/* 操作 */}
@@ -3901,11 +4472,15 @@ function IntervalPicker({
 }
 
 function OncePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT();
+
   return (
     <input
       type="datetime-local"
+      step={60}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      aria-label={t("执行时间")}
       style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
       className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
     />
@@ -4092,13 +4667,36 @@ export function buildHermesSendTarget(platform: string, chatId: string): string 
 }
 
 export function buildHermesSendCommand(platform: string, chatId: string, message: string): string {
-  return [
-    "hermes",
-    "send",
-    "--to",
-    shellQuote(buildHermesSendTarget(platform, chatId)),
-    shellQuote(message),
+  const target = shellQuote(buildHermesSendTarget(platform, chatId));
+  const payload = shellQuote(message);
+  const directSend = `${["hermes", "send", "--to", target, payload].join(" ")} 2>&1`;
+  const directCommand = [
+    `output=$(${directSend})`,
+    "status=$?",
+    "printf '%s\\n' \"$output\"",
+    "if [ $status -ne 0 ]; then exit $status; fi",
+  ].join("; ");
+  const legacyPayload = JSON.stringify({ action: "send", target: buildHermesSendTarget(platform, chatId), message });
+  const legacyScript = [
+    "import json, os, sys",
+    "from pathlib import Path",
+    "from dotenv import load_dotenv",
+    "home = Path(os.environ.get('HERMES_HOME') or (Path.home() / '.hermes'))",
+    "load_dotenv(str(home / '.env'), override=True)",
+    "from tools.send_message_tool import send_message_tool",
+    `result = send_message_tool(${legacyPayload})`,
+    "print(result)",
+    "payload = json.loads(result) if isinstance(result, str) else result",
+    "sys.exit(1 if isinstance(payload, dict) and payload.get('error') else 0)",
+  ].join("; ");
+  const legacyCommand = [
+    "cd \"$HOME/.hermes/hermes-agent\"",
+    "&&",
+    "\"$HOME/.hermes/hermes-agent/venv/bin/python\"",
+    "-c",
+    shellQuote(legacyScript),
   ].join(" ");
+  return `if hermes send --help >/dev/null 2>&1; then ${directCommand}; else ${legacyCommand}; fi`;
 }
 
 export function buildHermesSendTestCommand(platform: string, chatId: string, message: string): string {
@@ -4199,7 +4797,8 @@ export function isHermesNotificationChannelConfigured(
   comingSoon = false,
 ): boolean {
   if (comingSoon) return false;
-  return enabledChannels === null || enabledChannels.has(key);
+  if (enabledChannels === null) return true;
+  return enabledChannels.has(key);
 }
 
 export function formatTestSendError(
@@ -4273,9 +4872,11 @@ function normalizeHermesChannelKey(channel: string): string {
   if (["wechat", "weixin", "openclaw-weixin", "openclaw-wechat"].includes(normalized)) return "weixin";
   if (["qq", "qqbot", "qq-bot", "qqbotplugin", "openclaw-qqbot", "openclaw-qq"].includes(normalized)) return "qqbot";
   if (["wecom", "wework", "work-weixin", "work-wechat", "openclaw-wecom"].includes(normalized)) return "wecom";
+  if (["dingtalk", "openclaw-dingtalk"].includes(normalized)) return "dingtalk";
   if (["feishu", "lark", "larksuite", "openclaw-feishu", "openclaw-lark"].includes(normalized)) return "feishu";
   if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
   if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
   if (["discord", "openclaw-discord"].includes(normalized)) return "discord";
+  if (["slack", "openclaw-slack"].includes(normalized)) return "slack";
   return normalized;
 }

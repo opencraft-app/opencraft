@@ -8,3 +8,7 @@
 - 适用场景
 - 与相近概念的边界
 - 相关来源或决策
+
+## 已沉淀概念
+
+- [LightVela 官方社群和社交媒体入口](./lightvela-official-social-channels.md)：维护 Discord、WhatsApp 和 X 的官方 URL。

@@ -1,0 +1,14 @@
+# trade sgprod：注入 ACCOUNT_BINDING_INTERNAL_BASE_URL 到 trade-config。
+#
+# 新加坡正式 lightclaw-auth 起在 user-auth namespace，Service 名为 lightclaw-auth
+# （与 shprod 同形态，见 argocd/apps/sgprod/lightclaw-auth.yaml 的 destination）。
+# trade 通过这个内部接口反查 externalUserId -> uin/appId；国际站还会用它换取
+# 临时凭证（POST /internal/shadow/credentials）供 Billing CloudAPI 签名。
+# 正式环境必须连真实 shadow binding，不能启用 TRADE_SHADOW_MOCK_ENABLED。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trade-config
+  namespace: trade
+data:
+  ACCOUNT_BINDING_INTERNAL_BASE_URL: http://lightclaw-auth.user-auth.svc.cluster.local

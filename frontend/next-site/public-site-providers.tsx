@@ -1,36 +1,46 @@
 'use client';
 
-import { Suspense, type ReactNode, useEffect } from 'react';
+import React, { Suspense, type ReactNode } from 'react';
 
 import { OpenClawProvider } from '@/contexts/agent-context';
 import { RepositoryProvider } from '@/contexts/repository-context';
 import { RuntimeConfigProvider } from '@/contexts/runtime-config-context';
 import { SessionProvider } from '@/contexts/session-context';
-import i18n, { setLocale } from '@/i18n';
+import { LocaleOverrideProvider, type I18nLocale } from '@/i18n/t';
 import { DatongPageEffect } from '@/observability/datong-page-effect';
 import { DatongTrackerBridge } from '@/observability/datong-tracker-bridge';
 import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
-import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
+import { CookieConsentBanner } from '@/components/site/cookie-consent-banner';
+import { localeDefinition } from '@/i18n/locales.config';
 
 import type { PublicRouteLocale } from './public-locale';
 
 type Locale = PublicRouteLocale['locale'];
-type I18nLocale = 'zh-CN' | 'en-US';
 
 function i18nLocaleForPublicLocale(locale: Locale): I18nLocale {
-  return locale.startsWith('zh') ? 'zh-CN' : 'en-US';
+  return localeDefinition(locale).i18nKey;
 }
 
+/**
+ * 把路由 locale 转成 i18n locale 并通过 Context 注入。
+ *
+ * 关键：使用 **Context override** 而不是修改 i18n 单例的 `language`。
+ * 原因：
+ *   - 组件树里 `useT()` → `useTranslation({ lng })` → `i18n.getFixedT(lng)`
+ *     直接指定语言，同步生效、与全局 `i18n.language` 无关。
+ *   - Next.js SSR 是长驻进程 + 多请求，改全局单例会有并发污染；用 Context
+ *     则每次 render 隔离。
+ *   - SSR HTML 与客户端 hydration 都用同一 locale 走翻译，避免文案 mismatch。
+ */
 export function PublicSiteLocaleBridge({ locale, children }: { locale: Locale; children: ReactNode }) {
-  useEffect(() => {
-    const targetLocale = i18nLocaleForPublicLocale(locale);
-    if (i18n.language !== targetLocale) {
-      setLocale(targetLocale);
-    }
-  }, [locale]);
+  const targetLocale = i18nLocaleForPublicLocale(locale);
 
-  return <>{children}</>;
+  React.useEffect(() => {
+    document.documentElement.lang = targetLocale;
+  }, [targetLocale]);
+
+  return <LocaleOverrideProvider locale={targetLocale}>{children}</LocaleOverrideProvider>;
 }
 
 export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
@@ -45,7 +55,7 @@ export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
             <DatongPageEffect />
           </Suspense>
           <OpenClawProvider>
-            <MaintenanceAnnouncementBanner />
+            <CookieConsentBanner />
             {children}
           </OpenClawProvider>
         </SessionProvider>

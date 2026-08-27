@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useLocation } from "react-router-dom";
 
 import { LegalFooter } from "@/components/site/legal-footer";
-import { LightVelaFooter, type RenderFooterLink } from "@/components/site/lightvela-footer";
+import { LightVelaFooter, FooterLinkColumns, FOOTER_SURFACE_CLASS, type RenderFooterLink } from "@/components/site/lightvela-footer";
 import { LoginModal } from "@/components/site/login-modal";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
@@ -20,7 +20,9 @@ import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATI
 import { DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongClick } from "@/observability/datong-tracker";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
+import { useZhHantDeep } from "@/lib/zh-hant";
 import {
+  AGENT_SECTION_PATH_BY_ID,
   AGENTS_HOME_PATH,
   SUBSCRIBE_PATH,
   getAgentCreatingPath,
@@ -31,6 +33,10 @@ import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSect
 import FeatureSection, { CardsSection } from "@/imports/Frame2147230025/sections/FeatureSection";
 import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
 import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
+import { OverviewAutomationTasksSection } from "./scenario-tasks/OverviewAutomationTasksSection";
+import { getOverviewScenarioTaskPacks } from "./scenario-tasks/scenario-packs";
+
+const NO_INSTALLED_SCENARIOS: ReadonlySet<string> = new Set();
 
 type LandingNavigateOptions = {
   replace?: boolean;
@@ -67,6 +73,11 @@ export const LandingPageView = ({
   const { bots, isSubscribed } = useOpenClaw();
   const oauthError = useMemo(() => new URLSearchParams(locationSearch).get("oauth_error"), [locationSearch]);
   const oauthInitialError = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
+  const rawOverviewScenarioTaskPacks = useMemo(
+    () => getOverviewScenarioTaskPacks(publicLocale ?? (isGlobal ? "en-US" : "zh-CN")),
+    [publicLocale],
+  );
+  const overviewScenarioTaskPacks = useZhHantDeep(rawOverviewScenarioTaskPacks);
   const [showLogin, setShowLogin] = useState(false);
 
   useEffect(() => {
@@ -82,7 +93,7 @@ export const LandingPageView = ({
       location: PRODUCT_ANALYTICS_LOCATIONS.PUBLIC_LANDING,
     });
     const target = !isAuthenticated
-      ? AGENTS_HOME_PATH
+      ? SUBSCRIBE_PATH
       : !isSubscribed
         ? SUBSCRIBE_PATH
         : bots.length > 0
@@ -95,9 +106,9 @@ export const LandingPageView = ({
         target,
       },
     });
-    // 未登录：进入创建流程入口（产品壳内会引导登录）
+    // 未登录：跳订阅套餐页（未登录可浏览静态价格，点「订阅」时再引导登录）
     if (!isAuthenticated) {
-      navigateTo(AGENTS_HOME_PATH);
+      navigateTo(SUBSCRIBE_PATH);
       return;
     }
     // 功能点1：首页「创建」不再前置实名认证，已登录用户直接进入后续流程。
@@ -126,6 +137,9 @@ export const LandingPageView = ({
     ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
         renderLink({ ariaLabel, children, className, href, onClick })
     : undefined;
+  const handleOverviewAutomationClick = useCallback(() => {
+    navigateTo(AGENT_SECTION_PATH_BY_ID.automations);
+  }, [navigateTo]);
 
   return (
     <div className="w-full bg-white overflow-x-hidden">
@@ -149,9 +163,30 @@ export const LandingPageView = ({
       <BrandIconsSection />
       <FeatureSection />
       <CardsSection />
+      <OverviewAutomationTasksSection
+        packs={overviewScenarioTaskPacks}
+        installedScenarioIds={NO_INSTALLED_SCENARIOS}
+        myTasksHref={AGENT_SECTION_PATH_BY_ID.automations}
+        onEnable={handleOverviewAutomationClick}
+      />
       <ProcessSection />
       <CtaSection onCreateClick={() => handleCreateClick('footer')} ctaLabel={ctaLabel} />
-      {isGlobal ? <LightVelaFooter renderLink={renderFooterLink} /> : <LegalFooter icpPlacement="right" />}
+      {isGlobal ? (
+        <LightVelaFooter renderLink={renderFooterLink} />
+      ) : (
+        <>
+          {/*
+            国内站页脚：分栏导航（产品 / 公司 / 社区）+ 原有紧凑法律行。
+            LegalFooter 只承载版权与备案信息，栏目导航与国际站共用 FooterLinkColumns 的数据源。
+          */}
+          <div className={`w-full ${FOOTER_SURFACE_CLASS} pb-10`}>
+            <div className="mx-auto max-w-[1440px] px-6 md:px-10 lg:px-16">
+              <FooterLinkColumns renderLink={renderFooterLink} />
+            </div>
+          </div>
+          <LegalFooter icpPlacement="right" showLinks={false} />
+        </>
+      )}
       {!authControls ? (
         <LoginModal
           open={showLogin}

@@ -38,12 +38,34 @@ func tradeSubscriptionIdempotencyKey(dealName string) string {
 	return "trade:" + strings.TrimSpace(dealName)
 }
 
+const (
+	freeCreditSubscriptionNamePrefix = "free-credit:"
+	// International payment URL generation can include auth credential
+	// exchange, card lookup, order lookup, and CreatePayUrl. Keep the budget
+	// below the common 60-second edge timeout while leaving room for fallback.
+	payURLRequestTimeout = 50 * time.Second
+)
+
+func packageSubscriptionName(userID, passID string) string {
+	return "package:" + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
+}
+
+func freeCreditSubscriptionName(source, idempotencyKey string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "manual"
+	}
+	return freeCreditSubscriptionNamePrefix + source + ":" + strings.TrimSpace(idempotencyKey)
+}
+
 type newPassSubscriptionRequest struct {
-	IdempotencyKey string
-	UserID         string
-	PlanID         string
-	PeriodValue    int
-	PeriodUnit     string
+	IdempotencyKey   string
+	UserID           string
+	PlanID           string
+	SubscriptionName string
+	PeriodValue      int
+	PeriodUnit       string
+	IsUnique         bool
 }
 
 type newPassSubscription struct {
@@ -55,6 +77,9 @@ type newPassSubscription struct {
 func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (bool, error) {
 	if gatewayroute.NewAllocationGateway(userID) == gatewayroute.GatewayLLMGateway {
 		resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().EnsureUser(ctx, userID, nickname)
+		if err != nil {
+			return false, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "ensure llmgateway user: %v", err)
+		}
 		return resp != nil && resp.Result == "created", err
 	}
 	resp, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ctx, userID, nickname)
@@ -64,11 +89,11 @@ func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (boo
 func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptionRequest) (*newPassSubscription, error) {
 	if gatewayroute.NewAllocationGateway(req.UserID) == gatewayroute.GatewayLLMGateway {
 		sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
-			IdempotencyKey: req.IdempotencyKey,
-			UserID:         req.UserID,
-			PlanID:         req.PlanID,
-			PeriodValue:    req.PeriodValue,
-			PeriodUnit:     req.PeriodUnit,
+			IdempotencyKey:   req.IdempotencyKey,
+			UserID:           req.UserID,
+			PlanID:           req.PlanID,
+			SubscriptionName: req.SubscriptionName,
+			IsUnique:         req.IsUnique,
 		})
 		if err != nil {
 			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway subscription: %v", err)
@@ -114,9 +139,11 @@ type PassDetail struct {
 	Status string
 
 	// 以下字段运行时从 Bundle / ai-gateway / user_resource_quota 拉取填充，不持久化
-	BundleName      string // 套餐名称（= bundle.bundle_name）
-	CreditTotal     int64  // 积分总量（= bundle.credit）
-	CreditAvailable int64  // 积分余量（= token_balance / credit_token_ratio）
+	BundleName          string // 套餐名称（= bundle.bundle_name）
+	CreditTotal         int64  // 套餐积分总量（active 且存在套餐订阅时 = bundle.credit）
+	CreditAvailable     int64  // 积分余量（= token_balance / credit_token_ratio）
+	FreeCreditTotal     int64  // 免费/额外积分总量（LLMGateway subscription_name=free-credit:*）
+	FreeCreditAvailable int64  // 免费/额外积分余量（LLMGateway subscription_name=free-credit:*）
 
 	// AgentQuotaTotal / AgentQuotaAvailable 是 Agent 席位配额（v1.7.23 B18 新增,
 	// v1.7.24 B19 修订: 两值都从 user_resource_quota 表同一行取, 不再用 bundle.agent_quota）。
@@ -154,7 +181,7 @@ type Logic interface {
 	//   - 入参 time_span / time_unit 由 trade 透传（来源于下单时的 trade_order，而非 bundle 字段）
 	//   - 入参 uin / app_id 由 trade 透传，写入 ctl_pass 表（取代 CreateTrialPass 中的 TODO=0）
 	//   - 入参 deal_name 仅日志记录用于排障，ctl_pass 表不持久化（归 trade_order 反查）
-	//   - renew_flag 本期 logic 内部写死 MANUAL_RENEW（不读 req.RenewFlag，待 AUTO_RENEW 放开后再切换）
+	//   - renew_flag 仅接受 AUTO_RENEW；缺失或其它值兜底 MANUAL_RENEW
 	//   - 兜底防御：用户已有 active pass 直接报 ErrPassAlreadyExists（不做幂等，不依赖 pass_pending_order）
 	CompletePass(req *transport.CompletePassRequest) (*PassDetail, error)
 
@@ -162,6 +189,10 @@ type Logic interface {
 	MigrateFreeTrialPassToBilling(req *transport.PassBillingMigrationRequest) (*transport.PassBillingMigrationResult, error)
 	// TransferPassFromBilling 在 jifei transferResource 回调到达后绑定既有 pass 的计费归属。
 	TransferPassFromBilling(req *transport.TransferPassRequest) (*PassDetail, error)
+
+	// GrantFreeCredit 给用户发放免费/额外积分。实际落到 LLMGateway named subscription，
+	// 过期时间跟随用户当前 active pass，不走 AI Gateway。
+	GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transport.GrantFreeCreditResponse, error)
 
 	// CreatePassOrder 创建付费 pass 订单（v1.7.31 拆分：仅下单，不再拉支付 URL）
 	//
@@ -189,6 +220,10 @@ type Logic interface {
 	//
 	// 与 CreatePassOrder 一致：**本接口不创建本地 pass**，pass 发货走相同的回调链路。
 	CreatePassOrderAndPay(userID string, req *transport.CreatePassOrderRequest) (*transport.CreatePassOrderAndPayResult, error)
+
+	// CreateDianshiPassOrderAndPay creates and pays through the dedicated
+	// Dianshi activity endpoint. It does not expose payment or renewal options.
+	CreateDianshiPassOrderAndPay(userID string, req *transport.CreateDianshiPassOrderAndPayRequest) (*transport.CreateDianshiPassOrderAndPayResult, error)
 
 	// GetPasses 查询所有 Pass（后台管理用）
 	GetPasses(userID *string, bundleID *string) ([]*PassDetail, error)
@@ -232,6 +267,15 @@ type Logic interface {
 	//   - appID：> 0
 	//   - passIDs：1..100（caller 已校验非空 + 上限）
 	ListPassesByResourceIDs(appID int64, passIDs []string) ([]*PassDetail, error)
+
+	// DescribePassByCloudAccount 供云 API DescribePass 按影子账号 + pass_id 精确反查 pass。
+	//
+	// 入参：
+	//   - uin / appID：影子账号归属，必须与 pass 表记录一致
+	//   - passID：pass 业务主键
+	//
+	// 归属不匹配按 ErrPassNotFound 处理，避免对外暴露 pass 是否存在。
+	DescribePassByCloudAccount(uin, appID int64, passID string) (*PassDetail, error)
 
 	// IsolatePass 受 trade 反向调用，把 pass 推入 isolating 状态并派发后台 task 完成实际隔离。
 	//
@@ -550,24 +594,25 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		return nil, fmt.Errorf("calc expired_time: %w", err)
 	}
 
-	// 步骤 9：AI Token 订阅联动（严格一致）
-	// credit > 0 时向选定网关开通订阅；credit == 0 时跳过。
+	// 步骤 9：确保 AI 权益存在。LLMGateway 使用长期订阅，业务有效期只由 ctl
+	// 的 pass 管理；legacy ai-gateway 在迁移期仍接收原周期。
+	subscriptionEnsured := false
 	if bundle.Credit > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		// R-MR-3 v0.3.0：透传 bundle.TimeSpan/TimeUnit 给选定网关，
-		// 让其内部按 (NOW + period) 算 PeriodEnd（Q9=i1 真源），与 ctl
-		// CalcExpiredTime 走同算法保证 PeriodEnd 完全一致。
 		sub, subErr := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
-			IdempotencyKey: trialSubscriptionIdempotencyKey(userID, bundleID),
-			UserID:         userID,
-			PlanID:         bundle.AiGatewayPlanID,
-			PeriodValue:    bundle.TimeSpan,
-			PeriodUnit:     bundle.TimeUnit,
+			IdempotencyKey:   trialSubscriptionIdempotencyKey(userID, bundleID),
+			UserID:           userID,
+			PlanID:           bundle.AiGatewayPlanID,
+			SubscriptionName: packageSubscriptionName(userID, passID),
+			PeriodValue:      bundle.TimeSpan,
+			PeriodUnit:       bundle.TimeUnit,
+			IsUnique:         true,
 		})
 		cancel()
 		if subErr != nil {
 			return nil, fmt.Errorf("apply gateway subscription: %w", subErr)
 		}
+		subscriptionEnsured = true
 		if sub != nil {
 			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, sub.Gateway, sub.ID, sub.PlanID, gatewayroute.SourceApplySubscription)
 			resource.ZapLogger.Info("pass subscription applied",
@@ -592,7 +637,12 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 	}
 
 	if err := passDao.CreatePassWithQuota(entity, userID, agentQuota); err != nil {
-		return nil, fmt.Errorf("create pass with quota: %w", err)
+		return nil, compensateEnsuredEntitlement(
+			resource.ZapLogger,
+			userID,
+			subscriptionEnsured,
+			fmt.Errorf("create pass with quota: %w", err),
+		)
 	}
 
 	// 步骤 11：创建成功，取消回滚
@@ -826,6 +876,76 @@ func (l *logic) TransferPassFromBilling(req *transport.TransferPassRequest) (*Pa
 	return entityToDetail(&saved), nil
 }
 
+func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transport.GrantFreeCreditResponse, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	userID := strings.TrimSpace(req.UserID)
+	planID := strings.TrimSpace(req.PlanID)
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if userID == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "user_id is required")
+	}
+	if planID == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "plan_id is required")
+	}
+	if idempotencyKey == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "idempotency_key is required")
+	}
+	if !config.LLMGatewayEnabled() {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "llmgateway is disabled")
+	}
+
+	activePass, err := findActivePassForFreeCredit(userID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	periodEnd := activePass.ExpiredTime.UTC()
+	subscriptionName := freeCreditSubscriptionName(req.Source, idempotencyKey)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
+		IdempotencyKey:   idempotencyKey,
+		UserID:           userID,
+		PlanID:           planID,
+		SubscriptionName: subscriptionName,
+		IsUnique:         false,
+	})
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway free credit subscription: %v", err)
+	}
+	if sub == nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway free credit subscription returned empty subscription")
+	}
+	gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceApplySubscription)
+	return &transport.GrantFreeCreditResponse{
+		UserID:           userID,
+		PlanID:           sub.PlanID,
+		SubscriptionID:   sub.ID,
+		SubscriptionName: subscriptionName,
+		PeriodEnd:        periodEnd,
+	}, nil
+}
+
+func findActivePassForFreeCredit(userID string, now time.Time) (*passmodel.Entity, error) {
+	passDao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	passes, err := passDao.ListByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("list user passes: %w", err)
+	}
+	for _, p := range passes {
+		if p == nil {
+			continue
+		}
+		if p.DeletedTime != nil || p.Status != passmodel.StatusActive || !p.ExpiredTime.After(now) {
+			continue
+		}
+		return p, nil
+	}
+	return nil, errcode.ErrPassNotFound
+}
+
 func validateTransferPassRequest(req *transport.TransferPassRequest) error {
 	if req == nil {
 		return errcode.ErrPassInvalidParam
@@ -972,7 +1092,7 @@ func (l *logic) fillCredits(details []*PassDetail) {
 
 // fillCredit 为单个 PassDetail 填充 bundle / 配额 / ai-gateway 相关字段
 //   - bundle_name 从 bundle 读取
-//   - credit_total 从 bundle.credit 读取
+//   - credit_total 从 bundle.credit 读取；pass 非 active 或无套餐订阅时返回 0
 //   - credit_available 实时调 ai-gateway 查 subscription 换算；失败时返回 0 + 日志告警
 //   - agent_quota_total / agent_quota_available 从 user_resource_quota 表读取（v1.7.23 B18 新增,
 //     v1.7.24 B19 修订: 两值都从同一行取, 强一致, 不再混用 bundle.agent_quota）
@@ -1016,15 +1136,16 @@ func (l *logic) fillCredit(d *PassDetail) {
 	}
 	// quotaEntity == nil（用户从未购买过 pass，无配额行）→ total/available 保持零值
 
-	// credit == 0 的 bundle 不需要查网关订阅
-	if bundle.Credit == 0 {
+	if d.Status != "" && d.Status != passmodel.StatusActive {
+		d.CreditTotal = 0
 		d.CreditAvailable = 0
 		return
 	}
 
+	// 即使套餐积分为 0，也要查询 LLMGateway 的免费/额外积分订阅。
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	tokenBalance, found, err := getCompatibleActiveSubscriptionTokenBalance(ctx, d.UserID)
+	balances, err := getCompatibleCreditBalances(ctx, d.UserID)
 	if err != nil {
 		resource.ZapLogger.Warn("fill credit: get active subscription failed",
 			zap.String("pass_id", d.PassID),
@@ -1034,15 +1155,24 @@ func (l *logic) fillCredit(d *PassDetail) {
 		d.CreditAvailable = 0
 		return
 	}
-	if !found {
-		// 无订阅（可能尚未开通或已取消）
+	if bundle.Credit == 0 || !balances.PackageFound {
+		d.CreditTotal = 0
 		d.CreditAvailable = 0
-		return
+	} else {
+		d.CreditAvailable = bundlelogic.TokensToCredit(balances.PackageTokenBalance)
 	}
-	d.CreditAvailable = bundlelogic.TokensToCredit(tokenBalance)
+	d.FreeCreditTotal = bundlelogic.TokensToCredit(balances.FreeTokenTotal)
+	d.FreeCreditAvailable = bundlelogic.TokensToCredit(balances.FreeTokenBalance)
 }
 
-func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID string) (int64, bool, error) {
+type creditBalances struct {
+	PackageTokenBalance int64
+	PackageFound        bool
+	FreeTokenTotal      int64
+	FreeTokenBalance    int64
+}
+
+func getCompatibleCreditBalances(ctx context.Context, userID string) (creditBalances, error) {
 	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
 		resource.ZapLogger.Warn("get recorded subscription gateway failed, fallback to probe",
 			zap.String("user_id", userID),
@@ -1052,32 +1182,33 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 		case gatewayroute.GatewayAIGateway:
 			legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
 			if legacyAdapter == nil {
-				return 0, false, fmt.Errorf("recorded ai-gateway subscription but ai-gateway adapter is nil")
+				return creditBalances{}, fmt.Errorf("recorded ai-gateway subscription but ai-gateway adapter is nil")
 			}
 			sub, err := legacyAdapter.GetActiveSubscription(ctx, userID)
 			if err != nil {
-				return 0, false, err
+				return creditBalances{}, err
 			}
 			if sub == nil {
-				return 0, false, nil
+				return creditBalances{}, nil
 			}
 			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayAIGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-			return sub.TokenBalance, true, nil
+			return creditBalances{PackageTokenBalance: sub.TokenBalance, PackageFound: true}, nil
 		case gatewayroute.GatewayLLMGateway:
 			if !config.LLMGatewayEnabled() {
 				resource.ZapLogger.Warn("recorded llmgateway subscription ignored because llmgateway is disabled",
 					zap.String("user_id", userID))
 				break
 			}
-			sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, userID)
+			list, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ListActiveSubscriptions(ctx, userID)
 			if err != nil {
-				return 0, false, err
+				return creditBalances{}, err
 			}
-			if sub == nil {
-				return 0, false, nil
+			balances := creditBalancesFromLLMSubscriptions(list.Subscriptions)
+			if len(list.Subscriptions) > 0 {
+				sub := firstPackageSubscription(list.Subscriptions)
+				gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
 			}
-			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-			return sub.TokenBalance, true, nil
+			return balances, nil
 		default:
 			resource.ZapLogger.Warn("unknown recorded subscription gateway, fallback to probe",
 				zap.String("user_id", userID),
@@ -1092,7 +1223,7 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 		if legacyErr == nil {
 			if legacySub != nil {
 				gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayAIGateway, legacySub.ID, legacySub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-				return legacySub.TokenBalance, true, nil
+				return creditBalances{PackageTokenBalance: legacySub.TokenBalance, PackageFound: true}, nil
 			}
 		} else if !isLegacyGatewayDisabled(legacyErr) {
 			resource.ZapLogger.Warn("get active subscription from ai-gateway failed, try llmgateway",
@@ -1104,26 +1235,54 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 
 	if !config.LLMGatewayEnabled() {
 		if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
-			return 0, false, legacyErr
+			return creditBalances{}, legacyErr
 		}
-		return 0, false, nil
+		return creditBalances{}, nil
 	}
 
-	llmSub, llmErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, userID)
+	llmList, llmErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ListActiveSubscriptions(ctx, userID)
 	if llmErr == nil {
-		if llmSub != nil {
-			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, llmSub.ID, llmSub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-			return llmSub.TokenBalance, true, nil
+		if llmList != nil && len(llmList.Subscriptions) > 0 {
+			sub := firstPackageSubscription(llmList.Subscriptions)
+			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			return creditBalancesFromLLMSubscriptions(llmList.Subscriptions), nil
 		}
 		if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
-			return 0, false, legacyErr
+			return creditBalances{}, legacyErr
 		}
-		return 0, false, nil
+		return creditBalances{}, nil
 	}
 	if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
-		return 0, false, fmt.Errorf("ai-gateway: %v; llmgateway: %w", legacyErr, llmErr)
+		return creditBalances{}, fmt.Errorf("ai-gateway: %v; llmgateway: %w", legacyErr, llmErr)
 	}
-	return 0, false, llmErr
+	return creditBalances{}, llmErr
+}
+
+func creditBalancesFromLLMSubscriptions(subs []llmgateway.Subscription) creditBalances {
+	var balances creditBalances
+	for _, sub := range subs {
+		if strings.HasPrefix(strings.TrimSpace(sub.Name), freeCreditSubscriptionNamePrefix) {
+			tokenTotal := sub.TokenTotal
+			if tokenTotal == 0 && sub.TokenBalance > 0 {
+				tokenTotal = sub.TokenBalance
+			}
+			balances.FreeTokenTotal += tokenTotal
+			balances.FreeTokenBalance += sub.TokenBalance
+			continue
+		}
+		balances.PackageFound = true
+		balances.PackageTokenBalance += sub.TokenBalance
+	}
+	return balances
+}
+
+func firstPackageSubscription(subs []llmgateway.Subscription) llmgateway.Subscription {
+	for _, sub := range subs {
+		if !strings.HasPrefix(strings.TrimSpace(sub.Name), freeCreditSubscriptionNamePrefix) {
+			return sub
+		}
+	}
+	return subs[0]
 }
 
 func isLegacyGatewayDisabled(err error) bool {
@@ -1228,7 +1387,7 @@ func entitiesToDetails(entities []*passmodel.Entity) []*PassDetail {
 //  1. 入参从 (userID, bundleID) 升级为完整 *transport.CompletePassRequest（透传 jifei 协议字段）
 //  2. expired_time 计算用 req.TimeSpan/TimeUnit（trade 持有的下单参数），不再读 bundle.TimeSpan/TimeUnit
 //  3. entity.Uin / AppID 从 req 透传写入（不再 TODO=0）
-//  4. RenewFlag 强制写 MANUAL_RENEW（v4 收敛：本期不对外暴露，req.RenewFlag 仅协议预留）
+//  4. RenewFlag 接受 trade 映射后的 AUTO_RENEW；缺失或非法值兜底 MANUAL_RENEW
 //  5. deal_name 仅日志记录用于排障，pass 表不持久化
 //
 // 复用 CreateTrialPass 步骤 5-12 的核心逻辑（EnsureUser → DecrementAvailCount →
@@ -1337,23 +1496,25 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		return nil, fmt.Errorf("calc expired_time: %w", err)
 	}
 
-	// 步骤 9：AI Token 订阅联动（与 CreateTrialPass 一致，credit > 0 时向选定网关开通订阅）
+	// 步骤 9：确保 AI 权益存在。LLMGateway 使用长期订阅，订单购买时长不下沉；
+	// legacy ai-gateway 在迁移期仍接收原周期。
+	subscriptionEnsured := false
 	if bundle.Credit > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		// R-MR-3 v0.3.0：透传 req.TimeSpan/TimeUnit（trade 已持有用户实际购买
-		// 时长），让 ai-gateway 按 (NOW + period) 算 PeriodEnd（Q9=i1 真源）。
-		// 同一份 bundle 不再需要按时长配多个 plan — bundle.AiGatewayPlanID 复用。
 		sub, subErr := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
-			IdempotencyKey: tradeSubscriptionIdempotencyKey(req.DealName),
-			UserID:         req.UserID,
-			PlanID:         bundle.AiGatewayPlanID,
-			PeriodValue:    req.TimeSpan,
-			PeriodUnit:     req.TimeUnit,
+			IdempotencyKey:   tradeSubscriptionIdempotencyKey(req.DealName),
+			UserID:           req.UserID,
+			PlanID:           bundle.AiGatewayPlanID,
+			SubscriptionName: packageSubscriptionName(req.UserID, passID),
+			PeriodValue:      req.TimeSpan,
+			PeriodUnit:       req.TimeUnit,
+			IsUnique:         true,
 		})
 		cancel()
 		if subErr != nil {
 			return nil, fmt.Errorf("apply gateway subscription: %w", subErr)
 		}
+		subscriptionEnsured = true
 		if sub != nil {
 			gatewayroute.RecordBestEffort(logger, req.UserID, sub.Gateway, sub.ID, sub.PlanID, gatewayroute.SourceApplySubscription)
 			logger.Info("complete pass subscription applied",
@@ -1364,7 +1525,7 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		}
 	}
 
-	// 步骤 10：事务写入 pass + quota（v4 收敛：uin/app_id 从 req 透传，renew_flag 写死 MANUAL_RENEW）
+	// 步骤 10：事务写入 pass + quota（uin/app_id 与 renew_flag 从 trade 透传）
 	entity := &passmodel.Entity{
 		PassID:      passID,
 		UserID:      req.UserID,
@@ -1372,11 +1533,16 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		Uin:         req.Uin,
 		AppID:       req.AppID,
 		ExpiredTime: expiredTime,
-		RenewFlag:   passmodel.RenewFlagManual, // v4 收敛：本期不对外暴露，logic 写死
-		Status:      passmodel.StatusActive,    // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
+		RenewFlag:   normalizeCompletePassRenewFlag(req.RenewFlag),
+		Status:      passmodel.StatusActive, // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
 	}
 	if err := passDao.CreatePassWithQuota(entity, req.UserID, agentQuota); err != nil {
-		return nil, fmt.Errorf("create pass with quota: %w", err)
+		return nil, compensateEnsuredEntitlement(
+			logger,
+			req.UserID,
+			subscriptionEnsured,
+			fmt.Errorf("create pass with quota: %w", err),
+		)
 	}
 
 	// 步骤 11：创建成功，取消回滚
@@ -1396,10 +1562,19 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 	return detail, nil
 }
 
+// normalizeCompletePassRenewFlag 只放行内部自动续费枚举。trade 旧版本、国内站回调或异常
+// 调用没有传入合法值时统一回落手动续费，避免改变既有 pass 的续费语义。
+func normalizeCompletePassRenewFlag(flag string) string {
+	if flag == passmodel.RenewFlagAuto {
+		return passmodel.RenewFlagAuto
+	}
+	return passmodel.RenewFlagManual
+}
+
 // validateCompletePassRequest v4 收敛：CompletePass 入参强校验
 //
-// trade 反向调时所有字段必填，缺失即报 ErrPassInvalidParam（trade 侧应已校验，
-// ctl 侧仅做防御性校验避免脏数据进入业务流程）。
+// trade 反向调时除可选 RenewFlag 外的业务字段必填，缺失即报 ErrPassInvalidParam
+// （trade 侧应已校验，ctl 侧仅做防御性校验避免脏数据进入业务流程）。
 func validateCompletePassRequest(req *transport.CompletePassRequest) error {
 	if req == nil {
 		return errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
@@ -1511,8 +1686,15 @@ func (l *logic) CreatePassOrder(userID string, req *transport.CreatePassOrderReq
 
 func mapTradePlaceOrderError(err error) error {
 	var tradeErr *tradeadapter.Error
-	if errors.As(err, &tradeErr) && tradeErr.Code == "BindingNotFound" {
-		return errcode.ErrPassShadowBindingRequired
+	if errors.As(err, &tradeErr) {
+		switch tradeErr.Code {
+		case "BindingNotFound":
+			return errcode.ErrPassShadowBindingRequired
+		case "BillingAccountOpenFailed":
+			return errcode.ErrPassBillingAccountOpenFailed
+		case "DianshiActivityRequired":
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "%s", tradeErr.Message)
+		}
 	}
 	return nil
 }
@@ -1522,7 +1704,7 @@ func mapTradePlaceOrderError(err error) error {
 // 流程概览：
 //
 //  1. 入参校验（userID / deal_names 非空）
-//  2. 调 trade.GeneratePayURL（透传 platform / wx_open_id / wx_app_id）
+//  2. 调 trade.GeneratePayURL（透传 platform / wx_open_id / wx_app_id / cancel_url / return_url）
 //  3. 返回支付 URL + 协议外字段
 //
 // **不写本地 pass 表**。
@@ -1544,10 +1726,12 @@ func (l *logic) CreatePassOrderUrl(userID string, req *transport.CreatePassOrder
 	// 当前单元素，遍历 deal_names[0]
 	dealName := req.DealNames[0]
 	var opts *tradeadapter.GeneratePayURLOptions
-	if req.Platform != "" || req.WxOpenID != "" {
+	if req.Platform != "" || req.WxOpenID != "" || req.CancelURL != "" || req.ReturnURL != "" {
 		opts = &tradeadapter.GeneratePayURLOptions{
-			Platform: req.Platform,
-			WxOpenID: req.WxOpenID,
+			Platform:  req.Platform,
+			WxOpenID:  req.WxOpenID,
+			CancelURL: req.CancelURL,
+			ReturnURL: req.ReturnURL,
 		}
 		// wx_app_id：当 wx_open_id 非空（微信公众号 / 小程序场景）时透传给 trade
 		// → jifei.getMidasEarmarking.wxAppId。
@@ -1560,7 +1744,7 @@ func (l *logic) CreatePassOrderUrl(userID string, req *transport.CreatePassOrder
 		}
 	}
 
-	urlCtx, urlCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	urlCtx, urlCancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().GeneratePayURL(urlCtx, dealName, opts)
 	urlCancel()
 	if urlErr != nil {
@@ -1647,6 +1831,131 @@ func (l *logic) CreatePassOrderAndPay(userID string, req *transport.CreatePassOr
 	}, nil
 }
 
+// CreateDianshiPassOrderAndPay uses Dianshi do_goods_and_pay for activity
+// bundles. Trade enforces activity eligibility and never falls back to jifei.
+func (l *logic) CreateDianshiPassOrderAndPay(userID string, req *transport.CreateDianshiPassOrderAndPayRequest) (*transport.CreateDianshiPassOrderAndPayResult, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	placeReq, logger, err := l.prepareCreatePassOrder(userID, &transport.CreatePassOrderRequest{
+		BundleID: req.BundleID,
+		Period:   req.Period,
+		TimeUnit: req.TimeUnit,
+	}, "create_dianshi_pass_order_and_pay")
+	if err != nil {
+		return nil, err
+	}
+
+	placeCtx, placeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	placeResp, placeErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().PlaceDianshiOrderAndPay(placeCtx, placeReq)
+	placeCancel()
+	if placeErr != nil {
+		logger.Warn("create Dianshi pass order and pay failed", zap.Error(placeErr))
+		if err := mapTradePlaceOrderError(placeErr); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("trade place Dianshi order and pay: %w", placeErr)
+	}
+	if placeResp == nil || placeResp.DealName == "" {
+		return nil, fmt.Errorf("trade place Dianshi order and pay: empty deal_name")
+	}
+
+	logger.Info("create Dianshi pass order and pay succeeded",
+		zap.String("deal_name", placeResp.DealName),
+		zap.String("big_order_id", placeResp.BigOrderID),
+	)
+	return &transport.CreateDianshiPassOrderAndPayResult{
+		DealName:   placeResp.DealName,
+		BigOrderID: placeResp.BigOrderID,
+	}, nil
+}
+
+// GrantDianshiSubscription prepares the same one-user Pass purchase invariant
+// as the normal flow and delegates the request-scoped product override to Trade.
+func (l *logic) GrantDianshiSubscription(userID string, req *transport.GrantDianshiSubscriptionRequest) (*transport.GrantDianshiSubscriptionResult, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	if req.ActivityID <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "activity_id must be > 0")
+	}
+	if req.ActID <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "act_id must be > 0")
+	}
+	if strings.TrimSpace(req.SecretKey) == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "secret_key is required")
+	}
+	period, timeUnit, err := parseDianshiTimeSpanUnit(req.TimeSpanUnit)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "%s", err.Error())
+	}
+	placeReq, logger, err := l.prepareCreatePassOrder(userID, &transport.CreatePassOrderRequest{
+		BundleID: req.BundleID,
+		Period:   period,
+		TimeUnit: timeUnit,
+	}, "grant_dianshi_subscription")
+	if err != nil {
+		if errors.Is(err, errcode.ErrPassAlreadyExists) {
+			return &transport.GrantDianshiSubscriptionResult{Status: "skipped"}, nil
+		}
+		return nil, err
+	}
+
+	tradeAdapter, ok := adapterfactory.DefaultAdapterFactory.TradeAdapter().(tradeadapter.DianshiGrantAdapter)
+	if !ok {
+		return nil, fmt.Errorf("trade adapter: Dianshi grant capability is not configured")
+	}
+	grantCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := tradeAdapter.GrantDianshiSubscription(grantCtx, &tradeadapter.GrantDianshiSubscriptionRequest{
+		PlaceOrderRequest: *placeReq,
+		ActivityID:        req.ActivityID,
+		ActID:             req.ActID,
+		TimeSpanUnit:      fmt.Sprintf("%d%s", period, timeUnit),
+		SecretKey:         strings.TrimSpace(req.SecretKey),
+	})
+	if err != nil {
+		logger.Warn("grant Dianshi subscription failed", zap.Error(err))
+		if mapped := mapTradePlaceOrderError(err); mapped != nil {
+			return nil, mapped
+		}
+		return nil, fmt.Errorf("trade grant Dianshi subscription: %w", err)
+	}
+	if result == nil || result.Status == "" {
+		return nil, fmt.Errorf("trade grant Dianshi subscription: empty status")
+	}
+	return &transport.GrantDianshiSubscriptionResult{
+		Status:     result.Status,
+		DealName:   result.DealName,
+		BigOrderID: result.BigOrderID,
+	}, nil
+}
+
+func parseDianshiTimeSpanUnit(value string) (int, string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, "", fmt.Errorf("time_span_unit is required")
+	}
+	digitEnd := 0
+	for digitEnd < len(value) && value[digitEnd] >= '0' && value[digitEnd] <= '9' {
+		digitEnd++
+	}
+	if digitEnd == 0 || digitEnd == len(value) {
+		return 0, "", fmt.Errorf("time_span_unit must look like 1m or 14d")
+	}
+	period, err := strconv.Atoi(value[:digitEnd])
+	if err != nil || period <= 0 {
+		return 0, "", fmt.Errorf("time_span_unit period must be positive")
+	}
+	unit := strings.ToLower(value[digitEnd:])
+	for _, char := range unit {
+		if char < 'a' || char > 'z' {
+			return 0, "", fmt.Errorf("time_span_unit must look like 1m or 14d")
+		}
+	}
+	return period, unit, nil
+}
+
 // prepareCreatePassOrder CreatePassOrder / CreatePassOrderAndPay 共享前置流程。
 //
 // 步骤覆盖：
@@ -1724,6 +2033,7 @@ func (l *logic) prepareCreatePassOrder(
 		TimeUnit:       req.TimeUnit,
 		GoodsNum:       lighthousePassGoodsNum,
 		PayMode:        lighthousePassPayMode,
+		AutoRenewFlag:  req.AutoRenewFlag,
 		// Q41 修订 2026-05-11：RegionID 不再透传，trade 内部固定 1（广州）
 		// Q30 拍板：Uin / AppID 不在 ctl 端反查，由 trade 内部 ShadowClient 反查
 	}, logger, nil
@@ -1796,6 +2106,32 @@ func (l *logic) ListPassesByResourceIDs(appID int64, passIDs []string) ([]*PassD
 	return entitiesToDetails(entities), nil
 }
 
+// DescribePassByCloudAccount 详见 Logic 接口注释。
+func (l *logic) DescribePassByCloudAccount(uin, appID int64, passID string) (*PassDetail, error) {
+	if uin <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "uin must be > 0")
+	}
+	if appID <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "app_id must be > 0")
+	}
+	passID = strings.TrimSpace(passID)
+	if passID == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "pass_id is required")
+	}
+	dao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	entity, err := dao.GetByPassID(passID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errcode.ErrPassNotFound) {
+			return nil, errcode.ErrPassNotFound
+		}
+		return nil, errcode.Wrap(errcode.ErrPassNotFound, "get pass: %v", err)
+	}
+	if entity.Uin != uin || entity.AppID != appID {
+		return nil, errcode.ErrPassNotFound
+	}
+	return entityToDetail(entity), nil
+}
+
 // === trade-pass-renew RenewPassOrderUrl 实现（设计稿 §3.3 / §4.4 / R-D-5）===
 
 // RenewPassOrderUrl 详见 Logic 接口注释。
@@ -1845,10 +2181,12 @@ func (l *logic) RenewPassOrderUrl(userID, passID string, req *transport.RenewPas
 	// 步骤 3：调 trade.GeneratePayURL（当前单元素，遍历 deal_names[0]）
 	dealName := req.DealNames[0]
 	var opts *tradeadapter.GeneratePayURLOptions
-	if req.Platform != "" || req.WxOpenID != "" {
+	if req.Platform != "" || req.WxOpenID != "" || req.CancelURL != "" || req.ReturnURL != "" {
 		opts = &tradeadapter.GeneratePayURLOptions{
-			Platform: req.Platform,
-			WxOpenID: req.WxOpenID,
+			Platform:  req.Platform,
+			WxOpenID:  req.WxOpenID,
+			CancelURL: req.CancelURL,
+			ReturnURL: req.ReturnURL,
 		}
 		// wx_app_id：当 wx_open_id 非空（微信公众号 / 小程序场景）时透传给 trade
 		// → jifei.getMidasEarmarking.wxAppId。
@@ -1860,7 +2198,7 @@ func (l *logic) RenewPassOrderUrl(userID, passID string, req *transport.RenewPas
 			opts.WxAppID = "wxf95ea3ae45d5304f"
 		}
 	}
-	urlCtx, urlCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	urlCtx, urlCancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().GeneratePayURL(urlCtx, dealName, opts)
 	urlCancel()
 	if urlErr != nil {
@@ -1911,6 +2249,9 @@ func (l *logic) RenewPassOrder(userID, passID string, req *transport.RenewPassOr
 	placeCancel()
 	if placeErr != nil {
 		logger.Warn("renew pass order: trade.PlaceRenewOrder failed", zap.Error(placeErr))
+		if mappedErr := tradeShadowBindingNotFoundError(placeErr); mappedErr != nil {
+			return nil, mappedErr
+		}
 		return nil, fmt.Errorf("trade place renew order: %w", placeErr)
 	}
 	if placeResp == nil || placeResp.DealName == "" {
@@ -1977,6 +2318,9 @@ func (l *logic) RenewPassOrderAndPay(userID, passID string, req *transport.Renew
 	placeCancel()
 	if placeErr != nil {
 		logger.Warn("renew pass order and pay: trade.PlaceRenewOrderAndPay failed", zap.Error(placeErr))
+		if mappedErr := tradeShadowBindingNotFoundError(placeErr); mappedErr != nil {
+			return nil, mappedErr
+		}
 		return nil, fmt.Errorf("trade place renew order and pay: %w", placeErr)
 	}
 	if placeResp == nil || placeResp.DealName == "" {
@@ -2006,8 +2350,8 @@ func (l *logic) RenewPassOrderAndPay(userID, passID string, req *transport.Renew
 //  3. 校验 passEntity.BundleID 对应 Bundle 存在（v1.7.22 B17 修订：不校验 BundleState；
 //     套餐下架仍可续费询价）
 //  4. **不调 shadow** — trade.QuoteRenew 已支持 ShadowClient 自动反查（ctl 只透传
-//     externalUserId / 与新购询价 DescribeBundles 同范式；询价是无副作用 RPC，
-//     trade 反查失败 → 业务错降级 nil 价格，不阻塞前端展示）
+//     externalUserId / 与新购询价 DescribeBundles 同范式）；trade 反查失败时，ctl
+//     将 BindingNotFound 翻译为 ErrPassShadowBindingRequired，保持新购 / 续费错误语义一致
 //  5. 构造 trade.InquiryRenew 入参（含 ResourceID + CurDeadline = passEntity.ExpiredTime.Format(...)）
 //  6. 调 trade adapter，把响应的 prices[0] 拍平为 RenewPassPriceResult 返回
 //
@@ -2083,6 +2427,9 @@ func (l *logic) RenewPassPrice(userID, passID string, req *transport.RenewPassPr
 	inqCancel()
 	if inqErr != nil {
 		logger.Warn("renew pass price: trade.InquiryRenew failed", zap.Error(inqErr))
+		if mappedErr := tradeShadowBindingNotFoundError(inqErr); mappedErr != nil {
+			return nil, mappedErr
+		}
 		return nil, fmt.Errorf("trade inquiry renew: %w", inqErr)
 	}
 	if inqResp == nil || len(inqResp.Prices) == 0 || inqResp.Prices[0] == nil {
@@ -2096,16 +2443,21 @@ func (l *logic) RenewPassPrice(userID, passID string, req *transport.RenewPassPr
 		zap.Float64("discount", q.Discount),
 	)
 
-	// 步骤 6：拍平为 RenewPassPriceResult（v1.7.28 BUG-04 C 路径精简：仅返价格 5 字段
+	// 步骤 6：拍平为 RenewPassPriceResult（仅返价格 6 字段
 	// + bundle_id 用于审计；string → float64 与新购 BundlePrice 对齐）
+	return renewQuoteToPrice(q), nil
+}
+
+func renewQuoteToPrice(q *tradeadapter.BundleQuote) *transport.RenewPassPriceResult {
 	return &transport.RenewPassPriceResult{
 		BundleID:      q.BundleID,
 		Price:         parseQuotePrice(q.Price),
 		TotalCost:     parseQuotePrice(q.TotalCost),
+		TaxPrice:      parseQuotePrice(q.TaxPrice),
 		RealTotalCost: parseQuotePrice(q.RealTotalCost),
 		Currency:      q.Currency,
 		Discount:      q.Discount,
-	}, nil
+	}
 }
 
 // parseQuotePrice 把 trade adapter BundleQuote 的字符串价格字段解析为 float64。
@@ -2124,6 +2476,18 @@ func parseQuotePrice(s string) float64 {
 		return 0
 	}
 	return v
+}
+
+func isTradeShadowBindingNotFound(err error) bool {
+	var tradeErr *tradeadapter.Error
+	return errors.As(err, &tradeErr) && tradeErr.Code == "BindingNotFound"
+}
+
+func tradeShadowBindingNotFoundError(err error) error {
+	if isTradeShadowBindingNotFound(err) {
+		return errcode.ErrPassShadowBindingRequired
+	}
+	return nil
 }
 
 // prepareRenewPassOrder 是 RenewPassOrderUrl 的共享前置流程（与 prepareCreatePassOrder 对偶）。

@@ -118,7 +118,7 @@ const achievementPanelErrorFromUnknown = (error: unknown): AchievementPanelError
 };
 
 export const achievementTimestampLocale = (language?: string) => (
-  (language || "").toLowerCase().startsWith("zh") ? "zh-CN" : "en-US"
+  (language || "").toLowerCase().startsWith("zh") ? "zh-CN" : (language || "").toLowerCase().startsWith("es") ? "es" : "en-US"
 );
 
 const criteriaMetricTranslations: Record<string, AchievementCopyTranslator> = {

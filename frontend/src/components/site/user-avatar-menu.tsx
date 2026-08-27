@@ -1,13 +1,15 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
+import { Bot, Globe, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect } from "react";
+import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, WEBSITES_PATH, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { isGlobal } from "@/lib/region";
 
 type RevealWorkbenchHost = Window & {
   show?: (...args: unknown[]) => unknown;
@@ -19,7 +21,7 @@ export const UserAvatarMenu = () => {
   const t = useT();
   const user = session.user;
   const [open, setOpen] = useState(false);
-  const [workbenchRevealed, setWorkbenchRevealed] = useState(false);
+  const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
   const [workbenchHostname, setWorkbenchHostname] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -44,7 +46,7 @@ export const UserAvatarMenu = () => {
     let mounted = true;
     const revealWorkbench = (...args: unknown[]) => {
       if (mounted) {
-        setWorkbenchRevealed(true);
+        setHiddenEntriesRevealed(true);
       }
       if (typeof originalShow === "function") {
         const originalResult = originalShow.apply(host, args);
@@ -84,7 +86,7 @@ export const UserAvatarMenu = () => {
   } as CSSProperties;
   const showWorkbenchEntry = shouldShowWorkbenchEntry({
     hostname: workbenchHostname,
-    revealed: workbenchRevealed,
+    revealed: hiddenEntriesRevealed,
   });
 
   return (
@@ -175,15 +177,27 @@ export const UserAvatarMenu = () => {
                 <User className={menuIconClass} />
                 {t("账号管理")}
               </Link>
-              {workbenchRevealed ? (
+              {isGlobal && hiddenEntriesRevealed ? (
                 <Link
-                  href="/support"
+                  href={WEBSITES_PATH}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <Globe className={menuIconClass} />
+                  {t("我的工作台")}
+                </Link>
+              ) : null}
+              {hiddenEntriesRevealed && !isGlobal ? (
+                <a
+                  href={PRODUCT_FEEDBACK_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   onClick={() => setOpen(false)}
                   className={menuItemClass}
                 >
                   <MessageSquare className={menuIconClass} />
                   {t("产品反馈")}
-                </Link>
+                </a>
               ) : null}
 
             </div>

@@ -9,6 +9,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestDBBootstrapShardNamesMatchFleetShardIDs(t *testing.T) {
+	content := string(readFile(t, "db-bootstrap-job.yaml"))
+	for _, want := range []string{
+		"id: \"shard-a\"\n        name: \"shard-a\"",
+		"id: \"shard-b\"\n        name: \"shard-b\"",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("DB bootstrap manifest missing canonical shard identity %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"name: \"Shard A\"",
+		"name: \"Shard B\"",
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("DB bootstrap manifest contains mutable display name %q", forbidden)
+		}
+	}
+}
+
 func TestSetManagerOnlyOwnsLLMFleetCRD(t *testing.T) {
 	raw := readFile(t, "llmgateway-set-manager.yaml.template")
 	content := string(raw)
@@ -221,6 +241,18 @@ func TestLLMFleetRGDUsesKRO08CompatibleSchemaAndSecretRefs(t *testing.T) {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("LLMFleet RGD must not contain %q", forbidden)
 		}
+	}
+}
+
+func TestNewAPIQuotaPacingConfigurationReachesEveryRuntimePath(t *testing.T) {
+	const envName = "SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT"
+	rgd := string(readFile(t, "llmfleet-rgd.yaml"))
+	if count := strings.Count(rgd, "name: "+envName); count != 3 {
+		t.Fatalf("LLMFleet RGD pacing env occurrences = %d, want admin, versioned traffic and legacy traffic", count)
+	}
+	controller := string(readFile(t, "velagwset-controller.yaml.template"))
+	if !strings.Contains(controller, "name: "+envName+"\n              value: \"0\"") {
+		t.Fatalf("VelaGWSet controller manifest must default %s to disabled", envName)
 	}
 }
 

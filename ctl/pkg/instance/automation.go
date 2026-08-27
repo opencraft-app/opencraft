@@ -119,29 +119,29 @@ func (l *logic) ensureAutomationGatewayAuthMaterial(ctx pctx.Context, entity *mo
 	}
 	gatewayAuthToken, err := generateGatewayAuthToken()
 	if err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "generate automation gateway token: %v", err)
 	}
 	gwConf, err := l.gatewayRuntimeConfig(backend)
 	if err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "resolve automation gateway config: %v", err)
 	}
 	if err := l.configureOnboard(ctx, entity.SandboxId, apiKeyResp.APIKey, gatewayAuthToken, gwConf); err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "configure automation gateway auth material: %v", err)
 	}
 	if err := l.persistAiGatewayKeyIDWithStatuses(ctx, entity, apiKeyResp.KeyID, []string{modelinstance.InstanceStatusRunning}); err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "persist automation ai-gateway key id: %v", err)
 	}
 	if err := l.persistGatewayAuthTokenWithStatuses(ctx, entity, gatewayAuthToken, []string{modelinstance.InstanceStatusRunning}); err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "persist automation gateway auth token: %v", err)
 	}
 
 	if previousKeyID != "" && previousKeyID != apiKeyResp.KeyID {
-		if err := l.revokeAiGatewayApiKey(ctx, previousKeyID); err != nil && !isAiGatewayKeyNotFound(err) {
+		if err := l.revokeGatewayAPIKey(ctx, backend, previousKeyID); err != nil {
 			l.logger.Warn("revoke previous ai-gateway key after automation backfill failed",
 				zap.Error(err),
 				zap.String("instance_id", entity.InstanceId),

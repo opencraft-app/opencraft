@@ -4,7 +4,7 @@
 > **分支：** `frontsandbox/scenario-task-installer`
 > **规模：** M（single_agent）
 > **TAPD：** [#135720398](https://tapd.woa.com/tapd_fe/10132091/story/detail/1010132091135720398)
-> **MR：** 
+> **MR：**
 > **HEAD commit：** `a2dee9ac`
 >
 > 本记录为补归档：归档执行发生在 `frontsandbox/hermes-agent-name-investigation` 隔离分支，业务需求来源以 `plan.md` / `current_state.md` 中记录的 `frontsandbox/scenario-task-installer` 为准，避免将旧需求误标到当前 Hermes 名称清理分支。

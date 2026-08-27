@@ -523,6 +523,10 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 		}
 	}
 
+	if input.RegistrationDisabled {
+		return nil, newError("oauth_registration_disabled", "该登录方式暂不接受新用户注册，已有用户仍可登录。", 403)
+	}
+
 	if strings.TrimSpace(input.Email) != "" {
 		if userID, exists := s.usersByEmail[input.Email]; exists {
 			user, ok := s.usersByID[userID]
@@ -535,6 +539,10 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 				return nil, newError("oauth_email_conflict", "第三方账号邮箱已被使用，请先使用已有方式登录后再绑定。", 409)
 			}
 		}
+	}
+
+	if err := enforceOAuthNewUserRegistrationEmailPolicy(input); err != nil {
+		return nil, err
 	}
 
 	user := s.newUserWithInviteRequirementLocked(input.Name, input.Email, "", false, now)

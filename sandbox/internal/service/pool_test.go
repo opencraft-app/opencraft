@@ -19,6 +19,54 @@ const (
 
 var testSecurityGroups = []string{"sg-test"}
 
+func TestRefillVerifiedVerifiesCloudIDInsteadOfAddress(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "delivery", "", "img-test", 1, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	var verified string
+	_, err = svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"ins-delivery-1"}, func(_ context.Context, cloudID string) error {
+		verified = cloudID
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("refill verified: %v", err)
+	}
+	if verified != "ins-delivery-1" {
+		t.Fatalf("expected verifier to receive cloud id, got %q", verified)
+	}
+}
+
+func TestRefreshInstanceStateTimestampKeepsStateAndAdvancesGeneration(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "generation", "", "img-test", 1, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	insts, err := svc.RefillVerified(ctx, pool.ID, 1, nil, []string{"ins-generation-1"}, func(context.Context, string) error { return nil })
+	if err != nil {
+		t.Fatalf("refill verified: %v", err)
+	}
+	if err := svc.MarkCleanInstancesDry(ctx, pool.ID); err != nil {
+		t.Fatalf("mark dry: %v", err)
+	}
+	resetting, err := svc.AdvanceState(ctx, insts[0].ID, core.StateResetting)
+	if err != nil {
+		t.Fatalf("advance resetting: %v", err)
+	}
+	time.Sleep(time.Millisecond)
+	refreshed, err := svc.RefreshInstanceStateTimestamp(ctx, resetting.ID, core.StateResetting)
+	if err != nil {
+		t.Fatalf("refresh state timestamp: %v", err)
+	}
+	if refreshed.State != core.StateResetting || !refreshed.UpdatedAt.After(resetting.UpdatedAt) {
+		t.Fatalf("expected RESETTING with newer generation, before=%+v after=%+v", resetting, refreshed)
+	}
+}
+
 func TestLifecycleTransitions(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
@@ -1179,6 +1227,9 @@ func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert sku: %v", err)
 	}
+	if sku.SystemDiskSize != 50 {
+		t.Fatalf("expected omitted system disk size to default to 50, got %d", sku.SystemDiskSize)
+	}
 	binding := core.TemplateSkuBinding{
 		TemplateClassID:    "openclaw-default",
 		SKUID:              "sku-default",
@@ -1237,6 +1288,38 @@ func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	}
 	if bundle.LineageTags["pool_id"] != pool.ID {
 		t.Fatalf("expected bundle reserved to pool %s, got %+v", pool.ID, bundle.LineageTags)
+	}
+}
+
+func TestUpsertSKUPreservesExistingSystemDiskSizeWhenOmitted(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "openclaw-4c8g80g",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	sku, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-4c8g",
+		TemplateClassID: "openclaw-4c8g80g",
+		BaseImage:       "img-old",
+		DesiredImageID:  "img-old",
+		InstanceType:    "SA5.LARGE8",
+		SystemDiskSize:  80,
+	})
+	if err != nil {
+		t.Fatalf("create sku: %v", err)
+	}
+
+	sku.DesiredImageID = "img-new"
+	sku.SystemDiskSize = 0
+	updated, err := svc.UpsertSKU(ctx, sku)
+	if err != nil {
+		t.Fatalf("update sku: %v", err)
+	}
+	if updated.SystemDiskSize != 80 {
+		t.Fatalf("expected omitted system disk size to preserve 80, got %d", updated.SystemDiskSize)
 	}
 }
 

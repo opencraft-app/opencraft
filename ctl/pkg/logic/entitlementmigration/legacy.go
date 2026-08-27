@@ -23,8 +23,6 @@ import (
 
 const legacyPassMigrationTimeout = 15 * time.Second
 
-var ErrWouldShortenEntitlement = errors.New("legacy pass migration would shorten entitlement")
-
 type LegacyPassMigrationResult struct {
 	Migrated       bool
 	SubscriptionID string
@@ -80,13 +78,6 @@ func EnsureLegacyPassEntitlement(ctx context.Context, userID string, now time.Ti
 	periodValue, periodUnit, err := originalPassPeriod(callCtx, passEntity.PassID, passEntity.BundleID, bundle.TimeSpan, bundle.TimeUnit)
 	if err != nil {
 		return nil, err
-	}
-	newPeriodEnd, err := calcPeriodEnd(now, periodValue, periodUnit)
-	if err != nil {
-		return nil, fmt.Errorf("legacy pass migration: calculate period end: %w", err)
-	}
-	if newPeriodEnd.Before(passEntity.ExpiredTime.UTC()) {
-		return nil, fmt.Errorf("%w: pass=%s current=%s reissued=%s", ErrWouldShortenEntitlement, passEntity.PassID, passEntity.ExpiredTime.UTC().Format(time.RFC3339), newPeriodEnd.Format(time.RFC3339))
 	}
 
 	sub, err := llm.ApplySubscription(callCtx, &llmgateway.ApplySubscriptionRequest{

@@ -59,8 +59,9 @@ import { cn } from "@/lib/utils";
 import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 import {
   createSkillsDataLayer,
+  getSkillSourceUrl,
   getPopularityTier,
-  installSkillsSequentially,
+  installSkillsInBatch,
   mergeSkills,
   REGISTRY_LABEL,
   SKILLS_DEMO_LIVE,
@@ -71,6 +72,7 @@ import {
   type Registry,
   type SearchRegistry,
   type Skill,
+  type SkillsExecDebugCommandStream,
 } from "./skill-registries";
 import {
   CURATED_SKILL_CATEGORIES,
@@ -83,6 +85,7 @@ import {
   getCuratedSkillOverview,
   type CuratedSkillBullet,
   type CuratedSkillOverview,
+  type CuratedSkillOverviewLocale,
 } from "./curated-skill-overviews";
 
 type RegistryFilter = "all" | Exclude<Registry, "hermes">;
@@ -93,10 +96,16 @@ type InstalledSourceDescriptor = {
   key: Exclude<InstalledSourceFilter, "all">;
   label: string;
   registry?: Registry;
+  sourceUrl?: string;
 };
 
 type Translate = ReturnType<typeof useT>;
 type SortMode = "popular" | "name";
+type SkillCategoryLabel = {
+  zh: string;
+  en: string;
+  id?: string; es?: string;
+};
 type SearchInstallRowStatus = {
   status: "pending" | "installing" | "retrying" | "done" | "failed" | "skipped";
   message?: string;
@@ -284,37 +293,59 @@ type SkillDetailsEntry = {
 
 export type SkillsDemoMode = "global" | "domestic";
 
-function getSkillOverview(skill: Skill, isChinese: boolean): CuratedSkillOverview {
+/**
+ * 未被 curated 数据集收录的 Skill 走这套兜底概览。
+ *
+ * 文案统一走 `t()` 而非中英二元字面量 —— 否则印尼语等语言会落到英文。
+ * 因为本函数在模块作用域，`t` 由调用方（组件内）注入。
+ */
+function getSkillOverview(
+  skill: Skill,
+  overviewLocale: CuratedSkillOverviewLocale,
+  t: (zh: string, options?: Record<string, unknown>) => string,
+): CuratedSkillOverview {
   try {
-    return getCuratedSkillOverview(skill.rawId, isChinese ? "zh-CN" : "en-US");
+    return getCuratedSkillOverview(skill.rawId, overviewLocale);
   } catch {
-    const description = skill.description?.trim() || (isChinese
-      ? "该技能来自 SkillHub，可根据名称和描述帮助智能体完成对应任务。"
-      : "This SkillHub skill helps the agent complete the task described by its name and metadata.");
-    const language = isChinese;
+    const description = skill.description?.trim()
+      || t("该技能来自 SkillHub，可根据名称和描述帮助智能体完成对应任务。");
     const bullet = (title: string, text: string): CuratedSkillBullet => ({ title, description: text });
     return {
-      overview: [description, language ? "安装后，智能体可以在对话中按需调用该技能。" : "After installation, the agent can invoke it when the task matches."],
+      overview: [description, t("安装后，智能体可以在对话中按需调用该技能。")],
       whoShouldUse: [
-        bullet(language ? "需要这项能力的用户" : "Users with this need", language ? "希望把这类任务交给智能体处理。" : "They want the agent to handle this kind of task."),
-        bullet(language ? "团队成员" : "Team members", language ? "需要可复用、统一的工作方式。" : "They need a repeatable way to handle the work."),
+        bullet(t("需要这项能力的用户"), t("希望把这类任务交给智能体处理。")),
+        bullet(t("团队成员"), t("需要可复用、统一的工作方式。")),
       ],
       problemsItSolves: [
-        bullet(language ? "重复查找" : "Repeated setup", language ? "减少每次重新说明任务背景的成本。" : "Reduces the need to restate the task context every time."),
-        bullet(language ? "流程不统一" : "Inconsistent process", language ? "让相似任务更容易按同一套步骤完成。" : "Makes similar tasks easier to complete consistently."),
+        bullet(t("重复查找"), t("减少每次重新说明任务背景的成本。")),
+        bullet(t("流程不统一"), t("让相似任务更容易按同一套步骤完成。")),
       ],
       keyCapabilities: [
-        bullet(language ? "任务理解" : "Task understanding", description),
-        bullet(language ? "结构化处理" : "Structured handling", language ? "根据输入整理并执行相关步骤。" : "Organizes and carries out the relevant steps from the input."),
-        bullet(language ? "结果输出" : "Result output", language ? "生成适合当前任务的结果。" : "Produces a result suited to the task."),
+        bullet(t("任务理解"), description),
+        bullet(t("结构化处理"), t("根据输入整理并执行相关步骤。")),
+        bullet(t("结果输出"), t("生成适合当前任务的结果。")),
       ],
-      basicUsage: language ? "安装技能后，直接描述目标并提供必要的资料或约束。" : "Install the skill, then describe the goal and provide the needed material or constraints.",
-      examplePrompt: language ? `请使用“${skill.name}”完成这项任务，并先说明需要哪些输入。` : `Use ${skill.name} for this task and first tell me what input you need.`,
+      basicUsage: t("安装技能后，直接描述目标并提供必要的资料或约束。"),
+      examplePrompt: t("请使用“{{name}}”完成这项任务，并先说明需要哪些输入。", { name: skill.name }),
     };
   }
 }
 
+function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
+  const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
+    "zh-CN": label.zh,
+    "id-ID": label.id, es: label.es,
+    "en-US": label.en,
+  };
+
+  return labelByLocale[overviewLocale] ?? label.en;
+}
+
 const CLS = "lv-skills-demo";
+const SKILLS_SEARCH_BOX_CLASS = "lv-agent-search-box";
+const SKILLS_SEARCH_ICON_CLASS = "lv-agent-search-box-icon";
+const SKILLS_SEARCH_INPUT_CLASS = "lv-skills-search-input lv-agent-search-box-input";
+const SEARCH_INPUT_NATIVE_CLEAR_CLASS = "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none";
 
 type CreateSkillCategoryId = "quick-learn" | "workplace" | "research" | "learning" | "creative" | "personal" | "leisure";
 
@@ -743,25 +774,30 @@ export type LearnSkillTriggerOptions = {
   hideName?: boolean;
 };
 
-function RegistryBadge({ registry }: { registry: Registry }) {
+function RegistryBadge({ registry, href }: { registry: Registry; href?: string }) {
   const isSkillsSh = registry === "skills-sh";
   const isSkillHub = registry === "skillhub";
   const isHermes = registry === "hermes";
+  const className = cn(
+    "inline-flex h-5 items-center rounded-[5px] px-1.5 text-[10px] font-semibold leading-none",
+    isSkillsSh
+      ? "bg-[#FFF6E6] text-[#B26A00]"
+      : isSkillHub
+        ? "bg-[#EAF6F1] text-[#287458]"
+        : isHermes
+          ? "bg-black/[0.06] text-black/60"
+          : "bg-[#EAF1FF] text-[#2F6BFF]",
+  );
+  if (!href) return <span className={className}>{REGISTRY_LABEL[registry]}</span>;
   return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center rounded-[5px] px-1.5 text-[10px] font-semibold leading-none",
-        isSkillsSh
-          ? "bg-[#FFF6E6] text-[#B26A00]"
-          : isSkillHub
-            ? "bg-[#EAF6F1] text-[#287458]"
-            : isHermes
-              ? "bg-black/[0.06] text-black/60"
-              : "bg-[#EAF1FF] text-[#2F6BFF]",
-      )}
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={cn(className, "underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]")}
     >
       {REGISTRY_LABEL[registry]}
-    </span>
+    </a>
   );
 }
 
@@ -773,6 +809,7 @@ function getInstalledSources(skill: InstalledSkill): InstalledSourceDescriptor[]
       key: `registry:${registry}`,
       label: REGISTRY_LABEL[registry],
       registry,
+      sourceUrl: skill.sourceUrls?.[registry],
     }));
   }
   const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
@@ -797,7 +834,7 @@ function getInstalledCategoryKey(category?: string): InstalledCategoryFilter {
 
 function InstalledSourceBadge({ source }: { source: InstalledSourceDescriptor }) {
   const t = useT();
-  if (source.registry) return <RegistryBadge registry={source.registry} />;
+  if (source.registry) return <RegistryBadge registry={source.registry} href={source.sourceUrl} />;
   return (
     <span className="inline-flex h-5 items-center rounded-[5px] bg-black/[0.06] px-1.5 text-[10px] font-semibold leading-none text-black/60">
       {translateInstalledSourceLabel(t, source.label)}
@@ -836,6 +873,10 @@ function getInstalledStatusLabel(t: Translate, status?: string): string | null {
   if (normalized === "disabled") return t("已禁用");
   if (normalized === "failed") return t("失败");
   return status?.trim() || null;
+}
+
+function getInstalledDisplayId(skill: InstalledSkill): string {
+  return skill.slug.trim() || skill.rawId;
 }
 
 function SkillIcon({
@@ -1004,6 +1045,7 @@ function SearchSkillRow({
   selected,
   disabled,
   rowStatus,
+  showSourceLink,
   onInstall,
   onToggleSelected,
 }: {
@@ -1013,6 +1055,7 @@ function SearchSkillRow({
   selected: boolean;
   disabled: boolean;
   rowStatus?: SearchInstallRowStatus;
+  showSourceLink: boolean;
   onInstall: (skill: Skill) => void;
   onToggleSelected: (skill: Skill) => void;
 }) {
@@ -1027,6 +1070,11 @@ function SearchSkillRow({
   }[rowStatus.status] : null;
   const statusInProgress = rowStatus?.status === "installing" || rowStatus?.status === "retrying";
   const statusRetryable = rowStatus?.status === "failed" || rowStatus?.status === "skipped";
+  const sourceUrl = showSourceLink
+    ? skill.registry === "clawhub"
+      ? "https://clawhub.ai/"
+      : getSkillSourceUrl(skill)
+    : undefined;
 
   return (
     <li className="flex min-w-0 items-start gap-3 border-b border-black/[0.07] bg-white px-4 py-3.5 transition-colors last:border-b-0 hover:bg-black/[0.02]">
@@ -1049,10 +1097,21 @@ function SearchSkillRow({
             {skill.rawId}
           </span>
         </div>
+        {sourceUrl ? (
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-black/45">
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="truncate text-[#2563EB] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            >
+              {t("来源")}
+            </a>
+          </div>
+        ) : null}
         {skill.description ? (
           <p className="mt-1 line-clamp-1 text-pretty text-xs leading-5 text-black/45">{skill.description}</p>
         ) : null}
-        {skill.author ? <div className="mt-1 text-[11px] text-black/40">@{skill.author}</div> : null}
       </div>
       <div className="flex min-h-9 shrink-0 self-center items-center justify-center">
         {installed ? (
@@ -1122,6 +1181,7 @@ function CuratedSkillDetailsDialog({
   const t = useT();
   if (!entry) return null;
   const { overview } = entry;
+  const sourceUrl = getSkillSourceUrl(entry.skill);
 
   return (
     <div className="fixed inset-0 z-[100] flex overscroll-contain items-center justify-center p-3 sm:p-6">
@@ -1151,6 +1211,18 @@ function CuratedSkillDetailsDialog({
         <div className="pr-8">
           <h2 id="curated-skill-dialog-title" className="text-lg font-semibold text-black/90">{entry.skill.name}</h2>
           <p className="mt-1 break-all font-mono text-xs leading-5 text-black/45">{entry.skill.rawId}</p>
+          {sourceUrl ? (
+            <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-black/45">
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate text-[#2563EB] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                {t("来源")}
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-5 space-y-6 border-t border-black/[0.07] pt-5">
@@ -1334,6 +1406,7 @@ function InstalledSkillRow({
   const t = useT();
   const sources = getInstalledSources(skill);
   const statusLabel = getInstalledStatusLabel(t, skill.status);
+  const displayId = getInstalledDisplayId(skill);
   const canUninstall = skill.uninstallable !== false && !skill.sourceUncertain;
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_2.25rem] items-center gap-x-3 gap-y-2 bg-white px-3.5 py-3 transition-colors hover:bg-black/[0.025] md:grid-cols-[minmax(0,1.3fr)_minmax(110px,0.65fr)_minmax(120px,0.7fr)_minmax(64px,0.35fr)_2.25rem]">
@@ -1346,7 +1419,7 @@ function InstalledSkillRow({
             </span>
           ) : null}
         </div>
-        <div className="mt-1 truncate font-mono text-[11px] text-black/45">{skill.rawId}</div>
+        <div className="mt-1 truncate font-mono text-[11px] text-black/45">{displayId}</div>
       </div>
       <div className="col-start-1 row-start-2 min-w-0 truncate text-xs text-black/55 md:col-start-2 md:row-start-1">
         <span className="mr-1 text-[11px] text-black/40 md:hidden">{t("分类")}</span>
@@ -1743,6 +1816,7 @@ function CreateSkillPanel({
 export function SkillsDemoPanel({
   botId,
   execDebugCommand,
+  execDebugCommandStream,
   mode = "global",
   learnSkillTrigger,
   learnSkillPanel,
@@ -1753,6 +1827,7 @@ export function SkillsDemoPanel({
 }: {
   botId: string;
   execDebugCommand: ExpertsExecDebugCommand;
+  execDebugCommandStream?: SkillsExecDebugCommandStream;
   mode?: SkillsDemoMode;
   learnSkillTrigger?: ReactNode;
   learnSkillPanel?: ReactNode;
@@ -1765,6 +1840,13 @@ export function SkillsDemoPanel({
   const { i18n } = useTranslation();
   const shouldReduceMotion = useReducedMotion();
   const isChinese = i18n.resolvedLanguage?.startsWith("zh") ?? false;
+  // Skill 概览数据集按语言分流：中文（含繁体，繁体再由 OpenCC 就地转字形）、
+  // 印尼语、其余回退英文。未收录的条目由 getCuratedSkillOverview 回退英文。
+  const overviewLocale: CuratedSkillOverviewLocale = isChinese
+    ? "zh-CN"
+    : i18n.resolvedLanguage === "id-ID"
+      ? "id-ID"
+      : i18n.resolvedLanguage?.startsWith("es") ? "es" : "en-US";
   const isDomestic = mode === "domestic";
   const featuredSkillCopy: Record<string, { title: string; subtitle: string; description: string }> = {
     "self-improving-agent": {
@@ -1799,8 +1881,8 @@ export function SkillsDemoPanel({
     },
   };
   const dataLayer = useMemo(
-    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en"),
-    [botId, execDebugCommand, isChinese, mode],
+    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en", execDebugCommandStream),
+    [botId, execDebugCommand, execDebugCommandStream, isChinese, mode],
   );
 
   const [keyword, setKeyword] = useState("");
@@ -1999,9 +2081,11 @@ export function SkillsDemoPanel({
       return [
         skill.name,
         skill.rawId,
+        skill.slug,
         skill.category ?? "",
         getInstalledCategoryLabel(t, skill.category),
         skill.version ?? "",
+        ...(skill.nativeAliases ?? []),
         ...sources.flatMap((source) => [source.label, translateInstalledSourceLabel(t, source.label)]),
       ].some((value) => value.toLocaleLowerCase().includes(keyword));
     });
@@ -2115,10 +2199,12 @@ export function SkillsDemoPanel({
       (index + 1) * FEATURED_BATCH_SIZE,
     ),
   );
+  // 未收录到 featuredSkillCopy 的条目走这套兜底文案。
+  // 走 t() 而非中英二元字面量，否则印尼语等语言会落到英文。
   const getFeaturedCopy = (entry: FeaturedSkillEntry) => featuredSkillCopy[entry.id] ?? {
-    title: isChinese ? `精选技能：${entry.skill.name}` : `Featured Skill: ${entry.skill.name}`,
-    subtitle: isChinese ? "SkillHub 热门技能" : "Popular on SkillHub",
-    description: entry.skill.description || (isChinese ? "帮助智能体完成对应任务" : "Helps the agent complete the matching task"),
+    title: t("精选技能：{{name}}", { name: entry.skill.name }),
+    subtitle: t("SkillHub 热门技能"),
+    description: entry.skill.description || t("帮助智能体完成对应任务"),
   };
 
   const handleInstall = useCallback(
@@ -2190,7 +2276,7 @@ export function SkillsDemoPanel({
       return next;
     });
     try {
-      const result = await installSkillsSequentially(dataLayer, selectedSkills, ({ index, total, skill, status, message }) => {
+      const result = await installSkillsInBatch(dataLayer, selectedSkills, ({ index, total, skill, status, message }) => {
         const id = skillIdentity(skill);
         if (status === "installing") {
           setBatchInstallProgress({ index, total, currentName: skill.name });
@@ -2402,8 +2488,8 @@ export function SkillsDemoPanel({
         <TabsContent value="discover" className="mt-0">
           <div className="space-y-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-black/35" aria-hidden="true" />
+              <div className={cn(SKILLS_SEARCH_BOX_CLASS, "min-w-0 flex-1")}>
+                <Search className={SKILLS_SEARCH_ICON_CLASS} aria-hidden="true" />
                 <input
                   type="text"
                   aria-label={t("搜索技能")}
@@ -2414,7 +2500,7 @@ export function SkillsDemoPanel({
                     setKeyword(e.target.value);
                   }}
                   placeholder={isDomestic ? "搜索 SkillHub 中的技能" : t("搜索 Skills.sh / Clawhub 中的技能")}
-                  className="lv-skills-search-input h-10 w-full rounded-md border border-black/10 bg-white pl-9 pr-9 text-sm text-black/90 outline-none transition-colors placeholder:text-black/35 focus:border-[#2F6BFF]"
+                  className={SKILLS_SEARCH_INPUT_CLASS}
                 />
                 {keyword ? (
                   <button
@@ -2467,30 +2553,6 @@ export function SkillsDemoPanel({
                     </SelectContent>
                   </Select>
                 </div>
-              ) : null}
-              {!isDomestic ? (
-                <p className="shrink-0 text-right text-[10px] font-medium text-black/45 sm:text-xs">
-                  <>
-                    {t("技能来源于")} {" "}
-                    <a
-                      href="https://skills.sh"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    >
-                      Skills.sh
-                    </a>{" "}
-                    {t("与")}{" "}
-                    <a
-                      href="https://clawhub.ai/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    >
-                      ClawHub
-                    </a>
-                  </>
-                </p>
               ) : null}
             </div>
 
@@ -2636,12 +2698,13 @@ export function SkillsDemoPanel({
                         selected={selectedSkillIds.has(skillIdentity(skill))}
                         disabled={operationBusy || searchQueryPending}
                         rowStatus={searchInstallRowStatuses.get(skillIdentity(skill))}
+                        showSourceLink={!isDomestic}
                         onToggleSelected={handleToggleSelected}
                       />
                     ))}
                   </ul>
                 )}
-                {!searching && visibleResults.length > 0 && (isDomestic || visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT) ? (
+                {!searching && visibleResults.length > 0 ? (
                   <div className="mt-3 grid min-h-8 grid-cols-[1fr_auto_1fr] items-center">
                     {visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
                       <button
@@ -2668,7 +2731,32 @@ export function SkillsDemoPanel({
                         源自 SkillHub
                         <span aria-hidden="true">↗</span>
                       </a>
-                    ) : null}
+                    ) : (
+                      <p className="col-start-3 inline-flex h-8 items-center justify-self-end gap-[3px] text-[13px] font-normal text-[#2563EB] underline-offset-2 transition-colors hover:text-[#1D4ED8]">
+                        <span>{isChinese ? "源自" : t("技能来源于")}</span>
+                        {" "}
+                        <a
+                          href="https://skills.sh"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                        >
+                          Skills.sh
+                        </a>
+                        {" "}
+                        <span>{isChinese ? "和" : t("与")}</span>
+                        {" "}
+                        <a
+                          href="https://clawhub.ai/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                        >
+                          ClawHub
+                        </a>
+                        <span aria-hidden="true">↗</span>
+                      </p>
+                    )}
                   </div>
                 ) : null}
               </section>
@@ -2720,7 +2808,7 @@ export function SkillsDemoPanel({
                               disabled={batchInstalling || Boolean(installingId)}
                               onOpenDetails={(skill) => setSelectedSkillDetails({
                                 skill,
-                                overview: getSkillOverview(skill, isChinese),
+                                overview: getSkillOverview(skill, overviewLocale, t),
                               })}
                             />
                           );
@@ -2746,12 +2834,12 @@ export function SkillsDemoPanel({
               {skillCategories.map((category) => (
                 <section key={category.id}>
                   <SectionTitle className="mb-2 text-base">
-                    {isChinese ? category.label.zh : category.label.en}
+                    {getCategoryLabel(category.label, overviewLocale)}
                   </SectionTitle>
                   <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
                     {category.skills.map((entry) => {
                       const skill = "skill" in entry ? entry.skill : entry;
-                      const description = getSkillOverview(skill, isChinese).overview[0];
+                      const description = getSkillOverview(skill, overviewLocale, t).overview[0];
                       return (
                       <SkillCard
                         key={`discover:${skillIdentity(skill)}`}
@@ -2765,7 +2853,7 @@ export function SkillsDemoPanel({
                         disabled={batchInstalling || Boolean(installingId)}
                         onOpenDetails={() => setSelectedSkillDetails({
                           skill,
-                          overview: getSkillOverview(skill, isChinese),
+                          overview: getSkillOverview(skill, overviewLocale, t),
                         })}
                         description={description}
                       />
@@ -2796,26 +2884,28 @@ export function SkillsDemoPanel({
             </SectionTitle>
             {!installedLoading && installed.length > 0 ? (
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="relative min-w-0 sm:w-60">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-black/35" aria-hidden="true" />
-                  <Input
-                    type="search"
-                    value={installedSearchQuery}
-                    onChange={(event) => setInstalledSearchQuery(event.target.value)}
-                    aria-label={t("搜索已安装技能")}
-                    placeholder={t("搜索已安装技能")}
-                    className="h-9 rounded-[12px] border-black/10 bg-white pl-9 pr-9 text-xs shadow-none placeholder:text-black/35 focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                  {installedSearchQuery ? (
-                    <button
-                      type="button"
-                      onClick={() => setInstalledSearchQuery("")}
-                      aria-label={t("清除已安装技能搜索")}
-                      className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    >
-                      <X className="size-3.5" aria-hidden="true" />
-                    </button>
-                  ) : null}
+                <div className="min-w-0 sm:w-60">
+                  <div className={SKILLS_SEARCH_BOX_CLASS}>
+                    <Search className={SKILLS_SEARCH_ICON_CLASS} aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={installedSearchQuery}
+                      onChange={(event) => setInstalledSearchQuery(event.target.value)}
+                      aria-label={t("搜索已安装技能")}
+                      placeholder={t("搜索已安装技能")}
+                      className={cn(SKILLS_SEARCH_INPUT_CLASS, SEARCH_INPUT_NATIVE_CLEAR_CLASS)}
+                    />
+                    {installedSearchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setInstalledSearchQuery("")}
+                        aria-label={t("清除已安装技能搜索")}
+                        className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      >
+                        <X className="size-3.5" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 <Select
                   value={installedCategoryFilter}

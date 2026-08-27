@@ -1,7 +1,9 @@
 'use client';
 
 import { ArrowLeft } from 'lucide-react';
-import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
+import React, { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { LoginModal } from '@/components/site/login-modal';
 import { LegalFooter } from '@/components/site/legal-footer';
@@ -9,10 +11,30 @@ import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import { useSession } from '@/contexts/session-context';
 import { useT } from '@/i18n/t';
 import { useAppNavigate } from '@/lib/app-navigation';
+import { isGlobal } from '@/lib/region';
+import { getSeoMeta } from '@/lib/seo-data';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
 import { ThemeStyleInjector } from '@/theme/theme-style';
 
 import { NextAppNavigationProvider } from './next-app-navigation';
+
+const LOCAL_PREVIEW_AUTH_ENABLED =
+  process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === '1'
+  || process.env.VITE_LOCAL_PREVIEW_AUTH === '1';
+
+function ProductRouteDocumentMetadata() {
+  const pathname = usePathname() || '/';
+  const { i18n } = useTranslation();
+
+  React.useEffect(() => {
+    if (!isGlobal || !i18n.language.toLowerCase().startsWith('es')) return;
+    const meta = getSeoMeta(`/es${pathname === '/' ? '' : pathname}`, 'global');
+    document.title = meta.title;
+    document.documentElement.lang = 'es';
+  }, [i18n.language, pathname]);
+
+  return null;
+}
 
 function SkeletonBlock({ className }: { className: string }) {
   return <span className={`block animate-pulse bg-black/[0.045] ${className}`} />;
@@ -243,7 +265,7 @@ function NextMarketingAuthGate({ children, loadingFallback }: { children: ReactN
     return <>{loadingFallback}</>;
   }
 
-  if (isAuthenticated) {
+  if (isAuthenticated || LOCAL_PREVIEW_AUTH_ENABLED) {
     return <>{children}</>;
   }
 
@@ -293,6 +315,7 @@ export function AppRouteShell({
       <NextAppNavigationProvider>
         <RumUserBridge />
         <ThemeStyleInjector />
+        <ProductRouteDocumentMetadata />
         {requireAuth ? (
           <NextMarketingAuthGate loadingFallback={fallback}>
             {children}

@@ -4,13 +4,7 @@ kind: Kustomization
 namespace: llmgateway
 
 resources:
-  - workloads.yaml
-  - llmfleet-rgd.yaml
-  - velagwset-crd.yaml
-  - velagwset-delete-policy.yaml
-  - velagwset-controller.yaml
-  - velagwset-provisioner.yaml
-  - release-bootstrap.yaml
+  - ../../../../velagw/deploy/k8s/prod/gitops-base
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -68,6 +62,11 @@ replacements:
           - spec.template.spec.containers.[name=controller].image
       - select:
           kind: Deployment
+          name: llmgateway-shard-manager
+        fieldPaths:
+          - spec.template.spec.containers.[name=shard-manager].image
+      - select:
+          kind: Deployment
           name: velagwset-provisioner
         fieldPaths:
           - spec.template.spec.containers.[name=provisioner].image
@@ -77,3 +76,90 @@ replacements:
           name: llmgateway-release-bootstrap
         fieldPaths:
           - spec.template.spec.containers.[name=bootstrap].image
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_OTEL_SERVICE_VERSION
+    targets:
+      - select:
+          kind: Deployment
+          labelSelector: velagw.lightvela.com/regional-observability=true
+        fieldPaths:
+          - spec.template.spec.containers.0.env.[name=OTEL_SERVICE_VERSION].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_CLUSTER_NAME
+    targets:
+      - select:
+          kind: Deployment
+          labelSelector: velagw.lightvela.com/regional-observability=true
+        fieldPaths:
+          - spec.template.spec.containers.0.env.[name=K8S_CLUSTER_NAME].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_CLOUD_REGION
+    targets:
+      - select:
+          kind: Deployment
+          labelSelector: velagw.lightvela.com/regional-observability=true
+        fieldPaths:
+          - spec.template.spec.containers.0.env.[name=CLOUD_REGION].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_CONTROL_PROTOCOL
+    targets:
+      - select:
+          kind: Service
+          name: llmgateway-control-public
+        fieldPaths:
+          - metadata.annotations.[service.cloud.tencent.com/specify-protocol]
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_TRAFFIC_PROTOCOL
+    targets:
+      - select:
+          kind: Service
+          name: llmgateway-traffic
+        fieldPaths:
+          - metadata.annotations.[service.cloud.tencent.com/specify-protocol]
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_SET_AUTOSCALER_MIN_WARM_SETS
+    targets:
+      - select:
+          kind: Deployment
+          name: llmgateway-worker-core
+        fieldPaths:
+          - spec.template.spec.containers.[name=worker].env.[name=LLMGATEWAY_SET_AUTOSCALER_MIN_WARM_SETS].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_VELAGWSET_SERVERLESS_TRAFFIC
+    targets:
+      - select:
+          kind: Deployment
+          name: velagwset-provisioner
+        fieldPaths:
+          - spec.template.spec.containers.[name=provisioner].env.[name=LLMGATEWAY_VELAGWSET_SERVERLESS_TRAFFIC].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: velagwset-controller
+        fieldPaths:
+          - spec.template.spec.containers.[name=controller].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
+      - select:
+          kind: ResourceGraphDefinition
+          name: llmfleets.llmgateway.io
+        fieldPaths:
+          - spec.resources.[id=newapiAdminMasterDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
+          - spec.resources.[id=newapiVersionedTrafficDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
+          - spec.resources.[id=newapiTrafficDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value

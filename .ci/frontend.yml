@@ -59,6 +59,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
+              enableVirtualMergeBranch: false
           - name: 打印 frontend 构建上下文
             shell: bash
             run: |
@@ -99,6 +100,7 @@ stages:
               VITE_AUTH_API_BASE_URL: https://lightclaw.tech
               FRONTEND_ARTIFACT_MATRIX: ${{ variables.FRONTEND_ARTIFACT_MATRIX }}
               FRONTEND_ARTIFACT_MODE: required
+              FRONTEND_ARTIFACT_EXISTING_POLICY: reuse
               FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
               FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |

@@ -22,6 +22,8 @@ import (
 	"ctl/pkg/taskruntime"
 	taskcommon "ctl/pkg/taskruntime/common"
 
+	websitelogic "ctl/pkg/logic/website"
+
 	"go.uber.org/zap"
 )
 
@@ -177,6 +179,12 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 	// 已经到达终态：上一次 execute 已 CAS isolating → isolated，本次只需 markSuccess
 	if passEntity.Status == modelpass.StatusIsolated {
 		logger.Info("pass already isolated, short-circuit parent task")
+		if err := logicpass.CancelAiGatewayEntitlement(logger, passEntity.UserID); err != nil {
+			return "", fmt.Errorf("repair isolated ai-gateway entitlement: %w", err)
+		}
+		if err := websitelogic.IsolateSitesOnPassExpired(logger, passEntity.UserID); err != nil {
+			return "", fmt.Errorf("repair isolated website sites: %w", err)
+		}
 		// pass 终态但 trade callback 上一轮可能没成功，best-effort 再补一次
 		t.notifyTradeFlowCompleted(ctx, logger)
 		return t.markSuccess(ctx)
@@ -295,7 +303,38 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 		return "", fmt.Errorf("waiting for %d pending + %d failed-to-redispatch child task(s)", pendingCount, failedCount)
 	}
 
-	// 5. 全部子 task 终态 → CAS isolating → isolated
+	// 5. 全部子 task 终态后，先撤销长期 AI 权益。失败时保持 isolating 并重试，
+	// 防止本地已经进入 isolated，但 VelaGW 仍允许模型调用。
+	userID = passEntity.UserID
+	if t.in.UserID != "" {
+		userID = t.in.UserID
+	}
+	if err := logicpass.CancelAiGatewayEntitlement(logger, userID); err != nil {
+		return "", fmt.Errorf("cancel ai-gateway entitlement before isolate: %w", err)
+	}
+
+	// 6. 站点隔离：与实例隔离同等地位的阻塞步骤，失败让父 task 按 ExecuteInterval 重试。
+	//
+	// 放在 CAS 之前，理由与步骤 5 相同：不能出现「pass 已 isolated 但站点仍在对外服务」。
+	//
+	// 为什么可以阻塞：站点隔离在改造后是一次纯本地 DB 事务（active → suspended），
+	// 不再登记异步操作、不依赖 worker、不触碰 COS——这正是产品「到期不删文件、
+	// 只靠自研反代按状态 403」这个决定带来的额外好处。在它还需要删 COS 对象的年代，
+	// 把它设成阻塞会让一次对象存储抖动拖住整条 pass 隔离链路，所以当时只能是
+	// best-effort 尾巴；现在唯一的失败原因是 DB 不可用，而那种情况下前面几步同样过不去。
+	//
+	// 为什么不派独立子 task：子 task 的价值在于隔离外部系统的耗时与失败（实例隔离要
+	// 调 sandbox / CVM，可能几分钟），并为每个实例提供独立的终态与可观测性。站点隔离
+	// 是同库的一次写入，拆成子 task 只会引入一个新 task 类型、新 payload、新注册与
+	// 新重试语义，换来的可观测性收益远小于这份复杂度；父 task 的 task_message
+	// 已经能把失败原因带出来。
+	//
+	// 幂等：OnPassIsolated 逐站点做 active → suspended 的 CAS，重跑只跳过已隔离的。
+	if err := websitelogic.IsolateSitesOnPassExpired(logger, userID); err != nil {
+		return "", fmt.Errorf("isolate website sites before pass isolated: %w", err)
+	}
+
+	// 7. CAS isolating → isolated
 	//
 	// 设计稿：trade-pass-isolate-design.md §11-Q22 钦点 — 父 task 终态须同时写
 	// status='isolated' + isolated_time=NOW()（不再视 isolated_time 为"预留字段"）。
@@ -429,6 +468,14 @@ func (t *isolatePassTask) idempotentCheck(ctx pctx.Context) (string, error) {
 	}
 	if passEntity.Status == modelpass.StatusIsolated {
 		ctx.Logger().Info("idempotent check: pass already isolated", zap.String("pass_id", t.in.PassID))
+		if err := logicpass.CancelAiGatewayEntitlement(ctx.Logger(), passEntity.UserID); err != nil {
+			return "", fmt.Errorf("idempotent repair isolated entitlement: %w", err)
+		}
+		// 锁竞争路径同样要补站点隔离：这条路径直接 markSuccess，跳过整个 execute，
+		// 漏掉钩子会让 pass 已 isolated 的用户站点继续对外服务，且再没有别的机会补上。
+		if err := websitelogic.IsolateSitesOnPassExpired(ctx.Logger(), passEntity.UserID); err != nil {
+			return "", fmt.Errorf("idempotent repair isolated website sites: %w", err)
+		}
 		// pass 已经 isolated，但 trade 侧 trade_flow 可能还停在 in_progress
 		// （前一轮 markSuccess 后 callback 失败了），这里再补一次 best-effort
 		t.notifyTradeFlowCompleted(ctx, ctx.Logger())

@@ -45,6 +45,26 @@
 - 管理终端：`nextgen-dashboard`
 - 环境与云资源：`infra_pulumi`
 
+## 本地 Kubernetes 开发环境
+
+仓库提供一套不依赖云资源、Argo CD 或 CI/CD 的 `localstack` 环境。它复用
+各服务现有 `k8s/base` 和 Kustomize 变量渲染，在本机 Kubernetes 中运行
+MySQL、Redis、认证、支付、订阅、AI Gateway、Mock Sandbox、统一网关、
+前端和外部服务 Mock。
+
+```bash
+make local-stack-doctor
+make local-stack-up
+```
+
+默认入口：
+
+- 前端：`http://localhost:5173`
+- API Gateway：`http://localhost:8085`
+
+环境模型、Secret 覆盖和清理命令见
+[`deploy/localstack/README.md`](deploy/localstack/README.md)。
+
 ## Agent 自动化玩法
 
 仓库已经内置工蜂和蓝盾 Skill。用户只需要说明目标，并通过当前本机会话安全提供对应凭据，Agent 就可以按仓库规范完成自动化操作，无需用户手工拼 API 请求。
@@ -178,7 +198,15 @@ git push git@git.woa.com:wisp/velagw.git \
 源码嵌入不等于发布迁移完成。`velagw/` 接入 mono2 统一 Argo/CD 入口前，仍按其目录内现有发布定义维护。
 详细说明见 [`velagw/MONO2_SUBTREE.md`](velagw/MONO2_SUBTREE.md)。
 
-### 4. Frontend 发布到 Cloudflare Pages
+### 4. NewAPI subtree 协作模型
+
+`new-api/` 是 `https://github.com/QuantumNous/new-api.git` 的 squash-style subtree。
+初始导入版本与当时北京、上海 LLMGateway 运行镜像的源码 revision 一致。
+
+源码变更由 `.ci/new-api.yml` 构建并推送到北京、上海 TCR，但不会自动修改 GitOps 或发布环境。
+详细说明见 [`new-api/MONO2_SUBTREE.md`](new-api/MONO2_SUBTREE.md)。
+
+### 5. Frontend 发布到 Cloudflare Pages
 
 当前 `frontend` 的 Cloudflare Pages 实战发布方式是：
 

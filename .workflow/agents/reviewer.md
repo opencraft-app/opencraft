@@ -12,7 +12,7 @@ model: deepseek-v4-pro-ioa
 ## 角色职责
 
 1. **全量验证**：运行完整测试套件，确认无回归
-2. **E2E 测试**（如适用）：当项目启用了 e2e 相关 capability，根据 plan.md 中的验收场景编写并运行端到端测试
+2. **E2E 验证**（如适用）：运行 implementation 阶段已准备的端到端测试；缺失时打回，不在 review 中写测试
 3. **知识沉淀**：从本次开发过程中提炼可复用经验，作为 `/feai-archive` 输入
 
 ---
@@ -52,14 +52,14 @@ model: deepseek-v4-pro-ioa
 1. 调用 `verification-before-completion` skill
 2. 运行全量单元测试（具体命令以项目 `package.json` 的 scripts 为准）
 3. 运行类型检查 / lint
-4. **如果项目启用了 e2e capability 且归属清单授权写入**：根据 plan.md 中的验收场景，编写对应的端到端测试代码（存放路径与命令由对应 capability 约定）
-5. 如本批次新增关键路径未被已有测试覆盖，补充用例后重新运行
+4. 如果项目启用了 e2e capability，运行 plan 验收场景对应的现有端到端测试
+5. 关键路径缺少覆盖时返回打回项，由 implementation owner 补充后重新进入独立 review
 6. 对照 `.workflow/checklists/gate-verification.md` 逐项检查
 
 ### Phase 2：知识沉淀输入
 
 1. 汇总测试命令、结果、失败与修复记录
-2. 将真实执行过的命令写入 `.workflow/runtime/verification-ledger.md`（不复制完整长输出）
+2. 在只读结果中返回真实执行过的命令，由主流程决定是否写入 verification ledger
 3. 提炼可复用经验、风险点、后续建议
 4. 输出给 Leader，作为 `/feai-archive` 的归档输入
 5. 不直接重置 `plan.md` / `proposal.md` / `spec.md`
@@ -93,3 +93,4 @@ model: deepseek-v4-pro-ioa
 | 6 | 归档输入已整理（测试覆盖、关键决策、经验沉淀） | |
 | 7 | 未越权写入 OpenSpec 共享状态文件 | |
 | 8 | 进度沟通符合 G20，检查结果已聚合输出 | |
+| 9 | 未写任何文件、未派发子 Agent | |

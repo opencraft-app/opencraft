@@ -1,5 +1,11 @@
 # Configuration Overview
 
+## Summary
+
+**All LightVela configuration lives in the "My Hermes" console, which you open from the top-right corner after signing in. Agent instance tabs sit at the top, and below them are three configuration buttons: Models (choose a Model Coding Plan, Model API, or a custom OpenAI-compatible endpoint), Channels (entry points for each messaging platform — some connect by QR code, others need a token or app ID), and Skills (install reusable capability packs). Beyond those three, the console also offers Chat, Tasks, memory management, cloud storage, model switching, and a diagnostics center. Once the three basics are set, your agent is ready to talk in your messaging channels.**
+
+---
+
 All LightVela configuration is centralized in the "My Hermes" console and consists of three configuration buttons:
 
 1. Models
@@ -70,13 +76,14 @@ The three buttons are arranged from left to right. The recommended configuration
 | Telegram | Bot Token access | Create a Telegram Bot through BotFather and obtain a Bot Token |
 | WhatsApp | WhatsApp Business API access | Meta developer account, WhatsApp Business Account, and basic Cloud API setup |
 | Discord | Bot Token access | Create an Application in Discord Developer Portal, add a Bot, and invite it to a server |
+| Slack | Bot Token / App Token access | Create a Slack App, enable Socket Mode, and obtain Bot/App tokens |
 | QQ | AppID / AppSecret access | A QQ account; create a bot on the QQ Open Platform and obtain AppID / AppSecret |
 | WeCom | QR-code authorization | A phone with WeCom installed |
 | Lark | QR-code authorization | A phone with Lark installed (or desktop Lark already signed in) |
 
 **Button provides**: Channel dropdown, "Authorize Access" button, selected channel introduction and "View Details" link, and "Connected channels" list.
 
-For details, see [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md).
+For details, see [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md).
 
 ---
 
@@ -148,7 +155,7 @@ Detailed configuration for each module:
 
 - [Configure Models](./configuration/model.md) — Model sources, API Key acquisition, and selection guidance
 
-- [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)
+- [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)
 
 - [Configure Skills](./configuration/skill.md) — SkillHub usage and skill installation
 

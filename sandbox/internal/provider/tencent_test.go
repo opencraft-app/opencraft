@@ -2,96 +2,141 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"cvm-mock-e2b/internal/blueprint"
 	"cvm-mock-e2b/internal/core"
 )
 
-func TestBuildHealthTargetPrivateUsesDirectInstanceIP(t *testing.T) {
-	p := &TencentCloudProvider{
-		cfg: TencentConfig{
-			AddressType:         "private",
-			IngressProxyBaseURL: "http://ingressproxy-router",
-		},
-	}
-
-	gotURL, gotHost, err := p.buildHealthTarget("10.15.224.144")
+func TestInvokeCommandParametersTargetsOneInstanceAndEncodesRuntimeParameters(t *testing.T) {
+	params, err := invokeCommandParameters("ins-1", "cmd-website1", map[string]string{
+		"website_key": "vik_secret_value",
+		"api_base":    "https://api.lightvela.ai",
+	})
 	if err != nil {
-		t.Fatalf("buildHealthTarget returned error: %v", err)
+		t.Fatalf("invokeCommandParameters: %v", err)
 	}
-
-	wantURL := "http://10.15.224.144:49983/health"
-	if gotURL != wantURL {
-		t.Fatalf("verify url mismatch: got %q want %q", gotURL, wantURL)
+	if params["CommandId"] != "cmd-website1" {
+		t.Fatalf("CommandId = %#v", params["CommandId"])
 	}
-	if gotHost != "" {
-		t.Fatalf("host override mismatch: got %q want empty", gotHost)
+	instances, ok := params["InstanceIds"].([]string)
+	if !ok || len(instances) != 1 || instances[0] != "ins-1" {
+		t.Fatalf("InstanceIds = %#v", params["InstanceIds"])
+	}
+	var runtime map[string]string
+	if err := json.Unmarshal([]byte(params["Parameters"].(string)), &runtime); err != nil {
+		t.Fatalf("decode Parameters: %v", err)
+	}
+	if runtime["website_key"] != "vik_secret_value" || runtime["api_base"] != "https://api.lightvela.ai" {
+		t.Fatalf("runtime Parameters = %#v", runtime)
 	}
 }
 
-func TestBuildHealthTargetPublicUsesDirectInstanceIP(t *testing.T) {
-	p := &TencentCloudProvider{
-		cfg: TencentConfig{
-			AddressType: "public",
-		},
+func TestCommandInvocationMetadataQueryHidesOutput(t *testing.T) {
+	params := commandInvocationQueryParameters("inv-1", "ins-1", true)
+	if hide, ok := params["HideOutput"].(bool); !ok || !hide {
+		t.Fatalf("HideOutput = %#v, want true", params["HideOutput"])
 	}
-
-	gotURL, gotHost, err := p.buildHealthTarget("8.8.8.8")
-	if err != nil {
-		t.Fatalf("buildHealthTarget returned error: %v", err)
+	filters, ok := params["Filters"].([]map[string]interface{})
+	if !ok || len(filters) != 2 {
+		t.Fatalf("Filters = %#v", params["Filters"])
 	}
-
-	wantURL := "http://8.8.8.8:49983/health"
-	if gotURL != wantURL {
-		t.Fatalf("verify url mismatch: got %q want %q", gotURL, wantURL)
-	}
-	if gotHost != "" {
-		t.Fatalf("host override mismatch: got %q want empty", gotHost)
+	if filters[0]["Name"] != "invocation-id" || filters[1]["Name"] != "instance-id" {
+		t.Fatalf("Filters = %#v", filters)
 	}
 }
 
-func TestBuildEnvdProcessTargetPrivateUsesDirectInstanceIP(t *testing.T) {
-	p := &TencentCloudProvider{
-		cfg: TencentConfig{
-			AddressType:         "private",
-			IngressProxyBaseURL: "http://ingressproxy-router",
-		},
-	}
+func TestDecodeCommandInvocationMetadataDropsCredentialBearingOutput(t *testing.T) {
+	const secret = "vik_test_should_not_escape"
+	body := []byte(`{"Response":{"InvocationTaskSet":[{"CommandId":"cmd-website1","InvocationId":"inv-1","TaskStatus":"FAILED","InstanceId":"ins-1","StartTime":"start","EndTime":"end","ErrorInfo":"` + secret + `","TaskResult":{"ExitCode":17,"Output":"` + secret + `","OutputUrl":"https://example.invalid/secret","Dropped":3,"ExecutionTime":"1.0"}}]}}`)
 
-	gotURL, gotHost, err := p.buildEnvdProcessTarget("10.15.224.144")
+	result, err := decodeCommandInvocationMetadata(body, "ap-beijing")
 	if err != nil {
-		t.Fatalf("buildEnvdProcessTarget returned error: %v", err)
+		t.Fatalf("decodeCommandInvocationMetadata: %v", err)
 	}
-
-	wantURL := "http://10.15.224.144:49983/process.Process/Start"
-	if gotURL != wantURL {
-		t.Fatalf("process url mismatch: got %q want %q", gotURL, wantURL)
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
 	}
-	if gotHost != "" {
-		t.Fatalf("host override mismatch: got %q want empty", gotHost)
+	if strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), "OutputUrl") {
+		t.Fatalf("metadata leaked command output: %s", encoded)
+	}
+	if result.Status != "FAILED" || result.ExitCode != 17 || result.InvocationID != "inv-1" {
+		t.Fatalf("metadata = %+v", result)
 	}
 }
 
-func TestBuildEnvdProcessTargetPublicUsesDirectInstanceIP(t *testing.T) {
-	p := &TencentCloudProvider{
-		cfg: TencentConfig{
-			AddressType: "public",
+func TestVerifyInstanceDeliveryWithOpsUsesFreshTATAgentAndHandshake(t *testing.T) {
+	now := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	var describedCloudID, agentCloudID, commandCloudID, commandScript string
+	ops := deliveryProbeOps{
+		describeInstance: func(_ context.Context, cloudID string) (string, error) {
+			describedCloudID = cloudID
+			return "RUNNING", nil
 		},
+		describeAgent: func(_ context.Context, cloudID string) (tatAgentStatus, error) {
+			agentCloudID = cloudID
+			return tatAgentStatus{Status: "Online", LastHeartbeatTime: now.Format(time.RFC3339)}, nil
+		},
+		runCommand: func(_ context.Context, cloudID, script string) (CommandInvocation, error) {
+			commandCloudID = cloudID
+			commandScript = script
+			return CommandInvocation{InvocationID: "inv-1", InstanceID: cloudID}, nil
+		},
+		getCommandInvocation: func(_ context.Context, invocationID, cloudID string) (CommandResult, error) {
+			if invocationID != "inv-1" || cloudID != "ins-1" {
+				t.Fatalf("unexpected invocation lookup: invocation=%q cloud=%q", invocationID, cloudID)
+			}
+			return CommandResult{CommandInvocation: CommandInvocation{Status: "SUCCESS"}, ExitCode: 0}, nil
+		},
+		now: func() time.Time { return now },
 	}
 
-	gotURL, gotHost, err := p.buildEnvdProcessTarget("8.8.8.8")
-	if err != nil {
-		t.Fatalf("buildEnvdProcessTarget returned error: %v", err)
+	if err := verifyInstanceDeliveryWithOps(context.Background(), "ins-1", now.Add(-time.Second), ops); err != nil {
+		t.Fatalf("verify delivery: %v", err)
+	}
+	if describedCloudID != "ins-1" || agentCloudID != "ins-1" || commandCloudID != "ins-1" {
+		t.Fatalf("expected cloud id throughout delivery probe, describe=%q agent=%q command=%q", describedCloudID, agentCloudID, commandCloudID)
+	}
+	if commandScript != deliveryProbeScript {
+		t.Fatalf("unexpected delivery probe script %q", commandScript)
+	}
+}
+
+func TestValidateTATAgentReadyRejectsHeartbeatBeforeDeliveryGeneration(t *testing.T) {
+	now := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	err := validateTATAgentReady(tatAgentStatus{
+		Status:            "Online",
+		LastHeartbeatTime: now.Add(-time.Minute).Format(time.RFC3339),
+	}, now, now)
+	if err == nil || !strings.Contains(err.Error(), "predates delivery generation") {
+		t.Fatalf("expected stale-generation heartbeat error, got %v", err)
+	}
+}
+
+func TestVerifyInstanceDeliveryWithOpsRejectsFailedHandshake(t *testing.T) {
+	now := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	ops := deliveryProbeOps{
+		describeInstance: func(context.Context, string) (string, error) { return "RUNNING", nil },
+		describeAgent: func(context.Context, string) (tatAgentStatus, error) {
+			return tatAgentStatus{Status: "Online", LastHeartbeatTime: now.Format(time.RFC3339)}, nil
+		},
+		runCommand: func(context.Context, string, string) (CommandInvocation, error) {
+			return CommandInvocation{InvocationID: "inv-failed"}, nil
+		},
+		getCommandInvocation: func(context.Context, string, string) (CommandResult, error) {
+			return CommandResult{CommandInvocation: CommandInvocation{Status: "FAILED"}, ExitCode: 1, ErrorInfo: "boom"}, nil
+		},
+		now: func() time.Time { return now },
 	}
 
-	wantURL := "http://8.8.8.8:49983/process.Process/Start"
-	if gotURL != wantURL {
-		t.Fatalf("process url mismatch: got %q want %q", gotURL, wantURL)
-	}
-	if gotHost != "" {
-		t.Fatalf("host override mismatch: got %q want empty", gotHost)
+	err := verifyInstanceDeliveryWithOps(context.Background(), "ins-1", time.Time{}, ops)
+	if err == nil || !errors.Is(err, errDeliveryProbeCommandFailed) {
+		t.Fatalf("expected failed handshake error, got %v", err)
 	}
 }
 

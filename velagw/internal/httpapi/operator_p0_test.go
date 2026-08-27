@@ -125,6 +125,49 @@ func TestSetManagerScopedEndpointsRequireInternalToken(t *testing.T) {
 	}
 }
 
+func TestShardManagerObservationRequiresInternalTokenAndRejectsDrift(t *testing.T) {
+	store := gateway.NewMemoryStore()
+	svc := gateway.NewService(store, nil, gateway.Options{})
+	handler := NewControlServer(svc, Config{AdminToken: "admin-token", InternalToken: "internal-token"})
+	body := `{
+		"id":"shard-a",
+		"name":"Shard A",
+		"kind":"mysql",
+		"endpoint":"mysql-a.internal:3306",
+		"redis_endpoint":"redis-a.internal:6379",
+		"secret_name":"shard-a-runtime",
+		"redis_db_start":0,
+		"redis_db_limit":256,
+		"status":"active",
+		"max_sets":16
+	}`
+
+	unauthorized := httptest.NewRequest(http.MethodPost, "/api/internal/shard-manager/shards", bytes.NewBufferString(body))
+	unauthorized.Header.Set("Authorization", "Bearer admin-token")
+	unauthorizedRec := httptest.NewRecorder()
+	handler.ServeHTTP(unauthorizedRec, unauthorized)
+	if unauthorizedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("admin token status=%d body=%s", unauthorizedRec.Code, unauthorizedRec.Body.String())
+	}
+
+	authorized := httptest.NewRequest(http.MethodPost, "/api/internal/shard-manager/shards", bytes.NewBufferString(body))
+	authorized.Header.Set("Authorization", "Bearer internal-token")
+	authorizedRec := httptest.NewRecorder()
+	handler.ServeHTTP(authorizedRec, authorized)
+	if authorizedRec.Code != http.StatusOK {
+		t.Fatalf("internal token status=%d body=%s", authorizedRec.Code, authorizedRec.Body.String())
+	}
+
+	drift := strings.Replace(body, "mysql-a.internal:3306", "mysql-b.internal:3306", 1)
+	driftReq := httptest.NewRequest(http.MethodPost, "/api/internal/shard-manager/shards", bytes.NewBufferString(drift))
+	driftReq.Header.Set("Authorization", "Bearer internal-token")
+	driftRec := httptest.NewRecorder()
+	handler.ServeHTTP(driftRec, driftReq)
+	if driftRec.Code != http.StatusConflict {
+		t.Fatalf("drift status=%d body=%s", driftRec.Code, driftRec.Body.String())
+	}
+}
+
 func TestTenantStatisticsEndpointReturnsNotReadyWithoutSnapshot(t *testing.T) {
 	store := gateway.NewMemoryStore()
 	svc := gateway.NewService(store, nil, gateway.Options{})

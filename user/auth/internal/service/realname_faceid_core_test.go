@@ -462,6 +462,14 @@ func TestValidateRealnameFaceIDStartupRequiresCompleteNonLegacyRuntime(t *testin
 	if err := ValidateRealnameFaceIDStartup(ready, &stubFaceIDVerifier{}, stubRealnameCipher{}, shadowSvc, true, true); err != nil {
 		t.Fatalf("complete FaceID runtime must pass startup validation: %v", err)
 	}
+	if err := ValidateRealnameFaceIDStartup(RealnameFaceIDConfig{
+		Mode: RealnameAssuranceModeFaceless, DigestKey: []byte("0123456789abcdef0123456789abcdef"),
+	}, &stubFaceIDVerifier{}, stubRealnameCipher{}, shadowSvc, true, true); err != nil {
+		t.Fatalf("faceless runtime must not require FaceID-specific configuration: %v", err)
+	}
+	if err := ValidateRealnameFaceIDStartup(RealnameFaceIDConfig{Mode: RealnameAssuranceModeFaceless}, &stubFaceIDVerifier{}, stubRealnameCipher{}, shadowSvc, true, true); err == nil || !strings.Contains(err.Error(), "32-byte digest key") {
+		t.Fatalf("faceless runtime must require the local identity digest key, got %v", err)
+	}
 	unavailableShadow := shadowbinding.New(
 		shadowbinding.NewMemoryStore(),
 		shadowbinding.NewUnavailableClient("missing credentials"),

@@ -93,6 +93,14 @@ ENVD_SERVICE="envd.service"
 ENVD_LISTEN_PORT="${ENVD_LISTEN_PORT:-49983}"
 ENVD_LOCAL_BINARY="${ENVD_LOCAL_BINARY:-${SCRIPT_DIR}/bin/envd}"
 RUNTIME_ASSETS_DIR="${SCRIPT_DIR}/runtime"
+HERMES_WEBSITE_BUILDER_SKILL_FILE="${HERMES_WEBSITE_BUILDER_SKILL_FILE:-}"
+if [ -z "${HERMES_WEBSITE_BUILDER_SKILL_FILE}" ]; then
+  if [ -f "${SCRIPT_DIR}/../.agents/skills/website-builder/SKILL.md" ]; then
+    HERMES_WEBSITE_BUILDER_SKILL_FILE="${SCRIPT_DIR}/../.agents/skills/website-builder/SKILL.md"
+  else
+    HERMES_WEBSITE_BUILDER_SKILL_FILE="${SCRIPT_DIR}/skills/website-builder/SKILL.md"
+  fi
+fi
 NODE_INSTALL_DIR=""
 NODE_BIN_DIR=""
 NPM_GLOBAL_PREFIX="/usr/local"
@@ -1108,6 +1116,24 @@ remove_hermes_find_skill_skillhub() {
   fi
 }
 
+install_hermes_website_builder_skill() {
+  local source_file="${HERMES_WEBSITE_BUILDER_SKILL_FILE}"
+  local target_dir="${RUNTIME_HOME}/.hermes/skills/website-builder"
+
+  if [ ! -f "${source_file}" ]; then
+    log_error "website-builder Skill source is missing: ${source_file}"
+    return 1
+  fi
+  mkdir -p "${target_dir}"
+  install -m 0644 "${source_file}" "${target_dir}/SKILL.md"
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${target_dir}"
+  if [ ! -s "${target_dir}/SKILL.md" ]; then
+    log_error "website-builder Skill installation failed: ${target_dir}/SKILL.md"
+    return 1
+  fi
+  log_info "installed repository website-builder Skill"
+}
+
 curate_hermes_skills() {
   local skills_root="${RUNTIME_HOME}/.hermes/skills"
   local keep_list=(
@@ -1129,6 +1155,7 @@ curate_hermes_skills() {
     "productivity/maps"
     "creative/architecture-diagram"
     "creative/humanizer"
+    "website-builder"
   )
   local skill=""
   local skill_dir=""
@@ -1219,7 +1246,7 @@ install_hermes_whatsapp_bridge_deps() {
     "${bridge_home}/.hermes/hermes-agent/scripts" 2>/dev/null || true
   chown -R "${bridge_user}:${bridge_user}" "${bridge_dir}" 2>/dev/null || true
 
-  sudo npm install -g pnpm
+  sudo npm install -g "pnpm@${PNPM_VERSION}"
 
   resolve_js='for (const m of ["@whiskeysockets/baileys","qrcode-terminal","express","pino"]) console.log(m, require.resolve(m))'
   printf -v bridge_home_escaped '%q' "${bridge_home}"
@@ -1694,15 +1721,31 @@ install_hermes_acli() {
     run_as_runtime_user "acli doctor" || true
     return 1
   fi
-  if ! run_as_runtime_user "acli backend --help >/dev/null 2>&1"; then
-    log_info "acli backend command unavailable for ${RUNTIME_USER}; attempting bundle-update"
+  local required_acli_commands=(
+    "acli backend --help"
+    "acli skills batch-install --help"
+    "acli skills-sh batch-install --help"
+    "acli clawhub batch-install --help"
+  )
+  local acli_bundle_update_required="false"
+  local required_acli_command
+  for required_acli_command in "${required_acli_commands[@]}"; do
+    if ! run_as_runtime_user "${required_acli_command} >/dev/null 2>&1"; then
+      log_info "required ACLI capability unavailable for ${RUNTIME_USER}: ${required_acli_command}"
+      acli_bundle_update_required="true"
+    fi
+  done
+  if [ "${acli_bundle_update_required}" = "true" ]; then
+    log_info "attempting ACLI bundle-update for required Hermes capabilities"
     run_as_runtime_user "acli bundle-update >/dev/null 2>&1" || true
   fi
-  if ! run_as_runtime_user "acli backend --help >/dev/null 2>&1"; then
-    log_error "acli backend command is unavailable for ${RUNTIME_USER}"
-    run_as_runtime_user "acli --help" || true
-    return 1
-  fi
+  for required_acli_command in "${required_acli_commands[@]}"; do
+    if ! run_as_runtime_user "${required_acli_command} >/dev/null 2>&1"; then
+      log_error "required ACLI capability is unavailable for ${RUNTIME_USER}: ${required_acli_command}"
+      run_as_runtime_user "acli --help" || true
+      return 1
+    fi
+  done
   ensure_global_bin_links
 }
 
@@ -2194,6 +2237,7 @@ build_app_layer() {
     install_hermes_acli
     upgrade_hermes_backend_blueprint
     finalize_hermes_runtime_pin
+    install_hermes_website_builder_skill
     curate_hermes_skills
     remove_hermes_find_skill_skillhub
   else

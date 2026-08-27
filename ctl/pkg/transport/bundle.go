@@ -174,6 +174,7 @@ type UserBundleResponse struct {
 type BundlePrice struct {
 	Price         float64 `json:"price"`           // CGW data[].price，标价
 	TotalCost     float64 `json:"total_cost"`      // CGW totalCost，成本价
+	TaxPrice      float64 `json:"tax_price"`       // 实付金额对应税额
 	RealTotalCost float64 `json:"real_total_cost"` // CGW realTotalCost，实付价
 	Currency      string  `json:"currency"`        // 币种，如 CNY
 	Discount      float64 `json:"discount"`        // 总折扣率，来自 CGW policyDetail.total（拍平）；1.0 = 无折扣
@@ -183,7 +184,7 @@ type BundlePrice struct {
 // GET /internal/ctl/bundles/{bundleId} 拿到 bundle 业务规格做 state / sales_state 自校验。
 //
 // 严格精简（Q33 / Q25 / Q37 拍板，2026-05-08 v3 校正）：
-//   - 不含 ai_gateway_plans / ai_gateway_plan_id：DB 内部字段，唯一消费方 ctl/pass，trade 不感知；
+//   - 不含 ai_gateway_plans / ai_gateway_plan_id：网关内部字段，trade 不感知；
 //   - 不含 sub_product_code：归 trade 库 trade_bundle_definition，ctl 完全不感知；
 //   - 不含 time_span / time_unit：时长由 CreatePass 入参 (period, timeUnit) 决定，trade checkCreate 不需要时长。
 //

@@ -842,6 +842,73 @@ func TestRevokeExternalKeyInvalidatesRouteCache(t *testing.T) {
 	}
 }
 
+func TestRevokeExternalKeyUsesLoginBearerForNewAPIUserToken(t *testing.T) {
+	var loginCalls atomic.Int32
+	var userTokenCalls atomic.Int32
+	var deleteCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			loginCalls.Add(1)
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"access_token": "login-access-token",
+				"user":         map[string]any{"id": 42, "username": "sgw-user-42"},
+			}})
+		case "GET /api/user/token":
+			userTokenCalls.Add(1)
+			if r.Header.Get("Authorization") != "Bearer login-access-token" {
+				http.Error(w, `{"success":false,"message":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			if r.Header.Get("New-Api-User") != "42" {
+				t.Fatalf("New-Api-User = %q, want 42", r.Header.Get("New-Api-User"))
+			}
+			writeTestJSON(t, w, map[string]any{"success": true, "data": "user-access-token"})
+		case "DELETE /api/token/7":
+			deleteCalls.Add(1)
+			if r.Header.Get("Authorization") != "Bearer user-access-token" {
+				t.Fatalf("delete Authorization = %q, want user access token", r.Header.Get("Authorization"))
+			}
+			writeTestJSON(t, w, map[string]any{"success": true})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	store := NewMemoryStore()
+	if err := store.SaveSet(t.Context(), Set{
+		ID: "set-a", BaseURL: upstream.URL, Status: SetStatusActive, Setup: true,
+		AdminUserID: 1, AdminAccessToken: "admin-secret", AdmissionStatus: SetAdmissionStatusPassed,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "internal-user-42", SetID: "set-a", UpstreamUserID: 42,
+		Username: "sgw-user-42", Password: "password-secret", ProvisionStatus: BindingProvisionStatusUserReady,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, externalKeyID := saveTestAPIKey(t, store, "revoke-new-auth", APIKeyBinding{
+		UserID:        "internal-user-42",
+		SetID:         "set-a",
+		UpstreamKeyID: 7,
+	})
+
+	svc := NewService(store, upstream.Client().Transport, Options{})
+	if err := svc.RevokeExternalKey(t.Context(), externalKeyID); err != nil {
+		t.Fatal(err)
+	}
+	if loginCalls.Load() != 1 || userTokenCalls.Load() != 1 || deleteCalls.Load() != 1 {
+		t.Fatalf(
+			"upstream calls login=%d user_token=%d delete=%d, want 1 each",
+			loginCalls.Load(),
+			userTokenCalls.Load(),
+			deleteCalls.Load(),
+		)
+	}
+}
+
 func TestProxyStripsHopByHopHeadersInBothDirections(t *testing.T) {
 	store := NewMemoryStore()
 	var forwarded http.Header

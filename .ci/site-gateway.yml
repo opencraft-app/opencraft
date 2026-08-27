@@ -1,0 +1,39 @@
+version: v2.0
+name: Build site-gateway
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - site-gateway/**
+      - argocd/services/site-gateway/**
+      - argocd/apps/*/site-gateway.yaml
+      - argocd/projects/*-site-gateway.yaml
+      - argocd/secrets/*/site-gateway-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-site-gateway
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: site-gateway
+    BUNDLE: site-gateway
+    DISPLAY_NAME: site-gateway
+    DEFAULT_TARGET_ENV: sgprod
+    MASTER_BUILD_ENVS: shprod,sgprod
+    MASTER_AUTO_PIN_ENVS: none
+    ENABLE_MASTER_PROD_PROMOTE: true
+    ENABLE_MASTER_PROD_DB_MIGRATION: false
+    PLAYGROUND_BUILD_ENVS: none
+    PLAYGROUND_AUTO_PIN_ENVS: none
+    RUNNER_POOL_NAME: cn-pool
+    PRINT_RUNNER_DIAGNOSTICS: true

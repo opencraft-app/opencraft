@@ -232,19 +232,18 @@ func TestBootstrapSetCompletesTwoFALoginWhenManagedRootAlreadyRequiresIt(t *test
 		case "GET /api/setup":
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"status": true, "root_init": true}})
 		case "POST /api/user/login":
-			http.SetCookie(w, &http.Cookie{Name: "session", Value: "pending-2fa", Path: "/"})
-			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"require_2fa": true}})
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+				"flow_token":  "flow-123",
+			}})
 		case "POST /api/user/login/2fa":
-			cookie, err := r.Cookie("session")
-			if err != nil || cookie.Value != "pending-2fa" {
-				t.Fatalf("missing pending 2FA session cookie: cookie=%v err=%v", cookie, err)
-			}
 			var req struct {
-				Code string `json:"code"`
+				Code      string `json:"code"`
+				FlowToken string `json:"flow_token"`
 			}
 			decodeTestJSON(t, r, &req)
-			if len(req.Code) != 6 || strings.Trim(req.Code, "0123456789") != "" {
-				t.Fatalf("unexpected 2FA login code %q", req.Code)
+			if req.FlowToken != "flow-123" || len(req.Code) != 6 || strings.Trim(req.Code, "0123456789") != "" {
+				t.Fatalf("unexpected 2FA login request %+v", req)
 			}
 			completed2FA = true
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default"}})
@@ -438,6 +437,208 @@ func TestCreateExternalKeyEnsuresUserAndCreatesUpstreamToken(t *testing.T) {
 	}
 	if !route.Enabled {
 		t.Fatalf("traffic route remained disabled after tenant became active: %+v", route)
+	}
+}
+
+func TestCreateExternalKeyReusesActivePurposeBinding(t *testing.T) {
+	var upstreamCreates atomic.Int32
+	upstream := newKeyIssuanceUpstream(t, func() { upstreamCreates.Add(1) })
+	defer upstream.Close()
+
+	store := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, store, upstream.URL)
+	svc := NewService(store, nil, Options{KeyRouteCache: NewMemoryAPIKeyRouteCache(0, 100)})
+
+	first, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ExternalKeyID != first.ExternalKeyID || second.ExternalKey != first.ExternalKey {
+		t.Fatalf("second key = %+v, want original key id=%q", second, first.ExternalKeyID)
+	}
+	if upstreamCreates.Load() != 1 {
+		t.Fatalf("upstream token creates = %d, want 1", upstreamCreates.Load())
+	}
+}
+
+func TestCreateExternalKeyRejectsUnusablePurposeBindingStates(t *testing.T) {
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{4}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := APIKeyBinding{
+		ExternalKey:     material.ExternalKey,
+		ExternalKeyHash: material.ExternalKeyHash,
+		ExternalKeyID:   material.ExternalKeyID,
+		SecretHash:      material.SecretHash,
+		KeyVersion:      material.Version,
+		RouteSlot:       material.RouteSlot,
+		Purpose:         "default",
+		SetID:           "set-a",
+		UserID:          "user-1",
+		UpstreamKey:     "sk-upstream",
+		UpstreamKeyID:   7,
+	}
+	tests := []struct {
+		name      string
+		status    string
+		mutate    func(*APIKeyBinding)
+		wantError error
+	}{
+		{name: "reserved", status: APIKeyStatusReserved, wantError: ErrAPIKeyProvisioning},
+		{name: "upstream ready", status: APIKeyStatusUpstreamReady, wantError: ErrAPIKeyProvisioning},
+		{name: "route pending", status: APIKeyStatusRoutePending, wantError: ErrAPIKeyProvisioning},
+		{name: "error", status: APIKeyStatusError, wantError: ErrAPIKeyStateUnavailable},
+		{name: "legacy disabled", status: APIKeyStatusLegacyDisabled, wantError: ErrAPIKeyStateUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			memory := NewMemoryStore()
+			prepareReadyKeyIssuanceUser(t, memory, "http://unused.invalid")
+			binding := valid
+			binding.Status = test.status
+			if test.mutate != nil {
+				test.mutate(&binding)
+			}
+			store := &fixedPurposeLookupStore{Store: memory, binding: binding}
+			svc := NewService(store, nil, Options{})
+			_, err := svc.createExternalKey(t.Context(), "user-1", "DEFAULT")
+			if !errors.Is(err, test.wantError) {
+				t.Fatalf("error = %v, want %v", err, test.wantError)
+			}
+			if strings.Contains(err.Error(), material.ExternalKey) {
+				t.Fatal("state error leaked external key")
+			}
+		})
+	}
+}
+
+func TestCreateExternalKeyRotatesActivePurposeBindingWithoutStoredMaterial(t *testing.T) {
+	var upstreamCreates atomic.Int32
+	var upstreamDeletes atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 42, "username": "sgw-user-1"}})
+		case "GET /api/user/token":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": "user-access-token"})
+		case "DELETE /api/token/7":
+			upstreamDeletes.Add(1)
+			writeTestJSON(t, w, map[string]any{"success": true})
+		case "POST /api/token/":
+			upstreamCreates.Add(1)
+			writeTestJSON(t, w, map[string]any{"success": true})
+		case "GET /api/token/search":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": []map[string]any{{"id": 8, "name": r.URL.Query().Get("keyword")}}}})
+		case "POST /api/token/8/key":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-upstream-new"}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{4}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, memory, upstream.URL)
+	store := &legacyPurposeBindingStore{
+		Store: memory,
+		binding: APIKeyBinding{
+			ExternalKeyHash: material.ExternalKeyHash,
+			ExternalKeyID:   material.ExternalKeyID,
+			SecretHash:      material.SecretHash,
+			KeyVersion:      material.Version,
+			RouteSlot:       material.RouteSlot,
+			Purpose:         "default",
+			SetID:           "set-a",
+			UserID:          "user-1",
+			UpstreamKey:     "sk-upstream-old",
+			UpstreamKeyID:   7,
+			Status:          APIKeyStatusActive,
+		},
+	}
+	svc := NewService(store, nil, Options{KeyRouteCache: NewMemoryAPIKeyRouteCache(0, 100)})
+
+	rotated, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.ExternalKey == "" || rotated.ExternalKeyID == material.ExternalKeyID {
+		t.Fatalf("rotated key = %+v, want fresh material", rotated)
+	}
+	if upstreamDeletes.Load() != 1 || upstreamCreates.Load() != 1 {
+		t.Fatalf("upstream deletes=%d creates=%d, want 1 each", upstreamDeletes.Load(), upstreamCreates.Load())
+	}
+	if !store.deleted.Load() {
+		t.Fatal("legacy binding was not deleted")
+	}
+
+	reused, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.ExternalKeyID != rotated.ExternalKeyID || reused.ExternalKey != rotated.ExternalKey {
+		t.Fatalf("reused key = %+v, want rotated key id=%q", reused, rotated.ExternalKeyID)
+	}
+	if upstreamDeletes.Load() != 1 || upstreamCreates.Load() != 1 {
+		t.Fatalf("repeat request changed upstream deletes=%d creates=%d", upstreamDeletes.Load(), upstreamCreates.Load())
+	}
+}
+
+func TestCreateExternalKeyDoesNotReturnActiveKeyForInactiveTenant(t *testing.T) {
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{3}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := APIKeyBinding{
+		ExternalKey: material.ExternalKey, ExternalKeyHash: material.ExternalKeyHash,
+		ExternalKeyID: material.ExternalKeyID, SecretHash: material.SecretHash,
+		KeyVersion: material.Version, RouteSlot: material.RouteSlot,
+		Purpose: "default", SetID: "set-a", UserID: "user-1", Status: APIKeyStatusActive,
+	}
+	for _, status := range []string{TenantStatusDisabled, TenantStatusDeleting, TenantStatusDeleted} {
+		memory := NewMemoryStore()
+		prepareReadyKeyIssuanceUser(t, memory, "http://unused.invalid")
+		if err := memory.SaveTenant(t.Context(), Tenant{
+			ExternalUserID: "user-1", Backend: UserBackendNew, SetID: "set-a", Status: status,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		store := &fixedPurposeLookupStore{Store: memory, binding: binding}
+		svc := NewService(store, nil, Options{})
+		if _, err := svc.createExternalKey(t.Context(), "user-1", "default"); !errors.Is(err, ErrTenantInactive) {
+			t.Fatalf("status %s error = %v, want tenant inactive", status, err)
+		} else if strings.Contains(err.Error(), material.ExternalKey) {
+			t.Fatalf("status %s error leaked external key", status)
+		}
+	}
+}
+
+func TestCreateExternalKeyWithoutPurposeCreatesDistinctKeys(t *testing.T) {
+	upstream := newKeyIssuanceUpstream(t, nil)
+	defer upstream.Close()
+	store := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, store, upstream.URL)
+	svc := NewService(store, nil, Options{})
+
+	first, err := svc.CreateExternalKey(t.Context(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.CreateExternalKey(t.Context(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ExternalKeyID == second.ExternalKeyID || first.ExternalKey == second.ExternalKey {
+		t.Fatalf("purpose-less keys unexpectedly reused: first=%q second=%q", first.ExternalKeyID, second.ExternalKeyID)
 	}
 }
 
@@ -734,6 +935,46 @@ func TestCreateExternalKeyDoesNotRetryPurposeConflict(t *testing.T) {
 	}
 }
 
+func TestCreateExternalKeyPurposeConflictReturnsConcurrentWinnerWithoutUpstreamToken(t *testing.T) {
+	var upstreamCreates atomic.Int32
+	upstream := newKeyIssuanceUpstream(t, func() { upstreamCreates.Add(1) })
+	defer upstream.Close()
+
+	memory := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, memory, upstream.URL)
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{6}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	winner := APIKeyBinding{
+		ExternalKey:     material.ExternalKey,
+		ExternalKeyHash: material.ExternalKeyHash,
+		ExternalKeyID:   material.ExternalKeyID,
+		SecretHash:      material.SecretHash,
+		KeyVersion:      material.Version,
+		RouteSlot:       material.RouteSlot,
+		Purpose:         "default",
+		SetID:           "set-a",
+		UserID:          "user-1",
+		UpstreamKey:     "sk-winner-upstream",
+		UpstreamKeyID:   77,
+		Status:          APIKeyStatusActive,
+	}
+	store := &purposeConflictWinnerStore{Store: memory, winner: winner}
+	svc := NewService(store, nil, Options{})
+
+	key, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key.ExternalKeyID != winner.ExternalKeyID || key.ExternalKey != winner.ExternalKey {
+		t.Fatalf("key = %+v, want concurrent winner %+v", key, winner)
+	}
+	if upstreamCreates.Load() != 0 {
+		t.Fatalf("upstream token creates = %d, want 0", upstreamCreates.Load())
+	}
+}
+
 type keyIssuanceOrderStore struct {
 	Store
 	record func(string)
@@ -747,6 +988,42 @@ func (s *keyIssuanceOrderStore) ReserveAPIKeyBinding(ctx context.Context, bindin
 func (s *keyIssuanceOrderStore) SaveAPIKeyBinding(ctx context.Context, binding APIKeyBinding) error {
 	s.record("save")
 	return s.Store.SaveAPIKeyBinding(ctx, binding)
+}
+
+type fixedPurposeLookupStore struct {
+	Store
+	binding APIKeyBinding
+}
+
+func (s *fixedPurposeLookupStore) GetAPIKeyBindingByUserPurpose(context.Context, string, string) (APIKeyBinding, bool, error) {
+	return s.binding, true, nil
+}
+
+type legacyPurposeBindingStore struct {
+	Store
+	binding APIKeyBinding
+	deleted atomic.Bool
+}
+
+func (s *legacyPurposeBindingStore) GetAPIKeyBindingByUserPurpose(ctx context.Context, userID, purpose string) (APIKeyBinding, bool, error) {
+	if !s.deleted.Load() && s.binding.UserID == userID && s.binding.Purpose == purpose {
+		return s.binding, true, nil
+	}
+	return s.Store.GetAPIKeyBindingByUserPurpose(ctx, userID, purpose)
+}
+
+func (s *legacyPurposeBindingStore) GetAPIKeyBindingByExternalKeyID(ctx context.Context, keyID string) (APIKeyBinding, bool, error) {
+	if !s.deleted.Load() && s.binding.ExternalKeyID == keyID {
+		return s.binding, true, nil
+	}
+	return s.Store.GetAPIKeyBindingByExternalKeyID(ctx, keyID)
+}
+
+func (s *legacyPurposeBindingStore) DeleteAPIKeyBindingByExternalKeyID(ctx context.Context, keyID string) error {
+	if s.binding.ExternalKeyID == keyID {
+		s.deleted.Store(true)
+	}
+	return s.Store.DeleteAPIKeyBindingByExternalKeyID(ctx, keyID)
 }
 
 type failingRoutePublicationCache struct {
@@ -774,6 +1051,23 @@ type collisionReservationStore struct {
 	randomCollisions int32
 	purposeConflict  bool
 	attempts         atomic.Int32
+}
+
+type purposeConflictWinnerStore struct {
+	Store
+	winner APIKeyBinding
+	once   sync.Once
+}
+
+func (s *purposeConflictWinnerStore) ReserveAPIKeyBinding(ctx context.Context, _ APIKeyBinding) error {
+	var saveErr error
+	s.once.Do(func() {
+		saveErr = s.Store.SaveAPIKeyBinding(ctx, s.winner)
+	})
+	if saveErr != nil {
+		return saveErr
+	}
+	return ErrAPIKeyPurposeConflict
 }
 
 func (s *collisionReservationStore) ReserveAPIKeyBinding(ctx context.Context, binding APIKeyBinding) error {

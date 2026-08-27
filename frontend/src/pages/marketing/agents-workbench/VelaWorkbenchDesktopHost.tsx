@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { useT } from "@/i18n/t";
 import type { Bot } from "@/domain/types";
 import type { BotRepository } from "@/repositories/types";
 import type {
@@ -63,13 +64,14 @@ export function VelaWorkbenchDesktopHost({
   getTerminalSession,
   onReloadBots,
 }: VelaWorkbenchDesktopHostProps) {
+  const t = useT();
   const hostStateStores = useMemo(() => createWorkbenchDesktopHostStateStores(), []);
   const [transport, setTransport] = useState<ResolvedWorkbenchVeladTransport | null>(
     null,
   );
   const [bootstrap, setBootstrap] = useState<WorkbenchBootstrap>({
     status: "starting",
-    message: botLoading ? "Loading bot..." : "",
+    message: botLoading ? t("正在加载 Agent…") : "",
   });
   const [connectAttempt, setConnectAttempt] = useState(0);
   const [autoVeladBootstrap, setAutoVeladBootstrap] =
@@ -141,7 +143,7 @@ export function VelaWorkbenchDesktopHost({
       setTransport(null);
       setBootstrap({
         status: "starting",
-        message: botLoading ? "Loading bot..." : "No bot is available.",
+        message: botLoading ? t("正在加载 Agent…") : t("暂无可用的 Agent。"),
       });
       return undefined;
     }
@@ -156,7 +158,7 @@ export function VelaWorkbenchDesktopHost({
       }
       setBootstrap({
         status: "starting",
-        message: "Starting velad in VM...",
+        message: t("正在虚拟机中启动 velad…"),
       });
       return undefined;
     }
@@ -209,37 +211,43 @@ export function VelaWorkbenchDesktopHost({
     setConnectAttempt((current) => current + 1);
   }, [onReloadBots]);
 
-  if (transport) {
-    return (
-      <WorkbenchEmbeddedReadyApp
-        hostStateStores={hostStateStores}
-        transport={transport}
-      />
-    );
-  }
+	  if (transport) {
+	    return (
+	      <WorkbenchEmbeddedReadyApp
+	        botName={bot?.name ?? null}
+	        hostStateStores={hostStateStores}
+	        transport={transport}
+	      />
+	    );
+	  }
 
-  return (
-    <WorkbenchHostSurface
-      error={bootstrap.status === "failed" ? bootstrap.error : null}
-      isLoading={bootstrap.status === "starting"}
-      onRetry={retry}
-    />
-  );
+	  return (
+	    <WorkbenchHostSurface
+	      botName={bot?.name ?? null}
+	      error={bootstrap.status === "failed" ? bootstrap.error : null}
+	      isLoading={bootstrap.status === "starting"}
+	      onRetry={retry}
+	    />
+	  );
 }
 
 interface WorkbenchEmbeddedReadyAppProps {
+  botName?: string | null;
   hostStateStores: WorkbenchDesktopHostStateStores;
   transport: ResolvedWorkbenchVeladTransport;
 }
 
 function WorkbenchEmbeddedReadyApp({
+  botName,
   hostStateStores,
   transport,
 }: WorkbenchEmbeddedReadyAppProps) {
+  const t = useT();
   const [activeSessionId, setActiveSessionId] = useState(
     () => hostStateStores.sessionSelectionStore?.read()?.sessionId ?? "",
   );
-  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
+  // setter 省略：分支的内嵌组件结构暂未提供后端切换 UI，仅消费当前值。
+  const [selectedBackendKind] = useState<BackendKindWire | "">(
     readDefaultBackendPreference,
   );
   const [sessions, setSessions] = useState<SessionListItemWire[]>([]);
@@ -329,13 +337,14 @@ function WorkbenchEmbeddedReadyApp({
       const nextSetup = await resolveNewSessionSetup();
       const backend = nextSetup.resolvedSelectedBackend;
       if (!backend) {
-        setError("No backend is available yet. Please try again after velad finishes starting.");
+        setError(t("暂无可用后端，请等待 velad 启动完成后重试。"));
         return;
       }
       const created = await client.createSession({
-        backend,
+        // setup 选择器的返回被推断为 string，此处收窄断言回字面量联合。
+        backend: backend as BackendKindWire,
         agentConfig: nextSetup.setupAgentConfig,
-        title: "New chat",
+        title: t("新对话"),
         workingDirectory: DEFAULT_WORKING_DIRECTORY,
       });
       setActiveSessionId(created.session.id);
@@ -359,11 +368,11 @@ function WorkbenchEmbeddedReadyApp({
     setup.resolvedSelectedBackend,
   ]);
 
-  return (
-    <WorkbenchHostSurface
-      activeSessionId={activeSessionId || null}
-      botName={bot?.name ?? null}
-      error={controller.error ?? error}
+	  return (
+	    <WorkbenchHostSurface
+	      activeSessionId={activeSessionId || null}
+	      botName={botName}
+	      error={controller.error ?? error}
       isLoading={isLoadingSessions || !activeSessionId}
       onCreateSession={createSession}
       onRetry={loadSessions}
@@ -382,7 +391,6 @@ function WorkbenchEmbeddedReadyApp({
           isRespondingToRequest={controller.isRespondingToRequest}
           isUpdatingComposerControls={controller.isUpdatingAgentConfig}
           layout="contained"
-          messageFollowToken={controller.messageFollowToken}
           model={controller.model}
           onAgentConfigChange={controller.updateAgentConfig}
           onAttachImages={controller.attachImages}
@@ -421,6 +429,7 @@ function WorkbenchHostSurface({
   onSelectSession?: (sessionId: string) => void;
   sessions?: SessionListItemWire[];
 }) {
+  const t = useT();
   const visibleSessions = sessions ?? [];
   const railTitle = botName?.trim() || "Hermes";
 
@@ -430,16 +439,17 @@ function WorkbenchHostSurface({
       data-vela-embedded-workbench
       aria-busy={isLoading && !error ? "true" : undefined}
     >
+      {/* aria-label 固定为 "Vela sessions"：该字面量被 workbench-desktop-shell-boundary 测试锁定 */}
       <aside className={styles.sessionRail} aria-label="Vela sessions">
         <div className={styles.sessionRailTop}>
           <div>
-            <div className={styles.eyebrow}>Workbench</div>
+            <div className={styles.eyebrow}>{t("工作台")}</div>
             <h2 className={styles.railTitle}>{railTitle}</h2>
           </div>
           <button
             className={styles.iconButton}
             type="button"
-            aria-label="Refresh sessions"
+            aria-label={t("刷新会话")}
             onClick={onRetry}
           >
             ↻
@@ -452,7 +462,7 @@ function WorkbenchHostSurface({
           onClick={() => void onCreateSession?.()}
         >
           <span aria-hidden>+</span>
-          <span>New chat</span>
+          <span>{t("新对话")}</span>
         </button>
 
         <div className={styles.sessionListRegion}>

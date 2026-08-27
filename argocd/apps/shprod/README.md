@@ -16,7 +16,7 @@
 - 只允许已经在北京验证过的服务进入
 - secret 变更必须经过受保护流水线和受保护变更路径
 - bot PR 不能自动合并，必须有人审批准入
-- 这里的 leaf app 由 `root-shprod` 统一扫描和接管
+- 这里的 leaf app 以及 `argocd/projects/shprod*.yaml` 由 `root-shprod` 统一扫描和接管
 - 当前上海先沿用按服务拆分的 cutover project 模式，而不是统一 `shprod` project
 - 上海正式环境不启用 `syncPolicy.automated`
 - GitOps MR 合入 `gitops` 只代表发布批准；实际下发必须由人工或发布系统在发布窗口执行 Argo sync
@@ -38,6 +38,8 @@
 - `subscription`
 - `trade`
 - `velagw`
+- `workers-website-deployer`（workers 镜像的 `website-deployer` 进程，运行在 `ctl` namespace，
+  发布通道独立于 `.ci/workers.yml` / `shanghai-workers`）
 
 当前上海项目模型：
 
@@ -58,6 +60,7 @@
   - `shprod-subscription`
   - `shprod-trade`
   - `shprod-velagw`
+  - `shprod-workers-website-deployer`
 
 新增/修改上海 leaf app 时，至少要同时确认：
 
@@ -75,7 +78,7 @@
 
 注意：
 
-- `apps/shprod/` 是 `root-shprod` 会直接扫描的 live 路径
+- `root-shprod` 同时扫描 `apps/shprod/` 和 `projects/shprod*.yaml`；新增 leaf app 时无需再手工注册 AppProject
 - 如果后续要把上海收敛成单一 project 模型，需要成组调整：
   - `argocd/apps/shprod/*.yaml`
   - `argocd/projects/shprod*.yaml`

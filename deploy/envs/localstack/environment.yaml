@@ -1,0 +1,47 @@
+apiVersion: lightclaw.dev/v1alpha1
+kind: LocalEnvironment
+metadata:
+  name: localstack
+spec:
+  orchestrator: kubernetes
+  contextAllowlist:
+    - orbstack
+    - docker-desktop
+  architecture: arm64
+  secrets:
+    provider: kustomize-secret-generator
+    encrypted: false
+    localOverrideDirectory: deploy/envs/localstack/overrides
+  capabilities:
+    cloudProvider: tencent-via-cloudladder
+    tencentCloudAPI: fake
+    jifei: fake
+    sandboxProvider: mock
+    sandboxRealResourcePool: false
+    realname: false
+    contentAudit: false
+    qqOAuth: fake
+    wechatPayBridge: fake
+  entrypoints:
+    frontend: http://localhost:5173
+    gateway: http://localhost:8085
+    cloudladdergateway: http://localhost:18095
+    shadow: http://localhost:18083
+    trade: http://localhost:18084
+    fakeQQOAuth: http://localhost:19010
+    fakeJifei: http://localhost:19020
+    fakeTencentCloud: http://localhost:19030
+    fakeWechatPayBridge: http://localhost:19040
+  components:
+    - infrastructure
+    - auth
+    - payment
+    - subscription
+    - ai-gateway
+    - sandbox
+    - cloudladdergateway
+    - shadow
+    - trade
+    - ctl
+    - service-gateway
+    - frontend

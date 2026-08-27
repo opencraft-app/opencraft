@@ -12,6 +12,8 @@ Thumbs.db
 .agents/*
 !.agents/skills/
 !.agents/skills/**
+# 本地专用运维 SOP（含内网机器/集群拓扑，不入库）
+.agents/skills/deploy-beijing-sandbox/
 .claude/
 .gemini/
 .omx/
@@ -27,6 +29,7 @@ go.work.sum
 node_modules/
 package-lock.json
 !ai-gateway/package-lock.json
+!deploy/local/mockservers/control/package-lock.json
 yarn.lock
 pnpm-lock.yaml
 !frontend/pnpm-lock.yaml
@@ -58,6 +61,9 @@ frontend/.source/
 _research-output
 *.zip
 graphify-out/
+
+# Locally generated longform article covers; reusable skill reference assets remain tracked.
+product/longform-content/assets/
 
 # ─── Python ──────────────────────────────────────────
 __pycache__/
@@ -91,8 +97,12 @@ gateway-dashboard/k8s/overlays/*/generated/
 ctl/k8s/overlays/*/generated/
 frontend/k8s/overlays/*/generated/
 workers/k8s/overlays/*/generated/
+# workers overlay 里每个 worker 自己一层目录（如 shprod/website-deployer/generated/）
+workers/k8s/overlays/*/*/generated/*.env
 deploy/envs/*/platform.env
 deploy/envs/*/*.kustomize.secret.env
+deploy/envs/localstack/overrides/*.env
+.localstack/
 infra_pulumi/.reconcile/
 /api
 ctl/api
@@ -143,6 +153,22 @@ openspec/spec.md
 # 例外（保留追踪）：项目共享配置
 !.codebuddy/mcp.json.example
 # === END FEAI MANAGED ===
+# ClawPro（teamai）本机绑定状态与 CodeBuddy 个人 IDE 设置，不入库
+.teamai/
+.codebuddy/settings.json
 .DS_Store
 frontend/.support-feedback/
 frontend/.next-global/
+frontend/.next-cn/
+frontend/.codebuddy/.cache
+frontend/.workflow/
+# Obsidian 编辑器本地配置：workspace.json 记录机器特定的窗口/标签页状态，
+# 每次编辑都会变动，入库会造成反复 merge conflict。
+# 用不带前缀的模式匹配任意层级（仓库根、wiki/ 等）。
+.obsidian/
+.playwright-mcp/
+docs/harness/
+
+# teamai（ClawPro）本地状态目录与注入的工具 hooks —— 机器本地配置，不入库
+.teamai/
+.codebuddy/settings.json

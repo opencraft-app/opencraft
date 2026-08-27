@@ -35,9 +35,32 @@ func (httpTestShadowClient) SaveBasicAuthForSaaS(context.Context, shadowbinding.
 	return nil
 }
 
+func (httpTestShadowClient) GetTemporaryCredentialsForSaaS(context.Context, shadowbinding.CloudTemporaryCredentialsInput) (shadowbinding.CloudTemporaryCredentials, error) {
+	return shadowbinding.CloudTemporaryCredentials{
+		Uin:          300000000053,
+		OwnerUin:     300000000053,
+		Token:        "tmp-token",
+		TmpSecretID:  "tmp-id",
+		TmpSecretKey: "tmp-key",
+		ExpiredTime:  fixedHTTPTestNow().Add(time.Hour),
+		RequestID:    "sts-request-id",
+	}, nil
+}
+
 type httpRecordingShadowClient struct {
 	basicAuthCalls int
 	basicAuthErr   error
+}
+
+type httpBillingClient struct {
+	result shadowbinding.BillingAccountResult
+	err    error
+	calls  int
+}
+
+func (c *httpBillingClient) EnsureBillingAccount(context.Context, int64) (shadowbinding.BillingAccountResult, error) {
+	c.calls++
+	return c.result, c.err
 }
 
 func (c *httpRecordingShadowClient) SendSMSVerifyCode(context.Context, shadowbinding.CloudSendSMSInput) error {
@@ -55,6 +78,60 @@ func (c *httpRecordingShadowClient) UpdatePhoneByAuthCode(context.Context, shado
 func (c *httpRecordingShadowClient) SaveBasicAuthForSaaS(context.Context, shadowbinding.CloudSaveBasicAuthInput) error {
 	c.basicAuthCalls++
 	return c.basicAuthErr
+}
+
+func TestInternalShadowCredentialsRequiresTokenAndReturnsTemporaryCredentials(t *testing.T) {
+	t.Parallel()
+
+	router, svc, _ := newShadowBindingHTTPTestRouter()
+	_, userID := completePhone3FAHTTPFlow(t, router, svc)
+	body := map[string]any{"external_user_id": userID, "client_ip": "10.0.0.1", "client_ua": "lightvela-trade"}
+
+	unauthorized := performJSONRequest(t, router, http.MethodPost, "/internal/shadow/credentials", body)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected credentials endpoint to require token, got %d: %s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	req := newJSONRequest(t, http.MethodPost, "/internal/shadow/credentials", body)
+	req.Header.Set("Authorization", "Bearer shadow-internal-token")
+	response := performRequest(router, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected credentials endpoint 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if !stringsContainsAll(response.Body.String(),
+		`"code":"OK"`,
+		`"uin":300000000053`,
+		`"owner_uin":300000000053`,
+		`"tmp_secret_id":"tmp-id"`,
+		`"tmp_secret_key":"tmp-key"`,
+		`"token":"tmp-token"`,
+		`"expired_at":"2026-03-20T11:00:00Z"`,
+	) {
+		t.Fatalf("unexpected credentials response: %s", response.Body.String())
+	}
+}
+
+func TestInternalRegisterOrRetryShadowBindingRequiresTokenAndReturnsBinding(t *testing.T) {
+	t.Parallel()
+
+	router, svc, _ := newShadowBindingHTTPTestRouter()
+	_, userID := completePhone3FAHTTPFlow(t, router, svc)
+	body := map[string]any{"external_user_id": userID}
+
+	unauthorized := performJSONRequest(t, router, http.MethodPost, "/internal/shadow/binding/register-or-retry", body)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected register-or-retry endpoint to require token, got %d: %s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	req := newJSONRequest(t, http.MethodPost, "/internal/shadow/binding/register-or-retry", body)
+	req.Header.Set("Authorization", "Bearer shadow-internal-token")
+	response := performRequest(router, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected register-or-retry endpoint 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if !stringsContainsAll(response.Body.String(), `"code":"OK"`, `"user_id":"`+userID+`"`, `"status":"active"`) {
+		t.Fatalf("unexpected register-or-retry response: %s", response.Body.String())
+	}
 }
 
 func TestInternalShadowBindingAndTencentCloudCallback(t *testing.T) {
@@ -143,6 +220,81 @@ func TestInternalShadowBindingAndTencentCloudCallback(t *testing.T) {
 	}
 	if !stringsContainsAll(prefixed.Body.String(), `"returnCode":0`, `"exist":true`) {
 		t.Fatalf("unexpected prefixed callback body: %s", prefixed.Body.String())
+	}
+}
+
+func TestInternalShadowBillingRetryReturnsRegisteredIdentityUntilActive(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authStore := service.NewMemoryStore(service.StoreOptions{Now: fixedHTTPTestNow, SeedDefaultInvites: true})
+	billing := &httpBillingClient{err: errors.New("billing base info unavailable")}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), httpTestShadowClient{}, shadowbinding.Options{
+		Enabled:        true,
+		Now:            fixedHTTPTestNow,
+		SiteKind:       shadowbinding.SiteKindIntl,
+		BillingAccount: billing,
+		RunAsync:       func(task func()) { task() },
+	})
+	svc := service.NewWithStore(authStore, service.Options{
+		Now:           fixedHTTPTestNow,
+		SessionTTL:    30 * 24 * time.Hour,
+		SiteKind:      shadowbinding.SiteKindIntl,
+		ShadowBinding: shadowSvc,
+	})
+	router := NewRouter(svc, ServerConfig{
+		SessionTTL:                 30 * 24 * time.Hour,
+		ShadowBindingInternalToken: "shadow-internal-token",
+	})
+	const userID = "usr_intl_billing_retry"
+	pending, err := shadowSvc.BindShadowAccount(context.Background(), shadowbinding.BindInput{
+		UserID: userID,
+		Email:  "verified@example.com",
+	})
+	if err != nil || pending.Status != shadowbinding.StatusPending {
+		t.Fatalf("registration should return pending: binding=%+v err=%v", pending, err)
+	}
+	failed, err := shadowSvc.GetBindingByUserID(context.Background(), userID)
+	if err != nil || failed.LastErrorCode != "billing_account_open_failed" {
+		t.Fatalf("seed async billing failure: binding=%+v err=%v", failed, err)
+	}
+
+	unauthorized := performJSONRequest(t, router, http.MethodPost, "/internal/shadow/binding/retry", map[string]any{"external_user_id": userID})
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected retry endpoint to require token, got %d: %s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	stateReq := newJSONRequest(t, http.MethodGet, "/internal/shadow/binding/state?external_user_id="+userID, nil)
+	stateReq.Header.Set("Authorization", "Bearer shadow-internal-token")
+	state := performRequest(router, stateReq)
+	if state.Code != http.StatusOK || !stringsContainsAll(state.Body.String(),
+		`"status":"failed"`,
+		`"last_error_code":"billing_account_open_failed"`,
+		`"uin":300000000053`,
+		`"app_id":1250000000`,
+	) {
+		t.Fatalf("unexpected failed binding state: %d %s", state.Code, state.Body.String())
+	}
+
+	retryReq := newJSONRequest(t, http.MethodPost, "/internal/shadow/binding/retry", map[string]any{"external_user_id": userID})
+	retryReq.Header.Set("Authorization", "Bearer shadow-internal-token")
+	retryFailed := performRequest(router, retryReq)
+	if retryFailed.Code != http.StatusOK || !stringsContainsAll(retryFailed.Body.String(),
+		`"status":"failed"`,
+		`"last_error_code":"billing_account_open_failed"`,
+		`"uin":300000000053`,
+	) {
+		t.Fatalf("retry failure must retain registered identity: %d %s", retryFailed.Code, retryFailed.Body.String())
+	}
+
+	billing.err = nil
+	billing.result = shadowbinding.BillingAccountResult{IsOpen: true}
+	retryReq = newJSONRequest(t, http.MethodPost, "/internal/shadow/binding/retry", map[string]any{"external_user_id": userID})
+	retryReq.Header.Set("Authorization", "Bearer shadow-internal-token")
+	retryActive := performRequest(router, retryReq)
+	if retryActive.Code != http.StatusOK || !stringsContainsAll(retryActive.Body.String(), `"status":"active"`, `"uin":300000000053`) {
+		t.Fatalf("expected active binding after retry: %d %s", retryActive.Code, retryActive.Body.String())
+	}
+	if billing.calls != 3 {
+		t.Fatalf("expected initial open plus two retries, calls=%d", billing.calls)
 	}
 }
 
@@ -293,6 +445,10 @@ func TestInternalShadowRoutesRejectWhenTokensAreUnset(t *testing.T) {
 	binding := performJSONRequest(t, router, http.MethodGet, "/internal/shadow/binding?user_id=user-1", nil)
 	if binding.Code != http.StatusUnauthorized {
 		t.Fatalf("expected missing internal token to deny binding lookup, got %d: %s", binding.Code, binding.Body.String())
+	}
+	paymentContext := performJSONRequest(t, router, http.MethodPost, "/internal/payment-methods/context", map[string]any{"external_user_id": "user-1"})
+	if paymentContext.Code != http.StatusUnauthorized {
+		t.Fatalf("expected missing internal token to deny payment context lookup, got %d: %s", paymentContext.Code, paymentContext.Body.String())
 	}
 
 	callback := performJSONRequest(t, router, http.MethodPost, "/internal/tencentcloud/account", map[string]any{

@@ -3,15 +3,18 @@ package proxy
 import "net/http"
 
 type Request struct {
-	RequestID  string
-	Caller     string
-	RouteID    string
-	Method     string
-	Path       string
-	Query      string
-	Headers    http.Header
-	Body       []byte
-	Attributes map[string]string
+	RequestID     string
+	Caller        string
+	RouteID       string
+	Method        string
+	Path          string
+	Query         string
+	OriginalHost  string
+	OriginalPath  string
+	OriginalQuery string
+	Headers       http.Header
+	Body          []byte
+	Attributes    map[string]string
 }
 
 type Response struct {

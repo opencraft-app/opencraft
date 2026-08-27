@@ -4,6 +4,17 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Pass, User } from "@/domain/types";
+import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
+
+vi.mock("@tencent/universal-report", () => ({
+  default: class MockUniversalReport {
+    reportEvent = vi.fn();
+    setPublicParams = vi.fn();
+    setAccountInfo = vi.fn();
+    startReport = vi.fn();
+  },
+}));
+
 import { AccountPage } from "@/pages/marketing/account-page";
 
 const updateProfile = vi.fn();
@@ -13,6 +24,10 @@ const deleteAccount = vi.fn();
 const signInAsGuest = vi.fn();
 const refreshProfile = vi.fn();
 const retryRealnameSync = vi.fn();
+const refreshPasses = vi.fn();
+const listMyPasses = vi.fn();
+const getRenewPrice = vi.fn();
+const createRenewOrder = vi.fn();
 
 let currentUser: User;
 let realnamePhoneVerificationEnabled = false;
@@ -80,6 +95,7 @@ vi.mock("@/contexts/agent-context", () => ({
       },
     },
     activePass,
+    refreshPasses,
   }),
 }));
 
@@ -90,7 +106,9 @@ vi.mock("@/contexts/repository-context", () => ({
       retryRealnameSync,
     },
     plans: {
-      listMyPasses: vi.fn().mockResolvedValue([]),
+      listMyPasses,
+      getRenewPrice,
+      createRenewOrder,
     },
   }),
 }));
@@ -119,6 +137,24 @@ const renderAccountPage = () => {
     </MemoryRouter>,
   );
 };
+
+const renderAccountPageWithNavigation = (navigation: AppNavigationValue) => {
+  render(
+    <MemoryRouter>
+      <AppNavigationProvider value={navigation}>
+        <AccountPage />
+      </AppNavigationProvider>
+    </MemoryRouter>,
+  );
+};
+
+const createNavigationValue = (navigate = vi.fn()): AppNavigationValue => ({
+  Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>,
+  navigate,
+  pathname: "/account",
+  search: "",
+  setSearchParams: vi.fn(),
+});
 
 const buildActivePass = (): Pass => ({
   pass_id: "pass_active_renew",
@@ -154,6 +190,23 @@ describe("AccountPage nickname audit state", () => {
     activePass = null;
     sessionAuthReady = true;
     sessionIsAuthenticated = true;
+    refreshPasses.mockResolvedValue(undefined);
+    listMyPasses.mockResolvedValue([]);
+    getRenewPrice.mockResolvedValue({
+      bundle_id: "bundle_launch",
+      price: 4900,
+      total_cost: 4900,
+      real_total_cost: 4900,
+      currency: "CNY",
+      discount: 100,
+    });
+    createRenewOrder.mockResolvedValue({
+      order_id: "order_renewal_audit",
+      pass_id: "pass_active_renew",
+      pay_url: "weixin://wxpay/bizpayurl?pr=renewal",
+      auth_code: "weixin://wxpay/bizpayurl?pr=renewal",
+      deal_names: ["启航套餐 续费"],
+    });
   });
 
   it("keeps the account chrome singular across auth states", () => {
@@ -188,6 +241,27 @@ describe("AccountPage nickname audit state", () => {
 
     expect(document.querySelectorAll("header")).toHaveLength(1);
     expect(screen.getAllByText("legal footer")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "退出登录" })).toHaveLength(1);
+  });
+
+  it("replaces to the homepage immediately while signing out", async () => {
+    const navigate = vi.fn();
+    let resolveSignOut: () => void = () => {};
+    signOut.mockReturnValueOnce(new Promise<void>((resolve) => {
+      resolveSignOut = resolve;
+    }));
+
+    renderAccountPageWithNavigation(createNavigationValue(navigate));
+
+    await userEvent.click(screen.getByRole("button", { name: "退出登录" }));
+
+    expect(navigate).toHaveBeenCalledWith("/", { replace: true });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("登录以查看账号信息")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveSignOut();
+    });
   });
 
   it("uses pure realname by default without exposing any phone concept", async () => {
@@ -205,7 +279,7 @@ describe("AccountPage nickname audit state", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /去认证/ }));
 
-    expect(screen.getByText("当前未认证，请完善信息并提交认证。")).toBeInTheDocument();
+    expect(screen.getByText("填写与你身份证一致的信息，完成实名认证。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入真实姓名")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入身份证号码")).toBeInTheDocument();
     expect(screen.queryByText(/手机/)).not.toBeInTheDocument();
@@ -225,8 +299,7 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.getByText("账号 ID")).toBeInTheDocument();
-    expect(screen.getByText("usr_visible_account_id")).toBeInTheDocument();
+    expect(screen.getByText("id: usr_visible_account_id")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "复制" }));
 
@@ -242,7 +315,7 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.getByText("绑定邮箱")).toBeInTheDocument();
+    expect(screen.getByText("邮箱")).toBeInTheDocument();
     expect(screen.getByText("user@example.com")).toBeInTheDocument();
     expect(screen.getByText("已验证")).toBeInTheDocument();
     expect(screen.queryByText("该邮箱已验证，可用于接收导出完成通知等重要消息。")).not.toBeInTheDocument();
@@ -264,7 +337,7 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText(/SaaS/)).not.toBeInTheDocument();
   });
 
-  it("keeps the safety phone row hidden until show() reveals account hidden tools", () => {
+  it("shows the safety phone row after verification when phone proof is enabled", () => {
     realnamePhoneVerificationEnabled = true;
     currentUser = {
       ...currentUser,
@@ -275,36 +348,24 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
-
-    act(() => {
-      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
-    });
-
-    const safetyPhoneRow = screen.getByText("安全手机").parentElement;
+    const safetyPhoneRow = screen.getByText("手机号").parentElement;
     expect(safetyPhoneRow).not.toBeNull();
     expect(within(safetyPhoneRow!).getByRole("button", { name: /修改/ })).toBeInTheDocument();
     expect(within(safetyPhoneRow!).queryByRole("button", { name: /绑定/ })).not.toBeInTheDocument();
     expect(screen.getByText("实名认证")).toBeInTheDocument();
   });
 
-  it("keeps the renew action hidden until show() reveals account hidden tools", () => {
+  it("shows the renew action by default for domestic active passes", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
     renderAccountPage();
 
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /立即续费/ })).not.toBeInTheDocument();
-
-    act(() => {
-      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
-    });
-
     expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
   });
 
-  it("keeps the safety phone and renew actions hidden by default", () => {
+  it("keeps the safety phone hidden while showing the renew action by default", () => {
     realnamePhoneVerificationEnabled = true;
     paidBillingEnabled = true;
     activePass = buildActivePass();
@@ -312,7 +373,52 @@ describe("AccountPage nickname audit state", () => {
     renderAccountPage();
 
     expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /立即续费/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+  });
+
+  it("opens the renewal modal with the new status wording and month or quarter choices only", async () => {
+    paidBillingEnabled = true;
+    activePass = buildActivePass();
+
+    renderAccountPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
+
+    expect(await screen.findByText("续费套餐")).toBeInTheDocument();
+    expect(screen.getByText("生效中")).toBeInTheDocument();
+    expect(screen.queryByText("有效中")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /月付/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /季付/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /6个月/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /1年|12个月/ })).not.toBeInTheDocument();
+  });
+
+  it("shows the realname guide in the renewal modal when an unverified user clicks renew", async () => {
+    currentUser = {
+      ...currentUser,
+      realnameVerified: false,
+      realnameLevel: "none",
+    };
+    paidBillingEnabled = true;
+    activePass = buildActivePass();
+
+    renderAccountPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
+
+    expect(await screen.findByText("续费套餐")).toBeInTheDocument();
+    expect(await screen.findByText("续费前需先")).toBeInTheDocument();
+    expect(screen.getByText("，完成后再确认续费。")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "更新实名认证信息" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "确认续费" })).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: "实名认证" })).not.toBeInTheDocument();
+    expect(getRenewPrice).not.toHaveBeenCalled();
+    expect(createRenewOrder).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "更新实名认证信息" }));
+
+    expect(screen.queryByText("续费套餐")).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "实名认证" })).toBeInTheDocument();
   });
 
   it("shows the pending nickname privately while keeping the active nickname explicit", async () => {
@@ -412,7 +518,7 @@ describe("AccountPage nickname audit state", () => {
     expect(verifyButtons.length).toBeGreaterThan(0);
     await userEvent.click(verifyButtons[0]!);
 
-    expect(screen.getByText("第一步：提交真实姓名和身份证号。")).toBeInTheDocument();
+    expect(screen.getByText("填写与你身份证一致的信息，完成实名认证。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入真实姓名")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入身份证号码")).toBeInTheDocument();
     expect(screen.queryByText("第二步：输入当前手机号收到的短信验证码。")).not.toBeInTheDocument();

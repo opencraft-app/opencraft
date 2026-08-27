@@ -3,8 +3,8 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
+import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
@@ -18,7 +18,7 @@ import type { Bundle, BundlePrice, BundleDescriptionEntry } from "@/domain/types
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
-import { isGlobal } from "@/lib/region";
+import { isCN, isGlobal } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
   resolveBillingErrorMessage,
@@ -46,7 +46,113 @@ const colors = {
   border: "rgba(0,0,0,0.1)",
   badgeBg: "rgba(0,0,0,0.04)",
   badgeText: "rgba(0,0,0,0.75)",
+  /* Tooltip（免费试用提示等）配色，集中管理避免散落硬编码 */
+  tooltipBg: "rgba(23,23,23,0.92)",
+  tooltipShadow: "0 4px 16px rgba(0,0,0,0.18)",
 };
+
+/* ─── 套餐识别常量（避免魔法字符串） ─── */
+/** 启航版套餐名匹配关键字（后端可能返回「启航」中文名或「launch」英文名） */
+const LAUNCH_BUNDLE_NAME_KEYWORDS = {
+  zh: "启航",
+  en: "launch",
+} as const;
+/** AI 增强版套餐类型标识（国际站启航 AI 对新用户提供 3 天免费，巡游 AI 为首购折扣） */
+const BUNDLE_TYPE_AI = "ai";
+/** 巡游版套餐名匹配关键字（后端可能返回「巡游」中文名或「cruise」英文名） */
+const CRUISE_BUNDLE_NAME_KEYWORDS = {
+  zh: "巡游",
+  en: "cruise",
+} as const;
+const CN_REFUND_RULES_PATH = "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99";
+
+/** 按套餐名判定所属档位（启航 / 巡游）；中英文名与中英混排均可命中。 */
+const matchBundleTier = (bundleName: string | undefined) => {
+  const nm = bundleName ?? "";
+  const lower = nm.toLowerCase();
+  return {
+    isLaunch:
+      nm.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.zh) || lower.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.en),
+    isCruise:
+      nm.includes(CRUISE_BUNDLE_NAME_KEYWORDS.zh) || lower.includes(CRUISE_BUNDLE_NAME_KEYWORDS.en),
+  };
+};
+
+/**
+ * AI 增强版档位的促销标签文案。
+ *
+ * 前端按「档位 + bundle_type」直接判定，不依赖后端 `bundle.price.discount`
+ * —— 该字段在本文件内存在两套单位口径（小数 `0<d<1` 与百分数 `50`），
+ * 依赖它会让国际站 AI 档位在后端下发百分数时丢标签。
+ *
+ * 站点口径差异（本次需求仅调整国际站，国内站维持现状）：
+ *   - 国际站启航 AI：`首单免费 3 天`（**仅新用户**，见下方 isNewUser 门禁）
+ *   - 国际站巡游 AI：`首月 6 折`
+ *   - 国内站启航 / 巡游 AI：`首月 6 折`（与改动前一致）
+ *
+ * 国际站标签必须同时匹配用户资格和真实询价：
+ *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 3 天」；
+ *   - 只有实付价低于原价时才展示折扣，避免后端异常全价询价仍承诺优惠。
+ * 未登录静态 Bundle 也携带同样的原价 / 实付价，因此继续稳定展示既定免费与折扣信息。
+ *
+ * 仅返回文案，不改价格、不改 CTA、不改计费链路。
+ */
+const aiPromoTagText = (
+  tier: { isLaunch: boolean; isCruise: boolean },
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+  /* 新用户（未订阅任何套餐）。已订阅用户不展示「首单」类文案。 */
+  isNewUser: boolean,
+  price?: BundlePrice | null,
+): string | undefined => {
+  if (isGlobal) {
+    if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
+      return t("首单免费 3 天");
+    }
+    const discountRate = actualDiscountRate(price);
+    if ((tier.isLaunch || tier.isCruise) && discountRate != null) {
+      /* 既有月付 AI 活动仍使用「首月 6 折」专属文案；异常的其他折扣率按真实比值展示。 */
+      return Math.abs(discountRate - 0.6) < 0.0001
+        ? t("首月 6 折")
+        : discountTagText(discountRate, t);
+    }
+    return undefined;
+  }
+  if (tier.isLaunch || tier.isCruise) return t("首月 6 折");
+  return undefined;
+};
+
+/**
+ * 折扣角标文案（季付「8.5折」这类按实际折扣计算的标签）。
+ *
+ * 必须走 i18n：改动前此处用模板字符串直接拼中文「折」，
+ * 导致 en-US / id-ID 环境下也输出「9.8折」这类中文文案。
+ *
+ * 同一条 key 下发两套口径，靠插值变量区分（i18next 会忽略译文里未引用的变量）：
+ *   - zh-CN / zh-Hant：`{{discount}}折`   → 9.8折（折扣率，保留 1 位小数，中式表达）
+ *   - en-US / id-ID：  `Save {{percent}}%` → Save 2%（节省比例，取整，西式表达）
+ *
+ * @param rate 折后价 / 原价的比值，取值区间 (0, 1)
+ */
+const discountTagText = (
+  rate: number,
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+): string =>
+  t("{{discount}}折", {
+    /* 中式折扣率，保留 1 位小数：0.85 → 8.5、0.9 → 9（整数不补 .0）、0.9827 → 9.8。
+       乘 100 再除 10（而非 ×1000/100）确保只保留 1 位小数，与改动前的展示精度一致。 */
+    discount: Math.round(rate * 100) / 10,
+    /* 西式节省比例，取整：0.85 → 15（Math.round 同时规避浮点误差，如 15.000000000000002） */
+    percent: Math.round((1 - rate) * 100),
+  });
+
+/** 只接受后端可计费的正数折扣价；零元权益只由新用户资格分支处理，已订阅零元询价视为异常且不展示促销。 */
+const actualDiscountRate = (price?: BundlePrice | null): number | undefined =>
+  price &&
+  price.total_cost > 0 &&
+  price.real_total_cost > 0 &&
+  price.real_total_cost < price.total_cost
+    ? price.real_total_cost / price.total_cost
+    : undefined;
 
 const shadows = {
   card: "rgba(0,0,0,0.04) 0px 4px 18px, rgba(0,0,0,0.027) 0px 2.025px 7.85px, rgba(0,0,0,0.02) 0px 0.8px 2.93px, rgba(0,0,0,0.01) 0px 0.175px 1.04px",
@@ -89,6 +195,13 @@ interface PlanInfo {
   badge?: string;
   badgeStyle?: "tag" | "popular";
   price: string;
+  /* 结构化价格（分）：确认订单弹窗三行金额的真源。登录态真实计费时填充；
+     demoMode 占位卡 / 静态价为 undefined，弹窗退化为旧视觉。 */
+  priceDetail?: {
+    subtotalCents: number;
+    taxCents: number;
+    totalCents: number;
+  };
   priceUnit?: string;
   priceNote?: string;
   /* 原价（折扣前价格）：有折扣时展在活动价右侧，小字删除线灰色。无折扣时为 undefined。 */
@@ -99,6 +212,9 @@ interface PlanInfo {
   features: PlanFeature[];
   ctaLabel: string;
   ctaStyle: "outline" | "primary" | "outline-dark";
+  /* 免费试用提示：新用户启航版按钮展示「免费订阅」时，hover 到按钮上方显示的提示文案。
+     非新用户 / 非启航版 / 非免费订阅态时为 undefined（不展示提示）。 */
+  freeTrialHint?: string;
   featured?: boolean;
   maxBots: number;
   /* 售罄：按钮禁用，展示「当日名额已满 / 明天再试」 */
@@ -126,12 +242,15 @@ interface PlanInfo {
   raw: Bundle;
 }
 
+const isDianshiZeroAmountPlan = (plan: PlanInfo, paidBillingActive: boolean): boolean =>
+  isGlobal && paidBillingActive && plan.raw.price?.real_total_cost === 0;
+
 /* ─── 套餐分类 Tab 配置 ─── */
 
 /**
  * 套餐分类 tab，与后端 `bundle.bundle_type` 枚举对应（migration 000023 / 2026-06 后端联调确认）：
- *   - general  标准版（启航 / 巡游 / 远航）
- *   - ai       AI 增强版（启航 AI / 巡游 AI / 远航 AI）
+ *   - general  标准版（启航 / 巡游）
+ *   - ai       AI 增强版（启航 AI / 巡游 AI）
  *   - free     历史免费试用分类；现网灰度识别免费套餐只看 bundle_id
  * 后端新增付费枚举后，**只需修改本数组**（顺序 / key / 文案）即可，业务逻辑无需变更。
  *
@@ -176,19 +295,19 @@ interface AiDurationTabDef {
   zhLabel: string;
 }
 
-const AI_DURATION_TABS: AiDurationTabDef[] = [
+const AI_DURATION_TABS = [
   { key: "monthly", period: 1, time_unit: "m", zhLabel: "月付" },
   { key: "quarterly", period: 3, time_unit: "m", zhLabel: "季付" },
-];
+] as const satisfies readonly AiDurationTabDef[];
 
 const getBillingPriceUnit = (
   durationKey: AiDurationTabDef["key"],
   t: (zh: string, opts?: Record<string, unknown>) => string,
 ): string => {
   if (durationKey === "quarterly") {
-    return isGlobal ? "/ quarter" : t("/ 季");
+    return t("/ 季");
   }
-  return isGlobal ? "/ month" : t("/ 月");
+  return t("/ 月");
 };
 
 const getBillingDurationLabel = (
@@ -289,6 +408,8 @@ const __markBundleBackendStringsForI18n = (t: (zh: string, opts?: Record<string,
   /* bundle_name */
   void t("启航 Launch");
   /* description.Key */
+  void t("独立环境");
+  void t("7×24小时在线");
   void t("7*24小时在线");
 };
 
@@ -337,16 +458,15 @@ const mapBundleToPlan = (
   __markBundleBackendStringsForI18n(t);
   const features: PlanFeature[] = [];
 
-  /* 套餐档位（tier）判定，依据 bundle_name（中/英/中英混排）识别启航 / 巡游 / 远航。
+  /* 套餐档位（tier）判定，依据 bundle_name（中/英/中英混排）识别启航 / 巡游。
      用于：独立环境规格差异化 + 一句话文案差异化。避免后端 description.Value 缺值时露馅。 */
   const bundleNm = bundle.bundle_name ?? "";
   const nmLower = bundleNm.toLowerCase();
   const isLaunchTier = bundleNm.includes("启航") || nmLower.includes("launch");
   const isCruiseTier = bundleNm.includes("巡游") || nmLower.includes("cruise");
-  const isVoyageTier = bundleNm.includes("远航") || nmLower.includes("voyage");
-  /* 独立环境规格：启航 2核4G；巡游 / 远航 升配 4核8G。 */
+  /* 独立环境规格：启航 2核4G；巡游升配 4核8G。 */
   const envSpec = isLaunchTier ? t("2核 4G 内存") : t("4核 8G 内存");
-  /* 专属云端存储：启航 50G；巡游 / 远航 升配 80G。 */
+  /* 专属云端存储：启航 50G；巡游升配 80G。 */
   const storageSpec = isLaunchTier ? "50G" : "80G";
   /* 一句话文案按 tier 差异化（PRD 需求2）。命中 tier 时直接使用 tier 文案，不受 freeGuideAllowed 清空；
      未命中 tier（如免费试用卡）保持原有兜底逻辑。 */
@@ -354,9 +474,7 @@ const mapBundleToPlan = (
     ? t("低成本上手，先让 Agent 替你跑起来")
     : isCruiseTier
       ? t("日常主力，让智能化成为习惯")
-      : isVoyageTier
-        ? t("体验进阶，专业玩家的配置")
-        : "";
+      : "";
 
   /* agent_quota 打头阵 */
   if (bundle.agent_quota > 0) {
@@ -442,15 +560,30 @@ const mapBundleToPlan = (
    *   - `paidBillingEnabled=true`（开关已开启，新逻辑）：
    *       国内站（isGlobal=false）消费后端真实价格 bundle.price.real_total_cost；
    *         无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章。
-   *       国际站（isGlobal=true）暂时仍保持「限时免费」内测策略，待海外计费闭环后再切换。
+   *       国际站（isGlobal=true）已全量放开付费定价展示：
+   *         登录后消费后端 bundle.price（单位分 + USD），未登录消费前端静态美元价表。
    */
   const soldOut = bundle.bundle_sales_state === "SOLD_OUT";
-  /* 计费开关未开启时无论国内外都视为免费视觉；开启后仅国内站进入真实计费。 */
-  const paid = paidBillingEnabled && !isGlobal;
-  /** 国内站要展示的真实金额（元）；后端 bundle.price.real_total_cost 单位是分，
-   *  展示前需调 centsToYuan 转为元；后端 price 为 null 时返回 null 并标记为「暂无报价」禁用 */
+  /* 计费开关开启后国内外一律进入真实计费展示。
+     国际站未登录不再走「限时免费 $7.5」兜底 —— 未登录消费 buildStaticBundles 下发的静态价，
+     与登录后新用户的价格 / 折扣 / 标签口径一致（需求：未登录展示纯静态页，信息等同登录后新用户）。 */
+  const paid = paidBillingEnabled;
+  /* 新用户（未订阅任何套餐）：决定是否展示「首单」类权益文案。
+     未登录一律视为新用户（未登录必然还没有订阅），与登录后的新用户展示口径保持一致。 */
+  const isNewUser = !isSubscribed;
+  /** 套餐卡展示的「价格基准」：产品口径为税前实付价（价签模式：卡片标税前，付款实付含税）。
+   *  注意与后端 2692ca1ca 询价税费拆分的语义：
+   *    real_total_cost = 含税实付；total_cost = 税前原价；tax_price = 实付税额。
+   *  卡片价 = real_total_cost - tax_price = 税前实付价（含折扣）：
+   *    - 有税数据：从含税实付中扣除税额，与弹窗「小计（税前）」同口径，避免
+   *      「卡片 $52、弹窗小计 $45」被用户当成变价；
+   *    - 无税数据（tax_price 缺失 / 静态价表）：等于 real_total_cost 直显，
+   *      与静态新用户实付价（如启航月付 $0、巡游 AI $13.8）的展示设计兼容。
+   *  单位转换后端给的是分，cent...Yuan 内部乘 0.01；后端 price 为 null 时返回 null。 */
   const realPriceYuan =
-    paid && bundle.price ? centsToYuan(bundle.price.real_total_cost) : null;
+    paid && bundle.price
+      ? centsToYuan(bundle.price.real_total_cost - (bundle.price.tax_price ?? 0))
+      : null;
   const priceUnavailable = paid && !bundle.price && !soldOut;
   /* 询价中中间态：用户已切换 durationKey、但新时长的询价尚未返回。此时 bundle.price 仍是旧时长的价。
      方案 B1：视觉上保留旧价 + 旧单位（不切成新单位，避免「旧价 + 新单位」的误导组合），
@@ -470,16 +603,52 @@ const mapBundleToPlan = (
     let displayPriceYuan = realPriceYuan;
     /* 原价（折扣前）：未登录时即 realPriceYuan（后端下发的原价）；已登录时取后端 total_cost。 */
     let originalPriceYuan: number | null = null;
-    if (!isLoggedIn && realPriceYuan != null) {
+    if (isGlobal && bundle.price) {
+      /* 国际站（登录与未登录同一口径）：real_total_cost 即新用户实付价、total_cost 为原价。
+         未登录静态价来自 STATIC_INTL_PRICE_USD，已内置新用户实付价（如启航 AI 月付 $0、
+         巡游 AI 月付 $13.8），**不能再套用下方未登录分支的 ×0.5 / ×0.6 / 置 0 二次折算**，
+         否则会出现 $13.8 再打 6 折这类错误金额。
+         这样未登录展示与登录后新用户完全一致（需求：未登录整页按登录后新用户呈现）。 */
+      const intlOriginalYuan = centsToYuan(bundle.price?.total_cost);
+      if (
+        intlOriginalYuan != null &&
+        displayPriceYuan != null &&
+        intlOriginalYuan > displayPriceYuan
+      ) {
+        originalPriceYuan = intlOriginalYuan;
+      }
+    } else if (!isLoggedIn && realPriceYuan != null) {
       const nm = bundle.bundle_name ?? "";
       const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
       const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
       const notAi = bundle.bundle_type !== "ai";
-      if (isLaunch && notAi) {
-        displayPriceYuan = 0; // 免费 14 天 → ¥0
+      if (durationKey === "quarterly") {
+        /* 季付：静态 price 已内置折扣（标准版 8.5 折 / AI 增强版 9 折，见 STATIC_*_DISCOUNT），
+           结构与登录后询价一致（total_cost=原价 / real_total_cost=折后价）。此处仅取原价展示删除线，
+           不套用月付促销（免费14天 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
+           折扣角标（如「8.5折」）由后续 promoTag 分支按 price.discount 计算。标准版与 AI 增强版一致。 */
+        if (isLaunch || isCruise) {
+          const staticOriginalYuan = bundle.price
+            ? centsToYuan(bundle.price.total_cost)
+            : null;
+          if (
+            staticOriginalYuan != null &&
+            displayPriceYuan != null &&
+            staticOriginalYuan > displayPriceYuan
+          ) {
+            originalPriceYuan = staticOriginalYuan;
+          }
+        }
+      } else if (isLaunch && notAi) {
+        displayPriceYuan = 0; // 月付：免费 14 天 → ¥0
         originalPriceYuan = realPriceYuan; // 原价展示
       } else if (isCruise && notAi) {
-        displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 首月 5 折
+        displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 月付：首月 5 折
+        originalPriceYuan = realPriceYuan; // 原价展示
+      } else if ((isLaunch || isCruise) && !notAi) {
+        /* AI 增强版月付：首月 6 折（静态 price 存原价，此处按 0.6 计算折后价，
+           「首月 6 折」标签由后续 promoTag 分支给出）。 */
+        displayPriceYuan = +(realPriceYuan * STATIC_AI_MONTHLY_DISCOUNT).toFixed(2);
         originalPriceYuan = realPriceYuan; // 原价展示
       }
     } else if (isLoggedIn && bundle.price) {
@@ -497,24 +666,70 @@ const mapBundleToPlan = (
     originalPrice = originalPriceYuan != null ? formatYuan(originalPriceYuan, currency) : undefined;
     /* 国内站不再展示"限时免费"标签 */
     const backendDiscount = bundle.price?.discount;
-    if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
-      promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
+    if (durationKey === "quarterly") {
+      /* 季付：不展示月付首期促销（免费14天 / 首月5折 / 首月6折），改为按实际折扣显示「8.5折」这类角标。
+         折扣直接由「折后价 / 原价」比值算出（originalPriceYuan=原价、displayPriceYuan=折后价，前面价格逻辑已备好），
+         登录取后端 total_cost/real_total_cost、未登录取静态价，口径一致，不依赖后端 discount 字段口径。
+         无原价删除线（即无折扣）时不展示角标。 */
+      promoTag =
+        originalPriceYuan != null && displayPriceYuan != null && originalPriceYuan > displayPriceYuan
+          ? discountTagText(displayPriceYuan / originalPriceYuan, t)
+          : undefined;
+    } else if (isGlobal) {
+      /* 国际站月付：标签统一按「档位 + bundle_type + 原价 / 实付价」判定，不依赖后端 discount 字段
+         （该字段在本文件内存在小数 `0<d<1` 与百分数 `50` 两套口径，依赖它会丢标签）。
+         未登录静态 Bundle 也携带既定原价 / 实付价，因此展示不变；登录态异常全价询价不承诺优惠。 */
+      const tier = matchBundleTier(bundle.bundle_name);
+      const isAi = bundle.bundle_type === BUNDLE_TYPE_AI;
+      const discountRate = actualDiscountRate(bundle.price);
+      if (isAi) {
+        /* AI 档位：启航零元新用户「首单免费 3 天」；有真实折扣时按询价展示。 */
+        promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
+      } else if (tier.isLaunch) {
+        /* 启航标准版：只有新用户实付为零才承诺 14 天免费；其他状态只展示真实折扣。 */
+        if (isNewUser && bundle.price?.real_total_cost === 0) {
+          promoTag = t("首单免费 14 天");
+          isZeroDownFreeTrial = true;
+        } else {
+          promoTag = discountRate == null ? undefined : discountTagText(discountRate, t);
+        }
+      } else if (tier.isCruise) {
+        /* 巡游标准版：新用户且真实五折时使用首购文案；其余真实折扣使用通用折扣标签。 */
+        promoTag =
+          discountRate == null
+            ? undefined
+            : isNewUser && Math.abs(discountRate - 0.5) < 0.0001
+              ? t("首月 5 折")
+              : discountTagText(discountRate, t);
+      } else {
+        promoTag = undefined;
+      }
+    } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
+      /* 国内站：有真实折扣（小数口径）时按比值展示「X折」，与改动前一致。 */
+      promoTag = discountTagText(backendDiscount, t);
     } else {
-      const nm = bundle.bundle_name ?? "";
-      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
-      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
-      const withToken = bundle.bundle_type === "ai";
-      if (isLaunch) {
+      const tier = matchBundleTier(bundle.bundle_name);
+      const withToken = bundle.bundle_type === BUNDLE_TYPE_AI;
+      if (tier.isLaunch) {
         if (withToken) {
-          promoTag = t("首月 6 折");
+          /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
+          /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
+             国际站启航 AI「首单免费 3 天」，国内站启航 AI「首月 6 折」（与改动前一致）。
+             改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。
+             已订阅用户由 aiPromoTagText 内部降级为「首月 6 折」，不展示首单权益。 */
+          promoTag = aiPromoTagText(tier, t, isNewUser);
         } else if (!isLoggedIn || backendDiscount === 0) {
           /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
           promoTag = t("首单免费 14 天");
           isZeroDownFreeTrial = true;
         }
-      } else if (isCruise) {
+      } else if (tier.isCruise) {
         if (withToken) {
-          promoTag = t("首月 6 折");
+          /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
+          /* 巡游 AI 档位国内外一致展示「首月 6 折」。
+             改动前此处被 `if (!isGlobal)` 拦截，且后端 discount 单位不一致（0<d<1 与 50 两套口径），
+             导致国际站巡游 AI 档位丢失「首月 6 折」标签 —— 本次需求要修的即此问题。 */
+          promoTag = aiPromoTagText(tier, t, isNewUser);
         } else if (!isLoggedIn || backendDiscount === 50) {
           /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
@@ -524,7 +739,10 @@ const mapBundleToPlan = (
       }
     }
   } else {
-    /* 国际站：保持当前限时免费视觉 */
+    /* 计费开关整体关闭（paidBillingEnabled=false）时的限时免费视觉，国内外一致。
+       注意：国际站未登录**不再**落到这里 —— `paid` 已改为只看 paidBillingEnabled，
+       未登录会消费 buildStaticBundles 的静态价，与登录后新用户口径一致。
+       因此本分支只服务「开关未开启」的灰度兜底场景，保持改动前的原始行为不变。 */
     price = isGlobal ? "$7.5" : "¥49";
     promoTag = soldOut ? undefined : t("限时免费");
   }
@@ -548,6 +766,42 @@ const mapBundleToPlan = (
     bundle.bundle_id === currentBundleId ||
     CURRENT_BUNDLE_ALIASES[bundle.bundle_id]?.includes(currentBundleId) === true
   );
+  /* 启航版（标准版，非 AI 增强版）识别。新用户只有在真实实付为零时展示「免费订阅」，
+     防止登录态异常全价询价仍承诺免费；未登录静态价为零，既定展示不受影响。 */
+  const bundleTier = matchBundleTier(bundle.bundle_name);
+  const isLaunchStandard = bundleTier.isLaunch && bundle.bundle_type !== BUNDLE_TYPE_AI;
+  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 3 天」（见 aiPromoTagText）。
+     国内站启航 AI 不进入本判定，CTA 维持「立即订阅」，与改动前一致。 */
+  const isIntlLaunchAi =
+    isGlobal && bundleTier.isLaunch && bundle.bundle_type === BUNDLE_TYPE_AI;
+  /* 季付不含首期免费试用（季付价即实付价，见上方 durationKey === "quarterly" 的促销分支：
+     月付首期促销一律不生效，只按实际折扣展示角标）。
+     因此季付一律不展示「免费订阅」引导，CTA 维持「立即订阅」，也不展示免费试用 hover 提示。 */
+  const freeTrialEligibleDuration = durationKey !== "quarterly";
+  const isZeroAmountBundle = paid && bundle.price?.real_total_cost === 0;
+  const isNewUserFreeLaunch =
+    isLaunchStandard &&
+    isZeroAmountBundle &&
+    !isSubscribed &&
+    !isCurrentPlan &&
+    freeTrialEligibleDuration;
+  /**
+   * 启航 AI 档位是否展示「免费订阅」CTA。
+   *
+   * 必须以**实付金额为 0** 为前提，不能只看档位 —— 否则会出现
+   * 「按钮承诺免费、点击后进入信用卡支付」的不一致（本次未实现 3 天试用能力，
+   * 权益与支付逻辑均未改动）。
+   *
+   * 金额为 0 时点击链路本身也是零元流程：`isDianshiZeroAmountPlan` 命中
+   * `real_total_cost === 0` 走点石零元下单，不进入信用卡支付，与 CTA 语义一致。
+   * 金额非 0 时（如首月 6 折）自动回落为「立即订阅」，与实际收费一致。
+   */
+  const isNewUserFreeLaunchAi =
+    isIntlLaunchAi &&
+    isZeroAmountBundle &&
+    !isSubscribed &&
+    !isCurrentPlan &&
+    freeTrialEligibleDuration;
   const ctaLabel = isCurrentPlan
     ? t("当前订阅")
     : soldOut
@@ -556,11 +810,21 @@ const mapBundleToPlan = (
       ? t("询价中...")
       : priceUnavailable
         ? t("暂无报价")
-        : /* 需求4：可享免费 14 天 0 元下单，或内测「免费订阅」引导态，一律显示「免费订阅」。
-             已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。 */
-          !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide)
+        : /* 可享免费 14 天的零元下单，或内测「免费订阅」引导态，显示「免费订阅」。
+             国际站启航标准版 / AI 版均须同时满足新用户、月付、实付为零。
+             已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。
+             季付无首期免费试用，freeTrialEligibleDuration=false 时统一收口为「立即订阅」。 */
+          !isSubscribed &&
+          freeTrialEligibleDuration &&
+          (isZeroDownFreeTrial || isFeaturedFreeGuide || isNewUserFreeLaunch || isNewUserFreeLaunchAi)
           ? t("免费订阅")
           : t("立即订阅");
+  /* 免费试用提示：仅当按钮实际展示「免费订阅」且为新用户启航版时才展示。
+     售罄 / 询价中 / 暂无报价 / 当前订阅等态下 ctaLabel 不是「免费订阅」，不提示。 */
+  const freeTrialHint =
+    isNewUserFreeLaunch && !soldOut && !showPricingPlaceholder && !priceUnavailable
+      ? t("免费试用到期后，不会自动扣费，后续如需继续使用，请手动续费。")
+      : undefined;
 
   return {
     id: bundle.bundle_id,
@@ -571,6 +835,20 @@ const mapBundleToPlan = (
     badgeStyle: soldOut ? "tag" : undefined,
     /* 价格：中间态保留旧价原样展示，视觉稳定不跳变；CTA 由 pricingLoading 兜底禁用。 */
     price,
+    /* 结构化价格（分）：确认订单弹窗三行金额真源（后端 2692ca1ca 询价税费拆分）。
+       口径（产品确认 2026-08-24）：小计=折后价（税前实付 = real_total_cost - tax_price，
+       与卡片价同源同值，避免「卡片 $7、弹窗小计 $14」变价错觉）、税费=tax_price、
+       合计=real_total_cost（含税实付）。原价/折扣差不单列展示。
+       仅在登录态真实计费（paid && bundle.price）时填充；
+       询价中间态沿用旧 bundle.price，与新时长无关——弹窗在 CTA 禁用期间不可打开，无误导窗口。 */
+    priceDetail:
+      paid && bundle.price
+        ? {
+            subtotalCents: bundle.price.real_total_cost - (bundle.price.tax_price ?? 0),
+            taxCents: bundle.price.tax_price ?? 0,
+            totalCents: bundle.price.real_total_cost,
+          }
+        : undefined,
     /* 原价（折扣前）：有折扣时展在活动价右侧删除线；询价加载中不展示，避免误导。 */
     originalPrice: showPricingPlaceholder ? undefined : originalPrice,
     /* 价格单位需与当前 durationKey 一致，且中间态必须与旧价口径一致：
@@ -581,14 +859,20 @@ const mapBundleToPlan = (
          为避免「旧价 + 新单位」的误导，单位强制回退为"/ 月"，与旧价口径保持一致，
          直到新价格返回后再随 durationKey 一并切成"/ 季"。 */
     priceUnit: paid && !showPricingPlaceholder ? getBillingPriceUnit(durationKey, t) : getBillingPriceUnit("monthly", t),
-    /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
-    promoTag,
+    /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。
+       询价加载中（showPricingPlaceholder）不展示折扣角标：此时 bundle.price 仍是旧时长的价，
+       与 originalPrice 同样口径处理，避免月付切季付的中间态基于旧价算出「0折 / 5折」等误导角标。 */
+    promoTag: showPricingPlaceholder ? undefined : promoTag,
     /* 命中 tier 时用 tier 一句话文案（需求2）；未命中 tier 时维持原兜底：
        freeGuideAllowed（两开关同时关闭）去掉描述，其余展示「尝鲜体验，从一个 Agent 开始」。 */
     description: tierTagline || (freeGuideAllowed ? "" : t("尝鲜体验，从一个 Agent 开始")),
     features,
     ctaLabel,
-    ctaStyle: index === 0 ? "primary" : "outline",
+    freeTrialHint,
+    /* 国际站两张卡 CTA 统一黑底白字（primary），视觉权重一致；
+       国内站维持原样（仅主推卡 index===0 为 primary，其余 outline），本次不改国内站。
+       featured（卡片描边 / 圆角强调）仍只由 tier 顺序决定，不随配色统一而变。 */
+    ctaStyle: isGlobal || index === 0 ? "primary" : "outline",
     featured: index === 0,
     maxBots: bundle.agent_quota || 1,
     /* 真实缺价走 priceUnavailable（触发徽章 + CTA 禁用 + 点击拦截）；
@@ -647,21 +931,116 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
  * 表现为「打开啥也没有」），改用下面写死的静态 Bundle 列表，喂给同一套 mapBundleToPlan / planTiers
  * 渲染，保证「未登录静态展示」与「登录后询价展示」的结构、文案、促销角标完全一致；
  * 仅在点击订阅按钮时才引导登录（见 handleSubscribe 的 !isLoggedIn → login()）。
+ * 国际站付费已全量放开：planList 直接展示付费套餐，无 reveal 门禁。
  *
- * 价格为线上确认值（金额敏感）：
- *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3，无折扣）
- *   - 巡游标准版：月付 ¥95 / 季付 ¥285（月×3，无折扣）
- * AI 增强版与远航统一「敬请期待」、不展示价格（price=null，由 planTiers 强制），故无需静态金额。
- * ⚠️ 后端调整线上价格时请同步更新此表，避免未登录静态价与登录后询价价不一致。 */
+ * 价格为线上确认值（金额敏感），此处均为「原价」：
+ *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3）
+ *   - 巡游标准版：月付 ¥95 / 季付 ¥285（月×3）
+ * 季付统一享 8.5 折优惠（与登录后询价下发折扣一致）：启航 ¥114.75 / 巡游 ¥242.25，原价删除线展示。
+ * AI 增强版已露静态价，见 STATIC_AI_TIER_PRICE_YUAN。
+ * ⚠️ 后端调整线上价格 / 折扣时请同步更新此表，避免未登录静态价与登录后询价价不一致。 */
 const STATIC_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | "quarterly", number>> = {
   launch: { monthly: 45, quarterly: 135 },
   cruise: { monthly: 95, quarterly: 285 },
 };
 
-/** 静态价格构造器：入参以「元」为单位，内部转「分」以与后端询价 BundlePrice 口径一致（discount=1.0 不打折）。 */
-const buildStaticPrice = (yuan: number): BundlePrice => {
-  const cents = Math.round(yuan * 100);
-  return { price: cents, total_cost: cents, real_total_cost: cents, currency: "CNY", discount: 1.0 };
+/** 季付统一优惠折扣：8.5 折（与登录后询价下发的 discount 对齐，未登录静态展示据此计算折后价）。 */
+const STATIC_QUARTERLY_DISCOUNT = 0.85;
+
+/**
+ * AI 增强版静态原价（元）：与登录后询价原价对齐（启航月付 ¥68 / 巡游月付 ¥158，季付 = 月付×3）。
+ * 未登录静态展示据此计算：月付享「首月 6 折」、季付享 9 折（展示「9折」角标）。
+ * ⚠️ 后端调整线上 AI 价格 / 折扣时请同步更新此表，避免未登录静态价与登录后询价不一致。
+ */
+const STATIC_AI_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | "quarterly", number>> = {
+  launch: { monthly: 68, quarterly: 204 },
+  cruise: { monthly: 158, quarterly: 474 },
+};
+
+/** AI 增强版月付首期折扣：首月 6 折（0.6），后续原价；仅未登录静态展示据此计算折后价 + 展示「首月 6 折」标签。 */
+const STATIC_AI_MONTHLY_DISCOUNT = 0.6;
+
+/** AI 增强版季付折扣：9 折（0.9），展示「9折」角标（季付按实际折扣显示，不套月付首期促销）。 */
+const STATIC_AI_QUARTERLY_DISCOUNT = 0.9;
+
+/**
+ * 国际站未登录静态价（美元，面向新用户口径）。
+ *
+ * 需求：未登录整页按「登录后新用户」呈现，含美元与折扣。国际站美元价由腾讯云计费系统
+ * 实时询价返回（见 `trade/internal/logic/inquiry/service.go`，按 SiteKind 返回 USD），
+ * 代码中无权威价表，故此处按产品确认值硬编码。
+ *
+ * `original` = 原价（展示删除线）；`real` = 新用户实付价（展示主价）。
+ * **直接指定 real，不由 original × 折扣率乘算** —— 乘算存在分币舍入（如季付 19.5 × 0.85
+ * = 16.575 → 定价 $16.58 四舍五入到分），直接写 real 保证展示与登录后询价逐分一致。
+ *
+ * 折扣角标由 mapBundleToPlan 按 `real / original` 比值反算展示（en-US 为 `Save X%`）。
+ *
+ * ⚠️ 产品调整国际站线上价格 / 折扣时必须同步此表，否则未登录静态价与登录后询价不一致。
+ * 数据来源：产品 2026-08-21 确认（季付标准版 9.3 折 / AI 版 9.8 折）；2026-08-26 变更为
+ * 季付标准版 8.5 折、AI 增强版 9 折，与登录后询价下发折扣对齐
+ * （曾因未同步导致「未登录 Save 7% / 登录后 Save 15%」不一致）。
+ */
+const STATIC_INTL_PRICE_USD: Record<
+  "launch" | "cruise",
+  Record<"general" | "ai", Record<"monthly" | "quarterly", { original: number; real: number }>>
+> = {
+  launch: {
+    /* 启航标准版：月付 $6.5，新用户 14 天免费（实付 $0）；季付 $19.5 → 8.5 折 $16.58 */
+    general: {
+      monthly: { original: 6.5, real: 0 },
+      quarterly: { original: 19.5, real: 16.58 },
+    },
+    /* 启航 AI 版：月付 $10，新用户 3 天免费（实付 $0）；季付 $30 → 9 折 $27.00 */
+    ai: {
+      monthly: { original: 10, real: 0 },
+      quarterly: { original: 30, real: 27 },
+    },
+  },
+  cruise: {
+    /* 巡游标准版：月付 $14，新用户首购 5 折 $7；季付 $42 → 8.5 折 $35.70 */
+    general: {
+      monthly: { original: 14, real: 7 },
+      quarterly: { original: 42, real: 35.7 },
+    },
+    /* 巡游 AI 版：月付 $23，新用户首购 6 折 $13.8；季付 $69 → 9 折 $62.10 */
+    ai: {
+      monthly: { original: 23, real: 13.8 },
+      quarterly: { original: 69, real: 62.1 },
+    },
+  },
+};
+
+/** 静态价格构造器：入参以「元」为单位的原价，可选 discount（0~1，默认 1.0 不打折）。
+ *  内部转「分」并按 discount 计算折后价，与后端询价 BundlePrice 口径一致
+ *  （total_cost=原价 / real_total_cost=折后价 / discount=折扣率）。 */
+const buildStaticPrice = (yuan: number, discount = 1.0): BundlePrice => {
+  const originalCents = Math.round(yuan * 100);
+  const realCents = Math.round(yuan * discount * 100);
+  return {
+    price: originalCents,
+    total_cost: originalCents,
+    real_total_cost: realCents,
+    currency: "CNY",
+    discount,
+  };
+};
+
+/**
+ * 国际站静态价构造器：原价与折后价均由 STATIC_INTL_PRICE_USD 直接给出（美元），
+ * 不做折扣率乘算，避免分币差异。`discount` 字段按比值回填，仅供折扣角标反算。
+ */
+const buildIntlStaticPrice = (entry: { original: number; real: number }): BundlePrice => {
+  const originalCents = Math.round(entry.original * 100);
+  const realCents = Math.round(entry.real * 100);
+  return {
+    price: originalCents,
+    total_cost: originalCents,
+    real_total_cost: realCents,
+    currency: "USD",
+    /* 比值口径（0~1 小数），与本文件 discountTagText 的入参口径一致；原价为 0 时兜底 1。 */
+    discount: originalCents > 0 ? realCents / originalCents : 1,
+  };
 };
 
 /** 标准版通用卖点（与后端 description 对齐；独立环境规格 / 存储 / 积分等具体展示由 mapBundleToPlan 内部统一处理）。 */
@@ -672,15 +1051,38 @@ const STATIC_GENERAL_DESC: BundleDescriptionEntry[] = [
 ];
 
 /**
- * 生成未登录静态 Bundle 列表（6 张，覆盖启航/巡游/远航 × 标准版/AI 增强版），
+ * 生成未登录静态 Bundle 列表（覆盖启航/巡游 × 标准版/AI 增强版），
  * 走与后端相同的 mapBundleToPlan / planTiers 链路渲染。
- *   - 标准版：露真实价（启航/巡游随 durationKey 取月付/季付；远航由 planTiers 强制「敬请期待」，price=null）
- *   - AI 增强版：price=null，积分由 planTiers 的 AI_VARIANT_CREDIT 强制写死（启航 4500 / 巡游 10000）
+ *   - 国际站：使用 STATIC_INTL_PRICE_USD，直接指定原价与新用户实付价，避免分币误差。
+ *   - 国内站：沿用 STATIC_TIER_PRICE_YUAN / STATIC_AI_TIER_PRICE_YUAN 与既有折扣率。
+ * AI 增强版积分写死为启航 4500 / 巡游 10000。
  * bundle_id 与线上真实配置一致（见 scripts/seed_trade_shprod_bundle_definition.sql），
  * 但未登录不会触发下单（点订阅先引导登录），仅用于展示。
  */
+
 const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
   const span = durationKey === "quarterly" ? 3 : 1;
+  /**
+   * 静态价按站点分流：
+   *   - 国际站：STATIC_INTL_PRICE_USD（美元，原价 + 新用户实付价直接指定）
+   *   - 国内站：STATIC_TIER_PRICE_YUAN / STATIC_AI_TIER_PRICE_YUAN（人民币，原价 × 折扣率）
+   * 国内站分支保持改动前行为不变。
+   */
+  const staticPrice = (tier: "launch" | "cruise", kind: "general" | "ai"): BundlePrice => {
+    if (isGlobal) {
+      return buildIntlStaticPrice(STATIC_INTL_PRICE_USD[tier][kind][durationKey]);
+    }
+    if (kind === "ai") {
+      return buildStaticPrice(
+        STATIC_AI_TIER_PRICE_YUAN[tier][durationKey],
+        durationKey === "quarterly" ? STATIC_AI_QUARTERLY_DISCOUNT : 1.0,
+      );
+    }
+    return buildStaticPrice(
+      STATIC_TIER_PRICE_YUAN[tier][durationKey],
+      durationKey === "quarterly" ? STATIC_QUARTERLY_DISCOUNT : 1.0,
+    );
+  };
   const base = {
     bundle_state: "ONLINE" as const,
     time_unit: "m" as const,
@@ -696,9 +1098,9 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
     {
       ...base,
       bundle_id: "bundle_free_7d",
-      bundle_name: "免费试用 7天",
+      bundle_name: "启航 Launch",
       bundle_type: "free",
-      description: [{ Key: "独立环境", Value: "" }],
+      description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 0,
       price: null,
@@ -714,7 +1116,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 100,
-      price: buildStaticPrice(STATIC_TIER_PRICE_YUAN.launch[durationKey]),
+      price: staticPrice("launch", "general"),
       time_span: span,
     },
     {
@@ -725,8 +1127,8 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 4500,
-      price: null,
-      time_span: 1,
+      price: staticPrice("launch", "ai"),
+      time_span: span,
     },
     /* 巡游 Cruise —— 标准版（促销「首月 5 折」）+ AI 增强版（敬请期待） */
     {
@@ -737,7 +1139,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 200,
-      price: buildStaticPrice(STATIC_TIER_PRICE_YUAN.cruise[durationKey]),
+      price: staticPrice("cruise", "general"),
       time_span: span,
     },
     {
@@ -748,20 +1150,8 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 10000,
-      price: null,
-      time_span: 1,
-    },
-    /* 远航 Voyage —— planTiers 强制单卡「敬请期待」，无需价格 */
-    {
-      ...base,
-      bundle_id: "bundle_voyage_01",
-      bundle_name: "远航 Voyage",
-      bundle_type: "general",
-      description: STATIC_GENERAL_DESC,
-      agent_quota: 3,
-      credit: 500,
-      price: null,
-      time_span: 1,
+      price: staticPrice("cruise", "ai"),
+      time_span: span,
     },
   ];
 };
@@ -789,10 +1179,15 @@ interface PlaceholderPlanDef {
   ctaStyle: "outline" | "primary" | "outline-dark";
   maxBots: number;
   comingSoon?: boolean;
+  /**
+   * 国际站放开为可购买（进信用卡确认弹窗、纯前端演示下单）。
+   * 仅在 isGlobal 构建下生效；国内站及其他占位卡仍维持 comingSoon「即将上线」。
+   */
+  releasedOnGlobal?: boolean;
   agentQuota: number;
   /**
    * 套餐分类，用于未开启计费开关（国际站占位卡场景）时也能按 BUNDLE_TYPE_TABS 分 tab。
-   * 缺省会落入「其他」兜底分组；巡游/远航属于传统标准套餐语义，默认 "general"。
+   * 缺省会落入「其他」兜底分组；巡游属于传统标准套餐语义，默认 "general"。
    */
   bundleType?: string;
 }
@@ -829,37 +1224,6 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     agentQuota: 1,
     bundleType: "general",
   },
-  {
-    id: "placeholder-pro",
-    name: "远航 Voyage",
-    price: "¥279",
-    priceGlobal: "$42",
-    priceUnit: "/ 月",
-    priceUnitGlobal: "/ month",
-    description: "体验进阶，专业玩家的配置",
-    features: [
-      { iconKey: "user", label: "Agent", value: "3 个" },
-      { iconKey: "monitor", label: "云端独立环境", value: "4核 8G 内存" },
-      { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
-      { iconKey: "zap", label: "模型积分", value: "-" },
-      { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
-      { iconKey: "clock", label: "7*24小时在线", hasCheck: true },
-      { iconKey: "settings", label: "极简配置面板", hasCheck: true },
-      { iconKey: "channel", label: "连接主流聊天通道", hasCheck: true },
-      { iconKey: "modelApi", label: "接入主流模型 API", hasCheck: true },
-      { iconKey: "skill", label: "精选技能/技能包", hasCheck: true },
-      { iconKey: "persona", label: "人设注入", hasCheck: true },
-      { iconKey: "automation", label: "自动任务", hasCheck: true },
-      { iconKey: "memory", label: "长期记忆", hasCheck: true },
-      { iconKey: "diagnostics", label: "诊断中心", hasCheck: true },
-    ],
-    ctaLabel: "即将上线",
-    ctaStyle: "outline-dark",
-    maxBots: 3,
-    comingSoon: true,
-    agentQuota: 3,
-    bundleType: "general",
-  },
 ];
 
 /**
@@ -871,11 +1235,8 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
 const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
   void t("免费试用 7天");
   void t("巡游 Cruise");
-  void t("远航 Voyage");
   void t("日常主力，让智能化成为习惯");
-  void t("体验进阶，专业玩家的配置");
   void t("1 个");
-  void t("3 个");
   void t("云端独立环境");
   void t("4核 8G 内存");
   void t("极简配置面板");
@@ -893,49 +1254,44 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
 /** 将纯数据占位套餐转为带 JSX + i18n 的 PlanInfo */
 const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo[] => {
   __markPlaceholderPlansForI18n(t);
-  return PLACEHOLDER_PLAN_DEFS.map((def) => ({
-    id: def.id,
-    name: t(def.name),
-    price: isGlobal ? def.priceGlobal : def.price,
-    priceUnit: isGlobal ? def.priceUnitGlobal : t(def.priceUnit),
-    description: t(def.description),
-    features: def.features.map((f) => ({
-      icon: iconMap[f.iconKey],
-      label: t(f.label),
-      value: f.value ? t(f.value) : undefined,
-      hasCheck: f.hasCheck,
-    })),
-    ctaLabel: t(def.ctaLabel),
-    ctaStyle: def.ctaStyle,
-    maxBots: def.maxBots,
-    comingSoon: def.comingSoon,
-    bundleType: def.bundleType,
-    raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
-  }));
+  return PLACEHOLDER_PLAN_DEFS.map((def) => {
+    /* 国际站放开的占位卡（当前仅「巡游 Cruise」）：解除「即将上线」禁用、CTA 改为「立即订阅」，
+       并置 skipPayment=false 让点击走信用卡确认弹窗（纯前端演示下单，见 CreditCardConfirmOrderModal）。
+       国内站及未放开的占位卡（如「远航」）维持 comingSoon「即将上线」原样。 */
+    const releasedForGlobal = isGlobal && def.releasedOnGlobal === true;
+    return {
+      id: def.id,
+      name: t(def.name),
+      price: isGlobal ? def.priceGlobal : def.price,
+      priceUnit: isGlobal ? t(def.priceUnitGlobal) : t(def.priceUnit),
+      description: t(def.description),
+      features: def.features.map((f) => ({
+        icon: iconMap[f.iconKey],
+        label: t(f.label),
+        value: f.value ? t(f.value) : undefined,
+        hasCheck: f.hasCheck,
+      })),
+      ctaLabel: releasedForGlobal ? t("立即订阅") : t(def.ctaLabel),
+      ctaStyle: releasedForGlobal ? "primary" : def.ctaStyle,
+      maxBots: def.maxBots,
+      comingSoon: releasedForGlobal ? false : def.comingSoon,
+      /* 放开后不走免费直建链路，改由确认弹窗承接（纯前端演示） */
+      skipPayment: releasedForGlobal ? false : undefined,
+      bundleType: def.bundleType,
+      raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
+    };
+  });
 };
 
-/* ─── 套餐档位（tier）分组：启航 / 巡游 / 远航 ─── */
+/* ─── 套餐档位（tier）分组：启航 / 巡游 ─── */
 
 /**
  * 需求3 重构：不再用「标准版 / AI 增强版」全局 tab 切换整排卡，而是
- * 三张卡按 tier（启航 / 巡游 / 远航）固定展示，同一 tier 下的标准版 / AI 增强版
+ * 按 tier（启航 / 巡游）固定展示，同一 tier 下的标准版 / AI 增强版
  * 收敛为卡内「积分」切换（见 PlanCard）。这里定义 tier 分组所需的类型与工具。
  */
-type PlanTierKey = "launch" | "cruise" | "voyage";
-const PLAN_TIER_ORDER: PlanTierKey[] = ["launch", "cruise", "voyage"];
-
-/**
- * AI 增强版档位的「模型积分」写死值（仅在 AI 档位未放出可购买时作为展示兜底）。
- * 当前 AI 增强版放出策略：启航 / 巡游在月付下可购买（取后端 bundle.credit），
- * 季付下仍未上线、展示「敬请期待」，此时积分用前端写死值：
- *   - 启航 launch → 4500
- *   - 巡游 cruise → 10000
- * 月付放出可购买时积分回退为取后端 bundle.credit，不再用此表覆盖。
- */
-const AI_VARIANT_CREDIT: Partial<Record<PlanTierKey, number>> = {
-  launch: 4500,
-  cruise: 10000,
-};
+type PlanTierKey = "launch" | "cruise";
+const PLAN_TIER_ORDER: PlanTierKey[] = ["launch", "cruise"];
 
 /** 按 bundle_name（中 / 英 / 中英混排）判定 tier；未命中返回 null（如免费试用卡）。 */
 const tierOfPlan = (plan: PlanInfo): PlanTierKey | null => {
@@ -943,17 +1299,37 @@ const tierOfPlan = (plan: PlanInfo): PlanTierKey | null => {
   const lower = raw.toLowerCase();
   if (raw.includes("启航") || lower.includes("launch")) return "launch";
   if (raw.includes("巡游") || lower.includes("cruise")) return "cruise";
-  if (raw.includes("远航") || lower.includes("voyage")) return "voyage";
   return null;
 };
 
-/** 一个 tier 分组：同 tier 的多个档位（variants，按积分升序）+ 是否敬请期待。 */
+const isRetiredVoyagePlan = (plan: PlanInfo): boolean => {
+  const raw = plan.raw.bundle_name ?? plan.name ?? "";
+  const lower = raw.toLowerCase();
+  return raw.includes("远航") || lower.includes("voyage");
+};
+
+/** 一个 tier 分组：同 tier 的多个档位（variants，按积分升序展示）+ 是否敬请期待。 */
 interface PlanTierGroup {
-  /** tier key（launch/cruise/voyage）或未命中 tier 时的 plan.id（各自单卡） */
+  /** tier key（launch/cruise）或未命中 tier 时的 plan.id（各自单卡） */
   key: string;
-  /** 同 tier 的档位列表，按 credit 升序（标准版在左、AI 增强版在右） */
+  /** 同 tier 的档位列表；国际站 AI 增强版在前、国内站标准版在前（见 planTiers 排序） */
   variants: PlanInfo[];
 }
+
+const getDefaultVariantIndex = (variants: PlanInfo[]): number => {
+  if (variants.length <= 1) return 0;
+  /* 国际站默认选 AI 增强版（高 credit，含免费体验）；国内站默认选标准版（低 credit）。
+     与 planTiers 的 variants 排序方向一致：国际站降序、国内站升序，保证默认 variant 落在 index 0。 */
+  const preferHigh = isGlobal;
+  return variants.reduce((bestIndex, variant, index) => {
+    const bestCredit = variants[bestIndex]?.raw.credit ?? Number.POSITIVE_INFINITY;
+    const credit = variant.raw.credit ?? Number.POSITIVE_INFINITY;
+    if (preferHigh) {
+      return credit > bestCredit ? index : bestIndex;
+    }
+    return credit < bestCredit ? index : bestIndex;
+  }, 0);
+};
 
 /**
  * 实名校验错误码兜底文案 — 计费侧错误码统一走 lib/billing-error 的 resolveBillingErrorMessage
@@ -1015,31 +1391,35 @@ const PlanCard = ({
   reserveCreditTabSpace,
   subscriptionLocked,
 }: {
-  /* 同一 tier 的档位列表（标准版 / AI 增强版），按积分升序；未命中 tier 时长度为 1 */
+  /* 同一 tier 的档位列表（AI 增强版 / 标准版）；未命中 tier 时长度为 1 */
   variants: PlanInfo[];
   index: number;
   onSubscribe: (planId: string) => void;
   subscribingPlanId: string | null;
   currentBots: number;
-  /* 是否为「无积分切换」的卡（如远航敬请期待）预留等高占位，使其 CTA/功能点与有积分切换的卡对齐 */
+  /* 是否为「无积分切换」的卡预留等高占位，使其 CTA/功能点与有积分切换的卡对齐 */
   reserveCreditTabSpace?: boolean;
   /* 用户已有生效订阅：暂不支持升级 / 更换套餐，所有卡按钮统一禁用（当前套餐卡文案为「当前订阅」）。 */
   subscriptionLocked?: boolean;
 }) => {
   const t = useT();
-  /* 卡内积分档位切换：同 tier 的标准版 / AI 增强版收敛为 variants，切换即换整份 PlanInfo，
-     价格 / 积分 / 折扣 / 下单套餐随之联动（需求3）。默认选中第一个（积分最少的标准版）。 */
-  const [activeVariantIdx, setActiveVariantIdx] = useState(0);
-  const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : 0;
+  /* 卡内积分档位切换：同 tier 的 AI 增强版 / 标准版收敛为 variants，切换即换整份 PlanInfo，
+     价格 / 积分 / 折扣 / 下单套餐随之联动。国际站默认选 AI 增强版（启航 4500 / 巡游 10000），
+     国内站默认选标准版（启航 100 / 巡游 200）。 */
+  const defaultVariantIdx = getDefaultVariantIndex(variants);
+  const [activeVariantIdx, setActiveVariantIdx] = useState(() => defaultVariantIdx);
+  const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
   const plan = variants[safeIdx]!;
   const subscribing = subscribingPlanId === plan.id;
+  /* 新用户启航版「免费订阅」按钮 hover 时，上方展示免费试用到期不自动扣款的提示（plan.freeTrialHint） */
+  const [showFreeTrialHint, setShowFreeTrialHint] = useState(false);
   const quotaWouldExceed = currentBots >= plan.maxBots;
   /* 主推卡由 tier 顺序决定（启航，index===0），不随积分切换变化 */
   const isFeatured = index === 0;
   const isSoldOut = plan.soldOut === true;
   const isComingSoon = plan.comingSoon === true;
   const isPriceUnavailable = plan.priceUnavailable === true;
-  /* 积分切换 tab：只要有 >1 个档位就展示（远航为单档位天然不展示）。
+  /* 积分切换 tab：只要有 >1 个档位就展示。
      即便当前选中的档位是「敬请期待」（如本期未上线的 AI 增强版），也保留切换入口，
      否则用户切到 AI 档后会因 tab 消失而无法切回标准版。 */
   const showCreditTabs = variants.length > 1;
@@ -1174,7 +1554,7 @@ const PlanCard = ({
         </div>
 
         {/* 积分档位切换（segmented control）：同 tier 的标准版 / AI 增强版通过积分数值切换，
-            切换即联动价格 / 积分 / 折扣 / 下单套餐（需求3）。远航（敬请期待）不展示。 */}
+            切换即联动价格 / 积分 / 折扣 / 下单套餐（需求3）。 */}
         {showCreditTabs && (
           <div
             role="tablist"
@@ -1220,14 +1600,14 @@ const PlanCard = ({
                   }}
                 >
                   <Zap style={{ width: 13, height: 13, color: active ? "#D14081" : colors.warmGray300, strokeWidth: 2 }} />
-                  {v.raw.credit}
+                  <span>{v.raw.credit}</span>
                 </button>
               );
             })}
           </div>
         )}
 
-        {/* 无积分切换的卡（如远航敬请期待）补一段与积分 tabs 等高的占位，使 CTA/分割线/功能点与其他卡对齐 */}
+        {/* 无积分切换的卡补一段与积分 tabs 等高的占位，使 CTA/分割线/功能点与其他卡对齐 */}
         {!showCreditTabs && reserveCreditTabSpace && (
           <div aria-hidden style={{ height: 32, marginTop: 4, marginBottom: 16, order: 2 }} />
         )}
@@ -1453,7 +1833,55 @@ const PlanCard = ({
         )}
 
         {/* CTA Button — 需求3：上移到功能点上方（积分切换与分割线之间），order=3 */}
-        <div style={{ marginTop: 4, marginBottom: 4, order: 3 }}>
+        <div
+          style={{ position: "relative", marginTop: 4, marginBottom: 4, order: 3 }}
+          onMouseEnter={() => {
+            if (plan.freeTrialHint) setShowFreeTrialHint(true);
+          }}
+          onMouseLeave={() => setShowFreeTrialHint(false)}
+        >
+          {/* 免费试用提示：新用户启航版「免费订阅」按钮 hover 时，在按钮上方展示 */}
+          {plan.freeTrialHint && showFreeTrialHint && (
+            <div
+              role="tooltip"
+              style={{
+                position: "absolute",
+                bottom: "calc(100% + 8px)",
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 20,
+                width: "max-content",
+                maxWidth: 240,
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: colors.tooltipBg,
+                color: colors.white,
+                fontSize: 12,
+                fontWeight: 500,
+                lineHeight: 1.5,
+                textAlign: "center",
+                boxShadow: colors.tooltipShadow,
+                pointerEvents: "none",
+                whiteSpace: "normal",
+              }}
+            >
+              {plan.freeTrialHint}
+              {/* 指向按钮的小三角箭头 */}
+              <span
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 0,
+                  height: 0,
+                  borderLeft: "5px solid transparent",
+                  borderRight: "5px solid transparent",
+                  borderTop: `5px solid ${colors.tooltipBg}`,
+                }}
+              />
+            </div>
+          )}
           {isComingSoon ? (
             <button
               disabled
@@ -1600,11 +2028,15 @@ const modalCloseStyle: React.CSSProperties = {
 const ConfirmOrderModal = ({
   plan,
   billingPeriodLabel,
+  showPaymentMethod = true,
+  actionLabel,
   onCancel,
   onPay,
 }: {
   plan: PlanInfo;
   billingPeriodLabel: string;
+  showPaymentMethod?: boolean;
+  actionLabel?: string;
   onCancel: () => void;
   onPay: () => void;
 }) => {
@@ -1632,6 +2064,7 @@ const ConfirmOrderModal = ({
         <button
           style={modalCloseStyle}
           onClick={onCancel}
+          aria-label={t("关闭")}
           onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; e.currentTarget.style.color = colors.primary; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = colors.warmGray300; }}
         >
@@ -1667,38 +2100,40 @@ const ConfirmOrderModal = ({
             </div>
           </div>
 
-          <div
-            style={{
-              border: `1px solid ${colors.border}`,
-              borderRadius: 12,
-              padding: "16px 20px",
-              marginBottom: 24,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
+          {showPaymentMethod && (
             <div
               style={{
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                border: `2px solid ${colors.primary}`,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 12,
+                padding: "16px 20px",
+                marginBottom: 24,
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
+                gap: 10,
               }}
             >
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.primary }} />
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  border: `2px solid ${colors.primary}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.primary }} />
+              </div>
+              <svg viewBox="0 0 24 24" style={{ width: 22, height: 22, flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="12" fill="#07C160" />
+                <path d="M17.2 10.8c-.4-2.1-2.5-3.6-5-3.6-2.8 0-5.1 1.9-5.1 4.3 0 1.4.8 2.6 2 3.5l-.5 1.5 1.8-1c.6.2 1.2.3 1.8.3.3 0 .5 0 .8-.1-.2-.4-.2-.8-.2-1.2 0-2.1 2-3.7 4.4-3.7z" fill="#fff" />
+                <path d="M19.5 14.5c0-1.7-1.7-3.1-3.8-3.1s-3.8 1.4-3.8 3.1 1.7 3.1 3.8 3.1c.4 0 .9-.1 1.3-.2l1.2.7-.3-1.1c1-0.6 1.6-1.5 1.6-2.5z" fill="#fff" />
+              </svg>
+              <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("微信支付")}</span>
             </div>
-            <svg viewBox="0 0 24 24" style={{ width: 22, height: 22, flexShrink: 0 }}>
-              <circle cx="12" cy="12" r="12" fill="#07C160" />
-              <path d="M17.2 10.8c-.4-2.1-2.5-3.6-5-3.6-2.8 0-5.1 1.9-5.1 4.3 0 1.4.8 2.6 2 3.5l-.5 1.5 1.8-1c.6.2 1.2.3 1.8.3.3 0 .5 0 .8-.1-.2-.4-.2-.8-.2-1.2 0-2.1 2-3.7 4.4-3.7z" fill="#fff" />
-              <path d="M19.5 14.5c0-1.7-1.7-3.1-3.8-3.1s-3.8 1.4-3.8 3.1 1.7 3.1 3.8 3.1c.4 0 .9-.1 1.3-.2l1.2.7-.3-1.1c1-0.6 1.6-1.5 1.6-2.5z" fill="#fff" />
-            </svg>
-            <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("微信支付")}</span>
-          </div>
+          )}
 
           <div style={{ display: "flex", gap: 12 }}>
             <button
@@ -1737,7 +2172,7 @@ const ConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              {t("支付")} {currencySymbol}{priceNum}
+              {actionLabel ?? `${t("支付")} ${currencySymbol}${priceNum}`}
             </button>
           </div>
         </div>
@@ -1746,31 +2181,271 @@ const ConfirmOrderModal = ({
   );
 };
 
+/* ─── Credit Card Confirm Order Modal（国际站）─── */
+
+/**
+ * 国际站信用卡确认订单弹窗。
+ *
+ * 与国内站微信版 ConfirmOrderModal 并列，由渲染点按编译期常量 isGlobal 分流：
+ * 国内包不会打进本组件，国际包不会打进微信版（tree-shaking）。
+ *
+ * 本组件为纯前端 UI / 交互还原（不接后端）：
+ *   - 订单明细：Subtotal / Tax / Total
+ *   - 支付方式：仅信用卡（Credit card）
+ *   - 信用卡下「自动续费（Auto-renew）」开关；开关开启且未绑卡时，
+ *     提示绑卡并拦截支付，点击「Bind card」进入绑卡表单
+ *   - 绑卡为前端演示：卡片状态仅在弹窗生命周期内维护，不落库、不发请求
+ *
+ * 金额三行口径（后端计费字段，单位分，见 BundlePrice.tax_price 注释）：
+ *   小计 ← 折后价（real_total_cost - tax_price，与卡片价同源）；税费 ← tax_price（未下发视为 0）；
+ *   合计 ← real_total_cost（含税实付）直接展示，不做前端加总。
+ * 原价与折扣差不展示（不单列折扣行），弹窗内不出现原价。
+ */
+
+export const CreditCardConfirmOrderModal = ({
+  plan,
+  billingPeriodLabel,
+  demoMode = false,
+  paying = false,
+  onCancel,
+  onPay,
+}: {
+  plan: PlanInfo;
+  billingPeriodLabel: string;
+  /** 纯前端演示：点「Pay」不调后端下单，直接在弹窗内展示支付成功（国际站占位付费卡放开场景）。 */
+  demoMode?: boolean;
+  /** 支付处理中（onPay 已触发、后端 order-and-pay 未返回）：禁用按钮防重复下单扣款。 */
+  paying?: boolean;
+  onCancel: () => void;
+  /** 确认支付；autoRenew = 用户是否开启自动续费（透传后端 auto_renew_flag） */
+  onPay: (autoRenew: boolean) => void;
+}) => {
+  const t = useT();
+  const [view, setView] = useState<"order" | "success">("order");
+
+  /* 有 priceDetail（登录态真实计费）时三行全部用后端真源：
+     小计=折后价（real_total_cost - tax_price，与卡片价同源）、税费=tax_price、
+     合计=real_total_cost（含税实付）直显。
+     合计不做前端加总——分转元的舍入误差与后端未来的调整项都会让加总对不上实付。
+     无 priceDetail（demoMode 占位卡 / 静态价）时退化为旧视觉：tax=0、合计=小计。 */
+  const subtotal = plan.priceDetail
+    ? plan.priceDetail.subtotalCents / 100
+    : parseFloat(plan.price.replace(/[^0-9.]/g, "")) || 0;
+  const tax = plan.priceDetail ? plan.priceDetail.taxCents / 100 : 0;
+  const total = plan.priceDetail ? plan.priceDetail.totalCents / 100 : subtotal + tax;
+  /* 币种符号必须跟随 plan.price，不能硬编码 "$"：
+     plan.price 由 formatYuan(displayPriceYuan, bundle.price.currency) 产出，
+     而 currency 走 `bundle.price?.currency ?? "CNY"` 兜底。
+     国际站正常路径后端下发 currency=USD（trade 按 LIGHTVELA_SITE_KIND 分流，intl=USD / cn=CNY），
+     但一旦该字段缺失或为其他币种，formatYuan 会输出「¥45.00」/「7500 KRW」，
+     此处 parseFloat 剥离符号后若再用固定 "$" 重排，就会把非美元价展示成美元价（金额误导）。
+     判定方式与本文件 PlanCard 的 currencySymbol 保持一致。 */
+  const currencySymbol = plan.price.trim().startsWith("$") ? "$" : "¥";
+  const fmt = (n: number) => `${currencySymbol}${n.toFixed(2)}`;
+
+  const handlePayClick = () => {
+    /* 纯前端演示：不调后端下单，直接展示支付成功 */
+    if (demoMode) { setView("success"); return; }
+    /* 国际站信用卡为订阅制，固定开启自动续费。
+       注意 auto_renew_flag 只影响新购订单的 goodsDetail.autoRenewFlag，
+       是否发起签约（ContractOrder）由后端查询用户绑卡状态决定，与此值解耦。
+       见 codesign/ctl-frontend-billing-api.md「国际站支付模式」。 */
+    onPay(true);
+  };
+
+  return (
+    <motion.div
+      style={modalOverlayStyle}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onCancel}
+    >
+      <motion.div
+        style={modalPanelStyle}
+        initial={{ opacity: 0, scale: 0.95, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 12 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          style={modalCloseStyle}
+          onClick={onCancel}
+          aria-label={t("关闭")}
+          onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; e.currentTarget.style.color = colors.primary; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = colors.warmGray300; }}
+        >
+          <X style={{ width: 18, height: 18 }} />
+        </button>
+
+        {view === "success" ? (
+          /* ─── Payment success view（纯前端演示）─── */
+          <div style={{ padding: "36px 28px 28px", textAlign: "center" }}>
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: "50%",
+                background: colors.primary,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 18px",
+              }}
+            >
+              <Check style={{ width: 30, height: 30, color: colors.white }} strokeWidth={3} />
+            </div>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
+              {t("支付成功")}
+            </h3>
+            <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 4px" }}>
+              {t("你已订阅「{{plan}}」套餐。", { plan: plan.name })}
+            </p>
+            <p style={{ fontSize: 20, fontWeight: 700, color: colors.black, margin: "8px 0 24px", letterSpacing: "-0.5px" }}>
+              {fmt(total)}
+              <span style={{ fontSize: 13, fontWeight: 500, color: colors.warmGray500 }}> {billingPeriodLabel}</span>
+            </p>
+            <button
+              onClick={onCancel}
+              style={{ width: "100%", padding: "12px 16px", borderRadius: 8, border: "none", background: colors.primary, color: colors.white, fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "all 0.15s" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
+            >
+              {t("关闭")}
+            </button>
+          </div>
+        ) : view === "order" ? (
+          <div style={{ padding: "28px 28px 24px" }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
+              {t("确认订单")}
+            </h3>
+            <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 20px" }}>{t("请核对以下订单信息")}</p>
+
+            {/* Order summary */}
+            <div style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
+                <span>{t("「{{plan}}」套餐", { plan: plan.name })}</span>
+                {/* 套餐行展示折后价（与小计行同源同值，= real_total_cost - tax_price）。 */}
+                <span style={{ fontWeight: 600, color: colors.black }}>{fmt(subtotal)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>
+                <span>{t("计费周期")}</span>
+                <span style={{ fontWeight: 600, color: colors.black }}>{billingPeriodLabel}</span>
+              </div>
+              <div style={{ height: 1, background: colors.border, margin: "0 0 16px" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13, color: colors.warmGray500 }}>
+                <span>{t("小计")}</span>
+                <span>{fmt(subtotal)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 13, color: colors.warmGray500 }}>
+                <span>{t("税费")}</span>
+                <span>{fmt(tax)}</span>
+              </div>
+              <div style={{ height: 1, background: colors.border, margin: "0 0 16px" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ fontSize: 14, color: colors.warmGray500 }}>{t("合计")}</span>
+                <span style={{ fontSize: 28, fontWeight: 700, color: colors.black, letterSpacing: "-1px" }}>{fmt(total)}</span>
+              </div>
+            </div>
+
+            {/* Payment method */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: colors.warmGray500, margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+              {t("支付方式")}
+            </div>
+            <div style={{ border: `1px solid ${colors.primary}`, borderRadius: 12, padding: "16px 20px", marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${colors.primary}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.primary }} />
+                </div>
+                <CreditCard style={{ width: 20, height: 20, flexShrink: 0, color: colors.black }} />
+                <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("信用卡")}</span>
+              </div>
+
+              <div style={{ height: 1, background: colors.border, margin: "16px 0" }} />
+
+              {/* 自动续费说明：国际站信用卡为订阅制，不提供一次性购买，
+                  因此这里是只读告知而非开关——给一个点了会被拦的假开关只会浪费用户一次点击。 */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <RefreshCw style={{ width: 16, height: 16, flexShrink: 0, marginTop: 2, color: colors.primary }} />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: colors.black }}>{t("自动续费")}</div>
+                  <div style={{ fontSize: 12, color: colors.warmGray500, marginTop: 2, lineHeight: 1.6 }}>
+                    {t("订阅将在每个计费周期结束时自动续费，可随时在账号管理页取消。")}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                onClick={onCancel}
+                style={{ flex: 1, padding: "12px 16px", borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.white, color: colors.black, fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = colors.white; }}
+              >
+                {t("取消")}
+              </button>
+              <button
+                onClick={handlePayClick}
+                disabled={paying}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: paying ? colors.warmGray300 : colors.primary,
+                  color: colors.white,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: paying ? "not-allowed" : "pointer",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => { if (!paying) e.currentTarget.style.background = colors.primaryHover; }}
+                onMouseLeave={(e) => { if (!paying) e.currentTarget.style.background = colors.primary; }}
+              >
+                {paying ? t("处理中...") : t("支付 {{amount}}", { amount: fmt(total) })}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </motion.div>
+    </motion.div>
+  );
+};
+
 /* ─── Payment Pending Modal ─── */
 
 /**
- * 付费进行中弹窗——取代原来的 mock 微信二维码。该弹窗同时覆盖两个状态：
- *   - paying ：已跳转新窗口，后台轮询 listMyPasses 中
- *   - polling：用户点击「我已完成支付」，立即询问一次
- *
- * 表现上这两个状态只在 spinner / 文案上轻微区分，避免闪烁。
+ * 付费进行中弹窗——取代原来的 mock 微信二维码。
+ * 弹窗期间后台轮询 listMyPasses，轮询到有效 pass 后自动 finalizeBot 接棒，
+ * 用户无需任何手动确认按钮。
  */
 const PaymentPendingModal = ({
   bridgeUrl,
+  redirectUrl,
   onCancel,
-  onManualConfirm,
   onRefresh,
   refreshing,
+  timedOut = false,
+  provisioningOnly = false,
   t,
 }: {
-  /** 中转页绝对 URL，用作 QRCode value */
-  bridgeUrl: string;
+  /** 国内站：中转页绝对 URL，用作 QRCode value */
+  bridgeUrl?: string;
+  /** 国际站：信用卡 hosted page URL（pay_url），用于「重新打开支付页」 */
+  redirectUrl?: string;
   onCancel: () => void;
-  onManualConfirm: () => void;
-  /** 「刷新」按钮：重新生成二维码（重新下单换新 auth_code） */
+  /** 「刷新」按钮：重新生成二维码（重新下单换新 auth_code）— 仅国内站 bridge 模式 */
   onRefresh: () => void;
   /** 刷新进行中（重新下单的网络往返期间），用于禁用按钮防止重复请求 */
   refreshing: boolean;
+  /** 轮询已超时：后台发货延迟，改为提示用户稍后重试而不是一直转圈 */
+  timedOut?: boolean;
+  /** 点石零元单已完成下单并支付，只等待 Pass 发货。 */
+  provisioningOnly?: boolean;
   t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
   return (
@@ -1802,13 +2477,23 @@ const PaymentPendingModal = ({
 
         <div style={{ padding: "28px 28px 24px" }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
-            {t("请完成支付")}
+            {timedOut ? t("正在开通，请稍候") : provisioningOnly ? t("正在开通套餐") : t("请完成支付")}
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
-            {t("请使用微信扫描下方二维码完成支付")}
+            {timedOut
+              ? t("已收到你的支付，套餐开通稍有延迟，本页会自动完成开通，请勿关闭。")
+              : provisioningOnly
+                ? t("订单已提交，正在等待套餐开通，完成后将自动跳转")
+              : bridgeUrl
+                ? t("请使用微信扫描下方二维码完成支付")
+                /* 支付回跳场景没有 redirectUrl（原窗口已被替换），此时是在等后台发货，
+                   不能再说「支付页已在新窗口打开」。 */
+                : redirectUrl
+                  ? t("信用卡支付页已在新窗口打开，完成支付后本页将自动跳转")
+                  : t("正在确认支付结果并开通套餐，完成后将自动跳转")}
           </p>
 
-          {/* bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
+          {/* 国内站 bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
           {bridgeUrl && (
             <div
               style={{
@@ -1825,38 +2510,104 @@ const PaymentPendingModal = ({
             </div>
           )}
 
-          <p style={{ fontSize: 13, color: colors.warmGray500, textAlign: "center", margin: "0 0 20px" }}>
-            {t("支付完成后，需等待约15秒完成下单")}
-          </p>
-
-          {/* 底部按钮区：仅「刷新」（重新生成二维码） */}
-          <div style={{ display: "flex", flexDirection: "row", gap: 12 }}>
-            <button
-              onClick={onRefresh}
-              disabled={refreshing}
+          {/* 国际站信用卡模式：展示支付页已打开的提示 */}
+          {redirectUrl && (
+            <div
               style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: `1px solid ${colors.primary}`,
-                background: colors.white,
-                color: colors.primary,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: refreshing ? "not-allowed" : "pointer",
-                opacity: refreshing ? 0.6 : 1,
-                transition: "background 0.15s, color 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                if (refreshing) return;
-                e.currentTarget.style.background = colors.warmWhite;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = colors.white;
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 20,
+                padding: 24,
+                borderRadius: 12,
+                background: colors.warmWhite,
               }}
             >
-              {refreshing ? t("刷新中...") : t("刷新")}
-            </button>
+              <CreditCard style={{ width: 36, height: 36, color: colors.primary }} />
+              <span style={{ fontSize: 13, color: colors.warmGray500 }}>{t("信用卡支付")}</span>
+            </div>
+          )}
+
+          {/* 支付回跳等发货：既没有二维码也没有 pay_url，用 loading 表达「正在开通」 */}
+          {!bridgeUrl && !redirectUrl && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 20,
+                padding: 24,
+                borderRadius: 12,
+                background: colors.warmWhite,
+              }}
+            >
+              {timedOut
+                ? <Clock style={{ width: 36, height: 36, color: colors.primary }} />
+                : <Loader2 className="animate-spin" style={{ width: 36, height: 36, color: colors.primary }} />}
+              <span style={{ fontSize: 13, color: colors.warmGray500 }}>
+                {timedOut ? t("开通中") : t("正在开通套餐")}
+              </span>
+            </div>
+          )}
+
+          <p style={{ fontSize: 13, color: colors.warmGray500, textAlign: "center", margin: "0 0 20px" }}>
+            {timedOut ? t("如长时间未开通，请联系客服") : t("支付完成后，需等待约15秒完成下单")}
+          </p>
+
+          {/* 底部按钮区：国内站「刷新」重新生成二维码；国际站「重新打开支付页」 */}
+          <div style={{ display: "flex", flexDirection: "row", gap: 12 }}>
+            {bridgeUrl ? (
+              <button
+                onClick={onRefresh}
+                disabled={refreshing}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: 8,
+                  border: `1px solid ${colors.primary}`,
+                  background: colors.white,
+                  color: colors.primary,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: refreshing ? "not-allowed" : "pointer",
+                  opacity: refreshing ? 0.6 : 1,
+                  transition: "background 0.15s, color 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  if (refreshing) return;
+                  e.currentTarget.style.background = colors.warmWhite;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = colors.white;
+                }}
+              >
+                {refreshing ? t("刷新中...") : t("刷新")}
+              </button>
+            ) : redirectUrl ? (
+              <button
+                onClick={() => {
+                  window.open(redirectUrl, "_blank", "noopener,noreferrer");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: 8,
+                  border: `1px solid ${colors.primary}`,
+                  background: colors.white,
+                  color: colors.primary,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "background 0.15s, color 0.15s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = colors.white; }}
+              >
+                {t("重新打开支付页")}
+              </button>
+            ) : null}
           </div>
         </div>
       </motion.div>
@@ -1873,13 +2624,17 @@ const PaymentPendingModal = ({
  *   - paying   ：已通过 tcb-jssdk 拉起 Midas 收银台（页内二维码 / 兜底新窗口），等待用户支付完成
  *
  * 注：v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
- * SDK 自身会通过 callback 通知支付完成；用户使用兜底入口时手动点「我已完成支付」即可。
+ * 实际以 paying 阶段的 listMyPasses 轮询为准，自动 finalizeBot，无需用户手动确认。
  */
 type ModalStep = "closed" | "confirm" | "paying";
 
 type SubscribeError = {
   code?: string | null;
   message: string;
+  action?: {
+    label: string;
+    href: string;
+  };
 };
 
 type SubscribePageProps = {
@@ -1894,6 +2649,15 @@ type SubscribePageProps = {
 const PAY_POLL_INTERVAL_MS = 3000;
 const PAY_POLL_TIMEOUT_MS = 180_000;
 
+/**
+ * 支付回跳标记：国际站信用卡的占位窗口被弹窗拦截时，会用
+ * window.location.assign 替换当前页去支付，付款后 return_url 回到的是全新页面，
+ * 原窗口的 paying 轮询已经销毁。带上这两个 query 才能在回跳页重新接棒
+ * 「等后台发货 → 自动创建实例 → 跳实例管理页」。
+ */
+const PAY_RETURN_QUERY_KEY = "pay_return";
+const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
+
 export const SubscribePage = ({
   authControls,
   publicLocale,
@@ -1906,7 +2670,10 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass, latestPass } = useOpenClaw();
+  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, refreshPasses, activePass, latestPass } = useOpenClaw();
+  void BUNDLE_TYPE_FALLBACK_KEY;
+  void BUNDLE_TYPE_TABS;
+  __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
@@ -1935,10 +2702,9 @@ export const SubscribePage = ({
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
-     对应 localStorage 覆盖 lightclaw:features.paidBillingEnabled=false
-     且 lightclaw:features.realnamePhoneVerificationEnabled=false 的场景。
-     任一开关开启时不做免费引导，CTA 维持「立即开通」。 */
-  const freeGuideAllowed = !paidBillingEnabled && !realnamePhoneVerificationEnabled;
+     国际站已全量放开，付费开关只由后端 features 熔断；
+     任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
+  const freeGuideAllowed = !paidBillingActive && !realnamePhoneVerificationEnabled;
   const header = (
     <SubscribePageHeader
       authControls={authControls}
@@ -2024,7 +2790,10 @@ export const SubscribePage = ({
         }
       } catch (err) {
         if (!cancelled) {
-          setBundlesError(err instanceof Error ? err.message : t("套餐列表加载失败"));
+          const code = getBillingErrorCode(err);
+          const rawMessage = err instanceof Error ? err.message : "";
+          const isUnauthorized = code === "unauthorized" || /unauthorized/i.test(rawMessage);
+          setBundlesError(isUnauthorized ? t("请先登录") : rawMessage || t("套餐列表加载失败"));
         }
       } finally {
         if (!cancelled) {
@@ -2085,16 +2854,16 @@ export const SubscribePage = ({
   }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, bots.length, freeGuideAllowed, activePass?.bundle_id, latestPass?.bundle_id, isLoggedIn]);
 
   /**
-   * 需求3：按 tier（启航 / 巡游 / 远航）把 planList 分组，取代原「标准版 / AI 增强版」全局 tab。
+   * 需求3：按 tier（启航 / 巡游）把 planList 分组，取代原「标准版 / AI 增强版」全局 tab。
    *   - 同 tier 的标准版 / AI 增强版收敛为一张卡的多个 variants（按积分升序），卡内切换（见 PlanCard）
-   *   - tier 顺序固定：启航 → 巡游 → 远航
-   *   - 远航（voyage）保持「敬请期待」：只取首个 variant 并强制 comingSoon、不放积分切换（PRD 决策）
+   *   - tier 顺序固定：启航 → 巡游
    *   - 未命中 tier 的套餐（如免费试用卡）各自单卡展示，追加在后，保持 planList 原顺序
    */
   const planTiers = useMemo<PlanTierGroup[]>(() => {
     const tierMap = new Map<PlanTierKey, PlanInfo[]>();
     const uncategorized: PlanInfo[] = [];
     for (const plan of planList) {
+      if (isRetiredVoyagePlan(plan)) continue;
       const tk = tierOfPlan(plan);
       if (tk) {
         if (!tierMap.has(tk)) tierMap.set(tk, []);
@@ -2107,67 +2876,47 @@ export const SubscribePage = ({
     for (const tk of PLAN_TIER_ORDER) {
       const variants = tierMap.get(tk);
       if (!variants || variants.length === 0) continue;
-      /* 按积分升序：标准版（积分少）在左，AI 增强版（积分多）在右 */
-      const sorted = [...variants].sort((a, b) => (a.raw.credit ?? 0) - (b.raw.credit ?? 0));
-      if (tk === "voyage") {
-        /* 远航（需求1）：屏蔽后端可能已配置的价格 / 促销 / 下单入口，统一「敬请期待」，单卡无积分切换。
-           清空 price / promoTag 并复位 priceUnavailable / pricingLoading，确保价格区落到「敬请期待」分支；
-           CTA 文案同步改为「敬请期待」。 */
-        const first = sorted[0]!;
-        groups.push({
-          key: tk,
-          variants: [{
-            ...first,
-            comingSoon: true,
-            price: "",
-            promoTag: undefined,
-            priceUnavailable: false,
-            pricingLoading: false,
-            ctaLabel: t("敬请期待"),
-          }],
-        });
-      } else {
-        /* AI 增强版可见性：
-           - 已登录：启航 / 巡游的 AI 档位（月付 / 季付）均已上线可购买，
-             保留后端真实价格 / 促销 / 下单入口，积分回退取后端 bundle.credit（不再写死）。
-             季付走带参询价（见 needsExplicitDurationPriceQuery），后端已支持。
-           - 未登录：统一「敬请期待」。未登录走的是前端静态价（AI price=null），放出后会落到
-             「暂无报价」，体验劣于「敬请期待」，故未登录一律维持敬请期待。
-           - 标准版 variant 任何时长都保持原样正常购买。 */
-        const aiReleased = isLoggedIn;
-        const aiCredit = AI_VARIANT_CREDIT[tk];
-        const mapped = sorted.map((v) => {
-          const isAi = v.bundleType === "ai" || v.raw.bundle_type === "ai";
-          if (!isAi) return v;
-          if (aiReleased) return v;
-          return {
-            ...v,
-            comingSoon: true,
-            price: "",
-            promoTag: undefined,
-            priceUnavailable: false,
-            pricingLoading: false,
-            ctaLabel: t("敬请期待"),
-            raw: aiCredit != null ? { ...v.raw, credit: aiCredit } : v.raw,
-          };
-        });
-        groups.push({ key: tk, variants: mapped });
-      }
+      /* 国际站按积分降序（AI 增强版在前，含免费体验更醒目）；国内站按积分升序（标准版在前，老口径）。
+         getDefaultVariantIndex 与此方向一致，保证默认选中落在 index 0。 */
+      const sorted = [...variants].sort((a, b) => {
+        const diff = (a.raw.credit ?? 0) - (b.raw.credit ?? 0);
+        return isGlobal ? -diff : diff;
+      });
+      /* AI 增强版可见性：启航 / 巡游的 AI 档位（月付 / 季付）均展示价格 + 下单入口。
+         - 已登录：保留后端真实价格 / 促销 / 下单入口，积分取后端 bundle.credit。
+         - 未登录：走 buildStaticBundles 的国际站静态美元价，展示新用户
+           实付价 + 原价删除线 + 对应促销标签；CTA 点击仍只引导登录。 */
+      groups.push({ key: tk, variants: sorted });
     }
     for (const plan of uncategorized) {
       groups.push({ key: plan.id, variants: [plan] });
     }
     return groups;
-  }, [planList, isLoggedIn, t]);
+  }, [planList, t]);
 
-  /* 付费过程上下文：仅在国内站走付费链路时使用。
-     v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
-     保存当前订单 deal_names + 已选套餐 + 二维码 URL，供 PaymentPendingModal 渲染 QRCode。 */
+  /* 付费过程上下文：国内站走 bridge 中转页二维码方案；国际站走信用卡 hosted page 跳转。
+     保存当前订单 deal_names + 已选套餐 + 支付页 URL，供 PaymentPendingModal 渲染。 */
   const [paymentContext, setPaymentContext] = useState<{
     plan: PlanInfo;
     dealNames: string[];
-    bridgeUrl: string;
+    /** 国内站：中转页二维码 URL */
+    bridgeUrl?: string;
+    /** 国际站：信用卡 hosted page URL（getPassOrderUrl 返回的 pay_url） */
+    redirectUrl?: string;
+    /** 点石零元下单已完成，仅等待发货。 */
+    provisioningOnly?: boolean;
   } | null>(null);
+
+  /* 轮询超时标记：后台发货延迟超过 PAY_POLL_TIMEOUT_MS 时不静默停住，
+     改为在 PaymentPendingModal 提示「已收到支付、开通稍有延迟」并给手动重试入口。
+
+     重置时机放在「进入 paying」这一状态迁移处，而不是轮询 effect 体内：
+     该 effect 依赖 refreshPasses / t，它们引用变化会让 effect 重跑，
+     若在体内重置就会连同 startedAt 一起复位，导致超时提示永远不出现、轮询无限续命。 */
+  const [payPollTimedOut, setPayPollTimedOut] = useState(false);
+  useEffect(() => {
+    if (modalStep === "paying") setPayPollTimedOut(false);
+  }, [modalStep]);
 
   /* 引用快照供 useCallback 中读取最新 paymentContext，避免重复触发依赖 */
   const paymentContextRef = useRef(paymentContext);
@@ -2180,41 +2929,75 @@ export const SubscribePage = ({
   const isSubscribedRef = useRef(isSubscribed);
   isSubscribedRef.current = isSubscribed;
 
+  /* bots 的 ref 镜像 — 给 finalizeBot 的幂等保护用：
+     原窗口轮询与支付回跳页轮询可能同时命中同一个已发货 pass，
+     若不拦截会各建一个实例（用户还要为多余实例付费）。 */
+  const botsRef = useRef(bots);
+  botsRef.current = bots;
+
+  /* finalizeBot 的执行闸门：同一次支付只允许创建一个实例。
+     用 ref 而非 state：轮询回调里必须同步读到最新值，state 异步更新拦不住并发。 */
+  const finalizingRef = useRef(false);
+
   /* 重复使用的收尾逻辑：addBot + subscribe + navigate 。
-     供两个链路（免费试用 / 付费下单后）复用 */
+     供多个链路（免费试用 / 付费下单后 / 支付回跳）复用 */
   const finalizeBot = useCallback(async (plan: PlanInfo) => {
-    const createdBot = await addBot({
-      name: "我的Hermes",
-      personality: "默认设定",
-      personalityEmoji: "✨",
-      intro: "",
-      soulTemplateId: undefined,
-      status: "running",
-    });
-    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_SUCCEEDED, {
-      plan_id: plan.id,
-      plan_name: plan.name,
-      bot_status: createdBot.status,
-    });
-    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_PAY_SUCCESS, {
-      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
-      params: {
-        plan: plan.id,
+    /* 幂等闸门①：拦并发。原窗口轮询与支付回跳页轮询可能同时命中同一个已发货 pass。
+       注意闸门只覆盖单次执行窗口，finally 里必须复位：
+       这是 SPA，用户从 /agents 返回订阅页时组件不会重新挂载、ref 会保留，
+       若成功后不复位，用户下次购买会在第一行被静默 return，付了钱却毫无反应。
+       防「重复创建」靠的是下面的闸门②，不是这个标志位。 */
+    if (finalizingRef.current) return;
+    finalizingRef.current = true;
+    try {
+      /* 幂等闸门②：账号下已有实例说明发货后实例已建好（如原窗口先完成、或用户重复回跳），
+         此时只做跳转，不再创建。 */
+      const existingBot = botsRef.current[0];
+      if (existingBot) {
+        subscribe();
+        setModalStep("closed");
+        setSelectedPlan(null);
+        setPaymentContext(null);
+        navigate(getAgentCreatingPath(existingBot.id));
+        return;
+      }
+      const createdBot = await addBot({
+        name: "我的Hermes",
+        personality: "默认设定",
+        personalityEmoji: "✨",
+        intro: "",
+        soulTemplateId: undefined,
+        status: "running",
+      });
+      captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_SUCCEEDED, {
+        plan_id: plan.id,
         plan_name: plan.name,
-      },
-    });
-    trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
-      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
-      params: {
-        bot_id: createdBot.id,
-        plan: plan.id,
-      },
-    });
-    subscribe();
-    setModalStep("closed");
-    setSelectedPlan(null);
-    setPaymentContext(null);
-    navigate(getAgentCreatingPath(createdBot.id));
+        bot_status: createdBot.status,
+      });
+      trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_PAY_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+        params: {
+          plan: plan.id,
+          plan_name: plan.name,
+        },
+      });
+      trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+        params: {
+          bot_id: createdBot.id,
+          plan: plan.id,
+        },
+      });
+      subscribe();
+      setModalStep("closed");
+      setSelectedPlan(null);
+      setPaymentContext(null);
+      navigate(getAgentCreatingPath(createdBot.id));
+    } finally {
+      /* 无论成功失败都复位：失败时后续轮询要能重试，
+         成功时用户可能返回本页再次购买（SPA 不重新挂载，ref 会保留）。 */
+      finalizingRef.current = false;
+    }
   }, [addBot, subscribe, navigate]);
 
   /**
@@ -2294,6 +3077,117 @@ export const SubscribePage = ({
     setModalStep("paying");
   }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration]);
 
+  const startDianshiOrderAndPay = useCallback(async (plan: PlanInfo) => {
+    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        plan: plan.id,
+        plan_name: plan.name,
+        billing_period: aiDuration.period,
+      },
+    });
+    if (isSubscribed) {
+      await finalizeBot(plan);
+      return;
+    }
+
+    const order = await repositories.plans.createDianshiPassOrderAndPay({
+      bundle_id: plan.raw.bundle_id,
+      period: aiDuration.period,
+      time_unit: aiDuration.time_unit,
+    });
+    setPaymentContext({
+      plan,
+      dealNames: [order.deal_name],
+      provisioningOnly: true,
+    });
+    setSelectedPlan(plan);
+    setModalStep("paying");
+    await refreshPasses();
+  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans]);
+
+  /**
+   * 国际站信用卡支付链路（正式）。
+   *
+   * 与国内站 startPaidPassOrder 的区别：不走微信扫码，走信用卡 hosted page 跳转：
+   *   1. createPassOrder 拿 deal_names
+   *   2. getPassOrderUrl（PC 端 Bearer）拿 pay_url（信用卡支付页 URL）+ need_charge
+   *   3. need_charge=0 时零元订单已支付成功，直接接棒 finalize；
+   *      否则 window.open 新窗口打开支付页，进入 paying 阶段
+   *   4. paying 阶段轮询 listMyPasses，检测到新生效 pass 后 finalizeBot 接棒
+   *
+   * 抛错由 executeCreateBot 的 try/catch 统一走错误映射（realname_required / invite 等）。
+   */
+  const startIntlCardPay = useCallback(async (plan: PlanInfo, autoRenew: boolean) => {
+    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        plan: plan.id,
+        plan_name: plan.name,
+        billing_period: aiDuration.period,
+      },
+    });
+    if (isSubscribed) {
+      /* 已有有效 pass，直接创建实例即可 */
+      await finalizeBot(plan);
+      return;
+    }
+    /* 同步打开占位窗口：window.open 必须在用户手势同步调用栈内，跨 await（网络往返）后
+       会被浏览器弹窗拦截。先开 about:blank 占位，拿到 pay_url 后再赋值 location 跳转。 */
+    const payWindow = window.open("about:blank", "_blank");
+    try {
+      /* 1. 下单拿 deal_names。国际站为订阅制，auto_renew_flag 固定 auto_renew；
+         该字段只作用于新购订单的 goodsDetail.autoRenewFlag，是否签约由后端查绑卡状态决定。 */
+      const order = await repositories.plans.createPassOrder({
+        bundle_id: plan.raw.bundle_id,
+        period: aiDuration.period,
+        time_unit: aiDuration.time_unit,
+        auto_renew_flag: autoRenew ? "auto_renew" : "notify_and_manual_renew",
+      });
+      /* 2. 拉信用卡支付页 URL（PC 端 Bearer 鉴权）。
+         cancel_url / return_url 协议上可选（不传时 trade 用环境兜底 TRADE_BILLING_PAY_REDIRECT_URL），
+         但这里显式传当前页面地址，避免被兜底地址带到别的页面；
+         按协议要求去掉 query/hash，防止把 OAuth code / 一次性 ticket 带进计费回跳地址。
+
+         return_url 额外带 pay_return / pay_plan 标记：占位窗口被弹窗拦截时会走
+         window.location.assign 替换掉当前页，付款后回跳到的是一个全新页面，
+         原窗口的 paying 轮询已随之销毁。有标记才能在回跳页重新接棒
+         「等发货 → 自动建实例 → 跳管理页」，否则用户会停在订阅页且实例没建。 */
+      const payRedirectBase = (window.location.href.split("#")[0] ?? '').split("?")[0] ?? '';
+      const payReturnUrl = `${payRedirectBase}?${PAY_RETURN_QUERY_KEY}=1&${PAY_RETURN_PLAN_QUERY_KEY}=${encodeURIComponent(plan.id)}`;
+      const orderUrl = await repositories.plans.getPassOrderUrl({
+        deal_names: order.deal_names,
+        platform: "pc",
+        cancel_url: payRedirectBase,
+        return_url: payReturnUrl,
+      });
+      /* 3. need_charge=0：零元订单已支付成功，关闭占位窗口，直接接棒 finalize */
+      if (orderUrl.need_charge === 0) {
+        payWindow?.close();
+        await refreshPasses();
+        await finalizeBot(plan);
+        setModalStep("closed");
+        setSelectedPlan(null);
+        return;
+      }
+      /* 4. need_charge=1：占位窗口跳转信用卡 hosted page；pay_url 为空视为异常 */
+      if (!orderUrl.pay_url) {
+        throw new Error("trade generate pay url: empty pay_url");
+      }
+      if (payWindow) {
+        payWindow.location.href = orderUrl.pay_url;
+      } else {
+        /* 占位窗口被拦截（浏览器弹窗限制）：兜底当前页跳转 */
+        window.location.assign(orderUrl.pay_url);
+      }
+      setPaymentContext({ plan, dealNames: order.deal_names, redirectUrl: orderUrl.pay_url });
+      setModalStep("paying");
+    } catch (err) {
+      payWindow?.close();
+      throw err;
+    }
+  }, [isSubscribed, repositories.plans, finalizeBot, refreshPasses, aiDuration]);
+
   /* finalizeBot 的 ref 镜像 — 见 isSubscribedRef 的注释，目的相同：
      轮询 effect 内的 setInterval 闭包要拿最新 finalizeBot，又不能依赖它（会反复重建）。
      注意：必须放在 finalizeBot 声明之后，用一个独立 effect 来同步。 */
@@ -2302,9 +3196,52 @@ export const SubscribePage = ({
     finalizeBotRef.current = finalizeBot;
   }, [finalizeBot]);
 
+  /* 支付回跳接管：识别 return_url 带回的 pay_return 标记，直接进入 paying 态，
+     复用下方已验证的轮询链路等后台发货，发货后自动 finalizeBot 建实例并跳管理页。
+     顺带解决「回跳后订阅页不显示当前订阅」——轮询本身会持续 refreshPasses。
+
+     只跑一次：立刻清掉 query，避免用户刷新页面又触发一遍轮询。 */
+  const payReturnHandledRef = useRef(false);
+  useEffect(() => {
+    if (payReturnHandledRef.current) return;
+    if (!isGlobal) return;
+    /* 必须等鉴权与套餐列表就绪：planList 为空时找不到 plan，无法 finalize。 */
+    if (!authReady || !isAuthenticated) return;
+    if (planList.length === 0) return;
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(PAY_RETURN_QUERY_KEY) !== "1") return;
+
+    const planId = params.get(PAY_RETURN_PLAN_QUERY_KEY);
+    const plan = planId ? planList.find((item) => item.id === planId) : undefined;
+
+    payReturnHandledRef.current = true;
+    /* 先清 query 再进流程：保留 pathname + hash，避免刷新重复触发。 */
+    params.delete(PAY_RETURN_QUERY_KEY);
+    params.delete(PAY_RETURN_PLAN_QUERY_KEY);
+    const nextSearch = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`,
+    );
+
+    if (!plan) {
+      /* 拿不到套餐（planList 变更 / 链接被改）：不静默失败，至少刷一次让当前订阅显示出来。 */
+      void refreshPasses();
+      return;
+    }
+    /* dealNames 留空：回跳页没有原订单号，轮询只依赖 pass 状态，不需要它。 */
+    setSelectedPlan(plan);
+    setPaymentContext({ plan, dealNames: [] });
+    setModalStep("paying");
+  }, [authReady, isAuthenticated, planList, refreshPasses]);
+
   /* paying 阶段轮询 listMyPasses：代替 SDK callback。
-     轮询到有效 active pass 后自动 finalizeBot 接棒（用户无需再点「我已完成支付」）；
-     超时（PAY_POLL_TIMEOUT_MS）不主动报错，用户仍可手动点「我已完成支付」兜底。 */
+     轮询到有效 active pass 后自动 finalizeBot 接棒，用户无需任何手动确认。
+     超时（PAY_POLL_TIMEOUT_MS）只切换 UI 到「开通中」的耐心文案，不停止轮询——
+     手动确认按钮已移除，轮询是唯一的自动接棒途径，停了用户就只能刷新页面自救。 */
   useEffect(() => {
     if (modalStep !== "paying") return;
     const ctx = paymentContext;
@@ -2339,7 +3276,9 @@ export const SubscribePage = ({
         return;
       }
       if (Date.now() - startedAt > PAY_POLL_TIMEOUT_MS) {
-        window.clearInterval(timer);
+        /* 只切文案不停止轮询：手动确认按钮已移除，若停轮询，
+           发货慢的用户将永远等不到自动开通。轮询随弹窗关闭（cleanup）而终止。 */
+        if (!cancelled) setPayPollTimedOut(true);
       }
     }, PAY_POLL_INTERVAL_MS);
     return () => {
@@ -2350,7 +3289,7 @@ export const SubscribePage = ({
   /**
    * 总调度 — 根据站点路由到免费试用或付费下单，并统一出错处理
    */
-  const executeCreateBot = useCallback(async (plan: PlanInfo) => {
+  const executeCreateBot = useCallback(async (plan: PlanInfo, autoRenew = false) => {
     setSubscribingPlanId(plan.id);
     setError(null);
     captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_STARTED, {
@@ -2362,13 +3301,20 @@ export const SubscribePage = ({
     try {
       /* 国内站一律走付费下单链路（plan.skipPayment 已在 mapBundleToPlan 中按站点置为 false）；
          国际站维持「paidBillingActive 开关 + skipPayment」组合控制。 */
-      if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
-        /* 付费链路：startPaidPassOrder 只展示二维码并把弹窗切到 paying；
-           真正的 addBot + 跳转由两条接棒路径承接：
-             ① paying 阶段轮询到 active pass → 自动 finalizeBot
-             ② 用户点「我已完成支付」 → handleManualConfirm → finalizeBot
-           因此这里**不能**再继续往下做 addBot/navigate，否则用户还没付钱实例就建了 */
-        await startPaidPassOrder(plan);
+      if (isDianshiZeroAmountPlan(plan, paidBillingActive)) {
+        await startDianshiOrderAndPay(plan);
+      } else if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
+        if (isGlobal) {
+          /* 国际站付费链路：信用卡 hosted page 跳转（createPassOrder + getPassOrderUrl）。
+             startIntlCardPay 内部新窗口打开支付页 + 进入 paying 轮询接棒 finalizeBot，
+             这里不能继续往下 addBot/navigate，finalize 已处理跳转。 */
+          await startIntlCardPay(plan, autoRenew);
+        } else {
+          /* 国内站付费链路：startPaidPassOrder 只展示二维码并把弹窗切到 paying；
+             真正的 addBot + 跳转由 paying 阶段轮询接棒（轮询到 active pass → 自动 finalizeBot）。
+             因此这里**不能**再继续往下做 addBot/navigate，否则用户还没付钱实例就建了 */
+          await startPaidPassOrder(plan);
+        }
       } else {
         /* 免费链路：startTrialPass 内部已 await finalizeBot，addBot + 跳转一气呵成 */
         await startTrialPass(plan);
@@ -2404,7 +3350,21 @@ export const SubscribePage = ({
       }
       /* 特例 3：需要走续费路径（expired/isolated） → 引导到账号页 */
       if (isPassRequiresRenewError(code)) {
-        setError({ code, message: t("您的套餐已过期或进入隔离期，请前往「我的账号」续费。") });
+        const message = isGlobal
+          ? code === "PASS_ISOLATED"
+            ? t("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")
+            : t("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")
+          : code === "PASS_ISOLATED"
+            ? t("当前套餐已进入隔离期，请前往我的账号续费恢复使用，或在账号页销毁后重新购买。")
+            : t("当前套餐已到期，请前往我的账号续费后继续使用。");
+        setError({
+          code,
+          message,
+          action: {
+            label: isGlobal ? t("管理套餐") : t("前往续费"),
+            href: ACCOUNT_PATH,
+          },
+        });
         setModalStep("closed");
         setSelectedPlan(null);
         setPaymentContext(null);
@@ -2418,7 +3378,7 @@ export const SubscribePage = ({
     } finally {
       setSubscribingPlanId(null);
     }
-  }, [paidBillingActive, startPaidPassOrder, startTrialPass, t]);
+  }, [paidBillingActive, startDianshiOrderAndPay, startPaidPassOrder, startIntlCardPay, startTrialPass, t]);
 
   const handleSubscribe = useCallback((planId: string) => {
     const plan = planList.find((p) => p.id === planId);
@@ -2516,31 +3476,16 @@ export const SubscribePage = ({
   /**
    * 「确认订单」点「支付」 → 发起 createPassOrder 跳转 jifei（走付费链路主入口）
    */
-  const handlePay = useCallback(() => {
+  const handlePay = useCallback((autoRenew: boolean) => {
     if (!selectedPlan) return;
-    void executeCreateBot(selectedPlan);
+    /* 占位付费卡为纯前端演示：确认弹窗内部已处理支付成功展示，绝不能拿假 bundle_id 调后端下单。
+       这里再兜底一层，防止误触真实下单链路。 */
+    if (selectedPlan.id.startsWith("placeholder-")) return;
+    void executeCreateBot(selectedPlan, autoRenew);
   }, [selectedPlan, executeCreateBot]);
 
-  /**
-   * 用户在「付费进行中」弹窗点「我已完成支付」 → 直接刷新 pass 列表 + finalize。
-   * 仅在 fallback 模式（新窗口拉起、SDK 不可用）会出现此按钮；SDK 模式由 callback 驱动。
-   * 后端 v1.7.30 明确「前端不需要轮询支付状态」，只要刷一次 pass 即可。
-   */
-  const handleManualConfirm = useCallback(async () => {
-    const ctx = paymentContextRef.current;
-    if (!ctx) return;
-    try {
-      await refreshPasses();
-      await finalizeBot(ctx.plan);
-    } catch (err) {
-      const fallbackMsg = err instanceof Error ? err.message : t("创建实例失败，请稍后重试。");
-      console.error("[subscribe] manual confirm finalize failed", err);
-      setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
-      setModalStep("closed");
-      setSelectedPlan(null);
-      setPaymentContext(null);
-    }
-  }, [refreshPasses, finalizeBot, t]);
+  /* 「我已完成支付」手动确认入口已移除：轮询是唯一自动接棒途径，
+     超时后也持续轮询（见上方 paying 轮询 effect），用户无需手动确认。 */
 
   /* 「刷新」按钮：重新下单生成一份新的 deal_name + auth_code，重新生成二维码。
      主要场景：二维码接近/已过期、后台 auth_code 已被 Consume、用户重新扫码。
@@ -2604,7 +3549,8 @@ export const SubscribePage = ({
                 <>
                   {t("当前LightVela为内测阶段，内测期间限时免费。")}
                   <a
-                    href="/docs/announcements/public-beta/"
+                    href={isGlobal ? "https://lightvela.ai/docs/overview/" : "/docs/announcements/public-beta/"}
+                    {...(isGlobal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                     style={{
                       color: colors.primary,
                       fontWeight: 500,
@@ -2650,6 +3596,11 @@ export const SubscribePage = ({
             >
               <p
                 style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
                   padding: "10px 16px",
                   borderRadius: 8,
                   textAlign: "center",
@@ -2670,7 +3621,19 @@ export const SubscribePage = ({
                     </AppLink>{" "}
                     {t("进行实名。")}
                   </>
-                ) : error.message}
+                ) : (
+                  <>
+                    <span>{error.message}</span>
+                    {error.action && (
+                      <AppLink
+                        to={error.action.href}
+                        style={{ color: "#cf3d4c", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
+                      >
+                        {error.action.label}
+                      </AppLink>
+                    )}
+                  </>
+                )}
               </p>
             </motion.div>
           )}
@@ -2744,32 +3707,51 @@ export const SubscribePage = ({
               <p style={{ fontSize: 14, color: colors.warmGray300 }}>{t("暂无在售套餐，敬请期待")}</p>
             </div>
           ) : (
-            <motion.div
-              variants={staggerContainer}
-              initial="hidden"
-              animate="visible"
-              style={{
-                display: "grid",
-                gridTemplateColumns: planTiers.length >= 3 ? "repeat(3, 1fr)" : `repeat(${planTiers.length}, 1fr)`,
-                gap: 24,
-                maxWidth: 1080,
-                margin: "0 auto",
-              }}
-            >
-              {planTiers.map((tier, idx) => (
-                <PlanCard
-                  key={tier.key}
-                  variants={tier.variants}
-                  index={idx}
-                  onSubscribe={(planId) => void handleSubscribe(planId)}
-                  subscribingPlanId={subscribingPlanId}
-                  currentBots={bots.length}
-                  reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
-                  /* 已有生效订阅或有智能体：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
-                  subscriptionLocked={isSubscribed || bots.length > 0}
-                />
-              ))}
-            </motion.div>
+            <>
+              <motion.div
+                variants={staggerContainer}
+                initial="hidden"
+                animate="visible"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: planTiers.length >= 3 ? "repeat(3, 1fr)" : `repeat(${planTiers.length}, 1fr)`,
+                  gap: 24,
+                  maxWidth: 1080,
+                  margin: "0 auto",
+                }}
+              >
+                {planTiers.map((tier, idx) => (
+                  <PlanCard
+                    key={tier.key}
+                    variants={tier.variants}
+                    index={idx}
+                    onSubscribe={(planId) => void handleSubscribe(planId)}
+                    subscribingPlanId={subscribingPlanId}
+                    currentBots={bots.length}
+                    reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
+                    /* 已有生效订阅或有智能体：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
+                    subscriptionLocked={isSubscribed || bots.length > 0}
+                  />
+                ))}
+              </motion.div>
+              {isCN && (
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
+                  <AppLink
+                    to={CN_REFUND_RULES_PATH}
+                    style={{
+                      color: colors.warmGray500,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      lineHeight: 1.5,
+                      textDecoration: "underline",
+                      textUnderlineOffset: 3,
+                    }}
+                  >
+                    {t("退款规则")}
+                  </AppLink>
+                </div>
+              )}
+            </>
           )}
         </section>
       </main>
@@ -2779,22 +3761,46 @@ export const SubscribePage = ({
       {/* Payment Modals */}
       <AnimatePresence>
         {modalStep === "confirm" && selectedPlan && (
-          <ConfirmOrderModal
-            key="confirm"
-            plan={selectedPlan}
-            billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
-            onCancel={handleCloseModal}
-            onPay={handlePay}
-          />
+          isDianshiZeroAmountPlan(selectedPlan, paidBillingActive) ? (
+            <ConfirmOrderModal
+              key="confirm-dianshi"
+              plan={selectedPlan}
+              billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
+              showPaymentMethod={false}
+              actionLabel={t("确认开通")}
+              onCancel={handleCloseModal}
+              onPay={() => handlePay(false)}
+            />
+          ) : isGlobal ? (
+            <CreditCardConfirmOrderModal
+              key="confirm"
+              plan={selectedPlan}
+              billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
+              demoMode={selectedPlan.id.startsWith("placeholder-")}
+              paying={subscribingPlanId === selectedPlan.id}
+              onCancel={handleCloseModal}
+              onPay={handlePay}
+            />
+          ) : (
+            <ConfirmOrderModal
+              key="confirm"
+              plan={selectedPlan}
+              billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
+              onCancel={handleCloseModal}
+              onPay={() => handlePay(false)}
+            />
+          )
         )}
         {modalStep === "paying" && paymentContext && (
           <PaymentPendingModal
             key="paying"
             bridgeUrl={paymentContext.bridgeUrl}
+            redirectUrl={paymentContext.redirectUrl}
             onCancel={handleCloseModal}
-            onManualConfirm={handleManualConfirm}
             onRefresh={() => void handleRefreshPayment()}
             refreshing={paymentRefreshing}
+            timedOut={payPollTimedOut}
+            provisioningOnly={paymentContext.provisioningOnly}
             t={t}
           />
         )}

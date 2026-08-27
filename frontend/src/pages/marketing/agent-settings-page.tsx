@@ -23,6 +23,7 @@ import {
   TerminalSquare,
   Download,
   Files,
+  FlaskConical,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -31,9 +32,10 @@ import {
   UserRound,
   Wand2,
   Wrench,
+  SlidersHorizontal,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ComponentType, type ReactNode } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -43,14 +45,32 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
+import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
-import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
+// agent-config 本地模块统一从 barrel 导入。
+// 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
+// 治本（见该文件说明），barrel 顶层已无 SSR 危险依赖，页面层可安全静态导入。
+import {
+  createLighthouseConfig,
+  useModelProviders,
+  createLocalCommandExecutor,
+  type ICommandExecutor,
+  type IProductConfig,
+} from "@/pages/marketing/agent-config";
+import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";
+import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
+import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
-import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+// 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
+import type {
+  LightVelaMultiSessionOptions,
+  LightVelaSession,
+  LightVelaSessionActions,
+} from "./agent-chat-panel";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -58,13 +78,14 @@ import {
   getAgentSectionHref,
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
-import type { WorkerActionStatusResult } from "@/repositories/types";
-import {
-  createMonoDebugExecAdapter,
-} from "@/pages/marketing/agent-tat-adapter";
+import type { Repositories, WorkerActionStatusResult } from "@/repositories/types";
+import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
+import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
+import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
+import { shouldUseEnglishProviderData } from "@/pages/marketing/agent-provider-locale";
 import {
   fetchHermesMemorySnapshot,
   getHermesMemoryLimitBounds,
@@ -119,6 +140,12 @@ import {
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/agent-reset-config";
 import { toast } from "@/lib/toast";
+import { isPaidBillingEnabled } from "@/lib/billing-flow";
+import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renewal";
+import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
+import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
+import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
@@ -137,10 +164,45 @@ const TatHermesWebPanel = lazy(() =>
 const TerminalPanel = lazy(() =>
   import("@/pages/marketing/agent-terminal-panel").then((module) => ({ default: module.TerminalPanel })),
 );
+const AgentWebsitePanel = lazy(() =>
+  import("@/pages/marketing/agent-website-panel").then((module) => ({ default: module.AgentWebsitePanel })),
+);
+const AgentCommonSettingsPanel = lazy(() =>
+  import("@/pages/marketing/agent-common-settings-panel").then((module) => ({ default: module.AgentCommonSettingsPanel })),
+);
+
+// ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
+// 与其他面板一致。内部依赖全部指向本地 config/hooks，仅 scripts 命令生成走
+// SDK `/scripts` 子入口（纯 TS、无浏览器副作用）。
+const AgentChannelPanel = lazy(() =>
+  import("@/pages/marketing/agent-channel-panel").then((module) => ({ default: module.ChannelPanel })),
+);
+
+type Translate = (text: string, options?: Record<string, unknown>) => string;
+
+function getPassExpiryReminderCopy(reminder: PassExpiryReminder, t: Translate) {
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const oneHourMs = 60 * 60 * 1000;
+  const label = reminder.label === "临近到期" ? t("临近到期") : t("即将到期");
+
+  if (reminder.remainingMs < oneDayMs) {
+    const hours = Math.ceil(reminder.remainingMs / oneHourMs);
+    return {
+      label,
+      tooltip: hours < 1 ? t("剩余不足 1 小时到期") : t("剩余 {{hours}} 小时到期", { hours }),
+    };
+  }
+
+  return {
+    label,
+    tooltip: t("剩余 {{days}} 天到期", { days: Math.ceil(reminder.remainingMs / oneDayMs) }),
+  };
+}
 
 type TeaSdkInstanceInfo = {
   InstanceId: string;
   RegionId: number;
+  Zone?: string;
 };
 
 type TeaSdkFeatureFlags = {
@@ -159,235 +221,94 @@ type TeaSdkFeatureFlags = {
   qqbotplugin: boolean;
 };
 
-type TeaSdkProductConfig = {
-  acliProduct: "lightvela";
-  runCommand: unknown;
-  getInvocationTask: unknown;
-  [key: string]: unknown;
-};
-
-type TeaSdkPanelProps = {
-  instance: TeaSdkInstanceInfo;
-  featureFlags: TeaSdkFeatureFlags;
-  productConfig: TeaSdkProductConfig;
-};
-
-type TeaSdkRuntime = {
-  ChannelPanel: ComponentType<TeaSdkPanelProps>;
-  ModelPanel: ComponentType<TeaSdkPanelProps>;
-  /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
-  useModelProviders: (params?: {
-    isI18n?: boolean;
-    useEnglish?: boolean;
-    rainbowBaseUrl?: string;
-    app?: string;
-  }) => IModelProvider[] | undefined;
-  createProductConfig: (args: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-    modelProviders?: IModelProvider[];
-  }) => TeaSdkProductConfig;
-  getGatewayRestartCommand: () => string;
-  getProviderSaveCommand: (config: {
-    name: string;
-    baseUrl: string;
-    api: string;
-    apiKey: string;
-    models: Array<{ id: string; name: string }>;
-  }) => string;
-  getModelSwitchCommand: (modelFullId: string) => string;
-};
-
-let teaSdkRuntimePromise: Promise<TeaSdkRuntime> | null = null;
-let teaSdkRuntimeCache: TeaSdkRuntime | null = null;
-let teaSdkRuntimeError: Error | null = null;
-
-function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
-  if (teaSdkRuntimeCache) {
-    return Promise.resolve(teaSdkRuntimeCache);
-  }
-  if (!teaSdkRuntimePromise) {
-    teaSdkRuntimePromise = (async () => {
-      // Keep TEA SDK out of the module graph evaluated during Next static generation.
-      // The SDK reads browser globals at module scope, so it must be initialized
-      // only inside the hydrated agents page before its panels render.
-      await import("@/lib/i18n-env");
-      await import("@tencent/tea-sdk-lightclaw/styles");
-      const [sdk, scriptsModule] = await Promise.all([
-        import("@tencent/tea-sdk-lightclaw"),
-        import("@tencent/tea-sdk-lightclaw/scripts"),
-      ]);
-      const lightVelaHermesScripts = scriptsModule.createLightClawScripts();
-      const hermesScripts = lightVelaHermesScripts.hermes;
-      const hermesGatewayCommands = hermesScripts.gateway;
-      const hermesModelCommands = hermesScripts.model;
-      const useModelProviders: TeaSdkRuntime["useModelProviders"] =
-        typeof sdk.useModelProviders === "function"
-          ? sdk.useModelProviders
-          : () => undefined;
-
-      const runtime: TeaSdkRuntime = {
-        ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        useModelProviders,
-        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
-          const config = sdk.createLighthouseConfig({
-            agentType: "hermes",
-            supportsTencentCloudApi: false,
-            isI18n: isGlobal,
-            modelProviders,
-          });
-          // SDK 的 getFilteredModelProviderList 用 IS_I18N（来自 window.LOGIN_INFO.area）
-          // 做国内/国际站过滤，但 mono2 不设置 window.LOGIN_INFO，导致 IS_I18N 恒为 false，
-          // 国际站会错误隐藏 OpenAI/Anthropic 等海外 provider。这里用 mono2 的 isGlobal
-          // 覆盖过滤逻辑，绕过 SDK 的模块级常量。
-          const hiddenProviders = isGlobal
-            ? sdk.I18N_HIDDEN_PROVIDERS
-            : sdk.DOMESTIC_HIDDEN_PROVIDERS;
-          return {
-            ...config,
-            acliProduct: "lightvela",
-            runCommand,
-            getInvocationTask,
-            getFilteredModelProviders: (region?: string) => {
-              const filtered = config.modelProviders.filter(
-                (p) => !hiddenProviders.includes(p.value),
-              );
-              if (region === "ap-hongkong") {
-                return filtered.filter(
-                  (p) => !sdk.HK_REGION_HIDDEN_PROVIDERS.includes(p.value),
-                );
-              }
-              return filtered;
-            },
-          };
-        },
-        getGatewayRestartCommand: () => hermesGatewayCommands.getRestartCommand(),
-        getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
-        getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
-      };
-      teaSdkRuntimeCache = runtime;
-      teaSdkRuntimeError = null;
-      return runtime;
-    })().catch((error: unknown) => {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
-      teaSdkRuntimeError = normalizedError;
-      teaSdkRuntimePromise = null;
-      throw normalizedError;
-    });
-  }
-  return teaSdkRuntimePromise;
-}
-
-function TeaSdkRuntimeLoading() {
-  const t = useT();
-
-  return (
-    <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
-      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-      {t("正在加载配置面板…")}
-    </div>
-  );
-}
-
+/**
+ * 通道/模型配置面板接入层。
+ *
+ * ChannelPanel / ModelPanel 已完全本地化（agent-config），其 productConfig、
+ * scriptCommands 均可由组件内部 createLighthouseConfig()/createLightClawScripts()
+ * 兜底。宿主这里只需补两处组件默认值给不了的差异：
+ *   1. isI18n：国际站 provider 过滤（国内/国际站模型列表不同）
+ *   2. commandExecutor：mono2 的本地命令执行器（直连 debug/exec，脱离 SDK TAT）
+ *
+ * 用本地 useModelProviders 拉取模型列表、本地 createLighthouseConfig 生成
+ * IProductConfig，再叠加宿主命令执行器，得到类型正确的 productConfig +
+ * commandExecutor 直接传入 lazy Panel（Suspense 兜加载态）。
+ */
 function TeaSdkSettingsPanel({
   kind,
   instance,
   featureFlags,
-  productConfigArgs,
+  commandExecutor,
+  execDebugCommand,
   useEnglish,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  commandExecutor?: ICommandExecutor;
+  execDebugCommand?: Repositories["bots"]["execDebugCommand"];
+  /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
 }) {
   const t = useT();
-  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
-  const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
+  const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
 
-  useEffect(() => {
-    if (teaSdkRuntimeCache) {
-      setRuntime(teaSdkRuntimeCache);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    void loadTeaSdkRuntime()
-      .then((nextRuntime) => {
-        if (!cancelled) setRuntime(nextRuntime);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
+  const productConfig = useMemo<IProductConfig>(() => {
+    // 本地 createLighthouseConfig 内部的 getFilteredModelProviders 已用 isI18n
+    // 正确过滤国内/国际站 provider，无需再套 SDK 那套 IS_I18N hidden-providers hack。
+    const config = createLighthouseConfig({
+      agentType: "hermes",
+      supportsTencentCloudApi: false,
+      isI18n: isGlobal,
+      modelProviders,
+    });
+    return {
+      ...config,
+      acliProduct: "lightvela",
     };
-  }, []);
+  }, [modelProviders]);
 
-  if (error) {
+  if (kind === "model") {
+    if (!execDebugCommand) {
+      return (
+        <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {rawT("未找到当前 Hermes Agent 实例。")}
+        </div>
+      );
+    }
     return (
-      <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {t("加载配置面板失败：{{message}}", { message: error })}
-      </div>
+      <AgentModelConfigPanel
+        botId={instance.InstanceId}
+        execDebugCommand={execDebugCommand}
+        providers={resolveProductModelProviderOptions(productConfig, modelProviders, {
+          region: instance.Zone,
+          regionId: instance.RegionId,
+        })}
+        isGlobalRegion={isGlobal}
+      />
     );
   }
 
-  if (!runtime) {
-    return <TeaSdkRuntimeLoading />;
-  }
-
-  return (
-    <TeaSdkSettingsPanelReady
-      runtime={runtime}
-      kind={kind}
-      instance={instance}
-      featureFlags={featureFlags}
-      productConfigArgs={productConfigArgs}
-      useEnglish={useEnglish}
-    />
-  );
-}
-
-/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
-function TeaSdkSettingsPanelReady({
-  runtime,
-  kind,
-  instance,
-  featureFlags,
-  productConfigArgs,
-  useEnglish,
-}: {
-  runtime: TeaSdkRuntime;
-  kind: "channel" | "model";
-  instance: TeaSdkInstanceInfo;
-  featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  useEnglish: boolean;
-}) {
-  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
-  const productConfig = useMemo(
-    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
-    [runtime, productConfigArgs, modelProviders],
-  );
-
-  const Panel = kind === "channel" ? runtime.ChannelPanel : runtime.ModelPanel;
-
+  // 面板经 lazy() 动态加载，SSR 静态导出预渲染时走 Suspense fallback、不求值
+  // 面板模块；客户端 hydrate 后才真正 import。scripts SDK 的 window 副作用也已
+  // 在 useAgentInternals 内动态 import 治本，无需再手动区分 SSR / 客户端。
   return (
     <StableTeaSdkPanelHost>
-      <Panel
-        instance={instance}
-        featureFlags={featureFlags}
-        productConfig={productConfig}
-      />
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {t("正在加载配置面板…")}
+          </div>
+        }
+      >
+        <AgentChannelPanel
+          instance={instance}
+          featureFlags={featureFlags}
+          productConfig={productConfig}
+          commandExecutor={commandExecutor}
+        />
+      </Suspense>
     </StableTeaSdkPanelHost>
   );
 }
@@ -628,8 +549,16 @@ void _staggerContainer;
 
 /* ─── Navbar ─── */
 
-const SHOW_AGENTCHAT_ENTRY = true;
 const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "channel";
+
+/**
+ * 「前一个设置菜单」记忆（模块级）。
+ * Why 模块级而非 useRef：/agents/[section] 路由在 section 间切换时页面组件会重挂载，
+ * useRef 被重置回初始值，导致从对话切回设置时永远落在「通道」；模块级变量跨重挂载存活，
+ * 且仅在本组件的 effect / 点击 handler（纯客户端时机）读写，无 SSR 跨请求泄漏。
+ * 刷新页面自然回到初始值（channel），符合 tab 状态不做持久化的约定。
+ */
+let lastSettingsSection: AgentSettingsSectionId = DEFAULT_AGENT_SECTION;
 
 /* ─── Section Card Wrapper ─── */
 
@@ -994,7 +923,7 @@ const MemoryPanel = ({
             </div>
             <MemoryEntries
               entries={visibleEntries}
-              emptyText={activeTab === "memory" ? t("暂无 Agent 记忆。") : t("暂无用户画像。")}
+              emptyText={activeTab === "memory" ? t("MEMORY.md 文件为空") : t("USER.md 文件为空")}
             />
           </div>
         </>
@@ -2487,6 +2416,21 @@ const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
 const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model"]);
 
+/**
+ * 会话是否可删除。
+ *
+ * 产品决策：默认会话（`chatId === ""`）不可删除。它是列表的兜底项——「新增会话」
+ * 按钮位于 SDK 面板右上角，若允许把默认会话也删掉，用户可能删空列表，失去唯一
+ * 的新增入口，无法再发起新会话。因此默认会话必须始终保留。
+ *
+ * 技术背景：`chatId === ""` 是 SDK 的合法默认会话标识（`resolveFallbackChatId`
+ * 正是靠 `session.chatId === ""` 定位它）。SDK 1.4.1 的删除链路恰好也用 truthiness
+ * 拦掉了空串（`deleteSession` / `deleteChat` 都是 `if (!chatId) return`），所以即便
+ * 宿主不做这道判定，请求也不会发出。但这属于 SDK 的实现细节，不能作为产品契约
+ * 依赖——宿主仍需显式守门，避免将来 SDK 修正 `!chatId` 后默认会话突然变为可删。
+ */
+const canDeleteSession = (session: LightVelaSession) => session.chatId !== "";
+
 type WorkspaceConfirmState =
   | { kind: "export" }
   | { kind: "import"; file: File | null };
@@ -2558,15 +2502,31 @@ export const AgentSettingsPage = ({
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass } = useOpenClaw();
   const repositories = useRepositories();
+  const paidBillingEnabled = usePaidBillingEnabled();
+  const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
+  const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
   const {
     commandLifecycle: automationModelCommandLifecycle,
     confirmationDialog: automationModelSwitchDialog,
   } = useAutomationAwareModelSwitch();
+  const qqbotGroupPolicyCommandLifecycle = useMemo(
+    () => createQqbotGroupPolicyCommandLifecycle(),
+    [],
+  );
+  const sdkCommandLifecycle = useMemo(
+    () => composeDebugExecCommandLifecycles(
+      automationModelCommandLifecycle,
+      qqbotGroupPolicyCommandLifecycle,
+    ),
+    [automationModelCommandLifecycle, qqbotGroupPolicyCommandLifecycle],
+  );
   // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
   const { session } = useSession();
   const accountId = session.user?.id ?? "";
+  const renewalRealnameVerified = isRenewalRealnameVerified(session.user, realnamePhoneVerificationEnabled);
 
   useEffect(() => {
     document.documentElement.classList.add("lw-settings-scrollbar-stable");
@@ -2604,17 +2564,183 @@ export const AgentSettingsPage = ({
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
-  useEffect(() => {
-    if (!TEA_SDK_SECTIONS.has(activeSection)) return;
-    void loadTeaSdkRuntime().catch(() => {
-      // The visible settings panel reports the concrete loading error.
-    });
-  }, [activeSection]);
-
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [isAgentActionMenuOpen, setIsAgentActionMenuOpen] = useState(false);
+  const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
+
+  /* ── 侧边栏「对话/设置」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
+  /** tab 仅切侧边栏内容，右侧主区始终按当前路由渲染；初始值随路由推导，不做持久化。 */
+  const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
+  const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
+  const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
+  /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定（SDK 侧会驱动默认会话）。 */
+  const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
+  /** SDK 会话动作句柄（renameSession / deleteSession）。 */
+  const [chatSessionActions, setChatSessionActions] = useState<LightVelaSessionActions | null>(null);
+  /** 行内重命名状态：renamingChatId 非空表示该项处于编辑态。 */
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renamingDraft, setRenamingDraft] = useState("");
+  /** 三点菜单当前展开的会话。 */
+  const [openSessionMenuChatId, setOpenSessionMenuChatId] = useState<string | null>(null);
+  /** 待删除会话（非空表示弹出删除二次确认）。 */
+  const [sessionToDelete, setSessionToDelete] = useState<LightVelaSession | null>(null);
+  const sessionMenuRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 记录「前一个点击的设置菜单」：切到「对话」再回「设置」时，主区回到该菜单而非固定通道。
+   * 写入模块级 lastSettingsSection（见其声明处的重挂载说明）。
+   */
+  useEffect(() => {
+    if (activeSection !== "chat") {
+      lastSettingsSection = activeSection;
+    }
+  }, [activeSection]);
+
+  /**
+   * tab 点击联动主区导航（对齐产品确认的交互）：
+   * - 点「设置」：若当前在对话页，回到前一个设置菜单（无记忆则通道）；
+   * - 点「对话」：若当前不在对话页，进入对话页，并默认选中第一个会话。
+   */
+  const handleSidebarSettingsTabClick = () => {
+    setSidebarTab("settings");
+    if (activeSection === "chat") {
+      navigate(
+        getAgentSectionHref(AGENT_SECTION_PATH_BY_ID[lastSettingsSection], searchParams),
+      );
+    }
+  };
+
+  const handleSidebarChatTabClick = () => {
+    setSidebarTab("chat");
+    if (activeSection !== "chat") {
+      navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
+      // 默认选中第一个对话；若 SDK 尚未回传会话列表，则保持 undefined 由 SDK 驱动默认会话。
+      if (selectedChatId == null && chatSessions.length > 0) {
+        setSelectedChatId(chatSessions[0]?.chatId);
+      }
+    }
+  };
+
+  /**
+   * 多会话受控桥接。
+   *
+   * 三个回调必须用 useCallback 稳定引用，不能内联在 useMemo 里。
+   * Why：SDK 的 actions effect 把回调**引用**放进了依赖数组：
+   *
+   *   useEffect(() => {
+   *     const onSessionActionsChange = multiSession?.onSessionActionsChange;
+   *     if (!enabled || !onSessionActionsChange) return undefined;
+   *     onSessionActionsChange({ renameSession, deleteSession });
+   *     return () => onSessionActionsChange(null);   // ← cleanup 会置 null
+   *   }, [..., multiSession?.onSessionActionsChange, ...]);
+   *
+   * 回调若内联，则每次 selectedChatId 变化都会产生新引用 → effect 重跑 →
+   * 先 cleanup 成 null 再重新赋值，导致 chatSessionActions 在**每次切换会话时
+   * 短暂为 null**：重命名/删除菜单项会闪一下禁用，且此刻点击会静默失效
+   * （`chatSessionActions?.deleteSession` 走 optional chaining 直接跳过）。
+   *
+   * selectedChatId 仍需随值更新——SDK 的 switchChat effect 依赖的是它的**值**
+   * （`multiSession?.selectedChatId`）而非对象引用，因此对象重建不会误触发切换。
+   * 另两个回调 SDK 内部走 ref（onSelectedChatIdChangeRef），本就不受引用变化影响，
+   * 但一并稳定化以免后续版本改成直接依赖。
+   */
+  const handleChatSessionStateChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
+  >(({ sessions, loading }) => {
+    setChatSessions(sessions);
+    setChatSessionsLoading(loading);
+  }, []);
+
+  const handleChatSelectedChatIdChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSelectedChatIdChange"]>
+  >((chatId) => {
+    // 注意事项 2：收到值必须无条件写回，否则受控状态与 SDK 失步。
+    // 不要在此加真值守卫——空串是合法默认会话，会被误当成"无效值"丢弃。
+    setSelectedChatId(chatId);
+  }, []);
+
+  const handleChatSessionActionsChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSessionActionsChange"]>
+  >((actions) => {
+    setChatSessionActions(actions);
+  }, []);
+
+  const chatMultiSessionBridge = useMemo<LightVelaMultiSessionOptions>(
+    () => ({
+      selectedChatId,
+      onSessionStateChange: handleChatSessionStateChange,
+      onSelectedChatIdChange: handleChatSelectedChatIdChange,
+      onSessionActionsChange: handleChatSessionActionsChange,
+    }),
+    [selectedChatId, handleChatSessionStateChange, handleChatSelectedChatIdChange, handleChatSessionActionsChange],
+  );
+
+  const startSessionRename = (session: LightVelaSession) => {
+    setOpenSessionMenuChatId(null);
+    setRenamingChatId(session.chatId);
+    setRenamingDraft(session.title || "");
+  };
+
+  const commitSessionRename = () => {
+    const chatId = renamingChatId;
+    if (chatId == null) return;
+    const nextTitle = renamingDraft.trim();
+    setRenamingChatId(null);
+    setRenamingDraft("");
+    if (nextTitle) chatSessionActions?.renameSession(chatId, nextTitle);
+  };
+
+  const cancelSessionRename = () => {
+    setRenamingChatId(null);
+    setRenamingDraft("");
+  };
+
+  const openSessionDeleteConfirm = (session: LightVelaSession) => {
+    if (!canDeleteSession(session)) return;
+    setOpenSessionMenuChatId(null);
+    setSessionToDelete(session);
+  };
+
+  const confirmSessionDelete = () => {
+    if (!sessionToDelete) return;
+    // 再次守门：SDK 会静默丢弃 chatId === "" 的删除（见 canDeleteSession 注释），
+    // 这里挡住可避免「弹窗关了但会话还在」的假成功。
+    if (!canDeleteSession(sessionToDelete)) {
+      setSessionToDelete(null);
+      return;
+    }
+    chatSessionActions?.deleteSession(sessionToDelete.chatId);
+    setSessionToDelete(null);
+  };
+
+  const cancelSessionDelete = () => {
+    setSessionToDelete(null);
+  };
+
+  useEffect(() => {
+    // chatId === "" 是合法默认会话，判定只能用 == null（SDK 对接注意事项 1）。
+    // 用 truthiness 会让默认会话的菜单打开后无法通过点击外部 / Esc 关闭。
+    if (openSessionMenuChatId == null) return undefined;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!sessionMenuRef.current?.contains(event.target as Node)) {
+        setOpenSessionMenuChatId(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenSessionMenuChatId(null);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openSessionMenuChatId]);
+
   const agentActionMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isAgentActionMenuOpen) return undefined;
@@ -2645,6 +2771,16 @@ export const AgentSettingsPage = ({
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const activeBotStatus = activeBot?.status;
+  const passExpiryReminder = useMemo(
+    () => (isGlobal || paidBillingActive ? getPassExpiryReminder(activePass) : null),
+    [activePass, paidBillingActive],
+  );
+  const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
+  const passExpiryTooltipId = useId();
+  const handleRenewPassSuccess = useCallback(async () => {
+    setRenewPassModalOpen(false);
+    await refreshPasses();
+  }, [refreshPasses]);
   const isInitialBotsLoading = shouldShowAgentSettingsDataLoading({
     botsLoading,
     isCreating,
@@ -2654,16 +2790,71 @@ export const AgentSettingsPage = ({
   /**
    * AgentChat（LightVela）启动 token：
    * - 接口：`POST /v1/instances/:instanceId/agentchat/launch-token`，需带 LightClaw Bearer 登录态
-   * - TTL：300 秒；过期前 60 秒自动续期
-   * - 仅在用户进入 chat tab 且 activeBot 存在时拉取，避免无意义请求
-   * - 401 / 网络错误：状态置为 error，由 chat tab UI 提示并提供重试
+   * - TTL 由后端 `expires_at` 决定（默认 24h）；本页不再维护 setTimeout 续期
+   * - 续期改由 SDK 热更新机制驱动，经 refreshLaunchToken 拉新 token，不写本页 state（不重渲染 / 重连）
+   * - 首帧仅拉取一次写 state 供面板挂载；仅在 chat tab 且 activeBot 存在时拉取
+   * - 401 / 网络错误：状态置为 error，由 UI 提示并重试
    */
   const [launchToken, setLaunchToken] = useState<string | null>(null);
+  // 首帧 token 过期时刻（Unix 秒；后端未下发为 null），下传给面板判断复用。
+  const [launchTokenExpiresAt, setLaunchTokenExpiresAt] = useState<number | null>(null);
   const [launchTokenStatus, setLaunchTokenStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [launchTokenError, setLaunchTokenError] = useState<string | null>(null);
   const [launchTokenRefreshTick, setLaunchTokenRefreshTick] = useState(0);
 
   const activeBotId = activeBot?.id;
+
+  /**
+   * 拉取一个 launch token（纯请求，不碰 state），供首帧拉取与 SDK 续期回调共用。
+   * 返回 token 及过期时刻（expiresAt，Unix 秒；后端未返回为 undefined），失败抛错。
+   */
+  const fetchLaunchTokenValue = useCallback(
+    async (botId: string, signal?: AbortSignal): Promise<{ token: string; expiresAt?: number }> => {
+      const baseUrl = resolveConfiguredAuthApiBaseUrl();
+      if (!baseUrl) {
+        throw new Error(AUTH_SERVICE_UNAVAILABLE_MESSAGE);
+      }
+      const authToken = readStoredAuthToken();
+      if (!authToken) {
+        throw new Error("未登录，无法获取 AgentChat 启动 token");
+      }
+
+      const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(botId)}/agentchat/launch-token`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: "{}",
+        signal,
+      });
+
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const body = await response.json() as { code?: string; message?: string };
+          if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
+        } catch {
+          // 忽略响应体解析错误
+        }
+        throw new Error(detail);
+      }
+
+      const json = await response.json() as {
+        code?: string;
+        data?: { launch_token?: string; expires_at?: number };
+        message?: string;
+      };
+      const token = json?.data?.launch_token;
+      if (!token) {
+        throw new Error(json?.message || "返回数据缺少 launch_token");
+      }
+      const expiresAt = typeof json?.data?.expires_at === "number" ? json.data.expires_at : undefined;
+      return { token, expiresAt };
+    },
+    [],
+  );
 
   useEffect(() => {
     // 仅在 chat tab 激活、activeBot 已就位、用户已登录（拿到账号 id）时拉取
@@ -2676,82 +2867,18 @@ export const AgentSettingsPage = ({
       return;
     }
 
-    const baseUrl = resolveConfiguredAuthApiBaseUrl();
-    if (!baseUrl) {
-      setLaunchTokenStatus("error");
-      setLaunchTokenError(AUTH_SERVICE_UNAVAILABLE_MESSAGE);
-      return;
-    }
-
-    const authToken = readStoredAuthToken();
-    if (!authToken) {
-      setLaunchTokenStatus("error");
-      setLaunchTokenError("未登录，无法获取 AgentChat 启动 token");
-      return;
-    }
-
     const controller = new AbortController();
     let cancelled = false;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const fetchLaunchToken = async () => {
+    const loadInitialToken = async () => {
       setLaunchTokenStatus("loading");
       setLaunchTokenError(null);
       try {
-        const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(activeBotId)}/agentchat/launch-token`;
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: "{}",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          if (cancelled) return;
-          let detail = `HTTP ${response.status}`;
-          try {
-            const body = await response.json() as { code?: string; message?: string };
-            if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
-          } catch {
-            // 忽略响应体解析错误
-          }
-          setLaunchTokenStatus("error");
-          setLaunchTokenError(detail);
-          return;
-        }
-
-        const json = await response.json() as {
-          code?: string;
-          data?: { launch_token?: string; expires_at?: number };
-          message?: string;
-        };
+        const { token, expiresAt } = await fetchLaunchTokenValue(activeBotId, controller.signal);
         if (cancelled) return;
-
-        const token = json?.data?.launch_token;
-        const expiresAt = json?.data?.expires_at;
-        if (!token) {
-          setLaunchTokenStatus("error");
-          setLaunchTokenError(json?.message || "返回数据缺少 launch_token");
-          return;
-        }
-
         setLaunchToken(token);
+        setLaunchTokenExpiresAt(typeof expiresAt === "number" ? expiresAt : null);
         setLaunchTokenStatus("ready");
-
-        // 过期前 60s 触发续期；若返回的 expires_at 不可信则按 4 分钟兜底
-        const now = Math.floor(Date.now() / 1000);
-        const ttlSeconds = typeof expiresAt === "number" && expiresAt > now
-          ? expiresAt - now
-          : 300;
-        const refreshAfterMs = Math.max(30, ttlSeconds - 60) * 1000;
-        refreshTimer = setTimeout(() => {
-          if (!cancelled) {
-            setLaunchTokenRefreshTick((tick) => tick + 1);
-          }
-        }, refreshAfterMs);
       } catch (e) {
         if (cancelled || (e as Error)?.name === "AbortError") return;
         setLaunchTokenStatus("error");
@@ -2759,19 +2886,30 @@ export const AgentSettingsPage = ({
       }
     };
 
-    fetchLaunchToken();
+    void loadInitialToken();
 
     return () => {
       cancelled = true;
       controller.abort();
-      if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick]);
+  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick, fetchLaunchTokenValue]);
+
+  /**
+   * SDK 续期入口：token 将过期时调用，拿新 token 返回给面板。不写 state，故不触发
+   * 重渲染 / 重连（保活不断连的关键）。expiresAt 为 Unix 秒，供面板判断复用。
+   */
+  const refreshLaunchToken = useCallback(async (): Promise<{ token: string; expiresAt?: number }> => {
+    if (!activeBotId) {
+      throw new Error("无有效实例，无法续期 AgentChat token");
+    }
+    return fetchLaunchTokenValue(activeBotId);
+  }, [activeBotId, fetchLaunchTokenValue]);
 
   // 切到非 chat tab 或换 bot 时，清空已缓存的 token，避免泄露给下个 bot
   useEffect(() => {
     if (activeSection !== "chat") {
       setLaunchToken(null);
+      setLaunchTokenExpiresAt(null);
       setLaunchTokenStatus("idle");
       setLaunchTokenError(null);
     }
@@ -2890,8 +3028,7 @@ export const AgentSettingsPage = ({
         value,
         existingChars,
         getGatewayRestartCommand: async () => {
-          const teaSdkRuntime = await loadTeaSdkRuntime();
-          return teaSdkRuntime.getGatewayRestartCommand();
+          return (await getHermesScriptCommands()).getGatewayRestartCommand();
         },
       });
       if (!isCurrentRequest()) return false;
@@ -2942,44 +3079,43 @@ export const AgentSettingsPage = ({
 
 
   /**
-   * tea-sdk-lightclaw 的 ModelCard / ChannelCard / SkillCard 内部通过
-   * 自定义 `runCommand` + `getInvocationTask` 把命令下发到 mono 后端。
+   * channel / model 配置面板（agent-config 的 ChannelPanel / ModelPanel）
+   * 使用的命令执行器。
    *
-   * 和存量业务（channel 配置、onboard、debug 排错等）保持一致，走通用
-   * 入口 `POST /v1/instances/:botId/debug/exec`（envd process stream），
-   * 不再使用腾讯云 TAT。
+   * 走本地 `createLocalCommandExecutor`，直连 `POST /v1/instances/:botId/debug/exec`
+   * （国际站由后端建立 TAT PtyExecCmdStream，国内站保持原 envd 执行链路），
+   * 与 chat / skill / diagnostics 面板同一条「直连」链路，彻底脱离 SDK 的
+   * TAT 两步式（RunCommand → 轮询 getInvocationTask）逻辑。
    *
-   * 业务约定：把 `activeBot.id` 作为 SDK `IInstanceInfo.InstanceId` 传入，
-   * SDK 内部 `InstanceIds: [instance.InstanceId]` 原样透传给适配器，
-   * 适配器从 `InstanceIds[0]` 拿到的就是 botId，无需额外映射或查询
-   * sandbox_id。
+   * `sdkCommandLifecycle` 挂载业务钩子（自动化模型切换同步、QQ 群策略注入）。
+   * 仅在 activeBot 存在时构造；无 bot 时传 undefined，面板内部 fallback 到空
+   * executor 占位（实际操作路径不会触发）。
    */
-  const commandAdapter = useMemo(
+  const teaSdkCommandExecutor = useMemo<ICommandExecutor | undefined>(
     () =>
-      createMonoDebugExecAdapter({
-        baseUrl: resolveConfiguredAuthApiBaseUrl() ?? "",
-        getAuthHeader: () => {
-          const token = readStoredAuthToken();
-          return token ? `Bearer ${token}` : undefined;
-        },
-        commandLifecycle: automationModelCommandLifecycle,
-      }),
-    [automationModelCommandLifecycle],
+      activeBotId
+        ? createLocalCommandExecutor({
+          repositories,
+          botId: activeBotId,
+          commandLifecycle: sdkCommandLifecycle,
+        })
+        : undefined,
+    [repositories, activeBotId, sdkCommandLifecycle],
   );
 
   /**
    * LightVelaPanel 用的 commandExecutor。
    *
-   * 与上方 `commandAdapter`（给 `@tencent/tea-sdk-lightclaw` SDK 走 TAT 协议
-   * 的适配器）不同，LightVelaPanel 接受的是 ClawPanel 公共层定义的更直接的
-   * `CommandExecutor` 契约（`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
+   * 与上方 `teaSdkCommandExecutor`（给 agent-config 面板用、形状为
+   * `ICommandExecutor` 的 run/runWithProgress）不同，LightVelaPanel 接受的是
+   * ClawPanel 公共层定义的更直接的 `CommandExecutor` 契约
+   * （`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
    *
-   * 两者底层都走 mono debug/exec，但接口形状不同：
-   *   - commandAdapter：runCommand → getInvocationTask 两步式（兼容 SDK 的 TAT 模型）
-   *   - lightvelaCommandExecutor：单步同步返回（贴近 LightVelaPanel 期望）
+   * 两者底层都走 mono debug/exec 直连（均已脱离 SDK TAT），只是对上层暴露的
+   * 接口形状不同。
    *
    * 仅在 activeBot 存在时构造；切换到无 bot 状态会传 undefined，让 panel
-   * 内部 fallback 到默认 TAT 通道（实际 lightvela 场景不会走到）。
+   * 内部 fallback 到默认通道（实际 lightvela 场景不会走到）。
    */
   const lightvelaCommandExecutor = useMemo(
     () => activeBotId
@@ -3057,8 +3193,8 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const providerSaveCmd = teaSdkRuntime.getProviderSaveCommand({
+      const hermesScriptCommands = await getHermesScriptCommands();
+      const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
         name: result.config.providerName,
         baseUrl: result.config.baseUrl,
         api: result.config.api,
@@ -3080,7 +3216,7 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const switchModelCmd = teaSdkRuntime.getModelSwitchCommand(
+      const switchModelCmd = hermesScriptCommands.getModelSwitchCommand(
         hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
       );
       const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
@@ -3179,8 +3315,8 @@ export const AgentSettingsPage = ({
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const result = await repositories.bots.execDebugCommand(targetBotId, teaSdkRuntime.getGatewayRestartCommand());
+      const gatewayRestartCommand = (await getHermesScriptCommands()).getGatewayRestartCommand();
+      const result = await repositories.bots.execDebugCommand(targetBotId, gatewayRestartCommand);
       const errorMsg = buildRestartErrorMessage(result);
       if (errorMsg) {
         setRestartErrors((prev) => setErrorForBot(prev, targetBotId, errorMsg));
@@ -3381,6 +3517,24 @@ export const AgentSettingsPage = ({
       RegionId: 1,
     };
   }, [activeBot?.id]);
+
+  /**
+   * 实例切换时重置会话受控状态（SDK 对接注意事项 3）。
+   * Why：切换 Agent 走 setActiveTabId，组件不重挂载；旧实例的会话列表/选中值/actions
+   * 若不清理，会在新实例回调覆盖前闪现旧数据，且 rename 句柄可能指向旧实例。
+   * 重置后 selectedChatId 回到 undefined，SDK 按新实例重新下发默认会话。
+   */
+  useEffect(() => {
+    setChatSessions([]);
+    setChatSessionsLoading(false);
+    setSelectedChatId(undefined);
+    setChatSessionActions(null);
+    setRenamingChatId(null);
+    setRenamingDraft("");
+    setOpenSessionMenuChatId(null);
+    setSessionToDelete(null);
+  }, [sdkInstance?.InstanceId]);
+
   const sdkFeatureFlags = useMemo<TeaSdkFeatureFlags>(() => ({
     gateway: true,
     channel: true,
@@ -3398,11 +3552,7 @@ export const AgentSettingsPage = ({
   }), []);
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
-  const useEnglish = !!i18n.language?.startsWith("en");
-  const sdkProductConfigArgs = useMemo(() => ({
-    runCommand: commandAdapter.runCommand,
-    getInvocationTask: commandAdapter.getInvocationTask,
-  }), [commandAdapter]);
+  const useEnglish = shouldUseEnglishProviderData(i18n.language);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
     isGlobalRegion: isGlobal,
     hiddenToolsRevealed: showHiddenAgentTools,
@@ -3655,21 +3805,7 @@ export const AgentSettingsPage = ({
       setIsCreating(true);
       navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
     } catch (err) {
-      const raw = err instanceof Error ? err.message : "";
-      // 将后端错误映射为用户友好文案
-      let friendlyMsg: string;
-      if (/quota|limit|exceed/i.test(raw)) {
-        friendlyMsg = t("当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。");
-      } else if (/resource|sandbox|pool|exhaust/i.test(raw)) {
-        friendlyMsg = t("云端资源暂时紧张，请稍后再试。");
-      } else if (/timeout|timed?\s*out/i.test(raw)) {
-        friendlyMsg = t("创建超时，请稍后重试。");
-      } else if (/network|fetch|connect/i.test(raw)) {
-        friendlyMsg = t("网络异常，请检查网络后重试。");
-      } else {
-        friendlyMsg = raw || t("创建失败，请稍后重试。");
-      }
-      setDirectCreateError(friendlyMsg);
+      setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
     } finally {
       setDirectCreating(false);
     }
@@ -3948,38 +4084,38 @@ export const AgentSettingsPage = ({
       {workspaceDetailsOpen && (
         <div id="workspace-recovery-details" className="mt-4 max-h-[320px] overflow-y-auto pr-1">
           {workspaceTaskLogs.length === 0 ? (
-          <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
-            {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无 Agent 任务记录")}
-          </div>
-        ) : (
-          <ol className="space-y-0">
-            {workspaceTaskLogs.map((log, index, allLogs) => {
-              const isLast = index === allLogs.length - 1;
-              const tone = log.level === "error"
-                ? "bg-red-500"
-                : log.level === "success"
-                  ? "bg-emerald-500"
-                  : log.level === "warning"
-                    ? "bg-amber-500"
-                    : "bg-black/35";
-              return (
-                <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">
-                  <div className="pt-0.5 text-right text-[11px] text-black/35">
-                    {formatExportLogTime(log.time)}
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className={cn("mt-1.5 h-2.5 w-2.5 rounded-full", tone)} />
-                    {!isLast && <span className="absolute top-5 bottom-0 w-px bg-black/[0.08]" />}
-                  </div>
-                  <div className="pb-4">
-                    <p className="text-sm leading-relaxed text-black/78">{log.message}</p>
-                    {activeWorkspaceTask && log.phase && <p className="mt-0.5 text-[11px] text-black/35">{workspacePhaseLabel(activeWorkspaceTask.kind, log.phase)}</p>}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        )}
+            <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
+              {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无 Agent 任务记录")}
+            </div>
+          ) : (
+            <ol className="space-y-0">
+              {workspaceTaskLogs.map((log, index, allLogs) => {
+                const isLast = index === allLogs.length - 1;
+                const tone = log.level === "error"
+                  ? "bg-red-500"
+                  : log.level === "success"
+                    ? "bg-emerald-500"
+                    : log.level === "warning"
+                      ? "bg-amber-500"
+                      : "bg-black/35";
+                return (
+                  <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">
+                    <div className="pt-0.5 text-right text-[11px] text-black/35">
+                      {formatExportLogTime(log.time)}
+                    </div>
+                    <div className="relative flex justify-center">
+                      <span className={cn("mt-1.5 h-2.5 w-2.5 rounded-full", tone)} />
+                      {!isLast && <span className="absolute top-5 bottom-0 w-px bg-black/[0.08]" />}
+                    </div>
+                    <div className="pb-4">
+                      <p className="text-sm leading-relaxed text-black/78">{log.message}</p>
+                      {activeWorkspaceTask && log.phase && <p className="mt-0.5 text-[11px] text-black/35">{workspacePhaseLabel(activeWorkspaceTask.kind, log.phase)}</p>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </div>
       )}
     </section>
@@ -4176,6 +4312,45 @@ export const AgentSettingsPage = ({
                 {t("确认删除")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Session Delete Confirm Dialog */}
+      {sessionToDelete && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={cancelSessionDelete}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "rgba(238,238,238,0.4)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
+                <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除会话")}</h3>
+            </div>
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("确定要删除会话「{{name}}」吗？此操作不可撤销。", { name: sessionToDelete.title || t("默认会话") })}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={confirmSessionDelete}
+                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
+                style={{ backgroundColor: "#DC2626", cursor: "pointer", fontSize: "16px" }}
+              >
+                {t("确认删除")}
+              </button>
+              <button onClick={cancelSessionDelete} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
               </button>
             </div>
@@ -4397,12 +4572,24 @@ export const AgentSettingsPage = ({
         document.body,
       )}
 
+      <AnimatePresence>
+        {renewPassModalOpen && renewalAvailable && activePass && (
+          <RenewPassModal
+            key="renew-pass"
+            pass={activePass}
+            onClose={() => setRenewPassModalOpen(false)}
+            onSuccess={() => void handleRenewPassSuccess()}
+            initialRealnameRequired={Boolean(session.user) && !renewalRealnameVerified}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Channel Modal */}
       {showChannelModal && activeBot && (
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
       )}
 
-      <main className="lw-app-top-pad flex-grow bg-white">
+      <main className="lw-app-top-pad flex-grow bg-white pb-6">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
           {isInitialBotsLoading && (
@@ -4417,19 +4604,64 @@ export const AgentSettingsPage = ({
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
             (() => {
-              const settingsSections: { id: AgentSettingsSectionId; label: string; icon: React.ReactNode; path: string; badge?: string }[] = [
-                { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
-                { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
-                { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
-                { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
-                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
-                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
-                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
-                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
-                ...(SHOW_AGENTCHAT_ENTRY
-                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
-                  : []),
-                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+              type SettingsSectionLink = {
+                id: AgentSettingsSectionId;
+                label: string;
+                icon: React.ReactNode;
+                path: string;
+                badge?: string;
+              };
+              const settingsGroups: { id: string; label: string; sections: SettingsSectionLink[] }[] = [
+                {
+                  id: "setup",
+                  label: t("配置"),
+                  sections: [
+                    { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
+                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
+                  ],
+                },
+                {
+                  id: "use",
+                  label: t("使用"),
+                  sections: [
+                    { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+                    ...(isGlobal && showHiddenAgentTools
+                      ? [{ id: "website" as const, label: t("工作台"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
+                      : []),
+                  ],
+                },
+                {
+                  id: "growth",
+                  label: t("成长"),
+                  sections: [
+                    { id: "buddy", label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
+                    { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
+                    { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
+                  ],
+                },
+                {
+                  id: "manage",
+                  label: t("管理"),
+                  sections: [
+                    { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
+                    { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+                    { id: "settings", label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings },
+                  ],
+                },
+                {
+                  id: "labs",
+                  label: t("实验室"),
+                  sections: [
+                    {
+                      id: "deepseek-harness",
+                      label: "DeepSeek Harness",
+                      icon: <FlaskConical className="h-4 w-4" />,
+                      path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
+                      badge: "Beta",
+                    },
+                  ],
+                },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
@@ -4450,15 +4682,15 @@ export const AgentSettingsPage = ({
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
-                    <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {t("正在加载页面…")}
-                    </div>
-                  );
+                  <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("正在加载页面…")}
+                  </div>
+                );
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-                  <aside className="lv-agents-sidebar lg:sticky lg:top-[84px]">
+                  <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
@@ -4486,16 +4718,75 @@ export const AgentSettingsPage = ({
                           <span className="lv-agent-profile-name" title={activeBot.name}>
                             {truncateBotName(activeBot.name)}
                           </span>
-                          <span className="lv-agent-status">
-                            {isActiveBotRestarting ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <span
-                                className="inline-block h-1.5 w-1.5 rounded-full"
-                                style={{ background: getBotStatusColor(activeBot.status) }}
-                              />
+                          <span className="lv-agent-status-row">
+                            <span className="lv-agent-status">
+                              {isActiveBotRestarting ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <span
+                                  className="inline-block h-1.5 w-1.5 rounded-full"
+                                  style={{ background: getBotStatusColor(activeBot.status) }}
+                                />
+                              )}
+                              {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                            </span>
+                            {passExpiryReminder && passExpiryReminderCopy && activePass && (
+                              renewalAvailable ? (
+                                <span className="group relative inline-flex">
+                                  <button
+                                    type="button"
+                                    className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
+                                    aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminderCopy.tooltip })}
+                                    aria-describedby={passExpiryTooltipId}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setRenewPassModalOpen(true);
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter" || event.key === " ") {
+                                        event.stopPropagation();
+                                      }
+                                    }}
+                                  >
+                                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                    {passExpiryReminderCopy.label}
+                                  </button>
+                                  <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                                    <span
+                                      id={passExpiryTooltipId}
+                                      role="tooltip"
+                                      className="pointer-events-auto relative whitespace-nowrap rounded-[6px] border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
+                                    >
+                                      {passExpiryReminderCopy.tooltip}
+                                      <button
+                                        type="button"
+                                        className="ml-2 cursor-pointer font-semibold text-[#A86108] underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A86108]/30"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setRenewPassModalOpen(true);
+                                        }}
+                                      >
+                                        {t("立即续费")}
+                                      </button>
+                                      <span
+                                        aria-hidden="true"
+                                        className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
+                                      />
+                                    </span>
+                                  </span>
+                                </span>
+                              ) : (
+                                <span
+                                  className={cn(
+                                    "lv-agent-renewal-badge is-disabled",
+                                    `is-${passExpiryReminder.level}`,
+                                  )}
+                                >
+                                  {passExpiryReminderCopy.label}
+                                  <span className="sr-only"> {passExpiryReminderCopy.tooltip}</span>
+                                </span>
+                              )
                             )}
-                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                           </span>
                         </span>
                         <div
@@ -4603,67 +4894,240 @@ export const AgentSettingsPage = ({
                       )}
                     </div>
 
-                    <nav
-                      aria-label={t("实例配置导航")}
-                      className="lv-agents-nav"
-                    >
-                      {showHiddenAgentTools ? (
-                        <>
-                          <AppLink
-                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
-                            aria-current={activeSection === "terminal" ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              activeSection === "terminal"
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left">{t("终端")}</span>
-                          </AppLink>
-                          <AppLink
-                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
-                            aria-current={activeSection === "browser" ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              activeSection === "browser"
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left">{t("浏览器")}</span>
-                          </AppLink>
-                        </>
-                      ) : null}
-                      {settingsSections.map((section) => {
-                        const isActive = section.id === activeSection;
-                        return (
-                          <AppLink
-                            key={section.id}
-                            to={getAgentSectionHref(section.path, searchParams)}
-                            aria-current={isActive ? "page" : undefined}
-                            className={cn(
-                              "lw-settings-nav-item lv-agents-nav-item",
-                              isActive
-                                ? "is-active"
-                                : "text-black/70 hover:bg-black/[0.025]",
-                            )}
-                          >
-                            <span className="lv-agents-nav-icon">{section.icon}</span>
-                            <span className="flex-1 text-left">{section.label}</span>
-                            {section.badge && (
-                              <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
-                                {section.badge}
-                              </span>
-                            )}
-                          </AppLink>
-                        );
-                      })}
-                    </nav>
+                    {/* ── 侧边栏顶层「设置/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
+                    <div className="lv-agents-sidebar-tabs" role="tablist" aria-label={t("侧边栏视图切换")}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sidebarTab === "settings"}
+                        className={cn("lv-agents-sidebar-tab", sidebarTab === "settings" && "is-active")}
+                        onClick={handleSidebarSettingsTabClick}
+                      >
+                        {t("设置")}
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sidebarTab === "chat"}
+                        className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && "is-active")}
+                        onClick={handleSidebarChatTabClick}
+                      >
+                        {t("对话")}
+                      </button>
+                    </div>
 
-                    {isCN ? (
+                    {sidebarTab === "chat" ? (
+                      <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
+                        <div className="lv-agents-nav-group" role="group">
+                          <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
+                          <ul className="lv-agents-nav-group-items">
+                            {chatSessionsLoading && chatSessions.length === 0 ? (
+                              <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
+                            ) : chatSessions.length === 0 ? (
+                              /*
+                               * 列表为空是正常状态，不做异常处理，只给默认对话入口。
+                               * 成因有三，对用户而言表现一致（都只有一个会话可进）：
+                               *   - 桥接还没建立：sidebarTab 与 activeSection 是独立状态，
+                               *     且 AgentChatPanel 需 activeSection === "chat" 且
+                               *     launchToken ready 才挂载，切换过程中会短暂走到这里；
+                               *   - 实例不支持会话协议（SDK 5s 超时，见对接注意事项 6），
+                               *     即单会话形态，老实例/特定镜像版本的合法状态；
+                               *   - 确实还没有任何会话。
+                               * 三者都不该阻断用户进聊天页——消息收发不依赖会话协议。
+                               * 要区分需看 WebSocket 有无 chat:response，不是 UI 的职责。
+                               */
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
+                                  aria-current={activeSection === "chat" ? "page" : undefined}
+                                  className={cn(
+                                    "lv-agents-session-item lv-agents-nav-item",
+                                    activeSection === "chat" && "is-active",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
+                                  <span className="lv-agents-session-title" title={t("默认对话")}>
+                                    {t("默认对话")}
+                                  </span>
+                                </AppLink>
+                              </li>
+                            ) : (
+                              chatSessions.map((session) => {
+                                const isSelected = selectedChatId === session.chatId;
+                                const isRenaming = renamingChatId === session.chatId;
+                                const isMenuOpen = openSessionMenuChatId === session.chatId;
+                                const isDeletable = canDeleteSession(session);
+                                return (
+                                  <li key={session.chatId} className="lv-agents-session-item-wrap">
+                                    {isRenaming ? (
+                                      <input
+                                        className="lv-agents-session-rename-input"
+                                        value={renamingDraft}
+                                        autoFocus
+                                        aria-label={t("会话名称")}
+                                        title={t("回车确认，Esc 取消")}
+                                        onChange={(event) => setRenamingDraft(event.target.value)}
+                                        onBlur={() => commitSessionRename()}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter") {
+                                            event.preventDefault();
+                                            commitSessionRename();
+                                          } else if (event.key === "Escape") {
+                                            event.preventDefault();
+                                            cancelSessionRename();
+                                          }
+                                        }}
+                                      />
+                                    ) : (
+                                      <>
+                                        <AppLink
+                                          to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
+                                          aria-current={isSelected ? "page" : undefined}
+                                          onClick={() => setSelectedChatId(session.chatId)}
+                                          className={cn(
+                                            "lv-agents-session-item lv-agents-nav-item",
+                                            isSelected && "is-active",
+                                          )}
+                                        >
+                                          <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
+                                          <span className="lv-agents-session-title" title={session.title || t("默认会话")}>
+                                            {session.title || t("默认会话")}
+                                          </span>
+                                        </AppLink>
+                                        <div ref={isMenuOpen ? sessionMenuRef : undefined} className="lv-agents-session-menu-anchor">
+                                          <button
+                                            type="button"
+                                            className="lv-agents-session-menu-btn"
+                                            aria-label={t("会话操作")}
+                                            aria-expanded={isMenuOpen}
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
+                                              setOpenSessionMenuChatId(isMenuOpen ? null : session.chatId);
+                                            }}
+                                          >
+                                            <MoreVertical className="h-3.5 w-3.5" />
+                                          </button>
+                                          {isMenuOpen ? (
+                                            <div className="lv-agents-session-menu" role="menu">
+                                              <button
+                                                type="button"
+                                                role="menuitem"
+                                                className="lv-agents-session-menu-item"
+                                                disabled={!chatSessionActions}
+                                                onClick={() => startSessionRename(session)}
+                                              >
+                                                {t("重命名")}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                role="menuitem"
+                                                className="lv-agents-session-menu-item lv-agents-session-menu-item--danger"
+                                                disabled={!chatSessionActions || !isDeletable}
+                                                title={isDeletable ? undefined : t("默认会话不支持删除")}
+                                                onClick={() => openSessionDeleteConfirm(session)}
+                                              >
+                                                {t("删除")}
+                                              </button>
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </>
+                                    )}
+                                  </li>
+                                );
+                              })
+                            )}
+                          </ul>
+                        </div>
+                      </nav>
+                    ) : (
+                      <nav
+                        aria-label={t("实例配置导航")}
+                        className="lv-agents-nav"
+                      >
+                        {showHiddenAgentTools ? (
+                          <div className="lv-agents-nav-group">
+                            <ul className="lv-agents-nav-group-items">
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
+                                  aria-current={activeSection === "terminal" ? "page" : undefined}
+                                  className={cn(
+                                    "lw-settings-nav-item lv-agents-nav-item",
+                                    activeSection === "terminal"
+                                      ? "is-active"
+                                      : "text-black/70 hover:bg-black/[0.025]",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
+                                  <span className="flex-1 text-left">{t("终端")}</span>
+                                </AppLink>
+                              </li>
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
+                                  aria-current={activeSection === "browser" ? "page" : undefined}
+                                  className={cn(
+                                    "lw-settings-nav-item lv-agents-nav-item",
+                                    activeSection === "browser"
+                                      ? "is-active"
+                                      : "text-black/70 hover:bg-black/[0.025]",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
+                                  <span className="flex-1 text-left">{t("浏览器")}</span>
+                                </AppLink>
+                              </li>
+                            </ul>
+                          </div>
+                        ) : null}
+                        {settingsGroups.map((group) => {
+                          const groupLabelId = `agent-settings-nav-group-${group.id}`;
+                          return (
+                            <div
+                              key={group.id}
+                              className="lv-agents-nav-group"
+                              role="group"
+                              aria-labelledby={groupLabelId}
+                            >
+                              <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
+                              <ul className="lv-agents-nav-group-items">
+                                {group.sections.map((section) => {
+                                  const isActive = section.id === activeSection;
+                                  return (
+                                    <li key={section.id}>
+                                      <AppLink
+                                        to={getAgentSectionHref(section.path, searchParams)}
+                                        aria-label={section.badge ? section.label : undefined}
+                                        aria-current={isActive ? "page" : undefined}
+                                        className={cn(
+                                          "lw-settings-nav-item lv-agents-nav-item",
+                                          section.badge && "has-badge",
+                                          isActive
+                                            ? "is-active"
+                                            : "text-black/70 hover:bg-black/[0.025]",
+                                        )}
+                                      >
+                                        <span className="lv-agents-nav-icon">{section.icon}</span>
+                                        <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
+                                        {section.badge && (
+                                          <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
+                                            {section.badge}
+                                          </span>
+                                        )}
+                                      </AppLink>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          );
+                        })}
+                      </nav>
+                    )}
+
+                    {sidebarTab === "settings" && isCN ? (
                       <a
                         href={PRODUCT_FEEDBACK_URL}
                         target="_blank"
@@ -4676,7 +5140,7 @@ export const AgentSettingsPage = ({
                     ) : null}
                   </aside>
 
-                  <section className="min-w-0">
+                  <section className="min-w-0 lg:col-start-2">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
                         fallback={sectionFallback}
@@ -4687,7 +5151,7 @@ export const AgentSettingsPage = ({
                               kind="channel"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfigArgs={sdkProductConfigArgs}
+                              commandExecutor={teaSdkCommandExecutor}
                               useEnglish={useEnglish}
                             />
                           )}
@@ -4696,7 +5160,8 @@ export const AgentSettingsPage = ({
                               kind="model"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfigArgs={sdkProductConfigArgs}
+                              commandExecutor={teaSdkCommandExecutor}
+                              execDebugCommand={repositories.bots.execDebugCommand}
                               useEnglish={useEnglish}
                             />
                           )}
@@ -4744,14 +5209,22 @@ export const AgentSettingsPage = ({
                             />
                           )}
                           {activeSection === "chat" && (
+                            /* 国际站语言切换时重挂 AgentChatPanel：组件内部用 ref 锁定首帧 launch token
+                               与 lightvelaApiParams（见 agent-chat-panel.tsx 注释），切换语言需整体卸载
+                               重挂以重置这些 ref，让 LightVelaPanel 用新语言重新初始化。国内站固定 key，
+                               不因其他 state 变化无谓重挂。 */
                             <AgentChatPanel
+                              key={isGlobal ? i18n.language : "cn"}
                               accountId={accountId}
                               commandExecutor={lightvelaCommandExecutor}
                               instanceId={sdkInstance.InstanceId}
                               launchToken={launchToken}
+                              launchTokenExpiresAt={launchTokenExpiresAt}
                               launchTokenError={launchTokenError}
                               launchTokenStatus={launchTokenStatus}
                               onRetryLaunchToken={retryLaunchToken}
+                              onRefreshLaunchToken={refreshLaunchToken}
+                              multiSession={chatMultiSessionBridge}
                             />
                           )}
                           {activeSection === "memory" && (
@@ -4769,8 +5242,24 @@ export const AgentSettingsPage = ({
                               t={t}
                             />
                           )}
+                          {activeSection === "settings" && (
+                            <AgentCommonSettingsPanel
+                              botId={activeBot.id}
+                              botStatus={activeBot.status}
+                              bots={repositories.bots}
+                              getGatewayRestartCommand={async () => {
+                                return (await getHermesScriptCommands()).getGatewayRestartCommand();
+                              }}
+                            />
+                          )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "deepseek-harness" && (
+                            <AgentDeepSeekHarnessPanel botId={activeBot.id} />
+                          )}
+                          {isGlobal && activeSection === "website" && (
+                            <AgentWebsitePanel />
                           )}
                           {activeSection === "browser" && (
                             <TatHermesWebPanel botId={activeBot.id} />

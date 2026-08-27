@@ -47,6 +47,7 @@ type Inventory struct {
 
 		Cynosdb struct {
 			AvailabilityZone   string `yaml:"availability_zone"`
+			ExistingEndpoint   string `yaml:"existing_endpoint"`
 			DBVersion          string `yaml:"db_version"`
 			SubnetID           string `yaml:"subnet_id"`
 			ClusterCIDR        string `yaml:"cluster_cidr"`
@@ -110,6 +111,8 @@ type Inventory struct {
 			SandboxRoute RedisInventory `yaml:"sandbox_route"`
 		} `yaml:"redis"`
 
+		Notify NotifyInventory `yaml:"notify"`
+
 		TCR struct {
 			InstanceType                   string            `yaml:"instance_type"`
 			NamespaceName                  string            `yaml:"namespace_name"`
@@ -165,12 +168,48 @@ type SecurityGroupInventory struct {
 
 type RedisInventory struct {
 	AvailabilityZone string   `yaml:"availability_zone"`
+	ExistingEndpoint string   `yaml:"existing_endpoint"`
 	MemSize          int      `yaml:"mem_size"`
 	TypeID           int      `yaml:"type_id"`
 	SubnetID         string   `yaml:"subnet_id"`
 	RedisShardNum    int      `yaml:"redis_shard_num"`
 	RedisReplicasNum int      `yaml:"redis_replicas_num"`
 	SecurityGroups   []string `yaml:"security_groups"`
+}
+
+type NotifyInventory struct {
+	Enabled                   bool   `yaml:"enabled"`
+	ManageTriggers            bool   `yaml:"manage_triggers"`
+	TriggersEnabled           bool   `yaml:"triggers_enabled"`
+	TestAllowlistEnabled      bool   `yaml:"test_allowlist_enabled"`
+	DBUser                    string `yaml:"db_user"`
+	DBHost                    string `yaml:"db_host"`
+	DBPort                    int    `yaml:"db_port"`
+	DBSecretName              string `yaml:"db_secret_name"`
+	RedisHost                 string `yaml:"redis_host"`
+	RedisPort                 int    `yaml:"redis_port"`
+	RedisSecretName           string `yaml:"redis_secret_name"`
+	VPCID                     string `yaml:"vpc_id"`
+	SubnetID                  string `yaml:"subnet_id"`
+	CLSLogsetID               string `yaml:"cls_logset_id"`
+	CLSTopicID                string `yaml:"cls_topic_id"`
+	SMSSDKAppID               string `yaml:"sms_sdk_app_id"`
+	SMSSignName               string `yaml:"sms_sign_name"`
+	SMSTemplateID             string `yaml:"sms_template_id"`
+	ExpiryWindowsDays         string `yaml:"expiry_windows_days"`
+	SMSQPS                    int    `yaml:"sms_qps"`
+	SMSBurst                  int    `yaml:"sms_burst"`
+	ScanPageSize              int    `yaml:"scan_page_size"`
+	WorkerBatchSize           int    `yaml:"worker_batch_size"`
+	WorkerMaxMessages         int    `yaml:"worker_max_messages"`
+	ScannerCron               string `yaml:"scanner_cron"`
+	WorkerCron                string `yaml:"worker_cron"`
+	ScannerFunctionName       string `yaml:"scanner_function_name"`
+	WorkerFunctionName        string `yaml:"worker_function_name"`
+	ExistingScannerFunctionID string `yaml:"existing_scanner_function_id"`
+	ExistingWorkerFunctionID  string `yaml:"existing_worker_function_id"`
+	ExistingScannerTriggerID  string `yaml:"existing_scanner_trigger_id"`
+	ExistingWorkerTriggerID   string `yaml:"existing_worker_trigger_id"`
 }
 
 type JumpserverInventory struct {

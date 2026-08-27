@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { AboutPage } from '@/pages/marketing/about-page';
 import { ChangelogPage } from '@/pages/marketing/changelog-page';
 import { LandingPageView } from '@/pages/marketing/landing-page';
-import { SUBSCRIBE_PATH } from '@/lib/agent-routes';
 
 import {
   DEFAULT_PUBLIC_ROUTE_LOCALE,
@@ -34,10 +33,13 @@ function useNextSearch() {
 // 在 Next `output: 'export'`（静态导出）下，App Router 对动态段路由
 // （如 /agents/[section]）的客户端软导航（router.push）会静默失败，
 // 表现为「点击无反应、URL 不变」。因此跳入产品壳一律使用整页硬跳转。
-const APP_SHELL_ROUTE_PREFIXES = ['/agents', '/account', SUBSCRIBE_PATH, '/plan-select'];
+/* /subscribe 不列入 app shell 路由：它是 public 定价页（requireAuth=false，未登录可浏览静态价格），
+   走 SPA 软导航即可（header router.push 已验证）。硬跳转会导致整页刷新时 session 恢复竞态，
+   未登录用户被错误导向「请先登录」页。*/
+const APP_SHELL_ROUTE_PREFIXES = ['/agents', '/account', '/plan-select'];
 
 function isAppShellRoute(to: string): boolean {
-  const path = to.split('?')[0].split('#')[0];
+  const path = (to.split('?')[0] ?? '').split('#')[0] ?? '';
   return APP_SHELL_ROUTE_PREFIXES.some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`),
   );
@@ -84,6 +86,7 @@ export function PublicHomePage({
             locale={locale}
             oauthError={new URLSearchParams(locationSearch).get('oauth_error')}
             showLanguageSwitcher
+            promoteFreeTrial
           />
         )}
         locationSearch={locationSearch}

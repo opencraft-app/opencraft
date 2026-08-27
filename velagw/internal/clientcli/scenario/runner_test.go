@@ -6,7 +6,6 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"time"
 
 	"git.woa.com/wisp/mono2/llmgateway/internal/client"
 )
@@ -33,9 +32,6 @@ func (f *fakeGateway) GetAssignment(context.Context, string) (client.Result, err
 }
 func (f *fakeGateway) ApplySubscription(context.Context, client.ApplySubscriptionInput) (client.Result, error) {
 	return f.result("apply", `{}`)
-}
-func (f *fakeGateway) ExtendSubscription(context.Context, client.ExtendSubscriptionInput) (client.Result, error) {
-	return f.result("extend", `{}`)
 }
 func (f *fakeGateway) CancelSubscription(context.Context, string) (client.Result, error) {
 	return f.result("cancel", `{}`)
@@ -70,12 +66,11 @@ func TestTradeLifecycleRunsInBusinessOrder(t *testing.T) {
 	runner := Runner{Gateway: fake}
 	_, err := runner.TradeLifecycle(context.Background(), TradeLifecycleInput{
 		UserID: "user-1", PlanID: "plan-pro", IdempotencyKey: "deal-1",
-		NewPeriodEnd: time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"ensure", "assignment", "apply", "subscription", "credit", "extend", "subscription", "cancel", "subscription"}
+	want := []string{"ensure", "assignment", "apply", "subscription", "credit", "cancel", "subscription"}
 	if !reflect.DeepEqual(fake.calls, want) {
 		t.Fatalf("calls=%v want=%v", fake.calls, want)
 	}

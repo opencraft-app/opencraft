@@ -47,6 +47,13 @@ import {
   type SkillHubSkillSet,
 } from "@/lib/skillhub-api";
 
+import {
+  installSkillsWithNativeBatch,
+  type BatchInstallResult,
+  type Skill,
+  type SkillsExecDebugCommandStream,
+} from "./skills-demo/skill-registries";
+
 type ExpertFilterId = "all" | SkillHubKnownSkillSetScene;
 type ExpertView = "list" | "grid";
 
@@ -54,6 +61,7 @@ interface ExpertSceneOption {
   value: SkillHubKnownSkillSetScene;
   label: string;
   labelEn: string;
+  labelEs: string;
   icon: ElementType;
 }
 
@@ -92,18 +100,18 @@ interface SkillInstallProgress {
 
 const EXPERT_FILTER_SCENES: ExpertSceneOption[] = [
   // Keep the same visible category order as SkillHub's /skillspackage page.
-  { value: "finance", label: "金融", labelEn: "Finance", icon: Landmark },
-  { value: "tech", label: "科技", labelEn: "Technology", icon: Cpu },
-  { value: "design", label: "设计", labelEn: "Design", icon: Palette },
-  { value: "marketing", label: "营销", labelEn: "Marketing", icon: Megaphone },
-  { value: "legal", label: "法律", labelEn: "Legal", icon: Scale },
-  { value: "academic", label: "学术", labelEn: "Academic", icon: GraduationCap },
-  { value: "education", label: "教育", labelEn: "Education", icon: BookOpen },
-  { value: "hr", label: "人力", labelEn: "Human Resources", icon: Users },
-  { value: "ecommerce", label: "电商", labelEn: "Ecommerce", icon: ShoppingCart },
-  { value: "media", label: "媒体", labelEn: "Media", icon: Clapperboard },
-  { value: "healthcare", label: "医疗", labelEn: "Healthcare", icon: HeartPulse },
-  { value: "mysticism", label: "玄学", labelEn: "Mysticism", icon: MoonStar },
+  { value: "finance", label: "金融", labelEn: "Finance", labelEs: "Finanzas", icon: Landmark },
+  { value: "tech", label: "科技", labelEn: "Technology", labelEs: "Tecnología", icon: Cpu },
+  { value: "design", label: "设计", labelEn: "Design", labelEs: "Diseño", icon: Palette },
+  { value: "marketing", label: "营销", labelEn: "Marketing", labelEs: "Marketing", icon: Megaphone },
+  { value: "legal", label: "法律", labelEn: "Legal", labelEs: "Legal", icon: Scale },
+  { value: "academic", label: "学术", labelEn: "Academic", labelEs: "Académico", icon: GraduationCap },
+  { value: "education", label: "教育", labelEn: "Education", labelEs: "Educación", icon: BookOpen },
+  { value: "hr", label: "人力", labelEn: "Human Resources", labelEs: "Recursos humanos", icon: Users },
+  { value: "ecommerce", label: "电商", labelEn: "Ecommerce", labelEs: "Comercio electrónico", icon: ShoppingCart },
+  { value: "media", label: "媒体", labelEn: "Media", labelEs: "Medios", icon: Clapperboard },
+  { value: "healthcare", label: "医疗", labelEn: "Healthcare", labelEs: "Salud", icon: HeartPulse },
+  { value: "mysticism", label: "玄学", labelEn: "Mysticism", labelEs: "Misticismo", icon: MoonStar },
 ];
 
 const EXPERT_PACKAGE_SCENE_ROLES: Record<SkillHubKnownSkillSetScene, string> = {
@@ -204,7 +212,11 @@ const EXPERT_LANGUAGE_DOC_NAMES = {
   en: ["identify_en.md", ...LEGACY_SKILL_DOC_NAMES],
   zh: ["identify.md", ...LEGACY_SKILL_DOC_NAMES],
 } as const;
-type ExpertLanguage = "en" | "zh";
+type ExpertLanguage = "en" | "zh" | "es";
+
+function usesEnglishExpertContent(lang?: ExpertLanguage): boolean {
+  return lang === "en" || lang === "es";
+}
 const PACKAGE_SKILL_SLUG_OVERRIDES: Record<string, Record<string, string>> = {
   "tech-code-review": {
     cody: "code-review-assistant",
@@ -245,6 +257,36 @@ const EXPERT_PACKAGE_SUB_SCENE_ROLES_EN: Record<string, string> = {
   "poetry-creation": "Poetry Creation Expert",
   screenwriting: "Screenwriting Expert",
   "story-outlining": "Story Outline Planner",
+};
+
+const EXPERT_PACKAGE_SCENE_ROLES_ES: Record<SkillHubKnownSkillSetScene, string> = {
+  academic: "Investigador académico",
+  "content-creation": "Especialista en creación de contenido",
+  design: "Asesor de diseño de producto",
+  ecommerce: "Especialista en operaciones de comercio electrónico",
+  education: "Asesor de planificación del aprendizaje",
+  finance: "Especialista en análisis de inversiones",
+  healthcare: "Asesor de información sanitaria",
+  hr: "Asesor de talento y organización",
+  legal: "Asesor de cumplimiento legal",
+  lifestyle: "Asesor de vida saludable",
+  marketing: "Especialista en crecimiento de marketing",
+  media: "Especialista en contenido multimedia",
+  mysticism: "Asesor de astrología y adivinación",
+  tech: "Ingeniero de software sénior",
+};
+
+const EXPERT_PACKAGE_SUB_SCENE_ROLES_ES: Record<string, string> = {
+  "fitness-training": "Entrenador personal",
+  "health-data-analysis": "Analista de datos de salud",
+  "lyrics-songwriting": "Especialista en composición de letras",
+  "meditation-mindfulness": "Instructor de meditación y mindfulness",
+  "mental-counseling": "Asesor psicológico",
+  "novel-writing": "Especialista en escritura de novelas",
+  "nutrition-meal-plan": "Asesor de nutrición y salud",
+  "poetry-creation": "Especialista en poesía",
+  screenwriting: "Guionista",
+  "story-outlining": "Especialista en planificación de tramas",
 };
 function getInstalledPackagesStorageKey(botId: string): string {
   return `${INSTALLED_PACKAGES_STORAGE_PREFIX}:${botId}`;
@@ -349,8 +391,16 @@ function getExpertRole(
   t: ReturnType<typeof useT>,
   lang?: ExpertLanguage,
 ): string {
-  const subSceneRoles = lang === "en" ? EXPERT_PACKAGE_SUB_SCENE_ROLES_EN : EXPERT_PACKAGE_SUB_SCENE_ROLES;
-  const sceneRoles = lang === "en" ? EXPERT_PACKAGE_SCENE_ROLES_EN : EXPERT_PACKAGE_SCENE_ROLES;
+  const subSceneRoles = lang === "es"
+    ? EXPERT_PACKAGE_SUB_SCENE_ROLES_ES
+    : lang === "en"
+      ? EXPERT_PACKAGE_SUB_SCENE_ROLES_EN
+      : EXPERT_PACKAGE_SUB_SCENE_ROLES;
+  const sceneRoles = lang === "es"
+    ? EXPERT_PACKAGE_SCENE_ROLES_ES
+    : lang === "en"
+      ? EXPERT_PACKAGE_SCENE_ROLES_EN
+      : EXPERT_PACKAGE_SCENE_ROLES;
   const subSceneRole = pkg.subScene ? subSceneRoles[pkg.subScene] : undefined;
   if (subSceneRole) return subSceneRole;
 
@@ -369,7 +419,9 @@ export function getEnglishPackageFrontmatterValue(content: string | undefined, k
   const lineIndex = lines.findIndex((line) => keyPattern.test(line));
   if (lineIndex < 0) return undefined;
 
-  const match = lines[lineIndex].match(keyPattern);
+  const matchingLine = lines[lineIndex];
+  if (!matchingLine) return undefined;
+  const match = matchingLine.match(keyPattern);
   const rawValue = match?.[1]?.trim() ?? "";
   if ([">", ">-", ">+", "|", "|-", "|+"].includes(rawValue)) {
     const continuation: string[] = [];
@@ -389,14 +441,15 @@ function formatEnglishPackageSlug(slug: string): string {
     .replace(/[\/_-]+/g, " ")
     .split(/\s+/)
     .filter((part) => part.toLowerCase() !== "en")
-    .map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part)
+    .map((part) => part ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part)
     .join(" ");
 }
 
 function getLocalizedPackageDisplayName(pkg: SkillHubSkillSet, lang?: ExpertLanguage): string {
-  if (lang !== "en") return pkg.displayName;
+  if (!usesEnglishExpertContent(lang)) return pkg.displayName;
   return pkg.displayNameEn?.trim()
     || getEnglishPackageFrontmatterValue(pkg.contentEn, "display_name")
+    || (pkg.displayName?.trim() && !/[\u3400-\u9fff]/.test(pkg.displayName) ? pkg.displayName.trim() : undefined)
     || formatEnglishPackageSlug(pkg.slug);
 }
 
@@ -419,7 +472,7 @@ function getPackageSummary(
   t: ReturnType<typeof useT>,
   lang?: ExpertLanguage,
 ): string {
-  if (lang === "en") {
+  if (usesEnglishExpertContent(lang)) {
     return getEnglishPackageSummary(pkg)
       || `A curated skill package for ${getLocalizedPackageDisplayName(pkg, "en")}.`;
   }
@@ -428,6 +481,10 @@ function getPackageSummary(
 
 export function buildInstallSkillCommand(skillSlug: string): string {
   return `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=${shellQuote(SKILLHUB_DOWNLOAD_URL_TEMPLATE)} acli skills install ${shellQuote(skillSlug)}`;
+}
+
+export function buildInstallSkillsBatchCommand(skillSlugs: string[]): string {
+  return `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=${shellQuote(SKILLHUB_DOWNLOAD_URL_TEMPLATE)} acli skills batch-install --wait=true ${shellQuote(skillSlugs.join(" "))}`;
 }
 
 export function buildSkillHubSelfUpgradeCommand(): string {
@@ -439,7 +496,7 @@ export function stripMarkdownFrontmatter(markdown: string): string {
 }
 
 export function getExpertSkillDocumentPath(filePaths: string[], lang?: ExpertLanguage): string | null {
-  const targetNames = lang === "en"
+  const targetNames = usesEnglishExpertContent(lang)
     ? EXPERT_LANGUAGE_DOC_NAMES.en
     : EXPERT_LANGUAGE_DOC_NAMES.zh;
   for (const targetName of targetNames) {
@@ -453,9 +510,15 @@ async function fetchSkillMarkdown(skillSlug: string, lang?: ExpertLanguage): Pro
   const files = await fetchSkillFiles(skillSlug);
   const docPath = getExpertSkillDocumentPath(files.map((file) => file.path), lang);
   if (!docPath) {
-    throw new Error(lang === "en" ? "未找到 identify_en.md 或兼容技能文档" : "未找到 identify.md 或兼容技能文档");
+    throw new Error(getMissingExpertSkillDocumentMessage(lang));
   }
   return stripMarkdownFrontmatter(await fetchSkillFile(skillSlug, docPath));
+}
+
+export function getMissingExpertSkillDocumentMessage(lang?: ExpertLanguage): string {
+  return usesEnglishExpertContent(lang)
+    ? "Could not find identify_en.md or a compatible skill document"
+    : "未找到 identify.md 或兼容技能文档";
 }
 
 async function fetchSkillDisplayNames(
@@ -465,8 +528,8 @@ async function fetchSkillDisplayNames(
   const entries = await Promise.all(
     skillSlugs.map(async (skillSlug) => {
       try {
-        const skill = await fetchSkillDetail(skillSlug, lang === "en" ? { lang } : undefined);
-        const displayName = lang === "en" ? skill.displayNameEn || skill.displayName : skill.displayName;
+        const skill = await fetchSkillDetail(skillSlug, usesEnglishExpertContent(lang) ? { lang: "en" } : undefined);
+        const displayName = usesEnglishExpertContent(lang) ? skill.displayNameEn || skill.displayName : skill.displayName;
         return [skillSlug, displayName || formatSkillDisplayName(skillSlug)] as const;
       } catch {
         return [skillSlug, formatSkillDisplayName(skillSlug)] as const;
@@ -576,38 +639,185 @@ async function retryFailedSkillInstall(
   return result;
 }
 
+type SkillHubUpgradeState = {
+  attempted: boolean;
+};
+
+async function recoverSkillInstall(
+  botId: string,
+  skillSlug: string,
+  execDebugCommand: ExpertsExecDebugCommand,
+  failedResult: { succeeded: boolean; output: string },
+  upgradeState: SkillHubUpgradeState,
+): Promise<{ succeeded: boolean; output: string }> {
+  let result = failedResult;
+  if (!result.succeeded && !upgradeState.attempted && shouldUpgradeSkillHubCli(result.output)) {
+    upgradeState.attempted = true;
+    await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand(), {
+      timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
+    }).catch(() => null);
+    result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+  }
+  if (!result.succeeded) {
+    result = await retryFailedSkillInstall(botId, skillSlug, execDebugCommand, result);
+  }
+  return result;
+}
+
+async function installSkillSlugWithRecovery(
+  botId: string,
+  skillSlug: string,
+  execDebugCommand: ExpertsExecDebugCommand,
+  upgradeState: SkillHubUpgradeState,
+): Promise<{ succeeded: boolean; output: string }> {
+  const result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+  if (result.succeeded) return result;
+  return recoverSkillInstall(botId, skillSlug, execDebugCommand, result, upgradeState);
+}
+
+function toPackageSkill(skillSlug: string): Skill {
+  return {
+    registry: "skillhub",
+    rawId: skillSlug,
+    slug: skillSlug,
+    name: skillSlug,
+  };
+}
+
+function mapBatchInstallResult(
+  skillSlugs: string[],
+  result: BatchInstallResult,
+): SkillInstallResult {
+  const succeededSlugs = new Set(result.succeeded.map((skill) => skill.rawId));
+  const failedOutputs = new Map(result.failed.map(({ skill, message }) => [skill.rawId, message ?? ""]));
+  return {
+    succeeded: skillSlugs.filter((skillSlug) => succeededSlugs.has(skillSlug)),
+    failed: skillSlugs
+      .filter((skillSlug) => failedOutputs.has(skillSlug))
+      .map((skillSlug) => ({ slug: skillSlug, output: failedOutputs.get(skillSlug) ?? "" })),
+  };
+}
+
+async function installSkillSlugsSequentially(
+  botId: string,
+  skillSlugs: string[],
+  execDebugCommand: ExpertsExecDebugCommand,
+  onProgress?: (progress: SkillInstallProgress) => void,
+  upgradeState: SkillHubUpgradeState = { attempted: false },
+): Promise<SkillInstallResult> {
+  const succeeded: string[] = [];
+  const failed: SkillInstallFailure[] = [];
+
+  for (const [index, skillSlug] of skillSlugs.entries()) {
+    onProgress?.({ current: index + 1, total: skillSlugs.length });
+    const result = await installSkillSlugWithRecovery(botId, skillSlug, execDebugCommand, upgradeState);
+    if (result.succeeded) succeeded.push(skillSlug);
+    else failed.push({ slug: skillSlug, output: result.output });
+  }
+
+  return { succeeded, failed };
+}
+
+async function installSkillSlugsWithNativeBatch(
+  botId: string,
+  skillSlugs: string[],
+  execDebugCommand: ExpertsExecDebugCommand,
+  execDebugCommandStream: SkillsExecDebugCommandStream,
+  onProgress?: (progress: SkillInstallProgress) => void,
+): Promise<SkillInstallResult> {
+  const skills = skillSlugs.map(toPackageSkill);
+  const upgradeState: SkillHubUpgradeState = { attempted: false };
+  let usedSequentialFallback = false;
+  let maxReportedProgress = 0;
+  const reportProgress = (current: number, total: number) => {
+    maxReportedProgress = Math.max(maxReportedProgress, current);
+    onProgress?.({ current: maxReportedProgress, total });
+  };
+  const runBatchInstall = () => {
+    usedSequentialFallback = false;
+    return installSkillsWithNativeBatch(
+      botId,
+      execDebugCommandStream,
+      async (skill) => {
+        const result = await installSkillSlugWithRecovery(botId, skill.rawId, execDebugCommand, upgradeState);
+        return { ok: result.succeeded, message: result.output };
+      },
+      skills,
+      ({ index, total }) => reportProgress(index, total),
+      {
+        buildBatchCommand: (_registry, batchSkills) => (
+          buildInstallSkillsBatchCommand(batchSkills.map((skill) => skill.rawId))
+        ),
+        onSequentialFallback: () => {
+          usedSequentialFallback = true;
+        },
+        onIncompleteResults: (_registry, incompleteSkills) => {
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[experts] ACLI batch-install omitted results; retrying individually:",
+            incompleteSkills.map((skill) => skill.rawId),
+          );
+        },
+      },
+    );
+  };
+
+  let batchResult = await runBatchInstall();
+  if (usedSequentialFallback) return mapBatchInstallResult(skillSlugs, batchResult);
+
+  const shouldRetryBatchAfterUpgrade = !upgradeState.attempted
+    && batchResult.succeeded.length === 0
+    && batchResult.failed.length === skills.length
+    && batchResult.failed.every(({ message }) => shouldUpgradeSkillHubCli(message ?? ""));
+  if (shouldRetryBatchAfterUpgrade) {
+    upgradeState.attempted = true;
+    await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand(), {
+      timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
+    }).catch(() => null);
+    batchResult = await runBatchInstall();
+    if (usedSequentialFallback) return mapBatchInstallResult(skillSlugs, batchResult);
+  }
+
+  const succeededSlugs = new Set(batchResult.succeeded.map((skill) => skill.rawId));
+  const failedOutputs = new Map<string, string>();
+  for (const { skill, message } of batchResult.failed) {
+    reportProgress(skillSlugs.indexOf(skill.rawId) + 1, skillSlugs.length);
+    const recovered = await recoverSkillInstall(
+      botId,
+      skill.rawId,
+      execDebugCommand,
+      { succeeded: false, output: message ?? "" },
+      upgradeState,
+    );
+    if (recovered.succeeded) succeededSlugs.add(skill.rawId);
+    else failedOutputs.set(skill.rawId, recovered.output);
+  }
+
+  return {
+    succeeded: skillSlugs.filter((skillSlug) => succeededSlugs.has(skillSlug)),
+    failed: skillSlugs
+      .filter((skillSlug) => failedOutputs.has(skillSlug))
+      .map((skillSlug) => ({ slug: skillSlug, output: failedOutputs.get(skillSlug) ?? "" })),
+  };
+}
+
 export async function installSkillSlugs(
   botId: string,
   skillSlugs: string[],
   execDebugCommand: ExpertsExecDebugCommand,
   onProgress?: (progress: SkillInstallProgress) => void,
+  execDebugCommandStream?: SkillsExecDebugCommandStream,
 ): Promise<SkillInstallResult> {
-  const succeeded: string[] = [];
-  const failed: SkillInstallFailure[] = [];
-  let hasTriedSkillHubUpgrade = false;
-
-  for (const [index, skillSlug] of skillSlugs.entries()) {
-    onProgress?.({ current: index + 1, total: skillSlugs.length });
-    let result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
-    if (!result.succeeded && !hasTriedSkillHubUpgrade && shouldUpgradeSkillHubCli(result.output)) {
-      hasTriedSkillHubUpgrade = true;
-      await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand(), {
-        timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
-      }).catch(() => null);
-      result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
-    }
-    if (!result.succeeded) {
-      result = await retryFailedSkillInstall(botId, skillSlug, execDebugCommand, result);
-    }
-
-    if (result.succeeded) {
-      succeeded.push(skillSlug);
-    } else {
-      failed.push({ slug: skillSlug, output: result.output });
-    }
+  if (execDebugCommandStream) {
+    return installSkillSlugsWithNativeBatch(
+      botId,
+      skillSlugs,
+      execDebugCommand,
+      execDebugCommandStream,
+      onProgress,
+    );
   }
-
-  return { succeeded, failed };
+  return installSkillSlugsSequentially(botId, skillSlugs, execDebugCommand, onProgress);
 }
 
 function tryParseJson(value: string): unknown | null {
@@ -697,8 +907,8 @@ export function getSkillPackageInstallFailureMessage(
 }
 
 async function fetchAllExpertPackages(keyword: string, lang?: string): Promise<SkillHubSkillSet[]> {
-  const expertLanguage = lang === "en" || lang === "zh" ? lang : undefined;
-  const apiLanguage = expertLanguage === "en" ? "en" : undefined;
+  const expertLanguage = lang === "en" || lang === "zh" || lang === "es" ? lang : undefined;
+  const apiLanguage = expertLanguage === "en" || expertLanguage === "es" ? "en" : undefined;
   let page = 1;
   let total = 0;
   const allPackages: SkillHubSkillSet[] = [];
@@ -740,7 +950,8 @@ async function fetchAllExpertPackages(keyword: string, lang?: string): Promise<S
     }
   }));
 
-  return [...visiblePackages, ...fetchedMissingPackages.filter((pkg): pkg is SkillHubSkillSet => Boolean(pkg))]
+  const availableMissingPackages = fetchedMissingPackages.flatMap((pkg) => pkg ? [pkg] : []);
+  return [...visiblePackages, ...availableMissingPackages]
     .sort(sortByInternationalOrder);
 }
 
@@ -762,10 +973,12 @@ async function fetchExperts(params: {
 export function ExpertsPanel({
   botId,
   execDebugCommand,
+  execDebugCommandStream,
   lang,
 }: {
   botId: string;
   execDebugCommand: ExpertsExecDebugCommand;
+  execDebugCommandStream?: SkillsExecDebugCommandStream;
   lang?: ExpertLanguage;
 }) {
   const t = useT();
@@ -914,8 +1127,8 @@ export function ExpertsPanel({
     async function fetchVisiblePackageDetails() {
       await Promise.all(missingCards.map(async ({ pkg }) => {
         try {
-          const detail = lang === "en"
-            ? await fetchSkillSetDetail(pkg.slug, { lang })
+          const detail = usesEnglishExpertContent(lang)
+            ? await fetchSkillSetDetail(pkg.slug, { lang: "en" })
             : await fetchSkillSetDetail(pkg.slug);
           const skillSlugs = getPackageSkillSlugs(
             pkg.slug,
@@ -993,8 +1206,8 @@ export function ExpertsPanel({
     if (installingSlug) return;
     setInstallingSlug(pkg.slug);
     try {
-      const detail = lang === "en"
-        ? await fetchSkillSetDetail(pkg.slug, { lang })
+      const detail = usesEnglishExpertContent(lang)
+        ? await fetchSkillSetDetail(pkg.slug, { lang: "en" })
         : await fetchSkillSetDetail(pkg.slug);
       const skillSlugs = await resolveAvailablePackageSkillSlugs(pkg.slug, detail.skillSlugs ?? [], detail.missing ?? []);
       if (skillSlugs.length === 0) {
@@ -1002,7 +1215,13 @@ export function ExpertsPanel({
         return;
       }
 
-      const installResult = await installSkillSlugs(botId, skillSlugs, execDebugCommand, setInstallProgress);
+      const installResult = await installSkillSlugs(
+        botId,
+        skillSlugs,
+        execDebugCommand,
+        setInstallProgress,
+        execDebugCommandStream,
+      );
       if (installResult.failed.length > 0) {
         toast.error(getSkillPackageInstallFailureMessage(installResult, t));
         return;
@@ -1035,7 +1254,7 @@ export function ExpertsPanel({
       setInstallingSlug(null);
       setInstallProgress(null);
     }
-  }, [botId, execDebugCommand, installingSlug, lang, t]);
+  }, [botId, execDebugCommand, execDebugCommandStream, installingSlug, lang, t]);
 
   const handleOpenDetail = useCallback((card: ExpertPackageCard) => {
     setSelectedCard(card);
@@ -1158,6 +1377,11 @@ function ExpertSearchBox({
   lang?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const placeholder = lang === "es"
+    ? "Buscar paquetes de Skills"
+    : lang === "en"
+      ? "Search skill packages"
+      : "搜索技能包";
 
   return (
     <div className="lv-agent-search-box">
@@ -1173,7 +1397,7 @@ function ExpertSearchBox({
             inputRef.current?.blur();
           }
         }}
-        placeholder={lang === "en" ? "Search skill packages" : "搜索技能包"}
+        placeholder={placeholder}
         className="lv-skills-search-input lv-agent-search-box-input"
       />
     </div>
@@ -1189,12 +1413,20 @@ function ExpertViewToggle({
   onChange: (value: ExpertView) => void;
   lang?: ExpertLanguage;
 }) {
+  const viewLabelsEs: Record<ExpertView, string> = {
+    list: "Lista",
+    grid: "Tarjetas",
+  };
   return (
     <div className="flex w-max items-center gap-1 rounded-md bg-black/[0.04] p-0.5">
       {EXPERT_VIEW_OPTIONS.map((item) => {
         const Icon = item.icon;
         const active = value === item.value;
-        const label = lang === "en" ? (item.value === "list" ? "List" : "Cards") : item.label;
+        const label = lang === "es"
+          ? viewLabelsEs[item.value]
+          : lang === "en"
+            ? (item.value === "list" ? "List" : "Cards")
+            : item.label;
         const tooltipId = `skill-package-view-${item.value}-tooltip`;
         return (
           <span key={item.value} className="group relative inline-flex">
@@ -1240,7 +1472,7 @@ function ExpertSceneFilters({
     { value: "all", label: t("全部"), icon: PackageOpen },
     ...EXPERT_FILTER_SCENES.map((filter) => ({
       ...filter,
-      label: lang === "en" ? filter.labelEn : filter.label,
+      label: lang === "es" ? filter.labelEs : lang === "en" ? filter.labelEn : filter.label,
     })),
   ];
 
@@ -1290,16 +1522,24 @@ function getDefaultExpertProfileImage(seed: string): string {
 }
 
 function getExpertInitial(displayName: string): string {
-  return Array.from(displayName.trim())[0]?.toUpperCase() ?? "专";
+  return Array.from(displayName.trim())[0]?.toUpperCase() ?? "E";
 }
 
-function SkillPackageProfileIcon({ pkg, className }: { pkg: SkillHubSkillSet; className?: string }) {
+function SkillPackageProfileIcon({
+  pkg,
+  displayName,
+  className,
+}: {
+  pkg: SkillHubSkillSet;
+  displayName: string;
+  className?: string;
+}) {
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [assetFailed, setAssetFailed] = useState(false);
   const [defaultFailed, setDefaultFailed] = useState(false);
   const avatarSrc = pkg.avatarUrl?.trim();
   const assetSrc = getExpertProfileImage(pkg.slug);
-  const defaultSrc = getDefaultExpertProfileImage(pkg.slug || pkg.displayName);
+  const defaultSrc = getDefaultExpertProfileImage(pkg.slug || displayName);
   const imageSrc = avatarSrc && !avatarFailed
     ? avatarSrc
     : !assetFailed
@@ -1312,7 +1552,7 @@ function SkillPackageProfileIcon({ pkg, className }: { pkg: SkillHubSkillSet; cl
     setAvatarFailed(false);
     setAssetFailed(false);
     setDefaultFailed(false);
-  }, [avatarSrc, pkg.displayName, pkg.slug]);
+  }, [avatarSrc, displayName, pkg.slug]);
 
   return (
     <div
@@ -1339,9 +1579,9 @@ function SkillPackageProfileIcon({ pkg, className }: { pkg: SkillHubSkillSet; cl
           }}
         />
       ) : (
-        <span data-testid="skill-package-profile-fallback">{getExpertInitial(pkg.displayName)}</span>
+        <span data-testid="skill-package-profile-fallback">{getExpertInitial(displayName)}</span>
       )}
-      <span className="sr-only">{pkg.displayName}</span>
+      <span className="sr-only">{displayName}</span>
     </div>
   );
 }
@@ -1429,7 +1669,11 @@ function ExpertListItem({
         onClick={() => onOpen(card)}
         className="flex min-w-0 flex-1 items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/35"
       >
-        <SkillPackageProfileIcon pkg={card.pkg} className="h-10 w-10 rounded-[9px]" />
+        <SkillPackageProfileIcon
+          pkg={card.pkg}
+          displayName={getLocalizedPackageDisplayName(card.pkg, lang)}
+          className="h-10 w-10 rounded-[9px]"
+        />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold leading-5 text-black/90">
             {getLocalizedPackageDisplayName(card.pkg, lang)}
@@ -1486,7 +1730,11 @@ function ExpertGridCard({
       }}
       className="group flex cursor-pointer items-start gap-3 rounded-md border border-black/[0.06] bg-white px-3.5 py-3 text-left transition-colors hover:border-black/[0.12] hover:bg-black/[0.025] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40"
     >
-      <SkillPackageProfileIcon pkg={card.pkg} className="h-9 w-9 rounded-[8px]" />
+      <SkillPackageProfileIcon
+        pkg={card.pkg}
+        displayName={getLocalizedPackageDisplayName(card.pkg, lang)}
+        className="h-9 w-9 rounded-[8px]"
+      />
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-sm font-semibold text-black/90">{getLocalizedPackageDisplayName(card.pkg, lang)}</h3>
         <p className="mt-1 line-clamp-2 text-xs leading-4 text-black/45" title={summary}>{summary}</p>
@@ -1527,8 +1775,8 @@ function SkillPackageDetailView({
 }) {
   const t = useT();
   const detailFetcher = useCallback(
-    () => lang === "en"
-      ? fetchSkillSetDetail(card.pkg.slug, { lang })
+    () => usesEnglishExpertContent(lang)
+      ? fetchSkillSetDetail(card.pkg.slug, { lang: "en" })
       : fetchSkillSetDetail(card.pkg.slug),
     [card.pkg.slug, lang],
   );
@@ -1579,7 +1827,11 @@ function SkillPackageDetailView({
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-5">
-          <SkillPackageProfileIcon pkg={detail} className="h-16 w-16 rounded-[14px]" />
+          <SkillPackageProfileIcon
+            pkg={detail}
+            displayName={getLocalizedPackageDisplayName(detail, lang)}
+            className="h-16 w-16 rounded-[14px]"
+          />
           <div className="min-w-0">
             <h2 className="text-[28px] font-semibold leading-tight text-black/95">{getLocalizedPackageDisplayName(detail, lang)}</h2>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-7 gap-y-1 text-sm font-medium leading-6 text-black/48">

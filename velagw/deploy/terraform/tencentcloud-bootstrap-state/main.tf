@@ -55,6 +55,7 @@ resource "tencentcloud_cos_bucket_policy" "terraform_state" {
         ]
         Resource = [
           "${local.bucket_qcs}/llmgateway/prod/*",
+          "${local.bucket_qcs}/llmgateway/sgprod/*",
           "${local.bucket_qcs}/env:/*"
         ]
       }

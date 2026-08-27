@@ -1,6 +1,17 @@
-# ctl 开发者指南
+# 开发者指南
 
-本目录保留 `ctl` / `sandbox` 集成的背景文档和设计说明。
+本目录保留各服务的开发联调文档与设计说明。
+
+## 文档索引
+
+| 文档 | 说明 |
+|------|------|
+| [frontend-whistle-proxy.md](./frontend-whistle-proxy.md) | frontend whisker 本地热更新联调代理配置 |
+| [frontend-tea-sdk-local-hmr.md](./frontend-tea-sdk-local-hmr.md) | tea-sdk-lightclaw SDK 本地源码热更新（Vite 时代，已过期） |
+
+### ctl / sandbox
+
+本子目录保留 `ctl` / `sandbox` 集成的背景文档和设计说明。
 
 说明：
 

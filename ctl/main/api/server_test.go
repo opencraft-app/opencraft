@@ -47,6 +47,7 @@ type stubLogic struct {
 	terminalSessionResp                    *transport.TerminalSessionResponse
 	terminalSessionErr                     error
 	terminalSessionInstanceID              string
+	terminalSessionUserID                  string
 	workspaceResp                          *transport.WorkspaceFilesResponse
 	workspaceErr                           error
 	workspaceFile                          string
@@ -104,6 +105,7 @@ type stubLogic struct {
 	debugInstanceID                        string
 	debugCommand                           string
 	debugRunAsUser                         string
+	debugExecutionBackend                  string
 	debugResp                              *transport.ExecDebugCommandResponse
 	debugErr                               error
 	debugStreamEvents                      []transport.ExecDebugCommandStreamEvent
@@ -181,6 +183,7 @@ func (s *stubLogic) GetInstance(ctx pctx.Context, instanceID string) (*transport
 func (s *stubLogic) StartTerminalSession(ctx pctx.Context, instanceID string) (*transport.TerminalSessionResponse, error) {
 	if s.terminalSessionResp != nil || s.terminalSessionErr != nil {
 		s.terminalSessionInstanceID = instanceID
+		s.terminalSessionUserID = ctx.GetUserID()
 		return s.terminalSessionResp, s.terminalSessionErr
 	}
 	return nil, errors.New("unexpected call")
@@ -243,6 +246,16 @@ func (s *stubLogic) StreamDebugCommand(ctx pctx.Context, instanceID string, comm
 		return s.debugStreamErr
 	}
 	return errors.New("unexpected call")
+}
+
+func (s *stubLogic) ExecDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string) (*transport.ExecDebugCommandResponse, error) {
+	s.debugExecutionBackend = executionBackend
+	return s.ExecDebugCommand(ctx, instanceID, commandType, runAsUser)
+}
+
+func (s *stubLogic) StreamDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error {
+	s.debugExecutionBackend = executionBackend
+	return s.StreamDebugCommand(ctx, instanceID, commandType, runAsUser, onEvent)
 }
 
 func (s *stubLogic) GetWorkspaceFiles(ctx pctx.Context, instanceID string, fileName string) (*transport.WorkspaceFilesResponse, error) {
@@ -1407,7 +1420,7 @@ func TestListOperationsReturnsSuccessEnvelope(t *testing.T) {
 }
 
 func TestExecDebugCommandPassesRunAsUser(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser","execution_backend":"tat"}`))
 	req.Header.Set(headerUserID, "user-1")
 	rec := httptest.NewRecorder()
 
@@ -1428,6 +1441,9 @@ func TestExecDebugCommandPassesRunAsUser(t *testing.T) {
 	stub := handler.logic.(*stubLogic)
 	if stub.debugInstanceID != "ins-1" || stub.debugCommand != "echo hello" || stub.debugRunAsUser != "agentuser" {
 		t.Fatalf("unexpected debug call capture: instance=%q command=%q runAs=%q", stub.debugInstanceID, stub.debugCommand, stub.debugRunAsUser)
+	}
+	if stub.debugExecutionBackend != "tat" {
+		t.Fatalf("expected execution backend forwarded, got %q", stub.debugExecutionBackend)
 	}
 
 	var payload struct {
@@ -1492,6 +1508,51 @@ func TestStartTerminalSessionUsesBotScopedRoute(t *testing.T) {
 	}
 }
 
+func TestInternalBotTerminalSessionRequiresServiceBearerAndTrustedUser(t *testing.T) {
+	t.Setenv("CTL_INTERNAL_TOKEN", "internal-token")
+	response := &transport.TerminalSessionResponse{
+		SessionID: "sess-1", Region: "ap-beijing", InstanceID: "i-123",
+		OwnerUin: "10001", LoginUin: "10002", AppID: 123,
+		WsURL: "wss://tat.example.test/ws", Cols: 120, Rows: 30, TimeoutSeconds: 3600,
+	}
+	handler := &instanceHandler{logic: &stubLogic{terminalSessionResp: response}}
+	router := newRouter(handler, &bundleHandler{}, &passHandler{})
+
+	unauthorized := httptest.NewRequest(http.MethodPost, "/internal/bots/ins-1/tat/session", nil)
+	unauthorized.Header.Set(headerUserID, "user-1")
+	unauthorizedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(unauthorizedRecorder, unauthorized)
+	if unauthorizedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d body=%s", unauthorizedRecorder.Code, unauthorizedRecorder.Body.String())
+	}
+
+	authorized := httptest.NewRequest(http.MethodPost, "/internal/bots/ins-1/tat/session", nil)
+	authorized.Header.Set("Authorization", "Bearer internal-token")
+	authorized.Header.Set(headerUserID, "user-1")
+	authorizedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(authorizedRecorder, authorized)
+	if authorizedRecorder.Code != http.StatusOK {
+		t.Fatalf("authorized status = %d body=%s", authorizedRecorder.Code, authorizedRecorder.Body.String())
+	}
+	stub := handler.logic.(*stubLogic)
+	if stub.terminalSessionInstanceID != "ins-1" || stub.terminalSessionUserID != "user-1" {
+		t.Fatalf("terminal call instance=%q user=%q", stub.terminalSessionInstanceID, stub.terminalSessionUserID)
+	}
+}
+
+func TestInternalBotTerminalSessionFailsClosedWithoutConfiguredToken(t *testing.T) {
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "")
+	t.Setenv("CTL_INTERNAL_TOKEN", "")
+	handler := &instanceHandler{logic: &stubLogic{terminalSessionResp: &transport.TerminalSessionResponse{SessionID: "must-not-run"}}}
+	req := httptest.NewRequest(http.MethodPost, "/internal/bots/ins-1/tat/session", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("missing configured token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestNewRequestContextCapturesSessionAuthorization(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/tat/session", nil)
 	req.Header.Set(headerUserID, "user-1")
@@ -1530,7 +1591,7 @@ func TestNewRequestContextCapturesSessionCookie(t *testing.T) {
 }
 
 func TestExecDebugCommandStreamsSSE(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser","execution_backend":"tat"}`))
 	req.Header.Set(headerUserID, "user-1")
 	req.Header.Set("Accept", "text/event-stream")
 	rec := &streamingRecorder{ResponseRecorder: httptest.NewRecorder()}
@@ -1566,6 +1627,9 @@ func TestExecDebugCommandStreamsSSE(t *testing.T) {
 	stub := handler.logic.(*stubLogic)
 	if stub.debugRunAsUser != "agentuser" {
 		t.Fatalf("expected run_as_user forwarded to logic, got %q", stub.debugRunAsUser)
+	}
+	if stub.debugExecutionBackend != "tat" {
+		t.Fatalf("expected execution backend forwarded, got %q", stub.debugExecutionBackend)
 	}
 }
 
@@ -1770,6 +1834,31 @@ func TestInternalListPassesUnauthorizedWithBearerMismatch(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestInternalBearerPrefersLightclawToken verifies ctl's internal endpoints
+// accept the same token used by trade when both legacy and shared tokens exist.
+func TestInternalBearerPrefersLightclawToken(t *testing.T) {
+	t.Setenv("CTL_INTERNAL_TOKEN", "legacy-secret")
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "shared-secret")
+
+	router := newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{})
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/ctl/passes", nil)
+	req.Header.Set("Authorization", "Bearer shared-secret")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected shared token to pass auth and reach validation, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/internal/ctl/passes", nil)
+	req.Header.Set("Authorization", "Bearer legacy-secret")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected legacy token to be rejected when shared token is set, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

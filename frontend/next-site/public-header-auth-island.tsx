@@ -10,40 +10,93 @@ import { UserAvatarMenu } from '@/components/site/user-avatar-menu';
 import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { oauthErrorMessage } from '@/lib/oauth';
-import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { publicSiteHref, type PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
 import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
+import { parseLocaleCode } from '@/i18n/locales.config';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
+import {
+  EN_US_LOCALE,
+  ZH_CN_LOCALE,
+  ZH_SG_LOCALE,
+} from './public-locale';
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
   solid: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
 };
 
-const copyByLocale: Record<PublicSiteLocale, { createNow: string; login: string }> = {
+const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: string; login: string }> = {
   'en-US': {
     createNow: 'Create Now',
+    freeTrial: 'Free trial',
     login: 'Sign In',
   },
   'zh-CN': {
     createNow: '立即创建',
+    freeTrial: '免费试用',
     login: '登录',
   },
   'zh-SG': {
     createNow: '立即创建',
+    freeTrial: '免费试用',
     login: '登录',
   },
+  'zh-Hant': {
+    createNow: '立即創建',
+    freeTrial: '免費試用',
+    login: '登入',
+  },
+  'id-ID': {
+    createNow: 'Buat Sekarang',
+    freeTrial: 'Coba Gratis',
+    login: 'Masuk',
+  },
+  es: {
+    createNow: 'Crear ahora',
+    freeTrial: 'Prueba gratis',
+    login: 'Iniciar sesión',
+  },
+  'ja-JP': {
+    createNow: '今すぐ作成',
+    freeTrial: '無料で試す',
+    login: 'ログイン',
+  },
+  'ko-KR': {
+    createNow: '지금 만들기',
+    freeTrial: '무료 체험',
+    login: '로그인',
+  },
 };
+
+/**
+ * 未显式传入 `locale` prop 时的兜底：从运行时 `i18n.language` 推断当前 locale。
+ *
+ * 注意繁体必须优先于「以 zh 开头」的简体判断 —— 否则 `zh-Hant` 会误落到
+ * 简体 `ZH_SG_LOCALE`，导致繁体站头部按钮显示简体文案（「立即创建/登录」
+ * 而非「立即創建/登入」）。
+ */
+function inferLocaleFromI18n(language: string | undefined): PublicSiteLocale {
+  const locale = parseLocaleCode(language);
+  if (!locale) return EN_US_LOCALE;
+  if (locale === ZH_CN_LOCALE || locale === ZH_SG_LOCALE) return ZH_SG_LOCALE;
+  return locale;
+}
 
 type PublicHeaderAuthIslandProps = {
   appearance?: HeaderAppearance;
   locale?: PublicSiteLocale;
   oauthError?: string | null;
   showLanguageSwitcher?: boolean;
+  /**
+   * 未登录转化引导：为 true 时右上角主按钮文案改为「免费试用」，
+   * 未登录点击直接跳转订阅套餐页（而非弹出登录框）。仅首页启用。
+   */
+  promoteFreeTrial?: boolean;
 };
 
 function PublicHeaderAuthControls({
@@ -51,6 +104,7 @@ function PublicHeaderAuthControls({
   locale,
   oauthError = null,
   showLanguageSwitcher = isGlobal,
+  promoteFreeTrial = false,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
   const { i18n } = useTranslation();
@@ -58,8 +112,11 @@ function PublicHeaderAuthControls({
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
-  const activeLocale: PublicSiteLocale = locale ?? (i18n.language?.startsWith('zh') ? 'zh-SG' : 'en-US');
-  const copy = copyByLocale[activeLocale] || copyByLocale['en-US'];
+  const activeLocale: PublicSiteLocale = locale ?? inferLocaleFromI18n(i18n.language);
+  const copy = copyByLocale[activeLocale];
+  // 未登录转化引导：主按钮文案改为当前 locale 的「免费试用」。
+  const createLabel = promoteFreeTrial ? copy.freeTrial : copy.createNow;
+  const subscribePath = publicSiteHref('/subscribe', activeLocale, { localized: isGlobal });
 
   useEffect(() => {
     if (oauthError) {
@@ -69,12 +126,14 @@ function PublicHeaderAuthControls({
 
   const goToCreate = () => {
     const target = !isAuthenticated
-      ? 'login_modal'
+      ? promoteFreeTrial
+        ? subscribePath
+        : 'login_modal'
       : isSubscribed
         ? bots.length > 0
           ? AGENTS_HOME_PATH
           : getAgentCreatingPath(true)
-        : '/subscribe';
+        : subscribePath;
     trackDatongClick('header_create_now_btn', {
       pgid: DATONG_PAGE_IDS.HOME,
       params: {
@@ -83,6 +142,12 @@ function PublicHeaderAuthControls({
       },
     });
     if (!isAuthenticated) {
+      // 首页转化引导：未登录点击「免费试用」直接进入订阅套餐页；
+      // 其它页面维持原有「弹出登录框」行为。
+      if (promoteFreeTrial) {
+        router.push(subscribePath);
+        return;
+      }
       setShowLogin(true);
       return;
     }
@@ -90,7 +155,7 @@ function PublicHeaderAuthControls({
       router.push(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
       return;
     }
-    router.push('/subscribe');
+    router.push(subscribePath);
   };
 
   if (!authReady) {
@@ -131,7 +196,7 @@ function PublicHeaderAuthControls({
           onClick={goToCreate}
           className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
         >
-          {copy.createNow}
+          {createLabel}
         </button>
         <button
           type="button"

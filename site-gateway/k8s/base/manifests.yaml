@@ -1,0 +1,198 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: site-gateway-config
+  namespace: ctl
+data:
+  SITE_GATEWAY_ADDR: ":8080"
+  SITE_GATEWAY_ADMIN_ADDR: ":8081"
+  # 根域走配置而非常量：测试与正式用不同的域，正式根域后续还会更换。
+  SITE_GATEWAY_ROOT_DOMAINS: "REPLACE_SITE_GATEWAY_ROOT_DOMAINS"
+  # 用户站点专用桶，不与任何自有业务共用——腾讯云对违规内容的处置粒度可以到桶。
+  SITE_GATEWAY_COS_BUCKET: "REPLACE_SITE_GATEWAY_COS_BUCKET"
+  SITE_GATEWAY_COS_REGION: "REPLACE_SITE_GATEWAY_COS_REGION"
+  SITE_GATEWAY_CTL_BASE_URL: "REPLACE_SITE_GATEWAY_CTL_BASE_URL"
+  SITE_GATEWAY_AUTH_MODE: "public"
+  SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED: "false"
+  SITE_GATEWAY_AUTH_FIXED_HOST: ""
+  SITE_GATEWAY_AUTH_OIDC_ISSUER: ""
+  SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL: ""
+  SITE_GATEWAY_AUTH_OIDC_TOKEN_URL: ""
+  SITE_GATEWAY_AUTH_OIDC_JWKS_URL: ""
+  SITE_GATEWAY_AUTH_OIDC_CLIENT_ID: ""
+  SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID: ""
+  SITE_GATEWAY_AUTH_SESSION_TTL: "5m"
+  # DSH data-plane routing is opt-in. Empty domains and federation settings keep it disabled.
+  SITE_GATEWAY_DSH_DOMAINS: ""
+  SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL: ""
+  SITE_GATEWAY_DSH_FEDERATION_BASE_URL: ""
+  SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID: ""
+  SITE_GATEWAY_DSH_FEDERATION_KEY_ID: ""
+  SITE_GATEWAY_DSH_TAT_START_TIMEOUT: "10s"
+  SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT: "15s"
+  # Plugin installation can legitimately run for up to 15 minutes. Keep this
+  # separate from the short timeout used to open a TAT tunnel.
+  SITE_GATEWAY_DSH_RESPONSE_HEADER_TIMEOUT: "20m"
+  SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT: "1h"
+  SITE_GATEWAY_DSH_MAX_TARGETS: "16"
+  SITE_GATEWAY_DSH_MAX_CONNECTIONS_PER_TARGET: "64"
+  SITE_GATEWAY_DSH_QUEUE_DEPTH: "64"
+  # Bound TAT buffering by bytes as well as frames. The aggregate 64 MiB cap
+  # leaves headroom inside the Pod's 256 MiB memory limit.
+  SITE_GATEWAY_DSH_MAX_FRAME_BYTES: "262144"
+  SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION: "2097152"
+  SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_TARGET: "16777216"
+  SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_TOTAL: "67108864"
+  SITE_GATEWAY_SITE_CACHE_TTL: "30s"
+  SITE_GATEWAY_SITE_MISS_CACHE_TTL: "5s"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: site-gateway
+  namespace: ctl
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: site-gateway
+  template:
+    metadata:
+      labels:
+        app: site-gateway
+      annotations:
+        site-gateway.lightclaw.dev/redeploy-at: REPLACE_SITE_GATEWAY_DEPLOYED_AT
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: site-gateway
+      containers:
+        - name: site-gateway
+          image: REPLACE_SITE_GATEWAY_IMAGE
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: site-gateway-config
+          env:
+            - name: WEBSITE_COS_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: WEBSITE_COS_SECRET_ID
+            - name: WEBSITE_COS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: WEBSITE_COS_SECRET_KEY
+            - name: WEBSITE_INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: WEBSITE_INTERNAL_API_TOKEN
+            - name: SITE_GATEWAY_AUTH_AEAD_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: SITE_GATEWAY_AUTH_AEAD_KEYS
+                  optional: true
+            # Optional while DSH routing is disabled. Auth and site-gateway use the same client key.
+            - name: SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: admin
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: admin
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 1000m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: site-gateway
+  namespace: ctl
+spec:
+  # 保持 ClusterIP：Ingress 开了 direct-access，CLB 直接把 Pod IP 注册为后端，
+  # 不经过节点端口转发。
+  selector:
+    app: site-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  # 沿用已有的 Ingress 名字，避免同一个 host 上出现两条规则、也避免多开一个 CLB。
+  name: lightclaw-sites-public
+  namespace: ctl
+  annotations:
+    kubernetes.io/ingress.class: qcloud
+    # direct-access 让 CLB 直接把 Pod IP 注册为后端。不开这个的话 CLB 只接受
+    # NodePort/LoadBalancer 类型的 Service，而节点端口转发在本集群上不通（504）。
+    ingress.cloud.tencent.com/direct-access: "true"
+    ingress.cloud.tencent.com/pass-to-target: "true"
+    # 关掉修改保护，否则后续调整后端会被 CLB 侧拒绝。
+    ingress.cloud.tencent.com/modification-protection: "false"
+    # 不开 CLB 健康检查：它会以泛域名为 Host 打在 / 上，而站点网关对未绑定的
+    # 站点一律返回 404，会被判为不健康而摘掉全部后端。
+spec:
+  # 集群用的是腾讯云 CLB ingress controller，不是 nginx。
+  ingressClassName: qcloud
+  # 证书必须是专门签给站点泛域名的那一张：泛域名只覆盖一级标签，
+  # *.lightclaw.tech 覆盖不了 *.sites.lightclaw.tech。腾讯云免费 DV 证书不支持
+  # 通配符（只能签单域名），付费通配符证书需要账号余额充足才能下单，所以
+  # beijing-sandbox 用的是 ACME（Let's Encrypt）+ DNSPod DNS-01 签发的
+  # *.sites.lightclaw.tech 通配符证书，再导入腾讯云 SSL 供 CLB 引用。
+  #
+  # ⚠️ 到期风险：证书必须由平台证书自动化负责续期、导入腾讯云 SSL，并更新 live
+  # Secret 的 qcloud_cert_id，否则站点公网 HTTPS 会整体失效。证书轮换可以产生新的
+  # 腾讯云证书 ID，但 GitOps 和业务配置只依赖稳定的 Secret 名，不保存证书 ID。
+  #
+  # secretName 指向的必须是平台维护、带 qcloud_cert_id 的 Opaque Secret，值是腾讯云
+  # SSL 的证书 ID。该 Secret 不由本应用的 GitOps manifest 管理。
+  # CLB ingress controller 不认 kubernetes.io/tls 类型的 secret：直接塞
+  # tls.crt / tls.key 会报 E4011 invalid tls secret content，并且连带 E4204
+  # 让整条 ingress 同步失败（实测于 beijing-sandbox）。也就是说证书必须先进
+  # 腾讯云 SSL 拿到证书 ID，光把证书内容放进集群没有用。
+  tls:
+    - hosts:
+        - "REPLACE_SITE_GATEWAY_WILDCARD_HOST"
+      secretName: REPLACE_SITE_GATEWAY_TLS_SECRET_NAME
+  rules:
+    - host: "REPLACE_SITE_GATEWAY_WILDCARD_HOST"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: site-gateway
+                port:
+                  number: 80

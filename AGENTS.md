@@ -53,8 +53,18 @@
 | `shadow/` | Go | 影子账号服务 | [shadow/AGENTS.md](shadow/AGENTS.md) |
 | `sandbox/` | Go / 沙箱 | 云主机 Mock | [sandbox/AGENTS.md](sandbox/AGENTS.md) |
 | `infra_pulumi/` | Pulumi / IaC | 基础设施 | [infra_pulumi/AGENTS.md](infra_pulumi/AGENTS.md) |
+| `new-api/` | Go + React | NewAPI upstream subtree | [new-api/MONO2_SUBTREE.md](new-api/MONO2_SUBTREE.md) |
 | `velagw/` | Go + React | LLMGateway control/data plane upstream subtree | [velagw/MONO2_SUBTREE.md](velagw/MONO2_SUBTREE.md) |
 | `velalink/` | TS + Rust | AI chat/runtime upstream subtree | [velalink/MONO2_SUBTREE.md](velalink/MONO2_SUBTREE.md) |
+
+### NewAPI subtree 协作模型（P0）
+
+`new-api/` 是 `https://github.com/QuantumNous/new-api.git` 的 squash-style subtree。
+mono2 内可以直接修改、测试和 review；上游同步必须显式选择版本并更新 `new-api/.mono2-subtree`。
+
+`.ci/new-api.yml` 只负责构建并推送北京、上海 TCR 镜像，不修改 GitOps，也不自动发布。
+
+标准流程详见 [new-api/MONO2_SUBTREE.md](new-api/MONO2_SUBTREE.md)。
 
 ### LLMGateway subtree 协作模型（P0）
 
@@ -352,11 +362,13 @@ codesign/                # EdgeOne / 子账号 / 权限模型 / 测试发布协�
 
 | 模式 | 适用场景 | 执行阶段 |
 |:----:|----------|----------|
-| 🟢 **快速修复**（`--quick`） | 小 Bug、文案修改、样式调整 | 1 → 4 → 5 |
-| 🟡 **标准开发**（默认） | 中等功能需求、组件开发 | 0 → 1 → 2 → 3 → 4 → 4B → 5 |
-| 🔴 **完整流程**（`--full`） | 大型需求、新模块、跨页面功能 | 0 → 1 → 2 → 2B → 3 → 4 → 4B → 5 → 6 |
+| 🟢 **轻量 S**（自动路由或 `--quick`） | 明确目标的局部 Bug、文案、样式、小交互 | P0 → 单任务 plan → quick review → light archive |
+| 🟡 **标准 M**（自动路由） | 超出 S 但仍在单一边界内的局部功能 | 标准规划 → 分批实现/review → standard archive |
+| 🔴 **完整 L**（`--full` 或可靠性条件升级） | 跨模块/跨服务、高风险契约、数据迁移或完整流程 | 完整规划 → Leader 串行调度 → full review/archive |
 
-### 标准开发流程
+### M/L 标准开发流程
+
+S 级需求不进入下方完整步骤，按需求路由执行 P0、单任务 plan、相关验证、quick review 和 light archive；只有升级到 M/L 后才执行对应的标准或完整阶段。
 
 ```
 📐 OpenSpec 上下文加载（子服务下沉维护）

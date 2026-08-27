@@ -1,5 +1,11 @@
 # Configure Channel - WeChat
 
+## Summary
+
+**The WeChat channel connects by QR code and is the simplest of all channels to set up: pick WeChat in the console Channels section, click to authorize and generate a QR code, then scan it with WeChat on your phone to start talking. You need just two things — a phone with WeChat installed, and a configured model (or simply the monthly model credits included with your plan). One agent can be connected to several channels at once, and they all share the same persona and long-term memory.**
+
+---
+
 The WeChat channel uses QR-code access and is the simplest channel to configure.
 
 ## This page covers
@@ -135,5 +141,7 @@ After access succeeds, the WeChat bot can receive and reply to basic text messag
 - [Configure Channel - WhatsApp](./channel-whatsapp.md) — International user communication and customer service
 
 - [Configure Channel - Discord](./channel-discord.md) — Community operations and developer communities
+
+- [Configure Channel - Slack](./channel-slack.md) — Team collaboration, workspace notifications, and channel workflows
 
 - [Configure Skills](./skill.md) — Extend Hermes Agent capabilities

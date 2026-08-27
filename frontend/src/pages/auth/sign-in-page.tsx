@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { PhoneLoginForm } from "@/components/auth/phone-login-form";
+import { WeChatMobileBrowserGuide } from "@/components/site/wechat-mobile-browser-guide";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
+import { useT } from "@/i18n/t";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import { installShowPhoneLoginHelper, usePhoneLoginVisibility } from "@/lib/phone-login-visibility";
 import {
@@ -11,7 +13,6 @@ import {
   oauthErrorMessage,
   redirectToOAuthStart,
   VISIBLE_OAUTH_PROVIDERS,
-  WECHAT_MOBILE_BROWSER_PROMPT,
   wechatOAuthStartTargetForUserAgent,
   type OAuthProvider,
 } from "@/lib/oauth";
@@ -58,6 +59,7 @@ export const SignInPage = () => {
   const navigate = useNavigate();
   const repositories = useRepositories();
   const { signInAsGuest } = useSession();
+  const t = useT();
   const showGitHubLoginEgg = useGitHubLoginVisibility();
   const showPhoneLogin = usePhoneLoginVisibility();
   const oauthError = new URLSearchParams(location.search).get("oauth_error");
@@ -66,6 +68,7 @@ export const SignInPage = () => {
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
   const [oauthPrompt, setOAuthPrompt] = useState<string | null>(null);
+  const [wechatMobileGuideUrl, setWechatMobileGuideUrl] = useState<string | null>(null);
   const [phoneLoginOpen, setPhoneLoginOpen] = useState(false);
 
   useEffect(() => installShowGitHubLoginHelper(), []);
@@ -84,7 +87,15 @@ export const SignInPage = () => {
 
   const handleOAuthLogin = async (provider: OAuthProvider) => {
     if (provider === "wechat" && wechatOAuthStartTargetForUserAgent(window.navigator.userAgent) === "unsupported_mobile_browser") {
-      setOAuthPrompt(WECHAT_MOBILE_BROWSER_PROMPT);
+      const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
+        wechatMode: "official_account",
+      });
+      if (!loginUrl) {
+        setOAuthPrompt(t("请在微信中打开当前页面后继续登录。"));
+        return;
+      }
+      setOAuthPrompt(null);
+      setWechatMobileGuideUrl(loginUrl);
       return;
     }
     const loginUrl = getOAuthStartUrlForProvider(provider);
@@ -92,6 +103,7 @@ export const SignInPage = () => {
       return;
     }
     setOAuthPrompt(null);
+    setWechatMobileGuideUrl(null);
     redirectToOAuthStart(loginUrl);
   };
 
@@ -127,6 +139,16 @@ export const SignInPage = () => {
       <div className="space-y-4">
         {providersToRender.map((provider) => {
           if (provider !== "wechat" && !getOAuthStartUrlForProvider(provider)) return null;
+          if (provider === "wechat" && wechatMobileGuideUrl) {
+            return (
+              <WeChatMobileBrowserGuide
+                key={provider}
+                loginUrl={wechatMobileGuideUrl}
+                className="py-2"
+                autoFocus
+              />
+            );
+          }
           const visual = PROVIDER_VISUALS[provider];
           return (
             <Button
@@ -144,7 +166,16 @@ export const SignInPage = () => {
           phoneLoginOpen ? (
             <PhoneLoginForm onSignedIn={() => navigate("/", { replace: true })} />
           ) : (
-            <Button type="button" variant="outline" className={OUTLINE_CLASS} onClick={() => setPhoneLoginOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              className={OUTLINE_CLASS}
+              onClick={() => {
+                setWechatMobileGuideUrl(null);
+                setOAuthPrompt(null);
+                setPhoneLoginOpen(true);
+              }}
+            >
               使用手机号登录
             </Button>
           )
