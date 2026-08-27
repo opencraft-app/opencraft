@@ -440,14 +440,34 @@ describe("AgentModelConfigPanel", () => {
     expect(apiKeyControl).toContainElement(apiKey);
     expect(apiKeyControl).toContainElement(screen.getByRole("button", { name: "显示 API Key" }));
     expect(apiKeyControl).toContainElement(fetchModelsButton);
-    expect(fetchModelsButton).toHaveClass("h-full", "w-28", "shrink-0", "rounded-none", "border-l", "sm:w-36");
+    expect(fetchModelsButton).toHaveClass(
+      "h-full",
+      "min-w-max",
+      "shrink-0",
+      "whitespace-nowrap",
+      "rounded-none",
+      "border-l",
+    );
+    expect(fetchModelsButton).not.toHaveClass("w-28", "sm:w-36");
+    expect(fetchModelsButton.querySelector('[data-slot="model-compound-action-width-label"]')).toHaveTextContent("获取可用模型");
+    expect(fetchModelsButton.querySelector('[data-slot="model-compound-action-width-label"]')).toHaveClass("invisible");
     expect(fetchModelsButton.querySelector("svg")).toBeNull();
 
     expect(modelControl).toHaveClass("flex", "overflow-hidden", "focus-within:border-[#2F6BFF]");
     expect(modelControl).toContainElement(model);
     expect(modelControl).toContainElement(connectivityButton);
     expect(model).toHaveClass("min-w-0", "flex-1", "rounded-none", "border-0");
-    expect(connectivityButton).toHaveClass("h-full", "w-28", "shrink-0", "rounded-none", "border-l", "sm:w-36");
+    expect(connectivityButton).toHaveClass(
+      "h-full",
+      "min-w-max",
+      "shrink-0",
+      "whitespace-nowrap",
+      "rounded-none",
+      "border-l",
+    );
+    expect(connectivityButton).not.toHaveClass("w-28", "sm:w-36");
+    expect(connectivityButton.querySelector('[data-slot="model-compound-action-width-label"]')).toHaveTextContent("检测模型状态");
+    expect(connectivityButton.querySelector('[data-slot="model-compound-action-width-label"]')).toHaveClass("invisible");
     expect(connectivityButton.querySelector("svg")).toBeNull();
 
     const addButton = screen.getByRole("button", { name: "添加模型" });
@@ -573,6 +593,31 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.clear(apiKey);
     expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
     expect(screen.queryByText("shared-model")).not.toBeInTheDocument();
+  });
+
+  it("keeps the full idle action width while model discovery is loading", async () => {
+    const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel] });
+    renderPanel(remote);
+    await screen.findByText("model-primary");
+
+    const execute = remote.execDebugCommand.getMockImplementation();
+    if (!execute) throw new Error("Missing remote command implementation");
+    remote.execDebugCommand.mockImplementation(async (botId, command) => {
+      if (decodeAction(command).type === "probe") {
+        return await new Promise<never>(() => undefined);
+      }
+      return execute(botId, command);
+    });
+
+    await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    const loadingButton = await screen.findByRole("button", { name: "获取中..." });
+    expect(loadingButton).toBeDisabled();
+    expect(loadingButton).toHaveTextContent("获取中...");
+    expect(loadingButton.querySelector("svg")).toHaveClass("animate-spin");
+    expect(loadingButton.querySelector('[data-slot="model-compound-action-width-label"]')).toHaveTextContent("获取可用模型");
+    expect(loadingButton.querySelector('[data-slot="model-compound-action-width-label"]')).toHaveClass("invisible");
   });
 
   it("renders the API Key destination as an external link", async () => {

@@ -78,9 +78,7 @@ export default function HeroSection({ onCreateClick, ctaLabel }: HeroSectionProp
             draggable={false}
           />
           <p className="m-0 max-w-[270px] break-words [word-break:normal] sm:max-w-[620px]">
-            {isCN
-              ? "LightVela · Hermes Agent"
-              : t("云端托管 Hermes Agent，越聊越懂你的智能伙伴")}
+            {t("LightVela · 云端 Hermes Agent")}
           </p>
         </div>
 
@@ -91,8 +89,8 @@ export default function HeroSection({ onCreateClick, ctaLabel }: HeroSectionProp
           )}
         >
           {isCN
-            ? "越用越懂你，长期在线的 AI 伙伴"
-            : t("灵感随时发生，思考自由流动")}
+            ? "你的 AI 伙伴，长期在线，持续进化"
+            : t("你的 AI 伙伴，随时都在，持续进化")}
         </h1>
 
         <button

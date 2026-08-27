@@ -44,10 +44,10 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 - DSH 版本目录 `/opt/lightvela/dsh/releases/<snapshot-id>-<task-prefix>`，当前链接 `/opt/lightvela/dsh/current`；相同快照复用已有 runtime，成功后仅保留当前与一个上一版本。
 - 系统服务文件 `/etc/systemd/system/deepseek-harness.service`，通过 `User=agentuser`、`Group=agentuser` 降权运行，启动命令固定为 `dsh web --host 127.0.0.1 --port 3080`，设置 `Restart=always`、`RestartSec=5`、`UMask=0077`。
 - SkillHub、QQBot、微信、企业微信、Lark 和钉钉全部安装到 DSH `web` profile。六个插件必须同时满足快照包名/版本、声明 `dsh.bundle`、进入 `dsh.profile.bundles`、出现在 `dsh plugin --profile web list --depth 0 --json`，且 `dsh --profile web --dump-config` 成功；任一失败都将整个任务判定失败。
-- 安装使用 `flock`，状态以 root-owned JSON 原子写入 `/var/lib/lightvela/dsh/installations/`。下载、冻结安装和静态检查先在任务临时目录完成；正式切换前再次比较旧 profile 指纹，检测到并发修改则不覆盖。
+- 安装使用 `flock`，状态以 root-owned JSON 原子写入 `/var/lib/lightvela/dsh/installations/`。下载、冻结安装和静态检查先在 root-owned 任务目录完成；已有 profile 的可变插件内容仅以 `agentuser` 身份复制，控制文件通过 no-follow 读取后原子重建。正式切换前先停止旧服务，再比较包含第三方插件编译产物在内的完整旧 profile 指纹，检测到并发修改则恢复旧服务且不覆盖。
 - 切换前备份旧 runtime、完整旧 `web` profile、固定 pnpm tooling 和旧 unit；切换后明确 enable、restart，先等待回环 HTTP 200，再确认只监听 `127.0.0.1:3080`。失败时恢复备份并重启旧服务；首次安装失败清理临时目录和半成品。
 - 重装或升级时保留原 `web/cordis.patch.yml`；`$DSH_HOME` 下的 credentials、settings、storage 和其他用户数据不参与替换或清理。成功或失败后删除任务工作目录，但保留安装任务 JSON 状态记录。
-- 已经收敛到相同 npm 快照、六插件和服务配置时幂等复用 runtime。检测到非 LightVela 管理的额外 profile 依赖或 bundle 时保持原状并失败，不删除未知插件、不放弃快照一致性保证。
+- 已经收敛到相同 npm 快照、六插件和服务配置时幂等复用 runtime。SkillHub 已安装的第三方插件依赖、bundle、workspace build policy 与编译产物在校验包名、bundle patch 路径和 profile 完整性后保留；旧安装器写入的 `pnpm.onlyBuiltDependencies` 从可变 Web profile 迁移删除，runtime 自身的 native build allowlist 保持不变。
 
 ## 3. 模型供应商配置 helper
 
