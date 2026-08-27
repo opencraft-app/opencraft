@@ -37,6 +37,21 @@ const (
 	SiteStatusBlocked = "blocked"
 )
 
+// ---- Site 访问模式 ----
+
+const (
+	SiteAccessModeOwnerOnly = "owner_only"
+	SiteAccessModeShareCode = "share_code"
+)
+
+// NormalizeSiteAccessMode 对未知或空值执行 fail-closed 降级。
+func NormalizeSiteAccessMode(mode string) string {
+	if mode == SiteAccessModeShareCode {
+		return SiteAccessModeShareCode
+	}
+	return SiteAccessModeOwnerOnly
+}
+
 // ---- Release 状态 ----
 
 const (
@@ -70,10 +85,10 @@ const (
 	OpTypeCreate = "create"
 	OpTypeDeploy = "deploy"
 	OpTypeDelete = "delete"
-		// OpTypeSuspend 仅兼容历史操作；当前套餐到期由 CTL 直接切换站点状态。
-		OpTypeSuspend = "suspend"
-		// OpTypeResume 仅兼容历史操作；当前续费不需要 COS 恢复动作。
-		OpTypeResume = "resume"
+	// OpTypeSuspend 仅兼容历史操作；当前套餐到期由 CTL 直接切换站点状态。
+	OpTypeSuspend = "suspend"
+	// OpTypeResume 仅兼容历史操作；当前续费不需要 COS 恢复动作。
+	OpTypeResume = "resume"
 )
 
 // ---- 列名 ----
@@ -102,6 +117,9 @@ type SiteEntity struct {
 	Status         string  `gorm:"column:status;index:idx_status"`
 	CloudPath      string  `gorm:"column:cloud_path"`
 	PublicURL      string  `gorm:"column:public_url"`
+	// AccessMode 与 ShareExpiresAt 由 CTL 从 Redis 临时分享状态派生，不落 website_sites。
+	AccessMode     string     `gorm:"-"`
+	ShareExpiresAt *time.Time `gorm:"-"`
 	// OperationGeneration fences late workers so an older deploy cannot restore a deleted site.
 	OperationGeneration int64 `gorm:"column:operation_generation"`
 	// StorageBytes 是站点当前保留的 COS 字节数。正常成功态只有 sites/ 下的

@@ -68,6 +68,31 @@ func TestBySiteIDParsesUserID(t *testing.T) {
 	}
 }
 
+func TestBySiteIDParsesShareAccessPolicy(t *testing.T) {
+	expiresAt := time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"code":"OK","message":"success","data":{` +
+			`"site_id":"ws-abc","status":"active","access_mode":"share_code",` +
+			`"share_generation":"generation-7","share_expires_at":"2026-09-23T10:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	site, err := NewClient(Options{BaseURL: server.URL}).BySiteID(context.Background(), "ws-abc")
+	if err != nil {
+		t.Fatalf("BySiteID: %v", err)
+	}
+	if site.AccessMode != AccessModeShareCode || site.ShareGeneration != "generation-7" ||
+		site.ShareExpiresAt == nil || !site.ShareExpiresAt.Equal(expiresAt) {
+		t.Fatalf("share access policy = %+v", site)
+	}
+	if !site.ShareAccessActiveAt(expiresAt.Add(-time.Second)) || site.ShareAccessActiveAt(expiresAt) {
+		t.Fatalf("share expiry boundary was not enforced: %+v", site)
+	}
+	if got := NormalizeAccessMode("unexpected"); got != AccessModeOwnerOnly {
+		t.Fatalf("unknown access mode normalized to %q", got)
+	}
+}
+
 func TestBySiteIDNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

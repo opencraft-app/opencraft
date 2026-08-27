@@ -133,6 +133,60 @@
 
 ---
 
+# 国内建站临时分享码 Implementation Plan
+
+> **执行约束：** 用户已批准 Redis TTL 方案、后端实现以及提交分支并创建 MR；本次仍不改 GitOps、不发布生产。
+
+**Goal:** 将国内站分享码改为 Redis 临时状态，支持 1/7/30 天自动到期和 generation 主动废除，同时保持 Owner OIDC 与国际站 public 行为不变。
+
+**Architecture:** CTL 以 `website:share:access:{site_id}` Redis key 保存 bcrypt hash、随机 generation 和绝对到期时间，TTL 是分享生命周期；site-gateway 通过 CTL 元数据和校验接口获得 generation/expiry，并签发不超过剩余有效期的 Host-only Cookie。MySQL 不承载分享状态，不新增 migration；前端管理 UI 已按用户要求撤出本分支，后续交由前端同学实现。
+
+**Tech Stack:** Go 1.26、go-redis v9、bcrypt、site-gateway AES-GCM TokenCodec。
+
+## Global Constraints
+
+- Redis TTL 只允许 1/7/30 天；key 缺失、过期、损坏或 Redis 异常时访客 fail-closed 为 owner-only。
+- 分享码固定 6 位无歧义大写字母数字；Redis 只保存 bcrypt hash，明文仅在开启/重置响应返回一次。
+- generation 使用独立加密随机值；分享 Cookie 绑定 site/host/generation，且 token/cookie 到期不晚于分享 `expires_at`。
+- 重置保留原绝对到期时间；停止分享删除 key；自动到期不得被 gateway 30 秒元数据缓存延长。
+- Owner OIDC 与国际 `public` 完全不读取分享 Cookie；客户端 IP 只接受显式受信代理头。
+- 本分支不修改前端路由、工作台页面、分享按钮、Dialog 或 i18n 资源。
+
+## Active Tasks
+
+- [x] **Task WSR-1 — CTL Redis 临时状态、所有者接口与内部校验**
+  - **Role:** Developer（inline，现有隔离 worktree 单写者）
+  - **Files:** 删除 `ctl/migrations/000029_add_website_share_access.*.sql`；修改 `ctl/pkg/model/website/entity.go`、`dao.go`、`ctl/pkg/logic/website/share_access.go`、`logic.go`、`ctl/main/api/website_handler.go` 及相邻测试。
+  - **Interfaces:** `SetAccessPolicy(userID, siteID, mode string, durationDays int) (*ShareAccessResult, error)`；`ResetShareCode(userID, siteID string)`；`VerifyShareCode(siteID, code, clientIP string) (*ShareVerifyResult, error)`；Redis state `{code_hash,generation,expires_at}`。
+  - **RED/GREEN:** 先修改测试要求 1/7/30 TTL、非法时长、无 DB 字段、随机 generation、重置保留到期和停止删除；确认旧实现因契约不符失败后，再替换为 Redis 实现。
+  - **Acceptance:** `website_sites` 无分享字段/migration；用户 API 不返回 generation/hash；内部元数据仅返回 generation/expiry；Redis read 异常不阻断 Owner OIDC；限流仍在 bcrypt 前且 fail-closed。
+  - **Verify:** `cd ctl && go test -count=1 ./pkg/logic/website ./main/api`
+
+- [x] **Task WSR-2 — site-gateway generation/expiry 分享会话**
+  - **Role:** Developer（inline）
+  - **Files:** 修改 `site-gateway/internal/sitemeta/*`、`internal/siteauth/token*`、`internal/httpapi/shareauth*`、`siteauth.go`、`internal/config/*`、`cmd/site-gateway/main.go`。
+  - **Interfaces:** `ShareCodeVerifier.Verify(...) (ShareVerification, error)` 返回 generation/expiry；`ShareSessionClaims{SiteID,SiteHost,Generation,Nonce}`；`SealShareSession(claims, ttl)` 使用动态剩余 TTL。
+  - **RED/GREEN:** 先让 Cookie 动态 TTL、generation mismatch、自动到期、public/owner-only 回归测试失败，再实现最小 verifier/token/gateway 判断。
+  - **Acceptance:** Cookie Max-Age/exp 不超过 Redis 分享剩余时间；自动到期立即拒绝；重置/停止在元数据缓存收敛后拒绝；public 不触发 verifier。
+  - **Verify:** `cd site-gateway && go test -count=1 ./...`
+
+- [ ] **Task WSR-3 — 前端分享管理 UI（移交前端同学）**
+  - **状态:** 本分支已删除分享按钮、Dialog、国内路由入口、相关测试与 i18n 资源，不在当前实现范围内。
+  - **交互要求:** 先选择“使用分享码访问”再展示 1/7/30 天；只保留一个“复制分享信息”按钮，复制内容包含 LightVela 分享说明、站点地址、分享码和有效期。
+
+- [x] **Task WSR-4 — 后端跨服务回归与安全审查**
+  - **Role:** Developer + final Reviewer（最终一次只读 review）
+  - **Files:** 仅修正 WSR-1~2 暴露的后端缺陷；更新 `.workflow/runtime/verification-ledger.md`，不提交 runtime 文件。
+  - **Acceptance:** 目标 Go 测试、`git diff --check`、migration/DB 字段残留扫描、secret/hash/code 日志扫描均有最新证据；前端门禁不属于当前分支验收范围。
+  - **Verify:** `git status --short`, `git diff --check`, `git diff --stat`；明确真实 Redis、DB migration、登录态浏览器和线上请求均未执行。
+
+## Batches
+
+- Batch 1（当前）：WSR-1、WSR-2，主 Agent 串行实现，避免共享契约并发写入；WSR-3 移交前端同学。
+- Batch 2：WSR-4 最终验证和验收摘要。
+
+---
+
 ### Task 1: 路由与 Section 模型
 
 **Role:** Developer
