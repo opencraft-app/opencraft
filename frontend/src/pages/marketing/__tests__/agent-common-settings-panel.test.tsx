@@ -179,7 +179,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     const trigger = await screen.findByRole("combobox", { name: "审批模式" });
     expect(trigger).toHaveTextContent("智能审批");
-    expect(screen.queryByText("当前不会请求危险命令审批")).toBeNull();
+    expect(screen.queryByText("当前高风险操作无需审批")).toBeNull();
     await user.click(trigger);
     expect(screen.getByRole("option", { name: "智能审批" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "始终询问" })).toBeTruthy();
@@ -392,7 +392,9 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("关闭审批");
-    expect(screen.getByText("当前不会请求危险命令审批")).toBeTruthy();
+    const warning = screen.getByText("当前高风险操作无需审批");
+    expect(warning).toHaveClass("whitespace-nowrap", "text-right");
+    expect(screen.queryByText("当前不会请求危险命令审批")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 

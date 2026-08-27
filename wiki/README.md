@@ -6,6 +6,7 @@
 
 - `product-state/`：当前状态层，维护目标、风险和当前重点。
 - `roadmap/`：产品路线图目录，维护总体规划和各阶段 Roadmap。
+- `techpedia/`：技术百科长篇内容目录，维护中英文 Techpedia 文章。
 - `sources/`：原始输入层，维护进展、脑暴、会议、市场分析等可回溯来源。
 - `knowledge/`：沉淀知识层，维护概念、决策和长期产品理解。
 - `prd-docs/`：需求文档层，存放通过 [`prd-creator`](../.agents/skills/product-skills/prd-creator/SKILL.md) 梳理生成的 PRD 需求单。

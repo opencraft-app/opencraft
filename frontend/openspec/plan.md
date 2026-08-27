@@ -4472,3 +4472,33 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check` 通过。
 
 ---
+
+# Agent 审批关闭提示文案与布局 Quick Fix
+
+**Goal:** 将 Approval Mode 关闭状态的常驻提示统一为「高风险操作」术语，并避免紧凑控件列中的提示文案错误换行。
+
+## Tasks
+
+- [x] 更新关闭审批状态提示、四语言资源和单行布局，完成定向测试、i18n、类型与 diff 检查。
+
+---
+
+# 自动任务 Job 术语统一 Quick Fix
+
+**Goal:** 英文和印尼语界面以 `Job` 表示可调度的自动任务实体，以 `Run` 表示单次执行；`Automations` 仅作为模块名称，`Task` 仅用于描述 Job 实际执行的工作内容。
+
+## Tasks
+
+- [x] **Task 1: 用全球站测试锁定 Job 文案。**
+  - 页签使用 `Current Jobs`、`Ended Jobs`、`Recent Runs`。
+  - 新建和编辑弹窗使用 `Create Job`、`Edit Job`，详情、ID、上下游关系使用 `Job`。
+
+- [x] **Task 2: 同步英文和印尼语资源。**
+  - 只调整指代自动任务实体的翻译；模块名 `Automations`、执行记录 `Runs` 和描述工作内容的 `task` 保持原语义。
+
+- [x] **Task 3: 完成回归与质量门禁。**
+  - 运行全球站自动任务定向测试、i18n 检查、`pnpm check` 和 `git diff --check`。
+
+**Verification:** RED 三轮分别命中 59、15、10 个预期失败，覆盖主面板、模型同步、场景入口与残留实体文案；GREEN 自动任务与更新日志相关 19 个测试文件 357 passed。`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 与 `git diff --check` 通过。
+
+---
