@@ -2927,7 +2927,7 @@ export const AgentSettingsPage = ({
   const paidBillingEnabled = usePaidBillingEnabled();
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
-  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
   const {
     commandLifecycle: automationModelCommandLifecycle,
     confirmationDialog: automationModelSwitchDialog,
@@ -3020,7 +3020,7 @@ export const AgentSettingsPage = ({
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const activeBotStatus = activeBot?.status;
   const passExpiryReminder = useMemo(
-    () => (paidBillingActive ? getPassExpiryReminder(activePass) : null),
+    () => (isGlobal || paidBillingActive ? getPassExpiryReminder(activePass) : null),
     [activePass, paidBillingActive],
   );
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
