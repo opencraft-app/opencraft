@@ -58,6 +58,7 @@ import {
   removeCronJob,
   removeCronJobWithDependentRollback,
   resumeCronJob,
+  sendHermesChatNotice,
   shellQuote,
   startCronTestRun,
   type CronDependentBinding,
@@ -3270,6 +3271,18 @@ export function AutomationFormModal({
         } else {
           await createCronJobWithScriptRollback(botId, createInput, script);
         }
+        onSaved();
+        if (deliver !== "local") {
+          const deliveryWarning = t("自动任务已添加，但部分通知通道发送确认消息失败。");
+          void sendHermesChatNotice(botId, deliver, t("LightVela 已添加新的自动任务。"))
+            .then(({ failed }) => {
+              if (failed > 0) {
+                onError(deliveryWarning);
+              }
+            })
+            .catch(() => onError(deliveryWarning));
+        }
+        return;
       } else if (initialJob) {
         const patch: Parameters<typeof editCronJob>[2] = {};
         const nextName = name.trim();

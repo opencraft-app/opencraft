@@ -1780,3 +1780,40 @@ describe("parseCronListOutput execution status", () => {
     expect(jobs[0]?.execution_status).toBe("running");
   });
 });
+
+describe("sendHermesChatNotice", () => {
+  it("reports per-target results while continuing after one immediate notice fails", async () => {
+    const client = await import("../hermes-cron-client") as unknown as {
+      sendHermesChatNotice?: (
+        botId: string,
+        deliver: string,
+        message: string,
+      ) => Promise<{ sent: number; failed: number }>;
+    };
+    expect(client.sendHermesChatNotice).toBeTypeOf("function");
+    if (!client.sendHermesChatNotice) return;
+
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init.body)) as { command: string };
+      if (command.command.includes("--to 'wecom'")) return failedExec("wecom unavailable");
+      if (command.command.includes("--to 'qqbot:chat-1'")) return okExec("Sent.");
+      throw new Error(`unexpected command in test: ${command.command}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(client.sendHermesChatNotice(
+      "bot-1",
+      "wecom,qqbot:chat-1",
+      "LightVela 已添加新的自动任务。",
+    )).resolves.toEqual({ sent: 1, failed: 1 });
+
+    const commands = fetchMock.mock.calls.map((call) => {
+      const init = call[1] as { body?: string };
+      return (JSON.parse(String(init.body)) as { command: string }).command;
+    });
+    expect(commands).toHaveLength(2);
+    expect(commands.some((command) => command.includes("--to 'wecom'"))).toBe(true);
+    expect(commands.some((command) => command.includes("--to 'qqbot:chat-1'"))).toBe(true);
+    expect(commands.every((command) => command.includes("LightVela 已添加新的自动任务。"))).toBe(true);
+  });
+});

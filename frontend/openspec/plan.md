@@ -1,3 +1,21 @@
+# 自动任务创建成功通知 Implementation Plan
+
+**Design:** `../wiki/prd-docs/2026-08-27-自动任务创建成功后发送通知确认.md`
+
+**Detailed plan:** `openspec/changes/2026-08-27-automation-create-notice-plan.md`
+
+## Tasks
+
+- [x] 测试先行实现自动任务创建成功后的多通道确认消息、失败隔离、非阻塞警告与双站国际化，并通过定向测试、类型、i18n 和差异门禁。
+
+**Verification:**
+- RED：新增用例分别失败于即时发送接口不存在、创建流程未调用和未处理 Promise rejection；GREEN 后全部通过。
+- 国内/国际相关 3 个测试文件共 231 passed；补充异常 rejection 用例后自动任务主测试文件 130 passed。
+- `pnpm check` 通过：TypeScript diagnostics 214 current / 276 baseline / 0 new / 62 resolved；i18n 结构错误 0。
+- `pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+
+---
+
 # MR !3385 CR：移除误复活的国际 Support 路由
 
 **Goal:** 恢复 !3316 已确认的产品边界，国际站不生成带语言前缀的 Support 页面；国内站反馈页及已存在的西语组件文案保持不变。

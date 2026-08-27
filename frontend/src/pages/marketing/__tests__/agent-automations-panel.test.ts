@@ -13,6 +13,7 @@ const cronClientMocks = vi.hoisted(() => ({
   listRecentCronRuns: vi.fn(),
   removeCronJob: vi.fn(),
   removeCronJobWithDependentRollback: vi.fn(),
+  sendHermesChatNotice: vi.fn(),
 }));
 
 const skillsClientMocks = vi.hoisted(() => ({
@@ -87,6 +88,7 @@ beforeEach(() => {
   cronClientMocks.listRecentCronRuns.mockResolvedValue([]);
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
   cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
+  cronClientMocks.sendHermesChatNotice.mockResolvedValue({ sent: 0, failed: 0 });
   skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue([]);
 });
 
@@ -1866,6 +1868,86 @@ describe("automation notification channel options", () => {
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
     expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
+  });
+
+  it("sends a creation notice to every selected target and surfaces partial failures without undoing the save", async () => {
+    const onSaved = vi.fn();
+    const onError = vi.fn();
+    cronClientMocks.sendHermesChatNotice.mockResolvedValue({ sent: 1, failed: 1 });
+    renderAutomationForm({
+      enabledChannels: new Set(["qqbot", "wecom"]),
+      onSaved,
+      onError,
+    });
+
+    fillCreateFields();
+    fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "企业微信" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+        "bot-1",
+        expect.objectContaining({ deliver: "qqbot,wecom" }),
+        undefined,
+      );
+    });
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(cronClientMocks.sendHermesChatNotice).toHaveBeenCalledWith(
+        "bot-1",
+        "qqbot,wecom",
+        "LightVela 已添加新的自动任务。",
+      );
+      expect(onError).toHaveBeenCalledWith("自动任务已添加，但部分通知通道发送确认消息失败。");
+    });
+  });
+
+  it("does not send a creation notice when the new task has no notification target", async () => {
+    const onSaved = vi.fn();
+    renderAutomationForm({ onSaved });
+
+    fillCreateFields();
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(cronClientMocks.sendHermesChatNotice).not.toHaveBeenCalled();
+  });
+
+  it("keeps the task saved and warns when the immediate notice request rejects unexpectedly", async () => {
+    const onSaved = vi.fn();
+    const onError = vi.fn();
+    cronClientMocks.sendHermesChatNotice.mockRejectedValue(new Error("transport unavailable"));
+    renderAutomationForm({
+      enabledChannels: new Set(["qqbot"]),
+      onSaved,
+      onError,
+    });
+
+    fillCreateFields();
+    fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith("自动任务已添加，但部分通知通道发送确认消息失败。");
+    });
+  });
+
+  it("does not send a creation notice when editing an existing task", async () => {
+    const onSaved = vi.fn();
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({ deliver: "qqbot" }),
+      enabledChannels: new Set(["qqbot"]),
+      onSaved,
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "已编辑任务" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(cronClientMocks.sendHermesChatNotice).not.toHaveBeenCalled();
   });
 });
 
