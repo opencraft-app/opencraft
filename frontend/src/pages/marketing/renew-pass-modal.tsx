@@ -4,11 +4,20 @@ import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRepositories } from "@/contexts/repository-context";
-import { useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
+import {
+  usePaidBillingEnabled,
+  useRealnamePhoneVerificationEnabled,
+} from "@/contexts/runtime-config-context";
 import { useSession } from "@/contexts/session-context";
 import { type BundleTimeUnit, type Pass, type PassRenewPrice } from "@/domain/types";
 import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
-import { centsToYuan, formatYuan, getPassStatus, type PassStatus } from "@/lib/billing-flow";
+import {
+  centsToYuan,
+  formatYuan,
+  getPassStatus,
+  isPaidBillingEnabled,
+  type PassStatus,
+} from "@/lib/billing-flow";
 import {
   estimateRenewalExpiry,
   formatPassDate,
@@ -67,6 +76,7 @@ export const RenewPassModal = ({
   const { plans } = useRepositories();
   const { session, refreshProfile } = useSession();
   const user = session.user;
+  const paidBillingEnabled = usePaidBillingEnabled();
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const [selected, setSelected] = useState<RenewalSelection>({
     period: RENEWAL_PERIOD_OPTIONS[0]!.period,
@@ -116,7 +126,10 @@ export const RenewPassModal = ({
   } = getRenewalRealnameFlowFlags(user, realnamePhoneVerificationEnabled);
   /* 国际站（lightvela.ai）无中国实名要求：短路实名门禁，避免续费按钮被 disabled。
      国内站续费仍需 PHONE_3FA 实名（renewal-realname.ts isRenewalRealnameVerified）。 */
-  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
+  const renewalAvailable = isRenewalAvailableForRegion(
+    isGlobal,
+    isPaidBillingEnabled(paidBillingEnabled),
+  );
   const realnameVerified = isGlobal || isRenewalRealnameVerified(user, realnamePhoneVerificationEnabled);
   const realnameSyncStatus = user?.realnameSyncStatus as RealnameSyncStatus | undefined;
   const renewActionDisabled = submitting || pricing || !realnameVerified || !renewalAvailable;

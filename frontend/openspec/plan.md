@@ -70,6 +70,25 @@
 
 ---
 
+# 国际站续费付费开关 Implementation Plan
+
+**Design:** `openspec/changes/2026-08-27-global-renew-paid-billing-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-27-global-renew-paid-billing-plan.md`
+
+## Tasks
+
+- [x] 用失败测试锁定国际站开关关闭/开启和国内站不回归。
+- [x] 统一账号页、Agent 到期提醒与续费弹窗的 `paidBillingEnabled` 门控。
+- [x] 完成相关测试、类型检查、i18n 检查和 diff 门禁。
+
+**Verification:**
+- 续费相关聚焦回归 6 个测试文件、47 passed。
+- `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- `renewal-id-ID.test.ts` 仍有 2 条 `origin/master` 既有字典缺项失败，本变更未修改对应测试和生成字典。
+
+---
+
 ### Task 1: 路由与 Section 模型
 
 **Role:** Developer

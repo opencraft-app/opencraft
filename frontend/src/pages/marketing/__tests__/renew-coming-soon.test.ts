@@ -2,7 +2,11 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { getRenewComingSoonTooltipPosition, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
+import {
+  getRenewComingSoonTooltipPosition,
+  isRenewalAvailableForRegion,
+  RenewComingSoonButton,
+} from "@/pages/marketing/renew-coming-soon";
 
 const rect = (values: Partial<DOMRect>): DOMRect => ({
   x: values.left ?? 0,
@@ -43,6 +47,20 @@ describe("getRenewComingSoonTooltipPosition", () => {
     expect(position.left).toBe(102);
     expect(position.placement).toBe("top");
   });
+});
+
+describe("isRenewalAvailableForRegion", () => {
+  it.each([
+    { globalRegion: false, paidBillingEnabled: false, expected: true },
+    { globalRegion: false, paidBillingEnabled: true, expected: true },
+    { globalRegion: true, paidBillingEnabled: false, expected: false },
+    { globalRegion: true, paidBillingEnabled: true, expected: true },
+  ])(
+    "returns $expected for global=$globalRegion and paidBillingEnabled=$paidBillingEnabled",
+    ({ globalRegion, paidBillingEnabled, expected }) => {
+      expect(isRenewalAvailableForRegion(globalRegion, paidBillingEnabled)).toBe(expected);
+    },
+  );
 });
 
 describe("RenewComingSoonButton", () => {
