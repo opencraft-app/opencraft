@@ -12,8 +12,9 @@ import (
 type prepareTaskFunc func(ctx context.Context, data []byte) (task taskruntime.ServiceTask, in, out interface{}, err error)
 
 var pfMap = map[string]prepareTaskFunc{
-	taskcommon.TaskNameCreateInstance:  instancetask.PrepareCreateTask,
-	taskcommon.TaskNameDestroyInstance: instancetask.PrepareDestroyTask,
+	taskcommon.TaskNameCreateInstance:            instancetask.PrepareCreateTask,
+	taskcommon.TaskNameDestroyInstance:           instancetask.PrepareDestroyTask,
+	taskcommon.TaskNameBuildInstanceBirthProfile: prepareDeprecatedBirthProfileTask,
 
 	// trade-pass-isolate 父子 task（设计稿 §10 Q22-I-E）
 	taskcommon.TaskNameIsolateInstance: instancetask.PrepareIsolateInstanceTask,

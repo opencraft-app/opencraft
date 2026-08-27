@@ -386,6 +386,7 @@ function WorkbenchEmbeddedReadyApp({
           composerControls={controller.composerControls}
           draft={controller.draft}
           error={controller.error ?? error}
+          followOutputToken={controller.followOutputToken}
           historyPhase={controller.historyPhase}
           isLoadingOlder={controller.isLoadingOlder}
           isRespondingToRequest={controller.isRespondingToRequest}
@@ -431,7 +432,7 @@ function WorkbenchHostSurface({
 }) {
   const t = useT();
   const visibleSessions = sessions ?? [];
-  const railTitle = botName?.trim() || "Hermes";
+  const railTitle = botName?.trim() || t("我的Hermes");
 
   return (
     <section
