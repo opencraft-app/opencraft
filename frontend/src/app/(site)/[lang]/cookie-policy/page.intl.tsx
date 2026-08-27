@@ -12,6 +12,9 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: 'Cookies 政策',
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'Cookies 政策',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Cookies',
+  [PUBLIC_SITE_LOCALES.ES]: 'Política de cookies',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'Cookies Policy',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'Cookies Policy',
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -20,6 +23,9 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela Cookies 政策，说明 cookies 的类型、用途和管理方式。',
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela Cookies 政策，说明 cookies 的类型、用途和管理方式。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Cookies LightVela, termasuk jenis, tujuan, dan kontrol cookies.',
+  [PUBLIC_SITE_LOCALES.ES]: 'Política de cookies de LightVela, incluidos sus tipos, finalidades y opciones de control.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'LightVela Cookies Policy, including cookie types, purposes, and controls.',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela Cookies Policy, including cookie types, purposes, and controls.',
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

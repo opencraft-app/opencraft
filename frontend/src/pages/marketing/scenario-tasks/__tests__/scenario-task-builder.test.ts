@@ -202,6 +202,60 @@ describe("scenario task builder", () => {
     expect(draft.generatedPrompt).not.toContain("billing details:");
   });
 
+  it("builds fully Spanish protocol prompts for Spanish overview tasks", () => {
+    const pack = getOverviewScenarioTaskPacks("es").find((item) => item.id === "rent-reminder");
+    expect(pack).toBeTruthy();
+
+    const draft = buildScenarioTaskDraft({
+      pack: pack!,
+      values: {
+        rentInfo: "Factura de internet, pagada por transferencia bancaria",
+      },
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.oneShotJobName).toBe(`${draft.generatedName} · ejecución única`);
+    expect(draft.generatedPrompt).toContain("Estás ejecutando una automatización de LightVela");
+    expect(draft.generatedPrompt).toContain("Nombre de la tarea: Recordatorio del alquiler");
+    expect(draft.generatedPrompt).toContain("Requisitos de salida:");
+    expect(draft.generatedPrompt).toContain("Detalles proporcionados por el usuario:");
+    expect(draft.generatedPrompt).toContain(
+      "detalles de facturación: Factura de internet, pagada por transferencia bancaria.",
+    );
+    expect(draft.generatedPrompt).toContain("aviso el día del vencimiento: sí.");
+    expect(draft.generatedPrompt).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+  });
+
+  it("keeps Spanish realtime and safety instructions in Spanish", () => {
+    const pack = getOverviewScenarioTaskPacks("es").find((item) => item.id === "country-fx-alert");
+    expect(pack).toBeTruthy();
+
+    const draft = buildScenarioTaskDraft({
+      pack: pack!,
+      values: {},
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.generatedPrompt).toContain("Reglas de consulta en tiempo real:");
+    expect(draft.generatedPrompt).toContain("web_search, web_fetch");
+    expect(draft.generatedPrompt).toContain("Nota de seguridad:");
+    expect(draft.generatedPrompt).toContain("No constituye asesoramiento de inversión");
+    expect(draft.generatedPrompt).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+  });
+
+  it("keeps every Spanish overview task draft free of Chinese fallback copy", () => {
+    for (const pack of getOverviewScenarioTaskPacks("es")) {
+      const draft = buildScenarioTaskDraft({
+        pack,
+        values: {},
+        now: new Date(2026, 6, 2, 9, 0, 0),
+      });
+
+      expect(draft.oneShotJobName, pack.id).toContain("ejecución única");
+      expect(draft.generatedPrompt, pack.id).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+    }
+  });
+
   it("formats scenario-specific field values for prompts", () => {
     const pack = getScenarioTaskPack("todo-focus-brief");
     const draft = buildScenarioTaskDraft({

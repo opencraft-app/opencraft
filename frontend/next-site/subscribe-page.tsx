@@ -4,7 +4,7 @@ import type { LanguageSwitcherVariant } from "@/components/site/language-switche
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
@@ -2202,7 +2202,7 @@ const ConfirmOrderModal = ({
  * 原价与折扣差不展示（不单列折扣行），弹窗内不出现原价。
  */
 
-const CreditCardConfirmOrderModal = ({
+export const CreditCardConfirmOrderModal = ({
   plan,
   billingPeriodLabel,
   demoMode = false,
@@ -2273,7 +2273,7 @@ const CreditCardConfirmOrderModal = ({
         <button
           style={modalCloseStyle}
           onClick={onCancel}
-          aria-label="Close"
+          aria-label={t("关闭")}
           onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; e.currentTarget.style.color = colors.primary; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = colors.warmGray300; }}
         >
@@ -2298,10 +2298,10 @@ const CreditCardConfirmOrderModal = ({
               <Check style={{ width: 30, height: 30, color: colors.white }} strokeWidth={3} />
             </div>
             <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
-              Payment successful
+              {t("支付成功")}
             </h3>
             <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 4px" }}>
-              You&rsquo;ve subscribed to the {plan.name} plan.
+              {t("你已订阅「{{plan}}」套餐。", { plan: plan.name })}
             </p>
             <p style={{ fontSize: 20, fontWeight: 700, color: colors.black, margin: "8px 0 24px", letterSpacing: "-0.5px" }}>
               {fmt(total)}
@@ -2313,7 +2313,7 @@ const CreditCardConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              Done
+              {t("关闭")}
             </button>
           </div>
         ) : view === "order" ? (

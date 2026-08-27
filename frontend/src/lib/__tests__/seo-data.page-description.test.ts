@@ -203,4 +203,18 @@ describe("getSeoMeta — page-level description override", () => {
       expect(b.description).toBe(a.description);
     });
   });
+
+  describe("Spanish URL metadata", () => {
+    it("uses Spanish descriptions for home, About, and Docs", () => {
+      const home = getSeoMeta("/es", "global");
+      const about = getSeoMeta("/es/about", "global");
+      const docs = getSeoMeta("/es/docs/overview", "global");
+
+      expect(home.description).toContain("agente personal de IA");
+      expect(about.description).toContain("LightVela");
+      expect(docs.description).toContain("Hermes Agent");
+      expect(new Set([home.description, about.description, docs.description]).size).toBe(3);
+      expect([home, about, docs].every((meta) => !meta.description.startsWith("LightVela is"))).toBe(true);
+    });
+  });
 });

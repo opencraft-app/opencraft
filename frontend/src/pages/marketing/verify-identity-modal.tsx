@@ -717,6 +717,7 @@ export const VerifyIdentityModal = ({
                           />
                           <span>
                             {t("我已阅读")}
+                            <span className="lw-realname-consent-separator" aria-hidden="true">{" "}</span>
                             <a
                               href="https://privacy.qq.com/document/preview/a955b796edc34796b6e81d4f4df006f3"
                               target="_blank"
@@ -726,6 +727,7 @@ export const VerifyIdentityModal = ({
                             >
                               {t("《隐私协议》")}
                             </a>
+                            <span className="lw-realname-consent-separator" aria-hidden="true">{" "}</span>
                             {t("并同意进行身份核验")}
                           </span>
                         </label>

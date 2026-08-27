@@ -1,6 +1,7 @@
 import React, { type ReactNode } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useLocaleOverride } from "@/i18n/t";
 
 const navigationMock = vi.hoisted(() => ({
   usePathname: vi.fn(() => "/"),
@@ -44,11 +45,12 @@ vi.mock("@/components/site/cookie-consent-banner", () => ({
 
 describe("PublicSiteAppProviders", () => {
   let PublicSiteAppProviders: (typeof import("@next-site/public-site-providers"))["PublicSiteAppProviders"];
+  let PublicSiteLocaleBridge: (typeof import("@next-site/public-site-providers"))["PublicSiteLocaleBridge"];
 
   beforeEach(async () => {
     (globalThis as { React?: typeof React }).React = React;
     navigationMock.usePathname.mockReturnValue("/");
-    ({ PublicSiteAppProviders } = await import("@next-site/public-site-providers"));
+    ({ PublicSiteAppProviders, PublicSiteLocaleBridge } = await import("@next-site/public-site-providers"));
   });
 
   afterEach(() => {
@@ -75,5 +77,19 @@ describe("PublicSiteAppProviders", () => {
     );
 
     expect(screen.queryByTestId("maintenance-announcement-locale")).not.toBeInTheDocument();
+  });
+
+  it("bridges the Spanish public route to the Spanish i18n dictionary", () => {
+    function LocaleProbe() {
+      return <div data-testid="locale-override">{useLocaleOverride()}</div>;
+    }
+
+    render(
+      <PublicSiteLocaleBridge locale="es">
+        <LocaleProbe />
+      </PublicSiteLocaleBridge>,
+    );
+
+    expect(screen.getByTestId("locale-override")).toHaveTextContent("es");
   });
 });

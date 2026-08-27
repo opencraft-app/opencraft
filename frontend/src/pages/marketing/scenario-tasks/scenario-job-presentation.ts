@@ -1,8 +1,21 @@
 import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
+import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { buildScenarioTaskDraft } from "./scenario-task-builder";
-import { getOverviewScenarioTaskPacks, type ScenarioTaskId, type ScenarioTaskPack } from "./scenario-packs";
+import {
+  getOverviewScenarioTaskPacks,
+  hasLocalizedOverviewCopy,
+  type ScenarioTaskId,
+  type ScenarioTaskPack,
+} from "./scenario-packs";
 
-type AutomationDisplayLocale = "zh-CN" | "zh-SG" | "en-US" | "id-ID";
+/**
+ * 自动任务展示所用的 locale。
+ *
+ * 直接复用注册表的 `PublicSiteLocaleCode`，不再自持一份联合类型副本
+ * （此前本文件与 `agent-automations-panel.tsx` 各维护一份，属于典型的
+ * 镜像脱节隐患）。
+ */
+type AutomationDisplayLocale = PublicSiteLocaleCode;
 
 export interface ScenarioJobPresentation {
   name: string;
@@ -39,7 +52,11 @@ function getScenarioRecordPresentation(
   rawPrompt: string,
   locale: AutomationDisplayLocale,
 ): ScenarioJobPresentation {
-  if (locale !== "en-US" && locale !== "id-ID") return { name: rawName, prompt: rawPrompt };
+  /* 该语种没有独立场景任务文案时，直接展示原始（中文）内容。
+     判断委托给 scenario-packs 的注册表驱动查表，避免此处再写
+     `locale !== 'en-US' && locale !== 'id-ID'` 这类排除式条件——
+     排除式条件在新增语种时不会报错，会让新语种静默走进本地化分支。 */
+  if (!hasLocalizedOverviewCopy(locale)) return { name: rawName, prompt: rawPrompt };
 
   const match = findOverviewScenarioPack(rawName, rawPrompt, locale);
   if (!match) return { name: rawName, prompt: rawPrompt };
