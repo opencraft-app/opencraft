@@ -4482,3 +4482,23 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check` 通过。
 
 ---
+
+# 模型配置融合按钮响应式宽度 Implementation Plan
+
+**Goal:** 修复国际站模型配置表单中“获取可用模型”和“检测模型状态”英文按钮被固定宽度裁切的问题，同时保持输入框与按钮融合的现有交互。
+
+**Architecture:** 融合控件继续使用单一 flex 容器；输入框和模型下拉保持 `min-w-0 flex-1`，尾部操作按钮改为按内容撑开、禁止换行且禁止收缩。加载态始终保留完整操作文案的占位宽度，避免请求过程中输入区域横向跳动。
+
+## Tasks
+
+- [x] 先调整组件测试，锁定融合按钮不再使用固定宽度，并具备内容自适应、禁止换行和禁止收缩约束。
+- [x] 实现两个融合按钮的响应式尺寸及稳定加载态，保持原有探测、检测、禁用和可访问语义。
+- [x] 运行模型配置定向测试、类型检查、i18n 检查和 `git diff --check`，并验证中英文及窄屏布局无裁切。
+
+**Verification:**
+- RED：组件测试命中固定 `w-28 sm:w-36` 的预期失败；GREEN：组件测试 24 passed，并显式覆盖探测加载态的文案与宽度占位。
+- 模型配置域 7 个测试文件，115 passed / 1 skipped。
+- `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- 使用本地 global + mock 预览完成英文布局验收：1440px 桌面与 900px 窄屏下两个操作按钮均完整显示，输入框和模型下拉保持剩余空间；临时 mock 已在验收后移除。
+
+---

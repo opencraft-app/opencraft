@@ -66,12 +66,38 @@ const MODEL_FIELD_CLASS = "grid gap-y-2";
 const MODEL_CONTROL_CLASS = "h-12 rounded-md border-black/10 bg-white shadow-none outline-none transition-colors focus:border-[#2F6BFF] focus:outline-none focus:ring-0 focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-0";
 const MODEL_COMPOUND_CONTROL_CLASS = "flex h-12 min-w-0 overflow-hidden rounded-md border border-black/10 bg-white shadow-none transition-colors focus-within:border-[#2F6BFF]";
 const MODEL_COMPOUND_FIELD_CLASS = "h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none outline-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0";
-const MODEL_COMPOUND_ACTION_CLASS = "h-full w-28 shrink-0 rounded-none border-0 border-l border-black/10 bg-white px-3 shadow-none hover:translate-y-0 hover:border-black/10 hover:bg-black/[0.025] focus-visible:ring-inset sm:w-36";
+const MODEL_COMPOUND_ACTION_CLASS = "h-full min-w-max shrink-0 whitespace-nowrap rounded-none border-0 border-l border-black/10 bg-white px-4 shadow-none hover:translate-y-0 hover:border-black/10 hover:bg-black/[0.025] focus-visible:ring-inset";
 const MODEL_SELECT_CONTENT_CLASS = "max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-md";
 const MODEL_SELECT_CONTENT_STYLE = {
   width: "var(--radix-select-trigger-width)",
   minWidth: "var(--radix-select-trigger-width)",
 } as const;
+
+function ModelCompoundActionContent({
+  idleLabel,
+  loadingLabel,
+  loading,
+}: {
+  idleLabel: string;
+  loadingLabel: string;
+  loading: boolean;
+}) {
+  return (
+    <span className="relative grid place-items-center">
+      <span
+        aria-hidden="true"
+        data-slot="model-compound-action-width-label"
+        className="invisible whitespace-nowrap"
+      >
+        {idleLabel}
+      </span>
+      <span className="absolute inset-0 inline-flex items-center justify-center gap-2 whitespace-nowrap">
+        {loading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+        {loading ? loadingLabel : idleLabel}
+      </span>
+    </span>
+  );
+}
 
 function captureAgentSidebarPosition() {
   const sidebar = document.querySelector<HTMLElement>(".lv-agents-sidebar-scroll-isolated");
@@ -650,10 +676,11 @@ export function AgentModelConfigPanel({
                 disabled={!canProbe || busy}
                 onClick={() => void handleProbe()}
               >
-                {controller.operation === "probe" ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                {controller.operation === "probe" ? t("获取中...") : t("获取可用模型")}
+                <ModelCompoundActionContent
+                  idleLabel={t("获取可用模型")}
+                  loadingLabel={t("获取中...")}
+                  loading={controller.operation === "probe"}
+                />
               </Button>
             </div>
             {activeProvider?.apiKeyUrl ? (
@@ -711,10 +738,11 @@ export function AgentModelConfigPanel({
                 disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy}
                 onClick={() => void handleConnectivityTest()}
               >
-                {controller.operation === "connectivity-probe" ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                {controller.operation === "connectivity-probe" ? t("检测中...") : t("检测模型状态")}
+                <ModelCompoundActionContent
+                  idleLabel={t("检测模型状态")}
+                  loadingLabel={t("检测中...")}
+                  loading={controller.operation === "connectivity-probe"}
+                />
               </Button>
             </div>
           </div>
