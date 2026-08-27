@@ -22,7 +22,6 @@ const spanishPublicRoutes = [
   "/es/open-source-licenses",
   "/es/privacy-policy",
   "/es/subscribe",
-  "/es/support",
   "/es/terms-of-service",
 ];
 const spanishPublicRouteSet = new Set(spanishPublicRoutes);
@@ -103,7 +102,7 @@ function spanishMetadataFailures(route, html) {
   const spanishAlternate = (html.match(/<link\b[^>]*>/g) ?? []).find(
     (tag) => attributeValue(tag, "rel") === "alternate" && attributeValue(tag, "hrefLang") === "es",
   );
-  const noindexExpected = route === "/es/subscribe" || route === "/es/support";
+  const noindexExpected = route === "/es/subscribe";
   const failures = [];
 
   if (attributeValue(htmlTag, "lang") !== "es") failures.push("expected html lang es");

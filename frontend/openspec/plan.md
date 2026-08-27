@@ -1,3 +1,18 @@
+# MR !3385 CR：移除误复活的国际 Support 路由
+
+**Goal:** 恢复 !3316 已确认的产品边界，国际站不生成带语言前缀的 Support 页面；国内站反馈页及已存在的西语组件文案保持不变。
+
+**Files:**
+- Modify: `frontend/scripts/check-next-seo.mjs`
+- Modify: `frontend/scripts/check-next-seo.test.ts`
+- Modify: `frontend/scripts/intl-only-pages.test.ts`
+- Delete: `frontend/src/app/(site)/[lang]/support/page.intl.tsx`
+- Delete: `frontend/src/app/(site)/[lang]/support/page.intl.test.tsx`
+
+- [x] 测试先行移除 `support` 国际路由白名单，删除误复活页面，并通过路由守卫、前端检查与国际站构建验证。
+
+---
+
 # 西语 Tencent Lighthouse 专有名词收口 Implementation Plan
 
 **Goal:** 所有西语一方内容完整保留团队名 `Tencent Lighthouse`，清除 `Tencent Cloud Light` / `Tencent Cloud Lighthouse` 误写。

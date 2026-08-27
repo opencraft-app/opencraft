@@ -23,7 +23,6 @@ const spanishPublicRoutes = [
   "/es/open-source-licenses",
   "/es/privacy-policy",
   "/es/subscribe",
-  "/es/support",
   "/es/terms-of-service",
 ] as const;
 
@@ -78,7 +77,7 @@ function spanishHtml(route: string, robots = "index, follow") {
 
 function writeSpanishRoutes(out: string) {
   for (const route of spanishPublicRoutes) {
-    const noindex = route === "/es/subscribe" || route === "/es/support";
+    const noindex = route === "/es/subscribe";
     writeRoute(out, route, spanishHtml(route, noindex ? "noindex, nofollow" : "index, follow"));
   }
 }
@@ -105,6 +104,18 @@ function prepareOutput() {
 }
 
 describe("check-next-seo Spanish release paths", () => {
+  it("accepts all eight released Spanish pages without requiring Support", () => {
+    const { root, out } = prepareOutput();
+    try {
+      writeSpanishRoutes(out);
+      const script = resolve("scripts/check-next-seo.mjs");
+
+      expect(checkerFailure(script, root, "global")).toBe("");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("checks existing Spanish static pages", () => {
     const { root, out } = prepareOutput();
     try {
@@ -141,7 +152,7 @@ describe("check-next-seo Spanish release paths", () => {
     }
   });
 
-  it("checks all nine Spanish public pages", () => {
+  it("checks all eight Spanish public pages", () => {
     const { root, out } = prepareOutput();
     try {
       writeSpanishRoutes(out);
@@ -183,18 +194,18 @@ describe("check-next-seo Spanish release paths", () => {
     try {
       writeSpanishRoutes(out);
       writeRoute(out, "/es/about", spanishHtml("/es/about", "noindex, nofollow"));
-      writeRoute(out, "/es/support", spanishHtml("/es/support", "index, follow"));
+      writeRoute(out, "/es/subscribe", spanishHtml("/es/subscribe", "index, follow"));
       const script = resolve("scripts/check-next-seo.mjs");
       const failure = checkerFailure(script, root, "global");
 
       expect(failure).toContain("/es/about: expected index robots");
-      expect(failure).toContain("/es/support: expected noindex robots");
+      expect(failure).toContain("/es/subscribe: expected noindex robots");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("requires all nine Spanish pages in a global build even when no ES artifact exists", () => {
+  it("requires all eight Spanish pages in a global build even when no ES artifact exists", () => {
     const { root } = prepareOutput();
     try {
       const script = resolve("scripts/check-next-seo.mjs");

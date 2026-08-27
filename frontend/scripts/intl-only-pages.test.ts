@@ -183,7 +183,6 @@ describe('[lang] 与裸路径的对应关系', () => {
       'open-source-licenses',
       'privacy-policy',
       'subscribe',
-      'support',
       'terms-of-service',
     ];
 
