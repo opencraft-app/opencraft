@@ -1246,7 +1246,7 @@ install_hermes_whatsapp_bridge_deps() {
     "${bridge_home}/.hermes/hermes-agent/scripts" 2>/dev/null || true
   chown -R "${bridge_user}:${bridge_user}" "${bridge_dir}" 2>/dev/null || true
 
-  sudo npm install -g pnpm
+  sudo npm install -g "pnpm@${PNPM_VERSION}"
 
   resolve_js='for (const m of ["@whiskeysockets/baileys","qrcode-terminal","express","pino"]) console.log(m, require.resolve(m))'
   printf -v bridge_home_escaped '%q' "${bridge_home}"

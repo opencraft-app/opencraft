@@ -189,6 +189,7 @@ export function useModelConfig({
     apiKey: string;
     model: HermesConfiguredModel;
     purpose: ModelPurpose;
+    discoverModels?: boolean;
   }) => runMutation("add", () => client.add(input)), [client, runMutation]);
 
   const assign = useCallback((model: HermesConfiguredModel, purpose: "primary" | "fallback") =>

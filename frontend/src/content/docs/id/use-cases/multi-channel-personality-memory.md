@@ -37,7 +37,8 @@ Persona, memori jangka panjang, dan Skill termasuk pada lapisan Agent, sementara
 
 - Akun WhatsApp yang dapat Anda pakai secara normal.
 
-- Pemahaman bahwa Telegram dan WhatsApp saat ini terutama ditujukan untuk percakapan satu lawan satu.
+- Pemahaman tentang penyiapan pesan grup Telegram: nonaktifkan Group Privacy di BotFather, tambahkan Bot ke grup, lalu mulai percakapan dengan `@username_bot`.
+- Pemahaman bahwa dukungan grup WhatsApp tetap mengikuti dokumentasi kanalnya sendiri.
 
 ## Langkah-langkah
 
@@ -145,7 +146,8 @@ Jika Anda memerlukan peran dan memori yang benar-benar berbeda, buat Agent yang 
 
 ### Bisakah grup WhatsApp berbagi memori dengan Telegram?
 
-Dokumentasi WhatsApp saat ini menyatakan chat grup tidak didukung, dan Telegram juga terutama ditujukan untuk percakapan satu lawan satu.
+Dokumentasi WhatsApp saat ini menyatakan chat grup tidak didukung.
+Telegram mendukung pesan grup setelah Anda menonaktifkan Group Privacy, menambahkan Bot ke grup, dan memulai percakapan dengan `@username_bot`.
 
 Berbagi lintas kanal menjaga lapisan Agent tetap konsisten, tetapi ia tidak menambahkan kemampuan chat grup ke kanal mana pun.
 

@@ -13,6 +13,8 @@ import type { BotRepository } from "@/repositories/types";
 import {
   fetchHermesCommonSettingsSnapshot,
   getHermesCommonSettingKeysForGroup,
+  isHermesCommonSettingAtResetTarget,
+  requiresHermesCommonSettingGatewayRestart,
   validateHermesCommonSetting,
   type HermesApprovalMode,
   type HermesCommonSettingGroup,
@@ -71,6 +73,7 @@ interface SettingGroup {
 
 const emptyFeedback = (): Record<HermesCommonSettingKey, FieldFeedback> => ({
   approvalMode: null,
+  destructiveSlashConfirm: null,
   persistentMemory: null,
   userProfile: null,
   autoCompression: null,
@@ -117,13 +120,19 @@ export function AgentCommonSettingsPanel({
     {
       id: "security",
       title: t("安全"),
-      description: t("管理 Agent 执行高风险操作时的审批方式。"),
+      description: t("管理 Agent 的命令审批与会话操作确认方式。"),
       settings: [
         {
           key: "approvalMode",
           label: t("审批模式"),
           description: t("设置 Agent 执行高风险操作时的审批方式。"),
           kind: "select",
+        },
+        {
+          key: "destructiveSlashConfirm",
+          label: t("会话操作确认"),
+          description: t("新建会话，或清空、撤销、删除会话内容前，先向你确认。"),
+          kind: "switch",
         },
       ],
     },
@@ -162,6 +171,10 @@ export function AgentCommonSettingsPanel({
     setPendingResetGroup(null);
     setResettingGroup(null);
     setFeedback(emptyFeedback());
+    if (botStatus !== "running") {
+      setLoading(false);
+      return;
+    }
     try {
       const next = await loadSettings(bots, botId);
       if (requestIdRef.current !== requestId) return;
@@ -173,7 +186,7 @@ export function AgentCommonSettingsPanel({
     } finally {
       if (requestIdRef.current === requestId) setLoading(false);
     }
-  }, [botId, bots, loadSettings]);
+  }, [botId, botStatus, bots, loadSettings]);
 
   useEffect(() => {
     void refresh();
@@ -207,7 +220,7 @@ export function AgentCommonSettingsPanel({
         saved = true;
       } else {
         const message = result.status === "partial"
-          ? key === "approvalMode"
+          ? !requiresHermesCommonSettingGatewayRestart(key)
             ? t("配置已保存，但回读验证失败，请刷新确认。")
             : t("配置已保存，但重启或回读验证失败，请刷新确认。")
           : t("保存失败：{{detail}}", { detail: result.error.message });
@@ -269,6 +282,11 @@ export function AgentCommonSettingsPanel({
   };
 
   const switchConfirmationDescription = (change: PendingSwitchChange): string => {
+    if (change.key === "destructiveSlashConfirm") {
+      return change.nextValue
+        ? t("开启后，新建会话，或清空、撤销、删除会话内容前，将先向你确认。")
+        : t("关闭后，新建会话，或清空、撤销、删除会话内容时将直接执行。");
+    }
     if (change.key === "persistentMemory") {
       return change.nextValue
         ? t("开启后，Agent 将在后续会话中读取和更新 MEMORY.md。")
@@ -352,19 +370,19 @@ export function AgentCommonSettingsPanel({
   return (
     <section className="min-w-0">
       <AgentSectionHeader title={t("高级设置")} description={null} />
-      {agentStopped && <p className="mt-5 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Agent 未运行，启动后才能修改设置。")}</p>}
-      {loading && <div className="flex items-center justify-center py-16 text-sm text-black/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("正在读取当前配置…")}</div>}
-      {!loading && loadError && (
+      {agentStopped && <p className="mt-5 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Agent 未运行，启动后才能查看和修改设置。")}</p>}
+      {!agentStopped && loading && <div className="flex items-center justify-center py-16 text-sm text-black/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("正在读取当前配置…")}</div>}
+      {!agentStopped && !loading && loadError && (
         <div className="mt-6 border-y border-black/[0.08] py-10 text-center">
           <p role="alert" className="text-sm text-red-600">{t("读取配置失败：{{detail}}", { detail: loadError })}</p>
           <button type="button" onClick={() => void refresh()} className="mt-4 inline-flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm hover:bg-black/[0.03]"><RefreshCw className="h-4 w-4" />{t("重试")}</button>
         </div>
       )}
-      {!loading && snapshot && (
+      {!agentStopped && !loading && snapshot && (
         <div className="mt-8 flex flex-col gap-10">
           {settingGroups.map((group, groupIndex) => {
             const groupAlreadyDefault = getHermesCommonSettingKeysForGroup(group.id)
-              .every((key) => snapshot.defaultedKeys.includes(key) || snapshot.unsupportedKeys.includes(key));
+              .every((key) => isHermesCommonSettingAtResetTarget(key, snapshot));
 
             return (
               <section
@@ -572,7 +590,12 @@ export function AgentCommonSettingsPanel({
               <button
                 type="button"
                 onClick={confirmSwitchChange}
-                className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white transition hover:opacity-90"
+                className={cn(
+                  "inline-flex h-9 min-w-[104px] items-center justify-center rounded-md px-4 text-sm font-semibold text-white transition",
+                  pendingSwitchChange.key === "destructiveSlashConfirm" && !pendingSwitchChange.nextValue
+                    ? "bg-red-600 hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                    : "bg-[var(--text-primary)] hover:opacity-90",
+                )}
               >
                 {pendingSwitchChange.nextValue ? t("确认开启") : t("确认关闭")}
               </button>
@@ -626,9 +649,7 @@ export function AgentCommonSettingsPanel({
               </DialogTitle>
               <DialogDescription className="mt-1 text-pretty text-sm leading-6 text-black/55">
                 {pendingResetGroup === "security"
-                  ? snapshot?.values.approvalMode === "off"
-                    ? t("恢复后审批模式将变为「智能审批」（当前为「关闭审批」）。")
-                    : t("恢复后将使用「智能审批」。")
+                  ? t("恢复后审批模式将变为「关闭审批」，会话操作确认将关闭。")
                   : t("将重置「{{group}}」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。", {
                       group: pendingResetGroupTitle,
                     })}

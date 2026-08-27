@@ -14,6 +14,8 @@ import {
   buildHermesCommonSettingsReadCommand,
   fetchHermesCommonSettingsSnapshot,
   getHermesCommonSettingKeysForGroup,
+  getHermesCommonSettingResetValue,
+  isHermesCommonSettingAtResetTarget,
   parseHermesCommonSettingsSnapshot,
   requiresHermesCommonSettingGatewayRestart,
   validateHermesCommonSetting,
@@ -24,6 +26,7 @@ const snapshotOutput = () => [
   JSON.stringify({
     values: {
       approvalMode: "off",
+      destructiveSlashConfirm: false,
       persistentMemory: true,
       userProfile: false,
       autoCompression: true,
@@ -38,7 +41,7 @@ const snapshotOutput = () => [
 ].join("\n");
 
 describe("Hermes common settings reader", () => {
-  it("reads the seven allowlisted resolved values and detects raw YAML defaults", () => {
+  it("reads the eight allowlisted resolved values and detects raw YAML defaults", () => {
     const command = buildHermesCommonSettingsReadCommand();
 
     expect(command).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
@@ -52,6 +55,7 @@ describe("Hermes common settings reader", () => {
     expect(command).toContain('"compression.target_ratio"');
     expect(command).toContain('"compression.protect_last_n"');
     expect(command).toContain('"approvals.mode"');
+    expect(command).toContain('"approvals.destructive_slash_confirm"');
     expect(command).not.toContain("shell=True");
     expect(command).toContain("valid_value");
   });
@@ -60,6 +64,7 @@ describe("Hermes common settings reader", () => {
     expect(parseHermesCommonSettingsSnapshot(snapshotOutput())).toEqual({
       values: {
         approvalMode: "off",
+        destructiveSlashConfirm: false,
         persistentMemory: true,
         userProfile: false,
         autoCompression: true,
@@ -78,8 +83,8 @@ describe("Hermes common settings reader", () => {
     const configPath = join(root, "config.yaml");
     const hermesPath = join(binDir, "hermes");
     mkdirSync(binDir);
-    writeFileSync(configPath, "approvals:\n  mode: auto\n", "utf8");
-    writeFileSync(join(root, "yaml.py"), "def safe_load(_text):\n    return {'approvals': {'mode': 'auto'}}\n", "utf8");
+    writeFileSync(configPath, "approvals:\n  mode: auto\n  destructive_slash_confirm: false\n", "utf8");
+    writeFileSync(join(root, "yaml.py"), "def safe_load(_text):\n    return {'approvals': {'mode': 'auto', 'destructive_slash_confirm': False}}\n", "utf8");
     writeFileSync(hermesPath, `#!/bin/sh
 if [ "$1" = "config" ] && [ "$2" = "path" ]; then
   printf '%s\\n' "$FAKE_HERMES_CONFIG_PATH"
@@ -88,6 +93,7 @@ fi
 if [ "$1" = "config" ] && [ "$2" = "get" ]; then
   case "$3" in
     approvals.mode) printf '%s\\n' '"auto"' ;;
+    approvals.destructive_slash_confirm) printf '%s\\n' 'false' ;;
     memory.memory_enabled|memory.user_profile_enabled|compression.enabled) printf '%s\\n' 'true' ;;
     compression.threshold) printf '%s\\n' '0.5' ;;
     compression.target_ratio) printf '%s\\n' '0.2' ;;
@@ -127,6 +133,7 @@ exit 1
       JSON.stringify({
         values: {
           approvalMode: "off",
+          destructiveSlashConfirm: false,
           persistentMemory: true,
           userProfile: true,
           autoCompression: true,
@@ -162,7 +169,10 @@ exit 1
 
 describe("Hermes common setting validation", () => {
   it("keeps memory and context reset scopes isolated", () => {
-    expect(getHermesCommonSettingKeysForGroup("security")).toEqual(["approvalMode"]);
+    expect(getHermesCommonSettingKeysForGroup("security")).toEqual([
+      "approvalMode",
+      "destructiveSlashConfirm",
+    ]);
     expect(getHermesCommonSettingKeysForGroup("memory")).toEqual([
       "persistentMemory",
       "userProfile",
@@ -175,13 +185,18 @@ describe("Hermes common setting validation", () => {
     ]);
   });
 
-  it("reads approval mode and keeps security reset scope isolated", () => {
+  it("reads both Security settings and keeps the reset scope isolated", () => {
     const command = buildHermesCommonSettingsReadCommand();
 
     expect(command).toContain('"approvalMode": ("approvals.mode", "smart")');
+    expect(command).toContain('"destructiveSlashConfirm": ("approvals.destructive_slash_confirm", True)');
     expect(command).toContain('field == "approvalMode"');
-    expect(getHermesCommonSettingKeysForGroup("security")).toEqual(["approvalMode"]);
+    expect(getHermesCommonSettingKeysForGroup("security")).toEqual([
+      "approvalMode",
+      "destructiveSlashConfirm",
+    ]);
     expect(parseHermesCommonSettingsSnapshot(snapshotOutput()).values.approvalMode).toBe("off");
+    expect(parseHermesCommonSettingsSnapshot(snapshotOutput()).values.destructiveSlashConfirm).toBe(false);
   });
 
   it("accepts only the three documented approval modes", () => {
@@ -200,12 +215,29 @@ describe("Hermes common setting validation", () => {
       "hermes config unset approvals.mode",
     );
     expect(() => buildHermesCommonSettingCommand("approvalMode", "always" as never)).toThrow("invalid");
+    expect(buildHermesCommonSettingCommand("destructiveSlashConfirm", false)).toBe(
+      "hermes config set approvals.destructive_slash_confirm false",
+    );
+    expect(validateHermesCommonSetting("destructiveSlashConfirm", true)).toEqual({ ok: true, value: true });
+    expect(validateHermesCommonSetting("destructiveSlashConfirm", "false")).toEqual({ ok: false, reason: "type" });
   });
 
-  it("marks only approval mode as immediate", () => {
+  it("marks both Security settings as immediate", () => {
     expect(requiresHermesCommonSettingGatewayRestart("approvalMode")).toBe(false);
+    expect(requiresHermesCommonSettingGatewayRestart("destructiveSlashConfirm")).toBe(false);
     expect(requiresHermesCommonSettingGatewayRestart("persistentMemory")).toBe(true);
     expect(requiresHermesCommonSettingGatewayRestart("compressionThreshold")).toBe(true);
+  });
+
+  it("uses LightVela presets as the Security reset target", () => {
+    const current = parseHermesCommonSettingsSnapshot(snapshotOutput());
+
+    expect(getHermesCommonSettingResetValue("approvalMode")).toBe("off");
+    expect(getHermesCommonSettingResetValue("destructiveSlashConfirm")).toBe(false);
+    expect(getHermesCommonSettingResetValue("persistentMemory")).toBeUndefined();
+    expect(isHermesCommonSettingAtResetTarget("approvalMode", current)).toBe(true);
+    expect(isHermesCommonSettingAtResetTarget("destructiveSlashConfirm", current)).toBe(true);
+    expect(isHermesCommonSettingAtResetTarget("persistentMemory", current)).toBe(false);
   });
 
   it("builds unset commands only from the static setting allowlist", () => {

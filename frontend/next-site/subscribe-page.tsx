@@ -971,40 +971,42 @@ const STATIC_AI_QUARTERLY_DISCOUNT = 0.9;
  * 代码中无权威价表，故此处按产品确认值硬编码。
  *
  * `original` = 原价（展示删除线）；`real` = 新用户实付价（展示主价）。
- * **直接指定 real，不由 original × 折扣率乘算** —— 产品确认的折后价与乘算结果存在
- * 分币差异（如季付 19.5 × 0.93 = 18.135，产品定价 18.07），乘算会导致展示与实际定价不一致。
+ * **直接指定 real，不由 original × 折扣率乘算** —— 乘算存在分币舍入（如季付 19.5 × 0.85
+ * = 16.575 → 定价 $16.58 四舍五入到分），直接写 real 保证展示与登录后询价逐分一致。
  *
  * 折扣角标由 mapBundleToPlan 按 `real / original` 比值反算展示（en-US 为 `Save X%`）。
  *
  * ⚠️ 产品调整国际站线上价格 / 折扣时必须同步此表，否则未登录静态价与登录后询价不一致。
- * 数据来源：产品 2026-08-21 确认。
+ * 数据来源：产品 2026-08-21 确认（季付标准版 9.3 折 / AI 版 9.8 折）；2026-08-26 变更为
+ * 季付标准版 8.5 折、AI 增强版 9 折，与登录后询价下发折扣对齐
+ * （曾因未同步导致「未登录 Save 7% / 登录后 Save 15%」不一致）。
  */
 const STATIC_INTL_PRICE_USD: Record<
   "launch" | "cruise",
   Record<"general" | "ai", Record<"monthly" | "quarterly", { original: number; real: number }>>
 > = {
   launch: {
-    /* 启航标准版：月付 $6.5，新用户 14 天免费（实付 $0）；季付 $19.5 → 9.3 折 $18.07 */
+    /* 启航标准版：月付 $6.5，新用户 14 天免费（实付 $0）；季付 $19.5 → 8.5 折 $16.58 */
     general: {
       monthly: { original: 6.5, real: 0 },
-      quarterly: { original: 19.5, real: 18.07 },
+      quarterly: { original: 19.5, real: 16.58 },
     },
-    /* 启航 AI 版：月付 $10，新用户 3 天免费（实付 $0）；季付 $30 → 9.8 折 $29.43 */
+    /* 启航 AI 版：月付 $10，新用户 3 天免费（实付 $0）；季付 $30 → 9 折 $27.00 */
     ai: {
       monthly: { original: 10, real: 0 },
-      quarterly: { original: 30, real: 29.43 },
+      quarterly: { original: 30, real: 27 },
     },
   },
   cruise: {
-    /* 巡游标准版：月付 $14，新用户首购 5 折 $7；季付 $42 → 9.3 折 $38.92 */
+    /* 巡游标准版：月付 $14，新用户首购 5 折 $7；季付 $42 → 8.5 折 $35.70 */
     general: {
       monthly: { original: 14, real: 7 },
-      quarterly: { original: 42, real: 38.92 },
+      quarterly: { original: 42, real: 35.7 },
     },
-    /* 巡游 AI 版：月付 $23，新用户首购 6 折 $13.8；季付 $69 → 9.8 折 $67.69 */
+    /* 巡游 AI 版：月付 $23，新用户首购 6 折 $13.8；季付 $69 → 9 折 $62.10 */
     ai: {
       monthly: { original: 23, real: 13.8 },
-      quarterly: { original: 69, real: 67.69 },
+      quarterly: { original: 69, real: 62.1 },
     },
   },
 };
@@ -1310,16 +1312,22 @@ const isRetiredVoyagePlan = (plan: PlanInfo): boolean => {
 interface PlanTierGroup {
   /** tier key（launch/cruise）或未命中 tier 时的 plan.id（各自单卡） */
   key: string;
-  /** 同 tier 的档位列表，按 credit 升序（标准版在左、AI 增强版在右） */
+  /** 同 tier 的档位列表；国际站 AI 增强版在前、国内站标准版在前（见 planTiers 排序） */
   variants: PlanInfo[];
 }
 
 const getDefaultVariantIndex = (variants: PlanInfo[]): number => {
   if (variants.length <= 1) return 0;
-  return variants.reduce((lowestIndex, variant, index) => {
-    const lowestCredit = variants[lowestIndex]?.raw.credit ?? Number.POSITIVE_INFINITY;
+  /* 国际站默认选 AI 增强版（高 credit，含免费体验）；国内站默认选标准版（低 credit）。
+     与 planTiers 的 variants 排序方向一致：国际站降序、国内站升序，保证默认 variant 落在 index 0。 */
+  const preferHigh = isGlobal;
+  return variants.reduce((bestIndex, variant, index) => {
+    const bestCredit = variants[bestIndex]?.raw.credit ?? Number.POSITIVE_INFINITY;
     const credit = variant.raw.credit ?? Number.POSITIVE_INFINITY;
-    return credit < lowestCredit ? index : lowestIndex;
+    if (preferHigh) {
+      return credit > bestCredit ? index : bestIndex;
+    }
+    return credit < bestCredit ? index : bestIndex;
   }, 0);
 };
 
@@ -1396,7 +1404,8 @@ const PlanCard = ({
 }) => {
   const t = useT();
   /* 卡内积分档位切换：同 tier 的 AI 增强版 / 标准版收敛为 variants，切换即换整份 PlanInfo，
-     价格 / 积分 / 折扣 / 下单套餐随之联动。默认选中低积分标准版（启航 100 / 巡游 200）。 */
+     价格 / 积分 / 折扣 / 下单套餐随之联动。国际站默认选 AI 增强版（启航 4500 / 巡游 10000），
+     国内站默认选标准版（启航 100 / 巡游 200）。 */
   const defaultVariantIdx = getDefaultVariantIndex(variants);
   const [activeVariantIdx, setActiveVariantIdx] = useState(() => defaultVariantIdx);
   const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
@@ -2867,8 +2876,12 @@ export const SubscribePage = ({
     for (const tk of PLAN_TIER_ORDER) {
       const variants = tierMap.get(tk);
       if (!variants || variants.length === 0) continue;
-      /* 按积分升序：标准版（积分少）在左，AI 增强版（积分多）在右 */
-      const sorted = [...variants].sort((a, b) => (a.raw.credit ?? 0) - (b.raw.credit ?? 0));
+      /* 国际站按积分降序（AI 增强版在前，含免费体验更醒目）；国内站按积分升序（标准版在前，老口径）。
+         getDefaultVariantIndex 与此方向一致，保证默认选中落在 index 0。 */
+      const sorted = [...variants].sort((a, b) => {
+        const diff = (a.raw.credit ?? 0) - (b.raw.credit ?? 0);
+        return isGlobal ? -diff : diff;
+      });
       /* AI 增强版可见性：启航 / 巡游的 AI 档位（月付 / 季付）均展示价格 + 下单入口。
          - 已登录：保留后端真实价格 / 促销 / 下单入口，积分取后端 bundle.credit。
          - 未登录：走 buildStaticBundles 的国际站静态美元价，展示新用户

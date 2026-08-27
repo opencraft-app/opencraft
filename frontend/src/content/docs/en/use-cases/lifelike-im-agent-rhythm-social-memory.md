@@ -12,7 +12,8 @@ This guide is for people who want an IM Agent to feel more natural and consisten
 
 It works for personal assistants, study partners, research partners, and teams designing community assistants.
 
-The current Telegram and WhatsApp documentation treats 1-to-1 conversations as the primary supported mode, so the group-norm section is a design checklist and does not mean that either channel currently supports group chats.
+Telegram supports group messages after you disable Group Privacy in BotFather, add the Bot to the group, and mention it with `@bot_username`.
+WhatsApp group capability remains subject to its own channel documentation, so apply these group norms to Telegram after setup and verify support before using another channel.
 
 ## Decide what should stay stable
 
@@ -95,9 +96,10 @@ Long-term memory should reduce repeated questions without taking away the user's
 
 ### 5. Prepare group norms for shared spaces
 
-Telegram and WhatsApp currently do not support group chats, so write group norms as pre-launch rules for now.
+Telegram group messages are supported.
+After disabling Group Privacy, adding the Bot to the group, and mentioning it with `@bot_username`, apply group norms to the live conversation.
 
-If a future target channel explicitly supports groups, define at least:
+Before using a group, define at least:
 
 - Whether the Bot replies only after an @mention or explicit command.
 
@@ -155,9 +157,9 @@ Keep only confirmed information that helps future collaboration, and review the 
 
 ### Can I use group norms in Telegram and WhatsApp now?
 
-The current documentation for both channels says group chats are not supported, so the group-norm section is a design and pre-launch checklist.
-
-Validate personality, rhythm, FAQs, and reminders in 1-to-1 conversations first, then wait for explicit group support in the target channel.
+You can apply the group norms in this guide to Telegram group messages.
+Disable Group Privacy, add the Bot to the group, and validate personality, rhythm, FAQs, and reminders by mentioning it with `@bot_username`.
+For WhatsApp or another channel, first confirm that channel's own group-support scope.
 
 ### Why are some Agent replies long and others short?
 
@@ -173,4 +175,4 @@ Set a preference in the user profile, or state in the current request that you w
 
 - [How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills](./im-agent-skill-scenarios.md) - Extend natural conversation with concrete capabilities.
 
-- [How to Configure a Telegram Group AI Community Assistant](./telegram-group-community-assistant.md) - Review the current boundary around group norms.
+- [How to Use a Telegram Group AI Community Assistant](./telegram-group-community-assistant.md) - Complete the group-message setup and apply group norms in practice.

@@ -23,6 +23,7 @@ import {
   TerminalSquare,
   Download,
   Files,
+  FlaskConical,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -143,6 +144,7 @@ import { isPaidBillingEnabled } from "@/lib/billing-flow";
 import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renewal";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
 import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -5059,14 +5061,14 @@ export const AgentSettingsPage = ({
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
             (() => {
-              type SettingsSection = {
+              type SettingsSectionLink = {
                 id: AgentSettingsSectionId;
                 label: string;
                 icon: React.ReactNode;
                 path: string;
                 badge?: string;
               };
-              const settingsGroups: { id: string; label: string; sections: SettingsSection[] }[] = [
+              const settingsGroups: { id: string; label: string; sections: SettingsSectionLink[] }[] = [
                 {
                   id: "setup",
                   label: t("配置"),
@@ -5082,7 +5084,7 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
                     ...(isGlobal && showHiddenAgentTools
-                      ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
+                      ? [{ id: "website" as const, label: t("工作台"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
                       : []),
                   ],
                 },
@@ -5101,9 +5103,20 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                     { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
-                    ...(!isGlobal
-                      ? [{ id: "settings" as const, label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings }]
-                      : []),
+                    { id: "settings", label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings },
+                  ],
+                },
+                {
+                  id: "labs",
+                  label: t("实验室"),
+                  sections: [
+                    {
+                      id: "deepseek-harness",
+                      label: "DeepSeek Harness",
+                      icon: <FlaskConical className="h-4 w-4" />,
+                      path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
+                      badge: "Beta",
+                    },
                   ],
                 },
               ];
@@ -5134,7 +5147,7 @@ export const AgentSettingsPage = ({
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-                  <aside className="lv-agents-sidebar lg:sticky lg:top-[84px]">
+                  <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
@@ -5543,18 +5556,20 @@ export const AgentSettingsPage = ({
                                     <li key={section.id}>
                                       <AppLink
                                         to={getAgentSectionHref(section.path, searchParams)}
+                                        aria-label={section.badge ? section.label : undefined}
                                         aria-current={isActive ? "page" : undefined}
                                         className={cn(
                                           "lw-settings-nav-item lv-agents-nav-item",
+                                          section.badge && "has-badge",
                                           isActive
                                             ? "is-active"
                                             : "text-black/70 hover:bg-black/[0.025]",
                                         )}
                                       >
                                         <span className="lv-agents-nav-icon">{section.icon}</span>
-                                        <span className="flex-1 text-left">{section.label}</span>
+                                        <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
                                         {section.badge && (
-                                          <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                          <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
                                             {section.badge}
                                           </span>
                                         )}
@@ -5582,7 +5597,7 @@ export const AgentSettingsPage = ({
                     ) : null}
                   </aside>
 
-                  <section className="min-w-0">
+                  <section className="min-w-0 lg:col-start-2">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
                         fallback={sectionFallback}
@@ -5651,7 +5666,12 @@ export const AgentSettingsPage = ({
                             />
                           )}
                           {activeSection === "chat" && (
+                            /* 国际站语言切换时重挂 AgentChatPanel：组件内部用 ref 锁定首帧 launch token
+                               与 lightvelaApiParams（见 agent-chat-panel.tsx 注释），切换语言需整体卸载
+                               重挂以重置这些 ref，让 LightVelaPanel 用新语言重新初始化。国内站固定 key，
+                               不因其他 state 变化无谓重挂。 */
                             <AgentChatPanel
+                              key={isGlobal ? i18n.language : "cn"}
                               accountId={accountId}
                               commandExecutor={lightvelaCommandExecutor}
                               instanceId={sdkInstance.InstanceId}
@@ -5679,7 +5699,7 @@ export const AgentSettingsPage = ({
                               t={t}
                             />
                           )}
-                          {!isGlobal && activeSection === "settings" && (
+                          {activeSection === "settings" && (
                             <AgentCommonSettingsPanel
                               botId={activeBot.id}
                               botStatus={activeBot.status}
@@ -5691,6 +5711,9 @@ export const AgentSettingsPage = ({
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "deepseek-harness" && (
+                            <AgentDeepSeekHarnessPanel botId={activeBot.id} />
                           )}
                           {isGlobal && activeSection === "website" && (
                             <AgentWebsitePanel />

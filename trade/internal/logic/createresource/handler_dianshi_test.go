@@ -237,6 +237,7 @@ func TestRunMainFlow_DianshiCallbackWithoutTradeOrderInsertsParticipation(t *tes
 		"goodsDetail": map[string]interface{}{
 			"bundleId":       "bundle_cruise_01",
 			"externalUserId": "usr_bb753c9a0c8cc53a3e9df172",
+			"dianshiActId":   142123551192174,
 			"timeSpan":       1,
 			"timeUnit":       "m",
 			"goodsNum":       1,
@@ -263,11 +264,39 @@ func TestRunMainFlow_DianshiCallbackWithoutTradeOrderInsertsParticipation(t *tes
 	if got.Uin != "450850000019" || got.AppID != "1472039146" || got.ExternalUserID != "usr_bb753c9a0c8cc53a3e9df172" {
 		t.Errorf("participation identity=%q/%q/%q", got.Uin, got.AppID, got.ExternalUserID)
 	}
-	if got.ActivityID != 165523570799387 || got.ActID != 142062575174494 || got.BundleID != "bundle_cruise_01" {
+	if got.ActivityID != 165523570799387 || got.ActID != 142123551192174 || got.BundleID != "bundle_cruise_01" {
 		t.Errorf("participation activity=%d/%d/%q", got.ActivityID, got.ActID, got.BundleID)
 	}
 	if got.DealName != "20260821019013005816971" || got.BigDealNo != "20260821019013005816961" {
 		t.Errorf("participation deal=%q/%q", got.DealName, got.BigDealNo)
+	}
+}
+
+func TestInsertDianshiParticipation_RequestScopedCampaignSkipsMappingLookup(t *testing.T) {
+	act := &fakeActivityStoreCR{getErr: errors.New("trade_bundle_activity must not be queried")}
+	deps := Deps{ActivityStore: act, DB: newActivityTxTestDB(t)}
+	para := &callbackPara{
+		DealName:          "deal-request-scoped",
+		BigDealID:         "big-request-scoped",
+		BillingActivityID: "16552",
+		AppID:             1472039146,
+		Uin:               "450850002074",
+		BundleID:          "bundle_launch_ai_01",
+		GoodsDetail: map[string]interface{}{
+			"externalUserId":      "usr_e7dffa50f167a72ae0a9a0d6",
+			"dianshi_activity_id": float64(165523570799387),
+			"dianshiActId":        float64(142163399386388),
+		},
+	}
+
+	if err := insertDianshiParticipation(context.Background(), deps, para, "pass-request-scoped"); err != nil {
+		t.Fatalf("insertDianshiParticipation: %v", err)
+	}
+	if act.getCalls.Load() != 0 || act.insertCalls.Load() != 1 {
+		t.Fatalf("activity store calls get/insert=%d/%d want 0/1", act.getCalls.Load(), act.insertCalls.Load())
+	}
+	if got := act.lastParticipation; got == nil || got.ActivityID != 165523570799387 || got.ActID != 142163399386388 {
+		t.Fatalf("unexpected participation: %+v", got)
 	}
 }
 

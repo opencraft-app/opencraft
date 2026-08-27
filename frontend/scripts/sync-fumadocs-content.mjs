@@ -102,7 +102,7 @@ const cnDocs = [
   { slug: 'configuration/files', title: '云存储', file: 'configuration/files.md', group: '功能与配置', description: '管理 Agent 使用的云端文件和工作资料。', hideDescription: true },
   { slug: 'configuration/agent-chat', title: '对话', file: 'configuration/agent-chat.md', group: '功能与配置', description: '通过聊天窗口与 Hermes Agent 交互。', hideDescription: true },
   { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '查看日志并排查 Hermes Agent 的异常情况。', hideDescription: true },
-  { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '功能与配置', description: '查看并调整 Hermes Agent 的记忆和上下文管理配置。', hideDescription: true },
+  { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '功能与配置', description: '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。', hideDescription: true },
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
   // Hermes Agent 解读（长文科普，帮助用户理解 Hermes Agent 的设计与原理）
   { slug: 'hermes-agent/hermes-vs-openclaw', title: 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别', file: 'hermes-agent/01-hermes-vs-openclaw.md', group: 'Hermes Agent 解读', description: '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。', hideDescription: true },
@@ -427,8 +427,8 @@ const globalDocs = [
     file: 'configuration/advanced-settings.md',
     group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
-      'en-US': 'Review and adjust Hermes Agent memory and context-management settings.',
-      'zh-CN': '查看并调整 Hermes Agent 的记忆和上下文管理配置。',
+      'en-US': 'Review and adjust Hermes Agent safety, memory, and context-management settings.',
+      'zh-CN': '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。',
     },
     hideDescription: true,
   },
@@ -498,7 +498,7 @@ const globalDocs = [
   },
   {
     slug: 'use-cases/telegram-group-community-assistant',
-    title: { 'en-US': 'How to Configure a Telegram Group AI Community Assistant: Welcome Messages, FAQs, Summaries, and Reminders', 'zh-CN': '如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒？' },
+    title: { 'en-US': 'How to Use a Telegram Group AI Community Assistant: Q&A, Summaries, and Reminders', 'zh-CN': '如何使用 Telegram 群组 AI 社群助手：问答、摘要与提醒？' },
     file: 'use-cases/telegram-group-community-assistant.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
@@ -896,7 +896,7 @@ const ID_DOC_METADATA = {
   },
   'configuration/advanced-settings': {
     title: 'Pengaturan Lanjutan',
-    description: 'Tinjau dan sesuaikan pengaturan memori serta pengelolaan konteks Hermes Agent.',
+    description: 'Tinjau dan sesuaikan pengaturan keamanan, memori, serta pengelolaan konteks Hermes Agent.',
   },
   'configuration/multiple-models': {
     title: 'Beberapa Model',
@@ -939,8 +939,8 @@ const ID_DOC_METADATA = {
     description: 'Pelajari cara menjaga kepribadian dan memori Agent tetap konsisten saat digunakan di beberapa kanal.',
   },
   'use-cases/telegram-group-community-assistant': {
-    title: 'Asisten Komunitas AI untuk Grup Telegram',
-    description: 'Rancang sambutan, FAQ, ringkasan, dan pengingat komunitas dengan batas kemampuan grup yang jelas.',
+    title: 'Cara Menggunakan Asisten Komunitas AI Grup Telegram: Tanya Jawab, Ringkasan, dan Pengingat',
+    description: 'Siapkan pesan grup Telegram dengan Group Privacy, @mention, tanya jawab, ringkasan, dan draf pengingat.',
   },
   'use-cases/whatsapp-24-7-customer-service': {
     title: 'Layanan Pelanggan AI 24/7 di WhatsApp',

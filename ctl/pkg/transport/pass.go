@@ -320,6 +320,21 @@ type CreateDianshiPassOrderAndPayResult struct {
 	BigOrderID string `json:"big_order_id"`
 }
 
+type GrantDianshiSubscriptionRequest struct {
+	ExternalUserID string `json:"external_user_id"`
+	BundleID       string `json:"bundle_id"`
+	ActivityID     int64  `json:"activity_id"`
+	ActID          int64  `json:"act_id"`
+	TimeSpanUnit   string `json:"time_span_unit"`
+	SecretKey      string `json:"secret_key"`
+}
+
+type GrantDianshiSubscriptionResult struct {
+	Status     string `json:"status"`
+	DealName   string `json:"deal_name,omitempty"`
+	BigOrderID string `json:"big_order_id,omitempty"`
+}
+
 // === trade-pass-renew transport DTO（设计稿 §3.3 / §4.4 / R-D-5）===
 //
 // 入口：POST /internal/ctl/passes/{pass_id}/renew/order-url

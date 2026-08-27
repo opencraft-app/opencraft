@@ -234,8 +234,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         : "1454 / 1045"
       : variant === "advancedSettings"
       ? isGlobal
-        ? useGlobalChineseAsset ? "1165 / 930" : "1403 / 1121"
-        : "1165 / 930"
+        ? useGlobalChineseAsset ? "1043 / 1059" : "1055 / 1071"
+        : "1043 / 1059"
       : variant === "wecom"
       ? "2160 / 844"
       : variant === "dingtalk"

@@ -24,6 +24,7 @@ const AGENT_SECTION_PGID: Record<AgentSectionId, DatongPageId> = {
   chat: DATONG_PAGE_IDS.AGENT_CHAT,
   workbench: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   achievement: DATONG_PAGE_IDS.AGENT_ACHIEVEMENT,
+  "deepseek-harness": DATONG_PAGE_IDS.AGENTS_HOME,
   // 以下页面方案文档中尚无独立 pgid，统一归到 workbench，避免上报到未定义的 pgid。
   browser: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   terminal: DATONG_PAGE_IDS.AGENT_WORKBENCH,

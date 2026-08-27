@@ -232,6 +232,7 @@ func newRouterWithWebsiteAuth(
 	mux.HandleFunc("/v1/passes/order-and-pay", ph.handleUserPassesOrderAndPay)
 	// Dedicated Dianshi activity purchase path; no payment-method or renewal inputs.
 	mux.HandleFunc("/v1/passes/dianshi/order-and-pay", ph.handleUserDianshiPassesOrderAndPay)
+	mux.HandleFunc("/internal/ctl/subscriptions/dianshi/grant", ph.handleInternalDianshiGrant)
 	// R-D-5b 续费支付 URL 入口（trade-pass-renew §3.3 / §4.4）：
 	//   POST /v1/passes/{pass_id}/renew/order-url             前端鉴权 X-User-Id
 	//   POST /admin/api/ctl/passes/{pass_id}/renew/order-url  后台 admin 鉴权
@@ -381,6 +382,7 @@ func normalizePath(path string) string {
 	case "/health", "/metrics", "/internal/bots", "/v1/soul-templates", "/v1/me/usage",
 		"/v1/bundles", "/v1/passes", "/v1/passes/order", "/v1/passes/order-and-pay",
 		"/v1/passes/dianshi/order-and-pay",
+		"/internal/ctl/subscriptions/dianshi/grant",
 		"/v1/integrations/agentchat/introspect",
 		"/admin/api/ctl/bundles", "/admin/api/ctl/passes", "/admin/api/ctl/passes/order",
 		"/admin/api/ctl/passes/free-credit", "/admin/api/ctl/passes/order-and-pay",

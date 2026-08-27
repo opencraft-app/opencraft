@@ -52,6 +52,7 @@ Temukan kartu Telegram lalu klik "+ Connect".
 
 ![](../images/telegram-botfather-3-global.webp)
 
+
 ### 4. Tempel HTTP API token ke Telegram
 
 Tempel HTTP API token tersebut ke kolom token.
@@ -78,6 +79,27 @@ Anda semestinya menerima balasan Hermes Agent dalam beberapa detik.
 
 <img src="../images/telegram-botfather-6-global-en.webp" alt="" width="360" />
 
+### 6. Opsional: Aktifkan pesan grup di BotFather
+
+Selesaikan langkah 6 dan 7 hanya jika Anda ingin menggunakan Bot di grup.
+Pesan langsung sudah dapat digunakan setelah langkah 5.
+
+1. Buka `@BotFather` di Telegram.
+2. Kirim `/mybots`.
+3. Pilih Bot yang sudah terhubung ke Hermes Agent Anda.
+4. Buka "Bot Settings".
+5. Pilih "Group Privacy".
+6. Pilih "Turn off" atau "Disable privacy mode".
+
+### 7. Opsional: Tambahkan dan uji Bot di grup
+
+1. Buka grup Telegram yang ingin digunakan.
+2. Pilih "Add Members" atau tindakan pengelolaan grup yang setara.
+3. Cari Bot berdasarkan username-nya lalu tambahkan ke grup.
+4. Sebut Bot dengan `@username_bot` lalu kirim pesan uji.
+
+Setelah Group Privacy dinonaktifkan, bot dapat menerima dan membalas pesan grup yang menyebutnya.
+
 ---
 
 ## Kondisi berhasil
@@ -87,6 +109,8 @@ Anda semestinya menerima balasan Hermes Agent dalam beberapa detik.
 - Bot terkait dapat ditemukan di kontak Telegram
 
 - Hermes Agent membalas setelah Anda mengirim pesan
+
+- Hermes Agent membalas setelah Anda menyebut bot dan mengirim pesan di grup tempat bot telah ditambahkan
 
 
 ---
@@ -121,7 +145,7 @@ Setelah akses berhasil, bot Telegram dapat menerima dan membalas pesan teks dasa
 | Tidak ada respons setelah mengklik akses | Keterlambatan jaringan atau otorisasi belum selesai | Segarkan konsol untuk memastikan status; jika akses belum berhasil, coba lagi |
 | Bot tidak dapat ditemukan di Telegram | Anda belum mengklik tautan dari BotFather, atau belum memulai percakapan | Klik tautan yang diberikan BotFather, lalu klik Start di halaman bot |
 | Tidak ada balasan setelah mengirim pesan | Model belum dikonfigurasi, kredit uji coba habis, atau bot belum berhasil terhubung | Periksa status "Current model" di kartu "1. Model" dan pastikan kanal Telegram tampil sebagai terhubung |
-| Bot tidak dapat menerima pesan grup | Batasan mode privasi grup Telegram | Periksa Bot Settings di BotFather; bila perlu, nonaktifkan Group Privacy atau sebut bot dengan @ di grup |
+| Bot tidak dapat menerima pesan grup | Group Privacy masih aktif, bot belum ditambahkan ke grup, atau pesan tidak menyebut bot | Di BotFather, kirim `/mybots`, pilih bot, lalu buka "Bot Settings" → "Group Privacy" dan nonaktifkan privacy mode. Tambahkan bot ke grup dan kirim pesan uji dengan `@username_bot` |
 | Cara memutuskan tautan | — | Hapus catatan Telegram terkait di daftar "Connected channels" |
 | Apakah satu bot Telegram yang sama dapat terhubung ke beberapa instans Hermes Agent | Tidak disarankan; satu Bot Token sebaiknya terikat pada satu Hermes Agent | Jika Anda memerlukan beberapa instans Hermes Agent, buat bot Telegram terpisah |
 
@@ -131,7 +155,7 @@ Setelah akses berhasil, bot Telegram dapat menerima dan membalas pesan teks dasa
 
 - **Jenis pesan**: Mendukung teks, gambar, video, file, pesan suara, dan lainnya. Lihat "Jenis pesan yang didukung" di atas
 
-- **Dukungan chat grup**: Chat grup belum didukung saat ini; hanya percakapan satu lawan satu yang didukung
+- **Dukungan chat grup**: Pesan grup didukung setelah Anda menonaktifkan Group Privacy di BotFather, menambahkan bot ke grup, dan memulai percakapan dengan `@username_bot`
 
 - **Koneksi terputus**: Tidak ada respons dalam waktu lama dapat menandakan otorisasi sudah dicabut. Kembali ke konsol lalu berikan otorisasi akses lagi
 

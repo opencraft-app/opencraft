@@ -39,7 +39,7 @@
   --border-strong: rgba(0, 0, 0, 0.08);
 
   --color-success: #07C160;
-  --color-danger: #D92D20;
+  --color-danger: #cf3d4c;
   --danger: var(--color-danger);
   --ring: rgba(40, 93, 255, 0.24);
   --realname-control-border: #E9ECF1;
@@ -85,6 +85,13 @@ html {
 html.lw-settings-scrollbar-stable body[data-scroll-locked] {
   padding-right: 0 !important;
   margin-right: 0 !important;
+}
+
+@media (min-width: 1024px) {
+  html.lw-settings-scrollbar-stable body[data-scroll-locked] .lv-agents-sidebar-scroll-isolated {
+    position: fixed;
+    top: var(--lv-agents-sidebar-locked-top, 84px);
+  }
 }
 
 html.lw-settings-scrollbar-stable {
@@ -253,13 +260,15 @@ a {
 
 /* ── /agents 左侧导航视觉升级 ───────────────────────────────────────────── */
 .lv-agents-sidebar {
+  --lv-agents-nav-width: 220px;
+
   min-height: calc(100dvh - 178px);
   padding-right: 28px;
   border-right: 1px solid #e9ecf1;
 }
 
 .lv-agent-profile-wrap {
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   padding-bottom: 16px;
   border-bottom: 1px solid #e9ecf1;
 }
@@ -267,7 +276,7 @@ a {
 .lv-agent-profile {
   position: relative;
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   min-height: 44px;
   align-items: center;
   gap: 16px;
@@ -450,7 +459,7 @@ a {
 
 .lv-agent-create-button {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   height: 36px;
   align-items: center;
   justify-content: center;
@@ -479,7 +488,7 @@ a {
 
 .lv-agents-nav {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   flex-direction: column;
   gap: 12px;
   margin-top: 16px;
@@ -678,7 +687,7 @@ a {
 
 .lv-agents-nav-item {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   height: 36px;
   align-items: center;
   gap: 14px;
@@ -699,6 +708,11 @@ a {
   font-weight: 600;
 }
 
+.lv-agents-nav-item.has-badge {
+  gap: 8px;
+  font-size: 13px;
+}
+
 .lv-agents-nav-icon {
   display: flex;
   width: 14px;
@@ -716,7 +730,7 @@ a {
 
 .lv-agent-feedback-link {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   align-items: center;
   gap: 8px;
   margin-top: 16px;
@@ -742,6 +756,17 @@ a {
   background: rgb(0 0 0 / 2.5%);
   outline: 2px solid rgb(0 0 0 / 30%);
   outline-offset: 2px;
+}
+
+@media (min-width: 1024px) {
+  .lv-agents-sidebar-scroll-isolated {
+    position: sticky;
+    top: 84px;
+    width: 280px;
+    max-height: calc(100dvh - 84px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 }
 
 @media (max-width: 1023px) {

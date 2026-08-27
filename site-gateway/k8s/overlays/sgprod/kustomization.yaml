@@ -14,6 +14,31 @@ configMapGenerator:
     envs:
       - generated/platform.env
 
+patches:
+  - target:
+      kind: Ingress
+      name: lightclaw-sites-public
+    patch: |-
+      - op: add
+        path: /spec/tls/-
+        value:
+          hosts:
+            - REPLACE_SITE_GATEWAY_DSH_WILDCARD_HOST
+          secretName: REPLACE_SITE_GATEWAY_DSH_TLS_SECRET_NAME
+      - op: add
+        path: /spec/rules/-
+        value:
+          host: REPLACE_SITE_GATEWAY_DSH_WILDCARD_HOST
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: site-gateway
+                    port:
+                      number: 80
+
 replacements:
   - source:
       kind: ConfigMap
@@ -146,6 +171,27 @@ replacements:
           name: lightclaw-sites-public
         fieldPaths:
           - spec.tls.0.secretName
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_DSH_WILDCARD_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: lightclaw-sites-public
+        fieldPaths:
+          - spec.rules.1.host
+          - spec.tls.1.hosts.0
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_DSH_TLS_SECRET_NAME
+    targets:
+      - select:
+          kind: Ingress
+          name: lightclaw-sites-public
+        fieldPaths:
+          - spec.tls.1.secretName
   - source:
       kind: ConfigMap
       name: site-gateway-platform-values
