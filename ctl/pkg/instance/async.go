@@ -21,7 +21,6 @@ import (
 	entitlementmigration "ctl/pkg/logic/entitlementmigration"
 	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/metric"
-	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
 	"ctl/pkg/model/operationhistory"
 	modelsnapshot "ctl/pkg/model/snapshot"
