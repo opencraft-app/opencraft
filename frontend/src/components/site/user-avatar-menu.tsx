@@ -1,6 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Bot, Globe, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
-import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect } from "react";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
@@ -96,14 +95,14 @@ export const UserAvatarMenu = () => {
         onMouseEnter={() => setOpen(true)}
         className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
       >
-        <Link href="/account" onClick={() => setOpen(false)} className="inline-flex shrink-0">
+        <a href="/account" onClick={() => setOpen(false)} className="inline-flex shrink-0">
           <img
             src={avatarSrc}
             alt="avatar"
             className="h-9 w-9 cursor-pointer object-cover"
             style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
           />
-        </Link>
+        </a>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -151,41 +150,41 @@ export const UserAvatarMenu = () => {
 
             {/* Menu items */}
             <div className="py-1.5">
-              <Link
+              <a
                 href={AGENTS_HOME_PATH}
                 onClick={() => setOpen(false)}
                 className={menuItemClass}
               >
                 <Bot className={menuIconClass} />
                 {t("我的智能体伙伴")}
-              </Link>
+              </a>
               {showWorkbenchEntry ? (
-                <Link
+                <a
                   href={AGENT_SECTION_PATH_BY_ID.workbench}
                   onClick={() => setOpen(false)}
                   className={menuItemClass}
                 >
                   <LayoutDashboard className={menuIconClass} />
                   {t("工作台")}
-                </Link>
+                </a>
               ) : null}
-              <Link
+              <a
                 href="/account"
                 onClick={() => setOpen(false)}
                 className={menuItemClass}
               >
                 <User className={menuIconClass} />
                 {t("账号管理")}
-              </Link>
+              </a>
               {isGlobal && hiddenEntriesRevealed ? (
-                <Link
+                <a
                   href={WEBSITES_PATH}
                   onClick={() => setOpen(false)}
                   className={menuItemClass}
                 >
                   <Globe className={menuIconClass} />
                   {t("我的工作台")}
-                </Link>
+                </a>
               ) : null}
               {hiddenEntriesRevealed && !isGlobal ? (
                 <a
