@@ -5262,7 +5262,12 @@ export const AgentSettingsPage = ({
                             />
                           )}
                           {activeSection === "chat" && (
+                            /* 国际站语言切换时重挂 AgentChatPanel：组件内部用 ref 锁定首帧 launch token
+                               与 lightvelaApiParams（见 agent-chat-panel.tsx 注释），切换语言需整体卸载
+                               重挂以重置这些 ref，让 LightVelaPanel 用新语言重新初始化。国内站固定 key，
+                               不因其他 state 变化无谓重挂。 */
                             <AgentChatPanel
+                              key={isGlobal ? i18n.language : "cn"}
                               accountId={accountId}
                               commandExecutor={lightvelaCommandExecutor}
                               instanceId={sdkInstance.InstanceId}
