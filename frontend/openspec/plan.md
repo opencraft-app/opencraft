@@ -16,6 +16,30 @@
 
 ---
 
+# 静态导航与公共头部三栏布局 Implementation Plan
+
+**Goal:** 在最新 master 上恢复静态导出页面的可靠整页导航，并固定桌面端公共头部主导航的页面中心位置。
+
+**Files:**
+- Modify: `next-site/user-menu-link.tsx`
+- Create: `next-site/__tests__/static-navigation.test.tsx`
+- Modify: `src/components/site/user-avatar-menu.tsx`
+- Modify: `src/components/site/cookie-consent-banner.tsx`
+- Modify: `src/components/site/public-site-header.tsx`
+- Modify: `src/components/site/__tests__/site-header.test.tsx`
+
+## Tasks
+
+- [x] 用失败测试锁定公共 Header、头像菜单和 Cookie Policy 的原生静态导航。
+- [x] 用失败测试锁定桌面端对称三列 Grid，并保持移动端布局不变。
+- [x] 在最新 master 干净分支完成定向测试、类型检查、双站静态构建和浏览器验收。
+
+**Known baseline:** `user-avatar-menu.test.tsx` 仍期待“我的作品”，组件实际渲染“我的工作台”；该 1 个既有失败不在本需求中修复。
+
+**Verification:** 定向回归 16 passed；`pnpm check` 为 0 个新增 TypeScript diagnostics；国内/国际静态构建通过。浏览器验收确认双站导航中心跨页差值为 0px、390px 无横向溢出，英文/中文/西语静态链接均完成整页导航。
+
+---
+
 # MR !3385 CR：移除误复活的国际 Support 路由
 
 **Goal:** 恢复 !3316 已确认的产品边界，国际站不生成带语言前缀的 Support 页面；国内站反馈页及已存在的西语组件文案保持不变。
