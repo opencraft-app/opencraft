@@ -299,21 +299,21 @@ describe("SubscribePage intl AI promo tags", () => {
     const launchCard = getTierCard("启航 Launch");
     const cruiseCard = getTierCard("巡游 Cruise");
 
-    /* 默认标准版：启航新用户 14 天免费；巡游首购 5 折。 */
-    expectTierPrice(launchCard, "$0.00", "$6.50");
-    expect(within(launchCard).getByText("首单免费 14 天")).toBeInTheDocument();
-    expectTierPrice(cruiseCard, "$7.00", "$14.00");
-    expect(within(cruiseCard).getByText("首月 5 折")).toBeInTheDocument();
-
-    /* AI 版：启航新用户 3 天免费；巡游首购 6 折。 */
-    await user.click(getCreditTab("4500"));
-    await user.click(getCreditTab("10000"));
-    await waitFor(() => {
-      expectTierPrice(launchCard, "$0.00", "$10.00");
-      expectTierPrice(cruiseCard, "$13.80", "$23.00");
-    });
+    /* 默认 AI 增强版（国际站顺序调整，2026-08-27）：启航新用户 3 天免费；巡游首购 6 折。 */
+    expectTierPrice(launchCard, "$0.00", "$10.00");
     expect(within(launchCard).getByText("首单免费 3 天")).toBeInTheDocument();
+    expectTierPrice(cruiseCard, "$13.80", "$23.00");
     expect(within(cruiseCard).getByText("首月 6 折")).toBeInTheDocument();
+
+    /* 切标准版：启航新用户 14 天免费；巡游首购 5 折。 */
+    await user.click(getCreditTab("100"));
+    await user.click(getCreditTab("200"));
+    await waitFor(() => {
+      expectTierPrice(launchCard, "$0.00", "$6.50");
+      expectTierPrice(cruiseCard, "$7.00", "$14.00");
+    });
+    expect(within(launchCard).getByText("首单免费 14 天")).toBeInTheDocument();
+    expect(within(cruiseCard).getByText("首月 5 折")).toBeInTheDocument();
   });
 
   /* 季付四档只展示静态季付折后价，不继承月付首期免费/首购标签。 */
@@ -329,23 +329,23 @@ describe("SubscribePage intl AI promo tags", () => {
     const launchCard = getTierCard("启航 Launch");
     const cruiseCard = getTierCard("巡游 Cruise");
     await waitFor(() => {
-      /* 季付统一 8.5 折（2026-08-26 变更，与登录后询价折扣对齐）：
-         $19.5 → $16.58、$42 → $35.70 */
-      expectTierPrice(launchCard, "$16.58", "$19.50");
-      expectTierPrice(cruiseCard, "$35.70", "$42.00");
-    });
-    expect(within(launchCard).getByText("8.5折")).toBeInTheDocument();
-    expect(within(cruiseCard).getByText("8.5折")).toBeInTheDocument();
-
-    await user.click(getCreditTab("4500"));
-    await user.click(getCreditTab("10000"));
-    await waitFor(() => {
-      /* AI 增强版季付 9 折（2026-08-26 变更）：$30 → $27.00、$69 → $62.10 */
+      /* 默认 AI 增强版季付 9 折（国际站顺序调整，2026-08-27）：
+         $30 → $27.00、$69 → $62.10 */
       expectTierPrice(launchCard, "$27.00", "$30.00");
       expectTierPrice(cruiseCard, "$62.10", "$69.00");
     });
     expect(within(launchCard).getByText("9折")).toBeInTheDocument();
     expect(within(cruiseCard).getByText("9折")).toBeInTheDocument();
+
+    /* 切标准版季付 8.5 折（2026-08-26 变更）：$19.5 → $16.58、$42 → $35.70 */
+    await user.click(getCreditTab("100"));
+    await user.click(getCreditTab("200"));
+    await waitFor(() => {
+      expectTierPrice(launchCard, "$16.58", "$19.50");
+      expectTierPrice(cruiseCard, "$35.70", "$42.00");
+    });
+    expect(within(launchCard).getByText("8.5折")).toBeInTheDocument();
+    expect(within(cruiseCard).getByText("8.5折")).toBeInTheDocument();
     expect(listBundlesMock).not.toHaveBeenCalled();
   });
 
