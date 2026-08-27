@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { AgentDeepSeekHarnessModelCard } from "@/pages/marketing/agent-deepseek-harness-model-card";
 
 export const DEEPSEEK_HARNESS_LOGO_URL =
-  "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/ae53bb41-9387-4f31-b264-0e4fd747e20b.svg";
+  "/assets/deepseek-harness-logo.svg";
 
 export const buildDeepSeekHarnessWebUiUrl = (botId: string, region: DeepSeekHarnessRegion) =>
   `https://${botId}.dsh.${region === "cn" ? "lightvela.tech" : "lightvela.site"}`;
@@ -27,7 +27,8 @@ const INSTALLATION_STAGE_SOFT_CEILING: Readonly<Record<string, number>> = {
   resolve_latest: 27,
   snapshot_resolved: 34,
   runtime_lockfile: 47,
-  runtime_install: 55,
+  runtime_install: 51,
+  browser_trust_patch: 55,
   profile_lockfile: 67,
   profile_install: 74,
   validate_candidate: 84,
@@ -287,6 +288,11 @@ export const AgentDeepSeekHarnessPanel = ({
       const nextRuntime = await client.restart();
       if (!mountedRef.current) return;
       setRuntime(nextRuntime);
+      if (!nextRuntime.healthy) {
+        setRestartPhase("idle");
+        setOperationError(t("DeepSeek Harness 已重启，但 WebUI 尚未就绪"));
+        return;
+      }
       setRestartPhase("completed");
     } catch (restartError) {
       if (!mountedRef.current) return;
@@ -311,6 +317,9 @@ export const AgentDeepSeekHarnessPanel = ({
     }
   };
 
+  const isCardTransparent = cardTransition === "fading-out" || cardTransition === "fading-in-start";
+  const isRuntimeHealthy = runtime?.healthy === true && runtime.status === "running";
+  const isRuntimeDegraded = runtime?.service_status === "active" && !isRuntimeHealthy;
   const liveAnnouncement = status === "installing"
     ? t("正在安装 DeepSeek Harness")
     : restartPhase === "restarting"
@@ -318,10 +327,19 @@ export const AgentDeepSeekHarnessPanel = ({
       : restartPhase === "completed"
         ? t("DeepSeek Harness 已重新启动")
         : status === "installed"
-          ? t("DeepSeek Harness 已安装并运行中")
+          ? isRuntimeHealthy
+            ? t("DeepSeek Harness 已安装并运行中")
+            : isRuntimeDegraded
+              ? t("DeepSeek Harness 已安装，但 WebUI 当前不可访问")
+              : t("DeepSeek Harness 已安装")
           : "";
-  const isCardTransparent = cardTransition === "fading-out" || cardTransition === "fading-in-start";
-  const isRuntimeHealthy = runtime?.healthy === true && runtime.status === "running";
+  const runtimeStatusLabel = restartPhase === "restarting"
+    ? t("重启中...")
+    : isRuntimeHealthy
+      ? t("运行中")
+      : isRuntimeDegraded
+        ? t("运行异常")
+        : t("已安装");
 
   return (
     <div className="space-y-4">
@@ -401,7 +419,7 @@ export const AgentDeepSeekHarnessPanel = ({
                       <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
                     )}
                     <span>
-                      {restartPhase === "restarting" ? t("重启中...") : isRuntimeHealthy ? t("运行中") : t("已安装")}
+                      {runtimeStatusLabel}
                     </span>
                   </div>
                 </div>

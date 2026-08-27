@@ -45,7 +45,7 @@ export const DeepSeekHarnessProviderDeleteDialog = ({
             {provider ? t("删除 {{provider}}？", { provider: provider.displayName }) : t("删除模型供应商？")}
           </DialogTitle>
           <DialogDescription>
-            {t("删除后需要重新填写 API 密钥才能使用。不会删除环境变量或自定义凭据。")}
+            {t("删除后将移除当前模型供应商配置；由 LightVela 写入的 API 密钥也会一并移除。环境变量中的密钥不会被删除。")}
           </DialogDescription>
         </DialogHeader>
         {error ? <p role="alert" className="mb-4 text-sm text-red-600">{error}</p> : null}

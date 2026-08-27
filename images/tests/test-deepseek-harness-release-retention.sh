@@ -12,6 +12,29 @@ export LIGHTVELA_DSH_TEST_ROOT="${TMPDIR}/root"
 # shellcheck source=../helpers/install-deepseek-harness.sh
 source "${INSTALLER}"
 
+task_id="dshi-0123456789abcdef0123456789abcdef"
+mkdir -p \
+  "${RELEASES_DIR}/.staging-${task_id}" \
+  "${DSH_HOME}/.staging-${task_id}" \
+  "${DSH_HOME}/profiles/.backup-${task_id}" \
+  "${TOOLING_ROOT}/.pnpm-staging-${task_id}" \
+  "${WORK_ROOT}/${task_id}" \
+  "${RELEASES_DIR}/.staging-user-data"
+mkdir -p "$(dirname "${UNIT_PATH}")"
+touch "${UNIT_PATH}.candidate-${task_id}" "${UNIT_PATH}.backup-${task_id}"
+
+cleanup_abandoned_install_artifacts
+
+test ! -e "${RELEASES_DIR}/.staging-${task_id}"
+test ! -e "${DSH_HOME}/.staging-${task_id}"
+test ! -e "${DSH_HOME}/profiles/.backup-${task_id}"
+test ! -e "${TOOLING_ROOT}/.pnpm-staging-${task_id}"
+test ! -e "${WORK_ROOT}/${task_id}"
+test ! -e "${UNIT_PATH}.candidate-${task_id}"
+test ! -e "${UNIT_PATH}.backup-${task_id}"
+test -d "${RELEASES_DIR}/.staging-user-data"
+rm -rf -- "${RELEASES_DIR}/.staging-user-data"
+
 write_manifest() {
   local destination="$1"
   local resolved_at="$2"
@@ -81,6 +104,11 @@ first_snapshot="${SNAPSHOT_ID}"
 finalize_snapshot "${second_manifest}"
 second_snapshot="${SNAPSHOT_ID}"
 test "${first_snapshot}" = "${second_snapshot}"
+
+if find_reusable_release "${second_manifest}" >/dev/null; then
+  echo "find_reusable_release must fail when no matching release exists" >&2
+  exit 1
+fi
 
 profile_dir="${TMPDIR}/profile"
 runtime_dir="${TMPDIR}/runtime"

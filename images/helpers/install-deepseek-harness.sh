@@ -514,7 +514,7 @@ PY
   then
     return 0
   fi
-  return 0
+  return 1
 }
 
 normalize_managed_release() {
@@ -592,6 +592,44 @@ prune_old_releases() {
     fi
     rm -rf -- "${normalized}"
   done < <(find "${RELEASES_DIR}" -mindepth 1 -maxdepth 1 -type d -print0)
+}
+
+remove_managed_install_artifacts() {
+  local root="$1"
+  local artifact_type="$2"
+  local name_pattern="$3"
+  local candidate=""
+  local name=""
+  local -a find_type=(-type f)
+  [ -d "${root}" ] || return 0
+  if [ "${artifact_type}" = "directory" ]; then
+    find_type=(-type d)
+  fi
+  while IFS= read -r -d '' candidate; do
+    name="${candidate##*/}"
+    [[ "${name}" =~ ${name_pattern} ]] || continue
+    if [ "${artifact_type}" = "directory" ]; then
+      rm -rf -- "${candidate}"
+    else
+      rm -f -- "${candidate}"
+    fi
+  done < <(find "${root}" -mindepth 1 -maxdepth 1 "${find_type[@]}" -print0)
+}
+
+cleanup_abandoned_install_artifacts() {
+  remove_managed_install_artifacts \
+    "${RELEASES_DIR}" directory '^\.staging-dshi-[0-9a-f]{32}$'
+  remove_managed_install_artifacts \
+    "${DSH_HOME}" directory '^\.staging-dshi-[0-9a-f]{32}$'
+  remove_managed_install_artifacts \
+    "${DSH_HOME}/profiles" directory '^\.backup-dshi-[0-9a-f]{32}$'
+  remove_managed_install_artifacts \
+    "${TOOLING_ROOT}" directory '^\.pnpm-staging-dshi-[0-9a-f]{32}$'
+  remove_managed_install_artifacts \
+    "${WORK_ROOT}" directory '^dshi-[0-9a-f]{32}$'
+  remove_managed_install_artifacts \
+    "$(dirname "${UNIT_PATH}")" file \
+    '^deepseek-harness\.service\.(candidate|backup)-dshi-[0-9a-f]{32}$'
 }
 
 write_candidate_inputs() {
@@ -899,7 +937,7 @@ prepare_candidate() {
   write_task running snapshot_resolved 28 "已锁定安装版本" "" "${manifest_path}"
   CANDIDATE_RUNTIME="${runtime_dir}"
   RUNTIME_REUSED=false
-  reusable_release="$(find_reusable_release "${manifest_path}" 2>/dev/null)"
+  reusable_release="$(find_reusable_release "${manifest_path}" 2>/dev/null || true)"
   if [ -n "${reusable_release}" ]; then
     CANDIDATE_RUNTIME="${reusable_release}"
     TARGET_RELEASE="${reusable_release}"
@@ -1077,6 +1115,7 @@ do_install() {
     write_task failed lock 0 "安装任务冲突" "已有安装任务正在运行"
     return 1
   fi
+  cleanup_abandoned_install_artifacts
 
   local work_dir="${WORK_ROOT}/${TASK_ID}"
   local runtime_stage="${RELEASES_DIR}/.staging-${TASK_ID}"

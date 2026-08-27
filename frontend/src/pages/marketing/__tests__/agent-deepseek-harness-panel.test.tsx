@@ -48,6 +48,11 @@ const INSTALLED = {
   service_status: "active",
   healthy: true,
 };
+const DEGRADED = {
+  ...INSTALLED,
+  status: "degraded",
+  healthy: false,
+};
 
 describe("buildDeepSeekHarnessWebUiUrl", () => {
   it("builds the region-specific WebUI host from the Bot ID", () => {
@@ -90,8 +95,9 @@ describe("AgentDeepSeekHarnessPanel", () => {
     expect(screen.getByRole("note", { name: "抢先体验公告" }).nextElementSibling).toBe(card);
     expect(screen.getByRole("img", { name: "DeepSeek Harness Logo" })).toHaveAttribute(
       "src",
-      DEEPSEEK_HARNESS_LOGO_URL,
+      "/assets/deepseek-harness-logo.svg",
     );
+    expect(DEEPSEEK_HARNESS_LOGO_URL).not.toMatch(/^https?:\/\//);
     expect(clientFactory).toHaveBeenCalledWith("ins-1", execDebugCommand);
     expect(api.getStatus).toHaveBeenCalledWith();
     expect(screen.queryByRole("region", { name: "模型配置" })).not.toBeInTheDocument();
@@ -234,6 +240,43 @@ describe("AgentDeepSeekHarnessPanel", () => {
     expect(progress).toHaveAttribute("aria-valuenow", "27");
   });
 
+  it("keeps runtime installation progress below the browser trust stage", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    api.getInstallation.mockResolvedValue({
+      task_id: "dshi-123",
+      status: "running",
+      stage: "runtime_install",
+      progress: 48,
+      message: "Installing runtime",
+      updated_at: "2026-08-21T10:00:00Z",
+    });
+    render(<AgentDeepSeekHarnessPanel botId="ins-1" clientFactory={clientFactory} />);
+    await screen.findByRole("button", { name: "即刻安装体验" });
+
+    await user.click(screen.getByRole("button", { name: "即刻安装体验" }));
+    const progress = await screen.findByRole("progressbar", { name: "DeepSeek Harness 安装进度" });
+    for (let index = 0; index < 8; index += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_500);
+      });
+    }
+    expect(progress).toHaveAttribute("aria-valuenow", "51");
+
+    api.getInstallation.mockResolvedValue({
+      task_id: "dshi-123",
+      status: "running",
+      stage: "browser_trust_patch",
+      progress: 52,
+      message: "Configuring browser access",
+      updated_at: "2026-08-21T10:00:15Z",
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(progress).toHaveAttribute("aria-valuenow", "52");
+  });
+
   it("renders the installed state with domestic WebUI access, restart, and model configuration", async () => {
     const user = userEvent.setup();
     let resolveRestart: (value: typeof INSTALLED) => void = () => undefined;
@@ -258,6 +301,33 @@ describe("AgentDeepSeekHarnessPanel", () => {
     await act(async () => resolveRestart(INSTALLED));
     expect(await within(runtime).findByRole("button", { name: "重启" })).toBeEnabled();
     expect(screen.getByRole("status")).toHaveTextContent("DeepSeek Harness 已重新启动");
+  });
+
+  it("distinguishes an active service whose WebUI is unavailable", async () => {
+    api.getStatus.mockResolvedValue(DEGRADED);
+    render(<AgentDeepSeekHarnessPanel botId="ins-1" clientFactory={clientFactory} />);
+
+    const runtime = await screen.findByRole("group", { name: "DeepSeek Harness 运行信息" });
+    expect(within(runtime).getByText("运行异常")).toBeInTheDocument();
+    expect(within(runtime).getByRole("link", { name: "访问 WebUI" })).toHaveAttribute(
+      "href",
+      "https://ins-1.dsh.lightvela.tech",
+    );
+    expect(within(runtime).getByRole("button", { name: "重启" })).toBeEnabled();
+  });
+
+  it("does not announce restart success while the WebUI remains unavailable", async () => {
+    const user = userEvent.setup();
+    api.getStatus.mockResolvedValue(INSTALLED);
+    api.restart.mockResolvedValue(DEGRADED);
+    render(<AgentDeepSeekHarnessPanel botId="ins-1" clientFactory={clientFactory} />);
+
+    const runtime = await screen.findByRole("group", { name: "DeepSeek Harness 运行信息" });
+    await user.click(within(runtime).getByRole("button", { name: "重启" }));
+
+    expect(await within(runtime).findByText("运行异常")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("DeepSeek Harness 已重启，但 WebUI 尚未就绪");
+    expect(screen.getByRole("status")).not.toHaveTextContent("DeepSeek Harness 已重新启动");
   });
 
   it("recovers a persisted task after refresh and shows a retryable failure", async () => {

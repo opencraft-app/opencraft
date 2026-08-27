@@ -1,4 +1,4 @@
-import { webcrypto } from "node:crypto";
+import { createHash, webcrypto } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { access, chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -49,6 +49,8 @@ const paddedInstaller = (body: readonly string[]) => [
   "",
 ].join("\n");
 
+const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+
 describe("DeepSeekHarnessCommandClient", () => {
   it("checks the system service through debug/exec", async () => {
     const execDebugCommand = vi.fn().mockResolvedValue(success(JSON.stringify({
@@ -62,9 +64,122 @@ describe("DeepSeekHarnessCommandClient", () => {
     await expect(client.getStatus()).resolves.toMatchObject({ installed: true, status: "running" });
     expect(execDebugCommand).toHaveBeenCalledWith(
       "bot-1",
-      expect.stringContaining("sudo systemctl status deepseek-harness.service --no-pager"),
+      expect.stringContaining("sudo -n systemctl status deepseek-harness.service --no-pager"),
       expect.any(Object),
     );
+    const command = String(execDebugCommand.mock.calls[0]?.[1]);
+    expect(command).toContain("sudo -n test -x /opt/lightvela/dsh/current/node_modules/.bin/dsh");
+    expect(command).toContain("sudo -n test ! -x /opt/lightvela/dsh/current/node_modules/.bin/dsh");
+    expect(command).toContain("http://127.0.0.1:3080/");
+    expect(command).toContain('"status":"degraded"');
+  });
+
+  it("fails closed when non-interactive sudo is unavailable during status detection", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-status-sudo-"));
+    const binDir = path.join(root, "bin");
+    await mkdir(binDir);
+    await writeFile(path.join(binDir, "sudo"), "#!/usr/bin/env bash\nexit 1\n", "utf8");
+    await chmod(path.join(binDir, "sudo"), 0o755);
+
+    const execDebugCommand = vi.fn().mockImplementation(async (_botId: string, command: string) => {
+      const result = spawnSync("/bin/bash", ["-c", command], {
+        env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+        encoding: "utf8",
+      });
+      return {
+        status: result.status === 0 ? "SUCCESS" : "FAILED",
+        exitCode: result.status ?? 1,
+        output: result.stdout || result.stderr,
+      };
+    });
+    const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand);
+
+    await expect(client.getStatus()).rejects.toThrow();
+  });
+
+  it("reports an active service as degraded after automatic restarts", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-status-restarts-"));
+    const binDir = path.join(root, "bin");
+    await mkdir(binDir);
+    await writeFile(path.join(binDir, "sudo"), [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "[ \"${1:-}\" = \"-n\" ] && shift",
+      "exec \"$@\"",
+      "",
+    ].join("\n"), "utf8");
+    await writeFile(path.join(binDir, "systemctl"), [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "if [ \"${1:-}\" = \"status\" ]; then exit 0; fi",
+      "if [ \"${1:-}\" = \"show\" ]; then printf '2\\n'; exit 0; fi",
+      "exit 1",
+      "",
+    ].join("\n"), "utf8");
+    await writeFile(path.join(binDir, "curl"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    await Promise.all(["sudo", "systemctl", "curl"].map((name) => chmod(path.join(binDir, name), 0o755)));
+
+    const execDebugCommand = vi.fn().mockImplementation(async (_botId: string, command: string) => {
+      const result = spawnSync("/bin/bash", ["-c", command], {
+        env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+        encoding: "utf8",
+      });
+      return {
+        status: result.status === 0 ? "SUCCESS" : "FAILED",
+        exitCode: result.status ?? 1,
+        output: result.stdout || result.stderr,
+      };
+    });
+    const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand);
+
+    await expect(client.getStatus()).resolves.toMatchObject({
+      installed: true,
+      status: "degraded",
+      healthy: false,
+    });
+  });
+
+  it("fails status detection instead of reporting degraded when curl is unavailable", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-status-curl-"));
+    const binDir = path.join(root, "bin");
+    await mkdir(binDir);
+    await writeFile(path.join(binDir, "sudo"), [
+      "#!/bin/bash",
+      "set -euo pipefail",
+      "[ \"${1:-}\" = \"-n\" ] && shift",
+      "exec \"$@\"",
+      "",
+    ].join("\n"), "utf8");
+    await writeFile(path.join(binDir, "systemctl"), [
+      "#!/bin/bash",
+      "set -euo pipefail",
+      "if [ \"${1:-}\" = \"status\" ]; then exit 0; fi",
+      "if [ \"${1:-}\" = \"show\" ]; then printf '0\\n'; exit 0; fi",
+      "exit 1",
+      "",
+    ].join("\n"), "utf8");
+    await Promise.all(["sudo", "systemctl"].map((name) => chmod(path.join(binDir, name), 0o755)));
+
+    const execDebugCommand = vi.fn().mockImplementation(async (_botId: string, command: string) => {
+      const result = spawnSync("/bin/bash", ["-c", command], {
+        env: {
+          ...process.env,
+          PATH: binDir,
+          HOME: root,
+          BASH_ENV: "",
+          ENV: "",
+        },
+        encoding: "utf8",
+      });
+      return {
+        status: result.status === 0 ? "SUCCESS" : "FAILED",
+        exitCode: result.status ?? 1,
+        output: result.stdout || result.stderr,
+      };
+    });
+    const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand);
+
+    await expect(client.getStatus()).rejects.toThrow();
   });
 
   it("downloads the installer from the accelerated COS endpoint and polls its task file", async () => {
@@ -222,7 +337,7 @@ describe("DeepSeekHarnessCommandClient", () => {
       "/bin/bash",
       [
         "-c",
-        createDeepSeekHarnessInstallLaunchScript(),
+        createDeepSeekHarnessInstallLaunchScript(undefined, sha256(installer)),
         "lightvela-dsh-install",
         taskId,
         stateDir,
@@ -253,14 +368,15 @@ describe("DeepSeekHarnessCommandClient", () => {
     const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-installer-failure-"));
     const stateDir = path.join(root, "tasks");
     const workDir = path.join(root, "work");
-    const { binDir, sourcePath } = await createFakeCurl(root, paddedInstaller(["exit 42"]));
+    const installer = paddedInstaller(["exit 42"]);
+    const { binDir, sourcePath } = await createFakeCurl(root, installer);
 
     const taskId = "dshi-0123456789abcdef0123456789abcdef";
     const result = spawnSync(
       "/bin/bash",
       [
         "-c",
-        createDeepSeekHarnessInstallLaunchScript(),
+        createDeepSeekHarnessInstallLaunchScript(undefined, sha256(installer)),
         "lightvela-dsh-install",
         taskId,
         stateDir,
@@ -314,6 +430,52 @@ describe("DeepSeekHarnessCommandClient", () => {
     expect(task).toMatchObject({ status: "failed", message: "Invalid installer size" });
   });
 
+  it("rejects a syntactically valid installer whose checksum does not match", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "lightvela-dsh-checksum-"));
+    const stateDir = path.join(root, "tasks");
+    const workDir = path.join(root, "work");
+    const executedPath = path.join(root, "executed");
+    const trustedInstaller = paddedInstaller(["exit 0"]);
+    const tamperedInstaller = paddedInstaller(['touch "$TEST_EXECUTED_PATH"']);
+    const { binDir, sourcePath } = await createFakeCurl(root, tamperedInstaller);
+    const taskId = "dshi-0123456789abcdef0123456789abcdef";
+
+    const result = spawnSync(
+      "/bin/bash",
+      [
+        "-c",
+        createDeepSeekHarnessInstallLaunchScript(undefined, sha256(trustedInstaller)),
+        "lightvela-dsh-install",
+        taskId,
+        stateDir,
+        workDir,
+        trustedBrowserHost,
+      ],
+      {
+        env: {
+          ...process.env,
+          PATH: `${binDir}:${process.env.PATH}`,
+          TEST_INSTALLER_SOURCE: sourcePath,
+          TEST_EXECUTED_PATH: executedPath,
+        },
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).not.toBe(0);
+    const task = JSON.parse(await readFile(path.join(stateDir, `${taskId}.json`), "utf8")) as {
+      status: string;
+      stage: string;
+      message: string;
+    };
+    expect(task).toMatchObject({
+      status: "failed",
+      stage: "verify_installer",
+      message: "Installer checksum mismatch",
+    });
+    await expect(access(executedPath)).rejects.toThrow();
+  });
+
   it("restarts the system service and refreshes status through debug/exec", async () => {
     const execDebugCommand = vi.fn()
       .mockResolvedValueOnce(success())
@@ -326,8 +488,23 @@ describe("DeepSeekHarnessCommandClient", () => {
     const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand);
 
     await expect(client.restart()).resolves.toMatchObject({ healthy: true });
-    expect(execDebugCommand.mock.calls[0]?.[1]).toBe("sudo systemctl restart deepseek-harness.service");
-    expect(execDebugCommand.mock.calls[1]?.[1]).toContain("sudo systemctl status deepseek-harness.service --no-pager");
+    expect(execDebugCommand.mock.calls[0]?.[1]).toBe("sudo -n systemctl restart deepseek-harness.service");
+    expect(execDebugCommand.mock.calls[1]?.[1]).toContain("sudo -n systemctl status deepseek-harness.service --no-pager");
+  });
+
+  it("rejects a failed restart without reporting the old healthy process as restarted", async () => {
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce({ status: "FAILED", exitCode: 1, output: "restart denied" })
+      .mockResolvedValueOnce(success(JSON.stringify({
+        installed: true,
+        status: "running",
+        service_status: "active",
+        healthy: true,
+      })));
+    const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand);
+
+    await expect(client.restart()).rejects.toThrow("restart denied");
+    expect(execDebugCommand).toHaveBeenCalledTimes(1);
   });
 
   it("loads providers and saves an encrypted API key through inline management scripts", async () => {
@@ -359,13 +536,19 @@ describe("DeepSeekHarnessCommandClient", () => {
     const keyCommand = String(execDebugCommand.mock.calls[1]?.[1]);
     expect(keyCommand).toContain("openssl genpkey");
     expect(keyCommand).toContain("dshk-0123456789abcdef0123456789abcdef.pem");
+    expect(keyCommand).toContain("-mmin +14 -delete");
+    expect(keyCommand).toContain("sudo -n systemd-run");
+    expect(keyCommand).toContain("--on-active=15m");
+    expect(keyCommand).toContain("lightvela-dsh-secret-dshk-0123456789abcdef0123456789abcdef");
+    const keySyntaxCheck = spawnSync("/bin/bash", ["-n", "-c", keyCommand], { encoding: "utf8" });
+    expect(keySyntaxCheck.status, keySyntaxCheck.stderr).toBe(0);
     const saveCommand = String(execDebugCommand.mock.calls[2]?.[1]);
     expect(saveCommand).toContain("configure --provider deepseek");
     expect(saveCommand).not.toContain("sk-sensitive-value");
     expect(saveCommand).not.toContain(btoa("sk-sensitive-value"));
     expect(saveCommand).toContain("ZW5jcnlwdGVkLXNlY3JldA==");
     expect(saveCommand).toContain("rsa_padding_mode:oaep");
-    expect(saveCommand).toContain("rm -f");
+    expect(saveCommand).toContain('trap cleanup_secret_key EXIT');
     const syntaxCheck = spawnSync("/bin/bash", ["-n", "-c", saveCommand], { encoding: "utf8" });
     expect(syntaxCheck.status, syntaxCheck.stderr).toBe(0);
     expect([keyCommand, saveCommand].every((command) => Buffer.byteLength(command) < 64 * 1024))

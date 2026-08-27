@@ -5,7 +5,7 @@
 - 当前产品：LightVela Agent 控制台
 - 需求状态：npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机的首次安装、同快照重装和服务健康复验，等待北京 Hermes Sandbox 共存与 TAT 链路联调
 - 创建日期：2026-08-20
-- 最后更新时间：2026-08-21
+- 最后更新时间：2026-08-27
 - 需求类型：实验室能力 / 实例侧运行时集成
 - 发布范围：国内站与国际站按 Provider 白名单区分
 - 优先级：P1
@@ -15,7 +15,7 @@
 
 DeepSeek Harness（简称 dsh）是由 DeepSeek 开发的开源智能体框架，采用“一切皆插件”的 Cordis 架构。LightVela 希望在用户当前 Hermes Agent 实例中额外安装 dsh，并让用户从 Agent 控制台完成安装、运行状态查看、模型供应商配置和专属 WebUI 访问。
 
-第一版已经形成“管理 > 实验室 > DeepSeek Harness”入口；本轮已将前端模拟状态替换为真实安装任务，并在已安装页面下方增加模型配置卡片。
+第一版已经形成独立“实验室 > DeepSeek Harness”入口；本轮已将前端模拟状态替换为真实安装任务，并在已安装页面下方增加模型配置卡片。
 
 WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightvela.tech`，国际站为 `https://${botId}.dsh.lightvela.site`。产品页面不展示任何静态 IP 地址；域名代理必须校验当前登录态和实例权限。
 
@@ -29,7 +29,7 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 
 ### 典型场景
 
-1. 用户在“管理 > 实验室 > DeepSeek Harness”进入能力页。
+1. 用户在“实验室 > DeepSeek Harness”进入能力页。
 2. 未安装时，用户阅读简介与公告，点击“即刻安装体验”。
 3. 安装期间，页面展示真实任务进度和 1-3 分钟等待提示。
 4. 安装完成后，页面展示运行状态、“访问 WebUI”和“重启”。
@@ -37,7 +37,7 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 
 ## 产品目标
 
-- 保持 DeepSeek Harness 为“实验室”下的二级能力，不占用一级导航。
+- “实验室”与“配置 / 使用 / 成长 / 管理”同级，DeepSeek Harness 作为实验室分组中的能力项。
 - 将 dsh 以及 SkillHub、QQBot、微信、企业微信、Lark、钉钉六个 Web profile 插件安装到当前 Hermes 实例的同一运行环境中。
 - 让用户在 LightVela 内完成受控 Provider 的凭据配置，无需进入 dsh 设置页。
 - 保证 API Key 只写、不回显、不进入 URL、日志、TAPD 或前端持久化；通过 `debug/exec` 保存时使用实例一次性 RSA 公钥与 RSA-OAEP/SHA-256 加密，命令只携带密文。
@@ -47,7 +47,7 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 
 ### 本轮已实现
 
-- 左侧导航“管理 > 实验室 > DeepSeek Harness”。
+- 左侧导航独立“实验室 > DeepSeek Harness”分组。
 - 未安装、安装中、安装失败、已安装及重启状态全部通过现有 `debug/exec` 获取。
 - 公告位于 DeepSeek Harness 卡片上方。
 - 未安装态展示 Logo、标题后的 `Beta`、简介及简介下方的“即刻安装体验”。
@@ -60,8 +60,9 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 - 国内站和国际站使用不同的 Provider 白名单。
 - 安装动作通过 `debug/exec` 启动实例侧异步任务，由实例从 COS 全球加速地址下载完整单文件安装器；依赖快照由脚本在实例内从 npm 解析，不依赖 Hermes 镜像预置安装器或前端 payload。前端继续通过 `debug/exec` 轮询任务状态。
 - 实例侧在安装任务开始时从 npm 解析 dsh、SkillHub 与五个渠道插件的 `latest` 精确版本和 integrity，以快照方式安装，并由 `agentuser` 身份长期运行。
-- 安装器校验 dsh 与六个 Web profile 插件的快照版本、bundle 声明、配置组合、systemd 服务状态、回环监听和本地 HTTP 健康状态；页面运行态直接以 systemd 状态为准。
-- 重启操作通过 `debug/exec` 下发固定的 `sudo systemctl restart deepseek-harness.service`。
+- 安装器校验 dsh 与六个 Web profile 插件的快照版本、bundle 声明、配置组合、systemd 服务状态、回环监听和本地 HTTP 健康状态；页面运行态同时检查 systemd active、`NRestarts` 与三秒回环 HTTP 探测。
+- 安装器取得全局锁后清理上次异常中断遗留的受管 staging/backup；COS 发布前必须逐字节校验远端脚本与仓库脚本一致。`@latest` 为产品确认的取舍，但单次任务会固定精确版本和 integrity，安装过程中不漂移。
+- 重启操作通过 `debug/exec` 下发固定的 `sudo -n systemctl restart deepseek-harness.service`。
 - WebUI 使用当前 `botId` 生成分站实例域名；静态演示地址从产品逻辑中移除。
 
 ### 本阶段不包含
@@ -76,13 +77,12 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 
 ## 信息架构
 
-左侧导航保持：
+左侧导航保持独立分组：
 
-- 管理
-  - 实验室
-    - DeepSeek Harness
+- 实验室
+  - DeepSeek Harness
 
-路由保持 `/agents/labs/deepseek-harness`。当当前页为 DeepSeek Harness 时，“实验室”保持展开，二级项保持选中。
+路由保持 `/agents/labs/deepseek-harness`。当当前页为 DeepSeek Harness 时，对应能力项保持选中。
 
 ## 页面与交互设计
 
@@ -104,7 +104,7 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 
 - 保持 Logo、标题、Beta 和简介。
 - 简介下方展示进度条、百分比和“请稍等片刻，安装大约需要 1-3 分钟”。
-- 进度由实例侧任务阶段映射，不伪装成精确的包下载百分比：环境检查 10%、解析版本 20%、快照生成 28%、runtime 锁文件 35%、runtime 安装 48%、profile 锁文件 56%、六插件安装 68%、候选校验 75%、原子切换 85%、健康检查 95%、清理 99%、完成 100%。同一真实节点停留时，前端每 1.5 秒轮询成功后最多递增 1%，并始终低于下一真实节点；后端进度降低时页面不倒退。
+- 进度由实例侧任务阶段映射，不伪装成精确的包下载百分比：环境检查 10%、解析版本 20%、快照生成 28%、runtime 锁文件 35%、runtime 安装 48%、WebUI 信任配置 52%、profile 锁文件 56%、六插件安装 68%、候选校验 75%、原子切换 85%、健康检查 95%、清理 99%、完成 100%。同一真实节点停留时，前端每 1.5 秒轮询成功后最多递增 1%，并始终低于下一真实节点；后端进度降低时页面不倒退。
 - 安装完成后使用淡出、内容切换、淡入进入已安装态。
 - 安装失败时恢复“重新安装”操作并展示简短错误；不增加“查看诊断”入口。
 
@@ -113,7 +113,7 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 - 主卡片展示 Logo、标题、Beta 和运行状态，不展示简介、静态地址、安装时间或最近启动时间。
 - 右侧展示主按钮“访问 WebUI”和次按钮“重启”。
 - “访问 WebUI”新窗口打开后端返回的受控访问地址。
-- “重启”只重启系统级 `deepseek-harness.service`；成功后再次通过 systemd 状态命令确认运行状态。
+- “重启”只重启系统级 `deepseek-harness.service`；命令退出码为零后，再通过 systemd 与回环 HTTP 组合状态确认运行结果。回环 HTTP 未就绪时不提示重启成功。
 
 ### 模型配置卡片
 
@@ -144,6 +144,7 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 - 下拉列表始终展示当前站点完整白名单；首次进入默认选中 DeepSeek，已配置供应商仍可再次选择。
 - 选择供应商、填写 API Key 后保存；如果该供应商已经配置，本次保存覆盖更新原配置。
 - 点击“保存配置”后，按钮展示加载状态，并禁用供应商选择、密钥输入和其他配置操作，直到 `debug/exec` 返回成功或失败。
+- 保存链路在 React 状态更新前使用同步锁去重，连续点击只会下发一次配置命令。
 - 保存成功或失败使用全局顶部居中 Toast 提醒，并约 3 秒自动消失。成功后保留当前供应商并清空 API Key，失败后保留输入以便重试。
 
 #### 第一版做减法
@@ -194,7 +195,7 @@ WebUI 使用实例专属域名访问：国内站为 `https://${botId}.dsh.lightv
 - `credentials.set`：将 API Key 写入独立凭据存储。
 - `credentials.unset`：删除时仅清理能够确认由 LightVela 创建且当前可写的凭据。
 
-helper 固定使用本地 `Host` 和 `Origin`，目标端口固定为 3080。保存时先经 `debug/exec` 在 `agentuser` 私有目录生成一次性 RSA-4096 密钥并返回公钥，前端使用 RSA-OAEP/SHA-256 加密 API Key；后续命令只携带密文，在实例内通过 OpenSSL 解密并管道写入 helper stdin。一次性私钥在命令退出时删除，超过 15 分钟的遗留私钥在下一次保存前清理。前端不得将 API Key 写入埋点、缓存、localStorage 或错误详情。
+helper 固定使用本地 `Host` 和 `Origin`，目标端口固定为 3080。保存时先经 `debug/exec` 在 `agentuser` 私有目录生成一次性 RSA-4096 密钥并返回公钥，同时建立 15 分钟 systemd 清理 timer；timer 创建失败时立即删除密钥并终止。前端使用 RSA-OAEP/SHA-256 加密 API Key；后续命令只携带密文，在实例内通过 OpenSSL 解密并管道写入 helper stdin。一次性私钥在第二条命令退出时主动删除，浏览器中断时最迟由 timer 清理，旧版本超过 15 分钟的遗留私钥也会在下一次保存前清理。前端不得将 API Key 写入埋点、缓存、localStorage 或错误详情。
 
 ### 写入顺序
 
@@ -236,7 +237,7 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 ### 方案比较
 
-1. **COS 单文件脚本 + npm 快照 + 独立版本目录 + systemd 系统服务（采用）**：前端经 `debug/exec` 启动实例下载并校验 COS 上的完整安装脚本，安装器解析一次 `latest` 后将精确快照安装到 `/opt/lightvela/dsh/releases/<snapshot-id>-<task-prefix>`，通过 `/opt/lightvela/dsh/current` 切换；系统服务使用 `User=agentuser`。支持存量实例直接安装、版本审计、同快照复用和快速回滚，DSH 依赖不写入 Hermes runtime 包树。
+1. **COS 单文件脚本 + SHA-256 + npm 快照 + 独立版本目录 + systemd 系统服务（采用）**：前端经 `debug/exec` 启动实例下载 COS 上的完整安装脚本，并校验构建期从仓库安装器生成的 SHA-256；安装器解析一次 `latest` 后将精确快照安装到 `/opt/lightvela/dsh/releases/<snapshot-id>-<task-prefix>`，通过 `/opt/lightvela/dsh/current` 切换；系统服务使用 `User=agentuser`。支持存量实例直接安装、版本审计、同快照复用和快速回滚，DSH 依赖不写入 Hermes runtime 包树。
 2. **镜像内离线预置 runtime 与插件包体**：实例激活最稳定，但每次 DSH 升级都要求重建镜像；首版先不采用。
 3. **独立 COS 离线 runtime bundle**：可以进一步减少 npm 网络依赖，但需要额外的包体构建和发布链路；首版不采用。
 4. **systemd 每次直接运行未固定版本的 npx**：会把启动稳定性绑定到 npm 网络和 `latest`，不采用。
@@ -257,9 +258,9 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 不新增 DeepSeek Harness 专用后端接口。状态、安装、任务查询、重启和 Provider 配置均复用 `POST /v1/instances/{id}/debug/exec`。前端只生成固定模板命令，任务 ID 与 Provider 均在前端和实例 helper 两侧校验。
 
-点击安装后，前端通过 `debug/exec` 启动 `sudo systemd-run`，由实例从 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh` 下载完整单文件安装器。wrapper 使用 HTTPS/TLS 1.2、5 次有限重试和有界超时，下载到 root 私有临时目录后检查 1 KiB 至 1 MiB 的文件大小、Bash shebang 与 `bash -n`，通过后再执行，不使用 `curl | bash`。wrapper 在下载前原子写入 `pending`，准备失败或安装器未写终态便退出时原子覆盖为 `failed`；启动响应不确定时使用只读命令延迟检查任务文件和 systemd unit。临时下载目录在任务结束后自动清理。包坐标、目录、用户和端口由安装器固定，精确版本由每次任务开始时的 npm metadata 决定：
+点击安装后，前端通过 `debug/exec` 启动 `sudo systemd-run`，由实例从 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh` 下载完整单文件安装器。wrapper 使用 HTTPS/TLS 1.2、5 次有限重试和有界超时，下载到 root 私有临时目录后检查 1 KiB 至 1 MiB 的文件大小、Bash shebang、`bash -n` 与构建期可信 SHA-256，全部通过后再执行，不使用 `curl | bash`。哈希不符时写入 `verify_installer` 失败状态。wrapper 在下载前原子写入 `pending`，准备失败或安装器未写终态便退出时原子覆盖为 `failed`；启动响应不确定时使用只读命令延迟检查任务文件和 systemd unit。临时下载目录在任务结束后自动清理。包坐标、目录、用户和端口由安装器固定，精确版本由每次任务开始时的 npm metadata 决定：
 
-1. 使用 `flock` 获取实例安装锁，拒绝同实例并发安装。
+1. 使用 `flock` 获取实例安装锁，拒绝同实例并发安装；取得锁后仅清理 LightVela 受管目录内、严格匹配 `dshi-*` 任务 ID 的上次 staging/backup/work/unit 遗留。
 2. 检查实例归属、运行状态、架构、磁盘、Node >=22、固定 pnpm、编译工具和 3080 端口占用；必要时在候选目录引导固定 pnpm。
 3. 在任务临时目录按有限重试策略解析 DSH、SkillHub 和五渠道 npm `latest` 元数据，校验版本、HTTPS tarball 与 `dist.integrity`，生成不含时间漂移的内容快照 ID。
 4. 分别为 DSH runtime 和 `web` profile 写入精确版本 package，先生成 lockfile、再执行 `pnpm install --frozen-lockfile`；要求每个 npm integrity 都出现在对应 lockfile，缺失或不匹配立即失败。
@@ -287,6 +288,7 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 | 安装中 | 真实阶段映射进度与 1-3 分钟提示 | 禁止重复提交 |
 | 安装失败 | 简短错误并恢复安装入口 | 重新安装 |
 | 已安装 / 运行中 | 运行卡片 + 模型配置卡片 | 访问 WebUI、重启、配置 Provider |
+| 已安装 / 运行异常 | systemd active，但出现自动重启或 WebUI 回环探测失败 | 访问 WebUI、重启、配置 Provider |
 | 已安装 / 未运行 | 状态提示 + 模型配置卡片 | 访问 WebUI、重启、配置 Provider |
 | 重启中 | 保持卡片尺寸，按钮 loading | 禁止重复重启 |
 
@@ -317,7 +319,7 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 
 ## 验收标准
 
-1. 原有“管理 > 实验室 > DeepSeek Harness”入口和三态布局保持不变。
+1. 独立“实验室 > DeepSeek Harness”入口和三态布局保持不变。
 2. 安装动作使用真实异步任务，同实例重复点击不会创建并发安装。
 3. 安装完成后 dsh 与 SkillHub、QQBot、微信、企业微信、Lark、钉钉六个插件均等于任务快照版本并进入 `web` profile；配置组合检查通过，系统级 `deepseek-harness.service` active，`127.0.0.1:3080` 返回 HTTP 200。
 4. 实例公网不监听 3080，安全组不新增 3080 入站规则。
@@ -332,6 +334,8 @@ DSH 官方实现将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`�
 13. “访问 WebUI”使用受当前登录态和实例权限保护的地址，页面不展示静态 IP。
 14. 安装失败只展示轻量错误和重新安装，不增加“查看诊断”按钮。
 15. 保存配置期间展示加载状态并锁定配置交互；成功或失败通过顶部居中、自动消失的 Toast 提醒，成功清空密钥，失败保留输入。
+16. 下载的安装器必须匹配构建期可信 SHA-256；内容被替换时不得以 root 执行。
+17. 状态与重启命令统一使用 `sudo -n`；权限错误不得误报未安装，重启命令非零退出时不得继续读取旧状态并提示成功；systemd active 但存在自动重启记录或回环 HTTP 不可达时展示“运行异常”。
 
 ## 发布与观测
 

@@ -4,7 +4,7 @@
 
 **Status:** npm 渠道插件迁移与钉钉接入已通过本地自动化及用户授权 Ubuntu 24.04 主机的首次安装、同快照重装与六插件复验。北京 Hermes Sandbox 共存与 TAT 链路仍待验证；未提交、未推送、未创建 MR。
 
-**Goal:** 在 `/agents` 控制台中新增“管理 > 实验室 > DeepSeek Harness”二级入口，并提供真实安装、运行状态、WebUI 访问和 Provider 配置体验。
+**Goal:** 在 `/agents` 控制台中新增独立“实验室 > DeepSeek Harness”入口，并提供真实安装、运行状态、WebUI 访问和 Provider 配置体验。
 
 **Architecture:** 安装、状态查询、安装进度、重启和模型配置全部复用现有 `BotRepository.execDebugCommand` 与 `/v1/instances/:id/debug/exec`，不新增 DeepSeek Harness 专用 ctl 或 gateway 接口。实例侧固定管理脚本负责版本、目录、Provider 白名单和 DSH 回环 RPC；dsh 以系统级 `deepseek-harness.service` 运行并监听 `127.0.0.1:3080`。WebUI 直接使用当前 `Bot.id` 生成分站实例域名。API Key 只写、不回显、不进入 URL 或前端持久化。
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 入口固定为左侧导航“管理 > 实验室 > DeepSeek Harness”，DeepSeek Harness 不作为一级左导航出现。
+- “实验室”与“配置 / 使用 / 成长 / 管理”同级，DeepSeek Harness 作为实验室分组中的能力项。
 - 路由采用 `/agents/labs/deepseek-harness`；不新增 `/agents/deepseek-harness` 旁路。
 - 两条抢先体验公告位于 DeepSeek Harness 卡片上方，不嵌入卡片。
 - 未安装态必须展示 DeepSeek Harness Logo、标题后的 `Beta`、指定简介，以及简介下方的“即刻安装体验”按钮。
@@ -36,12 +36,12 @@
 
 - 在 `agent-routes.ts` 中增加 DeepSeek Harness section id 与 lab slug 解析。
 - 新增 `agents/labs/[lab]` App Router 页面，避免污染现有 `/agents/[section]` 单段 section 路由。
-- 在 `AgentSettingsPage` 内把“实验室”作为“管理”分组下的可展开导航项，子项 DeepSeek Harness 指向 `/agents/labs/deepseek-harness`。
+- 在 `AgentSettingsPage` 内把“实验室”作为独立分组，能力项 DeepSeek Harness 指向 `/agents/labs/deepseek-harness`。
 - 页面主体抽到 `agent-deepseek-harness-panel.tsx`，减少继续膨胀 `agent-settings-page.tsx`。
 
 ### 备选方案与取舍
 
-- 备选 A：把 DeepSeek Harness 直接作为“管理”下普通平级项。实现最短，但不满足用户明确要求的“实验室可展开二级导航”，不采用。
+- 早期方案：把“实验室”放在“管理”分组下并增加展开层级。后续产品决策将“实验室”提升为独立分组，当前实现以最终决策为准。
 - 备选 B（第一版记录）：复用现有 `browser` / `TatHermesWebPanel` 代理链路直接嵌入 WebUI。当时未采用；Task 7 已在不嵌入页面的前提下复用并扩展该链路。
 - 备选 C（第一版记录）：先做后端安装接口再上前端入口。当时未采用；Task 7 已在入口验证后补齐真实安装接口。
 
@@ -62,7 +62,7 @@
 - Test: `frontend/src/lib/__tests__/agent-routes.test.ts`
   锁定 lab path 与 slug helper。
 - Test: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
-  锁定“实验室”位于“管理”分组，DeepSeek Harness 是其二级项。
+  锁定“实验室”为独立分组，DeepSeek Harness 是其能力项。
 - Test: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
   覆盖三态文案、Logo、按钮和 WebUI 链接。
 - Test: `frontend/src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
@@ -125,7 +125,7 @@
 - [x] 使用 lucide `ExternalLink` / `Loader2` 等图标，按钮文字不被图标替代。
 - [x] 运行 `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`。
 
-### Task 3: 左侧导航二级实验室入口
+### Task 3: 左侧导航独立实验室分组
 
 **Role:** Developer
 
@@ -137,20 +137,19 @@
 
 **Interfaces:**
 - Consumes: `AGENT_SECTION_PATH_BY_ID["deepseek-harness"]`。
-- Produces: Manage group 中的 expandable item：`实验室 -> DeepSeek Harness`。
-- Produces: `activeSection === "deepseek-harness"` 时，实验室自动展开，子项 `aria-current="page"`。
+- Produces: 与配置、使用、成长、管理同级的 `实验室` 分组，以及 `DeepSeek Harness` 能力项。
+- Produces: `activeSection === "deepseek-harness"` 时，能力项具有 `aria-current="page"`。
 
 **Acceptance:**
-- “实验室”出现在“管理”分组内，且不是一级导航分组。
-- 点击“实验室”只展开/收起，不直接跳转。
-- 点击二级项“DeepSeek Harness”跳转 `/agents/labs/deepseek-harness`。
-- 选中 DeepSeek Harness 时，“实验室”保持展开。
+- “实验室”与“配置 / 使用 / 成长 / 管理”同级展示。
+- 点击能力项“DeepSeek Harness”跳转 `/agents/labs/deepseek-harness`。
+- 选中 DeepSeek Harness 时，能力项具有 `aria-current="page"`。
 - 桌面端二级项缩进清晰；移动端不溢出、不挤压、不横向滚动。
-- 导航具有可访问语义：展开按钮有 `aria-expanded`、`aria-controls`，当前页有 `aria-current="page"`。
+- 导航具有可访问语义：实验室分组具有 group label，当前页有 `aria-current="page"`。
 
-- [x] 扩展 `agent-settings-nav-order.test.ts`，用源码结构锁定“管理”内 `files -> diagnostics -> labs -> deepseek-harness`。
-- [x] 新增 `agent-settings-labs-nav.test.tsx`，渲染 `AgentSettingsPage sectionId="deepseek-harness"` 并断言展开态、选中态与链接。
-- [x] 调整 `SettingsSection` 导航数据结构，使其支持普通 section 和 expandable labs item。
+- [x] 扩展 `agent-settings-nav-order.test.ts`，用源码结构锁定配置、使用、成长、管理、实验室五个分组及 DeepSeek Harness 能力项。
+- [x] 新增 `agent-settings-labs-nav.test.tsx`，渲染 `AgentSettingsPage sectionId="deepseek-harness"` 并断言独立分组、选中态与链接。
+- [x] 在现有分组数据结构中新增独立 labs 分组。
 - [x] 接入 `AgentDeepSeekHarnessPanel` 到 section 分发。
 - [x] 补充 `.lv-agents-nav-subitems`、`.lv-agents-nav-expand-toggle`、移动端 grid span 样式。
 - [x] 运行 `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-nav-order.test.ts src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`。
@@ -180,7 +179,7 @@
 - [x] 启动本地预览并检查桌面/移动端：
   - `cd frontend && pnpm exec next dev -H 127.0.0.1 -p 5175`
   - 访问 `/agents/labs/deepseek-harness`
-  - 验证左导“管理 > 实验室 > DeepSeek Harness”、未安装态、安装中态、已安装态和“打开 WebUI”。
+  - 验证左导“实验室 > DeepSeek Harness”、未安装态、安装中态、已安装态和“打开 WebUI”。
 - [x] 汇总变更、验证结果、截图/观察结论与剩余风险，停在用户验收确认点。
 
 ### Task 5: 用户验收反馈调整
@@ -294,7 +293,7 @@
 - Produces: 固定命令构造与 JSON 结果解析；页面不能提交包名、版本、目录、端口或任意 Provider。
 - Produces: 系统级 `/etc/systemd/system/deepseek-harness.service`，运行用户仍为 `agentuser`。
 
-- [x] 先改测试，断言状态使用 `sudo systemctl status deepseek-harness.service --no-pager`，安装、任务轮询、重启和 Provider 配置全部调用 `execDebugCommand`。
+- [x] 先改测试，断言状态使用 `sudo -n systemctl status deepseek-harness.service --no-pager`，安装、任务轮询、重启和 Provider 配置全部调用 `execDebugCommand`。
 - [x] 运行聚焦测试并确认因旧 API/RPC 调用而失败。
 - [x] 新增命令构造与解析模块；Provider 白名单、任务 ID、输出 JSON 和 API Key 编码在浏览器侧校验。
 - [x] 安装器切换为系统服务，并增加只接受白名单 Provider 的 `providers` / `configure` 动作；密钥从 stdin 读取且不回显。
@@ -584,6 +583,7 @@
 
 - [x] RED：安装命令必须包含 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh`，并禁止旧地域域名和前端 payload 上传。
 - [x] 实例以 HTTPS、有限重试、超时、文件大小和 Bash 语法检查下载脚本，再通过 `systemd-run` 异步执行；准备失败仍写入可轮询的失败任务状态。
+- [x] 构建期根据仓库安装器生成 SHA-256；实例执行前必须匹配该值，合法 Bash 被替换后同样拒绝执行并写入 `verify_installer` 失败状态。
 - [x] 删除安装 payload 的前端运行时依赖，Provider helper 的内联执行与密钥传输保持不变。
 - [x] 同步规格和 PRD，运行定向测试、类型检查、生成物检查及差异检查。
 - [ ] 将当前 npm-only 六插件安装器覆盖到 COS 对象并复验。2026-08-26 实测源站与加速域名均返回旧 GitHub 四插件脚本，ETag `64acd8e96c56a730e4041276604e7f47`，尚无钉钉支持。
@@ -591,6 +591,25 @@
 **Planning Gate:** 用户已明确指定 COS 全球加速域名；脚本路径保持 `/dsh/install-deepseek-harness.sh`，远端对象为完整单文件安装器，不再由前端上传安装 payload。
 
 **Status:** 前端实现与本地验证完成；真实安装仍等待 COS 对象更新后复验。未 commit、未 push、未创建 MR。
+
+---
+
+### Task 17: 补齐 DSH 安装与模型配置 CR 边界
+
+**Goal:** 修复评审遗漏的安装中断残留、模型保存重入、外链 Logo 与远端安装器发布契约，并用回归测试证明一次性私钥清理和状态探测依赖边界。
+
+**Constraints:**
+
+- DSH 与六个插件继续按用户确认的 `@latest` 策略，在单次任务开始时解析并固定精确版本与 integrity；本轮不改为仓库固定版本。
+- 孤儿目录只在取得全局安装锁后清理，并严格限制在 LightVela 管理目录与 `dshi-*` 命名空间内。
+- COS 安装器仍由发布动作上传；仓库只提供可在发布前执行的字节级 SHA-256 一致性门禁。
+
+- [x] RED：增加孤儿 staging/backup 清理、同步重复保存、Logo 本地化、私钥 TTL、缺失 curl 时状态查询失败和 COS 字节一致性测试。
+- [x] GREEN：实现锁内孤儿清理、保存同步锁、本地 Logo、精确私钥 TTL、状态依赖保护和 COS 校验脚本。
+- [x] 同步 proposal/spec/PRD，明确 `@latest` 为已接受取舍，并记录 COS 上传后必须执行一致性门禁。
+- [x] 运行 DSH 聚焦测试、安装器 shell 测试、生成物、类型、i18n 与 diff 门禁，等待用户验收后再提交。
+
+**Verification:** DSH 相关 10 个 Vitest 文件共 75 个测试通过；安装器、release retention、standalone contract 与 COS verifier 四组 shell 测试通过；`pnpm check` 为 232 current / 276 baseline / 0 new，i18n 英文待翻译 0；CI runtime 464 个测试通过。真实 COS 校验当前按预期失败：仓库安装器 SHA-256 为 `8873cd55452895b4e735904eda74f3357c3a8da936a580dcc3472773bd1a0531`，远端仍为 `d1fddc521cc3e5f35edcdeb569118283340f46f44fcb47183309e3f935e93214`，需覆盖对象后再复验。
 
 ---
 
