@@ -50,6 +50,7 @@ type Config struct {
 	DSHFederationHMACKey         []byte
 	DSHTATStartTimeout           time.Duration
 	DSHTATOpenTimeout            time.Duration
+	DSHResponseHeaderTimeout     time.Duration
 	DSHTATIdleTimeout            time.Duration
 	DSHMaxTargets                int
 	DSHMaxConnectionsPerTarget   int
@@ -154,6 +155,9 @@ func FromEnv() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.DSHTATOpenTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT", 15*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.DSHResponseHeaderTimeout, err = getDuration("SITE_GATEWAY_DSH_RESPONSE_HEADER_TIMEOUT", 20*time.Minute); err != nil {
 		return Config{}, err
 	}
 	if cfg.DSHTATIdleTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_IDLE_TIMEOUT", time.Hour); err != nil {
