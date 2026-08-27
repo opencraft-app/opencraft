@@ -12,9 +12,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  *    正文与 `/docs/overview/` 相同，canonical 指向 `/docs/overview/`）。
  */
 
-// manifest 是构建期生成产物（国内站只含 zh-cn，国际站含 5 个 locale），
+// manifest 是构建期生成产物（国内站只含 zh-cn，国际站含 6 个 locale），
 // 这里固定为全量 locale，以便同一份 mock 同时验证两个 region 的分支。
-const MOCK_LOCALES = ['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id'] as const;
+const MOCK_LOCALES = ['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id', 'es'] as const;
 const MOCK_SLUGS = [[], ['overview'], ['plans']] as const;
 /** 每篇文档一个不同日期，用来验证 lastmod 是**逐 URL**取值，而不是全站同一个时间。 */
 const MOCK_LAST_UPDATED: Record<string, string> = {

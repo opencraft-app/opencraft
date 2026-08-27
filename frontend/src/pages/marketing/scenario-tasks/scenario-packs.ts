@@ -8,6 +8,8 @@
  *
  * ID 采用宽松的 string 类型，便于持续新增卡片而不必维护联合字面量。
  */
+import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
+
 export type ScenarioTaskId = string;
 
 export type ScenarioTaskFieldType =
@@ -142,8 +144,13 @@ export interface ScenarioTaskPack {
   quickPrompt: string;
   /** 快速启用时展示的自然语言模板；field 片段与真实 Cron 参数双向绑定。 */
   quickPromptTemplate?: ScenarioQuickPromptPart[];
-  /** 仅控制快速任务句里的日期与列表显示，不参与 Cron 解析。 */
-  quickPromptLocale?: "zh-CN" | "en-US" | "id-ID";
+  /**
+   * 仅控制快速任务句里的日期与列表显示，不参与 Cron 解析。
+   *
+   * 使用注册表的 `PublicSiteLocaleCode`，新增语种无需改此类型；
+   * 未提供专属格式化规则的语种会走 `scenario-task-builder` 中的默认分支。
+   */
+  quickPromptLocale?: PublicSiteLocaleCode;
   category: ScenarioCategoryId;
   /** 二级子类（须属于所在分类的 subCategories） */
   subCategory: string;
@@ -183,6 +190,8 @@ export interface ScenarioTaskPack {
   icon: ScenarioIcon;
   /** 今日必看：高频刚需，聚合到首页顶部 */
   featured?: boolean;
+  /** 是否需要联网检索实时信息。 */
+  needsRealtime?: boolean;
   fields: ScenarioTaskField[];
   safetyNote?: string;
   /** 给用户看的使用说明，解释这个模板如何工作。 */
@@ -307,8 +316,10 @@ function formatQuickPromptDate(
 ): string {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return value;
-  if (locale === "en-US" || locale === "id-ID") return `${match[1]}-${match[2]}-${match[3]}`;
-  return `${match[1]}年${Number(match[2])}月${Number(match[3])}日`;
+  if (locale === "zh-CN" || locale === "zh-SG" || locale === "zh-Hant") {
+    return `${match[1]}年${Number(match[2])}月${Number(match[3])}日`;
+  }
+  return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 function splitQuickPromptValues(value: string): string[] {
@@ -1884,6 +1895,7 @@ function makePack(config: MakePackConfig): ScenarioTaskPack {
     requiredInfoLabel: config.requiredInfoLabel ?? "关注重点、提醒时间（均可选）",
     icon: config.icon,
     featured: config.featured,
+    needsRealtime: config.needsRealtime,
     fields,
     safetyNote: config.safetyNote,
     usageGuide: config.usageGuide,
@@ -2863,13 +2875,23 @@ export const OVERVIEW_SCENARIO_TASK_IDS = [
 export const OVERVIEW_SCENARIO_TASK_PACKS: readonly ScenarioTaskPack[] =
   OVERVIEW_SCENARIO_TASK_IDS.map((id) => getScenarioTaskPack(id));
 
+type OverviewFieldCopy = Pick<ScenarioTaskField, "label"> &
+  Partial<Pick<ScenarioTaskField, "defaultValue" | "placeholder" | "helpText">> & {
+    optionLabels?: Record<string, string>;
+  };
+
 type OverviewEnglishPackCopy = Pick<
   ScenarioTaskPack,
   "name" | "valueProp" | "description" | "quickPrompt" | "defaultFrequencyLabel"
-> & {
+> & Partial<Pick<
+  ScenarioTaskPack,
+  "durationLabel" | "defaultDeliverLabel" | "requiredInfoLabel"
+>> & {
   quickPromptTemplate: ScenarioQuickPromptPart[];
+  usageGuide?: string[];
   fieldDefaults?: Record<string, string>;
   optionLabels?: Record<string, Record<string, string>>;
+  fieldCopy?: Record<string, OverviewFieldCopy>;
   safetyNote?: string;
 };
 
@@ -3073,6 +3095,441 @@ const OVERVIEW_ENGLISH_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number],
       customRequest: "Use public information only and do not provide buy, sell, add, or reduce-position advice",
     },
     safetyNote: "Public information only. This is not investment advice.",
+  },
+};
+
+const OVERVIEW_SPANISH_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number], OverviewEnglishPackCopy> = {
+  "medication-once": {
+    name: "Recordatorios de agua y medicación",
+    valueProp: "Avisos suaves para hidratarte y tomar la medicación según tus indicaciones",
+    description: "Reúne la hidratación y la medicación en una sola tarea, respetando siempre tu receta o las instrucciones que proporciones.",
+    quickPrompt: "Recuérdame beber agua y tomar la medicación según las indicaciones.",
+    defaultFrequencyLabel: "Una vez o durante el tratamiento",
+    durationLabel: "Aprox. 1 minuto",
+    defaultDeliverLabel: "Web / ejecución reciente",
+    requiredInfoLabel: "Tipo de recordatorio, horario de hidratación/medicación, dosis y guía de uso opcional",
+    usageGuide: [
+      "La hidratación, ponerse de pie o estirar son avisos suaves; la medicación sigue las indicaciones, el prospecto o los enlaces que facilites, sin mezclar las reglas.",
+      "Elige una sola vez, durante el tratamiento o de forma continua; el tratamiento se detiene al llegar la fecha final y las tareas continuas se gestionan desde Automatizaciones.",
+      "La tarea intentará abrir los enlaces públicos que facilites solo al ejecutarse; si requieren inicio de sesión, pago o verificación, indicará que no puede leerlos.",
+      "La tarea no determina si ya tomaste la medicación ni cambia dosis según tus respuestas; sigue siempre las indicaciones médicas.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "Usa un recordatorio " },
+      { type: "field", fieldKey: "reminderMode" },
+      { type: "text", text: " para la hidratación y la medicación: " },
+      { type: "field", fieldKey: "medicine" },
+      { type: "text", text: ". " },
+      { type: "text", text: "Recuérdamelo a las ", visibleWhen: { fieldKey: "reminderMode", values: ["仅这一次"] } },
+      { type: "field", fieldKey: "triggerAt" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["仅这一次"] } },
+      { type: "text", text: "Recuérdamelo cada día a las ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复", "长期重复"] } },
+      { type: "field", fieldKey: "recurringTimes" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复", "长期重复"] } },
+      { type: "text", text: "Continúa hasta el ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复"] } },
+      { type: "field", fieldKey: "courseEndDate" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复"] } },
+      { type: "text", text: "Notas: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      medicine: "Sigue mi receta y las instrucciones de dosis que ya tengo",
+      customRequest: "Mantén breves los avisos de hidratación; para la medicación, sigue mi receta y las instrucciones o enlaces que proporcione",
+    },
+    optionLabels: {
+      reminderMode: {
+        "仅这一次": "de una sola vez",
+        "按疗程重复": "durante el tratamiento",
+        "长期重复": "continuo",
+      },
+    },
+    fieldCopy: {
+      reminderMode: {
+        label: "Tipo de recordatorio",
+        helpText: "Durante el tratamiento se detiene tras la fecha final; el modo continuo sigue activo hasta que lo pauses o elimines.",
+      },
+      triggerAt: {
+        label: "Fecha y hora del recordatorio",
+        helpText: "Envía un único aviso en este momento.",
+      },
+      recurringTimes: {
+        label: "Horas diarias del recordatorio",
+        helpText: "Añade hasta 4 horas concretas; la tarea avisará por separado en cada una.",
+      },
+      courseEndDate: {
+        label: "Fecha de fin del tratamiento",
+        placeholder: "Selecciona la fecha de fin del tratamiento",
+        helpText: "Empieza el día de activación y deja de enviar avisos cuando termine esta fecha.",
+      },
+      medicineType: {
+        label: "Tipo de medicación",
+        optionLabels: {
+          "口服药": "Medicación oral",
+          "外用药/贴剂": "Medicación tópica o parches",
+          "滴眼液/喷剂": "Colirios o aerosoles",
+          "术后/临时医嘱": "Indicaciones posoperatorias o temporales",
+          "复诊/检查前准备": "Preparación para revisión o prueba",
+        },
+      },
+      medicine: {
+        label: "Medicamento y dosis",
+        placeholder: "Nombre, dosis, antes/después de comer y precauciones",
+      },
+      sourceLinks: {
+        label: "Enlaces al prospecto o guía de medicación",
+        placeholder: "Opcional: pega prospectos, guías del hospital o enlaces del médico, uno por línea",
+        helpText: "El Agent prioriza tus fuentes para extraer horarios y precauciones; no sustituye las indicaciones médicas.",
+      },
+      sourceText: {
+        label: "Extractos importantes del prospecto",
+        placeholder: "Opcional: pega la posología, contraindicaciones, relación con comidas o instrucciones ante una dosis olvidada",
+      },
+      customRequest: {
+        label: "Indicaciones adicionales",
+        placeholder: "Por ejemplo: avisar después de comer, levantarse un minuto o recordar la revisión el día anterior",
+      },
+    },
+    safetyNote: "Sigue las indicaciones médicas. Este recordatorio no ofrece asesoramiento sobre medicación.",
+  },
+  "rent-reminder": {
+    name: "Recordatorio del alquiler",
+    valueProp: "Recibe un aviso antes del vencimiento del alquiler",
+    description: "Controla la fecha de vencimiento mensual e incluye el importe, el destinatario, el método de pago y las notas en el aviso.",
+    quickPrompt: "Recuérdame pagar el alquiler antes de su vencimiento mensual.",
+    defaultFrequencyLabel: "Recordatorio mensual de pago",
+    durationLabel: "Aprox. 1 minuto",
+    defaultDeliverLabel: "Web / ejecución reciente",
+    requiredInfoLabel: "Fecha de vencimiento, datos del alquiler o factura, días de antelación y aviso el mismo día",
+    usageGuide: [
+      "Puedes activar la plantilla varias veces, por ejemplo para alquiler, suministros y aparcamiento; cada tarea mostrará su ciclo y sus notas.",
+      "Indica la fecha real de este vencimiento, el importe, el destinatario y el método de pago; después se repetirá mensualmente y solo avisará con la antelación elegida y, si lo activas, el día de vencimiento.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "Cada día a las " },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", comprueba el ciclo de pago. A partir del " },
+      { type: "field", fieldKey: "dueDate" },
+      { type: "text", text: ", recuérdame cada mes pagar " },
+      { type: "field", fieldKey: "rentInfo" },
+      { type: "text", text: ". Avísame " },
+      { type: "field", fieldKey: "advanceDays" },
+      { type: "text", text: " y " },
+      { type: "field", fieldKey: "includeDueDay", trueLabel: "repite el aviso el día del vencimiento", falseLabel: "no repitas el aviso el día del vencimiento" },
+      { type: "text", text: ". Notas: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      rentInfo: "5.000 CNY de alquiler al propietario mediante transferencia bancaria",
+      customRequest: "Incluye suministros, aparcamiento, referencias de pago o datos del propietario si los añado",
+    },
+    optionLabels: {
+      advanceDays: Object.fromEntries(
+        Array.from({ length: 31 }, (_, days) => [
+          String(days),
+          days === 0 ? "el día del vencimiento" : `${days} día${days === 1 ? "" : "s"} antes`,
+        ]),
+      ),
+    },
+    fieldCopy: {
+      reminderTime: {
+        label: "Hora del recordatorio",
+        helpText: "La tarea comprueba el ciclo a esta hora y solo avisa al entrar en la ventana configurada.",
+      },
+      dueDate: {
+        label: "Fecha de vencimiento actual",
+        helpText: "Esta fecha define el ciclo mensual; si un mes no tiene ese día, se usa el último día del mes.",
+      },
+      rentInfo: {
+        label: "Datos del alquiler o factura",
+        placeholder: "Por ejemplo: 5.000 CNY de alquiler al propietario mediante transferencia bancaria",
+      },
+      advanceDays: {
+        label: "Días de antelación",
+      },
+      includeDueDay: {
+        label: "Avisar también el día del vencimiento",
+        helpText: "Si lo desactivas, solo avisa en la fecha anticipada y no repite el aviso el día de vencimiento.",
+      },
+      customRequest: {
+        label: "Indicaciones adicionales",
+        placeholder: "Por ejemplo: alias del propietario, referencia de transferencia o suministros incluidos",
+      },
+    },
+  },
+  "country-fx-alert": {
+    name: "Alerta de tipo de cambio",
+    valueProp: "Elige un par de divisas y recibe un aviso cuando se cumpla tu condición",
+    description: "Controla un par de divisas según un tipo objetivo o un umbral de variación diaria y avisa solo cuando se cumpla la condición.",
+    quickPrompt: "Controla el par de divisas que elija y avísame cuando se alcance el umbral.",
+    defaultFrequencyLabel: "Cada día a las 10:00",
+    durationLabel: "Aprox. 1 minuto",
+    defaultDeliverLabel: "Web / ejecución reciente",
+    requiredInfoLabel: "Divisa de origen, divisa de destino y umbral de activación",
+    usageGuide: [
+      "Selecciona las divisas de origen y destino; se admiten los códigos ISO 4217 reconocidos por el navegador.",
+      "La variación se calcula con valores comparables de la misma fuente entre el dato actual y la referencia del día natural anterior; si falta una referencia válida, no se estima ni se activa la alerta.",
+      "La tarea solo ofrece información y alertas de tipo de cambio, no recomendaciones de inversión; puede usarse para viajes, estudios, compras o pagos internacionales.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "Cada día a las " },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", comprueba el tipo de cambio de " },
+      { type: "field", fieldKey: "fromCurrency" },
+      { type: "text", text: " a " },
+      { type: "field", fieldKey: "toCurrency" },
+      { type: "text", text: ". Avísame cuando " },
+      { type: "field", fieldKey: "thresholdMode" },
+      { type: "text", text: " " },
+      { type: "field", fieldKey: "thresholdValue" },
+      { type: "text", text: ". Notas: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      customRequest: "Úsalo para viajes, estudios en el extranjero o pagos internacionales e indícame qué debo verificar",
+    },
+    optionLabels: {
+      thresholdMode: {
+        "相较前一自然日同源参考值，涨跌幅达到": "la variación absoluta frente a la referencia válida del día anterior alcanza (%)",
+        "当前汇率高于": "el tipo actual supera",
+        "当前汇率低于": "el tipo actual es inferior a",
+      },
+    },
+    fieldCopy: {
+      reminderTime: {
+        label: "Hora de comprobación",
+        helpText: "La tarea consulta el tipo de cambio a esta hora y solo avisa cuando se cumple la condición.",
+      },
+      fromCurrency: {
+        label: "Divisa de origen",
+      },
+      toCurrency: {
+        label: "Divisa de destino",
+      },
+      thresholdMode: {
+        label: "Condición de activación",
+      },
+      thresholdValue: {
+        label: "Valor del umbral",
+        placeholder: "Por ejemplo: 1 para una variación del 1 %, o el tipo objetivo",
+        helpText: "Con variación porcentual, 1 significa 1 %; con superior/inferior, indica el tipo objetivo del par.",
+      },
+      actionMode: {
+        label: "Acción al activarse",
+        optionLabels: {
+          "只提醒，不给交易建议": "Solo avisar, sin recomendaciones de inversión",
+          "提醒并解释可能原因": "Avisar y explicar posibles causas",
+          "提醒并给我需要核对的信息": "Avisar e indicar qué información debo verificar",
+        },
+      },
+      customRequest: {
+        label: "Indicaciones adicionales",
+        placeholder: "Por ejemplo: viaje a Japón, convertir 3.000 CNY cada vez o usar el tipo vendedor del banco",
+      },
+    },
+    safetyNote: "Solo información sobre tipos de cambio. No constituye asesoramiento de inversión.",
+  },
+  "calorie-fitness-checkin": {
+    name: "Registro de calorías y ejercicio",
+    valueProp: "Registra cada día comidas, ejercicio y tendencias de peso",
+    description: "Solicita datos de comidas, ejercicio, peso y estado físico, y ofrece estimaciones claramente identificadas y un resumen breve.",
+    quickPrompt: "Ayúdame a registrar las comidas y el ejercicio de hoy.",
+    defaultFrequencyLabel: "Cada día a las 21:30",
+    durationLabel: "Aprox. 2 minutos",
+    defaultDeliverLabel: "Web / ejecución reciente",
+    requiredInfoLabel: "Hora de registro, objetivo, alimentación y ejercicio, con datos corporales opcionales",
+    usageGuide: [
+      "La altura, el peso, el peso objetivo y la experiencia deportiva son opcionales; sin ellos, la tarea puede funcionar como diario.",
+      "Las calorías y el gasto son estimaciones aproximadas, no sustituyen a profesionales médicos, de nutrición o entrenamiento; ante enfermedades, embarazo, menores o dietas extremas, se recomienda ayuda profesional.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "Cada día a las " },
+      { type: "field", fieldKey: "checkinTime" },
+      { type: "text", text: ", recuérdame registrar " },
+      { type: "field", fieldKey: "foodLog" },
+      { type: "text", text: ". Mi objetivo es " },
+      { type: "field", fieldKey: "fitnessGoal" },
+      { type: "text", text: ". Comentarios: " },
+      { type: "field", fieldKey: "reportStyle" },
+      { type: "text", text: ". Notas: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      foodLog: "lo que he comido y bebido, el ejercicio realizado y cualquier cambio de peso",
+      fitnessGoal: "perder grasa manteniendo el entrenamiento de fuerza",
+      customRequest: "Datos corporales opcionales: altura, peso, edad, sexo, peso objetivo y experiencia de entrenamiento; pregunta por comidas o ejercicio que falten si el registro está incompleto",
+    },
+    optionLabels: {
+      reportStyle: {
+        "估算热量 + 给明天一个小调整": "estima las calorías y sugiere un pequeño ajuste para mañana",
+        "只做记录和趋势，不评价": "registra las tendencias sin juzgar",
+        "重点看蛋白质、饮水和运动完成度": "céntrate en proteínas, hidratación y cumplimiento del ejercicio",
+      },
+    },
+    fieldCopy: {
+      checkinTime: {
+        label: "Horas de registro",
+        helpText: "Configura de 1 a 5 avisos, por ejemplo después del desayuno, después de comer o antes de dormir.",
+      },
+      fitnessGoal: {
+        label: "Objetivo",
+        placeholder: "Por ejemplo: perder grasa, ganar músculo, mantener peso, competir o retomar el ejercicio",
+      },
+      bodyProfile: {
+        label: "Datos corporales (opcional)",
+        placeholder: "Por ejemplo: 168 cm, 62 kg, objetivo 58 kg y 3 entrenamientos por semana",
+        helpText: "Es opcional; solo se usa para estimaciones y tendencias, no para diagnósticos médicos o nutricionales.",
+      },
+      foodLog: {
+        label: "Contenido del registro",
+        placeholder: "Por ejemplo: preguntar por comidas, bebidas, ejercicio y peso al final del día",
+      },
+      reportStyle: {
+        label: "Tipo de comentarios",
+      },
+      customRequest: {
+        label: "Indicaciones adicionales",
+        placeholder: "Por ejemplo: dieta vegetariana, control de azúcar, cenas tardías o comentarios motivadores",
+      },
+    },
+    safetyNote: "Las calorías y el gasto de actividad son estimaciones, no asesoramiento médico, nutricional ni de entrenamiento.",
+  },
+  "global-holiday-reminder": {
+    name: "Festivos y clima",
+    valueProp: "Controla juntos los festivos, el clima del destino y las alertas oficiales",
+    description: "Sigue festivos, días laborables ajustados, previsiones del destino y alertas meteorológicas oficiales para viajes y planificación internacional.",
+    quickPrompt: "Controla los festivos, el clima del destino y las alertas oficiales de los lugares que me interesan.",
+    defaultFrequencyLabel: "Cada día a las 09:00",
+    durationLabel: "Aprox. 2 minutos",
+    defaultDeliverLabel: "Web / ejecución reciente",
+    requiredInfoLabel: "Países, alcance de festivos, ventana de aviso y clima o alertas opcionales del destino",
+    usageGuide: [
+      "Puedes seguir varios países a la vez, como Tailandia e Indonesia; la tarea consulta por separado festivos públicos, días ajustados y festivos bancarios.",
+      "De forma predeterminada sigue los próximos festivos; si tienes un viaje, envío o proyecto concreto, indica directamente el intervalo de fechas.",
+      "Para consultar el clima del destino, indica la ciudad y las fechas; las alertas por lluvia intensa, tifones o calor se contrastan primero con fuentes oficiales o autorizadas.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "Cada día a las " },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", controla " },
+      { type: "field", fieldKey: "holidayCountries" },
+      { type: "text", text: " para " },
+      { type: "field", fieldKey: "holidayScope" },
+      { type: "text", text: ". Avísame " },
+      { type: "field", fieldKey: "reminderWindow" },
+      { type: "text", text: ". " },
+      { type: "field", fieldKey: "holidayWeatherPlan" },
+      { type: "text", text: ". Notas: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      holidayWeatherPlan: "Controla también el clima de los próximos 7 días en Bangkok y Yakarta, además de las alertas oficiales por lluvias intensas, tifones y calor",
+      customRequest: "Usa las fechas de viaje, envío, clientes o reuniones que añada para que los avisos sean relevantes",
+    },
+    optionLabels: {
+      holidayScope: {
+        "公共假期 + 调休日 + 银行假日": "festivos públicos, días laborables ajustados y festivos bancarios",
+        "只看法定公共假期": "solo festivos públicos oficiales",
+        "加上当地大型节庆/交通高峰": "festivos públicos y grandes celebraciones locales",
+      },
+      reminderWindow: {
+        "提前 7 天 + 提前 1 天": "7 días y 1 día antes",
+        "提前 3 天 + 当天早上": "3 días antes y de nuevo esa mañana",
+        "仅在假期当天早上提醒": "solo la mañana del festivo",
+      },
+    },
+    fieldCopy: {
+      reminderTime: {
+        label: "Hora de comprobación",
+        helpText: "La tarea comprueba a esta hora los festivos, el clima y las alertas.",
+      },
+      holidayCountries: {
+        label: "Países o regiones",
+        helpText: "Selecciona varios países o regiones; las opciones elegidas aparecen debajo.",
+      },
+      holidayScope: {
+        label: "Alcance de los festivos",
+      },
+      reminderWindow: {
+        label: "Ventana de aviso",
+      },
+      periodMode: {
+        label: "Periodo de seguimiento",
+        optionLabels: {
+          "持续关注": "Seguimiento continuo",
+          "指定日期范围": "Intervalo de fechas",
+        },
+      },
+      periodStart: {
+        label: "Fecha de inicio",
+        placeholder: "Selecciona la fecha de inicio",
+      },
+      periodEnd: {
+        label: "Fecha de fin",
+        placeholder: "Selecciona la fecha de fin",
+      },
+      holidayWeatherPlan: {
+        label: "Clima y alertas",
+        placeholder: "Por ejemplo: clima de Bangkok del 1 al 7 de agosto y alertas oficiales por lluvia; elimina este dato si no necesitas clima",
+      },
+      customRequest: {
+        label: "Indicaciones adicionales",
+        placeholder: "Por ejemplo: viaje a Bangkok en agosto, calendario con clientes de Indonesia o evitar envíos durante festivos largos",
+      },
+    },
+  },
+  "stock-info-digest": {
+    name: "Resumen bursátil",
+    valueProp: "Resume precios, anuncios y resultados de las acciones seleccionadas",
+    description: "Organiza información pública sobre acciones de China continental, Hong Kong y Estados Unidos sin ofrecer recomendaciones de inversión.",
+    quickPrompt: "Resume la información pública del mercado sobre las acciones que sigo.",
+    defaultFrequencyLabel: "Cada día a las 09:00",
+    durationLabel: "Aprox. 3 minutos",
+    defaultDeliverLabel: "Web / ejecución reciente",
+    requiredInfoLabel: "Nombre o código de las acciones, mercado y aspectos de interés",
+    usageGuide: [
+      "Admite acciones de China continental, Hong Kong y Estados Unidos; si solo indicas la empresa, el Agent intentará asociar un código habitual y marcará si no es seguro.",
+      "Solo organiza información pública del mercado, anuncios, resultados y noticias; no ofrece recomendaciones de compra, venta, aumento o reducción de posiciones.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "Cada día a las " },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", resume las novedades de estas acciones: " },
+      { type: "field", fieldKey: "stockList" },
+      { type: "text", text: ". Céntrate en " },
+      { type: "field", fieldKey: "stockFocus" },
+      { type: "text", text: ". Notas: " },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      stockList: "Tencent Holdings 00700, NVIDIA NVDA, Kweichow Moutai 600519",
+      stockFocus: "último precio, variación porcentual, anuncios relevantes, resultados y posibles causas públicas de movimientos inusuales",
+      customRequest: "Usa solo información pública y no recomiendes comprar, vender, aumentar ni reducir posiciones",
+    },
+    fieldCopy: {
+      reminderTime: {
+        label: "Hora del resumen",
+        helpText: "La tarea organiza a esta hora la información pública disponible del día.",
+      },
+      stockList: {
+        label: "Acciones seguidas",
+        placeholder: "Nombre, código y mercado; también puedes indicar solo la empresa",
+      },
+      stockFocus: {
+        label: "Aspectos de interés",
+        placeholder: "Por ejemplo: variación de precio, anuncios, resultados, movimientos inusuales o noticias sectoriales",
+      },
+      customRequest: {
+        label: "Indicaciones adicionales",
+        placeholder: "Por ejemplo: solo Hong Kong y Estados Unidos, priorizar resultados o avisar solo cuando haya anuncios",
+      },
+    },
+    safetyNote: "Solo información pública. No constituye asesoramiento de inversión.",
   },
 };
 
@@ -3282,10 +3739,24 @@ const OVERVIEW_INDONESIAN_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[numbe
 function localizeOverviewField(
   field: ScenarioTaskField,
   copy: OverviewEnglishPackCopy,
-  locale: "en-US" | "id-ID",
+  locale: PublicSiteLocaleCode,
 ): ScenarioTaskField {
-  const defaultValue = copy.fieldDefaults?.[field.key] ?? field.defaultValue;
-  const optionLabels = copy.optionLabels?.[field.key];
+  const localizedField = copy.fieldCopy?.[field.key];
+  const defaultValue = localizedField?.defaultValue
+    ?? copy.fieldDefaults?.[field.key]
+    ?? field.defaultValue;
+  const optionLabels = localizedField?.optionLabels ?? copy.optionLabels?.[field.key];
+  const localizedMetadata: Partial<ScenarioTaskField> = localizedField
+    ? {
+        label: localizedField.label,
+        ...(localizedField.placeholder !== undefined
+          ? { placeholder: localizedField.placeholder }
+          : {}),
+        ...(localizedField.helpText !== undefined
+          ? { helpText: localizedField.helpText }
+          : {}),
+      }
+    : {};
   let options = field.options?.map((option) => ({
     ...option,
     label: optionLabels?.[option.value] ?? option.label,
@@ -3310,15 +3781,57 @@ function localizeOverviewField(
     }));
   }
 
-  return { ...field, defaultValue, options };
+  return {
+    ...field,
+    ...localizedMetadata,
+    defaultValue,
+    options,
+  };
+}
+
+/**
+ * 场景任务卡片的本地化文案表。
+ *
+ * `null` 表示该语种尚未提供独立文案，将回退到中文原稿
+ * （`OVERVIEW_SCENARIO_TASK_PACKS`）。
+ *
+ * ⚠️ 刻意使用 `Record<PublicSiteLocaleCode, …>` 而非
+ * `locale !== 'en-US' && locale !== 'id-ID'` 的排除式判断：排除式判断在
+ * 新增语种时**不会报错**，会让新语种静默显示中文；改为全量查表后，
+ * 注册表新增语种而此处未声明时 `tsc` 直接失败，迫使开发者显式决定
+ * 「提供翻译」还是「明确标记为回退」。
+ */
+const OVERVIEW_COPY_BY_LOCALE: Record<
+  PublicSiteLocaleCode,
+  typeof OVERVIEW_ENGLISH_COPY | null
+> = {
+  "zh-CN": null,
+  "zh-SG": null,
+  "zh-Hant": null,
+  "en-US": OVERVIEW_ENGLISH_COPY,
+  "id-ID": OVERVIEW_INDONESIAN_COPY,
+  es: OVERVIEW_SPANISH_COPY,
+  /* 日语 / 韩语场景任务文案待补齐，当前显式回退中文原稿。 */
+  "ja-JP": null,
+  "ko-KR": null,
+};
+
+/**
+ * 该语种是否提供了独立的场景任务文案。
+ *
+ * 供 `scenario-job-presentation` 等消费方判断「是否走本地化分支」，
+ * 避免在多处重复写 `locale !== 'en-US' && locale !== 'id-ID'` 这类
+ * 排除式条件——排除式条件新增语种时不报错，会让新语种静默走错分支。
+ */
+export function hasLocalizedOverviewCopy(locale: PublicSiteLocaleCode): boolean {
+  return OVERVIEW_COPY_BY_LOCALE[locale] !== null;
 }
 
 export function getOverviewScenarioTaskPacks(
-  locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID",
+  locale: PublicSiteLocaleCode,
 ): readonly ScenarioTaskPack[] {
-  if (locale !== "en-US" && locale !== "id-ID") return OVERVIEW_SCENARIO_TASK_PACKS;
-
-  const localizedCopy = locale === "id-ID" ? OVERVIEW_INDONESIAN_COPY : OVERVIEW_ENGLISH_COPY;
+  const localizedCopy = OVERVIEW_COPY_BY_LOCALE[locale];
+  if (!localizedCopy) return OVERVIEW_SCENARIO_TASK_PACKS;
 
   return OVERVIEW_SCENARIO_TASK_PACKS.map((pack) => {
     const copy = localizedCopy[pack.id as (typeof OVERVIEW_SCENARIO_TASK_IDS)[number]];

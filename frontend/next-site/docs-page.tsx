@@ -16,6 +16,8 @@ import { DOCS_ROUTE_SLUGS, type DocsRouteLocale } from './docs-route-manifest';
 import {
   EN_US_LOCALE,
   EN_US_URL_LANG,
+  ES_LOCALE,
+  ES_URL_LANG,
   ID_ID_LOCALE,
   ID_ID_URL_LANG,
   ZH_CN_LOCALE,
@@ -32,6 +34,7 @@ export type DocsLocalePrefix =
   | typeof ZH_SG_URL_LANG
   | typeof ZH_HANT_URL_LANG
   | typeof ID_ID_URL_LANG
+  | typeof ES_URL_LANG
   | undefined;
 
 export function docsSlug(_prefix: DocsLocalePrefix, slug?: string[]) {
@@ -58,6 +61,7 @@ function lastUpdatedLabel(prefix: DocsLocalePrefix, lastUpdated?: string): strin
 
   if (prefix === ID_ID_URL_LANG) return `Terakhir diperbarui ${lastUpdated}`;
   if (prefix === EN_US_URL_LANG) return `Last updated ${lastUpdated}`;
+  if (prefix === ES_URL_LANG) return `Última actualización: ${lastUpdated}`;
   // 中文语系（zh-cn / zh-sg / zh-hant）与国内站默认路径统一用中文
   return `最后更新于 ${lastUpdated}`;
 }
@@ -72,7 +76,7 @@ export function LightVelaDocsPage({ prefix, slug }: { prefix?: DocsLocalePrefix;
   const page = getDocsPage(prefix, slug);
   const MDX = page.data.body;
   const breadcrumbRoutePath = canonicalDocsPath(prefix ?? 'default', docsSlug(prefix, slug));
-  const docsBreadcrumbName = prefix === ID_ID_URL_LANG ? 'Dokumentasi' : 'Docs';
+  const breadcrumbName = docsBreadcrumbName(prefix);
   const lastUpdated = lastUpdatedLabel(prefix, page.data.last_updated);
 
   return (
@@ -104,12 +108,18 @@ export function LightVelaDocsPage({ prefix, slug }: { prefix?: DocsLocalePrefix;
       <BreadcrumbJsonLd
         items={[
           { name: 'LightVela', path: '/' },
-          { name: docsBreadcrumbName, path: canonicalDocsPath(prefix ?? 'default', []) },
+          { name: breadcrumbName, path: canonicalDocsPath(prefix ?? 'default', []) },
           { name: page.data.title, path: breadcrumbRoutePath },
         ]}
       />
     </>
   );
+}
+
+export function docsBreadcrumbName(prefix: DocsLocalePrefix): string {
+  if (prefix === ID_ID_URL_LANG) return 'Dokumentasi';
+  if (prefix === ES_URL_LANG) return 'Documentación';
+  return 'Docs';
 }
 
 export function docsMetadata(prefix: DocsLocalePrefix, slug?: string[]) {
@@ -135,6 +145,7 @@ function docsSeoLocale(prefix: DocsLocalePrefix): SeoLocale {
     [ZH_SG_URL_LANG]: ZH_SG_LOCALE,
     [ZH_HANT_URL_LANG]: ZH_HANT_LOCALE,
     [ID_ID_URL_LANG]: ID_ID_LOCALE,
+    [ES_URL_LANG]: ES_LOCALE,
   } as const satisfies Record<Exclude<DocsLocalePrefix, undefined>, SeoLocale>;
   return prefix ? PREFIX_TO_SEO_LOCALE[prefix] : ZH_CN_LOCALE;
 }

@@ -104,7 +104,7 @@ type SortMode = "popular" | "name";
 type SkillCategoryLabel = {
   zh: string;
   en: string;
-  id?: string;
+  id?: string; es?: string;
 };
 type SearchInstallRowStatus = {
   status: "pending" | "installing" | "retrying" | "done" | "failed" | "skipped";
@@ -334,7 +334,7 @@ function getSkillOverview(
 function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
   const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
     "zh-CN": label.zh,
-    "id-ID": label.id,
+    "id-ID": label.id, es: label.es,
     "en-US": label.en,
   };
 
@@ -1846,7 +1846,7 @@ export function SkillsDemoPanel({
     ? "zh-CN"
     : i18n.resolvedLanguage === "id-ID"
       ? "id-ID"
-      : "en-US";
+      : i18n.resolvedLanguage?.startsWith("es") ? "es" : "en-US";
   const isDomestic = mode === "domestic";
   const featuredSkillCopy: Record<string, { title: string; subtitle: string; description: string }> = {
     "self-improving-agent": {

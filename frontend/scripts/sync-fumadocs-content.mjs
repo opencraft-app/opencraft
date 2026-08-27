@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import * as OpenCC from 'opencc-js';
@@ -39,6 +39,7 @@ const LOCALES = Object.freeze({
   ZH_SG: 'zh-SG',
   ZH_HANT: 'zh-Hant',
   ID_ID: 'id-ID',
+  ES: 'es',
 });
 
 /** URL 前缀（对应 fumadocs 输出目录），与 `PUBLIC_URL_LANGS` 保持一致。 */
@@ -48,6 +49,7 @@ const URL_LANGS = Object.freeze({
   ZH_SG: 'zh-sg',
   ZH_HANT: 'zh-hant',
   ID_ID: 'id-id',
+  ES: 'es',
 });
 
 function convertTraditional(text) {
@@ -150,6 +152,18 @@ const GLOBAL_GROUP_ORDER = [
   'Advanced',
   'Support',
 ];
+
+const ES_GROUP_LABELS = {
+  'Getting Started': 'Primeros pasos',
+  'Plans & Activation': 'Planes y activación',
+  'Features & Configuration': 'Funciones y configuración',
+  'Use Cases': 'Casos de uso',
+  'Compare & Choose': 'Comparar y elegir',
+  'Hermes Agent Deep Dive': 'Análisis de Hermes Agent',
+  Troubleshooting: 'Solución de problemas',
+  Advanced: 'Avanzado',
+  Support: 'Soporte',
+};
 
 const globalDocs = [
   {
@@ -789,6 +803,253 @@ const globalDocs = [
   },
 ];
 
+const ES_DOC_METADATA = {
+  overview: {
+    title: 'Qué es LightVela',
+    description: 'LightVela es un compañero Hermes Agent alojado en la nube que mantiene activas tus conversaciones y automatizaciones.',
+  },
+  quickstart: {
+    title: 'Inicio rápido',
+    description: 'Configura tu primera conversación con LightVela en pocos minutos.',
+  },
+  'core-concepts': {
+    title: 'Conceptos básicos',
+    description: 'Comprende Hermes, los modelos, los canales, las Skills y las automatizaciones de LightVela.',
+  },
+  'who-is-lightvela-for': {
+    title: '¿Para quién es LightVela?',
+    description: 'Descubre para quién está pensado LightVela, incluido quien busca un compañero de IA personal en la nube sin administrar servidores ni infraestructura.',
+  },
+  plans: {
+    title: 'Planes',
+    description: 'Compara los planes de LightVela, los recursos aislados en la nube, los créditos de IA mensuales y las reglas y pasos de reembolso por correo electrónico.',
+  },
+  'announcements/public-beta': {
+    title: 'Anuncio de la versión de pago de LightVela',
+    description: 'LightVela prevé iniciar la beta pública y la facturación el 18 de agosto de 2026, hora de Singapur, con beneficios específicos para usuarios actuales y nuevos.',
+  },
+  credits: {
+    title: 'Créditos',
+    description: 'Aprende cómo se asignan y consumen los créditos de modelos de LightVela según el uso de tokens y cómo se relacionan con los planes y modelos.',
+  },
+  'create-first-hermes': {
+    title: 'Cómo activar tu primera instancia de Hermes',
+    description: 'Activa tu primera instancia de Hermes con Google o GitHub, un plan disponible, aprovisionamiento automático en la nube y un canal de mensajería internacional.',
+  },
+  'configuration/index': {
+    title: 'Resumen de configuración',
+    description: 'Revisa el flujo de configuración de la consola de LightVela.',
+  },
+  'configuration/model': {
+    title: 'Configurar modelos',
+    description: 'Conecta y administra los modelos de lenguaje que utiliza Hermes.',
+  },
+  'configuration/channel-telegram': {
+    title: 'Canal de Telegram',
+    description: 'Conecta Telegram con tu Hermes Agent.',
+  },
+  'configuration/channel-whatsapp': {
+    title: 'Canal de WhatsApp',
+    description: 'Conecta WhatsApp con tu Hermes Agent.',
+  },
+  'configuration/channel-discord': {
+    title: 'Canal de Discord',
+    description: 'Conecta Discord con tu Hermes Agent.',
+  },
+  'configuration/channel-slack': {
+    title: 'Canal de Slack',
+    description: 'Conecta Slack con tu Hermes Agent mediante un Slack Bot Token y un App Token.',
+  },
+  'configuration/channel-wechat': {
+    title: 'Canal de WeChat',
+    description: 'Conecta WeChat con tu Hermes Agent.',
+  },
+  'configuration/channel-qq': {
+    title: 'Canal de QQ',
+    description: 'Conecta QQ con tu Hermes Agent.',
+  },
+  'configuration/channel-wecom': {
+    title: 'Canal de WeCom',
+    description: 'Conecta WeCom con tu Hermes Agent.',
+  },
+  'configuration/channel-feishu': {
+    title: 'Canal de Lark',
+    description: 'Conecta Lark con tu Hermes Agent.',
+  },
+  'configuration/skill': {
+    title: 'Configurar Skills',
+    description: 'Instala Skills para ampliar las capacidades de Hermes.',
+  },
+  'configuration/personality': {
+    title: 'Personalidad',
+    description: 'Elige y aplica una personalidad Soul para definir el rol, la voz, las prioridades y los límites de comportamiento de Hermes Agent.',
+  },
+  'configuration/memory': {
+    title: 'Gestión de la memoria',
+    description: 'Aprende cómo Hermes almacena y administra recuerdos a largo plazo y perfiles de usuario entre dispositivos y canales de mensajería.',
+  },
+  'configuration/automation': {
+    title: 'Automatizaciones',
+    description: 'Crea automatizaciones programadas para tu Hermes Agent.',
+  },
+  'configuration/files': {
+    title: 'Almacenamiento en la nube',
+    description: 'Organiza los archivos que tu Agent puede utilizar como contexto de trabajo en LightVela.',
+  },
+  'configuration/agent-chat': {
+    title: 'Chat del Agent',
+    description: 'Habla con Hermes y revisa el comportamiento de la conversación.',
+  },
+  'configuration/diagnostics': {
+    title: 'Diagnóstico',
+    description: 'Usa el centro de diagnóstico para revisar el estado del Agent, los canales y la configuración esencial.',
+  },
+  'configuration/advanced-settings': {
+    title: 'Configuración avanzada',
+    description: 'Revisa y ajusta la seguridad, la memoria y la gestión del contexto de Hermes Agent.',
+  },
+  'configuration/multiple-models': {
+    title: 'Cambio de modelo',
+    description: 'Administra varias configuraciones de modelos y selecciona la adecuada para cada necesidad del Agent.',
+  },
+  'use-cases/personal-ai-assistant': {
+    title: 'Cómo crear un asistente personal de IA con LightVela',
+    description: 'Usa LightVela como asistente personal de IA para recordatorios, resúmenes y conversaciones cotidianas.',
+  },
+  'use-cases/chinese-messaging-channels': {
+    title: 'Cómo conectar un Agent de IA a plataformas de mensajería',
+    description: 'Aprende a conectar un Agent con las aplicaciones de mensajería compatibles del sitio internacional.',
+  },
+  'use-cases/telegram-persona-agent': {
+    title: 'Cómo configurar una personalidad propia para Hermes Agent en Telegram',
+    description: 'Crea un Agent de Telegram con un rol, una voz y una memoria coherentes.',
+  },
+  'use-cases/whatsapp-persona-agent': {
+    title: 'Cómo configurar una personalidad propia para Hermes Agent en WhatsApp',
+    description: 'Usa Hermes Agent en WhatsApp con una personalidad estable para conversaciones personales o de servicio.',
+  },
+  'use-cases/im-agent-persona-soul-md': {
+    title: 'Cómo definir el rol, la personalidad y la voz de un Agent de mensajería con SOUL.md',
+    description: 'Aprende a estructurar la personalidad del Agent para que responda de forma coherente en las aplicaciones de mensajería.',
+  },
+  'use-cases/im-agent-skill-scenarios': {
+    title: 'Cómo convertir un Agent de mensajería en asistente de servicio, comunidad o compañía mediante Skills',
+    description: 'Usa Skills para ampliar el Agent en escenarios de atención al cliente, comunidad y acompañamiento personal.',
+  },
+  'use-cases/multi-channel-personality-memory': {
+    title: 'Cómo usar un solo Agent en Telegram y WhatsApp con la misma personalidad y memoria',
+    description: 'Mantén coherentes la personalidad y la memoria del Agent cuando lo utilizas en varios canales.',
+  },
+  'use-cases/telegram-group-community-assistant': {
+    title: 'Cómo configurar un asistente de comunidad con IA para un grupo de Telegram',
+    description: 'Diseña mensajes de bienvenida, preguntas frecuentes, resúmenes y recordatorios con límites claros para el uso en grupos.',
+  },
+  'use-cases/whatsapp-24-7-customer-service': {
+    title: 'Cómo configurar atención al cliente con IA 24/7 en WhatsApp',
+    description: 'Configura personalidad, conocimiento, Skills y automatizaciones para un flujo de atención al cliente en WhatsApp.',
+  },
+  'use-cases/lifelike-im-agent-rhythm-social-memory': {
+    title: 'Cómo diseñar un Agent de mensajería más natural',
+    description: 'Ajusta el ritmo de conversación, las normas del grupo y la memoria social a largo plazo para lograr interacciones más naturales.',
+  },
+  'use-cases/telegram-whatsapp-safety-boundaries': {
+    title: 'Cómo diseñar límites de seguridad para Agents de Telegram y WhatsApp',
+    description: 'Define autorización, reglas de grupo y protección de acciones sensibles para Agents en aplicaciones de mensajería.',
+  },
+  'use-cases/daily-summary': {
+    title: 'Cómo crear resúmenes diarios con Hermes Agent',
+    description: 'Genera automáticamente resúmenes diarios de la información que quieras supervisar.',
+  },
+  'use-cases/hermes-agent-24-7': {
+    title: 'Cómo mantener Hermes Agent disponible 24/7',
+    description: 'Descubre cómo Hermes Agent permanece disponible en la nube sin depender de un dispositivo local.',
+  },
+  'use-cases/memory-and-knowledge': {
+    title: 'Cómo gestionar la memoria a largo plazo y el conocimiento personal con un Agent',
+    description: 'Usa la memoria y el conocimiento del Agent para aportar más contexto a las conversaciones futuras.',
+  },
+  'use-cases/discord-community-agent': {
+    title: 'LightVela para Discord: un Agent de IA al servicio de tu canal',
+    description: 'Configura un Agent compartido de Discord para preguntas de la comunidad, incorporación y apoyo a eventos.',
+  },
+  'use-cases/discord-event-agent': {
+    title: 'Potencia tu bot de eventos de Discord con capacidades de Agent de IA',
+    description: 'Usa un Agent de Discord para responder preguntas, enviar recordatorios y mantener coherentes las operaciones de un evento.',
+  },
+  'compare/lightvela-vs-localhost-ai-agent': {
+    title: 'LightVela frente a un Agent autoalojado: ¿cuál te conviene?',
+    description: 'Compara LightVela con un Agent ejecutado en un dispositivo o servidor propio.',
+  },
+  'compare/lightvela-vs-hostinger': {
+    title: 'LightVela frente a Hostinger: ¿cuál conviene para alojar un Agent?',
+    description: 'Compara LightVela con un VPS general cuando necesitas mantener un Agent siempre disponible.',
+  },
+  'compare/lightvela-vs-manus': {
+    title: 'LightVela frente a Manus: ¿cuál conviene para tu Agent de IA?',
+    description: 'Compara los enfoques de LightVela y Manus para las necesidades de un Agent personal en la nube.',
+  },
+  'compare/lightvela-vs-chatgpt': {
+    title: 'LightVela frente a ChatGPT: ¿cuál conviene para crear un asistente personal de IA?',
+    description: 'Compara las experiencias de LightVela y ChatGPT al crear un asistente personal de IA siempre disponible.',
+  },
+  'compare/lightvela-vs-genspark': {
+    title: 'LightVela frente a Genspark: ¿cuál conviene para alojar un Agent de IA?',
+    description: 'Compara LightVela y Genspark desde la perspectiva de un Agent personal que se ejecuta en la nube.',
+  },
+  'hermes-agent/hermes-vs-openclaw': {
+    title: 'Hermes Agent frente a OpenClaw: diferencias fundamentales entre dos Agents de código abierto',
+    description: 'Compara Hermes Agent y OpenClaw en memoria a largo plazo, ecosistemas de Skills e integración multiplataforma para identificar qué Agent encaja con tu caso de uso.',
+  },
+  'hermes-agent/why-hermes-remembers-you': {
+    title: '¿Cómo te recuerda Hermes Agent?',
+    description: 'Descubre el sistema de memoria a largo plazo de cuatro capas de Hermes Agent: USER.md, MEMORY.md, el archivo de conversaciones SQLite+FTS5 y las Skills.',
+  },
+  'hermes-agent/user-md-vs-memory-md': {
+    title: 'Por qué USER.md y MEMORY.md no pueden combinarse',
+    description: 'Tres restricciones, capacidad, estrategia de carga y semántica de actualización, explican por qué Hermes Agent separa la memoria a largo plazo en dos notas.',
+  },
+  'hermes-agent/hermes-memory-curation': {
+    title: 'Curación de la memoria a largo plazo de Hermes Agent: cuatro reglas para conservar poco y preciso',
+    description: 'Analiza las reglas de memoria acotada, estable, transparente y autoconsolidada que evitan que la memoria a largo plazo se vuelva imprecisa.',
+  },
+  'hermes-agent/memory-vs-skill': {
+    title: 'Memoria frente a Skill: memoria declarativa y procedimental',
+    description: 'Comprende por qué Hermes Agent divide la memoria a largo plazo entre Memory y Skill y cómo difieren en activación, forma y evolución.',
+  },
+  'hermes-agent/model-vs-agent-layer': {
+    title: '¿Puedes sustituir el cerebro de Hermes Agent? Capa de modelo frente a capa de Agent',
+    description: 'Descubre qué responsabilidades pertenecen al modelo y cuáles permanecen en el Agent, como identidad, memoria, herramientas, canales y tareas programadas.',
+  },
+  'hermes-agent/message-gateway': {
+    title: '¿Cómo puede un Agent aparecer en varias aplicaciones de mensajería?',
+    description: 'Observa cómo una pasarela de mensajería convierte eventos específicos de cada canal en una conversación compartida con el Agent.',
+  },
+  'hermes-agent/automation-scheduling': {
+    title: '¿Cómo se pone en contacto Hermes Agent contigo según un horario?',
+    description: 'Comprende las capas de evento, programación, ejecución y entrega que permiten al Agent completar trabajo recurrente de forma proactiva.',
+  },
+  'hermes-agent/model-switching-memory': {
+    title: '¿Cambiar de modelo hace que un Agent olvide?',
+    description: 'Aprende cómo desacoplar modelo, personalidad y memoria permite cambiar el motor de inferencia sin perder el contexto a largo plazo.',
+  },
+  'hermes-agent/persona-user-memory': {
+    title: '¿De dónde proviene la personalidad de Hermes Agent?',
+    description: 'Explora cómo las reglas de personalidad, las preferencias del usuario y la memoria a largo plazo producen una personalidad estable y adaptable.',
+  },
+  'hermes-agent/workspace-context-storage': {
+    title: '¿Dónde guarda los archivos Hermes Agent?',
+    description: 'Conoce las funciones distintas del directorio de trabajo, los archivos de contexto y el almacenamiento persistente cuando un Agent crea y reutiliza trabajo.',
+  },
+  'hermes-agent/skills-self-improvement': {
+    title: '¿Por qué un Agent mejora con el uso?',
+    description: 'Descubre cómo las Skills reutilizables convierten patrones de trabajo eficaces en instrucciones duraderas para hacer más fiables las tareas futuras.',
+  },
+  'contact-us': {
+    title: 'Contacto',
+    description: 'Únete a la comunidad beta de LightVela, habla directamente con el equipo de producto y comparte preguntas, sugerencias y experiencias reales.',
+  },
+};
+
 const ID_GROUP_LABELS = {
   'Getting Started': 'Mulai',
   'Plans & Activation': 'Paket & Aktivasi',
@@ -1043,6 +1304,18 @@ const ID_DOC_METADATA = {
 for (const doc of globalDocs) {
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
+    const esGroup = ES_GROUP_LABELS[englishGroup];
+    if (!esGroup) throw new Error(`missing Spanish docs group label: ${englishGroup}`);
+    doc.group[LOCALES.ES] = esGroup;
+  }
+
+  const esMetadata = ES_DOC_METADATA[doc.slug];
+  if (!esMetadata) throw new Error(`missing Spanish docs metadata: ${doc.slug}`);
+  doc.title[LOCALES.ES] = esMetadata.title;
+  doc.description[LOCALES.ES] = esMetadata.description;
+
+  if (doc.group && typeof doc.group === 'object') {
+    const englishGroup = doc.group[LOCALES.EN_US];
     const idGroup = ID_GROUP_LABELS[englishGroup];
     if (idGroup) doc.group[LOCALES.ID_ID] = idGroup;
   }
@@ -1122,6 +1395,13 @@ const docSets = [
     docs: globalDocsForIndonesian,
     title: 'Dokumentasi LightVela',
   },
+  {
+    outputPrefix: URL_LANGS.ES,
+    sourcePrefix: 'es',
+    locale: LOCALES.ES,
+    docs: globalDocsForEnglish,
+    title: 'Documentación de LightVela',
+  },
 ];
 
 function ensureDir(path) {
@@ -1154,7 +1434,10 @@ function textFor(value, locale) {
   return value?.[locale] ?? value?.[LOCALES.EN_US] ?? '';
 }
 
-function stripTitle(markdown, title) {
+export function stripTitle(markdown, title, stripSourceHeading = false) {
+  if (stripSourceHeading) {
+    return markdown.replace(/^\uFEFF?[\t ]*(?:\n[\t ]*)*#(?!#)\s+[^\n]+\n+/, '').trim();
+  }
   return markdown.replace(new RegExp(`^#\\s+${escapeRegExp(title)}\\s*\\n+`), '').trim();
 }
 
@@ -1166,10 +1449,12 @@ function allDocsForLinks(outputPrefix) {
     localeDocs = globalDocsForChineseLocale(LOCALES.ZH_HANT);
   } else if (outputPrefix === URL_LANGS.ID_ID) {
     localeDocs = globalDocsForIndonesian;
+  } else if (outputPrefix === URL_LANGS.ES) {
+    localeDocs = globalDocsForEnglish;
   } else {
     localeDocs = globalDocsForEnglish;
   }
-  return [...cnDocs, ...localeDocs];
+  return outputPrefix === URL_LANGS.ES ? localeDocs : [...cnDocs, ...localeDocs];
 }
 
 function fileToHrefFor(outputPrefix) {
@@ -1188,23 +1473,58 @@ function fileToHrefFor(outputPrefix) {
 }
 
 function localizedImageName(imageName, locale) {
-  if ((locale !== LOCALES.EN_US && locale !== LOCALES.ID_ID) || /-en\.[^.]+$/.test(imageName)) return imageName;
+  if (![LOCALES.EN_US, LOCALES.ID_ID, LOCALES.ES].includes(locale) || /-en\.[^.]+$/.test(imageName)) return imageName;
   const candidate = imageName.replace(/(\.[^.]+)$/, '-en$1');
   return existsSync(join(sourceRoot, 'images', candidate)) ? candidate : imageName;
 }
 
-function normalizeMarkdownLinks(markdown, currentFile, outputPrefix, locale) {
+function splitHrefSuffix(href) {
+  const queryIndex = href.indexOf('?');
+  const fragmentIndex = href.indexOf('#');
+  const indexes = [queryIndex, fragmentIndex].filter((index) => index >= 0);
+  const suffixIndex = indexes.length > 0 ? Math.min(...indexes) : -1;
+  return suffixIndex < 0
+    ? { path: href, suffix: '' }
+    : { path: href.slice(0, suffixIndex), suffix: href.slice(suffixIndex) };
+}
+
+function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, outputPrefix) {
+  const destinationParts = destination.match(/^(\S+)([\s\S]*)$/);
+  if (!destinationParts?.[1]) return destination;
+
+  const href = destinationParts[1];
+  const titleSuffix = destinationParts[2] ?? '';
+  const { path: hrefPath, suffix } = splitHrefSuffix(href);
+
+  if (/^\.?\.?\/.*\.md$/.test(hrefPath)) {
+    const resolved = relative('.', join(currentDir, hrefPath)).replaceAll('\\', '/').replace(/^\.\//, '');
+    const target = fileToHref.get(resolved);
+    return target ? `${target}${suffix}${titleSuffix}` : destination;
+  }
+
+  if (outputPrefix !== URL_LANGS.ES) return destination;
+
+  const docsPath = hrefPath.startsWith('https://lightvela.ai/')
+    ? hrefPath.slice('https://lightvela.ai'.length)
+    : hrefPath;
+  if (docsPath !== '/docs' && !docsPath.startsWith('/docs/')) return destination;
+
+  const slug = docsPath.slice('/docs'.length).replace(/^\//, '').replace(/\/$/, '');
+  const spanishSlugs = new Set(globalDocsForEnglish.map((doc) => doc.slug.replace(/\/index$/, '')));
+  if (slug && !spanishSlugs.has(slug)) return destination;
+  return `/es/docs${slug ? `/${slug}` : ''}${suffix}${titleSuffix}`;
+}
+
+export function normalizeMarkdownLinks(markdown, currentFile, outputPrefix, locale) {
   const currentDir = dirname(currentFile);
   const fileToHref = fileToHrefFor(outputPrefix);
   return markdown
     .replace(/(!?\[[^\]]*]\()(?:(?:\.\.?\/)?images\/)([^)\s]+)([^)]*\))/g, (_match, prefix, imageName, suffix) => {
       return `${prefix}/docs-images/${localizedImageName(imageName, locale)}${suffix}`;
     })
-    .replace(/(\[[^\]]+]\()(\.?\.?\/[^)#]+\.md)(#[^)]+)?(\))/g, (match, prefix, href, hash = '', suffix) => {
-      const resolved = relative('.', join(currentDir, href)).replaceAll('\\', '/').replace(/^\.\//, '');
-      const target = fileToHref.get(resolved);
-      if (!target) return match;
-      return `${prefix}${target}${hash}${suffix}`;
+    .replace(/(?<!!)(\[[^\]\n]+]\()([^)\n]+)(\))/g, (match, opening, destination, closing) => {
+      const rewritten = rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, outputPrefix);
+      return rewritten === destination ? match : `${opening}${rewritten}${closing}`;
     });
 }
 
@@ -1226,7 +1546,6 @@ function sourcePathFor(docSet, file) {
 
 function writeDoc(docSet, doc) {
   const convert = docSet.convertToTraditional ? convertTraditional : (value) => value;
-  // rawTitle 为简体底稿，用于从原始 md 中剥离一级标题；title/description/body 写盘时再转繁。
   const rawTitle = textFor(doc.title, docSet.locale);
   const title = convert(rawTitle);
   const description = convert(textFor(doc.description, docSet.locale));
@@ -1237,7 +1556,12 @@ function writeDoc(docSet, doc) {
 
   const raw = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   const body = convert(
-    normalizeMarkdownLinks(stripTitle(raw, rawTitle), doc.file, docSet.outputPrefix, docSet.locale),
+    normalizeMarkdownLinks(
+      stripTitle(raw, rawTitle, docSet.locale === LOCALES.ES),
+      doc.file,
+      docSet.outputPrefix,
+      docSet.locale,
+    ),
   );
   const sourcePath = relative(frontendRoot, inputPath);
   /*
@@ -1381,28 +1705,35 @@ function writeRouteManifest(lastUpdatedByLocale) {
   );
 }
 
-rmSync(outputRoot, { recursive: true, force: true });
-ensureDir(outputRoot);
-copyImages();
-const lastUpdatedByLocale = Object.fromEntries(docSets.map((docSet) => [docSet.outputPrefix, {}]));
-for (const docSet of docSets) {
-  for (const doc of docSet.docs) {
-    const written = writeDoc(docSet, doc);
-    if (written.lastUpdated) {
-      lastUpdatedByLocale[docSet.outputPrefix][slugSegments(doc.slug).join('/')] = written.lastUpdated;
+function syncFumadocsContent() {
+  rmSync(outputRoot, { recursive: true, force: true });
+  ensureDir(outputRoot);
+  copyImages();
+  const lastUpdatedByLocale = Object.fromEntries(docSets.map((docSet) => [docSet.outputPrefix, {}]));
+  for (const docSet of docSets) {
+    for (const doc of docSet.docs) {
+      const written = writeDoc(docSet, doc);
+      if (written.lastUpdated) {
+        lastUpdatedByLocale[docSet.outputPrefix][slugSegments(doc.slug).join('/')] = written.lastUpdated;
+      }
     }
+    writeMetaForDocSet(docSet);
   }
-  writeMetaForDocSet(docSet);
-}
-/*
- * `/docs/`（空 slug）渲染的是 overview 的内容，所以它的更新日期就是 overview 的日期。
- * 不给它单独造一个日期，避免出现「同一份内容两个时间」的矛盾。
- */
-for (const locale of Object.keys(lastUpdatedByLocale)) {
-  const overview = lastUpdatedByLocale[locale].overview;
-  if (overview) lastUpdatedByLocale[locale][''] = overview;
-}
-writeRouteManifest(lastUpdatedByLocale);
+  /*
+   * `/docs/`（空 slug）渲染的是 overview 的内容，所以它的更新日期就是 overview 的日期。
+   * 不给它单独造一个日期，避免出现「同一份内容两个时间」的矛盾。
+   */
+  for (const locale of Object.keys(lastUpdatedByLocale)) {
+    const overview = lastUpdatedByLocale[locale].overview;
+    if (overview) lastUpdatedByLocale[locale][''] = overview;
+  }
+  writeRouteManifest(lastUpdatedByLocale);
 
-const total = docSets.reduce((count, docSet) => count + docSet.docs.length, 0);
-console.log(`[sync-fumadocs-content] synced ${total} docs from ${relative(frontendRoot, sourceRoot)}`);
+  const total = docSets.reduce((count, docSet) => count + docSet.docs.length, 0);
+  console.log(`[sync-fumadocs-content] synced ${total} docs from ${relative(frontendRoot, sourceRoot)}`);
+}
+
+const invokedPath = process.argv[1];
+if (invokedPath && resolve(invokedPath) === fileURLToPath(import.meta.url)) {
+  syncFumadocsContent();
+}

@@ -18,7 +18,7 @@ import {
   CN_TERMS_OF_SERVICE_URL,
 } from "@/constants/legal";
 import { useLocaleOverride, useT } from "@/i18n/t";
-import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
+import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
@@ -261,14 +261,7 @@ export const LoginModal = ({
   const { i18n } = useTranslation();
   const localeOverride = useLocaleOverride();
   const showGitHubLogin = useGitHubLoginVisibility();
-  const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.ID_ID || i18n.language === PUBLIC_SITE_LOCALES.ID_ID
-      ? PUBLIC_SITE_LOCALES.ID_ID
-      : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT || i18n.language === PUBLIC_SITE_LOCALES.ZH_HANT
-        ? PUBLIC_SITE_LOCALES.ZH_HANT
-        : localeOverride?.startsWith("zh") || i18n.language?.startsWith("zh")
-          ? PUBLIC_SITE_LOCALES.ZH_SG
-          : PUBLIC_SITE_LOCALES.EN_US;
+  const currentLocale = resolveVisiblePublicSiteLocale(localeOverride, i18n.language);
   const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
   const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
   const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);

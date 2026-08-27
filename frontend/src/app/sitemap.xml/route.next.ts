@@ -113,7 +113,7 @@ export function GET() {
     }));
   // 同上：国内站唯一语言 zh-CN 即裸路径，不输出 `/zh-cn/docs/...` 重复条目
   const localizedDocsEntries: SitemapEntry[] = (globalBuild ? DOCS_ROUTE_LOCALES : []).filter(
-    (locale) => SEO_DOCS_ROUTE_LOCALES.includes(locale) && locale !== 'en-us',
+    (locale) => (SEO_DOCS_ROUTE_LOCALES as readonly DocsRouteLocale[]).includes(locale) && locale !== 'en-us',
   ).flatMap((locale) =>
     DOCS_ROUTE_SLUGS[locale]
       // 同上：`/{lang}/docs/` 空 slug 的 canonical 指向 `/{lang}/docs/overview/`

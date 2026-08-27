@@ -12,6 +12,9 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: '服务条款',
   [PUBLIC_SITE_LOCALES.ZH_SG]: '服务条款',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Ketentuan Layanan',
+  [PUBLIC_SITE_LOCALES.ES]: 'Términos del servicio',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'Terms of Service',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'Terms of Service',
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -20,6 +23,9 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela 服务条款，适用于访问和使用 LightVela 服务。',
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela 服务条款，适用于访问和使用 LightVela 服务。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Ketentuan Layanan LightVela untuk mengakses dan menggunakan layanan LightVela.',
+  [PUBLIC_SITE_LOCALES.ES]: 'Términos del servicio de LightVela aplicables al acceso y uso de la plataforma.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'LightVela Terms of Service for accessing and using the LightVela service.',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela Terms of Service for accessing and using the LightVela service.',
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

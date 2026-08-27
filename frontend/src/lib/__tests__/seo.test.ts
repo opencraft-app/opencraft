@@ -113,4 +113,33 @@ describe("seo meta — global multi-URL language prefix", () => {
     expect(getFullSeoMeta("/about", "cn").htmlLang).toBe("zh-CN");
     expect(getFullSeoMeta("/about", "cn").ogLocale).toBe("zh_CN");
   });
+
+  it("returns Spanish metadata and locale fields for /es public and docs routes", () => {
+    const home = getFullSeoMeta("/es", "global");
+    const about = getFullSeoMeta("/es/about", "global");
+    const docs = getFullSeoMeta("/es/docs/overview", "global");
+
+    expect(home.title).toBe("LightVela | Tu agente personal de IA en la nube");
+    expect(about.title).toContain("Acerca de LightVela");
+    expect(docs.title).toContain("Qué es LightVela");
+    expect(docs.title).not.toContain("¿");
+    for (const meta of [home, about, docs]) {
+      expect(meta.title).not.toContain("Page Not Found");
+      expect(meta.description).not.toContain("LightVela is a cloud Agent hosting product");
+      expect(meta.htmlLang).toBe("es");
+      expect(meta.ogLocale).toBe("es_ES");
+      expect(meta.ogUrl).toBe(meta.canonical);
+      expect(meta.canonical).toContain("https://lightvela.ai/es");
+    }
+  });
+
+  it("returns Spanish titles for locale-projected private product routes", () => {
+    const suffix = "LightVela · Tu agente personal de IA en la nube";
+
+    expect(getSeoMeta("/es/agents", "global").title).toBe(`Mis agentes | ${suffix}`);
+    expect(getSeoMeta("/es/agents/skills", "global").title).toBe(`Habilidades | ${suffix}`);
+    expect(getSeoMeta("/es/account", "global").title).toBe(`Cuenta | ${suffix}`);
+    expect(getSeoMeta("/es/account/orders", "global").title).toBe(`Pedidos | ${suffix}`);
+    expect(getSeoMeta("/es/plans/select", "global").title).toBe(`Elige un plan | ${suffix}`);
+  });
 });

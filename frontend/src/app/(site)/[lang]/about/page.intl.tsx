@@ -14,6 +14,9 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: '关于我们',
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '關於我們',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Tentang LightVela',
+  [PUBLIC_SITE_LOCALES.ES]: 'Acerca de LightVela',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'About LightVela',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'About LightVela',
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
@@ -24,6 +27,12 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela 由騰訊輕量雲團隊出品，將 AI Agent 的完整能力搬上雲端。',
   [PUBLIC_SITE_LOCALES.ID_ID]:
     'LightVela menghadirkan pengalaman Agent cloud yang terkelola dan mudah digunakan untuk lebih banyak orang.',
+  [PUBLIC_SITE_LOCALES.ES]:
+    'Conoce cómo LightVela acerca los agentes de IA en la nube a más personas mediante una experiencia gestionada y sencilla.',
+  [PUBLIC_SITE_LOCALES.JA_JP]:
+    'LightVela brings the cloud Agent experience to more people through a managed, approachable product.',
+  [PUBLIC_SITE_LOCALES.KO_KR]:
+    'LightVela brings the cloud Agent experience to more people through a managed, approachable product.',
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

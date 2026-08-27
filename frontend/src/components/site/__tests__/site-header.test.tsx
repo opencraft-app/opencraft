@@ -2,6 +2,12 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicSiteHeader } from "@/components/site/public-site-header";
 
+const translationMock = vi.hoisted(() => ({ language: "en-US" }));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ i18n: { language: translationMock.language } }),
+}));
+
 vi.mock("@/components/site/user-avatar-menu", () => ({
   UserAvatarMenu: () => <button type="button">avatar menu</button>,
 }));
@@ -14,6 +20,7 @@ vi.mock("@/components/site/language-switcher", () => ({
 
 afterEach(() => {
   cleanup();
+  translationMock.language = "en-US";
 });
 
 describe("PublicSiteHeader", () => {
@@ -67,6 +74,17 @@ describe("PublicSiteHeader", () => {
 
     rerender(<PublicSiteHeader locale="id-ID" />);
     expect(screen.getByRole("link", { name: "Beranda" })).toHaveAttribute("href", "/");
+  });
+
+  it("infers Spanish header navigation and auth copy from the runtime language", async () => {
+    translationMock.language = "es";
+
+    render(<PublicSiteHeader onLoginClick={vi.fn()} />);
+
+    expect(await screen.findByRole("link", { name: "Inicio" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Documentación" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Crear ahora" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Iniciar sesión" }).length).toBeGreaterThan(0);
   });
 
 

@@ -12,6 +12,9 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: '隐私政策',
   [PUBLIC_SITE_LOCALES.ZH_SG]: '隐私政策',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Privasi',
+  [PUBLIC_SITE_LOCALES.ES]: 'Política de privacidad',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'Privacy Policy',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'Privacy Policy',
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -20,6 +23,9 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Privasi LightVela, termasuk pemrosesan, penyimpanan, pembagian informasi pribadi, dan hak pengguna.',
+  [PUBLIC_SITE_LOCALES.ES]: 'Política de privacidad de LightVela sobre el tratamiento, almacenamiento y uso compartido de datos personales y los derechos del usuario.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'LightVela Privacy Policy, including personal information processing, storage, sharing, and user rights.',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela Privacy Policy, including personal information processing, storage, sharing, and user rights.',
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

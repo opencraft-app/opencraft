@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -16,6 +17,7 @@ const refreshProfile = vi.fn();
 let activePass: Pass | null = null;
 let bots: OpenClawBot[] = [];
 let currentSessionUser: User;
+let paidBillingEnabled = false;
 
 vi.mock("@/i18n/t", () => {
   const translate = (text: string, options?: Record<string, unknown>) => {
@@ -53,7 +55,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
-  usePaidBillingEnabled: () => true,
+  usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -173,6 +175,7 @@ describe("AgentSettingsPage global renewal reminder", () => {
     };
     bots = [buildBot()];
     activePass = buildPass();
+    paidBillingEnabled = false;
     getRenewPrice.mockResolvedValue({
       bundle_id: "bundle_launch",
       price: 4900,
@@ -228,5 +231,16 @@ describe("AgentSettingsPage global renewal reminder", () => {
     expect(screen.queryByRole("heading", { name: "续费套餐" })).not.toBeInTheDocument();
     expect(getRenewPrice).not.toHaveBeenCalled();
     expect(createRenewOrder).not.toHaveBeenCalled();
+  });
+
+  it("opens the renewal modal from the global reminder when paid billing is enabled", async () => {
+    paidBillingEnabled = true;
+    renderAgentSettingsPage();
+
+    const reminder = screen.getByRole("button", { name: /点击续费/ });
+    await userEvent.click(reminder);
+
+    expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
+    expect(getRenewPrice).toHaveBeenCalledWith("pass_global_agent_renewal", { period: 1, time_unit: "m" });
   });
 });

@@ -39,7 +39,20 @@ const copy = {
     description: "Ketentuan ini mengatur akses dan penggunaan Anda atas layanan LightVela.",
     note: "Ketentuan hukum di bawah ini berasal dari dokumen resmi LightVela Terms of Service.",
   },
-} satisfies Record<"en" | "zh" | "id", TermsCopy>;
+  es: {
+    backHome: "Volver al inicio",
+    brand: "LightVela",
+    title: "Términos del servicio",
+    description: "Estos Términos rigen su acceso y uso del servicio LightVela.",
+    note: "La traducción al español que aparece a continuación procede del documento oficial de Términos del servicio de LightVela.",
+  },
+} satisfies Record<"en" | "zh" | "id" | "es", TermsCopy>;
+
+export function getTermsOfServiceChrome(locale: PublicSiteLocaleCode): TermsCopy {
+  if (locale === PUBLIC_SITE_LOCALES.ES) return copy.es;
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return copy.id;
+  return isZhLocale(locale) ? copy.zh : copy.en;
+}
 
 const primaryHeadings = new Set([
   "Introduction",
@@ -241,6 +254,80 @@ const idTermsBlocks: TermsBlock[] = [
   { kind: "paragraph", text: "Jika Anda mengakses atau menggunakan Layanan dari Vietnam, addendum Vietnam berlaku sebagai ketentuan tambahan. Addendum ini mencakup ruang lingkup, usia minimum, transparansi dan pelabelan konten AI, penanganan insiden, tata kelola dan lokalisasi data, keamanan siber, perlindungan data pribadi, batasan penggunaan, kewajiban deployer, perlindungan konsumen, sanksi dan penalti, hukum yang berlaku, serta pembaruan regulator. Jika terdapat konflik, hukum wajib Vietnam dan addendum berlaku sejauh diperlukan." },
 ];
 
+const esTermsBlocks: TermsBlock[] = [
+  { kind: "h2", text: "Introducción" },
+  { kind: "paragraph", text: "Le damos la bienvenida y le agradecemos su interés en el servicio LightVela (el “Servicio”)." },
+  { kind: "paragraph", text: "Estos Términos del servicio de LightVela (los “Términos”) constituyen un contrato jurídicamente vinculante entre usted (el “Usuario” o “usted”) y Tencent Cloud International Pte. Ltd., entidad registrada en Singapur con domicilio social en 10 Anson Road, #21-07, International Plaza, Singapore 079903 (“Tencent” o “nosotros”), relativo al uso que usted haga del Servicio." },
+  { kind: "warning", text: "AL UTILIZAR EL SERVICIO, CONFIRMA QUE HA LEÍDO Y COMPRENDIDO ESTOS TÉRMINOS Y QUE ACEPTA QUEDAR VINCULADO POR ELLOS. SI NO CUMPLE LOS REQUISITOS O NO ACEPTA ESTOS TÉRMINOS, NO ESTÁ AUTORIZADO A UTILIZAR EL SERVICIO." },
+  { kind: "h2", text: "Requisitos" },
+  { kind: "paragraph", text: "Debe haber alcanzado la mayoría de edad legal en su jurisdicción y disponer de la capacidad jurídica necesaria para aceptar estos Términos y utilizar el Servicio. Si no ha alcanzado dicha edad o carece de capacidad jurídica por cualquier motivo, su padre, madre o tutor legal deberá leer y aceptar estos Términos en su nombre." },
+  { kind: "paragraph", text: "Usted declara y garantiza que no ha sido suspendido ni expulsado anteriormente del Servicio y que su registro y uso cumplen todas las leyes aplicables. No podrá aceptar estos Términos en nombre de una organización, empresa u otra entidad salvo que tenga autoridad legal para vincularla." },
+  { kind: "h2", text: "Términos adicionales aplicables" },
+  { kind: "paragraph", text: "En función del país que indique en la información de registro, podrán aplicarse términos adicionales o distintos. Si accede al Servicio o lo utiliza desde una jurisdicción incluida en el Anexo específico por jurisdicción situado al final de estos Términos, las disposiciones correspondientes a esa jurisdicción serán aplicables y prevalecerán sobre las demás partes de estos Términos en caso de conflicto o incoherencia." },
+  { kind: "h2", text: "Cambios en estos Términos" },
+  { kind: "paragraph", text: "Podremos modificar o actualizar estos Términos periódicamente para reflejar cambios en la legislación aplicable o en las mejores prácticas, mejorar el Servicio o abordar nuevas funciones. Cuando los cambios sean sustanciales, haremos esfuerzos razonables para avisarle con antelación, por ejemplo, por correo electrónico o mediante un aviso destacado en nuestro sitio web." },
+  { kind: "warning", text: "EN LA MEDIDA PERMITIDA POR LA LEY, SI NO SE OPONE A LOS CAMBIOS NI DEJA DE UTILIZAR EL SERVICIO ANTES DE QUE ENTREN EN VIGOR, SE CONSIDERARÁ QUE LOS HA ACEPTADO. SI SE OPONE, DEBERÁ DEJAR DE UTILIZAR EL SERVICIO Y NOTIFICÁRNOSLO ANTES DE LA FECHA DE ENTRADA EN VIGOR." },
+  { kind: "h2", text: "Definiciones e interpretación" },
+  { kind: "paragraph", text: "Los términos “Cuenta”, “Afiliada”, “Agente de IA”, “Funciones de IA”, “Legislación aplicable”, “Contenido”, “Entrada”, “Salida”, “Software” y “Datos del usuario” tienen el significado establecido en la versión oficial en inglés. La Documentación, la Política de privacidad y el Aviso de código abierto están disponibles en: [https://lightvela.ai/docs/overview/], [https://lightvela.ai/zh-sg/privacy-policy/] y [https://lightvela.ai/zh-sg/open-source-licenses/]." },
+  { kind: "paragraph", text: "Los títulos de las secciones se incluyen únicamente para facilitar la consulta y no limitan la interpretación de estos Términos. Expresiones como “incluido” y los ejemplos no tienen carácter restrictivo." },
+  { kind: "h2", text: "Su cuenta" },
+  { kind: "h3", text: "Registro de la cuenta e información facilitada" },
+  { kind: "paragraph", text: "Después de registrar una cuenta, usted será responsable de proteger todos los datos de la cuenta y las credenciales de acceso, así como del uso de la cuenta o del Servicio y de todas las actividades, acciones u omisiones que se produzcan en ella. Salvo que el acceso no autorizado se deba a un incumplimiento de estos Términos por nuestra parte, Tencent y sus afiliadas no serán responsables de dicho acceso." },
+  { kind: "paragraph", text: "Los Datos del usuario que facilite al utilizar el Servicio, como la información de la cuenta, deben ser verdaderos, exactos y completos. Si cambian, deberá informar de ello a Tencent sin demora." },
+  { kind: "h3", text: "Recuperación de la cuenta y cuentas de plataformas de terceros" },
+  { kind: "paragraph", text: "Si solicita recuperar la cuenta porque ha perdido sus datos o ha olvidado la contraseña, deberá proporcionar la información y los documentos de verificación exigidos por el proceso que publiquemos y asegurarse de que sean legales, verdaderos y válidos. En el caso de cuentas indirectas creadas mediante Google, Apple u otras plataformas de terceros, la plataforma correspondiente será responsable de la cuenta y de la información de dicha plataforma." },
+  { kind: "h3", text: "Seguridad del Servicio" },
+  { kind: "paragraph", text: "Si detecta un uso ilícito de la cuenta o un problema de seguridad, notifíquenoslo inmediatamente. No deberá eludir nuestras medidas técnicas, incluidas las destinadas a impedir usos no autorizados, incumplimientos de estos Términos o programas maliciosos. Tampoco deberá transmitir virus, código malicioso, datos destructivos ni malware mediante el Servicio." },
+  { kind: "h2", text: "El Servicio" },
+  { kind: "h3", text: "Naturaleza, riesgos y limitaciones de los servicios de IA" },
+  { kind: "paragraph", text: "Mediante el Servicio, Tencent puede proporcionar acceso a Agentes de IA, alojarlos, ofrecer infraestructura informática y suministrar Funciones de IA basadas en modelos de lenguaje de gran tamaño. Al activar, acceder o utilizar un Agente de IA o una Función de IA, usted comprende y acepta los riesgos inherentes a la tecnología de IA." },
+  { kind: "warning", text: "LAS SALIDAS PUEDEN CONTENER ERRORES FÁCTICOS, INFORMACIÓN INVENTADA, OMISIONES O SESGOS. LOS AGENTES DE IA PUEDEN EJECUTAR INCORRECTAMENTE LLAMADAS A HERRAMIENTAS, SOLICITUDES API O ACCIONES AUTÓNOMAS. LOS LLM, COMPLEMENTOS Y API DE TERCEROS SE RIGEN POR SUS PROPIOS TÉRMINOS. LA IA CARECE DE JUICIO HUMANO, EMPATÍA, SENTIDO COMÚN Y RAZONAMIENTO ÉTICO. USTED ES RESPONSABLE DE LAS CONSECUENCIAS DEL USO Y DEBE APLICAR SUPERVISIÓN HUMANA, FLUJOS DE VALIDACIÓN Y PROTOCOLOS DE PRUEBAS ADECUADOS." },
+  { kind: "paragraph", text: "Las Salidas se ofrecen únicamente con fines informativos y no constituyen asesoramiento jurídico, financiero, médico ni profesional. El Servicio no está destinado a adoptar decisiones que produzcan efectos jurídicos o efectos significativos similares sobre personas sin una supervisión humana adecuada, ni está diseñado para infraestructuras críticas, sistemas de soporte vital, diagnósticos médicos o decisiones de las fuerzas del orden." },
+  { kind: "h3", text: "Límites de las Salidas, cambios en el Servicio e interrupciones" },
+  { kind: "paragraph", text: "Tencent podrá establecer límites razonables sobre el volumen, la frecuencia o la naturaleza de las Salidas que usted genere, incluidos límites de uso, de velocidad o vinculados al plan de suscripción. En la medida permitida por la ley, Tencent podrá modificar, limitar, suspender o interrumpir el Servicio o cualquiera de sus partes, entre otros motivos, por mantenimiento, fuerza mayor, órdenes regulatorias u obligaciones legales." },
+  { kind: "h3", text: "Materiales de terceros" },
+  { kind: "paragraph", text: "El Servicio puede integrar o permitirle acceder a modelos de IA, herramientas, API, complementos, contenido, productos o servicios de terceros. Salvo que se indique expresamente lo contrario, Tencent no desarrolla, opera ni controla los Materiales de terceros y no es responsable de sus actos, rendimiento, seguridad, disponibilidad, Salidas o contenido. Usted es responsable de seleccionar, activar y configurar dichos materiales y de cumplir los términos, licencias y políticas de privacidad aplicables." },
+  { kind: "h3", text: "Materiales de código abierto" },
+  { kind: "paragraph", text: "Debe asegurarse de que el uso de Materiales de terceros o Software no exija divulgar o distribuir código fuente, licenciar obras derivadas, redistribuir gratuitamente ni asumir obligaciones Copyleft incompatibles. La información sobre licencias, los avisos de derechos de autor y los datos pertinentes de código abierto están disponibles en el Aviso de código abierto: [https://lightvela.ai/zh-sg/open-source-licenses/]." },
+  { kind: "h2", text: "Uso del Servicio por su parte" },
+  { kind: "paragraph", text: "Siempre que cumpla estos Términos, Tencent le concede una licencia limitada, no exclusiva, intransferible, no sublicenciable y revocable para descargar una copia del Software y utilizar el Servicio con fines personales, sin superar los límites de uso, el periodo de vigencia o el territorio aplicables." },
+  { kind: "paragraph", text: "No podrá copiar, modificar, adaptar, distribuir, mostrar públicamente, revender, sublicenciar, realizar ingeniería inversa, descompilar, traducir, desensamblar ni intentar extraer el código fuente del Servicio. Tampoco podrá cargar o difundir contenido ilegal, engañoso, perjudicial, que vulnere derechos de terceros, interfiera con sistemas, eluda protecciones o infrinja estos Términos." },
+  { kind: "h2", text: "BYOK y servicios de terceros" },
+  { kind: "paragraph", text: "Si el Servicio le permite aportar su propia clave (BYOK) o conectar servicios de terceros, usted será responsable de disponer de los derechos, permisos y consentimientos necesarios y de cumplir los términos aplicables de esos terceros. La disponibilidad, el tratamiento, los costes, la conservación de datos y la seguridad de los servicios de terceros pueden depender de ellos, y Tencent no será responsable de esos aspectos." },
+  { kind: "h2", text: "Suscripciones, tarifas y pagos" },
+  { kind: "paragraph", text: "Determinados servicios o funciones pueden requerir una suscripción, un pago anticipado, tarifas basadas en el uso u otros acuerdos de pago. Deberá abonar las tarifas correspondientes conforme a los precios, impuestos, métodos de pago y plazos indicados en la página del servicio, el pedido, la factura o el proceso de pago. Salvo que la ley lo exija o estos Términos dispongan lo contrario, las cantidades pagadas podrán no ser reembolsables." },
+  { kind: "paragraph", text: "Debe asegurarse de que el método de pago sea válido y autorizarnos a nosotros o al procesador de pagos externo a cobrar las tarifas. Usted será responsable de los impuestos, aranceles, tasas y demás gravámenes públicos relacionados con la adquisición o el uso del Servicio, salvo los impuestos sobre la renta de Tencent." },
+  { kind: "h2", text: "Obligaciones del usuario" },
+  { kind: "paragraph", text: "Debe cumplir todas las leyes aplicables, los requisitos regulatorios, estos Términos, la Documentación y los límites del Servicio, y será responsable de sus Entradas, Salidas, Datos del usuario, configuraciones, integraciones de terceros y usos posteriores. No podrá utilizar el Servicio para actividades ilegales, de alto riesgo, engañosas, que vulneren derechos, impliquen acoso u odio, distribuyan malware, eludan medidas de seguridad, accedan sin autorización, abusen de sistemas o perjudiquen a Tencent, sus usuarios, terceros o el público." },
+  { kind: "h2", text: "Titularidad y derechos de propiedad intelectual" },
+  { kind: "paragraph", text: "Salvo por la licencia limitada que se le concede expresamente, Tencent y sus licenciantes conservan todos los derechos, títulos e intereses sobre el Servicio, el Software, la Documentación, las marcas, los logotipos, la tecnología, los sistemas y los derechos de propiedad intelectual relacionados. Usted conserva sus derechos sobre los Datos del usuario, las Entradas y el contenido que posea legítimamente; el uso de las Salidas seguirá sujeto a la legislación aplicable, los derechos de terceros y estos Términos." },
+  { kind: "h2", text: "Confidencialidad" },
+  { kind: "paragraph", text: "Al utilizar el Servicio podrá acceder a información no pública de Tencent, tecnología, planes de productos, interfaces, credenciales u otra información confidencial. Salvo para utilizar el Servicio conforme a estos Términos, no podrá divulgar, copiar, transferir ni utilizar indebidamente dicha información sin el consentimiento previo y por escrito de Tencent." },
+  { kind: "h2", text: "Privacidad" },
+  { kind: "paragraph", text: "Tratamos la información personal de acuerdo con la Política de privacidad aplicable al Servicio. Dicha política explica cómo recopilamos, utilizamos, almacenamos, compartimos y protegemos la información personal, así como los derechos que puede ejercer. Consulte: [https://lightvela.ai/zh-sg/privacy-policy/]." },
+  { kind: "h2", text: "Vigencia y terminación" },
+  { kind: "paragraph", text: "Estos Términos entran en vigor cuando los acepta o cuando accede, descarga, instala o utiliza por primera vez el Servicio, y continúan vigentes hasta que se resuelvan conforme a ellos. Podremos suspender o terminar su acceso si incumple los Términos, genera un riesgo jurídico o de seguridad, existe una exigencia regulatoria, se interrumpe el servicio o concurre otra circunstancia permitida. Tras la terminación, deberá dejar de utilizar el Servicio y, si se le solicita, eliminar o devolver el Software y la información confidencial relacionada." },
+  { kind: "h2", text: "Exclusiones de responsabilidad y ausencia de garantías" },
+  { kind: "paragraph", text: "En la medida permitida por la legislación aplicable, el Servicio se ofrece “tal cual” y “según disponibilidad”. Tencent no garantiza, de forma expresa, implícita o legal, que el Servicio sea ininterrumpido, esté libre de errores, sea seguro, exacto o completo, resulte adecuado para una finalidad concreta o satisfaga sus necesidades." },
+  { kind: "h2", text: "Indemnización" },
+  { kind: "paragraph", text: "Deberá indemnizar y mantener indemnes a Tencent y sus afiliadas frente a reclamaciones, pérdidas, responsabilidades, costes y gastos derivados de su incumplimiento de estos Términos, el uso ilícito del Servicio, sus Datos del usuario o contenido, las integraciones de terceros, la vulneración de derechos de terceros o sus usos posteriores." },
+  { kind: "h2", text: "Limitación de responsabilidad" },
+  { kind: "paragraph", text: "En la medida permitida por la legislación aplicable, Tencent no será responsable de pérdidas indirectas, incidentales, especiales, punitivas o consecuentes, lucro cesante, pérdida de ingresos, fondo de comercio o datos, interrupciones del negocio ni costes de servicios sustitutivos. La responsabilidad total de Tencent estará sujeta a los límites establecidos en estos Términos y en la legislación aplicable." },
+  { kind: "h2", text: "Legislación aplicable y resolución de controversias" },
+  { kind: "paragraph", text: "Salvo que el Anexo específico por jurisdicción o una norma imperativa aplicable disponga lo contrario, la legislación aplicable, el arbitraje y los mecanismos de resolución de controversias serán los establecidos en la versión oficial en inglés. Las controversias que no puedan resolverse mediante conversaciones se resolverán conforme al mecanismo previsto en estos Términos." },
+  { kind: "h2", text: "Disposiciones generales" },
+  { kind: "paragraph", text: "Estos Términos incluyen disposiciones generales sobre cesión, notificaciones, fuerza mayor, divisibilidad, ausencia de terceros beneficiarios, acuerdo completo e idioma. Podemos traducirlos a otros idiomas; en caso de incoherencia entre la versión en inglés y cualquier otra versión, prevalecerá la versión en inglés, salvo que una norma imperativa disponga lo contrario." },
+  { kind: "h2", text: "Atención al cliente y contacto" },
+  { kind: "paragraph", text: "Si tiene preguntas, consultas, reclamaciones o comentarios relacionados con estos Términos o con el uso del Servicio, puede ponerse en contacto con nosotros en [lightvela@tencent.com]. Le responderemos lo antes posible después de recibir su comunicación y, cuando corresponda, dentro del plazo exigido por la legislación aplicable." },
+  { kind: "h2", text: "Anexo específico por jurisdicción" },
+  { kind: "h3", text: "Kenia" },
+  { kind: "paragraph", text: "Si selecciona Kenia como país de registro, el anexo de Kenia se aplicará como término adicional. Abarca la legislación de protección del consumidor, la edad mínima, la información sobre IA, los límites de responsabilidad, la resolución de controversias y el cumplimiento relativo al contenido. En caso de conflicto con estos Términos, el anexo prevalecerá en la medida de la incoherencia." },
+  { kind: "h3", text: "Vietnam" },
+  { kind: "paragraph", text: "Si accede al Servicio o lo utiliza desde Vietnam, el anexo de Vietnam se aplicará como término adicional. Abarca el ámbito de aplicación, la edad mínima, la transparencia y el etiquetado de contenido de IA, la gestión de incidentes, el gobierno y la localización de datos, la ciberseguridad, la protección de datos personales, las restricciones de uso, las obligaciones del responsable del despliegue, la protección del consumidor, las sanciones, la legislación aplicable y las actualizaciones regulatorias. En caso de conflicto, las normas imperativas de Vietnam y el anexo prevalecerán en la medida necesaria." },
+  { kind: "h2", text: "Idioma" },
+  { kind: "paragraph", text: "En caso de discrepancia o incoherencia entre la versión en inglés y esta traducción al español, prevalecerá la versión en inglés, salvo que la legislación aplicable disponga lo contrario." },
+];
+
 function normalizeLine(line: string): string {
   return line.replace(/·{2,}\d*$/g, "").trim();
 }
@@ -262,6 +349,15 @@ function parseTermsBlocks(text: string): TermsBlock[] {
     });
 }
 
+export function getTermsOfServiceBlocks(
+  locale: PublicSiteLocaleCode,
+  englishBlocks: TermsBlock[],
+): TermsBlock[] {
+  if (locale === PUBLIC_SITE_LOCALES.ES) return esTermsBlocks;
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return idTermsBlocks;
+  return isZhLocale(locale) ? zhTermsBlocks : englishBlocks;
+}
+
 const lightVelaLegalPaths: Record<string, string> = {
   "https://lightvela.ai/docs/overview/": "/docs/overview",
   "https://lightvela.ai/zh-sg/privacy-policy/": "/privacy-policy",
@@ -275,16 +371,17 @@ function withTrailingSlash(path: string): string {
 function publicLocalePrefix(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}`;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}`;
   return `/${PUBLIC_URL_LANGS.EN_US}`;
 }
 
-function localizedLegalPath(path: string, locale: PublicSiteLocaleCode, forceLocalePrefix: boolean): string {
+export function localizedLegalPath(path: string, locale: PublicSiteLocaleCode, forceLocalePrefix: boolean): string {
   if (!forceLocalePrefix) return withTrailingSlash(localizedPath(path, locale));
   return withTrailingSlash(`${publicLocalePrefix(locale)}${path}`);
 }
 
-function localizedLightVelaUrl(
+export function localizedLightVelaUrl(
   url: string,
   locale: PublicSiteLocaleCode,
   forceLocalePrefix: boolean,
@@ -373,15 +470,16 @@ export const TermsOfServicePage = () => {
   const currentLocale: PublicSiteLocaleCode =
     localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID
+      : localeOverride === PUBLIC_SITE_LOCALES.ES
+        ? PUBLIC_SITE_LOCALES.ES
       : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT
         ? PUBLIC_SITE_LOCALES.ZH_HANT
         : localeOverride?.startsWith("zh")
           ? PUBLIC_SITE_LOCALES.ZH_SG
           : PUBLIC_SITE_LOCALES.EN_US;
-  const selectedCopy = useZhHantDeep(currentLocale === "id-ID" ? copy.id : isZhLocale(currentLocale) ? copy.zh : copy.en);
+  const selectedCopy = useZhHantDeep(getTermsOfServiceChrome(currentLocale));
   const englishBlocks = useMemo(() => parseTermsBlocks(termsOfServiceText), []);
-  const localizedBlocks =
-    currentLocale === PUBLIC_SITE_LOCALES.ID_ID ? idTermsBlocks : isZhLocale(currentLocale) ? zhTermsBlocks : englishBlocks;
+  const localizedBlocks = getTermsOfServiceBlocks(currentLocale, englishBlocks);
   const blocks = useZhHantDeep(localizedBlocks);
   const forceLocalePrefix = Boolean(localeOverride);
   const homePath = forceLocalePrefix ? localizedLegalPath("/", currentLocale, true) : localizedPath("/", currentLocale);

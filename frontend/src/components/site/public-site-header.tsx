@@ -17,6 +17,7 @@ import {
   type PublicSiteSection,
 } from "@/lib/public-site-navigation";
 import { PUBLIC_SITE_LOCALES } from "@/lib/public-site-routing";
+import { parseLocaleCode } from "@/i18n/locales.config";
 import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
@@ -139,6 +140,24 @@ const headerCopy: Record<PublicSiteLocale, {
     login: "Masuk",
     openMenu: "Buka menu",
   },
+  [PUBLIC_SITE_LOCALES.ES]: {
+    closeMenu: "Cerrar menú",
+    createNow: "Crear ahora",
+    login: "Iniciar sesión",
+    openMenu: "Abrir menú",
+  },
+  [PUBLIC_SITE_LOCALES.JA_JP]: {
+    closeMenu: "メニューを閉じる",
+    createNow: "今すぐ作成",
+    login: "ログイン",
+    openMenu: "メニューを開く",
+  },
+  [PUBLIC_SITE_LOCALES.KO_KR]: {
+    closeMenu: "메뉴 닫기",
+    createNow: "지금 만들기",
+    login: "로그인",
+    openMenu: "메뉴 열기",
+  },
 };
 
 function defaultHeaderLocale(): PublicSiteLocale {
@@ -147,10 +166,12 @@ function defaultHeaderLocale(): PublicSiteLocale {
 }
 
 function headerLocaleFromLanguage(language: string | undefined): PublicSiteLocale {
-  if (language === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
-  if (language === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
-  if (language?.startsWith("zh")) return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
-  return PUBLIC_SITE_LOCALES.EN_US;
+  const locale = parseLocaleCode(language);
+  if (!locale) return PUBLIC_SITE_LOCALES.EN_US;
+  if (locale === PUBLIC_SITE_LOCALES.ZH_CN || locale === PUBLIC_SITE_LOCALES.ZH_SG) {
+    return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
+  }
+  return locale;
 }
 
 function useCurrentPath(explicitPath?: string): string {

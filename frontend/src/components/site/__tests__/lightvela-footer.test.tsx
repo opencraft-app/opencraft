@@ -11,7 +11,7 @@ vi.mock("@/i18n/t", () => ({
   useLocaleOverride: () => null,
 }));
 
-// 当前语言可变，供不同用例切换（en-US / zh-CN / zh-SG / zh-Hant / id-ID）
+// 当前语言可变，供不同用例切换。
 let mockLanguage = "en-US";
 let mockIsGlobal = true;
 
@@ -29,7 +29,7 @@ vi.mock("@/lib/region", () => ({
   get isGlobal() {
     return mockIsGlobal;
   },
-  localizedPath: (path: string, locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID") => {
+  localizedPath: (path: string, locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID" | "es") => {
     const lang =
       locale === "zh-CN"
         ? "zh"
@@ -39,7 +39,10 @@ vi.mock("@/lib/region", () => ({
             ? "zh-hant"
             : locale === "id-ID"
               ? "id-id"
-              : "en";
+              : locale === "es"
+                ? "es"
+                : null;
+    if (!lang) return path;
     return path === "/" ? `/${lang}/` : `/${lang}${path}`;
   },
 }));
@@ -67,19 +70,19 @@ describe("LightVelaFooter", () => {
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
     expect(productSection).not.toBeNull();
     const product = within(productSection as HTMLElement);
-    expect(product.getByRole("link", { name: "14 天免费试用" })).toHaveAttribute("href", "/en/subscribe");
-    expect(product.getByRole("link", { name: "定价" })).toHaveAttribute("href", "/en/subscribe");
+    expect(product.getByRole("link", { name: "14 天免费试用" })).toHaveAttribute("href", "/subscribe");
+    expect(product.getByRole("link", { name: "定价" })).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "接入 WhatsApp 指引" })).toHaveAttribute(
       "href",
-      "/en/docs/configuration/channel-whatsapp",
+      "/docs/configuration/channel-whatsapp",
     );
     expect(product.getByRole("link", { name: "接入 Telegram 指引" })).toHaveAttribute(
       "href",
-      "/en/docs/configuration/channel-telegram",
+      "/docs/configuration/channel-telegram",
     );
     expect(product.getByRole("link", { name: "接入 Discord 指引" })).toHaveAttribute(
       "href",
-      "/en/docs/configuration/channel-discord",
+      "/docs/configuration/channel-discord",
     );
     // 国内站专属通道不应出现在国际站页脚（两站分别描述，不混写）
     expect(product.queryByRole("link", { name: "接入 QQ 指引" })).toBeNull();
@@ -89,13 +92,13 @@ describe("LightVelaFooter", () => {
     const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
     expect(companySection).not.toBeNull();
     const company = within(companySection as HTMLElement);
-    expect(company.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/en/about");
+    expect(company.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/about");
     expect(company.queryByRole("link", { name: "帮助与反馈" })).not.toBeInTheDocument();
-    expect(company.getByRole("link", { name: "隐私政策" })).toHaveAttribute("href", "/en/privacy-policy");
-    expect(company.getByRole("link", { name: "服务条款" })).toHaveAttribute("href", "/en/terms-of-service");
+    expect(company.getByRole("link", { name: "隐私政策" })).toHaveAttribute("href", "/privacy-policy");
+    expect(company.getByRole("link", { name: "服务条款" })).toHaveAttribute("href", "/terms-of-service");
     expect(company.getByRole("link", { name: "开源声明" })).toHaveAttribute(
       "href",
-      "/en/open-source-licenses",
+      "/open-source-licenses",
     );
 
     const communitySection = screen.getByRole("heading", { name: "社区" }).closest("section");
@@ -123,23 +126,23 @@ describe("LightVelaFooter", () => {
     const compare = within(compareSection as HTMLElement);
     expect(compare.getByRole("link", { name: "与本地部署对比" })).toHaveAttribute(
       "href",
-      "/en/docs/compare/lightvela-vs-localhost-ai-agent",
+      "/docs/compare/lightvela-vs-localhost-ai-agent",
     );
     expect(compare.getByRole("link", { name: "与 Hostinger 对比" })).toHaveAttribute(
       "href",
-      "/en/docs/compare/lightvela-vs-hostinger",
+      "/docs/compare/lightvela-vs-hostinger",
     );
     expect(compare.getByRole("link", { name: "与 Manus 对比" })).toHaveAttribute(
       "href",
-      "/en/docs/compare/lightvela-vs-manus",
+      "/docs/compare/lightvela-vs-manus",
     );
     expect(compare.getByRole("link", { name: "与 ChatGPT 对比" })).toHaveAttribute(
       "href",
-      "/en/docs/compare/lightvela-vs-chatgpt",
+      "/docs/compare/lightvela-vs-chatgpt",
     );
     expect(compare.getByRole("link", { name: "与 Genspark 对比" })).toHaveAttribute(
       "href",
-      "/en/docs/compare/lightvela-vs-genspark",
+      "/docs/compare/lightvela-vs-genspark",
     );
     // 国内站专属对比页不应出现在国际站
     expect(compare.queryByRole("link", { name: "与 AI Chatbot 对比" })).toBeNull();
@@ -201,5 +204,33 @@ describe("LightVelaFooter", () => {
     expect(supportLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
     expect(supportLink).toHaveAttribute("target", "_blank");
     expect(supportLink).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("keeps every Spanish footer link, including the logo, under /es", () => {
+    mockLanguage = "es";
+    render(
+      <MemoryRouter>
+        <LightVelaFooter />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/es/");
+
+    const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
+    const company = within(companySection as HTMLElement);
+    expect(company.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/es/about");
+    expect(company.queryByRole("link", { name: "帮助与反馈" })).not.toBeInTheDocument();
+    expect(company.getByRole("link", { name: "隐私政策" })).toHaveAttribute(
+      "href",
+      "/es/privacy-policy",
+    );
+    expect(company.getByRole("link", { name: "服务条款" })).toHaveAttribute(
+      "href",
+      "/es/terms-of-service",
+    );
+    expect(company.getByRole("link", { name: "开源声明" })).toHaveAttribute(
+      "href",
+      "/es/open-source-licenses",
+    );
   });
 });

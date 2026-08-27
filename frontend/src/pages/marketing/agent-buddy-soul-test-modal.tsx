@@ -25,6 +25,12 @@ import {
   generateIndonesianPersonalityProfile,
 } from "@/pages/marketing/agent-buddy-soul-test-data.id";
 import { getIndonesianSoulSpec } from "@/lib/soul-indonesian-data";
+import { getSpanishSoulSpec } from "@/lib/soul-spanish-data";
+import {
+  SPANISH_PREF_TAG_LABELS,
+  buildSpanishQuestions,
+  generateSpanishPersonalityProfile,
+} from "@/pages/marketing/agent-buddy-soul-test-data.es";
 import {
   PREF_TAGS,
   calculateMatchedSoul,
@@ -51,6 +57,8 @@ interface SoulTestModalProps {
   useGlobalChineseSoulData?: boolean;
   /** 印尼语：题库与人设文案切印尼语；计分沿用英文实现（映射逐条一致） */
   useIndonesianSoulData?: boolean;
+  /** 西班牙语：题库与人设文案切西语；计分沿用英文实现（映射逐条一致） */
+  useSpanishSoulData?: boolean;
   onClose: () => void;
   onUseSoul: (soul: SkillHubSoul) => boolean;
 }
@@ -64,6 +72,7 @@ export function SoulTestModal({
   useEnglishSoulData = false,
   useGlobalChineseSoulData = false,
   useIndonesianSoulData = false,
+  useSpanishSoulData = false,
   onClose,
   onUseSoul,
 }: SoulTestModalProps) {
@@ -75,7 +84,7 @@ export function SoulTestModal({
   const [matchedSoulId, setMatchedSoulId] = useState<string | null>(null);
   const [useError, setUseError] = useState<string | null>(null);
   const [questions, setQuestions] = useState<SoulTestQuestion[]>(
-    () => buildQuestions(useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData),
+    () => buildQuestions(useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData),
   );
 
   useEffect(() => {
@@ -85,8 +94,8 @@ export function SoulTestModal({
     setAnswers({});
     setMatchedSoulId(null);
     setUseError(null);
-    setQuestions(buildQuestions(useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData));
-  }, [open, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
+    setQuestions(buildQuestions(useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData));
+  }, [open, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
 
   useEffect(() => {
     if (!open) return;
@@ -110,6 +119,7 @@ export function SoulTestModal({
         useEnglishSoulData,
         useGlobalChineseSoulData,
         useIndonesianSoulData,
+        useSpanishSoulData,
       )
     : null;
   const prefScores = useMemo(
@@ -123,13 +133,13 @@ export function SoulTestModal({
   const profileText = useMemo(
     () => {
       if (useEnglishSoulData) {
-        return useIndonesianSoulData
-          ? generateIndonesianPersonalityProfile(answers)
-          : generateEnglishPersonalityProfile(answers);
+        if (useSpanishSoulData) return generateSpanishPersonalityProfile(answers);
+        if (useIndonesianSoulData) return generateIndonesianPersonalityProfile(answers);
+        return generateEnglishPersonalityProfile(answers);
       }
       return generatePersonalityProfile(answers);
     },
-    [answers, useEnglishSoulData, useIndonesianSoulData],
+    [answers, useEnglishSoulData, useIndonesianSoulData, useSpanishSoulData],
   );
 
   const handleSelect = useCallback(
@@ -177,8 +187,8 @@ export function SoulTestModal({
     setAnswers({});
     setMatchedSoulId(null);
     setUseError(null);
-    setQuestions(buildQuestions(useEnglishSoulData, useGlobalChineseSoulData));
-  }, [useEnglishSoulData, useGlobalChineseSoulData]);
+    setQuestions(buildQuestions(useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData));
+  }, [useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
 
   const handleUseSoul = useCallback(() => {
     if (!recommendedSoul) return;
@@ -256,6 +266,7 @@ export function SoulTestModal({
               onRetry={handleRetry}
               useEnglishSoulData={useEnglishSoulData}
               useIndonesianSoulData={useIndonesianSoulData}
+              useSpanishSoulData={useSpanishSoulData}
             />
           )}
         </motion.div>
@@ -374,6 +385,7 @@ function ResultStep({
   onRetry,
   useEnglishSoulData,
   useIndonesianSoulData = false,
+  useSpanishSoulData = false,
 }: {
   matchedSoulId: string | null;
   soul: SkillHubSoul | null;
@@ -385,6 +397,7 @@ function ResultStep({
   onRetry: () => void;
   useEnglishSoulData: boolean;
   useIndonesianSoulData?: boolean;
+  useSpanishSoulData?: boolean;
 }) {
   const t = useT();
   const [soulInfoOpen, setSoulInfoOpen] = useState(false);
@@ -450,7 +463,7 @@ function ResultStep({
                         key={tag}
                         className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-1.5 text-sm font-medium text-black/68 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
                       >
-                        {getPrefTagLabel(tag, t, useEnglishSoulData, useIndonesianSoulData)}
+                        {getPrefTagLabel(tag, t, useEnglishSoulData, useIndonesianSoulData, useSpanishSoulData)}
                         <span
                           className={cn(
                             "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
@@ -459,7 +472,7 @@ function ResultStep({
                             category === "low" && "bg-black/[0.05] text-black/45",
                           )}
                         >
-                          {categoryLabel(category, useEnglishSoulData)}
+                          {categoryLabel(category, useEnglishSoulData, useSpanishSoulData)}
                         </span>
                       </span>
                     );
@@ -511,12 +524,15 @@ function ResultStep({
 
 function buildQuestions(
   useEnglishSoulData: boolean,
-  useGlobalChineseSoulData: boolean,
+  _useGlobalChineseSoulData: boolean,
   useIndonesianSoulData = false,
+  useSpanishSoulData = false,
 ): SoulTestQuestion[] {
   // 国际站 EN / ID → 对应语言题库；国际站 ZH 与国内站共用中文题目（中文文案）。
   if (useEnglishSoulData) {
-    return useIndonesianSoulData ? buildIndonesianQuestions() : buildEnglishQuestions();
+    if (useSpanishSoulData) return buildSpanishQuestions();
+    if (useIndonesianSoulData) return buildIndonesianQuestions();
+    return buildEnglishQuestions();
   }
   return [...shuffleArray(personalityQuestions), ...shuffleArray(prefQuestions)];
 }
@@ -546,8 +562,17 @@ function SoulInterpretationSummary({
   );
 }
 
-function categoryLabel(category: "high" | "mid" | "low", useEnglishSoulData: boolean): string {
+function categoryLabel(
+  category: "high" | "mid" | "low",
+  useEnglishSoulData: boolean,
+  useSpanishSoulData = false,
+): string {
   if (useEnglishSoulData) {
+    if (useSpanishSoulData) {
+      if (category === "high") return "Alto";
+      if (category === "mid") return "Medio";
+      return "Bajo";
+    }
     if (category === "high") return "High";
     if (category === "mid") return "Mid";
     return "Low";
@@ -562,9 +587,12 @@ function getLocalizedSoulSpec(
   useEnglishSoulData: boolean,
   useGlobalChineseSoulData: boolean,
   useIndonesianSoulData = false,
+  useSpanishSoulData = false,
 ): SoulSpec | null {
   if (useEnglishSoulData) {
-    return useIndonesianSoulData ? getIndonesianSoulSpec(slug) : getEnglishSoulSpec(slug);
+    if (useSpanishSoulData) return getSpanishSoulSpec(slug);
+    if (useIndonesianSoulData) return getIndonesianSoulSpec(slug);
+    return getEnglishSoulSpec(slug);
   }
   if (useGlobalChineseSoulData) return getGlobalChineseSoulSpec(slug);
   return getSoulSpec(toCanonicalSlug(slug));
@@ -583,9 +611,12 @@ function getPrefTagLabel(
   t: (zh: string, options?: Record<string, unknown>) => string,
   useEnglishSoulData: boolean,
   useIndonesianSoulData = false,
+  useSpanishSoulData = false,
 ): string {
   if (useEnglishSoulData) {
-    return useIndonesianSoulData ? INDONESIAN_PREF_TAG_LABELS[tag] : ENGLISH_PREF_TAG_LABELS[tag];
+    if (useSpanishSoulData) return SPANISH_PREF_TAG_LABELS[tag];
+    if (useIndonesianSoulData) return INDONESIAN_PREF_TAG_LABELS[tag];
+    return ENGLISH_PREF_TAG_LABELS[tag];
   }
   // 中文：PrefTag 本身就是中文字面量，交给 t() 兼顾简繁。
   return t(tag);

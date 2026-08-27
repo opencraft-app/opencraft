@@ -21,6 +21,7 @@ import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
 import { getSoulSpec } from "@/lib/soul-interpretations";
 import { getEnglishSoulDetail, getEnglishSoulSpec } from "@/lib/soul-english-data";
 import { getIndonesianSoulDetail, getIndonesianSoulSpec } from "@/lib/soul-indonesian-data";
+import { getSpanishSoulDetail, getSpanishSoulSpec } from "@/lib/soul-spanish-data";
 import {
   getGlobalChineseSoulDetail,
   getGlobalChineseSoulSpec,
@@ -82,6 +83,8 @@ interface DrawSoulModalProps {
   useGlobalChineseSoulData?: boolean;
   /** 印尼语：在英文体系内替换展示文案，未覆盖的条目回退英文 */
   useIndonesianSoulData?: boolean;
+  /** 西班牙语：在英文 slug 体系内替换全部展示文案 */
+  useSpanishSoulData?: boolean;
   onClose: () => void;
   /** 抽中并点击“添加，暂不注入”时回调 */
   onPick: (soul: SkillHubSoul) => void;
@@ -96,6 +99,7 @@ export function DrawSoulModal({
   useEnglishSoulData = false,
   useGlobalChineseSoulData = false,
   useIndonesianSoulData = false,
+  useSpanishSoulData = false,
   onClose,
   onPick,
   onInject,
@@ -312,6 +316,7 @@ export function DrawSoulModal({
               useEnglishSoulData={useEnglishSoulData}
               useGlobalChineseSoulData={useGlobalChineseSoulData}
               useIndonesianSoulData={useIndonesianSoulData}
+              useSpanishSoulData={useSpanishSoulData}
             />
           )}
         </AnimatePresence>
@@ -473,6 +478,7 @@ function RevealPanel({
   useEnglishSoulData,
   useGlobalChineseSoulData,
   useIndonesianSoulData = false,
+  useSpanishSoulData = false,
 }: {
   soul: SkillHubSoul;
   onConfirm: () => void;
@@ -481,6 +487,7 @@ function RevealPanel({
   useEnglishSoulData: boolean;
   useGlobalChineseSoulData: boolean;
   useIndonesianSoulData?: boolean;
+  useSpanishSoulData?: boolean;
 }) {
   const t = useT();
   const [interpretOpen, setInterpretOpen] = useState(false);
@@ -550,6 +557,7 @@ function RevealPanel({
             useEnglishSoulData={useEnglishSoulData}
             useGlobalChineseSoulData={useGlobalChineseSoulData}
             useIndonesianSoulData={useIndonesianSoulData}
+            useSpanishSoulData={useSpanishSoulData}
             onClose={() => setInterpretOpen(false)}
           />
         )}
@@ -563,20 +571,24 @@ function SoulInterpretModal({
   useEnglishSoulData,
   useGlobalChineseSoulData,
   useIndonesianSoulData = false,
+  useSpanishSoulData = false,
   onClose,
 }: {
   soul: SkillHubSoul;
   useEnglishSoulData: boolean;
   useGlobalChineseSoulData: boolean;
   useIndonesianSoulData?: boolean;
+  useSpanishSoulData?: boolean;
   onClose: () => void;
 }) {
   const t = useT();
   const fetcher = useCallback(() => {
     if (useEnglishSoulData) {
-      const detail = useIndonesianSoulData
-        ? getIndonesianSoulDetail(soul.slug)
-        : getEnglishSoulDetail(soul.slug);
+      const detail = useSpanishSoulData
+        ? getSpanishSoulDetail(soul.slug)
+        : useIndonesianSoulData
+          ? getIndonesianSoulDetail(soul.slug)
+          : getEnglishSoulDetail(soul.slug);
       if (!detail) throw new Error("Soul detail not found");
       return Promise.resolve(detail);
     }
@@ -586,8 +598,8 @@ function SoulInterpretModal({
       return Promise.resolve(detail);
     }
     return fetchSoulDetail(soul.slug);
-  }, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
-  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
+  }, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
+  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
 
   // 用 Portal 挂到 body，避开 reveal panel 的 padding/高度裁切，
   // 同时 fixed 相对视口居中，不被祖先 transform/filter 影响。
@@ -635,9 +647,11 @@ function SoulInterpretModal({
           {data && (() => {
             // 优先使用本地 SkillHub 同款"人设解读 + 5 维度"；缺失时回退到 OpenSpec
             const spec = useEnglishSoulData
-              ? (useIndonesianSoulData
-                  ? getIndonesianSoulSpec(soul.slug)
-                  : getEnglishSoulSpec(soul.slug))
+              ? (useSpanishSoulData
+                  ? getSpanishSoulSpec(soul.slug)
+                  : useIndonesianSoulData
+                    ? getIndonesianSoulSpec(soul.slug)
+                    : getEnglishSoulSpec(soul.slug))
               : useGlobalChineseSoulData
                 ? getGlobalChineseSoulSpec(soul.slug)
                 : getSoulSpec(soul.slug);

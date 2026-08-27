@@ -25,6 +25,7 @@ function langForOutputPath(path) {
   if (relative.startsWith('zh-sg/')) return 'zh-SG';
   if (relative.startsWith('zh-hant/')) return 'zh-Hant';
   if (relative.startsWith('id-id/')) return 'id-ID';
+  if (relative.startsWith('es/')) return 'es';
   return defaultHtmlLang;
 }
 
@@ -65,8 +66,65 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function nextFlightSource(routePaths) {
-  return `^/(${routePaths.join('|')})\\.txt$`;
+function regexAlternation(values) {
+  return values.length === 1 ? values[0] : `(?:${values.join('|')})`;
+}
+
+function compactNextFlightBranches(routePaths) {
+  const childrenByParent = new Map();
+  for (const routePath of routePaths) {
+    const separator = routePath.lastIndexOf('/');
+    const parent = separator === -1 ? '' : routePath.slice(0, separator);
+    const child = separator === -1 ? routePath : routePath.slice(separator + 1);
+    const children = childrenByParent.get(parent) ?? [];
+    children.push(child);
+    childrenByParent.set(parent, children);
+  }
+
+  // Localized routes usually share the same child set. Factoring their parent
+  // prefixes keeps the EdgeOne config bounded without matching arbitrary .txt assets.
+  const groupsByChildren = new Map();
+  for (const [parent, children] of childrenByParent) {
+    const sortedChildren = children.sort();
+    const groupKey = `${parent === '' ? 'root' : 'nested'}:${sortedChildren.join('\0')}`;
+    const group = groupsByChildren.get(groupKey) ?? { parents: [], children: sortedChildren };
+    group.parents.push(parent);
+    groupsByChildren.set(groupKey, group);
+  }
+
+  const branches = [];
+  for (const { parents, children } of groupsByChildren.values()) {
+    const parentExpression = parents[0] === ''
+      ? ''
+      : `${regexAlternation(parents.sort().map(escapeRegex))}/`;
+    let currentChildren = [];
+
+    const branchFor = (candidateChildren) =>
+      `${parentExpression}${regexAlternation(candidateChildren.map(escapeRegex))}`;
+    const flush = () => {
+      if (currentChildren.length === 0) return;
+      branches.push(branchFor(currentChildren));
+      currentChildren = [];
+    };
+
+    for (const child of children) {
+      const candidate = [...currentChildren, child];
+      if (currentChildren.length > 0 && Buffer.byteLength(nextFlightSource([branchFor(candidate)])) > maxFlightRouteSourceBytes) {
+        flush();
+      }
+      currentChildren.push(child);
+      if (Buffer.byteLength(nextFlightSource([branchFor(currentChildren)])) > maxFlightRouteSourceBytes) {
+        throw new Error(`EdgeOne Flight route exceeds ${maxFlightRouteSourceBytes} bytes: ${parentExpression}${child}`);
+      }
+    }
+    flush();
+  }
+
+  return branches.sort();
+}
+
+function nextFlightSource(routeBranches) {
+  return `^/(${routeBranches.join('|')})\\.txt$`;
 }
 
 function collectNextFlightRoutes() {
@@ -79,14 +137,14 @@ function collectNextFlightRoutes() {
     current = [];
   }
 
-  for (const routePath of collectNextFlightRoutePaths().map(escapeRegex)) {
-    const candidate = nextFlightSource([...current, routePath]);
+  for (const routeBranch of compactNextFlightBranches(collectNextFlightRoutePaths())) {
+    const candidate = nextFlightSource([...current, routeBranch]);
     if (current.length > 0 && Buffer.byteLength(candidate) > maxFlightRouteSourceBytes) {
       flush();
     }
-    current.push(routePath);
+    current.push(routeBranch);
     if (Buffer.byteLength(nextFlightSource(current)) > maxFlightRouteSourceBytes) {
-      throw new Error(`EdgeOne Flight route exceeds ${maxFlightRouteSourceBytes} bytes: ${routePath}`);
+      throw new Error(`EdgeOne Flight route exceeds ${maxFlightRouteSourceBytes} bytes: ${routeBranch}`);
     }
   }
   flush();

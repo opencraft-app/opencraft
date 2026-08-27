@@ -40,6 +40,8 @@ describe("publicSiteHref", () => {
     expect(publicSiteHref("/changelog", "id-ID", { localized: true })).toBe("/id-id/changelog");
     expect(publicSiteHref("/subscribe", "id-ID", { localized: true })).toBe("/id-id/subscribe");
     expect(publicSiteHref("/support", "id-ID", { localized: true })).toBe("/id-id/support");
+    expect(publicSiteHref("/about", "es", { localized: true })).toBe("/es/about");
+    expect(publicSiteHref("/agents", "es", { localized: true })).toBe("/agents");
   });
 });
 

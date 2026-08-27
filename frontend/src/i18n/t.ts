@@ -32,6 +32,7 @@ import { useCallback } from "react";
 
 import zhToKey from "./generated/zh-to-key.json";
 import i18n from "./index";
+import type { I18nDictKey } from "./locales.config";
 
 /** 反查表类型：中文 → hash key */
 type ZhToKeyMap = Record<string, string>;
@@ -39,7 +40,7 @@ type ZhToKeyMap = Record<string, string>;
 const zhToKeyMap = zhToKey as ZhToKeyMap;
 
 /** 支持的 i18n locale —— 与 src/i18n/index.ts 中的 resources 保持一致 */
-export type I18nLocale = "zh-CN" | "en-US" | "zh-Hant" | "id-ID";
+export type I18nLocale = I18nDictKey;
 
 /**
  * Locale override context —— 由路由层（例如 Next.js App Router 的 layout）

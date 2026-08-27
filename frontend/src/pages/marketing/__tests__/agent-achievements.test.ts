@@ -186,6 +186,8 @@ describe("openclaw achievements debug exec helpers", () => {
     expect(achievementTimestampLocale("zh-CN")).toBe("zh-CN");
     expect(achievementTimestampLocale("zh-Hans")).toBe("zh-CN");
     expect(achievementTimestampLocale("en-US")).toBe("en-US");
+    expect(achievementTimestampLocale("es")).toBe("es");
+    expect(achievementTimestampLocale("es-ES")).toBe("es");
     expect(achievementTimestampLocale(undefined)).toBe("en-US");
   });
 

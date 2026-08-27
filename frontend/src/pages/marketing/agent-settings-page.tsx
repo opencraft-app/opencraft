@@ -80,6 +80,7 @@ import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-swi
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
+import { shouldUseEnglishProviderData } from "@/pages/marketing/agent-provider-locale";
 import {
   fetchHermesMemorySnapshot,
   getHermesMemoryLimitBounds,
@@ -278,6 +279,7 @@ function TeaSdkSettingsPanel({
           region: instance.Zone,
           regionId: instance.RegionId,
         })}
+        isGlobalRegion={isGlobal}
       />
     );
   }
@@ -2927,7 +2929,7 @@ export const AgentSettingsPage = ({
   const paidBillingEnabled = usePaidBillingEnabled();
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
-  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
   const {
     commandLifecycle: automationModelCommandLifecycle,
     confirmationDialog: automationModelSwitchDialog,
@@ -3020,7 +3022,7 @@ export const AgentSettingsPage = ({
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const activeBotStatus = activeBot?.status;
   const passExpiryReminder = useMemo(
-    () => (paidBillingActive ? getPassExpiryReminder(activePass) : null),
+    () => (isGlobal || paidBillingActive ? getPassExpiryReminder(activePass) : null),
     [activePass, paidBillingActive],
   );
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
@@ -3785,7 +3787,7 @@ export const AgentSettingsPage = ({
   }), []);
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
-  const useEnglish = !!i18n.language?.startsWith("en");
+  const useEnglish = shouldUseEnglishProviderData(i18n.language);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
     isGlobalRegion: isGlobal,
     hiddenToolsRevealed: showHiddenAgentTools,

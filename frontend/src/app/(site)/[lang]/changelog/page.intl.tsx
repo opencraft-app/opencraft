@@ -17,6 +17,9 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: '更新日志',
   [PUBLIC_SITE_LOCALES.ZH_SG]: '更新日志',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Catatan Rilis',
+  [PUBLIC_SITE_LOCALES.ES]: 'Novedades',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'Changelog',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'Changelog',
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -25,6 +28,9 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_CN]: '记录 LightVela 的产品更新、能力上线与体验改进。',
   [PUBLIC_SITE_LOCALES.ZH_SG]: '记录 LightVela 的产品更新、能力上线与体验改进。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Pembaruan produk, kemampuan baru, dan peningkatan pengalaman dari LightVela.',
+  [PUBLIC_SITE_LOCALES.ES]: 'Consulta las actualizaciones del producto, las nuevas funciones y las mejoras de experiencia de LightVela.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: 'Product updates, new capabilities, and experience improvements from LightVela.',
+  [PUBLIC_SITE_LOCALES.KO_KR]: 'Product updates, new capabilities, and experience improvements from LightVela.',
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

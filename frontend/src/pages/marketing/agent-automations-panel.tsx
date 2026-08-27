@@ -20,7 +20,9 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useT } from "@/i18n/t";
-import { isGlobal } from "@/lib/region";
+import { parseLocaleCode } from "@/i18n/locales.config";
+import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
+import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import {
   listInstalledSkillSlugs,
   type InstalledSkillLoadState,
@@ -82,18 +84,33 @@ const AUTOMATION_PROMPT_MAX_LENGTH = 1000;
 const CHAT_ID_MAX_LENGTH = 60;
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
-type AutomationDisplayLocale = "zh-CN" | "zh-SG" | "en-US" | "id-ID";
+/**
+ * 自动任务展示所用的 locale，直接复用注册表类型。
+ *
+ * 此前本文件自持 `"zh-CN" | "zh-SG" | "en-US" | "id-ID"` 联合类型副本，
+ * 与 `scenario-job-presentation.ts` 中的同名类型构成镜像，新增语种时
+ * 两处都要改且漏改不报错。
+ */
+type AutomationDisplayLocale = PublicSiteLocaleCode;
 type ScenarioMutationStatus = "creating" | "enabling";
 type ScenarioReminderNotice = {
   draft: ScenarioTaskDraft;
   kind: "preview" | "recurring";
 };
 
+/**
+ * 把 i18next 的运行时语言收敛为自动任务展示 locale。
+ *
+ * ⚠️ 刻意使用注册表白名单校验（`parseLocaleCode`）而非
+ * `language?.startsWith("en")` 一类前缀猜测。前缀猜测的问题：
+ *   - 新增语种时不会报错，只会静默落到最后的 `return "zh-CN"`，
+ *     用户侧表现为「界面已切日语，自动任务区却仍是中文」；
+ *   - `startsWith("en")` 会把任何以 en 开头的值都当成英文。
+ *
+ * 无法识别的语言（含被篡改的 localStorage 值）回退到区域默认语言。
+ */
 function getAutomationDisplayLocale(language: string | undefined): AutomationDisplayLocale {
-  if (language?.startsWith("en")) return "en-US";
-  if (language === "id-ID") return "id-ID";
-  if (language === "zh-SG") return "zh-SG";
-  return "zh-CN";
+  return parseLocaleCode(language) ?? DEFAULT_LOCALE;
 }
 
 export function toCreateCronSkills(selectedSkill: string): string[] | undefined {

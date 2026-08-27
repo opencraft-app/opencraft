@@ -767,8 +767,8 @@ const SubscriptionSection = ({
   const renewalRealnameVerified = isRenewalRealnameVerified(session.user, realnamePhoneVerificationEnabled);
 
   /**
-   * 只读 fallback pass — 国内站场景：activePass 为 null 但用户仍有 expired/isolated pass 需要续费或销毁。
-   * 仅在国内站且未多貌 activePass 时拉一次，避免与 agent-context.refreshPasses 重复干活。
+   * 只读 fallback pass：activePass 为空时仍需展示 expired/isolated pass 的续费状态。
+   * 国内站仅在付费开关开启时拉取；国际站关闭时也要展示 Coming Soon。
    */
   const [fallbackPass, setFallbackPass] = useState<Pass | null>(null);
 
@@ -777,7 +777,7 @@ const SubscriptionSection = ({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!paidBillingActive) return;
+    if (!isGlobal && !paidBillingActive) return;
     if (pass) {
       setFallbackPass(null);
       return;
@@ -803,8 +803,8 @@ const SubscriptionSection = ({
   /** 可操作的 pass：优先 active，其次 fallback */
   const operablePass = pass ?? fallbackPass;
   const passStatus = operablePass ? getPassStatus(operablePass) : null;
-  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
-  const canRenew = paidBillingActive && operablePass != null && canRenewPass(operablePass);
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
+  const canRenew = (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
   const canDelete = paidBillingActive && operablePass != null && canDeletePass(operablePass);
 
   const handleRenewSuccess = useCallback(async () => {
@@ -1014,7 +1014,7 @@ const SubscriptionSection = ({
           </>
         )}
 
-        {/* 续费 / 销毁按钮区：国际站续费暂置灰，国内站保留真实续费入口。 */}
+        {/* 续费 / 销毁按钮区：国际站续费由 paidBillingEnabled 控制。 */}
         {(canRenew || canDelete) && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
@@ -1050,14 +1050,14 @@ const SubscriptionSection = ({
               )}
               {passStatus === "isolated" && (
                 <p className="basis-full text-xs" style={{ color: "#C67B1E" }}>
-                  {isGlobal
+                  {!renewalAvailable
                     ? t("续费功能敬请期待。你仍可销毁当前套餐后重新购买。")
                     : t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
                 </p>
               )}
               {passStatus === "expired" && (
                 <p className="basis-full text-xs" style={{ color: "#cf3d4c" }}>
-                  {isGlobal
+                  {!renewalAvailable
                     ? t("续费功能敬请期待。套餐已过期，暂时无法发起续费。")
                     : t("套餐已过期，请及时续费以免进入隔离期。")}
                 </p>
@@ -1067,7 +1067,7 @@ const SubscriptionSection = ({
         )}
       </div>
 
-      {/* 续费 / 销毁弹窗 — 国际站续费入口置灰，续费弹窗仅国内站触发。 */}
+      {/* 续费 / 销毁弹窗 — 国际站续费入口由 paidBillingEnabled 控制。 */}
       <AnimatePresence>
         {renewModalOpen && renewalAvailable && operablePass && (
           <RenewPassModal

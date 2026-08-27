@@ -124,6 +124,8 @@ export function buildScenarioTaskDraft({
         ? "one-time run"
         : pack.quickPromptLocale === "id-ID"
           ? "sekali jalan"
+          : pack.quickPromptLocale === "es"
+            ? "ejecución única"
           : "单次执行"
     }`,
     skillIds,
@@ -467,6 +469,9 @@ function buildUserFacingScenarioPrompt(
   if (pack.quickPromptLocale === "id-ID") {
     return buildIndonesianUserFacingScenarioPrompt(pack, values, userPrompt);
   }
+  if (pack.quickPromptLocale === "es") {
+    return buildSpanishUserFacingScenarioPrompt(pack, values, userPrompt);
+  }
   const scenarioPrompt = pack.promptBuilder(values);
   return [
     "你正在执行一个 LightVela 场景任务。请把输出写成可以直接发送给用户的最终消息。",
@@ -559,6 +564,42 @@ function buildIndonesianUserFacingScenarioPrompt(
     .join("\n\n");
 }
 
+function buildSpanishUserFacingScenarioPrompt(
+  pack: ScenarioTaskPack,
+  values: Record<string, string>,
+  userPrompt: string,
+): string {
+  const valueLines = buildSpanishScenarioValueLines(pack, values);
+  return [
+    "Estás ejecutando una automatización de LightVela. Escribe el resultado final como un mensaje listo para enviar directamente al usuario.",
+    [
+      `Nombre de la tarea: ${pack.name}`,
+      "Requisitos de salida:",
+      "1. Empieza con una frase clara que resuma el resultado o el recordatorio principal.",
+      "2. Mantén el mensaje visible breve: como máximo 6 líneas con la conclusión, los datos esenciales y el siguiente paso.",
+      "3. No muestres job_id, Cronjob, códigos de estado HTTP, trazas, registros de depuración ni pasos internos.",
+      "4. Si falta información externa, indica brevemente qué no se pudo confirmar y qué debe revisar el usuario.",
+      "5. Si el modelo, una herramienta o un servicio previo no está disponible, explica con claridad que la ejecución no se completó y sugiere intentarlo más tarde o revisar la configuración del modelo.",
+      "6. Trátalo como un flujo de automatización: comprueba primero la condición de activación y el estado actual; después comunica el resultado, el riesgo y la siguiente acción. No pidas a otro Agent que envíe el mensaje; cron deliver gestiona la entrega final.",
+      "7. Las tareas programadas deben activarse de forma predecible. No añadas retrasos aleatorios. Si el horario parece incorrecto, revisa en cron list lastRunAtMs, nextRunAtMs y createdAtMs antes de explicarlo.",
+    ].join("\n"),
+    "Solicitud del escenario:",
+    `Solicitud del usuario: ${userPrompt}`,
+    valueLines.length ? ["Detalles proporcionados por el usuario:", ...valueLines].join("\n") : null,
+    pack.needsRealtime
+      ? [
+          "Reglas de consulta en tiempo real:",
+          "Usa web_search, web_fetch y comprobaciones de fecha y hora de forma acotada cuando se necesiten datos actuales.",
+          "Utiliza como máximo 3 búsquedas concretas y 4 páginas de fuentes, salvo que el usuario pida expresamente más.",
+          "Conserva los nombres o enlaces de las fuentes cuando sean importantes para la fiabilidad.",
+        ].join("\n")
+      : null,
+    pack.safetyNote ? `Nota de seguridad: ${pack.safetyNote}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 const ENGLISH_SCENARIO_FIELD_LABELS: Record<string, string> = {
   actionMode: "mode",
   advanceDays: "advance reminder",
@@ -619,6 +660,36 @@ const INDONESIAN_SCENARIO_FIELD_LABELS: Record<string, string> = {
   triggerAt: "waktu pemicu",
 };
 
+const SPANISH_SCENARIO_FIELD_LABELS: Record<string, string> = {
+  actionMode: "modo",
+  advanceDays: "aviso anticipado",
+  alertLevel: "nivel de alerta",
+  checkinTime: "hora del registro",
+  courseEndDate: "fecha de finalización",
+  customRequest: "notas",
+  dueDate: "fecha de vencimiento",
+  fitnessGoal: "objetivo",
+  foodLog: "contenido del registro",
+  fromCurrency: "moneda de origen",
+  holidayCountries: "países o regiones",
+  holidayScope: "cobertura de festivos",
+  holidayWeatherPlan: "seguimiento del tiempo y las alertas",
+  includeDueDay: "aviso el día del vencimiento",
+  medicine: "indicaciones de la medicación",
+  recurringTimes: "horas de aviso",
+  reminderMode: "modo de recordatorio",
+  reminderTime: "hora del recordatorio",
+  reminderWindow: "ventana del recordatorio",
+  rentInfo: "detalles de facturación",
+  reportStyle: "estilo de respuesta",
+  stockFocus: "enfoque",
+  stockList: "acciones",
+  thresholdMode: "condición de activación",
+  thresholdValue: "umbral",
+  toCurrency: "moneda de destino",
+  triggerAt: "hora de activación",
+};
+
 function buildEnglishScenarioValueLines(
   pack: ScenarioTaskPack,
   values: Record<string, string>,
@@ -649,6 +720,21 @@ function buildIndonesianScenarioValueLines(
     .filter((line): line is string => Boolean(line));
 }
 
+function buildSpanishScenarioValueLines(
+  pack: ScenarioTaskPack,
+  values: Record<string, string>,
+): string[] {
+  return pack.fields
+    .map((field) => {
+      if (!isScenarioTaskFieldVisible(field, values)) return "";
+      const value = getScenarioFieldValueForPrompt(field, values);
+      if (!value) return "";
+      const label = SPANISH_SCENARIO_FIELD_LABELS[field.key] ?? englishizeFieldKey(field.key);
+      return `${label}: ${formatSpanishScenarioFieldValue(field, value)}.`;
+    })
+    .filter((line): line is string => Boolean(line));
+}
+
 function getScenarioFieldValueForPrompt(
   field: ScenarioTaskField,
   values: Record<string, string>,
@@ -665,6 +751,11 @@ function formatEnglishScenarioFieldValue(field: ScenarioTaskField, value: string
     .map((part) => labelByValue.get(part.trim()) ?? part.trim())
     .filter(Boolean)
     .join(", ");
+}
+
+function formatSpanishScenarioFieldValue(field: ScenarioTaskField, value: string): string {
+  if (field.type === "checkbox") return value === "yes" ? "sí" : "no";
+  return formatEnglishScenarioFieldValue(field, value);
 }
 
 function englishizeFieldKey(key: string): string {

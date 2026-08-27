@@ -74,6 +74,18 @@ describe("CookieConsentBanner", () => {
     expect(screen.getByRole("link", { name: "Cookie 政策" })).toHaveAttribute("href", "/zh-cn/cookie-policy");
   });
 
+  it("uses Spanish copy and keeps the Spanish cookie-policy route", () => {
+    routeState.language = "es";
+    routeState.pathname = "/es/about";
+
+    renderBanner();
+
+    expect(screen.getByRole("heading", { name: "Usamos cookies" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Política de cookies" })).toHaveAttribute("href", "/es/cookie-policy");
+    expect(screen.getByRole("button", { name: "Solo las necesarias" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aceptar todas" })).toBeInTheDocument();
+  });
+
   it("stores a necessary-only choice and hides the banner", () => {
     renderBanner();
 

@@ -15,28 +15,50 @@ afterEach(() => {
 });
 
 describe("首页 Hero 文案", () => {
-  it("只在国内站展示新的两句文案", () => {
+  it("在国内站展示最终简中文案", () => {
     render(
       <LocaleOverrideProvider locale="zh-CN">
         <HeroSection />
       </LocaleOverrideProvider>,
     );
 
-    if (isCN) {
-      expect(screen.getByText("LightVela · Hermes Agent")).toBeInTheDocument();
-      const heading = screen.getByRole("heading", {
-        name: "越用越懂你，长期在线的 AI 伙伴",
-      });
-      expect(heading).toHaveClass("text-[30px]", "sm:text-[48px]", "lg:text-[56px]");
-      return;
-    }
+    if (!isCN) return;
 
-    expect(
-      screen.getByText("云端托管 Hermes Agent，越聊越懂你的智能伙伴"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("LightVela · 云端 Hermes Agent")).toBeInTheDocument();
     const heading = screen.getByRole("heading", {
-      name: "灵感随时发生，思考自由流动",
+      name: "你的 AI 伙伴，长期在线，持续进化",
     });
+    expect(heading).toHaveClass("text-[30px]", "sm:text-[48px]", "lg:text-[56px]");
+  });
+
+  it.each([
+    ["zh-CN", "LightVela · 云端 Hermes Agent", "你的 AI 伙伴，随时都在，持续进化"],
+    [
+      "zh-Hant",
+      "LightVela · 雲端 Hermes Agent",
+      "你的 AI 夥伴，隨時都在，持續進化",
+    ],
+    [
+      "en-US",
+      "LightVela · Hermes Agent in the Cloud",
+      "Your AI companion—always here, always evolving with you",
+    ],
+    [
+      "id-ID",
+      "LightVela · Hermes Agent di cloud",
+      "Pendamping AI-mu—selalu ada, selalu berkembang bersamamu",
+    ],
+  ] as const)("在国际站展示 %s Hero 文案", (locale, eyebrow, slogan) => {
+    render(
+      <LocaleOverrideProvider locale={locale}>
+        <HeroSection />
+      </LocaleOverrideProvider>,
+    );
+
+    if (isCN) return;
+
+    expect(screen.getByText(eyebrow)).toBeInTheDocument();
+    const heading = screen.getByRole("heading", { name: slogan });
     expect(heading).toHaveClass("text-[30px]", "sm:text-[52px]", "lg:text-[64px]");
   });
 });
