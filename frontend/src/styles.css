@@ -292,13 +292,15 @@ a {
 
 /* ── /agents 左侧导航视觉升级 ───────────────────────────────────────────── */
 .lv-agents-sidebar {
+  --lv-agents-nav-width: 220px;
+
   min-height: calc(100dvh - 178px);
   padding-right: 28px;
   border-right: 1px solid #e9ecf1;
 }
 
 .lv-agent-profile-wrap {
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   padding-bottom: 16px;
   border-bottom: 1px solid #e9ecf1;
 }
@@ -306,7 +308,7 @@ a {
 .lv-agent-profile {
   position: relative;
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   min-height: 44px;
   align-items: center;
   gap: 16px;
@@ -489,7 +491,7 @@ a {
 
 .lv-agent-create-button {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   height: 36px;
   align-items: center;
   justify-content: center;
@@ -518,7 +520,7 @@ a {
 
 .lv-agents-nav {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   flex-direction: column;
   gap: 12px;
   margin-top: 16px;
@@ -557,7 +559,7 @@ a {
 
 .lv-agents-nav-item {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   height: 36px;
   align-items: center;
   gap: 14px;
@@ -578,6 +580,11 @@ a {
   font-weight: 600;
 }
 
+.lv-agents-nav-item.has-badge {
+  gap: 8px;
+  font-size: 13px;
+}
+
 .lv-agents-nav-icon {
   display: flex;
   width: 14px;
@@ -595,7 +602,7 @@ a {
 
 .lv-agent-feedback-link {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   align-items: center;
   gap: 8px;
   margin-top: 16px;
@@ -661,6 +668,7 @@ a {
   .lv-agents-nav-item {
     width: 100%;
   }
+
 }
 
 @media (max-width: 720px) {

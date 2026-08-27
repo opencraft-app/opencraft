@@ -10,7 +10,8 @@
     "daily_report_patterns": ["????-??-??.md"],
     "progress_root": "wiki/sources",
     "progress_filename": "README.md",
-    "changelog_filename": "README.md"
+    "changelog_filename": "README.md",
+    "releases_source": "frontend/src/pages/marketing/changelog-page.tsx"
   },
   "brief_output": {
     "gongfeng_project_id": "TencentLightCloud/center-reports",

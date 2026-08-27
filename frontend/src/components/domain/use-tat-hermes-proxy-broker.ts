@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
-import { isHermesWebTextResponse, rewriteHermesWebTextPayload } from "@/lib/tat-hermes-web-proxy-rewrite";
-import { createTatHermesWebFetch, type TatHttpVirtualFetch } from "@/lib/tat-http-virtual-client";
+import { isHermesWebTextResponse, rewriteTatWebTextPayload } from "@/lib/tat-hermes-web-proxy-rewrite";
+import { createTatHermesWebFetch, createTatPortFetch, type TatHttpVirtualFetch } from "@/lib/tat-http-virtual-client";
 
 type HermesWebStatus = "idle" | "registering" | "ready" | "error";
 
@@ -47,6 +47,12 @@ const SERVICE_WORKER_URL = "/tat-hermes-web-proxy-sw.js";
 const PROXY_PREFIX = "/__tat_hermes_proxy";
 const SERVICE_WORKER_SCOPE = "/";
 const BROKER_REGISTRATION_HEARTBEAT_MS = 60_000;
+
+export type TatWebProxyTarget = "hermes" | "deepseek-harness";
+
+const targetConfig = (target: TatWebProxyTarget, botId: string) => target === "deepseek-harness"
+  ? { brokerId: `dsh--${botId}`, port: 3080 }
+  : { brokerId: botId, port: 9119 };
 
 const proxyBaseFor = (botId: string) => `${PROXY_PREFIX}/${encodeURIComponent(botId)}`;
 
@@ -126,7 +132,7 @@ const postHermesBrokerRegistration = (worker: ServiceWorker | null, botId: strin
   });
 };
 
-export const useTatHermesProxyBroker = (botId: string) => {
+export const useTatHermesProxyBroker = (botId: string, target: TatWebProxyTarget = "hermes") => {
   const t = useT();
   const repositories = useRepositories();
   const tRef = useRef(t);
@@ -138,7 +144,8 @@ export const useTatHermesProxyBroker = (botId: string) => {
   const [reloadKey, setReloadKey] = useState(0);
   const [diagnostic, setDiagnostic] = useState<TatHermesProxyDiagnostic>(initialDiagnostic);
 
-  const proxyBase = useMemo(() => proxyBaseFor(botId), [botId]);
+  const config = useMemo(() => targetConfig(target, botId), [botId, target]);
+  const proxyBase = useMemo(() => proxyBaseFor(config.brokerId), [config.brokerId]);
   const frameUrl = useMemo(() => `${proxyBase}/`, [proxyBase]);
 
   useEffect(() => {
@@ -150,10 +157,12 @@ export const useTatHermesProxyBroker = (botId: string) => {
       return fetchRef.current;
     }
     const bootstrap = await repositories.bots.getTerminalSession(botId);
-    const tatFetch = createTatHermesWebFetch(bootstrap);
+    const tatFetch = target === "deepseek-harness"
+      ? createTatPortFetch(bootstrap, config.port)
+      : createTatHermesWebFetch(bootstrap);
     fetchRef.current = tatFetch;
     return tatFetch;
-  }, [botId, repositories.bots]);
+  }, [botId, config.port, repositories.bots, target]);
 
   useEffect(() => {
     return () => {
@@ -169,7 +178,7 @@ export const useTatHermesProxyBroker = (botId: string) => {
     pendingRequestsRef.current.clear();
     setDiagnostic(initialDiagnostic());
     setReloadKey((key) => key + 1);
-  }, [botId]);
+  }, [botId, target]);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,9 +205,9 @@ export const useTatHermesProxyBroker = (botId: string) => {
         });
         await waitForServiceWorkerActivation(registration);
         activeWorker = registration.active ?? (await navigator.serviceWorker.ready).active;
-        postHermesBrokerRegistration(activeWorker, botId, true);
+        postHermesBrokerRegistration(activeWorker, config.brokerId, true);
         heartbeatTimer = window.setInterval(() => {
-          postHermesBrokerRegistration(activeWorker, botId, true);
+          postHermesBrokerRegistration(activeWorker, config.brokerId, true);
         }, BROKER_REGISTRATION_HEARTBEAT_MS);
         if (!cancelled) {
           setStatus("ready");
@@ -217,9 +226,9 @@ export const useTatHermesProxyBroker = (botId: string) => {
       if (heartbeatTimer !== null) {
         window.clearInterval(heartbeatTimer);
       }
-      postHermesBrokerRegistration(activeWorker, botId, false);
+      postHermesBrokerRegistration(activeWorker, config.brokerId, false);
     };
-  }, [botId]);
+  }, [config.brokerId]);
 
   useEffect(() => {
     const streamResponseBody = async (request: HermesProxyRequest, port: MessagePort, response: Response) => {
@@ -359,7 +368,7 @@ export const useTatHermesProxyBroker = (botId: string) => {
           let body = await response.arrayBuffer();
           if (isHermesWebTextResponse(contentType) && body.byteLength > 0) {
             const text = new TextDecoder().decode(body);
-            const rewritten = rewriteHermesWebTextPayload(text, contentType, proxyBase);
+            const rewritten = rewriteTatWebTextPayload(text, contentType, proxyBase, config.port);
             body = new TextEncoder().encode(rewritten).buffer;
           }
           const message: HermesProxyResponse = {
@@ -407,7 +416,7 @@ export const useTatHermesProxyBroker = (botId: string) => {
 
     const handleMessage = (event: MessageEvent) => {
       const port = event.ports[0];
-      if (!port || !isHermesProxyRequest(event.data) || event.data.botId !== botId) {
+      if (!port || !isHermesProxyRequest(event.data) || event.data.botId !== config.brokerId) {
         return;
       }
       port.postMessage({
@@ -426,7 +435,7 @@ export const useTatHermesProxyBroker = (botId: string) => {
     return () => {
       navigator.serviceWorker?.removeEventListener("message", handleMessage);
     };
-  }, [botId, getHermesWebFetch, proxyBase]);
+  }, [config.brokerId, config.port, getHermesWebFetch, proxyBase]);
 
   const reload = useCallback(() => {
     responseCacheRef.current.clear();

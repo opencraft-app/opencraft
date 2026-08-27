@@ -258,7 +258,7 @@ for (const [dictKey, dict] of dictionaries) {
  * QQ / Kimi / 智谱等），应由对应需求负责人补齐。
  */
 const KNOWN_TRANSLATION_DEBT = {
-  "id-ID": 178,
+  "id-ID": 176,
 };
 
 if (CHECK_ONLY) {

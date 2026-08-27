@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useTatHermesProxyBroker } from "@/components/domain/use-tat-hermes-proxy-broker";
-import { createTatHermesWebFetch, type TatHttpVirtualFetch } from "@/lib/tat-http-virtual-client";
+import { createTatHermesWebFetch, createTatPortFetch, type TatHttpVirtualFetch } from "@/lib/tat-http-virtual-client";
 
 const getTerminalSession = vi.fn();
 const tatFetch = Object.assign(vi.fn(), {
@@ -31,6 +31,7 @@ vi.mock("@/lib/tat-http-virtual-client", async () => {
   return {
     ...actual,
     createTatHermesWebFetch: vi.fn(),
+    createTatPortFetch: vi.fn(),
   };
 });
 
@@ -102,7 +103,10 @@ describe("useTatHermesProxyBroker", () => {
     tatFetch.mockReset();
     tatFetch.close.mockReset();
     tatFetch.json.mockReset();
+    vi.mocked(createTatHermesWebFetch).mockReset();
+    vi.mocked(createTatPortFetch).mockReset();
     vi.mocked(createTatHermesWebFetch).mockReturnValue(tatFetch);
+    vi.mocked(createTatPortFetch).mockReturnValue(tatFetch);
 
     const worker = {
       state: "activated",
@@ -219,6 +223,47 @@ describe("useTatHermesProxyBroker", () => {
     expect(workerMessages).toContainEqual({
       type: "tat-hermes-proxy-broker-unregister",
       botId: "ins-stream",
+    });
+  });
+
+  it("uses a dedicated broker identity and port for DeepSeek Harness", async () => {
+    tatFetch.mockResolvedValue(new Response("ok", { status: 200, headers: { "Content-Type": "text/plain" } }));
+    const { result, unmount } = renderHook(() => useTatHermesProxyBroker("ins-dsh", "deepseek-harness"));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    expect(result.current.frameUrl).toBe("/__tat_hermes_proxy/dsh--ins-dsh/");
+
+    const channel = await dispatchProxyRequest({
+      type: "tat-hermes-proxy-request",
+      requestId: "req-dsh",
+      botId: "dsh--ins-dsh",
+      method: "GET",
+      url: "/",
+      headers: [],
+      body: null,
+    });
+    await expect(nextPortMessage(channel.port1)).resolves.toMatchObject({
+      type: "tat-hermes-proxy-accepted",
+      requestId: "req-dsh",
+    });
+    await expect(nextPortMessage(channel.port1)).resolves.toMatchObject({
+      type: "tat-hermes-proxy-response",
+      requestId: "req-dsh",
+      status: 200,
+    });
+    expect(createTatPortFetch).toHaveBeenCalledWith(bootstrap, 3080);
+    expect(createTatHermesWebFetch).not.toHaveBeenCalled();
+    expect(workerMessages).toContainEqual({
+      type: "tat-hermes-proxy-broker-register",
+      botId: "dsh--ins-dsh",
+    });
+
+    unmount();
+    expect(workerMessages).toContainEqual({
+      type: "tat-hermes-proxy-broker-unregister",
+      botId: "dsh--ins-dsh",
     });
   });
 
