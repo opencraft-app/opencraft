@@ -5,6 +5,8 @@
   "自动任务示例模板": "Plantillas de Jobs",
   "LightVela 自动任务测试消息：通知通道已连接。": "Mensaje de prueba de automatizaciones de LightVela: el canal de notificaciones está conectado.",
   "最近执行": "Ejecuciones recientes",
+  "删除后将解除上游绑定并继续独立执行": "Al eliminarlo, se desvinculará del Job upstream y continuará ejecutándose de forma independiente",
+  "未命名任务": "Job sin nombre",
   "自动任务检查失败": "No se pudieron comprobar los Jobs",
   "模型已切换，并同步更新 {{count}} 个自动任务。": "Se cambió el modelo y se sincronizaron {{count}} Jobs.",
   "模型已切换；自动任务同步成功 {{succeeded}} 个，失败 {{failed}} 个。": "Se cambió el modelo; se sincronizaron {{succeeded}} Jobs y fallaron {{failed}}.",
