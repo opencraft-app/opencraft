@@ -271,28 +271,47 @@ validate_existing_profile() {
   fi
   python3 - "${LIVE_PROFILE}/package.json" <<'PY'
 import json
+import os
+import stat
 import sys
 
-allowed = {
-    "@deepseek-ai/dsh-base",
-    "@deepseek-ai/dsh-web-app",
-    "@cocofhu/skillhub",
-    "deepseek-harness-qqbot",
-    "deepseek-harness-weixin",
-    "deepseek-harness-wecom",
-    "deepseek-harness-lark",
-    "deepseek-harness-dingtalk",
-}
-with open(sys.argv[1], encoding="utf-8") as handle:
-    profile = json.load(handle)
+root = os.path.dirname(sys.argv[1])
+root_stat = os.lstat(root)
+if not stat.S_ISDIR(root_stat.st_mode):
+    raise SystemExit("existing DeepSeek Harness web profile is not a regular directory")
+for name in ("package.json", "pnpm-lock.yaml", ".pnpmfile.cjs", "pnpm-workspace.yaml", "cordis.patch.yml"):
+    path = os.path.join(root, name)
+    if os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode):
+        raise SystemExit(f"invalid DeepSeek Harness profile control file: {name}")
+flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+descriptor = os.open(sys.argv[1], flags)
+try:
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        raise SystemExit("existing DeepSeek Harness package.json is not a regular file")
+    with os.fdopen(descriptor, encoding="utf-8") as handle:
+        descriptor = -1
+        profile = json.load(handle)
+finally:
+    if descriptor >= 0:
+        os.close(descriptor)
+if not isinstance(profile, dict):
+    raise SystemExit("existing DeepSeek Harness web profile is not a JSON object")
 for field in ("dependencies", "devDependencies", "optionalDependencies"):
-    unknown = set(profile.get(field, {})) - allowed
-    if unknown:
-        raise SystemExit(f"unmanaged DeepSeek Harness profile dependencies: {sorted(unknown)}")
-bundles = profile.get("dsh", {}).get("profile", {}).get("bundles", [])
-unknown = set(bundles) - allowed
-if unknown:
-    raise SystemExit(f"unmanaged DeepSeek Harness profile bundles: {sorted(unknown)}")
+    dependencies = profile.get(field, {})
+    if not isinstance(dependencies, dict):
+        raise SystemExit(f"invalid DeepSeek Harness profile {field}")
+    for name, specification in dependencies.items():
+        if not isinstance(name, str) or not name or not isinstance(specification, str) or not specification:
+            raise SystemExit(f"invalid DeepSeek Harness profile dependency in {field}")
+dsh = profile.get("dsh", {})
+if not isinstance(dsh, dict) or not isinstance(dsh.get("profile", {}), dict):
+    raise SystemExit("invalid DeepSeek Harness profile settings")
+bundles = dsh.get("profile", {}).get("bundles", [])
+if not isinstance(bundles, list) or any(not isinstance(bundle, str) or not bundle for bundle in bundles):
+    raise SystemExit("invalid DeepSeek Harness profile bundles")
+pnpm = profile.get("pnpm", {})
+if not isinstance(pnpm, dict):
+    raise SystemExit("invalid DeepSeek Harness profile pnpm settings")
 PY
 }
 
@@ -300,23 +319,51 @@ profile_fingerprint() {
   python3 - "${LIVE_PROFILE}" <<'PY'
 import hashlib
 import os
+import stat
 import sys
 
 root = sys.argv[1]
 digest = hashlib.sha256()
-if not os.path.exists(root):
+if not os.path.lexists(root):
     print("absent")
     raise SystemExit(0)
-for name in ("package.json", "pnpm-lock.yaml", ".pnpmfile.cjs", "pnpm-workspace.yaml", "cordis.patch.yml"):
-    path = os.path.join(root, name)
-    digest.update(name.encode())
-    if os.path.isfile(path):
-        digest.update(b"\0present\0")
-        with open(path, "rb") as handle:
+if not stat.S_ISDIR(os.lstat(root).st_mode):
+    raise SystemExit("DeepSeek Harness web profile is not a regular directory")
+
+flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+
+def hash_entry(path, relative):
+    metadata = os.lstat(path)
+    digest.update(relative.encode("utf-8", "surrogateescape"))
+    if stat.S_ISLNK(metadata.st_mode):
+        digest.update(b"\0link\0")
+        digest.update(os.readlink(path).encode("utf-8", "surrogateescape"))
+        return
+    if stat.S_ISDIR(metadata.st_mode):
+        digest.update(b"\0directory\0")
+        with os.scandir(path) as entries:
+            children = sorted(entries, key=lambda entry: entry.name)
+        for child in children:
+            child_relative = os.path.join(relative, child.name) if relative else child.name
+            hash_entry(child.path, child_relative)
+        return
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit(f"unsupported file in DeepSeek Harness profile: {relative}")
+    digest.update(b"\0file\0")
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise SystemExit(f"profile file changed while fingerprinting: {relative}")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
-    else:
-        digest.update(b"\0absent\0")
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+hash_entry(root, "")
 print(digest.hexdigest())
 PY
 }
@@ -594,27 +641,72 @@ prune_old_releases() {
   done < <(find "${RELEASES_DIR}" -mindepth 1 -maxdepth 1 -type d -print0)
 }
 
+copy_profile_payload() {
+  local source_profile="$1"
+  local destination_profile="$2"
+  local candidate_home="$3"
+  local runtime_dir="$4"
+  run_as_runtime_user_in "${candidate_home}" "${runtime_dir}" \
+    python3 - "${source_profile}" "${destination_profile}" <<'PY'
+import os
+import shutil
+import stat
+import sys
+
+source, destination = sys.argv[1:]
+if not stat.S_ISDIR(os.lstat(source).st_mode):
+    raise SystemExit("existing DeepSeek Harness web profile is not a regular directory")
+excluded = {"package.json", "pnpm-lock.yaml", ".pnpmfile.cjs", "pnpm-workspace.yaml"}
+for entry in os.scandir(source):
+    if entry.name in excluded:
+        continue
+    target = os.path.join(destination, entry.name)
+    metadata = entry.stat(follow_symlinks=False)
+    if stat.S_ISDIR(metadata.st_mode):
+        shutil.copytree(entry.path, target, symlinks=True)
+    elif stat.S_ISREG(metadata.st_mode):
+        shutil.copy2(entry.path, target, follow_symlinks=False)
+    elif stat.S_ISLNK(metadata.st_mode):
+        os.symlink(os.readlink(entry.path), target)
+    else:
+        raise SystemExit(f"unsupported file in DeepSeek Harness profile: {entry.name}")
+PY
+}
+
+require_atomic_profile_switch() {
+  python3 - "$1" "$2" <<'PY'
+import os
+import sys
+
+source_parent, destination_parent = sys.argv[1:]
+if os.stat(source_parent).st_dev != os.stat(destination_parent).st_dev:
+    raise SystemExit("DeepSeek Harness candidate and live profile must share a filesystem")
+PY
+}
+
 write_candidate_inputs() {
   local manifest_path="$1"
   local runtime_dir="$2"
   local profile_dir="$3"
+  local existing_profile_dir="${4:-}"
   mkdir -p "${profile_dir}"
   if [ -n "${runtime_dir}" ]; then
     mkdir -p "${runtime_dir}"
   fi
-  python3 - "${manifest_path}" "${runtime_dir}" "${profile_dir}" <<'PY'
+  python3 - "${manifest_path}" "${runtime_dir}" "${profile_dir}" "${existing_profile_dir}" <<'PY'
 import json
 import os
-import pathlib
+import stat
 import sys
+import tempfile
 
-manifest_path, runtime_dir, profile_dir = sys.argv[1:]
+manifest_path, runtime_dir, profile_dir, existing_profile_dir = sys.argv[1:]
 with open(manifest_path, encoding="utf-8") as handle:
     manifest = json.load(handle)
 dsh_version = manifest["runtime"]["version"]
 pnpm_version = manifest["pnpmVersion"]
 plugins = manifest["profile"]["plugins"]
-common_pnpm = {
+runtime_pnpm = {
     "onlyBuiltDependencies": ["@deepseek-ai/dsh-subprocess-local", "koffi", "node-pty"],
     "ignoredBuiltDependencies": ["@google/genai", "protobufjs"],
 }
@@ -623,14 +715,14 @@ runtime = {
     "private": True,
     "packageManager": f"pnpm@{pnpm_version}",
     "dependencies": {"@deepseek-ai/dsh": dsh_version},
-    "pnpm": common_pnpm,
+    "pnpm": runtime_pnpm,
 }
 dependencies = {}
 for item in plugins:
     if item["source"] != "npm":
         raise SystemExit(f"unsupported profile plugin source: {item['source']}")
     dependencies[item["package"]] = item["version"]
-profile = {
+managed_profile = {
     "name": "@lightvela/deepseek-harness-web-profile",
     "private": True,
     "packageManager": f"pnpm@{pnpm_version}",
@@ -639,8 +731,66 @@ profile = {
         *manifest["profile"]["builtInBundles"],
         *(item["package"] for item in plugins),
     ]}},
-    "pnpm": common_pnpm,
 }
+# The web profile is mutable: SkillHub owns plugin build policy in
+# pnpm-workspace.yaml. Keeping onlyBuiltDependencies here conflicts with
+# SkillHub's prepare-script fallback on pnpm 10.
+profile = {}
+existing_package_path = os.path.join(existing_profile_dir, "package.json")
+read_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+
+def read_regular(path, binary=False):
+    try:
+        descriptor = os.open(path, read_flags)
+    except OSError as error:
+        raise SystemExit(f"unable to read profile input safely: {os.path.basename(path)}") from error
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise SystemExit(f"profile input is not a regular file: {os.path.basename(path)}")
+        mode = "rb" if binary else "r"
+        options = {} if binary else {"encoding": "utf-8"}
+        with os.fdopen(descriptor, mode, **options) as handle:
+            descriptor = -1
+            return handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+if existing_profile_dir and os.path.lexists(existing_package_path):
+    profile = json.loads(read_regular(existing_package_path))
+if not isinstance(profile, dict):
+    raise SystemExit("existing DeepSeek Harness web profile is not a JSON object")
+profile.update({key: value for key, value in managed_profile.items() if key not in {"dependencies", "dsh"}})
+for field in ("dependencies", "devDependencies", "optionalDependencies"):
+    existing_dependencies = profile.get(field, {})
+    if field == "dependencies":
+        profile[field] = {**existing_dependencies, **managed_profile["dependencies"]}
+    elif existing_dependencies:
+        profile[field] = existing_dependencies
+existing_dsh = profile.get("dsh", {})
+if not isinstance(existing_dsh, dict):
+    raise SystemExit("invalid existing DeepSeek Harness profile settings")
+existing_profile = existing_dsh.get("profile", {})
+if not isinstance(existing_profile, dict):
+    raise SystemExit("invalid existing DeepSeek Harness profile settings")
+bundles = list(managed_profile["dsh"]["profile"]["bundles"])
+for bundle in existing_profile.get("bundles", []):
+    if bundle not in bundles:
+        bundles.append(bundle)
+profile["dsh"] = {
+    **existing_dsh,
+    "profile": {**existing_profile, "bundles": bundles},
+}
+pnpm = profile.get("pnpm")
+if isinstance(pnpm, dict):
+    pnpm = dict(pnpm)
+    # Migrate profiles created by older LightVela installers. Workspace build
+    # policy remains intact and becomes the single source of truth.
+    pnpm.pop("onlyBuiltDependencies", None)
+    if pnpm:
+        profile["pnpm"] = pnpm
+    else:
+        profile.pop("pnpm", None)
 hook = f'''const DSH_RELEASE = {json.dumps(dsh_version)};
 
 function pinDshRelease(dependencies) {{
@@ -665,17 +815,41 @@ module.exports = {{
 '''
 workspace = "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n"
 
+def atomic_write(path, content):
+    directory = os.path.dirname(path)
+    descriptor, temporary = tempfile.mkstemp(prefix=".dsh-installer-", dir=directory)
+    try:
+        os.fchmod(descriptor, 0o644)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
 def write_json(path, value):
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(value, handle, ensure_ascii=True, indent=2)
-        handle.write("\n")
+    content = json.dumps(value, ensure_ascii=True, indent=2).encode() + b"\n"
+    atomic_write(path, content)
 
 if runtime_dir:
     write_json(os.path.join(runtime_dir, "package.json"), runtime)
-    pathlib.Path(runtime_dir, ".pnpmfile.cjs").write_text(hook, encoding="utf-8")
+    atomic_write(os.path.join(runtime_dir, ".pnpmfile.cjs"), hook.encode())
 write_json(os.path.join(profile_dir, "package.json"), profile)
-pathlib.Path(profile_dir, ".pnpmfile.cjs").write_text(hook, encoding="utf-8")
-pathlib.Path(profile_dir, "pnpm-workspace.yaml").write_text(workspace, encoding="utf-8")
+atomic_write(os.path.join(profile_dir, ".pnpmfile.cjs"), hook.encode())
+existing_workspace_path = os.path.join(existing_profile_dir, "pnpm-workspace.yaml")
+if existing_profile_dir and os.path.lexists(existing_workspace_path):
+    workspace_content = read_regular(existing_workspace_path, binary=True)
+else:
+    workspace_content = workspace.encode()
+atomic_write(os.path.join(profile_dir, "pnpm-workspace.yaml"), workspace_content)
 PY
 }
 
@@ -685,27 +859,85 @@ validate_profile_tree() {
   python3 - "${profile_dir}" "${manifest_path}" <<'PY'
 import json
 import os
+import re
+import stat
 import sys
 
 root, manifest_path = sys.argv[1:]
+read_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+
+def read_json(path, label):
+    try:
+        descriptor = os.open(path, read_flags)
+    except OSError as error:
+        raise SystemExit(f"unable to read {label} safely") from error
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise SystemExit(f"{label} is not a regular file")
+        with os.fdopen(descriptor, encoding="utf-8") as handle:
+            descriptor = -1
+            return json.load(handle)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+def package_directory(package_name):
+    if not isinstance(package_name, str) or not re.fullmatch(
+        r"(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*", package_name,
+        flags=re.IGNORECASE,
+    ):
+        raise SystemExit(f"invalid DSH plugin package name: {package_name!r}")
+    return os.path.join(root, "node_modules", *package_name.split("/"))
+
+def validate_bundle(package_name, expected_version=None):
+    package_dir = package_directory(package_name)
+    package_path = os.path.join(package_dir, "package.json")
+    if not os.path.lexists(package_path):
+        raise SystemExit(f"missing DeepSeek Harness profile plugin: {package_name}")
+    package = read_json(package_path, f"plugin package.json for {package_name}")
+    if package.get("name") != package_name:
+        raise SystemExit(f"plugin package name mismatch: {package_name}")
+    if expected_version is not None and package.get("version") != expected_version:
+        raise SystemExit(f"plugin snapshot mismatch: {package_name}")
+    patch = package.get("dsh", {}).get("bundle", {}).get("patch")
+    if not isinstance(patch, str) or not patch or os.path.isabs(patch):
+        raise SystemExit(f"plugin bundle declaration is invalid: {package_name}")
+    normalized_package_dir = os.path.abspath(package_dir)
+    patch_path = os.path.abspath(os.path.join(package_dir, patch))
+    if os.path.commonpath((normalized_package_dir, patch_path)) != normalized_package_dir:
+        raise SystemExit(f"plugin bundle patch escapes its package: {package_name}")
+    relative_patch = os.path.relpath(patch_path, normalized_package_dir)
+    current = normalized_package_dir
+    for component in relative_patch.split(os.sep):
+        current = os.path.join(current, component)
+        try:
+            metadata = os.lstat(current)
+        except FileNotFoundError as error:
+            raise SystemExit(f"plugin bundle patch is missing: {package_name}") from error
+        if stat.S_ISLNK(metadata.st_mode):
+            raise SystemExit(f"plugin bundle patch contains a symlink: {package_name}")
+    if not stat.S_ISREG(os.lstat(patch_path).st_mode):
+        raise SystemExit(f"plugin bundle patch is not a regular file: {package_name}")
+
+for name in ("package.json", "pnpm-lock.yaml", ".pnpmfile.cjs", "pnpm-workspace.yaml", "cordis.patch.yml"):
+    path = os.path.join(root, name)
+    if os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode):
+        raise SystemExit(f"invalid candidate profile control file: {name}")
 with open(manifest_path, encoding="utf-8") as handle:
     manifest = json.load(handle)
-with open(os.path.join(root, "package.json"), encoding="utf-8") as handle:
-    profile = json.load(handle)
+profile = read_json(os.path.join(root, "package.json"), "candidate profile package.json")
 plugins = manifest["profile"]["plugins"]
 expected_bundles = [*manifest["profile"]["builtInBundles"], *(item["package"] for item in plugins)]
-if profile.get("dsh", {}).get("profile", {}).get("bundles") != expected_bundles:
+actual_bundles = profile.get("dsh", {}).get("profile", {}).get("bundles", [])
+if actual_bundles[:len(expected_bundles)] != expected_bundles:
     raise SystemExit("DeepSeek Harness web profile bundle list does not match the snapshot")
 for item in plugins:
-    package_path = os.path.join(root, "node_modules", *item["package"].split("/"), "package.json")
-    if not os.path.isfile(package_path):
-        raise SystemExit(f"missing DeepSeek Harness profile plugin: {item['package']}")
-    with open(package_path, encoding="utf-8") as handle:
-        package = json.load(handle)
-    if package.get("name") != item["package"] or package.get("version") != item["version"]:
-        raise SystemExit(f"plugin snapshot mismatch: {item['package']}")
-    if not package.get("dsh", {}).get("bundle", {}).get("patch"):
-        raise SystemExit(f"plugin bundle declaration is missing: {item['package']}")
+    validate_bundle(item["package"], item["version"])
+dependencies = profile.get("dependencies", {})
+for package_name in actual_bundles[len(expected_bundles):]:
+    if package_name not in dependencies:
+        raise SystemExit(f"third-party DSH bundle is not a profile dependency: {package_name}")
+    validate_bundle(package_name)
 PY
 }
 
@@ -904,18 +1136,27 @@ prepare_candidate() {
     CANDIDATE_RUNTIME="${reusable_release}"
     TARGET_RELEASE="${reusable_release}"
     RUNTIME_REUSED=true
-    write_candidate_inputs "${manifest_path}" "" "${profile_dir}"
   else
     TARGET_RELEASE="${RELEASES_DIR}/${SNAPSHOT_ID}-$(printf '%s' "${TASK_ID#dshi-}" | cut -c1-8)"
     test -f "${manifest_path}" || fail "installation manifest disappeared before candidate preparation"
-    write_candidate_inputs "${manifest_path}" "${runtime_dir}" "${profile_dir}"
-    cp "${manifest_path}" "${runtime_dir}/install-manifest.json"
-  fi
-  if [ -f "${LIVE_PROFILE}/cordis.patch.yml" ]; then
-    cp "${LIVE_PROFILE}/cordis.patch.yml" "${profile_dir}/cordis.patch.yml"
   fi
   if [ "${TEST_MODE}" != "1" ]; then
-    chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${candidate_home}"
+    chown "${RUNTIME_USER}:${RUNTIME_USER}" "${profile_dir}"
+  fi
+  if [ -d "${LIVE_PROFILE}" ]; then
+    # Copy mutable plugin payload only as the runtime user. Installer-owned
+    # control files are rebuilt atomically below and never copied as root.
+    copy_profile_payload "${LIVE_PROFILE}" "${profile_dir}" \
+      "${candidate_home}" "${CANDIDATE_RUNTIME}"
+  fi
+  if [ "${RUNTIME_REUSED}" = true ]; then
+    write_candidate_inputs "${manifest_path}" "" "${profile_dir}" "${LIVE_PROFILE}"
+  else
+    write_candidate_inputs "${manifest_path}" "${runtime_dir}" "${profile_dir}" "${LIVE_PROFILE}"
+    cp "${manifest_path}" "${runtime_dir}/install-manifest.json"
+  fi
+  if [ "${TEST_MODE}" != "1" ]; then
+    chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${profile_dir}"
     if [ "${RUNTIME_REUSED}" != true ]; then
       chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${runtime_dir}"
     fi
@@ -1080,7 +1321,7 @@ do_install() {
 
   local work_dir="${WORK_ROOT}/${TASK_ID}"
   local runtime_stage="${RELEASES_DIR}/.staging-${TASK_ID}"
-  local candidate_home="${DSH_HOME}/.staging-${TASK_ID}"
+  local candidate_home="${work_dir}/candidate-home"
   local candidate_profile="${candidate_home}/profiles/web"
   local profile_backup="${DSH_HOME}/profiles/.backup-${TASK_ID}"
   local unit_candidate="${UNIT_PATH}.candidate-${TASK_ID}"
@@ -1157,8 +1398,10 @@ do_install() {
   trap 'rollback_install 130; exit 130' INT TERM HUP
   rm -rf -- "${work_dir}" "${runtime_stage}" "${candidate_home}" "${profile_backup}" "${tooling_stage}"
   rm -f -- "${unit_candidate}" "${unit_backup}"
-  mkdir -p "${work_dir}" "${candidate_home}/profiles"
+  mkdir -p "${work_dir}" "${candidate_home}/profiles" "${DSH_HOME}/profiles"
   chmod 0711 "${work_dir}"
+  chmod 0755 "${candidate_home}" "${candidate_home}/profiles"
+  require_atomic_profile_switch "${candidate_home}/profiles" "${DSH_HOME}/profiles"
 
   CURRENT_STAGE="preflight"
   write_task running preflight 10 "正在检查实例环境"
@@ -1178,9 +1421,6 @@ do_install() {
 
   CURRENT_STAGE="validate_candidate"
   write_task running validate_candidate 75 "正在检查安装内容" "" "${manifest_path}"
-  if [ "$(profile_fingerprint)" != "${initial_fingerprint}" ]; then
-    fail "DeepSeek Harness web profile changed during installation"
-  fi
   if [ -L "${CURRENT_LINK}" ]; then
     previous_current="$(readlink "${CURRENT_LINK}")"
   fi
@@ -1200,6 +1440,10 @@ do_install() {
     systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1 || true
   fi
   wait_for_port_free
+  if [ "$(profile_fingerprint)" != "${initial_fingerprint}" ]; then
+    fail "DeepSeek Harness web profile changed during installation"
+  fi
+  validate_existing_profile
   if [ "${had_profile}" = true ]; then
     mv "${LIVE_PROFILE}" "${profile_backup}"
   fi

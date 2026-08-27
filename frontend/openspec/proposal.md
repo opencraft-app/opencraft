@@ -29,9 +29,9 @@
 ## 关键决策
 
 - DSH、SkillHub 与五个渠道插件均请求 npm `@latest`；每次任务先解析并校验 `version`、`dist.integrity` 和 HTTPS tarball，再以本次解析出的精确版本生成 package/lockfile，安装过程中不再次跟随 `latest`。
-- DSH runtime 与 `web` profile 分别先生成 lockfile、再执行 `--frozen-lockfile` 安装；固定 `pnpm@10.33.0` 在候选阶段引导并于校验后持久化到 root-owned tooling，不替换实例全局 pnpm。所有 profile 插件均来自 npm registry，实例安装不依赖 GitHub；每个包的 registry integrity 均必须出现在对应 lockfile 中。
-- 安装在任务临时目录完成下载、依赖安装和配置组合检查后再原子切换；任一插件失败即恢复旧 runtime、完整旧 `web` profile 和旧 service unit。
-- 已安装 profile 出现非 LightVela 管理的额外 DSH 插件时，安装器保持原状并安全失败，不删除未知插件或退化为非冻结安装。
+- DSH runtime 与 `web` profile 分别先生成 lockfile、再执行 `--frozen-lockfile` 安装；固定 `pnpm@10.33.0` 在候选阶段引导并于校验后持久化到 root-owned tooling，不替换实例全局 pnpm。LightVela 管理的六个 profile 插件均来自 npm registry，基础安装不依赖 GitHub；每个托管包的 registry integrity 均必须出现在对应 lockfile 中。
+- 安装在 root-owned 任务目录完成下载、依赖安装和配置组合检查后再原子切换；已有 profile 的可变内容仅以 `agentuser` 身份复制，控制文件使用 no-follow 读取和原子重建；任一插件失败即恢复旧 runtime、完整旧 `web` profile 和旧 service unit。
+- 已安装 profile 中由 SkillHub 管理的额外 DSH 插件，在依赖、bundle patch、workspace build policy 和编译产物通过校验后随 profile 保留。安装器迁移删除旧 Web profile 的 `pnpm.onlyBuiltDependencies`，避免与 SkillHub 在 pnpm 10.33 写入的 build policy 冲突；完整 profile 在停服后再次校验指纹，并发变化时不切换。
 - 包名、版本、目录、用户、端口和 Provider 白名单由实例侧 helper 固定；前端只选择固定动作与白名单 Provider ID。
 - API Key 使用实例一次性 RSA-4096 公钥与 RSA-OAEP/SHA-256 加密，密文经 `debug/exec` 传输，在实例内解密到 helper stdin 后由 DSH `credentials.set` 单向写入；一次性私钥在命令退出时删除，设置写入携带 `expectedRevision`。
 - 删除经同一 `debug/exec` 通道调用固定 `remove-provider` 动作；只清理可确认由 LightVela 创建且当前可写的凭据，环境变量密钥和自定义引用保持不变。
