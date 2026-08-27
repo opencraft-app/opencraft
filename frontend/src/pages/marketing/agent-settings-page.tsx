@@ -2863,6 +2863,21 @@ const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
 const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model"]);
 
+/**
+ * 会话是否可删除。
+ *
+ * 产品决策：默认会话（`chatId === ""`）不可删除。它是列表的兜底项——「新增会话」
+ * 按钮位于 SDK 面板右上角，若允许把默认会话也删掉，用户可能删空列表，失去唯一
+ * 的新增入口，无法再发起新会话。因此默认会话必须始终保留。
+ *
+ * 技术背景：`chatId === ""` 是 SDK 的合法默认会话标识（`resolveFallbackChatId`
+ * 正是靠 `session.chatId === ""` 定位它）。SDK 1.4.1 的删除链路恰好也用 truthiness
+ * 拦掉了空串（`deleteSession` / `deleteChat` 都是 `if (!chatId) return`），所以即便
+ * 宿主不做这道判定，请求也不会发出。但这属于 SDK 的实现细节，不能作为产品契约
+ * 依赖——宿主仍需显式守门，避免将来 SDK 修正 `!chatId` 后默认会话突然变为可删。
+ */
+const canDeleteSession = (session: LightVelaSession) => session.chatId !== "";
+
 type WorkspaceConfirmState =
   | { kind: "export" }
   | { kind: "import"; file: File | null };
@@ -3009,13 +3024,15 @@ export const AgentSettingsPage = ({
   const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
   /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定（SDK 侧会驱动默认会话）。 */
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
-  /** SDK 会话动作句柄（当前仅 renameSession；SDK 未提供删除 API）。 */
+  /** SDK 会话动作句柄（renameSession / deleteSession）。 */
   const [chatSessionActions, setChatSessionActions] = useState<LightVelaSessionActions | null>(null);
   /** 行内重命名状态：renamingChatId 非空表示该项处于编辑态。 */
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renamingDraft, setRenamingDraft] = useState("");
   /** 三点菜单当前展开的会话。 */
   const [openSessionMenuChatId, setOpenSessionMenuChatId] = useState<string | null>(null);
+  /** 待删除会话（非空表示弹出删除二次确认）。 */
+  const [sessionToDelete, setSessionToDelete] = useState<LightVelaSession | null>(null);
   const sessionMenuRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -3053,22 +3070,58 @@ export const AgentSettingsPage = ({
     }
   };
 
-  /** 多会话受控桥接：回调引用保持稳定（仅依赖 selectedChatId），避免 SDK 内部 effect 循环。 */
+  /**
+   * 多会话受控桥接。
+   *
+   * 三个回调必须用 useCallback 稳定引用，不能内联在 useMemo 里。
+   * Why：SDK 的 actions effect 把回调**引用**放进了依赖数组：
+   *
+   *   useEffect(() => {
+   *     const onSessionActionsChange = multiSession?.onSessionActionsChange;
+   *     if (!enabled || !onSessionActionsChange) return undefined;
+   *     onSessionActionsChange({ renameSession, deleteSession });
+   *     return () => onSessionActionsChange(null);   // ← cleanup 会置 null
+   *   }, [..., multiSession?.onSessionActionsChange, ...]);
+   *
+   * 回调若内联，则每次 selectedChatId 变化都会产生新引用 → effect 重跑 →
+   * 先 cleanup 成 null 再重新赋值，导致 chatSessionActions 在**每次切换会话时
+   * 短暂为 null**：重命名/删除菜单项会闪一下禁用，且此刻点击会静默失效
+   * （`chatSessionActions?.deleteSession` 走 optional chaining 直接跳过）。
+   *
+   * selectedChatId 仍需随值更新——SDK 的 switchChat effect 依赖的是它的**值**
+   * （`multiSession?.selectedChatId`）而非对象引用，因此对象重建不会误触发切换。
+   * 另两个回调 SDK 内部走 ref（onSelectedChatIdChangeRef），本就不受引用变化影响，
+   * 但一并稳定化以免后续版本改成直接依赖。
+   */
+  const handleChatSessionStateChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
+  >(({ sessions, loading }) => {
+    setChatSessions(sessions);
+    setChatSessionsLoading(loading);
+  }, []);
+
+  const handleChatSelectedChatIdChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSelectedChatIdChange"]>
+  >((chatId) => {
+    // 注意事项 2：收到值必须无条件写回，否则受控状态与 SDK 失步。
+    // 不要在此加真值守卫——空串是合法默认会话，会被误当成"无效值"丢弃。
+    setSelectedChatId(chatId);
+  }, []);
+
+  const handleChatSessionActionsChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSessionActionsChange"]>
+  >((actions) => {
+    setChatSessionActions(actions);
+  }, []);
+
   const chatMultiSessionBridge = useMemo<LightVelaMultiSessionOptions>(
     () => ({
       selectedChatId,
-      onSessionStateChange: ({ sessions, loading }) => {
-        setChatSessions(sessions);
-        setChatSessionsLoading(loading);
-      },
-      onSelectedChatIdChange: (chatId) => {
-        setSelectedChatId(chatId);
-      },
-      onSessionActionsChange: (actions) => {
-        setChatSessionActions(actions);
-      },
+      onSessionStateChange: handleChatSessionStateChange,
+      onSelectedChatIdChange: handleChatSelectedChatIdChange,
+      onSessionActionsChange: handleChatSessionActionsChange,
     }),
-    [selectedChatId],
+    [selectedChatId, handleChatSessionStateChange, handleChatSelectedChatIdChange, handleChatSessionActionsChange],
   );
 
   const startSessionRename = (session: LightVelaSession) => {
@@ -3091,8 +3144,32 @@ export const AgentSettingsPage = ({
     setRenamingDraft("");
   };
 
+  const openSessionDeleteConfirm = (session: LightVelaSession) => {
+    if (!canDeleteSession(session)) return;
+    setOpenSessionMenuChatId(null);
+    setSessionToDelete(session);
+  };
+
+  const confirmSessionDelete = () => {
+    if (!sessionToDelete) return;
+    // 再次守门：SDK 会静默丢弃 chatId === "" 的删除（见 canDeleteSession 注释），
+    // 这里挡住可避免「弹窗关了但会话还在」的假成功。
+    if (!canDeleteSession(sessionToDelete)) {
+      setSessionToDelete(null);
+      return;
+    }
+    chatSessionActions?.deleteSession(sessionToDelete.chatId);
+    setSessionToDelete(null);
+  };
+
+  const cancelSessionDelete = () => {
+    setSessionToDelete(null);
+  };
+
   useEffect(() => {
-    if (!openSessionMenuChatId) return undefined;
+    // chatId === "" 是合法默认会话，判定只能用 == null（SDK 对接注意事项 1）。
+    // 用 truthiness 会让默认会话的菜单打开后无法通过点击外部 / Esc 关闭。
+    if (openSessionMenuChatId == null) return undefined;
 
     const handlePointerDown = (event: MouseEvent) => {
       if (!sessionMenuRef.current?.contains(event.target as Node)) {
@@ -3905,6 +3982,7 @@ export const AgentSettingsPage = ({
     setRenamingChatId(null);
     setRenamingDraft("");
     setOpenSessionMenuChatId(null);
+    setSessionToDelete(null);
   }, [sdkInstance?.InstanceId]);
 
   const sdkFeatureFlags = useMemo<TeaSdkFeatureFlags>(() => ({
@@ -4692,6 +4770,45 @@ export const AgentSettingsPage = ({
         document.body,
       )}
 
+      {/* Session Delete Confirm Dialog */}
+      {sessionToDelete && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={cancelSessionDelete}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "rgba(238,238,238,0.4)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
+                <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除会话")}</h3>
+            </div>
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("确定要删除会话「{{name}}」吗？此操作不可撤销。", { name: sessionToDelete.title || t("默认会话") })}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={confirmSessionDelete}
+                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
+                style={{ backgroundColor: "#DC2626", cursor: "pointer", fontSize: "16px" }}
+              >
+                {t("确认删除")}
+              </button>
+              <button onClick={cancelSessionDelete} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
       {/* Restart Gateway Confirm Dialog */}
       {showRestartConfirm && activeBot && createPortal(
         <div
@@ -5251,6 +5368,18 @@ export const AgentSettingsPage = ({
                             {chatSessionsLoading && chatSessions.length === 0 ? (
                               <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
                             ) : chatSessions.length === 0 ? (
+                              /*
+                               * 列表为空是正常状态，不做异常处理，只给默认对话入口。
+                               * 成因有三，对用户而言表现一致（都只有一个会话可进）：
+                               *   - 桥接还没建立：sidebarTab 与 activeSection 是独立状态，
+                               *     且 AgentChatPanel 需 activeSection === "chat" 且
+                               *     launchToken ready 才挂载，切换过程中会短暂走到这里；
+                               *   - 实例不支持会话协议（SDK 5s 超时，见对接注意事项 6），
+                               *     即单会话形态，老实例/特定镜像版本的合法状态；
+                               *   - 确实还没有任何会话。
+                               * 三者都不该阻断用户进聊天页——消息收发不依赖会话协议。
+                               * 要区分需看 WebSocket 有无 chat:response，不是 UI 的职责。
+                               */
                               <li>
                                 <AppLink
                                   to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
@@ -5271,6 +5400,7 @@ export const AgentSettingsPage = ({
                                 const isSelected = selectedChatId === session.chatId;
                                 const isRenaming = renamingChatId === session.chatId;
                                 const isMenuOpen = openSessionMenuChatId === session.chatId;
+                                const isDeletable = canDeleteSession(session);
                                 return (
                                   <li key={session.chatId} className="lv-agents-session-item-wrap">
                                     {isRenaming ? (
@@ -5332,6 +5462,16 @@ export const AgentSettingsPage = ({
                                                 onClick={() => startSessionRename(session)}
                                               >
                                                 {t("重命名")}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                role="menuitem"
+                                                className="lv-agents-session-menu-item lv-agents-session-menu-item--danger"
+                                                disabled={!chatSessionActions || !isDeletable}
+                                                title={isDeletable ? undefined : t("默认会话不支持删除")}
+                                                onClick={() => openSessionDeleteConfirm(session)}
+                                              >
+                                                {t("删除")}
                                               </button>
                                             </div>
                                           ) : null}

@@ -81,13 +81,19 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(chatPanel).toContain("multiSession={multiSession}");
   });
 
-  it("only exposes rename in the session menu (SDK has no delete API yet)", () => {
+  it("exposes rename and delete in the session menu (delete needs confirmation)", () => {
     const page = readPageSource();
 
     expect(page).toContain('role="menuitem"');
     expect(page).toContain('t("重命名")');
-    // SDK 1.4.0-beta.0 仅提供 renameSession。
+    expect(page).toContain('t("删除")');
+    // SDK 1.4.1 提供 renameSession / deleteSession。
     expect(page).toContain("renameSession");
+    expect(page).toContain("deleteSession");
+    // 删除需二次确认弹窗。
+    expect(page).toContain("sessionToDelete");
+    expect(page).toContain('t("删除会话")');
+    expect(page).toContain("confirmSessionDelete");
   });
 
   it("keeps the chat panel rendering decoupled from the sidebar tab", () => {
@@ -113,5 +119,72 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).not.toMatch(/if \(chatId\)/);
     expect(page).not.toMatch(/if \(selectedChatId\)/);
     expect(page).toContain("if (chatId == null) return;");
+
+    // 同一条约定必须覆盖菜单开合状态：用 truthiness 会让默认会话的菜单
+    // 打开后无法通过点击外部 / Esc 关闭。
+    expect(page).not.toMatch(/if \(!openSessionMenuChatId\)/);
+    expect(page).toContain("if (openSessionMenuChatId == null) return undefined;");
+  });
+
+  // 产品决策：默认会话（chatId === ""）是列表兜底项，不可删除——「新增」按钮在
+  // SDK 面板右上角，若删空列表用户会失去唯一的新增入口。宿主需显式守门，不能
+  // 依赖 SDK 恰好用 truthiness 拦掉空串这一实现细节。
+  it("keeps the default session non-deletable as the list fallback", () => {
+    const page = readPageSource();
+
+    expect(page).toContain('const canDeleteSession = (session: LightVelaSession) => session.chatId !== "";');
+    // 菜单项禁用 + 说明原因，而不是让用户点了没反应。
+    expect(page).toContain("const isDeletable = canDeleteSession(session);");
+    expect(page).toContain("disabled={!chatSessionActions || !isDeletable}");
+    expect(page).toContain('title={isDeletable ? undefined : t("默认会话不支持删除")}');
+  });
+
+  // 注意事项 2 的隐含要求：SDK 的 actions effect 依赖 onSessionActionsChange 的
+  // **引用**，cleanup 会 onSessionActionsChange(null)。回调内联在 useMemo 里会让
+  // 每次切换会话都把 chatSessionActions 置 null 再恢复，此刻点删除会静默失效。
+  it("keeps multi-session callback identities stable across selectedChatId changes", () => {
+    const page = readPageSource();
+
+    expect(page).toContain("const handleChatSessionStateChange = useCallback<");
+    expect(page).toContain("const handleChatSelectedChatIdChange = useCallback<");
+    expect(page).toContain("const handleChatSessionActionsChange = useCallback<");
+
+    // bridge 只能引用稳定回调，不能内联箭头函数。
+    expect(page).toContain("onSessionStateChange: handleChatSessionStateChange,");
+    expect(page).toContain("onSelectedChatIdChange: handleChatSelectedChatIdChange,");
+    expect(page).toContain("onSessionActionsChange: handleChatSessionActionsChange,");
+
+    const bridge = page.slice(
+      page.indexOf("const chatMultiSessionBridge = useMemo<"),
+      page.indexOf("const startSessionRename"),
+    );
+    expect(bridge).not.toMatch(/onSessionActionsChange: \(actions\) =>/);
+    expect(bridge).not.toMatch(/onSessionStateChange: \(\{/);
+  });
+
+  // 空列表是正常状态（桥接未建立 / 实例单会话形态 / 尚无会话），三者对用户
+  // 表现一致，都必须留有进聊天页的入口——消息收发不依赖会话协议。
+  // 也不要在此渲染面向开发者的诊断文案：用户无从理解，也无权处置。
+  it("keeps a usable chat entry on an empty session list without leaking diagnostics", () => {
+    const page = readPageSource();
+
+    const emptyBranch = page.slice(
+      page.indexOf(") : chatSessions.length === 0 ? ("),
+      page.indexOf("chatSessions.map((session) => {"),
+    );
+
+    expect(emptyBranch).toContain('title={t("默认对话")}');
+    expect(emptyBranch).not.toContain("Hermes");
+    expect(emptyBranch).not.toContain("chatSessionActions");
+  });
+
+  it("guards both the confirm-open and confirm-commit paths of session delete", () => {
+    const page = readPageSource();
+
+    // 入口守门：不可删时不弹确认框。
+    expect(page).toMatch(/openSessionDeleteConfirm = \(session: LightVelaSession\) => \{\s*\n\s*if \(!canDeleteSession\(session\)\) return;/);
+    // 提交守门：避免关掉弹窗却没真正删除的假成功。
+    expect(page).toMatch(/if \(!canDeleteSession\(sessionToDelete\)\) \{[\s\S]*?setSessionToDelete\(null\);[\s\S]*?return;/);
+    expect(page).toContain("chatSessionActions?.deleteSession(sessionToDelete.chatId);");
   });
 });

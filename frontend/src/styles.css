@@ -619,6 +619,14 @@ a {
   cursor: not-allowed;
 }
 
+.lv-agents-session-menu-item--danger {
+  color: var(--danger);
+}
+
+.lv-agents-session-menu-item--danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 6%, transparent);
+}
+
 .lv-agents-session-rename-input {
   width: 100%;
   height: 28px;
