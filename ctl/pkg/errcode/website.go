@@ -17,6 +17,9 @@ var (
 	ErrWebsiteOperationNotRevivable      = Register(New("WEBSITE_OPERATION_NOT_REVIVABLE", 409, "operation cannot be revived"))
 	ErrWebsiteCredentialStoreUnavailable = Register(New("WEBSITE_CREDENTIAL_STORE_UNAVAILABLE", 503, "website credential store unavailable"))
 	ErrWebsiteUploadUnavailable          = Register(New("WEBSITE_UPLOAD_UNAVAILABLE", 503, "website upload service unavailable"))
+	ErrWebsiteShareCodeInvalid           = Register(New("WEBSITE_SHARE_CODE_INVALID", 403, "invalid website share code"))
+	ErrWebsiteShareRateLimited           = Register(New("WEBSITE_SHARE_RATE_LIMITED", 429, "too many website share code attempts"))
+	ErrWebsiteShareUnavailable           = Register(New("WEBSITE_SHARE_UNAVAILABLE", 503, "website share verification unavailable"))
 )
 
 // Custom domain binding error codes

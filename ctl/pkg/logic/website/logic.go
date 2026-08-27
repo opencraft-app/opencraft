@@ -87,8 +87,11 @@ type SiteStatusView struct {
 	Status    string `json:"status"`
 	CloudPath string `json:"cloud_path"`
 	// MonthlyTrafficBytes 为 0 表示不限额（额度未配置或查不到），网关按不拦截处理。
-	MonthlyTrafficBytes int64 `json:"monthly_traffic_bytes"`
-	UsedTrafficBytes    int64 `json:"used_traffic_bytes"`
+	MonthlyTrafficBytes int64      `json:"monthly_traffic_bytes"`
+	UsedTrafficBytes    int64      `json:"used_traffic_bytes"`
+	AccessMode          string     `json:"access_mode"`
+	ShareGeneration     string     `json:"share_generation,omitempty"`
+	ShareExpiresAt      *time.Time `json:"share_expires_at,omitempty"`
 }
 
 // ---- Logic 接口 ----
@@ -98,6 +101,9 @@ type Logic interface {
 	CreateSite(userID, bundleID, name, idempotencyKey string) (*CreateSiteResult, error)
 	ListSites(userID string, page, pageSize int) ([]*website.SiteEntity, int64, error)
 	GetSite(userID, siteID string) (*website.SiteEntity, error)
+	SetAccessPolicy(userID, siteID, mode string, durationDays int) (*ShareAccessResult, error)
+	ResetShareCode(userID, siteID string) (*ShareAccessResult, error)
+	VerifyShareCode(siteID, code, clientIP string) (*ShareVerifyResult, error)
 	CreateRelease(userID, siteID string, req CreateReleaseRequest) (*CreateReleaseResult, error)
 	ListReleases(userID, siteID string, page, pageSize int) ([]*website.ReleaseEntity, int64, error)
 	GetOperation(userID, operationID string) (*website.OperationEntity, error)
@@ -581,7 +587,14 @@ func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*Crea
 // ---- ListSites ----
 
 func (l *logic) ListSites(userID string, page, pageSize int) ([]*website.SiteEntity, int64, error) {
-	return l.siteDao.ListByUserID(userID, page, pageSize)
+	sites, total, err := l.siteDao.ListByUserID(userID, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, site := range sites {
+		l.hydrateShareAccess(site)
+	}
+	return sites, total, nil
 }
 
 // ---- GetSite ----
@@ -594,6 +607,7 @@ func (l *logic) GetSite(userID, siteID string) (*website.SiteEntity, error) {
 	if site == nil {
 		return nil, errcode.ErrWebsiteNotFound
 	}
+	l.hydrateShareAccess(site)
 	return site, nil
 }
 
@@ -856,10 +870,17 @@ func (l *logic) GetSiteInternal(siteID string) (*SiteStatusView, error) {
 		return nil, errcode.ErrWebsiteNotFound
 	}
 	view := &SiteStatusView{
-		SiteID:    site.SiteID,
-		UserID:    site.UserID,
-		Status:    site.Status,
-		CloudPath: site.CloudPath,
+		SiteID:     site.SiteID,
+		UserID:     site.UserID,
+		Status:     site.Status,
+		CloudPath:  site.CloudPath,
+		AccessMode: website.SiteAccessModeOwnerOnly,
+	}
+	if share := loadShareAccessMetadata(siteID); share != nil {
+		view.AccessMode = website.SiteAccessModeShareCode
+		view.ShareGeneration = share.Generation
+		expiresAt := share.ExpiresAt
+		view.ShareExpiresAt = &expiresAt
 	}
 	view.MonthlyTrafficBytes, view.UsedTrafficBytes = l.trafficBudgetForSite(site)
 	return view, nil

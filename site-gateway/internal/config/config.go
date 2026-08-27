@@ -41,6 +41,7 @@ type Config struct {
 	AuthAEADActiveKeyID  string
 	AuthAEADKeys         map[string][]byte
 	AuthSessionTTL       time.Duration
+	TrustProxyHeaders    bool
 
 	DSHDomains                   []string
 	DSHFederationAuthorizeURL    string
@@ -150,6 +151,9 @@ func FromEnv() (Config, error) {
 	}
 	if cfg.AuthSessionTTL > 5*time.Minute {
 		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_SESSION_TTL must not exceed 5m")
+	}
+	if cfg.TrustProxyHeaders, err = getBool("SITE_GATEWAY_TRUST_PROXY_HEADERS", false); err != nil {
+		return Config{}, err
 	}
 	if cfg.DSHTATStartTimeout, err = getDuration("SITE_GATEWAY_DSH_TAT_START_TIMEOUT", 10*time.Second); err != nil {
 		return Config{}, err

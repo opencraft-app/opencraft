@@ -26,6 +26,7 @@ const (
 	siteAuthCallbackPath  = "/__lightvela/auth/callback"
 	siteSessionCookie     = "lv_site_session"
 	siteStateCookie       = "__Host-lv_oidc_state"
+	shareSessionCookie    = "__Host-lv_site_share"
 )
 
 var (
@@ -34,16 +35,19 @@ var (
 )
 
 type AuthOptions struct {
-	Required         bool
-	EndpointsEnabled bool
-	FixedAuthHost    string
-	AuthorizeURL     string
-	TokenURL         string
-	ClientID         string
-	SessionTTL       time.Duration
-	TokenCodec       *siteauth.TokenCodec
-	IDTokens         *siteauth.IDTokenVerifier
-	HTTPClient       *http.Client
+	Required          bool
+	EndpointsEnabled  bool
+	FixedAuthHost     string
+	AuthorizeURL      string
+	TokenURL          string
+	ClientID          string
+	SessionTTL        time.Duration
+	TokenCodec        *siteauth.TokenCodec
+	IDTokens          *siteauth.IDTokenVerifier
+	HTTPClient        *http.Client
+	ShareVerifier     ShareCodeVerifier
+	TrustProxyHeaders bool
+	Clock             func() time.Time
 }
 
 func (h *SiteHandler) handleAuthPath(w http.ResponseWriter, r *http.Request) bool {
@@ -61,6 +65,12 @@ func (h *SiteHandler) handleAuthPath(w http.ResponseWriter, r *http.Request) boo
 				return true
 			}
 		}
+	}
+	if h.auth.Required && r.URL.Path == siteSharePath {
+		h.handleSiteShare(w, r)
+		return true
+	}
+	if h.auth.EndpointsEnabled {
 		switch r.URL.Path {
 		case siteAuthStartPath:
 			h.startSiteAuth(w, r)
@@ -286,7 +296,8 @@ func (h *SiteHandler) finishSiteAuth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SiteHandler) authorizeSiteRequest(w http.ResponseWriter, r *http.Request) bool {
-	if _, _, ok := h.resolveSite(w, r); !ok {
+	siteID, _, ok := h.resolveSite(w, r)
+	if !ok {
 		return false
 	}
 	resolved, err := h.resolveSiteHost(r.Context(), r.Host)
@@ -295,6 +306,11 @@ func (h *SiteHandler) authorizeSiteRequest(w http.ResponseWriter, r *http.Reques
 		return false
 	}
 	if err != nil {
+		writeAuthFailure(w, http.StatusBadGateway, "site authentication is unavailable")
+		return false
+	}
+	site, err := h.sites.BySiteID(r.Context(), siteID)
+	if err != nil || site == nil {
 		writeAuthFailure(w, http.StatusBadGateway, "site authentication is unavailable")
 		return false
 	}
@@ -311,8 +327,26 @@ func (h *SiteHandler) authorizeSiteRequest(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 	}
+	if site.ShareAccessActiveAt(h.authNow()) {
+		shareCookie, err := r.Cookie(shareSessionCookie)
+		if err == nil && strings.TrimSpace(shareCookie.Value) != "" && h.auth.TokenCodec != nil {
+			if session, openErr := h.auth.TokenCodec.OpenShareSession(shareCookie.Value, resolved.Host); openErr == nil &&
+				session.SiteID == resolved.SiteID && session.Generation == site.ShareGeneration {
+				return true
+			}
+		}
+		h.redirectToSharePage(w, r, safeReturnTo(r.URL.RequestURI()))
+		return false
+	}
 	h.redirectToSiteAuth(w, r, resolved, safeReturnTo(r.URL.RequestURI()))
 	return false
+}
+
+func (h *SiteHandler) authNow() time.Time {
+	if h != nil && h.auth.Clock != nil {
+		return h.auth.Clock().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func (h *SiteHandler) redirectToSiteAuth(w http.ResponseWriter, r *http.Request, site resolvedSiteHost, returnTo string) {

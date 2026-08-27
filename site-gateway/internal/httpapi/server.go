@@ -63,10 +63,10 @@ func NewSiteHandler(opts Options) *SiteHandler {
 
 // ServeHTTP 把站点路径空间整体交给静态回源。
 //
-// 网关不再保留任何命名空间：站点是纯静态托管，没有需要与页面同源的服务端接口，
-// 保留前缀只会白白占用用户的路径。所有路径一视同仁地走候选 key 回源，命不中就 404。
+// public 模式仍把路径空间完整交给静态站点；required 模式会先拦截认证与分享页的
+// 固定前缀，再把其余 GET/HEAD 交给静态回源。
 func (h *SiteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.auth.EndpointsEnabled {
+	if h.auth.EndpointsEnabled || h.auth.Required {
 		if h.handleAuthPath(w, r) {
 			return
 		}

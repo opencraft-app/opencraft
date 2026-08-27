@@ -117,6 +117,30 @@ func TestFromEnvRejectsAuthSessionTTLOverFiveMinutes(t *testing.T) {
 	}
 }
 
+func TestFromEnvParsesTrustedProxyConfig(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_TRUST_PROXY_HEADERS", "true")
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TrustProxyHeaders {
+		t.Fatalf("trusted proxy config = %+v", cfg)
+	}
+}
+
+func TestFromEnvDefaultsTrustedProxyConfigToFalse(t *testing.T) {
+	setRequired(t)
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TrustProxyHeaders {
+		t.Fatalf("default trusted proxy config = %+v", cfg)
+	}
+}
+
 func TestFromEnvRequiredAuthRejectsIncompleteConfig(t *testing.T) {
 	setRequired(t)
 	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
