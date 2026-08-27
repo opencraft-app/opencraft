@@ -153,6 +153,10 @@ describe("LightVelaFooter", () => {
     expect(
       within(relatedSection as HTMLElement).getByRole("link", { name: "腾讯云开发 Tencent CloudBase" }),
     ).toHaveAttribute("href", "https://tcb.cloud.tencent.com/en/?from=lightvela");
+    const edgeOneLink = within(relatedSection as HTMLElement).getByRole("link", { name: "Tencent EdgeOne" });
+    expect(edgeOneLink).toHaveAttribute("href", "https://edgeone.ai/");
+    expect(edgeOneLink).toHaveAttribute("target", "_blank");
+    expect(edgeOneLink).toHaveAttribute("rel", "noopener noreferrer");
 
     expect(screen.getByText("© 2026 LightVela 版权所有，由腾讯轻量云团队出品")).toBeInTheDocument();
   });
@@ -204,6 +208,7 @@ describe("LightVelaFooter", () => {
     expect(supportLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
     expect(supportLink).toHaveAttribute("target", "_blank");
     expect(supportLink).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.queryByRole("link", { name: "Tencent EdgeOne" })).not.toBeInTheDocument();
   });
 
   it("keeps every Spanish footer link, including the logo, under /es", () => {

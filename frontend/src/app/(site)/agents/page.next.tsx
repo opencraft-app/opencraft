@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 
+import { getAgentDocumentMetadata } from '@next-site/agent-document-metadata';
 import { AgentsPageClient } from '@next-site/agents-page-client';
 
 export const metadata: Metadata = {
-  title: '我的智能体伙伴',
+  title: getAgentDocumentMetadata().title,
   robots: {
     index: false,
     follow: false,

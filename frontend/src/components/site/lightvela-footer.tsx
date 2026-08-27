@@ -170,6 +170,11 @@ const getFooterSections = (t: (zh: string) => string): FooterSection[] => {
           href: "https://tcb.cloud.tencent.com/en/?from=lightvela",
           external: true,
         },
+        {
+          label: "Tencent EdgeOne",
+          href: "https://edgeone.ai/",
+          external: true,
+        },
       ],
     });
   }
