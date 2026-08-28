@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -111,13 +110,13 @@ export const CookieConsentBanner = () => {
           <h2 className="text-base font-semibold tracking-[-0.02em] text-slate-950">{text.title}</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             {text.description}{" "}
-            <Link
+            <a
               href={cookiePolicyPath}
               className="font-semibold underline underline-offset-2 hover:opacity-80"
               style={{ color: "#2563EB", WebkitTextFillColor: "#2563EB", textDecorationColor: "#2563EB" }}
             >
               {text.policy}
-            </Link>
+            </a>
           </p>
         </div>
         <div className="flex shrink-0 flex-col gap-2 sm:flex-row md:justify-end">

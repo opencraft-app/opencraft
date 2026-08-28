@@ -1,5 +1,5 @@
 import { KeyRound, Loader2, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
@@ -49,6 +49,7 @@ export const AgentDeepSeekHarnessModelCard = ({
   const [pendingDelete, setPendingDelete] = useState<DeepSeekHarnessProvider | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<DeepSeekHarnessProviderID | null>(null);
+  const savingIdRef = useRef<DeepSeekHarnessProviderID | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -119,7 +120,7 @@ export const AgentDeepSeekHarnessModelCard = ({
     rawValue: string,
     mode: "add" | "edit",
   ) => {
-    if (savingId) return;
+    if (savingIdRef.current) return;
     const value = rawValue.trim();
     if (!value && mode === "edit") {
       setEditingId(null);
@@ -131,6 +132,7 @@ export const AgentDeepSeekHarnessModelCard = ({
       return;
     }
 
+    savingIdRef.current = provider.id;
     setSavingId(provider.id);
     try {
       await client.saveProvider(provider.id, value);
@@ -143,6 +145,7 @@ export const AgentDeepSeekHarnessModelCard = ({
     } catch (error) {
       toast.error(errorMessage(error, t("模型配置保存失败，请稍后重试")));
     } finally {
+      savingIdRef.current = null;
       setSavingId(null);
     }
   };

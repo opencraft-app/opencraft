@@ -36,7 +36,7 @@ describe("PublicSiteHeader", () => {
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "首页" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "更新日志" })).toHaveAttribute("href", "/changelog");
-    expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("href", "/docs/overview");
+    expect(screen.getByRole("link", { name: "文档" })).toHaveAttribute("href", "/docs/overview");
     expect(screen.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/about");
 
     fireEvent.click(screen.getByRole("button", { name: "立即创建" }));
@@ -58,16 +58,50 @@ describe("PublicSiteHeader", () => {
     );
 
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("data-next-link", "true");
-    expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("data-next-link", "true");
+    expect(screen.getByRole("link", { name: "文档" })).toHaveAttribute("data-next-link", "true");
+  });
+
+  it("keeps the brand, navigation, and actions in independent desktop grid columns", () => {
+    render(
+      <PublicSiteHeader
+        authControls={<div data-testid="custom-header-actions">actions</div>}
+        locale="zh-CN"
+      />,
+    );
+
+    expect(screen.getByTestId("site-header-layout")).toHaveClass(
+      "lg:grid",
+      "lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]",
+    );
+    expect(screen.getByTestId("site-header-brand")).toHaveClass(
+      "lg:col-start-1",
+      "lg:justify-self-start",
+    );
+    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toHaveClass(
+      "lg:col-start-2",
+      "lg:justify-self-center",
+    );
+    expect(screen.getByTestId("site-header-actions")).toHaveClass(
+      "lg:col-start-3",
+      "lg:justify-self-end",
+    );
+    expect(screen.getByTestId("site-header-brand")).toContainElement(
+      screen.getByRole("link", { name: "LightVela" }),
+    );
+    expect(screen.getByTestId("site-header-actions")).toContainElement(
+      screen.getByTestId("custom-header-actions"),
+    );
   });
 
   it("uses Home wording for international homepage navigation", () => {
     const { rerender } = render(<PublicSiteHeader locale="zh-SG" />);
 
     expect(screen.getByRole("link", { name: "首页" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "文档" })).toHaveAttribute("href", "/docs/overview");
 
     rerender(<PublicSiteHeader locale="zh-Hant" />);
     expect(screen.getByRole("link", { name: "首頁" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "文檔" })).toHaveAttribute("href", "/docs/overview");
 
     rerender(<PublicSiteHeader locale="en-US" />);
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");

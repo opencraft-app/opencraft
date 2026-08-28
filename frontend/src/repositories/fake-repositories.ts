@@ -1266,7 +1266,7 @@ const createBotRepository = (): BotRepository => {
   };
 
   const maybeHandleFakeDshCommand = (command: string) => {
-    if (command.includes("sudo systemctl status deepseek-harness.service --no-pager")) {
+    if (command.includes("sudo -n systemctl status deepseek-harness.service --no-pager")) {
       return {
         status: "Succeeded",
         exitCode: 0,
@@ -1305,7 +1305,7 @@ const createBotRepository = (): BotRepository => {
       };
     }
 
-    if (command.includes("sudo systemctl restart deepseek-harness.service")) {
+    if (command.includes("sudo -n systemctl restart deepseek-harness.service")) {
       return { status: "Succeeded", exitCode: fakeDshInstalled ? 0 : 1, output: "" };
     }
 

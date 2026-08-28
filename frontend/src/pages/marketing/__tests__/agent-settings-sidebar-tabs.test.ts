@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * 侧边栏「对话/设置」双 tab 改造守卫测试。
+ * 侧边栏「探索/对话」双 tab 改造守卫测试。
  *
  * 背景：对话入口从「使用」菜单组移到侧边栏顶部 tab；「对话」tab 渲染最近会话列表，
  * 数据来自 SDK 1.4.0-beta.0 的 multiSession 受控桥接。本测试做源码级守卫，
@@ -15,6 +15,11 @@ const readPageSource = () =>
 
 const readChatPanelSource = () =>
   readFileSync(join(process.cwd(), "src/pages/marketing/agent-chat-panel.tsx"), "utf8");
+
+const readGeneratedDictionary = (locale: string): Record<string, string> =>
+  JSON.parse(
+    readFileSync(join(process.cwd(), `src/i18n/generated/${locale}.json`), "utf8"),
+  ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
@@ -33,10 +38,63 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('aria-selected={sidebarTab === "settings"}');
   });
 
+  it("labels the top-level modes as explore and chat", () => {
+    const page = readPageSource();
+    const tabs = page.slice(
+      page.indexOf("lv-agents-sidebar-tabs"),
+      page.indexOf('{sidebarTab === "chat" ? ('),
+    );
+
+    expect(tabs).toContain('t("探索")');
+    expect(tabs).toContain('t("对话")');
+    expect(tabs).not.toContain('t("设置")');
+  });
+
+  it("translates the explore and chat tabs in every supported locale", () => {
+    const exploreKey = readGeneratedDictionary("zh-to-key")["探索"];
+    const chatKey = readGeneratedDictionary("zh-to-key")["对话"];
+    const expectedByLocale = {
+      "zh-CN": { explore: "探索", chat: "对话" },
+      "zh-Hant": { explore: "探索", chat: "對話" },
+      "en-US": { explore: "Explore", chat: "Chat" },
+      "id-ID": { explore: "Jelajahi", chat: "Obrolan" },
+      es: { explore: "Explorar", chat: "Conversación" },
+      "ja-JP": { explore: "探索", chat: "チャット" },
+      "ko-KR": { explore: "탐색", chat: "채팅" },
+    } as const;
+
+    expect(exploreKey).toBeDefined();
+    expect(chatKey).toBeDefined();
+    for (const [locale, expected] of Object.entries(expectedByLocale)) {
+      const dictionary = readGeneratedDictionary(locale);
+      expect(dictionary[exploreKey!]).toBe(expected.explore);
+      expect(dictionary[chatKey!]).toBe(expected.chat);
+    }
+  });
+
+  it("places skills under use before automations without moving workbench", () => {
+    const page = readPageSource();
+    const setupGroupStart = page.indexOf('id: "setup"');
+    const useGroupStart = page.indexOf('id: "use"');
+    const growthGroupStart = page.indexOf('id: "growth"');
+    const setupGroup = page.slice(setupGroupStart, useGroupStart);
+    const useGroup = page.slice(useGroupStart, growthGroupStart);
+
+    expect(setupGroup).not.toContain('id: "skill"');
+    expect(useGroup).toContain('id: "skill"');
+    expect(useGroup.indexOf('id: "skill"')).toBeLessThan(
+      useGroup.indexOf('id: "automations"'),
+    );
+    expect(useGroup.indexOf('id: "automations"')).toBeLessThan(
+      useGroup.indexOf('id: "website"'),
+    );
+    expect(useGroup).toContain("isGlobal && showHiddenAgentTools");
+  });
+
   it("navigates the main area on tab click (settings → last menu, chat → first session)", () => {
     const page = readPageSource();
 
-    // 点「设置」：在对话页时回到前一个设置菜单（模块级记忆，跨 /agents/[section] 重挂载存活）。
+    // 点「探索」：在对话页时回到前一个设置菜单（模块级记忆，跨 /agents/[section] 重挂载存活）。
     expect(page).toContain("handleSidebarSettingsTabClick");
     expect(page).toContain("let lastSettingsSection");
     expect(page).toContain("AGENT_SECTION_PATH_BY_ID[lastSettingsSection]");

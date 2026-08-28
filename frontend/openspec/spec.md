@@ -1,8 +1,8 @@
 # 国际站西语端到端上线 Spec
 # DeepSeek Harness 真实接入 Spec
 
-**最后更新：** 2026-08-25
-**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机复验；前端已切换 COS 全球加速安装地址，但该对象当前仍需覆盖为最新版，之后再进行北京 Hermes Sandbox 与 TAT 复验
+**最后更新：** 2026-08-27
+**状态：** npm-only 六插件方案已通过本地验证与用户授权 Ubuntu 24.04 主机复验；仓库安装器已与 COS 对象逐字节对齐并通过发布一致性门禁；北京 Hermes Sandbox 与 TAT 链路仍待复验
 
 ## 1. 统一命令通道
 
@@ -10,10 +10,11 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 
 | 动作 | 固定命令 |
 | --- | --- |
-| 状态 | `sudo systemctl status deepseek-harness.service --no-pager`，包装为始终返回 JSON 的条件命令 |
-| 安装 | 下发固定 `sudo systemd-run` 命令，由实例经 HTTPS 从 COS 全球加速地址下载、校验并执行单文件安装器；任务 ID 由前端生成并校验 |
-| 任务查询 | `sudo cat /var/lib/lightvela/dsh/installations/<validated-id>.json` |
-| 重启 | `sudo systemctl restart deepseek-harness.service`，随后再次查询状态 |
+| 状态 | `sudo -n systemctl status deepseek-harness.service --no-pager`、`NRestarts` 与三秒 `http://127.0.0.1:3080/` 探测；sudo 或 `curl` 不可用、探测命令异常时整体失败，不回落为未安装或误报服务异常 |
+| 安装 | 下发固定 `sudo -n systemd-run` 命令，由实例经 HTTPS 从 COS 全球加速地址下载单文件安装器，校验构建期固定 SHA-256 后执行；任务 ID 由前端生成并校验 |
+| 修复 | 用户二次确认后复用安装任务，固定传入 `repair` 操作类型；wrapper 隔离完整旧 Web profile，只保留 `cordis.patch.yml` 作为干净 profile 输入，再调用同一安装器 `install` action；失败时恢复旧 profile 和服务，成功后清理备份 |
+| 任务查询 | `sudo -n cat /var/lib/lightvela/dsh/installations/<validated-id>.json` |
+| 重启 | `sudo -n systemctl restart deepseek-harness.service`，先校验命令退出码，再查询组合健康状态 |
 | 模型供应商列表 | 以 `agentuser` 身份执行前端内联的固定 Provider helper：`providers --region <cn|global>` |
 | 模型供应商配置 | 首个命令在实例生成一次性 RSA 密钥并返回公钥；浏览器用 RSA-OAEP/SHA-256 加密 API Key，第二个命令只携带密文并在实例解密到 helper stdin；Provider ID 必须命中固定白名单 |
 | 模型供应商删除 | 以 `agentuser` 身份执行同一内联 helper：`remove-provider --provider <allowlisted-id>` |
@@ -21,9 +22,10 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 ## 2. COS 单文件安装器
 
 - 固定运行用户 `agentuser`、`DSH_HOME=/home/agentuser/.dsh`、端口 `127.0.0.1:3080`。
-- DSH、SkillHub 与五个渠道插件均请求 npm `@latest`；安装任务开始时一次性解析并校验精确版本、`dist.integrity` 和 HTTPS tarball，将结果写入 root-owned 安装快照；不安装 `dsh-auth`。
-- Hermes 镜像不预置 DSH 安装器、Provider helper 或冻结清单。安装器固定从 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh` 获取；Provider helper 继续使用独立内联资源。
-- 用户点击安装后，前端只通过一次 `debug/exec` 请求启动 `systemd-run`。wrapper 使用 HTTPS/TLS 1.2、5 次有限重试、连接和总超时下载脚本到 root 私有临时目录，并校验文件大小为 1 KiB 至 1 MiB、首行为 Bash shebang 且 `bash -n` 通过后再执行；不使用 `curl | bash`。任务结束自动清理下载目录。
+- DSH、SkillHub 与五个渠道插件均请求 npm `@latest`，这是产品明确接受的跨任务可复现性取舍；安装任务开始时一次性解析并校验精确版本、`dist.integrity` 和 HTTPS tarball，将结果写入 root-owned 安装快照，保证单次任务内部不漂移；不安装 `dsh-auth`。
+- Hermes 镜像不预置 DSH 安装器、Provider helper 或冻结清单。安装器固定从 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh` 获取；构建时根据仓库内 `images/helpers/install-deepseek-harness.sh` 生成可信 SHA-256，Provider helper 继续使用独立内联资源。
+- 用户点击安装后，前端只通过一次 `debug/exec` 请求启动 `systemd-run`。wrapper 使用 HTTPS/TLS 1.2、5 次有限重试、连接和总超时下载脚本到 root 私有临时目录，并依次校验文件大小为 1 KiB 至 1 MiB、Bash shebang、`bash -n` 和可信 SHA-256；全部通过后才执行，不使用 `curl | bash`。校验失败写入 `verify_installer` 失败状态，任务结束自动清理下载目录。
+- `.ci/hermes-image.yml` 在构建前调用独立校验器下载 COS 对象，执行 Bash 语法检查并与仓库安装器逐字节比较；内容或 SHA-256 不一致时立即失败。更新仓库安装器后，必须先覆盖 COS 对象并通过该门禁，不能只更新前端生成哈希。
 - `systemd-run` wrapper 在下载前原子写入 `pending` 任务 JSON；下载、校验或安装器尚未写终态便退出时原子覆盖为 `failed`，避免轮询只得到文件不存在或永久停在 pending。启动请求结果不确定时，前端通过只读命令对任务文件与 systemd unit 延迟重试对账；对账通道同样不可用时保留 task ID，明确确认任务未启动后向用户返回原始错误。
 - DSH runtime 与 `web` profile 根据本次安装快照生成精确版本的 `package.json`、`.pnpmfile.cjs` 和 `pnpm-lock.yaml`；hook 将整个 `@deepseek-ai/dsh-*` 依赖族保持在本次解析出的 DSH 版本，避免安装过程中混装其他版本。候选目录先执行 `--lockfile-only`，再执行 `pnpm install --frozen-lockfile`。
 - 若实例全局 pnpm 不存在或不是 `10.33.0`，安装任务先在候选目录引导固定版本，校验通过后原子持久化到 root-owned `/opt/lightvela/dsh/tooling/pnpm-10.33.0`；服务通过固定 PATH 使用该版本，任务目录清理后仍可执行插件管理。不得替换或升级实例全局 pnpm。
@@ -48,26 +50,30 @@ DeepSeek Harness 不新增专用后端接口。页面所有实例操作统一调
 - 切换前备份旧 runtime、完整旧 `web` profile、固定 pnpm tooling 和旧 unit；切换后明确 enable、restart，先等待回环 HTTP 200，再确认只监听 `127.0.0.1:3080`。失败时恢复备份并重启旧服务；首次安装失败清理临时目录和半成品。
 - 重装或升级时保留原 `web/cordis.patch.yml`；`$DSH_HOME` 下的 credentials、settings、storage 和其他用户数据不参与替换或清理。成功或失败后删除任务工作目录，但保留安装任务 JSON 状态记录。
 - 已经收敛到相同 npm 快照、六插件和服务配置时幂等复用 runtime。SkillHub 已安装的第三方插件依赖、bundle、workspace build policy 与编译产物在校验包名、bundle patch 路径和 profile 完整性后保留；旧安装器写入的 `pnpm.onlyBuiltDependencies` 从可变 Web profile 迁移删除，runtime 自身的 native build allowlist 保持不变。
+- 用户确认“修复”后，wrapper 隔离完整旧 profile，只将 `web/cordis.patch.yml` 放入干净 profile，再调用安装器；模型凭据、DSH settings 与 storage 保留，用户自行安装的插件及其他 profile 文件移除。任务失败时恢复完整旧 profile 和原服务状态。
 
 ## 3. 模型供应商配置 helper
 
 前端不再直连 DSH 配置 RPC。`configure-deepseek-harness.py` 在构建时编码为固定前端资源，每次操作经 `debug/exec` 以内联 Python 脚本实时执行，不落到实例公共路径。helper 只允许调用 `llm.providers`、`settings.describe`、`credentials.describe`、`settings.mutate`、`credentials.set`、`credentials.unset`，并校验 RPC envelope 与 `result.ok`。非 DeepSeek Provider 在对应 settings path 写入派生的 `<ROUTE>_API_KEY` 引用，DeepSeek 直接写 `DEEPSEEK_API_KEY`。helper 只从 stdin 读取密钥，响应不包含密钥值。
 
-保存密钥分两次调用同一 `debug/exec`：第一次在 `agentuser` 私有目录生成一次性 RSA-4096 密钥并仅返回 DER 公钥；浏览器使用 RSA-OAEP/SHA-256 加密用户输入；第二次命令只携带 base64 密文，由 OpenSSL 在实例内解密并通过管道写入 helper stdin。私钥权限为 0600，命令退出时删除；未完成的旧私钥在下一次保存时按 15 分钟 TTL 清理。API Key 明文不会进入命令正文、进程参数、响应或浏览器持久化。
+保存密钥分两次调用同一 `debug/exec`：第一次在 `agentuser` 私有目录生成一次性 RSA-4096 密钥并仅返回 DER 公钥，同时通过 `sudo -n systemd-run --on-active=15m` 建立一次性清理 timer；timer 创建失败则首条命令立即删除私钥并失败。浏览器使用 RSA-OAEP/SHA-256 加密用户输入；第二次命令只携带 base64 密文，由 OpenSSL 在实例内解密并通过管道写入 helper stdin。私钥权限为 0600，第二次命令退出时主动删除；浏览器中断时最迟由 timer 清理，旧版本遗留且已满 15 分钟的私钥在下一次保存前再次清理。API Key 明文不会进入命令正文、进程参数、响应或浏览器持久化。
 
 删除遵循 DSH WebUI 的窄范围清理：DeepSeek 只清除可写的 `DEEPSEEK_API_KEY`，凭据已配置但来自不可写环境时明确拒绝删除；其他供应商删除 profile，且仅在 profile 引用 LightVela 派生的 `<ROUTE>_API_KEY` 并确认凭据可写时清除凭据。环境变量密钥、自定义引用与不可识别凭据保持不变。凭据清理和 profile `unset` 均为幂等操作，部分失败允许原位重试。
 
 ## 4. 页面状态
 
-- 状态查询 loading、error、未安装、安装中、安装失败、运行中、未运行完整覆盖。
+- 状态查询 loading、error、未安装、安装中、安装失败、运行中、运行异常、未运行完整覆盖。systemd active 但存在自动重启记录或回环 HTTP 不可达时为运行异常。
 - dsh 已安装即展示模型配置卡片和 WebUI/重启操作；运行状态如实展示，不增加诊断分支。
+- 已安装卡片在“重启”右侧展示“修复”。点击后显示 `修复 DeepSeek Harness` 确认弹窗并准确说明 WebUI 暂时不可用、数据保留范围和插件重置范围；取消、关闭或 Esc 均不启动任务。
+- 确认修复后显示 `正在修复 DeepSeek Harness` 和现有任务进度。任务类型与 task ID 一并持久化，刷新后优先恢复修复轮询；修复失败且安装器已回滚时重新读取真实状态，旧服务可用则保留已安装页面并展示错误。
 - 模型配置卡片上方持续展示已配置模型供应商，每行提供编辑和删除；同一时间只展开一个编辑区。
 - 配置区始终展示当前站点完整白名单，字段标签使用“模型供应商”；重复保存同一 Provider 通过原固定命令覆盖更新。
 - API Key 输入始终为空；编辑时留空表示保留已有密钥。
-- 保存请求未完成时，按钮显示“保存中...”并禁用供应商选择、密钥输入和其他配置操作。
+- 保存请求未完成时，按钮显示“保存中...”并禁用供应商选择、密钥输入和其他配置操作；同步 ref 锁在 React 状态提交前即占位，连续点击只允许一条保存命令进入执行链路。
 - 保存成功或失败通过顶部居中 Toast 反馈并自动消失；成功时保留当前 Provider 选择并清空密钥，失败时保留密钥以便重试。
 - 删除前二次确认；成功后刷新列表，失败时保留弹窗并允许重试。
 - WebUI 使用当前 `Bot.id` 生成实例专属外链：国内站 `https://${botId}.dsh.lightvela.tech`，国际站 `https://${botId}.dsh.lightvela.site`；链接在新标签页打开，不展示静态 IP。
+- 主卡片 Logo 使用仓库内 `/assets/deepseek-harness-logo.svg`，不依赖外部图片域名。
 
 ---
 
