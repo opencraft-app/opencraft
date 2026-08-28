@@ -83,8 +83,10 @@ const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
 const AUTOMATION_PROMPT_MAX_LENGTH = 1000;
 const CHAT_ID_MAX_LENGTH = 60;
+const AUTOMATION_FORM_TEST_JOB_ID = "automation-form-test-run";
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
+type AutomationTestState = "idle" | "running" | "ok" | "fail";
 /**
  * 自动任务展示所用的 locale，直接复用注册表类型。
  *
@@ -1159,6 +1161,8 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           skillLoadState={installedSkillLoadState}
           onRefreshSkills={refreshInstalledSkills}
           onRefreshJobs={refreshCreatedJobs}
+          testState={testState[AUTOMATION_FORM_TEST_JOB_ID] ?? "idle"}
+          onTestRun={(job) => void handleTestRun(job)}
           onClose={() => setCreating(false)}
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
@@ -1224,6 +1228,8 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           skillLoadState={installedSkillLoadState}
           onRefreshSkills={refreshInstalledSkills}
           onRefreshJobs={refreshCreatedJobs}
+          testState={testState[AUTOMATION_FORM_TEST_JOB_ID] ?? "idle"}
+          onTestRun={(job) => void handleTestRun(job)}
           onClose={() => setCreatingFromTemplate(null)}
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
@@ -1267,6 +1273,8 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           skillLoadState={installedSkillLoadState}
           onRefreshSkills={refreshInstalledSkills}
           onRefreshJobs={refreshCreatedJobs}
+          testState={testState[editingJob.id] ?? "idle"}
+          onTestRun={(job) => void handleTestRun(job)}
           onClose={() => setEditingJob(null)}
           onSaved={async () => {
             setEditingJob(null);
@@ -2888,6 +2896,8 @@ export function AutomationFormModal({
   skillLoadState,
   onRefreshSkills,
   onRefreshJobs,
+  testState,
+  onTestRun,
   onClose,
   onSaved,
   onError,
@@ -2904,6 +2914,8 @@ export function AutomationFormModal({
   skillLoadState: InstalledSkillLoadState;
   onRefreshSkills: () => Promise<InstalledSkillLoadState>;
   onRefreshJobs: () => Promise<CronJob[] | null>;
+  testState: AutomationTestState;
+  onTestRun: (job: CronJob) => void;
   onClose: () => void;
   onSaved: () => void;
   onError: (message: string) => void;
@@ -3100,6 +3112,52 @@ export function AutomationFormModal({
     && name.trim().length > 0
     && (mode === "edit" || prompt.trim().length > 0)
     && (scheduleUneditable || schedule.length > 0);
+  const canTestRun = !submitting
+    && testState !== "running"
+    && name.trim().length > 0
+    && prompt.trim().length > 0;
+
+  const handleTestRun = useCallback(() => {
+    if (!canTestRun) return;
+    const deliver = buildDeliverString(deliverPlatforms, deliverChatIds);
+    const baseJob: CronJob = initialJob ?? {
+      id: AUTOMATION_FORM_TEST_JOB_ID,
+      name: "",
+      prompt: "",
+      schedule: { kind: "", expr: "", display: "" },
+      skills: [],
+      enabled: true,
+      state: "",
+      deliver: "local",
+      next_run_at: null,
+      last_run_at: null,
+      last_status: null,
+      created_at: null,
+      script: "",
+      effective_window: null,
+      lightvela_schedule: null,
+      context_from: null,
+      context_from_hydrated: true,
+      inference_config: null,
+    };
+    onTestRun({
+      ...baseJob,
+      id: initialJob?.id ?? AUTOMATION_FORM_TEST_JOB_ID,
+      name: name.trim(),
+      prompt: prompt.trim(),
+      schedule: initialJob?.schedule ?? { kind: "", expr: schedule, display: schedule },
+      skills: selectedSkill ? [selectedSkill] : [],
+      deliver,
+      // 测试运行忽略正式任务的生效窗口脚本，保证当前表单内容可以立即执行。
+      script: "",
+      effective_window: null,
+      lightvela_schedule: null,
+      context_from: externalMultipleUpstreams
+        ? initialContextFrom
+        : selectedUpstream ? [selectedUpstream] : null,
+      context_from_hydrated: true,
+    });
+  }, [canTestRun, deliverChatIds, deliverPlatforms, externalMultipleUpstreams, initialContextFrom, initialJob, name, onTestRun, prompt, schedule, selectedSkill, selectedUpstream]);
 
   const handleChatIdChange = useCallback((channel: string, value: string) => {
     const nextValue = value.slice(0, CHAT_ID_MAX_LENGTH);
@@ -3774,6 +3832,24 @@ export function AutomationFormModal({
 
         {/* 操作 */}
         <div className="mt-6 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={!canTestRun}
+            onClick={handleTestRun}
+            style={MODAL_CONTROL_TEXT_STYLE}
+            className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-4 py-2 text-base font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {testState === "running" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : testState === "ok" ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-[#0F8A4B]" />
+            ) : testState === "fail" ? (
+              <X className="h-3.5 w-3.5 text-[#B91C1C]" />
+            ) : (
+              <Zap className="h-3.5 w-3.5" />
+            )}
+            {t("测试运行")}
+          </button>
           <button
             type="button"
             onClick={onClose}

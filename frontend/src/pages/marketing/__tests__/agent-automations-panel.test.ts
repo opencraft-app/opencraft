@@ -1855,10 +1855,88 @@ function renderAutomationForm(overrides: Partial<Parameters<typeof AutomationFor
     onClose: vi.fn(),
     onSaved: vi.fn(),
     onError: vi.fn(),
+    testState: "idle",
+    onTestRun: vi.fn(),
     ...overrides,
   };
   return render(createElement(AutomationFormModal, props));
 }
+
+describe("automation form test run", () => {
+  it("test-runs the current unsaved create form without saving it", () => {
+    if (isGlobal) return;
+    const onTestRun = vi.fn();
+    const onSaved = vi.fn();
+    renderAutomationForm({
+      onTestRun,
+      onSaved,
+      enabledChannels: new Set(["wecom"]),
+      skillLoadState: { status: "ready", slugs: ["news"], error: null },
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "未保存名称" } });
+    fireEvent.change(screen.getByPlaceholderText(/请用提示词的形式描述/), { target: { value: "未保存说明" } });
+    chooseUpstream("上游任务 A");
+    fireEvent.click(screen.getByRole("button", { name: "调用技能" }));
+    fireEvent.click(screen.getByRole("option", { name: /news/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /企业微信/ }));
+    fireEvent.click(screen.getByRole("button", { name: "测试运行" }));
+
+    expect(onTestRun).toHaveBeenCalledWith(expect.objectContaining({
+      name: "未保存名称",
+      prompt: "未保存说明",
+      skills: ["news"],
+      deliver: "wecom",
+      context_from: ["upstream"],
+      script: "",
+      effective_window: null,
+    }));
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
+    expect(cronClientMocks.createCronJobWithScriptRollback).not.toHaveBeenCalled();
+    expect(screen.getByText("添加自动任务")).toBeInTheDocument();
+  });
+
+  it("test-runs unsaved edit values and keeps save separate", () => {
+    const onTestRun = vi.fn();
+    const onSaved = vi.fn();
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({ id: "edit-job", name: "旧名称", prompt: "旧说明" }),
+      onTestRun,
+      onSaved,
+    });
+
+    fireEvent.change(screen.getByDisplayValue("旧名称"), { target: { value: "编辑中的名称" } });
+    fireEvent.change(screen.getByDisplayValue("旧说明"), { target: { value: "编辑中的说明" } });
+    fireEvent.click(screen.getByRole("button", { name: /测试运行|Test run/ }));
+
+    expect(onTestRun).toHaveBeenCalledWith(expect.objectContaining({
+      id: "edit-job",
+      name: "编辑中的名称",
+      prompt: "编辑中的说明",
+    }));
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(cronClientMocks.editCronJob).not.toHaveBeenCalled();
+    expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
+  });
+
+  it("disables form test run while required fields are empty", () => {
+    renderAutomationForm();
+    expect(screen.getByRole("button", { name: /测试运行|Test run/ })).toBeDisabled();
+  });
+
+  it("shows the form test run as busy while it is starting", () => {
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({ id: "edit-job", name: "草稿", prompt: "执行草稿" }),
+      testState: "running",
+    });
+    const button = screen.getByRole("button", { name: /测试运行|Test run/ });
+    expect(button).toBeDisabled();
+    expect(button.querySelector(".animate-spin")).not.toBeNull();
+  });
+});
 
 describe("automation notification channel options", () => {
   it("keeps the domestic empty-state guard", () => {
