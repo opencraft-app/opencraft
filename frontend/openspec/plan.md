@@ -7,12 +7,14 @@
 ## Tasks
 
 - [x] 测试先行实现自动任务创建成功后的多通道确认消息、失败隔离、非阻塞警告与双站国际化，并通过定向测试、类型、i18n 和差异门禁。
+- [x] 增量调整创建确认消息，使用已创建任务的名称进行本地化插值，并完成 TDD、国际化和回归门禁。
 
 **Verification:**
 - RED：新增用例分别失败于即时发送接口不存在、创建流程未调用和未处理 Promise rejection；GREEN 后全部通过。
 - 国内/国际相关 3 个测试文件共 231 passed；补充异常 rejection 用例后自动任务主测试文件 130 passed。
 - `pnpm check` 通过：TypeScript diagnostics 214 current / 276 baseline / 0 new / 62 resolved；i18n 结构错误 0。
 - `pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+- 增量 RED：任务名断言准确捕获固定文案；GREEN 后消息使用 `createInput.name`，相关 3 个测试文件仍为 231 passed，`pnpm check` 保持 0 new diagnostics。
 
 ---
 

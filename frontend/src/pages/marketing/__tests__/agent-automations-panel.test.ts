@@ -1897,7 +1897,7 @@ describe("automation notification channel options", () => {
       expect(cronClientMocks.sendHermesChatNotice).toHaveBeenCalledWith(
         "bot-1",
         "qqbot,wecom",
-        "LightVela 已添加新的自动任务。",
+        "LightVela 已添加新的自动任务「下游任务」。",
       );
       expect(onError).toHaveBeenCalledWith("自动任务已添加，但部分通知通道发送确认消息失败。");
     });
