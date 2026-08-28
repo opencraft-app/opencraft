@@ -55,6 +55,8 @@ Confirm that the Agent responds normally and that the model shown in the Agent c
 
 Model Switching changes the engine used for future responses. It does not move your conversation history, rewrite files in [Cloud Storage](./files.md), or change your [Skills](./skill.md) and [Automations](./automation.md).
 
+If you want to explore a separate plugin-first agent environment alongside Hermes Agent, see [DeepSeek Harness](./deepseek-harness.md).
+
 ## If a switch does not work
 
 1. Return to [Configure Models](./model.md) and confirm the target model, credentials, and provider settings are complete.

@@ -88,6 +88,7 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/diagnostics", title: "诊断中心" },
       { slug: "configuration/advanced-settings", title: "高级设置" },
       { slug: "configuration/multiple-models", title: "模型切换" },
+      { slug: "configuration/deepseek-harness", title: "DeepSeek Harness" },
     ],
   },
   {
@@ -189,6 +190,11 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         slug: "configuration/multiple-models",
         title: "模型切换",
         titleEn: "Model Switching",
+      },
+      {
+        slug: "configuration/deepseek-harness",
+        title: "DeepSeek Harness",
+        titleEn: "DeepSeek Harness",
       },
     ],
   },
@@ -352,6 +358,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/diagnostics": "configuration/diagnostics.md",
   "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
+  "configuration/deepseek-harness": "configuration/deepseek-harness.md",
   // 问题排查
   faq: "07-faq.md",
   // 联系与支持
@@ -402,6 +409,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/diagnostics": "configuration/diagnostics.md",
   "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
+  "configuration/deepseek-harness": "configuration/deepseek-harness.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",
   "use-cases/chinese-messaging-channels": "use-cases/chinese-messaging-channels.md",
