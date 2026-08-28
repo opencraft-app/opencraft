@@ -1880,7 +1880,7 @@ describe("automation notification channel options", () => {
       onError,
     });
 
-    fillCreateFields();
+    fillCreateFields("  下游任务  ");
     fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "企业微信" }));
     fireEvent.click(screen.getByRole("button", { name: "添加" }));
@@ -1888,7 +1888,7 @@ describe("automation notification channel options", () => {
     await waitFor(() => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
         "bot-1",
-        expect.objectContaining({ deliver: "qqbot,wecom" }),
+        expect.objectContaining({ name: "下游任务", deliver: "qqbot,wecom" }),
         undefined,
       );
     });
@@ -1897,7 +1897,7 @@ describe("automation notification channel options", () => {
       expect(cronClientMocks.sendHermesChatNotice).toHaveBeenCalledWith(
         "bot-1",
         "qqbot,wecom",
-        "LightVela 已添加新的自动任务。",
+        "LightVela 已添加新的自动任务「下游任务」。",
       );
       expect(onError).toHaveBeenCalledWith("自动任务已添加，但部分通知通道发送确认消息失败。");
     });
@@ -1951,8 +1951,8 @@ describe("automation notification channel options", () => {
   });
 });
 
-function fillCreateFields() {
-  fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "下游任务" } });
+function fillCreateFields(name = "下游任务") {
+  fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: name } });
   fireEvent.change(screen.getByPlaceholderText(/请用提示词的形式描述/), { target: { value: "整理上游结果" } });
 }
 

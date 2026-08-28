@@ -92,8 +92,8 @@ export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
     section: "docs",
     href: "/docs/overview",
     label: label({
-      ...zhSimplified("产品文档"),
-      [PUBLIC_SITE_LOCALES.ZH_HANT]: "產品文檔",
+      ...zhSimplified("文档"),
+      [PUBLIC_SITE_LOCALES.ZH_HANT]: "文檔",
       [PUBLIC_SITE_LOCALES.EN_US]: "Docs",
       [PUBLIC_SITE_LOCALES.ID_ID]: "Dokumentasi",
       [PUBLIC_SITE_LOCALES.ES]: "Documentación",
