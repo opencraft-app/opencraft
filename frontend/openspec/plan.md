@@ -1,78 +1,3 @@
-# Agent 侧边栏“技能 / 自动任务”顺序调整 Implementation Plan
-
-**Goal:** 将“技能”从“配置”分组移动到“使用”分组，并排在“自动任务”前；“工作台”的条件、位置与行为保持不变。
-
-**Role:** Developer / Reviewer（S 级单任务，沿用当前隔离 worktree）
-
-**Files:**
-- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
-- Test: `frontend/src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts`
-- Test: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
-
-**Acceptance:** 侧栏“使用”分组顺序为“技能 → 自动任务 → 工作台（原条件下显示）”；“配置”分组不再包含“技能”；所有入口路由、图标和页面行为不变。
-
-## Tasks
-
-- [x] 测试先行调整“技能”所属分组及顺序，并通过定向测试、类型和差异门禁。
-
-**Verification:**
-- RED：新增顺序守卫测试因“技能”仍位于“配置”分组而失败，17 passed / 1 failed；现有导航分组守卫随后暴露旧约定，21 passed / 1 failed。
-- GREEN：两组 Agent 侧边栏测试 22/22 passed；与首页导航合并回归共 30/30 passed。
-- `pnpm check` 通过：TypeScript diagnostics 214 current / 276 baseline / 0 new / 62 resolved；i18n 结构错误 0。
-- `git diff --check` 通过。
-
----
-
-# 首页顶部导航“产品文档”精简为“文档” Implementation Plan
-
-**Goal:** 将公开站首页顶部导航的简体中文“产品文档”精简为“文档”，繁体中文同步精简为“文檔”；保持文档路由和其他语言标签不变。
-
-**Role:** Developer / Reviewer（S 级单任务，沿用当前隔离 worktree）
-
-**Files:**
-- Modify: `frontend/src/lib/public-site-navigation.ts`
-- Test: `frontend/src/components/site/__tests__/site-header.test.tsx`
-
-**Acceptance:** `zh-CN` / `zh-SG` 顶部导航显示“文档”，`zh-Hant` 显示“文檔”，并继续指向 `/docs/overview`；其他语言标签和所有导航行为不变。
-
-## Tasks
-
-- [x] 测试先行更新简体及繁体中文文档导航标签，并通过定向测试、类型和差异门禁。
-
-**Verification:**
-- RED：简体阶段 2 条断言因仍渲染“产品文档”而失败；繁体补充阶段 1 条断言因仍渲染“產品文檔”而失败。
-- GREEN：站点头部与 Agent 侧边栏两组定向测试共 25/25 passed。
-- `pnpm check` 通过：TypeScript diagnostics 214 current / 276 baseline / 0 new / 62 resolved；i18n 结构错误 0。
-- `git diff --check` 通过。
-
----
-
-# Agent 侧边栏“探索 / 对话”文案 Implementation Plan
-
-**Goal:** 将 Agent 侧边栏顶层双页签从“设置 / 对话”调整为“探索 / 对话”，并同步全部已支持语言；不改变路由、内部状态名或交互行为。
-
-**Role:** Developer / Reviewer（S 级单任务，隔离 worktree 内串行执行）
-
-**Files:**
-- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
-- Test: `frontend/src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts`
-- Generate: `frontend/src/i18n/generated/{zh-to-key,zh-CN,zh-Hant,en-US,id-ID,es,ja-JP,ko-KR}.json`
-
-**Acceptance:** 顶层页签显示“探索 / 对话”；英文显示“Explore / Chat”；其余已支持语言均有明确译文；路由、`sidebarTab` 内部状态和点击行为保持不变。
-
-## Tasks
-
-- [x] 测试先行锁定“探索 / 对话”页签文案，更新中文源文案与全部生成语言，并通过定向测试、i18n、类型和差异门禁。
-
-**Verification:**
-- RED：页签测试先失败于源码仍为“设置”；语言测试再失败于新增翻译为空及日/韩“对话”为空。
-- GREEN：`agent-settings-sidebar-tabs.test.ts` 17/17 passed。
-- `pnpm i18n:extract`、`pnpm i18n:check`、`pnpm i18n:zh-hant:check` 通过。
-- `pnpm check` 通过：TypeScript diagnostics 214 current / 276 baseline / 0 new / 62 resolved；i18n 结构错误 0。
-- `git diff --check` 通过。
-
----
-
 # 自动任务创建成功通知 Implementation Plan
 
 **Design:** `../wiki/prd-docs/2026-08-27-自动任务创建成功后发送通知确认.md`
@@ -82,14 +7,12 @@
 ## Tasks
 
 - [x] 测试先行实现自动任务创建成功后的多通道确认消息、失败隔离、非阻塞警告与双站国际化，并通过定向测试、类型、i18n 和差异门禁。
-- [x] 增量调整创建确认消息，使用已创建任务的名称进行本地化插值，并完成 TDD、国际化和回归门禁。
 
 **Verification:**
 - RED：新增用例分别失败于即时发送接口不存在、创建流程未调用和未处理 Promise rejection；GREEN 后全部通过。
 - 国内/国际相关 3 个测试文件共 231 passed；补充异常 rejection 用例后自动任务主测试文件 130 passed。
 - `pnpm check` 通过：TypeScript diagnostics 214 current / 276 baseline / 0 new / 62 resolved；i18n 结构错误 0。
 - `pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
-- 增量 RED：任务名断言准确捕获固定文案；GREEN 后消息使用 `createInput.name`，相关 3 个测试文件仍为 231 passed，`pnpm check` 保持 0 new diagnostics。
 
 ---
 
