@@ -61,6 +61,38 @@ describe("PublicSiteHeader", () => {
     expect(screen.getByRole("link", { name: "文档" })).toHaveAttribute("data-next-link", "true");
   });
 
+  it("keeps the brand, navigation, and actions in independent desktop grid columns", () => {
+    render(
+      <PublicSiteHeader
+        authControls={<div data-testid="custom-header-actions">actions</div>}
+        locale="zh-CN"
+      />,
+    );
+
+    expect(screen.getByTestId("site-header-layout")).toHaveClass(
+      "lg:grid",
+      "lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]",
+    );
+    expect(screen.getByTestId("site-header-brand")).toHaveClass(
+      "lg:col-start-1",
+      "lg:justify-self-start",
+    );
+    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toHaveClass(
+      "lg:col-start-2",
+      "lg:justify-self-center",
+    );
+    expect(screen.getByTestId("site-header-actions")).toHaveClass(
+      "lg:col-start-3",
+      "lg:justify-self-end",
+    );
+    expect(screen.getByTestId("site-header-brand")).toContainElement(
+      screen.getByRole("link", { name: "LightVela" }),
+    );
+    expect(screen.getByTestId("site-header-actions")).toContainElement(
+      screen.getByTestId("custom-header-actions"),
+    );
+  });
+
   it("uses Home wording for international homepage navigation", () => {
     const { rerender } = render(<PublicSiteHeader locale="zh-SG" />);
 
