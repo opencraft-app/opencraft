@@ -5165,3 +5165,14 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - 使用本地 global + mock 预览完成英文布局验收：1440px 桌面与 900px 窄屏下两个操作按钮均完整显示，输入框和模型下拉保持剩余空间；临时 mock 已在验收后移除。
 
 ---
+# 国际站 Agent 与页脚问题修复 Implementation Plan
+
+**Goal:** 修复国际站英文 Agent 页标题、双站 Agent 侧栏底部留白，并在国际站页脚增加 Tencent EdgeOne。
+
+**Design:** `openspec/changes/2026-08-27-global-agent-footer-bugfix-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-27-global-agent-footer-bugfix-plan.md`
+
+- [x] 测试先行完成三项局部修复，并通过定向 Vitest、类型、i18n、diff 与国际站浏览器 smoke。
+
+---

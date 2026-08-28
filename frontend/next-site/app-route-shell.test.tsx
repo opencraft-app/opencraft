@@ -2,6 +2,8 @@ import { render, waitFor } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+let currentLanguage = "es";
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/agents/skills",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -12,7 +14,7 @@ vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
   return {
     ...actual,
-    useTranslation: () => ({ i18n: { language: "es" } }),
+    useTranslation: () => ({ i18n: { language: currentLanguage } }),
   };
 });
 
@@ -30,6 +32,7 @@ import { AppRouteShell } from "./app-route-shell";
 
 describe("AppRouteShell document metadata", () => {
   beforeEach(() => {
+    currentLanguage = "es";
     document.title = "Agent Console | LightVela";
     document.documentElement.lang = "en-US";
   });
@@ -44,6 +47,39 @@ describe("AppRouteShell document metadata", () => {
     await waitFor(() => {
       expect(document.title).toContain("Habilidades");
       expect(document.documentElement.lang).toBe("es");
+    });
+  });
+
+  it("uses My Agent for English and switches the title back to Chinese", async () => {
+    currentLanguage = "en-US";
+    const { rerender } = render(
+      <AppRouteShell requireAuth={false}>
+        <div>Agent settings</div>
+      </AppRouteShell>,
+    );
+
+    await waitFor(() => {
+      expect(document.title).toBe("My Agent | LightVela");
+      expect(document.documentElement.lang).toBe("en-US");
+    });
+
+    currentLanguage = "zh-CN";
+    rerender(
+      <AppRouteShell requireAuth={false}>
+        <div>智能体设置</div>
+      </AppRouteShell>,
+    );
+
+    await waitFor(() => {
+      expect(document.title).toBe("我的智能体伙伴 | LightVela");
+      expect(document.documentElement.lang).toBe("zh-CN");
+    });
+
+    document.title = "My Agent | LightVela";
+
+    await waitFor(() => {
+      expect(document.title).toBe("我的智能体伙伴 | LightVela");
+      expect(document.head.querySelectorAll("title")).toHaveLength(1);
     });
   });
 });
