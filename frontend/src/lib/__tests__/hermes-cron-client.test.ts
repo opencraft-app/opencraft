@@ -27,6 +27,7 @@ import {
   removeCronJobWithDependentRollback,
   runCronJob,
   runCronJobAsTest,
+  startCronTestRun,
   shellQuote,
   splitLastRunValue,
   type CronJob,
@@ -452,6 +453,8 @@ describe("parseCronRunFilesOutput", () => {
       script: "",
       effective_window: null,
       lightvela_schedule: null,
+      context_from: null,
+      inference_config: null,
     }]);
 
     expect(runs).toEqual([{
@@ -566,6 +569,8 @@ describe("parseCronRunFilesOutput", () => {
       script: "",
       effective_window: null,
       lightvela_schedule: null,
+      context_from: null,
+      inference_config: null,
     }]);
 
     expect(runs[0]).toMatchObject({
@@ -1118,6 +1123,8 @@ describe("runCronJobAsTest", () => {
     script: "",
     effective_window: null,
     lightvela_schedule: null,
+    context_from: null,
+    inference_config: null,
   };
 
   function extractCommand(fetchMock: ReturnType<typeof vi.fn>, callIndex: number): string {
@@ -1141,6 +1148,79 @@ describe("runCronJobAsTest", () => {
     const [result] = await Promise.all([work, vi.advanceTimersByTimeAsync(advanceMs)]);
     return result;
   }
+
+  it("runs the disposable test job with the draft upstream context", async () => {
+    const commands: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      if (command.startsWith("hermes send ")) return okExec("Sent.");
+      if (command.includes("from tools.cronjob_tools import cronjob")) {
+        return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job_id":"temp-context"}');
+      }
+      if (command.includes("lightvela-jobs-meta.json")) return okExec("");
+      if (command.includes("cat ~/.hermes/cron/jobs.json")) {
+        return okExec(JSON.stringify([{
+          id: "temp-context",
+          last_run_at: "2026-08-28T10:00:00+08:00",
+          last_status: "ok",
+          last_delivery_error: null,
+        }]));
+      }
+      if (command === "hermes cron remove 'temp-context'") return okExec("Removed.");
+      return failedExec(`unexpected command: ${command}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = await startCronTestRun("bot-1", {
+      ...baseJob,
+      name: "未保存名称",
+      prompt: "未保存任务说明",
+      skills: ["news"],
+      deliver: "wecom",
+      context_from: ["upstream-current"],
+    });
+    await expect(started.completion).resolves.toMatchObject({ output: "ok", deliveryError: null });
+
+    const createCommand = commands.find((command) => command.includes("from tools.cronjob_tools import cronjob")) ?? "";
+    expect(createCommand).toContain('\\"context_from\\":[\\"upstream-current\\"]');
+    expect(createCommand).toContain('\\"prompt\\":\\"未保存任务说明\\"');
+    expect(commands).toContain("hermes cron remove 'temp-context'");
+  });
+
+  it("retries cleanup when structured create succeeds without returning a job id", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_788_000_000_000);
+    vi.spyOn(Math, "random").mockReturnValue(0.25);
+    const marker = buildTestRunMarker(baseJob.id, baseJob.name);
+    const commands: string[] = [];
+    let jobsReadCount = 0;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      if (command.startsWith("hermes send ")) return okExec("Sent.");
+      if (command.includes("from tools.cronjob_tools import cronjob")) {
+        return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}');
+      }
+      if (command.includes("cat ~/.hermes/cron/jobs.json")) {
+        jobsReadCount += 1;
+        return okExec(JSON.stringify(jobsReadCount >= 2 ? [{ id: "temp-context", name: marker }] : []));
+      }
+      if (command === "hermes cron remove 'temp-context'") return okExec("Removed.");
+      return failedExec(`unexpected command: ${command}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const start = startCronTestRun("bot-1", {
+      ...baseJob,
+      context_from: ["upstream-current"],
+    });
+
+    await expect(runWithAdvancedTimers(start, 2_000)).rejects.toThrow(
+      "临时测试任务创建异常，已尝试清理，请稍后重试",
+    );
+    expect(jobsReadCount).toBe(2);
+    expect(commands).toContain("hermes cron remove 'temp-context'");
+  });
 
   it("clones a disposable once-off job, waits for it to run naturally, and cleans it up without touching the original job id", async () => {
     let capturedMarker = "";

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -130,6 +130,27 @@ describe("AgentDeepSeekHarnessModelCard", () => {
     expect(screen.getByLabelText("DeepSeek API 密钥")).toHaveValue("");
   });
 
+  it("deduplicates synchronous save attempts before React rerenders", async () => {
+    const user = userEvent.setup();
+    let resolveSave: (() => void) | undefined;
+    saveProvider.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveSave = resolve;
+    }));
+    render(<AgentDeepSeekHarnessModelCard botId="ins-1" region="cn" clientFactory={clientFactory} />);
+    await screen.findByRole("list", { name: "已配置模型供应商" });
+
+    await user.type(screen.getByLabelText("DeepSeek API 密钥"), "single-flight-key");
+    const saveButton = screen.getByRole("button", { name: "保存配置" });
+    act(() => {
+      saveButton.click();
+      saveButton.click();
+    });
+
+    expect(saveProvider).toHaveBeenCalledTimes(1);
+    resolveSave?.();
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("DeepSeek 配置已保存"));
+  });
+
   it("overwrites a configured provider selected from the complete catalog", async () => {
     const user = userEvent.setup();
     render(<AgentDeepSeekHarnessModelCard botId="ins-1" region="cn" clientFactory={clientFactory} />);
@@ -185,7 +206,8 @@ describe("AgentDeepSeekHarnessModelCard", () => {
 
     await user.click(screen.getByRole("button", { name: "删除 DeepSeek" }));
     const dialog = screen.getByRole("alertdialog", { name: "删除 DeepSeek？" });
-    expect(within(dialog).getByText(/不会删除环境变量或自定义凭据/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/LightVela 写入.*一并移除/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/环境变量中的密钥不会被删除/)).toBeInTheDocument();
 
     listProviders.mockResolvedValueOnce(providers.map((provider) => (
       provider.id === "deepseek" ? { ...provider, configured: false } : provider

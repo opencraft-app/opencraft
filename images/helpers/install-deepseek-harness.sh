@@ -1210,6 +1210,11 @@ Group=${RUNTIME_USER}
 Environment=HOME=/home/${RUNTIME_USER}
 Environment=DSH_HOME=/home/${RUNTIME_USER}/.dsh
 Environment=PATH=/opt/lightvela/dsh/current/node_modules/.bin:/opt/lightvela/dsh/tooling/pnpm-${PNPM_VERSION}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
+Environment=GIT_CONFIG_COUNT=2
+Environment=GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf
+Environment=GIT_CONFIG_VALUE_0=git@github.com:
+Environment=GIT_CONFIG_KEY_1=url.https://github.com/.insteadOf
+Environment=GIT_CONFIG_VALUE_1=ssh://git@github.com/
 WorkingDirectory=/home/${RUNTIME_USER}
 ExecStart=/opt/lightvela/dsh/current/node_modules/.bin/dsh web --host 127.0.0.1 --port ${DSH_PORT}
 Restart=always
@@ -1401,6 +1406,9 @@ do_install() {
   mkdir -p "${work_dir}" "${candidate_home}/profiles" "${DSH_HOME}/profiles"
   chmod 0711 "${work_dir}"
   chmod 0755 "${candidate_home}" "${candidate_home}/profiles"
+  if [ "${TEST_MODE}" != "1" ]; then
+    chown "${RUNTIME_USER}:${RUNTIME_USER}" "${candidate_home}/profiles"
+  fi
   require_atomic_profile_switch "${candidate_home}/profiles" "${DSH_HOME}/profiles"
 
   CURRENT_STAGE="preflight"

@@ -41,6 +41,15 @@ stages:
               echo "runtime=hermes"
               echo "base_image_id=img-id352nof"
               echo "target_regions=ap-beijing,ap-shanghai,ap-singapore,ap-tokyo"
+          - name: 校验 COS DeepSeek Harness 安装器
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_node
+              node frontend/scripts/generate-deepseek-harness-runtime-assets.mjs --check
+              bash images/helpers/verify-deepseek-harness-cos-installer.sh
           - name: 构建 Hermes CVM 镜像
             shell: bash
             run: |
