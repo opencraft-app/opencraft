@@ -14,6 +14,7 @@ const cronClientMocks = vi.hoisted(() => ({
   removeCronJob: vi.fn(),
   removeCronJobWithDependentRollback: vi.fn(),
   sendHermesChatNotice: vi.fn(),
+  startCronTestRun: vi.fn(),
 }));
 
 const skillsClientMocks = vi.hoisted(() => ({
@@ -89,6 +90,9 @@ beforeEach(() => {
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
   cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
   cronClientMocks.sendHermesChatNotice.mockResolvedValue({ sent: 0, failed: 0 });
+  cronClientMocks.startCronTestRun.mockResolvedValue({
+    completion: Promise.resolve({ output: "ok", deliveryError: null }),
+  });
   skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue([]);
 });
 
@@ -1902,7 +1906,14 @@ describe("automation form test run", () => {
     const onSaved = vi.fn();
     renderAutomationForm({
       mode: "edit",
-      initialJob: makeCronJob({ id: "edit-job", name: "旧名称", prompt: "旧说明" }),
+      initialJob: makeCronJob({
+        id: "edit-job",
+        name: "旧名称",
+        prompt: "旧说明",
+        script: "lightvela-effective-window-edit-job.py",
+        effective_window: { start_at: "2026-01-01T00:00:00+08:00", end_at: "2026-12-31T23:59:59+08:00" },
+        lightvela_schedule: { kind: "daily_times", times: ["09:00", "18:00"] },
+      }),
       onTestRun,
       onSaved,
     });
@@ -1915,6 +1926,9 @@ describe("automation form test run", () => {
       id: "edit-job",
       name: "编辑中的名称",
       prompt: "编辑中的说明",
+      script: "",
+      effective_window: null,
+      lightvela_schedule: null,
     }));
     expect(onSaved).not.toHaveBeenCalled();
     expect(cronClientMocks.editCronJob).not.toHaveBeenCalled();
@@ -1924,6 +1938,19 @@ describe("automation form test run", () => {
   it("disables form test run while required fields are empty", () => {
     renderAutomationForm();
     expect(screen.getByRole("button", { name: /测试运行|Test run/ })).toBeDisabled();
+  });
+
+  it("explains why an editable historical task cannot be test-run without a prompt", () => {
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({ id: "edit-job", name: "历史任务", prompt: "" }),
+    });
+
+    const testButton = screen.getByRole("button", { name: /测试运行|Test run/ });
+    expect(testButton).toBeDisabled();
+    expect(testButton).toHaveAccessibleDescription("请先填写名称和任务说明");
+    expect(testButton.parentElement).toHaveAttribute("title", "请先填写名称和任务说明");
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
   });
 
   it("shows the form test run as busy while it is starting", () => {
@@ -1936,6 +1963,32 @@ describe("automation form test run", () => {
     expect(button).toBeDisabled();
     expect(button.querySelector(".animate-spin")).not.toBeNull();
   });
+});
+
+describe("automation form test-state wiring", () => {
+  it.each(["blank", "template"] as const)(
+    "shows the running state in the %s create form while the test job is starting",
+    async (entry) => {
+      cronClientMocks.startCronTestRun.mockImplementationOnce(() => new Promise(() => {}));
+      render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+      if (entry === "blank") {
+        fireEvent.click(await screen.findByRole("button", { name: "添加" }));
+        fillCreateFields();
+      } else {
+        fireEvent.click(await screen.findByRole("button", { name: "模板" }));
+        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /每日工作小结/ }));
+      }
+
+      const testButton = within(screen.getByRole("dialog")).getByRole("button", { name: "测试运行" });
+      fireEvent.click(testButton);
+
+      await waitFor(() => {
+        expect(testButton).toBeDisabled();
+        expect(testButton.querySelector(".animate-spin")).not.toBeNull();
+      });
+    },
+  );
 });
 
 describe("automation notification channel options", () => {

@@ -2921,6 +2921,7 @@ export function AutomationFormModal({
   onError: (message: string) => void;
 }) {
   const t = useT();
+  const testRunHintId = useId();
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
   const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
@@ -3116,6 +3117,9 @@ export function AutomationFormModal({
     && testState !== "running"
     && name.trim().length > 0
     && prompt.trim().length > 0;
+  const testRunDisabledReason = !name.trim() || !prompt.trim()
+    ? t("请先填写名称和任务说明")
+    : null;
 
   const handleTestRun = useCallback(() => {
     if (!canTestRun) return;
@@ -3832,24 +3836,30 @@ export function AutomationFormModal({
 
         {/* 操作 */}
         <div className="mt-6 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            disabled={!canTestRun}
-            onClick={handleTestRun}
-            style={MODAL_CONTROL_TEXT_STYLE}
-            className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-4 py-2 text-base font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {testState === "running" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : testState === "ok" ? (
-              <CheckCircle2 className="h-3.5 w-3.5 text-[#0F8A4B]" />
-            ) : testState === "fail" ? (
-              <X className="h-3.5 w-3.5 text-[#B91C1C]" />
-            ) : (
-              <Zap className="h-3.5 w-3.5" />
-            )}
-            {t("测试运行")}
-          </button>
+          <span className="inline-flex" title={testRunDisabledReason ?? undefined}>
+            <button
+              type="button"
+              disabled={!canTestRun}
+              onClick={handleTestRun}
+              aria-describedby={testRunDisabledReason ? testRunHintId : undefined}
+              style={MODAL_CONTROL_TEXT_STYLE}
+              className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-4 py-2 text-base font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {testState === "running" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : testState === "ok" ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-[#0F8A4B]" />
+              ) : testState === "fail" ? (
+                <X className="h-3.5 w-3.5 text-[#B91C1C]" />
+              ) : (
+                <Zap className="h-3.5 w-3.5" />
+              )}
+              {t("测试运行")}
+            </button>
+            {testRunDisabledReason ? (
+              <span id={testRunHintId} className="sr-only">{testRunDisabledReason}</span>
+            ) : null}
+          </span>
           <button
             type="button"
             onClick={onClose}

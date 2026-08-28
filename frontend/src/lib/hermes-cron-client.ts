@@ -1636,7 +1636,7 @@ async function findCronJobIdByExactNameWithRetry(
  * 保证任何已创建的临时任务都不会残留后被调度器真实执行。best-effort，找不到就放弃。
  */
 async function removeCronJobByExactName(botId: string, name: string): Promise<void> {
-  const id = await findCronJobIdByExactName(botId, name);
+  const id = await findCronJobIdByExactNameWithRetry(botId, name);
   if (id) await removeCronJob(botId, id);
 }
 
@@ -1977,13 +1977,20 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
     // 有意不传 script：跳过生效窗口/daily_times 门控，保证到点真实执行一次
   };
   const upstreamId = job.context_from?.length === 1 ? job.context_from[0]?.trim() : "";
-  let tempId: string | null;
-  if (upstreamId) {
-    // 表单试跑必须使用当前尚未保存的上游选择；structured cronjob create 会直接返回临时任务 id。
-    tempId = await createCronJobWithContextAndScriptRollback(botId, input, upstreamId);
-  } else {
-    await createCronJob(botId, input);
-    tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
+  let tempId: string | null = null;
+  try {
+    if (upstreamId) {
+      // 表单试跑必须使用当前尚未保存的上游选择；structured cronjob create 会直接返回临时任务 id。
+      tempId = await createCronJobWithContextAndScriptRollback(botId, input, upstreamId);
+    } else {
+      await createCronJob(botId, input);
+      tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
+    }
+  } catch {
+    await removeCronJobByExactName(botId, marker).catch(() => {
+      /* 兜底清理失败不影响中文错误上抛 */
+    });
+    throw new Error("临时测试任务创建异常，已尝试清理，请稍后重试");
   }
   // create 已成功 → 临时任务几乎肯定已经落进 cron。从这里开始，任何后续失败都必须
   // 保证「已创建的临时任务能被删除」，否则它会在约 2 分钟后被调度器真实执行并投递，
