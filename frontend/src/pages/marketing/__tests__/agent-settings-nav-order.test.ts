@@ -17,9 +17,9 @@ describe("Agent settings navigation groups", () => {
     return page.slice(settingsGroupsStart, settingsGroupsEnd);
   };
 
-  it("orders the task-oriented groups as setup, use, growth, and manage", () => {
+  it("orders the task-oriented groups as setup, use, growth, manage, and labs", () => {
     const settingsGroups = readNavigationSource();
-    const labels = ['t("配置")', 't("使用")', 't("成长")', 't("管理")'];
+    const labels = ['t("配置")', 't("使用")', 't("成长")', 't("管理")', 't("实验室")'];
     const indexes = labels.map((label) => settingsGroups.indexOf(label));
 
     indexes.forEach((index) => expect(index).toBeGreaterThanOrEqual(0));
@@ -32,15 +32,17 @@ describe("Agent settings navigation groups", () => {
     const useStart = settingsGroups.indexOf('id: "use"');
     const growthStart = settingsGroups.indexOf('id: "growth"');
     const manageStart = settingsGroups.indexOf('id: "manage"');
+    const labsStart = settingsGroups.indexOf('id: "labs"');
 
-    [setupStart, useStart, growthStart, manageStart].forEach((index) => {
+    [setupStart, useStart, growthStart, manageStart, labsStart].forEach((index) => {
       expect(index).toBeGreaterThanOrEqual(0);
     });
 
     const setup = settingsGroups.slice(setupStart, useStart);
     const use = settingsGroups.slice(useStart, growthStart);
     const growth = settingsGroups.slice(growthStart, manageStart);
-    const manage = settingsGroups.slice(manageStart);
+    const manage = settingsGroups.slice(manageStart, labsStart);
+    const labs = settingsGroups.slice(labsStart);
 
     expect(setup).toMatch(/id: "channel"[\s\S]*id: "model"/);
     expect(setup).not.toContain('id: "skill"');
@@ -48,9 +50,9 @@ describe("Agent settings navigation groups", () => {
     expect(use).toMatch(/id: "skill"[\s\S]*id: "automations"[\s\S]*id: "website"/);
     expect(use).not.toContain('id: "chat"');
     expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"[\s\S]*id: "achievement"/);
-    expect(manage).toMatch(
-      /id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "settings"[\s\S]*id: "labs"[\s\S]*id: "deepseek-harness"/,
-    );
+    expect(manage).toMatch(/id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "settings"/);
+    expect(manage).not.toContain('id: "labs"');
+    expect(labs).toMatch(/id: "labs"[\s\S]*id: "deepseek-harness"/);
   });
 
   it("keeps the My creations navigation entry behind show()", () => {

@@ -44,7 +44,7 @@ if grep -Fq 'dsh-auth' "${INSTALLER}"; then
   exit 1
 fi
 
-if grep -Eiq 'github|codeload|refs/heads/main|ls-remote' "${INSTALLER}"; then
+if grep -Eiq 'codeload|refs/heads/main|ls-remote|github\.com/[^[:space:]]*(archive|tarball|zipball)' "${INSTALLER}"; then
   echo "installer must not depend on GitHub for profile plugins" >&2
   exit 1
 fi

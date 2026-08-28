@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  DEEPSEEK_HARNESS_INSTALLER_SHA256,
   DEEPSEEK_HARNESS_PROVIDER_HELPER_BASE64,
 } from "../src/lib/generated/deepseek-harness-runtime-assets";
 
@@ -28,6 +30,15 @@ describe("DeepSeek Harness runtime assets", () => {
     );
     expect(generated).not.toContain("DEEPSEEK_HARNESS_INSTALL_PAYLOAD");
     expect(generated).not.toContain("install-deepseek-harness.sh");
+  });
+
+  it("pins the remotely downloaded installer to the reviewed repository source", () => {
+    const installer = readFileSync(
+      path.join(frontendDir, "../images/helpers/install-deepseek-harness.sh"),
+    );
+
+    expect(DEEPSEEK_HARNESS_INSTALLER_SHA256)
+      .toBe(createHash("sha256").update(installer).digest("hex"));
   });
 
   it("keeps the provider helper below the backend command limit", () => {
