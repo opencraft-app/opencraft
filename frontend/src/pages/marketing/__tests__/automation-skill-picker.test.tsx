@@ -70,6 +70,8 @@ function renderAutomationFormModal() {
       skillLoadState={ready(["builder-radar", "finance-news"])}
       onRefreshSkills={async () => ready(["builder-radar", "finance-news"])}
       onRefreshJobs={async () => []}
+      testState="idle"
+      onTestRun={vi.fn()}
       onClose={vi.fn()}
       onSaved={vi.fn()}
       onError={vi.fn()}

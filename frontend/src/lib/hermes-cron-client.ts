@@ -70,7 +70,7 @@ interface CronjobToolResult {
 export interface CronDependentBinding {
   id: string;
   name: string;
-  contextFrom: string[];
+  contextFrom: readonly string[];
 }
 
 interface CronDependentMutationSummary {
@@ -1636,7 +1636,7 @@ async function findCronJobIdByExactNameWithRetry(
  * 保证任何已创建的临时任务都不会残留后被调度器真实执行。best-effort，找不到就放弃。
  */
 async function removeCronJobByExactName(botId: string, name: string): Promise<void> {
-  const id = await findCronJobIdByExactName(botId, name);
+  const id = await findCronJobIdByExactNameWithRetry(botId, name);
   if (id) await removeCronJob(botId, id);
 }
 
@@ -1968,14 +1968,30 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
     /* 即时回执发送失败不影响测试运行主流程 */
   });
   const marker = buildTestRunMarker(job.id, job.name);
-  await createCronJob(botId, {
+  const input: CreateCronJobInput = {
     schedule: buildImmediateOnceSchedule(),
     prompt: job.prompt,
     name: marker,
     skills: job.skills,
     deliver,
     // 有意不传 script：跳过生效窗口/daily_times 门控，保证到点真实执行一次
-  });
+  };
+  const upstreamId = job.context_from?.length === 1 ? job.context_from[0]?.trim() : "";
+  let tempId: string | null = null;
+  try {
+    if (upstreamId) {
+      // 表单试跑必须使用当前尚未保存的上游选择；structured cronjob create 会直接返回临时任务 id。
+      tempId = await createCronJobWithContextAndScriptRollback(botId, input, upstreamId);
+    } else {
+      await createCronJob(botId, input);
+      tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
+    }
+  } catch {
+    await removeCronJobByExactName(botId, marker).catch(() => {
+      /* 兜底清理失败不影响中文错误上抛 */
+    });
+    throw new Error("临时测试任务创建异常，已尝试清理，请稍后重试");
+  }
   // create 已成功 → 临时任务几乎肯定已经落进 cron。从这里开始，任何后续失败都必须
   // 保证「已创建的临时任务能被删除」，否则它会在约 2 分钟后被调度器真实执行并投递，
   // 违背「测试失败不产生后续副作用」的预期（见 CR P1）。
@@ -1984,7 +2000,6 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
   // 解析不到 marker，首次读可能拿不到。这里带重试；仍拿不到时不直接裸抛，而是先按
   // marker 名做一次兜底删除（`hermes cron remove --name` 语义走不了，用 list 反查
   // 一次或直接按名删），把已创建的临时任务清掉，再抛错。
-  let tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
   if (!tempId) {
     // 兜底：即便反查不到 id，也尽力按 marker 名把这个已创建的临时任务删掉，
     // 避免它残留后被调度器真实执行。best-effort，失败也不阻断错误上抛。
