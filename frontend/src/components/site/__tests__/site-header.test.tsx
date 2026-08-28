@@ -36,7 +36,7 @@ describe("PublicSiteHeader", () => {
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "首页" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "更新日志" })).toHaveAttribute("href", "/changelog");
-    expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("href", "/docs/overview");
+    expect(screen.getByRole("link", { name: "文档" })).toHaveAttribute("href", "/docs/overview");
     expect(screen.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/about");
 
     fireEvent.click(screen.getByRole("button", { name: "立即创建" }));
@@ -58,16 +58,18 @@ describe("PublicSiteHeader", () => {
     );
 
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("data-next-link", "true");
-    expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("data-next-link", "true");
+    expect(screen.getByRole("link", { name: "文档" })).toHaveAttribute("data-next-link", "true");
   });
 
   it("uses Home wording for international homepage navigation", () => {
     const { rerender } = render(<PublicSiteHeader locale="zh-SG" />);
 
     expect(screen.getByRole("link", { name: "首页" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "文档" })).toHaveAttribute("href", "/docs/overview");
 
     rerender(<PublicSiteHeader locale="zh-Hant" />);
     expect(screen.getByRole("link", { name: "首頁" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "文檔" })).toHaveAttribute("href", "/docs/overview");
 
     rerender(<PublicSiteHeader locale="en-US" />);
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");

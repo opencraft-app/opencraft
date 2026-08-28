@@ -3021,7 +3021,7 @@ export const AgentSettingsPage = ({
   const [isAgentActionMenuOpen, setIsAgentActionMenuOpen] = useState(false);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
 
-  /* ── 侧边栏「对话/设置」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
+  /* ── 侧边栏「探索/对话」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
   /** tab 仅切侧边栏内容，右侧主区始终按当前路由渲染；初始值随路由推导，不做持久化。 */
   const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
   const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
@@ -3051,7 +3051,7 @@ export const AgentSettingsPage = ({
 
   /**
    * tab 点击联动主区导航（对齐产品确认的交互）：
-   * - 点「设置」：若当前在对话页，回到前一个设置菜单（无记忆则通道）；
+   * - 点「探索」：若当前在对话页，回到前一个设置菜单（无记忆则通道）；
    * - 点「对话」：若当前不在对话页，进入对话页，并默认选中第一个会话。
    */
   const handleSidebarSettingsTabClick = () => {
@@ -5077,13 +5077,13 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
                     { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
-                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                   ],
                 },
                 {
                   id: "use",
                   label: t("使用"),
                   sections: [
+                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                     { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
                     ...(isGlobal && showHiddenAgentTools
                       ? [{ id: "website" as const, label: t("工作台"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
@@ -5353,7 +5353,7 @@ export const AgentSettingsPage = ({
                       )}
                     </div>
 
-                    {/* ── 侧边栏顶层「设置/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
+                    {/* ── 侧边栏顶层「探索/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
                     <div className="lv-agents-sidebar-tabs" role="tablist" aria-label={t("侧边栏视图切换")}>
                       <button
                         type="button"
@@ -5362,7 +5362,7 @@ export const AgentSettingsPage = ({
                         className={cn("lv-agents-sidebar-tab", sidebarTab === "settings" && "is-active")}
                         onClick={handleSidebarSettingsTabClick}
                       >
-                        {t("设置")}
+                        {t("探索")}
                       </button>
                       <button
                         type="button"
