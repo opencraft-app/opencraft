@@ -55,6 +55,8 @@ Confirme que el Agent responda normalmente y que el modelo mostrado en la consol
 
 El cambio de modelo cambia el motor utilizado para futuras respuestas. No mueve su historial de conversación, no reescribe archivos en [Almacenamiento en la nube](./files.md) ni cambia sus [Skills](./skill.md) y [Automatizaciones](./automation.md).
 
+Si desea explorar un entorno de Agent independiente con una arquitectura basada en plugins junto a Hermes Agent, consulte [DeepSeek Harness](./deepseek-harness.md).
+
 ## Si un cambio no funciona
 
 1. Vuelva a [Configurar modelos](./model.md) y confirme que la configuración del modelo objetivo, las credenciales y la configuración del proveedor estén completas.

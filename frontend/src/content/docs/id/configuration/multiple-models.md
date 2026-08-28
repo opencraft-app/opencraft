@@ -55,6 +55,8 @@ Pastikan Agent merespons normal dan model yang ditampilkan di konsol Agent adala
 
 Penggantian model mengubah mesin yang dipakai untuk respons selanjutnya. Tindakan ini tidak memindahkan riwayat percakapan Anda, tidak menulis ulang file di [File](./files.md), dan tidak mengubah [Skill](./skill.md) serta [Otomasi](./automation.md) Anda.
 
+Jika Anda ingin menjelajahi lingkungan Agent terpisah dengan arsitektur plugin-first di samping Hermes Agent, lihat [DeepSeek Harness](./deepseek-harness.md).
+
 ## Jika penggantian tidak berhasil
 
 1. Kembali ke [Konfigurasi Model](./model.md) lalu pastikan model tujuan, kredensial, dan pengaturan penyedia sudah lengkap.

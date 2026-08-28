@@ -55,6 +55,8 @@
 
 模型切换只会改变后续回复使用的引擎。它不会移动聊天记录、改写[云存储](./files.md)中的文件，也不会变更[技能](./skill.md)和[自动化](./automation.md)。
 
+如果你想在 Hermes Agent 之外体验独立的插件优先 Agent 环境，可以查看[DeepSeek Harness](./deepseek-harness.md)。
+
 ## 切换后无法使用怎么办
 
 1. 回到[配置模型](./model.md)，确认目标模型、凭证和提供商设置完整。

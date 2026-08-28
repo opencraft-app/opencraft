@@ -63,6 +63,25 @@ describe("global changelog skill package entry", () => {
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
     expect(
+      screen.getByRole("heading", { name: "LightVela 新增 DeepSeek Harness" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。",
+      ),
+    ).toBeInTheDocument();
+    const zhDeepSeekHarnessImage = screen.getByAltText("LightVela 新增 DeepSeek Harness");
+    expect(zhDeepSeekHarnessImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.png"),
+    );
+    expect(zhDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2172 / 1286" });
+    const zhAugustSection = screen.getByText("2026 年 8 月").closest("section");
+    expect(zhAugustSection).not.toBeNull();
+    expect(within(zhAugustSection!).getAllByRole("heading")[0]).toHaveTextContent(
+      "LightVela 新增 DeepSeek Harness",
+    );
+    expect(
       screen.getByRole("heading", { name: "LightVela 新增 Hermes Agent 高级设置" }),
     ).toBeInTheDocument();
     expect(
@@ -145,6 +164,20 @@ describe("global changelog skill package entry", () => {
       within(augustSection!).queryByRole("heading", { name: "Ready-Made Job Templates" }),
     ).not.toBeInTheDocument();
     expect(
+      within(augustSection!).getByRole("heading", { name: "LightVela Adds DeepSeek Harness" }),
+    ).toBeInTheDocument();
+    expect(
+      within(augustSection!).getByText(
+        "Install and manage DeepSeek Harness alongside Hermes Agent, with dedicated WebUI access, model provider configuration, plugin management, workspace support, and independent service controls.",
+      ),
+    ).toBeInTheDocument();
+    const enDeepSeekHarnessImage = screen.getByAltText("LightVela Adds DeepSeek Harness");
+    expect(enDeepSeekHarnessImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
+    );
+    expect(enDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2168 / 1287" });
+    expect(
       within(julySection!).getByRole("heading", { name: "Ready-Made Job Templates" }),
     ).toBeInTheDocument();
     expect(
@@ -156,7 +189,7 @@ describe("global changelog skill package entry", () => {
       ),
     ).toBeInTheDocument();
     expect(within(augustSection!).getAllByRole("heading")[0]).toHaveTextContent(
-      "LightVela Adds Advanced Settings for Hermes Agent",
+      "LightVela Adds DeepSeek Harness",
     );
     expect(
       screen.getByText(
@@ -224,6 +257,14 @@ describe("global changelog skill package entry", () => {
     expect(
       screen.getByRole("heading", { name: "LightVela 新增 Hermes Agent 高級設置" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela 新增 DeepSeek Harness" })).toBeInTheDocument();
+    expect(screen.getByAltText("LightVela 新增 DeepSeek Harness")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.png"),
+    );
+    expect(screen.getByAltText("LightVela 新增 DeepSeek Harness").parentElement).toHaveStyle({
+      aspectRatio: "2172 / 1286",
+    });
     expect(screen.getByAltText("LightVela 新增 Hermes Agent 高級設置")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
@@ -284,6 +325,18 @@ describe("global changelog skill package entry", () => {
     expect(
       screen.getByRole("heading", { name: "LightVela Menambahkan Pengaturan Lanjutan untuk Hermes Agent" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela Menambahkan DeepSeek Harness" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Instal dan kelola DeepSeek Harness bersama Hermes Agent, dengan akses WebUI khusus, konfigurasi penyedia model, pengelolaan plugin, dukungan workspace, dan kontrol layanan yang terpisah.",
+      ),
+    ).toBeInTheDocument();
+    const idDeepSeekHarnessImage = screen.getByAltText("LightVela Menambahkan DeepSeek Harness");
+    expect(idDeepSeekHarnessImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
+    );
+    expect(idDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2168 / 1287" });
     expect(
       screen.getByText(
         "Sesuaikan cara Hermes Agent mengelola memori jangka panjang, profil pengguna, dan konteks selama percakapan panjang dengan pengaturan kompresi yang fleksibel.",
@@ -308,6 +361,28 @@ describe("global changelog skill package entry", () => {
     expect(
       screen.getByRole("heading", { name: "Job Kini Dapat Ditautkan ke Job Upstream" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows the DeepSeek Harness update in Spanish with the global screenshot", async () => {
+    await i18n.changeLanguage("es");
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "LightVela Añade DeepSeek Harness" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Instale y administre DeepSeek Harness junto a Hermes Agent, con acceso dedicado a WebUI, configuración de proveedores de modelos, gestión de plugins, compatibilidad con workspaces y controles de servicio independientes.",
+      ),
+    ).toBeInTheDocument();
+    const esDeepSeekHarnessImage = screen.getByAltText("LightVela Añade DeepSeek Harness");
+    expect(esDeepSeekHarnessImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
+    );
+    expect(esDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2168 / 1287" });
   });
 
   it("uses locale-specific skill package copy and screenshots", async () => {

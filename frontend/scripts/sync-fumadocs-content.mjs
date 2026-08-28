@@ -106,6 +106,7 @@ const cnDocs = [
   { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '查看日志并排查 Hermes Agent 的异常情况。', hideDescription: true },
   { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '功能与配置', description: '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。', hideDescription: true },
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
+  { slug: 'configuration/deepseek-harness', title: 'DeepSeek Harness', file: 'configuration/deepseek-harness.md', group: '功能与配置', description: '在 LightVela 中安装和管理 DeepSeek Harness Labs 运行环境。', hideDescription: true },
   // Hermes Agent 解读（长文科普，帮助用户理解 Hermes Agent 的设计与原理）
   { slug: 'hermes-agent/hermes-vs-openclaw', title: 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别', file: 'hermes-agent/01-hermes-vs-openclaw.md', group: 'Hermes Agent 解读', description: '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。', hideDescription: true },
   { slug: 'hermes-agent/why-hermes-remembers-you', title: 'Hermes Agent 是怎么"记住你"的？', file: 'hermes-agent/02-why-hermes-remembers-you.md', group: 'Hermes Agent 解读', description: '揭秘 Hermes Agent 长期记忆背后的四层分工系统：USER.md、MEMORY.md、SQLite+FTS5 会话档案与 Skills，以及写入/召回时机的工程实现。', hideDescription: true },
@@ -452,6 +453,17 @@ const globalDocs = [
     file: 'configuration/multiple-models.md',
     group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
+    slug: 'configuration/deepseek-harness',
+    title: { 'en-US': 'DeepSeek Harness', 'zh-CN': 'DeepSeek Harness' },
+    file: 'configuration/deepseek-harness.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Install and manage the DeepSeek Harness Labs runtime alongside Hermes Agent in LightVela.',
+      'zh-CN': '在 LightVela 中与 Hermes Agent 并行安装和管理 DeepSeek Harness Labs 运行环境。',
+    },
     hideDescription: true,
   },
   {
@@ -912,6 +924,10 @@ const ES_DOC_METADATA = {
     title: 'Cambio de modelo',
     description: 'Administra varias configuraciones de modelos y selecciona la adecuada para cada necesidad del Agent.',
   },
+  'configuration/deepseek-harness': {
+    title: 'DeepSeek Harness',
+    description: 'Instala y administra DeepSeek Harness como un entorno Labs independiente que funciona junto a Hermes Agent en LightVela.',
+  },
   'use-cases/personal-ai-assistant': {
     title: 'Cómo crear un asistente personal de IA con LightVela',
     description: 'Usa LightVela como asistente personal de IA para recordatorios, resúmenes y conversaciones cotidianas.',
@@ -1163,6 +1179,10 @@ const ID_DOC_METADATA = {
     title: 'Beberapa Model',
     description: 'Kelola beberapa konfigurasi model dan pilih model yang sesuai untuk kebutuhan Agent.',
   },
+  'configuration/deepseek-harness': {
+    title: 'DeepSeek Harness',
+    description: 'Instal dan kelola DeepSeek Harness sebagai lingkungan Labs terpisah yang berjalan berdampingan dengan Hermes Agent di LightVela.',
+  },
   credits: {
     title: 'Kredit',
     description: 'Pelajari cara kredit model LightVela dialokasikan, digunakan berdasarkan token, dan terkait dengan paket serta model.',
@@ -1339,6 +1359,10 @@ const globalDocsForIndonesian = globalDocs.filter(
     !isHiddenFor(doc, LOCALES.ID_ID),
 );
 
+const globalDocsForSpanish = globalDocsForEnglish.filter((doc) =>
+  existsSync(join(sourceRoot, 'es', doc.file)),
+);
+
 /** 判断 doc 是否对某 locale 隐藏（仅按 hiddenForLocales 白名单）。 */
 function isHiddenFor(doc, locale) {
   return Array.isArray(doc.hiddenForLocales) && doc.hiddenForLocales.includes(locale);
@@ -1399,7 +1423,7 @@ const docSets = [
     outputPrefix: URL_LANGS.ES,
     sourcePrefix: 'es',
     locale: LOCALES.ES,
-    docs: globalDocsForEnglish,
+    docs: globalDocsForSpanish,
     title: 'Documentación de LightVela',
   },
 ];
@@ -1450,7 +1474,7 @@ function allDocsForLinks(outputPrefix) {
   } else if (outputPrefix === URL_LANGS.ID_ID) {
     localeDocs = globalDocsForIndonesian;
   } else if (outputPrefix === URL_LANGS.ES) {
-    localeDocs = globalDocsForEnglish;
+    localeDocs = globalDocsForSpanish;
   } else {
     localeDocs = globalDocsForEnglish;
   }
