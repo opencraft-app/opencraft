@@ -263,7 +263,6 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodPost + " /v1/instances":                                                                  {},
 		http.MethodGet + " /v1/instances/{instance_id}":                                                     {},
 		http.MethodDelete + " /v1/instances/{instance_id}":                                                  {},
-		http.MethodGet + " /v1/instances/{instance_id}/borncard":                                            {},
 		http.MethodPost + " /v1/instances/{instance_id}/debug/exec":                                         {},
 		http.MethodPost + " /v1/instances/{instance_id}/tat/session":                                        {},
 		http.MethodPost + " /v1/instances/{instance_id}/config/reset":                                       {},
@@ -291,6 +290,9 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 				got := make(map[string]struct{}, len(route.PathAllow))
 				for _, rule := range route.PathAllow {
 					got[rule.Method+" "+rule.Path] = struct{}{}
+				}
+				if _, exposed := got[http.MethodGet+" /v1/instances/{instance_id}/borncard"]; exposed {
+					t.Fatal("borncard must not be exposed by the gateway")
 				}
 				if len(got) != len(want) {
 					t.Fatalf("instance path allowlist has %d rules, want %d: %+v", len(got), len(want), got)

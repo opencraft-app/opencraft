@@ -595,7 +595,7 @@ const fetchCurrentSubscription = async (baseUrl: string): Promise<CurrentSubscri
   }
 };
 
-type BotDraft = Partial<Pick<Bot, "status" | "mission" | "scenario" | "template" | "type">>;
+type BotDraft = Partial<Pick<Bot, "name" | "status" | "mission" | "scenario" | "template" | "type">>;
 
 const defaultBillingSummary: BillingSummary = {
   tier: "free",
@@ -701,11 +701,21 @@ const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
 
 const defaultHermesAgentName = () => translate("我的Hermes");
 
+const legacyDefaultHermesAgentNames = new Set(["Hermes宝宝", "Hermes寶寶", "Baby Hermes", "Bebé Hermes"]);
+
+const resolveLegacyDraftBotName = (draft?: BotDraft) => {
+  const draftName = draft?.name?.trim();
+  if (!draftName || legacyDefaultHermesAgentNames.has(draftName)) {
+    return undefined;
+  }
+  return draftName;
+};
+
 const projectInstanceToBot = (instance: CtlInstancePayload, draft?: BotDraft): Bot => {
   return {
     id: instance.instance_id,
     sandboxId: instance.sandbox_id,
-    name: instance.name?.trim() || defaultHermesAgentName(),
+    name: instance.name?.trim() || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
     type: draft?.type || "ops",
     template: draft?.template?.trim() || "OpenClaw Runtime",
     mission: draft?.mission?.trim() || "",
