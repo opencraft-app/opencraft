@@ -845,14 +845,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
             {"name": "lightclaw-auth-secrets", "key": "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"},
         )
 
-    def test_sgprod_sandbox_internal_service_token_is_shipped(self) -> None:
-        manifest = yaml.safe_load(
+    def test_sgprod_internal_sandbox_auth_is_shipped(self) -> None:
+        sandbox_manifest = yaml.safe_load(
             (REPO_ROOT / "scripts/ssm_manifest.sandbox.sgprod.yaml").read_text()
         )
-        item = manifest["items"][0]
-        self.assertEqual(item["id"], "sandbox-runtime-secrets")
+        sandbox_item = sandbox_manifest["items"][0]
+        self.assertEqual(sandbox_item["id"], "sandbox-runtime-secrets")
         self.assertEqual(
-            item["required_keys"],
+            sandbox_item["required_keys"],
             [
                 "MYSQL_PASSWORD",
                 "MYSQL_USER",
@@ -860,13 +860,28 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "TENCENT_SECRET_ID",
                 "TENCENT_SECRET_KEY",
                 "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+                "SANDBOX_API_KEY",
             ],
         )
 
-        secret = yaml.safe_load(
+        sandbox_secret = yaml.safe_load(
             (REPO_ROOT / "argocd/secrets/sgprod/sandbox-runtime-secrets.sops.yaml").read_text()
         )
-        self.assertIn("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", secret["stringData"])
+        self.assertIn("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", sandbox_secret["stringData"])
+
+        ctl_manifest = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.ctl.sgprod.yaml").read_text()
+        )
+        ctl_item = next(
+            item for item in ctl_manifest["items"] if item["id"] == "ctl-runtime-secrets"
+        )
+        for key in ("CTL_TRADE_TOKEN", "LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "SANDBOX_API_KEY"):
+            self.assertIn(key, ctl_item["required_keys"])
+
+        ctl_secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        self.assertIn("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", ctl_secret["stringData"])
 
     def test_shprod_federation_internal_service_token_is_aligned(self) -> None:
         manifest_expectations = {
