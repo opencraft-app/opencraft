@@ -329,11 +329,26 @@ describe("cron context panel integration", () => {
   it("uses the new copy for the blank create entry and modal title", async () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "新建" }));
+    expect(await screen.findByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("新建自动任务")).toBeTruthy();
-    expect(within(dialog).getByRole("button", { name: "新建" })).toBeTruthy();
+    expect(within(dialog).getByText(isGlobal ? "Create Job" : "新建自动任务")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: isGlobal ? "Create" : "新建" })).toBeTruthy();
+  });
+
+  it("uses new-task copy when confirming creation above the active-job limit", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue(Array.from({ length: 20 }, (_, index) => makeCronJob({
+      id: `limit-${index}`,
+      name: `上限任务 ${index}`,
+      state: "scheduled",
+    })));
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: isGlobal ? "Create" : "新建" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: isGlobal ? "Continue creating" : "继续新建" })).toBeTruthy();
   });
 
   it("keeps the refresh button static and disabled during the initial load", async () => {
@@ -988,9 +1003,13 @@ describe("terminal cron card visibility", () => {
     cronClientMocks.listCronJobs.mockResolvedValue([job]);
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    fireEvent.click(within(await getCronJobCard(job.name)).getByRole("button", { name: "测试运行" }));
+    fireEvent.click(within(await getCronJobCard(job.name)).getByRole("button", { name: isGlobal ? "Test run" : "测试运行" }));
 
-    expect(await screen.findByText("已在后台执行，请在你的 IM 软件中查看运行结果")).toBeTruthy();
+    expect(await screen.findByText(
+      isGlobal
+        ? "Running in the background — please check the result in your IM app."
+        : "已在后台执行，请在你的 IM 软件中查看运行结果",
+    )).toBeTruthy();
   });
 
   it("shows a past-due one-shot job as running while Hermes is still executing it", async () => {
@@ -1113,7 +1132,7 @@ describe("terminal cron card visibility", () => {
     fireEvent.click(screen.getByRole("button", { name: "已结束任务" }));
 
     expect(await screen.findByText("暂无已结束任务")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "参考模板添加" })).toBeNull();
+    expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
   });
 
   it("returns to active jobs after creating from the ended-jobs tab", async () => {
@@ -2057,9 +2076,9 @@ describe("automation notification channel options", () => {
       expect(cronClientMocks.sendHermesChatNotice).toHaveBeenCalledWith(
         "bot-1",
         "qqbot,wecom",
-        "LightVela 已添加新的自动任务「下游任务」。",
+        "LightVela 已新建自动任务「下游任务」。",
       );
-      expect(onError).toHaveBeenCalledWith("自动任务已添加，但部分通知通道发送确认消息失败。");
+      expect(onError).toHaveBeenCalledWith("自动任务已新建，但部分通知通道发送确认消息失败。");
     });
   });
 
@@ -2090,7 +2109,7 @@ describe("automation notification channel options", () => {
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith("自动任务已添加，但部分通知通道发送确认消息失败。");
+      expect(onError).toHaveBeenCalledWith("自动任务已新建，但部分通知通道发送确认消息失败。");
     });
   });
 

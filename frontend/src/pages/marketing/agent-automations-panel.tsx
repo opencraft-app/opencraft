@@ -1112,7 +1112,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
                   onClick={() => requestCreate("template")}
                   className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
                 >
-                  {t("参考模板添加")}
+                  {t("参考模板新建")}
                 </button>
               </p>
             )}
@@ -2384,7 +2384,7 @@ function ConfirmCreateOverLimitModal({
             onClick={onConfirm}
             className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white transition hover:bg-black/85"
           >
-            {t("继续添加")}
+            {t("继续新建")}
           </button>
         </div>
       </div>
@@ -3335,8 +3335,8 @@ export function AutomationFormModal({
         }
         onSaved();
         if (deliver !== "local") {
-          const deliveryWarning = t("自动任务已添加，但部分通知通道发送确认消息失败。");
-          void sendHermesChatNotice(botId, deliver, t("LightVela 已添加新的自动任务「{{name}}」。", {
+          const deliveryWarning = t("自动任务已新建，但部分通知通道发送确认消息失败。");
+          void sendHermesChatNotice(botId, deliver, t("LightVela 已新建自动任务「{{name}}」。", {
             name: createInput.name,
           }))
             .then(({ failed }) => {
