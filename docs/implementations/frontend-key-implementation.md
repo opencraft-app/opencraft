@@ -360,7 +360,6 @@ Bot 草稿信息缓存到 localStorage：
 | `destroyBot` | `DELETE /v1/instances/{id}` | 删除 Bot |
 | `renameBot` | `PUT /v1/instances/{id}` | 重命名 Bot |
 | `updateBotProfile` | `PUT /v1/instances/{id}` | 更新 Bot 属性 |
-| `getBotBornCard` | `GET /v1/instances/{id}/borncard` | 获取出生证明数据 |
 | `getTerminalSession` | `POST /sandboxes/{sandboxId}/tat/session` | 获取终端会话 |
 | `configureQQChannel` | `POST /v1/instances/{id}/channels/config` | 配置 QQ 通道 |
 | `createWeixinLoginSession` | `POST /v1/instances/{id}/channels/weixin/login-sessions` | 创建微信登录会话 |
@@ -503,12 +502,8 @@ HTTP 层统一处理：
 核心功能：
 
 - 彩屑动画：20 个粒子从顶部下落
-- 成功消息：显示 "🎉 恭喜，Hermes #N 创建成功！"
-- 出生证明卡片：
-  - 展示 Bot 头像、名称、出生日期
-  - 点击打开装饰性出生证明弹窗（桃色背景 #FFD4A8、波浪边框）
-  - 从后端 `/borncard` 获取出生序号（"今天出生的第 X 个 Hermes 宝宝"）
-  - 通过 `html2canvas` 高 DPI 渲染并下载为 PNG
+- 成功消息：显示 "🎉 Hermes 创建成功！"
+- 已创建 Agent 卡片：展示 Bot 头像、名称和继续配置提示
 - 导航：`"管理我的智能体伙伴"` → `/agents`
 
 ### 6.7 Agent 控制台
@@ -536,9 +531,8 @@ HTTP 层统一处理：
 1. **微信二维码弹窗**：SSE 事件流 + 智能降级轮询，复杂状态机（creating → starting → waiting_qr → scanned → success/failed/expired/timeout），重试逻辑（session 创建 40 次、轮询 30 次、3-5s 延迟），处理"已有活跃 session"冲突
 2. **QQ 通道配置弹窗**：App ID + App Secret 表单，gateway 重启通知，外部文档链接
 3. **终端弹窗（TerminalModal）**：XTerm.js 集成，BSON/JSON 帧解码，Base64 UTF-8 PTY 通信
-4. **出生证明弹窗**：装饰性证书 + html2canvas 高 DPI 下载 + 出生序号
-5. **删除确认对话框**：需输入 Bot 名称匹配验证
-6. **通道配置弹窗**：连接通道展示 + 嵌套微信 QR/QQ 表单
+4. **删除确认对话框**：需输入 Bot 名称匹配验证
+5. **通道配置弹窗**：连接通道展示 + 嵌套微信 QR/QQ 表单
 
 **SDK 集成（tea-sdk-lightclaw）：**
 - `ModelCard`：添加/管理语言模型

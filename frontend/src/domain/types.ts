@@ -63,18 +63,6 @@ export interface Bot {
   status: "draft" | "provisioning" | "active" | "paused" | "failed" | "deleting";
 }
 
-export interface BotBornCard {
-  instanceId: string;
-  userId: string;
-  sandboxId?: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-  timeoutAt?: string;
-  bornDateForChina: string;
-  bornNumberForChina: number;
-}
-
 export interface BotTerminalSession {
   sandboxId?: string;
   poolId: string;

@@ -13,7 +13,6 @@ import type {
   CurrentSubscription,
   DeletePassResult,
   Bot,
-  BotBornCard,
   BotChannelConfigResult,
   BotTerminalSession,
   BotRuntime,
@@ -426,7 +425,6 @@ export interface BotRepository {
   sendWorkspaceMessage(botId: string, text: string): Promise<WorkspaceMessage[]>;
   getSettingsSnapshot(botId: string, mode?: DataMode): Promise<SettingsSnapshot>;
   getTerminalSession(botId: string): Promise<BotTerminalSession>;
-  getBotBornCard(botId: string): Promise<BotBornCard>;
   configureQQChannel(botId: string, input: { appId: string; appSecret: string; account?: string }): Promise<BotChannelConfigResult>;
   createWeixinLoginSession(botId: string): Promise<{ sessionId: string; status: string }>;
   getWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;

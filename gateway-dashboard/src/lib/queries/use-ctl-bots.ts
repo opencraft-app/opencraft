@@ -17,8 +17,6 @@ export interface CtlBot {
   created_at: string;
   updated_at: string;
   timeout_at?: string;
-  born_date_for_china?: string;
-  born_number_for_china?: number;
 }
 
 export interface CtlBotListResponse {

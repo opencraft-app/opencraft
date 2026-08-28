@@ -78,8 +78,6 @@ routes:
     path: /v1/instances/{instance_id}
   - method: DELETE
     path: /v1/instances/{instance_id}
-  - method: GET
-    path: /v1/instances/{instance_id}/borncard
   - method: POST
     path: /v1/instances/{instance_id}/debug/exec
   - method: POST

@@ -102,19 +102,6 @@ export default function CtlBotsPage() {
         cell: ({ row }) => statusBadge(row.original.status),
       },
       {
-        accessorKey: "born_date_for_china",
-        header: "中国出生日期",
-        cell: ({ row }) => row.original.born_date_for_china || "-",
-      },
-      {
-        accessorKey: "born_number_for_china",
-        header: "第几只",
-        cell: ({ row }) =>
-          typeof row.original.born_number_for_china === "number"
-            ? `第 ${row.original.born_number_for_china} 只`
-            : "-",
-      },
-      {
         accessorKey: "created_at",
         header: "创建时间",
         cell: ({ row }) => formatDateTime(row.original.created_at),
@@ -178,7 +165,7 @@ export default function CtlBotsPage() {
     <div className="space-y-6">
       <PageHeader
         title="CTL Bots"
-        description="查看当前环境下 bot 实例归属、关联沙箱、创建时间和出生编号。"
+        description="查看当前环境下 bot 实例归属、关联沙箱、创建时间和运行状态。"
       >
         <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
           <RefreshCw className="mr-2 h-4 w-4" />

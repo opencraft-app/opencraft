@@ -73,9 +73,6 @@ Workspace（对话工作台）、Settings（配置）、Terminal（调试终端�
   - `subscribeWeixinLoginSessionEvents(botId, sessionId, signal?)` — AsyncIterable，
     订阅 `{event, data}` 事件流
 
-**出生卡**
-- `getBotBornCard(botId)` → `BotBornCard`
-
 ### 状态管理
 
 - 各控制台页使用 `useAsyncResource(fetcher, deps)` 直接包装对应快照接口，

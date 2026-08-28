@@ -395,9 +395,6 @@ func normalizePath(path string) string {
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/chatclaw/runtime-bootstrap") {
 		return "/internal/instances/{id}/chatclaw/runtime-bootstrap"
 	}
-	if strings.HasPrefix(path, "/internal/bots/") && strings.HasSuffix(path, "/borncard") {
-		return "/internal/bots/{id}/borncard"
-	}
 	if strings.HasPrefix(path, "/internal/ctl/bundles/") {
 		return "/internal/ctl/bundles/{bundleId}"
 	}
@@ -657,18 +654,6 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		resp, err := h.logic.ResetInstanceConfig(ctx, instanceID)
-		if err != nil {
-			writeHTTPError(w, r, err)
-			return
-		}
-		writeSuccess(w, r, http.StatusOK, resp)
-	case len(parts) == 2 && r.Method == http.MethodGet && parts[1] == "borncard":
-		ctx, ok := newRequestContext(r)
-		if !ok {
-			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
-			return
-		}
-		resp, err := h.loadBotBornCard(r, instanceID, ctx.GetUserID())
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return

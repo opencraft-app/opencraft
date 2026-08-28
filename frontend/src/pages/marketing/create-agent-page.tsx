@@ -114,7 +114,7 @@ export const CreateOpenClawPage = () => {
     ];
   }, [remoteSoulTemplates, fallbackSoulTemplates, t]);
 
-  const displayName = botName.trim() || t("Hermes宝宝");
+  const displayName = botName.trim() || t("我的Hermes");
 
   const previewIntro = intro.trim() || "";
 

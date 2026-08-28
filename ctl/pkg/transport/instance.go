@@ -152,10 +152,6 @@ type BotSummaryResponse struct {
 	UpdatedAt time.Time `json:"updated_at" example:"2026-03-29T12:30:00Z"`
 	// 超时时间
 	TimeoutAt *time.Time `json:"timeout_at,omitempty" example:"2026-03-29T13:00:00Z"`
-	// 北京时间出生日期
-	BornDateForChina string `json:"born_date_for_china,omitempty" example:"2026-03-30"`
-	// 北京时间当天第几只出生
-	BornNumberForChina *int `json:"born_number_for_china,omitempty" example:"12"`
 }
 
 // ListBotsResponse bot 归属列表
@@ -164,20 +160,6 @@ type ListBotsResponse struct {
 	Page     int                   `json:"page" example:"1"`
 	PageSize int                   `json:"page_size" example:"20"`
 	Items    []*BotSummaryResponse `json:"items"`
-}
-
-// BotBornCardResponse bot 出生卡
-type BotBornCardResponse struct {
-	InstanceID         string     `json:"instance_id" example:"ins_123"`
-	Name               string     `json:"name,omitempty" example:"我的龙虾"`
-	UserID             string     `json:"user_id" example:"usr_123"`
-	SandboxID          string     `json:"sandbox_id,omitempty" example:"sbx_123"`
-	Status             string     `json:"status" example:"Running"`
-	CreatedAt          time.Time  `json:"created_at" example:"2026-03-29T12:00:00Z"`
-	UpdatedAt          time.Time  `json:"updated_at" example:"2026-03-29T12:30:00Z"`
-	TimeoutAt          *time.Time `json:"timeout_at,omitempty" example:"2026-03-29T13:00:00Z"`
-	BornDateForChina   string     `json:"born_date_for_china" example:"2026-03-30"`
-	BornNumberForChina int        `json:"born_number_for_china" example:"12"`
 }
 
 // OperationResponse 操作记录响应

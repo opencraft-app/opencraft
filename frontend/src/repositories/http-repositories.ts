@@ -1,11 +1,11 @@
 import { planCatalog } from "@/domain/plan-catalog";
+import { t as translate } from "@/i18n/t";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 import type {
   AuthSessionSnapshot,
   BillingSummary,
   Bot,
-  BotBornCard,
   BotChannelConfigResult,
   BotTerminalSession,
   BotRuntime,
@@ -174,6 +174,7 @@ interface OIDCAuthorizationPayload {
 interface CtlInstancePayload {
   instance_id: string;
   sandbox_id?: string;
+  name?: string;
   status: string;
   created_at: string;
   timeout_at?: string;
@@ -191,18 +192,6 @@ interface CtlConfigureChannelPayload {
   channel: string;
   gateway_restarted: boolean;
   output?: string;
-}
-
-interface CtlBotBornCardPayload {
-  instance_id: string;
-  user_id: string;
-  sandbox_id?: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  timeout_at?: string;
-  born_date_for_china: string;
-  born_number_for_china: number;
 }
 
 interface WorkerActionStartPayload {
@@ -710,11 +699,23 @@ const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
   }
 };
 
+const defaultHermesAgentName = () => translate("我的Hermes");
+
+const legacyDefaultHermesAgentNames = new Set(["Hermes宝宝", "Hermes寶寶", "Baby Hermes", "Bebé Hermes"]);
+
+const resolveLegacyDraftBotName = (draft?: BotDraft) => {
+  const draftName = draft?.name?.trim();
+  if (!draftName || legacyDefaultHermesAgentNames.has(draftName)) {
+    return undefined;
+  }
+  return draftName;
+};
+
 const projectInstanceToBot = (instance: CtlInstancePayload, draft?: BotDraft): Bot => {
   return {
     id: instance.instance_id,
     sandboxId: instance.sandbox_id,
-    name: draft?.name?.trim() || "Hermes宝宝",
+    name: instance.name?.trim() || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
     type: draft?.type || "ops",
     template: draft?.template?.trim() || "OpenClaw Runtime",
     mission: draft?.mission?.trim() || "",
@@ -723,18 +724,6 @@ const projectInstanceToBot = (instance: CtlInstancePayload, draft?: BotDraft): B
     status: draft?.status || mapInstanceStatusToBotStatus(instance.status),
   };
 };
-
-const mapBotBornCard = (payload: CtlBotBornCardPayload): BotBornCard => ({
-  instanceId: payload.instance_id,
-  userId: payload.user_id,
-  sandboxId: payload.sandbox_id,
-  status: payload.status,
-  createdAt: payload.created_at,
-  updatedAt: payload.updated_at,
-  timeoutAt: payload.timeout_at,
-  bornDateForChina: payload.born_date_for_china,
-  bornNumberForChina: payload.born_number_for_china,
-});
 
 /* ── Usage API ── */
 interface UsagePayload {
@@ -822,8 +811,10 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async createBot(input) {
+      const displayName = input?.name?.trim() || defaultHermesAgentName();
       const body: Record<string, unknown> = {
         timeout: DEFAULT_INSTANCE_TIMEOUT_SECONDS,
+        name: displayName,
       };
       if (input?.soulTemplateId) {
         body.soul_template_id = input.soulTemplateId;
@@ -835,11 +826,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       });
 
       const drafts = readBotDrafts();
-      drafts[created.instance_id] = {
-        name: input?.name?.trim() || undefined,
-      };
-      writeBotDrafts(drafts);
-
       return projectInstanceToBot(created, drafts[created.instance_id]);
     },
 
@@ -861,18 +847,16 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         method: "PUT",
         body: { name },
       });
-      // 同步更新本地 draft，确保后续读取 name 一致
       const drafts = readBotDrafts();
-      drafts[botId] = { ...(drafts[botId] ?? {}), name };
-      writeBotDrafts(drafts);
       return projectInstanceToBot(data, drafts[botId]);
     },
 
     async updateBotProfile(botId, patch) {
       const drafts = readBotDrafts();
+      const { name: _ignoredName, ...draftPatch } = patch;
       drafts[botId] = {
         ...(drafts[botId] ?? {}),
-        ...patch,
+        ...draftPatch,
       };
       writeBotDrafts(drafts);
       return getBotByID(botId);
@@ -928,13 +912,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       return requestEnvelope<BotTerminalSession>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/tat/session`, {
         method: "POST",
       });
-    },
-
-    async getBotBornCard(botId) {
-      const payload = await requestEnvelope<CtlBotBornCardPayload>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/borncard`, {
-        method: "GET",
-      });
-      return mapBotBornCard(payload);
     },
 
     async configureQQChannel(botId, input) {

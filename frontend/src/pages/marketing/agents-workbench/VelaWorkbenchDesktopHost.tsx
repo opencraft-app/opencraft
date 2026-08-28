@@ -211,30 +211,34 @@ export function VelaWorkbenchDesktopHost({
     setConnectAttempt((current) => current + 1);
   }, [onReloadBots]);
 
-  if (transport) {
-    return (
-      <WorkbenchEmbeddedReadyApp
-        hostStateStores={hostStateStores}
-        transport={transport}
-      />
-    );
-  }
+	  if (transport) {
+	    return (
+	      <WorkbenchEmbeddedReadyApp
+	        botName={bot?.name ?? null}
+	        hostStateStores={hostStateStores}
+	        transport={transport}
+	      />
+	    );
+	  }
 
-  return (
-    <WorkbenchHostSurface
-      error={bootstrap.status === "failed" ? bootstrap.error : null}
-      isLoading={bootstrap.status === "starting"}
-      onRetry={retry}
-    />
-  );
+	  return (
+	    <WorkbenchHostSurface
+	      botName={bot?.name ?? null}
+	      error={bootstrap.status === "failed" ? bootstrap.error : null}
+	      isLoading={bootstrap.status === "starting"}
+	      onRetry={retry}
+	    />
+	  );
 }
 
 interface WorkbenchEmbeddedReadyAppProps {
+  botName?: string | null;
   hostStateStores: WorkbenchDesktopHostStateStores;
   transport: ResolvedWorkbenchVeladTransport;
 }
 
 function WorkbenchEmbeddedReadyApp({
+  botName,
   hostStateStores,
   transport,
 }: WorkbenchEmbeddedReadyAppProps) {
@@ -364,10 +368,11 @@ function WorkbenchEmbeddedReadyApp({
     setup.resolvedSelectedBackend,
   ]);
 
-  return (
-    <WorkbenchHostSurface
-      activeSessionId={activeSessionId || null}
-      error={controller.error ?? error}
+	  return (
+	    <WorkbenchHostSurface
+	      activeSessionId={activeSessionId || null}
+	      botName={botName}
+	      error={controller.error ?? error}
       isLoading={isLoadingSessions || !activeSessionId}
       onCreateSession={createSession}
       onRetry={loadSessions}
@@ -381,6 +386,7 @@ function WorkbenchEmbeddedReadyApp({
           composerControls={controller.composerControls}
           draft={controller.draft}
           error={controller.error ?? error}
+          followOutputToken={controller.followOutputToken}
           historyPhase={controller.historyPhase}
           isLoadingOlder={controller.isLoadingOlder}
           isRespondingToRequest={controller.isRespondingToRequest}
@@ -405,6 +411,7 @@ function WorkbenchEmbeddedReadyApp({
 
 function WorkbenchHostSurface({
   activeSessionId,
+  botName,
   children,
   error,
   isLoading,
@@ -414,6 +421,7 @@ function WorkbenchHostSurface({
   sessions,
 }: {
   activeSessionId?: string | null;
+  botName?: string | null;
   children?: ReactNode;
   error: string | null;
   isLoading: boolean;
@@ -424,6 +432,7 @@ function WorkbenchHostSurface({
 }) {
   const t = useT();
   const visibleSessions = sessions ?? [];
+  const railTitle = botName?.trim() || t("我的Hermes");
 
   return (
     <section
@@ -436,7 +445,7 @@ function WorkbenchHostSurface({
         <div className={styles.sessionRailTop}>
           <div>
             <div className={styles.eyebrow}>{t("工作台")}</div>
-            <h2 className={styles.railTitle}>{t("Hermes宝宝")}</h2>
+            <h2 className={styles.railTitle}>{railTitle}</h2>
           </div>
           <button
             className={styles.iconButton}

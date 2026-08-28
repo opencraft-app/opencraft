@@ -324,7 +324,6 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
       /* Persist personality/intro as draft metadata via updateBotProfile */
       await repositories.bots.updateBotProfile(created.id, {
-        name: bot.name,
         template: bot.personality,
         mission: bot.intro || undefined,
       });

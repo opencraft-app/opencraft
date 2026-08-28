@@ -168,7 +168,7 @@
     `cancelWeixinLoginSession` / `subscribeWeixinLoginSessionEvents`
   - QQ 通道：`configureQQChannel`
   - 终端：`getTerminalSession`
-  - 其它：`getBotBornCard` / `renameBot`
+  - 其它：`renameBot`
 - **订阅与账户**：`PlanRepository`（套餐 / 订阅）、`AuthRepository`（资料、实名认证 `verifyRealname`）
 
 ### AppShell 分支（`src/pages/app/*`）真实 API 依赖
