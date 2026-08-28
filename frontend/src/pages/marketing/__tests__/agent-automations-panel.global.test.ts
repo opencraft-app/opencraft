@@ -77,7 +77,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
     expect(await screen.findByText("From: Upstream")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Add|添加/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Create|新建/ }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Create Job");
     expect(screen.getByRole("dialog")).toHaveTextContent("Instructions");
     expect(screen.getByRole("combobox", { name: "Upstream Job" })).toBeInTheDocument();
@@ -118,7 +118,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
     fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
       target: { value: "Global downstream" },
     });
@@ -127,7 +127,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     });
     fireEvent.click(screen.getByRole("combobox", { name: "Upstream Job" }));
     fireEvent.click(screen.getByRole("option", { name: /Upstream/ }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(cronClientMocks.createCronJobWithContextAndScriptRollback).toHaveBeenCalledWith(
@@ -172,14 +172,14 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
     fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
       target: { value: "Global task" },
     });
     fireEvent.change(screen.getByPlaceholderText(/Describe the task as a prompt/), {
       target: { value: "Summarize updates" },
     });
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);

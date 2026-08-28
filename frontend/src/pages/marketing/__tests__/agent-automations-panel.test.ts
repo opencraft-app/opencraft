@@ -317,6 +317,40 @@ describe("cron context relationship helpers", () => {
 });
 
 describe("cron context panel integration", () => {
+  it.each(["create", "edit"] as const)("uses the wider responsive form in $mode mode", (mode) => {
+    renderAutomationForm({
+      mode,
+      initialJob: mode === "edit" ? makeCronJob({ id: "edit-width", name: "编辑宽度任务" }) : undefined,
+    });
+
+    expect(screen.getByRole("dialog").firstElementChild).toHaveClass("w-full", "max-w-[680px]");
+  });
+
+  it("uses the new copy for the blank create entry and modal title", async () => {
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    expect(await screen.findByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(isGlobal ? "Create Job" : "新建自动任务")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: isGlobal ? "Create" : "新建" })).toBeTruthy();
+  });
+
+  it("uses new-task copy when confirming creation above the active-job limit", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue(Array.from({ length: 20 }, (_, index) => makeCronJob({
+      id: `limit-${index}`,
+      name: `上限任务 ${index}`,
+      state: "scheduled",
+    })));
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: isGlobal ? "Create" : "新建" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: isGlobal ? "Continue creating" : "继续新建" })).toBeTruthy();
+  });
+
   it("keeps the refresh button static and disabled during the initial load", async () => {
     let resolveJobs: ((jobs: CronJob[]) => void) | undefined;
     cronClientMocks.listCronJobs.mockImplementationOnce(() => new Promise((resolve) => {
@@ -360,7 +394,7 @@ describe("cron context panel integration", () => {
     await waitFor(() => {
       expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
     });
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     const skillLabel = await screen.findByText("调用技能");
     const upstreamLabel = screen.getByText("上游任务");
@@ -377,7 +411,7 @@ describe("cron context panel integration", () => {
     await waitFor(() => {
       expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
     });
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     const upstreamLabel = (await screen.findByText("上游任务")).closest("label");
     expect(upstreamLabel).not.toBeNull();
@@ -406,7 +440,7 @@ describe("cron context panel integration", () => {
     await waitFor(() => {
       expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledTimes(1);
     });
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
     fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "保留中的草稿" } });
 
     fireEvent.click(await screen.findByRole("button", { name: "重试" }));
@@ -440,7 +474,7 @@ describe("cron context panel integration", () => {
       expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledTimes(2);
     });
     resolveFirst?.("unknown");
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     expect(await screen.findByRole("combobox", { name: "上游任务" })).toBeEnabled();
   });
@@ -463,7 +497,7 @@ describe("cron context panel integration", () => {
       } else {
         fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "普通任务已更新" } });
       }
-      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "添加" : "保存" }));
+      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       if (mode === "create") {
         await waitFor(() => {
@@ -486,7 +520,7 @@ describe("cron context panel integration", () => {
 
     fillCreateFields();
     chooseUpstream("上游任务 A");
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
       expect(cronClientMocks.createCronJobWithContextAndScriptRollback).toHaveBeenCalledWith(
@@ -520,7 +554,7 @@ describe("cron context panel integration", () => {
 
       if (mode === "create") fillCreateFields();
       chooseUpstream("上游任务 A");
-      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "添加" : "保存" }));
+      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent(
         "暂时无法确认最新依赖关系，请重试",
@@ -658,11 +692,11 @@ describe("cron context panel integration", () => {
 
     fillCreateFields();
     chooseUpstream("上游任务 A");
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     const dialog = screen.getByRole("dialog");
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(message);
-    expect(within(dialog).getByText("添加自动任务")).toBeTruthy();
+    expect(within(dialog).getByText("新建自动任务")).toBeTruthy();
     expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
   });
 
@@ -689,13 +723,13 @@ describe("cron context panel integration", () => {
 
       if (mode === "create") fillCreateFields();
       chooseUpstream("上游任务 A");
-      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "添加" : "保存" }));
+      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       const dialog = screen.getByRole("dialog");
       expect(await within(dialog).findByRole("alert")).toHaveTextContent(
         "所选上游任务已删除或过期，请重新选择或解除关联",
       );
-      expect(within(dialog).getByText(mode === "create" ? "添加自动任务" : "编辑自动任务")).toBeTruthy();
+      expect(within(dialog).getByText(mode === "create" ? "新建自动任务" : "编辑自动任务")).toBeTruthy();
       expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
       expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
       expect(onSaved).not.toHaveBeenCalled();
@@ -964,6 +998,20 @@ describe("cron context dependent deletion", () => {
 });
 
 describe("terminal cron card visibility", () => {
+  it("names the messaging destination as IM software after starting a test run", async () => {
+    const job = makeCronJob({ id: "toast-copy", name: "Toast 文案任务" });
+    cronClientMocks.listCronJobs.mockResolvedValue([job]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard(job.name)).getByRole("button", { name: isGlobal ? "Test run" : "测试运行" }));
+
+    expect(await screen.findByText(
+      isGlobal
+        ? "Running in the background — please check the result in your IM app."
+        : "已在后台执行，请在你的 IM 软件中查看运行结果",
+    )).toBeTruthy();
+  });
+
   it("shows a past-due one-shot job as running while Hermes is still executing it", async () => {
     const running = makeCronJob({
       id: "running-once",
@@ -1084,7 +1132,7 @@ describe("terminal cron card visibility", () => {
     fireEvent.click(screen.getByRole("button", { name: "已结束任务" }));
 
     expect(await screen.findByText("暂无已结束任务")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "参考模板添加" })).toBeNull();
+    expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
   });
 
   it("returns to active jobs after creating from the ended-jobs tab", async () => {
@@ -1097,9 +1145,9 @@ describe("terminal cron card visibility", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "已结束任务" }));
     expect(await screen.findByText("旧任务")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
     fillCreateFields();
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "添加" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
@@ -1119,7 +1167,7 @@ describe("terminal cron card visibility", () => {
     fireEvent.click(await screen.findByRole("button", { name: "已结束任务" }));
     fireEvent.click(screen.getByRole("button", { name: "模板" }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /每日工作小结/ }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "添加" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
@@ -1898,7 +1946,7 @@ describe("automation form test run", () => {
     expect(onSaved).not.toHaveBeenCalled();
     expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
     expect(cronClientMocks.createCronJobWithScriptRollback).not.toHaveBeenCalled();
-    expect(screen.getByText("添加自动任务")).toBeInTheDocument();
+    expect(screen.getByText("新建自动任务")).toBeInTheDocument();
   });
 
   it("test-runs unsaved edit values and keeps save separate", () => {
@@ -1973,7 +2021,7 @@ describe("automation form test-state wiring", () => {
       render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
       if (entry === "blank") {
-        fireEvent.click(await screen.findByRole("button", { name: "添加" }));
+        fireEvent.click(await screen.findByRole("button", { name: "新建" }));
         fillCreateFields();
       } else {
         fireEvent.click(await screen.findByRole("button", { name: "模板" }));
@@ -2014,7 +2062,7 @@ describe("automation notification channel options", () => {
     fillCreateFields("  下游任务  ");
     fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "企业微信" }));
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
@@ -2028,9 +2076,9 @@ describe("automation notification channel options", () => {
       expect(cronClientMocks.sendHermesChatNotice).toHaveBeenCalledWith(
         "bot-1",
         "qqbot,wecom",
-        "LightVela 已添加新的自动任务「下游任务」。",
+        "LightVela 已新建自动任务「下游任务」。",
       );
-      expect(onError).toHaveBeenCalledWith("自动任务已添加，但部分通知通道发送确认消息失败。");
+      expect(onError).toHaveBeenCalledWith("自动任务已新建，但部分通知通道发送确认消息失败。");
     });
   });
 
@@ -2039,7 +2087,7 @@ describe("automation notification channel options", () => {
     renderAutomationForm({ onSaved });
 
     fillCreateFields();
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     expect(cronClientMocks.sendHermesChatNotice).not.toHaveBeenCalled();
@@ -2057,11 +2105,11 @@ describe("automation notification channel options", () => {
 
     fillCreateFields();
     fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
-    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith("自动任务已添加，但部分通知通道发送确认消息失败。");
+      expect(onError).toHaveBeenCalledWith("自动任务已新建，但部分通知通道发送确认消息失败。");
     });
   });
 

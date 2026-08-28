@@ -272,7 +272,7 @@ function ScenarioReminderBanner({
           <h3 className="truncate font-semibold text-black/88" title={notice.draft.generatedName}>
             {isPreview
               ? t("已开始试跑：{{name}}", { name: notice.draft.generatedName })
-              : t("已添加自动任务：{{name}}", { name: notice.draft.generatedName })}
+              : t("已新建自动任务：{{name}}", { name: notice.draft.generatedName })}
           </h3>
           <p className="mt-1 text-xs leading-5 text-black/55">
             {isPreview
@@ -944,7 +944,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     }
     // 前置成功：即时回执已发出、任务已在后台跑。立刻撤转圈，不再让用户盲等真正执行完。
     flashTestResult(job.id, "ok");
-    showNotice(t("已在后台执行，请在你的 IM 中查看运行结果"), "success");
+    showNotice(t("已在后台执行，请在你的 IM 软件中查看运行结果"), "success");
     // 后台阶段 fire-and-forget：等真正执行完后给用户一个明确交代——不再阻塞 UI，但也
     // 不再「全静默」。三种结局分别提示：
     //   1. 执行成功且投递成功 → 静默（用户已从 IM 收到结果，无需再打扰）。
@@ -999,7 +999,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
               className="inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85"
             >
               <Plus className="h-5 w-5" />
-              <span className="text-base font-semibold leading-none">{t("添加")}</span>
+              <span className="text-base font-semibold leading-none">{t("新建")}</span>
             </button>
           </div>
         )}
@@ -1112,7 +1112,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
                   onClick={() => requestCreate("template")}
                   className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
                 >
-                  {t("参考模板添加")}
+                  {t("参考模板新建")}
                 </button>
               </p>
             )}
@@ -2384,7 +2384,7 @@ function ConfirmCreateOverLimitModal({
             onClick={onConfirm}
             className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white transition hover:bg-black/85"
           >
-            {t("继续添加")}
+            {t("继续新建")}
           </button>
         </div>
       </div>
@@ -3335,8 +3335,8 @@ export function AutomationFormModal({
         }
         onSaved();
         if (deliver !== "local") {
-          const deliveryWarning = t("自动任务已添加，但部分通知通道发送确认消息失败。");
-          void sendHermesChatNotice(botId, deliver, t("LightVela 已添加新的自动任务「{{name}}」。", {
+          const deliveryWarning = t("自动任务已新建，但部分通知通道发送确认消息失败。");
+          void sendHermesChatNotice(botId, deliver, t("LightVela 已新建自动任务「{{name}}」。", {
             name: createInput.name,
           }))
             .then(({ failed }) => {
@@ -3404,7 +3404,7 @@ export function AutomationFormModal({
           onClose={() => setTestSendToast(null)}
         />
       )}
-      <div className="relative max-h-[calc(100vh-24px)] w-full max-w-[635px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
+      <div className="relative max-h-[calc(100vh-24px)] w-full max-w-[680px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
         <button
           type="button"
           onClick={onClose}
@@ -3415,7 +3415,7 @@ export function AutomationFormModal({
         </button>
 
         <h2 className="text-lg font-semibold text-black/90">
-          {mode === "create" ? t("添加自动任务") : t("编辑自动任务")}
+          {mode === "create" ? t("新建自动任务") : t("编辑自动任务")}
         </h2>
 
         {/* 名称 */}
@@ -3878,7 +3878,7 @@ export function AutomationFormModal({
             className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-base font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {mode === "create" ? t("添加") : t("保存")}
+            {mode === "create" ? t("新建") : t("保存")}
           </button>
         </div>
       </div>
