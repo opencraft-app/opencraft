@@ -1,4 +1,5 @@
 import {
+  DEEPSEEK_HARNESS_INSTALLER_SHA256,
   DEEPSEEK_HARNESS_PROVIDER_HELPER_BASE64,
 } from "@/lib/generated/deepseek-harness-runtime-assets";
 import { isCN } from "@/lib/region";
@@ -74,8 +75,10 @@ const SERVICE = "deepseek-harness.service";
 const TASK_ID_PATTERN = /^dshi-[0-9a-f]{32}$/;
 const SECRET_ID_PATTERN = /^dshk-[0-9a-f]{32}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const INSTALL_WORK_PREFIX = "/tmp/lightvela-dsh-install-";
 const INSTALLATION_STATE_DIR = "/var/lib/lightvela/dsh/installations";
+const WEB_PROFILE_DIR = "/home/agentuser/.dsh/profiles/web";
 const SECRET_TRANSPORT_DIR = "/home/agentuser/.dsh/.lightvela-secret-transport";
 const ALL_PROVIDERS = new Set<string>([
   ...DEEPSEEK_HARNESS_CN_PROVIDERS,
@@ -83,12 +86,23 @@ const ALL_PROVIDERS = new Set<string>([
 ]);
 
 const STATUS_COMMAND = [
-  `if sudo systemctl status ${SERVICE} --no-pager >/dev/null 2>&1; then`,
-  `  printf '%s\\n' '{"installed":true,"status":"running","service_status":"active","healthy":true}'`,
-  "elif sudo test -x /opt/lightvela/dsh/current/node_modules/.bin/dsh; then",
+  `if sudo -n systemctl status ${SERVICE} --no-pager >/dev/null 2>&1; then`,
+  "  if ! command -v curl >/dev/null 2>&1; then exit 1; fi",
+  `  restarts="$(sudo -n systemctl show --property=NRestarts --value ${SERVICE})" || exit 1`,
+  '  case "$restarts" in ""|*[!0-9]*) exit 1 ;; esac',
+  '  if [ "$restarts" -gt 0 ]; then',
+  `    printf '%s\\n' '{"installed":true,"status":"degraded","service_status":"active","healthy":false}'`,
+  "  elif curl --silent --show-error --fail --max-time 3 --output /dev/null http://127.0.0.1:3080/ 2>/dev/null; then",
+  `    printf '%s\\n' '{"installed":true,"status":"running","service_status":"active","healthy":true}'`,
+  "  else",
+  `    printf '%s\\n' '{"installed":true,"status":"degraded","service_status":"active","healthy":false}'`,
+  "  fi",
+  "elif sudo -n test -x /opt/lightvela/dsh/current/node_modules/.bin/dsh; then",
   `  printf '%s\\n' '{"installed":true,"status":"stopped","service_status":"inactive","healthy":false}'`,
-  "else",
+  "elif sudo -n test ! -x /opt/lightvela/dsh/current/node_modules/.bin/dsh; then",
   `  printf '%s\\n' '{"installed":false,"status":"not-installed","service_status":"inactive","healthy":false}'`,
+  "else",
+  "  exit 1",
   "fi",
 ].join("\n");
 
@@ -118,6 +132,37 @@ const INSTALL_TASK_WRITER = [
   " try: os.unlink(temp_path)",
   " except FileNotFoundError: pass",
   " raise",
+].join("\n");
+
+const REPAIR_PROFILE_PREPARER = [
+  "import os,pwd,shutil,stat,sys",
+  "source,destination=sys.argv[1:]",
+  "metadata=os.lstat(source)",
+  "if not stat.S_ISDIR(metadata.st_mode): raise RuntimeError('DeepSeek Harness Web profile is not a regular directory')",
+  "account=pwd.getpwnam('agentuser')",
+  "os.mkdir(destination,0o755)",
+  "os.chown(destination,account.pw_uid,account.pw_gid)",
+  "package_path=os.path.join(destination,'package.json')",
+  "descriptor=os.open(package_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,'O_NOFOLLOW',0),0o644)",
+  "with os.fdopen(descriptor,'wb') as handle: handle.write(b'{}\\n'); handle.flush(); os.fsync(handle.fileno())",
+  "os.chown(package_path,account.pw_uid,account.pw_gid)",
+  "patch_source=os.path.join(source,'cordis.patch.yml')",
+  "patch_destination=os.path.join(destination,'cordis.patch.yml')",
+  "try: patch_metadata=os.lstat(patch_source)",
+  "except FileNotFoundError: patch_metadata=None",
+  "if patch_metadata is not None:",
+  " if not stat.S_ISREG(patch_metadata.st_mode): raise RuntimeError('DeepSeek Harness cordis.patch.yml is not a regular file')",
+  " read_descriptor=os.open(patch_source,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0))",
+  " write_descriptor=os.open(patch_destination,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,'O_NOFOLLOW',0),0o600)",
+  " try:",
+  "  with os.fdopen(read_descriptor,'rb') as source_handle,os.fdopen(write_descriptor,'wb') as destination_handle:",
+  "   read_descriptor=write_descriptor=-1",
+  "   shutil.copyfileobj(source_handle,destination_handle)",
+  "   destination_handle.flush(); os.fsync(destination_handle.fileno())",
+  " finally:",
+  "  if read_descriptor>=0: os.close(read_descriptor)",
+  "  if write_descriptor>=0: os.close(write_descriptor)",
+  " os.chown(patch_destination,account.pw_uid,account.pw_gid)",
 ].join("\n");
 
 const randomHexId = (prefix: string) => {
@@ -169,9 +214,14 @@ const shellQuote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`;
 
 export const createDeepSeekHarnessInstallLaunchScript = (
   installerUrl = DEEPSEEK_HARNESS_INSTALLER_URL,
+  installerSha256 = DEEPSEEK_HARNESS_INSTALLER_SHA256,
 ) => {
+  if (!SHA256_PATTERN.test(installerSha256)) {
+    throw new Error("Invalid DeepSeek Harness installer checksum");
+  }
   const taskStatusCheckerBase64 = encodeUtf8Base64(INSTALL_TASK_STATUS_CHECKER);
   const taskWriterBase64 = encodeUtf8Base64(INSTALL_TASK_WRITER);
+  const repairProfilePreparerBase64 = encodeUtf8Base64(REPAIR_PROFILE_PREPARER);
   return [
     "set -Eeuo pipefail",
     "umask 077",
@@ -179,7 +229,14 @@ export const createDeepSeekHarnessInstallLaunchScript = (
     'state_dir="$2"',
     'work_dir="$3"',
     'trusted_browser_host="$4"',
+    'operation="${5:-install}"',
     'installer_path="$work_dir/install-deepseek-harness.sh"',
+    `repair_profile=${shellQuote(WEB_PROFILE_DIR)}`,
+    'repair_profile_parent="${repair_profile%/*}"',
+    'repair_backup="$repair_profile_parent/.lightvela-repair-backup-$task_id"',
+    "repair_profile_isolated=0",
+    "repair_service_was_active=0",
+    `installer_sha256=${shellQuote(installerSha256)}`,
     "installer_started=0",
     'write_task_state() { python3 -c "import base64;exec(base64.b64decode(\''
       + taskWriterBase64
@@ -187,8 +244,20 @@ export const createDeepSeekHarnessInstallLaunchScript = (
     'task_has_status() { python3 -c "import base64;exec(base64.b64decode(\''
       + taskStatusCheckerBase64
       + "'))\" \"$state_dir/$task_id.json\" \"$1\"; }",
+    'restore_repair_profile() { if [ "$repair_profile_isolated" -eq 1 ]; then systemctl stop "'
+      + SERVICE
+      + '" >/dev/null 2>&1 || true; rm -rf -- "$repair_profile"; mv -- "$repair_backup" "$repair_profile" || return 1; repair_profile_isolated=0; fi; if [ "$repair_service_was_active" -eq 1 ]; then systemctl restart "'
+      + SERVICE
+      + '" >/dev/null 2>&1 || return 1; repair_service_was_active=0; fi; }',
+    'prepare_repair_profile() { [ "$operation" = repair ] || return 0; if [ ! -e "$repair_profile" ] && [ ! -L "$repair_profile" ]; then return 0; fi; if systemctl is-active --quiet "'
+      + SERVICE
+      + '"; then repair_service_was_active=1; systemctl stop "'
+      + SERVICE
+      + '"; fi; [ ! -e "$repair_backup" ] && [ ! -L "$repair_backup" ] || return 1; mv -- "$repair_profile" "$repair_backup"; repair_profile_isolated=1; python3 -c "import base64;exec(base64.b64decode(\''
+      + repairProfilePreparerBase64
+      + "'))\" \"$repair_backup\" \"$repair_profile\"; }",
     'cleanup_work() { rm -rf -- "$work_dir"; }',
-    'on_exit() { rc=$?; trap - EXIT; if [ "$rc" -ne 0 ] && [ "$installer_started" -eq 0 ] && ! task_has_status failed; then write_task_state failed prepare 0 "Installation preparation failed" || true; fi; cleanup_work; exit "$rc"; }',
+    'on_exit() { rc=$?; trap - EXIT; if [ "$rc" -ne 0 ]; then restore_repair_profile || true; fi; if [ "$rc" -ne 0 ] && [ "$installer_started" -eq 0 ] && ! task_has_status failed; then write_task_state failed prepare 0 "Installation preparation failed" || true; fi; cleanup_work; exit "$rc"; }',
     "trap on_exit EXIT",
     'install -d -m 0700 -- "$state_dir"',
     'rm -rf -- "$work_dir"',
@@ -206,7 +275,10 @@ export const createDeepSeekHarnessInstallLaunchScript = (
     'if ! [[ "$installer_size" =~ ^[0-9]+$ ]] || [ "$installer_size" -lt 1024 ] || [ "$installer_size" -gt 1048576 ]; then write_task_state failed prepare 0 "Invalid installer size"; exit 1; fi',
     'if [ "$(head -n 1 "$installer_path")" != "#!/usr/bin/env bash" ]; then write_task_state failed prepare 0 "Invalid installer header"; exit 1; fi',
     'if ! bash -n "$installer_path"; then write_task_state failed prepare 0 "Invalid installer syntax"; exit 1; fi',
+    'if ! python3 -c \'import hashlib,pathlib,sys; path,expected=sys.argv[1:]; actual=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(); sys.exit(0 if actual == expected else 1)\' "$installer_path" "$installer_sha256"; then write_task_state failed verify_installer 0 "Installer checksum mismatch"; exit 1; fi',
     'chmod 0700 "$installer_path"',
+    'case "$operation" in install|repair) ;; *) write_task_state failed prepare 0 "Invalid installation operation"; exit 2 ;; esac',
+    "prepare_repair_profile",
     "installer_started=1",
     "set +e",
     '"$installer_path" install --task-id "$task_id" --trusted-browser-host "$trusted_browser_host"',
@@ -214,6 +286,7 @@ export const createDeepSeekHarnessInstallLaunchScript = (
     "set -e",
     'if [ "$installer_rc" -ne 0 ]; then if ! task_has_status failed; then write_task_state failed install 0 "Installation failed before reporting status"; fi; exit "$installer_rc"; fi',
     'if ! task_has_status succeeded; then write_task_state failed install 0 "Installation finished without success status"; exit 1; fi',
+    'if [ "$repair_profile_isolated" -eq 1 ]; then rm -rf -- "$repair_backup"; repair_profile_isolated=0; repair_service_was_active=0; fi',
   ].join("\n");
 };
 
@@ -274,10 +347,11 @@ export class DeepSeekHarnessCommandClient {
 
   async getStatus(): Promise<DeepSeekHarnessStatus> {
     const result = await this.execDebugCommand(this.botId, STATUS_COMMAND, { timeoutMs: 30_000 });
+    assertCommandSucceeded(result, "DeepSeek Harness status failed");
     return parseJson<DeepSeekHarnessStatus>(result.output, "status");
   }
 
-  async startInstall(): Promise<{ task_id: string }> {
+  async startInstall(operation: "install" | "repair" = "install"): Promise<{ task_id: string }> {
     const taskId = this.createTaskId();
     assertTaskId(taskId);
     let launchRequested = false;
@@ -301,6 +375,7 @@ export class DeepSeekHarnessCommandClient {
         shellQuote(INSTALLATION_STATE_DIR),
         shellQuote(workDir),
         shellQuote(trustedBrowserHost),
+        shellQuote(operation),
       ].join(" ");
       launchRequested = true;
       const launchResult = await this.execDebugCommand(this.botId, launchCommand, {
@@ -352,11 +427,12 @@ export class DeepSeekHarnessCommandClient {
   }
 
   async restart(): Promise<DeepSeekHarnessStatus> {
-    await this.execDebugCommand(
+    const result = await this.execDebugCommand(
       this.botId,
-      `sudo systemctl restart ${SERVICE}`,
+      `sudo -n systemctl restart ${SERVICE}`,
       { timeoutMs: 120_000 },
     );
+    assertCommandSucceeded(result, "DeepSeek Harness restart failed");
     return this.getStatus();
   }
 
@@ -380,13 +456,22 @@ export class DeepSeekHarnessCommandClient {
     const secretId = this.createSecretId();
     assertSecretId(secretId);
     const keyPath = `${SECRET_TRANSPORT_DIR}/${secretId}.pem`;
+    const cleanupUnit = `lightvela-dsh-secret-${secretId}`;
     const createKeyCommand = [
       "set -Eeuo pipefail",
       "umask 077",
+      `key_path=${shellQuote(keyPath)}`,
+      `cleanup_unit=${shellQuote(cleanupUnit)}`,
+      "timer_armed=false",
+      'cleanup_unarmed_key() { [ "$timer_armed" = true ] || rm -f -- "$key_path"; }',
+      "trap cleanup_unarmed_key EXIT",
       `install -d -m 0700 -- ${shellQuote(SECRET_TRANSPORT_DIR)}`,
-      `find ${shellQuote(SECRET_TRANSPORT_DIR)} -maxdepth 1 -type f -name 'dshk-*.pem' -mmin +15 -delete`,
-      `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out ${shellQuote(keyPath)} 2>/dev/null`,
-      `openssl pkey -in ${shellQuote(keyPath)} -pubout -outform DER 2>/dev/null | base64 | tr -d '\\n'`,
+      `find ${shellQuote(SECRET_TRANSPORT_DIR)} -maxdepth 1 -type f -name 'dshk-*.pem' -mmin +14 -delete`,
+      'openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$key_path" 2>/dev/null',
+      'public_key="$(openssl pkey -in "$key_path" -pubout -outform DER 2>/dev/null | base64 | tr -d \'\\n\')"',
+      'sudo -n systemd-run --quiet --collect --unit="$cleanup_unit" --on-active=15m /usr/bin/rm -f -- "$key_path" >/dev/null',
+      "timer_armed=true",
+      'printf \'%s\' "$public_key"',
     ].join("\n");
     const keyResult = await this.execDebugCommand(this.botId, createKeyCommand, { timeoutMs: 30_000 });
     assertCommandSucceeded(keyResult, "DeepSeek Harness secret transport setup failed");

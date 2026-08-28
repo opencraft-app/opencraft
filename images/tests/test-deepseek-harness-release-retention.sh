@@ -82,6 +82,11 @@ finalize_snapshot "${second_manifest}"
 second_snapshot="${SNAPSHOT_ID}"
 test "${first_snapshot}" = "${second_snapshot}"
 
+if [ -n "$(find_reusable_release "${second_manifest}")" ]; then
+  echo "find_reusable_release must not return a path when no matching release exists" >&2
+  exit 1
+fi
+
 profile_dir="${TMPDIR}/profile"
 runtime_dir="${TMPDIR}/runtime"
 write_candidate_inputs "${first_manifest}" "${runtime_dir}" "${profile_dir}"
