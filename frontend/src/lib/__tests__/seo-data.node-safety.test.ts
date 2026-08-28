@@ -75,8 +75,8 @@ describe("SEO modules consumed by node scripts must stay node-loadable", () => {
 
     expect(() => mod.getSeoMeta("/agents/%E4%B8", "cn")).not.toThrow();
     expect(() => mod.getSeoMeta("/agents/%ZZ", "cn")).not.toThrow();
-    expect(mod.getSeoMeta("/agents/%ZZ", "cn").title).toContain("Agent 控制台");
-    expect(mod.getSeoMeta("/agents/%ZZ", "global").title).toContain("Agent Console");
+    expect(mod.getSeoMeta("/agents/%ZZ", "cn").title).toContain("我的智能体伙伴");
+    expect(mod.getSeoMeta("/agents/%ZZ", "global").title).toContain("My Agent");
   });
 
   it("exposes applySeoToHtml importable without vite alias", async () => {

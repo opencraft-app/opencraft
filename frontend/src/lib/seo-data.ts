@@ -448,8 +448,8 @@ const AGENT_SECTION_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> 
 };
 
 const AGENTS_HOME_TITLE_BY_REGION: Record<SeoRegion, string> = {
-  cn: "Agent 控制台",
-  global: "Agent Console",
+  cn: "我的智能体伙伴",
+  global: "My Agent",
 };
 
 const APP_PAGE_TITLES_BY_REGION: Record<

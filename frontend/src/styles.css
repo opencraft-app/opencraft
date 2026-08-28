@@ -295,6 +295,7 @@ a {
   --lv-agents-nav-width: 220px;
 
   min-height: calc(100dvh - 178px);
+  padding-bottom: 24px;
   padding-right: 28px;
   border-right: 1px solid #e9ecf1;
 }

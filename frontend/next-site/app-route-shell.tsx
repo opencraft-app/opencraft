@@ -16,6 +16,7 @@ import { getSeoMeta } from '@/lib/seo-data';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
 import { ThemeStyleInjector } from '@/theme/theme-style';
 
+import { getAgentDocumentMetadata } from './agent-document-metadata';
 import { NextAppNavigationProvider } from './next-app-navigation';
 
 const LOCAL_PREVIEW_AUTH_ENABLED =
@@ -25,13 +26,42 @@ const LOCAL_PREVIEW_AUTH_ENABLED =
 function ProductRouteDocumentMetadata() {
   const pathname = usePathname() || '/';
   const { i18n } = useTranslation();
+  const agentMetadata = /^\/agents(?:\/[^/]+)?\/?$/.test(pathname)
+    ? getAgentDocumentMetadata(i18n.language)
+    : null;
+  const agentTitle = agentMetadata ? `${agentMetadata.title} | LightVela` : null;
+  const agentHtmlLang = agentMetadata?.htmlLang ?? null;
 
   React.useEffect(() => {
-    if (!isGlobal || !i18n.language.toLowerCase().startsWith('es')) return;
-    const meta = getSeoMeta(`/es${pathname === '/' ? '' : pathname}`, 'global');
-    document.title = meta.title;
-    document.documentElement.lang = 'es';
-  }, [i18n.language, pathname]);
+    if (isGlobal && i18n.language.toLowerCase().startsWith('es')) {
+      const meta = getSeoMeta(`/es${pathname === '/' ? '' : pathname}`, 'global');
+      document.title = meta.title;
+      document.documentElement.lang = 'es';
+      return;
+    }
+
+    if (!agentTitle || !agentHtmlLang) return;
+
+    document.documentElement.lang = agentHtmlLang;
+
+    const syncTitle = () => {
+      const titles = Array.from(document.head.querySelectorAll('title'));
+      const primaryTitle = titles[0] ?? document.head.appendChild(document.createElement('title'));
+
+      if (primaryTitle.textContent !== agentTitle) {
+        primaryTitle.textContent = agentTitle;
+      }
+      for (const duplicateTitle of titles.slice(1)) {
+        duplicateTitle.remove();
+      }
+    };
+
+    syncTitle();
+    const observer = new MutationObserver(syncTitle);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+
+    return () => observer.disconnect();
+  }, [agentHtmlLang, agentTitle, i18n.language, pathname]);
 
   return null;
 }
