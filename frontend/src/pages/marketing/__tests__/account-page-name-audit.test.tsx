@@ -131,7 +131,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 const renderAccountPage = () => {
-  render(
+  return render(
     <MemoryRouter>
       <AccountPage />
     </MemoryRouter>,
@@ -367,6 +367,78 @@ describe("AccountPage nickname audit state", () => {
 
     expect(subscriptionHeader).not.toBeNull();
     expect(within(subscriptionHeader!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+  });
+
+  it.each([
+    { usedPercent: 49, expectedColor: "var(--lw-accent)" },
+    { usedPercent: 50, expectedColor: "#C67B1E" },
+    { usedPercent: 79, expectedColor: "#C67B1E" },
+    { usedPercent: 80, expectedColor: "#CF3D4C" },
+    { usedPercent: 95, expectedColor: "#CF3D4C" },
+    { usedPercent: 96, expectedColor: "#991B1B" },
+  ])("uses $expectedColor for $usedPercent% credit usage", ({ usedPercent, expectedColor }) => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 100,
+      credit_available: 100 - usedPercent,
+    };
+
+    const { container } = renderAccountPage();
+    const percentage = screen.getByText(`${usedPercent}%`);
+    const progressFill = container.querySelector<HTMLElement>(`[style*="width: ${usedPercent}%"]`);
+
+    expect(percentage).toHaveStyle({ color: expectedColor });
+    expect(progressFill).not.toBeNull();
+    expect(progressFill).toHaveStyle({ background: expectedColor });
+  });
+
+  it("shows no model prompt at 95% credit usage", () => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 100,
+      credit_available: 5,
+    };
+
+    renderAccountPage();
+
+    expect(screen.queryByText(/模型积分即将用尽/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/模型积分已用尽/)).not.toBeInTheDocument();
+  });
+
+  it("links to model settings when credits are almost exhausted", () => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 100,
+      credit_available: 4,
+    };
+
+    renderAccountPage();
+
+    const modelLink = screen.getByRole("link", { name: "配置自有模型" });
+    expect(modelLink.closest("p")).toHaveTextContent(
+      "模型积分即将用尽，为避免智能体停止响应，请尽快配置自有模型",
+    );
+    expect(modelLink).toHaveAttribute("href", "/agents/models");
+    expect(modelLink).toHaveClass("inline-flex", "items-center", "gap-0.5");
+    expect(modelLink.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("links to model settings when credits are exhausted", () => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 0,
+      credit_available: 0,
+    };
+
+    renderAccountPage();
+
+    const modelLink = screen.getByRole("link", { name: "立即配置模型" });
+    expect(modelLink.closest("p")).toHaveTextContent(
+      "模型积分已用尽，如未配置自有模型，智能体将无法继续响应。立即配置模型",
+    );
+    expect(modelLink).toHaveAttribute("href", "/agents/models");
+    expect(modelLink).toHaveClass("inline-flex", "items-center", "gap-0.5");
+    expect(modelLink.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("keeps the safety phone hidden while showing the renew action by default", () => {

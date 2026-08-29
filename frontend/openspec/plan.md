@@ -1,3 +1,21 @@
+# 账号页模型积分使用率颜色分级 Implementation Plan
+
+**Status:** 已实现并通过定向测试、i18n、前端质量门禁与本地页面刷新验收。
+
+**Size:** S。账号页订阅套餐卡片内的局部颜色调整，不改变积分计算、接口、布局或交互。
+
+**Goal:** 百分比文字和进度条统一使用四档颜色；使用率超过 95% 时切换为深红色，并按剩余积分区分展示模型配置提示。
+
+**Plan:** `openspec/changes/2026-08-29-account-credit-usage-colors-implementation-plan.md`
+
+- [x] **按实施计划完成六个边界值的 TDD 测试、最小实现和质量门禁。**
+- [x] **按实施计划完成“即将用尽/已用尽”提示、句内模型配置链接和定向验证。**
+- [x] **为两处模型配置链接增加 12px `ChevronRight`，保持原链接名称、跳转目标和句内样式。**
+
+**Verification:** 颜色测试先因现有规则不匹配而 RED（4 个预期失败）；提示测试先因页面无对应链接而 RED（2 个预期失败），并额外验证 `0 / 0` 时仍进入已用尽状态；图标测试先因两处链接缺少 SVG 与布局类而 RED（2 个预期失败）。最终账号页定向测试 29/29 GREEN；`pnpm i18n:check`、`pnpm check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved；本地账号页刷新正常且无浏览器错误；目标文件 `git diff --check` 通过。全量 Vitest 在 `origin/master` 基线存在多组无关失败并挂起，已记录且未扩展修复。未执行 commit、push 或 MR。
+
+---
+
 # 自动任务创建成功通知 Implementation Plan
 
 **Design:** `../wiki/prd-docs/2026-08-27-自动任务创建成功后发送通知确认.md`

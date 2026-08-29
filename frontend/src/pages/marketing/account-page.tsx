@@ -871,6 +871,15 @@ const SubscriptionSection = ({
   const creditsTotal = operablePass ? operablePass.credit_total : 0;
   const creditsUsed = operablePass ? Math.max(0, operablePass.credit_total - operablePass.credit_available) : 0;
   const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
+  const creditsExhausted = Boolean(operablePass && operablePass.credit_available <= 0);
+  const showCreditPrompt = creditsExhausted || usedPercent > 95;
+  const creditUsageColor = usedPercent > 95
+    ? "#991B1B"
+    : usedPercent >= 80
+      ? "#CF3D4C"
+      : usedPercent >= 50
+        ? "#C67B1E"
+        : "var(--lw-accent)";
 
   // 展示用的套餐名称
   const displayName = operablePass?.bundle_name ?? subscription?.code ?? plan.name;
@@ -1003,34 +1012,67 @@ const SubscriptionSection = ({
           </div>
         </div>
 
-        {/* Credits progress（仅当有积分额度时展示） */}
-        {creditsTotal > 0 && (
+        {/* Credits progress and usage prompt */}
+        {(creditsTotal > 0 || showCreditPrompt) && (
           <>
             {/* Divider */}
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
             <div>
-              <div className="mb-2">
-                <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
-              </div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
-                  {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
+              {creditsTotal > 0 && (
+                <>
+                  <div className="mb-2">
+                    <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
+                      {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
+                    </p>
+                    <span className="text-xs font-semibold" style={{ color: creditUsageColor }}>
+                      {usedPercent}%
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="relative h-2.5 w-full overflow-hidden rounded-full" style={{ background: "rgba(0,0,0,0.05)" }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${usedPercent}%`,
+                        background: creditUsageColor,
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              {showCreditPrompt && operablePass && (
+                <p className="mt-3 text-xs leading-relaxed" style={{ color: "#991B1B" }}>
+                  {!creditsExhausted ? (
+                    <>
+                      {t("模型积分即将用尽，为避免智能体停止响应，请尽快")}
+                      <AppLink
+                        to="/agents/models"
+                        className="inline-flex items-center gap-0.5 font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                        style={{ color: "inherit" }}
+                      >
+                        {t("配置自有模型")}
+                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                      </AppLink>
+                    </>
+                  ) : (
+                    <>
+                      {t("模型积分已用尽，如未配置自有模型，智能体将无法继续响应。")}
+                      <AppLink
+                        to="/agents/models"
+                        className="inline-flex items-center gap-0.5 font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                        style={{ color: "inherit" }}
+                      >
+                        {t("立即配置模型")}
+                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                      </AppLink>
+                    </>
+                  )}
                 </p>
-                <span className="text-xs font-semibold" style={{ color: usedPercent >= 80 ? "#cf3d4c" : "#666" }}>
-                  {usedPercent}%
-                </span>
-              </div>
-              {/* Progress bar */}
-              <div className="relative h-2.5 w-full overflow-hidden rounded-full" style={{ background: "rgba(0,0,0,0.05)" }}>
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${usedPercent}%`,
-                    background: usedPercent >= 80 ? "#cf3d4c" : usedPercent >= 50 ? "#C67B1E" : "var(--lw-accent)",
-                  }}
-                />
-              </div>
+              )}
             </div>
           </>
         )}
