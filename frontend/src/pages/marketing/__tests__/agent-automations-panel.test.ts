@@ -1598,9 +1598,11 @@ describe("automation notification channel options", () => {
 });
 
 describe("formatTestSendError", () => {
-  it("wraps raw send failures in actionable Chinese copy", () => {
-    expect(formatTestSendError(new Error("backend failed"), "发送失败，请检查通道配置或稍后重试"))
-      .toBe("发送失败，请检查通道配置或稍后重试：backend failed");
+  it("hides unrecognized raw send failures behind actionable copy", () => {
+    expect(formatTestSendError(
+      new Error("hermes send: Weixin session is unavailable"),
+      "发送失败，请先在微信中向 Hermes Agent 发送任意消息，或稍后重试",
+    )).toBe("发送失败，请先在微信中向 Hermes Agent 发送任意消息，或稍后重试");
   });
 
   it("translates common English command errors", () => {

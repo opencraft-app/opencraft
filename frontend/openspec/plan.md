@@ -1,3 +1,17 @@
+# 自动任务测试消息错误提示精简 Implementation Plan
+
+**Status:** 已实现并通过自动化验证，准备提交 MR。
+
+**Design:** `openspec/changes/2026-08-30-automation-test-send-error-copy-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-30-automation-test-send-error-copy-implementation-plan.md`
+
+- [x] 隐藏发送测试消息时未识别的 Hermes 原始英文错误，保留本地化可操作提示。
+
+**Verification:** 截图对应用例先 RED、后 GREEN；国内/国际自动任务面板测试 149/149 通过，`pnpm check` 与目标文件 `git diff --check` 通过。
+
+---
+
 # 自动任务创建成功通知 Implementation Plan
 
 **Design:** `../wiki/prd-docs/2026-08-27-自动任务创建成功后发送通知确认.md`
