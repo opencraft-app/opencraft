@@ -871,7 +871,7 @@ const SubscriptionSection = ({
   const creditsTotal = operablePass ? operablePass.credit_total : 0;
   const creditsUsed = operablePass ? Math.max(0, operablePass.credit_total - operablePass.credit_available) : 0;
   const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
-  const creditsExhausted = Boolean(operablePass && operablePass.credit_available <= 0);
+  const creditsExhausted = Boolean(operablePass && creditsTotal > 0 && operablePass.credit_available <= 0);
   const showCreditPrompt = creditsExhausted || usedPercent > 95;
   const creditUsageColor = usedPercent > 95
     ? "#991B1B"

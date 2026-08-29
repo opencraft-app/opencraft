@@ -11,8 +11,9 @@
 - [x] **按实施计划完成六个边界值的 TDD 测试、最小实现和质量门禁。**
 - [x] **按实施计划完成“即将用尽/已用尽”提示、句内模型配置链接和定向验证。**
 - [x] **为两处模型配置链接增加 12px `ChevronRight`，保持原链接名称、跳转目标和句内样式。**
+- [x] **修复零积分套餐误报“模型积分已用尽”，仅对曾分配积分且余额归零的套餐显示提示。**
 
-**Verification:** 颜色测试先因现有规则不匹配而 RED（4 个预期失败）；提示测试先因页面无对应链接而 RED（2 个预期失败），并额外验证 `0 / 0` 时仍进入已用尽状态；图标测试先因两处链接缺少 SVG 与布局类而 RED（2 个预期失败）。最终账号页定向测试 29/29 GREEN；`pnpm i18n:check`、`pnpm check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved；本地账号页刷新正常且无浏览器错误；目标文件 `git diff --check` 通过。全量 Vitest 在 `origin/master` 基线存在多组无关失败并挂起，已记录且未扩展修复。未执行 commit、push 或 MR。
+**Verification:** 颜色测试先因现有规则不匹配而 RED（4 个预期失败）；提示测试先因页面无对应链接而 RED（2 个预期失败）；图标测试先因两处链接缺少 SVG 与布局类而 RED（2 个预期失败）；CR 跟进测试确认 `0 / 0` 套餐会误报“已用尽”（1 个预期失败）。最终账号页定向测试 30/30 GREEN；`pnpm i18n:check`、`pnpm check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved；本地账号页刷新正常且无浏览器错误；目标文件 `git diff --check` 通过。全量 Vitest 在 `origin/master` 基线存在多组无关失败并挂起，已记录且未扩展修复。未执行 commit、push 或 MR。
 
 ---
 

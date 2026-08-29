@@ -17,7 +17,8 @@
 - 百分比文字和进度条填充色必须一致。
 - `usedPercent <= 95` 不显示模型积分提示。
 - `usedPercent > 95` 且 `credit_available > 0` 显示“模型积分即将用尽，为避免智能体停止响应，请尽快配置自有模型”，仅“配置自有模型”可点击。
-- `credit_available <= 0` 显示“模型积分已用尽，如未配置自有模型，智能体将无法继续响应。立即配置模型”，仅“立即配置模型”可点击。
+- `credit_total > 0` 且 `credit_available <= 0` 显示“模型积分已用尽，如未配置自有模型，智能体将无法继续响应。立即配置模型”，仅“立即配置模型”可点击。
+- `credit_total <= 0` 不显示积分进度或模型积分提示。
 - 两种链接都进入 `/agents/models`；不显示使用率小数。
 - 不改变积分计算、进度宽度、接口或其他套餐行为。
 - 不新增依赖；新增文案通过仓库 i18n 脚本提取、批量翻译和生成，不手工修改 hash 映射。
@@ -257,8 +258,8 @@ Expected: 定向测试、i18n 和类型检查通过，目标文件 `git diff --c
 ## Task 2 Result
 
 - RED：首次新增提示测试时，“即将用尽”和“已用尽”两个展示用例因页面无对应链接而失败；`95%` 无提示用例通过。
-- 边界加固：将已用尽用例扩展为 `credit_total = 0`、`credit_available = 0` 后，旧条件再次按预期失败；实现改为直接以 `credit_available <= 0` 判断已用尽。
-- GREEN：账号页定向测试 29/29 通过，覆盖四档颜色、95% 无提示、96% 即将用尽、零余额已用尽及两个链接目标。
+- 已用尽用例使用 `credit_total = 100`、`credit_available = 0`，验证有积分额度的套餐在余额归零时进入已用尽状态。
+- GREEN：账号页定向测试 29/29 通过，覆盖四档颜色、95% 无提示、96% 即将用尽、有额度套餐零余额已用尽及两个链接目标。
 - i18n：`pnpm i18n:check` 通过；新增文案已覆盖英文、繁体中文、印尼语、西班牙语、日语和韩语，未增加既有翻译欠账。
 - Quality gate：`pnpm check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。
 - Remote：未执行 commit、push 或 MR，等待用户单独确认。
@@ -348,3 +349,23 @@ git diff --check -- frontend/src/pages/marketing/account-page.tsx frontend/src/p
 - Quality gate：`pnpm check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。
 - Local preview：刷新 `http://localhost:5174/account/` 后页面正常、无错误覆盖层和浏览器错误；当前登录账号无套餐，图标状态以组件测试为验收证据。
 - Remote：未执行 commit、push 或 MR，等待用户单独确认。
+
+---
+
+### Task 4: 修复零积分套餐误报已用尽
+
+**Files:**
+- Modify: `src/pages/marketing/account-page.tsx:874`
+- Test: `src/pages/marketing/__tests__/account-page-name-audit.test.tsx:426-456`
+
+- [x] 将已用尽用例固定为 `credit_total = 100`、`credit_available = 0`。
+- [x] 新增 `credit_total = 0`、`credit_available = 0` 不显示提示的失败测试，并确认 RED。
+- [x] 为 `creditsExhausted` 增加 `creditsTotal > 0` 条件。
+- [x] 运行账号页定向测试并确认 GREEN。
+- [x] 运行 `pnpm check` 与 `git diff --check`。
+
+## Task 4 Result
+
+- RED：零积分套餐用例因实际渲染“模型积分已用尽”而失败，其余 29 个用例通过。
+- GREEN：`creditsExhausted` 仅在套餐总积分大于 `0` 且余额小于等于 `0` 时成立；账号页定向测试 30/30 通过。
+- Quality gate：`pnpm check` 与 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。

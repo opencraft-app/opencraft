@@ -426,7 +426,7 @@ describe("AccountPage nickname audit state", () => {
   it("links to model settings when credits are exhausted", () => {
     activePass = {
       ...buildActivePass(),
-      credit_total: 0,
+      credit_total: 100,
       credit_available: 0,
     };
 
@@ -439,6 +439,20 @@ describe("AccountPage nickname audit state", () => {
     expect(modelLink).toHaveAttribute("href", "/agents/models");
     expect(modelLink).toHaveClass("inline-flex", "items-center", "gap-0.5");
     expect(modelLink.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("shows no exhausted prompt when the plan has no model credits", () => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 0,
+      credit_available: 0,
+    };
+
+    renderAccountPage();
+
+    expect(screen.queryByText(/模型积分即将用尽/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/模型积分已用尽/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "立即配置模型" })).not.toBeInTheDocument();
   });
 
   it("keeps the safety phone hidden while showing the renew action by default", () => {
