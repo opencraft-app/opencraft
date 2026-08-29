@@ -1938,7 +1938,7 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 
 # 统一 OIDC 站点鉴权 Active Plan
 
-**Status:** 实现中。
+**Status:** Task 1-3 实现与自动化验证完成，等待用户验收。
 
 **Confirmed callbacks:**
 
@@ -5220,5 +5220,209 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 **Detailed plan:** `openspec/changes/2026-08-27-global-agent-footer-bugfix-plan.md`
 
 - [x] 测试先行完成三项局部修复，并通过定向 Vitest、类型、i18n、diff 与国际站浏览器 smoke。
+
+# 主模型删除提示文案修复 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收。
+
+**Size:** S。仅调整主模型删除按钮的禁用态 Tooltip 文案，不改变删除条件、按钮状态或模型配置行为。
+
+**Goal:** 主模型不可删除时提示“无法删除主模型，请先切换至其他模型”。
+
+## Task 1: 更新主模型删除提示并完成定向验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/agent-model-config.id-ID.test.ts`
+- Generate: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 主模型删除按钮保持禁用，hover/focus Tooltip 显示“无法删除主模型，请先切换至其他模型”。
+- 其他模型操作、删除条件与相邻 Tooltip 文案保持不变。
+- 模型配置定向测试、i18n、类型检查与 diff 门禁通过。
+
+- [x] 先修改组件测试与印尼语文案完整性测试并确认 RED，再最小更新源码和 i18n 生成文件，最后完成定向验证。
+
+**Verification:**
+- RED：2 个定向测试按预期失败，分别命中旧 Tooltip 文案和新 i18n key 缺失。
+- GREEN：定向测试 65 passed；模型配置域 7 个测试文件、119 passed。
+- `pnpm check` 通过：i18n extract/check、字典结构、繁体一致性、Docs 同步与 TypeScript 基线均通过，0 个新增 TypeScript diagnostics。
+- `git diff --check` 通过；改动仅覆盖计划、Tooltip 文案、对应测试与 7 个语言字典/中文 key 映射。
+
+## Task 2: 更新 Hy Token Plan 模型介绍文案
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-config/utils/model-providers.ts`
+- Test: `frontend/src/pages/marketing/agent-config/utils/__tests__/model-providers.test.ts`
+- Generate: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 模型配置页面的腾讯云 Hy Token Plan 介绍显示“基于腾讯2026年最新推出的混元模型打造：集成 Hy3 模型，面向 Agent 工作负载设计，适配 Coding Agent、文档自动化、多步工具调用等工作流。”。
+- Provider、模型 ID、套餐入口、筛选规则与页面布局保持不变。
+- 定向测试、i18n、类型检查与 diff 门禁通过。
+
+- [x] 先新增 Provider 配置断言并确认 RED，再最小更新源码和 i18n 生成文件，最后完成定向验证。
+
+**Verification:**
+- RED：Provider 配置测试按预期失败，明确显示旧文案与目标文案的差异。
+- GREEN：Provider 配置测试通过；连同模型配置域回归共 8 个测试文件，117 passed / 1 skipped。
+- `pnpm check` 通过：i18n extract/check、字典结构、繁体一致性、Docs 同步与 TypeScript 基线均通过，0 个新增 TypeScript diagnostics。
+- `git diff --check` 通过；旧介绍文案已从源码与生成字典中移除。
+
+## Task 3: 将账号页续费按钮移动到订阅套餐标题栏
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `executing-plans` and `test-driven-development`. 本仓库当前为 single-agent，禁止派发 subagent。
+
+**Goal:** 将已订阅套餐卡片的“立即续费”控件从内容区底部移动到“订阅套餐”标题栏右侧，并保持现有续费、Coming Soon、销毁和状态说明逻辑不变。
+
+**Architecture:** 直接移动现有 `canRenew` 条件渲染块，不抽取新组件、不复制业务判断。标题栏改为单行 flex；底部操作区在可销毁或处于隔离期/过期状态时渲染，继续承载销毁按钮和状态说明。
+
+**Tech Stack:** React 19、TypeScript、Tailwind CSS、Vitest、Testing Library。
+
+**Design:** `frontend/openspec/changes/2026-08-29-account-renew-action-header-design.md`
+
+**Global Constraints:**
+- 标题和续费按钮保持同一行，按钮不收缩、不裁切。
+- 保留现有按钮样式、图标、可用/禁用状态、Tooltip、弹窗及点击逻辑。
+- “销毁套餐”和隔离期/过期说明保留在内容底部。
+- 不修改套餐数据、资格判断、付费开关、实名校验或接口调用。
+- 未经用户单独确认，不执行 commit、push 或创建 MR。
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx:920-1065`
+- Test: `frontend/src/pages/marketing/__tests__/account-page-name-audit.test.tsx:356-390`
+
+**Interfaces:**
+- Consumes: `canRenew: boolean`、`renewalAvailable: boolean`、`canDelete: boolean`、`operablePass: Pass | null`。
+- Produces: 标题栏内原有续费控件；底部仅保留可用的销毁按钮及隔离期/过期状态说明。
+
+- [x] **Step 1: 写入失败的标题栏结构测试**
+
+  在国内站生效套餐用例中定位“订阅套餐”标题的父容器，并断言该容器包含“立即续费”按钮：
+
+  ```tsx
+  const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
+  const subscriptionHeader = subscriptionHeading.parentElement;
+
+  expect(subscriptionHeader).not.toBeNull();
+  expect(within(subscriptionHeader!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+  ```
+
+- [x] **Step 2: 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  pnpm exec vitest run src/pages/marketing/__tests__/account-page-name-audit.test.tsx -t "shows the renew action by default for domestic active passes"
+  ```
+
+  Expected: FAIL；标题父容器内找不到“立即续费”按钮，证明旧布局仍在卡片底部。
+
+- [x] **Step 3: 最小移动续费控件**
+
+  将标题栏调整为：
+
+  ```tsx
+  <div
+    className="flex items-center justify-between gap-3 px-5 py-5 md:px-8 md:py-8"
+    style={{ borderBottom: "1px solid #E6E9EF" }}
+  >
+    <h3
+      className="min-w-0 text-balance text-[18px] md:text-[20px]"
+      style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
+    >
+      {t("订阅套餐")}
+    </h3>
+    {canRenew && operablePass && (
+      <div className="shrink-0">
+        {!renewalAvailable ? (
+          <RenewComingSoonButton
+            label={t("立即续费")}
+            tooltip={t("敬请期待")}
+            icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setRenewModalOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
+          >
+            <CreditCard className="h-4 w-4" />
+            {t("立即续费")}
+          </button>
+        )}
+      </div>
+    )}
+  </div>
+  ```
+
+  从底部删除同一 `canRenew` 渲染块，并将底部容器条件收窄为可销毁或需要展示状态说明：
+
+  ```tsx
+  {(canDelete || passStatus === "isolated" || passStatus === "expired") && operablePass && (
+    <>
+      <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
+      <div className="flex flex-wrap items-center gap-3">
+        {canDelete && (
+          <button
+            type="button"
+            onClick={() => setDeleteModalOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full border bg-white px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(207,61,76,0.04)]"
+            style={{ borderColor: "rgba(207,61,76,0.3)", color: "#cf3d4c" }}
+          >
+            <Trash2 className="h-4 w-4" />
+            {t("销毁套餐")}
+          </button>
+        )}
+        {passStatus === "isolated" && (
+          <p className="basis-full text-xs" style={{ color: "#C67B1E" }}>
+            {!renewalAvailable
+              ? t("续费功能敬请期待。你仍可销毁当前套餐后重新购买。")
+              : t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
+          </p>
+        )}
+        {passStatus === "expired" && (
+          <p className="basis-full text-xs" style={{ color: "#cf3d4c" }}>
+            {!renewalAvailable
+              ? t("续费功能敬请期待。套餐已过期，暂时无法发起续费。")
+              : t("套餐已过期，请及时续费以免进入隔离期。")}
+          </p>
+        )}
+      </div>
+    </>
+  )}
+  ```
+
+- [x] **Step 4: 运行结构和续费回归测试并确认 GREEN**
+
+  Run:
+
+  ```bash
+  pnpm exec vitest run \
+    src/pages/marketing/__tests__/account-page-name-audit.test.tsx \
+    src/pages/marketing/__tests__/account-page-renewal.global.test.tsx \
+    src/pages/marketing/__tests__/renew-coming-soon.test.ts
+  ```
+
+  Expected: 全部通过；续费按钮位于标题栏，国内续费弹窗、国际 Coming Soon 和 Tooltip 行为无回归。
+
+- [x] **Step 5: 完成质量门禁与范围核对**
+
+  Run:
+
+  ```bash
+  pnpm check
+  git diff --check
+  ```
+
+  Expected: 两个命令退出码均为 0；差异仅覆盖设计/计划、账号页 JSX 与对应测试，不出现业务判断或接口改动。
+
+**Verification:**
+- Baseline：账号页续费相关 3 个测试文件、31 tests passed。
+- RED：国内生效套餐结构测试按预期失败，标题容器内找不到“立即续费”按钮。
+- GREEN：结构测试通过；账号页全部专项回归 5 个测试文件、53 tests passed。
+- `pnpm check` 通过，TypeScript diagnostics 207 current / 276 baseline / 0 new / 69 resolved；i18n 结构 0 errors。
+- `git diff --check` 通过；`$baseline-ui` 核对无新增绝对定位、换行布局、新动画或交互原语。
 
 ---

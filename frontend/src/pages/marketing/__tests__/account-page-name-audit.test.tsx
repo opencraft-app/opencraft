@@ -362,7 +362,11 @@ describe("AccountPage nickname audit state", () => {
     renderAccountPage();
 
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+    const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
+    const subscriptionHeader = subscriptionHeading.parentElement;
+
+    expect(subscriptionHeader).not.toBeNull();
+    expect(within(subscriptionHeader!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
   });
 
   it("keeps the safety phone hidden while showing the renew action by default", () => {

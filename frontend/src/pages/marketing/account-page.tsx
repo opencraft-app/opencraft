@@ -919,12 +919,33 @@ const SubscriptionSection = ({
       className="overflow-hidden bg-white"
       style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
     >
-      <div className="px-5 py-5 md:px-8 md:py-8" style={{ borderBottom: "1px solid #E6E9EF" }}>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
-            {t("订阅套餐")}
-          </h3>
-        </div>
+      <div
+        className="flex items-center justify-between gap-3 px-5 py-5 md:px-8 md:py-8"
+        style={{ borderBottom: "1px solid #E6E9EF" }}
+      >
+        <h3 className="min-w-0 text-balance text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
+          {t("订阅套餐")}
+        </h3>
+        {canRenew && operablePass && (
+          <div className="shrink-0">
+            {!renewalAvailable ? (
+              <RenewComingSoonButton
+                label={t("立即续费")}
+                tooltip={t("敬请期待")}
+                icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setRenewModalOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
+              >
+                <CreditCard className="h-4 w-4" />
+                {t("立即续费")}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">
         {/* Current plan */}
@@ -1014,29 +1035,11 @@ const SubscriptionSection = ({
           </>
         )}
 
-        {/* 续费 / 销毁按钮区：国际站续费由 paidBillingEnabled 控制。 */}
-        {(canRenew || canDelete) && operablePass && (
+        {/* 销毁按钮及隔离期 / 过期说明；续费入口位于标题栏。 */}
+        {(canDelete || passStatus === "isolated" || passStatus === "expired") && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
-              {canRenew && (
-                !renewalAvailable ? (
-                  <RenewComingSoonButton
-                    label={t("立即续费")}
-                    tooltip={t("敬请期待")}
-                    icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setRenewModalOpen(true)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
-                  >
-                    <CreditCard className="h-4 w-4" />
-                    {t("立即续费")}
-                  </button>
-                )
-              )}
               {canDelete && (
                 <button
                   type="button"

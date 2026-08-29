@@ -497,7 +497,7 @@ export function AgentModelConfigPanel({
                         {fallback ? t("取消备用") : t("设为备用模型")}
                       </Button>
                     </ModelActionTooltip>
-                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("请先切换主模型后再删除") : undefined}>
+                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("无法删除主模型，请先切换至其他模型") : undefined}>
                       <Button
                         type="button"
                         size="sm"
