@@ -1,3 +1,19 @@
+# Changelog 上线节点与 DeepSeek Harness Beta 标识 Implementation Plan
+
+**Status:** MR !3458 已包含原有更新；测试运行动态的顺序和描述已调整并通过验证，等待提交授权。
+
+**Design:** `openspec/changes/2026-08-30-changelog-launch-beta-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-30-changelog-launch-beta-implementation-plan.md`
+
+- [x] 更新 DeepSeek Harness 实验室归属和 Beta 标签、国内站 4 月公测标题及 7 月正式上线无图条目，并完成双站验证。
+- [x] 在国内站和国际站 8 月动态增加“自动任务支持测试运行”无图条目，并完成本地化与双站验证。
+- [x] 将双站测试运行动态移动到 DeepSeek Harness 后，并将描述中的“当前填写的内容”调整为“当前任务内容”。
+
+**Verification:** 原有更新的新增断言先 RED（6 个预期失败），实现后 Changelog 国内/国际定向测试 13/13 GREEN；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm i18n:validate`、`pnpm check` 和 `git diff --check` 通过。国内页面确认 7 月条目位于最后且无图、4 月为公测，国际英文页面确认 Labs + Beta、保留 Product Beta Launch 且无中国站付费条目。新增测试运行动态的双站断言先 RED（2 个预期失败），实现后 13/13 GREEN。最新顺序与文案调整再次通过 RED（2 个预期失败、11 个既有用例通过）/ GREEN（13/13）验证；i18n、类型和差异门禁通过，测试运行动态在双站均紧接 DeepSeek Harness，并使用“当前任务内容”的新描述。
+
+---
+
 # 自动任务测试消息错误提示精简 Implementation Plan
 
 **Status:** 已实现并通过自动化验证，准备提交 MR。
