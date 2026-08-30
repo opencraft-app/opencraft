@@ -223,6 +223,14 @@ describe("marketing channel copy", () => {
       ),
     ).toBeInTheDocument();
     expect(testRunHeading.closest("article")?.querySelector("img")).toBeNull();
+    expect(
+      within(augustSection!).queryByRole("heading", { name: "LightVela 支持印度尼西亚语" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "LightVela 国际站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
+      ),
+    ).not.toBeInTheDocument();
     const augustHeadingsWithAdvancedSettings = screen.getAllByRole("heading").map((heading) => heading.textContent);
     expect(
       augustHeadingsWithAdvancedSettings.findIndex((heading) =>

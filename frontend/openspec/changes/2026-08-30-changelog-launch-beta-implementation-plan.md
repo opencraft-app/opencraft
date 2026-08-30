@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use test-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 更新国内/国际 Changelog 的 DeepSeek Harness Beta 标识，准确记录中国站上线节点，并在双站 8 月动态中把自动任务测试运行能力紧接 DeepSeek Harness 展示。
+**Goal:** 更新国内/国际 Changelog 的 DeepSeek Harness Beta 标识与自动任务测试运行动态，准确记录双站产品阶段，并在国际站 8 月补充印度尼西亚语支持和正式付费上线节点。
 
-**Architecture:** 保持 `changelog-page.tsx` 现有数据驱动结构，为条目增加可选 `badge` 字段；区域差异继续通过编译期 `isGlobal` 分支表达。国内站 7 月新增无图条目，4 月标题按区域选择，国际站不引入国内付费节点。
+**Architecture:** 保持 `changelog-page.tsx` 现有数据驱动结构和可选 `badge` 字段；区域差异继续通过编译期 `isGlobal` 分支表达。双站 4 月统一复用公测翻译键；国际站 8 月在现有数组末尾追加两个无图条目，且不影响中国站既有 7 月正式上线节点。
 
 **Tech Stack:** React 19、TypeScript、Tailwind CSS、Vitest、Testing Library、项目字面量 i18n。
 
@@ -14,11 +14,15 @@
 - 国内站 7 月最后一条标题必须为 `LightVela 正式上线并启用付费服务`。
 - 国内站 7 月描述必须逐字为 `LightVela 产品中国站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。`
 - 国内站 7 月正式上线条目不配图，国际站不显示该条目。
-- 国内站 4 月标题必须为 `LightVela 产品公测上线`；国际站继续显示 `LightVela Product Beta Launch`。
+- 双站 4 月均使用源标题 `LightVela 产品公测上线`；国际站按当前语言显示其 Public Beta 本地化标题。
 - 不替换现有 Changelog 图片，不修改其他月份内容或业务逻辑。
 - 自动任务测试运行条目必须位于国内站和国际站 8 月更新日志的 DeepSeek Harness 条目之后，并使用 `visual: "none"`。
 - 国内站标题必须为 `自动任务支持测试运行`，描述必须逐字为 `创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。`。
 - 国际站英文标题必须为 `Jobs Now Support Test Runs`，描述必须为 `When creating or editing a job, you can run the current job once without saving it, review the result, and then decide whether to create or update the job.`。
+- 国际站 8 月倒数第二条必须为印度尼西亚语支持动态，最后一条必须为正式上线并启用付费服务动态；两条均使用 `visual: "none"`。
+- 国际站 8 月新增条目覆盖当前可见语言 `en-US`、`zh-CN`/`zh-SG`、`zh-Hant`、`id-ID`、`es`；`ja-JP`、`ko-KR` 只维护键结构，不补充对外翻译。
+- 国际站正式上线描述必须与中国站 7 月描述使用不同翻译键，避免把“中国站”或“国际站”错误复用到另一站点。
+- 中国站 8 月内容和其他月份内容保持不变，不显示国际站印度尼西亚语支持动态或国际站正式上线描述。
 
 ---
 
@@ -197,3 +201,109 @@
   Expected: 定向测试和全部门禁通过，差异仅包含计划、Changelog 数据、测试与必要 i18n 资源。
 
   Evidence: RED 时两个区域测试各有 1 个顺序断言按预期失败，其余 11 个用例通过；最小实现后 13/13 GREEN。`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 和 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。
+
+### Task 6: 国际站公测、正式付费上线与印度尼西亚语支持
+
+> Task 1-5 记录的是此前已完成阶段及当时的验收基线；本任务以最新确认方案为准，并替代其中“国际站 4 月保留 Product Beta”的旧阶段结论。
+
+**Files:**
+- Modify: `src/pages/marketing/__tests__/channel-copy.test.tsx`
+- Modify: `src/pages/marketing/__tests__/global-changelog.test.tsx`
+- Modify: `src/pages/marketing/changelog-page.tsx`
+- Modify: `src/i18n/generated/en-US.json`
+- Modify: `src/i18n/generated/es.json`
+- Modify: `src/i18n/generated/id-ID.json`
+- Modify: `src/i18n/generated/zh-CN.json`
+- Modify: `src/i18n/generated/zh-Hant.json`
+- Verify: `src/i18n/generated/ja-JP.json`
+- Verify: `src/i18n/generated/ko-KR.json`
+
+**Interfaces:**
+- Consumes: `ChangelogPage` 的 `isGlobal` 月份数组、`useT()` 字面量翻译、现有 `visual: "none"` 和可见语言注册表。
+- Produces: 双站 4 月 Public Beta 标题、国际站 8 月倒数第二条印度尼西亚语支持动态、最后一条正式付费上线动态，以及五套可见字典的完整本地化。
+
+- [x] **Step 1: 写失败测试锁定双站边界、语言和顺序**
+
+  在 `global-changelog.test.tsx` 中使用当前字典依次渲染简体中文、繁体中文、英语、印尼语和西班牙语，断言：
+
+  - 4 月标题使用各语言的 Public Beta 文案，不出现旧的 Product Beta / 内测标题。
+  - 8 月存在印度尼西亚语支持与正式付费上线两个条目。
+  - 8 月最后两个 heading 的顺序固定为“印度尼西亚语支持 → 正式付费上线”。
+  - 两个新增 `article` 均不包含 `img`，正式付费上线是 8 月最后一个条目。
+
+  在 `channel-copy.test.tsx` 中断言中国站不出现源描述 `LightVela 国际站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。`，也不出现 `LightVela 支持印度尼西亚语`。
+
+- [x] **Step 2: 运行 Changelog 定向测试确认 RED**
+
+  Run: `pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx --api.host 127.0.0.1`
+
+  Expected: 新增国际站断言因 8 月两个条目尚不存在、4 月仍使用旧内测源键而失败；既有 13 个测试继续通过。
+
+- [x] **Step 3: 最小实现双站 4 月公测与国际站 8 月两个无图条目**
+
+  在 `changelog-page.tsx` 中把 4 月标题从区域条件改为统一翻译键：
+
+  ```tsx
+  title: t("LightVela 产品公测上线"),
+  ```
+
+  仅在 `isGlobal` 的 `2026-08` 数组末尾按以下顺序追加：
+
+  ```tsx
+  {
+    id: "indonesian-language",
+    title: t("LightVela 支持印度尼西亚语"),
+    description: t(
+      "现在可以使用印度尼西亚语浏览 LightVela 的公开页面、产品文档和账号流程。",
+    ),
+    visual: "none" as const,
+  },
+  {
+    id: "global-official-launch",
+    title: t("LightVela 正式上线并启用付费服务"),
+    description: t(
+      "LightVela 国际站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
+    ),
+    visual: "none" as const,
+  },
+  ```
+
+  不移动中国站条目，不新增图片、视觉 variant、路由或业务逻辑。
+
+- [x] **Step 4: 生成翻译键并补齐所有可见语言**
+
+  Run: `pnpm i18n:extract && pnpm i18n:zh-hant`
+
+  对脚本生成的新键写入以下精确翻译，禁止手工编造哈希键：
+
+  - `en-US`：`Indonesian Is Now Available` / `Browse LightVela's public pages, documentation, and account flows in Indonesian.`；`LightVela Officially Launches with Paid Services` / `LightVela is now officially available globally with paid services. Choose a subscription plan that fits your needs.`
+  - `zh-Hant`：`LightVela 支持印度尼西亞語` / `現在可以使用印度尼西亞語瀏覽 LightVela 的公開頁面、產品文檔和賬號流程。`；`LightVela 正式上線並啓用付費服務` / `LightVela 國際站正式上線，同步啓用付費服務。你可以根據使用需求選擇合適的訂閲套餐。`
+  - `id-ID`：`Bahasa Indonesia Kini Tersedia` / `Sekarang Anda dapat menjelajahi halaman publik, dokumentasi produk, dan alur akun LightVela dalam Bahasa Indonesia.`；`LightVela Resmi Diluncurkan dengan Layanan Berbayar` / `LightVela kini resmi tersedia secara global dengan layanan berbayar. Pilih paket langganan yang sesuai dengan kebutuhan Anda.`
+  - `es`：`El indonesio ya está disponible` / `Ahora puedes explorar las páginas públicas, la documentación del producto y los flujos de cuenta de LightVela en indonesio.`；`LightVela se lanza oficialmente y activa los servicios de pago` / `LightVela ya está disponible oficialmente a nivel global con servicios de pago. Elige el plan de suscripción que mejor se adapte a tus necesidades.`
+  - `zh-CN` 保持源文案；`zh-SG` 复用 `zh-CN`。`ja-JP` 和 `ko-KR` 只保留提取脚本生成的空值结构。
+
+- [x] **Step 5: 运行定向测试确认 GREEN**
+
+  Run: `pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx --api.host 127.0.0.1`
+
+  Expected: 两个测试文件全部通过；国际站五种可见语言的 Public Beta、印度尼西亚语支持和正式付费上线文案均通过断言，中国站排除断言保持通过。
+
+- [x] **Step 6: 运行完整前端质量门禁**
+
+  Run: `pnpm i18n:check && pnpm i18n:zh-hant:check && pnpm check && git diff --check`
+
+  Expected: i18n 结构、繁体生成、TypeScript、Lint 和差异检查全部通过；改动范围仅包含设计/计划、Changelog 页面、定向测试和必要的生成字典。
+
+- [x] **Step 7: 浏览器验证中国站和国际站可见语言**
+
+  分别启动 `VITE_REGION=cn` 和 `VITE_REGION=global` 本地预览，检查：
+
+  - 中国站 `/changelog/`：4 月为公测，且不出现国际站两个新增 8 月条目。
+  - 国际站 `/changelog/`、`/zh-sg/changelog/`、`/zh-hant/changelog/`、`/id-id/changelog/`、`/es/changelog/`：4 月均为 Public Beta；8 月倒数第二条为印度尼西亚语支持，最后一条为正式付费上线；两条均无图。
+  - 桌面端和 390px 移动端不因新增条目引入横向溢出。
+
+- [x] **Step 8: 展示差异并等待提交授权**
+
+  汇总 scoped diff、RED/GREEN、i18n/类型/差异门禁和双站浏览器证据；提交信息建议为 `更新国际站产品阶段与语言动态 / feat(changelog): add global launch milestones`。未经用户明确确认不执行 commit、push 或创建后续 MR。
+
+  Evidence: 基线为 13/13；RED 时新增 2 个国际站用例失败、既有 13 个用例通过；最小实现及公测图片辅助文本同步后 15/15 GREEN。`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 与 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。浏览器确认中国站只显示中国站节点，国际站英文、简中、繁中、印尼语和西语均显示 Public Beta，且 8 月最后两条顺序与无图状态正确；西语 390px 下两个新增 article 均为 `clientWidth = scrollWidth = 342`。页面整体存在既有公共区域横向溢出，本地跨语言导航还会记录既有鉴权/水合日志，本任务未引入新的目标条目错误。用户已明确要求代码完成后提交 MR；远端核验发现 MR !3458 已合并，因此改为创建只包含本次差异的后续 MR。
