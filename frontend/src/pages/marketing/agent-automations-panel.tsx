@@ -4950,7 +4950,7 @@ function formatKnownTestSendError(message: string, t?: (s: string, vars?: Record
   }
   if (/command\s+not\s+found|not found/i.test(message)) return "";
   if (/permission denied/i.test(message)) return t ? t("实例内命令执行权限不足") : "实例内命令执行权限不足";
-  return message;
+  return "";
 }
 
 function extractCommandFailureField(message: string, field: "stderr" | "stdout" | "error"): string {
