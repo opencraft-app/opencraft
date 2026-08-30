@@ -310,7 +310,7 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
 
     expect(within(primaryRow).getByRole("group", { name: "主模型不能同时设为备用模型" })).toBeInTheDocument();
-    expect(within(primaryRow).getByRole("group", { name: "请先切换主模型后再删除" })).toBeInTheDocument();
+    expect(within(primaryRow).getByRole("group", { name: "无法删除主模型，请先切换至其他模型" })).toBeInTheDocument();
     expect(within(fallbackRow).getByRole("button", { name: "取消备用" })).toBeEnabled();
     expect(primaryRow.querySelector("[title]")).toBeNull();
     expect(screen.queryByRole("button", { name: /上移|下移/ })).not.toBeInTheDocument();
