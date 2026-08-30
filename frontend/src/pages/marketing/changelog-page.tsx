@@ -243,8 +243,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         : "1454 / 1045"
       : variant === "advancedSettings"
       ? isGlobal
-        ? useGlobalChineseAsset ? "1043 / 1059" : "1055 / 1071"
-        : "1043 / 1059"
+        ? useGlobalChineseAsset ? "1043 / 1282" : "1055 / 1285"
+        : "1043 / 1282"
       : variant === "deepseekHarness"
       ? isGlobal && !useGlobalChineseAsset ? "2168 / 1287" : "2172 / 1286"
       : variant === "wecom"

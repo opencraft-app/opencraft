@@ -150,7 +150,7 @@ describe("marketing channel copy", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
     );
-    expect(advancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1059" });
+    expect(advancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1282" });
     expect(
       screen.getByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
     ).toBeInTheDocument();

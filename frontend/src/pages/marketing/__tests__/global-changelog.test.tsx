@@ -103,7 +103,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
     );
-    expect(zhAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1059" });
+    expect(zhAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1282" });
     expect(
       screen.getByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
     ).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-advanced-settings-en.png"),
     );
-    expect(enAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1055 / 1071" });
+    expect(enAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1055 / 1285" });
     const enPersonaImage = screen.getByAltText("LightVela Now Supports Custom Persona File Uploads");
     expect(enPersonaImage).toHaveAttribute(
       "src",
