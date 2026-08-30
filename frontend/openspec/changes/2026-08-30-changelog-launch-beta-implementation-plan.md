@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use test-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 更新国内/国际 Changelog 的 DeepSeek Harness Beta 标识，并准确记录国内站公测、正式上线和付费服务节点。
+**Goal:** 更新国内/国际 Changelog 的 DeepSeek Harness Beta 标识，准确记录国内站上线节点，并在双站 8 月动态中补充自动任务测试运行能力。
 
 **Architecture:** 保持 `changelog-page.tsx` 现有数据驱动结构，为条目增加可选 `badge` 字段；区域差异继续通过编译期 `isGlobal` 分支表达。国内站 7 月新增无图条目，4 月标题按区域选择，国际站不引入国内付费节点。
 
@@ -16,6 +16,9 @@
 - 国内站 7 月正式上线条目不配图，国际站不显示该条目。
 - 国内站 4 月标题必须为 `LightVela 产品公测上线`；国际站继续显示 `LightVela Product Beta Launch`。
 - 不替换现有 Changelog 图片，不修改其他月份内容或业务逻辑。
+- 自动任务测试运行条目必须位于国内站和国际站 8 月更新日志最后一条，并使用 `visual: "none"`。
+- 国内站标题必须为 `自动任务支持测试运行`，描述必须逐字为 `创建或编辑自动任务时，可以先运行一次当前填写的内容，无需保存即可确认执行效果，再决定是否创建或更新任务。`。
+- 国际站英文标题必须为 `Jobs Now Support Test Runs`，描述必须为 `When creating or editing a job, you can run the current form once without saving it, review the result, and then decide whether to create or update the job.`。
 
 ---
 
@@ -104,3 +107,53 @@
 - [ ] **Step 4: 等待提交授权**
 
   展示 scoped diff、验证结果和建议提交信息；未经用户确认不执行 commit、push 或 MR。
+
+### Task 4: 在双站 8 月动态增加自动任务测试运行条目
+
+**Files:**
+- Modify: `src/pages/marketing/__tests__/channel-copy.test.tsx`
+- Modify: `src/pages/marketing/__tests__/global-changelog.test.tsx`
+- Modify: `src/pages/marketing/changelog-page.tsx`
+- Modify: `src/i18n/generated/*.json`（仅通过仓库 i18n 脚本生成和补齐翻译）
+
+**Interfaces:**
+- Consumes: 国内站和国际站各自的 `2026-08` 条目数组、现有 `visual: "none"`、`useT()` 字面量翻译链路。
+- Produces: 双站 8 月最后一条无图测试运行动态，以及中文、英文和现有受支持语言的本地化文案。
+
+- [x] **Step 1: 写失败测试锁定双站文案、顺序与无图状态**
+
+  国内站断言 8 月最后一个 `article` 的标题为 `自动任务支持测试运行`，描述逐字匹配确认文案，且该条目中不存在 `img`。国际站中文渲染断言同一条目存在并位于 8 月末尾；英文渲染断言标题为 `Jobs Now Support Test Runs`、描述为已确认英文文案，并且条目不含图片。
+
+- [x] **Step 2: 运行 Changelog 定向测试确认 RED**
+
+  Run: `pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx --api.host 127.0.0.1`
+
+  Expected: 新增测试因测试运行条目尚不存在而失败；既有断言继续通过。
+
+- [x] **Step 3: 最小实现双站 8 月无图条目**
+
+  在 `changelog-page.tsx` 的国内站和国际站 `2026-08` 数组末尾分别追加相同条目：`id: "automation-form-test-run"`、确认后的标题和描述，以及 `visual: "none" as const`。不新增视觉 variant，不修改自动任务业务逻辑。
+
+- [x] **Step 4: 生成并补齐本地化资源**
+
+  Run: `pnpm i18n:extract && pnpm i18n:zh-hant`
+
+  为新标题和描述补齐英语、繁体中文、印尼语、西班牙语等必填语言；英语必须使用 Global Constraints 中的 Title Case 标题和确认描述。禁止手工编造哈希键。
+
+- [x] **Step 5: 运行定向测试确认 GREEN**
+
+  Run: `pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx --api.host 127.0.0.1`
+
+  Expected: 两个测试文件全部通过，双站既有 8 月条目和区域差异保持不变。
+
+- [x] **Step 6: 完成质量与双站浏览器验证**
+
+  Run: `pnpm i18n:check && pnpm i18n:zh-hant:check && pnpm check && git diff --check`
+
+  国内站 `/changelog/` 与国际站 `/en-us/changelog/` 均确认该条目位于 8 月末尾、文案正确且无图；移动端不新增横向溢出。
+
+  Evidence: Changelog 定向测试 RED 时 2 个新增断言失败、11 个既有用例通过；GREEN 后 13/13 通过。`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 与 `git diff --check` 通过。浏览器确认国内/国际 8 月最后一条均为测试运行且无图；新增国际站条目在 390px 下 `clientWidth = scrollWidth = 342`，未引入横向溢出。页面顶部英文说明存在既有 390px 溢出，不属于本任务范围。
+
+- [ ] **Step 7: 展示差异并等待提交授权**
+
+  汇总 scoped diff、RED/GREEN、i18n/类型检查和双站浏览器证据；未经用户确认不执行 commit、push 或更新 MR !3458。

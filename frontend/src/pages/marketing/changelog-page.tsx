@@ -356,6 +356,12 @@ function ChangelogContent() {
                 desc: t("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。"),
                 visual: "traditionalChinese" as const,
               },
+              {
+                id: "automation-form-test-run",
+                title: t("自动任务支持测试运行"),
+                desc: t("创建或编辑自动任务时，可以先运行一次当前填写的内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
+                visual: "none" as const,
+              },
             ],
           },
         ]
@@ -400,6 +406,12 @@ function ChangelogContent() {
                 title: t("支持在 QQ 群聊中 @ 机器人"),
                 desc: t("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。"),
                 visual: "qqGroupMentions" as const,
+              },
+              {
+                id: "automation-form-test-run",
+                title: t("自动任务支持测试运行"),
+                desc: t("创建或编辑自动任务时，可以先运行一次当前填写的内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
+                visual: "none" as const,
               },
             ],
           },

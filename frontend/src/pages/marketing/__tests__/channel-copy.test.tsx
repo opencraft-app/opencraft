@@ -208,6 +208,18 @@ describe("marketing channel copy", () => {
     );
     expect(screen.queryByRole("heading", { name: "技能页面支持批量安装与来源查看" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "支持繁体中文" })).not.toBeInTheDocument();
+    const augustSection = screen.getByText("2026 年 8 月").closest("section");
+    expect(augustSection).not.toBeNull();
+    const testRunHeading = within(augustSection!).getByRole("heading", {
+      name: "自动任务支持测试运行",
+    });
+    expect(within(augustSection!).getAllByRole("heading").at(-1)).toBe(testRunHeading);
+    expect(
+      within(augustSection!).getByText(
+        "创建或编辑自动任务时，可以先运行一次当前填写的内容，无需保存即可确认执行效果，再决定是否创建或更新任务。",
+      ),
+    ).toBeInTheDocument();
+    expect(testRunHeading.closest("article")?.querySelector("img")).toBeNull();
     const augustHeadingsWithAdvancedSettings = screen.getAllByRole("heading").map((heading) => heading.textContent);
     expect(
       augustHeadingsWithAdvancedSettings.findIndex((heading) =>
