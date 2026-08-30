@@ -209,9 +209,7 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("LightVela 支持技能包")
       : variant === "soul"
         ? t("Soul 人设能力上线")
-        : isGlobal
-          ? t("LightVela 产品内测上线")
-          : t("LightVela 产品公测上线");
+        : t("LightVela 产品公测上线");
   const aspectRatio =
     variant === "cloudStorage"
       ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
@@ -361,6 +359,18 @@ function ChangelogContent() {
                 title: t("支持繁体中文"),
                 desc: t("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。"),
                 visual: "traditionalChinese" as const,
+              },
+              {
+                id: "indonesian-language",
+                title: t("LightVela 支持印度尼西亚语"),
+                desc: t("现在可以使用印度尼西亚语浏览 LightVela 的公开页面、产品文档和账号流程。"),
+                visual: "none" as const,
+              },
+              {
+                id: "global-official-launch",
+                title: t("LightVela 正式上线并启用付费服务"),
+                desc: t("LightVela 国际站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。"),
+                visual: "none" as const,
               },
             ],
           },
@@ -536,7 +546,7 @@ function ChangelogContent() {
       entries: [
         {
           id: "beta-launch",
-          title: isGlobal ? t("LightVela 产品内测上线") : t("LightVela 产品公测上线"),
+          title: t("LightVela 产品公测上线"),
           desc: launchDesc,
           visual: "lobster",
         },

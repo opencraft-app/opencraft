@@ -53,6 +53,98 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  const globalLaunchCopies = [
+    {
+      locale: "zh-CN",
+      publicBetaTitle: "LightVela 产品公测上线",
+      indonesianTitle: "LightVela 支持印度尼西亚语",
+      indonesianDescription:
+        "现在可以使用印度尼西亚语浏览 LightVela 的公开页面、产品文档和账号流程。",
+      launchTitle: "LightVela 正式上线并启用付费服务",
+      launchDescription:
+        "LightVela 国际站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
+    },
+    {
+      locale: "zh-Hant",
+      publicBetaTitle: "LightVela 產品公測上線",
+      indonesianTitle: "LightVela 支持印度尼西亞語",
+      indonesianDescription:
+        "現在可以使用印度尼西亞語瀏覽 LightVela 的公開頁面、產品文檔和賬號流程。",
+      launchTitle: "LightVela 正式上線並啓用付費服務",
+      launchDescription:
+        "LightVela 國際站正式上線，同步啓用付費服務。你可以根據使用需求選擇合適的訂閲套餐。",
+    },
+    {
+      locale: "en-US",
+      publicBetaTitle: "LightVela Public Beta Launch",
+      indonesianTitle: "Indonesian Is Now Available",
+      indonesianDescription:
+        "Browse LightVela's public pages, documentation, and account flows in Indonesian.",
+      launchTitle: "LightVela Officially Launches with Paid Services",
+      launchDescription:
+        "LightVela is now officially available globally with paid services. Choose a subscription plan that fits your needs.",
+    },
+    {
+      locale: "id-ID",
+      publicBetaTitle: "Peluncuran Beta Publik LightVela",
+      indonesianTitle: "Bahasa Indonesia Kini Tersedia",
+      indonesianDescription:
+        "Sekarang Anda dapat menjelajahi halaman publik, dokumentasi produk, dan alur akun LightVela dalam Bahasa Indonesia.",
+      launchTitle: "LightVela Resmi Diluncurkan dengan Layanan Berbayar",
+      launchDescription:
+        "LightVela kini resmi tersedia secara global dengan layanan berbayar. Pilih paket langganan yang sesuai dengan kebutuhan Anda.",
+    },
+    {
+      locale: "es",
+      publicBetaTitle: "Lanzamiento de la beta pública de LightVela",
+      indonesianTitle: "El indonesio ya está disponible",
+      indonesianDescription:
+        "Ahora puedes explorar las páginas públicas, la documentación del producto y los flujos de cuenta de LightVela en indonesio.",
+      launchTitle: "LightVela se lanza oficialmente y activa los servicios de pago",
+      launchDescription:
+        "LightVela ya está disponible oficialmente a nivel global con servicios de pago. Elige el plan de suscripción que mejor se adapte a tus necesidades.",
+    },
+  ] as const;
+
+  it("describes the April launch as a public beta in every visible global dictionary", async () => {
+    for (const copy of globalLaunchCopies) {
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByRole("heading", { name: copy.publicBetaTitle })).toBeInTheDocument();
+      cleanup();
+    }
+  });
+
+  it("ends the global August changelog with Indonesian support and the paid launch", async () => {
+    for (const copy of globalLaunchCopies) {
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      const indonesianHeading = screen.getByRole("heading", { name: copy.indonesianTitle });
+      const launchHeading = screen.getByRole("heading", { name: copy.launchTitle });
+      const augustSection = launchHeading.closest("section");
+      expect(augustSection).not.toBeNull();
+      expect(within(augustSection!).getAllByRole("heading").slice(-2)).toEqual([
+        indonesianHeading,
+        launchHeading,
+      ]);
+      expect(within(augustSection!).getByText(copy.indonesianDescription)).toBeInTheDocument();
+      expect(within(augustSection!).getByText(copy.launchDescription)).toBeInTheDocument();
+      expect(indonesianHeading.closest("article")?.querySelector("img")).toBeNull();
+      expect(launchHeading.closest("article")?.querySelector("img")).toBeNull();
+      cleanup();
+    }
+  });
+
   it("shows the new global August updates in every global locale", async () => {
     await i18n.changeLanguage("zh-CN");
     render(
@@ -82,9 +174,6 @@ describe("global changelog skill package entry", () => {
     expect(within(zhAugustSection!).getAllByRole("heading")[0]).toHaveTextContent(
       "LightVela 实验室新增 DeepSeek Harness",
     );
-    expect(
-      screen.queryByRole("heading", { name: "LightVela 正式上线并启用付费服务" }),
-    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(
         "LightVela 产品中国站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
@@ -214,9 +303,6 @@ describe("global changelog skill package entry", () => {
     expect(within(augustSection!).getAllByRole("heading")[0]).toHaveTextContent(
       "DeepSeek Harness Is Now Available in LightVela Labs",
     );
-    expect(
-      screen.queryByRole("heading", { name: "LightVela Officially Launches with Paid Services" }),
-    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(
         "LightVela's China site is now officially available with paid services. Choose a subscription plan that fits your needs.",
@@ -464,7 +550,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/soul-persona-global-zh.webp"),
     );
-    expect(screen.getByAltText("LightVela 产品内测上线")).toHaveAttribute(
+    expect(screen.getByAltText("LightVela 产品公测上线")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-launch-global-zh.webp"),
     );
@@ -503,7 +589,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/soul-persona-global-en.webp"),
     );
-    expect(screen.getByAltText("LightVela Product Beta Launch")).toHaveAttribute(
+    expect(screen.getByAltText("LightVela Public Beta Launch")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-launch-global-en.webp"),
     );
