@@ -47,6 +47,7 @@ type ChangelogEntry = {
   id: string;
   title: string;
   desc?: string;
+  badge?: string;
   /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / none=无图 */
   visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "none";
 };
@@ -187,7 +188,7 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "advancedSettings"
       ? t("LightVela 新增 Hermes Agent 高级设置")
       : variant === "deepseekHarness"
-      ? t("LightVela 新增 DeepSeek Harness")
+      ? t("LightVela 实验室新增 DeepSeek Harness")
       : variant === "achievements"
       ? t("LightVela 支持成就模块")
       : variant === "wecom"
@@ -208,7 +209,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("LightVela 支持技能包")
       : variant === "soul"
         ? t("Soul 人设能力上线")
-        : t("LightVela 产品内测上线");
+        : isGlobal
+          ? t("LightVela 产品内测上线")
+          : t("LightVela 产品公测上线");
   const aspectRatio =
     variant === "cloudStorage"
       ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
@@ -312,8 +315,9 @@ function ChangelogContent() {
             entries: [
               {
                 id: "deepseek-harness",
-                title: t("LightVela 新增 DeepSeek Harness"),
+                title: t("LightVela 实验室新增 DeepSeek Harness"),
                 desc: t("在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。"),
+                badge: "Beta",
                 visual: "deepseekHarness" as const,
               },
               {
@@ -362,8 +366,9 @@ function ChangelogContent() {
             entries: [
               {
                 id: "deepseek-harness",
-                title: t("LightVela 新增 DeepSeek Harness"),
+                title: t("LightVela 实验室新增 DeepSeek Harness"),
                 desc: t("在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。"),
+                badge: "Beta",
                 visual: "deepseekHarness" as const,
               },
               {
@@ -439,6 +444,12 @@ function ChangelogContent() {
                 desc: t("快速安装技能组合，让 Agent 从单点技能走向完整工作流。"),
                 visual: "skill-package" as const,
               },
+              {
+                id: "domestic-official-launch",
+                title: t("LightVela 正式上线并启用付费服务"),
+                desc: t("LightVela 产品国内站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。"),
+                visual: "none" as const,
+              },
             ]
           : []),
       ],
@@ -513,7 +524,7 @@ function ChangelogContent() {
       entries: [
         {
           id: "beta-launch",
-          title: t("LightVela 产品内测上线"),
+          title: isGlobal ? t("LightVela 产品内测上线") : t("LightVela 产品公测上线"),
           desc: launchDesc,
           visual: "lobster",
         },
@@ -620,6 +631,7 @@ function ChangelogContent() {
 
                       <div>
                         <h2
+                          className="flex flex-wrap items-center gap-2 text-balance"
                           style={{
                             fontSize: "24px",
                             fontWeight: 500,
@@ -629,7 +641,12 @@ function ChangelogContent() {
                             marginBottom: entry.desc ? "20px" : "24px",
                           }}
                         >
-                          {entry.title}
+                          <span>{entry.title}</span>
+                          {entry.badge && (
+                            <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium leading-none text-violet-700">
+                              {entry.badge}
+                            </span>
+                          )}
                         </h2>
 
                         {entry.desc && (

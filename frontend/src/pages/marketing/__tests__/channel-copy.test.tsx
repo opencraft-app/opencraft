@@ -1,6 +1,6 @@
 import React from "react";
 import { MemoryRouter } from "react-router-dom";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import i18n from "@/i18n";
@@ -108,6 +108,20 @@ describe("marketing channel copy", () => {
       "src",
       expect.stringContaining("/assets/changelog/automation-skill-invocation.png"),
     );
+
+    const julySection = monthText.closest("section");
+    expect(julySection).not.toBeNull();
+    const julyHeadings = within(julySection!).getAllByRole("heading");
+    const launchHeading = within(julySection!).getByRole("heading", {
+      name: "LightVela 正式上线并启用付费服务",
+    });
+    expect(julyHeadings.at(-1)).toBe(launchHeading);
+    expect(
+      within(julySection!).getByText(
+        "LightVela 产品国内站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
+      ),
+    ).toBeInTheDocument();
+    expect(launchHeading.closest("article")?.querySelector("img")).toBeNull();
   });
 
   it("shows the domestic August updates with DeepSeek Harness first and no automation template", () => {
@@ -118,9 +132,12 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "LightVela 新增 DeepSeek Harness" })).toBeInTheDocument();
+    const deepSeekHarnessHeading = screen.getByRole("heading", {
+      name: /LightVela 实验室新增 DeepSeek Harness/,
+    });
+    expect(within(deepSeekHarnessHeading).getByText("Beta")).toBeInTheDocument();
     expect(screen.getByText("在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。")).toBeInTheDocument();
-    const deepSeekHarnessImage = screen.getByAltText("LightVela 新增 DeepSeek Harness");
+    const deepSeekHarnessImage = screen.getByAltText("LightVela 实验室新增 DeepSeek Harness");
     expect(deepSeekHarnessImage).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.png"),
@@ -192,7 +209,11 @@ describe("marketing channel copy", () => {
     expect(screen.queryByRole("heading", { name: "技能页面支持批量安装与来源查看" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "支持繁体中文" })).not.toBeInTheDocument();
     const augustHeadingsWithAdvancedSettings = screen.getAllByRole("heading").map((heading) => heading.textContent);
-    expect(augustHeadingsWithAdvancedSettings.indexOf("LightVela 新增 DeepSeek Harness")).toBeLessThan(
+    expect(
+      augustHeadingsWithAdvancedSettings.findIndex((heading) =>
+        heading?.startsWith("LightVela 实验室新增 DeepSeek Harness"),
+      ),
+    ).toBeLessThan(
       augustHeadingsWithAdvancedSettings.indexOf("LightVela 新增 Hermes Agent 高级设置"),
     );
     expect(augustHeadingsWithAdvancedSettings.indexOf("LightVela 新增 Hermes Agent 高级设置")).toBeLessThan(
@@ -233,7 +254,7 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")).toBeInTheDocument();
-    expect(screen.getByAltText("LightVela 产品内测上线")).toHaveAttribute(
+    expect(screen.getByAltText("LightVela 产品公测上线")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-launch.webp"),
     );
@@ -267,7 +288,8 @@ describe("marketing channel copy", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getAllByRole("heading", { name: "LightVela 产品内测上线" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("heading", { name: "LightVela 产品公测上线" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("heading", { name: "LightVela 产品内测上线" })).not.toBeInTheDocument();
     expect(screen.getByText("支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")).toBeInTheDocument();
   });
 

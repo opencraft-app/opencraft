@@ -1,3 +1,17 @@
+# Changelog 上线节点与 DeepSeek Harness Beta 标识 Implementation Plan
+
+**Status:** 已实现并通过定向测试、i18n、类型检查和双站浏览器验证，等待提交授权。
+
+**Design:** `openspec/changes/2026-08-30-changelog-launch-beta-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-30-changelog-launch-beta-implementation-plan.md`
+
+- [x] 更新 DeepSeek Harness 实验室归属和 Beta 标签、国内站 4 月公测标题及 7 月正式上线无图条目，并完成双站验证。
+
+**Verification:** 新增断言先 RED（6 个预期失败），实现后 Changelog 国内/国际定向测试 13/13 GREEN；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm i18n:validate`、`pnpm check` 和 `git diff --check` 通过。国内页面确认 7 月条目位于最后且无图、4 月为公测，国际英文页面确认 Labs + Beta、保留 Product Beta Launch 且无国内付费条目。
+
+---
+
 # 自动任务测试消息错误提示精简 Implementation Plan
 
 **Status:** 已实现并通过自动化验证，准备提交 MR。
