@@ -1,3 +1,18 @@
+# 高级设置关闭审批状态提示移除 Implementation Plan
+
+**Status:** 已实现并通过 RED/GREEN、多语言、前端门禁与本地组件页面验收，准备提交。
+
+**Design:** `openspec/changes/2026-08-30-approval-off-warning-copy-removal-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-30-approval-off-warning-copy-removal-implementation-plan.md`
+
+- [x] 删除关闭审批状态提示及七种语言资源，保留选项、保存与确认弹窗。
+- [x] 完成 RED/GREEN、多语言校验、前端门禁和浏览器验收。
+
+**Verification:** 目标测试先按七种语言准确 RED（7 failed / 41 passed），实现后 48/48 GREEN；`pnpm i18n:check`、`pnpm check` 与 `git diff --check` 通过。应用内浏览器使用临时本地组件预览验证“关闭审批”仍显示、风险确认弹窗仍出现、确认后目标提示计数为 0，控制台新增错误为 0；预览路由已删除，未进入最终 diff。
+
+---
+
 # 自动任务测试消息错误提示精简 Implementation Plan
 
 **Status:** 已实现并通过自动化验证，准备提交 MR。
