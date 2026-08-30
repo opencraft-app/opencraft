@@ -118,7 +118,7 @@ describe("marketing channel copy", () => {
     expect(julyHeadings.at(-1)).toBe(launchHeading);
     expect(
       within(julySection!).getByText(
-        "LightVela 产品国内站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
+        "LightVela 产品中国站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
       ),
     ).toBeInTheDocument();
     expect(launchHeading.closest("article")?.querySelector("img")).toBeNull();

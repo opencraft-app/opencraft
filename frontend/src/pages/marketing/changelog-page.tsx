@@ -447,7 +447,7 @@ function ChangelogContent() {
               {
                 id: "domestic-official-launch",
                 title: t("LightVela 正式上线并启用付费服务"),
-                desc: t("LightVela 产品国内站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。"),
+                desc: t("LightVela 产品中国站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。"),
                 visual: "none" as const,
               },
             ]

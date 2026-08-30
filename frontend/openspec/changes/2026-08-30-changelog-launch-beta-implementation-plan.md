@@ -12,7 +12,7 @@
 
 - DeepSeek Harness 国内站标题必须为 `LightVela 实验室新增 DeepSeek Harness`，标题右侧必须显示 `Beta`。
 - 国内站 7 月最后一条标题必须为 `LightVela 正式上线并启用付费服务`。
-- 国内站 7 月描述必须逐字为 `LightVela 产品国内站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。`
+- 国内站 7 月描述必须逐字为 `LightVela 产品中国站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。`
 - 国内站 7 月正式上线条目不配图，国际站不显示该条目。
 - 国内站 4 月标题必须为 `LightVela 产品公测上线`；国际站继续显示 `LightVela Product Beta Launch`。
 - 不替换现有 Changelog 图片，不修改其他月份内容或业务逻辑。

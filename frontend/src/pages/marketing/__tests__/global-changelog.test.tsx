@@ -87,7 +87,7 @@ describe("global changelog skill package entry", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText(
-        "LightVela 产品国内站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
+        "LightVela 产品中国站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
       ),
     ).not.toBeInTheDocument();
     expect(
@@ -208,7 +208,7 @@ describe("global changelog skill package entry", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText(
-        "LightVela's domestic site is now officially available with paid services. Choose a subscription plan that fits your needs.",
+        "LightVela's China site is now officially available with paid services. Choose a subscription plan that fits your needs.",
       ),
     ).not.toBeInTheDocument();
     expect(
