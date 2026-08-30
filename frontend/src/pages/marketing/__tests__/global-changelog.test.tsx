@@ -157,10 +157,11 @@ describe("global changelog skill package entry", () => {
     const zhTestRunHeading = within(zhAugustSection!).getByRole("heading", {
       name: "自动任务支持测试运行",
     });
-    expect(within(zhAugustSection!).getAllByRole("heading").at(-1)).toBe(zhTestRunHeading);
+    const zhAugustHeadings = within(zhAugustSection!).getAllByRole("heading");
+    expect(zhAugustHeadings[1]).toBe(zhTestRunHeading);
     expect(
       within(zhAugustSection!).getByText(
-        "创建或编辑自动任务时，可以先运行一次当前填写的内容，无需保存即可确认执行效果，再决定是否创建或更新任务。",
+        "创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。",
       ),
     ).toBeInTheDocument();
     expect(zhTestRunHeading.closest("article")?.querySelector("img")).toBeNull();
@@ -278,10 +279,10 @@ describe("global changelog skill package entry", () => {
     const enTestRunHeading = within(augustSection!).getByRole("heading", {
       name: "Jobs Now Support Test Runs",
     });
-    expect(within(augustSection!).getAllByRole("heading").at(-1)).toBe(enTestRunHeading);
+    expect(within(augustSection!).getAllByRole("heading")[1]).toBe(enTestRunHeading);
     expect(
       within(augustSection!).getByText(
-        "When creating or editing a job, you can run the current form once without saving it, review the result, and then decide whether to create or update the job.",
+        "When creating or editing a job, you can run the current job once without saving it, review the result, and then decide whether to create or update the job.",
       ),
     ).toBeInTheDocument();
     expect(enTestRunHeading.closest("article")?.querySelector("img")).toBeNull();

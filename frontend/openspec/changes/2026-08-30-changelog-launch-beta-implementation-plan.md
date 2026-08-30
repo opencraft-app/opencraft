@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use test-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 更新国内/国际 Changelog 的 DeepSeek Harness Beta 标识，准确记录国内站上线节点，并在双站 8 月动态中补充自动任务测试运行能力。
+**Goal:** 更新国内/国际 Changelog 的 DeepSeek Harness Beta 标识，准确记录中国站上线节点，并在双站 8 月动态中把自动任务测试运行能力紧接 DeepSeek Harness 展示。
 
 **Architecture:** 保持 `changelog-page.tsx` 现有数据驱动结构，为条目增加可选 `badge` 字段；区域差异继续通过编译期 `isGlobal` 分支表达。国内站 7 月新增无图条目，4 月标题按区域选择，国际站不引入国内付费节点。
 
@@ -16,9 +16,9 @@
 - 国内站 7 月正式上线条目不配图，国际站不显示该条目。
 - 国内站 4 月标题必须为 `LightVela 产品公测上线`；国际站继续显示 `LightVela Product Beta Launch`。
 - 不替换现有 Changelog 图片，不修改其他月份内容或业务逻辑。
-- 自动任务测试运行条目必须位于国内站和国际站 8 月更新日志最后一条，并使用 `visual: "none"`。
-- 国内站标题必须为 `自动任务支持测试运行`，描述必须逐字为 `创建或编辑自动任务时，可以先运行一次当前填写的内容，无需保存即可确认执行效果，再决定是否创建或更新任务。`。
-- 国际站英文标题必须为 `Jobs Now Support Test Runs`，描述必须为 `When creating or editing a job, you can run the current form once without saving it, review the result, and then decide whether to create or update the job.`。
+- 自动任务测试运行条目必须位于国内站和国际站 8 月更新日志的 DeepSeek Harness 条目之后，并使用 `visual: "none"`。
+- 国内站标题必须为 `自动任务支持测试运行`，描述必须逐字为 `创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。`。
+- 国际站英文标题必须为 `Jobs Now Support Test Runs`，描述必须为 `When creating or editing a job, you can run the current job once without saving it, review the result, and then decide whether to create or update the job.`。
 
 ---
 
@@ -154,6 +154,46 @@
 
   Evidence: Changelog 定向测试 RED 时 2 个新增断言失败、11 个既有用例通过；GREEN 后 13/13 通过。`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 与 `git diff --check` 通过。浏览器确认国内/国际 8 月最后一条均为测试运行且无图；新增国际站条目在 390px 下 `clientWidth = scrollWidth = 342`，未引入横向溢出。页面顶部英文说明存在既有 390px 溢出，不属于本任务范围。
 
-- [ ] **Step 7: 展示差异并等待提交授权**
+- [x] **Step 7: 展示差异并等待提交授权**
 
   汇总 scoped diff、RED/GREEN、i18n/类型检查和双站浏览器证据；未经用户确认不执行 commit、push 或更新 MR !3458。
+
+### Task 5: 调整测试运行条目的位置和描述
+
+**Files:**
+- Modify: `src/pages/marketing/__tests__/channel-copy.test.tsx`
+- Modify: `src/pages/marketing/__tests__/global-changelog.test.tsx`
+- Modify: `src/pages/marketing/changelog-page.tsx`
+- Modify: `src/i18n/generated/*.json`（仅通过仓库 i18n 脚本生成和补齐翻译）
+
+**Interfaces:**
+- Consumes: 双站 `2026-08` 条目数组与现有 `automation-form-test-run` 条目。
+- Produces: 双站均紧接 DeepSeek Harness 的测试运行动态，以及更新后的本地化描述。
+
+- [x] **Step 1: 写失败测试锁定紧邻顺序和新文案**
+
+  国内站、国际站中文和国际站英文测试均断言测试运行条目紧接 DeepSeek Harness；中文描述使用“当前任务内容”，英文描述同步使用 `current job`。
+
+- [x] **Step 2: 运行定向测试确认 RED**
+
+  Run: `pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx --api.host 127.0.0.1`
+
+  Expected: 当前实现因条目仍位于 8 月末尾且描述仍为旧文案而失败。
+
+- [x] **Step 3: 最小调整双站数组与源文案**
+
+  将两个 `automation-form-test-run` 条目移动到各自 DeepSeek Harness 条目后，只替换确认后的描述，不修改其他条目、图片或业务逻辑。
+
+- [x] **Step 4: 重新生成本地化资源并补齐语义更新**
+
+  Run: `pnpm i18n:extract && pnpm i18n:zh-hant`
+
+  更新英语、繁体中文、印尼语、西班牙语等资源；禁止手工编造哈希键。
+
+- [x] **Step 5: 完成 GREEN 和完整质量门禁**
+
+  Run: `pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx --api.host 127.0.0.1 && pnpm i18n:check && pnpm i18n:zh-hant:check && pnpm check && git diff --check`
+
+  Expected: 定向测试和全部门禁通过，差异仅包含计划、Changelog 数据、测试与必要 i18n 资源。
+
+  Evidence: RED 时两个区域测试各有 1 个顺序断言按预期失败，其余 11 个用例通过；最小实现后 13/13 GREEN。`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 和 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。
