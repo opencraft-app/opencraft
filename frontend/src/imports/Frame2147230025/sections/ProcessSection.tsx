@@ -74,7 +74,7 @@ function PlanetImage({
         animationDelay,
       }}
     >
-      <img alt="" src={src} className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" />
+      <img alt="" src={src} className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" loading="lazy" />
     </div>
   );
 }
@@ -269,9 +269,9 @@ export default function ProcessSection() {
         </div>
         {/* 星球图（移动端垂直堆叠展示） */}
         <div className="flex justify-center gap-4 flex-wrap opacity-70" aria-hidden="true">
-          <img alt="" src={imgImage614591622} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
-          <img alt="" src={imgImage614591617} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
-          <img alt="" src={imgImage614591619} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
+          <img alt="" src={imgImage614591622} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" loading="lazy" />
+          <img alt="" src={imgImage614591617} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" loading="lazy" />
+          <img alt="" src={imgImage614591619} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" loading="lazy" />
         </div>
       </div>
     </section>

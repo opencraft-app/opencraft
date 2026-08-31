@@ -276,6 +276,31 @@ describe("scenario task builder", () => {
 
   it("keeps unfinished workflow scenarios off the published shelf", () => {
     const publishedIds = SCENARIO_TASK_PACKS.map((pack) => pack.id);
+    expect(publishedIds).toEqual([
+      "cbt-counseling",
+      "medication-once",
+      "hydration-standup-reminder",
+      "srs-study-checkin",
+      "calorie-fitness-checkin",
+      "todo-focus-brief",
+      "goal-weekly-sprint",
+      "price-availability-alert",
+      "job-opportunity-radar",
+      "rent-reminder",
+      "weekend-shopping-list",
+      "country-fx-alert",
+      "stock-info-digest",
+      "subscription-renewal-watch",
+      "ai-hot-daily",
+      "deep-research-watch",
+      "weather-warning-alert",
+      "cross-border-brand-radar",
+      "platform-policy-watch",
+      "global-holiday-reminder",
+      "visa-document-deadline",
+      "flight-departure-once",
+    ]);
+    expect(new Set(publishedIds).size).toBe(publishedIds.length);
     expect(publishedIds).not.toContain("automation-opportunity-scan");
     expect(publishedIds).not.toContain("interview-prep-once");
     expect(publishedIds).not.toContain("world-cup-daily");

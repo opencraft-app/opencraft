@@ -1,3 +1,40 @@
+# 首页加载性能优化 Spec
+
+**最后更新：** 2026-08-31
+
+**状态：** 已批准，进入实现。
+
+## 1. 图片加载契约
+
+1. BrandIcons 1、Feature 跑马灯 18、Cards 12、Process 7、CTA 2，共 40 个唯一折叠下方资源必须使用 `loading="lazy"`。
+2. Hero 四张图片与公共 Header 的 LightVela logo 不得在本批改为 lazy。
+3. ProcessSection 的数据映射产生 7 个唯一资源；移动端重复实例也必须继承 lazy 属性。
+4. width/height 只允许使用图片真实 intrinsic size；已有固定尺寸/比例容器可以作为布局稳定性约束，不得填写猜测值。
+5. 最新 master 的真实构建基线为 CN 45、global 46；目标分别降为 5 和 6。CN 剩余 logo + Hero 四图，global 额外保留 Footer wordmark。
+
+## 2. 首页场景依赖契约
+
+1. 首页 6 个 pack、语言文案、locale 映射与 getter 位于独立 overview 入口，并由全量库复用同一份基础定义。
+2. `overview-packs.ts` 不得 import `scenario-packs.ts`；共用 factory、类型和最小字段依赖放入中立 core。
+3. 全量 pack 的有序 ID 集合和重复性、首页 6 个 ID/顺序、公开 locale 文案及 `promptBuilder` 行为必须保持不变。
+4. 原入口可按调用方兼容需要 re-export；`landing-page.tsx` 必须直接消费 overview 入口。
+5. 构建产物必须证明首页链不再包含完整 `scenario-packs` / `FOCUSED_SCENARIO_PACKS`，不能只用源码 import 变化代替。
+
+## 3. i18n Q0 PoC 契约
+
+1. 记录 CN/global 首页脚本、模块 ID、client boundary 和重复字典证据，解释两个约 1006 KiB chunk 的来源。
+2. 优先验证共享 chunk 或收窄 client boundary 能否去掉一份重复字典，并记录 before/after。
+3. 本批不得改变运行时 i18n 行为；若结论要求改初始化、hydration、locale 注册表或资源外置，必须另起实施计划。
+
+## 4. 验证契约
+
+1. baseline 与改后样本使用同一 commit 基线、设备、Chrome、限速和构建环境。
+2. Lighthouse 冷缓存各运行 5 次，比较中位数 LCP/FCP/TBT/CLS。
+3. 国内站和国际站分别执行真实 Next 构建；本机失败时前后样本必须统一迁移到同一 CI/构建机，禁止跨环境比较。
+4. 必须通过图片/场景定向测试、`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 与 `git diff --check`。
+
+---
+
 # 国际站西语端到端上线 Spec
 # DeepSeek Harness 真实接入 Spec
 

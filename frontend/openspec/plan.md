@@ -1,3 +1,19 @@
+# 首页加载性能优化 Implementation Plan
+
+**Status:** 实现中。
+
+**Size:** M。首页图片加载与场景依赖边界是两个相关性能批次；i18n 仅做构建 PoC。
+
+**Goal:** 减少国内站/国际站首页首屏非必要资源，并用真实构建与测量验证收益，不改变页面内容、区域化或 locale 行为。
+
+**Detailed plan:** `openspec/changes/2026-08-31-homepage-performance-implementation-plan.md`
+
+- [x] **Task 1：测试先行将 40 个唯一折叠下方图片资源改为 lazy，完成双区域 preload、构建和 Lighthouse 验证。**
+- [x] **Task 2：测试先行抽取首页 6 个场景 pack 的单一事实来源，保持全量库、locale 与 prompt 行为，并验证首页 bundle 边界。**
+- [x] **Task 3：完成 i18n 两份大 chunk 重复字典的 Q0 PoC，只输出证据与后续方案，不直接改运行时协议。**
+
+---
+
 # Changelog 上线节点与 DeepSeek Harness Beta 标识 Implementation Plan
 
 **Status:** 国际站公测、正式付费上线与印度尼西亚语支持已完成实现及验证；MR !3458 已合并，准备按用户授权创建后续 MR。

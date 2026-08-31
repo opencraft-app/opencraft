@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { formatScenarioQuickPrompt } from "../scenario-packs";
 import {
-  formatScenarioQuickPrompt,
   getOverviewScenarioTaskPacks,
   OVERVIEW_SCENARIO_TASK_PACKS,
-} from "../scenario-packs";
+} from "../overview-packs";
 
 const HAN_CHARACTER_PATTERN = /[\u3400-\u9fff]/;
 
