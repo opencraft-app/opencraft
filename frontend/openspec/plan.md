@@ -1,6 +1,24 @@
+# 首页登录态产品入口 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认提交；不自动 commit、push 或创建 MR。
+
+**Size:** S。首页公共头部的局部登录态入口，不改变认证、订阅、创建或管理页行为。
+
+**Goal:** 国内站和国际站首页登录态在头像左侧显示本地化产品入口，点击直达 `/agents`。
+
+**Design:** `openspec/changes/2026-08-31-homepage-auth-entry-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-31-homepage-auth-entry-implementation-plan.md`
+
+- [x] **测试先行实现登录态首页入口、八种 locale、首页范围开关、原生 `/agents` 链接与埋点，并完成双站验证。**
+
+**Verification:** 目标测试先 RED（12 个用例中 9 个按预期失败）后 GREEN（12/12）；相关公共导航回归 24/24 通过。`pnpm i18n:check`、`pnpm check`、`pnpm build:cn`、`pnpm build:global` 及范围内 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。真实登录态浏览器确认国内站“开始使用”和国际站“Enter LightVela”在桌面与 390px 下均无横向溢出，点击进入 `/agents/`；退出态由自动化用例确认原免费试用动作不变。
+
+---
+
 # 首页加载性能优化 Implementation Plan
 
-**Status:** 实现中。
+**Status:** 已归档。归档文件：`openspec/changes/2026-08-31-homepage-performance.md`。
 
 **Size:** M。首页图片加载与场景依赖边界是两个相关性能批次；i18n 仅做构建 PoC。
 

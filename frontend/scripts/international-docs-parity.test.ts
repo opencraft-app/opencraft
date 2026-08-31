@@ -398,28 +398,28 @@ describe("international docs publication inventory", () => {
   describe("Spanish docs source publication", () => {
     const esRoot = join(generatedDocsRoot, "es");
 
-    it("publishes the same 63 routes as international English while Korean remains unprepared", () => {
+    it("publishes the same 67 routes as international English without exposing hidden locales", () => {
       expect(docsRouteSlugs.es).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs.es).toHaveLength(63);
+      expect(docsRouteSlugs.es).toHaveLength(67);
       expect(docsRouteSlugs.es).toContainEqual([]);
       expect(Object.keys(docsRouteSlugs)).toContain("ja-jp");
       expect(Object.keys(docsRouteSlugs)).not.toContain("ko-kr");
     });
 
     it("keeps the expected locale route inventories", () => {
-      expect(docsRouteSlugs["en-us"]).toHaveLength(63);
+      expect(docsRouteSlugs["en-us"]).toHaveLength(67);
       expect(docsRouteSlugs["zh-cn"]).toHaveLength(43);
-      expect(docsRouteSlugs["zh-sg"]).toHaveLength(63);
-      expect(docsRouteSlugs["zh-hant"]).toHaveLength(63);
-      expect(docsRouteSlugs["id-id"]).toHaveLength(61);
+      expect(docsRouteSlugs["zh-sg"]).toHaveLength(67);
+      expect(docsRouteSlugs["zh-hant"]).toHaveLength(67);
+      expect(docsRouteSlugs["id-id"]).toHaveLength(65);
     });
 
-    it("generates 62 Spanish documents from explicit Spanish body sources", () => {
+    it("generates 66 Spanish documents from explicit Spanish body sources", () => {
       expect(existsSync(join(docsContentRoot, "es"))).toBe(true);
       expect(existsSync(esRoot)).toBe(true);
 
       const generatedDocs = walkFiles(esRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(62);
+      expect(generatedDocs).toHaveLength(66);
 
       for (const path of generatedDocs) {
         const content = readFileSync(path, "utf8");

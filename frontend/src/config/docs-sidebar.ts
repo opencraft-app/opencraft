@@ -312,6 +312,9 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent", titleEn: "LightVela vs Selfhost Agent" },
       { slug: "compare/lightvela-vs-chatgpt", title: "LightVela vs ChatGPT", titleEn: "LightVela vs ChatGPT" },
       { slug: "compare/lightvela-vs-genspark", title: "LightVela vs Genspark", titleEn: "LightVela vs Genspark" },
+      { slug: "compare/lightvela-vs-grok-bot", title: "LightVela vs Grok Bot", titleEn: "LightVela vs Grok Bot" },
+      { slug: "compare/lightvela-vs-mira", title: "LightVela vs Mira", titleEn: "LightVela vs Mira" },
+      { slug: "compare/lightvela-vs-viktor", title: "LightVela vs Viktor.com", titleEn: "LightVela vs Viktor.com" },
     ],
   },
   {
@@ -444,6 +447,9 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "compare/lightvela-vs-localhost-ai-agent": "compare/lightvela-vs-localhost-ai-agent.md",
   "compare/lightvela-vs-chatgpt": "compare/lightvela-vs-chatgpt.md",
   "compare/lightvela-vs-genspark": "compare/lightvela-vs-genspark.md",
+  "compare/lightvela-vs-grok-bot": "compare/lightvela-vs-grok-bot.md",
+  "compare/lightvela-vs-mira": "compare/lightvela-vs-mira.md",
+  "compare/lightvela-vs-viktor": "compare/lightvela-vs-viktor.md",
   "contact-us": "contact-us.md",
 };
 

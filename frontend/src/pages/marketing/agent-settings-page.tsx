@@ -4626,9 +4626,6 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                     { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
-                    ...(isGlobal && showHiddenAgentTools
-                      ? [{ id: "website" as const, label: t("工作台"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
-                      : []),
                   ],
                 },
                 {
@@ -4653,6 +4650,13 @@ export const AgentSettingsPage = ({
                   id: "labs",
                   label: t("实验室"),
                   sections: [
+                    {
+                      id: "website",
+                      label: t("工作台"),
+                      icon: <Globe2 className="h-4 w-4" />,
+                      path: AGENT_SECTION_PATH_BY_ID.website,
+                      badge: "Beta",
+                    },
                     {
                       id: "deepseek-harness",
                       label: "DeepSeek Harness",
@@ -5258,7 +5262,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "deepseek-harness" && (
                             <AgentDeepSeekHarnessPanel botId={activeBot.id} />
                           )}
-                          {isGlobal && activeSection === "website" && (
+                          {activeSection === "website" && (
                             <AgentWebsitePanel />
                           )}
                           {activeSection === "browser" && (

@@ -26,6 +26,10 @@ Setiap tugas dapat mengatur penjadwalan dan aturan eksekusi secara fleksibel, se
 - **Periode berlaku**: Batasi rentang waktu saat tugas dapat berjalan. Biarkan kosong agar tugas berjalan sepanjang waktu.
 - **Notifikasi**: Pengalih opsional untuk memilih kanal yang menerima notifikasi eksekusi tugas.
 
+Untuk membuat job kustom, klik “Buat” alih-alih memulai dari templat, lalu isi formulir kosong dengan jadwal dan instruksi Anda sendiri.
+
+![Dialog Buat Job untuk mengonfigurasi otomasi](../images/automation-create-job.webp)
+
 ## Menghubungkan Tugas Upstream
 
 Tugas upstream cocok untuk memecah satu pekerjaan menjadi alur multi-langkah yang stabil:
@@ -46,25 +50,41 @@ Instruksi tugas tetap perlu menjelaskan cara memakai output upstream. Contohnya:
 
 ## Templat Tugas
 
-Jika belum yakin otomasi apa yang perlu dikonfigurasi, klik “Templates” untuk memilih rencana otomasi siap pakai.
+Jika belum yakin otomasi apa yang perlu dikonfigurasi, gunakan Area Templat di halaman “Otomasi”. Pilih kartu seperti Pengingat minum air & obat, Pengingat sewa, Pengingat kurs target, atau Ringkasan info saham, lalu klik “Aktifkan” untuk meninjau jadwal dan instruksi sebelum membuat job.
+
+![Area Templat dengan kartu otomasi siap pakai](../images/automation-template-area.webp)
+
+Saat membuka templat, formulir Buat Job akan terisi otomatis. Templat Ringkasan info saham, misalnya, mengisi nama job, jadwal harian, dan instruksi ringkasan informasi pasar, sehingga Anda masih dapat mengedit detail sebelum menguji atau membuat job.
+
+<div style={{ maxWidth: "760px" }}>
+
+![Templat Ringkasan info saham terbuka di formulir Buat Job](../images/automation-template-stock-job.webp)
+
+</div>
 
 ## Mengelola Otomasi
 
 Setelah otomasi dibuat, Anda dapat melihat tugas yang sudah diaktifkan di halaman “Automations”.
 
+Gunakan tab di atas daftar untuk berpindah antara “Job Saat Ini”, “Eksekusi terbaru”, dan “Job Berakhir”. “Job Berakhir” mengumpulkan tugas yang selesai, gagal, dan kedaluwarsa, sementara tugas yang masih berjalan tetap berada di “Job Saat Ini”.
+
+<div style={{ maxWidth: "420px" }}>
+
+![Halaman Automations dengan tab Job Saat Ini, Eksekusi terbaru, dan Job Berakhir](../images/automation-current-jobs.webp)
+
+</div>
+
+Setelah job mulai berjalan, job tersebut muncul sebagai kartu di “Job Saat Ini” dengan instruksi, jadwal, dan tindakan cepat.
+
+<div style={{ maxWidth: "520px" }}>
+
+![Kartu otomasi yang sedang berjalan di Job Saat Ini](../images/automation-running-job.webp)
+
+</div>
+
 Dari halaman ini, Anda dapat melihat detail otomasi, mengedit tugas, menjedanya, atau menghapusnya sesuai kebutuhan.
 
 Untuk tugas yang saling terhubung, periksa apakah ada tugas downstream yang masih bergantung pada output selesai terbaru tugas upstream sebelum menghapus tugas upstream tersebut.
-
-## Validasi
-
-Setelah membuat atau mengedit otomasi, jangan berhenti pada “berhasil disimpan”. Konfirmasi hal-hal berikut:
-
-1. Tugas muncul di daftar otomasi, dan statusnya sesuai harapan.
-2. Jadwal, periode berlaku, dan pengaturan notifikasi sudah benar.
-3. Jika tugas upstream dihubungkan, tugas upstream sudah memiliki output selesai terbaru.
-4. Setelah satu eksekusi nyata, periksa catatan eksekusi terbaru.
-5. Periksa apakah output benar-benar memakai hasil tugas upstream, bukan menebak konteks yang hilang.
 
 ## Penanganan Kegagalan Umum
 

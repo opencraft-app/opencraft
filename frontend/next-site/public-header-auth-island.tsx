@@ -30,44 +30,55 @@ const secondaryButtonClass: Record<HeaderAppearance, string> = {
   solid: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
 };
 
-const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: string; login: string }> = {
+const copyByLocale: Record<
+  PublicSiteLocale,
+  { createNow: string; enterProduct: string; freeTrial: string; login: string }
+> = {
   'en-US': {
     createNow: 'Create Now',
+    enterProduct: 'Enter LightVela',
     freeTrial: 'Free trial',
     login: 'Sign In',
   },
   'zh-CN': {
     createNow: '立即创建',
+    enterProduct: '开始使用',
     freeTrial: '免费试用',
     login: '登录',
   },
   'zh-SG': {
     createNow: '立即创建',
+    enterProduct: '开始使用',
     freeTrial: '免费试用',
     login: '登录',
   },
   'zh-Hant': {
     createNow: '立即創建',
+    enterProduct: '開始使用',
     freeTrial: '免費試用',
     login: '登入',
   },
   'id-ID': {
     createNow: 'Buat Sekarang',
+    enterProduct: 'Masuk ke LightVela',
     freeTrial: 'Coba Gratis',
     login: 'Masuk',
   },
   es: {
     createNow: 'Crear ahora',
+    enterProduct: 'Entrar a LightVela',
     freeTrial: 'Prueba gratis',
     login: 'Iniciar sesión',
   },
   'ja-JP': {
     createNow: '今すぐ作成',
+    enterProduct: 'LightVelaを開く',
     freeTrial: '無料で試す',
     login: 'ログイン',
   },
   'ko-KR': {
     createNow: '지금 만들기',
+    enterProduct: 'LightVela 열기',
     freeTrial: '무료 체험',
     login: '로그인',
   },
@@ -92,6 +103,7 @@ type PublicHeaderAuthIslandProps = {
   locale?: PublicSiteLocale;
   oauthError?: string | null;
   showLanguageSwitcher?: boolean;
+  showProductEntry?: boolean;
   /**
    * 未登录转化引导：为 true 时右上角主按钮文案改为「免费试用」，
    * 未登录点击直接跳转订阅套餐页（而非弹出登录框）。仅首页启用。
@@ -104,6 +116,7 @@ function PublicHeaderAuthControls({
   locale,
   oauthError = null,
   showLanguageSwitcher = isGlobal,
+  showProductEntry = false,
   promoteFreeTrial = false,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
@@ -117,6 +130,28 @@ function PublicHeaderAuthControls({
   // 未登录转化引导：主按钮文案改为当前 locale 的「免费试用」。
   const createLabel = promoteFreeTrial ? copy.freeTrial : copy.createNow;
   const subscribePath = publicSiteHref('/subscribe', activeLocale, { localized: isGlobal });
+
+  const renderProductEntry = (surface: 'desktop' | 'mobile') => {
+    if (!showProductEntry) return null;
+    const isMobile = surface === 'mobile';
+    return (
+      <a
+        href={AGENTS_HOME_PATH}
+        onClick={() => {
+          trackDatongClick('agent_enter_console_btn', {
+            pgid: DATONG_PAGE_IDS.HOME,
+            params: { surface, target: AGENTS_HOME_PATH },
+          });
+        }}
+        className={cn(
+          'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 font-heading font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2',
+          isMobile ? 'h-[32px] px-3 text-[13px]' : 'h-[36px] px-4 text-sm xl:px-5',
+        )}
+      >
+        {copy.enterProduct}
+      </a>
+    );
+  };
 
   useEffect(() => {
     if (oauthError) {
@@ -178,9 +213,11 @@ function PublicHeaderAuthControls({
       <>
         <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-3">
           {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
+          {renderProductEntry('desktop')}
           <UserAvatarMenu />
         </div>
         <div className="ml-auto flex items-center gap-2 lg:hidden">
+          {renderProductEntry('mobile')}
           <UserAvatarMenu />
         </div>
       </>

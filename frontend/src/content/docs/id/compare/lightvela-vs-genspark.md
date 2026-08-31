@@ -107,4 +107,6 @@ Pandangan saya: **LightVela adalah host Agent khusus yang lebih baik. Genspark a
 
 Jika pertanyaan Anda adalah "Tool mana yang paling cepat membuatkan saya presentasi, laporan riset, dan spreadsheet?", Genspark kemungkinan jawaban yang lebih jelas.
 
+Jika Anda membandingkan host untuk Agent pribadi dengan pekerjaan AI yang didelegasikan, [LightVela vs Grok Bot](./lightvela-vs-grok-bot.md) menjelaskan perbedaan antara Agent yang dapat dikonfigurasi dan Bot persisten di cloud.
+
 Jika pertanyaan Anda adalah "Di mana saya sebaiknya meng-hosting AI Agent yang terus saya pakai setiap hari?", LightVela lebih pas.

@@ -649,6 +649,38 @@ const globalDocs = [
     hideDescription: true,
   },
   {
+    slug: 'compare/lightvela-vs-grok-bot',
+    title: { 'en-US': 'LightVela vs Grok Bot: Which is best to run your personal AI Agent?', 'zh-CN': 'LightVela vs Grok Bot：哪个更适合运行你的个人 AI Agent？' },
+    file: 'compare/lightvela-vs-grok-bot.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': 'Compare LightVela and Grok Bot for running a personal AI Agent, from persistent routines and messaging access to cloud computers and delegated work.', 'zh-CN': '对比 LightVela 与 Grok Bot 运行个人 AI Agent 的方式，了解个人工作流、消息入口、云端电脑与委托式工作的差异。' },
+    hideDescription: true,
+  },
+  {
+    slug: 'compare/lightvela-vs-mira',
+    title: { 'en-US': 'LightVela vs Mira: Which is best to run your personal AI Agent?', 'zh-CN': 'LightVela vs Mira：哪个更适合运行你的个人 AI Agent？' },
+    file: 'compare/lightvela-vs-mira.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': 'Compare LightVela and Mira for running a personal AI Agent, from persistent routines and messaging channels to Telegram-first teamwork and chat-based actions.', 'zh-CN': '对比 LightVela 与 Mira 运行个人 AI Agent 的方式，了解持久化工作流、消息通道、Telegram 协作与聊天驱动操作的差异。' },
+    hideDescription: true,
+  },
+  {
+    slug: 'compare/lightvela-vs-viktor',
+    title: { 'en-US': 'LightVela vs Viktor.com: Which is best to run your personal AI Agent?', 'zh-CN': 'LightVela vs Viktor.com：哪个更适合你的个人 AI Agent？' },
+    file: 'compare/lightvela-vs-viktor.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': 'Compare LightVela and Viktor.com for running a personal AI Agent, from persistent personal assistance to shared team workflows across business tools.', 'zh-CN': '对比 LightVela 与 Viktor.com 运行个人 AI Agent 的方式，了解持久化个人助手与跨业务工具团队工作流的差异。' },
+    hideDescription: true,
+  },
+  {
+    slug: 'compare/lightvela-vs-today-ai',
+    title: { 'en-US': 'LightVela vs Today.AI: Which is best for an always-on personal AI assistant?', 'zh-CN': 'LightVela vs Today.AI：哪个更适合运行始终在线的个人 AI 助手？' },
+    file: 'compare/lightvela-vs-today-ai.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': 'Compare LightVela and Today.AI for an always-on personal AI assistant, from explicit Agent hosting and Automations to proactive personal context across devices.', 'zh-CN': '对比 LightVela 与 Today.AI 的始终在线个人 AI 助手体验，了解明确的 Agent 托管与自动任务，以及跨设备的主动式个人上下文。' },
+    hideDescription: true,
+  },
+  {
     slug: 'hermes-agent/hermes-vs-openclaw',
     title: {
       'en-US': 'Hermes Agent vs OpenClaw: Fundamental Differences Between Two Open-Source Agents',
@@ -1026,6 +1058,22 @@ const ES_DOC_METADATA = {
     title: 'LightVela frente a Genspark: ¿cuál conviene para alojar un Agent de IA?',
     description: 'Compara LightVela y Genspark desde la perspectiva de un Agent personal que se ejecuta en la nube.',
   },
+  'compare/lightvela-vs-grok-bot': {
+    title: 'LightVela frente a Grok Bot: ¿cuál es mejor para ejecutar tu AI Agent personal?',
+    description: 'Compara LightVela y Grok Bot para ejecutar un AI Agent personal, desde las rutinas persistentes y la mensajería hasta los ordenadores cloud y el trabajo delegado.',
+  },
+  'compare/lightvela-vs-mira': {
+    title: 'LightVela frente a Mira: ¿cuál es mejor para ejecutar tu AI Agent personal?',
+    description: 'Compara LightVela y Mira para ejecutar un AI Agent personal, desde las rutinas persistentes y los canales de mensajería hasta la colaboración centrada en Telegram y las acciones desde el chat.',
+  },
+  'compare/lightvela-vs-viktor': {
+    title: 'LightVela frente a Viktor.com: ¿cuál es mejor para ejecutar tu AI Agent personal?',
+    description: 'Compara LightVela y Viktor.com para ejecutar un AI Agent personal, desde la asistencia personal persistente hasta los flujos de equipo entre herramientas empresariales.',
+  },
+  'compare/lightvela-vs-today-ai': {
+    title: 'LightVela frente a Today.AI: ¿cuál es mejor para un asistente personal de IA siempre disponible?',
+    description: 'Compara LightVela y Today.AI para un asistente personal de IA siempre disponible, desde el alojamiento explícito del Agent y las Automatizaciones hasta el contexto personal proactivo entre dispositivos.',
+  },
   'hermes-agent/hermes-vs-openclaw': {
     title: 'Hermes Agent frente a OpenClaw: diferencias fundamentales entre dos Agents de código abierto',
     description: 'Compara Hermes Agent y OpenClaw en memoria a largo plazo, ecosistemas de Skills e integración multiplataforma para identificar qué Agent encaja con tu caso de uso.',
@@ -1280,6 +1328,22 @@ const ID_DOC_METADATA = {
   'compare/lightvela-vs-genspark': {
     title: 'LightVela vs Genspark: Mana yang Lebih Sesuai untuk Hosting AI Agent?',
     description: 'Bandingkan LightVela dan Genspark dari sudut pandang Agent pribadi yang berjalan di cloud.',
+  },
+  'compare/lightvela-vs-grok-bot': {
+    title: 'LightVela vs Grok Bot: Mana yang lebih tepat untuk menjalankan AI Agent pribadi?',
+    description: 'Bandingkan LightVela dan Grok Bot untuk menjalankan AI Agent pribadi, mulai dari rutinitas persisten dan akses pesan hingga komputer cloud dan pekerjaan terdelegasi.',
+  },
+  'compare/lightvela-vs-mira': {
+    title: 'LightVela vs Mira: Mana yang lebih tepat untuk menjalankan AI Agent pribadi?',
+    description: 'Bandingkan LightVela dan Mira untuk menjalankan AI Agent pribadi, mulai dari rutinitas persisten dan kanal pesan hingga kolaborasi yang berpusat pada Telegram dan tindakan melalui chat.',
+  },
+  'compare/lightvela-vs-viktor': {
+    title: 'LightVela vs Viktor.com: Mana yang lebih tepat untuk AI Agent pribadi?',
+    description: 'Bandingkan LightVela dan Viktor.com untuk menjalankan AI Agent pribadi, mulai dari bantuan pribadi yang persisten hingga alur kerja tim lintas tools bisnis.',
+  },
+  'compare/lightvela-vs-today-ai': {
+    title: 'LightVela vs Today.AI: Mana yang lebih tepat untuk asisten AI pribadi yang selalu tersedia?',
+    description: 'Bandingkan LightVela dan Today.AI untuk asisten AI pribadi yang selalu tersedia, mulai dari hosting Agent dan Automations yang jelas hingga konteks pribadi proaktif lintas perangkat.',
   },
   'hermes-agent/hermes-vs-openclaw': {
     title: 'Hermes Agent vs OpenClaw',
@@ -1577,9 +1641,21 @@ function fileToHrefFor(outputPrefix) {
 }
 
 function localizedImageName(imageName, locale) {
-  if (![LOCALES.EN_US, LOCALES.ID_ID, LOCALES.ES, LOCALES.JA_JP].includes(locale) || /-en\.[^.]+$/.test(imageName)) return imageName;
-  const candidate = imageName.replace(/(\.[^.]+)$/, '-en$1');
-  return existsSync(join(sourceRoot, 'images', candidate)) ? candidate : imageName;
+  const suffixesByLocale = {
+    [LOCALES.EN_US]: ['-en'],
+    [LOCALES.ZH_HANT]: ['-zh-hant'],
+    [LOCALES.ID_ID]: ['-id', '-en'],
+    [LOCALES.ES]: ['-es', '-en'],
+    [LOCALES.JA_JP]: ['-en'],
+  };
+  const suffixes = suffixesByLocale[locale];
+  if (!suffixes || /-(?:en|zh-hant|id|es)\.[^.]+$/.test(imageName)) return imageName;
+
+  for (const suffix of suffixes) {
+    const candidate = imageName.replace(/(\.[^.]+)$/, `${suffix}$1`);
+    if (existsSync(join(sourceRoot, 'images', candidate))) return candidate;
+  }
+  return imageName;
 }
 
 function splitHrefSuffix(href) {

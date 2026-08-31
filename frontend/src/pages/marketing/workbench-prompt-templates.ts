@@ -9,32 +9,54 @@
  *   agent-routes.ts 的 getAgentSectionHref 会按 AGENT_SECTION_PERSISTENT_QUERY_KEYS
  *   白名单过滤跨 section 的查询参数（当前白名单为空），URL 上的 prompt 会在跳转时被丢弃。
  *   项目既有的 scenario-pending-install 也采用同样的 sessionStorage 暂存 + resume 模式。
+ *
+ * prompt 语言策略：
+ *   与站点区域（cn/global）解耦，直接按「运行时当前语言」判断——仅简体中文
+ *   （zh-CN，zh-SG 已在 i18n 层映射到 zh-CN）发送中文，其余语言（en-US / zh-Hant /
+ *   id-ID / es / ja-JP / ko-KR 等）一律发送英文。国内站固定 zh-CN 自然发中文。
  */
+
+import i18n from "@/i18n";
 
 export type WorkbenchTemplateId = "tool" | "dashboard" | "campaign" | "profile" | "blank";
 
 /**
- * 所有工作台构建请求共享的技术栈与约束。
+ * 是否使用中文 prompt。
+ *
+ * 仅简体中文（zh-CN）使用中文；zh-SG 无独立字典、i18n 层已映射到 zh-CN，
+ * 因此这里只判断 "zh-CN" 即可。传入值应为 i18n.language（字典 key）。
+ */
+export const isChinesePromptLocale = (language: string): boolean => language === "zh-CN";
+
+/**
+ * 所有工作台构建请求共享的技术栈与约束（中 / 英两版）。
  *
  * 设计要点：这段约束**不写死进模板文案**，而是在「发送那一刻」由 withSharedTechStack
  * 统一追加到最终 prompt 末尾。这样无论来源是预设模板，还是用户自定义输入的内容，
  * 都会带上同一份技术栈约束，避免四处重复、也便于后续统一调整。
  */
-const SHARED_TECH_STACK = [
+const SHARED_TECH_STACK_ZH = [
   "技术栈：React + TypeScript + Tailwind CSS；组件库优先使用 shadcn/ui；图标使用 lucide-react；如需图表可使用 Recharts。",
   "不要预置任何模拟业务数据；内容需要可编辑；数据可暂存至浏览器本地存储（localStorage）。",
   "代码生成完后，使用 website-builder Skill 进行部署。",
 ].join("\n");
 
+const SHARED_TECH_STACK_EN = [
+  "Tech stack: React + TypeScript + Tailwind CSS; prefer shadcn/ui for components; use lucide-react for icons; use Recharts for charts if needed.",
+  "Do not preset any mock business data; content should be editable; data can be temporarily stored in browser local storage (localStorage).",
+  "After generating the code, deploy it using the website-builder Skill.",
+].join("\n");
+
 /**
- * 在任意 prompt 末尾追加共享技术栈约束。
+ * 在任意 prompt 末尾追加共享技术栈约束（按当前语言选择中 / 英）。
  *
  * 适用于所有发往 Agent 的工作台构建请求（预设模板 / 用户自定义输入）。
  * 空白或纯空白 prompt 原样返回，不追加（例如「创建空白工作台」入口不应带约束）。
  */
 export function withSharedTechStack(prompt: string): string {
   if (!prompt.trim()) return prompt;
-  return `${prompt}\n${SHARED_TECH_STACK}`;
+  const stack = isChinesePromptLocale(i18n.language) ? SHARED_TECH_STACK_ZH : SHARED_TECH_STACK_EN;
+  return `${prompt}\n${stack}`;
 }
 
 /**
@@ -70,6 +92,40 @@ export const WORKBENCH_TEMPLATE_PROMPTS: Record<WorkbenchTemplateId, string> = {
   ].join("\n"),
 };
 
+/** 每个启动模板对应的英文场景提示词（与 WORKBENCH_TEMPLATE_PROMPTS 一一对应）。 */
+export const WORKBENCH_TEMPLATE_PROMPTS_EN: Record<WorkbenchTemplateId, string> = {
+  tool: [
+    'I want to build a "clean utility dashboard" type web workbench for form collection, information lookup, or lightweight internal tools.',
+    "Keep the overall style clean and functional, with short user journeys.",
+    "Before starting, please ask me: what scenario this tool solves, what fields/functions are needed, and who it is for.",
+  ].join("\n"),
+  dashboard: [
+    'I want to build a "data dashboard" type web workbench for displaying core metrics, trends, and a business data overview, suitable for daily reports or data summaries.',
+    "Keep the style professional with reasonable information density, so key metrics are visible at a glance.",
+    "Before starting, please ask me: which metrics to show, where the data comes from, how often it updates, and who it is for.",
+  ].join("\n"),
+  campaign: [
+    'I want to build a "campaign landing" type web workbench for activity landing pages, sign-up pages, or redemption entries, suitable for growth and campaign operations.',
+    "Keep the style energetic and persuasive, emphasizing calls to action (sign up / join / redeem).",
+    "Before starting, please ask me: the campaign theme and goals, which modules are needed (sign-up form / rules / prizes, etc.), and the distribution channels.",
+  ].join("\n"),
+  profile: [
+    'I want to build a "personal showcase" type web workbench for a portfolio, personal homepage, or service introduction, suitable for public display.',
+    "Keep the style natural and personal, with clear content hierarchy so visitors can quickly understand me.",
+    "Before starting, please ask me: who the audience is, what content to highlight (works / experience / services / contact info, etc.), and any preferred style.",
+  ].join("\n"),
+  blank: [
+    "I want to create a web workbench.",
+    "Please proactively ask me: what this workbench is for, who it is aimed at, and what core features are needed. Help me clarify the requirements step by step before starting.",
+  ].join("\n"),
+};
+
+/** 按当前语言返回模板 prompt（简体中文返回中文，其余返回英文）。 */
+const resolveTemplatePrompt = (templateId: WorkbenchTemplateId): string =>
+  (isChinesePromptLocale(i18n.language)
+    ? WORKBENCH_TEMPLATE_PROMPTS
+    : WORKBENCH_TEMPLATE_PROMPTS_EN)[templateId];
+
 const PENDING_WORKBENCH_PROMPT_KEY = "lightvela-pending-workbench-prompt-v1";
 const PENDING_WORKBENCH_PROMPT_TTL_MS = 10 * 60 * 1000;
 
@@ -88,13 +144,14 @@ function getWorkbenchPromptStorage(): Storage | null {
 
 /**
  * 保存待发送的工作台提示词（点击卡片时调用）。
+ * 按当前语言写入对应中文 / 英文 prompt。
  * @returns 是否成功写入（无 storage 或未知模板返回 false）
  */
 export function savePendingWorkbenchPrompt(
   templateId: WorkbenchTemplateId,
   now = new Date(),
 ): boolean {
-  const prompt = WORKBENCH_TEMPLATE_PROMPTS[templateId];
+  const prompt = resolveTemplatePrompt(templateId);
   if (!prompt) return false;
   const storage = getWorkbenchPromptStorage();
   if (!storage) return false;

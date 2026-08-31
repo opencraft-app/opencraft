@@ -47,27 +47,30 @@ describe("Agent settings navigation groups", () => {
     expect(setup).toMatch(/id: "channel"[\s\S]*id: "model"/);
     expect(setup).not.toContain('id: "skill"');
     // 「对话」菜单项已移除：入口改由侧边栏顶部「探索/对话」双 tab 承担（sidebar-tabs 改造）。
-    expect(use).toMatch(/id: "skill"[\s\S]*id: "automations"[\s\S]*id: "website"/);
+    expect(use).toMatch(/id: "skill"[\s\S]*id: "automations"/);
+    expect(use).not.toContain('id: "website"');
     expect(use).not.toContain('id: "chat"');
     expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"[\s\S]*id: "achievement"/);
     expect(manage).toMatch(/id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "settings"/);
     expect(manage).not.toContain('id: "labs"');
-    expect(labs).toMatch(/id: "labs"[\s\S]*id: "deepseek-harness"/);
+    expect(labs).toMatch(/id: "website"[\s\S]*id: "deepseek-harness"/);
   });
 
-  it("keeps the My creations navigation entry behind show()", () => {
+  it("工作台导航入口默认显示，不再需要 show() 解锁", () => {
     const settingsGroups = readNavigationSource();
 
-    expect(settingsGroups).toMatch(/isGlobal\s*&&\s*showHiddenAgentTools[\s\S]*id: "website"/);
+    expect(settingsGroups).toContain('id: "website"');
+    expect(settingsGroups).not.toMatch(/isGlobal\s*&&\s*showHiddenAgentTools/);
   });
 
-  it("keeps the website panel directly reachable after hiding its navigation entry", () => {
+  it("工作台面板直接按 activeSection 渲染（不再受 isGlobal 限制）", () => {
     const page = readFileSync(
       join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
       "utf8",
     );
 
-    expect(page).toContain('isGlobal && activeSection === "website"');
+    expect(page).toContain('activeSection === "website"');
+    expect(page).not.toContain('isGlobal && activeSection === "website"');
   });
 
 });

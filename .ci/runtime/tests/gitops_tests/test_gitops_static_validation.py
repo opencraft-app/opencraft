@@ -4,15 +4,83 @@ import textwrap
 import unittest
 from pathlib import Path
 import sys
+from unittest import mock
 
 RUNTIME_DIR = next(parent for parent in Path(__file__).resolve().parents if parent.name == "runtime" and parent.parent.name == ".ci")
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from gitops.gitops_static_validation import validate
+from gitops import gitops_static_validation
+
+validate = gitops_static_validation.validate
 
 
 class GitOpsStaticValidationTests(unittest.TestCase):
+    def test_sgprod_internal_service_token_mismatch_fails(self) -> None:
+        errors = gitops_static_validation.validate_sgprod_internal_service_token_values(
+            ctl_trade_token="ctl-token",
+            ctl_shared_token="ctl-token",
+            trade_shared_token="trade-token",
+        )
+
+        self.assertEqual(
+            errors,
+            [
+                "sgprod internal service token mismatch: "
+                "ctl CTL_TRADE_TOKEN must equal trade LIGHTCLAW_INTERNAL_SERVICE_TOKEN"
+            ],
+        )
+
+    def test_sgprod_ctl_internal_token_alias_mismatch_fails(self) -> None:
+        errors = gitops_static_validation.validate_sgprod_internal_service_token_values(
+            ctl_trade_token="trade-token",
+            ctl_shared_token="stale-token",
+            trade_shared_token="trade-token",
+        )
+
+        self.assertEqual(
+            errors,
+            [
+                "sgprod internal service token mismatch: "
+                "ctl CTL_TRADE_TOKEN must equal ctl LIGHTCLAW_INTERNAL_SERVICE_TOKEN"
+            ],
+        )
+
+    def test_sgprod_internal_service_token_contract_decrypts_both_secrets(self) -> None:
+        with self.repo() as tmp:
+            repo = Path(tmp)
+            secret_dir = repo / "argocd/secrets/sgprod"
+            secret_dir.mkdir(parents=True)
+            ctl_secret = secret_dir / "ctl-runtime-secrets.sops.yaml"
+            trade_secret = secret_dir / "trade-runtime-secrets.sops.yaml"
+            ctl_secret.write_text("encrypted ctl secret\n")
+            trade_secret.write_text("encrypted trade secret\n")
+
+            values = {
+                (ctl_secret.name, "CTL_TRADE_TOKEN"): "ctl-token",
+                (ctl_secret.name, "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"): "ctl-token",
+                (trade_secret.name, "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"): "trade-token",
+            }
+            with mock.patch.object(
+                gitops_static_validation,
+                "decrypt_sops_secret_value",
+                create=True,
+                side_effect=lambda path, key: values[(path.name, key)],
+            ):
+                errors = (
+                    gitops_static_validation.validate_sgprod_internal_service_token_contract(
+                        repo
+                    )
+                )
+
+            self.assertEqual(
+                errors,
+                [
+                    "sgprod internal service token mismatch: "
+                    "ctl CTL_TRADE_TOKEN must equal trade LIGHTCLAW_INTERNAL_SERVICE_TOKEN"
+                ],
+            )
+
     def test_valid_beijing_appset_catalog_and_publish_closure_passes(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp)
