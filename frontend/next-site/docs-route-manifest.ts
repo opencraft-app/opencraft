@@ -194,6 +194,22 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
+      "compare",
+      "lightvela-vs-grok-bot"
+    ],
+    [
+      "compare",
+      "lightvela-vs-mira"
+    ],
+    [
+      "compare",
+      "lightvela-vs-viktor"
+    ],
+    [
+      "compare",
+      "lightvela-vs-today-ai"
+    ],
+    [
       "hermes-agent",
       "hermes-vs-openclaw"
     ],
@@ -596,6 +612,22 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
+      "compare",
+      "lightvela-vs-grok-bot"
+    ],
+    [
+      "compare",
+      "lightvela-vs-mira"
+    ],
+    [
+      "compare",
+      "lightvela-vs-viktor"
+    ],
+    [
+      "compare",
+      "lightvela-vs-today-ai"
+    ],
+    [
       "hermes-agent",
       "hermes-vs-openclaw"
     ],
@@ -838,6 +870,22 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
+      "compare",
+      "lightvela-vs-grok-bot"
+    ],
+    [
+      "compare",
+      "lightvela-vs-mira"
+    ],
+    [
+      "compare",
+      "lightvela-vs-viktor"
+    ],
+    [
+      "compare",
+      "lightvela-vs-today-ai"
+    ],
+    [
       "hermes-agent",
       "hermes-vs-openclaw"
     ],
@@ -1070,6 +1118,22 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "compare",
       "lightvela-vs-genspark"
+    ],
+    [
+      "compare",
+      "lightvela-vs-grok-bot"
+    ],
+    [
+      "compare",
+      "lightvela-vs-mira"
+    ],
+    [
+      "compare",
+      "lightvela-vs-viktor"
+    ],
+    [
+      "compare",
+      "lightvela-vs-today-ai"
     ],
     [
       "hermes-agent",
@@ -1314,6 +1378,22 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
+      "compare",
+      "lightvela-vs-grok-bot"
+    ],
+    [
+      "compare",
+      "lightvela-vs-mira"
+    ],
+    [
+      "compare",
+      "lightvela-vs-viktor"
+    ],
+    [
+      "compare",
+      "lightvela-vs-today-ai"
+    ],
+    [
       "hermes-agent",
       "hermes-vs-openclaw"
     ],
@@ -1437,7 +1517,11 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-hostinger": "2026-08-17",
     "compare/lightvela-vs-manus": "2026-08-18",
     "compare/lightvela-vs-chatgpt": "2026-08-18",
-    "compare/lightvela-vs-genspark": "2026-08-18",
+    "compare/lightvela-vs-genspark": "2026-08-31",
+    "compare/lightvela-vs-grok-bot": "2026-08-31",
+    "compare/lightvela-vs-mira": "2026-08-31",
+    "compare/lightvela-vs-viktor": "2026-08-31",
+    "compare/lightvela-vs-today-ai": "2026-08-31",
     "hermes-agent/hermes-vs-openclaw": "2026-08-03",
     "hermes-agent/why-hermes-remembers-you": "2026-08-18",
     "hermes-agent/user-md-vs-memory-md": "2026-08-12",
@@ -1547,7 +1631,11 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-hostinger": "2026-08-17",
     "compare/lightvela-vs-manus": "2026-08-18",
     "compare/lightvela-vs-chatgpt": "2026-08-18",
-    "compare/lightvela-vs-genspark": "2026-08-18",
+    "compare/lightvela-vs-genspark": "2026-08-31",
+    "compare/lightvela-vs-grok-bot": "2026-08-31",
+    "compare/lightvela-vs-mira": "2026-08-31",
+    "compare/lightvela-vs-viktor": "2026-08-31",
+    "compare/lightvela-vs-today-ai": "2026-08-31",
     "hermes-agent/hermes-vs-openclaw": "2026-08-03",
     "hermes-agent/why-hermes-remembers-you": "2026-08-18",
     "hermes-agent/user-md-vs-memory-md": "2026-08-12",
@@ -1612,7 +1700,11 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-hostinger": "2026-08-17",
     "compare/lightvela-vs-manus": "2026-08-18",
     "compare/lightvela-vs-chatgpt": "2026-08-18",
-    "compare/lightvela-vs-genspark": "2026-08-18",
+    "compare/lightvela-vs-genspark": "2026-08-31",
+    "compare/lightvela-vs-grok-bot": "2026-08-31",
+    "compare/lightvela-vs-mira": "2026-08-31",
+    "compare/lightvela-vs-viktor": "2026-08-31",
+    "compare/lightvela-vs-today-ai": "2026-08-31",
     "hermes-agent/hermes-vs-openclaw": "2026-08-03",
     "hermes-agent/why-hermes-remembers-you": "2026-08-18",
     "hermes-agent/user-md-vs-memory-md": "2026-08-12",
@@ -1675,7 +1767,11 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-hostinger": "2026-08-18",
     "compare/lightvela-vs-manus": "2026-08-18",
     "compare/lightvela-vs-chatgpt": "2026-08-18",
-    "compare/lightvela-vs-genspark": "2026-08-18",
+    "compare/lightvela-vs-genspark": "2026-08-31",
+    "compare/lightvela-vs-grok-bot": "2026-08-31",
+    "compare/lightvela-vs-mira": "2026-08-31",
+    "compare/lightvela-vs-viktor": "2026-08-31",
+    "compare/lightvela-vs-today-ai": "2026-08-31",
     "hermes-agent/hermes-vs-openclaw": "2026-08-18",
     "hermes-agent/why-hermes-remembers-you": "2026-08-18",
     "hermes-agent/user-md-vs-memory-md": "2026-08-18",
@@ -1740,7 +1836,11 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-hostinger": "2026-08-26",
     "compare/lightvela-vs-manus": "2026-08-26",
     "compare/lightvela-vs-chatgpt": "2026-08-26",
-    "compare/lightvela-vs-genspark": "2026-08-26",
+    "compare/lightvela-vs-genspark": "2026-08-31",
+    "compare/lightvela-vs-grok-bot": "2026-08-31",
+    "compare/lightvela-vs-mira": "2026-08-31",
+    "compare/lightvela-vs-viktor": "2026-08-31",
+    "compare/lightvela-vs-today-ai": "2026-08-31",
     "hermes-agent/hermes-vs-openclaw": "2026-08-26",
     "hermes-agent/why-hermes-remembers-you": "2026-08-26",
     "hermes-agent/user-md-vs-memory-md": "2026-08-26",

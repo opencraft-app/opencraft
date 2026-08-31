@@ -107,4 +107,6 @@ Mi opinión: **LightVela es el mejor host de Agent dedicado. Genspark es el mejo
 
 Si tu pregunta es "¿Qué herramienta puede crear para mí una presentación, informe de investigación y hoja de cálculo más rápido?", Genspark probablemente sea la respuesta más obvia.
 
+Si comparas un host para un Agent personal con trabajo de IA delegado, [LightVela frente a Grok Bot](./lightvela-vs-grok-bot.md) explica la diferencia entre un Agent configurable y Bots persistentes en la nube.
+
 Si tu pregunta es "¿Dónde debería alojar un AI Agent que uso cada día?", LightVela es el ajuste más limpio.
