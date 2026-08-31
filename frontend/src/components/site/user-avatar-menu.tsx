@@ -176,16 +176,14 @@ export const UserAvatarMenu = () => {
                 <User className={menuIconClass} />
                 {t("账号管理")}
               </a>
-              {isGlobal && hiddenEntriesRevealed ? (
-                <a
-                  href={WEBSITES_PATH}
-                  onClick={() => setOpen(false)}
-                  className={menuItemClass}
-                >
-                  <Globe className={menuIconClass} />
-                  {t("我的工作台")}
-                </a>
-              ) : null}
+              <a
+                href={WEBSITES_PATH}
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <Globe className={menuIconClass} />
+                {t("我的工作台")}
+              </a>
               {hiddenEntriesRevealed && !isGlobal ? (
                 <a
                   href={PRODUCT_FEEDBACK_URL}
