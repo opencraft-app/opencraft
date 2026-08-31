@@ -72,7 +72,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     }
   });
 
-  it("places skills under use before automations without moving workbench", () => {
+  it("places skills under use before automations; workbench lives in labs", () => {
     const page = readPageSource();
     const setupGroupStart = page.indexOf('id: "setup"');
     const useGroupStart = page.indexOf('id: "use"');
@@ -85,9 +85,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(useGroup.indexOf('id: "skill"')).toBeLessThan(
       useGroup.indexOf('id: "automations"'),
     );
-    expect(useGroup.indexOf('id: "automations"')).toBeLessThan(
-      useGroup.indexOf('id: "website"'),
-    );
+    expect(useGroup).not.toContain('id: "website"');
     expect(useGroup).not.toContain("isGlobal && showHiddenAgentTools");
   });
 

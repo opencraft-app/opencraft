@@ -32,13 +32,13 @@ describe("Agent common settings region boundary", () => {
     expect(notFound).not.toHaveBeenCalled();
   });
 
-  it("keeps websites global-only without filtering ordinary routes", async () => {
+  it("生成并解析 websites 路由（国内国际均可用，不再 global-only）", async () => {
     const domestic = await loadRoute(false);
 
     expect(domestic.route.generateStaticParams()).toContainEqual({ section: "channels" });
-    expect(domestic.route.generateStaticParams()).not.toContainEqual({ section: "websites" });
-    await expect(domestic.route.default({ params: Promise.resolve({ section: "websites" }) })).rejects.toThrow("NEXT_NOT_FOUND");
-    expect(domestic.notFound).toHaveBeenCalledOnce();
+    expect(domestic.route.generateStaticParams()).toContainEqual({ section: "websites" });
+    await expect(domestic.route.default({ params: Promise.resolve({ section: "websites" }) })).resolves.toBeTruthy();
+    expect(domestic.notFound).not.toHaveBeenCalled();
 
     const global = await loadRoute(true);
 
