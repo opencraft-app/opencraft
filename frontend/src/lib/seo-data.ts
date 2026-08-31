@@ -1,3 +1,14 @@
+import {
+  JAPANESE_DEFAULT_SEO_TITLE,
+  JAPANESE_DOC_PAGE_TITLES,
+  JAPANESE_PAGE_DESCRIPTIONS,
+  JAPANESE_SEO_DESCRIPTION,
+  JAPANESE_SEO_KEYWORDS,
+  JAPANESE_SEO_TITLE_SUFFIX,
+  JAPANESE_STATIC_PAGE_TITLES,
+  getJapaneseProductPageTitle,
+} from "./seo-data.ja";
+
 export type SeoRegion = "cn" | "global";
 
 export interface SeoMeta {
@@ -571,10 +582,10 @@ function normalizePathname(pathname: string): string {
  * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "es";
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "es" | "ja-jp";
 
 function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|es|en|zh)(?:\/(.*))?$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|es|ja-jp|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
@@ -593,6 +604,7 @@ const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
   "zh-hant": "zh-Hant",
   "id-id": "id-ID",
   es: "es",
+  "ja-jp": "ja-JP",
 };
 const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   en: "en_US",
@@ -604,6 +616,7 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   "zh-hant": "zh_HK",
   "id-id": "id_ID",
   es: "es_ES",
+  "ja-jp": "ja_JP",
 };
 
 function safeDecodeURIComponent(value: string): string {
@@ -681,6 +694,20 @@ export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
       title: pageTitle ? `${pageTitle} | ${SPANISH_SEO_TITLE_SUFFIX}` : SPANISH_DEFAULT_SEO_TITLE,
       description: SPANISH_PAGE_DESCRIPTIONS[bare] ?? SPANISH_SEO_DESCRIPTION,
       keywords: SPANISH_SEO_KEYWORDS,
+    };
+  }
+  if (r === "global" && urlLang === "ja-jp") {
+    const pageTitle =
+      bare === "/"
+        ? null
+        : JAPANESE_STATIC_PAGE_TITLES[bare] ??
+          JAPANESE_DOC_PAGE_TITLES[bare] ??
+          getJapaneseProductPageTitle(bare) ??
+          (bare.startsWith("/docs/") ? "LightVelaドキュメント" : "ページが見つかりません");
+    return {
+      title: pageTitle ? `${pageTitle} | ${JAPANESE_SEO_TITLE_SUFFIX}` : JAPANESE_DEFAULT_SEO_TITLE,
+      description: JAPANESE_PAGE_DESCRIPTIONS[bare] ?? JAPANESE_SEO_DESCRIPTION,
+      keywords: JAPANESE_SEO_KEYWORDS,
     };
   }
   const lookupRegion = effectiveRegionForLookup(r, urlLang);

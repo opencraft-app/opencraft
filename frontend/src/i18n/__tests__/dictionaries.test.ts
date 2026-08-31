@@ -167,3 +167,30 @@ describe("西语翻译完成门禁", () => {
     expect(teamCopy.every((value) => value.includes("Tencent Lighthouse"))).toBe(true);
   });
 });
+
+describe("日语翻译完成门禁", () => {
+  it("ja-JP 不含空译文", () => {
+    const emptyKeys = Object.entries(jaJP).flatMap(([key, value]) => (value === "" ? [key] : []));
+    expect(emptyKeys, `ja-JP 仍有 ${emptyKeys.length} 条未翻译`).toEqual([]);
+  });
+
+  it("ja-JP 保持占位符且不含机器翻译提示残留", () => {
+    const promptLeakPattern = /ZXQ|LVNEWLINE|LV数字|英文参考|中文原文|保護マーク|保护标记/;
+
+    for (const [key, value] of Object.entries(jaJP)) {
+      const source = zhCN[key as keyof typeof zhCN];
+      expect(placeholdersOf(value), `ja-JP ${key} 的占位符与中文原文不一致`).toEqual(
+        placeholdersOf(source),
+      );
+      expect(value, `ja-JP ${key} 含机器翻译提示残留`).not.toMatch(promptLeakPattern);
+    }
+  });
+
+  it("核心短文案使用日语 UI 表达并保持产品术语", () => {
+    expect(jaJP.k_24575130).toBe("土曜日");
+    expect(jaJP.k_744d02c0).toBe("承認をオフ");
+    expect(jaJP.k_d61247ca).toBe("ソウル");
+    expect(jaJP.k_0a666759).toBe("オフライン");
+    expect(jaJP.k_9905befc).toContain("Hermes Agent");
+  });
+});

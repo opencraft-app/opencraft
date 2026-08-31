@@ -5,6 +5,7 @@ import { type PublicUrlLang } from '@next-site/public-locale';
 import { SubscribePageClient } from '@next-site/subscribe-page-client';
 import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
+import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
 
 const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.EN_US]: 'Choose a Plan',
@@ -13,7 +14,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '選擇套餐',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Pilih Paket',
   [PUBLIC_SITE_LOCALES.ES]: 'Elige un plan',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'Choose a Plan',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/subscribe'),
   [PUBLIC_SITE_LOCALES.KO_KR]: 'Choose a Plan',
 };
 
@@ -24,7 +25,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '選擇適合你的 LightVela 套餐。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Pilih paket LightVela yang sesuai untuk Hermes Agent Anda.',
   [PUBLIC_SITE_LOCALES.ES]: 'Elige el plan de LightVela que mejor se adapte a tu Hermes Agent.',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'Choose the LightVela plan that fits your Hermes Agent.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/subscribe'),
   [PUBLIC_SITE_LOCALES.KO_KR]: 'Choose the LightVela plan that fits your Hermes Agent.',
 };
 

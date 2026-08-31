@@ -142,4 +142,30 @@ describe("seo meta — global multi-URL language prefix", () => {
     expect(getSeoMeta("/es/account/orders", "global").title).toBe(`Pedidos | ${suffix}`);
     expect(getSeoMeta("/es/plans/select", "global").title).toBe(`Elige un plan | ${suffix}`);
   });
+
+  it("returns Japanese metadata and locale fields for prepared /ja-jp routes", () => {
+    const home = getFullSeoMeta("/ja-jp", "global");
+    const about = getFullSeoMeta("/ja-jp/about", "global");
+    const docs = getFullSeoMeta("/ja-jp/docs/overview", "global");
+
+    expect(home.title).toBe("LightVela | あなた専用のクラウドAIエージェント");
+    expect(about.title).toContain("LightVelaについて");
+    expect(docs.title).toContain("LightVelaとは");
+    for (const meta of [home, about, docs]) {
+      expect(meta.description).toMatch(/[\u3040-\u30ff]/);
+      expect(meta.htmlLang).toBe("ja-JP");
+      expect(meta.ogLocale).toBe("ja_JP");
+      expect(meta.ogUrl).toBe(meta.canonical);
+      expect(meta.canonical).toContain("https://lightvela.ai/ja-jp");
+    }
+  });
+
+  it("returns Japanese titles for locale-projected private product routes", () => {
+    const suffix = "LightVela · あなた専用のクラウドAIエージェント";
+
+    expect(getSeoMeta("/ja-jp/agents", "global").title).toBe(`マイエージェント | ${suffix}`);
+    expect(getSeoMeta("/ja-jp/agents/skills", "global").title).toBe(`スキル | ${suffix}`);
+    expect(getSeoMeta("/ja-jp/account", "global").title).toBe(`アカウント | ${suffix}`);
+    expect(getSeoMeta("/ja-jp/plans/select", "global").title).toBe(`プランを選択 | ${suffix}`);
+  });
 });

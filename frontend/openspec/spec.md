@@ -444,3 +444,35 @@ IP 不进入 Redis key 明文、不写业务日志。只有 `SITE_GATEWAY_TRUST_
 - site-gateway：owner-only/public 回归、分享页、动态 Cookie TTL、generation 失效、自动到期、错误/429/503、return_to 安全和受信代理头。
 - 前端：不在本分支验证，交由后续前端实现补充交互测试、类型检查、i18n 与浏览器验收。
 - 门禁：目标 Go 包测试、site-gateway `go test ./...`、`git diff --check`。
+
+---
+
+# 国际站日语完整本地化 Spec
+
+**区域：** `global`，仅国际站 `lightvela.ai`。
+
+**Locale：** `ja-JP`；公开 URL 前缀 `/ja-jp`。
+
+## 1. 发布契约
+
+日语路由、切换器、SEO、Docs 与字体只从 locale 注册表的发布状态派生。完成前保持 `switcherVisible=false`、`translationRequired=false`；自动门禁、母语抽检和法务审阅通过后同时开启。
+
+## 2. 字典与结构化内容
+
+`ja-JP.json` 必须与中文基准 key 集一致、全部非空，且占位符、HTML 标签和换行结构一致。Soul、Buddy、Skills、Experts 与场景任务使用显式日语数据源；发布状态下核心内容不得回退中文或西语。
+
+## 3. Docs
+
+`src/content/docs/ja/**` 与英文/西语发布文档保持 61 个文件同集合。图片目标、代码块、标题层级、表格、事实、能力边界和链接意图保持一致；内链指向 `/ja-jp/docs/**`。日语搜索与 manifest 必须覆盖全部发布 slug。
+
+## 4. 法务
+
+隐私、Cookie 与服务条款提供完整日语译文并声明英文版本优先。开源许可证正文保持英文，只翻译页面结构与说明。
+
+## 5. SEO 与字体
+
+日语 URL 使用 self-canonical、`hreflang=ja-JP`、`og:locale=ja_JP`、`html lang=ja-JP`。只有真实 200 路径进入 sitemap。字体使用 Hiragino Sans / Yu Gothic / Noto Sans JP / system-ui，不将完整日文字形加入 HY 字体子集。
+
+## 6. 排除
+
+国内站、Models、Tea SDK 内部语言包、自动语言识别、账号级语言同步、日韩市场支付与登录能力均不在本次范围。

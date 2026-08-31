@@ -18,14 +18,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "@/i18n/t";
 import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
-import { getSoulSpec } from "@/lib/soul-interpretations";
-import { getEnglishSoulDetail, getEnglishSoulSpec } from "@/lib/soul-english-data";
-import { getIndonesianSoulDetail, getIndonesianSoulSpec } from "@/lib/soul-indonesian-data";
-import { getSpanishSoulDetail, getSpanishSoulSpec } from "@/lib/soul-spanish-data";
-import {
-  getGlobalChineseSoulDetail,
-  getGlobalChineseSoulSpec,
-} from "@/lib/soul-global-chinese-data";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { useAsyncResource } from "@/services/use-async-resource";
 import {
@@ -39,6 +31,11 @@ import {
 } from "@/pages/marketing/agent-buddy-cards";
 import { DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongClick } from "@/observability/datong-tracker";
+import {
+  getBuddySoulDetail,
+  getBuddySoulSpec,
+  type BuddySoulLocale,
+} from "@/pages/marketing/agent-buddy-localization";
 
 /** 跑灯顺序：左→右、上→下，蛇形闭合避免抖动 */
 const CYCLE_ORDER = [0, 1, 2, 5, 4, 3];
@@ -85,6 +82,8 @@ interface DrawSoulModalProps {
   useIndonesianSoulData?: boolean;
   /** 西班牙语：在英文 slug 体系内替换全部展示文案 */
   useSpanishSoulData?: boolean;
+  /** 单一语言解析入口；旧布尔 props 仅保留给兼容调用方。 */
+  soulDataLocale?: BuddySoulLocale;
   onClose: () => void;
   /** 抽中并点击“添加，暂不注入”时回调 */
   onPick: (soul: SkillHubSoul) => void;
@@ -100,11 +99,18 @@ export function DrawSoulModal({
   useGlobalChineseSoulData = false,
   useIndonesianSoulData = false,
   useSpanishSoulData = false,
+  soulDataLocale,
   onClose,
   onPick,
   onInject,
 }: DrawSoulModalProps) {
   const t = useT();
+  const activeSoulLocale = soulDataLocale ?? resolveLegacySoulLocale(
+    useEnglishSoulData,
+    useGlobalChineseSoulData,
+    useIndonesianSoulData,
+    useSpanishSoulData,
+  );
   const [phase, setPhase] = useState<Phase>("idle");
   /** 跑灯当前高亮卡片索引（0-5） */
   const [activeIdx, setActiveIdx] = useState<number>(-1);
@@ -313,10 +319,7 @@ export function DrawSoulModal({
               onConfirm={handleConfirm}
               onInject={handleInject}
               isInjecting={isInjecting}
-              useEnglishSoulData={useEnglishSoulData}
-              useGlobalChineseSoulData={useGlobalChineseSoulData}
-              useIndonesianSoulData={useIndonesianSoulData}
-              useSpanishSoulData={useSpanishSoulData}
+              soulDataLocale={activeSoulLocale}
             />
           )}
         </AnimatePresence>
@@ -475,19 +478,13 @@ function RevealPanel({
   onConfirm,
   onInject,
   isInjecting,
-  useEnglishSoulData,
-  useGlobalChineseSoulData,
-  useIndonesianSoulData = false,
-  useSpanishSoulData = false,
+  soulDataLocale,
 }: {
   soul: SkillHubSoul;
   onConfirm: () => void;
   onInject: () => void;
   isInjecting: boolean;
-  useEnglishSoulData: boolean;
-  useGlobalChineseSoulData: boolean;
-  useIndonesianSoulData?: boolean;
-  useSpanishSoulData?: boolean;
+  soulDataLocale: BuddySoulLocale;
 }) {
   const t = useT();
   const [interpretOpen, setInterpretOpen] = useState(false);
@@ -554,10 +551,7 @@ function RevealPanel({
         {interpretOpen && (
           <SoulInterpretModal
             soul={soul}
-            useEnglishSoulData={useEnglishSoulData}
-            useGlobalChineseSoulData={useGlobalChineseSoulData}
-            useIndonesianSoulData={useIndonesianSoulData}
-            useSpanishSoulData={useSpanishSoulData}
+            soulDataLocale={soulDataLocale}
             onClose={() => setInterpretOpen(false)}
           />
         )}
@@ -568,38 +562,23 @@ function RevealPanel({
 
 function SoulInterpretModal({
   soul,
-  useEnglishSoulData,
-  useGlobalChineseSoulData,
-  useIndonesianSoulData = false,
-  useSpanishSoulData = false,
+  soulDataLocale,
   onClose,
 }: {
   soul: SkillHubSoul;
-  useEnglishSoulData: boolean;
-  useGlobalChineseSoulData: boolean;
-  useIndonesianSoulData?: boolean;
-  useSpanishSoulData?: boolean;
+  soulDataLocale: BuddySoulLocale;
   onClose: () => void;
 }) {
   const t = useT();
   const fetcher = useCallback(() => {
-    if (useEnglishSoulData) {
-      const detail = useSpanishSoulData
-        ? getSpanishSoulDetail(soul.slug)
-        : useIndonesianSoulData
-          ? getIndonesianSoulDetail(soul.slug)
-          : getEnglishSoulDetail(soul.slug);
-      if (!detail) throw new Error("Soul detail not found");
-      return Promise.resolve(detail);
-    }
-    if (useGlobalChineseSoulData) {
-      const detail = getGlobalChineseSoulDetail(soul.slug);
+    if (soulDataLocale !== "domestic-zh") {
+      const detail = getBuddySoulDetail(soulDataLocale, soul.slug);
       if (!detail) throw new Error("Soul detail not found");
       return Promise.resolve(detail);
     }
     return fetchSoulDetail(soul.slug);
-  }, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
-  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
+  }, [soul.slug, soulDataLocale]);
+  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug, soulDataLocale]);
 
   // 用 Portal 挂到 body，避开 reveal panel 的 padding/高度裁切，
   // 同时 fixed 相对视口居中，不被祖先 transform/filter 影响。
@@ -646,15 +625,7 @@ function SoulInterpretModal({
           )}
           {data && (() => {
             // 优先使用本地 SkillHub 同款"人设解读 + 5 维度"；缺失时回退到 OpenSpec
-            const spec = useEnglishSoulData
-              ? (useSpanishSoulData
-                  ? getSpanishSoulSpec(soul.slug)
-                  : useIndonesianSoulData
-                    ? getIndonesianSoulSpec(soul.slug)
-                    : getEnglishSoulSpec(soul.slug))
-              : useGlobalChineseSoulData
-                ? getGlobalChineseSoulSpec(soul.slug)
-                : getSoulSpec(soul.slug);
+            const spec = getBuddySoulSpec(soulDataLocale, soul.slug);
             if (spec) {
               return <SoulSpecPanel spec={spec} />;
             }
@@ -670,4 +641,17 @@ function SoulInterpretModal({
     </motion.div>,
     document.body,
   );
+}
+
+function resolveLegacySoulLocale(
+  useEnglishSoulData: boolean,
+  useGlobalChineseSoulData: boolean,
+  useIndonesianSoulData: boolean,
+  useSpanishSoulData: boolean,
+): BuddySoulLocale {
+  if (useGlobalChineseSoulData) return "global-zh";
+  if (!useEnglishSoulData) return "domestic-zh";
+  if (useSpanishSoulData) return "es";
+  if (useIndonesianSoulData) return "id";
+  return "en";
 }

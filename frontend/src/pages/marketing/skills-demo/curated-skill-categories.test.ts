@@ -17,6 +17,19 @@ describe("curated Discover categories", () => {
     }
   });
 
+  it("provides a complete Japanese overview for every curated international skill", () => {
+    for (const rawId of Object.keys(CURATED_SKILL_OVERVIEWS)) {
+      const english = getCuratedSkillOverview(rawId, "en-US");
+      const japanese = getCuratedSkillOverview(rawId, "ja-JP" as never);
+
+      expect(japanese, rawId).toBeTruthy();
+      expect(japanese.overview, rawId).not.toEqual(english.overview);
+      expect(japanese.basicUsage, rawId).not.toBe(english.basicUsage);
+      expect(japanese.examplePrompt, rawId).not.toBe(english.examplePrompt);
+      expect(JSON.stringify(japanese), rawId).toMatch(/[\u3040-\u30ff]/);
+    }
+  });
+
   it("keeps the four fixed categories and their exact skills.sh IDs", () => {
     expect(CURATED_SKILL_CATEGORIES.map((category) => category.id)).toEqual([
       "market-analysis",
@@ -65,6 +78,15 @@ describe("curated Discover categories", () => {
       "Creación de contenido",
       "Investigación",
       "Herramientas de desarrollo",
+    ]);
+  });
+
+  it("provides Japanese labels for the four fixed categories", () => {
+    expect(CURATED_SKILL_CATEGORIES.map((category) => category.label.ja)).toEqual([
+      "市場分析",
+      "コンテンツ制作",
+      "リサーチ",
+      "開発ツール",
     ]);
   });
 

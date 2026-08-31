@@ -6,6 +6,7 @@ import { PublicHomePage } from '@next-site/public-pages';
 import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS, SoftwareApplicationJsonLd } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
 
 // 首页元数据文案表：以 locale 常量为键，避免 `=== 'en-US'` 类魔法字符串。
 const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
@@ -15,7 +16,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela｜雲端專屬個人 Agent',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'LightVela | Agen AI Pribadi di Cloud',
   [PUBLIC_SITE_LOCALES.ES]: 'LightVela | Tu agente personal de IA en la nube',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'LightVela | Your Personal Cloud AI Agent',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/'),
   [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela | Your Personal Cloud AI Agent',
 };
 
@@ -26,7 +27,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela 是騰訊輕量雲團隊推出的雲端 Agent 託管產品。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'LightVela adalah produk hosting Agent cloud dari tim Tencent Lighthouse.',
   [PUBLIC_SITE_LOCALES.ES]: 'LightVela es una plataforma gestionada para crear y alojar tu agente personal de IA en la nube.',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/'),
   [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.',
 };
 

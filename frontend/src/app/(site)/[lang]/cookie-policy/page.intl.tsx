@@ -5,6 +5,7 @@ import { PublicCookiePolicyPage } from '@next-site/legal-pages';
 import { type PublicUrlLang } from '@next-site/public-locale';
 import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
+import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
 
 const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.EN_US]: 'Cookies Policy',
@@ -13,7 +14,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'Cookies 政策',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Cookies',
   [PUBLIC_SITE_LOCALES.ES]: 'Política de cookies',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'Cookies Policy',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/cookie-policy'),
   [PUBLIC_SITE_LOCALES.KO_KR]: 'Cookies Policy',
 };
 
@@ -24,7 +25,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela Cookies 政策，说明 cookies 的类型、用途和管理方式。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Cookies LightVela, termasuk jenis, tujuan, dan kontrol cookies.',
   [PUBLIC_SITE_LOCALES.ES]: 'Política de cookies de LightVela, incluidos sus tipos, finalidades y opciones de control.',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'LightVela Cookies Policy, including cookie types, purposes, and controls.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/cookie-policy'),
   [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela Cookies Policy, including cookie types, purposes, and controls.',
 };
 

@@ -120,6 +120,30 @@ describe("global public SEO URL contract", () => {
     expect(metadata.openGraph?.url).toBe("https://lightvela.ai/about/");
   });
 
+  it("builds self-consistent Japanese metadata before the release switch is opened", async () => {
+    const { createPublicMetadata } = await importSeoWithRegion("global");
+
+    const metadata = createPublicMetadata({
+      path: "/ja-jp/about",
+      locale: "ja-JP",
+      title: "LightVelaについて",
+      description: "LightVelaのクラウドAIエージェントについて紹介します。",
+    });
+
+    expect(metadata.alternates?.canonical).toBe("/ja-jp/about");
+    expect(metadata.openGraph?.url).toBe("https://lightvela.ai/ja-jp/about/");
+    expect(metadata.openGraph?.locale).toBe("ja_JP");
+    expect(metadata.keywords).toEqual(expect.arrayContaining(["クラウドAIエージェント", "AIアシスタント"]));
+  });
+
+  it("uses Japanese SoftwareApplication structured data", async () => {
+    const { SOFTWARE_APPLICATION_DESCRIPTIONS } = await importSeoWithRegion("global");
+    const description = SOFTWARE_APPLICATION_DESCRIPTIONS["ja-JP"];
+
+    expect(description).toContain("長期的に使える自分専用のAIアシスタント");
+    expect(description).not.toContain("越聊越懂你");
+  });
+
   it("keeps cn canonical/og on the bare path (never /zh-cn/)", async () => {
     // 国内站只有 zh-CN 一种语言，裸路径即唯一正式 URL：
     // canonical / og:url / hreflang 三处必须一致指向裸路径，
@@ -313,6 +337,27 @@ describe("Spanish public page metadata", () => {
     await expect(subscribeMetadata({ params: Promise.resolve({ lang: "es" }) })).resolves.toMatchObject({
       robots: { index: false, follow: false },
     });
+  });
+});
+
+describe("Japanese public page metadata copy", () => {
+  it("provides Japanese title and description for all eight future localized routes", async () => {
+    const { japaneseRouteDescription, japaneseRouteTitle } = await import("../src/lib/seo-data.ja");
+    const paths = [
+      "/",
+      "/about",
+      "/changelog",
+      "/cookie-policy",
+      "/open-source-licenses",
+      "/privacy-policy",
+      "/subscribe",
+      "/terms-of-service",
+    ] as const;
+
+    for (const path of paths) {
+      expect(japaneseRouteTitle(path)).toMatch(/[ぁ-んァ-ヶ一-龯]/u);
+      expect(japaneseRouteDescription(path)).toMatch(/[ぁ-んァ-ヶ一-龯]/u);
+    }
   });
 });
 

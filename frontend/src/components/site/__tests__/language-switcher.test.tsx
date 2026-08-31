@@ -57,6 +57,27 @@ describe("LanguageSwitcher", () => {
     ]);
   });
 
+  it("builds a release-ready Japanese option from the locale registry", () => {
+    expect(buildLanguageSwitcherOptions(["en-US", "ja-JP"], "International Site")).toEqual([
+      { value: "en-US", short: "EN", label: "International Site - English" },
+      { value: "ja-JP", short: "JA", label: "International Site - 日本語" },
+    ]);
+  });
+
+  it("closes the desktop listbox with Escape and restores trigger focus", () => {
+    render(<LanguageSwitcher activeLocale={isGlobal ? "en-US" : "zh-CN"} />);
+    const trigger = screen.getByRole("button", { name: "Change language" });
+
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    expect(screen.getAllByRole("option")[0]).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it("adds Spanish to the global production menu while keeping Japanese and Korean hidden", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_REGION", "global");
@@ -77,6 +98,24 @@ describe("LanguageSwitcher", () => {
     ]);
     expect(screen.getByRole("option", { name: "International Site - Español" })).toBeInTheDocument();
     expect(screen.queryByText(/日本語|한국어/)).not.toBeInTheDocument();
+  });
+
+  it("adds Japanese to the explicit global development preview menu", async () => {
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("NEXT_PUBLIC_REGION", "global");
+    vi.stubEnv("NEXT_PUBLIC_PREVIEW_LOCALES", "ja-JP");
+    const { LanguageSwitcher: PreviewLanguageSwitcher } = await import(
+      "@/components/site/language-switcher"
+    );
+
+    render(<PreviewLanguageSwitcher activeLocale="en-US" />);
+    fireEvent.click(screen.getByRole("button", { name: "Change language" }));
+
+    expect(screen.getByRole("option", {
+      name: "International Site - 日本語",
+    })).toBeInTheDocument();
+    expect(screen.queryByText(/한국어/)).not.toBeInTheDocument();
   });
 
   it("builds Spanish and English international URLs while preserving the public path", () => {

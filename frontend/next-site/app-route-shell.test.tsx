@@ -50,6 +50,20 @@ describe("AppRouteShell document metadata", () => {
     });
   });
 
+  it("uses Japanese title and html lang for a future published product route", async () => {
+    currentLanguage = "ja-JP";
+    render(
+      <AppRouteShell requireAuth={false}>
+        <div>スキル</div>
+      </AppRouteShell>,
+    );
+
+    await waitFor(() => {
+      expect(document.title).toContain("スキル");
+      expect(document.documentElement.lang).toBe("ja-JP");
+    });
+  });
+
   it("uses My Agent for English and switches the title back to Chinese", async () => {
     currentLanguage = "en-US";
     const { rerender } = render(

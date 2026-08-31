@@ -1,6 +1,10 @@
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
-import { localeDefinitionByUrlLang, type UrlLang } from '@/i18n/locales.config';
+import {
+  localeDefinitionByUrlLang,
+  runtimeLocaleDefinitions,
+  type UrlLang,
+} from '@/i18n/locales.config';
 
 export type PublicUrlLang = UrlLang;
 
@@ -43,20 +47,20 @@ export const DEFAULT_PUBLIC_ROUTE_LOCALE: PublicRouteLocale = {
   localized: false,
 };
 
-export const PUBLIC_URL_LANGS = [
-  EN_US_URL_LANG,
-  ZH_CN_URL_LANG,
-  ZH_SG_URL_LANG,
-  ZH_HANT_URL_LANG,
-  ID_ID_URL_LANG,
-  ES_URL_LANG,
-] as const satisfies readonly PublicUrlLang[];
+const RUNTIME_LOCALE_DEFINITIONS = runtimeLocaleDefinitions({
+  region: isGlobal ? 'global' : 'cn',
+  isProduction: process.env.NODE_ENV === 'production',
+  previewLocales: process.env.NEXT_PUBLIC_PREVIEW_LOCALES,
+});
+
+export const PUBLIC_URL_LANGS: readonly PublicUrlLang[] = RUNTIME_LOCALE_DEFINITIONS
+  .map((definition) => definition.urlLang);
 
 /**
  * 运行时公开路由白名单。
  *
- * Spanish 已接通 runtime，但 ja/ko 仍处于隐藏准备阶段；静态生成与 SEO
- * 发布集合由后续任务单独控制，不能直接把注册表全量 locale 当作已发布路由。
+ * 公开运行时路由与切换器共用注册表发布门禁。日语/韩语准备期间不会因
+ * 已注册而意外暴露；当两项发布标志同时打开时会自动进入此集合。
  */
 export const PUBLIC_RUNTIME_URL_LANGS = PUBLIC_URL_LANGS;
 

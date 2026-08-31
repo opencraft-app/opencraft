@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { formatScenarioQuickPrompt } from "../scenario-packs";
 import {
   getOverviewScenarioTaskPacks,
+  hasLocalizedOverviewCopy,
   OVERVIEW_SCENARIO_TASK_PACKS,
 } from "../overview-packs";
 
@@ -193,8 +194,39 @@ describe("getOverviewScenarioTaskPacks", () => {
     });
   });
 
+  it("localizes all six Japanese packs without falling back to the Chinese source", () => {
+    const packs = getOverviewScenarioTaskPacks("ja-JP");
+
+    expect(hasLocalizedOverviewCopy("ja-JP")).toBe(true);
+    expect(packs.map((pack) => pack.name)).toEqual([
+      "水分補給・服薬リマインダー",
+      "家賃リマインダー",
+      "為替レートアラート",
+      "カロリー・運動記録",
+      "祝日・天気チェック",
+      "株式情報ダイジェスト",
+    ]);
+
+    packs.forEach((pack, index) => {
+      const original = OVERVIEW_SCENARIO_TASK_PACKS[index];
+      expect(original).toBeDefined();
+      expect(pack.id).toBe(original?.id);
+      expect(pack.defaultSchedule).toBe(original?.defaultSchedule);
+      expect(pack.promptBuilder).toBe(original?.promptBuilder);
+      expect(pack.quickPromptLocale).toBe("ja-JP");
+      expect(`${pack.name}${pack.valueProp}${pack.description}`).toMatch(/[\u3040-\u30ff]/);
+      expect(pack.name).not.toBe(original?.name);
+      expect(pack.fields.map((field) => field.key)).toEqual(original?.fields.map((field) => field.key));
+      pack.fields.forEach((field, fieldIndex) => {
+        expect(field.label, `${pack.id}.${field.key}`).not.toBe(original?.fields[fieldIndex]?.label);
+      });
+      const defaultValues = Object.fromEntries(pack.fields.map((field) => [field.key, field.defaultValue]));
+      expect(formatScenarioQuickPrompt(pack, defaultValues), pack.id).toMatch(/[\u3040-\u30ff]/);
+    });
+  });
+
   it("includes an editable reminder time in every localized overview task request", () => {
-    for (const locale of ["zh-CN", "zh-SG", "en-US", "id-ID", "es"] as const) {
+    for (const locale of ["zh-CN", "zh-SG", "en-US", "id-ID", "es", "ja-JP"] as const) {
       for (const pack of getOverviewScenarioTaskPacks(locale)) {
         const defaultValues = Object.fromEntries(
           pack.fields.map((field) => [field.key, field.defaultValue]),

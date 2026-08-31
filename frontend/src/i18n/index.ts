@@ -17,10 +17,11 @@
  *   - 国际站浏览器侧可通过 `localStorage.setItem('lw-locale', 'en-US')` 覆盖
  *   - 国内站固定中文，忽略跨站点遗留的语言覆盖
  *
- * 不做的事（保持简单）：
+ * 加载策略：
  *   - 不接 `i18next-browser-languagedetector`
- *   - 不做懒加载 / 分包（文案整体体积很小，直接静态 import 更快）
- *     注意：语种增多后需复测首屏体积，必要时改为按 locale 分包。
+ *   - 已发布语种同步装载，保证既有首屏行为不变
+ *   - 尚未发布的日语/韩语按需分包；发布前性能门禁证明日语若同步装载会让
+ *     首页 gzip JS 增加超过 100 KB
  */
 
 import i18n from "i18next";
@@ -32,34 +33,41 @@ import {
   type I18nDictKey,
   type LocaleCode,
   localeDefinition,
-  parseLocaleCode,
+  parseRuntimeLocaleCode,
 } from "./locales.config";
 import enUS from "./generated/en-US.json";
 import es from "./generated/es.json";
 import idID from "./generated/id-ID.json";
-import jaJP from "./generated/ja-JP.json";
-import koKR from "./generated/ko-KR.json";
 import zhCN from "./generated/zh-CN.json";
 import zhHant from "./generated/zh-Hant.json";
 
+type TranslationDictionary = Record<string, string>;
+
 /**
- * 字典文件映射。
+ * 首屏同步字典与按需字典。
  *
- * 这是全项目**唯一**需要在新增语种时补充静态 import 的地方——因为
- * 打包器要求 import 路径为字面量，无法用注册表数据动态拼接。
- *
- * 类型为 `Record<I18nDictKey, …>`，因此注册表新增字典语种而此处
- * 未补 import 时，`tsc` 会直接报错，不会静默缺失字典。
+ * 动态 import 仍保持字面量路径，确保打包器生成独立 chunk。日语或韩语
+ * 成为当前 URL / 用户选择时才下载；已发布既有语种继续同步可用。
  */
-const DICTIONARIES: Record<I18nDictKey, Record<string, string>> = {
+const EAGER_DICTIONARIES: Partial<Record<I18nDictKey, TranslationDictionary>> = {
   "en-US": enUS,
   "zh-CN": zhCN,
   "zh-Hant": zhHant,
   "id-ID": idID,
   es,
-  "ja-JP": jaJP,
-  "ko-KR": koKR,
 };
+
+const LAZY_DICTIONARY_LOADERS: Partial<
+  Record<I18nDictKey, () => Promise<TranslationDictionary>>
+> = {
+  "ja-JP": async () => (await import("./generated/ja-JP.json")).default,
+  "ko-KR": async () => (await import("./generated/ko-KR.json")).default,
+};
+
+const dictionaryCache: Partial<Record<I18nDictKey, TranslationDictionary>> = {
+  ...EAGER_DICTIONARIES,
+};
+const dictionaryLoads = new Map<I18nDictKey, Promise<TranslationDictionary>>();
 
 /**
  * i18next 支持的 locale 类型。
@@ -72,6 +80,12 @@ export type SupportedLocale = LocaleCode;
 /** 本地存储 key，用户手动切换语言时持久化 */
 const LOCALE_STORAGE_KEY = "lw-locale";
 
+const RUNTIME_LOCALE_OPTIONS = {
+  region: isGlobal ? "global" : "cn",
+  isProduction: process.env.NODE_ENV === "production",
+  previewLocales: process.env.NEXT_PUBLIC_PREVIEW_LOCALES,
+} as const;
+
 /**
  * 读取用户手动覆盖的语言（若存在）。
  *
@@ -81,11 +95,18 @@ const LOCALE_STORAGE_KEY = "lw-locale";
 const readOverride = (): LocaleCode | null => {
   if (typeof window === "undefined") return null;
   try {
-    return parseLocaleCode(window.localStorage.getItem(LOCALE_STORAGE_KEY));
+    return parseRuntimeLocaleCode(
+      window.localStorage.getItem(LOCALE_STORAGE_KEY),
+      RUNTIME_LOCALE_OPTIONS,
+    );
   } catch {
     return null;
   }
 };
+
+/** `zh-SG` 等公开 locale 统一解析到实际字典 key。 */
+const dictKeyForLocale = (locale: LocaleCode): I18nDictKey =>
+  localeDefinition(locale).i18nKey;
 
 /**
  * 初始语言优先级（仅国际站涉及多语言；国内站固定中文）：
@@ -98,8 +119,10 @@ const readOverride = (): LocaleCode | null => {
 const pathnameForInitialLocale =
   typeof window !== "undefined" ? window.location.pathname : null;
 
-const initialLocaleFromPath =
-  pathnameForInitialLocale ? readLocaleFromPath(pathnameForInitialLocale) : null;
+const initialLocaleFromPath = parseRuntimeLocaleCode(
+  pathnameForInitialLocale ? readLocaleFromPath(pathnameForInitialLocale) : null,
+  RUNTIME_LOCALE_OPTIONS,
+);
 
 const shouldUseDefaultLocaleForBarePublicRoot =
   pathnameForInitialLocale === "/" && DEFAULT_LOCALE === "en-US";
@@ -110,6 +133,39 @@ const initialLocale: LocaleCode =
       (shouldUseDefaultLocaleForBarePublicRoot ? DEFAULT_LOCALE : readOverride())
     : null) ??
   DEFAULT_LOCALE;
+
+const initialDictKey = dictKeyForLocale(initialLocale);
+
+async function loadDictionary(dictKey: I18nDictKey): Promise<TranslationDictionary> {
+  const cached = dictionaryCache[dictKey];
+  if (cached) return cached;
+
+  const existingLoad = dictionaryLoads.get(dictKey);
+  if (existingLoad) return existingLoad;
+
+  const loader = LAZY_DICTIONARY_LOADERS[dictKey];
+  if (!loader) throw new Error(`[i18n] missing dictionary loader: ${dictKey}`);
+  const load = loader().then((dictionary) => {
+    dictionaryCache[dictKey] = dictionary;
+    dictionaryLoads.delete(dictKey);
+    return dictionary;
+  });
+  dictionaryLoads.set(dictKey, load);
+  return load;
+}
+
+/*
+ * 服务端会按多条 locale 路由并发渲染，共享同一个 i18n 单例，因此预载独立
+ * chunk 中的字典，保证 LocaleOverrideProvider 的 SSR 首帧不回退中文。
+ * 浏览器只加载当前 URL 对应字典，首页仍不会下载日语/韩语 chunk。
+ */
+if (typeof window === "undefined") {
+  await Promise.all(
+    (Object.keys(LAZY_DICTIONARY_LOADERS) as I18nDictKey[]).map(loadDictionary),
+  );
+} else if (!dictionaryCache[initialDictKey]) {
+  await loadDictionary(initialDictKey);
+}
 
 /**
  * 从带语言前缀的公开页进入时，把该语言持久化下来。
@@ -130,18 +186,9 @@ if (initialLocaleFromPath && typeof window !== "undefined") {
   }
 }
 
-/**
- * 把 locale 解析为实际使用的字典 key。
- *
- * `zh-SG` 没有独立字典，其 `i18nKey` 指向 `zh-CN`；此处统一走注册表，
- * 避免调用方各自用 `startsWith('zh')` 猜测。
- */
-const dictKeyForLocale = (locale: LocaleCode): I18nDictKey =>
-  localeDefinition(locale).i18nKey;
-
 /** 按注册表装配 i18next resources，新增字典语种无需改这段循环。 */
 const resources: Resource = Object.fromEntries(
-  Object.entries(DICTIONARIES).map(([dictKey, translation]) => [dictKey, { translation }]),
+  Object.entries(dictionaryCache).map(([dictKey, translation]) => [dictKey, { translation }]),
 );
 
 void i18n.use(initReactI18next).init({
@@ -157,18 +204,35 @@ void i18n.use(initReactI18next).init({
   returnNull: false,
 });
 
+/** 确保目标 locale 的字典已经注册，供切换器和静态渲染共用。 */
+export async function ensureLocaleDictionary(locale: SupportedLocale): Promise<I18nDictKey> {
+  const dictKey = dictKeyForLocale(locale);
+  if (!i18n.hasResourceBundle(dictKey, "translation")) {
+    const translation = await loadDictionary(dictKey);
+    i18n.addResourceBundle(dictKey, "translation", translation, true, true);
+  }
+  return dictKey;
+}
+
 /**
  * 手动切换语言并持久化
  * @example setLocale('ja-JP')
  */
 export const setLocale = (locale: SupportedLocale): void => {
+  const runtimeLocale = parseRuntimeLocaleCode(locale, RUNTIME_LOCALE_OPTIONS);
+  if (!runtimeLocale) return;
   try {
-    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, runtimeLocale);
   } catch {
     /* 隐私模式等场景 localStorage 不可用，忽略 */
   }
   /* 切到实际字典 key：zh-SG 需落到 zh-CN，否则 i18next 找不到资源。 */
-  void i18n.changeLanguage(dictKeyForLocale(locale));
+  const dictKey = dictKeyForLocale(runtimeLocale);
+  if (i18n.hasResourceBundle(dictKey, "translation")) {
+    void i18n.changeLanguage(dictKey);
+    return;
+  }
+  void ensureLocaleDictionary(runtimeLocale).then((loadedDictKey) => i18n.changeLanguage(loadedDictKey));
 };
 
 export default i18n;

@@ -193,17 +193,21 @@ const frontmatterValue = (content: string, key: string) => {
   return JSON.parse(match[1]) as string;
 };
 
-const spanishDocsTargets = (content: string): string[] => {
+const localizedDocsTargets = (content: string, locale: "es" | "ja-jp"): string[] => {
   const targets: string[] = [];
-  for (const match of content.matchAll(/(?<!!)\[[^\]\n]+]\((\S+)(?:\s+(?:"[^"]*"|'[^']*'))?\)/g)) {
+  for (const match of content.matchAll(/(?<!!)\[[^\]\n]+]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)/g)) {
     const href = match[1];
     if (!href) continue;
     const path = href.split(/[?#]/, 1)[0] ?? "";
-    if (path !== "/es/docs" && !path.startsWith("/es/docs/")) continue;
-    targets.push(path.slice("/es/docs".length).replace(/^\//, "").replace(/\/$/, ""));
+    const docsRoot = `/${locale}/docs`;
+    if (path !== docsRoot && !path.startsWith(`${docsRoot}/`)) continue;
+    targets.push(path.slice(docsRoot.length).replace(/^\//, "").replace(/\/$/, ""));
   }
   return targets;
 };
+
+const spanishDocsTargets = (content: string): string[] => localizedDocsTargets(content, "es");
+const japaneseDocsTargets = (content: string): string[] => localizedDocsTargets(content, "ja-jp");
 
 describe("international docs publication inventory", () => {
   describe("Spanish docs source parity", () => {
@@ -234,6 +238,100 @@ describe("international docs publication inventory", () => {
         expect(spanish, `${file}: Tencent Lighthouse team name was rewritten`).not.toMatch(
           /Tencent Cloud Lighthouse|Tencent Cloud Light\b/,
         );
+      }
+    });
+  });
+
+  describe("Japanese docs source parity", () => {
+    const enRoot = join(docsContentRoot, "en");
+    const jaRoot = join(docsContentRoot, "ja");
+    const generatedJaRoot = join(generatedDocsRoot, "ja-jp");
+
+    it("keeps a complete Japanese source file for every international English document", () => {
+      expect(markdownFilesRelativeTo(jaRoot)).toEqual(markdownFilesRelativeTo(enRoot));
+    });
+
+    it("preserves images, links, fenced code, and document structure in every Japanese source", () => {
+      for (const file of markdownFilesRelativeTo(jaRoot)) {
+        const english = readFileSync(join(enRoot, file), "utf8");
+        const japanese = readFileSync(join(jaRoot, file), "utf8");
+
+        expect(imageTargets(japanese), `${file}: image targets changed`).toEqual(imageTargets(english));
+        expect(linkTargets(japanese), `${file}: link targets changed`).toEqual(linkTargets(english));
+        expect(fencedCodeBlocks(japanese), `${file}: fenced code changed`).toEqual(fencedCodeBlocks(english));
+        expect(markdownStructure(japanese), `${file}: heading or table structure changed`).toEqual(
+          markdownStructure(english),
+        );
+        expect(japanese.match(/[ぁ-んァ-ヶ一-龠]/g)?.length ?? 0, `${file}: Japanese body is missing`).toBeGreaterThan(30);
+      }
+    });
+
+    it("provides an international-only Japanese search endpoint", () => {
+      const routeRoot = join(process.cwd(), "src", "app", "api", "search", "ja-jp");
+      expect(existsSync(join(routeRoot, "route.intl.ts"))).toBe(true);
+      expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
+    });
+
+    it("generates the same 63-route inventory as English from Japanese sources", () => {
+      expect(docsRouteSlugs["ja-jp"]).toEqual(docsRouteSlugs["en-us"]);
+      expect(docsRouteSlugs["ja-jp"]).toHaveLength(63);
+      const generatedDocs = walkFiles(generatedJaRoot).filter((path) => path.endsWith(".mdx"));
+      expect(generatedDocs).toHaveLength(62);
+      for (const path of generatedDocs) {
+        expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
+          /^src\/content\/docs\/ja\//,
+        );
+      }
+    });
+
+    it("uses Japanese page, navigation, breadcrumb, and search controls", () => {
+      const overview = readFileSync(join(generatedJaRoot, "overview.mdx"), "utf8");
+      expect(frontmatterValue(overview, "title")).toBe("LightVelaとは何ですか");
+      expect(frontmatterValue(overview, "description")).toContain("クラウドホスト型エージェントプラットフォーム");
+
+      const meta = JSON.parse(readFileSync(join(generatedJaRoot, "meta.json"), "utf8")) as {
+        title: string;
+        pages: string[];
+      };
+      expect(meta.title).toBe("LightVelaドキュメント");
+      expect(meta.pages.filter((page) => page.startsWith("---"))).toEqual([
+        "---はじめに---",
+        "---プランと利用開始---",
+        "---機能と設定---",
+        "---ユースケース---",
+        "---比較と選び方---",
+        "---Hermes Agentを深く知る---",
+        "---サポート---",
+      ]);
+
+      expect(docsPageApi.docsBreadcrumbName?.("ja-jp")).toBe("ドキュメント");
+      expect(docsLayoutApi.fumadocsTranslations?.("ja-jp")).toEqual({
+        "Close Search(search dialog)(aria-label)": "検索を閉じる",
+        "No Headings(table of contents)": "見出しはありません",
+        "No results found(search dialog)": "結果が見つかりません",
+        "On this page(table of contents)": "このページの内容",
+        "Open Search(search trigger)(aria-label)": "検索を開く",
+        "Search(search dialog)": "検索",
+        "Search(search trigger)": "ドキュメントを検索",
+      });
+    });
+
+    it("maps Japanese content without opening the public route release gate", () => {
+      expect(docsRouteApi.publicLocaleForDocsRoute?.("ja-jp")).toBe("ja-JP");
+      expect(docsRouteApi.docsRouteLocalesForRegion?.("global")).not.toContain("ja-jp");
+    });
+
+    it("localizes every generated Japanese docs link to a real Japanese route", () => {
+      const routeSet = new Set(docsRouteSlugs["ja-jp"].map((slug) => slug.join("/")));
+      const generatedDocs = walkFiles(generatedJaRoot).filter((path) => path.endsWith(".mdx"));
+      for (const path of generatedDocs) {
+        const content = readFileSync(path, "utf8");
+        expect(content, path).not.toMatch(/]\(https:\/\/lightvela\.ai\/docs(?:\/|\))/);
+        expect(content, path).not.toMatch(/]\(\/docs(?:\/|\))/);
+        expect(content, path).not.toMatch(/]\([^)]*\.md(?:[)#])/);
+        for (const target of japaneseDocsTargets(content)) {
+          expect(routeSet.has(target), `${path} links to missing /ja-jp/docs/${target}`).toBe(true);
+        }
       }
     });
   });
@@ -300,11 +398,11 @@ describe("international docs publication inventory", () => {
   describe("Spanish docs source publication", () => {
     const esRoot = join(generatedDocsRoot, "es");
 
-    it("publishes the same 63 routes as international English without exposing hidden locales", () => {
+    it("publishes the same 63 routes as international English while Korean remains unprepared", () => {
       expect(docsRouteSlugs.es).toEqual(docsRouteSlugs["en-us"]);
       expect(docsRouteSlugs.es).toHaveLength(63);
       expect(docsRouteSlugs.es).toContainEqual([]);
-      expect(Object.keys(docsRouteSlugs)).not.toContain("ja-jp");
+      expect(Object.keys(docsRouteSlugs)).toContain("ja-jp");
       expect(Object.keys(docsRouteSlugs)).not.toContain("ko-kr");
     });
 

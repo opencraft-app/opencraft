@@ -5492,3 +5492,25 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `git diff --check` 通过；`$baseline-ui` 核对无新增绝对定位、换行布局、新动画或交互原语。
 
 ---
+
+# 国际站日语完整本地化 Implementation Plan
+
+**Goal:** 先完整交付国际站日语，再复用同一流水线完成韩语。
+
+**Design:** `openspec/changes/2026-08-28-japanese-localization-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-28-japanese-localization-plan.md`
+
+## Tasks
+
+- [x] 建立日语发布契约和注册表派生的 locale resolver，先写失败测试。
+- [x] 补齐 2654 条日语 UI 字典并通过结构与术语门禁。
+- [x] 完成 Soul、Buddy、Skills、Experts 与场景任务日语结构化内容。
+- [x] 完成公开页、SEO、metadata、sitemap 与 JSON-LD 日语适配。
+- [x] 完成 61 篇日语 Docs、搜索路由和 manifest。
+- [x] 完成日语法务页面并生成全文人工审阅清单。
+- [x] 完成日语字体、语言切换器和性能门禁；日语/韩语字典按 locale 分包，首页 gzip 相对基线 -2.84%。
+- [x] 增加仅限国际站开发环境的日语预览开关，完成首页、Docs、法务页与移动端浏览器验收；生产发布标记保持关闭。
+- [ ] 完成日语母语审校与法务审阅后开放生产注册表标记，等待用户确认后再提交。
+
+---

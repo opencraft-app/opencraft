@@ -30,6 +30,97 @@ import {
 
 const spanishEnglishPrevailsDisclaimer =
   'En caso de discrepancia o incoherencia entre la versión en inglés y esta traducción al español, prevalecerá la versión en inglés, salvo que la legislación aplicable disponga lo contrario.';
+const japaneseEnglishPrevailsDisclaimer =
+  '英語版と本日本語訳の間に相違または不一致がある場合、適用法令に別段の定めがない限り、英語版が優先されます。';
+
+describe('Japanese legal page navigation', () => {
+  it('keeps every legal page and internal legal link under /ja-jp', () => {
+    expect(cookiePolicyHomePath('ja-JP')).toBe('/ja-jp/');
+    expect(openSourceHomePath('ja-JP')).toBe('/ja-jp/');
+    expect(privacyHomePath('ja-JP')).toBe('/ja-jp/');
+    expect(localizedLegalPath('/', 'ja-JP', true)).toBe('/ja-jp/');
+    expect(localizedLightVelaUrl('https://lightvela.ai/zh-sg/privacy-policy/', 'ja-JP', true)).toEqual({
+      href: '/ja-jp/privacy-policy/',
+      label: 'https://lightvela.ai/ja-jp/privacy-policy/',
+    });
+  });
+
+  it('keeps Japanese legal structures aligned with English and includes the English-prevails disclaimer', () => {
+    const japanesePrivacy = getPrivacyPolicyCopy('ja-JP');
+    const englishPrivacy = getPrivacyPolicyCopy('en-US');
+    expect(japanesePrivacy).toMatchObject({
+      title: 'プライバシーポリシー',
+      languageTitle: '10. 言語',
+      languageParagraph: japaneseEnglishPrevailsDisclaimer,
+    });
+    expect(japanesePrivacy.intro).toHaveLength(englishPrivacy.intro.length);
+    expect(japanesePrivacy.processRows.map((group) => group.data.length)).toEqual(
+      englishPrivacy.processRows.map((group) => group.data.length),
+    );
+    expect(japanesePrivacy.shareBullets).toHaveLength(englishPrivacy.shareBullets.length);
+    expect(japanesePrivacy.retentionRows).toHaveLength(englishPrivacy.retentionRows.length);
+    expect(japanesePrivacy.rightsBullets).toHaveLength(englishPrivacy.rightsBullets.length);
+    expect(getPrivacyPolicyTableHeaders('ja-JP')).toEqual({
+      personal: '個人情報',
+      use: '利用目的',
+      legalBasis: '法的根拠（該当する場合）',
+      retentionPolicy: '保存方針',
+    });
+
+    const japaneseCookies = getCookiePolicyCopy('ja-JP');
+    const englishCookies = getCookiePolicyCopy('en-US');
+    expect(japaneseCookies.sections.at(-1)).toEqual({
+      title: '7. 言語',
+      paragraphs: [japaneseEnglishPrevailsDisclaimer],
+    });
+    expect(japaneseCookies.sections).toHaveLength(englishCookies.sections.length + 1);
+    expect(japaneseCookies.sections.flatMap((section) => section.tableRows ?? [])).toHaveLength(
+      englishCookies.sections.flatMap((section) => section.tableRows ?? []).length,
+    );
+
+    const japaneseTerms = getTermsOfServiceBlocks('ja-JP', []);
+    expect(japaneseTerms).toHaveLength(455);
+    expect(japaneseTerms).toEqual(expect.arrayContaining([
+      { kind: 'h2', text: '言語' },
+      { kind: 'paragraph', text: japaneseEnglishPrevailsDisclaimer },
+    ]));
+  });
+
+  it('localizes Japanese page chrome and Open Source headings while preserving license terms', () => {
+    expect(getPrivacyPolicyChrome('ja-JP')).toMatchObject({
+      backHome: 'ホームに戻る',
+      title: 'プライバシーポリシー',
+      updated: '最終更新: 2026年8月',
+    });
+    expect(getCookiePolicyChrome('ja-JP')).toMatchObject({
+      backHome: 'ホームに戻る',
+      title: 'Cookieポリシー',
+    });
+    expect(getTermsOfServiceChrome('ja-JP')).toMatchObject({
+      backHome: 'ホームに戻る',
+      title: '利用規約',
+    });
+    expect(getOpenSourceLicensesChrome('ja-JP')).toMatchObject({
+      backHome: 'ホームに戻る',
+      title: 'オープンソースに関する通知',
+      updated: '最終更新: 2026年8月',
+    });
+    expect(translateNoticeText('Terms of the Apache License 2.0:', 'ja-JP')).toBe(
+      'Apache License 2.0の条項:',
+    );
+    expect(translateNoticeText('Permission is hereby granted, free of charge, to any person obtaining a copy', 'ja-JP')).toBe(
+      'Permission is hereby granted, free of charge, to any person obtaining a copy',
+    );
+
+    const cookieLinks = renderToStaticMarkup(React.createElement(CookiePolicyParagraph, {
+      text: 'お問い合わせはこちら。Chrome（ウェブ）のCookie設定とChromeブラウザのアドオン、すべてのCookieについてをご確認ください。',
+    }));
+    expect(cookieLinks).toContain('mailto:lightvela@tencent.com');
+    expect(cookieLinks).toContain('hl=ja');
+    expect(cookieLinks).toContain('https://tools.google.com/dlpage/gaoptout');
+    expect(cookieLinks).toContain('https://allaboutcookies.org/');
+  });
+});
 
 describe('Spanish legal page navigation', () => {
   it('keeps every legal page home link under /es', () => {

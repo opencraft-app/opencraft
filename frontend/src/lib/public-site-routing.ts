@@ -18,6 +18,7 @@ import {
   localeDefinition,
   parseLocaleCode,
   resolveUrlLangToLocale,
+  runtimeLocaleDefinitions,
   type UrlLang,
 } from "@/i18n/locales.config";
 
@@ -62,6 +63,12 @@ export const PUBLIC_URL_LANGS = {
   KO_KR: "ko-kr",
 } as const satisfies Record<string, CanonicalPublicUrlLang>;
 
+const RUNTIME_LOCALE_DEFINITIONS = runtimeLocaleDefinitions({
+  region: process.env.NEXT_PUBLIC_REGION === "global" ? "global" : "cn",
+  isProduction: process.env.NODE_ENV === "production",
+  previewLocales: process.env.NEXT_PUBLIC_PREVIEW_LOCALES,
+});
+
 /** Resolve untrusted i18n values through the registry while keeping hidden locales inaccessible. */
 export function resolveVisiblePublicSiteLocale(
   localeOverride: string | null | undefined,
@@ -69,7 +76,9 @@ export function resolveVisiblePublicSiteLocale(
 ): PublicSiteLocaleCode {
   for (const value of [localeOverride, i18nLanguage]) {
     const locale = parseLocaleCode(value);
-    if (locale && localeDefinition(locale).switcherVisible) return locale;
+    if (locale && RUNTIME_LOCALE_DEFINITIONS.some((definition) => definition.code === locale)) {
+      return locale;
+    }
   }
   return PUBLIC_SITE_LOCALES.EN_US;
 }
@@ -163,8 +172,7 @@ export const SEO_PREFIXED_URL_LANGS: readonly CanonicalPublicUrlLang[] = LOCALE_
 export const ALL_CANONICAL_URL_LANGS: readonly CanonicalPublicUrlLang[] = ALL_URL_LANGS;
 
 /** 在语言切换器中展示的 locale。 */
-export const SWITCHER_VISIBLE_LOCALES: readonly PublicSiteLocaleCode[] = LOCALE_DEFINITIONS
-  .filter((def) => def.switcherVisible)
-  .map((def) => def.code);
+export const SWITCHER_VISIBLE_LOCALES: readonly PublicSiteLocaleCode[] = RUNTIME_LOCALE_DEFINITIONS
+  .map((definition) => definition.code);
 
 export { localeDefinition, resolveUrlLangToLocale };

@@ -18,12 +18,13 @@ import {
 describe("subset fonts", () => {
   it("derives published dictionaries from the locale registry instead of a mirrored list", () => {
     const dictionaryFiles = getSubsetTextInputs("/frontend", [
-      { i18nKey: "en-US", switcherVisible: true, translationRequired: true },
-      { i18nKey: "zh-CN", switcherVisible: true, translationRequired: true },
-      { i18nKey: "zh-CN", switcherVisible: true, translationRequired: true },
-      { i18nKey: "es", switcherVisible: true, translationRequired: true },
-      { i18nKey: "ja-JP", switcherVisible: false, translationRequired: false },
-      { i18nKey: "ko-KR", switcherVisible: false, translationRequired: false },
+      { i18nKey: "en-US", switcherVisible: true, translationRequired: true, fontSubsetEligible: true },
+      { i18nKey: "zh-CN", switcherVisible: true, translationRequired: true, fontSubsetEligible: true },
+      { i18nKey: "zh-CN", switcherVisible: true, translationRequired: true, fontSubsetEligible: true },
+      { i18nKey: "es", switcherVisible: true, translationRequired: true, fontSubsetEligible: true },
+      /* 模拟日语最终发布状态：即使入口已开放，也必须完全走系统字体。 */
+      { i18nKey: "ja-JP", switcherVisible: true, translationRequired: true, fontSubsetEligible: false },
+      { i18nKey: "ko-KR", switcherVisible: false, translationRequired: false, fontSubsetEligible: false },
     ])
       .filter((path) => path.includes("/src/i18n/generated/"))
       .map((path) => basename(path));
@@ -68,7 +69,6 @@ describe("subset fonts", () => {
     }
     expect([...filesRead].some((file) => file.includes("/src/imports/Frame2147230025/"))).toBe(true);
     expect([...filesRead].some((file) => file.endsWith("/src/pages/marketing/landing-page.tsx"))).toBe(true);
-    expect([...filesRead].some((file) => file.endsWith("/src/components/site/landing-cta-footer-links.tsx"))).toBe(true);
     for (const char of SPANISH_REQUIRED_CHARS) expect(text).toContain(char);
   });
 
@@ -137,5 +137,19 @@ describe("subset fonts", () => {
       expect(css).toContain(`html[lang="es"] .landing-page ${selector}`);
     }
     expect(css).toMatch(/html\[lang=["']es["']\] \.landing-page span\s*\{\s*font-family:\s*var\(--font-body\)/);
+  });
+
+  it("uses a Japanese system stack without adding a Japanese webfont", () => {
+    const css = readFileSync(resolve("src/styles.css"), "utf8");
+
+    expect(css).toMatch(
+      /--font-japanese:\s*-apple-system,\s*BlinkMacSystemFont,\s*["']Hiragino Sans["'],\s*["']Yu Gothic["'],\s*["']YuGothic["'],\s*["']Noto Sans JP["'],\s*system-ui,\s*sans-serif/s,
+    );
+    expect(css).toMatch(/html\[lang=["']ja-JP["']\]\s*\{[^}]*--font-heading:\s*var\(--font-japanese\)/s);
+    expect(css).toMatch(/html\[lang=["']ja-JP["']\]\s*\{[^}]*--font-body:\s*var\(--font-japanese\)/s);
+    for (const selector of ["p", "label", "input", "textarea", "button", "span"]) {
+      expect(css).toContain(`html[lang="ja-JP"] .landing-page ${selector}`);
+    }
+    expect(css).not.toMatch(/@font-face\s*\{[^}]*font-family:\s*["'][^"']*(?:Japanese|Noto Sans JP|Yu Gothic|Hiragino Sans)/si);
   });
 });

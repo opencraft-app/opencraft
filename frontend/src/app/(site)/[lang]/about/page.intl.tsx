@@ -6,6 +6,7 @@ import { PublicAboutPage } from '@next-site/public-pages';
 import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
 
 // 关于页元数据文案表：与首页保持相同「按 locale key 查表 + EN_US 兜底」模式。
 const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
@@ -15,7 +16,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '關於我們',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Tentang LightVela',
   [PUBLIC_SITE_LOCALES.ES]: 'Acerca de LightVela',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'About LightVela',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/about'),
   [PUBLIC_SITE_LOCALES.KO_KR]: 'About LightVela',
 };
 
@@ -29,8 +30,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
     'LightVela menghadirkan pengalaman Agent cloud yang terkelola dan mudah digunakan untuk lebih banyak orang.',
   [PUBLIC_SITE_LOCALES.ES]:
     'Conoce cómo LightVela acerca los agentes de IA en la nube a más personas mediante una experiencia gestionada y sencilla.',
-  [PUBLIC_SITE_LOCALES.JA_JP]:
-    'LightVela brings the cloud Agent experience to more people through a managed, approachable product.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/about'),
   [PUBLIC_SITE_LOCALES.KO_KR]:
     'LightVela brings the cloud Agent experience to more people through a managed, approachable product.',
 };

@@ -12,7 +12,8 @@
     "seoPrefixed": true,
     "switcherVisible": true,
     "translationRequired": true,
-    "requiresFontFallback": false
+    "requiresFontFallback": false,
+    "fontSubsetEligible": true
   },
   {
     "code": "zh-CN",
@@ -27,7 +28,8 @@
     "seoPrefixed": true,
     "switcherVisible": true,
     "translationRequired": true,
-    "requiresFontFallback": false
+    "requiresFontFallback": false,
+    "fontSubsetEligible": true
   },
   {
     "code": "zh-SG",
@@ -42,7 +44,8 @@
     "seoPrefixed": true,
     "switcherVisible": true,
     "translationRequired": true,
-    "requiresFontFallback": false
+    "requiresFontFallback": false,
+    "fontSubsetEligible": true
   },
   {
     "code": "zh-Hant",
@@ -57,7 +60,8 @@
     "seoPrefixed": true,
     "switcherVisible": true,
     "translationRequired": true,
-    "requiresFontFallback": false
+    "requiresFontFallback": false,
+    "fontSubsetEligible": true
   },
   {
     "code": "id-ID",
@@ -72,7 +76,8 @@
     "seoPrefixed": true,
     "switcherVisible": true,
     "translationRequired": true,
-    "requiresFontFallback": false
+    "requiresFontFallback": false,
+    "fontSubsetEligible": true
   },
   {
     "code": "es",
@@ -87,7 +92,8 @@
     "seoPrefixed": true,
     "switcherVisible": true,
     "translationRequired": true,
-    "requiresFontFallback": true
+    "requiresFontFallback": true,
+    "fontSubsetEligible": true
   },
   {
     "code": "ja-JP",
@@ -102,7 +108,8 @@
     "seoPrefixed": true,
     "switcherVisible": false,
     "translationRequired": false,
-    "requiresFontFallback": true
+    "requiresFontFallback": true,
+    "fontSubsetEligible": false
   },
   {
     "code": "ko-KR",
@@ -117,6 +124,7 @@
     "seoPrefixed": true,
     "switcherVisible": false,
     "translationRequired": false,
-    "requiresFontFallback": true
+    "requiresFontFallback": true,
+    "fontSubsetEligible": false
   }
 ]

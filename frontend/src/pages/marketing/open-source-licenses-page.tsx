@@ -105,12 +105,22 @@ const copy = {
     updated: "Última actualización: agosto de 2026",
     description: "Esta página incluye los avisos de atribución y licencia del software de código abierto utilizado por LightVela.",
   },
+  ja: {
+    backHome: "ホームに戻る",
+    brand: "LightVela",
+    title: "オープンソースに関する通知",
+    updated: "最終更新: 2026年8月",
+    description: "このページには、LightVelaで使用しているオープンソースソフトウェアの帰属表示およびライセンス通知を掲載しています。",
+  },
 };
 
 const spanishLegalLanguageNote =
   "Los términos de las licencias se conservan en su versión original en inglés. En caso de discrepancia, prevalecerá el texto original en inglés.";
+const japaneseLegalLanguageNote =
+  "ライセンス条項は英語の原文をそのまま掲載しています。翻訳された見出しや説明と相違がある場合は、英語のライセンス原文が優先されます。";
 
 export function getOpenSourceLicensesChrome(locale: PublicSiteLocaleCode) {
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return copy.ja;
   if (locale === PUBLIC_SITE_LOCALES.ES) return copy.es;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return copy.id;
   return isZhLocale(locale) ? copy.zh : copy.en;
@@ -120,6 +130,7 @@ export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}/`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}/`;
   if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}/`;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}/`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}/`;
   return `/${PUBLIC_URL_LANGS.EN_US}/`;
 }
@@ -129,6 +140,9 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
 
   const licenseGroup = text.match(/^Open Source Software Licensed under the (.+):$/);
   if (licenseGroup) {
+    if (locale === PUBLIC_SITE_LOCALES.JA_JP) {
+      return `${licenseGroup[1]}でライセンスされるオープンソースソフトウェア:`;
+    }
     if (locale === PUBLIC_SITE_LOCALES.ES) {
       return `Software de código abierto con licencia ${licenseGroup[1]}:`;
     }
@@ -139,6 +153,9 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
 
   const licenseTerms = text.match(/^Terms of the (.+):$/);
   if (licenseTerms) {
+    if (locale === PUBLIC_SITE_LOCALES.JA_JP) {
+      return `${licenseTerms[1]}の条項:`;
+    }
     if (locale === PUBLIC_SITE_LOCALES.ES) {
       return `Términos de la ${licenseTerms[1]}:`;
     }
@@ -149,6 +166,9 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
 
   const sourceInfo = text.match(/^You may obtain the source code and detailed information about this component at (.+)\.$/);
   if (sourceInfo) {
+    if (locale === PUBLIC_SITE_LOCALES.JA_JP) {
+      return `このコンポーネントのソースコードと詳細情報は、${sourceInfo[1]}で確認できます。`;
+    }
     if (locale === PUBLIC_SITE_LOCALES.ES) {
       return `Puede obtener el código fuente y la información detallada de este componente en ${sourceInfo[1]}.`;
     }
@@ -158,6 +178,9 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
   }
 
   if (text === "The project is built on and with the aid of the following open source projects. Credits are given to these projects.") {
+    if (locale === PUBLIC_SITE_LOCALES.JA_JP) {
+      return "本プロジェクトは、以下のオープンソースプロジェクトを利用して構築されています。これらのプロジェクトに謝意を表します。";
+    }
     if (locale === PUBLIC_SITE_LOCALES.ES) {
       return "El proyecto se ha creado con la ayuda de los siguientes proyectos de código abierto, a los que se reconoce expresamente.";
     }
@@ -167,6 +190,9 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
   }
 
   if (text === "In case you believe there have been errors in the attribution below, you may submit the concerns to us for review and correction.") {
+    if (locale === PUBLIC_SITE_LOCALES.JA_JP) {
+      return "以下の帰属表示に誤りがあると思われる場合は、確認および修正のため当社までお知らせください。";
+    }
     if (locale === PUBLIC_SITE_LOCALES.ES) {
       return "Si considera que existe algún error en las atribuciones siguientes, puede comunicárnoslo para que lo revisemos y corrijamos.";
     }
@@ -176,6 +202,7 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
   }
 
   if (text === "license not found") {
+    if (locale === PUBLIC_SITE_LOCALES.JA_JP) return "ライセンス本文が見つかりません";
     if (locale === PUBLIC_SITE_LOCALES.ES) return "No se ha encontrado el texto de la licencia";
     return locale === PUBLIC_SITE_LOCALES.ID_ID ? "Teks lisensi tidak ditemukan" : "未找到许可证文本";
   }
@@ -186,7 +213,9 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
 export const OpenSourceLicensesPage = () => {
   const localeOverride = useLocaleOverride();
   const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.ID_ID
+    localeOverride === PUBLIC_SITE_LOCALES.JA_JP
+      ? PUBLIC_SITE_LOCALES.JA_JP
+      : localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID
       : localeOverride === PUBLIC_SITE_LOCALES.ES
         ? PUBLIC_SITE_LOCALES.ES
@@ -221,6 +250,8 @@ export const OpenSourceLicensesPage = () => {
               <p className="mt-5 text-[14px] leading-relaxed text-slate-500 sm:text-[15px]">{text.description}</p>
               {currentLocale === PUBLIC_SITE_LOCALES.ES ? (
                 <p className="mt-3 text-[13px] leading-relaxed text-slate-500">{spanishLegalLanguageNote}</p>
+              ) : currentLocale === PUBLIC_SITE_LOCALES.JA_JP ? (
+                <p className="mt-3 text-[13px] leading-relaxed text-slate-500">{japaneseLegalLanguageNote}</p>
               ) : null}
             </div>
           </div>
