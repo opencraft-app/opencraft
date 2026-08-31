@@ -1,3 +1,18 @@
+# Agent 工作台左侧导航文案 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅调整 `/agents/websites/` 共用左侧导航的本地化文案，不改变页面结构、路由、功能或可见性。
+
+**Goal:** 左侧导航显示“我的工作台 / My Workbench”，并在已开放语言中保持单数的个人产物语义。
+
+- [x] **测试先行将网站入口导航文案改为“我的工作台 / My Workbench”，完成中英文与前端质量门禁验证。**
+- [x] **补齐西班牙语单数文案“Mi espacio de trabajo”，保留繁中与印尼语现有合适译法。**
+
+**Verification:** 导航和英文翻译新增断言先按预期 RED（2 个失败），西班牙语断言随后按预期 RED（1 个失败）；实现后相关导航测试 34/34 GREEN。`pnpm i18n:extract`、`pnpm check` 与 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。本地 `/agents/websites/` 返回 200，但未登录 mock 状态进入创建 Agent 空态，侧栏文案由聚焦源码与字典断言覆盖。
+
+---
+
 # 首页登录态产品入口 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认提交；不自动 commit、push 或创建 MR。
