@@ -64,6 +64,20 @@ describe("AppRouteShell document metadata", () => {
     });
   });
 
+  it("uses Korean title and html lang for a future published product route", async () => {
+    currentLanguage = "ko-KR";
+    render(
+      <AppRouteShell requireAuth={false}>
+        <div>스킬</div>
+      </AppRouteShell>,
+    );
+
+    await waitFor(() => {
+      expect(document.title).toContain("스킬");
+      expect(document.documentElement.lang).toBe("ko-KR");
+    });
+  });
+
   it("uses My Agent for English and switches the title back to Chinese", async () => {
     currentLanguage = "en-US";
     const { rerender } = render(

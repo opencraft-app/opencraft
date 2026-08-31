@@ -2,6 +2,7 @@ import { CURATED_SKILL_OVERVIEWS_ZH } from "./curated-skill-overviews.zh";
 import { CURATED_SKILL_OVERVIEWS_ID } from "./curated-skill-overviews.id";
 import { CURATED_SKILL_OVERVIEWS_ES } from "./curated-skill-overviews.es";
 import { CURATED_SKILL_OVERVIEWS_JA } from "./curated-skill-overviews.ja";
+import { CURATED_SKILL_OVERVIEWS_KO } from "./curated-skill-overviews.ko";
 
 export type CuratedSkillBullet = {
   title: string;
@@ -17,7 +18,7 @@ export type CuratedSkillOverview = {
   examplePrompt: string;
 };
 
-export type CuratedSkillOverviewLocale = "en-US" | "zh-CN" | "id-ID" | "es" | "ja-JP";
+export type CuratedSkillOverviewLocale = "en-US" | "zh-CN" | "id-ID" | "es" | "ja-JP" | "ko-KR";
 
 function overview(
   firstParagraph: string,
@@ -512,6 +513,8 @@ export function getCuratedSkillOverview(
         ? CURATED_SKILL_OVERVIEWS_ES[rawId] ?? CURATED_SKILL_OVERVIEWS[rawId]
       : locale === "ja-JP"
         ? CURATED_SKILL_OVERVIEWS_JA[rawId] ?? CURATED_SKILL_OVERVIEWS[rawId]
+      : locale === "ko-KR"
+        ? CURATED_SKILL_OVERVIEWS_KO[rawId] ?? CURATED_SKILL_OVERVIEWS[rawId]
       : CURATED_SKILL_OVERVIEWS[rawId];
   if (!result) {
     throw new Error(`Missing curated skill overview: ${rawId}`);

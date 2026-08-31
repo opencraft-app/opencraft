@@ -233,13 +233,13 @@ describe("不可信输入的白名单收敛", () => {
     }
   });
 
-  it("公开输入解析器拒绝尚未发布的日语和韩语", () => {
+  it("公开输入解析器接受已发布的日语和韩语", () => {
     expect(parsePublishedLocaleCode("es")).toBe("es");
-    expect(parsePublishedLocaleCode("ja-JP")).toBeNull();
-    expect(parsePublishedLocaleCode("ko-KR")).toBeNull();
+    expect(parsePublishedLocaleCode("ja-JP")).toBe("ja-JP");
+    expect(parsePublishedLocaleCode("ko-KR")).toBe("ko-KR");
   });
 
-  it("仅在国际站非生产环境显式开放日语预览", () => {
+  it("已发布日韩始终可用，非生产预览只补充尚未发布 locale", () => {
     const previewOptions = {
       region: "global",
       isProduction: false,
@@ -247,12 +247,12 @@ describe("不可信输入的白名单收敛", () => {
     } as const;
 
     expect(runtimeLocaleDefinitions(previewOptions).map((definition) => definition.code))
-      .toEqual(["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP"]);
+      .toEqual(["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"]);
     expect(parseRuntimeLocaleCode("ja-JP", previewOptions)).toBe("ja-JP");
     expect(parseRuntimeLocaleCode("unknown", previewOptions)).toBeNull();
   });
 
-  it("生产环境与国内站始终拒绝预览 locale", () => {
+  it("生产环境忽略预览变量但保留已发布日韩 locale", () => {
     const productionDefinitions = runtimeLocaleDefinitions({
       region: "global",
       isProduction: true,
@@ -264,13 +264,17 @@ describe("不可信输入的白名单收敛", () => {
       previewLocales: "ja-JP",
     });
 
-    expect(productionDefinitions.map((definition) => definition.code)).not.toContain("ja-JP");
-    expect(domesticDefinitions.map((definition) => definition.code)).not.toContain("ja-JP");
+    expect(productionDefinitions.map((definition) => definition.code)).toEqual(
+      expect.arrayContaining(["ja-JP", "ko-KR"]),
+    );
+    expect(domesticDefinitions.map((definition) => definition.code)).toEqual(
+      expect.arrayContaining(["ja-JP", "ko-KR"]),
+    );
     expect(parseRuntimeLocaleCode("ja-JP", {
       region: "global",
       isProduction: true,
       previewLocales: "ja-JP",
-    })).toBeNull();
+    })).toBe("ja-JP");
   });
 
   it("URL 前缀解析覆盖正式前缀与历史别名，未知值返回 null", () => {
@@ -296,7 +300,7 @@ describe("新增语种的已知约束", () => {
     expect(resolveUrlLangToLocale("es")).toBe("es");
   });
 
-  it("生产切换器开放西语并继续隐藏日语与韩语", () => {
+  it("生产切换器开放西语、日语与韩语", () => {
     expect(SWITCHER_VISIBLE_LOCALES).toEqual([
       "en-US",
       "zh-CN",
@@ -304,8 +308,9 @@ describe("新增语种的已知约束", () => {
       "zh-Hant",
       "id-ID",
       "es",
+      "ja-JP",
+      "ko-KR",
     ]);
-    expect(SWITCHER_VISIBLE_LOCALES).not.toEqual(expect.arrayContaining(["ja-JP", "ko-KR"]));
   });
 
   it("日语、韩语、西语标记为需要字体回退", () => {

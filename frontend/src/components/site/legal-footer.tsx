@@ -150,8 +150,7 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="absolute bottom-full left-1/2 z-20 mb-3 -translate-x-1/2 flex flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-lg"
-                  style={{ width: "200px" }}
+                  className="absolute bottom-full left-1/2 z-20 mb-3 flex w-60 max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-lg"
                 >
                   {isGlobal ? (
                     <a
@@ -166,7 +165,7 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
                         className="rounded-lg"
                         style={{ width: "168px", height: "168px" }}
                       />
-                      <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+                      <span className="max-w-full whitespace-normal text-pretty text-center text-[11px] leading-relaxed text-black/50">
                         {t("扫码加入Discord交流群")}
                       </span>
                     </a>
@@ -178,7 +177,7 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
                         className="rounded-lg"
                         style={{ width: "168px", height: "168px" }}
                       />
-                      <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+                      <span className="max-w-full whitespace-normal text-pretty text-center text-[11px] leading-relaxed text-black/50">
                         {t("扫码加入交流群")}
                       </span>
                     </>

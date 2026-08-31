@@ -7,6 +7,7 @@ import { AppLink } from "@/lib/app-navigation";
 import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
 import { JAPANESE_COOKIE_POLICY_COPY } from "./legal-copy.ja";
+import { KOREAN_COOKIE_POLICY_COPY } from "./legal-copy.ko";
 
 type CookieTableRow = {
   cookie: string;
@@ -618,6 +619,7 @@ const CookieTable = ({ copy, rows }: { copy: CookiePolicyCopy; rows: CookieTable
 );
 
 export function cookiePolicyHomePath(locale: PublicSiteLocaleCode | null): string {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return `/${PUBLIC_URL_LANGS.KO_KR}/`;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}/`;
   return locale === PUBLIC_SITE_LOCALES.ES ? '/es/' : '/';
 }
@@ -630,6 +632,7 @@ export function getCookiePolicyChrome(
 }
 
 export function getCookiePolicyCopy(locale: PublicSiteLocaleCode | null): CookiePolicyCopy {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_COOKIE_POLICY_COPY as CookiePolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_COOKIE_POLICY_COPY as CookiePolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.ES) return es;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return id;

@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-Otomasi membuat Hermes Agent menjalankan pekerjaan secara proaktif pada waktu tetap, interval, atau jadwal satu kali, lalu mengirimkan hasilnya ke kanal notifikasi yang dipilih. Anda dapat mulai dari templat, atau menyesuaikan nama, aturan eksekusi, instruksi tugas, periode berlaku, dan pengaturan notifikasi, lalu terus mengelola statusnya dari daftar tugas.
+**Otomasi membuat Hermes Agent menjalankan pekerjaan secara proaktif pada waktu tetap, interval, atau jadwal satu kali, lalu mengirimkan hasilnya ke kanal notifikasi yang dipilih. Anda dapat mulai dari templat, atau menyesuaikan nama, aturan eksekusi, instruksi tugas, periode berlaku, dan pengaturan notifikasi, lalu terus mengelola statusnya dari daftar tugas.**
 
 Saat membuat atau mengedit otomasi, Anda juga dapat menghubungkannya dengan tugas upstream. Eksekusi berikutnya akan memakai output selesai terbaru dari tugas upstream sebagai konteks tambahan. Ini cocok untuk memecah alur berurutan seperti “kumpulkan informasi terlebih dahulu, lalu buat ringkasan” menjadi beberapa langkah.
 

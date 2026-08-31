@@ -78,7 +78,7 @@ describe("LanguageSwitcher", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("adds Spanish to the global production menu while keeping Japanese and Korean hidden", async () => {
+  it("adds Spanish, Japanese and Korean to the global production menu", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_REGION", "global");
     const { LanguageSwitcher: GlobalLanguageSwitcher } = await import(
@@ -94,13 +94,16 @@ describe("LanguageSwitcher", () => {
       "International Site - 繁體中文",
       "International Site - Bahasa Indonesia",
       "International Site - Español",
+      "International Site - 日本語",
+      "International Site - 한국어",
       "中国站",
     ]);
     expect(screen.getByRole("option", { name: "International Site - Español" })).toBeInTheDocument();
-    expect(screen.queryByText(/日本語|한국어/)).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "International Site - 日本語" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "International Site - 한국어" })).toBeInTheDocument();
   });
 
-  it("adds Japanese to the explicit global development preview menu", async () => {
+  it("keeps both published East Asian locales in the development menu", async () => {
     vi.resetModules();
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("NEXT_PUBLIC_REGION", "global");
@@ -115,7 +118,9 @@ describe("LanguageSwitcher", () => {
     expect(screen.getByRole("option", {
       name: "International Site - 日本語",
     })).toBeInTheDocument();
-    expect(screen.queryByText(/한국어/)).not.toBeInTheDocument();
+    expect(screen.getByRole("option", {
+      name: "International Site - 한국어",
+    })).toBeInTheDocument();
   });
 
   it("builds Spanish and English international URLs while preserving the public path", () => {

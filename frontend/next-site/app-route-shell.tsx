@@ -38,11 +38,17 @@ function ProductRouteDocumentMetadata() {
       ? '/es'
       : normalizedLanguage.startsWith('ja')
         ? '/ja-jp'
-        : null;
+        : normalizedLanguage.startsWith('ko')
+          ? '/ko-kr'
+          : null;
     if (isGlobal && localizedSeoPrefix) {
       const meta = getSeoMeta(`${localizedSeoPrefix}${pathname === '/' ? '' : pathname}`, 'global');
       document.title = meta.title;
-      document.documentElement.lang = normalizedLanguage.startsWith('ja') ? 'ja-JP' : 'es';
+      document.documentElement.lang = normalizedLanguage.startsWith('ja')
+        ? 'ja-JP'
+        : normalizedLanguage.startsWith('ko')
+          ? 'ko-KR'
+          : 'es';
       return;
     }
 

@@ -56,7 +56,7 @@ describe("i18n initial locale", () => {
     expect(window.localStorage.getItem("lw-locale")).toBe("es");
   });
 
-  it("keeps the hidden Japanese dictionary out of the bare-root bundle and loads it on demand", async () => {
+  it("keeps the published Japanese dictionary out of the bare-root bundle and loads it on demand", async () => {
     const { default: i18n, ensureLocaleDictionary } = await loadI18n("global", "/");
 
     expect(i18n.hasResourceBundle("ja-JP", "translation")).toBe(false);
@@ -66,12 +66,12 @@ describe("i18n initial locale", () => {
       .toMatch(/[ぁ-んァ-ヶ]/);
   });
 
-  it("does not let an unreleased Japanese URL bypass the publication gate", async () => {
+  it("loads and persists Japanese from the published URL", async () => {
     const { default: i18n } = await loadI18n("global", "/ja-jp/");
 
-    expect(i18n.language).toBe("en-US");
-    expect(i18n.hasResourceBundle("ja-JP", "translation")).toBe(false);
-    expect(window.localStorage.getItem("lw-locale")).toBeNull();
+    expect(i18n.language).toBe("ja-JP");
+    expect(i18n.hasResourceBundle("ja-JP", "translation")).toBe(true);
+    expect(window.localStorage.getItem("lw-locale")).toBe("ja-JP");
   });
 
   it("loads and persists Japanese from an explicit local preview URL", async () => {
@@ -82,23 +82,22 @@ describe("i18n initial locale", () => {
     expect(window.localStorage.getItem("lw-locale")).toBe("ja-JP");
   });
 
-  it("ignores an unreleased Japanese localStorage override", async () => {
+  it("restores the published Japanese localStorage override", async () => {
     window.localStorage.setItem("lw-locale", "ja-JP");
 
     const { default: i18n } = await loadI18n("global", "/agents");
 
-    expect(i18n.language).toBe("en-US");
-    expect(i18n.hasResourceBundle("ja-JP", "translation")).toBe(false);
+    expect(i18n.language).toBe("ja-JP");
+    expect(i18n.hasResourceBundle("ja-JP", "translation")).toBe(true);
   });
 
-  it("refuses to switch to an unreleased locale through the public setter", async () => {
+  it("switches to published Japanese through the public setter", async () => {
     const { default: i18n, setLocale } = await loadI18n("global", "/agents");
 
     setLocale("ja-JP");
-    await Promise.resolve();
 
-    expect(i18n.language).toBe("en-US");
-    expect(window.localStorage.getItem("lw-locale")).toBeNull();
+    await vi.waitFor(() => expect(i18n.language).toBe("ja-JP"));
+    expect(window.localStorage.getItem("lw-locale")).toBe("ja-JP");
   });
 
   it("keeps the domestic site in Chinese when localStorage has stale English", async () => {

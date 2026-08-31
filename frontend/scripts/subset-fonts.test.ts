@@ -152,4 +152,18 @@ describe("subset fonts", () => {
     }
     expect(css).not.toMatch(/@font-face\s*\{[^}]*font-family:\s*["'][^"']*(?:Japanese|Noto Sans JP|Yu Gothic|Hiragino Sans)/si);
   });
+
+  it("uses a Korean system stack without adding a Korean webfont", () => {
+    const css = readFileSync(resolve("src/styles.css"), "utf8");
+
+    expect(css).toMatch(
+      /--font-korean:\s*-apple-system,\s*BlinkMacSystemFont,\s*["']Apple SD Gothic Neo["'],\s*["']Malgun Gothic["'],\s*["']Noto Sans KR["'],\s*system-ui,\s*sans-serif/s,
+    );
+    expect(css).toMatch(/html\[lang=["']ko-KR["']\]\s*\{[^}]*--font-heading:\s*var\(--font-korean\)/s);
+    expect(css).toMatch(/html\[lang=["']ko-KR["']\]\s*\{[^}]*--font-body:\s*var\(--font-korean\)/s);
+    for (const selector of ["p", "label", "input", "textarea", "button", "span"]) {
+      expect(css).toContain(`html[lang="ko-KR"] .landing-page ${selector}`);
+    }
+    expect(css).not.toMatch(/@font-face\s*\{[^}]*font-family:\s*["'][^"']*(?:Korean|Noto Sans KR|Malgun Gothic|Apple SD Gothic Neo)/si);
+  });
 });

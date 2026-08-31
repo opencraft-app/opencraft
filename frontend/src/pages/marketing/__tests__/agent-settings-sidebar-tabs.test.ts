@@ -116,6 +116,16 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('lv-agents-session-item');
   });
 
+  it("normalizes backend and SDK default copy before rendering the sidebar", () => {
+    const page = readPageSource();
+
+    expect(page).toContain("resolveAgentDisplayName(activeBot.name, t)");
+    expect(page).toMatch(
+      /resolveAgentSessionTitle\(\s*session\.title,\s*i18n\.language,\s*t\("默认会话"\),?\s*\)/,
+    );
+    expect(page).toContain("{sessionDisplayTitle}");
+  });
+
   it("shows a default-chat entry when the SDK has no sessions yet", () => {
     const page = readPageSource();
 

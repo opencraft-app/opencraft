@@ -106,8 +106,8 @@
     "docsSourcePrefix": "ja",
     "docsFallbackPrefixes": ["en", "global"],
     "seoPrefixed": true,
-    "switcherVisible": false,
-    "translationRequired": false,
+    "switcherVisible": true,
+    "translationRequired": true,
     "requiresFontFallback": true,
     "fontSubsetEligible": false
   },
@@ -122,8 +122,8 @@
     "docsSourcePrefix": "ko",
     "docsFallbackPrefixes": ["en", "global"],
     "seoPrefixed": true,
-    "switcherVisible": false,
-    "translationRequired": false,
+    "switcherVisible": true,
+    "translationRequired": true,
     "requiresFontFallback": true,
     "fontSubsetEligible": false
   }

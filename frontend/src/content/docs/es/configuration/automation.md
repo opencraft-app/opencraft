@@ -2,7 +2,7 @@
 
 ## Resumen
 
-Las automatizaciones permiten que Hermes Agent ejecute trabajos proactivamente según un horario fijo, un intervalo o un esquema de ejecución única, y luego envíe los resultados a los canales de notificación seleccionados. Puede comenzar con una plantilla, o personalizar el nombre, las reglas de ejecución, las instrucciones de la tarea, la ventana de validez y la configuración de notificaciones, y luego continuar gestionando el estado de la tarea desde la lista de tareas.
+**Las automatizaciones permiten que Hermes Agent ejecute trabajos proactivamente según un horario fijo, un intervalo o un esquema de ejecución única, y luego envíe los resultados a los canales de notificación seleccionados. Puede comenzar con una plantilla, o personalizar el nombre, las reglas de ejecución, las instrucciones de la tarea, la ventana de validez y la configuración de notificaciones, y luego continuar gestionando el estado de la tarea desde la lista de tareas.**
 
 Al crear o editar una automatización, también puede vincularla a una tarea anterior. Las ejecuciones posteriores utilizarán la salida más reciente completada de la tarea anterior como contexto adicional. Esto es útil para dividir flujos de trabajo como "recopilar información primero, luego resumirla" en múltiples pasos.
 

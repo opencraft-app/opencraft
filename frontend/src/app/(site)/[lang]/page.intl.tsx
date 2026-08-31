@@ -7,6 +7,7 @@ import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, S
 import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
+import { koreanRouteDescription, koreanRouteTitle } from '@/lib/seo-data.ko';
 
 // 首页元数据文案表：以 locale 常量为键，避免 `=== 'en-US'` 类魔法字符串。
 const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
@@ -17,7 +18,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ID_ID]: 'LightVela | Agen AI Pribadi di Cloud',
   [PUBLIC_SITE_LOCALES.ES]: 'LightVela | Tu agente personal de IA en la nube',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/'),
-  [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela | Your Personal Cloud AI Agent',
+  [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteTitle('/'),
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
@@ -28,7 +29,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ID_ID]: 'LightVela adalah produk hosting Agent cloud dari tim Tencent Lighthouse.',
   [PUBLIC_SITE_LOCALES.ES]: 'LightVela es una plataforma gestionada para crear y alojar tu agente personal de IA en la nube.',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/'),
-  [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.',
+  [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteDescription('/'),
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

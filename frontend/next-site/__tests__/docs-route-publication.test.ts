@@ -7,8 +7,8 @@ import {
 } from "@next-site/docs-route-publication";
 
 describe("docs route publication", () => {
-  it("keeps hidden Japanese docs out of the current global and domestic builds", () => {
-    expect(docsRouteLocalesForRegion("global")).not.toContain("ja-jp");
+  it("publishes Japanese and Korean docs globally while keeping domestic builds empty", () => {
+    expect(docsRouteLocalesForRegion("global")).toEqual(expect.arrayContaining(["ja-jp", "ko-kr"]));
     expect(docsRouteLocalesForRegion("cn")).toEqual([]);
   });
 
@@ -22,7 +22,7 @@ describe("docs route publication", () => {
     expect(docsRouteLocalesForRegion("global", japaneseReadyDefinitions)).toContain("ja-jp");
   });
 
-  it("includes Japanese docs only for an explicit non-production global preview", () => {
+  it("keeps published Japanese docs in production and out of domestic preview", () => {
     expect(docsRouteLocalesForRegion("global", LOCALE_DEFINITIONS, {
       isProduction: false,
       previewLocales: "ja-JP",
@@ -30,10 +30,25 @@ describe("docs route publication", () => {
     expect(docsRouteLocalesForRegion("global", LOCALE_DEFINITIONS, {
       isProduction: true,
       previewLocales: "ja-JP",
-    })).not.toContain("ja-jp");
+    })).toContain("ja-jp");
     expect(docsRouteLocalesForRegion("cn", LOCALE_DEFINITIONS, {
       isProduction: false,
       previewLocales: "ja-JP",
+    })).toEqual([]);
+  });
+
+  it("keeps published Korean docs in production and out of domestic preview", () => {
+    expect(docsRouteLocalesForRegion("global", LOCALE_DEFINITIONS, {
+      isProduction: false,
+      previewLocales: "ja-JP,ko-KR",
+    })).toContain("ko-kr");
+    expect(docsRouteLocalesForRegion("global", LOCALE_DEFINITIONS, {
+      isProduction: true,
+      previewLocales: "ja-JP,ko-KR",
+    })).toContain("ko-kr");
+    expect(docsRouteLocalesForRegion("cn", LOCALE_DEFINITIONS, {
+      isProduction: false,
+      previewLocales: "ja-JP,ko-KR",
     })).toEqual([]);
   });
 
@@ -55,6 +70,7 @@ describe("docs route publication", () => {
       "id-id",
       "es",
       "ja-jp",
+      "ko-kr",
     ]);
   });
 });

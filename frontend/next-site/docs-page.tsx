@@ -22,6 +22,8 @@ import {
   ID_ID_URL_LANG,
   JA_JP_LOCALE,
   JA_JP_URL_LANG,
+  KO_KR_LOCALE,
+  KO_KR_URL_LANG,
   ZH_CN_LOCALE,
   ZH_CN_URL_LANG,
   ZH_HANT_LOCALE,
@@ -38,6 +40,7 @@ export type DocsLocalePrefix =
   | typeof ID_ID_URL_LANG
   | typeof ES_URL_LANG
   | typeof JA_JP_URL_LANG
+  | typeof KO_KR_URL_LANG
   | undefined;
 
 export function docsSlug(_prefix: DocsLocalePrefix, slug?: string[]) {
@@ -66,6 +69,7 @@ function lastUpdatedLabel(prefix: DocsLocalePrefix, lastUpdated?: string): strin
   if (prefix === EN_US_URL_LANG) return `Last updated ${lastUpdated}`;
   if (prefix === ES_URL_LANG) return `Última actualización: ${lastUpdated}`;
   if (prefix === JA_JP_URL_LANG) return `最終更新日: ${lastUpdated}`;
+  if (prefix === KO_KR_URL_LANG) return `마지막 업데이트: ${lastUpdated}`;
   // 中文语系（zh-cn / zh-sg / zh-hant）与国内站默认路径统一用中文
   return `最后更新于 ${lastUpdated}`;
 }
@@ -124,6 +128,7 @@ export function docsBreadcrumbName(prefix: DocsLocalePrefix): string {
   if (prefix === ID_ID_URL_LANG) return 'Dokumentasi';
   if (prefix === ES_URL_LANG) return 'Documentación';
   if (prefix === JA_JP_URL_LANG) return 'ドキュメント';
+  if (prefix === KO_KR_URL_LANG) return '문서';
   return 'Docs';
 }
 
@@ -152,6 +157,7 @@ function docsSeoLocale(prefix: DocsLocalePrefix): SeoLocale {
     [ID_ID_URL_LANG]: ID_ID_LOCALE,
     [ES_URL_LANG]: ES_LOCALE,
     [JA_JP_URL_LANG]: JA_JP_LOCALE,
+    [KO_KR_URL_LANG]: KO_KR_LOCALE,
   } as const satisfies Record<Exclude<DocsLocalePrefix, undefined>, SeoLocale>;
   return prefix ? PREFIX_TO_SEO_LOCALE[prefix] : ZH_CN_LOCALE;
 }

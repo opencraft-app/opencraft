@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LegalFooter } from "@/components/site/legal-footer";
@@ -33,5 +34,16 @@ describe("LegalFooter", () => {
     expect(feedbackLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
     expect(feedbackLink).toHaveAttribute("target", "_blank");
     expect(feedbackLink).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("wraps long localized QR instructions inside a viewport-safe popover", async () => {
+    render(<LegalFooter />);
+
+    await userEvent.hover(screen.getByText("加入交流群"));
+
+    const instruction = await screen.findByText("扫码加入交流群");
+    expect(instruction).toHaveClass("max-w-full", "whitespace-normal", "text-center", "text-pretty");
+    expect(instruction).not.toHaveClass("whitespace-nowrap", "tracking-wider");
+    expect(instruction.parentElement).toHaveClass("w-60", "max-w-[calc(100vw-2rem)]");
   });
 });

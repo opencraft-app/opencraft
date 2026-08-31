@@ -23,7 +23,7 @@ import { describe, expect, it } from 'vitest';
  */
 
 const frontendRoot = join(import.meta.dirname, '../../../..');
-const SUMMARY_HEADINGS = ['摘要', 'Summary', 'Ringkasan', 'Resumen', '概要'];
+const SUMMARY_HEADINGS = ['摘要', 'Summary', 'Ringkasan', 'Resumen', '概要', '요약'];
 const SUMMARY_PATTERN = new RegExp(`^##\\s+(${SUMMARY_HEADINGS.join('|')})\\s*$`, 'm');
 
 function readDoc(relativePath: string): string {

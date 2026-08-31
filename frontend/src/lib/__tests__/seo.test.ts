@@ -168,4 +168,30 @@ describe("seo meta — global multi-URL language prefix", () => {
     expect(getSeoMeta("/ja-jp/account", "global").title).toBe(`アカウント | ${suffix}`);
     expect(getSeoMeta("/ja-jp/plans/select", "global").title).toBe(`プランを選択 | ${suffix}`);
   });
+
+  it("returns Korean metadata and locale fields for prepared /ko-kr routes", () => {
+    const home = getFullSeoMeta("/ko-kr", "global");
+    const about = getFullSeoMeta("/ko-kr/about", "global");
+    const docs = getFullSeoMeta("/ko-kr/docs/overview", "global");
+
+    expect(home.title).toBe("LightVela | 나만의 클라우드 AI 에이전트");
+    expect(about.title).toContain("LightVela 소개");
+    expect(docs.title).toContain("LightVela란 무엇인가요");
+    for (const meta of [home, about, docs]) {
+      expect(meta.description).toMatch(/[가-힣]/);
+      expect(meta.htmlLang).toBe("ko-KR");
+      expect(meta.ogLocale).toBe("ko_KR");
+      expect(meta.ogUrl).toBe(meta.canonical);
+      expect(meta.canonical).toContain("https://lightvela.ai/ko-kr");
+    }
+  });
+
+  it("returns Korean titles for locale-projected private product routes", () => {
+    const suffix = "LightVela · 나만의 클라우드 AI 에이전트";
+
+    expect(getSeoMeta("/ko-kr/agents", "global").title).toBe(`내 에이전트 | ${suffix}`);
+    expect(getSeoMeta("/ko-kr/agents/skills", "global").title).toBe(`스킬 | ${suffix}`);
+    expect(getSeoMeta("/ko-kr/account", "global").title).toBe(`계정 | ${suffix}`);
+    expect(getSeoMeta("/ko-kr/plans/select", "global").title).toBe(`플랜 선택 | ${suffix}`);
+  });
 });

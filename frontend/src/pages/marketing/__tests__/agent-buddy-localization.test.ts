@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { JAPANESE_SOULS } from "@/lib/soul-japanese-data";
+import { KOREAN_SOULS } from "@/lib/soul-korean-data";
 import { PREF_TAGS } from "@/pages/marketing/agent-buddy-soul-test-data";
 
 type LocalizationModule = typeof import("@/pages/marketing/agent-buddy-localization");
@@ -20,6 +21,7 @@ describe("Buddy Soul locale resolver", () => {
     expect(localization?.resolveBuddySoulLocale(true, "id-ID")).toBe("id");
     expect(localization?.resolveBuddySoulLocale(true, "es-ES")).toBe("es");
     expect(localization?.resolveBuddySoulLocale(true, "ja-JP")).toBe("ja");
+    expect(localization?.resolveBuddySoulLocale(true, "ko-KR")).toBe("ko");
   });
 
   it("serves the complete Japanese Soul experience through one adapter", async () => {
@@ -33,5 +35,16 @@ describe("Buddy Soul locale resolver", () => {
       expect(localization?.getBuddyPrefTagLabel("ja", tag)).toBeTruthy();
     }
     expect(localization?.getBuddyCategoryLabel("ja", "high")).toBe("高");
+  });
+
+  it("serves the complete Korean Soul experience through one adapter", async () => {
+    const localization = await loadLocalizationModule();
+    expect(localization).not.toBeNull();
+    expect(localization?.getBuddySoulPool("ko")).toEqual(KOREAN_SOULS);
+    expect(localization?.buildBuddyQuestions("ko")).toHaveLength(15);
+    expect(localization?.getBuddySoulSpec("ko", KOREAN_SOULS[0]!.slug)).not.toBeNull();
+    expect(localization?.getBuddySoulDetail("ko", KOREAN_SOULS[0]!.slug)?.content).toContain("기본 성격");
+    for (const tag of PREF_TAGS) expect(localization?.getBuddyPrefTagLabel("ko", tag)).toBeTruthy();
+    expect(localization?.getBuddyCategoryLabel("ko", "high")).toBe("높음");
   });
 });

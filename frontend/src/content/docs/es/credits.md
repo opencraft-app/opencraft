@@ -2,7 +2,7 @@
 
 ## Resumen
 
-Los créditos de modelo son la unidad que LightVela utiliza para medir cuánto gasta tu Hermes Agent en llamadas a modelos, contando tanto la entrada como la salida. Los créditos se incluyen en tu plan mensualmente, no se venden por separado y se reinician cada ciclo de facturación: Launch incluye 100 créditos al mes, y Cruise ofrece una cantidad mayor. Los créditos se consumen cada vez que el Agent habla contigo, ejecuta una tarea automatizada o utiliza una Skill — todo lo cual termina llamando al modelo — y las conversaciones más largas con más contexto las agotan más rápido. Si te quedas sin créditos a mitad de ciclo, las funciones dependientes del modelo se limitan hasta la siguiente asignación, o puedes cambiar a tu propia clave de API de modelo en la configuración del modelo y continuar.
+**Los créditos de modelo son la unidad que LightVela utiliza para medir cuánto gasta tu Hermes Agent en llamadas a modelos, contando tanto la entrada como la salida. Los créditos se incluyen en tu plan mensualmente, no se venden por separado y se reinician cada ciclo de facturación: Launch incluye 100 créditos al mes, y Cruise ofrece una cantidad mayor. Los créditos se consumen cada vez que el Agent habla contigo, ejecuta una tarea automatizada o utiliza una Skill — todo lo cual termina llamando al modelo — y las conversaciones más largas con más contexto las agotan más rápido. Si te quedas sin créditos a mitad de ciclo, las funciones dependientes del modelo se limitan hasta la siguiente asignación, o puedes cambiar a tu propia clave de API de modelo en la configuración del modelo y continuar.**
 
 ---
 

@@ -6,6 +6,7 @@ import { type PublicUrlLang } from '@next-site/public-locale';
 import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
 import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
+import { koreanRouteDescription, koreanRouteTitle } from '@/lib/seo-data.ko';
 
 const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.EN_US]: 'Privacy Policy',
@@ -15,7 +16,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Privasi',
   [PUBLIC_SITE_LOCALES.ES]: 'Política de privacidad',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/privacy-policy'),
-  [PUBLIC_SITE_LOCALES.KO_KR]: 'Privacy Policy',
+  [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteTitle('/privacy-policy'),
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -26,7 +27,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Privasi LightVela, termasuk pemrosesan, penyimpanan, pembagian informasi pribadi, dan hak pengguna.',
   [PUBLIC_SITE_LOCALES.ES]: 'Política de privacidad de LightVela sobre el tratamiento, almacenamiento y uso compartido de datos personales y los derechos del usuario.',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/privacy-policy'),
-  [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela Privacy Policy, including personal information processing, storage, sharing, and user rights.',
+  [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteDescription('/privacy-policy'),
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

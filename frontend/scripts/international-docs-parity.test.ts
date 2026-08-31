@@ -193,7 +193,7 @@ const frontmatterValue = (content: string, key: string) => {
   return JSON.parse(match[1]) as string;
 };
 
-const localizedDocsTargets = (content: string, locale: "es" | "ja-jp"): string[] => {
+const localizedDocsTargets = (content: string, locale: "es" | "ja-jp" | "ko-kr"): string[] => {
   const targets: string[] = [];
   for (const match of content.matchAll(/(?<!!)\[[^\]\n]+]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)/g)) {
     const href = match[1];
@@ -208,6 +208,7 @@ const localizedDocsTargets = (content: string, locale: "es" | "ja-jp"): string[]
 
 const spanishDocsTargets = (content: string): string[] => localizedDocsTargets(content, "es");
 const japaneseDocsTargets = (content: string): string[] => localizedDocsTargets(content, "ja-jp");
+const koreanDocsTargets = (content: string): string[] => localizedDocsTargets(content, "ko-kr");
 
 describe("international docs publication inventory", () => {
   describe("Spanish docs source parity", () => {
@@ -272,11 +273,11 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
     });
 
-    it("generates the same 63-route inventory as English from Japanese sources", () => {
+    it("generates the same 67-route inventory as English from Japanese sources", () => {
       expect(docsRouteSlugs["ja-jp"]).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs["ja-jp"]).toHaveLength(63);
+      expect(docsRouteSlugs["ja-jp"]).toHaveLength(67);
       const generatedDocs = walkFiles(generatedJaRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(62);
+      expect(generatedDocs).toHaveLength(66);
       for (const path of generatedDocs) {
         expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
           /^src\/content\/docs\/ja\//,
@@ -316,9 +317,9 @@ describe("international docs publication inventory", () => {
       });
     });
 
-    it("maps Japanese content without opening the public route release gate", () => {
+    it("maps Japanese content and opens the public docs route", () => {
       expect(docsRouteApi.publicLocaleForDocsRoute?.("ja-jp")).toBe("ja-JP");
-      expect(docsRouteApi.docsRouteLocalesForRegion?.("global")).not.toContain("ja-jp");
+      expect(docsRouteApi.docsRouteLocalesForRegion?.("global")).toContain("ja-jp");
     });
 
     it("localizes every generated Japanese docs link to a real Japanese route", () => {
@@ -333,6 +334,119 @@ describe("international docs publication inventory", () => {
           expect(routeSet.has(target), `${path} links to missing /ja-jp/docs/${target}`).toBe(true);
         }
       }
+    });
+  });
+
+  describe("Korean docs source parity", () => {
+    const enRoot = join(docsContentRoot, "en");
+    const koRoot = join(docsContentRoot, "ko");
+    const generatedKoRoot = join(generatedDocsRoot, "ko-kr");
+
+    it("keeps a complete Korean source file for every international English document", () => {
+      expect(markdownFilesRelativeTo(koRoot)).toEqual(markdownFilesRelativeTo(enRoot));
+    });
+
+    it("preserves images, links, fenced code, and document structure in every Korean source", () => {
+      for (const file of markdownFilesRelativeTo(koRoot)) {
+        const english = readFileSync(join(enRoot, file), "utf8");
+        const korean = readFileSync(join(koRoot, file), "utf8");
+
+        expect(imageTargets(korean), `${file}: image targets changed`).toEqual(imageTargets(english));
+        expect(linkTargets(korean), `${file}: link targets changed`).toEqual(linkTargets(english));
+        expect(fencedCodeBlocks(korean), `${file}: fenced code changed`).toEqual(fencedCodeBlocks(english));
+        expect(markdownStructure(korean), `${file}: heading or table structure changed`).toEqual(
+          markdownStructure(english),
+        );
+        expect(korean.match(/[가-힣]/g)?.length ?? 0, `${file}: Korean body is missing`).toBeGreaterThan(30);
+      }
+    });
+
+    it("rejects corrupted repetition and Chinese Han residue in Korean prose", () => {
+      const repeatedWord = /([가-힣]+)(?:\s+\1){3,}/u;
+
+      for (const file of markdownFilesRelativeTo(koRoot)) {
+        const korean = withoutFencedCode(readFileSync(join(koRoot, file), "utf8"));
+        expect(korean, `${file}: contains a runaway repeated Korean word`).not.toMatch(repeatedWord);
+        expect(korean, `${file}: contains Chinese Han characters`).not.toMatch(/\p{Script=Han}/u);
+      }
+    });
+
+    it("provides an international-only Korean search endpoint", () => {
+      const routeRoot = join(process.cwd(), "src", "app", "api", "search", "ko-kr");
+      expect(existsSync(join(routeRoot, "route.intl.ts"))).toBe(true);
+      expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
+    });
+
+    it("generates the same 67-route inventory as English from Korean sources", () => {
+      expect(docsRouteSlugs["ko-kr"]).toEqual(docsRouteSlugs["en-us"]);
+      expect(docsRouteSlugs["ko-kr"]).toHaveLength(67);
+      const generatedDocs = walkFiles(generatedKoRoot).filter((path) => path.endsWith(".mdx"));
+      expect(generatedDocs).toHaveLength(66);
+      for (const path of generatedDocs) {
+        expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
+          /^src\/content\/docs\/ko\//,
+        );
+      }
+    });
+
+    it("uses Korean navigation, breadcrumb, and search controls", () => {
+      const meta = JSON.parse(readFileSync(join(generatedKoRoot, "meta.json"), "utf8")) as {
+        title: string;
+        pages: string[];
+      };
+      expect(meta.title).toBe("LightVela 문서");
+      expect(meta.pages.filter((page) => page.startsWith("---"))).toEqual([
+        "---시작하기---",
+        "---플랜 및 시작---",
+        "---기능 및 설정---",
+        "---사용 사례---",
+        "---비교 및 선택---",
+        "---Hermes Agent 심층 분석---",
+        "---지원---",
+      ]);
+
+      expect(docsPageApi.docsBreadcrumbName?.("ko-kr")).toBe("문서");
+      expect(docsLayoutApi.fumadocsTranslations?.("ko-kr")).toEqual({
+        "Close Search(search dialog)(aria-label)": "검색 닫기",
+        "No Headings(table of contents)": "제목이 없습니다",
+        "No results found(search dialog)": "검색 결과가 없습니다",
+        "On this page(table of contents)": "이 페이지에서",
+        "Open Search(search trigger)(aria-label)": "검색 열기",
+        "Search(search dialog)": "검색",
+        "Search(search trigger)": "문서 검색",
+      });
+    });
+
+    it("maps Korean content and opens the public docs route", () => {
+      expect(docsRouteApi.publicLocaleForDocsRoute?.("ko-kr")).toBe("ko-KR");
+      expect(docsRouteApi.docsRouteLocalesForRegion?.("global")).toContain("ko-kr");
+    });
+
+    it("localizes every generated Korean docs link to a real Korean route", () => {
+      const routeSet = new Set(docsRouteSlugs["ko-kr"].map((slug) => slug.join("/")));
+      const generatedDocs = walkFiles(generatedKoRoot).filter((path) => path.endsWith(".mdx"));
+      for (const path of generatedDocs) {
+        const content = readFileSync(path, "utf8");
+        expect(content, path).not.toMatch(/]\(https:\/\/lightvela\.ai\/docs(?:\/|\))/);
+        expect(content, path).not.toMatch(/]\(\/docs(?:\/|\))/);
+        expect(content, path).not.toMatch(/]\([^)]*\.md(?:[)#])/);
+        for (const target of koreanDocsTargets(content)) {
+          expect(routeSet.has(target), `${path} links to missing /ko-kr/docs/${target}`).toBe(true);
+        }
+      }
+    });
+
+    it("documents console skill removal consistently in English, Japanese, and Korean", () => {
+      const english = readFileSync(join(enRoot, "configuration", "skill.md"), "utf8");
+      const japanese = readFileSync(join(docsContentRoot, "ja", "configuration", "skill.md"), "utf8");
+      const korean = readFileSync(join(koRoot, "configuration", "skill.md"), "utf8");
+
+      expect(english).toContain("Installed skills can be removed from the console.");
+      expect(english).not.toContain("Currently only conversation-based deletion is supported");
+      expect(japanese).toContain("インストール済みのスキルはコンソールから削除できます");
+      expect(japanese).not.toContain("現在は会話ベースでの削除のみサポートされています");
+      expect(korean).toContain("설치한 스킬은 콘솔에서 삭제할 수 있습니다");
+      expect(korean).not.toContain("현재 대화 기반 삭제만 지원됩니다");
     });
   });
 
@@ -398,12 +512,12 @@ describe("international docs publication inventory", () => {
   describe("Spanish docs source publication", () => {
     const esRoot = join(generatedDocsRoot, "es");
 
-    it("publishes the same 67 routes as international English without exposing hidden locales", () => {
+    it("publishes the same 67 routes as international English for every completed locale", () => {
       expect(docsRouteSlugs.es).toEqual(docsRouteSlugs["en-us"]);
       expect(docsRouteSlugs.es).toHaveLength(67);
       expect(docsRouteSlugs.es).toContainEqual([]);
       expect(Object.keys(docsRouteSlugs)).toContain("ja-jp");
-      expect(Object.keys(docsRouteSlugs)).not.toContain("ko-kr");
+      expect(Object.keys(docsRouteSlugs)).toContain("ko-kr");
     });
 
     it("keeps the expected locale route inventories", () => {
@@ -571,7 +685,7 @@ describe("international docs publication inventory", () => {
       expect(overview).not.toContain("/docs-images/1-1.webp");
     });
 
-    it("maps Spanish only into the global docs route collection and keeps CN zh-cn-only", () => {
+    it("maps all published international locales into global docs and keeps CN zh-cn-only", () => {
       expect(docsRouteApi.docsRouteLocalesForRegion).toBeTypeOf("function");
       expect(docsRouteApi.publicLocaleForDocsRoute).toBeTypeOf("function");
       if (!docsRouteApi.docsRouteLocalesForRegion || !docsRouteApi.publicLocaleForDocsRoute) return;
@@ -581,11 +695,13 @@ describe("international docs publication inventory", () => {
         "zh-hant",
         "id-id",
         "es",
+        "ja-jp",
+        "ko-kr",
       ]);
       expect(docsRouteApi.docsRouteLocalesForRegion("cn")).toEqual([]);
       expect(docsRouteApi.publicLocaleForDocsRoute("es")).toBe("es");
-      expect(docsRouteApi.docsRouteLocalesForRegion("global")).not.toContain("ja-jp");
-      expect(docsRouteApi.docsRouteLocalesForRegion("global")).not.toContain("ko-kr");
+      expect(docsRouteApi.docsRouteLocalesForRegion("global")).toContain("ja-jp");
+      expect(docsRouteApi.docsRouteLocalesForRegion("global")).toContain("ko-kr");
     });
 
     it("returns Spanish breadcrumb, search, and table-of-contents controls", () => {

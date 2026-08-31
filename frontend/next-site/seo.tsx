@@ -219,7 +219,16 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
     'AIエージェントホスティング',
     '自動化',
   ],
-  'ko-KR': ['LightVela'],
+  'ko-KR': [
+    'LightVela',
+    '클라우드 AI 에이전트',
+    '개인 AI 에이전트',
+    'AI 어시스턴트',
+    'Hermes Agent',
+    'AI 에이전트 호스팅',
+    '자동 작업',
+    '스킬',
+  ],
 };
 
 export const SOFTWARE_APPLICATION_DESCRIPTIONS: Record<SeoLocale, string> = {

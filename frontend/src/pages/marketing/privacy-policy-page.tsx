@@ -8,6 +8,7 @@ import { localizedPath } from "@/lib/region";
 import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
 import { JAPANESE_PRIVACY_POLICY_COPY } from "./legal-copy.ja";
+import { KOREAN_PRIVACY_POLICY_COPY } from "./legal-copy.ko";
 
 interface PolicyCopy {
   backHome: string;
@@ -902,6 +903,14 @@ export function getPrivacyPolicyTableHeaders(locale: PublicSiteLocaleCode): {
       retentionPolicy: "保存方針",
     };
   }
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) {
+    return {
+      personal: "개인정보",
+      use: "이용 목적",
+      legalBasis: "법적 근거(해당하는 경우)",
+      retentionPolicy: "보유 정책",
+    };
+  }
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) {
     return {
       personal: "Informasi Pribadi",
@@ -1041,6 +1050,7 @@ export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}/`;
   if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}/`;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}/`;
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return `/${PUBLIC_URL_LANGS.KO_KR}/`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}/`;
   return `/${PUBLIC_URL_LANGS.EN_US}/`;
 }
@@ -1058,6 +1068,7 @@ export function getPrivacyPolicyChrome(
 }
 
 export function getPrivacyPolicyCopy(locale: PublicSiteLocaleCode): PolicyCopy {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_PRIVACY_POLICY_COPY as PolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_PRIVACY_POLICY_COPY as PolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.ES) return es;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return id;
@@ -1067,7 +1078,9 @@ export function getPrivacyPolicyCopy(locale: PublicSiteLocaleCode): PolicyCopy {
 export const PrivacyPolicyPage = () => {
   const localeOverride = useLocaleOverride();
   const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.JA_JP
+    localeOverride === PUBLIC_SITE_LOCALES.KO_KR
+      ? PUBLIC_SITE_LOCALES.KO_KR
+      : localeOverride === PUBLIC_SITE_LOCALES.JA_JP
       ? PUBLIC_SITE_LOCALES.JA_JP
       : localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID

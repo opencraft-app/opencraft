@@ -25,6 +25,7 @@ const DOCS_LOCALE_TO_PUBLIC_LOCALE: Record<DocsRouteLocale, PublicSiteLocale> = 
   [PUBLIC_URL_LANGS.ID_ID]: PUBLIC_SITE_LOCALES.ID_ID,
   [PUBLIC_URL_LANGS.ES]: PUBLIC_SITE_LOCALES.ES,
   [PUBLIC_URL_LANGS.JA_JP]: PUBLIC_SITE_LOCALES.JA_JP,
+  [PUBLIC_URL_LANGS.KO_KR]: PUBLIC_SITE_LOCALES.KO_KR,
 };
 
 export function publicLocaleForDocsRoute(locale: DocsRouteLocale): PublicSiteLocale {
