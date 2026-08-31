@@ -1497,9 +1497,20 @@ function fileToHrefFor(outputPrefix) {
 }
 
 function localizedImageName(imageName, locale) {
-  if (![LOCALES.EN_US, LOCALES.ID_ID, LOCALES.ES].includes(locale) || /-en\.[^.]+$/.test(imageName)) return imageName;
-  const candidate = imageName.replace(/(\.[^.]+)$/, '-en$1');
-  return existsSync(join(sourceRoot, 'images', candidate)) ? candidate : imageName;
+  const suffixesByLocale = {
+    [LOCALES.EN_US]: ['-en'],
+    [LOCALES.ZH_HANT]: ['-zh-hant'],
+    [LOCALES.ID_ID]: ['-id', '-en'],
+    [LOCALES.ES]: ['-es', '-en'],
+  };
+  const suffixes = suffixesByLocale[locale];
+  if (!suffixes || /-(?:en|zh-hant|id|es)\.[^.]+$/.test(imageName)) return imageName;
+
+  for (const suffix of suffixes) {
+    const candidate = imageName.replace(/(\.[^.]+)$/, `${suffix}$1`);
+    if (existsSync(join(sourceRoot, 'images', candidate))) return candidate;
+  }
+  return imageName;
 }
 
 function splitHrefSuffix(href) {

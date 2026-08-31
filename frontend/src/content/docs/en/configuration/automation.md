@@ -26,6 +26,10 @@ Each task supports flexible scheduling and run rules, so your AI assistant can k
 - **Effective window**: Limit the time range in which the task can run. Leave it empty to keep it active around the clock.
 - **Notification**: Optional toggles for selecting the channels that receive task execution notifications.
 
+To create a custom job, click “Create” instead of starting from a template, then fill in the blank dialog with your own schedule and instructions.
+
+![Create Job dialog for configuring an automation](../images/automation-create-job.webp)
+
 ## Linking an Upstream Task
 
 An upstream task is useful when one piece of work should be split into a stable multi-step flow:
@@ -46,25 +50,41 @@ The task instructions still need to explain how to use the upstream output. For 
 
 ## Task Templates
 
-If you are not sure what automation to configure, click “Templates” to choose a ready-made automation plan.
+If you are not sure what automation to configure, use the Template Area on the Automations page. Choose a card such as Water & medication reminders, Rent reminder, Exchange-rate alert, or Stock update digest, then click “Enable” to review the generated schedule and instructions before creating the job.
+
+![Template Area showing ready-made automation cards](../images/automation-template-area.webp)
+
+Opening a template pre-fills the Create Job dialog. The Stock update digest template, for example, fills in the job name, a daily run schedule, and market-information instructions so you can edit the details before testing or creating the job.
+
+<div style={{ maxWidth: "760px" }}>
+
+![Stock update digest template opened in the Create Job dialog](../images/automation-template-stock-job.webp)
+
+</div>
 
 ## Managing Automations
 
 After an automation is created, you can view enabled tasks on the “Automations” page.
 
+Use the tabs above the list to switch between “Current Jobs,” “Recent Runs,” and “Ended Jobs.” Ended Jobs collects completed, failed, and expired tasks, while ongoing tasks stay under Current Jobs.
+
+<div style={{ maxWidth: "420px" }}>
+
+![Automations page showing Current Jobs, Recent Runs, and Ended Jobs tabs](../images/automation-current-jobs.webp)
+
+</div>
+
+After a job starts running, it appears as a card under “Current Jobs” with its instructions, schedule, and quick actions.
+
+<div style={{ maxWidth: "520px" }}>
+
+![Running automation card in Current Jobs](../images/automation-running-job.webp)
+
+</div>
+
 From this page, you can inspect automation details, edit the task, pause it, or delete it as needed.
 
 For linked tasks, check whether any downstream task still depends on the upstream task's most recent completed output before deleting the upstream task.
-
-## Validation
-
-After creating or editing an automation, do not stop at “saved successfully.” Confirm the following:
-
-1. The task appears in the automation list, and its status matches expectations.
-2. The schedule, effective window, and notification settings are correct.
-3. If an upstream task is linked, the upstream task already has a most recent completed output.
-4. After one real run, inspect the recent run record.
-5. Check whether the output actually used the upstream task result instead of guessing the missing background.
 
 ## Common Failure Handling
 

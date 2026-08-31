@@ -15,6 +15,7 @@ const cronClientMocks = vi.hoisted(() => ({
   removeCronJobWithDependentRollback: vi.fn(),
   sendHermesChatNotice: vi.fn(),
   startCronTestRun: vi.fn(),
+  writeEffectiveWindowScript: vi.fn(),
 }));
 
 const skillsClientMocks = vi.hoisted(() => ({
@@ -33,6 +34,7 @@ vi.mock("@/lib/hermes-skills-client", async () => ({
 
 import {
   AutomationFormModal,
+  AutomationScenarioTemplatesSection,
   buildEffectiveWindowFromInputs,
   buildDeliverString,
   buildHermesSendCommand,
@@ -45,6 +47,7 @@ import {
   formatScheduleTooltip,
   formatTestSendError,
   getAutomationSkillSelectionIssue,
+  getUnifiedAutomationTemplates,
   getEligibleCronUpstreams,
   getTestSendFailureFallback,
   getLastAgentRunForJob,
@@ -93,12 +96,90 @@ beforeEach(() => {
   cronClientMocks.startCronTestRun.mockResolvedValue({
     completion: Promise.resolve({ output: "ok", deliveryError: null }),
   });
+  cronClientMocks.writeEffectiveWindowScript.mockResolvedValue(undefined);
   skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue([]);
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+});
+
+describe("automation scenario templates section", () => {
+  it("keeps template prompts concise and separate from schedule defaults", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+    const scenarioTemplates = templates.slice(0, 6);
+
+    for (const template of scenarioTemplates) {
+      expect(template.prompt.split("\n").filter(Boolean).length).toBeLessThanOrEqual(2);
+      expect(template.prompt).not.toContain("自动化执行方式");
+      expect(template.prompt).not.toContain("请按以下结构输出");
+      expect(template.prompt).not.toContain("用户配置");
+      expect(template.prompt).not.toContain("不构成");
+      expect(template.prompt).not.toContain("如果我补充");
+      expect(template.prompt).not.toContain("说明书/链接");
+      expect(template.prompt).toContain("写了新的就以新的为准");
+    }
+
+    const medication = templates.find((template) => template.id === "medication-once");
+    expect(medication?.prompt).toContain("请帮我轻提醒喝水");
+    expect(medication?.prompt).toContain("按医嘱服用我的常用药");
+    expect(medication?.prompt).not.toContain("本提醒不构成用药建议");
+    expect(medication?.prompt).not.toContain("08:00");
+    expect(medication?.prompt).not.toContain("20:00");
+
+    const rent = templates.find((template) => template.id === "rent-reminder");
+    expect(rent?.prompt).toContain("请帮我记得交房租和物业费");
+    expect(rent?.prompt).toContain("房租 2000 元、物业费 800 元");
+    expect(rent?.prompt).not.toContain("水电、车位费、付款备注或房东信息");
+    expect(rent?.prompt).not.toContain("09:00");
+
+    const fx = templates.find((template) => template.id === "country-fx-alert");
+    expect(fx?.prompt).toContain("美元 USD 到人民币 CNY");
+    expect(fx?.prompt).not.toContain("换出币种：");
+    expect(fx?.prompt).not.toContain("10:00");
+
+    const fitness = templates.find((template) => template.id === "calorie-fitness-checkin");
+    expect(fitness?.prompt).toContain("写了新的就以新的为准：目标减脂并保持力量训练");
+    expect(fitness?.prompt).toContain("168cm、62kg、目标 58kg");
+    expect(fitness?.prompt).not.toContain("21:30");
+  });
+
+  it("shows overview templates plus non-overlapping legacy templates through pagination", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+    const onEnable = vi.fn();
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable }));
+
+    expect(templates.length).toBeGreaterThan(6);
+    expect(templates.some((template) => template.name === "喝水与吃药提醒")).toBe(true);
+    expect(templates.some((template) => template.name === "股票信息速递")).toBe(true);
+    expect(templates.some((template) => template.name === "喝水休息提醒")).toBe(false);
+    expect(templates.some((template) => template.name === "股票盯盘")).toBe(false);
+    expect(templates.some((template) => template.name === "每日工作小结")).toBe(true);
+    expect(templates.some((template) => template.name === "每日 AI 资讯摘要")).toBe(true);
+
+    expect(screen.getByRole("heading", { name: "模板专区" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /^启用/ })).toHaveLength(6);
+    for (const template of templates.slice(0, 6)) {
+      expect(screen.getByRole("button", { name: `启用${template.name}` })).toBeTruthy();
+    }
+
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "启用每日工作小结" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: `启用${templates[0]!.name}` }));
+
+    expect(onEnable).toHaveBeenCalledTimes(1);
+    expect(onEnable).toHaveBeenCalledWith(templates[0]);
+
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "启用每日工作小结" })).toBeTruthy();
+  });
 });
 
 describe("recent run limit hint", () => {
@@ -329,7 +410,8 @@ describe("cron context panel integration", () => {
   it("uses the new copy for the blank create entry and modal title", async () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: isGlobal ? "Templates" : "模板专区" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
 
     const dialog = screen.getByRole("dialog");
@@ -1076,7 +1158,11 @@ describe("terminal cron card visibility", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByRole("button", { name: "当前任务" })).toBeTruthy();
+    const createdTab = await screen.findByRole("button", { name: "已生效任务" });
+    const recentTab = screen.getByRole("button", { name: "最近执行" });
+    const endedTab = screen.getByRole("button", { name: "已结束任务" });
+    expect(Boolean(createdTab.compareDocumentPosition(recentTab) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(recentTab.compareDocumentPosition(endedTab) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(await screen.findByText("生效任务")).toBeTruthy();
     expect(screen.getByText("停用任务")).toBeTruthy();
     expect(screen.getByText("已停用")).toBeTruthy();
@@ -1153,7 +1239,7 @@ describe("terminal cron card visibility", () => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
     });
     expect(await screen.findByText("新任务")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "当前任务" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "已生效任务" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("returns to active jobs after creating from a template on the ended-jobs tab", async () => {
@@ -1165,15 +1251,18 @@ describe("terminal cron card visibility", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "已结束任务" }));
-    fireEvent.click(screen.getByRole("button", { name: "模板" }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /每日工作小结/ }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "新建" }));
+    fireEvent.click(screen.getByRole("button", { name: "启用喝水与吃药提醒" }));
+    const submitButton = within(screen.getByRole("dialog")).getByRole("button", { name: "新建" });
+    await waitFor(() => {
+      expect(submitButton).toBeEnabled();
+    });
+    fireEvent.click(submitButton);
 
     await waitFor(() => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
     });
     expect(await screen.findByText("模板新任务")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "当前任务" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "已生效任务" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
@@ -2026,8 +2115,7 @@ describe("automation form test-state wiring", () => {
         fireEvent.click(await screen.findByRole("button", { name: "新建" }));
         fillCreateFields();
       } else {
-        fireEvent.click(await screen.findByRole("button", { name: "模板" }));
-        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /每日工作小结/ }));
+        fireEvent.click(await screen.findByRole("button", { name: "启用喝水与吃药提醒" }));
       }
 
       const testButton = within(screen.getByRole("dialog")).getByRole("button", { name: "测试运行" });
