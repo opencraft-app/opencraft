@@ -35,7 +35,7 @@
 - [x] 运行定向测试、`pnpm check`、CN/global 构建并确认唯一图片 preload：CN 从 45 降为 5（logo + 4 张 Hero），global 从 46 降为 6（再含国际站 Footer wordmark）。
 - [x] 在同环境冷缓存运行 Lighthouse，各 5 次取中位数，并完成桌面/移动端视觉 smoke。
 
-**Task 1 Result:** RED 为 5 个 lazy 分组预期失败，GREEN 后新测试 6/6、相关首页测试 14/14 通过，`pnpm check` 通过。真实构建达到 CN 45→5、global 46→6。Lighthouse mobile simulated 中位数：global LCP 19,207→18,160 ms、CN LCP 19,207→18,158 ms；两站 FCP 约 4,655 ms、performance 63、CLS 基本不变，TBT 波动较小。该 LCP 改善只作为本机信号，LCP 元素仍是 Hero 装饰图；不在本批顺手修改 Hero priority。global settled 桌面/移动端截图与 baseline 逐字节一致，CN 桌面/移动端 smoke 正常。20 份原始报告的逐次指标、文件路径与 SHA-256 见 `openspec/changes/2026-08-31-homepage-lighthouse-evidence.md`。
+**Task 1 Result:** RED 为 5 个 lazy 分组预期失败，GREEN 后新测试 6/6、相关首页测试 14/14 通过，`pnpm check` 通过。真实构建达到 CN 45→5、global 46→6。Lighthouse mobile simulated 中位数：global LCP 19,207→18,160 ms、CN LCP 19,207→18,158 ms；两站 FCP 约 4,655 ms、performance 63、CLS 基本不变，TBT 波动较小。该 LCP 档位变化只作为本机观测；baseline 组内极差约 1,502 ms、每组仅 5 次采样，因此本批不主张 LCP 收益。LCP 元素仍是 Hero 装饰图，不在本批顺手修改 Hero priority，实际收益待线上 RUM 验证。global settled 桌面/移动端截图与 baseline 逐字节一致，CN 桌面/移动端 smoke 正常。20 份原始报告的逐次指标、文件路径与 SHA-256 见 `openspec/changes/2026-08-31-homepage-lighthouse-evidence.md`。
 
 ## Task 2：首页场景 pack 依赖拆分
 

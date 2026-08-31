@@ -41,4 +41,4 @@
 
 ## Interpretation boundary
 
-这是固定本机环境下的相对信号，不等同于线上 RUM。两站 LCP 中位数约改善 1.05 秒，但 performance 分数与 FCP 基本不变；global TBT 小幅变差、CN TBT 小幅改善，均可能属于运行波动。LCP 元素仍是 Hero 装饰图，因此本批不把结果描述为首屏瓶颈已解决，也不据此调整 Hero `fetchPriority`。
+这是固定本机环境下的相对信号，不等同于线上 RUM。两站 LCP 中位数均落到较低档位（global 19,207→18,160 ms，CN 19,207→18,158 ms），但 baseline 组内极差约 1,502 ms、取值呈 simulated throttling 离散档位，且每组只有 5 次采样，因此本批不主张 LCP 收益。Performance 分数与 FCP 基本不变；global TBT 小幅变差、CN TBT 小幅改善，均可能属于运行波动。LCP 元素仍是 Hero 装饰图，因此也不据此调整 Hero `fetchPriority`，实际收益待线上 RUM 验证。
