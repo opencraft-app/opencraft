@@ -88,7 +88,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(useGroup.indexOf('id: "automations"')).toBeLessThan(
       useGroup.indexOf('id: "website"'),
     );
-    expect(useGroup).toContain("isGlobal && showHiddenAgentTools");
+    expect(useGroup).not.toContain("isGlobal && showHiddenAgentTools");
   });
 
   it("navigates the main area on tab click (settings → last menu, chat → first session)", () => {

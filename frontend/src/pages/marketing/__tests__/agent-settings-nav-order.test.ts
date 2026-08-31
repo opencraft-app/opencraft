@@ -55,19 +55,21 @@ describe("Agent settings navigation groups", () => {
     expect(labs).toMatch(/id: "labs"[\s\S]*id: "deepseek-harness"/);
   });
 
-  it("keeps the My creations navigation entry behind show()", () => {
+  it("工作台导航入口默认显示，不再需要 show() 解锁", () => {
     const settingsGroups = readNavigationSource();
 
-    expect(settingsGroups).toMatch(/isGlobal\s*&&\s*showHiddenAgentTools[\s\S]*id: "website"/);
+    expect(settingsGroups).toContain('id: "website"');
+    expect(settingsGroups).not.toMatch(/isGlobal\s*&&\s*showHiddenAgentTools/);
   });
 
-  it("keeps the website panel directly reachable after hiding its navigation entry", () => {
+  it("工作台面板直接按 activeSection 渲染（不再受 isGlobal 限制）", () => {
     const page = readFileSync(
       join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
       "utf8",
     );
 
-    expect(page).toContain('isGlobal && activeSection === "website"');
+    expect(page).toContain('activeSection === "website"');
+    expect(page).not.toContain('isGlobal && activeSection === "website"');
   });
 
 });
