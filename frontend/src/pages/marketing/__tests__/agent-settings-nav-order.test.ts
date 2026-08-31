@@ -3,6 +3,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("Agent settings navigation groups", () => {
+  const readGeneratedDictionary = (locale: string): Record<string, string> =>
+    JSON.parse(
+      readFileSync(join(process.cwd(), `src/i18n/generated/${locale}.json`), "utf8"),
+    ) as Record<string, string>;
+
   const readNavigationSource = () => {
     const page = readFileSync(
       join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
@@ -61,6 +66,29 @@ describe("Agent settings navigation groups", () => {
 
     expect(settingsGroups).toContain('id: "website"');
     expect(settingsGroups).not.toMatch(/isGlobal\s*&&\s*showHiddenAgentTools/);
+  });
+
+  it("将工作台导航标记为当前用户的个人工作台", () => {
+    const settingsGroups = readNavigationSource();
+    const labsStart = settingsGroups.indexOf('id: "labs"');
+    const labs = settingsGroups.slice(labsStart);
+
+    expect(labs).toContain('label: t("我的工作台")');
+    expect(labs).not.toContain('label: t("工作台")');
+  });
+
+  it("将我的工作台英文文案翻译为单数 My Workbench", () => {
+    const translationKey = readGeneratedDictionary("zh-to-key")["我的工作台"];
+
+    expect(translationKey).toBeDefined();
+    expect(readGeneratedDictionary("en-US")[translationKey!]).toBe("My Workbench");
+  });
+
+  it("将我的工作台西班牙语文案翻译为单数 Mi espacio de trabajo", () => {
+    const translationKey = readGeneratedDictionary("zh-to-key")["我的工作台"];
+
+    expect(translationKey).toBeDefined();
+    expect(readGeneratedDictionary("es")[translationKey!]).toBe("Mi espacio de trabajo");
   });
 
   it("工作台面板直接按 activeSection 渲染（不再受 isGlobal 限制）", () => {

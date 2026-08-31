@@ -4652,7 +4652,7 @@ export const AgentSettingsPage = ({
                   sections: [
                     {
                       id: "website",
-                      label: t("工作台"),
+                      label: t("我的工作台"),
                       icon: <Globe2 className="h-4 w-4" />,
                       path: AGENT_SECTION_PATH_BY_ID.website,
                       badge: "Beta",
