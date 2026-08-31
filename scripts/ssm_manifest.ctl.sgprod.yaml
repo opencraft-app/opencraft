@@ -6,7 +6,7 @@ defaults:
 items:
 - id: ctl-runtime-secrets
   secret_name: mono-sgprod-ctl-runtime-secrets
-  version_id: v4
+  version_id: v5
   namespace: ctl
   kubernetes_resource_name: ctl-runtime-secrets
   kubernetes_resource_kind: Secret

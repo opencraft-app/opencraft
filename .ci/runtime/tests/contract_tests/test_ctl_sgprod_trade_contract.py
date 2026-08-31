@@ -20,9 +20,12 @@ class CtlSgprodTradeContractTests(unittest.TestCase):
         manifest = yaml.safe_load(
             (REPO_ROOT / "scripts/ssm_manifest.ctl.sgprod.yaml").read_text()
         )
-        runtime_item = next(
+        runtime_items = [
             item for item in manifest["items"] if item["id"] == "ctl-runtime-secrets"
-        )
+        ]
+        self.assertEqual(len(runtime_items), 1)
+        runtime_item = runtime_items[0]
+        self.assertEqual(runtime_item.get("version_id"), "v5")
         self.assertIn("CTL_TRADE_TOKEN", runtime_item.get("required_keys", []))
         self.assertIn(
             "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
