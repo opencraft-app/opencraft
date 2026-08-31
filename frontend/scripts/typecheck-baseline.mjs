@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
+import { setTimeout as wait } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
@@ -8,6 +9,8 @@ import ts from "typescript";
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const configPath = resolve(frontendRoot, process.env.TYPECHECK_CONFIG_PATH ?? "tsconfig.app.json");
 const baselinePath = resolve(frontendRoot, "typecheck-baseline.json");
+const fumadocsServerPath = resolve(frontendRoot, ".source/server.ts");
+const fumadocsSourceRetryDelayMs = 5_000;
 const updateBaseline = process.argv.includes("--update");
 
 function normalizePath(fileName) {
@@ -58,6 +61,43 @@ function loadBaseline() {
   return new Map(entries);
 }
 
+function collectCurrentDiagnostics() {
+  const program = ts.createProgram({ rootNames: parsedConfig.fileNames, options: parsedConfig.options });
+  return countDiagnostics(ts.getPreEmitDiagnostics(program).map(normalizeDiagnostic));
+}
+
+function getDiagnosticDelta(currentDiagnostics, baselineDiagnostics) {
+  const newDiagnostics = [];
+  let resolvedCount = 0;
+
+  for (const [key, diagnostic] of currentDiagnostics) {
+    const baselineCount = baselineDiagnostics.get(key) ?? 0;
+    if (diagnostic.count > baselineCount) {
+      newDiagnostics.push({ ...diagnostic, count: diagnostic.count - baselineCount });
+    }
+  }
+  for (const [key, diagnosticCount] of baselineDiagnostics) {
+    const currentCount = currentDiagnostics.get(key)?.count ?? 0;
+    resolvedCount += Math.max(0, diagnosticCount - currentCount);
+  }
+
+  return { newDiagnostics, resolvedCount };
+}
+
+function isFumadocsSourceResolutionRace(diagnostic) {
+  return diagnostic.file === "next-site/source.ts"
+    && diagnostic.code === 2305
+    && diagnostic.message.includes("Module '\"collections/server\"' has no exported member 'docs'.");
+}
+
+function hasGeneratedDocsExport() {
+  try {
+    return readFileSync(fumadocsServerPath, "utf8").includes("export const docs");
+  } catch {
+    return false;
+  }
+}
+
 const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
 if (configFile.error) {
   console.error(ts.formatDiagnostic(configFile.error, {
@@ -81,8 +121,7 @@ if (parsedConfig.fileNames.length === 0) {
   console.error(`TypeScript config ${normalizePath(configPath)} resolved to zero source files.`);
   process.exit(1);
 }
-const program = ts.createProgram({ rootNames: parsedConfig.fileNames, options: parsedConfig.options });
-const currentDiagnostics = countDiagnostics(ts.getPreEmitDiagnostics(program).map(normalizeDiagnostic));
+let currentDiagnostics = collectCurrentDiagnostics();
 
 if (updateBaseline) {
   const diagnostics = Object.fromEntries([...currentDiagnostics.entries()]
@@ -94,18 +133,13 @@ if (updateBaseline) {
 }
 
 const baselineDiagnostics = loadBaseline();
-const newDiagnostics = [];
-let resolvedCount = 0;
+let { newDiagnostics, resolvedCount } = getDiagnosticDelta(currentDiagnostics, baselineDiagnostics);
 
-for (const [key, diagnostic] of currentDiagnostics) {
-  const baselineCount = baselineDiagnostics.get(key) ?? 0;
-  if (diagnostic.count > baselineCount) {
-    newDiagnostics.push({ ...diagnostic, count: diagnostic.count - baselineCount });
-  }
-}
-for (const [key, diagnosticCount] of baselineDiagnostics) {
-  const currentCount = currentDiagnostics.get(key)?.count ?? 0;
-  resolvedCount += Math.max(0, diagnosticCount - currentCount);
+if (newDiagnostics.some(isFumadocsSourceResolutionRace) && hasGeneratedDocsExport()) {
+  console.warn(`Detected fumadocs source resolution race; retrying typecheck in ${fumadocsSourceRetryDelayMs}ms.`);
+  await wait(fumadocsSourceRetryDelayMs);
+  currentDiagnostics = collectCurrentDiagnostics();
+  ({ newDiagnostics, resolvedCount } = getDiagnosticDelta(currentDiagnostics, baselineDiagnostics));
 }
 
 const currentCount = [...currentDiagnostics.values()].reduce((total, item) => total + item.count, 0);
