@@ -66,11 +66,11 @@ Al abrir una plantilla, el formulario Crear Job se completa automáticamente. La
 
 Después de crear una automatización, puede ver las tareas habilitadas en la página "Automatizaciones".
 
-Use las pestañas sobre la lista para alternar entre "Jobs actuales", "Ejecuciones recientes" y "Jobs finalizados". "Jobs finalizados" reúne las tareas completadas, fallidas y vencidas, mientras que las tareas en curso permanecen en "Jobs actuales".
+Use las pestañas sobre la lista para alternar entre "Jobs actuales", "Jobs finalizados" y "Ejecuciones recientes". "Jobs finalizados" reúne las tareas completadas, fallidas y vencidas, mientras que las tareas en curso permanecen en "Jobs actuales".
 
 <div style={{ maxWidth: "420px" }}>
 
-![Página de automatizaciones con las pestañas Jobs actuales, Ejecuciones recientes y Jobs finalizados](../images/automation-current-jobs.webp)
+![Página de automatizaciones con las pestañas Jobs actuales, Jobs finalizados y Ejecuciones recientes](../images/automation-current-jobs.webp)
 
 </div>
 
@@ -85,6 +85,16 @@ Cuando un Job empieza a ejecutarse, aparece como una tarjeta en "Jobs actuales" 
 Desde esta página, puede inspeccionar los detalles de la automatización, editar la tarea, pausarla o eliminarla según sea necesario.
 
 Para tareas vinculadas, verifique si alguna tarea aguas abajo aún depende de la salida más reciente completada de la tarea anterior antes de eliminar la tarea anterior.
+
+## Validación
+
+Después de crear o editar una automatización, no se detenga en "guardado con éxito". Confirme lo siguiente:
+
+1. La tarea aparece en la lista de automatizaciones y su estado coincide con las expectativas.
+2. El horario, la ventana de validez y la configuración de notificación son correctos.
+3. Si se vincula una tarea anterior, la tarea anterior ya tiene una salida más reciente completada.
+4. Después de una ejecución real, inspeccione el registro de ejecución reciente.
+5. Verifique si la salida realmente utilizó el resultado de la tarea anterior en lugar de adivinar el contexto faltante.
 
 ## Manejo de Fallos Comunes
 
