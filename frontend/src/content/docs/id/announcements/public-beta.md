@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**LightVela berencana masuk tahap public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura). Setelah itu berlaku, masa aktif paket pengguna closed beta akan diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba paket Launch gratis selama 14 hari. Saat ini tersedia dua paket, Launch dan Cruise, yang berbeda pada spesifikasi lingkungan cloud, penyimpanan khusus, dan kredit model bulanan; kemampuan inti Agent sama di semua paket. Harga, ketersediaan, dan rincian hak pemakaian terkini mengacu pada halaman langganan.**
+**LightVela berencana masuk tahap public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura). Setelah itu berlaku, masa aktif paket pengguna closed beta akan diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba Launch gratis selama 14 hari atau Launch AI gratis selama 7 hari pada pesanan pertama. Saat ini tersedia dua paket, Launch dan Cruise, yang berbeda pada spesifikasi lingkungan cloud, penyimpanan khusus, dan kredit model bulanan; kemampuan inti Agent sama di semua paket. Harga, ketersediaan, dan rincian hak pemakaian terkini mengacu pada halaman langganan.**
 
 ---
 
@@ -18,7 +18,7 @@ Sejak akses beta dibuka, kami menerima banyak saran dan laporan pemakaian nyata 
 | --- | --- |
 | Rencana tanggal beta publik dan penagihan | 18 Agustus 2026 (Waktu Singapura) |
 | Manfaat pengguna beta | Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket yang sudah dimiliki pengguna beta akan diperpanjang satu bulan tambahan |
-| Manfaat pengguna baru setelah beta publik dan penagihan dimulai | Uji coba gratis paket Launch selama 14 hari |
+| Manfaat pengguna baru setelah beta publik dan penagihan dimulai | Launch gratis selama 14 hari pada pesanan pertama; Launch AI gratis selama 7 hari pada pesanan pertama |
 
 ## Kemampuan produk yang terus kami bangun
 
@@ -57,7 +57,7 @@ LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Wa
 Kami juga berharap dapat terus mendengar masukan dari pengguna beta.
 
 - Uji coba gratis Launch selama 14 hari: pengguna baru dapat mencoba Launch secara gratis, mencakup 1 Agent cloud, runtime terisolasi 2-core 4GB, cloud storage khusus 50GB, sejumlah kecil kredit uji coba, ketersediaan 24/7, dan konsol konfigurasi yang sederhana.
-- Penawaran bulan pertama Launch AI: pengguna yang menginginkan lebih banyak kredit AI sejak awal dapat membeli Launch AI dengan diskon khusus bulan pertama.
+- Uji coba gratis Launch AI selama 7 hari: pengguna baru yang menginginkan lebih banyak kredit AI dapat mencoba Launch AI gratis selama 7 hari pada pesanan pertama.
 - Manfaat pembelian lainnya akan menyusul kemudian.
 
 ## Arah iterasi produk berikutnya
