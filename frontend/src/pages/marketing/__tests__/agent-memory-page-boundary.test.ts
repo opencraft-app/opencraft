@@ -36,4 +36,21 @@ describe("Agent memory page async boundary", () => {
     expect(page).not.toContain('t("暂无 Agent 记忆。")');
     expect(page).not.toContain('t("暂无用户画像。")');
   });
+
+  it("uses the automations icon-only refresh button style", () => {
+    const page = readPageSource();
+    const memoryPanel = page.slice(
+      page.indexOf("const MemoryPanel ="),
+      page.indexOf("/* ─── Delete Confirm Dialog ─── */"),
+    );
+
+    expect(memoryPanel).toContain(
+      'className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"',
+    );
+    expect(memoryPanel).toContain('aria-label={t("刷新")}');
+    expect(memoryPanel).toContain('title={t("刷新")}');
+    expect(memoryPanel).toContain('RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}');
+    expect(memoryPanel).not.toContain('Loader2 className="h-4 w-4 animate-spin"');
+    expect(memoryPanel).not.toContain('\n            {t("刷新")}\n');
+  });
 });

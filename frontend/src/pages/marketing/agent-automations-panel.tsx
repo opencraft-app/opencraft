@@ -349,7 +349,7 @@ export function AutomationScenarioTemplatesSection({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h3 id="automation-scenario-templates-title" className="text-sm font-semibold text-black/85">
-            {t("模板专区")}
+            {t("任务模板")}
           </h3>
           <p className="mt-1 text-xs leading-5 text-black/45">{t("从常用场景开始，确认内容后启用。")}</p>
         </div>
@@ -1208,7 +1208,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             ) : (
               <p>
                 {t("暂无自动任务，")}
-                <span className="font-medium text-black/70">{t("可从上方模板专区快速启用")}</span>
+                <span className="font-medium text-black/70">{t("可从上方任务模板快速启用")}</span>
               </p>
             )}
           </div>
