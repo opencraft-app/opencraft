@@ -60,6 +60,10 @@ Real-time prices, inventory, discounts, and purchase availability are shown on t
 | Launch AI | $12 / month |
 | Cruise AI | $23 / month |
 
+> ℹ️ **New-user offer**
+>
+> New users can try Launch free for 14 days on their first order and Launch AI free for 7 days on their first order. The offer shown on the Subscribe page takes precedence.
+
 > ℹ️ **Price note**
 >
 > This page lists only monthly standard list prices. Prices, discounts, quotas, and plan availability may change because of campaigns or backend configuration. The price shown on the Subscribe page and the final amount confirmed on the payment page take precedence over this document. Taxes, if applicable, are calculated based on the account region, payment channel, and local rules. The final payable amount shown on the payment page prevails.
