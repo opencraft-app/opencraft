@@ -58,6 +58,28 @@
 **Verification:** 日韩字典均为 2677/2677，日语 0 error / 12 个共享汉字提示、韩语 0 error / 0 warning；专项回归 23 files / 265 tests 通过；`pnpm check` 为 206 current / 276 baseline / 0 new / 70 resolved；合并最新 `origin/master` 后，国际站 564 页、国内站 90 页生产构建通过，国际站日韩文档均与英文保持 67 路由一致，国内站未发布日韩前缀路由；桌面端/移动端首页、Docs、法务页 8 个浏览器用例通过且无横向溢出。登录态 Agent 实页因本地认证服务不可用被标记为 blocked，默认 `新会话` 在非中文 locale 展示 `New chat` 已由自动化回归覆盖。
 ---
 
+# 国际站 V2 多语言首页接入 Implementation Plan
+
+**Status:** 用户补充项已实现并验证，等待更新后的 commit / push / MR 范围确认。
+
+**Size:** M。单一前端域内完成区域分流、静态首页资源、交互动效和导航闭环；每批不超过 3 个任务。
+
+**Goal:** 在最新 master 的独立分支中，将已验收的 V2 首页接入国际站七个已发布首页语言，统一结构和动态并保留各语言内容、字体与本地定制模块；国内站保持不变。
+
+**Detailed plan:** `openspec/changes/2026-08-31-intl-homepage-integration-implementation-plan.md`
+
+- [x] **Task 1（Developer）：测试先行锁定国际站英文首页选择、国内站/其他 locale 负向边界、资源完整性和正式链接映射。**
+- [x] **Task 2（Developer）：接入国际站专用 Server/Client 首页组件、HTML fragment、CSS/图片/字体/动效资源，并将所有导航连接到正式落点。**
+- [x] **Task 3（Reviewer）：完成定向测试、类型与 i18n 检查、国际站构建、本地桌面/移动端预览和控制台验收。**
+- [x] **Task 4（Developer / Reviewer）：按现网恢复顶部语言控件，将首页账号入口收敛为黑色 Sign In，修复页脚 Logo 白底与变形，并隔离新版首页样式以恢复 Cookie 提示布局。**
+- [x] **Task 5（Developer / Reviewer）：同步简中、繁中、印尼语、西语、日语、韩语 fragment 与图片，以简中为动态基准、英文为非中文标题字体基准，修复语言切换后动态重绑定、长标题换行和 CTA 英文回退。**
+- [x] **Task 6（Reviewer）：按用户截图收口页脚、用户评价、DeepSeek Harness 保留边界，完成七语种浏览器 smoke、PRD/OpenSpec 同步和提交前 CR。**
+- [x] **Task 7（Developer / Reviewer）：统一国际站公开页语言与登录按钮，完成七语种首页 117 个站内目标和关键路由 HTTP 校验。**
+
+**Verification:** 首页、渲染与公共头部定向 Vitest 41/41 GREEN；七个 locale fragment、正式路由、静态资源、动态脚本重绑定、CTA 本地化、单一顶部字标、统一公开页账号区和保留模块均有自动化断言。`pnpm check` 通过，i18n 结构错误 0，TypeScript diagnostics 为 206 current / 276 baseline / 0 new / 70 resolved。`NODE_OPTIONS=--max-old-space-size=8192 NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm build:next` 通过，国际站 564/564 页面生成、42 条公开路由 SEO 校验通过；75 个首页图片/字体资源全部有引用且无缺失。七个已发布 locale 共 117 个去重站内目标均匹配生产静态产物，七语种首页及关于、文档、定价、Agent、自动任务和 Harness 关键落点跟随正常重定向后均返回 200。浏览器此前实测七语种逐字入场、Discord 打字动态和繁体四渠道重播；最终本地 HTTP 核对韩语首页只含一个透明 SVG 字标，Harness 图片返回 200 `image/png`。`git diff --check` 通过。
+
+---
+
 # 首页加载性能优化 Implementation Plan
 
 **Status:** 已归档。归档文件：`openspec/changes/2026-08-31-homepage-performance.md`。
