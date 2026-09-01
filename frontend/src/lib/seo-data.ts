@@ -205,6 +205,7 @@ const SPANISH_STATIC_PAGE_TITLES: Record<string, string> = {
   "/auth/sign-in": "Iniciar sesión",
   "/auth/sign-up": "Crear una cuenta",
   "/auth/sign-up-code": "Verificar código",
+  "/blog": "Blog",
   "/changelog": "Novedades",
   "/cookie-policy": "Política de cookies",
   "/dashboard/create": "Crear un agente",
@@ -254,6 +255,8 @@ const SPANISH_DOC_PAGE_TITLES: Record<string, string> = {
 const SPANISH_PAGE_DESCRIPTIONS: Record<string, string> = {
   "/about":
     "Conoce cómo LightVela acerca los agentes de IA en la nube a más personas mediante una experiencia gestionada y sencilla.",
+  "/blog":
+    "El Blog de LightVela compartirá anuncios de producto, actualizaciones y casos de uso de agentes de IA alojados en la nube.",
   "/changelog":
     "Consulta las actualizaciones del producto, las nuevas funciones y las mejoras de experiencia de LightVela.",
   "/cookie-policy":
@@ -331,6 +334,8 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
   global: {
     "/about":
       "Built by the Tencent Lighthouse team, LightVela was born from a question: what should AI become? We believe AI should not be just a cold tool, but a long-term presence that knows you, remembers you, and grows with you.",
+    "/blog":
+      "The LightVela Blog will share product announcements, updates, and use cases for cloud-hosted AI Agents.",
     "/changelog":
       "Track LightVela product updates, new capabilities, and experience improvements, including cloud storage, achievements, web chat, memory views, and automations.",
 
@@ -421,6 +426,7 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
   },
   global: {
     "/about": "About LightVela",
+    "/blog": "Blog",
     "/changelog": "Changelog",
     "/privacy-policy": "Privacy Policy",
     "/terms-of-service": "Terms of Service",
