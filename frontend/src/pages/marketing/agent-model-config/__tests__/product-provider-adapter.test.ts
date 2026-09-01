@@ -81,6 +81,27 @@ describe("adaptProductModelProviders", () => {
     }));
   });
 
+  it("marks the Hy Token Plan personal provider as a fixed catalog model", () => {
+    const [adaptedProvider] = adaptProductModelProviders([{
+      value: "tencent_hy_token_plan",
+      category: "coding_plan",
+      provider: "tencenthytokenplan",
+      provider_name: "腾讯云 Hy Token Plan（个人版）",
+      description: "Hy4 Preview",
+      api_key_url: "https://console.cloud.tencent.com/tokenhub/tokenplan/hy",
+      base_url: "https://api.lkeap.cloud.tencent.com/plan/v3",
+      api: "openai-completions",
+      models: [{ id: "hy4-preview", name: "hy4-preview" }],
+    }]);
+
+    expect(adaptedProvider).toEqual(expect.objectContaining({
+      providerKey: "tencent_hy_token_plan",
+      discoveryStrategy: "catalog",
+      fixedModelSelection: true,
+      catalogModels: [{ id: "hy4-preview", name: "hy4-preview" }],
+    }));
+  });
+
   it("extracts untrusted provider HTML without writing through element innerHTML", () => {
     const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
     if (!descriptor?.configurable) throw new Error("innerHTML descriptor must be configurable in this test environment");
