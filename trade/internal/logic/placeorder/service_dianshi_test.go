@@ -216,6 +216,35 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	}
 }
 
+func TestPlaceOrder_DianshiBranch_LaunchAIBundleUsesActivityDuration(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+	req := stdPlaceOrderReq()
+	req.BundleID = "bundle_launch_ai_01"
+	r.mapping.BundleID = req.BundleID
+	r.mapping.TimeSpanUnit = "3d"
+
+	if _, err := d.service.PlaceOrder(context.Background(), req); err != nil {
+		t.Fatalf("PlaceOrder err=%v", err)
+	}
+
+	prefParam := dc.lastDoGoodsReq.Goods[0].PreferenceParam
+	if got, _ := prefParam["timeSpanUnit"].(string); got != "3d" {
+		t.Errorf("preference_param.timeSpanUnit=%v want 3d", prefParam["timeSpanUnit"])
+	}
+	if got, _ := prefParam["bundleId"].(string); got != req.BundleID {
+		t.Errorf("preference_param.bundleId=%v want %s", prefParam["bundleId"], req.BundleID)
+	}
+
+	order := d.writer.lastCreateOrderInput
+	if order.Period != 3 || order.TimeUnit != "d" {
+		t.Errorf("trade_order period/time_unit=%d/%q want 3/d", order.Period, order.TimeUnit)
+	}
+	if order.GoodsDetail["timeSpan"] != 3 || order.GoodsDetail["timeUnit"] != "d" {
+		t.Errorf("goods_detail timeSpan/timeUnit=%v/%v want 3/d",
+			order.GoodsDetail["timeSpan"], order.GoodsDetail["timeUnit"])
+	}
+}
+
 func TestPlaceOrder_DianshiBranch_ReusesPendingOrder(t *testing.T) {
 	d, _, dc := newDianshiDeps()
 	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, createdAfter time.Time) (*store.TradeOrder, error) {
