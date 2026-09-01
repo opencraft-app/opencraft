@@ -1,3 +1,35 @@
+# 记忆刷新按钮与自动任务模板文案统一 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅统一 `/agents/memory/` 刷新按钮视觉，并调整 `/agents/automations/` 模板区名称；不改变刷新、模板启用或自动任务业务逻辑。
+
+**Goal:** 记忆页刷新按钮与自动任务页采用同一图标按钮样式，并将“模板专区”统一命名为“任务模板”，同步相关辅助文案、文档与全部已生成 locale。
+
+- [x] **Developer｜影响 `agent-settings-page.tsx`、`agent-automations-panel.tsx`、相关测试、自动任务文档与生成字典：先以失败测试锁定 32×32 纯图标刷新按钮及“任务模板”文案，再最小实现并完成定向测试、i18n、类型和差异校验。**
+
+**Acceptance:** 记忆页刷新按钮无可见文字、保留 `aria-label/title="刷新"`，尺寸、颜色、hover、disabled 与自动任务页一致且加载时图标旋转；自动任务模板区标题及空态辅助文案使用“任务模板”，文档引用与所有已生成 locale 保持一致。
+
+**Verification:** 新增要求先产生 3 个预期 RED，最小实现后相关测试 149/149 GREEN；`pnpm check` 通过，TypeScript diagnostics 为 206 current / 276 baseline / 0 new / 70 resolved，i18n 结构错误 0，7 个 locale 的 2 条新文案逐项断言通过，旧“模板专区”源码无残留，`git diff --check` 无输出。本地 mock 路由 `/agents/memory/` 返回 200、无错误覆盖层或 console error；mock 无 Agent，目标面板视觉由同款 class、无障碍属性和 loading 图标断言覆盖。
+
+**Out of scope:** 不调整记忆加载状态模型、自动任务刷新行为、模板卡片内容、分页、布局或功能。
+
+---
+
+# 人设页按钮文案精简 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅精简 `/agents/persona/` 两个按钮的显示文案，不改变按钮行为、样式或人设逻辑。
+
+**Goal:** 将“随机抽取人设 / 答题测试人设”分别改为“抽取人设 / 测试人设”，并保持已开放语言的既有语义。
+
+- [x] **先用页面组件测试确认新文案 RED，再最小修改渲染与 i18n 资源并完成定向测试、i18n、类型和差异校验。**
+
+**Verification:** 页面组件测试先按预期出现 6 个文案相关失败，再恢复 GREEN；CN 组件与字典定向测试 48/48 通过。`pnpm check` 通过（i18n、繁中一致性、类型检查均无新增错误），7 个 locale 的新按钮键逐项断言通过，目标文件 `git diff --check` 无输出。直接把整套国内 persona 交互夹具切到 global 会触发 8 个既有 slug fixture 失败，因此 global 文案以全 locale 字典测试与键值断言覆盖，本次不扩大范围修复测试架构。
+
+---
+
 # Agent 工作台左侧导航文案 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。

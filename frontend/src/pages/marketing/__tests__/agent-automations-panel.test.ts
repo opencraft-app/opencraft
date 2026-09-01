@@ -161,7 +161,7 @@ describe("automation scenario templates section", () => {
     expect(templates.some((template) => template.name === "每日工作小结")).toBe(true);
     expect(templates.some((template) => template.name === "每日 AI 资讯摘要")).toBe(true);
 
-    expect(screen.getByRole("heading", { name: "模板专区" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "任务模板" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /^启用/ })).toHaveLength(6);
     for (const template of templates.slice(0, 6)) {
       expect(screen.getByRole("button", { name: `启用${template.name}` })).toBeTruthy();
@@ -410,7 +410,10 @@ describe("cron context panel integration", () => {
   it("uses the new copy for the blank create entry and modal title", async () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByRole("heading", { name: isGlobal ? "Templates" : "模板专区" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: isGlobal ? "Task Templates" : "任务模板" })).toBeTruthy();
+    expect(await screen.findByText(
+      isGlobal ? "quickly enable one from the task templates above" : "可从上方任务模板快速启用",
+    )).toBeTruthy();
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
 
