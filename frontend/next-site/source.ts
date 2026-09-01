@@ -3,12 +3,13 @@ import { defineI18n } from 'fumadocs-core/i18n';
 import { loader } from 'fumadocs-core/source';
 
 import { DEFAULT_PUBLIC_DOCS_LOCALE } from './public-locale';
+import { docsI18nLanguagesForRuntime } from './docs-route-publication';
 
 const COMPARISON_FILE_PREFIX = 'compare/lightvela-vs-';
 
 export const docsI18n = defineI18n({
   defaultLanguage: DEFAULT_PUBLIC_DOCS_LOCALE,
-  languages: ['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id', 'es'],
+  languages: [...docsI18nLanguagesForRuntime()],
   parser: 'dir',
   hideLocale: 'default-locale',
 });

@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CookieConsentBanner } from "@/components/site/cookie-consent-banner";
+import {
+  COOKIE_CONSENT_COPY,
+  CookieConsentBanner,
+} from "@/components/site/cookie-consent-banner";
 import {
   COOKIE_CONSENT_NECESSARY,
   COOKIE_CONSENT_STORAGE_KEY,
@@ -84,6 +87,21 @@ describe("CookieConsentBanner", () => {
     expect(screen.getByRole("link", { name: "Política de cookies" })).toHaveAttribute("href", "/es/cookie-policy");
     expect(screen.getByRole("button", { name: "Solo las necesarias" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aceptar todas" })).toBeInTheDocument();
+  });
+
+  it("has complete Japanese copy ready without exposing it before publication", () => {
+    expect(COOKIE_CONSENT_COPY["ja-JP"]).toEqual({
+      title: "Cookieを使用しています",
+      description: expect.stringContaining("Cookie"),
+      policy: "Cookieポリシー",
+      accept: "すべて許可",
+      necessary: "必要なCookieのみ",
+    });
+
+    routeState.language = "ja-JP";
+    routeState.pathname = "/ja-jp/about";
+    renderBanner();
+    expect(screen.getByRole("heading", { name: "Cookie Policy" })).toBeInTheDocument();
   });
 
   it("stores a necessary-only choice and hides the banner", () => {

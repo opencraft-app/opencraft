@@ -71,10 +71,12 @@ describe("global public SEO URL contract", () => {
       "zh-Hant": "https://lightvela.ai/zh-hant/about/",
       "id-ID": "https://lightvela.ai/id-id/about/",
       es: "https://lightvela.ai/es/about/",
+      "ja-JP": "https://lightvela.ai/ja-jp/about/",
+      "ko-KR": "https://lightvela.ai/ko-kr/about/",
     });
   });
 
-  it("publishes Spanish SEO without exposing hidden Japanese or Korean locales", async () => {
+  it("publishes Spanish, Japanese and Korean SEO from the registry", async () => {
     const {
       SEO_ALL_DOCS_ROUTE_LOCALES,
       SEO_ALL_PUBLIC_URL_LANGS,
@@ -84,14 +86,22 @@ describe("global public SEO URL contract", () => {
       createPublicMetadata,
     } = await importSeoWithRegion("global");
 
-    expect(SEO_PUBLIC_URL_LANGS).toEqual(["en-us", "zh-sg", "zh-hant", "id-id", "es"]);
-    expect(SEO_DOCS_ROUTE_LOCALES).toEqual(["en-us", "zh-sg", "zh-hant", "id-id", "es"]);
-    expect(SEO_ALL_PUBLIC_URL_LANGS).toEqual(["zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "es"]);
-    expect(SEO_ALL_DOCS_ROUTE_LOCALES).toEqual(["zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "es"]);
+    expect(SEO_PUBLIC_URL_LANGS).toEqual([
+      "en-us", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+    ]);
+    expect(SEO_DOCS_ROUTE_LOCALES).toEqual([
+      "en-us", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+    ]);
+    expect(SEO_ALL_PUBLIC_URL_LANGS).toEqual([
+      "zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+    ]);
+    expect(SEO_ALL_DOCS_ROUTE_LOCALES).toEqual([
+      "zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+    ]);
     expect(buildPublicAlternates("/es/about")).toMatchObject({
       es: "https://lightvela.ai/es/about/",
     });
-    expect(Object.keys(buildPublicAlternates("/es/about"))).not.toEqual(
+    expect(Object.keys(buildPublicAlternates("/es/about"))).toEqual(
       expect.arrayContaining(["ja-JP", "ko-KR"]),
     );
 
@@ -118,6 +128,30 @@ describe("global public SEO URL contract", () => {
 
     expect(metadata.alternates?.canonical).toBe("/about");
     expect(metadata.openGraph?.url).toBe("https://lightvela.ai/about/");
+  });
+
+  it("builds self-consistent Japanese metadata before the release switch is opened", async () => {
+    const { createPublicMetadata } = await importSeoWithRegion("global");
+
+    const metadata = createPublicMetadata({
+      path: "/ja-jp/about",
+      locale: "ja-JP",
+      title: "LightVelaについて",
+      description: "LightVelaのクラウドAIエージェントについて紹介します。",
+    });
+
+    expect(metadata.alternates?.canonical).toBe("/ja-jp/about");
+    expect(metadata.openGraph?.url).toBe("https://lightvela.ai/ja-jp/about/");
+    expect(metadata.openGraph?.locale).toBe("ja_JP");
+    expect(metadata.keywords).toEqual(expect.arrayContaining(["クラウドAIエージェント", "AIアシスタント"]));
+  });
+
+  it("uses Japanese SoftwareApplication structured data", async () => {
+    const { SOFTWARE_APPLICATION_DESCRIPTIONS } = await importSeoWithRegion("global");
+    const description = SOFTWARE_APPLICATION_DESCRIPTIONS["ja-JP"];
+
+    expect(description).toContain("長期的に使える自分専用のAIアシスタント");
+    expect(description).not.toContain("越聊越懂你");
   });
 
   it("keeps cn canonical/og on the bare path (never /zh-cn/)", async () => {
@@ -159,13 +193,17 @@ describe("global public SEO URL contract", () => {
     // 结果 /en-us/about/ 在 dev 下返回 200、静态导出后却是 404，两边行为不一致。
     const { prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } = await importSeoWithRegion("global");
 
-    expect([...SEO_PREFIXED_PUBLIC_URL_LANGS]).toEqual(["zh-sg", "zh-hant", "id-id", "es"]);
+    expect([...SEO_PREFIXED_PUBLIC_URL_LANGS]).toEqual([
+      "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+    ]);
     // 默认语言只有裸路径，前缀路由一律拒绝
     expect(prefixedPublicRouteLocale("en-us")).toBeNull();
     expect(prefixedPublicRouteLocale("zh-cn")).toBeNull();
     expect(prefixedPublicRouteLocale("zh-sg")).toEqual({ locale: "zh-SG", localized: true });
     expect(prefixedPublicRouteLocale("id-id")).toEqual({ locale: "id-ID", localized: true });
     expect(prefixedPublicRouteLocale("es")).toEqual({ locale: "es", localized: true });
+    expect(prefixedPublicRouteLocale("ja-jp")).toEqual({ locale: "ja-JP", localized: true });
+    expect(prefixedPublicRouteLocale("ko-kr")).toEqual({ locale: "ko-KR", localized: true });
     expect(prefixedPublicRouteLocale("fr")).toBeNull();
   });
 
@@ -225,14 +263,18 @@ describe("global public SEO URL contract", () => {
     expect(locations).toContain("https://lightvela.ai/zh-sg/docs/overview/");
     expect(locations).toContain("https://lightvela.ai/id-id/docs/overview/");
     expect(locations).toContain("https://lightvela.ai/es/docs/overview/");
+    expect(locations).toContain("https://lightvela.ai/ja-jp/about/");
+    expect(locations).toContain("https://lightvela.ai/ko-kr/about/");
+    expect(locations).toContain("https://lightvela.ai/ja-jp/docs/overview/");
+    expect(locations).toContain("https://lightvela.ai/ko-kr/docs/overview/");
     expect(locations).not.toContain("https://lightvela.ai/es/docs/");
     for (const slug of DOCS_ROUTE_SLUGS.es.filter((parts) => parts.length > 0)) {
       expect(locations).toContain(`https://lightvela.ai/es/docs/${slug.join("/")}/`);
     }
     expect(locations).not.toContain("https://lightvela.ai/es/subscribe/");
     expect(locations).not.toContain("https://lightvela.ai/es/support/");
-    expect(locations.some((location) => location.includes("/ja-jp/"))).toBe(false);
-    expect(locations.some((location) => location.includes("/ko-kr/"))).toBe(false);
+    expect(locations.some((location) => location.includes("/ja-jp/"))).toBe(true);
+    expect(locations.some((location) => location.includes("/ko-kr/"))).toBe(true);
     expect(locations.some((location) => location.startsWith("https://lightvela.com/es"))).toBe(false);
     expect(locations).not.toContain("https://lightvela.ai/en-us/about/");
     expect(locations).not.toContain("https://lightvela.ai/docs/");
@@ -313,6 +355,48 @@ describe("Spanish public page metadata", () => {
     await expect(subscribeMetadata({ params: Promise.resolve({ lang: "es" }) })).resolves.toMatchObject({
       robots: { index: false, follow: false },
     });
+  });
+});
+
+describe("Japanese public page metadata copy", () => {
+  it("provides Japanese title and description for all eight future localized routes", async () => {
+    const { japaneseRouteDescription, japaneseRouteTitle } = await import("../src/lib/seo-data.ja");
+    const paths = [
+      "/",
+      "/about",
+      "/changelog",
+      "/cookie-policy",
+      "/open-source-licenses",
+      "/privacy-policy",
+      "/subscribe",
+      "/terms-of-service",
+    ] as const;
+
+    for (const path of paths) {
+      expect(japaneseRouteTitle(path)).toMatch(/[ぁ-んァ-ヶ一-龯]/u);
+      expect(japaneseRouteDescription(path)).toMatch(/[ぁ-んァ-ヶ一-龯]/u);
+    }
+  });
+});
+
+describe("Korean public page metadata copy", () => {
+  it("provides Korean title and description for all eight future localized routes", async () => {
+    const { koreanRouteDescription, koreanRouteTitle } = await import("../src/lib/seo-data.ko");
+    const paths = [
+      "/",
+      "/about",
+      "/changelog",
+      "/cookie-policy",
+      "/open-source-licenses",
+      "/privacy-policy",
+      "/subscribe",
+      "/terms-of-service",
+    ] as const;
+
+    for (const path of paths) {
+      expect(koreanRouteTitle(path)).toMatch(/[가-힣]/u);
+      expect(koreanRouteDescription(path)).toMatch(/[가-힣]/u);
+    }
   });
 });
 

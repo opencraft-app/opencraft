@@ -40,6 +40,8 @@ const LOCALES = Object.freeze({
   ZH_HANT: 'zh-Hant',
   ID_ID: 'id-ID',
   ES: 'es',
+  JA_JP: 'ja-JP',
+  KO_KR: 'ko-KR',
 });
 
 /** URL 前缀（对应 fumadocs 输出目录），与 `PUBLIC_URL_LANGS` 保持一致。 */
@@ -50,6 +52,8 @@ const URL_LANGS = Object.freeze({
   ZH_HANT: 'zh-hant',
   ID_ID: 'id-id',
   ES: 'es',
+  JA_JP: 'ja-jp',
+  KO_KR: 'ko-kr',
 });
 
 function convertTraditional(text) {
@@ -164,6 +168,30 @@ const ES_GROUP_LABELS = {
   Troubleshooting: 'Solución de problemas',
   Advanced: 'Avanzado',
   Support: 'Soporte',
+};
+
+const JA_GROUP_LABELS = {
+  'Getting Started': 'はじめに',
+  'Plans & Activation': 'プランと利用開始',
+  'Features & Configuration': '機能と設定',
+  'Use Cases': 'ユースケース',
+  'Compare & Choose': '比較と選び方',
+  'Hermes Agent Deep Dive': 'Hermes Agentを深く知る',
+  Troubleshooting: 'トラブルシューティング',
+  Advanced: '高度な活用',
+  Support: 'サポート',
+};
+
+const KO_GROUP_LABELS = {
+  'Getting Started': '시작하기',
+  'Plans & Activation': '플랜 및 시작',
+  'Features & Configuration': '기능 및 설정',
+  'Use Cases': '사용 사례',
+  'Compare & Choose': '비교 및 선택',
+  'Hermes Agent Deep Dive': 'Hermes Agent 심층 분석',
+  Troubleshooting: '문제 해결',
+  Advanced: '고급 활용',
+  Support: '지원',
 };
 
 const globalDocs = [
@@ -1385,6 +1413,72 @@ const ID_DOC_METADATA = {
   },
 };
 
+function plainMarkdownText(value) {
+  return value
+    .replace(/!\[([^\]]*)]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[`*_~>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function truncateJapaneseDescription(value, maxLength = 180) {
+  if (value.length <= maxLength) return value;
+  const candidate = value.slice(0, maxLength);
+  const boundary = Math.max(candidate.lastIndexOf('。'), candidate.lastIndexOf('！'), candidate.lastIndexOf('？'));
+  return boundary >= Math.floor(maxLength * 0.6)
+    ? candidate.slice(0, boundary + 1)
+    : `${candidate.trimEnd()}…`;
+}
+
+/** 日语 Docs 的 title/description 直接取自已审校的日语正文，避免再维护 61 份镜像。 */
+function japaneseDocMetadata(file) {
+  const path = join(sourceRoot, 'ja', file);
+  if (!existsSync(path)) throw new Error(`missing Japanese docs source: ${path}`);
+  const markdown = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+  const title = plainMarkdownText(markdown.match(/^#\s+(.+)$/m)?.[1] ?? 'LightVelaドキュメント');
+  const withoutCode = markdown.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm, '');
+  const summary = withoutCode.match(/\*\*([\s\S]*?)\*\*/)?.[1]
+    ?? withoutCode
+      .split(/\n\s*\n/)
+      .map(plainMarkdownText)
+      .find((paragraph) => paragraph.length >= 40 && paragraph !== title)
+    ?? `${title}について説明します。`;
+  return {
+    title,
+    description: truncateJapaneseDescription(plainMarkdownText(summary)),
+  };
+}
+
+function truncateKoreanDescription(value, maxLength = 180) {
+  if (value.length <= maxLength) return value;
+  const candidate = value.slice(0, maxLength);
+  const boundary = Math.max(candidate.lastIndexOf('.'), candidate.lastIndexOf('!'), candidate.lastIndexOf('?'));
+  return boundary >= Math.floor(maxLength * 0.6)
+    ? candidate.slice(0, boundary + 1)
+    : `${candidate.trimEnd()}…`;
+}
+
+/** 韩语 Docs 的 title/description 直接取自韩语正文，避免维护第二份 metadata 镜像。 */
+function koreanDocMetadata(file) {
+  const path = join(sourceRoot, 'ko', file);
+  if (!existsSync(path)) throw new Error(`missing Korean docs source: ${path}`);
+  const markdown = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+  const title = plainMarkdownText(markdown.match(/^#\s+(.+)$/m)?.[1] ?? 'LightVela 문서');
+  const withoutCode = markdown.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm, '');
+  const summary = withoutCode.match(/\*\*([\s\S]*?)\*\*/)?.[1]
+    ?? withoutCode
+      .split(/\n\s*\n/)
+      .map(plainMarkdownText)
+      .find((paragraph) => paragraph.length >= 40 && paragraph !== title)
+    ?? `${title}에 대해 설명합니다.`;
+  return {
+    title,
+    description: truncateKoreanDescription(plainMarkdownText(summary)),
+  };
+}
+
 for (const doc of globalDocs) {
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
@@ -1397,6 +1491,28 @@ for (const doc of globalDocs) {
   if (!esMetadata) throw new Error(`missing Spanish docs metadata: ${doc.slug}`);
   doc.title[LOCALES.ES] = esMetadata.title;
   doc.description[LOCALES.ES] = esMetadata.description;
+
+  if (doc.group && typeof doc.group === 'object') {
+    const englishGroup = doc.group[LOCALES.EN_US];
+    const jaGroup = JA_GROUP_LABELS[englishGroup];
+    if (!jaGroup) throw new Error(`missing Japanese docs group label: ${englishGroup}`);
+    doc.group[LOCALES.JA_JP] = jaGroup;
+  }
+
+  const jaMetadata = japaneseDocMetadata(doc.file);
+  doc.title[LOCALES.JA_JP] = jaMetadata.title;
+  doc.description[LOCALES.JA_JP] = jaMetadata.description;
+
+  if (doc.group && typeof doc.group === 'object') {
+    const englishGroup = doc.group[LOCALES.EN_US];
+    const koGroup = KO_GROUP_LABELS[englishGroup];
+    if (!koGroup) throw new Error(`missing Korean docs group label: ${englishGroup}`);
+    doc.group[LOCALES.KO_KR] = koGroup;
+  }
+
+  const koMetadata = koreanDocMetadata(doc.file);
+  doc.title[LOCALES.KO_KR] = koMetadata.title;
+  doc.description[LOCALES.KO_KR] = koMetadata.description;
 
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
@@ -1425,6 +1541,18 @@ const globalDocsForIndonesian = globalDocs.filter(
 
 const globalDocsForSpanish = globalDocsForEnglish.filter((doc) =>
   existsSync(join(sourceRoot, 'es', doc.file)),
+);
+
+const globalDocsForJapanese = globalDocs.filter(
+  (doc) =>
+    existsSync(join(sourceRoot, 'ja', doc.file)) &&
+    !isHiddenFor(doc, LOCALES.JA_JP),
+);
+
+const globalDocsForKorean = globalDocs.filter(
+  (doc) =>
+    existsSync(join(sourceRoot, 'ko', doc.file)) &&
+    !isHiddenFor(doc, LOCALES.KO_KR),
 );
 
 /** 判断 doc 是否对某 locale 隐藏（仅按 hiddenForLocales 白名单）。 */
@@ -1490,6 +1618,20 @@ const docSets = [
     docs: globalDocsForSpanish,
     title: 'Documentación de LightVela',
   },
+  {
+    outputPrefix: URL_LANGS.JA_JP,
+    sourcePrefix: 'ja',
+    locale: LOCALES.JA_JP,
+    docs: globalDocsForJapanese,
+    title: 'LightVelaドキュメント',
+  },
+  {
+    outputPrefix: URL_LANGS.KO_KR,
+    sourcePrefix: 'ko',
+    locale: LOCALES.KO_KR,
+    docs: globalDocsForKorean,
+    title: 'LightVela 문서',
+  },
 ];
 
 function ensureDir(path) {
@@ -1539,10 +1681,16 @@ function allDocsForLinks(outputPrefix) {
     localeDocs = globalDocsForIndonesian;
   } else if (outputPrefix === URL_LANGS.ES) {
     localeDocs = globalDocsForSpanish;
+  } else if (outputPrefix === URL_LANGS.JA_JP) {
+    localeDocs = globalDocsForJapanese;
+  } else if (outputPrefix === URL_LANGS.KO_KR) {
+    localeDocs = globalDocsForKorean;
   } else {
     localeDocs = globalDocsForEnglish;
   }
-  return outputPrefix === URL_LANGS.ES ? localeDocs : [...cnDocs, ...localeDocs];
+  return [URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)
+    ? localeDocs
+    : [...cnDocs, ...localeDocs];
 }
 
 function fileToHrefFor(outputPrefix) {
@@ -1566,6 +1714,8 @@ function localizedImageName(imageName, locale) {
     [LOCALES.ZH_HANT]: ['-zh-hant'],
     [LOCALES.ID_ID]: ['-id', '-en'],
     [LOCALES.ES]: ['-es', '-en'],
+    [LOCALES.JA_JP]: ['-en'],
+    [LOCALES.KO_KR]: ['-en'],
   };
   const suffixes = suffixesByLocale[locale];
   if (!suffixes || /-(?:en|zh-hant|id|es)\.[^.]+$/.test(imageName)) return imageName;
@@ -1601,7 +1751,7 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
     return target ? `${target}${suffix}${titleSuffix}` : destination;
   }
 
-  if (outputPrefix !== URL_LANGS.ES) return destination;
+  if (![URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)) return destination;
 
   const docsPath = hrefPath.startsWith('https://lightvela.ai/')
     ? hrefPath.slice('https://lightvela.ai'.length)
@@ -1609,9 +1759,9 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
   if (docsPath !== '/docs' && !docsPath.startsWith('/docs/')) return destination;
 
   const slug = docsPath.slice('/docs'.length).replace(/^\//, '').replace(/\/$/, '');
-  const spanishSlugs = new Set(globalDocsForEnglish.map((doc) => doc.slug.replace(/\/index$/, '')));
-  if (slug && !spanishSlugs.has(slug)) return destination;
-  return `/es/docs${slug ? `/${slug}` : ''}${suffix}${titleSuffix}`;
+  const localizedSlugs = new Set(globalDocsForEnglish.map((doc) => doc.slug.replace(/\/index$/, '')));
+  if (slug && !localizedSlugs.has(slug)) return destination;
+  return `/${outputPrefix}/docs${slug ? `/${slug}` : ''}${suffix}${titleSuffix}`;
 }
 
 export function normalizeMarkdownLinks(markdown, currentFile, outputPrefix, locale) {
@@ -1656,7 +1806,7 @@ function writeDoc(docSet, doc) {
   const raw = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   const body = convert(
     normalizeMarkdownLinks(
-      stripTitle(raw, rawTitle, docSet.locale === LOCALES.ES),
+      stripTitle(raw, rawTitle, [LOCALES.ES, LOCALES.JA_JP, LOCALES.KO_KR].includes(docSet.locale)),
       doc.file,
       docSet.outputPrefix,
       docSet.locale,

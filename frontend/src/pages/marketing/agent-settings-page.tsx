@@ -85,7 +85,11 @@ import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-swi
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
-import { shouldUseEnglishProviderData } from "@/pages/marketing/agent-provider-locale";
+import {
+  resolveAgentDisplayName,
+  resolveAgentSessionTitle,
+  shouldUseEnglishProviderData,
+} from "@/pages/marketing/agent-provider-locale";
 import {
   fetchHermesMemorySnapshot,
   getHermesMemoryLimitBounds,
@@ -4691,6 +4695,7 @@ export const AgentSettingsPage = ({
                     {t("正在加载页面…")}
                   </div>
                 );
+              const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -4719,8 +4724,8 @@ export const AgentSettingsPage = ({
                           <img src={avatarUrl} alt="" />
                         </span>
                         <span className="lv-agent-profile-text">
-                          <span className="lv-agent-profile-name" title={activeBot.name}>
-                            {truncateBotName(activeBot.name)}
+                          <span className="lv-agent-profile-name" title={activeBotDisplayName}>
+                            {truncateBotName(activeBotDisplayName)}
                           </span>
                           <span className="lv-agent-status-row">
                             <span className="lv-agent-status">
@@ -4858,6 +4863,7 @@ export const AgentSettingsPage = ({
                         <div className="mt-1 rounded-md bg-black/[0.025] p-1">
                           {visibleBots.map((bot) => {
                             const isActive = bot.id === activeTabId;
+                            const botDisplayName = resolveAgentDisplayName(bot.name, t);
                             return (
                               <button
                                 key={bot.id}
@@ -4872,8 +4878,8 @@ export const AgentSettingsPage = ({
                                 )}
                               >
                                 <img src={getAvatarForBot(bot.id)} alt="" className="h-5 w-5 flex-shrink-0 rounded object-contain" />
-                                <span className="min-w-0 flex-1 truncate" title={bot.name}>
-                                  {truncateBotName(bot.name)}
+                                <span className="min-w-0 flex-1 truncate" title={botDisplayName}>
+                                  {truncateBotName(botDisplayName)}
                                 </span>
                                 {isActive && <Check className="h-3.5 w-3.5 text-black/55" />}
                               </button>
@@ -4961,6 +4967,11 @@ export const AgentSettingsPage = ({
                                 const isRenaming = renamingChatId === session.chatId;
                                 const isMenuOpen = openSessionMenuChatId === session.chatId;
                                 const isDeletable = canDeleteSession(session);
+                                const sessionDisplayTitle = resolveAgentSessionTitle(
+                                  session.title,
+                                  i18n.language,
+                                  t("默认会话"),
+                                );
                                 return (
                                   <li key={session.chatId} className="lv-agents-session-item-wrap">
                                     {isRenaming ? (
@@ -4994,8 +5005,8 @@ export const AgentSettingsPage = ({
                                           )}
                                         >
                                           <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
-                                          <span className="lv-agents-session-title" title={session.title || t("默认会话")}>
-                                            {session.title || t("默认会话")}
+                                          <span className="lv-agents-session-title" title={sessionDisplayTitle}>
+                                            {sessionDisplayTitle}
                                           </span>
                                         </AppLink>
                                         <div ref={isMenuOpen ? sessionMenuRef : undefined} className="lv-agents-session-menu-anchor">

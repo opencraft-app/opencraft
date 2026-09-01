@@ -23,7 +23,7 @@ import { describe, expect, it } from 'vitest';
  */
 
 const frontendRoot = join(import.meta.dirname, '../../../..');
-const SUMMARY_HEADINGS = ['摘要', 'Summary', 'Ringkasan'];
+const SUMMARY_HEADINGS = ['摘要', 'Summary', 'Ringkasan', 'Resumen', '概要', '요약'];
 const SUMMARY_PATTERN = new RegExp(`^##\\s+(${SUMMARY_HEADINGS.join('|')})\\s*$`, 'm');
 
 function readDoc(relativePath: string): string {
@@ -52,7 +52,9 @@ function summaryLead(markdown: string): string | null {
  * 因此按语言分档，而不是一刀切。
  */
 function isLatinLocale(path: string): boolean {
-  return path.startsWith('src/content/docs/en/') || path.startsWith('src/content/docs/id/');
+  return path.startsWith('src/content/docs/en/') ||
+    path.startsWith('src/content/docs/id/') ||
+    path.startsWith('src/content/docs/es/');
 }
 
 /**

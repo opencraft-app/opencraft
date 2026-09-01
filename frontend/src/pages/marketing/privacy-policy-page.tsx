@@ -7,6 +7,8 @@ import { AppLink } from "@/lib/app-navigation";
 import { localizedPath } from "@/lib/region";
 import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
+import { JAPANESE_PRIVACY_POLICY_COPY } from "./legal-copy.ja";
+import { KOREAN_PRIVACY_POLICY_COPY } from "./legal-copy.ko";
 
 interface PolicyCopy {
   backHome: string;
@@ -666,6 +668,13 @@ const sectionFour = {
       "Lamentablemente, la transmisión de información por internet no es completamente segura. Aunque aplicaremos y mantendremos medidas razonables para proteger su información personal, no podemos garantizar la seguridad de la información transmitida por internet; toda transmisión se realiza por su cuenta y riesgo.",
     ],
   },
+  ja: {
+    title: "4. 個人情報の安全性",
+    paragraphs: [
+      "当社は、システムおよび技術へのアクセスに関する情報セキュリティ・アクセス方針を整備し、暗号化、ハッシュ化、ロールベースのアクセス制御、データアクセスの監査ログなど、適切な技術的保護措置を用いて個人情報を保護します。",
+      "インターネットを介した情報送信は完全に安全ではありません。当社は個人情報を保護するため合理的な措置を実施・維持しますが、インターネット経由で送信される情報の安全性を保証することはできず、送信は利用者ご自身の責任で行われます。",
+    ],
+  },
 };
 
 const boldFullSentences = [
@@ -886,6 +895,22 @@ export function getPrivacyPolicyTableHeaders(locale: PublicSiteLocaleCode): {
       retentionPolicy: "Política de conservación",
     };
   }
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) {
+    return {
+      personal: "個人情報",
+      use: "利用目的",
+      legalBasis: "法的根拠（該当する場合）",
+      retentionPolicy: "保存方針",
+    };
+  }
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) {
+    return {
+      personal: "개인정보",
+      use: "이용 목적",
+      legalBasis: "법적 근거(해당하는 경우)",
+      retentionPolicy: "보유 정책",
+    };
+  }
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) {
     return {
       personal: "Informasi Pribadi",
@@ -1024,6 +1049,8 @@ export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}/`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}/`;
   if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}/`;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}/`;
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return `/${PUBLIC_URL_LANGS.KO_KR}/`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}/`;
   return `/${PUBLIC_URL_LANGS.EN_US}/`;
 }
@@ -1041,6 +1068,8 @@ export function getPrivacyPolicyChrome(
 }
 
 export function getPrivacyPolicyCopy(locale: PublicSiteLocaleCode): PolicyCopy {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_PRIVACY_POLICY_COPY as PolicyCopy;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_PRIVACY_POLICY_COPY as PolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.ES) return es;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return id;
   return isZhLocale(locale) ? zh : en;
@@ -1049,7 +1078,11 @@ export function getPrivacyPolicyCopy(locale: PublicSiteLocaleCode): PolicyCopy {
 export const PrivacyPolicyPage = () => {
   const localeOverride = useLocaleOverride();
   const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.ID_ID
+    localeOverride === PUBLIC_SITE_LOCALES.KO_KR
+      ? PUBLIC_SITE_LOCALES.KO_KR
+      : localeOverride === PUBLIC_SITE_LOCALES.JA_JP
+      ? PUBLIC_SITE_LOCALES.JA_JP
+      : localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID
       : localeOverride === PUBLIC_SITE_LOCALES.ES
         ? PUBLIC_SITE_LOCALES.ES
@@ -1060,12 +1093,15 @@ export const PrivacyPolicyPage = () => {
           : PUBLIC_SITE_LOCALES.EN_US;
   const isZh = isZhLocale(currentLocale);
   const isId = currentLocale === PUBLIC_SITE_LOCALES.ID_ID;
+  const isJa = currentLocale === PUBLIC_SITE_LOCALES.JA_JP;
   // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
   const baseCopy = getPrivacyPolicyCopy(currentLocale);
   const copy = useZhHantDeep({ ...baseCopy, ...getPrivacyPolicyChrome(currentLocale) });
   const security = useZhHantDeep(
     currentLocale === PUBLIC_SITE_LOCALES.ES
       ? sectionFour.es
+      : isJa
+        ? sectionFour.ja
       : isId
         ? sectionFour.id
         : isZh

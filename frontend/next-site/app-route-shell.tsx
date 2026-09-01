@@ -33,10 +33,22 @@ function ProductRouteDocumentMetadata() {
   const agentHtmlLang = agentMetadata?.htmlLang ?? null;
 
   React.useEffect(() => {
-    if (isGlobal && i18n.language.toLowerCase().startsWith('es')) {
-      const meta = getSeoMeta(`/es${pathname === '/' ? '' : pathname}`, 'global');
+    const normalizedLanguage = i18n.language.toLowerCase();
+    const localizedSeoPrefix = normalizedLanguage.startsWith('es')
+      ? '/es'
+      : normalizedLanguage.startsWith('ja')
+        ? '/ja-jp'
+        : normalizedLanguage.startsWith('ko')
+          ? '/ko-kr'
+          : null;
+    if (isGlobal && localizedSeoPrefix) {
+      const meta = getSeoMeta(`${localizedSeoPrefix}${pathname === '/' ? '' : pathname}`, 'global');
       document.title = meta.title;
-      document.documentElement.lang = 'es';
+      document.documentElement.lang = normalizedLanguage.startsWith('ja')
+        ? 'ja-JP'
+        : normalizedLanguage.startsWith('ko')
+          ? 'ko-KR'
+          : 'es';
       return;
     }
 

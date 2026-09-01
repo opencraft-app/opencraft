@@ -129,6 +129,8 @@ export type LocaleDefinition = {
    * 韩文谚文，也不含 `ñÑ¿¡`。
    */
   readonly requiresFontFallback: boolean;
+  /** 是否把该语种字典字符写入 HYRuiYiSong 字体子集。 */
+  readonly fontSubsetEligible: boolean;
 };
 
 /* ──────────────────────────────────────────────────────────────
@@ -175,6 +177,99 @@ export const TRANSLATION_REQUIRED_DICT_KEYS: readonly I18nDictKey[] = [
   ...new Set(LOCALE_DEFINITIONS.filter((d) => d.translationRequired).map((d) => d.i18nKey)),
 ];
 
+/**
+ * 已满足公开发布门禁的 locale。
+ *
+ * `switcherVisible` 表达产品发布意图，`translationRequired` 表达翻译完整度
+ * 已进入 CI 强校验；两者缺一时均不得生成公开路由或进入切换器。参数可注入
+ * 是为了让测试在不提前开放生产 locale 的前提下验证未来发布行为。
+ */
+export function publishedLocaleDefinitions(
+  definitions: readonly LocaleDefinition[] = LOCALE_DEFINITIONS,
+): readonly LocaleDefinition[] {
+  return definitions.filter((definition) => (
+    definition.switcherVisible && definition.translationRequired
+  ));
+}
+
+/** 单个 locale 是否同时通过产品可见性与翻译完整度发布门禁。 */
+export function isPublishedLocale(
+  locale: LocaleCode,
+  definitions: readonly LocaleDefinition[] = LOCALE_DEFINITIONS,
+): boolean {
+  const definition = definitions.find((candidate) => candidate.code === locale);
+  return Boolean(definition?.switcherVisible && definition.translationRequired);
+}
+
+/** 已发布 locale 的规范 URL 前缀。 */
+export function publishedUrlLangs(
+  definitions: readonly LocaleDefinition[] = LOCALE_DEFINITIONS,
+): readonly UrlLang[] {
+  return publishedLocaleDefinitions(definitions).map((definition) => definition.urlLang);
+}
+
+/** 已发布 locale 实际使用的 i18next 字典 key（去重后）。 */
+export function publishedI18nDictKeys(
+  definitions: readonly LocaleDefinition[] = LOCALE_DEFINITIONS,
+): readonly I18nDictKey[] {
+  return [
+    ...new Set(publishedLocaleDefinitions(definitions).map((definition) => definition.i18nKey)),
+  ];
+}
+
+export type RuntimeLocaleOptions = {
+  /** 国内站永不接受本地预览语种。 */
+  readonly region: "cn" | "global";
+  /** 生产构建即使误注入预览变量也必须忽略。 */
+  readonly isProduction: boolean;
+  /** 逗号分隔的规范 locale code，仅接受注册表中的精确值。 */
+  readonly previewLocales?: string | null;
+  /** 测试或未来发布模拟时可注入定义，默认使用正式注册表。 */
+  readonly definitions?: readonly LocaleDefinition[];
+};
+
+/**
+ * 运行时可访问 locale。
+ *
+ * 默认值严格等于正式发布集合；只有国际站非生产环境显式传入
+ * `previewLocales` 时，才把已注册的目标 locale 合并进来。返回顺序始终
+ * 沿用注册表顺序，避免语言菜单在预览模式下跳位。
+ */
+export function runtimeLocaleDefinitions(
+  options: RuntimeLocaleOptions,
+): readonly LocaleDefinition[] {
+  const definitions = options.definitions ?? LOCALE_DEFINITIONS;
+  const publishedCodes = new Set(
+    publishedLocaleDefinitions(definitions).map((definition) => definition.code),
+  );
+
+  if (options.region !== "global" || options.isProduction || !options.previewLocales) {
+    return definitions.filter((definition) => publishedCodes.has(definition.code));
+  }
+
+  const previewCodes = new Set(
+    options.previewLocales
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  return definitions.filter((definition) => (
+    publishedCodes.has(definition.code) || previewCodes.has(definition.code)
+  ));
+}
+
+/** 把 URL / localStorage 等不可信输入收敛为当前运行时可访问的 locale。 */
+export function parseRuntimeLocaleCode(
+  value: string | null | undefined,
+  options: RuntimeLocaleOptions,
+): LocaleCode | null {
+  const locale = parseLocaleCode(value);
+  if (!locale) return null;
+  return runtimeLocaleDefinitions(options).some((definition) => definition.code === locale)
+    ? locale
+    : null;
+}
+
 const DEFINITION_BY_CODE = new Map<LocaleCode, LocaleDefinition>(
   LOCALE_DEFINITIONS.map((d) => [d.code, d]),
 );
@@ -209,6 +304,18 @@ export function parseLocaleCode(value: string | null | undefined): LocaleCode | 
   if (!value) return null;
   if (DEFINITION_BY_CODE.has(value as LocaleCode)) return value as LocaleCode;
   return null;
+}
+
+/**
+ * 把浏览器 URL、本地存储等公开输入收敛为已经发布的 locale。
+ * 注册但尚未发布的字典只能由构建/测试内部显式预载，不能成为用户界面语言。
+ */
+export function parsePublishedLocaleCode(
+  value: string | null | undefined,
+  definitions: readonly LocaleDefinition[] = LOCALE_DEFINITIONS,
+): LocaleCode | null {
+  const locale = parseLocaleCode(value);
+  return locale && isPublishedLocale(locale, definitions) ? locale : null;
 }
 
 /**

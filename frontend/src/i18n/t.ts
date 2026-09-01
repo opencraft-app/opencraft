@@ -25,13 +25,13 @@
  *   - 未提供 override 时（Vite SPA / 老代码路径）保持原行为：走全局单例。
  */
 
-import { createContext, createElement, useContext } from "react";
+import { createContext, createElement, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
 
 import zhToKey from "./generated/zh-to-key.json";
-import i18n from "./index";
+import i18n, { ensureLocaleDictionary } from "./index";
 import type { I18nDictKey } from "./locales.config";
 
 /** 反查表类型：中文 → hash key */
@@ -64,6 +64,26 @@ export function LocaleOverrideProvider({
   locale: I18nLocale | null;
   children: ReactNode;
 }) {
+  const [loadedLocale, setLoadedLocale] = useState<I18nLocale | null>(
+    () => locale && i18n.hasResourceBundle(locale, "translation") ? locale : null,
+  );
+
+  useEffect(() => {
+    if (!locale || i18n.hasResourceBundle(locale, "translation")) {
+      setLoadedLocale(locale);
+      return;
+    }
+    let active = true;
+    void ensureLocaleDictionary(locale).then(() => {
+      if (active) setLoadedLocale(locale);
+    });
+    return () => {
+      active = false;
+    };
+  }, [locale]);
+
+  /* 避免客户端 locale 切换期间短暂渲染中文 fallback。服务端字典已预载。 */
+  if (locale && !i18n.hasResourceBundle(locale, "translation") && loadedLocale !== locale) return null;
   return createElement(LocaleOverrideContext.Provider, { value: locale }, children);
 }
 

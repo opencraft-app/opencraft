@@ -3,10 +3,11 @@ import type { ReactNode } from 'react';
 
 import { isGlobal, type Region } from '@/lib/region';
 
-import type { DocsRouteLocale } from './docs-route-manifest';
+import { DOCS_ROUTE_LOCALES, type DocsRouteLocale } from './docs-route-manifest';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import {
   DEFAULT_PUBLIC_ROUTE_LOCALE,
+  PUBLIC_URL_LANGS,
   publicRouteLocaleFromLang,
   type PublicRouteLocale,
   type PublicUrlLang,
@@ -209,32 +210,62 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
     'bot de Discord',
   ],
   // Hidden preparation locales are deliberately not part of any release array.
-  'ja-JP': ['LightVela'],
-  'ko-KR': ['LightVela'],
+  'ja-JP': [
+    'LightVela',
+    'クラウドAIエージェント',
+    'パーソナルAIエージェント',
+    'AIアシスタント',
+    'Hermes Agent',
+    'AIエージェントホスティング',
+    '自動化',
+  ],
+  'ko-KR': [
+    'LightVela',
+    '클라우드 AI 에이전트',
+    '개인 AI 에이전트',
+    'AI 어시스턴트',
+    'Hermes Agent',
+    'AI 에이전트 호스팅',
+    '자동 작업',
+    '스킬',
+  ],
 };
 
-export const SEO_PUBLIC_URL_LANGS = (
-  isGlobal ? [EN_US_URL_LANG, ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG, ES_URL_LANG] : [ZH_CN_URL_LANG]
-) satisfies readonly PublicUrlLang[];
-export const SEO_DOCS_ROUTE_LOCALES = (
-  isGlobal ? [EN_US_URL_LANG, ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG, ES_URL_LANG] : [ZH_CN_URL_LANG]
-) satisfies readonly DocsRouteLocale[];
-export const SEO_ALL_PUBLIC_URL_LANGS = [
-  ZH_CN_URL_LANG,
-  EN_US_URL_LANG,
-  ZH_SG_URL_LANG,
-  ZH_HANT_URL_LANG,
-  ID_ID_URL_LANG,
-  ES_URL_LANG,
-] as const satisfies readonly PublicUrlLang[];
-export const SEO_ALL_DOCS_ROUTE_LOCALES = [
-  ZH_CN_URL_LANG,
-  EN_US_URL_LANG,
-  ZH_SG_URL_LANG,
-  ZH_HANT_URL_LANG,
-  ID_ID_URL_LANG,
-  ES_URL_LANG,
-] as const satisfies readonly DocsRouteLocale[];
+export const SOFTWARE_APPLICATION_DESCRIPTIONS: Record<SeoLocale, string> = {
+  'en-US': 'LightVela is a cloud Agent hosting product for creating a long-term personal AI companion.',
+  'zh-CN': 'LightVela 是云端 Agent 托管产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
+  'zh-SG': 'LightVela 是云端 Agent 托管产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
+  'zh-Hant': 'LightVela 是雲端 Agent 託管產品，用於建立長期在線、越聊越懂你的個人 AI 夥伴。',
+  'id-ID': 'LightVela adalah produk hosting Agent berbasis cloud untuk membuat pendamping AI pribadi jangka panjang.',
+  es: 'LightVela es una plataforma de agentes de IA en la nube para crear un asistente personal siempre disponible.',
+  'ja-JP': 'LightVelaは、長期的に使える自分専用のAIアシスタントを作成するためのクラウドAIエージェント基盤です。',
+  'ko-KR': 'LightVela는 장기간 사용할 수 있는 개인 AI 어시스턴트를 만드는 클라우드 AI 에이전트 플랫폼입니다.',
+};
+
+const GLOBAL_PUBLISHED_URL_LANGS = PUBLIC_URL_LANGS.filter((lang) => lang !== ZH_CN_URL_LANG);
+
+/** 当前构建区域已通过语言注册表发布门禁的公开 URL 语言。 */
+export const SEO_PUBLIC_URL_LANGS: readonly PublicUrlLang[] = isGlobal
+  ? GLOBAL_PUBLISHED_URL_LANGS
+  : PUBLIC_URL_LANGS.filter((lang) => lang === ZH_CN_URL_LANG);
+
+function isDocsRouteLocale(lang: PublicUrlLang): lang is DocsRouteLocale {
+  return (DOCS_ROUTE_LOCALES as readonly string[]).includes(lang);
+}
+
+/** 当前构建区域同时具备公开语言资格与文档路由清单的语言。 */
+export const SEO_DOCS_ROUTE_LOCALES: readonly DocsRouteLocale[] =
+  SEO_PUBLIC_URL_LANGS.filter(isDocsRouteLocale);
+
+/** 跨国内站与国际站的完整已发布语言集合，供 hreflang 使用。 */
+export const SEO_ALL_PUBLIC_URL_LANGS: readonly PublicUrlLang[] = [
+  ...PUBLIC_URL_LANGS.filter((lang) => lang === ZH_CN_URL_LANG),
+  ...GLOBAL_PUBLISHED_URL_LANGS,
+];
+
+/** 跨站点已发布且实际存在文档路由的语言集合。 */
+export const SEO_ALL_DOCS_ROUTE_LOCALES: readonly DocsRouteLocale[] =
+  SEO_ALL_PUBLIC_URL_LANGS.filter(isDocsRouteLocale);
 
 /**
  * 需要生成「带语言前缀」静态路由的语言（用于 generateStaticParams）。
@@ -255,14 +286,12 @@ export const SEO_ALL_DOCS_ROUTE_LOCALES = [
  *
  * 国际站的非默认语言保持不变：`/zh-sg/`、`/zh-hant/`、`/id-id/` 均为真实语言版本。
  */
-export const SEO_PREFIXED_PUBLIC_URL_LANGS = (
-  isGlobal ? [ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG, ES_URL_LANG] : []
-) satisfies readonly PublicUrlLang[];
+export const SEO_PREFIXED_PUBLIC_URL_LANGS: readonly PublicUrlLang[] =
+  SEO_PUBLIC_URL_LANGS.filter((lang) => lang !== EN_US_URL_LANG && lang !== ZH_CN_URL_LANG);
 
 /** 文档站版本，语义同 `SEO_PREFIXED_PUBLIC_URL_LANGS`。 */
-export const SEO_PREFIXED_DOCS_ROUTE_LOCALES = (
-  isGlobal ? [ZH_SG_URL_LANG, ZH_HANT_URL_LANG, ID_ID_URL_LANG, ES_URL_LANG] : []
-) satisfies readonly DocsRouteLocale[];
+export const SEO_PREFIXED_DOCS_ROUTE_LOCALES: readonly DocsRouteLocale[] =
+  SEO_PREFIXED_PUBLIC_URL_LANGS.filter(isDocsRouteLocale);
 
 /**
  * `[lang]` 路由的运行时守卫：只接受**本站点真的生成前缀路由**的语言。
@@ -475,16 +504,6 @@ export function SiteJsonLd() {
 }
 
 export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale }: { locale?: SeoLocale }) {
-  const isEnglish = locale === EN_US_LOCALE;
-  const isIndonesian = locale === ID_ID_LOCALE;
-  const isSpanish = locale === ES_LOCALE;
-  const description = isEnglish
-    ? 'LightVela is a cloud Agent hosting product for creating a long-term personal AI companion.'
-    : isIndonesian
-      ? 'LightVela adalah produk hosting Agent berbasis cloud untuk membuat pendamping AI pribadi jangka panjang.'
-      : isSpanish
-        ? 'LightVela es una plataforma de agentes de IA en la nube para crear un asistente personal siempre disponible.'
-      : 'LightVela 是云端 Agent 托管产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。';
   return (
     <JsonLd
       id="lightvela-software-jsonld"
@@ -496,7 +515,7 @@ export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE
         operatingSystem: 'Web',
         url: siteUrl(),
         image: absoluteUrl(DEFAULT_OG_IMAGE_PATH),
-        description,
+        description: SOFTWARE_APPLICATION_DESCRIPTIONS[locale],
         offers: PLAN_OFFERS_BY_SEO_REGION[seoRegion()],
       }}
     />

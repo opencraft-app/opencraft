@@ -1389,6 +1389,441 @@ const OVERVIEW_SPANISH_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number],
   },
 };
 
+const OVERVIEW_KOREAN_GENERATED_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number], OverviewEnglishPackCopy> = {
+  "medication-once": {
+    name: "물과 약물 치료의 상기제",
+    valueProp: "수분을 섭취하고, 당신의 의사표시에 따라 약을 복용하기 위한 부드러운 경고",
+    description: "수분과 약을 한 작업으로 묶어 주며 항상 당신의 처방전이나 당신이 제공하는 지침을 준수하십시오.",
+    quickPrompt: "물을 마시고, 지시대로 약을 먹도록 상기시켜 주십시오.",
+    defaultFrequencyLabel: "치료 중 한 번 또는 그 동안",
+    durationLabel: "1분 정도",
+    defaultDeliverLabel: "웹 / 최근 실행",
+    requiredInfoLabel: "상기기 유형, 수분/약 복용 시간, 복용량 및 선택적 사용 안내서",
+    usageGuide: [
+      "수분을 공급하거나, 일어서거나, 길게 뻗는 것은 부드러운 경고입니다. 약은 당신이 제시한 지표, 안내서, 또는 링크를 따르고, 규칙을 섞지 않고 있습니다.",
+      "처리 중 또는 연속적으로 한 번만 선택하세요. 처리 기간이 끝나면 처리 종료되며, 연속적인 작업은 자동화에서 관리됩니다.",
+      "작업은 실행에 옮기면만 공개 링크를 열려고 노력할 것이고, 로그인, 결제 또는 확인을 필요로 한다면, 읽을 수 없다는 것을 표시할 것입니다.",
+      "과제는 이미 약을 복용했는지 여부를 결정하거나 응답에 따라 복용량을 변경하는 것이 아니라 항상 의사의 지시를 따르십시오.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "상기기 사용하세요" },
+      { type: "field", fieldKey: "reminderMode" },
+      { type: "text", text: "수분 및 약물치료에 필요한 경우:" },
+      { type: "field", fieldKey: "medicine" },
+      { type: "text", text: ". " },
+      { type: "text", text: "기억하세요", visibleWhen: { fieldKey: "reminderMode", values: ["仅这一次"] } },
+      { type: "field", fieldKey: "triggerAt" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["仅这一次"] } },
+      { type: "text", text: "매일 매일 기억해 주세요", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复", "长期重复"] } },
+      { type: "field", fieldKey: "recurringTimes" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复", "长期重复"] } },
+      { type: "text", text: "계속해", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复"] } },
+      { type: "field", fieldKey: "courseEndDate" },
+      { type: "text", text: ". ", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复"] } },
+      { type: "text", text: "참고:" },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      medicine: "제 처방과 이미 가지고 있는 복용량 지침을 따르세요",
+      customRequest: "수분을 알리는 것을 간략하게 유지하세요. 제 처방전과",
+    },
+    optionLabels: {
+      reminderMode: {
+        "仅这一次": "한 번만",
+        "按疗程重复": "치료 중에",
+        "长期重复": "계속",
+      },
+    },
+    fieldCopy: {
+      reminderMode: {
+        label: "상기기 유형",
+        helpText: "치료 기간은 종료 후 중단되며, 중단 또는 제거할 때까지 계속된 모드가 계속 작동합니다.",
+      },
+      triggerAt: {
+        label: "상기 시점과 날짜",
+        helpText: "지금 당장 단 한 번만 통보를 보내세요.",
+      },
+      recurringTimes: {
+        label: "매일의 상기시간",
+        helpText: "4시간까지 추가하고, 각 시간마다 별도로 알릴 수 있습니다.",
+      },
+      courseEndDate: {
+        label: "치료 종료 날짜",
+        placeholder: "치료 종료 날짜를 선택하세요",
+        helpText: "활성화 날 시작하고 이 날짜가 끝나면 알림을 보내지 마세요.",
+      },
+      medicineType: {
+        label: "약물 복용 유형",
+        optionLabels: {
+          "口服药": "입술의 약",
+          "外用药/贴剂": "토픽 약물이나 패치",
+          "滴眼液/喷剂": "콜리리 또는 에어로솔",
+          "术后/临时医嘱": "수술 후 또는 일시적인 표시",
+          "复诊/检查前准备": "검토 또는 시험 준비",
+        },
+      },
+      medicine: {
+        label: "약품 및 복용량",
+        placeholder: "이름, 복용량, 식사 전/후 및 예방 사항",
+      },
+      sourceLinks: {
+        label: "약물의 안내서 또는 약물의 안내서 링크",
+        placeholder: "선택적: 안내서, 병원 안내서 또는 의사 링크를 붙여넣어, 한 줄로",
+        helpText: "에이전트는 시간표와 예방 조치를 취하기 위해 여러분의 자료를 우선시하고 의료 지시를 대체하지 않습니다.",
+      },
+      sourceText: {
+        label: "이 부문에서 중요한 단편소",
+        placeholder: "선택 사항: 복용량, უკუჩვენებები, 식사와 연관성 또는 잊혀진 복용량에 대한 지침을 붙여넣어",
+      },
+      customRequest: {
+        label: "추가적인 지표",
+        placeholder: "예를 들어, 식사 후 경고, 잠시 일어나거나 전날의 점검을 상기시켜",
+      },
+    },
+    safetyNote: "의사의 지시를 따르세요. 이 예고서는 약물치료에 대한 조언을 제공하지 않습니다.",
+  },
+  "rent-reminder": {
+    name: "임대기록",
+    valueProp: "임대료가 만료되기 전에 알림을 받으세요",
+    description: "월화 날짜를 확인하고 통보에 금액, 수신자, 지불 방법 및 메모를 포함합니다.",
+    quickPrompt: "월가 정해진 전에 임대료를 지불하라고 상기시켜주십시오.",
+    defaultFrequencyLabel: "월간 결제 통보",
+    durationLabel: "1분 정도",
+    defaultDeliverLabel: "웹 / 최근 실행",
+    requiredInfoLabel: "임대일, 임대 또는 청구서 데이터, 그 날 미리 알림 및 알림",
+    usageGuide: [
+      "예를 들어, 임대, 물품, 주차장 등 여러 번 템플릿을 활성화할 수 있습니다. 각 작업은 주기 및 점수를 표시합니다.",
+      "실제 날짜, 금액, 대상자 및 지불 방법 등을 표시하고, 그 다음으로 매달 반복되며 선택된 사전 통지일 뿐이며, 활성화하면 결제일만 표시합니다.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "매일 밤" },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", 결제 주기를 확인합니다." },
+      { type: "field", fieldKey: "dueDate" },
+      { type: "text", text: "매월 지불하라고 상기시켜줘" },
+      { type: "field", fieldKey: "rentInfo" },
+      { type: "text", text: "- 알리세요" },
+      { type: "field", fieldKey: "advanceDays" },
+      { type: "text", text: "그리고" },
+      { type: "field", fieldKey: "includeDueDay", trueLabel: "그 날 다시 경고하라", falseLabel: "결말날에 경고를 반복하지 말라" },
+      { type: "text", text: "." },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      rentInfo: "은행 송금으로 주인에게 5,000만원 규모의 임대",
+      customRequest: "물품, 주차장, 지불 통지 또는 소유자의 데이터를 추가하면 포함됩니다.",
+    },
+    optionLabels: {
+      advanceDays: Object.fromEntries(
+        Array.from({ length: 31 }, (_, days) => [
+          String(days),
+          days === 0 ? "결속일" : `${days} día${days === 1 ? "" : "s"} antes`,
+        ]),
+      ),
+    },
+    fieldCopy: {
+      reminderTime: {
+        label: "상기 시기는",
+        helpText: "이 작업은 이 시간에 순환을 확인하고 설정된 창에 들어가면 알릴 것입니다.",
+      },
+      dueDate: {
+        label: "현재 유효기간",
+        helpText: "이 날짜는 월순환을 정의합니다. 달이 그 날을 가지고 있지 않다면, 달의 마지막 날입니다.",
+      },
+      rentInfo: {
+        label: "임대 또는 청구서 데이터",
+        placeholder: "예를 들어, 은행 송금으로 주인에게 5,000만원 규모의 임대",
+      },
+      advanceDays: {
+        label: "사전에 몇일",
+      },
+      includeDueDay: {
+        label: "또한 결말일을 알리는",
+        helpText: "만약 당신이 그것을 비활성화한다면, 미리 알리고, 그 날에는 다시 알리지 마십시오.",
+      },
+      customRequest: {
+        label: "추가적인 지표",
+        placeholder: "예를 들어: 소유자의 일명, 전송 참조 또는 공급이 포함된",
+      },
+    },
+  },
+  "country-fx-alert": {
+    name: "환율 경보",
+    valueProp: "몇 개의 화폐를 선택하고 조건이 충족되면 알림을 받게됩니다.",
+    description: "목표형 또는 매일 변동률에 따라 통화쌍을 통제하고 조건이 충족되면만 통보합니다.",
+    quickPrompt: "당신이 선택한 통화쌍을 확인하고, 그 열을 도달하면 알려주세요.",
+    defaultFrequencyLabel: "매일 10시",
+    durationLabel: "1분 정도",
+    defaultDeliverLabel: "웹 / 최근 실행",
+    requiredInfoLabel: "출산과 목적지 통화 및 활성화 열대",
+    usageGuide: [
+      "출처와 목적지 화폐를 선택하고 브라우저에서 인정된 ISO 4217 코드가 지원됩니다.",
+      "변이는 현재 데이터와 이전 천연일 기준 사이의 같은 소스의 비교값으로 계산되며 유효한 기준이 없으면 추정되지 않으며 경고가 활성화되지 않습니다.",
+      "이 작업은 환율 정보와 경고만을 제공하지만 투자 추천은 제공하지 않습니다. 여행, 연구, 쇼핑 또는 국제 결제에서 사용할 수 있습니다.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "매일 밤" },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", 의 환율을 확인합니다" },
+      { type: "field", fieldKey: "fromCurrency" },
+      { type: "text", text: "a" },
+      { type: "field", fieldKey: "toCurrency" },
+      { type: "text", text: "언제인지 알려줘" },
+      { type: "field", fieldKey: "thresholdMode" },
+      { type: "text", text: " " },
+      { type: "field", fieldKey: "thresholdValue" },
+      { type: "text", text: "." },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      customRequest: "여행이나 해외연수나 국제 결제 등에 사용해서 확인해야 할 것을 알려주세요",
+    },
+    optionLabels: {
+      thresholdMode: {
+        "相较前一自然日同源参考值，涨跌幅达到": "전날의 유효한 기준에 대한 절대적인 변수는 (%)",
+        "当前汇率高于": "현재는",
+        "当前汇率低于": "현재는",
+      },
+    },
+    fieldCopy: {
+      reminderTime: {
+        label: "확인 시간",
+        helpText: "이 작업은 이 시간에 환율을 확인하고 조건이 충족되면만 알립니다.",
+      },
+      fromCurrency: {
+        label: "출처 통화",
+      },
+      toCurrency: {
+        label: "목적지 통화는",
+      },
+      thresholdMode: {
+        label: "활성화 조건",
+      },
+      thresholdValue: {
+        label: "그라운드 값",
+        placeholder: "예를 들어: 1%의 변동에 대해 1 또는 목표형",
+        helpText: "비율 변수에서 1은 1%이고, 상위/하위에서 이쌍의 목표 유형을 나타냅니다.",
+      },
+      actionMode: {
+        label: "활성화 시행",
+        optionLabels: {
+          "只提醒，不给交易建议": "투자 추천 없이 경고만",
+          "提醒并解释可能原因": "가능한 원인을 알리고 설명하는",
+          "提醒并给我需要核对的信息": "어떤 정보를 확인해야 하는지 알려주고",
+        },
+      },
+      customRequest: {
+        label: "추가적인 지표",
+        placeholder: "예를 들어 일본으로 여행을 하거나 한 번에 3,000조원을 전환하거나 은행의 판매자를 사용하거나",
+      },
+    },
+    safetyNote: "환율 정보만요, 투자 자문도 아닙니다.",
+  },
+  "calorie-fitness-checkin": {
+    name: "칼로리 기록과 운동",
+    valueProp: "매일 식사, 운동, 체중 트렌드를 기록합니다",
+    description: "식사, 운동, 체중, 체력 데이터를 요청하고 명확하게 식별된 추정과 짧은 요약을 제공합니다.",
+    quickPrompt: "오늘 식사와 운동을 기록하는 데 도움이 되세요",
+    defaultFrequencyLabel: "매일 9시 30분",
+    durationLabel: "약 2분",
+    defaultDeliverLabel: "웹 / 최근 실행",
+    requiredInfoLabel: "선택적 신체 데이터를 가진 기록 시간, 목표, 먹거리 및 운동",
+    usageGuide: [
+      "키, 체중, 목표물 무게, 스포츠 경험은 선택 사항입니다. 이것 없이는 작업은 일상의 방식으로 작동 할 수 있습니다.",
+      "칼로리와 지출은 대략적인 추정치이며, 의료, 영양 및 훈련 전문가의 대상이 아닙니다. 질병, 임신, 청소년 또는 극단적인 식단에서 전문적인 도움이 좋습니다.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "매일 밤" },
+      { type: "field", fieldKey: "checkinTime" },
+      { type: "text", text: ", 기록해 주세요" },
+      { type: "field", fieldKey: "foodLog" },
+      { type: "text", text: "- 제 목표는" },
+      { type: "field", fieldKey: "fitnessGoal" },
+      { type: "text", text: ". 댓글:" },
+      { type: "field", fieldKey: "reportStyle" },
+      { type: "text", text: "." },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      foodLog: "제가 먹거나 마시는 것, 제가 운동한 것, 그리고 체중의 변화",
+      fitnessGoal: "체력 훈련을 통해 지방을 잃게 됩니다.",
+      customRequest: "선택적 신체 데이터는: 키, 체중, 나이, 성별, 목표 체중 및 훈련 경험; 기록이 불완전하다면 부족한 식사 또는 운동에 대한 질문",
+    },
+    optionLabels: {
+      reportStyle: {
+        "估算热量 + 给明天一个小调整": "칼로리를 계산하고 내일의 작은 조정을 제안합니다.",
+        "只做记录和趋势，不评价": "추세를 판단하지 않고 기록합니다.",
+        "重点看蛋白质、饮水和运动完成度": "단백질, 수분, 운동에 집중하세요",
+      },
+    },
+    fieldCopy: {
+      checkinTime: {
+        label: "등록시간",
+        helpText: "1~5개의 경고를 설정하세요. 예를 들어, 아침 식사 후, 식사 후, 또는 잠들기 전에 말이죠.",
+      },
+      fitnessGoal: {
+        label: "목표",
+        placeholder: "예를 들어: 지방을 잃거나 근육을 얻거나 체중을 유지하거나, 경쟁하거나, 다시 운동을 시작하십시오.",
+      },
+      bodyProfile: {
+        label: "신체 데이터 (선택)",
+        placeholder: "예를 들어: 168cm, 62kg, 58kg의 목표, 일주일에 3번 훈련",
+        helpText: "선택적입니다. 추정과 추세에만 사용됩니다. 의학이나 영양 진단에 사용되지 않습니다.",
+      },
+      foodLog: {
+        label: "등록 내용",
+        placeholder: "예를 들어, 식사, 음료, 운동, 그리고 하루가 끝날 때 체중에 대해 물어보세요.",
+      },
+      reportStyle: {
+        label: "댓글의 종류",
+      },
+      customRequest: {
+        label: "추가적인 지표",
+        placeholder: "예를 들어 채식주의 식단, 설탕 조절, 늦은 저녁 식사, 동기부여 의견",
+      },
+    },
+    safetyNote: "칼로리와 운동 지출은 추정치입니다. 의료, 영양, 훈련의 조언이 아닙니다.",
+  },
+  "global-holiday-reminder": {
+    name: "축제와 날씨",
+    valueProp: "함께 축제, 운명 날씨, 공식 알림 등을 통제합니다",
+    description: "휴일, 일일 정규, 목적지 예측 및 국제 여행 및 계획에 대한 공식 기상 경보가 계속됩니다.",
+    quickPrompt: "제 관심 있는 장소의 공무원 경보와 명절, 기상 등을 통제합니다.",
+    defaultFrequencyLabel: "매일 9시",
+    durationLabel: "약 2분",
+    defaultDeliverLabel: "웹 / 최근 실행",
+    requiredInfoLabel: "국가, 휴가 기간, 경고 창 및 날씨 또는 선택적 목적지 알림",
+    usageGuide: [
+      "태국과 인도네시아와 같은 여러 나라를 동시에 추적할 수 있습니다. 공휴일, 일정한 날, 은행의 휴일을 별도로 확인하는 작업입니다.",
+      "기본적으로 다음의 축제를 따라가며, 여행이나 배송 또는 특정 프로젝트를 가지고 있다면 날짜 간격을 직접 표시하십시오.",
+      "목적지의 날씨를 확인하려면 도시와 날짜를 표시하고 강수, 태풍 또는 열에 대한 경고는 먼저 공식 또는 허가된 소스로 대조됩니다.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "매일 밤" },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", 통제합니다" },
+      { type: "field", fieldKey: "holidayCountries" },
+      { type: "text", text: " para " },
+      { type: "field", fieldKey: "holidayScope" },
+      { type: "text", text: "- 알리세요" },
+      { type: "field", fieldKey: "reminderWindow" },
+      { type: "text", text: ". " },
+      { type: "field", fieldKey: "holidayWeatherPlan" },
+      { type: "text", text: "." },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      holidayWeatherPlan: "또한 방콕과 자카르타에서 7일간의 기상과 함께 강수, 태풍, 열에 대한 공식 경보도 확인합니다.",
+      customRequest: "통지사항을 관련성 있게 하기 위해 추가한 여행, 배송, 고객 또는 회의 날짜를 사용하세요",
+    },
+    optionLabels: {
+      holidayScope: {
+        "公共假期 + 调休日 + 银行假日": "공휴일, 일일 정규 및 은행휴일",
+        "只看法定公共假期": "공적인 공휴일만",
+        "加上当地大型节庆/交通高峰": "공중 축제와 큰 지역 기념식",
+      },
+      reminderWindow: {
+        "提前 7 天 + 提前 1 天": "7일 1일 전",
+        "提前 3 天 + 当天早上": "3일 전과 그 아침 다시",
+        "仅在假期当天早上提醒": "축제 아침일 뿐",
+      },
+    },
+    fieldCopy: {
+      reminderTime: {
+        label: "확인 시간",
+        helpText: "숙제는 지금부터 휴일, 날씨, 경보를 확인합니다.",
+      },
+      holidayCountries: {
+        label: "국가 또는 지역",
+        helpText: "여러 국가나 지역을 선택하고, 선택된 옵션은 아래에서 표시됩니다.",
+      },
+      holidayScope: {
+        label: "축제의 범위",
+      },
+      reminderWindow: {
+        label: "경고 창",
+      },
+      periodMode: {
+        label: "추적 기간",
+        optionLabels: {
+          "持续关注": "지속적인 추적",
+          "指定日期范围": "날짜 간격",
+        },
+      },
+      periodStart: {
+        label: "시작 날짜",
+        placeholder: "시작 날짜를 선택",
+      },
+      periodEnd: {
+        label: "종료 날짜",
+        placeholder: "종료 날짜를 선택",
+      },
+      holidayWeatherPlan: {
+        label: "기후와 경고",
+        placeholder: "예를 들어 8월 1일부터 7일까지 방콕의 날씨와 공식적인 비가 오는 경고를 삭제합니다. 날씨가 필요하지 않으면 데이터를 삭제합니다.",
+      },
+      customRequest: {
+        label: "추가적인 지표",
+        placeholder: "예를 들어, 8월에 방콕으로 여행하거나 인도네시아 고객들과 일정을 나눌 수 있고, 긴 휴가 기간 동안 배송을 피할 수 있습니다.",
+      },
+    },
+  },
+  "stock-info-digest": {
+    name: "거래소 요약",
+    valueProp: "선택된 주식 가격, 발표 및 성과 요약",
+    description: "중국 본토, 홍콩, 미국 주식회사들에 대한 공공 정보를 제공하지만 투자 추천을 하지 않습니다.",
+    quickPrompt: "제가 추구하는 주식들에 대한 시장의 공공 정보를 요약합니다.",
+    defaultFrequencyLabel: "매일 9시",
+    durationLabel: "약 3분",
+    defaultDeliverLabel: "웹 / 최근 실행",
+    requiredInfoLabel: "주식 이름 또는 코드, 시장 및 관심 사항",
+    usageGuide: [
+      "중국 본토, 홍콩, 미국 주식을 인정하고, 회사를 표시하면 에이전트가 일반적인 코드를 연결하려고 노력하고 안전하지 않은지 표시합니다.",
+      "시장 정보, 광고, 결과 및 뉴스만 공개하고 있으며, 구매, 판매, 승화 또는 저하의 추천을 하지 않습니다.",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "매일 밤" },
+      { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: ", 이 같은 행동의 신화를 요약합니다:" },
+      { type: "field", fieldKey: "stockList" },
+      { type: "text", text: "집중해 보세요" },
+      { type: "field", fieldKey: "stockFocus" },
+      { type: "text", text: "." },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "." },
+    ],
+    fieldDefaults: {
+      stockList: "텐센트 홀딩스 00700, NVIDIA NVDA, Kweichow Moutai 600519",
+      stockFocus: "마지막 가격, 비율 변동, 관련 발표, 결과 및 비정상적인 이동의 가능한 공공 원인은",
+      customRequest: "공개적인 정보를 사용해서 구매, 판매, 증대, 감소할 것을 권장하지 않습니다.",
+    },
+    fieldCopy: {
+      reminderTime: {
+        label: "요약 시간",
+        helpText: "이 시간에는 공중적으로 사용할 수 있는 정보들을 정리합니다.",
+      },
+      stockList: {
+        label: "계속되는 행위",
+        placeholder: "이름, 코드, 시장; 또한 회사만 표시할 수 있습니다",
+      },
+      stockFocus: {
+        label: "관심의 사항",
+        placeholder: "예를 들어: 가격 변화, 발표, 결과, 특이한 움직임 또는 산업 뉴스",
+      },
+      customRequest: {
+        label: "추가적인 지표",
+        placeholder: "예를 들어, 홍콩과 미국만, 결과를 우선시하거나 발표가 있을 때만 알리는",
+      },
+    },
+    safetyNote: "공공 정보만 제공해주는 것이 아니라 투자 자문입니다.",
+  },
+};
+
 const OVERVIEW_INDONESIAN_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number], OverviewEnglishPackCopy> = {
   "medication-once": {
     name: "Pengingat minum air & obat",
@@ -1592,6 +2027,275 @@ const OVERVIEW_INDONESIAN_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[numbe
   },
 };
 
+const OVERVIEW_JAPANESE_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number], OverviewEnglishPackCopy> = {
+  "medication-once": {
+    name: "水分補給・服薬リマインダー",
+    valueProp: "指定した内容に沿って、水分補給と服薬をやさしくお知らせ",
+    description: "水分補給と服薬を一つのタスクで管理し、服薬内容は処方や入力した指示に従います。",
+    quickPrompt: "指示に沿って、水分補給と服薬を知らせてください。",
+    defaultFrequencyLabel: "1回のみ、または服用期間中",
+    durationLabel: "約1分",
+    defaultDeliverLabel: "Web／最近の実行",
+    requiredInfoLabel: "リマインダー形式、時刻、薬と用量、必要に応じて参考情報",
+    usageGuide: [
+      "水分補給やストレッチは軽い通知として扱い、服薬は入力した処方・説明書・参考リンクに従います。",
+      "1回のみ、服用期間中、継続のいずれかを選べます。服用期間中は終了日を過ぎると停止します。",
+      "服薬済みかどうかの診断や用量の変更は行いません。必ず医療専門家の指示を優先してください。",
+    ],
+    quickPromptTemplate: [
+      { type: "field", fieldKey: "reminderMode" },
+      { type: "text", text: "のリマインダーで、水分補給と服薬を知らせてください。内容：" },
+      { type: "field", fieldKey: "medicine" },
+      { type: "text", text: "。" },
+      { type: "text", text: "通知日時は", visibleWhen: { fieldKey: "reminderMode", values: ["仅这一次"] } },
+      { type: "field", fieldKey: "triggerAt" },
+      { type: "text", text: "。", visibleWhen: { fieldKey: "reminderMode", values: ["仅这一次"] } },
+      { type: "text", text: "毎日の通知時刻は", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复", "长期重复"] } },
+      { type: "field", fieldKey: "recurringTimes" },
+      { type: "text", text: "。", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复", "长期重复"] } },
+      { type: "text", text: "終了日は", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复"] } },
+      { type: "field", fieldKey: "courseEndDate" },
+      { type: "text", text: "。", visibleWhen: { fieldKey: "reminderMode", values: ["按疗程重复"] } },
+      { type: "text", text: "補足：" },
+      { type: "field", fieldKey: "customRequest" },
+      { type: "text", text: "。" },
+    ],
+    fieldDefaults: {
+      medicine: "現在の処方と用量の指示に従う",
+      customRequest: "水分補給の通知は短くし、服薬は入力した処方、説明、リンクに従う",
+    },
+    optionLabels: {
+      reminderMode: { "仅这一次": "1回のみ", "按疗程重复": "服用期間中", "长期重复": "継続" },
+    },
+    fieldCopy: {
+      reminderMode: { label: "リマインダー形式", helpText: "服用期間中は終了日まで、継続は一時停止または削除するまで有効です。" },
+      triggerAt: { label: "通知日時", helpText: "指定した日時に1回だけ通知します。" },
+      recurringTimes: { label: "毎日の通知時刻", helpText: "最大4つまで指定でき、それぞれの時刻に通知します。" },
+      courseEndDate: { label: "服用終了日", placeholder: "服用終了日を選択", helpText: "有効化した日から、この日の終了まで通知します。" },
+      medicineType: {
+        label: "薬の種類",
+        optionLabels: {
+          "口服药": "内服薬", "外用药/贴剂": "外用薬・貼付薬", "滴眼液/喷剂": "点眼薬・スプレー",
+          "术后/临时医嘱": "術後・一時的な指示", "复诊/检查前准备": "再診・検査前の準備",
+        },
+      },
+      medicine: { label: "薬と用量", placeholder: "薬の名前、用量、食前・食後、注意事項" },
+      sourceLinks: { label: "説明書・服薬ガイドのリンク", placeholder: "任意：説明書、病院の案内、医師からのリンクを1行ずつ入力", helpText: "入力した情報源を優先しますが、医療専門家の指示には代わりません。" },
+      sourceText: { label: "説明書の重要な抜粋", placeholder: "任意：用法、禁忌、食事との関係、飲み忘れ時の対応など" },
+      customRequest: { label: "追加の要望", placeholder: "例：食後に通知する、1分立ち上がる、再診の前日に知らせる" },
+    },
+    safetyNote: "医療専門家の指示に従ってください。このリマインダーは服薬に関する助言を行いません。",
+  },
+  "rent-reminder": {
+    name: "家賃リマインダー",
+    valueProp: "家賃の支払期限より前に通知を受け取る",
+    description: "毎月の支払日を確認し、金額、支払先、支払方法、補足をリマインダーに含めます。",
+    quickPrompt: "毎月の家賃支払期限より前に知らせてください。",
+    defaultFrequencyLabel: "毎月の支払い通知",
+    durationLabel: "約1分",
+    defaultDeliverLabel: "Web／最近の実行",
+    requiredInfoLabel: "支払日、家賃・請求内容、事前通知日数、当日の再通知",
+    usageGuide: [
+      "家賃、光熱費、駐車場代など、用途ごとにこのテンプレートを複数作成できます。",
+      "現在の支払日、金額、支払先、支払方法を入力すると、選んだ日数前と必要に応じて当日に通知します。",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "毎日" }, { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: "に支払い周期を確認してください。" }, { type: "field", fieldKey: "dueDate" },
+      { type: "text", text: "から毎月、次の支払いを知らせてください：" }, { type: "field", fieldKey: "rentInfo" },
+      { type: "text", text: "。通知は" }, { type: "field", fieldKey: "advanceDays" },
+      { type: "text", text: "、支払日当日は" },
+      { type: "field", fieldKey: "includeDueDay", trueLabel: "もう一度通知する", falseLabel: "再通知しない" },
+      { type: "text", text: "。補足：" }, { type: "field", fieldKey: "customRequest" }, { type: "text", text: "。" },
+    ],
+    fieldDefaults: {
+      rentInfo: "家主へ家賃5,000 CNYを銀行振込で支払う",
+      customRequest: "入力した場合は、光熱費、駐車場代、振込番号、家主の情報も含める",
+    },
+    optionLabels: {
+      advanceDays: Object.fromEntries(Array.from({ length: 31 }, (_, days) => [String(days), days === 0 ? "支払日当日" : `${days}日前`])),
+    },
+    fieldCopy: {
+      reminderTime: { label: "確認時刻", helpText: "毎日この時刻に周期を確認し、設定した通知期間に入った場合だけ知らせます。" },
+      dueDate: { label: "現在の支払日", helpText: "この日付を基準に毎月繰り返します。その日がない月は月末を使います。" },
+      rentInfo: { label: "支払い内容", placeholder: "例：家主へ家賃5,000 CNYを銀行振込で支払う" },
+      advanceDays: { label: "何日前に知らせるか" },
+      includeDueDay: { label: "支払日当日も通知", helpText: "オフの場合は事前通知のみで、当日は繰り返しません。" },
+      customRequest: { label: "追加の要望", placeholder: "例：家主の口座名、振込番号、含まれる光熱費" },
+    },
+  },
+  "country-fx-alert": {
+    name: "為替レートアラート",
+    valueProp: "通貨ペアを選び、指定条件に達したときだけ通知",
+    description: "目標レートまたは前日比のしきい値で通貨ペアを監視し、条件を満たした場合に通知します。",
+    quickPrompt: "選んだ通貨ペアを監視し、しきい値に達したら知らせてください。",
+    defaultFrequencyLabel: "毎日10:00",
+    durationLabel: "約1分",
+    defaultDeliverLabel: "Web／最近の実行",
+    requiredInfoLabel: "基準通貨、対象通貨、通知条件",
+    usageGuide: [
+      "基準通貨と対象通貨を選び、目標レートまたは前日比の条件を設定します。",
+      "為替情報と通知のみを提供し、投資判断の助言は行いません。旅行、留学、海外送金などに利用できます。",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "毎日" }, { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: "に" }, { type: "field", fieldKey: "fromCurrency" },
+      { type: "text", text: "から" }, { type: "field", fieldKey: "toCurrency" },
+      { type: "text", text: "への為替レートを確認し、" }, { type: "field", fieldKey: "thresholdMode" },
+      { type: "text", text: " " }, { type: "field", fieldKey: "thresholdValue" },
+      { type: "text", text: "になったら知らせてください。補足：" }, { type: "field", fieldKey: "customRequest" }, { type: "text", text: "。" },
+    ],
+    fieldDefaults: { customRequest: "旅行、留学、海外送金に使い、確認すべき点も知らせる" },
+    optionLabels: {
+      thresholdMode: {
+        "相较前一自然日同源参考值，涨跌幅达到": "前日の同一情報源の有効値からの変動率が（%）に達する",
+        "当前汇率高于": "現在のレートが次を上回る",
+        "当前汇率低于": "現在のレートが次を下回る",
+      },
+    },
+    fieldCopy: {
+      reminderTime: { label: "確認時刻", helpText: "この時刻に為替レートを確認し、条件を満たした場合だけ通知します。" },
+      fromCurrency: { label: "基準通貨" },
+      toCurrency: { label: "対象通貨" },
+      thresholdMode: { label: "通知条件" },
+      thresholdValue: { label: "しきい値", placeholder: "例：1%の変動なら1、または目標レート", helpText: "変動率では1が1%を表し、上回る・下回る条件では目標レートを入力します。" },
+      actionMode: {
+        label: "条件成立時の動作",
+        optionLabels: {
+          "只提醒，不给交易建议": "通知のみ（投資助言なし）",
+          "提醒并解释可能原因": "通知して、考えられる理由も説明",
+          "提醒并给我需要核对的信息": "通知して、確認すべき情報も提示",
+        },
+      },
+      customRequest: { label: "追加の要望", placeholder: "例：日本旅行用、毎回3,000 CNYを両替、銀行の売値を参照" },
+    },
+    safetyNote: "為替レート情報のみを提供します。投資助言ではありません。",
+  },
+  "calorie-fitness-checkin": {
+    name: "カロリー・運動記録",
+    valueProp: "食事、運動、体重の変化を毎日記録",
+    description: "食事、運動、体重、体調を確認し、推定値であることを明示した簡潔な振り返りを作ります。",
+    quickPrompt: "今日の食事と運動を記録するのを手伝ってください。",
+    defaultFrequencyLabel: "毎日21:30",
+    durationLabel: "約2分",
+    defaultDeliverLabel: "Web／最近の実行",
+    requiredInfoLabel: "記録時刻、目標、食事・運動内容、任意の身体情報",
+    usageGuide: [
+      "身長、体重、目標体重、運動経験は任意です。入力しなくても日記として利用できます。",
+      "カロリーや消費量は概算であり、医療・栄養・トレーニングの専門的助言には代わりません。",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "毎日" }, { type: "field", fieldKey: "checkinTime" },
+      { type: "text", text: "に次の内容を記録するよう知らせてください：" }, { type: "field", fieldKey: "foodLog" },
+      { type: "text", text: "。目標：" }, { type: "field", fieldKey: "fitnessGoal" },
+      { type: "text", text: "。フィードバック：" }, { type: "field", fieldKey: "reportStyle" },
+      { type: "text", text: "。補足：" }, { type: "field", fieldKey: "customRequest" }, { type: "text", text: "。" },
+    ],
+    fieldDefaults: {
+      foodLog: "食べた物と飲み物、運動、体重の変化",
+      fitnessGoal: "筋力トレーニングを続けながら体脂肪を減らす",
+      customRequest: "任意の身体情報：身長、体重、年齢、性別、目標体重、運動経験。記録が不完全なら不足した食事や運動を確認する",
+    },
+    optionLabels: {
+      reportStyle: {
+        "估算热量 + 给明天一个小调整": "カロリーを推定し、明日に向けた小さな改善を1つ提案",
+        "只做记录和趋势，不评价": "評価せず、記録と傾向だけを整理",
+        "重点看蛋白质、饮水和运动完成度": "たんぱく質、水分補給、運動の達成度を重視",
+      },
+    },
+    fieldCopy: {
+      checkinTime: { label: "記録時刻", helpText: "朝食後、昼食後、就寝前など、1〜5件の通知を設定できます。" },
+      fitnessGoal: { label: "目標", placeholder: "例：減量、筋肉増加、体重維持、大会、運動再開" },
+      bodyProfile: { label: "身体情報（任意）", placeholder: "例：168cm、62kg、目標58kg、週3回の運動", helpText: "推定と傾向のためだけに使い、医療・栄養診断には使用しません。" },
+      foodLog: { label: "記録する内容", placeholder: "例：1日の終わりに食事、飲み物、運動、体重を確認" },
+      reportStyle: { label: "フィードバック形式" },
+      customRequest: { label: "追加の要望", placeholder: "例：菜食、糖質管理、遅い夕食、励ますトーン" },
+    },
+    safetyNote: "カロリーと活動消費量は推定値であり、医療・栄養・トレーニング上の助言ではありません。",
+  },
+  "global-holiday-reminder": {
+    name: "祝日・天気チェック",
+    valueProp: "各国の祝日、目的地の天気、公式警報をまとめて確認",
+    description: "海外旅行や国際業務のために、祝日、振替出勤日、目的地の予報、公式気象警報を追跡します。",
+    quickPrompt: "気になる地域の祝日、目的地の天気、公式警報を確認してください。",
+    defaultFrequencyLabel: "毎日09:00",
+    durationLabel: "約2分",
+    defaultDeliverLabel: "Web／最近の実行",
+    requiredInfoLabel: "国・地域、祝日の範囲、通知時期、任意の天気・警報条件",
+    usageGuide: [
+      "複数の国・地域を選び、祝日、振替出勤日、銀行休業日を分けて確認できます。",
+      "目的地の都市と日付を入力すると、天気と大雨・台風・猛暑などの公式警報も確認します。",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "毎日" }, { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: "に" }, { type: "field", fieldKey: "holidayCountries" },
+      { type: "text", text: "の" }, { type: "field", fieldKey: "holidayScope" },
+      { type: "text", text: "を確認し、" }, { type: "field", fieldKey: "reminderWindow" },
+      { type: "text", text: "に知らせてください。" }, { type: "field", fieldKey: "holidayWeatherPlan" },
+      { type: "text", text: "。補足：" }, { type: "field", fieldKey: "customRequest" }, { type: "text", text: "。" },
+    ],
+    fieldDefaults: {
+      holidayWeatherPlan: "バンコクとジャカルタの今後7日間の天気、および大雨、台風、猛暑の公式警報も確認する",
+      customRequest: "入力した旅行、配送、顧客、会議の日程を使い、関連性の高い通知にする",
+    },
+    optionLabels: {
+      holidayScope: {
+        "公共假期 + 调休日 + 银行假日": "祝日、振替出勤日、銀行休業日",
+        "只看法定公共假期": "法定祝日のみ",
+        "加上当地大型节庆/交通高峰": "祝日と主要な地域行事・交通混雑",
+      },
+      reminderWindow: {
+        "提前 7 天 + 提前 1 天": "7日前と1日前",
+        "提前 3 天 + 当天早上": "3日前と当日の朝",
+        "仅在假期当天早上提醒": "祝日当日の朝のみ",
+      },
+    },
+    fieldCopy: {
+      reminderTime: { label: "確認時刻", helpText: "この時刻に祝日、天気、警報を確認します。" },
+      holidayCountries: { label: "国・地域", helpText: "複数選択できます。選択した項目は下に表示されます。" },
+      holidayScope: { label: "祝日の範囲" },
+      reminderWindow: { label: "通知する時期" },
+      periodMode: { label: "追跡期間", optionLabels: { "持续关注": "継続して追跡", "指定日期范围": "日付範囲を指定" } },
+      periodStart: { label: "開始日", placeholder: "開始日を選択" },
+      periodEnd: { label: "終了日", placeholder: "終了日を選択" },
+      holidayWeatherPlan: { label: "天気と警報", placeholder: "例：8月1日〜7日のバンコクの天気と公式大雨警報。天気が不要なら削除" },
+      customRequest: { label: "追加の要望", placeholder: "例：8月のバンコク旅行、インドネシアの顧客予定、長期休暇中の配送回避" },
+    },
+  },
+  "stock-info-digest": {
+    name: "株式情報ダイジェスト",
+    valueProp: "選んだ銘柄の株価、発表、決算情報を要約",
+    description: "中国本土、香港、米国株の公開情報を整理し、売買の推奨は行いません。",
+    quickPrompt: "フォローしている銘柄の公開市場情報をまとめてください。",
+    defaultFrequencyLabel: "毎日09:00",
+    durationLabel: "約3分",
+    defaultDeliverLabel: "Web／最近の実行",
+    requiredInfoLabel: "銘柄名またはコード、市場、確認したい項目",
+    usageGuide: [
+      "中国本土、香港、米国の銘柄に対応します。企業名だけの場合は一般的なコードを照合し、不確かな場合は明示します。",
+      "公開されている市場情報、発表、決算、ニュースだけを整理し、売買や保有比率の助言は行いません。",
+    ],
+    quickPromptTemplate: [
+      { type: "text", text: "毎日" }, { type: "field", fieldKey: "reminderTime" },
+      { type: "text", text: "に次の銘柄の更新をまとめてください：" }, { type: "field", fieldKey: "stockList" },
+      { type: "text", text: "。確認項目：" }, { type: "field", fieldKey: "stockFocus" },
+      { type: "text", text: "。補足：" }, { type: "field", fieldKey: "customRequest" }, { type: "text", text: "。" },
+    ],
+    fieldDefaults: {
+      stockList: "Tencent Holdings 00700、NVIDIA NVDA、Kweichow Moutai 600519",
+      stockFocus: "最新価格、変動率、重要な発表、決算、異常な値動きの公開情報上の要因",
+      customRequest: "公開情報だけを使い、売買や保有比率の増減を推奨しない",
+    },
+    fieldCopy: {
+      reminderTime: { label: "要約時刻", helpText: "この時刻に、その日に確認できる公開情報を整理します。" },
+      stockList: { label: "フォローする銘柄", placeholder: "銘柄名、コード、市場。企業名だけでも入力できます" },
+      stockFocus: { label: "確認したい項目", placeholder: "例：価格変動、発表、決算、異常な値動き、業界ニュース" },
+      customRequest: { label: "追加の要望", placeholder: "例：香港・米国株のみ、決算を優先、発表があるときだけ通知" },
+    },
+    safetyNote: "公開情報のみを扱います。投資助言ではありません。",
+  },
+};
+
 function localizeOverviewField(
   field: ScenarioTaskField,
   copy: OverviewEnglishPackCopy,
@@ -1645,6 +2349,39 @@ function localizeOverviewField(
   };
 }
 
+const KOREAN_OVERVIEW_TEXT = {
+  "medication-once": ["물 섭취 및 복약 알림", "물 섭취는 가볍게, 복약은 의사의 지시에 따라 알림", "물 섭취와 복약을 하나의 작업으로 관리하되 복약 내용은 처방과 안내를 기준으로 합니다.", "1회 또는 복약 기간"],
+  "rent-reminder": ["임대료 납부 알림", "납부일 전에 알려 연체 방지", "매월 임대료 납부일을 확인하고 금액, 지불 방법, 메모와 함께 알려 줍니다.", "매일 09:00에 확인"],
+  "country-fx-alert": ["환율 도달 알림", "원하는 환율에 도달했을 때만 알림", "통화 쌍과 기준값을 확인하고 조건을 충족할 때 알려 줍니다.", "매일 10:00"],
+  "calorie-fitness-checkin": ["칼로리 및 운동 기록", "매일 식사, 운동, 체중 추세 기록", "매일 식사와 운동을 묻고 제공한 신체 정보를 기준으로 가벼운 회고를 제공합니다.", "매일 21:30"],
+  "global-holiday-reminder": ["공휴일 및 날씨 확인", "공휴일, 날씨, 공식 특보를 함께 확인", "국가별 공휴일과 대체 휴일, 목적지 날씨, 공식 특보를 확인합니다.", "매일 09:00에 확인"],
+  "stock-info-digest": ["주식 정보 요약", "관심 주식의 가격, 공시, 실적 변화 정리", "관심 주식의 공개 시장 정보와 공시, 실적, 뉴스를 정리하며 매매 조언은 제공하지 않습니다.", "매일 09:00"],
+} satisfies Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number], readonly [string, string, string, string]>;
+
+function koreanQuickPromptTemplate(id: (typeof OVERVIEW_SCENARIO_TASK_IDS)[number]): ScenarioQuickPromptPart[] {
+  if (id === "medication-once") return [{ type: "text", text: "매일 " }, { type: "field", fieldKey: "recurringTimes" }, { type: "text", text: "에 물 섭취와 복약을 알려 주세요: " }, { type: "field", fieldKey: "medicine" }];
+  if (id === "calorie-fitness-checkin") return [{ type: "text", text: "매일 " }, { type: "field", fieldKey: "checkinTime" }, { type: "text", text: "에 식사와 운동을 기록해 주세요: " }, { type: "field", fieldKey: "foodLog" }];
+  if (id === "rent-reminder") return [{ type: "text", text: "매일 " }, { type: "field", fieldKey: "reminderTime" }, { type: "text", text: "에 확인하고 임대료 납부를 알려 주세요: " }, { type: "field", fieldKey: "rentInfo" }];
+  if (id === "country-fx-alert") return [{ type: "text", text: "매일 " }, { type: "field", fieldKey: "reminderTime" }, { type: "text", text: "에 환율을 확인하고 기준에 도달하면 알려 주세요: " }, { type: "field", fieldKey: "thresholdValue" }];
+  if (id === "global-holiday-reminder") return [{ type: "text", text: "매일 " }, { type: "field", fieldKey: "reminderTime" }, { type: "text", text: "에 다음 국가의 공휴일과 날씨를 확인해 주세요: " }, { type: "field", fieldKey: "holidayCountries" }];
+  return [{ type: "text", text: "매일 " }, { type: "field", fieldKey: "reminderTime" }, { type: "text", text: "에 다음 주식 정보를 정리해 주세요: " }, { type: "field", fieldKey: "stockList" }];
+}
+
+const OVERVIEW_KOREAN_COPY: typeof OVERVIEW_ENGLISH_COPY = Object.fromEntries(
+  OVERVIEW_SCENARIO_TASK_IDS.map((id) => {
+    const [name, valueProp, description, defaultFrequencyLabel] = KOREAN_OVERVIEW_TEXT[id];
+    return [id, {
+      ...OVERVIEW_KOREAN_GENERATED_COPY[id],
+      name,
+      valueProp,
+      description,
+      quickPrompt: description,
+      defaultFrequencyLabel,
+      quickPromptTemplate: koreanQuickPromptTemplate(id),
+    }];
+  }),
+) as typeof OVERVIEW_ENGLISH_COPY;
+
 /**
  * 场景任务卡片的本地化文案表。
  *
@@ -1667,9 +2404,8 @@ const OVERVIEW_COPY_BY_LOCALE: Record<
   "en-US": OVERVIEW_ENGLISH_COPY,
   "id-ID": OVERVIEW_INDONESIAN_COPY,
   es: OVERVIEW_SPANISH_COPY,
-  /* 日语 / 韩语场景任务文案待补齐，当前显式回退中文原稿。 */
-  "ja-JP": null,
-  "ko-KR": null,
+  "ja-JP": OVERVIEW_JAPANESE_COPY,
+  "ko-KR": OVERVIEW_KOREAN_COPY,
 };
 
 /**

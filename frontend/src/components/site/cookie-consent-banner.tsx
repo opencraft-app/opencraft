@@ -10,7 +10,7 @@ import {
   type CookieConsentValue,
 } from "@/lib/cookie-consent";
 
-const copy = {
+export const COOKIE_CONSENT_COPY = {
   [PUBLIC_SITE_LOCALES.EN_US]: {
     title: "Cookie Policy",
     description:
@@ -51,12 +51,20 @@ const copy = {
     accept: "Aceptar todas",
     necessary: "Solo las necesarias",
   },
+  [PUBLIC_SITE_LOCALES.JA_JP]: {
+    title: "Cookieを使用しています",
+    description:
+      "LightVelaの安定した動作、サイト利用状況の把握、サービス改善のためにCookieを使用します。すべてのCookieを許可するか、必要なCookieのみに設定できます。詳しくは",
+    policy: "Cookieポリシー",
+    accept: "すべて許可",
+    necessary: "必要なCookieのみ",
+  },
 };
 
-type CookieCopyLocale = keyof typeof copy;
+type CookieCopyLocale = keyof typeof COOKIE_CONSENT_COPY;
 
 const hasCookieCopy = (locale: string | undefined): locale is CookieCopyLocale =>
-  locale !== undefined && Object.prototype.hasOwnProperty.call(copy, locale);
+  locale !== undefined && Object.prototype.hasOwnProperty.call(COOKIE_CONSENT_COPY, locale);
 
 export const CookieConsentBanner = () => {
   const pathname = usePathname();
@@ -88,16 +96,22 @@ export const CookieConsentBanner = () => {
    * 若只看 URL 前缀，在 /agents 下 localePrefix 会是 "agents"，
    * 匹配不到任何语言而错误地回退英文。
    */
-  const localeFromPrefix = hasCookieCopy(routeDefinition?.i18nKey) ? routeDefinition.i18nKey : null;
+  const localeFromPrefix = hasLocalizedRoute && hasCookieCopy(routeDefinition?.i18nKey)
+    ? routeDefinition.i18nKey
+    : null;
 
   const currentI18nLanguage = i18n.language;
   const currentLocaleCode = parseLocaleCode(currentI18nLanguage);
   const currentI18nKey = currentLocaleCode ? localeDefinition(currentLocaleCode).i18nKey : undefined;
-  const localeFromI18n = hasCookieCopy(currentI18nKey) ? currentI18nKey : null;
+  const localeFromI18n = currentLocaleCode
+    && SWITCHER_VISIBLE_LOCALES.includes(currentLocaleCode)
+    && hasCookieCopy(currentI18nKey)
+    ? currentI18nKey
+    : null;
 
   const locale = localeFromPrefix ?? localeFromI18n ?? PUBLIC_SITE_LOCALES.EN_US;
   const cookiePolicyPath = hasLocalizedRoute ? `/${localePrefix}/cookie-policy` : "/cookie-policy";
-  const text = copy[locale];
+  const text = COOKIE_CONSENT_COPY[locale];
   const handleChoice = (value: CookieConsentValue) => {
     storeCookieConsent(value);
     setVisible(false);

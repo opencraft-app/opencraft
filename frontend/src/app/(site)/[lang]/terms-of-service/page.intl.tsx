@@ -5,6 +5,8 @@ import { PublicTermsOfServicePage } from '@next-site/legal-pages';
 import { type PublicUrlLang } from '@next-site/public-locale';
 import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
+import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
+import { koreanRouteDescription, koreanRouteTitle } from '@/lib/seo-data.ko';
 
 const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.EN_US]: 'Terms of Service',
@@ -13,8 +15,8 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: '服务条款',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Ketentuan Layanan',
   [PUBLIC_SITE_LOCALES.ES]: 'Términos del servicio',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'Terms of Service',
-  [PUBLIC_SITE_LOCALES.KO_KR]: 'Terms of Service',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/terms-of-service'),
+  [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteTitle('/terms-of-service'),
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -24,8 +26,8 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela 服务条款，适用于访问和使用 LightVela 服务。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Ketentuan Layanan LightVela untuk mengakses dan menggunakan layanan LightVela.',
   [PUBLIC_SITE_LOCALES.ES]: 'Términos del servicio de LightVela aplicables al acceso y uso de la plataforma.',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'LightVela Terms of Service for accessing and using the LightVela service.',
-  [PUBLIC_SITE_LOCALES.KO_KR]: 'LightVela Terms of Service for accessing and using the LightVela service.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/terms-of-service'),
+  [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteDescription('/terms-of-service'),
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

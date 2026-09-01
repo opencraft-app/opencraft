@@ -104,7 +104,7 @@ type SortMode = "popular" | "name";
 type SkillCategoryLabel = {
   zh: string;
   en: string;
-  id?: string; es?: string;
+  id?: string; es?: string; ja?: string; ko?: string;
 };
 type SearchInstallRowStatus = {
   status: "pending" | "installing" | "retrying" | "done" | "failed" | "skipped";
@@ -334,7 +334,7 @@ function getSkillOverview(
 function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
   const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
     "zh-CN": label.zh,
-    "id-ID": label.id, es: label.es,
+    "id-ID": label.id, es: label.es, "ja-JP": label.ja, "ko-KR": label.ko ?? label.en,
     "en-US": label.en,
   };
 
@@ -1841,12 +1841,18 @@ export function SkillsDemoPanel({
   const shouldReduceMotion = useReducedMotion();
   const isChinese = i18n.resolvedLanguage?.startsWith("zh") ?? false;
   // Skill 概览数据集按语言分流：中文（含繁体，繁体再由 OpenCC 就地转字形）、
-  // 印尼语、其余回退英文。未收录的条目由 getCuratedSkillOverview 回退英文。
+  // 印尼语、西班牙语、日语、韩语，其余回退英文。未收录条目回退英文。
   const overviewLocale: CuratedSkillOverviewLocale = isChinese
     ? "zh-CN"
     : i18n.resolvedLanguage === "id-ID"
       ? "id-ID"
-      : i18n.resolvedLanguage?.startsWith("es") ? "es" : "en-US";
+      : i18n.resolvedLanguage?.startsWith("es")
+        ? "es"
+        : i18n.resolvedLanguage?.startsWith("ja")
+          ? "ja-JP"
+          : i18n.resolvedLanguage?.startsWith("ko")
+            ? "ko-KR"
+            : "en-US";
   const isDomestic = mode === "domestic";
   const featuredSkillCopy: Record<string, { title: string; subtitle: string; description: string }> = {
     "self-improving-agent": {
@@ -1935,7 +1941,7 @@ export function SkillsDemoPanel({
     setActiveTab(initialTab === "create" ? "discover" : initialTab);
   }, [initialTab]);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const refreshInstalled = useCallback(async (): Promise<boolean> => {
     const requestId = installedRequestIdRef.current + 1;

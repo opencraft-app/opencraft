@@ -849,6 +849,17 @@ it("uses Spanish category and overview copy when the international locale is es"
   mocks.language = "zh-CN";
 });
 
+it("uses Japanese category and overview copy when the international locale is ja-JP", async () => {
+  mocks.language = "ja-JP";
+  renderPanel("global");
+
+  expect(screen.getByText("市場分析")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "查看Stock Analysis详情" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/Stock Analysisは、ファンダメンタルズ/)).toBeInTheDocument();
+  mocks.language = "zh-CN";
+});
+
 describe("SkillsDemoPanel installed identity boundaries", () => {
   beforeEach(() => {
     vi.clearAllMocks();

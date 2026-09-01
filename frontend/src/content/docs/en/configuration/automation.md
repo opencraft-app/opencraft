@@ -2,7 +2,7 @@
 
 ## Summary
 
-Automations let Hermes Agent proactively run work on a fixed time, interval, or one-time schedule, then send the result to the selected notification channels. You can start from a template, or customize the name, run rules, task instructions, effective window, and notification settings, then continue managing the task status from the task list.
+**Automations let Hermes Agent proactively run work on a fixed time, interval, or one-time schedule, then send the result to the selected notification channels. You can start from a template, or customize the name, run rules, task instructions, effective window, and notification settings, then continue managing the task status from the task list.**
 
 When creating or editing an automation, you can also link it to an upstream task. Later runs use the upstream task's most recent completed output as additional context. This is useful for splitting workflows such as “collect information first, then summarize it” into multiple steps.
 

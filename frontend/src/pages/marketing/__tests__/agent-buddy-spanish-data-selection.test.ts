@@ -10,10 +10,7 @@ describe("BuddyPanel Spanish dataset selection", () => {
       localizeDrawnSouls?: (
         drawn: typeof ENGLISH_SOULS,
         available: typeof ENGLISH_SOULS,
-        useEnglish: boolean,
-        useGlobalChinese: boolean,
-        useIndonesian: boolean,
-        useSpanish: boolean,
+        locale: "es",
       ) => typeof ENGLISH_SOULS;
     };
 
@@ -21,10 +18,7 @@ describe("BuddyPanel Spanish dataset selection", () => {
     const localized = panel.localizeDrawnSouls?.(
       [ENGLISH_SOULS[0]!],
       [],
-      true,
-      false,
-      false,
-      true,
+      "es",
     );
     expect(localized?.[0]?.displayName).toBe(SPANISH_SOULS[0]?.displayName);
   });

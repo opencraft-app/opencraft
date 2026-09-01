@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { shouldUseEnglishProviderData } from "@/pages/marketing/agent-provider-locale";
+import {
+  resolveAgentDisplayName,
+  resolveAgentSessionTitle,
+  shouldUseEnglishProviderData,
+} from "@/pages/marketing/agent-provider-locale";
 
 describe("shouldUseEnglishProviderData", () => {
   it.each([
@@ -7,11 +11,28 @@ describe("shouldUseEnglishProviderData", () => {
     ["en-US", true],
     ["es", true],
     ["es-MX", true],
+    ["ja-JP", true],
+    ["ko-KR", true],
+    ["id-ID", true],
     ["zh-CN", false],
     ["zh-Hant", false],
-    ["id-ID", false],
     [undefined, false],
   ])("returns %s for locale %s", (locale, expected) => {
     expect(shouldUseEnglishProviderData(locale)).toBe(expected);
+  });
+
+  it("localizes the backend default Hermes name without touching custom names", () => {
+    const translate = (copy: string) => copy === "我的Hermes" ? "私のHermes" : copy;
+
+    expect(resolveAgentDisplayName("我的Hermes", translate)).toBe("私のHermes");
+    expect(resolveAgentDisplayName("Jasmin Agent", translate)).toBe("Jasmin Agent");
+  });
+
+  it("shows the legacy SDK default session title in English for non-Chinese locales", () => {
+    expect(resolveAgentSessionTitle("新会话", "ko-KR", "기본 세션")).toBe("New chat");
+    expect(resolveAgentSessionTitle("新会话", "ja-JP", "デフォルトセッション")).toBe("New chat");
+    expect(resolveAgentSessionTitle("新会话", "zh-CN", "默认会话")).toBe("新会话");
+    expect(resolveAgentSessionTitle("历史会话", "ko-KR", "기본 세션")).toBe("历史会话");
+    expect(resolveAgentSessionTitle("", "ko-KR", "기본 세션")).toBe("기본 세션");
   });
 });

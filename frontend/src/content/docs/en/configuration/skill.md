@@ -171,7 +171,7 @@ This task includes multiple steps such as opening a web page, waiting for it to 
 
 ## Delete installed skills
 
-If you no longer use an installed skill, you can ask Hermes to delete it through conversation.
+If you no longer use an installed skill, delete it from the console's **Installed skills** list or ask Hermes to delete it through conversation.
 
 ### 1. View currently installed skills
 
@@ -201,9 +201,9 @@ Check the currently installed skills again and confirm the target skill has been
 Check again what skills you currently have installed
 ```
 
-> ℹ️ **Currently only conversation-based deletion is supported**
+> ℹ️ **Console and conversation deletion are both supported**
 > 
-> LightVela uses a cloud-hosted mode and does not provide user-facing file-system operations. Skills can only be deleted through conversation with Hermes.
+> In the console's **Installed skills** list, use the delete control for the target skill and confirm the action. You can also ask Hermes to delete the skill through conversation. LightVela uses a cloud-hosted mode and does not provide user-facing file-system operations.
 
 ---
 
@@ -213,7 +213,7 @@ Check again what skills you currently have installed
 
 - When you make a related request in conversation, Hermes can correctly recognize and call the skill
 
-- The skill can be deleted normally through conversation
+- The skill can be deleted from the console or through conversation
 
 
 ---

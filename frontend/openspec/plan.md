@@ -28,7 +28,34 @@
 - [x] **测试先行实现登录态首页入口、八种 locale、首页范围开关、原生 `/agents` 链接与埋点，并完成双站验证。**
 
 **Verification:** 目标测试先 RED（12 个用例中 9 个按预期失败）后 GREEN（12/12）；相关公共导航回归 24/24 通过。`pnpm i18n:check`、`pnpm check`、`pnpm build:cn`、`pnpm build:global` 及范围内 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。真实登录态浏览器确认国内站“开始使用”和国际站“Enter LightVela”在桌面与 390px 下均无横向溢出，点击进入 `/agents/`；退出态由自动化用例确认原免费试用动作不变。
+---
 
+# 国际站日韩本地化收口与生产入口开放 Implementation Plan
+
+**Status:** 实现与专项验收完成；仅处理日语、韩语需求本身，等待用户验收，不自动提交、推送或创建 MR。
+
+**Size:** M。范围包含高可见文案质量、生产 locale 发布标记、专项质量门禁与浏览器验收；不处理仓库全量测试中的无关历史失败。
+
+**Goal:** 修正浏览器验收发现的日韩高可见误译和移动端断行问题，按西语法务模式保留“英文版本为准”声明，同时开放国际站日语、韩语切换入口。
+
+**Files:**
+- Modify: `src/i18n/__tests__/dictionaries.test.ts`
+- Modify: `src/i18n/__tests__/locales.config.test.ts`
+- Modify: `src/i18n/generated/ja-JP.json`
+- Modify: `src/i18n/generated/ko-KR.json`
+- Modify: `src/i18n/locales.json`
+- Modify: `next-site/__tests__/public-locale.test.ts`
+- Modify: `next-site/__tests__/docs-route-publication.test.ts`
+- Verify: `openspec/changes/2026-08-31-korean-localization-plan.md`
+
+- [x] **Task 1：测试先行锁定日韩首页高可见语义与生产发布契约。**
+- [x] **Task 2：修正日语、韩语高可见文案并同时开放两个 locale 的发布标记。**
+- [x] **Task 3：运行日韩专项 i18n、路由、Docs、SEO、法务、类型与双区域构建门禁。**
+- [x] **Task 4：完成日语、韩语桌面端/移动端首页、Docs、法务及可达 Agent 页面浏览器验收并生成 HTML 报告。**
+
+**Product decisions:** 用户已确认法务页沿用西语模式：提供本地化译文并明确英文版本优先；日韩母语与法务人员复核由用户另行安排，不阻塞本次代码验收。Docs 图片体积及其他全量测试历史失败不在本需求范围。
+
+**Verification:** 日韩字典均为 2677/2677，日语 0 error / 12 个共享汉字提示、韩语 0 error / 0 warning；专项回归 23 files / 265 tests 通过；`pnpm check` 为 206 current / 276 baseline / 0 new / 70 resolved；合并最新 `origin/master` 后，国际站 564 页、国内站 90 页生产构建通过，国际站日韩文档均与英文保持 67 路由一致，国内站未发布日韩前缀路由；桌面端/移动端首页、Docs、法务页 8 个浏览器用例通过且无横向溢出。登录态 Agent 实页因本地认证服务不可用被标记为 blocked，默认 `新会话` 在非中文 locale 展示 `New chat` 已由自动化回归覆盖。
 ---
 
 # 首页加载性能优化 Implementation Plan
@@ -5523,5 +5550,50 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - GREEN：结构测试通过；账号页全部专项回归 5 个测试文件、53 tests passed。
 - `pnpm check` 通过，TypeScript diagnostics 207 current / 276 baseline / 0 new / 69 resolved；i18n 结构 0 errors。
 - `git diff --check` 通过；`$baseline-ui` 核对无新增绝对定位、换行布局、新动画或交互原语。
+
+---
+
+# 国际站日语完整本地化 Implementation Plan
+
+**Goal:** 先完整交付国际站日语，再复用同一流水线完成韩语。
+
+**Design:** `openspec/changes/2026-08-28-japanese-localization-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-28-japanese-localization-plan.md`
+
+## Tasks
+
+- [x] 建立日语发布契约和注册表派生的 locale resolver，先写失败测试。
+- [x] 补齐 2654 条日语 UI 字典并通过结构与术语门禁。
+- [x] 完成 Soul、Buddy、Skills、Experts 与场景任务日语结构化内容。
+- [x] 完成公开页、SEO、metadata、sitemap 与 JSON-LD 日语适配。
+- [x] 完成 61 篇日语 Docs、搜索路由和 manifest。
+- [x] 完成日语法务页面并生成全文人工审阅清单。
+- [x] 完成日语字体、语言切换器和性能门禁；日语/韩语字典按 locale 分包，首页 gzip 相对基线 -2.84%。
+- [x] 增加仅限国际站开发环境的日语预览开关，完成首页、Docs、法务页与移动端浏览器验收；生产发布标记保持关闭。
+- [ ] 修正高可见日语误译并开放生产注册表标记，完成专项构建与浏览器验收；母语复核由用户并行安排。
+
+---
+
+# 国际站韩语完整本地化 Implementation Plan
+
+**Goal:** 复用已验证的日语管线，完整交付国际站 `ko-KR` / `/ko-kr`，修正高可见误译后与日语一并开放国际站生产入口。
+
+**Design:** `openspec/changes/2026-08-31-korean-localization-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-31-korean-localization-plan.md`
+
+## Tasks
+
+- [x] 锁定韩语发布契约并增加仅限非生产国际站的 `/ko-kr` 预览。
+- [x] 补齐 2680 条韩语 UI 字典并通过结构与术语门禁。
+- [x] 完成 Soul、Buddy、Skills、Experts 与场景任务韩语结构化内容。
+- [x] 完成公开页、SEO、metadata、sitemap 与 JSON-LD 韩语适配。
+- [x] 完成 62 篇韩语 Docs、搜索路由和 manifest。
+- [x] 完成韩语法务页面并生成全文人工审阅清单。
+- [x] 完成韩语字体、语言切换器和桌面/移动端浏览器验收。
+- [ ] 完成日韩需求范围内的国际/国内构建与专项质量门禁，并开放生产发布标记。
+
+> 首轮实现已完成定向测试、Docs parity、`pnpm check`、国际/国内生产构建和 `git diff --check`。用户已明确排除仓库全量测试中的无关历史失败，并确认法务页沿用“本地化译文 + 英文版本为准”的西语模式；本轮继续修正文案、开放日韩入口并做专项验收。
 
 ---

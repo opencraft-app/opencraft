@@ -256,6 +256,24 @@ describe("scenario task builder", () => {
     }
   });
 
+  it("builds Japanese protocol prompts for Japanese overview tasks", () => {
+    const pack = getOverviewScenarioTaskPacks("ja-JP").find((item) => item.id === "rent-reminder");
+    expect(pack).toBeTruthy();
+
+    const draft = buildScenarioTaskDraft({
+      pack: pack!,
+      values: { rentInfo: "家賃8万円を銀行振込で支払う" },
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.oneShotJobName).toBe(`${draft.generatedName} · 1回のみ実行`);
+    expect(draft.generatedPrompt).toContain("LightVelaの自動化を実行しています");
+    expect(draft.generatedPrompt).toContain("タスク名：家賃リマインダー");
+    expect(draft.generatedPrompt).toContain("出力要件：");
+    expect(draft.generatedPrompt).toContain("ユーザーが指定した内容：");
+    expect(draft.generatedPrompt).toContain("支払い内容：家賃8万円を銀行振込で支払う。");
+  });
+
   it("formats scenario-specific field values for prompts", () => {
     const pack = getScenarioTaskPack("todo-focus-brief");
     const draft = buildScenarioTaskDraft({
