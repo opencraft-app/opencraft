@@ -57,7 +57,7 @@ const LAUNCH_BUNDLE_NAME_KEYWORDS = {
   zh: "启航",
   en: "launch",
 } as const;
-/** AI 增强版套餐类型标识（国际站启航 AI 对新用户提供 3 天免费，巡游 AI 为首购折扣） */
+/** AI 增强版套餐类型标识（国际站启航 AI 对新用户提供 7 天免费，巡游 AI 为首购折扣） */
 const BUNDLE_TYPE_AI = "ai";
 /** 巡游版套餐名匹配关键字（后端可能返回「巡游」中文名或「cruise」英文名） */
 const CRUISE_BUNDLE_NAME_KEYWORDS = {
@@ -86,12 +86,12 @@ const matchBundleTier = (bundleName: string | undefined) => {
  * 依赖它会让国际站 AI 档位在后端下发百分数时丢标签。
  *
  * 站点口径差异（本次需求仅调整国际站，国内站维持现状）：
- *   - 国际站启航 AI：`首单免费 3 天`（**仅新用户**，见下方 isNewUser 门禁）
+ *   - 国际站启航 AI：`首单免费 7 天`（**仅新用户**，见下方 isNewUser 门禁）
  *   - 国际站巡游 AI：`首月 6 折`
  *   - 国内站启航 / 巡游 AI：`首月 6 折`（与改动前一致）
  *
  * 国际站标签必须同时匹配用户资格和真实询价：
- *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 3 天」；
+ *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 7 天」；
  *   - 只有实付价低于原价时才展示折扣，避免后端异常全价询价仍承诺优惠。
  * 未登录静态 Bundle 也携带同样的原价 / 实付价，因此继续稳定展示既定免费与折扣信息。
  *
@@ -106,7 +106,7 @@ const aiPromoTagText = (
 ): string | undefined => {
   if (isGlobal) {
     if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
-      return t("首单免费 3 天");
+      return t("首单免费 7 天");
     }
     const discountRate = actualDiscountRate(price);
     if ((tier.isLaunch || tier.isCruise) && discountRate != null) {
@@ -683,7 +683,7 @@ const mapBundleToPlan = (
       const isAi = bundle.bundle_type === BUNDLE_TYPE_AI;
       const discountRate = actualDiscountRate(bundle.price);
       if (isAi) {
-        /* AI 档位：启航零元新用户「首单免费 3 天」；有真实折扣时按询价展示。 */
+        /* AI 档位：启航零元新用户「首单免费 7 天」；有真实折扣时按询价展示。 */
         promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
       } else if (tier.isLaunch) {
         /* 启航标准版：只有新用户实付为零才承诺 14 天免费；其他状态只展示真实折扣。 */
@@ -714,7 +714,7 @@ const mapBundleToPlan = (
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
           /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
-             国际站启航 AI「首单免费 3 天」，国内站启航 AI「首月 6 折」（与改动前一致）。
+             国际站启航 AI「首单免费 7 天」，国内站启航 AI「首月 6 折」（与改动前一致）。
              改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。
              已订阅用户由 aiPromoTagText 内部降级为「首月 6 折」，不展示首单权益。 */
           promoTag = aiPromoTagText(tier, t, isNewUser);
@@ -770,7 +770,7 @@ const mapBundleToPlan = (
      防止登录态异常全价询价仍承诺免费；未登录静态价为零，既定展示不受影响。 */
   const bundleTier = matchBundleTier(bundle.bundle_name);
   const isLaunchStandard = bundleTier.isLaunch && bundle.bundle_type !== BUNDLE_TYPE_AI;
-  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 3 天」（见 aiPromoTagText）。
+  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 7 天」（见 aiPromoTagText）。
      国内站启航 AI 不进入本判定，CTA 维持「立即订阅」，与改动前一致。 */
   const isIntlLaunchAi =
     isGlobal && bundleTier.isLaunch && bundle.bundle_type === BUNDLE_TYPE_AI;
@@ -991,7 +991,7 @@ const STATIC_INTL_PRICE_USD: Record<
       monthly: { original: 6.5, real: 0 },
       quarterly: { original: 19.5, real: 16.58 },
     },
-    /* 启航 AI 版：月付 $10，新用户 3 天免费（实付 $0）；季付 $30 → 9 折 $27.00 */
+    /* 启航 AI 版：月付 $10，新用户 7 天免费（实付 $0）；季付 $30 → 9 折 $27.00 */
     ai: {
       monthly: { original: 10, real: 0 },
       quarterly: { original: 30, real: 27 },
