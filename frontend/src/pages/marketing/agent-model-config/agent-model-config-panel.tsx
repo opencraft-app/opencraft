@@ -184,8 +184,10 @@ export function AgentModelConfigPanel({
   const [selectedModelId, setSelectedModelId] = useState("");
   const [purpose, setPurpose] = useState<ConfigurePurpose>("primary");
   const [connectionResult, setConnectionResult] = useState<HermesConnectionProbeResult | null>(null);
+  const [validatingBeforeAdd, setValidatingBeforeAdd] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<HermesConfiguredModel | null>(null);
   const probeUiRevision = useRef(0);
+  const validationRequestRef = useRef<symbol | null>(null);
 
   const providerOptions = useMemo(
     () => providers.filter((provider) => provider.category === category),
@@ -203,7 +205,9 @@ export function AgentModelConfigPanel({
   );
   const availableModelOptions = activeProvider?.fixedModelSelection ? fixedModelOptions : modelOptions;
   const effectiveSelectedModelId = activeProvider?.fixedModelSelection
-    ? fixedModelOptions[0]?.id ?? ""
+    ? fixedModelOptions.some((model) => model.id === selectedModelId)
+      ? selectedModelId
+      : fixedModelOptions[0]?.id ?? ""
     : selectedModelId;
 
   const compoundControlClassName = cn(
@@ -236,9 +240,11 @@ export function AgentModelConfigPanel({
 
   const resetProbeResult = () => {
     probeUiRevision.current += 1;
+    validationRequestRef.current = null;
     setModelOptions([]);
     setSelectedModelId("");
     setConnectionResult(null);
+    setValidatingBeforeAdd(false);
     controller.clearOperationError();
   };
 
@@ -266,6 +272,11 @@ export function AgentModelConfigPanel({
   const selectedModel = providerDraft && effectiveSelectedModelId
     ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
+  const selectedModelTarget = selectedModel
+    ? [providerFingerprint, selectedModel.id].join("\n")
+    : "";
+  const selectedModelTargetRef = useRef(selectedModelTarget);
+  selectedModelTargetRef.current = selectedModelTarget;
   const fallbackPurposeDisabled = sameModel(controller.snapshot?.primary, selectedModel);
   const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
@@ -290,6 +301,8 @@ export function AgentModelConfigPanel({
     setModelOptions([]);
     setSelectedModelId("");
     setConnectionResult(null);
+    validationRequestRef.current = null;
+    setValidatingBeforeAdd(false);
   }, [controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
 
   useEffect(() => {
@@ -355,13 +368,25 @@ export function AgentModelConfigPanel({
     if (validateBeforeAdd) {
       const requestFingerprint = providerFingerprint;
       const revision = probeUiRevision.current;
+      const validationTarget = selectedModelTarget;
+      const validationRequest = Symbol("validate-before-add");
+      validationRequestRef.current = validationRequest;
       setConnectionResult(null);
+      setValidatingBeforeAdd(true);
       const result = await controller.testConnection({
         apiKey: normalizedApiKey,
         model: selectedModel,
         strategy: "model_request",
       });
-      if (revision !== probeUiRevision.current || requestFingerprint !== providerFingerprintRef.current) return;
+      const ownsValidation = validationRequestRef.current === validationRequest;
+      if (ownsValidation) {
+        validationRequestRef.current = null;
+        setValidatingBeforeAdd(false);
+      }
+      if (!ownsValidation
+        || revision !== probeUiRevision.current
+        || requestFingerprint !== providerFingerprintRef.current
+        || validationTarget !== selectedModelTargetRef.current) return;
       if (!result) return;
       if (!result.success) {
         setConnectionResult(result);
@@ -780,21 +805,19 @@ export function AgentModelConfigPanel({
                   ))}
                 </SelectContent>
               </Select>
-              {!validateBeforeAdd ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={compoundActionClassName}
-                  disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy}
-                  onClick={() => void handleConnectivityTest()}
-                >
-                  <ModelCompoundActionContent
-                    idleLabel={t("检测模型状态")}
-                    loadingLabel={t("检测中...")}
-                    loading={controller.operation === "connectivity-probe"}
-                  />
-                </Button>
-              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                className={compoundActionClassName}
+                disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy}
+                onClick={() => void handleConnectivityTest()}
+              >
+                <ModelCompoundActionContent
+                  idleLabel={t("检测模型状态")}
+                  loadingLabel={t("检测中...")}
+                  loading={controller.operation === "connectivity-probe" && !validatingBeforeAdd}
+                />
+              </Button>
             </div>
           </div>
 
@@ -858,7 +881,7 @@ export function AgentModelConfigPanel({
               disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (purpose === "fallback" && fallbackPurposeDisabled)}
               onClick={() => void handleAdd()}
             >
-              {controller.operation === "add" || (validateBeforeAdd && controller.operation === "connectivity-probe")
+              {controller.operation === "add" || validatingBeforeAdd
                 ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 : <Plus className="size-4" aria-hidden="true" />}
               {t("添加模型")}

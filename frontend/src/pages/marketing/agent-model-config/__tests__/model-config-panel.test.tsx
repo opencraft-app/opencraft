@@ -104,7 +104,10 @@ const fixedHyProvider: ModelProviderOption = {
   discoveryStrategy: "catalog",
   fixedModelSelection: true,
   validateBeforeAdd: true,
-  catalogModels: [{ id: "hy4-preview", name: "hy4-preview" }],
+  catalogModels: [
+    { id: "hy4-preview", name: "Hy4 Preview" },
+    { id: "hy-next", name: "Hy Next" },
+  ],
 };
 const { publicKey: testPublicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -690,7 +693,7 @@ describe("AgentModelConfigPanel", () => {
     }));
   });
 
-  it("shows the fixed Hy4 model without model discovery", async () => {
+  it("shows the first Coding Plan catalog model without model discovery", async () => {
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
     render(
       <AgentModelConfigPanel
@@ -702,8 +705,33 @@ describe("AgentModelConfigPanel", () => {
     await screen.findByText("暂未配置模型");
 
     expect(screen.queryByRole("button", { name: "获取可用模型" })).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("hy4-preview");
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Hy4 Preview");
     expect(remote.actions.some((action) => action.type === "probe")).toBe(false);
+  });
+
+  it("keeps standalone model validation for a Coding Plan catalog", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
+    render(
+      <AgentModelConfigPanel
+        botId="bot-1"
+        execDebugCommand={remote.execDebugCommand}
+        providers={[fixedHyProvider]}
+      />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    const statusButton = screen.getByRole("button", { name: "检测模型状态" });
+    expect(statusButton).toBeDisabled();
+    await userEvent.type(screen.getByLabelText("API Key"), "hy-secret");
+    expect(statusButton).toBeEnabled();
+    await userEvent.click(statusButton);
+
+    expect(await screen.findByRole("dialog", { name: "模型可用性检测通过" })).toBeInTheDocument();
+    expect(remote.actions).toContainEqual(expect.objectContaining({
+      type: "connectivityProbe",
+      strategy: "model_request",
+      model: expect.objectContaining({ id: "hy4-preview" }),
+    }));
   });
 
   it("validates the fixed Hy model before adding it", async () => {
@@ -717,8 +745,8 @@ describe("AgentModelConfigPanel", () => {
     );
     await screen.findByText("暂未配置模型");
 
-    expect(screen.queryByRole("button", { name: "检测模型状态" })).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("API Key"), "hy-secret");
+    await selectOption("模型", "Hy Next");
     await userEvent.click(screen.getByRole("button", { name: "添加模型" }));
 
     await waitFor(() => expect(toastMocks.success).toHaveBeenLastCalledWith("模型已添加"));
@@ -729,7 +757,7 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions).toContainEqual(expect.objectContaining({
       type: "connectivityProbe",
       strategy: "model_request",
-      model: expect.objectContaining({ id: "hy4-preview" }),
+      model: expect.objectContaining({ id: "hy-next" }),
     }));
     expect(remote.actions).toContainEqual(expect.objectContaining({
       type: "add",
@@ -759,7 +787,7 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions.some((action) => action.type === "add")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "确定" }));
     expect(screen.getByLabelText("API Key")).toHaveValue("hy-secret");
-    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("hy4-preview");
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Hy4 Preview");
     expect(screen.getByRole("radio", { name: "仅添加" })).toBeChecked();
   });
 
@@ -782,7 +810,7 @@ describe("AgentModelConfigPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("模型配置操作失败，请重试。");
     expect(remote.actions.some((action) => action.type === "add")).toBe(false);
     expect(screen.getByLabelText("API Key")).toHaveValue("hy-secret");
-    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("hy4-preview");
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Hy4 Preview");
     expect(screen.getByRole("radio", { name: "仅添加" })).toBeChecked();
   });
 
@@ -1072,6 +1100,52 @@ describe("AgentModelConfigPanel", () => {
       await pendingConnection;
     });
     expect(screen.queryByRole("dialog", { name: "模型可用性检测通过" })).not.toBeInTheDocument();
+  });
+
+  it("does not add a stale Coding Plan model when its Rainbow catalog changes during validation", async () => {
+    const initialProvider: ModelProviderOption = {
+      ...fixedHyProvider,
+      catalogModels: [{ id: "old-model", name: "Old Model" }],
+    };
+    const refreshedProvider: ModelProviderOption = {
+      ...initialProvider,
+      catalogModels: [{ id: "new-model", name: "New Model" }],
+    };
+    const initialSnapshot = { primary: null, fallbacks: [], configuredModels: [] };
+    let resolveConnection: ((result: { status: string; exitCode: number; output: string }) => void) | undefined;
+    const pendingConnection = new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+      resolveConnection = resolve;
+    });
+    const actions: HermesModelConfigAction[] = [];
+    const execDebugCommand = vi.fn(async (_botId: string, command: string) => {
+      const action = decodeAction(command);
+      actions.push(action);
+      if (action.type === "prepareCredentialEnvelope") {
+        return { status: "Succeeded", exitCode: 0, output: preparationOutput };
+      }
+      if (action.type === "connectivityProbe") return pendingConnection;
+      return { status: "Succeeded", exitCode: 0, output: successOutput(initialSnapshot) };
+    });
+    const view = render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={execDebugCommand} providers={[initialProvider]} />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "catalog-secret");
+    await userEvent.click(screen.getByRole("button", { name: "添加模型" }));
+    view.rerender(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={execDebugCommand} providers={[refreshedProvider]} />,
+    );
+    expect(await screen.findByRole("combobox", { name: "模型" })).toHaveTextContent("New Model");
+
+    await act(async () => {
+      resolveConnection?.({ status: "Succeeded", exitCode: 0, output: connectionOutput(initialSnapshot) });
+      await pendingConnection;
+    });
+
+    expect(actions.some((action) => action.type === "add")).toBe(false);
+    expect(screen.getByRole("button", { name: "添加模型" }).querySelector(".animate-spin")).toBeNull();
+    expect(screen.getByLabelText("API Key")).toHaveValue("catalog-secret");
   });
 
   it("uses a collision-safe identity for custom Providers", async () => {
