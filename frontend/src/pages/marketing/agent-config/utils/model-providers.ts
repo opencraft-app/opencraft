@@ -334,12 +334,12 @@ export const MODEL_PROVIDER_LIST: IModelProvider[] = [
       provider: 'tencenthytokenplan',
       provider_name: t('腾讯云 Hy Token Plan（个人版）'),
       description: t(
-        '基于腾讯2026年最新推出的混元模型打造：集成 Hy3 模型，面向 Agent 工作负载设计，适配 Coding Agent、文档自动化、多步工具调用等工作流。',
+        '基于腾讯2026年最新推出的混元模型打造：集成 Hy4 Preview 模型，面向 Agent 工作负载设计，适配 Coding Agent、文档自动化、多步工具调用等工作流。',
       ),
       api_key_url: 'https://console.cloud.tencent.com/tokenhub/tokenplan/hy',
       base_url: 'https://api.lkeap.cloud.tencent.com/plan/v3',
       api: 'openai-completions',
-      models: [{ id: 'hy3-preview', name: 'Hy3 preview' }],
+      models: [{ id: 'hy4-preview', name: 'hy4-preview' }],
     },
     {
       value: 'tencent_token_plan',

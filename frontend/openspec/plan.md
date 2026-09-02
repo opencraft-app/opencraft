@@ -1,3 +1,28 @@
+# Hy Token Plan 个人版固定模型 Implementation Plan
+
+**Status:** 实现与自动化验证完成；本地浏览器账号无智能体，只完成路由可达性与无控制台错误 smoke，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅调整腾讯云 Hy Token Plan（个人版）的模型选择策略与 Hy4 目录文案，不改变其他 Provider、连接检测协议或添加模型生效流程。
+
+**Goal:** Hy Token Plan 个人版无需获取模型列表，固定使用 `hy4-preview`，并保留模型状态检测和添加模型生效。
+
+**Design:** `openspec/changes/2026-09-01-hy-token-plan-fixed-model-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-01-hy-token-plan-fixed-model-implementation-plan.md`
+
+- [x] **测试先行实现 Hy4 固定目录、状态检测与添加生效，完成 i18n、类型、专项回归、双区域构建和国内站页面可达性 smoke。**
+
+**执行记录（2026-09-01）：**
+
+- RED：Provider 目录/适配新增断言 2 条按预期失败；模型面板固定展示、状态检测、添加生效新增断言 3 条按预期失败。
+- GREEN：目标 4 个测试文件共 54 条全部通过；模型面板 28 条全部通过，断言固定 `hy4-preview`、无模型发现、检测使用 `model_request`、添加使用 `discoverModels: false` 且保持主模型用途。
+- i18n：已运行 `pnpm i18n:extract`、`pnpm i18n:check`、`pnpm i18n:zh-hant:check`，所有已开放 locale 的 Hy4 新文案非空；印尼语已知翻译债务从 175 降至 174。
+- 质量门禁：`pnpm check` 通过且 0 个新增 TypeScript 诊断；`pnpm build:cn` 与 `pnpm build:global` 通过；`git diff --check` 无输出。
+- 浏览器：本地 `/agents/models/` 返回 200、页面正常渲染且无控制台错误；当前浏览器账号没有智能体，页面停留在“立即创建”，为避免创建真实云端资源，未执行完整表单交互 smoke。
+- 扩展模型目录回归共 140 条：103 条通过、1 条按环境跳过；36 条 Hermes 客户端测试因本机系统 Python 缺少 `cryptography` 在脚本启动阶段失败，本次未修改对应客户端或脚本。
+
+---
+
 # 自动任务页签顺序回归修复 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认提交；不自动 commit、push 或创建 MR。
