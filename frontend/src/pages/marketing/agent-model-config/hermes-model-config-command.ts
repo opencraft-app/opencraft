@@ -61,6 +61,7 @@ export interface ModelProviderOption {
   apiKeyUrl?: string;
   catalogModels?: Array<{ id: string; name: string }>;
   fixedModelSelection?: boolean;
+  validateBeforeAdd?: boolean;
 }
 
 export type HermesModelConfigAction =

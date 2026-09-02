@@ -1,14 +1,10 @@
-import {
-  HY_TOKEN_PLAN_FIXED_CATALOG,
-  type IModelProvider,
-} from "@/pages/marketing/agent-config/utils/model-providers";
+import type { IModelProvider } from "@/pages/marketing/agent-config/utils/model-providers";
 
 import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config-client";
 
 const CATALOG_DISCOVERY_PROVIDERS = new Set(["minimax", "minimax-cn"]);
-const FIXED_MODEL_SELECTION_PROVIDER_CATALOGS = new Map([
-  ["tencent_hy_token_plan", HY_TOKEN_PLAN_FIXED_CATALOG],
-]);
+const FIXED_MODEL_SELECTION_PROVIDERS = new Set(["tencent_hy_token_plan"]);
+const VALIDATE_BEFORE_ADD_PROVIDERS = new Set(["tencent_hy_token_plan"]);
 
 function decodeHtmlEntity(entity: string) {
   const normalized = entity.toLowerCase();
@@ -57,8 +53,12 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
     const baseUrl = provider.base_url.trim();
     const apiMode = toHermesApiMode(provider.api);
     if (!baseUrl || provider.oauth?.exclusive || !apiMode) return [];
-    const fixedCatalog = FIXED_MODEL_SELECTION_PROVIDER_CATALOGS.get(provider.value);
-    const fixedModelSelection = Boolean(fixedCatalog);
+    const fixedModelSelection = FIXED_MODEL_SELECTION_PROVIDERS.has(provider.value);
+    const validateBeforeAdd = VALIDATE_BEFORE_ADD_PROVIDERS.has(provider.value);
+    const catalogModels = provider.models
+      .map((model) => ({ id: model.id.trim(), name: model.name.trim() || model.id.trim() }))
+      .filter((model) => model.id);
+    if (fixedModelSelection && catalogModels.length === 0) return [];
     return [{
       providerKey: provider.value,
       providerName: toPlainText(provider.provider_name) || provider.provider || provider.value,
@@ -70,11 +70,10 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
           ? "catalog"
           : "live",
       ...(fixedModelSelection ? { fixedModelSelection: true } : {}),
-      description: toPlainText(fixedCatalog?.description ?? provider.description) || undefined,
+      ...(validateBeforeAdd ? { validateBeforeAdd: true } : {}),
+      description: toPlainText(provider.description) || undefined,
       apiKeyUrl: provider.api_key_url.trim() || undefined,
-      catalogModels: (fixedCatalog?.models ?? provider.models)
-        .map((model) => ({ id: model.id.trim(), name: model.name.trim() || model.id.trim() }))
-        .filter((model) => model.id),
+      catalogModels,
     } satisfies ModelProviderOption];
   });
 }
