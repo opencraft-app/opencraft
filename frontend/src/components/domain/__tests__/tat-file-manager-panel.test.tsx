@@ -9,8 +9,8 @@ const deleteFileMock = vi.fn();
 const createFileMock = vi.fn();
 const execCommandMock = vi.fn();
 const STORAGE_TOTAL_BYTES = 50 * 1024 * 1024 * 1024;
-const STORAGE_USED_BYTES = 10 * 1024 * 1024 * 1024;
-const STORAGE_AVAILABLE_BYTES = 40 * 1024 * 1024 * 1024;
+const STORAGE_USED_BYTES = 22 * 1024 * 1024 * 1024;
+const STORAGE_AVAILABLE_BYTES = 28 * 1024 * 1024 * 1024;
 const storageCapacityOutput = JSON.stringify({
   total_bytes: STORAGE_TOTAL_BYTES,
   used_bytes: STORAGE_USED_BYTES,
@@ -173,24 +173,25 @@ describe("TatFileManagerPanel upload limits", () => {
     await waitFor(() => expect(uploadFileMock).not.toHaveBeenCalled());
   });
 
-  it("shows instance storage usage from the fixed capacity command", async () => {
+  it("includes reserved space in instance storage usage", async () => {
     render(<TatFileManagerPanel botId="bot-storage-capacity" />);
 
     expect(await screen.findByText("实例存储")).toBeInTheDocument();
-    expect(await screen.findByText("已用 10 GB / 50 GB")).toBeInTheDocument();
-    expect(screen.getByText("剩余 40 GB")).toBeInTheDocument();
-    expect(screen.getByText("包含 Agent 运行环境和云存储文件。")).toBeInTheDocument();
+    expect(await screen.findByText("已用 22 GB / 50 GB")).toBeInTheDocument();
+    expect(screen.getByText("可用 28 GB")).toBeInTheDocument();
+    expect(screen.getByText("包含 Agent 运行环境、系统预留和云存储文件。")).toBeInTheDocument();
 
     const progressbar = screen.getByRole("progressbar", { name: "实例存储使用率" });
     expect(progressbar).toHaveAttribute("aria-valuemin", "0");
     expect(progressbar).toHaveAttribute("aria-valuemax", "100");
-    expect(progressbar).toHaveAttribute("aria-valuenow", "20");
+    expect(progressbar).toHaveAttribute("aria-valuenow", "44");
 
     await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(1));
     const capacityCommand = storageCapacityCommandCalls()[0]?.[0];
     expect(capacityCommand).toContain('os.statvfs("/home/agentuser")');
-    expect(capacityCommand).toContain("stats.f_bfree");
     expect(capacityCommand).toContain("stats.f_bavail");
+    expect(capacityCommand).toContain('"used_bytes": max(0, total - available)');
+    expect(capacityCommand).not.toContain("total - free");
     expect(capacityCommand).not.toContain("bot-storage-capacity");
     expect(capacityCommand).not.toContain("/home/agentuser/.hermes");
   });

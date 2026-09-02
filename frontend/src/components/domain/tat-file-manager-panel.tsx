@@ -56,7 +56,7 @@ const DEFAULT_TAT_FILE_UID = 1000;
 const DEFAULT_TAT_FILE_GID = 1000;
 const DEFAULT_TAT_FILE_PATH = "/home/agentuser/.hermes";
 const MANAGED_TAT_FILE_ROOT = "/home/agentuser";
-const STORAGE_CAPACITY_COMMAND = `python3 -c 'import json, os; stats = os.statvfs("/home/agentuser"); block_size = stats.f_frsize; total = stats.f_blocks * block_size; free = stats.f_bfree * block_size; available = stats.f_bavail * block_size; print(json.dumps({"total_bytes": total, "used_bytes": max(0, total - free), "available_bytes": available}, separators=(",", ":")))'`;
+const STORAGE_CAPACITY_COMMAND = `python3 -c 'import json, os; stats = os.statvfs("/home/agentuser"); block_size = stats.f_frsize; total = stats.f_blocks * block_size; available = stats.f_bavail * block_size; print(json.dumps({"total_bytes": total, "used_bytes": max(0, total - available), "available_bytes": available}, separators=(",", ":")))'`;
 const STORAGE_CAPACITY_COMMAND_TIMEOUT_SECONDS = 30;
 const SERVICE_WORKER_URL = "/tat-hermes-web-proxy-sw.js";
 const SERVICE_WORKER_VERSION = "tat-file-download-v6";
@@ -1064,7 +1064,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
               {t("实例存储")}
             </h3>
             <p className="mt-1 text-xs leading-5 text-[var(--text-tertiary)]">
-              {t("包含 Agent 运行环境和云存储文件。")}
+              {t("包含 Agent 运行环境、系统预留和云存储文件。")}
             </p>
           </div>
           {storageCapacityStatus === "ready" && storageCapacity ? (
@@ -1076,7 +1076,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                 })}
               </p>
               <p className="mt-1 text-xs tabular-nums text-[var(--text-secondary)]">
-                {t("剩余 {{available}}", { available: formatBytes(storageCapacity.availableBytes) })}
+                {t("可用 {{available}}", { available: formatBytes(storageCapacity.availableBytes) })}
               </p>
             </div>
           ) : storageCapacityStatus === "loading" ? (
