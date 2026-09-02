@@ -81,25 +81,30 @@ describe("adaptProductModelProviders", () => {
     }));
   });
 
-  it("marks the Hy Token Plan personal provider as a fixed catalog model", () => {
+  it("keeps the Hy Token Plan personal catalog fixed when Rainbow still returns Hy3", () => {
     const [adaptedProvider] = adaptProductModelProviders([{
       value: "tencent_hy_token_plan",
       category: "coding_plan",
       provider: "tencenthytokenplan",
       provider_name: "腾讯云 Hy Token Plan（个人版）",
-      description: "Hy4 Preview",
+      description: "远端旧说明：集成 Hy3 模型",
       api_key_url: "https://console.cloud.tencent.com/tokenhub/tokenplan/hy",
       base_url: "https://api.lkeap.cloud.tencent.com/plan/v3",
       api: "openai-completions",
-      models: [{ id: "hy4-preview", name: "hy4-preview" }],
+      models: [
+        { id: "hy4-preview", name: "Hy4 Preview", isDefault: true },
+        { id: "hy3", name: "Hy3" },
+      ],
     }]);
 
     expect(adaptedProvider).toEqual(expect.objectContaining({
       providerKey: "tencent_hy_token_plan",
       discoveryStrategy: "catalog",
       fixedModelSelection: true,
+      description: expect.stringContaining("Hy4 Preview"),
       catalogModels: [{ id: "hy4-preview", name: "hy4-preview" }],
     }));
+    expect(adaptedProvider?.description).not.toContain("Hy3");
   });
 
   it("extracts untrusted provider HTML without writing through element innerHTML", () => {

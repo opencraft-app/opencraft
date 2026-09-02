@@ -2439,12 +2439,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
         self.assertIn('"$PNPM_BIN" run build:next', command_text)
-        self.assertIn('rm -rf .next out "$output_dir"', command_text)
+        self.assertIn('FRONTEND_PREVIEW_ARTIFACT_ROOT="$FRONTEND_PREVIEW_BUILD_ROOT/artifacts"', command_text)
+        self.assertIn('local workspace="$FRONTEND_PREVIEW_WORKSPACE_ROOT/$variant"', command_text)
+        self.assertIn('mv out "$artifact_dir"', command_text)
         self.assertIn('source "$CI_DIR/init.sh"', command_text)
         self.assertIn('python3 "$CI_DIR/runtime/commands/upload_staticpages_preview.py"', command_text)
 
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         self.assertIn("node scripts/clean-next-build-state.mjs", package_json["scripts"]["build:next"])
+        self.assertNotIn("preserve-next-preview-output.mjs", package_json["scripts"]["build:next"])
 
     def test_frontend_preview_builds_from_an_isolated_source_directory(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
@@ -2474,11 +2477,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" cn)"', workflow_text)
         self.assertIn('PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" intl)"', workflow_text)
         self.assertEqual(workflow_text.count('printf \'https://lightclaw.tech\''), 2)
-        self.assertIn('build_next_preview_variant cn cn "$PREVIEW_CN_AUTH_API_BASE_URL" "$FRONTEND_NEXT_CN_DIR"', workflow_text)
-        self.assertIn('build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_NEXT_GLOBAL_DIR"', workflow_text)
+        self.assertIn(
+            'build_next_preview_variant cn cn "$PREVIEW_CN_AUTH_API_BASE_URL" "$FRONTEND_PREVIEW_CN_ARTIFACT_DIR"',
+            workflow_text,
+        )
+        self.assertIn(
+            'build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_PREVIEW_INTL_ARTIFACT_DIR"',
+            workflow_text,
+        )
         self.assertIn('export VITE_AUTH_API_BASE_URL="$api_base"', workflow_text)
         self.assertIn('export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"', workflow_text)
         self.assertIn('export NEXT_WRITE_EDGEONE_BUILD_OUTPUT=0', workflow_text)
+        self.assertIn('unset FRONTEND_PREVIEW_BRANCH FRONTEND_PREVIEW_SHA', workflow_text)
         self.assertIn('"$PNPM_BIN" run build:next', workflow_text)
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
 
@@ -2561,7 +2571,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(template_stages[4].get("if"), "${{ variables.MIGRATION_DECISION }} == run_migration")
         self.assertNotIn("${{ci.actor}}", template_text)
         self.assertNotIn("${{ ci.actor }}", template_text)
-        self.assertIn('reviewers: [ "skipzhang", "xinqishang" ]', template_text)
+        self.assertIn('reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]', template_text)
         self.assertIn("请先检查上一阶段 dry-run 日志中的执行计划", template_text)
         self.assertEqual(template_text.count("run_prod_db_migration.py"), 2)
         self.assertIn("SKIP_IF_NO_MIGRATION_CHANGE", template_text)
@@ -2819,7 +2829,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         on_config = workflow.get("on") or workflow.get(True) or {}
         watched_paths = ((on_config.get("push") or {}).get("paths") or [])
 
-        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu", "lhuigou"]')
+        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu", "lhuigou", "mingyuxiao"]')
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "devcloud-dep,shprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "devcloud-dep")
         self.assertEqual(devcloud_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudagent-gateway")
@@ -3026,7 +3036,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         second_approval_reviews = (((second_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
         template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
-        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang"]')
+        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang", "mingyuxiao"]')
         self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertEqual(second_approval_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertIn("reviewers: ${{ parameters.PROD_REVIEWERS }}", template_text)
@@ -3038,6 +3048,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("若本服务启用生产 DB migration，会先发起 shprod / sgprod DB 子流水线", template_text)
+
         self.assertIn("若本服务未启用生产 DB migration，会直接进入生产镜像升级二次确认", template_text)
         self.assertIn("本次镜像 tag / SOURCE_SHA 确实允许进入 shprod / sgprod GitOps 待同步流程", template_text)
         self.assertIn("若本服务启用生产 DB migration，shprod / sgprod DB 子流水线已经完成", template_text)
@@ -3071,6 +3082,22 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(template_text.count('value: "true"'), 2)
         self.assertIn('value: "shprod"', template_text)
         self.assertIn('value: "sgprod"', template_text)
+
+    def test_frontend_template_consumers_keep_frontend_prod_reviewers(self) -> None:
+        frontend_reviewers = '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
+        workflows = [
+            ".ci/nextgen-dashboard.yml",
+            ".ci/tokyo-nextgen-dashboard.yml",
+            ".ci/gateway-dashboard.yml",
+            ".ci/tokyo-gateway-dashboard.yml",
+            ".ci/tokyo-frontend.yml",
+        ]
+
+        for workflow_path in workflows:
+            with self.subTest(workflow=workflow_path):
+                workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                parameters = (workflow.get("extends") or {}).get("parameters") or {}
+                self.assertEqual(parameters.get("PROD_REVIEWERS"), frontend_reviewers)
 
     def test_db_contract_workflows_enable_prod_db_migration_child_pipelines(self) -> None:
         for workflow_path in sorted(PROD_DB_MIGRATION_WORKFLOWS):
