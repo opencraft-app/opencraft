@@ -189,7 +189,7 @@ describe("SubscribePage", () => {
     vi.useRealTimers();
   });
 
-  it("shows low credit tiers first and selects them by default", async () => {
+  it("shows AI tiers first and selects them by default", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
 
     render(<SubscribePage />);
@@ -198,16 +198,19 @@ describe("SubscribePage", () => {
 
     await waitFor(() => {
       expect(getCreditTabs().map(getCreditValue)).toEqual([
-        "100",
         "4500",
-        "200",
+        "100",
         "10000",
+        "200",
       ]);
     });
-    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "false");
-    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "false");
-    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
-    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
+    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
+    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
+    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "false");
+    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "false");
+    /* 启航 AI 默认选中且为首单免费 3 天（2026-09-02 国内站口径）：¥0 + 免费标签。
+       巡游 AI 无免费试用，仍展示「首月 6 折」（合法共存，不做否定断言）。 */
+    expect(screen.getAllByText("首单免费 3 天").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("14天免费体验")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "退款规则" })).toHaveAttribute(
       "href",
