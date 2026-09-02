@@ -333,7 +333,9 @@ describe("international v2 homepage artifact", () => {
       "Related products",
     ]);
     expect(footer?.querySelectorAll(".foot__links-grid ul")).toHaveLength(5);
-    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(20);
+    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(21);
+    expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.textContent).toBe("Blog");
+    expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/blog");
     expect(footer?.textContent).toContain("14-day free trial");
     expect(footer?.textContent).toContain("Self-hosting analysis");
     expect(footer?.textContent).not.toContain("Comparison");
