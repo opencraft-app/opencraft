@@ -13,7 +13,7 @@
 **Verification:** Blog 专项断言先按预期 RED（6 个失败），实现后 6 个测试文件共 40 个断言 GREEN。`pnpm i18n:check`、`pnpm check`、`pnpm build:global`、`pnpm build:cn` 与 `git diff --check` 均通过；类型基线为 206 current / 276 baseline / 0 new / 70 resolved。
 # Hy Token Plan 个人版固定模型 Implementation Plan
 
-**Status:** 实现与自动化验证完成；本地浏览器账号无智能体，只完成路由可达性与无控制台错误 smoke，等待用户验收；不自动 commit、push 或创建 MR。
+**Status:** 七彩石覆盖回归已完成实现与自动化验证，等待提交 MR。
 
 **Size:** S。仅调整腾讯云 Hy Token Plan（个人版）的模型选择策略与 Hy4 目录文案，不改变其他 Provider、连接检测协议或添加模型生效流程。
 
@@ -23,7 +23,16 @@
 
 **Detailed plan:** `openspec/changes/2026-09-01-hy-token-plan-fixed-model-implementation-plan.md`
 
+**Follow-up plan:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-override-implementation-plan.md`
+
 - [x] **测试先行实现 Hy4 固定目录、状态检测与添加生效，完成 i18n、类型、专项回归、双区域构建和国内站页面可达性 smoke。**
+- [x] **测试先行修复七彩石覆盖：即使远端仍返回 Hy4 Preview 与 Hy3，Hy 个人版也只展示本地 `hy4-preview` 并使用 Hy4 说明；保持模型状态检测与添加模型协议不变。**
+
+**Follow-up 执行记录（2026-09-02）：**
+
+- RED：按现网七彩石返回 `hy4-preview + hy3` 与旧 Hy3 说明构造回归用例，适配器按预期失败并暴露两个远端模型。
+- GREEN：Hy 个人版在适配层改用本地固定目录与说明，适配器和模型面板聚焦回归 35/35 通过；模型状态检测仍为 `model_request`，添加模型仍为 `discoverModels: false`。
+- 质量门禁：`pnpm check` 通过（0 个新增 TypeScript 诊断、i18n 结构错误 0）；`pnpm build:cn` 生成 90/90 页面，`pnpm build:global` 生成 564/564 页面；`git diff --check` 无输出。
 
 **执行记录（2026-09-01）：**
 
