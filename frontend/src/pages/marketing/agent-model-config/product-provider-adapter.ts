@@ -1,9 +1,14 @@
-import type { IModelProvider } from "@/pages/marketing/agent-config";
+import {
+  HY_TOKEN_PLAN_FIXED_CATALOG,
+  type IModelProvider,
+} from "@/pages/marketing/agent-config/utils/model-providers";
 
 import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config-client";
 
 const CATALOG_DISCOVERY_PROVIDERS = new Set(["minimax", "minimax-cn"]);
-const FIXED_MODEL_SELECTION_PROVIDERS = new Set(["tencent_hy_token_plan"]);
+const FIXED_MODEL_SELECTION_PROVIDER_CATALOGS = new Map([
+  ["tencent_hy_token_plan", HY_TOKEN_PLAN_FIXED_CATALOG],
+]);
 
 function decodeHtmlEntity(entity: string) {
   const normalized = entity.toLowerCase();
@@ -52,7 +57,8 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
     const baseUrl = provider.base_url.trim();
     const apiMode = toHermesApiMode(provider.api);
     if (!baseUrl || provider.oauth?.exclusive || !apiMode) return [];
-    const fixedModelSelection = FIXED_MODEL_SELECTION_PROVIDERS.has(provider.value);
+    const fixedCatalog = FIXED_MODEL_SELECTION_PROVIDER_CATALOGS.get(provider.value);
+    const fixedModelSelection = Boolean(fixedCatalog);
     return [{
       providerKey: provider.value,
       providerName: toPlainText(provider.provider_name) || provider.provider || provider.value,
@@ -64,9 +70,9 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
           ? "catalog"
           : "live",
       ...(fixedModelSelection ? { fixedModelSelection: true } : {}),
-      description: toPlainText(provider.description) || undefined,
+      description: toPlainText(fixedCatalog?.description ?? provider.description) || undefined,
       apiKeyUrl: provider.api_key_url.trim() || undefined,
-      catalogModels: provider.models
+      catalogModels: (fixedCatalog?.models ?? provider.models)
         .map((model) => ({ id: model.id.trim(), name: model.name.trim() || model.id.trim() }))
         .filter((model) => model.id),
     } satisfies ModelProviderOption];

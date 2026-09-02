@@ -121,7 +121,7 @@ stages:
       reviews:
         flows:
           - name: 确认执行生产 DB migration
-            reviewers: [ "skipzhang", "xinqishang" ]
+            reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]
         description: |
           请先检查上一阶段 dry-run 日志中的执行计划：
           1. SERVICE / TARGET_ENV / SOURCE_SHA 是否正确。
