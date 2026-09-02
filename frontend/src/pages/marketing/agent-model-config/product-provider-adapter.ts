@@ -3,6 +3,7 @@ import type { IModelProvider } from "@/pages/marketing/agent-config";
 import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config-client";
 
 const CATALOG_DISCOVERY_PROVIDERS = new Set(["minimax", "minimax-cn"]);
+const FIXED_MODEL_SELECTION_PROVIDERS = new Set(["tencent_hy_token_plan"]);
 
 function decodeHtmlEntity(entity: string) {
   const normalized = entity.toLowerCase();
@@ -51,13 +52,18 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
     const baseUrl = provider.base_url.trim();
     const apiMode = toHermesApiMode(provider.api);
     if (!baseUrl || provider.oauth?.exclusive || !apiMode) return [];
+    const fixedModelSelection = FIXED_MODEL_SELECTION_PROVIDERS.has(provider.value);
     return [{
       providerKey: provider.value,
       providerName: toPlainText(provider.provider_name) || provider.provider || provider.value,
       category: provider.category,
       baseUrl,
       apiMode,
-      discoveryStrategy: CATALOG_DISCOVERY_PROVIDERS.has(provider.provider.trim().toLowerCase()) ? "catalog" : "live",
+      discoveryStrategy:
+        fixedModelSelection || CATALOG_DISCOVERY_PROVIDERS.has(provider.provider.trim().toLowerCase())
+          ? "catalog"
+          : "live",
+      ...(fixedModelSelection ? { fixedModelSelection: true } : {}),
       description: toPlainText(provider.description) || undefined,
       apiKeyUrl: provider.api_key_url.trim() || undefined,
       catalogModels: provider.models

@@ -194,6 +194,16 @@ export function AgentModelConfigPanel({
   const activeProvider = category === "custom"
     ? null
     : providerOptions.find((provider) => provider.providerKey === providerKey) ?? null;
+  const fixedModelOptions = useMemo<ModelOption[]>(
+    () => activeProvider?.fixedModelSelection
+      ? (activeProvider.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" }))
+      : [],
+    [activeProvider],
+  );
+  const availableModelOptions = activeProvider?.fixedModelSelection ? fixedModelOptions : modelOptions;
+  const effectiveSelectedModelId = activeProvider?.fixedModelSelection
+    ? fixedModelOptions[0]?.id ?? ""
+    : selectedModelId;
 
   const compoundControlClassName = cn(
     MODEL_COMPOUND_CONTROL_BASE_CLASS,
@@ -252,8 +262,8 @@ export function AgentModelConfigPanel({
   const providerFingerprintRef = useRef(providerFingerprint);
   const previousProviderFingerprintRef = useRef(providerFingerprint);
   providerFingerprintRef.current = providerFingerprint;
-  const selectedModel = providerDraft && selectedModelId
-    ? { ...providerDraft, id: selectedModelId, keyEnv: "" }
+  const selectedModel = providerDraft && effectiveSelectedModelId
+    ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
   const fallbackPurposeDisabled = sameModel(controller.snapshot?.primary, selectedModel);
   const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
@@ -688,19 +698,21 @@ export function AgentModelConfigPanel({
                   {showApiKey ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
                 </button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className={compoundActionClassName}
-                disabled={!canProbe || busy}
-                onClick={() => void handleProbe()}
-              >
-                <ModelCompoundActionContent
-                  idleLabel={t("获取可用模型")}
-                  loadingLabel={t("获取中...")}
-                  loading={controller.operation === "probe"}
-                />
-              </Button>
+              {!activeProvider?.fixedModelSelection ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={compoundActionClassName}
+                  disabled={!canProbe || busy}
+                  onClick={() => void handleProbe()}
+                >
+                  <ModelCompoundActionContent
+                    idleLabel={t("获取可用模型")}
+                    loadingLabel={t("获取中...")}
+                    loading={controller.operation === "probe"}
+                  />
+                </Button>
+              ) : null}
             </div>
             {activeProvider?.apiKeyUrl ? (
               <a
@@ -721,8 +733,8 @@ export function AgentModelConfigPanel({
             </label>
             <div data-slot="model-option-control" className={compoundControlClassName}>
               <Select
-                value={selectedModelId}
-                disabled={busy || modelOptions.length === 0}
+                value={effectiveSelectedModelId}
+                disabled={busy || availableModelOptions.length === 0}
                 onValueChange={(value) => {
                   setSelectedModelId(value);
                   setConnectionResult(null);
@@ -736,14 +748,14 @@ export function AgentModelConfigPanel({
                   onPointerDownCapture={captureAgentSidebarPosition}
                   onKeyDownCapture={captureAgentSidebarPosition}
                 >
-                  <SelectValue placeholder={modelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
+                  <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
                 </SelectTrigger>
                 <SelectContent
                   position="popper"
                   className={MODEL_SELECT_CONTENT_CLASS}
                   style={MODEL_SELECT_CONTENT_STYLE}
                 >
-                  {modelOptions.map((modelOption) => (
+                  {availableModelOptions.map((modelOption) => (
                     <SelectItem key={modelOption.id} value={modelOption.id}>
                       {modelOption.name}
                     </SelectItem>
