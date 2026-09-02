@@ -14,6 +14,8 @@ FRONTEND_PREVIEW_BRANCH="${FRONTEND_PREVIEW_BRANCH:?FRONTEND_PREVIEW_BRANCH is r
 FRONTEND_PREVIEW_SHA="${FRONTEND_PREVIEW_SHA:?FRONTEND_PREVIEW_SHA is required}"
 STATICPAGES_API_URL="${STATICPAGES_API_URL:?STATICPAGES_API_URL is required}"
 FRONTEND_PREVIEW_NODE_MAX_OLD_SPACE_MB="${FRONTEND_PREVIEW_NODE_MAX_OLD_SPACE_MB:-6144}"
+FRONTEND_PREVIEW_BUILD_HEARTBEAT_SECONDS="${FRONTEND_PREVIEW_BUILD_HEARTBEAT_SECONDS:-60}"
+FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS="${FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS:-2700}"
 FRONTEND_PREVIEW_SOURCE_ROOT="$REPO_ROOT"
 FRONTEND_PREVIEW_BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/frontend-preview-build.XXXXXX")"
 FRONTEND_PREVIEW_WORKSPACE_ROOT="$FRONTEND_PREVIEW_BUILD_ROOT/workspaces"
@@ -31,6 +33,54 @@ mkdir -p "$FRONTEND_PREVIEW_WORKSPACE_ROOT" "$FRONTEND_PREVIEW_ARTIFACT_ROOT"
 echo "frontend 预览源码快照：${FRONTEND_PREVIEW_SOURCE_ROOT}"
 echo "frontend 预览构建根目录：${FRONTEND_PREVIEW_BUILD_ROOT}"
 echo "frontend 预览 Node heap 上限：${FRONTEND_PREVIEW_NODE_MAX_OLD_SPACE_MB}MB"
+echo "frontend 预览构建心跳间隔：${FRONTEND_PREVIEW_BUILD_HEARTBEAT_SECONDS}s"
+echo "frontend 预览单变体构建超时：${FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS}s"
+
+run_with_build_heartbeat() {
+  local started_at=$SECONDS
+  local build_pid heartbeat_pid status elapsed
+  local -a build_command=("$@")
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --signal=TERM --kill-after=30s "${FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS}s" "${build_command[@]}" &
+  else
+    echo "frontend next 构建告警：当前环境没有 timeout 命令，无法执行硬超时保护" >&2
+    "${build_command[@]}" &
+  fi
+  build_pid=$!
+
+  (
+    while kill -0 "$build_pid" 2>/dev/null; do
+      sleep "$FRONTEND_PREVIEW_BUILD_HEARTBEAT_SECONDS"
+      if ! kill -0 "$build_pid" 2>/dev/null; then
+        break
+      fi
+      elapsed=$((SECONDS - started_at))
+      echo "frontend next 构建心跳：elapsed=${elapsed}s root_pid=${build_pid}"
+      ps -eo pid,ppid,stat,etime,%cpu,%mem,rss,args 2>/dev/null \
+        | awk 'NR == 1 || $0 ~ /(node|pnpm|next|webpack)/ { print }' \
+        | tail -n 20 \
+        || true
+    done
+  ) &
+  heartbeat_pid=$!
+
+  if wait "$build_pid"; then
+    status=0
+  else
+    status=$?
+  fi
+  kill "$heartbeat_pid" 2>/dev/null || true
+  wait "$heartbeat_pid" 2>/dev/null || true
+
+  elapsed=$((SECONDS - started_at))
+  if [[ "$status" -eq 124 ]]; then
+    echo "frontend next 构建超时：elapsed=${elapsed}s limit=${FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS}s" >&2
+  else
+    echo "frontend next 构建结束：elapsed=${elapsed}s status=${status}"
+  fi
+  return "$status"
+}
 
 resolve_preview_auth_api_base_url() {
   local branch="$1"
@@ -120,7 +170,7 @@ build_next_preview_variant() {
     # to build:next. Artifact ownership belongs to this orchestrator, so make
     # that legacy hook a no-op inside each isolated workspace.
     unset FRONTEND_PREVIEW_BRANCH FRONTEND_PREVIEW_SHA
-    "$PNPM_BIN" run build:next
+    run_with_build_heartbeat "$PNPM_BIN" run build:next
   )
 
   if [[ ! -d out ]]; then
@@ -184,6 +234,7 @@ upload_staticpages_preview() {
       --source-branch "$FRONTEND_PREVIEW_BRANCH" \
       --variant "$variant" \
       --sha "$FRONTEND_PREVIEW_SHA" \
+      --upload-mode packs \
       --timeout-seconds "$staticpages_upload_timeout_seconds"; then
       echo "StaticPages 上传成功：variant=${variant} attempt=${attempt}/${staticpages_upload_max_attempts}"
       return 0

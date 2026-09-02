@@ -2502,7 +2502,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         for script_name in ("build", "build:cn", "build:global"):
             self.assertIn("next build", frontend_scripts[script_name])
             self.assertNotIn("--webpack", frontend_scripts[script_name])
-        self.assertIn("next build --webpack", frontend_scripts["build:next"])
+        self.assertIn("next build", frontend_scripts["build:next"])
+        self.assertNotIn("--webpack", frontend_scripts["build:next"])
         self.assertIn('["exec", "next", "build"]', artifact_builder_text)
         self.assertNotIn("--webpack", artifact_builder_text)
         recursive_pnpm_scripts = {
