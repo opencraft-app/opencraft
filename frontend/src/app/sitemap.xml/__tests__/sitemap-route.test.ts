@@ -148,6 +148,14 @@ describe('sitemap.xml — 国际站（global）', () => {
     expect(zhCn.every((entry) => entry.href.startsWith('https://lightvela.com/'))).toBe(true);
     expect(zhCn.every((entry) => !entry.href.includes('/zh-cn/'))).toBe(true);
   });
+
+  it('英文正文 Blog 只声明英文与默认 hreflang，不互指未翻译语言', async () => {
+    const { hreflangs } = await sitemapForRegion('global');
+    const blogHreflangs = hreflangs.filter((entry) => entry.href.includes('/blog/'));
+
+    expect(blogHreflangs.length).toBeGreaterThan(0);
+    expect(blogHreflangs.every((entry) => entry.hreflang === 'x-default' || entry.hreflang === 'en-US')).toBe(true);
+  });
 });
 
 describe('sitemap.xml — lastmod 语义', () => {

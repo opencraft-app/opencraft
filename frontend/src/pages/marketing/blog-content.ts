@@ -38,7 +38,7 @@ export type BlogBlock =
 
 export type BlogPost = {
   slug: string;
-  category: "use-case";
+  category: "announcement" | "product" | "use-case";
   title: string;
   excerpt: string;
   publishedAt: string;
@@ -73,8 +73,8 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       {
         type: "paragraph",
         content: [
-          "Anthropic is building this feature internally as its next breakout product. Borrowing Andrej Karpathy’s framing, Claude Tag suggests that AI products are entering a third stage: Chat, then local coding agents, then AI coworkers. For a deeper look, see this ",
-          link("in-depth WeChat article", "https://mp.weixin.qq.com/s/DfQFOgOZxhReNiXbYG8ybA?scene=1"),
+          "Anthropic is building this feature internally as its next breakout product. Borrowing Andrej Karpathy’s framing, Claude Tag suggests that AI products are entering a third stage: Chat, then local coding agents, then AI coworkers. For a deeper look, see ",
+          link("Anthropic's official Claude Tag announcement", "https://www.anthropic.com/news/introducing-claude-tag"),
           ".",
         ],
       },
@@ -485,7 +485,7 @@ Keep the message short and energetic. Use only the information above. If any eve
         type: "paragraph",
         content: [
           "Bot personalities sounded fun, especially in the form of a soul. It is essentially a ",
-          link("soul.md", "http://soul.md"),
+          link("soul.md", "https://soul.md"),
           " file that guides the agent to behave as instructed. The choices offered were fairly rudimentary, akin to a replica of the MBTI system. LightVela does have the option to upload my own persona files, which gives me more room to personalize the bot.",
         ],
       },
@@ -531,15 +531,17 @@ export function getBlogPost(slug: string): BlogPost | undefined {
   return BLOG_POSTS.find((post) => post.slug === slug);
 }
 
-export function formatBlogPublishedAt(publishedAt: string): string {
-  return new Intl.DateTimeFormat("en-US", {
+export function formatBlogPublishedAt(publishedAt: string, locale = "en-US"): string {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "Asia/Shanghai",
   }).format(new Date(publishedAt));
 }
 
-export function formatBlogPublishedDate(publishedAt: string): string {
-  return new Intl.DateTimeFormat("en-US", {
+export function formatBlogPublishedDate(publishedAt: string, locale = "en-US"): string {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "long",
+    timeZone: "Asia/Shanghai",
   }).format(new Date(publishedAt));
 }

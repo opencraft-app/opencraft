@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { type PublicUrlLang } from '@next-site/public-locale';
 import { PublicBlogArticlePage } from '@next-site/public-pages';
 import {
-  buildGlobalPublicAlternates,
+  buildGlobalEnglishContentAlternates,
   createPublicMetadata,
   localizedPublicPath,
   prefixedPublicRouteLocale,
@@ -34,7 +34,7 @@ export async function generateMetadata({
     locale: routeLocale.locale,
     title: post.title,
     description: post.excerpt,
-    alternates: buildGlobalPublicAlternates(`/blog/${slug}`),
+    alternates: buildGlobalEnglishContentAlternates(`/blog/${slug}`),
   });
 }
 

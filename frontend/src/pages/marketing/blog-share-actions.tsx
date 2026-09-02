@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { useT } from "@/i18n/t";
 
+// Share controls always use the production canonical URL so preview domains are never shared publicly.
 const BLOG_ORIGIN = "https://lightvela.ai";
 
 type BlogShareActionsProps = {

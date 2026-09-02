@@ -75,6 +75,11 @@ describe("BlogArticlePage", () => {
       candidate.textContent?.includes("I Recreated Claude Tag with LightVela"),
     );
     if (!article) throw new Error("Expected the Slack digital employee article to be rendered");
+    expect(article).toHaveAttribute("lang", "en");
+    expect(within(article).getByRole("link", { name: "Anthropic's official Claude Tag announcement" })).toHaveAttribute(
+      "href",
+      "https://www.anthropic.com/news/introducing-claude-tag",
+    );
     expect(within(article).getByRole("img", { name: "Colorful Slack-inspired LightVela illustration" })).toBeInTheDocument();
     expect(within(article).getAllByRole("img")).toHaveLength(8);
     expect(within(article).getByRole("img", { name: /Slack conversation with LightVela/ })).toHaveAttribute(

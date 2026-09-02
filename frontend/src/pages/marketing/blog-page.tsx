@@ -119,13 +119,13 @@ export function BlogPage({
                     alt=""
                     className="aspect-[16/9] w-full rounded-md object-cover transition-opacity group-hover:opacity-80"
                   />
-                  <h2 className="mt-4 min-h-[2.5rem] line-clamp-2 text-pretty text-base font-medium leading-5 text-black">
+                  <h2 lang="en" className="mt-4 min-h-[2.5rem] line-clamp-2 text-pretty text-base font-medium leading-5 text-black">
                     {post.title}
                   </h2>
                   <div className="mt-2 flex items-center gap-2 text-sm text-black/50">
                     <span>{blogCategoryLabel(t, post.category)}</span>
                     <span aria-hidden="true">·</span>
-                    <time dateTime={post.publishedAt}>{formatBlogPublishedDate(post.publishedAt)}</time>
+                    <time dateTime={post.publishedAt}>{formatBlogPublishedDate(post.publishedAt, publicLocale)}</time>
                   </div>
                 </a>
               );

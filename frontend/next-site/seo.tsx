@@ -410,6 +410,17 @@ export function buildGlobalPublicAlternates(path: string): Record<string, string
   return alternates;
 }
 
+/** English-only content keeps localized UI routes without declaring untranslated content as another language. */
+export function buildGlobalEnglishContentAlternates(path: string): Record<string, string> {
+  const publicPath = stripPublicLocalePrefix(path);
+  const englishUrl = absolutePageUrlForSeoRegion('global', localizedPublicPath(publicPath, 'default'));
+
+  return {
+    'x-default': englishUrl,
+    'en-US': englishUrl,
+  };
+}
+
 export function buildDocsAlternates(
   slug: readonly string[],
   availableLocales: readonly DocsRouteLocale[],

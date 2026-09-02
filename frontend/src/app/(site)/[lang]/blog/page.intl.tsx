@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { type PublicUrlLang } from '@next-site/public-locale';
 import { PublicBlogPage } from '@next-site/public-pages';
-import { buildGlobalPublicAlternates, createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
+import { buildGlobalEnglishContentAlternates, createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { isGlobal } from '@/lib/region';
 import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
 import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
@@ -45,7 +45,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
     locale: routeLocale.locale,
     title: TITLE_BY_LOCALE[routeLocale.locale] ?? TITLE_BY_LOCALE[PUBLIC_SITE_LOCALES.EN_US],
     description: DESCRIPTION_BY_LOCALE[routeLocale.locale] ?? DESCRIPTION_BY_LOCALE[PUBLIC_SITE_LOCALES.EN_US],
-    alternates: buildGlobalPublicAlternates('/blog'),
+    alternates: buildGlobalEnglishContentAlternates('/blog'),
   });
 }
 

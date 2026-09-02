@@ -1,3 +1,19 @@
+# 国际站 Blog 评审修正 Implementation Plan
+
+**Status:** 实现与验证完成，等待提交并更新 MR。
+
+**Size:** S。
+仅修正国际站 Blog 的英文外链、英文正文 SEO 语义、分类类型与本地化日期格式。
+不翻译博客正文，不移除语言前缀路由，不改国内站公开路由。
+
+**Goal:** 让英文正文只声明英文 hreflang，使用可访问的 HTTPS 外链，并让日期按当前界面语言和北京时间格式化。
+
+- [x] **Task 1：测试先行修正 Blog 外链、英文正文 alternates、分类类型和本地化日期，并完成国际站与国内站构建验证。**
+
+**Verification:** Blog 专项断言先按预期 RED（6 个失败），实现后 6 个测试文件共 40 个断言 GREEN。`pnpm i18n:check`、`pnpm check`、`pnpm build:global`、`pnpm build:cn` 与 `git diff --check` 均通过；类型基线为 206 current / 276 baseline / 0 new / 70 resolved。
+
+---
+
 # Agent 工作台左侧导航文案 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。

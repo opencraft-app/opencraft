@@ -38,7 +38,8 @@ describe("BlogPage", () => {
       "href",
       "/blog/recreated-claude-tag-with-lightvela",
     );
-    const latestCard = screen.getByRole("link", { name: /I Recreated Claude Tag with LightVela/ });
+    const latestCard = screen.getAllByRole("link", { name: /I Recreated Claude Tag with LightVela/ }).at(-1);
+    if (!latestCard) throw new Error("Expected the localized latest Blog card to be rendered");
     expect(screen.queryByText(/I host my mega Discord server with over 600 users/)).not.toBeInTheDocument();
     expect(latestCard.querySelector("img")).toHaveClass("rounded-md");
     expect(latestCard.querySelector("h2")).toHaveClass("line-clamp-2", "min-h-[2.5rem]", "text-pretty");
@@ -54,5 +55,18 @@ describe("BlogPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "使用场景" }));
 
     expect(screen.getByRole("link", { name: /Using Hermes Agent as a Discord bot/ })).toBeInTheDocument();
+  });
+
+  it("formats listing dates for the active public locale in Beijing time", () => {
+    render(<BlogPage publicLocale="zh-Hant" />);
+
+    const expectedDate = new Intl.DateTimeFormat("zh-Hant", {
+      dateStyle: "long",
+      timeZone: "Asia/Shanghai",
+    }).format(new Date("2026-09-01T20:35:43+08:00"));
+    const latestCard = screen.getAllByRole("link", { name: /I Recreated Claude Tag with LightVela/ }).at(-1);
+    if (!latestCard) throw new Error("Expected the localized latest Blog card to be rendered");
+
+    expect(latestCard.querySelector("time")).toHaveTextContent(expectedDate);
   });
 });

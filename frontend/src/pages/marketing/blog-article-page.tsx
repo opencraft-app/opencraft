@@ -152,7 +152,7 @@ export function BlogArticlePage({
         renderLanguageSwitcher={renderLanguageSwitcher}
       />
       <main className="flex-1 px-6 pb-24 pt-[116px] sm:px-10">
-        <article className="mx-auto w-full max-w-5xl">
+        <article lang="en" className="mx-auto w-full max-w-5xl">
           <a
             href={blogHref}
             aria-label={t("返回")}
@@ -170,7 +170,7 @@ export function BlogArticlePage({
           />
           <h1 className="mt-8 text-pretty text-3xl font-bold leading-tight text-black sm:text-4xl">{post.title}</h1>
           <div className="mt-5 text-sm text-black/45">
-            <time dateTime={post.publishedAt}>{formatBlogPublishedAt(post.publishedAt)}</time>
+            <time dateTime={post.publishedAt}>{formatBlogPublishedAt(post.publishedAt, publicLocale)}</time>
           </div>
           <div className="mt-8 space-y-4">
             {post.content.slice(1).map((block, index) => renderBlock(block, index, publicLocale, publicLocalized))}

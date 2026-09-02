@@ -77,18 +77,12 @@ describe("global public SEO URL contract", () => {
     });
   });
 
-  it("keeps Blog hreflang targets on the global site", async () => {
-    const { buildGlobalPublicAlternates } = await importSeoWithRegion("global");
+  it("keeps English-only Blog content alternates on the global site", async () => {
+    const { buildGlobalEnglishContentAlternates } = await importSeoWithRegion("global");
 
-    expect(buildGlobalPublicAlternates("/blog")).toEqual({
+    expect(buildGlobalEnglishContentAlternates("/blog")).toEqual({
       "x-default": "https://lightvela.ai/blog/",
       "en-US": "https://lightvela.ai/blog/",
-      "zh-SG": "https://lightvela.ai/zh-sg/blog/",
-      "zh-Hant": "https://lightvela.ai/zh-hant/blog/",
-      "id-ID": "https://lightvela.ai/id-id/blog/",
-      es: "https://lightvela.ai/es/blog/",
-      "ja-JP": "https://lightvela.ai/ja-jp/blog/",
-      "ko-KR": "https://lightvela.ai/ko-kr/blog/",
     });
   });
 

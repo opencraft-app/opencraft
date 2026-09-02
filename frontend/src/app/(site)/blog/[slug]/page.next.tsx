@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { DEFAULT_PUBLIC_ROUTE_LOCALE } from '@next-site/public-locale';
 import { PublicBlogArticlePage } from '@next-site/public-pages';
-import { buildGlobalPublicAlternates, createPublicMetadata } from '@next-site/seo';
+import { buildGlobalEnglishContentAlternates, createPublicMetadata } from '@next-site/seo';
 import { isGlobal } from '@/lib/region';
 import { BLOG_POSTS, getBlogPost } from '@/pages/marketing/blog-content';
 
@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     locale: DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
     title: post.title,
     description: post.excerpt,
-    alternates: buildGlobalPublicAlternates(`/blog/${slug}`),
+    alternates: buildGlobalEnglishContentAlternates(`/blog/${slug}`),
   });
 }
 

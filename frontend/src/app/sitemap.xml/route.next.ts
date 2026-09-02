@@ -8,7 +8,7 @@ import { DEFAULT_PUBLIC_DOCS_LOCALE } from '@next-site/public-locale';
 import {
   absolutePageUrlForSeoRegion,
   buildDocsAlternates,
-  buildGlobalPublicAlternates,
+  buildGlobalEnglishContentAlternates,
   buildPublicAlternates,
   localizedDocsPath,
   localizedPublicPath,
@@ -72,7 +72,7 @@ function sameSlug(left: readonly string[], right: readonly string[]): boolean {
 
 function publicAlternates(path: string): Record<string, string> {
   return path === '/blog' || path.startsWith('/blog/')
-    ? buildGlobalPublicAlternates(path)
+    ? buildGlobalEnglishContentAlternates(path)
     : buildPublicAlternates(path);
 }
 

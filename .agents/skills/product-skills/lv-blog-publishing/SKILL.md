@@ -31,6 +31,7 @@ Load it when the user asks to write a blog, add a new blog post, create an artic
 
 - Add or update the post in `frontend/src/pages/marketing/blog-content.ts`.
 - Use a stable lowercase slug and keep the title, category, cover image, content, and `publishedAt` fields consistent.
+- Keep the category type open to `announcement`, `product`, and `use-case` so future posts can use every listing filter.
 - Set `publishedAt` to the actual insertion or publishing time as a timezone-aware ISO 8601 value.
 - Put the same cover asset first in `content` and in `coverImage`.
 - Store a post cover at `frontend/public/assets/blog/<slug>/cover.<extension>` unless an existing project asset convention requires another path.
@@ -45,6 +46,8 @@ Load it when the user asks to write a blog, add a new blog post, create an artic
 - Render unordered points as `unordered-list` blocks.
 - Render prompts, shell commands, and configuration snippets as `code` blocks.
 - Render destination URLs and references as inline `link` items.
+- Use HTTPS for external links whenever the destination supports it.
+  Prefer an accessible first-party source that matches the article's language and audience.
 - Preserve meaningful tables as tables when the current content model supports them.
 - Do not add a `Summary` heading unless the user explicitly requests one.
 - Do not add decorative shapes, unnecessary outer borders, extra buttons, or unrelated calls to action.
@@ -67,6 +70,9 @@ Load it when the user asks to write a blog, add a new blog post, create an artic
 - Place the article cover above the article title on detail pages.
   Keep the title bold but smaller than the page heading and avoid excessive right-side whitespace.
 - Keep article body line spacing compact and readable.
+- Format visible publication dates in the active public locale with `Asia/Shanghai` as the fixed publishing time zone.
+- When article body content remains English across localized Blog routes, mark the article content with `lang="en"` and use the English-only Blog alternate helper.
+  Keep localized routes for UI chrome, but do not emit non-English hreflang targets for untranslated article content.
 
 ## Fixed article ending
 
