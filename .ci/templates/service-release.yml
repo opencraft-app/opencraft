@@ -42,7 +42,7 @@ parameters:
     default: false
   - name: PROD_REVIEWERS
     type: string
-    default: '["skipzhang", "xinqishang"]'
+    default: '["skipzhang", "xinqishang", "mingyuxiao"]'
 
 variables:
   PIPELINE_MODE:
