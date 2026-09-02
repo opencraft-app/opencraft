@@ -2439,12 +2439,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
         self.assertIn('"$PNPM_BIN" run build:next', command_text)
-        self.assertIn('rm -rf .next out "$output_dir"', command_text)
+        self.assertIn('FRONTEND_PREVIEW_ARTIFACT_ROOT="$FRONTEND_PREVIEW_BUILD_ROOT/artifacts"', command_text)
+        self.assertIn('local workspace="$FRONTEND_PREVIEW_WORKSPACE_ROOT/$variant"', command_text)
+        self.assertIn('mv out "$artifact_dir"', command_text)
         self.assertIn('source "$CI_DIR/init.sh"', command_text)
         self.assertIn('python3 "$CI_DIR/runtime/commands/upload_staticpages_preview.py"', command_text)
 
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         self.assertIn("node scripts/clean-next-build-state.mjs", package_json["scripts"]["build:next"])
+        self.assertNotIn("preserve-next-preview-output.mjs", package_json["scripts"]["build:next"])
 
     def test_frontend_preview_builds_from_an_isolated_source_directory(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
@@ -2474,11 +2477,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" cn)"', workflow_text)
         self.assertIn('PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" intl)"', workflow_text)
         self.assertEqual(workflow_text.count('printf \'https://lightclaw.tech\''), 2)
-        self.assertIn('build_next_preview_variant cn cn "$PREVIEW_CN_AUTH_API_BASE_URL" "$FRONTEND_NEXT_CN_DIR"', workflow_text)
-        self.assertIn('build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_NEXT_GLOBAL_DIR"', workflow_text)
+        self.assertIn(
+            'build_next_preview_variant cn cn "$PREVIEW_CN_AUTH_API_BASE_URL" "$FRONTEND_PREVIEW_CN_ARTIFACT_DIR"',
+            workflow_text,
+        )
+        self.assertIn(
+            'build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_PREVIEW_INTL_ARTIFACT_DIR"',
+            workflow_text,
+        )
         self.assertIn('export VITE_AUTH_API_BASE_URL="$api_base"', workflow_text)
         self.assertIn('export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"', workflow_text)
         self.assertIn('export NEXT_WRITE_EDGEONE_BUILD_OUTPUT=0', workflow_text)
+        self.assertIn('unset FRONTEND_PREVIEW_BRANCH FRONTEND_PREVIEW_SHA', workflow_text)
         self.assertIn('"$PNPM_BIN" run build:next', workflow_text)
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
 
