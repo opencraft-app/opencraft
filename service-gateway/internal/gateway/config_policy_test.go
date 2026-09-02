@@ -580,14 +580,33 @@ func loadSOPSStringDataKeys(path string) (map[string]struct{}, error) {
 	return keys, nil
 }
 
-// TestWebsiteRoutesAllowShareAccessPUT 锁定建站路由的方法白名单必须包含 PUT。
+// websiteAccessPUTExpectations 声明每个环境的 ctl-websites 路由是否应放行 PUT。
 //
-// PUT /v1/websites/{site_id}/access 是「开启/关闭分享」的唯一写入口。网关的
-// methods 同时决定两件事：CORS 预检是否放行（allowsPreflight 直接查这个列表），
-// 以及真实请求是否被 methodAllowed 拒绝。少了 PUT，浏览器在 OPTIONS 阶段就拿到
-// 不含 PUT 的 Access-Control-Allow-Methods，前端只会看到一个没有响应体的 CORS
-// 错误，业务代码完全不会被执行。
-func TestWebsiteRoutesAllowShareAccessPUT(t *testing.T) {
+// PUT /v1/websites/{site_id}/access 是「开启/关闭分享码」的唯一写入口，只有在
+// site-gateway 以 SITE_GATEWAY_AUTH_MODE=required 运行的环境才有意义：
+//
+//   - shprod（国内站）：required 模式，站点访问要校验分享 Cookie，必须放行。
+//   - sgprod（国际站）：public 模式，site-gateway 直接回源、不读分享状态也不展示
+//     分享页。ctl 侧的 SetAccessPolicy 并不按地域拦截，一旦网关放行，请求会真的
+//     写入 Redis 并返回分享码，却对实际访问毫无约束 —— 那是一个「返回成功但安全
+//     承诺是假的」接口。所以这里保持关闭，是刻意的 fail-closed，不是遗漏。
+//   - beijing-sandbox：国内测试环境，供前端联调分享码，放行。
+//
+// 新环境必须在这里显式表态，否则测试会失败，避免再次出现「接口上线但网关方法白
+// 名单没跟上」的静默缺口（参见 MR !3416 只改业务代码、没改网关配置）。
+var websiteAccessPUTExpectations = map[string]bool{
+	"shprod":          true,
+	"beijing-sandbox": true,
+	"sgprod":          false,
+}
+
+// TestWebsiteRoutesShareAccessPUTMatchesSiteAuthMode 锁定建站路由 PUT 方法的开关状态。
+//
+// 网关的 methods 同时决定两件事：CORS 预检是否放行（allowsPreflight 直接查这个
+// 列表），以及真实请求是否被 methodAllowed 拒绝。少了 PUT，浏览器在 OPTIONS 阶段
+// 就拿到不含 PUT 的 Access-Control-Allow-Methods，前端只会看到一个没有响应体的
+// CORS 错误，业务代码完全不会被执行。
+func TestWebsiteRoutesShareAccessPUTMatchesSiteAuthMode(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
@@ -596,7 +615,8 @@ func TestWebsiteRoutesAllowShareAccessPUT(t *testing.T) {
 
 	for _, configFile := range deployConfigPaths(t, repoRoot) {
 		configFile := configFile
-		t.Run(filepath.Base(filepath.Dir(configFile)), func(t *testing.T) {
+		env := filepath.Base(filepath.Dir(configFile))
+		t.Run(env, func(t *testing.T) {
 			cfg, err := LoadConfigFile(configFile)
 			if err != nil {
 				t.Fatalf("load config: %v", err)
@@ -606,8 +626,17 @@ func TestWebsiteRoutesAllowShareAccessPUT(t *testing.T) {
 				if route.Name != "ctl-websites" {
 					continue
 				}
-				if !methodAllowed(route.Methods, http.MethodPut) {
-					t.Fatalf("ctl-websites must allow PUT for /v1/websites/{site_id}/access, got methods %v", route.Methods)
+				want, declared := websiteAccessPUTExpectations[env]
+				if !declared {
+					t.Fatalf("env %q routes ctl-websites but has no entry in websiteAccessPUTExpectations; "+
+						"decide explicitly whether PUT /v1/websites/{site_id}/access should be reachable there", env)
+				}
+				got := methodAllowed(route.Methods, http.MethodPut)
+				if got != want {
+					if want {
+						t.Fatalf("ctl-websites must allow PUT for /v1/websites/{site_id}/access, got methods %v", route.Methods)
+					}
+					t.Fatalf("ctl-websites must NOT allow PUT in %s (site-gateway runs in public mode, share codes are inert there), got methods %v", env, route.Methods)
 				}
 			}
 		})

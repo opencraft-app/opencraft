@@ -121,7 +121,7 @@ routes:
 
   - name: ctl-websites
     prefix: /v1/websites
-    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    methods: [GET, POST, DELETE, OPTIONS]
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     auth_strategy: session
