@@ -84,6 +84,7 @@ const providers: [ModelProviderOption, ModelProviderOption] = [
     baseUrl: "https://alpha.example.com/v1",
     apiMode: "chat_completions",
     discoveryStrategy: "live",
+    supportsLiveModelRefresh: true,
     apiKeyUrl: "https://alpha.example.com/keys",
   },
   {
@@ -93,8 +94,26 @@ const providers: [ModelProviderOption, ModelProviderOption] = [
     baseUrl: "https://beta.example.com/v1",
     apiMode: "chat_completions",
     discoveryStrategy: "live",
+    supportsLiveModelRefresh: true,
   },
 ];
+
+const catalogPlan: ModelProviderOption = {
+  ...providers[1],
+  providerKey: "catalog-plan",
+  providerName: "Catalog Plan",
+  catalogModels: [
+    { id: "catalog-first", name: "Catalog First" },
+    { id: "catalog-second", name: "Catalog Second" },
+  ],
+};
+
+const tencentPlan: ModelProviderOption = {
+  ...catalogPlan,
+  providerKey: "tencent-plan",
+  providerName: "Tencent Token Plan",
+  supportsLiveModelRefresh: false,
+};
 const { publicKey: testPublicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
   publicKeyEncoding: { type: "spki", format: "pem" },
@@ -673,29 +692,183 @@ describe("AgentModelConfigPanel", () => {
     }));
   });
 
-  it("does not present catalog models when Hermes model discovery fails", async () => {
-    const catalogProvider: ModelProviderOption = {
-      ...providers[1],
-      discoveryStrategy: "live",
-      catalogModels: [{ id: "catalog-only-model", name: "Catalog Only Model" }],
-    };
-    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, [], false);
+  it("preloads the product catalog and selects the first model before any credential", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
+    render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    const modelSelect = screen.getByRole("combobox", { name: "模型" });
+    expect(modelSelect).toBeEnabled();
+    expect(modelSelect).toHaveTextContent("Catalog First");
+    expect(remote.actions.some((action) => action.type === "probe")).toBe(false);
+  });
+
+  it("hides live model discovery for Tencent Providers and keeps it elsewhere", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
     render(
       <AgentModelConfigPanel
         botId="bot-1"
         execDebugCommand={remote.execDebugCommand}
-        providers={[catalogProvider]}
+        providers={[tencentPlan, { ...catalogPlan, category: "api" }]}
       />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Catalog First");
+    expect(screen.queryByRole("button", { name: "获取可用模型" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "模型 API" }));
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
+  });
+
+  it("restores the product catalog when the credential, Provider, or category changes", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["live-only-model"]);
+    const secondPlan: ModelProviderOption = {
+      ...catalogPlan,
+      providerKey: "catalog-plan-2",
+      providerName: "Catalog Plan 2",
+      catalogModels: [{ id: "second-plan-model", name: "Second Plan Model" }],
+    };
+    render(
+      <AgentModelConfigPanel
+        botId="bot-1"
+        execDebugCommand={remote.execDebugCommand}
+        providers={[catalogPlan, secondPlan, { ...catalogPlan, providerKey: "catalog-api", category: "api" }]}
+      />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model"));
+
+    await userEvent.type(screen.getByLabelText("API Key"), "-changed");
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Catalog First");
+
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model"));
+    await selectOption("Coding Plan 套餐", "Catalog Plan 2");
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Second Plan Model");
+    expect(screen.getByLabelText("API Key")).toHaveValue("");
+
+    await userEvent.click(screen.getByRole("tab", { name: "模型 API" }));
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Catalog First");
+  });
+
+  it("returns to the product catalog after a model is added", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["live-only-model"]);
+    render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model"));
+    await userEvent.click(screen.getByRole("button", { name: "添加模型" }));
+
+    await waitFor(() => expect(toastMocks.success).toHaveBeenLastCalledWith("模型已添加"));
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Catalog First");
+  });
+
+  it("keeps the previous model list and selection when Hermes model discovery fails", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, [], false);
+    render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
     );
     await screen.findByText("暂未配置模型");
 
     await userEvent.type(screen.getByLabelText("API Key"), "invalid-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
 
-    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
-    expect(screen.queryByText("Catalog Only Model")).not.toBeInTheDocument();
-    expect(toastMocks.error).toHaveBeenCalledWith("未获取到可用模型，请检查API Key是否正确或有效");
+    const modelSelect = screen.getByRole("combobox", { name: "模型" });
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith("未获取到可用模型，请检查API Key是否正确或有效"));
+    expect(modelSelect).toBeEnabled();
+    expect(modelSelect).toHaveTextContent("Catalog First");
     expect(screen.queryByText("未获取到可用模型，请检查API Key是否正确或有效")).not.toBeInTheDocument();
+  });
+
+  it("keeps the previous model list when the discovery command itself fails", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["live-only-model"]);
+    render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model"));
+
+    remote.failNext("probe");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith("模型配置操作失败，请重试。"));
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model");
+  });
+
+  it("replaces the catalog with live results and re-replaces them on the next request", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["live-a", "live-b"]);
+    render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-a"));
+    await userEvent.click(screen.getByRole("combobox", { name: "模型" }));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["live-a", "live-b"]);
+    await userEvent.keyboard("{Escape}");
+
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-a"));
+    await userEvent.click(screen.getByRole("combobox", { name: "模型" }));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["live-a", "live-b"]);
+    await userEvent.keyboard("{Escape}");
+  });
+
+  it("clears the model list when live discovery succeeds without models", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, []);
+    render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled());
+    expect(screen.queryByText("Catalog First")).not.toBeInTheDocument();
+    expect(toastMocks.error).toHaveBeenCalledWith("未获取到可用模型，请检查API Key是否正确或有效");
+  });
+
+  it("keeps the current model list while a live request is in flight", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["live-only-model"]);
+    render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model"));
+
+    const execute = remote.execDebugCommand.getMockImplementation();
+    if (!execute) throw new Error("Missing remote command implementation");
+    remote.execDebugCommand.mockImplementation(async (botId, command) => {
+      if (decodeAction(command).type === "probe") return await new Promise<never>(() => undefined);
+      return execute(botId, command);
+    });
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    await screen.findByRole("button", { name: "获取中..." });
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model");
   });
 
   it("keeps model selection disabled when neither live nor catalog models are available", async () => {

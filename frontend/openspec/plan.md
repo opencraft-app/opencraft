@@ -1,3 +1,31 @@
+# 模型配置默认使用七彩石目录 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。
+
+**Size:** M。改动集中在模型配置适配层与配置面板，新增供应商能力字段并调整默认模型列表与实时获取语义；不触及 Hermes 命令、连接检测策略或配置持久化协议。
+
+**Goal:** 模型配置面板默认展示当前供应商的七彩石模型目录并选中第一项，腾讯系供应商不再展示实时获取入口，其他供应商的实时结果完整替换目录。
+
+**Design:** `openspec/changes/2026-09-01-rainbow-model-catalog-default-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-01-rainbow-model-catalog-default-implementation-plan.md`
+
+**Files:**
+- Modify: `src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `src/pages/marketing/agent-model-config/product-provider-adapter.ts`
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/product-provider-adapter.test.ts`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] **Task 1：适配层按供应商 `value` 输出 `supportsLiveModelRefresh`，`tokenhub` 与 `tencent_*` 为 false。**
+- [x] **Task 2：面板默认展示七彩石目录并选中第一项，集中处理重置时机，并按能力字段控制「获取可用模型」按钮可见性。**
+- [x] **Task 3：实时获取成功时完整替换模型列表，空结果清空列表，失败与请求中保留原列表和选择。**
+- [x] **Task 4：运行模型配置定向 Vitest、类型基线与 `git diff --check`，输出验收摘要等待用户确认。**
+
+**Verification:** 三轮 RED→GREEN 均先观察到预期失败（适配层 2 个、面板默认目录 4 个、实时替换语义 4 个），实现后模型配置目录定向回归 7 files / 128 tests 通过（唯一 skip 为需要真实 Hermes 源码的 smoke 文件）。本机 `frontend/node_modules` 原为部分安装，经确认后执行 `CI=true pnpm install --frozen-lockfile` 补齐（`package.json`、`pnpm-lock.yaml` 未变）；`pnpm check` 退出码 0，TypeScript diagnostics 为 206 current / 276 baseline / 0 new / 70 resolved，`git diff --check` 退出码 0。`src/pages/marketing` 扩大回归 1398/1409 通过，剩余 10 个失败为西语/印尼语词条断言与并行满载超时，单独运行相应文件均通过，与本次改动无关。
+
+---
+
 # Agent 工作台左侧导航文案 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。

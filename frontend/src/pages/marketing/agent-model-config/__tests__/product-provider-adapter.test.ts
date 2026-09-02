@@ -52,6 +52,7 @@ describe("adaptProductModelProviders", () => {
         baseUrl: "https://alpha.example.com/v1",
         apiMode: "chat_completions",
         discoveryStrategy: "live",
+        supportsLiveModelRefresh: true,
         catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
       },
       expect.objectContaining({
@@ -79,6 +80,24 @@ describe("adaptProductModelProviders", () => {
       providerKey: "minimax_coding",
       discoveryStrategy: "catalog",
     }));
+  });
+
+  it("disables live model refresh for Tencent-managed providers only", () => {
+    const adapted = adaptProductModelProviders([
+      { ...provider("tokenhub"), provider: "tokenhub" },
+      provider("tencent_token_plan"),
+      provider("tencent_token_plan_enterprise_pro_intl"),
+      { ...provider("minimax_coding"), provider: "minimax" },
+      provider("openrouter"),
+    ]);
+
+    expect(adapted.map((item) => [item.providerKey, item.supportsLiveModelRefresh])).toEqual([
+      ["tokenhub", false],
+      ["tencent_token_plan", false],
+      ["tencent_token_plan_enterprise_pro_intl", false],
+      ["minimax_coding", true],
+      ["openrouter", true],
+    ]);
   });
 
   it("extracts untrusted provider HTML without writing through element innerHTML", () => {

@@ -194,6 +194,13 @@ export function AgentModelConfigPanel({
   const activeProvider = category === "custom"
     ? null
     : providerOptions.find((provider) => provider.providerKey === providerKey) ?? null;
+  const catalogModelOptions = useMemo<ModelOption[]>(
+    () => category === "custom"
+      ? []
+      : (activeProvider?.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" as const })),
+    [activeProvider, category],
+  );
+  const canRefreshModels = category === "custom" || (activeProvider?.supportsLiveModelRefresh ?? true);
 
   const compoundControlClassName = cn(
     MODEL_COMPOUND_CONTROL_BASE_CLASS,
@@ -223,10 +230,10 @@ export function AgentModelConfigPanel({
     }
   }, [category, providerKey, providerOptions, providers]);
 
-  const resetProbeResult = () => {
+  const restoreCatalogModelOptions = () => {
     probeUiRevision.current += 1;
-    setModelOptions([]);
-    setSelectedModelId("");
+    setModelOptions(catalogModelOptions);
+    setSelectedModelId(catalogModelOptions[0]?.id ?? "");
     setConnectionResult(null);
     controller.clearOperationError();
   };
@@ -276,10 +283,10 @@ export function AgentModelConfigPanel({
     setApiKey("");
     setApiKeyTarget("");
     setShowApiKey(false);
-    setModelOptions([]);
-    setSelectedModelId("");
+    setModelOptions(catalogModelOptions);
+    setSelectedModelId(catalogModelOptions[0]?.id ?? "");
     setConnectionResult(null);
-  }, [controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
+  }, [catalogModelOptions, controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
 
   useEffect(() => {
     setPurpose(controller.snapshot?.primary ? "idle" : "primary");
@@ -292,25 +299,28 @@ export function AgentModelConfigPanel({
     setApiKeyTarget("");
     setShowApiKey(false);
     setPurpose(controller.snapshot?.primary ? "idle" : "primary");
-    resetProbeResult();
+    restoreCatalogModelOptions();
   };
 
   const handleProbe = async () => {
     if (!providerDraft || !canProbe) return;
     const requestFingerprint = providerFingerprint;
-    resetProbeResult();
     const revision = probeUiRevision.current;
-    const catalogModels = category === "custom" ? [] : activeProvider?.catalogModels ?? [];
-    if (activeProvider?.discoveryStrategy === "catalog") {
-      const nextOptions = catalogModels.map(({ id, name }) => ({ id, name, source: "catalog" as const }));
+    setConnectionResult(null);
+    controller.clearOperationError();
+    // 探测结果整体替换当前列表，不与七彩石目录合并，也不用目录补空。
+    const applyModelOptions = (nextOptions: ModelOption[]) => {
       setModelOptions(nextOptions);
       setSelectedModelId(nextOptions[0]?.id ?? "");
-      if (nextOptions.length > 0) setPurpose("primary");
       if (nextOptions.length > 0) {
+        setPurpose("primary");
         toast.success(t("已获取可用模型"));
       } else {
         toast.error(t("未获取到可用模型，请检查API Key是否正确或有效"));
       }
+    };
+    if (activeProvider?.discoveryStrategy === "catalog") {
+      applyModelOptions(catalogModelOptions);
       return;
     }
     const probeResult = await controller.probe({
@@ -319,23 +329,16 @@ export function AgentModelConfigPanel({
       apiMode: providerDraft.apiMode,
     });
     if (revision !== probeUiRevision.current || requestFingerprint !== providerFingerprintRef.current) return;
+    // 失败时保留请求前的列表和选择，只反馈错误。
     if (!probeResult) {
       toast.error(t("模型配置操作失败，请重试。"));
       return;
     }
-    const nextOptions: ModelOption[] = probeResult.models.length > 0
-      ? probeResult.models.map((id) => ({ id, name: id, source: "live" }))
-      : probeResult.succeeded
-        ? catalogModels.map(({ id, name }) => ({ id, name, source: "catalog" }))
-        : [];
-    setModelOptions(nextOptions);
-    setSelectedModelId(nextOptions[0]?.id ?? "");
-    if (nextOptions.length > 0) setPurpose("primary");
-    if (nextOptions.length > 0) {
-      toast.success(t("已获取可用模型"));
-    } else {
+    if (!probeResult.succeeded) {
       toast.error(t("未获取到可用模型，请检查API Key是否正确或有效"));
+      return;
     }
+    applyModelOptions(probeResult.models.map((id) => ({ id, name: id, source: "live" as const })));
   };
 
   const handleAdd = async () => {
@@ -350,10 +353,8 @@ export function AgentModelConfigPanel({
     setApiKey("");
     setApiKeyTarget("");
     setShowApiKey(false);
-    setModelOptions([]);
-    setSelectedModelId("");
+    restoreCatalogModelOptions();
     toast.success(t("模型已添加"));
-    setConnectionResult(null);
   };
 
   const handleConnectivityTest = async () => {
@@ -561,7 +562,7 @@ export function AgentModelConfigPanel({
                   className={MODEL_CONTROL_CLASS}
                   onChange={(event) => {
                     setCustomProviderName(event.target.value);
-                    resetProbeResult();
+                    restoreCatalogModelOptions();
                   }}
                 />
               </label>
@@ -574,7 +575,7 @@ export function AgentModelConfigPanel({
                   className={MODEL_CONTROL_CLASS}
                   onChange={(event) => {
                     setCustomBaseUrl(event.target.value);
-                    resetProbeResult();
+                    restoreCatalogModelOptions();
                   }}
                 />
               </label>
@@ -587,7 +588,7 @@ export function AgentModelConfigPanel({
                   disabled={busy}
                   onValueChange={(value) => {
                     setCustomApiMode(value);
-                    resetProbeResult();
+                    restoreCatalogModelOptions();
                   }}
                 >
                   <SelectTrigger
@@ -630,7 +631,7 @@ export function AgentModelConfigPanel({
                   setApiKey("");
                   setApiKeyTarget("");
                   setShowApiKey(false);
-                  resetProbeResult();
+                  restoreCatalogModelOptions();
                 }}
               >
                 <SelectTrigger
@@ -676,7 +677,7 @@ export function AgentModelConfigPanel({
                   onChange={(event) => {
                     setApiKey(event.target.value);
                     setApiKeyTarget(providerFingerprint);
-                    resetProbeResult();
+                    restoreCatalogModelOptions();
                   }}
                 />
                 <button
@@ -688,19 +689,21 @@ export function AgentModelConfigPanel({
                   {showApiKey ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
                 </button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className={compoundActionClassName}
-                disabled={!canProbe || busy}
-                onClick={() => void handleProbe()}
-              >
-                <ModelCompoundActionContent
-                  idleLabel={t("获取可用模型")}
-                  loadingLabel={t("获取中...")}
-                  loading={controller.operation === "probe"}
-                />
-              </Button>
+              {canRefreshModels ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={compoundActionClassName}
+                  disabled={!canProbe || busy}
+                  onClick={() => void handleProbe()}
+                >
+                  <ModelCompoundActionContent
+                    idleLabel={t("获取可用模型")}
+                    loadingLabel={t("获取中...")}
+                    loading={controller.operation === "probe"}
+                  />
+                </Button>
+              ) : null}
             </div>
             {activeProvider?.apiKeyUrl ? (
               <a

@@ -57,6 +57,7 @@ export interface ModelProviderOption {
   baseUrl: string;
   apiMode: HermesCanonicalApiMode;
   discoveryStrategy: ModelDiscoveryStrategy;
+  supportsLiveModelRefresh: boolean;
   description?: string;
   apiKeyUrl?: string;
   catalogModels?: Array<{ id: string; name: string }>;

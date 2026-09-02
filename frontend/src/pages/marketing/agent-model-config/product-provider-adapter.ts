@@ -4,6 +4,15 @@ import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config
 
 const CATALOG_DISCOVERY_PROVIDERS = new Set(["minimax", "minimax-cn"]);
 
+/**
+ * 腾讯系供应商的模型目录由平台侧统一维护，面板不提供实时探测入口。
+ * 按 `value` 前缀判断可覆盖所有现有与后续新增的 `tencent_*` 套餐。
+ */
+function providerSupportsLiveModelRefresh(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized !== "tokenhub" && !normalized.startsWith("tencent_");
+}
+
 function decodeHtmlEntity(entity: string) {
   const normalized = entity.toLowerCase();
   if (normalized === "amp") return "&";
@@ -58,6 +67,7 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
       baseUrl,
       apiMode,
       discoveryStrategy: CATALOG_DISCOVERY_PROVIDERS.has(provider.provider.trim().toLowerCase()) ? "catalog" : "live",
+      supportsLiveModelRefresh: providerSupportsLiveModelRefresh(provider.value),
       description: toPlainText(provider.description) || undefined,
       apiKeyUrl: provider.api_key_url.trim() || undefined,
       catalogModels: provider.models

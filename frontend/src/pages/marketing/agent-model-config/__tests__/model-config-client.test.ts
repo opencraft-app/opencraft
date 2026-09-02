@@ -354,6 +354,7 @@ describe("Hermes model configuration client", () => {
     apiKeyUrl: "https://platform.deepseek.com/api_keys",
     catalogModels: [{ id: model.id, name: "DeepSeek V3" }],
     discoveryStrategy: "live",
+    supportsLiveModelRefresh: true,
   };
 
   it("encodes action payloads and selects the Hermes runtime without exposing API keys", () => {
