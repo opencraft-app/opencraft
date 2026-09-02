@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/SpechtLabs/StaticPages/pkg/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -35,6 +36,16 @@ type S3PageClient struct {
 	s3Endpoint   string
 	s3BucketName string
 	publicRead   bool
+}
+
+type ObjectInfo struct {
+	Size     int64
+	Metadata map[string]string
+}
+
+type PresignedPut struct {
+	URL     string
+	Headers map[string]string
 }
 
 func NewS3PageClient(page *config.Page, options ...S3ClientOption) *S3PageClient {
@@ -88,7 +99,7 @@ func WithBucketConf(bucketConf *config.BucketConfig) S3ClientOption {
 			BaseEndpoint:  &c.s3Endpoint,
 			Region:        bucketConf.Region.String(), // required even if arbitrary
 			UsePathStyle:  usePathStyle,
-			UseAccelerate: false,                      // maybe required for BackBlaze B2 compatibility? TODO: test
+			UseAccelerate: false, // maybe required for BackBlaze B2 compatibility? TODO: test
 			Logger:        otelzap.L(),
 			Credentials: aws.NewCredentialsCache(
 				credentials.NewStaticCredentialsProvider(
@@ -163,6 +174,110 @@ func (c *S3PageClient) UploadFolder(ctx context.Context, source, target string) 
 
 	span.SetStatus(codes.Ok, "")
 	return nil
+}
+
+func (c *S3PageClient) PutPrivateObject(
+	ctx context.Context,
+	key string,
+	body io.Reader,
+	size int64,
+	contentType string,
+	metadata map[string]string,
+) error {
+	_, err := c.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(c.s3BucketName),
+		Key:           aws.String(filepath.ToSlash(key)),
+		Body:          body,
+		ContentLength: aws.Int64(size),
+		ContentType:   aws.String(contentType),
+		Metadata:      metadata,
+	})
+	return err
+}
+
+func (c *S3PageClient) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {
+	response, err := c.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(c.s3BucketName),
+		Key:    aws.String(filepath.ToSlash(key)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response.Body, nil
+}
+
+func (c *S3PageClient) HeadObject(ctx context.Context, key string) (ObjectInfo, error) {
+	response, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(c.s3BucketName),
+		Key:    aws.String(filepath.ToSlash(key)),
+	})
+	if err != nil {
+		return ObjectInfo{}, err
+	}
+	return ObjectInfo{Size: aws.ToInt64(response.ContentLength), Metadata: response.Metadata}, nil
+}
+
+func (c *S3PageClient) PresignPrivatePutObject(
+	ctx context.Context,
+	key string,
+	size int64,
+	contentType string,
+	metadata map[string]string,
+	expires time.Duration,
+) (PresignedPut, error) {
+	request, err := s3.NewPresignClient(c.client).PresignPutObject(
+		ctx,
+		&s3.PutObjectInput{
+			Bucket:        aws.String(c.s3BucketName),
+			Key:           aws.String(filepath.ToSlash(key)),
+			ContentLength: aws.Int64(size),
+			ContentType:   aws.String(contentType),
+			Metadata:      metadata,
+		},
+		func(options *s3.PresignOptions) { options.Expires = expires },
+	)
+	if err != nil {
+		return PresignedPut{}, err
+	}
+	headers := make(map[string]string)
+	for name, values := range request.SignedHeader {
+		if name == "Host" || len(values) == 0 {
+			continue
+		}
+		headers[name] = values[0]
+	}
+	return PresignedPut{URL: request.URL, Headers: headers}, nil
+}
+
+func (c *S3PageClient) DeleteObjectPrefix(ctx context.Context, prefix string) error {
+	var continuationToken *string
+	for {
+		listed, err := c.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(c.s3BucketName),
+			Prefix:            aws.String(filepath.ToSlash(prefix)),
+			ContinuationToken: continuationToken,
+		})
+		if err != nil {
+			return err
+		}
+		if len(listed.Contents) > 0 {
+			objects := make([]types.ObjectIdentifier, 0, len(listed.Contents))
+			for _, object := range listed.Contents {
+				objects = append(objects, types.ObjectIdentifier{Key: object.Key})
+			}
+			_, err = c.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: aws.String(c.s3BucketName),
+				Delete: &types.Delete{Objects: objects, Quiet: aws.Bool(true)},
+			})
+			if err != nil {
+				return err
+			}
+		}
+		if !aws.ToBool(listed.IsTruncated) {
+			return nil
+		}
+		continuationToken = listed.NextContinuationToken
+	}
 }
 
 func (c *S3PageClient) uploadFileInFolder(ctx context.Context, source, file, target string) humane.Error {
