@@ -53,6 +53,50 @@
 
 ---
 
+# Hy Token Plan 添加前自动验证 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收；尚未创建分支或提交。
+
+**Size:** S。仅调整 Hy Token Plan 个人版的模型状态检测入口和添加动作时序；不修改七彩石、Hermes 协议或其他 Provider。
+
+**Goal:** 隐藏 Hy 的独立“检测模型状态”按钮，点击“添加模型”时先真实验证，成功后才保存，失败时保留表单且不写配置。
+
+**Design:** `openspec/changes/2026-09-02-hy-token-plan-validate-on-add-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-hy-token-plan-validate-on-add-implementation-plan.md`
+
+- [x] **Developer｜测试先行为 Hy 增加添加前验证能力，隐藏独立检测按钮，串行执行 `connectivityProbe -> add`，覆盖失败不保存和其他 Provider 不变，并完成聚焦回归、类型与差异检查。**
+
+**Acceptance:** Hy 点击添加时使用当前模型和 API Key 执行 `model_request`；成功直接保存且不弹检测成功框；失败不产生 `add`、不清空表单；其他 Provider 的独立检测与添加流程不变。
+
+**Out of scope:** 不改变七彩石目录/缓存/兜底，不删除底层检测能力，不增加验证缓存、轮询或新接口；未经确认不创建分支、commit、push 或 MR。
+
+**Verification:** Provider 能力用例先出现 1 个预期 RED；面板成功/失败链路先出现 2 个预期 RED。最小实现后模型配置标准套件 7 个文件 126/126 GREEN，本地 Hy4 整体失败兜底测试 1/1 GREEN；面板测试同时覆盖探测命令异常不保存且保留表单。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。标准套件首次执行因系统 Python 缺少 `cryptography` 产生环境级级联失败，改用 Codex 工作区自带 Python 后全部通过。
+
+---
+
+# Hy Token Plan 七彩石模型目录 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收；尚未创建分支或提交。
+
+**Size:** S。仅调整 Hy Token Plan 个人版在产品 Provider 适配层的数据来源与空目录过滤；不修改七彩石接口、模型配置协议或其他 Provider 行为。
+
+**Goal:** 七彩石成功时由远端决定 Hy Token Plan 的存在性、说明和模型列表；整体失败时保留本地 Hy4 兜底，并继续使用固定目录交互。
+
+**Design:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-catalog-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-catalog-implementation-plan.md`
+
+- [x] **Developer｜测试先行取消 Hy 成功态本地目录覆盖，过滤空模型 Provider，保留本地 Hy4 兜底和固定选择交互，并完成聚焦回归、类型与差异检查。**
+
+**Acceptance:** 远端 Hy 目录与说明原样进入 LightVela；远端缺失或模型为空时不展示；七彩石整体失败仍由现有 Hook 回退本地 Hy4；无模型发现入口，检测与添加协议不变。
+
+**Out of scope:** 不增加实时刷新、缓存 TTL、轮询、已保存配置迁移、SDK 依赖升级或其他 Provider 行为调整；未经确认不创建分支、commit、push 或 MR。
+
+**Verification:** 新适配用例先出现 2 个预期 RED，分别证明远端目录/说明被本地 Hy4 覆盖以及空目录被错误补回；最小实现后 3 个聚焦测试文件 38/38 GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。
+
+---
+
 # Hy Token Plan 个人版固定模型 Implementation Plan
 
 **Status:** 七彩石覆盖回归已完成实现与自动化验证，等待提交 MR。
