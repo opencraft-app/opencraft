@@ -82,6 +82,7 @@ const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
   "subject-hyn": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   "academic-paper-writing-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
   "novel-evaluator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/9bcddb03-161b-42cd-bf2e-cf0159d85bd7.png",
+  "lh6-anniversary-blessing": "/assets/skills/featured-domestic-lh6-icon.svg",
 };
 
 function skill(
