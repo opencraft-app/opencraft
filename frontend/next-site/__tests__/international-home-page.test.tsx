@@ -87,6 +87,19 @@ describe("international v2 homepage artifact", () => {
     }
   });
 
+  it("keeps generated avatar and scene-button fixes in the homepage importer", () => {
+    const importer = readFileSync(
+      path.join(process.cwd(), "scripts/import-international-homepage.mjs"),
+      "utf8",
+    );
+
+    expect(importer).toContain("optimizeInternationalHomeVoiceAvatars(targetRoot)");
+    expect(importer).toContain("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');");
+    expect(importer).toContain("btn.addEventListener('click', activate);");
+    expect(importer).toContain("btn.addEventListener('keydown', activateFromKeyboard);");
+    expect(importer).toContain("Unable to add accessible activation to homepage scene buttons");
+  });
+
   it("connects the approved homepage navigation to production destinations", () => {
     const hrefs = Array.from(parseFragment().querySelectorAll<HTMLAnchorElement>("a[href]"), (anchor) =>
       anchor.getAttribute("href"),
@@ -164,6 +177,49 @@ describe("international v2 homepage artifact", () => {
     expect(document.querySelectorAll(".voice .tcard").length).toBeGreaterThanOrEqual(20);
     expect(css).toMatch(/#lightvela-intl-home \.voice\s*\{[^}]*padding:\s*96px 0 104px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.voice \.marquee__rows\s*\{[^}]*min-height:\s*420px;/s);
+  });
+
+  it("activates all 18 native scene buttons by click as well as hover", () => {
+    const englishDocument = new DOMParser().parseFromString(
+      readLocaleFragment("en-US"),
+      "text/html",
+    );
+    const publishedButtons = Array.from(
+      englishDocument.querySelectorAll<HTMLButtonElement>(".scene__sub"),
+    );
+    expect(publishedButtons).toHaveLength(18);
+    expect(
+      publishedButtons.every(
+        (button) => button.tagName === "BUTTON" && button.getAttribute("type") === "button",
+      ),
+    ).toBe(true);
+
+    document.body.innerHTML = [
+      '<div class="scene" id="scene-1">',
+      '<button class="scene__sub on" type="button">First scene</button>',
+      '<button class="scene__sub" type="button">Second scene</button>',
+      '<div class="scene-chat"><div class="native__thread"></div></div>',
+      '<div class="scene-chat"><div class="native__thread"></div></div>',
+      "</div>",
+    ].join("");
+    window.eval(readFileSync(runtimePath, "utf8"));
+
+    const buttons = document.querySelectorAll<HTMLButtonElement>(".scene__sub");
+    const chats = document.querySelectorAll<HTMLElement>(".scene-chat");
+    buttons[1].click();
+
+    expect(buttons[0].classList.contains("on")).toBe(false);
+    expect(buttons[1].classList.contains("on")).toBe(true);
+    expect(buttons[0].getAttribute("aria-pressed")).toBe("false");
+    expect(buttons[1].getAttribute("aria-pressed")).toBe("true");
+    expect(chats[0].style.display).toBe("none");
+    expect(chats[1].style.display).toBe("");
+
+    buttons[0].dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+    expect(buttons[0].classList.contains("on")).toBe(true);
+    buttons[1].dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: " " }));
+    expect(buttons[1].classList.contains("on")).toBe(true);
+    document.body.replaceChildren();
   });
 
   it("keeps international homepage demos localized", () => {

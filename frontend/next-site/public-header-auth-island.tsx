@@ -123,7 +123,7 @@ function PublicHeaderAuthControls({
   loginOnly = isGlobal,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
-  const { i18n } = useTranslation();
+  const { i18n } = useTranslation(undefined, { useSuspense: false });
   const { authReady, isAuthenticated } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);

@@ -4,7 +4,7 @@ import { RootProvider } from 'fumadocs-ui/provider/next';
 import type { ReactNode } from 'react';
 
 import { LightVelaSearchDialog } from '@next-site/lightvela-search-dialog';
-import { PublicSiteAppProviders } from '@next-site/public-site-providers';
+import { PublicSiteAppProviders } from '@next-site/public-site-app-providers';
 import { SiteJsonLd } from '@next-site/seo';
 
 export default function SiteLayout({ children }: { children: ReactNode }) {

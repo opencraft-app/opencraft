@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
 import React, { type ReactNode } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -91,5 +94,48 @@ describe("PublicSiteAppProviders", () => {
     );
 
     expect(screen.getByTestId("locale-override")).toHaveTextContent("es");
+  });
+
+  it("keeps the persistent app provider boundary free of locale dictionaries", () => {
+    const frontendRoot = process.cwd();
+    const layout = readFileSync(
+      path.join(frontendRoot, "src/app/(site)/layout.next.tsx"),
+      "utf8",
+    );
+    const appProvidersPath = path.join(
+      frontendRoot,
+      "next-site/public-site-app-providers.tsx",
+    );
+
+    expect(existsSync(appProvidersPath)).toBe(true);
+    if (!existsSync(appProvidersPath)) return;
+    const appProviders = readFileSync(appProvidersPath, "utf8");
+    expect(layout).toContain("@next-site/public-site-app-providers");
+    expect(appProviders).toContain("@/i18n/react-instance-registration");
+    expect(appProviders).not.toMatch(
+      /@\/i18n\/t|LocaleOverrideProvider|PublicSiteLocaleBridge/,
+    );
+    const registration = readFileSync(
+      path.join(frontendRoot, "src/i18n/react-instance-registration.ts"),
+      "utf8",
+    );
+    expect(registration).toContain("setI18n(i18n)");
+    expect(registration).not.toContain("setDefaults");
+    expect(registration).not.toMatch(/generated\/|@\/i18n\/(?:index|t)/);
+
+    for (const shellComponent of [
+      "src/components/site/cookie-consent-banner.tsx",
+      "next-site/public-header-auth-island.tsx",
+    ]) {
+      const source = readFileSync(path.join(frontendRoot, shellComponent), "utf8");
+      expect(source).toMatch(/useTranslation\(undefined,\s*\{\s*useSuspense:\s*false\s*\}\)/);
+    }
+
+    const httpRepositories = readFileSync(
+      path.join(frontendRoot, "src/repositories/http-repositories.ts"),
+      "utf8",
+    );
+    expect(httpRepositories).toContain("@/i18n/default-agent-name");
+    expect(httpRepositories).not.toContain("@/i18n/t");
   });
 });

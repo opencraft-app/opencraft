@@ -12,6 +12,34 @@
 - [x] 验证国际站首页与 Blog 页 Footer 入口及 Blog 页透明头部回归。
 - [x] 完成定向测试、国际化检查、类型检查、双区域构建和浏览器验收。
 
+---
+
+# 国际站 V2 首页性能优化 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认是否 commit/push/MR；当前未提交、未发布。
+
+**Size:** M。范围限定在国际站 V2 首页 client boundary、评价头像和场景子按钮；fragment 输出建议已实测无收益并撤回。不修改完整 marketing layout、动效生命周期或发布缓存。
+
+**Goal:** 去除一份重复 i18n client chunk，延迟并缩小评价头像，修复 18 个场景子按钮的 click/Enter/Space 操作，并用真实 RSC 产物校正无效的 fragment 优化建议。
+
+**Design:** `openspec/changes/2026-09-02-international-home-performance-v2-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-international-home-performance-v2-implementation-plan.md`
+
+- [x] **Task 1：测试先行拆分持久 App Provider client boundary；根据首次构建证据移除 repository 对全量 `@/i18n/t` 的单条默认名称依赖，并用真实 global 构建验证完整字典 chunk 数。**
+- [x] **Task 2：实现 Server Component 直出实验并用真实 RSC 产物确认载荷未减少，撤回无收益生产改动。**
+- [x] **Task 3：测试先行生成评价头像 64×64 WebP，并为全部 locale fragment 添加 lazy、async decoding 和真实展示尺寸。**
+- [x] **Task 4：以真实 runtime 行为测试锁定并修复 18 个场景子按钮的 hover、click、Enter、Space 与 `aria-pressed`。**
+- [x] **Task 5：完成聚焦回归、i18n、类型、global build、bundle/HTML/RSC/头像字节对比和双视口浏览器 smoke。**
+
+**Acceptance:** 首页 global 构建只包含一份完整 eager 字典 key 集合；fragment 实验以真实 RSC 证据撤回且不虚报 97 KB 收益；评价头像 lazy 并引用 64×64 WebP；18 个 `.scene__sub` 可通过 hover、click、Enter/Space 激活；七 locale、header 与首页视觉不变。
+
+**Verification:** 已同步并基于最新 `origin/master`（`4b6cb083e`）复验。聚焦测试 9 文件 115 项通过；`pnpm i18n:check`、`pnpm check`（0 new diagnostics）、`pnpm build:global`（592/592）通过。同提交纯 master 对照下，首页本地 JS 为 4,075,348 → 3,051,382 B raw、1,014,547 → 778,284 B Brotli，完整 2,693-key 字典 2 → 1；12 个唯一评价头像 1,248,169 → 25,056 B。英文桌面和西语 390px 浏览器 smoke 无 console error、无横向溢出，click/Enter/Space 均通过。
+
+**Out of scope:** 动效 IIFE cleanup、打字机布局优化、缓存头、完整 marketing layout、i18n 异步协议、API/鉴权/计费/发布。
+
+---
+
 # 云存储实例容量展示 Implementation Plan
 
 **Status:** 容量展示、系统预留口径及 CR 修正已实现；已合并最新 `master` 并完成复验，等待更新 MR !3499。
