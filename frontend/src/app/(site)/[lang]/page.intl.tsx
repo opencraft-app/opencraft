@@ -1,11 +1,14 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
+import { InternationalHomePage } from '@next-site/international-home-page';
+import { shouldUseInternationalV2Home } from '@next-site/international-home-routing';
 import { type PublicUrlLang } from '@next-site/public-locale';
 import { PublicHomePage } from '@next-site/public-pages';
-import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS, SoftwareApplicationJsonLd } from '@next-site/seo';
+import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS, SoftwareApplicationJsonLd, OrganizationJsonLd, WebSiteJsonLd } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { isGlobal } from '@/lib/region';
 import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
 import { koreanRouteDescription, koreanRouteTitle } from '@/lib/seo-data.ko';
 
@@ -56,10 +59,13 @@ export default async function LocalizedHomePage({ params }: { params: Promise<{ 
   const { lang } = await params;
   const routeLocale = prefixedPublicRouteLocale(lang);
   if (!routeLocale) notFound();
+  const useInternationalV2Home = shouldUseInternationalV2Home(isGlobal, routeLocale.locale);
   return (
     <>
-      <PublicHomePage {...routeLocale} />
+      {useInternationalV2Home ? <InternationalHomePage locale={routeLocale.locale} /> : <PublicHomePage {...routeLocale} />}
       <SoftwareApplicationJsonLd locale={routeLocale.locale} />
+      <OrganizationJsonLd />
+      <WebSiteJsonLd />
     </>
   );
 }

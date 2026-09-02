@@ -549,6 +549,46 @@ export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE
   );
 }
 
+/**
+ * Organization 实体声明（GEO/SEO）：AI 引擎与搜索引擎做品牌实体识别时依赖此结构化数据，
+ * 建立产品与官方社媒主页的实体信任链。sameAs 只放指向品牌自身的档案页
+ * （X / YouTube 官方主页），不放社区邀请链接与关联产品外链。
+ * cn / global 构建均渲染；url / logo 由 siteUrl() 与 og 图按区域自动分叉。
+ */
+export function OrganizationJsonLd() {
+  return (
+    <JsonLd
+      id="lightvela-organization-jsonld"
+      data={{
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: SITE_NAME,
+        url: siteUrl(),
+        logo: absoluteUrl(DEFAULT_OG_IMAGE_PATH),
+        sameAs: ['https://x.com/agentlightvela', 'https://www.youtube.com/@TencentLightVela'],
+      }}
+    />
+  );
+}
+
+/**
+ * WebSite 实体声明（GEO/SEO）：站点级身份锚点，与 hreflang 语言矩阵互补。
+ * 站内暂无搜索功能，故不声明 SearchAction（避免向引擎声明不存在的功能）。
+ */
+export function WebSiteJsonLd() {
+  return (
+    <JsonLd
+      id="lightvela-website-jsonld"
+      data={{
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: SITE_NAME,
+        url: siteUrl(),
+      }}
+    />
+  );
+}
+
 export function BreadcrumbJsonLd({ items }: { items: readonly { name: string; path: string }[] }) {
   return (
     <JsonLd

@@ -842,13 +842,11 @@ const MemoryPanel = ({
             type="button"
             onClick={onRefresh}
             disabled={isLoading}
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90",
-              isLoading && "cursor-not-allowed opacity-60",
-            )}
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
+            aria-label={t("刷新")}
+            title={t("刷新")}
           >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {t("刷新")}
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
           </button>
         )}
       />

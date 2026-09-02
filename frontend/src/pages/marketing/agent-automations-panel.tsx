@@ -349,7 +349,7 @@ export function AutomationScenarioTemplatesSection({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h3 id="automation-scenario-templates-title" className="text-sm font-semibold text-black/85">
-            {t("模板专区")}
+            {t("任务模板")}
           </h3>
           <p className="mt-1 text-xs leading-5 text-black/45">{t("从常用场景开始，确认内容后启用。")}</p>
         </div>
@@ -1139,15 +1139,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "created" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
             aria-pressed={activeView === "created"}
           >
-            {t("已生效任务")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView("recent")}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "recent" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
-            aria-pressed={activeView === "recent"}
-          >
-            {t("最近执行")}
+            {t("当前任务")}
           </button>
           <button
             type="button"
@@ -1156,6 +1148,14 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             aria-pressed={activeView === "ended"}
           >
             {t("已结束任务")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView("recent")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "recent" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
+            aria-pressed={activeView === "recent"}
+          >
+            {t("最近执行")}
           </button>
         </div>
         <button
@@ -1208,7 +1208,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             ) : (
               <p>
                 {t("暂无自动任务，")}
-                <span className="font-medium text-black/70">{t("可从上方模板专区快速启用")}</span>
+                <span className="font-medium text-black/70">{t("可从上方任务模板快速启用")}</span>
               </p>
             )}
           </div>

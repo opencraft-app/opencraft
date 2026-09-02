@@ -161,7 +161,7 @@ describe("automation scenario templates section", () => {
     expect(templates.some((template) => template.name === "每日工作小结")).toBe(true);
     expect(templates.some((template) => template.name === "每日 AI 资讯摘要")).toBe(true);
 
-    expect(screen.getByRole("heading", { name: "模板专区" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "任务模板" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /^启用/ })).toHaveLength(6);
     for (const template of templates.slice(0, 6)) {
       expect(screen.getByRole("button", { name: `启用${template.name}` })).toBeTruthy();
@@ -410,7 +410,10 @@ describe("cron context panel integration", () => {
   it("uses the new copy for the blank create entry and modal title", async () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByRole("heading", { name: isGlobal ? "Templates" : "模板专区" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: isGlobal ? "Task Templates" : "任务模板" })).toBeTruthy();
+    expect(await screen.findByText(
+      isGlobal ? "quickly enable one from the task templates above" : "可从上方任务模板快速启用",
+    )).toBeTruthy();
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
 
@@ -1126,7 +1129,7 @@ describe("terminal cron card visibility", () => {
     expect(card).not.toHaveTextContent("已执行");
   });
 
-  it("keeps disabled jobs active and moves ended states into their own tab", async () => {
+  it("keeps disabled jobs active and orders current, ended, and recent tabs", async () => {
     const active = makeCronJob({ id: "active", name: "生效任务", state: "scheduled" });
     const disabled = makeCronJob({
       id: "disabled",
@@ -1158,11 +1161,11 @@ describe("terminal cron card visibility", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    const createdTab = await screen.findByRole("button", { name: "已生效任务" });
+    const createdTab = await screen.findByRole("button", { name: "当前任务" });
     const recentTab = screen.getByRole("button", { name: "最近执行" });
     const endedTab = screen.getByRole("button", { name: "已结束任务" });
-    expect(Boolean(createdTab.compareDocumentPosition(recentTab) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(Boolean(recentTab.compareDocumentPosition(endedTab) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(createdTab.compareDocumentPosition(endedTab) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(endedTab.compareDocumentPosition(recentTab) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(await screen.findByText("生效任务")).toBeTruthy();
     expect(screen.getByText("停用任务")).toBeTruthy();
     expect(screen.getByText("已停用")).toBeTruthy();
@@ -1239,7 +1242,7 @@ describe("terminal cron card visibility", () => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
     });
     expect(await screen.findByText("新任务")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "已生效任务" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "当前任务" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("returns to active jobs after creating from a template on the ended-jobs tab", async () => {
@@ -1262,7 +1265,7 @@ describe("terminal cron card visibility", () => {
       expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
     });
     expect(await screen.findByText("模板新任务")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "已生效任务" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "当前任务" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 

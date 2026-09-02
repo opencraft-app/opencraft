@@ -11,6 +11,78 @@
 - [x] **Task 1：测试先行修正 Blog 外链、英文正文 alternates、分类类型和本地化日期，并完成国际站与国内站构建验证。**
 
 **Verification:** Blog 专项断言先按预期 RED（6 个失败），实现后 6 个测试文件共 40 个断言 GREEN。`pnpm i18n:check`、`pnpm check`、`pnpm build:global`、`pnpm build:cn` 与 `git diff --check` 均通过；类型基线为 206 current / 276 baseline / 0 new / 70 resolved。
+# Hy Token Plan 个人版固定模型 Implementation Plan
+
+**Status:** 实现与自动化验证完成；本地浏览器账号无智能体，只完成路由可达性与无控制台错误 smoke，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅调整腾讯云 Hy Token Plan（个人版）的模型选择策略与 Hy4 目录文案，不改变其他 Provider、连接检测协议或添加模型生效流程。
+
+**Goal:** Hy Token Plan 个人版无需获取模型列表，固定使用 `hy4-preview`，并保留模型状态检测和添加模型生效。
+
+**Design:** `openspec/changes/2026-09-01-hy-token-plan-fixed-model-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-01-hy-token-plan-fixed-model-implementation-plan.md`
+
+- [x] **测试先行实现 Hy4 固定目录、状态检测与添加生效，完成 i18n、类型、专项回归、双区域构建和国内站页面可达性 smoke。**
+
+**执行记录（2026-09-01）：**
+
+- RED：Provider 目录/适配新增断言 2 条按预期失败；模型面板固定展示、状态检测、添加生效新增断言 3 条按预期失败。
+- GREEN：目标 4 个测试文件共 54 条全部通过；模型面板 28 条全部通过，断言固定 `hy4-preview`、无模型发现、检测使用 `model_request`、添加使用 `discoverModels: false` 且保持主模型用途。
+- i18n：已运行 `pnpm i18n:extract`、`pnpm i18n:check`、`pnpm i18n:zh-hant:check`，所有已开放 locale 的 Hy4 新文案非空；印尼语已知翻译债务从 175 降至 174。
+- 质量门禁：`pnpm check` 通过且 0 个新增 TypeScript 诊断；`pnpm build:cn` 与 `pnpm build:global` 通过；`git diff --check` 无输出。
+- 浏览器：本地 `/agents/models/` 返回 200、页面正常渲染且无控制台错误；当前浏览器账号没有智能体，页面停留在“立即创建”，为避免创建真实云端资源，未执行完整表单交互 smoke。
+- 扩展模型目录回归共 140 条：103 条通过、1 条按环境跳过；36 条 Hermes 客户端测试因本机系统 Python 缺少 `cryptography` 在脚本启动阶段失败，本次未修改对应客户端或脚本。
+
+---
+
+# 自动任务页签顺序回归修复 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认提交；不自动 commit、push 或创建 MR。
+
+**Size:** M。行为仍是单一回归修复，但需要同步组件测试、7 个 locale 文档与 5 份本地化截图资源，文件面超过 S 级上限。
+
+**Goal:** 页签恢复为“当前任务 → 已结束任务 → 最近执行”，同步修正测试和文档截图，并恢复被 !3471 删除的“结果校验”；不改变任务分类、切换行为、布局或其他 !3471 变更。
+
+- [x] **Developer｜影响 `agent-automations-panel.tsx`、对应组件测试、必要 i18n 生成资源、自动任务双区域文档与现有页签截图：先修改真实渲染断言确认 RED，再最小恢复文案和 DOM 顺序；随后同步 7 个 locale 的正确顺序和“结果校验”，覆盖现有 5 份本地化截图，最后完成定向测试、docs sync、i18n、类型和差异校验。**
+
+**Acceptance:** 国内站显示“当前任务 → 已结束任务 → 最近执行”；全部已开放 locale 使用既有“当前任务”翻译；自动任务文档正文、图片替代文本与本地化截图使用相同顺序，7 个 locale 均包含结果校验步骤；任务分类、点击切换及创建后回到当前任务的行为保持不变。
+
+**Verification:** 组件测试先出现 3 个预期失败、文档契约测试先出现 7 个预期失败，最小修复后聚焦测试 151/151 通过；`pnpm check` 通过（TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved，i18n 结构错误 0），`docs:sync` 输出的 8 个站点 locale 均包含正确顺序和结果校验，5 份截图源文件与 public 镜像一致，`git diff --check` 无输出。国内线上页确认了 !3471 的错误顺序，纠正后组件在本地 CN/global 预览中逐语言实渲染并截图；国际线上页因未登录仅能看到登录提示。
+
+**Out of scope:** 不处理 !3471 的模板启用流程、typecheck 重试脚本或其他无关改动；不整体 revert !3471。
+
+---
+
+# 记忆刷新按钮与自动任务模板文案统一 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅统一 `/agents/memory/` 刷新按钮视觉，并调整 `/agents/automations/` 模板区名称；不改变刷新、模板启用或自动任务业务逻辑。
+
+**Goal:** 记忆页刷新按钮与自动任务页采用同一图标按钮样式，并将“模板专区”统一命名为“任务模板”，同步相关辅助文案、文档与全部已生成 locale。
+
+- [x] **Developer｜影响 `agent-settings-page.tsx`、`agent-automations-panel.tsx`、相关测试、自动任务文档与生成字典：先以失败测试锁定 32×32 纯图标刷新按钮及“任务模板”文案，再最小实现并完成定向测试、i18n、类型和差异校验。**
+
+**Acceptance:** 记忆页刷新按钮无可见文字、保留 `aria-label/title="刷新"`，尺寸、颜色、hover、disabled 与自动任务页一致且加载时图标旋转；自动任务模板区标题及空态辅助文案使用“任务模板”，文档引用与所有已生成 locale 保持一致。
+
+**Verification:** 新增要求先产生 3 个预期 RED，最小实现后相关测试 149/149 GREEN；`pnpm check` 通过，TypeScript diagnostics 为 206 current / 276 baseline / 0 new / 70 resolved，i18n 结构错误 0，7 个 locale 的 2 条新文案逐项断言通过，旧“模板专区”源码无残留，`git diff --check` 无输出。本地 mock 路由 `/agents/memory/` 返回 200、无错误覆盖层或 console error；mock 无 Agent，目标面板视觉由同款 class、无障碍属性和 loading 图标断言覆盖。
+
+**Out of scope:** 不调整记忆加载状态模型、自动任务刷新行为、模板卡片内容、分页、布局或功能。
+
+---
+
+# 人设页按钮文案精简 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅精简 `/agents/persona/` 两个按钮的显示文案，不改变按钮行为、样式或人设逻辑。
+
+**Goal:** 将“随机抽取人设 / 答题测试人设”分别改为“抽取人设 / 测试人设”，并保持已开放语言的既有语义。
+
+- [x] **先用页面组件测试确认新文案 RED，再最小修改渲染与 i18n 资源并完成定向测试、i18n、类型和差异校验。**
+
+**Verification:** 页面组件测试先按预期出现 6 个文案相关失败，再恢复 GREEN；CN 组件与字典定向测试 48/48 通过。`pnpm check` 通过（i18n、繁中一致性、类型检查均无新增错误），7 个 locale 的新按钮键逐项断言通过，目标文件 `git diff --check` 无输出。直接把整套国内 persona 交互夹具切到 global 会触发 8 个既有 slug fixture 失败，因此 global 文案以全 locale 字典测试与键值断言覆盖，本次不扩大范围修复测试架构。
 
 ---
 
@@ -72,6 +144,28 @@
 **Product decisions:** 用户已确认法务页沿用西语模式：提供本地化译文并明确英文版本优先；日韩母语与法务人员复核由用户另行安排，不阻塞本次代码验收。Docs 图片体积及其他全量测试历史失败不在本需求范围。
 
 **Verification:** 日韩字典均为 2677/2677，日语 0 error / 12 个共享汉字提示、韩语 0 error / 0 warning；专项回归 23 files / 265 tests 通过；`pnpm check` 为 206 current / 276 baseline / 0 new / 70 resolved；合并最新 `origin/master` 后，国际站 564 页、国内站 90 页生产构建通过，国际站日韩文档均与英文保持 67 路由一致，国内站未发布日韩前缀路由；桌面端/移动端首页、Docs、法务页 8 个浏览器用例通过且无横向溢出。登录态 Agent 实页因本地认证服务不可用被标记为 blocked，默认 `新会话` 在非中文 locale 展示 `New chat` 已由自动化回归覆盖。
+---
+
+# 国际站 V2 多语言首页接入 Implementation Plan
+
+**Status:** 用户补充项已实现并验证，等待更新后的 commit / push / MR 范围确认。
+
+**Size:** M。单一前端域内完成区域分流、静态首页资源、交互动效和导航闭环；每批不超过 3 个任务。
+
+**Goal:** 在最新 master 的独立分支中，将已验收的 V2 首页接入国际站七个已发布首页语言，统一结构和动态并保留各语言内容、字体与本地定制模块；国内站保持不变。
+
+**Detailed plan:** `openspec/changes/2026-08-31-intl-homepage-integration-implementation-plan.md`
+
+- [x] **Task 1（Developer）：测试先行锁定国际站英文首页选择、国内站/其他 locale 负向边界、资源完整性和正式链接映射。**
+- [x] **Task 2（Developer）：接入国际站专用 Server/Client 首页组件、HTML fragment、CSS/图片/字体/动效资源，并将所有导航连接到正式落点。**
+- [x] **Task 3（Reviewer）：完成定向测试、类型与 i18n 检查、国际站构建、本地桌面/移动端预览和控制台验收。**
+- [x] **Task 4（Developer / Reviewer）：按现网恢复顶部语言控件，将首页账号入口收敛为黑色 Sign In，修复页脚 Logo 白底与变形，并隔离新版首页样式以恢复 Cookie 提示布局。**
+- [x] **Task 5（Developer / Reviewer）：同步简中、繁中、印尼语、西语、日语、韩语 fragment 与图片，以简中为动态基准、英文为非中文标题字体基准，修复语言切换后动态重绑定、长标题换行和 CTA 英文回退。**
+- [x] **Task 6（Reviewer）：按用户截图收口页脚、用户评价、DeepSeek Harness 保留边界，完成七语种浏览器 smoke、PRD/OpenSpec 同步和提交前 CR。**
+- [x] **Task 7（Developer / Reviewer）：统一国际站公开页语言与登录按钮，完成七语种首页 117 个站内目标和关键路由 HTTP 校验。**
+
+**Verification:** 首页、渲染与公共头部定向 Vitest 41/41 GREEN；七个 locale fragment、正式路由、静态资源、动态脚本重绑定、CTA 本地化、单一顶部字标、统一公开页账号区和保留模块均有自动化断言。`pnpm check` 通过，i18n 结构错误 0，TypeScript diagnostics 为 206 current / 276 baseline / 0 new / 70 resolved。`NODE_OPTIONS=--max-old-space-size=8192 NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm build:next` 通过，国际站 564/564 页面生成、42 条公开路由 SEO 校验通过；75 个首页图片/字体资源全部有引用且无缺失。七个已发布 locale 共 117 个去重站内目标均匹配生产静态产物，七语种首页及关于、文档、定价、Agent、自动任务和 Harness 关键落点跟随正常重定向后均返回 200。浏览器此前实测七语种逐字入场、Discord 打字动态和繁体四渠道重播；最终本地 HTTP 核对韩语首页只含一个透明 SVG 字标，Harness 图片返回 200 `image/png`。`git diff --check` 通过。
+
 ---
 
 # 首页加载性能优化 Implementation Plan
