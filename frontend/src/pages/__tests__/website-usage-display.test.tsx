@@ -1,7 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { WebsitePage } from "@/pages/app/website-page";
 import { AgentWebsitePanel } from "@/pages/marketing/agent-website-panel";
 
 vi.mock("@/i18n/t", () => ({
@@ -17,11 +16,12 @@ vi.mock("@/repositories/http-repositories", () => ({
 }));
 
 vi.mock("@/components/domain/agent-section-header", () => ({
-  AgentSectionHeader: ({ title }: { title: string }) => <h1>{title}</h1>,
-}));
-
-vi.mock("@/components/site/product-chrome", () => ({
-  ProductPageShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  AgentSectionHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => (
+    <div>
+      <h1>{title}</h1>
+      {actions}
+    </div>
+  ),
 }));
 
 vi.mock("@/lib/app-navigation", () => ({
@@ -68,13 +68,14 @@ describe("建站权益用量展示", () => {
     vi.unstubAllGlobals();
   });
 
-  it.each([
-    ["Agent 内嵌面板", AgentWebsitePanel],
-    ["独立作品页", WebsitePage],
-  ])("%s 显示流量和存储的已用量与总量", async (_name, Component) => {
-    render(<Component />);
+  it("显示工作台数量和本月访问流量的已用量与总量", async () => {
+    render(<AgentWebsitePanel />);
 
-    expect(await screen.findByText("64.9 KB / 10.0 GB")).toBeInTheDocument();
-    expect(screen.getByText("29.3 KB / 5.0 GB")).toBeInTheDocument();
+    expect(await screen.findByText("本月访问流量")).toBeInTheDocument();
+    expect(screen.getByText("工作台数量")).toBeInTheDocument();
+
+    // 用量与总量拆分渲染：数字在文本节点，总量在 span 内（normalizer 会去除前导空格）
+    expect(screen.getByText("64.9 KB")).toBeInTheDocument();
+    expect(screen.getByText("/ 10.0 GB")).toBeInTheDocument();
   });
 });

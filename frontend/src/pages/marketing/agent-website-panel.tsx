@@ -6,6 +6,7 @@ import {
   Loader2,
   Megaphone,
   Plus,
+  Share2,
   Trash2,
   UserRound,
   Wrench,
@@ -18,6 +19,7 @@ import { useT } from "@/i18n/t";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { AppLink } from "@/lib/app-navigation";
 import { savePendingWorkbenchPrompt } from "./workbench-prompt-templates";
+import { WebsiteShareDialog } from "./agent-website-share-dialog";
 
 interface WebsiteCapability {
   max_sites: number;
@@ -43,6 +45,8 @@ interface WebsiteSite {
   CloudPath: string;
   PublicURL: string;
   DeletedTime: string | null;
+  AccessMode?: "owner_only" | "share_code";
+  ShareExpiresAt?: string | null;
 }
 
 interface WebsiteOperation {
@@ -228,6 +232,7 @@ export const AgentWebsitePanel = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WebsiteSite | null>(null);
+  const [shareTarget, setShareTarget] = useState<WebsiteSite | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   /** 已发起删除、正在轮询收敛的站点，用于在服务端状态回传前就锁住该行 */
@@ -714,6 +719,19 @@ export const AgentWebsitePanel = () => {
                         <ExternalLink className="h-4 w-4" />
                       </span>
                     )}
+                    {status === "active" && siteURL && !isDeleting && (
+                      <button
+                        type="button"
+                        onClick={() => setShareTarget(site)}
+                        title={t("分享")}
+                        className="group/btn relative inline-flex h-8 w-8 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-black/[0.05] hover:text-[#007AFF]"
+                      >
+                        <Share2 className="h-4 w-4" />
+                        <span className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover/btn:opacity-100">
+                          {t("分享")}
+                        </span>
+                      </button>
+                    )}
                     {!isDeleting && (
                       <button
                         type="button"
@@ -804,6 +822,19 @@ export const AgentWebsitePanel = () => {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 分享弹窗 */}
+      <AnimatePresence>
+        {shareTarget && (
+          <WebsiteShareDialog
+            site={shareTarget}
+            onClose={() => setShareTarget(null)}
+            onChanged={() => {
+              void fetchData();
+            }}
+          />
         )}
       </AnimatePresence>
     </div>
