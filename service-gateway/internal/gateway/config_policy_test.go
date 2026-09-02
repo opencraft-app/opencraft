@@ -312,48 +312,83 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 }
 
-func TestShprodChatOriginIsScopedToTATSession(t *testing.T) {
+func TestProductionChatOriginsAreScopedToBotListAndTATSession(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
-	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/shprod/config.yaml"))
-	if err != nil {
-		t.Fatalf("load config: %v", err)
+	tests := []struct {
+		name        string
+		configPath  string
+		wantOrigins map[string]struct{}
+	}{
+		{
+			name:       "Shanghai",
+			configPath: "argocd/services/service-gateway/shprod/config.yaml",
+			wantOrigins: map[string]struct{}{
+				"https://chat.lightvela.com":      {},
+				"https://localhost.lightvela.com": {},
+			},
+		},
+		{
+			name:       "Singapore",
+			configPath: "argocd/services/service-gateway/sgprod/config.yaml",
+			wantOrigins: map[string]struct{}{
+				"https://chat.lightvela.ai":      {},
+				"https://localhost.lightvela.ai": {},
+			},
+		},
+	}
+	wantRules := map[string]struct{}{
+		http.MethodGet + " /v1/instances":                            {},
+		http.MethodPost + " /v1/instances/{instance_id}/tat/session": {},
 	}
 
-	wantOrigins := map[string]struct{}{
-		"https://chat.lightvela.com":      {},
-		"https://localhost.lightvela.com": {},
-	}
-	for _, origin := range cfg.AllowedOrigins {
-		if _, scoped := wantOrigins[origin]; scoped {
-			t.Fatalf("scoped TAT origin %q must not be added to the global CORS allowlist", origin)
-		}
-	}
-	for _, route := range cfg.Routes {
-		if route.Name != "ctl" {
-			continue
-		}
-		if len(route.CORSAllow) != 1 {
-			t.Fatalf("ctl cors_allow has %d rules, want 1: %+v", len(route.CORSAllow), route.CORSAllow)
-		}
-		rule := route.CORSAllow[0]
-		if rule.Method != http.MethodPost || rule.Path != "/v1/instances/{instance_id}/tat/session" {
-			t.Fatalf("unexpected scoped CORS rule: %+v", rule)
-		}
-		if len(rule.AllowedOrigins) != len(wantOrigins) {
-			t.Fatalf("unexpected scoped CORS origins: %+v", rule.AllowedOrigins)
-		}
-		for _, origin := range rule.AllowedOrigins {
-			if _, ok := wantOrigins[origin]; !ok {
-				t.Fatalf("unexpected scoped CORS origin %q", origin)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, tt.configPath))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
 			}
-		}
-		return
+			for _, origin := range cfg.AllowedOrigins {
+				if _, scoped := tt.wantOrigins[origin]; scoped {
+					t.Fatalf("scoped chat origin %q must not be added to the global CORS allowlist", origin)
+				}
+			}
+			for _, route := range cfg.Routes {
+				if route.Name != "ctl" {
+					continue
+				}
+				if len(route.CORSAllow) != len(wantRules) {
+					t.Fatalf("ctl cors_allow has %d rules, want %d: %+v", len(route.CORSAllow), len(wantRules), route.CORSAllow)
+				}
+				gotRules := make(map[string]struct{}, len(route.CORSAllow))
+				for _, rule := range route.CORSAllow {
+					key := rule.Method + " " + rule.Path
+					if _, wanted := wantRules[key]; !wanted {
+						t.Fatalf("unexpected scoped CORS rule: %+v", rule)
+					}
+					if len(rule.AllowedOrigins) != len(tt.wantOrigins) {
+						t.Fatalf("unexpected scoped CORS origins for %s: %+v", key, rule.AllowedOrigins)
+					}
+					for _, origin := range rule.AllowedOrigins {
+						if _, wanted := tt.wantOrigins[origin]; !wanted {
+							t.Fatalf("unexpected scoped CORS origin %q for %s", origin, key)
+						}
+					}
+					gotRules[key] = struct{}{}
+				}
+				for key := range wantRules {
+					if _, ok := gotRules[key]; !ok {
+						t.Fatalf("missing scoped CORS rule %s", key)
+					}
+				}
+				return
+			}
+			t.Fatal("ctl route not found")
+		})
 	}
-	t.Fatal("ctl route not found")
 }
 
 func TestDeployConfigsScopeWebsiteInstanceCredentials(t *testing.T) {

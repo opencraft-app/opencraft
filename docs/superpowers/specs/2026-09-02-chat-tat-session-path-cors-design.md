@@ -2,9 +2,10 @@
 
 ## Goal
 
-Allow the browser application at `https://chat.lightvela.com` to create a
-short-lived Tencent TAT terminal session for an owned LightVela instance,
-without granting that origin CORS access to other `service-gateway` routes.
+Allow the browser applications at `https://chat.lightvela.com` and
+`https://chat.lightvela.ai` to list the signed-in user's LightVela instances
+and create a short-lived Tencent TAT terminal session for an owned instance,
+without granting those origins CORS access to other `service-gateway` routes.
 
 ## Policy
 
@@ -25,19 +26,42 @@ The Shanghai production configuration grants only:
 ```text
 Origin: https://chat.lightvela.com
         https://localhost.lightvela.com
+Method: GET
+Path:   /v1/instances
+
+Origin: https://chat.lightvela.com
+        https://localhost.lightvela.com
 Method: POST
 Path:   /v1/instances/{instance_id}/tat/session
 ```
 
-No wildcard origins or ports are introduced. `localhost.lightvela.com` is an
-explicitly trusted HTTPS origin; this policy accepts the risk that software
-able to control that local origin can request a general TAT session as the
-signed-in user. The Tencent TAT WebSocket remains a direct
-browser-to-Tencent connection after the authenticated bootstrap call;
-`service-gateway` does not proxy WebSocket traffic.
+The Singapore production configuration grants the same two paths to the
+corresponding international origins:
+
+```text
+Origin: https://chat.lightvela.ai
+        https://localhost.lightvela.ai
+Method: GET
+Path:   /v1/instances
+
+Origin: https://chat.lightvela.ai
+        https://localhost.lightvela.ai
+Method: POST
+Path:   /v1/instances/{instance_id}/tat/session
+```
+
+No wildcard origins or ports are introduced. The `localhost.lightvela.com`
+and `localhost.lightvela.ai` origins are explicitly trusted HTTPS origins;
+this policy accepts the risk that software able to control either local
+origin can enumerate the signed-in user's instances and request a general
+TAT session. The Tencent TAT WebSocket remains a direct browser-to-Tencent
+connection after the authenticated bootstrap call; `service-gateway` does
+not proxy WebSocket traffic. The session API is not exposed to these origins,
+so this policy does not grant access to the reusable session token returned
+by `/auth/session`.
 
 ## Validation
 
 Tests cover additive global behavior, preflight method/path matching, actual
 authenticated responses, rejection on sibling instance paths, and the exact
-Shanghai deployment policy.
+Shanghai and Singapore deployment policies.
