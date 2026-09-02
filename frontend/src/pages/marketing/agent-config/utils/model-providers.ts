@@ -195,6 +195,14 @@ export interface IModelProvider {
   };
 }
 
+/** Hy Token Plan（个人版）不接受七彩石覆盖的固定模型目录。 */
+export const HY_TOKEN_PLAN_FIXED_CATALOG = {
+  description: t(
+    '基于腾讯2026年最新推出的混元模型打造：集成 Hy4 Preview 模型，面向 Agent 工作负载设计，适配 Coding Agent、文档自动化、多步工具调用等工作流。',
+  ),
+  models: [{ id: 'hy4-preview', name: 'hy4-preview' }],
+} satisfies Pick<IModelProvider, 'description' | 'models'>;
+
 // 列表文案含 t()。原 SDK 的 i18n 词条由宿主在模块加载后才注册，顶层求值会拿到
 // 未初始化的 i18n（返回中文 defaultValue 或空串），故曾用惰性 Proxy 推迟到首次访问。
 // 本地化后 t() 走 @/i18n/t：构建期静态字典 + i18n 在模块顶层同步 init，
@@ -333,13 +341,11 @@ export const MODEL_PROVIDER_LIST: IModelProvider[] = [
       category: 'coding_plan',
       provider: 'tencenthytokenplan',
       provider_name: t('腾讯云 Hy Token Plan（个人版）'),
-      description: t(
-        '基于腾讯2026年最新推出的混元模型打造：集成 Hy4 Preview 模型，面向 Agent 工作负载设计，适配 Coding Agent、文档自动化、多步工具调用等工作流。',
-      ),
+      description: HY_TOKEN_PLAN_FIXED_CATALOG.description,
       api_key_url: 'https://console.cloud.tencent.com/tokenhub/tokenplan/hy',
       base_url: 'https://api.lkeap.cloud.tencent.com/plan/v3',
       api: 'openai-completions',
-      models: [{ id: 'hy4-preview', name: 'hy4-preview' }],
+      models: HY_TOKEN_PLAN_FIXED_CATALOG.models,
     },
     {
       value: 'tencent_token_plan',
