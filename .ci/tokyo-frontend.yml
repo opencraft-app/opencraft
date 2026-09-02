@@ -33,4 +33,5 @@ extends:
     ENABLE_MASTER_PROD_PROMOTE: false
     PLAYGROUND_BUILD_ENVS: auto
     PLAYGROUND_AUTO_PIN_ENVS: auto
+    PROD_REVIEWERS: '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
     RUNNER_POOL_NAME: cn-pool
