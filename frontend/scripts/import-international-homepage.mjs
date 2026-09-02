@@ -49,6 +49,7 @@ const publicLocalizedPaths = [
   "/",
   "/about",
   "/changelog",
+  "/blog",
   "/docs",
   "/open-source-licenses",
   "/privacy-policy",
@@ -1079,6 +1080,16 @@ Object.assign(coreCopyByLocale, {
     "My AI partners": "내 AI 파트너",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 모든 권리 보유. Tencent Lighthouse에서 제작.",
   },
+});
+Object.assign(coreCopyByLocale, {
+  "en-US": { Blog: "Blog" },
+  "zh-CN": { Blog: "博客" },
+  "zh-SG": { Blog: "博客" },
+  "zh-Hant": { Blog: "博客" },
+  "id-ID": { Blog: "Blog" },
+  es: { Blog: "Blog" },
+  "ja-JP": { Blog: "ブログ" },
+  "ko-KR": { Blog: "블로그" },
 });
 const cardAltCopyByLocale = {
   "zh-CN": {
@@ -3904,7 +3915,7 @@ function applyFooterLayout(document) {
   </div>
   <div class="foot__links"><div class="foot__links-grid">
     <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.</p></div>
-    <div><h3>Product</h3><ul><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
+    <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Analysis</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Self-hosting analysis</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Hostinger analysis</a></li><li><a href="/docs/compare/lightvela-vs-manus">Manus analysis</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">ChatGPT analysis</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Genspark analysis</a></li></ul></div>
     <div><h3>Community</h3><ul><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://www.youtube.com/@TencentLightVela" target="_blank" rel="noreferrer">YouTube</a></li></ul></div>
     <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
@@ -3949,6 +3960,7 @@ const routeByLabel = new Map([
   ["Pricing", "/subscribe"],
   ["Docs", "/docs/overview"],
   ["Changelog", "/changelog"],
+  ["Blog", "/blog"],
   ["About", "/about"],
   ["CN", "/zh-sg/"],
   ["Early Access", "/subscribe"],

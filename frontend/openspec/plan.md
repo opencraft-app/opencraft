@@ -1,3 +1,17 @@
+# 国际站 Blog 入口与页面头部统一 Implementation Plan
+
+**Status:** 实现中，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Goal:** 让国际站所有公开页共享 Blog 顶部入口，并让首页与 Blog 页保持一致的国际站 Footer，同时保留 Blog 页当前透明头部效果。
+
+**Design:** `openspec/changes/2026-09-02-global-blog-navigation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-global-blog-navigation-implementation-plan.md`
+
+- [x] 注册国际站 Blog 顶部导航项，验证桌面导航、移动菜单、语言前缀和国内站隔离。
+- [x] 验证国际站首页与 Blog 页 Footer 入口及 Blog 页透明头部回归。
+- [x] 完成定向测试、国际化检查、类型检查、双区域构建和浏览器验收。
+
 # 国际站 Blog 评审修正 Implementation Plan
 
 **Status:** 实现与验证完成，等待提交并更新 MR。
