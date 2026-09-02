@@ -133,6 +133,50 @@
 
   Expected: 无输出。
 
+## Task 5：处理 TAT 输出健壮性 CR
+
+**Files:**
+
+- Modify: `src/components/domain/__tests__/tat-file-manager-panel.test.tsx`
+- Modify: `src/components/domain/tat-file-manager-panel.tsx`
+- Modify: `openspec/plan.md`
+
+**Interfaces:**
+
+- Consumes: `TencentTsshFileClient.execCommand()` 返回的 `{ exitCode: number | null; output: string }`。
+- Produces: 仅接受双哨兵之间的容量 JSON；有效 JSON 可在 `exitCode === null` 时成功，明确的非零退出码仍失败。
+
+- [x] **Step 1：补失败测试**
+
+  - 容量命令必须输出 `__LIGHTVELA_STORAGE_CAPACITY_START__` 与 `__LIGHTVELA_STORAGE_CAPACITY_END__`。
+  - `exitCode: null` 且哨兵载荷有效时展示容量。
+  - 哨兵前后存在 PTY 噪声时仍展示容量。
+  - 查询失败时调用 `console.warn("[storage-capacity] lookup failed", <脱敏消息>)`，界面仍只显示统一错误态。
+  - 重命名测试按命令内容筛选 `mv` 调用，并同时断言恰好一次及完整参数。
+
+- [x] **Step 2：运行聚焦测试确认 RED**
+
+  Run: `cd frontend && corepack pnpm@10.23.0 vitest run src/components/domain/__tests__/tat-file-manager-panel.test.tsx`
+
+  Expected: 新增的退出码、哨兵噪声与日志断言失败，既有文件管理行为保持通过。
+
+- [x] **Step 3：最小实现**
+
+  - 固定命令把 JSON 包在双哨兵之间。
+  - `parseStorageCapacity()` 使用最后一个开始哨兵和其后的结束哨兵截取载荷，再复用既有 JSON 字段校验。
+  - 退出码判断改为仅拒绝明确非零值。
+  - `catch` 只记录错误消息，不记录命令输出、实例信息或凭据。
+
+- [x] **Step 4：运行 GREEN 与质量门禁**
+
+  Run: `cd frontend && corepack pnpm@10.23.0 vitest run src/components/domain/__tests__/tat-file-manager-panel.test.tsx && corepack pnpm@10.23.0 check`
+
+  Expected: 聚焦测试全部通过，i18n / TypeScript 无新增错误。
+
+- [ ] **Step 5：合并最新目标分支并验证**
+
+  在获得 commit / push 确认后合并 `origin/master`，只手工合并 `frontend/openspec/plan.md` 的双方顶部条目；随后重新运行聚焦测试、`pnpm check`、`build:cn`、`build:global` 和 `git diff --check`。
+
 ## Out of scope
 
 - 新后端接口、debug/exec 或 TAT 协议变更；

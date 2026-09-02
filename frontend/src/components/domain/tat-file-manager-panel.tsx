@@ -56,7 +56,12 @@ const DEFAULT_TAT_FILE_UID = 1000;
 const DEFAULT_TAT_FILE_GID = 1000;
 const DEFAULT_TAT_FILE_PATH = "/home/agentuser/.hermes";
 const MANAGED_TAT_FILE_ROOT = "/home/agentuser";
-const STORAGE_CAPACITY_COMMAND = `python3 -c 'import json, os; stats = os.statvfs("/home/agentuser"); block_size = stats.f_frsize; total = stats.f_blocks * block_size; available = stats.f_bavail * block_size; print(json.dumps({"total_bytes": total, "used_bytes": max(0, total - available), "available_bytes": available}, separators=(",", ":")))'`;
+const STORAGE_CAPACITY_OUTPUT_START = "__LIGHTVELA_STORAGE_CAPACITY_START__";
+const STORAGE_CAPACITY_OUTPUT_END = "__LIGHTVELA_STORAGE_CAPACITY_END__";
+const STORAGE_CAPACITY_COMMAND_FAILED_MESSAGE = "storage capacity command failed";
+const STORAGE_CAPACITY_INVALID_RESPONSE_MESSAGE = "invalid storage capacity response";
+const STORAGE_CAPACITY_REQUEST_FAILED_MESSAGE = "storage capacity request failed";
+const STORAGE_CAPACITY_COMMAND = `python3 -c 'import json, os; stats = os.statvfs("/home/agentuser"); block_size = stats.f_frsize; total = stats.f_blocks * block_size; available = stats.f_bavail * block_size; print("${STORAGE_CAPACITY_OUTPUT_START}" + json.dumps({"total_bytes": total, "used_bytes": max(0, total - available), "available_bytes": available}, separators=(",", ":")) + "${STORAGE_CAPACITY_OUTPUT_END}")'`;
 const STORAGE_CAPACITY_COMMAND_TIMEOUT_SECONDS = 30;
 const SERVICE_WORKER_URL = "/tat-hermes-web-proxy-sw.js";
 const SERVICE_WORKER_VERSION = "tat-file-download-v6";
@@ -111,9 +116,23 @@ const formatBytes = (value: number) => {
 };
 
 const parseStorageCapacity = (output: string): StorageCapacity => {
-  const parsed: unknown = JSON.parse(output.trim());
+  const startIndex = output.lastIndexOf(STORAGE_CAPACITY_OUTPUT_START);
+  if (startIndex < 0) {
+    throw new Error(STORAGE_CAPACITY_INVALID_RESPONSE_MESSAGE);
+  }
+  const payloadStart = startIndex + STORAGE_CAPACITY_OUTPUT_START.length;
+  const endIndex = output.indexOf(STORAGE_CAPACITY_OUTPUT_END, payloadStart);
+  if (endIndex < 0) {
+    throw new Error(STORAGE_CAPACITY_INVALID_RESPONSE_MESSAGE);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output.slice(payloadStart, endIndex).trim());
+  } catch {
+    throw new Error(STORAGE_CAPACITY_INVALID_RESPONSE_MESSAGE);
+  }
   if (!parsed || typeof parsed !== "object") {
-    throw new Error("invalid storage capacity response");
+    throw new Error(STORAGE_CAPACITY_INVALID_RESPONSE_MESSAGE);
   }
   const record = parsed as Record<string, unknown>;
   const totalBytes = record.total_bytes;
@@ -129,9 +148,20 @@ const parseStorageCapacity = (output: string): StorageCapacity => {
     usedBytes > totalBytes ||
     availableBytes > totalBytes
   ) {
-    throw new Error("invalid storage capacity response");
+    throw new Error(STORAGE_CAPACITY_INVALID_RESPONSE_MESSAGE);
   }
   return { totalBytes, usedBytes, availableBytes };
+};
+
+const storageCapacityFailureReason = (error: unknown) => {
+  if (
+    error instanceof Error &&
+    (error.message === STORAGE_CAPACITY_COMMAND_FAILED_MESSAGE ||
+      error.message === STORAGE_CAPACITY_INVALID_RESPONSE_MESSAGE)
+  ) {
+    return error.message;
+  }
+  return STORAGE_CAPACITY_REQUEST_FAILED_MESSAGE;
 };
 
 const formatTime = (timestamp: number) => {
@@ -580,8 +610,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       const result = await runWithReconnectedClient((client) =>
         client.execCommand(STORAGE_CAPACITY_COMMAND, STORAGE_CAPACITY_COMMAND_TIMEOUT_SECONDS),
       );
-      if (result.exitCode !== 0) {
-        throw new Error("storage capacity command failed");
+      if (result.exitCode !== null && result.exitCode !== 0) {
+        throw new Error(STORAGE_CAPACITY_COMMAND_FAILED_MESSAGE);
       }
       const capacity = parseStorageCapacity(result.output);
       if (capacityRequestSequenceRef.current !== requestSequence || activeBotIdRef.current !== requestBotId) {
@@ -589,10 +619,14 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       }
       setStorageCapacity(capacity);
       setStorageCapacityStatus("ready");
-    } catch {
+    } catch (capacityError) {
       if (capacityRequestSequenceRef.current !== requestSequence || activeBotIdRef.current !== requestBotId) {
         return;
       }
+      console.warn(
+        "[storage-capacity] lookup failed",
+        storageCapacityFailureReason(capacityError),
+      );
       setStorageCapacity(null);
       setStorageCapacityStatus("error");
     }
