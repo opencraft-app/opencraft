@@ -8,6 +8,14 @@ const listPathMock = vi.fn<() => Promise<TsshFileInfo[]>>(async () => []);
 const deleteFileMock = vi.fn();
 const createFileMock = vi.fn();
 const execCommandMock = vi.fn();
+const STORAGE_TOTAL_BYTES = 50 * 1024 * 1024 * 1024;
+const STORAGE_USED_BYTES = 10 * 1024 * 1024 * 1024;
+const STORAGE_AVAILABLE_BYTES = 40 * 1024 * 1024 * 1024;
+const storageCapacityOutput = JSON.stringify({
+  total_bytes: STORAGE_TOTAL_BYTES,
+  used_bytes: STORAGE_USED_BYTES,
+  available_bytes: STORAGE_AVAILABLE_BYTES,
+});
 const originalServiceWorkerDescriptor = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
 const tsshFileClientInstances: Array<{ close: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn>; isReady: ReturnType<typeof vi.fn> }> = [];
 
@@ -119,6 +127,9 @@ const fileWithSize = (name: string, size: number) => {
   return file;
 };
 
+const storageCapacityCommandCalls = () =>
+  execCommandMock.mock.calls.filter(([command]) => typeof command === "string" && command.includes("statvfs"));
+
 describe("TatFileManagerPanel upload limits", () => {
   beforeEach(() => {
     uploadFileMock.mockReset();
@@ -128,7 +139,10 @@ describe("TatFileManagerPanel upload limits", () => {
     createFileMock.mockReset();
     createFileMock.mockResolvedValue(undefined);
     execCommandMock.mockReset();
-    execCommandMock.mockResolvedValue({ exitCode: 0, output: "" });
+    execCommandMock.mockImplementation(async (command: string) => ({
+      exitCode: 0,
+      output: command.includes("statvfs") ? storageCapacityOutput : "",
+    }));
     listPathMock.mockReset();
     listPathMock.mockResolvedValue([]);
     tsshFileClientInstances.length = 0;
@@ -157,6 +171,95 @@ describe("TatFileManagerPanel upload limits", () => {
 
     expect(await screen.findByText("单个文件最大支持上传 1 GB。")).toBeInTheDocument();
     await waitFor(() => expect(uploadFileMock).not.toHaveBeenCalled());
+  });
+
+  it("shows instance storage usage from the fixed capacity command", async () => {
+    render(<TatFileManagerPanel botId="bot-storage-capacity" />);
+
+    expect(await screen.findByText("实例存储")).toBeInTheDocument();
+    expect(await screen.findByText("已用 10 GB / 50 GB")).toBeInTheDocument();
+    expect(screen.getByText("剩余 40 GB")).toBeInTheDocument();
+    expect(screen.getByText("包含 Agent 运行环境和云存储文件。")).toBeInTheDocument();
+
+    const progressbar = screen.getByRole("progressbar", { name: "实例存储使用率" });
+    expect(progressbar).toHaveAttribute("aria-valuemin", "0");
+    expect(progressbar).toHaveAttribute("aria-valuemax", "100");
+    expect(progressbar).toHaveAttribute("aria-valuenow", "20");
+
+    await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(1));
+    const capacityCommand = storageCapacityCommandCalls()[0]?.[0];
+    expect(capacityCommand).toContain('os.statvfs("/home/agentuser")');
+    expect(capacityCommand).toContain("stats.f_bfree");
+    expect(capacityCommand).toContain("stats.f_bavail");
+    expect(capacityCommand).not.toContain("bot-storage-capacity");
+    expect(capacityCommand).not.toContain("/home/agentuser/.hermes");
+  });
+
+  it("keeps the file list available when capacity lookup fails", async () => {
+    listPathMock.mockResolvedValueOnce([
+      {
+        type: "-",
+        name: "app.log",
+        size: 42,
+        modifyTime: 0,
+        accessTime: 0,
+        rights: "-rw-r--r--",
+      },
+    ]);
+    execCommandMock.mockImplementation(async (command: string) => ({
+      exitCode: command.includes("statvfs") ? 1 : 0,
+      output: command.includes("statvfs") ? "python3: not found" : "",
+    }));
+
+    render(<TatFileManagerPanel botId="bot-storage-capacity-error" />);
+
+    expect(await screen.findByText("存储容量暂不可用")).toBeInTheDocument();
+    expect(await screen.findByText("app.log")).toBeInTheDocument();
+    expect(screen.queryByText("python3: not found")).not.toBeInTheDocument();
+  });
+
+  it("refreshes storage capacity from the existing refresh button", async () => {
+    render(<TatFileManagerPanel botId="bot-storage-capacity-refresh" />);
+
+    await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+
+    await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(2));
+  });
+
+  it("refreshes storage capacity after a successful upload", async () => {
+    const upload = fileWithSize("report.txt", 1024);
+    const { container } = render(<TatFileManagerPanel botId="bot-storage-capacity-upload" />);
+    await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(1));
+    const input = container.querySelector('input[type="file"]');
+
+    fireEvent.change(input as HTMLInputElement, { target: { files: [upload] } });
+
+    await waitFor(() => expect(uploadFileMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(2));
+  });
+
+  it("refreshes storage capacity after a successful deletion", async () => {
+    listPathMock
+      .mockResolvedValueOnce([
+        {
+          type: "-",
+          name: "app.log",
+          size: 42,
+          modifyTime: 0,
+          accessTime: 0,
+          rights: "-rw-r--r--",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    render(<TatFileManagerPanel botId="bot-storage-capacity-delete" />);
+    await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(1));
+    fireEvent.click(await screen.findByText("app.log"));
+
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith("/home/agentuser/.hermes/app.log", false));
+    await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(2));
   });
 
   it("allows uploading a single file equal to 1 GB", async () => {
@@ -405,7 +508,7 @@ describe("TatFileManagerPanel upload limits", () => {
     fireEvent.change(renameInput, { target: { value: "server.log" } });
     fireEvent.click(screen.getByRole("button", { name: "确认重命名" }));
 
-    await waitFor(() => expect(execCommandMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(execCommandMock).toHaveBeenCalledWith(expect.stringContaining("\nmv -- "), 60));
     expect(execCommandMock).toHaveBeenCalledWith(
       "if [ -e '/home/agentuser/.hermes/server.log' ]; then echo 'file exists' >&2; exit 1; fi\nmv -- '/home/agentuser/.hermes/app.log' '/home/agentuser/.hermes/server.log'",
       60,
@@ -433,7 +536,7 @@ describe("TatFileManagerPanel upload limits", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认重命名" }));
 
     expect(await screen.findByText("文件名无效，只能在 /home/agentuser 目录下重命名。")).toBeInTheDocument();
-    expect(execCommandMock).not.toHaveBeenCalled();
+    expect(execCommandMock.mock.calls.some(([command]) => typeof command === "string" && command.includes("\nmv -- "))).toBe(false);
   });
 
   it("selects a file row for download when clicking the row", async () => {

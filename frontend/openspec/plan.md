@@ -1,3 +1,25 @@
+# 云存储实例容量展示 Implementation Plan
+
+**Status:** 实现与自动化验证完成；本地浏览器账号无 Agent，只完成路由可达性与无控制台错误 smoke，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。单一云存储页面增强；业务逻辑和测试各 1 个文件，i18n 资源由脚本机械生成，不新增后端、公共接口、权限、计费或依赖。
+
+**Goal:** 国内站和国际站云存储页面显示实例磁盘已用、总量和剩余容量，并在进入页面、手动刷新、上传成功和删除成功后更新。
+
+**PRD:** `../wiki/prd-docs/2026-09-02-cloud-storage-capacity.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-cloud-storage-capacity-implementation-plan.md`
+
+- [x] **Developer｜修改 `tat-file-manager-panel.tsx`、对应组件测试及生成 i18n 资源：先以失败测试锁定固定 TAT/TSSH 容量查询、展示、错误隔离与刷新时机，再最小实现并完成聚焦测试、i18n、类型、双区域构建和页面 smoke。**
+
+**Acceptance:** 容量卡片展示 `/home/agentuser` 所在文件系统的已用/总量、剩余空间及可访问进度条；首次进入、手动刷新、上传成功和删除成功后重查；查询失败不影响文件管理；命令固定只读且无用户输入；国内站和国际站均生效。
+
+**Out of scope:** 目录大小汇总、业务配额、扩容、告警、历史趋势、轮询、新后端接口及其他文件管理行为调整。
+
+**Verification:** 既有文件管理器基线 24/24 通过；新增 5 个容量场景先 RED，最小实现后总计 29/29 GREEN。`pnpm check` 通过（TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved），i18n 结构错误 0，所有新增文案覆盖 6 个必填翻译 locale；`build:cn` 90/90、`build:global` 564/564 静态页生成通过。本地国际站 `/agents/files/` 返回 200 且无 console error；当前本地账号没有 Agent，页面停留在“Create Now”，因此未创建云资源执行真实 TAT 命令。
+
+---
+
 # Hy Token Plan 个人版固定模型 Implementation Plan
 
 **Status:** 实现与自动化验证完成；本地浏览器账号无智能体，只完成路由可达性与无控制台错误 smoke，等待用户验收；不自动 commit、push 或创建 MR。

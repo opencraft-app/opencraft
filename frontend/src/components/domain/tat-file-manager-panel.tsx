@@ -42,6 +42,13 @@ const ActionTooltip = ({ children, label }: ActionTooltipProps) => {
 };
 
 type FileManagerStatus = "idle" | "connecting" | "loading" | "working" | "ready" | "error";
+type StorageCapacityStatus = "loading" | "ready" | "error";
+
+interface StorageCapacity {
+  totalBytes: number;
+  usedBytes: number;
+  availableBytes: number;
+}
 
 const ROOT_PATH = "/";
 const DEFAULT_TAT_FILE_USER = "agentuser";
@@ -49,6 +56,8 @@ const DEFAULT_TAT_FILE_UID = 1000;
 const DEFAULT_TAT_FILE_GID = 1000;
 const DEFAULT_TAT_FILE_PATH = "/home/agentuser/.hermes";
 const MANAGED_TAT_FILE_ROOT = "/home/agentuser";
+const STORAGE_CAPACITY_COMMAND = `python3 -c 'import json, os; stats = os.statvfs("/home/agentuser"); block_size = stats.f_frsize; total = stats.f_blocks * block_size; free = stats.f_bfree * block_size; available = stats.f_bavail * block_size; print(json.dumps({"total_bytes": total, "used_bytes": max(0, total - free), "available_bytes": available}, separators=(",", ":")))'`;
+const STORAGE_CAPACITY_COMMAND_TIMEOUT_SECONDS = 30;
 const SERVICE_WORKER_URL = "/tat-hermes-web-proxy-sw.js";
 const SERVICE_WORKER_VERSION = "tat-file-download-v6";
 const SERVICE_WORKER_SCOPE = "/";
@@ -99,6 +108,30 @@ const formatBytes = (value: number) => {
     unit += 1;
   }
   return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+};
+
+const parseStorageCapacity = (output: string): StorageCapacity => {
+  const parsed: unknown = JSON.parse(output.trim());
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("invalid storage capacity response");
+  }
+  const record = parsed as Record<string, unknown>;
+  const totalBytes = record.total_bytes;
+  const usedBytes = record.used_bytes;
+  const availableBytes = record.available_bytes;
+  const values = [totalBytes, usedBytes, availableBytes];
+  if (
+    values.some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0) ||
+    typeof totalBytes !== "number" ||
+    typeof usedBytes !== "number" ||
+    typeof availableBytes !== "number" ||
+    totalBytes <= 0 ||
+    usedBytes > totalBytes ||
+    availableBytes > totalBytes
+  ) {
+    throw new Error("invalid storage capacity response");
+  }
+  return { totalBytes, usedBytes, availableBytes };
 };
 
 const formatTime = (timestamp: number) => {
@@ -326,6 +359,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const createFolderInputRef = useRef<HTMLInputElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const downloadTriggerIframesRef = useRef<Set<DownloadTriggerIframe>>(new Set());
+  const capacityRequestSequenceRef = useRef(0);
+  const activeBotIdRef = useRef(botId);
   const [path, setPath] = useState(DEFAULT_TAT_FILE_PATH);
   const [pathDraft, setPathDraft] = useState(DEFAULT_TAT_FILE_PATH);
   const [pathEditing, setPathEditing] = useState(false);
@@ -340,6 +375,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  const [storageCapacityStatus, setStorageCapacityStatus] = useState<StorageCapacityStatus>("loading");
+  const [storageCapacity, setStorageCapacity] = useState<StorageCapacity | null>(null);
 
   const displayedFiles = useMemo(() => (showHiddenFiles ? files : files.filter((file) => !isHiddenFile(file))), [files, showHiddenFiles]);
   const selectedFile = useMemo(() => displayedFiles.find((file) => file.name === selectedName) ?? null, [displayedFiles, selectedName]);
@@ -422,6 +459,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   }, [clearDownloadTriggerIframes]);
 
   useEffect(() => {
+    activeBotIdRef.current = botId;
+    capacityRequestSequenceRef.current += 1;
     clearDownloadTriggerIframes();
     clientRef.current?.close();
     clientRef.current = null;
@@ -438,10 +477,15 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setError(null);
     setProgress(null);
     setStatus("idle");
+    setStorageCapacity(null);
+    setStorageCapacityStatus("loading");
   }, [botId, clearDownloadTriggerIframes]);
 
   useEffect(() => {
-    void loadPath(DEFAULT_TAT_FILE_PATH);
+    void (async () => {
+      await loadPath(DEFAULT_TAT_FILE_PATH);
+      await loadStorageCapacity();
+    })();
   }, [botId]);
 
   useEffect(() => {
@@ -523,6 +567,36 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       return operation(await getClient());
     }
   }, [getClient, resetClient]);
+
+  const loadStorageCapacity = async () => {
+    const requestBotId = botId;
+    if (!requestBotId || activeBotIdRef.current !== requestBotId) {
+      return;
+    }
+    const requestSequence = capacityRequestSequenceRef.current + 1;
+    capacityRequestSequenceRef.current = requestSequence;
+    setStorageCapacityStatus("loading");
+    try {
+      const result = await runWithReconnectedClient((client) =>
+        client.execCommand(STORAGE_CAPACITY_COMMAND, STORAGE_CAPACITY_COMMAND_TIMEOUT_SECONDS),
+      );
+      if (result.exitCode !== 0) {
+        throw new Error("storage capacity command failed");
+      }
+      const capacity = parseStorageCapacity(result.output);
+      if (capacityRequestSequenceRef.current !== requestSequence || activeBotIdRef.current !== requestBotId) {
+        return;
+      }
+      setStorageCapacity(capacity);
+      setStorageCapacityStatus("ready");
+    } catch {
+      if (capacityRequestSequenceRef.current !== requestSequence || activeBotIdRef.current !== requestBotId) {
+        return;
+      }
+      setStorageCapacity(null);
+      setStorageCapacityStatus("error");
+    }
+  };
 
   const assertCanDownloadFile = useCallback(async (client: TencentTsshFileClient, remotePath: string, listedFile?: TsshFileInfo | null) => {
     const fileInfo = listedFile ?? (await client.fileInfo(remotePath));
@@ -709,6 +783,11 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     }
   };
 
+  const refreshPathAndCapacity = async () => {
+    await loadPath(path);
+    await loadStorageCapacity();
+  };
+
   const openPathDraft = async () => {
     const nextPath = normalizeEditablePath(pathDraft);
     setPathDraft(nextPath);
@@ -820,6 +899,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       await runWithReconnectedClient((client) => client.deleteFile(remotePath, isDirectory(selectedFile)));
       setNotice(t("已删除选中文件。"));
       await loadPath(path);
+      await loadStorageCapacity();
     } catch (deleteError) {
       setError(translateFileManagerError(deleteError, t("删除失败")));
       setStatus("error");
@@ -922,6 +1002,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       }));
       setNotice(t("上传完成。"));
       await loadPath(path);
+      await loadStorageCapacity();
     } catch (uploadError) {
       setError(translateFileManagerError(uploadError, t("上传失败")));
       setStatus("error");
@@ -962,6 +1043,9 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   };
 
   const busy = status === "connecting" || status === "loading" || status === "working";
+  const storageUsagePercent = storageCapacity
+    ? Math.min(100, Math.max(0, Math.round((storageCapacity.usedBytes / storageCapacity.totalBytes) * 100)))
+    : 0;
 
   return (
     <div className="space-y-5">
@@ -969,6 +1053,65 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
         title={t("云存储")}
         description={t("查看、管理云存储中的文件")}
       />
+
+      <section
+        aria-labelledby="instance-storage-title"
+        className="rounded-md border border-[var(--border-subtle)] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h3 id="instance-storage-title" className="text-sm font-semibold text-[var(--text-primary)]">
+              {t("实例存储")}
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-[var(--text-tertiary)]">
+              {t("包含 Agent 运行环境和云存储文件。")}
+            </p>
+          </div>
+          {storageCapacityStatus === "ready" && storageCapacity ? (
+            <div className="shrink-0 text-left sm:text-right">
+              <p className="text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                {t("已用 {{used}} / {{total}}", {
+                  used: formatBytes(storageCapacity.usedBytes),
+                  total: formatBytes(storageCapacity.totalBytes),
+                })}
+              </p>
+              <p className="mt-1 text-xs tabular-nums text-[var(--text-secondary)]">
+                {t("剩余 {{available}}", { available: formatBytes(storageCapacity.availableBytes) })}
+              </p>
+            </div>
+          ) : storageCapacityStatus === "loading" ? (
+            <p className="inline-flex shrink-0 items-center gap-2 text-sm text-[var(--text-secondary)]" aria-live="polite">
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              {t("正在查询存储容量")}
+            </p>
+          ) : (
+            <p className="shrink-0 text-sm text-[var(--text-secondary)]" role="status">
+              {t("存储容量暂不可用")}
+            </p>
+          )}
+        </div>
+        {storageCapacityStatus === "ready" && storageCapacity ? (
+          <div className="mt-4">
+            <div className="mb-2 flex items-center justify-between gap-3 text-xs text-[var(--text-tertiary)]">
+              <span>{t("实例存储使用率")}</span>
+              <span className="tabular-nums">{storageUsagePercent}%</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={t("实例存储使用率")}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={storageUsagePercent}
+              className="h-2 overflow-hidden rounded-full bg-black/[0.08]"
+            >
+              <div
+                className="h-full origin-left rounded-full bg-[#2F6BFF]"
+                style={{ transform: `scaleX(${storageUsagePercent / 100})` }}
+              />
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-start gap-2">
@@ -1072,7 +1215,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                     type="button"
                     variant="outline"
                     className="h-10 w-10 shrink-0 px-0"
-                    onClick={() => void loadPath(path)}
+                    onClick={() => void refreshPathAndCapacity()}
                     disabled={busy}
                     aria-label={t("刷新")}
                   >
