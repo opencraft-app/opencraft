@@ -579,3 +579,37 @@ func loadSOPSStringDataKeys(path string) (map[string]struct{}, error) {
 	}
 	return keys, nil
 }
+
+// TestWebsiteRoutesAllowShareAccessPUT 锁定建站路由的方法白名单必须包含 PUT。
+//
+// PUT /v1/websites/{site_id}/access 是「开启/关闭分享」的唯一写入口。网关的
+// methods 同时决定两件事：CORS 预检是否放行（allowsPreflight 直接查这个列表），
+// 以及真实请求是否被 methodAllowed 拒绝。少了 PUT，浏览器在 OPTIONS 阶段就拿到
+// 不含 PUT 的 Access-Control-Allow-Methods，前端只会看到一个没有响应体的 CORS
+// 错误，业务代码完全不会被执行。
+func TestWebsiteRoutesAllowShareAccessPUT(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+
+	for _, configFile := range deployConfigPaths(t, repoRoot) {
+		configFile := configFile
+		t.Run(filepath.Base(filepath.Dir(configFile)), func(t *testing.T) {
+			cfg, err := LoadConfigFile(configFile)
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+
+			for _, route := range cfg.Routes {
+				if route.Name != "ctl-websites" {
+					continue
+				}
+				if !methodAllowed(route.Methods, http.MethodPut) {
+					t.Fatalf("ctl-websites must allow PUT for /v1/websites/{site_id}/access, got methods %v", route.Methods)
+				}
+			}
+		})
+	}
+}
