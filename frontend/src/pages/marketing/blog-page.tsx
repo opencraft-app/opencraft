@@ -60,6 +60,7 @@ export function BlogPage({
   return (
     <div className="landing-page flex min-h-screen flex-col bg-white text-black">
       <PublicSiteHeader
+        appearance="immersive"
         authControls={authControls}
         currentPath={currentPath}
         locale={publicLocale}
@@ -68,10 +69,15 @@ export function BlogPage({
         renderLink={renderLink}
         renderLanguageSwitcher={renderLanguageSwitcher}
       />
-      <main className="flex flex-1 pt-[60px]">
+      <main
+        className="flex flex-1 bg-white pt-[60px]"
+        style={{
+          backgroundImage: "linear-gradient(to bottom, #b9c8f8 0%, #edf2ff 26%, #ffffff 70%)",
+        }}
+      >
         <section
           aria-labelledby="blog-heading"
-          className="mx-auto flex w-full max-w-5xl flex-col items-center px-6 pb-24 pt-[clamp(8rem,20vh,14rem)] text-center"
+          className="mx-auto flex w-full max-w-5xl flex-col items-center px-6 pb-96 pt-[clamp(8rem,20vh,14rem)] text-center"
         >
           <h1 id="blog-heading" className="text-balance text-5xl font-semibold sm:text-6xl">
             {t("博客")}

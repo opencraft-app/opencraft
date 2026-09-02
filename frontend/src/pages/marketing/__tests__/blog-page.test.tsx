@@ -12,7 +12,9 @@ vi.mock("@/components/site/lightvela-footer", () => ({
 }));
 
 vi.mock("@/components/site/public-site-header", () => ({
-  PublicSiteHeader: () => <header>header</header>,
+  PublicSiteHeader: ({ appearance }: { appearance?: string }) => (
+    <header data-appearance={appearance}>header</header>
+  ),
 }));
 
 describe("BlogPage", () => {
@@ -20,6 +22,12 @@ describe("BlogPage", () => {
     render(<BlogPage />);
 
     expect(screen.getByRole("heading", { name: "博客" })).toBeInTheDocument();
+    expect(screen.getByRole("banner")).toHaveAttribute("data-appearance", "immersive");
+    expect(screen.getByRole("main")).toHaveStyle({
+      backgroundImage: "linear-gradient(to bottom, #b9c8f8 0%, #edf2ff 26%, #ffffff 70%)",
+    });
+    expect(screen.getByRole("main")).toHaveClass("bg-white");
+    expect(screen.getByRole("region", { name: "博客" })).toHaveClass("pb-96");
     expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "公告" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("link", { name: /Using Hermes Agent as a Discord bot/ })).toHaveAttribute(
