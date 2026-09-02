@@ -105,6 +105,17 @@ function skill(
 
 export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
   {
+    id: "lh6-anniversary-blessing",
+    skill: skill(
+      "lh6-anniversary-blessing",
+      "轻量云六周年送祝福",
+      "为轻量云六周年生成祝福文案与祝福海报，支持多场景、多风格的祝福语定制。",
+      0,
+    ),
+    heroImageSrc: "/assets/skills/featured-domestic-lh6-anniversary.jpg",
+    heroClassName: "bg-[#2B2F5C]",
+  },
+  {
     id: "find-skill-skillhub",
     skill: skill(
       "find-skill-skillhub",
@@ -158,17 +169,6 @@ export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
     ),
     heroImageSrc: "/assets/skills/featured-domestic-news.jpg",
     heroClassName: "bg-[#303F9F]",
-  },
-  {
-    id: "weather",
-    skill: skill(
-      "weather",
-      "Weather",
-      "获取当前天气和预报，无需 API 密钥。",
-      21530,
-    ),
-    heroImageSrc: "/assets/skills/featured-domestic-weather.jpg",
-    heroClassName: "bg-[#3E9BC2]",
   },
 ] as const;
 

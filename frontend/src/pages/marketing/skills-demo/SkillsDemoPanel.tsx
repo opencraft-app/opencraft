@@ -1855,6 +1855,11 @@ export function SkillsDemoPanel({
             : "en-US";
   const isDomestic = mode === "domestic";
   const featuredSkillCopy: Record<string, { title: string; subtitle: string; description: string }> = {
+    "lh6-anniversary-blessing": {
+      title: t("精选技能：轻量云六周年送祝福"),
+      subtitle: t("送祝福，赢实例"),
+      description: t("为轻量云六周年生成祝福文案与海报，支持多场景风格定制"),
+    },
     "self-improving-agent": {
       title: t("精选技能：Self-Improving Agent"),
       subtitle: t("从每次执行中学习"),
