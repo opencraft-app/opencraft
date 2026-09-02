@@ -117,10 +117,15 @@ describe('sitemap.xml — 国内站（cn）', () => {
 
 describe('sitemap.xml — 国际站（global）', () => {
   it('输出 zh-sg / zh-hant / id-id 前缀条目，但 en-US 与 zh-CN 走裸路径', async () => {
-    const { locs } = await sitemapForRegion('global');
+    const { locs, xml } = await sitemapForRegion('global');
 
     expect(locs).toContain('https://lightvela.ai/');
     expect(locs).toContain('https://lightvela.ai/zh-sg/about/');
+    expect(locs).toContain('https://lightvela.ai/blog/');
+    expect(locs).toContain('https://lightvela.ai/blog/using-hermes-agent-as-a-discord-bot/');
+    expect(locs).toContain('https://lightvela.ai/zh-hant/blog/');
+    expect(locs).toContain('https://lightvela.ai/zh-hant/blog/using-hermes-agent-as-a-discord-bot/');
+    expect(xml).not.toContain('https://lightvela.com/blog/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/docs/plans/');
     expect(locs).toContain('https://lightvela.ai/id-id/docs/overview/');
     // 默认语言不再有第二套前缀 URL
@@ -142,6 +147,14 @@ describe('sitemap.xml — 国际站（global）', () => {
     expect(zhCn.length).toBeGreaterThan(0);
     expect(zhCn.every((entry) => entry.href.startsWith('https://lightvela.com/'))).toBe(true);
     expect(zhCn.every((entry) => !entry.href.includes('/zh-cn/'))).toBe(true);
+  });
+
+  it('英文正文 Blog 只声明英文与默认 hreflang，不互指未翻译语言', async () => {
+    const { hreflangs } = await sitemapForRegion('global');
+    const blogHreflangs = hreflangs.filter((entry) => entry.href.includes('/blog/'));
+
+    expect(blogHreflangs.length).toBeGreaterThan(0);
+    expect(blogHreflangs.every((entry) => entry.hreflang === 'x-default' || entry.hreflang === 'en-US')).toBe(true);
   });
 });
 
