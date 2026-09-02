@@ -312,6 +312,50 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 }
 
+func TestShprodChatOriginIsScopedToTATSession(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/shprod/config.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	wantOrigins := map[string]struct{}{
+		"https://chat.lightvela.com":      {},
+		"https://localhost.lightvela.com": {},
+	}
+	for _, origin := range cfg.AllowedOrigins {
+		if _, scoped := wantOrigins[origin]; scoped {
+			t.Fatalf("scoped TAT origin %q must not be added to the global CORS allowlist", origin)
+		}
+	}
+	for _, route := range cfg.Routes {
+		if route.Name != "ctl" {
+			continue
+		}
+		if len(route.CORSAllow) != 1 {
+			t.Fatalf("ctl cors_allow has %d rules, want 1: %+v", len(route.CORSAllow), route.CORSAllow)
+		}
+		rule := route.CORSAllow[0]
+		if rule.Method != http.MethodPost || rule.Path != "/v1/instances/{instance_id}/tat/session" {
+			t.Fatalf("unexpected scoped CORS rule: %+v", rule)
+		}
+		if len(rule.AllowedOrigins) != len(wantOrigins) {
+			t.Fatalf("unexpected scoped CORS origins: %+v", rule.AllowedOrigins)
+		}
+		for _, origin := range rule.AllowedOrigins {
+			if _, ok := wantOrigins[origin]; !ok {
+				t.Fatalf("unexpected scoped CORS origin %q", origin)
+			}
+		}
+		return
+	}
+	t.Fatal("ctl route not found")
+}
+
 func TestDeployConfigsScopeWebsiteInstanceCredentials(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
