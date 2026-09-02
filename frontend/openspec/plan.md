@@ -1,3 +1,28 @@
+# 云存储实例容量展示 Implementation Plan
+
+**Status:** 容量展示、系统预留口径及 CR 修正已实现；已合并最新 `master` 并完成复验，等待更新 MR !3499。
+
+**Size:** S。单一云存储页面增强；业务逻辑和测试各 1 个文件，i18n 资源由脚本机械生成，不新增后端、公共接口、权限、计费或依赖。
+
+**Goal:** 国内站和国际站云存储页面显示实例磁盘已用、总量和剩余容量，并在进入页面、手动刷新、上传成功和删除成功后更新。
+
+**PRD:** `../wiki/prd-docs/2026-09-02-cloud-storage-capacity.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-cloud-storage-capacity-implementation-plan.md`
+
+- [x] **Developer｜修改 `tat-file-manager-panel.tsx`、对应组件测试及生成 i18n 资源：先以失败测试锁定固定 TAT/TSSH 容量查询、展示、错误隔离与刷新时机，再最小实现并完成聚焦测试、i18n、类型、双区域构建和页面 smoke。**
+- [x] **Developer｜根据真实实例验收修正统计口径：先以失败测试锁定 `已用 = 总容量 - 普通用户可用容量`、文案“可用”及新进度值，再最小修改固定命令和 i18n 文案并完成验证。**
+- [x] **Developer｜处理 CR：测试先行兼容 TAT 缺失退出码、用双哨兵从 PTY 噪声中提取容量 JSON、记录脱敏失败原因并恢复重命名单次调用断言；同步澄清真实实例验收记录。**
+- [x] **Developer｜合并最新 `origin/master`，只解决 `openspec/plan.md` 热点文件冲突，再完成聚焦测试、`pnpm check`、双区域构建和 MR 状态核验。**
+
+**Acceptance:** 容量卡片展示 `/home/agentuser` 所在文件系统的已用/总量、普通用户可用空间及可访问进度条；系统预留计入“已用”，满足 `总容量 = 已用容量 + 可用容量`；首次进入、手动刷新、上传成功和删除成功后重查；查询失败不影响文件管理；命令固定只读且无用户输入；国内站和国际站均生效。
+
+**Out of scope:** 目录大小汇总、业务配额、扩容、告警、历史趋势、轮询、新后端接口及其他文件管理行为调整。
+
+**Verification:** 既有文件管理器基线 24/24 通过；新增 5 个容量场景先 RED，最小实现后总计 29/29 GREEN。系统预留口径修正前先确认基线 29/29，通过新增断言得到 1 个预期 RED，最小修查询公式与文案后恢复 29/29 GREEN。CR 回归新增 TAT 缺失退出码、PTY 杂音与诊断日志脱敏场景：旧实现先得到 4 个预期失败，额外安全断言再得到 1 个预期失败，最小修复后组件测试 32/32 GREEN。合并最新 `master` 后复验：组件测试 32/32、`pnpm check` 通过（TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved），i18n 结构错误 0，所有新增文案覆盖 6 个必填翻译 locale；`build:cn` 93/93、`build:global` 585/585 静态页生成通过。本地直连账号没有 Agent，页面停留在“Create Now”；另通过用户已登录的预览页面与本地代理捕获到真实 Agent 的 TAT 容量响应，确认 Python、权限与 `statvfs` 字段可用，并据此完成系统预留口径修正。
+
+---
+
 # 国际站 Blog 评审修正 Implementation Plan
 
 **Status:** 实现与验证完成，等待提交并更新 MR。
@@ -11,6 +36,9 @@
 - [x] **Task 1：测试先行修正 Blog 外链、英文正文 alternates、分类类型和本地化日期，并完成国际站与国内站构建验证。**
 
 **Verification:** Blog 专项断言先按预期 RED（6 个失败），实现后 6 个测试文件共 40 个断言 GREEN。`pnpm i18n:check`、`pnpm check`、`pnpm build:global`、`pnpm build:cn` 与 `git diff --check` 均通过；类型基线为 206 current / 276 baseline / 0 new / 70 resolved。
+
+---
+
 # Hy Token Plan 个人版固定模型 Implementation Plan
 
 **Status:** 七彩石覆盖回归已完成实现与自动化验证，等待提交 MR。
