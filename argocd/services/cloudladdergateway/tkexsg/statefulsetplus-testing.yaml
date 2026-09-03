@@ -98,7 +98,7 @@ spec:
         # 共享落点（api-sandbox-kr-1），而是转给下面的 dev-1。这样共享 playground 不会
         # 因为个人联调多出订单/pass。加人时在这里追加 `<uin>=jifei-callback-dev-2` 等。
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_UIN_ROUTES
-          value: 450860000011=jifei-callback-dev-1
+          value: 450860000013=jifei-callback-dev-1
         # 各开发者环境的可达地址（config.example.yaml 里是黑洞占位，必须在这里覆盖）。
         #
         # 不直连 DevCloud：本 Pod 反向连 DevCloud 实测不通（10s 超时），改成打到

@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 import yaml
@@ -76,10 +77,18 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
 
     def test_sg_testing_dev_landing_goes_through_devtunnel(self) -> None:
         env = self.callback_env("statefulsetplus-testing.yaml")
-        self.assertEqual(
-            env[f"{CALLBACK_PREFIX}_UIN_ROUTES"],
-            "450860000011=jifei-callback-dev-1",
+        # 不断言具体 uin：槽位是开发者按需申领的，谁在联调就换成谁的影子账号 uin。
+        # 写死数字只会让每次换人都顺带改一次测试，而那一步必然被忘掉。这里只守住
+        # 格式约束——`<uin>=<槽位>` 逗号分隔，槽位必须是镜像里烤好的 dev-1/2/3 之一。
+        uin_routes = env[f"{CALLBACK_PREFIX}_UIN_ROUTES"]
+        self.assertRegex(
+            uin_routes,
+            r"^\d+=jifei-callback-dev-[123](?:,\d+=jifei-callback-dev-[123])*$",
         )
+        # 申领了哪些槽位，就必须给哪些槽位配落点，否则回调被改派到黑洞占位 base_url。
+        for slot in sorted(set(re.findall(r"jifei-callback-dev-([123])", uin_routes))):
+            self.assertIn(f"{CALLBACK_PREFIX}_DEV_{slot}_BASE_URL", env)
+            self.assertIn(f"{CALLBACK_PREFIX}_DEV_{slot}_HOST_HEADER", env)
         # 落点必须是集群内 devtunnel，不能是某台开发者机器的直连 IP：tkex → DevCloud
         # 反向不通，直连只会让回调稳定超时。
         self.assertTrue(
