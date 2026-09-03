@@ -1,3 +1,138 @@
+# MR !3566 CR Follow-up Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认 commit；尚未 push 或更新 MR。
+
+**Size:** S。仅修复模型配置面板的目录同步、凭据端点绑定与手填模型检测策略；不新增 UI、文案或 Hermes 协议。
+
+**Goal:** 修复 MR !3566 中三个评审问题，同时保持实时探测结果、自定义草稿编辑体验和预置供应商行为不变。
+
+**Decision:**
+- 当当前列表仍来自产品目录时，同步同一 Provider 的异步目录更新；已有实时探测结果时不覆盖。
+- 自定义 API Key 首次发起网络请求时绑定当前端点指纹；端点变化后保留输入但禁止复用，重新编辑 Key 才授权新端点。
+- 自定义手填模型在 Chat Completions / Anthropic Messages 模式下使用 `model_request` 检测；探测所得模型及暂不支持模型请求的模式继续使用 `model_list`。
+
+**Files:**
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] **Task 1：测试先行覆盖同 Provider 异步目录更新，且不覆盖已有实时探测结果。**
+- [x] **Task 2：测试先行绑定自定义凭据到首次请求端点，端点变化后必须重新编辑 Key 才能继续。**
+- [x] **Task 3：测试先行让支持的手填模型通过 `model_request` 检测，并保持发现模型的原策略。**
+- [x] **Task 4：运行模型配置定向回归、`pnpm check` 与 `git diff --check`，展示提交范围等待确认。**
+
+**Verification:** 3 条缺陷回归断言先按预期 RED，最小实现后新增 6 条用例全部通过；模型配置、Provider Hook 与 SDK 边界共 158 passed / 1 skipped。`pnpm check` 通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0，49 个告警与 id-ID 174 条待翻译均为既有基线；`git diff --check` 通过。
+
+---
+
+# 模型配置范围收窄至 API 与自定义分类 Implementation Plan
+
+**Status:** 已按新范围完成并通过门禁，等待用户确认；不自动 commit、push。
+
+**Size:** S。仅调整既有改动的作用范围，不新增功能、不新增文案。
+
+**Goal:** Coding Plan 交由 master 的 `fixedModelSelection` 方案接管，本分支只负责 `api` 分类与自定义模型。
+
+**背景:** 本分支的 `supportsLiveModelRefresh` 与 master 的 `fixedModelSelection` 原本是同一问题的两套竞品方案（详见 `2026-09-02-coding-plan-rainbow-catalog-design.md`）。产品侧确认 Coding Plan 不再改动后，两套机制不再冲突，可各管一段。
+
+**方案:**
+- 恢复 `ModelProviderOption.fixedModelSelection` 与适配层对 Coding Plan 的赋值，面板重新使用 master 的
+  `fixedModelOptions` / `availableModelOptions` / `effectiveSelectedModelId`。
+- `catalogModelOptions` 收窄为「非 `fixedModelSelection` 且非自定义」，即只服务 `api` 分类。
+- `canRefreshModels` 叠加 `!fixedModelSelection`：Coding Plan 按 master 规则隐藏按钮，`api` 分类内的
+  腾讯系（TokenHub）按本分支规则隐藏。
+- 自定义模型的凭据作用域与手输能力不受影响，master 明确将其划为「流程不变」。
+- 测试夹具 `catalogPlan` / `tencentPlan` 从 `coding_plan` 改为 `api`，避免断言现实中不存在的状态。
+
+- [x] **Task 1：恢复 `fixedModelSelection` 字段、适配层赋值与面板渲染层覆盖。**
+- [x] **Task 2：收窄 `catalogModelOptions` 与 `canRefreshModels` 至 `api` 与自定义分类。**
+- [x] **Task 3：测试夹具改判为 `api` 分类并修正联动断言。**
+
+**Verification:** `agent-model-config` 目录 146 passed / 1 skipped；叠加 `agent-config` 与 sdk-boundary 共 152 passed / 1 skipped。`pnpm check` 退出码 0，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；`git diff --check` 退出码 0。
+
+---
+
+# 自定义模型支持手动填写模型 ID Implementation Plan
+
+**Status:** 规划完成，进入 TDD 实现。
+
+**Size:** S。仅改自定义分类下的模型控件与 `discoverModels` 取值，新增 1 条文案；不改预置供应商、不改探测协议、不改 Hermes 命令结构。
+
+**Goal:** 自定义供应商在 `/v1/models` 不可用或探测失败时，用户仍能手动填写模型 ID 并完成添加。
+
+**Problem:** 自定义分类的 `catalogModelOptions` 恒为空，模型下拉唯一来源是 `probe_api_models`。探测拿不到列表时下拉 disabled、`selectedModel` 恒为 `null`、「添加模型」随之禁用，形成无出口的死胡同。而自定义供应商的典型场景（私有中转、企业网关）恰恰常常不实现 `/v1/models`。
+
+**Decision:**
+- 自定义分类的模型控件改为可输入控件，探测结果作为候选建议保留，不再阻断手输。
+- 预置分类维持现有 `Select`，不受影响。
+- `handleAdd` 的 `discoverModels`：手输 ID 传 `false`（让 Hermes 以配置内模型列表为权威，不再依赖 `/models`），从探测结果中选中的仍传 `true`。依据见 helper 的 `provider_catalog_is_authoritative`。
+- 新增文案 1 条，用于可输入控件的占位；zh-Hant 由 `scripts/i18n-zh-hant.mjs` 派生，其余必填语种手工补齐。
+
+**Files:**
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `src/i18n/generated/*.json`
+
+- [x] **Task 1：自定义分类模型控件改为可输入，探测结果降级为候选建议。**
+- [x] **Task 2：手输模型 ID 时 `discoverModels` 传 `false`，选中探测结果时保持 `true`。**
+- [x] **Task 3：补齐新增文案的必填语种翻译并通过 i18n 门禁。**
+- [x] **Task 4：运行模型配置定向 Vitest、`pnpm check` 与 `git diff --check`，输出验收摘要等待用户确认。**
+
+**Verification:** 两个新用例先 RED（手输后模型框仍 disabled、探测结果未落到可输入控件），实现后 `model-config-panel.test.tsx` 37/37 通过，`agent-model-config` + `agent-settings-sdk-boundary` 共 132 passed / 1 skipped。新增文案 `输入或选择模型`（`k_e7e28005`）已补齐 en-US / es / ja-JP / ko-KR / id-ID，zh-Hant 由 `scripts/i18n-zh-hant.mjs` 派生，`pnpm i18n:check` 通过；id-ID 剩余 175 条待翻译为既有缺口，未在本次扩大。`pnpm check` 退出码 0，TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved；`git diff --check` 退出码 0。
+
+**Test churn（行为变更的预期后果）:** 三个既有用例原本断言「自定义分类下模型下拉 disabled」，与本次目标直接冲突，已改为断言模型框为空或已被清空——语义比原断言更强。datalist 的 `<option>` 不进无障碍树，建议项改用 DOM 查询断言。
+
+---
+
+# 自定义模型草稿保留 API Key Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅调整模型配置面板的凭据作用域判定，不改协议、不改 Hermes 命令、不新增文案。
+
+**Goal:** 自定义模型页填写 Provider 名称、Base URL、兼容协议时不再清空已输入的 API Key，同时保持「A 的凭据不能发到 B 的 endpoint」这条安全不变量。
+
+**Problem:** 自定义供应商的 `providerFingerprint` 由 Provider 名称、Base URL、兼容协议派生，而三个输入框都是逐字符受控更新，导致指纹 effect 每次击键都执行 `setApiKey("")`。用户只能按「先地址后密钥」的顺序填写，改一个字符就丢凭据。
+
+**Files:**
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] **Task 1：引入 `credentialScope`，自定义草稿内共用同一凭据作用域，预置供应商仍按完整指纹隔离。**
+- [x] **Task 2：拆分指纹 effect —— 凭据清空跟随 `credentialScope`，模型列表恢复与在途请求作废仍跟随 `providerFingerprint`。**
+- [x] **Task 3：补齐 `handleAdd` 的 `credentialMatchesProvider` 守卫，让安全不变量落在代码而非仅靠按钮禁用态。**
+- [x] **Task 4：运行模型配置定向 Vitest 与类型基线，输出验收摘要等待用户确认。**
+
+**Verification:** 新增用例先 RED（自定义草稿保留凭据失败，回归守卫「切换预置供应商/分类仍清空凭据」按预期已通过），实现后 `model-config-panel.test.tsx` 35/35 通过，`agent-model-config` 目录 127 passed / 1 skipped，`agent-settings-sdk-boundary` 3/3。`pnpm check` 退出码 0，TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved；`git diff --check` 退出码 0。期间一次整目录跑出现 23 个失败，重跑同条件 127/128 全通过，原因是本地 dev server 编译占满资源导致 5s 用例超时，与本次改动无关。
+
+---
+
+# 模型配置默认使用七彩石目录 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。
+
+**Size:** M。改动集中在模型配置适配层与配置面板，新增供应商能力字段并调整默认模型列表与实时获取语义；不触及 Hermes 命令、连接检测策略或配置持久化协议。
+
+**Goal:** 模型配置面板默认展示当前供应商的七彩石模型目录并选中第一项，腾讯系供应商不再展示实时获取入口，其他供应商的实时结果完整替换目录。
+
+**Design:** `openspec/changes/2026-09-01-rainbow-model-catalog-default-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-01-rainbow-model-catalog-default-implementation-plan.md`
+
+**Files:**
+- Modify: `src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `src/pages/marketing/agent-model-config/product-provider-adapter.ts`
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/product-provider-adapter.test.ts`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] **Task 1：适配层按供应商 `value` 输出 `supportsLiveModelRefresh`，`tokenhub` 与 `tencent_*` 为 false。**
+- [x] **Task 2：面板默认展示七彩石目录并选中第一项，集中处理重置时机，并按能力字段控制「获取可用模型」按钮可见性。**
+- [x] **Task 3：实时获取成功时完整替换模型列表，空结果清空列表，失败与请求中保留原列表和选择。**
+- [x] **Task 4：运行模型配置定向 Vitest、类型基线与 `git diff --check`，输出验收摘要等待用户确认。**
+
+**Verification:** 三轮 RED→GREEN 均先观察到预期失败（适配层 2 个、面板默认目录 4 个、实时替换语义 4 个），实现后模型配置目录定向回归 7 files / 128 tests 通过（唯一 skip 为需要真实 Hermes 源码的 smoke 文件）。本机 `frontend/node_modules` 原为部分安装，经确认后执行 `CI=true pnpm install --frozen-lockfile` 补齐（`package.json`、`pnpm-lock.yaml` 未变）；`pnpm check` 退出码 0，TypeScript diagnostics 为 206 current / 276 baseline / 0 new / 70 resolved，`git diff --check` 退出码 0。`src/pages/marketing` 扩大回归 1398/1409 通过，剩余 10 个失败为西语/印尼语词条断言与并行满载超时，单独运行相应文件均通过，与本次改动无关。
+---
+
 # 已配置模型 Provider 分组切换 Implementation Plan
 
 **Status:** 共享接入地址与模型、但凭据身份不同的 Provider 已可独立显示并分别写入或取消备用链；模型行字体强调已降低，“添加模型”按钮已移至表单右下角，备用模型标签已统一为灰色，等待提交确认；不自动 commit、push 或更新 MR。

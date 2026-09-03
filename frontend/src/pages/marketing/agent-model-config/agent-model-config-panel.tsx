@@ -56,6 +56,7 @@ import {
 type ProviderCategory = "coding_plan" | "api" | "custom";
 type ConfigurePurpose = "primary" | "fallback" | "idle";
 type ModelOption = { id: string; name: string; source: "live" | "catalog" };
+type ModelOptionsOrigin = ModelOption["source"];
 type ConfiguredModelListItem = HermesConfiguredModel & {
   catalogName?: string;
   catalogOnly?: true;
@@ -71,6 +72,14 @@ const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
   { id: "api", label: "模型 API" },
   { id: "custom", label: "自定义模型" },
 ];
+
+/**
+ * 自定义供应商的凭据作用域。Provider 名称、Base URL、兼容协议都在同一份草稿里逐字符编辑，
+ * 若按端点指纹隔离凭据，用户每敲一个字符就会丢失已输入的 API Key。
+ */
+const CUSTOM_CREDENTIAL_SCOPE = "custom-draft";
+
+const CUSTOM_MODEL_SUGGESTION_LIST_ID = "custom-model-suggestions";
 
 const MODEL_FIELD_CLASS = "grid gap-y-2";
 const MODEL_CONTROL_CLASS = "h-12 rounded-md border-black/10 bg-white shadow-none outline-none transition-colors focus:border-[#2F6BFF] focus:outline-none focus:ring-0 focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-0";
@@ -223,6 +232,10 @@ function displayError(message: string, localizedFallback: string) {
   return message;
 }
 
+function supportsModelRequestProbe(apiMode: string) {
+  return apiMode === "chat_completions" || apiMode === "anthropic_messages";
+}
+
 function ModelConfigLoading() {
   const t = useT();
   return (
@@ -262,6 +275,7 @@ export function AgentModelConfigPanel({
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customApiMode, setCustomApiMode] = useState("chat_completions");
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const modelOptionsOriginRef = useRef<ModelOptionsOrigin>("catalog");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [purpose, setPurpose] = useState<ConfigurePurpose>("primary");
   const [connectionResult, setConnectionResult] = useState<HermesConnectionProbeResult | null>(null);
@@ -283,12 +297,24 @@ export function AgentModelConfigPanel({
       : [],
     [activeProvider],
   );
+  /** Coding Plan 由 fixedModelSelection 接管；这里只为 `api` 分类预置七彩石目录，自定义分类恒为空。 */
+  const catalogModelOptions = useMemo<ModelOption[]>(
+    () => category === "custom" || activeProvider?.fixedModelSelection
+      ? []
+      : (activeProvider?.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" as const })),
+    [activeProvider, category],
+  );
+  const catalogModelFingerprint = JSON.stringify(
+    catalogModelOptions.map(({ id, name }) => [id, name]),
+  );
   const availableModelOptions = activeProvider?.fixedModelSelection ? fixedModelOptions : modelOptions;
   const effectiveSelectedModelId = activeProvider?.fixedModelSelection
     ? fixedModelOptions.some((model) => model.id === selectedModelId)
       ? selectedModelId
       : fixedModelOptions[0]?.id ?? ""
     : selectedModelId;
+  const canRefreshModels = !activeProvider?.fixedModelSelection
+    && (category === "custom" || (activeProvider?.supportsLiveModelRefresh ?? true));
 
   const compoundControlClassName = cn(
     MODEL_COMPOUND_CONTROL_BASE_CLASS,
@@ -318,10 +344,11 @@ export function AgentModelConfigPanel({
     }
   }, [category, providerKey, providerOptions, providers]);
 
-  const resetProbeResult = () => {
+  const restoreCatalogModelOptions = () => {
     probeUiRevision.current += 1;
-    setModelOptions([]);
-    setSelectedModelId("");
+    modelOptionsOriginRef.current = "catalog";
+    setModelOptions(catalogModelOptions);
+    setSelectedModelId(catalogModelOptions[0]?.id ?? "");
     setConnectionResult(null);
     controller.clearOperationError();
   };
@@ -346,12 +373,18 @@ export function AgentModelConfigPanel({
     : "";
   const providerFingerprintRef = useRef(providerFingerprint);
   const previousProviderFingerprintRef = useRef(providerFingerprint);
+  const previousCatalogModelFingerprintRef = useRef(catalogModelFingerprint);
   providerFingerprintRef.current = providerFingerprint;
+  const credentialScope = category === "custom" ? CUSTOM_CREDENTIAL_SCOPE : providerFingerprint;
+  const previousCredentialScopeRef = useRef(credentialScope);
   const selectedModel = providerDraft && effectiveSelectedModelId
     ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
   const selectedModelIsPrimary = sameModel(controller.snapshot?.primary, selectedModel);
-  const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
+  const customCredentialIsUnbound = category === "custom" && apiKeyTarget === CUSTOM_CREDENTIAL_SCOPE;
+  const credentialMatchesProvider = category === "custom"
+    ? customCredentialIsUnbound || (!!providerFingerprint && apiKeyTarget === providerFingerprint)
+    : !!credentialScope && apiKeyTarget === credentialScope;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
   const snapshot = controller.snapshot ?? { primary: null, fallbacks: [], configuredModels: [] };
@@ -383,20 +416,37 @@ export function AgentModelConfigPanel({
     />
   );
 
+  // 离开当前凭据作用域即作废凭据，确保为某个供应商输入的 API Key 不会流向另一个 endpoint。
   useEffect(() => {
-    if (previousProviderFingerprintRef.current === providerFingerprint) return;
-    previousProviderFingerprintRef.current = providerFingerprint;
-    providerFingerprintRef.current = providerFingerprint;
-    probeUiRevision.current += 1;
-    controller.cancelProbe();
-    controller.clearOperationError();
+    if (previousCredentialScopeRef.current === credentialScope) return;
+    previousCredentialScopeRef.current = credentialScope;
     setApiKey("");
     setApiKeyTarget("");
     setShowApiKey(false);
-    setModelOptions([]);
-    setSelectedModelId("");
+  }, [credentialScope]);
+
+  useEffect(() => {
+    const providerChanged = previousProviderFingerprintRef.current !== providerFingerprint;
+    const catalogChanged = previousCatalogModelFingerprintRef.current !== catalogModelFingerprint;
+    if (!providerChanged && !catalogChanged) return;
+    previousProviderFingerprintRef.current = providerFingerprint;
+    previousCatalogModelFingerprintRef.current = catalogModelFingerprint;
+    providerFingerprintRef.current = providerFingerprint;
+    if (!providerChanged && modelOptionsOriginRef.current === "live") return;
+    probeUiRevision.current += 1;
+    controller.cancelProbe();
+    controller.clearOperationError();
+    modelOptionsOriginRef.current = "catalog";
+    setModelOptions(catalogModelOptions);
+    setSelectedModelId(catalogModelOptions[0]?.id ?? "");
     setConnectionResult(null);
-  }, [controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
+  }, [
+    catalogModelFingerprint,
+    catalogModelOptions,
+    controller.cancelProbe,
+    controller.clearOperationError,
+    providerFingerprint,
+  ]);
 
   useEffect(() => {
     setPurpose(selectedModelIsPrimary ? "primary" : controller.snapshot?.primary ? "idle" : "primary");
@@ -409,80 +459,92 @@ export function AgentModelConfigPanel({
     setApiKeyTarget("");
     setShowApiKey(false);
     setPurpose(controller.snapshot?.primary ? "idle" : "primary");
-    resetProbeResult();
+    restoreCatalogModelOptions();
+  };
+
+  const bindCustomCredentialToProvider = () => {
+    if (customCredentialIsUnbound) setApiKeyTarget(providerFingerprint);
   };
 
   const handleProbe = async () => {
     if (!providerDraft || !canProbe) return;
     const requestFingerprint = providerFingerprint;
-    resetProbeResult();
     const revision = probeUiRevision.current;
-    const catalogModels = category === "custom" ? [] : activeProvider?.catalogModels ?? [];
-    if (activeProvider?.discoveryStrategy === "catalog") {
-      const nextOptions = catalogModels.map(({ id, name }) => ({ id, name, source: "catalog" as const }));
+    setConnectionResult(null);
+    controller.clearOperationError();
+    // 探测结果整体替换当前列表，不与七彩石目录合并，也不用目录补空。
+    const applyModelOptions = (nextOptions: ModelOption[], origin: ModelOptionsOrigin) => {
+      modelOptionsOriginRef.current = origin;
       setModelOptions(nextOptions);
       setSelectedModelId(nextOptions[0]?.id ?? "");
-      if (nextOptions.length > 0) setPurpose("primary");
       if (nextOptions.length > 0) {
+        setPurpose("primary");
         toast.success(t("已获取可用模型"));
       } else {
         toast.error(t("未获取到可用模型，请检查API Key是否正确或有效"));
       }
+    };
+    if (activeProvider?.discoveryStrategy === "catalog") {
+      applyModelOptions(catalogModelOptions, "catalog");
       return;
     }
+    bindCustomCredentialToProvider();
     const probeResult = await controller.probe({
       apiKey: apiKey.trim(),
       baseUrl: providerDraft.baseUrl,
       apiMode: providerDraft.apiMode,
     });
     if (revision !== probeUiRevision.current || requestFingerprint !== providerFingerprintRef.current) return;
+    // 失败时保留请求前的列表和选择，只反馈错误。
     if (!probeResult) {
       toast.error(t("模型配置操作失败，请重试。"));
       return;
     }
-    const nextOptions: ModelOption[] = probeResult.models.length > 0
-      ? probeResult.models.map((id) => ({ id, name: id, source: "live" }))
-      : probeResult.succeeded
-        ? catalogModels.map(({ id, name }) => ({ id, name, source: "catalog" }))
-        : [];
-    setModelOptions(nextOptions);
-    setSelectedModelId(nextOptions[0]?.id ?? "");
-    if (nextOptions.length > 0) setPurpose("primary");
-    if (nextOptions.length > 0) {
-      toast.success(t("已获取可用模型"));
-    } else {
+    if (!probeResult.succeeded) {
       toast.error(t("未获取到可用模型，请检查API Key是否正确或有效"));
+      return;
     }
+    applyModelOptions(probeResult.models.map((id) => ({ id, name: id, source: "live" as const })), "live");
   };
 
   const handleAdd = async () => {
     const normalizedApiKey = apiKey.trim();
     if (!selectedModel || !normalizedApiKey || !credentialMatchesProvider) return;
+    bindCustomCredentialToProvider();
     const nextSnapshot = await controller.add({
       apiKey: normalizedApiKey,
       model: selectedModel,
       purpose,
-      discoverModels: category === "custom" || activeProvider?.discoveryStrategy !== "catalog",
+      // 手输的模型 ID 未经探测验证，写入 discover_models=false 让 Hermes 以配置内列表为权威。
+      discoverModels: category === "custom"
+        ? modelOptions.some((modelOption) => modelOption.id === selectedModelId)
+        : activeProvider?.discoveryStrategy !== "catalog",
     });
     if (!nextSnapshot) return;
     setApiKey("");
     setApiKeyTarget("");
     setShowApiKey(false);
-    setModelOptions([]);
-    setSelectedModelId("");
+    restoreCatalogModelOptions();
     toast.success(t("模型已添加"));
-    setConnectionResult(null);
   };
 
   const handleConnectivityTest = async () => {
     if (!selectedModel || !apiKey.trim() || !credentialMatchesProvider) return;
+    bindCustomCredentialToProvider();
     const requestFingerprint = providerFingerprint;
     const revision = probeUiRevision.current;
+    const selectedCustomModelWasDiscovered = category === "custom"
+      && modelOptions.some((modelOption) => modelOption.id === selectedModelId);
     setConnectionResult(null);
     const result = await controller.testConnection({
       apiKey: apiKey.trim(),
       model: selectedModel,
-      strategy: activeProvider?.discoveryStrategy === "catalog" ? "model_request" : "model_list",
+      strategy: activeProvider?.discoveryStrategy === "catalog"
+        || (category === "custom"
+          && !selectedCustomModelWasDiscovered
+          && supportsModelRequestProbe(providerDraft?.apiMode ?? ""))
+        ? "model_request"
+        : "model_list",
     });
     if (result && revision === probeUiRevision.current && requestFingerprint === providerFingerprintRef.current) {
       setConnectionResult(result);
@@ -768,7 +830,7 @@ export function AgentModelConfigPanel({
                   className={MODEL_CONTROL_CLASS}
                   onChange={(event) => {
                     setCustomProviderName(event.target.value);
-                    resetProbeResult();
+                    restoreCatalogModelOptions();
                   }}
                 />
               </label>
@@ -781,7 +843,7 @@ export function AgentModelConfigPanel({
                   className={MODEL_CONTROL_CLASS}
                   onChange={(event) => {
                     setCustomBaseUrl(event.target.value);
-                    resetProbeResult();
+                    restoreCatalogModelOptions();
                   }}
                 />
               </label>
@@ -794,7 +856,7 @@ export function AgentModelConfigPanel({
                   disabled={busy}
                   onValueChange={(value) => {
                     setCustomApiMode(value);
-                    resetProbeResult();
+                    restoreCatalogModelOptions();
                   }}
                 >
                   <SelectTrigger
@@ -837,7 +899,7 @@ export function AgentModelConfigPanel({
                   setApiKey("");
                   setApiKeyTarget("");
                   setShowApiKey(false);
-                  resetProbeResult();
+                  restoreCatalogModelOptions();
                 }}
               >
                 <SelectTrigger
@@ -882,8 +944,8 @@ export function AgentModelConfigPanel({
                   className={cn(compoundFieldClassName, "pr-11")}
                   onChange={(event) => {
                     setApiKey(event.target.value);
-                    setApiKeyTarget(providerFingerprint);
-                    resetProbeResult();
+                    setApiKeyTarget(credentialScope);
+                    restoreCatalogModelOptions();
                   }}
                 />
                 <button
@@ -895,7 +957,7 @@ export function AgentModelConfigPanel({
                   {showApiKey ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
                 </button>
               </div>
-              {!activeProvider?.fixedModelSelection ? (
+              {canRefreshModels ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -929,36 +991,61 @@ export function AgentModelConfigPanel({
               {t("模型")}
             </label>
             <div data-slot="model-option-control" className={compoundControlClassName}>
-              <Select
-                value={effectiveSelectedModelId}
-                disabled={busy || availableModelOptions.length === 0}
-                onValueChange={(value) => {
-                  setSelectedModelId(value);
-                  setConnectionResult(null);
-                  controller.clearOperationError();
-                }}
-              >
-                <SelectTrigger
-                  id="detected-model"
-                  aria-label={t("模型")}
-                  className={compoundFieldClassName}
-                  onPointerDownCapture={captureAgentSidebarPosition}
-                  onKeyDownCapture={captureAgentSidebarPosition}
+              {category === "custom" ? (
+                // 自定义 endpoint 常常没有实现 /v1/models，探测结果只能作为建议，必须允许手动填写。
+                <>
+                  <Input
+                    id="detected-model"
+                    list={CUSTOM_MODEL_SUGGESTION_LIST_ID}
+                    autoComplete="off"
+                    value={selectedModelId}
+                    disabled={busy}
+                    placeholder={t("输入或选择模型")}
+                    className={compoundFieldClassName}
+                    onChange={(event) => {
+                      setSelectedModelId(event.target.value);
+                      setConnectionResult(null);
+                      controller.clearOperationError();
+                    }}
+                  />
+                  <datalist id={CUSTOM_MODEL_SUGGESTION_LIST_ID}>
+                    {modelOptions.map((modelOption) => (
+                      <option key={modelOption.id} value={modelOption.id}>{modelOption.name}</option>
+                    ))}
+                  </datalist>
+                </>
+              ) : (
+                <Select
+                  value={effectiveSelectedModelId}
+                  disabled={busy || availableModelOptions.length === 0}
+                  onValueChange={(value) => {
+                    setSelectedModelId(value);
+                    setConnectionResult(null);
+                    controller.clearOperationError();
+                  }}
                 >
-                  <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
-                </SelectTrigger>
-                <SelectContent
-                  position="popper"
-                  className={MODEL_SELECT_CONTENT_CLASS}
-                  style={MODEL_SELECT_CONTENT_STYLE}
-                >
-                  {availableModelOptions.map((modelOption) => (
-                    <SelectItem key={modelOption.id} value={modelOption.id}>
-                      {modelOption.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    id="detected-model"
+                    aria-label={t("模型")}
+                    className={compoundFieldClassName}
+                    onPointerDownCapture={captureAgentSidebarPosition}
+                    onKeyDownCapture={captureAgentSidebarPosition}
+                  >
+                    <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    className={MODEL_SELECT_CONTENT_CLASS}
+                    style={MODEL_SELECT_CONTENT_STYLE}
+                  >
+                    {availableModelOptions.map((modelOption) => (
+                      <SelectItem key={modelOption.id} value={modelOption.id}>
+                        {modelOption.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 type="button"
                 variant="outline"

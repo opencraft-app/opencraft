@@ -53,6 +53,7 @@ describe("adaptProductModelProviders", () => {
         apiMode: "chat_completions",
         discoveryStrategy: "catalog",
         fixedModelSelection: true,
+        supportsLiveModelRefresh: true,
         catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
       },
       expect.objectContaining({
@@ -82,7 +83,25 @@ describe("adaptProductModelProviders", () => {
     }));
   });
 
-  it("uses the Rainbow Hy Token Plan catalog while keeping fixed selection", () => {
+  it("disables live model refresh for Tencent-managed providers only", () => {
+    const adapted = adaptProductModelProviders([
+      { ...provider("tokenhub"), provider: "tokenhub" },
+      provider("tencent_token_plan"),
+      provider("tencent_token_plan_enterprise_pro_intl"),
+      { ...provider("minimax_coding"), provider: "minimax" },
+      provider("openrouter"),
+    ]);
+
+    expect(adapted.map((item) => [item.providerKey, item.supportsLiveModelRefresh])).toEqual([
+      ["tokenhub", false],
+      ["tencent_token_plan", false],
+      ["tencent_token_plan_enterprise_pro_intl", false],
+      ["minimax_coding", true],
+      ["openrouter", true],
+    ]);
+  });
+
+  it("uses the Rainbow Hy Token Plan catalog and hides live refresh for it", () => {
     const [adaptedProvider] = adaptProductModelProviders([{
       value: "tencent_hy_token_plan",
       category: "coding_plan",
@@ -102,6 +121,7 @@ describe("adaptProductModelProviders", () => {
       providerKey: "tencent_hy_token_plan",
       discoveryStrategy: "catalog",
       fixedModelSelection: true,
+      supportsLiveModelRefresh: false,
       description: "七彩石最新模型说明",
       catalogModels: [
         { id: "hy4-preview", name: "Hy4 Preview" },
