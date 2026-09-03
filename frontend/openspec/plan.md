@@ -16,7 +16,7 @@
 
 # 国际站 V2 首页性能优化 Implementation Plan
 
-**Status:** 实现与验证完成，等待用户确认是否 commit/push/MR；当前未提交、未发布。
+**Status:** MR !3533 的 CR 修正已实现并完成本地验证，等待用户确认 commit、同步最新 master 并 push 更新 MR；当前未发布。
 
 **Size:** M。范围限定在国际站 V2 首页 client boundary、评价头像和场景子按钮；fragment 输出建议已实测无收益并撤回。不修改完整 marketing layout、动效生命周期或发布缓存。
 
@@ -31,10 +31,11 @@
 - [x] **Task 3：测试先行生成评价头像 64×64 WebP，并为全部 locale fragment 添加 lazy、async decoding 和真实展示尺寸。**
 - [x] **Task 4：以真实 runtime 行为测试锁定并修复 18 个场景子按钮的 hover、click、Enter、Space 与 `aria-pressed`。**
 - [x] **Task 5：完成聚焦回归、i18n、类型、global build、bundle/HTML/RSC/头像字节对比和双视口浏览器 smoke。**
+- [x] **Task 6：处理 MR CR：移除旧 Provider re-export，并让 9 份静态 fragment 在脚本执行前携带正确的初始 `aria-pressed`。**
 
 **Acceptance:** 首页 global 构建只包含一份完整 eager 字典 key 集合；fragment 实验以真实 RSC 证据撤回且不虚报 97 KB 收益；评价头像 lazy 并引用 64×64 WebP；18 个 `.scene__sub` 可通过 hover、click、Enter/Space 激活；七 locale、header 与首页视觉不变。
 
-**Verification:** 已同步并基于最新 `origin/master`（`4b6cb083e`）复验。聚焦测试 9 文件 115 项通过；`pnpm i18n:check`、`pnpm check`（0 new diagnostics）、`pnpm build:global`（592/592）通过。同提交纯 master 对照下，首页本地 JS 为 4,075,348 → 3,051,382 B raw、1,014,547 → 778,284 B Brotli，完整 2,693-key 字典 2 → 1；12 个唯一评价头像 1,248,169 → 25,056 B。英文桌面和西语 390px 浏览器 smoke 无 console error、无横向溢出，click/Enter/Space 均通过。
+**Verification:** MR 基线 `origin/master`（`4b6cb083e`）已完成原始复验。CR 修正先得到 2 个预期失败，再恢复为聚焦测试 10 文件 117 项通过；`pnpm check`（0 new diagnostics）、`pnpm build:global`（592/592）通过。9 份 fragment 共 162 个场景按钮均含静态 `aria-pressed`，每份 6 个初始选中态；helper 单测覆盖每组唯一选中、无关标记保留和二次执行字节一致。同提交纯 master 对照下，首页本地 JS 为 4,075,348 → 3,051,382 B raw、1,014,547 → 778,284 B Brotli，完整 2,693-key 字典 2 → 1；12 个唯一评价头像 1,248,169 → 25,056 B。英文桌面和西语 390px 浏览器 smoke 无 console error、无横向溢出，click/Enter/Space 均通过。远端 master 现已前进至 `aafc32ed`，待提交确认后同步并复验再更新 MR。
 
 **Out of scope:** 动效 IIFE cleanup、打字机布局优化、缓存头、完整 marketing layout、i18n 异步协议、API/鉴权/计费/发布。
 

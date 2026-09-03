@@ -47,13 +47,14 @@ vi.mock("@/components/site/cookie-consent-banner", () => ({
 }));
 
 describe("PublicSiteAppProviders", () => {
-  let PublicSiteAppProviders: (typeof import("@next-site/public-site-providers"))["PublicSiteAppProviders"];
+  let PublicSiteAppProviders: (typeof import("@next-site/public-site-app-providers"))["PublicSiteAppProviders"];
   let PublicSiteLocaleBridge: (typeof import("@next-site/public-site-providers"))["PublicSiteLocaleBridge"];
 
   beforeEach(async () => {
     (globalThis as { React?: typeof React }).React = React;
     navigationMock.usePathname.mockReturnValue("/");
-    ({ PublicSiteAppProviders, PublicSiteLocaleBridge } = await import("@next-site/public-site-providers"));
+    ({ PublicSiteAppProviders } = await import("@next-site/public-site-app-providers"));
+    ({ PublicSiteLocaleBridge } = await import("@next-site/public-site-providers"));
   });
 
   afterEach(() => {
@@ -106,11 +107,18 @@ describe("PublicSiteAppProviders", () => {
       frontendRoot,
       "next-site/public-site-app-providers.tsx",
     );
+    const localeProviders = readFileSync(
+      path.join(frontendRoot, "next-site/public-site-providers.tsx"),
+      "utf8",
+    );
 
     expect(existsSync(appProvidersPath)).toBe(true);
     if (!existsSync(appProvidersPath)) return;
     const appProviders = readFileSync(appProvidersPath, "utf8");
     expect(layout).toContain("@next-site/public-site-app-providers");
+    expect(localeProviders).not.toMatch(
+      /export\s*\{\s*PublicSiteAppProviders\s*\}\s*from/,
+    );
     expect(appProviders).toContain("@/i18n/react-instance-registration");
     expect(appProviders).not.toMatch(
       /@\/i18n\/t|LocaleOverrideProvider|PublicSiteLocaleBridge/,

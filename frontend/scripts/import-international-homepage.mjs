@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import * as OpenCC from "opencc-js";
 
+import { initializeInternationalHomeFragmentAccessibility } from "./international-home-fragment-accessibility.mjs";
 import { optimizeInternationalHomeVoiceAvatars } from "./international-home-voice-avatars.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -4363,6 +4364,7 @@ await writeFile(path.join(targetRoot, "runtime.js"), cleanGeneratedText(runtime)
 await writeFile(path.join(targetRoot, "hero-chat.js"), cleanGeneratedText(heroChat));
 await copyFile(path.join(sourceRoot, "assets/scene-wheel.js"), path.join(targetRoot, "scene-wheel.js"));
 
+await initializeInternationalHomeFragmentAccessibility(targetRoot);
 const voiceAvatarSummary = await optimizeInternationalHomeVoiceAvatars(targetRoot);
 
 console.log(

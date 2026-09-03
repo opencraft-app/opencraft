@@ -10,6 +10,17 @@ const fragmentPath = path.join(homeRoot, "index-fragment.html");
 const stylesheetPath = path.join(homeRoot, "style.css");
 const runtimePath = path.join(homeRoot, "runtime.js");
 const publishedInternationalLocales = ["en-US", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"] as const;
+const generatedFragmentNames = [
+  "index-fragment.html",
+  "index-fragment.en-US.html",
+  "index-fragment.zh-CN.html",
+  "index-fragment.zh-SG.html",
+  "index-fragment.zh-Hant.html",
+  "index-fragment.id-ID.html",
+  "index-fragment.es.html",
+  "index-fragment.ja-JP.html",
+  "index-fragment.ko-KR.html",
+] as const;
 
 const requiredInternalRoutes = [
   "/",
@@ -94,6 +105,7 @@ describe("international v2 homepage artifact", () => {
     );
 
     expect(importer).toContain("optimizeInternationalHomeVoiceAvatars(targetRoot)");
+    expect(importer).toContain("initializeInternationalHomeFragmentAccessibility(targetRoot)");
     expect(importer).toContain("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');");
     expect(importer).toContain("btn.addEventListener('click', activate);");
     expect(importer).toContain("btn.addEventListener('keydown', activateFromKeyboard);");
@@ -193,7 +205,6 @@ describe("international v2 homepage artifact", () => {
         (button) => button.tagName === "BUTTON" && button.getAttribute("type") === "button",
       ),
     ).toBe(true);
-
     document.body.innerHTML = [
       '<div class="scene" id="scene-1">',
       '<button class="scene__sub on" type="button">First scene</button>',
@@ -220,6 +231,28 @@ describe("international v2 homepage artifact", () => {
     buttons[1].dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: " " }));
     expect(buttons[1].classList.contains("on")).toBe(true);
     document.body.replaceChildren();
+  });
+
+  it("publishes the initial pressed state in every generated locale fragment", () => {
+    for (const fragmentName of generatedFragmentNames) {
+      const document = new DOMParser().parseFromString(
+        readFileSync(path.join(homeRoot, fragmentName), "utf8"),
+        "text/html",
+      );
+      const buttons = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".scene__sub"),
+      );
+
+      expect(buttons, fragmentName).toHaveLength(18);
+      expect(
+        buttons.every((button) => button.hasAttribute("aria-pressed")),
+        fragmentName,
+      ).toBe(true);
+      expect(
+        buttons.filter((button) => button.getAttribute("aria-pressed") === "true"),
+        fragmentName,
+      ).toHaveLength(6);
+    }
   });
 
   it("keeps international homepage demos localized", () => {

@@ -258,11 +258,12 @@ Expected: 无 whitespace error；只包含本计划列出的源码、测试、�
 
 ## Verification Record
 
-- TDD：provider module、repository 适配器、头像 helper、scene click/Enter/Space 均先得到预期 RED，再恢复 GREEN。最终聚焦命令覆盖 9 个文件、115 个测试。
+- TDD：provider module、repository 适配器、头像 helper、scene click/Enter/Space 均先得到预期 RED，再恢复 GREEN。CR 修正继续先锁定旧 Provider re-export 和静态 fragment 缺少初始 `aria-pressed` 的 2 个预期 RED；最小实现并补齐 helper 幂等性回归后，聚焦命令覆盖 10 个文件、117 个测试并全部通过。
 - 门禁：已同步最新 `origin/master`（`4b6cb083e`）；`pnpm i18n:check` 通过；`pnpm check` 通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；仓库既有 i18n warning 49 条，错误 0。
 - global build：Next 16.2.9 编译、592/592 静态页、SEO 与 versioned asset 检查通过；轻量实例注册后 `NO_I18NEXT_INSTANCE` 从 13 次降为 0。
 - 首页 Next JS（同提交临时 worktree 对照、同机本地 Brotli）：纯 `origin/master` 与最终均为 30 个 `script[src]`；基线 4,075,348 B raw / 1,014,547 B Brotli、两份 950,607 B / 2,693-key 完整字典；最终 3,051,382 B raw / 778,284 B Brotli、仅一份 891,264 B / 2,693-key 字典。净减少 1,023,966 B raw / 236,263 B Brotli；不把脚本数量下降作为收益。
 - 头像：12 个唯一源头像从 1,248,169 B 降为 25,056 B（-1,223,113 B，-98.0%）；9 份 fragment 共 216 个评价头像引用全部为 `-64.webp`、lazy、async、32×32，0 个不合规引用。
 - fragment 实验：Server Component 直出版本的 `__PAGE__.txt` 仍为 102,321 B 且代表性正文命中 1 次，最终 HTML 仍含正文和内嵌 Flight 两份；无 97 KB 网络收益，已撤回生产代码。
 - 浏览器：最终 `out/` 在 1440×900 英文和 390×844 西语通过；正文、18 个场景按钮、语言/账号头部、Cookie locale 正常，click / Enter / Space 均切换对应 panel，横向 overflow 为 0，console warning/error 与 framework overlay 均为 0。
-- 已将静态资源版本提升为 `20260902-home-performance-v2`，避免边缘缓存继续返回旧 runtime。未 commit、push、创建 MR 或发布。
+- CR：`public-site-providers.tsx` 不再 re-export `PublicSiteAppProviders`，对应测试改从新边界直接导入；9 份 fragment 共 162 个 `.scene__sub` 均含静态 `aria-pressed`，每份 6 个初始 `true`；helper 单测覆盖每组唯一选中、无关标记保留与二次执行字节一致。CR 后 `pnpm check` 与 `pnpm build:global` 再次通过。
+- 已将静态资源版本提升为 `20260902-home-performance-v2`，避免边缘缓存继续返回旧 runtime。MR !3533 已存在；本轮 CR 修正尚未 commit/push，远端 master 已前进至 `aafc32ed`，待用户确认后同步并复验。

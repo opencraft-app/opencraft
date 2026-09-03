@@ -8,8 +8,6 @@ import { localeDefinition } from '@/i18n/locales.config';
 import type { PublicRouteLocale } from './public-locale';
 import { PublicSiteAppProviders } from './public-site-app-providers';
 
-export { PublicSiteAppProviders } from './public-site-app-providers';
-
 type Locale = PublicRouteLocale['locale'];
 
 function i18nLocaleForPublicLocale(locale: Locale): I18nLocale {
