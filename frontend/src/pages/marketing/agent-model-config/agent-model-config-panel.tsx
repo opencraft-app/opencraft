@@ -272,7 +272,7 @@ export function AgentModelConfigPanel({
   const selectedModel = providerDraft && selectedModelId
     ? { ...providerDraft, id: selectedModelId, keyEnv: "" }
     : null;
-  const fallbackPurposeDisabled = sameModel(controller.snapshot?.primary, selectedModel);
+  const selectedModelIsPrimary = sameModel(controller.snapshot?.primary, selectedModel);
   const credentialMatchesProvider = !!credentialScope && apiKeyTarget === credentialScope;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
@@ -305,8 +305,8 @@ export function AgentModelConfigPanel({
   }, [catalogModelOptions, controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
 
   useEffect(() => {
-    setPurpose(controller.snapshot?.primary ? "idle" : "primary");
-  }, [controller.snapshot?.primary]);
+    setPurpose(selectedModelIsPrimary ? "primary" : controller.snapshot?.primary ? "idle" : "primary");
+  }, [controller.snapshot?.primary, selectedModelIsPrimary]);
 
   const handleCategoryChange = (nextCategory: ProviderCategory) => {
     setCategory(nextCategory);
@@ -358,9 +358,10 @@ export function AgentModelConfigPanel({
   };
 
   const handleAdd = async () => {
-    if (!selectedModel || !apiKey.trim() || !credentialMatchesProvider) return;
+    const normalizedApiKey = apiKey.trim();
+    if (!selectedModel || !normalizedApiKey || !credentialMatchesProvider) return;
     const nextSnapshot = await controller.add({
-      apiKey: apiKey.trim(),
+      apiKey: normalizedApiKey,
       model: selectedModel,
       purpose,
       // 手输的模型 ID 未经探测验证，写入 discover_models=false 让 Hermes 以配置内列表为权威。
@@ -821,7 +822,7 @@ export function AgentModelConfigPanel({
                 { value: "fallback", label: "设为备用模型" },
                 { value: "idle", label: "仅添加" },
               ] satisfies Array<{ value: ConfigurePurpose; label: string }>).map((item) => {
-                const disabled = busy || (item.value === "fallback" && fallbackPurposeDisabled);
+                const disabled = busy || (selectedModelIsPrimary && item.value !== "primary");
                 const active = purpose === item.value;
                 return (
                   <label
@@ -839,7 +840,13 @@ export function AgentModelConfigPanel({
                       value={item.value}
                       checked={active}
                       disabled={disabled}
-                      aria-describedby={item.value === "fallback" && fallbackPurposeDisabled ? "fallback-purpose-help" : undefined}
+                      aria-describedby={selectedModelIsPrimary
+                        ? item.value === "fallback"
+                          ? "fallback-purpose-help"
+                          : item.value === "idle"
+                            ? "primary-idle-purpose-help"
+                            : undefined
+                        : undefined}
                       onChange={() => setPurpose(item.value)}
                     />
                     {item.value === "primary"
@@ -851,10 +858,15 @@ export function AgentModelConfigPanel({
                 );
               })}
             </div>
-            {fallbackPurposeDisabled ? (
-              <p id="fallback-purpose-help" className="text-xs text-black/45">
-                {t("主模型不能同时设为备用模型。")}
-              </p>
+            {selectedModelIsPrimary ? (
+              <>
+                <p id="fallback-purpose-help" className="text-xs text-black/45">
+                  {t("主模型不能同时设为备用模型。")}
+                </p>
+                <p id="primary-idle-purpose-help" className="sr-only">
+                  {t("当前模型已经是主模型")}
+                </p>
+              </>
             ) : null}
           </fieldset>
 
@@ -870,7 +882,7 @@ export function AgentModelConfigPanel({
             <Button
               type="button"
               className="rounded-md"
-              disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (purpose === "fallback" && fallbackPurposeDisabled)}
+              disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (selectedModelIsPrimary && purpose !== "primary")}
               onClick={() => void handleAdd()}
             >
               {controller.operation === "add"

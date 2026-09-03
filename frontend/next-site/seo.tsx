@@ -394,6 +394,33 @@ export function buildPublicAlternates(path: string): Record<string, string> {
   return alternates;
 }
 
+/** Global-only public pages must not advertise a China-site hreflang target. */
+export function buildGlobalPublicAlternates(path: string): Record<string, string> {
+  const publicPath = stripPublicLocalePrefix(path);
+  const alternates: Record<string, string> = {
+    'x-default': absolutePageUrlForSeoRegion('global', localizedPublicPath(publicPath, 'default')),
+  };
+
+  for (const lang of SEO_PUBLIC_URL_LANGS) {
+    const locale = localeFromUrlLang(lang);
+    const localizedPath = usesBarePathForUrlLang(lang) ? publicPath : localizedPublicPath(publicPath, lang);
+    alternates[locale] = absolutePageUrlForUrlLang(lang, localizedPath);
+  }
+
+  return alternates;
+}
+
+/** English-only content keeps localized UI routes without declaring untranslated content as another language. */
+export function buildGlobalEnglishContentAlternates(path: string): Record<string, string> {
+  const publicPath = stripPublicLocalePrefix(path);
+  const englishUrl = absolutePageUrlForSeoRegion('global', localizedPublicPath(publicPath, 'default'));
+
+  return {
+    'x-default': englishUrl,
+    'en-US': englishUrl,
+  };
+}
+
 export function buildDocsAlternates(
   slug: readonly string[],
   availableLocales: readonly DocsRouteLocale[],
@@ -517,6 +544,46 @@ export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE
         image: absoluteUrl(DEFAULT_OG_IMAGE_PATH),
         description: SOFTWARE_APPLICATION_DESCRIPTIONS[locale],
         offers: PLAN_OFFERS_BY_SEO_REGION[seoRegion()],
+      }}
+    />
+  );
+}
+
+/**
+ * Organization 实体声明（GEO/SEO）：AI 引擎与搜索引擎做品牌实体识别时依赖此结构化数据，
+ * 建立产品与官方社媒主页的实体信任链。sameAs 只放指向品牌自身的档案页
+ * （X / YouTube 官方主页），不放社区邀请链接与关联产品外链。
+ * cn / global 构建均渲染；url / logo 由 siteUrl() 与 og 图按区域自动分叉。
+ */
+export function OrganizationJsonLd() {
+  return (
+    <JsonLd
+      id="lightvela-organization-jsonld"
+      data={{
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: SITE_NAME,
+        url: siteUrl(),
+        logo: absoluteUrl(DEFAULT_OG_IMAGE_PATH),
+        sameAs: ['https://x.com/agentlightvela', 'https://www.youtube.com/@TencentLightVela'],
+      }}
+    />
+  );
+}
+
+/**
+ * WebSite 实体声明（GEO/SEO）：站点级身份锚点，与 hreflang 语言矩阵互补。
+ * 站内暂无搜索功能，故不声明 SearchAction（避免向引擎声明不存在的功能）。
+ */
+export function WebSiteJsonLd() {
+  return (
+    <JsonLd
+      id="lightvela-website-jsonld"
+      data={{
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: SITE_NAME,
+        url: siteUrl(),
       }}
     />
   );

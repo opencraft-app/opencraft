@@ -15,6 +15,7 @@ description: 当 LightVela 产品相关工作需要在产品前置、SEO/GEO、�
 - `lightvela-changelog-update/`：设计或执行 LightVela 产品动态与更新日志流程。
 - `lv-docs/`：维护、翻译和审查 LightVela 文档站文档，覆盖国内站与国际站双区域。
 - `lv-longform-content/`：生成 LightVela 教程、功能介绍、应用场景和社媒长篇内容。
+- `lv-blog-publishing/`：写作、添加、创建、编辑、更新和发布 LightVela 国际站 Blog 页面文章或卡片，覆盖内容输入、语言、分类、封面、版式、元数据、发布时间和固定分享结尾。
 - `lv-sitepage-skills/`：维护 LightVela 国内站和国际站 Agent Skills 页面。
 
 ## 使用规则
@@ -26,5 +27,6 @@ description: 当 LightVela 产品相关工作需要在产品前置、SEO/GEO、�
 5. 产品动态、更新日志和 changelog 工作使用 `lightvela-changelog-update`。
 6. LightVela 文档站文档维护（`lightvela.com/docs` 国内站或 `lightvela.ai/docs` 国际站）使用 `lv-docs`；该 skill 会先确认本次目标区域。
 7. 教程、功能介绍、应用场景和社媒长文使用 `lv-longform-content`。
-8. 国内站或国际站 Agent Skills 页面维护使用 `lv-sitepage-skills`。
-9. 执行具体工作时，读取对应子目录里的 `SKILL.md`，不要只依赖本聚合入口。
+8. 用户要求写、添加、创建、编辑、更新或发布国际站 Blog 页面文章、文章卡片或封面时使用 `lv-blog-publishing`；该 skill 会确认内容语言、分类和用户提供的封面，并固定文章末尾分享区。
+9. 国内站或国际站 Agent Skills 页面维护使用 `lv-sitepage-skills`。
+10. 执行具体工作时，读取对应子目录里的 `SKILL.md`，不要只依赖本聚合入口。

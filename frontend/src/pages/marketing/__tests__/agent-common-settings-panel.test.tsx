@@ -392,8 +392,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("关闭审批");
-    const warning = screen.getByText("当前高风险操作无需审批");
-    expect(warning).toHaveClass("whitespace-nowrap", "text-right");
+    expect(screen.queryByText("当前高风险操作无需审批")).toBeNull();
     expect(screen.queryByText("当前不会请求危险命令审批")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -405,7 +404,7 @@ describe("AgentCommonSettingsPanel", () => {
     ["es", "Las operaciones de alto riesgo se ejecutan sin aprobación"],
     ["ja-JP", "現在、高リスク操作は承認なしで実行されます"],
     ["ko-KR", "현재 고위험 작업은 승인 없이 실행됩니다"],
-  ] as const)("localizes the approval-off warning for %s", async (locale, expectedCopy) => {
+  ] as const)("does not render the approval-off warning for %s", async (locale, removedCopy) => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
@@ -420,7 +419,8 @@ describe("AgentCommonSettingsPanel", () => {
       locale,
     );
 
-    expect(await screen.findByText(expectedCopy)).toHaveClass("whitespace-nowrap", "text-right");
+    await screen.findAllByTestId("common-setting-row");
+    expect(screen.queryByText(removedCopy)).toBeNull();
   });
 
   it("disables Security reset when both Security settings are unsupported", async () => {

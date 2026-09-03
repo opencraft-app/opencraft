@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
+import { InternationalHomePage } from '@next-site/international-home-page';
+import { shouldUseInternationalV2Home } from '@next-site/international-home-routing';
 import { PublicHomePage } from '@next-site/public-pages';
 import { DEFAULT_PUBLIC_ROUTE_LOCALE } from '@next-site/public-locale';
-import { createPublicMetadata, SoftwareApplicationJsonLd } from '@next-site/seo';
+import { createPublicMetadata, OrganizationJsonLd, SoftwareApplicationJsonLd, WebSiteJsonLd } from '@next-site/seo';
+import { isGlobal } from '@/lib/region';
 
 export const metadata: Metadata = createPublicMetadata({
   path: '/',
@@ -19,10 +22,13 @@ export const metadata: Metadata = createPublicMetadata({
 });
 
 export default function HomePage() {
+  const useInternationalV2Home = shouldUseInternationalV2Home(isGlobal, DEFAULT_PUBLIC_ROUTE_LOCALE.locale);
   return (
     <>
-      <PublicHomePage />
+      {useInternationalV2Home ? <InternationalHomePage locale={DEFAULT_PUBLIC_ROUTE_LOCALE.locale} /> : <PublicHomePage />}
       <SoftwareApplicationJsonLd locale={DEFAULT_PUBLIC_ROUTE_LOCALE.locale} />
+      <OrganizationJsonLd />
+      <WebSiteJsonLd />
     </>
   );
 }

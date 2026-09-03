@@ -82,6 +82,7 @@ const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
   "subject-hyn": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   "academic-paper-writing-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
   "novel-evaluator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/9bcddb03-161b-42cd-bf2e-cf0159d85bd7.png",
+  "lh6-anniversary-blessing": "/assets/skills/featured-domestic-lh6-icon.svg",
 };
 
 function skill(
@@ -104,6 +105,17 @@ function skill(
 }
 
 export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
+  {
+    id: "lh6-anniversary-blessing",
+    skill: skill(
+      "lh6-anniversary-blessing",
+      "轻量云六周年送祝福",
+      "为轻量云六周年生成祝福文案与祝福海报，支持多场景、多风格的祝福语定制。",
+      0,
+    ),
+    heroImageSrc: "/assets/skills/featured-domestic-lh6-anniversary.jpg",
+    heroClassName: "bg-[#2B2F5C]",
+  },
   {
     id: "find-skill-skillhub",
     skill: skill(
@@ -158,17 +170,6 @@ export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
     ),
     heroImageSrc: "/assets/skills/featured-domestic-news.jpg",
     heroClassName: "bg-[#303F9F]",
-  },
-  {
-    id: "weather",
-    skill: skill(
-      "weather",
-      "Weather",
-      "获取当前天气和预报，无需 API 密钥。",
-      21530,
-    ),
-    heroImageSrc: "/assets/skills/featured-domestic-weather.jpg",
-    heroClassName: "bg-[#3E9BC2]",
   },
 ] as const;
 

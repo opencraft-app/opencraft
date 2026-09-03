@@ -1151,7 +1151,7 @@ export function BuddyPanel({
               }}
             >
               <Dice5 className="h-4 w-4" />
-              {t("随机抽取人设")}
+              {t("抽取人设")}
             </button>
             {isAtMax && (
               <div
@@ -1179,7 +1179,7 @@ export function BuddyPanel({
               }}
             >
               <ClipboardCheck className="h-4 w-4" />
-              {t("答题测试人设")}
+              {t("测试人设")}
             </button>
             {isAtMax && (
               <div

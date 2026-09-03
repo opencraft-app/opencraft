@@ -1,3 +1,43 @@
+# 国际站 V2 多语言首页接入 Spec
+
+**最后更新：** 2026-09-01
+
+**状态：** 已实现并完成用户验收。
+
+## 1. 区域与语言边界
+
+1. `isGlobal === true` 且 locale 为 `en-US`、`zh-SG`、`zh-Hant`、`id-ID`、`es`、`ja-JP`、`ko-KR` 时使用新版首页。
+2. 国内站构建继续使用现有 `PublicHomePage`，不得加载新版首页 fragment、CSS 或运行时脚本。
+3. `zh-CN` 不选择新版国际站首页；七个已发布 locale 必须读取各自 fragment，避免跨语言内容回退。
+
+## 2. 页面与动效契约
+
+1. 页面结构、布局、图片和动效以已验收 V2 静态首页为来源；七个 locale 使用对应本地化 fragment 和图片。
+2. 首页正文必须进入静态导出 HTML，不能用 iframe，也不能依赖客户端 fetch 后才出现。
+3. 动效脚本只在新版首页挂载时加载；locale 变化时移除旧脚本并以新 locale 重新加载，页面卸载时不得留下重复脚本标签。
+4. 所有 fragment 图片、字体和脚本使用 `/lightvela-intl-home/` 绝对资源路径；资源必须在构建前可解析。
+5. 简体与繁体中文使用中文版字体；英文、印尼语、西班牙语、日语、韩语营销标题使用英文版 editorial 字体基准。
+6. 印尼语与西班牙语长 Hero 标题桌面端保持一行；印尼语能力区长标题桌面端保持一行；移动端允许自然换行且不得横向溢出。
+7. 页脚、用户评价和 DeepSeek Harness 使用本地已确认版本；Hero eyebrow 不使用浅色胶囊。
+
+## 3. 导航契约
+
+1. fragment 中不得保留 `href="#"`、`javascript:`、本地 `index.html` 或 `assets/...` 相对路径。
+2. 核心站内落点固定为：`/`、`/subscribe`、`/docs/overview`、`/changelog`、`/about`、`/agents`、`/agents/automations`、`/agents/files`、`/agents/websites/`、`/privacy-policy`、`/terms-of-service`、`/open-source-licenses`。
+3. 对比文章落到 `/docs/compare/*` 正式文档路由；通道指引落到 `/docs/configuration/channel-*`。
+4. 语言入口复用生产语言切换器；外部 Discord、WhatsApp、X、YouTube、CloudBase、EdgeOne 使用当前正式链接并带 `target="_blank" rel="noreferrer"`。
+5. Hero、账号入口、产品 CTA 和试用入口落到对应正式 Agent 或订阅路由，并保留 locale 前缀。
+
+## 4. 验收契约
+
+1. 测试先证明最新 master 尚未接入新版首页，再实现区域选择和资源加载。
+2. 运行定向 Vitest、`pnpm check`、`pnpm build:global` 与 `git diff --check`。
+3. 本地 global 开发服务在独立端口启动；桌面和移动端检查七个 locale 的首屏、导航、动效、无水平溢出、无破图和无新增页面错误。
+4. 国内站负向测试必须证明 `isGlobal === false` 不选择新版首页。
+5. 自动化测试必须覆盖 locale fragment、正式链接、资源完整性、动效脚本重绑定、保留模块、长标题与 CTA 本地化。
+
+---
+
 # 首页加载性能优化 Spec
 
 **最后更新：** 2026-08-31

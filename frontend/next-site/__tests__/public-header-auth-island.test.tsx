@@ -26,6 +26,10 @@ vi.mock("@/contexts/session-context", () => ({
   }),
 }));
 vi.mock("@/lib/oauth", () => ({ oauthErrorMessage: () => null }));
+vi.mock("@/lib/region", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/region")>("@/lib/region");
+  return { ...actual, isGlobal: true };
+});
 vi.mock("@/observability/datong-tracker", () => ({
   trackDatongClick: trackDatongClickMock,
 }));
@@ -47,11 +51,13 @@ afterEach(() => {
 });
 
 describe("PublicHeaderAuthIsland", () => {
-  it("infers Spanish auth actions from the runtime language", () => {
+  it("uses the homepage language-and-login treatment across international public pages", () => {
     render(<PublicHeaderAuthIsland showLanguageSwitcher={false} />);
 
-    expect(screen.getByRole("button", { name: "Crear ahora" })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Iniciar sesión" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Crear ahora" })).not.toBeInTheDocument();
+    for (const button of screen.getAllByRole("button", { name: "Iniciar sesión" })) {
+      expect(button).toHaveClass("bg-black/90", "text-white");
+    }
   });
 
   it.each([
@@ -94,6 +100,7 @@ describe("PublicHeaderAuthIsland", () => {
         showLanguageSwitcher={false}
         showProductEntry
         promoteFreeTrial
+        loginOnly={false}
       />,
     );
 
@@ -115,5 +122,25 @@ describe("PublicHeaderAuthIsland", () => {
       pgid: "home",
       params: { surface: "desktop", target: "/agents" },
     });
+  });
+
+  it("supports the international homepage login-only treatment", () => {
+    (globalThis as { React?: typeof React }).React = React;
+    render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} loginOnly />);
+
+    expect(screen.queryByRole("button", { name: "Create Now" })).not.toBeInTheDocument();
+    for (const button of screen.getAllByRole("button", { name: "Sign In" })) {
+      expect(button).toHaveClass("bg-black/90", "text-white");
+    }
+  });
+
+  it("keeps login-only auth copy localized", () => {
+    (globalThis as { React?: typeof React }).React = React;
+    render(<PublicHeaderAuthIsland locale="id-ID" showLanguageSwitcher={false} loginOnly />);
+
+    for (const button of screen.getAllByRole("button", { name: "Masuk" })) {
+      expect(button).toHaveClass("bg-black/90", "text-white");
+    }
+    expect(screen.queryByRole("button", { name: "Sign In" })).not.toBeInTheDocument();
   });
 });

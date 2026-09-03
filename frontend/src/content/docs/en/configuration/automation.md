@@ -66,11 +66,11 @@ Opening a template pre-fills the Create Job dialog. The Stock update digest temp
 
 After an automation is created, you can view enabled tasks on the “Automations” page.
 
-Use the tabs above the list to switch between “Current Jobs,” “Recent Runs,” and “Ended Jobs.” Ended Jobs collects completed, failed, and expired tasks, while ongoing tasks stay under Current Jobs.
+Use the tabs above the list to switch between “Current Jobs,” “Ended Jobs,” and “Recent Runs.” Ended Jobs collects completed, failed, and expired tasks, while ongoing tasks stay under Current Jobs.
 
 <div style={{ maxWidth: "420px" }}>
 
-![Automations page showing Current Jobs, Recent Runs, and Ended Jobs tabs](../images/automation-current-jobs.webp)
+![Automations page showing Current Jobs, Ended Jobs, and Recent Runs tabs](../images/automation-current-jobs.webp)
 
 </div>
 
@@ -85,6 +85,16 @@ After a job starts running, it appears as a card under “Current Jobs” with i
 From this page, you can inspect automation details, edit the task, pause it, or delete it as needed.
 
 For linked tasks, check whether any downstream task still depends on the upstream task's most recent completed output before deleting the upstream task.
+
+## Validation
+
+After creating or editing an automation, do not stop at “saved successfully.” Confirm the following:
+
+1. The task appears in the automation list, and its status matches expectations.
+2. The schedule, effective window, and notification settings are correct.
+3. If an upstream task is linked, the upstream task already has a most recent completed output.
+4. After one real run, inspect the recent run record.
+5. Check whether the output actually used the upstream task result instead of guessing the missing background.
 
 ## Common Failure Handling
 

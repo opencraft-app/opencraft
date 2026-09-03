@@ -548,11 +548,6 @@ export function AgentCommonSettingsPanel({
                         )}
                         {savingKey === setting.key && <span className="text-xs text-black/45">{t("保存中…")}</span>}
                         {fieldFeedback && <span role="alert" className="text-right text-xs text-red-600">{fieldFeedback.message}</span>}
-                        {!unsupported && setting.key === "approvalMode" && snapshot.values.approvalMode === "off" && (
-                          <span className="whitespace-nowrap text-right text-xs text-amber-700">
-                            {t("当前高风险操作无需审批")}
-                          </span>
-                        )}
                         {compressionDisabled && <span className="text-xs text-black/35">{t("开启自动压缩后可修改")}</span>}
                       </div>
                     </div>

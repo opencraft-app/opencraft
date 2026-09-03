@@ -7,6 +7,7 @@ import { DOCS_ROUTE_SLUGS } from "./docs-route-manifest";
 
 vi.mock("@next-site/public-pages", () => ({
   PublicAboutPage: () => null,
+  PublicBlogPage: () => null,
   PublicChangelogPage: () => null,
   PublicHomePage: () => null,
 }));
@@ -73,6 +74,15 @@ describe("global public SEO URL contract", () => {
       es: "https://lightvela.ai/es/about/",
       "ja-JP": "https://lightvela.ai/ja-jp/about/",
       "ko-KR": "https://lightvela.ai/ko-kr/about/",
+    });
+  });
+
+  it("keeps English-only Blog content alternates on the global site", async () => {
+    const { buildGlobalEnglishContentAlternates } = await importSeoWithRegion("global");
+
+    expect(buildGlobalEnglishContentAlternates("/blog")).toEqual({
+      "x-default": "https://lightvela.ai/blog/",
+      "en-US": "https://lightvela.ai/blog/",
     });
   });
 
@@ -313,12 +323,13 @@ describe("Spanish public page metadata", () => {
     vi.resetModules();
   });
 
-  it("provides unique Spanish metadata for all eight localized public pages", async () => {
+  it("provides unique Spanish metadata for all nine localized public pages", async () => {
     vi.stubEnv("NEXT_PUBLIC_REGION", "global");
     vi.stubEnv("VITE_REGION", "global");
     const pages = [
       ["/es", "LightVela | Tu agente personal de IA en la nube", () => import("../src/app/(site)/[lang]/page.intl")],
       ["/es/about", "Acerca de LightVela", () => import("../src/app/(site)/[lang]/about/page.intl")],
+      ["/es/blog", "Blog", () => import("../src/app/(site)/[lang]/blog/page.intl")],
       ["/es/changelog", "Novedades", () => import("../src/app/(site)/[lang]/changelog/page.intl")],
       ["/es/cookie-policy", "Política de cookies", () => import("../src/app/(site)/[lang]/cookie-policy/page.intl")],
       ["/es/open-source-licenses", "Aviso de código abierto", () => import("../src/app/(site)/[lang]/open-source-licenses/page.intl")],
@@ -344,7 +355,7 @@ describe("Spanish public page metadata", () => {
         return metadata.description;
       }),
     );
-    expect(new Set(descriptions).size).toBe(8);
+    expect(new Set(descriptions).size).toBe(9);
   });
 
   it("keeps subscribe noindex in Spanish", async () => {
@@ -359,11 +370,12 @@ describe("Spanish public page metadata", () => {
 });
 
 describe("Japanese public page metadata copy", () => {
-  it("provides Japanese title and description for all eight future localized routes", async () => {
+  it("provides Japanese title and description for all nine future localized routes", async () => {
     const { japaneseRouteDescription, japaneseRouteTitle } = await import("../src/lib/seo-data.ja");
     const paths = [
       "/",
       "/about",
+      "/blog",
       "/changelog",
       "/cookie-policy",
       "/open-source-licenses",
@@ -380,11 +392,12 @@ describe("Japanese public page metadata copy", () => {
 });
 
 describe("Korean public page metadata copy", () => {
-  it("provides Korean title and description for all eight future localized routes", async () => {
+  it("provides Korean title and description for all nine future localized routes", async () => {
     const { koreanRouteDescription, koreanRouteTitle } = await import("../src/lib/seo-data.ko");
     const paths = [
       "/",
       "/about",
+      "/blog",
       "/changelog",
       "/cookie-policy",
       "/open-source-licenses",

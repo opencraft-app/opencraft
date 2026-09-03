@@ -109,6 +109,8 @@ type PublicHeaderAuthIslandProps = {
    * 未登录点击直接跳转订阅套餐页（而非弹出登录框）。仅首页启用。
    */
   promoteFreeTrial?: boolean;
+  /** 仅显示黑色登录主按钮，供国际站首页的精简导航使用。 */
+  loginOnly?: boolean;
 };
 
 function PublicHeaderAuthControls({
@@ -118,9 +120,10 @@ function PublicHeaderAuthControls({
   showLanguageSwitcher = isGlobal,
   showProductEntry = false,
   promoteFreeTrial = false,
+  loginOnly = isGlobal,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
-  const { i18n } = useTranslation();
+  const { i18n } = useTranslation(undefined, { useSuspense: false });
   const { authReady, isAuthenticated } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
@@ -198,7 +201,7 @@ function PublicHeaderAuthControls({
       <>
         <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
           {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
-          <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />
+          {!loginOnly && <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />}
           <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
         </div>
         <div className="ml-auto flex items-center gap-2 lg:hidden" aria-hidden="true">
@@ -228,13 +231,15 @@ function PublicHeaderAuthControls({
     <>
       <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
         {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
-        <button
-          type="button"
-          onClick={goToCreate}
-          className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
-        >
-          {createLabel}
-        </button>
+        {!loginOnly && (
+          <button
+            type="button"
+            onClick={goToCreate}
+            className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
+          >
+            {createLabel}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -243,7 +248,9 @@ function PublicHeaderAuthControls({
           }}
           className={cn(
             'inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4',
-            secondaryButtonClass[appearance],
+            loginOnly
+              ? 'border border-black/90 bg-black/90 text-white hover:bg-black'
+              : secondaryButtonClass[appearance],
           )}
         >
           {copy.login}
@@ -261,7 +268,9 @@ function PublicHeaderAuthControls({
           }}
           className={cn(
             'inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
-            secondaryButtonClass[appearance],
+            loginOnly
+              ? 'border border-black/90 bg-black/90 text-white hover:bg-black'
+              : secondaryButtonClass[appearance],
           )}
         >
           {copy.login}

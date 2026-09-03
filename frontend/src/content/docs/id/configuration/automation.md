@@ -66,11 +66,11 @@ Saat membuka templat, formulir Buat Job akan terisi otomatis. Templat Ringkasan 
 
 Setelah otomasi dibuat, Anda dapat melihat tugas yang sudah diaktifkan di halaman “Automations”.
 
-Gunakan tab di atas daftar untuk berpindah antara “Job Saat Ini”, “Eksekusi terbaru”, dan “Job Berakhir”. “Job Berakhir” mengumpulkan tugas yang selesai, gagal, dan kedaluwarsa, sementara tugas yang masih berjalan tetap berada di “Job Saat Ini”.
+Gunakan tab di atas daftar untuk berpindah antara “Job Saat Ini”, “Job Berakhir”, dan “Eksekusi terbaru”. “Job Berakhir” mengumpulkan tugas yang selesai, gagal, dan kedaluwarsa, sementara tugas yang masih berjalan tetap berada di “Job Saat Ini”.
 
 <div style={{ maxWidth: "420px" }}>
 
-![Halaman Automations dengan tab Job Saat Ini, Eksekusi terbaru, dan Job Berakhir](../images/automation-current-jobs.webp)
+![Halaman Automations dengan tab Job Saat Ini, Job Berakhir, dan Eksekusi terbaru](../images/automation-current-jobs.webp)
 
 </div>
 
@@ -85,6 +85,16 @@ Setelah job mulai berjalan, job tersebut muncul sebagai kartu di “Job Saat Ini
 Dari halaman ini, Anda dapat melihat detail otomasi, mengedit tugas, menjedanya, atau menghapusnya sesuai kebutuhan.
 
 Untuk tugas yang saling terhubung, periksa apakah ada tugas downstream yang masih bergantung pada output selesai terbaru tugas upstream sebelum menghapus tugas upstream tersebut.
+
+## Validasi
+
+Setelah membuat atau mengedit otomasi, jangan berhenti pada “berhasil disimpan”. Konfirmasi hal-hal berikut:
+
+1. Tugas muncul di daftar otomasi, dan statusnya sesuai harapan.
+2. Jadwal, periode berlaku, dan pengaturan notifikasi sudah benar.
+3. Jika tugas upstream dihubungkan, tugas upstream sudah memiliki output selesai terbaru.
+4. Setelah satu eksekusi nyata, periksa catatan eksekusi terbaru.
+5. Periksa apakah output benar-benar memakai hasil tugas upstream, bukan menebak konteks yang hilang.
 
 ## Penanganan Kegagalan Umum
 

@@ -104,10 +104,13 @@ const aiPromoTagText = (
   isNewUser: boolean,
   price?: BundlePrice | null,
 ): string | undefined => {
+  /* 启航 AI 零元新用户「首单免费」标签（国内外统一门禁，天数不同）：
+     国际站 7 天、国内站 3 天。巡游 AI 无免费试用，走下方折扣分支。
+     注意 t() 必须直接消费字面量（i18n-extract 静态扫描，三元内联字符串扫不到）。 */
+  if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
+    return isGlobal ? t("首单免费 7 天") : t("首单免费 3 天");
+  }
   if (isGlobal) {
-    if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
-      return t("首单免费 7 天");
-    }
     const discountRate = actualDiscountRate(price);
     if ((tier.isLaunch || tier.isCruise) && discountRate != null) {
       /* 既有月付 AI 活动仍使用「首月 6 折」专属文案；异常的其他折扣率按真实比值展示。 */
@@ -117,6 +120,7 @@ const aiPromoTagText = (
     }
     return undefined;
   }
+  /* 国内站：启航 AI 未命中免费门禁（已订阅 / 询价非零）与巡游 AI 均展示「首月 6 折」。 */
   if (tier.isLaunch || tier.isCruise) return t("首月 6 折");
   return undefined;
 };
@@ -645,8 +649,15 @@ const mapBundleToPlan = (
       } else if (isCruise && notAi) {
         displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 月付：首月 5 折
         originalPriceYuan = realPriceYuan; // 原价展示
-      } else if ((isLaunch || isCruise) && !notAi) {
-        /* AI 增强版月付：首月 6 折（静态 price 存原价，此处按 0.6 计算折后价，
+      } else if (isLaunch && !notAi) {
+        /* 启航 AI 增强版月付：首单免费 3 天 → ¥0（2026-09-02 国内站口径，参考国际站启航 AI）。
+           静态构建时 real_total_cost 已置 0（见 buildStaticPriceWithAiTier），realPriceYuan 即 0；
+           原价走静态 total_cost 展示删除线。「首单免费 3 天」标签由 aiPromoTagText 免费门禁给出。 */
+        displayPriceYuan = 0;
+        originalPriceYuan =
+          bundle.price?.total_cost != null ? centsToYuan(bundle.price.total_cost) : null;
+      } else if (isCruise && !notAi) {
+        /* 巡游 AI 增强版月付：首月 6 折（静态 price 存原价，此处按 0.6 计算折后价，
            「首月 6 折」标签由后续 promoTag 分支给出）。 */
         displayPriceYuan = +(realPriceYuan * STATIC_AI_MONTHLY_DISCOUNT).toFixed(2);
         originalPriceYuan = realPriceYuan; // 原价展示
@@ -714,10 +725,10 @@ const mapBundleToPlan = (
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
           /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
-             国际站启航 AI「首单免费 7 天」，国内站启航 AI「首月 6 折」（与改动前一致）。
+             国际站启航 AI「首单免费 7 天」，国内站启航 AI 零元新用户「首单免费 3 天」。
              改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。
              已订阅用户由 aiPromoTagText 内部降级为「首月 6 折」，不展示首单权益。 */
-          promoTag = aiPromoTagText(tier, t, isNewUser);
+          promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
         } else if (!isLoggedIn || backendDiscount === 0) {
           /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
           promoTag = t("首单免费 14 天");
@@ -726,10 +737,8 @@ const mapBundleToPlan = (
       } else if (tier.isCruise) {
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          /* 巡游 AI 档位国内外一致展示「首月 6 折」。
-             改动前此处被 `if (!isGlobal)` 拦截，且后端 discount 单位不一致（0<d<1 与 50 两套口径），
-             导致国际站巡游 AI 档位丢失「首月 6 折」标签 —— 本次需求要修的即此问题。 */
-          promoTag = aiPromoTagText(tier, t, isNewUser);
+          /* 巡游 AI 档位国内外一致展示「首月 6 折」（无免费试用，不受启航 AI 免费门禁影响）。 */
+          promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
         } else if (!isLoggedIn || backendDiscount === 50) {
           /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
@@ -1073,9 +1082,13 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       return buildIntlStaticPrice(STATIC_INTL_PRICE_USD[tier][kind][durationKey]);
     }
     if (kind === "ai") {
+      /* 月付：启航 AI 首单免费 3 天 → discount=0（real_total_cost=0，配合 mapBundleToPlan
+         置 ¥0 与 aiPromoTagText 免费门禁）；巡游 AI 维持原价（real），由 mapBundleToPlan ×0.6。
+         季付：统一 9 折不变。 */
+      const monthlyDiscount = tier === "launch" ? 0 : 1.0;
       return buildStaticPrice(
         STATIC_AI_TIER_PRICE_YUAN[tier][durationKey],
-        durationKey === "quarterly" ? STATIC_AI_QUARTERLY_DISCOUNT : 1.0,
+        durationKey === "quarterly" ? STATIC_AI_QUARTERLY_DISCOUNT : monthlyDiscount,
       );
     }
     return buildStaticPrice(
@@ -1312,22 +1325,18 @@ const isRetiredVoyagePlan = (plan: PlanInfo): boolean => {
 interface PlanTierGroup {
   /** tier key（launch/cruise）或未命中 tier 时的 plan.id（各自单卡） */
   key: string;
-  /** 同 tier 的档位列表；国际站 AI 增强版在前、国内站标准版在前（见 planTiers 排序） */
+  /** 同 tier 的档位列表；国内外统一 AI 增强版在前（见 planTiers 排序） */
   variants: PlanInfo[];
 }
 
 const getDefaultVariantIndex = (variants: PlanInfo[]): number => {
   if (variants.length <= 1) return 0;
-  /* 国际站默认选 AI 增强版（高 credit，含免费体验）；国内站默认选标准版（低 credit）。
-     与 planTiers 的 variants 排序方向一致：国际站降序、国内站升序，保证默认 variant 落在 index 0。 */
-  const preferHigh = isGlobal;
+  /* 国内外统一默认选 AI 增强版（高 credit，含免费体验更醒目；2026-09-02 国内站对齐国际站）。
+     与 planTiers 的 variants 排序方向一致：统一降序，保证默认 variant 落在 index 0。 */
   return variants.reduce((bestIndex, variant, index) => {
-    const bestCredit = variants[bestIndex]?.raw.credit ?? Number.POSITIVE_INFINITY;
-    const credit = variant.raw.credit ?? Number.POSITIVE_INFINITY;
-    if (preferHigh) {
-      return credit > bestCredit ? index : bestIndex;
-    }
-    return credit < bestCredit ? index : bestIndex;
+    const bestCredit = variants[bestIndex]?.raw.credit ?? Number.NEGATIVE_INFINITY;
+    const credit = variant.raw.credit ?? Number.NEGATIVE_INFINITY;
+    return credit > bestCredit ? index : bestIndex;
   }, 0);
 };
 
@@ -1404,8 +1413,8 @@ const PlanCard = ({
 }) => {
   const t = useT();
   /* 卡内积分档位切换：同 tier 的 AI 增强版 / 标准版收敛为 variants，切换即换整份 PlanInfo，
-     价格 / 积分 / 折扣 / 下单套餐随之联动。国际站默认选 AI 增强版（启航 4500 / 巡游 10000），
-     国内站默认选标准版（启航 100 / 巡游 200）。 */
+     价格 / 积分 / 折扣 / 下单套餐随之联动。国内外统一默认选 AI 增强版
+     （启航 4500 / 巡游 10000）。 */
   const defaultVariantIdx = getDefaultVariantIndex(variants);
   const [activeVariantIdx, setActiveVariantIdx] = useState(() => defaultVariantIdx);
   const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
@@ -2876,11 +2885,10 @@ export const SubscribePage = ({
     for (const tk of PLAN_TIER_ORDER) {
       const variants = tierMap.get(tk);
       if (!variants || variants.length === 0) continue;
-      /* 国际站按积分降序（AI 增强版在前，含免费体验更醒目）；国内站按积分升序（标准版在前，老口径）。
+      /* 国内外统一按积分降序（AI 增强版在前，含免费体验更醒目；2026-09-02 国内站对齐国际站）。
          getDefaultVariantIndex 与此方向一致，保证默认选中落在 index 0。 */
       const sorted = [...variants].sort((a, b) => {
-        const diff = (a.raw.credit ?? 0) - (b.raw.credit ?? 0);
-        return isGlobal ? -diff : diff;
+        return (b.raw.credit ?? 0) - (a.raw.credit ?? 0);
       });
       /* AI 增强版可见性：启航 / 巡游的 AI 档位（月付 / 季付）均展示价格 + 下单入口。
          - 已登录：保留后端真实价格 / 促销 / 下单入口，积分取后端 bundle.credit。
