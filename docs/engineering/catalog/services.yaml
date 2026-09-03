@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "services": [
+    {"id": "ci", "path": ".ci", "catalog": ".ci/catalog-info.yaml"},
+    {"id": "admin-gateway", "path": "admin-gateway", "catalog": "admin-gateway/catalog-info.yaml"},
+    {"id": "ai-gateway", "path": "ai-gateway", "catalog": "ai-gateway/catalog-info.yaml"},
+    {"id": "cloudagent", "path": "cloudagent", "catalog": "cloudagent/catalog-info.yaml"},
+    {"id": "cloudladdergateway", "path": "cloudladdergateway", "catalog": "cloudladdergateway/catalog-info.yaml"},
+    {"id": "codesign", "path": "codesign", "catalog": "codesign/catalog-info.yaml"},
+    {"id": "ctl", "path": "ctl", "catalog": "ctl/catalog-info.yaml"},
+    {"id": "frontend", "path": "frontend", "catalog": "frontend/catalog-info.yaml"},
+    {"id": "gateway-dashboard", "path": "gateway-dashboard", "catalog": "gateway-dashboard/catalog-info.yaml"},
+    {"id": "infra-pulumi", "path": "infra_pulumi", "catalog": "infra_pulumi/catalog-info.yaml"},
+    {"id": "new-api", "path": "new-api", "catalog": "new-api/catalog-info.yaml"},
+    {"id": "nextgen-dashboard", "path": "nextgen-dashboard", "catalog": "nextgen-dashboard/catalog-info.yaml"},
+    {"id": "payment", "path": "payment", "catalog": "payment/catalog-info.yaml"},
+    {"id": "sandbox", "path": "sandbox", "catalog": "sandbox/catalog-info.yaml"},
+    {"id": "service-gateway", "path": "service-gateway", "catalog": "service-gateway/catalog-info.yaml"},
+    {"id": "shadow", "path": "shadow", "catalog": "shadow/catalog-info.yaml"},
+    {"id": "subscription", "path": "subscription", "catalog": "subscription/catalog-info.yaml"},
+    {"id": "ticket", "path": "ticket", "catalog": "ticket/catalog-info.yaml"},
+    {"id": "trade", "path": "trade", "catalog": "trade/catalog-info.yaml"},
+    {"id": "user-auth", "path": "user/auth", "catalog": "user/auth/catalog-info.yaml"},
+    {"id": "velagw", "path": "velagw", "catalog": "velagw/catalog-info.yaml"},
+    {"id": "velalink", "path": "velalink", "catalog": "velalink/catalog-info.yaml"},
+    {"id": "workers", "path": "workers", "catalog": "workers/catalog-info.yaml"}
+  ]
+}

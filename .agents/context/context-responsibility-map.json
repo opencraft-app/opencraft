@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "owner": "wisp/mono2-maintainers",
+  "reviewed_at": "2026-09-01",
+  "review_due": "2026-11-30",
+  "layers": {
+    "formal_engineering_knowledge": {
+      "status": "implemented",
+      "locations": ["docs/engineering/"],
+      "entrypoints": ["docs/engineering/README.md"],
+      "owner_refs": ["docs/engineering/catalog/owners.yaml"],
+      "authority": "canonical",
+      "source_links": ["docs/engineering/governance/documentation-policy.md"],
+      "validators": ["python3 .agents/context/scripts/validate_documentation.py --repo . --format json"]
+    },
+    "service_colocated_knowledge": {
+      "status": "implemented",
+      "locations": ["<service>/README.md", "<service>/AGENTS.md", "<service>/catalog-info.yaml", "<service>/docs/README.md"],
+      "entrypoints": ["docs/engineering/catalog/services.yaml"],
+      "owner_refs": ["docs/engineering/catalog/owners.yaml"],
+      "authority": "canonical",
+      "source_links": ["docs/engineering/governance/documentation-policy.md"],
+      "validators": ["python3 .agents/context/scripts/validate_documentation.py --repo . --format json"]
+    },
+    "agent_derived_context": {
+      "status": "implemented",
+      "locations": ["docs/context/"],
+      "entrypoints": ["AGENTS.md", "docs/context/INDEX.md"],
+      "owner_refs": ["docs/context/.context/source-map.yaml"],
+      "authority": "derived",
+      "source_links": ["docs/context/.context/source-map.yaml"],
+      "validators": ["python3 .agents/context/scripts/validate_context.py --repo . --build-catalog"]
+    },
+    "context_control_plane": {
+      "status": "implemented",
+      "locations": [".agents/context/"],
+      "entrypoints": [".agents/context/context-routing.yaml"],
+      "owner_refs": ["docs/engineering/catalog/owners.yaml"],
+      "authority": "control",
+      "source_links": ["docs/engineering/decisions/ADR-0002-design-history-and-docs-impact.md"],
+      "validators": ["python3 .agents/context/scripts/validate_context.py --repo . --format json"]
+    },
+    "reusable_workflows": {
+      "status": "implemented",
+      "locations": [".agents/skills/"],
+      "entrypoints": [".agents/skills/README.md"],
+      "owner_refs": ["docs/engineering/catalog/owners.yaml"],
+      "authority": "workflow",
+      "source_links": [".agents/skills/context-audit/SKILL.md"],
+      "validators": ["python3 -m unittest discover -s .agents/skills/context-audit/tests -v"]
+    },
+    "evaluation_isolation": {
+      "status": "implemented",
+      "locations": ["docs/context/evaluation/"],
+      "entrypoints": ["docs/context/evaluation/README.md"],
+      "owner_refs": ["docs/engineering/governance/documentation-map.yaml"],
+      "authority": "non_runtime",
+      "source_links": ["docs/context/evaluation/README.md"],
+      "validators": ["python3 .agents/context/scripts/validate_context.py --repo . --format json"]
+    }
+  }
+}

@@ -581,5 +581,5 @@ timeout = 60
 
 - [Sandbox 命令执行方式](../developer-guide/sandbox-command-execution.md)
 - [Sandbox OpenAPI](../ctl-sandbox-plan-design/sandbox-openapi.yaml)
-- [Architecture Decision Document](./architecture.md)
+- [CTL Architecture](../ctl-design/architecture.md)
 - [Local Dev Setup](../ctl-dev-setup/README.md)

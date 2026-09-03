@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "owner": "wisp/mono2-maintainers",
+  "reviewed_at": "2026-09-01",
+  "review_due": "2026-11-30",
+  "requirements_scope": {
+    "status": "partial",
+    "rationale": "初始索引登记当前五个 Domain 与 Context Engineering 的有效入口；不把未核对的全仓历史伪造成已恢复需求。每个受影响任务再以路径和需求标识有界补齐。",
+    "recheck_triggers": ["新增或迁移服务", "需求命中未知功能族", "MR/TAPD/Issue 权限或来源系统变化"]
+  },
+  "source_inventory": [
+    {
+      "source_id": "repository-git",
+      "kind": "git",
+      "scope": "本地可读取提交、文件首次引入和当前变更；未提交工作树资产不作为 Git 历史事实。",
+      "access_status": "partial",
+      "limitations": "本索引不执行全仓穷举；每个任务按受影响路径查询。"
+    },
+    {
+      "source_id": "gongfeng-mr",
+      "kind": "merge-request",
+      "scope": "与具体需求标识和路径关联的 MR 讨论与审阅记录。",
+      "access_status": "unknown",
+      "limitations": "当前未建立可复用的 MR 母集读取凭据或分页快照。"
+    },
+    {
+      "source_id": "tapd-issue",
+      "kind": "requirement",
+      "scope": "TAPD、Issue、PRD 中的需求原文与验收变化。",
+      "access_status": "unknown",
+      "limitations": "当前未建立全量来源母集；任务中可访问时必须记录精确来源。"
+    }
+  ],
+  "families": [
+    {
+      "family_id": "identity-access",
+      "scope": "身份、会话、实名、授权与影子账号边界。",
+      "lifecycle": "current",
+      "superseded_by": null,
+      "owner_ref": "wisp/mono2-maintainers",
+      "design_record": "docs/engineering/domains/identity-access.md",
+      "current_code_evidence": ["user/auth/", "shadow/", "service-gateway/"],
+      "derived_contexts": [{"context_id": "identity-access", "path": "docs/context/domains/identity-access.md", "status": "active", "default_routed": true}],
+      "risk": "high",
+      "unknowns": ["早期需求、MR 与 TAPD 设计链在任务命中前未做全量恢复。"]
+    },
+    {
+      "family_id": "subscription-entitlements",
+      "scope": "套餐、支付、续费、订单与权益状态。",
+      "lifecycle": "current",
+      "superseded_by": null,
+      "owner_ref": "wisp/mono2-maintainers",
+      "design_record": "docs/engineering/domains/subscription-entitlements.md",
+      "current_code_evidence": ["subscription/", "payment/", "trade/", "cloudladdergateway/"],
+      "derived_contexts": [{"context_id": "subscription-entitlements", "path": "docs/context/domains/subscription-entitlements.md", "status": "active", "default_routed": true}],
+      "risk": "high",
+      "unknowns": ["早期需求、MR 与 TAPD 设计链在任务命中前未做全量恢复。"]
+    },
+    {
+      "family_id": "agent-gateway-runtime",
+      "scope": "Agent 执行、网关路由、模型 Provider、控制面与 Sandbox runtime。",
+      "lifecycle": "current",
+      "superseded_by": null,
+      "owner_ref": "wisp/mono2-maintainers",
+      "design_record": "docs/engineering/domains/agent-gateway-runtime.md",
+      "current_code_evidence": ["cloudagent/", "ai-gateway/", "ctl/", "sandbox/", "velagw/", "velalink/", "workers/", "new-api/"],
+      "derived_contexts": [{"context_id": "agent-gateway-runtime", "path": "docs/context/domains/agent-gateway-runtime.md", "status": "active", "default_routed": true}],
+      "risk": "high",
+      "unknowns": ["上游 subtree 的原始设计保持在各上游谱系，任务需分别恢复。"]
+    },
+    {
+      "family_id": "site-environment-routing",
+      "scope": "国内/国际站产品表面、地域、域名和环境路由。",
+      "lifecycle": "current",
+      "superseded_by": null,
+      "owner_ref": "wisp/mono2-maintainers",
+      "design_record": "docs/engineering/domains/site-environment-routing.md",
+      "current_code_evidence": ["frontend/", "admin-gateway/", "gateway-dashboard/", "nextgen-dashboard/"],
+      "derived_contexts": [{"context_id": "site-environment-routing", "path": "docs/context/domains/site-environment-routing.md", "status": "active", "default_routed": true}],
+      "risk": "normal",
+      "unknowns": ["外部 DNS、CDN 与环境实时配置不在仓库历史中。"]
+    },
+    {
+      "family_id": "release-gitops",
+      "scope": "制品构建、环境配置、GitOps 与运行态交付。",
+      "lifecycle": "current",
+      "superseded_by": null,
+      "owner_ref": "wisp/mono2-maintainers",
+      "design_record": "docs/engineering/domains/release-gitops.md",
+      "current_code_evidence": [".ci/", "argocd/", "infra_pulumi/", "codesign/"],
+      "derived_contexts": [{"context_id": "release-gitops", "path": "docs/context/domains/release-gitops.md", "status": "active", "default_routed": true}],
+      "risk": "high",
+      "unknowns": ["运行态和外部云审批记录须从受控系统读取，不能由仓库提交替代。"]
+    },
+    {
+      "family_id": "context-engineering-v1",
+      "scope": "仓库文档、Agent Context、路由、历史恢复与持续变更治理。",
+      "lifecycle": "current",
+      "superseded_by": null,
+      "owner_ref": "wisp/mono2-maintainers",
+      "design_record": "docs/engineering/decisions/ADR-0002-design-history-and-docs-impact.md",
+      "current_code_evidence": ["AGENTS.md", ".agents/context/", "docs/context/", "docs/engineering/"],
+      "derived_contexts": [{"context_id": "project-overview", "path": "docs/context/project/overview.md", "status": "active", "default_routed": false}],
+      "risk": "high",
+      "unknowns": ["本轮前的上下文建设资产大多处于未提交工作树，需在提交后以 Git revision 固化。"]
+    }
+  ]
+}

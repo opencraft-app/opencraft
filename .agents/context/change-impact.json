@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "owner": "wisp/mono2-maintainers",
+  "reviewed_at": "2026-09-01",
+  "review_due": "2026-11-30",
+  "rules": [
+    {
+      "id": "identity-access",
+      "paths": ["user/auth/**", "shadow/**", "service-gateway/**"],
+      "design_docs": ["docs/engineering/domains/identity-access.md", "docs/engineering/journeys/account-to-agent.md"],
+      "risk": "high",
+      "owner": "wisp/mono2-maintainers"
+    },
+    {
+      "id": "subscription-entitlements",
+      "paths": ["subscription/**", "payment/**", "trade/**", "cloudladdergateway/**"],
+      "design_docs": ["docs/engineering/domains/subscription-entitlements.md", "docs/engineering/journeys/subscription-purchase-renewal.md"],
+      "risk": "high",
+      "owner": "wisp/mono2-maintainers"
+    },
+    {
+      "id": "agent-gateway-runtime",
+      "paths": ["cloudagent/**", "ai-gateway/**", "ctl/**", "sandbox/**", "velagw/**", "velalink/**", "workers/**", "new-api/**"],
+      "design_docs": ["docs/engineering/domains/agent-gateway-runtime.md", "docs/engineering/journeys/agent-request-streaming.md"],
+      "risk": "high",
+      "owner": "wisp/mono2-maintainers"
+    },
+    {
+      "id": "site-environment-routing",
+      "paths": ["frontend/**", "admin-gateway/**", "gateway-dashboard/**", "nextgen-dashboard/**"],
+      "design_docs": ["docs/engineering/domains/site-environment-routing.md", "docs/engineering/journeys/dual-site-request-routing.md"],
+      "risk": "normal",
+      "owner": "wisp/mono2-maintainers"
+    },
+    {
+      "id": "release-gitops",
+      "paths": [".ci/runtime/**", "argocd/**", "infra_pulumi/**", "codesign/**"],
+      "design_docs": ["docs/engineering/domains/release-gitops.md", "docs/engineering/journeys/source-to-production.md"],
+      "risk": "high",
+      "owner": "wisp/mono2-maintainers"
+    },
+    {
+      "id": "context-engineering",
+      "paths": ["AGENTS.md", ".agents/context/**", "docs/context/decisions/**", "docs/context/project/overview.md", "docs/context/23-rules-matrix.md", "docs/context/.context/**", ".agents/skills/context-audit/**"],
+      "design_docs": ["docs/context/decisions/ADR-0001-context-engineering-v2.md", "docs/engineering/decisions/ADR-0002-design-history-and-docs-impact.md"],
+      "risk": "high",
+      "owner": "wisp/mono2-maintainers"
+    }
+  ]
+}

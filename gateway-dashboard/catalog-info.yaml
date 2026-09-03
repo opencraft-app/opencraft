@@ -1,0 +1,18 @@
+{
+  "id": "gateway-dashboard",
+  "name": "Gateway Dashboard",
+  "kind": "application",
+  "path": "gateway-dashboard",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "release-gitops"],
+  "summary": "提供 AI Gateway/LLMGateway 的管理控制台，经 Admin Gateway 暴露。",
+  "runtime": "React/TypeScript Web 应用",
+  "interfaces": ["管理控制台 HTTP", "Gateway 管理 API"],
+  "dependencies": ["admin-gateway", "ai-gateway", "velagw"],
+  "source_docs": ["gateway-dashboard/README.md", "gateway-dashboard/AGENTS.md", "docs/agent-guides/gateway-dashboard-agent-guide.md"],
+  "agent_entry": "gateway-dashboard/AGENTS.md",
+  "service_docs": "gateway-dashboard/docs/README.md",
+  "deploy": ["gateway-dashboard/k8s", "argocd/services/gateway-dashboard"],
+  "generated_paths": ["gateway-dashboard/k8s/overlays/*/generated"]
+}

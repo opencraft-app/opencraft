@@ -1,0 +1,59 @@
+{
+  "version": 5,
+  "owner": "wisp/mono2-maintainers",
+  "reviewed_at": "2026-08-26",
+  "review_due": "2026-11-24",
+  "canonical_documentation": {
+    "entry": "docs/engineering/README.md",
+    "service_catalog": "docs/engineering/catalog/services.yaml",
+    "documentation_map": "docs/engineering/governance/documentation-map.yaml"
+  },
+  "domains": {
+    "identity-access": ["docs/engineering/domains/identity-access.md", "docs/context/domains/identity-access.md"],
+    "subscription-entitlements": ["docs/engineering/domains/subscription-entitlements.md", "docs/context/domains/subscription-entitlements.md"],
+    "agent-gateway-runtime": ["docs/engineering/domains/agent-gateway-runtime.md", "docs/context/domains/agent-gateway-runtime.md"],
+    "site-environment-routing": ["docs/engineering/domains/site-environment-routing.md", "docs/context/domains/site-environment-routing.md"],
+    "release-gitops": ["docs/engineering/domains/release-gitops.md", "docs/context/domains/release-gitops.md"]
+  },
+  "services": {
+    "ci": [".ci/catalog-info.yaml", ".ci/docs/README.md", "docs/context/project/services/ci.md"],
+    "admin-gateway": ["admin-gateway/catalog-info.yaml", "admin-gateway/docs/README.md", "docs/context/project/services/admin-gateway.md"],
+    "ai-gateway": ["ai-gateway/catalog-info.yaml", "ai-gateway/docs/README.md", "docs/context/project/services/ai-gateway.md"],
+    "cloudagent": ["cloudagent/catalog-info.yaml", "cloudagent/docs/README.md", "docs/context/project/services/cloudagent.md"],
+    "cloudladdergateway": ["cloudladdergateway/catalog-info.yaml", "cloudladdergateway/docs/README.md", "docs/context/project/services/cloudladdergateway.md"],
+    "codesign": ["codesign/catalog-info.yaml", "codesign/docs/README.md", "docs/context/project/services/codesign.md"],
+    "ctl": ["ctl/catalog-info.yaml", "ctl/docs/README.md", "docs/context/project/services/ctl.md"],
+    "frontend": ["frontend/catalog-info.yaml", "frontend/docs/README.md", "docs/context/project/services/frontend.md"],
+    "gateway-dashboard": ["gateway-dashboard/catalog-info.yaml", "gateway-dashboard/docs/README.md", "docs/context/project/services/gateway-dashboard.md"],
+    "infra-pulumi": ["infra_pulumi/catalog-info.yaml", "infra_pulumi/docs/README.md", "docs/context/project/services/infra-pulumi.md"],
+    "new-api": ["new-api/catalog-info.yaml", "new-api/docs/README.md", "docs/context/project/services/new-api.md"],
+    "nextgen-dashboard": ["nextgen-dashboard/catalog-info.yaml", "nextgen-dashboard/docs/README.md", "docs/context/project/services/nextgen-dashboard.md"],
+    "payment": ["payment/catalog-info.yaml", "payment/docs/README.md", "docs/context/project/services/payment.md"],
+    "sandbox": ["sandbox/catalog-info.yaml", "sandbox/docs/README.md", "docs/context/project/services/sandbox.md"],
+    "service-gateway": ["service-gateway/catalog-info.yaml", "service-gateway/docs/README.md", "docs/context/project/services/service-gateway.md"],
+    "shadow": ["shadow/catalog-info.yaml", "shadow/docs/README.md", "docs/context/project/services/shadow.md"],
+    "subscription": ["subscription/catalog-info.yaml", "subscription/docs/README.md", "docs/context/project/services/subscription.md"],
+    "ticket": ["ticket/catalog-info.yaml", "ticket/docs/README.md", "docs/context/project/services/ticket.md"],
+    "trade": ["trade/catalog-info.yaml", "trade/docs/README.md", "docs/context/project/services/trade.md"],
+    "user-auth": ["user/auth/catalog-info.yaml", "user/auth/docs/README.md", "docs/context/project/services/user-auth.md"],
+    "velagw": ["velagw/catalog-info.yaml", "velagw/docs/README.md", "docs/context/project/services/velagw.md"],
+    "velalink": ["velalink/catalog-info.yaml", "velalink/docs/README.md", "docs/context/project/services/velalink.md"],
+    "workers": ["workers/catalog-info.yaml", "workers/docs/README.md", "docs/context/project/services/workers.md"]
+  },
+  "project_context": {
+    "overview": ["docs/engineering/architecture/system-overview.md", "docs/engineering/architecture/service-topology.md", "docs/engineering/architecture/authority-and-contracts.md", "docs/context/project/overview.md"]
+  },
+  "governance": {
+    "context-engineering": ["docs/context/decisions/ADR-0001-context-engineering-v2.md", "docs/engineering/decisions/ADR-0002-design-history-and-docs-impact.md", ".agents/context/design-history-index.json", ".agents/context/change-impact.json", ".agents/context/context-responsibility-map.json"],
+    "task-contract": ["docs/context/tasks/TASK-TEMPLATE.md", "docs/context/tasks/CHECKPOINT-TEMPLATE.md", "docs/context/tasks/context-engineering-v1-hardening.md"]
+  },
+  "supplemental": {
+    "playground-environment": [".ci/runtime/create_playground_from_gitops.sh", ".ci/runtime/commands/check_playground_environment_contract.py"],
+    "product-skill-sync": [".agents/skills/product-skills"],
+    "tapd-gongfeng-delivery": [".agents/skills/gongfeng/SKILL.md", "docs/context/flows/change-delivery.md"],
+    "upstream-subtrees": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md"],
+    "context-governance": [".agents/context", "docs/context/23-rules-matrix.md", "docs/context/project/adjacency/README.md", "docs/context/project/overview.md"]
+  },
+  "external": [".agents/context/external-sources.yaml"],
+  "evaluation_only": ["docs/context/evaluation"]
+}

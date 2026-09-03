@@ -1,6 +1,6 @@
 ---
 name: lv-docs
-description: 维护 LightVela 产品文档站的专用技能，覆盖国内站（lightvela.com/docs）与国际站（lightvela.ai/docs）双区域。用户要求编辑、新增、翻译或审查文档站页面时使用，尤其是涉及 frontend/src/content/docs 根目录、frontend/src/content/docs/global、frontend/src/content/docs/en、文档图片、文档侧边栏、slug 映射、fumadocs 注册、路由 metadata，或提示中出现“文档站”、“国内站文档”、“国际站文档”、lightvela.com/docs、lightvela.ai/docs、English docs、zh-sg docs、docs screenshots/images、双站同步等信息时使用。
+description: 维护 LightVela 产品文档站的专用技能，覆盖国内站（lightvela.com/docs）与国际站（lightvela.ai/docs）双区域。用户要求编辑、新增、翻译或审查文档站页面时使用，尤其是涉及 frontend/src/content/docs 根目录、frontend/src/content/docs/global、frontend/src/content/docs/en、frontend/src/content/docs/id、文档图片、文档侧边栏、slug 映射、fumadocs 注册、路由 metadata，或提示中出现“文档站”、“国内站文档”、“国际站文档”、lightvela.com/docs、lightvela.ai/docs、English docs、zh-sg docs、id-id docs、docs screenshots/images、双站同步等信息时使用。
 ---
 
 # LightVela 文档站文档
@@ -10,7 +10,7 @@ description: 维护 LightVela 产品文档站的专用技能，覆盖国内站�
 这个技能服务 LightVela 产品文档站的两个区域：
 
 - 国内站：`lightvela.com/docs`（`zh-cn`）
-- 国际站：`lightvela.ai/docs`（`en-us` / `zh-sg`）
+- 国际站：`lightvela.ai/docs`（`en-us` / `zh-sg` / `zh-hant` / `id-id`）
 
 两个区域在代码里**严格隔离、不跨区域 fallback**，因此每次任务都必须先确定区域，再动文件。
 
@@ -22,13 +22,13 @@ description: 维护 LightVela 产品文档站的专用技能，覆盖国内站�
 
 ```text
 region: cn      # 仅国内站 lightvela.com/docs
-region: global  # 仅国际站 lightvela.ai/docs（含 zh-sg 中文与 en-us 英文）
+region: global  # 仅国际站 lightvela.ai/docs（含 en-us、zh-sg、zh-hant 与页面级 id-id）
 region: both    # 双站同步上线
 ```
 
 免问的例外情况（可直接推断，但要在最终回复里说明推断依据）：
 
-- 用户明确提到 `lightvela.ai`、国际站、英文文档、`en-us`、`zh-sg` → `global`。
+- 用户明确提到 `lightvela.ai`、国际站、英文文档、印尼语文档、`en-us`、`zh-sg`、`zh-hant`、`id-id` → `global`。
 - 用户明确提到 `lightvela.com`、国内站、中国站、实名认证等国内专属语境 → `cn`。
 - 用户明确说“双站”、“两个站”、“国内外都要” → `both`。
 - 仅修改一个已存在文件的局部内容，且该文件路径已能唯一确定区域 → 按该文件所属区域处理。
@@ -44,6 +44,8 @@ region: both    # 双站同步上线
 1. `frontend/src/config/docs-sidebar.ts` 的 `CN_SIDEBAR` / `GLOBAL_SIDEBAR`（决定用户是否可见）。
 2. 同文件的 `CN_SLUG_TO_FILE` / `GLOBAL_SLUG_TO_FILE`（决定 slug 能否解析到文件）。
 3. `frontend/scripts/sync-fumadocs-content.mjs` 的 `cnDocs` / `globalDocs`（决定标题、描述、分组是否生效）。
+
+国际站还要检查同一脚本的 `ID_DOC_METADATA` 与 `globalDocsForIndonesian`：印尼语是 `frontend/src/content/docs/id/<file>` 的页面级显式源，只有存在该文件的页面才生成 `id-id` 路由；它不是从英文或中文自动翻译出的全量镜像。
 
 只查一处会误判。例如 `hermes-agent` 前 5 篇不在 `CN_SLUG_TO_FILE` 里，但在 `cnDocs` 里注册了，国内站其实是有的。
 
@@ -119,11 +121,12 @@ region: both    # 双站同步上线
 - `Compare & Choose`：使用 `assets/templates/international-comparison.md`。
 - `Hermes Agent Deep Dive`：使用 `assets/templates/international-agent-deep-dive.md`。
 - 用户明确要求哪种语言，就先用该语言完成内容底稿；未明确时，按用户要求的输出语言或提示词主语言起草。
-- 内容底稿完成后，由执行本技能的 Agent 在同一任务中自动本地化为国际站全部源语言：英文写入 `en/<file>`，简体中文写入 `global/<file>`。
+- 内容底稿完成后，由执行本技能的 Agent 在同一任务中补齐国际站基础源语言：英文写入 `en/<file>`，简体中文写入 `global/<file>`。
 - `zh-hant` 没有独立正文源文件，由 `pnpm docs:sync` 从 `global/<file>` 自动转换生成；同步后必须检查对应 `.fumadocs-content/docs/zh-hant/` 产物。
+- `id-id` 使用独立的 `frontend/src/content/docs/id/<file>`。如果目标页面已有印尼语源，事实或结构改动必须同步更新并检查 `.fumadocs-content/docs/id-id/`；新页面只有在用户要求印尼语交付时才新增该源，未提供时该页面不会进入 `globalDocsForIndonesian`，不得宣称已交付印尼语版本。
 - 本地化不是逐字翻译。不同语言必须保持相同标题层级、表格、图片位置、事实、示例意图、链接目标、警告与能力边界，同时使用自然的本地表达。
 - 用户只要求生成一种语言时，也要自动补齐另一种国际站源语言，不再等待第二次提示。
-- 缺少 `en/<file>`、`global/<file>` 或同步后的 `zh-hant` 产物，都视为国际站页面未完成。
+- 缺少 `en/<file>`、`global/<file>` 或同步后的 `zh-hant` 产物，都视为国际站基础页面未完成；已有或明确要求的 `id/<file>` 缺失、过期或没有 `id-id` 产物，也视为对应印尼语交付未完成。
 
 三个模板都强制执行以下顺序和质量要求：
 
@@ -143,7 +146,7 @@ region: both    # 双站同步上线
 
 - 新页面正文分散放置 2-5 个真实相关的出站内链。
 - 在 1-3 个最相关的既有国际站页面中加入指向新页面的上下文反链，前提是该链接确实帮助读者理解或继续操作。
-- 英文新页面与反链写入 `en/`，简体中文对应内容写入 `global/`，两种语言保持相同链接关系并本地化锚文本。
+- 英文新页面与反链写入 `en/`，简体中文对应内容写入 `global/`，两种基础源保持相同链接关系并本地化锚文本；目标页已有或明确要求 `id/<file>` 时，印尼语源也保持同一链接图并本地化锚文本。
 - 链接必须内联在相关段落，不新增 `Related reading`、`延伸阅读` 或类似集中链接板块。
 - 修改前按 `lv-seo-geo` 核对真实 slug、路由、注册与 sitemap，不把 Markdown 文件名当 URL。
 
@@ -214,13 +217,14 @@ region: both    # 双站同步上线
 
 3. 定位 slug 与文件：
    - 国内站从 `CN_SIDEBAR` / `CN_SLUG_TO_FILE` 查，文件在 `frontend/src/content/docs/<file>`。
-   - 国际站从 `GLOBAL_SIDEBAR` / `GLOBAL_SLUG_TO_FILE` 查，中文在 `global/<file>`，英文在 `en/<file>`。
+   - 国际站从 `GLOBAL_SIDEBAR` / `GLOBAL_SLUG_TO_FILE` 查，简中在 `global/<file>`，英文在 `en/<file>`，页面级印尼语在 `frontend/src/content/docs/id/<file>`；再从 `globalDocsForIndonesian` 确认是否生成 `id-id` 路由。
    - 新增页面时，同步在 `sync-fumadocs-content.mjs` 的 `cnDocs` / `globalDocs` 注册标题、描述与分组。
 
 4. 检查是否共享或缺文件：
    - 国际站英文缺 `en/<file>` 时会 fallback 到 `global/<file>`；正式英文文档不应依赖 fallback。
    - 国际站要与国内站内容不同时，必须补齐 `global/` / `en/` 独立文件，不要改根目录文件来间接影响国际站。
-   - `region: cn` 时不要顺手改 `global/` / `en/`；`region: global` 时不要顺手改根目录文件。
+   - `id-id` 只对存在 `id/<file>` 的页面开放；已有印尼语源不得因本次英文或中文更新而留下过期事实。
+   - `region: cn` 时不要顺手改 `global/` / `en/` / `id/`；`region: global` 时不要顺手改根目录文件。
 
 5. 同步内容分类状态：
    - 写作前从 `wiki/growth-state/lightvela-docs-content-categories.md` 找到对应内容项。
@@ -230,14 +234,14 @@ region: both    # 双站同步上线
 
 6. 内容编辑顺序：
    - `region: cn`：直接写 `frontend/src/content/docs/<file>`（中文）。
-   - `region: global`：按用户指定语言或提示词主语言完成内容底稿，再在同一任务中写入并本地化 `en/<file>` 与 `global/<file>`。
-   - `region: both`：国内站中文稿独立适配；国际站部分仍按用户指定语言或提示词主语言起草，再补齐 `en/<file>` 与 `global/<file>`。
-   - 国际站两份源稿不做逐字硬翻，要面向各自用户自然本地化；保持标题层级、步骤顺序、表格、图片位置、链接结构、事实与注意事项语义一致。
+   - `region: global`：按用户指定语言或提示词主语言完成内容底稿，再在同一任务中写入并本地化 `en/<file>` 与 `global/<file>`；若已有或明确要求印尼语，再同步 `id/<file>`。
+   - `region: both`：国内站中文稿独立适配；国际站部分仍按用户指定语言或提示词主语言起草，再补齐 `en/<file>` 与 `global/<file>`，并按上一条处理印尼语。
+   - 国际站各源稿不做逐字硬翻，要面向各自用户自然本地化；保持标题层级、步骤顺序、表格、图片位置、链接结构、事实与注意事项语义一致。
    - `Use Cases`、`Compare & Choose`、`Hermes Agent Deep Dive` 必须按「国际站 B 档模板」选择对应资产。
 
 7. 图片检查：
    - 扫描目标 markdown 的 `![](...)` 与 `<img src="...">`。
-   - 英文文档若引用中文 UI 图片，检查 `frontend/src/content/docs/images/` 是否有同 basename 的 `-en` 版本；缺失时在最终回复中列出。
+   - 英文或印尼语文档若引用中文 UI 图片，检查 `frontend/src/content/docs/images/` 是否有同 basename 的 `-en` 版本；同步脚本对 `en-us` 与 `id-id` 都优先使用 `-en` 图片，缺失时在最终回复中列出。
    - 用户要求检查/更新/替换截图，或表达「图片不对 / 图片过期 / 与页面不一致」时，必须用 Browser 打开对应区域的真实页面做视觉核对：国内站用 `lightvela.com`，国际站用 `lightvela.ai`。
    - 只覆盖 markdown 当前引用的既有图片文件，不新增旁路文件、不只返回 markdown。
    - 只替换确属 LightVela 站内 UI 且能在真实站点复现的图；第三方平台与手机 App 截图（BotFather、Discord Developer Portal、WhatsApp、QQ/WeCom/Lark 管理后台等）不替换。
@@ -266,7 +270,7 @@ region: both    # 双站同步上线
    - 内部信息自查：搜 `5174`、`5175`、`localhost:`、`.woa.com`、`mono2` 等真实端口、主机名、仓库名。示例统一用中性值（如端口写 `3000`、项目名写 `agent-demo`）。走查范围不限于本次新增文件，同分类下的既有文章也要一并扫（老文章常有历史残留）。
    - 自查必须同时在 `src/content/docs/` 源文件和 `.fumadocs-content/docs/<locale>/` 产物上各跑一遍：产物侧能暴露源文件漏改和同步未生效两类问题。
    - 确认已执行第 9 步同步，并已核对生成产物内容确实更新。
-   - `region: global` 或 `both` 时，确认 `en/<file>` 与 `global/<file>` 都存在，结构一致，并检查同步生成的 `en-us`、`zh-sg`、`zh-hant` 三份产物。
+   - `region: global` 或 `both` 时，确认 `en/<file>` 与 `global/<file>` 都存在、结构一致，并检查同步生成的 `en-us`、`zh-sg`、`zh-hant` 三份基础产物；若已有或明确要求 `id/<file>`，再检查 `id-id` 产物、结构和事实一致性。
    - 国际站 B 档页面确认模板顺序、推荐图位置、必需表格、2-5 个出站内链与 1-3 个有效上下文反链均已落实。
    - 国际站 B 档页面确认至少 2 个正文板块中合计包含不少于 3 项可核查细节。
    - 涉及 sidebar、注册表、route 或 metadata 时，建议运行 `cd frontend && pnpm check`，或相关 parity 测试。
@@ -278,6 +282,7 @@ region: both    # 双站同步上线
 frontend/src/content/docs/<file>.md          # 国内站（zh-cn）
 frontend/src/content/docs/global/<file>.md   # 国际站中文（zh-sg）
 frontend/src/content/docs/en/<file>.md       # 国际站英文（en-us）
+frontend/src/content/docs/id/<file>          # 国际站印尼语（id-id，页面级显式开放）
 frontend/src/content/docs/images/*           # 文档图片资源
 frontend/src/config/docs-sidebar.ts          # sidebar / slug 变化时修改
 frontend/scripts/sync-fumadocs-content.mjs   # 新增页面注册标题、描述、分组
@@ -290,7 +295,7 @@ frontend/scripts/sync-fumadocs-content.mjs   # 新增页面注册标题、描述
 最终回复用中文，说明：
 
 - 本次区域是 `cn` / `global` / `both`，以及区域是用户指定还是推断（推断要给依据）。
-- 国际站任务说明内容底稿使用的语言，以及自动补齐了哪些本地化源文件与生成产物。
+- 国际站任务说明内容底稿使用的语言、自动补齐了哪些基础源文件与生成产物，以及目标页是否已有或明确要求 `id-id`、对应 `id/<file>` 是否同步。
 - 改了哪些文件，是否创建或补齐了区域独立文件。
 - 是否存在目标区域缺失该功能的情况，以及提醒与用户确认结果。
 - 开篇摘要板块是否就位；本次判定的体裁档位（A 工具型 / B 可读型）及依据；该档的字数门槛与事实密度是否达标。

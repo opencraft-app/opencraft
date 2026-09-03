@@ -1,0 +1,18 @@
+{
+  "id": "admin-gateway",
+  "name": "管理面网关",
+  "kind": "service",
+  "path": "admin-gateway",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["identity-access", "release-gitops"],
+  "summary": "承载管理面入口并代理 Gateway Dashboard，发布链路与公共 Service Gateway 分离。",
+  "runtime": "Go 网关（复用 service-gateway 构建实现）",
+  "interfaces": ["管理面 HTTP 入口", "gateway-dashboard upstream"],
+  "dependencies": ["gateway-dashboard", "user-auth"],
+  "source_docs": ["admin-gateway/README.md", "admin-gateway/AGENTS.md"],
+  "agent_entry": "admin-gateway/AGENTS.md",
+  "service_docs": "admin-gateway/docs/README.md",
+  "deploy": ["admin-gateway/k8s", "argocd/services/admin-gateway"],
+  "generated_paths": ["admin-gateway/k8s/overlays/*/generated"]
+}

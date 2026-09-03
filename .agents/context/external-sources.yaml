@@ -1,0 +1,73 @@
+{
+  "version": 3,
+  "owner": "mingyuxiao",
+  "reviewed_at": "2026-08-25",
+  "review_due": "2026-11-23",
+  "sources": [
+    {
+      "id": "tencent-cloud-billing",
+      "uri": "https://cloud.tencent.com/document/product/555/7465",
+      "authority": "腾讯云费用中心官方文档",
+      "use_for": ["计费模式", "账单语义", "退款与结算规则"],
+      "owner": "mingyuxiao",
+      "reviewed_at": "2026-08-25",
+      "review_due": "2026-09-24",
+      "version_policy": "计费决策使用当前已发布页面，并在 Task Pack 中记录页面更新时间。",
+      "stale_after_days": 30,
+      "unavailable_policy": "停止计费规则变更，并将外部事实标记为未验证；不得推断价格或结算行为。",
+      "repository_boundary": "仓库只保存 LightVela 对订单状态的消费逻辑和测试；不得把变化中的价格复制为仓库真源。"
+    },
+    {
+      "id": "tencent-cloud-api",
+      "uri": "https://cloud.tencent.com/document/product/1278/46697",
+      "authority": "腾讯云 API Explorer 官方文档",
+      "use_for": ["请求与响应契约", "错误码", "签名与限流规则"],
+      "owner": "mingyuxiao",
+      "reviewed_at": "2026-08-25",
+      "review_due": "2026-09-24",
+      "version_policy": "固定实现所使用的服务 API 版本和地域；变更契约前重新核对 Explorer。",
+      "stale_after_days": 30,
+      "unavailable_policy": "现有行为可使用固定版本的生成 Client 和测试验证，但必须阻断新的 API 契约声明。",
+      "repository_boundary": "生成 Client 和集成测试定义本地映射；Explorer 仍是云端契约的权威来源。"
+    },
+    {
+      "id": "tencent-cloud-cam",
+      "uri": "https://cloud.tencent.com/document/product/598/38503",
+      "authority": "腾讯云 CAM 官方文档",
+      "use_for": ["最小权限策略设计", "资源级授权", "凭据范围"],
+      "owner": "mingyuxiao",
+      "reviewed_at": "2026-08-25",
+      "review_due": "2026-09-24",
+      "version_policy": "新增或扩大策略前，重新核对当前服务的授权粒度。",
+      "stale_after_days": 30,
+      "unavailable_policy": "不得扩大权限；保留现有策略并记录被阻塞的验证。",
+      "repository_boundary": "仓库可以记录所需 Action 和资源，但不得包含凭据，也不得声称云端策略状态。"
+    },
+    {
+      "id": "tencent-cloud-faceid-detectauth",
+      "uri": "https://cloud.tencent.com/document/product/1007/31816",
+      "authority": "腾讯云 FaceID DetectAuth 官方 API 文档",
+      "use_for": ["DetectAuth 请求契约", "规则与账号约束", "供应商错误处理"],
+      "owner": "mingyuxiao",
+      "reviewed_at": "2026-08-25",
+      "review_due": "2026-09-24",
+      "version_policy": "记录 user/auth 使用的 API 版本和地域，并在供应商流程变更前重新核对。",
+      "stale_after_days": 30,
+      "unavailable_policy": "阻断新的供应商流程变更；现有本地测试只能验证当前 adapter 行为。",
+      "repository_boundary": "LightVela 负责会话、加密、持久化和网关策略；腾讯云负责供应商约束。"
+    },
+    {
+      "id": "tencent-cloud-faceid-result",
+      "uri": "https://cloud.tencent.com/document/product/1007/41957",
+      "authority": "腾讯云 FaceID 结果查询官方 API 文档",
+      "use_for": ["认证结果契约", "回调对账", "供应商状态解释"],
+      "owner": "mingyuxiao",
+      "reviewed_at": "2026-08-25",
+      "review_due": "2026-09-24",
+      "version_policy": "以当前发布的响应 Schema 作为外部权威，并用测试约束本地映射。",
+      "stale_after_days": 30,
+      "unavailable_policy": "不得编造状态映射；将事实保持为未验证，并停止受影响的变更。",
+      "repository_boundary": "仓库测试负责 LightVela 状态流转；供应商文档负责结果字段含义。"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "new-api",
+  "name": "NewAPI 上游服务",
+  "kind": "upstream-service",
+  "path": "new-api",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "upstream",
+  "domains": ["agent-gateway-runtime", "release-gitops"],
+  "summary": "以 squash subtree 维护的 NewAPI 模型聚合服务及 Web 管理端。",
+  "runtime": "Go 后端与 Web 前端",
+  "interfaces": ["OpenAI-compatible API", "NewAPI 管理 Web"],
+  "dependencies": ["upstream QuantumNous/new-api", "ai-gateway"],
+  "source_docs": ["new-api/README.md", "new-api/AGENTS.md", "new-api/MONO2_SUBTREE.md"],
+  "agent_entry": "new-api/AGENTS.md",
+  "service_docs": "new-api/docs/README.md",
+  "deploy": ["new-api/k8s", "argocd/services/new-api"],
+  "generated_paths": ["new-api/web/dist"]
+}

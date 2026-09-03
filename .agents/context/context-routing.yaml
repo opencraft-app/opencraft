@@ -1,0 +1,359 @@
+{
+  "version": 3,
+  "evaluation_excluded": true,
+  "default": {
+    "must_read": [],
+    "deferred_paths": [
+      "docs/context/project/repository-map.md",
+      "docs/context/project/service-boundaries.md",
+      "docs/context/23-rules-matrix.md",
+      "docs/context/project/adjacency/README.md"
+    ]
+  },
+  "retrieval": [
+    {"id": "exact-path", "weight": 30, "rule": "显式仓库路径和路径前缀属于受保护匹配。"},
+    {"id": "deferred-path", "weight": 20, "rule": "已点名的权威文件必须直接加载，不得用模糊匹配结果替换。"},
+    {"id": "symbol", "weight": 5, "rule": "API、类型、数据表、路由、环境和配置符号可以追加相关 Pack。"},
+    {"id": "task-keyword", "weight": 2, "rule": "业务名词和动词可以选择多个相关 Pack。"}
+  ],
+  "packs": [
+    {
+      "id": "identity-access",
+      "scope": "登录、会话、实名认证、影子身份和路由级授权。",
+      "triggers": ["auth", "login", "session", "realname", "real-name", "实名", "未实名", "认证", "权限", "faceid", "oidc", "oauth"],
+      "symbols": ["/auth/realname", "RealnameVerified", "require_realname", "realname_required", "REALNAME_ENCRYPTION_KEY"],
+      "path_prefixes": ["user/auth/", "shadow/", "service-gateway/"],
+      "must_read": ["docs/context/domains/identity-access.md"],
+      "deferred_paths": ["user/auth/api/openapi.yaml", "service-gateway/internal/gateway/config.go"]
+    },
+    {
+      "id": "subscription-entitlements",
+      "scope": "订阅套餐、Pass、续费、支付回调、交易和权益限制。",
+      "triggers": ["subscription", "pass", "renewal", "renew", "quota", "entitlement", "payment", "套餐", "续费", "权益", "订阅", "支付", "计费"],
+      "weak_triggers": ["billing"],
+      "symbols": ["/subscriptions/current", "/internal/subscriptions/apply-payment", "AutoRenewFlag", "agent_quota", "CreatePayUrl"],
+      "path_prefixes": ["subscription/", "payment/", "trade/"],
+      "must_read": ["docs/context/domains/subscription-entitlements.md"],
+      "deferred_paths": ["subscription/api/openapi.yaml", "payment/api/openapi.yaml"]
+    },
+    {
+      "id": "agent-gateway-runtime",
+      "scope": "Agent 执行、网关路由、渠道、模型供应商和流式行为。",
+      "triggers": ["gateway", "channel", "stream", "streaming", "代理", "网关", "流式"],
+      "weak_triggers": ["agent", "model", "runtime", "provider"],
+      "symbols": ["cloudagent", "ai-gateway", "service-gateway", "velagw", "channel"],
+      "path_prefixes": ["cloudagent/", "ai-gateway/", "velagw/", "service-gateway/", "ctl/", "sandbox/", "workers/", "velalink/", "new-api/"],
+      "must_read": ["docs/context/domains/agent-gateway-runtime.md"],
+      "deferred_paths": ["cloudagent/AGENTS.md", "ai-gateway/AGENTS.md", "service-gateway/README.md"]
+    },
+    {
+      "id": "site-environment-routing",
+      "scope": "国内站与国际站边界、环境路由、域名、地域和 locale 行为。",
+      "triggers": ["locale", "i18n", "国际站", "国内站", "环境", "域名", "语言", "新加坡"],
+      "weak_triggers": ["site", "domain", "environment", "global", "intl", "domestic", "china", "international"],
+      "symbols": ["lightvela.com", "lightvela.ai", "isGlobal", "sgprod", "shprod", "beijing-sandbox", "sandbox-bj"],
+      "path_prefixes": ["frontend/", "argocd/apps/", "argocd/services/"],
+      "must_read": ["docs/context/domains/site-environment-routing.md"],
+      "deferred_paths": ["frontend/src/lib/public-site-routing.ts", "argocd/apps/sgprod/README.md", "argocd/apps/shprod/README.md"]
+    },
+    {
+      "id": "release-gitops",
+      "scope": "镜像构建、制品晋级、GitOps、Argo CD、发布 rollout 和线上发布验证。",
+      "triggers": ["release", "deploy", "deployment", "gitops", "argo", "promote", "image", "publish", "上线", "发布", "镜像", "部署", "灰度", "生产环境"],
+      "symbols": ["build_release_image.py", "targetRevision", "Synced", "Healthy", "gitops"],
+      "path_prefixes": ["argocd/", ".ci/", "infra_pulumi/"],
+      "must_read": ["docs/context/domains/release-gitops.md"],
+      "deferred_paths": ["argocd/README.md", ".ci/AGENTS.md", ".ci/runtime/commands/build_release_image.py"]
+    }
+  ],
+  "supplemental_routes": [
+    {
+      "id": "project-overview",
+      "scope": "项目架构、模块关系、数据模型、关键跨服务流程与当前设计入口。",
+      "triggers": ["project overview", "system architecture", "模块关系", "项目架构", "数据模型"],
+      "symbols": ["docs/engineering/architecture", "docs/engineering/catalog/services.yaml"],
+      "path_prefixes": ["docs/engineering/architecture/", "docs/engineering/catalog/"],
+      "must_read": ["docs/context/project/overview.md"],
+      "deferred_paths": ["docs/engineering/architecture/system-overview.md", "docs/engineering/architecture/service-topology.md", "docs/engineering/architecture/authority-and-contracts.md"]
+    },
+    {
+      "id": "playground-environment",
+      "scope": "创建、修复、扩容和销毁 sandbox-bj-N 或北京 Playground 环境。",
+      "triggers": ["playground", "sandbox-bj", "beijing-playground", "创建环境", "修复环境", "扩容环境"],
+      "symbols": ["create_playground_from_gitops.sh", "playground-runtime-secrets"],
+      "path_prefixes": [".ci/runtime/create_playground", "argocd/catalog/"],
+      "must_read": ["docs/context/runbooks/playground-environment.md"],
+      "deferred_paths": [".ci/AGENTS.md", "docs/context/project/services/ci.md"]
+    },
+    {
+      "id": "product-skill-sync",
+      "scope": "LightVela Product Skills 的归属、编写、验证和下游 subtree 同步。",
+      "triggers": ["product skills", "product-ai", "skill 同步", "同步 skill", "subtree sync"],
+      "symbols": [".agents/skills/product-skills", "skills/lightvela", "git-subtree-split"],
+      "path_prefixes": [".agents/skills/product-skills/"],
+      "must_read": ["docs/context/runbooks/product-skill-subtree-sync.md"],
+      "deferred_paths": [".agents/skills/product-skills/SKILL.md", ".agents/skills/product-skills/prd-creator/SKILL.md"]
+    },
+    {
+      "id": "tapd-gongfeng-delivery",
+      "scope": "TAPD 标识处理、分支与 Merge Request 交付，以及外部工具失败策略。",
+      "triggers": ["tapd", "merge request", "mr", "工蜂", "需求单", "短 id", "完整 id"],
+      "symbols": ["stories_get", "create_merge_request", "add_git_branch_to_object"],
+      "path_prefixes": [".agents/skills/gongfeng/"],
+      "must_read": ["docs/context/flows/tapd-gongfeng-delivery.md"],
+      "deferred_paths": [".agents/skills/gongfeng/SKILL.md", "docs/context/flows/change-delivery.md"]
+    },
+    {
+      "id": "upstream-subtrees",
+      "scope": "NewAPI、LLMGateway 和 VelaLink 上游 subtree 的归属、同步、固定版本和本地验证。",
+      "triggers": ["velalink", "velagw", "new-api", "subtree", "upstream", "上游"],
+      "symbols": [".mono2-subtree", "velachat", "git subtree split", "git subtree pull"],
+      "path_prefixes": ["new-api/", "velagw/", "velalink/"],
+      "must_read": ["docs/context/project/upstream-subtrees.md"],
+      "deferred_paths": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md"]
+    },
+    {
+      "id": "context-governance",
+      "scope": "仓库上下文工程、路由、元数据、生命周期、审计、评测隔离和 23 条规则契约。",
+      "triggers": ["context engineering", "context audit", "context pack", "docs-impact", "上下文工程", "上下文建设", "上下文审计", "设计历史", "23 条", "23 rules"],
+      "symbols": ["context_receipt", "catalog.jsonl", "context-routing.yaml", "context-audit"],
+      "path_prefixes": [".agents/context/", "docs/context/"],
+      "must_read": ["docs/context/23-rules-matrix.md", "docs/context/decisions/ADR-0001-context-engineering-v2.md", "docs/engineering/decisions/ADR-0002-design-history-and-docs-impact.md"],
+      "deferred_paths": [".agents/context/context-pack.schema.json", ".agents/context/lifecycle.yaml", ".agents/context/design-history-index.json", ".agents/context/change-impact.json", "docs/context/project/adjacency/README.md"]
+    },
+    {
+      "id": "frontend-product-surface",
+      "scope": "前端产品 UI、导航、营销页面、文案、布局和生成的 locale 内容。",
+      "triggers": ["ui", "navigation", "header", "footer", "hero", "changelog", "announcement", "marketing", "copy", "layout", "tab", "导航", "首页", "文案", "布局", "公告", "人设", "记忆页", "自动任务"],
+      "symbols": ["frontend/src/pages/marketing", "LegalFooter", "CTAFooterSection"],
+      "path_prefixes": ["frontend/"],
+      "must_read": ["docs/context/project/services/frontend.md"],
+      "deferred_paths": ["frontend/AGENTS.md", "frontend/src/lib/public-site-routing.ts"]
+    },
+    {
+      "id": "commerce-trade-ops",
+      "scope": "交易订单、点石商业化、CloudLadderGateway 计费路由和支付链接行为。",
+      "triggers": ["trade", "dianshi", "点石", "询价", "订单", "clgateway", "cloudladdergateway", "CreatePayUrl"],
+      "symbols": ["JIFEI_BILLING_APIGW_URL", "Dianshi"],
+      "path_prefixes": ["trade/", "cloudladdergateway/"],
+      "must_read": ["docs/context/project/services/trade.md"],
+      "deferred_paths": ["trade/AGENTS.md"]
+    },
+    {
+      "id": "control-plane-ops",
+      "scope": "CTL adapter、Sandbox 运维、网关 Dashboard 管理和 LLMGateway 控制面集成。",
+      "triggers": ["ctl", "sandbox", "TAT PTY", "LLMGateway", "adapter", "pass lifecycle", "后台"],
+      "symbols": ["ctl/pkg/adapter", "StartTerminalSession"],
+      "path_prefixes": ["ctl/", "sandbox/", "gateway-dashboard/"],
+      "must_read": ["docs/context/project/services/ctl.md"],
+      "deferred_paths": ["docs/context/project/repository-map.md", "docs/context/project/service-boundaries.md"]
+    },
+    {
+      "id": "service-ci",
+      "scope": "持续集成、镜像构建和制品晋级服务入口。",
+      "triggers": [".ci", "持续集成", "build_release_image"],
+      "symbols": [".ci/runtime", "build_release_image.py"],
+      "path_prefixes": [".ci/"],
+      "must_read": ["docs/context/project/services/ci.md"],
+      "deferred_paths": [".ci/docs/README.md", ".ci/AGENTS.md"]
+    },
+    {
+      "id": "service-admin-gateway",
+      "scope": "管理面网关与 Dashboard 代理服务入口。",
+      "triggers": ["admin-gateway", "管理面网关", "admin gateway"],
+      "symbols": ["admin-gateway"],
+      "path_prefixes": ["admin-gateway/"],
+      "must_read": ["docs/context/project/services/admin-gateway.md"],
+      "deferred_paths": ["admin-gateway/docs/README.md", "admin-gateway/AGENTS.md"]
+    },
+    {
+      "id": "service-ai-gateway",
+      "scope": "AI Gateway 模型路由与 provider 适配服务入口。",
+      "triggers": ["ai-gateway", "模型网关", "provider adapter"],
+      "symbols": ["ai-gateway"],
+      "path_prefixes": ["ai-gateway/"],
+      "must_read": ["docs/context/project/services/ai-gateway.md"],
+      "deferred_paths": ["ai-gateway/docs/README.md", "ai-gateway/AGENTS.md"]
+    },
+    {
+      "id": "service-cloudagent",
+      "scope": "CloudAgent gateway、渠道与 runtime artifact 服务入口。",
+      "triggers": ["cloudagent", "channelgateway", "wisp runtime"],
+      "symbols": ["cloudagent/gateway", "cloudagent/wisp"],
+      "path_prefixes": ["cloudagent/"],
+      "must_read": ["docs/context/project/services/cloudagent.md"],
+      "deferred_paths": ["cloudagent/docs/README.md", "cloudagent/AGENTS.md"]
+    },
+    {
+      "id": "service-cloudladdergateway",
+      "scope": "Cloud Ladder 强认证计费代理服务入口。",
+      "triggers": ["cloudladdergateway", "clgateway", "计费代理"],
+      "symbols": ["cloudladdergateway/v1/gateway.proto"],
+      "path_prefixes": ["cloudladdergateway/"],
+      "must_read": ["docs/context/project/services/cloudladdergateway.md"],
+      "deferred_paths": ["cloudladdergateway/docs/README.md", "cloudladdergateway/AGENTS.md"]
+    },
+    {
+      "id": "service-codesign",
+      "scope": "代码签名与受控外部交付平台知识入口。",
+      "triggers": ["codesign", "代码签名", "edgeone delivery"],
+      "symbols": ["codesign"],
+      "path_prefixes": ["codesign/"],
+      "must_read": ["docs/context/project/services/codesign.md"],
+      "deferred_paths": ["codesign/docs/README.md", "codesign/AGENTS.md"]
+    },
+    {
+      "id": "service-ctl",
+      "scope": "CTL 实例、渠道与任务编排服务入口。",
+      "triggers": ["ctl service", "控制面编排", "instance control"],
+      "symbols": ["ctl/pkg/adapter", "ctl/pkg/instance"],
+      "path_prefixes": ["ctl/"],
+      "must_read": ["docs/context/project/services/ctl.md"],
+      "deferred_paths": ["ctl/docs/README.md", "ctl/AGENTS.md"]
+    },
+    {
+      "id": "service-frontend",
+      "scope": "LightVela Web、双站 UI 与产品文档服务入口。",
+      "triggers": ["frontend service", "lightvela web", "前端服务"],
+      "symbols": ["frontend/src", "public-site-routing"],
+      "path_prefixes": ["frontend/"],
+      "must_read": ["docs/context/project/services/frontend.md"],
+      "deferred_paths": ["frontend/docs/README.md", "frontend/AGENTS.md"]
+    },
+    {
+      "id": "service-gateway-dashboard",
+      "scope": "Gateway Dashboard 管理前端服务入口。",
+      "triggers": ["gateway-dashboard", "网关管理台", "dashboard frontend"],
+      "symbols": ["gateway-dashboard"],
+      "path_prefixes": ["gateway-dashboard/"],
+      "must_read": ["docs/context/project/services/gateway-dashboard.md"],
+      "deferred_paths": ["gateway-dashboard/docs/README.md", "gateway-dashboard/AGENTS.md"]
+    },
+    {
+      "id": "service-infra-pulumi",
+      "scope": "Pulumi 基础设施与环境 inventory 控制面入口。",
+      "triggers": ["infra_pulumi", "infractl", "pulumi inventory"],
+      "symbols": ["cmd/infractl", "Pulumi.yaml"],
+      "path_prefixes": ["infra_pulumi/"],
+      "must_read": ["docs/context/project/services/infra-pulumi.md"],
+      "deferred_paths": ["infra_pulumi/docs/README.md", "infra_pulumi/AGENTS.md"]
+    },
+    {
+      "id": "service-new-api",
+      "scope": "NewAPI 上游 subtree 与本地集成服务入口。",
+      "triggers": ["new-api service", "new api gateway", "new-api 集成"],
+      "symbols": ["new-api/MONO2_SUBTREE.md"],
+      "path_prefixes": ["new-api/"],
+      "must_read": ["docs/context/project/services/new-api.md"],
+      "deferred_paths": ["new-api/docs/README.md", "new-api/AGENTS.md"]
+    },
+    {
+      "id": "service-nextgen-dashboard",
+      "scope": "Nextgen Dashboard 管理服务入口。",
+      "triggers": ["nextgen-dashboard", "nextgen dashboard", "下一代管理台"],
+      "symbols": ["nextgen-dashboard"],
+      "path_prefixes": ["nextgen-dashboard/"],
+      "must_read": ["docs/context/project/services/nextgen-dashboard.md"],
+      "deferred_paths": ["nextgen-dashboard/docs/README.md", "nextgen-dashboard/AGENTS.md"]
+    },
+    {
+      "id": "service-payment",
+      "scope": "支付链接、支付回调与支付幂等服务入口。",
+      "triggers": ["payment service", "支付回调", "pay url"],
+      "symbols": ["payment/api/openapi.yaml"],
+      "path_prefixes": ["payment/"],
+      "must_read": ["docs/context/project/services/payment.md"],
+      "deferred_paths": ["payment/docs/README.md", "payment/AGENTS.md"]
+    },
+    {
+      "id": "service-sandbox",
+      "scope": "Sandbox 实例池、状态机与镜像切换服务入口。",
+      "triggers": ["sandbox service", "实例池", "pool state"],
+      "symbols": ["sandbox/internal/service/pool.go", "expected_state"],
+      "path_prefixes": ["sandbox/"],
+      "must_read": ["docs/context/project/services/sandbox.md"],
+      "deferred_paths": ["sandbox/docs/README.md", "sandbox/AGENTS.md"]
+    },
+    {
+      "id": "service-service-gateway",
+      "scope": "公共网关、站点路由与鉴权代理服务入口。",
+      "triggers": ["service-gateway", "公共网关", "gateway route"],
+      "symbols": ["service-gateway/internal/gateway"],
+      "path_prefixes": ["service-gateway/"],
+      "must_read": ["docs/context/project/services/service-gateway.md"],
+      "deferred_paths": ["service-gateway/docs/README.md", "service-gateway/AGENTS.md"]
+    },
+    {
+      "id": "service-shadow",
+      "scope": "腾讯云影子账号与临时凭据编排服务入口。",
+      "triggers": ["shadow service", "shadow account", "影子账号"],
+      "symbols": ["shadow/internal/shadow", "SHADOW_PROVIDER"],
+      "path_prefixes": ["shadow/"],
+      "must_read": ["docs/context/project/services/shadow.md"],
+      "deferred_paths": ["shadow/docs/README.md", "shadow/AGENTS.md"]
+    },
+    {
+      "id": "service-subscription",
+      "scope": "套餐、订阅、续费、Pass 与配额服务入口。",
+      "triggers": ["subscription service", "订阅服务", "entitlement quota"],
+      "symbols": ["subscription/api/openapi.yaml"],
+      "path_prefixes": ["subscription/"],
+      "must_read": ["docs/context/project/services/subscription.md"],
+      "deferred_paths": ["subscription/docs/README.md", "subscription/AGENTS.md"]
+    },
+    {
+      "id": "service-ticket",
+      "scope": "反馈工单、realm 隔离与审计服务入口。",
+      "triggers": ["ticket service", "工单服务", "ticket audit"],
+      "symbols": ["ticket_audit_log", "ticket/api/openapi.yaml"],
+      "path_prefixes": ["ticket/"],
+      "must_read": ["docs/context/project/services/ticket.md"],
+      "deferred_paths": ["ticket/docs/README.md", "ticket/AGENTS.md"]
+    },
+    {
+      "id": "service-trade",
+      "scope": "交易订单、计费 provider 与 CTL 开通服务入口。",
+      "triggers": ["trade service", "交易服务", "billing provisioning"],
+      "symbols": ["trade/internal", "CreatePayUrl"],
+      "path_prefixes": ["trade/"],
+      "must_read": ["docs/context/project/services/trade.md"],
+      "deferred_paths": ["trade/docs/README.md", "trade/AGENTS.md"]
+    },
+    {
+      "id": "service-user-auth",
+      "scope": "用户登录、会话、实名与身份 API 服务入口。",
+      "triggers": ["user-auth", "身份认证服务", "user auth service"],
+      "symbols": ["user/auth/api/openapi.yaml"],
+      "path_prefixes": ["user/auth/"],
+      "must_read": ["docs/context/project/services/user-auth.md"],
+      "deferred_paths": ["user/auth/docs/README.md", "user/auth/AGENTS.md"]
+    },
+    {
+      "id": "service-velagw",
+      "scope": "VelaGW/LLMGateway 上游控制面与数据面服务入口。",
+      "triggers": ["velagw service", "llmgateway service", "VelaGW 集成"],
+      "symbols": ["velagw/MONO2_SUBTREE.md"],
+      "path_prefixes": ["velagw/"],
+      "must_read": ["docs/context/project/services/velagw.md"],
+      "deferred_paths": ["velagw/docs/README.md", "velagw/AGENTS.md"]
+    },
+    {
+      "id": "service-velalink",
+      "scope": "VelaLink 桌面、Chat UI、daemon 与上游同步服务入口。",
+      "triggers": ["velalink service", "vela desktop", "vela chat ui"],
+      "symbols": ["velalink/MONO2_SUBTREE.md", "desktop-preview"],
+      "path_prefixes": ["velalink/"],
+      "must_read": ["docs/context/project/services/velalink.md"],
+      "deferred_paths": ["velalink/docs/README.md", "velalink/AGENTS.md"]
+    },
+    {
+      "id": "service-workers",
+      "scope": "Temporal workflow 与 rescue 作业服务入口。",
+      "triggers": ["workers service", "temporal worker", "rescue exporter"],
+      "symbols": ["rescue-exporter", "TEMPORAL_WORKER_BUILD_ID"],
+      "path_prefixes": ["workers/"],
+      "must_read": ["docs/context/project/services/workers.md"],
+      "deferred_paths": ["workers/docs/README.md", "workers/AGENTS.md"]
+    }
+  ]
+}

@@ -1,80 +1,37 @@
-# Mono 项目文档索引
+# LightVela mono2 文档入口
 
-## 交接入口
+本页是全仓导航，不是 CTL 专属目录。先按问题选择正式知识层，再进入具体服务；不要一次性加载整个 `docs/`。
 
-- [CTL + Images 交接文档](handover-ctl-images.md) — CTL 控制面和沙箱镜像的交接说明、现状、未完成工作
+## 核心入口
 
-## 按角色导航
+| 目标 | 入口 |
+|---|---|
+| 理解系统、领域和跨服务流程 | [Vela 工程文档](engineering/README.md) |
+| 查某个服务的 Owner/依赖/入口 | [Service Catalog](engineering/catalog/services.yaml) |
+| 开发具体服务 | 对应 `<service>/docs/README.md` 与最近 `AGENTS.md` |
+| 维护客户产品文档 | `frontend/src/content/docs/` 与 `lv-docs` Skill |
+| 查产品状态、PRD 与来源 | `wiki/` |
+| 查 Agent 路由 Context | [Context 索引](context/INDEX.md)（仅按路由加载） |
+| 查运行/故障入口 | [运维索引](engineering/operations/README.md) |
+| 查历史方案与计划 | `docs/superpowers/`、`docs/handover/`、`docs/proposals/` |
 
-### 新人上手
+## 按领域导航
 
-1. 阅读 [AGENTS.md](../AGENTS.md) 了解项目总规范
-2. 阅读对应服务的 agent-guide（见下方）
-3. 本地跑通服务（[ctl-local-run-guide](agent-guides/ctl-local-run-guide.md)）
-4. 了解部署模型（[deployment-model-overview](deploy-guides/deployment-model-overview.md)）
+- [身份与访问](engineering/domains/identity-access.md)
+- [订阅与权益](engineering/domains/subscription-entitlements.md)
+- [Agent、网关与运行时](engineering/domains/agent-gateway-runtime.md)
+- [站点与环境路由](engineering/domains/site-environment-routing.md)
+- [发布与 GitOps](engineering/domains/release-gitops.md)
 
-### 开发指南（agent-guides/）
+## 已有专项资料
 
-| 文档 | 说明 |
-|------|------|
-| [ctl-agent-guide.md](agent-guides/ctl-agent-guide.md) | CTL 开发主入口（分层、异步模型、约束） |
-| [ctl-local-run-guide.md](agent-guides/ctl-local-run-guide.md) | CTL 本地启动、联调、回归脚本 |
-| [ctl-observability-guide.md](agent-guides/ctl-observability-guide.md) | Prometheus 指标 / zap 日志 / OpenTelemetry |
-| [ctl-create-instance-followup-guide.md](agent-guides/ctl-create-instance-followup-guide.md) | CreateInstance 卡 Creating 排查 |
-| [ctl-weixin-login-api-guide.md](agent-guides/ctl-weixin-login-api-guide.md) | 微信扫码登录 API 对接 |
-| [ctl-weixin-followup-guide.md](agent-guides/ctl-weixin-followup-guide.md) | 微信登录排障与已知坑 |
-| [sandbox-agent-guide.md](agent-guides/sandbox-agent-guide.md) | Sandbox 开发入口 |
-| [sandbox-image-agent-guide.md](agent-guides/sandbox-image-agent-guide.md) | 镜像构建（TAT/envd/健康检查） |
-| [sandbox-image-rollout-guide.md](agent-guides/sandbox-image-rollout-guide.md) | 镜像切换与 rollout 流程 |
-| [ai-gateway-agent-guide.md](agent-guides/ai-gateway-agent-guide.md) | AI Gateway 开发指南 |
-| [gateway-dashboard-agent-guide.md](agent-guides/gateway-dashboard-agent-guide.md) | Dashboard 前端指南 |
-| [infra-grafana-dashboard-guide.md](agent-guides/infra-grafana-dashboard-guide.md) | Grafana Dashboard 管理 |
+- CTL/Sandbox/AI Gateway 开发：[agent-guides/](agent-guides/)
+- 部署说明：[deploy-guides/](deploy-guides/)
+- 故障手册：[runbooks/](runbooks/)
+- CTL 技术规格：[ctl-tech-specs/README.md](ctl-tech-specs/README.md)
+- CTL 设计：[ctl-design/architecture.md](ctl-design/architecture.md)
+- 交接材料：[handover-ctl-images.md](handover-ctl-images.md)
 
-### 部署指南（deploy-guides/）
+## 权威与治理
 
-| 文档 | 说明 |
-|------|------|
-| [deployment-model-overview.md](deploy-guides/deployment-model-overview.md) | 部署模型总览：Pulumi -> platform.env -> Kustomize |
-| [ctl-deploy-guide.md](deploy-guides/ctl-deploy-guide.md) | CTL 三进程部署与验证 |
-| [sandbox-deploy-guide.md](deploy-guides/sandbox-deploy-guide.md) | Sandbox 发布与 pool 镜像 rollout |
-| [ai-gateway-deploy-guide.md](deploy-guides/ai-gateway-deploy-guide.md) | AI Gateway 测试环境部署 |
-
-### 架构设计（ctl-design/）
-
-| 文档 | 说明 |
-|------|------|
-| [architecture.md](ctl-design/architecture.md) | **当前架构设计**（沙箱服务模式） |
-| [prd.md](ctl-design/prd.md) | 产品需求文档 |
-| [epics.md](ctl-design/epics.md) | Epic/Story 分解与进度 |
-| [product-brief.md](ctl-design/product-brief.md) | 产品简报 |
-| [archive/core-design.md](ctl-design/archive/core-design.md) | 原架构（已废弃） |
-| [archive/vpc-design.md](ctl-design/archive/vpc-design.md) | 原网络设计（已废弃） |
-
-### 技术规格（ctl-tech-specs/）
-
-[索引](ctl-tech-specs/README.md) — 9 个 tech-spec，记录每个功能的设计决策和实现方案
-
-### 开发者背景文档（developer-guide/）
-
-[索引](developer-guide/README.md) — Sandbox 集成模型、命令执行、Pool 镜像更新等背景知识
-
-### 故障处理手册（runbooks/）
-
-12 个 runbook，覆盖 API 错误率/延迟、Bypass 锁失败、DB 连接池、Redis 连接池、远程命令失败/超时、Sandbox API 延迟、Task 失败/卡住/重试等场景。
-
-### 设计规范（superpowers/）
-
-AI Gateway、Dashboard、语义缓存等设计规范和开发计划。
-
-### 其他
-
-| 文档 | 说明 |
-|------|------|
-| [full-architecture.md](full-architecture.md) | 系统架构总览（Mermaid 图） |
-| [sandbox-image-contract.md](sandbox-image-contract.md) | 镜像运行时契约 |
-| [PRECOMMIT_SETUP.md](PRECOMMIT_SETUP.md) | Pre-commit 编译门禁 |
-| [ctl-dev-setup/README.md](ctl-dev-setup/README.md) | CTL 本地联调详细参考（早期记录） |
-
-### 归档（archive/）
-
-历史文档，不再维护：init.md、bmad.md、sprint-status.yaml 等。
+运行代码/测试、生成 API/Proto/Schema 和环境/GitOps Manifest 高于文案。文档落位、生命周期、生成物、vendor 和评测边界见 [文档治理规则](engineering/governance/documentation-policy.md)；架构决策见 [ADR-0001](engineering/decisions/ADR-0001-documentation-architecture.md)。

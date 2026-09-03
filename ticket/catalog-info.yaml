@@ -1,0 +1,18 @@
+{
+  "id": "ticket",
+  "name": "反馈与工单服务",
+  "kind": "service",
+  "path": "ticket",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["identity-access", "release-gitops"],
+  "summary": "提供 LightVela 反馈/工单 v1、realm 隔离、状态流转和审计日志。",
+  "runtime": "Go HTTP 服务",
+  "interfaces": ["ticket/api/openapi.yaml", "admin HTTP API", "ticket_audit_log"],
+  "dependencies": ["user-auth", "frontend", "MySQL"],
+  "source_docs": ["ticket/README.md", "ticket/AGENTS.md", "ticket/api/openapi.yaml"],
+  "agent_entry": "ticket/AGENTS.md",
+  "service_docs": "ticket/docs/README.md",
+  "deploy": ["ticket/k8s", "argocd/services/ticket"],
+  "generated_paths": ["ticket/generated"]
+}

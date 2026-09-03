@@ -1,4 +1,38 @@
 guards:
+  - name: context-docs-impact
+    paths:
+      - AGENTS.md
+      - user/auth/**
+      - shadow/**
+      - service-gateway/**
+      - subscription/**
+      - payment/**
+      - trade/**
+      - cloudladdergateway/**
+      - cloudagent/**
+      - ai-gateway/**
+      - ctl/**
+      - sandbox/**
+      - velagw/**
+      - velalink/**
+      - workers/**
+      - new-api/**
+      - frontend/**
+      - admin-gateway/**
+      - gateway-dashboard/**
+      - nextgen-dashboard/**
+      - .ci/runtime/**
+      - argocd/**
+      - infra_pulumi/**
+      - codesign/**
+      - .agents/context/**
+      - docs/context/decisions/**
+      - docs/context/project/overview.md
+      - docs/context/23-rules-matrix.md
+      - docs/context/.context/**
+      - .agents/skills/context-audit/**
+    command: .ci/checks/context_docs_impact_guard.sh
+
   - name: ci-runtime
     paths:
       - .ci/**

@@ -1,0 +1,18 @@
+{
+  "id": "cloudagent",
+  "name": "CloudAgent 运行时",
+  "kind": "service-group",
+  "path": "cloudagent",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "release-gitops"],
+  "summary": "包含 Agent gateway、ChannelGateway、Wisp、sandbox-host 和运行时制品。",
+  "runtime": "Go、Rust、Node.js 多语言运行时",
+  "interfaces": ["Agent gateway HTTP", "ChannelGateway", "runtime artifact"],
+  "dependencies": ["ctl", "sandbox", "ai-gateway"],
+  "source_docs": ["cloudagent/README.md", "cloudagent/AGENTS.md", "cloudagent/gateway/README.md"],
+  "agent_entry": "cloudagent/AGENTS.md",
+  "service_docs": "cloudagent/docs/README.md",
+  "deploy": ["argocd/services/cloudagent-gateway", ".ci/cloudagent-gateway.yml", ".ci/channelgateway.yml"],
+  "generated_paths": ["cloudagent/generated"]
+}

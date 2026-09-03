@@ -403,4 +403,4 @@ curl -X POST http://localhost:9590/v1/instances/$INSTANCE_ID/debug/exec \
 - [CTL 本地开发指南](../ctl-dev-setup/README.md)
 - [现有 API 实现参考](../../ctl/main/api/server.go)
 - [Adapter 层参考](../../ctl/pkg/adapter/sandbox/adapter.go)
-- [Logic 层参考](../../ctl/pkg/logic/instance/logic.go)
+- [Logic 层参考](../../ctl/pkg/instance/logic.go)

@@ -1,0 +1,18 @@
+{
+  "id": "subscription",
+  "name": "订阅与权益服务",
+  "kind": "service",
+  "path": "subscription",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["subscription-entitlements", "release-gitops"],
+  "summary": "管理套餐、订阅状态、续费、Pass 与权益应用。",
+  "runtime": "Go HTTP 服务",
+  "interfaces": ["subscription/api/openapi.yaml", "权益内部 API"],
+  "dependencies": ["payment", "trade", "user-auth"],
+  "source_docs": ["subscription/README.md", "subscription/AGENTS.md", "subscription/api/openapi.yaml"],
+  "agent_entry": "subscription/AGENTS.md",
+  "service_docs": "subscription/docs/README.md",
+  "deploy": ["subscription/k8s", "argocd/services/subscription"],
+  "generated_paths": ["subscription/generated"]
+}

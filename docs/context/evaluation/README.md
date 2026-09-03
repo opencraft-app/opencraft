@@ -1,31 +1,30 @@
-# Repository Context Evaluation
+# 仓库上下文评测（Repository Context Evaluation）
 
-## Goal
+## 目标
 
-Measure whether repository-level Context Engineering improves real AI coding outcomes, not whether a retrieval system scores well in isolation.
+衡量仓库级 Context Engineering 是否改善真实 AI 编码结果，而不是只衡量检索系统在隔离环境中的得分。
 
-## Dataset
+## 数据集
 
-- Source: real merged MRs in `wisp/mono2` from 2026.
-- Query: sanitized requirement intent from the MR title or the `需求描述` / `背景` section.
-- Raw MR description: retained as `raw_description` for provenance only, never used as the agent query.
-- Gold: merge commit changed files and verification evidence.
-- Minimum size: 50 samples.
-- Candidate pool: 96 MRs satisfy the basic query and merge SHA requirements.
-- Eligible pool after excluding release-only, generated subtree, and oversized changes: 69 MRs.
-- Current dataset: [candidates.jsonl](candidates.jsonl) contains 56 selected records — the initial 50 plus 6 replacements for invalid attempts.
-- Pilot queries: [pilot-queries.jsonl](pilot-queries.jsonl) contains the first 10 records without gold answers.
-- Final fixed-model report: [final-report.md](final-report.md).
-- Historical 22-sample interim report: [pilot-report.md](pilot-report.md).
-- Three representative case studies: [case-studies.md](case-studies.md).
-- Promotion narrative and rollout plan: [../promotion-plan.md](../promotion-plan.md).
-- Context consumption audit: [context-consumption-audit.md](context-consumption-audit.md).
-- Next iteration plan: [next-iteration.md](next-iteration.md).
-- Repository context audit: [../audits/2026-08-20-context-audit.md](../audits/2026-08-20-context-audit.md).
-- Context audit Skill: [context-audit](../../../.agents/skills/context-audit/SKILL.md).
-- Context-only diagnostic results: [context-only-results.jsonl](context-only-results.jsonl).
+- 来源：2026 年 `wisp/mono2` 中已合并的真实 MR。
+- Query：从 MR 标题或 `需求描述` / `背景` 节提取并净化后的需求意图。
+- 原始 MR 描述：仅以 `raw_description` 保留溯源信息，绝不作为 Agent Query。
+- Gold：合并 commit 的改动文件与验证证据。
+- 最小规模：50 个样本。
+- 候选池：96 个 MR 满足基础 Query 与合并 SHA 要求。
+- 排除仅发布、生成子树和超大改动后的合格池：69 个 MR。
+- 当前数据集：[candidates.jsonl](candidates.jsonl) 含 56 条选中记录——初始 50 条加上 6 条无效尝试的替换项。
+- 固定模型最终报告（本地产物）：`final-report.md`。
+- 历史 22 样本中期报告（本地产物）：`pilot-report.md`。
+- 三个代表性案例（本地产物）：`case-studies.md`。
+- 上下文消费审计（本地产物）：`context-consumption-audit.md`。
+- 下一轮迭代计划：[next-iteration.md](next-iteration.md)。
+- 上下文审计 Skill：[context-audit](../../../.agents/skills/context-audit/SKILL.md)。
+- 仅上下文诊断结果（本地产物）：`context-only-results.jsonl`。
 
-Each sample must contain:
+数据集、冻结清单、来源记录、Schema、脚本和运行说明属于可复现协议，可进入版本控制。`runs/`、`*-results.jsonl`、`execution-events.jsonl`、实验报告、审计、案例和实验汇总 HTML 属于本地派生产物，由仓库 `.gitignore` 统一排除；需要复盘时在本机保存或重新生成。
+
+每个样本必须包含：
 
 ```text
 id
@@ -44,47 +43,48 @@ size_label
 created_at
 ```
 
-## Sampling Quota
+## 抽样配额
 
-| Dimension | Target |
+| 维度 | 目标 |
 |---|---|
-| Primary service | frontend 30, ctl 7, trade 2, cloudladdergateway 2, gateway-dashboard 2, other 7 |
-| Size | small 20, medium 21, large 9 |
-| Time | spread across April to August 2026 |
+| 主服务 | frontend 30、ctl 7、trade 2、cloudladdergateway 2、gateway-dashboard 2、other 7 |
+| 规模 | small 20、medium 21、large 9 |
+| 时间 | 分布于 2026 年 4 月至 8 月 |
 
-## Experiment Arms
+## 实验分组
 
-| Arm | Context |
+| 分组 | 上下文 |
 |---|---|
-| Control | Existing root `AGENTS.md`, service `AGENTS.md`, OpenSpec, and Skills |
-| Treatment | Slim root entry, `docs/context/` routing, domain facts, task template, and Skill inventory |
+| Control | 现有根 `AGENTS.md`、服务 `AGENTS.md`、OpenSpec 与 Skills |
+| Treatment | 精简根入口、`docs/context/` 路由、领域事实、任务模板与 Skill 清单 |
 
-Both arms must use the same model, tools, prompt, timeout, base commit, gold, and budget. The treatment may load different context content, but must not receive more tool permissions.
+两组必须使用相同的模型、工具、prompt、超时、base commit、Gold 和预算。Treatment 可以加载不同上下文内容，但不得获得更多工具权限。
 
-## Metrics
+## 指标
 
-| Layer | Metric |
+| 层级 | 指标 |
 |---|---|
-| Retrieval | Hit@5, Recall@5, MRR, zero-result rate |
-| Delivery | changed-file overlap, required-test selection, semantic correctness, scope drift |
-| Efficiency | input tokens, output tokens, cache hit rate, wall time, tool calls |
-| Safety | secret exposure, unauthorized external action, stale fact use, scope expansion |
+| 检索 | Hit@5、Recall@5、MRR、零结果率 |
+| 交付 | 改动文件重叠度、必需测试选择、语义正确性、范围漂移 |
+| 效率 | 输入 Token、输出 Token、缓存命中率、墙钟时间、工具调用 |
+| 安全 | 密钥暴露、未授权外部操作、过期事实使用、范围扩张 |
 
-## Model Comparison
+## 模型对比
 
-Run the full dataset with the current fixed model only: `glm-5.3` with low reasoning effort. Do not introduce another model or model tier in this evaluation. Success requires the treatment arm to improve or preserve quality and efficiency under the fixed model, and every reported sample must be a valid paired Control/Treatment run.
+既有完整数据集报告固定为 `glm-5.3`、low 推理力度，属于不可改写的历史实验口径。新实验固定使用 CC Switch Provider `ccf642d4-1927-4769-a8f7-e2882c488455`、`glm-5.3`、high 推理力度与 Responses 协议，并使用新的 `run-label` 和冻结清单，禁止与历史 low 结果混算。成功要求 Treatment 在同一固定配置下提升或保持质量与效率，且每个报告样本都必须是有效的 Control/Treatment 配对运行。
 
-## Hard Gates
+## 硬性门禁
 
-- Query, gold, patch, and evaluation fixtures stay outside indexed corpus.
-- `raw_description`, changed files, tests, and verification evidence are gold-side data and must not be shown to the agent before it produces its plan.
-- Do not use future MR content in control context.
-- Do not claim causal improvement without paired runs.
-- Report worst cases and service slices, not only averages.
-- Never store credentials or raw sensitive logs in evaluation artifacts.
+- Query、Gold、patch 和评测 fixture 必须位于索引语料之外。
+- `raw_description`、改动文件、测试和验证证据均为 Gold 侧数据，在 Agent 产出计划前不得展示。
+- Control 上下文不得使用未来 MR 内容。
+- 没有配对运行时，不得声称因果改善。
+- 除平均值外，还须报告最差案例与服务切片。
+- 评测资产中绝不存储凭据或原始敏感日志。
+- 模型输出、报告、审计和运行回执仅保存在本地，不提交到 Git；Provider 凭据只允许通过受控环境变量注入。
 
-## Execution Files
+## 执行文件
 
-- [dataset.schema.json](dataset.schema.json): sample contract.
-- [prompt-template.md](prompt-template.md): common control and treatment instructions.
-- [runbook.md](runbook.md): execution and scoring procedure.
+- 本文“每个样本必须包含”定义数据集样本契约。
+- [output-plan.schema.json](output-plan.schema.json)：两组共用的模型计划输出契约。
+- [runbook.md](runbook.md)：两组共用指令、执行与评分流程。
