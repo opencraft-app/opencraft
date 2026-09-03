@@ -27,6 +27,9 @@ guards:
       - codesign/**
       - .agents/context/**
       - docs/context/decisions/**
+      - docs/engineering/decisions/**
+      - docs/engineering/domains/**
+      - docs/engineering/journeys/**
       - docs/context/project/overview.md
       - docs/context/23-rules-matrix.md
       - docs/context/.context/**
