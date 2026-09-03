@@ -965,6 +965,62 @@ describe("Hermes model configuration client", () => {
     expect(assignedFallback.events).toEqual(["save_config"]);
   });
 
+  it("preserves an inline Provider credential while assigning and removing model roles", () => {
+    const providerKey = "manual-inline-provider";
+    const baseUrl = "https://inline.example.com/v1";
+    const inlineApiKey = "inline-provider-secret";
+    const config = {
+      model: {
+        provider: providerKey,
+        default: "model-a",
+        base_url: baseUrl,
+        api_mode: "chat_completions",
+      },
+      providers: {
+        [providerKey]: {
+          name: "Inline Provider",
+          base_url: baseUrl,
+          model: "model-a",
+          models: { "model-a": {}, "model-b": {} },
+          api_key: inlineApiKey,
+          transport: "openai_chat",
+        },
+      },
+    };
+
+    const assignedPrimary = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "model-b",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+      purpose: "primary",
+    }, config);
+    expect((assignedPrimary.config.providers as Record<string, Record<string, unknown>>)[providerKey])
+      .toHaveProperty("api_key", inlineApiKey);
+
+    const assignedFallback = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "model-b",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+      purpose: "fallback",
+    }, config);
+    expect((assignedFallback.config.providers as Record<string, Record<string, unknown>>)[providerKey])
+      .toHaveProperty("api_key", inlineApiKey);
+
+    const removedFallback = runHelper({
+      type: "removeFallback",
+      providerKey,
+      modelId: "model-b",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+    }, assignedFallback.config);
+    expect((removedFallback.config.providers as Record<string, Record<string, unknown>>)[providerKey])
+      .toHaveProperty("api_key", inlineApiKey);
+  });
+
   it("rejects unsaved model assignment when the Provider endpoint differs or its saved identity is ambiguous", () => {
     const providerKey = "lightvela-tencent-hy-token-plan";
     const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";

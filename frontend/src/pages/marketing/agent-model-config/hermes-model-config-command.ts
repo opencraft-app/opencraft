@@ -790,11 +790,16 @@ def add_provider_model(provider, model_id):
     models.setdefault(model_id, {})
     provider["models"] = models
 
-def ensure_provider_model(config, model, discover_models=None):
+def ensure_provider_model(config, model, discover_models=None, preserve_credentials=False):
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
     existing = providers.get(model["providerKey"])
     provider = dict(existing) if isinstance(existing, dict) else {}
-    for alias in ("display_name", "api", "url", "api_mode", "api_key", "api_key_env"):
+    existing_declares_credentials = isinstance(existing, dict) and any(
+        key in existing for key in ("api_key", "key_env", "api_key_env", "key_cmd")
+    )
+    aliases = ["display_name", "api", "url", "api_mode"]
+    if not preserve_credentials: aliases.extend(["api_key", "api_key_env"])
+    for alias in aliases:
         provider.pop(alias, None)
     provider["name"] = model["providerName"]
     if model.get("baseUrl"): provider["base_url"] = model["baseUrl"]
@@ -803,7 +808,8 @@ def ensure_provider_model(config, model, discover_models=None):
     provider["transport"] = TRANSPORTS[model["apiMode"]]
     if isinstance(discover_models, bool): provider["discover_models"] = discover_models
     else: provider.setdefault("discover_models", True)
-    if model.get("keyEnv"): provider["key_env"] = model["keyEnv"]
+    if model.get("keyEnv") and (not preserve_credentials or not existing_declares_credentials):
+        provider["key_env"] = model["keyEnv"]
     add_provider_model(provider, model["id"])
     providers[model["providerKey"]] = provider
     config["providers"] = providers
@@ -971,7 +977,7 @@ def execute(action):
         if purpose == "idle" and same_route(before["primary"], model): raise ValueError("cannot idle primary")
         if model.get("requiresSetup"): raise ValueError("model setup is incomplete")
         if not provider_schema_supported(config): raise ValueError("Hermes provider schema is unavailable")
-        ensure_provider_model(config, model)
+        ensure_provider_model(config, model, preserve_credentials=True)
         remove_legacy_configured_model(config, model)
         remove_legacy_custom_provider(config, model)
         if purpose == "primary":
@@ -990,7 +996,7 @@ def execute(action):
         model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         if model.get("requiresSetup"): raise ValueError("model setup is incomplete")
         if not provider_schema_supported(config): raise ValueError("Hermes provider schema is unavailable")
-        ensure_provider_model(config, model)
+        ensure_provider_model(config, model, preserve_credentials=True)
         remove_legacy_configured_model(config, model)
         remove_legacy_custom_provider(config, model)
         remove_fallback(config, model)
