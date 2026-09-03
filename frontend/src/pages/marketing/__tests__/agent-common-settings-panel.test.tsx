@@ -84,6 +84,41 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.getByRole("heading", { name: "高级设置" })).toBeTruthy();
   });
 
+  it("refreshes settings from an icon-only header action", async () => {
+    const user = userEvent.setup();
+    let resolveRefresh!: (snapshot: HermesCommonSettingsSnapshot) => void;
+    const loadSettings = vi
+      .fn()
+      .mockResolvedValueOnce(baseSnapshot())
+      .mockImplementationOnce(() => new Promise<HermesCommonSettingsSnapshot>((resolve) => {
+        resolveRefresh = resolve;
+      }));
+
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    const refreshButton = await screen.findByRole("button", { name: "刷新" });
+    expect(refreshButton).toHaveAttribute("title", "刷新");
+    expect(refreshButton).toHaveClass("h-8", "w-8", "shrink-0", "text-black/35", "hover:text-black/80");
+    expect(within(refreshButton).queryByText("刷新")).toBeNull();
+    await user.click(refreshButton);
+
+    await waitFor(() => expect(loadSettings).toHaveBeenCalledTimes(2));
+    expect(refreshButton).toBeDisabled();
+    expect(refreshButton.querySelector("svg")).toHaveClass("animate-spin");
+
+    resolveRefresh(baseSnapshot());
+    await waitFor(() => expect(refreshButton).not.toBeDisabled());
+  });
+
   it("renders eight flat rows and saves a switch only after confirmation", async () => {
     const user = userEvent.setup();
     const saveSetting = vi.fn().mockImplementation(async ({ key, value }) => ({
