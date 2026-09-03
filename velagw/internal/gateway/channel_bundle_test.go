@@ -958,7 +958,7 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 		case "POST /api/user/login":
 			optionSessionLoggedIn = true
 			http.SetCookie(w, &http.Cookie{Name: "session", Value: "root-session", Path: "/"})
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default"}})
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default", "access_token": "fresh-admin-token"}})
 		case "GET /api/channel/search":
 			items := []map[string]any{}
 			if channelCreated {
@@ -976,8 +976,8 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 		case "GET /api/option/":
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []any{}})
 		case "PUT /api/option/":
-			if r.Header.Get("Authorization") != "" || !optionSessionLoggedIn {
-				t.Fatalf("bundle options must use dashboard session auth, authorization=%q logged_in=%v", r.Header.Get("Authorization"), optionSessionLoggedIn)
+			if r.Header.Get("Authorization") != "Bearer fresh-admin-token" || !optionSessionLoggedIn {
+				t.Fatalf("bundle options must use login access token, authorization=%q logged_in=%v", r.Header.Get("Authorization"), optionSessionLoggedIn)
 			}
 			if channelCreated {
 				t.Fatal("bundle options must be synced before channels")
@@ -1161,7 +1161,7 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 				t.Fatalf("unexpected 2fa login request: %+v", req)
 			}
 			twoFACompleted = true
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default"}})
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default", "access_token": "fresh-admin-token"}})
 		case "GET /api/channel/search":
 			items := []map[string]any{}
 			if channelCreated {
@@ -1179,8 +1179,8 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 		case "GET /api/option/":
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []any{}})
 		case "PUT /api/option/":
-			if r.Header.Get("Authorization") != "" || !twoFACompleted {
-				t.Fatalf("bundle options must use completed dashboard session, authorization=%q twoFACompleted=%v", r.Header.Get("Authorization"), twoFACompleted)
+			if r.Header.Get("Authorization") != "Bearer fresh-admin-token" || !twoFACompleted {
+				t.Fatalf("bundle options must use completed login access token, authorization=%q twoFACompleted=%v", r.Header.Get("Authorization"), twoFACompleted)
 			}
 			optionUpdated = true
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
