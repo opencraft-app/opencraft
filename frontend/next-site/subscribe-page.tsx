@@ -654,7 +654,8 @@ const mapBundleToPlan = (
            静态构建时 real_total_cost 已置 0（见 buildStaticPriceWithAiTier），realPriceYuan 即 0；
            原价走静态 total_cost 展示删除线。「首单免费 3 天」标签由 aiPromoTagText 免费门禁给出。 */
         displayPriceYuan = 0;
-        originalPriceYuan = centsToYuan(bundle.price?.total_cost ?? null);
+        originalPriceYuan =
+          bundle.price?.total_cost != null ? centsToYuan(bundle.price.total_cost) : null;
       } else if (isCruise && !notAi) {
         /* 巡游 AI 增强版月付：首月 6 折（静态 price 存原价，此处按 0.6 计算折后价，
            「首月 6 折」标签由后续 promoTag 分支给出）。 */
