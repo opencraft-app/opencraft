@@ -1209,6 +1209,54 @@ describe("Hermes model configuration client", () => {
     ]);
   });
 
+  it("keeps an idle model projected after assigning another model from the same Provider as fallback", () => {
+    const providerKey = "lightvela-minimax-coding";
+    const baseUrl = "https://api.minimaxi.com/anthropic";
+    const config = {
+      providers: {
+        [providerKey]: {
+          name: "MiniMax Token Plan（国内）",
+          base_url: baseUrl,
+          model: "MiniMax-M3",
+          models: { "MiniMax-M3": {} },
+          key_env: "MINIMAX_CODING_KEY",
+          transport: "anthropic_messages",
+          discover_models: false,
+        },
+      },
+    };
+
+    const assigned = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "MiniMax-M2.7",
+      purpose: "fallback",
+    }, config, {}, { MINIMAX_CODING_KEY: "minimax-secret" });
+    const snapshot = parseHermesModelConfigResponse(assigned.output);
+
+    expect(snapshot.fallbacks).toContainEqual(expect.objectContaining({
+      providerKey,
+      id: "MiniMax-M2.7",
+    }));
+    expect(snapshot.configuredModels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerKey, id: "MiniMax-M3" }),
+      expect.objectContaining({ providerKey, id: "MiniMax-M2.7" }),
+    ]));
+
+    const removed = runHelper({
+      type: "remove",
+      providerKey,
+      modelId: "MiniMax-M2.7",
+    }, assigned.config, {}, assigned.credentials);
+    const removedSnapshot = parseHermesModelConfigResponse(removed.output);
+
+    expect((removed.config.providers as Record<string, unknown>)[providerKey]).toBeDefined();
+    expect(removedSnapshot.configuredModels).toContainEqual(expect.objectContaining({
+      providerKey,
+      id: "MiniMax-M3",
+    }));
+  });
+
   it("rejects unsaved model assignment when the Provider endpoint differs or its saved identity is ambiguous", () => {
     const providerKey = "lightvela-tencent-hy-token-plan";
     const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";

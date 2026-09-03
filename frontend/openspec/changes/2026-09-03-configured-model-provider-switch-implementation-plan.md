@@ -191,6 +191,11 @@ git diff --check
 - [x] 将帮助提示更新为“你可以配置一个主模型，并可同时设置多个备用模型。”。
 - [x] 同步全部语言资源并运行提示交互测试与前端门禁。
 
+### Task 32：增强删除图标的可点击反馈
+
+- [x] 为启用状态的删除图标按钮增加指针光标。
+- [x] 运行模型行组件测试和前端门禁，并刷新本地预览。
+
 ## Task 17：主备模型标签默认同排并按需换行
 
 **Files:**
@@ -405,6 +410,26 @@ Expected: 全部命令 exit 0，TypeScript 无新增诊断，i18n 无新增缺�
 - `pnpm check`：通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0。
 - `pnpm i18n:check`：通过，2699 条文案；印尼语既有缺口 174 条。
 - `git diff --check`：通过。
+
+### Task 33：保留同 Provider 下仅添加模型的投影状态
+
+- [x] 以 MiniMax-M3 仅添加后将 MiniMax-M2.7 设为备用的配置补充客户端失败用例，并确认 snapshot 遗漏 MiniMax-M3。
+- [x] 仅投影 `discover_models: false` 的对象映射模型，避免把数组或动态发现目录误标为已添加。
+- [x] 覆盖删除当前备用模型后 Provider `model` 被清空但仍保留其他已添加模型的情况，确保 Provider 分组不会从页面消失。
+- [x] 运行模型配置完整专项、前端门禁并刷新本地预览。
+
+### Task 34：按模型角色展示删除确认文案
+
+- [x] 先补普通已添加模型与备用模型两条确认弹窗断言，并确认旧通用文案导致用例失败。
+- [x] 根据待删除模型是否位于备用链选择对应文案，保持主模型不可删除和既有删除命令不变。
+- [x] 移除不准确的凭据描述，并补齐全部展示语言。
+
+增量验证记录：
+
+- RED：2 failed / 54 skipped，两种状态均仍显示旧通用文案。
+- GREEN：目标用例 2 passed / 54 skipped；模型配置完整专项 165/165 passed。
+- `pnpm check`：通过，2695 条文案；本次新增文案在全部展示语言中均已补齐，结构错误 0；既有告警 48、印尼语既有缺口 174 条。
+- TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；`git diff --check` 通过。
 
 ### Task 28：模型 API 统一使用七彩石模型目录
 

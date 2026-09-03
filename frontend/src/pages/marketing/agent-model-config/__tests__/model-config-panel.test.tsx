@@ -574,6 +574,7 @@ describe("AgentModelConfigPanel", () => {
     expect(within(fallbackRow).getAllByRole("button")).toHaveLength(3);
     const fallbackPrimaryAction = within(fallbackRow).getByRole("button", { name: "设为主模型" });
     const cancelFallbackAction = within(fallbackRow).getByRole("button", { name: "取消备用" });
+    expect(within(fallbackRow).getByRole("button", { name: "删除" })).toHaveClass("enabled:cursor-pointer");
     for (const action of [fallbackPrimaryAction, cancelFallbackAction]) {
       expect(action).toHaveClass(...outlinedActionClasses);
       expect(action).toBeEnabled();
@@ -1493,7 +1494,7 @@ describe("AgentModelConfigPanel", () => {
     const idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
     await userEvent.click(within(idleRow).getByRole("button", { name: "删除" }));
     const dialog = screen.getByRole("dialog", { name: "删除模型" });
-    expect(dialog).toHaveAccessibleDescription("删除后将移除此模型配置；如果 Provider 下没有其他模型，也会移除对应凭据。");
+    expect(dialog).toHaveAccessibleDescription("删除后将移除此模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。");
     await userEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     expect(remote.actions.some((action) => action.type === "remove")).toBe(false);
 
@@ -1504,6 +1505,24 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions).toContainEqual({ type: "remove", providerKey: idleModel.providerKey, modelId: idleModel.id, baseUrl: idleModel.baseUrl, routeBaseUrl: idleModel.baseUrl });
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     expect(within(primaryRow).getByRole("button", { name: "删除" })).toBeDisabled();
+  });
+
+  it("explains that deleting a fallback removes its fallback configuration", async () => {
+    const remote = createRemote({
+      primary: primaryModel,
+      fallbacks: [fallbackModel],
+      configuredModels: [primaryModel, fallbackModel],
+    });
+    renderPanel(remote);
+    await screen.findByText("model-primary");
+
+    await userEvent.click(screen.getByRole("button", { name: /Beta API/ }));
+    const fallbackRow = screen.getByText("model-fallback").closest("li") as HTMLElement;
+    await userEvent.click(within(fallbackRow).getByRole("button", { name: "删除" }));
+
+    expect(screen.getByRole("dialog", { name: "删除模型" })).toHaveAccessibleDescription(
+      "删除后将移除该备用模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。",
+    );
   });
 
   it("blocks the primary model from fallback purpose and invalidates custom probe results", async () => {

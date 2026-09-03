@@ -785,7 +785,7 @@ export function AgentModelConfigPanel({
                                       type="button"
                                       size="sm"
                                       variant="ghost"
-                                      className="size-8 rounded-md p-0 font-normal"
+                                      className="size-8 rounded-md p-0 font-normal enabled:cursor-pointer"
                                       aria-label={t("删除")}
                                       disabled={busy || primary}
                                       onClick={() => {
@@ -1247,7 +1247,9 @@ export function AgentModelConfigPanel({
           <DialogHeader>
             <DialogTitle>{t("删除模型")}</DialogTitle>
             <DialogDescription>
-              {t("删除后将移除此模型配置；如果 Provider 下没有其他模型，也会移除对应凭据。")}
+              {deleteTarget && snapshot.fallbacks.some((model) => sameModel(model, deleteTarget))
+                ? t("删除后将移除该备用模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。")
+                : t("删除后将移除此模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。")}
             </DialogDescription>
           </DialogHeader>
           {controller.operationError && controller.operationErrorOperation === "remove" ? (
