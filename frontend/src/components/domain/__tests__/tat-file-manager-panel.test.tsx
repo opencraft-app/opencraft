@@ -183,12 +183,12 @@ describe("TatFileManagerPanel upload limits", () => {
   it("includes reserved space in instance storage usage", async () => {
     render(<TatFileManagerPanel botId="bot-storage-capacity" />);
 
-    expect(await screen.findByText("实例存储")).toBeInTheDocument();
+    expect(await screen.findByText("存储概览")).toBeInTheDocument();
     expect(await screen.findByText("已用 22 GB / 50 GB")).toBeInTheDocument();
     expect(screen.getByText("可用 28 GB")).toBeInTheDocument();
     expect(screen.getByText("包含 Agent 运行环境、系统预留和云存储文件。")).toBeInTheDocument();
 
-    const progressbar = screen.getByRole("progressbar", { name: "实例存储使用率" });
+    const progressbar = screen.getByRole("progressbar", { name: "存储空间使用率" });
     expect(progressbar).toHaveAttribute("aria-valuemin", "0");
     expect(progressbar).toHaveAttribute("aria-valuemax", "100");
     expect(progressbar).toHaveAttribute("aria-valuenow", "44");
