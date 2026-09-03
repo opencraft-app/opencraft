@@ -85,4 +85,24 @@ describe("AchievementsPanel request ownership", () => {
     expect(screen.getByText("Agent B Achievement")).toBeInTheDocument();
     expect(screen.queryByText("Agent A Achievement")).not.toBeInTheDocument();
   });
+
+  it("uses the memory page icon-only refresh button style", async () => {
+    repositoryMocks.execDebugCommand.mockResolvedValue(achievementResult("Agent A"));
+
+    render(<AchievementsPanel botId="agent-a" botName="Agent A" />);
+    expect(await screen.findByText("Agent A Achievement")).toBeInTheDocument();
+
+    const refreshButton = screen.getByRole("button", { name: "重新扫描" });
+    expect(refreshButton).toHaveAttribute("title", "重新扫描");
+    expect(refreshButton).toHaveClass(
+      "h-8",
+      "w-8",
+      "shrink-0",
+      "cursor-pointer",
+      "text-black/35",
+      "hover:text-black/80",
+    );
+    expect(refreshButton).not.toHaveClass("border");
+    expect(screen.queryByText("重新扫描")).not.toBeInTheDocument();
+  });
 });
