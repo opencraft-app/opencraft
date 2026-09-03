@@ -10,7 +10,7 @@
 
 **Design:** `openspec/changes/2026-09-03-configured-model-provider-switch-design.md`
 
-**Status:** Provider 分组、目录模型切换、行内操作布局、数量移除、带模型名称的 Provider 角色标签及同端点同模型的独立 Provider 保留均已按 TDD 完成，等待提交确认。
+**Status:** Provider 分组、目录模型切换、行内操作布局、数量移除、带模型名称的 Provider 角色标签及同端点同模型的独立 Provider 展示与备用链写入均已按 TDD 完成，等待提交确认。
 
 ## 全局约束
 
@@ -173,6 +173,150 @@ git diff --check
 - `pnpm check`：TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0。
 - `pnpm build:cn`：94/94 静态页；`pnpm build:global`：592/592 静态页。
 - 浏览器：global 静态 `/agents/models/` 可达，1280px 与 390px 均无横向溢出、无新增 console error；本地账号没有 Agent，页面停留在创建入口。
+- `git diff --check`：通过。
+
+## Task 13：将添加模型按钮移到表单右下角
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx:1041-1054`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx:677-680`
+
+**Interfaces:**
+
+- Consumes: 现有表单底部 `flex` 操作容器和内容宽度的“添加模型”按钮。
+- Produces: 操作容器在所有屏宽使用 `justify-end`；按钮尺寸、禁用条件、加载状态和 `handleAdd()` 调用保持不变。
+
+- [x] **Step 1：先将现有布局断言改为右对齐**
+
+```tsx
+expect(addButton.parentElement).toHaveClass("justify-end");
+expect(addButton.parentElement).not.toHaveClass("justify-start");
+expect(addButton).not.toHaveClass("w-full");
+```
+
+- [x] **Step 2：运行目标测试并确认 RED**
+
+Run: `pnpm exec vitest run --api.host=127.0.0.1 src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx -t "uses the production-style lower form"`
+
+Expected: 1 failed，按钮父容器实际仍包含 `justify-start`。
+
+- [x] **Step 3：实现最小布局修改**
+
+```tsx
+<div className="flex justify-end border-t border-black/[0.06] pt-5">
+```
+
+不修改其内部 `Button` 的 class、disabled 条件或 `onClick`。
+
+- [x] **Step 4：运行目标测试并确认 GREEN**
+
+Run: `pnpm exec vitest run --api.host=127.0.0.1 src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx -t "uses the production-style lower form"`
+
+Expected: 1 passed，其余用例按筛选跳过。
+
+- [x] **Step 5：运行完整回归和前端门禁**
+
+Run:
+
+```bash
+pnpm exec vitest run --api.host=127.0.0.1 src/pages/marketing/agent-model-config
+pnpm check
+pnpm i18n:check
+git diff --check
+```
+
+Expected: 全部命令 exit 0，TypeScript 无新增诊断，i18n 无新增缺口。
+
+- [x] **Step 6：更新验证记录并进入提交确认点**
+
+把 RED/GREEN 和完整门禁结果写回 `frontend/openspec/plan.md` 与本计划；只展示最终提交范围，得到用户确认后才 commit、push 并更新 MR !3569。
+
+增量验证记录：
+
+- 基线：固定 Vitest API host 为 `127.0.0.1` 后目标测试 1 passed / 33 skipped；未固定 host 的首次启动因本机 `localhost` DNS 解析失败，未进入测试断言。
+- RED：目标测试 1 failed / 33 skipped，按钮父容器实际仍为 `justify-start`。
+- GREEN：目标测试 1 passed / 33 skipped；模型配置目录 137 项通过，另 1 项按环境跳过。
+- `pnpm check`：通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0。
+- `pnpm i18n:check`：通过，2699 条文案；印尼语既有缺口 174 条。
+- `git diff --check`：通过。
+
+## Task 14：降低模型行名称与操作按钮的字体强调
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx:655-712`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx:475-515`
+
+**Interfaces:**
+
+- Consumes: 现有 `AgentModelConfigPanel` 模型行、共享 `Button` 组件和 `cn` class 合并规则。
+- Produces: 仅模型行名称使用 `text-xs font-normal`，仅该行三个操作按钮使用 `font-normal`；交互、文案和全局 Button 样式不变。
+
+- [x] **Step 1：先写失败的排版回归**
+
+在 `renders three role-aware actions with custom disabled-state tooltips` 中增加：
+
+```tsx
+const primaryModelName = within(primaryRow).getByText("model-primary");
+expect(primaryModelName).toHaveClass("text-xs", "font-normal");
+expect(primaryModelName).not.toHaveClass("text-sm", "font-semibold");
+for (const action of within(primaryRow).getAllByRole("button")) {
+  expect(action).toHaveClass("font-normal");
+  expect(action).not.toHaveClass("font-semibold");
+}
+```
+
+- [x] **Step 2：运行专项测试并确认 RED**
+
+Run: `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx -t "renders three role-aware actions"`
+
+Expected: 模型名称仍为 `text-sm font-semibold`，且按钮未包含局部 `font-normal`，断言失败。
+
+- [x] **Step 3：实现最小局部样式覆盖**
+
+将模型名称改为：
+
+```tsx
+<span className="break-all text-xs font-normal text-black/85">
+```
+
+将三个模型行操作按钮的 class 统一改为：
+
+```tsx
+className="rounded-md font-normal"
+```
+
+- [x] **Step 4：运行专项测试并确认 GREEN**
+
+Run: `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx -t "renders three role-aware actions"`
+
+Expected: 1 passed，其余用例按筛选跳过。
+
+- [x] **Step 5：运行模型配置完整回归和前端门禁**
+
+Run:
+
+```bash
+pnpm exec vitest run src/pages/marketing/agent-model-config
+pnpm check
+pnpm i18n:check
+git diff --check
+```
+
+Expected: 全部命令 exit 0，TypeScript 无新增诊断，i18n 无新增缺口。
+
+- [x] **Step 6：更新 OpenSpec 验证结果并进入提交确认点**
+
+将本任务的 RED/GREEN、完整测试和门禁结果写回 `frontend/openspec/plan.md` 与本计划；仅展示拟提交范围，不在未获确认时 commit 或 push。
+
+增量验证记录：
+
+- RED：目标测试 1 failed / 33 skipped，模型名称实际仍为 `text-sm font-semibold`。
+- RED 复核：仅临时撤回按钮局部覆盖后，目标测试再次 1 failed / 33 skipped，实际渲染仍继承全局 `font-semibold`。
+- GREEN：目标测试 1 passed / 33 skipped；模型配置目录 137 项通过，另 1 项按环境跳过。
+- `pnpm check`：通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0。
+- `pnpm i18n:check`：通过，2699 条文案；印尼语既有缺口 174 条。
 - `git diff --check`：通过。
 
 ## Task 10：移除误导性的模型数量
@@ -395,4 +539,128 @@ const roleLabel = role === "primary"
 - `pnpm i18n:check`：英语、繁中、西语、日语、韩语 2694/2694，印尼语 2520/2694，既有缺口保持 174 条、未新增翻译债务。
 - `pnpm check`：TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0。
 - 浏览器：目录候选 `Hy3` 显示“可选模型”且仍无删除按钮，已保存 `Hy4 Preview` 的操作规则未变化。
+- `git diff --check`：通过。
+
+## Task 12：允许凭据不同的同端点同模型 Provider 同时进入备用链
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+
+- [x] 按用户真实配置构造 Hy Token Plan 与通用 Token Plan 共用接入地址和 `hy4-preview`、但使用不同 `key_env` 的场景；先写入第一条备用路由，再为第二个 Provider 执行 `assign(..., "fallback")`。
+- [x] 运行专项用例并确认 RED：第二条路由被 `same_runtime_deployment` 当作别名去重，持久化配置只剩第一条。
+- [x] 将已配置 Provider 的凭据身份判定复用于 fallback 读取、追加、取消和角色校验；同 Provider 或无法证明凭据独立的历史别名继续按既有规则去重。
+- [x] 断言两条备用路由按顺序保留，快照分别返回两个 Provider；取消通用 Token Plan 路由后，Hy Token Plan 路由仍保留。
+- [x] 增加 `assign(..., "primary")` 与 `add(..., "primary")` 回归：设为主模型时仍按运行时部署清理所有冲突的 fallback 别名，不修改 Hermes 配置格式、凭据内容或 action 协议。
+
+增量验证记录：
+
+- RED：新增专项用例失败，预期两条 `fallback_providers`，实际只有 Hy Token Plan 一条。
+- RED：两条主模型反向回归均失败，`assign` 与 `add` 都错误保留了同运行时部署的 sibling fallback。
+- GREEN：Hermes 客户端 47/47；模型配置目录 137 项通过，另 1 项按环境跳过。
+- `pnpm check`：通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0。
+- `pnpm i18n:check`：通过，2699 条文案；印尼语既有缺口 174 条。
+- `git diff --check`：通过。
+
+## Task 15：将备用模型标签改为 neutral 灰色
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx:606-662`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx:370-390`
+
+**Interfaces:**
+
+- Consumes: 现有 `Badge` 的 `success`、`warning`、`neutral` variant。
+- Produces: Provider 标题与展开模型行的备用模型标签都使用既有 `neutral` 灰色；主模型继续使用 `success`，共享 Badge 组件不变。
+
+- [x] **Step 1：先锁定 Provider 标题备用标签为 neutral**
+
+在 `keeps models with the same Provider identity in one radio group` 中增加：
+
+```tsx
+expect(fallbackProviderLabel).toHaveClass(
+  "bg-[var(--surface-muted)]",
+  "text-[var(--text-secondary)]",
+);
+expect(fallbackProviderLabel).not.toHaveClass(
+  "bg-[color-mix(in_oklab,var(--warning)_20%,white)]",
+  "text-[var(--warning)]",
+);
+```
+
+- [x] **Step 2：运行标题专项并确认 RED**
+
+Run: `pnpm exec vitest run --api.host=127.0.0.1 src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx -t "keeps models with the same Provider identity"`
+
+Expected: 1 failed，标题备用标签仍渲染 `warning` 样式。
+
+- [x] **Step 3：将标题备用标签最小改为 neutral 并确认 GREEN**
+
+```tsx
+<Badge
+  variant="neutral"
+  className="justify-end whitespace-normal break-all text-right leading-tight"
+>
+```
+
+重新运行 Step 2 命令，Expected: 1 passed。
+
+- [x] **Step 4：先锁定模型行备用标签为 neutral**
+
+在同一测试中增加：
+
+```tsx
+const fallbackRow = screen.getByText("model-alpha-2").closest("li") as HTMLElement;
+const fallbackRowLabel = within(fallbackRow).getByText("备用模型");
+expect(fallbackRowLabel).toHaveClass(
+  "bg-[var(--surface-muted)]",
+  "text-[var(--text-secondary)]",
+);
+expect(fallbackRowLabel).not.toHaveClass(
+  "bg-[color-mix(in_oklab,var(--warning)_20%,white)]",
+  "text-[var(--warning)]",
+);
+```
+
+- [x] **Step 5：运行模型行专项并确认 RED**
+
+Run: `pnpm exec vitest run --api.host=127.0.0.1 src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx -t "keeps models with the same Provider identity"`
+
+Expected: 1 failed，模型行备用标签仍渲染 `warning` 样式。
+
+- [x] **Step 6：将模型行备用标签最小改为 neutral 并确认 GREEN**
+
+```tsx
+<Badge variant={primary ? "success" : "neutral"}>
+```
+
+重新运行 Step 5 命令，Expected: 1 passed。
+
+- [x] **Step 7：运行完整回归和前端门禁**
+
+Run:
+
+```bash
+pnpm exec vitest run --api.host=127.0.0.1 src/pages/marketing/agent-model-config
+pnpm check
+pnpm i18n:check
+git diff --check
+```
+
+Expected: 全部命令 exit 0，TypeScript 无新增诊断，i18n 无新增缺口。
+
+- [x] **Step 8：更新验证记录并进入提交确认点**
+
+把两轮 RED/GREEN 与完整门禁结果写回 `frontend/openspec/plan.md` 和本计划；得到用户确认后才 commit、push 并更新 MR !3569。
+
+增量验证记录：
+
+- 基线：目标测试 1 passed / 33 skipped。
+- Provider 标题 RED：1 failed / 33 skipped，实际仍为 warning 橙色；改用 neutral 后 GREEN 1 passed / 33 skipped。
+- 模型行 RED：1 failed / 33 skipped，实际仍为 warning 橙色；主模型外统一使用 neutral 后 GREEN 1 passed / 33 skipped。
+- 模型配置目录：137 项通过，另 1 项按环境跳过。
+- `pnpm check`：通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0。
+- `pnpm i18n:check`：通过，2699 条文案；印尼语既有缺口 174 条。
 - `git diff --check`：通过。

@@ -606,7 +606,7 @@ export function AgentModelConfigPanel({
                         ) : null}
                         {fallbackModels.length > 0 ? (
                           <Badge
-                            variant="warning"
+                            variant="neutral"
                             className="justify-end whitespace-normal break-all text-right leading-tight"
                           >
                             {t("备用模型：{{models}}", {
@@ -652,10 +652,10 @@ export function AgentModelConfigPanel({
                                 />
                                 <span className="min-w-0">
                                   <span className="flex flex-wrap items-center gap-2">
-                                    <span className="break-all text-sm font-semibold text-black/85">
+                                    <span className="break-all text-xs font-normal text-black/85">
                                       {displayConfiguredModelName(model)}
                                     </span>
-                                    <Badge variant={primary ? "success" : fallback ? "warning" : "neutral"}>
+                                    <Badge variant={primary ? "success" : "neutral"}>
                                       {role === "primary"
                                         ? t("主模型")
                                         : role === "fallback"
@@ -674,7 +674,7 @@ export function AgentModelConfigPanel({
                                     type="button"
                                     size="sm"
                                     variant={primary ? "secondary" : "outline"}
-                                    className="rounded-md"
+                                    className="rounded-md font-normal"
                                     disabled={busy || model.requiresSetup === true || primary}
                                     onClick={() => void controller.assign(model, "primary")}
                                   >
@@ -687,7 +687,7 @@ export function AgentModelConfigPanel({
                                     type="button"
                                     size="sm"
                                     variant={fallback ? "secondary" : "outline"}
-                                    className="rounded-md"
+                                    className="rounded-md font-normal"
                                     disabled={busy || primary}
                                     onClick={() => void (fallback
                                       ? controller.removeFallback(model)
@@ -702,7 +702,7 @@ export function AgentModelConfigPanel({
                                       type="button"
                                       size="sm"
                                       variant="ghost"
-                                      className="rounded-md"
+                                      className="rounded-md font-normal"
                                       disabled={busy || primary}
                                       onClick={() => {
                                         controller.clearOperationError();
@@ -1039,7 +1039,7 @@ export function AgentModelConfigPanel({
             </div>
           ) : null}
 
-          <div className="flex justify-start border-t border-black/[0.06] pt-5">
+          <div className="flex justify-end border-t border-black/[0.06] pt-5">
             <Button
               type="button"
               className="rounded-md"

@@ -1081,6 +1081,87 @@ describe("Hermes model configuration client", () => {
     });
   });
 
+  it("keeps credential-distinct fallback routes independent when Provider endpoint and model are shared", () => {
+    const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";
+    const hyProviderKey = "lightvela-tencent-hy-token-plan";
+    const generalProviderKey = "lightvela-tencent-token-plan";
+    const hyFallback = {
+      provider: hyProviderKey,
+      model: "hy4-preview",
+      base_url: baseUrl,
+      api_mode: "chat_completions",
+    };
+    const config = {
+      model: {
+        provider: hyProviderKey,
+        default: "hy3",
+        base_url: baseUrl,
+        api_mode: "chat_completions",
+      },
+      providers: {
+        [hyProviderKey]: {
+          name: "腾讯云 Hy Token Plan（个人版）",
+          base_url: baseUrl,
+          model: "hy3",
+          models: { hy3: {}, "hy4-preview": {} },
+          key_env: "HY_TOKEN_PLAN_KEY",
+          transport: "openai_chat",
+        },
+        [generalProviderKey]: {
+          name: "腾讯云通用 Token Plan（个人版）",
+          base_url: baseUrl,
+          model: "hy4-preview",
+          models: { "hy4-preview": {} },
+          key_env: "GENERAL_TOKEN_PLAN_KEY",
+          transport: "openai_chat",
+        },
+      },
+      fallback_providers: [hyFallback],
+    };
+    const credentials = {
+      HY_TOKEN_PLAN_KEY: "hy-secret",
+      GENERAL_TOKEN_PLAN_KEY: "general-secret",
+    };
+    const initialSnapshot = parseHermesModelConfigResponse(runHelper({ type: "read" }, config, {}, credentials).output);
+
+    expect(initialSnapshot.configuredModels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerKey: hyProviderKey, id: "hy4-preview" }),
+      expect.objectContaining({ providerKey: generalProviderKey, id: "hy4-preview" }),
+    ]));
+
+    const assigned = runHelper({
+      type: "assign",
+      providerKey: generalProviderKey,
+      modelId: "hy4-preview",
+      baseUrl,
+      routeBaseUrl: "",
+      purpose: "fallback",
+    }, config, {}, credentials);
+    const assignedSnapshot = parseHermesModelConfigResponse(assigned.output);
+
+    expect(assigned.config.fallback_providers).toEqual([
+      hyFallback,
+      expect.objectContaining({ provider: generalProviderKey, model: "hy4-preview" }),
+    ]);
+    expect(assignedSnapshot.fallbacks).toEqual([
+      expect.objectContaining({ providerKey: hyProviderKey, id: "hy4-preview" }),
+      expect.objectContaining({ providerKey: generalProviderKey, id: "hy4-preview" }),
+    ]);
+
+    const removed = runHelper({
+      type: "removeFallback",
+      providerKey: generalProviderKey,
+      modelId: "hy4-preview",
+      baseUrl,
+      routeBaseUrl: "",
+    }, assigned.config, {}, assigned.credentials);
+
+    expect(removed.config.fallback_providers).toEqual([hyFallback]);
+    expect(parseHermesModelConfigResponse(removed.output).fallbacks).toEqual([
+      expect.objectContaining({ providerKey: hyProviderKey, id: "hy4-preview" }),
+    ]);
+  });
+
   it("rejects unsaved model assignment when the Provider endpoint differs or its saved identity is ambiguous", () => {
     const providerKey = "lightvela-tencent-hy-token-plan";
     const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";
@@ -1553,6 +1634,71 @@ describe("Hermes model configuration client", () => {
 
     expect(() => parseHermesModelConfigResponse(conflict.output)).toThrow("Model configuration operation failed");
     expect(conflict.events).not.toContain("save_config");
+  });
+
+  it("clears every fallback alias of the runtime deployment when assigning a primary Provider", () => {
+    const sharedBaseUrl = "https://shared-gateway.example.com/v1";
+    const modelId = "shared-model";
+    const assigned = runHelper({
+      type: "assign",
+      providerKey: "proxy-b",
+      modelId,
+      baseUrl: sharedBaseUrl,
+      routeBaseUrl: "",
+      purpose: "primary",
+    }, {
+      providers: {
+        "proxy-a": {
+          name: "Proxy A",
+          base_url: sharedBaseUrl,
+          model: modelId,
+          models: { [modelId]: {} },
+          key_env: "PROXY_A_KEY",
+        },
+        "proxy-b": {
+          name: "Proxy B",
+          base_url: sharedBaseUrl,
+          model: modelId,
+          models: { [modelId]: {} },
+          key_env: "PROXY_B_KEY",
+        },
+      },
+      fallback_providers: [{ provider: "proxy-a", model: modelId, base_url: sharedBaseUrl }],
+    }, {}, {
+      PROXY_A_KEY: "proxy-a-secret",
+      PROXY_B_KEY: "proxy-b-secret",
+    });
+
+    expect(assigned.config.model).toMatchObject({ provider: "proxy-b", default: modelId });
+    expect(assigned.config).not.toHaveProperty("fallback_providers");
+    expect(parseHermesModelConfigResponse(assigned.output).fallbacks).toEqual([]);
+  });
+
+  it("clears every fallback alias of the runtime deployment when adding a primary Provider", () => {
+    const sharedBaseUrl = "https://shared-gateway.example.com/v1";
+    const newPrimary = {
+      ...model,
+      providerKey: "proxy-b",
+      providerName: "Proxy B",
+      baseUrl: sharedBaseUrl,
+      routeBaseUrl: sharedBaseUrl,
+    };
+    const added = runHelper({ type: "add", apiKey, model: newPrimary, purpose: "primary" }, {
+      providers: {
+        "proxy-a": {
+          name: "Proxy A",
+          base_url: sharedBaseUrl,
+          model: newPrimary.id,
+          models: { [newPrimary.id]: {} },
+          key_env: "PROXY_A_KEY",
+        },
+      },
+      fallback_providers: [{ provider: "proxy-a", model: newPrimary.id, base_url: sharedBaseUrl }],
+    }, {}, { PROXY_A_KEY: "proxy-a-secret" });
+
+    expect(added.config.model).toMatchObject({ provider: "lightvela-proxy-b", default: newPrimary.id });
+    expect(added.config).not.toHaveProperty("fallback_providers");
+    expect(parseHermesModelConfigResponse(added.output).fallbacks).toEqual([]);
   });
 
   it("retains a shared provider and credential while a sibling endpoint still references them", () => {
