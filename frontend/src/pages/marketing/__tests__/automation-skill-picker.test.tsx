@@ -70,6 +70,8 @@ function renderAutomationFormModal() {
       skillLoadState={ready(["builder-radar", "finance-news"])}
       onRefreshSkills={async () => ready(["builder-radar", "finance-news"])}
       onRefreshJobs={async () => []}
+      testState="idle"
+      onTestRun={vi.fn()}
       onClose={vi.fn()}
       onSaved={vi.fn()}
       onError={vi.fn()}
@@ -253,7 +255,30 @@ describe("AutomationSkillPicker", () => {
   });
 });
 
-describe("AutomationFormModal Skill selection", () => {
+describe("AutomationFormModal", () => {
+  it("keeps the one-time date and time in one minute-precision control", () => {
+    renderAutomationFormModal();
+
+    const dateTime = screen.getByLabelText("执行时间");
+    expect(dateTime).toHaveAttribute("type", "datetime-local");
+    expect(dateTime).toHaveAttribute("step", "60");
+  });
+
+  it("matches the effective-window date-time control styling", () => {
+    renderAutomationFormModal();
+
+    expect(screen.getByLabelText("执行时间")).toHaveClass(
+      "rounded-lg",
+      "border-black/10",
+      "bg-white",
+      "px-3",
+      "py-2",
+      "text-sm",
+      "focus:border-black/30",
+      "focus:outline-none",
+    );
+  });
+
   it("matches the Name and Skill control radius to the task description", () => {
     renderAutomationFormModal();
     const name = screen.getByPlaceholderText("请输入自动任务名称");

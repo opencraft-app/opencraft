@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_LAB_SECTION_ID_BY_SLUG,
   AGENT_SECTION_PATH_BY_ID,
   getAgentCreatingPath,
+  getAgentLabSectionFromSlug,
   getAgentSectionFromSlug,
   getAgentSectionHref,
   shouldShowWorkbenchEntry,
@@ -11,11 +13,27 @@ import {
 describe("agent route constants", () => {
   it("keeps shareable agent section urls outside the deleted vite router", () => {
     expect(AGENT_SECTION_PATH_BY_ID.browser).toBe("/agents/browser");
+    expect(AGENT_SECTION_PATH_BY_ID.settings).toBe("/agents/settings");
     expect(AGENT_SECTION_PATH_BY_ID.workbench).toBe("/agents/workbench");
     expect(getAgentSectionFromSlug("browser")).toBe("browser");
     expect(getAgentSectionFromSlug("workbench")).toBe("workbench");
     expect(getAgentSectionFromSlug("session")).toBe("workbench");
+    expect(getAgentSectionFromSlug("settings")).toBe("settings");
     expect(getAgentSectionFromSlug("unknown")).toBeNull();
+  });
+
+  it("keeps DeepSeek Harness behind the nested labs route", () => {
+    expect(AGENT_SECTION_PATH_BY_ID["deepseek-harness"]).toBe(
+      "/agents/labs/deepseek-harness",
+    );
+    expect(AGENT_LAB_SECTION_ID_BY_SLUG["deepseek-harness"]).toBe(
+      "deepseek-harness",
+    );
+    expect(getAgentLabSectionFromSlug("deepseek-harness")).toBe(
+      "deepseek-harness",
+    );
+    expect(getAgentLabSectionFromSlug("unknown")).toBeNull();
+    expect(getAgentSectionFromSlug("deepseek-harness")).toBeNull();
   });
 
   it("hides the workbench entry on public hosts by default", () => {

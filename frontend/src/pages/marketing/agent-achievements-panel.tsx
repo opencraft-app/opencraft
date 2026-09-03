@@ -118,7 +118,7 @@ const achievementPanelErrorFromUnknown = (error: unknown): AchievementPanelError
 };
 
 export const achievementTimestampLocale = (language?: string) => (
-  (language || "").toLowerCase().startsWith("zh") ? "zh-CN" : "en-US"
+  (language || "").toLowerCase().startsWith("zh") ? "zh-CN" : (language || "").toLowerCase().startsWith("es") ? "es" : "en-US"
 );
 
 const criteriaMetricTranslations: Record<string, AchievementCopyTranslator> = {
@@ -806,10 +806,11 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
             type="button"
             onClick={() => void load(true)}
             disabled={refreshing || loading}
-            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
+            aria-label={t("重新扫描")}
+            title={t("重新扫描")}
           >
             <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-            {refreshing ? t("扫描中") : t("重新扫描")}
           </button>
         )}
       />

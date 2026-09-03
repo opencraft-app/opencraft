@@ -16,25 +16,26 @@ import {
 } from "@/constants/community";
 import { useLocaleOverride, useT } from "@/i18n/t";
 import { isCN, isGlobal, localizedPath } from "@/lib/region";
-import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
+import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 
 interface LegalFooterProps {
   icpPlacement?: "inline" | "right";
+  /**
+   * 是否展示「隐私政策 · 服务条款 · 产品反馈 · 加入交流群」链接行。
+   *
+   * 默认 true，保持其他页面（文档站、账户页、更新日志等 12+ 处）现状不变。
+   * 首页传 false：这些链接已在上方 `FooterLinkColumns` 的分栏里出现，
+   * 同页重复会让页脚出现两套相同入口。
+   */
+  showLinks?: boolean;
 }
 
-export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
+export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: LegalFooterProps) => {
   const currentYear = new Date().getFullYear();
   const t = useT();
   const { i18n } = useTranslation();
   const localeOverride = useLocaleOverride();
-  const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.ID_ID || i18n.language === PUBLIC_SITE_LOCALES.ID_ID
-      ? PUBLIC_SITE_LOCALES.ID_ID
-      : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT || i18n.language === PUBLIC_SITE_LOCALES.ZH_HANT
-        ? PUBLIC_SITE_LOCALES.ZH_HANT
-        : localeOverride?.startsWith("zh") || i18n.language?.startsWith("zh")
-          ? PUBLIC_SITE_LOCALES.ZH_SG
-          : PUBLIC_SITE_LOCALES.EN_US;
+  const currentLocale = resolveVisiblePublicSiteLocale(localeOverride, i18n.language);
   const showICP = shouldShowICP();
   const [showQR, setShowQR] = useState(false);
   const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
@@ -67,6 +68,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </>
             )}
           </span>
+          {showLinks && (
           <span>
             {isGlobal ? (
               <a href={privacyPolicyPath} className={footerLinkClass}>
@@ -101,7 +103,9 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               <>
                 ·
                 <a
-                  href="/support"
+                  href={PRODUCT_FEEDBACK_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className={footerLinkClass}
                 >
                   {t("产品反馈")}
@@ -117,7 +121,9 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </>
             ) : null}
           </span>
+          )}
           {/* 加入交流群 — hover 展示二维码；国际站文案与二维码均可点击直达 Discord */}
+          {showLinks && (
           <span
             className="relative"
             onMouseEnter={() => setShowQR(true)}
@@ -144,8 +150,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="absolute bottom-full left-1/2 z-20 mb-3 -translate-x-1/2 flex flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-lg"
-                  style={{ width: "200px" }}
+                  className="absolute bottom-full left-1/2 z-20 mb-3 flex w-60 max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-lg"
                 >
                   {isGlobal ? (
                     <a
@@ -160,7 +165,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
                         className="rounded-lg"
                         style={{ width: "168px", height: "168px" }}
                       />
-                      <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+                      <span className="max-w-full whitespace-normal text-pretty text-center text-[11px] leading-relaxed text-black/50">
                         {t("扫码加入Discord交流群")}
                       </span>
                     </a>
@@ -172,7 +177,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
                         className="rounded-lg"
                         style={{ width: "168px", height: "168px" }}
                       />
-                      <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+                      <span className="max-w-full whitespace-normal text-pretty text-center text-[11px] leading-relaxed text-black/50">
                         {t("扫码加入交流群")}
                       </span>
                     </>
@@ -181,6 +186,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               )}
             </AnimatePresence>
           </span>
+          )}
           {showRightICP && (
             <a
               href={BEIAN_URL}

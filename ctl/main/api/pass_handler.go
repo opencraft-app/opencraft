@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,10 @@ import (
 // passHandler 用户权益 handler
 type passHandler struct {
 	logic passlogic.Logic
+}
+
+type dianshiGrantLogic interface {
+	GrantDianshiSubscription(userID string, req *transport.GrantDianshiSubscriptionRequest) (*transport.GrantDianshiSubscriptionResult, error)
 }
 
 // handleAdminPasses 处理后台管理接口 /admin/api/ctl/passes
@@ -391,6 +396,40 @@ func (h *passHandler) handleUserDianshiPassesOrderAndPay(w http.ResponseWriter, 
 	}
 
 	result, err := h.logic.CreateDianshiPassOrderAndPay(ctx.GetUserID(), &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+func (h *passHandler) handleInternalDianshiGrant(w http.ResponseWriter, r *http.Request) {
+	if !requireConfiguredInternalBearer(r) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	var req transport.GrantDianshiSubscriptionRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	req.ExternalUserID = strings.TrimSpace(req.ExternalUserID)
+	req.BundleID = strings.TrimSpace(req.BundleID)
+	if req.ExternalUserID == "" || req.BundleID == "" || req.ActID <= 0 {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrPassInvalidParam, "external_user_id, bundle_id and positive act_id are required"))
+		return
+	}
+	logic, ok := h.logic.(dianshiGrantLogic)
+	if !ok {
+		writeHTTPError(w, r, fmt.Errorf("Dianshi grant logic is not configured"))
+		return
+	}
+	result, err := logic.GrantDianshiSubscription(req.ExternalUserID, &req)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return

@@ -1,9 +1,12 @@
 package website
 
 import (
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
+	"ctl/pkg/errcode"
 	"ctl/pkg/model/bundle"
 	"ctl/pkg/model/pass"
 	"ctl/pkg/model/website"
@@ -136,6 +139,30 @@ func TestGetSiteInternalCarriesActiveCloudPath(t *testing.T) {
 	}
 }
 
+// internal 站点状态接口是 token 保护的内部契约，可以回传所属 user_id 给下游做唯一身份关联。
+func TestGetSiteInternalCarriesUserID(t *testing.T) {
+	newWebsiteOperationTestDB(t)
+	seedPassAndBundle(t, "user-1", "bundle-1", testQuotaJSON)
+	seedSite(t, "ws-a", "user-1", website.SiteStatusActive, 1)
+
+	view, err := NewLogic().GetSiteInternal("ws-a")
+	if err != nil {
+		t.Fatalf("GetSiteInternal: %v", err)
+	}
+
+	raw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatalf("marshal view: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload["user_id"] != "user-1" {
+		t.Fatalf("user_id = %#v，期望 user-1；payload=%s", payload["user_id"], string(raw))
+	}
+}
+
 // 当月已用量是按用户跨站点汇总的：一个站点刷爆额度会把同一用户的其他站点一起闸掉。
 // 这是月额度按用户计量的直接后果，必须是可观测的行为而不是意外。
 func TestGetSiteInternalUsesUserWideUsage(t *testing.T) {
@@ -191,5 +218,32 @@ func TestGetSiteInternalFailsOpenWithoutActivePass(t *testing.T) {
 	}
 	if view.MonthlyTrafficBytes != 0 {
 		t.Fatalf("monthly_traffic_bytes = %d，期望 0", view.MonthlyTrafficBytes)
+	}
+}
+
+func TestGetSiteInternalReturnsNotFoundForMissingOrDeletedSite(t *testing.T) {
+	newWebsiteOperationTestDB(t)
+	seedPassAndBundle(t, "user-1", "bundle-1", testQuotaJSON)
+	seedSite(t, "ws-deleted", "user-1", website.SiteStatusActive, 1)
+
+	if err := resource.GormDB.Table(website.SitesTable).
+		Where("site_id = ?", "ws-deleted").
+		Update("deleted_time", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		siteID string
+	}{
+		{name: "missing", siteID: "ws-missing"},
+		{name: "deleted", siteID: "ws-deleted"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewLogic().GetSiteInternal(tc.siteID)
+			if !errors.Is(err, errcode.ErrWebsiteNotFound) {
+				t.Fatalf("GetSiteInternal(%q) error = %v，期望 ErrWebsiteNotFound", tc.siteID, err)
+			}
+		})
 	}
 }

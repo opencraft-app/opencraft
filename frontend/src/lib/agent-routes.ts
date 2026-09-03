@@ -5,15 +5,18 @@ export type AgentSettingsSectionId =
   | "buddy"
   | "automations"
   | "diagnostics"
+  | "settings"
   | "memory"
   | "achievement"
   | "chat"
   | "files"
   | "browser"
   | "terminal"
+  | "deepseek-harness"
   | "website";
 
 export type AgentWorkbenchSectionId = "workbench";
+export type AgentLabSectionId = "deepseek-harness";
 
 export type AgentSectionId = AgentSettingsSectionId | AgentWorkbenchSectionId;
 
@@ -55,12 +58,14 @@ export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   buddy: `${AGENTS_HOME_PATH}/persona`,
   automations: `${AGENTS_HOME_PATH}/automations`,
   diagnostics: `${AGENTS_HOME_PATH}/diagnostics`,
+  settings: `${AGENTS_HOME_PATH}/settings`,
   memory: `${AGENTS_HOME_PATH}/memory`,
   achievement: `${AGENTS_HOME_PATH}/achievements`,
   files: `${AGENTS_HOME_PATH}/files`,
   browser: `${AGENTS_HOME_PATH}/browser`,
   chat: `${AGENTS_HOME_PATH}/chat`,
   terminal: `${AGENTS_HOME_PATH}/terminal`,
+  "deepseek-harness": `${AGENTS_HOME_PATH}/labs/deepseek-harness`,
   website: `${AGENTS_HOME_PATH}/websites`,
 };
 
@@ -73,6 +78,7 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
   persona: "buddy",
   automations: "automations",
   diagnostics: "diagnostics",
+  settings: "settings",
   memory: "memory",
   achievements: "achievement",
   workbench: "workbench",
@@ -84,9 +90,18 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
   websites: "website",
 };
 
+export const AGENT_LAB_SECTION_ID_BY_SLUG: Record<string, AgentLabSectionId> = {
+  "deepseek-harness": "deepseek-harness",
+};
+
 export const getAgentSectionFromSlug = (slug?: string): AgentSectionId | null => {
   if (!slug) return null;
   return AGENT_SECTION_ID_BY_SLUG[slug] ?? null;
+};
+
+export const getAgentLabSectionFromSlug = (slug?: string): AgentLabSectionId | null => {
+  if (!slug) return null;
+  return AGENT_LAB_SECTION_ID_BY_SLUG[slug] ?? null;
 };
 
 export const getAgentCreatingPath = (creating: true | string) => {
@@ -105,5 +120,5 @@ export const getAgentSectionHref = (pathname: string, params: URLSearchParams): 
   return `${pathname}${search ? `?${search}` : ""}`;
 };
 
-/** 我的作品页路由（避免魔法字符串，统一引用） */
+/** 我的工作台页路由（避免魔法字符串，统一引用） */
 export const WEBSITES_PATH = "/agents/websites/";

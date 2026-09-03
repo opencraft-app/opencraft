@@ -1,5 +1,11 @@
 # Memory Management
 
+## Summary
+
+**Memory is what lets Hermes retain the things that matter across conversations and devices — your preferences, who you are, what you are currently working on, and the experience it accumulates through long-term collaboration. It is the foundation that turns Hermes from one-off question answering into an assistant that understands you better over time. Memory lives inside the agent and outside the model, so switching models does not make it forget. You can review, edit, or clear what has accumulated on the memory and user-profile page in the console, and all your messaging channels share one memory.**
+
+---
+
 Memory helps Hermes retain important information across conversations and devices—your preferences, identity, work in progress, and the experience it develops through long-term collaboration. It is what turns Hermes from a one-off question-answering tool into a long-term assistant that understands you better over time.
 
 ![The Memory and User Profile page in the LightVela console](../images/memory-management-overview-en.png)

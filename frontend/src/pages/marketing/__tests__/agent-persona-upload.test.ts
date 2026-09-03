@@ -121,7 +121,21 @@ describe("uploaded persona Markdown", () => {
     expect(getPersonaDisplayName("# 自定义内容", "my-persona.md"))
       .toBe("my-persona");
     expect(getPersonaDisplayName("# 自定义内容", ".md"))
-      .toBe("自定义人设");
+      .toBe("Custom persona");
+  });
+
+  it("uses the caller-provided localized display-name fallback", () => {
+    expect(getPersonaDisplayName("Keep answers short.", ".md", "Persona kustom"))
+      .toBe("Persona kustom");
+
+    const result = buildCustomSoulMarkdown(
+      "Keep answers short.",
+      ".md",
+      "Custom persona",
+    );
+
+    expect(result.displayName).toBe("Custom persona");
+    expect(result.markdown).toContain("Name: Custom persona");
   });
 
   it("keeps file-name display metadata on a single line", () => {
@@ -169,6 +183,24 @@ describe("uploaded persona Markdown", () => {
       "不得代替用户付款。",
       "在不确定信息上明确说明假设和依据，并在执行高风险操作前征求用户确认。",
       "持续保持清晰、可靠和克制的表达，不虚构结果，也不泄露任何敏感信息。",
+    ].join("\n"))).toEqual([]);
+  });
+
+  it.each([
+    ["繁體中文", ["## 角色定位", "## 溝通風格", "## 工作原則", "## 行為邊界"]],
+    ["印尼语", ["## Identitas", "## Gaya Komunikasi", "## Prinsip Kerja", "## Batasan Perilaku"]],
+  ])("recognizes complete %s persona structure", (_language, headings) => {
+    expect(getPersonaStructureWarnings([
+      "# Soul",
+      "Name: Project Partner",
+      headings[0]!,
+      "Identity content.",
+      headings[1]!,
+      "Tone content.",
+      headings[2]!,
+      "Principles content.",
+      headings[3]!,
+      "Boundary content that is intentionally long enough to avoid the short-content warning.",
     ].join("\n"))).toEqual([]);
   });
 

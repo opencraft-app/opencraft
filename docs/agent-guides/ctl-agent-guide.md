@@ -78,7 +78,7 @@
 - `tasks` 表才是异步任务的持久化事实来源
 - `bypass` 的职责是补偿未完成任务，不是承载业务逻辑
 - `operation_histories` 是用户可见操作历史，不能复用为内部任务队列表
-- 像 `born_number_for_china` 这种未来可能跨 shard 聚合的衍生资料，优先做成投影：
+- 对未来可能跨 shard 聚合的衍生资料，优先做成投影：
   - 领域逻辑写 durable task
   - `main/service` 消费 task 更新投影
   - `main/bypass` 通过扫描 `tasks` 做补偿
@@ -109,10 +109,9 @@
 - `tasks`: 异步任务持久化表
 - `operation_histories`: 用户可见操作历史
 - `channel_login_sessions`: 微信等通道登录会话；“同一 user/instance/channel 只允许一个 active session” 必须由 DB invariant 保证
-- `instance_birth_profiles`: bot 出生卡投影表
-  - `created_at` 事实仍来自 `instances`（UTC 存储）
-  - `born_date_for_china` / `born_number_for_china` 属于异步投影，不属于 `instances` 主事实字段
-  - borncard 语义按中国自然日（`+8`）给实例编号，但换日逻辑基于 UTC 存储时间做时区转换
+- `instance_birth_profiles`: 历史 bot 出生卡投影表，当前出生证 / borncard 产品链路已下线
+  - 不再作为新功能依赖；新建实例不应继续投影出生编号
+  - 保留该表仅用于兼容历史 migration / 数据，不应把其字段重新暴露到当前 API
 
 ## 5. Local Dev Rules
 

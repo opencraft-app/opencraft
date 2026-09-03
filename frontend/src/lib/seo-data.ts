@@ -1,3 +1,24 @@
+import {
+  JAPANESE_DEFAULT_SEO_TITLE,
+  JAPANESE_DOC_PAGE_TITLES,
+  JAPANESE_PAGE_DESCRIPTIONS,
+  JAPANESE_SEO_DESCRIPTION,
+  JAPANESE_SEO_KEYWORDS,
+  JAPANESE_SEO_TITLE_SUFFIX,
+  JAPANESE_STATIC_PAGE_TITLES,
+  getJapaneseProductPageTitle,
+} from "./seo-data.ja";
+import {
+  KOREAN_DEFAULT_SEO_TITLE,
+  KOREAN_DOC_PAGE_TITLES,
+  KOREAN_PAGE_DESCRIPTIONS,
+  KOREAN_SEO_DESCRIPTION,
+  KOREAN_SEO_KEYWORDS,
+  KOREAN_SEO_TITLE_SUFFIX,
+  KOREAN_STATIC_PAGE_TITLES,
+  getKoreanProductPageTitle,
+} from "./seo-data.ko";
+
 export type SeoRegion = "cn" | "global";
 
 export interface SeoMeta {
@@ -160,6 +181,100 @@ const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
   ].join(", "),
 };
 
+const SPANISH_DEFAULT_SEO_TITLE = "LightVela | Tu agente personal de IA en la nube";
+const SPANISH_SEO_TITLE_SUFFIX = "LightVela · Tu agente personal de IA en la nube";
+const SPANISH_SEO_DESCRIPTION =
+  "LightVela es una plataforma gestionada para crear y alojar un agente personal de IA en la nube, siempre disponible y conectado a tus canales.";
+const SPANISH_SEO_KEYWORDS = [
+  "LightVela",
+  "agente de IA en la nube",
+  "agente de IA personal",
+  "asistente de IA",
+  "Hermes Agent",
+  "alojamiento de agentes",
+  "automatizaciones",
+].join(", ");
+
+const SPANISH_STATIC_PAGE_TITLES: Record<string, string> = {
+  "/about": "Acerca de LightVela",
+  "/account": "Cuenta",
+  "/account/orders": "Pedidos",
+  "/auth/email-bind-result": "Resultado de vinculación del correo",
+  "/auth/forgot-password": "Restablecer contraseña",
+  "/auth/invite": "Código de invitación",
+  "/auth/sign-in": "Iniciar sesión",
+  "/auth/sign-up": "Crear una cuenta",
+  "/auth/sign-up-code": "Verificar código",
+  "/blog": "Blog",
+  "/changelog": "Novedades",
+  "/cookie-policy": "Política de cookies",
+  "/dashboard/create": "Crear un agente",
+  "/dashboard/setup": "Configuración inicial",
+  "/dashboard/success": "Agente creado",
+  "/open-source-licenses": "Aviso de código abierto",
+  "/plans/select": "Elige un plan",
+  "/privacy-policy": "Política de privacidad",
+  "/subscribe": "Elige un plan",
+  "/support": "Ayuda y comentarios",
+  "/terms-of-service": "Términos del servicio",
+};
+
+const SPANISH_AGENT_SECTION_TITLES: Record<string, string> = {
+  achievements: "Logros",
+  automations: "Automatizaciones",
+  channels: "Canales",
+  chat: "Chat",
+  files: "Archivos",
+  memory: "Memoria",
+  models: "Modelos",
+  persona: "Personalidad",
+  skills: "Habilidades",
+  workbench: "Espacio de trabajo",
+};
+
+function getSpanishProductPageTitle(pathname: string): string | null {
+  if (pathname === "/agents") return "Mis agentes";
+  const agentSection = pathname.match(/^\/agents\/([^/]+)$/)?.[1];
+  if (agentSection) return SPANISH_AGENT_SECTION_TITLES[agentSection] ?? "Mis agentes";
+  return SPANISH_STATIC_PAGE_TITLES[pathname] ?? null;
+}
+
+const SPANISH_DOC_PAGE_TITLES: Record<string, string> = {
+  "/docs": "Documentación",
+  "/docs/overview": "Qué es LightVela",
+  "/docs/quickstart": "Inicio rápido",
+  "/docs/core-concepts": "Conceptos básicos",
+  "/docs/configuration": "Configuración",
+  "/docs/configuration/model": "Configurar modelos",
+  "/docs/configuration/skill": "Configurar habilidades",
+  "/docs/configuration/automation": "Automatizaciones",
+  "/docs/configuration/agent-chat": "Chat",
+  "/docs/faq": "Preguntas frecuentes",
+};
+
+const SPANISH_PAGE_DESCRIPTIONS: Record<string, string> = {
+  "/about":
+    "Conoce cómo LightVela acerca los agentes de IA en la nube a más personas mediante una experiencia gestionada y sencilla.",
+  "/blog":
+    "El Blog de LightVela compartirá anuncios de producto, actualizaciones y casos de uso de agentes de IA alojados en la nube.",
+  "/changelog":
+    "Consulta las actualizaciones del producto, las nuevas funciones y las mejoras de experiencia de LightVela.",
+  "/cookie-policy":
+    "Política de cookies de LightVela, incluidos sus tipos, finalidades y opciones de control.",
+  "/open-source-licenses":
+    "Atribuciones y avisos de licencia del software de código abierto utilizado por LightVela.",
+  "/privacy-policy":
+    "Política de privacidad de LightVela sobre el tratamiento, almacenamiento y uso compartido de datos personales y los derechos del usuario.",
+  "/subscribe": "Elige el plan de LightVela que mejor se adapte a tu Hermes Agent.",
+  "/support": "Envía comentarios, informa de problemas o solicita nuevas funciones para LightVela.",
+  "/terms-of-service":
+    "Términos del servicio de LightVela aplicables al acceso y uso de la plataforma.",
+  "/docs":
+    "Documentación de LightVela con inicio rápido, conceptos básicos y guías para configurar modelos, canales, habilidades y automatizaciones.",
+  "/docs/overview":
+    "Descubre cómo LightVela aloja Hermes Agent en la nube para ofrecerte un agente personal de IA siempre disponible, con memoria y canales conectados.",
+};
+
 /**
  * 页面级 description 覆盖表：仅列出需要"按页面内容定制 description"的路径。
  *
@@ -205,16 +320,24 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "微信通道接入指南：在 LightVela 生成二维码 → 手机微信扫码授权 → 在微信中与 Hermes 对话。所有通道中配置最简单的一种。",
     "/docs/configuration/channel-feishu":
       "飞书通道接入指南：扫码授权方式接入，适用于办公场景，支持富文本消息与群聊 @机器人。",
+    "/docs/configuration/channel-wecom":
+      "企业微信通道接入指南：在 LightVela 生成二维码 → 手机企业微信扫码授权 → 在企业微信中与 Hermes Agent 对话，支持文本、图片、文件、语音与主动消息。",
     "/docs/configuration/channel-qq":
       "QQ 通道接入指南：在 QQ 开放平台创建机器人、获取 AppID 与 AppSecret、填入 LightVela 完成接入，约 5–10 分钟。",
     "/docs/configuration/skill":
       "为 Hermes 配置技能（Skills）：基于腾讯 SkillHub 的可调用能力包，覆盖待办整理、日报、网页浏览、新闻搜索、图像生成等，支持管理台与对话两种安装方式。",
+    "/docs/configuration/deepseek-harness":
+      "在 LightVela 中安装和管理 DeepSeek Harness，了解模型提供商、插件、工作区、WebUI 和独立运行边界。",
+    "/docs/configuration/workbench":
+      "在 LightVela 中使用 AI Agent 创建、部署和管理静态网站，了解模板、发布状态、配额和托管边界。",
     "/docs/faq":
       "LightVela 使用过程中的常见问题汇总：账号登录、实名认证、套餐积分、模型与通道配置、对话与记忆机制等。",
   },
   global: {
     "/about":
       "Built by the Tencent Lighthouse team, LightVela was born from a question: what should AI become? We believe AI should not be just a cold tool, but a long-term presence that knows you, remembers you, and grows with you.",
+    "/blog":
+      "The LightVela Blog will share product announcements, updates, and use cases for cloud-hosted AI Agents.",
     "/changelog":
       "Track LightVela product updates, new capabilities, and experience improvements, including cloud storage, achievements, web chat, memory views, and automations.",
 
@@ -267,6 +390,10 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "Use Diagnostics to query Hermes logs and run maintenance actions such as resetting model configuration or reinstalling the Agent while preserving data.",
     "/docs/configuration/multiple-models":
       "Switch between configured models in LightVela when you need a different balance of capability, speed, cost, or provider availability.",
+    "/docs/configuration/deepseek-harness":
+      "Install and manage DeepSeek Harness in LightVela as a separate Labs environment alongside Hermes Agent, with model providers, plugins, workspaces, and a controlled WebUI.",
+    "/docs/configuration/workbench":
+      "Build, deploy, and manage static websites with an AI Agent in LightVela, including templates, deployment status, quotas, and hosting boundaries.",
     "/docs/configuration/automation":
       "Set up Hermes automations: schedule recurring tasks (reminders, daily reports, news tracking, content publishing) by time or trigger, with templates and lifecycle management.",
     "/docs/configuration/agent-chat":
@@ -296,7 +423,6 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/auth/sign-in": "登录",
     "/auth/sign-up": "注册",
     "/auth/sign-up-code": "输入验证码",
-    "/auth/invite": "邀请码",
     "/auth/forgot-password": "找回密码",
     "/plans/select": "选择套餐",
     "/settings/account": "账号设置",
@@ -304,6 +430,7 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
   },
   global: {
     "/about": "About LightVela",
+    "/blog": "Blog",
     "/changelog": "Changelog",
     "/privacy-policy": "Privacy Policy",
     "/terms-of-service": "Terms of Service",
@@ -321,7 +448,6 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/auth/sign-in": "Sign In",
     "/auth/sign-up": "Sign Up",
     "/auth/sign-up-code": "Verify Code",
-    "/auth/invite": "Invite Code",
     "/auth/forgot-password": "Forgot Password",
     "/plans/select": "Select Plan",
     "/settings/account": "Account Settings",
@@ -357,8 +483,8 @@ const AGENT_SECTION_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> 
 };
 
 const AGENTS_HOME_TITLE_BY_REGION: Record<SeoRegion, string> = {
-  cn: "Agent 控制台",
-  global: "Agent Console",
+  cn: "我的智能体伙伴",
+  global: "My Agent",
 };
 
 const APP_PAGE_TITLES_BY_REGION: Record<
@@ -391,9 +517,12 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration": "配置总览",
     "/docs/configuration/model": "配置模型",
     "/docs/configuration/channel-wechat": "微信",
-    "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/channel-qq": "QQ",
+    "/docs/configuration/channel-wecom": "企业微信",
+    "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/skill": "配置技能",
+    "/docs/configuration/deepseek-harness": "DeepSeek Harness",
+    "/docs/configuration/workbench": "工作台",
     "/docs/plans": "套餐管理",
     "/docs/announcements/public-beta": "LightVela 付费版本公告",
     "/docs/faq": "常见问题 FAQ",
@@ -409,6 +538,8 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/files": "Cloud Storage",
     "/docs/configuration/diagnostics": "Diagnostics",
     "/docs/configuration/multiple-models": "Model Switching",
+    "/docs/configuration/deepseek-harness": "DeepSeek Harness",
+    "/docs/configuration/workbench": "Workbench",
     "/docs/configuration/channel-wechat": "WeChat",
     "/docs/configuration/channel-telegram": "Telegram",
     "/docs/configuration/channel-whatsapp": "WhatsApp",
@@ -473,10 +604,10 @@ function normalizePathname(pathname: string): string {
  * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id";
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "es" | "ja-jp" | "ko-kr";
 
 function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|en|zh)(?:\/(.*))?$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|es|ja-jp|ko-kr|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
@@ -494,6 +625,9 @@ const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
   "zh-sg": "zh-SG",
   "zh-hant": "zh-Hant",
   "id-id": "id-ID",
+  es: "es",
+  "ja-jp": "ja-JP",
+  "ko-kr": "ko-KR",
 };
 const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   en: "en_US",
@@ -504,6 +638,9 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
   "zh-hant": "zh_HK",
   "id-id": "id_ID",
+  es: "es_ES",
+  "ja-jp": "ja_JP",
+  "ko-kr": "ko_KR",
 };
 
 function safeDecodeURIComponent(value: string): string {
@@ -569,6 +706,48 @@ export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
   /* 国际站剥掉 /en /zh URL 前缀后查表；国内站 stripUrlLangPrefix 对裸路径返回
      { bare: pathname, urlLang: null }，行为与改造前等价。 */
   const { bare, urlLang } = stripUrlLangPrefix(normalizePathname(pathname));
+  if (r === "global" && urlLang === "es") {
+    const pageTitle =
+      bare === "/"
+        ? null
+        : SPANISH_STATIC_PAGE_TITLES[bare] ??
+          SPANISH_DOC_PAGE_TITLES[bare] ??
+          getSpanishProductPageTitle(bare) ??
+          (bare.startsWith("/docs/") ? "Documentación de LightVela" : "Página no encontrada");
+    return {
+      title: pageTitle ? `${pageTitle} | ${SPANISH_SEO_TITLE_SUFFIX}` : SPANISH_DEFAULT_SEO_TITLE,
+      description: SPANISH_PAGE_DESCRIPTIONS[bare] ?? SPANISH_SEO_DESCRIPTION,
+      keywords: SPANISH_SEO_KEYWORDS,
+    };
+  }
+  if (r === "global" && urlLang === "ja-jp") {
+    const pageTitle =
+      bare === "/"
+        ? null
+        : JAPANESE_STATIC_PAGE_TITLES[bare] ??
+          JAPANESE_DOC_PAGE_TITLES[bare] ??
+          getJapaneseProductPageTitle(bare) ??
+          (bare.startsWith("/docs/") ? "LightVelaドキュメント" : "ページが見つかりません");
+    return {
+      title: pageTitle ? `${pageTitle} | ${JAPANESE_SEO_TITLE_SUFFIX}` : JAPANESE_DEFAULT_SEO_TITLE,
+      description: JAPANESE_PAGE_DESCRIPTIONS[bare] ?? JAPANESE_SEO_DESCRIPTION,
+      keywords: JAPANESE_SEO_KEYWORDS,
+    };
+  }
+  if (r === "global" && urlLang === "ko-kr") {
+    const pageTitle =
+      bare === "/"
+        ? null
+        : KOREAN_STATIC_PAGE_TITLES[bare] ??
+          KOREAN_DOC_PAGE_TITLES[bare] ??
+          getKoreanProductPageTitle(bare) ??
+          (bare.startsWith("/docs/") ? "LightVela 문서" : "페이지를 찾을 수 없습니다");
+    return {
+      title: pageTitle ? `${pageTitle} | ${KOREAN_SEO_TITLE_SUFFIX}` : KOREAN_DEFAULT_SEO_TITLE,
+      description: KOREAN_PAGE_DESCRIPTIONS[bare] ?? KOREAN_SEO_DESCRIPTION,
+      keywords: KOREAN_SEO_KEYWORDS,
+    };
+  }
   const lookupRegion = effectiveRegionForLookup(r, urlLang);
   const pageTitle =
     bare === "/"
@@ -618,8 +797,9 @@ function joinUrl(origin: string, path: string): string {
 /** 路径是否默认应被搜索引擎索引。 */
 export function isPathIndexable(pathname: string): boolean {
   const p = normalizePathname(pathname);
+  const bare = stripUrlLangPrefix(p).bare;
   return !NON_INDEXABLE_PREFIXES.some(
-    (prefix) => p === trimTrailingSlash(prefix) || p.startsWith(prefix),
+    (prefix) => bare === trimTrailingSlash(prefix) || bare.startsWith(prefix),
   );
 }
 

@@ -1,3 +1,2289 @@
+# 已配置模型 Provider 分组切换 Implementation Plan
+
+**Status:** 目录模型并入已配置 Provider、凭据复用切换、数量移除和带模型名称的 Provider 主备角色标签均已完成验证，等待提交确认；不自动 commit、push 或更新 MR。
+
+**Size:** M。产品边界仍只在模型配置域，但连同既有分组改动将涉及面板、Hermes 配置命令、两组测试及 OpenSpec，文件数超过 S 级上限；不修改 SDK、Hermes action 协议、凭据存储、Provider 目录或后端接口。
+
+**Goal:** 将已配置模型按 Provider 分组，并显示产品目录中属于该已配置 Provider 的其他模型；用户可直接设为主/备用模型，无需重新添加 Provider 或 API Key。
+
+**Design:** `openspec/changes/2026-09-03-configured-model-provider-switch-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-03-configured-model-provider-switch-implementation-plan.md`
+
+- [x] **Developer｜测试先行实现 Provider 分组、展开与组内单选，复用 `assign(..., "primary")` 完成跨 Provider 主模型切换，保留备用/删除操作，并完成模型配置回归、i18n、前端门禁和 CN/global 页面 smoke。**
+- [x] **Developer｜测试先行合并当前产品目录中的同 Provider 模型，复用已保存 Provider 身份和凭据完成主/备用模型切换；未保存目录模型不显示删除，并完成命令层安全边界、回归和浏览器 smoke。**
+- [x] **Developer｜测试先行将 Provider 行的“当前生效”改为带模型名称的主、备用模型标签；同一 Provider 同时承载主备模型时分两行显示且主模型在上，多个备用模型合并显示，并完成多语言与浏览器回归。**
+
+**Acceptance:** 当前主模型所在 Provider 默认展开；Provider 行按组内角色显示带模型名称的主、备用模型标签，同时承担两种角色时分两行显示且主模型在上，多个备用模型合并在备用模型标签内，不再显示“当前生效”；每组同时显示已保存模型和严格匹配的产品目录模型；标题区和 Provider 行不显示可能包含目录候选的模型数量；已配置区优先使用目录模型名称并与添加模型选择器保持一致；目录候选显示“可选模型”，已保存闲置模型显示“未启用”；目录模型可用现有 `assign` 直接设为主/备用并持久化，操作不重新添加、不探测、不要求 API Key；未保存目录模型不显示删除，自定义/地址不匹配 Provider 不被错误合并。
+
+**Out of scope:** SDK 面板、Hermes 配置格式、凭据存储、Provider/模型目录、路由策略、后端接口及发布。
+
+**Verification:** 初始 Provider 分组用例先按预期 RED；目录模型增量中，面板与 Hermes 客户端各 1 项按预期 RED；Provider 标签增量 4 项按预期 RED。最终面板 34/34、Hermes 客户端 42/42、模型配置目录 132/132（另 1 条按环境跳过）GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；浏览器 Mock 证明同一 Provider 的主、备用模型标签带具体模型名称、分两行且主模型在上，390px 下无横向溢出。`git diff --check` 通过。
+
+---
+
+# 高级设置关闭审批状态提示移除 Implementation Plan
+
+**Status:** 已实现并通过 RED/GREEN、多语言、前端门禁与本地组件页面验收，准备提交。
+
+**Design:** `openspec/changes/2026-08-30-approval-off-warning-copy-removal-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-30-approval-off-warning-copy-removal-implementation-plan.md`
+
+- [x] 删除关闭审批状态提示及七种语言资源，保留选项、保存与确认弹窗。
+- [x] 完成 RED/GREEN、多语言校验、前端门禁和浏览器验收。
+
+**Verification:** 目标测试先按七种语言准确 RED（7 failed / 41 passed），实现后 48/48 GREEN；`pnpm i18n:check`、`pnpm check` 与 `git diff --check` 通过。应用内浏览器使用临时本地组件预览验证“关闭审批”仍显示、风险确认弹窗仍出现、确认后目标提示计数为 0，控制台新增错误为 0；预览路由已删除，未进入最终 diff。
+
+---
+
+# 国际站 Blog 入口与页面头部统一 Implementation Plan
+
+**Status:** 实现中，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Goal:** 让国际站所有公开页共享 Blog 顶部入口，并让首页与 Blog 页保持一致的国际站 Footer，同时保留 Blog 页当前透明头部效果。
+
+**Design:** `openspec/changes/2026-09-02-global-blog-navigation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-global-blog-navigation-implementation-plan.md`
+
+- [x] 注册国际站 Blog 顶部导航项，验证桌面导航、移动菜单、语言前缀和国内站隔离。
+- [x] 验证国际站首页与 Blog 页 Footer 入口及 Blog 页透明头部回归。
+- [x] 完成定向测试、国际化检查、类型检查、双区域构建和浏览器验收。
+
+---
+
+# 国际站 V2 首页性能优化 Implementation Plan
+
+**Status:** MR !3533 的 CR 修正已提交并同步最新 master，合并后复验完成，等待 push 更新 MR；当前未发布。
+
+**Size:** M。范围限定在国际站 V2 首页 client boundary、评价头像和场景子按钮；fragment 输出建议已实测无收益并撤回。不修改完整 marketing layout、动效生命周期或发布缓存。
+
+**Goal:** 去除一份重复 i18n client chunk，延迟并缩小评价头像，修复 18 个场景子按钮的 click/Enter/Space 操作，并用真实 RSC 产物校正无效的 fragment 优化建议。
+
+**Design:** `openspec/changes/2026-09-02-international-home-performance-v2-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-international-home-performance-v2-implementation-plan.md`
+
+- [x] **Task 1：测试先行拆分持久 App Provider client boundary；根据首次构建证据移除 repository 对全量 `@/i18n/t` 的单条默认名称依赖，并用真实 global 构建验证完整字典 chunk 数。**
+- [x] **Task 2：实现 Server Component 直出实验并用真实 RSC 产物确认载荷未减少，撤回无收益生产改动。**
+- [x] **Task 3：测试先行生成评价头像 64×64 WebP，并为全部 locale fragment 添加 lazy、async decoding 和真实展示尺寸。**
+- [x] **Task 4：以真实 runtime 行为测试锁定并修复 18 个场景子按钮的 hover、click、Enter、Space 与 `aria-pressed`。**
+- [x] **Task 5：完成聚焦回归、i18n、类型、global build、bundle/HTML/RSC/头像字节对比和双视口浏览器 smoke。**
+- [x] **Task 6：处理 MR CR：移除旧 Provider re-export，并让 9 份静态 fragment 在脚本执行前携带正确的初始 `aria-pressed`。**
+
+**Acceptance:** 首页 global 构建只包含一份完整 eager 字典 key 集合；fragment 实验以真实 RSC 证据撤回且不虚报 97 KB 收益；评价头像 lazy 并引用 64×64 WebP；18 个 `.scene__sub` 可通过 hover、click、Enter/Space 激活；七 locale、header 与首页视觉不变。
+
+**Verification:** MR 基线 `origin/master`（`4b6cb083e`）已完成原始复验，CR 修正后已同步最新 `origin/master`（`aafc32ed`）。CR 修正先得到 2 个预期失败，合并后聚焦测试 10 文件 117 项、`pnpm check`（0 new diagnostics）和 `pnpm build:global`（592/592）通过。9 份 fragment 共 162 个场景按钮均含静态 `aria-pressed`，每份 6 个初始选中态；helper 单测覆盖每组唯一选中、无关标记保留和二次执行字节一致。同提交纯 master 对照下，首页本地 JS 为 4,075,348 → 3,051,382 B raw、1,014,547 → 778,284 B Brotli，完整 2,693-key 字典 2 → 1；12 个唯一评价头像 1,248,169 → 25,056 B。英文桌面和西语 390px 浏览器 smoke 无 console error、无横向溢出，click/Enter/Space 均通过。
+
+**Out of scope:** 动效 IIFE cleanup、打字机布局优化、缓存头、完整 marketing layout、i18n 异步协议、API/鉴权/计费/发布。
+
+---
+
+# 云存储实例容量展示 Implementation Plan
+
+**Status:** 容量展示、系统预留口径及 CR 修正已实现；已合并最新 `master` 并完成复验，等待更新 MR !3499。
+
+**Size:** S。单一云存储页面增强；业务逻辑和测试各 1 个文件，i18n 资源由脚本机械生成，不新增后端、公共接口、权限、计费或依赖。
+
+**Goal:** 国内站和国际站云存储页面显示实例磁盘已用、总量和剩余容量，并在进入页面、手动刷新、上传成功和删除成功后更新。
+
+**PRD:** `../wiki/prd-docs/2026-09-02-cloud-storage-capacity.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-cloud-storage-capacity-implementation-plan.md`
+
+- [x] **Developer｜修改 `tat-file-manager-panel.tsx`、对应组件测试及生成 i18n 资源：先以失败测试锁定固定 TAT/TSSH 容量查询、展示、错误隔离与刷新时机，再最小实现并完成聚焦测试、i18n、类型、双区域构建和页面 smoke。**
+- [x] **Developer｜根据真实实例验收修正统计口径：先以失败测试锁定 `已用 = 总容量 - 普通用户可用容量`、文案“可用”及新进度值，再最小修改固定命令和 i18n 文案并完成验证。**
+- [x] **Developer｜处理 CR：测试先行兼容 TAT 缺失退出码、用双哨兵从 PTY 噪声中提取容量 JSON、记录脱敏失败原因并恢复重命名单次调用断言；同步澄清真实实例验收记录。**
+- [x] **Developer｜合并最新 `origin/master`，只解决 `openspec/plan.md` 热点文件冲突，再完成聚焦测试、`pnpm check`、双区域构建和 MR 状态核验。**
+
+**Acceptance:** 容量卡片展示 `/home/agentuser` 所在文件系统的已用/总量、普通用户可用空间及可访问进度条；系统预留计入“已用”，满足 `总容量 = 已用容量 + 可用容量`；首次进入、手动刷新、上传成功和删除成功后重查；查询失败不影响文件管理；命令固定只读且无用户输入；国内站和国际站均生效。
+
+**Out of scope:** 目录大小汇总、业务配额、扩容、告警、历史趋势、轮询、新后端接口及其他文件管理行为调整。
+
+**Verification:** 既有文件管理器基线 24/24 通过；新增 5 个容量场景先 RED，最小实现后总计 29/29 GREEN。系统预留口径修正前先确认基线 29/29，通过新增断言得到 1 个预期 RED，最小修查询公式与文案后恢复 29/29 GREEN。CR 回归新增 TAT 缺失退出码、PTY 杂音与诊断日志脱敏场景：旧实现先得到 4 个预期失败，额外安全断言再得到 1 个预期失败，最小修复后组件测试 32/32 GREEN。合并最新 `master` 后复验：组件测试 32/32、`pnpm check` 通过（TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved），i18n 结构错误 0，所有新增文案覆盖 6 个必填翻译 locale；`build:cn` 93/93、`build:global` 585/585 静态页生成通过。本地直连账号没有 Agent，页面停留在“Create Now”；另通过用户已登录的预览页面与本地代理捕获到真实 Agent 的 TAT 容量响应，确认 Python、权限与 `statvfs` 字段可用，并据此完成系统预留口径修正。
+
+---
+
+# 国际站 Blog 评审修正 Implementation Plan
+
+**Status:** 实现与验证完成，等待提交并更新 MR。
+
+**Size:** S。
+仅修正国际站 Blog 的英文外链、英文正文 SEO 语义、分类类型与本地化日期格式。
+不翻译博客正文，不移除语言前缀路由，不改国内站公开路由。
+
+**Goal:** 让英文正文只声明英文 hreflang，使用可访问的 HTTPS 外链，并让日期按当前界面语言和北京时间格式化。
+
+- [x] **Task 1：测试先行修正 Blog 外链、英文正文 alternates、分类类型和本地化日期，并完成国际站与国内站构建验证。**
+
+**Verification:** Blog 专项断言先按预期 RED（6 个失败），实现后 6 个测试文件共 40 个断言 GREEN。`pnpm i18n:check`、`pnpm check`、`pnpm build:global`、`pnpm build:cn` 与 `git diff --check` 均通过；类型基线为 206 current / 276 baseline / 0 new / 70 resolved。
+
+---
+
+# Hy Token Plan 添加前自动验证 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收；尚未创建分支或提交。
+
+**Size:** S。仅调整 Hy Token Plan 个人版的模型状态检测入口和添加动作时序；不修改七彩石、Hermes 协议或其他 Provider。
+
+**Goal:** 隐藏 Hy 的独立“检测模型状态”按钮，点击“添加模型”时先真实验证，成功后才保存，失败时保留表单且不写配置。
+
+**Design:** `openspec/changes/2026-09-02-hy-token-plan-validate-on-add-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-hy-token-plan-validate-on-add-implementation-plan.md`
+
+- [x] **Developer｜测试先行为 Hy 增加添加前验证能力，隐藏独立检测按钮，串行执行 `connectivityProbe -> add`，覆盖失败不保存和其他 Provider 不变，并完成聚焦回归、类型与差异检查。**
+
+**Acceptance:** Hy 点击添加时使用当前模型和 API Key 执行 `model_request`；成功直接保存且不弹检测成功框；失败不产生 `add`、不清空表单；其他 Provider 的独立检测与添加流程不变。
+
+**Out of scope:** 不改变七彩石目录/缓存/兜底，不删除底层检测能力，不增加验证缓存、轮询或新接口；未经确认不创建分支、commit、push 或 MR。
+
+**Verification:** Provider 能力用例先出现 1 个预期 RED；面板成功/失败链路先出现 2 个预期 RED。最小实现后模型配置标准套件 7 个文件 126/126 GREEN，本地 Hy4 整体失败兜底测试 1/1 GREEN；面板测试同时覆盖探测命令异常不保存且保留表单。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。标准套件首次执行因系统 Python 缺少 `cryptography` 产生环境级级联失败，改用 Codex 工作区自带 Python 后全部通过。
+
+## 线上重复配置回归修复
+
+- [x] **Developer｜测试先行修复已配置主模型再次输入 Key 时用途误落到“仅添加”的问题：保持当前主模型用途，完成添加前检测后更新配置，并验证首次添加与其他用途不受影响。**
+
+**线上证据（2026-09-03）：** 同一 Hy4 Preview 独立连通性检测通过（约 0.9 秒），证明 API Key、七彩石模型名和 Token Plan 请求地址有效；失败表单同时显示该模型已经是主模型、用途却默认选中“仅添加”，故故障位于重复配置的用途校验而非模型接口。
+
+**Follow-up verification:** 新增回归用例先按预期 RED（当前主模型被错误选为“仅添加”），最小实现后自动保持“设为主模型”并禁用无效的“仅添加”；模型面板 32/32、模型配置目录 128/128（另 1 条按环境跳过）通过。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）。本机 `/etc/hosts` 缺少 localhost 映射，Vitest 运行时临时指定 `127.0.0.1` 后已还原；Hermes 客户端套件使用 Codex 工作区 Python 以满足既有 `cryptography` 测试依赖。本地页面可达但未登录，交互回归由聚焦组件测试覆盖。
+
+## Coding Plan 直接添加模型
+
+**Status:** 实现与自动化验证完成，用户已确认提交。
+
+**Detailed plan:** `openspec/changes/2026-09-03-coding-plan-direct-add-implementation-plan.md`
+
+- [x] **Developer｜测试先行移除 Coding Plan 添加前自动检测：添加直接保存，保留独立“检测模型状态”，删除 `validateBeforeAdd` 及其专用状态，并完成聚焦回归与 `pnpm check`。**
+
+**Verification:** 新增直接添加断言先按预期 RED，确认旧实现仍发出 `connectivityProbe`；Provider 适配断言同时因残留 `validateBeforeAdd` 失败。最小实现后聚焦测试 40/40 GREEN，模型配置目录回归 125/125 GREEN（另 1 条按环境跳过）。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；独立“检测模型状态”测试继续覆盖 `model_request`。本机 Vitest 临时使用 `127.0.0.1` 绕过 `localhost` 解析异常，验证后已还原配置。
+
+---
+
+# Hy Token Plan 七彩石模型目录 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收；尚未创建分支或提交。
+
+**Size:** S。仅调整 Hy Token Plan 个人版在产品 Provider 适配层的数据来源与空目录过滤；不修改七彩石接口、模型配置协议或其他 Provider 行为。
+
+**Goal:** 七彩石成功时由远端决定 Hy Token Plan 的存在性、说明和模型列表；整体失败时保留本地 Hy4 兜底，并继续使用固定目录交互。
+
+**Design:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-catalog-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-catalog-implementation-plan.md`
+
+- [x] **Developer｜测试先行取消 Hy 成功态本地目录覆盖，过滤空模型 Provider，保留本地 Hy4 兜底和固定选择交互，并完成聚焦回归、类型与差异检查。**
+
+**Acceptance:** 远端 Hy 目录与说明原样进入 LightVela；远端缺失或模型为空时不展示；七彩石整体失败仍由现有 Hook 回退本地 Hy4；无模型发现入口，检测与添加协议不变。
+
+**Out of scope:** 不增加实时刷新、缓存 TTL、轮询、已保存配置迁移、SDK 依赖升级或其他 Provider 行为调整；未经确认不创建分支、commit、push 或 MR。
+
+**Verification:** 新适配用例先出现 2 个预期 RED，分别证明远端目录/说明被本地 Hy4 覆盖以及空目录被错误补回；最小实现后 3 个聚焦测试文件 38/38 GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。
+
+---
+
+# Hy Token Plan 个人版固定模型 Implementation Plan
+
+**Status:** 七彩石覆盖回归已完成实现与自动化验证，等待提交 MR。
+
+**Size:** S。仅调整腾讯云 Hy Token Plan（个人版）的模型选择策略与 Hy4 目录文案，不改变其他 Provider、连接检测协议或添加模型生效流程。
+
+**Goal:** Hy Token Plan 个人版无需获取模型列表，固定使用 `hy4-preview`，并保留模型状态检测和添加模型生效。
+
+**Design:** `openspec/changes/2026-09-01-hy-token-plan-fixed-model-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-01-hy-token-plan-fixed-model-implementation-plan.md`
+
+**Follow-up plan:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-override-implementation-plan.md`
+
+- [x] **测试先行实现 Hy4 固定目录、状态检测与添加生效，完成 i18n、类型、专项回归、双区域构建和国内站页面可达性 smoke。**
+- [x] **测试先行修复七彩石覆盖：即使远端仍返回 Hy4 Preview 与 Hy3，Hy 个人版也只展示本地 `hy4-preview` 并使用 Hy4 说明；保持模型状态检测与添加模型协议不变。**
+
+**Follow-up 执行记录（2026-09-02）：**
+
+- RED：按现网七彩石返回 `hy4-preview + hy3` 与旧 Hy3 说明构造回归用例，适配器按预期失败并暴露两个远端模型。
+- GREEN：Hy 个人版在适配层改用本地固定目录与说明，适配器和模型面板聚焦回归 35/35 通过；模型状态检测仍为 `model_request`，添加模型仍为 `discoverModels: false`。
+- 质量门禁：`pnpm check` 通过（0 个新增 TypeScript 诊断、i18n 结构错误 0）；`pnpm build:cn` 生成 90/90 页面，`pnpm build:global` 生成 564/564 页面；`git diff --check` 无输出。
+
+**执行记录（2026-09-01）：**
+
+- RED：Provider 目录/适配新增断言 2 条按预期失败；模型面板固定展示、状态检测、添加生效新增断言 3 条按预期失败。
+- GREEN：目标 4 个测试文件共 54 条全部通过；模型面板 28 条全部通过，断言固定 `hy4-preview`、无模型发现、检测使用 `model_request`、添加使用 `discoverModels: false` 且保持主模型用途。
+- i18n：已运行 `pnpm i18n:extract`、`pnpm i18n:check`、`pnpm i18n:zh-hant:check`，所有已开放 locale 的 Hy4 新文案非空；印尼语已知翻译债务从 175 降至 174。
+- 质量门禁：`pnpm check` 通过且 0 个新增 TypeScript 诊断；`pnpm build:cn` 与 `pnpm build:global` 通过；`git diff --check` 无输出。
+- 浏览器：本地 `/agents/models/` 返回 200、页面正常渲染且无控制台错误；当前浏览器账号没有智能体，页面停留在“立即创建”，为避免创建真实云端资源，未执行完整表单交互 smoke。
+- 扩展模型目录回归共 140 条：103 条通过、1 条按环境跳过；36 条 Hermes 客户端测试因本机系统 Python 缺少 `cryptography` 在脚本启动阶段失败，本次未修改对应客户端或脚本。
+
+---
+
+# 自动任务页签顺序回归修复 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认提交；不自动 commit、push 或创建 MR。
+
+**Size:** M。行为仍是单一回归修复，但需要同步组件测试、7 个 locale 文档与 5 份本地化截图资源，文件面超过 S 级上限。
+
+**Goal:** 页签恢复为“当前任务 → 已结束任务 → 最近执行”，同步修正测试和文档截图，并恢复被 !3471 删除的“结果校验”；不改变任务分类、切换行为、布局或其他 !3471 变更。
+
+- [x] **Developer｜影响 `agent-automations-panel.tsx`、对应组件测试、必要 i18n 生成资源、自动任务双区域文档与现有页签截图：先修改真实渲染断言确认 RED，再最小恢复文案和 DOM 顺序；随后同步 7 个 locale 的正确顺序和“结果校验”，覆盖现有 5 份本地化截图，最后完成定向测试、docs sync、i18n、类型和差异校验。**
+
+**Acceptance:** 国内站显示“当前任务 → 已结束任务 → 最近执行”；全部已开放 locale 使用既有“当前任务”翻译；自动任务文档正文、图片替代文本与本地化截图使用相同顺序，7 个 locale 均包含结果校验步骤；任务分类、点击切换及创建后回到当前任务的行为保持不变。
+
+**Verification:** 组件测试先出现 3 个预期失败、文档契约测试先出现 7 个预期失败，最小修复后聚焦测试 151/151 通过；`pnpm check` 通过（TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved，i18n 结构错误 0），`docs:sync` 输出的 8 个站点 locale 均包含正确顺序和结果校验，5 份截图源文件与 public 镜像一致，`git diff --check` 无输出。国内线上页确认了 !3471 的错误顺序，纠正后组件在本地 CN/global 预览中逐语言实渲染并截图；国际线上页因未登录仅能看到登录提示。
+
+**Out of scope:** 不处理 !3471 的模板启用流程、typecheck 重试脚本或其他无关改动；不整体 revert !3471。
+
+---
+
+# 记忆刷新按钮与自动任务模板文案统一 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅统一 `/agents/memory/` 刷新按钮视觉，并调整 `/agents/automations/` 模板区名称；不改变刷新、模板启用或自动任务业务逻辑。
+
+**Goal:** 记忆页刷新按钮与自动任务页采用同一图标按钮样式，并将“模板专区”统一命名为“任务模板”，同步相关辅助文案、文档与全部已生成 locale。
+
+- [x] **Developer｜影响 `agent-settings-page.tsx`、`agent-automations-panel.tsx`、相关测试、自动任务文档与生成字典：先以失败测试锁定 32×32 纯图标刷新按钮及“任务模板”文案，再最小实现并完成定向测试、i18n、类型和差异校验。**
+
+**Acceptance:** 记忆页刷新按钮无可见文字、保留 `aria-label/title="刷新"`，尺寸、颜色、hover、disabled 与自动任务页一致且加载时图标旋转；自动任务模板区标题及空态辅助文案使用“任务模板”，文档引用与所有已生成 locale 保持一致。
+
+**Verification:** 新增要求先产生 3 个预期 RED，最小实现后相关测试 149/149 GREEN；`pnpm check` 通过，TypeScript diagnostics 为 206 current / 276 baseline / 0 new / 70 resolved，i18n 结构错误 0，7 个 locale 的 2 条新文案逐项断言通过，旧“模板专区”源码无残留，`git diff --check` 无输出。本地 mock 路由 `/agents/memory/` 返回 200、无错误覆盖层或 console error；mock 无 Agent，目标面板视觉由同款 class、无障碍属性和 loading 图标断言覆盖。
+
+**Out of scope:** 不调整记忆加载状态模型、自动任务刷新行为、模板卡片内容、分页、布局或功能。
+
+---
+
+# 人设页按钮文案精简 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅精简 `/agents/persona/` 两个按钮的显示文案，不改变按钮行为、样式或人设逻辑。
+
+**Goal:** 将“随机抽取人设 / 答题测试人设”分别改为“抽取人设 / 测试人设”，并保持已开放语言的既有语义。
+
+- [x] **先用页面组件测试确认新文案 RED，再最小修改渲染与 i18n 资源并完成定向测试、i18n、类型和差异校验。**
+
+**Verification:** 页面组件测试先按预期出现 6 个文案相关失败，再恢复 GREEN；CN 组件与字典定向测试 48/48 通过。`pnpm check` 通过（i18n、繁中一致性、类型检查均无新增错误），7 个 locale 的新按钮键逐项断言通过，目标文件 `git diff --check` 无输出。直接把整套国内 persona 交互夹具切到 global 会触发 8 个既有 slug fixture 失败，因此 global 文案以全 locale 字典测试与键值断言覆盖，本次不扩大范围修复测试架构。
+
+---
+
+# Agent 工作台左侧导航文案 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅调整 `/agents/websites/` 共用左侧导航的本地化文案，不改变页面结构、路由、功能或可见性。
+
+**Goal:** 左侧导航显示“我的工作台 / My Workbench”，并在已开放语言中保持单数的个人产物语义。
+
+- [x] **测试先行将网站入口导航文案改为“我的工作台 / My Workbench”，完成中英文与前端质量门禁验证。**
+- [x] **补齐西班牙语单数文案“Mi espacio de trabajo”，保留繁中与印尼语现有合适译法。**
+
+**Verification:** 导航和英文翻译新增断言先按预期 RED（2 个失败），西班牙语断言随后按预期 RED（1 个失败）；实现后相关导航测试 34/34 GREEN。`pnpm i18n:extract`、`pnpm check` 与 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。本地 `/agents/websites/` 返回 200，但未登录 mock 状态进入创建 Agent 空态，侧栏文案由聚焦源码与字典断言覆盖。
+
+---
+
+# 首页登录态产品入口 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认提交；不自动 commit、push 或创建 MR。
+
+**Size:** S。首页公共头部的局部登录态入口，不改变认证、订阅、创建或管理页行为。
+
+**Goal:** 国内站和国际站首页登录态在头像左侧显示本地化产品入口，点击直达 `/agents`。
+
+**Design:** `openspec/changes/2026-08-31-homepage-auth-entry-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-31-homepage-auth-entry-implementation-plan.md`
+
+- [x] **测试先行实现登录态首页入口、八种 locale、首页范围开关、原生 `/agents` 链接与埋点，并完成双站验证。**
+
+**Verification:** 目标测试先 RED（12 个用例中 9 个按预期失败）后 GREEN（12/12）；相关公共导航回归 24/24 通过。`pnpm i18n:check`、`pnpm check`、`pnpm build:cn`、`pnpm build:global` 及范围内 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。真实登录态浏览器确认国内站“开始使用”和国际站“Enter LightVela”在桌面与 390px 下均无横向溢出，点击进入 `/agents/`；退出态由自动化用例确认原免费试用动作不变。
+---
+
+# 国际站日韩本地化收口与生产入口开放 Implementation Plan
+
+**Status:** 实现与专项验收完成；仅处理日语、韩语需求本身，等待用户验收，不自动提交、推送或创建 MR。
+
+**Size:** M。范围包含高可见文案质量、生产 locale 发布标记、专项质量门禁与浏览器验收；不处理仓库全量测试中的无关历史失败。
+
+**Goal:** 修正浏览器验收发现的日韩高可见误译和移动端断行问题，按西语法务模式保留“英文版本为准”声明，同时开放国际站日语、韩语切换入口。
+
+**Files:**
+- Modify: `src/i18n/__tests__/dictionaries.test.ts`
+- Modify: `src/i18n/__tests__/locales.config.test.ts`
+- Modify: `src/i18n/generated/ja-JP.json`
+- Modify: `src/i18n/generated/ko-KR.json`
+- Modify: `src/i18n/locales.json`
+- Modify: `next-site/__tests__/public-locale.test.ts`
+- Modify: `next-site/__tests__/docs-route-publication.test.ts`
+- Verify: `openspec/changes/2026-08-31-korean-localization-plan.md`
+
+- [x] **Task 1：测试先行锁定日韩首页高可见语义与生产发布契约。**
+- [x] **Task 2：修正日语、韩语高可见文案并同时开放两个 locale 的发布标记。**
+- [x] **Task 3：运行日韩专项 i18n、路由、Docs、SEO、法务、类型与双区域构建门禁。**
+- [x] **Task 4：完成日语、韩语桌面端/移动端首页、Docs、法务及可达 Agent 页面浏览器验收并生成 HTML 报告。**
+
+**Product decisions:** 用户已确认法务页沿用西语模式：提供本地化译文并明确英文版本优先；日韩母语与法务人员复核由用户另行安排，不阻塞本次代码验收。Docs 图片体积及其他全量测试历史失败不在本需求范围。
+
+**Verification:** 日韩字典均为 2677/2677，日语 0 error / 12 个共享汉字提示、韩语 0 error / 0 warning；专项回归 23 files / 265 tests 通过；`pnpm check` 为 206 current / 276 baseline / 0 new / 70 resolved；合并最新 `origin/master` 后，国际站 564 页、国内站 90 页生产构建通过，国际站日韩文档均与英文保持 67 路由一致，国内站未发布日韩前缀路由；桌面端/移动端首页、Docs、法务页 8 个浏览器用例通过且无横向溢出。登录态 Agent 实页因本地认证服务不可用被标记为 blocked，默认 `新会话` 在非中文 locale 展示 `New chat` 已由自动化回归覆盖。
+---
+
+# 国际站 V2 多语言首页接入 Implementation Plan
+
+**Status:** 用户补充项已实现并验证，等待更新后的 commit / push / MR 范围确认。
+
+**Size:** M。单一前端域内完成区域分流、静态首页资源、交互动效和导航闭环；每批不超过 3 个任务。
+
+**Goal:** 在最新 master 的独立分支中，将已验收的 V2 首页接入国际站七个已发布首页语言，统一结构和动态并保留各语言内容、字体与本地定制模块；国内站保持不变。
+
+**Detailed plan:** `openspec/changes/2026-08-31-intl-homepage-integration-implementation-plan.md`
+
+- [x] **Task 1（Developer）：测试先行锁定国际站英文首页选择、国内站/其他 locale 负向边界、资源完整性和正式链接映射。**
+- [x] **Task 2（Developer）：接入国际站专用 Server/Client 首页组件、HTML fragment、CSS/图片/字体/动效资源，并将所有导航连接到正式落点。**
+- [x] **Task 3（Reviewer）：完成定向测试、类型与 i18n 检查、国际站构建、本地桌面/移动端预览和控制台验收。**
+- [x] **Task 4（Developer / Reviewer）：按现网恢复顶部语言控件，将首页账号入口收敛为黑色 Sign In，修复页脚 Logo 白底与变形，并隔离新版首页样式以恢复 Cookie 提示布局。**
+- [x] **Task 5（Developer / Reviewer）：同步简中、繁中、印尼语、西语、日语、韩语 fragment 与图片，以简中为动态基准、英文为非中文标题字体基准，修复语言切换后动态重绑定、长标题换行和 CTA 英文回退。**
+- [x] **Task 6（Reviewer）：按用户截图收口页脚、用户评价、DeepSeek Harness 保留边界，完成七语种浏览器 smoke、PRD/OpenSpec 同步和提交前 CR。**
+- [x] **Task 7（Developer / Reviewer）：统一国际站公开页语言与登录按钮，完成七语种首页 117 个站内目标和关键路由 HTTP 校验。**
+
+**Verification:** 首页、渲染与公共头部定向 Vitest 41/41 GREEN；七个 locale fragment、正式路由、静态资源、动态脚本重绑定、CTA 本地化、单一顶部字标、统一公开页账号区和保留模块均有自动化断言。`pnpm check` 通过，i18n 结构错误 0，TypeScript diagnostics 为 206 current / 276 baseline / 0 new / 70 resolved。`NODE_OPTIONS=--max-old-space-size=8192 NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm build:next` 通过，国际站 564/564 页面生成、42 条公开路由 SEO 校验通过；75 个首页图片/字体资源全部有引用且无缺失。七个已发布 locale 共 117 个去重站内目标均匹配生产静态产物，七语种首页及关于、文档、定价、Agent、自动任务和 Harness 关键落点跟随正常重定向后均返回 200。浏览器此前实测七语种逐字入场、Discord 打字动态和繁体四渠道重播；最终本地 HTTP 核对韩语首页只含一个透明 SVG 字标，Harness 图片返回 200 `image/png`。`git diff --check` 通过。
+
+---
+
+# 首页加载性能优化 Implementation Plan
+
+**Status:** 已归档。归档文件：`openspec/changes/2026-08-31-homepage-performance.md`。
+
+**Size:** M。首页图片加载与场景依赖边界是两个相关性能批次；i18n 仅做构建 PoC。
+
+**Goal:** 减少国内站/国际站首页首屏非必要资源，并用真实构建与测量验证收益，不改变页面内容、区域化或 locale 行为。
+
+**Detailed plan:** `openspec/changes/2026-08-31-homepage-performance-implementation-plan.md`
+
+- [x] **Task 1：测试先行将 40 个唯一折叠下方图片资源改为 lazy，完成双区域 preload、构建和 Lighthouse 验证。**
+- [x] **Task 2：测试先行抽取首页 6 个场景 pack 的单一事实来源，保持全量库、locale 与 prompt 行为，并验证首页 bundle 边界。**
+- [x] **Task 3：完成 i18n 两份大 chunk 重复字典的 Q0 PoC，只输出证据与后续方案，不直接改运行时协议。**
+
+---
+
+# Changelog 上线节点与 DeepSeek Harness Beta 标识 Implementation Plan
+
+**Status:** 国际站公测、正式付费上线与印度尼西亚语支持已完成实现及验证；MR !3458 已合并，准备按用户授权创建后续 MR。
+
+**Design:** `openspec/changes/2026-08-30-changelog-launch-beta-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-30-changelog-launch-beta-implementation-plan.md`
+
+- [x] 更新 DeepSeek Harness 实验室归属和 Beta 标签、国内站 4 月公测标题及 7 月正式上线无图条目，并完成双站验证。
+- [x] 在国内站和国际站 8 月动态增加“自动任务支持测试运行”无图条目，并完成本地化与双站验证。
+- [x] 将双站测试运行动态移动到 DeepSeek Harness 后，并将描述中的“当前填写的内容”调整为“当前任务内容”。
+- [x] 将国际站 4 月改为公测，并在 8 月增加印度尼西亚语支持及正式付费上线两条无图动态，覆盖全部可见语言。
+
+**Verification:** 原有更新的新增断言先 RED（6 个预期失败），实现后 Changelog 国内/国际定向测试 13/13 GREEN；新增测试运行动态与顺序调整分别完成 RED/GREEN。最新国际站阶段与语言动态以 13/13 基线开始，新增 2 个用例按预期 RED，最终 15/15 GREEN；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 和 `git diff --check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved。浏览器确认中国站区域排除及国际站五种可见语言文案、顺序、无图状态正确；新增条目在 390px 下无自身横向溢出。
+
+---
+
+# 自动任务测试消息错误提示精简 Implementation Plan
+
+**Status:** 已实现并通过自动化验证，准备提交 MR。
+
+**Design:** `openspec/changes/2026-08-30-automation-test-send-error-copy-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-30-automation-test-send-error-copy-implementation-plan.md`
+
+- [x] 隐藏发送测试消息时未识别的 Hermes 原始英文错误，保留本地化可操作提示。
+
+**Verification:** 截图对应用例先 RED、后 GREEN；国内/国际自动任务面板测试 149/149 通过，`pnpm check` 与目标文件 `git diff --check` 通过。
+
+---
+
+# 账号页模型积分使用率颜色分级 Implementation Plan
+
+**Status:** 已实现并通过定向测试、i18n、前端质量门禁与本地页面刷新验收。
+
+**Size:** S。账号页订阅套餐卡片内的局部颜色调整，不改变积分计算、接口、布局或交互。
+
+**Goal:** 百分比文字和进度条统一使用四档颜色；使用率超过 95% 时切换为深红色，并按剩余积分区分展示模型配置提示。
+
+**Plan:** `openspec/changes/2026-08-29-account-credit-usage-colors-implementation-plan.md`
+
+- [x] **按实施计划完成六个边界值的 TDD 测试、最小实现和质量门禁。**
+- [x] **按实施计划完成“即将用尽/已用尽”提示、句内模型配置链接和定向验证。**
+- [x] **为两处模型配置链接增加 12px `ChevronRight`，保持原链接名称、跳转目标和句内样式。**
+- [x] **修复零积分套餐误报“模型积分已用尽”，仅对曾分配积分且余额归零的套餐显示提示。**
+
+**Verification:** 颜色测试先因现有规则不匹配而 RED（4 个预期失败）；提示测试先因页面无对应链接而 RED（2 个预期失败）；图标测试先因两处链接缺少 SVG 与布局类而 RED（2 个预期失败）；CR 跟进测试确认 `0 / 0` 套餐会误报“已用尽”（1 个预期失败）。最终账号页定向测试 30/30 GREEN；`pnpm i18n:check`、`pnpm check` 通过，TypeScript diagnostics 为 207 current / 276 baseline / 0 new / 69 resolved；本地账号页刷新正常且无浏览器错误；目标文件 `git diff --check` 通过。全量 Vitest 在 `origin/master` 基线存在多组无关失败并挂起，已记录且未扩展修复。未执行 commit、push 或 MR。
+
+---
+
+# 自动任务创建成功通知 Implementation Plan
+
+**Design:** `../wiki/prd-docs/2026-08-27-自动任务创建成功后发送通知确认.md`
+
+**Detailed plan:** `openspec/changes/2026-08-27-automation-create-notice-plan.md`
+
+## Tasks
+
+- [x] 测试先行实现自动任务创建成功后的多通道确认消息、失败隔离、非阻塞警告与双站国际化，并通过定向测试、类型、i18n 和差异门禁。
+
+**Verification:**
+- RED：新增用例分别失败于即时发送接口不存在、创建流程未调用和未处理 Promise rejection；GREEN 后全部通过。
+- 国内/国际相关 3 个测试文件共 231 passed；补充异常 rejection 用例后自动任务主测试文件 130 passed。
+- `pnpm check` 通过：TypeScript diagnostics 214 current / 276 baseline / 0 new / 62 resolved；i18n 结构错误 0。
+- `pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+
+---
+
+# 静态导航与公共头部三栏布局 Implementation Plan
+
+**Goal:** 在最新 master 上恢复静态导出页面的可靠整页导航，并固定桌面端公共头部主导航的页面中心位置。
+
+**Files:**
+- Modify: `next-site/user-menu-link.tsx`
+- Create: `next-site/__tests__/static-navigation.test.tsx`
+- Modify: `src/components/site/user-avatar-menu.tsx`
+- Modify: `src/components/site/cookie-consent-banner.tsx`
+- Modify: `src/components/site/public-site-header.tsx`
+- Modify: `src/components/site/__tests__/site-header.test.tsx`
+
+## Tasks
+
+- [x] 用失败测试锁定公共 Header、头像菜单和 Cookie Policy 的原生静态导航。
+- [x] 用失败测试锁定桌面端对称三列 Grid，并保持移动端布局不变。
+- [x] 在最新 master 干净分支完成定向测试、类型检查、双站静态构建和浏览器验收。
+
+**Known baseline:** `user-avatar-menu.test.tsx` 仍期待“我的作品”，组件实际渲染“我的工作台”；该 1 个既有失败不在本需求中修复。
+
+**Verification:** 定向回归 16 passed；`pnpm check` 为 0 个新增 TypeScript diagnostics；国内/国际静态构建通过。浏览器验收确认双站导航中心跨页差值为 0px、390px 无横向溢出，英文/中文/西语静态链接均完成整页导航。
+
+---
+
+# MR !3385 CR：移除误复活的国际 Support 路由
+
+**Goal:** 恢复 !3316 已确认的产品边界，国际站不生成带语言前缀的 Support 页面；国内站反馈页及已存在的西语组件文案保持不变。
+
+**Files:**
+- Modify: `frontend/scripts/check-next-seo.mjs`
+- Modify: `frontend/scripts/check-next-seo.test.ts`
+- Modify: `frontend/scripts/intl-only-pages.test.ts`
+- Delete: `frontend/src/app/(site)/[lang]/support/page.intl.tsx`
+- Delete: `frontend/src/app/(site)/[lang]/support/page.intl.test.tsx`
+
+- [x] 测试先行移除 `support` 国际路由白名单，删除误复活页面，并通过路由守卫、前端检查与国际站构建验证。
+
+---
+
+# 西语 Tencent Lighthouse 专有名词收口 Implementation Plan
+
+**Goal:** 所有西语一方内容完整保留团队名 `Tencent Lighthouse`，清除 `Tencent Cloud Light` / `Tencent Cloud Lighthouse` 误写。
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/i18n/__tests__/dictionaries.test.ts`
+- Modify: `frontend/src/i18n/generated/es.json`
+- Modify: `frontend/src/content/docs/es/who-is-lightvela-for.md`
+
+- [x] 测试先行修正西语页脚、关于文案、Legal Footer 与 Docs 中的团队名，并通过定向字典、Docs、i18n 与浏览器检查。
+
+---
+
+# 国际站模型表单操作按钮防裁切 Implementation Plan
+
+**Goal:** 国际站长语言操作按钮按内容完整显示，窄屏换到字段下方；国内站和模型业务逻辑保持不变。
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Verify: `frontend/openspec/changes/2026-08-26-international-model-actions-overflow-design.md`
+- Execute: `frontend/openspec/changes/2026-08-26-international-model-actions-overflow-plan.md`
+
+- [x] 测试先行完成国际站模型复合控件响应式布局，并通过组件测试、类型检查、差异检查与已登录西语浏览器尺寸验收。
+# DeepSeek Harness 实验室入口 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `test-driven-development` before implementation and `verification-before-completion` before claiming completion. This FE-AI plan is the execution source for the DeepSeek Harness lab entry; do not commit, push, create MR, or archive until user acceptance.
+
+**Status:** npm 渠道插件迁移与钉钉接入已通过本地自动化及用户授权 Ubuntu 24.04 主机的首次安装、同快照重装与六插件复验。北京 Hermes Sandbox 共存与 TAT 链路仍待验证；未提交、未推送、未创建 MR。
+
+**Goal:** 在 `/agents` 控制台中新增独立“实验室 > DeepSeek Harness”入口，并提供真实安装、运行状态、WebUI 访问和 Provider 配置体验。
+
+**Architecture:** 安装、状态查询、安装进度、重启和模型配置全部复用现有 `BotRepository.execDebugCommand` 与 `/v1/instances/:id/debug/exec`，不新增 DeepSeek Harness 专用 ctl 或 gateway 接口。实例侧固定管理脚本负责版本、目录、Provider 白名单和 DSH 回环 RPC；dsh 以系统级 `deepseek-harness.service` 运行并监听 `127.0.0.1:3080`。WebUI 直接使用当前 `Bot.id` 生成分站实例域名。API Key 只写、不回显、不进入 URL 或前端持久化。
+
+**Tech Stack:** Next.js 16 App Router、React 19、TypeScript 5.9、Tailwind CSS v4、lucide-react、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- “实验室”与“配置 / 使用 / 成长 / 管理”同级，DeepSeek Harness 作为实验室分组中的能力项。
+- 路由采用 `/agents/labs/deepseek-harness`；不新增 `/agents/deepseek-harness` 旁路。
+- 两条抢先体验公告位于 DeepSeek Harness 卡片上方，不嵌入卡片。
+- 未安装态必须展示 DeepSeek Harness Logo、标题后的 `Beta`、指定简介，以及简介下方的“即刻安装体验”按钮。
+- 安装中态在简介下方展示任务阶段进度和“请稍等片刻，安装大约需要 1-3 分钟”；安装器写入 `10/20/28/35/48/56/68/75/85/95/99/100` 真实节点，同一节点停留时前端每轮最多补 1% 且不越过下一节点，完成后通过淡出/淡入切换卡片内容。
+- 已安装态移除简介，不展示静态 WebUI 地址，只展示 Logo、标题、`Beta`、运行状态，以及右侧“访问 WebUI”和“重启”。
+- 不展示安装时间、最近启动时间、异常态主按钮置灰或查看诊断。
+- 状态、安装、重启和模型配置接入现有 `debug/exec` 与回环健康检查；WebUI 按当前 `botId` 直接跳转实例专属域名。
+- 远端操作必须由用户明确授权；验证记录不得写入机器地址或凭据。当前仅已验证用户提供的通用 Ubuntu 24.04 主机，不等同于北京 Hermes Sandbox 联调。
+- 模型配置按 Provider + API Key 实现；本期不提供具体 model ID 选择。
+- LightVela `deepseek` 固定映射到 DSH 原生 `deepseek-official`。
+- DSH、SkillHub、QQBot、微信、企业微信、Lark 与钉钉均请求 npm `@latest`，每次安装开始时解析并固定本次快照的精确版本与 integrity；正式开放前必须完成北京 Hermes Sandbox 共存与 TAT 链路冒烟。
+- 首批真实安装只进入北京 Sandbox；`debug/exec` 已是现有通道，本需求不新增 service-gateway allowlist。
+- 国内站 WebUI 链接为 `https://${botId}.dsh.lightvela.tech`，国际站为 `https://${botId}.dsh.lightvela.site`。
+- Logo 使用产品提供的 SVG：`https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/ae53bb41-9387-4f31-b264-0e4fd747e20b.svg`。
+- UI 保持 Agent 控制台工具型风格：页面卡片使用 `rounded-md`、轻边框和 `0 10px 30px rgba(15,23,42,0.04)` 级别阴影；不做营销 hero、不嵌套卡片。
+- 新增用户可见中文需走 `useT()`，实现后按影响范围运行 i18n 检查。
+
+## Scope And Decision
+
+### 采用方案：独立 Lab section + 独立 Panel
+
+- 在 `agent-routes.ts` 中增加 DeepSeek Harness section id 与 lab slug 解析。
+- 新增 `agents/labs/[lab]` App Router 页面，避免污染现有 `/agents/[section]` 单段 section 路由。
+- 在 `AgentSettingsPage` 内把“实验室”作为独立分组，能力项 DeepSeek Harness 指向 `/agents/labs/deepseek-harness`。
+- 页面主体抽到 `agent-deepseek-harness-panel.tsx`，减少继续膨胀 `agent-settings-page.tsx`。
+
+### 备选方案与取舍
+
+- 早期方案：把“实验室”放在“管理”分组下并增加展开层级。后续产品决策将“实验室”提升为独立分组，当前实现以最终决策为准。
+- 备选 B（第一版记录）：复用现有 `browser` / `TatHermesWebPanel` 代理链路直接嵌入 WebUI。当时未采用；Task 7 已在不嵌入页面的前提下复用并扩展该链路。
+- 备选 C（第一版记录）：先做后端安装接口再上前端入口。当时未采用；Task 7 已在入口验证后补齐真实安装接口。
+
+## File Map
+
+- Modify: `frontend/src/lib/agent-routes.ts`
+  增加 DeepSeek Harness section id、`/agents/labs/deepseek-harness` path、lab slug helper。
+- Create: `frontend/src/app/(site)/agents/labs/[lab]/page.next.tsx`
+  承接 `/agents/labs/deepseek-harness`，非法 lab 返回 `notFound()`。
+- Modify: `frontend/src/observability/datong-page-map.ts`
+  为新增 section 补齐 pgid 映射，当前无独立 pgid 时归到 `agents_home`，避免类型和上报断层。
+- Create: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+  承载状态查询、安装轮询、失败恢复、重启、同源 WebUI 链接与模型配置入口。
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+  接入 panel；导航模型支持“实验室”二级展开；引入合适 lucide 图标。
+- Modify: `frontend/src/styles.css`
+  补充二级导航样式、移动端布局、激活态和 focus 样式。
+- Test: `frontend/src/lib/__tests__/agent-routes.test.ts`
+  锁定 lab path 与 slug helper。
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+  锁定“实验室”为独立分组，DeepSeek Harness 是其能力项。
+- Test: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+  覆盖三态文案、Logo、按钮和 WebUI 链接。
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
+  覆盖“实验室”展开/收起、选中态和 DeepSeek Harness 页面渲染。
+
+---
+
+# 国际站续费付费开关 Implementation Plan
+
+**Design:** `openspec/changes/2026-08-27-global-renew-paid-billing-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-27-global-renew-paid-billing-plan.md`
+
+## Tasks
+
+- [x] 用失败测试锁定国际站开关关闭/开启和国内站不回归。
+- [x] 统一账号页、Agent 到期提醒与续费弹窗的 `paidBillingEnabled` 门控。
+- [x] 完成相关测试、类型检查、i18n 检查和 diff 门禁。
+
+**Verification:**
+- 续费相关聚焦回归 6 个测试文件、47 passed。
+- `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- `renewal-id-ID.test.ts` 仍有 2 条 `origin/master` 既有字典缺项失败，本变更未修改对应测试和生成字典。
+
+---
+
+# 国内建站临时分享码 Implementation Plan
+
+> **执行约束：** 用户已批准 Redis TTL 方案、后端实现以及提交分支并创建 MR；本次仍不改 GitOps、不发布生产。
+
+**Goal:** 将国内站分享码改为 Redis 临时状态，支持 1/7/30 天自动到期和 generation 主动废除，同时保持 Owner OIDC 与国际站 public 行为不变。
+
+**Architecture:** CTL 以 `website:share:access:{site_id}` Redis key 保存 bcrypt hash、随机 generation 和绝对到期时间，TTL 是分享生命周期；site-gateway 通过 CTL 元数据和校验接口获得 generation/expiry，并签发不超过剩余有效期的 Host-only Cookie。MySQL 不承载分享状态，不新增 migration；前端管理 UI 已按用户要求撤出本分支，后续交由前端同学实现。
+
+**Tech Stack:** Go 1.26、go-redis v9、bcrypt、site-gateway AES-GCM TokenCodec。
+
+## Global Constraints
+
+- Redis TTL 只允许 1/7/30 天；key 缺失、过期、损坏或 Redis 异常时访客 fail-closed 为 owner-only。
+- 分享码固定 6 位无歧义大写字母数字；Redis 只保存 bcrypt hash，明文仅在开启/重置响应返回一次。
+- generation 使用独立加密随机值；分享 Cookie 绑定 site/host/generation，且 token/cookie 到期不晚于分享 `expires_at`。
+- 重置保留原绝对到期时间；停止分享删除 key；自动到期不得被 gateway 30 秒元数据缓存延长。
+- Owner OIDC 与国际 `public` 完全不读取分享 Cookie；客户端 IP 只接受显式受信代理头。
+- 本分支不修改前端路由、工作台页面、分享按钮、Dialog 或 i18n 资源。
+
+## Active Tasks
+
+- [x] **Task WSR-1 — CTL Redis 临时状态、所有者接口与内部校验**
+  - **Role:** Developer（inline，现有隔离 worktree 单写者）
+  - **Files:** 删除 `ctl/migrations/000029_add_website_share_access.*.sql`；修改 `ctl/pkg/model/website/entity.go`、`dao.go`、`ctl/pkg/logic/website/share_access.go`、`logic.go`、`ctl/main/api/website_handler.go` 及相邻测试。
+  - **Interfaces:** `SetAccessPolicy(userID, siteID, mode string, durationDays int) (*ShareAccessResult, error)`；`ResetShareCode(userID, siteID string)`；`VerifyShareCode(siteID, code, clientIP string) (*ShareVerifyResult, error)`；Redis state `{code_hash,generation,expires_at}`。
+  - **RED/GREEN:** 先修改测试要求 1/7/30 TTL、非法时长、无 DB 字段、随机 generation、重置保留到期和停止删除；确认旧实现因契约不符失败后，再替换为 Redis 实现。
+  - **Acceptance:** `website_sites` 无分享字段/migration；用户 API 不返回 generation/hash；内部元数据仅返回 generation/expiry；Redis read 异常不阻断 Owner OIDC；限流仍在 bcrypt 前且 fail-closed。
+  - **Verify:** `cd ctl && go test -count=1 ./pkg/logic/website ./main/api`
+
+- [x] **Task WSR-2 — site-gateway generation/expiry 分享会话**
+  - **Role:** Developer（inline）
+  - **Files:** 修改 `site-gateway/internal/sitemeta/*`、`internal/siteauth/token*`、`internal/httpapi/shareauth*`、`siteauth.go`、`internal/config/*`、`cmd/site-gateway/main.go`。
+  - **Interfaces:** `ShareCodeVerifier.Verify(...) (ShareVerification, error)` 返回 generation/expiry；`ShareSessionClaims{SiteID,SiteHost,Generation,Nonce}`；`SealShareSession(claims, ttl)` 使用动态剩余 TTL。
+  - **RED/GREEN:** 先让 Cookie 动态 TTL、generation mismatch、自动到期、public/owner-only 回归测试失败，再实现最小 verifier/token/gateway 判断。
+  - **Acceptance:** Cookie Max-Age/exp 不超过 Redis 分享剩余时间；自动到期立即拒绝；重置/停止在元数据缓存收敛后拒绝；public 不触发 verifier。
+  - **Verify:** `cd site-gateway && go test -count=1 ./...`
+
+- [ ] **Task WSR-3 — 前端分享管理 UI（移交前端同学）**
+  - **状态:** 本分支已删除分享按钮、Dialog、国内路由入口、相关测试与 i18n 资源，不在当前实现范围内。
+  - **交互要求:** 先选择“使用分享码访问”再展示 1/7/30 天；只保留一个“复制分享信息”按钮，复制内容包含 LightVela 分享说明、站点地址、分享码和有效期。
+
+- [x] **Task WSR-4 — 后端跨服务回归与安全审查**
+  - **Role:** Developer + final Reviewer（最终一次只读 review）
+  - **Files:** 仅修正 WSR-1~2 暴露的后端缺陷；更新 `.workflow/runtime/verification-ledger.md`，不提交 runtime 文件。
+  - **Acceptance:** 目标 Go 测试、`git diff --check`、migration/DB 字段残留扫描、secret/hash/code 日志扫描均有最新证据；前端门禁不属于当前分支验收范围。
+  - **Verify:** `git status --short`, `git diff --check`, `git diff --stat`；明确真实 Redis、DB migration、登录态浏览器和线上请求均未执行。
+
+## Batches
+
+- Batch 1（当前）：WSR-1、WSR-2，主 Agent 串行实现，避免共享契约并发写入；WSR-3 移交前端同学。
+- Batch 2：WSR-4 最终验证和验收摘要。
+
+---
+
+### Task 1: 路由与 Section 模型
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/lib/agent-routes.ts`
+- Create: `frontend/src/app/(site)/agents/labs/[lab]/page.next.tsx`
+- Modify: `frontend/src/observability/datong-page-map.ts`
+- Test: `frontend/src/lib/__tests__/agent-routes.test.ts`
+
+**Interfaces:**
+- Produces: `AgentSettingsSectionId` 新增 `"deepseek-harness"`。
+- Produces: `AGENT_SECTION_PATH_BY_ID["deepseek-harness"] === "/agents/labs/deepseek-harness"`。
+- Produces: `AGENT_LAB_SECTION_ID_BY_SLUG["deepseek-harness"] === "deepseek-harness"` or `getAgentLabSectionFromSlug("deepseek-harness") === "deepseek-harness"`。
+- Preserves: `getAgentSectionFromSlug("deepseek-harness") === null`，防止 `/agents/deepseek-harness` 成为旁路。
+
+**Acceptance:**
+- `/agents/labs/deepseek-harness` 可以渲染 `AgentsPageClient` 并传入 DeepSeek Harness section。
+- `/agents/[section]` 原有 channel/model/skills 等路径不受影响。
+- 未知 lab slug 返回 `notFound()`。
+- Datong 页面解析不因新增 section type 编译失败；无独立 pgid 前按 `agents_home` 兜底。
+
+- [x] 增加 `agent-routes.test.ts` 失败用例，断言 lab path、lab slug helper、无单段旁路。
+- [x] 更新 `agent-routes.ts` 的类型、path map 和 lab slug helper。
+- [x] 新增 `agents/labs/[lab]/page.next.tsx`，复用 `AgentsPageClient`。
+- [x] 补齐 `datong-page-map.ts` 的新增 section 映射或显式兜底。
+- [x] 运行 `cd frontend && pnpm exec vitest run src/lib/__tests__/agent-routes.test.ts`。
+
+### Task 2: DeepSeek Harness Panel
+
+> 第一版历史实现记录；真实接口与模型配置由 Task 7 替代。
+
+**Role:** Developer
+
+**Files:**
+- Create: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+
+**Interfaces:**
+- Produces: `<AgentDeepSeekHarnessPanel />` 第一版三态组件。
+- Logo: `DEEPSEEK_HARNESS_LOGO_URL` 使用产品提供的 SVG。
+
+**Acceptance:**
+- 初始未安装态展示 Logo、`DeepSeek Harness`、标题后的 `Beta`、用户确认的简介、两条公告和右上角“即刻安装体验”。
+- 点击“即刻安装体验”后进入安装中态，按钮 loading 且不重复提交。
+- 演示安装完成后切到已安装态，保持产品信息区不变并展示 `运行中`、“访问 WebUI”和“重启”。
+- “访问 WebUI”是带 `target="_blank"`、`rel="noopener noreferrer"` 的主按钮链接。
+- “重启”是次按钮，本阶段使用本地 loading 状态演示并阻止重复提交。
+- 页面不出现“安装时间”“最近启动时间”“查看诊断”。
+
+- [x] 先写 panel 失败测试，覆盖未安装态、安装中态、已安装态和禁用文案缺失。
+- [x] 创建 `AgentDeepSeekHarnessPanel`，复用 `AgentSectionHeader` 与本地轻量状态机。
+- [x] 使用 lucide `ExternalLink` / `Loader2` 等图标，按钮文字不被图标替代。
+- [x] 运行 `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`。
+
+### Task 3: 左侧导航独立实验室分组
+
+**Role:** Developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Modify: `frontend/src/styles.css`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
+
+**Interfaces:**
+- Consumes: `AGENT_SECTION_PATH_BY_ID["deepseek-harness"]`。
+- Produces: 与配置、使用、成长、管理同级的 `实验室` 分组，以及 `DeepSeek Harness` 能力项。
+- Produces: `activeSection === "deepseek-harness"` 时，能力项具有 `aria-current="page"`。
+
+**Acceptance:**
+- “实验室”与“配置 / 使用 / 成长 / 管理”同级展示。
+- 点击能力项“DeepSeek Harness”跳转 `/agents/labs/deepseek-harness`。
+- 选中 DeepSeek Harness 时，能力项具有 `aria-current="page"`。
+- 桌面端二级项缩进清晰；移动端不溢出、不挤压、不横向滚动。
+- 导航具有可访问语义：实验室分组具有 group label，当前页有 `aria-current="page"`。
+
+- [x] 扩展 `agent-settings-nav-order.test.ts`，用源码结构锁定配置、使用、成长、管理、实验室五个分组及 DeepSeek Harness 能力项。
+- [x] 新增 `agent-settings-labs-nav.test.tsx`，渲染 `AgentSettingsPage sectionId="deepseek-harness"` 并断言独立分组、选中态与链接。
+- [x] 在现有分组数据结构中新增独立 labs 分组。
+- [x] 接入 `AgentDeepSeekHarnessPanel` 到 section 分发。
+- [x] 补充 `.lv-agents-nav-subitems`、`.lv-agents-nav-expand-toggle`、移动端 grid span 样式。
+- [x] 运行 `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-nav-order.test.ts src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`。
+
+### Task 4: i18n、质量门禁与人工验收
+
+**Role:** Developer + Reviewer
+
+**Files:**
+- Modify as generated if needed: `frontend/src/i18n/generated/*.json`
+- Verify: `frontend/openspec/plan.md`
+
+**Acceptance:**
+- 新增中文文案已被 i18n 生成与检查覆盖。
+- TypeScript 检查通过。
+- 相关 Vitest 通过。
+- 本地预览确认 `/agents/labs/deepseek-harness` 可以进入、安装演示可切换、WebUI 外链可打开。
+- 不提交、不推送、不创建 MR；等待用户验收。
+
+- [x] 运行 `cd frontend && pnpm i18n:extract`，如生成字典变化则检查中文/英文 key 是否合理。
+- [x] 运行定向测试：
+  - `cd frontend && pnpm exec vitest run src/lib/__tests__/agent-routes.test.ts src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx src/pages/marketing/__tests__/agent-settings-nav-order.test.ts src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
+- [x] 运行质量门禁：
+  - `cd frontend && pnpm check`
+  - `cd frontend && pnpm i18n:check`
+  - `git diff --check`
+- [x] 启动本地预览并检查桌面/移动端：
+  - `cd frontend && pnpm exec next dev -H 127.0.0.1 -p 5175`
+  - 访问 `/agents/labs/deepseek-harness`
+  - 验证左导“实验室 > DeepSeek Harness”、未安装态、安装中态、已安装态和“打开 WebUI”。
+- [x] 汇总变更、验证结果、截图/观察结论与剩余风险，停在用户验收确认点。
+
+### Task 5: 用户验收反馈调整
+
+**Role:** Developer + Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+- Modify: `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+- Modify as generated: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- `Beta` 紧跟 `DeepSeek Harness` 标题；“即刻安装体验”位于卡片右上角操作位。
+- 描述下方持续展示同环境说明与抢先体验风险公告。
+- 安装完成后产品信息区不变，分割线下展示运行状态、静态地址、主按钮“访问 WebUI”和次按钮“重启”。
+- 重启在演示阶段提供 loading、完成播报和重复提交保护，不触发后端请求。
+
+- [x] 先调整 Panel 测试并确认旧实现 RED。
+- [x] 实现新布局、公告条和本地重启状态并确认 Panel 测试 GREEN。
+- [x] 同步更新 PRD 与实现计划，撤销旧版“无重启操作”约束。
+- [x] 重新生成并补齐 i18n 字典，运行定向测试和质量门禁。
+- [x] 在桌面端和 390px 移动端复验未安装、安装完成、重启和无溢出状态。
+- [x] 完成独立复审并停在用户验收确认点。
+
+### Task 6: 第二轮用户验收反馈调整
+
+**Role:** Developer + Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+- Modify: `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+- Modify as generated: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 公告位于卡片上方；卡片内不重复展示公告。
+- 未安装态的安装按钮位于简介下方。
+- 安装中态展示可访问的模拟进度条、百分比和 1-3 分钟等待提示。
+- 安装完成时先淡出引导卡片，再切换并淡入运行卡片。
+- 运行卡片不展示简介和静态 URL，左侧展示状态，右侧展示“访问 WebUI”和“重启”。
+
+- [x] 先调整 Panel 测试并确认旧实现 RED。
+- [x] 重构卡片外公告、安装进度和双卡片淡出/淡入切换，确认 Panel 测试 GREEN。
+- [x] 重新生成 i18n 字典并补齐本次新增英文、印尼语文案。
+- [x] 同步 PRD，运行定向测试与质量门禁。
+- [x] 复验桌面端和 390px 移动端的三态、动画、操作及无溢出。
+- [x] 修正复审发现的安装焦点断档、动画完成时序和进度条布局动画问题。
+- [x] 完成独立复审并停在用户验收确认点。
+
+### Task 7: 模型配置与真实安装接入（历史方案，已由 Task 8 纠偏）
+
+**Role:** Planner + Developer + Reviewer
+
+**Planning Evidence:**
+- 已只读检查 DSH WebUI 的 Models / Add provider 交互和 Provider 目录。
+- 已核对 DSH 官方 `settings.mutate`、`credentials.set`、`llm.providers` 契约及只写凭据语义。
+- 已核对 `@cocofhu/skillhub@0.2.13` 的安装命令、Node 要求和重启要求。
+- 已只读检查参考机的 systemd、回环监听、Caddy 代理与运行版本，未修改远端状态。
+- 已更新 `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`，等待用户确认五项产品与版本边界。
+
+**Proposed Files:**
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Create: `frontend/src/lib/dsh-config-client.ts`
+- Create: `frontend/src/lib/dsh-provider-catalog.ts`
+- Modify: `frontend/src/lib/tat-http-virtual-client.ts` or add a DSH-specific wrapper
+- Modify: `frontend/src/repositories/types.ts` and `frontend/src/repositories/http-repositories.ts`
+- Modify backend service selected during implementation planning for typed status/install/restart APIs
+- Create a checked-in, idempotent instance installer under the Hermes image/helper ownership boundary
+- Add focused frontend, backend, installer and proxy tests
+
+**Acceptance:**
+- 已安装主卡片下方展示模型配置卡片，支持当前站点白名单内的多 Provider 添加和 API Key 更新。
+- 国内站 Provider：`deepseek`、`minimax-cn`、`moonshotai-cn`、`qwen-token-plan-cn`、`openrouter`。
+- 国际站 Provider：`deepseek`、`minimax`、`minimax-cn`、`moonshotai`、`moonshotai-cn`、`openrouter`、`anthropic`、`groq`、`openai`。
+- LightVela `deepseek` 映射到 DSH 原生 `deepseek-official`。
+- API Key 只写、不回显，不进入日志、URL、埋点或浏览器持久化；Task 8 改为经 `debug/exec` 的 base64 shell 安全编码传输。
+- 安装固定版本的 dsh 和 SkillHub；Task 8 改为系统级 `deepseek-harness.service`，通过 `User=agentuser` 降权并监听回环 3080。
+- Task 8 将安装、状态查询、重启和模型配置统一改走现有 `debug/exec`，安装任务仍幂等且支持失败回滚。
+- WebUI 访问地址由当前 `Bot.id` 和站点区域生成，页面不展示静态 IP。
+
+- [x] 用户确认“模型选择”按 Provider + API Key 理解，本期不提供具体 model ID 选择。
+- [x] 用户确认 `deepseek -> deepseek-official`、`dsh@0.1.0-rc.7`、`skillhub@0.2.13` 与北京 Sandbox 首批灰度。
+- [x] 用户确认 WebUI 按当前 `Bot.id` 生成分站域名：国内站 `.dsh.lightvela.tech`，国际站 `.dsh.lightvela.site`。
+- [x] **历史批次 A：实例安装与状态接口。** 曾新增 DSH 专用 ctl 与 gateway 路由；用户评审后判定为重复设计，已在 Task 8 全部删除。
+- [x] **历史批次 B：DSH 配置与 WebUI 传输。** WebUI 的 3080 TAT broker 保留；前端直连 DSH 配置 RPC 已在 Task 8 替换为实例 helper + `debug/exec`。
+- [x] **批次 C：页面真实状态与模型卡片。** 页面交互保留，底层调用由 Task 8 统一切换为 `BotRepository.execDebugCommand`。
+
+### Task 8: 统一复用 debug/exec（用户架构纠偏）
+
+**Goal:** 删除 DeepSeek Harness 专用后端协议，让页面内所有实例操作统一通过现有 `debug/exec` 下发固定命令。
+
+**Files:**
+
+- Create: `frontend/src/lib/deepseek-harness-command.ts`
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-model-card.tsx`
+- Add: `frontend/src/pages/marketing/agent-deepseek-harness-provider-controls.tsx`
+- Add: `frontend/src/pages/marketing/agent-deepseek-harness-configured-provider-list.tsx`
+- Add: `frontend/src/pages/marketing/agent-deepseek-harness-provider-delete-dialog.tsx`
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Delete: `frontend/src/lib/deepseek-harness-api.ts`
+- Delete: `frontend/src/lib/deepseek-harness-client.ts`
+- Delete: `ctl/pkg/instance/deepseek_harness.go`
+- Delete: `ctl/pkg/errcode/deepseek_harness.go`
+- Revert scoped DSH additions: `ctl/main/api/server.go`、`ctl/pkg/instance/logic.go`、`ctl/pkg/transport/instance.go`、`argocd/services/service-gateway/beijing-sandbox/config.yaml`、`service-gateway/internal/gateway/config_policy_test.go`
+
+**Interfaces:**
+
+- Consumes: `BotRepository.execDebugCommand(botId, command, options?)`。
+- Produces: 固定命令构造与 JSON 结果解析；页面不能提交包名、版本、目录、端口或任意 Provider。
+- Produces: 系统级 `/etc/systemd/system/deepseek-harness.service`，运行用户仍为 `agentuser`。
+
+- [x] 先改测试，断言状态使用 `sudo -n systemctl status deepseek-harness.service --no-pager`，安装、任务轮询、重启和 Provider 配置全部调用 `execDebugCommand`。
+- [x] 运行聚焦测试并确认因旧 API/RPC 调用而失败。
+- [x] 新增命令构造与解析模块；Provider 白名单、任务 ID、输出 JSON 和 API Key 编码在浏览器侧校验。
+- [x] 安装器切换为系统服务，并增加只接受白名单 Provider 的 `providers` / `configure` 动作；密钥从 stdin 读取且不回显。
+- [x] 页面改用 Repository；删除 TAT 直连模型 RPC 和 DeepSeek Harness 专用 API 客户端。
+- [x] 删除 ctl、transport、errcode、server route 和 gateway allowlist 中仅为本需求新增的内容。
+- [x] 更新 PRD、proposal、spec 和安装脚本测试，确保文档不再声称存在专用接口或 systemd 用户服务。
+- [x] 运行 DSH 聚焦 Vitest、`pnpm check`、i18n、shell 测试、`git diff --check` 和浏览器桌面/移动端验收。
+
+## Planning Gate
+
+**规模判定：** M 级。Task 8 只保留 frontend、Hermes 镜像 helper 和现有 WebUI broker；不再修改 ctl 或 service-gateway。
+
+**Capability：** 不需要启用 `figma-fidelity`。本需求无 Figma 还原；浏览器 smoke 已通过本地预览执行。
+
+**规划门禁结论：** 通过。用户已确认所有 DSH 操作统一走 `debug/exec`；Task 8 代码、文档、自动化测试和浏览器桌面/移动端验收已完成，等待用户验收后再决定提交和 Sandbox 联调。
+**交付边界：** 用户验收前不提交、不推送、不创建 MR、不归档。
+
+### Task 9: 已配置模型供应商的修改与删除
+
+**Goal:** 将模型配置卡片升级为 DSH WebUI 风格的“已配置列表 + 单项展开编辑区 + 未配置供应商添加区”，并让添加、修改、删除全部通过固定命令复用 `debug/exec`。
+
+**Role:** Developer
+
+**Confirmed Design:**
+
+- 卡片上方持续展示 `configured=true` 的模型供应商，每行显示名称、绿色状态、编辑和删除操作。
+- 同一时间只展开一个编辑区；API Key 始终为空，留空保存保留原密钥，输入新值执行替换。
+- 添加区只展示尚未配置的站点白名单供应商；字段文案由 `Provider` 改为“模型供应商”。
+- 删除前二次确认；DeepSeek 只清除 LightVela 写入的 `DEEPSEEK_API_KEY`，其他供应商删除 profile，并只清理由 LightVela 派生且可写的凭据。
+- 环境变量密钥、自定义引用和不可识别凭据不删除；环境管理的 DeepSeek 凭据明确拒绝删除，部分失败保留确认弹窗并允许重试。
+
+**Planned Files:**
+
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-model-card.tsx`
+- Modify: `frontend/src/lib/deepseek-harness-command.ts`
+- Modify: `frontend/src/repositories/fake-repositories.ts`
+- Modify: `images/helpers/configure-deepseek-harness.py`
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Modify focused frontend, command-client, fake-repository, Python helper and installer tests
+
+**Out of Scope:**
+
+- 不新增 DSH 专用后端接口，不让浏览器直接访问 DSH RPC。
+- 不读取、回显或持久化现有 API Key；编辑区始终以空输入开始。
+- 不删除环境变量、自定义凭据引用或无法证明由 LightVela 创建的凭据。
+
+**Implementation Batches:**
+
+- [x] Batch 1（固定命令与实例 helper）：先补 `remove-provider` 的命令客户端、Python helper 和安装器失败测试，再实现白名单校验、凭据归属判断、幂等删除与非零退出码识别。验收信号为未知供应商无法下发命令，DeepSeek 仅清可写凭据，目录供应商按“凭据后 profile”顺序删除，外部凭据保持不变。
+- [x] Batch 2（模型配置交互与 Mock）：先补已配置列表、单项编辑、添加过滤、删除确认和失败重试测试，再实现紧凑列表、一次只展开一个编辑区、删除弹窗及 Fake Repository 状态变更。验收信号为已配置供应商持续可见，添加区只出现未配置项，删除失败时弹窗保留且可重试。
+- [x] Batch 3（规格与验收）：同步 PRD、proposal、spec 与 TAPD，运行聚焦测试、类型检查、i18n、shell/Python 测试和浏览器桌面/移动端 smoke。验收信号为页面无横向溢出、无控制台错误，且全部 DSH 操作仍只经 `debug/exec`。
+
+**TDD Checklist:**
+
+- [x] 前端组件测试先覆盖已配置列表、单项编辑、添加过滤、删除确认、删除失败重试与“模型供应商”文案。
+- [x] 命令客户端测试先覆盖白名单 `remove-provider` 命令，并拒绝未知 Provider ID。
+- [x] Python helper 测试先覆盖 DeepSeek 仅清凭据、目录供应商清凭据后 unset profile、外部凭据不清理和幂等重试。
+- [x] 安装器测试先覆盖 `remove-provider --provider <id>` 的参数校验与 helper 委托。
+- [x] 完成最小实现并运行聚焦测试、类型检查、i18n、shell/Python 测试和浏览器桌面/移动端验收。
+
+**Planning Gate:** M 级增量需求；方案 A、删除语义、影响文件、空态/错误态/加载态和验收标准均已确认，不新增依赖或专用接口。规划门禁通过，可进入 TDD 实现。
+
+**Status:** 方案 A 实现与验证完成，等待用户验收。
+
+---
+
+### Task 10: 收紧已安装运行态卡片高度
+
+**Goal:** 取消 DeepSeek Harness 已安装运行态不必要的固定最小高度，使卡片随单行运行信息自然收紧，同时保持加载、错误、未安装和安装中状态的稳定高度。
+
+**Files:**
+
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-panel.tsx`
+- Test: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-panel.test.tsx`
+
+**Interfaces:**
+
+- Preserves: 状态查询、安装动画、运行状态、WebUI 和重启操作不变。
+- Produces: `status === "installed"` 时主卡片不包含 `min-h-52`；其他状态继续包含 `min-h-52`。
+
+**Out of Scope:**
+
+- 不调整公告、模型配置卡片、按钮尺寸、移动端堆叠或安装状态内容。
+- 不新增高度动画，避免动画布局属性。
+
+- [x] 先扩展 Panel 测试，断言未安装态保留 `min-h-52`、已安装态移除 `min-h-52`，并确认旧实现 RED。
+- [x] 使用 `cn()` 按状态组合卡片 class，仅在非 installed 状态应用 `min-h-52`。
+- [x] 运行 Panel 定向测试、`pnpm check`、`git diff --check`，并复验桌面与 390x844 移动端无溢出。
+
+**Status:** 实现与验证完成，等待用户验收。
+
+---
+
+### Task 11: 模型配置保存反馈与覆盖更新
+
+**Goal:** 让模型供应商配置在等待 `debug/exec` 返回期间提供明确加载反馈，并允许从完整供应商列表重复选择同一 Provider 进行覆盖更新。
+
+**Confirmed Design:**
+
+- 点击“保存配置”后，按钮显示加载图标与“保存中...”，供应商选择、密钥输入和其他配置操作保持禁用，直到 `debug/exec` 成功或失败。
+- 保存成功或失败统一复用全局顶部居中 Toast，约 3 秒自动消失；删除失败仍保留在确认弹窗内，便于直接重试。
+- 配置区下拉始终展示当前站点全部白名单供应商，不再过滤已配置项；再次保存已配置 Provider 等价于覆盖更新其配置。
+- 区块文案由“添加模型供应商 / 添加配置”调整为“配置模型供应商 / 保存配置”。
+- 保存成功后保留当前 Provider 选择并清空 API 密钥输入；保存失败时保留输入，方便用户重试。
+
+**Files:**
+
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-model-card.tsx`
+- Modify: `frontend/src/pages/marketing/agent-deepseek-harness-provider-controls.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-deepseek-harness-model-card.test.tsx`
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`, `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Out of Scope:**
+
+- 不新增接口或改变固定命令，模型配置仍只通过 `BotRepository.execDebugCommand` 下发。
+- 不回显、持久化或读取现有 API Key。
+- 不改变删除失败弹窗及其重试行为。
+
+- [x] 先补充模型卡片失败测试，覆盖等待态、顶部 Toast、完整供应商下拉与同 Provider 覆盖保存。
+- [x] 实现最小交互调整，保存成功清空密钥、失败保留密钥，并确认测试 GREEN。
+- [x] 同步 proposal、spec 与 PRD，更新 i18n 生成字典。
+- [x] 运行定向测试、类型检查、i18n、diff 检查和浏览器桌面/移动端验收。
+
+**Planning Gate:** 用户已确认复用现有全局 Toast 的方案；交互状态、覆盖语义、反馈位置和错误边界均明确。规划门禁通过，可进入 TDD 实现。
+
+**Status:** 实现与验证完成，等待用户验收。
+
+---
+
+### Task 12: SkillHub 安装后明确重启 DSH
+
+**Goal:** 确保首次安装及重复安装/升级 SkillHub 后，`deepseek-harness.service` 都会重新启动并立即加载最新插件。
+
+**Files:**
+
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Modify: `images/tests/test-deepseek-harness-installer.sh`
+- Modify: `frontend/openspec/spec.md`, `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Interfaces:**
+
+- Preserves: DSH、SkillHub 固定版本、安装任务进度、健康检查、失败回滚和系统级服务结构。
+- Produces: SkillHub 安装或版本确认完成后，服务注册阶段执行 `systemctl enable deepseek-harness.service`，随后明确执行 `systemctl restart deepseek-harness.service`。
+
+**Out of Scope:**
+
+- 不新增独立重启任务或前端步骤。
+- 不改变模型配置后的生效策略；本次只处理插件安装/升级。
+
+- [x] 先修改安装器测试，断言 SkillHub 安装之后明确重启 DSH，并确认旧实现 RED。
+- [x] 调整服务注册命令并确认安装器测试 GREEN。
+- [x] 同步规格与 PRD，运行安装器、镜像脚本和差异检查。
+
+**Planning Gate:** 用户明确说明 SkillHub 安装后通常需要重启；现有 `enable --now` 在服务已运行时不保证重启，问题和修正边界已确认。规划门禁通过。
+
+**Status:** 实现与验证完成，等待用户验收。
+
+---
+
+### Task 13: 在线冻结依赖与五插件原子安装
+
+**Goal:** 保留用户点击后的在线安装方式，使用冻结依赖和校验清单安装 DSH runtime，并为 DSH `web` profile 全量安装 SkillHub、QQBot、微信、企业微信和 Lark；全部验证成功后才完成任务。
+
+**Role:** Developer + Reviewer
+
+**Files:**
+
+- Create: `images/runtime/deepseek-harness/manifest.json`
+- Create: `images/runtime/deepseek-harness/runtime/package.json`, `images/runtime/deepseek-harness/runtime/pnpm-lock.yaml`, `images/runtime/deepseek-harness/runtime/.pnpmfile.cjs`
+- Create: `images/runtime/deepseek-harness/web-profile/package.json`, `images/runtime/deepseek-harness/web-profile/pnpm-lock.yaml`, `images/runtime/deepseek-harness/web-profile/.pnpmfile.cjs`, `images/runtime/deepseek-harness/web-profile/pnpm-workspace.yaml`
+- Modify: `images/build.sh`
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Modify: `images/tests/test-deepseek-harness-installer.sh`, `images/tests/test-hermes-build-script.sh`
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`, `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Interfaces:**
+
+- Preserves: 前端三态交互、`debug/exec` 异步任务、`agentuser`、系统级 `deepseek-harness.service`、回环 3080 和 Provider helper；WebUI 改为实例专属域名跳转。
+- Produces: root-owned 冻结清单；固定 `pnpm@10.33.0`；DSH runtime 和 `web` profile 的 `--frozen-lockfile` 在线安装；四个渠道插件的固定 COS revision/SHA256；SkillHub 与 registry 依赖的 lockfile integrity；最多 5 次下载重试和有界超时。
+- Produces: 五插件准确版本、bundle 声明、profile bundle 列表、`dsh plugin ... list`、`dsh --profile web --dump-config`、systemd active 和 HTTP 200 的分层验收。
+
+**Atomicity and Error Handling:**
+
+- 网络下载、依赖安装和静态验证全部在任务临时目录完成，有限重试耗尽或任一校验失败时不触碰正式目录。
+- 正式切换前记录并复核旧 `web` profile 指纹；若安装期间被外部修改，则安全失败并保留现场。
+- 切换前备份旧 runtime、完整旧 `web` profile 和旧 unit；切换后明确 restart。任何后置验证失败都恢复三者和旧服务，首次安装失败清理半成品。
+- 已存在非 LightVela 管理的额外 profile 依赖或 bundle 时保持原状并失败，不删除未知插件、不降级为非冻结安装。
+- 保留原 `web/cordis.patch.yml` 和 `$DSH_HOME` 下 credentials/settings/storage；禁止宽泛执行 `pnpm approve-builds --all`，依赖构建脚本只能使用冻结清单中的精确白名单。
+
+**Out of Scope:**
+
+- 不安装 `dsh-auth`、Caddy 或独立 SkillHub CLI。
+- 不把 DSH runtime 和插件包体离线预置进镜像，不新增独立 COS bundle 发布链路。
+- 不修改 Hermes 自身的 SkillHub CLI、QQBot、微信、企业微信或 Lark 插件配置。
+- 不修改前端页面、ctl、service-gateway 或数据库接口。
+
+- [x] Batch 1 / RED：扩展 `images/tests/test-hermes-build-script.sh`，先断言镜像固定安装 `pnpm@10.33.0`，并把 `manifest.json`、runtime/web-profile 的 `package.json` 与 `pnpm-lock.yaml` 以 root-owned、只读方式复制到 `/usr/local/share/lightvela/deepseek-harness`；运行 `bash images/tests/test-hermes-build-script.sh`，确认旧实现因缺少冻结输入复制而失败。
+- [x] Batch 1 / RED：重构 `images/tests/test-deepseek-harness-installer.sh` 的 fake `pnpm/curl/systemctl/dsh`，断言安装器只使用 `pnpm install --frozen-lockfile`，四个渠道包执行最多 5 次、有连接/单次请求超时的下载及 SHA256 校验，SkillHub 走锁文件完整性；同时断言五插件版本、`dsh.bundle`、profile bundle 列表、`plugin list` 和 `dump-config` 全部通过后才重启服务。运行测试并确认旧实现 RED。
+- [x] Batch 2 / frozen inputs：新增冻结 manifest；runtime package 固定 `@deepseek-ai/dsh@0.1.0-rc.7`，两份 `.pnpmfile.cjs` 将整个 `@deepseek-ai/dsh-*` 依赖族保持在 `rc.7`，避免主包与新发布 `rc.8` 子包混装；web profile 复用官方 `nodeLinker: hoisted`、`autoInstallPeers: false` workspace 约定，只直接安装 SkillHub `0.2.13` 与 QQBot/微信/企业微信/Lark 的固定 revision、包版本和 SHA256，base/web-app bundles 由 runtime fallback 提供；使用 `pnpm@10.33.0 install --lockfile-only --ignore-scripts` 生成两份 lockfile，并以独立临时安装验证 `--frozen-lockfile` 不产生差异。
+- [x] Batch 2 / image wiring：为 `images/build.sh` 增加冻结输入 source/target，复制后校验文件集合、权限和所有者；将 Hermes WhatsApp bridge 的全局 pnpm 安装固定为 `pnpm@${PNPM_VERSION}`。运行镜像脚本测试转 GREEN。
+- [x] Batch 3 / candidate install：安装器读取 root-owned manifest，在 task 私有目录下载四个渠道包并校验 SHA256，将 SkillHub 交给 lockfile integrity；把 runtime 和完整 `web` profile 安装到候选目录，保留旧 `cordis.patch.yml`，拒绝未知依赖或 bundle，候选校验失败时只清理 task 目录并记录失败。
+- [x] Batch 3 / atomic switch：记录旧 profile 指纹，候选验证后再次比对；停服前备份 current symlink、完整旧 profile 和 unit，再一次性切换 runtime/profile/unit。后置的五插件清单、配置解析、systemd active、回环端口和 HTTP 200 任一失败时恢复三者并重启旧服务；首次安装失败不残留 release/profile/unit。
+- [x] Batch 4 / GREEN and regression：覆盖首次安装、重复安装、未知插件、下载校验失败、插件验证失败、profile 并发修改、切换中途失败、服务健康失败、服务 enable 状态恢复和成功清理；运行 `bash images/tests/test-deepseek-harness-installer.sh`、`bash images/tests/test-hermes-build-script.sh`、lockfile 再生成差异检查、`bash -n` 与 `git diff --check`。
+- [x] Batch 4 / docs：同步规格、PRD 和当前任务摘要，记录本地验证证据；后续远端操作仍需用户明确授权。
+
+**Planning Gate:** M 级安装可靠性增强。用户已选择在线冻结方案，并确认五个 `web` profile 插件全量成功才算完成；方案不新增后端接口或 UI，不启用额外 capability。书面规格和原子切换边界已经用户确认，按上述四个批次进入 TDD 实现。
+
+**Status:** 本地验证与用户提供的通用 Ubuntu 24.04 远端冒烟完成；北京 Hermes Sandbox 共存与 TAT 链路仍待验证。确认前不 commit / push / MR。
+
+---
+
+### Task 14: 改为 debug/exec 实时下发安装与模型配置脚本
+
+**Goal:** 消除对 Hermes 镜像内 `/usr/local/libexec/lightvela/*` 文件的依赖，让存量实例无需刷新镜像即可安装和配置 DSH。
+
+**Files:**
+
+- Create: `frontend/scripts/generate-deepseek-harness-runtime-assets.mjs`, `frontend/src/lib/generated/deepseek-harness-runtime-assets.ts`
+- Modify: `frontend/src/lib/deepseek-harness-command.ts`, `frontend/src/repositories/fake-repositories.ts`
+- Modify: `images/helpers/install-deepseek-harness.sh`, `images/build.sh`
+- Modify: DSH command、payload、installer 和 Hermes build 测试
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`, `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Acceptance:**
+
+- [x] 先确认旧实现因目标实例缺少预置安装器而失败，并补 RED 测试禁止固定公共安装器路径。
+- [x] 构建时将安装脚本和冻结依赖生成带 SHA256 的压缩 payload；安装时分片实时上传，全部成功后才由 `systemd-run` 异步执行。
+- [x] 任务轮询直接读取 root-owned task JSON；Provider helper 以内联 Python 执行，所有操作继续复用 `debug/exec`。
+- [x] Hermes 镜像不再复制 DSH 安装器、Provider helper 或冻结清单。
+- [x] 全局 pnpm 缺失或版本不符时，在候选目录引导 `pnpm@10.33.0`，校验后原子持久化到 root-owned tooling 并写入服务 PATH；不修改全局环境，任务目录清理后插件管理仍可执行。
+- [x] 解包前原子发布任务状态，显式校验 payload 并覆盖校验失败、路径穿越和成功 handoff 的真实 Bash/Python 执行测试。
+- [x] 模型 API Key 改为实例一次性 RSA-4096 公钥 + 浏览器 RSA-OAEP/SHA-256 密文传输，命令正文不携带明文或可直接还原的 base64 明文。
+- [x] 完成完整前端检查、脚本检查与生成物一致性检查。
+- [x] 在用户提供的通用 Ubuntu 24.04 主机完成全新安装、覆盖重装、服务重启、回环 HTTP、五插件和任务目录清理后插件管理复验。
+- [ ] 完成北京 Hermes Sandbox 共存与 TAT 链路复验。
+
+**Status:** 本地自动化与通用 Ubuntu 24.04 远端安装冒烟完成，等待北京 Hermes Sandbox 共存与 TAT 链路复验。
+
+---
+
+### Task 15: 渠道插件迁移 npm latest 并新增钉钉
+
+**Goal:** 消除实例安装阶段对 GitHub 的依赖，将 SkillHub、QQBot、微信、企业微信、Lark 和钉钉统一纳入 npm 快照安装；六个 profile 插件全量成功才算安装完成。
+
+**Files:**
+
+- Modify: `images/helpers/install-deepseek-harness.sh`
+- Modify: `images/tests/test-deepseek-harness-standalone-contract.sh`, `images/tests/test-deepseek-harness-release-retention.sh`
+- Regenerate: `frontend/src/lib/generated/deepseek-harness-runtime-assets.ts`
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`, `frontend/openspec/plan.md`
+- Modify: `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Architecture:**
+
+- 每次任务开始时通过 npm registry 分别解析 DSH、SkillHub 与五个渠道包的 `version`、`dist.integrity` 和 HTTPS tarball。
+- 将解析结果写入 schema v3 manifest；snapshot hash 排除时间字段但包含所有精确版本与 integrity，相同上游输入复用 runtime，上游任一包变化即生成新快照。
+- runtime/profile `package.json` 只写精确版本；先生成 lockfile，再执行 `--frozen-lockfile`，并要求每个 npm integrity 都出现在对应 lockfile 中。
+- 删除 GitHub repository、branch archive、SHA256 下载和本地 file dependency 路径；保留 npm/pnpm 有限重试、候选验证、原子切换、失败回滚、服务健康检查及 release 保留策略。
+
+**Acceptance:**
+
+- [x] 从 npm 官方 registry 确认五个渠道包均已发布，且包内声明有效 `dsh.bundle.patch`。
+- [x] RED：契约测试要求五个 npm `@latest` 坐标并禁止 GitHub/codeload；锁文件测试要求渠道 integrity 缺失时失败。
+- [x] 安装器生成 npm-only schema v3 快照，profile 使用本次解析的六个精确版本，并新增钉钉到受管依赖、bundle 与插件清单。
+- [x] 重新生成前端安装 payload，完成脚本语法、契约、快照复用、生成物一致性和前端相关检查。
+- [x] 在用户授权的 Ubuntu 24.04 主机完成首次安装、同快照重装、六插件、systemd、回环 HTTP 和 release 保留复验。
+- [ ] 完成北京 Hermes Sandbox 共存与 TAT 链路复验。
+
+**Planning Gate:** 用户确认采用方案 A：所有渠道从 npm 获取 `latest` 元数据，但安装期间使用任务开始时解析出的精确版本；钉钉作为第五个渠道插件纳入全量成功门槛。
+
+**Status:** 本地与通用 Ubuntu 24.04 复验完成，等待北京 Hermes Sandbox 共存与 TAT 链路复验；未 commit、未 push、未创建 MR。
+
+---
+
+### Task 16: 安装脚本切换至 COS 全球加速域名
+
+**Goal:** 用户点击安装后，由目标实例经 `debug/exec` 下载并运行 COS 上的完整单文件安装脚本，使用全球加速域名提升不同地域实例的下载可达性。
+
+**Files:**
+
+- Modify: `frontend/src/lib/deepseek-harness-command.ts`
+- Modify: `frontend/src/lib/__tests__/deepseek-harness-command.test.ts`
+- Modify: `frontend/openspec/proposal.md`, `frontend/openspec/spec.md`
+- Modify: `wiki/prd-docs/2026-08-20-deepseek-harness-lab.md`
+
+**Acceptance:**
+
+- [x] RED：安装命令必须包含 `https://vela-installer-1388575217.cos.accelerate.myqcloud.com/dsh/install-deepseek-harness.sh`，并禁止旧地域域名和前端 payload 上传。
+- [x] 实例以 HTTPS、有限重试、超时、文件大小和 Bash 语法检查下载脚本，再通过 `systemd-run` 异步执行；准备失败仍写入可轮询的失败任务状态。
+- [x] 构建期根据仓库安装器生成 SHA-256；实例执行前必须匹配该值，合法 Bash 被替换后同样拒绝执行并写入 `verify_installer` 失败状态。
+- [x] 删除安装 payload 的前端运行时依赖，Provider helper 的内联执行与密钥传输保持不变。
+- [x] 同步规格和 PRD，运行定向测试、类型检查、生成物检查及差异检查。
+- [x] 将当前 npm-only 六插件安装器与 COS 对象对齐并复验。2026-08-27 源站与加速域名均返回 ETag `4fec36772fbe755964e8ade2dad5bd1e`，仓库和远端 SHA-256 均为 `1025d54f38e3c82fed6195e318ef0c9e884c447431a6984af895c3bb89f4c2bc`。
+
+**Planning Gate:** 用户已明确指定 COS 全球加速域名；脚本路径保持 `/dsh/install-deepseek-harness.sh`，远端对象为完整单文件安装器，不再由前端上传安装 payload。
+
+**Status:** 前端实现与本地验证完成，COS 字节一致性门禁通过；北京 Hermes Sandbox 真实安装仍待复验。未 commit、未 push、未创建 MR。
+
+---
+
+### Task 17: 补齐 DSH 安装与模型配置 CR 边界
+
+**Goal:** 修复评审遗漏的安装中断残留、模型保存重入、外链 Logo 与远端安装器发布契约，并用回归测试证明一次性私钥清理和状态探测依赖边界。
+
+**Constraints:**
+
+- DSH 与六个插件继续按用户确认的 `@latest` 策略，在单次任务开始时解析并固定精确版本与 integrity；本轮不改为仓库固定版本。
+- 孤儿目录只在取得全局安装锁后清理，并严格限制在 LightVela 管理目录与 `dshi-*` 命名空间内。
+- COS 安装器仍由发布动作上传；仓库只提供可在发布前执行的字节级 SHA-256 一致性门禁。
+
+- [x] RED：增加孤儿 staging/backup 清理、同步重复保存、Logo 本地化、私钥 TTL、缺失 curl 时状态查询失败和 COS 字节一致性测试。
+- [x] GREEN：实现锁内孤儿清理、保存同步锁、本地 Logo、精确私钥 TTL、状态依赖保护和 COS 校验脚本。
+- [x] 同步 proposal/spec/PRD，明确 `@latest` 为已接受取舍，并记录 COS 上传后必须执行一致性门禁。
+- [x] 运行 DSH 聚焦测试、安装器 shell 测试、生成物、类型、i18n 与 diff 门禁，等待用户验收后再提交。
+
+**Verification:** DSH 相关 10 个 Vitest 文件共 75 个测试通过；安装器、release retention、standalone contract 与 COS verifier 四组 shell 测试通过；`pnpm check` 为 232 current / 276 baseline / 0 new，i18n 英文待翻译 0；CI runtime 464 个测试通过。真实 COS 校验当前按预期失败：仓库安装器 SHA-256 为 `8873cd55452895b4e735904eda74f3357c3a8da936a580dcc3472773bd1a0531`，远端仍为 `d1fddc521cc3e5f35edcdeb569118283340f46f44fcb47183309e3f935e93214`，需覆盖对象后再复验。
+
+### Task 18: 修复 MR !3395 状态探测与 SHA 门禁评论
+
+**Goal:** 修复缺少 `curl` 且服务有自动重启记录时状态探测未 fail closed 的分支顺序，并闭合仓库安装器、前端生成 SHA 与 COS 对象的三方一致性校验。
+
+- [x] RED：补充 `NRestarts=2` 且缺少 `curl` 的状态回归测试，并增加 CI 必须先运行生成器 `--check` 再校验 COS 的契约测试。
+- [x] GREEN：将 `curl` 可用性检查移到重启状态分支之前，并在 Hermes 镜像流水线中初始化 Node 后执行前端运行时资源生成器检查。
+- [x] 运行 DSH 定向测试、COS verifier、CI runtime、类型检查及差异检查；COS 实际对象上传仍作为独立发布前置等待处理。
+
+**Verification:** 状态命令与生成器相关 4 个 Vitest 文件共 47 项通过；COS verifier 契约测试和生成器 `--check` 通过；CI runtime 465 项通过；`pnpm check` 为 232 current / 276 baseline / 0 new。后续 Task 19 已将仓库安装器和固定 SHA 对齐到 COS 当前对象。
+
+**Status:** 代码项完成，等待用户验收后提交；COS 发布前置已在 Task 19 完成。
+
+### Task 19: 增加 DeepSeek Harness 修复操作
+
+**Goal:** 在已安装卡片增加经过确认的“修复”操作，复用现有安装任务重装运行环境和 WebUI 插件环境，并准确说明保留与重置范围。
+
+- [x] RED：补充修复弹窗、准确文案、取消保护、任务类型持久化、刷新恢复和失败回滚后的页面状态测试。
+- [x] GREEN：实现独立确认弹窗、修复按钮、`install | repair` 操作状态及修复失败后的真实状态回读。
+- [x] 安装器契约：普通安装保留现有 profile；确认修复时 wrapper 隔离完整旧 profile，只将 `cordis.patch.yml` 带入干净 profile，再调用同一 `install` action；失败恢复完整备份，成功后清理备份。
+- [x] 同步 proposal/spec/PRD/i18n，并运行 DSH 定向测试、类型检查、CI runtime 与差异门禁。
+
+**Planning Gate:** 用户已确认按钮文案、两条弹窗正文和数据边界；修复继续调用安装器 `install` action，保留模型配置、DSH 设置与存储数据，标准 WebUI 插件环境重新安装，用户自定义插件与 profile 文件不保留。
+
+**Verification:** DSH 前端与运行时资源 4 个测试文件共 51 项通过；安装器、release 复用/保留、独立脚本契约、生成器检查、Bash 语法检查和 COS 实际对象一致性校验通过；`pnpm check` 为 232 current / 276 baseline / 0 new。仓库安装器与 COS 源站、加速域名对象的 SHA-256 均为 `1025d54f38e3c82fed6195e318ef0c9e884c447431a6984af895c3bb89f4c2bc`。
+
+**Status:** 本地实现与回归验证完成；等待用户确认后再提交。
+
+---
+
+# 双站首页 Hero 多语言文案更新 Implementation Plan
+
+**Goal:** 更新国内站与国际站首页 Hero 的 Eyebrow 和 Slogan，仅覆盖现有简中、繁中、英文、印尼语 locale，西班牙语不在本次范围内。
+
+- [x] 测试先行覆盖国内站简中与国际站四种现有语言的最终 Eyebrow、Slogan，并确认旧文案导致测试失败。
+- [x] 最小替换 Hero 文案，运行 i18n 提取与繁体生成，补齐英文和印尼语翻译。
+- [x] 通过国内/国际区域测试、i18n 检查、类型检查与首页浏览器 smoke。
+
+---
+
+# 国内站首页 Hero 两句文案替换 Implementation Plan
+
+**Goal:** 仅替换国内站首页 Hero 的小标题与主标题，其他文案、布局、SEO 和国际站保持不变。
+
+- [x] 测试先行完成两句文案替换，并通过国内/国际区域测试、类型检查和本地预览；i18n 生成文件保持原样。
+- [x] 仅缩小国内站 Hero 主标题桌面字号至 `48/56px`，移动端与国际站保持原样。
+
+---
+
+# Advanced Settings 审批模式文档补充 Implementation Plan
+
+**Goal:** 让国内站和国际站的高级设置文档准确说明安全分组、审批模式、恢复默认和保存行为。
+
+**Scope:** 更新国内中文、国际中文、英文、印尼语源文档与既有文档元描述，并同步生成 Fumadocs 产物。
+
+- [x] 文档内容：补充审批模式和安全分组，并修正保存与恢复默认说明。
+- [x] 文档同步与验证：更新最后更新时间、生成各语言 Fumadocs 产物，并验证图片和文档链接。
+
+---
+
+# MR !3248 CR 国际化补强 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 修复 MR !3248 评审确认的繁中 / 印尼语结构误报、中文默认名泄漏和一处国际站测试空过，并如实记录国际站整文件既有失败。
+
+**Architecture:** 保持单一、区域无关的 Persona 解析链路；为结构识别补充明确的繁中 / 印尼语关键词，并把调用方本地化兜底名作为参数传入现有纯函数。测试先证明现状失败，再做最小实现；推荐人设 slug、读取失败重试和仓库级类型脚本不在本计划内。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、现有 `useT` i18n。
+
+## Global Constraints
+
+- 不改变 `SOUL.md` 的来源标记、Slug、正文、备份或原子写入协议。
+- 结构建议仍是软提示，不阻止上传或注入。
+- 不增加语言检测、区域分支、翻译服务、配置词库或依赖。
+- 不修改推荐人设 / 抽卡逻辑、`equippedStatus` 重试策略或 `pnpm check` 脚本。
+- 国内站默认名继续使用 `t("自定义人设")`，国际站按当前语言使用同一词条。
+- 未经用户再次确认，不执行 `git commit` 或 `git push`；MR !3248 更新前必须展示差异和验证结果。
+
+---
+
+# 国际站西语代码可控内容全面收口 Implementation Plan
+
+**Goal:** 在 `jasminzhao-821-language` 分支完成国际站 `es` 下 mono2 可直接控制的一方产品内容西语适配；Docs 正文、法务正文、图片内嵌文字、第三方托管页面和运行时外部数据保持既定排除项。
+
+**Constraints:** 只改变国际站 `es` 行为；不修改 `node_modules` 或复制外部依赖源码；未经用户再次确认不执行 `git commit` / `git push`。
+
+### Task 1: 产品壳 metadata 与 HTML 语言
+
+- [x] 为西语产品路由补充标题映射，并让产品壳在西语运行时同步 `document.title`。
+- [x] 让公共站 locale bridge 同步 `document.documentElement.lang`。
+- [x] 添加并通过 SEO、app route shell、public provider 定向测试。
+
+### Task 2: Agent 人设卡、西语 Soul 详情与人格测试
+
+- [x] 为 16 个既有人设 slug 增加西语名称、摘要、详情和运行时配置展示文案。
+- [x] 增加西语人格测试题、结果说明和偏好标签，保持既有计分结构不变。
+- [x] 接入 panel、draw、test 三条读取链并通过数据/组件测试。
+
+### Task 3: 精选 Skills 西语结构化介绍
+
+- [x] 按 `lv-sitepage-skills` 约束为 30 个精选 Skill 增加西语结构化介绍。
+- [x] 增加四个西语分类标签并按 `es` 显式选择数据。
+- [x] 通过 Skills 数据完整性和面板集成测试。
+
+### Task 4: 西语日期格式
+
+- [x] 让 Agent 成就时间戳的 `es` / `es-ES` 使用西语 `Intl.DateTimeFormat` locale。
+- [x] 通过相关定向测试。
+
+### Task 5: AgentChat 外部包上游交接
+
+- [x] 确认当前 `@tencent/agentchat-lightvela-panel@1.2.6` 和 registry 最新版 `1.4.0` 均只有中英字典。
+- [x] 尝试通过工蜂定位真实上游；当前凭据返回 `401 Unauthorized`，记录为外部阻塞。
+- [ ] 上游发布西语资源和 locale contract 后升级依赖 pin，并补 host integration 测试。
+
+### Task 6: 回归与验收
+
+- [x] 运行全部受影响 Vitest：相关用例全部通过。
+- [x] 运行 `pnpm check`：2437/2437 西语词条完整，TypeScript 通过。
+- [x] 运行 `pnpm build:global`：454 个静态页面生成，SEO 与静态 HTML 检查通过。
+- [x] 尝试本地浏览器冒烟；预览服务已恢复，但浏览器 localhost URL 安全策略拒绝自动读取，未绕过。
+- [x] 记录整仓测试既有问题：Docs 大图重复引用、`node:test` 脚本不兼容 Vitest 收集，随后 worker OOM；本次受影响测试无失败。
+- [x] 展示最终 diff、验证证据与提交范围，等待用户确认 commit/push。
+
+### Task 7: 自动任务西语最终生成链路
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/scenario-tasks/__tests__/scenario-task-builder.test.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/__tests__/scenario-job-presentation.test.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/scenario-packs.ts`
+- Modify: `frontend/src/pages/marketing/scenario-tasks/scenario-task-builder.ts`
+
+**Approach:** 选择在现有 `quickPromptLocale` 分流中增加显式 `es` 分支，并复用现有字段取值逻辑。备选的“重构为全语言模板注册表”影响中英/印尼语范围过大；“西语回退英文”不能满足全站西语适配，因此均不采用。
+
+**Acceptance:** 西语 overview task 的 `oneShotJobName` 使用 `ejecución única`；`generatedPrompt` 的协议、任务名、用户要求、字段标签、复选值、实时检索规则和安全提示均为西语且不含汉字；中英印尼语结果不变。
+
+- [x] **Step 1: 添加西语 draft 与历史任务展示失败测试。**
+
+  在 `scenario-task-builder.test.ts` 断言 `getOverviewScenarioTaskPacks("es")` 生成的租金提醒：
+
+  ```ts
+  expect(draft.oneShotJobName).toBe(`${draft.generatedName} · ejecución única`);
+  expect(draft.generatedPrompt).toContain("Estás ejecutando una automatización de LightVela");
+  expect(draft.generatedPrompt).toContain("Detalles proporcionados por el usuario:");
+  expect(draft.generatedPrompt).toContain("detalles de facturación: Factura de internet");
+  expect(draft.generatedPrompt).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+  ```
+
+  在 `scenario-job-presentation.test.ts` 断言旧中文任务在 `es` 下展示为西语 Prompt 且不含中文协议。
+
+- [x] **Step 2: 运行两份定向测试并确认 RED。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/scenario-tasks/__tests__/scenario-task-builder.test.ts \
+    src/pages/marketing/scenario-tasks/__tests__/scenario-job-presentation.test.ts
+  ```
+
+  Expected: 西语任务后缀实际为“单次执行”，Prompt 命中中文模板，新增断言失败；既有中英印尼语用例继续通过。
+
+- [x] **Step 3: 添加最小西语 Prompt 与字段标签实现。**
+
+  在 `scenario-task-builder.ts`：
+
+  ```ts
+  if (pack.quickPromptLocale === "es") {
+    return buildSpanishUserFacingScenarioPrompt(pack, values, userPrompt);
+  }
+  ```
+
+  新增与英文/印尼语结构一致的 `buildSpanishUserFacingScenarioPrompt`、`SPANISH_SCENARIO_FIELD_LABELS` 和 `buildSpanishScenarioValueLines`；修复 `makePack` 丢失 `needsRealtime` 的既有映射缺口，并将西语复选值输出为 `sí/no`；不改变 schedule、deliver 或 skillIds。
+
+- [x] **Step 4: 重跑定向测试确认 GREEN，并执行 `pnpm check` 与 `git diff --check`。**
+
+- [x] **Step 5: 更新 runtime summary，展示差异和验证证据，停在 commit/push 用户确认点。**
+
+---
+
+### Task 1: 多语言结构识别与本地化默认名
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-persona-upload.test.ts`
+- Modify: `frontend/src/pages/marketing/agent-persona-upload.ts`
+
+**Interfaces:**
+- Consumes: `getPersonaStructureWarnings(markdown)`、`getPersonaDisplayName(markdown, fileName, fallbackDisplayName?)`。
+- Produces: `buildCustomSoulMarkdown(markdown, fileName, fallbackDisplayName?)` 与 `validateCustomSoulMarkdown(markdown, fileName, fallbackDisplayName?)` 向下传递相同兜底名。
+
+- [x] **Step 1: 添加繁中 / 印尼语结构识别失败测试**
+
+在 `agent-persona-upload.test.ts` 添加两个完整 Markdown 用例：
+
+```ts
+it.each([
+  ["繁體中文", ["## 角色定位", "## 溝通風格", "## 工作原則", "## 行為邊界"]],
+  ["印尼语", ["## Identitas", "## Gaya Komunikasi", "## Prinsip Kerja", "## Batasan Perilaku"]],
+])("recognizes complete %s persona structure", (_language, headings) => {
+  expect(getPersonaStructureWarnings([
+    "# Soul",
+    "Name: Project Partner",
+    headings[0]!,
+    "Identity content.",
+    headings[1]!,
+    "Tone content.",
+    headings[2]!,
+    "Principles content.",
+    headings[3]!,
+    "Boundary content that is intentionally long enough to avoid the short-content warning.",
+  ].join("\n"))).toEqual([]);
+});
+```
+
+- [x] **Step 2: 添加可传入默认展示名的失败测试**
+
+```ts
+it("uses the caller-provided localized display-name fallback", () => {
+  expect(getPersonaDisplayName("Keep answers short.", ".md", "Persona kustom"))
+    .toBe("Persona kustom");
+
+  const result = buildCustomSoulMarkdown(
+    "Keep answers short.",
+    ".md",
+    "Custom persona",
+  );
+  expect(result.displayName).toBe("Custom persona");
+  expect(result.markdown).toContain("Name: Custom persona");
+});
+```
+
+- [x] **Step 3: 运行纯函数测试并确认 RED**
+
+Run:
+
+```bash
+cd frontend
+pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  -t 'recognizes complete|caller-provided localized'
+```
+
+Expected: 繁中 / 印尼语用例因 `missing_*` 提示失败，默认名用例因函数尚不接受第三个参数而失败；不得出现测试环境或语法错误。
+
+- [x] **Step 4: 最小扩充结构关键词**
+
+只在 `getPersonaStructureWarnings` 的四组现有正则中增加已确认词：
+
+```ts
+// identity: Identitas | Posisi Peran
+// tone: 溝通風格 | 語氣 | 表達 | Gaya Komunikasi | Nada
+// principles: 工作原則 | 原則 | 優先級 | Prinsip Kerja | Prioritas
+// boundaries: 行為邊界 | 邊界 | Batasan Perilaku | Batasan；正文兼容 Jangan
+```
+
+不得重写为语言分支或新增配置表。
+
+- [x] **Step 5: 最小传递本地化兜底名**
+
+签名统一为：
+
+```ts
+export function getPersonaDisplayName(
+  markdown: string,
+  fileName: string,
+  fallbackDisplayName = "Custom persona",
+): string;
+
+export function buildCustomSoulMarkdown(
+  markdown: string,
+  fileName: string,
+  fallbackDisplayName = "Custom persona",
+): { markdown: string; displayName: string };
+
+export function validateCustomSoulMarkdown(
+  markdown: string,
+  fileName: string,
+  fallbackDisplayName = "Custom persona",
+): CustomSoulMarkdownValidation;
+```
+
+名称优先级保持 `Name:` → 文件名 → `fallbackDisplayName`，并继续执行控制字符清理和 80 字节截断。
+
+- [x] **Step 6: 运行纯函数测试并确认 GREEN**
+
+Run:
+
+```bash
+cd frontend
+pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts
+```
+
+Expected: 该测试文件全部 PASS，现有简中 / 英文识别和 `SOUL.md` 标准化行为不回归。
+
+---
+
+### Task 2: 弹窗调用方与国际站真实测试覆盖
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-persona-upload-modal.tsx`
+- Modify: `frontend/src/pages/marketing/agent-custom-persona-file-modal.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+
+**Interfaces:**
+- Consumes: Task 1 的 `validateCustomSoulMarkdown(markdown, fileName, fallbackDisplayName?)`。
+- Produces: 两个弹窗始终传入 `t("自定义人设")`；`shows inject only after selecting a persona` 在 global 环境真实执行。
+
+- [x] **Step 1: 添加上传弹窗本地化兜底失败测试**
+
+把测试中的 `useT` mock 对“自定义人设”返回 `Persona kustom`，从而与纯函数的语言中立默认值区分：
+
+```tsx
+vi.mock("@/i18n/t", () => ({
+  useT: () => (text: string, options?: Record<string, unknown>) => (
+    text === "自定义人设"
+      ? "Persona kustom"
+      : text.replace(
+          /\{\{\s*([\w$]+)\s*\}\}/g,
+          (raw, key: string) => options?.[key] === undefined ? raw : String(options[key]),
+        )
+  ),
+}));
+```
+
+再添加完整上传用例：
+
+```tsx
+it("uses the localized display-name fallback", async () => {
+  const onInject = vi.fn().mockResolvedValue(undefined);
+  render(
+    <PersonaUploadModal
+      disabled={false}
+      hasExistingSoul={false}
+      onInject={onInject}
+    />,
+  );
+
+  selectFile(new File(["Keep answers short."], ".md"));
+  fireEvent.click(await screen.findByRole("button", { name: "注入人设" }));
+
+  await waitFor(() => expect(onInject).toHaveBeenCalledWith({
+    displayName: "Persona kustom",
+    markdown: expect.stringContaining("Name: Persona kustom"),
+  }));
+});
+```
+
+- [x] **Step 2: 运行弹窗测试并确认 RED**
+
+Run:
+
+```bash
+cd frontend
+pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  -t 'localized display-name fallback'
+```
+
+Expected: FAIL，收到的 `displayName` / `Name:` 仍为现有中文兜底。
+
+- [x] **Step 3: 两个弹窗显式传入翻译兜底**
+
+`agent-persona-upload-modal.tsx` 的预览校验与注入时校验都改为：
+
+```ts
+validateCustomSoulMarkdown(markdown, fileName, t("自定义人设"));
+```
+
+`agent-custom-persona-file-modal.tsx` 改为：
+
+```ts
+validateCustomSoulMarkdown(markdown, "SOUL.md", t("自定义人设"));
+```
+
+同步补齐 `useMemo` 依赖，不改变弹窗状态机。
+
+- [x] **Step 4: 删除纯遗留国际站测试守卫**
+
+仅删除以下用例开头的早退：
+
+```ts
+it("shows inject only after selecting a persona", async () => {
+  // 删除：if (isGlobal) return;
+```
+
+保留另外两处依赖推荐人设 global-ready 的早退。
+
+- [x] **Step 5: 运行弹窗和区域测试并确认 GREEN**
+
+Run:
+
+```bash
+cd frontend
+pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx
+
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  -t 'shows inject only after selecting a persona|renders the upload entry in both regions|uploads a custom persona'
+```
+
+Expected: 两条命令全部 PASS；global 下 `shows inject...` 不再空过。
+
+---
+
+### Task 3: 文档、全量门禁与 MR 更新检查点
+
+**Files:**
+- Modify: `frontend/openspec/changes/2026-08-24-global-custom-persona-upload-design.md`
+- Modify: `frontend/openspec/plan.md`
+
+**Interfaces:**
+- Consumes: Tasks 1–2 的实现和验证证据。
+- Produces: 如实的验证边界与可提交差异。
+
+- [x] **Step 1: 更新设计状态与验证边界**
+
+把状态改为“CR 增量已实施并通过定向双区域验证，待提交”，并明确：自定义人设定向链路通过；`agent-buddy-panel.test.tsx` 的 8 个推荐人设 global 失败来自 `master` 既有基线，本 MR 未触碰。
+
+- [x] **Step 2: 运行双区域 Persona 回归**
+
+Run:
+
+```bash
+cd frontend
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-buddy-command.test.ts
+
+NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-buddy-command.test.ts
+```
+
+Expected: 两组命令全部 PASS；jsdom 下载导航提示不计为失败。
+
+- [x] **Step 3: 运行静态与区域构建门禁**
+
+Run:
+
+```bash
+cd frontend
+pnpm i18n:check
+pnpm check
+pnpm build:cn
+pnpm build:global
+cd ..
+git diff --check
+git status --short
+```
+
+Expected: 全部 exit 0；构建生成的字体子集恢复到 `HEAD`，最终只保留规格、计划、纯函数、两个弹窗和对应测试的预期变更。
+
+- [x] **Step 4: 展示提交检查点并等待确认**
+
+建议追加 commit message：
+
+```text
+补齐国际站人设语言边界 / fix(persona): localize global persona validation
+```
+
+展示 `git status --short`、`git diff --stat`、完整业务 diff 和验证结果；未经确认不得 commit / push。推送后通过工蜂 API 回查 MR !3248 的 source commit、文件列表和 commit check。
+
+---
+
+# 国际站开放自定义人设文件 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 让 LightVela 国际站完整开放现有自定义人设 Markdown 的上传、编辑和下载能力，同时保持国内站行为不变。
+
+**Architecture:** 继续复用 `BuddyPanel`、Persona 上传/编辑弹窗、Markdown 校验和 Hermes `SOUL.md` 安全读写链路。只移除 `agent-buddy-panel.tsx` 中三个国际站展示门禁，并把自定义人设生命周期测试改为在 `cn` 与 `global` 环境下共同执行；不新增接口、组件副本或 capability flag。国际站整文件测试在 `origin/master` 上已有与预设人设英文 slug mock 相关的基线失败，因此本需求使用自定义人设定向用例作为国际站门禁，预设人设用例保持原区域策略。
+
+**Tech Stack:** React 19、TypeScript 5.9、Next.js 16、Vitest 4、Testing Library、现有 Hermes `debug/exec` Repository。
+
+## Global Constraints
+
+- 国内站行为保持不变；国际站新增完整的自定义人设上传、编辑和下载能力。
+- 不改变 `SOUL.md` 格式、`LightVela-Source: custom-upload` 来源标记、备份目录或安全写入协议。
+- 不新增 API、运行时命令、组件副本、依赖或区域 capability flag。
+- 不调整预设人设、抽卡、答题测试或 `/new` 生效提示。
+- 不新增或修改用户可见文案；复用现有中英文字典。
+- 必须先在国际站环境观察到测试因现有 `!isGlobal` 门禁失败，再修改生产代码。
+- 未经用户明确确认，不执行 `git commit`、`git push` 或创建 MR。
+
+---
+
+### Task 1: 国际站开放自定义人设完整生命周期
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-buddy-panel.tsx`
+- Modify: `frontend/openspec/plan.md`
+- Reference: `frontend/openspec/changes/2026-08-24-global-custom-persona-upload-design.md`
+
+**Interfaces:**
+- Consumes: `PersonaUploadModal`, `CustomPersonaFileModal`, `handleCustomPersonaInject`, `handleEditCustomPersona`, `handleDownloadCustomPersona`, `handleCustomPersonaSave` 的现有签名和行为。
+- Produces: `BuddyPanel` 在 `isGlobal === true` 与 `isGlobal === false` 时统一暴露上传入口、编辑/下载操作和编辑弹窗；不产生新导出接口。
+
+- [x] **Step 1: 把区域可见性测试改成双区域共同要求**
+
+在 `agent-buddy-panel.test.tsx` 中保留 `isGlobal` 导入（仍用于预设人设相关测试），并把“仅国内站显示上传入口”的条件断言改为两个区域都必须显示：
+
+```tsx
+it("renders the upload entry in both regions", async () => {
+  mockedLoadBuddyState.mockResolvedValue({
+    drawnSouls: [fixtures.agentA],
+    appliedSlug: null,
+  });
+  repositoryMocks.execDebugCommand.mockResolvedValue(successResult("Exists: no"));
+
+  render(<BuddyPanel botId="agent-a" />);
+  await screen.findByText("Agent A Soul");
+
+  expect(await screen.findByRole("button", { name: "上传人设文件" })).toBeEnabled();
+});
+```
+
+把自定义人设状态测试中的区域分支改为统一断言：
+
+```tsx
+const editButton = screen.getByRole("button", { name: "编辑自定义人设" });
+expect(editButton).toBeInTheDocument();
+expect(screen.getByRole("button", { name: "下载自定义人设" })).toBeInTheDocument();
+expect(editButton.parentElement?.parentElement).toHaveClass("gap-0");
+```
+
+删除以下自定义人设测试开头的 `if (isGlobal) return;`，让它们在国际站环境真实执行：
+
+- `reads the current Soul, edits it, and saves through the safe write command`
+- `downloads the exact current Soul directly without opening the editor`
+- `reports an actionable error for an unreadable current Soul: %s`
+- `reports a network error while reading the current Soul`
+- `disables both file actions and ignores an old content read after switching Agents`
+- `cancels a pending current-persona download when the panel unmounts`
+- `clears a pending file action when a new persona write supersedes its read`
+- `keeps Agent B editor open when Agent A save finishes stale`
+- `uploads a custom persona through the existing Hermes command`
+
+以下用例依赖预设人设选择和国际站英文 slug 映射，保持现有 `if (isGlobal) return;`，不纳入本需求：
+
+- `shows inject only after selecting a persona`
+- `discards an old custom-persona read when a recommended persona is injected`
+- `keeps the real custom status when a recommended persona write falls back`
+
+- [x] **Step 2: 运行国际站测试并确认 RED**
+
+Run:
+
+```bash
+cd frontend
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  -t 'renders the upload entry in both regions|restores a custom uploaded persona|reads the current Soul|downloads the exact current Soul|reports an actionable error|reports a network error|disables both file actions|cancels a pending current-persona download|clears a pending file action|keeps Agent B editor open|uploads a custom persona'
+```
+
+Expected:
+
+- FAIL。
+- 首个业务失败明确指出找不到“上传人设文件”按钮，或找不到“编辑自定义人设”/“下载自定义人设”按钮。
+- 失败原因来自 `agent-buddy-panel.tsx` 的现有 `!isGlobal` 展示门禁，不是语法错误、测试环境错误或 mock 缺失。
+
+- [x] **Step 3: 最小移除编辑与下载操作的国际站门禁**
+
+在 `customPersonaName` 状态区域保留现有按钮、loading、disabled 和 tooltip 内容，只移除外层 `!isGlobal` 条件：
+
+```tsx
+<div className="inline-flex items-center gap-0">
+  <div className="group relative inline-flex">
+    <button
+      type="button"
+      aria-label={t("编辑自定义人设")}
+      disabled={customPersonaFileAction !== "idle"}
+      onClick={() => void handleEditCustomPersona()}
+      className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {customPersonaFileAction === "editing" ? (
+        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <Pencil className="size-3.5" aria-hidden="true" />
+      )}
+    </button>
+    <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+      {t("编辑自定义人设")}
+      <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+    </div>
+  </div>
+  <div className="group relative inline-flex">
+    <button
+      type="button"
+      aria-label={t("下载自定义人设")}
+      disabled={customPersonaFileAction !== "idle"}
+      onClick={() => void handleDownloadCustomPersona()}
+      className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {customPersonaFileAction === "downloading" ? (
+        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <Download className="size-3.5" aria-hidden="true" />
+      )}
+    </button>
+    <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+      {t("下载自定义人设")}
+      <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+    </div>
+  </div>
+</div>
+```
+
+不得修改 `handleEditCustomPersona`、`handleDownloadCustomPersona`、读文件命令或下载文件名。
+
+- [x] **Step 4: 最小移除上传与编辑弹窗的国际站门禁**
+
+把操作区的上传弹窗直接渲染，保留原 disabled 条件：
+
+```tsx
+<PersonaUploadModal
+  key={botId ?? "no-agent"}
+  disabled={
+    !botId
+    || loadStatus !== "loaded"
+    || equippedStatus !== "ready"
+  }
+  hasExistingSoul={hasExistingSoul}
+  onInject={handleCustomPersonaInject}
+/>
+```
+
+把页面尾部的编辑弹窗直接渲染：
+
+```tsx
+<CustomPersonaFileModal
+  open={customPersonaEditorMarkdown !== null}
+  initialMarkdown={customPersonaEditorMarkdown ?? ""}
+  onClose={() => setCustomPersonaEditorMarkdown(null)}
+  onSave={handleCustomPersonaSave}
+/>
+```
+
+不得修改两个弹窗组件、Markdown 校验函数、Hermes 写入命令或状态回读逻辑。
+
+- [x] **Step 5: 运行国际站 Persona 回归并确认 GREEN**
+
+Run:
+
+```bash
+cd frontend
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  -t 'renders the upload entry in both regions|restores a custom uploaded persona|reads the current Soul|downloads the exact current Soul|reports an actionable error|reports a network error|disables both file actions|cancels a pending current-persona download|clears a pending file action|keeps Agent B editor open|uploads a custom persona'
+
+NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-buddy-command.test.ts
+```
+
+Expected: 两条命令全部 PASS，0 个失败；`agent-buddy-panel.test.tsx` 不再因为 `isGlobal` 跳过自定义人设生命周期。整文件国际站基线中的预设人设 slug mock 失败不属于本需求，不作为此处门禁。
+
+- [x] **Step 6: 运行国内站 Persona 回归并确认无回归**
+
+Run:
+
+```bash
+cd frontend
+NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm exec vitest run --config vitest.config.ts \
+  src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  src/pages/marketing/__tests__/agent-persona-upload.test.ts \
+  src/pages/marketing/__tests__/agent-persona-upload-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-custom-persona-file-modal.test.tsx \
+  src/pages/marketing/__tests__/agent-buddy-command.test.ts
+```
+
+Expected: 5 个测试文件全部 PASS，0 个失败；国内站上传、编辑、下载和安全写入行为保持不变。
+
+- [x] **Step 7: 运行静态、i18n 和差异门禁**
+
+Run:
+
+```bash
+cd frontend
+pnpm i18n:check
+pnpm check
+cd ..
+git diff --check
+git status --short
+```
+
+Expected:
+
+- `pnpm i18n:check` exit 0，英文缺失 0 条。
+- `pnpm check` exit 0，TypeScript 无错误，繁体字典一致。
+- `git diff --check` 无输出。
+- 变更范围仅包含设计文档、`frontend/openspec/plan.md`、`agent-buddy-panel.tsx` 和对应测试；构建产生的文件不得混入差异。
+
+- [x] **Step 8: 运行国内与国际区域构建**
+
+Run:
+
+```bash
+cd frontend
+pnpm build:cn
+pnpm build:global
+```
+
+Expected: 两个命令均 exit 0，Next 静态导出、SEO 和静态资产检查全部完成。
+
+构建后运行：
+
+```bash
+cd ..
+git status --short
+git diff --check
+```
+
+Expected: 没有新增需要提交的构建产物；若 `frontend/next-env.d.ts` 或字体子集等生成文件发生变化，恢复到 `HEAD` 后重新检查差异。
+
+- [x] **Step 9: 准备提交检查点并等待用户确认**
+
+展示以下内容，未经确认不得执行命令：
+
+```bash
+git status --short
+git diff --stat
+git diff -- frontend/src/pages/marketing/agent-buddy-panel.tsx \
+  frontend/src/pages/marketing/__tests__/agent-buddy-panel.test.tsx \
+  frontend/openspec/plan.md \
+  frontend/openspec/changes/2026-08-24-global-custom-persona-upload-design.md
+```
+
+建议 commit message：
+
+```text
+国际站开放自定义人设文件 / feat(persona): enable custom persona files globally
+```
+
+只有用户明确确认后，才能执行 `git add` 和 `git commit`；push 与 MR 仍需单独展示并确认。
+
+---
+
+# 国际站西班牙语完整上线 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: use `subagent-driven-development` when the user selects parallel execution, or `executing-plans` for inline execution. Follow `test-driven-development` for every behavior change and `verification-before-completion` before claiming completion.
+
+**Status:** Task 1–8 全部完成；质量门禁、双区域构建、浏览器验收与独立只读复审均通过，等待提交审批。
+
+**Size:** L。涉及国际站公开路由、全局 UI 字典、Docs 生成、SEO/metadata、字体和双区域回归；不涉及国内站产品行为、后端接口、法务正文或 Tea SDK 内部区域逻辑。
+
+**Goal:** 在 `lightvela.ai` 完整发布西班牙语 `/es`：公开页面和产品 UI 使用西语，Docs 导航与 metadata 使用西语、正文回退英文；日语和韩语继续隐藏，`lightvela.com` 不产生用户可见变化。
+
+**Architecture:** 以 `src/i18n/locales.json` 为语种能力源，先修复合并后的字典/校验基线，再让公开站路由、切换器、Docs、SEO 和字体按注册表能力消费 `es`。开发阶段保留 `switcherVisible: false` 与 `translationRequired: false`；字典、路由、SEO、Docs 与字体定向门禁通过后同时打开这两个标记，再执行 Task 8 双区域构建和浏览器最终验收，若最终门禁失败则回滚西语入口。生成文件只由对应脚本重建，不手工维护。
+
+**Scope boundaries:**
+
+- Included: 国际站公开页、登录后国际站 UI、`/es` 路由、语言切换器、Docs 西语导航/标题/描述、英文 Docs 正文回退、canonical/hreflang/Open Graph/sitemap、拉丁字体回退、国际/国内两套构建验证。
+- Excluded: 国内站可见内容与路由、Docs 正文翻译、隐私/条款/Cookie/开源许可正文翻译、Tea SDK 内部地区字段、Models 数据、日语与韩语上线。
+- Generated artifacts: `next-site/docs-route-manifest.ts` 与 `.fumadocs-content/` 只能通过 `pnpm docs:sync` 生成；i18n key 集合只能通过 `pnpm i18n:extract` 同步。
+- Commit gate: 本计划执行期间只做代码与验证；提交、推送、MR 必须另行展示 diff/标题并取得用户明确授权。
+
+## Task 1: 恢复 master 合并后的 i18n 可信基线
+
+**Files:**
+
+- Modify: `frontend/src/i18n/__tests__/dictionaries.test.ts`
+- Modify: `frontend/src/i18n/generated/en-US.json`
+- Modify: `frontend/src/i18n/generated/id-ID.json`
+- Modify: `frontend/src/i18n/generated/es.json`
+- Modify: `frontend/src/i18n/generated/ja-JP.json`
+- Modify: `frontend/src/i18n/generated/ko-KR.json`
+- Regenerate if needed: `frontend/src/i18n/generated/zh-CN.json`
+- Regenerate if needed: `frontend/src/i18n/generated/zh-Hant.json`
+- Regenerate if needed: `frontend/src/i18n/generated/zh-to-key.json`
+
+**Acceptance:**
+
+- 七个实际字典的 key 集合与 `zh-CN` 完全一致；新增语种不再缺 85 个当前 key，也不保留 7 个过期 key。
+- `{{discount}}折` 的英文和印尼语译文使用与中文一致的 `{{discount}}` 占位符；不得通过放宽 validator 掩盖占位符错误。
+- 日语、韩语仅补齐空 key 骨架，不翻译、不开启；西语保留已有 142 条译文并补齐空 key。
+- `pnpm i18n:check`、`pnpm i18n:validate` 与字典定向测试通过。
+
+- [x] **1.1 RED：运行字典完备性与 validator，记录当前 key 数和占位符失败。**
+
+  Run: `cd frontend && pnpm test -- src/i18n/__tests__/dictionaries.test.ts && pnpm i18n:validate`
+  Expected: 字典测试因 es/ja/ko key 集不完整失败；validator 因 `discount`/`percent` 占位符不一致失败。
+
+- [x] **1.2 GREEN：使用 `pnpm i18n:extract` 同步所有注册字典 key，再仅修正真实翻译值。**
+
+  Run: `cd frontend && pnpm i18n:extract && pnpm i18n:zh-hant`
+  Then: 在 `en-US.json` 与 `id-ID.json` 将错误的 `{{percent}}` 改为 `{{discount}}`；不得改中文 source 或 validator 规则。
+
+- [x] **1.3 VERIFY：锁定 key 等价、占位符等价与隐藏语种状态。**
+
+  Run: `cd frontend && pnpm test -- src/i18n/__tests__/dictionaries.test.ts src/i18n/__tests__/locales.config.test.ts && pnpm i18n:check && pnpm i18n:validate && pnpm i18n:zh-hant:check`
+  Expected: 全部退出码为 0；`es/ja-JP/ko-KR` 仍未列入必填翻译集合。
+
+## Task 2: 让国际站运行时与语言切换器真正支持 `/es`
+
+**Files:**
+
+- Modify: `frontend/src/components/site/__tests__/language-switcher.test.tsx`
+- Modify: `frontend/src/components/site/language-switcher.tsx`
+- Modify: `frontend/src/lib/public-site-routing.ts`
+- Modify: `frontend/src/lib/public-site-navigation.ts`
+- Modify: `frontend/src/lib/region.ts`
+- Modify: `frontend/next-site/public-locale.ts`
+- Modify: `frontend/next-site/public-header-auth-island.tsx`
+- Modify as required by exhaustive locale types: `frontend/src/components/site/public-site-header.tsx`
+- Modify as required by exhaustive locale types: `frontend/src/pages/marketing/scenario-tasks/scenario-packs.ts`
+- Test: `frontend/src/i18n/__tests__/initial-locale.test.ts`
+- Test: `frontend/src/i18n/__tests__/locales.config.test.ts`
+
+**Acceptance:**
+
+- 国际站能解析 `/es` 为 locale `es`，公开页导航、登录入口与场景结构化文案不回退中文。
+- 语言切换器选项、标签与目标 URL 从注册表派生；最终开启前测试先以显式 fixture 验证 `es` 选项和 `/es/...` 路径，生产列表仍不暴露西语。
+- 切换语言保留当前可本地化路径；例如 `/zh-hant/about` 切换为西语得到 `https://lightvela.ai/es/about`。
+- 国内站选项顺序、目标 URL 和默认中文保持不变；日语、韩语不出现在菜单中。
+
+- [x] **2.1 RED：先补 `/es` 解析、路径保留、国际站菜单和国内站负向断言。**
+
+  Add assertions for `publicRouteLocaleFromLang('es')`, locale-to-URL mapping, `Español`, `/es`, hidden ja/ko, and unchanged CN menu.
+  Run: `cd frontend && pnpm test -- src/components/site/__tests__/language-switcher.test.tsx src/i18n/__tests__/initial-locale.test.ts src/i18n/__tests__/locales.config.test.ts`
+  Expected: hard-coded five-locale branches fail the Spanish assertions.
+
+- [x] **2.2 GREEN：以注册表派生公开站 locale/options，补齐所有 `Record<PublicSiteLocale, ...>` 的西语值。**
+
+  Implementation constraint: `language-switcher.tsx` 不再声明独立的五语种联合类型或条件链；URL、显示名、短标签和可见性读取 locale definition。国内/国际跨站入口仍作为区域选项单独保留。
+
+- [x] **2.3 VERIFY：定向测试与 TypeScript 通过，确认 ja/ko 仍隐藏。**
+
+  Run: `cd frontend && pnpm test -- src/components/site/__tests__/language-switcher.test.tsx src/i18n/__tests__/initial-locale.test.ts src/i18n/__tests__/locales.config.test.ts && pnpm exec tsc --noEmit`
+
+## Task 3: 生成西语 Docs 路由、导航与英文正文回退
+
+**Files:**
+
+- Modify: `frontend/scripts/international-docs-parity.test.ts`
+- Modify: `frontend/scripts/sync-fumadocs-content.mjs`
+- Modify: `frontend/next-site/source.ts`
+- Regenerate: `frontend/next-site/docs-route-manifest.ts`
+- Modify: `frontend/src/app/(site)/[lang]/docs/[[...slug]]/page.next.tsx`
+- Modify if consumed by the legacy docs shell: `frontend/src/config/docs-sidebar.ts`
+- Generated, do not commit unless already tracked: `frontend/.fumadocs-content/docs/es/**`
+
+**Acceptance:**
+
+- `/es/docs` 与每个英文国际站真实 slug 都存在；route manifest 的 `es` slug 集与 `en-us` 集一致。
+- 西语 Docs 页的标题、描述、分组和导航为西语；正文选择 `src/content/docs/en/`，缺失时回退 `src/content/docs/global/`，不创建西语正文源文件。
+- `source_path` 明确指向英文/国际源；内部链接保持 `/es/docs/...`，不存在指向未生成 slug 的链接。
+- 国内 `zh-cn` 文档集、国际现有 en/zh/id 文档集及其数量不变。
+
+- [x] **3.1 RED：为西语 slug 对等、英文 source_path、metadata 西语和链接前缀补测试。**
+
+  Run: `cd frontend && pnpm test -- scripts/international-docs-parity.test.ts`
+  Expected: 当前 docSets 缺少 `es`，测试失败。
+
+- [x] **3.2 GREEN：在 Docs 生成器增加 `ES` locale/docSet 与西语 metadata map。**
+
+  Use the same document list as `globalDocsForEnglish`; configure `sourcePrefix: 'es'` and `fallbackSourcePrefixes: ['en', 'global']`. Extend `allDocsForLinks` and generated route locales for `es`. Do not add Spanish body files.
+
+- [x] **3.3 REGENERATE + VERIFY：只通过脚本重建 manifest/content 并检查确定性。**
+
+  Run: `cd frontend && pnpm docs:sync && cp next-site/docs-route-manifest.ts /tmp/lightvela-es-docs-manifest.ts && pnpm docs:sync && diff -u /tmp/lightvela-es-docs-manifest.ts next-site/docs-route-manifest.ts && pnpm test -- scripts/international-docs-parity.test.ts scripts/docs-image-assets.test.ts`
+  Expected: 两次生成结果一致，测试全部通过。
+
+## Task 4: 补齐西语公开页 metadata、SEO、hreflang 与 sitemap
+
+**Files:**
+
+- Modify: `frontend/next-site/seo.test.ts`
+- Modify: `frontend/next-site/seo.tsx`
+- Modify: `frontend/src/lib/__tests__/seo.test.ts`
+- Modify: `frontend/src/lib/__tests__/seo-data.page-description.test.ts`
+- Modify: `frontend/src/lib/seo-data.ts`
+- Modify: `frontend/src/app/sitemap.xml/route.next.ts`
+- Modify localized metadata maps in:
+  - `frontend/src/app/(site)/[lang]/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/about/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/changelog/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/cookie-policy/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/open-source-licenses/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/privacy-policy/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/subscribe/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/support/page.next.tsx`
+  - `frontend/src/app/(site)/[lang]/terms-of-service/page.next.tsx`
+
+**Acceptance:**
+
+- 国际站每个真实西语公开页输出唯一西语 title/description、`html lang="es"`、`og:locale=es_ES`。
+- canonical 与 `og:url` 都指向 `https://lightvela.ai/es/...`；hreflang 包含 `es` 且只指向真实存在的等价页。
+- sitemap 包含 `/es` 公开页与 `/es/docs/...` 真实 slug，不包含 `/ja-jp`、`/ko-kr` 或国内站西语 URL。
+- 法务页正文继续沿用英文回退，但页面 title/description 与语言提示为西语；不伪造西语法务正文。
+
+- [x] **4.1 RED：新增 Spanish metadata/canonical/hreflang/sitemap 与 hidden-locale 负向用例。**
+
+  Run: `cd frontend && pnpm test -- next-site/seo.test.ts src/lib/__tests__/seo.test.ts src/lib/__tests__/seo-data.page-description.test.ts`
+  Expected: hard-coded locale maps and SEO arrays fail Spanish cases.
+
+- [x] **4.2 GREEN：按注册表数据扩展 SEO 公共集合，并补齐九个公开页面的西语 metadata。**
+
+  Constraint: `SEO_PUBLIC_URL_LANGS`/`SEO_DOCS_ROUTE_LOCALES` 只包含当前可发布语言；ja/ko 即使已注册也不得进入 alternates 或 sitemap。canonical 与 Open Graph URL 必须由同一 URL builder 生成。
+
+- [x] **4.3 VERIFY：运行 SEO 单测、同步 Docs 后检查静态 SEO。**
+
+  Run: `cd frontend && pnpm docs:sync && pnpm test -- next-site/seo.test.ts src/lib/__tests__/seo.test.ts src/lib/__tests__/seo-data.page-description.test.ts && node scripts/check-next-seo.mjs`
+  Note: 若 `check-next-seo.mjs` 依赖完整构建产物，则在 Task 8 的 global build 中执行最终断言，本步保留单测证据。
+
+## Task 5: 为西语提供完整且可审计的 UI 翻译
+
+**Files:**
+
+- Modify: `frontend/src/i18n/generated/es.json`
+- Modify: `frontend/src/i18n/__tests__/dictionaries.test.ts`
+- Runtime-only, do not commit: `frontend/.workflow/runtime/intl-spanish-translation/manifest.json`
+- Runtime-only, do not commit: `frontend/.workflow/runtime/intl-spanish-translation/batch-001.json` through `batch-012.json`
+
+**Batch protocol:**
+
+1. 从同步后的 `es.json` 取空值 key，按 key 升序生成 manifest；manifest 每项含 `key`、`source`、`placeholders`。
+2. 按 manifest 下标切成 12 个互斥批次：001–011 每批最多 200 条，012 接收余项。批次数随实际空值总数校验；若少于 2201 条则删除无内容的尾批，不制造空批。
+3. 翻译人员/agent 只写自己拥有的 runtime batch 文件，格式为 `{ "中文原文": "西班牙语译文" }`；不得直接并发编辑 `es.json`。
+4. 单一 writer 按批次顺序执行 `pnpm i18n:apply -- es <batch> --overwrite`，每批后运行 validator；保留占位符、URL、代码、品牌名 LightVela/Hermes/SkillHub 和产品套餐名。
+5. 使用中性国际西班牙语；语气清晰自然，按钮用简洁动作词。涉及账户、支付、删除、隐私和错误提示时忠实原意，不增加承诺。
+
+**Acceptance:**
+
+- `es.json` 与中文基准 key 数一致且 0 空值；所有 placeholder 集合逐条一致。
+- 西语值不得等于中文源（品牌名、纯数字、URL、代码/占位符-only 字符串除外）；例外必须由测试中的明确 allowlist 说明原因。
+- 对首页、登录、订阅、Agent 配置、通道、支付/错误提示、设置等高风险词汇做人工抽样复核；不存在简中 UI 回退。
+- 日语、韩语字典仍为空骨架，不顺带翻译。
+
+- [x] **5.1 RED：把西语加入完整翻译门禁测试，确认当前空值数量导致失败。**
+
+  Add a Spanish-specific assertion for zero missing translations and placeholder parity without yet changing `translationRequired`.
+  Run: `cd frontend && pnpm test -- src/i18n/__tests__/dictionaries.test.ts`
+
+- [x] **5.2 TRANSLATE：生成互斥批次并逐批应用。**
+
+  Per batch: `cd frontend && pnpm i18n:apply -- es .workflow/runtime/intl-spanish-translation/batch-NNN.json --overwrite && pnpm i18n:validate`
+  Expected after final batch: validator reports Spanish translated count equal to the Chinese baseline and zero missing.
+
+- [x] **5.3 REVIEW + VERIFY：对高风险域抽样并运行完整字典门禁。**
+
+  Run: `cd frontend && pnpm test -- src/i18n/__tests__/dictionaries.test.ts src/i18n/__tests__/locales.config.test.ts && pnpm i18n:check && pnpm i18n:validate`
+
+## Task 6: 增加西语/拉丁字符字体回退且不扩大中文字体子集
+
+**Files:**
+
+- Add: `frontend/scripts/subset-fonts.test.ts`
+- Modify: `frontend/scripts/subset-fonts.mjs`
+- Modify: `frontend/src/styles.css`
+- Test fixture only if required: `frontend/src/i18n/generated/es.json`
+
+**Acceptance:**
+
+- 字体子集输入由注册表/字典集合覆盖西语重音字符和 `ñ/Ñ/ü/Ü/¿/¡`，不遗漏真实译文字符。
+- `[lang="es"]` 的正文与标题优先使用支持 Latin Extended 的系统字体栈；不强制使用仅面向中文的装饰字体。
+- 国内站默认字体变量与现有中文 `@font-face` 行为不变，构建产物大小没有因把全部日/韩字符加入而异常增长。
+
+- [x] **6.1 RED：新增西语字符收集与 CSS fallback 测试。**
+
+  Run: `cd frontend && pnpm test -- scripts/subset-fonts.test.ts`
+  Expected: 当前 `textInputs` 未读取 Spanish dictionary，测试失败。
+
+- [x] **6.2 GREEN：让 subset 脚本读取可发布 locale 的真实字典，并增加 `[lang="es"]` 字体变量覆盖。**
+
+  Constraint: ja/ko 仍隐藏且没有完整翻译，不进入发布字体子集；不得修改国内站根字体默认值。
+
+- [x] **6.3 VERIFY：运行字体测试并执行一次 subset 生成，检查输出没有缺字错误。**
+
+  Run: `cd frontend && pnpm test -- scripts/subset-fonts.test.ts && node scripts/subset-fonts.mjs`
+
+## Task 7: 最后一次性开启西语，保持日语/韩语隐藏
+
+**Files:**
+
+- Modify: `frontend/src/i18n/locales.json`
+- Modify: `frontend/src/i18n/__tests__/locales.config.test.ts`
+- Modify if generated typing changes: `frontend/src/i18n/locales.config.ts`
+- Modify: `wiki/prd-docs/2026-08-21-intl-locale-registry-es-ja-ko.md`
+- Update: `frontend/openspec/proposal.md`
+- Update: `frontend/openspec/spec.md`
+- Update: `frontend/openspec/plan.md`
+
+**Acceptance:**
+
+- 只将 `es.switcherVisible` 和 `es.translationRequired` 改为 `true`；`ja-JP`、`ko-KR` 两项仍为 `false`。
+- registry 测试明确断言国际站发布集合包含 es、排除 ja/ko；西语 URL 统一为 `/es`，文档中不再保留其他西语区域前缀歧义。
+- PRD/OpenSpec 与最终实现、排除项、验证结果一致，不声称翻译了 Docs/法务正文。
+
+- [x] **7.1 RED：先把最终发布状态写入 registry 测试。**
+
+  Run: `cd frontend && pnpm exec vitest run --config vitest.config.ts src/i18n/__tests__/locales.config.test.ts src/components/site/__tests__/language-switcher.test.tsx`
+  Expected: es 仍隐藏/非必填，因此最终发布断言失败。
+
+- [x] **7.2 GREEN：仅翻转 es 两个开关，更新最终文档。**
+
+- [x] **7.3 VERIFY：确认可见/必填集合只有 Spanish 新增。**
+
+  Run: `cd frontend && pnpm exec vitest run --config vitest.config.ts src/i18n/__tests__/locales.config.test.ts src/i18n/__tests__/dictionaries.test.ts src/components/site/__tests__/language-switcher.test.tsx && pnpm i18n:check && pnpm i18n:validate`
+
+## Task 8: 双区域全量验证与浏览器验收
+
+**Files:**
+
+- No new implementation files unless a failing gate exposes an in-scope defect.
+- Update verification evidence in: `frontend/openspec/plan.md`
+
+**Acceptance:**
+
+- 全量 test/check 通过；分别以 global 和 cn 环境成功构建。
+- 国际站浏览器验收覆盖 `/es`、`/es/about`、`/es/subscribe`、`/es/support`、`/es/docs` 和至少一个深层 Docs slug；页面无中文 UI 回退、404、hydration error、横向溢出或缺字。
+- 页面源代码验证 `lang=es`、西语 metadata、canonical、hreflang、Open Graph 和 sitemap；Docs 正文确为英文回退且导航/metadata 为西语。
+- 国内站首页、公开导航、语言菜单、Docs 和 sitemap 与基线一致，且不出现西语入口或 `/es` URL。
+- 日语/韩语入口、hreflang、sitemap 始终不存在。
+
+- [x] **8.1 TEST/CHECK：运行全量质量门禁并完成既有失败归因。**
+
+  Run: `cd frontend && pnpm test && pnpm check && git diff --check`
+
+  Evidence (2026-08-24): `pnpm check` 与 `git diff --check` 退出码均为 0；西语为 2403/2403、0 error/0 warning。全量 Vitest 中与本次实现相关的 173 个文件 / 1822 个断言分片运行全部通过；最终核心门禁 7 文件 / 87 个断言、登录/页脚与国内负向 3 文件 / 29 个断言再次通过。仓库级命令仍暴露三个不在本 diff 内的既有测试基础设施问题：13 个超限 Docs PNG（39 处引用）、Vitest 错误收集 `node:test` 格式的 `scripts/next-config.test.mjs`（该文件用 `node --test` 为 1/1 通过）、未修改的 `plan-select-page.test.tsx` 单文件持续增长内存。未通过放宽断言或修改无关资产掩盖这些问题。
+
+- [x] **8.2 BUILD GLOBAL：以国际站环境构建并运行静态 SEO 检查。**
+
+  Run: `cd frontend && NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm build`
+  Expected: build、Next static generation、SEO/versioned assets checks 全部退出码 0。
+
+  Evidence (2026-08-24): `pnpm build:global` 退出码 0；448/448 static pages（含独立 `/api/search/es`），51 条公开静态路由通过 SEO checker，EdgeOne 路由配置 14 条。产物包含 69 个 `/es` HTML、66 条 canonical 西语 sitemap URL；`/es/docs/` 作为 canonical 到 `/es/docs/overview/` 的别名不进入 sitemap。产物不含 ja/ko，也不把 noindex 的 subscribe/support 写入 sitemap。
+
+- [x] **8.3 BUILD CN：以国内站环境构建，证明无区域回归。**
+
+  Run: `cd frontend && NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm build`
+  Expected: build 退出码 0；国内 sitemap/菜单测试仍排除 Spanish。
+
+  Evidence (2026-08-24): `pnpm build:cn` 退出码 0；119/119 static pages，16 条公开静态路由通过 SEO checker。`out/es`、`out/ja-jp`、`out/ko-kr` 均不存在，国内 sitemap 的 `/es` URL 为 0；新增 search artifact 未接入国内 UI，不产生用户可见入口。
+
+- [x] **8.4 BROWSER：启动 global build，按桌面与 390px 移动视口逐页截图/控制台验收。**
+
+  Evidence to record: URL、HTTP 状态、页面 title、`html[lang]`、canonical、hreflang 列表、控制台错误、视觉截图路径。Docs 页额外记录英文正文与西语导航/metadata 的同时存在。
+
+  Evidence (2026-08-24): 桌面逐页检查 `/es/`、`/es/about`、`/es/subscribe`、`/es/support`、`/es/docs/`、`/es/docs/overview`、`/es/docs/configuration/model`，并以 390×844 复查首页与深层 Docs。页面均为 `lang=es`、canonical/OG URL 指向对应 `lightvela.ai/es/...`，无 404、稳定复现的 hydration error、替换字符或横向溢出；语言菜单含 Español 且排除日本語/한국어。Docs 标题、摘要和导航为西语，article 正文为英文回退。额外通过浏览器 RED→GREEN 修复西语 Cookie banner、首页 CTA 完整标题、footer/LoginModal `/es` 链接，并展开 Support 问卷确认全部选项无汉字；四个法务页均为西语标题/说明、英文法律正文，header/footer 链接保持 `/es`。国内站桌面抽检保持 `lang=zh-CN`，无西语文案、路径、语言按钮或 Cookie banner。
+
+- [x] **8.5 FINAL REVIEW：对照 proposal/spec/plan 逐项核对并展示最终 diff；未取得用户授权前不 commit、不 push、不建 MR。**
+
+  Evidence (2026-08-24): 独立只读复审结论 PASS（Critical 0、Important 0、Minor 0，Ready to merge: Yes）；复审聚焦 10 文件 / 94 个断言、全部新增未跟踪测试 6 文件 / 23 个断言均通过。当前仍保持未提交状态，等待用户审批提交内容。
+
+## 西语深层页面补漏（2026-08-24）
+
+**Status:** 实现与验证完成，等待用户验收。用户确认按审计清单优先处理国际站 P0 项；不翻译 Docs/法务正文，不修改国内站产品行为。
+
+**Design:** 继续使用中文原文作为 `useT()` key，通过 locale override 让 `/es` 输出西语；国际站配置面板在西语下使用英文 provider 数据作为无西语数据源时的安全回退。旧 `ChannelModal` 仅由国内站封存组件触发，国际站主流程没有打开入口，本轮不改这段国内遗留代码。
+
+### Task 9: 首页流程步骤标签西语化
+
+- [x] **RED：渲染西语 `ProcessSection`，断言桌面端和移动端均显示 `Paso 1/2/3` 且不出现 `Step 1/2/3`。**
+- [x] **GREEN：将步骤标签改为 `t("步骤 {{step}}")`，保持布局和国内站中文输出不变。**
+- [x] **VERIFY：运行组件测试和 i18n 门禁。**
+
+### Task 10: 国际站套餐选择页西语化
+
+- [x] **RED：为 `/plans/select` 增加轻量 i18n 边界测试，覆盖页面标题、状态、说明、套餐卡和按钮；既有页面渲染测试因已记录的单文件内存增长不作为本批门禁。**
+- [x] **GREEN：页面固定文案、三档 plan catalog 展示数据和 `PlanCard` 状态文案全部接入 `useT()`；国内站继续显示中文。**
+- [x] **VERIFY：运行套餐选择页 i18n 边界测试和 TypeScript。**
+
+### Task 11: 国际订阅支付成功态西语化
+
+- [x] **RED：增加国际信用卡成功态 i18n 边界测试，断言标题、说明、关闭按钮和 aria-label 不再保留英文硬编码。**
+- [x] **GREEN：成功态所有英文硬编码改为 `t()`，金额和套餐名插值保持不变。**
+- [x] **VERIFY：运行国际订阅定向测试。**
+
+### Task 12: `/agents` 西语模型数据安全回退
+
+- [x] **RED：新增 locale 边界测试，断言 `es` 与英语使用英文 provider 数据，中文仍使用中文 provider 数据。**
+- [x] **GREEN：设置页使用 locale helper 传递 `useEnglish`；不改 Tea SDK/provider 数据结构。**
+- [x] **VERIFY：运行 locale、SDK boundary 和通道配置边界测试。**
+
+### Task 13: 补漏回归与国际站验收
+
+- [x] **DICTIONARY：执行 `pnpm i18n:extract`，补齐新 key 的 en-US、id-ID、es 翻译并生成 zh-Hant。**
+- [x] **QUALITY：运行定向测试、`pnpm i18n:check`、`pnpm i18n:validate`、`pnpm check` 与 `git diff --check`。**
+- [x] **SMOKE：复查本地 `/es` 首页、套餐选择页和订阅公开页；真实支付成功态与登录后设置页按安全边界使用组件测试兜底，不修改或发布国内站。**
+
+  Evidence (2026-08-24): 相关 7 个测试文件 / 67 个断言通过；`pnpm check`、`git diff --check`、i18n extract/validate/zh-Hant check 均退出 0。西语字典 2437/2437，0 error/0 warning。本地 `/es` 首页显示两套 `Paso 1/2/3` 且 body 无中文；`/es/subscribe` 公开内容无中文；未登录直达 `/plans/select` 显示西语登录门禁。HTML 报告：`/tmp/lightvela-spanish-p0-2026-08-24/report.html`。
+
+---
+
 # 人设页标题与说明文案调整 Implementation Plan
 
 **Status:** 按用户视觉反馈增量调整完成，已验证。
@@ -64,6 +2350,252 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - GREEN：`agent-buddy-panel.test.tsx` 共 30 个用例通过。
 - `pnpm i18n:extract`、`pnpm i18n:zh-hant`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check` 通过；新增「人设卡片」的简中、繁中、英文和印尼语字典项。
 - 本地 `/agents/persona/` 返回 200，页面有内容、无 Next/Vite 错误浮层和浏览器错误；当前本地及 Chrome 均无可复用登录态，因此未把登录前页面截图冒充成人设面板视觉验收。
+
+---
+
+# 统一 OIDC 站点鉴权 Active Plan
+
+**Status:** Task 1-3 实现与自动化验证完成，等待用户验收。
+
+**Confirmed callbacks:**
+
+- `https://sites-auth.lightvela.tech/auth/lightvela/callback`
+- `https://sites-auth.lightvela.site/auth/lightvela/callback`
+
+- [x] 完成 `changes/2026-08-24-oidc-site-auth-plan.md` 的 UserAuth、frontend、site-gateway、CTL 实现和验证。
+
+---
+
+# 模型配置多源兼容读取与 Hermes 归一化写入 Implementation Plan
+
+**Status:** 多源归一化与页面标题增量均已实现并验证，等待用户验收。尚未提交或推送。
+
+**Size:** M。改动集中在模型配置域，但同时影响多源读取投影、主备角色识别、历史记录迁移、删除清理与 Hermes 配置写入契约，需要分批验证。
+
+**Goal:** 已配置模型列表完整展示运行中的主模型、备用模型、仅保存模型、有效历史模型和默认 `custom` 配置；所有新增和角色变更只写 Hermes 官方三层结构。
+
+**Architecture:** 保留内嵌 Python helper 作为 Agent 本地配置适配层，从 `model`、fallback、`providers`、legacy `custom_providers` 和 `lightvela.model_config.configured_models` 收集候选模型，再按运行部署身份统一去重。读取兼容层不写配置；新增、设主和设为备用分别归一到 `providers.<id>`、`model.provider + model.default` 与 `fallback_providers`，只在目标旧记录被迁移或删除时定向清理 LightVela 兼容数据。
+
+**Product Spec:** `wiki/prd-docs/2026-08-25-agent-model-config-normalization.md`
+
+**Scope:**
+- 读取 `model`、`fallback_providers`、legacy `fallback_model`、`providers.*.model/default_model`、legacy `custom_providers`、`lightvela.model_config.configured_models` 和默认 `custom` 配置。
+- `providers.*.models` 只补充目录信息，不把全部目录模型视为已配置模型。
+- 同一运行部署只展示一次；主模型优先于备用模型，备用模型保持原顺序，其后展示仅保存、历史和默认 `custom`。
+- 新增 Provider 按 Hermes Custom Endpoint 字段写入 `providers.<id>`，不再新增或双写 `configured_models`。
+- 历史模型首次设置主备时确保对应 `providers.<id>` 存在，再写运行槽位；删除时只清理目标模型及不再被引用的 Provider/凭据。
+- 不修改页面整体视觉、Provider 产品列表、模型探测和连通性检测协议。
+
+### Task 1: 多源读取与统一投影
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/model-config-client.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+**Acceptance:**
+- 主模型、多个备用模型、`providers` 仅保存模型、legacy `custom_providers`、LightVela 历史模型和默认 `custom` 均进入 `configuredModels`。
+- 同一部署跨来源只保留一条，角色由 `model` 与 fallback 动态计算，备用顺序不变。
+- `providers.models` 中非当前模型不进入已配置列表。
+- 默认 `custom` 信息不完整时仍展示为待补全项，页面不允许直接设主、设为备用或删除运行配置。
+
+- [x] 先补多源矩阵、去重、目录排除和默认 `custom` 待补全测试并确认 RED。
+- [x] 实现最小候选收集、字段合并和统一投影，让定向测试 GREEN。
+
+### Task 2: 写入 Hermes 官方三层并渐进归一化
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/hermes-model-config-real-smoke.test.ts`
+
+**Acceptance:**
+- “仅添加”写入 `providers.<id>` 的 `base_url`、`model`、`models`、`key_env`、`discover_models` 和协议字段，不修改主备槽位。
+- “设为主模型”写入 `model.provider + model.default`；“设为备用模型”写入有序 `fallback_providers`，并归并 legacy `fallback_model`。
+- 新操作不创建或追加 `lightvela.model_config.configured_models`；从旧列表首次设置角色时定向迁移目标 Provider，其他旧记录保持不变。
+- 删除只清理目标旧记录、目标 Provider 模型和无引用凭据，保留 Provider 扩展字段及无关模型。
+
+- [x] 先更新新增、角色切换、迁移、删除和回滚测试并确认 RED。
+- [x] 实现官方字段写入与定向旧记录清理，让 Python helper 测试 GREEN。
+
+### Task 3: 回归验证与双站验收准备
+
+**Role:** Reviewer
+
+**Files:**
+- Modify: `frontend/openspec/plan.md`
+- Modify: `wiki/prd-docs/2026-08-25-agent-model-config-normalization.md`（仅在实现发现需要澄清时）
+
+**Acceptance:**
+- 模型配置定向 Vitest、真实 Hermes helper smoke、`pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
+- 既有探测、连通性检测、主备冲突、凭据密封、回滚和扩展字段保留测试无回归。
+- 本地页面能展示多源存量配置；外部真实 Agent 或双站预览依赖留到用户验收阶段，不自动推送或发布。
+
+- [x] 完成定向、回归、类型、i18n 与差异检查。
+- [x] 完成本地页面冒烟并整理用户验收清单，等待提交、推送和 MR 的独立确认。
+
+**Verification:**
+- 模型配置域回归：8 个测试文件，106 passed / 1 skipped；真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed。
+- `tsc -p tsconfig.app.json --noEmit`、`pnpm check`、`pnpm i18n:check`、`git diff --check` 全部通过。
+- 本地 `http://127.0.0.1:5179/agents/models/` 可正常加载且无运行时 error；隔离浏览器无登录态，只验证登录门禁，不把登录后页面计为浏览器通过。多源列表与操作状态由组件和 helper 集成测试兜底。
+
+### Task 5: 处理本轮 CR 的投影与归一化完整性问题
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/hermes-model-config-real-smoke.test.ts`
+
+**Acceptance:**
+- `providers.custom` 与 `model.provider=custom` 同时缺少模型 ID 时，同一 endpoint 只投影一个待补全项；两个明确不同的 endpoint 不误合并。
+- 真实 Hermes smoke 明确断言新增模型不会创建或扩张 `lightvela.model_config.configured_models`。
+- legacy `custom_providers` 最后一条记录迁移后移除空键，不保留 `custom_providers: []`。
+
+- [x] 先补三条 CR 回归断言并确认待补全去重、空键清理用例 RED。
+- [x] 完成最小修复，让定向测试、真实 Hermes smoke 与项目质量检查 GREEN。
+
+**Task 5 Verification:**
+- RED：`model-config-client.test.ts` 新增断言稳定复现两条失败：同 endpoint 的双待补全 `custom` 未合并；legacy 迁移后残留 `custom_providers: []`。
+- GREEN：模型配置 client 34 passed；模型配置域 106 passed / 1 skipped。
+- 真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed，并明确断言连续 `add` 后既有 `configured_models` 数组保持不变。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+
+### Task 6: 处理 MR !3320 的配置事务与闲置 Provider 有效性问题
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+
+**Acceptance:**
+- `assign` 与 `removeFallback` 保存后语义校验失败时恢复操作前配置，不留下半成功状态。
+- 删除 Provider 的最后一个模型时，基于删除后的候选配置判断引用；无其他引用时删除 Provider，并在凭据未被复用时删除对应凭据。
+- 主模型和备用模型即使配置待修复也继续展示；仅由 `providers` 引入的闲置模型在明确模型目录不匹配或显式凭据无法解析时不投影。
+- 无 Key 自定义 Endpoint、`key_cmd`、本地环境凭据和 Hermes credential pool 均视为有效凭据来源；老 Hermes 缺少 auth helper 时读取不失败。
+
+- [x] 先补回滚、最后模型删除和闲置 Provider 有效性测试并确认 RED。
+- [x] 完成最小修复，让模型配置定向测试和真实 Hermes smoke GREEN。
+- [x] 完成类型、i18n 与差异检查，并记录验证结果。
+
+**Task 6 Verification:**
+- RED：新增用例稳定复现闲置 Provider 误投影、最后模型删除后 Provider/凭据残留，以及 `assign` / `removeFallback` 校验失败不回滚。
+- GREEN：client 定向测试 38 passed；模型配置域 7 个测试文件、113 passed；真实 Hermes `origin/main@6ce7ab8bfb` smoke 1 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- 两轮独立复审后无剩余 P0/P1/P2；目录权威性按 Hermes discovery 语义判断，credential pool 同时兼容 canonical Provider key 与 legacy `custom:<name>`。
+
+### Task 7: 调整模型探测与选择控件布局
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+**Acceptance:**
+- “获取可用模型”按钮始终位于模型下拉框左侧，两者在同一行并保留 12px 间距。
+- 按钮在窄屏和常规屏分别为 112px、144px，保持在 100px 至 150px 范围内；模型下拉框以 `min-width: 0` 占满剩余空间。
+- 未探测和已探测状态共用同一布局；普通状态不显示搜索图标，探测中仍显示加载状态。
+- 不改变 Provider、探测、模型选择和添加模型的业务逻辑。
+
+- [x] 先补同行、宽度、剩余空间和图标断言并确认 RED。
+- [x] 合并未探测与已探测布局分支，完成最小实现并让定向测试 GREEN。
+
+**Task 7 Verification:**
+- 组件定向测试 21 passed；模型配置域 7 个测试文件、113 passed。
+- Chrome 实测：1280px 视口下按钮 144px、下拉框 610px；390px 视口下按钮 112px、下拉框 176px。两者均同行、间距 12px、无横向溢出且无搜索图标。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+
+### Task 8: 将模型探测与状态检测融合到表单控件
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- API Key 输入框尾部融合“获取可用模型”按钮；输入区保留凭据显隐按钮，复合控件共享外框与聚焦态。
+- 模型下拉框尾部融合“检测模型状态”按钮；检测结果继续通过现有项目 Dialog 展示。
+- 尾部按钮在窄屏和常规屏分别为 112px、144px，仅使用内部左分隔线，不形成独立圆角控件。
+- 获取到模型后默认选中首个模型，并将用途默认切换为“设为主模型”。
+- 底部仅保留左对齐的“添加模型”按钮；探测、检测、添加及错误反馈协议保持不变。
+
+- [x] 先补复合控件结构、入口位置、默认用途与结果弹窗测试并确认 RED。
+- [x] 完成复合输入框、复合下拉框和左对齐提交区，让组件测试 GREEN。
+- [x] 同步“检测模型状态”多语言文案，并恢复生成器带出的无关历史字典删除。
+
+**Task 8 Verification:**
+- 组件定向测试 21 passed；模型配置域 7 个测试文件、113 passed。
+- Chrome 实测：1280px 与 390px 视口下两个复合控件均共享 48px 外框，尾部按钮分别为 144px、112px，文字完整、无横向溢出；添加按钮与表单左边缘对齐，控制台无 error。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+
+### Task 9: 将模型获取结果迁移到顶部消息提示
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/lib/__tests__/toast.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 获取成功、空结果和获取失败使用站内顶部居中消息提示，默认 3 秒后消失，卡片底部不再展示获取结果。
+- 添加模型成功同样使用瞬时消息；添加与连通性检测的可操作错误仍保留在对应表单区域。
+- API Key 外链文案改为“点此获取 API Key”，尾部展示外链图标，继续在新窗口打开。
+
+- [x] 先补顶部消息、3 秒关闭、卡片无残留和 API Key 外链测试并确认 RED。
+- [x] 复用 `@/lib/toast` 完成最小实现，同步 i18n 后让定向测试 GREEN。
+- [x] 完成模型配置回归、类型、i18n、diff 与本地页面验证。
+
+**Task 9 Verification:**
+- RED：组件测试新增 7 个预期失败，分别命中顶部消息未调用、卡片仍保留结果文案和 API Key 外链文案未更新。
+- GREEN：组件与 toast 定向测试 25 passed；模型配置域 7 个文件、115 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+- Chrome 已登录本地页确认“点此获取 API Key”及外链图标可见；占位凭据只读探测结束后卡片底部无获取结果残留，输入已清空。
+
+### Task 10: 优化未获取到模型的错误文案
+
+**Acceptance:**
+- 空结果提示统一为“未获取到可用模型，请检查API Key是否正确或有效”。
+- 成功提示、命令执行失败提示和顶部消息交互保持不变。
+- 四语言生成字典同步更新且无无关资源漂移。
+
+- [x] 先更新组件与本地化断言并确认 RED。
+- [x] 替换业务文案并通过生成脚本同步字典。
+- [x] 完成模型配置定向回归、i18n 与 diff 检查。
+
+**Task 10 Verification:**
+- RED：2 条交互断言仍收到旧提示，1 条本地化断言找不到新文案 key。
+- GREEN：组件与印尼语定向测试 63 passed；模型配置域 7 个文件、115 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`git diff --check` 通过。
+
+### Task 4: 对齐 Agent 页面顶部标题样式
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-config/__tests__/agent-model-config.id-ID.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 模型页复用 `AgentSectionHeader` 展示标题“模型”和描述“模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。”。
+- 加载、错误和正常状态均保留页面标题。
+- “已配置模型”后的信息图标通过项目 `ModelActionTooltip` 展示“选择一个主模型，并可设置多个备用模型。”，不使用浏览器原生 `title`，不再常驻展示说明，也不出现“配置将在新会话中生效。”。
+
+- [x] 先补页面标题、卡片文案和旧文案移除测试并确认 RED。
+- [x] 复用公共标题组件完成最小实现并同步 i18n，让定向测试 GREEN。
+- [x] 完成模型配置域回归、类型、i18n 与本地页面复验。
+
+**Task 4 Verification:**
+- RED：页面标题在加载、错误和正常状态缺失，两条新文案未进入多语言字典，共 5 个断言按预期失败。
+- GREEN：标题与印尼语定向测试 61 passed；模型配置域回归 108 passed / 1 skipped。
+- `tsc -p tsconfig.app.json --noEmit`、`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。
+- Chrome 已登录本地预览确认标题、描述、卡片短文案与四条存量模型正常展示；无新增 error，控制台仅保留既有动态目录 i18n warning。
+- 用户增量调整后，Tooltip 与新顶部描述定向测试再次经历 RED -> GREEN；Chrome 聚焦信息图标确认气泡挂载到 `BODY`、原生 `title` 为 null、控制台无 error。
 
 ---
 
@@ -2306,6 +4838,106 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - `git diff --check`
 
 ---
+
+# 模型配置页 CR 问题修复 Implementation Plan
+
+**Status:** Task 11 MR 范围收敛与验证完成，等待用户验收；不自动提交或推送。
+
+**Goal:** 修复 MR !3181 评审指出的静态模型不可添加、备用模型凭据丢失、连通性检测假阳性、Tooltip 被裁剪、印尼语文案为空和模型列表探测被表述为真实连接的问题。
+
+**Architecture:** 保持现有页面、Hermes debug/exec 通道和 Provider 产品配置边界不变。Hermes helper 在实例内原位修改 fallback 原始条目；前端只消费不含凭据的快照。模型列表优先采用实时探测，实时结果为空时仅以产品静态目录补充可选项；Tooltip 复用现有 Portal/fixed 浮层模式。
+
+**Scope:** 仅修改 `agent-model-config` 模块、该页面四语言资源、对应定向测试和本计划；不改 SDK、Provider 产品配置、后端接口、Hermes 命令行为或页面整体结构。
+
+### Task 1: 保留备用模型原始凭据字段
+
+- [x] 在 `model-config-client.test.ts` 先增加失败测试，覆盖追加、取消和 legacy 迁移时已有 fallback 的 `api_key`、`key_env`、`api_key_env` 与未知扩展字段保持不变。
+- [x] 修改 `hermes-model-config-command.ts`，让 fallback 增删直接基于实例内原始配置条目，只把脱敏后的模型视图返回前端。
+- [x] 运行客户端定向测试确认 GREEN，且命令、输出与前端响应不包含明文 Key。
+
+### Task 2: 连通性检测校验选中模型
+
+- [x] 在 `model-config-client.test.ts` 先增加失败测试，覆盖 Provider 返回其他模型但不含当前 `model_id` 时检测失败。
+- [x] 修改 Hermes helper，仅在探测结果包含选中模型 ID 时返回成功；空结果和不匹配结果返回就近错误。
+- [x] 运行客户端定向测试确认 GREEN，并保留现有加密凭据传输断言。
+
+### Task 3: 静态模型目录作为获取结果兜底
+
+- [x] 先增加失败测试，覆盖 MiniMax 类 Provider 实时探测为空或 Hermes 返回 `models: None` 时，使用 `catalogModels` 填充下拉并允许添加。
+- [x] 将面板模型选项统一为带 `id`、`name`、`source` 的结构；实时结果优先，只有实时结果为空且非自定义 Provider 时使用静态目录。
+- [x] 覆盖无实时结果且无静态目录时仍不可添加、自定义 Provider 不使用静态兜底，并运行面板定向测试确认 GREEN。
+
+### Task 4: 操作 Tooltip 脱离裁剪容器
+
+- [x] 在 `model-config-panel.test.tsx` 先增加失败测试，断言 Tooltip 渲染到 `document.body`，支持 hover/focus、鼠标进入气泡和文本选择。
+- [x] 将 `ModelActionTooltip` 改为 `createPortal` + `fixed` 定位，复用项目现有浮层定位模式；监听 resize 和 capture scroll 更新位置，保留短暂关闭缓冲。
+- [x] 运行面板定向测试确认 GREEN，并检查按钮可访问名称、焦点状态和禁用原因提示不回退到原生 `title`。
+
+### Task 5: 独立 CR 补充边界
+
+- [x] 将模型 route 身份对齐 Hermes `(provider, model, normalized_base_url)`，同 Provider/模型的不同 endpoint 可独立删除且保留各自凭据。
+- [x] 复用 Hermes fallback 链并按三元组去重，legacy 重复 route 不再写入 `fallback_providers`。
+- [x] 将连通性请求绑定 Provider 指纹与 revision，Provider 变化后忽略延迟响应。
+- [x] 解除两个 Dialog 的手工 description ID 覆盖，交由 Radix 自动关联并消除可访问性警告。
+
+### Task 6: 修复 FE-AI 复审问题
+
+- [x] 保留 Hermes `models: None` 的探测失败语义，仅在探测成功但模型列表为空时使用静态目录。
+- [x] 拆分原始 route 身份与 Hermes runtime deployment 判定，精确增删 fallback 并拒绝无效主备组合。
+- [x] 删除模型前检查 Provider、模型与 key env 的剩余引用，避免破坏兄弟 endpoint。
+- [x] 将新增凭据失败回滚收窄为本次 `.env` 写入，不清理操作前已有的凭据池或镜像状态。
+- [x] 补齐失败测试、真实 Hermes smoke、类型、i18n 与 diff 门禁后重新执行 FE-AI review。
+
+### Task 7: 修复最新评审的本地化与探测语义问题
+
+- [x] 先补模型配置页印尼语完整性测试，以及模型可用性检测成功文案测试并确认 RED。
+- [x] 补齐本页面新增的 35 条印尼语翻译，并将连接成功/失败文案收紧为模型列表可用性语义。
+- [x] 运行模型配置定向测试、类型检查、i18n 检查和 diff 门禁后重新执行 FE-AI review。
+
+### Task 8: 修复类型门禁与模型身份契约
+
+- [x] 建立真实执行 `tsconfig.app.json` 的无新增错误门禁，并接入 frontend `check` 命令，避免 solution-style `tsconfig.json` 导致类型检查空跑。
+- [x] 统一模型身份输入类型、先收窄 `probeSucceeded` 再写入快照，并清零模型配置模块源代码与测试代码的类型错误。
+- [x] 删除 `regionId === 5` 的失效地域推导，改为只透传明确的 region/Zone，并完成定向测试、类型基线、i18n 与 diff 验证。
+
+### Task 9: 修复 MiniMax 静态发现与模型检测
+
+- [x] 为 Provider 适配结果增加显式 `live | catalog` 模型发现策略，MiniMax 使用产品静态目录，其他预设和自定义 Provider 保持实时发现。
+- [x] 将模型发现与模型可用性检测解耦；MiniMax 仅在用户主动点击“模型检测”时发送最小模型请求，验证当前 Key、endpoint 与所选模型。
+- [x] 补齐 `models: None`、无效凭据、模型请求成功、其他 Provider 探测失败不回退目录等回归测试，并完成模型配置、类型、i18n 与 diff 门禁。
+
+### Task 10: 修复 frontend 质量脚本递归调用 pnpm
+
+- [x] 使用 CI Runtime 契约测试复现 `check` 与 `check:next` 递归调用 `pnpm typecheck` 的失败。
+- [x] 保留独立 `typecheck` 命令，将两个质量脚本改为直接执行 `typecheck-baseline.mjs`。
+- [x] 运行 CI Runtime 定向契约、frontend 质量检查、模型配置测试与 diff 门禁。
+
+### Task 11: 撤销模型配置 MR 的 CI 工作流改动
+
+- [x] 删除 `.ci/frontend.yml` 与 `.ci/frontend-preview.yml` 中本分支新增的 frontend 质量门禁步骤。
+- [x] 以 MR merge-base 为基准确认 `.ci/**` 变更归零，保留模型配置业务实现与本地质量命令。
+- [x] 重新运行模型配置测试、frontend 质量检查与 diff 门禁。
+
+## Verification
+
+- `pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx`
+- `pnpm check`
+- `pnpm i18n:check`
+- `git diff --check`
+
+**Task 6 verification:** 7 个回归断言先按预期失败；模型配置相关 52 个测试通过、1 个环境测试跳过，真实 Hermes 源码 smoke 1/1 通过；`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过。本地新进程 `http://127.0.0.1:5175/agents/models/` 返回 200。全仓测试另有 4 个未改动模块失败，随后一个 worker 持续满 CPU 无输出而终止，未作为本轮通过依据。
+
+**Task 7 verification:** 新增本地化资源与检测语义断言先出现 38 个预期失败；实现后模型配置模块 90 个测试通过、1 个真实 Hermes 环境测试跳过。`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过；英文待翻译为 0，印尼语待翻译由 213 条降至 178 条。本轮仅调整模型列表可用性文案与四语言资源，不改 Hermes 探测行为。
+
+**Task 8 verification:** 地域适配 2 个回归断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、94 个测试全部通过。真实类型门禁对空的根 `tsconfig.json` 和临时注入的 2 条诊断均按预期失败，最终 `pnpm check` 报告 276 条历史基线、0 条新增诊断。独立 CR 指出的 3 个 P1 与 2 个可立即处理的 P2 已修复；Task 11 已按 MR 范围要求撤销正式与预览流水线改动。实例 API 尚不提供 Zone，当前只移除失效推导并保留显式透传契约。
+
+**Task 9 verification:** Provider 策略、MiniMax 静态目录、Anthropic/OpenAI 最小模型请求、凭据拒绝和安全 HTTP transport 共 6 个关键断言先按预期失败；实现后 `pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，真实 Hermes 源码 smoke 1/1 通过。`pnpm check` 报告 276 条历史基线、0 条新增诊断；`pnpm i18n:check`、`git diff --check` 通过；本地 `/agents/models/` 编译并返回 200。
+
+**Task 10 verification:** CI Runtime 定向契约在修改前稳定失败，改为直接执行 `node scripts/typecheck-baseline.mjs` 后通过；完整 `.ci/runtime/check_ci_runtime.sh` 运行 454 个测试全部通过。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断，`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过。
+
+**Task 11 verification:** 以当前 MR merge-base `7a9e26c73230` 比较后 `.ci/**` 变更文件数为 0。`pnpm check` 报告 275 条当前诊断、276 条历史基线、0 条新增诊断；`pnpm test:model-config` 运行 7 个文件、98 个测试全部通过，`git diff --check` 通过。
+
+---
 # My creations show() reveal Implementation Plan
 
 **Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
@@ -2726,5 +5358,533 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - [x] **Step 1: 增加国际站月份归属断言并确认 RED。**
 - [x] **Step 2: 将 `automation-templates` 从国际站 8 月移到 7 月并确认 GREEN。**
 - [x] **Step 3: 运行国际站 Changelog 回归、类型、i18n 与 diff 检查。**
+
+---
+
+# 国际站新增自定义人设文件动态 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development to implement this S-level task.
+
+**Status:** 实现与验证完成，用户已确认提交、推送和创建 MR。
+
+**Size:** S。单一国际站静态 Changelog 条目与区域化截图调整，不涉及接口、权限、计费或发布。
+
+**Goal:** 在国际站 2026 年 8 月更新日志中新增“上传自定义人设文件”，沿用国内站文案结构并展示真实英文上传弹窗截图。
+
+**Architecture:** 继续使用 `changelog-page.tsx` 的 `isGlobal` 编译期分支；国际站 8 月复用现有标题和描述翻译键，同时让 `personaUpload` 在国际站选择新的英文截图、国内站继续选择原中文截图。先修改国际站专项测试并确认因条目缺失而失败，再添加最小页面数据与图片分支使其通过。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、现有中文即 key i18n、真实国际站英文 UI 截图。
+
+## Global Constraints
+
+- 国际站条目放在 2026 年 8 月首位，国内站条目、文案、顺序与中文截图保持不变。
+- 英文标题固定沿用现有翻译 `LightVela Now Supports Custom Persona File Uploads`。
+- 英文描述固定沿用现有翻译 `Upload a Markdown persona file, then continue editing it or inject it directly into your Agent. Injected persona files can also be edited or downloaded at any time.`。
+- 新图固定使用真实英文上传弹窗，路径为 `/assets/changelog/lightvela-persona-upload-global-en.png`；国际站四语言共用该国际版截图。
+- 不手改生成字典；`pnpm i18n:extract` 若无变化，不提交 i18n 文件。
+
+### Task 1: 新增国际站自定义人设文件动态
+
+**Role:** Developer / Reviewer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/global-changelog.test.tsx`
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx`
+- Create: `frontend/public/assets/changelog/lightvela-persona-upload-global-en.png`
+- Verify: `frontend/src/i18n/generated/{en-US,id-ID,zh-CN,zh-Hant,zh-to-key}.json`
+
+**Interfaces:**
+- Consumes: 现有 `personaUpload` visual、标题/描述翻译键和国际站上传人设弹窗。
+- Produces: 国际站 8 月首条 `persona-file-upload` 数据和区域化图片选择；国内站保持原路径。
+
+- [x] **Step 1: 修改国际站专项测试，断言四语言条目、英文截图与 8 月首位。**
+
+  将原有“不展示人设上传”断言改为展示断言，并验证英文标题、描述、图片路径与 `1410 / 642` 比例；同时保留钉钉排除和 7 月自动任务模板归属断言。
+
+- [x] **Step 2: 运行专项测试并确认 RED。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
+
+  Expected: FAIL，原因是国际站 8 月尚无 `persona-file-upload` 条目，而不是测试环境或语法错误。
+
+- [x] **Step 3: 捕获真实英文上传弹窗截图并加入 Changelog 资源。**
+
+  在国际站英文界面打开 `/agents/persona` 的上传弹窗，保留标题、说明、文件限制和 `Choose file` 按钮，输出为 `1410 × 642` PNG：
+
+  ```text
+  frontend/public/assets/changelog/lightvela-persona-upload-global-en.png
+  ```
+
+- [x] **Step 4: 添加最小页面数据与区域化图片选择。**
+
+  在国际站 8 月 `entries` 首位加入：
+
+  ```ts
+  {
+    id: "persona-file-upload",
+    title: t("LightVela 支持上传自定义人设文件"),
+    desc: t("上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。"),
+    visual: "personaUpload" as const,
+  }
+  ```
+
+  `personaUpload` 图片路径按区域选择：国际站使用 `lightvela-persona-upload-global-en.png`，国内站继续使用 `lightvela-persona-upload.png`。
+
+- [x] **Step 5: 运行国际站专项测试与国内站 Changelog 回归并确认 GREEN。**
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run --config vitest.config.ts \
+    src/pages/marketing/__tests__/global-changelog.test.tsx \
+    src/pages/marketing/__tests__/channel-copy.test.tsx
+  ```
+
+  Expected: 国际站四语言展示人设条目与英文截图；国内站仍展示原中文截图；其他区域条目不回归。
+
+- [x] **Step 6: 运行完整质量门禁并展示提交范围。**
+
+  ```bash
+  cd frontend
+  pnpm i18n:extract
+  pnpm i18n:check
+  pnpm check
+  cd ..
+  git diff --check
+  git status --short
+  ```
+
+  Expected: i18n、类型与 diff 检查通过，最终仅包含计划、国际站 Changelog 测试、页面数据和英文截图。
+
+- [x] **Step 7: 展示 diff、验证证据、提交信息和 MR 配置，等待用户确认。**
+
+---
+
+# Agent 审批模式 CR 修复 Implementation Plan
+
+**Goal:** 修复 MR !3288 评审确认的恢复默认说明、未知枚举失败半径和关闭审批状态提示，并锁定 reset/save 保护。
+
+**Design:** `openspec/changes/2026-08-25-agent-approval-mode-cr-fixes-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-25-agent-approval-mode-cr-fixes-plan.md`
+
+## Tasks
+
+- [x] 未知 `approvals.mode` 仅降级审批字段，不阻塞整页读取。
+- [x] 安全组恢复弹窗明确 `关闭审批 → 智能审批`，现有 `off` 展示低强度风险提示。
+- [x] 补齐 unsupported reset 过滤与同步保存互斥测试，并用定向 mutation 验证测试有效。
+- [x] 完成 i18n、焦点测试、类型检查、双区域构建和 diff 门禁。
+- [x] 展示最终范围、提交信息和 MR 配置，等待用户确认。
+- [x] 将安全分组、审批模式和关闭审批弹窗正文改为「高风险操作」，完成测试、i18n 和静态门禁后追加到 MR !3309。
+
+---
+
+# 模型配置下拉框滚动隔离 Implementation Plan
+
+**Goal:** 展开模型配置表单中的下拉框时隔离左侧导航布局，避免右侧操作引起的页面滚动改变导航位置。
+
+## Tasks
+
+- [x] 为桌面端侧栏滚动隔离和下拉触发前坐标捕获补充回归测试。
+- [x] 在滚动锁期间固定侧栏到交互前坐标，并保持右侧内容位于原网格列；移动端布局不变。
+- [x] 用 Chrome 验证 Provider 与模型下拉展开后侧栏不再滚到负坐标，触发器和弹层横向位置、宽度不变。
+- [x] 完成模型配置专项测试、i18n、类型检查和 diff 门禁。
+
+**Verification:**
+- 模型配置域 7 个测试文件、115 passed；Agent 设置页侧栏回归 6 passed。
+- `pnpm check` 通过（TypeScript diagnostics 240 current / 276 baseline / 0 new / 36 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- Chrome 本地预览验证：Provider 下拉展开后侧栏固定为 `top=84px`、导航 `top=161px`；模型下拉展开后侧栏固定为交互前捕获的 `top=40px`、导航 `top=117px`。右侧触发器和弹层保持原网格列与相同宽度。
+
+---
+
+# Agent 会话操作确认 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development. The repository remains single-agent unless the user explicitly authorizes subagents.
+
+**Goal:** 在高级设置「安全」分组增加「会话操作确认」，并让安全分组恢复到 LightVela 预置 `approvals.mode=off`、`approvals.destructive_slash_confirm=false`。
+
+**Design:** `openspec/changes/2026-08-25-session-operation-confirmation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-25-session-operation-confirmation-plan.md`
+
+## Tasks
+
+- [x] 扩展 typed settings、reader 与即时保存链路，接入 `approvals.destructive_slash_confirm`。
+- [x] 将安全分组 reset 改为 `config set` 写回 LightVela `off/false`，不得 unset 成 Hermes `smart/true`。
+- [x] 增加「会话操作确认」开关、风险确认、LightVela 恢复说明和四语言资源。
+- [x] 完成焦点测试、i18n、类型检查、双区域构建和 diff 门禁。
+- [x] 展示最终范围、验证证据、提交信息和 MR 配置，等待用户确认。
+
+---
+
+# 模型配置统一删除语义 Implementation Plan
+
+**Goal:** 不再向用户暴露不可访问的 Hermes 管理入口，完整模型无论配置来源均可在模型页删除，未补全的 `custom` 配置骨架不进入已配置模型列表。
+
+**Architecture:** 保留多源读取与精确路由去重，但移除基于 Provider 命名前缀的删除权限推断。删除命令同时清理 `providers`、`custom_providers` 和历史 `configured_models` 中命中的模型，仅在 Provider 与凭据不再被其他配置引用时清理共享资源；主模型继续由页面与命令双重阻止直接删除。
+
+**Tech Stack:** React 19、TypeScript、Vitest、嵌入式 Hermes Python helper、项目 i18n 生成器。
+
+## Tasks
+
+- [x] **Task 1: 用失败测试锁定统一展示和删除契约。**
+  - 未补全的 `providers.custom` 和空 `model.provider=custom` 不进入 `configuredModels`。
+  - 非 `lightvela-` Provider、legacy `custom_providers` 与历史 `configured_models` 的完整模型均允许删除。
+  - 删除 legacy custom 模型会移除对应配置；共享 Provider 和共享凭据继续保留。
+  - 页面不再渲染“请在 Hermes 中管理此模型”，主模型仍提示先切换。
+
+- [x] **Task 2: 实现来源无关的精确删除。**
+  - 移除 `lightvela-` 前缀与 `canDelete=false` 对完整模型的限制。
+  - 从读取投影中排除未补全 `custom` 配置骨架。
+  - 删除操作同步清理命中的 `custom_providers`，并沿用候选配置引用检查保护共享 Provider 和凭据。
+  - 删除无效 Hermes 管理提示及对应翻译键。
+
+- [x] **Task 3: 完成回归与质量门禁。**
+  - 运行模型配置专项测试、Toast/设置页关联测试、i18n 检查、类型检查和 `git diff --check`。
+  - 核对最终差异只包含本轮模型删除策略、测试、i18n 与 OpenSpec。
+
+**Verification:**
+- RED：新增与调整测试首次运行命中 5 个预期失败，覆盖未补全 custom 展示、legacy ownership 禁删、普通 Provider 删除和 `custom_providers` 残留。
+- GREEN：模型配置域 7 个测试文件、117 passed；其中 helper 定向测试 40 passed，Toast/设置页关联测试 8 passed，续费印尼语回归 10 passed。
+- 真实 Hermes 源码 smoke：设置 `HERMES_AGENT_SOURCE=/Users/junweicao/Documents/zhihu/sources/hermes-agent` 后 1 passed。
+- `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check` 通过。
+
+---
+
+# 国际站西语 Docs 正文全量适配 Implementation Plan
+
+**Goal:** 为国际站 61 篇 Docs 增加完整西语正文，最终不再依赖英文或中文正文 fallback，且不改动任何图片文件或图片引用路径。
+
+**Design:** `openspec/changes/2026-08-26-spanish-docs-body-translation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-spanish-docs-body-translation-plan.md`
+
+## Tasks
+
+- [x] 增加西语正文完整性、结构一致性、代码块和图片引用不变门禁。
+- [x] 第一批：完成 Getting Started、Plans & Activation、Features & Configuration、Support 共 28 篇。
+- [x] 第二批：完成 Use Cases 共 16 篇。
+- [x] 第三批：完成 Compare 5 篇与 Hermes Agent Deep Dive 12 篇，并移除正文 fallback。
+- [x] 同步 Fumadocs，完成 61 个 slug、last-updated、类型检查、构建和 diff 终验。
+
+---
+
+# 国际站西语法务页面适配 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development. The repository remains single-agent unless the user explicitly authorizes subagents.
+
+**Goal:** 完整适配国际站西语隐私政策、Cookie 政策和服务条款；开源许可证保持英文原文，只翻译页面说明与结构性文案，并明确英文版本优先效力。
+
+**Design:** `openspec/changes/2026-08-26-spanish-legal-pages-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-spanish-legal-pages-plan.md`
+
+## Tasks
+
+- [x] 建立西语正文、英文版本优先说明和开源许可证原文边界测试。
+- [x] 完成隐私政策完整西语正文与语言效力说明。
+- [x] 完成 Cookie 政策完整西语正文、链接 token 与语言效力说明。
+- [x] 完成服务条款完整西语正文、内部链接与语言效力说明。
+- [x] 完成开源声明结构文案翻译，并通过测试、类型、i18n、国际站构建和浏览器 smoke。
+
+---
+
+# 国际站渠道卡片操作按钮防溢出 Implementation Plan
+
+**Goal:** 修复国际站西语 Slack 已连接卡片三个操作按钮越过卡片边界的问题，并覆盖其他长文案语言的同类风险。
+
+**Design:** `openspec/changes/2026-08-26-international-channel-actions-overflow-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-26-international-channel-actions-overflow-plan.md`
+
+## Tasks
+
+- [x] 添加国际站作用域和已连接渠道卡片布局失败测试。
+- [x] 实现教程按钮可伸缩、右侧操作组整体换行的最小 CSS 修复。
+- [x] 通过相关 Vitest、`pnpm check`、`git diff --check` 和西语 Slack 浏览器 smoke。
+
+**Verification:** 4 个相关测试文件 / 10 个断言通过；`pnpm check` 和 `git diff --check` 退出码 0，西语 2589/2589 且 0 error / 0 warning。浏览器实测三个按钮最右侧距卡片右边界 21px，窄卡片下教程与右侧操作组自然分成两行，无相关控制台告警。
+
+---
+
+# 模型配置融合按钮响应式宽度 Implementation Plan
+
+**Goal:** 修复国际站模型配置表单中“获取可用模型”和“检测模型状态”英文按钮被固定宽度裁切的问题，同时保持输入框与按钮融合的现有交互。
+
+**Architecture:** 融合控件继续使用单一 flex 容器；输入框和模型下拉保持 `min-w-0 flex-1`，尾部操作按钮改为按内容撑开、禁止换行且禁止收缩。加载态始终保留完整操作文案的占位宽度，避免请求过程中输入区域横向跳动。
+
+## Tasks
+
+- [x] 先调整组件测试，锁定融合按钮不再使用固定宽度，并具备内容自适应、禁止换行和禁止收缩约束。
+- [x] 实现两个融合按钮的响应式尺寸及稳定加载态，保持原有探测、检测、禁用和可访问语义。
+- [x] 运行模型配置定向测试、类型检查、i18n 检查和 `git diff --check`，并验证中英文及窄屏布局无裁切。
+
+**Verification:**
+- RED：组件测试命中固定 `w-28 sm:w-36` 的预期失败；GREEN：组件测试 24 passed，并显式覆盖探测加载态的文案与宽度占位。
+- 模型配置域 7 个测试文件，115 passed / 1 skipped。
+- `pnpm check` 通过（TypeScript diagnostics 232 current / 276 baseline / 0 new / 44 resolved）；`pnpm i18n:check`、`git diff --check` 通过。
+- 使用本地 global + mock 预览完成英文布局验收：1440px 桌面与 900px 窄屏下两个操作按钮均完整显示，输入框和模型下拉保持剩余空间；临时 mock 已在验收后移除。
+
+---
+# 国际站 Agent 与页脚问题修复 Implementation Plan
+
+**Goal:** 修复国际站英文 Agent 页标题、双站 Agent 侧栏底部留白，并在国际站页脚增加 Tencent EdgeOne。
+
+**Design:** `openspec/changes/2026-08-27-global-agent-footer-bugfix-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-27-global-agent-footer-bugfix-plan.md`
+
+- [x] 测试先行完成三项局部修复，并通过定向 Vitest、类型、i18n、diff 与国际站浏览器 smoke。
+
+# 主模型删除提示文案修复 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收。
+
+**Size:** S。仅调整主模型删除按钮的禁用态 Tooltip 文案，不改变删除条件、按钮状态或模型配置行为。
+
+**Goal:** 主模型不可删除时提示“无法删除主模型，请先切换至其他模型”。
+
+## Task 1: 更新主模型删除提示并完成定向验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/agent-model-config.id-ID.test.ts`
+- Generate: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 主模型删除按钮保持禁用，hover/focus Tooltip 显示“无法删除主模型，请先切换至其他模型”。
+- 其他模型操作、删除条件与相邻 Tooltip 文案保持不变。
+- 模型配置定向测试、i18n、类型检查与 diff 门禁通过。
+
+- [x] 先修改组件测试与印尼语文案完整性测试并确认 RED，再最小更新源码和 i18n 生成文件，最后完成定向验证。
+
+**Verification:**
+- RED：2 个定向测试按预期失败，分别命中旧 Tooltip 文案和新 i18n key 缺失。
+- GREEN：定向测试 65 passed；模型配置域 7 个测试文件、119 passed。
+- `pnpm check` 通过：i18n extract/check、字典结构、繁体一致性、Docs 同步与 TypeScript 基线均通过，0 个新增 TypeScript diagnostics。
+- `git diff --check` 通过；改动仅覆盖计划、Tooltip 文案、对应测试与 7 个语言字典/中文 key 映射。
+
+## Task 2: 更新 Hy Token Plan 模型介绍文案
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-config/utils/model-providers.ts`
+- Test: `frontend/src/pages/marketing/agent-config/utils/__tests__/model-providers.test.ts`
+- Generate: `frontend/src/i18n/generated/*.json`
+
+**Acceptance:**
+- 模型配置页面的腾讯云 Hy Token Plan 介绍显示“基于腾讯2026年最新推出的混元模型打造：集成 Hy3 模型，面向 Agent 工作负载设计，适配 Coding Agent、文档自动化、多步工具调用等工作流。”。
+- Provider、模型 ID、套餐入口、筛选规则与页面布局保持不变。
+- 定向测试、i18n、类型检查与 diff 门禁通过。
+
+- [x] 先新增 Provider 配置断言并确认 RED，再最小更新源码和 i18n 生成文件，最后完成定向验证。
+
+**Verification:**
+- RED：Provider 配置测试按预期失败，明确显示旧文案与目标文案的差异。
+- GREEN：Provider 配置测试通过；连同模型配置域回归共 8 个测试文件，117 passed / 1 skipped。
+- `pnpm check` 通过：i18n extract/check、字典结构、繁体一致性、Docs 同步与 TypeScript 基线均通过，0 个新增 TypeScript diagnostics。
+- `git diff --check` 通过；旧介绍文案已从源码与生成字典中移除。
+
+## Task 3: 将账号页续费按钮移动到订阅套餐标题栏
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `executing-plans` and `test-driven-development`. 本仓库当前为 single-agent，禁止派发 subagent。
+
+**Goal:** 将已订阅套餐卡片的“立即续费”控件从内容区底部移动到“订阅套餐”标题栏右侧，并保持现有续费、Coming Soon、销毁和状态说明逻辑不变。
+
+**Architecture:** 直接移动现有 `canRenew` 条件渲染块，不抽取新组件、不复制业务判断。标题栏改为单行 flex；底部操作区在可销毁或处于隔离期/过期状态时渲染，继续承载销毁按钮和状态说明。
+
+**Tech Stack:** React 19、TypeScript、Tailwind CSS、Vitest、Testing Library。
+
+**Design:** `frontend/openspec/changes/2026-08-29-account-renew-action-header-design.md`
+
+**Global Constraints:**
+- 标题和续费按钮保持同一行，按钮不收缩、不裁切。
+- 保留现有按钮样式、图标、可用/禁用状态、Tooltip、弹窗及点击逻辑。
+- “销毁套餐”和隔离期/过期说明保留在内容底部。
+- 不修改套餐数据、资格判断、付费开关、实名校验或接口调用。
+- 未经用户单独确认，不执行 commit、push 或创建 MR。
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx:920-1065`
+- Test: `frontend/src/pages/marketing/__tests__/account-page-name-audit.test.tsx:356-390`
+
+**Interfaces:**
+- Consumes: `canRenew: boolean`、`renewalAvailable: boolean`、`canDelete: boolean`、`operablePass: Pass | null`。
+- Produces: 标题栏内原有续费控件；底部仅保留可用的销毁按钮及隔离期/过期状态说明。
+
+- [x] **Step 1: 写入失败的标题栏结构测试**
+
+  在国内站生效套餐用例中定位“订阅套餐”标题的父容器，并断言该容器包含“立即续费”按钮：
+
+  ```tsx
+  const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
+  const subscriptionHeader = subscriptionHeading.parentElement;
+
+  expect(subscriptionHeader).not.toBeNull();
+  expect(within(subscriptionHeader!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+  ```
+
+- [x] **Step 2: 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  pnpm exec vitest run src/pages/marketing/__tests__/account-page-name-audit.test.tsx -t "shows the renew action by default for domestic active passes"
+  ```
+
+  Expected: FAIL；标题父容器内找不到“立即续费”按钮，证明旧布局仍在卡片底部。
+
+- [x] **Step 3: 最小移动续费控件**
+
+  将标题栏调整为：
+
+  ```tsx
+  <div
+    className="flex items-center justify-between gap-3 px-5 py-5 md:px-8 md:py-8"
+    style={{ borderBottom: "1px solid #E6E9EF" }}
+  >
+    <h3
+      className="min-w-0 text-balance text-[18px] md:text-[20px]"
+      style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
+    >
+      {t("订阅套餐")}
+    </h3>
+    {canRenew && operablePass && (
+      <div className="shrink-0">
+        {!renewalAvailable ? (
+          <RenewComingSoonButton
+            label={t("立即续费")}
+            tooltip={t("敬请期待")}
+            icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setRenewModalOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
+          >
+            <CreditCard className="h-4 w-4" />
+            {t("立即续费")}
+          </button>
+        )}
+      </div>
+    )}
+  </div>
+  ```
+
+  从底部删除同一 `canRenew` 渲染块，并将底部容器条件收窄为可销毁或需要展示状态说明：
+
+  ```tsx
+  {(canDelete || passStatus === "isolated" || passStatus === "expired") && operablePass && (
+    <>
+      <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
+      <div className="flex flex-wrap items-center gap-3">
+        {canDelete && (
+          <button
+            type="button"
+            onClick={() => setDeleteModalOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full border bg-white px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(207,61,76,0.04)]"
+            style={{ borderColor: "rgba(207,61,76,0.3)", color: "#cf3d4c" }}
+          >
+            <Trash2 className="h-4 w-4" />
+            {t("销毁套餐")}
+          </button>
+        )}
+        {passStatus === "isolated" && (
+          <p className="basis-full text-xs" style={{ color: "#C67B1E" }}>
+            {!renewalAvailable
+              ? t("续费功能敬请期待。你仍可销毁当前套餐后重新购买。")
+              : t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
+          </p>
+        )}
+        {passStatus === "expired" && (
+          <p className="basis-full text-xs" style={{ color: "#cf3d4c" }}>
+            {!renewalAvailable
+              ? t("续费功能敬请期待。套餐已过期，暂时无法发起续费。")
+              : t("套餐已过期，请及时续费以免进入隔离期。")}
+          </p>
+        )}
+      </div>
+    </>
+  )}
+  ```
+
+- [x] **Step 4: 运行结构和续费回归测试并确认 GREEN**
+
+  Run:
+
+  ```bash
+  pnpm exec vitest run \
+    src/pages/marketing/__tests__/account-page-name-audit.test.tsx \
+    src/pages/marketing/__tests__/account-page-renewal.global.test.tsx \
+    src/pages/marketing/__tests__/renew-coming-soon.test.ts
+  ```
+
+  Expected: 全部通过；续费按钮位于标题栏，国内续费弹窗、国际 Coming Soon 和 Tooltip 行为无回归。
+
+- [x] **Step 5: 完成质量门禁与范围核对**
+
+  Run:
+
+  ```bash
+  pnpm check
+  git diff --check
+  ```
+
+  Expected: 两个命令退出码均为 0；差异仅覆盖设计/计划、账号页 JSX 与对应测试，不出现业务判断或接口改动。
+
+**Verification:**
+- Baseline：账号页续费相关 3 个测试文件、31 tests passed。
+- RED：国内生效套餐结构测试按预期失败，标题容器内找不到“立即续费”按钮。
+- GREEN：结构测试通过；账号页全部专项回归 5 个测试文件、53 tests passed。
+- `pnpm check` 通过，TypeScript diagnostics 207 current / 276 baseline / 0 new / 69 resolved；i18n 结构 0 errors。
+- `git diff --check` 通过；`$baseline-ui` 核对无新增绝对定位、换行布局、新动画或交互原语。
+
+---
+
+# 国际站日语完整本地化 Implementation Plan
+
+**Goal:** 先完整交付国际站日语，再复用同一流水线完成韩语。
+
+**Design:** `openspec/changes/2026-08-28-japanese-localization-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-28-japanese-localization-plan.md`
+
+## Tasks
+
+- [x] 建立日语发布契约和注册表派生的 locale resolver，先写失败测试。
+- [x] 补齐 2654 条日语 UI 字典并通过结构与术语门禁。
+- [x] 完成 Soul、Buddy、Skills、Experts 与场景任务日语结构化内容。
+- [x] 完成公开页、SEO、metadata、sitemap 与 JSON-LD 日语适配。
+- [x] 完成 61 篇日语 Docs、搜索路由和 manifest。
+- [x] 完成日语法务页面并生成全文人工审阅清单。
+- [x] 完成日语字体、语言切换器和性能门禁；日语/韩语字典按 locale 分包，首页 gzip 相对基线 -2.84%。
+- [x] 增加仅限国际站开发环境的日语预览开关，完成首页、Docs、法务页与移动端浏览器验收；生产发布标记保持关闭。
+- [ ] 修正高可见日语误译并开放生产注册表标记，完成专项构建与浏览器验收；母语复核由用户并行安排。
+
+---
+
+# 国际站韩语完整本地化 Implementation Plan
+
+**Goal:** 复用已验证的日语管线，完整交付国际站 `ko-KR` / `/ko-kr`，修正高可见误译后与日语一并开放国际站生产入口。
+
+**Design:** `openspec/changes/2026-08-31-korean-localization-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-31-korean-localization-plan.md`
+
+## Tasks
+
+- [x] 锁定韩语发布契约并增加仅限非生产国际站的 `/ko-kr` 预览。
+- [x] 补齐 2680 条韩语 UI 字典并通过结构与术语门禁。
+- [x] 完成 Soul、Buddy、Skills、Experts 与场景任务韩语结构化内容。
+- [x] 完成公开页、SEO、metadata、sitemap 与 JSON-LD 韩语适配。
+- [x] 完成 62 篇韩语 Docs、搜索路由和 manifest。
+- [x] 完成韩语法务页面并生成全文人工审阅清单。
+- [x] 完成韩语字体、语言切换器和桌面/移动端浏览器验收。
+- [ ] 完成日韩需求范围内的国际/国内构建与专项质量门禁，并开放生产发布标记。
+
+> 首轮实现已完成定向测试、Docs parity、`pnpm check`、国际/国内生产构建和 `git diff --check`。用户已明确排除仓库全量测试中的无关历史失败，并确认法务页沿用“本地化译文 + 英文版本为准”的西语模式；本轮继续修正文案、开放日韩入口并做专项验收。
 
 ---

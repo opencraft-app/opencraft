@@ -202,6 +202,78 @@ describe("scenario task builder", () => {
     expect(draft.generatedPrompt).not.toContain("billing details:");
   });
 
+  it("builds fully Spanish protocol prompts for Spanish overview tasks", () => {
+    const pack = getOverviewScenarioTaskPacks("es").find((item) => item.id === "rent-reminder");
+    expect(pack).toBeTruthy();
+
+    const draft = buildScenarioTaskDraft({
+      pack: pack!,
+      values: {
+        rentInfo: "Factura de internet, pagada por transferencia bancaria",
+      },
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.oneShotJobName).toBe(`${draft.generatedName} · ejecución única`);
+    expect(draft.generatedPrompt).toContain("Estás ejecutando una automatización de LightVela");
+    expect(draft.generatedPrompt).toContain("Nombre de la tarea: Recordatorio del alquiler");
+    expect(draft.generatedPrompt).toContain("Requisitos de salida:");
+    expect(draft.generatedPrompt).toContain("Detalles proporcionados por el usuario:");
+    expect(draft.generatedPrompt).toContain(
+      "detalles de facturación: Factura de internet, pagada por transferencia bancaria.",
+    );
+    expect(draft.generatedPrompt).toContain("aviso el día del vencimiento: sí.");
+    expect(draft.generatedPrompt).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+  });
+
+  it("keeps Spanish realtime and safety instructions in Spanish", () => {
+    const pack = getOverviewScenarioTaskPacks("es").find((item) => item.id === "country-fx-alert");
+    expect(pack).toBeTruthy();
+
+    const draft = buildScenarioTaskDraft({
+      pack: pack!,
+      values: {},
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.generatedPrompt).toContain("Reglas de consulta en tiempo real:");
+    expect(draft.generatedPrompt).toContain("web_search, web_fetch");
+    expect(draft.generatedPrompt).toContain("Nota de seguridad:");
+    expect(draft.generatedPrompt).toContain("No constituye asesoramiento de inversión");
+    expect(draft.generatedPrompt).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+  });
+
+  it("keeps every Spanish overview task draft free of Chinese fallback copy", () => {
+    for (const pack of getOverviewScenarioTaskPacks("es")) {
+      const draft = buildScenarioTaskDraft({
+        pack,
+        values: {},
+        now: new Date(2026, 6, 2, 9, 0, 0),
+      });
+
+      expect(draft.oneShotJobName, pack.id).toContain("ejecución única");
+      expect(draft.generatedPrompt, pack.id).not.toMatch(/[\u3400-\u9fff\uf900-\ufaff]/);
+    }
+  });
+
+  it("builds Japanese protocol prompts for Japanese overview tasks", () => {
+    const pack = getOverviewScenarioTaskPacks("ja-JP").find((item) => item.id === "rent-reminder");
+    expect(pack).toBeTruthy();
+
+    const draft = buildScenarioTaskDraft({
+      pack: pack!,
+      values: { rentInfo: "家賃8万円を銀行振込で支払う" },
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.oneShotJobName).toBe(`${draft.generatedName} · 1回のみ実行`);
+    expect(draft.generatedPrompt).toContain("LightVelaの自動化を実行しています");
+    expect(draft.generatedPrompt).toContain("タスク名：家賃リマインダー");
+    expect(draft.generatedPrompt).toContain("出力要件：");
+    expect(draft.generatedPrompt).toContain("ユーザーが指定した内容：");
+    expect(draft.generatedPrompt).toContain("支払い内容：家賃8万円を銀行振込で支払う。");
+  });
+
   it("formats scenario-specific field values for prompts", () => {
     const pack = getScenarioTaskPack("todo-focus-brief");
     const draft = buildScenarioTaskDraft({
@@ -222,6 +294,31 @@ describe("scenario task builder", () => {
 
   it("keeps unfinished workflow scenarios off the published shelf", () => {
     const publishedIds = SCENARIO_TASK_PACKS.map((pack) => pack.id);
+    expect(publishedIds).toEqual([
+      "cbt-counseling",
+      "medication-once",
+      "hydration-standup-reminder",
+      "srs-study-checkin",
+      "calorie-fitness-checkin",
+      "todo-focus-brief",
+      "goal-weekly-sprint",
+      "price-availability-alert",
+      "job-opportunity-radar",
+      "rent-reminder",
+      "weekend-shopping-list",
+      "country-fx-alert",
+      "stock-info-digest",
+      "subscription-renewal-watch",
+      "ai-hot-daily",
+      "deep-research-watch",
+      "weather-warning-alert",
+      "cross-border-brand-radar",
+      "platform-policy-watch",
+      "global-holiday-reminder",
+      "visa-document-deadline",
+      "flight-departure-once",
+    ]);
+    expect(new Set(publishedIds).size).toBe(publishedIds.length);
     expect(publishedIds).not.toContain("automation-opportunity-scan");
     expect(publishedIds).not.toContain("interview-prep-once");
     expect(publishedIds).not.toContain("world-cup-daily");

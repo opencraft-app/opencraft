@@ -17,6 +17,7 @@ import {
   type PublicSiteSection,
 } from "@/lib/public-site-navigation";
 import { PUBLIC_SITE_LOCALES } from "@/lib/public-site-routing";
+import { parseLocaleCode } from "@/i18n/locales.config";
 import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
@@ -78,7 +79,14 @@ const appearanceClass: Record<HeaderAppearance, string> = {
   solid: "border-b border-black/5 bg-white/90 backdrop-blur-[20px]",
 };
 
-const headerContentClass = "relative mx-auto flex h-[60px] max-w-[1600px] items-center justify-between px-6 lg:px-10 xl:px-[80px]";
+// 对称外侧轨道把主导航固定在页面中心：品牌 1fr / 导航 auto / 操作 1fr。
+const desktopHeaderGridClass =
+  "lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]";
+
+const headerContentClass = cn(
+  "relative mx-auto flex h-[60px] max-w-[1600px] items-center justify-between px-6 lg:px-10 xl:px-[80px]",
+  desktopHeaderGridClass,
+);
 
 const textClass: Record<HeaderAppearance, string> = {
   immersive: "text-black/90",
@@ -139,6 +147,24 @@ const headerCopy: Record<PublicSiteLocale, {
     login: "Masuk",
     openMenu: "Buka menu",
   },
+  [PUBLIC_SITE_LOCALES.ES]: {
+    closeMenu: "Cerrar menú",
+    createNow: "Crear ahora",
+    login: "Iniciar sesión",
+    openMenu: "Abrir menú",
+  },
+  [PUBLIC_SITE_LOCALES.JA_JP]: {
+    closeMenu: "メニューを閉じる",
+    createNow: "今すぐ作成",
+    login: "ログイン",
+    openMenu: "メニューを開く",
+  },
+  [PUBLIC_SITE_LOCALES.KO_KR]: {
+    closeMenu: "메뉴 닫기",
+    createNow: "지금 만들기",
+    login: "로그인",
+    openMenu: "메뉴 열기",
+  },
 };
 
 function defaultHeaderLocale(): PublicSiteLocale {
@@ -147,10 +173,12 @@ function defaultHeaderLocale(): PublicSiteLocale {
 }
 
 function headerLocaleFromLanguage(language: string | undefined): PublicSiteLocale {
-  if (language === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
-  if (language === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
-  if (language?.startsWith("zh")) return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
-  return PUBLIC_SITE_LOCALES.EN_US;
+  const locale = parseLocaleCode(language);
+  if (!locale) return PUBLIC_SITE_LOCALES.EN_US;
+  if (locale === PUBLIC_SITE_LOCALES.ZH_CN || locale === PUBLIC_SITE_LOCALES.ZH_SG) {
+    return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
+  }
+  return locale;
 }
 
 function useCurrentPath(explicitPath?: string): string {
@@ -300,123 +328,133 @@ export function PublicSiteHeader({
     <header
       className={cn("lw-public-site-header", positionClass[position], appearanceClass[appearance], className)}
     >
-      <div className={headerContentClass}>
-        {renderHeaderLink({
-          href: logoHref,
-          className: "flex shrink-0 items-center",
-          ariaLabel: "LightVela",
-          style: { ...headerLinkBaseStyle, alignItems: "center", display: "flex", flexShrink: 0 },
-          children: (
-          <img src={LOGO_URL} alt="LightVela" className="h-8 w-auto object-contain" />
-          ),
-        })}
+      <div data-testid="site-header-layout" className={headerContentClass}>
+        <div
+          data-testid="site-header-brand"
+          className="flex shrink-0 lg:col-start-1 lg:justify-self-start"
+        >
+          {renderHeaderLink({
+            href: logoHref,
+            className: "flex shrink-0 items-center",
+            ariaLabel: "LightVela",
+            style: { ...headerLinkBaseStyle, alignItems: "center", display: "flex", flexShrink: 0 },
+            children: (
+              <img src={LOGO_URL} alt="LightVela" className="h-8 w-auto object-contain" />
+            ),
+          })}
+        </div>
 
         {showNav && (
           <nav
-            className="lw-public-site-header__nav mx-auto hidden items-center justify-center gap-5 px-4 lg:flex xl:gap-8 xl:px-8"
+            className="lw-public-site-header__nav hidden items-center justify-center gap-5 px-4 lg:col-start-2 lg:flex lg:justify-self-center xl:gap-8 xl:px-8"
             aria-label="Primary navigation"
           >
             {renderNavLinks()}
           </nav>
         )}
 
-        {authControls}
+        <div
+          data-testid="site-header-actions"
+          className="ml-auto flex min-w-0 items-center justify-end lg:col-start-3 lg:ml-0 lg:justify-self-end"
+        >
+          {authControls}
 
-        {!usesAuthControlsSlot && showUnauthenticatedActions && authLoading && (
-          <div data-testid="site-header-auth-loading" className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
-            {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
-            <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />
-            <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
-          </div>
-        )}
-
-        {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
-          <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
-            {showLanguageSwitcher && renderLanguage("dropdown")}
-            {trackedCreateClick ? (
-              <button
-                type="button"
-                onClick={trackedCreateClick}
-                className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
-              >
-                {copy.createNow}
-              </button>
-            ) : (
-              <a
-                href={createHref}
-                className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
-              >
-                {copy.createNow}
-              </a>
-            )}
-            {onLoginClick ? (
-              <button
-                type="button"
-                onClick={onLoginClick}
-                className={cn(
-                  "inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4",
-                  secondaryButtonClass[appearance],
-                )}
-              >
-                {copy.login}
-              </button>
-            ) : (
-              <a
-                href={loginHref}
-                className={cn(
-                  "inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4",
-                  secondaryButtonClass[appearance],
-                )}
-              >
-                {copy.login}
-              </a>
-            )}
-          </div>
-        )}
-
-        {!usesAuthControlsSlot && !authLoading && isAuthenticated && (
-          <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
-            {showLanguageSwitcher && isDesktop && renderLanguage("dropdown")}
-            <UserAvatarMenu />
-          </div>
-        )}
-
-        {(showNav || (!usesAuthControlsSlot && showUnauthenticatedActions)) && (
-        <div className={cn("flex items-center gap-2 lg:hidden", usesAuthControlsSlot || isAuthenticated ? "" : "ml-auto")}>
-          {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
-            onLoginClick ? (
-              <button
-                type="button"
-                onClick={onLoginClick}
-                className={cn(
-                  "inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors",
-                  secondaryButtonClass[appearance],
-                )}
-              >
-                {copy.login}
-              </button>
-            ) : (
-              <a
-                href={loginHref}
-                className={cn(
-                  "inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors",
-                  secondaryButtonClass[appearance],
-                )}
-              >
-                {copy.login}
-              </a>
-            )
+          {!usesAuthControlsSlot && showUnauthenticatedActions && authLoading && (
+            <div data-testid="site-header-auth-loading" className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
+              {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
+              <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />
+              <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
+            </div>
           )}
-          <button
-            type="button"
-            className={cn("rounded-xl p-2 transition-colors hover:bg-black/5", textColorClass)}
-            onClick={() => setMenuOpen((open) => !open)}
-            aria-label={menuOpen ? copy.closeMenu : copy.openMenu}
-          >
-            {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+
+          {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
+            <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
+              {showLanguageSwitcher && renderLanguage("dropdown")}
+              {trackedCreateClick ? (
+                <button
+                  type="button"
+                  onClick={trackedCreateClick}
+                  className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
+                >
+                  {copy.createNow}
+                </button>
+              ) : (
+                <a
+                  href={createHref}
+                  className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
+                >
+                  {copy.createNow}
+                </a>
+              )}
+              {onLoginClick ? (
+                <button
+                  type="button"
+                  onClick={onLoginClick}
+                  className={cn(
+                    "inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4",
+                    secondaryButtonClass[appearance],
+                  )}
+                >
+                  {copy.login}
+                </button>
+              ) : (
+                <a
+                  href={loginHref}
+                  className={cn(
+                    "inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4",
+                    secondaryButtonClass[appearance],
+                  )}
+                >
+                  {copy.login}
+                </a>
+              )}
+            </div>
+          )}
+
+          {!usesAuthControlsSlot && !authLoading && isAuthenticated && (
+            <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
+              {showLanguageSwitcher && isDesktop && renderLanguage("dropdown")}
+              <UserAvatarMenu />
+            </div>
+          )}
+
+          {(showNav || (!usesAuthControlsSlot && showUnauthenticatedActions)) && (
+            <div className={cn("flex items-center gap-2 lg:hidden", usesAuthControlsSlot || isAuthenticated ? "" : "ml-auto")}>
+              {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
+                onLoginClick ? (
+                  <button
+                    type="button"
+                    onClick={onLoginClick}
+                    className={cn(
+                      "inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors",
+                      secondaryButtonClass[appearance],
+                    )}
+                  >
+                    {copy.login}
+                  </button>
+                ) : (
+                  <a
+                    href={loginHref}
+                    className={cn(
+                      "inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors",
+                      secondaryButtonClass[appearance],
+                    )}
+                  >
+                    {copy.login}
+                  </a>
+                )
+              )}
+              <button
+                type="button"
+                className={cn("rounded-xl p-2 transition-colors hover:bg-black/5", textColorClass)}
+                onClick={() => setMenuOpen((open) => !open)}
+                aria-label={menuOpen ? copy.closeMenu : copy.openMenu}
+              >
+                {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              </button>
+            </div>
+          )}
         </div>
-        )}
       </div>
 
       <AnimatePresence>

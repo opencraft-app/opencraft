@@ -104,7 +104,7 @@ type SortMode = "popular" | "name";
 type SkillCategoryLabel = {
   zh: string;
   en: string;
-  id?: string;
+  id?: string; es?: string; ja?: string; ko?: string;
 };
 type SearchInstallRowStatus = {
   status: "pending" | "installing" | "retrying" | "done" | "failed" | "skipped";
@@ -199,7 +199,7 @@ type FeaturedSkillId =
   | "to-issues"
   | "simple";
 
-const FEATURED_SKILLS: readonly Array<{
+const FEATURED_SKILLS: ReadonlyArray<{
   id: FeaturedSkillId;
   skill: Skill;
   heroImageSrc: string;
@@ -334,7 +334,7 @@ function getSkillOverview(
 function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
   const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
     "zh-CN": label.zh,
-    "id-ID": label.id,
+    "id-ID": label.id, es: label.es, "ja-JP": label.ja, "ko-KR": label.ko ?? label.en,
     "en-US": label.en,
   };
 
@@ -349,7 +349,7 @@ const SEARCH_INPUT_NATIVE_CLEAR_CLASS = "[&::-webkit-search-cancel-button]:appea
 
 type CreateSkillCategoryId = "quick-learn" | "workplace" | "research" | "learning" | "creative" | "personal" | "leisure";
 
-const CREATE_SKILL_CATEGORIES: readonly Array<{
+const CREATE_SKILL_CATEGORIES: ReadonlyArray<{
   id: CreateSkillCategoryId;
   icon: LucideIcon;
   iconClassName: string;
@@ -490,7 +490,7 @@ const CREATE_SKILL_SCENARIOS = [
     icon: Utensils,
     category: "leisure",
   },
-] as const satisfies readonly Array<{
+] as const satisfies ReadonlyArray<{
   id: string;
   icon: LucideIcon;
   category: CreateSkillCategoryId;
@@ -503,7 +503,7 @@ type CreateSkillField = {
   multiline?: boolean;
 };
 
-function getCreateSkillScenarioDetails(t: ReturnType<typeof useT>): Record<string, {
+function getCreateSkillScenarioDetails(t: ReturnType<typeof useT>): Record<CreateSkillScenarioId, {
   image: string;
   iconClassName: string;
   overlayClassName: string;
@@ -1244,7 +1244,7 @@ function CuratedSkillDetailsDialog({
           <section>
             <h3 className="text-base font-semibold text-black/90">{t("如何使用它？")}</h3>
             <h4 className="mt-3 text-sm font-semibold text-black/75">{t("基本用法")}</h4>
-            <p className="mt-2 text-sm leading-6 text-black/65">{overview.basicUsage}</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-black/65">{overview.basicUsage}</p>
             <pre className="mt-3 overflow-x-auto rounded-md bg-black/[0.04] px-3 py-3 font-mono text-xs leading-5 text-black/75">
               <code>{overview.examplePrompt}</code>
             </pre>
@@ -1339,7 +1339,7 @@ function FeaturedSkillCard({
           className="absolute inset-0 size-full object-cover"
         />
         <div
-          className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.34)_0%,rgba(0,0,0,0.16)_55%,rgba(0,0,0,0.04)_100%)]"
+          className={cn("absolute inset-0", entry.id !== "lh6-anniversary-blessing" && "bg-[linear-gradient(90deg,rgba(0,0,0,0.34)_0%,rgba(0,0,0,0.16)_55%,rgba(0,0,0,0.04)_100%)]")}
           aria-hidden="true"
         />
         <div className="relative z-10 max-w-[64%]">
@@ -1841,14 +1841,25 @@ export function SkillsDemoPanel({
   const shouldReduceMotion = useReducedMotion();
   const isChinese = i18n.resolvedLanguage?.startsWith("zh") ?? false;
   // Skill 概览数据集按语言分流：中文（含繁体，繁体再由 OpenCC 就地转字形）、
-  // 印尼语、其余回退英文。未收录的条目由 getCuratedSkillOverview 回退英文。
+  // 印尼语、西班牙语、日语、韩语，其余回退英文。未收录条目回退英文。
   const overviewLocale: CuratedSkillOverviewLocale = isChinese
     ? "zh-CN"
     : i18n.resolvedLanguage === "id-ID"
       ? "id-ID"
-      : "en-US";
+      : i18n.resolvedLanguage?.startsWith("es")
+        ? "es"
+        : i18n.resolvedLanguage?.startsWith("ja")
+          ? "ja-JP"
+          : i18n.resolvedLanguage?.startsWith("ko")
+            ? "ko-KR"
+            : "en-US";
   const isDomestic = mode === "domestic";
   const featuredSkillCopy: Record<string, { title: string; subtitle: string; description: string }> = {
+    "lh6-anniversary-blessing": {
+      title: t("精选技能：轻量云六周年送祝福"),
+      subtitle: t("送祝福，赢实例"),
+      description: t("为轻量云六周年生成祝福文案与海报，支持多场景风格定制"),
+    },
     "self-improving-agent": {
       title: t("精选技能：Self-Improving Agent"),
       subtitle: t("从每次执行中学习"),
@@ -1935,7 +1946,7 @@ export function SkillsDemoPanel({
     setActiveTab(initialTab === "create" ? "discover" : initialTab);
   }, [initialTab]);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const refreshInstalled = useCallback(async (): Promise<boolean> => {
     const requestId = installedRequestIdRef.current + 1;

@@ -8,8 +8,11 @@ import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
 import { useAppNavigate } from "@/lib/app-navigation";
 import { useAsyncResource } from "@/services/use-async-resource";
+import { useT } from "@/i18n/t";
+import { localizePlanOption } from "@/pages/app/plan-select-localization";
 
 export const PlanSelectPage = () => {
+  const t = useT();
   const navigate = useAppNavigate();
   const repositories = useRepositories();
   const { selectPlan } = useSession();
@@ -32,19 +35,19 @@ export const PlanSelectPage = () => {
   return (
     <div className="space-y-5">
       <GrammarPageIntro
-        eyebrow={<Badge variant="neutral">Plan selection</Badge>}
-      title="选择你的 LightVela 档位"
-        description="现在这一步更像首次设置，而不是注册尾声。先确认你要从哪种强度开始，再进入控制台。当前首版只开放免费体验。"
+        eyebrow={<Badge variant="neutral">{t("套餐选择")}</Badge>}
+        title={t("选择你的 LightVela 档位")}
+        description={t("现在这一步更像首次设置，而不是注册尾声。先确认你要从哪种强度开始，再进入控制台。当前首版只开放免费体验。")}
       />
 
-      {preview.loading ? <StatePanel variant="loading" title="加载中" description="正在读取套餐信息。" /> : null}
+      {preview.loading ? <StatePanel variant="loading" title={t("加载中")} description={t("正在读取套餐信息。")} /> : null}
 
       {preview.error ? (
         <StatePanel
           variant="error"
-          title="加载失败"
-          description={preview.error}
-          action={{ label: "重试", onClick: () => void preview.reload() }}
+          title={t("加载失败")}
+          description={t(preview.error)}
+          action={{ label: t("重试"), onClick: () => void preview.reload() }}
         />
       ) : null}
 
@@ -53,17 +56,17 @@ export const PlanSelectPage = () => {
           <GrammarPanel tone="muted" className="space-y-4">
             <div className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--lw-fg-tertiary)" }}>
-                Why a plan comes first
+                {t("为什么要先选套餐")}
               </p>
               <h2 className="text-2xl font-semibold tracking-[-0.05em]" style={{ color: "var(--lw-fg)" }}>
-                先确认工作节奏，再决定控制台要露出什么。
+                {t("先确认工作节奏，再决定控制台要露出什么。")}
               </h2>
             </div>
             <div className="space-y-3">
               {[
-                "免费体验适合先把创建、调试、配置主链路跑通。",
-                "Plus 和 Max 暂时保留卡位，让后续开放时仍在同一套页面结构里。",
-                "选完计划后直接进入设置页，不再多跳一步。",
+                t("免费体验适合先把创建、调试、配置主链路跑通。"),
+                t("Plus 和 Max 暂时保留卡位，让后续开放时仍在同一套页面结构里。"),
+                t("选完计划后直接进入设置页，不再多跳一步。"),
               ].map((item) => (
                 <div key={item} className="rounded-[1.1rem] border px-4 py-3 text-sm leading-7" style={{ borderColor: "var(--lw-border)", background: "rgba(255,255,255,0.76)" }}>
                   {item}
@@ -73,15 +76,18 @@ export const PlanSelectPage = () => {
           </GrammarPanel>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            {preview.data.plans.map((plan) => (
-              <PlanCard
-                key={plan.tier}
-                plan={plan}
-                selected={plan.tier === selectedTier}
-                loading={confirming && plan.tier === selectedTier}
-                onSelect={plan.available ? () => void onConfirm(plan.tier) : undefined}
-              />
-            ))}
+            {preview.data.plans.map((plan) => {
+              const localizedPlan = localizePlanOption(plan, t);
+              return (
+                <PlanCard
+                  key={plan.tier}
+                  plan={localizedPlan}
+                  selected={plan.tier === selectedTier}
+                  loading={confirming && plan.tier === selectedTier}
+                  onSelect={plan.available ? () => void onConfirm(plan.tier) : undefined}
+                />
+              );
+            })}
           </div>
         </div>
       ) : null}

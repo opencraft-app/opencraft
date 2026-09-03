@@ -107,4 +107,6 @@ Genspark 像是打开一个工作室。
 
 如果你问的是“哪个工具能最快帮我制作演示文稿、研究报告和表格”，Genspark 可能是更直接的答案。
 
+如果你正在比较个人 Agent 托管与委托式 AI 工作，可以阅读[LightVela 与 Grok Bot 的对比](./lightvela-vs-grok-bot.md)，了解一个可配置 Agent 与持久化云端 Bot 的区别。
+
 如果你问的是“我应该在哪里托管一个每天都会使用的 AI Agent”，LightVela 会更合适。

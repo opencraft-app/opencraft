@@ -1,5 +1,11 @@
 # Kanal WeChat
 
+## Ringkasan
+
+**Kanal WeChat dihubungkan dengan memindai kode QR dan merupakan yang paling sederhana di antara semua kanal: pilih WeChat di bagian Kanal pada konsol, klik untuk memberi otorisasi dan menghasilkan kode QR, lalu pindai dengan WeChat di ponsel Anda untuk mulai berbicara. Anda hanya memerlukan dua hal — ponsel dengan WeChat terpasang, dan model yang sudah dikonfigurasi (atau cukup kredit model bulanan dari paket Anda). Satu Agent dapat terhubung ke beberapa kanal sekaligus, dan semuanya berbagi persona serta memori jangka panjang yang sama.**
+
+---
+
 Kanal WeChat memakai akses kode QR dan merupakan kanal yang paling sederhana untuk dikonfigurasi.
 
 ## Yang dibahas di halaman ini

@@ -30,6 +30,14 @@ data:
     default_template_id    = "pool-1778850277827939648-1"
     candidate_template_ids = ["pool-1778850277827939648-1"]
 
+    # Cruise / Voyage AI bundles use the isolated SG 4C8G80G pool.
+    [[api.instance.spec_pools]]
+    spec_id                = "spec-4c8g80g"
+    template_class_id      = "openclaw-4c8g80g"
+    sku_id                 = "sku-hermes-4c8g"
+    default_template_id    = "pool-1787798066081877763-1"
+    candidate_template_ids = ["pool-1787798066081877763-1"]
+
     [db]
     host = "10.15.192.12"
     port = 3306

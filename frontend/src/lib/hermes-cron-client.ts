@@ -33,6 +33,8 @@ export interface CronJob {
   next_run_at: string | null;
   last_run_at: string | null;
   last_status: string | null;
+  /** `hermes cron list --all` 返回的当前执行状态，如 running/completed/failed。 */
+  execution_status?: string | null;
   created_at: string | null;
   script: string;
   effective_window: CronEffectiveWindow | null;
@@ -68,7 +70,7 @@ interface CronjobToolResult {
 export interface CronDependentBinding {
   id: string;
   name: string;
-  contextFrom: string[];
+  contextFrom: readonly string[];
 }
 
 interface CronDependentMutationSummary {
@@ -1033,7 +1035,7 @@ export function parseCronListOutput(text: string): CronJob[] {
       current = {
         id: headerMatch[1],
         state: stateRaw,
-        enabled: stateRaw.toLowerCase() !== "paused",
+        enabled: !["paused", "disabled"].includes(stateRaw.toLowerCase()),
         skills: [],
       };
       continue;
@@ -1052,6 +1054,7 @@ export function parseCronListOutput(text: string): CronJob[] {
       current.last_run_at = parsed.lastRunAt;
       if (parsed.lastStatus) current.last_status = parsed.lastStatus;
     }
+    else if (key === "execution") current.execution_status = value.split(/\s+/, 1)[0]?.toLowerCase() || null;
     else if (key === "last status") current.last_status = value;
     else if (key === "deliver") current.deliver = value;
     else if (key === "script") current.script = value;
@@ -1091,6 +1094,7 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     next_run_at: p.next_run_at || null,
     last_run_at: p.last_run_at || null,
     last_status: p.last_status || null,
+    execution_status: p.execution_status || null,
     created_at: p.created_at || null,
     script: p.script || "",
     effective_window: p.effective_window || null,
@@ -1632,7 +1636,7 @@ async function findCronJobIdByExactNameWithRetry(
  * 保证任何已创建的临时任务都不会残留后被调度器真实执行。best-effort，找不到就放弃。
  */
 async function removeCronJobByExactName(botId: string, name: string): Promise<void> {
-  const id = await findCronJobIdByExactName(botId, name);
+  const id = await findCronJobIdByExactNameWithRetry(botId, name);
   if (id) await removeCronJob(botId, id);
 }
 
@@ -1800,14 +1804,23 @@ const TEST_RUN_ACK_MESSAGE = "已收到测试请求，正在唤起任务，请�
  * 每个目标独立 best-effort：任一目标发送失败（通道未配置/掉线等）都不影响其它目标，
  * 也不影响后续真正的测试运行主流程。
  */
-async function sendChatNotice(botId: string, deliver: string, message: string): Promise<void> {
+export interface HermesChatNoticeResult {
+  sent: number;
+  failed: number;
+}
+
+export async function sendHermesChatNotice(
+  botId: string,
+  deliver: string,
+  message: string,
+): Promise<HermesChatNoticeResult> {
   const targets = deliver
     .split(",")
     .map((token) => token.trim())
     .filter(Boolean);
-  if (targets.length === 0) return;
+  if (targets.length === 0) return { sent: 0, failed: 0 };
   const quotedMessage = shellQuote(message);
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     targets.map((target) =>
       execCommand(
         botId,
@@ -1815,6 +1828,8 @@ async function sendChatNotice(botId: string, deliver: string, message: string): 
       ),
     ),
   );
+  const failed = results.filter((result) => result.status === "rejected").length;
+  return { sent: results.length - failed, failed };
 }
 
 function delay(ms: number): Promise<void> {
@@ -1940,7 +1955,7 @@ export interface StartedCronTestRun {
  * 这样 UI 就能在发完 `hermes send` 回执后立刻撤掉转圈——用户看到 IM 里的「已收到」即可，
  * 剩下的执行在后台继续，不必再对着 loading 盲等两三分钟。
  *
- * 前置阶段里 `sendChatNotice` 是 best-effort（发不出去也不阻断）；但 `createCronJob` /
+ * 前置阶段里 `sendHermesChatNotice` 是 best-effort（发不出去也不阻断）；但 `createCronJob` /
  * 定位 tempId 若失败会 throw，让调用方能把「连任务都没挂上」这种真失败反馈出来。
  */
 export async function startCronTestRun(botId: string, job: CronJob): Promise<StartedCronTestRun> {
@@ -1949,18 +1964,34 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
   // `hermes send` 往同一个 IM 通道即时回一句「已收到」，让用户立刻知道请求已进入处理，
   // UI 随即就能撤掉转圈。这条回执是 best-effort：发不出去（比如通道未配置）也绝不能影响
   // 后面真正的测试运行，因此单独 try/catch 吞掉错误。
-  await sendChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
+  await sendHermesChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
     /* 即时回执发送失败不影响测试运行主流程 */
   });
   const marker = buildTestRunMarker(job.id, job.name);
-  await createCronJob(botId, {
+  const input: CreateCronJobInput = {
     schedule: buildImmediateOnceSchedule(),
     prompt: job.prompt,
     name: marker,
     skills: job.skills,
     deliver,
     // 有意不传 script：跳过生效窗口/daily_times 门控，保证到点真实执行一次
-  });
+  };
+  const upstreamId = job.context_from?.length === 1 ? job.context_from[0]?.trim() : "";
+  let tempId: string | null = null;
+  try {
+    if (upstreamId) {
+      // 表单试跑必须使用当前尚未保存的上游选择；structured cronjob create 会直接返回临时任务 id。
+      tempId = await createCronJobWithContextAndScriptRollback(botId, input, upstreamId);
+    } else {
+      await createCronJob(botId, input);
+      tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
+    }
+  } catch {
+    await removeCronJobByExactName(botId, marker).catch(() => {
+      /* 兜底清理失败不影响中文错误上抛 */
+    });
+    throw new Error("临时测试任务创建异常，已尝试清理，请稍后重试");
+  }
   // create 已成功 → 临时任务几乎肯定已经落进 cron。从这里开始，任何后续失败都必须
   // 保证「已创建的临时任务能被删除」，否则它会在约 2 分钟后被调度器真实执行并投递，
   // 违背「测试失败不产生后续副作用」的预期（见 CR P1）。
@@ -1969,7 +2000,6 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
   // 解析不到 marker，首次读可能拿不到。这里带重试；仍拿不到时不直接裸抛，而是先按
   // marker 名做一次兜底删除（`hermes cron remove --name` 语义走不了，用 list 反查
   // 一次或直接按名删），把已创建的临时任务清掉，再抛错。
-  let tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
   if (!tempId) {
     // 兜底：即便反查不到 id，也尽力按 marker 名把这个已创建的临时任务删掉，
     // 避免它残留后被调度器真实执行。best-effort，失败也不阻断错误上抛。

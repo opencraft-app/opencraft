@@ -104,7 +104,7 @@ Setiap platform punya alur koneksi dan bentuk kredensial sendiri: sebagian menun
 
 ### 5.2 Kanal yang didukung berbeda per region
 
-Ini jebakan yang mudah ditemui saat membaca dokumentasi: region global dan Tiongkok pada LightVela tidak mendukung kumpulan kanal yang sama. Urutan kanal global adalah Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark. Region Tiongkok saat ini menyasar platform yang umum secara lokal seperti WeChat, Lark, dan QQ.
+Ini jebakan yang mudah ditemui saat membaca dokumentasi: region global dan Tiongkok pada LightVela tidak mendukung kumpulan kanal yang sama. Urutan kanal global adalah Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark. Region Tiongkok mendukung WeChat, QQ, WeCom, Lark, dan DingTalk.
 
 Jadi ketika Anda melihat klaim seperti "Telegram didukung", pastikan itu berlaku untuk region yang mana alih-alih mengasumsikannya berlaku lintas region.
 

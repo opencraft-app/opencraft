@@ -373,6 +373,85 @@ type InviteValidationRequest struct {
 	Code string `json:"code"`
 }
 
+// OIDCAuthorizeContextResponse defines model for OIDCAuthorizeContextResponse.
+type OIDCAuthorizeContextResponse struct {
+	Client              FederationClient         `json:"client"`
+	CodeChallenge       string                   `json:"code_challenge"`
+	CodeChallengeMethod string                   `json:"code_challenge_method"`
+	Nonce               string                   `json:"nonce"`
+	RedirectUri         string                   `json:"redirect_uri"`
+	ResponseType        string                   `json:"response_type"`
+	Scope               string                   `json:"scope"`
+	Session             FederationSessionSummary `json:"session"`
+	State               string                   `json:"state"`
+}
+
+// OIDCAuthorizeRequest defines model for OIDCAuthorizeRequest.
+type OIDCAuthorizeRequest struct {
+	ClientId            string `json:"client_id"`
+	CodeChallenge       string `json:"code_challenge"`
+	CodeChallengeMethod string `json:"code_challenge_method"`
+	Nonce               string `json:"nonce"`
+	RedirectUri         string `json:"redirect_uri"`
+	ResponseType        string `json:"response_type"`
+	Scope               string `json:"scope"`
+	State               string `json:"state"`
+}
+
+// OIDCAuthorizeResponse defines model for OIDCAuthorizeResponse.
+type OIDCAuthorizeResponse struct {
+	ExpiresAt   time.Time `json:"expires_at"`
+	RedirectUrl string    `json:"redirect_url"`
+}
+
+// OIDCDiscoveryDocument defines model for OIDCDiscoveryDocument.
+type OIDCDiscoveryDocument struct {
+	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
+	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
+	GrantTypesSupported               []string `json:"grant_types_supported"`
+	IdTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported"`
+	Issuer                            string   `json:"issuer"`
+	JwksUri                           string   `json:"jwks_uri"`
+	ResponseTypesSupported            []string `json:"response_types_supported"`
+	ScopesSupported                   []string `json:"scopes_supported"`
+	SubjectTypesSupported             []string `json:"subject_types_supported"`
+	TokenEndpoint                     string   `json:"token_endpoint"`
+	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+}
+
+// OIDCJWK defines model for OIDCJWK.
+type OIDCJWK struct {
+	Alg string `json:"alg"`
+	Crv string `json:"crv"`
+	Kid string `json:"kid"`
+	Kty string `json:"kty"`
+	Use string `json:"use"`
+	X   string `json:"x"`
+}
+
+// OIDCJWKS defines model for OIDCJWKS.
+type OIDCJWKS struct {
+	Keys []OIDCJWK `json:"keys"`
+}
+
+// OIDCTokenRequest defines model for OIDCTokenRequest.
+type OIDCTokenRequest struct {
+	ClientId     string `json:"client_id"`
+	Code         string `json:"code"`
+	CodeVerifier string `json:"code_verifier"`
+	GrantType    string `json:"grant_type"`
+	RedirectUri  string `json:"redirect_uri"`
+}
+
+// OIDCTokenResponse defines model for OIDCTokenResponse.
+type OIDCTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"`
+	IdToken     string `json:"id_token"`
+	Scope       string `json:"scope"`
+	TokenType   string `json:"token_type"`
+}
+
 // PasswordSignInRequest defines model for PasswordSignInRequest.
 type PasswordSignInRequest struct {
 	Email    string `json:"email"`
@@ -621,6 +700,30 @@ type FederationRequestId = string
 // FederationTimestamp defines model for FederationTimestamp.
 type FederationTimestamp = time.Time
 
+// OIDCClientId defines model for OIDCClientId.
+type OIDCClientId = string
+
+// OIDCCodeChallenge defines model for OIDCCodeChallenge.
+type OIDCCodeChallenge = string
+
+// OIDCCodeChallengeMethod defines model for OIDCCodeChallengeMethod.
+type OIDCCodeChallengeMethod = string
+
+// OIDCNonce defines model for OIDCNonce.
+type OIDCNonce = string
+
+// OIDCRedirectUri defines model for OIDCRedirectUri.
+type OIDCRedirectUri = string
+
+// OIDCResponseType defines model for OIDCResponseType.
+type OIDCResponseType = string
+
+// OIDCScope defines model for OIDCScope.
+type OIDCScope = string
+
+// OIDCState defines model for OIDCState.
+type OIDCState = string
+
 // PaymentMethodContractCode defines model for PaymentMethodContractCode.
 type PaymentMethodContractCode = string
 
@@ -661,6 +764,30 @@ type UpdateProfileAvatarMultipartBody struct {
 // HandleRealnameFaceIDCallbackParams defines parameters for HandleRealnameFaceIDCallback.
 type HandleRealnameFaceIDCallbackParams struct {
 	BizToken string `form:"BizToken" json:"BizToken"`
+}
+
+// GetOidcAuthorizeParams defines parameters for GetOidcAuthorize.
+type GetOidcAuthorizeParams struct {
+	ClientId            OIDCClientId            `form:"client_id" json:"client_id"`
+	RedirectUri         OIDCRedirectUri         `form:"redirect_uri" json:"redirect_uri"`
+	ResponseType        OIDCResponseType        `form:"response_type" json:"response_type"`
+	Scope               OIDCScope               `form:"scope" json:"scope"`
+	State               OIDCState               `form:"state" json:"state"`
+	Nonce               OIDCNonce               `form:"nonce" json:"nonce"`
+	CodeChallenge       OIDCCodeChallenge       `form:"code_challenge" json:"code_challenge"`
+	CodeChallengeMethod OIDCCodeChallengeMethod `form:"code_challenge_method" json:"code_challenge_method"`
+}
+
+// GetOidcAuthorizeContextParams defines parameters for GetOidcAuthorizeContext.
+type GetOidcAuthorizeContextParams struct {
+	ClientId            OIDCClientId            `form:"client_id" json:"client_id"`
+	RedirectUri         OIDCRedirectUri         `form:"redirect_uri" json:"redirect_uri"`
+	ResponseType        OIDCResponseType        `form:"response_type" json:"response_type"`
+	Scope               OIDCScope               `form:"scope" json:"scope"`
+	State               OIDCState               `form:"state" json:"state"`
+	Nonce               OIDCNonce               `form:"nonce" json:"nonce"`
+	CodeChallenge       OIDCCodeChallenge       `form:"code_challenge" json:"code_challenge"`
+	CodeChallengeMethod OIDCCodeChallengeMethod `form:"code_challenge_method" json:"code_challenge_method"`
 }
 
 // RequestEmailBindJSONRequestBody defines body for RequestEmailBind for application/json ContentType.
@@ -723,8 +850,20 @@ type VerifySmsCodeJSONRequestBody = VerifySmsRequest
 // CreateTencentCloudRedirectJSONRequestBody defines body for CreateTencentCloudRedirect for application/json ContentType.
 type CreateTencentCloudRedirectJSONRequestBody = TencentCloudRedirectRequest
 
+// AuthorizeOidcJSONRequestBody defines body for AuthorizeOidc for application/json ContentType.
+type AuthorizeOidcJSONRequestBody = OIDCAuthorizeRequest
+
+// ExchangeOidcTokenFormdataRequestBody defines body for ExchangeOidcToken for application/x-www-form-urlencoded ContentType.
+type ExchangeOidcTokenFormdataRequestBody = OIDCTokenRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Get OIDC signing keys
+	// (GET /.well-known/jwks.json)
+	GetOpenIdJwks(c *gin.Context)
+	// Get OIDC discovery metadata
+	// (GET /.well-known/openid-configuration)
+	GetOpenIdConfiguration(c *gin.Context)
 	// Send a magic-link email to bind an address to the current user
 	// (POST /auth/email/bind/request)
 	RequestEmailBind(c *gin.Context)
@@ -830,6 +969,18 @@ type ServerInterface interface {
 	// Create a one-time Tencent Cloud console login redirect for the current user
 	// (POST /auth/tencent-cloud/redirect)
 	CreateTencentCloudRedirect(c *gin.Context)
+	// Validate OIDC request and redirect to the authorization page
+	// (GET /oauth2/authorize)
+	GetOidcAuthorize(c *gin.Context, params GetOidcAuthorizeParams)
+	// Confirm an OIDC authorization request and issue a code
+	// (POST /oauth2/authorize)
+	AuthorizeOidc(c *gin.Context)
+	// Validate an OIDC authorization request and return session context
+	// (GET /oauth2/authorize/context)
+	GetOidcAuthorizeContext(c *gin.Context, params GetOidcAuthorizeContextParams)
+	// Exchange an OIDC authorization code for tokens
+	// (POST /oauth2/token)
+	ExchangeOidcToken(c *gin.Context)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -840,6 +991,32 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetOpenIdJwks operation middleware
+func (siw *ServerInterfaceWrapper) GetOpenIdJwks(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOpenIdJwks(c)
+}
+
+// GetOpenIdConfiguration operation middleware
+func (siw *ServerInterfaceWrapper) GetOpenIdConfiguration(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOpenIdConfiguration(c)
+}
 
 // RequestEmailBind operation middleware
 func (siw *ServerInterfaceWrapper) RequestEmailBind(c *gin.Context) {
@@ -1756,6 +1933,312 @@ func (siw *ServerInterfaceWrapper) CreateTencentCloudRedirect(c *gin.Context) {
 	siw.Handler.CreateTencentCloudRedirect(c)
 }
 
+// GetOidcAuthorize operation middleware
+func (siw *ServerInterfaceWrapper) GetOidcAuthorize(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetOidcAuthorizeParams
+
+	// ------------- Required query parameter "client_id" -------------
+
+	if paramValue := c.Query("client_id"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument client_id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client_id", c.Request.URL.Query(), &params.ClientId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter client_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "redirect_uri" -------------
+
+	if paramValue := c.Query("redirect_uri"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument redirect_uri is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "redirect_uri", c.Request.URL.Query(), &params.RedirectUri, runtime.BindQueryParameterOptions{Type: "string", Format: "uri"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter redirect_uri: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "response_type" -------------
+
+	if paramValue := c.Query("response_type"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument response_type is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "response_type", c.Request.URL.Query(), &params.ResponseType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter response_type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "scope" -------------
+
+	if paramValue := c.Query("scope"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument scope is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "scope", c.Request.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter scope: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "state" -------------
+
+	if paramValue := c.Query("state"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument state is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "state", c.Request.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter state: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "nonce" -------------
+
+	if paramValue := c.Query("nonce"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument nonce is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "nonce", c.Request.URL.Query(), &params.Nonce, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter nonce: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "code_challenge" -------------
+
+	if paramValue := c.Query("code_challenge"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument code_challenge is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code_challenge", c.Request.URL.Query(), &params.CodeChallenge, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code_challenge: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "code_challenge_method" -------------
+
+	if paramValue := c.Query("code_challenge_method"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument code_challenge_method is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code_challenge_method", c.Request.URL.Query(), &params.CodeChallengeMethod, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code_challenge_method: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOidcAuthorize(c, params)
+}
+
+// AuthorizeOidc operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeOidc(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AuthorizeOidc(c)
+}
+
+// GetOidcAuthorizeContext operation middleware
+func (siw *ServerInterfaceWrapper) GetOidcAuthorizeContext(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetOidcAuthorizeContextParams
+
+	// ------------- Required query parameter "client_id" -------------
+
+	if paramValue := c.Query("client_id"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument client_id is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client_id", c.Request.URL.Query(), &params.ClientId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter client_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "redirect_uri" -------------
+
+	if paramValue := c.Query("redirect_uri"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument redirect_uri is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "redirect_uri", c.Request.URL.Query(), &params.RedirectUri, runtime.BindQueryParameterOptions{Type: "string", Format: "uri"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter redirect_uri: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "response_type" -------------
+
+	if paramValue := c.Query("response_type"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument response_type is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "response_type", c.Request.URL.Query(), &params.ResponseType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter response_type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "scope" -------------
+
+	if paramValue := c.Query("scope"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument scope is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "scope", c.Request.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter scope: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "state" -------------
+
+	if paramValue := c.Query("state"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument state is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "state", c.Request.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter state: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "nonce" -------------
+
+	if paramValue := c.Query("nonce"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument nonce is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "nonce", c.Request.URL.Query(), &params.Nonce, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter nonce: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "code_challenge" -------------
+
+	if paramValue := c.Query("code_challenge"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument code_challenge is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code_challenge", c.Request.URL.Query(), &params.CodeChallenge, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code_challenge: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "code_challenge_method" -------------
+
+	if paramValue := c.Query("code_challenge_method"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument code_challenge_method is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code_challenge_method", c.Request.URL.Query(), &params.CodeChallengeMethod, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code_challenge_method: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOidcAuthorizeContext(c, params)
+}
+
+// ExchangeOidcToken operation middleware
+func (siw *ServerInterfaceWrapper) ExchangeOidcToken(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExchangeOidcToken(c)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -1783,6 +2266,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/.well-known/jwks.json", wrapper.GetOpenIdJwks)
+	router.GET(options.BaseURL+"/.well-known/openid-configuration", wrapper.GetOpenIdConfiguration)
 	router.POST(options.BaseURL+"/auth/email/bind/request", wrapper.RequestEmailBind)
 	router.POST(options.BaseURL+"/auth/federation/bots/:bot_id/tat/session", wrapper.CreateFederationTatSession)
 	router.GET(options.BaseURL+"/auth/federation/context", wrapper.GetFederationContext)
@@ -1818,9 +2303,63 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/sms/send", wrapper.SendSmsCode)
 	router.POST(options.BaseURL+"/auth/sms/verify", wrapper.VerifySmsCode)
 	router.POST(options.BaseURL+"/auth/tencent-cloud/redirect", wrapper.CreateTencentCloudRedirect)
+	router.GET(options.BaseURL+"/oauth2/authorize", wrapper.GetOidcAuthorize)
+	router.POST(options.BaseURL+"/oauth2/authorize", wrapper.AuthorizeOidc)
+	router.GET(options.BaseURL+"/oauth2/authorize/context", wrapper.GetOidcAuthorizeContext)
+	router.POST(options.BaseURL+"/oauth2/token", wrapper.ExchangeOidcToken)
 }
 
 type ErrorResponseJSONResponse ErrorResponse
+
+type GetOpenIdJwksRequestObject struct {
+}
+
+type GetOpenIdJwksResponseObject interface {
+	VisitGetOpenIdJwksResponse(w http.ResponseWriter) error
+}
+
+type GetOpenIdJwks200JSONResponse OIDCJWKS
+
+func (response GetOpenIdJwks200JSONResponse) VisitGetOpenIdJwksResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOpenIdJwks404JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetOpenIdJwks404JSONResponse) VisitGetOpenIdJwksResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOpenIdConfigurationRequestObject struct {
+}
+
+type GetOpenIdConfigurationResponseObject interface {
+	VisitGetOpenIdConfigurationResponse(w http.ResponseWriter) error
+}
+
+type GetOpenIdConfiguration200JSONResponse OIDCDiscoveryDocument
+
+func (response GetOpenIdConfiguration200JSONResponse) VisitGetOpenIdConfigurationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOpenIdConfiguration404JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetOpenIdConfiguration404JSONResponse) VisitGetOpenIdConfigurationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
 
 type RequestEmailBindRequestObject struct {
 	Body *RequestEmailBindJSONRequestBody
@@ -3616,8 +4155,162 @@ func (response CreateTencentCloudRedirect503JSONResponse) VisitCreateTencentClou
 	return json.NewEncoder(w).Encode(response)
 }
 
+type GetOidcAuthorizeRequestObject struct {
+	Params GetOidcAuthorizeParams
+}
+
+type GetOidcAuthorizeResponseObject interface {
+	VisitGetOidcAuthorizeResponse(w http.ResponseWriter) error
+}
+
+type GetOidcAuthorize302Response struct {
+}
+
+func (response GetOidcAuthorize302Response) VisitGetOidcAuthorizeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(302)
+	return nil
+}
+
+type GetOidcAuthorize400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetOidcAuthorize400JSONResponse) VisitGetOidcAuthorizeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOidcAuthorize404JSONResponse ErrorResponse
+
+func (response GetOidcAuthorize404JSONResponse) VisitGetOidcAuthorizeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AuthorizeOidcRequestObject struct {
+	Body *AuthorizeOidcJSONRequestBody
+}
+
+type AuthorizeOidcResponseObject interface {
+	VisitAuthorizeOidcResponse(w http.ResponseWriter) error
+}
+
+type AuthorizeOidc200JSONResponse OIDCAuthorizeResponse
+
+func (response AuthorizeOidc200JSONResponse) VisitAuthorizeOidcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AuthorizeOidc400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response AuthorizeOidc400JSONResponse) VisitAuthorizeOidcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AuthorizeOidc401JSONResponse ErrorResponse
+
+func (response AuthorizeOidc401JSONResponse) VisitAuthorizeOidcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AuthorizeOidc404JSONResponse ErrorResponse
+
+func (response AuthorizeOidc404JSONResponse) VisitAuthorizeOidcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOidcAuthorizeContextRequestObject struct {
+	Params GetOidcAuthorizeContextParams
+}
+
+type GetOidcAuthorizeContextResponseObject interface {
+	VisitGetOidcAuthorizeContextResponse(w http.ResponseWriter) error
+}
+
+type GetOidcAuthorizeContext200JSONResponse OIDCAuthorizeContextResponse
+
+func (response GetOidcAuthorizeContext200JSONResponse) VisitGetOidcAuthorizeContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOidcAuthorizeContext400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetOidcAuthorizeContext400JSONResponse) VisitGetOidcAuthorizeContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetOidcAuthorizeContext404JSONResponse ErrorResponse
+
+func (response GetOidcAuthorizeContext404JSONResponse) VisitGetOidcAuthorizeContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeOidcTokenRequestObject struct {
+	Body *ExchangeOidcTokenFormdataRequestBody
+}
+
+type ExchangeOidcTokenResponseObject interface {
+	VisitExchangeOidcTokenResponse(w http.ResponseWriter) error
+}
+
+type ExchangeOidcToken200JSONResponse OIDCTokenResponse
+
+func (response ExchangeOidcToken200JSONResponse) VisitExchangeOidcTokenResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeOidcToken400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response ExchangeOidcToken400JSONResponse) VisitExchangeOidcTokenResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExchangeOidcToken404JSONResponse ErrorResponse
+
+func (response ExchangeOidcToken404JSONResponse) VisitExchangeOidcTokenResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// Get OIDC signing keys
+	// (GET /.well-known/jwks.json)
+	GetOpenIdJwks(ctx context.Context, request GetOpenIdJwksRequestObject) (GetOpenIdJwksResponseObject, error)
+	// Get OIDC discovery metadata
+	// (GET /.well-known/openid-configuration)
+	GetOpenIdConfiguration(ctx context.Context, request GetOpenIdConfigurationRequestObject) (GetOpenIdConfigurationResponseObject, error)
 	// Send a magic-link email to bind an address to the current user
 	// (POST /auth/email/bind/request)
 	RequestEmailBind(ctx context.Context, request RequestEmailBindRequestObject) (RequestEmailBindResponseObject, error)
@@ -3723,6 +4416,18 @@ type StrictServerInterface interface {
 	// Create a one-time Tencent Cloud console login redirect for the current user
 	// (POST /auth/tencent-cloud/redirect)
 	CreateTencentCloudRedirect(ctx context.Context, request CreateTencentCloudRedirectRequestObject) (CreateTencentCloudRedirectResponseObject, error)
+	// Validate OIDC request and redirect to the authorization page
+	// (GET /oauth2/authorize)
+	GetOidcAuthorize(ctx context.Context, request GetOidcAuthorizeRequestObject) (GetOidcAuthorizeResponseObject, error)
+	// Confirm an OIDC authorization request and issue a code
+	// (POST /oauth2/authorize)
+	AuthorizeOidc(ctx context.Context, request AuthorizeOidcRequestObject) (AuthorizeOidcResponseObject, error)
+	// Validate an OIDC authorization request and return session context
+	// (GET /oauth2/authorize/context)
+	GetOidcAuthorizeContext(ctx context.Context, request GetOidcAuthorizeContextRequestObject) (GetOidcAuthorizeContextResponseObject, error)
+	// Exchange an OIDC authorization code for tokens
+	// (POST /oauth2/token)
+	ExchangeOidcToken(ctx context.Context, request ExchangeOidcTokenRequestObject) (ExchangeOidcTokenResponseObject, error)
 }
 
 type StrictHandlerFunc = strictgin.StrictGinHandlerFunc
@@ -3735,6 +4440,56 @@ func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareF
 type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
+}
+
+// GetOpenIdJwks operation middleware
+func (sh *strictHandler) GetOpenIdJwks(ctx *gin.Context) {
+	var request GetOpenIdJwksRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOpenIdJwks(ctx, request.(GetOpenIdJwksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOpenIdJwks")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetOpenIdJwksResponseObject); ok {
+		if err := validResponse.VisitGetOpenIdJwksResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOpenIdConfiguration operation middleware
+func (sh *strictHandler) GetOpenIdConfiguration(ctx *gin.Context) {
+	var request GetOpenIdConfigurationRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOpenIdConfiguration(ctx, request.(GetOpenIdConfigurationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOpenIdConfiguration")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetOpenIdConfigurationResponseObject); ok {
+		if err := validResponse.VisitGetOpenIdConfigurationResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // RequestEmailBind operation middleware
@@ -4800,84 +5555,221 @@ func (sh *strictHandler) CreateTencentCloudRedirect(ctx *gin.Context) {
 	}
 }
 
+// GetOidcAuthorize operation middleware
+func (sh *strictHandler) GetOidcAuthorize(ctx *gin.Context, params GetOidcAuthorizeParams) {
+	var request GetOidcAuthorizeRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOidcAuthorize(ctx, request.(GetOidcAuthorizeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOidcAuthorize")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetOidcAuthorizeResponseObject); ok {
+		if err := validResponse.VisitGetOidcAuthorizeResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthorizeOidc operation middleware
+func (sh *strictHandler) AuthorizeOidc(ctx *gin.Context) {
+	var request AuthorizeOidcRequestObject
+
+	var body AuthorizeOidcJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthorizeOidc(ctx, request.(AuthorizeOidcRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthorizeOidc")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AuthorizeOidcResponseObject); ok {
+		if err := validResponse.VisitAuthorizeOidcResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOidcAuthorizeContext operation middleware
+func (sh *strictHandler) GetOidcAuthorizeContext(ctx *gin.Context, params GetOidcAuthorizeContextParams) {
+	var request GetOidcAuthorizeContextRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOidcAuthorizeContext(ctx, request.(GetOidcAuthorizeContextRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOidcAuthorizeContext")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetOidcAuthorizeContextResponseObject); ok {
+		if err := validResponse.VisitGetOidcAuthorizeContextResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ExchangeOidcToken operation middleware
+func (sh *strictHandler) ExchangeOidcToken(ctx *gin.Context) {
+	var request ExchangeOidcTokenRequestObject
+
+	if err := ctx.Request.ParseForm(); err != nil {
+		ctx.Error(err)
+		return
+	}
+	var body ExchangeOidcTokenFormdataRequestBody
+	if err := runtime.BindForm(&body, ctx.Request.Form, nil, nil); err != nil {
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ExchangeOidcToken(ctx, request.(ExchangeOidcTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExchangeOidcToken")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(ExchangeOidcTokenResponseObject); ok {
+		if err := validResponse.VisitExchangeOidcTokenResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

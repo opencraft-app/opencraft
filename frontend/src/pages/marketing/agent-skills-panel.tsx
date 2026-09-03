@@ -1252,7 +1252,13 @@ export function HermesAgentSkillsPanel({
   const repositories = useRepositories();
   const t = useT();
   const { i18n } = useTranslation();
-  const globalExpertLanguage = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+  const globalExpertLanguage = i18n.resolvedLanguage?.startsWith("ja")
+    ? "ja"
+    : i18n.resolvedLanguage === "es"
+      ? "es"
+    : i18n.resolvedLanguage?.startsWith("zh")
+      ? "zh"
+      : "en";
   const initialGlobalSkillsTab: SkillsDemoTab = initialSectionSlug === "experts" || initialSectionSlug === "packages"
     ? "experts"
     : "discover";

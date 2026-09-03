@@ -5,10 +5,15 @@ metadata:
   namespace: argocd
 spec:
   project: sgprod-root
-  source:
-    repoURL: git@git.woa.com:wisp/mono2.git
-    targetRevision: gitops
-    path: argocd/apps/sgprod
+  sources:
+    - repoURL: git@git.woa.com:wisp/mono2.git
+      targetRevision: gitops
+      path: argocd/apps/sgprod
+    - repoURL: git@git.woa.com:wisp/mono2.git
+      targetRevision: gitops
+      path: argocd/projects
+      directory:
+        include: sgprod*.yaml
   destination:
     namespace: argocd
     server: https://kubernetes.default.svc

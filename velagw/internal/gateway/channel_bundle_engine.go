@@ -768,6 +768,10 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 		return fmt.Errorf("set %q is not active and bootstrapped", set.ID)
 	}
 	client := s.newAPIClient(set.BaseURL)
+	optionAuth, err := s.resolveSetOptionAuth(ctx, client, set)
+	if err != nil {
+		return err
+	}
 	var groupRatioOption *ChannelBundleOption
 	for _, option := range bundle.Spec.Options {
 		if option.Key == newAPIGroupRatioOptionKey {
@@ -775,7 +779,7 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 			groupRatioOption = &optionCopy
 			continue
 		}
-		if err := s.updateSetOption(ctx, client, set, option.Key, option.Value); err != nil {
+		if err := client.UpdateOptionWithAuth(ctx, optionAuth, option.Key, option.Value); err != nil {
 			return fmt.Errorf("sync option %s to set %s failed: %w", option.Key, set.ID, err)
 		}
 	}
@@ -787,7 +791,7 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 		if _, err := s.store.ReplacePlatformGroupRatios(ctx, set.ID, bundle.ID, ratios); err != nil {
 			return fmt.Errorf("persist option %s for set %s failed: %w", groupRatioOption.Key, set.ID, err)
 		}
-		if _, err := s.reconcileSetGroupRatios(ctx, set); err != nil {
+		if _, err := s.reconcileSetGroupRatiosWithAuth(ctx, set, &optionAuth); err != nil {
 			return fmt.Errorf("sync option %s to set %s failed: %w", groupRatioOption.Key, set.ID, err)
 		}
 	}
@@ -795,6 +799,14 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 }
 
 func (s *Service) updateSetOption(ctx context.Context, client *newapi.Client, set Set, key string, value any) error {
+	auth, err := s.resolveSetOptionAuth(ctx, client, set)
+	if err != nil {
+		return err
+	}
+	return client.UpdateOptionWithAuth(ctx, auth, key, value)
+}
+
+func (s *Service) resolveSetOptionAuth(ctx context.Context, client *newapi.Client, set Set) (newapi.AdminAuth, error) {
 	username := strings.TrimSpace(set.AdminUsername)
 	if username == "" {
 		username = strings.TrimSpace(s.options.RootUsername)
@@ -803,23 +815,23 @@ func (s *Service) updateSetOption(ctx context.Context, client *newapi.Client, se
 	if username != "" && password != "" {
 		session, err := client.Login(ctx, username, password)
 		if err != nil {
-			return err
+			return newapi.AdminAuth{}, err
 		}
 		if session.Require2FA && strings.TrimSpace(set.AdminTOTPSecret) != "" {
 			code, err := generateTOTPCode(set.AdminTOTPSecret, s.nowUTC())
 			if err != nil {
-				return err
+				return newapi.AdminAuth{}, err
 			}
 			session, err = client.Complete2FALogin(ctx, session.TwoFAFlowToken, code)
 			if err != nil {
-				return err
+				return newapi.AdminAuth{}, err
 			}
 		}
 		if session.UserID > 0 {
-			return client.UpdateOption(ctx, session.UserID, key, value)
+			return newapi.AdminAuth{UserID: session.UserID, AccessToken: session.AccessToken}, nil
 		}
 	}
-	return client.UpdateOptionWithAuth(ctx, adminAuthForSet(set), key, value)
+	return adminAuthForSet(set), nil
 }
 
 func (s *Service) markChannelBundlePendingForSyncTargets(ctx context.Context, bundle ChannelBundle) error {

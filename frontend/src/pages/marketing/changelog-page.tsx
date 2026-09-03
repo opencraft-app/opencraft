@@ -47,8 +47,9 @@ type ChangelogEntry = {
   id: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "none";
+  badge?: string;
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -61,7 +62,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -72,6 +73,10 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? useGlobalAssets
         ? "/assets/changelog/lightvela-cloud-storage-en.png"
         : "/assets/changelog/lightvela-cloud-storage.webp"
+      : variant === "workbench"
+      ? isGlobal && !useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-workbench-global-en.png"
+        : "/assets/changelog/lightvela-workbench-zh.png"
       : variant === "skillPackages"
       ? "/assets/changelog/skill-packages.png"
       : variant === "achievements"
@@ -95,7 +100,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         ? "/assets/changelog/lightvela-skills-bulk-install-global-zh.png"
         : "/assets/changelog/lightvela-skills-bulk-install-global-en.png"
       : variant === "automationUpstream"
-      ? "/assets/changelog/lightvela-automation-upstream-task.png"
+      ? isGlobal && useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-automation-upstream-task-global-zh.png"
+        : "/assets/changelog/lightvela-automation-upstream-task.png"
       : variant === "automationTemplates"
       ? useGlobalChineseAsset
         ? "/assets/changelog/lightvela-automation-templates-global-zh.png"
@@ -112,12 +119,26 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
           ? "/assets/changelog/lightvela-diagnostics-global-zh.webp"
           : "/assets/changelog/lightvela-diagnostics-global-en.webp"
         : "/assets/changelog/lightvela-diagnostics-domestic-zh.webp"
+      : variant === "advancedSettings"
+      ? isGlobal
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-advanced-settings-cn.png"
+          : "/assets/changelog/lightvela-advanced-settings-en.png"
+        : "/assets/changelog/lightvela-advanced-settings-cn.png"
+      : variant === "deepseekHarness"
+      ? isGlobal && !useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-deepseek-harness-global.png"
+        : "/assets/changelog/lightvela-deepseek-harness-cn.png"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "dingtalk"
       ? "/assets/changelog/lightvela-dingtalk-channel.png"
       : variant === "personaUpload"
-      ? "/assets/changelog/lightvela-persona-upload.png"
+      ? isGlobal
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-persona-upload-global-zh.png"
+          : "/assets/changelog/lightvela-persona-upload-global-en.png"
+        : "/assets/changelog/lightvela-persona-upload.png"
       : variant === "chat"
       ? useGlobalAssets
         ? "/assets/changelog/agentchat-web-chat-en.png"
@@ -150,6 +171,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
   const altText =
     variant === "cloudStorage"
       ? t("LightVela 支持云存储管理")
+      : variant === "workbench"
+      ? t("LightVela 支持创建和发布工作台")
       : variant === "skillPackages"
       ? t("新增技能包功能")
       : variant === "skillsRevamp"
@@ -168,6 +191,10 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("支持繁体中文")
       : variant === "diagnosticsCenter"
       ? t("诊断中心上线，让 Agent 排查更简单")
+      : variant === "advancedSettings"
+      ? t("LightVela 新增 Hermes Agent 高级设置")
+      : variant === "deepseekHarness"
+      ? t("LightVela 实验室新增 DeepSeek Harness")
       : variant === "achievements"
       ? t("LightVela 支持成就模块")
       : variant === "wecom"
@@ -188,10 +215,12 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? t("LightVela 支持技能包")
       : variant === "soul"
         ? t("Soul 人设能力上线")
-        : t("LightVela 产品内测上线");
+        : t("LightVela 产品公测上线");
   const aspectRatio =
     variant === "cloudStorage"
       ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
+      : variant === "workbench"
+      ? isGlobal && !useGlobalChineseAsset ? "2372 / 1226" : "2372 / 1221"
       : variant === "skillPackages"
       ? "2328 / 1370"
       : variant === "achievements"
@@ -207,7 +236,7 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "skillsBulkInstall"
       ? useGlobalChineseAsset ? "1284 / 806" : "1270 / 805"
       : variant === "automationUpstream"
-      ? "816 / 356"
+      ? isGlobal && useGlobalChineseAsset ? "718 / 234" : "816 / 356"
       : variant === "automationTemplates"
       ? useGlobalChineseAsset ? "1629 / 1090" : "1657 / 1117"
       : variant === "qqGroupMentions"
@@ -218,12 +247,20 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? isGlobal
         ? useGlobalChineseAsset ? "1281 / 615" : "1283 / 638"
         : "1454 / 1045"
+      : variant === "advancedSettings"
+      ? isGlobal
+        ? useGlobalChineseAsset ? "1043 / 1282" : "1055 / 1285"
+        : "1043 / 1282"
+      : variant === "deepseekHarness"
+      ? isGlobal && !useGlobalChineseAsset ? "2168 / 1287" : "2172 / 1286"
       : variant === "wecom"
       ? "2160 / 844"
       : variant === "dingtalk"
       ? "816 / 356"
       : variant === "personaUpload"
-      ? "1410 / 642"
+      ? isGlobal
+        ? useGlobalChineseAsset ? "1282 / 644" : "1410 / 642"
+        : "1410 / 642"
       : variant === "chat"
       ? useGlobalAssets ? "1677 / 938" : "1742 / 903"
       : variant === "memory"
@@ -279,9 +316,47 @@ function ChangelogContent() {
     ...(isGlobal
       ? [
           {
+            id: "2026-09",
+            month: t("2026 年 9 月"),
+            entries: [
+              {
+                id: "workbench",
+                title: t("LightVela 支持创建和发布工作台"),
+                desc: t("现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。"),
+                badge: "Beta",
+                visual: "workbench" as const,
+              },
+            ],
+          },
+          {
             id: "2026-08",
             month: t("2026 年 8 月"),
             entries: [
+              {
+                id: "deepseek-harness",
+                title: t("LightVela 实验室新增 DeepSeek Harness"),
+                desc: t("在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。"),
+                badge: "Beta",
+                visual: "deepseekHarness" as const,
+              },
+              {
+                id: "automation-form-test-run",
+                title: t("自动任务支持测试运行"),
+                desc: t("创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
+                visual: "none" as const,
+              },
+              {
+                id: "advanced-settings",
+                title: t("LightVela 新增 Hermes Agent 高级设置"),
+                desc: t("自定义 Hermes Agent 管理长期记忆、用户画像和长对话上下文的方式，并灵活调整压缩设置。"),
+                visual: "advancedSettings" as const,
+              },
+              {
+                id: "persona-file-upload",
+                title: t("LightVela 支持上传自定义人设文件"),
+                desc: t("上传 Markdown 人设文件后，可继续编辑或直接注入 Agent；已注入的人设文件也支持随时编辑和下载。"),
+                visual: "personaUpload" as const,
+              },
               {
                 id: "automation-upstream-task",
                 title: t("自动任务支持关联上游任务"),
@@ -306,14 +381,58 @@ function ChangelogContent() {
                 desc: t("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。"),
                 visual: "traditionalChinese" as const,
               },
+              {
+                id: "indonesian-language",
+                title: t("LightVela 支持印度尼西亚语"),
+                desc: t("现在可以使用印度尼西亚语浏览 LightVela 的公开页面、产品文档和账号流程。"),
+                visual: "none" as const,
+              },
+              {
+                id: "global-official-launch",
+                title: t("LightVela 正式上线并启用付费服务"),
+                desc: t("LightVela 国际站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。"),
+                visual: "none" as const,
+              },
             ],
           },
         ]
       : [
           {
+            id: "2026-09",
+            month: t("2026 年 9 月"),
+            entries: [
+              {
+                id: "workbench",
+                title: t("LightVela 支持创建和发布工作台"),
+                desc: t("现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。"),
+                badge: "Beta",
+                visual: "workbench" as const,
+              },
+            ],
+          },
+          {
             id: "2026-08",
             month: t("2026 年 8 月"),
             entries: [
+              {
+                id: "deepseek-harness",
+                title: t("LightVela 实验室新增 DeepSeek Harness"),
+                desc: t("在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。"),
+                badge: "Beta",
+                visual: "deepseekHarness" as const,
+              },
+              {
+                id: "automation-form-test-run",
+                title: t("自动任务支持测试运行"),
+                desc: t("创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
+                visual: "none" as const,
+              },
+              {
+                id: "advanced-settings",
+                title: t("LightVela 新增 Hermes Agent 高级设置"),
+                desc: t("自定义 Hermes Agent 管理长期记忆、用户画像和长对话上下文的方式，并灵活调整压缩设置。"),
+                visual: "advancedSettings" as const,
+              },
               {
                 id: "persona-file-upload",
                 title: t("LightVela 支持上传自定义人设文件"),
@@ -380,6 +499,12 @@ function ChangelogContent() {
                 title: t("LightVela 支持技能包"),
                 desc: t("快速安装技能组合，让 Agent 从单点技能走向完整工作流。"),
                 visual: "skill-package" as const,
+              },
+              {
+                id: "domestic-official-launch",
+                title: t("LightVela 正式上线并启用付费服务"),
+                desc: t("LightVela 产品中国站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。"),
+                visual: "none" as const,
               },
             ]
           : []),
@@ -455,7 +580,7 @@ function ChangelogContent() {
       entries: [
         {
           id: "beta-launch",
-          title: t("LightVela 产品内测上线"),
+          title: t("LightVela 产品公测上线"),
           desc: launchDesc,
           visual: "lobster",
         },
@@ -562,6 +687,7 @@ function ChangelogContent() {
 
                       <div>
                         <h2
+                          className="flex flex-wrap items-center gap-2 text-balance"
                           style={{
                             fontSize: "24px",
                             fontWeight: 500,
@@ -571,7 +697,12 @@ function ChangelogContent() {
                             marginBottom: entry.desc ? "20px" : "24px",
                           }}
                         >
-                          {entry.title}
+                          <span>{entry.title}</span>
+                          {entry.badge && (
+                            <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium leading-none text-violet-700">
+                              {entry.badge}
+                            </span>
+                          )}
                         </h2>
 
                         {entry.desc && (

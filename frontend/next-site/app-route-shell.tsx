@@ -1,7 +1,9 @@
 'use client';
 
 import { ArrowLeft } from 'lucide-react';
-import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
+import React, { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { LoginModal } from '@/components/site/login-modal';
 import { LegalFooter } from '@/components/site/legal-footer';
@@ -9,14 +11,72 @@ import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import { useSession } from '@/contexts/session-context';
 import { useT } from '@/i18n/t';
 import { useAppNavigate } from '@/lib/app-navigation';
+import { isGlobal } from '@/lib/region';
+import { getSeoMeta } from '@/lib/seo-data';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
 import { ThemeStyleInjector } from '@/theme/theme-style';
 
+import { getAgentDocumentMetadata } from './agent-document-metadata';
 import { NextAppNavigationProvider } from './next-app-navigation';
 
 const LOCAL_PREVIEW_AUTH_ENABLED =
   process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === '1'
   || process.env.VITE_LOCAL_PREVIEW_AUTH === '1';
+
+function ProductRouteDocumentMetadata() {
+  const pathname = usePathname() || '/';
+  const { i18n } = useTranslation();
+  const agentMetadata = /^\/agents(?:\/[^/]+)?\/?$/.test(pathname)
+    ? getAgentDocumentMetadata(i18n.language)
+    : null;
+  const agentTitle = agentMetadata ? `${agentMetadata.title} | LightVela` : null;
+  const agentHtmlLang = agentMetadata?.htmlLang ?? null;
+
+  React.useEffect(() => {
+    const normalizedLanguage = i18n.language.toLowerCase();
+    const localizedSeoPrefix = normalizedLanguage.startsWith('es')
+      ? '/es'
+      : normalizedLanguage.startsWith('ja')
+        ? '/ja-jp'
+        : normalizedLanguage.startsWith('ko')
+          ? '/ko-kr'
+          : null;
+    if (isGlobal && localizedSeoPrefix) {
+      const meta = getSeoMeta(`${localizedSeoPrefix}${pathname === '/' ? '' : pathname}`, 'global');
+      document.title = meta.title;
+      document.documentElement.lang = normalizedLanguage.startsWith('ja')
+        ? 'ja-JP'
+        : normalizedLanguage.startsWith('ko')
+          ? 'ko-KR'
+          : 'es';
+      return;
+    }
+
+    if (!agentTitle || !agentHtmlLang) return;
+
+    document.documentElement.lang = agentHtmlLang;
+
+    const syncTitle = () => {
+      const titles = Array.from(document.head.querySelectorAll('title'));
+      const primaryTitle = titles[0] ?? document.head.appendChild(document.createElement('title'));
+
+      if (primaryTitle.textContent !== agentTitle) {
+        primaryTitle.textContent = agentTitle;
+      }
+      for (const duplicateTitle of titles.slice(1)) {
+        duplicateTitle.remove();
+      }
+    };
+
+    syncTitle();
+    const observer = new MutationObserver(syncTitle);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+
+    return () => observer.disconnect();
+  }, [agentHtmlLang, agentTitle, i18n.language, pathname]);
+
+  return null;
+}
 
 function SkeletonBlock({ className }: { className: string }) {
   return <span className={`block animate-pulse bg-black/[0.045] ${className}`} />;
@@ -297,6 +357,7 @@ export function AppRouteShell({
       <NextAppNavigationProvider>
         <RumUserBridge />
         <ThemeStyleInjector />
+        <ProductRouteDocumentMetadata />
         {requireAuth ? (
           <NextMarketingAuthGate loadingFallback={fallback}>
             {children}

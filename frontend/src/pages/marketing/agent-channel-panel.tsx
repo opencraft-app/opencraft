@@ -293,7 +293,9 @@ export function ChannelPanel(props: ChannelPanelProps) {
   }
 
   return (
-    <div className={`${CLS} ${className || ''}`}>
+    <div
+      className={`${CLS} ${ops.productConfig.isI18n ? `${CLS}--i18n` : ''} ${className || ''}`}
+    >
       <h2 className={`${CLS}__title`}>{t('通道')}</h2>
 
       {/* 提示条 */}

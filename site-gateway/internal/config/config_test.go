@@ -117,6 +117,30 @@ func TestFromEnvRejectsAuthSessionTTLOverFiveMinutes(t *testing.T) {
 	}
 }
 
+func TestFromEnvParsesTrustedProxyConfig(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_TRUST_PROXY_HEADERS", "true")
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TrustProxyHeaders {
+		t.Fatalf("trusted proxy config = %+v", cfg)
+	}
+}
+
+func TestFromEnvDefaultsTrustedProxyConfigToFalse(t *testing.T) {
+	setRequired(t)
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TrustProxyHeaders {
+		t.Fatalf("default trusted proxy config = %+v", cfg)
+	}
+}
+
 func TestFromEnvRequiredAuthRejectsIncompleteConfig(t *testing.T) {
 	setRequired(t)
 	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
@@ -419,5 +443,100 @@ func TestFromEnvRejectsInvalidUsageBounds(t *testing.T) {
 		if _, err := FromEnv(); err == nil {
 			t.Fatalf("SITE_GATEWAY_USAGE_MAX_SITES=%q 应当报错", raw)
 		}
+	}
+}
+
+func TestFromEnvDSHDefaultsDisabled(t *testing.T) {
+	setRequired(t)
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DSHDomains) != 0 || cfg.DSHFederationAuthorizeURL != "" || cfg.DSHFederationBaseURL != "" || cfg.DSHFederationClientID != "" || cfg.DSHFederationKeyID != "" || len(cfg.DSHFederationHMACKey) != 0 {
+		t.Fatalf("DSH unexpectedly enabled: %+v", cfg.DSHDomains)
+	}
+}
+
+func TestFromEnvDSHDisabledAllowsPreprovisionedHMACKey(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY", base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DSHDomains) != 0 {
+		t.Fatalf("DSH unexpectedly enabled: %+v", cfg.DSHDomains)
+	}
+}
+
+func TestFromEnvDSHRequiresCompleteConfiguration(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_DSH_DOMAINS", "dsh.lightvela.site")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL", "https://lightvela.ai/auth/federation/authorize")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_BASE_URL", "http://lightclaw-auth.user-auth.svc.cluster.local")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID", "dsh-site-gateway")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_KEY_ID", "h1")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY", base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	t.Setenv("SITE_GATEWAY_DSH_TAT_OPEN_TIMEOUT", "7s")
+	t.Setenv("SITE_GATEWAY_DSH_RESPONSE_HEADER_TIMEOUT", "20m")
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DSHDomains) != 1 || cfg.DSHMaxTargets != 16 || cfg.DSHMaxConnectionsPerTarget != 64 || cfg.DSHQueueDepth != 64 ||
+		cfg.DSHMaxFrameBytes != 256<<10 || cfg.DSHMaxBufferedBytesPerConn != 2<<20 ||
+		cfg.DSHMaxBufferedBytesPerTarget != 16<<20 || cfg.DSHMaxBufferedBytesTotal != 64<<20 ||
+		cfg.DSHTATOpenTimeout != 7*time.Second || cfg.DSHResponseHeaderTimeout != 20*time.Minute {
+		t.Fatalf("DSH config = %+v", cfg)
+	}
+
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY", "")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("DSH enabled without federation HMAC key unexpectedly succeeded")
+	}
+}
+
+func TestFromEnvDSHResponseHeaderTimeoutDefaultsLongerThanTunnelOpen(t *testing.T) {
+	setRequired(t)
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DSHTATOpenTimeout != 15*time.Second || cfg.DSHResponseHeaderTimeout != 20*time.Minute {
+		t.Fatalf("DSH timeouts: open=%s response_header=%s", cfg.DSHTATOpenTimeout, cfg.DSHResponseHeaderTimeout)
+	}
+}
+
+func TestFromEnvDSHRequiresSeparateHTTPSAuthorizeURL(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_DSH_DOMAINS", "dsh.lightvela.site")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_BASE_URL", "http://lightclaw-auth.user-auth.svc.cluster.local")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID", "dsh-site-gateway")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_KEY_ID", "h1")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY", base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL", "")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("DSH enabled without frontend authorize URL unexpectedly succeeded")
+	}
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL", "http://lightvela.ai/auth/federation/authorize")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("DSH enabled with non-HTTPS frontend authorize URL unexpectedly succeeded")
+	}
+}
+
+func TestFromEnvDSHRejectsInconsistentByteLimits(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_DSH_DOMAINS", "dsh.lightvela.site")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_AUTHORIZE_URL", "https://lightvela.ai/auth/federation/authorize")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_BASE_URL", "http://lightclaw-auth.user-auth.svc.cluster.local")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_CLIENT_ID", "dsh-site-gateway")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_KEY_ID", "h1")
+	t.Setenv("SITE_GATEWAY_DSH_FEDERATION_HMAC_KEY", base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	t.Setenv("SITE_GATEWAY_DSH_MAX_FRAME_BYTES", "4096")
+	t.Setenv("SITE_GATEWAY_DSH_MAX_BUFFERED_BYTES_PER_CONNECTION", "2048")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("frame limit larger than connection budget unexpectedly succeeded")
 	}
 }

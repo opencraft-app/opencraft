@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SoulTestModal } from "@/pages/marketing/agent-buddy-soul-test-modal";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import { ENGLISH_SOULS } from "@/lib/soul-english-data";
+import { JAPANESE_SOULS } from "@/lib/soul-japanese-data";
+import { SPANISH_SOULS } from "@/lib/soul-spanish-data";
 
 const yydsSoul: SkillHubSoul = {
   id: 1,
@@ -95,5 +97,62 @@ describe("SoulTestModal", () => {
       displayName: expect.stringMatching(/[A-Za-z]/),
     }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the Spanish soul test dataset when requested", async () => {
+    const onUseSoul = vi.fn(() => true);
+
+    render(
+      <SoulTestModal
+        open
+        souls={SPANISH_SOULS}
+        maxDrawsReached={false}
+        drawnSlugs={[]}
+        useEnglishSoulData
+        useSpanishSoulData
+        onClose={vi.fn()}
+        onUseSoul={onUseSoul}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /^A\./ })).toHaveTextContent(/increíble|Sigo adelante|Inicio conversaciones|Amable|No importa/);
+
+    for (let index = 0; index < 15; index += 1) {
+      fireEvent.click(screen.getByRole("button", { name: /^A\./ }));
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+    }
+
+    expect(screen.getByText(/La leyenda|El incansable|El viajero|Sin rodeos/)).toBeInTheDocument();
+  });
+
+  it("uses the Japanese Soul pool, questions, profile, and labels through the locale adapter", async () => {
+    const onUseSoul = vi.fn(() => true);
+
+    render(
+      <SoulTestModal
+        open
+        souls={JAPANESE_SOULS}
+        maxDrawsReached={false}
+        drawnSlugs={[]}
+        soulDataLocale="ja"
+        onClose={vi.fn()}
+        onUseSoul={onUseSoul}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /^A\./ })).toHaveTextContent(/[\u3040-\u30ff]/);
+
+    for (let index = 0; index < 15; index += 1) {
+      fireEvent.click(screen.getByRole("button", { name: /^A\./ }));
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+    }
+
+    expect(screen.getByText(/伝説|働き者|旅人|率直な人/)).toBeInTheDocument();
+    expect(screen.getByText("主導力")).toBeInTheDocument();
+    expect(screen.getByText("行動力")).toBeInTheDocument();
   });
 });

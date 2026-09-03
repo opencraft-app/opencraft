@@ -18,11 +18,9 @@ import (
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
-	instancebirth "ctl/pkg/instancebirth"
 	entitlementmigration "ctl/pkg/logic/entitlementmigration"
 	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/metric"
-	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
 	"ctl/pkg/model/operationhistory"
 	modelsnapshot "ctl/pkg/model/snapshot"
@@ -47,14 +45,12 @@ const (
 )
 
 const (
-	TaskNameCreateInstance            = common.TaskNameCreateInstance
-	TaskNameDestroyInstance           = common.TaskNameDestroyInstance
-	TaskNameBuildInstanceBirthProfile = common.TaskNameBuildInstanceBirthProfile
+	TaskNameCreateInstance  = common.TaskNameCreateInstance
+	TaskNameDestroyInstance = common.TaskNameDestroyInstance
 )
 
 type CreateInstanceTaskPayload = common.CreateInstanceTaskPayload
 type DestroyInstanceTaskPayload = common.DestroyInstanceTaskPayload
-type BuildInstanceBirthProfileTaskPayload = common.BuildInstanceBirthProfileTaskPayload
 
 type noopProducer struct{}
 
@@ -707,18 +703,6 @@ func (l *logic) enqueueDestroyInstanceTask(ctx pctx.Context, entity *modelinstan
 	})
 }
 
-func (l *logic) enqueueBirthProfileTask(ctx pctx.Context, instanceID, parentTaskID string) error {
-	payload := &BuildInstanceBirthProfileTaskPayload{InstanceID: instanceID}
-	taskID, err := l.enqueueCompensableTask(ctx, TaskNameBuildInstanceBirthProfile, payload, parentTaskID)
-	if err != nil {
-		return err
-	}
-	if !l.executeTasksInline {
-		return nil
-	}
-	return l.runBuildBirthProfileTaskInline(ctx, taskID, payload)
-}
-
 func (l *logic) enqueueCompensableTask(ctx pctx.Context, taskName string, payload interface{}, parentTaskID string) (taskID string, err error) {
 	ctx, span := tracing.StartTrace(ctx, "Instance.EnqueueCompensableTask")
 	defer func() { span.EndWithError(err) }()
@@ -845,12 +829,6 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 	}
 	metric.RecordInstanceCreate("success", sandboxResp.TemplateID, payload.InstanceSpecID, time.Since(entity.CreatedAt).Seconds())
 	l.recordCreateSuccessEvent(ctx, entity.InstanceId)
-	if err := l.enqueueBirthProfileTask(ctx, entity.InstanceId, payload.OperationID); err != nil {
-		l.logger.Warn("enqueue birth profile task failed",
-			zap.Error(err),
-			zap.String("instance_id", entity.InstanceId),
-		)
-	}
 	l.deliverWebsiteCredentialOnCreate(ctx, entity, sandboxResp.SandboxID)
 
 	return nil
@@ -1735,33 +1713,6 @@ func (l *logic) runDestroyTaskInline(ctx pctx.Context, taskID string, payload *D
 	}
 	l.completeOperation(ctx, payload.OperationID, nil)
 	return nil
-}
-
-func (l *logic) runBuildBirthProfileTaskInline(ctx pctx.Context, taskID string, payload *BuildInstanceBirthProfileTaskPayload) error {
-	if err := l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-		taskmodel.ColumnExecuteCount:    1,
-		taskmodel.ColumnLastExecuteTime: time.Now().UTC(),
-		taskmodel.ColumnTaskState:       taskmodel.StateRunning,
-	}, taskID); err != nil {
-		return err
-	}
-
-	svc := instancebirth.NewService(
-		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
-		modelfactory.DefaultDaoFactory.InstanceBirthProfileDao(ctx),
-	)
-	if err := svc.RebuildForInstance(ctx, payload.InstanceID); err != nil {
-		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
-			taskmodel.ColumnTaskMessage: truncateTaskMessage(err),
-		}, taskID)
-		return err
-	}
-
-	return l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-		taskmodel.ColumnTaskState:   taskmodel.StateSuccess,
-		taskmodel.ColumnTaskMessage: "",
-	}, taskID)
 }
 
 func (l *logic) persistCreatedSandboxID(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) error {

@@ -12,6 +12,7 @@ const refreshProfile = vi.fn();
 let sessionUser: User | null = null;
 let realnamePhoneVerificationEnabled = false;
 let regionIsGlobal = false;
+let paidBillingEnabled = false;
 
 vi.mock("@/lib/region", () => ({
   get isGlobal() {
@@ -45,6 +46,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
+  usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
 }));
 
@@ -86,6 +88,7 @@ describe("RenewPassModal", () => {
     sessionUser = buildUser();
     realnamePhoneVerificationEnabled = false;
     regionIsGlobal = false;
+    paidBillingEnabled = false;
     refreshProfile.mockResolvedValue(undefined);
     getRenewPrice.mockResolvedValue({
       bundle_id: "bundle_launch",
@@ -144,15 +147,42 @@ describe("RenewPassModal", () => {
     expect(openWindow).not.toHaveBeenCalled();
   });
 
+  it("loads intl renewal pricing when paid billing is enabled", async () => {
+    regionIsGlobal = true;
+    paidBillingEnabled = true;
+    getRenewPrice.mockResolvedValue({
+      bundle_id: "bundle_launch",
+      price: 1500,
+      total_cost: 1500,
+      real_total_cost: 1500,
+      currency: "USD",
+      discount: 100,
+    });
+
+    render(
+      <RenewPassModal
+        pass={buildPass()}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("$15.00")).toBeInTheDocument();
+    expect(getRenewPrice).toHaveBeenCalledWith("pass_renew_modal", { period: 1, time_unit: "m" });
+    expect(screen.getByRole("button", { name: "确认续费" })).toBeEnabled();
+  });
+
   it("keeps automatic payment status polling serial while a request is still in flight", async () => {
-    let resolveFirstCheck: ((passes: Pass[]) => void) | null = null;
+    let resolveFirstCheck: (passes: Pass[]) => void = () => {
+      throw new Error("listMyPasses resolver was not initialized");
+    };
     const intervalCallbacks: Array<() => void> = [];
-    vi.spyOn(window, "setInterval").mockImplementation((handler, timeout) => {
+    vi.spyOn(window, "setInterval").mockImplementation(((handler: TimerHandler, timeout?: number) => {
       if (timeout === 3_000) {
         intervalCallbacks.push(handler as () => void);
       }
-      return 1;
-    });
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof window.setInterval);
     vi.spyOn(window, "clearInterval").mockImplementation(() => undefined);
     listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>((resolve) => {
       resolveFirstCheck = resolve;
@@ -178,7 +208,7 @@ describe("RenewPassModal", () => {
     intervalCallbacks[0]!();
     expect(listMyPasses).toHaveBeenCalledTimes(1);
 
-    resolveFirstCheck?.([]);
+    resolveFirstCheck([]);
     await Promise.resolve();
     intervalCallbacks[0]!();
     expect(listMyPasses).toHaveBeenCalledTimes(2);

@@ -11,7 +11,7 @@ import {
 
 import { useT } from "@/i18n/t";
 
-import type { ScenarioTaskPack } from "./scenario-packs";
+import type { ScenarioTaskPack } from "./scenario-pack-core";
 
 const TASK_ICON_BY_ID: Record<string, LucideIcon> = {
   "medication-once": Pill,

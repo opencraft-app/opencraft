@@ -1,9 +1,48 @@
 import { describe, expect, it } from "vitest";
 
 import { CURATED_SKILL_CATEGORIES } from "./curated-skill-categories";
-import { getCuratedSkillOverview } from "./curated-skill-overviews";
+import { CURATED_SKILL_OVERVIEWS, getCuratedSkillOverview } from "./curated-skill-overviews";
 
 describe("curated Discover categories", () => {
+  it("provides a complete Spanish overview for every curated international skill", () => {
+    for (const rawId of Object.keys(CURATED_SKILL_OVERVIEWS)) {
+      const english = getCuratedSkillOverview(rawId, "en-US");
+      const spanish = getCuratedSkillOverview(rawId, "es" as never);
+
+      expect(spanish, rawId).toBeTruthy();
+      expect(spanish.overview, rawId).not.toEqual(english.overview);
+      expect(spanish.basicUsage, rawId).not.toBe(english.basicUsage);
+      expect(spanish.examplePrompt, rawId).not.toBe(english.examplePrompt);
+      expect(JSON.stringify(spanish), rawId).not.toMatch(/[\u4e00-\u9fff]/);
+    }
+  });
+
+  it("provides a complete Japanese overview for every curated international skill", () => {
+    for (const rawId of Object.keys(CURATED_SKILL_OVERVIEWS)) {
+      const english = getCuratedSkillOverview(rawId, "en-US");
+      const japanese = getCuratedSkillOverview(rawId, "ja-JP" as never);
+
+      expect(japanese, rawId).toBeTruthy();
+      expect(japanese.overview, rawId).not.toEqual(english.overview);
+      expect(japanese.basicUsage, rawId).not.toBe(english.basicUsage);
+      expect(japanese.examplePrompt, rawId).not.toBe(english.examplePrompt);
+      expect(JSON.stringify(japanese), rawId).toMatch(/[\u3040-\u30ff]/);
+    }
+  });
+
+  it("provides a complete Korean overview for every curated international skill", () => {
+    for (const rawId of Object.keys(CURATED_SKILL_OVERVIEWS)) {
+      const english = getCuratedSkillOverview(rawId, "en-US");
+      const korean = getCuratedSkillOverview(rawId, "ko-KR" as never);
+
+      expect(korean, rawId).toBeTruthy();
+      expect(korean.overview, rawId).not.toEqual(english.overview);
+      expect(korean.basicUsage, rawId).not.toBe(english.basicUsage);
+      expect(korean.examplePrompt, rawId).not.toBe(english.examplePrompt);
+      expect(JSON.stringify(korean), rawId).toMatch(/[가-힣]/);
+    }
+  });
+
   it("keeps the four fixed categories and their exact skills.sh IDs", () => {
     expect(CURATED_SKILL_CATEGORIES.map((category) => category.id)).toEqual([
       "market-analysis",
@@ -44,6 +83,33 @@ describe("curated Discover categories", () => {
     expect(CURATED_SKILL_CATEGORIES.flatMap((category) => category.skills).every(
       (entry) => typeof entry.skill.installs === "number",
     )).toBe(true);
+  });
+
+  it("provides Spanish labels for the four fixed categories", () => {
+    expect(CURATED_SKILL_CATEGORIES.map((category) => category.label.es)).toEqual([
+      "Análisis de mercado",
+      "Creación de contenido",
+      "Investigación",
+      "Herramientas de desarrollo",
+    ]);
+  });
+
+  it("provides Japanese labels for the four fixed categories", () => {
+    expect(CURATED_SKILL_CATEGORIES.map((category) => category.label.ja)).toEqual([
+      "市場分析",
+      "コンテンツ制作",
+      "リサーチ",
+      "開発ツール",
+    ]);
+  });
+
+  it("provides Korean labels for the four fixed categories", () => {
+    expect(CURATED_SKILL_CATEGORIES.map((category) => category.label.ko)).toEqual([
+      "시장 분석",
+      "콘텐츠 제작",
+      "리서치",
+      "개발 도구",
+    ]);
   });
 
   it("provides the full recommendation structure for every curated skill", () => {

@@ -16,40 +16,71 @@ import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
 import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
+import { parseLocaleCode } from '@/i18n/locales.config';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
-import { EN_US_LOCALE, ID_ID_LOCALE, ZH_CN_LOCALE, ZH_HANT_LOCALE, ZH_SG_LOCALE } from './public-locale';
+import {
+  EN_US_LOCALE,
+  ZH_CN_LOCALE,
+  ZH_SG_LOCALE,
+} from './public-locale';
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
   solid: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
 };
 
-const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: string; login: string }> = {
-  [EN_US_LOCALE]: {
+const copyByLocale: Record<
+  PublicSiteLocale,
+  { createNow: string; enterProduct: string; freeTrial: string; login: string }
+> = {
+  'en-US': {
     createNow: 'Create Now',
+    enterProduct: 'Enter LightVela',
     freeTrial: 'Free trial',
     login: 'Sign In',
   },
-  [ZH_CN_LOCALE]: {
+  'zh-CN': {
     createNow: '立即创建',
+    enterProduct: '开始使用',
     freeTrial: '免费试用',
     login: '登录',
   },
-  [ZH_SG_LOCALE]: {
+  'zh-SG': {
     createNow: '立即创建',
+    enterProduct: '开始使用',
     freeTrial: '免费试用',
     login: '登录',
   },
-  [ZH_HANT_LOCALE]: {
+  'zh-Hant': {
     createNow: '立即創建',
+    enterProduct: '開始使用',
     freeTrial: '免費試用',
     login: '登入',
   },
-  [ID_ID_LOCALE]: {
+  'id-ID': {
     createNow: 'Buat Sekarang',
+    enterProduct: 'Masuk ke LightVela',
     freeTrial: 'Coba Gratis',
     login: 'Masuk',
+  },
+  es: {
+    createNow: 'Crear ahora',
+    enterProduct: 'Entrar a LightVela',
+    freeTrial: 'Prueba gratis',
+    login: 'Iniciar sesión',
+  },
+  'ja-JP': {
+    createNow: '今すぐ作成',
+    enterProduct: 'LightVelaを開く',
+    freeTrial: '無料で試す',
+    login: 'ログイン',
+  },
+  'ko-KR': {
+    createNow: '지금 만들기',
+    enterProduct: 'LightVela 열기',
+    freeTrial: '무료 체험',
+    login: '로그인',
   },
 };
 
@@ -61,10 +92,10 @@ const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: str
  * 而非「立即創建/登入」）。
  */
 function inferLocaleFromI18n(language: string | undefined): PublicSiteLocale {
-  if (language === ID_ID_LOCALE || language?.startsWith('id')) return ID_ID_LOCALE;
-  if (language === ZH_HANT_LOCALE || language?.startsWith('zh-Hant')) return ZH_HANT_LOCALE;
-  if (language?.startsWith('zh')) return ZH_SG_LOCALE;
-  return EN_US_LOCALE;
+  const locale = parseLocaleCode(language);
+  if (!locale) return EN_US_LOCALE;
+  if (locale === ZH_CN_LOCALE || locale === ZH_SG_LOCALE) return ZH_SG_LOCALE;
+  return locale;
 }
 
 type PublicHeaderAuthIslandProps = {
@@ -72,11 +103,14 @@ type PublicHeaderAuthIslandProps = {
   locale?: PublicSiteLocale;
   oauthError?: string | null;
   showLanguageSwitcher?: boolean;
+  showProductEntry?: boolean;
   /**
    * 未登录转化引导：为 true 时右上角主按钮文案改为「免费试用」，
    * 未登录点击直接跳转订阅套餐页（而非弹出登录框）。仅首页启用。
    */
   promoteFreeTrial?: boolean;
+  /** 仅显示黑色登录主按钮，供国际站首页的精简导航使用。 */
+  loginOnly?: boolean;
 };
 
 function PublicHeaderAuthControls({
@@ -84,19 +118,43 @@ function PublicHeaderAuthControls({
   locale,
   oauthError = null,
   showLanguageSwitcher = isGlobal,
+  showProductEntry = false,
   promoteFreeTrial = false,
+  loginOnly = isGlobal,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
-  const { i18n } = useTranslation();
+  const { i18n } = useTranslation(undefined, { useSuspense: false });
   const { authReady, isAuthenticated } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale: PublicSiteLocale = locale ?? inferLocaleFromI18n(i18n.language);
-  const copy = copyByLocale[activeLocale] || copyByLocale[EN_US_LOCALE];
+  const copy = copyByLocale[activeLocale];
   // 未登录转化引导：主按钮文案改为当前 locale 的「免费试用」。
   const createLabel = promoteFreeTrial ? copy.freeTrial : copy.createNow;
   const subscribePath = publicSiteHref('/subscribe', activeLocale, { localized: isGlobal });
+
+  const renderProductEntry = (surface: 'desktop' | 'mobile') => {
+    if (!showProductEntry) return null;
+    const isMobile = surface === 'mobile';
+    return (
+      <a
+        href={AGENTS_HOME_PATH}
+        onClick={() => {
+          trackDatongClick('agent_enter_console_btn', {
+            pgid: DATONG_PAGE_IDS.HOME,
+            params: { surface, target: AGENTS_HOME_PATH },
+          });
+        }}
+        className={cn(
+          'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 font-heading font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2',
+          isMobile ? 'h-[32px] px-3 text-[13px]' : 'h-[36px] px-4 text-sm xl:px-5',
+        )}
+      >
+        {copy.enterProduct}
+      </a>
+    );
+  };
 
   useEffect(() => {
     if (oauthError) {
@@ -143,7 +201,7 @@ function PublicHeaderAuthControls({
       <>
         <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
           {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
-          <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />
+          {!loginOnly && <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />}
           <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
         </div>
         <div className="ml-auto flex items-center gap-2 lg:hidden" aria-hidden="true">
@@ -158,9 +216,11 @@ function PublicHeaderAuthControls({
       <>
         <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-3">
           {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
+          {renderProductEntry('desktop')}
           <UserAvatarMenu />
         </div>
         <div className="ml-auto flex items-center gap-2 lg:hidden">
+          {renderProductEntry('mobile')}
           <UserAvatarMenu />
         </div>
       </>
@@ -171,13 +231,15 @@ function PublicHeaderAuthControls({
     <>
       <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
         {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
-        <button
-          type="button"
-          onClick={goToCreate}
-          className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
-        >
-          {createLabel}
-        </button>
+        {!loginOnly && (
+          <button
+            type="button"
+            onClick={goToCreate}
+            className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
+          >
+            {createLabel}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -186,7 +248,9 @@ function PublicHeaderAuthControls({
           }}
           className={cn(
             'inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4',
-            secondaryButtonClass[appearance],
+            loginOnly
+              ? 'border border-black/90 bg-black/90 text-white hover:bg-black'
+              : secondaryButtonClass[appearance],
           )}
         >
           {copy.login}
@@ -204,7 +268,9 @@ function PublicHeaderAuthControls({
           }}
           className={cn(
             'inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
-            secondaryButtonClass[appearance],
+            loginOnly
+              ? 'border border-black/90 bg-black/90 text-white hover:bg-black'
+              : secondaryButtonClass[appearance],
           )}
         >
           {copy.login}

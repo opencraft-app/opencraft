@@ -27,6 +27,7 @@
 - `SANDBOX_MYSQL_HOST`
 - `TENCENT_REGION`
 - `SANDBOX_VPC_ID`
+- `WEBSITE_CREDENTIAL_TAT_COMMAND_ID`：上海参数化 TAT Command allowlist
 - `SANDBOX_INGRESSPROXY_PUBLIC_HOST`
 - `SANDBOX_INGRESSPROXY_HEALTHCHECK_HOST`
 - `SANDBOX_INGRESSPROXY_TLS_SECRET_NAME`
@@ -45,6 +46,11 @@ Secret 键：
 - `REDIS_PASSWORD`
 - `TENCENT_SECRET_ID`
 - `TENCENT_SECRET_KEY`
+- `SANDBOX_API_KEY`：必须与上海 CTL `ctl-runtime-secrets` 中同名值一致
+
+内部参数化 TAT 路由同时校验 `SANDBOX_API_KEY` 和
+`WEBSITE_CREDENTIAL_TAT_COMMAND_ID`。缺少密钥、缺少 CommandId 或 CommandId 不匹配时
+请求默认拒绝；该失败只影响建站凭据下发，CTL 仍会保留已成功创建的实例。
 
 ## Note
 

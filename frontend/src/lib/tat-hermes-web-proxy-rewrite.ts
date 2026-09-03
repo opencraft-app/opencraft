@@ -4,13 +4,14 @@ export const isHermesWebTextResponse = (contentType: string) =>
   contentType.includes("javascript") ||
   contentType.includes("image/svg+xml");
 
-const TAT_HERMES_WEB_HOST_PATTERN = "(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0):9119";
+const tatWebHostPattern = (port: number) => `(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0):${port}`;
 
-const injectHermesProxyRuntime = (html: string, proxyBase: string) => {
+const injectTatProxyRuntime = (html: string, proxyBase: string, targetPort: number) => {
+  const absolutePattern = `^https?://(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0):${targetPort}(?=/|$)`;
   const runtime = `<script>
 (() => {
   const base = ${JSON.stringify(`${proxyBase}/`)};
-  const absoluteTargetPattern = /^https?:\\/\\/(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0):9119(?=\\/|$)/i;
+  const absoluteTargetPattern = new RegExp(${JSON.stringify(absolutePattern)}, "i");
   const rewrite = (value) => {
     if (typeof value !== "string") return value;
     try {
@@ -77,10 +78,11 @@ const injectHermesProxyRuntime = (html: string, proxyBase: string) => {
   return `<base href="${proxyBase}/">${runtime}${html}`;
 };
 
-export const rewriteHermesWebTextPayload = (text: string, contentType: string, proxyBase: string) => {
-  let output = contentType.includes("text/html") ? injectHermesProxyRuntime(text, proxyBase) : text;
-  const quotedAbsoluteTarget = new RegExp(`(["'\`])https?://${TAT_HERMES_WEB_HOST_PATTERN}(/[^"'\`\\s<)]*)?`, "gi");
-  const bareAbsoluteTarget = new RegExp(`https?://${TAT_HERMES_WEB_HOST_PATTERN}(/[^"'\\s<)]*)?`, "gi");
+export const rewriteTatWebTextPayload = (text: string, contentType: string, proxyBase: string, targetPort: number) => {
+  let output = contentType.includes("text/html") ? injectTatProxyRuntime(text, proxyBase, targetPort) : text;
+  const targetPattern = tatWebHostPattern(targetPort);
+  const quotedAbsoluteTarget = new RegExp(`(["'\`])https?://${targetPattern}(/[^"'\`\\s<)]*)?`, "gi");
+  const bareAbsoluteTarget = new RegExp(`https?://${targetPattern}(/[^"'\\s<)]*)?`, "gi");
   output = output
     .replace(quotedAbsoluteTarget, (_match, quote: string, path = "/") => `${quote}${proxyBase}${path}`)
     .replace(bareAbsoluteTarget, (_match, path = "/") => `${proxyBase}${path}`)
@@ -89,3 +91,6 @@ export const rewriteHermesWebTextPayload = (text: string, contentType: string, p
     .replace(/(["'`])\/(api|assets|static|dashboard-plugins|favicon|health|v1)([/"'`?])/gi, `$1${proxyBase}/$2$3`);
   return output;
 };
+
+export const rewriteHermesWebTextPayload = (text: string, contentType: string, proxyBase: string) =>
+  rewriteTatWebTextPayload(text, contentType, proxyBase, 9119);

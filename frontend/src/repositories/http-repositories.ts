@@ -1,11 +1,11 @@
 import { planCatalog } from "@/domain/plan-catalog";
+import { defaultHermesAgentName } from "@/i18n/default-agent-name";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 import type {
   AuthSessionSnapshot,
   BillingSummary,
   Bot,
-  BotBornCard,
   BotChannelConfigResult,
   BotTerminalSession,
   BotRuntime,
@@ -35,6 +35,9 @@ import type {
   FederationAuthorizationContext,
   FederationAuthorizationInput,
   FederationTicketResult,
+  OIDCAuthorizationContext,
+  OIDCAuthorizationInput,
+  OIDCAuthorizationResult,
   PlanRepository,
   RealnameVerifyResult,
   Repositories,
@@ -145,9 +148,33 @@ interface FederationTicketPayload {
   expires_at: string;
 }
 
+interface OIDCContextPayload {
+  client: {
+    id: string;
+    display_name: string;
+  };
+  redirect_uri: string;
+  state: string;
+  response_type: "code";
+  scope: string;
+  code_challenge: string;
+  code_challenge_method: "S256";
+  nonce: string;
+  session: {
+    authenticated: boolean;
+    user?: User;
+  };
+}
+
+interface OIDCAuthorizationPayload {
+  redirect_url: string;
+  expires_at: string;
+}
+
 interface CtlInstancePayload {
   instance_id: string;
   sandbox_id?: string;
+  name?: string;
   status: string;
   created_at: string;
   timeout_at?: string;
@@ -165,18 +192,6 @@ interface CtlConfigureChannelPayload {
   channel: string;
   gateway_restarted: boolean;
   output?: string;
-}
-
-interface CtlBotBornCardPayload {
-  instance_id: string;
-  user_id: string;
-  sandbox_id?: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  timeout_at?: string;
-  born_date_for_china: string;
-  born_number_for_china: number;
 }
 
 interface WorkerActionStartPayload {
@@ -684,11 +699,21 @@ const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
   }
 };
 
+const legacyDefaultHermesAgentNames = new Set(["Hermes宝宝", "Hermes寶寶", "Baby Hermes", "Bebé Hermes"]);
+
+const resolveLegacyDraftBotName = (draft?: BotDraft) => {
+  const draftName = draft?.name?.trim();
+  if (!draftName || legacyDefaultHermesAgentNames.has(draftName)) {
+    return undefined;
+  }
+  return draftName;
+};
+
 const projectInstanceToBot = (instance: CtlInstancePayload, draft?: BotDraft): Bot => {
   return {
     id: instance.instance_id,
     sandboxId: instance.sandbox_id,
-    name: draft?.name?.trim() || "Hermes宝宝",
+    name: instance.name?.trim() || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
     type: draft?.type || "ops",
     template: draft?.template?.trim() || "OpenClaw Runtime",
     mission: draft?.mission?.trim() || "",
@@ -697,18 +722,6 @@ const projectInstanceToBot = (instance: CtlInstancePayload, draft?: BotDraft): B
     status: draft?.status || mapInstanceStatusToBotStatus(instance.status),
   };
 };
-
-const mapBotBornCard = (payload: CtlBotBornCardPayload): BotBornCard => ({
-  instanceId: payload.instance_id,
-  userId: payload.user_id,
-  sandboxId: payload.sandbox_id,
-  status: payload.status,
-  createdAt: payload.created_at,
-  updatedAt: payload.updated_at,
-  timeoutAt: payload.timeout_at,
-  bornDateForChina: payload.born_date_for_china,
-  bornNumberForChina: payload.born_number_for_china,
-});
 
 /* ── Usage API ── */
 interface UsagePayload {
@@ -796,8 +809,10 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async createBot(input) {
+      const displayName = input?.name?.trim() || defaultHermesAgentName();
       const body: Record<string, unknown> = {
         timeout: DEFAULT_INSTANCE_TIMEOUT_SECONDS,
+        name: displayName,
       };
       if (input?.soulTemplateId) {
         body.soul_template_id = input.soulTemplateId;
@@ -809,11 +824,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       });
 
       const drafts = readBotDrafts();
-      drafts[created.instance_id] = {
-        name: input?.name?.trim() || undefined,
-      };
-      writeBotDrafts(drafts);
-
       return projectInstanceToBot(created, drafts[created.instance_id]);
     },
 
@@ -835,18 +845,16 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         method: "PUT",
         body: { name },
       });
-      // 同步更新本地 draft，确保后续读取 name 一致
       const drafts = readBotDrafts();
-      drafts[botId] = { ...(drafts[botId] ?? {}), name };
-      writeBotDrafts(drafts);
       return projectInstanceToBot(data, drafts[botId]);
     },
 
     async updateBotProfile(botId, patch) {
       const drafts = readBotDrafts();
+      const { name: _ignoredName, ...draftPatch } = patch;
       drafts[botId] = {
         ...(drafts[botId] ?? {}),
-        ...patch,
+        ...draftPatch,
       };
       writeBotDrafts(drafts);
       return getBotByID(botId);
@@ -902,13 +910,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       return requestEnvelope<BotTerminalSession>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/tat/session`, {
         method: "POST",
       });
-    },
-
-    async getBotBornCard(botId) {
-      const payload = await requestEnvelope<CtlBotBornCardPayload>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/borncard`, {
-        method: "GET",
-      });
-      return mapBotBornCard(payload);
     },
 
     async configureQQChannel(botId, input) {
@@ -1574,6 +1575,62 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
         client_id: input.clientId,
         redirect_uri: input.redirectUri,
         state: input.state,
+      },
+    });
+    return {
+      redirectUrl: payload.redirect_url,
+      expiresAt: payload.expires_at,
+    };
+  },
+  async getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext> {
+    const query = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      state: input.state,
+      response_type: input.responseType,
+      scope: input.scope,
+      code_challenge: input.codeChallenge,
+      code_challenge_method: input.codeChallengeMethod,
+      nonce: input.nonce,
+    });
+    const payload = await request<OIDCContextPayload>(
+      baseUrl,
+      `/oauth2/authorize/context?${query.toString()}`,
+      { method: "GET" },
+    );
+    return {
+      clientId: payload.client.id,
+      clientDisplayName: payload.client.display_name,
+      redirectUri: payload.redirect_uri,
+      state: payload.state,
+      responseType: payload.response_type,
+      scope: payload.scope,
+      codeChallenge: payload.code_challenge,
+      codeChallengeMethod: payload.code_challenge_method,
+      nonce: payload.nonce,
+      currentSession: payload.session.authenticated && payload.session.user ? {
+        user: {
+          id: payload.session.user.id,
+          name: payload.session.user.name,
+          email: payload.session.user.email,
+          phone: payload.session.user.phone,
+          avatarUrl: payload.session.user.avatarUrl,
+        },
+      } : null,
+    };
+  },
+  async authorizeOIDC(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationResult> {
+    const payload = await request<OIDCAuthorizationPayload>(baseUrl, "/oauth2/authorize", {
+      method: "POST",
+      body: {
+        client_id: input.clientId,
+        redirect_uri: input.redirectUri,
+        state: input.state,
+        response_type: input.responseType,
+        scope: input.scope,
+        code_challenge: input.codeChallenge,
+        code_challenge_method: input.codeChallengeMethod,
+        nonce: input.nonce,
       },
     });
     return {

@@ -1,5 +1,11 @@
 # Konsep Inti
 
+## Ringkasan
+
+**LightVela memiliki empat konsep inti. Hermes Agent adalah entitas percakapan yang berjalan di cloud, dengan lingkungan runtime tersendiri, memori yang bertahan lintas percakapan, dan ketersediaan 24/7. Model adalah model bahasa besar yang dipanggilnya — bisa Model Coding Plan (bulanan), Model API (bayar sesuai pemakaian), atau endpoint kustom yang kompatibel dengan OpenAI. Kanal adalah pintu masuk platform pesan tempat Anda berbicara dengannya; beberapa kanal dapat terhubung ke Agent yang sama dan berbagi satu persona serta memori. Skill adalah paket kemampuan yang dapat dipasang untuk memperluas penanganan tugas tertentu. Alur satu percakapan lengkap: kanal menerima pesan → Agent menentukan perlu memanggil skill atau tidak → memanggil model untuk menghasilkan respons → balasan dikirim kembali melalui kanal yang sama.**
+
+---
+
 LightVela memiliki empat konsep utama: Hermes Agent, model, kanal, dan Skill. Halaman ini menjelaskan peran masing-masing. Untuk langkah konfigurasi detail, lihat halaman konfigurasi terkait.
 
 ## Yang dibahas di halaman ini

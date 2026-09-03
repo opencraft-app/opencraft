@@ -250,7 +250,7 @@ type fakeOrderStore struct {
 	getProvisionedCreateOrderByResourceIDFn func(ctx context.Context, resourceID string) (*store.TradeOrder, error)
 }
 
-func (f *fakeOrderStore) FindReusableDianshiOrder(context.Context, string, int64, string, time.Time) (*store.TradeOrder, error) {
+func (f *fakeOrderStore) FindReusableDianshiOrder(context.Context, string, int64, string, int64, time.Time) (*store.TradeOrder, error) {
 	return nil, store.ErrTradeOrderNotFound
 }
 
@@ -273,21 +273,31 @@ func (f *fakeOrderStore) GetProvisionedCreateOrderByResourceID(ctx context.Conte
 // ============================================================================
 
 type testEnv struct {
-	router      *gin.Engine
-	ctl         *fakeCTL
-	jifei       *fakeJifei
-	orderWriter *fakeOrderWriter
-	orderStore  *fakeOrderStore
-	bundle      *fakeBundleStore
-	activity    *fakeActivityResolver
-	dianshi     *fakeDianshiClient
-	token       string
+	router        *gin.Engine
+	ctl           *fakeCTL
+	jifei         *fakeJifei
+	orderWriter   *fakeOrderWriter
+	orderStore    *fakeOrderStore
+	bundle        *fakeBundleStore
+	activity      *fakeActivityResolver
+	dianshi       *fakeDianshiClient
+	participation *fakeParticipationReader
+	token         string
 }
 
 type fakeActivityResolver struct {
 	mapping *activity.Mapping
 	use     bool
 	err     error
+}
+
+type fakeParticipationReader struct {
+	hit bool
+	err error
+}
+
+func (f *fakeParticipationReader) HasUserParticipated(context.Context, string, int64) (bool, error) {
+	return f.hit, f.err
 }
 
 func (f *fakeActivityResolver) ResolveForInquiry(context.Context, string, string, int, string) (*activity.Mapping, bool, error) {
@@ -314,7 +324,11 @@ func (f *fakeDianshiClient) DoGoods(context.Context, *dianshiclient.DoGoodsReque
 func (f *fakeDianshiClient) DoGoodsAndPay(_ context.Context, req *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
 	f.doGoodsAndPayCalls.Add(1)
 	f.lastRequest = req
-	return &dianshiclient.DoGoodsResponse{DealNames: []string{"dianshi-deal-1"}, BigDealNo: "dianshi-big-1"}, nil
+	return &dianshiclient.DoGoodsResponse{
+		DealNames:   []string{"dianshi-deal-1"},
+		BigDealNo:   "dianshi-big-1",
+		ResourceIDs: map[string][]string{"dianshi-deal-1": {"pass-dianshi-paid-1"}},
+	}, nil
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -326,6 +340,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	bundle := &fakeBundleStore{}
 	activityResolver := &fakeActivityResolver{}
 	dianshi := &fakeDianshiClient{}
+	participation := &fakeParticipationReader{}
 
 	inq := inquiry.New(inquiry.Deps{
 		CTLClient:   ctl,
@@ -333,13 +348,14 @@ func newTestEnv(t *testing.T) *testEnv {
 		JifeiClient: jifei,
 	})
 	po := placeorder.New(placeorder.Deps{
-		CTLClient:        ctl,
-		BundleStore:      bundle,
-		JifeiClient:      jifei,
-		OrderWriter:      orderWriter,
-		OrderStore:       orderStore,
-		ActivityResolver: activityResolver,
-		DianshiClient:    dianshi,
+		CTLClient:           ctl,
+		BundleStore:         bundle,
+		JifeiClient:         jifei,
+		OrderWriter:         orderWriter,
+		OrderStore:          orderStore,
+		ParticipationReader: participation,
+		ActivityResolver:    activityResolver,
+		DianshiClient:       dianshi,
 	})
 
 	r := gin.New()
@@ -354,15 +370,16 @@ func newTestEnv(t *testing.T) *testEnv {
 	})
 
 	return &testEnv{
-		router:      r,
-		ctl:         ctl,
-		jifei:       jifei,
-		orderWriter: orderWriter,
-		orderStore:  orderStore,
-		bundle:      bundle,
-		activity:    activityResolver,
-		dianshi:     dianshi,
-		token:       "test-token",
+		router:        r,
+		ctl:           ctl,
+		jifei:         jifei,
+		orderWriter:   orderWriter,
+		orderStore:    orderStore,
+		bundle:        bundle,
+		activity:      activityResolver,
+		dianshi:       dianshi,
+		participation: participation,
+		token:         "test-token",
 	}
 }
 
@@ -845,6 +862,9 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	if env.dianshi.doGoodsAndPayCalls.Load() != 1 {
 		t.Fatalf("expected DoGoodsAndPay once, got %d", env.dianshi.doGoodsAndPayCalls.Load())
 	}
+	if got := env.orderWriter.lastCreateOrderInput; got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted status/resource_id=%q/%q", got.Status, got.ResourceID)
+	}
 }
 
 func TestPlaceDianshiOrderAndPay_RequiresActivity(t *testing.T) {
@@ -867,6 +887,53 @@ func TestPlaceDianshiOrderAndPay_RequiresActivity(t *testing.T) {
 func TestPlaceDianshiOrderAndPay_AuthRequired(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/place-and-pay", map[string]any{}, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGrantDianshiSubscription_HappyPath(t *testing.T) {
+	env := newTestEnv(t)
+	env.activity.err = errors.New("grant path must not resolve activity mapping")
+
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/subscriptions/grant", map[string]any{
+		"externalUserId": "user-1",
+		"uin":            "1000",
+		"appId":          "10001",
+		"bundleId":       "b1",
+		"period":         1,
+		"timeUnit":       "m",
+		"goodsNum":       1,
+		"payMode":        1,
+		"activityId":     165523570799387,
+		"actId":          142163399386388,
+		"timeSpanUnit":   "1m",
+		"secretKey":      "campaign-secret",
+	}, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	resp := decodeBody(t, rec)
+	if resp["status"] != "granted" || resp["dealName"] != "dianshi-deal-1" || resp["bigOrderId"] != "dianshi-big-1" {
+		t.Fatalf("unexpected response: %v", resp)
+	}
+	if got := env.orderWriter.lastCreateOrderInput.ActID; got != 142163399386388 {
+		t.Fatalf("persisted actID=%d", got)
+	}
+	if got := env.orderWriter.lastCreateOrderInput; got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
+		t.Fatalf("persisted grant status/resource_id=%q/%q", got.Status, got.ResourceID)
+	}
+	if env.activity.err != nil && env.dianshi.doGoodsAndPayCalls.Load() != 1 {
+		t.Fatalf("grant path unexpectedly used activity resolver")
+	}
+	if got := env.dianshi.lastRequest.Goods[0].PreferenceParam["timeSpanUnit"]; got != "1m" {
+		t.Fatalf("timeSpanUnit=%v", got)
+	}
+}
+
+func TestGrantDianshiSubscription_AuthRequired(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/subscriptions/grant", map[string]any{}, false)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}

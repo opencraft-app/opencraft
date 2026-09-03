@@ -1,5 +1,11 @@
 # Paket
 
+## Ringkasan
+
+**LightVela menyediakan dua paket, Launch dan Cruise, mencakup kebutuhan dari percobaan ringan hingga pemakaian utama harian. Paket adalah bundel sumber daya untuk mengaktifkan Hermes Agent: setelah aktif, platform mengalokasikan lingkungan cloud khusus (CPU, memori, dan penyimpanan tersendiri) tempat Agent Anda daring 24/7, tanpa perlu membeli server atau melakukan deployment lokal. Perbedaan antar paket hanya pada spesifikasi lingkungan, kapasitas penyimpanan, dan kredit model bulanan — Launch memberi 2 core 4G memori, penyimpanan 50G, dan 100 kredit per bulan, sementara Cruise menawarkan 4 core 8G memori dengan penyimpanan serta kuota bulanan lebih besar. Kemampuan inti Agent (evolusi mandiri, akses multi-kanal, skill, tugas otomatis, dan memori jangka panjang) sama di semua paket. LightVela berencana masuk public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura); masa aktif paket pengguna closed beta diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba Launch gratis 14 hari atau Launch AI gratis 7 hari pada pesanan pertama. Harga dan ketersediaan terkini mengacu pada halaman langganan.**
+
+---
+
 LightVela menyediakan dua tingkat paket, **Launch** dan **Cruise**, untuk kebutuhan mulai dari percobaan ringan sampai penggunaan Agent harian. Setiap paket menyediakan lingkungan cloud terisolasi untuk satu Hermes Agent dan alokasi kredit model bulanan. Halaman ini menjelaskan posisi, sumber daya, dan manfaat tiap paket agar Anda bisa memilih yang paling sesuai.
 
 ## Yang dibahas di halaman ini
@@ -20,7 +26,7 @@ Paket adalah kumpulan sumber daya yang mengaktifkan Hermes Agent di LightVela. S
 
 Perbedaan utama antar paket ada pada **sumber daya runtime, penyimpanan khusus, dan alokasi kredit model bulanan**. Kemampuan inti Agent, termasuk perilaku adaptif, multi-kanal, Skill, otomasi, dan memori jangka panjang, tetap tersedia di semua tingkat paket.
 
-LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan, dan pengguna baru dapat mencoba paket Launch gratis selama 14 hari. Periksa [halaman Subscribe](/subscribe) untuk ketersediaan dan harga terbaru. Nilai di bawah menjelaskan struktur sumber daya dan kredit saat ini.
+LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan, dan pengguna baru dapat mencoba Launch gratis selama 14 hari atau Launch AI gratis selama 7 hari pada pesanan pertama. Periksa [halaman Subscribe](/subscribe) untuk ketersediaan dan harga terbaru. Nilai di bawah menjelaskan struktur sumber daya dan kredit saat ini.
 
 ---
 
@@ -82,7 +88,7 @@ Setiap Hermes Agent memiliki kemampuan inti yang sama; perbedaan paket hanya ada
 
 - **Fase saat ini**: LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan setelah beta publik dan penagihan resmi dimulai.
 
-- **Ketersediaan dan harga**: Tingkat paket yang tersedia, sisa kuota, dan harga mendatang dapat berubah. Selalu periksa [halaman Subscribe](/subscribe) untuk informasi terbaru.
+- **Penawaran pengguna baru**: Launch gratis selama 14 hari pada pesanan pertama dan Launch AI gratis selama 7 hari pada pesanan pertama. Tingkat paket yang tersedia, sisa kuota, dan harga dapat berubah. Selalu periksa [halaman Subscribe](/subscribe) untuk informasi terbaru.
 
 - **Opsi kredit**: Beberapa paket dapat menawarkan alokasi kredit berbeda. Opsi yang saat ini dapat dipilih dan manfaat yang termasuk di dalamnya ditampilkan di kartu paket.
 

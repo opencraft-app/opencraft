@@ -23,6 +23,7 @@ import {
   TerminalSquare,
   Download,
   Files,
+  FlaskConical,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -31,6 +32,7 @@ import {
   UserRound,
   Wand2,
   Wrench,
+  SlidersHorizontal,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
@@ -57,11 +59,18 @@ import {
   type ICommandExecutor,
   type IProductConfig,
 } from "@/pages/marketing/agent-config";
+import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";
+import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
 import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
-import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+// 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
+import type {
+  LightVelaMultiSessionOptions,
+  LightVelaSession,
+  LightVelaSessionActions,
+} from "./agent-chat-panel";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -69,13 +78,18 @@ import {
   getAgentSectionHref,
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
-import type { WorkerActionStatusResult } from "@/repositories/types";
+import type { Repositories, WorkerActionStatusResult } from "@/repositories/types";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
+import {
+  resolveAgentDisplayName,
+  resolveAgentSessionTitle,
+  shouldUseEnglishProviderData,
+} from "@/pages/marketing/agent-provider-locale";
 import {
   fetchHermesMemorySnapshot,
   getHermesMemoryLimitBounds,
@@ -134,7 +148,8 @@ import { isPaidBillingEnabled } from "@/lib/billing-flow";
 import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renewal";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
-import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
+import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
+import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
@@ -156,15 +171,15 @@ const TerminalPanel = lazy(() =>
 const AgentWebsitePanel = lazy(() =>
   import("@/pages/marketing/agent-website-panel").then((module) => ({ default: module.AgentWebsitePanel })),
 );
+const AgentCommonSettingsPanel = lazy(() =>
+  import("@/pages/marketing/agent-common-settings-panel").then((module) => ({ default: module.AgentCommonSettingsPanel })),
+);
 
 // ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
 // 与其他面板一致。内部依赖全部指向本地 config/hooks，仅 scripts 命令生成走
 // SDK `/scripts` 子入口（纯 TS、无浏览器副作用）。
 const AgentChannelPanel = lazy(() =>
   import("@/pages/marketing/agent-channel-panel").then((module) => ({ default: module.ChannelPanel })),
-);
-const AgentModelPanel = lazy(() =>
-  import("@/pages/marketing/agent-model-panel").then((module) => ({ default: module.ModelPanel })),
 );
 
 type Translate = (text: string, options?: Record<string, unknown>) => string;
@@ -191,6 +206,7 @@ function getPassExpiryReminderCopy(reminder: PassExpiryReminder, t: Translate) {
 type TeaSdkInstanceInfo = {
   InstanceId: string;
   RegionId: number;
+  Zone?: string;
 };
 
 type TeaSdkFeatureFlags = {
@@ -227,12 +243,14 @@ function TeaSdkSettingsPanel({
   instance,
   featureFlags,
   commandExecutor,
+  execDebugCommand,
   useEnglish,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
   commandExecutor?: ICommandExecutor;
+  execDebugCommand?: Repositories["bots"]["execDebugCommand"];
   /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
 }) {
@@ -254,7 +272,26 @@ function TeaSdkSettingsPanel({
     };
   }, [modelProviders]);
 
-  const Panel = kind === "channel" ? AgentChannelPanel : AgentModelPanel;
+  if (kind === "model") {
+    if (!execDebugCommand) {
+      return (
+        <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {rawT("未找到当前 Hermes Agent 实例。")}
+        </div>
+      );
+    }
+    return (
+      <AgentModelConfigPanel
+        botId={instance.InstanceId}
+        execDebugCommand={execDebugCommand}
+        providers={resolveProductModelProviderOptions(productConfig, modelProviders, {
+          region: instance.Zone,
+          regionId: instance.RegionId,
+        })}
+        isGlobalRegion={isGlobal}
+      />
+    );
+  }
 
   // 面板经 lazy() 动态加载，SSR 静态导出预渲染时走 Suspense fallback、不求值
   // 面板模块；客户端 hydrate 后才真正 import。scripts SDK 的 window 副作用也已
@@ -269,7 +306,7 @@ function TeaSdkSettingsPanel({
           </div>
         }
       >
-        <Panel
+        <AgentChannelPanel
           instance={instance}
           featureFlags={featureFlags}
           productConfig={productConfig}
@@ -516,8 +553,16 @@ void _staggerContainer;
 
 /* ─── Navbar ─── */
 
-const SHOW_AGENTCHAT_ENTRY = true;
 const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "channel";
+
+/**
+ * 「前一个设置菜单」记忆（模块级）。
+ * Why 模块级而非 useRef：/agents/[section] 路由在 section 间切换时页面组件会重挂载，
+ * useRef 被重置回初始值，导致从对话切回设置时永远落在「通道」；模块级变量跨重挂载存活，
+ * 且仅在本组件的 effect / 点击 handler（纯客户端时机）读写，无 SSR 跨请求泄漏。
+ * 刷新页面自然回到初始值（channel），符合 tab 状态不做持久化的约定。
+ */
+let lastSettingsSection: AgentSettingsSectionId = DEFAULT_AGENT_SECTION;
 
 /* ─── Section Card Wrapper ─── */
 
@@ -797,13 +842,11 @@ const MemoryPanel = ({
             type="button"
             onClick={onRefresh}
             disabled={isLoading}
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90",
-              isLoading && "cursor-not-allowed opacity-60",
-            )}
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
+            aria-label={t("刷新")}
+            title={t("刷新")}
           >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {t("刷新")}
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
           </button>
         )}
       />
@@ -1696,443 +1739,6 @@ const getAvatarForBot = (botId: string) => {
   return LIGHTCLAW_AVATARS[Math.abs(hash) % LIGHTCLAW_AVATARS.length];
 };
 
-// 出生证明弹窗组件 - 使用 Portal 渲染到 body
-const BirthCertificateModal = ({
-  bot,
-  onClose
-}: {
-  bot: { id: string; name: string; createdAt: string };
-  onClose: () => void;
-}) => {
-  const t = useT();
-  const repositories = useRepositories();
-  const certificateRef = useRef<HTMLDivElement>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [bornCardLoading, setBornCardLoading] = useState(true);
-  const [bornCardError, setBornCardError] = useState<string | null>(null);
-  const [bornCardOrder, setBornCardOrder] = useState<number | null>(null);
-  const [bornCardCreatedAt, setBornCardCreatedAt] = useState(bot.createdAt);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setBornCardLoading(true);
-    setBornCardError(null);
-
-    repositories.bots.getBotBornCard(bot.id)
-      .then((card) => {
-        if (cancelled) {
-          return;
-        }
-        setBornCardOrder(card.bornNumberForChina);
-        setBornCardCreatedAt(card.createdAt);
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
-        const message = error instanceof Error ? error.message : t("出生证明加载失败");
-        setBornCardError(message);
-        setBornCardOrder(null);
-        setBornCardCreatedAt(bot.createdAt);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setBornCardLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bot.createdAt, bot.id, repositories.bots]);
-
-  // 解析创建日期
-  const createdDate = new Date(bornCardCreatedAt);
-  const year = createdDate.getFullYear();
-  const month = createdDate.getMonth() + 1;
-  const day = createdDate.getDate();
-
-  // 获取龙虾头像的绝对 URL
-  const avatarPath = getAvatarForBot(bot.id) ?? assetUrl('/hermes_logo.png');
-  const avatarUrl = avatarImageUrl(avatarPath);
-
-  // 下载图片功能
-  const handleDownload = async () => {
-    if (!certificateRef.current || downloading) return;
-
-    setDownloading(true);
-    try {
-      // 动态导入 html2canvas
-      const html2canvas = (await import("html2canvas")).default;
-
-      const canvas = await html2canvas(certificateRef.current, {
-        backgroundColor: "#FFD4A8",
-        scale: 2, // 高清导出
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        imageTimeout: 15000,
-        onclone: (clonedDoc: Document) => {
-          // 确保克隆的文档中图片能正确加载
-          const clonedElement = clonedDoc.querySelector('[data-certificate]');
-          if (clonedElement) {
-            (clonedElement as HTMLElement).style.transform = 'none';
-          }
-        }
-      });
-
-      // 创建下载链接
-      const link = document.createElement("a");
-      link.download = `龙虾出生证明_${bot.name}_${year}${month}${day}.png`;
-      link.href = canvas.toDataURL("image/png", 1.0);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("下载失败:", error);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  return createPortal(
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-        style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0, y: 20 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}
-          className="relative flex flex-col items-center"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* 证书主体 - 可导出部分 */}
-          <div
-            ref={certificateRef}
-            data-certificate="true"
-            style={{
-              width: 600,
-              backgroundColor: "#FFD4A8",
-              backgroundImage: "linear-gradient(145deg, #FFD4A8 0%, #FFCA94 15%, #FFE4C8 50%, #FFCA94 85%, #FFD4A8 100%)",
-              borderRadius: 12,
-              position: "relative",
-              overflow: "hidden",
-              boxShadow: "0 25px 60px rgba(0,0,0,0.25), 0 10px 20px rgba(0,0,0,0.15)"
-            }}
-          >
-            {/* 装饰波浪线 - 使用内联 SVG 确保渲染 */}
-            <div style={{ position: "absolute", top: 20, left: 20, width: 80, height: 40, opacity: 0.4 }}>
-              <svg viewBox="0 0 60 30" style={{ width: "100%", height: "100%" }}>
-                <path d="M0,15 Q15,5 30,15 T60,15" fill="none" stroke="#E66F62" strokeWidth="2" />
-                <path d="M0,22 Q15,12 30,22 T60,22" fill="none" stroke="#E66F62" strokeWidth="1.5" />
-              </svg>
-            </div>
-
-            <div style={{ position: "absolute", top: 20, right: 20, width: 80, height: 40, opacity: 0.4 }}>
-              <svg viewBox="0 0 60 30" style={{ width: "100%", height: "100%" }}>
-                <path d="M0,15 Q15,5 30,15 T60,15" fill="none" stroke="#E66F62" strokeWidth="2" />
-                <path d="M0,22 Q15,12 30,22 T60,22" fill="none" stroke="#E66F62" strokeWidth="1.5" />
-              </svg>
-            </div>
-
-            <div style={{ position: "absolute", bottom: 20, left: 20, width: 80, height: 40, opacity: 0.4 }}>
-              <svg viewBox="0 0 60 30" style={{ width: "100%", height: "100%" }}>
-                <path d="M0,8 Q15,18 30,8 T60,8" fill="none" stroke="#E66F62" strokeWidth="2" />
-                <path d="M0,15 Q15,25 30,15 T60,15" fill="none" stroke="#E66F62" strokeWidth="1.5" />
-              </svg>
-            </div>
-
-            <div style={{ position: "absolute", bottom: 20, right: 20, width: 80, height: 40, opacity: 0.4 }}>
-              <svg viewBox="0 0 60 30" style={{ width: "100%", height: "100%" }}>
-                <path d="M0,8 Q15,18 30,8 T60,8" fill="none" stroke="#E66F62" strokeWidth="2" />
-                <path d="M0,15 Q15,25 30,15 T60,15" fill="none" stroke="#E66F62" strokeWidth="1.5" />
-              </svg>
-            </div>
-
-            <div style={{ padding: "32px 40px 28px" }}>
-              {/* 标题 - 带装饰引号 */}
-              <div style={{ textAlign: "center", marginBottom: 24 }}>
-                <h2
-                  style={{
-                    fontSize: 36,
-                    fontWeight: 900,
-                    letterSpacing: 4,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                    color: "#E66F62",
-                    textShadow: "2px 2px 0 rgba(230,111,98,0.15), -1px -1px 0 rgba(255,255,255,0.5)",
-                    margin: 0,
-                    lineHeight: 1.2
-                  }}
-                >
-                  <span style={{ fontSize: 30, color: "#E66F62", opacity: 0.6 }}>『</span>
-                  小龙虾出生证明
-                  <span style={{ fontSize: 30, color: "#E66F62", opacity: 0.6 }}>』</span>
-                </h2>
-              </div>
-
-              {/* 主体卡片 */}
-              <div
-                style={{
-                  backgroundColor: "rgba(255,250,245,0.95)",
-                  border: "3px solid rgba(230,111,98,0.15)",
-                  borderRadius: 12,
-                  padding: 24,
-                  marginLeft: 12,
-                  marginRight: 12
-                }}
-              >
-                <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-                  {/* 左侧龙虾图片 */}
-                  <div style={{ flexShrink: 0 }}>
-                    <div
-                      style={{
-                        width: 144,
-                        height: 144,
-                        overflow: "hidden",
-                        borderRadius: 12,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: "rgba(255,240,230,0.8)"
-                      }}
-                    >
-                      <img
-                        src={avatarUrl}
-                        alt="Hermes宝宝"
-                        style={{
-                          width: 128,
-                          height: 128,
-                          objectFit: "contain"
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* 右侧信息 */}
-                  <div style={{ flex: 1, paddingTop: 8 }}>
-                    {/* 龙虾姓名 */}
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 16 }}>
-                      <span
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 700,
-                          whiteSpace: "nowrap",
-                          color: "#5C4033"
-                        }}
-                      >
-                        龙虾姓名
-                      </span>
-                      <div
-                        style={{
-                          flex: 1,
-                          borderBottom: "2px solid rgba(92,64,51,0.25)",
-                          paddingBottom: 4,
-                          minWidth: 0
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 18,
-                            fontWeight: 700,
-                            display: "block",
-                            color: "#3D2B1F",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap"
-                          }}
-                        >
-                          {bot.name}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* 家庭住址 */}
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 16 }}>
-                      <span
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 700,
-                          whiteSpace: "nowrap",
-                          color: "#5C4033"
-                        }}
-                      >
-                        家庭住址：
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 600,
-                          color: "#5C4033"
-                        }}
-                      >
-                        LightVela
-                      </span>
-                    </div>
-
-                    {/* 出生日期 */}
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                      <span
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 700,
-                          whiteSpace: "nowrap",
-                          color: "#5C4033"
-                        }}
-                      >
-                        出生日期：
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 600,
-                          color: "#5C4033"
-                        }}
-                      >
-                        {year}年{month}月{day}日
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 底部印章徽章 */}
-                <div style={{ marginTop: 24, display: "flex", justifyContent: "center" }}>
-                  {bornCardLoading ? (
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 10,
-                        paddingLeft: 24,
-                        paddingRight: 24,
-                        paddingTop: 12,
-                        paddingBottom: 12,
-                        borderRadius: 9999,
-                        backgroundColor: "rgba(255,245,238,0.9)",
-                        border: "2px solid rgba(230,111,98,0.2)",
-                        color: "#E66F62",
-                        fontSize: 15,
-                        fontWeight: 700,
-                      }}
-                    >
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      出生编号加载中...
-                    </div>
-                  ) : bornCardError ? (
-                    <div
-                      style={{
-                        maxWidth: 360,
-                        padding: "12px 18px",
-                        borderRadius: 16,
-                        backgroundColor: "rgba(255,245,238,0.95)",
-                        border: "2px solid rgba(230,111,98,0.2)",
-                        color: "#A14E45",
-                        fontSize: 14,
-                        fontWeight: 600,
-                        textAlign: "center",
-                      }}
-                    >
-                      出生编号暂时不可用，请稍后重试。
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        paddingLeft: 24,
-                        paddingRight: 24,
-                        paddingTop: 12,
-                        paddingBottom: 12,
-                        borderRadius: 9999,
-                        backgroundColor: "rgba(255,245,238,0.9)",
-                        border: "2px solid rgba(230,111,98,0.25)"
-                      }}
-                    >
-                      <span style={{ fontSize: 14, marginRight: 4, color: "#E66F62" }}>✦</span>
-                      <span
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 700,
-                          color: "#E66F62"
-                        }}
-                      >
-                        今天出生的第
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 30,
-                          fontWeight: 900,
-                          marginLeft: 4,
-                          marginRight: 4,
-                          color: "#E66F62",
-                          textShadow: "1px 1px 0 rgba(230,111,98,0.2)"
-                        }}
-                      >
-                        {bornCardOrder}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 700,
-                          color: "#E66F62"
-                        }}
-                      >
-                        个Hermes宝宝
-                      </span>
-                      <span style={{ fontSize: 14, marginLeft: 4, color: "#E66F62" }}>✦</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 操作按钮区域 - 证书外部 */}
-          <div className="flex items-center gap-3 mt-5">
-            <button
-              onClick={handleDownload}
-              disabled={downloading || bornCardLoading || !!bornCardError}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
-              style={{ background: "#E66F62" }}
-            >
-              {downloading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  下载中...
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4" />
-                  下载图片
-                </>
-              )}
-            </button>
-            <button
-              onClick={onClose}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold transition-all hover:bg-[rgba(255,255,255,0.15)]"
-              style={{ color: "#fff", background: "rgba(255,255,255,0.1)" }}
-            >
-              <X className="h-4 w-4" />
-              关闭
-            </button>
-          </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>,
-    document.body
-  );
-};
-
 /* ─── Channel Modal (per bot) ─── */
 
 const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; connectedChannels: string[] }; onClose: () => void }) => {
@@ -2589,7 +2195,6 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
 export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: string; name: string; personality: string; personalityEmoji: string; intro: string; status: string; connectedChannels: string[]; installedSkills: string[]; createdAt: string }; index: number; onDelete: (id: string) => void; onTerminal: (id: string) => void }) => {
   void onDelete;
   void onTerminal;
-  const [showBirthCert, setShowBirthCert] = useState(false);
   const [showChannelModal, setShowChannelModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
@@ -2629,13 +2234,6 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
               <h4 className="truncate text-sm font-bold" style={{ color: "var(--lw-fg)" }}>{bot.name}</h4>
-              <button
-                onClick={() => setShowBirthCert(true)}
-                className="inline-flex flex-shrink-0 items-center gap-0.5 rounded-full px-1.5 py-px text-[10px] font-medium transition-all hover:opacity-70"
-                style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", cursor: "pointer", border: "none" }}
-              >
-                📜 出生证明
-              </button>
               {/* Tags: connected channels + skills */}
               {connectedChannels.map((ch) => (
                 <span key={ch} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: ch === "wechat" ? "rgba(7,193,96,0.08)" : "rgba(18,183,245,0.08)", color: ch === "wechat" ? "#07C160" : "#12B7F5" }}>
@@ -2678,11 +2276,6 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
           </div>
         </div>
       </motion.div>
-
-      {/* 出生证明弹窗 */}
-      {showBirthCert && (
-        <BirthCertificateModal bot={bot} onClose={() => setShowBirthCert(false)} />
-      )}
 
       {/* 接入通道弹窗 */}
       {showChannelModal && (
@@ -2825,6 +2418,21 @@ const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
 const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model"]);
 
+/**
+ * 会话是否可删除。
+ *
+ * 产品决策：默认会话（`chatId === ""`）不可删除。它是列表的兜底项——「新增会话」
+ * 按钮位于 SDK 面板右上角，若允许把默认会话也删掉，用户可能删空列表，失去唯一
+ * 的新增入口，无法再发起新会话。因此默认会话必须始终保留。
+ *
+ * 技术背景：`chatId === ""` 是 SDK 的合法默认会话标识（`resolveFallbackChatId`
+ * 正是靠 `session.chatId === ""` 定位它）。SDK 1.4.1 的删除链路恰好也用 truthiness
+ * 拦掉了空串（`deleteSession` / `deleteChat` 都是 `if (!chatId) return`），所以即便
+ * 宿主不做这道判定，请求也不会发出。但这属于 SDK 的实现细节，不能作为产品契约
+ * 依赖——宿主仍需显式守门，避免将来 SDK 修正 `!chatId` 后默认会话突然变为可删。
+ */
+const canDeleteSession = (session: LightVelaSession) => session.chatId !== "";
+
 type WorkspaceConfirmState =
   | { kind: "export" }
   | { kind: "import"; file: File | null };
@@ -2901,7 +2509,7 @@ export const AgentSettingsPage = ({
   const paidBillingEnabled = usePaidBillingEnabled();
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
-  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
   const {
     commandLifecycle: automationModelCommandLifecycle,
     confirmationDialog: automationModelSwitchDialog,
@@ -2963,6 +2571,178 @@ export const AgentSettingsPage = ({
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [isAgentActionMenuOpen, setIsAgentActionMenuOpen] = useState(false);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
+
+  /* ── 侧边栏「探索/对话」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
+  /** tab 仅切侧边栏内容，右侧主区始终按当前路由渲染；初始值随路由推导，不做持久化。 */
+  const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
+  const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
+  const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
+  /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定（SDK 侧会驱动默认会话）。 */
+  const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
+  /** SDK 会话动作句柄（renameSession / deleteSession）。 */
+  const [chatSessionActions, setChatSessionActions] = useState<LightVelaSessionActions | null>(null);
+  /** 行内重命名状态：renamingChatId 非空表示该项处于编辑态。 */
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renamingDraft, setRenamingDraft] = useState("");
+  /** 三点菜单当前展开的会话。 */
+  const [openSessionMenuChatId, setOpenSessionMenuChatId] = useState<string | null>(null);
+  /** 待删除会话（非空表示弹出删除二次确认）。 */
+  const [sessionToDelete, setSessionToDelete] = useState<LightVelaSession | null>(null);
+  const sessionMenuRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 记录「前一个点击的设置菜单」：切到「对话」再回「设置」时，主区回到该菜单而非固定通道。
+   * 写入模块级 lastSettingsSection（见其声明处的重挂载说明）。
+   */
+  useEffect(() => {
+    if (activeSection !== "chat") {
+      lastSettingsSection = activeSection;
+    }
+  }, [activeSection]);
+
+  /**
+   * tab 点击联动主区导航（对齐产品确认的交互）：
+   * - 点「探索」：若当前在对话页，回到前一个设置菜单（无记忆则通道）；
+   * - 点「对话」：若当前不在对话页，进入对话页，并默认选中第一个会话。
+   */
+  const handleSidebarSettingsTabClick = () => {
+    setSidebarTab("settings");
+    if (activeSection === "chat") {
+      navigate(
+        getAgentSectionHref(AGENT_SECTION_PATH_BY_ID[lastSettingsSection], searchParams),
+      );
+    }
+  };
+
+  const handleSidebarChatTabClick = () => {
+    setSidebarTab("chat");
+    if (activeSection !== "chat") {
+      navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
+      // 默认选中第一个对话；若 SDK 尚未回传会话列表，则保持 undefined 由 SDK 驱动默认会话。
+      if (selectedChatId == null && chatSessions.length > 0) {
+        setSelectedChatId(chatSessions[0]?.chatId);
+      }
+    }
+  };
+
+  /**
+   * 多会话受控桥接。
+   *
+   * 三个回调必须用 useCallback 稳定引用，不能内联在 useMemo 里。
+   * Why：SDK 的 actions effect 把回调**引用**放进了依赖数组：
+   *
+   *   useEffect(() => {
+   *     const onSessionActionsChange = multiSession?.onSessionActionsChange;
+   *     if (!enabled || !onSessionActionsChange) return undefined;
+   *     onSessionActionsChange({ renameSession, deleteSession });
+   *     return () => onSessionActionsChange(null);   // ← cleanup 会置 null
+   *   }, [..., multiSession?.onSessionActionsChange, ...]);
+   *
+   * 回调若内联，则每次 selectedChatId 变化都会产生新引用 → effect 重跑 →
+   * 先 cleanup 成 null 再重新赋值，导致 chatSessionActions 在**每次切换会话时
+   * 短暂为 null**：重命名/删除菜单项会闪一下禁用，且此刻点击会静默失效
+   * （`chatSessionActions?.deleteSession` 走 optional chaining 直接跳过）。
+   *
+   * selectedChatId 仍需随值更新——SDK 的 switchChat effect 依赖的是它的**值**
+   * （`multiSession?.selectedChatId`）而非对象引用，因此对象重建不会误触发切换。
+   * 另两个回调 SDK 内部走 ref（onSelectedChatIdChangeRef），本就不受引用变化影响，
+   * 但一并稳定化以免后续版本改成直接依赖。
+   */
+  const handleChatSessionStateChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
+  >(({ sessions, loading }) => {
+    setChatSessions(sessions);
+    setChatSessionsLoading(loading);
+  }, []);
+
+  const handleChatSelectedChatIdChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSelectedChatIdChange"]>
+  >((chatId) => {
+    // 注意事项 2：收到值必须无条件写回，否则受控状态与 SDK 失步。
+    // 不要在此加真值守卫——空串是合法默认会话，会被误当成"无效值"丢弃。
+    setSelectedChatId(chatId);
+  }, []);
+
+  const handleChatSessionActionsChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSessionActionsChange"]>
+  >((actions) => {
+    setChatSessionActions(actions);
+  }, []);
+
+  const chatMultiSessionBridge = useMemo<LightVelaMultiSessionOptions>(
+    () => ({
+      selectedChatId,
+      onSessionStateChange: handleChatSessionStateChange,
+      onSelectedChatIdChange: handleChatSelectedChatIdChange,
+      onSessionActionsChange: handleChatSessionActionsChange,
+    }),
+    [selectedChatId, handleChatSessionStateChange, handleChatSelectedChatIdChange, handleChatSessionActionsChange],
+  );
+
+  const startSessionRename = (session: LightVelaSession) => {
+    setOpenSessionMenuChatId(null);
+    setRenamingChatId(session.chatId);
+    setRenamingDraft(session.title || "");
+  };
+
+  const commitSessionRename = () => {
+    const chatId = renamingChatId;
+    if (chatId == null) return;
+    const nextTitle = renamingDraft.trim();
+    setRenamingChatId(null);
+    setRenamingDraft("");
+    if (nextTitle) chatSessionActions?.renameSession(chatId, nextTitle);
+  };
+
+  const cancelSessionRename = () => {
+    setRenamingChatId(null);
+    setRenamingDraft("");
+  };
+
+  const openSessionDeleteConfirm = (session: LightVelaSession) => {
+    if (!canDeleteSession(session)) return;
+    setOpenSessionMenuChatId(null);
+    setSessionToDelete(session);
+  };
+
+  const confirmSessionDelete = () => {
+    if (!sessionToDelete) return;
+    // 再次守门：SDK 会静默丢弃 chatId === "" 的删除（见 canDeleteSession 注释），
+    // 这里挡住可避免「弹窗关了但会话还在」的假成功。
+    if (!canDeleteSession(sessionToDelete)) {
+      setSessionToDelete(null);
+      return;
+    }
+    chatSessionActions?.deleteSession(sessionToDelete.chatId);
+    setSessionToDelete(null);
+  };
+
+  const cancelSessionDelete = () => {
+    setSessionToDelete(null);
+  };
+
+  useEffect(() => {
+    // chatId === "" 是合法默认会话，判定只能用 == null（SDK 对接注意事项 1）。
+    // 用 truthiness 会让默认会话的菜单打开后无法通过点击外部 / Esc 关闭。
+    if (openSessionMenuChatId == null) return undefined;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!sessionMenuRef.current?.contains(event.target as Node)) {
+        setOpenSessionMenuChatId(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenSessionMenuChatId(null);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openSessionMenuChatId]);
+
   const agentActionMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isAgentActionMenuOpen) return undefined;
@@ -2994,7 +2774,7 @@ export const AgentSettingsPage = ({
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const activeBotStatus = activeBot?.status;
   const passExpiryReminder = useMemo(
-    () => (paidBillingActive ? getPassExpiryReminder(activePass) : null),
+    () => (isGlobal || paidBillingActive ? getPassExpiryReminder(activePass) : null),
     [activePass, paidBillingActive],
   );
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
@@ -3317,10 +3097,10 @@ export const AgentSettingsPage = ({
     () =>
       activeBotId
         ? createLocalCommandExecutor({
-            repositories,
-            botId: activeBotId,
-            commandLifecycle: sdkCommandLifecycle,
-          })
+          repositories,
+          botId: activeBotId,
+          commandLifecycle: sdkCommandLifecycle,
+        })
         : undefined,
     [repositories, activeBotId, sdkCommandLifecycle],
   );
@@ -3501,9 +3281,6 @@ export const AgentSettingsPage = ({
 
   /* 通道弹窗 */
   const [showChannelModal, setShowChannelModal] = useState(false);
-
-  /* 出生证明 */
-  const [showBirthCert, setShowBirthCert] = useState(false);
 
   /* ── 重启 Gateway ── */
   // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
@@ -3742,6 +3519,24 @@ export const AgentSettingsPage = ({
       RegionId: 1,
     };
   }, [activeBot?.id]);
+
+  /**
+   * 实例切换时重置会话受控状态（SDK 对接注意事项 3）。
+   * Why：切换 Agent 走 setActiveTabId，组件不重挂载；旧实例的会话列表/选中值/actions
+   * 若不清理，会在新实例回调覆盖前闪现旧数据，且 rename 句柄可能指向旧实例。
+   * 重置后 selectedChatId 回到 undefined，SDK 按新实例重新下发默认会话。
+   */
+  useEffect(() => {
+    setChatSessions([]);
+    setChatSessionsLoading(false);
+    setSelectedChatId(undefined);
+    setChatSessionActions(null);
+    setRenamingChatId(null);
+    setRenamingDraft("");
+    setOpenSessionMenuChatId(null);
+    setSessionToDelete(null);
+  }, [sdkInstance?.InstanceId]);
+
   const sdkFeatureFlags = useMemo<TeaSdkFeatureFlags>(() => ({
     gateway: true,
     channel: true,
@@ -3759,7 +3554,7 @@ export const AgentSettingsPage = ({
   }), []);
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
-  const useEnglish = !!i18n.language?.startsWith("en");
+  const useEnglish = shouldUseEnglishProviderData(i18n.language);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
     isGlobalRegion: isGlobal,
     hiddenToolsRevealed: showHiddenAgentTools,
@@ -4291,38 +4086,38 @@ export const AgentSettingsPage = ({
       {workspaceDetailsOpen && (
         <div id="workspace-recovery-details" className="mt-4 max-h-[320px] overflow-y-auto pr-1">
           {workspaceTaskLogs.length === 0 ? (
-          <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
-            {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无 Agent 任务记录")}
-          </div>
-        ) : (
-          <ol className="space-y-0">
-            {workspaceTaskLogs.map((log, index, allLogs) => {
-              const isLast = index === allLogs.length - 1;
-              const tone = log.level === "error"
-                ? "bg-red-500"
-                : log.level === "success"
-                  ? "bg-emerald-500"
-                  : log.level === "warning"
-                    ? "bg-amber-500"
-                    : "bg-black/35";
-              return (
-                <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">
-                  <div className="pt-0.5 text-right text-[11px] text-black/35">
-                    {formatExportLogTime(log.time)}
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className={cn("mt-1.5 h-2.5 w-2.5 rounded-full", tone)} />
-                    {!isLast && <span className="absolute top-5 bottom-0 w-px bg-black/[0.08]" />}
-                  </div>
-                  <div className="pb-4">
-                    <p className="text-sm leading-relaxed text-black/78">{log.message}</p>
-                    {activeWorkspaceTask && log.phase && <p className="mt-0.5 text-[11px] text-black/35">{workspacePhaseLabel(activeWorkspaceTask.kind, log.phase)}</p>}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        )}
+            <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
+              {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无 Agent 任务记录")}
+            </div>
+          ) : (
+            <ol className="space-y-0">
+              {workspaceTaskLogs.map((log, index, allLogs) => {
+                const isLast = index === allLogs.length - 1;
+                const tone = log.level === "error"
+                  ? "bg-red-500"
+                  : log.level === "success"
+                    ? "bg-emerald-500"
+                    : log.level === "warning"
+                      ? "bg-amber-500"
+                      : "bg-black/35";
+                return (
+                  <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">
+                    <div className="pt-0.5 text-right text-[11px] text-black/35">
+                      {formatExportLogTime(log.time)}
+                    </div>
+                    <div className="relative flex justify-center">
+                      <span className={cn("mt-1.5 h-2.5 w-2.5 rounded-full", tone)} />
+                      {!isLast && <span className="absolute top-5 bottom-0 w-px bg-black/[0.08]" />}
+                    </div>
+                    <div className="pb-4">
+                      <p className="text-sm leading-relaxed text-black/78">{log.message}</p>
+                      {activeWorkspaceTask && log.phase && <p className="mt-0.5 text-[11px] text-black/35">{workspacePhaseLabel(activeWorkspaceTask.kind, log.phase)}</p>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </div>
       )}
     </section>
@@ -4519,6 +4314,45 @@ export const AgentSettingsPage = ({
                 {t("确认删除")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Session Delete Confirm Dialog */}
+      {sessionToDelete && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={cancelSessionDelete}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "rgba(238,238,238,0.4)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
+                <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除会话")}</h3>
+            </div>
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("确定要删除会话「{{name}}」吗？此操作不可撤销。", { name: sessionToDelete.title || t("默认会话") })}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={confirmSessionDelete}
+                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
+                style={{ backgroundColor: "#DC2626", cursor: "pointer", fontSize: "16px" }}
+              >
+                {t("确认删除")}
+              </button>
+              <button onClick={cancelSessionDelete} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
               </button>
             </div>
@@ -4757,11 +4591,6 @@ export const AgentSettingsPage = ({
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
       )}
 
-      {/* Birth Certificate */}
-      {showBirthCert && activeBot && (
-        <BirthCertificateModal bot={activeBot} onClose={() => setShowBirthCert(false)} />
-      )}
-
       <main className="lw-app-top-pad flex-grow bg-white pb-6">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
@@ -4777,34 +4606,28 @@ export const AgentSettingsPage = ({
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
             (() => {
-              type SettingsSection = {
+              type SettingsSectionLink = {
                 id: AgentSettingsSectionId;
                 label: string;
                 icon: React.ReactNode;
                 path: string;
                 badge?: string;
               };
-              const settingsGroups: { id: string; label: string; sections: SettingsSection[] }[] = [
+              const settingsGroups: { id: string; label: string; sections: SettingsSectionLink[] }[] = [
                 {
                   id: "setup",
                   label: t("配置"),
                   sections: [
                     { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
                     { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
-                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                   ],
                 },
                 {
                   id: "use",
                   label: t("使用"),
                   sections: [
-                    ...(SHOW_AGENTCHAT_ENTRY
-                      ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
-                      : []),
+                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                     { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
-                    ...(isGlobal && showHiddenAgentTools
-                      ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
-                      : []),
                   ],
                 },
                 {
@@ -4822,6 +4645,27 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                     { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
+                    { id: "settings", label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings },
+                  ],
+                },
+                {
+                  id: "labs",
+                  label: t("实验室"),
+                  sections: [
+                    {
+                      id: "website",
+                      label: t("我的工作台"),
+                      icon: <Globe2 className="h-4 w-4" />,
+                      path: AGENT_SECTION_PATH_BY_ID.website,
+                      badge: "Beta",
+                    },
+                    {
+                      id: "deepseek-harness",
+                      label: "DeepSeek Harness",
+                      icon: <FlaskConical className="h-4 w-4" />,
+                      path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
+                      badge: "Beta",
+                    },
                   ],
                 },
               ];
@@ -4844,15 +4688,16 @@ export const AgentSettingsPage = ({
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
-                    <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {t("正在加载页面…")}
-                    </div>
-                  );
+                  <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("正在加载页面…")}
+                  </div>
+                );
+              const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-                  <aside className="lv-agents-sidebar lg:sticky lg:top-[84px]">
+                  <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
@@ -4877,8 +4722,8 @@ export const AgentSettingsPage = ({
                           <img src={avatarUrl} alt="" />
                         </span>
                         <span className="lv-agent-profile-text">
-                          <span className="lv-agent-profile-name" title={activeBot.name}>
-                            {truncateBotName(activeBot.name)}
+                          <span className="lv-agent-profile-name" title={activeBotDisplayName}>
+                            {truncateBotName(activeBotDisplayName)}
                           </span>
                           <span className="lv-agent-status-row">
                             <span className="lv-agent-status">
@@ -4938,15 +4783,14 @@ export const AgentSettingsPage = ({
                                   </span>
                                 </span>
                               ) : (
-                                <span className="relative inline-flex">
-                                  <RenewComingSoonButton
-                                    label={passExpiryReminderCopy.label}
-                                    tooltip={t("敬请期待")}
-                                    ariaLabel={t("套餐{{time}}，敬请期待", { time: passExpiryReminderCopy.tooltip })}
-                                    icon={<AlertTriangle className="h-3 w-3" aria-hidden="true" />}
-                                    className={cn("lv-agent-renewal-badge cursor-not-allowed is-disabled", `is-${passExpiryReminder.level}`)}
-                                    tooltipClassName="whitespace-nowrap"
-                                  />
+                                <span
+                                  className={cn(
+                                    "lv-agent-renewal-badge is-disabled",
+                                    `is-${passExpiryReminder.level}`,
+                                  )}
+                                >
+                                  {passExpiryReminderCopy.label}
+                                  <span className="sr-only"> {passExpiryReminderCopy.tooltip}</span>
                                 </span>
                               )
                             )}
@@ -5017,6 +4861,7 @@ export const AgentSettingsPage = ({
                         <div className="mt-1 rounded-md bg-black/[0.025] p-1">
                           {visibleBots.map((bot) => {
                             const isActive = bot.id === activeTabId;
+                            const botDisplayName = resolveAgentDisplayName(bot.name, t);
                             return (
                               <button
                                 key={bot.id}
@@ -5031,8 +4876,8 @@ export const AgentSettingsPage = ({
                                 )}
                               >
                                 <img src={getAvatarForBot(bot.id)} alt="" className="h-5 w-5 flex-shrink-0 rounded object-contain" />
-                                <span className="min-w-0 flex-1 truncate" title={bot.name}>
-                                  {truncateBotName(bot.name)}
+                                <span className="min-w-0 flex-1 truncate" title={botDisplayName}>
+                                  {truncateBotName(botDisplayName)}
                                 </span>
                                 {isActive && <Check className="h-3.5 w-3.5 text-black/55" />}
                               </button>
@@ -5057,89 +4902,245 @@ export const AgentSettingsPage = ({
                       )}
                     </div>
 
-                    <nav
-                      aria-label={t("实例配置导航")}
-                      className="lv-agents-nav"
-                    >
-                      {showHiddenAgentTools ? (
-                        <div className="lv-agents-nav-group">
+                    {/* ── 侧边栏顶层「探索/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
+                    <div className="lv-agents-sidebar-tabs" role="tablist" aria-label={t("侧边栏视图切换")}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sidebarTab === "settings"}
+                        className={cn("lv-agents-sidebar-tab", sidebarTab === "settings" && "is-active")}
+                        onClick={handleSidebarSettingsTabClick}
+                      >
+                        {t("探索")}
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sidebarTab === "chat"}
+                        className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && "is-active")}
+                        onClick={handleSidebarChatTabClick}
+                      >
+                        {t("对话")}
+                      </button>
+                    </div>
+
+                    {sidebarTab === "chat" ? (
+                      <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
+                        <div className="lv-agents-nav-group" role="group">
+                          <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
                           <ul className="lv-agents-nav-group-items">
-                            <li>
-                              <AppLink
-                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
-                                aria-current={activeSection === "terminal" ? "page" : undefined}
-                                className={cn(
-                                  "lw-settings-nav-item lv-agents-nav-item",
-                                  activeSection === "terminal"
-                                    ? "is-active"
-                                    : "text-black/70 hover:bg-black/[0.025]",
-                                )}
-                              >
-                                <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
-                                <span className="flex-1 text-left">{t("终端")}</span>
-                              </AppLink>
-                            </li>
-                            <li>
-                              <AppLink
-                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
-                                aria-current={activeSection === "browser" ? "page" : undefined}
-                                className={cn(
-                                  "lw-settings-nav-item lv-agents-nav-item",
-                                  activeSection === "browser"
-                                    ? "is-active"
-                                    : "text-black/70 hover:bg-black/[0.025]",
-                                )}
-                              >
-                                <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
-                                <span className="flex-1 text-left">{t("浏览器")}</span>
-                              </AppLink>
-                            </li>
-                          </ul>
-                        </div>
-                      ) : null}
-                      {settingsGroups.map((group) => {
-                        const groupLabelId = `agent-settings-nav-group-${group.id}`;
-                        return (
-                          <div
-                            key={group.id}
-                            className="lv-agents-nav-group"
-                            role="group"
-                            aria-labelledby={groupLabelId}
-                          >
-                            <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
-                            <ul className="lv-agents-nav-group-items">
-                              {group.sections.map((section) => {
-                                const isActive = section.id === activeSection;
+                            {chatSessionsLoading && chatSessions.length === 0 ? (
+                              <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
+                            ) : chatSessions.length === 0 ? (
+                              /*
+                               * 列表为空是正常状态，不做异常处理，只给默认对话入口。
+                               * 成因有三，对用户而言表现一致（都只有一个会话可进）：
+                               *   - 桥接还没建立：sidebarTab 与 activeSection 是独立状态，
+                               *     且 AgentChatPanel 需 activeSection === "chat" 且
+                               *     launchToken ready 才挂载，切换过程中会短暂走到这里；
+                               *   - 实例不支持会话协议（SDK 5s 超时，见对接注意事项 6），
+                               *     即单会话形态，老实例/特定镜像版本的合法状态；
+                               *   - 确实还没有任何会话。
+                               * 三者都不该阻断用户进聊天页——消息收发不依赖会话协议。
+                               * 要区分需看 WebSocket 有无 chat:response，不是 UI 的职责。
+                               */
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
+                                  aria-current={activeSection === "chat" ? "page" : undefined}
+                                  className={cn(
+                                    "lv-agents-session-item lv-agents-nav-item",
+                                    activeSection === "chat" && "is-active",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
+                                  <span className="lv-agents-session-title" title={t("默认对话")}>
+                                    {t("默认对话")}
+                                  </span>
+                                </AppLink>
+                              </li>
+                            ) : (
+                              chatSessions.map((session) => {
+                                const isSelected = selectedChatId === session.chatId;
+                                const isRenaming = renamingChatId === session.chatId;
+                                const isMenuOpen = openSessionMenuChatId === session.chatId;
+                                const isDeletable = canDeleteSession(session);
+                                const sessionDisplayTitle = resolveAgentSessionTitle(
+                                  session.title,
+                                  i18n.language,
+                                  t("默认会话"),
+                                );
                                 return (
-                                  <li key={section.id}>
-                                    <AppLink
-                                      to={getAgentSectionHref(section.path, searchParams)}
-                                      aria-current={isActive ? "page" : undefined}
-                                      className={cn(
-                                        "lw-settings-nav-item lv-agents-nav-item",
-                                        isActive
-                                          ? "is-active"
-                                          : "text-black/70 hover:bg-black/[0.025]",
-                                      )}
-                                    >
-                                      <span className="lv-agents-nav-icon">{section.icon}</span>
-                                      <span className="flex-1 text-left">{section.label}</span>
-                                      {section.badge && (
-                                        <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
-                                          {section.badge}
-                                        </span>
-                                      )}
-                                    </AppLink>
+                                  <li key={session.chatId} className="lv-agents-session-item-wrap">
+                                    {isRenaming ? (
+                                      <input
+                                        className="lv-agents-session-rename-input"
+                                        value={renamingDraft}
+                                        autoFocus
+                                        aria-label={t("会话名称")}
+                                        title={t("回车确认，Esc 取消")}
+                                        onChange={(event) => setRenamingDraft(event.target.value)}
+                                        onBlur={() => commitSessionRename()}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter") {
+                                            event.preventDefault();
+                                            commitSessionRename();
+                                          } else if (event.key === "Escape") {
+                                            event.preventDefault();
+                                            cancelSessionRename();
+                                          }
+                                        }}
+                                      />
+                                    ) : (
+                                      <>
+                                        <AppLink
+                                          to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
+                                          aria-current={isSelected ? "page" : undefined}
+                                          onClick={() => setSelectedChatId(session.chatId)}
+                                          className={cn(
+                                            "lv-agents-session-item lv-agents-nav-item",
+                                            isSelected && "is-active",
+                                          )}
+                                        >
+                                          <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
+                                          <span className="lv-agents-session-title" title={sessionDisplayTitle}>
+                                            {sessionDisplayTitle}
+                                          </span>
+                                        </AppLink>
+                                        <div ref={isMenuOpen ? sessionMenuRef : undefined} className="lv-agents-session-menu-anchor">
+                                          <button
+                                            type="button"
+                                            className="lv-agents-session-menu-btn"
+                                            aria-label={t("会话操作")}
+                                            aria-expanded={isMenuOpen}
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
+                                              setOpenSessionMenuChatId(isMenuOpen ? null : session.chatId);
+                                            }}
+                                          >
+                                            <MoreVertical className="h-3.5 w-3.5" />
+                                          </button>
+                                          {isMenuOpen ? (
+                                            <div className="lv-agents-session-menu" role="menu">
+                                              <button
+                                                type="button"
+                                                role="menuitem"
+                                                className="lv-agents-session-menu-item"
+                                                disabled={!chatSessionActions}
+                                                onClick={() => startSessionRename(session)}
+                                              >
+                                                {t("重命名")}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                role="menuitem"
+                                                className="lv-agents-session-menu-item lv-agents-session-menu-item--danger"
+                                                disabled={!chatSessionActions || !isDeletable}
+                                                title={isDeletable ? undefined : t("默认会话不支持删除")}
+                                                onClick={() => openSessionDeleteConfirm(session)}
+                                              >
+                                                {t("删除")}
+                                              </button>
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </>
+                                    )}
                                   </li>
                                 );
-                              })}
+                              })
+                            )}
+                          </ul>
+                        </div>
+                      </nav>
+                    ) : (
+                      <nav
+                        aria-label={t("实例配置导航")}
+                        className="lv-agents-nav"
+                      >
+                        {showHiddenAgentTools ? (
+                          <div className="lv-agents-nav-group">
+                            <ul className="lv-agents-nav-group-items">
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
+                                  aria-current={activeSection === "terminal" ? "page" : undefined}
+                                  className={cn(
+                                    "lw-settings-nav-item lv-agents-nav-item",
+                                    activeSection === "terminal"
+                                      ? "is-active"
+                                      : "text-black/70 hover:bg-black/[0.025]",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
+                                  <span className="flex-1 text-left">{t("终端")}</span>
+                                </AppLink>
+                              </li>
+                              <li>
+                                <AppLink
+                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
+                                  aria-current={activeSection === "browser" ? "page" : undefined}
+                                  className={cn(
+                                    "lw-settings-nav-item lv-agents-nav-item",
+                                    activeSection === "browser"
+                                      ? "is-active"
+                                      : "text-black/70 hover:bg-black/[0.025]",
+                                  )}
+                                >
+                                  <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
+                                  <span className="flex-1 text-left">{t("浏览器")}</span>
+                                </AppLink>
+                              </li>
                             </ul>
                           </div>
-                        );
-                      })}
-                    </nav>
+                        ) : null}
+                        {settingsGroups.map((group) => {
+                          const groupLabelId = `agent-settings-nav-group-${group.id}`;
+                          return (
+                            <div
+                              key={group.id}
+                              className="lv-agents-nav-group"
+                              role="group"
+                              aria-labelledby={groupLabelId}
+                            >
+                              <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
+                              <ul className="lv-agents-nav-group-items">
+                                {group.sections.map((section) => {
+                                  const isActive = section.id === activeSection;
+                                  return (
+                                    <li key={section.id}>
+                                      <AppLink
+                                        to={getAgentSectionHref(section.path, searchParams)}
+                                        aria-label={section.badge ? section.label : undefined}
+                                        aria-current={isActive ? "page" : undefined}
+                                        className={cn(
+                                          "lw-settings-nav-item lv-agents-nav-item",
+                                          section.badge && "has-badge",
+                                          isActive
+                                            ? "is-active"
+                                            : "text-black/70 hover:bg-black/[0.025]",
+                                        )}
+                                      >
+                                        <span className="lv-agents-nav-icon">{section.icon}</span>
+                                        <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
+                                        {section.badge && (
+                                          <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
+                                            {section.badge}
+                                          </span>
+                                        )}
+                                      </AppLink>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          );
+                        })}
+                      </nav>
+                    )}
 
-                    {isCN ? (
+                    {sidebarTab === "settings" && isCN ? (
                       <a
                         href={PRODUCT_FEEDBACK_URL}
                         target="_blank"
@@ -5152,7 +5153,7 @@ export const AgentSettingsPage = ({
                     ) : null}
                   </aside>
 
-                  <section className="min-w-0">
+                  <section className="min-w-0 lg:col-start-2">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
                         fallback={sectionFallback}
@@ -5173,6 +5174,7 @@ export const AgentSettingsPage = ({
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               commandExecutor={teaSdkCommandExecutor}
+                              execDebugCommand={repositories.bots.execDebugCommand}
                               useEnglish={useEnglish}
                             />
                           )}
@@ -5220,7 +5222,12 @@ export const AgentSettingsPage = ({
                             />
                           )}
                           {activeSection === "chat" && (
+                            /* 国际站语言切换时重挂 AgentChatPanel：组件内部用 ref 锁定首帧 launch token
+                               与 lightvelaApiParams（见 agent-chat-panel.tsx 注释），切换语言需整体卸载
+                               重挂以重置这些 ref，让 LightVelaPanel 用新语言重新初始化。国内站固定 key，
+                               不因其他 state 变化无谓重挂。 */
                             <AgentChatPanel
+                              key={isGlobal ? i18n.language : "cn"}
                               accountId={accountId}
                               commandExecutor={lightvelaCommandExecutor}
                               instanceId={sdkInstance.InstanceId}
@@ -5230,6 +5237,7 @@ export const AgentSettingsPage = ({
                               launchTokenStatus={launchTokenStatus}
                               onRetryLaunchToken={retryLaunchToken}
                               onRefreshLaunchToken={refreshLaunchToken}
+                              multiSession={chatMultiSessionBridge}
                             />
                           )}
                           {activeSection === "memory" && (
@@ -5247,10 +5255,23 @@ export const AgentSettingsPage = ({
                               t={t}
                             />
                           )}
+                          {activeSection === "settings" && (
+                            <AgentCommonSettingsPanel
+                              botId={activeBot.id}
+                              botStatus={activeBot.status}
+                              bots={repositories.bots}
+                              getGatewayRestartCommand={async () => {
+                                return (await getHermesScriptCommands()).getGatewayRestartCommand();
+                              }}
+                            />
+                          )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
                           )}
-                          {isGlobal && activeSection === "website" && (
+                          {activeSection === "deepseek-harness" && (
+                            <AgentDeepSeekHarnessPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "website" && (
                             <AgentWebsitePanel />
                           )}
                           {activeSection === "browser" && (

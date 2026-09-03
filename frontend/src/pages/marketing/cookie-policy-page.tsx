@@ -4,7 +4,10 @@ import type { ReactNode } from "react";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useLocaleOverride } from "@/i18n/t";
 import { AppLink } from "@/lib/app-navigation";
+import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
+import { JAPANESE_COOKIE_POLICY_COPY } from "./legal-copy.ja";
+import { KOREAN_COOKIE_POLICY_COPY } from "./legal-copy.ko";
 
 type CookieTableRow = {
   cookie: string;
@@ -369,6 +372,123 @@ const id: CookiePolicyCopy = {
   ],
 };
 
+const es: CookiePolicyCopy = {
+  backHome: "Volver al inicio",
+  brand: "LightVela",
+  title: "Política de cookies",
+  tableHeaders: {
+    cookie: "Cookie",
+    name: "Nombre de la cookie",
+    purpose: "Finalidad",
+    duration: "Duración",
+  },
+  intro: [
+    "Esta Política de cookies se aplica al sitio web de LightVela (el “Servicio”). Cuando utiliza el Servicio, podemos emplear cookies, archivos de registro, etiquetas de píxel, balizas web, scripts, eTags, identificadores de dispositivos móviles, complementos, almacenamiento local y archivos o tecnologías similares (conjuntamente, las “cookies”) para recopilar y almacenar información que obtenemos automáticamente sobre su dispositivo y el uso del Servicio. Esta Política de cookies explica qué son las cookies, qué tipos pueden utilizarse en el Servicio y cómo puede administrarlas.",
+    "A efectos de esta Política de cookies, “nosotros”, “nos” y “nuestro” se refieren a Tencent Cloud International Pte. Limited, sociedad constituida en Singapur con domicilio social en 10 Anson Road, #21-07, International Plaza, Singapore 079903. Somos responsables del tratamiento de los datos personales que recopilamos mediante cookies. Puede ponerse en contacto aquí con nuestro delegado de protección de datos.",
+  ],
+  sections: [
+    {
+      title: "1. ¿QUÉ SON LAS COOKIES?",
+      paragraphs: [
+        "Las cookies son archivos que se colocan en su dispositivo cuando se carga un sitio web en el navegador. Se utilizan ampliamente para hacer que los sitios web funcionen o lo hagan de forma más eficiente, así como para proporcionar información al propietario del sitio o a otro sitio que reconozca la cookie.",
+        "Cookies propias y de terceros\n\nLas cookies pueden ser propias o de terceros. Nosotros instalamos directamente las cookies propias en su dispositivo, mientras que un tercero, como un proveedor de analítica, un anunciante o un socio comercial, instala las cookies de terceros.",
+        "Cookies persistentes y de sesión\n\nLas cookies pueden ser persistentes o de sesión según el tiempo que permanezcan en su dispositivo. Una cookie persistente se conserva incluso después de cerrar el navegador o finalizar la sesión y permite que el Servicio reconozca su dispositivo cuando vuelva a abrir el navegador y utilizarlo. Una cookie de sesión existe temporalmente mientras el navegador está abierto y se elimina automáticamente cuando abandona el sitio web o cierra el navegador.",
+        "Si no acepta el uso de cookies, desactívelas siguiendo las instrucciones siguientes y cambie la configuración del navegador para impedir que se instalen en su dispositivo.",
+      ],
+    },
+    {
+      title: "2. ¿QUÉ TIPOS DE COOKIES UTILIZAMOS?",
+      paragraphs: ["Las tablas siguientes explican las cookies que nosotros y nuestros socios utilizamos en relación con el Servicio."],
+    },
+    {
+      title: "Cookies estrictamente necesarias",
+      paragraphs: [
+        "Estas cookies son esenciales para el funcionamiento del Servicio, para prestar un servicio que haya solicitado o para cumplir la ley, por ejemplo, los requisitos de seguridad de la normativa de protección de datos. Se recopilan cuando nuestro sitio web se carga en el navegador y no pueden desactivarse, ya que sin ellas no podemos prestar el Servicio.",
+      ],
+    },
+    {
+      title: "Cookies de funcionalidad",
+      paragraphs: ["Estas cookies nos permiten recordar sus preferencias y las opciones que selecciona en el sitio."],
+      tableRows: [
+        { cookie: "github.com\n(Tercero)", name: "_gh_sess", purpose: "Se utiliza para mantener temporalmente el estado de la aplicación y del framework entre páginas, por ejemplo, el paso en el que se encuentra el usuario dentro de un formulario de varias etapas.", duration: "Sesión" },
+        { cookie: "github.com\n(Tercero)", name: "cpu_bucket", purpose: "Se utiliza para administrar la carga o asignar funciones.", duration: "Sesión" },
+        { cookie: "github.com\n(Tercero)", name: "tz", purpose: "Permite adaptar las marcas de tiempo a su zona horaria.", duration: "Sesión" },
+        { cookie: "github.com\n(Tercero)", name: "_device_id", purpose: "Se utiliza para realizar el seguimiento de dispositivos reconocidos con fines de seguridad.", duration: "1 año" },
+        { cookie: "github.com\n(Tercero)", name: "preferred_color_mode", purpose: "Indica la preferencia de tema seleccionada por el usuario.", duration: "Sesión" },
+        { cookie: "github.com\n(Tercero)", name: "logged_in", purpose: "Nos indica que el usuario ya ha iniciado sesión.", duration: "1 año" },
+        { cookie: "github.com\n(Tercero)", name: "_octo", purpose: "Se utiliza para administrar sesiones, incluido el almacenamiento en caché de contenido dinámico, el acceso condicional a funciones, los metadatos de solicitudes de asistencia y la analítica propia.", duration: "1 año" },
+      ],
+    },
+    {
+      title: "Cookies de rendimiento",
+      paragraphs: [
+        "Estas cookies nos permiten recopilar información sobre su actividad en línea, incluidos datos de comportamiento e interacción con el contenido. Nos ayudan a ofrecer una mejor experiencia de usuario y a mantener, operar y mejorar continuamente el Servicio.",
+      ],
+      tableRows: [
+        { cookie: "lightclaw.tech\n(Tercero)", name: "lc_session", purpose: "Se utiliza para comprender las visitas al sitio, la actividad en formularios y el contexto de referencia si acepta el seguimiento opcional.", duration: "Sesión" },
+      ],
+    },
+    {
+      title: "Cookies de marketing",
+      paragraphs: [
+        "Nosotros o nuestros socios publicitarios podemos instalar estas cookies mediante el Servicio para ofrecer una experiencia más personalizada, ejecutar campañas publicitarias, mostrar anuncios relevantes y medir la eficacia de las campañas. También pueden utilizarse para mostrarle anuncios relevantes en otros sitios. No almacenan directamente información personal, sino que se basan en la identificación única de su navegador y dispositivo de internet.",
+      ],
+    },
+    {
+      title: "3. ¿CÓMO PUEDE ADMINISTRAR O ELIMINAR LAS COOKIES?",
+      paragraphs: [
+        "Utilizamos cookies al prestar el Servicio para que pueda utilizarlo y disfrutarlo fácilmente. Algunas son esenciales y sin ellas no podemos prestar el Servicio, mientras que otras pueden desactivarse. Tiene derecho a decidir si acepta las cookies no esenciales y a continuación explicamos cómo ejercer ese derecho. Si rechaza o posteriormente desactiva determinadas cookies u otros datos almacenados localmente, es posible que no pueda utilizar todas las funciones del Servicio.",
+        "La mayoría de los dispositivos, en el caso de aplicaciones móviles, y navegadores, en el caso de aplicaciones y páginas web, permiten cambiar la configuración de cookies. Normalmente encontrará estos ajustes en el menú de “opciones” o “preferencias” del navegador. Desde allí puede:",
+      ],
+      bullets: [
+        "consultar qué cookies u otros datos almacenados localmente se utilizan y eliminarlos de forma individual",
+        "bloquear las cookies de terceros",
+        "bloquear las cookies de determinados sitios",
+        "impedir que se instalen todas las cookies",
+        "eliminar todas las cookies al cerrar el navegador",
+      ],
+    },
+    {
+      title: "Para obtener más información sobre cómo administrar los navegadores más utilizados, consulte los enlaces siguientes:",
+      bullets: [
+        "Configuración de cookies en Chrome para la Web",
+        "Configuración de cookies en Chrome para Android",
+        "Configuración de cookies en Safari para la Web",
+        "Configuración de cookies en Safari para iOS",
+        "Configuración de cookies en Internet Explorer",
+        "Configuración de cookies en Firefox",
+      ],
+      paragraphs: [
+        "Puede cambiar en cualquier momento la configuración de las cookies que utilizamos en el Servicio desde nuestro centro de preferencias.",
+        "Cómo desactivar el uso de cookies de terceros\n\nSi desea reducir los permisos en cualquier momento, por ejemplo, después de aceptar todas las cookies decide que no desea un tipo concreto, puede utilizar la configuración del navegador para eliminar cookies de terceros o tecnologías similares instaladas durante una visita anterior. Existe una extensión para el navegador Chrome que permite desactivar el uso de cookies de Google Analytics.",
+        "Si desea obtener más información sobre las cookies y su uso en internet, puede consultar el siguiente enlace: All About Cookies.",
+      ],
+    },
+    {
+      title: "4. CAMBIOS EN ESTA POLÍTICA DE COOKIES",
+      paragraphs: [
+        "Actualizaremos esta Política de cookies para reflejar los cambios en nuestras prácticas y servicios. Cuando publiquemos cambios, modificaremos la fecha de “Última actualización” situada al principio de la política. Si introducimos cambios sustanciales en la forma en que recopilamos, utilizamos o compartimos la información almacenada en cookies, se lo notificaremos mediante un aviso destacado cuando inicie sesión o utilice el Servicio. Le recomendamos consultar esta página periódicamente para informarse de cualquier cambio.",
+      ],
+    },
+    {
+      title: "5. COOKIES INSTALADAS ANTERIORMENTE",
+      paragraphs: [
+        "Si ha desactivado una o varias cookies, podremos seguir utilizando la información recopilada antes de que estableciera esa preferencia; no obstante, dejaremos de utilizar la cookie desactivada para recopilar información adicional.",
+      ],
+    },
+    {
+      title: "6. CONTACTO",
+      paragraphs: ["Si tiene preguntas o comentarios sobre esta Política de cookies, póngase en contacto con nosotros en lightvela@tencent.com."],
+    },
+    {
+      title: "7. IDIOMA",
+      paragraphs: [
+        "En caso de discrepancia o incoherencia entre la versión en inglés y esta traducción al español, prevalecerá la versión en inglés, salvo que la legislación aplicable disponga lo contrario.",
+      ],
+    },
+  ],
+};
+
 const blueLinkStyle = { color: "#2563EB", WebkitTextFillColor: "#2563EB", textDecorationColor: "#2563EB" };
 
 const browserLinks: Record<string, string> = {
@@ -390,26 +510,38 @@ const browserLinks: Record<string, string> = {
   "Pengaturan Cookie di Safari iOS": "https://support.apple.com/kb/HT1677",
   "Pengaturan Cookie di Internet Explorer": "https://windows.microsoft.com/en-gb/windows7/how-to-manage-cookies-in-internet-explorer-9",
   "Pengaturan Cookie di Firefox": "https://support.mozilla.org/en-US/kb/cookies",
+  "Configuración de cookies en Chrome para la Web": "https://support.google.com/chrome/answer/95647?co=GENIE.Platform%3DDesktop&hl=es",
+  "Configuración de cookies en Chrome para Android": "https://support.google.com/chrome/answer/95647?co=GENIE.Platform%3DAndroid&hl=es",
+  "Configuración de cookies en Safari para la Web": "https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac",
+  "Configuración de cookies en Safari para iOS": "https://support.apple.com/kb/HT1677",
+  "Configuración de cookies en Internet Explorer": "https://windows.microsoft.com/en-gb/windows7/how-to-manage-cookies-in-internet-explorer-9",
+  "Configuración de cookies en Firefox": "https://support.mozilla.org/es-ES/kb/cookies-informacion-que-los-sitios-web-guardan-en-",
+  "Chrome（ウェブ）のCookie設定": "https://support.google.com/chrome/answer/95647?co=GENIE.Platform%3DDesktop&hl=ja",
+  "Chrome（Android）のCookie設定": "https://support.google.com/chrome/answer/95647?co=GENIE.Platform%3DAndroid&hl=ja",
+  "Safari（ウェブ）のCookie設定": "https://support.apple.com/ja-jp/guide/safari/sfri11471/mac",
+  "Safari（iOS）のCookie設定": "https://support.apple.com/ja-jp/105082",
+  "Internet ExplorerのCookie設定": "https://windows.microsoft.com/en-gb/windows7/how-to-manage-cookies-in-internet-explorer-9",
+  "FirefoxのCookie設定": "https://support.mozilla.org/ja/kb/cookies-information-websites-store-on-your-computer",
 };
 
-const renderInlineLinks = (text: string): ReactNode[] => {
-  const tokenPattern = /(lightvela@tencent\.com|here|在此|di sini|Chrome browser add-on|Chrome 浏览器插件|add-on browser Chrome|All About Cookies|Cookie settings in Chrome for web|Cookie settings in Chrome for Android|Cookie settings in Safari web|Cookie settings in Safari iOS|Cookie settings in Internet Explorer|Cookie settings in Firefox|Chrome 网页版 Cookie 设置|Chrome Android 版 Cookie 设置|Safari 网页版 Cookie 设置|Safari iOS 版 Cookie 设置|Internet Explorer 的 Cookie 设置|Firefox 的 Cookie 设置|Pengaturan Cookie di Chrome untuk web|Pengaturan Cookie di Chrome untuk Android|Pengaturan Cookie di Safari web|Pengaturan Cookie di Safari iOS|Pengaturan Cookie di Internet Explorer|Pengaturan Cookie di Firefox)/g;
+export const renderCookiePolicyInlineLinks = (text: string): ReactNode[] => {
+  const tokenPattern = /(lightvela@tencent\.com|\bhere\b|在此|di sini|aquí|こちら|Chrome browser add-on|Chrome 浏览器插件|add-on browser Chrome|extensión para el navegador Chrome|Chromeブラウザのアドオン|All About Cookies|すべてのCookieについて|Cookie settings in Chrome for web|Cookie settings in Chrome for Android|Cookie settings in Safari web|Cookie settings in Safari iOS|Cookie settings in Internet Explorer|Cookie settings in Firefox|Chrome 网页版 Cookie 设置|Chrome Android 版 Cookie 设置|Safari 网页版 Cookie 设置|Safari iOS 版 Cookie 设置|Internet Explorer 的 Cookie 设置|Firefox 的 Cookie 设置|Pengaturan Cookie di Chrome untuk web|Pengaturan Cookie di Chrome untuk Android|Pengaturan Cookie di Safari web|Pengaturan Cookie di Safari iOS|Pengaturan Cookie di Internet Explorer|Pengaturan Cookie di Firefox|Configuración de cookies en Chrome para la Web|Configuración de cookies en Chrome para Android|Configuración de cookies en Safari para la Web|Configuración de cookies en Safari para iOS|Configuración de cookies en Internet Explorer|Configuración de cookies en Firefox|Chrome（ウェブ）のCookie設定|Chrome（Android）のCookie設定|Safari（ウェブ）のCookie設定|Safari（iOS）のCookie設定|Internet ExplorerのCookie設定|FirefoxのCookie設定)/g;
   return text.split(tokenPattern).filter(Boolean).map((part, index) => {
-    if (part === "lightvela@tencent.com" || part === "here" || part === "在此" || part === "di sini") {
+    if (part === "lightvela@tencent.com" || part === "here" || part === "在此" || part === "di sini" || part === "aquí" || part === "こちら") {
       return (
         <a key={`${part}-${index}`} href="mailto:lightvela@tencent.com" className="font-semibold underline underline-offset-2 hover:opacity-80" style={blueLinkStyle}>
           {part}
         </a>
       );
     }
-    if (part === "All About Cookies") {
+    if (part === "All About Cookies" || part === "すべてのCookieについて") {
       return (
         <a key={`${part}-${index}`} href="https://allaboutcookies.org/" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2 hover:opacity-80" style={blueLinkStyle}>
           {part}
         </a>
       );
     }
-    if (part === "Chrome browser add-on" || part === "Chrome 浏览器插件" || part === "add-on browser Chrome") {
+    if (part === "Chrome browser add-on" || part === "Chrome 浏览器插件" || part === "add-on browser Chrome" || part === "extensión para el navegador Chrome" || part === "Chromeブラウザのアドオン") {
       return (
         <a key={`${part}-${index}`} href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2 hover:opacity-80" style={blueLinkStyle}>
           {part}
@@ -434,13 +566,29 @@ const RichParagraph = ({ text }: { text: string }) => {
       <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
         {text.split("\n\n").map((paragraph) => (
           <p key={paragraph} style={{ margin: 0 }}>
-            {renderInlineLinks(paragraph)}
+            {renderCookiePolicyInlineLinks(paragraph)}
           </p>
         ))}
       </div>
     );
   }
-  return <>{renderInlineLinks(text)}</>;
+  return <>{renderCookiePolicyInlineLinks(text)}</>;
+};
+
+export const CookiePolicyParagraph = ({ text }: { text: string }) => {
+  const className = "mt-6 text-base leading-9 text-slate-700";
+  if (text.includes("\n\n")) {
+    return (
+      <div className={className}>
+        <RichParagraph text={text} />
+      </div>
+    );
+  }
+  return (
+    <p className={className}>
+      <RichParagraph text={text} />
+    </p>
+  );
 };
 
 const CookieTable = ({ copy, rows }: { copy: CookiePolicyCopy; rows: CookieTableRow[] }) => (
@@ -470,19 +618,41 @@ const CookieTable = ({ copy, rows }: { copy: CookiePolicyCopy; rows: CookieTable
   </div>
 );
 
+export function cookiePolicyHomePath(locale: PublicSiteLocaleCode | null): string {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return `/${PUBLIC_URL_LANGS.KO_KR}/`;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}/`;
+  return locale === PUBLIC_SITE_LOCALES.ES ? '/es/' : '/';
+}
+
+export function getCookiePolicyChrome(
+  locale: PublicSiteLocaleCode | null,
+): Pick<CookiePolicyCopy, "backHome" | "brand" | "title"> {
+  const source = getCookiePolicyCopy(locale);
+  return { backHome: source.backHome, brand: source.brand, title: source.title };
+}
+
+export function getCookiePolicyCopy(locale: PublicSiteLocaleCode | null): CookiePolicyCopy {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_COOKIE_POLICY_COPY as CookiePolicyCopy;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_COOKIE_POLICY_COPY as CookiePolicyCopy;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return es;
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return id;
+  return isZhLocale(locale ?? undefined) ? zh : en;
+}
+
 export const CookiePolicyPage = () => {
   const localeOverride = useLocaleOverride();
   // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
-  const copy = useZhHantDeep(localeOverride === "id-ID" ? id : isZhLocale(localeOverride) ? zh : en);
+  const baseCopy = getCookiePolicyCopy(localeOverride);
+  const copy = useZhHantDeep({ ...baseCopy, ...getCookiePolicyChrome(localeOverride) });
 
   return (
     <div className="min-h-dvh bg-[#F7F8FA] text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-5 sm:px-8">
-          <AppLink to="/" className="text-xl font-semibold tracking-[-0.04em] text-slate-950">
+          <AppLink to={cookiePolicyHomePath(localeOverride)} className="text-xl font-semibold tracking-[-0.04em] text-slate-950">
             {copy.brand}
           </AppLink>
-          <AppLink to="/" className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-950">
+          <AppLink to={cookiePolicyHomePath(localeOverride)} className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-950">
             {copy.backHome}
           </AppLink>
         </div>
@@ -493,22 +663,14 @@ export const CookiePolicyPage = () => {
           <div className="border-b border-slate-200 pb-12 sm:pb-14">
             <h1 className="text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-5xl">{copy.title}</h1>
             <div className="mt-12 space-y-6">
-              {copy.intro.map((paragraph) => (
-                <p key={paragraph} className="text-base leading-9 text-slate-700">
-                  <RichParagraph text={paragraph} />
-                </p>
-              ))}
+              {copy.intro.map((paragraph) => <CookiePolicyParagraph key={paragraph} text={paragraph} />)}
             </div>
           </div>
 
           {copy.sections.map((section) => (
             <section key={section.title} className="border-t border-slate-200 py-12 sm:py-14 first:border-t-0">
               <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">{section.title}</h2>
-              {section.paragraphs?.map((paragraph) => (
-                <p key={paragraph} className="mt-6 text-base leading-9 text-slate-700">
-                  <RichParagraph text={paragraph} />
-                </p>
-              ))}
+              {section.paragraphs?.map((paragraph) => <CookiePolicyParagraph key={paragraph} text={paragraph} />)}
               {section.bullets ? (
                 <ul className="mt-7 space-y-4 pl-5 text-base leading-9 text-slate-700">
                   {section.bullets.map((bullet) => (

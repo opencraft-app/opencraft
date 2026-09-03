@@ -16,20 +16,27 @@
  */
 
 import { Check, ChevronDown, Globe } from "lucide-react";
+import type { KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { setLocale } from "@/i18n";
+import { localeDefinition, parseLocaleCode, type I18nDictKey } from "@/i18n/locales.config";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-import { PUBLIC_SITE_LOCALES, shouldLocalizePublicPath, stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
+import {
+  PUBLIC_SITE_LOCALES,
+  shouldLocalizePublicPath,
+  stripPublicSiteLocalePrefix,
+  SWITCHER_VISIBLE_LOCALES,
+} from "@/lib/public-site-routing";
 import { isGlobal, switchLocaleInPath } from "@/lib/region";
 
 export type LanguageSwitcherVariant = "dropdown" | "inline";
 export type LanguageSwitcherNavigate = (targetUrl: string) => void;
 
-type I18nLocale = "zh-CN" | "en-US" | "zh-Hant" | "id-ID";
+type I18nLocale = I18nDictKey;
 
-type Option = {
+export type LanguageSwitcherOption = {
   value: PublicSiteLocale;
   /** 触发按钮上显示的短标（如 "EN" / "中"） */
   short: string;
@@ -37,41 +44,36 @@ type Option = {
   label: string;
 };
 
-const EN_OPTION: Option = { value: PUBLIC_SITE_LOCALES.EN_US, short: "EN", label: "Intl - English" };
-const ZH_CN_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_CN, short: "中", label: "Intl - 中文" };
-const ZH_SG_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_SG, short: "简", label: "Intl - 简体中文" };
-const ZH_HANT_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_HANT, short: "繁", label: "Intl - 繁體中文" };
-const ID_ID_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ID_ID, short: "ID", label: "Intl - Bahasa Indonesia" };
 const CHINA_SITE_URL = "https://lightvela.com";
 const INTL_SITE_URL = "https://lightvela.ai";
 
-function chineseOption(): Option {
-  return isGlobal ? ZH_SG_OPTION : ZH_CN_OPTION;
+export function buildLanguageSwitcherOptions(
+  localeCodes: readonly PublicSiteLocale[],
+  siteLabel: string,
+): readonly LanguageSwitcherOption[] {
+  return localeCodes.map((code) => {
+    const definition = localeDefinition(code);
+    return {
+      value: code,
+      short: definition.shortLabel,
+      label: `${siteLabel} - ${definition.displayName}`,
+    };
+  });
 }
 
-function currentOption(lang: string | undefined): Option {
-  if (lang === PUBLIC_SITE_LOCALES.ZH_HANT) return ZH_HANT_OPTION;
-  if (lang === PUBLIC_SITE_LOCALES.ID_ID) return ID_ID_OPTION;
-  if (lang?.startsWith("zh")) return chineseOption();
-  return EN_OPTION;
+function optionForLocale(locale: PublicSiteLocale, siteLabel = "Intl"): LanguageSwitcherOption {
+  const option = buildLanguageSwitcherOptions([locale], siteLabel)[0];
+  if (!option) throw new Error(`[language-switcher] missing locale option: ${locale}`);
+  return option;
 }
 
-/**
- * 下拉菜单里每个语言项的显示名。
- * 需明确区分「简体中文 / 繁體中文 / English」，不能笼统显示为「中文」，
- * 否则国际站同时存在简体（zh-SG/zh-CN）与繁体（zh-Hant）时用户无法分辨。
- */
-function dropdownOptionLabel(opt: Option): string {
-  const sitePrefix = isGlobal ? "International Site - " : "国际站 - ";
-  const name =
-    opt.value === PUBLIC_SITE_LOCALES.EN_US
-      ? "English"
-      : opt.value === PUBLIC_SITE_LOCALES.ZH_HANT
-        ? "繁體中文"
-        : opt.value === PUBLIC_SITE_LOCALES.ID_ID
-          ? "Bahasa Indonesia"
-        : "简体中文";
-  return sitePrefix + name;
+function currentOption(lang: string | undefined): LanguageSwitcherOption {
+  const parsed = parseLocaleCode(lang);
+  if (!parsed) return optionForLocale(PUBLIC_SITE_LOCALES.EN_US);
+  if (parsed === PUBLIC_SITE_LOCALES.ZH_CN || parsed === PUBLIC_SITE_LOCALES.ZH_SG) {
+    return optionForLocale(isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN);
+  }
+  return optionForLocale(parsed);
 }
 
 function languageFromPublicLocale(locale: PublicSiteLocale | undefined): PublicSiteLocale | undefined {
@@ -80,9 +82,7 @@ function languageFromPublicLocale(locale: PublicSiteLocale | undefined): PublicS
 }
 
 function i18nLocaleForPublicLocale(locale: PublicSiteLocale): I18nLocale {
-  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
-  if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
-  return locale.startsWith("zh") ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.EN_US;
+  return localeDefinition(locale).i18nKey;
 }
 
 /**
@@ -142,17 +142,24 @@ function openChinaSite(): void {
   window.open(CHINA_SITE_URL, "_blank", "noopener,noreferrer");
 }
 
+export function buildInternationalSiteUrl(
+  value: PublicSiteLocale,
+  location: { pathname: string; search: string; hash: string },
+): string {
+  const barePath = stripPublicSiteLocalePrefix(location.pathname || "/");
+  const globalLocale = value === PUBLIC_SITE_LOCALES.ZH_CN ? PUBLIC_SITE_LOCALES.ZH_SG : value;
+  const urlLang = localeDefinition(globalLocale).urlLang;
+  const shouldPrefix = value !== PUBLIC_SITE_LOCALES.EN_US && shouldLocalizePublicPath(barePath);
+  const targetPath = shouldPrefix
+    ? (barePath === "/" ? `/${urlLang}/` : `/${urlLang}${barePath}`)
+    : barePath;
+
+  return `${INTL_SITE_URL}${targetPath}${location.search}${location.hash}`;
+}
+
 function intlSiteUrlForLocale(value: PublicSiteLocale): string {
   if (typeof window === "undefined") return INTL_SITE_URL;
-
-  const barePath = stripPublicSiteLocalePrefix(window.location.pathname || "/");
-  const targetPath = value.startsWith("zh") && shouldLocalizePublicPath(barePath)
-    ? (barePath === "/" ? "/zh-sg/" : `/zh-sg${barePath}`)
-    : value === PUBLIC_SITE_LOCALES.ID_ID && shouldLocalizePublicPath(barePath)
-      ? (barePath === "/" ? "/id-id/" : `/id-id${barePath}`)
-      : barePath;
-
-  return `${INTL_SITE_URL}${targetPath}${window.location.search}${window.location.hash}`;
+  return buildInternationalSiteUrl(value, window.location);
 }
 
 function applyIntlChoice(
@@ -184,8 +191,15 @@ function DropdownSwitcher({
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const active = currentOption(activeLocale ?? i18n.language);
-  const options = [EN_OPTION, chineseOption(), ZH_HANT_OPTION, ID_ID_OPTION] as const;
+  const visibleLocales = SWITCHER_VISIBLE_LOCALES.filter((locale) => (
+    locale !== (isGlobal ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.ZH_SG)
+  ));
+  const options = buildLanguageSwitcherOptions(
+    visibleLocales,
+    isGlobal ? "International Site" : "国际站",
+  );
 
   /* 点击外部关闭下拉 */
   useEffect(() => {
@@ -197,6 +211,35 @@ function DropdownSwitcher({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    wrapRef.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus();
+  }, [open]);
+
+  const closeAndRestoreFocus = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const handleListboxKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeAndRestoreFocus();
+      return;
+    }
+
+    const options = [...(wrapRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [])];
+    const currentIndex = options.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowDown") nextIndex = Math.min(currentIndex + 1, options.length - 1);
+    if (event.key === "ArrowUp") nextIndex = Math.max(currentIndex - 1, 0);
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = options.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    options[nextIndex]?.focus();
+  };
 
   const handlePick = (value: PublicSiteLocale) => {
     setOpen(false);
@@ -223,16 +266,27 @@ function DropdownSwitcher({
     </li>
   );
 
-  const orderedOptions = isGlobal ? options : [ZH_CN_OPTION, EN_OPTION] as const;
+  const orderedOptions = isGlobal
+    ? options
+    : buildLanguageSwitcherOptions(
+        [PUBLIC_SITE_LOCALES.ZH_CN, PUBLIC_SITE_LOCALES.EN_US],
+        "国际站",
+      );
 
   return (
     <div ref={wrapRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="Change language"
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          event.preventDefault();
+          setOpen(true);
+        }}
         className="inline-flex items-center justify-center gap-1.5 h-[36px] px-3 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium whitespace-nowrap"
       >
         <Globe className="h-[14px] w-[14px]" />
@@ -245,6 +299,7 @@ function DropdownSwitcher({
       {open && (
         <ul
           role="listbox"
+          onKeyDown={handleListboxKeyDown}
           className="absolute right-0 top-[calc(100%+6px)] z-50 w-max min-w-[168px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
         >
           {!isGlobal && chinaSiteOption}
@@ -261,7 +316,7 @@ function DropdownSwitcher({
                     selected ? "font-semibold text-black/90" : "font-normal text-black/80"
                   }`}
                 >
-                  <span>{dropdownOptionLabel(opt)}</span>
+                  <span>{opt.label}</span>
                   {selected && <Check className="h-[14px] w-[14px]" />}
                 </button>
               </li>
@@ -289,7 +344,15 @@ function InlineSwitcher({
 }) {
   const { i18n } = useTranslation();
   const active = currentOption(activeLocale ?? i18n.language);
-  const options = [EN_OPTION, chineseOption(), ZH_HANT_OPTION, ID_ID_OPTION] as const;
+  const inlineLocales = isGlobal
+    ? SWITCHER_VISIBLE_LOCALES.filter((locale) => locale !== PUBLIC_SITE_LOCALES.ZH_CN)
+    : [
+        PUBLIC_SITE_LOCALES.EN_US,
+        PUBLIC_SITE_LOCALES.ZH_CN,
+        PUBLIC_SITE_LOCALES.ZH_HANT,
+        PUBLIC_SITE_LOCALES.ID_ID,
+      ];
+  const options = buildLanguageSwitcherOptions(inlineLocales, "Intl");
 
   return (
     <div className="flex flex-col gap-2">

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +48,74 @@ REQUIRED_APPSET_CATALOG_GLOBS = {
     "argocd/catalogs/playground/seoul-playground/*/*.yaml",
     "argocd/catalogs/playground/tokyo-playground/*/*.yaml",
 }
+SGPROD_CTL_SECRET_REL = "argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml"
+SGPROD_TRADE_SECRET_REL = "argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml"
+
+
+def validate_sgprod_internal_service_token_values(
+    *,
+    ctl_trade_token: str,
+    ctl_shared_token: str,
+    trade_shared_token: str,
+) -> list[str]:
+    errors: list[str] = []
+    if ctl_trade_token != ctl_shared_token:
+        errors.append(
+            "sgprod internal service token mismatch: "
+            "ctl CTL_TRADE_TOKEN must equal ctl LIGHTCLAW_INTERNAL_SERVICE_TOKEN"
+        )
+    if ctl_trade_token != trade_shared_token:
+        errors.append(
+            "sgprod internal service token mismatch: "
+            "ctl CTL_TRADE_TOKEN must equal trade LIGHTCLAW_INTERNAL_SERVICE_TOKEN"
+        )
+    return errors
+
+
+def decrypt_sops_secret_value(path: Path, key: str) -> str:
+    result = subprocess.run(
+        ["sops", "--decrypt", "--extract", f'["stringData"]["{key}"]', str(path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"failed to decrypt {path.name} key {key}")
+    value = result.stdout.rstrip("\n")
+    if not value:
+        raise RuntimeError(f"decrypted {path.name} key {key} is empty")
+    return value
+
+
+def validate_sgprod_internal_service_token_contract(repo_root: Path) -> list[str]:
+    ctl_secret = repo_root / SGPROD_CTL_SECRET_REL
+    trade_secret = repo_root / SGPROD_TRADE_SECRET_REL
+    missing = [
+        repo_rel(path, repo_root)
+        for path in (ctl_secret, trade_secret)
+        if not path.is_file()
+    ]
+    if missing:
+        return [
+            f"sgprod internal service token contract missing secret: {path}"
+            for path in missing
+        ]
+
+    try:
+        ctl_trade_token = decrypt_sops_secret_value(ctl_secret, "CTL_TRADE_TOKEN")
+        ctl_shared_token = decrypt_sops_secret_value(
+            ctl_secret, "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"
+        )
+        trade_shared_token = decrypt_sops_secret_value(
+            trade_secret, "LIGHTCLAW_INTERNAL_SERVICE_TOKEN"
+        )
+    except RuntimeError as exc:
+        return [f"sgprod internal service token contract: {exc}"]
+
+    return validate_sgprod_internal_service_token_values(
+        ctl_trade_token=ctl_trade_token,
+        ctl_shared_token=ctl_shared_token,
+        trade_shared_token=trade_shared_token,
+    )
 
 
 @dataclass(frozen=True)
@@ -315,7 +384,13 @@ def validate_publish_closure(
 
 def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
     if env in SUPPORTED_DIRECT_APP_ENVS:
-        return validate_direct_apps(repo_root, env)
+        errors = validate_direct_apps(repo_root, env)
+        if env == "sgprod" and all(
+            (repo_root / f"argocd/apps/sgprod/{service}.yaml").is_file()
+            for service in ("ctl", "trade")
+        ):
+            errors.extend(validate_sgprod_internal_service_token_contract(repo_root))
+        return errors
 
     if env not in SUPPORTED_SANDBOX_ENVS and not is_playground_env(env):
         return [f"unsupported env for AppSet static validation: {env}"]

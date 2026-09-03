@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AboutPage } from '@/pages/marketing/about-page';
+import { BlogArticlePage } from '@/pages/marketing/blog-article-page';
+import { BlogPage } from '@/pages/marketing/blog-page';
 import { ChangelogPage } from '@/pages/marketing/changelog-page';
 import { LandingPageView } from '@/pages/marketing/landing-page';
 
@@ -39,7 +41,7 @@ function useNextSearch() {
 const APP_SHELL_ROUTE_PREFIXES = ['/agents', '/account', '/plan-select'];
 
 function isAppShellRoute(to: string): boolean {
-  const path = to.split('?')[0].split('#')[0];
+  const path = (to.split('?')[0] ?? '').split('#')[0] ?? '';
   return APP_SHELL_ROUTE_PREFIXES.some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`),
   );
@@ -86,6 +88,7 @@ export function PublicHomePage({
             locale={locale}
             oauthError={new URLSearchParams(locationSearch).get('oauth_error')}
             showLanguageSwitcher
+            showProductEntry
             promoteFreeTrial
           />
         )}
@@ -136,6 +139,48 @@ export function PublicChangelogPage({
         publicLocalized={localized}
         renderLink={renderNextPublicSiteHeaderLink}
         renderLanguageSwitcher={renderNextLanguageSwitcher}
+      />
+    </PublicSiteLocaleBridge>
+  );
+}
+
+export function PublicBlogPage({
+  locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
+  localized = DEFAULT_PUBLIC_ROUTE_LOCALE.localized,
+}: Partial<PublicRouteLocale> = {}) {
+  const pathname = usePathname() || '/';
+
+  return (
+    <PublicSiteLocaleBridge locale={locale}>
+      <BlogPage
+        authControls={<PublicHeaderAuthIsland locale={locale} />}
+        currentPath={pathname}
+        publicLocale={locale}
+        publicLocalized={localized}
+        renderLink={renderNextPublicSiteHeaderLink}
+        renderLanguageSwitcher={renderNextLanguageSwitcher}
+      />
+    </PublicSiteLocaleBridge>
+  );
+}
+
+export function PublicBlogArticlePage({
+  locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
+  localized = DEFAULT_PUBLIC_ROUTE_LOCALE.localized,
+  slug,
+}: Partial<PublicRouteLocale> & { slug: string }) {
+  const pathname = usePathname() || '/';
+
+  return (
+    <PublicSiteLocaleBridge locale={locale}>
+      <BlogArticlePage
+        authControls={<PublicHeaderAuthIsland locale={locale} />}
+        currentPath={pathname}
+        publicLocale={locale}
+        publicLocalized={localized}
+        renderLink={renderNextPublicSiteHeaderLink}
+        renderLanguageSwitcher={renderNextLanguageSwitcher}
+        slug={slug}
       />
     </PublicSiteLocaleBridge>
   );

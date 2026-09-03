@@ -39,7 +39,7 @@
   --border-strong: rgba(0, 0, 0, 0.08);
 
   --color-success: #07C160;
-  --color-danger: #D92D20;
+  --color-danger: #cf3d4c;
   --danger: var(--color-danger);
   --ring: rgba(40, 93, 255, 0.24);
   --realname-control-border: #E9ECF1;
@@ -65,6 +65,50 @@
   --font-handwriting: "Kalam", cursive;
   --font-display-num: "Alimama ShuHeiTi", var(--font-heading);
   --font-chuangji: "ChuangJiHei", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  --font-latin: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-japanese: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "YuGothic", "Noto Sans JP", system-ui, sans-serif;
+  --font-korean: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+}
+
+html[lang="es"] {
+  --font-heading: var(--font-latin);
+  --font-body: var(--font-latin);
+}
+
+html[lang="ja-JP"] {
+  --font-heading: var(--font-japanese);
+  --font-body: var(--font-japanese);
+}
+
+html[lang="ko-KR"] {
+  --font-heading: var(--font-korean);
+  --font-body: var(--font-korean);
+}
+
+html:lang(zh) .lw-realname-consent-separator {
+  display: none;
+}
+
+.lw-cta-spanish-title {
+  display: none;
+}
+
+html[lang="es"] .lw-cta-display-title {
+  font-family: var(--font-heading) !important;
+}
+
+html[lang="es"] .lw-cta-segmented-title {
+  display: none;
+}
+
+html[lang="es"] .lw-cta-spanish-title {
+  display: block;
+  max-width: 768px;
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 48px;
+  font-weight: 400;
+  line-height: 64px;
 }
 
 * {
@@ -85,6 +129,13 @@ html {
 html.lw-settings-scrollbar-stable body[data-scroll-locked] {
   padding-right: 0 !important;
   margin-right: 0 !important;
+}
+
+@media (min-width: 1024px) {
+  html.lw-settings-scrollbar-stable body[data-scroll-locked] .lv-agents-sidebar-scroll-isolated {
+    position: fixed;
+    top: var(--lv-agents-sidebar-locked-top, 84px);
+  }
 }
 
 html.lw-settings-scrollbar-stable {
@@ -253,13 +304,16 @@ a {
 
 /* ── /agents 左侧导航视觉升级 ───────────────────────────────────────────── */
 .lv-agents-sidebar {
+  --lv-agents-nav-width: 220px;
+
   min-height: calc(100dvh - 178px);
+  padding-bottom: 24px;
   padding-right: 28px;
   border-right: 1px solid #e9ecf1;
 }
 
 .lv-agent-profile-wrap {
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   padding-bottom: 16px;
   border-bottom: 1px solid #e9ecf1;
 }
@@ -267,7 +321,7 @@ a {
 .lv-agent-profile {
   position: relative;
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   min-height: 44px;
   align-items: center;
   gap: 16px;
@@ -334,19 +388,18 @@ a {
 
 .lv-agent-renewal-badge {
   display: inline-flex;
-  height: 18px;
-  max-width: 92px;
+  max-width: 100%;
+  min-height: 18px;
   align-items: center;
   gap: 3px;
-  overflow: hidden;
-  padding: 0 6px;
+  padding: 2px 8px;
   border: 1px solid transparent;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 14px;
+  text-align: left;
+  white-space: normal;
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
@@ -450,7 +503,7 @@ a {
 
 .lv-agent-create-button {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   height: 36px;
   align-items: center;
   justify-content: center;
@@ -479,10 +532,170 @@ a {
 
 .lv-agents-nav {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   margin-top: 16px;
+}
+
+/* ── 侧边栏顶层「对话/设置」双 tab（分段控制器）── */
+.lv-agents-sidebar-tabs {
+  display: flex;
+  gap: 4px;
+  width: 220px;
+  margin-top: 12px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 4%);
+}
+
+.lv-agents-sidebar-tab {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 6px;
+  color: rgb(0 0 0 / 55%);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.lv-agents-sidebar-tab:hover {
+  color: rgb(0 0 0 / 80%);
+}
+
+.lv-agents-sidebar-tab.is-active {
+  color: #1f1f1f;
+  background: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+
+.lv-agents-sidebar-tab:focus-visible {
+  outline: 2px solid rgb(0 0 0 / 30%);
+  outline-offset: 1px;
+}
+
+/* ── 「对话」tab 会话列表 ── */
+.lv-agents-session-hint {
+  padding: 8px 12px 8px 20px;
+  color: rgb(0 0 0 / 40%);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.lv-agents-session-item-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.lv-agents-session-item.lv-agents-nav-item {
+  padding-right: 8px;
+}
+
+.lv-agents-session-item .lv-agents-session-title {
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lv-agents-session-menu-anchor {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  height: 36px;
+}
+
+.lv-agents-session-menu-btn {
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: rgb(0 0 0 / 35%);
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.lv-agents-session-item-wrap:hover .lv-agents-session-menu-btn,
+.lv-agents-session-menu-btn:focus-visible,
+.lv-agents-session-menu-btn[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.lv-agents-session-menu-btn:hover {
+  color: rgb(0 0 0 / 70%);
+  background: rgb(0 0 0 / 5%);
+}
+
+.lv-agents-session-menu {
+  position: absolute;
+  top: 26px;
+  right: 0;
+  z-index: 30;
+  min-width: 112px;
+  padding: 4px;
+  border: 1px solid rgb(15 23 42 / 8%);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+}
+
+.lv-agents-session-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: rgb(0 0 0 / 75%);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+}
+
+.lv-agents-session-menu-item:hover:not(:disabled) {
+  background: rgb(0 0 0 / 4%);
+}
+
+.lv-agents-session-menu-item:disabled {
+  color: rgb(0 0 0 / 30%);
+  cursor: not-allowed;
+}
+
+.lv-agents-session-menu-item--danger {
+  color: var(--danger);
+}
+
+.lv-agents-session-menu-item--danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 6%, transparent);
+}
+
+.lv-agents-session-rename-input {
+  width: 100%;
+  height: 28px;
+  margin: 4px 0;
+  padding: 0 10px;
+  border: 1px solid rgb(0 0 0 / 15%);
+  border-radius: 6px;
+  background: #fff;
+  color: #1f1f1f;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.lv-agents-session-rename-input:focus {
+  border-color: rgb(0 0 0 / 40%);
+  outline: none;
 }
 
 .lv-agents-nav .lw-settings-nav-item + .lw-settings-nav-item {
@@ -518,8 +731,8 @@ a {
 
 .lv-agents-nav-item {
   display: flex;
-  width: 220px;
-  height: 36px;
+  width: var(--lv-agents-nav-width);
+  height: 32px;
   align-items: center;
   gap: 14px;
   padding: 0 12px;
@@ -539,6 +752,11 @@ a {
   font-weight: 600;
 }
 
+.lv-agents-nav-item.has-badge {
+  gap: 8px;
+  font-size: 13px;
+}
+
 .lv-agents-nav-icon {
   display: flex;
   width: 14px;
@@ -556,7 +774,7 @@ a {
 
 .lv-agent-feedback-link {
   display: flex;
-  width: 220px;
+  width: var(--lv-agents-nav-width);
   align-items: center;
   gap: 8px;
   margin-top: 16px;
@@ -584,6 +802,17 @@ a {
   outline-offset: 2px;
 }
 
+@media (min-width: 1024px) {
+  .lv-agents-sidebar-scroll-isolated {
+    position: sticky;
+    top: 84px;
+    width: 280px;
+    max-height: calc(100dvh - 84px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
 @media (max-width: 1023px) {
   .lv-agents-sidebar {
     min-height: auto;
@@ -599,6 +828,10 @@ a {
     width: 100%;
   }
 
+  .lv-agents-nav {
+    gap: 12px;
+  }
+
   .lv-agents-nav-group-items {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -609,6 +842,11 @@ a {
   }
 
   .lv-agents-nav-item {
+    width: 100%;
+    height: 36px;
+  }
+
+  .lv-agents-sidebar-tabs {
     width: 100%;
   }
 }
@@ -1275,6 +1513,33 @@ code {
 .landing-page span {
   font-family: "PingFang SC", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-weight: inherit;
+}
+
+html[lang="es"] .landing-page p,
+html[lang="es"] .landing-page label,
+html[lang="es"] .landing-page input,
+html[lang="es"] .landing-page textarea,
+html[lang="es"] .landing-page button,
+html[lang="es"] .landing-page span {
+  font-family: var(--font-body);
+}
+
+html[lang="ja-JP"] .landing-page p,
+html[lang="ja-JP"] .landing-page label,
+html[lang="ja-JP"] .landing-page input,
+html[lang="ja-JP"] .landing-page textarea,
+html[lang="ja-JP"] .landing-page button,
+html[lang="ja-JP"] .landing-page span {
+  font-family: var(--font-body);
+}
+
+html[lang="ko-KR"] .landing-page p,
+html[lang="ko-KR"] .landing-page label,
+html[lang="ko-KR"] .landing-page input,
+html[lang="ko-KR"] .landing-page textarea,
+html[lang="ko-KR"] .landing-page button,
+html[lang="ko-KR"] .landing-page span {
+  font-family: var(--font-body);
 }
 
 /* ── setup page shared utilities ── */

@@ -13,7 +13,6 @@ import type {
   CurrentSubscription,
   DeletePassResult,
   Bot,
-  BotBornCard,
   BotChannelConfigResult,
   BotTerminalSession,
   BotRuntime,
@@ -45,6 +44,17 @@ export interface FederationAuthorizationInput {
   state: string;
 }
 
+export interface OIDCAuthorizationInput {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  responseType: "code";
+  scope: string;
+  codeChallenge: string;
+  codeChallengeMethod: "S256";
+  nonce: string;
+}
+
 export interface FederationSessionSummary {
   user: {
     id: string;
@@ -61,6 +71,16 @@ export interface FederationAuthorizationContext extends FederationAuthorizationI
 }
 
 export interface FederationTicketResult {
+  redirectUrl: string;
+  expiresAt: string;
+}
+
+export interface OIDCAuthorizationContext extends OIDCAuthorizationInput {
+  clientDisplayName: string;
+  currentSession: FederationSessionSummary | null;
+}
+
+export interface OIDCAuthorizationResult {
   redirectUrl: string;
   expiresAt: string;
 }
@@ -190,6 +210,8 @@ export interface AuthRepository {
   deletePaymentMethod(contractCode: string): Promise<void>;
   getFederationAuthorizationContext(input: FederationAuthorizationInput): Promise<FederationAuthorizationContext>;
   issueFederationTicket(input: FederationAuthorizationInput): Promise<FederationTicketResult>;
+  getOIDCAuthorizationContext(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationContext>;
+  authorizeOIDC(input: OIDCAuthorizationInput): Promise<OIDCAuthorizationResult>;
   prepareFederationSwitch(): Promise<void>;
   cancelFederationSwitch(): Promise<void>;
   getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
@@ -403,7 +425,6 @@ export interface BotRepository {
   sendWorkspaceMessage(botId: string, text: string): Promise<WorkspaceMessage[]>;
   getSettingsSnapshot(botId: string, mode?: DataMode): Promise<SettingsSnapshot>;
   getTerminalSession(botId: string): Promise<BotTerminalSession>;
-  getBotBornCard(botId: string): Promise<BotBornCard>;
   configureQQChannel(botId: string, input: { appId: string; appSecret: string; account?: string }): Promise<BotChannelConfigResult>;
   createWeixinLoginSession(botId: string): Promise<{ sessionId: string; status: string }>;
   getWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;

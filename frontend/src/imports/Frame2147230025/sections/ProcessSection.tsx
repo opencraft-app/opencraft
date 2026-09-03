@@ -74,7 +74,7 @@ function PlanetImage({
         animationDelay,
       }}
     >
-      <img alt="" src={src} className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" />
+      <img alt="" src={src} className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" loading="lazy" />
     </div>
   );
 }
@@ -170,19 +170,19 @@ export default function ProcessSection() {
         {/* process-grid > steps：左侧步骤列表（绝对定位，精确对齐 Figma 坐标） */}
         {/* Step 1: badge y=233.5, title y=289.5, desc y=333.5 */}
         <article className="absolute lv-reveal lv-delay-200" style={{ left: p(280), top: p(233.5, H), zIndex: 10 }}>
-          <StepBadge label="Step 1" width={90} />
+          <StepBadge label={t("步骤 {{step}}", { step: 1 })} width={90} />
           <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>{t("点击「立即创建」")}</h3>
           <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{t("选择订阅，点一下按钮，就这样")}</p>
         </article>
         {/* Step 2: badge y=432.5, title y=489, desc y=532.5 */}
         <article className="absolute lv-reveal lv-delay-400" style={{ left: p(280), top: p(432.5, H), zIndex: 10 }}>
-          <StepBadge label="Step 2" width={87} />
+          <StepBadge label={t("步骤 {{step}}", { step: 2 })} width={87} />
           <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>{t("系统自动帮你创建")}</h3>
           <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{t("喝口水的功夫，云端 Agent 即创建完成。")}</p>
         </article>
         {/* Step 3: badge y=611.5, title y=667.5, desc y=713.5 */}
         <article className="absolute lv-reveal lv-delay-600" style={{ left: p(280), top: p(611.5, H), zIndex: 10 }}>
-          <StepBadge label="Step 3" width={90} />
+          <StepBadge label={t("步骤 {{step}}", { step: 3 })} width={90} />
           <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>{t("和智能伙伴开始对话")}</h3>
           <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{t("创建完成后，绑定聊天通道，即刻开始探索之旅")}</p>
         </article>
@@ -256,12 +256,12 @@ export default function ProcessSection() {
         {/* 步骤 */}
         <div className="flex flex-col gap-8 lv-reveal lv-delay-200">
           {[
-            { step: 'Step 1', title: '点击「立即创建」', desc: '选择订阅，点一下按钮，就这样' },
-            { step: 'Step 2', title: '系统自动帮你创建', desc: '喝口水的功夫，云端 Agent 即创建完成。' },
-            { step: 'Step 3', title: '和智能伙伴开始对话', desc: '创建完成后，绑定聊天通道，即刻开始探索之旅' },
+            { step: 1, title: '点击「立即创建」', desc: '选择订阅，点一下按钮，就这样' },
+            { step: 2, title: '系统自动帮你创建', desc: '喝口水的功夫，云端 Agent 即创建完成。' },
+            { step: 3, title: '和智能伙伴开始对话', desc: '创建完成后，绑定聊天通道，即刻开始探索之旅' },
           ].map(({ step, title, desc }) => (
             <article key={step} className="flex flex-col gap-2">
-              <StepBadge label={step} />
+              <StepBadge label={t("步骤 {{step}}", { step })} />
               <p className="lw-font-hyruiyisong text-white text-[20px] leading-[30px] mt-1">{t(title)}</p>
               <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.7)] text-[13px] leading-6">{t(desc)}</p>
             </article>
@@ -269,9 +269,9 @@ export default function ProcessSection() {
         </div>
         {/* 星球图（移动端垂直堆叠展示） */}
         <div className="flex justify-center gap-4 flex-wrap opacity-70" aria-hidden="true">
-          <img alt="" src={imgImage614591622} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
-          <img alt="" src={imgImage614591617} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
-          <img alt="" src={imgImage614591619} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
+          <img alt="" src={imgImage614591622} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" loading="lazy" />
+          <img alt="" src={imgImage614591617} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" loading="lazy" />
+          <img alt="" src={imgImage614591619} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" loading="lazy" />
         </div>
       </div>
     </section>

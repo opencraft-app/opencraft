@@ -1,5 +1,11 @@
 # Model Switching
 
+## Summary
+
+**Model switching lets you choose which of your configured models the Hermes Agent currently uses. When a task calls for different speed, capability, cost profile, or provider availability, you switch models instead of creating a new agent. This works because persona, memory, skills, and automated tasks are all stored outside the model, so changing models only swaps the reasoning engine — nothing is taken away or wiped, and the agent still remembers you. Each agent has exactly one active model at a time.**
+
+---
+
 Model Switching lets you choose which configured model your Hermes Agent uses for its next work. Switch when a task needs a different balance of speed, capability, cost, or provider availability—without creating a new Agent.
 
 ## This page covers
@@ -48,6 +54,8 @@ Confirm that the Agent responds normally and that the model shown in the Agent c
 | You are comparing output quality | Run the same small prompt after each switch and compare the result. |
 
 Model Switching changes the engine used for future responses. It does not move your conversation history, rewrite files in [Cloud Storage](./files.md), or change your [Skills](./skill.md) and [Automations](./automation.md).
+
+If you want to explore a separate plugin-first agent environment alongside Hermes Agent, see [DeepSeek Harness](./deepseek-harness.md).
 
 ## If a switch does not work
 

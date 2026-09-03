@@ -1,27 +1,17 @@
 'use client';
 
-import { Suspense, type ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
 
-import { OpenClawProvider } from '@/contexts/agent-context';
-import { RepositoryProvider } from '@/contexts/repository-context';
-import { RuntimeConfigProvider } from '@/contexts/runtime-config-context';
-import { SessionProvider } from '@/contexts/session-context';
 import { LocaleOverrideProvider, type I18nLocale } from '@/i18n/t';
-import { DatongPageEffect } from '@/observability/datong-page-effect';
-import { DatongTrackerBridge } from '@/observability/datong-tracker-bridge';
-import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
-import { RumUserBridge } from '@/observability/rum-user-bridge';
-import { CookieConsentBanner } from '@/components/site/cookie-consent-banner';
-import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
+import { localeDefinition } from '@/i18n/locales.config';
 
 import type { PublicRouteLocale } from './public-locale';
+import { PublicSiteAppProviders } from './public-site-app-providers';
 
 type Locale = PublicRouteLocale['locale'];
 
 function i18nLocaleForPublicLocale(locale: Locale): I18nLocale {
-  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
-  if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
-  return locale.startsWith('zh') ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.EN_US;
+  return localeDefinition(locale).i18nKey;
 }
 
 /**
@@ -37,28 +27,12 @@ function i18nLocaleForPublicLocale(locale: Locale): I18nLocale {
  */
 export function PublicSiteLocaleBridge({ locale, children }: { locale: Locale; children: ReactNode }) {
   const targetLocale = i18nLocaleForPublicLocale(locale);
-  return <LocaleOverrideProvider locale={targetLocale}>{children}</LocaleOverrideProvider>;
-}
 
-export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
-  return (
-    <RepositoryProvider>
-      <RuntimeConfigProvider>
-        <SessionProvider>
-          <RumUserBridge />
-          <ProductAnalyticsBridge />
-          <DatongTrackerBridge />
-          <Suspense fallback={null}>
-            <DatongPageEffect />
-          </Suspense>
-          <OpenClawProvider>
-            <CookieConsentBanner />
-            {children}
-          </OpenClawProvider>
-        </SessionProvider>
-      </RuntimeConfigProvider>
-    </RepositoryProvider>
-  );
+  React.useEffect(() => {
+    document.documentElement.lang = targetLocale;
+  }, [targetLocale]);
+
+  return <LocaleOverrideProvider locale={targetLocale}>{children}</LocaleOverrideProvider>;
 }
 
 export function PublicSiteProviders({ locale, children }: { locale: Locale; children: ReactNode }) {

@@ -1,12 +1,43 @@
 import { describe, expect, it } from "vitest";
 
+import { formatScenarioQuickPrompt } from "../scenario-packs";
 import {
-  formatScenarioQuickPrompt,
   getOverviewScenarioTaskPacks,
+  hasLocalizedOverviewCopy,
   OVERVIEW_SCENARIO_TASK_PACKS,
-} from "../scenario-packs";
+} from "../overview-packs";
 
 const HAN_CHARACTER_PATTERN = /[\u3400-\u9fff]/;
+
+function spanishVisibleStrings(pack: (typeof OVERVIEW_SCENARIO_TASK_PACKS)[number]): string[] {
+  const topLevel = [
+    pack.name,
+    pack.valueProp,
+    pack.description,
+    pack.quickPrompt,
+    pack.defaultFrequencyLabel,
+    pack.durationLabel,
+    pack.defaultDeliverLabel,
+    pack.requiredInfoLabel,
+    ...(pack.usageGuide ?? []),
+    ...(pack.safetyNote ? [pack.safetyNote] : []),
+  ];
+  const quickPromptCopy = (pack.quickPromptTemplate ?? []).flatMap((part) => {
+    if (part.type === "text") return [part.text];
+    return [part.trueLabel, part.falseLabel].filter((value): value is string => Boolean(value));
+  });
+  const fieldCopy = pack.fields.flatMap((field) => {
+    const selectedOption = field.options?.find((option) => option.value === field.defaultValue);
+    return [
+      field.label,
+      field.placeholder,
+      field.helpText,
+      selectedOption?.label ?? field.defaultValue,
+      ...(field.options?.map((option) => option.label) ?? []),
+    ].filter((value): value is string => Boolean(value));
+  });
+  return [...topLevel, ...quickPromptCopy, ...fieldCopy];
+}
 
 describe("getOverviewScenarioTaskPacks", () => {
   it("keeps Chinese and English overview pack ids aligned by index", () => {
@@ -54,6 +85,10 @@ describe("getOverviewScenarioTaskPacks", () => {
       expect(HAN_CHARACTER_PATTERN.test(pack.name)).toBe(false);
       expect(HAN_CHARACTER_PATTERN.test(pack.valueProp)).toBe(false);
       expect(HAN_CHARACTER_PATTERN.test(pack.description)).toBe(false);
+      if (original?.safetyNote) {
+        expect(pack.safetyNote).toBeTruthy();
+        expect(HAN_CHARACTER_PATTERN.test(pack.safetyNote ?? ""), pack.name).toBe(false);
+      }
       const defaultValues = Object.fromEntries(
         pack.fields.map((field) => [field.key, field.defaultValue]),
       );
@@ -91,8 +126,137 @@ describe("getOverviewScenarioTaskPacks", () => {
     });
   });
 
-  it("includes an editable reminder time in every Chinese and English overview task request", () => {
-    for (const locale of ["zh-CN", "zh-SG", "en-US", "id-ID"] as const) {
+  it("localizes all six Spanish packs, prompts, safety copy, and dates without changing behavior", () => {
+    const packs = getOverviewScenarioTaskPacks("es");
+
+    expect(packs.map((pack) => pack.name)).toEqual([
+      "Recordatorios de agua y medicación",
+      "Recordatorio del alquiler",
+      "Alerta de tipo de cambio",
+      "Registro de calorías y ejercicio",
+      "Festivos y clima",
+      "Resumen bursátil",
+    ]);
+
+    packs.forEach((pack, index) => {
+      const original = OVERVIEW_SCENARIO_TASK_PACKS[index];
+      expect(original).toBeDefined();
+      expect(pack.id).toBe(original?.id);
+      expect(pack.defaultSchedule).toBe(original?.defaultSchedule);
+      expect(pack.promptBuilder).toBe(original?.promptBuilder);
+      expect(pack.quickPromptLocale).toBe("es");
+      expect(HAN_CHARACTER_PATTERN.test(pack.name)).toBe(false);
+      expect(HAN_CHARACTER_PATTERN.test(pack.valueProp)).toBe(false);
+      expect(HAN_CHARACTER_PATTERN.test(pack.description)).toBe(false);
+
+      const defaultValues = Object.fromEntries(
+        pack.fields.map((field) => [field.key, field.defaultValue]),
+      );
+      const quickPrompt = formatScenarioQuickPrompt(pack, defaultValues);
+      expect(HAN_CHARACTER_PATTERN.test(quickPrompt), pack.name).toBe(false);
+    });
+
+    const rentPack = packs.find((pack) => pack.id === "rent-reminder");
+    expect(rentPack).toBeDefined();
+    const rentValues = Object.fromEntries(
+      rentPack!.fields.map((field) => [field.key, field.defaultValue]),
+    );
+    rentValues.dueDate = "2026-09-01";
+    const rentPrompt = formatScenarioQuickPrompt(rentPack!, rentValues);
+    expect(rentPrompt).toContain("2026-09-01");
+    expect(rentPrompt).not.toMatch(/[年月日]/);
+  });
+
+  it("localizes every user-visible Spanish field string while preserving automation data", () => {
+    const packs = getOverviewScenarioTaskPacks("es");
+
+    packs.forEach((pack, index) => {
+      const original = OVERVIEW_SCENARIO_TASK_PACKS[index];
+      expect(original).toBeDefined();
+      expect(pack.id).toBe(original?.id);
+      expect(pack.defaultSchedule).toBe(original?.defaultSchedule);
+      expect(pack.promptBuilder).toBe(original?.promptBuilder);
+      expect(pack.fields.map((field) => field.key)).toEqual(
+        original?.fields.map((field) => field.key),
+      );
+      pack.fields.forEach((field, fieldIndex) => {
+        const originalField = original?.fields[fieldIndex];
+        expect(field.options?.map((option) => option.value) ?? []).toEqual(
+          originalField?.options?.map((option) => option.value) ?? [],
+        );
+        expect(field.visibleWhen).toEqual(originalField?.visibleWhen);
+      });
+
+      const chineseVisibleStrings = spanishVisibleStrings(pack).filter((value) =>
+        HAN_CHARACTER_PATTERN.test(value),
+      );
+      expect(chineseVisibleStrings, `${pack.id} 仍有中文用户可见文案`).toEqual([]);
+    });
+  });
+
+  it("localizes all six Japanese packs without falling back to the Chinese source", () => {
+    const packs = getOverviewScenarioTaskPacks("ja-JP");
+
+    expect(hasLocalizedOverviewCopy("ja-JP")).toBe(true);
+    expect(packs.map((pack) => pack.name)).toEqual([
+      "水分補給・服薬リマインダー",
+      "家賃リマインダー",
+      "為替レートアラート",
+      "カロリー・運動記録",
+      "祝日・天気チェック",
+      "株式情報ダイジェスト",
+    ]);
+
+    packs.forEach((pack, index) => {
+      const original = OVERVIEW_SCENARIO_TASK_PACKS[index];
+      expect(original).toBeDefined();
+      expect(pack.id).toBe(original?.id);
+      expect(pack.defaultSchedule).toBe(original?.defaultSchedule);
+      expect(pack.promptBuilder).toBe(original?.promptBuilder);
+      expect(pack.quickPromptLocale).toBe("ja-JP");
+      expect(`${pack.name}${pack.valueProp}${pack.description}`).toMatch(/[\u3040-\u30ff]/);
+      expect(pack.name).not.toBe(original?.name);
+      expect(pack.fields.map((field) => field.key)).toEqual(original?.fields.map((field) => field.key));
+      pack.fields.forEach((field, fieldIndex) => {
+        expect(field.label, `${pack.id}.${field.key}`).not.toBe(original?.fields[fieldIndex]?.label);
+      });
+      const defaultValues = Object.fromEntries(pack.fields.map((field) => [field.key, field.defaultValue]));
+      expect(formatScenarioQuickPrompt(pack, defaultValues), pack.id).toMatch(/[\u3040-\u30ff]/);
+    });
+  });
+
+  it("localizes all six Korean packs without falling back to the Chinese source", () => {
+    const packs = getOverviewScenarioTaskPacks("ko-KR");
+
+    expect(hasLocalizedOverviewCopy("ko-KR")).toBe(true);
+    expect(packs.map((pack) => pack.name)).toEqual([
+      "물 섭취 및 복약 알림",
+      "임대료 납부 알림",
+      "환율 도달 알림",
+      "칼로리 및 운동 기록",
+      "공휴일 및 날씨 확인",
+      "주식 정보 요약",
+    ]);
+
+    packs.forEach((pack, index) => {
+      const original = OVERVIEW_SCENARIO_TASK_PACKS[index];
+      expect(original).toBeDefined();
+      expect(pack.id).toBe(original?.id);
+      expect(pack.defaultSchedule).toBe(original?.defaultSchedule);
+      expect(pack.promptBuilder).toBe(original?.promptBuilder);
+      expect(pack.quickPromptLocale).toBe("ko-KR");
+      expect(`${pack.name}${pack.valueProp}${pack.description}`).toMatch(/[가-힣]/);
+      expect(pack.name).not.toBe(original?.name);
+      expect(pack.fields.map((field) => field.key)).toEqual(original?.fields.map((field) => field.key));
+      const visibleStrings = spanishVisibleStrings(pack);
+      expect(visibleStrings.filter((value) => HAN_CHARACTER_PATTERN.test(value)), pack.id).toEqual([]);
+      const defaultValues = Object.fromEntries(pack.fields.map((field) => [field.key, field.defaultValue]));
+      expect(formatScenarioQuickPrompt(pack, defaultValues), pack.id).toMatch(/[가-힣]/);
+    });
+  });
+
+  it("includes an editable reminder time in every localized overview task request", () => {
+    for (const locale of ["zh-CN", "zh-SG", "en-US", "id-ID", "es", "ja-JP", "ko-KR"] as const) {
       for (const pack of getOverviewScenarioTaskPacks(locale)) {
         const defaultValues = Object.fromEntries(
           pack.fields.map((field) => [field.key, field.defaultValue]),

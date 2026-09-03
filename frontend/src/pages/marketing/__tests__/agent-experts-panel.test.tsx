@@ -8,6 +8,7 @@ import {
   parseInstalledSkillSlugs,
 } from "@/lib/hermes-skills-client";
 import { fetchSkillFile, fetchSkillDetail, fetchSkillFiles, fetchSkillSetDetail, fetchSkillSets } from "@/lib/skillhub-api";
+import { LocaleOverrideProvider } from "@/i18n/t";
 
 import {
   buildInstallSkillsBatchCommand,
@@ -20,6 +21,7 @@ import {
   getSkillPackageInstallFailureMessage,
   getEnglishPackageFrontmatterValue,
   getExpertSkillDocumentPath,
+  getMissingExpertSkillDocumentMessage,
   isSkillInstallAlreadyExists,
   installSkillSlugs,
   resolveAvailablePackageSkillSlugs,
@@ -408,6 +410,12 @@ describe("hermes agent experts panel", () => {
     expect(getExpertSkillDocumentPath(["README.md"], "en")).toBe("README.md");
   });
 
+  it("uses an English fallback when a Spanish expert document is missing", () => {
+    expect(getMissingExpertSkillDocumentMessage("es")).toBe(
+      "Could not find identify_en.md or a compatible skill document",
+    );
+  });
+
   it("parses folded English package descriptions from frontmatter", () => {
     expect(getEnglishPackageFrontmatterValue(`---
 description: >-
@@ -705,6 +713,7 @@ metadata:
       remark: "",
       scene: "finance",
       skillCount: 1,
+      skillSlugs: [],
       createdAt: 0,
       updatedAt: 0,
     };
@@ -716,6 +725,7 @@ metadata:
       remark: "",
       scene: "tech",
       skillCount: 1,
+      skillSlugs: [],
       createdAt: 0,
       updatedAt: 0,
     };
@@ -738,6 +748,77 @@ metadata:
 
     await waitFor(() => expect(fetchSkillSets).toHaveBeenCalledWith(expect.objectContaining({ keyword: "quant" })));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Unmatched Test Package/ })).not.toBeInTheDocument());
+  });
+
+  it("keeps Experts-owned controls and roles in Spanish while using English package content", async () => {
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [{
+        id: 10,
+        slug: "academic-literature-review",
+        displayName: "文献综述",
+        displayNameEn: "Literature Review",
+        summary: "中文摘要",
+        summaryEn: "English package summary",
+        remark: "",
+        scene: "academic",
+        skillCount: 1,
+        createdAt: 0,
+        updatedAt: 0,
+      }],
+    });
+
+    render(
+      <LocaleOverrideProvider locale="es">
+        <ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} lang="es" />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(screen.getByPlaceholderText("Buscar paquetes de Skills")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lista" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tarjetas" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Todos" })).toBeInTheDocument();
+    const literatureButton = await screen.findByRole("button", { name: /Literature Review/ });
+    expect(literatureButton).toBeInTheDocument();
+    expect(await screen.findByText("Investigador académico")).toBeInTheDocument();
+    expect(screen.queryByText("学术研究员")).not.toBeInTheDocument();
+
+    const literatureCard = literatureButton.closest("article");
+    expect(literatureCard).not.toBeNull();
+    fireEvent.error(within(literatureCard!).getByTestId("skill-package-profile-image"));
+    fireEvent.error(within(literatureCard!).getByTestId("skill-package-profile-image"));
+    expect(within(literatureCard!).getByTestId("skill-package-profile-fallback")).toHaveTextContent("L");
+    expect(screen.queryByText("文献综述")).not.toBeInTheDocument();
+  });
+
+  it("keeps Experts-owned categories and roles in Japanese while requesting English package content", async () => {
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [{
+        id: 11,
+        slug: "academic-literature-review",
+        displayName: "文献综述",
+        displayNameEn: "Literature Review",
+        summary: "中文摘要",
+        summaryEn: "English package summary",
+        remark: "",
+        scene: "academic",
+        skillCount: 1,
+        createdAt: 0,
+        updatedAt: 0,
+      }],
+    });
+
+    render(
+      <LocaleOverrideProvider locale="ja-JP">
+        <ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} lang={"ja" as never} />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "全て" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "学術" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Literature Review/ })).toBeInTheDocument();
+    expect(await screen.findByText("学術リサーチャー")).toBeInTheDocument();
+    expect(fetchSkillSets).toHaveBeenCalledWith(expect.objectContaining({ lang: "en" }));
+    expect(screen.queryByText("学术研究员")).not.toBeInTheDocument();
   });
 
   it("loads SkillHub packages with scenes and filters local dev seed packages without a scene", async () => {

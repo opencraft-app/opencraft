@@ -111,6 +111,29 @@ func TestInternalShadowCredentialsRequiresTokenAndReturnsTemporaryCredentials(t 
 	}
 }
 
+func TestInternalRegisterOrRetryShadowBindingRequiresTokenAndReturnsBinding(t *testing.T) {
+	t.Parallel()
+
+	router, svc, _ := newShadowBindingHTTPTestRouter()
+	_, userID := completePhone3FAHTTPFlow(t, router, svc)
+	body := map[string]any{"external_user_id": userID}
+
+	unauthorized := performJSONRequest(t, router, http.MethodPost, "/internal/shadow/binding/register-or-retry", body)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected register-or-retry endpoint to require token, got %d: %s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	req := newJSONRequest(t, http.MethodPost, "/internal/shadow/binding/register-or-retry", body)
+	req.Header.Set("Authorization", "Bearer shadow-internal-token")
+	response := performRequest(router, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected register-or-retry endpoint 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if !stringsContainsAll(response.Body.String(), `"code":"OK"`, `"user_id":"`+userID+`"`, `"status":"active"`) {
+		t.Fatalf("unexpected register-or-retry response: %s", response.Body.String())
+	}
+}
+
 func TestInternalShadowBindingAndTencentCloudCallback(t *testing.T) {
 	t.Parallel()
 

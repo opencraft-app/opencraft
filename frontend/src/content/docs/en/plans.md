@@ -1,5 +1,11 @@
 # Plans
 
+## Summary
+
+**LightVela offers four plans—Launch, Cruise, Launch AI, and Cruise AI—covering everything from a light first try to high-frequency use. Each plan activates a Hermes Agent in a dedicated cloud runtime with its own CPU, memory, and storage, where the agent stays online 24/7 without a server to buy or a local deployment to maintain. Plans differ in runtime resources, storage capacity, and monthly AI credits, while core capabilities such as self-improvement, multi-channel access, skills, automated tasks, and long-term memory remain available across tiers. This page also explains refund rules and the email-based application process. Live pricing and availability are shown on the subscribe page.**
+
+---
+
 LightVela offers four plan tiers—**Launch, Cruise, Launch AI, and Cruise AI**—for needs ranging from a lightweight starting point to high-frequency Agent use. Each plan provides an isolated cloud environment for a Hermes Agent and a monthly AI-credit allocation. This page explains the positioning, resources, benefits, refund rules, and application steps so you can choose the right fit.
 
 ## What this page covers
@@ -53,6 +59,10 @@ Real-time prices, inventory, discounts, and purchase availability are shown on t
 | Cruise | $14 / month |
 | Launch AI | $12 / month |
 | Cruise AI | $23 / month |
+
+> ℹ️ **New-user offer**
+>
+> New users can try Launch free for 14 days on their first order and Launch AI free for 7 days on their first order. The offer shown on the Subscribe page takes precedence.
 
 > ℹ️ **Price note**
 >

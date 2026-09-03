@@ -156,6 +156,12 @@ type compiledRoute struct {
 	route          Route
 	proxy          *httputil.ReverseProxy
 	allowedOrigins originAllowlist
+	corsAllow      []compiledCORSRule
+}
+
+type compiledCORSRule struct {
+	rule           PublicRule
+	allowedOrigins originAllowlist
 }
 
 type sessionEnvelope struct {
@@ -209,10 +215,21 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 		if len(route.AllowedOrigins) > 0 {
 			routeAllowedOrigins = route.AllowedOrigins
 		}
+		corsAllow := make([]compiledCORSRule, 0, len(route.CORSAllow))
+		for _, rule := range route.CORSAllow {
+			corsAllow = append(corsAllow, compiledCORSRule{
+				rule: PublicRule{
+					Method: rule.Method,
+					Path:   rule.Path,
+				},
+				allowedOrigins: normalizeAllowedOrigins(rule.AllowedOrigins),
+			})
+		}
 		routes = append(routes, compiledRoute{
 			route:          route,
 			proxy:          newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs),
 			allowedOrigins: normalizeAllowedOrigins(routeAllowedOrigins),
+			corsAllow:      corsAllow,
 		})
 		if subscriptionServiceURL == "" && hasRoutePrefix("/subscriptions/current", route.Prefix) {
 			subscriptionServiceURL = strings.TrimRight(target.String(), "/")
@@ -347,6 +364,26 @@ func validateRoute(route Route) error {
 	default:
 		return fmt.Errorf("route %s path_policy %q is invalid", route.Name, route.PathPolicy)
 	}
+	for i, rule := range route.CORSAllow {
+		if strings.TrimSpace(rule.Method) == "" {
+			return fmt.Errorf("route %s cors_allow[%d] method is required", route.Name, i)
+		}
+		if !methodAllowed(route.Methods, rule.Method) {
+			return fmt.Errorf("route %s cors_allow[%d] method must be allowed by the route", route.Name, i)
+		}
+		if !strings.HasPrefix(strings.TrimSpace(rule.Path), "/") {
+			return fmt.Errorf("route %s cors_allow[%d] path must start with /", route.Name, i)
+		}
+		if !hasRoutePrefix(rule.Path, route.Prefix) {
+			return fmt.Errorf("route %s cors_allow[%d] path must be under route prefix", route.Name, i)
+		}
+		if len(rule.AllowedOrigins) == 0 {
+			return fmt.Errorf("route %s cors_allow[%d] allowed_origins is required", route.Name, i)
+		}
+		if route.PathPolicy == PathPolicyAllowlist && !containsPublicRule(route.PathAllow, PublicRule{Method: rule.Method, Path: rule.Path}) {
+			return fmt.Errorf("route %s cors_allow[%d] must reference an allowed route path", route.Name, i)
+		}
+	}
 	if route.AllowVelaInstanceKey {
 		if route.Access != AccessAuthenticated {
 			return fmt.Errorf("route %s allow_vela_instance_key requires authenticated access", route.Name)
@@ -403,7 +440,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	applyCORSHeaders(matched.allowedOrigins, w.Header(), r, matched.route.Methods)
+	applyCORSHeaders(matched.corsOriginsForRequest(r), w.Header(), r, matched.route.Methods)
 
 	if isCORSPreflight(r) {
 		if !matched.allowsPreflight(r) {
@@ -1048,6 +1085,35 @@ func (r compiledRoute) allowsPreflight(req *http.Request) bool {
 	target := req.Clone(req.Context())
 	target.Method = requestedMethod
 	return r.allowsRequest(target)
+}
+
+func (r compiledRoute) corsOriginsForRequest(req *http.Request) originAllowlist {
+	origin := strings.TrimSpace(req.Header.Get("Origin"))
+	if origin == "" || r.allowedOrigins.Allows(origin) {
+		return r.allowedOrigins
+	}
+
+	target := req
+	if isCORSPreflight(req) {
+		target = req.Clone(req.Context())
+		target.Method = strings.TrimSpace(req.Header.Get("Access-Control-Request-Method"))
+	}
+	for _, rule := range r.corsAllow {
+		if pathRuleMatches(rule.rule, target) && rule.allowedOrigins.Allows(origin) {
+			return rule.allowedOrigins
+		}
+	}
+	return r.allowedOrigins
+}
+
+func containsPublicRule(rules []PublicRule, target PublicRule) bool {
+	for _, rule := range rules {
+		if strings.EqualFold(strings.TrimSpace(rule.Method), strings.TrimSpace(target.Method)) &&
+			strings.TrimSpace(rule.Path) == strings.TrimSpace(target.Path) {
+			return true
+		}
+	}
+	return false
 }
 
 func pathRuleMatches(rule PublicRule, req *http.Request) bool {

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +17,7 @@ const refreshProfile = vi.fn();
 let activePass: Pass | null = null;
 let bots: OpenClawBot[] = [];
 let currentSessionUser: User;
+let paidBillingEnabled = false;
 
 vi.mock("@/i18n/t", () => {
   const translate = (text: string, options?: Record<string, unknown>) => {
@@ -26,8 +27,7 @@ vi.mock("@/i18n/t", () => {
       "剩余 {{days}} 天到期": "{{days}} days left",
       "剩余 {{hours}} 小时到期": "{{hours}} hours left",
       "剩余不足 1 小时到期": "Less than 1 hour left",
-      "套餐{{time}}，敬请期待": "Plan {{time}}, Coming Soon",
-      "敬请期待": "Coming Soon",
+      "高级设置": "Advanced Settings",
     };
     const mapped = translations[text] ?? text;
     return mapped.replace(/\{\{\s*(\w+)\s*\}\}/g, (raw, name: string) => {
@@ -55,7 +55,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
-  usePaidBillingEnabled: () => true,
+  usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -117,6 +117,10 @@ vi.mock("@/pages/marketing/agent-skills-panel", () => ({
   HermesAgentSkillsPanel: () => <div>Skills panel</div>,
 }));
 
+vi.mock("@/pages/marketing/agent-common-settings-panel", () => ({
+  AgentCommonSettingsPanel: () => <div>Global common settings panel</div>,
+}));
+
 const createNavigation = (): AppNavigationValue => ({
   Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>,
   navigate: vi.fn(),
@@ -150,9 +154,9 @@ const buildPass = (): Pass => ({
   credit_available: 900,
 });
 
-const renderAgentSettingsPage = () => render(
+const renderAgentSettingsPage = (sectionId: "skill" | "settings" = "skill") => render(
   <AppNavigationProvider value={createNavigation()}>
-    <AgentSettingsPage sectionId="skill" showHeader={false} />
+    <AgentSettingsPage sectionId={sectionId} showHeader={false} />
   </AppNavigationProvider>,
 );
 
@@ -171,6 +175,7 @@ describe("AgentSettingsPage global renewal reminder", () => {
     };
     bots = [buildBot()];
     activePass = buildPass();
+    paidBillingEnabled = false;
     getRenewPrice.mockResolvedValue({
       bundle_id: "bundle_launch",
       price: 4900,
@@ -194,25 +199,48 @@ describe("AgentSettingsPage global renewal reminder", () => {
     vi.useRealTimers();
   });
 
-  it("greys out the reminder renewal entry and does not open the renewal modal", async () => {
+  it("exposes the advanced settings navigation entry", () => {
     renderAgentSettingsPage();
 
-    const reminder = screen.getByRole("button", { name: "Plan 3 days left, Coming Soon" });
+    expect(screen.getByRole("link", { name: "Advanced Settings" })).toHaveAttribute("href", "/agents/settings");
+  });
+
+  it("mounts the advanced settings panel on the global site", async () => {
+    renderAgentSettingsPage("settings");
+
+    expect(await screen.findByText("Global common settings panel")).toBeInTheDocument();
+  });
+
+  it("renders the global renewal reminder as a static compact badge", () => {
+    renderAgentSettingsPage();
+
+    const reminder = screen.getByText("Expiring Soon").closest(".lv-agent-renewal-badge") as HTMLElement | null;
+    expect(reminder).not.toBeNull();
+    expect(reminder?.tagName).toBe("SPAN");
     expect(reminder).toHaveTextContent("Expiring Soon");
-    expect(reminder).toHaveAttribute("aria-disabled", "true");
-    expect(reminder).toHaveClass("cursor-not-allowed");
+    expect(reminder).toHaveTextContent("3 days left");
+    expect(reminder).toHaveClass("lv-agent-renewal-badge");
+    expect(reminder).not.toHaveAttribute("aria-label");
+    expect(reminder).not.toHaveAttribute("aria-disabled");
+    expect(reminder).not.toHaveAttribute("aria-describedby");
+    expect(reminder).not.toHaveAttribute("role");
     expect(reminder).not.toHaveAttribute("title");
-
-    fireEvent.focus(reminder);
-    const tooltip = await screen.findByRole("tooltip");
-    expect(tooltip).toHaveTextContent("Coming Soon");
-    expect(reminder).toHaveAttribute("aria-describedby", tooltip.id);
-    expect(within(tooltip).queryByRole("button", { name: "立即续费" })).not.toBeInTheDocument();
-
-    await userEvent.click(reminder);
-
+    expect(reminder?.querySelector("svg")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Expiring Soon|Coming Soon/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "续费套餐" })).not.toBeInTheDocument();
     expect(getRenewPrice).not.toHaveBeenCalled();
     expect(createRenewOrder).not.toHaveBeenCalled();
+  });
+
+  it("opens the renewal modal from the global reminder when paid billing is enabled", async () => {
+    paidBillingEnabled = true;
+    renderAgentSettingsPage();
+
+    const reminder = screen.getByRole("button", { name: /点击续费/ });
+    await userEvent.click(reminder);
+
+    expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
+    expect(getRenewPrice).toHaveBeenCalledWith("pass_global_agent_renewal", { period: 1, time_unit: "m" });
   });
 });

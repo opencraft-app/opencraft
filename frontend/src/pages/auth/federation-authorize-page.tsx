@@ -12,25 +12,75 @@ import { avatarImageUrl } from "@/lib/avatar-image";
 import type {
   FederationAuthorizationContext,
   FederationAuthorizationInput,
+  OIDCAuthorizationContext,
+  OIDCAuthorizationInput,
 } from "@/repositories/types";
 
 interface FederationAuthorizePageProps {
   navigate?: (url: string) => void;
 }
 
-const readAuthorizationInput = (): FederationAuthorizationInput | null => {
+type AuthorizationRequest =
+  | { protocol: "federation"; input: FederationAuthorizationInput }
+  | { protocol: "oidc"; input: OIDCAuthorizationInput };
+
+type AuthorizationContext =
+  | { protocol: "federation"; value: FederationAuthorizationContext }
+  | { protocol: "oidc"; value: OIDCAuthorizationContext };
+
+const readAuthorizationRequest = (): AuthorizationRequest | null => {
   const query = new URLSearchParams(window.location.search);
   const clientId = query.get("client_id")?.trim() ?? "";
   const redirectUri = query.get("redirect_uri")?.trim() ?? "";
-  if (!clientId || !redirectUri) return null;
+  const state = query.get("state")?.trim() ?? "";
+  if (!clientId || !redirectUri || !state) return null;
+
+  const oidcParameterNames = [
+    "response_type",
+    "scope",
+    "code_challenge",
+    "code_challenge_method",
+    "nonce",
+  ];
+  if (!oidcParameterNames.some((name) => query.has(name))) {
+    return {
+      protocol: "federation",
+      input: { clientId, redirectUri, state },
+    };
+  }
+
+  const responseType = query.get("response_type")?.trim();
+  const scope = query.get("scope")?.trim() ?? "";
+  const codeChallenge = query.get("code_challenge")?.trim() ?? "";
+  const codeChallengeMethod = query.get("code_challenge_method")?.trim();
+  const nonce = query.get("nonce")?.trim() ?? "";
+  const hasOpenIDScope = scope.split(/\s+/).includes("openid");
+  if (
+    responseType !== "code"
+    || !scope
+    || !hasOpenIDScope
+    || !codeChallenge
+    || codeChallengeMethod !== "S256"
+    || !nonce
+  ) {
+    return null;
+  }
   return {
-    clientId,
-    redirectUri,
-    state: query.get("state") ?? "",
+    protocol: "oidc",
+    input: {
+      clientId,
+      redirectUri,
+      state,
+      responseType,
+      scope,
+      codeChallenge,
+      codeChallengeMethod,
+      nonce,
+    },
   };
 };
 
-const buildCancellationUrl = (context: FederationAuthorizationContext) => {
+const buildCancellationUrl = (context: FederationAuthorizationContext | OIDCAuthorizationContext) => {
   const target = new URL(context.redirectUri);
   target.searchParams.set("error", "access_denied");
   if (context.state) {
@@ -45,25 +95,25 @@ export function FederationAuthorizePage({
   const repositories = useRepositories();
   const { authReady } = useSession();
   const t = useT();
-  const [input, setInput] = useState<FederationAuthorizationInput | null>();
-  const [context, setContext] = useState<FederationAuthorizationContext | null>(null);
+  const [request, setRequest] = useState<AuthorizationRequest | null>();
+  const [context, setContext] = useState<AuthorizationContext | null>(null);
   const [switchingAccount, setSwitchingAccount] = useState(false);
   const [loadingContext, setLoadingContext] = useState(true);
   const [issuingTicket, setIssuingTicket] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setInput(readAuthorizationInput());
+    setRequest(readAuthorizationRequest());
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    if (input === undefined) {
+    if (request === undefined) {
       return () => {
         cancelled = true;
       };
     }
-    if (!input) {
+    if (!request) {
       setError(t("无法验证授权请求，请返回来源网站重试。"));
       setLoadingContext(false);
       return () => {
@@ -71,7 +121,13 @@ export function FederationAuthorizePage({
       };
     }
 
-    repositories.auth.getFederationAuthorizationContext(input).then((result) => {
+    const contextPromise = request.protocol === "federation"
+      ? repositories.auth.getFederationAuthorizationContext(request.input)
+        .then((value) => ({ protocol: "federation" as const, value }))
+      : repositories.auth.getOIDCAuthorizationContext(request.input)
+        .then((value) => ({ protocol: "oidc" as const, value }));
+
+    contextPromise.then((result) => {
       if (!cancelled) setContext(result);
     }).catch(() => {
       if (!cancelled) {
@@ -84,7 +140,7 @@ export function FederationAuthorizePage({
     return () => {
       cancelled = true;
     };
-  }, [input, repositories.auth, t]);
+  }, [request, repositories.auth, t]);
 
   const cancelAuthorization = useCallback(async () => {
     if (!context) return;
@@ -96,7 +152,7 @@ export function FederationAuthorizePage({
         // the browser to the validated relying-party callback.
       }
     }
-    navigate(buildCancellationUrl(context));
+    navigate(buildCancellationUrl(context.value));
   }, [context, navigate, repositories.auth, switchingAccount]);
 
   const enterSwitchMode = async () => {
@@ -123,11 +179,22 @@ export function FederationAuthorizePage({
     setIssuingTicket(true);
     setError(null);
     try {
-      const result = await repositories.auth.issueFederationTicket({
-        clientId: context.clientId,
-        redirectUri: context.redirectUri,
-        state: context.state,
-      });
+      const result = context.protocol === "federation"
+        ? await repositories.auth.issueFederationTicket({
+          clientId: context.value.clientId,
+          redirectUri: context.value.redirectUri,
+          state: context.value.state,
+        })
+        : await repositories.auth.authorizeOIDC({
+          clientId: context.value.clientId,
+          redirectUri: context.value.redirectUri,
+          state: context.value.state,
+          responseType: context.value.responseType,
+          scope: context.value.scope,
+          codeChallenge: context.value.codeChallenge,
+          codeChallengeMethod: context.value.codeChallengeMethod,
+          nonce: context.value.nonce,
+        });
       navigate(result.redirectUrl);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("授权失败，请稍后重试。"));
@@ -137,22 +204,28 @@ export function FederationAuthorizePage({
   };
 
   const handleLoginSuccess = useCallback(async () => {
-    if (!input) return;
+    if (!request) return;
     try {
-      const refreshedContext = await repositories.auth.getFederationAuthorizationContext(input);
-      setContext(refreshedContext);
+      if (request.protocol === "federation") {
+        const value = await repositories.auth.getFederationAuthorizationContext(request.input);
+        setContext({ protocol: "federation", value });
+      } else {
+        const value = await repositories.auth.getOIDCAuthorizationContext(request.input);
+        setContext({ protocol: "oidc", value });
+      }
       setSwitchingAccount(false);
     } catch {
       setError(t("无法验证授权请求，请返回来源网站重试。"));
     }
-  }, [input, repositories.auth, t]);
+  }, [request, repositories.auth, t]);
 
-  const authenticatedUser = context?.currentSession?.user ?? null;
+  const authorizationContext = context?.value ?? null;
+  const authenticatedUser = authorizationContext?.currentSession?.user ?? null;
   const showLogin = Boolean(context && authReady && !authenticatedUser);
   const showConfirmation = Boolean(context && authReady && authenticatedUser && !switchingAccount);
   const avatarSrc = avatarImageUrl(authenticatedUser?.avatarUrl ?? null);
   const accountDetail = authenticatedUser?.email ?? authenticatedUser?.phone ?? null;
-  const destinationHost = context ? new URL(context.redirectUri).hostname : "";
+  const destinationHost = authorizationContext ? new URL(authorizationContext.redirectUri).hostname : "";
 
   return (
     <ProductPageShell>
@@ -183,7 +256,7 @@ export function FederationAuthorizePage({
       >
         <div className="flex flex-col items-center px-9 pb-8 pt-10 text-center">
           <h1 className="text-[28px] font-medium leading-none text-black/90">
-            {t("继续访问")} {context?.clientDisplayName}
+            {t("继续访问")} {authorizationContext?.clientDisplayName}
           </h1>
           <p className="mt-4 text-sm text-black/50">{destinationHost}</p>
 

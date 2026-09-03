@@ -1,4 +1,8 @@
 /**
+ * @deprecated 死代码：已被 agent-model-config/AgentModelConfigPanel 取代（零引用）。
+ * 本文件是 config-panel-migration（!3110）从 tea-sdk 迁移本地化后未删除的旧实现。
+ * 暂留作迁移期参考，待线上版本稳定后删除（2026-08-26 决策）。
+ *
  * @fileoverview ModelPanel — Standard 变体模型配置面板
  *
  * 交互设计：
@@ -158,7 +162,7 @@ export function ModelPanel(props: ModelPanelProps) {
   useEffect(() => {
     if (!codingPlanId && codingPlanProviders.length > 0) {
       const preferred = codingPlanProviders.find((p) => p.value === 'tencent_token_plan') ?? codingPlanProviders[0];
-      setCodingPlanId(preferred.value);
+      if (preferred) setCodingPlanId(preferred.value);
     }
   }, [codingPlanProviders, codingPlanId]);
 
@@ -177,7 +181,8 @@ export function ModelPanel(props: ModelPanelProps) {
   // 模型 API：默认选第一个 provider
   useEffect(() => {
     if (!apiProviderId && apiProviders.length > 0) {
-      setApiProviderId(apiProviders[0].value);
+      const first = apiProviders[0];
+      if (first) setApiProviderId(first.value);
     }
   }, [apiProviders, apiProviderId]);
 
@@ -258,7 +263,7 @@ export function ModelPanel(props: ModelPanelProps) {
         message.error({ content: t('保存失败') });
       }
     } catch (err) {
-      const msg = err?.message || t('保存失败');
+      const msg = err instanceof Error ? err.message : t('保存失败');
       message.error({ content: msg });
     }
   }, [
@@ -518,7 +523,7 @@ export function ModelPanel(props: ModelPanelProps) {
                   {/* 展开：model radio 列表 + 切换按钮 */}
                   {isExpanded && item.models.length > 0 && (
                     <div className={`${CLS}__registry-models`}>
-                      {item.models.map((m) => (
+                      {item.models.map((m: { id: string; name: string }) => (
                         <label key={m.id} className={`${CLS}__registry-model-item`}>
                           <input
                             type="radio"
@@ -575,7 +580,7 @@ export function ModelPanel(props: ModelPanelProps) {
               <label className={`${CLS}__label`}>{t('Coding Plan 套餐')}</label>
               <Select
                 value={codingPlanId}
-                onChange={(v) => {
+                onChange={(v: string) => {
                   setCodingPlanId(v);
                   setCodingPlanModelId('');
                 }}
@@ -641,7 +646,7 @@ export function ModelPanel(props: ModelPanelProps) {
               <label className={`${CLS}__label`}>{t('模型服务商')}</label>
               <Select
                 value={apiProviderId}
-                onChange={(v) => {
+                onChange={(v: string) => {
                   setApiProviderId(v);
                   setApiModelId('');
                 }}
@@ -742,7 +747,7 @@ export function ModelPanel(props: ModelPanelProps) {
                   <label className={`${CLS}__label`}>{t('兼容协议')}</label>
                   <Select
                     value={customApiMode}
-                    onChange={(v) => setCustomApiMode(v as CustomApiMode)}
+                    onChange={(v: string) => setCustomApiMode(v as CustomApiMode)}
                     options={[
                       { value: 'openai-completions', label: 'OpenAI Completions' },
                       { value: 'anthropic-messages', label: 'Anthropic Messages' },

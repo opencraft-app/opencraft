@@ -1,5 +1,11 @@
 # Beberapa Model
 
+## Ringkasan
+
+**Penggantian model dipakai untuk memilih model terkonfigurasi mana yang sedang digunakan Hermes Agent. Ketika sebuah tugas menuntut kecepatan, kemampuan, pertimbangan biaya, atau ketersediaan penyedia yang berbeda, Anda cukup berganti model tanpa membuat Agent baru. Ini dimungkinkan karena persona, memori, skill, dan tugas otomatis semuanya tersimpan di luar model, sehingga berganti model hanya menukar mesin penalaran — tidak ada yang terbawa atau terhapus, dan Agent tetap mengingat Anda. Setiap Agent hanya memiliki satu model aktif pada satu waktu.**
+
+---
+
 Penggantian model memungkinkan Anda memilih model terkonfigurasi mana yang dipakai Hermes Agent untuk pekerjaan berikutnya. Gantilah ketika sebuah tugas membutuhkan keseimbangan kecepatan, kemampuan, biaya, atau ketersediaan penyedia yang berbeda—tanpa harus membuat Agent baru.
 
 ## Yang dibahas di halaman ini
@@ -48,6 +54,8 @@ Pastikan Agent merespons normal dan model yang ditampilkan di konsol Agent adala
 | Anda sedang membandingkan kualitas keluaran | Jalankan prompt kecil yang sama setelah tiap penggantian lalu bandingkan hasilnya. |
 
 Penggantian model mengubah mesin yang dipakai untuk respons selanjutnya. Tindakan ini tidak memindahkan riwayat percakapan Anda, tidak menulis ulang file di [File](./files.md), dan tidak mengubah [Skill](./skill.md) serta [Otomasi](./automation.md) Anda.
+
+Jika Anda ingin menjelajahi lingkungan Agent terpisah dengan arsitektur plugin-first di samping Hermes Agent, lihat [DeepSeek Harness](./deepseek-harness.md).
 
 ## Jika penggantian tidak berhasil
 

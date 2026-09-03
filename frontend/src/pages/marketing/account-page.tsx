@@ -767,8 +767,8 @@ const SubscriptionSection = ({
   const renewalRealnameVerified = isRenewalRealnameVerified(session.user, realnamePhoneVerificationEnabled);
 
   /**
-   * 只读 fallback pass — 国内站场景：activePass 为 null 但用户仍有 expired/isolated pass 需要续费或销毁。
-   * 仅在国内站且未多貌 activePass 时拉一次，避免与 agent-context.refreshPasses 重复干活。
+   * 只读 fallback pass：activePass 为空时仍需展示 expired/isolated pass 的续费状态。
+   * 国内站仅在付费开关开启时拉取；国际站关闭时也要展示 Coming Soon。
    */
   const [fallbackPass, setFallbackPass] = useState<Pass | null>(null);
 
@@ -777,7 +777,7 @@ const SubscriptionSection = ({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!paidBillingActive) return;
+    if (!isGlobal && !paidBillingActive) return;
     if (pass) {
       setFallbackPass(null);
       return;
@@ -803,8 +803,8 @@ const SubscriptionSection = ({
   /** 可操作的 pass：优先 active，其次 fallback */
   const operablePass = pass ?? fallbackPass;
   const passStatus = operablePass ? getPassStatus(operablePass) : null;
-  const renewalAvailable = isRenewalAvailableForRegion(isGlobal);
-  const canRenew = paidBillingActive && operablePass != null && canRenewPass(operablePass);
+  const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
+  const canRenew = (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
   const canDelete = paidBillingActive && operablePass != null && canDeletePass(operablePass);
 
   const handleRenewSuccess = useCallback(async () => {
@@ -871,6 +871,15 @@ const SubscriptionSection = ({
   const creditsTotal = operablePass ? operablePass.credit_total : 0;
   const creditsUsed = operablePass ? Math.max(0, operablePass.credit_total - operablePass.credit_available) : 0;
   const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
+  const creditsExhausted = Boolean(operablePass && creditsTotal > 0 && operablePass.credit_available <= 0);
+  const showCreditPrompt = creditsExhausted || usedPercent > 95;
+  const creditUsageColor = usedPercent > 95
+    ? "#991B1B"
+    : usedPercent >= 80
+      ? "#CF3D4C"
+      : usedPercent >= 50
+        ? "#C67B1E"
+        : "var(--lw-accent)";
 
   // 展示用的套餐名称
   const displayName = operablePass?.bundle_name ?? subscription?.code ?? plan.name;
@@ -919,12 +928,33 @@ const SubscriptionSection = ({
       className="overflow-hidden bg-white"
       style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
     >
-      <div className="px-5 py-5 md:px-8 md:py-8" style={{ borderBottom: "1px solid #E6E9EF" }}>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
-            {t("订阅套餐")}
-          </h3>
-        </div>
+      <div
+        className="flex items-center justify-between gap-3 px-5 py-5 md:px-8 md:py-8"
+        style={{ borderBottom: "1px solid #E6E9EF" }}
+      >
+        <h3 className="min-w-0 text-balance text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
+          {t("订阅套餐")}
+        </h3>
+        {canRenew && operablePass && (
+          <div className="shrink-0">
+            {!renewalAvailable ? (
+              <RenewComingSoonButton
+                label={t("立即续费")}
+                tooltip={t("敬请期待")}
+                icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setRenewModalOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
+              >
+                <CreditCard className="h-4 w-4" />
+                {t("立即续费")}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">
         {/* Current plan */}
@@ -982,61 +1012,76 @@ const SubscriptionSection = ({
           </div>
         </div>
 
-        {/* Credits progress（仅当有积分额度时展示） */}
-        {creditsTotal > 0 && (
+        {/* Credits progress and usage prompt */}
+        {(creditsTotal > 0 || showCreditPrompt) && (
           <>
             {/* Divider */}
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
             <div>
-              <div className="mb-2">
-                <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
-              </div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
-                  {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
+              {creditsTotal > 0 && (
+                <>
+                  <div className="mb-2">
+                    <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
+                      {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
+                    </p>
+                    <span className="text-xs font-semibold" style={{ color: creditUsageColor }}>
+                      {usedPercent}%
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="relative h-2.5 w-full overflow-hidden rounded-full" style={{ background: "rgba(0,0,0,0.05)" }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${usedPercent}%`,
+                        background: creditUsageColor,
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              {showCreditPrompt && operablePass && (
+                <p className="mt-3 text-xs leading-relaxed" style={{ color: "#991B1B" }}>
+                  {!creditsExhausted ? (
+                    <>
+                      {t("模型积分即将用尽，为避免智能体停止响应，请尽快")}
+                      <AppLink
+                        to="/agents/models"
+                        className="inline-flex items-center gap-0.5 font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                        style={{ color: "inherit" }}
+                      >
+                        {t("配置自有模型")}
+                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                      </AppLink>
+                    </>
+                  ) : (
+                    <>
+                      {t("模型积分已用尽，如未配置自有模型，智能体将无法继续响应。")}
+                      <AppLink
+                        to="/agents/models"
+                        className="inline-flex items-center gap-0.5 font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                        style={{ color: "inherit" }}
+                      >
+                        {t("立即配置模型")}
+                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                      </AppLink>
+                    </>
+                  )}
                 </p>
-                <span className="text-xs font-semibold" style={{ color: usedPercent >= 80 ? "#cf3d4c" : "#666" }}>
-                  {usedPercent}%
-                </span>
-              </div>
-              {/* Progress bar */}
-              <div className="relative h-2.5 w-full overflow-hidden rounded-full" style={{ background: "rgba(0,0,0,0.05)" }}>
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${usedPercent}%`,
-                    background: usedPercent >= 80 ? "#cf3d4c" : usedPercent >= 50 ? "#C67B1E" : "var(--lw-accent)",
-                  }}
-                />
-              </div>
+              )}
             </div>
           </>
         )}
 
-        {/* 续费 / 销毁按钮区：国际站续费暂置灰，国内站保留真实续费入口。 */}
-        {(canRenew || canDelete) && operablePass && (
+        {/* 销毁按钮及隔离期 / 过期说明；续费入口位于标题栏。 */}
+        {(canDelete || passStatus === "isolated" || passStatus === "expired") && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
-              {canRenew && (
-                !renewalAvailable ? (
-                  <RenewComingSoonButton
-                    label={t("立即续费")}
-                    tooltip={t("敬请期待")}
-                    icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setRenewModalOpen(true)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
-                  >
-                    <CreditCard className="h-4 w-4" />
-                    {t("立即续费")}
-                  </button>
-                )
-              )}
               {canDelete && (
                 <button
                   type="button"
@@ -1050,14 +1095,14 @@ const SubscriptionSection = ({
               )}
               {passStatus === "isolated" && (
                 <p className="basis-full text-xs" style={{ color: "#C67B1E" }}>
-                  {isGlobal
+                  {!renewalAvailable
                     ? t("续费功能敬请期待。你仍可销毁当前套餐后重新购买。")
                     : t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
                 </p>
               )}
               {passStatus === "expired" && (
                 <p className="basis-full text-xs" style={{ color: "#cf3d4c" }}>
-                  {isGlobal
+                  {!renewalAvailable
                     ? t("续费功能敬请期待。套餐已过期，暂时无法发起续费。")
                     : t("套餐已过期，请及时续费以免进入隔离期。")}
                 </p>
@@ -1067,7 +1112,7 @@ const SubscriptionSection = ({
         )}
       </div>
 
-      {/* 续费 / 销毁弹窗 — 国际站续费入口置灰，续费弹窗仅国内站触发。 */}
+      {/* 续费 / 销毁弹窗 — 国际站续费入口由 paidBillingEnabled 控制。 */}
       <AnimatePresence>
         {renewModalOpen && renewalAvailable && operablePass && (
           <RenewPassModal
@@ -1875,13 +1920,13 @@ export const AccountPage = () => {
                             {realnameStatusLabel && (
                               <span
                                 className="text-sm"
-                                style={{ color: idCardSyncStatus === "failed" ? "var(--color-danger, #D92D20)" : "rgba(0,0,0,0.5)" }}
+                                style={{ color: idCardSyncStatus === "failed" ? "var(--color-danger, #cf3d4c)" : "rgba(0,0,0,0.5)" }}
                               >
                                 {realnameStatusLabel}
                               </span>
                             )}
                             {realnameSyncError && (
-                              <span className="max-w-[240px] text-right text-xs" style={{ color: "var(--color-danger, #D92D20)" }}>
+                              <span className="max-w-[240px] text-right text-xs" style={{ color: "var(--color-danger, #cf3d4c)" }}>
                                 {realnameSyncError}
                               </span>
                             )}

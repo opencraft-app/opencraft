@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useLocation } from "react-router-dom";
 
 import { LegalFooter } from "@/components/site/legal-footer";
-import { LightVelaFooter, type RenderFooterLink } from "@/components/site/lightvela-footer";
+import { LightVelaFooter, FooterLinkColumns, FOOTER_SURFACE_CLASS, type RenderFooterLink } from "@/components/site/lightvela-footer";
 import { LoginModal } from "@/components/site/login-modal";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
@@ -34,7 +34,7 @@ import FeatureSection, { CardsSection } from "@/imports/Frame2147230025/sections
 import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
 import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
 import { OverviewAutomationTasksSection } from "./scenario-tasks/OverviewAutomationTasksSection";
-import { getOverviewScenarioTaskPacks } from "./scenario-tasks/scenario-packs";
+import { getOverviewScenarioTaskPacks } from "./scenario-tasks/overview-packs";
 
 const NO_INSTALLED_SCENARIOS: ReadonlySet<string> = new Set();
 
@@ -171,7 +171,22 @@ export const LandingPageView = ({
       />
       <ProcessSection />
       <CtaSection onCreateClick={() => handleCreateClick('footer')} ctaLabel={ctaLabel} />
-      {isGlobal ? <LightVelaFooter renderLink={renderFooterLink} /> : <LegalFooter icpPlacement="right" />}
+      {isGlobal ? (
+        <LightVelaFooter renderLink={renderFooterLink} />
+      ) : (
+        <>
+          {/*
+            国内站页脚：分栏导航（产品 / 公司 / 社区）+ 原有紧凑法律行。
+            LegalFooter 只承载版权与备案信息，栏目导航与国际站共用 FooterLinkColumns 的数据源。
+          */}
+          <div className={`w-full ${FOOTER_SURFACE_CLASS} pb-10`}>
+            <div className="mx-auto max-w-[1440px] px-6 md:px-10 lg:px-16">
+              <FooterLinkColumns renderLink={renderFooterLink} />
+            </div>
+          </div>
+          <LegalFooter icpPlacement="right" showLinks={false} />
+        </>
+      )}
       {!authControls ? (
         <LoginModal
           open={showLogin}

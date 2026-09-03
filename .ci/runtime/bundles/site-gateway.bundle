@@ -3,16 +3,22 @@ bundles:
     owner: site-gateway
     source: site-gateway
     db_contract: none
-    reason: Public COS-backed static website gateway for international production.
+    reason: COS-backed static website gateway for domestic and international production.
     allowed_paths:
     - site-gateway/Dockerfile
     - site-gateway/k8s/base
     - site-gateway/k8s/overlays/sgprod
+    - site-gateway/k8s/overlays/shprod
     - site-gateway/docs
     - argocd/apps/sgprod/site-gateway.yaml
     - argocd/projects/sgprod-site-gateway.yaml
     - argocd/secrets/sgprod/site-gateway-secrets.sops.yaml
     - argocd/services/site-gateway/sgprod
+    - argocd/apps/shprod/site-gateway.yaml
+    - argocd/projects/shprod-site-gateway.yaml
+    - argocd/secrets/shprod/site-gateway-secrets.sops.yaml
+    - argocd/services/site-gateway/shprod
+    - scripts/ssm_manifest.site-gateway.shprod.yaml
     exit_condition: Can be removed only after site-gateway is folded into another owned runtime.
     publish_paths:
     - site-gateway/k8s/base/**
@@ -22,6 +28,13 @@ bundles:
     - argocd/secrets/{env}/site-gateway-secrets.sops.yaml
     - argocd/services/site-gateway/{env}/**
     publish_paths_by_env:
+      shprod:
+      - site-gateway/k8s/base/**
+      - site-gateway/k8s/overlays/shprod/**
+      - argocd/apps/shprod/site-gateway.yaml
+      - argocd/projects/shprod-site-gateway.yaml
+      - argocd/secrets/shprod/site-gateway-secrets.sops.yaml
+      - argocd/services/site-gateway/shprod/**
       sgprod:
       - site-gateway/k8s/base/**
       - site-gateway/k8s/overlays/sgprod/**
@@ -32,4 +45,5 @@ bundles:
     dockerfile: site-gateway/Dockerfile
     build_context: site-gateway
     image_repo:
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/site-gateway
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/site-gateway

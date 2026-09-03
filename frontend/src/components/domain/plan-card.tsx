@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/t";
 
 interface PlanCardProps {
   plan: PlanOption;
@@ -27,6 +28,7 @@ const onCardKeyDown =
   };
 
 export const PlanCard = ({ plan, selected = false, loading = false, onSelect }: PlanCardProps) => {
+  const t = useT();
   const interactive = plan.available && !!onSelect;
 
   return (
@@ -51,7 +53,7 @@ export const PlanCard = ({ plan, selected = false, loading = false, onSelect }: 
             <CardDescription>{plan.description}</CardDescription>
           </div>
           <Badge variant={plan.available ? (selected ? "success" : "neutral") : "warning"}>
-            {plan.available ? (selected ? "当前可用" : "可选择") : "Coming Soon"}
+            {plan.available ? (selected ? t("当前可用") : t("可选择")) : t("即将推出")}
           </Badge>
         </div>
 
@@ -84,7 +86,7 @@ export const PlanCard = ({ plan, selected = false, loading = false, onSelect }: 
             onSelect?.();
           }}
         >
-          {loading && plan.available ? "确认中..." : plan.ctaLabel}
+          {loading && plan.available ? t("确认中...") : plan.ctaLabel}
         </Button>
       </CardFooter>
     </Card>

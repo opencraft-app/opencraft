@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import i18n from "@/i18n";
 import {
   AUTH_SERVICE_UNAVAILABLE_MESSAGE,
   AUTH_UNAUTHORIZED_EVENT,
@@ -9,9 +10,10 @@ import {
 } from "@/repositories/http-repositories";
 
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
+const HTTP_BOT_DRAFTS_STORAGE_KEY = "lightclaw-http-bot-drafts-v1";
 
 describe("http repositories auth token bootstrap", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.restoreAllMocks();
     vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "");
     const values = new Map<string, string>();
@@ -22,6 +24,7 @@ describe("http repositories auth token bootstrap", () => {
       clear: () => values.clear(),
     });
     globalThis.localStorage.clear();
+    await i18n.changeLanguage("zh-CN");
     window.history.replaceState({}, "", "/auth/sign-in");
   });
 
@@ -539,6 +542,231 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("uses ctl instance name before stale local bot drafts", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    window.localStorage.setItem(
+      HTTP_BOT_DRAFTS_STORAGE_KEY,
+      JSON.stringify({
+        ins_123456: {
+          name: "Hermes宝宝",
+        },
+      }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [
+              {
+                instance_id: "ins_123456",
+                name: "我的Hermes",
+                status: "Running",
+                created_at: "2026-03-24T00:00:00Z",
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots[0]).toEqual(
+      expect.objectContaining({
+        id: "ins_123456",
+        name: "我的Hermes",
+      }),
+    );
+  });
+
+  it("uses a custom legacy local bot draft name when the ctl instance name is empty", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    window.localStorage.setItem(
+      HTTP_BOT_DRAFTS_STORAGE_KEY,
+      JSON.stringify({
+        ins_custom_draft_name: {
+          name: "我的旅行规划助手",
+        },
+      }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [
+              {
+                instance_id: "ins_custom_draft_name",
+                name: "   ",
+                status: "Running",
+                created_at: "2026-03-24T00:00:00Z",
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots[0]).toEqual(
+      expect.objectContaining({
+        id: "ins_custom_draft_name",
+        name: "我的旅行规划助手",
+      }),
+    );
+  });
+
+  it("ignores the legacy default local bot draft name when the ctl instance name is empty", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    window.localStorage.setItem(
+      HTTP_BOT_DRAFTS_STORAGE_KEY,
+      JSON.stringify({
+        ins_legacy_default_name: {
+          name: "Hermes宝宝",
+        },
+      }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [
+              {
+                instance_id: "ins_legacy_default_name",
+                name: "   ",
+                status: "Running",
+                created_at: "2026-03-24T00:00:00Z",
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots[0]).toEqual(
+      expect.objectContaining({
+        id: "ins_legacy_default_name",
+        name: "我的Hermes",
+      }),
+    );
+  });
+
+  it("falls back to the regional default name when ctl instance name is empty", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [
+              {
+                instance_id: "ins_empty_name",
+                name: "   ",
+                status: "Running",
+                created_at: "2026-03-24T00:00:00Z",
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots[0]).toEqual(
+      expect.objectContaining({
+        id: "ins_empty_name",
+        name: "我的Hermes",
+      }),
+    );
+  });
+
+  it("uses the current international-site language for the default Hermes name", async () => {
+    await i18n.changeLanguage("id-ID");
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [
+              {
+                instance_id: "ins_empty_name_id",
+                name: "   ",
+                status: "Running",
+                created_at: "2026-03-24T00:00:00Z",
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots[0]).toEqual(
+      expect.objectContaining({
+        id: "ins_empty_name_id",
+        name: "Hermes Saya",
+      }),
+    );
+  });
+
   it("normalizes ctl instance status variants", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(
@@ -588,6 +816,7 @@ describe("http repositories auth token bootstrap", () => {
           message: "success",
           data: {
             instance_id: "ins_newbot",
+            name: "新实例 Bot",
             status: "Running",
             created_at: "2026-03-24T00:00:00Z",
           },
@@ -614,7 +843,7 @@ describe("http repositories auth token bootstrap", () => {
       "https://lightclaw.tech/v1/instances",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ timeout: 3600 }),
+        body: JSON.stringify({ timeout: 3600, name: "新实例 Bot" }),
       }),
     );
   });
@@ -628,6 +857,7 @@ describe("http repositories auth token bootstrap", () => {
           message: "success",
           data: {
             instance_id: "ins_creating",
+            name: "创建中 Bot",
             status: "Creating",
             created_at: "2026-03-24T00:00:00Z",
           },
@@ -1593,10 +1823,80 @@ describe("http repositories auth token bootstrap", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       client: {
         id: "personal-site",
-        display_name: "LightVela Personal Site",
+        display_name: "Personal Site",
       },
-      redirect_uri: "https://notes.lightvela.site/auth/lightvela/callback",
+      redirect_uri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
       state: "opaque state",
+      session: { authenticated: false },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.getFederationAuthorizationContext({
+      clientId: "personal-site",
+      redirectUri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+    })).resolves.toEqual({
+      clientId: "personal-site",
+      clientDisplayName: "Personal Site",
+      redirectUri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      currentSession: null,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/federation/context?client_id=personal-site&redirect_uri=https%3A%2F%2Fprobe-dsh.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=opaque+state",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("requests a federation ticket without constructing the callback in the client", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      redirect_url: "https://probe-dsh.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      expires_at: "2026-08-25T10:00:05Z",
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.issueFederationTicket({
+      clientId: "personal-site",
+      redirectUri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+      state: "state-1",
+    })).resolves.toEqual({
+      redirectUrl: "https://probe-dsh.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      expiresAt: "2026-08-25T10:00:05Z",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/federation/tickets",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          client_id: "personal-site",
+          redirect_uri: "https://probe-dsh.lightvela.site/auth/lightvela/callback",
+          state: "state-1",
+        }),
+      }),
+    );
+  });
+
+  it("loads a validated oidc authorization context", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      client: {
+        id: "site-gateway",
+        display_name: "LightVela Sites",
+      },
+      redirect_uri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
+      state: "opaque state",
+      response_type: "code",
+      scope: "openid profile",
+      code_challenge: "challenge-1",
+      code_challenge_method: "S256",
+      nonce: "nonce-1",
       session: {
         authenticated: true,
         user: {
@@ -1617,15 +1917,25 @@ describe("http repositories auth token bootstrap", () => {
     vi.stubGlobal("fetch", fetchMock);
     const repositories = createHttpRepositories("https://lightclaw.tech");
 
-    await expect(repositories.auth.getFederationAuthorizationContext({
-      clientId: "personal-site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    await expect(repositories.auth.getOIDCAuthorizationContext({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
       state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
     })).resolves.toEqual({
-      clientId: "personal-site",
-      clientDisplayName: "LightVela Personal Site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+      clientId: "site-gateway",
+      clientDisplayName: "LightVela Sites",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
       state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
       currentSession: {
         user: {
           id: "usr_123",
@@ -1636,14 +1946,14 @@ describe("http repositories auth token bootstrap", () => {
       },
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://lightclaw.tech/auth/federation/context?client_id=personal-site&redirect_uri=https%3A%2F%2Fnotes.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=opaque+state",
+      "https://lightclaw.tech/oauth2/authorize/context?client_id=site-gateway&redirect_uri=https%3A%2F%2Fsites-auth.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=opaque+state&response_type=code&scope=openid+profile&code_challenge=challenge-1&code_challenge_method=S256&nonce=nonce-1",
       expect.objectContaining({ method: "GET" }),
     );
   });
 
-  it("issues a federation ticket without constructing the callback in the client", async () => {
+  it("posts oidc authorization confirmation without constructing the callback in the client", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      redirect_url: "https://notes.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      redirect_url: "https://sites-auth.lightvela.site/auth/lightvela/callback?code=opaque&state=state-1",
       expires_at: "2026-08-21T10:00:05Z",
     }), {
       status: 200,
@@ -1652,25 +1962,75 @@ describe("http repositories auth token bootstrap", () => {
     vi.stubGlobal("fetch", fetchMock);
     const repositories = createHttpRepositories("https://lightclaw.tech");
 
-    await expect(repositories.auth.issueFederationTicket({
-      clientId: "personal-site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    await expect(repositories.auth.authorizeOIDC({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
       state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
     })).resolves.toEqual({
-      redirectUrl: "https://notes.lightvela.site/auth/lightvela/callback?ticket=opaque&state=state-1",
+      redirectUrl: "https://sites-auth.lightvela.site/auth/lightvela/callback?code=opaque&state=state-1",
       expiresAt: "2026-08-21T10:00:05Z",
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://lightclaw.tech/auth/federation/tickets",
+      "https://lightclaw.tech/oauth2/authorize",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          client_id: "personal-site",
-          redirect_uri: "https://notes.lightvela.site/auth/lightvela/callback",
+          client_id: "site-gateway",
+          redirect_uri: "https://sites-auth.lightvela.site/auth/lightvela/callback",
           state: "state-1",
+          response_type: "code",
+          scope: "openid profile",
+          code_challenge: "challenge-1",
+          code_challenge_method: "S256",
+          nonce: "nonce-1",
         }),
       }),
     );
+  });
+
+  it("keeps the fixed tech callback contract visible in oidc context requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      client: {
+        id: "site-gateway",
+        display_name: "LightVela Sites",
+      },
+      redirect_uri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      state: "opaque state",
+      response_type: "code",
+      scope: "openid profile",
+      code_challenge: "challenge-1",
+      code_challenge_method: "S256",
+      nonce: "nonce-1",
+      session: {
+        authenticated: false,
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.getOIDCAuthorizationContext({
+      clientId: "site-gateway",
+      redirectUri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      state: "opaque state",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
+    })).resolves.toMatchObject({
+      clientId: "site-gateway",
+      clientDisplayName: "LightVela Sites",
+      redirectUri: "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+      currentSession: null,
+    });
   });
 
   it("prepares and cancels federation account switching with cookie-authenticated requests", async () => {

@@ -15,7 +15,10 @@ export type RenewComingSoonTooltipPosition = {
   placement: TooltipPlacement;
 };
 
-export const isRenewalAvailableForRegion = (globalRegion: boolean): boolean => !globalRegion;
+export const isRenewalAvailableForRegion = (
+  globalRegion: boolean,
+  paidBillingEnabled: boolean,
+): boolean => !globalRegion || paidBillingEnabled;
 
 export const getRenewComingSoonTooltipPosition = ({
   triggerRect,

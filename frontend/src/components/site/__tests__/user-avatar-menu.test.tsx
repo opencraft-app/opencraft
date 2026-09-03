@@ -12,6 +12,7 @@ vi.mock("framer-motion", () => ({
 
 const useSession = vi.fn();
 const useOpenClaw = vi.fn();
+let mockIsGlobal = true;
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => useSession(),
@@ -30,7 +31,9 @@ vi.mock("@/lib/avatar-image", () => ({
 }));
 
 vi.mock("@/lib/region", () => ({
-  isGlobal: true,
+  get isGlobal() {
+    return mockIsGlobal;
+  },
 }));
 
 const stubLocation = (hostname: string) => {
@@ -50,6 +53,7 @@ afterEach(() => {
   cleanup();
   useSession.mockReset();
   useOpenClaw.mockReset();
+  mockIsGlobal = true;
   delete (window as Window & { show?: unknown }).show;
   stubLocation("localhost");
 });
@@ -181,6 +185,7 @@ describe("UserAvatarMenu", () => {
   });
 
   it("keeps the product feedback menu item hidden until show() reveals it", () => {
+    mockIsGlobal = false;
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -202,10 +207,13 @@ describe("UserAvatarMenu", () => {
       (window as Window & { show?: () => boolean }).show?.();
     });
 
-    expect(screen.getByRole("link", { name: "产品反馈" })).toHaveAttribute("href", "/support");
+    const feedbackLink = screen.getByRole("link", { name: "产品反馈" });
+    expect(feedbackLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
+    expect(feedbackLink).toHaveAttribute("target", "_blank");
+    expect(feedbackLink).toHaveAttribute("rel", "noopener noreferrer");
   });
 
-  it("keeps My creations hidden until show() reveals it", () => {
+  it("removes the product feedback menu item on the international site", () => {
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -220,12 +228,29 @@ describe("UserAvatarMenu", () => {
     render(<UserAvatarMenu />);
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
-    expect(screen.queryByRole("link", { name: "我的作品" })).not.toBeInTheDocument();
-
     act(() => {
       (window as Window & { show?: () => boolean }).show?.();
     });
 
-    expect(screen.getByRole("link", { name: "我的作品" })).toHaveAttribute("href", "/agents/websites");
+    expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
+  });
+
+  it("我的工作台入口默认显示（不再需要 show() 解锁）", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(<UserAvatarMenu />);
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+
+    expect(screen.getByRole("link", { name: "我的工作台" })).toHaveAttribute("href", "/agents/websites/");
   });
 });

@@ -108,7 +108,7 @@ stories_update({ workspace_id, id: full_story_id, label: newLabel });
 
 ## FE-AI Commit 标记规范
 
-> Conventional Commits 完整格式、commit 中文化要求等通用规范以 `global.md` G14 与 `quality.md` 5.2 为准。本节只规定**因 AI 辅助开发额外注入**的 FE-AI 标记，三行可以记完：
+> Conventional Commits 完整格式、commit 语言与项目规范优先等通用规范以 `../feai-native/references/team-conventions.md` 的「commit 规范」一节为准。本节只规定**因 AI 辅助开发额外注入**的 FE-AI 标记，三行可以记完：
 
 1. **subject 前缀**：`[FE-AI] <type>(<scope>): <中文描述>`
 2. **footer 脚注**：在 commit body 末尾追加 `AI-Assisted-By: FE-AI`
@@ -133,7 +133,7 @@ AI-Assisted-By: FE-AI"
 ## 与其他 Skills 的协作
 
 ```
-tapd-requirement-fetch → branch-auto-create → executing-plans → git commit (本 skill 注入 FE-AI 前缀) → mr-auto-submit
+tapd-requirement-fetch → branch-auto-create → build 实现 → git commit (本 skill 注入 FE-AI 前缀) → mr-auto-submit
          ↓                                                                   ↓                                  ↓
   [TAPD 标签: FE-AI]                                                  [Commit: [FE-AI]]                 [MR: FE-AI]
 ```

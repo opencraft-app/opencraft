@@ -3,7 +3,6 @@ import {
   imgCtaDeco } from '../assets';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
-import { LandingCtaFooterLinks } from '@/components/site/landing-cta-footer-links';
 import { useT } from '@/i18n/t';
 
 function CreateButton({ onClick, label }: { onClick?: () => void; label?: string }) {
@@ -72,9 +71,12 @@ function MascotGroup({ offsetX, offsetY }: MascotGroupProps) {
         >
           <img
             alt=""
+            height={254}
+            loading="lazy"
             src="/Slice 1.webp"
             className="pointer-events-none"
             style={{ width: 126, height: 118 }}
+            width={273}
           />
         </div>
       </div>
@@ -88,19 +90,22 @@ function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) 
     <div>
       {/* 开启旅程 — 带吉祥物装饰（吉祥物在文字右侧，避免遮盖英文标题） */}
       <div className="relative inline-flex items-center">
-        <h2 className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', height: '64px' }}>
+        <h2 className="lw-cta-display-title text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', height: '64px' }}>
           {t("开启旅程")}
         </h2>
         <MascotGroup offsetX={offsetX} offsetY={offsetY} />
       </div>
       {/* 准备好开启 探索之旅 了吗？ */}
-      <div className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', width: '768px', height: '64px' }}>
+      <div className="lw-cta-segmented-title text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', width: '768px', height: '64px' }}>
         {t("准备好开启")}
         <span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, rgb(53, 3, 255) 0%, rgb(213, 135, 255) 49.519%, rgb(255, 202, 128) 100%)' }}>
           {t("探索之旅")}
         </span>
         {t("了吗？")}
       </div>
+      <h2 className="lw-cta-spanish-title text-[#1a1a1a]">
+        {t("准备好开启探索之旅了吗？")}
+      </h2>
     </div>
   );
 }
@@ -154,7 +159,10 @@ export default function CtaSection({ onCreateClick, ctaLabel }: CtaSectionProps 
         src={imgCtaDeco}
         alt=""
         className="absolute pointer-events-none select-none lv-breathe"
+        height={466}
+        loading="lazy"
         style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 800, height: 800, opacity: 0.6 }}
+        width={492}
       />
 
       {/* 内容区 */}
@@ -167,8 +175,6 @@ export default function CtaSection({ onCreateClick, ctaLabel }: CtaSectionProps 
           {/* 左侧 .journey-copy */}
           <div className="flex flex-col lv-reveal">
             <TitleBlock offsetX={offset.x} offsetY={offset.y} />
-            {/* 副文案：隐私政策 / 服务条款 / 加入用户交流群（业务组件，独立维护） */}
-            <LandingCtaFooterLinks />
           </div>
 
           {/* 右侧 .journey-action */}

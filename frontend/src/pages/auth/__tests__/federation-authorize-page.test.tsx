@@ -12,11 +12,16 @@ vi.mock("@/observability/posthog", () => ({
   PRODUCT_ANALYTICS_LOCATIONS: { LOGIN_MODAL: "login_modal" },
 }));
 
-const issueFederationTicket = vi.fn();
+const authorizeOIDC = vi.fn();
+const getOIDCAuthorizationContext = vi.fn();
 const getFederationAuthorizationContext = vi.fn();
+const issueFederationTicket = vi.fn();
 const navigate = vi.fn();
 const prepareFederationSwitch = vi.fn();
 const cancelFederationSwitch = vi.fn();
+const OIDC_CLIENT_ID = "site-gateway";
+const OIDC_CLIENT_NAME = "LightVela Sites";
+const OIDC_REDIRECT_URI = "https://sites-auth.lightvela.site/auth/lightvela/callback";
 let sessionState: {
   authReady: boolean;
   session: {
@@ -33,8 +38,10 @@ let sessionState: {
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     auth: {
+      getOIDCAuthorizationContext,
       getFederationAuthorizationContext,
       getOAuthStartUrl: (provider: string) => `https://lightclaw.tech/auth/oauth/${provider}/start`,
+      authorizeOIDC,
       issueFederationTicket,
       prepareFederationSwitch,
       cancelFederationSwitch,
@@ -56,18 +63,29 @@ describe("FederationAuthorizePage", () => {
       authReady: true,
       session: { stage: "anonymous", user: null },
     };
-    window.history.replaceState({}, "", "/auth/federation/authorize?client_id=personal-site&redirect_uri=https%3A%2F%2Fnotes.lightvela.site%2Fauth%2Flightvela%2Fcallback&state=state-1");
-    getFederationAuthorizationContext.mockReset().mockResolvedValue({
-      clientId: "personal-site",
-      clientDisplayName: "LightVela Personal Site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    window.history.replaceState(
+      {},
+      "",
+      `/auth/federation/authorize?client_id=${OIDC_CLIENT_ID}&redirect_uri=${encodeURIComponent(OIDC_REDIRECT_URI)}&state=state-1&response_type=code&scope=openid+profile&code_challenge=challenge-1&code_challenge_method=S256&nonce=nonce-1`,
+    );
+    getOIDCAuthorizationContext.mockReset().mockResolvedValue({
+      clientId: OIDC_CLIENT_ID,
+      clientDisplayName: OIDC_CLIENT_NAME,
+      redirectUri: OIDC_REDIRECT_URI,
       state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
       currentSession: null,
     });
-    issueFederationTicket.mockReset().mockResolvedValue({
-      redirectUrl: "https://notes.lightvela.site/auth/lightvela/callback?ticket=server-ticket&state=state-1",
+    authorizeOIDC.mockReset().mockResolvedValue({
+      redirectUrl: `${OIDC_REDIRECT_URI}?code=server-code&state=state-1`,
       expiresAt: "2026-08-21T10:00:05Z",
     });
+    getFederationAuthorizationContext.mockReset();
+    issueFederationTicket.mockReset();
     navigate.mockReset();
     prepareFederationSwitch.mockReset().mockResolvedValue(undefined);
     cancelFederationSwitch.mockReset().mockResolvedValue(undefined);
@@ -80,6 +98,57 @@ describe("FederationAuthorizePage", () => {
 
     expect(await screen.findByRole("dialog", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "微信账号登录" })).toBeInTheDocument();
+  });
+
+  it("Federation 三参数请求使用 Federation context 和 ticket 流程", async () => {
+    const federationRedirectUri = "https://probe-dsh.lightvela.site/auth/lightvela/callback";
+    window.history.replaceState(
+      {},
+      "",
+      `/auth/federation/authorize?client_id=personal-site&redirect_uri=${encodeURIComponent(federationRedirectUri)}&state=federation-state`,
+    );
+    sessionState = {
+      authReady: true,
+      session: {
+        stage: "authenticated",
+        user: { id: "usr_123", name: "Ada" },
+      },
+    };
+    getFederationAuthorizationContext.mockResolvedValue({
+      clientId: "personal-site",
+      clientDisplayName: "Personal Site",
+      redirectUri: federationRedirectUri,
+      state: "federation-state",
+      currentSession: { user: sessionState.session.user },
+    });
+    issueFederationTicket.mockResolvedValue({
+      redirectUrl: `${federationRedirectUri}?ticket=server-ticket&state=federation-state`,
+      expiresAt: "2026-08-25T10:00:05Z",
+    });
+
+    render(<FederationAuthorizePage navigate={navigate} />);
+
+    expect(await screen.findByRole("dialog", { name: "确认授权登录" })).toBeInTheDocument();
+    expect(getFederationAuthorizationContext).toHaveBeenCalledWith({
+      clientId: "personal-site",
+      redirectUri: federationRedirectUri,
+      state: "federation-state",
+    });
+    expect(getOIDCAuthorizationContext).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+
+    await waitFor(() => {
+      expect(issueFederationTicket).toHaveBeenCalledWith({
+        clientId: "personal-site",
+        redirectUri: federationRedirectUri,
+        state: "federation-state",
+      });
+      expect(authorizeOIDC).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(
+        `${federationRedirectUri}?ticket=server-ticket&state=federation-state`,
+      );
+    });
   });
 
   it("已登录时展示当前账号并只使用服务端签发的跳转地址", async () => {
@@ -95,11 +164,16 @@ describe("FederationAuthorizePage", () => {
         },
       },
     };
-    getFederationAuthorizationContext.mockResolvedValue({
-      clientId: "personal-site",
-      clientDisplayName: "LightVela Personal Site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    getOIDCAuthorizationContext.mockResolvedValue({
+      clientId: OIDC_CLIENT_ID,
+      clientDisplayName: OIDC_CLIENT_NAME,
+      redirectUri: OIDC_REDIRECT_URI,
       state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
       currentSession: { user: sessionState.session.user },
     });
     render(<FederationAuthorizePage navigate={navigate} />);
@@ -110,13 +184,18 @@ describe("FederationAuthorizePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     await waitFor(() => {
-      expect(issueFederationTicket).toHaveBeenCalledWith({
-        clientId: "personal-site",
-        redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+      expect(authorizeOIDC).toHaveBeenCalledWith({
+        clientId: OIDC_CLIENT_ID,
+        redirectUri: OIDC_REDIRECT_URI,
         state: "state-1",
+        responseType: "code",
+        scope: "openid profile",
+        codeChallenge: "challenge-1",
+        codeChallengeMethod: "S256",
+        nonce: "nonce-1",
       });
       expect(navigate).toHaveBeenCalledWith(
-        "https://notes.lightvela.site/auth/lightvela/callback?ticket=server-ticket&state=state-1",
+        `${OIDC_REDIRECT_URI}?code=server-code&state=state-1`,
       );
     });
   });
@@ -129,11 +208,16 @@ describe("FederationAuthorizePage", () => {
         user: { id: "usr_123", name: "Ada" },
       },
     };
-    getFederationAuthorizationContext.mockResolvedValue({
-      clientId: "personal-site",
-      clientDisplayName: "LightVela Personal Site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    getOIDCAuthorizationContext.mockResolvedValue({
+      clientId: OIDC_CLIENT_ID,
+      clientDisplayName: OIDC_CLIENT_NAME,
+      redirectUri: OIDC_REDIRECT_URI,
       state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
       currentSession: { user: sessionState.session.user },
     });
     render(<FederationAuthorizePage navigate={navigate} />);
@@ -144,7 +228,7 @@ describe("FederationAuthorizePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "返回使用当前账号" }));
     await waitFor(() => expect(cancelFederationSwitch).toHaveBeenCalledOnce());
     expect(await screen.findByRole("dialog", { name: "确认授权登录" })).toBeInTheDocument();
-    expect(issueFederationTicket).not.toHaveBeenCalled();
+    expect(authorizeOIDC).not.toHaveBeenCalled();
   });
 
   it("切换账号时关闭登录先取消切换再返回来源网站", async () => {
@@ -152,11 +236,16 @@ describe("FederationAuthorizePage", () => {
       authReady: true,
       session: { stage: "authenticated", user: { id: "usr_123", name: "Ada" } },
     };
-    getFederationAuthorizationContext.mockResolvedValue({
-      clientId: "personal-site",
-      clientDisplayName: "LightVela Personal Site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    getOIDCAuthorizationContext.mockResolvedValue({
+      clientId: OIDC_CLIENT_ID,
+      clientDisplayName: OIDC_CLIENT_NAME,
+      redirectUri: OIDC_REDIRECT_URI,
       state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
       currentSession: { user: sessionState.session.user },
     });
     render(<FederationAuthorizePage navigate={navigate} />);
@@ -168,10 +257,10 @@ describe("FederationAuthorizePage", () => {
     await waitFor(() => {
       expect(cancelFederationSwitch).toHaveBeenCalledOnce();
       expect(navigate).toHaveBeenCalledWith(
-        "https://notes.lightvela.site/auth/lightvela/callback?error=access_denied&state=state-1",
+        `${OIDC_REDIRECT_URI}?error=access_denied&state=state-1`,
       );
     });
-    expect(cancelFederationSwitch.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
+    expect(cancelFederationSwitch.mock.invocationCallOrder[0]!).toBeLessThan(navigate.mock.invocationCallOrder[0]!);
   });
 
   it("取消切换接口失败时仍返回来源网站", async () => {
@@ -179,11 +268,16 @@ describe("FederationAuthorizePage", () => {
       authReady: true,
       session: { stage: "authenticated", user: { id: "usr_123", name: "Ada" } },
     };
-    getFederationAuthorizationContext.mockResolvedValue({
-      clientId: "personal-site",
-      clientDisplayName: "LightVela Personal Site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    getOIDCAuthorizationContext.mockResolvedValue({
+      clientId: OIDC_CLIENT_ID,
+      clientDisplayName: OIDC_CLIENT_NAME,
+      redirectUri: OIDC_REDIRECT_URI,
       state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
       currentSession: { user: sessionState.session.user },
     });
     cancelFederationSwitch.mockRejectedValueOnce(new Error("network unavailable"));
@@ -194,7 +288,7 @@ describe("FederationAuthorizePage", () => {
     fireEvent.click(within(switchDialog).getByRole("button", { name: "关闭" }));
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(
-      "https://notes.lightvela.site/auth/lightvela/callback?error=access_denied&state=state-1",
+      `${OIDC_REDIRECT_URI}?error=access_denied&state=state-1`,
     ));
   });
 
@@ -206,11 +300,16 @@ describe("FederationAuthorizePage", () => {
         user: { id: "usr_123", name: "Ada" },
       },
     };
-    getFederationAuthorizationContext.mockResolvedValue({
-      clientId: "personal-site",
-      clientDisplayName: "LightVela Personal Site",
-      redirectUri: "https://notes.lightvela.site/auth/lightvela/callback",
+    getOIDCAuthorizationContext.mockResolvedValue({
+      clientId: OIDC_CLIENT_ID,
+      clientDisplayName: OIDC_CLIENT_NAME,
+      redirectUri: OIDC_REDIRECT_URI,
       state: "state-1",
+      responseType: "code",
+      scope: "openid profile",
+      codeChallenge: "challenge-1",
+      codeChallengeMethod: "S256",
+      nonce: "nonce-1",
       currentSession: { user: sessionState.session.user },
     });
     render(<FederationAuthorizePage navigate={navigate} />);
@@ -218,15 +317,28 @@ describe("FederationAuthorizePage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "关闭" }));
 
     expect(navigate).toHaveBeenCalledWith(
-      "https://notes.lightvela.site/auth/lightvela/callback?error=access_denied&state=state-1",
+      `${OIDC_REDIRECT_URI}?error=access_denied&state=state-1`,
     );
   });
 
   it("context 校验失败时不跳转到原始查询参数中的 callback", async () => {
-    getFederationAuthorizationContext.mockRejectedValue(new Error("invalid callback"));
+    getOIDCAuthorizationContext.mockRejectedValue(new Error("invalid callback"));
     render(<FederationAuthorizePage navigate={navigate} />);
 
     expect(await screen.findByText("无法验证授权请求，请返回来源网站重试。")).toBeInTheDocument();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("请求缺少 OIDC 必填参数时直接显示验证失败", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      `/auth/federation/authorize?client_id=${OIDC_CLIENT_ID}&redirect_uri=${encodeURIComponent(OIDC_REDIRECT_URI)}&state=state-1&response_type=token&scope=profile&code_challenge_method=plain`,
+    );
+
+    render(<FederationAuthorizePage navigate={navigate} />);
+
+    expect(await screen.findByText("无法验证授权请求，请返回来源网站重试。")).toBeInTheDocument();
+    expect(getOIDCAuthorizationContext).not.toHaveBeenCalled();
   });
 });

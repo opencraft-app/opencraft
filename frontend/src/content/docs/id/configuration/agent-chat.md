@@ -1,5 +1,11 @@
 # Chat Agent
 
+## Ringkasan
+
+**Halaman Percakapan adalah jendela obrolan bawaan di konsol LightVela yang memungkinkan Anda berbicara langsung dengan Hermes Agent tanpa menghubungkan kanal eksternal — praktis untuk memastikan Agent bekerja tepat setelah model dikonfigurasi. Halaman ini memakai Agent, persona, dan memori jangka panjang yang sama dengan kanal pesan eksternal, sehingga preferensi yang Anda sebutkan di sini juga berlaku di kanal lain, dan sebaliknya.**
+
+---
+
 Buka halaman "Chat" untuk berinteraksi dengan Hermes Agent Anda melalui jendela percakapan.
 
 > ℹ️ **Perlu diketahui**

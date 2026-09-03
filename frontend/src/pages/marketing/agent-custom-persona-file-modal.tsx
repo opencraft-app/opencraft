@@ -52,8 +52,8 @@ export function CustomPersonaFileModal({
   const [saveError, setSaveError] = useState(false);
   const saveRequestIdRef = useRef(0);
   const validation = useMemo(
-    () => validateCustomSoulMarkdown(markdown, "SOUL.md"),
-    [markdown],
+    () => validateCustomSoulMarkdown(markdown, "SOUL.md", t("自定义人设")),
+    [markdown, t],
   );
   const unchanged = markdown === initialMarkdown;
 

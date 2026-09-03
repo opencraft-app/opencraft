@@ -1,7 +1,7 @@
 /**
  * Support / LightVela Product Feedback — 用户端问卷表单页面
  * ──────────────────────────────────────────────────────────────
- * 本期仅上线国内站，暂不做多语言支持。
+ * 国内站保留原有体验；国际站按公开语言注册表提供本地化版本。
  */
 'use client';
 
@@ -297,10 +297,112 @@ const SUPPORT_LABELS_HANT: Record<string, string> = {
   '微信号如：lightvela_demo，邮箱如：1234@gmail.com': '微信號如：lightvela_demo，郵箱如：1234@gmail.com',
 };
 
-function localizeSupportLabel(label: string, locale: PublicSiteLocale): string {
+const SUPPORT_LABELS_ES: Record<string, string> = {
+  '每次必现': 'Siempre ocurre',
+  '经常发生': 'Ocurre con frecuencia',
+  '偶尔发生': 'Ocurre ocasionalmente',
+  '仅出现一次': 'Solo ocurrió una vez',
+  '搜索引擎': 'Motor de búsqueda',
+  '朋友/同事推荐': 'Recomendación de amigos o compañeros',
+  '社交媒体': 'Redes sociales',
+  '官网/文档': 'Sitio web oficial o documentación',
+  '社区/论坛': 'Comunidad o foro',
+  '广告投放': 'Publicidad',
+  '新闻/媒体': 'Noticias o medios',
+  '其他': 'Otro',
+  '学生': 'Estudiante',
+  '开发者': 'Desarrollador',
+  '设计师': 'Diseñador',
+  '产品经理': 'Gerente de producto',
+  '创业者': 'Emprendedor',
+  '运营/其他': 'Operaciones / otro',
+  '科研/学术': 'Investigación / ámbito académico',
+  '工程师（非开发）': 'Ingeniero (no desarrollador)',
+  '市场/营销': 'Marketing',
+  '销售/商务': 'Ventas / negocios',
+  '人力/招聘': 'Recursos humanos / contratación',
+  '写作/内容': 'Redacción / contenido',
+  '教师/教育': 'Docente / educación',
+  '自由职业者': 'Profesional independiente',
+  '分析师/咨询': 'Analista / consultoría',
+  '团队负责人/管理者': 'Líder de equipo / gerente',
+  '几乎每天': 'Casi todos los días',
+  '每周几次': 'Varias veces por semana',
+  '每月几次': 'Varias veces al mes',
+  '偶尔用用': 'Ocasionalmente',
+  '刚接触': 'Acabo de empezar',
+  '互联网/软件': 'Internet / software',
+  'AI/科技': 'IA / tecnología',
+  '教育': 'Educación',
+  '金融/保险': 'Finanzas / seguros',
+  '媒体/内容': 'Medios / contenido',
+  '电商/零售': 'Comercio electrónico / venta minorista',
+  '医疗/生物': 'Salud / biotecnología',
+  '制造/硬件': 'Manufactura / hardware',
+  '游戏/文娱': 'Videojuegos / entretenimiento',
+  '政府/公共': 'Gobierno / sector público',
+  '自由职业/个体': 'Trabajo independiente / autónomo',
+  '调研问卷': 'Encuesta',
+  '可留下微信号或邮箱；': 'Puedes dejar tu ID de WeChat o correo electrónico;',
+  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': 'Por ejemplo: WeChat lightvela_demo o correo 1234@gmail.com',
+};
+
+const SUPPORT_LABELS_JA: Record<string, string> = {
+  '每次必现': '常に発生',
+  '经常发生': '頻繁に発生',
+  '偶尔发生': 'ときどき発生',
+  '仅出现一次': '1回だけ発生',
+  '搜索引擎': '検索エンジン',
+  '朋友/同事推荐': '友人・同僚からの紹介',
+  '社交媒体': 'ソーシャルメディア',
+  '官网/文档': '公式サイト・ドキュメント',
+  '社区/论坛': 'コミュニティ・フォーラム',
+  '广告投放': '広告',
+  '新闻/媒体': 'ニュース・メディア',
+  '其他': 'その他',
+  '学生': '学生',
+  '开发者': '開発者',
+  '设计师': 'デザイナー',
+  '产品经理': 'プロダクトマネージャー',
+  '创业者': '起業家',
+  '运营/其他': '運用・その他',
+  '科研/学术': '研究・学術',
+  '工程师（非开发）': 'エンジニア（ソフトウェア開発以外）',
+  '市场/营销': 'マーケティング',
+  '销售/商务': '営業・ビジネス',
+  '人力/招聘': '人事・採用',
+  '写作/内容': 'ライティング・コンテンツ',
+  '教师/教育': '教師・教育',
+  '自由职业者': 'フリーランサー',
+  '分析师/咨询': 'アナリスト・コンサルティング',
+  '团队负责人/管理者': 'チームリーダー・管理職',
+  '几乎每天': 'ほぼ毎日',
+  '每周几次': '週に数回',
+  '每月几次': '月に数回',
+  '偶尔用用': 'ときどき利用',
+  '刚接触': '使い始めたばかり',
+  '互联网/软件': 'インターネット・ソフトウェア',
+  'AI/科技': 'AI・テクノロジー',
+  '教育': '教育',
+  '金融/保险': '金融・保険',
+  '媒体/内容': 'メディア・コンテンツ',
+  '电商/零售': 'EC・小売',
+  '医疗/生物': '医療・バイオテクノロジー',
+  '制造/硬件': '製造・ハードウェア',
+  '游戏/文娱': 'ゲーム・エンターテインメント',
+  '政府/公共': '行政・公共',
+  '自由职业/个体': 'フリーランス・個人事業',
+  '调研问卷': 'アンケート',
+  '可留下微信号或邮箱；': 'WeChat IDまたはメールアドレスを入力できます。',
+  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': '例：WeChat lightvela_demo、メール 1234@gmail.com',
+};
+
+export function localizeSupportLabel(label: string, locale: PublicSiteLocale): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return SUPPORT_LABELS_ID[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.EN_US) return SUPPORT_LABELS_EN[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return SUPPORT_LABELS_HANT[label] ?? label;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return SUPPORT_LABELS_ES[label] ?? label;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return SUPPORT_LABELS_JA[label] ?? label;
   return label;
 }
 
@@ -422,13 +524,13 @@ export function SupportPage({
   const [description, setDescription] = useState('');
   const [contactInfo, setContactInfo] = useState('');
   // 用户画像（调研问卷，必填）——仅收集高信号字段，建议/反馈类使用
-  const [profileSource, setProfileSource] = useState('');
-  const [profileRole, setProfileRole] = useState('');
+  const [profileSource, setProfileSource] = useState<ProfileSource | ''>('');
+  const [profileRole, setProfileRole] = useState<ProfileRole | ''>('');
   const [profileAiGoal, setProfileAiGoal] = useState('');
-  const [profileFrequency, setProfileFrequency] = useState('');
-  const [profileIndustry, setProfileIndustry] = useState('');
+  const [profileFrequency, setProfileFrequency] = useState<ProfileFrequency | ''>('');
+  const [profileIndustry, setProfileIndustry] = useState<ProfileIndustry | ''>('');
   // Bug 类排障信息
-  const [bugFrequency, setBugFrequency] = useState('');
+  const [bugFrequency, setBugFrequency] = useState<BugFrequency | ''>('');
   const [bugExpected, setBugExpected] = useState('');
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [submitted, setSubmitted] = useState(false);
@@ -682,6 +784,7 @@ export function SupportPage({
     const newFiles: UploadedFile[] = [];
     for (let i = 0; i < selected.length; i++) {
       const f = selected[i];
+      if (!f) continue;
       if (f.size > MAX_FILE_SIZE) continue; // skip oversized
       newFiles.push({
         name: f.name,
@@ -876,7 +979,7 @@ export function SupportPage({
                           <Label className="text-xs text-[var(--text-tertiary)]">{t('您从哪里了解到 LightVela？')}</Label>
                           <select
                             value={profileSource}
-                            onChange={(e) => setProfileSource(e.target.value)}
+                            onChange={(e) => setProfileSource(e.target.value as ProfileSource | '')}
                             className={cn(
                               'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-[var(--text-primary)]',
                               errors.profileSource ? 'border-red-400' : 'border-[var(--border-strong)]',
@@ -893,7 +996,7 @@ export function SupportPage({
                           <Label className="text-xs text-[var(--text-tertiary)]">{t('您的角色是？')}</Label>
                           <select
                             value={profileRole}
-                            onChange={(e) => setProfileRole(e.target.value)}
+                            onChange={(e) => setProfileRole(e.target.value as ProfileRole | '')}
                             className={cn(
                               'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-[var(--text-primary)]',
                               errors.profileRole ? 'border-red-400' : 'border-[var(--border-strong)]',
@@ -912,7 +1015,7 @@ export function SupportPage({
                           <Label className="text-xs text-[var(--text-tertiary)]">{t('您平时使用 LightVela 的频率？')}</Label>
                           <select
                             value={profileFrequency}
-                            onChange={(e) => setProfileFrequency(e.target.value)}
+                            onChange={(e) => setProfileFrequency(e.target.value as ProfileFrequency | '')}
                             className={cn(
                               'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-[var(--text-primary)]',
                               errors.profileFrequency ? 'border-red-400' : 'border-[var(--border-strong)]',
@@ -929,7 +1032,7 @@ export function SupportPage({
                           <Label className="text-xs text-[var(--text-tertiary)]">{t('您所在的行业是？')}</Label>
                           <select
                             value={profileIndustry}
-                            onChange={(e) => setProfileIndustry(e.target.value)}
+                            onChange={(e) => setProfileIndustry(e.target.value as ProfileIndustry | '')}
                             className={cn(
                               'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-[var(--text-primary)]',
                               errors.profileIndustry ? 'border-red-400' : 'border-[var(--border-strong)]',
@@ -1214,4 +1317,3 @@ export function SupportPage({
     </div>
   );
 }
-

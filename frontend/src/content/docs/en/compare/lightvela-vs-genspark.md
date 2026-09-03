@@ -107,4 +107,6 @@ My take: **LightVela is the better dedicated Agent host. Genspark is the better 
 
 If your question is “Which tool can make me a presentation, research report, and spreadsheet fastest?”, Genspark is probably the more obvious answer.
 
+If you are comparing a personal Agent host with delegated AI work, [LightVela vs Grok Bot](./lightvela-vs-grok-bot.md) explains the difference between one configurable Agent and persistent cloud Bots.
+
 If your question is “Where should I host an AI Agent that I keep using every day?”, LightVela is the cleaner fit.

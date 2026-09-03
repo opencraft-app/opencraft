@@ -1,5 +1,11 @@
 # Kredit
 
+## Ringkasan
+
+**Kredit model adalah satuan yang dipakai LightVela untuk menghitung konsumsi pemanggilan model oleh Hermes Agent, dengan input maupun output ikut dihitung. Kredit diberikan bersama paket setiap bulan, tidak dijual terpisah, dan direset tiap siklus bulanan: Launch mencakup 100 kredit per bulan, sedangkan Cruise menyediakan kuota lebih besar. Kredit terpakai saat Agent berbicara dengan Anda, menjalankan tugas otomatis, atau menjalankan skill — semuanya pada dasarnya memanggil model — dan percakapan yang lebih panjang dengan konteks lebih besar menghabiskannya lebih cepat. Jika kredit habis di tengah siklus, fitur yang bergantung pada model menjadi terbatas hingga alokasi berikutnya, atau Anda dapat beralih ke API key model sendiri di pengaturan model.**
+
+---
+
 Kredit model adalah satuan yang digunakan LightVela untuk mengukur penggunaan model oleh Hermes Agent. Setiap paket menyertakan alokasi kredit bulanan. Setiap kali Agent Anda memanggil language model selama percakapan atau tugas, kredit akan dikurangi sesuai penggunaan. Halaman ini menjelaskan apa itu kredit, bagaimana kredit dialokasikan dan dikonsumsi, serta bagaimana kredit berkaitan dengan paket.
 
 ## Yang dibahas di halaman ini

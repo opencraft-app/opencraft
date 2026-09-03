@@ -90,6 +90,20 @@ describe("agents workbench embedded shell boundary", () => {
     expect(host).toMatch(/historyPhase=\{controller\.historyPhase\}/);
   });
 
+  it("passes the controller follow token through to ChatSurface for output auto-follow", () => {
+    const host = readSource("src/pages/marketing/agents-workbench/VelaWorkbenchDesktopHost.tsx");
+    const chatSurface = host.match(/<ChatSurface[\s\S]*?\/>/)?.[0] ?? "";
+
+    expect(chatSurface).toMatch(/followOutputToken=\{controller\.followOutputToken\}/);
+  });
+
+  it("uses the localized Hermes default name when the workbench bot name is still empty", () => {
+    const host = readSource("src/pages/marketing/agents-workbench/VelaWorkbenchDesktopHost.tsx");
+
+    expect(host).toMatch(/const railTitle = botName\?\.trim\(\) \|\| t\("我的Hermes"\);/);
+    expect(host).not.toMatch(/const railTitle = botName\?\.trim\(\) \|\| "Hermes";/);
+  });
+
   it("keeps VM velad installation in the workbench host, not the reusable ChatUI", () => {
     const release = readSource("src/pages/marketing/agents-workbench/velad-release.ts");
     const host = readSource("src/pages/marketing/agents-workbench/VelaWorkbenchDesktopHost.tsx");

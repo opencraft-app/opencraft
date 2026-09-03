@@ -7,7 +7,7 @@
  * 区域差异：
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
- *   - 国内站（CN_SIDEBAR）：微信 / 飞书 / QQ
+ *   - 国内站（CN_SIDEBAR）：微信 / QQ / 企业微信 / 飞书
  *   - 国际站（GLOBAL_SIDEBAR）：Telegram / WhatsApp / Discord / Slack / WeChat / QQ / WeCom / Lark
  */
 
@@ -26,7 +26,7 @@ export interface DocItem {
   availableLocales?: Array<"zh" | "en">;
   /**
    * 是否作为二级目录项（视觉上缩进）。
-   * 用于在"配置通道"下挂具体通道（国内：微信/飞书/QQ；国际：Telegram/WhatsApp/...）。
+   * 用于在"配置通道"下挂具体通道（国内：微信/QQ/企业微信/飞书；国际：Telegram/WhatsApp/...）。
    */
   indent?: boolean;
   /**
@@ -73,12 +73,23 @@ const CN_SIDEBAR: DocGroup[] = [
     items: [
       { slug: "configuration", title: "配置总览" },
       { slug: "configuration/model", title: "配置模型" },
-      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂三个具体 channel 作为二级项
+      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂四个具体 channel 作为二级项
       { slug: null, title: "配置通道", defaultChildSlug: "configuration/channel-wechat" },
       { slug: "configuration/channel-wechat", title: "微信", indent: true },
-      { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", indent: true },
+      { slug: "configuration/channel-wecom", title: "企业微信", indent: true },
+      { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/skill", title: "配置技能" },
+      { slug: "configuration/personality", title: "人设" },
+      { slug: "configuration/memory", title: "记忆管理" },
+      { slug: "configuration/automation", title: "自动任务" },
+      { slug: "configuration/files", title: "云存储" },
+      { slug: "configuration/agent-chat", title: "对话" },
+      { slug: "configuration/diagnostics", title: "诊断中心" },
+      { slug: "configuration/advanced-settings", title: "高级设置" },
+      { slug: "configuration/multiple-models", title: "模型切换" },
+      { slug: "configuration/deepseek-harness", title: "DeepSeek Harness" },
+      { slug: "configuration/workbench", title: "工作台" },
     ],
   },
   {
@@ -169,15 +180,27 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-wecom", title: "企业微信", titleEn: "WeCom", indent: true },
       { slug: "configuration/channel-feishu", title: "飞书", titleEn: "Lark", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
+      { slug: "configuration/personality", title: "人设", titleEn: "Souls" },
       { slug: "configuration/memory", title: "记忆管理", titleEn: "Memory Management" },
       { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
       { slug: "configuration/files", title: "云存储", titleEn: "Cloud Storage" },
       { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
       { slug: "configuration/diagnostics", title: "诊断中心", titleEn: "Diagnostics" },
+      { slug: "configuration/advanced-settings", title: "高级设置", titleEn: "Advanced Settings" },
       {
         slug: "configuration/multiple-models",
         title: "模型切换",
         titleEn: "Model Switching",
+      },
+      {
+        slug: "configuration/deepseek-harness",
+        title: "DeepSeek Harness",
+        titleEn: "DeepSeek Harness",
+      },
+      {
+        slug: "configuration/workbench",
+        title: "工作台",
+        titleEn: "Workbench",
       },
     ],
   },
@@ -222,8 +245,8 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       },
       {
         slug: "use-cases/telegram-group-community-assistant",
-        title: "如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒？",
-        titleEn: "How to Configure a Telegram Group AI Community Assistant: Welcome Messages, FAQs, Summaries, and Reminders",
+        title: "如何使用 Telegram 群组 AI 社群助手：问答、摘要与提醒？",
+        titleEn: "How to Use a Telegram Group AI Community Assistant: Q&A, Summaries, and Reminders",
       },
       {
         slug: "use-cases/whatsapp-24-7-customer-service",
@@ -295,6 +318,9 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent", titleEn: "LightVela vs Selfhost Agent" },
       { slug: "compare/lightvela-vs-chatgpt", title: "LightVela vs ChatGPT", titleEn: "LightVela vs ChatGPT" },
       { slug: "compare/lightvela-vs-genspark", title: "LightVela vs Genspark", titleEn: "LightVela vs Genspark" },
+      { slug: "compare/lightvela-vs-grok-bot", title: "LightVela vs Grok Bot", titleEn: "LightVela vs Grok Bot" },
+      { slug: "compare/lightvela-vs-mira", title: "LightVela vs Mira", titleEn: "LightVela vs Mira" },
+      { slug: "compare/lightvela-vs-viktor", title: "LightVela vs Viktor.com", titleEn: "LightVela vs Viktor.com" },
     ],
   },
   {
@@ -329,9 +355,20 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   configuration: "05-configuration.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
-  "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
+  "configuration/channel-wecom": "configuration/channel-wecom.md",
+  "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/skill": "configuration/skill.md",
+  "configuration/personality": "configuration/personality.md",
+  "configuration/memory": "configuration/memory.md",
+  "configuration/automation": "configuration/automation.md",
+  "configuration/files": "configuration/files.md",
+  "configuration/agent-chat": "configuration/agent-chat.md",
+  "configuration/diagnostics": "configuration/diagnostics.md",
+  "configuration/advanced-settings": "configuration/advanced-settings.md",
+  "configuration/multiple-models": "configuration/multiple-models.md",
+  "configuration/deepseek-harness": "configuration/deepseek-harness.md",
+  "configuration/workbench": "configuration/workbench.md",
   // 问题排查
   faq: "07-faq.md",
   // 联系与支持
@@ -375,11 +412,15 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-wecom": "configuration/channel-wecom.md",
   "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/skill": "configuration/skill.md",
+  "configuration/personality": "configuration/personality.md",
   "configuration/memory": "configuration/memory.md",
   "configuration/files": "configuration/files.md",
   "configuration/automation": "configuration/automation.md",
   "configuration/diagnostics": "configuration/diagnostics.md",
+  "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
+  "configuration/deepseek-harness": "configuration/deepseek-harness.md",
+  "configuration/workbench": "configuration/workbench.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",
   "use-cases/chinese-messaging-channels": "use-cases/chinese-messaging-channels.md",
@@ -414,6 +455,9 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "compare/lightvela-vs-localhost-ai-agent": "compare/lightvela-vs-localhost-ai-agent.md",
   "compare/lightvela-vs-chatgpt": "compare/lightvela-vs-chatgpt.md",
   "compare/lightvela-vs-genspark": "compare/lightvela-vs-genspark.md",
+  "compare/lightvela-vs-grok-bot": "compare/lightvela-vs-grok-bot.md",
+  "compare/lightvela-vs-mira": "compare/lightvela-vs-mira.md",
+  "compare/lightvela-vs-viktor": "compare/lightvela-vs-viktor.md",
   "contact-us": "contact-us.md",
 };
 

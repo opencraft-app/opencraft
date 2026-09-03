@@ -184,7 +184,7 @@ Ini memperjelas bahwa Soul yang baru seharusnya dimuat selama inisialisasi perca
 
 ## Langkah berikutnya
 
-- [Mengatur Kepribadian Hermes Agent di Telegram](./telegram-persona-agent.md) — Terapkan kepribadiannya pada percakapan satu lawan satu di Telegram.
+- [Mengatur Kepribadian Hermes Agent di Telegram](./telegram-persona-agent.md) — Terapkan kepribadian pada percakapan pribadi dan pesan grup Telegram setelah penyiapan Group Privacy.
 
 - [Mengatur Kepribadian Hermes Agent di WhatsApp](./whatsapp-persona-agent.md) — Terapkan kepribadiannya pada percakapan satu lawan satu di WhatsApp.
 

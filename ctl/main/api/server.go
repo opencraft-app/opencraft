@@ -232,6 +232,7 @@ func newRouterWithWebsiteAuth(
 	mux.HandleFunc("/v1/passes/order-and-pay", ph.handleUserPassesOrderAndPay)
 	// Dedicated Dianshi activity purchase path; no payment-method or renewal inputs.
 	mux.HandleFunc("/v1/passes/dianshi/order-and-pay", ph.handleUserDianshiPassesOrderAndPay)
+	mux.HandleFunc("/internal/ctl/subscriptions/dianshi/grant", ph.handleInternalDianshiGrant)
 	// R-D-5b 续费支付 URL 入口（trade-pass-renew §3.3 / §4.4）：
 	//   POST /v1/passes/{pass_id}/renew/order-url             前端鉴权 X-User-Id
 	//   POST /admin/api/ctl/passes/{pass_id}/renew/order-url  后台 admin 鉴权
@@ -381,6 +382,7 @@ func normalizePath(path string) string {
 	case "/health", "/metrics", "/internal/bots", "/v1/soul-templates", "/v1/me/usage",
 		"/v1/bundles", "/v1/passes", "/v1/passes/order", "/v1/passes/order-and-pay",
 		"/v1/passes/dianshi/order-and-pay",
+		"/internal/ctl/subscriptions/dianshi/grant",
 		"/v1/integrations/agentchat/introspect",
 		"/admin/api/ctl/bundles", "/admin/api/ctl/passes", "/admin/api/ctl/passes/order",
 		"/admin/api/ctl/passes/free-credit", "/admin/api/ctl/passes/order-and-pay",
@@ -392,9 +394,6 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/chatclaw/runtime-bootstrap") {
 		return "/internal/instances/{id}/chatclaw/runtime-bootstrap"
-	}
-	if strings.HasPrefix(path, "/internal/bots/") && strings.HasSuffix(path, "/borncard") {
-		return "/internal/bots/{id}/borncard"
 	}
 	if strings.HasPrefix(path, "/internal/ctl/bundles/") {
 		return "/internal/ctl/bundles/{bundleId}"
@@ -655,18 +654,6 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		resp, err := h.logic.ResetInstanceConfig(ctx, instanceID)
-		if err != nil {
-			writeHTTPError(w, r, err)
-			return
-		}
-		writeSuccess(w, r, http.StatusOK, resp)
-	case len(parts) == 2 && r.Method == http.MethodGet && parts[1] == "borncard":
-		ctx, ok := newRequestContext(r)
-		if !ok {
-			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
-			return
-		}
-		resp, err := h.loadBotBornCard(r, instanceID, ctx.GetUserID())
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return

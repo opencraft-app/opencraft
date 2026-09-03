@@ -4,6 +4,9 @@ type LocalizedText = {
   en: string;
   zh: string;
   id: string;
+  es: string;
+  ja: string;
+  ko: string;
 };
 
 export type CuratedSkillEntry = {
@@ -62,7 +65,7 @@ function skill(rawId: string, name: string): Skill {
 export const CURATED_SKILL_CATEGORIES: readonly CuratedSkillCategory[] = [
   {
     id: "market-analysis",
-    label: { en: "Market Analysis", zh: "市场分析", id: "Analisis Pasar" },
+    label: { en: "Market Analysis", zh: "市场分析", id: "Analisis Pasar", es: "Análisis de mercado", ja: "市場分析", ko: "시장 분석" },
     skills: [
       {
         skill: skill("gracefullight/stock-checker/stock-analysis", "Stock Analysis"),
@@ -86,7 +89,7 @@ export const CURATED_SKILL_CATEGORIES: readonly CuratedSkillCategory[] = [
   },
   {
     id: "content-creation",
-    label: { en: "Content Creation", zh: "内容创作", id: "Pembuatan Konten" },
+    label: { en: "Content Creation", zh: "内容创作", id: "Pembuatan Konten", es: "Creación de contenido", ja: "コンテンツ制作", ko: "콘텐츠 제작" },
     skills: [
       {
         skill: skill("coreyhaines31/marketingskills/content-strategy", "Content Strategy"),
@@ -110,7 +113,7 @@ export const CURATED_SKILL_CATEGORIES: readonly CuratedSkillCategory[] = [
   },
   {
     id: "research",
-    label: { en: "Research", zh: "研究", id: "Riset" },
+    label: { en: "Research", zh: "研究", id: "Riset", es: "Investigación", ja: "リサーチ", ko: "리서치" },
     skills: [
       {
         skill: skill("karpathy/nanochat/read-arxiv-paper", "Read arXiv Paper"),
@@ -134,7 +137,7 @@ export const CURATED_SKILL_CATEGORIES: readonly CuratedSkillCategory[] = [
   },
   {
     id: "devtools",
-    label: { en: "DevTools", zh: "开发工具", id: "Alat Pengembangan" },
+    label: { en: "DevTools", zh: "开发工具", id: "Alat Pengembangan", es: "Herramientas de desarrollo", ja: "開発ツール", ko: "개발 도구" },
     skills: [
       {
         skill: skill("anthropics/skills/pdf", "PDF"),

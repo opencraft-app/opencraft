@@ -1036,7 +1036,7 @@ func (s *Service) quoteDianshi(
 				// 缺任一字段点石返 returnCode=1100109 缺少参数 / 1100105 商品ID不存在。
 				PreferenceParam: map[string]interface{}{
 					"regionId":       s.region.RegionID,
-					"timeSpanUnit":   dianshiInquiryTimeSpanUnit(req, mapping, s.deps.SiteKind),
+					"timeSpanUnit":   dianshiInquiryTimeSpanUnit(req, mapping),
 					"subProductCode": def.SubProductCode,
 					"bundleId":       mapping.BundleID,
 				},
@@ -1122,10 +1122,10 @@ const (
 	dianshiLaunchAIBundleID = "bundle_launch_ai_01"
 )
 
-func dianshiInquiryTimeSpanUnit(req QuoteRequest, mapping *activity.Mapping, siteKind string) string {
+func dianshiInquiryTimeSpanUnit(req QuoteRequest, mapping *activity.Mapping) string {
 	if mapping != nil {
 		useRequestPeriod := mapping.BundleID == dianshiLaunchBundleID ||
-			(mapping.BundleID == dianshiLaunchAIBundleID && strings.EqualFold(strings.TrimSpace(siteKind), "intl"))
+			mapping.BundleID == dianshiLaunchAIBundleID
 		if !useRequestPeriod {
 			return mapping.TimeSpanUnit
 		}

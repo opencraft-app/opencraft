@@ -7,6 +7,8 @@ import { AppLink } from "@/lib/app-navigation";
 import { localizedPath } from "@/lib/region";
 import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
+import { JAPANESE_PRIVACY_POLICY_COPY } from "./legal-copy.ja";
+import { KOREAN_PRIVACY_POLICY_COPY } from "./legal-copy.ko";
 
 interface PolicyCopy {
   backHome: string;
@@ -473,6 +475,170 @@ const id: PolicyCopy = {
   languageParagraph: "Kecuali ditentukan lain oleh hukum, jika terdapat perbedaan atau ketidaksesuaian antara versi bahasa Inggris dan versi bahasa lokal dari Kebijakan Privasi ini, versi bahasa Inggris yang akan berlaku.",
 };
 
+const es: PolicyCopy = {
+  backHome: "Volver al inicio",
+  brand: "LightVela",
+  title: "Política de privacidad",
+  updated: "Última actualización: agosto de 2026",
+  intro: [
+    "¡Le damos la bienvenida a LightVela! Esta Política de privacidad explica cuándo, cómo y por qué tratamos su información personal en relación con el sitio web y el servicio de LightVela (conjuntamente, el “Servicio”), así como las opciones y los derechos que le corresponden respecto de dicha información.",
+    "A efectos de la legislación sobre protección de datos, el responsable del tratamiento de su información personal en relación con el Servicio es Tencent Cloud International Pte. Ltd. (“nosotros”, “nos” o “nuestro”).",
+    "Tenga en cuenta que esta Política de privacidad solo se aplica al Servicio. Si utiliza otros productos o servicios, consulte la política de privacidad correspondiente a esos productos o servicios.",
+    "Si no está de acuerdo con el tratamiento de su información personal descrito en esta Política de privacidad, no facilite su información cuando se le solicite y deje de utilizar el Servicio. Al utilizar el Servicio, reconoce que tratamos su información personal conforme a esta Política de privacidad y, cuando en su jurisdicción no podamos basar dicho tratamiento en la ejecución de un contrato o en un interés legítimo, presta su consentimiento al tratamiento descrito en esta Política de privacidad.",
+    "Si tiene alguna pregunta sobre esta Política de privacidad o desea ejercer alguno de sus derechos, encontrará nuestros datos de contacto en la Sección 7 (Contacto).",
+  ],
+  sections: [
+    {
+      title: "1. Menores",
+      paragraphs: [
+        "Las personas menores de 18 años no pueden utilizar el Servicio con ningún fin.",
+        "No solicitamos ni recopilamos deliberadamente información personal de menores de 18 años con ningún fin. Si considera que disponemos de información personal de una persona menor de 18 años, o si es el padre, la madre o el tutor legal de un usuario y desea informarnos de que este es menor de 18 años, póngase en contacto con nosotros según se indica en la Sección 7 (Contacto).",
+      ],
+    },
+  ],
+  processTitle: "2. Cómo tratamos su información personal",
+  processIntro: [
+    "Esta sección ofrece información más detallada sobre los tipos de información personal que recopilamos y los motivos por los que lo hacemos.",
+    "También identifica la base jurídica en la que nos apoyamos para tratar sus datos, en la medida exigida por la legislación sobre protección de datos de su jurisdicción. Si la legislación de su jurisdicción no reconoce la ejecución de un contrato o el interés legítimo como base jurídica, al aceptar esta Política de privacidad usted consiente el tratamiento de su información personal para el fin correspondiente.",
+  ],
+  processRows: [
+    {
+      category: "Información que nos proporciona, directamente o a través de un tercero",
+      data: [
+        {
+          personal: "Información de inicio de sesión y de la cuenta, e información de credenciales de seguridad, como su dirección de correo electrónico, nombre de usuario o alias, identificadores de inicio de sesión de terceros, dirección IP, token de OAuth, token de sesión, estado de la cuenta e identificadores de usuario.",
+          use: "Utilizamos esta información para crear, autenticar y administrar su cuenta del Servicio, así como para operar y prestarle el Servicio.",
+          basis: "Es necesaria para ejecutar el contrato que hemos celebrado con usted y prestarle el Servicio.",
+        },
+        {
+          personal: "Entradas y salidas: las instrucciones y solicitudes que facilita en sus sesiones de chat, programación, memoria y agente, así como las respuestas y acciones generadas.\n\nCuando utiliza Canales de mensajería y AgentChat, también tratamos datos de transmisión de mensajes, como marcas de tiempo, identificadores de canal e identificadores del remitente.\n\nSi decide integrar aplicaciones de terceros o cargar archivos e información, incluida información personal, como parte de sus Entradas, recopilaremos dicha información y esta podrá reproducirse en las Salidas.",
+          use: "Utilizamos esta información para procesar sus Entradas y ofrecerle Salidas de acuerdo con sus instrucciones.\n\nUtilizamos esta información para transmitir sus mensajes entre los Canales de mensajería, AgentChat y el Servicio con el fin de prestarle el Servicio.\n\nTambién utilizamos esta información para investigar y resolver problemas de seguridad y realizar comprobaciones destinadas a garantizar que no existan riesgos de seguridad.",
+          basis: "Es necesaria para ejecutar el contrato que hemos celebrado con usted y prestarle el Servicio.\n\nTambién responde a nuestro interés legítimo en proteger sus datos y nuestros sistemas.",
+        },
+        {
+          personal: "Información de pago: si decide adquirir acceso al Servicio, trataremos información de pago como el número de pedido, el número de serie de la transacción, el importe y la marca de tiempo del pago, el canal y el estado del pago comunicado por el procesador, los metadatos del método de pago y los cuatro últimos dígitos de la tarjeta de crédito facilitados por el procesador.\n\nNuestros proveedores de pago externos, como los bancos emisores de tarjetas, tratan los datos correspondientes en nuestro nombre.",
+          use: "Utilizamos esta información para administrar la facturación y los pagos del Servicio.",
+          basis: "Es necesaria para ejecutar el contrato que hemos celebrado con usted y prestarle el Servicio.",
+        },
+        {
+          personal: "Información de comunicaciones: si se comunica con nosotros o le enviamos avisos, tratamos información como su nombre, sus datos de contacto y el contenido de las comunicaciones que nos remita.",
+          use: "Utilizamos esta información para comunicarnos con usted acerca de las cuestiones que plantee.\n\nPodremos enviarle avisos cuando lo consideremos necesario, por ejemplo, cuando suspendamos temporalmente el acceso al Servicio por mantenimiento o para comunicaciones relacionadas con la seguridad, la privacidad o la administración. Estos avisos esenciales del sistema y del Servicio no tienen carácter promocional y no es posible darse de baja de ellos.",
+          basis: "Es necesaria para ejecutar el contrato que hemos celebrado con usted y prestarle el Servicio.",
+        },
+        {
+          personal: "Información de comentarios: si decide enviarnos comentarios, sugerencias de mejora o valoraciones de una Salida mediante la aplicación o nuestro servidor de Discord, almacenaremos la conversación correspondiente como parte de sus comentarios.",
+          use: "Utilizamos esta información para resolver los problemas que pueda experimentar, depurar y corregir incidencias, mejorar el Servicio y realizar investigaciones.",
+          basis: "Tratamos esta información con su consentimiento.\n\nTambién responde a nuestro interés legítimo en mantener el funcionamiento del Servicio, diagnosticar errores y seguir mejorándolo y desarrollándolo.",
+        },
+      ],
+    },
+    {
+      category: "Información generada como parte del Servicio",
+      data: [
+        {
+          personal: "Información del dispositivo, como identificadores, tipo y modelo del dispositivo, información del sistema operativo, direcciones IP, información de red y conexión, información de sesiones de control remoto e información de complementos.",
+          use: "Utilizamos esta información para:\n• prestarle el Servicio;\n• crear y administrar su cuenta;\n• ofrecer y mantener servicios y funciones opcionales que mejoran la funcionalidad del Servicio y su experiencia; y\n• detectar e identificar errores y fallos, y solucionarlos.",
+          basis: "Es necesaria para ejecutar el contrato que hemos celebrado con usted. También responde a nuestro interés legítimo en mantener el funcionamiento del Servicio y diagnosticar errores.",
+        },
+        {
+          personal: "Información de configuración: tratamos información sobre el funcionamiento y la interacción de los componentes de hardware, software y red, como la configuración del sistema y de la infraestructura, así como los datos y metadatos de autorización y configuración de los Canales de mensajería.",
+          use: "Utilizamos esta información para conservar sus ajustes de configuración y prestarle el Servicio.",
+          basis: "Es necesaria para ejecutar el contrato que hemos celebrado con usted y prestarle el Servicio.",
+        },
+        {
+          personal: "Información de diagnóstico y uso, e información de registros: tratamos información sobre su uso del Servicio, como las fechas y horas de inicio de sesión, acceso y búsqueda, la dirección IP, la información del entorno de ejecución, la información de red y seguridad, los registros de despliegue y errores, las métricas y códigos de aplicaciones y rendimiento, las integraciones y otra información sobre cómo utiliza el Servicio.",
+          use: "Utilizamos esta información para:\n• prestarle el Servicio;\n• supervisar el rendimiento y la calidad del Servicio;\n• detectar e identificar errores y fallos, y solucionarlos; y\n• mejorar, optimizar y desarrollar el Servicio.",
+          basis: "Responde a nuestro interés legítimo en supervisar el rendimiento del sistema, diagnosticar errores y mejorar el producto.",
+        },
+        {
+          personal: "Información de facturación y consumo: tratamos información relacionada con la facturación, como el nombre y los datos de contacto del titular de la tarjeta, los importes y marcas de tiempo de las transacciones, los números de pedido y los servicios y funciones adquiridos.",
+          use: "Utilizamos esta información para administrar la facturación y los pagos del Servicio.",
+          basis: "Es necesaria para ejecutar el contrato que hemos celebrado con usted y prestarle el Servicio.",
+        },
+        {
+          personal: "Registros de cumplimiento: registros de consentimiento y retirada del consentimiento, registros de solicitudes de eliminación y exportación de datos y cualquier otra información personal que deba conservarse o divulgarse conforme a las leyes, reglamentos, resoluciones judiciales o solicitudes gubernamentales aplicables.",
+          use: "Utilizamos esta información para cumplir nuestras obligaciones legales, responder a solicitudes de las autoridades y atender los derechos de los interesados.",
+          basis: "Tratamos esta información para cumplir nuestras obligaciones legales.",
+        },
+        {
+          personal: "Otra información de la que disponemos sobre usted, como identificadores e información del dispositivo, dirección IP, información sobre el uso del Servicio, Entradas y Salidas y datos de complementos.",
+          use: "Utilizamos esta información para garantizar la seguridad de nuestros servicios, incluida su agregación y anonimización con ese fin.",
+          basis: "Responde a nuestro interés legítimo en garantizar la seguridad del Servicio o de nuestros servicios.",
+          useRows: [
+            {
+              use: "Utilizamos esta información para garantizar la seguridad de nuestros servicios, incluida su agregación y anonimización con ese fin.",
+              basis: "Responde a nuestro interés legítimo en garantizar la seguridad del Servicio o de nuestros servicios.",
+            },
+            {
+              use: "Utilizamos esta información para mejorar nuestros servicios, incluida su agregación y anonimización con ese fin.",
+              basis: "Responde a nuestro interés legítimo en mejorar el Servicio o nuestros servicios.",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  shareTitle: "3. Cómo almacenamos y compartimos su información personal",
+  shareParagraphs: [
+    "Su información personal se almacenará en servidores ubicados en Singapur. También contamos con equipos globales de soporte, ingeniería y otras funciones que prestan apoyo al Servicio, incluidos equipos situados en Singapur y la República Popular China.",
+    "Transferiremos datos fuera de la jurisdicción en la que se encuentre para los fines descritos en esta Política de privacidad. Cuando lo hagamos, adoptaremos medidas para garantizar la protección de su información personal y aplicaremos las salvaguardias exigidas, entre ellas cláusulas contractuales tipo, decisiones de adecuación cuando estén disponibles, acuerdos de tratamiento de datos con todos los encargados externos y otras garantías contractuales. Puede ponerse en contacto con nosotros mediante los datos de la Sección 7 (Contacto) para solicitar una copia de estas salvaguardias.",
+    "Compartiremos su información personal con terceros en las siguientes situaciones:",
+  ],
+  shareBullets: [
+    {
+      text: "Terceros que prestan servicios de apoyo al Servicio, incluidos proveedores que tratan la información personal identificada en esta política conforme a nuestro interés legítimo en prestar el Servicio de forma eficiente. Por ejemplo, transferiremos su información personal a:",
+      children: [
+        "procesadores de pagos que tratan los datos de instrucciones de pago correspondientes al Servicio.",
+      ],
+    },
+    { text: "Sitios web y servicios de terceros: puede decidir integrar el Servicio con distintos sitios web, aplicaciones y servicios de terceros, por ejemplo mediante claves API, como proveedores de LLM, proveedores externos de Skills y Canales de mensajería. Si decide hacerlo, compartiremos su información personal con dichos terceros de acuerdo con sus instrucciones. Una vez transferida, la información quedará sujeta a la política de privacidad del tercero. La inclusión de enlaces a esos servicios o sitios no implica que respaldemos al tercero." },
+    { text: "Empresas de nuestro grupo corporativo que tratan su información personal conforme a nuestro interés legítimo en prestar el Servicio de forma eficiente. Estas empresas solo podrán utilizar su información personal de acuerdo con esta Política de privacidad." },
+    { text: "Organismos reguladores, autoridades judiciales y fuerzas del orden. En determinadas circunstancias podremos estar legalmente obligados a divulgar información personal sobre usted, por ejemplo, para cumplir obligaciones o procedimientos legales. También podremos divulgarla a dichas autoridades para garantizar la protección, la seguridad o el cumplimiento de la ley." },
+    { text: "Terceros para garantizar la protección, la seguridad o el cumplimiento de la ley. Podremos divulgar su información personal para: (a) hacer cumplir nuestros términos y condiciones y otros acuerdos, incluida la investigación de posibles infracciones; (b) detectar, prevenir o abordar problemas de seguridad, fraude o técnicos; o (c) proteger nuestros derechos, bienes o seguridad, los de nuestros usuarios, los de terceros o los del público, según lo exija o permita la ley." },
+    { text: "Asesores profesionales. Podremos divulgar su información personal a auditores, despachos de abogados o firmas de contabilidad conforme a nuestro interés legítimo en evaluar, proteger, ejercer y defender nuestros derechos y cumplir nuestras obligaciones legales y reglamentarias." },
+    { text: "Un tercero que adquiera la totalidad o una parte sustancial de nosotros o de nuestro negocio. También podremos divulgar su información personal si: (a) vendemos, transferimos, fusionamos, consolidamos o reorganizamos alguna parte de nuestro negocio, o si nos fusionamos con otra empresa, la adquirimos o constituimos una empresa conjunta con ella; o (b) vendemos o transferimos alguno de nuestros activos, en cuyo caso la información personal que conservamos sobre usted podrá formar parte de esos activos y transferirse a un posible comprador, nuevo propietario u otro tercero participante en la operación." },
+  ],
+  retentionTitle: "5. Conservación de datos",
+  retentionIntro: [
+    "Para ejecutar sus instrucciones y prestarle el Servicio, almacenaremos la información personal pertinente en nuestros propios servidores, según se indica en la tabla siguiente.",
+    "No conservamos sus datos durante más tiempo del necesario para cumplir los fines descritos, salvo que la ley nos obligue o autorice a hacerlo. Si conservamos su información personal más allá de los periodos indicados, por ejemplo, para cumplir la legislación aplicable, la almacenaremos separada de otros tipos de información personal.",
+  ],
+  retentionRows: [
+    { personal: "Información de inicio de sesión y de la cuenta, e información de credenciales de seguridad\n\nEntradas y Salidas", policy: "Se conserva mientras mantenga una cuenta con nosotros y se elimina en los 30 días posteriores, o en los 30 días siguientes a su solicitud de eliminación, lo que ocurra primero." },
+    { personal: "Información del dispositivo", policy: "Se conserva mientras mantenga una cuenta con nosotros y se elimina en los 30 días posteriores a la cancelación de la cuenta, o en los 30 días siguientes a su solicitud de eliminación, lo que ocurra primero. La información del dispositivo utilizada para solucionar problemas se conserva únicamente durante el tiempo necesario para prestar asistencia y nunca más de 30 días después de que deje de mantener una cuenta con nosotros." },
+    { personal: "Información de configuración", policy: "Se conserva mientras mantenga una cuenta con nosotros y se elimina en los 30 días siguientes a su solicitud de eliminación." },
+    { personal: "Datos de diagnóstico y uso, e información de registros", policy: "Se conservan durante un máximo de 6 meses." },
+    { personal: "Información de pago\n\nInformación de facturación y consumo", policy: "Se conserva durante un máximo de 24 meses tras la cancelación de su cuenta para cumplir obligaciones financieras y fiscales." },
+    { personal: "Registros de cumplimiento", policy: "Durante el tiempo exigido por la legislación aplicable." },
+    { personal: "Información de comunicaciones", policy: "Hasta que se resuelva la cuestión sobre la que se haya comunicado con nosotros." },
+    { personal: "Información de comentarios", policy: "Se conserva durante un máximo de 24 meses tras su envío o la cancelación de la cuenta." },
+  ],
+  rightsTitle: "6. Sus derechos",
+  rightsIntro: "Ofrecemos a nuestros usuarios los siguientes derechos respecto de su información personal, que podrán ejercer legalmente en función del lugar donde se encuentren. Algunos derechos solo se aplican en determinadas circunstancias; se lo indicaremos cuando solicite ejercerlos. Puede ejercer algunos directamente accediendo a la información personal de su cuenta y actualizándola. Para los demás, póngase en contacto con nosotros mediante los datos de la Sección 7 (Contacto).",
+  rightsBullets: [
+    "Acceso. Puede tener derecho a acceder a la información personal que conservamos sobre usted, saber cómo la utilizamos y con quién la compartimos.",
+    "Portabilidad. Puede tener derecho a recibir una copia de determinada información personal que tratamos sobre usted.",
+    "Rectificación. Puede tener derecho a corregir la información personal inexacta que conservemos sobre usted.",
+    "Supresión. Puede eliminar su cuenta o determinada información personal iniciando sesión en su cuenta o solicitándonos su supresión.",
+    "Limitación del tratamiento al almacenamiento. En determinadas circunstancias, puede tener derecho a exigir que dejemos de tratar su información personal salvo para su almacenamiento.",
+    "Oposición. Puede tener derecho a oponerse al tratamiento de su información personal en determinadas situaciones.",
+    "Retirada del consentimiento. En la medida prevista por la legislación aplicable, puede retirar el consentimiento que nos haya otorgado para determinadas actividades de tratamiento poniéndose en contacto con nosotros. Cuando el consentimiento sea necesario y usted no lo otorgue o lo retire, es posible que no podamos prestarle el servicio esperado. El derecho a retirar el consentimiento solo está disponible cuando el tratamiento se basa jurídicamente en el consentimiento.",
+    "También tiene derecho a presentar una reclamación directamente ante nosotros y ante la autoridad de protección de datos competente del país donde viva o trabaje.",
+  ],
+  contactTitle: "7. Contacto",
+  contactParagraphs: [
+    "Póngase en contacto con nosotros si tiene alguna pregunta. En primera instancia puede escribirnos a:",
+    "Correo electrónico: lightvela@tencent.com",
+    "Procuraremos atender su solicitud lo antes posible. Esto no limita ningún derecho que pueda tener a presentar una reclamación ante la autoridad de protección de datos de la jurisdicción donde viva o trabaje si considera que hemos infringido la legislación de protección de datos.",
+  ],
+  thirdPartyTitle: "8. Sitios web y enlaces de terceros",
+  thirdPartyParagraph: "Podemos ofrecer enlaces o acceso a sitios web, servicios y funciones de terceros como parte del Servicio. Puede decidir conectarse al LLM que elija mediante BYOK, conectar sus Canales de mensajería preferidos y descargar e instalar Skills.\n\nSi sigue enlaces a sitios o plataformas, o activa funciones que no controlamos ni están afiliadas a nosotros, debe consultar los avisos de privacidad, políticas y demás términos aplicables. No somos responsables de la privacidad, la seguridad ni la información de esos sitios o plataformas. La inclusión de enlaces o el acceso a dichas funciones no implica por sí misma que respaldemos el contenido de esas plataformas, el funcionamiento de las funciones ni a sus propietarios u operadores.",
+  changesTitle: "9. Cambios",
+  changesParagraph: "Si modificamos esta Política de privacidad, publicaremos aquí la versión actualizada y se lo notificaremos de acuerdo con los requisitos legales aplicables.",
+  languageTitle: "10. Idioma",
+  languageParagraph: "En caso de discrepancia o incoherencia entre la versión en inglés y esta traducción al español, prevalecerá la versión en inglés, salvo que la legislación aplicable disponga lo contrario.",
+};
+
 const sectionFour = {
   en: {
     title: "4. The Security of Your Personal Information",
@@ -493,6 +659,20 @@ const sectionFour = {
     paragraphs: [
       "Kami memiliki kebijakan keamanan informasi dan akses untuk sistem dan teknologi kami, serta melindungi informasi pribadi menggunakan langkah perlindungan teknologi yang sesuai, seperti enkripsi, hashing, kontrol akses berbasis peran, dan log audit akses data.",
       "Sayangnya, transmisi informasi melalui internet tidak sepenuhnya aman. Meskipun kami akan menerapkan dan memelihara langkah yang wajar untuk melindungi informasi pribadi Anda, kami tidak dapat menjamin keamanan informasi yang dikirim melalui internet; setiap transmisi dilakukan atas risiko Anda sendiri.",
+    ],
+  },
+  es: {
+    title: "4. Seguridad de su información personal",
+    paragraphs: [
+      "Disponemos de políticas de seguridad de la información y acceso aplicables a nuestros sistemas y tecnología, y protegemos la información personal mediante medidas tecnológicas adecuadas, como cifrado, hashing, controles de acceso basados en funciones y registros de auditoría del acceso a los datos.",
+      "Lamentablemente, la transmisión de información por internet no es completamente segura. Aunque aplicaremos y mantendremos medidas razonables para proteger su información personal, no podemos garantizar la seguridad de la información transmitida por internet; toda transmisión se realiza por su cuenta y riesgo.",
+    ],
+  },
+  ja: {
+    title: "4. 個人情報の安全性",
+    paragraphs: [
+      "当社は、システムおよび技術へのアクセスに関する情報セキュリティ・アクセス方針を整備し、暗号化、ハッシュ化、ロールベースのアクセス制御、データアクセスの監査ログなど、適切な技術的保護措置を用いて個人情報を保護します。",
+      "インターネットを介した情報送信は完全に安全ではありません。当社は個人情報を保護するため合理的な措置を実施・維持しますが、インターネット経由で送信される情報の安全性を保証することはできず、送信は利用者ご自身の責任で行われます。",
     ],
   },
 };
@@ -685,9 +865,78 @@ const RichText = ({ text }: { text: string }) => {
   );
 };
 
-const PolicyTable = ({ copy }: { copy: PolicyCopy }) => {
-  const isZh = copy === zh;
-  const isId = copy === id;
+export const PrivacyPolicyParagraph = ({ text }: { text: string }) => {
+  const className = "mt-6 text-base leading-9 text-slate-700";
+  if (text.includes("\n\n")) {
+    return (
+      <div className={className}>
+        <RichText text={text} />
+      </div>
+    );
+  }
+  return (
+    <p className={className}>
+      <RichText text={text} />
+    </p>
+  );
+};
+
+export function getPrivacyPolicyTableHeaders(locale: PublicSiteLocaleCode): {
+  personal: string;
+  use: string;
+  legalBasis: string;
+  retentionPolicy: string;
+} {
+  if (locale === PUBLIC_SITE_LOCALES.ES) {
+    return {
+      personal: "Información personal",
+      use: "Uso",
+      legalBasis: "Base jurídica (cuando corresponda)",
+      retentionPolicy: "Política de conservación",
+    };
+  }
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) {
+    return {
+      personal: "個人情報",
+      use: "利用目的",
+      legalBasis: "法的根拠（該当する場合）",
+      retentionPolicy: "保存方針",
+    };
+  }
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) {
+    return {
+      personal: "개인정보",
+      use: "이용 목적",
+      legalBasis: "법적 근거(해당하는 경우)",
+      retentionPolicy: "보유 정책",
+    };
+  }
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) {
+    return {
+      personal: "Informasi Pribadi",
+      use: "Penggunaan",
+      legalBasis: "Dasar Hukum (jika berlaku)",
+      retentionPolicy: "Kebijakan Retensi",
+    };
+  }
+  if (isZhLocale(locale)) {
+    return {
+      personal: "个人信息",
+      use: "用途",
+      legalBasis: "法律基础（如适用）",
+      retentionPolicy: "保留政策",
+    };
+  }
+  return {
+    personal: "Personal Information",
+    use: "Use",
+    legalBasis: "Legal Basis (where applicable)",
+    retentionPolicy: "Retention Policy",
+  };
+}
+
+const PolicyTable = ({ copy, locale }: { copy: PolicyCopy; locale: PublicSiteLocaleCode }) => {
+  const headers = getPrivacyPolicyTableHeaders(locale);
 
   return (
     <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -695,9 +944,9 @@ const PolicyTable = ({ copy }: { copy: PolicyCopy }) => {
         <table className="min-w-[880px] border-collapse text-left text-[15px] leading-8">
           <thead className="bg-[#0B2E70] text-white">
             <tr>
-              <th className="w-[34%] px-4 py-3 font-semibold">{isZh ? "个人信息" : isId ? "Informasi Pribadi" : "Personal Information"}</th>
-              <th className="w-[33%] px-4 py-3 font-semibold">{isZh ? "用途" : isId ? "Penggunaan" : "Use"}</th>
-              <th className="w-[33%] px-4 py-3 font-semibold">{isZh ? "法律基础（如适用）" : isId ? "Dasar Hukum (jika berlaku)" : "Legal Basis (where applicable)"}</th>
+              <th className="w-[34%] px-4 py-3 font-semibold">{headers.personal}</th>
+              <th className="w-[33%] px-4 py-3 font-semibold">{headers.use}</th>
+              <th className="w-[33%] px-4 py-3 font-semibold">{headers.legalBasis}</th>
             </tr>
           </thead>
           <tbody>
@@ -741,9 +990,8 @@ const PolicyTable = ({ copy }: { copy: PolicyCopy }) => {
   );
 };
 
-const RetentionTable = ({ copy }: { copy: PolicyCopy }) => {
-  const isZh = copy === zh;
-  const isId = copy === id;
+const RetentionTable = ({ copy, locale }: { copy: PolicyCopy; locale: PublicSiteLocaleCode }) => {
+  const headers = getPrivacyPolicyTableHeaders(locale);
 
   return (
     <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -751,8 +999,8 @@ const RetentionTable = ({ copy }: { copy: PolicyCopy }) => {
         <table className="min-w-[720px] border-collapse text-left text-sm leading-6">
           <thead className="bg-[#0B2E70] text-white">
             <tr>
-              <th className="w-[42%] px-4 py-3 font-semibold">{isZh ? "个人信息" : isId ? "Informasi Pribadi" : "Personal Information"}</th>
-              <th className="px-4 py-3 font-semibold">{isZh ? "保留政策" : isId ? "Kebijakan Retensi" : "Retention Policy"}</th>
+              <th className="w-[42%] px-4 py-3 font-semibold">{headers.personal}</th>
+              <th className="px-4 py-3 font-semibold">{headers.retentionPolicy}</th>
             </tr>
           </thead>
           <tbody>
@@ -772,11 +1020,7 @@ const RetentionTable = ({ copy }: { copy: PolicyCopy }) => {
 const TextSection = ({ id, title, paragraphs, bullets }: { id?: string; title: string; paragraphs?: string[]; bullets?: Array<string | { text: string; children?: string[] }> }) => (
   <section id={id} className="scroll-mt-24 border-t border-slate-200 py-12 sm:py-14">
     <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">{title}</h2>
-    {paragraphs?.map((paragraph) => (
-      <p key={paragraph} className="mt-6 text-base leading-9 text-slate-700">
-        <RichText text={paragraph} />
-      </p>
-    ))}
+    {paragraphs?.map((paragraph) => <PrivacyPolicyParagraph key={paragraph} text={paragraph} />)}
     {bullets ? (
       <ul className="mt-7 space-y-5 pl-5 text-base leading-9 text-slate-700">
         {bullets.map((bullet) => {
@@ -801,18 +1045,47 @@ const TextSection = ({ id, title, paragraphs, bullets }: { id?: string; title: s
   </section>
 );
 
-function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
+export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}/`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}/`;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}/`;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}/`;
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return `/${PUBLIC_URL_LANGS.KO_KR}/`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}/`;
   return `/${PUBLIC_URL_LANGS.EN_US}/`;
+}
+
+export function getPrivacyPolicyChrome(
+  locale: PublicSiteLocaleCode,
+): Pick<PolicyCopy, "backHome" | "brand" | "title" | "updated"> {
+  const source = getPrivacyPolicyCopy(locale);
+  return {
+    backHome: source.backHome,
+    brand: source.brand,
+    title: source.title,
+    updated: source.updated,
+  };
+}
+
+export function getPrivacyPolicyCopy(locale: PublicSiteLocaleCode): PolicyCopy {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_PRIVACY_POLICY_COPY as PolicyCopy;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_PRIVACY_POLICY_COPY as PolicyCopy;
+  if (locale === PUBLIC_SITE_LOCALES.ES) return es;
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return id;
+  return isZhLocale(locale) ? zh : en;
 }
 
 export const PrivacyPolicyPage = () => {
   const localeOverride = useLocaleOverride();
   const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.ID_ID
+    localeOverride === PUBLIC_SITE_LOCALES.KO_KR
+      ? PUBLIC_SITE_LOCALES.KO_KR
+      : localeOverride === PUBLIC_SITE_LOCALES.JA_JP
+      ? PUBLIC_SITE_LOCALES.JA_JP
+      : localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID
+      : localeOverride === PUBLIC_SITE_LOCALES.ES
+        ? PUBLIC_SITE_LOCALES.ES
       : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT
         ? PUBLIC_SITE_LOCALES.ZH_HANT
         : localeOverride?.startsWith("zh")
@@ -820,9 +1093,21 @@ export const PrivacyPolicyPage = () => {
           : PUBLIC_SITE_LOCALES.EN_US;
   const isZh = isZhLocale(currentLocale);
   const isId = currentLocale === PUBLIC_SITE_LOCALES.ID_ID;
+  const isJa = currentLocale === PUBLIC_SITE_LOCALES.JA_JP;
   // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
-  const copy = useZhHantDeep(isId ? id : isZh ? zh : en);
-  const security = useZhHantDeep(isId ? sectionFour.id : isZh ? sectionFour.zh : sectionFour.en);
+  const baseCopy = getPrivacyPolicyCopy(currentLocale);
+  const copy = useZhHantDeep({ ...baseCopy, ...getPrivacyPolicyChrome(currentLocale) });
+  const security = useZhHantDeep(
+    currentLocale === PUBLIC_SITE_LOCALES.ES
+      ? sectionFour.es
+      : isJa
+        ? sectionFour.ja
+      : isId
+        ? sectionFour.id
+        : isZh
+          ? sectionFour.zh
+          : sectionFour.en,
+  );
   const homePath = localeOverride ? publicLocaleHomePath(currentLocale) : localizedPath("/", currentLocale);
 
   return (
@@ -863,7 +1148,7 @@ export const PrivacyPolicyPage = () => {
                 <RichText text={paragraph} />
               </p>
             ))}
-            <PolicyTable copy={copy} />
+          <PolicyTable copy={copy} locale={currentLocale} />
           </section>
 
           <TextSection title={copy.shareTitle} paragraphs={copy.shareParagraphs} bullets={copy.shareBullets} />
@@ -876,7 +1161,7 @@ export const PrivacyPolicyPage = () => {
                 <RichText text={paragraph} />
               </p>
             ))}
-            <RetentionTable copy={copy} />
+          <RetentionTable copy={copy} locale={currentLocale} />
           </section>
 
           <TextSection title={copy.rightsTitle} paragraphs={[copy.rightsIntro]} bullets={copy.rightsBullets} />

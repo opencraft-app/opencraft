@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Connecting a Hermes Agent to messaging platforms rests on one idea: channels are entry points, and the Agent is the thing that works. One cloud Agent shares the same model, skills, and memory across every connected channel, so there is no need for a separate bot per platform.** The flow has four steps: confirm the channel is available in your region (the global region supports Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark; the China region targets WeChat, Lark, and QQ); complete authorisation on the platform side to obtain credentials; connect in the console and confirm the channel shows as connected; then send a test message and verify the reply lands in the same conversation you messaged from. Credentials are sensitive - never write them into long-term context or paste them into chat.
+**Connecting a Hermes Agent to messaging platforms rests on one idea: channels are entry points, and the Agent is the thing that works. One cloud Agent shares the same model, skills, and memory across every connected channel, so there is no need for a separate bot per platform.** The flow has four steps: confirm the channel is available in your region (the global region supports Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark; the China region supports WeChat, QQ, WeCom, Lark, and DingTalk); complete authorisation on the platform side to obtain credentials; connect in the console and confirm the channel shows as connected; then send a test message and verify the reply lands in the same conversation you messaged from. Credentials are sensitive - never write them into long-term context or paste them into chat.
 
 ![LightVela messaging platform connections](../images/use-case-messaging-platforms.webp)
 

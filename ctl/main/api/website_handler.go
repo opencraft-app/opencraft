@@ -124,6 +124,12 @@ func (h *websiteHandler) handleWebsitesByID(w http.ResponseWriter, r *http.Reque
 		opID := strings.TrimPrefix(subPath, "operations/")
 		h.handleGetOperation(w, r, opID)
 
+	case subPath == "access":
+		h.handleSiteAccess(w, r, siteID)
+
+	case subPath == "share-code/reset":
+		h.handleResetShareCode(w, r, siteID)
+
 	default:
 		writeHTTPError(w, r, errcode.ErrWebsiteNotFound)
 	}
@@ -148,6 +154,10 @@ func (h *websiteHandler) handleInternalSite(w http.ResponseWriter, r *http.Reque
 	}
 
 	if len(parts) == 2 && parts[1] != "" {
+		if parts[1] == "share-code/verify" {
+			h.handleInternalShareCodeVerify(w, r, siteID)
+			return
+		}
 		if parts[1] != "storage" {
 			writeHTTPError(w, r, errcode.ErrWebsiteNotFound)
 			return
@@ -167,6 +177,27 @@ func (h *websiteHandler) handleInternalSite(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeSuccess(w, r, http.StatusOK, site)
+}
+
+func (h *websiteHandler) handleInternalShareCodeVerify(w http.ResponseWriter, r *http.Request, siteID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "%s", err.Error()))
+		return
+	}
+	result, err := h.logic.VerifyShareCode(siteID, req.Code, r.Header.Get("X-Site-Client-IP"))
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
 }
 
 // handleInternalSiteStorage 处理 POST /internal/ctl/websites/sites/{siteId}/storage
@@ -456,6 +487,52 @@ func (h *websiteHandler) handleGetSite(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	writeSuccess(w, r, http.StatusOK, site)
+}
+
+func (h *websiteHandler) handleSiteAccess(w http.ResponseWriter, r *http.Request, siteID string) {
+	if r.Method != http.MethodPut {
+		w.Header().Set("Allow", http.MethodPut)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	var req struct {
+		Mode         string `json:"mode"`
+		DurationDays int    `json:"duration_days"`
+	}
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "%s", err.Error()))
+		return
+	}
+	result, err := h.logic.SetAccessPolicy(ctx.GetUserID(), siteID, req.Mode, req.DurationDays)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+func (h *websiteHandler) handleResetShareCode(w http.ResponseWriter, r *http.Request, siteID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	result, err := h.logic.ResetShareCode(ctx.GetUserID(), siteID)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
 }
 
 // ---- DELETE /v1/websites/{siteId} ----

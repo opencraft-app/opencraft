@@ -9,14 +9,14 @@ Panduan ini menunjukkan cara menghubungkan Hermes Agent ke Telegram dan memakai 
 
 ## Ringkasan
 
-**Telegram hanyalah pintu masuk. Yang menentukan bagaimana Agent berbicara, bagaimana ia bekerja, dan apa yang tidak akan ia lakukan adalah persona dan konteks jangka panjangnya.** Alurnya terbagi dua bagian: pertama hubungkan Hermes Agent ke Telegram mengikuti panduan kanal (buat bot dengan BotFather untuk memperoleh token, hubungkan di konsol, lalu pastikan tampil sebagai terhubung), kemudian pakai bagian Persona pada halaman pengaturan Agent untuk memilih peran, nada, dan kumpulan batas yang stabil lalu menyuntikkannya. Jaga ketiga lapisan tetap terpisah: persona memegang prinsip perilaku yang tahan lama, preferensi pengguna memegang bagaimana Anda ingin diperlakukan, dan memori jangka panjang memegang fakta yang sudah dikonfirmasi serta latar belakang proyek. Perhatikan bahwa kanal Telegram saat ini hanya mendukung percakapan satu lawan satu, bukan chat grup.
+**Telegram hanyalah pintu masuk. Yang menentukan bagaimana Agent berbicara, bagaimana ia bekerja, dan apa yang tidak akan ia lakukan adalah persona dan konteks jangka panjangnya.** Alurnya terbagi dua bagian: pertama hubungkan Hermes Agent ke Telegram mengikuti panduan kanal (buat bot dengan BotFather untuk memperoleh token, hubungkan di konsol, lalu pastikan tampil sebagai terhubung), kemudian pakai bagian Persona pada halaman pengaturan Agent untuk memilih peran, nada, dan kumpulan batas yang stabil lalu menyuntikkannya. Jaga ketiga lapisan tetap terpisah: persona memegang prinsip perilaku yang tahan lama, preferensi pengguna memegang bagaimana Anda ingin diperlakukan, dan memori jangka panjang memegang fakta yang sudah dikonfirmasi serta latar belakang proyek. Telegram mendukung pesan grup setelah Anda menonaktifkan Group Privacy di BotFather, menambahkan Bot ke grup, dan memulai percakapan dengan `@username_bot`.
 
 ## Untuk siapa ini
 
 Panduan ini ditujukan bagi orang yang ingin Hermes Agent dengan kepribadian yang konsisten di Telegram dalam jangka panjang.
 Ia bekerja baik untuk asisten pribadi, mitra riset, pendamping belajar, atau asisten sehari-hari apa pun yang seharusnya berkomunikasi dengan cara yang dapat diprediksi.
 
-Telegram saat ini terutama ditujukan untuk percakapan satu lawan satu.
+Telegram mendukung percakapan pribadi dan pesan grup yang menyebut Bot setelah Group Privacy dinonaktifkan.
 Jika Anda perlu menghubungkan Telegram, mulai dari [Kanal Telegram](../configuration/channel-telegram.md).
 
 ## Prasyarat
@@ -129,7 +129,9 @@ Ia tidak menghapus memori jangka panjang maupun profil pengguna milik Agent.
 
 ### Bisakah saya menambahkan bot Telegram ke sebuah grup?
 
-Dokumentasi Telegram saat ini memperlakukan percakapan satu lawan satu sebagai mode utama yang didukung, dan perilaku di grup juga dipengaruhi konfigurasi kanal serta pengaturan privasi.
+Ya.
+Di BotFather, kirim `/mybots`, pilih Bot, lalu buka "Bot Settings" → "Group Privacy" dan nonaktifkan privacy mode.
+Tambahkan Bot ke grup dan mulai percakapan dengan `@username_bot`.
 Jangan memakai panduan ini sebagai penyiapan chat grup; periksa [Kanal Telegram](../configuration/channel-telegram.md) untuk cakupan dukungan saat ini.
 
 ### Apakah mengganti model membuat Agent kehilangan kepribadiannya?

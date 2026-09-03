@@ -76,6 +76,55 @@ func TestDeployConfigsExposeOnlyExactFederationPublicPaths(t *testing.T) {
 	}
 }
 
+func TestProductionOIDCRoutesExposeOnlyProtocolEndpoints(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	wantPaths := map[string]struct{}{
+		http.MethodGet + " /oauth2/authorize":                 {},
+		http.MethodGet + " /oauth2/authorize/context":         {},
+		http.MethodPost + " /oauth2/authorize":                {},
+		http.MethodPost + " /oauth2/token":                    {},
+		http.MethodGet + " /.well-known/openid-configuration": {},
+		http.MethodGet + " /.well-known/jwks.json":            {},
+	}
+	for _, env := range []string{"sgprod", "shprod"} {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load %s config: %v", env, err)
+			}
+
+			gotPaths := map[string]struct{}{}
+			for _, route := range cfg.Routes {
+				if route.Name != "oidc" && route.Name != "oidc-discovery" {
+					continue
+				}
+				if route.Access != AccessPublic {
+					t.Fatalf("OIDC protocol routes must be public and defer session checks to UserAuth: %+v", route)
+				}
+				if route.PathPolicy != PathPolicyAllowlist {
+					t.Fatalf("OIDC route must use an exact path allowlist: %+v", route)
+				}
+				for _, rule := range route.PathAllow {
+					gotPaths[rule.Method+" "+rule.Path] = struct{}{}
+				}
+			}
+
+			if len(gotPaths) != len(wantPaths) {
+				t.Fatalf("OIDC path allowlist = %+v, want %+v", gotPaths, wantPaths)
+			}
+			for key := range wantPaths {
+				if _, ok := gotPaths[key]; !ok {
+					t.Fatalf("OIDC path allowlist missing %s", key)
+				}
+			}
+		})
+	}
+}
+
 func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -214,7 +263,6 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodPost + " /v1/instances":                                                                  {},
 		http.MethodGet + " /v1/instances/{instance_id}":                                                     {},
 		http.MethodDelete + " /v1/instances/{instance_id}":                                                  {},
-		http.MethodGet + " /v1/instances/{instance_id}/borncard":                                            {},
 		http.MethodPost + " /v1/instances/{instance_id}/debug/exec":                                         {},
 		http.MethodPost + " /v1/instances/{instance_id}/tat/session":                                        {},
 		http.MethodPost + " /v1/instances/{instance_id}/config/reset":                                       {},
@@ -243,6 +291,9 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 				for _, rule := range route.PathAllow {
 					got[rule.Method+" "+rule.Path] = struct{}{}
 				}
+				if _, exposed := got[http.MethodGet+" /v1/instances/{instance_id}/borncard"]; exposed {
+					t.Fatal("borncard must not be exposed by the gateway")
+				}
 				if len(got) != len(want) {
 					t.Fatalf("instance path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
 				}
@@ -257,6 +308,89 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 				return
 			}
 			t.Fatal("instance route not found")
+		})
+	}
+}
+
+func TestProductionChatOriginsAreScopedToBotListAndTATSession(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	tests := []struct {
+		name        string
+		configPath  string
+		wantOrigins map[string]struct{}
+	}{
+		{
+			name:       "Shanghai",
+			configPath: "argocd/services/service-gateway/shprod/config.yaml",
+			wantOrigins: map[string]struct{}{
+				"https://chat.lightvela.com":      {},
+				"https://localhost.lightvela.com": {},
+				"https://chat.lightvela.ai":       {},
+				"https://localhost.lightvela.ai":  {},
+			},
+		},
+		{
+			name:       "Singapore",
+			configPath: "argocd/services/service-gateway/sgprod/config.yaml",
+			wantOrigins: map[string]struct{}{
+				"https://chat.lightvela.com":      {},
+				"https://localhost.lightvela.com": {},
+				"https://chat.lightvela.ai":       {},
+				"https://localhost.lightvela.ai":  {},
+			},
+		},
+	}
+	wantRules := map[string]struct{}{
+		http.MethodGet + " /v1/instances":                            {},
+		http.MethodPost + " /v1/instances/{instance_id}/tat/session": {},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, tt.configPath))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			for _, origin := range cfg.AllowedOrigins {
+				if _, scoped := tt.wantOrigins[origin]; scoped {
+					t.Fatalf("scoped chat origin %q must not be added to the global CORS allowlist", origin)
+				}
+			}
+			for _, route := range cfg.Routes {
+				if route.Name != "ctl" {
+					continue
+				}
+				if len(route.CORSAllow) != len(wantRules) {
+					t.Fatalf("ctl cors_allow has %d rules, want %d: %+v", len(route.CORSAllow), len(wantRules), route.CORSAllow)
+				}
+				gotRules := make(map[string]struct{}, len(route.CORSAllow))
+				for _, rule := range route.CORSAllow {
+					key := rule.Method + " " + rule.Path
+					if _, wanted := wantRules[key]; !wanted {
+						t.Fatalf("unexpected scoped CORS rule: %+v", rule)
+					}
+					if len(rule.AllowedOrigins) != len(tt.wantOrigins) {
+						t.Fatalf("unexpected scoped CORS origins for %s: %+v", key, rule.AllowedOrigins)
+					}
+					for _, origin := range rule.AllowedOrigins {
+						if _, wanted := tt.wantOrigins[origin]; !wanted {
+							t.Fatalf("unexpected scoped CORS origin %q for %s", origin, key)
+						}
+					}
+					gotRules[key] = struct{}{}
+				}
+				for key := range wantRules {
+					if _, ok := gotRules[key]; !ok {
+						t.Fatalf("missing scoped CORS rule %s", key)
+					}
+				}
+				return
+			}
+			t.Fatal("ctl route not found")
 		})
 	}
 }
@@ -527,4 +661,67 @@ func loadSOPSStringDataKeys(path string) (map[string]struct{}, error) {
 		keys[key] = struct{}{}
 	}
 	return keys, nil
+}
+
+// websiteAccessPUTExpectations 声明每个环境的 ctl-websites 路由是否应放行 PUT。
+//
+// PUT /v1/websites/{site_id}/access 是「开启/关闭分享码」的唯一写入口，只有在
+// site-gateway 以 SITE_GATEWAY_AUTH_MODE=required 运行的环境才有意义：
+//
+//   - shprod（国内站）：required 模式，站点访问要校验分享 Cookie，必须放行。
+//   - sgprod（国际站）：public 模式，site-gateway 直接回源、不读分享状态也不展示
+//     分享页。ctl 侧的 SetAccessPolicy 并不按地域拦截，一旦网关放行，请求会真的
+//     写入 Redis 并返回分享码，却对实际访问毫无约束 —— 那是一个「返回成功但安全
+//     承诺是假的」接口。所以这里保持关闭，是刻意的 fail-closed，不是遗漏。
+//   - beijing-sandbox：国内测试环境，供前端联调分享码，放行。
+//
+// 新环境必须在这里显式表态，否则测试会失败，避免再次出现「接口上线但网关方法白
+// 名单没跟上」的静默缺口（参见 MR !3416 只改业务代码、没改网关配置）。
+var websiteAccessPUTExpectations = map[string]bool{
+	"shprod":          true,
+	"beijing-sandbox": true,
+	"sgprod":          false,
+}
+
+// TestWebsiteRoutesShareAccessPUTMatchesSiteAuthMode 锁定建站路由 PUT 方法的开关状态。
+//
+// 网关的 methods 同时决定两件事：CORS 预检是否放行（allowsPreflight 直接查这个
+// 列表），以及真实请求是否被 methodAllowed 拒绝。少了 PUT，浏览器在 OPTIONS 阶段
+// 就拿到不含 PUT 的 Access-Control-Allow-Methods，前端只会看到一个没有响应体的
+// CORS 错误，业务代码完全不会被执行。
+func TestWebsiteRoutesShareAccessPUTMatchesSiteAuthMode(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+
+	for _, configFile := range deployConfigPaths(t, repoRoot) {
+		configFile := configFile
+		env := filepath.Base(filepath.Dir(configFile))
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(configFile)
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+
+			for _, route := range cfg.Routes {
+				if route.Name != "ctl-websites" {
+					continue
+				}
+				want, declared := websiteAccessPUTExpectations[env]
+				if !declared {
+					t.Fatalf("env %q routes ctl-websites but has no entry in websiteAccessPUTExpectations; "+
+						"decide explicitly whether PUT /v1/websites/{site_id}/access should be reachable there", env)
+				}
+				got := methodAllowed(route.Methods, http.MethodPut)
+				if got != want {
+					if want {
+						t.Fatalf("ctl-websites must allow PUT for /v1/websites/{site_id}/access, got methods %v", route.Methods)
+					}
+					t.Fatalf("ctl-websites must NOT allow PUT in %s (site-gateway runs in public mode, share codes are inert there), got methods %v", env, route.Methods)
+				}
+			}
+		})
+	}
 }

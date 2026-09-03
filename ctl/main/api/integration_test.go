@@ -260,14 +260,6 @@ func TestInstanceAPIIntegrationLifecycleAndAncillaryEndpoints(t *testing.T) {
 	}
 	instanceID := create.Data.InstanceID
 
-	profile, err := modelfactory.DefaultDaoFactory.InstanceBirthProfileDao(testutil.NewContext(t, h.userID)).GetByInstanceID(testutil.NewContext(t, h.userID), instanceID)
-	if err != nil {
-		t.Fatalf("expected birth profile to be projected after create, got error: %v", err)
-	}
-	if profile.BornDateForChina == "" || profile.BornNumberForChina != 1 {
-		t.Fatalf("unexpected projected birth profile: %+v", profile)
-	}
-
 	listResp := h.request(t, http.MethodGet, "/v1/instances?page=1&page_size=20", nil, nil)
 	if listResp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected list status: %d", listResp.StatusCode)
@@ -529,62 +521,18 @@ func TestInternalBotsEndpointListsInstancesAcrossUsers(t *testing.T) {
 	if item.InstanceID != "ins-bot-b" || item.UserID != "usr_beta" || item.SandboxID != "sbx-beta" {
 		t.Fatalf("unexpected bot payload: %+v", item)
 	}
-	if item.BornDateForChina != "2026-03-30" {
-		t.Fatalf("expected china birth date, got %+v", item)
-	}
-	if item.BornNumberForChina == nil || *item.BornNumberForChina != 2 {
-		t.Fatalf("expected beta to be second birth of china day, got %+v", item)
-	}
 }
 
-func TestInternalBotBornCardEndpointReturnsChinaBirthInfo(t *testing.T) {
+func TestInternalBotBornCardEndpointIsDownlined(t *testing.T) {
 	h := newAPIIntegrationHarness(t)
 
-	alphaCreated := time.Date(2026, 3, 29, 16, 0, 0, 0, time.UTC)
-	betaCreated := time.Date(2026, 3, 29, 16, 1, 0, 0, time.UTC)
-	entities := []modelinstance.Entity{
-		{
-			InstanceId: "ins-borncard-a",
-			UserId:     "usr_alpha",
-			SandboxId:  "sbx-alpha",
-			Status:     modelinstance.InstanceStatusRunning,
-			TimeoutAt:  alphaCreated.Add(time.Hour),
-			CreatedAt:  alphaCreated,
-			UpdatedAt:  alphaCreated.Add(5 * time.Minute),
-		},
-		{
-			InstanceId: "ins-borncard-b",
-			UserId:     "usr_beta",
-			SandboxId:  "sbx-beta",
-			Status:     modelinstance.InstanceStatusRunning,
-			TimeoutAt:  betaCreated.Add(time.Hour),
-			CreatedAt:  betaCreated,
-			UpdatedAt:  betaCreated.Add(5 * time.Minute),
-		},
-	}
-	if err := resource.GormDB.Table(modelinstance.TableName).Create(&entities).Error; err != nil {
-		t.Fatalf("seed borncard instances: %v", err)
-	}
-
 	resp := h.request(t, http.MethodGet, "/internal/bots/ins-borncard-b/borncard", nil, map[string]string{headerUserID: ""})
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected borncard status: %d body=%s", resp.StatusCode, readBody(t, resp))
-	}
-
-	defer resp.Body.Close()
-	var payload transport.BotBornCardResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode borncard payload: %v", err)
-	}
-	if payload.InstanceID != "ins-borncard-b" || payload.UserID != "usr_beta" {
-		t.Fatalf("unexpected borncard payload: %+v", payload)
-	}
-	if payload.BornDateForChina != "2026-03-30" || payload.BornNumberForChina != 2 {
-		t.Fatalf("unexpected borncard birth fields: %+v", payload)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected internal borncard route to be downlined, got %d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 }
 
-func TestPublicBotBornCardEndpointRequiresOwnerAndReturnsChinaBirthInfo(t *testing.T) {
+func TestPublicBotBornCardEndpointIsDownlined(t *testing.T) {
 	h := newAPIIntegrationHarness(t)
 
 	createResp := h.request(t, http.MethodPost, "/v1/instances", map[string]any{"timeout": 30}, nil)
@@ -594,21 +542,8 @@ func TestPublicBotBornCardEndpointRequiresOwnerAndReturnsChinaBirthInfo(t *testi
 	create := decodeSuccessEnvelope[transport.InstanceResponse](t, createResp)
 
 	resp := h.request(t, http.MethodGet, "/v1/instances/"+create.Data.InstanceID+"/borncard", nil, nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected public borncard status: %d body=%s", resp.StatusCode, readBody(t, resp))
-	}
-
-	envelope := decodeSuccessEnvelope[transport.BotBornCardResponse](t, resp)
-	if envelope.Data.InstanceID != create.Data.InstanceID || envelope.Data.UserID != h.userID {
-		t.Fatalf("unexpected public borncard payload: %+v", envelope.Data)
-	}
-	if envelope.Data.BornDateForChina == "" || envelope.Data.BornNumberForChina <= 0 {
-		t.Fatalf("unexpected public borncard birth fields: %+v", envelope.Data)
-	}
-
-	forbiddenResp := h.request(t, http.MethodGet, "/v1/instances/"+create.Data.InstanceID+"/borncard", nil, map[string]string{headerUserID: "usr_other"})
-	if forbiddenResp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected not found for non-owner borncard, got %d body=%s", forbiddenResp.StatusCode, readBody(t, forbiddenResp))
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected public borncard route to be downlined, got %d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 }
 

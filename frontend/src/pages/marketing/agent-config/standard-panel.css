@@ -1360,6 +1360,42 @@ input.lh-std-input::placeholder {
   cursor: not-allowed;
 }
 
+/* 国际站长文案：保持已连接卡片的三个操作在卡片边界内。 */
+.lh-std-channel-panel--i18n
+  .lh-std-channel-panel__card--bound
+  .lh-std-channel-panel__card-action {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.lh-std-channel-panel--i18n
+  .lh-std-channel-panel__card--bound
+  .lh-std-channel-panel__guide-btn {
+  flex: 1 1 112px;
+  min-width: 112px;
+  justify-content: center;
+  padding-inline: 10px;
+  text-align: center;
+}
+
+.lh-std-channel-panel--i18n
+  .lh-std-channel-panel__card--bound
+  .lh-std-channel-panel__card-action-right {
+  flex: 1 0 220px;
+  min-width: min(220px, 100%);
+  justify-content: flex-end;
+  margin-left: 0;
+}
+
+.lh-std-channel-panel--i18n
+  .lh-std-channel-panel__card--bound
+  :is(.lh-std-channel-panel__card-unbind, .lh-std-channel-panel__connect-btn) {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
 /* ChannelPanel — QQ Modal 表单 */
 .lh-std-channel-panel__modal-body {
   display: flex;

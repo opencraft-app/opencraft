@@ -13,61 +13,43 @@
 | 概念 | 说明 | 代码位置 |
 |---|---|---|
 | **站点分流** | `isGlobal=true` 为国际站。编译期常量（`REGION=global` 构建），构建时折叠 | `src/lib/region.ts` |
-| **计费灰度** | 国际站默认走「免费试用」老逻辑；后端计费开关 + 显式开启（localStorage/构建期）+ 当前会话执行 `show()` 三层串联后，才展示真实计费 | `runtime-config-context.tsx` + `subscribe-page.tsx` + `lib/billing-flow.ts` |
+| **计费开关** | 国际站已全量放开：与国内站口径一致，由后端 `features.paidBillingEnabled` 统一控制（可一键熔断），无本地显式开启层、无会话 reveal 门禁 | `runtime-config-context.tsx` + `lib/billing-flow.ts` |
 | **强制订阅制** | 确认订单弹窗的自动续费为**只读说明**（非开关），`auto_renew_flag` 固定 `auto_renew` | `CreditCardConfirmOrderModal` |
 | **价格单位** | 后端返回**分**，币种跟随 `bundle.price?.currency`（USD / KRW 等，缺失兜底 CNY），展示时按币种换算；确认订单弹窗币种符号跟随 `plan.price`（7a6bf73ee 修复，曾硬编码 `$` 导致 KRW 环境错显）；折扣仅后端有真实 `discount` 时展示 | `mapBundleToPlan` / `formatYuan` / `centsToYuan` |
 | **支付回跳** | 弹窗拦截兜底走 `location.assign` 替换当前页，付款后 `return_url` 回到全新页面，需 `pay_return` 标记重建轮询 | `subscribe-page.tsx` → `PAY_RETURN_QUERY_KEY` |
-| **免费试用** | 灰度未开启时国际站入口走 `POST /v1/passes`（直接发货，不支付） | `createPass` |
+| **免费试用** | 后端计费开关熔断（`paidBillingEnabled=false`）时国际站入口走 `POST /v1/passes`（直接发货，不支付） | `createPass` |
 
-### 隐藏计费入口
-
-```js
-// 在国际站订阅页控制台执行；当前浏览器会话内持续有效：
-show()
-```
-
-判定链：
+### 判定链（已全量）
 
 ```
-config.features.paidBillingEnabled !== true  → 关（后端可一键熔断，本地钥匙打不开）
+config.features.paidBillingEnabled !== true  → 关（后端可一键熔断；国内站国际站同口径）
                 ↓ true
-国内站 → 开（全量，零影响）
-国际站 → 显式开启？（localStorage "lightclaw:features.paidBillingEnabled"="true"
-           或构建期环境变量显式 true；未配置时即使后端下发 true 也不放量）
-           否 → 免费试用链路
-           是 → 当前会话执行过 show()（或 pay_return=1 回跳）？
-                  否 → 免费试用链路
-                  是 → 付费下单链路
+付费下单链路（登录门控见 mapBundleToPlan 内 paid 判定）
 ```
 
-四个关键点：
-1. 后端 `features.paidBillingEnabled` 是熔断与资格开关；「显式开启」（localStorage / 构建期环境变量）是放量信号——**后端目前对所有站点硬编码下发 `true`**，所以它自己不能作为国际站放量依据（`resolvePaidBillingEnabled`，构建期判断用「显式配置过」而非「解析结果为 true」，兜底值 `true` 不算显式）。
-2. `show()` 是国际站产品曝光门控，状态写入 `sessionStorage`，只在当前浏览器会话内保留；新开标签页需重新执行。**只 `show()` 不设 localStorage 钥匙仍进不了付费**——三层是串联关系。
-3. 支付回跳携带 `pay_return=1` 时会自动恢复付费状态，保证付款后的发货轮询可以接棒；默认访问订阅页仍走免费链路。
-4. 灰度关闭（任一层未满足）时 `freeGuideAllowed` 生效：免费试用引导与 `createPass` 链路整体回归，不只是隐藏价格。
+关键点：
 
-### 灰度双变量：`paidBillingEnabled` 与 `paidBillingActive`
+1. 后端 `features.paidBillingEnabled` 是唯一的熔断与资格开关，国内站 / 国际站口径一致；构建期环境变量默认值与 localStorage override（`lightclaw:features.paidBillingEnabled`）仍可作为本地紧急关闭通道。
+2. 原「国际站显式开启（localStorage / 构建期）」层与「会话内 `show()` reveal」层已于全量放开时移除（feat/intl-billing-full-release）：`show()` 不再有任何计费含义，`sessionStorage` reveal key 已废弃。
+3. 支付回跳携带 `pay_return=1` 仍用于重建发货轮询（与计费开关无关）。
+4. 开关熔断时 `freeGuideAllowed` 生效：免费试用引导与 `createPass` 链路整体回归，不只是隐藏价格。
 
-代码里存在两个相近变量，语义差一层，读代码时极易混淆：
+### 变量：`paidBillingEnabled` 与 `paidBillingActive`
 
 ```
-paidBillingEnabled   = usePaidBillingEnabled()          // hook：构建期默认 → 后端 features
-                                                       // → localStorage override → 国际站显式开启（①+②层）
-paidBillingActive    = isPaidBillingEnabled(paidBillingEnabled)
-                       && (!isGlobal || intlPaidBillingRevealed)   // 再叠第③层 reveal
+paidBillingEnabled   = usePaidBillingEnabled()          // hook：构建期默认 → 后端 features → localStorage override
+paidBillingActive    = isPaidBillingEnabled(paidBillingEnabled)   // 布尔化；全量后两值恒等
 ```
 
 | 消费方 | 用哪个 | 控制什么 |
 |---|---|---|
 | `mapBundleToPlan`（形参名就叫 `paidBillingEnabled`，**实参是 `paidBillingActive`**） | Active | 卡片价格真源、`skipPayment: !paid`（CTA 是否跳支付）、促销徽章 |
-| `planList` 灰度过滤 | Active | Active → 只留付费 bundle；非 Active → 只留免费 bundle + 两张前端占位卡（并抹 `bundleType`，不出现付费分组 tab） |
+| `planList` 过滤 | Active | Active → 只留付费 bundle；非 Active → 只留免费 bundle + 两张前端占位卡（并抹 `bundleType`，不出现付费分组 tab） |
 | `executeCreateBot` | Active | 下单执行分流（付费/免费/点石零元）与埋点 |
-| `freeGuideAllowed = !paidBillingActive && !realname` | Active | 免费引导文案——国际站未 reveal 时整体回落免费口径 |
+| `freeGuideAllowed = !paidBillingActive && !realname` | Active | 免费引导文案——开关熔断时整体回落免费口径 |
 | `PaymentPendingModal` | 都不用 | 只认 `paymentContext`（bridgeUrl/redirectUrl/provisioningOnly） |
 
-**两个陷阱**：
-1. `mapBundleToPlan` 的形参名 `paidBillingEnabled` 与 hook 同名但语义不同（实参是 Active），函数内 `paid = 形参 && (!isGlobal || isLoggedIn)` 还会再叠一层登录门控。
-2. reveal 状态存 **sessionStorage**（key `lightvela:features.intlPaidBillingRevealed`），新开标签页不继承。
+**陷阱**：`mapBundleToPlan` 的形参名 `paidBillingEnabled` 与 hook 同名但语义不同（实参是 Active），函数内 `paid = 形参 && (!isGlobal || isLoggedIn)` 还会再叠一层登录门控。
 
 ## 三、时序图
 
@@ -180,8 +162,8 @@ closed ──选套餐下单──▶ paying ──轮询到 pass──▶ final
 | 支付方式 | bridge 中转页 + 微信扫码 | 信用卡 hosted page 新窗口 |
 | 自动续费 | 米大师签约模板 | 强制订阅制（只读说明） |
 | 实名 | 手机号实名（`realnamePhoneVerificationEnabled`） | 无 |
-| 计费开关 | 全量开启 | 默认免费试用；显式开启（localStorage / 构建期）+ 会话内 `show()` 揭示后才展示付费 |
-| 免费试用 | 走 `createPassOrder` 真实下单 | 灰度未开时走 `createPass` 直接领 |
+| 计费开关 | 全量开启 | 同口径全量开启（后端 `features.paidBillingEnabled` 统一熔断） |
+| 免费试用 | 走 `createPassOrder` 真实下单 | 开关熔断时走 `createPass` 直接领 |
 | 轮询超时 | 同左 | 同左（两站共用同一 effect） |
 
 ## 七、已知遗留与坑点
@@ -189,10 +171,11 @@ closed ──选套餐下单──▶ paying ──轮询到 pass──▶ final
 | # | 问题 | 现状 |
 |---|---|---|
 | 1 | 跨 tab 重复建实例风险（见阶段 5） | 待后端按 `pass_id` 幂等 |
-| 2 | `agent-settings-page.tsx` 存在 `isCN &&` 硬守卫 | 国际站灰度开启后该页付费 UI 仍不展示（订阅页/账号页正常） |
-| 3 | 灰度关闭态 = 整套老逻辑回归 | 需实测确认免费试用文案与 `createPass` 行为 |
-| 4 | `realnamePhoneVerificationEnabled` 的 localStorage override 与付费开关共用一把钥匙体系 | 灰度调试时注意别误开实名 |
-| 5 | 国际站曾用 staging 构建期 `PAID_BILLING_ENABLED=true` | 已在 `release-matrix.json` 移除，四环境统一走灰度 |
+| 2 | `agent-settings-page.tsx` 存在 `isCN &&` 硬守卫 | 国际站全量后该页付费 UI 仍不展示（订阅页/账号页正常） |
+| 3 | 开关熔断态 = 整套老逻辑回归 | 需实测确认免费试用文案与 `createPass` 行为 |
+| 4 | `realnamePhoneVerificationEnabled` 的 localStorage override 与付费开关共用一把钥匙体系 | 本地熔断调试时注意别误开实名 |
+| 5 | 国际站曾用 staging 构建期 `PAID_BILLING_ENABLED=true` | 已在 `release-matrix.json` 移除，四环境统一跟随后端开关 |
+| 6 | 灰度期的「显式开启」层与 `show()` reveal 层已移除 | 全量放开（feat/intl-billing-full-release）；遗留的 localStorage reveal key（`lightvela:features.intlPaidBillingRevealed`）不再被读取，用户侧无需清理 |
 
 ## 八、文件索引
 
@@ -200,8 +183,8 @@ closed ──选套餐下单──▶ paying ──轮询到 pass──▶ final
 |---|---|
 | `next-site/subscribe-page.tsx` | 主流程：`startIntlCardPay` / 支付回跳 / 轮询 / `finalizeBot` / `CreditCardConfirmOrderModal` |
 | `src/pages/marketing/renew-pass-modal.tsx` | 账号页续费（国际站分支：`createRenewOrder` + `getRenewOrderUrl` + 回跳地址） |
-| `src/contexts/runtime-config-context.tsx` | 灰度开关 `resolvePaidBillingEnabled` / `hasExplicitPaidBillingOptIn`（显式开启层） |
-| `src/lib/billing-flow.ts` | `isPaidBillingEnabled` 布尔化；`subscribe-page.tsx` 内叠加 `show()` reveal 层组成 `paidBillingActive` |
+| `src/contexts/runtime-config-context.tsx` | 付费开关 `resolvePaidBillingEnabled`（后端 features 布尔化，国内/国际同口径） |
+| `src/lib/billing-flow.ts` | `isPaidBillingEnabled` 布尔化（`paidBillingActive = isPaidBillingEnabled(paidBillingEnabled)`） |
 | `release-matrix.json` | 各环境构建期环境变量（付费开关已全部 unset） |
 | `src/lib/region.ts` | `isGlobal` 编译期站点常量 |
 | `src/repositories/http-repositories.ts` | `createPassOrder` / `getPassOrderUrl` / `createRenewOrder` / `getRenewOrderUrl` / `listMyPasses` / `createPass` |

@@ -27,4 +27,17 @@ describe("scenario job presentation", () => {
       prompt: "任务名称：交租提醒",
     });
   });
+
+  it("localizes legacy Chinese overview scenario jobs in the Spanish automation panel", () => {
+    const presentation = getScenarioCronJobPresentation({
+      name: "交租提醒",
+      prompt: "你正在执行一个 LightVela 场景任务。\n任务名称：交租提醒\n用户任务要求：房租 5000 元",
+    }, "es");
+
+    expect(presentation.name).toBe("Recordatorio del alquiler");
+    expect(presentation.prompt).toContain("Estás ejecutando una automatización de LightVela");
+    expect(presentation.prompt).toContain("Nombre de la tarea: Recordatorio del alquiler");
+    expect(presentation.prompt).not.toContain("你正在执行一个 LightVela 场景任务");
+    expect(presentation.prompt).not.toContain("任务名称：交租提醒");
+  });
 });

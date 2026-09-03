@@ -49,17 +49,17 @@ describe("AutomationUpstreamPicker Indonesian localization", () => {
     const user = userEvent.setup();
     const { rerender } = renderPicker("loading");
 
-    expect(screen.getByText("Memeriksa dukungan tugas upstream...")).toBeInTheDocument();
+    expect(screen.getByText("Memeriksa dukungan job upstream...")).toBeInTheDocument();
 
     rerender(renderPickerElement("supported"));
-    const trigger = screen.getByRole("combobox", { name: "Tugas upstream" });
+    const trigger = screen.getByRole("combobox", { name: "Job upstream" });
     expect(trigger).toHaveTextContent(
-      "Saat tugas ini berjalan, output terbaru dari tugas upstream akan digunakan sebagai konteks",
+      "Saat job ini berjalan, output terbaru dari job upstream akan digunakan sebagai konteks",
     );
 
     await user.click(trigger);
-    expect(screen.getByRole("combobox", { name: "Cari tugas upstream" })).toBeInTheDocument();
-    expect(screen.getByText("Tidak ada tugas upstream yang dapat ditautkan")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Cari job upstream" })).toBeInTheDocument();
+    expect(screen.getByText("Tidak ada job upstream yang dapat ditautkan")).toBeInTheDocument();
   });
 
   it.each(UPSTREAM_CONTEXT_COPY)("provides non-empty Indonesian copy for %s", (source) => {

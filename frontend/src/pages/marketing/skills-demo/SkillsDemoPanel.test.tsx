@@ -1,7 +1,7 @@
 import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SkillsDataLayer } from "./skill-registries";
+import type { Registry, SkillsDataLayer } from "./skill-registries";
 import { SkillsDemoPanel } from "./SkillsDemoPanel";
 
 configure({ asyncUtilTimeout: 3_000 });
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   createSkillsDataLayer: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  language: "zh-CN",
 }));
 
 vi.mock("@/i18n/t", () => ({
@@ -22,7 +23,7 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ i18n: { resolvedLanguage: "zh-CN" } }),
+  useTranslation: () => ({ i18n: { resolvedLanguage: mocks.language } }),
 }));
 
 vi.mock("@/lib/toast", () => ({
@@ -59,23 +60,23 @@ function makeDataLayer(mode: "global" | "domestic"): SkillsDataLayer {
     listInstalled: vi.fn(async () => ({
       failedSources: [],
       skills: [{
-        registry: "skillhub",
+        registry: "skillhub" as Registry,
         rawId: "builder-radar",
         slug: "builder-radar",
         name: "Builder Radar",
         category: "productivity",
         version: "1.2.3",
         iconUrl: "https://cdn.example.com/builder-radar.png",
-        registries: ["skillhub", "hermes"],
+        registries: ["skillhub", "hermes"] as Registry[],
         sourceLabel: "SkillHub / Hermes",
         uninstallable: true,
       }, {
-        registry: "hermes",
+        registry: "hermes" as Registry,
         rawId: "finance-news",
         slug: "finance-news",
         name: "Finance News",
         status: "disabled",
-        registries: ["hermes"],
+        registries: ["hermes"] as Registry[],
         nativeSource: "local",
         sourceLabel: "本地安装",
         uninstallable: true,
@@ -835,6 +836,28 @@ it("shows the international source link in a curated skill details dialog", asyn
   expect(sourceLink).toHaveClass("text-[#2563EB]", "hover:underline");
   expect(sourceLink.parentElement).toHaveClass("mt-1", "text-[11px]");
   expect(sourceLink).not.toHaveClass("h-8", "border", "bg-[#F5F9FF]");
+});
+
+it("uses Spanish category and overview copy when the international locale is es", async () => {
+  mocks.language = "es";
+  renderPanel("global");
+
+  expect(screen.getByText("Análisis de mercado")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "查看Stock Analysis详情" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/Stock Analysis ayuda a analizar una acción/)).toBeInTheDocument();
+  mocks.language = "zh-CN";
+});
+
+it("uses Japanese category and overview copy when the international locale is ja-JP", async () => {
+  mocks.language = "ja-JP";
+  renderPanel("global");
+
+  expect(screen.getByText("市場分析")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "查看Stock Analysis详情" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/Stock Analysisは、ファンダメンタルズ/)).toBeInTheDocument();
+  mocks.language = "zh-CN";
 });
 
 describe("SkillsDemoPanel installed identity boundaries", () => {

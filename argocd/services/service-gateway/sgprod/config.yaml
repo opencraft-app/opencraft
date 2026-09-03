@@ -59,7 +59,6 @@ routes:
       - { method: POST, path: "/v1/instances" }
       - { method: GET, path: "/v1/instances/{instance_id}" }
       - { method: DELETE, path: "/v1/instances/{instance_id}" }
-      - { method: GET, path: "/v1/instances/{instance_id}/borncard" }
       - { method: POST, path: "/v1/instances/{instance_id}/debug/exec" }
       - { method: POST, path: "/v1/instances/{instance_id}/tat/session" }
       - { method: POST, path: "/v1/instances/{instance_id}/config/reset" }
@@ -69,6 +68,21 @@ routes:
       - { method: GET, path: "/v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}" }
       - { method: GET, path: "/v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/events" }
       - { method: POST, path: "/v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/cancel" }
+    cors_allow:
+      - method: GET
+        path: "/v1/instances"
+        allowed_origins:
+          - https://chat.lightvela.com
+          - https://localhost.lightvela.com
+          - https://chat.lightvela.ai
+          - https://localhost.lightvela.ai
+      - method: POST
+        path: "/v1/instances/{instance_id}/tat/session"
+        allowed_origins:
+          - https://chat.lightvela.com
+          - https://localhost.lightvela.com
+          - https://chat.lightvela.ai
+          - https://localhost.lightvela.ai
     require_realname: true
     response_header_timeout: 60s
   - name: sandbox-legacy
@@ -137,6 +151,30 @@ routes:
       - { method: POST, path: "/v1/websites/{site_id}/releases" }
       - { method: GET, path: "/v1/websites/{site_id}/operations/{operation_id}" }
     response_header_timeout: 30s
+
+  - name: oidc-discovery
+    prefix: /.well-known
+    methods: [GET, OPTIONS]
+    upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+    access: public
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/.well-known/openid-configuration" }
+      - { method: GET, path: "/.well-known/jwks.json" }
+    response_header_timeout: 10s
+
+  - name: oidc
+    prefix: /oauth2
+    methods: [GET, POST, OPTIONS]
+    upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+    access: public
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/oauth2/authorize" }
+      - { method: GET, path: "/oauth2/authorize/context" }
+      - { method: POST, path: "/oauth2/authorize" }
+      - { method: POST, path: "/oauth2/token" }
+    response_header_timeout: 10s
 
   - name: auth
     prefix: /auth

@@ -30,6 +30,9 @@ func TestBuildFederationConfigRequiresCompleteSecretBackedConfiguration(t *testi
 	if config == nil {
 		t.Fatal("complete federation configuration was rejected")
 	}
+	if got, err := config.Registry.ValidateCallback("personal-site", "https://preview.lightvela.site/auth/lightvela/callback"); err != nil || got != "https://preview.lightvela.site/auth/lightvela/callback" {
+		t.Fatalf("configured callback subdomain = %q, %v", got, err)
+	}
 	if config.HandoffTTL != 5*time.Second || config.DelegatedSessionTTL != 8*time.Hour {
 		t.Fatalf("unexpected lifetimes: handoff=%s delegated=%s", config.HandoffTTL, config.DelegatedSessionTTL)
 	}

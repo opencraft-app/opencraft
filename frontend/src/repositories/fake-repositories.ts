@@ -869,7 +869,7 @@ export const createFakeRepositories = (): Repositories => {
         const session = readStoredAuthSession();
         return {
           ...input,
-          clientDisplayName: "LightVela Personal Site",
+          clientDisplayName: "Personal Site",
           currentSession: session ? {
             user: {
               id: session.user.id,
@@ -888,6 +888,38 @@ export const createFakeRepositories = (): Repositories => {
         }
         const redirectUrl = new URL(input.redirectUri);
         redirectUrl.searchParams.set("ticket", "fake-federation-ticket");
+        if (input.state) {
+          redirectUrl.searchParams.set("state", input.state);
+        }
+        return {
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 5_000).toISOString(),
+        };
+      },
+      async getOIDCAuthorizationContext(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const session = readStoredAuthSession();
+        return {
+          ...input,
+          clientDisplayName: "LightVela Sites",
+          currentSession: session ? {
+            user: {
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+              phone: session.user.phone,
+              avatarUrl: session.user.avatarUrl,
+            },
+          } : null,
+        };
+      },
+      async authorizeOIDC(input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        if (!readStoredAuthSession()) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL(input.redirectUri);
+        redirectUrl.searchParams.set("code", "fake-oidc-code");
         if (input.state) {
           redirectUrl.searchParams.set("state", input.state);
         }
@@ -1174,6 +1206,42 @@ export const createFakeRepositories = (): Repositories => {
 
 const createBotRepository = (): BotRepository => {
   const fakeConnectedChannels = new Set<string>();
+  const fakeConfiguredDshProviders = new Set<string>();
+  let fakeDshInstalled = false;
+  let fakeDshInstallationPollCount = 0;
+  let fakeDshTaskId = "";
+  const fakeDshInstallationSteps = [
+    { stage: "preflight", progress: 10, message: "正在检查实例环境" },
+    { stage: "resolve_latest", progress: 20, message: "正在获取最新版本" },
+    { stage: "snapshot_resolved", progress: 28, message: "已锁定安装版本" },
+    { stage: "runtime_lockfile", progress: 35, message: "正在生成 DSH 依赖锁" },
+    { stage: "runtime_install", progress: 48, message: "正在安装 DSH 运行环境" },
+    { stage: "profile_lockfile", progress: 56, message: "正在生成插件依赖锁" },
+    { stage: "profile_install", progress: 68, message: "正在安装 SkillHub 与渠道插件" },
+    { stage: "validate_candidate", progress: 75, message: "正在检查安装内容" },
+    { stage: "activate", progress: 85, message: "正在切换运行环境" },
+    { stage: "health_check", progress: 95, message: "正在检查运行状态" },
+    { stage: "cleanup", progress: 99, message: "正在清理旧运行环境" },
+    { stage: "completed", progress: 100, message: "DeepSeek Harness 安装完成" },
+  ] as const;
+
+  const fakeDshProviders = {
+    cn: ["deepseek", "minimax-cn", "moonshotai-cn", "qwen-token-plan-cn", "openrouter"],
+    global: ["deepseek", "minimax", "minimax-cn", "moonshotai", "moonshotai-cn", "openrouter", "anthropic", "groq", "openai"],
+  } as const;
+  const fakeDshProviderNames: Record<string, string> = {
+    deepseek: "DeepSeek",
+    minimax: "MiniMax",
+    "minimax-cn": "MiniMax CN",
+    moonshotai: "Moonshot AI",
+    "moonshotai-cn": "Moonshot AI CN",
+    "qwen-token-plan-cn": "Qwen Token Plan CN",
+    openrouter: "OpenRouter",
+    anthropic: "Anthropic",
+    groq: "Groq",
+    openai: "OpenAI",
+  };
+  const fakeDshSecretTransportPublicKey = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlfPhpfKnEnuYvdgdhoS//1lLcu4FH8xtRFSAhF6JJO27KYZI6UfhC09cdp+cKq5AyLxONpY6XWg8ozZptWu5xHDZQ9zjT2HPB20Alvb/ekO46RFL9tq7u7QlG6IRDGSRzFPboOH2VxmzpqPmuLs3jnBuUidatqjmKSmkP3tWgp/ztQR2MaNi/M07yqEBHuHFKsaSBn5yE1k18+6ER5J9GR0jJFF+QpvF/mnNKoSFkELvcy6C89nYTVMBMh+NbNLkVu7fTpbmu7JegAEMm1GSFgRcuF2uYADaRxJX8b4un7qRh6fISNECU0p7LwDvllUp6Nox7mYTEW74qTiusFwgLQIDAQAB";
 
   const fakeChannelStatusOutput = () => JSON.stringify({
     success: true,
@@ -1195,6 +1263,90 @@ const createBotRepository = (): BotRepository => {
     if (command.includes("SLACK_BOT_TOKEN") && command.includes("SLACK_APP_TOKEN")) {
       fakeConnectedChannels.add("slack");
     }
+  };
+
+  const maybeHandleFakeDshCommand = (command: string) => {
+    if (command.includes("sudo -n systemctl status deepseek-harness.service --no-pager")) {
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify(fakeDshInstalled
+          ? { installed: true, status: "running", service_status: "active", healthy: true }
+          : { installed: false, status: "not-installed", service_status: "inactive", healthy: false }),
+      };
+    }
+
+    if (command.includes("systemd-run") && command.includes("install-deepseek-harness.sh")) {
+      fakeDshTaskId = command.match(/--unit=lightvela-dsh-install-(dshi-[0-9a-f]{32})/)?.[1] ?? "";
+      fakeDshInstallationPollCount = 0;
+      return { status: "Succeeded", exitCode: 0, output: "" };
+    }
+
+    if (command.includes("sudo -n cat /var/lib/lightvela/dsh/installations/")) {
+      fakeDshInstallationPollCount += 1;
+      const stepIndex = Math.min(
+        Math.floor((fakeDshInstallationPollCount - 1) / 2),
+        fakeDshInstallationSteps.length - 1,
+      );
+      const step = fakeDshInstallationSteps[stepIndex]!;
+      const completed = step.stage === "completed";
+      if (completed) fakeDshInstalled = true;
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({
+          task_id: fakeDshTaskId,
+          status: completed ? "succeeded" : "running",
+          stage: step.stage,
+          progress: step.progress,
+          message: step.message,
+          updated_at: nowIso(),
+        }),
+      };
+    }
+
+    if (command.includes("sudo -n systemctl restart deepseek-harness.service")) {
+      return { status: "Succeeded", exitCode: fakeDshInstalled ? 0 : 1, output: "" };
+    }
+
+    if (command.includes("openssl genpkey") && command.includes(".lightvela-secret-transport")) {
+      return { status: "Succeeded", exitCode: 0, output: fakeDshSecretTransportPublicKey };
+    }
+
+    const region = command.match(/providers --region (cn|global)/)?.[1] as "cn" | "global" | undefined;
+    if (region) {
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({
+          providers: fakeDshProviders[region].map((id) => ({
+            id,
+            displayName: fakeDshProviderNames[id],
+            configured: fakeConfiguredDshProviders.has(id),
+            active: id === "deepseek",
+            writable: true,
+          })),
+        }),
+      };
+    }
+
+    const provider = command.match(/configure --provider ([a-z0-9-]+)/)?.[1];
+    if (provider) {
+      fakeConfiguredDshProviders.add(provider);
+      return { status: "Succeeded", exitCode: 0, output: "" };
+    }
+
+    const removedProvider = command.match(/remove-provider --provider ([a-z0-9-]+)/)?.[1];
+    if (removedProvider) {
+      fakeConfiguredDshProviders.delete(removedProvider);
+      return {
+        status: "Succeeded",
+        exitCode: 0,
+        output: JSON.stringify({ ok: true, provider: removedProvider, configured: false }),
+      };
+    }
+
+    return null;
   };
 
   return {
@@ -1464,33 +1616,6 @@ const createBotRepository = (): BotRepository => {
       };
     },
 
-    async getBotBornCard(botId) {
-      await wait(NETWORK_DELAY_MS / 2);
-      const bot = botStore.get(botId);
-      if (!bot) {
-        throw new Error("Bot 不存在，请先创建。");
-      }
-
-      const createdDate = new Date(bot.createdAt);
-      const bornDateForChina = `${createdDate.getUTCFullYear()}-${String(createdDate.getUTCMonth() + 1).padStart(2, "0")}-${String(createdDate.getUTCDate()).padStart(2, "0")}`;
-      let bornNumber = 0;
-      for (let i = 0; i < bot.id.length; i++) {
-        bornNumber = ((bornNumber << 3) + bornNumber) + bot.id.charCodeAt(i);
-      }
-
-      return {
-        instanceId: bot.id,
-        userId: "usr_mock",
-        sandboxId: `sb_${bot.id}`,
-        status: bot.status,
-        createdAt: bot.createdAt,
-        updatedAt: bot.createdAt,
-        timeoutAt: undefined,
-        bornDateForChina,
-        bornNumberForChina: (Math.abs(bornNumber) % 500) + 1,
-      };
-    },
-
     async configureQQChannel(botId, input) {
       await wait(NETWORK_DELAY_MS);
       const bot = botStore.get(botId);
@@ -1555,6 +1680,8 @@ const createBotRepository = (): BotRepository => {
     },
 
     async execDebugCommand(_botId, command) {
+      const dshResult = maybeHandleFakeDshCommand(command);
+      if (dshResult) return dshResult;
       await wait(NETWORK_DELAY_MS);
       if (command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND) {
         return {
@@ -1577,7 +1704,7 @@ const createBotRepository = (): BotRepository => {
         ? { status: "Succeeded", exitCode: 0, output: JSON.stringify({ models: {}, channels: {}, gateway: {} }) }
         : command.includes("acli channel status")
           ? { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() }
-          : { status: "Succeeded", exitCode: 0, output: "" };
+          : maybeHandleFakeDshCommand(command) ?? { status: "Succeeded", exitCode: 0, output: "" };
       if (result.output) onChunk({ stream: DEBUG_EXEC_STDOUT_STREAM, chunk: result.output });
       return result;
     },

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"git.woa.com/wisp/mono2/llmgateway/internal/newapi"
 	"git.woa.com/wisp/mono2/llmgateway/internal/observability"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -76,6 +77,10 @@ func groupRatioFingerprint(entries []GroupRatioDesired) (string, error) {
 }
 
 func (s *Service) reconcileSetGroupRatios(ctx context.Context, set Set) (GroupRatioApplyState, error) {
+	return s.reconcileSetGroupRatiosWithAuth(ctx, set, nil)
+}
+
+func (s *Service) reconcileSetGroupRatiosWithAuth(ctx context.Context, set Set, auth *newapi.AdminAuth) (GroupRatioApplyState, error) {
 	var result GroupRatioApplyState
 	ctx, span := s.startTelemetrySpan(ctx, observability.ScopeConfigConsistency, "llmgateway.group_ratio.sync",
 		attribute.String("llmgateway.set.id", set.ID),
@@ -126,9 +131,15 @@ func (s *Service) reconcileSetGroupRatios(ctx context.Context, set Set) (GroupRa
 		}
 
 		client := s.newAPIClient(set.BaseURL)
-		if err := s.updateSetOption(opCtx, client, set, newAPIGroupRatioOptionKey, string(payload)); err != nil {
-			recordFailure(err)
-			return err
+		var updateErr error
+		if auth != nil {
+			updateErr = client.UpdateOptionWithAuth(opCtx, *auth, newAPIGroupRatioOptionKey, string(payload))
+		} else {
+			updateErr = s.updateSetOption(opCtx, client, set, newAPIGroupRatioOptionKey, string(payload))
+		}
+		if updateErr != nil {
+			recordFailure(updateErr)
+			return updateErr
 		}
 		previous := state
 		result, err = s.store.CompleteGroupRatioApply(opCtx, GroupRatioApplyCompletion{

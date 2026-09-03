@@ -4,9 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersonaUploadModal } from "../agent-persona-upload-modal";
 
 vi.mock("@/i18n/t", () => ({
-  useT: () => (text: string, options?: Record<string, unknown>) => text.replace(
-    /\{\{\s*([\w$]+)\s*\}\}/g,
-    (raw, key: string) => options?.[key] === undefined ? raw : String(options[key]),
+  useT: () => (text: string, options?: Record<string, unknown>) => (
+    text === "自定义人设"
+      ? "Persona kustom"
+      : text.replace(
+          /\{\{\s*([\w$]+)\s*\}\}/g,
+          (raw, key: string) => options?.[key] === undefined ? raw : String(options[key]),
+        )
   ),
 }));
 
@@ -209,6 +213,25 @@ describe("PersonaUploadModal", () => {
       markdown: expect.stringContaining("LightVela-Source: custom-upload"),
     }));
     expect(screen.queryByRole("dialog", { name: "覆盖当前人设？" })).not.toBeInTheDocument();
+  });
+
+  it("uses the localized display-name fallback", async () => {
+    const onInject = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PersonaUploadModal
+        disabled={false}
+        hasExistingSoul={false}
+        onInject={onInject}
+      />,
+    );
+
+    selectFile(new File(["Keep answers short."], ".md"));
+    fireEvent.click(await screen.findByRole("button", { name: "注入人设" }));
+
+    await waitFor(() => expect(onInject).toHaveBeenCalledWith({
+      displayName: "Persona kustom",
+      markdown: expect.stringContaining("Name: Persona kustom"),
+    }));
   });
 
   it("keeps the editor and allows retry after injection fails", async () => {
