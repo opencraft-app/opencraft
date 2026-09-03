@@ -68,6 +68,7 @@ func NewMySQLDB(t *testing.T, migrationPathParts ...string) *MySQLContainer {
 	t.Helper()
 
 	resource.ZapLogger = zap.NewNop()
+	originalDB := resource.GormDB
 
 	container := acquireSharedMySQLContainer(t)
 	dbName := createTestDatabase(t, container.DSN)
@@ -89,6 +90,9 @@ func NewMySQLDB(t *testing.T, migrationPathParts ...string) *MySQLContainer {
 		t.Fatalf("open gorm mysql db: %v", err)
 	}
 	resource.GormDB = gdb
+	t.Cleanup(func() {
+		resource.GormDB = originalDB
+	})
 	return container
 }
 
@@ -96,6 +100,7 @@ func NewMySQLAutoMigrateDB(t *testing.T, models ...interface{}) *MySQLContainer 
 	t.Helper()
 
 	resource.ZapLogger = zap.NewNop()
+	originalDB := resource.GormDB
 
 	container := acquireSharedMySQLContainer(t)
 	dbName := createTestDatabase(t, container.DSN)
@@ -111,5 +116,8 @@ func NewMySQLAutoMigrateDB(t *testing.T, models ...interface{}) *MySQLContainer 
 		t.Fatalf("auto migrate mysql db: %v", err)
 	}
 	resource.GormDB = gdb
+	t.Cleanup(func() {
+		resource.GormDB = originalDB
+	})
 	return container
 }

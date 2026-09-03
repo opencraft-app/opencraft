@@ -58,6 +58,14 @@ func (f *fakeCTL) DestroyPass(_ context.Context, _ string, _ *ctlclient.DestroyP
 	return nil, errors.New("DestroyPass not used in inquiry tests")
 }
 
+func (f *fakeCTL) CheckPassModify(_ context.Context, _ string, _ *ctlclient.CheckPassModifyRequest) (*ctlclient.CheckPassModifyResponse, error) {
+	return nil, errors.New("CheckPassModify not used in these tests")
+}
+
+func (f *fakeCTL) ModifyPass(_ context.Context, _ string, _ *ctlclient.ModifyPassRequest) (*ctlclient.ModifyPassResponse, error) {
+	return nil, errors.New("ModifyPass not used in these tests")
+}
+
 type fakeBundleStore struct {
 	def                       *store.BundleDefinition
 	defs                      map[string]*store.BundleDefinition

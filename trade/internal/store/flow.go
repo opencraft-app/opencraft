@@ -32,6 +32,7 @@ const (
 //   - FlowTypeRenewResource = "renew_resource"   jifei lightvela.pass.renewResource (R-A 续费)
 //   - FlowTypeDestroyResource = "destroy_resource" jifei lightvela.pass.destroyResource (D-1 销毁)
 //   - FlowTypeTransferResource = "transfer_resource" jifei lightvela.pass.transferResource (外部资源迁入)
+//   - FlowTypeModifyResource = "modify_resource"   jifei lightvela.pass.modifyResource (同 SP 变配)
 //
 // checkCreate 不写本表（Q62），所以无对应 flow_type；queryFlow 是只读链路（按 ID 反查），
 // 不写本表，也无对应 flow_type。
@@ -47,6 +48,11 @@ const (
 	FlowTypeRenewResource    = "renew_resource"
 	FlowTypeDestroyResource  = "destroy_resource"
 	FlowTypeTransferResource = "transfer_resource"
+	// FlowTypeModifyResource = "modify_resource"  jifei lightvela.pass.modifyResource（同 SP 变配，
+	// TAPD 1010132091137784162 §7.1）。与 renew 同幂等范式：走 TryAcquireSlot 的
+	// (deal_name, flow_type, app_id) 唯一键，因为变配必然有 dealName（不像 isolate/destroy 有
+	// dealName 为 NULL 的生命周期分支）。
+	FlowTypeModifyResource = "modify_resource"
 )
 
 // Flow 是 trade_flow 表的领域对象（与 §7.3.5 / migration 0001 + 0002 列对齐）。
@@ -397,6 +403,56 @@ func (s *MySQLStore) MarkCompletedWithResourceID(
 	); err != nil {
 		return fmt.Errorf("trade_flow: mark completed with resource_id dealName=%s resourceID=%s: %w",
 			dealName, resourceID, err)
+	}
+	return nil
+}
+
+// RecordAcceptedByID records the successful asynchronous acceptance response
+// without advancing the flow to completed. modifyResource uses this after CTL
+// has accepted the work; the CTL parent task remains the only component that
+// may advance the flow to its completed terminal state.
+//
+// Keeping the response body while status is still in_progress serves two
+// purposes: duplicate modifyResource callbacks can replay the original
+// acceptance response, and the later /flows/{id}/complete callback can retain
+// that framework response for post-completion replay.
+func (s *MySQLStore) RecordAcceptedByID(
+	ctx context.Context,
+	id int64,
+	resourceID string,
+	responseBody []byte,
+) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("trade_flow: store is nil")
+	}
+	if id <= 0 {
+		return fmt.Errorf("trade_flow: id must be positive")
+	}
+	if resourceID == "" {
+		return fmt.Errorf("trade_flow: resource_id is required")
+	}
+	if len(responseBody) == 0 {
+		return fmt.Errorf("trade_flow: accepted response_body is required")
+	}
+
+	const q = `
+		UPDATE trade_flow
+		   SET resource_id = ?, response_body = ?, updated_time = NOW(6)
+		 WHERE id = ? AND status = ?
+		   AND (resource_id IS NULL OR resource_id = '' OR resource_id = ?)
+	`
+	res, err := s.db.ExecContext(ctx, q,
+		resourceID, string(responseBody), id, FlowStatusInProgress, resourceID,
+	)
+	if err != nil {
+		return fmt.Errorf("trade_flow: record accepted id=%d resourceID=%s: %w", id, resourceID, err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("trade_flow: record accepted rows affected id=%d: %w", id, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("trade_flow: record accepted id=%d affected 0 rows", id)
 	}
 	return nil
 }

@@ -9,6 +9,9 @@
 //   - POST /internal/trade/orders/place-and-pay       下单+支付一体化（迭代 8B-1.5 测试链路用）
 //   - POST /internal/trade/orders/renew               续费下单（ctl/pass.RenewPassOrderUrl 用，R-C-7）
 //   - POST /internal/trade/orders/renew/place-and-pay 续费下单+支付一体化（ctl/pass.RenewPassOrderAndPay 测试用，R-D-7）
+//   - POST /internal/trade/inquiry/modify              升配询价（同 SP 变配差价）
+//   - POST /internal/trade/orders/modify               升配下单（两步式，生产链路）
+//   - POST /internal/trade/orders/modify/place-and-pay 升配下单+代扣一体化（联调 / e2e）
 //   - POST /internal/trade/orders/:dealName/pay-url   生成支付 url（ctl/pass CreatePass 拉支付页用）
 //   - POST /internal/trade/orders/:dealName/query-status 订单状态反查（v1.7.32 引入，详见 .tmp/ctl-order-status-query-design.md）
 //   - GET  /internal/trade/orders/by-resource/:resourceID 存量 Pass 原始购买周期查询
@@ -30,6 +33,7 @@
 package internalapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,6 +72,11 @@ type Deps struct {
 	//
 	// 允许 nil（向后兼容仅承载 8A 内部 RPC 的旧调用方）；nil 时 callback 路由不挂载。
 	FlowStore store.FlowStore
+
+	// OrderUpdater is used by the flow completion callback to promote a modify
+	// order only after CTL has finished the asynchronous parent task. It is
+	// optional for backwards-compatible test/router assembly.
+	OrderUpdater OrderProvisionUpdater
 
 	// BundleStore 提供 trade_bundle_definition 反查能力（D-2 销毁链路用户主动入口用）。
 	//
@@ -142,6 +151,10 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/orders/move-in", moveInOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew", placeRenewOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew/place-and-pay", placeRenewOrderAndPayHandler(deps.PlaceOrder))
+	// 同 SP 变配（TAPD 1010132091137784162 §5.1）：询价 + 两步式下单 + 一体化下单。
+	group.POST("/inquiry/modify", inquiryModifyHandler(deps.Inquiry))
+	group.POST("/orders/modify", placeModifyOrderHandler(deps.PlaceOrder))
+	group.POST("/orders/modify/place-and-pay", placeModifyOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/orders/:dealName/pay-url", payURLHandler(deps.PlaceOrder))
 	if deps.ProvisionedOrderStore != nil {
 		group.GET("/orders/by-resource/:resourceID", provisionedCreateOrderHandler(deps.ProvisionedOrderStore))
@@ -150,7 +163,7 @@ func Install(router *gin.Engine, deps Deps) {
 	// Sub-4 ctl→trade callback：trade_flow.status 推进到 completed。
 	// FlowStore == nil 时不挂载（向后兼容；生产路径 main.go 必注入）。
 	if deps.FlowStore != nil {
-		group.POST("/flows/:flowID/complete", flowCompleteHandler(deps.FlowStore))
+		group.POST("/flows/:flowID/complete", flowCompleteHandler(deps.FlowStore, deps.OrderUpdater))
 	}
 
 	// D-2 ctl→trade 销毁链路用户主动入口（设计稿 §3.5 + §11-A Q2/Q20/Q26）：
@@ -984,6 +997,12 @@ type flowCompleteResponse struct {
 	Ack bool `json:"ack"`
 }
 
+// OrderProvisionUpdater is the narrow order write contract required by the
+// CTL-to-trade completion callback.
+type OrderProvisionUpdater interface {
+	MarkOrderProvisioned(ctx context.Context, dealName, resourceID string) error
+}
+
 // flowCompleteHandler 处理 ctl 父 task 完成后回写 trade_flow.status 的 callback。
 //
 // 行为：
@@ -1000,7 +1019,7 @@ type flowCompleteResponse struct {
 // 错误响应：
 //   - 400 InvalidRequest：flowID 非数字 / body decode 失败
 //   - 502 UpstreamError：DB 写失败
-func flowCompleteHandler(flowStore store.FlowStore) gin.HandlerFunc {
+func flowCompleteHandler(flowStore store.FlowStore, orderUpdater OrderProvisionUpdater) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		flowIDStr := c.Param("flowID")
 		flowID, err := strconv.ParseInt(flowIDStr, 10, 64)
@@ -1038,6 +1057,40 @@ func flowCompleteHandler(flowStore store.FlowStore) gin.HandlerFunc {
 				return
 			}
 		} else {
+			// modifyResource is asynchronous: CTL acceptance alone is not a
+			// provisioned order. Promote the order only in this parent-task terminal
+			// callback. Preserve the original jifei framework response so duplicate
+			// modifyResource callbacks can replay it after completion.
+			if orderUpdater != nil {
+				flow, getErr := flowStore.GetByID(c.Request.Context(), flowID)
+				if getErr != nil {
+					c.JSON(http.StatusBadGateway, gin.H{
+						"code":    "UpstreamError",
+						"message": "get trade_flow before completion: " + getErr.Error(),
+					})
+					return
+				}
+				if flow != nil && flow.FlowType == store.FlowTypeModifyResource {
+					if flow.DealName == "" || flow.ResourceID == nil || *flow.ResourceID == "" ||
+						len(flow.ResponseBody) == 0 {
+						c.JSON(http.StatusServiceUnavailable, gin.H{
+							"code":    "FlowNotAccepted",
+							"message": "modify flow acceptance metadata is not ready",
+						})
+						return
+					}
+					if err := orderUpdater.MarkOrderProvisioned(
+						c.Request.Context(), flow.DealName, *flow.ResourceID,
+					); err != nil {
+						c.JSON(http.StatusBadGateway, gin.H{
+							"code":    "UpstreamError",
+							"message": "mark modify order provisioned: " + err.Error(),
+						})
+						return
+					}
+					respBody = flow.ResponseBody
+				}
+			}
 			if err := flowStore.MarkCompletedByID(c.Request.Context(), flowID, respBody); err != nil {
 				c.JSON(http.StatusBadGateway, gin.H{
 					"code":    "UpstreamError",

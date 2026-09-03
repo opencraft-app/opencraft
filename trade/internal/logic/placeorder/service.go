@@ -239,6 +239,17 @@ type Deps struct {
 	// DianshiClient 是点石出向客户端（设计稿 §5.1）。仅在 ActivityResolver 也注入时
 	// 被 placeOrderDianshi 调用；启动期 main.go 应保证两者同进同退。
 	DianshiClient dianshiclient.Client
+
+	// ModifyFlowReader closes the callback-before-order-insert race for the
+	// one-shot modify flow. It is optional because only modify order-and-pay
+	// uses it; production wires the same MySQL store used by callbacks.
+	ModifyFlowReader ModifyFlowReader
+}
+
+// ModifyFlowReader is the narrow trade_flow read contract needed by
+// PlaceModifyOrderAndPay after it persists the order.
+type ModifyFlowReader interface {
+	GetFlow(ctx context.Context, dealName, flowType, appID string) (*store.Flow, error)
 }
 
 // Service 实现"业务层下单"能力。

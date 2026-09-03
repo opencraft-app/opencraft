@@ -569,6 +569,10 @@ func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Reques
 			h.destroyPass(w, r, passID)
 		case "renew":
 			h.renewPass(w, r, passID)
+		case "check-modify":
+			h.checkPassModify(w, r, passID)
+		case "modify":
+			h.acceptPassModify(w, r, passID)
 		default:
 			writeHTTPError(w, r, errcode.ErrNotFound)
 		}
@@ -733,6 +737,84 @@ func (h *passHandler) renewPass(w http.ResponseWriter, r *http.Request, passID s
 		return
 	}
 	writeSuccess(w, r, http.StatusOK, &transport.RenewPassResponse{
+		PassID: passID,
+		TaskID: taskID,
+	})
+}
+
+// checkPassModify POST /internal/ctl/passes/{pass_id}/check-modify
+//
+// 需求：TAPD 1010132091137784162 §5.2 / §5.3
+//
+// 计费 checkModify 协议总时限 3 秒，trade → ctl 的预算必须更小，所以本路径只读
+// CTL DB 与本地策略表：不调 sandbox、不询价、不改任何状态。
+//
+// 返回：
+//   - 200 {"pass_id":..., "allowed":true}：允许变配，trade 翻译成计费的 data.status = 0
+//   - 4xx 业务错：trade 翻译成非 0；错误码见 Logic.CheckPassModify 注释
+//
+// 鉴权：requireInternalBearer（外层 handleInternalPasses 已校验）
+func (h *passHandler) checkPassModify(w http.ResponseWriter, r *http.Request, passID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	passID = strings.TrimSpace(passID)
+	if passID == "" {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrPassInvalidParam, "pass_id is required"))
+		return
+	}
+
+	var req transport.CheckPassModifyRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	if err := h.logic.CheckPassModify(passID, &req); err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, &transport.CheckPassModifyResponse{
+		PassID:  passID,
+		Allowed: true,
+	})
+}
+
+// acceptPassModify POST /internal/ctl/passes/{pass_id}/modify
+//
+// 需求：TAPD 1010132091137784162 §5.2 / §5.3
+//
+// 支付成功后的发货受理：重跑一遍前置校验（询价到发货之间 pass 可能已漂移）→
+// CAS active → modifying → 入队变配父 task → 返 task_id。
+//
+// 幂等：同一 trade_flow_id 重投返 200 + 原链路的 task_id。计费失败或超时会持续重投
+// modifyResource，这个分支必须成功，否则会被判定发货失败去退款。
+//
+// 鉴权：requireInternalBearer（外层 handleInternalPasses 已校验）
+func (h *passHandler) acceptPassModify(w http.ResponseWriter, r *http.Request, passID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	passID = strings.TrimSpace(passID)
+	if passID == "" {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrPassInvalidParam, "pass_id is required"))
+		return
+	}
+
+	var req transport.PassModifyRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	taskID, err := h.logic.AcceptPassModify(passID, &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, &transport.PassModifyResponse{
 		PassID: passID,
 		TaskID: taskID,
 	})
@@ -1148,7 +1230,132 @@ func (h *passHandler) handleUserPassesByID(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	// 3 段路径：{pass_id}/modify/{bundles | order | order-url | order-and-pay}
+	// 同 SP 升配（TAPD 1010132091137784162 §5.1）
+	if len(parts) == 3 && parts[1] == "modify" {
+		switch parts[2] {
+		case "bundles":
+			h.userListPassModifyBundles(w, r, parts[0])
+			return
+		case "order":
+			h.userModifyPassOrder(w, r, parts[0])
+			return
+		case "order-url":
+			h.userModifyPassOrderUrl(w, r, parts[0])
+			return
+		case "order-and-pay":
+			h.userModifyPassOrderAndPay(w, r, parts[0])
+			return
+		}
+	}
 	writeHTTPError(w, r, errcode.ErrNotFound)
+}
+
+// === 同 SP 升配用户侧入口（TAPD 1010132091137784162 §5.1）===
+//
+// 四个 handler 共用 X-User-Id 鉴权 + pass 归属校验（在 logic 层完成）。
+// bundles 是 GET（无副作用查询），其余三个是 POST。
+
+// userListPassModifyBundles GET /v1/passes/{pass_id}/modify/bundles
+//
+// 返回该 pass 可升配的目标套餐及各自实时差价。**不接收 target_bundle_id**：
+// 合法目标由服务端推导，前端只能从响应里取回传。
+//
+// 错误语义：
+//   - 200 + result：成功（无可升配路径时 modify_bundle_set 为空数组）
+//   - 401 UNAUTHORIZED：缺 X-User-Id
+//   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户
+//   - 5xx：trade 询价 / DB 异常
+func (h *passHandler) userListPassModifyBundles(w http.ResponseWriter, r *http.Request, passID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	result, err := h.logic.ListPassModifyBundles(ctx.GetUserID(), passID)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+// userModifyPassOrder POST /v1/passes/{pass_id}/modify/order — 升配纯下单，返订单号。
+//
+// 错误语义（三个下单入口共用）：
+//   - 400 PASS_INVALID_PARAM：缺 target_bundle_id
+//   - 400 PASS_MODIFY_TARGET_NOT_ALLOWED：目标不在允许的升配关系中（含降配 / 跨 SP）
+//   - 403 PASS_MODIFYING / PASS_NOT_MODIFIABLE：pass 不处于 active
+//   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户
+func (h *passHandler) userModifyPassOrder(w http.ResponseWriter, r *http.Request, passID string) {
+	h.userModifyOrderEntry(w, r, passID, h.logic.ModifyPassOrder)
+}
+
+// userModifyPassOrderAndPay POST /v1/passes/{pass_id}/modify/order-and-pay
+//
+// **仅用于联调 / 自动化 e2e**，现网控制台禁止暴露（与 renew/order-and-pay 同语义）。
+func (h *passHandler) userModifyPassOrderAndPay(w http.ResponseWriter, r *http.Request, passID string) {
+	h.userModifyOrderEntry(w, r, passID, h.logic.ModifyPassOrderAndPay)
+}
+
+// userModifyOrderEntry 收敛两个返回订单号的下单入口。
+func (h *passHandler) userModifyOrderEntry(
+	w http.ResponseWriter,
+	r *http.Request,
+	passID string,
+	place func(userID, passID string, req *transport.ModifyPassOrderRequest) (*transport.ModifyPassOrderResult, error),
+) {
+	req, userID, ok := decodeModifyOrderRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := place(userID, passID, req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+// userModifyPassOrderUrl POST /v1/passes/{pass_id}/modify/order-url — 建单 + 返支付页 URL。
+func (h *passHandler) userModifyPassOrderUrl(w http.ResponseWriter, r *http.Request, passID string) {
+	req, userID, ok := decodeModifyOrderRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.logic.ModifyPassOrderUrl(userID, passID, req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+// decodeModifyOrderRequest 做三个 POST 入口共同的方法校验、鉴权和 body 解析。
+// ok=false 时响应已写出，调用方直接返回。
+func decodeModifyOrderRequest(w http.ResponseWriter, r *http.Request) (*transport.ModifyPassOrderRequest, string, bool) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return nil, "", false
+	}
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return nil, "", false
+	}
+	var req transport.ModifyPassOrderRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return nil, "", false
+	}
+	return &req, ctx.GetUserID(), true
 }
 
 // handleAdminPassesByID 处理 /admin/api/ctl/passes/{pass_id}/... 子路径路由（后台入口）。

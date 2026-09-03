@@ -21,6 +21,7 @@ var ErrTradeOrderNotFound = errors.New("trade_order: not found")
 //
 //   - OrderTypeCreate = "create"  新购订单（兼容历史数据，DEFAULT 'create'）
 //   - OrderTypeRenew  = "renew"   续费订单（R-A 新增）
+//   - OrderTypeModify = "modify"  变配订单（同 SP 升配，TAPD 1010132091137784162 §7.1）
 //   - 预留 OrderTypeRefund = "refund"（本期暂不实现）
 //
 // 与 trade_flow.flow_type（jifei 协议长事务流水类型）维度不同：trade_order.order_type
@@ -29,6 +30,7 @@ var ErrTradeOrderNotFound = errors.New("trade_order: not found")
 const (
 	OrderTypeCreate = "create"
 	OrderTypeRenew  = "renew"
+	OrderTypeModify = "modify"
 )
 
 // OrderSource 枚举（migration 000006 新增列；订单来源）：

@@ -27,6 +27,20 @@ data:
     default_template_id    = "pool-kr-2c4g-01"
     candidate_template_ids = ["pool-kr-2c4g-01"]
 
+    # spec-4c8g80g 是巡游/巡游 AI 的规格，同 SP 变配（TAPD 1010132091137784162）的目标端。
+    # 独立 template_class_id 与 bj-7 / beijing-sandbox 同范式：sandbox_primary 模式下若共用
+    # openclaw-default，sandbox 会按 template_pool_bindings.priority 自主选池，4C8G 用户可能被
+    # 路由到 2C4G 池（用户按巡游付费却拿到启航配置）。
+    # 配套 sandbox-kr-1 DB 录入：template_classes(openclaw-4c8g80g) +
+    # pools(pool-kr-4c8g-01, SA5.LARGE8, system_disk_size=80) +
+    # template_pool_bindings(openclaw-4c8g80g ↔ pool-kr-4c8g-01, priority=1)。
+    [[api.instance.spec_pools]]
+    spec_id                = "spec-4c8g80g"
+    template_class_id      = "openclaw-4c8g80g"
+    sku_id                 = "sku-hermes-4c8g"
+    default_template_id    = "pool-kr-4c8g-01"
+    candidate_template_ids = ["pool-kr-4c8g-01"]
+
     [db]
     host = "10.47.192.15"
     port = 3306

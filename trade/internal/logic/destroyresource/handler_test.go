@@ -114,6 +114,14 @@ func (f *fakeCTLClient) DestroyPass(ctx context.Context, passID string, req *ctl
 	return f.destroyFunc(ctx, passID, req)
 }
 
+func (f *fakeCTLClient) CheckPassModify(_ context.Context, _ string, _ *ctlclient.CheckPassModifyRequest) (*ctlclient.CheckPassModifyResponse, error) {
+	return nil, errors.New("CheckPassModify not used in these tests")
+}
+
+func (f *fakeCTLClient) ModifyPass(_ context.Context, _ string, _ *ctlclient.ModifyPassRequest) (*ctlclient.ModifyPassResponse, error) {
+	return nil, errors.New("ModifyPass not used in these tests")
+}
+
 // ===== helpers ==============================================================
 
 func defaultPara() callbackPara {

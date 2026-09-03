@@ -164,7 +164,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 28, "sgprod": 28},
+                    {"shprod": 29, "sgprod": 29},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:

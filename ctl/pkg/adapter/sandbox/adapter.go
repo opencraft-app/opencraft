@@ -84,6 +84,21 @@ type Adapter interface {
 	//
 	// 调用方：ctl 销毁子 task 阶段 2 轮询 + ctl admin 反查使用。
 	GetSnapshotStatus(ctx context.Context, sandboxID, snapshotID string) (*GetSnapshotStatusResponse, error)
+
+	// === 同 SP 变配（升配）===
+	// 需求：TAPD 1010132091137784162 §5.4
+	//
+	// Modify 调 sandbox `POST /internal/sandboxes/{sandboxID}/modify`，创建或命中一份
+	// 云操作账本并返回 202；停机 → 改计算规格 → 扩系统盘 → 开机 → 重绑目标 Pool
+	// 由 sandbox worker 单向续跑，不在本调用内完成。
+	//
+	// 幂等：IdempotencyKey 用 ctl 单实例 child task ID，重投命中原 operation。
+	// 同一 key 换目标规格会被 sandbox 以 409 MODIFY_OPERATION_CONFLICT 拒绝。
+	Modify(ctx context.Context, sandboxID string, req *ModifyRequest) (*ModifyOperation, error)
+
+	// GetModifyOperation 调 sandbox `GET /internal/sandbox-modify-operations/{operationID}` 轮询账本。
+	// Status 为 running / completed / failed；failed 时 LastError 带云侧原因。
+	GetModifyOperation(ctx context.Context, operationID string) (*ModifyOperation, error)
 }
 
 // CommandInvoker is the optional internal capability used for invoking a
@@ -842,7 +857,7 @@ func marshalBody(body interface{}) ([]byte, error) {
 func mapAPIError(status int, body []byte) error {
 	var apiErr APIError
 	_ = json.Unmarshal(body, &apiErr)
-	message := strings.TrimSpace(apiErr.Message)
+	message := apiErr.Detail()
 
 	var target *errcode.Error
 	switch status {
@@ -1311,6 +1326,77 @@ func (a *SandboxAdapter) GetSnapshotStatus(
 		http.MethodGet,
 		"/sandboxes/"+url.PathEscape(sandboxID)+"/snapshot-status",
 		query,
+		nil,
+		http.StatusOK,
+		resp,
+	); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// === 同 SP 变配（升配）出向 adapter ===
+// 需求：TAPD 1010132091137784162 §5.4
+//
+// 两个端点都挂在 sandbox 的 `/internal` + API-key 分组下（变配改的是计费规格，
+// 与 TAT invocation 同一鉴权档位）。
+
+// Modify 详见 Adapter 接口注释
+func (a *SandboxAdapter) Modify(
+	ctx context.Context,
+	sandboxID string,
+	req *ModifyRequest,
+) (resp *ModifyOperation, err error) {
+	ctx, span := otel.Tracer("ctl/pkg/adapter/sandbox").Start(ctx, "SandboxAdapter.Modify")
+	defer func() { endSpanWithError(span, err) }()
+
+	if err = validateSandboxID(sandboxID); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrSandboxInvalidParam, "Modify: nil request")
+	}
+	if req.IdempotencyKey == "" || req.TargetPoolID == "" {
+		return nil, errcode.Wrap(errcode.ErrSandboxInvalidParam, "Modify: missing idempotency_key/target_pool_id")
+	}
+	resp = new(ModifyOperation)
+	// 202：sandbox 只落账本并把实例挂到 MODIFYING，云侧步骤由它的 worker 单向续跑。
+	if err = a.doRequest(
+		ctx,
+		"modify_sandbox",
+		http.MethodPost,
+		"/internal/sandboxes/"+url.PathEscape(sandboxID)+"/modify",
+		nil,
+		req,
+		http.StatusAccepted,
+		resp,
+	); err != nil {
+		return nil, err
+	}
+	if resp.OperationID == "" {
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "Modify: empty operation_id")
+	}
+	return resp, nil
+}
+
+// GetModifyOperation 详见 Adapter 接口注释
+func (a *SandboxAdapter) GetModifyOperation(
+	ctx context.Context,
+	operationID string,
+) (resp *ModifyOperation, err error) {
+	ctx, span := otel.Tracer("ctl/pkg/adapter/sandbox").Start(ctx, "SandboxAdapter.GetModifyOperation")
+	defer func() { endSpanWithError(span, err) }()
+
+	if operationID == "" {
+		return nil, errcode.Wrap(errcode.ErrSandboxInvalidParam, "GetModifyOperation: operationID empty")
+	}
+	resp = new(ModifyOperation)
+	if err = a.doRequest(
+		ctx,
+		"get_modify_operation",
+		http.MethodGet,
+		"/internal/sandbox-modify-operations/"+url.PathEscape(operationID),
+		nil,
 		nil,
 		http.StatusOK,
 		resp,

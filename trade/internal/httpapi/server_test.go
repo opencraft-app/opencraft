@@ -81,6 +81,14 @@ func (fakeCTLClientUnused) DestroyPass(_ context.Context, _ string, _ *ctlclient
 	return nil, errors.New("ctl client not exercised in router test")
 }
 
+func (fakeCTLClientUnused) CheckPassModify(_ context.Context, _ string, _ *ctlclient.CheckPassModifyRequest) (*ctlclient.CheckPassModifyResponse, error) {
+	return nil, errors.New("CheckPassModify not used in these tests")
+}
+
+func (fakeCTLClientUnused) ModifyPass(_ context.Context, _ string, _ *ctlclient.ModifyPassRequest) (*ctlclient.ModifyPassResponse, error) {
+	return nil, errors.New("ModifyPass not used in these tests")
+}
+
 // fakeFlowStoreAcquireWins 总是返 acquired=true 让 createResource handler 进入主链路；
 // 主链路第一步会撞 OrderStore 反查 not found，从而以 ReturnCodeOrderNotFound=600202 退出。
 //

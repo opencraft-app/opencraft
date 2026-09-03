@@ -57,6 +57,10 @@ cp sandbox/secret-templates/local.env.example \
 - `POST /pools/{poolID}/allocate`：业务分配一台 `CLEAN` 主机，状态改为 `ALLOCATED`。
 - `POST /instances/{id}/release`：业务释放实例，改为 `DRY`。
 - `PATCH /instances/{id}/state`：Worker 推进状态（`DRY→RESETTING→CLEAN` 或 `CREATING→CLEAN`）。
+- `POST /internal/sandboxes/{sandboxID}/modify`：使用 `X-API-Key` 受理在线升配，
+  以 `idempotency_key` 创建或复用持久化 operation，返回 `202`。
+- `GET /internal/sandbox-modify-operations/{operationID}`：查询在线升配 operation 的
+  `running/completed/failed` 状态与已完成步骤，供 CTL 子任务轮询。
 
 所有接口返回 JSON，失败返回 `{"error": "..."}`
 

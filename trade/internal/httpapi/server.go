@@ -11,11 +11,13 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/httpapi/jifei"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/checkcreate"
+	"git.woa.com/wisp/mono/trade/internal/logic/checkmodify"
 	"git.woa.com/wisp/mono/trade/internal/logic/checkrenew"
 	"git.woa.com/wisp/mono/trade/internal/logic/createresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/destroyresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/isolateresource"
+	"git.woa.com/wisp/mono/trade/internal/logic/modifyresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
 	"git.woa.com/wisp/mono/trade/internal/logic/queryflow"
@@ -251,6 +253,34 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 		Builder:   builder,
 	})
 
+	// 10. 注册同 SP 变配的两个 handler（TAPD 1010132091137784162 §4.1 / §7.1）。
+	//     checkModify 无状态：trade 对账 SP/PID/newConfig ↔ trade_bundle_definition，
+	//     再反向调 ctl check-modify 校验 pass 层。
+	//     modifyResource 抢占式 trade_flow 幂等（flow_type='modify_resource'）+
+	//     反向调 ctl /internal/ctl/passes/{pass_id}/modify 受理发货，透传 trade_flow.id
+	//     供 ctl 做幂等键与终态回调。
+	//     BundleStore 为 nil 时不注册 checkModify：它的核心职责就是对着
+	//     trade_bundle_definition 对账，没有这张表这个 handler 没有存在意义。
+	//     未注册时 dispatcher 会明确回"未知 interfaceName"，比注册一个必然 panic 的 handler 好。
+	if cfg.BundleStore != nil {
+		checkmodify.Install(dispatcher, checkmodify.Deps{
+			CTLClient:   cfg.CTLClient,
+			BundleStore: cfg.BundleStore,
+			Builder:     builder,
+		})
+	}
+	modifyresource.Install(dispatcher, modifyresource.Deps{
+		FlowStore: cfg.FlowStore,
+		CTLClient: cfg.CTLClient,
+		Builder:   builder,
+		// BundleStore 用于按 oldConfig / newConfig 的 SV 集合反查源 / 目标套餐
+		// （计费不回传 trade 自塞的 bundleId，2026-09-02 实测）。
+		// 与 checkModify 不同，这里不加 nil 守卫而是无条件注册：modifyResource 是
+		// 已付款后的发货入口，不注册会让计费收到"未知 interfaceName"并按重试处理，
+		// 比 handler 内以 B 类业务码明确回一个可读原因更难排障。
+		BundleStore: cfg.BundleStore,
+	})
+
 	router.POST("/trade/jifei/callback", jifei.CallbackHandler(dispatcher))
 
 	// 6. 注册内部 RPC（迭代 8A + Sub-4 callback）。
@@ -264,6 +294,7 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 			Inquiry:              cfg.InquiryService,
 			PlaceOrder:           cfg.PlaceOrderService,
 			FlowStore:            cfg.FlowStore,
+			OrderUpdater:         cfg.OrderUpdater,
 			// D-2 销毁链路用户主动入口（设计稿 §3.5 + §11-A Q26）：BundleStore + JifeiClient
 			// 任一 nil 时 internalapi 不挂载 /internal/trade/resources/:resourceID/delete 路由。
 			BundleStore: cfg.BundleStore,

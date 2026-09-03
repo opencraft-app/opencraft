@@ -387,6 +387,31 @@ type Logic interface {
 	// 鉴权：transport 层校验用户是 pass 当前持有人（与 RenewPassOrderUrl 一致）。
 	RenewPassPrice(userID, passID string, req *transport.RenewPassPriceRequest) (*transport.RenewPassPriceResult, error)
 
+	// === 同 SP 升配用户侧入口（TAPD 1010132091137784162 §5.1）===
+
+	// ListPassModifyBundles 返回该 pass 当前可升配的目标套餐及各自实时差价。
+	//
+	// 不接收 target_bundle_id：合法目标由服务端按 pass.bundle_id 从升配策略推导，
+	// 前端只能从响应回传 target_bundle_id。pass 非 active 或无可升配路径时返回空集合。
+	//
+	// **无副作用**：只读 pass / bundle 并向 trade 询价，不改任何本地状态。
+	ListPassModifyBundles(userID, passID string) (*transport.ModifyBundleSetResult, error)
+
+	// ModifyPassOrder 创建升配订单，返回订单号；调用方随后走 ModifyPassOrderUrl 拉支付页。
+	//
+	// 服务端会重新校验 pass 状态与升配关系，不信任前端查询时的旧结果。
+	// **不修改本地 pass** — pass.status 推进由 jifei → trade.modifyResource →
+	// ctl.AcceptPassModify 链路触发。
+	ModifyPassOrder(userID, passID string, req *transport.ModifyPassOrderRequest) (*transport.ModifyPassOrderResult, error)
+
+	// ModifyPassOrderUrl 创建升配订单并直接返回支付页 URL（前端主链路）。
+	ModifyPassOrderUrl(userID, passID string, req *transport.ModifyPassOrderRequest) (*transport.ModifyPassOrderUrlResult, error)
+
+	// ModifyPassOrderAndPay 一体化创建升配订单 + 代扣，跳过支付页。
+	//
+	// **仅用于联调 / 自动化 e2e**，现网控制台禁止暴露（与 PlaceOrderAndPay 同语义）。
+	ModifyPassOrderAndPay(userID, passID string, req *transport.ModifyPassOrderRequest) (*transport.ModifyPassOrderResult, error)
+
 	// DeletePass 由前端控制台用户主动触发销毁（trade-pass-destroy 入口 A）
 	//
 	// 设计稿：.tmp/trade-pass-destroy-design.md §3.5 / §4.5.1 / §11-A Q1 / Q2 / Q26 / Q27
@@ -470,6 +495,40 @@ type Logic interface {
 	//
 	// 鉴权：transport 层 requireInternalBearer（trade 出向带 CTL_INTERNAL_TOKEN）。
 	DestroyPass(passID string, tradeFlowID int64, destroyReason string) (taskID string, err error)
+
+	// === 同 SP 变配（升配）===
+	// 需求：TAPD 1010132091137784162 §5.2 / §6
+
+	// CheckPassModify 是计费下单前的同步检查（trade.checkModify handler 反向调）。
+	//
+	// 只读 CTL DB 与本地策略表：pass 存在且归属正确且为 active、source→target 命中允许关系、
+	// 到期时间与 curDeadline 一致、目标套餐在线且有 instance_spec_id、pass 下非终态实例
+	// 全部 Running（零实例直接通过）。不调 sandbox、不询价、不改任何状态——jifei 的
+	// checkModify 协议总时限只有 3 秒。
+	//
+	// 返回 nil 表示允许变配；trade 侧把它翻译成计费协议的 data.status = 0，
+	// 把 4xx 业务错翻译成非 0。
+	//
+	// 错误码：ErrPassNotFound / ErrPassInvalidParam / ErrPassModifying /
+	// ErrPassNotModifiable / ErrPassModifyTargetNotAllowed / ErrPassModifyConfigMismatch /
+	// ErrPassModifyInstanceNotReady
+	CheckPassModify(passID string, req *transport.CheckPassModifyRequest) error
+
+	// AcceptPassModify 是支付成功后的发货受理（trade.modifyResource handler 反向调）。
+	//
+	// 行为：
+	//   1. 重跑一遍 CheckPassModify 的全部校验（询价到发货之间 pass 可能已漂移）
+	//   2. CAS active → modifying，同事务写入 modify_flow_id + modify_target_bundle_id
+	//   3. 入队变配父 task ModifyPass（30s × 1<<30，"永不放弃"）
+	//   4. 返 taskID 供 trade 记录和排障
+	//
+	// 幂等：pass 已在 modifying 且 modify_flow_id == tradeFlowID 时视为同一笔单重投，
+	// 返回成功并补派父 task（原派发可能因 MQ 抖动丢失）；flow id 不同则返 ErrPassModifying
+	// 拒绝插队。计费重投 modifyResource 是常态，这个分支必须返成功，否则会被判定发货失败去退款。
+	//
+	// 失败策略：系统盘扩容不可逆，父 task 失败时 pass 保持 modifying 前滚重试，
+	// 不自动回滚也不自动退款；只有参数永久非法这类不可恢复错误才由人工确认后走 DeliveryFailRefund。
+	AcceptPassModify(passID string, req *transport.PassModifyRequest) (taskID string, err error)
 }
 
 type logic struct {

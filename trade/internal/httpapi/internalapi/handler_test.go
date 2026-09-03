@@ -76,6 +76,14 @@ func (f *fakeCTL) DestroyPass(_ context.Context, _ string, _ *ctlclient.DestroyP
 	return nil, errors.New("DestroyPass not used in internalapi tests")
 }
 
+func (f *fakeCTL) CheckPassModify(_ context.Context, _ string, _ *ctlclient.CheckPassModifyRequest) (*ctlclient.CheckPassModifyResponse, error) {
+	return nil, errors.New("CheckPassModify not used in these tests")
+}
+
+func (f *fakeCTL) ModifyPass(_ context.Context, _ string, _ *ctlclient.ModifyPassRequest) (*ctlclient.ModifyPassResponse, error) {
+	return nil, errors.New("ModifyPass not used in these tests")
+}
+
 // fakeBundleStore 默认行为兼容历史用例（仅返 purchase scene）；
 // R-C-7 起支持 getBundleDefinitionByIDFn 注入，方便续费场景测试覆盖 scene=renew 分支。
 type fakeBundleStore struct {

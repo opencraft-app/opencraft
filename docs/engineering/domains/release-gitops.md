@@ -31,6 +31,19 @@ master 源码
 - 接管已经存在的 Deployment、StatefulSet 或 StatefulSetPlus 时，GitOps manifest 必须沿用 live 对象的 `spec.selector`；该字段不可变，不能为了补充组织标签而扩展。新增标签只能放在允许变更的 metadata/Pod template，并确保 Pod labels 继续匹配 selector。发现 selector 漂移时先修 `master` 真源，再由流水线投影到 `gitops`，不直接热修 `gitops`。
 - 生产镜像 promote 只有在 staged diff 符合该服务的 pin-only 合约时才允许自动合并或自动同步。VelaGW 的 pin-only 合约仅允许目标环境 `velagw-platform.env` 中的 `VELAGW_IMAGE` 与 `VELAGW_DEPLOYED_AT` 变化；Kustomize 结构、NewAPI release pin 或任何其他 deploy-facing 配置变化必须关闭自动合并和自动同步，先审查差异并回填 `master` 真源后重新生成候选。
 
+## 跨服务计费能力的发布门禁
+
+- 跨 Trade、CTL、Sandbox 的能力必须先在同一个候选源码 revision 上完成三个服务的
+  test/vet、受影响包 race、migration up/down 和配置 contract，再构建镜像。
+- migration 必须先于常驻 workload 镜像。测试环境若删除了 migration Job，需在受控
+  临时执行器中手工迁移并回读版本；常驻环境的固定名 Job 必须变更名称或时间戳，不能因
+  Job 对象仍在就假定新 migration 已执行。
+- 外部计费 CategoryID 和资源池映射属于独立前置。只有计费变更已发布到目标环境、DB
+  schema ready、目标 Pool/SKU/Plan 可用后，才允许 seed 启用入口；seed 必须在镜像之后，
+  且有精确、幂等、拒绝歧义数据的回滚脚本。
+- 测试环境验证必须记录订单/flow、业务实体、权益和底层资源联合终态。国内与国际是独立
+  发布面；国内灰度稳定观察完成前，不用国内结果替代国际站放行。
+
 ## CloudLadder Gateway 回调环境
 
 `tkexgz` 的三个 CloudLadder Gateway workload 共享路由定义，但通过各自

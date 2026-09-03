@@ -609,3 +609,11 @@ func TestResolveCreatePoolAttemptLimit(t *testing.T) {
 		t.Fatalf("expected zero config to fallback to candidate count, got %d", got)
 	}
 }
+
+func (s *testSandboxAdapter) Modify(context.Context, string, *psandbox.ModifyRequest) (*psandbox.ModifyOperation, error) {
+	panic("unexpected call")
+}
+
+func (s *testSandboxAdapter) GetModifyOperation(context.Context, string) (*psandbox.ModifyOperation, error) {
+	panic("unexpected call")
+}
