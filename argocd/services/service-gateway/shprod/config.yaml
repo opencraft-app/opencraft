@@ -79,11 +79,15 @@ routes:
         allowed_origins:
           - https://chat.lightvela.com
           - https://localhost.lightvela.com
+          - https://chat.lightvela.ai
+          - https://localhost.lightvela.ai
       - method: POST
         path: "/v1/instances/{instance_id}/tat/session"
         allowed_origins:
           - https://chat.lightvela.com
           - https://localhost.lightvela.com
+          - https://chat.lightvela.ai
+          - https://localhost.lightvela.ai
     require_realname: true
     response_header_timeout: 60s
   - name: sandbox-legacy
