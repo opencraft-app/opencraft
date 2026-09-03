@@ -18,6 +18,7 @@ import { readStoredAuthToken } from "@/repositories/http-repositories";
 import { useT } from "@/i18n/t";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { AppLink } from "@/lib/app-navigation";
+import { isCN } from "@/lib/region";
 import { savePendingWorkbenchPrompt } from "./workbench-prompt-templates";
 import { WebsiteShareDialog } from "./agent-website-share-dialog";
 
@@ -719,7 +720,7 @@ export const AgentWebsitePanel = () => {
                         <ExternalLink className="h-4 w-4" />
                       </span>
                     )}
-                    {status === "active" && siteURL && !isDeleting && (
+                    {status === "active" && isCN && siteURL && !isDeleting && (
                       <button
                         type="button"
                         onClick={() => setShareTarget(site)}
