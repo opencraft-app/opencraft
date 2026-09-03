@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import * as OpenCC from "opencc-js";
 
+import { initializeInternationalHomeFragmentAccessibility } from "./international-home-fragment-accessibility.mjs";
+import { optimizeInternationalHomeVoiceAvatars } from "./international-home-voice-avatars.mjs";
+
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, "..");
 const sourceArgument = process.argv[2];
@@ -4190,7 +4193,43 @@ const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionC
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
   "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
+).replace(
+  `        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
+        chats.forEach(function (chat, i) {`,
+  `        subs.forEach(function (btn, i) {
+          btn.classList.toggle('on', i === active);
+          btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');
+        });
+        chats.forEach(function (chat, i) {`,
+).replace(
+  `      subs.forEach(function (btn, i) {
+        btn.addEventListener('mouseenter', function () {
+          if (active === i) return;
+          render(i, true);
+        });
+      });`,
+  `      subs.forEach(function (btn, i) {
+        function activate() {
+          if (active === i) return;
+          render(i, true);
+        }
+        function activateFromKeyboard(event) {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          activate();
+        }
+        btn.addEventListener('mouseenter', activate);
+        btn.addEventListener('click', activate);
+        btn.addEventListener('keydown', activateFromKeyboard);
+      });`,
 );
+if (
+  !runtimeSource.includes("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');")
+  || !runtimeSource.includes("btn.addEventListener('click', activate);")
+  || !runtimeSource.includes("btn.addEventListener('keydown', activateFromKeyboard);")
+) {
+  throw new Error("Unable to add accessible activation to homepage scene buttons");
+}
 const playHoverRuntime = `
 (function () {
   document.querySelectorAll('.plays__tabs label[for]').forEach(function (label) {
@@ -4325,4 +4364,9 @@ await writeFile(path.join(targetRoot, "runtime.js"), cleanGeneratedText(runtime)
 await writeFile(path.join(targetRoot, "hero-chat.js"), cleanGeneratedText(heroChat));
 await copyFile(path.join(sourceRoot, "assets/scene-wheel.js"), path.join(targetRoot, "scene-wheel.js"));
 
-console.log(`Imported ${assetPaths.size} assets into ${targetRoot}`);
+await initializeInternationalHomeFragmentAccessibility(targetRoot);
+const voiceAvatarSummary = await optimizeInternationalHomeVoiceAvatars(targetRoot);
+
+console.log(
+  `Imported ${assetPaths.size} assets into ${targetRoot}; optimized ${voiceAvatarSummary.avatars} voice avatars (${voiceAvatarSummary.sourceBytes} -> ${voiceAvatarSummary.optimizedBytes} bytes)`,
+);
