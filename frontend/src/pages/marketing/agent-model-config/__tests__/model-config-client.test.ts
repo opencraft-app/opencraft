@@ -1021,6 +1021,66 @@ describe("Hermes model configuration client", () => {
       .toHaveProperty("api_key", inlineApiKey);
   });
 
+  it("keeps sibling Providers visible when they share an endpoint and model but use different credentials", () => {
+    const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";
+    const hyProviderKey = "lightvela-tencent-hy-token-plan";
+    const generalProviderKey = "lightvela-tencent-token-plan";
+    const config = {
+      model: {
+        provider: hyProviderKey,
+        default: "hy3",
+        base_url: baseUrl,
+        api_mode: "chat_completions",
+      },
+      providers: {
+        [hyProviderKey]: {
+          name: "腾讯云 Hy Token Plan（个人版）",
+          base_url: baseUrl,
+          model: "hy3",
+          models: { hy3: {}, "hy4-preview": {} },
+          key_env: "HY_TOKEN_PLAN_KEY",
+          transport: "openai_chat",
+        },
+        [generalProviderKey]: {
+          name: "腾讯云通用 Token Plan（个人版）",
+          base_url: baseUrl,
+          model: "hy4-preview",
+          models: { "hy4-preview": {} },
+          key_env: "GENERAL_TOKEN_PLAN_KEY",
+          transport: "openai_chat",
+        },
+      },
+    };
+
+    const assignedFallback = runHelper({
+      type: "assign",
+      providerKey: hyProviderKey,
+      modelId: "hy4-preview",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+      purpose: "fallback",
+    }, config, {}, {
+      HY_TOKEN_PLAN_KEY: "hy-secret",
+      GENERAL_TOKEN_PLAN_KEY: "general-secret",
+    });
+    const snapshot = parseHermesModelConfigResponse(assignedFallback.output);
+
+    expect(snapshot.fallbacks).toContainEqual(expect.objectContaining({
+      providerKey: hyProviderKey,
+      id: "hy4-preview",
+    }));
+    expect(snapshot.configuredModels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerKey: hyProviderKey, id: "hy4-preview" }),
+      expect.objectContaining({ providerKey: generalProviderKey, id: "hy4-preview" }),
+    ]));
+    expect((assignedFallback.config.providers as Record<string, Record<string, unknown>>)[generalProviderKey])
+      .toMatchObject({ key_env: "GENERAL_TOKEN_PLAN_KEY", model: "hy4-preview" });
+    expect(assignedFallback.credentials).toEqual({
+      HY_TOKEN_PLAN_KEY: "hy-secret",
+      GENERAL_TOKEN_PLAN_KEY: "general-secret",
+    });
+  });
+
   it("rejects unsaved model assignment when the Provider endpoint differs or its saved identity is ambiguous", () => {
     const providerKey = "lightvela-tencent-hy-token-plan";
     const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";

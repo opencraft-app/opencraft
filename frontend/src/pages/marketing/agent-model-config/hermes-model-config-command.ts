@@ -601,6 +601,16 @@ def same_runtime_deployment(left, right):
     if not left_provider or not left_model or left_model != right_model: return False
     return not (left_url and right_url and left_url != right_url)
 
+def same_projected_deployment(left, right, configured_provider_keys):
+    if not same_runtime_deployment(left, right): return False
+    left_provider = route_identity(left)[0]
+    right_provider = route_identity(right)[0]
+    if left_provider != right_provider and left_provider in configured_provider_keys and right_provider in configured_provider_keys:
+        left_key_env = str(left.get("keyEnv") or "").strip()
+        right_key_env = str(right.get("keyEnv") or "").strip()
+        if left_key_env and right_key_env and left_key_env != right_key_env: return False
+    return True
+
 def model_config(config):
     lightvela = config.get("lightvela") if isinstance(config.get("lightvela"), dict) else {}
     managed = lightvela.get("model_config") if isinstance(lightvela.get("model_config"), dict) else {}
@@ -660,10 +670,10 @@ def fallback_models(config):
         if model and not any(same_runtime_deployment(model, saved) for saved in values): values.append(model)
     return values
 
-def append_projected(values, candidate):
+def append_projected(values, candidate, configured_provider_keys):
     if not candidate: return
     for current in values:
-        if not same_runtime_deployment(current, candidate): continue
+        if not same_projected_deployment(current, candidate, configured_provider_keys): continue
         for field in ("providerName", "baseUrl", "routeBaseUrl", "apiMode", "keyEnv"):
             if not current.get(field) and candidate.get(field): current[field] = candidate[field]
         if not candidate.get("requiresSetup"): current.pop("requiresSetup", None)
@@ -673,25 +683,26 @@ def append_projected(values, candidate):
 def read_snapshot(config):
     primary = model_from_route(config, config.get("model") if isinstance(config.get("model"), dict) else {})
     fallbacks = fallback_models(config)
-    projected = []
-    append_projected(projected, primary)
-    for candidate in fallbacks: append_projected(projected, candidate)
-
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
+    configured_provider_keys = {str(provider_key).strip().lower() for provider_key in providers}
+    projected = []
+    append_projected(projected, primary, configured_provider_keys)
+    for candidate in fallbacks: append_projected(projected, candidate, configured_provider_keys)
+
     for provider_key, provider in providers.items():
         try:
             candidate = model_from_provider(str(provider_key), provider)
             if candidate and not idle_provider_is_usable(str(provider_key), provider): candidate = None
         except (KeyError, TypeError, ValueError): candidate = None
-        append_projected(projected, candidate)
+        append_projected(projected, candidate, configured_provider_keys)
 
     custom_providers = config.get("custom_providers") if isinstance(config.get("custom_providers"), list) else []
     for provider in custom_providers:
         try: candidate = model_from_custom_provider(provider)
         except (KeyError, TypeError, ValueError): candidate = None
-        append_projected(projected, candidate)
+        append_projected(projected, candidate, configured_provider_keys)
 
-    for candidate in configured_models(config): append_projected(projected, candidate)
+    for candidate in configured_models(config): append_projected(projected, candidate, configured_provider_keys)
     return {"primary": primary, "fallbacks": fallbacks, "configuredModels": projected}
 
 def find_configured(config, provider_key, model_id, base_url=None, route_base_url=None):

@@ -10,7 +10,7 @@
 
 **Design:** `openspec/changes/2026-09-03-configured-model-provider-switch-design.md`
 
-**Status:** Provider 分组、目录模型切换、行内操作布局、数量移除和带模型名称的 Provider 角色标签均已按 TDD 完成，等待提交确认。
+**Status:** Provider 分组、目录模型切换、行内操作布局、数量移除、带模型名称的 Provider 角色标签及同端点同模型的独立 Provider 保留均已按 TDD 完成，等待提交确认。
 
 ## 全局约束
 
@@ -246,6 +246,29 @@ expect(remote.actions).toContainEqual(expect.objectContaining({
 - GREEN：面板专项 31/31；模型配置目录 127/127，另 1 条按环境跳过。
 - `pnpm check`：TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0。
 - 浏览器：Mock 预览中 `hy4-preview` 与 `hy3` 各自在同一模型行内展示“设为主模型”“设为备用模型”“删除”，Provider 分组底部不再出现独立按钮行。
+- `git diff --check`：通过。
+
+## Task 12：保留共享接入地址与模型的独立 Provider
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Modify: `src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Verify only, do not commit: `src/app/(site)/model-provider-preview/page.next.tsx`
+
+- [x] 先构造 Hy Token Plan 与通用 Token Plan 共用接入地址和 `hy4-preview`、但 Provider key 与 `keyEnv` 不同的真实回归场景；将 Hy4 设为 Hy Provider 备用模型后，断言两个 Provider 仍存在且两份凭据不变。
+- [x] 运行客户端专项测试，确认旧投影逻辑会把通用 Token Plan 错误合并掉，按预期 RED。
+- [x] 将已配置模型快照的去重边界收紧：只有两个当前配置中的 Provider 具有明确不同凭据身份时才保留为独立项；无独立配置来源的历史 Provider 别名仍按同一运行部署合并。
+- [x] 运行新回归与历史别名兼容用例，再运行模型配置目录完整测试、`pnpm check` 和 `git diff --check`。
+- [x] 更新不提交的 Mock 预览：Hy3 为主模型、企业版 Auto 为备用模型、通用 Token Plan 独立存在；将 Hy4 Preview 设为 Hy Provider 备用模型后，通用 Token Plan 在桌面和 390px 窄屏均继续显示。
+
+增量验证记录：
+
+- RED：新客户端用例中 `configuredModels` 只剩 Hy Provider 的 Hy3、Hy4，通用 Token Plan 的 Hy4 被错误合并。
+- 兼容回归：首次按 Provider key 完全隔离会导致历史 Provider 别名重复；条件收紧后，新场景与历史别名场景 4/4 通过。
+- GREEN：模型配置目录 134/134，另 1 条按环境跳过。
+- `pnpm check`：TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0。
+- 浏览器：设置 Hy4 Preview 为备用模型后，Hy Provider 显示主模型 Hy3 与备用模型 Hy4 Preview，通用 Token Plan 仍存在；390px 下页面宽度与视口均为 390px，无横向溢出。
 - `git diff --check`：通过。
 
 ## Task 5：用失败测试锁定目录模型并入已配置 Provider
