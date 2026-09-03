@@ -523,8 +523,9 @@ describe("AgentModelConfigPanel", () => {
 
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     const primaryModelName = within(primaryRow).getByText("model-primary");
-    expect(primaryModelName).toHaveClass("text-xs", "font-normal");
-    expect(primaryModelName).not.toHaveClass("text-sm", "font-semibold");
+    expect(primaryModelName).toHaveClass("text-sm", "font-normal");
+    expect(primaryModelName).not.toHaveClass("text-xs", "font-semibold");
+    expect(within(primaryRow).getByText("主模型")).toHaveClass("text-xs");
     const primaryAction = within(primaryRow).getByRole("button", { name: "设为主模型" });
     const fallbackAction = within(primaryRow).getByRole("button", { name: "设为备用模型" });
     const outlinedActionClasses = ["border", "border-[var(--border-strong)]"];
@@ -704,11 +705,11 @@ describe("AgentModelConfigPanel", () => {
 
     expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
     expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")).toBeInTheDocument();
-    const configuredHelp = screen.getByRole("group", { name: "选择一个主模型，并可设置多个备用模型。" });
+    const configuredHelp = screen.getByRole("group", { name: "你可以配置一个主模型，并可同时设置多个备用模型。" });
     expect(configuredHelp).not.toHaveAttribute("title");
-    expect(screen.queryByText("选择一个主模型，并可设置多个备用模型。")).not.toBeInTheDocument();
+    expect(screen.queryByText("你可以配置一个主模型，并可同时设置多个备用模型。")).not.toBeInTheDocument();
     await userEvent.hover(configuredHelp);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("选择一个主模型，并可设置多个备用模型。");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("你可以配置一个主模型，并可同时设置多个备用模型。");
     await userEvent.unhover(configuredHelp);
     expect(screen.queryByText("选择一个主模型，并可设置多个备用模型。配置将在新会话中生效。")).not.toBeInTheDocument();
     const configuredSection = screen.getByRole("heading", { name: "已配置模型" }).closest("section");

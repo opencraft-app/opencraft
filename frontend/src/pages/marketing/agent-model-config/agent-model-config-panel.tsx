@@ -608,7 +608,7 @@ export function AgentModelConfigPanel({
             <h2 ref={configuredHeadingRef} tabIndex={-1} className="text-base font-semibold text-black/85 focus:outline-none">
               {t("已配置模型")}
             </h2>
-            <ModelActionTooltip content={t("选择一个主模型，并可设置多个备用模型。")}>
+            <ModelActionTooltip content={t("你可以配置一个主模型，并可同时设置多个备用模型。")}>
               <CircleHelp className="size-3.5 text-black/35" aria-hidden="true" />
             </ModelActionTooltip>
           </div>
@@ -732,13 +732,13 @@ export function AgentModelConfigPanel({
                                 />
                                 <span className="min-w-0">
                                   <span className="flex flex-wrap items-center gap-2">
-                                    <span className="break-all text-xs font-normal text-black/85">
+                                    <span className="break-all text-sm font-normal text-black/85">
                                       {displayConfiguredModelName(model, autoModelDisplayName)}
                                     </span>
                                     {!model.catalogOnly ? (
                                       <Badge
                                         variant={primary ? "success" : "neutral"}
-                                        className={fallback ? "border border-[var(--border-subtle)]" : undefined}
+                                        className={cn("text-xs", fallback && "border border-[var(--border-subtle)]")}
                                       >
                                         {role === "primary"
                                           ? t("主模型")
