@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "states": ["candidate", "pilot", "active", "stale", "retired"],
+  "transitions": {
+    "candidate": ["pilot"],
+    "pilot": ["active", "stale", "retired"],
+    "active": ["stale", "retired"],
+    "stale": ["pilot", "active", "retired"],
+    "retired": []
+  },
+  "requirements": {
+    "candidate": ["一个具体失败案例或重复任务模式", "来源证据", "候选 Owner"],
+    "pilot": ["明确的成功指标", "至少三个路由案例", "无评测污染"],
+    "active": ["Owner 审批", "事实真源", "复查日期", "静态验证通过"],
+    "stale": ["过期原因或失效信号", "停止默认路由或明确降级范围", "复查或替代计划"],
+    "retired": ["替代或移除原因", "更新受影响的路由", "保留有界历史回退入口或删除记录"]
+  },
+  "review_interval_days": 90
+}

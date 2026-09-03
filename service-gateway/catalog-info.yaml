@@ -1,0 +1,18 @@
+{
+  "id": "service-gateway",
+  "name": "公共 Service Gateway",
+  "kind": "service",
+  "path": "service-gateway",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["identity-access", "agent-gateway-runtime", "site-environment-routing", "release-gitops"],
+  "summary": "承载 LightVela 公共入口、站点路由、鉴权和后端服务代理。",
+  "runtime": "Go HTTP 网关",
+  "interfaces": ["公共 HTTP 路由", "鉴权 middleware", "服务 upstream"],
+  "dependencies": ["user-auth", "ctl", "subscription", "payment", "trade", "cloudagent"],
+  "source_docs": ["service-gateway/README.md", "service-gateway/AGENTS.md", "service-gateway/internal/gateway"],
+  "agent_entry": "service-gateway/AGENTS.md",
+  "service_docs": "service-gateway/docs/README.md",
+  "deploy": ["service-gateway/k8s", "argocd/services/service-gateway"],
+  "generated_paths": ["service-gateway/k8s/overlays/*/generated"]
+}

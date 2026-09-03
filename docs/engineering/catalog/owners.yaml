@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "owners": {
+    "wisp/mono2-maintainers": {
+      "type": "repository-group",
+      "display_name": "mono2 仓库维护责任队列",
+      "scope": "负责服务目录、工程文档和派生 Context 的审阅分派；不代表个人业务 Owner。",
+      "review_cycle_days": 90
+    }
+  }
+}

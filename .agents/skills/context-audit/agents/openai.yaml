@@ -1,0 +1,7 @@
+interface:
+  display_name: "仓库上下文评测与建设"
+  short_description: "双量表评测仓库，并规划三轮上下文建设"
+  default_prompt: "使用 $context-audit 先只读评测本仓库，输出评分、证据与 TMR；等我确认后再按三轮建设。"
+
+policy:
+  allow_implicit_invocation: true

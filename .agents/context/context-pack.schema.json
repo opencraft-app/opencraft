@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LightVela 上下文文档",
+  "type": "object",
+  "required": ["id", "type", "scope", "triggers", "owner", "authority", "source_of_truth", "status", "reviewed_at", "review_due", "revision", "precedence", "derived"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "type": {"enum": ["domain", "service", "document", "project", "flow", "decision", "runbook", "task", "feedback", "candidate"]},
+    "scope": {"type": "string", "minLength": 12},
+    "triggers": {"type": "array", "minItems": 3, "items": {"type": "string"}},
+    "owner": {"type": "string", "minLength": 2},
+    "authority": {"enum": ["primary", "derived", "external"]},
+    "source_of_truth": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "status": {"enum": ["active", "pilot", "candidate", "stale", "retired"]},
+    "reviewed_at": {"type": "string", "format": "date"},
+    "review_due": {"type": "string", "format": "date"},
+    "revision": {"type": "string", "minLength": 1},
+    "precedence": {"enum": ["team", "project", "domain", "service", "task", "external"]},
+    "derived": {"type": "boolean"},
+    "supersedes": {"type": "array", "items": {"type": "string"}},
+    "related_packs": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

@@ -1,16 +1,16 @@
-# AGENTS.md - Litestream AI Agent Guide
+# AGENTS.md - Litestream AI Agent 指引
 
-Litestream is a disaster recovery tool for SQLite that runs as a background process, monitors the WAL, converts changes to immutable LTX files, and replicates them to cloud storage. It uses `modernc.org/sqlite` (pure Go, no CGO required).
+Litestream 是 SQLite 灾难恢复工具：它作为后台进程运行、监控 WAL、把变更转换为不可变 LTX 文件并复制到云存储。使用 `modernc.org/sqlite`（纯 Go，不需要 CGO）。
 
-## Before You Start
+## 开始前
 
-1. Read [AI_PR_GUIDE.md](AI_PR_GUIDE.md) for contribution requirements
-2. Check [CONTRIBUTING.md](CONTRIBUTING.md) for what we accept (bug fixes welcome, features need discussion)
-3. Review recent PRs for current patterns
+1. 阅读[AI_PR_GUIDE.md](AI_PR_GUIDE.md)了解贡献要求
+2. 查看[CONTRIBUTING.md](CONTRIBUTING.md)了解可接受范围（欢迎 bug fix，feature 需要讨论）
+3. 审阅近期 PR 了解当前模式
 
-## Critical Rules
+## 关键规则
 
-- **Lock page at 1GB**: SQLite reserves page at 0x40000000. Always skip it. See [docs/SQLITE_INTERNALS.md](docs/SQLITE_INTERNALS.md)
+- **1GB lock page**：SQLite 在 0x40000000 保留 page，始终跳过。见[docs/SQLITE_INTERNALS.md](docs/SQLITE_INTERNALS.md)
 - **LTX files are immutable**: Never modify after creation. See [docs/LTX_FORMAT.md](docs/LTX_FORMAT.md)
 - **Single replica per database**: Each DB replicates to exactly one destination
 - **Use `litestream ltx`**: Not `litestream wal` (deprecated)
@@ -22,38 +22,38 @@ Litestream is a disaster recovery tool for SQLite that runs as a background proc
 - **`litestream ltx -level`**: Use `-level 0`–`9` or `-level all` to inspect specific compaction levels. See `cmd/litestream/ltx.go`
 - **Return errors, don't log them**: Always return errors to callers. Never `log.Printf(err)` and continue — this silently hides failures in a disaster recovery tool. Only use DEBUG log for best-effort operations where failure doesn't affect correctness and a valid fallback exists (e.g., reading SHM mxFrame optimization hint). See [docs/PATTERNS.md](docs/PATTERNS.md#error-handling)
 
-## Layer Boundaries
+## 分层边界
 
-| Layer | File | Responsibility |
+| 层 | 文件 | 职责 |
 |-------|------|----------------|
-| DB | `db.go` | Database state, restoration, WAL monitoring, library API (`SyncStatus`, `SyncAndWait`, `EnsureExists`) |
-| Replica | `replica.go` | Replication mechanics only |
-| Storage | `**/replica_client.go` | Backend implementations (includes `ReplicaClientV3` for v0.3.x restore) |
-| IPC | `server.go` | Unix socket control API (register/unregister, /txid, pprof) |
-| Leasing | `leaser.go`, `s3/leaser.go` | Distributed lease acquisition via conditional writes |
+| DB | `db.go` | 数据库状态、恢复、WAL 监控、library API（`SyncStatus`、`SyncAndWait`、`EnsureExists`） |
+| Replica | `replica.go` | 仅负责复制机制 |
+| Storage | `**/replica_client.go` | backend 实现（包括供 v0.3.x restore 使用的 `ReplicaClientV3`） |
+| IPC | `server.go` | Unix socket control API（register/unregister、/txid、pprof） |
+| Leasing | `leaser.go`, `s3/leaser.go` | 通过 conditional write 获取分布式 lease |
 
-Database state logic belongs in DB layer, not Replica layer.
+数据库状态逻辑属于 DB layer，不属于 Replica layer。
 
-## Quick Reference
+## 快速参考
 
-**Build:**
+**构建：**
 
 ```bash
 go build -o bin/litestream ./cmd/litestream
 go test -race -v ./...
 ```
 
-**Code quality:**
+**代码质量：**
 
 ```bash
 pre-commit run --all-files
 ```
 
-## Documentation
+## 文档
 
-| Document | When to Read |
+| 文档 | 何时阅读 |
 |----------|--------------|
-| [docs/PATTERNS.md](docs/PATTERNS.md) | Code patterns and anti-patterns |
+| [docs/PATTERNS.md](docs/PATTERNS.md) | 代码模式与反模式 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Deep component details |
 | [docs/SQLITE_INTERNALS.md](docs/SQLITE_INTERNALS.md) | WAL format, lock page |
 | [docs/LTX_FORMAT.md](docs/LTX_FORMAT.md) | Replication format |
@@ -61,13 +61,13 @@ pre-commit run --all-files
 | [docs/REPLICA_CLIENT_GUIDE.md](docs/REPLICA_CLIENT_GUIDE.md) | Adding storage backends |
 | [docs/PROVIDER_COMPATIBILITY.md](docs/PROVIDER_COMPATIBILITY.md) | Provider-specific S3/cloud configs |
 
-## Checklist
+## 清单
 
-Before submitting changes:
+提交变更前：
 
-- [ ] Read relevant docs above
-- [ ] Follow patterns in [docs/PATTERNS.md](docs/PATTERNS.md)
-- [ ] Test with race detector (`go test -race`)
-- [ ] Run `pre-commit run --all-files`
-- [ ] For page iteration: test with >1GB databases
-- [ ] Show investigation evidence in PR (see [AI_PR_GUIDE.md](AI_PR_GUIDE.md))
+- [ ] 阅读上述相关文档
+- [ ] 遵循[docs/PATTERNS.md](docs/PATTERNS.md)中的模式
+- [ ] 用 race detector 测试（`go test -race`）
+- [ ] 运行 `pre-commit run --all-files`
+- [ ] page iteration：用 >1GB database 测试
+- [ ] 在 PR 展示调查证据（见[AI_PR_GUIDE.md](AI_PR_GUIDE.md)）

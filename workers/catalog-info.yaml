@@ -1,0 +1,18 @@
+{
+  "id": "workers",
+  "name": "Temporal Workers",
+  "kind": "service",
+  "path": "workers",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "release-gitops"],
+  "summary": "运行 Temporal workflow worker、rescue exporter 与 uploader。",
+  "runtime": "Go Temporal Worker",
+  "interfaces": ["Temporal task queue", "rescue exporter", "COS uploader"],
+  "dependencies": ["Temporal", "Tencent Cloud COS", "runtime secrets"],
+  "source_docs": ["workers/README.md", "workers/AGENTS.md"],
+  "agent_entry": "workers/AGENTS.md",
+  "service_docs": "workers/docs/README.md",
+  "deploy": ["workers/k8s", "argocd/services/workers"],
+  "generated_paths": ["workers/k8s/overlays/*/generated"]
+}

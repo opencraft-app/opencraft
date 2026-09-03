@@ -806,7 +806,7 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
   - 独立 AI 网关方向服务
 - [gateway-dashboard](gateway-dashboard)
   - 当前后台主线，不再是旧原型
-- [_bmad](_bmad) / [_bmad-output](_bmad-output)
+- 历史 BMAD 目录：`_bmad` / `_bmad-output`（当前 checkout 未包含，不作为有效导航）
   - 规划、分析、backlog、实现产物，不是运行时服务
 
 ## 怎么理解这个仓库

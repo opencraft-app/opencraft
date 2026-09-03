@@ -1,33 +1,26 @@
-# CloudAgent Operating Notes
+# CloudAgent 运行说明
 
-This directory owns CloudAgent gateway, ChannelGateway, Wisp runtime packages,
-sandbox-host, agent-loader, and related runtime artifacts.
+本目录负责 CloudAgent gateway、ChannelGateway、Wisp runtime package、sandbox-host、agent-loader 及相关运行时产物。
 
-## DevCloud Release Triggers
+## DevCloud 发布触发条件
 
-DevCloud does not become current just because a CloudAgent code commit lands on
-`master`. Always check the release surface that owns the changed code:
+CloudAgent code commit 进入 `master` 不代表 DevCloud 自动更新。始终检查拥有该变更代码的发布面：
 
-- `cloudagent/gateway/**` or `cloudagent/sandbox-host/**` triggers
+- `cloudagent/gateway/**` 或 `cloudagent/sandbox-host/**` 会触发
   `.ci/cloudagent-gateway.yml`, which builds and pins the
   `cloudagent-gateway` image for `devcloud-dep`.
-- `cloudagent/channelgateway/**` triggers `.ci/channelgateway.yml`, which
+- `cloudagent/channelgateway/**` 会触发 `.ci/channelgateway.yml`，它
   builds and pins the `channelgateway` image for `devcloud-dep`.
-- `cloudagent/wisp/**`, `cloudagent/research/hermes-rs/**`, and
+- `cloudagent/wisp/**`、`cloudagent/research/hermes-rs/**` 和
   `cloudagent/agent-loader/**` trigger `.ci/cloudagent-agent-artifact.yml`,
   which builds and uploads CloudAgent runtime artifacts to Shanghai COS.
 
-If a change spans Wisp/runtime artifacts and gateway behavior, verify both:
+变更同时涉及 Wisp/runtime artifact 和 gateway 行为时，验证以下两侧：
 
-1. The runtime artifact CI produced a new Wisp/sidecar artifact URL and SHA.
+1. runtime artifact CI 产出了新的 Wisp/sidecar artifact URL 和 SHA。
 2. `argocd/services/cloudagent-gateway/devcloud-dep/cloudagent-gateway-platform.env`
    has been pinned to the desired gateway image and Wisp artifact URL.
-3. Argo `cloudagent-gateway-devcloud-dep` is `Synced / Healthy`.
-4. `GET /v1/selfcheck` on the DevCloud internal endpoint reports the expected
-   sidecar/Wisp artifact values.
+3. Argo `cloudagent-gateway-devcloud-dep` 为 `Synced / Healthy`。
+4. DevCloud 内部 endpoint 的 `GET /v1/selfcheck` 报告预期 sidecar/Wisp artifact 值。
 
-When a gateway image rebuild is required but the source change did not touch a
-gateway-owned watched path, use the existing CI trigger-note convention by
-adding a dated no-op line under `cloudagent/gateway/README.md` `CI trigger
-notes`. When a Wisp artifact rebuild is required, touch a Wisp-owned watched
-path such as this file or `cloudagent/wisp/AGENTS.md`.
+需要重建 gateway image 但源码未触及 gateway 所有的 watched path 时，按既有 CI trigger-note 约定，在 `cloudagent/gateway/README.md` 的 `CI trigger notes` 下添加带日期的 no-op 行。需要重建 Wisp artifact 时，触及 Wisp 所有的 watched path，例如本文件或 `cloudagent/wisp/AGENTS.md`。

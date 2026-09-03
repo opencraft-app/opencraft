@@ -1,0 +1,18 @@
+{
+  "id": "user-auth",
+  "name": "用户身份与认证",
+  "kind": "service",
+  "path": "user/auth",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["identity-access", "release-gitops"],
+  "summary": "提供账号登录、会话、OIDC/OAuth、实名与内部身份 contract。",
+  "runtime": "Go HTTP 服务",
+  "interfaces": ["user/auth/api/openapi.yaml", "登录/会话 API", "实名回调"],
+  "dependencies": ["service-gateway", "shadow", "external-identity-providers"],
+  "source_docs": ["user/auth/README.md", "user/auth/AGENTS.md", "user/auth/api/openapi.yaml"],
+  "agent_entry": "user/auth/AGENTS.md",
+  "service_docs": "user/auth/docs/README.md",
+  "deploy": ["user/auth/k8s", "argocd/services/lightclaw-auth"],
+  "generated_paths": ["user/auth/generated"]
+}

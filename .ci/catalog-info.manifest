@@ -1,0 +1,18 @@
+{
+  "id": "ci",
+  "name": "持续集成与制品晋级",
+  "kind": "platform",
+  "path": ".ci",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["release-gitops"],
+  "summary": "维护 DevCloud/蓝盾流水线、镜像构建、制品晋级和 GitOps 更新命令。",
+  "runtime": "Python 与流水线 YAML",
+  "interfaces": [".ci/*.yml", ".ci/runtime/commands"],
+  "dependencies": ["infra_pulumi", "argocd"],
+  "source_docs": [".ci/README.md", ".ci/AGENTS.md"],
+  "agent_entry": ".ci/AGENTS.md",
+  "service_docs": ".ci/docs/README.md",
+  "deploy": [".ci/runtime/commands/build_release_image.py"],
+  "generated_paths": []
+}

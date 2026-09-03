@@ -1,0 +1,18 @@
+{
+  "id": "nextgen-dashboard",
+  "name": "Nextgen Dashboard",
+  "kind": "service",
+  "path": "nextgen-dashboard",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "release-gitops"],
+  "summary": "提供下一代管理 Dashboard 后端与相关页面资源。",
+  "runtime": "Go 服务",
+  "interfaces": ["Dashboard HTTP API"],
+  "dependencies": ["admin-gateway", "ai-gateway"],
+  "source_docs": ["nextgen-dashboard/README.md", "nextgen-dashboard/AGENTS.md"],
+  "agent_entry": "nextgen-dashboard/AGENTS.md",
+  "service_docs": "nextgen-dashboard/docs/README.md",
+  "deploy": ["nextgen-dashboard/k8s", "argocd/services/nextgen-dashboard"],
+  "generated_paths": ["nextgen-dashboard/k8s/overlays/*/generated"]
+}
