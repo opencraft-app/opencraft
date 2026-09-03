@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import i18n from "@/i18n";
+import i18n, { ensureLocaleDictionary } from "@/i18n";
 import { ChangelogPage } from "@/pages/marketing/changelog-page";
 
 vi.mock("@/lib/region", async (importOriginal) => ({
@@ -53,6 +53,86 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("shows the September Workbench update with localized copy and the correct screenshot", async () => {
+    const workbenchCopies = [
+      {
+        locale: "zh-CN",
+        month: "2026 年 9 月",
+        title: "LightVela 支持创建和发布工作台",
+        description:
+          "现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。",
+        image: "/assets/changelog/lightvela-workbench-zh.png",
+      },
+      {
+        locale: "zh-Hant",
+        month: "2026 年 9 月",
+        title: "LightVela 支持創建和發佈工作台",
+        description:
+          "現在可以通過 Agent 選擇模板或從零開始創建靜態網站，並在 LightVela 中直接發佈、預覽、更新和管理自己的工作台。",
+        image: "/assets/changelog/lightvela-workbench-zh.png",
+      },
+      {
+        locale: "en-US",
+        month: "September 2026",
+        title: "LightVela Supports Building and Publishing Workbenches",
+        description:
+          "Build static websites with an Agent from a starter template or from scratch, then publish, preview, update, and manage your workbenches directly in LightVela.",
+        image: "/assets/changelog/lightvela-workbench-global-en.png",
+      },
+      {
+        locale: "id-ID",
+        month: "September 2026",
+        title: "LightVela Mendukung Pembuatan dan Publikasi Workbench",
+        description:
+          "Buat situs web statis dengan Agent dari templat awal atau dari nol, lalu publikasikan, pratinjau, perbarui, dan kelola workbench Anda langsung di LightVela.",
+        image: "/assets/changelog/lightvela-workbench-global-en.png",
+      },
+      {
+        locale: "es",
+        month: "Septiembre de 2026",
+        title: "LightVela Permite Crear y Publicar Workbenches",
+        description:
+          "Crea sitios web estáticos con un Agent a partir de una plantilla inicial o desde cero, y publícalos, previsualízalos, actualízalos y gestiónalos directamente en LightVela.",
+        image: "/assets/changelog/lightvela-workbench-global-en.png",
+      },
+      {
+        locale: "ja-JP",
+        month: "2026年9月",
+        title: "LightVelaでワークベンチの作成と公開に対応",
+        description:
+          "スターターテンプレートまたはゼロからAgentで静的Webサイトを作成し、LightVela上で直接公開、プレビュー、更新、管理できます。",
+        image: "/assets/changelog/lightvela-workbench-global-en.png",
+      },
+      {
+        locale: "ko-KR",
+        month: "2026년 9월",
+        title: "LightVela에서 워크벤치 생성 및 게시 지원",
+        description:
+          "시작 템플릿을 선택하거나 처음부터 Agent로 정적 웹사이트를 만든 다음 LightVela에서 직접 게시, 미리보기, 업데이트 및 관리할 수 있습니다.",
+        image: "/assets/changelog/lightvela-workbench-global-en.png",
+      },
+    ] as const;
+
+    for (const copy of workbenchCopies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      const septemberSection = screen.getByText(copy.month).closest("section");
+      expect(septemberSection).not.toBeNull();
+      const heading = within(septemberSection!).getByRole("heading", { name: `${copy.title}Beta` });
+      expect(heading).toBeInTheDocument();
+      expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(within(heading.closest("article")!).getByText("Beta")).toBeInTheDocument();
+      expect(screen.getByAltText(copy.title)).toHaveAttribute("src", expect.stringContaining(copy.image));
+      cleanup();
+    }
+  });
+
   const globalLaunchCopies = [
     {
       locale: "zh-CN",

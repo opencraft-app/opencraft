@@ -36,9 +36,13 @@ export type BlogBlock =
       content: string;
     };
 
+export const BLOG_AUTHORS = ["Cassidy Shi", "Walker Cao", "Jasmin Zhao"] as const;
+export type BlogAuthor = (typeof BLOG_AUTHORS)[number];
+
 export type BlogPost = {
   slug: string;
   category: "announcement" | "product" | "use-case";
+  author: BlogAuthor;
   title: string;
   excerpt: string;
   publishedAt: string;
@@ -50,8 +54,596 @@ const link = (label: string, href: string): BlogInline => ({ type: "link", label
 
 export const BLOG_POSTS: readonly BlogPost[] = [
   {
+    slug: "lightvela-workbench-ai-vibe-your-own-website",
+    category: "product",
+    author: "Cassidy Shi",
+    title: "LightVela Introduces Workbench to AI-Vibe Your Own Website",
+    excerpt:
+      "My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela, from a starter template or a blank workbench to a published site.",
+    publishedAt: "2026-09-03T12:11:11+08:00",
+    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover.png",
+    content: [
+      {
+        type: "image",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover.png",
+        alt: "LightVela My Workbench interface with starter templates",
+      },
+      {
+        type: "paragraph",
+        emphasis: true,
+        content: [
+          "My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela. Choose a starter template or describe a website from scratch, then work with the Agent to refine and publish it.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "After deployment, you can view the public address, check the current status, and manage your existing workbenches from one place.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Beta notice: My Workbench is a Beta feature, so the generation and deployment workflow may change as the feature evolves.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "What My Workbench Does",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "My Workbench connects your agent chat with a managed static website workflow. You can start your own workbench or choose one of the provided templates, interact with the Agent to refine it, and preview your site with your own dedicated link.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/workbench-overview.png",
+        alt: "LightVela My Workbench page showing templates and the workbench list",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "LightVela manages the hosting process, so you do not need to configure a separate hosting server or cloud account.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Open My Workbench",
+      },
+      {
+        type: "ordered-list",
+        ariaLabel: "Steps to open My Workbench",
+        items: [
+          ["Open ", link("LightVela Agents", "https://lightvela.ai/agents/"), "."],
+          ["In the left navigation, open My Workbench."],
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The Workbench page shows your current usage, available templates, and existing workbenches.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Choose a Starter Template",
+      },
+      {
+        type: "paragraph",
+        content: ["Starter templates help you begin with a clear direction."],
+      },
+      {
+        type: "paragraph",
+        content: ["You can choose a template based on the type of website you want to build:"],
+      },
+      {
+        type: "unordered-list",
+        items: [
+          ["Clean Utility Dashboard: Forms, information lookup, or lightweight internal tools."],
+          ["Data Dashboard: Core metrics, trends, business overviews, or daily reports."],
+          ["Campaign Landing Page: Activity pages, sign-up pages, or redemption entries."],
+          ["Personal Showcase: Portfolios, personal homepages, or service introductions."],
+        ],
+      },
+      {
+        type: "paragraph",
+        content: ["Select a template to open Agent chat with a prepared request."],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/starter-templates.png",
+        alt: "LightVela Workbench starter templates for utility tools, dashboards, campaigns, and showcases",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "You can also select the blank option and let the Agent clarify the requirements with you step by step.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Create a Workbench with Agent Chat",
+      },
+      {
+        type: "ordered-list",
+        ariaLabel: "Steps to create a Workbench with Agent chat",
+        items: [
+          ["Select a starter template, or start with a blank workbench."],
+          ["Describe the website’s purpose, audience, content, and visual direction."],
+          ["Answer the Agent’s questions as it clarifies the requirements."],
+          ["Review the generated result and ask the Agent to make changes."],
+          ["When the website is ready, ask the Agent to publish the latest version."],
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The current workflow uses React, TypeScript, Tailwind CSS, and common UI libraries for generated websites.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/agent-chat.png",
+        alt: "LightVela Agent chat clarifying requirements for a utility dashboard",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The Agent is also instructed to keep content editable, avoid preset mock business data, and use browser local storage when temporary local data is appropriate.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Check the Workbench Status",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Each workbench has a deployment status so you can see whether it is ready to visit.",
+        ],
+      },
+      {
+        type: "unordered-list",
+        items: [
+          ["Building: The website is being generated or prepared."],
+          ["Publishing: The latest version is being published."],
+          ["Online: The website is available at its public address."],
+          ["Update failed: The latest generation or publishing attempt failed."],
+          ["Offline: The website is unavailable or has been removed."],
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/status-dashboard.png",
+        alt: "DataHub dashboard showing revenue, users, orders, and conversion metrics",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "When a workbench is online and has a public address, select Visit to open it. If the workbench is still building or publishing, wait for the process to finish and refresh the page if necessary.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Manage Existing Workbenches",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The existing workbench list shows the website name, public address, creation date, and current status.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "To update a workbench, return to Agent chat and describe the changes you want. After reviewing the changes, ask the Agent to publish the updated version.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: ["To remove a workbench:"],
+      },
+      {
+        type: "ordered-list",
+        ariaLabel: "Steps to remove a Workbench",
+        items: [
+          ["Find the workbench in the list."],
+          ["Select the delete action."],
+          ["Confirm the deletion."],
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Deleting a workbench immediately takes it offline and removes its related files. This action cannot be undone.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Workbench Quota and Hosting Limits",
+      },
+      {
+        type: "paragraph",
+        content: ["Your Workbench limit depends on your plan:"],
+      },
+      {
+        type: "unordered-list",
+        items: [
+          ["Launch plan: Create 1 workbench."],
+          ["Higher-tier plans: Create up to 5 workbenches."],
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "If you reach your limit, delete an existing workbench before creating a new one or upgrade your plan.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Common Problems",
+      },
+      {
+        type: "unordered-list",
+        items: [
+          ["The Workbench page asks you to sign in: Your session has expired. Sign in again and reopen My Workbench."],
+          ["You cannot create another workbench: You may have reached your plan limit. Check your usage or remove an unused workbench."],
+          ["The status remains Building or Publishing: The deployment is still processing. Wait briefly, then refresh the page."],
+          ["The Visit action is unavailable: The workbench is not online yet. Wait until the status changes to Online."],
+          ["The status changes to Update failed: Review the Agent response, make the required changes, and try again."],
+          ["Website data disappears in another browser: The data was stored in browser local storage. Use a backend service if the website requires shared or persistent data."],
+          ["A deleted workbench still appears in the list: Deletion is still being processed. Wait for cleanup to finish and refresh the page."],
+        ],
+      },
+      {
+        type: "heading",
+        text: "Current Boundaries",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "My Workbench is intended for creating and hosting static websites through Agent chat. It does not provide server-side storage, managed databases, persistent form handling, shared accounts, or arbitrary backend services.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Workbench count, traffic, storage, package size, and file count depend on your active plan.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "FAQ",
+      },
+      {
+        type: "heading",
+        text: "What types of websites can I create?",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "You can create dashboards, internal tools, campaign pages, portfolios, landing pages, and other static front-end websites.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Do I need coding experience?",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "No. You can describe what you want in natural language and let the Agent guide you through the requirements, generation, and publishing process.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Can I update an existing workbench?",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Yes. Return to Agent chat, describe the changes, review the result, and ask the Agent to publish the updated version.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Can my website save data?",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Static websites can temporarily save data in the current browser with local storage. LightVela does not provide server-side persistent storage for Workbench websites.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Do I need a separate hosting account?",
+      },
+      {
+        type: "paragraph",
+        content: ["No. LightVela provides the hosting workflow for your static workbench."],
+      },
+      {
+        type: "heading",
+        text: "Why is my workbench not immediately available?",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Generation and publishing can take some time. Check the current status and wait until it changes to Online before opening the public address.",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "basketball-shoe-storefront-with-lightvela-workbench",
+    category: "use-case",
+    author: "Cassidy Shi",
+    title: "I Vibe-Coded My Own Basketball Shoe Storefront with LightVela Workbench",
+    excerpt:
+      "I used LightVela Workbench’s Campaign Hub template to turn a basketball shoe launch idea into a premium storefront with a clear product story, guided comparisons, and a focused path to purchase.",
+    publishedAt: "2026-09-03T11:31:46+08:00",
+    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.png",
+    content: [
+      {
+        type: "image",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.png",
+        alt: "A basketball shoe beside the LightVela Workbench interface",
+      },
+      {
+        type: "paragraph",
+        emphasis: true,
+        content: [
+          "I used LightVela’s Campaign Hub template to turn a basketball shoe launch idea into a premium ecommerce hub. The Agent helped structure the product story, organize the shoe lineup, explain performance features, and create a focused path from discovery to purchase.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The goal was not to create another generic product grid. I wanted a storefront that made the collection feel considered, gave each shoe a reason to exist, and helped shoppers move from curiosity to a confident decision.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "My Expectations for the Site",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "I wanted the site to feel fast, technical, and premium while still being easy to scan. It needed a strong hero section, featured shoe cards, performance comparisons, a size guide, player recommendations, and clear purchase calls to action.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.png",
+        alt: "A collection of colorful basketball shoes",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The collection itself was the starting point. I had several different silhouettes and design directions to bring together, so the site needed to explain what made each model distinct instead of making shoppers compare a wall of nearly identical cards.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Why I Started with the Campaign Hub Template",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "I opened ",
+          link("LightVela Workbench", "https://lightvela.ai/agents/websites?from=social_x"),
+          " and selected the Campaign Hub template. It gave me a useful foundation for a launch page, with enough structure to move quickly and enough flexibility to shape the experience around the shoe collection.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.png",
+        alt: "LightVela Workbench with Campaign Hub starter templates",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "I started the build with a concise brief:",
+        ],
+      },
+      {
+        type: "code",
+        content: `Build a premium ecommerce campaign hub for a collection of top-tier basketball shoes.
+Make the experience feel fast, technical, and premium.
+Include a strong hero section, featured shoe cards, performance comparisons, a size guide, player recommendations, and clear purchase calls to action.
+Keep all product content editable and do not use fake business data.`,
+      },
+      {
+        type: "image",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.png",
+        alt: "LightVela Agent chat showing the storefront build request",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "That prompt established the visual direction and the core information architecture. From there, I could use the conversation to refine the story, adjust the hierarchy, and ask the Agent to turn broad ideas into concrete sections.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Upload the Product Data",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "A product-focused page is only useful when the details are easy to maintain. I used the Workbench environment to keep the product content, images, and supporting files together so the collection could evolve without rebuilding the whole page from scratch.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The product data needed to cover both the practical buying questions and the emotional side of the collection. That meant combining performance details with the design story behind each model.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cloud-storage.png",
+        alt: "LightVela Cloud Storage with the storefront project files",
+      },
+      {
+        type: "heading",
+        text: "Building the Product Story",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The most important shift was treating the storefront as a product story rather than a list of inventory. I organized the page around a few ideas that could help a shopper understand the collection quickly:",
+        ],
+      },
+      {
+        type: "unordered-list",
+        items: [
+          ["Six performance-focused basketball models"],
+          ["Speed, cushioning, traction, and court control"],
+          ["Athlete trust, ratings, and risk-free returns"],
+          ["Design principles such as performance, durability, and fit"],
+          ["A collection journey from concept and prototyping to court testing and final release"],
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "This gave the page a natural rhythm. The hero introduced the promise, the feature cards explained the collection, and the timeline showed how the products moved from an idea to a finished release.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront.png",
+        alt: "Dark basketball shoe storefront built with LightVela Workbench",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The dark visual system helped the orange calls to action and performance details stand out. It also made the red, black, and white shoe palette feel consistent across the collection.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Making Premium Products Easier to Compare",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "A premium product page should answer the questions that usually stop a purchase. I used the comparison experience to make those questions explicit:",
+        ],
+      },
+      {
+        type: "unordered-list",
+        items: [
+          ["Which shoe fits my playing style?"],
+          ["How does the cushioning feel compared with the other models?"],
+          ["Which silhouette gives me the traction and stability I need?"],
+          ["What size should I choose?"],
+          ["Can I make a confident purchase if I need to return or exchange it?"],
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront-story.png",
+        alt: "HOOP ELITE basketball shoe collection with a performance comparison",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The result is a more guided decision path. Shoppers can inspect a specific model, choose a size, review the key details, and move toward the purchase action without losing the context of the larger collection.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Keeping the Storefront Ready for Checkout",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "LightVela’s Workbench is designed for static websites, so I treated the project as the storefront and campaign layer rather than the complete commerce backend.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/checkout-modal.png",
+        alt: "HOOP ELITE product purchase modal with size and checkout details",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "It presents the products, captures a shopper’s selection, and makes the next step obvious. The checkout connection can be wired to the commerce system used by the business, while the storefront content stays editable in the Workbench.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Iterating with the Agent",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The first generated version was a starting point, not the finished page. I used follow-up instructions to sharpen the experience:",
+        ],
+      },
+      {
+        type: "unordered-list",
+        items: [
+          ["Make the hero section feel more premium and strengthen the contrast between shoe models."],
+          ["Reduce the text density so the most important product details are easier to scan."],
+          ["Create a more focused mobile layout for shoppers browsing on smaller screens."],
+        ],
+      },
+      {
+        type: "heading",
+        text: "What Changed",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Once the main story and visual system were in place, the storefront became much easier to evaluate as a complete customer journey:",
+        ],
+      },
+      {
+        type: "ordered-list",
+        ariaLabel: "Basketball shoe storefront customer journey",
+        items: [
+          ["A shopper arrives at the hero and understands the collection’s performance promise."],
+          ["They scan the featured models and find the shoes that match their needs."],
+          ["They compare performance, fit, and design details across the collection."],
+          ["They open a product view, choose a size, and review the purchase information."],
+          ["They continue to checkout with enough context to feel confident about the selection."],
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The page now has a clear point of view. It feels like a real product launch experience, but its core content can still be edited and extended as the collection grows.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "The Larger Lesson",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The useful part of Workbench was not simply generating a polished page. It was having an Agent that could help translate a product idea into a structured, editable experience, then keep iterating as the brief became more specific.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "For a campaign hub, that means I can move from a rough collection concept to a credible storefront quickly, while keeping the product story, comparison logic, and next steps under my control.",
+        ],
+      },
+    ],
+  },
+  {
     slug: "recreated-claude-tag-with-lightvela",
     category: "use-case",
+    author: "Cassidy Shi",
     title: "I Recreated Claude Tag with LightVela and Set Up a “Digital Employee” in Slack",
     excerpt:
       "Anthropic’s Claude Tag points to a new way of working in Slack, so I recreated the idea with LightVela and built a digital employee for my team...",
@@ -282,6 +874,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
   {
     slug: "using-hermes-agent-as-a-discord-bot",
     category: "use-case",
+    author: "Cassidy Shi",
     title: "Using Hermes Agent as a Discord bot to drive my 600-user server engagement",
     excerpt:
       "I host my mega Discord server with over 600 users, revolving around DWS, Minecraft, and Palworld...",

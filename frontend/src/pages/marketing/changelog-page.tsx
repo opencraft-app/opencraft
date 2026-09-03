@@ -48,8 +48,8 @@ type ChangelogEntry = {
   title: string;
   desc?: string;
   badge?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -62,7 +62,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -73,6 +73,10 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       ? useGlobalAssets
         ? "/assets/changelog/lightvela-cloud-storage-en.png"
         : "/assets/changelog/lightvela-cloud-storage.webp"
+      : variant === "workbench"
+      ? isGlobal && !useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-workbench-global-en.png"
+        : "/assets/changelog/lightvela-workbench-zh.png"
       : variant === "skillPackages"
       ? "/assets/changelog/skill-packages.png"
       : variant === "achievements"
@@ -167,6 +171,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
   const altText =
     variant === "cloudStorage"
       ? t("LightVela 支持云存储管理")
+      : variant === "workbench"
+      ? t("LightVela 支持创建和发布工作台")
       : variant === "skillPackages"
       ? t("新增技能包功能")
       : variant === "skillsRevamp"
@@ -213,6 +219,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
   const aspectRatio =
     variant === "cloudStorage"
       ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
+      : variant === "workbench"
+      ? isGlobal && !useGlobalChineseAsset ? "2372 / 1226" : "2372 / 1221"
       : variant === "skillPackages"
       ? "2328 / 1370"
       : variant === "achievements"
@@ -308,6 +316,19 @@ function ChangelogContent() {
     ...(isGlobal
       ? [
           {
+            id: "2026-09",
+            month: t("2026 年 9 月"),
+            entries: [
+              {
+                id: "workbench",
+                title: t("LightVela 支持创建和发布工作台"),
+                desc: t("现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。"),
+                badge: "Beta",
+                visual: "workbench" as const,
+              },
+            ],
+          },
+          {
             id: "2026-08",
             month: t("2026 年 8 月"),
             entries: [
@@ -376,6 +397,19 @@ function ChangelogContent() {
           },
         ]
       : [
+          {
+            id: "2026-09",
+            month: t("2026 年 9 月"),
+            entries: [
+              {
+                id: "workbench",
+                title: t("LightVela 支持创建和发布工作台"),
+                desc: t("现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。"),
+                badge: "Beta",
+                visual: "workbench" as const,
+              },
+            ],
+          },
           {
             id: "2026-08",
             month: t("2026 年 8 月"),

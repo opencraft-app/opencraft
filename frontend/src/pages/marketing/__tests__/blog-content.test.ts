@@ -34,4 +34,11 @@ describe("Blog publishing dates", () => {
       }).format(new Date(publishedAt)),
     );
   });
+
+  it("assigns one approved author to every published post", async () => {
+    const { BLOG_POSTS } = await import("@/pages/marketing/blog-content");
+
+    expect(BLOG_POSTS).toHaveLength(4);
+    expect(BLOG_POSTS.map((post) => post.author)).toEqual(["Cassidy Shi", "Cassidy Shi", "Cassidy Shi", "Cassidy Shi"]);
+  });
 });

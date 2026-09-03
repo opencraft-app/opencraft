@@ -87,4 +87,48 @@ describe("BlogArticlePage", () => {
       expect.stringContaining("english"),
     );
   });
+
+  it("renders the Workbench basketball shoe storefront article with its supplied images in order", () => {
+    render(<BlogArticlePage slug="basketball-shoe-storefront-with-lightvela-workbench" />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: "I Vibe-Coded My Own Basketball Shoe Storefront with LightVela Workbench",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "My Expectations for the Site" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Why I Started with the Campaign Hub Template" })).toBeInTheDocument();
+    expect(screen.getByText(/Build a premium ecommerce campaign hub/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "The Larger Lesson" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "LightVela’s Workbench is designed for static websites, so I treated the project as the storefront and campaign layer rather than the complete commerce backend.",
+      ),
+    ).toBeInTheDocument();
+
+    const article = screen.getAllByRole("article").find((candidate) =>
+      candidate.textContent?.includes("I Vibe-Coded My Own Basketball Shoe Storefront"),
+    );
+    if (!article) throw new Error("Expected the Workbench basketball shoe storefront article to be rendered");
+    expect(within(article).getByText("Sep 3, 2026, 11:31 AM")).toBeInTheDocument();
+    expect(within(article).getByText("Cassidy Shi")).toBeInTheDocument();
+    const images = within(article).getAllByRole("img");
+    expect(images).toHaveLength(8);
+    expect(images.map((image) => image.getAttribute("src"))).toEqual([
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cloud-storage.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront-story.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/checkout-modal.png",
+    ]);
+    expect(within(article).getByRole("heading", { name: "Share" })).toBeInTheDocument();
+    expect(within(article).getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+    expect(within(article).getByRole("link", { name: "Share X" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("https%3A%2F%2Flightvela.ai%2Fblog%2Fbasketball-shoe-storefront-with-lightvela-workbench"),
+    );
+  });
 });
