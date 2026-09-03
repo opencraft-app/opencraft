@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import mimetypes
 import os
 import re
@@ -9,9 +10,18 @@ import tarfile
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from uuid import uuid4
+
+from support.staticpages_pack import (
+    DEFAULT_PACK_MAX_BYTES,
+    DEFAULT_PACK_TARGET_BYTES,
+    ReleaseBundle,
+    build_release_packs,
+    iter_files,
+)
 
 
 DEFAULT_PREVIEW_DOMAIN = "preview.lightclaw.tech"
@@ -165,13 +175,6 @@ def staticpages_sha_for_variant(source_sha: str, variant: str) -> str:
     raise ValueError(f"unsupported preview variant: {variant!r}")
 
 
-def iter_files(artifact_dir: Path) -> list[Path]:
-    files = [path for path in artifact_dir.rglob("*") if path.is_file()]
-    if not files:
-        raise ValueError(f"artifact directory is empty: {artifact_dir}")
-    return sorted(files)
-
-
 def write_multipart_body(body_path: Path, artifact_dir: Path, files: list[Path], boundary: str) -> None:
     with body_path.open("wb") as out:
         for path in files:
@@ -197,6 +200,131 @@ def write_tar_gzip_archive(archive_path: Path, artifact_dir: Path, files: list[P
         for path in files:
             rel = path.relative_to(artifact_dir).as_posix()
             archive.add(path, arcname=rel, recursive=False)
+
+
+def _release_collection_url(api_url: str) -> str:
+    parsed = urllib.parse.urlsplit(api_url)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/api/upload"):
+        path = f"{path[:-len('/api/upload')]}/api/releases"
+    else:
+        path = f"{path}/api/releases"
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def _read_json_response(response) -> dict[str, object]:
+    raw = response.read()
+    if not raw:
+        return {}
+    value = json.loads(raw.decode("utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError("StaticPages response must be a JSON object")
+    return value
+
+
+def _request_json(*, url: str, method: str, payload: dict[str, object], headers: dict[str, str], timeout_seconds: int, urlopen) -> dict[str, object]:
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    request_headers = dict(headers)
+    request_headers["Content-Type"] = "application/json"
+    request_headers["Content-Length"] = str(len(body))
+    request = urllib.request.Request(url, data=body, headers=request_headers, method=method)
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            return _read_json_response(response)
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"StaticPages request failed: method={method} http={exc.code} body={error_body}") from exc
+
+
+def publish_release_packs(
+    *,
+    api_url: str,
+    headers: dict[str, str],
+    bundle: ReleaseBundle,
+    timeout_seconds: int,
+    pack_upload_attempts: int = 3,
+    progress: bool = True,
+    urlopen=urllib.request.urlopen,
+    sleep=time.sleep,
+) -> dict[str, object]:
+    if pack_upload_attempts < 1:
+        raise ValueError("pack_upload_attempts must be at least 1")
+
+    collection_url = _release_collection_url(api_url)
+    created = _request_json(
+        url=collection_url,
+        method="POST",
+        payload={"manifest": bundle.manifest},
+        headers=headers,
+        timeout_seconds=timeout_seconds,
+        urlopen=urlopen,
+    )
+    release_id = created.get("release_id")
+    uploads = created.get("uploads")
+    if not isinstance(release_id, str) or not release_id:
+        raise RuntimeError("StaticPages release response is missing release_id")
+    if created.get("status") == "published":
+        return created
+    if not isinstance(uploads, list):
+        raise RuntimeError("StaticPages release response is missing uploads")
+
+    upload_by_name: dict[str, dict[str, object]] = {}
+    for item in uploads:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            raise RuntimeError("StaticPages release response contains an invalid upload")
+        name = item["name"]
+        if name in upload_by_name:
+            raise RuntimeError(f"StaticPages release response contains duplicate upload: {name}")
+        upload_by_name[name] = item
+
+    expected_names = {path.name for path in bundle.pack_paths}
+    if set(upload_by_name) != expected_names:
+        raise RuntimeError("StaticPages release uploads do not match local packs")
+
+    for pack_path in bundle.pack_paths:
+        upload = upload_by_name[pack_path.name]
+        upload_url = upload.get("url")
+        signed_headers = upload.get("headers", {})
+        if not isinstance(upload_url, str) or not upload_url:
+            raise RuntimeError(f"StaticPages upload URL is missing for pack: {pack_path.name}")
+        if not isinstance(signed_headers, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in signed_headers.items()
+        ):
+            raise RuntimeError(f"StaticPages upload headers are invalid for pack: {pack_path.name}")
+
+        for attempt in range(1, pack_upload_attempts + 1):
+            try:
+                with pack_path.open("rb") as raw:
+                    size = pack_path.stat().st_size
+                    data = UploadProgressReader(
+                        raw,
+                        total_bytes=size,
+                        enabled=progress,
+                        label=f"pack/{pack_path.name}",
+                    )
+                    request_headers = dict(signed_headers)
+                    request_headers.setdefault("Content-Type", "application/gzip")
+                    request_headers["Content-Length"] = str(size)
+                    request = urllib.request.Request(upload_url, data=data, headers=request_headers, method="PUT")
+                    with urlopen(request, timeout=timeout_seconds) as response:
+                        response.read()
+                    data.finish()
+                break
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+                if attempt >= pack_upload_attempts:
+                    raise RuntimeError(
+                        f"StaticPages pack upload failed after {attempt} attempts: {pack_path.name}: {exc}"
+                    ) from exc
+                sleep(min(2 ** (attempt - 1), 8))
+
+    return _request_json(
+        url=f"{collection_url}/{urllib.parse.quote(release_id, safe='')}/commit",
+        method="POST",
+        payload={},
+        headers=headers,
+        timeout_seconds=timeout_seconds,
+        urlopen=urlopen,
+    )
 
 
 def upload_body(
@@ -245,6 +373,37 @@ def upload(args: argparse.Namespace) -> int:
     upload_mode = args.upload_mode
     if archive_file is not None:
         upload_mode = "archive"
+
+    if upload_mode == "packs":
+        if artifact_dir is None or not artifact_dir.is_dir():
+            raise ValueError(f"artifact directory does not exist: {artifact_dir}")
+        with tempfile.TemporaryDirectory(prefix="staticpages-packs-") as tmp:
+            bundle = build_release_packs(
+                artifact_dir,
+                Path(tmp) / "packs",
+                target_bytes=args.pack_target_bytes,
+                max_bytes=args.pack_max_bytes,
+            )
+            total_pack_bytes = sum(path.stat().st_size for path in bundle.pack_paths)
+            _print_upload_decision(
+                args,
+                preview_name=preview_name,
+                sha=sha,
+                mode="grouped tar.gz packs",
+                file_count=int(bundle.manifest["file_count"]),
+                size=total_pack_bytes,
+            )
+            print(f"上传分组数：{len(bundle.pack_paths)}")
+            result = publish_release_packs(
+                api_url=args.api_url,
+                headers=_common_headers(args, token, preview_name, sha),
+                bundle=bundle,
+                timeout_seconds=args.timeout_seconds,
+                pack_upload_attempts=args.pack_upload_attempts,
+                progress=not args.no_progress,
+            )
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        return 0
 
     if upload_mode == "archive":
         if archive_file is not None:
@@ -360,7 +519,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Upload frontend preview artifacts to StaticPages.")
     parser.add_argument("--artifact-dir")
     parser.add_argument("--archive-file", default="", help="Upload an existing .tar.gz archive instead of building one from --artifact-dir.")
-    parser.add_argument("--upload-mode", choices=("archive", "multipart"), default=os.environ.get("STATICPAGES_UPLOAD_MODE", "archive"))
+    parser.add_argument("--upload-mode", choices=("archive", "multipart", "packs"), default=os.environ.get("STATICPAGES_UPLOAD_MODE", "archive"))
     parser.add_argument("--api-url", default=os.environ.get("STATICPAGES_API_URL", DEFAULT_API_URL))
     parser.add_argument("--repository", default=os.environ.get("STATICPAGES_REPOSITORY", DEFAULT_REPOSITORY))
     parser.add_argument("--source-branch", required=True)
@@ -369,6 +528,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sha", required=True)
     parser.add_argument("--token", default="")
     parser.add_argument("--timeout-seconds", type=int, default=300)
+    parser.add_argument("--pack-target-bytes", type=int, default=int(os.environ.get("STATICPAGES_PACK_TARGET_BYTES", DEFAULT_PACK_TARGET_BYTES)))
+    parser.add_argument("--pack-max-bytes", type=int, default=int(os.environ.get("STATICPAGES_PACK_MAX_BYTES", DEFAULT_PACK_MAX_BYTES)))
+    parser.add_argument("--pack-upload-attempts", type=int, default=int(os.environ.get("STATICPAGES_PACK_UPLOAD_ATTEMPTS", "3")))
     parser.add_argument("--no-progress", action="store_true", help="Disable upload progress logs.")
     return parser.parse_args()
 

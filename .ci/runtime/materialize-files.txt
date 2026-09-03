@@ -126,5 +126,6 @@
 .ci/runtime/support/logging.py
 .ci/runtime/support/playground_dns.py
 .ci/runtime/support/process.py
+.ci/runtime/support/staticpages_pack.py
 .ci/runtime/support/staticpages_preview.py
 .ci/runtime/support/yaml.py

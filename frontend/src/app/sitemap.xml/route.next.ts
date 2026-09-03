@@ -8,6 +8,7 @@ import { DEFAULT_PUBLIC_DOCS_LOCALE } from '@next-site/public-locale';
 import {
   absolutePageUrlForSeoRegion,
   buildDocsAlternates,
+  buildGlobalEnglishContentAlternates,
   buildPublicAlternates,
   localizedDocsPath,
   localizedPublicPath,
@@ -16,6 +17,7 @@ import {
   SEO_PUBLIC_URL_LANGS,
   seoRegion,
 } from '@next-site/seo';
+import { BLOG_POSTS } from '@/pages/marketing/blog-content';
 
 export const dynamic = 'force-static';
 
@@ -68,11 +70,18 @@ function sameSlug(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((part, index) => part === right[index]);
 }
 
+function publicAlternates(path: string): Record<string, string> {
+  return path === '/blog' || path.startsWith('/blog/')
+    ? buildGlobalEnglishContentAlternates(path)
+    : buildPublicAlternates(path);
+}
+
 export function GET() {
   const globalBuild = seoRegion() === 'global';
   const publicPaths = [
     '/',
     '/about',
+    ...(globalBuild ? ['/blog', ...BLOG_POSTS.map((post) => `/blog/${post.slug}`)] : []),
     '/changelog',
     '/privacy-policy',
     '/terms-of-service',
@@ -91,11 +100,11 @@ export function GET() {
     ? SEO_PUBLIC_URL_LANGS.filter((lang) => lang !== 'en-us')
     : [];
   const publicEntries: SitemapEntry[] = [
-    ...publicPaths.map((path) => ({ path, alternates: buildPublicAlternates(path) })),
+    ...publicPaths.map((path) => ({ path, alternates: publicAlternates(path) })),
     ...localizedPublicLangs.flatMap((lang) =>
       publicPaths.map((path) => ({
         path: localizedPublicPath(path, lang),
-        alternates: buildPublicAlternates(path),
+        alternates: publicAlternates(path),
       })),
     ),
   ];

@@ -38,6 +38,9 @@ describe("publicSiteHref", () => {
     expect(publicSiteHref("/changelog", "en-US", { localized: true })).toBe("/changelog");
     expect(publicSiteHref("/changelog", "zh-CN", { localized: true })).toBe("/zh-sg/changelog");
     expect(publicSiteHref("/changelog", "id-ID", { localized: true })).toBe("/id-id/changelog");
+    expect(publicSiteHref("/blog", "en-US", { localized: true })).toBe("/blog");
+    expect(publicSiteHref("/blog", "zh-CN", { localized: true })).toBe("/zh-sg/blog");
+    expect(publicSiteHref("/blog", "id-ID", { localized: true })).toBe("/id-id/blog");
     expect(publicSiteHref("/subscribe", "id-ID", { localized: true })).toBe("/id-id/subscribe");
     expect(publicSiteHref("/support", "id-ID", { localized: true })).toBe("/id-id/support");
     expect(publicSiteHref("/about", "es", { localized: true })).toBe("/es/about");

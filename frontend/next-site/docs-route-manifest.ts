@@ -110,6 +110,10 @@ export const DOCS_ROUTE_SLUGS = {
       "deepseek-harness"
     ],
     [
+      "configuration",
+      "workbench"
+    ],
+    [
       "use-cases",
       "personal-ai-assistant"
     ],
@@ -355,6 +359,10 @@ export const DOCS_ROUTE_SLUGS = {
       "deepseek-harness"
     ],
     [
+      "configuration",
+      "workbench"
+    ],
+    [
       "hermes-agent",
       "hermes-vs-openclaw"
     ],
@@ -526,6 +534,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "deepseek-harness"
+    ],
+    [
+      "configuration",
+      "workbench"
     ],
     [
       "use-cases",
@@ -786,6 +798,10 @@ export const DOCS_ROUTE_SLUGS = {
       "deepseek-harness"
     ],
     [
+      "configuration",
+      "workbench"
+    ],
+    [
       "use-cases",
       "personal-ai-assistant"
     ],
@@ -1044,6 +1060,10 @@ export const DOCS_ROUTE_SLUGS = {
       "deepseek-harness"
     ],
     [
+      "configuration",
+      "workbench"
+    ],
+    [
       "use-cases",
       "personal-ai-assistant"
     ],
@@ -1292,6 +1312,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "deepseek-harness"
+    ],
+    [
+      "configuration",
+      "workbench"
     ],
     [
       "use-cases",
@@ -1552,6 +1576,10 @@ export const DOCS_ROUTE_SLUGS = {
       "deepseek-harness"
     ],
     [
+      "configuration",
+      "workbench"
+    ],
+    [
       "use-cases",
       "personal-ai-assistant"
     ],
@@ -1810,6 +1838,10 @@ export const DOCS_ROUTE_SLUGS = {
       "deepseek-harness"
     ],
     [
+      "configuration",
+      "workbench"
+    ],
+    [
       "use-cases",
       "personal-ai-assistant"
     ],
@@ -2013,6 +2045,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
     "configuration/deepseek-harness": "2026-08-28",
+    "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-18",
     "use-cases/chinese-messaging-channels": "2026-08-21",
     "use-cases/telegram-persona-agent": "2026-08-17",
@@ -2079,6 +2112,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
     "configuration/deepseek-harness": "2026-08-28",
+    "configuration/workbench": "2026-09-02",
     "hermes-agent/hermes-vs-openclaw": "2026-08-12",
     "hermes-agent/why-hermes-remembers-you": "2026-08-12",
     "hermes-agent/user-md-vs-memory-md": "2026-08-12",
@@ -2127,6 +2161,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
     "configuration/deepseek-harness": "2026-08-28",
+    "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-18",
     "use-cases/chinese-messaging-channels": "2026-08-21",
     "use-cases/telegram-persona-agent": "2026-08-17",
@@ -2196,6 +2231,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
     "configuration/deepseek-harness": "2026-08-28",
+    "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-18",
     "use-cases/chinese-messaging-channels": "2026-08-21",
     "use-cases/telegram-persona-agent": "2026-08-17",
@@ -2265,6 +2301,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
     "configuration/deepseek-harness": "2026-08-28",
+    "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-18",
     "use-cases/chinese-messaging-channels": "2026-08-20",
     "use-cases/telegram-persona-agent": "2026-08-18",
@@ -2332,6 +2369,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/advanced-settings": "2026-08-26",
     "configuration/multiple-models": "2026-08-28",
     "configuration/deepseek-harness": "2026-08-28",
+    "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-26",
     "use-cases/chinese-messaging-channels": "2026-08-26",
     "use-cases/telegram-persona-agent": "2026-08-26",
@@ -2401,6 +2439,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/advanced-settings": "2026-08-28",
     "configuration/multiple-models": "2026-08-31",
     "configuration/deepseek-harness": "2026-08-31",
+    "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-28",
     "use-cases/chinese-messaging-channels": "2026-08-28",
     "use-cases/telegram-persona-agent": "2026-08-28",
@@ -2470,6 +2509,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/advanced-settings": "2026-08-31",
     "configuration/multiple-models": "2026-08-31",
     "configuration/deepseek-harness": "2026-08-31",
+    "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-31",
     "use-cases/chinese-messaging-channels": "2026-08-31",
     "use-cases/telegram-persona-agent": "2026-08-31",
