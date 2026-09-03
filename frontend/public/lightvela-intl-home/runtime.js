@@ -97,8 +97,9 @@
     var cards = Array.prototype.slice.call(document.querySelectorAll('.about__cards .wcard'));
     var strip = document.querySelector('.about__cards');
     if (!cards.length) return;
+    var phoneMedia = window.matchMedia('(max-width: 640px)');
     function isPhone() {
-      return window.matchMedia('(max-width: 640px)').matches;
+      return phoneMedia.matches;
     }
     function mark(index) {
       if (!isPhone() || !cards[index]) return;
@@ -170,6 +171,10 @@
     }
 
     document.querySelectorAll('.scene').forEach(function (scene) {
+      var phoneMedia = window.matchMedia('(max-width: 640px)');
+      function isPhone() {
+        return phoneMedia.matches;
+      }
       var subs = Array.prototype.slice.call(scene.querySelectorAll('.scene__sub'));
       var chats = Array.prototype.slice.call(scene.querySelectorAll('.scene-chat'));
       if (!subs.length || !chats.length) return;
@@ -190,7 +195,7 @@
             if (animate) fadeInThread(thread);
           }
         });
-        if (window.matchMedia('(max-width: 640px)').matches && subs[active]) {
+        if (isPhone() && subs[active]) {
           try {
             subs[active].scrollIntoView({ behavior: animate ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
           } catch (_) {
@@ -223,7 +228,7 @@
           touchStartY = touch.clientY;
         }, { passive: true });
         touchRegion.addEventListener('touchend', function (event) {
-          if (!window.matchMedia('(max-width: 640px)').matches) return;
+          if (!isPhone()) return;
           var touch = event.changedTouches && event.changedTouches[0];
           if (!touch) return;
           var dx = touch.clientX - touchStartX;
@@ -264,6 +269,10 @@
 (function () {
   var labels = Array.prototype.slice.call(document.querySelectorAll('.plays__tabs label[for]'));
   if (!labels.length) return;
+  var phoneMedia = window.matchMedia('(max-width: 640px)');
+  function isPhone() {
+    return phoneMedia.matches;
+  }
   function getCheckedIndex() {
     var checked = document.querySelector('.plays input[type="radio"]:checked');
     return Math.max(0, labels.findIndex(function (label) {
@@ -274,7 +283,7 @@
     if (!labels[index]) return;
     var input = document.getElementById(labels[index].htmlFor);
     if (input && !input.checked) input.click();
-    if (window.matchMedia('(max-width: 640px)').matches) {
+    if (isPhone()) {
       try {
         labels[index].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
       } catch (_) {
@@ -298,7 +307,7 @@
     startY = touch.clientY;
   }, { passive: true });
   stage.addEventListener('touchend', function (event) {
-    if (!window.matchMedia('(max-width: 640px)').matches) return;
+    if (!isPhone()) return;
     var touch = event.changedTouches && event.changedTouches[0];
     if (!touch) return;
     var dx = touch.clientX - startX;

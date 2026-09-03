@@ -469,6 +469,18 @@
   font: inherit;
 }
 
+#lightvela-intl-home .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------- 4. 工具 ---------- */
 .shell {
   width: 100%;
@@ -944,6 +956,7 @@
   margin-left: -8px;
 }
 .hero__title {
+  margin: 0;
   font-family: var(--font-hero);
   font-weight: 400;
   font-size: 32px;

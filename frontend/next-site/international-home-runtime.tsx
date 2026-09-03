@@ -17,17 +17,6 @@ function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
 }
 
-const INTERNATIONAL_HOME_HARNESS_IMAGE_BY_LOCALE: Record<PublicSiteLocale, string> = {
-  'en-US': '/lightvela-intl-home/assets/deepseek-harness-en-us.webp',
-  'zh-CN': '/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp',
-  'zh-SG': '/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp',
-  'zh-Hant': '/lightvela-intl-home/assets/deepseek-harness-zh-hant.webp',
-  'id-ID': '/lightvela-intl-home/assets/deepseek-harness-id-id.webp',
-  es: '/lightvela-intl-home/assets/deepseek-harness-es.webp',
-  'ja-JP': '/lightvela-intl-home/assets/deepseek-harness-ja-jp.webp',
-  'ko-KR': '/lightvela-intl-home/assets/deepseek-harness-ko-kr.webp',
-};
-
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
   useEffect(() => {
     let cancelled = false;
@@ -65,13 +54,6 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
 
   return (
     <>
-      <link
-        rel="preload"
-        as="image"
-        href={versionedInternationalHomeAsset(INTERNATIONAL_HOME_HARNESS_IMAGE_BY_LOCALE[locale])}
-        type="image/webp"
-        fetchPriority="low"
-      />
       <link
         rel="stylesheet"
         href={versionedInternationalHomeAsset('/lightvela-intl-home/style.css')}

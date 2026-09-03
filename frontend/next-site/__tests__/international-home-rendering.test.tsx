@@ -23,9 +23,7 @@ describe("international v2 homepage rendering", () => {
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
     expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260903-home-mobile-fit"');
-    expect(markup).toContain(
-      'rel="preload" as="image" href="/lightvela-intl-home/assets/deepseek-harness-en-us.webp?v=20260903-home-mobile-fit"',
-    );
+    expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion, always here, always evolving with you");
     expect(markup).toContain('href="/subscribe"');
@@ -53,7 +51,7 @@ describe("international v2 homepage rendering", () => {
       "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     );
     expect(renderToStaticMarkup(<InternationalHomePage locale="zh-SG" />)).toContain(
-      'href="/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260903-home-mobile-fit"',
+      'src="/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260903-home-mobile-fit"',
     );
   });
 

@@ -611,10 +611,13 @@ describe("international v2 homepage artifact", () => {
     for (const [fragmentName, headings] of Object.entries(expectedHeadings)) {
       const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
       const document = new DOMParser().parseFromString(html, "text/html");
-      const h1s = Array.from(document.querySelectorAll("h1"), (heading) => heading.textContent?.trim());
+      const h1s = Array.from(document.querySelectorAll("h1"));
       const h2s = Array.from(document.querySelectorAll("h2"), (heading) => heading.textContent?.trim());
 
-      expect(h1s, fragmentName).toEqual([headings.h1]);
+      expect(h1s, fragmentName).toHaveLength(1);
+      expect(h1s[0]?.classList.contains("hero__title"), fragmentName).toBe(true);
+      expect(h1s[0]?.querySelector(".sr-only")?.textContent?.trim(), fragmentName).toBe(headings.h1);
+      expect(document.querySelector(".hero__eyebrow")?.tagName, fragmentName).toBe("DIV");
       for (const heading of headings.h2) {
         expect(h2s, `${fragmentName} h2`).toContain(heading);
       }
@@ -690,8 +693,8 @@ describe("international v2 homepage artifact", () => {
       expect(document.querySelectorAll("#play-4 .play__list li")).toHaveLength(4);
       const harnessImage = document.querySelector<HTMLImageElement>("#play-4 .play__screen--harness .harness-visual-img");
       expect(harnessImage?.getAttribute("src")).toBe(deepSeekVisuals[locale]);
-      expect(harnessImage?.getAttribute("loading")).toBe("eager");
-      expect(harnessImage?.getAttribute("fetchpriority")).toBe("low");
+      expect(harnessImage?.getAttribute("loading")).toBe("lazy");
+      expect(harnessImage?.hasAttribute("fetchpriority")).toBe(false);
       expect(harnessImage?.getAttribute("decoding")).toBe("async");
     }
 
@@ -767,13 +770,13 @@ describe("international v2 homepage artifact", () => {
         ".wcard img, .scenes img, .scene img, .plays img, .harness img, .voice img, .foot__brand img",
       );
       expect(belowFoldImages.length, `${fragmentName} below-fold images`).toBeGreaterThan(10);
-      for (const image of Array.from(belowFoldImages).filter((item) => !item.classList.contains("harness-visual-img"))) {
+      for (const image of Array.from(belowFoldImages)) {
         expect(image.getAttribute("loading"), `${fragmentName} ${image.getAttribute("src")}`).toBe("lazy");
       }
 
       const harnessImage = document.querySelector<HTMLImageElement>(".harness-visual-img");
-      expect(harnessImage?.getAttribute("loading"), `${fragmentName} harness loading`).toBe("eager");
-      expect(harnessImage?.getAttribute("fetchpriority"), `${fragmentName} harness priority`).toBe("low");
+      expect(harnessImage?.getAttribute("loading"), `${fragmentName} harness loading`).toBe("lazy");
+      expect(harnessImage?.hasAttribute("fetchpriority"), `${fragmentName} harness priority`).toBe(false);
 
       for (const assetName of optimizedAssetNames) {
         expect(html, `${fragmentName} should not reference unoptimized ${assetName} png`).not.toMatch(
@@ -791,10 +794,12 @@ describe("international v2 homepage artifact", () => {
     expect(runtime).toContain("window.matchMedia('(max-width: 640px), (prefers-reduced-motion: reduce)').matches");
     expect(runtime).toContain("if (!shouldKeepNaturalText && main) next = splitChars(main, next);");
     expect(runtime).toContain("document.querySelectorAll('.about__cards .wcard')");
+    expect(runtime).toContain("var phoneMedia = window.matchMedia('(max-width: 640px)');");
+    expect(runtime).toContain("return phoneMedia.matches;");
     expect(runtime).toContain("strip.addEventListener('scroll', function () {");
     expect(runtime).toContain("card.classList.toggle('is-mobile-active', i === index);");
     expect(runtime).toContain("btn.addEventListener('click', activate);");
-    expect(runtime).toContain("if (!window.matchMedia('(max-width: 640px)').matches) return;");
+    expect(runtime).toContain("if (!isPhone()) return;");
     expect(runtime).toContain("touchRegion.addEventListener('touchstart', function (event) {");
     expect(runtime).toContain("var nextIndex = dx < 0 ? active + 1 : active - 1;");
     expect(runtime).toContain("stage.addEventListener('touchstart', function (event) {");
