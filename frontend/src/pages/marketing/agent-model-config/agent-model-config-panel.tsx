@@ -56,10 +56,14 @@ import {
 type ProviderCategory = "coding_plan" | "api" | "custom";
 type ConfigurePurpose = "primary" | "fallback" | "idle";
 type ModelOption = { id: string; name: string; source: "live" | "catalog" };
+type ConfiguredModelListItem = HermesConfiguredModel & {
+  catalogName?: string;
+  catalogOnly?: true;
+};
 type ConfiguredProviderGroup = {
   key: string;
   providerName: string;
-  models: HermesConfiguredModel[];
+  models: ConfiguredModelListItem[];
 };
 
 const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
@@ -137,15 +141,27 @@ function sameModel(
   return !!left && !!right && getHermesModelIdentity(left) === getHermesModelIdentity(right);
 }
 
+function normalizeProviderEndpoint(value: string) {
+  return value.trim().replace(/\/+$/, "").toLowerCase();
+}
+
 function getConfiguredProviderGroupKey(model: HermesConfiguredModel) {
-  const routeBaseUrl = (model.routeBaseUrl ?? model.baseUrl)
-    .trim()
-    .replace(/\/+$/, "")
-    .toLowerCase();
+  const routeBaseUrl = normalizeProviderEndpoint(model.routeBaseUrl || model.baseUrl);
   return JSON.stringify([model.providerKey.trim().toLowerCase(), routeBaseUrl]);
 }
 
-function groupConfiguredModelsByProvider(models: HermesConfiguredModel[]) {
+function modelMatchesProductProvider(model: HermesConfiguredModel, provider: ModelProviderOption) {
+  const configuredKey = model.providerKey.trim().toLowerCase();
+  const productKey = provider.providerKey.trim().toLowerCase();
+  return (configuredKey === productKey || configuredKey === managedProviderKey(productKey))
+    && normalizeProviderEndpoint(model.routeBaseUrl || model.baseUrl) === normalizeProviderEndpoint(provider.baseUrl)
+    && model.apiMode.trim().toLowerCase() === provider.apiMode.trim().toLowerCase();
+}
+
+function groupConfiguredModelsByProvider(
+  models: HermesConfiguredModel[],
+  providers: ModelProviderOption[],
+) {
   const groups = new Map<string, ConfiguredProviderGroup>();
   for (const model of models) {
     const key = getConfiguredProviderGroupKey(model);
@@ -156,11 +172,48 @@ function groupConfiguredModelsByProvider(models: HermesConfiguredModel[]) {
       groups.set(key, { key, providerName: model.providerName, models: [model] });
     }
   }
+  for (const group of groups.values()) {
+    const matchingProviders = providers.filter((provider) => (
+      provider.catalogModels?.length
+      && group.models.every((model) => modelMatchesProductProvider(model, provider))
+      && new Set(group.models.map((model) => model.keyEnv.trim())).size === 1
+    ));
+    if (matchingProviders.length !== 1) continue;
+    const provider = matchingProviders[0];
+    const representative = group.models[0];
+    if (!provider || !representative) continue;
+    const catalogNames = new Map(
+      (provider.catalogModels ?? []).map(({ id, name }) => [id.trim(), name.trim() || id.trim()]),
+    );
+    group.models = group.models.map((model) => ({
+      ...model,
+      catalogName: catalogNames.get(model.id.trim()),
+    }));
+    const identities = new Set(group.models.map(getHermesModelIdentity));
+    for (const catalogModel of provider.catalogModels ?? []) {
+      const id = catalogModel.id.trim();
+      if (!id) continue;
+      const candidate: ConfiguredModelListItem = {
+        ...representative,
+        id,
+        catalogName: catalogModel.name.trim() || id,
+        catalogOnly: true,
+      };
+      const identity = getHermesModelIdentity(candidate);
+      if (identities.has(identity)) continue;
+      identities.add(identity);
+      group.models.push(candidate);
+    }
+  }
   return [...groups.values()];
 }
 
 function displayConfiguredModelId(modelId: string) {
   return !modelId.trim() || ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? "Auto" : modelId;
+}
+
+function displayConfiguredModelName(model: ConfiguredModelListItem) {
+  return model.catalogName?.trim() || displayConfiguredModelId(model.id);
 }
 
 function displayError(message: string, localizedFallback: string) {
@@ -307,9 +360,10 @@ export function AgentModelConfigPanel({
     [controller.snapshot?.configuredModels],
   );
   const configuredProviderGroups = useMemo(
-    () => groupConfiguredModelsByProvider(configuredModels),
-    [configuredModels],
+    () => groupConfiguredModelsByProvider(configuredModels, providers),
+    [configuredModels, providers],
   );
+  const configuredModelCount = configuredProviderGroups.reduce((count, group) => count + group.models.length, 0);
   const primaryConfiguredProviderKey = snapshot.primary
     ? getConfiguredProviderGroupKey(snapshot.primary)
     : null;
@@ -488,7 +542,7 @@ export function AgentModelConfigPanel({
             </ModelActionTooltip>
           </div>
           <span className="shrink-0 text-xs font-medium text-black/35">
-            {t("共 {{count}} 个", { count: configuredModels.length })}
+            {t("共 {{count}} 个", { count: configuredModelCount })}
           </span>
         </div>
 
@@ -524,7 +578,6 @@ export function AgentModelConfigPanel({
               const selectedIdentity = selectedConfiguredModel
                 ? getHermesModelIdentity(selectedConfiguredModel)
                 : null;
-              const selectedIsPrimary = sameModel(snapshot.primary, selectedConfiguredModel);
               const groupPanelId = `configured-provider-${groupIndex}`;
               return (
                 <li key={group.key}>
@@ -568,7 +621,7 @@ export function AgentModelConfigPanel({
                                 <input
                                   type="radio"
                                   name={`configured-model-${groupIndex}`}
-                                  aria-label={displayConfiguredModelId(model.id)}
+                                  aria-label={displayConfiguredModelName(model)}
                                   value={modelIdentity}
                                   checked={selectedIdentity === modelIdentity}
                                   disabled={busy}
@@ -581,7 +634,7 @@ export function AgentModelConfigPanel({
                                 <span className="min-w-0">
                                   <span className="flex flex-wrap items-center gap-2">
                                     <span className="break-all text-sm font-semibold text-black/85">
-                                      {displayConfiguredModelId(model.id)}
+                                      {displayConfiguredModelName(model)}
                                     </span>
                                     <Badge variant={primary ? "success" : fallback ? "warning" : "neutral"}>
                                       {role === "primary" ? t("主模型") : role === "fallback" ? t("备用模型") : t("未启用")}
@@ -591,6 +644,19 @@ export function AgentModelConfigPanel({
                               </label>
 
                               <div className="flex flex-wrap items-center gap-2 pl-7 sm:pl-0">
+                                <ModelActionTooltip content={primary ? t("当前模型已经是主模型") : undefined}>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={primary ? "secondary" : "outline"}
+                                    className="rounded-md"
+                                    disabled={busy || model.requiresSetup === true || primary}
+                                    onClick={() => void controller.assign(model, "primary")}
+                                  >
+                                    <Check className="size-3.5" aria-hidden="true" />
+                                    {t("设为主模型")}
+                                  </Button>
+                                </ModelActionTooltip>
                                 <ModelActionTooltip content={primary ? t("主模型不能同时设为备用模型") : undefined}>
                                   <Button
                                     type="button"
@@ -605,43 +671,29 @@ export function AgentModelConfigPanel({
                                     {fallback ? t("取消备用") : t("设为备用模型")}
                                   </Button>
                                 </ModelActionTooltip>
-                                <ModelActionTooltip content={primary ? t("无法删除主模型，请先切换至其他模型") : undefined}>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    className="rounded-md"
-                                    disabled={busy || primary}
-                                    onClick={() => {
-                                      controller.clearOperationError();
-                                      setDeleteTarget(model);
-                                    }}
-                                  >
-                                    <Trash2 className="size-3.5" aria-hidden="true" />
-                                    {t("删除")}
-                                  </Button>
-                                </ModelActionTooltip>
+                                {!model.catalogOnly ? (
+                                  <ModelActionTooltip content={primary ? t("无法删除主模型，请先切换至其他模型") : undefined}>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="rounded-md"
+                                      disabled={busy || primary}
+                                      onClick={() => {
+                                        controller.clearOperationError();
+                                        setDeleteTarget(model);
+                                      }}
+                                    >
+                                      <Trash2 className="size-3.5" aria-hidden="true" />
+                                      {t("删除")}
+                                    </Button>
+                                  </ModelActionTooltip>
+                                ) : null}
                               </div>
                             </li>
                           );
                         })}
                       </ul>
-
-                      <div className="mt-4 flex justify-center">
-                        <ModelActionTooltip content={selectedIsPrimary ? t("当前模型已经是主模型") : undefined}>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={selectedIsPrimary ? "secondary" : "outline"}
-                            className="min-w-32 rounded-md"
-                            disabled={busy || !selectedConfiguredModel || selectedConfiguredModel.requiresSetup === true || selectedIsPrimary}
-                            onClick={() => selectedConfiguredModel && void controller.assign(selectedConfiguredModel, "primary")}
-                          >
-                            <Check className="size-3.5" aria-hidden="true" />
-                            {t("设为主模型")}
-                          </Button>
-                        </ModelActionTooltip>
-                      </div>
                     </div>
                   ) : null}
                 </li>

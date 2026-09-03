@@ -224,9 +224,23 @@ function createRemote(
       }
     }
     if (action.type === "assign") {
-      const nextModel = snapshot.configuredModels.find(
+      const exactModel = snapshot.configuredModels.find(
         (model) => model.providerKey === action.providerKey && model.id === action.modelId,
       ) ?? null;
+      const providerModel = snapshot.configuredModels.find((model) => (
+        model.providerKey === action.providerKey
+        && (model.routeBaseUrl ?? model.baseUrl).replace(/\/+$/, "").toLowerCase()
+          === (action.routeBaseUrl ?? action.baseUrl ?? "").replace(/\/+$/, "").toLowerCase()
+      )) ?? null;
+      const nextModel = exactModel ?? (providerModel
+        ? {
+            ...providerModel,
+            id: action.modelId,
+            baseUrl: action.baseUrl ?? providerModel.baseUrl,
+            routeBaseUrl: action.routeBaseUrl ?? providerModel.routeBaseUrl,
+          }
+        : null);
+      if (nextModel && !exactModel) snapshot.configuredModels = [...snapshot.configuredModels, nextModel];
       if (action.purpose === "primary") {
         snapshot.primary = nextModel;
         snapshot.fallbacks = snapshot.fallbacks.filter(
@@ -270,12 +284,16 @@ function createRemote(
   };
 }
 
-function renderPanel(remote: ReturnType<typeof createRemote>, isGlobalRegion = false) {
+function renderPanel(
+  remote: ReturnType<typeof createRemote>,
+  isGlobalRegion = false,
+  providerOptions: ModelProviderOption[] = providers,
+) {
   return render(
     <AgentModelConfigPanel
       botId="bot-1"
       execDebugCommand={remote.execDebugCommand}
-      providers={providers}
+      providers={providerOptions}
       isGlobalRegion={isGlobalRegion}
     />,
   );
@@ -311,7 +329,8 @@ describe("AgentModelConfigPanel", () => {
     const betaGroup = screen.getByRole("group", { name: "Beta API 已配置模型" });
     expect(within(betaGroup).getByRole("radio", { name: "model-fallback" })).toBeChecked();
     await userEvent.click(within(betaGroup).getByRole("radio", { name: "model-beta-2" }));
-    await userEvent.click(within(betaGroup).getByRole("button", { name: "设为主模型" }));
+    const secondBetaRow = screen.getByText("model-beta-2").closest("li") as HTMLElement;
+    await userEvent.click(within(secondBetaRow).getByRole("button", { name: "设为主模型" }));
 
     await waitFor(() => expect(screen.getByRole("button", { name: /Beta API/ }).closest("li")).toHaveTextContent("当前生效"));
     expect(within(screen.getByRole("group", { name: "Beta API 已配置模型" })).getByText("model-beta-2").closest("li")).toHaveTextContent("主模型");
@@ -338,11 +357,83 @@ describe("AgentModelConfigPanel", () => {
 
     expect(await screen.findAllByRole("button", { name: /Alpha API/ })).toHaveLength(1);
     const alphaGroup = screen.getByRole("group", { name: "Alpha API 已配置模型" });
-    expect(within(alphaGroup).getByRole("radio", { name: "model-primary" })).toBeChecked();
-    expect(within(alphaGroup).getByRole("button", { name: "设为主模型" })).toBeDisabled();
+    const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
+    const secondAlphaRow = screen.getByText("model-alpha-2").closest("li") as HTMLElement;
+    expect(within(primaryRow).getByRole("radio", { name: "model-primary" })).toBeChecked();
+    expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
+    expect(within(secondAlphaRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
 
     await userEvent.click(within(alphaGroup).getByRole("radio", { name: "model-alpha-2" }));
-    expect(within(alphaGroup).getByRole("button", { name: "设为主模型" })).toBeEnabled();
+    expect(within(secondAlphaRow).getByRole("radio", { name: "model-alpha-2" })).toBeChecked();
+  });
+
+  it("shows catalog models inside an already configured Provider and assigns them without credentials", async () => {
+    const savedHyModel: HermesConfiguredModel = {
+      id: "hy4-preview",
+      providerKey: "lightvela-tencent-hy-token-plan",
+      providerName: fixedHyProvider.providerName,
+      baseUrl: fixedHyProvider.baseUrl,
+      routeBaseUrl: fixedHyProvider.baseUrl,
+      apiMode: fixedHyProvider.apiMode,
+      keyEnv: "KEY_lightvela_tencent_hy_token_plan",
+    };
+    const remote = createRemote({
+      primary: savedHyModel,
+      fallbacks: [],
+      configuredModels: [savedHyModel],
+    });
+    renderPanel(remote, false, [fixedHyProvider]);
+
+    expect(await screen.findByText("共 2 个")).toBeInTheDocument();
+    const providerGroup = screen.getByRole("group", {
+      name: `${fixedHyProvider.providerName} 已配置模型`,
+    });
+    expect(within(providerGroup).getByText("Hy4 Preview")).toBeInTheDocument();
+    expect(within(providerGroup).queryByText("hy4-preview")).not.toBeInTheDocument();
+    const catalogRow = within(providerGroup).getByText("Hy Next").closest("li") as HTMLElement;
+    expect(within(catalogRow).getByText("未启用")).toBeInTheDocument();
+    expect(within(catalogRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
+    expect(within(catalogRow).getByRole("button", { name: "设为备用模型" })).toBeEnabled();
+    expect(within(catalogRow).queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
+
+    await userEvent.click(within(catalogRow).getByRole("button", { name: "设为主模型" }));
+
+    await waitFor(() => expect(within(catalogRow).getByText("主模型")).toBeInTheDocument());
+    const assignActions = remote.actions.filter((action) => action.type === "assign");
+    expect(assignActions).toEqual([{
+      type: "assign",
+      providerKey: savedHyModel.providerKey,
+      modelId: "hy-next",
+      baseUrl: savedHyModel.baseUrl,
+      routeBaseUrl: savedHyModel.routeBaseUrl,
+      purpose: "primary",
+    }]);
+    expect(assignActions[0]).not.toHaveProperty("apiKey");
+    expect(assignActions[0]).not.toHaveProperty("credentialEnvelope");
+    expect(remote.actions.some((action) => ["add", "probe", "connectivityProbe"].includes(action.type))).toBe(false);
+  });
+
+  it.each([
+    ["different endpoint", "https://proxy.example.com/v1", fixedHyProvider.apiMode],
+    ["different API mode", fixedHyProvider.baseUrl, "anthropic_messages"],
+  ])("does not merge catalog models into a configured Provider with a %s", async (_case, baseUrl, apiMode) => {
+    const mismatchedHyModel: HermesConfiguredModel = {
+      id: "hy4-preview",
+      providerKey: "lightvela-tencent-hy-token-plan",
+      providerName: fixedHyProvider.providerName,
+      baseUrl,
+      apiMode,
+      keyEnv: "KEY_proxy_hy",
+    };
+    const remote = createRemote({
+      primary: mismatchedHyModel,
+      fallbacks: [],
+      configuredModels: [mismatchedHyModel],
+    });
+    renderPanel(remote, false, [fixedHyProvider]);
+
+    expect(await screen.findByText("共 1 个")).toBeInTheDocument();
+    expect(screen.queryByText("hy-next")).not.toBeInTheDocument();
   });
 
   it("renders three role-aware actions with custom disabled-state tooltips", async () => {
@@ -358,15 +449,14 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.getByText("正在读取模型配置")).toBeInTheDocument();
     expect(await screen.findByText("model-primary")).toBeInTheDocument();
 
-    const alphaGroup = screen.getByRole("group", { name: "Alpha API 已配置模型" });
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     expect(primaryRow).not.toHaveClass("bg-black/[0.015]");
     expect(within(primaryRow).getByText("主模型")).toBeInTheDocument();
-    expect(within(primaryRow).getAllByRole("button")).toHaveLength(2);
-    expect(within(alphaGroup).getByRole("button", { name: "设为主模型" })).toBeDisabled();
+    expect(within(primaryRow).getAllByRole("button")).toHaveLength(3);
+    expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
     expect(within(primaryRow).getByRole("button", { name: "设为备用模型" })).toBeDisabled();
     expect(within(primaryRow).getByRole("button", { name: "删除" })).toBeDisabled();
-    const primaryTooltipTrigger = within(alphaGroup).getByRole("group", { name: "当前模型已经是主模型" });
+    const primaryTooltipTrigger = within(primaryRow).getByRole("group", { name: "当前模型已经是主模型" });
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     await userEvent.hover(primaryTooltipTrigger);
     const primaryTooltip = await screen.findByRole("tooltip");
@@ -389,7 +479,8 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: /Beta API/ }));
     const fallbackRow = screen.getByText("model-fallback").closest("li") as HTMLElement;
     expect(within(fallbackRow).getByText("备用模型")).toBeInTheDocument();
-    expect(within(fallbackRow).getAllByRole("button")).toHaveLength(2);
+    expect(within(fallbackRow).getAllByRole("button")).toHaveLength(3);
+    expect(within(fallbackRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
     expect(within(fallbackRow).getByRole("button", { name: "取消备用" })).toBeEnabled();
     expect(primaryRow.querySelector("[title]")).toBeNull();
     expect(screen.queryByRole("button", { name: /上移|下移/ })).not.toBeInTheDocument();
@@ -842,7 +933,7 @@ describe("AgentModelConfigPanel", () => {
         providers={[fixedHyProvider]}
       />,
     );
-    await screen.findByText("hy4-preview");
+    expect(await screen.findAllByText("Hy4 Preview")).toHaveLength(2);
 
     expect(screen.getByRole("radio", { name: "设为主模型" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "仅添加" })).not.toBeChecked();

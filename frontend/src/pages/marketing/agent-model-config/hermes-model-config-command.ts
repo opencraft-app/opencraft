@@ -710,6 +710,35 @@ def find_configured(config, provider_key, model_id, base_url=None, route_base_ur
     if len(matches) > 1: raise ValueError("model identity is ambiguous")
     raise ValueError("model is not saved")
 
+def find_assignable(config, provider_key, model_id, base_url=None, route_base_url=None):
+    try:
+        return find_configured(config, provider_key, model_id, base_url, route_base_url)
+    except ValueError as error:
+        if str(error) != "model is not saved": raise
+    matches = [
+        model for model in read_snapshot(config)["configuredModels"]
+        if model["providerKey"].strip().lower() == provider_key.strip().lower()
+    ]
+    if route_base_url is not None:
+        target_url = normalized_route_base_url(route_base_url)
+        matches = [model for model in matches if route_identity(model)[2] == target_url]
+    elif base_url:
+        target_url = normalized_route_base_url(base_url)
+        matches = [model for model in matches if normalized_route_base_url(model.get("baseUrl")) == target_url]
+    identities = {
+        (
+            normalized_route_base_url(model.get("routeBaseUrl") or model.get("baseUrl")),
+            str(model.get("apiMode") or "").strip().lower(),
+            str(model.get("keyEnv") or "").strip(),
+        )
+        for model in matches
+    }
+    if not matches: raise ValueError("model is not saved")
+    if len(identities) != 1: raise ValueError("provider identity is ambiguous")
+    model = dict(matches[0])
+    model["id"] = model_id
+    return model
+
 def save_and_reload(config):
     save_config(config)
     saved = load_config() or {}
@@ -935,7 +964,7 @@ def execute(action):
     if kind == "assign":
         original_config = copy.deepcopy(config)
         route_base_url = text(action.get("routeBaseUrl"), "routeBaseUrl", required=False) if "routeBaseUrl" in action else None
-        model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
+        model = find_assignable(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         purpose = text(action.get("purpose"), "purpose")
         before = read_snapshot(config)
         if purpose == "fallback" and same_runtime_deployment(before["primary"], model): raise ValueError("role conflict")

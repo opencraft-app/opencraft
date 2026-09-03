@@ -1,22 +1,23 @@
 # 已配置模型 Provider 分组切换 Implementation Plan
 
-**Status:** 已按 TDD 完成实现、双区域构建与验收，等待用户确认提交；不自动 commit、push 或创建 MR。
+**Status:** 目录模型并入已配置 Provider、凭据复用切换与回归验证均已完成，等待用户验收；不自动 commit、push 或创建 MR。
 
-**Size:** S。仅调整本地模型配置面板的已配置模型展示和切换交互；不修改 SDK、Hermes 协议、凭据、Provider 目录或后端接口。
+**Size:** M。产品边界仍只在模型配置域，但连同既有分组改动将涉及面板、Hermes 配置命令、两组测试及 OpenSpec，文件数超过 S 级上限；不修改 SDK、Hermes action 协议、凭据存储、Provider 目录或后端接口。
 
-**Goal:** 将已配置模型按 Provider 分组，用户选择任意已保存模型后可直接“设为主模型”，无需重新添加 Provider 或 API Key。
+**Goal:** 将已配置模型按 Provider 分组，并显示产品目录中属于该已配置 Provider 的其他模型；用户可直接设为主/备用模型，无需重新添加 Provider 或 API Key。
 
 **Design:** `openspec/changes/2026-09-03-configured-model-provider-switch-design.md`
 
 **Detailed plan:** `openspec/changes/2026-09-03-configured-model-provider-switch-implementation-plan.md`
 
 - [x] **Developer｜测试先行实现 Provider 分组、展开与组内单选，复用 `assign(..., "primary")` 完成跨 Provider 主模型切换，保留备用/删除操作，并完成模型配置回归、i18n、前端门禁和 CN/global 页面 smoke。**
+- [x] **Developer｜测试先行合并当前产品目录中的同 Provider 模型，复用已保存 Provider 身份和凭据完成主/备用模型切换；未保存目录模型不显示删除，并完成命令层安全边界、回归和浏览器 smoke。**
 
-**Acceptance:** 当前 Provider 默认展开并显示“当前生效”；每组可单选已配置模型并用“设为主模型”切换；操作只触发 `assign`，不重新添加、不探测、不要求 API Key；备用、删除、空态和错误态保持可用。
+**Acceptance:** 当前 Provider 默认展开并显示“当前生效”；每组同时显示已保存模型和严格匹配的产品目录模型；已配置区优先使用目录模型名称并与添加模型选择器保持一致；目录模型可用现有 `assign` 直接设为主/备用并持久化，操作不重新添加、不探测、不要求 API Key；未保存目录模型不显示删除，自定义/地址不匹配 Provider 不被错误合并。
 
 **Out of scope:** SDK 面板、Hermes 配置格式、凭据存储、Provider/模型目录、路由策略、后端接口及发布。
 
-**Verification:** 新增 2 个用例先按预期 RED，证明旧页面缺少 Provider 分组与 radio；实现后面板 31/31、模型配置目录 127/127（另 1 条按环境跳过）GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；CN/global 构建分别完成 94/94、592/592 静态页。global 本地静态页在 1280px 与 390px 无横向溢出、无新增控制台错误；本地账号没有 Agent，带模型数据的交互由 CN/global 组件测试覆盖。`git diff --check` 通过。
+**Verification:** 初始 Provider 分组用例先按预期 RED；目录模型增量中，面板与 Hermes 客户端各 1 项按预期 RED。最终面板 34/34、Hermes 客户端 42/42、模型配置目录 132/132（另 1 条按环境跳过）GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；浏览器 Mock 证明 snapshot 仅保存一个模型时仍显示同 Provider 目录模型，可直接切为主模型且不显示未保存模型的删除入口；1920px 与 750px 无横向溢出。`git diff --check` 通过。
 
 ---
 
