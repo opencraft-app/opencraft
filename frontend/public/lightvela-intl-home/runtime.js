@@ -49,6 +49,7 @@
   (function () {
     var INITIAL = 100;
     var STEP = 30;
+    var shouldKeepNaturalText = window.matchMedia('(max-width: 640px), (prefers-reduced-motion: reduce)').matches;
     function splitChars(el, startDelay) {
       var text = el.textContent;
       el.textContent = '';
@@ -65,8 +66,8 @@
     var prefix = document.querySelector('.hero__line--dynamic .hero__prefix');
     var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
     var next = INITIAL;
-    if (main) next = splitChars(main, next);
-    if (prefix) next = splitChars(prefix, next + 60);
+    if (!shouldKeepNaturalText && main) next = splitChars(main, next);
+    if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + 60);
     if (wrap) wrap.style.setProperty('--rotator-delay', next + 'ms');
     var root = document.documentElement;
     var afterText = next + 200;
@@ -90,6 +91,55 @@
       });
     }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
     els.forEach(function (el) { io.observe(el); });
+  })();
+
+  (function () {
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.about__cards .wcard'));
+    var strip = document.querySelector('.about__cards');
+    if (!cards.length) return;
+    function isPhone() {
+      return window.matchMedia('(max-width: 640px)').matches;
+    }
+    function mark(index) {
+      if (!isPhone() || !cards[index]) return;
+      cards.forEach(function (card, i) { card.classList.toggle('is-mobile-active', i === index); });
+    }
+    function activate(index, animate) {
+      if (!isPhone() || !cards[index]) return;
+      mark(index);
+      try {
+        cards[index].scrollIntoView({ behavior: animate ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
+      } catch (_) {
+        cards[index].scrollIntoView();
+      }
+    }
+    cards.forEach(function (card, index) {
+      card.addEventListener('click', function () { activate(index, true); });
+    });
+    if (strip) {
+      var ticking = false;
+      strip.addEventListener('scroll', function () {
+        if (!isPhone() || ticking) return;
+        ticking = true;
+        requestAnimationFrame(function () {
+          ticking = false;
+          var stripBox = strip.getBoundingClientRect();
+          var center = stripBox.left + stripBox.width / 2;
+          var nearest = 0;
+          var nearestDistance = Infinity;
+          cards.forEach(function (card, index) {
+            var box = card.getBoundingClientRect();
+            var distance = Math.abs(box.left + box.width / 2 - center);
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              nearest = index;
+            }
+          });
+          mark(nearest);
+        });
+      }, { passive: true });
+    }
+    activate(0, false);
   })();
 
   (function () {
@@ -137,13 +187,48 @@
             if (animate) fadeInThread(thread);
           }
         });
+        if (window.matchMedia('(max-width: 640px)').matches && subs[active]) {
+          try {
+            subs[active].scrollIntoView({ behavior: animate ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
+          } catch (_) {
+            subs[active].scrollIntoView();
+          }
+        }
       }
       subs.forEach(function (btn, i) {
         btn.addEventListener('mouseenter', function () {
           if (active === i) return;
           render(i, true);
         });
+        btn.addEventListener('click', function () {
+          if (!window.matchMedia('(max-width: 640px)').matches) return;
+          if (active === i) return;
+          render(i, true);
+        });
       });
+      var touchRegion = scene.querySelector('.scene__chats');
+      var touchStartX = 0;
+      var touchStartY = 0;
+      if (touchRegion) {
+        touchRegion.addEventListener('touchstart', function (event) {
+          var touch = event.changedTouches && event.changedTouches[0];
+          if (!touch) return;
+          touchStartX = touch.clientX;
+          touchStartY = touch.clientY;
+        }, { passive: true });
+        touchRegion.addEventListener('touchend', function (event) {
+          if (!window.matchMedia('(max-width: 640px)').matches) return;
+          var touch = event.changedTouches && event.changedTouches[0];
+          if (!touch) return;
+          var dx = touch.clientX - touchStartX;
+          var dy = touch.clientY - touchStartY;
+          if (Math.abs(dx) < 42 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+          var nextIndex = dx < 0 ? active + 1 : active - 1;
+          if (nextIndex < 0) nextIndex = subs.length - 1;
+          if (nextIndex >= subs.length) nextIndex = 0;
+          render(nextIndex, true);
+        }, { passive: true });
+      }
       render(active, false);
 
       // 顶部 tab 切换到本场景时，也让当前卡片的气泡依次淡入
@@ -171,10 +256,52 @@
   })();
 
 (function () {
-  document.querySelectorAll('.plays__tabs label[for]').forEach(function (label) {
+  var labels = Array.prototype.slice.call(document.querySelectorAll('.plays__tabs label[for]'));
+  if (!labels.length) return;
+  function getCheckedIndex() {
+    var checked = document.querySelector('.plays input[type="radio"]:checked');
+    return Math.max(0, labels.findIndex(function (label) {
+      return checked && label.htmlFor === checked.id;
+    }));
+  }
+  function activate(index) {
+    if (!labels[index]) return;
+    var input = document.getElementById(labels[index].htmlFor);
+    if (input && !input.checked) input.click();
+    if (window.matchMedia('(max-width: 640px)').matches) {
+      try {
+        labels[index].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      } catch (_) {
+        labels[index].scrollIntoView();
+      }
+    }
+  }
+  labels.forEach(function (label, i) {
     label.addEventListener('mouseenter', function () {
-      var input = document.getElementById(label.htmlFor);
-      if (input && !input.checked) input.click();
+      activate(i);
     });
   });
+  var stage = document.querySelector('.plays__stage');
+  var startX = 0;
+  var startY = 0;
+  if (!stage) return;
+  stage.addEventListener('touchstart', function (event) {
+    var touch = event.changedTouches && event.changedTouches[0];
+    if (!touch) return;
+    startX = touch.clientX;
+    startY = touch.clientY;
+  }, { passive: true });
+  stage.addEventListener('touchend', function (event) {
+    if (!window.matchMedia('(max-width: 640px)').matches) return;
+    var touch = event.changedTouches && event.changedTouches[0];
+    if (!touch) return;
+    var dx = touch.clientX - startX;
+    var dy = touch.clientY - startY;
+    if (Math.abs(dx) < 42 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+    var current = getCheckedIndex();
+    var next = dx < 0 ? current + 1 : current - 1;
+    if (next < 0) next = labels.length - 1;
+    if (next >= labels.length) next = 0;
+    activate(next);
+  }, { passive: true });
 })();
