@@ -1095,7 +1095,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h3 id="instance-storage-title" className="text-sm font-semibold text-[var(--text-primary)]">
-              {t("实例存储")}
+              {t("存储概览")}
             </h3>
             <p className="mt-1 text-xs leading-5 text-[var(--text-tertiary)]">
               {t("包含 Agent 运行环境、系统预留和云存储文件。")}
@@ -1127,12 +1127,12 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
         {storageCapacityStatus === "ready" && storageCapacity ? (
           <div className="mt-4">
             <div className="mb-2 flex items-center justify-between gap-3 text-xs text-[var(--text-tertiary)]">
-              <span>{t("实例存储使用率")}</span>
+              <span>{t("存储空间使用率")}</span>
               <span className="tabular-nums">{storageUsagePercent}%</span>
             </div>
             <div
               role="progressbar"
-              aria-label={t("实例存储使用率")}
+              aria-label={t("存储空间使用率")}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={storageUsagePercent}

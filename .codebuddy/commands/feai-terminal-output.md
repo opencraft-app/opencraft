@@ -22,7 +22,9 @@
 
 ```bash
 command -v tokenjuice >/dev/null 2>&1 && tokenjuice --version || echo "tokenjuice not installed"
-test -f .workflow/rules/terminal-output.md && echo "terminal-output rule ok"
+{ test -f .codebuddy/skills/feai-native/references/team-conventions.md \
+  || test -f .agents/skills/feai-native/references/team-conventions.md; } \
+  && echo "team-conventions ok"
 ```
 
 如未安装，只 WARN，不阻塞 workflow。
@@ -55,4 +57,4 @@ tokenjuice wrap --store -- pnpm build
 
 不适合：`cat` / `sed` / `nl` / `jq` 精确读文件、高风险写操作、部署、删除、生产数据命令。
 
-详细规则见 `.workflow/rules/terminal-output.md`。
+详细规则见 feai-native skill `references/team-conventions.md` 的「终端输出与上下文预算」一节（安装后位于 `.codebuddy/skills/feai-native/references/team-conventions.md`，codex profile 为 `.agents/skills/feai-native/references/team-conventions.md`）。

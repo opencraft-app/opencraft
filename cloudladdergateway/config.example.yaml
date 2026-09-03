@@ -769,8 +769,21 @@ routes:
   #   CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_<N>_BASE_URL
   # 覆盖成该开发者环境的可达地址，再配合上面 jifei-callback 的 uin_routes 生效。
   #
+  # 落点有两种形态：
+  #   1) 直连：DEV_<N>_BASE_URL = http://<devcloud-ip>:18084，要求云梯 pod 能反向连到
+  #      开发者机器。实测 tkex → DevCloud 反向不通（10s 超时），所以这条一般不可用。
+  #   2) 经 devtunnel（推荐）：DEV_<N>_BASE_URL 指向下面的 devtunnel 服务，并用
+  #      DEV_<N>_HOST_HEADER 盖一个每人唯一的 host（如 dev1.tunnel.internal）；devtunnel
+  #      按这个 host 把回调交给该开发者出站长轮询挂着的 agent。绕开反向不通的问题。
+  #
   # 预留成池子是为了「新增开发者只改 gitops 的环境变量、不用重建镜像」——
-  # 加人时挑一个空位改两个 env（uin 映射 + base_url）即可。
+  # 加人时挑一个空位改 uin 映射 + base_url(+host_header) 即可。
+  #
+  # headers_from_env 注入 Authorization 是形态 2 的必需项：devtunnel 的 ingest 端点
+  # 和控制面一样要鉴权，而 route 的 env 覆盖只有 _BASE_URL / _HOST_HEADER / _UIN_ROUTES，
+  # 没法从 gitops 注入 header，所以只能烤在这里。devtunnel 侧比较 token 时 "Bearer "
+  # 前缀可选，因此这里注入裸 token 即可，与 agent 共用同一个 DEVTUNNEL_TOKEN。
+  # DEVTUNNEL_TOKEN 未注入时这里是空 header，配合黑洞 base_url 等于该落点不存在。
   - id: jifei-callback-dev-1
     description: "开发者个人测试环境回调落点 1（base_url 必须由 env 覆盖）"
     callers: ["jifei"]
@@ -779,6 +792,8 @@ routes:
       base_url: "http://127.0.0.1:9"
       timeout: 10s
       allowed_methods: ["POST"]
+      headers_from_env:
+        Authorization: DEVTUNNEL_TOKEN
 
   - id: jifei-callback-dev-2
     description: "开发者个人测试环境回调落点 2（base_url 必须由 env 覆盖）"
@@ -788,6 +803,8 @@ routes:
       base_url: "http://127.0.0.1:9"
       timeout: 10s
       allowed_methods: ["POST"]
+      headers_from_env:
+        Authorization: DEVTUNNEL_TOKEN
 
   - id: jifei-callback-dev-3
     description: "开发者个人测试环境回调落点 3（base_url 必须由 env 覆盖）"
@@ -797,6 +814,28 @@ routes:
       base_url: "http://127.0.0.1:9"
       timeout: 10s
       allowed_methods: ["POST"]
+      headers_from_env:
+        Authorization: DEVTUNNEL_TOKEN
+
+  # devtunnel 反向隧道的控制面入口。
+  #
+  # 仅用途：让开发者 DevCloud 上的 agent 经云梯 CLB「出站」访问 devtunnel 的
+  # /_tunnel/poll 与 /_tunnel/reply（tkex → DevCloud 反向不通，只能让 DevCloud 主动出站）。
+  # 回调本身不走这条 route —— 回调走 jifei-callback 的 uin_routes → jifei-callback-dev-<N>
+  # →（env 覆盖后）devtunnel 服务，devtunnel 按 Host 分流。
+  #
+  # base_url 是黑洞占位，必须由工作负载上的
+  #   CLOUDLADDERGATEWAY_ROUTE_DEVTUNNEL_BASE_URL=http://<devtunnel-svc>:8080
+  # 覆盖。默认（未覆盖）时本 route 打到黑洞，等于禁用，生产不受影响。
+  - id: devtunnel
+    description: "devtunnel 反向隧道控制面（agent 出站 poll/reply 用；base_url 必须由 env 覆盖）"
+    # 条件用 Starlark 求值，布尔或是 `or` 而不是 `||`（写成 `||` 会在匹配时报语法错，
+    # 表现为这条 route 永远匹配不上）。
+    condition: 'request.method == "GET" or request.method == "POST"'
+    upstream:
+      base_url: "http://127.0.0.1:9"
+      timeout: 30s
+      allowed_methods: ["GET", "POST"]
 
   # ===========================================================================
   # jifei → clgateway → trade 入向回调地域路由（方案一：routeId 区分地域）

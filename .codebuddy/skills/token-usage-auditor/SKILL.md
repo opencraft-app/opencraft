@@ -1,12 +1,13 @@
 ---
 name: token-usage-auditor
-description: "FE-AI 内置的轻量本地用量审计。仅用于 /feai-archive 生成 metadata.localUsageAudit，按 usage-context.provider 统计当前需求窗口内当前 agent 工具的 token、缓存命中率、积分和费用。不要把它当作完整多工具 HTML 报告 CLI；完整报告请使用 token-usage-auditor 独立仓库。"
+description: "FE-AI 内置的轻量本地用量审计。仅用于归档流程（feai native archive，用户确认归档后）生成 metadata.localUsageAudit，按 usage-context.provider 统计当前需求窗口内当前 agent 工具的 token、缓存命中率、积分和费用。不要把它当作完整多工具 HTML 报告 CLI；完整报告请使用 token-usage-auditor 独立仓库。"
 ---
 
 # FE-AI Local Usage Auditor
 
-这个 skill 是 FE-AI 分发包里的轻量版 token auditor，只服务 `/feai-archive` 的
-`metadata.localUsageAudit`。它不会生成 HTML 报告，也不会做全工具对比。
+这个 skill 是 FE-AI 分发包里的轻量版 token auditor，只服务归档流程
+（`feai native archive`，用户确认归档后执行）的 `metadata.localUsageAudit`。
+它不会生成 HTML 报告，也不会做全工具对比。
 
 ## 入口
 
@@ -22,7 +23,7 @@ python3 <skill-dir>/scripts/feai-local-usage-audit \
 排障时可通过 FE-AI CLI 使用 `feai report doctor --project "$BASE_DIR" --change-name "$CHANGE_NAME" --json`，
 它复用同一套 provider reader，默认只输出可转发的精简摘要，不写入 `localUsageAudit.json`。
 需要本机深度排障时追加 `--verbose`，此时会输出 session/window/notes 等完整诊断字段。
-`/feai-archive` 发现审计缺失、失败、为 0 或 fallback 时会自动在本地缓存目录写入完整
+归档流程发现审计缺失、失败、为 0 或 fallback 时会自动在本地缓存目录写入完整
 `localUsageDoctor.json`；评分上报只携带其中的安全摘要字段。
 
 ## 统计口径
@@ -37,7 +38,7 @@ python3 <skill-dir>/scripts/feai-local-usage-audit \
 
 provider 必须来自命令行参数或 `usage-context.provider`，不做默认猜测。FE-AI
 工作流应在 `/feai-start` 阶段由 AI 判断当前运行工具；无法确认时通过对话让用户选择，并把结果写入
-`usage-context.provider`。如果历史需求或旧流程漏写/写入非法 provider，`/feai-archive` 应二次确认并写回
+`usage-context.provider`。如果历史需求或旧流程漏写/写入非法 provider，归档流程应二次确认并写回
 `usage-context.provider` 后再审计；`.codebuddy/project.local.json` 的 `aiUsage.provider` 只作为询问时的默认建议。当前
 slim 版支持：
 
@@ -53,7 +54,7 @@ slim 版支持：
 `token-usage-auditor` 主仓库实现并验证，再移植对应的轻量 reader，并用 parity
 脚本确认 slim 与完整 FE-AI 模式一致。
 
-如果 provider 仍未确认，`/feai-archive` 应先阻断并让用户确认；用户明确选择暂不统计时，
+如果 provider 仍未确认，归档流程应先阻断并让用户确认；用户明确选择暂不统计时，
 `metadata.localUsageAudit` 才保持 `null`，避免把未知工具误算成 `codebuddycode`。
 
 session id 可由运行平台注入，也可由开发者显式设置 `FEAI_USAGE_SESSION_ID`；存在

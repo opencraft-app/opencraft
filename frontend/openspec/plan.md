@@ -1,3 +1,27 @@
+# 已配置模型 Provider 分组切换 Implementation Plan
+
+**Status:** 目录模型并入已配置 Provider、凭据复用切换、数量移除和带模型名称的 Provider 主备角色标签均已完成验证，等待提交确认；不自动 commit、push 或更新 MR。
+
+**Size:** M。产品边界仍只在模型配置域，但连同既有分组改动将涉及面板、Hermes 配置命令、两组测试及 OpenSpec，文件数超过 S 级上限；不修改 SDK、Hermes action 协议、凭据存储、Provider 目录或后端接口。
+
+**Goal:** 将已配置模型按 Provider 分组，并显示产品目录中属于该已配置 Provider 的其他模型；用户可直接设为主/备用模型，无需重新添加 Provider 或 API Key。
+
+**Design:** `openspec/changes/2026-09-03-configured-model-provider-switch-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-03-configured-model-provider-switch-implementation-plan.md`
+
+- [x] **Developer｜测试先行实现 Provider 分组、展开与组内单选，复用 `assign(..., "primary")` 完成跨 Provider 主模型切换，保留备用/删除操作，并完成模型配置回归、i18n、前端门禁和 CN/global 页面 smoke。**
+- [x] **Developer｜测试先行合并当前产品目录中的同 Provider 模型，复用已保存 Provider 身份和凭据完成主/备用模型切换；未保存目录模型不显示删除，并完成命令层安全边界、回归和浏览器 smoke。**
+- [x] **Developer｜测试先行将 Provider 行的“当前生效”改为带模型名称的主、备用模型标签；同一 Provider 同时承载主备模型时分两行显示且主模型在上，多个备用模型合并显示，并完成多语言与浏览器回归。**
+
+**Acceptance:** 当前主模型所在 Provider 默认展开；Provider 行按组内角色显示带模型名称的主、备用模型标签，同时承担两种角色时分两行显示且主模型在上，多个备用模型合并在备用模型标签内，不再显示“当前生效”；每组同时显示已保存模型和严格匹配的产品目录模型；标题区和 Provider 行不显示可能包含目录候选的模型数量；已配置区优先使用目录模型名称并与添加模型选择器保持一致；目录候选显示“可选模型”，已保存闲置模型显示“未启用”；目录模型可用现有 `assign` 直接设为主/备用并持久化，操作不重新添加、不探测、不要求 API Key；未保存目录模型不显示删除，自定义/地址不匹配 Provider 不被错误合并。
+
+**Out of scope:** SDK 面板、Hermes 配置格式、凭据存储、Provider/模型目录、路由策略、后端接口及发布。
+
+**Verification:** 初始 Provider 分组用例先按预期 RED；目录模型增量中，面板与 Hermes 客户端各 1 项按预期 RED；Provider 标签增量 4 项按预期 RED。最终面板 34/34、Hermes 客户端 42/42、模型配置目录 132/132（另 1 条按环境跳过）GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；浏览器 Mock 证明同一 Provider 的主、备用模型标签带具体模型名称、分两行且主模型在上，390px 下无横向溢出。`git diff --check` 通过。
+
+---
+
 # 高级设置关闭审批状态提示移除 Implementation Plan
 
 **Status:** 已实现并通过 RED/GREEN、多语言、前端门禁与本地组件页面验收，准备提交。

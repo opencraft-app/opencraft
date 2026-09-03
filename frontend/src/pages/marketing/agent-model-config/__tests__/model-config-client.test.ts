@@ -904,6 +904,191 @@ describe("Hermes model configuration client", () => {
     expect((assigned.config.model as Record<string, unknown>).provider).toBe("lightvela-two");
   });
 
+  it("assigns an unsaved catalog model through the matching configured Provider without replacing credentials", () => {
+    const providerKey = "lightvela-tencent-hy-token-plan";
+    const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";
+    const keyEnv = "KEY_lightvela_tencent_hy_token_plan";
+    const config = {
+      model: {
+        provider: providerKey,
+        default: "hy4-preview",
+        base_url: baseUrl,
+        api_mode: "chat_completions",
+      },
+      providers: {
+        [providerKey]: {
+          name: "腾讯云 Hy Token Plan（个人版）",
+          base_url: baseUrl,
+          model: "hy4-preview",
+          models: { "hy4-preview": {} },
+          key_env: keyEnv,
+          transport: "openai_chat",
+          discover_models: false,
+        },
+      },
+    };
+    const credentials = { [keyEnv]: "saved-provider-secret" };
+
+    const assignedPrimary = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "hy-next",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+      purpose: "primary",
+    }, config, {}, credentials);
+    const primarySnapshot = parseHermesModelConfigResponse(assignedPrimary.output);
+    const primaryProvider = (assignedPrimary.config.providers as Record<string, Record<string, unknown>>)[providerKey];
+
+    expect(primarySnapshot.primary).toMatchObject({ providerKey, id: "hy-next", keyEnv });
+    expect(primaryProvider).toMatchObject({
+      model: "hy-next",
+      key_env: keyEnv,
+      models: { "hy4-preview": {}, "hy-next": {} },
+    });
+    expect(assignedPrimary.credentials).toEqual(credentials);
+    expect(assignedPrimary.events).toEqual(["save_config"]);
+
+    const assignedFallback = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "hy-next",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+      purpose: "fallback",
+    }, config, {}, credentials);
+    const fallbackSnapshot = parseHermesModelConfigResponse(assignedFallback.output);
+
+    expect(fallbackSnapshot.primary).toMatchObject({ providerKey, id: "hy4-preview" });
+    expect(fallbackSnapshot.fallbacks).toContainEqual(expect.objectContaining({ providerKey, id: "hy-next", keyEnv }));
+    expect(assignedFallback.credentials).toEqual(credentials);
+    expect(assignedFallback.events).toEqual(["save_config"]);
+  });
+
+  it("preserves an inline Provider credential while assigning and removing model roles", () => {
+    const providerKey = "manual-inline-provider";
+    const baseUrl = "https://inline.example.com/v1";
+    const inlineApiKey = "inline-provider-secret";
+    const config = {
+      model: {
+        provider: providerKey,
+        default: "model-a",
+        base_url: baseUrl,
+        api_mode: "chat_completions",
+      },
+      providers: {
+        [providerKey]: {
+          name: "Inline Provider",
+          base_url: baseUrl,
+          model: "model-a",
+          models: { "model-a": {}, "model-b": {} },
+          api_key: inlineApiKey,
+          transport: "openai_chat",
+        },
+      },
+    };
+
+    const assignedPrimary = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "model-b",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+      purpose: "primary",
+    }, config);
+    expect((assignedPrimary.config.providers as Record<string, Record<string, unknown>>)[providerKey])
+      .toHaveProperty("api_key", inlineApiKey);
+
+    const assignedFallback = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "model-b",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+      purpose: "fallback",
+    }, config);
+    expect((assignedFallback.config.providers as Record<string, Record<string, unknown>>)[providerKey])
+      .toHaveProperty("api_key", inlineApiKey);
+
+    const removedFallback = runHelper({
+      type: "removeFallback",
+      providerKey,
+      modelId: "model-b",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+    }, assignedFallback.config);
+    expect((removedFallback.config.providers as Record<string, Record<string, unknown>>)[providerKey])
+      .toHaveProperty("api_key", inlineApiKey);
+  });
+
+  it("rejects unsaved model assignment when the Provider endpoint differs or its saved identity is ambiguous", () => {
+    const providerKey = "lightvela-tencent-hy-token-plan";
+    const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";
+    const config = {
+      providers: {
+        [providerKey]: {
+          name: "腾讯云 Hy Token Plan（个人版）",
+          base_url: baseUrl,
+          model: "hy4-preview",
+          models: { "hy4-preview": {} },
+          key_env: "HY_TOKEN_PLAN_KEY",
+          transport: "openai_chat",
+        },
+      },
+    };
+    const wrongEndpoint = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "hy-next",
+      baseUrl: "https://proxy.example.com/v1",
+      routeBaseUrl: "https://proxy.example.com/v1",
+      purpose: "primary",
+    }, config);
+
+    expect(() => parseHermesModelConfigResponse(wrongEndpoint.output)).toThrow("Model configuration operation failed");
+    expect(wrongEndpoint.config).toEqual(config);
+    expect(wrongEndpoint.events).toEqual([]);
+
+    const ambiguousConfig = {
+      lightvela: {
+        model_config: {
+          configured_models: [
+            {
+              id: "hy4-preview",
+              providerKey,
+              providerName: "Hy Route A",
+              baseUrl,
+              routeBaseUrl: baseUrl,
+              apiMode: "chat_completions",
+              keyEnv: "HY_ROUTE_A_KEY",
+            },
+            {
+              id: "hy3",
+              providerKey,
+              providerName: "Hy Route B",
+              baseUrl,
+              routeBaseUrl: baseUrl,
+              apiMode: "anthropic_messages",
+              keyEnv: "HY_ROUTE_B_KEY",
+            },
+          ],
+        },
+      },
+    };
+    const ambiguous = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "hy-next",
+      baseUrl,
+      routeBaseUrl: baseUrl,
+      purpose: "primary",
+    }, ambiguousConfig);
+
+    expect(() => parseHermesModelConfigResponse(ambiguous.output)).toThrow("Model configuration operation failed");
+    expect(ambiguous.config).toEqual(ambiguousConfig);
+    expect(ambiguous.events).toEqual([]);
+  });
+
   it("normalizes canonical provider fields, appends ordered fallbacks, migrates legacy config, and does not write during probe", () => {
     const added = runHelper({ type: "add", apiKey, model: { ...model, apiMode: "openai" }, purpose: "fallback" }, {
       model: { provider: "other", default: "other-model" },
