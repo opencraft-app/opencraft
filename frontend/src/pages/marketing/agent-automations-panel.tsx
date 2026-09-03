@@ -14,7 +14,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, ArrowRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, ArrowRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronUp, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -318,6 +318,24 @@ function ScenarioReminderBanner({
 }
 
 const AUTOMATION_TEMPLATE_PAGE_SIZE = 6;
+const AUTOMATION_TEMPLATES_COLLAPSED_STORAGE_KEY = "lightvela-automation-templates-collapsed-v1";
+
+function getInitialAutomationTemplatesCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(AUTOMATION_TEMPLATES_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function persistAutomationTemplatesCollapsed(collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(AUTOMATION_TEMPLATES_COLLAPSED_STORAGE_KEY, String(collapsed));
+  } catch {
+    // Browser storage can be disabled; the current session state still works.
+  }
+}
 
 type AutomationScenarioTemplatesSectionProps = {
   templates: readonly AutomationTemplate[];
@@ -330,6 +348,7 @@ export function AutomationScenarioTemplatesSection({
 }: AutomationScenarioTemplatesSectionProps) {
   const t = useT();
   const [page, setPage] = useState(0);
+  const [templatesCollapsed, setTemplatesCollapsed] = useState(getInitialAutomationTemplatesCollapsed);
   const pageCount = Math.max(1, Math.ceil(templates.length / AUTOMATION_TEMPLATE_PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const visibleTemplates = templates.slice(
@@ -341,25 +360,52 @@ export function AutomationScenarioTemplatesSection({
     if (page >= pageCount) setPage(pageCount - 1);
   }, [page, pageCount]);
 
+  const toggleTemplatesCollapsed = useCallback(() => {
+    setTemplatesCollapsed((current) => {
+      const next = !current;
+      persistAutomationTemplatesCollapsed(next);
+      return next;
+    });
+  }, []);
+
   return (
     <section
-      className="rounded-xl border border-black/[0.06] bg-white p-4 shadow-[0_4px_24px_rgba(0,0,0,0.03),0_1px_2px_rgba(0,0,0,0.02)]"
+      className="border-0 bg-transparent p-0 shadow-none"
       aria-labelledby="automation-scenario-templates-title"
     >
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h3 id="automation-scenario-templates-title" className="text-sm font-semibold text-black/85">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="inline-flex items-center gap-1.5">
+          <h3 id="automation-scenario-templates-title" className="text-xs font-medium text-black/45">
             {t("任务模板")}
           </h3>
-          <p className="mt-1 text-xs leading-5 text-black/45">{t("从常用场景开始，确认内容后启用。")}</p>
+          <button
+            type="button"
+            onClick={toggleTemplatesCollapsed}
+            aria-expanded={!templatesCollapsed}
+            aria-controls="automation-scenario-templates-grid"
+            aria-label={templatesCollapsed ? t("展开任务模板") : t("收起任务模板")}
+            className="inline-flex h-6 items-center justify-center gap-1 rounded-sm border-0 px-1 text-[11px] font-normal text-black/40 transition hover:text-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+          >
+            {templatesCollapsed ? (
+              <>
+                <span>{t("展开")}</span>
+                <ChevronDown className="size-3" aria-hidden="true" />
+              </>
+            ) : (
+              <>
+                <span>{t("收起")}</span>
+                <ChevronUp className="size-3" aria-hidden="true" />
+              </>
+            )}
+          </button>
         </div>
-        {pageCount > 1 && (
+        {!templatesCollapsed && pageCount > 1 && (
           <div className="inline-flex items-center gap-2 text-xs text-black/45">
             <button
               type="button"
               onClick={() => setPage((current) => Math.max(0, current - 1))}
               disabled={safePage === 0}
-              className="rounded-md border border-black/[0.08] bg-white px-2 py-1 font-medium text-black/60 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:text-black/25"
+              className="rounded-sm border border-black/[0.08] bg-white px-2 py-1 font-medium text-black/60 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:text-black/25"
             >
               {t("上一页")}
             </button>
@@ -368,40 +414,42 @@ export function AutomationScenarioTemplatesSection({
               type="button"
               onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
               disabled={safePage >= pageCount - 1}
-              className="rounded-md border border-black/[0.08] bg-white px-2 py-1 font-medium text-black/60 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:text-black/25"
+              className="rounded-sm border border-black/[0.08] bg-white px-2 py-1 font-medium text-black/60 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:text-black/25"
             >
               {t("下一页")}
             </button>
           </div>
         )}
       </div>
-      <div className="mt-3 grid min-h-[208px] grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {visibleTemplates.map((template) => {
-          const tone = AUTOMATION_TEMPLATE_TONES[template.id as keyof typeof AUTOMATION_TEMPLATE_TONES];
-          const Icon = tone?.icon ?? CalendarDays;
-          return (
-            <button
-              key={template.id}
-              type="button"
-              onClick={() => onEnable(template)}
-              aria-label={t("启用{{name}}", { name: template.name })}
-              className="group flex min-h-[96px] items-start gap-3 rounded-lg border border-black/[0.06] bg-black/[0.015] p-3 text-left transition hover:border-black/[0.12] hover:bg-black/[0.035]"
-            >
-              <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] ${tone?.iconClass ?? "bg-white text-black/55"}`}>
-                <Icon className="h-[18px] w-[18px]" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-black/82">{template.name}</span>
-                <span className="mt-1 block line-clamp-2 text-xs leading-5 text-black/45">{template.description}</span>
-                <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-black/55 transition group-hover:text-black/80">
-                  {t("启用")}
-                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+      {!templatesCollapsed && (
+        <div id="automation-scenario-templates-grid" className="mt-3 grid min-h-[208px] grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {visibleTemplates.map((template) => {
+            const tone = AUTOMATION_TEMPLATE_TONES[template.id as keyof typeof AUTOMATION_TEMPLATE_TONES];
+            const Icon = tone?.icon ?? CalendarDays;
+            return (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => onEnable(template)}
+                aria-label={t("启用{{name}}", { name: template.name })}
+                className="group flex min-h-[96px] items-start gap-3 rounded-sm border border-black/[0.04] bg-white p-3 text-left transition hover:border-black/[0.08] hover:bg-white"
+              >
+                <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-sm shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] ${tone?.iconClass ?? "bg-white text-black/55"}`}>
+                  <Icon className="h-[18px] w-[18px]" />
                 </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-black/82">{template.name}</span>
+                  <span className="mt-1 block line-clamp-2 text-xs leading-5 text-black/45">{template.description}</span>
+                  <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-black/55 transition group-hover:text-black/80">
+                    {t("启用")}
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { shouldUseInternationalV2Home } from "@next-site/international-home-routing";
 
@@ -132,13 +132,13 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     } as const;
     const expectedCardAssets = {
-      "en-US": ["wcard-apps-en.png", "wcard-folder-en.png", "wcard-hub-v3-en.png"],
-      "zh-SG": ["wcard-apps-zh-Hans.png", "wcard-folder-zh-Hans.png", "wcard-hub-v3-zh-Hans.png"],
-      "zh-Hant": ["wcard-apps-zh-Hant.png", "wcard-folder-zh-Hant.png", "wcard-hub-v3-zh-Hant.png"],
-      "id-ID": ["wcard-apps-id.png", "wcard-folder-id.png", "wcard-hub-v3-id.png"],
-      es: ["wcard-apps-es.png", "wcard-folder-es.png", "wcard-hub-v3-es.png"],
-      "ja-JP": ["wcard-apps-ja.png", "wcard-folder-ja.png", "wcard-hub-v3-ja.png"],
-      "ko-KR": ["wcard-apps-ko.png", "wcard-folder-ko.png", "wcard-hub-v3-ko.png"],
+      "en-US": ["wcard-apps-en.png", "wcard-folder-en.webp", "wcard-hub-v3-en.webp"],
+      "zh-SG": ["wcard-apps-zh-Hans.png", "wcard-folder-zh-Hans.webp", "wcard-hub-v3-zh-Hans.webp"],
+      "zh-Hant": ["wcard-apps-zh-Hant.png", "wcard-folder-zh-Hant.webp", "wcard-hub-v3-zh-Hant.webp"],
+      "id-ID": ["wcard-apps-id.png", "wcard-folder-id.webp", "wcard-hub-v3-id.webp"],
+      es: ["wcard-apps-es.png", "wcard-folder-es.webp", "wcard-hub-v3-es.webp"],
+      "ja-JP": ["wcard-apps-ja.png", "wcard-folder-ja.webp", "wcard-hub-v3-ja.webp"],
+      "ko-KR": ["wcard-apps-ko.png", "wcard-folder-ko.webp", "wcard-hub-v3-ko.webp"],
     } as const;
     const expectedProductPanelAssets = {
       "en-US": ["automation-templates-panel-en.png", "workbench-panel-en.png"],
@@ -170,6 +170,9 @@ describe("international v2 homepage artifact", () => {
       expect(
         Array.from(document.querySelectorAll(".nav__links a"), (anchor) => anchor.textContent?.trim()),
       ).toEqual(expectedNavLabels[locale]);
+      const navLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>(".nav__links a"));
+      expect(navLinks[0]?.getAttribute("aria-current"), `${locale} homepage nav current`).toBe("page");
+      expect(navLinks.slice(1).every((anchor) => !anchor.hasAttribute("aria-current")), `${locale} secondary nav current`).toBe(true);
       for (const assetName of expectedCardAssets[locale]) {
         expect(html).toContain(`/lightvela-intl-home/assets/${assetName}`);
         expect(existsSync(path.join(homeRoot, "assets", assetName)), `missing ${assetName}`).toBe(true);
@@ -189,6 +192,7 @@ describe("international v2 homepage artifact", () => {
     expect(document.querySelectorAll(".voice .tcard").length).toBeGreaterThanOrEqual(20);
     expect(css).toMatch(/#lightvela-intl-home \.voice\s*\{[^}]*padding:\s*96px 0 104px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.voice \.marquee__rows\s*\{[^}]*min-height:\s*420px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.voice \.tcard\s*\{[^}]*width:\s*260px;[^}]*min-height:\s*116px;/s);
   });
 
   it("activates all 18 native scene buttons by click as well as hover", () => {
@@ -213,6 +217,10 @@ describe("international v2 homepage artifact", () => {
       '<div class="scene-chat"><div class="native__thread"></div></div>',
       "</div>",
     ].join("");
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: false }),
+    });
     window.eval(readFileSync(runtimePath, "utf8"));
 
     const buttons = document.querySelectorAll<HTMLButtonElement>(".scene__sub");
@@ -416,7 +424,7 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelectorAll(".foot__brand-copy")).toHaveLength(0);
     expect(Array.from(footer?.querySelectorAll(".foot__links-grid h3") ?? [], (heading) => heading.textContent)).toEqual([
       "Product",
-      "Analysis",
+      "Compare",
       "Community",
       "Company",
       "Related products",
@@ -426,7 +434,7 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.textContent).toBe("Blog");
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/blog");
     expect(footer?.textContent).toContain("14-day free trial");
-    expect(footer?.textContent).toContain("Self-hosting analysis");
+    expect(footer?.textContent).toContain("Compare with self-hosting");
     expect(footer?.textContent).not.toContain("Comparison");
     expect(footer?.textContent).not.toContain("LightVela keeps your personal AI companion online in the cloud.");
     expect(footer?.textContent).not.toContain("Create it once, connect your channels, and let it keep learning how you work.");
@@ -485,6 +493,8 @@ describe("international v2 homepage artifact", () => {
     );
 
     expect(css).toMatch(/\.hero__line--main\s*\{[^}]*font-size:\s*50px;[^}]*font-weight:\s*500;[^}]*white-space:\s*normal;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.nav__links a\s*\{[^}]*font-weight:\s*400;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.nav__links a\[aria-current='page'\]\s*\{[^}]*font-weight:\s*600;/s);
     expect(editorialHeroRules.some((rule) => (
       rule.includes("font-family: var(--font-cover-en);")
       && rule.includes("max-width: min(1180px, calc(100vw - 120px));")
@@ -563,6 +573,62 @@ describe("international v2 homepage artifact", () => {
     }
   });
 
+  it("uses SEO-friendly homepage heading levels in every localized fragment", () => {
+    const expectedHeadings = {
+      "index-fragment.html": {
+        h1: "LightVela · AI companion in the cloud",
+        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
+      },
+      "index-fragment.en-US.html": {
+        h1: "LightVela · AI companion in the cloud",
+        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
+      },
+      "index-fragment.zh-CN.html": {
+        h1: "LightVela · 云端 AI 伙伴",
+        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，无需信用卡"],
+      },
+      "index-fragment.zh-SG.html": {
+        h1: "LightVela · 云端 AI 伙伴",
+        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，无需信用卡"],
+      },
+      "index-fragment.zh-Hant.html": {
+        h1: "LightVela · 雲端 AI 夥伴",
+        h2: ["從認識，到成為你的夥伴", "如何擁有？", "免費體驗，無需信用卡"],
+      },
+      "index-fragment.id-ID.html": {
+        h1: "LightVela · pendamping AI di cloud",
+        h2: ["Dari sapaan pertama hingga pendamping tepercaya", "Cara Memulai", "Coba gratis, tanpa kartu kredit"],
+      },
+      "index-fragment.es.html": {
+        h1: "LightVela · compañero de IA en la nube",
+        h2: ["Del primer hola a un compañero de confianza", "Cómo empezar", "Pruébalo gratis, sin tarjeta de crédito"],
+      },
+      "index-fragment.ja-JP.html": {
+        h1: "LightVela · クラウドのAIパートナー",
+        h2: ["最初の挨拶から、信頼できるパートナーへ", "始め方", "クレジットカード不要で無料体験"],
+      },
+      "index-fragment.ko-KR.html": {
+        h1: "LightVela · 클라우드의 AI 파트너",
+        h2: ["첫 인사에서 믿을 수 있는 파트너까지", "시작 방법", "신용카드 없이 무료로 체험하세요"],
+      },
+    } as const;
+
+    for (const [fragmentName, headings] of Object.entries(expectedHeadings)) {
+      const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
+      const document = new DOMParser().parseFromString(html, "text/html");
+      const h1s = Array.from(document.querySelectorAll("h1"));
+      const h2s = Array.from(document.querySelectorAll("h2"), (heading) => heading.textContent?.trim());
+
+      expect(h1s, fragmentName).toHaveLength(1);
+      expect(h1s[0]?.classList.contains("hero__title"), fragmentName).toBe(true);
+      expect(h1s[0]?.querySelector(".sr-only")?.textContent?.trim(), fragmentName).toBe(headings.h1);
+      expect(document.querySelector(".hero__eyebrow")?.tagName, fragmentName).toBe("DIV");
+      for (const heading of headings.h2) {
+        expect(h2s, `${fragmentName} h2`).toContain(heading);
+      }
+    }
+  });
+
   it("localizes owned product UI labels by locale while preserving brand names", () => {
     const expectedProductTabLabels = {
       "en-US": ["Automations", "Workbench", "DeepSeek Harness"],
@@ -615,14 +681,14 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": ["DeepSeek Harness 원클릭 배포", "바로 사용할 수 있고 클라우드에서 항상 온라인입니다.", "안전한 WebUI"],
     } as const;
     const deepSeekVisuals = {
-      "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.png?v=20260901-deepseek-ui",
-      "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.png?v=20260901-deepseek-ui",
-      "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-sg.png?v=20260901-deepseek-ui",
-      "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-hant.png?v=20260901-deepseek-ui",
-      "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.png?v=20260901-deepseek-ui",
-      es: "/lightvela-intl-home/assets/deepseek-harness-es.png?v=20260901-deepseek-ui",
-      "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.png?v=20260901-deepseek-ui",
-      "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.png?v=20260901-deepseek-ui",
+      "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.webp?v=20260903-home-mobile-fit",
+      "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260903-home-mobile-fit",
+      "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260903-home-mobile-fit",
+      "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-hant.webp?v=20260903-home-mobile-fit",
+      "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.webp?v=20260903-home-mobile-fit",
+      es: "/lightvela-intl-home/assets/deepseek-harness-es.webp?v=20260903-home-mobile-fit",
+      "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.webp?v=20260903-home-mobile-fit",
+      "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.webp?v=20260903-home-mobile-fit",
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -630,9 +696,11 @@ describe("international v2 homepage artifact", () => {
       for (const copy of deepSeekCopy[locale]) expect(html).toContain(copy);
       const document = new DOMParser().parseFromString(html, "text/html");
       expect(document.querySelectorAll("#play-4 .play__list li")).toHaveLength(4);
-      expect(document.querySelector<HTMLImageElement>("#play-4 .play__screen--harness .harness-visual-img")?.getAttribute("src")).toBe(
-        deepSeekVisuals[locale],
-      );
+      const harnessImage = document.querySelector<HTMLImageElement>("#play-4 .play__screen--harness .harness-visual-img");
+      expect(harnessImage?.getAttribute("src")).toBe(deepSeekVisuals[locale]);
+      expect(harnessImage?.getAttribute("loading")).toBe("lazy");
+      expect(harnessImage?.hasAttribute("fetchpriority")).toBe(false);
+      expect(harnessImage?.getAttribute("decoding")).toBe("async");
     }
 
     const simplifiedHtml = readFileSync(path.join(homeRoot, "index-fragment.zh-SG.html"), "utf8");
@@ -668,5 +736,131 @@ describe("international v2 homepage artifact", () => {
     for (const scriptName of scriptNames) {
       expect(existsSync(path.join(homeRoot, scriptName)), `missing ${scriptName}`).toBe(true);
     }
+  });
+
+  it("keeps homepage image payloads and loading hints performance-friendly", () => {
+    const fragments = ["index-fragment.html", ...publishedInternationalLocales.map((locale) => `index-fragment.${locale}.html`)];
+    const optimizedAssetNames = [
+      "mock-grocery-receipt",
+      "telegram-chat-bg",
+      "whatsapp-chat-bg",
+      "wcard-folder",
+      "wcard-hub-v3",
+    ];
+    const css = readFileSync(stylesheetPath, "utf8");
+
+    for (const assetName of optimizedAssetNames) {
+      expect(css, `${assetName} should not be referenced as png in css`).not.toContain(`${assetName}.png`);
+      expect(css, `${assetName} should use webp in css when referenced there`).not.toMatch(
+        new RegExp(`${assetName}[^"')\\s]*\\.png`),
+      );
+    }
+
+    for (const fragmentName of fragments) {
+      const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
+      const document = new DOMParser().parseFromString(html, "text/html");
+      const images = Array.from(document.querySelectorAll<HTMLImageElement>("img"));
+
+      expect(images.length, `${fragmentName} should render homepage imagery`).toBeGreaterThan(20);
+
+      for (const image of images) {
+        expect(image.getAttribute("decoding"), `${fragmentName} ${image.getAttribute("src")}`).toBe("async");
+      }
+
+      const brandLogo = document.querySelector<HTMLImageElement>(".nav__brand img");
+      expect(brandLogo?.getAttribute("loading"), `${fragmentName} logo loading`).toBe("eager");
+      expect(brandLogo?.getAttribute("fetchpriority"), `${fragmentName} logo priority`).toBe("high");
+
+      const belowFoldImages = document.querySelectorAll<HTMLImageElement>(
+        ".wcard img, .scenes img, .scene img, .plays img, .harness img, .voice img, .foot__brand img",
+      );
+      expect(belowFoldImages.length, `${fragmentName} below-fold images`).toBeGreaterThan(10);
+      for (const image of Array.from(belowFoldImages)) {
+        expect(image.getAttribute("loading"), `${fragmentName} ${image.getAttribute("src")}`).toBe("lazy");
+      }
+
+      const harnessImage = document.querySelector<HTMLImageElement>(".harness-visual-img");
+      expect(harnessImage?.getAttribute("loading"), `${fragmentName} harness loading`).toBe("lazy");
+      expect(harnessImage?.hasAttribute("fetchpriority"), `${fragmentName} harness priority`).toBe(false);
+
+      for (const assetName of optimizedAssetNames) {
+        expect(html, `${fragmentName} should not reference unoptimized ${assetName} png`).not.toMatch(
+          new RegExp(`${assetName}[^"']*\\.png`),
+        );
+      }
+    }
+  });
+
+  it("keeps the international homepage compact and touch-friendly on phones", () => {
+    const css = readFileSync(stylesheetPath, "utf8");
+    const runtime = readFileSync(runtimePath, "utf8");
+
+    expect(css).toContain("@media (max-width: 640px)");
+    expect(runtime).toContain("window.matchMedia('(max-width: 640px), (prefers-reduced-motion: reduce)').matches");
+    expect(runtime).toContain("if (!shouldKeepNaturalText && main) next = splitChars(main, next);");
+    expect(runtime).toContain("document.querySelectorAll('.about__cards .wcard')");
+    expect(runtime).toContain("var phoneMedia = window.matchMedia('(max-width: 640px)');");
+    expect(runtime).toContain("return phoneMedia.matches;");
+    expect(runtime).toContain("strip.addEventListener('scroll', function () {");
+    expect(runtime).toContain("card.classList.toggle('is-mobile-active', i === index);");
+    expect(runtime).toContain("btn.addEventListener('click', activate);");
+    expect(runtime).toContain("if (!isPhone()) return;");
+    expect(runtime).toContain("touchRegion.addEventListener('touchstart', function (event) {");
+    expect(runtime).toContain("var nextIndex = dx < 0 ? active + 1 : active - 1;");
+    expect(runtime).toContain("stage.addEventListener('touchstart', function (event) {");
+    expect(runtime).toContain("var next = dx < 0 ? current + 1 : current - 1;");
+    expect(css).toMatch(/#lightvela-intl-home \.hero\s*\{[^}]*padding:\s*104px 16px 0;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.hero__tabs label\s*\{[^}]*min-height:\s*38px;[^}]*font-size:\s*12px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.hero__tabs label img\s*\{[^}]*width:\s*15px;[^}]*height:\s*15px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.hero__line--main\s*\{[^}]*font-size:\s*clamp\(28px, 8\.4vw, 34px\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.hero__line--dynamic\s*\{[^}]*font-size:\s*clamp\(18px, 5\.2vw, 22px\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.hero__frame\s*\{[^}]*min-width:\s*0;[^}]*border-radius:\s*18px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.about,\s*#lightvela-intl-home \.scenes,\s*#lightvela-intl-home \.deploy\s*\{[^}]*padding-left:\s*16px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.about__head \.k,\s*#lightvela-intl-home \.scenes__title,\s*#lightvela-intl-home \.deploy__lead\s*\{[^}]*font-size:\s*clamp\(22px, 6vw, 28px\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.about__head::after\s*\{[^}]*content:\s*'Swipe left or right to switch cards';/s);
+    expect(css).toMatch(
+      /#lightvela-intl-home \.soul-strip\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*height:\s*auto;/s,
+    );
+    expect(css).toMatch(/#lightvela-intl-home \.soul-strip::before,\s*#lightvela-intl-home \.soul-strip::after\s*\{[^}]*display:\s*none;/s);
+    expect(css).toMatch(
+      /#lightvela-intl-home \.soul-strip__icons,\s*#lightvela-intl-home \.soul-strip__icons--soul\s*\{[^}]*display:\s*none;/s,
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.soul-strip__half > \.soul-strip__cap:not\(\.soul-strip__cap--secondary\) \.soul-strip__icons,\s*#lightvela-intl-home \.soul-strip__half > \.soul-strip__cap:not\(\.soul-strip__cap--secondary\) \.soul-strip__icons--soul\s*\{[^}]*display:\s*inline-flex;/s,
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.soul-strip__half > \.soul-strip__cap:not\(\.soul-strip__cap--secondary\) > i,\s*#lightvela-intl-home \.soul-strip__half > \.soul-strip__cap:not\(\.soul-strip__cap--secondary\) > b\s*\{[^}]*display:\s*none;/s,
+    );
+    expect(css).toMatch(/#lightvela-intl-home \.about__cards\s*\{[^}]*display:\s*flex;[^}]*scroll-snap-type:\s*x mandatory;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.wcard\s*\{[^}]*flex:\s*0 0 min\(72vw, 282px\);[^}]*scroll-snap-align:\s*center;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.wcard__thumb\s*\{[^}]*display:\s*block;[^}]*height:\s*86px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.wcard__list\s*\{[^}]*max-height:\s*0;[^}]*opacity:\s*0;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.wcard\.is-mobile-active \.wcard__list,\s*#lightvela-intl-home \.wcard:active \.wcard__list\s*\{[^}]*max-height:\s*140px;[^}]*opacity:\s*1;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.hero__frame \.dc__rail,\s*#lightvela-intl-home \.hero__frame \.dc__side,\s*#lightvela-intl-home \.hero__frame \.dc__members\s*\{[^}]*display:\s*none;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.scenes__tabs\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.scenes__tabs label\s*\{[^}]*min-height:\s*36px;[^}]*font-size:\s*10\.5px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.plays__tabs\s*\{[^}]*justify-content:\s*flex-start;[^}]*overflow-x:\s*auto;/s);
+    expect(css).not.toContain("Swipe left or right to switch scenes");
+    expect(css).not.toContain("左右滑动切换场景");
+    expect(css).toMatch(/#lightvela-intl-home \.scene__subs\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.scene__sub\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*none;[^}]*min-height:\s*40px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.scene__sub b::before\s*\{[^}]*display:\s*none;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.scene__chats\s*\{[^}]*display:\s*block;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.scene-chat\s*\{[^}]*display:\s*flex;[^}]*aspect-ratio:\s*auto;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.track__badge\s*\{[^}]*width:\s*50px;[^}]*height:\s*50px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.track__ic\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.track__body h3\s*\{[^}]*font-size:\s*15\.5px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.play\s*\{[^}]*padding:\s*20px 14px;[^}]*border-radius:\s*12px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.play__screen\s*\{[^}]*min-height:\s*120px;[^}]*max-height:\s*220px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.harness-visual-img\s*\{[^}]*min-height:\s*132px;[^}]*max-height:\s*196px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.voice\s*\{[^}]*padding:\s*56px 0 64px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.hero__line--main \.hero__char,\s*#lightvela-intl-home \.hero__line--dynamic \.hero__char,\s*#lightvela-intl-home \.hero__line--dynamic \.hero__rotator-wrap\s*\{[^}]*animation:\s*none;[^}]*filter:\s*none;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.hero__line--main \.hero__char,\s*#lightvela-intl-home \.hero__line--dynamic \.hero__char\s*\{[^}]*display:\s*inline;[^}]*white-space:\s*normal;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.cta__grid > div:first-child\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) max-content;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.cta__title\s*\{[^}]*font-size:\s*clamp\(24px, 6\.6vw, 30px\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.cta__acts\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*end;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot__title\s*\{[^}]*font-size:\s*clamp\(25px, 8\.4vw, 36px\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot__links-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot__links-grid > div:nth-child\(2\) a\s*\{[^}]*white-space:\s*normal;/s);
   });
 });
