@@ -1,3 +1,25 @@
+# 已配置模型 Provider 分组切换 Implementation Plan
+
+**Status:** 已按 TDD 完成实现、双区域构建与验收，等待用户确认提交；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅调整本地模型配置面板的已配置模型展示和切换交互；不修改 SDK、Hermes 协议、凭据、Provider 目录或后端接口。
+
+**Goal:** 将已配置模型按 Provider 分组，用户选择任意已保存模型后可直接“设为主模型”，无需重新添加 Provider 或 API Key。
+
+**Design:** `openspec/changes/2026-09-03-configured-model-provider-switch-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-03-configured-model-provider-switch-implementation-plan.md`
+
+- [x] **Developer｜测试先行实现 Provider 分组、展开与组内单选，复用 `assign(..., "primary")` 完成跨 Provider 主模型切换，保留备用/删除操作，并完成模型配置回归、i18n、前端门禁和 CN/global 页面 smoke。**
+
+**Acceptance:** 当前 Provider 默认展开并显示“当前生效”；每组可单选已配置模型并用“设为主模型”切换；操作只触发 `assign`，不重新添加、不探测、不要求 API Key；备用、删除、空态和错误态保持可用。
+
+**Out of scope:** SDK 面板、Hermes 配置格式、凭据存储、Provider/模型目录、路由策略、后端接口及发布。
+
+**Verification:** 新增 2 个用例先按预期 RED，证明旧页面缺少 Provider 分组与 radio；实现后面板 31/31、模型配置目录 127/127（另 1 条按环境跳过）GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；CN/global 构建分别完成 94/94、592/592 静态页。global 本地静态页在 1280px 与 390px 无横向溢出、无新增控制台错误；本地账号没有 Agent，带模型数据的交互由 CN/global 组件测试覆盖。`git diff --check` 通过。
+
+---
+
 # 高级设置关闭审批状态提示移除 Implementation Plan
 
 **Status:** 已实现并通过 RED/GREEN、多语言、前端门禁与本地组件页面验收，准备提交。

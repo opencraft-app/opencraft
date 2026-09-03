@@ -58,6 +58,18 @@ const fallbackModel: HermesConfiguredModel = {
   keyEnv: "HERMES_CUSTOM_LIGHTVELA_BETA_API_KEY",
 };
 
+const secondBetaModel: HermesConfiguredModel = {
+  ...fallbackModel,
+  id: "model-beta-2",
+  routeBaseUrl: "https://beta.example.com/v1/",
+};
+
+const secondAlphaModel: HermesConfiguredModel = {
+  ...primaryModel,
+  id: "model-alpha-2",
+  routeBaseUrl: "HTTPS://ALPHA.EXAMPLE.COM/v1/",
+};
+
 const idleModel: HermesConfiguredModel = {
   id: "model-idle",
   providerKey: "lightvela-gamma",
@@ -281,6 +293,58 @@ describe("AgentModelConfigPanel", () => {
     vi.clearAllMocks();
   });
 
+  it("groups configured models by Provider and switches the primary model without re-adding credentials", async () => {
+    const remote = createRemote({
+      primary: primaryModel,
+      fallbacks: [fallbackModel],
+      configuredModels: [primaryModel, fallbackModel, secondBetaModel],
+    });
+    renderPanel(remote);
+
+    const alphaTrigger = await screen.findByRole("button", { name: /Alpha API/ });
+    const betaTrigger = screen.getByRole("button", { name: /Beta API/ });
+    expect(alphaTrigger).toHaveAttribute("aria-expanded", "true");
+    expect(alphaTrigger.closest("li")).toHaveTextContent("当前生效");
+    expect(betaTrigger).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(betaTrigger);
+    const betaGroup = screen.getByRole("group", { name: "Beta API 已配置模型" });
+    expect(within(betaGroup).getByRole("radio", { name: "model-fallback" })).toBeChecked();
+    await userEvent.click(within(betaGroup).getByRole("radio", { name: "model-beta-2" }));
+    await userEvent.click(within(betaGroup).getByRole("button", { name: "设为主模型" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /Beta API/ }).closest("li")).toHaveTextContent("当前生效"));
+    expect(within(screen.getByRole("group", { name: "Beta API 已配置模型" })).getByText("model-beta-2").closest("li")).toHaveTextContent("主模型");
+    expect(remote.actions.filter((action) => action.type === "assign")).toEqual([
+      expect.objectContaining({
+        type: "assign",
+        providerKey: secondBetaModel.providerKey,
+        modelId: secondBetaModel.id,
+        baseUrl: secondBetaModel.baseUrl,
+        routeBaseUrl: secondBetaModel.routeBaseUrl,
+        purpose: "primary",
+      }),
+    ]);
+    expect(remote.actions.some((action) => ["add", "probe", "connectivityProbe"].includes(action.type))).toBe(false);
+  });
+
+  it("keeps models with the same Provider identity in one radio group", async () => {
+    const remote = createRemote({
+      primary: primaryModel,
+      fallbacks: [],
+      configuredModels: [primaryModel, secondAlphaModel],
+    });
+    renderPanel(remote, true);
+
+    expect(await screen.findAllByRole("button", { name: /Alpha API/ })).toHaveLength(1);
+    const alphaGroup = screen.getByRole("group", { name: "Alpha API 已配置模型" });
+    expect(within(alphaGroup).getByRole("radio", { name: "model-primary" })).toBeChecked();
+    expect(within(alphaGroup).getByRole("button", { name: "设为主模型" })).toBeDisabled();
+
+    await userEvent.click(within(alphaGroup).getByRole("radio", { name: "model-alpha-2" }));
+    expect(within(alphaGroup).getByRole("button", { name: "设为主模型" })).toBeEnabled();
+  });
+
   it("renders three role-aware actions with custom disabled-state tooltips", async () => {
     const remote = createRemote({
       primary: primaryModel,
@@ -294,17 +358,15 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.getByText("正在读取模型配置")).toBeInTheDocument();
     expect(await screen.findByText("model-primary")).toBeInTheDocument();
 
+    const alphaGroup = screen.getByRole("group", { name: "Alpha API 已配置模型" });
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
-    const fallbackRow = screen.getByText("model-fallback").closest("li") as HTMLElement;
     expect(primaryRow).not.toHaveClass("bg-black/[0.015]");
     expect(within(primaryRow).getByText("主模型")).toBeInTheDocument();
-    expect(within(fallbackRow).getByText("备用模型")).toBeInTheDocument();
-    expect(within(primaryRow).getAllByRole("button")).toHaveLength(3);
-    expect(within(fallbackRow).getAllByRole("button")).toHaveLength(3);
-    expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
+    expect(within(primaryRow).getAllByRole("button")).toHaveLength(2);
+    expect(within(alphaGroup).getByRole("button", { name: "设为主模型" })).toBeDisabled();
     expect(within(primaryRow).getByRole("button", { name: "设为备用模型" })).toBeDisabled();
     expect(within(primaryRow).getByRole("button", { name: "删除" })).toBeDisabled();
-    const primaryTooltipTrigger = within(primaryRow).getByRole("group", { name: "当前模型已经是主模型" });
+    const primaryTooltipTrigger = within(alphaGroup).getByRole("group", { name: "当前模型已经是主模型" });
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     await userEvent.hover(primaryTooltipTrigger);
     const primaryTooltip = await screen.findByRole("tooltip");
@@ -324,6 +386,10 @@ describe("AgentModelConfigPanel", () => {
 
     expect(within(primaryRow).getByRole("group", { name: "主模型不能同时设为备用模型" })).toBeInTheDocument();
     expect(within(primaryRow).getByRole("group", { name: "无法删除主模型，请先切换至其他模型" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Beta API/ }));
+    const fallbackRow = screen.getByText("model-fallback").closest("li") as HTMLElement;
+    expect(within(fallbackRow).getByText("备用模型")).toBeInTheDocument();
+    expect(within(fallbackRow).getAllByRole("button")).toHaveLength(2);
     expect(within(fallbackRow).getByRole("button", { name: "取消备用" })).toBeEnabled();
     expect(primaryRow.querySelector("[title]")).toBeNull();
     expect(screen.queryByRole("button", { name: /上移|下移/ })).not.toBeInTheDocument();
@@ -341,7 +407,7 @@ describe("AgentModelConfigPanel", () => {
     expect(autoRow).toBeInTheDocument();
     expect(within(autoRow).queryByText("auto")).not.toBeInTheDocument();
 
-    await userEvent.click(within(autoRow).getByRole("button", { name: "设为主模型" }));
+    await userEvent.click(screen.getByRole("button", { name: "设为主模型" }));
     expect(remote.actions).not.toContainEqual(expect.objectContaining({ type: "assign" }));
   });
 
@@ -380,7 +446,7 @@ describe("AgentModelConfigPanel", () => {
     renderPanel(remote);
 
     const importedRow = (await screen.findByText("manual-model")).closest("li") as HTMLElement;
-    expect(within(importedRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "设为主模型" })).toBeEnabled();
     expect(within(importedRow).getByRole("button", { name: "设为备用模型" })).toBeEnabled();
     expect(within(importedRow).getByRole("button", { name: "删除" })).toBeEnabled();
     expect(within(importedRow).queryByRole("group", { name: /Hermes 中管理/ })).not.toBeInTheDocument();
@@ -407,6 +473,7 @@ describe("AgentModelConfigPanel", () => {
     const configuredSection = screen.getByRole("heading", { name: "已配置模型" }).closest("section");
     expect(configuredSection).toHaveClass("bg-white", "shadow-[0_10px_30px_rgba(15,23,42,0.04)]");
     expect(configuredSection?.parentElement).toHaveClass("pb-12", "md:pb-16");
+    await userEvent.click(screen.getByRole("button", { name: /Beta API/ }));
     expect(within(configuredSection as HTMLElement).getByText("model-fallback")).toBeInTheDocument();
 
     const tabList = screen.getByRole("tablist", { name: "模型配置方式" });
@@ -913,15 +980,20 @@ describe("AgentModelConfigPanel", () => {
     renderPanel(remote);
     await screen.findByText("model-primary");
 
-    const idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
+    await userEvent.click(screen.getByRole("button", { name: /Gamma API/ }));
+    let idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
     await userEvent.click(within(idleRow).getByRole("button", { name: "设为备用模型" }));
     await waitFor(() => expect(within(idleRow).getByText("备用模型")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: /Beta API/ }));
     expect(screen.getByText("model-fallback").closest("li")).toHaveTextContent("备用模型");
 
+    await userEvent.click(screen.getByRole("button", { name: /Gamma API/ }));
+    idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
     await userEvent.click(within(idleRow).getByRole("button", { name: "取消备用" }));
     await waitFor(() => expect(within(idleRow).getByText("未启用")).toBeInTheDocument());
     expect(remote.actions).toContainEqual({ type: "assign", providerKey: idleModel.providerKey, modelId: idleModel.id, baseUrl: idleModel.baseUrl, routeBaseUrl: idleModel.baseUrl, purpose: "fallback" });
     expect(remote.actions).toContainEqual({ type: "removeFallback", providerKey: idleModel.providerKey, modelId: idleModel.id, baseUrl: idleModel.baseUrl, routeBaseUrl: idleModel.baseUrl });
+    await userEvent.click(screen.getByRole("button", { name: /Beta API/ }));
     expect(screen.getByText("model-fallback").closest("li")).toHaveTextContent("备用模型");
   });
 
@@ -934,6 +1006,7 @@ describe("AgentModelConfigPanel", () => {
     renderPanel(remote);
     await screen.findByText("model-primary");
 
+    await userEvent.click(screen.getByRole("button", { name: /Gamma API/ }));
     const idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
     await userEvent.click(within(idleRow).getByRole("button", { name: "删除" }));
     const dialog = screen.getByRole("dialog", { name: "删除模型" });

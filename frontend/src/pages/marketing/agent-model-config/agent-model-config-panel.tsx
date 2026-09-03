@@ -3,6 +3,7 @@
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
   CircleHelp,
   ExternalLink,
   Eye,
@@ -55,6 +56,11 @@ import {
 type ProviderCategory = "coding_plan" | "api" | "custom";
 type ConfigurePurpose = "primary" | "fallback" | "idle";
 type ModelOption = { id: string; name: string; source: "live" | "catalog" };
+type ConfiguredProviderGroup = {
+  key: string;
+  providerName: string;
+  models: HermesConfiguredModel[];
+};
 
 const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
   { id: "coding_plan", label: "模型 Coding Plan" },
@@ -131,6 +137,28 @@ function sameModel(
   return !!left && !!right && getHermesModelIdentity(left) === getHermesModelIdentity(right);
 }
 
+function getConfiguredProviderGroupKey(model: HermesConfiguredModel) {
+  const routeBaseUrl = (model.routeBaseUrl ?? model.baseUrl)
+    .trim()
+    .replace(/\/+$/, "")
+    .toLowerCase();
+  return JSON.stringify([model.providerKey.trim().toLowerCase(), routeBaseUrl]);
+}
+
+function groupConfiguredModelsByProvider(models: HermesConfiguredModel[]) {
+  const groups = new Map<string, ConfiguredProviderGroup>();
+  for (const model of models) {
+    const key = getConfiguredProviderGroupKey(model);
+    const group = groups.get(key);
+    if (group) {
+      group.models.push(model);
+    } else {
+      groups.set(key, { key, providerName: model.providerName, models: [model] });
+    }
+  }
+  return [...groups.values()];
+}
+
 function displayConfiguredModelId(modelId: string) {
   return !modelId.trim() || ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? "Auto" : modelId;
 }
@@ -185,6 +213,8 @@ export function AgentModelConfigPanel({
   const [purpose, setPurpose] = useState<ConfigurePurpose>("primary");
   const [connectionResult, setConnectionResult] = useState<HermesConnectionProbeResult | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<HermesConfiguredModel | null>(null);
+  const [expandedConfiguredProviderKey, setExpandedConfiguredProviderKey] = useState<string | null | undefined>(undefined);
+  const [selectedConfiguredModelByProvider, setSelectedConfiguredModelByProvider] = useState<Record<string, string>>({});
   const probeUiRevision = useRef(0);
 
   const providerOptions = useMemo(
@@ -271,6 +301,28 @@ export function AgentModelConfigPanel({
   const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
+  const snapshot = controller.snapshot ?? { primary: null, fallbacks: [], configuredModels: [] };
+  const configuredModels = useMemo(
+    () => (controller.snapshot?.configuredModels ?? []).filter((model) => model.id.trim() && model.requiresSetup !== true),
+    [controller.snapshot?.configuredModels],
+  );
+  const configuredProviderGroups = useMemo(
+    () => groupConfiguredModelsByProvider(configuredModels),
+    [configuredModels],
+  );
+  const primaryConfiguredProviderKey = snapshot.primary
+    ? getConfiguredProviderGroupKey(snapshot.primary)
+    : null;
+  const defaultExpandedConfiguredProviderKey = configuredProviderGroups.some(
+    (group) => group.key === primaryConfiguredProviderKey,
+  )
+    ? primaryConfiguredProviderKey
+    : configuredProviderGroups[0]?.key ?? null;
+  const effectiveExpandedConfiguredProviderKey = expandedConfiguredProviderKey === undefined
+    || (expandedConfiguredProviderKey !== null
+      && !configuredProviderGroups.some((group) => group.key === expandedConfiguredProviderKey))
+    ? defaultExpandedConfiguredProviderKey
+    : expandedConfiguredProviderKey;
   const pageHeader = (
     <AgentSectionHeader
       title={t("模型")}
@@ -422,9 +474,6 @@ export function AgentModelConfigPanel({
     );
   }
 
-  const snapshot = controller.snapshot ?? { primary: null, fallbacks: [], configuredModels: [] };
-  const configuredModels = snapshot.configuredModels.filter((model) => model.id.trim() && model.requiresSetup !== true);
-
   return (
     <div className="space-y-5 pb-12 md:pb-16" aria-busy={busy || controller.loading}>
       {pageHeader}
@@ -462,71 +511,139 @@ export function AgentModelConfigPanel({
           </div>
         ) : (
           <ul className="divide-y divide-black/[0.06]">
-            {configuredModels.map((model) => {
-              const primary = sameModel(snapshot.primary, model);
-              const fallback = snapshot.fallbacks.some((candidate) => sameModel(candidate, model));
-              const requiresSetup = model.requiresSetup === true;
-              const role = primary ? "primary" : fallback ? "fallback" : "idle";
+            {configuredProviderGroups.map((group, groupIndex) => {
+              const expanded = effectiveExpandedConfiguredProviderKey === group.key;
+              const groupIsPrimary = group.models.some((model) => sameModel(snapshot.primary, model));
+              const retainedSelectedModel = group.models.find(
+                (model) => getHermesModelIdentity(model) === selectedConfiguredModelByProvider[group.key],
+              );
+              const selectedConfiguredModel = retainedSelectedModel
+                ?? group.models.find((model) => sameModel(snapshot.primary, model))
+                ?? group.models[0]
+                ?? null;
+              const selectedIdentity = selectedConfiguredModel
+                ? getHermesModelIdentity(selectedConfiguredModel)
+                : null;
+              const selectedIsPrimary = sameModel(snapshot.primary, selectedConfiguredModel);
+              const groupPanelId = `configured-provider-${groupIndex}`;
               return (
-                <li
-                  key={getHermesModelIdentity(model)}
-                  className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="break-all text-sm font-semibold text-black/85">{displayConfiguredModelId(model.id)}</span>
-                      <Badge variant={primary ? "success" : fallback ? "warning" : "neutral"}>
-                        {role === "primary" ? t("主模型") : role === "fallback" ? t("备用模型") : t("未启用")}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 break-all text-xs text-black/45">{model.providerName}</p>
-                  </div>
+                <li key={group.key}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-black/[0.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2F6BFF]"
+                    aria-expanded={expanded}
+                    aria-controls={groupPanelId}
+                    onClick={() => setExpandedConfiguredProviderKey(expanded ? null : group.key)}
+                  >
+                    <ChevronDown
+                      className={cn("size-4 shrink-0 text-black/35", !expanded && "-rotate-90")}
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-black/85">
+                      {group.providerName}
+                    </span>
+                    {groupIsPrimary ? <Badge variant="success">{t("当前生效")}</Badge> : null}
+                    <span className="shrink-0 text-xs text-black/35">{group.models.length}</span>
+                  </button>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("当前模型已经是主模型") : undefined}>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={primary ? "secondary" : "outline"}
-                        className="rounded-md"
-                        disabled={busy || primary || requiresSetup}
-                        onClick={() => void controller.assign(model, "primary")}
-                      >
-                        <Check className="size-3.5" aria-hidden="true" />
-                        {t("设为主模型")}
-                      </Button>
-                    </ModelActionTooltip>
-                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("主模型不能同时设为备用模型") : undefined}>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={fallback ? "secondary" : "outline"}
-                        className="rounded-md"
-                        disabled={busy || primary || requiresSetup}
-                        onClick={() => void (fallback
-                          ? controller.removeFallback(model)
-                          : controller.assign(model, "fallback"))}
-                      >
-                        {fallback ? t("取消备用") : t("设为备用模型")}
-                      </Button>
-                    </ModelActionTooltip>
-                    <ModelActionTooltip content={requiresSetup ? t("请先获取可用模型") : primary ? t("无法删除主模型，请先切换至其他模型") : undefined}>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="rounded-md"
-                        disabled={busy || primary || requiresSetup}
-                        onClick={() => {
-                          controller.clearOperationError();
-                          setDeleteTarget(model);
-                        }}
-                      >
-                        <Trash2 className="size-3.5" aria-hidden="true" />
-                        {t("删除")}
-                      </Button>
-                    </ModelActionTooltip>
-                  </div>
+                  {expanded ? (
+                    <div
+                      id={groupPanelId}
+                      role="group"
+                      aria-label={`${group.providerName} ${t("已配置模型")}`}
+                      className="border-t border-black/[0.06] bg-black/[0.015] px-4 py-4 sm:px-5"
+                    >
+                      <ul className="overflow-hidden rounded-md border border-black/[0.06] bg-white divide-y divide-black/[0.06]">
+                        {group.models.map((model) => {
+                          const primary = sameModel(snapshot.primary, model);
+                          const fallback = snapshot.fallbacks.some((candidate) => sameModel(candidate, model));
+                          const role = primary ? "primary" : fallback ? "fallback" : "idle";
+                          const modelIdentity = getHermesModelIdentity(model);
+                          return (
+                            <li
+                              key={modelIdentity}
+                              className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                                <input
+                                  type="radio"
+                                  name={`configured-model-${groupIndex}`}
+                                  aria-label={displayConfiguredModelId(model.id)}
+                                  value={modelIdentity}
+                                  checked={selectedIdentity === modelIdentity}
+                                  disabled={busy}
+                                  onChange={() => setSelectedConfiguredModelByProvider((current) => ({
+                                    ...current,
+                                    [group.key]: modelIdentity,
+                                  }))}
+                                  className="size-4 shrink-0 accent-[#2F6BFF]"
+                                />
+                                <span className="min-w-0">
+                                  <span className="flex flex-wrap items-center gap-2">
+                                    <span className="break-all text-sm font-semibold text-black/85">
+                                      {displayConfiguredModelId(model.id)}
+                                    </span>
+                                    <Badge variant={primary ? "success" : fallback ? "warning" : "neutral"}>
+                                      {role === "primary" ? t("主模型") : role === "fallback" ? t("备用模型") : t("未启用")}
+                                    </Badge>
+                                  </span>
+                                </span>
+                              </label>
+
+                              <div className="flex flex-wrap items-center gap-2 pl-7 sm:pl-0">
+                                <ModelActionTooltip content={primary ? t("主模型不能同时设为备用模型") : undefined}>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={fallback ? "secondary" : "outline"}
+                                    className="rounded-md"
+                                    disabled={busy || primary}
+                                    onClick={() => void (fallback
+                                      ? controller.removeFallback(model)
+                                      : controller.assign(model, "fallback"))}
+                                  >
+                                    {fallback ? t("取消备用") : t("设为备用模型")}
+                                  </Button>
+                                </ModelActionTooltip>
+                                <ModelActionTooltip content={primary ? t("无法删除主模型，请先切换至其他模型") : undefined}>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="rounded-md"
+                                    disabled={busy || primary}
+                                    onClick={() => {
+                                      controller.clearOperationError();
+                                      setDeleteTarget(model);
+                                    }}
+                                  >
+                                    <Trash2 className="size-3.5" aria-hidden="true" />
+                                    {t("删除")}
+                                  </Button>
+                                </ModelActionTooltip>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
+                      <div className="mt-4 flex justify-center">
+                        <ModelActionTooltip content={selectedIsPrimary ? t("当前模型已经是主模型") : undefined}>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={selectedIsPrimary ? "secondary" : "outline"}
+                            className="min-w-32 rounded-md"
+                            disabled={busy || !selectedConfiguredModel || selectedConfiguredModel.requiresSetup === true || selectedIsPrimary}
+                            onClick={() => selectedConfiguredModel && void controller.assign(selectedConfiguredModel, "primary")}
+                          >
+                            <Check className="size-3.5" aria-hidden="true" />
+                            {t("设为主模型")}
+                          </Button>
+                        </ModelActionTooltip>
+                      </div>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
