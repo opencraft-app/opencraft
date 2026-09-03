@@ -14,7 +14,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X, Zap } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, ArrowRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -38,7 +38,12 @@ import { getScenarioCronJobPresentation, getScenarioRunPresentation } from "./sc
 // 场景任务入口暂时下线，保留依赖便于后续恢复。
 // import { ScenarioTaskGrid } from "./scenario-tasks/ScenarioTaskGrid";
 // import { getScenarioTaskPack, SCENARIO_TASK_PACKS, type ScenarioTaskId, type ScenarioTaskPack } from "./scenario-tasks/scenario-packs";
-import { getScenarioTaskPack, type ScenarioTaskPack } from "./scenario-tasks/scenario-packs";
+import {
+  SCENARIO_MULTISELECT_SEPARATOR,
+  getOverviewScenarioTaskPacks,
+  getScenarioTaskPack,
+  type ScenarioTaskPack,
+} from "./scenario-tasks/scenario-packs";
 // import { buildScenarioTaskDraft, isScenarioRecurringJobName, type ScenarioTaskDraft } from "./scenario-tasks/scenario-task-builder";
 import { buildScenarioTaskDraft, type ScenarioTaskDraft } from "./scenario-tasks/scenario-task-builder";
 import {
@@ -249,17 +254,18 @@ function ErrorToast({ message, onClose, tone = "error" }: { message: string; onC
 
 function ScenarioReminderBanner({
   notice,
+  pack,
   onDismiss,
   onViewCreated,
   onEnable,
 }: {
   notice: ScenarioReminderNotice;
+  pack: ScenarioTaskPack;
   onDismiss: () => void;
   onViewCreated: () => void;
   onEnable: () => void;
 }) {
   const t = useT();
-  const pack = getScenarioTaskPack(notice.draft.scenarioId);
   const isPreview = notice.kind === "preview";
 
   return (
@@ -306,6 +312,95 @@ function ScenarioReminderBanner({
         >
           <X className="h-4 w-4" />
         </button>
+      </div>
+    </section>
+  );
+}
+
+const AUTOMATION_TEMPLATE_PAGE_SIZE = 6;
+
+type AutomationScenarioTemplatesSectionProps = {
+  templates: readonly AutomationTemplate[];
+  onEnable: (template: AutomationTemplate) => void;
+};
+
+export function AutomationScenarioTemplatesSection({
+  templates,
+  onEnable,
+}: AutomationScenarioTemplatesSectionProps) {
+  const t = useT();
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(templates.length / AUTOMATION_TEMPLATE_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const visibleTemplates = templates.slice(
+    safePage * AUTOMATION_TEMPLATE_PAGE_SIZE,
+    safePage * AUTOMATION_TEMPLATE_PAGE_SIZE + AUTOMATION_TEMPLATE_PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    if (page >= pageCount) setPage(pageCount - 1);
+  }, [page, pageCount]);
+
+  return (
+    <section
+      className="rounded-xl border border-black/[0.06] bg-white p-4 shadow-[0_4px_24px_rgba(0,0,0,0.03),0_1px_2px_rgba(0,0,0,0.02)]"
+      aria-labelledby="automation-scenario-templates-title"
+    >
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h3 id="automation-scenario-templates-title" className="text-sm font-semibold text-black/85">
+            {t("任务模板")}
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-black/45">{t("从常用场景开始，确认内容后启用。")}</p>
+        </div>
+        {pageCount > 1 && (
+          <div className="inline-flex items-center gap-2 text-xs text-black/45">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+              disabled={safePage === 0}
+              className="rounded-md border border-black/[0.08] bg-white px-2 py-1 font-medium text-black/60 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:text-black/25"
+            >
+              {t("上一页")}
+            </button>
+            <span className="tabular-nums">{safePage + 1} / {pageCount}</span>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+              disabled={safePage >= pageCount - 1}
+              className="rounded-md border border-black/[0.08] bg-white px-2 py-1 font-medium text-black/60 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:text-black/25"
+            >
+              {t("下一页")}
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="mt-3 grid min-h-[208px] grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {visibleTemplates.map((template) => {
+          const tone = AUTOMATION_TEMPLATE_TONES[template.id as keyof typeof AUTOMATION_TEMPLATE_TONES];
+          const Icon = tone?.icon ?? CalendarDays;
+          return (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => onEnable(template)}
+              aria-label={t("启用{{name}}", { name: template.name })}
+              className="group flex min-h-[96px] items-start gap-3 rounded-lg border border-black/[0.06] bg-black/[0.015] p-3 text-left transition hover:border-black/[0.12] hover:bg-black/[0.035]"
+            >
+              <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] ${tone?.iconClass ?? "bg-white text-black/55"}`}>
+                <Icon className="h-[18px] w-[18px]" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-black/82">{template.name}</span>
+                <span className="mt-1 block line-clamp-2 text-xs leading-5 text-black/45">{template.description}</span>
+                <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-black/55 transition group-hover:text-black/80">
+                  {t("启用")}
+                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -498,6 +593,8 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
 
 export function HermesAgentAutomationsPanel({ botId }: { botId: string | null }) {
   const t = useT();
+  const { i18n } = useTranslation();
+  const displayLocale = getAutomationDisplayLocale(i18n.language);
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [contextCapability, setContextCapability] = useState<"loading" | CronContextCapability>(
     "loading",
@@ -516,7 +613,6 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
   const [activeView, setActiveView] = useState<"created" | "ended" | "recent">("created");
   const [creating, setCreating] = useState(false);
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
   const [scenarioInstallPack, setScenarioInstallPack] = useState<ScenarioTaskPack | null>(null);
   const [scenarioDraft, setScenarioDraft] = useState<ScenarioTaskDraft | null>(null);
@@ -524,6 +620,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const [scenarioReminderNotice, setScenarioReminderNotice] = useState<ScenarioReminderNotice | null>(null);
   const [scenarioEnableConfirmOpen, setScenarioEnableConfirmOpen] = useState(false);
   const [pendingCreateMode, setPendingCreateMode] = useState<"blank" | "template" | null>(null);
+  const [pendingCreateTemplate, setPendingCreateTemplate] = useState<AutomationTemplate | null>(null);
   const [confirmCreateOverLimit, setConfirmCreateOverLimit] = useState(false);
   const [viewingJob, setViewingJob] = useState<CronJob | null>(null);
   /** 正在编辑的 job；非空时弹编辑表单 */
@@ -558,7 +655,11 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const displayedJobs = activeView === "ended" ? endedJobs : activeJobs;
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const jobLimitReached = activeJobs.length >= MAX_CRON_JOBS_PER_BOT;
-  const templates = useMemo(() => getAutomationTemplates(t), [t]);
+  const templates = useMemo(() => getUnifiedAutomationTemplates(t, displayLocale), [displayLocale, t]);
+  const scenarioTemplatePacks = useMemo(() => getOverviewScenarioTaskPacks(displayLocale), [displayLocale]);
+  const resolveScenarioPackForDisplay = useCallback((scenarioId: string) => (
+    scenarioTemplatePacks.find((pack) => pack.id === scenarioId) ?? getScenarioTaskPack(scenarioId)
+  ), [scenarioTemplatePacks]);
   // const installedScenarioIds = useMemo(() => new Set(
   //   SCENARIO_TASK_PACKS
   //     .filter((pack) => activeJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
@@ -613,15 +714,29 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     }
   }, [botId]);
 
-  const requestCreate = useCallback((mode: "blank" | "template") => {
+  const requestCreate = useCallback(() => {
     if (jobLimitReached) {
-      setPendingCreateMode(mode);
+      setPendingCreateMode("blank");
+      setPendingCreateTemplate(null);
       setConfirmCreateOverLimit(true);
       return;
     }
-    if (mode === "template") setTemplatePickerOpen(true);
-    else setCreating(true);
+    setCreating(true);
   }, [jobLimitReached]);
+
+  const requestTemplateCreate = useCallback((template: AutomationTemplate) => {
+    trackDatongClick("automation_template_card", {
+      pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
+      params: { bot_id: botId ?? "", template_id: template.id },
+    });
+    if (jobLimitReached) {
+      setPendingCreateMode("template");
+      setPendingCreateTemplate(template);
+      setConfirmCreateOverLimit(true);
+      return;
+    }
+    setCreatingFromTemplate(template);
+  }, [botId, jobLimitReached]);
 
   const showError = useCallback((message: string) => {
     if (errorTimerRef.current) {
@@ -987,15 +1102,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           <div className="inline-flex items-center gap-2.5">
             <button
               type="button"
-              onClick={() => requestCreate("template")}
-              className="inline-flex min-w-[96px] items-center justify-center gap-2 rounded-lg border border-black/10 bg-white px-4 py-2 text-black/75 transition hover:bg-black/[0.04]"
-            >
-              <LayoutTemplate className="h-5 w-5" />
-              <span className="text-base font-semibold leading-none">{t("模板")}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => requestCreate("blank")}
+              onClick={requestCreate}
               className="inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85"
             >
               <Plus className="h-5 w-5" />
@@ -1005,21 +1112,15 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         )}
       />
 
-      {/* 场景任务入口暂时下线，保留实现便于后续恢复。
-      {!isGlobal && (
-        <ScenarioTaskGrid
-          packs={SCENARIO_TASK_PACKS}
-          installedScenarioIds={installedScenarioIds}
-          compact={activeJobs.length > 0}
-          onRunOnce={openScenarioInstaller}
-          onSchedule={openScenarioInstaller}
-        />
-      )}
-      */}
+      <AutomationScenarioTemplatesSection
+        templates={templates}
+        onEnable={requestTemplateCreate}
+      />
 
       {!isGlobal && scenarioReminderNotice && (
         <ScenarioReminderBanner
           notice={scenarioReminderNotice}
+          pack={resolveScenarioPackForDisplay(scenarioReminderNotice.draft.scenarioId)}
           onDismiss={() => setScenarioReminderNotice(null)}
           onViewCreated={() => setActiveView("created")}
           onEnable={() => {
@@ -1107,13 +1208,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             ) : (
               <p>
                 {t("暂无自动任务，")}
-                <button
-                  type="button"
-                  onClick={() => requestCreate("template")}
-                  className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
-                >
-                  {t("参考模板新建")}
-                </button>
+                <span className="font-medium text-black/70">{t("可从上方任务模板快速启用")}</span>
               </p>
             )}
           </div>
@@ -1195,23 +1290,11 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
 
       {!isGlobal && scenarioEnableConfirmOpen && scenarioDraft && (
         <ScenarioEnableConfirmModal
-          pack={getScenarioTaskPack(scenarioDraft.scenarioId)}
+          pack={resolveScenarioPackForDisplay(scenarioDraft.scenarioId)}
           draft={scenarioDraft}
           busy={scenarioPreviewStatus === "enabling"}
           onCancel={() => setScenarioEnableConfirmOpen(false)}
           onConfirm={handleScenarioEnableConfirm}
-        />
-      )}
-
-      {templatePickerOpen && (
-        <AutomationTemplateModal
-          templates={templates}
-          botId={botId}
-          onClose={() => setTemplatePickerOpen(false)}
-          onSelect={(template) => {
-            setTemplatePickerOpen(false);
-            setCreatingFromTemplate(template);
-          }}
         />
       )}
 
@@ -1249,12 +1332,15 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           onCancel={() => {
             setConfirmCreateOverLimit(false);
             setPendingCreateMode(null);
+            setPendingCreateTemplate(null);
           }}
           onConfirm={() => {
             setConfirmCreateOverLimit(false);
             const mode = pendingCreateMode ?? "blank";
+            const template = pendingCreateTemplate;
             setPendingCreateMode(null);
-            if (mode === "template") setTemplatePickerOpen(true);
+            setPendingCreateTemplate(null);
+            if (mode === "template" && template) setCreatingFromTemplate(template);
             else setCreating(true);
           }}
         />
@@ -2154,103 +2240,6 @@ function InlineCopyText({ value }: { value: string }) {
   );
 }
 
-function AutomationTemplateModal({
-  templates,
-  botId,
-  onClose,
-  onSelect,
-}: {
-  templates: AutomationTemplate[];
-  botId: string;
-  onClose: () => void;
-  onSelect: (template: AutomationTemplate) => void;
-}) {
-  const t = useT();
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 px-4 py-6"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-[680px] rounded-2xl bg-white p-6 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/50 transition hover:bg-black/[0.04] hover:text-black/80"
-          aria-label={t("关闭")}
-        >
-          <X className="h-4 w-4" />
-        </button>
-        <div className="pr-8">
-          <h3 className="text-lg font-semibold leading-10 text-black/90">{t("自动任务示例模板")}</h3>
-        </div>
-        <div className="mt-5 grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
-          {templates.map((template) => {
-            const tone = AUTOMATION_TEMPLATE_TONES[template.id as keyof typeof AUTOMATION_TEMPLATE_TONES] ?? AUTOMATION_TEMPLATE_TONES["daily-summary"];
-            const TemplateIcon = tone.icon;
-            return (
-              <button
-                key={template.id}
-                type="button"
-                onClick={() => {
-                  trackDatongClick("automation_template_card", {
-                    pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-                    params: { bot_id: botId ?? "", template_id: template.id },
-                  });
-                  onSelect(template);
-                }}
-                className={`group flex min-h-[132px] flex-col rounded-xl border border-l-[3px] border-black/10 ${tone.accentClass} bg-white p-4 text-left shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all duration-200 hover:bg-black/[0.015] hover:shadow-[0_12px_24px_rgba(15,23,42,0.07)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20`}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${tone.iconClass}`}>
-                        <TemplateIcon className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-black/90">{template.name}</div>
-                      </div>
-                    </div>
-                    <span className="shrink-0 rounded-full border border-black/[0.04] bg-black/[0.035] px-2 py-0.5 text-[11px] font-medium text-black/55 transition-colors group-hover:bg-black/[0.055]">
-                      {formatTemplateSchedule(template, t)}
-                    </span>
-                  </div>
-                  <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-black/60">
-                    {template.prompt}
-                  </p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function formatTemplateSchedule(template: AutomationTemplate, t: ReturnType<typeof useT>): string {
-  const schedule = template.schedule;
-  if (schedule.kind === "interval") {
-    const unitLabel = schedule.intervalUnit === "m" ? t("分钟") : schedule.intervalUnit === "d" ? t("天") : t("小时");
-    return t("每 {{num}} {{unit}}", { num: String(schedule.intervalNum ?? 1), unit: unitLabel });
-  }
-  if (schedule.kind === "recurring") {
-    if (schedule.period === "weekly") {
-      return t("每{{weekday}} {{time}}", {
-        weekday: formatWeekdays(schedule.weekdays ?? [schedule.weekday ?? 1], t),
-        time: schedule.time ?? "09:00",
-      });
-    }
-    return t("每天 {{time}}", { time: schedule.time ?? "09:00" });
-  }
-  return t("单次");
-}
-
 function formatCronDependentRemovalError(
   error: unknown,
   target: CronJob,
@@ -2806,6 +2795,36 @@ const AUTOMATION_TEMPLATE_TONES = {
     iconClass: "bg-[#EEF2F8] text-[#556F9A]",
     accentClass: "border-l-[#BAC8DF] hover:border-[#BAC8DF]",
   },
+  "medication-once": {
+    icon: Pill,
+    iconClass: "bg-[#EEF6F8] text-[#3F7A8A]",
+    accentClass: "border-l-[#B7D5DD] hover:border-[#B7D5DD]",
+  },
+  "rent-reminder": {
+    icon: CreditCard,
+    iconClass: "bg-[#F7F4EE] text-[#8A6A2B]",
+    accentClass: "border-l-[#D8C7A3] hover:border-[#D8C7A3]",
+  },
+  "country-fx-alert": {
+    icon: ArrowLeftRight,
+    iconClass: "bg-[#EFF4F7] text-[#55708A]",
+    accentClass: "border-l-[#BACBDD] hover:border-[#BACBDD]",
+  },
+  "calorie-fitness-checkin": {
+    icon: Activity,
+    iconClass: "bg-[#EFF7F2] text-[#4A7A5F]",
+    accentClass: "border-l-[#BBD8C6] hover:border-[#BBD8C6]",
+  },
+  "global-holiday-reminder": {
+    icon: CalendarDays,
+    iconClass: "bg-[#F7F4E8] text-[#7D6A2A]",
+    accentClass: "border-l-[#D6C98E] hover:border-[#D6C98E]",
+  },
+  "stock-info-digest": {
+    icon: Wallet,
+    iconClass: "bg-[#F8EEF0] text-[#8E4D58]",
+    accentClass: "border-l-[#D4B0B6] hover:border-[#D4B0B6]",
+  },
 } satisfies Record<string, {
   icon: typeof Clock;
   iconClass: string;
@@ -2870,6 +2889,418 @@ function getAutomationTemplates(t: ReturnType<typeof useT>): AutomationTemplate[
       prompt: t("提醒我查看今天的 AI 资讯，整理 3 条值得关注的动态，并简要说明影响。"),
       schedule: { kind: "recurring", period: "daily", time: "08:30" },
     },
+  ];
+}
+
+const SCENARIO_TEMPLATE_FALLBACK_TEMPLATE_IDS: Record<string, string> = {
+  "medication-once": "water-break",
+  "stock-info-digest": "stock-watch",
+};
+
+const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<AutomationDisplayLocale, Record<string, string>>>> = {
+  "rent-reminder": {
+    "zh-CN": {
+      rentInfo: "房租 2000 元，物业费 800 元，付给房东/物业，通过银行转账",
+    },
+    "zh-SG": {
+      rentInfo: "房租 2000 元，物业费 800 元，付给房东/物业，通过银行转账",
+    },
+    "zh-Hant": {
+      rentInfo: "房租 2000 元，物业费 800 元，付给房东/物业，通过银行转账",
+    },
+    "en-US": {
+      rentInfo: "rent of 2,000 CNY plus an 800 CNY property-management fee, paid to my landlord or property manager by bank transfer",
+    },
+    es: {
+      rentInfo: "alquiler de 2000 CNY y cuota de comunidad de 800 CNY, pagados al casero o a la administración por transferencia bancaria",
+    },
+    "id-ID": {
+      rentInfo: "sewa 2.000 CNY ditambah biaya pengelolaan properti 800 CNY, dibayar ke pemilik atau pengelola properti melalui transfer bank",
+    },
+  },
+  "country-fx-alert": {
+    "zh-CN": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
+    "zh-SG": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
+    "zh-Hant": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
+    "en-US": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
+    es: {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
+    "id-ID": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
+  },
+  "calorie-fitness-checkin": {
+    "zh-CN": {
+      bodyProfile: "168cm，62kg，目标 58kg，每周力量训练 3 次",
+    },
+    "zh-SG": {
+      bodyProfile: "168cm，62kg，目标 58kg，每周力量训练 3 次",
+    },
+    "zh-Hant": {
+      bodyProfile: "168cm，62kg，目标 58kg，每周力量训练 3 次",
+    },
+    "en-US": {
+      bodyProfile: "168 cm, 62 kg, target 58 kg, strength training 3 times per week",
+    },
+    es: {
+      bodyProfile: "168 cm, 62 kg, objetivo 58 kg, entrenamiento de fuerza 3 veces por semana",
+    },
+    "id-ID": {
+      bodyProfile: "168 cm, 62 kg, target 58 kg, latihan kekuatan 3 kali per minggu",
+    },
+  },
+};
+
+const SCENARIO_TEMPLATE_PROMPT_FIELD_KEYS: Record<string, string[]> = {
+  "medication-once": ["medicine", "customRequest"],
+  "rent-reminder": ["rentInfo", "advanceDays", "includeDueDay"],
+  "country-fx-alert": ["fromCurrency", "toCurrency", "thresholdMode", "thresholdValue", "customRequest"],
+  "calorie-fitness-checkin": ["fitnessGoal", "bodyProfile", "foodLog", "reportStyle"],
+  "global-holiday-reminder": ["holidayCountries", "holidayScope", "reminderWindow", "holidayWeatherPlan"],
+  "stock-info-digest": ["stockList", "stockFocus", "customRequest"],
+};
+
+const SCENARIO_TEMPLATE_PROMPT_LABELS: Record<AutomationDisplayLocale, {
+  config: string;
+  yes: string;
+  no: string;
+}> = {
+  "zh-CN": {
+    config: "例子可删可改，写了新的就以新的为准",
+    yes: "是",
+    no: "否",
+  },
+  "zh-SG": {
+    config: "例子可删可改，写了新的就以新的为准",
+    yes: "是",
+    no: "否",
+  },
+  "zh-Hant": {
+    config: "例子可刪可改，寫了新的就以新的為準",
+    yes: "是",
+    no: "否",
+  },
+  "en-US": {
+    config: "This example can be deleted or edited; if I write new details, use the new ones",
+    yes: "yes",
+    no: "no",
+  },
+  es: {
+    config: "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos",
+    yes: "sí",
+    no: "no",
+  },
+  "ja-JP": {
+    config: "この例は削除または編集できます。新しい内容を書いたら、それを優先してください",
+    yes: "はい",
+    no: "いいえ",
+  },
+  "ko-KR": {
+    config: "이 예시는 삭제하거나 수정할 수 있습니다. 새 내용을 쓰면 새 내용을 기준으로 해 주세요",
+    yes: "예",
+    no: "아니요",
+  },
+  "id-ID": {
+    config: "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru",
+    yes: "ya",
+    no: "tidak",
+  },
+};
+
+const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<AutomationDisplayLocale, string[]>>> = {
+  "medication-once": {
+    "zh-CN": [
+      "请帮我轻提醒喝水，也按医嘱提醒我服药。",
+      "例子可删可改，写了新的就以新的为准：按医嘱服用我的常用药，剂量按原医嘱；喝水只做轻提醒。",
+    ],
+    "zh-SG": [
+      "请帮我轻提醒喝水，也按医嘱提醒我服药。",
+      "例子可删可改，写了新的就以新的为准：按医嘱服用我的常用药，剂量按原医嘱；喝水只做轻提醒。",
+    ],
+    "en-US": [
+      "Please help me with gentle water reminders, and remind me about medication exactly as prescribed.",
+      "This example can be deleted or edited; if I write new details, use the new ones: take my regular medication as directed, with the original dosage; keep water reminders light.",
+    ],
+    es: [
+      "Ayudame con recordatorios suaves para beber agua y tomar la medicacion tal como esta indicada.",
+      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: medicacion habitual segun receta y avisos de agua ligeros.",
+    ],
+    "id-ID": [
+      "Tolong bantu ingatkan saya minum air secara ringan, dan ingatkan obat sesuai arahan dokter.",
+      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: minum obat rutin sesuai resep dengan dosis asli; pengingat air dibuat ringan.",
+    ],
+  },
+  "rent-reminder": {
+    "zh-CN": [
+      "请帮我记得交房租和物业费，临近账期时提醒我处理。",
+      "例子可删可改，写了新的就以新的为准：房租 2000 元、物业费 800 元，付给房东/物业，通过银行转账。",
+    ],
+    "zh-SG": [
+      "请帮我记得交房租和物业费，临近账期时提醒我处理。",
+      "例子可删可改，写了新的就以新的为准：房租 2000 元、物业费 800 元，付给房东/物业，通过银行转账。",
+    ],
+    "en-US": [
+      "Please help me remember rent and property-management fees when the billing date is close.",
+      "This example can be deleted or edited; if I write new details, use the new ones: rent of 2,000 CNY plus an 800 CNY property-management fee, paid to my landlord or property manager by bank transfer.",
+    ],
+    es: [
+      "Ayudame a recordar el alquiler y la cuota de comunidad cuando se acerque la fecha de pago.",
+      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: alquiler 2000 CNY y comunidad 800 CNY, por transferencia al casero o administracion.",
+    ],
+    "id-ID": [
+      "Tolong bantu ingatkan saya membayar sewa dan biaya pengelolaan properti saat tanggal tagihan mendekat.",
+      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: sewa 2.000 CNY ditambah biaya pengelolaan 800 CNY, dibayar ke pemilik/pengelola lewat transfer bank.",
+    ],
+  },
+  "country-fx-alert": {
+    "zh-CN": [
+      "请帮我关注美元 USD 到人民币 CNY 的汇率，达到条件时再提醒我。",
+      "例子可删可改，写了新的就以新的为准：较前一日涨跌幅达到 1% 时提醒我。",
+    ],
+    "zh-SG": [
+      "请帮我关注美元 USD 到人民币 CNY 的汇率，达到条件时再提醒我。",
+      "例子可删可改，写了新的就以新的为准：较前一日涨跌幅达到 1% 时提醒我。",
+    ],
+    "en-US": [
+      "Please help me watch the USD to CNY exchange rate and remind me only when the condition is met.",
+      "This example can be deleted or edited; if I write new details, use the new ones: notify me if it moves 1% from the previous day.",
+    ],
+    es: [
+      "Ayudame a vigilar el tipo de cambio de USD a CNY y avisame solo cuando se cumpla la condicion.",
+      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: avisame si cambia un 1% frente al dia anterior.",
+    ],
+    "id-ID": [
+      "Tolong bantu pantau kurs USD ke CNY dan ingatkan saya hanya saat syaratnya terpenuhi.",
+      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: beri tahu jika bergerak 1% dari hari sebelumnya.",
+    ],
+  },
+  "calorie-fitness-checkin": {
+    "zh-CN": [
+      "请帮我记录今天的饮食、运动和体重变化，并做轻量复盘。",
+      "例子可删可改，写了新的就以新的为准：目标减脂并保持力量训练，168cm、62kg、目标 58kg。",
+    ],
+    "zh-SG": [
+      "请帮我记录今天的饮食、运动和体重变化，并做轻量复盘。",
+      "例子可删可改，写了新的就以新的为准：目标减脂并保持力量训练，168cm、62kg、目标 58kg。",
+    ],
+    "en-US": [
+      "Please help me log today's meals, workouts, and weight changes, then give me a light recap.",
+      "This example can be deleted or edited; if I write new details, use the new ones: fat loss while keeping strength training, 168 cm, 62 kg, target 58 kg.",
+    ],
+    es: [
+      "Ayudame a registrar comidas, ejercicio y peso de hoy, y dame un resumen ligero.",
+      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: perder grasa manteniendo fuerza, 168 cm, 62 kg, objetivo 58 kg.",
+    ],
+    "id-ID": [
+      "Tolong bantu catat makanan, olahraga, dan perubahan berat badan hari ini, lalu beri ringkasan ringan.",
+      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: menurunkan lemak sambil mempertahankan latihan kekuatan, 168 cm, 62 kg, target 58 kg.",
+    ],
+  },
+  "global-holiday-reminder": {
+    "zh-CN": [
+      "请帮我关注泰国、印尼等目的地的公共假期、调休日和天气预警。",
+      "例子可删可改，写了新的就以新的为准：旅行、发货或会议前，提醒我避开假期和天气风险。",
+    ],
+    "zh-SG": [
+      "请帮我关注泰国、印尼等目的地的公共假期、调休日和天气预警。",
+      "例子可删可改，写了新的就以新的为准：旅行、发货或会议前，提醒我避开假期和天气风险。",
+    ],
+    "en-US": [
+      "Please help me watch public holidays, substitute days off, and weather alerts for destinations such as Thailand and Indonesia.",
+      "This example can be deleted or edited; if I write new details, use the new ones: before travel, shipping, or meetings, remind me to avoid holiday and weather risks.",
+    ],
+    es: [
+      "Ayudame a seguir festivos, dias ajustados y alertas meteorologicas de destinos como Tailandia e Indonesia.",
+      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: antes de viajes, envios o reuniones, avisame de riesgos de festivos y clima.",
+    ],
+    "id-ID": [
+      "Tolong bantu pantau hari libur publik, cuti pengganti, dan peringatan cuaca untuk tujuan seperti Thailand dan Indonesia.",
+      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: sebelum perjalanan, pengiriman, atau rapat, ingatkan saya menghindari risiko libur dan cuaca.",
+    ],
+  },
+  "stock-info-digest": {
+    "zh-CN": [
+      "请帮我整理关注股票的公开市场信息，只做信息速递。",
+      "例子可删可改，写了新的就以新的为准：腾讯控股 00700、NVIDIA NVDA、贵州茅台 600519；重点看价格、公告和财报。",
+    ],
+    "zh-SG": [
+      "请帮我整理关注股票的公开市场信息，只做信息速递。",
+      "例子可删可改，写了新的就以新的为准：腾讯控股 00700、NVIDIA NVDA、贵州茅台 600519；重点看价格、公告和财报。",
+    ],
+    "en-US": [
+      "Please help me summarize public market information for stocks I follow, as an information digest only.",
+      "This example can be deleted or edited; if I write new details, use the new ones: Tencent 00700, NVIDIA NVDA, and Kweichow Moutai 600519; focus on price moves, announcements, and earnings.",
+    ],
+    es: [
+      "Ayudame a resumir informacion publica del mercado sobre las acciones que sigo, solo como boletin informativo.",
+      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: Tencent 00700, NVIDIA NVDA y Kweichow Moutai 600519; mira precios, anuncios y resultados.",
+    ],
+    "id-ID": [
+      "Tolong bantu rangkum informasi pasar publik untuk saham yang saya ikuti, hanya sebagai ringkasan informasi.",
+      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: Tencent 00700, NVIDIA NVDA, dan Kweichow Moutai 600519; fokus pada harga, pengumuman, dan laporan keuangan.",
+    ],
+  },
+};
+
+function getScenarioDefaultValues(pack: ScenarioTaskPack): Record<string, string> {
+  return Object.fromEntries(pack.fields.map((field) => [field.key, field.defaultValue]));
+}
+
+function getScenarioTemplatePromptValues(
+  pack: ScenarioTaskPack,
+  displayLocale: AutomationDisplayLocale,
+): Record<string, string> {
+  return {
+    ...getScenarioDefaultValues(pack),
+    ...(SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES[pack.id]?.[displayLocale] ?? {}),
+  };
+}
+
+function splitScenarioTemplateTimes(value: string): string[] {
+  return value
+    .split(/[|,，、\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getScenarioTemplateSchedule(
+  pack: ScenarioTaskPack,
+  values: Record<string, string>,
+  fallback?: AutomationTemplate,
+): AutomationTemplate["schedule"] {
+  const parsed = parseInitialSchedule(pack.defaultSchedule);
+  if (parsed?.kind === "recurring" && parsed.period === "daily" && pack.dailyTimesFieldKey) {
+    const times = normalizeDailyTimes(splitScenarioTemplateTimes(values[pack.dailyTimesFieldKey] ?? ""), parsed.time ?? "09:00");
+    return { kind: "recurring", period: "daily", time: times[0], times };
+  }
+  if (parsed) return parsed;
+  return fallback?.schedule ?? { kind: "recurring", period: "daily", time: "09:00" };
+}
+
+function isScenarioTemplateScheduleField(pack: ScenarioTaskPack, field: ScenarioTaskPack["fields"][number]): boolean {
+  return field.type === "time"
+    || field.type === "times"
+    || field.key === pack.dailyTimesFieldKey
+    || field.key === pack.oneShotScheduleFieldKey;
+}
+
+function formatScenarioTemplateFieldValue(
+  field: ScenarioTaskPack["fields"][number],
+  value: string,
+  displayLocale: AutomationDisplayLocale,
+): string {
+  if (field.type === "checkbox") {
+    return value === "true"
+      ? SCENARIO_TEMPLATE_PROMPT_LABELS[displayLocale].yes
+      : SCENARIO_TEMPLATE_PROMPT_LABELS[displayLocale].no;
+  }
+  if (field.type === "multi-dropdown" || field.type === "multiselect") {
+    const optionLabelByValue = new Map((field.options ?? []).map((option) => [option.value, option.label]));
+    return value
+      .split(SCENARIO_MULTISELECT_SEPARATOR)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => optionLabelByValue.get(item) ?? item)
+      .join(" / ");
+  }
+  const selectedOption = field.options?.find((option) => option.value === value);
+  return selectedOption?.label ?? value;
+}
+
+function getScenarioTemplatePromptFields(pack: ScenarioTaskPack): Array<ScenarioTaskPack["fields"][number]> {
+  const fieldByKey = new Map(pack.fields.map((field) => [field.key, field]));
+  const configuredFields = (SCENARIO_TEMPLATE_PROMPT_FIELD_KEYS[pack.id] ?? [])
+    .map((key) => fieldByKey.get(key))
+    .filter((field): field is ScenarioTaskPack["fields"][number] => Boolean(field));
+  if (configuredFields.length) return configuredFields;
+  return pack.fields.filter((field) => !isScenarioTemplateScheduleField(pack, field)).slice(0, 4);
+}
+
+function buildScenarioTemplateConfigLine(
+  pack: ScenarioTaskPack,
+  values: Record<string, string>,
+  displayLocale: AutomationDisplayLocale,
+): string {
+  const labels = SCENARIO_TEMPLATE_PROMPT_LABELS[displayLocale];
+  const items = getScenarioTemplatePromptFields(pack)
+    .filter((field) => !isScenarioTemplateScheduleField(pack, field))
+    .map((field) => {
+      const rawValue = values[field.key]?.trim() || field.defaultValue.trim();
+      if (!rawValue) return "";
+      return `${field.label}: ${formatScenarioTemplateFieldValue(field, rawValue, displayLocale)}.`;
+    })
+    .filter(Boolean);
+  return items.length ? `${labels.config}: ${items.join(" ")}` : "";
+}
+
+function getScenarioTemplatePrompt(
+  pack: ScenarioTaskPack,
+  values: Record<string, string>,
+  displayLocale: AutomationDisplayLocale,
+  fallback?: AutomationTemplate,
+): string {
+  const naturalPrompt = SCENARIO_TEMPLATE_NATURAL_PROMPTS[pack.id]?.[displayLocale];
+  if (naturalPrompt?.length) {
+    const prompt = naturalPrompt.join("\n");
+    return prompt.length > AUTOMATION_PROMPT_MAX_LENGTH
+      ? prompt.slice(0, AUTOMATION_PROMPT_MAX_LENGTH)
+      : prompt;
+  }
+
+  const prompt = [
+    pack.quickPrompt.trim() || fallback?.prompt.trim(),
+    buildScenarioTemplateConfigLine(pack, values, displayLocale),
+  ].filter(Boolean).join("\n");
+  return prompt.length > AUTOMATION_PROMPT_MAX_LENGTH
+    ? prompt.slice(0, AUTOMATION_PROMPT_MAX_LENGTH)
+    : prompt;
+}
+
+function scenarioPackToAutomationTemplate(
+  pack: ScenarioTaskPack,
+  displayLocale: AutomationDisplayLocale,
+  fallback?: AutomationTemplate,
+): AutomationTemplate {
+  const values = getScenarioTemplatePromptValues(pack, displayLocale);
+  return {
+    id: pack.id,
+    name: pack.name,
+    description: pack.valueProp || fallback?.description || pack.description,
+    prompt: getScenarioTemplatePrompt(pack, values, displayLocale, fallback),
+    schedule: getScenarioTemplateSchedule(pack, values, fallback),
+  };
+}
+
+export function getUnifiedAutomationTemplates(
+  t: ReturnType<typeof useT>,
+  displayLocale: AutomationDisplayLocale = DEFAULT_LOCALE,
+): AutomationTemplate[] {
+  const legacyTemplates = getAutomationTemplates(t);
+  const legacyById = new Map(legacyTemplates.map((template) => [template.id, template]));
+  const usedLegacyIds = new Set<string>();
+  const scenarioTemplates = getOverviewScenarioTaskPacks(displayLocale).map((pack) => {
+    const fallbackId = SCENARIO_TEMPLATE_FALLBACK_TEMPLATE_IDS[pack.id];
+    if (fallbackId) usedLegacyIds.add(fallbackId);
+    return scenarioPackToAutomationTemplate(pack, displayLocale, fallbackId ? legacyById.get(fallbackId) : undefined);
+  });
+  return [
+    ...scenarioTemplates,
+    ...legacyTemplates.filter((template) => !usedLegacyIds.has(template.id)),
   ];
 }
 

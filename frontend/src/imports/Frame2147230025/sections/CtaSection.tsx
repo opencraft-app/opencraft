@@ -71,9 +71,12 @@ function MascotGroup({ offsetX, offsetY }: MascotGroupProps) {
         >
           <img
             alt=""
+            height={254}
+            loading="lazy"
             src="/Slice 1.webp"
             className="pointer-events-none"
             style={{ width: 126, height: 118 }}
+            width={273}
           />
         </div>
       </div>
@@ -156,7 +159,10 @@ export default function CtaSection({ onCreateClick, ctaLabel }: CtaSectionProps 
         src={imgCtaDeco}
         alt=""
         className="absolute pointer-events-none select-none lv-breathe"
+        height={466}
+        loading="lazy"
         style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 800, height: 800, opacity: 0.6 }}
+        width={492}
       />
 
       {/* 内容区 */}

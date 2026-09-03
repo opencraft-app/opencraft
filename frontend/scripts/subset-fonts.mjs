@@ -24,7 +24,7 @@ export function publishedDictionaryKeys(localeDefinitions) {
   return [
     ...new Set(
       localeDefinitions
-        .filter((definition) => definition.switcherVisible)
+        .filter((definition) => definition.switcherVisible && definition.fontSubsetEligible)
         .map((definition) => definition.i18nKey),
     ),
   ];

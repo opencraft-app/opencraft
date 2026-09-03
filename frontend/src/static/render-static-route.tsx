@@ -2,7 +2,8 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 
 import { PublicSiteHeader } from "@/components/site/public-site-header";
-import i18n from "@/i18n";
+import i18n, { ensureLocaleDictionary } from "@/i18n";
+import { parseLocaleCode } from "@/i18n/locales.config";
 import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
 
 type StaticRouteInput = {
@@ -47,8 +48,10 @@ export async function renderStaticRoute({ route, locale }: StaticRouteInput): Pr
   /* i18n.changeLanguage 在已 init 的实例上是同步切换 + 异步 emit，
      这里 await 拿到 emit 完成后再 renderToString，确保所有 useTranslation
      订阅者读到的是目标 locale 的文案。 */
-  if (locale && i18n.language !== locale) {
-    await i18n.changeLanguage(locale);
+  const parsedLocale = parseLocaleCode(locale);
+  if (parsedLocale) {
+    const dictKey = await ensureLocaleDictionary(parsedLocale);
+    if (i18n.language !== dictKey) await i18n.changeLanguage(dictKey);
   }
   return renderToString(<StaticLandingPage />);
 }

@@ -93,11 +93,11 @@ describe("翻译进度与注册表标记一致", () => {
    *   - 改为「棘轮式」基线：允许不超过既有缺口数，一旦有人新增未翻译
    *     文案导致缺口变大，测试立即失败。缺口补齐后应下调此基线。
    *
-   * id-ID 的 175 条缺口来自 master 上通道与模型配置相关功能
+   * id-ID 的 174 条缺口来自 master 上通道与模型配置相关功能
    * （钉钉 / 企业微信 / QQ / Kimi / 智谱等），应由对应需求负责人补齐。
    */
   const KNOWN_TRANSLATION_DEBT: Readonly<Record<string, number>> = {
-    "id-ID": 175,
+    "id-ID": 174,
   };
 
   it("标记为 translationRequired 的语种不得超出已知翻译债务基线", () => {
@@ -132,8 +132,8 @@ describe("翻译进度与注册表标记一致", () => {
   });
 
   it("新增语种字典已创建且 key 齐全", () => {
-    /* es 已完成全量翻译；ja-JP / ko-KR 仍处于隐藏准备状态。
-       本用例只锁定三份字典结构，西语零空值由下方独立发布门禁负责。 */
+    /* es / ja-JP / ko-KR 已完成全量翻译并进入发布门禁。
+       本用例锁定三份字典结构，各语种零空值由下方独立门禁负责。 */
     for (const dictKey of ["es", "ja-JP", "ko-KR"] as const) {
       const stat = progress.get(dictKey);
       expect(stat, `${dictKey} 字典未生成`).toBeDefined();
@@ -165,5 +165,149 @@ describe("西语翻译完成门禁", () => {
 
     expect(teamCopy).not.toContainEqual(expect.stringMatching(/Tencent Cloud Light/));
     expect(teamCopy.every((value) => value.includes("Tencent Lighthouse"))).toBe(true);
+  });
+});
+
+describe("日语翻译完成门禁", () => {
+  it("ja-JP 不含空译文", () => {
+    const emptyKeys = Object.entries(jaJP).flatMap(([key, value]) => (value === "" ? [key] : []));
+    expect(emptyKeys, `ja-JP 仍有 ${emptyKeys.length} 条未翻译`).toEqual([]);
+  });
+
+  it("ja-JP 保持占位符且不含机器翻译提示残留", () => {
+    const promptLeakPattern = /ZXQ|LVNEWLINE|LV数字|英文参考|中文原文|保護マーク|保护标记/;
+
+    for (const [key, value] of Object.entries(jaJP)) {
+      const source = zhCN[key as keyof typeof zhCN];
+      expect(placeholdersOf(value), `ja-JP ${key} 的占位符与中文原文不一致`).toEqual(
+        placeholdersOf(source),
+      );
+      expect(value, `ja-JP ${key} 含机器翻译提示残留`).not.toMatch(promptLeakPattern);
+    }
+  });
+
+  it("核心短文案使用日语 UI 表达并保持产品术语", () => {
+    expect(jaJP.k_24575130).toBe("土曜日");
+    expect(jaJP.k_744d02c0).toBe("承認をオフ");
+    expect(jaJP.k_d61247ca).toBe("ソウル");
+    expect(jaJP.k_0a666759).toBe("オフライン");
+    expect(jaJP.k_9c418985).toBe("ゴールド");
+    expect(jaJP.k_9905befc).toContain("Hermes Agent");
+  });
+
+  it("首页高可见文案使用自然日语并保持英文产品名", () => {
+    expect(jaJP.k_6c779cec).toBe("やりたいことを伝えるだけ。あとはAIパートナーが対応します。");
+    expect(jaJP.k_4f3b1439).toBe("レシピ");
+    expect(jaJP.k_a1bd9760).toBe("スケジュールタスク");
+    expect(jaJP.k_20f08c6e).toBe("ニュースダイジェスト");
+    expect(jaJP.k_a512817f).toBe("水分補給リマインダー");
+    expect(jaJP.k_60d063b6).toBe("ブログ");
+    expect(jaJP.k_da90c775).toBe("Coding Planモデル");
+    expect(jaJP.k_dceceeaf).toBe("セットアップ不要");
+    expect(jaJP.k_6db1f265).toBe(
+      "セルフホスティングも環境構築もAPIキー管理も不要です。クラウドでHermes Agentをすぐに利用できます。",
+    );
+    expect(jaJP.k_4e21f1d4).toBe("24時間365日稼働");
+    expect(jaJP.k_fc61ee9e).toBe(
+      "Hermes Agentは専用のクラウドインスタンスで動作するため、端末のバッテリーやメモリを消費しません。スマートフォンやパソコンからいつでも呼び出せ、すぐに応答します。",
+    );
+    expect(jaJP.k_8ed5493c).toBe("繰り返しの作業はHermesにお任せ");
+    expect(jaJP.k_b6ff0105).toBe("関連製品");
+    expect(jaJP.k_14833b0a).toBe(
+      "© 2026 LightVela. All rights reserved. Tencent Lighthouse 提供。",
+    );
+  });
+});
+
+describe("韩语翻译完成门禁", () => {
+  it("ko-KR 不含空译文", () => {
+    const emptyKeys = Object.entries(koKR).flatMap(([key, value]) => (value === "" ? [key] : []));
+    expect(emptyKeys, `ko-KR 仍有 ${emptyKeys.length} 条未翻译`).toEqual([]);
+  });
+
+  it("ko-KR 保持占位符且不含机器翻译提示残留", () => {
+    const promptLeakPattern = /ZXQ|LVNEWLINE|英文参考|中文原文|번역 지침|보호 마커/;
+
+    for (const [key, value] of Object.entries(koKR)) {
+      const source = zhCN[key as keyof typeof zhCN];
+      expect(placeholdersOf(value), `ko-KR ${key} 的占位符与中文原文不一致`).toEqual(
+        placeholdersOf(source),
+      );
+      expect(value, `ko-KR ${key} 含机器翻译提示残留`).not.toMatch(promptLeakPattern);
+    }
+  });
+
+  it("核心短文案使用韩语 UI 表达并保持固定术语", () => {
+    expect(koKR.k_24575130).toBe("토요일");
+    expect(koKR.k_744d02c0).toBe("승인 끄기");
+    expect(koKR.k_44e4d7a3).toBe("메모리");
+    expect(koKR.k_699143b1).toBe("스킬");
+    expect(koKR.k_8000f187).toBe("모델");
+    expect(koKR.k_8da3d655).toBe("자동 작업");
+    expect(koKR.k_d61247ca).toBe("페르소나");
+    expect(koKR.k_e4f52ebc).toBe("채널");
+  });
+
+  it("首页高可见文案使用自然韩语并保持英文产品名", () => {
+    expect(koKR.k_5d16b3fa).toBe("LightVela · 클라우드 기반 Hermes Agent");
+    expect(koKR.k_78273f26).toBe("언제나 곁에서 함께 성장하는 AI 파트너");
+    expect(koKR.k_6c779cec).toBe("원하는 일을 말해 주세요. 나머지는 AI 파트너가 처리합니다.");
+    expect(koKR.k_4f3b1439).toBe("레시피");
+    expect(koKR.k_a1bd9760).toBe("예약 작업");
+    expect(koKR.k_20f08c6e).toBe("뉴스 요약");
+    expect(koKR.k_a512817f).toBe("수분 섭취 알림");
+    expect(koKR.k_46e38679).toBe("실행 중");
+    expect(koKR.k_d679aea3).toBe("실행 중");
+    expect(koKR.k_5a136705).toBe("홈으로 돌아가기");
+    expect(koKR.k_86385379).toBe("개요");
+    expect(koKR.k_23093bb2).toBe("업데이트 내역");
+    expect(koKR.k_2e76d5c8).toBe("문서");
+    expect(koKR.k_da90c775).toBe("Coding Plan 모델");
+    expect(koKR.k_dceceeaf).toBe("설정 불필요");
+    expect(koKR.k_6db1f265).toBe(
+      "셀프 호스팅, 환경 구성, API 키 관리가 필요 없습니다. 클라우드에서 완전한 Hermes Agent를 바로 사용할 수 있습니다.",
+    );
+    expect(koKR.k_4e21f1d4).toBe("24시간 연중무휴");
+    expect(koKR.k_8ed5493c).toBe("반복 작업은 Hermes에 맡기세요");
+    expect(koKR.k_89a9e11e).toBe("LightVela 이용 방법");
+    expect(koKR.k_01be26f3).toBe("물 한 잔 마시는 동안 클라우드의 Hermes Agent가 준비됩니다.");
+    expect(koKR.k_26a64af5).toBe("물 한 잔 마시는 동안 클라우드의 Hermes Agent가 준비됩니다.");
+    expect(koKR.k_ecb0cd78).toBe("시작하기");
+    expect(koKR.k_da72cec6).toBe("바닥글 탐색");
+    expect(koKR.k_e95597ee).toBe("셀프 호스팅과 비교");
+    expect(koKR.k_a0e41ec0).toBe("Hostinger와 비교");
+    expect(koKR.k_1d940924).toBe("Manus와 비교");
+    expect(koKR.k_3b2e3653).toBe("회사 소개");
+    expect(koKR.k_c1cfdfd3).toBe("서비스 이용약관");
+    expect(koKR.k_e38f72fc).toBe("서비스 이용약관");
+    expect(koKR.k_248f81e2).toBe("무료 체험");
+    expect(koKR.k_d88baed5).toBe("무료 체험");
+    expect(koKR.k_fc115671).toBe("무료 체험");
+    expect(koKR.k_310eb572).toBe("7일 무료 체험");
+    expect(koKR.k_5a84204f).toBe("무료 체험 선택");
+    expect(koKR.k_e6dbe35f).toBe("14일 무료 체험");
+    expect(koKR.k_14833b0a).toBe(
+      "© 2026 LightVela. All rights reserved. Tencent Lighthouse 제공.",
+    );
+    expect(koKR.k_6de351e5).toBe("기기 자원을 소모하지 않고 언제든지 호출하세요");
+    expect(koKR.k_50495c0d).toBe("정식 Hermes Agent, 클릭 한 번으로 바로 사용");
+    expect(koKR.k_ff4289bd).toBe("정식 Hermes Agent,\n클릭 한 번으로 바로 사용");
+    expect(koKR.k_be9a8923).toBe("내 자동 작업 관리");
+    expect(koKR.k_bdcffa6c).toBe("‘지금 만들기’를 클릭하세요");
+    expect(koKR.k_7f472118).toBe("완전 자동 클라우드 프로비저닝");
+    expect(koKR.k_c0f65be9).toBe("완전 자동 클라우드 프로비저닝");
+    expect(koKR.k_7e359b79).toBe("새로운 여정—");
+    expect(koKR.k_d7abd6c7).toBe("시작할 준비가 되셨나요");
+    expect(koKR.k_7b6bd0b8).toBe("?");
+    expect(koKR.k_5ea72ed7).toBe("AI가 클라우드에서 기다립니다. 어디서든 항상 함께합니다.");
+    expect(koKR.k_8f0bbb96).toBe("AI가 클라우드에서 기다립니다. 어디서든 항상 함께합니다.");
+    expect(koKR.k_888af1f2).toBe("커뮤니티");
+    expect(koKR.k_c24697b5).toBe("Tencent CloudBase");
+    expect(koKR.k_7ad1c108).toBe("언제나 온라인, 데이터는 온전히 내 것");
+    expect(koKR.k_020a4682).toBe("대화 내용은\n나만의 공간에 저장");
+    expect(koKR.k_cc96d3c2).toBe("대화 내용은 나만의 공간에만 저장");
+    expect(koKR.k_aedf5b7e).toBe(
+      "Hermes Agent와 나눈 모든 메시지는 전용 서버에 저장되며 제3자와 공유되지 않습니다. 언제든 직접 관리할 수 있습니다.",
+    );
   });
 });

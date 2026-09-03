@@ -790,6 +790,37 @@ metadata:
     expect(screen.queryByText("文献综述")).not.toBeInTheDocument();
   });
 
+  it("keeps Experts-owned categories and roles in Japanese while requesting English package content", async () => {
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [{
+        id: 11,
+        slug: "academic-literature-review",
+        displayName: "文献综述",
+        displayNameEn: "Literature Review",
+        summary: "中文摘要",
+        summaryEn: "English package summary",
+        remark: "",
+        scene: "academic",
+        skillCount: 1,
+        createdAt: 0,
+        updatedAt: 0,
+      }],
+    });
+
+    render(
+      <LocaleOverrideProvider locale="ja-JP">
+        <ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} lang={"ja" as never} />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "全て" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "学術" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Literature Review/ })).toBeInTheDocument();
+    expect(await screen.findByText("学術リサーチャー")).toBeInTheDocument();
+    expect(fetchSkillSets).toHaveBeenCalledWith(expect.objectContaining({ lang: "en" }));
+    expect(screen.queryByText("学术研究员")).not.toBeInTheDocument();
+  });
+
   it("loads SkillHub packages with scenes and filters local dev seed packages without a scene", async () => {
     vi.mocked(fetchSkillSets).mockImplementation(async () => ({
       total: 7,

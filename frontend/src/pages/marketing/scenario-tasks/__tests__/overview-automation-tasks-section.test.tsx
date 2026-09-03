@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OverviewAutomationTasksSection } from "../OverviewAutomationTasksSection";
-import { getOverviewScenarioTaskPacks } from "../scenario-packs";
+import { getOverviewScenarioTaskPacks } from "../overview-packs";
 
 afterEach(() => {
   cleanup();

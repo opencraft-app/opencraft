@@ -1,8 +1,12 @@
-import type { IModelProvider } from "@/pages/marketing/agent-config";
+import type { IModelProvider } from "@/pages/marketing/agent-config/utils/model-providers";
 
 import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config-client";
 
 const CATALOG_DISCOVERY_PROVIDERS = new Set(["minimax", "minimax-cn"]);
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
 
 function decodeHtmlEntity(entity: string) {
   const normalized = entity.toLowerCase();
@@ -48,21 +52,35 @@ export function toHermesApiMode(value: string): HermesCanonicalApiMode | null {
 
 export function adaptProductModelProviders(source: IModelProvider[] | undefined): ModelProviderOption[] {
   return (source ?? []).flatMap((provider) => {
-    const baseUrl = provider.base_url.trim();
-    const apiMode = toHermesApiMode(provider.api);
-    if (!baseUrl || provider.oauth?.exclusive || !apiMode) return [];
+    if (!provider || !["coding_plan", "api"].includes(provider.category)) return [];
+    const providerKey = readString(provider.value).trim();
+    const providerId = readString(provider.provider).trim();
+    const baseUrl = readString(provider.base_url).trim();
+    const apiMode = toHermesApiMode(readString(provider.api));
+    if (!providerKey || !baseUrl || provider.oauth?.exclusive || !apiMode) return [];
+    const isCodingPlan = provider.category === "coding_plan";
+    const catalogModels = (Array.isArray(provider.models) ? provider.models : []).flatMap((model) => {
+      if (!model || typeof model.id !== "string") return [];
+      const id = model.id.trim();
+      if (!id) return [];
+      const name = typeof model.name === "string" ? model.name.trim() : "";
+      return [{ id, name: name || id }];
+    });
+    if (isCodingPlan && catalogModels.length === 0) return [];
     return [{
-      providerKey: provider.value,
-      providerName: toPlainText(provider.provider_name) || provider.provider || provider.value,
+      providerKey,
+      providerName: toPlainText(readString(provider.provider_name)) || providerId || providerKey,
       category: provider.category,
       baseUrl,
       apiMode,
-      discoveryStrategy: CATALOG_DISCOVERY_PROVIDERS.has(provider.provider.trim().toLowerCase()) ? "catalog" : "live",
-      description: toPlainText(provider.description) || undefined,
-      apiKeyUrl: provider.api_key_url.trim() || undefined,
-      catalogModels: provider.models
-        .map((model) => ({ id: model.id.trim(), name: model.name.trim() || model.id.trim() }))
-        .filter((model) => model.id),
+      discoveryStrategy:
+        isCodingPlan || CATALOG_DISCOVERY_PROVIDERS.has(providerId.toLowerCase())
+          ? "catalog"
+          : "live",
+      ...(isCodingPlan ? { fixedModelSelection: true } : {}),
+      description: toPlainText(readString(provider.description)) || undefined,
+      apiKeyUrl: readString(provider.api_key_url).trim() || undefined,
+      catalogModels,
     } satisfies ModelProviderOption];
   });
 }

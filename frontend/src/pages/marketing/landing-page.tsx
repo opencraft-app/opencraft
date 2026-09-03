@@ -34,7 +34,7 @@ import FeatureSection, { CardsSection } from "@/imports/Frame2147230025/sections
 import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
 import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
 import { OverviewAutomationTasksSection } from "./scenario-tasks/OverviewAutomationTasksSection";
-import { getOverviewScenarioTaskPacks } from "./scenario-tasks/scenario-packs";
+import { getOverviewScenarioTaskPacks } from "./scenario-tasks/overview-packs";
 
 const NO_INSTALLED_SCENARIOS: ReadonlySet<string> = new Set();
 

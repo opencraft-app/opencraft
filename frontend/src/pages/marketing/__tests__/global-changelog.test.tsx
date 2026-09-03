@@ -53,6 +53,98 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  const globalLaunchCopies = [
+    {
+      locale: "zh-CN",
+      publicBetaTitle: "LightVela 产品公测上线",
+      indonesianTitle: "LightVela 支持印度尼西亚语",
+      indonesianDescription:
+        "现在可以使用印度尼西亚语浏览 LightVela 的公开页面、产品文档和账号流程。",
+      launchTitle: "LightVela 正式上线并启用付费服务",
+      launchDescription:
+        "LightVela 国际站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
+    },
+    {
+      locale: "zh-Hant",
+      publicBetaTitle: "LightVela 產品公測上線",
+      indonesianTitle: "LightVela 支持印度尼西亞語",
+      indonesianDescription:
+        "現在可以使用印度尼西亞語瀏覽 LightVela 的公開頁面、產品文檔和賬號流程。",
+      launchTitle: "LightVela 正式上線並啓用付費服務",
+      launchDescription:
+        "LightVela 國際站正式上線，同步啓用付費服務。你可以根據使用需求選擇合適的訂閲套餐。",
+    },
+    {
+      locale: "en-US",
+      publicBetaTitle: "LightVela Public Beta Launch",
+      indonesianTitle: "Indonesian Is Now Available",
+      indonesianDescription:
+        "Browse LightVela's public pages, documentation, and account flows in Indonesian.",
+      launchTitle: "LightVela Officially Launches with Paid Services",
+      launchDescription:
+        "LightVela is now officially available globally with paid services. Choose a subscription plan that fits your needs.",
+    },
+    {
+      locale: "id-ID",
+      publicBetaTitle: "Peluncuran Beta Publik LightVela",
+      indonesianTitle: "Bahasa Indonesia Kini Tersedia",
+      indonesianDescription:
+        "Sekarang Anda dapat menjelajahi halaman publik, dokumentasi produk, dan alur akun LightVela dalam Bahasa Indonesia.",
+      launchTitle: "LightVela Resmi Diluncurkan dengan Layanan Berbayar",
+      launchDescription:
+        "LightVela kini resmi tersedia secara global dengan layanan berbayar. Pilih paket langganan yang sesuai dengan kebutuhan Anda.",
+    },
+    {
+      locale: "es",
+      publicBetaTitle: "Lanzamiento de la beta pública de LightVela",
+      indonesianTitle: "El indonesio ya está disponible",
+      indonesianDescription:
+        "Ahora puedes explorar las páginas públicas, la documentación del producto y los flujos de cuenta de LightVela en indonesio.",
+      launchTitle: "LightVela se lanza oficialmente y activa los servicios de pago",
+      launchDescription:
+        "LightVela ya está disponible oficialmente a nivel global con servicios de pago. Elige el plan de suscripción que mejor se adapte a tus necesidades.",
+    },
+  ] as const;
+
+  it("describes the April launch as a public beta in every visible global dictionary", async () => {
+    for (const copy of globalLaunchCopies) {
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByRole("heading", { name: copy.publicBetaTitle })).toBeInTheDocument();
+      cleanup();
+    }
+  });
+
+  it("ends the global August changelog with Indonesian support and the paid launch", async () => {
+    for (const copy of globalLaunchCopies) {
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      const indonesianHeading = screen.getByRole("heading", { name: copy.indonesianTitle });
+      const launchHeading = screen.getByRole("heading", { name: copy.launchTitle });
+      const augustSection = launchHeading.closest("section");
+      expect(augustSection).not.toBeNull();
+      expect(within(augustSection!).getAllByRole("heading").slice(-2)).toEqual([
+        indonesianHeading,
+        launchHeading,
+      ]);
+      expect(within(augustSection!).getByText(copy.indonesianDescription)).toBeInTheDocument();
+      expect(within(augustSection!).getByText(copy.launchDescription)).toBeInTheDocument();
+      expect(indonesianHeading.closest("article")?.querySelector("img")).toBeNull();
+      expect(launchHeading.closest("article")?.querySelector("img")).toBeNull();
+      cleanup();
+    }
+  });
+
   it("shows the new global August updates in every global locale", async () => {
     await i18n.changeLanguage("zh-CN");
     render(
@@ -62,15 +154,16 @@ describe("global changelog skill package entry", () => {
     );
 
     expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "LightVela 新增 DeepSeek Harness" }),
-    ).toBeInTheDocument();
+    const zhDeepSeekHarnessHeading = screen.getByRole("heading", {
+      name: /LightVela 实验室新增 DeepSeek Harness/,
+    });
+    expect(within(zhDeepSeekHarnessHeading).getByText("Beta")).toBeInTheDocument();
     expect(
       screen.getByText(
         "在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。",
       ),
     ).toBeInTheDocument();
-    const zhDeepSeekHarnessImage = screen.getByAltText("LightVela 新增 DeepSeek Harness");
+    const zhDeepSeekHarnessImage = screen.getByAltText("LightVela 实验室新增 DeepSeek Harness");
     expect(zhDeepSeekHarnessImage).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.png"),
@@ -79,8 +172,13 @@ describe("global changelog skill package entry", () => {
     const zhAugustSection = screen.getByText("2026 年 8 月").closest("section");
     expect(zhAugustSection).not.toBeNull();
     expect(within(zhAugustSection!).getAllByRole("heading")[0]).toHaveTextContent(
-      "LightVela 新增 DeepSeek Harness",
+      "LightVela 实验室新增 DeepSeek Harness",
     );
+    expect(
+      screen.queryByText(
+        "LightVela 产品中国站正式上线，同步启用付费服务。你可以根据使用需求选择合适的订阅套餐。",
+      ),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "LightVela 新增 Hermes Agent 高级设置" }),
     ).toBeInTheDocument();
@@ -94,7 +192,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
     );
-    expect(zhAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1059" });
+    expect(zhAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1282" });
     expect(
       screen.getByRole("heading", { name: "LightVela 支持上传自定义人设文件" }),
     ).toBeInTheDocument();
@@ -145,6 +243,17 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
     );
+    const zhTestRunHeading = within(zhAugustSection!).getByRole("heading", {
+      name: "自动任务支持测试运行",
+    });
+    const zhAugustHeadings = within(zhAugustSection!).getAllByRole("heading");
+    expect(zhAugustHeadings[1]).toBe(zhTestRunHeading);
+    expect(
+      within(zhAugustSection!).getByText(
+        "创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。",
+      ),
+    ).toBeInTheDocument();
+    expect(zhTestRunHeading.closest("article")?.querySelector("img")).toBeNull();
     const zhHeadings = screen.getAllByRole("heading").map((heading) => heading.textContent);
     expect(zhHeadings).not.toContain("定价支持更多套餐与订阅方式");
 
@@ -163,15 +272,18 @@ describe("global changelog skill package entry", () => {
     expect(
       within(augustSection!).queryByRole("heading", { name: "Ready-Made Job Templates" }),
     ).not.toBeInTheDocument();
-    expect(
-      within(augustSection!).getByRole("heading", { name: "LightVela Adds DeepSeek Harness" }),
-    ).toBeInTheDocument();
+    const enDeepSeekHarnessHeading = within(augustSection!).getByRole("heading", {
+      name: /DeepSeek Harness Is Now Available in LightVela Labs/,
+    });
+    expect(within(enDeepSeekHarnessHeading).getByText("Beta")).toBeInTheDocument();
     expect(
       within(augustSection!).getByText(
         "Install and manage DeepSeek Harness alongside Hermes Agent, with dedicated WebUI access, model provider configuration, plugin management, workspace support, and independent service controls.",
       ),
     ).toBeInTheDocument();
-    const enDeepSeekHarnessImage = screen.getByAltText("LightVela Adds DeepSeek Harness");
+    const enDeepSeekHarnessImage = screen.getByAltText(
+      "DeepSeek Harness Is Now Available in LightVela Labs",
+    );
     expect(enDeepSeekHarnessImage).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
@@ -189,8 +301,13 @@ describe("global changelog skill package entry", () => {
       ),
     ).toBeInTheDocument();
     expect(within(augustSection!).getAllByRole("heading")[0]).toHaveTextContent(
-      "LightVela Adds DeepSeek Harness",
+      "DeepSeek Harness Is Now Available in LightVela Labs",
     );
+    expect(
+      screen.queryByText(
+        "LightVela's China site is now officially available with paid services. Choose a subscription plan that fits your needs.",
+      ),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         "Customize how Hermes Agent manages long-term memory, user profiles, and context during long conversations with flexible compression settings.",
@@ -201,7 +318,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-advanced-settings-en.png"),
     );
-    expect(enAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1055 / 1071" });
+    expect(enAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1055 / 1285" });
     const enPersonaImage = screen.getByAltText("LightVela Now Supports Custom Persona File Uploads");
     expect(enPersonaImage).toHaveAttribute(
       "src",
@@ -245,6 +362,16 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
     );
+    const enTestRunHeading = within(augustSection!).getByRole("heading", {
+      name: "Jobs Now Support Test Runs",
+    });
+    expect(within(augustSection!).getAllByRole("heading")[1]).toBe(enTestRunHeading);
+    expect(
+      within(augustSection!).getByText(
+        "When creating or editing a job, you can run the current job once without saving it, review the result, and then decide whether to create or update the job.",
+      ),
+    ).toBeInTheDocument();
+    expect(enTestRunHeading.closest("article")?.querySelector("img")).toBeNull();
 
     cleanup();
     await i18n.changeLanguage("zh-Hant");
@@ -257,12 +384,15 @@ describe("global changelog skill package entry", () => {
     expect(
       screen.getByRole("heading", { name: "LightVela 新增 Hermes Agent 高級設置" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "LightVela 新增 DeepSeek Harness" })).toBeInTheDocument();
-    expect(screen.getByAltText("LightVela 新增 DeepSeek Harness")).toHaveAttribute(
+    const zhHantDeepSeekHarnessHeading = screen.getByRole("heading", {
+      name: /LightVela 實驗室新增 DeepSeek Harness/,
+    });
+    expect(within(zhHantDeepSeekHarnessHeading).getByText("Beta")).toBeInTheDocument();
+    expect(screen.getByAltText("LightVela 實驗室新增 DeepSeek Harness")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.png"),
     );
-    expect(screen.getByAltText("LightVela 新增 DeepSeek Harness").parentElement).toHaveStyle({
+    expect(screen.getByAltText("LightVela 實驗室新增 DeepSeek Harness").parentElement).toHaveStyle({
       aspectRatio: "2172 / 1286",
     });
     expect(screen.getByAltText("LightVela 新增 Hermes Agent 高級設置")).toHaveAttribute(
@@ -325,13 +455,18 @@ describe("global changelog skill package entry", () => {
     expect(
       screen.getByRole("heading", { name: "LightVela Menambahkan Pengaturan Lanjutan untuk Hermes Agent" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "LightVela Menambahkan DeepSeek Harness" })).toBeInTheDocument();
+    const idDeepSeekHarnessHeading = screen.getByRole("heading", {
+      name: /DeepSeek Harness Kini Tersedia di LightVela Labs/,
+    });
+    expect(within(idDeepSeekHarnessHeading).getByText("Beta")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Instal dan kelola DeepSeek Harness bersama Hermes Agent, dengan akses WebUI khusus, konfigurasi penyedia model, pengelolaan plugin, dukungan workspace, dan kontrol layanan yang terpisah.",
       ),
     ).toBeInTheDocument();
-    const idDeepSeekHarnessImage = screen.getByAltText("LightVela Menambahkan DeepSeek Harness");
+    const idDeepSeekHarnessImage = screen.getByAltText(
+      "DeepSeek Harness Kini Tersedia di LightVela Labs",
+    );
     expect(idDeepSeekHarnessImage).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
@@ -371,13 +506,18 @@ describe("global changelog skill package entry", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "LightVela Añade DeepSeek Harness" })).toBeInTheDocument();
+    const esDeepSeekHarnessHeading = screen.getByRole("heading", {
+      name: /DeepSeek Harness ya está disponible en LightVela Labs/,
+    });
+    expect(within(esDeepSeekHarnessHeading).getByText("Beta")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Instale y administre DeepSeek Harness junto a Hermes Agent, con acceso dedicado a WebUI, configuración de proveedores de modelos, gestión de plugins, compatibilidad con workspaces y controles de servicio independientes.",
       ),
     ).toBeInTheDocument();
-    const esDeepSeekHarnessImage = screen.getByAltText("LightVela Añade DeepSeek Harness");
+    const esDeepSeekHarnessImage = screen.getByAltText(
+      "DeepSeek Harness ya está disponible en LightVela Labs",
+    );
     expect(esDeepSeekHarnessImage).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
@@ -410,7 +550,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/soul-persona-global-zh.webp"),
     );
-    expect(screen.getByAltText("LightVela 产品内测上线")).toHaveAttribute(
+    expect(screen.getByAltText("LightVela 产品公测上线")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-launch-global-zh.webp"),
     );
@@ -449,7 +589,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/soul-persona-global-en.webp"),
     );
-    expect(screen.getByAltText("LightVela Product Beta Launch")).toHaveAttribute(
+    expect(screen.getByAltText("LightVela Public Beta Launch")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-launch-global-en.webp"),
     );

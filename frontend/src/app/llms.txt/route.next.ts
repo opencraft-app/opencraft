@@ -3,6 +3,7 @@ import { getDocsPage } from '@next-site/docs-page';
 import { DEFAULT_PUBLIC_DOCS_LOCALE } from '@next-site/public-locale';
 import { DOCS_ROUTE_SLUGS, docsLastUpdated, type DocsRouteLocale } from '@next-site/docs-route-manifest';
 import { absoluteUrl } from '@next-site/seo';
+import { BLOG_POSTS } from '@/pages/marketing/blog-content';
 
 export const dynamic = 'force-static';
 
@@ -76,6 +77,7 @@ const COPY = {
     entries: [
       { title: 'Home', path: '/' },
       { title: 'About', path: '/about' },
+      { title: 'Blog', path: '/blog' },
       { title: 'Changelog', path: '/changelog' },
     ],
     /**
@@ -170,7 +172,12 @@ export function GET() {
   const docsLocale: DocsRouteLocale = DEFAULT_PUBLIC_DOCS_LOCALE;
 
   // 官方入口
-  const entryLinks: DocLink[] = copy.entries.map((entry) => ({
+  const entryLinks: DocLink[] = [
+    ...copy.entries,
+    ...(region === 'global'
+      ? BLOG_POSTS.map((post) => ({ title: post.title, path: `/blog/${post.slug}` }))
+      : []),
+  ].map((entry) => ({
     title: entry.title,
     url: absoluteUrl(entry.path),
     slug: [],

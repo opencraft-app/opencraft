@@ -2,7 +2,7 @@
 
 ## Summary
 
-Automations let Hermes Agent proactively run work on a fixed time, interval, or one-time schedule, then send the result to the selected notification channels. You can start from a template, or customize the name, run rules, task instructions, effective window, and notification settings, then continue managing the task status from the task list.
+**Automations let Hermes Agent proactively run work on a fixed time, interval, or one-time schedule, then send the result to the selected notification channels. You can start from a template, or customize the name, run rules, task instructions, effective window, and notification settings, then continue managing the task status from the task list.**
 
 When creating or editing an automation, you can also link it to an upstream task. Later runs use the upstream task's most recent completed output as additional context. This is useful for splitting workflows such as “collect information first, then summarize it” into multiple steps.
 
@@ -26,6 +26,10 @@ Each task supports flexible scheduling and run rules, so your AI assistant can k
 - **Effective window**: Limit the time range in which the task can run. Leave it empty to keep it active around the clock.
 - **Notification**: Optional toggles for selecting the channels that receive task execution notifications.
 
+To create a custom job, click “Create” instead of starting from a template, then fill in the blank dialog with your own schedule and instructions.
+
+![Create Job dialog for configuring an automation](../images/automation-create-job.webp)
+
 ## Linking an Upstream Task
 
 An upstream task is useful when one piece of work should be split into a stable multi-step flow:
@@ -46,11 +50,37 @@ The task instructions still need to explain how to use the upstream output. For 
 
 ## Task Templates
 
-If you are not sure what automation to configure, click “Templates” to choose a ready-made automation plan.
+If you are not sure what automation to configure, use the Template Area on the Automations page. Choose a card such as Water & medication reminders, Rent reminder, Exchange-rate alert, or Stock update digest, then click “Enable” to review the generated schedule and instructions before creating the job.
+
+![Template Area showing ready-made automation cards](../images/automation-template-area.webp)
+
+Opening a template pre-fills the Create Job dialog. The Stock update digest template, for example, fills in the job name, a daily run schedule, and market-information instructions so you can edit the details before testing or creating the job.
+
+<div style={{ maxWidth: "760px" }}>
+
+![Stock update digest template opened in the Create Job dialog](../images/automation-template-stock-job.webp)
+
+</div>
 
 ## Managing Automations
 
 After an automation is created, you can view enabled tasks on the “Automations” page.
+
+Use the tabs above the list to switch between “Current Jobs,” “Ended Jobs,” and “Recent Runs.” Ended Jobs collects completed, failed, and expired tasks, while ongoing tasks stay under Current Jobs.
+
+<div style={{ maxWidth: "420px" }}>
+
+![Automations page showing Current Jobs, Ended Jobs, and Recent Runs tabs](../images/automation-current-jobs.webp)
+
+</div>
+
+After a job starts running, it appears as a card under “Current Jobs” with its instructions, schedule, and quick actions.
+
+<div style={{ maxWidth: "520px" }}>
+
+![Running automation card in Current Jobs](../images/automation-running-job.webp)
+
+</div>
 
 From this page, you can inspect automation details, edit the task, pause it, or delete it as needed.
 

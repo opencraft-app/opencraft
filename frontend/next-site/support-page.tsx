@@ -347,11 +347,62 @@ const SUPPORT_LABELS_ES: Record<string, string> = {
   '微信号如：lightvela_demo，邮箱如：1234@gmail.com': 'Por ejemplo: WeChat lightvela_demo o correo 1234@gmail.com',
 };
 
+const SUPPORT_LABELS_JA: Record<string, string> = {
+  '每次必现': '常に発生',
+  '经常发生': '頻繁に発生',
+  '偶尔发生': 'ときどき発生',
+  '仅出现一次': '1回だけ発生',
+  '搜索引擎': '検索エンジン',
+  '朋友/同事推荐': '友人・同僚からの紹介',
+  '社交媒体': 'ソーシャルメディア',
+  '官网/文档': '公式サイト・ドキュメント',
+  '社区/论坛': 'コミュニティ・フォーラム',
+  '广告投放': '広告',
+  '新闻/媒体': 'ニュース・メディア',
+  '其他': 'その他',
+  '学生': '学生',
+  '开发者': '開発者',
+  '设计师': 'デザイナー',
+  '产品经理': 'プロダクトマネージャー',
+  '创业者': '起業家',
+  '运营/其他': '運用・その他',
+  '科研/学术': '研究・学術',
+  '工程师（非开发）': 'エンジニア（ソフトウェア開発以外）',
+  '市场/营销': 'マーケティング',
+  '销售/商务': '営業・ビジネス',
+  '人力/招聘': '人事・採用',
+  '写作/内容': 'ライティング・コンテンツ',
+  '教师/教育': '教師・教育',
+  '自由职业者': 'フリーランサー',
+  '分析师/咨询': 'アナリスト・コンサルティング',
+  '团队负责人/管理者': 'チームリーダー・管理職',
+  '几乎每天': 'ほぼ毎日',
+  '每周几次': '週に数回',
+  '每月几次': '月に数回',
+  '偶尔用用': 'ときどき利用',
+  '刚接触': '使い始めたばかり',
+  '互联网/软件': 'インターネット・ソフトウェア',
+  'AI/科技': 'AI・テクノロジー',
+  '教育': '教育',
+  '金融/保险': '金融・保険',
+  '媒体/内容': 'メディア・コンテンツ',
+  '电商/零售': 'EC・小売',
+  '医疗/生物': '医療・バイオテクノロジー',
+  '制造/硬件': '製造・ハードウェア',
+  '游戏/文娱': 'ゲーム・エンターテインメント',
+  '政府/公共': '行政・公共',
+  '自由职业/个体': 'フリーランス・個人事業',
+  '调研问卷': 'アンケート',
+  '可留下微信号或邮箱；': 'WeChat IDまたはメールアドレスを入力できます。',
+  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': '例：WeChat lightvela_demo、メール 1234@gmail.com',
+};
+
 export function localizeSupportLabel(label: string, locale: PublicSiteLocale): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return SUPPORT_LABELS_ID[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.EN_US) return SUPPORT_LABELS_EN[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return SUPPORT_LABELS_HANT[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.ES) return SUPPORT_LABELS_ES[label] ?? label;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return SUPPORT_LABELS_JA[label] ?? label;
   return label;
 }
 

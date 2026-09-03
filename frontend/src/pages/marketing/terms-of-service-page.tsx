@@ -8,6 +8,14 @@ import { AppLink } from "@/lib/app-navigation";
 import { localizedPath } from "@/lib/region";
 import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
+import {
+  JAPANESE_TERMS_OF_SERVICE_BLOCKS,
+  JAPANESE_TERMS_OF_SERVICE_CHROME,
+} from "./legal-copy.ja";
+import {
+  KOREAN_TERMS_OF_SERVICE_BLOCKS,
+  KOREAN_TERMS_OF_SERVICE_CHROME,
+} from "./legal-copy.ko";
 
 type TermsCopy = {
   backHome: string;
@@ -49,6 +57,8 @@ const copy = {
 } satisfies Record<"en" | "zh" | "id" | "es", TermsCopy>;
 
 export function getTermsOfServiceChrome(locale: PublicSiteLocaleCode): TermsCopy {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_TERMS_OF_SERVICE_CHROME;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_TERMS_OF_SERVICE_CHROME;
   if (locale === PUBLIC_SITE_LOCALES.ES) return copy.es;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return copy.id;
   return isZhLocale(locale) ? copy.zh : copy.en;
@@ -336,7 +346,7 @@ function isWarning(line: string): boolean {
   return line.length > 36 && /[A-Z]/.test(line) && line === line.toUpperCase();
 }
 
-function parseTermsBlocks(text: string): TermsBlock[] {
+export function parseTermsBlocks(text: string): TermsBlock[] {
   return text
     .split(/\n{2,}/)
     .map(normalizeLine)
@@ -353,6 +363,8 @@ export function getTermsOfServiceBlocks(
   locale: PublicSiteLocaleCode,
   englishBlocks: TermsBlock[],
 ): TermsBlock[] {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_TERMS_OF_SERVICE_BLOCKS as TermsBlock[];
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_TERMS_OF_SERVICE_BLOCKS as TermsBlock[];
   if (locale === PUBLIC_SITE_LOCALES.ES) return esTermsBlocks;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return idTermsBlocks;
   return isZhLocale(locale) ? zhTermsBlocks : englishBlocks;
@@ -372,6 +384,8 @@ function publicLocalePrefix(locale: PublicSiteLocaleCode): string {
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}`;
   if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}`;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}`;
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return `/${PUBLIC_URL_LANGS.KO_KR}`;
   if (locale.startsWith("zh")) return `/${PUBLIC_URL_LANGS.ZH_SG}`;
   return `/${PUBLIC_URL_LANGS.EN_US}`;
 }
@@ -468,7 +482,11 @@ function renderBlock(block: TermsBlock, index: number, locale: PublicSiteLocaleC
 export const TermsOfServicePage = () => {
   const localeOverride = useLocaleOverride();
   const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.ID_ID
+    localeOverride === PUBLIC_SITE_LOCALES.KO_KR
+      ? PUBLIC_SITE_LOCALES.KO_KR
+      : localeOverride === PUBLIC_SITE_LOCALES.JA_JP
+      ? PUBLIC_SITE_LOCALES.JA_JP
+      : localeOverride === PUBLIC_SITE_LOCALES.ID_ID
       ? PUBLIC_SITE_LOCALES.ID_ID
       : localeOverride === PUBLIC_SITE_LOCALES.ES
         ? PUBLIC_SITE_LOCALES.ES

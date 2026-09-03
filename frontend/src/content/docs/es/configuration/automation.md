@@ -2,7 +2,7 @@
 
 ## Resumen
 
-Las automatizaciones permiten que Hermes Agent ejecute trabajos proactivamente según un horario fijo, un intervalo o un esquema de ejecución única, y luego envíe los resultados a los canales de notificación seleccionados. Puede comenzar con una plantilla, o personalizar el nombre, las reglas de ejecución, las instrucciones de la tarea, la ventana de validez y la configuración de notificaciones, y luego continuar gestionando el estado de la tarea desde la lista de tareas.
+**Las automatizaciones permiten que Hermes Agent ejecute trabajos proactivamente según un horario fijo, un intervalo o un esquema de ejecución única, y luego envíe los resultados a los canales de notificación seleccionados. Puede comenzar con una plantilla, o personalizar el nombre, las reglas de ejecución, las instrucciones de la tarea, la ventana de validez y la configuración de notificaciones, y luego continuar gestionando el estado de la tarea desde la lista de tareas.**
 
 Al crear o editar una automatización, también puede vincularla a una tarea anterior. Las ejecuciones posteriores utilizarán la salida más reciente completada de la tarea anterior como contexto adicional. Esto es útil para dividir flujos de trabajo como "recopilar información primero, luego resumirla" en múltiples pasos.
 
@@ -26,6 +26,10 @@ Cada tarea admite programación flexible y reglas de ejecución, de modo que su 
 - **Ventana de validez**: Limite el rango de tiempo en el que la tarea puede ejecutarse. Déjelo vacío para mantenerlo activo las 24 horas.
 - **Notificación**: Interruptores opcionales para seleccionar los canales que reciben las notificaciones de ejecución de la tarea.
 
+Para crear un Job personalizado, haga clic en "Crear" en lugar de partir de una plantilla, y complete el formulario en blanco con su propio horario e instrucciones.
+
+![Cuadro Crear Job para configurar una automatización](../images/automation-create-job.webp)
+
 ## Vincular una Tarea Anterior
 
 Una tarea anterior es útil cuando una pieza de trabajo debe dividirse en un flujo multi-paso estable:
@@ -46,11 +50,37 @@ Las instrucciones de la tarea aún necesitan explicar cómo utilizar la salida d
 
 ## Plantillas de Tareas
 
-Si no está seguro de qué automatización configurar, haga clic en "Plantillas" para elegir un plan de automatización listo para usar.
+Si no está seguro de qué automatización configurar, use la Zona de plantillas en la página "Automatizaciones". Elija una tarjeta como Recordatorios de agua y medicación, Recordatorio del alquiler, Alerta de tipo de cambio o Resumen bursátil, y haga clic en "Activar" para revisar el horario y las instrucciones antes de crear el Job.
+
+![Zona de plantillas con tarjetas de automatización listas para usar](../images/automation-template-area.webp)
+
+Al abrir una plantilla, el formulario Crear Job se completa automáticamente. La plantilla Resumen bursátil, por ejemplo, rellena el nombre del Job, una programación diaria y las instrucciones de información de mercado para que pueda editar los detalles antes de probar o crear el Job.
+
+<div style={{ maxWidth: "760px" }}>
+
+![Plantilla Resumen bursátil abierta en el formulario Crear Job](../images/automation-template-stock-job.webp)
+
+</div>
 
 ## Gestionar Automatizaciones
 
 Después de crear una automatización, puede ver las tareas habilitadas en la página "Automatizaciones".
+
+Use las pestañas sobre la lista para alternar entre "Jobs actuales", "Jobs finalizados" y "Ejecuciones recientes". "Jobs finalizados" reúne las tareas completadas, fallidas y vencidas, mientras que las tareas en curso permanecen en "Jobs actuales".
+
+<div style={{ maxWidth: "420px" }}>
+
+![Página de automatizaciones con las pestañas Jobs actuales, Jobs finalizados y Ejecuciones recientes](../images/automation-current-jobs.webp)
+
+</div>
+
+Cuando un Job empieza a ejecutarse, aparece como una tarjeta en "Jobs actuales" con sus instrucciones, horario y acciones rápidas.
+
+<div style={{ maxWidth: "520px" }}>
+
+![Tarjeta de automatización en ejecución dentro de Jobs actuales](../images/automation-running-job.webp)
+
+</div>
 
 Desde esta página, puede inspeccionar los detalles de la automatización, editar la tarea, pausarla o eliminarla según sea necesario.
 

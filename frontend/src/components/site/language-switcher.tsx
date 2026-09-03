@@ -16,6 +16,7 @@
  */
 
 import { Check, ChevronDown, Globe } from "lucide-react";
+import type { KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -190,6 +191,7 @@ function DropdownSwitcher({
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const active = currentOption(activeLocale ?? i18n.language);
   const visibleLocales = SWITCHER_VISIBLE_LOCALES.filter((locale) => (
     locale !== (isGlobal ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.ZH_SG)
@@ -209,6 +211,35 @@ function DropdownSwitcher({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    wrapRef.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus();
+  }, [open]);
+
+  const closeAndRestoreFocus = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const handleListboxKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeAndRestoreFocus();
+      return;
+    }
+
+    const options = [...(wrapRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [])];
+    const currentIndex = options.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowDown") nextIndex = Math.min(currentIndex + 1, options.length - 1);
+    if (event.key === "ArrowUp") nextIndex = Math.max(currentIndex - 1, 0);
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = options.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    options[nextIndex]?.focus();
+  };
 
   const handlePick = (value: PublicSiteLocale) => {
     setOpen(false);
@@ -245,11 +276,17 @@ function DropdownSwitcher({
   return (
     <div ref={wrapRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="Change language"
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          event.preventDefault();
+          setOpen(true);
+        }}
         className="inline-flex items-center justify-center gap-1.5 h-[36px] px-3 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium whitespace-nowrap"
       >
         <Globe className="h-[14px] w-[14px]" />
@@ -262,6 +299,7 @@ function DropdownSwitcher({
       {open && (
         <ul
           role="listbox"
+          onKeyDown={handleListboxKeyDown}
           className="absolute right-0 top-[calc(100%+6px)] z-50 w-max min-w-[168px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
         >
           {!isGlobal && chinaSiteOption}

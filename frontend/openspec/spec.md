@@ -1,3 +1,80 @@
+# 国际站 V2 多语言首页接入 Spec
+
+**最后更新：** 2026-09-01
+
+**状态：** 已实现并完成用户验收。
+
+## 1. 区域与语言边界
+
+1. `isGlobal === true` 且 locale 为 `en-US`、`zh-SG`、`zh-Hant`、`id-ID`、`es`、`ja-JP`、`ko-KR` 时使用新版首页。
+2. 国内站构建继续使用现有 `PublicHomePage`，不得加载新版首页 fragment、CSS 或运行时脚本。
+3. `zh-CN` 不选择新版国际站首页；七个已发布 locale 必须读取各自 fragment，避免跨语言内容回退。
+
+## 2. 页面与动效契约
+
+1. 页面结构、布局、图片和动效以已验收 V2 静态首页为来源；七个 locale 使用对应本地化 fragment 和图片。
+2. 首页正文必须进入静态导出 HTML，不能用 iframe，也不能依赖客户端 fetch 后才出现。
+3. 动效脚本只在新版首页挂载时加载；locale 变化时移除旧脚本并以新 locale 重新加载，页面卸载时不得留下重复脚本标签。
+4. 所有 fragment 图片、字体和脚本使用 `/lightvela-intl-home/` 绝对资源路径；资源必须在构建前可解析。
+5. 简体与繁体中文使用中文版字体；英文、印尼语、西班牙语、日语、韩语营销标题使用英文版 editorial 字体基准。
+6. 印尼语与西班牙语长 Hero 标题桌面端保持一行；印尼语能力区长标题桌面端保持一行；移动端允许自然换行且不得横向溢出。
+7. 页脚、用户评价和 DeepSeek Harness 使用本地已确认版本；Hero eyebrow 不使用浅色胶囊。
+
+## 3. 导航契约
+
+1. fragment 中不得保留 `href="#"`、`javascript:`、本地 `index.html` 或 `assets/...` 相对路径。
+2. 核心站内落点固定为：`/`、`/subscribe`、`/docs/overview`、`/changelog`、`/about`、`/agents`、`/agents/automations`、`/agents/files`、`/agents/websites/`、`/privacy-policy`、`/terms-of-service`、`/open-source-licenses`。
+3. 对比文章落到 `/docs/compare/*` 正式文档路由；通道指引落到 `/docs/configuration/channel-*`。
+4. 语言入口复用生产语言切换器；外部 Discord、WhatsApp、X、YouTube、CloudBase、EdgeOne 使用当前正式链接并带 `target="_blank" rel="noreferrer"`。
+5. Hero、账号入口、产品 CTA 和试用入口落到对应正式 Agent 或订阅路由，并保留 locale 前缀。
+
+## 4. 验收契约
+
+1. 测试先证明最新 master 尚未接入新版首页，再实现区域选择和资源加载。
+2. 运行定向 Vitest、`pnpm check`、`pnpm build:global` 与 `git diff --check`。
+3. 本地 global 开发服务在独立端口启动；桌面和移动端检查七个 locale 的首屏、导航、动效、无水平溢出、无破图和无新增页面错误。
+4. 国内站负向测试必须证明 `isGlobal === false` 不选择新版首页。
+5. 自动化测试必须覆盖 locale fragment、正式链接、资源完整性、动效脚本重绑定、保留模块、长标题与 CTA 本地化。
+
+---
+
+# 首页加载性能优化 Spec
+
+**最后更新：** 2026-08-31
+
+**状态：** 已归档。归档文件：`openspec/changes/2026-08-31-homepage-performance.md`。
+
+## 1. 图片加载契约
+
+1. BrandIcons 1、Feature 跑马灯 18、Cards 12、Process 7、CTA 2，共 40 个唯一折叠下方资源必须使用 `loading="lazy"`。
+2. Hero 四张图片与公共 Header 的 LightVela logo 不得在本批改为 lazy。
+3. ProcessSection 的数据映射产生 7 个唯一资源；移动端重复实例也必须继承 lazy 属性。
+4. width/height 只允许使用图片真实 intrinsic size；已有固定尺寸/比例容器可以作为布局稳定性约束，不得填写猜测值。
+5. 最新 master 的真实构建基线为 CN 45、global 46；目标分别降为 5 和 6。CN 剩余 logo + Hero 四图，global 额外保留 Footer wordmark。
+
+## 2. 首页场景依赖契约
+
+1. 首页 6 个 pack、语言文案、locale 映射与 getter 位于独立 overview 入口，并由全量库复用同一份基础定义。
+2. `overview-packs.ts` 不得 import `scenario-packs.ts`；共用 factory、类型和最小字段依赖放入中立 core。
+3. 全量 pack 的有序 ID 集合和重复性、首页 6 个 ID/顺序、公开 locale 文案及 `promptBuilder` 行为必须保持不变。
+4. 原入口可按调用方兼容需要 re-export；`landing-page.tsx` 必须直接消费 overview 入口。
+5. 构建产物必须证明首页链不再包含完整 `scenario-packs` / `FOCUSED_SCENARIO_PACKS`，不能只用源码 import 变化代替。
+
+## 3. i18n Q0 PoC 契约
+
+1. 记录 CN/global 首页脚本、模块 ID、client boundary 和重复字典证据，解释两个约 1006 KiB chunk 的来源。
+2. 优先验证共享 chunk 或收窄 client boundary 能否去掉一份重复字典，并记录 before/after。
+3. 本批不得改变运行时 i18n 行为；若结论要求改初始化、hydration、locale 注册表或资源外置，必须另起实施计划。
+
+## 4. 验证契约
+
+1. baseline 与改后样本使用同一 commit 基线、设备、Chrome、限速和构建环境。
+2. Lighthouse 冷缓存各运行 5 次，比较中位数 LCP/FCP/TBT/CLS。
+3. 国内站和国际站分别执行真实 Next 构建；本机失败时前后样本必须统一迁移到同一 CI/构建机，禁止跨环境比较。
+4. 必须通过图片/场景定向测试、`pnpm i18n:check`、`pnpm i18n:zh-hant:check`、`pnpm check` 与 `git diff --check`。
+
+---
+
 # 国际站西语端到端上线 Spec
 # DeepSeek Harness 真实接入 Spec
 
@@ -407,3 +484,35 @@ IP 不进入 Redis key 明文、不写业务日志。只有 `SITE_GATEWAY_TRUST_
 - site-gateway：owner-only/public 回归、分享页、动态 Cookie TTL、generation 失效、自动到期、错误/429/503、return_to 安全和受信代理头。
 - 前端：不在本分支验证，交由后续前端实现补充交互测试、类型检查、i18n 与浏览器验收。
 - 门禁：目标 Go 包测试、site-gateway `go test ./...`、`git diff --check`。
+
+---
+
+# 国际站日语完整本地化 Spec
+
+**区域：** `global`，仅国际站 `lightvela.ai`。
+
+**Locale：** `ja-JP`；公开 URL 前缀 `/ja-jp`。
+
+## 1. 发布契约
+
+日语路由、切换器、SEO、Docs 与字体只从 locale 注册表的发布状态派生。完成前保持 `switcherVisible=false`、`translationRequired=false`；自动门禁、母语抽检和法务审阅通过后同时开启。
+
+## 2. 字典与结构化内容
+
+`ja-JP.json` 必须与中文基准 key 集一致、全部非空，且占位符、HTML 标签和换行结构一致。Soul、Buddy、Skills、Experts 与场景任务使用显式日语数据源；发布状态下核心内容不得回退中文或西语。
+
+## 3. Docs
+
+`src/content/docs/ja/**` 与英文/西语发布文档保持 61 个文件同集合。图片目标、代码块、标题层级、表格、事实、能力边界和链接意图保持一致；内链指向 `/ja-jp/docs/**`。日语搜索与 manifest 必须覆盖全部发布 slug。
+
+## 4. 法务
+
+隐私、Cookie 与服务条款提供完整日语译文并声明英文版本优先。开源许可证正文保持英文，只翻译页面结构与说明。
+
+## 5. SEO 与字体
+
+日语 URL 使用 self-canonical、`hreflang=ja-JP`、`og:locale=ja_JP`、`html lang=ja-JP`。只有真实 200 路径进入 sitemap。字体使用 Hiragino Sans / Yu Gothic / Noto Sans JP / system-ui，不将完整日文字形加入 HY 字体子集。
+
+## 6. 排除
+
+国内站、Models、Tea SDK 内部语言包、自动语言识别、账号级语言同步、日韩市场支付与登录能力均不在本次范围。

@@ -18,7 +18,13 @@ import {
   localeDefinition,
   localeDefinitionByUrlLang,
   parseLocaleCode,
+  parsePublishedLocaleCode,
+  parseRuntimeLocaleCode,
+  publishedI18nDictKeys,
+  publishedLocaleDefinitions,
+  publishedUrlLangs,
   resolveUrlLangToLocale,
+  runtimeLocaleDefinitions,
   TRANSLATION_REQUIRED_DICT_KEYS,
   urlLangMatchCandidates,
 } from "../locales.config";
@@ -84,6 +90,7 @@ describe("locales.json 与联合类型的一致性", () => {
       expect(typeof def.switcherVisible, `switcherVisible: ${def.code}`).toBe("boolean");
       expect(typeof def.translationRequired, `translationRequired: ${def.code}`).toBe("boolean");
       expect(typeof def.requiresFontFallback, `requiresFontFallback: ${def.code}`).toBe("boolean");
+      expect(typeof def.fontSubsetEligible, `fontSubsetEligible: ${def.code}`).toBe("boolean");
     }
   });
 
@@ -135,6 +142,30 @@ describe("注册表自身一致性", () => {
     for (const code of ["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"] as const) {
       expect(ALL_LOCALE_CODES).toContain(code);
     }
+  });
+
+  it("公开路由、字典和切换器从同一发布条件派生", () => {
+    const japaneseReadyDefinitions = LOCALE_DEFINITIONS.map((definition) =>
+      definition.code === "ja-JP"
+        ? { ...definition, switcherVisible: true, translationRequired: true }
+        : definition,
+    );
+
+    expect(publishedLocaleDefinitions(japaneseReadyDefinitions).map((definition) => definition.code))
+      .toContain("ja-JP");
+    expect(publishedUrlLangs(japaneseReadyDefinitions)).toContain("ja-jp");
+    expect(publishedI18nDictKeys(japaneseReadyDefinitions)).toContain("ja-JP");
+  });
+
+  it("翻译门禁未打开时不得生成公开路由", () => {
+    const incompleteJapaneseDefinitions = LOCALE_DEFINITIONS.map((definition) =>
+      definition.code === "ja-JP"
+        ? { ...definition, switcherVisible: true, translationRequired: false }
+        : definition,
+    );
+
+    expect(publishedUrlLangs(incompleteJapaneseDefinitions)).not.toContain("ja-jp");
+    expect(publishedI18nDictKeys(incompleteJapaneseDefinitions)).not.toContain("ja-JP");
   });
 });
 
@@ -202,6 +233,50 @@ describe("不可信输入的白名单收敛", () => {
     }
   });
 
+  it("公开输入解析器接受已发布的日语和韩语", () => {
+    expect(parsePublishedLocaleCode("es")).toBe("es");
+    expect(parsePublishedLocaleCode("ja-JP")).toBe("ja-JP");
+    expect(parsePublishedLocaleCode("ko-KR")).toBe("ko-KR");
+  });
+
+  it("已发布日韩始终可用，非生产预览只补充尚未发布 locale", () => {
+    const previewOptions = {
+      region: "global",
+      isProduction: false,
+      previewLocales: " ja-JP,unknown ",
+    } as const;
+
+    expect(runtimeLocaleDefinitions(previewOptions).map((definition) => definition.code))
+      .toEqual(["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"]);
+    expect(parseRuntimeLocaleCode("ja-JP", previewOptions)).toBe("ja-JP");
+    expect(parseRuntimeLocaleCode("unknown", previewOptions)).toBeNull();
+  });
+
+  it("生产环境忽略预览变量但保留已发布日韩 locale", () => {
+    const productionDefinitions = runtimeLocaleDefinitions({
+      region: "global",
+      isProduction: true,
+      previewLocales: "ja-JP",
+    });
+    const domesticDefinitions = runtimeLocaleDefinitions({
+      region: "cn",
+      isProduction: false,
+      previewLocales: "ja-JP",
+    });
+
+    expect(productionDefinitions.map((definition) => definition.code)).toEqual(
+      expect.arrayContaining(["ja-JP", "ko-KR"]),
+    );
+    expect(domesticDefinitions.map((definition) => definition.code)).toEqual(
+      expect.arrayContaining(["ja-JP", "ko-KR"]),
+    );
+    expect(parseRuntimeLocaleCode("ja-JP", {
+      region: "global",
+      isProduction: true,
+      previewLocales: "ja-JP",
+    })).toBe("ja-JP");
+  });
+
   it("URL 前缀解析覆盖正式前缀与历史别名，未知值返回 null", () => {
     expect(resolveUrlLangToLocale("es")).toBe("es");
     expect(resolveUrlLangToLocale("ja-jp")).toBe("ja-JP");
@@ -225,7 +300,7 @@ describe("新增语种的已知约束", () => {
     expect(resolveUrlLangToLocale("es")).toBe("es");
   });
 
-  it("生产切换器开放西语并继续隐藏日语与韩语", () => {
+  it("生产切换器开放西语、日语与韩语", () => {
     expect(SWITCHER_VISIBLE_LOCALES).toEqual([
       "en-US",
       "zh-CN",
@@ -233,8 +308,9 @@ describe("新增语种的已知约束", () => {
       "zh-Hant",
       "id-ID",
       "es",
+      "ja-JP",
+      "ko-KR",
     ]);
-    expect(SWITCHER_VISIBLE_LOCALES).not.toEqual(expect.arrayContaining(["ja-JP", "ko-KR"]));
   });
 
   it("日语、韩语、西语标记为需要字体回退", () => {
@@ -242,6 +318,12 @@ describe("新增语种的已知约束", () => {
     for (const code of ["ja-JP", "ko-KR", "es"] as const) {
       expect(localeDefinition(code).requiresFontFallback).toBe(true);
     }
+  });
+
+  it("日语与韩语完全使用系统字体，西语仍保留源字体支持的重音字符", () => {
+    expect(localeDefinition("es").fontSubsetEligible).toBe(true);
+    expect(localeDefinition("ja-JP").fontSubsetEligible).toBe(false);
+    expect(localeDefinition("ko-KR").fontSubsetEligible).toBe(false);
   });
 
   it("新增语种配置了文档回落，避免正文缺失导致 404", () => {

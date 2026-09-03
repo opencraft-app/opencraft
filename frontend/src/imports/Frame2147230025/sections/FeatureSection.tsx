@@ -71,7 +71,7 @@ function Container5() {
 function Image2() {
   return (
     <div className="absolute left-[5.2px] size-[4.839px] top-[14.57px]" data-name="Image">
-      <img alt="" className="absolute inset-0 max-w-none object-contain pointer-events-none size-full" src={imgImage} />
+      <img alt="" className="absolute inset-0 max-w-none object-contain pointer-events-none size-full" loading="lazy" src={imgImage} />
     </div>
   );
 }
@@ -741,7 +741,7 @@ function MaskGroup4() {
         <div className="-scale-y-100 flex-none rotate-180">
           <div className="h-[10.284px] mask-alpha mask-intersect mask-no-clip mask-no-repeat mask-position-[-0.002px_0px] mask-size-[53.385px_10.284px] relative w-[53.385px]" style={{ maskImage: `url("${imgImage1}")` }} data-name="Image">
             <div className="absolute inset-0 opacity-40 overflow-hidden pointer-events-none">
-              <img alt="" className="absolute h-[114.37%] left-0 max-w-none top-[-11.78%] w-[99.98%]" src={imgImage614591645} />
+              <img alt="" className="absolute h-[114.37%] left-0 max-w-none top-[-11.78%] w-[99.98%]" loading="lazy" src={imgImage614591645} />
             </div>
           </div>
         </div>
@@ -852,7 +852,7 @@ function MaskGroup5() {
   return (
     <div className="absolute contents left-[-0.15px] top-[-0.15px]" data-name="Mask group">
       <div className="absolute h-[32.364px] left-[-71.23px] mask-alpha mask-intersect mask-no-clip mask-no-repeat mask-position-[71.23px_1.211px] mask-size-[53.385px_10.284px] top-[-1.21px] w-[167.716px]" style={{ maskImage: `url("${imgImage2}")` }} data-name="Image">
-        <img alt="" className="absolute inset-0 max-w-none object-cover opacity-30 pointer-events-none size-full" src={imgImage614591647} />
+        <img alt="" className="absolute inset-0 max-w-none object-cover opacity-30 pointer-events-none size-full" loading="lazy" src={imgImage614591647} />
       </div>
     </div>
   );
@@ -960,7 +960,7 @@ function MaskGroup6() {
   return (
     <div className="absolute contents left-[-0.15px] top-[-0.15px]" data-name="Mask group">
       <div className="absolute blur-[1.512px] h-[31.759px] left-[-69.57px] mask-alpha mask-intersect mask-no-clip mask-no-repeat mask-position-[69.566px_10.742px] mask-size-[53.385px_10.284px] top-[-10.74px] w-[164.994px]" style={{ maskImage: `url("${imgImage2}")` }} data-name="Image">
-        <img alt="" className="absolute inset-0 max-w-none object-cover opacity-20 pointer-events-none size-full" src={imgImage614591648} />
+        <img alt="" className="absolute inset-0 max-w-none object-cover opacity-20 pointer-events-none size-full" loading="lazy" src={imgImage614591648} />
       </div>
     </div>
   );
@@ -1180,7 +1180,7 @@ function Badge() {
         <div aria-hidden className="absolute inset-0 pointer-events-none rounded-[15.138px]">
           <div className="absolute bg-white inset-0 rounded-[15.138px]" />
           <div className="absolute inset-0 overflow-hidden rounded-[15.138px]">
-            <img alt="" className="absolute h-[83.42%] left-[0.91%] max-w-none top-[6.52%] w-[197.61%]" src={imgImage3} />
+            <img alt="" className="absolute h-[83.42%] left-[0.91%] max-w-none top-[6.52%] w-[197.61%]" loading="lazy" src={imgImage3} />
           </div>
         </div>
       </div>
@@ -1332,7 +1332,7 @@ function BadgeContainer() {
     <div className="absolute h-[25.524px] left-[111.67px] overflow-clip top-[137.33px] w-[28.714px]" data-name="Badge Container">
       <div className="absolute h-[24.886px] left-0 top-[0.64px] w-[72.394px]" data-name="Image">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <img alt="" className="absolute h-[156.06%] left-[-14.06%] max-w-none top-[-31.82%] w-[127.08%]" src={imgImage4} />
+          <img alt="" className="absolute h-[156.06%] left-[-14.06%] max-w-none top-[-31.82%] w-[127.08%]" loading="lazy" src={imgImage4} />
         </div>
       </div>
     </div>
@@ -1406,17 +1406,17 @@ function Container52() {
       <p className="[word-break:break-word] absolute font-['Lexend_Deca:Medium',sans-serif] font-medium leading-[6.399px] left-[296.33px] text-[6.257px] text-[rgba(0,0,0,0.9)] top-[147.42px] whitespace-nowrap">LightVela</p>
       <p className="[word-break:break-word] absolute font-['Lexend_Deca:Medium',sans-serif] font-medium leading-[6.399px] left-[296.33px] text-[6.257px] text-[rgba(0,0,0,0.9)] top-[181.86px] whitespace-nowrap">LightVela</p>
       <div className="absolute h-[3.199px] left-[285.02px] opacity-40 rounded-[27.194px] top-[158.86px] w-[76.784px]" data-name="RoundedRectangle">
-        <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[27.194px] size-full" src={imgRoundedRectangle} />
+        <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[27.194px] size-full" loading="lazy" src={imgRoundedRectangle} />
       </div>
       <div className="absolute h-[3.199px] left-[285.02px] opacity-40 rounded-[27.194px] top-[166.86px] w-[36.792px]" data-name="RoundedRectangle">
-        <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[27.194px] size-full" src={imgRoundedRectangle1} />
+        <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[27.194px] size-full" loading="lazy" src={imgRoundedRectangle1} />
       </div>
       <div className="absolute h-[3.199px] left-[285.02px] opacity-40 rounded-[27.194px] top-[194.05px] w-[76.784px]" data-name="RoundedRectangle">
-        <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[27.194px] size-full" src={imgRoundedRectangle} />
+        <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[27.194px] size-full" loading="lazy" src={imgRoundedRectangle} />
       </div>
       <Container55 />
       <div className="absolute h-[3.199px] left-[285.02px] opacity-40 rounded-[27.194px] top-[202.05px] w-[76.784px]" data-name="RoundedRectangle">
-        <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[27.194px] size-full" src={imgRoundedRectangle} />
+        <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none rounded-[27.194px] size-full" loading="lazy" src={imgRoundedRectangle} />
       </div>
     </div>
   );
@@ -1443,7 +1443,7 @@ function Group77() {
       <div className="absolute border-[1.6px] border-[rgba(102,109,235,0.5)] border-solid h-[1.6px] left-[176.99px] shadow-[0px_0px_3.199px_0px_rgba(65,81,255,0.16)] top-[164.38px] w-[22.395px]" data-name="RoundedRectangle" />
       <div className="absolute border-[#666deb] border-[1.6px] border-solid h-[1.6px] left-[258.58px] shadow-[0px_0px_3.199px_0px_rgba(65,81,255,0.16)] top-[164.38px] w-[17.596px]" data-name="RoundedRectangle" />
       <div className="-translate-x-1/2 -translate-y-1/2 absolute left-[calc(50%+7.78px)] opacity-20 size-[236.749px] top-[calc(50%+0.37px)]">
-        <img alt="" className="absolute block inset-0 max-w-none size-full" height="236.749" src={imgEllipse111556} width="236.749" />
+        <img alt="" className="absolute block inset-0 max-w-none size-full" height="236.749" loading="lazy" src={imgEllipse111556} width="236.749" />
       </div>
       <div className="-translate-x-1/2 -translate-y-1/2 absolute left-[calc(50%+6.9px)] size-[154.995px] top-[calc(50%-0.51px)]">
         <svg className="absolute block inset-0 size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 154.995 154.995">
@@ -1458,7 +1458,7 @@ function Group77() {
         </svg>
       </div>
       <div className="-translate-x-1/2 -translate-y-1/2 absolute left-[calc(50%+7.64px)] opacity-50 size-[197.065px] top-[calc(50%+0.13px)]">
-        <img alt="" className="absolute block inset-0 max-w-none size-full" height="197.065" src={imgEllipse111550} width="197.065" />
+        <img alt="" className="absolute block inset-0 max-w-none size-full" height="197.065" loading="lazy" src={imgEllipse111550} width="197.065" />
       </div>
       <div className="absolute left-[204.18px] size-[49.589px] top-[138.78px]">
         <svg className="absolute block inset-0 size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 32 32">
@@ -1528,12 +1528,12 @@ function Group77() {
       <Container51 />
       <div className="absolute h-[12.102px] left-[82.82px] opacity-80 top-[182.84px] w-[42.952px]" data-name="Image">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <img alt="" className="absolute h-[314.66%] left-[-88.51%] max-w-none top-[-64.15%] w-[210.02%]" src={imgImage4} />
+          <img alt="" className="absolute h-[314.66%] left-[-88.51%] max-w-none top-[-64.15%] w-[210.02%]" loading="lazy" src={imgImage4} />
         </div>
       </div>
       <div className="absolute h-[12.632px] left-[129.93px] opacity-80 top-[182.84px] w-[42.952px]" data-name="Image">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <img alt="" className="absolute h-[301.47%] left-[-88.51%] max-w-none top-[-149.73%] w-[210.02%]" src={imgImage4} />
+          <img alt="" className="absolute h-[301.47%] left-[-88.51%] max-w-none top-[-149.73%] w-[210.02%]" loading="lazy" src={imgImage4} />
         </div>
       </div>
       <div className="absolute bg-[rgba(65,81,255,0.15)] blur-[18.076px] h-[86.381px] left-[298.66px] rounded-[6.399px] top-[135.58px] w-[51.189px]" data-name="RoundedRectangle" />
@@ -1754,12 +1754,12 @@ function Container63() {
       </div>
       <div className="-translate-x-1/2 -translate-y-1/2 absolute h-[118.785px] left-[calc(50%+1.56px)] opacity-50 top-[calc(50%-5.72px)] w-[237.569px]">
         <div className="absolute inset-[-1.17%_-0.58%_0_-0.58%]">
-          <img alt="" className="block max-w-none size-full" height="120.174" src={imgEllipse111566} width="240.348" />
+          <img alt="" className="block max-w-none size-full" height="120.174" loading="lazy" src={imgEllipse111566} width="240.348" />
         </div>
       </div>
       <div className="absolute h-[58.704px] left-[222.43px] opacity-50 top-[99.58px] w-0">
         <div className="absolute inset-[0_-1.39px]">
-          <img alt="" className="block max-w-none size-full" height="58.704" src={imgVector919} width="2.779" />
+          <img alt="" className="block max-w-none size-full" height="58.704" loading="lazy" src={imgVector919} width="2.779" />
         </div>
       </div>
       <Container65 />
@@ -1966,7 +1966,7 @@ function TagPill({ img, label, bg }: { img: string; label: string; bg: string })
       style={{ background: bg }}
     >
       <span className="relative shrink-0 size-[28px] overflow-hidden">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={img} />
+        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" loading="lazy" src={img} />
       </span>
       {t(label)}
     </span>

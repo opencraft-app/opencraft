@@ -2,7 +2,7 @@
 
 ## Summary
 
-**LightVela plans to enter public beta with billing enabled on August 18, 2026 (Singapore time). Once that happens, existing closed-beta plans will be extended by one additional month, and new users can try the Launch plan free for 14 days. Two plans are currently offered, Launch and Cruise, differing in cloud runtime specs, dedicated storage, and monthly model credits; core agent capabilities are identical across tiers. Live pricing, availability, and exact entitlements are whatever the subscribe page shows.**
+**LightVela plans to enter public beta with billing enabled on August 18, 2026 (Singapore time). Once that happens, existing closed-beta plans will be extended by one additional month, and new users can try Launch free for 14 days or Launch AI free for 7 days on their first order. Two plans are currently offered, Launch and Cruise, differing in cloud runtime specs, dedicated storage, and monthly model credits; core agent capabilities are identical across tiers. Live pricing, availability, and exact entitlements are whatever the subscribe page shows.**
 
 ---
 
@@ -18,7 +18,7 @@ Since beta access opened, we have received many suggestions and real usage repor
 | --- | --- |
 | Planned public beta and billing date | August 18, 2026 (Singapore Time) |
 | Beta user benefit | After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month |
-| New-user benefit after public beta and billing start | 14-day free trial of the Launch plan |
+| New-user benefit after public beta and billing start | First-order Launch free for 14 days; first-order Launch AI free for 7 days |
 
 ## Product capabilities we are continuing to build
 
@@ -57,7 +57,7 @@ LightVela plans to enter public beta and start billing on August 18, 2026 (Singa
 We also hope to keep hearing from beta users.
 
 - Launch free trial for 14 days: new users can try Launch for free, including 1 cloud Agent, a 2-core 4GB isolated runtime, 50GB dedicated cloud storage, a small amount of trial credits, 24/7 availability, and the simple configuration console.
-- Launch AI first-month offer: users who want more AI credits out of the box can purchase Launch AI with a special first-month discount.
+- Launch AI free trial for 7 days: new users who want more AI credits can try Launch AI free for 7 days on their first order.
 - More purchase benefits are coming later.
 
 ## Next product iteration directions

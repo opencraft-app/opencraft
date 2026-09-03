@@ -51,7 +51,8 @@ describe("adaptProductModelProviders", () => {
         apiKeyUrl: "https://alpha.example.com/keys",
         baseUrl: "https://alpha.example.com/v1",
         apiMode: "chat_completions",
-        discoveryStrategy: "live",
+        discoveryStrategy: "catalog",
+        fixedModelSelection: true,
         catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
       },
       expect.objectContaining({
@@ -79,6 +80,92 @@ describe("adaptProductModelProviders", () => {
       providerKey: "minimax_coding",
       discoveryStrategy: "catalog",
     }));
+  });
+
+  it("uses the Rainbow Hy Token Plan catalog while keeping fixed selection", () => {
+    const [adaptedProvider] = adaptProductModelProviders([{
+      value: "tencent_hy_token_plan",
+      category: "coding_plan",
+      provider: "tencenthytokenplan",
+      provider_name: "腾讯云 Hy Token Plan（个人版）",
+      description: "七彩石最新模型说明",
+      api_key_url: "https://console.cloud.tencent.com/tokenhub/tokenplan/hy",
+      base_url: "https://api.lkeap.cloud.tencent.com/plan/v3",
+      api: "openai-completions",
+      models: [
+        { id: "hy4-preview", name: "Hy4 Preview", isDefault: true },
+        { id: "hy-next", name: "Hy Next" },
+      ],
+    }]);
+
+    expect(adaptedProvider).toEqual(expect.objectContaining({
+      providerKey: "tencent_hy_token_plan",
+      discoveryStrategy: "catalog",
+      fixedModelSelection: true,
+      description: "七彩石最新模型说明",
+      catalogModels: [
+        { id: "hy4-preview", name: "Hy4 Preview" },
+        { id: "hy-next", name: "Hy Next" },
+      ],
+    }));
+  });
+
+  it("hides the Rainbow Hy Token Plan provider when it has no valid models", () => {
+    expect(adaptProductModelProviders([{
+      value: "tencent_hy_token_plan",
+      category: "coding_plan",
+      provider: "tencenthytokenplan",
+      provider_name: "腾讯云 Hy Token Plan（个人版）",
+      description: "暂无模型",
+      api_key_url: "",
+      base_url: "https://api.lkeap.cloud.tencent.com/plan/v3",
+      api: "openai-completions",
+      models: [{ id: "  ", name: "无效模型" }],
+    }])).toEqual([]);
+  });
+
+  it("hides every Coding Plan provider when its Rainbow catalog has no valid models", () => {
+    expect(adaptProductModelProviders([{
+      value: "empty-coding-plan",
+      category: "coding_plan",
+      provider: "empty",
+      provider_name: "Empty Coding Plan",
+      description: "暂无模型",
+      api_key_url: "",
+      base_url: "https://empty.example.com/v1",
+      api: "openai-completions",
+      models: [{ id: " ", name: "Invalid" }],
+    }])).toEqual([]);
+  });
+
+  it("filters malformed Rainbow model entries without crashing the model page", () => {
+    const malformedProvider = {
+      value: "partially-valid-plan",
+      category: "coding_plan",
+      provider: "partial",
+      provider_name: "Partially Valid Plan",
+      description: "",
+      api_key_url: "",
+      base_url: "https://partial.example.com/v1",
+      api: "openai-completions",
+      models: [
+        null,
+        { id: null, name: "Missing ID" },
+        { id: 42, name: "Numeric ID" },
+        { id: "valid-model", name: null },
+      ],
+    } as unknown as IModelProvider;
+
+    expect(adaptProductModelProviders([malformedProvider])).toEqual([
+      expect.objectContaining({
+        providerKey: "partially-valid-plan",
+        catalogModels: [{ id: "valid-model", name: "valid-model" }],
+      }),
+    ]);
+  });
+
+  it("does not inject the Hy Token Plan provider when Rainbow omits it", () => {
+    expect(adaptProductModelProviders([])).toEqual([]);
   });
 
   it("extracts untrusted provider HTML without writing through element innerHTML", () => {

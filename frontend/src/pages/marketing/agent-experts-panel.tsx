@@ -62,6 +62,7 @@ interface ExpertSceneOption {
   label: string;
   labelEn: string;
   labelEs: string;
+  labelJa: string;
   icon: ElementType;
 }
 
@@ -100,18 +101,18 @@ interface SkillInstallProgress {
 
 const EXPERT_FILTER_SCENES: ExpertSceneOption[] = [
   // Keep the same visible category order as SkillHub's /skillspackage page.
-  { value: "finance", label: "金融", labelEn: "Finance", labelEs: "Finanzas", icon: Landmark },
-  { value: "tech", label: "科技", labelEn: "Technology", labelEs: "Tecnología", icon: Cpu },
-  { value: "design", label: "设计", labelEn: "Design", labelEs: "Diseño", icon: Palette },
-  { value: "marketing", label: "营销", labelEn: "Marketing", labelEs: "Marketing", icon: Megaphone },
-  { value: "legal", label: "法律", labelEn: "Legal", labelEs: "Legal", icon: Scale },
-  { value: "academic", label: "学术", labelEn: "Academic", labelEs: "Académico", icon: GraduationCap },
-  { value: "education", label: "教育", labelEn: "Education", labelEs: "Educación", icon: BookOpen },
-  { value: "hr", label: "人力", labelEn: "Human Resources", labelEs: "Recursos humanos", icon: Users },
-  { value: "ecommerce", label: "电商", labelEn: "Ecommerce", labelEs: "Comercio electrónico", icon: ShoppingCart },
-  { value: "media", label: "媒体", labelEn: "Media", labelEs: "Medios", icon: Clapperboard },
-  { value: "healthcare", label: "医疗", labelEn: "Healthcare", labelEs: "Salud", icon: HeartPulse },
-  { value: "mysticism", label: "玄学", labelEn: "Mysticism", labelEs: "Misticismo", icon: MoonStar },
+  { value: "finance", label: "金融", labelEn: "Finance", labelEs: "Finanzas", labelJa: "金融", icon: Landmark },
+  { value: "tech", label: "科技", labelEn: "Technology", labelEs: "Tecnología", labelJa: "テクノロジー", icon: Cpu },
+  { value: "design", label: "设计", labelEn: "Design", labelEs: "Diseño", labelJa: "デザイン", icon: Palette },
+  { value: "marketing", label: "营销", labelEn: "Marketing", labelEs: "Marketing", labelJa: "マーケティング", icon: Megaphone },
+  { value: "legal", label: "法律", labelEn: "Legal", labelEs: "Legal", labelJa: "法務", icon: Scale },
+  { value: "academic", label: "学术", labelEn: "Academic", labelEs: "Académico", labelJa: "学術", icon: GraduationCap },
+  { value: "education", label: "教育", labelEn: "Education", labelEs: "Educación", labelJa: "教育", icon: BookOpen },
+  { value: "hr", label: "人力", labelEn: "Human Resources", labelEs: "Recursos humanos", labelJa: "人事", icon: Users },
+  { value: "ecommerce", label: "电商", labelEn: "Ecommerce", labelEs: "Comercio electrónico", labelJa: "EC", icon: ShoppingCart },
+  { value: "media", label: "媒体", labelEn: "Media", labelEs: "Medios", labelJa: "メディア", icon: Clapperboard },
+  { value: "healthcare", label: "医疗", labelEn: "Healthcare", labelEs: "Salud", labelJa: "ヘルスケア", icon: HeartPulse },
+  { value: "mysticism", label: "玄学", labelEn: "Mysticism", labelEs: "Misticismo", labelJa: "占術", icon: MoonStar },
 ];
 
 const EXPERT_PACKAGE_SCENE_ROLES: Record<SkillHubKnownSkillSetScene, string> = {
@@ -212,10 +213,10 @@ const EXPERT_LANGUAGE_DOC_NAMES = {
   en: ["identify_en.md", ...LEGACY_SKILL_DOC_NAMES],
   zh: ["identify.md", ...LEGACY_SKILL_DOC_NAMES],
 } as const;
-type ExpertLanguage = "en" | "zh" | "es";
+type ExpertLanguage = "en" | "zh" | "es" | "ja";
 
 function usesEnglishExpertContent(lang?: ExpertLanguage): boolean {
-  return lang === "en" || lang === "es";
+  return lang === "en" || lang === "es" || lang === "ja";
 }
 const PACKAGE_SKILL_SLUG_OVERRIDES: Record<string, Record<string, string>> = {
   "tech-code-review": {
@@ -287,6 +288,36 @@ const EXPERT_PACKAGE_SUB_SCENE_ROLES_ES: Record<string, string> = {
   "poetry-creation": "Especialista en poesía",
   screenwriting: "Guionista",
   "story-outlining": "Especialista en planificación de tramas",
+};
+
+const EXPERT_PACKAGE_SCENE_ROLES_JA: Record<SkillHubKnownSkillSetScene, string> = {
+  academic: "学術リサーチャー",
+  "content-creation": "コンテンツ制作エキスパート",
+  design: "プロダクトデザインアドバイザー",
+  ecommerce: "EC運用エキスパート",
+  education: "学習プランナー",
+  finance: "投資分析エキスパート",
+  healthcare: "ヘルスケア情報アドバイザー",
+  hr: "人材・組織アドバイザー",
+  legal: "法務・コンプライアンスアドバイザー",
+  lifestyle: "ライフスタイル・健康アドバイザー",
+  marketing: "マーケティング成長エキスパート",
+  media: "メディアコンテンツエキスパート",
+  mysticism: "占いアドバイザー",
+  tech: "シニア開発エンジニア",
+};
+
+const EXPERT_PACKAGE_SUB_SCENE_ROLES_JA: Record<string, string> = {
+  "fitness-training": "フィットネストレーナー",
+  "health-data-analysis": "健康データアナリスト",
+  "lyrics-songwriting": "作詞エキスパート",
+  "meditation-mindfulness": "マインドフルネスコーチ",
+  "mental-counseling": "メンタルヘルスアドバイザー",
+  "novel-writing": "小説執筆エキスパート",
+  "nutrition-meal-plan": "栄養・健康アドバイザー",
+  "poetry-creation": "詩作エキスパート",
+  screenwriting: "脚本執筆エキスパート",
+  "story-outlining": "ストーリー構成プランナー",
 };
 function getInstalledPackagesStorageKey(botId: string): string {
   return `${INSTALLED_PACKAGES_STORAGE_PREFIX}:${botId}`;
@@ -391,12 +422,16 @@ function getExpertRole(
   t: ReturnType<typeof useT>,
   lang?: ExpertLanguage,
 ): string {
-  const subSceneRoles = lang === "es"
+  const subSceneRoles = lang === "ja"
+    ? EXPERT_PACKAGE_SUB_SCENE_ROLES_JA
+    : lang === "es"
     ? EXPERT_PACKAGE_SUB_SCENE_ROLES_ES
     : lang === "en"
       ? EXPERT_PACKAGE_SUB_SCENE_ROLES_EN
       : EXPERT_PACKAGE_SUB_SCENE_ROLES;
-  const sceneRoles = lang === "es"
+  const sceneRoles = lang === "ja"
+    ? EXPERT_PACKAGE_SCENE_ROLES_JA
+    : lang === "es"
     ? EXPERT_PACKAGE_SCENE_ROLES_ES
     : lang === "en"
       ? EXPERT_PACKAGE_SCENE_ROLES_EN
@@ -516,6 +551,7 @@ async function fetchSkillMarkdown(skillSlug: string, lang?: ExpertLanguage): Pro
 }
 
 export function getMissingExpertSkillDocumentMessage(lang?: ExpertLanguage): string {
+  if (lang === "ja") return "identify_en.md または互換性のあるスキル文書が見つかりません";
   return usesEnglishExpertContent(lang)
     ? "Could not find identify_en.md or a compatible skill document"
     : "未找到 identify.md 或兼容技能文档";
@@ -907,8 +943,8 @@ export function getSkillPackageInstallFailureMessage(
 }
 
 async function fetchAllExpertPackages(keyword: string, lang?: string): Promise<SkillHubSkillSet[]> {
-  const expertLanguage = lang === "en" || lang === "zh" || lang === "es" ? lang : undefined;
-  const apiLanguage = expertLanguage === "en" || expertLanguage === "es" ? "en" : undefined;
+  const expertLanguage = lang === "en" || lang === "zh" || lang === "es" || lang === "ja" ? lang : undefined;
+  const apiLanguage = expertLanguage === "en" || expertLanguage === "es" || expertLanguage === "ja" ? "en" : undefined;
   let page = 1;
   let total = 0;
   const allPackages: SkillHubSkillSet[] = [];
@@ -1472,7 +1508,11 @@ function ExpertSceneFilters({
     { value: "all", label: t("全部"), icon: PackageOpen },
     ...EXPERT_FILTER_SCENES.map((filter) => ({
       ...filter,
-      label: lang === "es" ? filter.labelEs : lang === "en" ? filter.labelEn : filter.label,
+      label: lang === "ja"
+        ? filter.labelJa
+        : lang === "es"
+          ? filter.labelEs
+          : lang === "en" ? filter.labelEn : filter.label,
     })),
   ];
 

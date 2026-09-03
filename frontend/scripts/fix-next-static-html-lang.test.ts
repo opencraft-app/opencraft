@@ -183,8 +183,8 @@ describe("fix-next-static-html-lang", () => {
       expect(readFileSync(join(out, "about", "index.html"), "utf8")).toContain('<html lang="en-US"');
       expect(readFileSync(join(out, "zh-cn", "about", "index.html"), "utf8")).toContain('<html lang="zh-CN"');
       expect(readFileSync(join(out, "es", "about", "index.html"), "utf8")).toContain('<html lang="es"');
-      expect(readFileSync(join(out, "ja-jp", "about", "index.html"), "utf8")).toContain('<html lang="en-US"');
-      expect(readFileSync(join(out, "ko-kr", "about", "index.html"), "utf8")).toContain('<html lang="en-US"');
+      expect(readFileSync(join(out, "ja-jp", "about", "index.html"), "utf8")).toContain('<html lang="ja-JP"');
+      expect(readFileSync(join(out, "ko-kr", "about", "index.html"), "utf8")).toContain('<html lang="ko-KR"');
 
       mkdirSync(join(out, "id-id", "about"), { recursive: true });
       writeFileSync(join(out, "id-id", "about", "index.html"), '<html lang="en"><body></body></html>');

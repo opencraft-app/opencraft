@@ -15,7 +15,7 @@ export default function BrandIconsSection() {
     <section className="w-full py-10" ref={ref as React.RefObject<HTMLElement>}>
       <div className="mx-auto px-16" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
         <div className="flex justify-center lv-reveal">
-          <img alt="" className="max-w-full h-auto" src={brandIconsUrl} />
+          <img alt="" className="max-w-full h-auto" height={321} loading="lazy" src={brandIconsUrl} width={2507} />
         </div>
       </div>
     </section>

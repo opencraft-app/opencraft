@@ -40,6 +40,8 @@ const LOCALES = Object.freeze({
   ZH_HANT: 'zh-Hant',
   ID_ID: 'id-ID',
   ES: 'es',
+  JA_JP: 'ja-JP',
+  KO_KR: 'ko-KR',
 });
 
 /** URL 前缀（对应 fumadocs 输出目录），与 `PUBLIC_URL_LANGS` 保持一致。 */
@@ -50,6 +52,8 @@ const URL_LANGS = Object.freeze({
   ZH_HANT: 'zh-hant',
   ID_ID: 'id-id',
   ES: 'es',
+  JA_JP: 'ja-jp',
+  KO_KR: 'ko-kr',
 });
 
 function convertTraditional(text) {
@@ -107,6 +111,7 @@ const cnDocs = [
   { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '功能与配置', description: '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。', hideDescription: true },
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
   { slug: 'configuration/deepseek-harness', title: 'DeepSeek Harness', file: 'configuration/deepseek-harness.md', group: '功能与配置', description: '在 LightVela 中安装和管理 DeepSeek Harness Labs 运行环境。', hideDescription: true },
+  { slug: 'configuration/workbench', title: '工作台', file: 'configuration/workbench.md', group: '功能与配置', description: '在 LightVela 中使用 AI Agent 创建、部署和管理静态网站。', hideDescription: true },
   // Hermes Agent 解读（长文科普，帮助用户理解 Hermes Agent 的设计与原理）
   { slug: 'hermes-agent/hermes-vs-openclaw', title: 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别', file: 'hermes-agent/01-hermes-vs-openclaw.md', group: 'Hermes Agent 解读', description: '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。', hideDescription: true },
   { slug: 'hermes-agent/why-hermes-remembers-you', title: 'Hermes Agent 是怎么"记住你"的？', file: 'hermes-agent/02-why-hermes-remembers-you.md', group: 'Hermes Agent 解读', description: '揭秘 Hermes Agent 长期记忆背后的四层分工系统：USER.md、MEMORY.md、SQLite+FTS5 会话档案与 Skills，以及写入/召回时机的工程实现。', hideDescription: true },
@@ -164,6 +169,30 @@ const ES_GROUP_LABELS = {
   Troubleshooting: 'Solución de problemas',
   Advanced: 'Avanzado',
   Support: 'Soporte',
+};
+
+const JA_GROUP_LABELS = {
+  'Getting Started': 'はじめに',
+  'Plans & Activation': 'プランと利用開始',
+  'Features & Configuration': '機能と設定',
+  'Use Cases': 'ユースケース',
+  'Compare & Choose': '比較と選び方',
+  'Hermes Agent Deep Dive': 'Hermes Agentを深く知る',
+  Troubleshooting: 'トラブルシューティング',
+  Advanced: '高度な活用',
+  Support: 'サポート',
+};
+
+const KO_GROUP_LABELS = {
+  'Getting Started': '시작하기',
+  'Plans & Activation': '플랜 및 시작',
+  'Features & Configuration': '기능 및 설정',
+  'Use Cases': '사용 사례',
+  'Compare & Choose': '비교 및 선택',
+  'Hermes Agent Deep Dive': 'Hermes Agent 심층 분석',
+  Troubleshooting: '문제 해결',
+  Advanced: '고급 활용',
+  Support: '지원',
 };
 
 const globalDocs = [
@@ -467,6 +496,17 @@ const globalDocs = [
     hideDescription: true,
   },
   {
+    slug: 'configuration/workbench',
+    title: { 'en-US': 'Workbench', 'zh-CN': '工作台' },
+    file: 'configuration/workbench.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Build, deploy, and manage static websites with an AI Agent in LightVela.',
+      'zh-CN': '在 LightVela 中使用 AI Agent 创建、部署和管理静态网站。',
+    },
+    hideDescription: true,
+  },
+  {
     slug: 'use-cases/personal-ai-assistant',
     title: { 'en-US': 'How to Build a Personal AI Assistant with LightVela', 'zh-CN': '如何用 LightVela 搭建个人 AI 助手？' },
     file: 'use-cases/personal-ai-assistant.md',
@@ -632,6 +672,38 @@ const globalDocs = [
     file: 'compare/lightvela-vs-genspark.md',
     group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
+    slug: 'compare/lightvela-vs-grok-bot',
+    title: { 'en-US': 'LightVela vs Grok Bot: Which is best to run your personal AI Agent?', 'zh-CN': 'LightVela vs Grok Bot：哪个更适合运行你的个人 AI Agent？' },
+    file: 'compare/lightvela-vs-grok-bot.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': 'Compare LightVela and Grok Bot for running a personal AI Agent, from persistent routines and messaging access to cloud computers and delegated work.', 'zh-CN': '对比 LightVela 与 Grok Bot 运行个人 AI Agent 的方式，了解个人工作流、消息入口、云端电脑与委托式工作的差异。' },
+    hideDescription: true,
+  },
+  {
+    slug: 'compare/lightvela-vs-mira',
+    title: { 'en-US': 'LightVela vs Mira: Which is best to run your personal AI Agent?', 'zh-CN': 'LightVela vs Mira：哪个更适合运行你的个人 AI Agent？' },
+    file: 'compare/lightvela-vs-mira.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': 'Compare LightVela and Mira for running a personal AI Agent, from persistent routines and messaging channels to Telegram-first teamwork and chat-based actions.', 'zh-CN': '对比 LightVela 与 Mira 运行个人 AI Agent 的方式，了解持久化工作流、消息通道、Telegram 协作与聊天驱动操作的差异。' },
+    hideDescription: true,
+  },
+  {
+    slug: 'compare/lightvela-vs-viktor',
+    title: { 'en-US': 'LightVela vs Viktor.com: Which is best to run your personal AI Agent?', 'zh-CN': 'LightVela vs Viktor.com：哪个更适合你的个人 AI Agent？' },
+    file: 'compare/lightvela-vs-viktor.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': 'Compare LightVela and Viktor.com for running a personal AI Agent, from persistent personal assistance to shared team workflows across business tools.', 'zh-CN': '对比 LightVela 与 Viktor.com 运行个人 AI Agent 的方式，了解持久化个人助手与跨业务工具团队工作流的差异。' },
+    hideDescription: true,
+  },
+  {
+    slug: 'compare/lightvela-vs-today-ai',
+    title: { 'en-US': 'LightVela vs Today.AI: Which is best for an always-on personal AI assistant?', 'zh-CN': 'LightVela vs Today.AI：哪个更适合运行始终在线的个人 AI 助手？' },
+    file: 'compare/lightvela-vs-today-ai.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': 'Compare LightVela and Today.AI for an always-on personal AI assistant, from explicit Agent hosting and Automations to proactive personal context across devices.', 'zh-CN': '对比 LightVela 与 Today.AI 的始终在线个人 AI 助手体验，了解明确的 Agent 托管与自动任务，以及跨设备的主动式个人上下文。' },
     hideDescription: true,
   },
   {
@@ -928,6 +1000,10 @@ const ES_DOC_METADATA = {
     title: 'DeepSeek Harness',
     description: 'Instala y administra DeepSeek Harness como un entorno Labs independiente que funciona junto a Hermes Agent en LightVela.',
   },
+  'configuration/workbench': {
+    title: 'Workbench',
+    description: 'Crea, publica y administra sitios web estáticos con un Agent de IA en LightVela.',
+  },
   'use-cases/personal-ai-assistant': {
     title: 'Cómo crear un asistente personal de IA con LightVela',
     description: 'Usa LightVela como asistente personal de IA para recordatorios, resúmenes y conversaciones cotidianas.',
@@ -1011,6 +1087,22 @@ const ES_DOC_METADATA = {
   'compare/lightvela-vs-genspark': {
     title: 'LightVela frente a Genspark: ¿cuál conviene para alojar un Agent de IA?',
     description: 'Compara LightVela y Genspark desde la perspectiva de un Agent personal que se ejecuta en la nube.',
+  },
+  'compare/lightvela-vs-grok-bot': {
+    title: 'LightVela frente a Grok Bot: ¿cuál es mejor para ejecutar tu AI Agent personal?',
+    description: 'Compara LightVela y Grok Bot para ejecutar un AI Agent personal, desde las rutinas persistentes y la mensajería hasta los ordenadores cloud y el trabajo delegado.',
+  },
+  'compare/lightvela-vs-mira': {
+    title: 'LightVela frente a Mira: ¿cuál es mejor para ejecutar tu AI Agent personal?',
+    description: 'Compara LightVela y Mira para ejecutar un AI Agent personal, desde las rutinas persistentes y los canales de mensajería hasta la colaboración centrada en Telegram y las acciones desde el chat.',
+  },
+  'compare/lightvela-vs-viktor': {
+    title: 'LightVela frente a Viktor.com: ¿cuál es mejor para ejecutar tu AI Agent personal?',
+    description: 'Compara LightVela y Viktor.com para ejecutar un AI Agent personal, desde la asistencia personal persistente hasta los flujos de equipo entre herramientas empresariales.',
+  },
+  'compare/lightvela-vs-today-ai': {
+    title: 'LightVela frente a Today.AI: ¿cuál es mejor para un asistente personal de IA siempre disponible?',
+    description: 'Compara LightVela y Today.AI para un asistente personal de IA siempre disponible, desde el alojamiento explícito del Agent y las Automatizaciones hasta el contexto personal proactivo entre dispositivos.',
   },
   'hermes-agent/hermes-vs-openclaw': {
     title: 'Hermes Agent frente a OpenClaw: diferencias fundamentales entre dos Agents de código abierto',
@@ -1183,6 +1275,10 @@ const ID_DOC_METADATA = {
     title: 'DeepSeek Harness',
     description: 'Instal dan kelola DeepSeek Harness sebagai lingkungan Labs terpisah yang berjalan berdampingan dengan Hermes Agent di LightVela.',
   },
+  'configuration/workbench': {
+    title: 'Workbench',
+    description: 'Buat, terbitkan, dan kelola situs web statis dengan Agent AI di LightVela.',
+  },
   credits: {
     title: 'Kredit',
     description: 'Pelajari cara kredit model LightVela dialokasikan, digunakan berdasarkan token, dan terkait dengan paket serta model.',
@@ -1267,6 +1363,22 @@ const ID_DOC_METADATA = {
     title: 'LightVela vs Genspark: Mana yang Lebih Sesuai untuk Hosting AI Agent?',
     description: 'Bandingkan LightVela dan Genspark dari sudut pandang Agent pribadi yang berjalan di cloud.',
   },
+  'compare/lightvela-vs-grok-bot': {
+    title: 'LightVela vs Grok Bot: Mana yang lebih tepat untuk menjalankan AI Agent pribadi?',
+    description: 'Bandingkan LightVela dan Grok Bot untuk menjalankan AI Agent pribadi, mulai dari rutinitas persisten dan akses pesan hingga komputer cloud dan pekerjaan terdelegasi.',
+  },
+  'compare/lightvela-vs-mira': {
+    title: 'LightVela vs Mira: Mana yang lebih tepat untuk menjalankan AI Agent pribadi?',
+    description: 'Bandingkan LightVela dan Mira untuk menjalankan AI Agent pribadi, mulai dari rutinitas persisten dan kanal pesan hingga kolaborasi yang berpusat pada Telegram dan tindakan melalui chat.',
+  },
+  'compare/lightvela-vs-viktor': {
+    title: 'LightVela vs Viktor.com: Mana yang lebih tepat untuk AI Agent pribadi?',
+    description: 'Bandingkan LightVela dan Viktor.com untuk menjalankan AI Agent pribadi, mulai dari bantuan pribadi yang persisten hingga alur kerja tim lintas tools bisnis.',
+  },
+  'compare/lightvela-vs-today-ai': {
+    title: 'LightVela vs Today.AI: Mana yang lebih tepat untuk asisten AI pribadi yang selalu tersedia?',
+    description: 'Bandingkan LightVela dan Today.AI untuk asisten AI pribadi yang selalu tersedia, mulai dari hosting Agent dan Automations yang jelas hingga konteks pribadi proaktif lintas perangkat.',
+  },
   'hermes-agent/hermes-vs-openclaw': {
     title: 'Hermes Agent vs OpenClaw',
     description: 'Pahami perbedaan Hermes Agent dan OpenClaw dari sisi tujuan, runtime, dan pengalaman pengguna.',
@@ -1321,6 +1433,72 @@ const ID_DOC_METADATA = {
   },
 };
 
+function plainMarkdownText(value) {
+  return value
+    .replace(/!\[([^\]]*)]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[`*_~>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function truncateJapaneseDescription(value, maxLength = 180) {
+  if (value.length <= maxLength) return value;
+  const candidate = value.slice(0, maxLength);
+  const boundary = Math.max(candidate.lastIndexOf('。'), candidate.lastIndexOf('！'), candidate.lastIndexOf('？'));
+  return boundary >= Math.floor(maxLength * 0.6)
+    ? candidate.slice(0, boundary + 1)
+    : `${candidate.trimEnd()}…`;
+}
+
+/** 日语 Docs 的 title/description 直接取自已审校的日语正文，避免再维护 61 份镜像。 */
+function japaneseDocMetadata(file) {
+  const path = join(sourceRoot, 'ja', file);
+  if (!existsSync(path)) throw new Error(`missing Japanese docs source: ${path}`);
+  const markdown = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+  const title = plainMarkdownText(markdown.match(/^#\s+(.+)$/m)?.[1] ?? 'LightVelaドキュメント');
+  const withoutCode = markdown.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm, '');
+  const summary = withoutCode.match(/\*\*([\s\S]*?)\*\*/)?.[1]
+    ?? withoutCode
+      .split(/\n\s*\n/)
+      .map(plainMarkdownText)
+      .find((paragraph) => paragraph.length >= 40 && paragraph !== title)
+    ?? `${title}について説明します。`;
+  return {
+    title,
+    description: truncateJapaneseDescription(plainMarkdownText(summary)),
+  };
+}
+
+function truncateKoreanDescription(value, maxLength = 180) {
+  if (value.length <= maxLength) return value;
+  const candidate = value.slice(0, maxLength);
+  const boundary = Math.max(candidate.lastIndexOf('.'), candidate.lastIndexOf('!'), candidate.lastIndexOf('?'));
+  return boundary >= Math.floor(maxLength * 0.6)
+    ? candidate.slice(0, boundary + 1)
+    : `${candidate.trimEnd()}…`;
+}
+
+/** 韩语 Docs 的 title/description 直接取自韩语正文，避免维护第二份 metadata 镜像。 */
+function koreanDocMetadata(file) {
+  const path = join(sourceRoot, 'ko', file);
+  if (!existsSync(path)) throw new Error(`missing Korean docs source: ${path}`);
+  const markdown = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+  const title = plainMarkdownText(markdown.match(/^#\s+(.+)$/m)?.[1] ?? 'LightVela 문서');
+  const withoutCode = markdown.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm, '');
+  const summary = withoutCode.match(/\*\*([\s\S]*?)\*\*/)?.[1]
+    ?? withoutCode
+      .split(/\n\s*\n/)
+      .map(plainMarkdownText)
+      .find((paragraph) => paragraph.length >= 40 && paragraph !== title)
+    ?? `${title}에 대해 설명합니다.`;
+  return {
+    title,
+    description: truncateKoreanDescription(plainMarkdownText(summary)),
+  };
+}
+
 for (const doc of globalDocs) {
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
@@ -1333,6 +1511,28 @@ for (const doc of globalDocs) {
   if (!esMetadata) throw new Error(`missing Spanish docs metadata: ${doc.slug}`);
   doc.title[LOCALES.ES] = esMetadata.title;
   doc.description[LOCALES.ES] = esMetadata.description;
+
+  if (doc.group && typeof doc.group === 'object') {
+    const englishGroup = doc.group[LOCALES.EN_US];
+    const jaGroup = JA_GROUP_LABELS[englishGroup];
+    if (!jaGroup) throw new Error(`missing Japanese docs group label: ${englishGroup}`);
+    doc.group[LOCALES.JA_JP] = jaGroup;
+  }
+
+  const jaMetadata = japaneseDocMetadata(doc.file);
+  doc.title[LOCALES.JA_JP] = jaMetadata.title;
+  doc.description[LOCALES.JA_JP] = jaMetadata.description;
+
+  if (doc.group && typeof doc.group === 'object') {
+    const englishGroup = doc.group[LOCALES.EN_US];
+    const koGroup = KO_GROUP_LABELS[englishGroup];
+    if (!koGroup) throw new Error(`missing Korean docs group label: ${englishGroup}`);
+    doc.group[LOCALES.KO_KR] = koGroup;
+  }
+
+  const koMetadata = koreanDocMetadata(doc.file);
+  doc.title[LOCALES.KO_KR] = koMetadata.title;
+  doc.description[LOCALES.KO_KR] = koMetadata.description;
 
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
@@ -1361,6 +1561,18 @@ const globalDocsForIndonesian = globalDocs.filter(
 
 const globalDocsForSpanish = globalDocsForEnglish.filter((doc) =>
   existsSync(join(sourceRoot, 'es', doc.file)),
+);
+
+const globalDocsForJapanese = globalDocs.filter(
+  (doc) =>
+    existsSync(join(sourceRoot, 'ja', doc.file)) &&
+    !isHiddenFor(doc, LOCALES.JA_JP),
+);
+
+const globalDocsForKorean = globalDocs.filter(
+  (doc) =>
+    existsSync(join(sourceRoot, 'ko', doc.file)) &&
+    !isHiddenFor(doc, LOCALES.KO_KR),
 );
 
 /** 判断 doc 是否对某 locale 隐藏（仅按 hiddenForLocales 白名单）。 */
@@ -1426,6 +1638,20 @@ const docSets = [
     docs: globalDocsForSpanish,
     title: 'Documentación de LightVela',
   },
+  {
+    outputPrefix: URL_LANGS.JA_JP,
+    sourcePrefix: 'ja',
+    locale: LOCALES.JA_JP,
+    docs: globalDocsForJapanese,
+    title: 'LightVelaドキュメント',
+  },
+  {
+    outputPrefix: URL_LANGS.KO_KR,
+    sourcePrefix: 'ko',
+    locale: LOCALES.KO_KR,
+    docs: globalDocsForKorean,
+    title: 'LightVela 문서',
+  },
 ];
 
 function ensureDir(path) {
@@ -1475,10 +1701,16 @@ function allDocsForLinks(outputPrefix) {
     localeDocs = globalDocsForIndonesian;
   } else if (outputPrefix === URL_LANGS.ES) {
     localeDocs = globalDocsForSpanish;
+  } else if (outputPrefix === URL_LANGS.JA_JP) {
+    localeDocs = globalDocsForJapanese;
+  } else if (outputPrefix === URL_LANGS.KO_KR) {
+    localeDocs = globalDocsForKorean;
   } else {
     localeDocs = globalDocsForEnglish;
   }
-  return outputPrefix === URL_LANGS.ES ? localeDocs : [...cnDocs, ...localeDocs];
+  return [URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)
+    ? localeDocs
+    : [...cnDocs, ...localeDocs];
 }
 
 function fileToHrefFor(outputPrefix) {
@@ -1497,9 +1729,22 @@ function fileToHrefFor(outputPrefix) {
 }
 
 function localizedImageName(imageName, locale) {
-  if (![LOCALES.EN_US, LOCALES.ID_ID, LOCALES.ES].includes(locale) || /-en\.[^.]+$/.test(imageName)) return imageName;
-  const candidate = imageName.replace(/(\.[^.]+)$/, '-en$1');
-  return existsSync(join(sourceRoot, 'images', candidate)) ? candidate : imageName;
+  const suffixesByLocale = {
+    [LOCALES.EN_US]: ['-en'],
+    [LOCALES.ZH_HANT]: ['-zh-hant'],
+    [LOCALES.ID_ID]: ['-id', '-en'],
+    [LOCALES.ES]: ['-es', '-en'],
+    [LOCALES.JA_JP]: ['-en'],
+    [LOCALES.KO_KR]: ['-en'],
+  };
+  const suffixes = suffixesByLocale[locale];
+  if (!suffixes || /-(?:en|zh-hant|id|es)\.[^.]+$/.test(imageName)) return imageName;
+
+  for (const suffix of suffixes) {
+    const candidate = imageName.replace(/(\.[^.]+)$/, `${suffix}$1`);
+    if (existsSync(join(sourceRoot, 'images', candidate))) return candidate;
+  }
+  return imageName;
 }
 
 function splitHrefSuffix(href) {
@@ -1526,7 +1771,7 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
     return target ? `${target}${suffix}${titleSuffix}` : destination;
   }
 
-  if (outputPrefix !== URL_LANGS.ES) return destination;
+  if (![URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)) return destination;
 
   const docsPath = hrefPath.startsWith('https://lightvela.ai/')
     ? hrefPath.slice('https://lightvela.ai'.length)
@@ -1534,9 +1779,9 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
   if (docsPath !== '/docs' && !docsPath.startsWith('/docs/')) return destination;
 
   const slug = docsPath.slice('/docs'.length).replace(/^\//, '').replace(/\/$/, '');
-  const spanishSlugs = new Set(globalDocsForEnglish.map((doc) => doc.slug.replace(/\/index$/, '')));
-  if (slug && !spanishSlugs.has(slug)) return destination;
-  return `/es/docs${slug ? `/${slug}` : ''}${suffix}${titleSuffix}`;
+  const localizedSlugs = new Set(globalDocsForEnglish.map((doc) => doc.slug.replace(/\/index$/, '')));
+  if (slug && !localizedSlugs.has(slug)) return destination;
+  return `/${outputPrefix}/docs${slug ? `/${slug}` : ''}${suffix}${titleSuffix}`;
 }
 
 export function normalizeMarkdownLinks(markdown, currentFile, outputPrefix, locale) {
@@ -1581,7 +1826,7 @@ function writeDoc(docSet, doc) {
   const raw = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   const body = convert(
     normalizeMarkdownLinks(
-      stripTitle(raw, rawTitle, docSet.locale === LOCALES.ES),
+      stripTitle(raw, rawTitle, [LOCALES.ES, LOCALES.JA_JP, LOCALES.KO_KR].includes(docSet.locale)),
       doc.file,
       docSet.outputPrefix,
       docSet.locale,

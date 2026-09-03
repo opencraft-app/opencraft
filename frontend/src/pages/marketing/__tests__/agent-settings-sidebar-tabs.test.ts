@@ -72,7 +72,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     }
   });
 
-  it("places skills under use before automations without moving workbench", () => {
+  it("places skills under use before automations; workbench lives in labs", () => {
     const page = readPageSource();
     const setupGroupStart = page.indexOf('id: "setup"');
     const useGroupStart = page.indexOf('id: "use"');
@@ -85,10 +85,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(useGroup.indexOf('id: "skill"')).toBeLessThan(
       useGroup.indexOf('id: "automations"'),
     );
-    expect(useGroup.indexOf('id: "automations"')).toBeLessThan(
-      useGroup.indexOf('id: "website"'),
-    );
-    expect(useGroup).toContain("isGlobal && showHiddenAgentTools");
+    expect(useGroup).not.toContain('id: "website"');
+    expect(useGroup).not.toContain("isGlobal && showHiddenAgentTools");
   });
 
   it("navigates the main area on tab click (settings → last menu, chat → first session)", () => {
@@ -116,6 +114,16 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('t("最近会话")');
     expect(page).toContain("chatSessions.map");
     expect(page).toContain('lv-agents-session-item');
+  });
+
+  it("normalizes backend and SDK default copy before rendering the sidebar", () => {
+    const page = readPageSource();
+
+    expect(page).toContain("resolveAgentDisplayName(activeBot.name, t)");
+    expect(page).toMatch(
+      /resolveAgentSessionTitle\(\s*session\.title,\s*i18n\.language,\s*t\("默认会话"\),?\s*\)/,
+    );
+    expect(page).toContain("{sessionDisplayTitle}");
   });
 
   it("shows a default-chat entry when the SDK has no sessions yet", () => {

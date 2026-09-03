@@ -303,12 +303,12 @@ describe("BuddyPanel P1 stability", () => {
     expect(screen.getAllByRole("button")
       .map((button) => button.textContent?.trim())
       .filter((label) => [
-        "随机抽取人设",
-        "答题测试人设",
+        "抽取人设",
+        "测试人设",
         "上传人设文件",
       ].includes(label ?? ""))).toEqual([
-      "随机抽取人设",
-      "答题测试人设",
+      "抽取人设",
+      "测试人设",
       "上传人设文件",
     ]);
 
@@ -317,13 +317,13 @@ describe("BuddyPanel P1 stability", () => {
     expect(screen.getAllByRole("button")
       .map((button) => button.textContent?.trim())
       .filter((label) => [
-        "随机抽取人设",
-        "答题测试人设",
+        "抽取人设",
+        "测试人设",
         "上传人设文件",
         "注入",
       ].includes(label ?? ""))).toEqual([
-      "随机抽取人设",
-      "答题测试人设",
+      "抽取人设",
+      "测试人设",
       "上传人设文件",
       "注入",
     ]);
@@ -347,7 +347,7 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
-    fireEvent.click(screen.getByRole("button", { name: "随机抽取人设" }));
+    fireEvent.click(screen.getByRole("button", { name: "抽取人设" }));
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
 
     expect(await screen.findByText("Extra Soul", {}, { timeout: 3_000 })).toBeInTheDocument();
@@ -372,7 +372,7 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
-    fireEvent.click(screen.getByRole("button", { name: "随机抽取人设" }));
+    fireEvent.click(screen.getByRole("button", { name: "抽取人设" }));
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
 
     expect(await screen.findByText(
@@ -398,7 +398,7 @@ describe("BuddyPanel P1 stability", () => {
 
     const { rerender } = render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
-    fireEvent.click(screen.getByRole("button", { name: "随机抽取人设" }));
+    fireEvent.click(screen.getByRole("button", { name: "抽取人设" }));
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
     await waitFor(() => expect(repositoryMocks.execDebugCommand).toHaveBeenCalledWith(
       "agent-a",
@@ -432,7 +432,7 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
-    fireEvent.click(screen.getByRole("button", { name: "随机抽取人设" }));
+    fireEvent.click(screen.getByRole("button", { name: "抽取人设" }));
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
 
     expect(await screen.findByText(
@@ -914,7 +914,7 @@ describe("BuddyPanel P1 stability", () => {
 
     const { rerender } = render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
-    fireEvent.click(screen.getByRole("button", { name: "答题测试人设" }));
+    fireEvent.click(screen.getByRole("button", { name: "测试人设" }));
     fireEvent.click(screen.getByRole("button", { name: "使用测试推荐" }));
     await waitFor(() => expect(mockedSaveBuddyState).toHaveBeenCalledWith(
       "agent-a",

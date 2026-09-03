@@ -89,6 +89,7 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/advanced-settings", title: "高级设置" },
       { slug: "configuration/multiple-models", title: "模型切换" },
       { slug: "configuration/deepseek-harness", title: "DeepSeek Harness" },
+      { slug: "configuration/workbench", title: "工作台" },
     ],
   },
   {
@@ -195,6 +196,11 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         slug: "configuration/deepseek-harness",
         title: "DeepSeek Harness",
         titleEn: "DeepSeek Harness",
+      },
+      {
+        slug: "configuration/workbench",
+        title: "工作台",
+        titleEn: "Workbench",
       },
     ],
   },
@@ -312,6 +318,9 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent", titleEn: "LightVela vs Selfhost Agent" },
       { slug: "compare/lightvela-vs-chatgpt", title: "LightVela vs ChatGPT", titleEn: "LightVela vs ChatGPT" },
       { slug: "compare/lightvela-vs-genspark", title: "LightVela vs Genspark", titleEn: "LightVela vs Genspark" },
+      { slug: "compare/lightvela-vs-grok-bot", title: "LightVela vs Grok Bot", titleEn: "LightVela vs Grok Bot" },
+      { slug: "compare/lightvela-vs-mira", title: "LightVela vs Mira", titleEn: "LightVela vs Mira" },
+      { slug: "compare/lightvela-vs-viktor", title: "LightVela vs Viktor.com", titleEn: "LightVela vs Viktor.com" },
     ],
   },
   {
@@ -359,6 +368,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/deepseek-harness": "configuration/deepseek-harness.md",
+  "configuration/workbench": "configuration/workbench.md",
   // 问题排查
   faq: "07-faq.md",
   // 联系与支持
@@ -410,6 +420,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/deepseek-harness": "configuration/deepseek-harness.md",
+  "configuration/workbench": "configuration/workbench.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",
   "use-cases/chinese-messaging-channels": "use-cases/chinese-messaging-channels.md",
@@ -444,6 +455,9 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "compare/lightvela-vs-localhost-ai-agent": "compare/lightvela-vs-localhost-ai-agent.md",
   "compare/lightvela-vs-chatgpt": "compare/lightvela-vs-chatgpt.md",
   "compare/lightvela-vs-genspark": "compare/lightvela-vs-genspark.md",
+  "compare/lightvela-vs-grok-bot": "compare/lightvela-vs-grok-bot.md",
+  "compare/lightvela-vs-mira": "compare/lightvela-vs-mira.md",
+  "compare/lightvela-vs-viktor": "compare/lightvela-vs-viktor.md",
   "contact-us": "contact-us.md",
 };
 

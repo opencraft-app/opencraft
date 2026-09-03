@@ -13,9 +13,74 @@ ci_ensure_pnpm
 FRONTEND_PREVIEW_BRANCH="${FRONTEND_PREVIEW_BRANCH:?FRONTEND_PREVIEW_BRANCH is required}"
 FRONTEND_PREVIEW_SHA="${FRONTEND_PREVIEW_SHA:?FRONTEND_PREVIEW_SHA is required}"
 STATICPAGES_API_URL="${STATICPAGES_API_URL:?STATICPAGES_API_URL is required}"
-FRONTEND_DIR="$REPO_ROOT/frontend"
-FRONTEND_NEXT_CN_DIR="$FRONTEND_DIR/out-cn"
-FRONTEND_NEXT_GLOBAL_DIR="$FRONTEND_DIR/out-global"
+FRONTEND_PREVIEW_NODE_MAX_OLD_SPACE_MB="${FRONTEND_PREVIEW_NODE_MAX_OLD_SPACE_MB:-6144}"
+FRONTEND_PREVIEW_BUILD_HEARTBEAT_SECONDS="${FRONTEND_PREVIEW_BUILD_HEARTBEAT_SECONDS:-60}"
+FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS="${FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS:-2700}"
+FRONTEND_PREVIEW_SOURCE_ROOT="$REPO_ROOT"
+FRONTEND_PREVIEW_BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/frontend-preview-build.XXXXXX")"
+FRONTEND_PREVIEW_WORKSPACE_ROOT="$FRONTEND_PREVIEW_BUILD_ROOT/workspaces"
+FRONTEND_PREVIEW_ARTIFACT_ROOT="$FRONTEND_PREVIEW_BUILD_ROOT/artifacts"
+FRONTEND_PREVIEW_CN_ARTIFACT_DIR="$FRONTEND_PREVIEW_ARTIFACT_ROOT/cn"
+FRONTEND_PREVIEW_INTL_ARTIFACT_DIR="$FRONTEND_PREVIEW_ARTIFACT_ROOT/intl"
+
+cleanup_frontend_preview_build() {
+  ci_cleanup_sops_age_key || true
+  rm -rf "$FRONTEND_PREVIEW_BUILD_ROOT"
+}
+trap cleanup_frontend_preview_build EXIT
+
+mkdir -p "$FRONTEND_PREVIEW_WORKSPACE_ROOT" "$FRONTEND_PREVIEW_ARTIFACT_ROOT"
+echo "frontend 预览源码快照：${FRONTEND_PREVIEW_SOURCE_ROOT}"
+echo "frontend 预览构建根目录：${FRONTEND_PREVIEW_BUILD_ROOT}"
+echo "frontend 预览 Node heap 上限：${FRONTEND_PREVIEW_NODE_MAX_OLD_SPACE_MB}MB"
+echo "frontend 预览构建心跳间隔：${FRONTEND_PREVIEW_BUILD_HEARTBEAT_SECONDS}s"
+echo "frontend 预览单变体构建超时：${FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS}s"
+
+run_with_build_heartbeat() {
+  local started_at=$SECONDS
+  local build_pid heartbeat_pid status elapsed
+  local -a build_command=("$@")
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --signal=TERM --kill-after=30s "${FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS}s" "${build_command[@]}" &
+  else
+    echo "frontend next 构建告警：当前环境没有 timeout 命令，无法执行硬超时保护" >&2
+    "${build_command[@]}" &
+  fi
+  build_pid=$!
+
+  (
+    while kill -0 "$build_pid" 2>/dev/null; do
+      sleep "$FRONTEND_PREVIEW_BUILD_HEARTBEAT_SECONDS"
+      if ! kill -0 "$build_pid" 2>/dev/null; then
+        break
+      fi
+      elapsed=$((SECONDS - started_at))
+      echo "frontend next 构建心跳：elapsed=${elapsed}s root_pid=${build_pid}"
+      ps -eo pid,ppid,stat,etime,%cpu,%mem,rss,args 2>/dev/null \
+        | awk 'NR == 1 || $0 ~ /(node|pnpm|next|webpack)/ { print }' \
+        | tail -n 20 \
+        || true
+    done
+  ) &
+  heartbeat_pid=$!
+
+  if wait "$build_pid"; then
+    status=0
+  else
+    status=$?
+  fi
+  kill "$heartbeat_pid" 2>/dev/null || true
+  wait "$heartbeat_pid" 2>/dev/null || true
+
+  elapsed=$((SECONDS - started_at))
+  if [[ "$status" -eq 124 ]]; then
+    echo "frontend next 构建超时：elapsed=${elapsed}s limit=${FRONTEND_PREVIEW_BUILD_TIMEOUT_SECONDS}s" >&2
+  else
+    echo "frontend next 构建结束：elapsed=${elapsed}s status=${status}"
+  fi
+  return "$status"
+}
 
 resolve_preview_auth_api_base_url() {
   local branch="$1"
@@ -58,44 +123,84 @@ case "$FRONTEND_PREVIEW_BRANCH" in
     ;;
 esac
 
-cd "$FRONTEND_DIR"
-rm -rf node_modules "$FRONTEND_NEXT_CN_DIR" "$FRONTEND_NEXT_GLOBAL_DIR" out
-"$PNPM_BIN" install --frozen-lockfile
+verify_frontend_preview_artifact() {
+  local variant="$1"
+  local artifact_dir="$2"
+  local contaminated_css
+
+  if [[ ! -d "$artifact_dir" ]] || [[ -z "$(find "$artifact_dir" -type f -print -quit)" ]]; then
+    echo "frontend next artifact is missing or empty: variant=${variant} dir=${artifact_dir}" >&2
+    return 1
+  fi
+
+  contaminated_css="$(grep -RIlE --include='*.css' 'self\.__next_f\.push|</script><script>' "$artifact_dir" 2>/dev/null || true)"
+  if [[ -n "$contaminated_css" ]]; then
+    echo "frontend next artifact contains serialized RSC markup in CSS: variant=${variant}" >&2
+    printf '%s\n' "$contaminated_css" >&2
+    return 1
+  fi
+}
 
 build_next_preview_variant() {
   local variant="$1"
   local region="$2"
   local api_base="$3"
-  local output_dir="$4"
+  local artifact_dir="$4"
+  local workspace="$FRONTEND_PREVIEW_WORKSPACE_ROOT/$variant"
+  local frontend_dir="$workspace/frontend"
+  local inherited_node_options="${NODE_OPTIONS:-}"
 
-  echo "构建 frontend next 预览产物：variant=${variant} region=${region} output=${output_dir}"
-  rm -rf .next out "$output_dir"
+  echo "准备 frontend next 独立工作区：variant=${variant} workspace=${workspace}"
+  mkdir -p "$workspace"
+  cp -a --reflink=auto "$FRONTEND_PREVIEW_SOURCE_ROOT/." "$workspace/"
+
+  cd "$frontend_dir"
+  rm -rf node_modules .next out out-cn out-global
+  "$PNPM_BIN" install --frozen-lockfile
+
+  echo "构建 frontend next 预览产物：variant=${variant} region=${region} artifact=${artifact_dir}"
   (
     export VITE_REGION="$region"
     export NEXT_PUBLIC_REGION="$region"
     export VITE_AUTH_API_BASE_URL="$api_base"
     export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"
     export NEXT_WRITE_EDGEONE_BUILD_OUTPUT=0
-    "$PNPM_BIN" run build:next
+    export NODE_OPTIONS="${inherited_node_options}${inherited_node_options:+ }--max-old-space-size=${FRONTEND_PREVIEW_NODE_MAX_OLD_SPACE_MB}"
+    # Older source branches may still append preserve-next-preview-output.mjs
+    # to build:next. Artifact ownership belongs to this orchestrator, so make
+    # that legacy hook a no-op inside each isolated workspace.
+    unset FRONTEND_PREVIEW_BRANCH FRONTEND_PREVIEW_SHA
+    run_with_build_heartbeat "$PNPM_BIN" run build:next
   )
-  cp -R out "$output_dir"
+
+  if [[ ! -d out ]]; then
+    echo "frontend next build did not produce out/: variant=${variant}" >&2
+    return 1
+  fi
+  verify_frontend_preview_artifact "$variant" out
+  mv out "$artifact_dir"
+  echo "frontend next 预览产物已冻结：variant=${variant} artifact=${artifact_dir}"
+  cd "$FRONTEND_PREVIEW_SOURCE_ROOT"
+  rm -rf "$workspace"
+  echo "frontend next 临时工作区已释放：variant=${variant}"
 }
 
 build_next_preview() {
-  echo "顺序构建 frontend next 国内站和国际站产物"
-  build_next_preview_variant cn cn "$PREVIEW_CN_AUTH_API_BASE_URL" "$FRONTEND_NEXT_CN_DIR"
-  build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_NEXT_GLOBAL_DIR"
+  echo "使用独立工作区顺序构建 frontend next 国内站和国际站产物"
+  build_next_preview_variant cn cn "$PREVIEW_CN_AUTH_API_BASE_URL" "$FRONTEND_PREVIEW_CN_ARTIFACT_DIR"
+  build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_PREVIEW_INTL_ARTIFACT_DIR"
 }
 
 build_next_preview
-FRONTEND_PREVIEW_CN_ARTIFACT_DIR="$FRONTEND_NEXT_CN_DIR"
-FRONTEND_PREVIEW_INTL_ARTIFACT_DIR="$FRONTEND_NEXT_GLOBAL_DIR"
 
-cd "$REPO_ROOT"
+cd "$FRONTEND_PREVIEW_SOURCE_ROOT"
 if [[ -z "${STATICPAGES_UPLOAD_TOKEN:-}" ]] || ci_is_unexpanded_setting "$STATICPAGES_UPLOAD_TOKEN"; then
   echo "STATICPAGES_UPLOAD_TOKEN not provided by CI settings; decrypting GitOps StaticPages runtime secret"
   ci_ensure_sops
   ci_prepare_sops_age_key
+  # ci_prepare_sops_age_key installs its own EXIT trap when it materializes a
+  # temporary key. Restore the composite cleanup so both resources are owned.
+  trap cleanup_frontend_preview_build EXIT
   STATICPAGES_UPLOAD_TOKEN="$(sops --decrypt --extract '["stringData"]["STATICPAGES_UPLOAD_TOKEN"]' argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml | ci_read_secret_value)"
   export STATICPAGES_UPLOAD_TOKEN
   echo "STATICPAGES_UPLOAD_TOKEN source=argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
@@ -129,6 +234,7 @@ upload_staticpages_preview() {
       --source-branch "$FRONTEND_PREVIEW_BRANCH" \
       --variant "$variant" \
       --sha "$FRONTEND_PREVIEW_SHA" \
+      --upload-mode packs \
       --timeout-seconds "$staticpages_upload_timeout_seconds"; then
       echo "StaticPages 上传成功：variant=${variant} attempt=${attempt}/${staticpages_upload_max_attempts}"
       return 0

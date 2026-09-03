@@ -194,6 +194,18 @@ export function AgentModelConfigPanel({
   const activeProvider = category === "custom"
     ? null
     : providerOptions.find((provider) => provider.providerKey === providerKey) ?? null;
+  const fixedModelOptions = useMemo<ModelOption[]>(
+    () => activeProvider?.fixedModelSelection
+      ? (activeProvider.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" }))
+      : [],
+    [activeProvider],
+  );
+  const availableModelOptions = activeProvider?.fixedModelSelection ? fixedModelOptions : modelOptions;
+  const effectiveSelectedModelId = activeProvider?.fixedModelSelection
+    ? fixedModelOptions.some((model) => model.id === selectedModelId)
+      ? selectedModelId
+      : fixedModelOptions[0]?.id ?? ""
+    : selectedModelId;
 
   const compoundControlClassName = cn(
     MODEL_COMPOUND_CONTROL_BASE_CLASS,
@@ -252,10 +264,10 @@ export function AgentModelConfigPanel({
   const providerFingerprintRef = useRef(providerFingerprint);
   const previousProviderFingerprintRef = useRef(providerFingerprint);
   providerFingerprintRef.current = providerFingerprint;
-  const selectedModel = providerDraft && selectedModelId
-    ? { ...providerDraft, id: selectedModelId, keyEnv: "" }
+  const selectedModel = providerDraft && effectiveSelectedModelId
+    ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
-  const fallbackPurposeDisabled = sameModel(controller.snapshot?.primary, selectedModel);
+  const selectedModelIsPrimary = sameModel(controller.snapshot?.primary, selectedModel);
   const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
@@ -282,8 +294,8 @@ export function AgentModelConfigPanel({
   }, [controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
 
   useEffect(() => {
-    setPurpose(controller.snapshot?.primary ? "idle" : "primary");
-  }, [controller.snapshot?.primary]);
+    setPurpose(selectedModelIsPrimary ? "primary" : controller.snapshot?.primary ? "idle" : "primary");
+  }, [controller.snapshot?.primary, selectedModelIsPrimary]);
 
   const handleCategoryChange = (nextCategory: ProviderCategory) => {
     setCategory(nextCategory);
@@ -339,9 +351,10 @@ export function AgentModelConfigPanel({
   };
 
   const handleAdd = async () => {
-    if (!selectedModel || !apiKey.trim()) return;
+    const normalizedApiKey = apiKey.trim();
+    if (!selectedModel || !normalizedApiKey || !credentialMatchesProvider) return;
     const nextSnapshot = await controller.add({
-      apiKey: apiKey.trim(),
+      apiKey: normalizedApiKey,
       model: selectedModel,
       purpose,
       discoverModels: category === "custom" || activeProvider?.discoveryStrategy !== "catalog",
@@ -688,19 +701,21 @@ export function AgentModelConfigPanel({
                   {showApiKey ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
                 </button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className={compoundActionClassName}
-                disabled={!canProbe || busy}
-                onClick={() => void handleProbe()}
-              >
-                <ModelCompoundActionContent
-                  idleLabel={t("获取可用模型")}
-                  loadingLabel={t("获取中...")}
-                  loading={controller.operation === "probe"}
-                />
-              </Button>
+              {!activeProvider?.fixedModelSelection ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={compoundActionClassName}
+                  disabled={!canProbe || busy}
+                  onClick={() => void handleProbe()}
+                >
+                  <ModelCompoundActionContent
+                    idleLabel={t("获取可用模型")}
+                    loadingLabel={t("获取中...")}
+                    loading={controller.operation === "probe"}
+                  />
+                </Button>
+              ) : null}
             </div>
             {activeProvider?.apiKeyUrl ? (
               <a
@@ -721,8 +736,8 @@ export function AgentModelConfigPanel({
             </label>
             <div data-slot="model-option-control" className={compoundControlClassName}>
               <Select
-                value={selectedModelId}
-                disabled={busy || modelOptions.length === 0}
+                value={effectiveSelectedModelId}
+                disabled={busy || availableModelOptions.length === 0}
                 onValueChange={(value) => {
                   setSelectedModelId(value);
                   setConnectionResult(null);
@@ -736,14 +751,14 @@ export function AgentModelConfigPanel({
                   onPointerDownCapture={captureAgentSidebarPosition}
                   onKeyDownCapture={captureAgentSidebarPosition}
                 >
-                  <SelectValue placeholder={modelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
+                  <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
                 </SelectTrigger>
                 <SelectContent
                   position="popper"
                   className={MODEL_SELECT_CONTENT_CLASS}
                   style={MODEL_SELECT_CONTENT_STYLE}
                 >
-                  {modelOptions.map((modelOption) => (
+                  {availableModelOptions.map((modelOption) => (
                     <SelectItem key={modelOption.id} value={modelOption.id}>
                       {modelOption.name}
                     </SelectItem>
@@ -774,7 +789,7 @@ export function AgentModelConfigPanel({
                 { value: "fallback", label: "设为备用模型" },
                 { value: "idle", label: "仅添加" },
               ] satisfies Array<{ value: ConfigurePurpose; label: string }>).map((item) => {
-                const disabled = busy || (item.value === "fallback" && fallbackPurposeDisabled);
+                const disabled = busy || (selectedModelIsPrimary && item.value !== "primary");
                 const active = purpose === item.value;
                 return (
                   <label
@@ -792,7 +807,13 @@ export function AgentModelConfigPanel({
                       value={item.value}
                       checked={active}
                       disabled={disabled}
-                      aria-describedby={item.value === "fallback" && fallbackPurposeDisabled ? "fallback-purpose-help" : undefined}
+                      aria-describedby={selectedModelIsPrimary
+                        ? item.value === "fallback"
+                          ? "fallback-purpose-help"
+                          : item.value === "idle"
+                            ? "primary-idle-purpose-help"
+                            : undefined
+                        : undefined}
                       onChange={() => setPurpose(item.value)}
                     />
                     {item.value === "primary"
@@ -804,10 +825,15 @@ export function AgentModelConfigPanel({
                 );
               })}
             </div>
-            {fallbackPurposeDisabled ? (
-              <p id="fallback-purpose-help" className="text-xs text-black/45">
-                {t("主模型不能同时设为备用模型。")}
-              </p>
+            {selectedModelIsPrimary ? (
+              <>
+                <p id="fallback-purpose-help" className="text-xs text-black/45">
+                  {t("主模型不能同时设为备用模型。")}
+                </p>
+                <p id="primary-idle-purpose-help" className="sr-only">
+                  {t("当前模型已经是主模型")}
+                </p>
+              </>
             ) : null}
           </fieldset>
 
@@ -823,7 +849,7 @@ export function AgentModelConfigPanel({
             <Button
               type="button"
               className="rounded-md"
-              disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (purpose === "fallback" && fallbackPurposeDisabled)}
+              disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (selectedModelIsPrimary && purpose !== "primary")}
               onClick={() => void handleAdd()}
             >
               {controller.operation === "add"

@@ -4,8 +4,10 @@ import type { ReactNode } from "react";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useLocaleOverride } from "@/i18n/t";
 import { AppLink } from "@/lib/app-navigation";
-import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
+import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
+import { JAPANESE_COOKIE_POLICY_COPY } from "./legal-copy.ja";
+import { KOREAN_COOKIE_POLICY_COPY } from "./legal-copy.ko";
 
 type CookieTableRow = {
   cookie: string;
@@ -514,26 +516,32 @@ const browserLinks: Record<string, string> = {
   "Configuración de cookies en Safari para iOS": "https://support.apple.com/kb/HT1677",
   "Configuración de cookies en Internet Explorer": "https://windows.microsoft.com/en-gb/windows7/how-to-manage-cookies-in-internet-explorer-9",
   "Configuración de cookies en Firefox": "https://support.mozilla.org/es-ES/kb/cookies-informacion-que-los-sitios-web-guardan-en-",
+  "Chrome（ウェブ）のCookie設定": "https://support.google.com/chrome/answer/95647?co=GENIE.Platform%3DDesktop&hl=ja",
+  "Chrome（Android）のCookie設定": "https://support.google.com/chrome/answer/95647?co=GENIE.Platform%3DAndroid&hl=ja",
+  "Safari（ウェブ）のCookie設定": "https://support.apple.com/ja-jp/guide/safari/sfri11471/mac",
+  "Safari（iOS）のCookie設定": "https://support.apple.com/ja-jp/105082",
+  "Internet ExplorerのCookie設定": "https://windows.microsoft.com/en-gb/windows7/how-to-manage-cookies-in-internet-explorer-9",
+  "FirefoxのCookie設定": "https://support.mozilla.org/ja/kb/cookies-information-websites-store-on-your-computer",
 };
 
 export const renderCookiePolicyInlineLinks = (text: string): ReactNode[] => {
-  const tokenPattern = /(lightvela@tencent\.com|\bhere\b|在此|di sini|aquí|Chrome browser add-on|Chrome 浏览器插件|add-on browser Chrome|extensión para el navegador Chrome|All About Cookies|Cookie settings in Chrome for web|Cookie settings in Chrome for Android|Cookie settings in Safari web|Cookie settings in Safari iOS|Cookie settings in Internet Explorer|Cookie settings in Firefox|Chrome 网页版 Cookie 设置|Chrome Android 版 Cookie 设置|Safari 网页版 Cookie 设置|Safari iOS 版 Cookie 设置|Internet Explorer 的 Cookie 设置|Firefox 的 Cookie 设置|Pengaturan Cookie di Chrome untuk web|Pengaturan Cookie di Chrome untuk Android|Pengaturan Cookie di Safari web|Pengaturan Cookie di Safari iOS|Pengaturan Cookie di Internet Explorer|Pengaturan Cookie di Firefox|Configuración de cookies en Chrome para la Web|Configuración de cookies en Chrome para Android|Configuración de cookies en Safari para la Web|Configuración de cookies en Safari para iOS|Configuración de cookies en Internet Explorer|Configuración de cookies en Firefox)/g;
+  const tokenPattern = /(lightvela@tencent\.com|\bhere\b|在此|di sini|aquí|こちら|Chrome browser add-on|Chrome 浏览器插件|add-on browser Chrome|extensión para el navegador Chrome|Chromeブラウザのアドオン|All About Cookies|すべてのCookieについて|Cookie settings in Chrome for web|Cookie settings in Chrome for Android|Cookie settings in Safari web|Cookie settings in Safari iOS|Cookie settings in Internet Explorer|Cookie settings in Firefox|Chrome 网页版 Cookie 设置|Chrome Android 版 Cookie 设置|Safari 网页版 Cookie 设置|Safari iOS 版 Cookie 设置|Internet Explorer 的 Cookie 设置|Firefox 的 Cookie 设置|Pengaturan Cookie di Chrome untuk web|Pengaturan Cookie di Chrome untuk Android|Pengaturan Cookie di Safari web|Pengaturan Cookie di Safari iOS|Pengaturan Cookie di Internet Explorer|Pengaturan Cookie di Firefox|Configuración de cookies en Chrome para la Web|Configuración de cookies en Chrome para Android|Configuración de cookies en Safari para la Web|Configuración de cookies en Safari para iOS|Configuración de cookies en Internet Explorer|Configuración de cookies en Firefox|Chrome（ウェブ）のCookie設定|Chrome（Android）のCookie設定|Safari（ウェブ）のCookie設定|Safari（iOS）のCookie設定|Internet ExplorerのCookie設定|FirefoxのCookie設定)/g;
   return text.split(tokenPattern).filter(Boolean).map((part, index) => {
-    if (part === "lightvela@tencent.com" || part === "here" || part === "在此" || part === "di sini" || part === "aquí") {
+    if (part === "lightvela@tencent.com" || part === "here" || part === "在此" || part === "di sini" || part === "aquí" || part === "こちら") {
       return (
         <a key={`${part}-${index}`} href="mailto:lightvela@tencent.com" className="font-semibold underline underline-offset-2 hover:opacity-80" style={blueLinkStyle}>
           {part}
         </a>
       );
     }
-    if (part === "All About Cookies") {
+    if (part === "All About Cookies" || part === "すべてのCookieについて") {
       return (
         <a key={`${part}-${index}`} href="https://allaboutcookies.org/" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2 hover:opacity-80" style={blueLinkStyle}>
           {part}
         </a>
       );
     }
-    if (part === "Chrome browser add-on" || part === "Chrome 浏览器插件" || part === "add-on browser Chrome" || part === "extensión para el navegador Chrome") {
+    if (part === "Chrome browser add-on" || part === "Chrome 浏览器插件" || part === "add-on browser Chrome" || part === "extensión para el navegador Chrome" || part === "Chromeブラウザのアドオン") {
       return (
         <a key={`${part}-${index}`} href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2 hover:opacity-80" style={blueLinkStyle}>
           {part}
@@ -611,6 +619,8 @@ const CookieTable = ({ copy, rows }: { copy: CookiePolicyCopy; rows: CookieTable
 );
 
 export function cookiePolicyHomePath(locale: PublicSiteLocaleCode | null): string {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return `/${PUBLIC_URL_LANGS.KO_KR}/`;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}/`;
   return locale === PUBLIC_SITE_LOCALES.ES ? '/es/' : '/';
 }
 
@@ -622,6 +632,8 @@ export function getCookiePolicyChrome(
 }
 
 export function getCookiePolicyCopy(locale: PublicSiteLocaleCode | null): CookiePolicyCopy {
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_COOKIE_POLICY_COPY as CookiePolicyCopy;
+  if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_COOKIE_POLICY_COPY as CookiePolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.ES) return es;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return id;
   return isZhLocale(locale ?? undefined) ? zh : en;

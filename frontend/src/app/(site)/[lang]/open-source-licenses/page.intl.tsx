@@ -5,6 +5,8 @@ import { PublicOpenSourceLicensesPage } from '@next-site/legal-pages';
 import { type PublicUrlLang } from '@next-site/public-locale';
 import { createPublicMetadata, localizedPublicPath, prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } from '@next-site/seo';
 import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
+import { japaneseRouteDescription, japaneseRouteTitle } from '@/lib/seo-data.ja';
+import { koreanRouteDescription, koreanRouteTitle } from '@/lib/seo-data.ko';
 
 const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.EN_US]: 'Open Source Notice',
@@ -13,8 +15,8 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: '开源声明',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Pemberitahuan Sumber Terbuka',
   [PUBLIC_SITE_LOCALES.ES]: 'Aviso de código abierto',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'Open Source Notice',
-  [PUBLIC_SITE_LOCALES.KO_KR]: 'Open Source Notice',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/open-source-licenses'),
+  [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteTitle('/open-source-licenses'),
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -24,8 +26,8 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela 使用的开源软件归属与许可证声明。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Atribusi dan pemberitahuan lisensi untuk perangkat lunak sumber terbuka yang digunakan LightVela.',
   [PUBLIC_SITE_LOCALES.ES]: 'Atribuciones y avisos de licencia del software de código abierto utilizado por LightVela.',
-  [PUBLIC_SITE_LOCALES.JA_JP]: 'Attribution and license notices for open source software used by LightVela.',
-  [PUBLIC_SITE_LOCALES.KO_KR]: 'Attribution and license notices for open source software used by LightVela.',
+  [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/open-source-licenses'),
+  [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteDescription('/open-source-licenses'),
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

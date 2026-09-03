@@ -235,7 +235,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
   });
 
-  it("keeps My creations hidden until show() reveals it", () => {
+  it("我的工作台入口默认显示（不再需要 show() 解锁）", () => {
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -250,12 +250,7 @@ describe("UserAvatarMenu", () => {
     render(<UserAvatarMenu />);
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
-    expect(screen.queryByRole("link", { name: "我的作品" })).not.toBeInTheDocument();
 
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-
-    expect(screen.getByRole("link", { name: "我的作品" })).toHaveAttribute("href", "/agents/websites");
+    expect(screen.getByRole("link", { name: "我的工作台" })).toHaveAttribute("href", "/agents/websites/");
   });
 });

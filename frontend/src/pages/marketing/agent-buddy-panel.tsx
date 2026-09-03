@@ -37,23 +37,7 @@ import {
   fetchSouls,
   type SkillHubSoul,
 } from "@/lib/skillhub-api";
-import { getSoulSpec, buildSoulMd } from "@/lib/soul-interpretations";
-import { ENGLISH_SOULS, getEnglishSoulDetail, getEnglishSoulSpec } from "@/lib/soul-english-data";
-import {
-  INDONESIAN_SOULS,
-  getIndonesianSoulDetail,
-  getIndonesianSoulSpec,
-} from "@/lib/soul-indonesian-data";
-import {
-  SPANISH_SOULS,
-  getSpanishSoulDetail,
-  getSpanishSoulSpec,
-} from "@/lib/soul-spanish-data";
-import {
-  GLOBAL_CHINESE_SOULS,
-  getGlobalChineseSoulDetail,
-  getGlobalChineseSoulSpec,
-} from "@/lib/soul-global-chinese-data";
+import { buildSoulMd } from "@/lib/soul-interpretations";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
@@ -81,6 +65,14 @@ import {
   CUSTOM_PERSONA_SLUG,
   encodeUtf8Base64,
 } from "@/pages/marketing/agent-persona-upload";
+import {
+  getBuddySoulDetail,
+  getBuddySoulPool,
+  getBuddySoulSpec,
+  resolveBuddySoulLocale,
+  usesWesternSoulSlugs,
+  type BuddySoulLocale,
+} from "@/pages/marketing/agent-buddy-localization";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
@@ -109,29 +101,13 @@ const MAX_DRAWS = 8;
 export function localizeDrawnSouls(
   drawnSouls: SkillHubSoul[],
   availableSouls: SkillHubSoul[],
-  useEnglishSoulData: boolean,
-  useGlobalChineseSoulData: boolean,
-  useIndonesianSoulData = false,
-  useSpanishSoulData = false,
+  soulDataLocale: BuddySoulLocale,
 ): SkillHubSoul[] {
-  // 国际站 EN / ID：持久化 slug → westernized slug，在对应语言的池里解析。
-  // 印尼语沿用英文 slug，因此只需切换查表用的池。
-  if (useEnglishSoulData) {
-    const pool = useSpanishSoulData
-      ? SPANISH_SOULS
-      : useIndonesianSoulData
-        ? INDONESIAN_SOULS
-        : ENGLISH_SOULS;
+  const localizedPool = getBuddySoulPool(soulDataLocale);
+  if (localizedPool) {
     return drawnSouls.map((soul) => {
       const enSlug = toEnglishSlug(soul.slug);
-      return pool.find((item) => item.slug === enSlug) ?? soul;
-    });
-  }
-  // 国际站 ZH：持久化 slug → westernized slug，在 GLOBAL_CHINESE_SOULS 里解析。
-  if (useGlobalChineseSoulData) {
-    return drawnSouls.map((soul) => {
-      const enSlug = toEnglishSlug(soul.slug);
-      return GLOBAL_CHINESE_SOULS.find((item) => item.slug === enSlug) ?? soul;
+      return localizedPool.find((item) => item.slug === enSlug) ?? soul;
     });
   }
   // 国内站：持久化 slug → canonical slug，在 SkillHub 池里解析。
@@ -193,14 +169,7 @@ export function BuddyPanel({
   const mountedRef = useRef(false);
   const saveReqIdRef = useRef(0);
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
-  const useEnglishSoulData = isGlobal && !i18n.language.startsWith("zh");
-  // 国际站中文：用独立的 global-CN 人设体系（GOAT·大神…），与国内站（YYDS·神人…）分开。
-  const useGlobalChineseSoulData = isGlobal && i18n.language.startsWith("zh");
-  // 印尼语：复用英文体系的 slug 命名空间，仅替换展示文案。
-  // 刻意不从 useEnglishSoulData 中排除 id-ID —— 它作为印尼语分支的兜底，
-  // 任何未覆盖到的取数路径都会安全回退英文，而不会误落到国内站 SkillHub 池。
-  const useIndonesianSoulData = isGlobal && i18n.language.startsWith("id");
-  const useSpanishSoulData = isGlobal && i18n.language.startsWith("es");
+  const soulDataLocale = resolveBuddySoulLocale(isGlobal, i18n.language);
 
   // 持久化：状态走 Vibebase（用户级 KV，跨设备一致）。
   // 加载流程：mount / 切 botId → 异步拉取 → 期间显示 loading 占位（空抽卡盘 + 转圈）。
@@ -256,36 +225,21 @@ export function BuddyPanel({
   // souls 列表是抽卡 modal 的候选池数据源 —— 提到这一层统一拉取，
   // 避免 SoulSlotGrid 内部 fetch 一次、DrawModal 再单独 fetch 一次。
   const soulsFetcher = useCallback(() => {
-    if (useEnglishSoulData) {
-      const pool = useSpanishSoulData
-        ? SPANISH_SOULS
-        : useIndonesianSoulData
-          ? INDONESIAN_SOULS
-          : ENGLISH_SOULS;
+    const pool = getBuddySoulPool(soulDataLocale);
+    if (pool) {
       return Promise.resolve({ total: pool.length, souls: pool });
     }
-    if (useGlobalChineseSoulData) {
-      return Promise.resolve({ total: GLOBAL_CHINESE_SOULS.length, souls: GLOBAL_CHINESE_SOULS });
-    }
     return fetchSouls({ page: 1, pageSize: 30 });
-  }, [useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
-  const soulsResource = useAsyncResource(soulsFetcher, [
-    useEnglishSoulData,
-    useGlobalChineseSoulData,
-    useIndonesianSoulData,
-    useSpanishSoulData,
-  ]);
+  }, [soulDataLocale]);
+  const soulsResource = useAsyncResource(soulsFetcher, [soulDataLocale]);
   const souls = soulsResource.data?.souls ?? [];
   const localizedDrawnSouls = useMemo(
     () => localizeDrawnSouls(
       drawnSouls,
       souls,
-      useEnglishSoulData,
-      useGlobalChineseSoulData,
-      useIndonesianSoulData,
-      useSpanishSoulData,
+      soulDataLocale,
     ),
-    [drawnSouls, souls, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData],
+    [drawnSouls, soulDataLocale, souls],
   );
 
   const drawnSlugs = drawnSouls.map((s) => s.slug);
@@ -610,15 +564,9 @@ export function BuddyPanel({
 
     let md: string;
     try {
-      const detail = useEnglishSoulData
-        ? (useSpanishSoulData
-            ? getSpanishSoulDetail(soul.slug)
-            : useIndonesianSoulData
-              ? getIndonesianSoulDetail(soul.slug)
-              : getEnglishSoulDetail(soul.slug))
-        : useGlobalChineseSoulData
-          ? getGlobalChineseSoulDetail(soul.slug)
-          : await fetchSoulDetail(soul.slug);
+      const detail = soulDataLocale === "domestic-zh"
+        ? await fetchSoulDetail(soul.slug)
+        : getBuddySoulDetail(soulDataLocale, soul.slug);
       if (!detail) throw new Error(`Soul detail not found: ${soul.slug}`);
       md = buildSoulMd({
         slug: soul.slug,
@@ -728,7 +676,7 @@ export function BuddyPanel({
       }
     }
     return false;
-  }, [botId, invalidateCustomPersonaFileRead, repositories, toast.kind, showToast, t, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
+  }, [botId, invalidateCustomPersonaFileRead, repositories, showToast, soulDataLocale, t, toast.kind]);
 
   const handleApply = useCallback(() => {
     if (!selectedSlug) return;
@@ -1203,7 +1151,7 @@ export function BuddyPanel({
               }}
             >
               <Dice5 className="h-4 w-4" />
-              {t("随机抽取人设")}
+              {t("抽取人设")}
             </button>
             {isAtMax && (
               <div
@@ -1231,7 +1179,7 @@ export function BuddyPanel({
               }}
             >
               <ClipboardCheck className="h-4 w-4" />
-              {t("答题测试人设")}
+              {t("测试人设")}
             </button>
             {isAtMax && (
               <div
@@ -1306,7 +1254,7 @@ export function BuddyPanel({
         // 重抽时把"被重抽的卡"从已抽列表里移除，让其他池里的 soul 可以替补它的位置
         drawnSlugs={
           (rerollingSlug ? drawnSlugs.filter((s) => s !== rerollingSlug) : drawnSlugs)
-            .map((s) => isGlobal ? toEnglishSlug(s) : s)
+            .map((s) => usesWesternSoulSlugs(soulDataLocale) ? toEnglishSlug(s) : s)
         }
         onClose={() => {
           setDrawOpen(false);
@@ -1314,17 +1262,14 @@ export function BuddyPanel({
         }}
         onPick={handlePickFromDraw}
         onInject={handleInjectFromDraw}
-        useEnglishSoulData={useEnglishSoulData}
-        useGlobalChineseSoulData={useGlobalChineseSoulData}
-        useIndonesianSoulData={useIndonesianSoulData}
-        useSpanishSoulData={useSpanishSoulData}
+        soulDataLocale={soulDataLocale}
       />
 
       <SoulTestModal
         open={soulTestOpen}
         souls={souls}
         maxDrawsReached={isAtMax}
-        drawnSlugs={drawnSlugs.map((s) => isGlobal ? toEnglishSlug(s) : s)}
+        drawnSlugs={drawnSlugs.map((s) => usesWesternSoulSlugs(soulDataLocale) ? toEnglishSlug(s) : s)}
         saveDisabledReason={
           loadStatus === "loaded"
             ? null
@@ -1332,10 +1277,7 @@ export function BuddyPanel({
         }
         onClose={() => setSoulTestOpen(false)}
         onUseSoul={handleUseTestSoul}
-        useEnglishSoulData={useEnglishSoulData}
-        useGlobalChineseSoulData={useGlobalChineseSoulData}
-        useIndonesianSoulData={useIndonesianSoulData}
-        useSpanishSoulData={useSpanishSoulData}
+        soulDataLocale={soulDataLocale}
       />
 
       <CustomPersonaFileModal
@@ -1348,10 +1290,7 @@ export function BuddyPanel({
       {previewSoulSlug && (
         <SoulPreviewModal
           slug={previewSoulSlug}
-          useEnglishSoulData={useEnglishSoulData}
-          useGlobalChineseSoulData={useGlobalChineseSoulData}
-          useIndonesianSoulData={useIndonesianSoulData}
-          useSpanishSoulData={useSpanishSoulData}
+          soulDataLocale={soulDataLocale}
           onClose={() => setPreviewSoulSlug(null)}
         />
       )}
@@ -1734,49 +1673,26 @@ function EmptySlot({ onClick }: { onClick: () => void }) {
 
 function SoulPreviewModal({
   slug,
-  useEnglishSoulData,
-  useGlobalChineseSoulData,
-  useIndonesianSoulData = false,
-  useSpanishSoulData = false,
+  soulDataLocale,
   onClose,
 }: {
   slug: string;
-  useEnglishSoulData: boolean;
-  useGlobalChineseSoulData: boolean;
-  useIndonesianSoulData?: boolean;
-  useSpanishSoulData?: boolean;
+  soulDataLocale: BuddySoulLocale;
   onClose: () => void;
 }) {
   const fetcher = useCallback(() => {
-    if (useEnglishSoulData) {
-      const detail = useSpanishSoulData
-        ? getSpanishSoulDetail(toEnglishSlug(slug))
-        : useIndonesianSoulData
-          ? getIndonesianSoulDetail(toEnglishSlug(slug))
-          : getEnglishSoulDetail(toEnglishSlug(slug));
-      if (!detail) throw new Error("Soul detail not found");
-      return Promise.resolve(detail);
-    }
-    if (useGlobalChineseSoulData) {
-      const detail = getGlobalChineseSoulDetail(toEnglishSlug(slug));
+    if (soulDataLocale !== "domestic-zh") {
+      const detail = getBuddySoulDetail(soulDataLocale, slug);
       if (!detail) throw new Error("Soul detail not found");
       return Promise.resolve(detail);
     }
     return fetchSoulDetail(toCanonicalSlug(slug));
-  }, [slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData]);
+  }, [slug, soulDataLocale]);
   const { data, loading, error, reload } = useAsyncResource(
     fetcher,
-    [slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData, useSpanishSoulData],
+    [slug, soulDataLocale],
   );
-  const spec = useEnglishSoulData
-    ? (useSpanishSoulData
-        ? getSpanishSoulSpec(toEnglishSlug(slug))
-        : useIndonesianSoulData
-          ? getIndonesianSoulSpec(toEnglishSlug(slug))
-          : getEnglishSoulSpec(toEnglishSlug(slug)))
-    : useGlobalChineseSoulData
-      ? getGlobalChineseSoulSpec(toEnglishSlug(slug))
-      : getSoulSpec(toCanonicalSlug(slug));
+  const spec = getBuddySoulSpec(soulDataLocale, slug);
   return (
     <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
       {loading && <CenterLoader />}

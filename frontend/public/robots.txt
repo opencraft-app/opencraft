@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://lightvela.ai/sitemap.xml
+Sitemap: https://lightvela.com/sitemap.xml
