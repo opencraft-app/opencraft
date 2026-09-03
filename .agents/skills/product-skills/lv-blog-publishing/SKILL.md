@@ -22,6 +22,9 @@ Load it when the user asks to write a blog, add a new blog post, create an artic
   If the user did not specify it, ask for the language in one concise question.
 - Confirm exactly one category: `Announcement`, `Product`, or `Use Cases`.
   If the user did not specify it, ask for the category in the same question.
+- Confirm exactly one author from the approved list: `Cassidy Shi`, `Walker Cao`, or `Jasmin Zhao`.
+  If the user did not provide an author, ask them to choose one of these three exact names before implementing the post.
+  If the user provides any other name or a variation in spelling, capitalization, or spacing, ask again and do not normalize or silently substitute it.
 - Require a specific user-provided cover image for every new post.
   If the user did not upload or explicitly select one, ask for the cover image before implementing the post.
 - Keep article content in its requested language across all site locales unless the user explicitly asks for translation.
@@ -31,6 +34,7 @@ Load it when the user asks to write a blog, add a new blog post, create an artic
 
 - Add or update the post in `frontend/src/pages/marketing/blog-content.ts`.
 - Use a stable lowercase slug and keep the title, category, cover image, content, and `publishedAt` fields consistent.
+- Set the required `author` field to one of the three approved exact names: `Cassidy Shi`, `Walker Cao`, or `Jasmin Zhao`.
 - Keep the category type open to `announcement`, `product`, and `use-case` so future posts can use every listing filter.
 - Set `publishedAt` to the actual insertion or publishing time as a timezone-aware ISO 8601 value.
 - Put the same cover asset first in `content` and in `coverImage`.
@@ -71,6 +75,7 @@ Load it when the user asks to write a blog, add a new blog post, create an artic
   Keep the title bold but smaller than the page heading and avoid excessive right-side whitespace.
 - Keep article body line spacing compact and readable.
 - Format visible publication dates in the active public locale with `Asia/Shanghai` as the fixed publishing time zone.
+- Show the author after the publication date with a dot separator on Blog cards and after the full date and time on article detail pages.
 - When article body content remains English across localized Blog routes, mark the article content with `lang="en"` and use the English-only Blog alternate helper.
   Keep localized routes for UI chrome, but do not emit non-English hreflang targets for untranslated article content.
 

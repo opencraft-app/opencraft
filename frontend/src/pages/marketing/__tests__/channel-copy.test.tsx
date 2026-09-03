@@ -55,6 +55,28 @@ afterEach(() => {
 });
 
 describe("marketing channel copy", () => {
+  it("shows the Workbench update with the domestic Chinese screenshot", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    const septemberSection = screen.getByText("2026 年 9 月").closest("section");
+    expect(septemberSection).not.toBeNull();
+    const heading = within(septemberSection!).getByRole("heading", {
+      name: "LightVela 支持创建和发布工作台Beta",
+    });
+    expect(within(septemberSection!).getByText(
+      "现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。",
+    )).toBeInTheDocument();
+    expect(within(heading.closest("article")!).getByText("Beta")).toBeInTheDocument();
+    expect(screen.getByAltText("LightVela 支持创建和发布工作台")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-workbench-zh.png"),
+    );
+  });
+
   it("uses the domestic skill package visual when the revamped card is reused on the domestic site", () => {
     render(<VisualCard variant="skillPackagesRevamp" />);
 
