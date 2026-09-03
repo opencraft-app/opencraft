@@ -10,6 +10,9 @@ RUN go mod download
 COPY shared/cloudladdertransport/ /src/shared/cloudladdertransport/
 COPY cloudladdergateway/ ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/cloudladdergateway ./cmd/cloudladdergateway
+# devtunnel：反向回调隧道服务端，打进同一镜像，由工作负载 command 覆盖成入口。
+# 详见 internal/devtunnel 包注释与 argocd/services/.../devtunnel-testing.yaml。
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/devtunnel ./cmd/devtunnel
 
 FROM --platform=linux/amd64 alpine:3.20
 RUN apk add --no-cache \
@@ -29,6 +32,7 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 COPY --from=builder /out/cloudladdergateway /usr/local/bin/cloudladdergateway
+COPY --from=builder /out/devtunnel /usr/local/bin/devtunnel
 COPY cloudladdergateway/config.example.yaml /etc/cloudladdergateway/config.yaml
 
 ENV CLOUDLADDERGATEWAY_CONFIG=/etc/cloudladdergateway/config.yaml

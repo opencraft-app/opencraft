@@ -7,12 +7,15 @@ resources:
 - ingress-testing.yaml
 - statefulsetplus.yaml
 - statefulsetplus-testing.yaml
+# devtunnel 反向回调隧道，只有 testing 一份（开发者联调用，生产没有对应工作负载）。
+- devtunnel-testing.yaml
 # Keep this overlay in cloudladdergateway CI path to refresh GitOps secret closure.
 generators:
 - ksops-secret-generator.yaml
 - ksops-callback-secret-generator.yaml
 - ksops-krsbx-callback-secret-generator.yaml
 - ksops-jpsbx-callback-secret-generator.yaml
+- ksops-devtunnel-secret-generator.yaml
 - ksops-polaris-prod-service-generator.yaml
 - ksops-polaris-prod-sg-service-generator.yaml
 - ksops-polaris-testing-service-generator.yaml
@@ -44,6 +47,13 @@ replacements:
   - select:
       kind: StatefulSetPlus
       name: lightvela-proxy-testing
+    fieldPaths:
+    - spec.template.spec.containers.0.image
+  # devtunnel 复用同一个镜像（devtunnel 二进制打在里面，只是 command 覆盖入口），
+  # 跟着 testing 一起 pin，避免两边镜像版本漂移。
+  - select:
+      kind: StatefulSetPlus
+      name: devtunnel-testing
     fieldPaths:
     - spec.template.spec.containers.0.image
 - source:
