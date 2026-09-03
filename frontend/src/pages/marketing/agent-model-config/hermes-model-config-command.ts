@@ -601,6 +601,21 @@ def same_runtime_deployment(left, right):
     if not left_provider or not left_model or left_model != right_model: return False
     return not (left_url and right_url and left_url != right_url)
 
+def same_configured_deployment(left, right, provider_keys):
+    if not same_runtime_deployment(left, right): return False
+    left_provider = route_identity(left)[0]
+    right_provider = route_identity(right)[0]
+    # A shared endpoint can still be an independent fallback route when its configured credential differs.
+    if left_provider != right_provider and left_provider in provider_keys and right_provider in provider_keys:
+        left_key_env = str(left.get("keyEnv") or "").strip()
+        right_key_env = str(right.get("keyEnv") or "").strip()
+        if left_key_env and right_key_env and left_key_env != right_key_env: return False
+    return True
+
+def configured_provider_keys(config):
+    providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
+    return {str(provider_key).strip().lower() for provider_key in providers}
+
 def model_config(config):
     lightvela = config.get("lightvela") if isinstance(config.get("lightvela"), dict) else {}
     managed = lightvela.get("model_config") if isinstance(lightvela.get("model_config"), dict) else {}
@@ -654,16 +669,17 @@ def remove_legacy_custom_provider(config, model):
 
 def fallback_models(config):
     values = []
+    provider_keys = configured_provider_keys(config)
     for route in get_fallback_chain(config) or []:
         try: model = model_from_route(config, route)
         except (TypeError, ValueError): continue
-        if model and not any(same_runtime_deployment(model, saved) for saved in values): values.append(model)
+        if model and not any(same_configured_deployment(model, saved, provider_keys) for saved in values): values.append(model)
     return values
 
-def append_projected(values, candidate):
+def append_projected(values, candidate, provider_keys):
     if not candidate: return
     for current in values:
-        if not same_runtime_deployment(current, candidate): continue
+        if not same_configured_deployment(current, candidate, provider_keys): continue
         for field in ("providerName", "baseUrl", "routeBaseUrl", "apiMode", "keyEnv"):
             if not current.get(field) and candidate.get(field): current[field] = candidate[field]
         if not candidate.get("requiresSetup"): current.pop("requiresSetup", None)
@@ -673,25 +689,26 @@ def append_projected(values, candidate):
 def read_snapshot(config):
     primary = model_from_route(config, config.get("model") if isinstance(config.get("model"), dict) else {})
     fallbacks = fallback_models(config)
-    projected = []
-    append_projected(projected, primary)
-    for candidate in fallbacks: append_projected(projected, candidate)
-
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
+    provider_keys = configured_provider_keys(config)
+    projected = []
+    append_projected(projected, primary, provider_keys)
+    for candidate in fallbacks: append_projected(projected, candidate, provider_keys)
+
     for provider_key, provider in providers.items():
         try:
             candidate = model_from_provider(str(provider_key), provider)
             if candidate and not idle_provider_is_usable(str(provider_key), provider): candidate = None
         except (KeyError, TypeError, ValueError): candidate = None
-        append_projected(projected, candidate)
+        append_projected(projected, candidate, provider_keys)
 
     custom_providers = config.get("custom_providers") if isinstance(config.get("custom_providers"), list) else []
     for provider in custom_providers:
         try: candidate = model_from_custom_provider(provider)
         except (KeyError, TypeError, ValueError): candidate = None
-        append_projected(projected, candidate)
+        append_projected(projected, candidate, provider_keys)
 
-    for candidate in configured_models(config): append_projected(projected, candidate)
+    for candidate in configured_models(config): append_projected(projected, candidate, provider_keys)
     return {"primary": primary, "fallbacks": fallbacks, "configuredModels": projected}
 
 def find_configured(config, provider_key, model_id, base_url=None, route_base_url=None):
@@ -880,37 +897,41 @@ def write_fallback_routes(config, entries):
 def apply_fallback(config, model):
     entries = []
     matched = False
+    provider_keys = configured_provider_keys(config)
     for entry in raw_fallback_routes(config):
         try: candidate = model_from_route(config, entry)
         except (TypeError, ValueError): candidate = None
-        if same_runtime_deployment(candidate, model):
+        if same_configured_deployment(candidate, model, provider_keys):
             if not matched: entries.append(entry)
             matched = True
         else: entries.append(entry)
     if not matched: entries.append(fallback_entry(model))
     write_fallback_routes(config, entries)
 
-def remove_fallback(config, model):
+def remove_fallback(config, model, *, all_runtime_aliases=False):
     retained = []
+    provider_keys = configured_provider_keys(config)
     for entry in raw_fallback_routes(config):
         try: candidate = model_from_route(config, entry)
         except (TypeError, ValueError): candidate = None
-        if not same_runtime_deployment(candidate, model): retained.append(entry)
+        matches = same_runtime_deployment(candidate, model) if all_runtime_aliases else same_configured_deployment(candidate, model, provider_keys)
+        if not matches: retained.append(entry)
     write_fallback_routes(config, retained)
 
-def is_fallback(snapshot, model):
-    return any(same_runtime_deployment(item, model) for item in snapshot["fallbacks"])
+def is_fallback(config, snapshot, model):
+    provider_keys = configured_provider_keys(config)
+    return any(same_configured_deployment(item, model, provider_keys) for item in snapshot["fallbacks"])
 
 def expect_role(saved, purpose, model):
     snapshot = read_snapshot(saved)
     if purpose == "primary" and not same_route(snapshot["primary"], model): raise ValueError("primary was not saved")
-    if purpose == "fallback" and not is_fallback(snapshot, model): raise ValueError("fallback was not saved")
-    if purpose == "idle" and (same_route(snapshot["primary"], model) or is_fallback(snapshot, model)): raise ValueError("idle role was not saved")
+    if purpose == "fallback" and not is_fallback(saved, snapshot, model): raise ValueError("fallback was not saved")
+    if purpose == "idle" and (same_route(snapshot["primary"], model) or is_fallback(saved, snapshot, model)): raise ValueError("idle role was not saved")
     return snapshot
 
 def expect_fallback_removed(saved, model):
     snapshot = read_snapshot(saved)
-    if is_fallback(snapshot, model): raise ValueError("fallback was not removed")
+    if is_fallback(saved, snapshot, model): raise ValueError("fallback was not removed")
     return snapshot
 
 def execute(action):
@@ -955,7 +976,7 @@ def execute(action):
             ensure_provider_model(config, model, action.get("discoverModels"))
             if purpose == "primary":
                 apply_primary(config, model)
-                remove_fallback(config, model)
+                remove_fallback(config, model, all_runtime_aliases=True)
             elif purpose == "fallback": apply_fallback(config, model)
             else: remove_fallback(config, model)
             save_config(config)
@@ -982,10 +1003,10 @@ def execute(action):
         remove_legacy_custom_provider(config, model)
         if purpose == "primary":
             apply_primary(config, model)
-            remove_fallback(config, model)
+            remove_fallback(config, model, all_runtime_aliases=True)
         elif purpose == "fallback": apply_fallback(config, model)
         elif purpose == "idle":
-            if is_fallback(before, model): remove_fallback(config, model)
+            if is_fallback(config, before, model): remove_fallback(config, model)
             else: pass
         elif purpose != "idle": raise ValueError("purpose is invalid")
         snapshot = save_validate_or_rollback(original_config, config, lambda saved: expect_role(saved, purpose, model))

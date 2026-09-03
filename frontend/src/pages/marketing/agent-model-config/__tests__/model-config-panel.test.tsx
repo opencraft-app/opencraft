@@ -380,9 +380,26 @@ describe("AgentModelConfigPanel", () => {
     expect(primaryProviderLabel.compareDocumentPosition(fallbackProviderLabel))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(primaryProviderLabel.parentElement).toHaveClass("flex-col");
+    expect(fallbackProviderLabel).toHaveClass(
+      "bg-[var(--surface-muted)]",
+      "text-[var(--text-secondary)]",
+    );
+    expect(fallbackProviderLabel).not.toHaveClass(
+      "bg-[color-mix(in_oklab,var(--warning)_20%,white)]",
+      "text-[var(--warning)]",
+    );
     const alphaGroup = screen.getByRole("group", { name: "Alpha API 已配置模型" });
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     const secondAlphaRow = screen.getByText("model-alpha-2").closest("li") as HTMLElement;
+    const fallbackRowLabel = within(secondAlphaRow).getByText("备用模型");
+    expect(fallbackRowLabel).toHaveClass(
+      "bg-[var(--surface-muted)]",
+      "text-[var(--text-secondary)]",
+    );
+    expect(fallbackRowLabel).not.toHaveClass(
+      "bg-[color-mix(in_oklab,var(--warning)_20%,white)]",
+      "text-[var(--warning)]",
+    );
     expect(within(primaryRow).getByRole("radio", { name: "model-primary" })).toBeChecked();
     expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
     expect(within(secondAlphaRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
@@ -476,6 +493,13 @@ describe("AgentModelConfigPanel", () => {
     expect(await screen.findByText("model-primary")).toBeInTheDocument();
 
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
+    const primaryModelName = within(primaryRow).getByText("model-primary");
+    expect(primaryModelName).toHaveClass("text-xs", "font-normal");
+    expect(primaryModelName).not.toHaveClass("text-sm", "font-semibold");
+    for (const action of within(primaryRow).getAllByRole("button")) {
+      expect(action).toHaveClass("font-normal");
+      expect(action).not.toHaveClass("font-semibold");
+    }
     expect(primaryRow).not.toHaveClass("bg-black/[0.015]");
     expect(within(primaryRow).getByText("主模型")).toBeInTheDocument();
     expect(within(primaryRow).getAllByRole("button")).toHaveLength(3);
@@ -670,7 +694,8 @@ describe("AgentModelConfigPanel", () => {
     const addButton = screen.getByRole("button", { name: "添加模型" });
     expect(fetchModelsButton.parentElement).not.toContainElement(addButton);
     expect(connectivityButton.parentElement).not.toContainElement(addButton);
-    expect(addButton.parentElement).toHaveClass("justify-start");
+    expect(addButton.parentElement).toHaveClass("justify-end");
+    expect(addButton.parentElement).not.toHaveClass("justify-start");
     expect(addButton).not.toHaveClass("w-full");
 
     const purposeGroup = screen.getByRole("group", { name: "选择用途" });
