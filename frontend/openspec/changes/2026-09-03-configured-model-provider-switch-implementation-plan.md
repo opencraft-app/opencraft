@@ -238,14 +238,14 @@ git diff --check
 - Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
 - Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
 
-- [x] 先将模型行排版用例改为要求模型名称和两个可见文字操作按钮均使用 `text-sm font-normal`，运行专项测试并确认旧实现按预期 RED。
-- [x] 将模型名称、“设为主模型”和“设为备用模型 / 取消备用”显式统一为 `text-sm font-normal`；纯图标删除按钮、交互和全局 Button 样式保持不变。
+- [x] 先将模型行排版用例改为要求模型名称和两个可见文字操作按钮均使用 `text-xs font-normal`，运行专项测试并确认旧实现按预期 RED。
+- [x] 将模型名称、“设为主模型”和“设为备用模型 / 取消备用”显式统一为 `text-xs font-normal`；纯图标删除按钮、交互和全局 Button 样式保持不变。
 - [x] 运行模型配置目录完整回归、`pnpm check`、`git diff --check`，并确认本地 Mock 预览地址可达。
 - [ ] 刷新本地 Mock 预览，人工确认模型名称与文字按钮字号一致。
 
 增量验证记录：
 
-- RED：模型行排版专项 1 failed / 51 skipped，实际模型名称仍为 `text-xs`。
+- RED：模型行排版专项 1 failed / 51 skipped，实际模型名称仍为 `text-sm`。
 - GREEN：模型行排版专项 1 passed / 51 skipped。
 - 完整回归：模型配置目录 155 项通过，另 1 项按环境跳过；`pnpm check` 通过，TypeScript 0 条新增诊断且多语言结构错误 0；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
 
