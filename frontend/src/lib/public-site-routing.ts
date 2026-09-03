@@ -85,6 +85,7 @@ export function resolveVisiblePublicSiteLocale(
 
 export const PUBLIC_LOCALIZED_PATH_PREFIXES = [
   "/docs",
+  "/blog",
   "/about",
   "/subscribe",
   "/support",

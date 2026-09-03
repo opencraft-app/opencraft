@@ -70,6 +70,8 @@ describe("LightVelaFooter", () => {
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
     expect(productSection).not.toBeNull();
     const product = within(productSection as HTMLElement);
+    expect(product.getAllByRole("link")[0]).toHaveAccessibleName("博客");
+    expect(product.getAllByRole("link")[0]).toHaveAttribute("href", "/blog");
     expect(product.getByRole("link", { name: "14 天免费试用" })).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "定价" })).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "接入 WhatsApp 指引" })).toHaveAttribute(
@@ -187,6 +189,10 @@ describe("LightVelaFooter", () => {
     );
 
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
+    expect(within(productSection as HTMLElement).getByRole("link", { name: "博客" })).toHaveAttribute(
+      "href",
+      "/zh-hant/blog",
+    );
     expect(within(productSection as HTMLElement).getByRole("link", { name: "定价" })).toHaveAttribute(
       "href",
       "/zh-hant/subscribe",
@@ -208,6 +214,7 @@ describe("LightVelaFooter", () => {
     expect(supportLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
     expect(supportLink).toHaveAttribute("target", "_blank");
     expect(supportLink).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Tencent EdgeOne" })).not.toBeInTheDocument();
   });
 
@@ -220,6 +227,12 @@ describe("LightVelaFooter", () => {
     );
 
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/es/");
+
+    const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
+    expect(within(productSection as HTMLElement).getByRole("link", { name: "博客" })).toHaveAttribute(
+      "href",
+      "/es/blog",
+    );
 
     const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
     const company = within(companySection as HTMLElement);

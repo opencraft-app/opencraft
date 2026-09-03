@@ -816,7 +816,7 @@ func (s *Service) updateSetOption(ctx context.Context, client *newapi.Client, se
 			}
 		}
 		if session.UserID > 0 {
-			return client.UpdateOption(ctx, session.UserID, key, value)
+			return client.UpdateOption(ctx, session.UserID, key, value, session.AccessToken)
 		}
 	}
 	return client.UpdateOptionWithAuth(ctx, adminAuthForSet(set), key, value)

@@ -1,5 +1,5 @@
 import { planCatalog } from "@/domain/plan-catalog";
-import { t as translate } from "@/i18n/t";
+import { defaultHermesAgentName } from "@/i18n/default-agent-name";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 import type {
@@ -698,8 +698,6 @@ const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
       return "draft";
   }
 };
-
-const defaultHermesAgentName = () => translate("我的Hermes");
 
 const legacyDefaultHermesAgentNames = new Set(["Hermes宝宝", "Hermes寶寶", "Baby Hermes", "Bebé Hermes"]);
 

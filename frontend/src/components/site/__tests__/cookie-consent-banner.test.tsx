@@ -89,7 +89,7 @@ describe("CookieConsentBanner", () => {
     expect(screen.getByRole("button", { name: "Aceptar todas" })).toBeInTheDocument();
   });
 
-  it("has complete Japanese copy ready without exposing it before publication", () => {
+  it("uses Japanese copy and keeps the Japanese cookie-policy route", () => {
     expect(COOKIE_CONSENT_COPY["ja-JP"]).toEqual({
       title: "Cookieを使用しています",
       description: expect.stringContaining("Cookie"),
@@ -101,7 +101,11 @@ describe("CookieConsentBanner", () => {
     routeState.language = "ja-JP";
     routeState.pathname = "/ja-jp/about";
     renderBanner();
-    expect(screen.getByRole("heading", { name: "Cookie Policy" })).toBeInTheDocument();
+
+    expect(screen.getByRole("heading", { name: "Cookieを使用しています" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Cookieポリシー" })).toHaveAttribute("href", "/ja-jp/cookie-policy");
+    expect(screen.getByRole("button", { name: "必要なCookieのみ" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "すべて許可" })).toBeInTheDocument();
   });
 
   it("stores a necessary-only choice and hides the banner", () => {

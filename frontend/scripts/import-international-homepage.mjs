@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import * as OpenCC from "opencc-js";
 
+import { initializeInternationalHomeFragmentAccessibility } from "./international-home-fragment-accessibility.mjs";
+import { optimizeInternationalHomeVoiceAvatars } from "./international-home-voice-avatars.mjs";
+
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, "..");
 const sourceArgument = process.argv[2];
@@ -49,6 +52,7 @@ const publicLocalizedPaths = [
   "/",
   "/about",
   "/changelog",
+  "/blog",
   "/docs",
   "/open-source-licenses",
   "/privacy-policy",
@@ -1079,6 +1083,16 @@ Object.assign(coreCopyByLocale, {
     "My AI partners": "내 AI 파트너",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 모든 권리 보유. Tencent Lighthouse에서 제작.",
   },
+});
+Object.assign(coreCopyByLocale, {
+  "en-US": { Blog: "Blog" },
+  "zh-CN": { Blog: "博客" },
+  "zh-SG": { Blog: "博客" },
+  "zh-Hant": { Blog: "博客" },
+  "id-ID": { Blog: "Blog" },
+  es: { Blog: "Blog" },
+  "ja-JP": { Blog: "ブログ" },
+  "ko-KR": { Blog: "블로그" },
 });
 const cardAltCopyByLocale = {
   "zh-CN": {
@@ -3904,7 +3918,7 @@ function applyFooterLayout(document) {
   </div>
   <div class="foot__links"><div class="foot__links-grid">
     <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.</p></div>
-    <div><h3>Product</h3><ul><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
+    <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Analysis</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Self-hosting analysis</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Hostinger analysis</a></li><li><a href="/docs/compare/lightvela-vs-manus">Manus analysis</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">ChatGPT analysis</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Genspark analysis</a></li></ul></div>
     <div><h3>Community</h3><ul><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://www.youtube.com/@TencentLightVela" target="_blank" rel="noreferrer">YouTube</a></li></ul></div>
     <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
@@ -3949,6 +3963,7 @@ const routeByLabel = new Map([
   ["Pricing", "/subscribe"],
   ["Docs", "/docs/overview"],
   ["Changelog", "/changelog"],
+  ["Blog", "/blog"],
   ["About", "/about"],
   ["CN", "/zh-sg/"],
   ["Early Access", "/subscribe"],
@@ -4178,7 +4193,43 @@ const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionC
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
   "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
+).replace(
+  `        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
+        chats.forEach(function (chat, i) {`,
+  `        subs.forEach(function (btn, i) {
+          btn.classList.toggle('on', i === active);
+          btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');
+        });
+        chats.forEach(function (chat, i) {`,
+).replace(
+  `      subs.forEach(function (btn, i) {
+        btn.addEventListener('mouseenter', function () {
+          if (active === i) return;
+          render(i, true);
+        });
+      });`,
+  `      subs.forEach(function (btn, i) {
+        function activate() {
+          if (active === i) return;
+          render(i, true);
+        }
+        function activateFromKeyboard(event) {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          activate();
+        }
+        btn.addEventListener('mouseenter', activate);
+        btn.addEventListener('click', activate);
+        btn.addEventListener('keydown', activateFromKeyboard);
+      });`,
 );
+if (
+  !runtimeSource.includes("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');")
+  || !runtimeSource.includes("btn.addEventListener('click', activate);")
+  || !runtimeSource.includes("btn.addEventListener('keydown', activateFromKeyboard);")
+) {
+  throw new Error("Unable to add accessible activation to homepage scene buttons");
+}
 const playHoverRuntime = `
 (function () {
   document.querySelectorAll('.plays__tabs label[for]').forEach(function (label) {
@@ -4313,4 +4364,9 @@ await writeFile(path.join(targetRoot, "runtime.js"), cleanGeneratedText(runtime)
 await writeFile(path.join(targetRoot, "hero-chat.js"), cleanGeneratedText(heroChat));
 await copyFile(path.join(sourceRoot, "assets/scene-wheel.js"), path.join(targetRoot, "scene-wheel.js"));
 
-console.log(`Imported ${assetPaths.size} assets into ${targetRoot}`);
+await initializeInternationalHomeFragmentAccessibility(targetRoot);
+const voiceAvatarSummary = await optimizeInternationalHomeVoiceAvatars(targetRoot);
+
+console.log(
+  `Imported ${assetPaths.size} assets into ${targetRoot}; optimized ${voiceAvatarSummary.avatars} voice avatars (${voiceAvatarSummary.sourceBytes} -> ${voiceAvatarSummary.optimizedBytes} bytes)`,
+);
