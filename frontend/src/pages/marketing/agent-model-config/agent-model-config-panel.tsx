@@ -62,6 +62,14 @@ const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
   { id: "custom", label: "自定义模型" },
 ];
 
+/**
+ * 自定义供应商的凭据作用域。Provider 名称、Base URL、兼容协议都在同一份草稿里逐字符编辑，
+ * 若按端点指纹隔离凭据，用户每敲一个字符就会丢失已输入的 API Key。
+ */
+const CUSTOM_CREDENTIAL_SCOPE = "custom-draft";
+
+const CUSTOM_MODEL_SUGGESTION_LIST_ID = "custom-model-suggestions";
+
 const MODEL_FIELD_CLASS = "grid gap-y-2";
 const MODEL_CONTROL_CLASS = "h-12 rounded-md border-black/10 bg-white shadow-none outline-none transition-colors focus:border-[#2F6BFF] focus:outline-none focus:ring-0 focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-0";
 const MODEL_COMPOUND_CONTROL_BASE_CLASS = "min-w-0 overflow-hidden rounded-md border border-black/10 bg-white shadow-none transition-colors focus-within:border-[#2F6BFF]";
@@ -259,11 +267,13 @@ export function AgentModelConfigPanel({
   const providerFingerprintRef = useRef(providerFingerprint);
   const previousProviderFingerprintRef = useRef(providerFingerprint);
   providerFingerprintRef.current = providerFingerprint;
+  const credentialScope = category === "custom" ? CUSTOM_CREDENTIAL_SCOPE : providerFingerprint;
+  const previousCredentialScopeRef = useRef(credentialScope);
   const selectedModel = providerDraft && selectedModelId
     ? { ...providerDraft, id: selectedModelId, keyEnv: "" }
     : null;
   const fallbackPurposeDisabled = sameModel(controller.snapshot?.primary, selectedModel);
-  const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
+  const credentialMatchesProvider = !!credentialScope && apiKeyTarget === credentialScope;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
   const pageHeader = (
@@ -273,6 +283,15 @@ export function AgentModelConfigPanel({
     />
   );
 
+  // 离开当前凭据作用域即作废凭据，确保为某个供应商输入的 API Key 不会流向另一个 endpoint。
+  useEffect(() => {
+    if (previousCredentialScopeRef.current === credentialScope) return;
+    previousCredentialScopeRef.current = credentialScope;
+    setApiKey("");
+    setApiKeyTarget("");
+    setShowApiKey(false);
+  }, [credentialScope]);
+
   useEffect(() => {
     if (previousProviderFingerprintRef.current === providerFingerprint) return;
     previousProviderFingerprintRef.current = providerFingerprint;
@@ -280,9 +299,6 @@ export function AgentModelConfigPanel({
     probeUiRevision.current += 1;
     controller.cancelProbe();
     controller.clearOperationError();
-    setApiKey("");
-    setApiKeyTarget("");
-    setShowApiKey(false);
     setModelOptions(catalogModelOptions);
     setSelectedModelId(catalogModelOptions[0]?.id ?? "");
     setConnectionResult(null);
@@ -342,12 +358,15 @@ export function AgentModelConfigPanel({
   };
 
   const handleAdd = async () => {
-    if (!selectedModel || !apiKey.trim()) return;
+    if (!selectedModel || !apiKey.trim() || !credentialMatchesProvider) return;
     const nextSnapshot = await controller.add({
       apiKey: apiKey.trim(),
       model: selectedModel,
       purpose,
-      discoverModels: category === "custom" || activeProvider?.discoveryStrategy !== "catalog",
+      // 手输的模型 ID 未经探测验证，写入 discover_models=false 让 Hermes 以配置内列表为权威。
+      discoverModels: category === "custom"
+        ? modelOptions.some((modelOption) => modelOption.id === selectedModelId)
+        : activeProvider?.discoveryStrategy !== "catalog",
     });
     if (!nextSnapshot) return;
     setApiKey("");
@@ -676,7 +695,7 @@ export function AgentModelConfigPanel({
                   className={cn(compoundFieldClassName, "pr-11")}
                   onChange={(event) => {
                     setApiKey(event.target.value);
-                    setApiKeyTarget(providerFingerprint);
+                    setApiKeyTarget(credentialScope);
                     restoreCatalogModelOptions();
                   }}
                 />
@@ -723,36 +742,61 @@ export function AgentModelConfigPanel({
               {t("模型")}
             </label>
             <div data-slot="model-option-control" className={compoundControlClassName}>
-              <Select
-                value={selectedModelId}
-                disabled={busy || modelOptions.length === 0}
-                onValueChange={(value) => {
-                  setSelectedModelId(value);
-                  setConnectionResult(null);
-                  controller.clearOperationError();
-                }}
-              >
-                <SelectTrigger
-                  id="detected-model"
-                  aria-label={t("模型")}
-                  className={compoundFieldClassName}
-                  onPointerDownCapture={captureAgentSidebarPosition}
-                  onKeyDownCapture={captureAgentSidebarPosition}
+              {category === "custom" ? (
+                // 自定义 endpoint 常常没有实现 /v1/models，探测结果只能作为建议，必须允许手动填写。
+                <>
+                  <Input
+                    id="detected-model"
+                    list={CUSTOM_MODEL_SUGGESTION_LIST_ID}
+                    autoComplete="off"
+                    value={selectedModelId}
+                    disabled={busy}
+                    placeholder={t("输入或选择模型")}
+                    className={compoundFieldClassName}
+                    onChange={(event) => {
+                      setSelectedModelId(event.target.value);
+                      setConnectionResult(null);
+                      controller.clearOperationError();
+                    }}
+                  />
+                  <datalist id={CUSTOM_MODEL_SUGGESTION_LIST_ID}>
+                    {modelOptions.map((modelOption) => (
+                      <option key={modelOption.id} value={modelOption.id}>{modelOption.name}</option>
+                    ))}
+                  </datalist>
+                </>
+              ) : (
+                <Select
+                  value={selectedModelId}
+                  disabled={busy || modelOptions.length === 0}
+                  onValueChange={(value) => {
+                    setSelectedModelId(value);
+                    setConnectionResult(null);
+                    controller.clearOperationError();
+                  }}
                 >
-                  <SelectValue placeholder={modelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
-                </SelectTrigger>
-                <SelectContent
-                  position="popper"
-                  className={MODEL_SELECT_CONTENT_CLASS}
-                  style={MODEL_SELECT_CONTENT_STYLE}
-                >
-                  {modelOptions.map((modelOption) => (
-                    <SelectItem key={modelOption.id} value={modelOption.id}>
-                      {modelOption.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    id="detected-model"
+                    aria-label={t("模型")}
+                    className={compoundFieldClassName}
+                    onPointerDownCapture={captureAgentSidebarPosition}
+                    onKeyDownCapture={captureAgentSidebarPosition}
+                  >
+                    <SelectValue placeholder={modelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    className={MODEL_SELECT_CONTENT_CLASS}
+                    style={MODEL_SELECT_CONTENT_STYLE}
+                  >
+                    {modelOptions.map((modelOption) => (
+                      <SelectItem key={modelOption.id} value={modelOption.id}>
+                        {modelOption.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 type="button"
                 variant="outline"

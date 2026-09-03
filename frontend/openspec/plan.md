@@ -1,3 +1,58 @@
+# 自定义模型支持手动填写模型 ID Implementation Plan
+
+**Status:** 规划完成，进入 TDD 实现。
+
+**Size:** S。仅改自定义分类下的模型控件与 `discoverModels` 取值，新增 1 条文案；不改预置供应商、不改探测协议、不改 Hermes 命令结构。
+
+**Goal:** 自定义供应商在 `/v1/models` 不可用或探测失败时，用户仍能手动填写模型 ID 并完成添加。
+
+**Problem:** 自定义分类的 `catalogModelOptions` 恒为空，模型下拉唯一来源是 `probe_api_models`。探测拿不到列表时下拉 disabled、`selectedModel` 恒为 `null`、「添加模型」随之禁用，形成无出口的死胡同。而自定义供应商的典型场景（私有中转、企业网关）恰恰常常不实现 `/v1/models`。
+
+**Decision:**
+- 自定义分类的模型控件改为可输入控件，探测结果作为候选建议保留，不再阻断手输。
+- 预置分类维持现有 `Select`，不受影响。
+- `handleAdd` 的 `discoverModels`：手输 ID 传 `false`（让 Hermes 以配置内模型列表为权威，不再依赖 `/models`），从探测结果中选中的仍传 `true`。依据见 helper 的 `provider_catalog_is_authoritative`。
+- 新增文案 1 条，用于可输入控件的占位；zh-Hant 由 `scripts/i18n-zh-hant.mjs` 派生，其余必填语种手工补齐。
+
+**Files:**
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `src/i18n/generated/*.json`
+
+- [x] **Task 1：自定义分类模型控件改为可输入，探测结果降级为候选建议。**
+- [x] **Task 2：手输模型 ID 时 `discoverModels` 传 `false`，选中探测结果时保持 `true`。**
+- [x] **Task 3：补齐新增文案的必填语种翻译并通过 i18n 门禁。**
+- [x] **Task 4：运行模型配置定向 Vitest、`pnpm check` 与 `git diff --check`，输出验收摘要等待用户确认。**
+
+**Verification:** 两个新用例先 RED（手输后模型框仍 disabled、探测结果未落到可输入控件），实现后 `model-config-panel.test.tsx` 37/37 通过，`agent-model-config` + `agent-settings-sdk-boundary` 共 132 passed / 1 skipped。新增文案 `输入或选择模型`（`k_e7e28005`）已补齐 en-US / es / ja-JP / ko-KR / id-ID，zh-Hant 由 `scripts/i18n-zh-hant.mjs` 派生，`pnpm i18n:check` 通过；id-ID 剩余 175 条待翻译为既有缺口，未在本次扩大。`pnpm check` 退出码 0，TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved；`git diff --check` 退出码 0。
+
+**Test churn（行为变更的预期后果）:** 三个既有用例原本断言「自定义分类下模型下拉 disabled」，与本次目标直接冲突，已改为断言模型框为空或已被清空——语义比原断言更强。datalist 的 `<option>` 不进无障碍树，建议项改用 DOM 查询断言。
+
+---
+
+# 自定义模型草稿保留 API Key Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。
+
+**Size:** S。仅调整模型配置面板的凭据作用域判定，不改协议、不改 Hermes 命令、不新增文案。
+
+**Goal:** 自定义模型页填写 Provider 名称、Base URL、兼容协议时不再清空已输入的 API Key，同时保持「A 的凭据不能发到 B 的 endpoint」这条安全不变量。
+
+**Problem:** 自定义供应商的 `providerFingerprint` 由 Provider 名称、Base URL、兼容协议派生，而三个输入框都是逐字符受控更新，导致指纹 effect 每次击键都执行 `setApiKey("")`。用户只能按「先地址后密钥」的顺序填写，改一个字符就丢凭据。
+
+**Files:**
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] **Task 1：引入 `credentialScope`，自定义草稿内共用同一凭据作用域，预置供应商仍按完整指纹隔离。**
+- [x] **Task 2：拆分指纹 effect —— 凭据清空跟随 `credentialScope`，模型列表恢复与在途请求作废仍跟随 `providerFingerprint`。**
+- [x] **Task 3：补齐 `handleAdd` 的 `credentialMatchesProvider` 守卫，让安全不变量落在代码而非仅靠按钮禁用态。**
+- [x] **Task 4：运行模型配置定向 Vitest 与类型基线，输出验收摘要等待用户确认。**
+
+**Verification:** 新增用例先 RED（自定义草稿保留凭据失败，回归守卫「切换预置供应商/分类仍清空凭据」按预期已通过），实现后 `model-config-panel.test.tsx` 35/35 通过，`agent-model-config` 目录 127 passed / 1 skipped，`agent-settings-sdk-boundary` 3/3。`pnpm check` 退出码 0，TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved；`git diff --check` 退出码 0。期间一次整目录跑出现 23 个失败，重跑同条件 127/128 全通过，原因是本地 dev server 编译占满资源导致 5s 用例超时，与本次改动无关。
+
+---
+
 # 模型配置默认使用七彩石目录 Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认；不自动 commit、push 或创建 MR。

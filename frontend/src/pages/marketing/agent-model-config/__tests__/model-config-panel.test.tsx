@@ -724,7 +724,7 @@ describe("AgentModelConfigPanel", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
     expect(screen.getByRole("button", { name: "获取可用模型" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
+    expect(screen.getByLabelText("模型")).toHaveValue("");
   });
 
   it("restores the product catalog when the credential, Provider, or category changes", async () => {
@@ -918,7 +918,7 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
 
-    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
+    expect(screen.getByLabelText("模型")).toHaveValue("");
     expect(screen.queryByText("Catalog Only Model")).not.toBeInTheDocument();
   });
 
@@ -1010,10 +1010,10 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
     await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
-    expect(screen.getByRole("combobox", { name: "模型" })).toBeEnabled();
+    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveValue(primaryModel.id));
 
     await userEvent.type(screen.getByLabelText("Base URL"), "/new");
-    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
+    expect(screen.getByLabelText("模型")).toHaveValue("");
   });
 
   it("supports arrow-key navigation across Provider modes", async () => {
@@ -1132,6 +1132,103 @@ describe("AgentModelConfigPanel", () => {
       await pendingConnection;
     });
     expect(screen.queryByRole("dialog", { name: "模型可用性检测通过" })).not.toBeInTheDocument();
+  });
+
+  it("lets a custom Provider add a hand-written model when discovery returns nothing", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, []);
+    renderPanel(remote);
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    await userEvent.type(screen.getByLabelText("Provider 名称"), "Private Relay");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
+    await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    const modelField = screen.getByLabelText("模型");
+    expect(modelField).toBeEnabled();
+    await userEvent.type(modelField, "relay-gpt-4o");
+    expect(screen.getByRole("button", { name: "检测模型状态" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "添加模型" }));
+
+    await waitFor(() => expect(toastMocks.success).toHaveBeenLastCalledWith("模型已添加"));
+    expect(remote.actions).toContainEqual(expect.objectContaining({
+      type: "add",
+      discoverModels: false,
+      model: expect.objectContaining({ id: "relay-gpt-4o", providerName: "Private Relay" }),
+    }));
+  });
+
+  it("still offers discovered models as suggestions for a custom Provider", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["relay-model-a", "relay-model-b"]);
+    renderPanel(remote);
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    await userEvent.type(screen.getByLabelText("Provider 名称"), "Private Relay");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
+    await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+
+    const modelField = screen.getByLabelText("模型");
+    await waitFor(() => expect(modelField).toHaveValue("relay-model-a"));
+    const suggestions = document.querySelectorAll<HTMLOptionElement>("#custom-model-suggestions option");
+    expect([...suggestions].map((option) => option.value)).toEqual(["relay-model-a", "relay-model-b"]);
+
+    await userEvent.click(screen.getByRole("button", { name: "添加模型" }));
+    expect(remote.actions).toContainEqual(expect.objectContaining({
+      type: "add",
+      discoverModels: true,
+      model: expect.objectContaining({ id: "relay-model-a" }),
+    }));
+  });
+
+  it("keeps the custom credential while the draft Provider is still being edited", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["custom-model"]);
+    renderPanel(remote);
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
+    await userEvent.type(screen.getByLabelText("Provider 名称"), "Private Relay");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
+    expect(screen.getByLabelText("API Key")).toHaveValue("relay-secret");
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeEnabled();
+
+    await userEvent.type(screen.getByLabelText("Base URL"), "/v2");
+    await selectOption("兼容协议", "Anthropic Messages");
+    expect(screen.getByLabelText("API Key")).toHaveValue("relay-secret");
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    const probeAction = remote.actions.find((item): item is Extract<HermesModelConfigAction, { type: "probe" }> => item.type === "probe");
+    expect(probeAction?.baseUrl).toBe("https://relay.example.com/v1/v2");
+    expect(probeAction?.apiMode).toBe("anthropic_messages");
+  });
+
+  it("still drops the credential when the preset Provider or category changes", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
+    render(
+      <AgentModelConfigPanel
+        botId="bot-1"
+        execDebugCommand={remote.execDebugCommand}
+        providers={[catalogPlan, { ...catalogPlan, providerKey: "catalog-plan-2", providerName: "Catalog Plan 2" }]}
+      />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "plan-secret");
+    expect(screen.getByLabelText("API Key")).toHaveValue("plan-secret");
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeEnabled();
+
+    await selectOption("Coding Plan 套餐", "Catalog Plan 2");
+    expect(screen.getByLabelText("API Key")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText("API Key"), "second-secret");
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    expect(screen.getByLabelText("API Key")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeDisabled();
   });
 
   it("uses a collision-safe identity for custom Providers", async () => {
