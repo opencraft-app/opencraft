@@ -171,6 +171,8 @@ export function BlogArticlePage({
           <h1 className="mt-8 text-pretty text-3xl font-bold leading-tight text-black sm:text-4xl">{post.title}</h1>
           <div className="mt-5 text-sm text-black/45">
             <time dateTime={post.publishedAt}>{formatBlogPublishedAt(post.publishedAt, publicLocale)}</time>
+            <span aria-hidden="true"> · </span>
+            <span>{post.author}</span>
           </div>
           <div className="mt-8 space-y-4">
             {post.content.slice(1).map((block, index) => renderBlock(block, index, publicLocale, publicLocalized))}

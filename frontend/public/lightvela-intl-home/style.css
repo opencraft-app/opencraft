@@ -362,6 +362,15 @@
     url('https://fonts.gstatic.com/s/anton/v25/1Ptgg87LROyAm3Kz-C8CSKlv.woff2') format('woff2');
 }
 
+@font-face {
+  font-family: 'Allura';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('assets/fonts/allura-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ---------- 2. 变量 ---------- */
 #lightvela-intl-home {
   --brand: #6a4fde;
@@ -392,6 +401,7 @@
   --font-hero: 'Avenir Next', 'SF Pro Display', 'Helvetica Neue', 'PingFang SC',
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   --font-cover-en: 'New York', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --font-footer-display: 'Allura', Georgia, 'Times New Roman', serif;
   --font-brand-word: var(--font-hero);
   --font-display: var(--font-sans);
 
@@ -457,6 +467,18 @@
 }
 :where(#lightvela-intl-home input) {
   font: inherit;
+}
+
+#lightvela-intl-home .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---------- 4. 工具 ---------- */
@@ -934,6 +956,7 @@
   margin-left: -8px;
 }
 .hero__title {
+  margin: 0;
   font-family: var(--font-hero);
   font-weight: 400;
   font-size: 32px;
@@ -1651,7 +1674,7 @@
   background-position: center;
 }
 .native--wa .native__body {
-  background-image: url('assets/whatsapp-chat-bg.png');
+  background-image: url('assets/whatsapp-chat-bg.webp');
 }
 
 /* WhatsApp 最新风格：气泡更柔和、圆角更大 */
@@ -1788,7 +1811,7 @@
   background: #f9f9fa;
 }
 .native--tg .native__body {
-  background-image: url('assets/telegram-chat-bg.png');
+  background-image: url('assets/telegram-chat-bg.webp');
 }
 
 .native__thread {
@@ -3430,11 +3453,30 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
 
 /* ---------- Skill × Soul 拼接条（双卡斜缝拼接，文案居中） ---------- */
 .soul-strip {
+  --soul-strip-hold: 2s;
+  --soul-strip-shift: 0.55s;
+  --soul-strip-cycle: calc((var(--soul-strip-hold) + var(--soul-strip-shift)) * 2);
   position: relative;
   display: flex;
   max-width: var(--shell);
   height: 69px;
   margin: 32px auto;
+  overflow: hidden;
+  border-radius: 12px;
+}
+.soul-strip::before {
+  content: '';
+  position: absolute;
+  top: -24px;
+  bottom: -24px;
+  left: -18%;
+  z-index: 3;
+  width: 150px;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.14) 28%, rgba(255, 255, 255, 0.82) 50%, rgba(255, 255, 255, 0.16) 72%, transparent 100%);
+  filter: blur(1px);
+  transform: translateX(-140%) skewX(-10deg);
+  pointer-events: none;
+  animation: soul-strip-sweep var(--soul-strip-cycle) var(--ease) infinite;
 }
 /* 中间斜缝：白色斜切遮条（仅缝隙倾斜，卡片外缘保持垂直） */
 .soul-strip::after {
@@ -3443,7 +3485,7 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   left: 50%;
   top: -6px;
   bottom: -6px;
-  z-index: 2;
+  z-index: 4;
   width: 6px;
   background: #fff;
   transform: translateX(-50%) skewX(-10deg);
@@ -3451,6 +3493,7 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
 }
 .soul-strip__half {
   position: relative;
+  z-index: 1;
   flex: 1 1 0%;
   display: flex;
   align-items: center;
@@ -3471,7 +3514,24 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   align-items: center;
   gap: 16px;
   margin: 0;
+  max-width: calc(100% - 24px);
   white-space: nowrap;
+}
+.soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) {
+  animation: soul-strip-primary var(--soul-strip-cycle) var(--ease) infinite;
+  will-change: opacity, transform, filter;
+}
+.soul-strip__cap--secondary {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  max-width: none;
+  opacity: 0;
+  transform: translateY(6px);
+  filter: blur(3px);
+  animation: soul-strip-secondary var(--soul-strip-cycle) var(--ease) infinite;
+  pointer-events: none;
+  will-change: opacity, transform, filter;
 }
 /* Skill 左侧：叠放圆圈图标组（白底黑图标，第 4 个 ···） */
 .soul-strip__icons {
@@ -3506,6 +3566,9 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   object-fit: cover;
   display: block;
 }
+.soul-strip__icons--secondary {
+  color: var(--ink);
+}
 /* Soul 侧：图标组在文案右侧，间距 8px */
 .soul-strip__icons--soul {
   margin-right: 0;
@@ -3516,19 +3579,136 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   font-weight: 600;
   letter-spacing: 1px;
 }
+.soul-strip__copy {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.soul-strip__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.soul-strip__state--secondary {
+  position: relative;
+  justify-content: flex-start;
+  gap: 10px;
+  width: min(100%, 560px);
+}
 .soul-strip__cap span {
+  flex: 0 0 auto;
   font-size: 16px;
   color: #000;
 }
-.soul-strip__cap > i {
+.soul-strip__cap > i,
+.soul-strip__state > i {
+  flex: 0 0 1px;
   width: 1px;
   height: 18px;
   background: rgba(0, 0, 0, 0.14);
 }
+.soul-strip__state--secondary .soul-strip__label {
+  align-self: center;
+  font-size: 16px;
+  font-weight: 400;
+  color: #000;
+}
 .soul-strip__cap b {
+  min-width: 0;
+  overflow: hidden;
   font-size: 16px;
   font-weight: 600;
   color: #000;
+  text-overflow: ellipsis;
+}
+.soul-strip__state--secondary b {
+  display: block;
+  max-width: 390px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #000;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@keyframes soul-strip-primary {
+  0%,
+  39% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  50%,
+  89% {
+    opacity: 0;
+    transform: translateY(-6px);
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+@keyframes soul-strip-secondary {
+  0%,
+  39% {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(3px);
+  }
+  50%,
+  89% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(3px);
+  }
+}
+@keyframes soul-strip-sweep {
+  0%,
+  35%,
+  55%,
+  85%,
+  100% {
+    opacity: 0;
+    transform: translateX(-140%) skewX(-10deg);
+  }
+  41% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+    transform: translateX(950%) skewX(-10deg);
+  }
+  91% {
+    opacity: 1;
+  }
+  99% {
+    opacity: 0;
+    transform: translateX(950%) skewX(-10deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .soul-strip::before,
+  .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary),
+  .soul-strip__cap--secondary {
+    animation: none;
+  }
+  .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  .soul-strip__cap--secondary {
+    display: none;
+  }
 }
 @media (max-width: 900px) {
   .soul-strip {
@@ -3537,9 +3717,15 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   .soul-strip__cap {
     gap: 10px;
   }
+  .soul-strip__state {
+    gap: 10px;
+  }
   .soul-strip__cap span,
   .soul-strip__cap b {
     font-size: 13px;
+  }
+  .soul-strip__state--secondary b {
+    font-size: 11.5px;
   }
 }
 .scenes input[type='radio'] {
@@ -6209,7 +6395,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   flex: 1;
   padding: 22px 18px;
   overflow-y: auto;
-  background-image: url('assets/whatsapp-chat-bg.png');
+  background-image: url('assets/whatsapp-chat-bg.webp');
   background-size: cover;
   background-position: center;
 }
@@ -7114,8 +7300,13 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   color: rgba(33, 26, 42, 0.88);
   font-family: var(--font-ui);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0;
+}
+
+#lightvela-intl-home .nav__links a[aria-current='page'] {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 #lightvela-intl-home .nav__links a::after {
@@ -7493,6 +7684,23 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   transform: rotate(-1deg) translateY(0.02em);
 }
 
+#lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es']) .foot__title,
+#lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es']) .foot__title .row,
+#lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es']) .foot__title em {
+  font-family: var(--font-footer-display) !important;
+}
+
+#lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es']) .foot__title em {
+  font-size: 1.08em;
+  font-style: normal !important;
+  font-weight: 400;
+  transform: none;
+}
+
+#lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es']) .foot__title .row {
+  font-style: normal;
+}
+
 #lightvela-intl-home .foot__cta a {
   display: inline-flex;
   position: relative;
@@ -7711,5 +7919,921 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
   #lightvela-intl-home .voice .marquee__rows {
     min-height: 380px;
+  }
+}
+
+@media (max-width: 640px) {
+  #lightvela-intl-home {
+    overflow-x: hidden;
+  }
+
+  #lightvela-intl-home .nav__inner {
+    width: calc(100vw - 28px);
+    max-width: calc(100vw - 28px);
+    min-height: 56px;
+    padding-inline: 0;
+  }
+
+  #lightvela-intl-home .nav__brand img {
+    width: 108px;
+    height: auto;
+  }
+
+  #lightvela-intl-home .hero {
+    padding: 104px 16px 0;
+  }
+
+  #lightvela-intl-home .hero__eyebrow {
+    max-width: 100%;
+    justify-content: center;
+    line-height: 1.35;
+  }
+
+  #lightvela-intl-home .hero__title {
+    gap: 12px;
+  }
+
+  #lightvela-intl-home .hero__line {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  #lightvela-intl-home .hero__line--main {
+    font-size: clamp(28px, 8.4vw, 34px);
+    line-height: 1.16;
+    text-wrap: balance;
+  }
+
+  #lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es'], [data-locale^='ja'], [data-locale^='ko']) .hero__line--main {
+    max-width: 100%;
+    font-size: clamp(28px, 8.4vw, 34px);
+    line-height: 1.16;
+  }
+
+  #lightvela-intl-home .hero__line--dynamic {
+    max-width: 100%;
+    font-size: clamp(18px, 5.2vw, 22px);
+    white-space: normal;
+  }
+
+  #lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es'], [data-locale^='ja'], [data-locale^='ko']) .hero__line--dynamic {
+    max-width: 100%;
+    min-height: auto;
+    padding-bottom: 16px;
+    font-size: clamp(18px, 5.2vw, 22px);
+    line-height: 1.34;
+  }
+
+  #lightvela-intl-home .hero__line--dynamic .hero__prefix {
+    max-width: 100%;
+  }
+
+  #lightvela-intl-home .hero__rotator-wrap {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #lightvela-intl-home .hero__rotator {
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  #lightvela-intl-home .hero__line--main .hero__char,
+  #lightvela-intl-home .hero__line--dynamic .hero__char,
+  #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap {
+    animation: none;
+    filter: none;
+    opacity: 1;
+  }
+
+  #lightvela-intl-home .hero__line--main .hero__char,
+  #lightvela-intl-home .hero__line--dynamic .hero__char {
+    display: inline;
+    white-space: normal;
+  }
+
+  #lightvela-intl-home .hero__cta {
+    margin-top: 28px;
+  }
+
+  #lightvela-intl-home .hero__cta .btn-dark {
+    min-height: 48px;
+    max-width: 100%;
+    padding-left: 22px;
+    padding-right: 46px;
+  }
+
+  #lightvela-intl-home .btn-dark__icon-bubble {
+    width: 34px;
+    height: 34px;
+    margin-right: -14px;
+  }
+
+  #lightvela-intl-home .hero__stage {
+    width: 100%;
+    margin-top: 40px;
+    padding-bottom: 18px;
+  }
+
+  #lightvela-intl-home .hero__stage::before {
+    opacity: 0.28;
+    transform: translate(-50%, calc(-50% - 180px));
+  }
+
+  #lightvela-intl-home .hero__tabs {
+    width: 100%;
+    justify-content: space-between;
+    gap: 2px;
+    margin-bottom: 14px;
+    padding-inline: 2px;
+    overflow-x: visible;
+  }
+
+  #lightvela-intl-home .hero__tabs label {
+    min-width: 0;
+    min-height: 38px;
+    flex: 1 1 0;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 3px 10px;
+    font-size: 12px;
+    line-height: 1.1;
+  }
+
+  #lightvela-intl-home .hero__tabs label img {
+    width: 15px;
+    height: 15px;
+  }
+
+  #lightvela-intl-home .hero__frame {
+    min-width: 0;
+    padding: 6px;
+    border-radius: 18px;
+  }
+
+  #lightvela-intl-home .im {
+    border-radius: 14px;
+  }
+
+  #lightvela-intl-home .hero__mascot {
+    right: -18px;
+    bottom: -10px;
+    width: 116px;
+  }
+
+  #lightvela-intl-home .about,
+  #lightvela-intl-home .scenes,
+  #lightvela-intl-home .deploy {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  #lightvela-intl-home .about {
+    padding-top: 76px;
+    padding-bottom: 76px;
+  }
+
+  #lightvela-intl-home .about__head {
+    margin-bottom: 24px;
+  }
+
+  #lightvela-intl-home .about__head .k,
+  #lightvela-intl-home .scenes__title,
+  #lightvela-intl-home .deploy__lead {
+    font-size: clamp(22px, 6vw, 28px);
+    line-height: 1.16;
+    text-wrap: balance;
+  }
+
+  #lightvela-intl-home .about__head::after {
+    content: 'Swipe left or right to switch cards';
+    display: block;
+    margin-top: 12px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--ink-35);
+  }
+
+  #lightvela-intl-home:is([data-locale='zh-SG'], [data-locale='zh-CN']) .about__head::after {
+    content: '左右滑动切换卡片';
+  }
+
+  #lightvela-intl-home[data-locale='zh-Hant'] .about__head::after {
+    content: '左右滑動切換卡片';
+  }
+
+  #lightvela-intl-home[data-locale='id-ID'] .about__head::after {
+    content: 'Geser kiri atau kanan untuk beralih kartu';
+  }
+
+  #lightvela-intl-home[data-locale='es'] .about__head::after {
+    content: 'Desliza para cambiar de tarjeta';
+  }
+
+  #lightvela-intl-home[data-locale='ja-JP'] .about__head::after {
+    content: '左右にスワイプしてカードを切り替え';
+  }
+
+  #lightvela-intl-home[data-locale='ko-KR'] .about__head::after {
+    content: '좌우로 밀어 카드 전환';
+  }
+
+  #lightvela-intl-home .about__intro {
+    margin-top: 14px;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  #lightvela-intl-home .soul-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    height: auto;
+    gap: 0;
+    margin: 24px 0 28px;
+    border-radius: 10px;
+  }
+
+  #lightvela-intl-home .soul-strip::before,
+  #lightvela-intl-home .soul-strip::after {
+    display: none;
+  }
+
+  #lightvela-intl-home .soul-strip__half,
+  #lightvela-intl-home .soul-strip__half:first-child,
+  #lightvela-intl-home .soul-strip__half:last-child {
+    min-height: 48px;
+    justify-content: center;
+    padding: 0 8px;
+    background: #fff;
+  }
+
+  #lightvela-intl-home .soul-strip__half:first-child {
+    border-radius: 10px 0 0 10px;
+  }
+
+  #lightvela-intl-home .soul-strip__half:last-child {
+    border-radius: 0 10px 10px 0;
+  }
+
+  #lightvela-intl-home .soul-strip__cap {
+    width: 100%;
+    max-width: 100%;
+    justify-content: center;
+    gap: 6px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  #lightvela-intl-home .soul-strip__icons,
+  #lightvela-intl-home .soul-strip__icons--soul {
+    display: none;
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  #lightvela-intl-home .soul-strip__icons i {
+    width: 24px;
+    height: 24px;
+  }
+
+  #lightvela-intl-home .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) .soul-strip__icons,
+  #lightvela-intl-home .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) .soul-strip__icons--soul {
+    display: inline-flex;
+  }
+
+  #lightvela-intl-home .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) > i,
+  #lightvela-intl-home .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) > b {
+    display: none;
+  }
+
+  #lightvela-intl-home .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) {
+    gap: 8px;
+  }
+
+  #lightvela-intl-home .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) > span:not(.soul-strip__icons) {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  #lightvela-intl-home .soul-strip__copy {
+    width: 100%;
+  }
+
+  #lightvela-intl-home .soul-strip__state {
+    width: 100%;
+    gap: 6px;
+  }
+
+  #lightvela-intl-home .soul-strip__state > span,
+  #lightvela-intl-home .soul-strip__state b {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+  }
+
+  #lightvela-intl-home .soul-strip__state--secondary {
+    gap: 4px;
+    width: 100%;
+  }
+
+  #lightvela-intl-home .soul-strip__state--secondary > i {
+    height: 18px;
+  }
+
+  #lightvela-intl-home .soul-strip__state--secondary b {
+    display: block;
+    max-width: 100%;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.18;
+    color: #000;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  #lightvela-intl-home .soul-strip__state--secondary .soul-strip__label {
+    max-width: 64px;
+    font-size: 12px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  #lightvela-intl-home .soul-strip__state > i {
+    flex: 0 0 1px;
+    height: 14px;
+  }
+
+  #lightvela-intl-home .about__cards {
+    display: flex;
+    grid-template-columns: none;
+    gap: 10px;
+    margin-inline: -16px;
+    padding: 0 34px 10px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 34px;
+    scrollbar-width: none;
+  }
+
+  #lightvela-intl-home .about__cards::-webkit-scrollbar {
+    display: none;
+  }
+
+  #lightvela-intl-home .wcard {
+    flex: 0 0 min(72vw, 282px);
+    scroll-snap-align: center;
+  }
+
+  #lightvela-intl-home .wcard__inner {
+    min-height: 0;
+    padding: 10px;
+    border-color: transparent;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: none;
+    cursor: pointer;
+    transition: transform 0.24s var(--ease), box-shadow 0.24s, border-color 0.24s, background-color 0.24s;
+  }
+
+  #lightvela-intl-home .wcard.is-mobile-active .wcard__inner,
+  #lightvela-intl-home .wcard:active .wcard__inner {
+    transform: translateY(-4px);
+    border-color: rgba(27, 22, 52, 0.14);
+    background: #fff;
+    box-shadow: 0 10px 28px rgba(27, 22, 52, 0.08);
+  }
+
+  #lightvela-intl-home .wcard__thumb {
+    display: block;
+    height: 86px;
+    border-radius: 9px;
+  }
+
+  #lightvela-intl-home .wcard__body {
+    padding: 12px 0 2px;
+  }
+
+  #lightvela-intl-home .wcard__body h4 {
+    font-size: 17px;
+    line-height: 1.25;
+  }
+
+  #lightvela-intl-home .wcard__body p {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.58;
+  }
+
+  #lightvela-intl-home .wcard__list {
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.2s ease, transform 0.2s var(--ease);
+  }
+
+  #lightvela-intl-home .wcard.is-mobile-active .wcard__list,
+  #lightvela-intl-home .wcard:active .wcard__list {
+    max-height: 140px;
+    opacity: 1;
+    transform: none;
+  }
+
+  #lightvela-intl-home .wcard__list li {
+    gap: 6px;
+    font-size: 11.5px;
+    line-height: 1.42;
+  }
+
+  #lightvela-intl-home .hero__frame .dc__rail,
+  #lightvela-intl-home .hero__frame .dc__side,
+  #lightvela-intl-home .hero__frame .dc__members {
+    display: none;
+  }
+
+  #lightvela-intl-home .hero__frame .dc__main {
+    min-width: 0;
+    width: 100%;
+  }
+
+  #lightvela-intl-home .hero__frame .dc__body {
+    padding: 12px;
+  }
+
+  #lightvela-intl-home .hero__frame .dc__msg {
+    gap: 8px;
+  }
+
+  #lightvela-intl-home .hero__frame .dc__msg p {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  #lightvela-intl-home .scenes {
+    margin-top: -72px;
+    padding-top: 76px;
+    padding-bottom: 76px;
+  }
+
+  #lightvela-intl-home .scenes__head {
+    margin-bottom: 22px;
+  }
+
+  #lightvela-intl-home .scenes__tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 6px;
+    margin-bottom: 20px;
+    padding-bottom: 0;
+    overflow: visible;
+  }
+
+  #lightvela-intl-home .scenes__tabs label {
+    min-width: 0;
+    min-height: 36px;
+    flex: initial;
+    justify-content: flex-start;
+    gap: 5px;
+    padding: 7px 4px 8px;
+    font-size: 10.5px;
+    line-height: 1.15;
+    white-space: normal;
+  }
+
+  #lightvela-intl-home .scenes__tabs label .icon {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+  }
+
+  #lightvela-intl-home .scenes__tabs label span {
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  #lightvela-intl-home .scenes__tabs label::after {
+    left: 22px;
+    right: 6px;
+    bottom: 0;
+  }
+
+  #lightvela-intl-home .scenes__layout {
+    padding: 18px 0 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  #lightvela-intl-home .scene {
+    gap: 0;
+  }
+
+  #lightvela-intl-home .scene__split {
+    gap: 14px;
+  }
+
+  #lightvela-intl-home .scene__subs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-inline: 0;
+    padding: 0 0 8px;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+
+  #lightvela-intl-home .scene__subs::-webkit-scrollbar {
+    display: none;
+  }
+
+  #lightvela-intl-home .scene__sub {
+    width: 100%;
+    max-width: none;
+    min-height: 40px;
+    padding: 8px 7px;
+    border-color: var(--line);
+    border-radius: 10px;
+    background: #fff;
+    scroll-snap-align: start;
+  }
+
+  #lightvela-intl-home .scene__sub.on {
+    border-color: rgba(27, 22, 52, 0.14);
+    background: #f8f8fa;
+  }
+
+  #lightvela-intl-home .scene__sub b {
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10.5px;
+    line-height: 1.22;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  #lightvela-intl-home .scene__sub b::before {
+    display: none;
+  }
+
+  #lightvela-intl-home .scene__sub:focus {
+    outline: none;
+  }
+
+  #lightvela-intl-home .scene__sub:focus-visible {
+    outline: 2px solid rgba(27, 22, 52, 0.2);
+    outline-offset: 1px;
+  }
+
+  #lightvela-intl-home .scene__sub small {
+    display: none !important;
+  }
+
+  #lightvela-intl-home .scene__chats {
+    display: block;
+  }
+
+  #lightvela-intl-home .scene-chat {
+    display: flex;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: auto;
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(27, 22, 52, 0.06);
+  }
+
+  #lightvela-intl-home .scene-chat__bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 10px 12px;
+  }
+
+  #lightvela-intl-home .scene-chat__bar b {
+    grid-column: 1;
+    text-align: left;
+  }
+
+  #lightvela-intl-home .scene-chat__status {
+    grid-column: 2;
+  }
+
+  #lightvela-intl-home .scene-chat__body {
+    max-height: none;
+    padding: 14px 12px 16px;
+    overflow: visible;
+  }
+
+  #lightvela-intl-home .scene-chat .native__thread {
+    gap: 10px;
+  }
+
+  #lightvela-intl-home .scene-chat .av-c {
+    width: 26px;
+    height: 26px;
+    font-size: 9px;
+  }
+
+  #lightvela-intl-home .scene-chat .bub__box {
+    max-width: calc(100% - 38px);
+    padding: 9px 11px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  #lightvela-intl-home .scene-chat .line__img img {
+    max-height: 150px;
+  }
+
+  #lightvela-intl-home .deploy {
+    padding-top: 76px;
+    padding-bottom: 40px;
+  }
+
+  #lightvela-intl-home .track {
+    gap: 10px;
+    margin-top: 34px;
+  }
+
+  #lightvela-intl-home .track__item {
+    gap: 11px;
+  }
+
+  #lightvela-intl-home .track__badge {
+    width: 50px;
+    height: 50px;
+    border-radius: 11px;
+  }
+
+  #lightvela-intl-home .track__num {
+    font-size: 21px;
+    line-height: 1;
+  }
+
+  #lightvela-intl-home .track__ic {
+    top: -7px;
+    right: -7px;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+  }
+
+  #lightvela-intl-home .track__ic .icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  #lightvela-intl-home .track__body h3 {
+    font-size: 15.5px;
+    line-height: 1.22;
+  }
+
+  #lightvela-intl-home .track__body p {
+    margin-top: 7px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  #lightvela-intl-home .plays {
+    margin-top: 34px;
+    padding-top: 24px;
+  }
+
+  #lightvela-intl-home .plays__head {
+    text-align: left;
+  }
+
+  #lightvela-intl-home .plays__head h3 {
+    font-size: clamp(22px, 6.2vw, 28px);
+    line-height: 1.16;
+  }
+
+  #lightvela-intl-home .plays__head p {
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  #lightvela-intl-home .plays__tabs {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-top: 24px;
+    padding: 0 2px 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  #lightvela-intl-home .plays__tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  #lightvela-intl-home .plays__tabs label {
+    min-height: 38px;
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  #lightvela-intl-home .play {
+    gap: 18px;
+    padding: 20px 14px;
+    border-radius: 12px;
+    box-shadow: 0 8px 22px rgba(42, 16, 82, 0.05);
+    backdrop-filter: none;
+  }
+
+  #lightvela-intl-home .play__text h4 {
+    font-size: 20px;
+    line-height: 1.2;
+  }
+
+  #lightvela-intl-home .play__text > p {
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  #lightvela-intl-home .play__list {
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 16px;
+  }
+
+  #lightvela-intl-home .play__list li {
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+
+  #lightvela-intl-home .play__list b {
+    margin-bottom: 5px;
+  }
+
+  #lightvela-intl-home .play__screen {
+    min-height: 120px;
+    max-height: 220px;
+    padding: 6px;
+    border-radius: 12px;
+  }
+
+  #lightvela-intl-home .play__screen img {
+    max-height: 208px;
+  }
+
+  #lightvela-intl-home .play__screen--harness {
+    min-height: 132px;
+  }
+
+  #lightvela-intl-home .harness-visual-img {
+    min-height: 132px;
+    max-height: 196px;
+    height: auto;
+    object-fit: contain;
+  }
+
+  #lightvela-intl-home .voice {
+    margin-top: 36px;
+    padding: 56px 0 64px;
+  }
+
+  #lightvela-intl-home .voice .marquee__rows {
+    min-height: 260px;
+    gap: 10px;
+  }
+
+  #lightvela-intl-home .voice .mrow {
+    min-height: 124px;
+  }
+
+  #lightvela-intl-home .voice .mrow__track {
+    gap: 10px;
+  }
+
+  #lightvela-intl-home .voice .tcard {
+    width: 260px;
+    min-height: 116px;
+    padding: 14px;
+    border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  }
+
+  #lightvela-intl-home .voice .tcard__head {
+    gap: 9px;
+  }
+
+  #lightvela-intl-home .voice .tcard__head i {
+    width: 26px;
+    height: 26px;
+  }
+
+  #lightvela-intl-home .voice .tcard p {
+    margin-top: 9px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  #lightvela-intl-home .voice .tcard--event {
+    width: 300px;
+    min-height: auto;
+    padding: 6px;
+  }
+
+  #lightvela-intl-home .cta {
+    padding: 76px 16px;
+  }
+
+  #lightvela-intl-home .cta__card {
+    padding: 26px 18px;
+  }
+
+  #lightvela-intl-home .cta__grid > div:first-child {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    column-gap: 14px;
+    align-items: end;
+  }
+
+  #lightvela-intl-home .cta__title {
+    grid-column: 1 / -1;
+    font-size: clamp(24px, 6.6vw, 30px);
+  }
+
+  #lightvela-intl-home .cta__copy {
+    grid-column: 1;
+    margin-top: 20px;
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+
+  #lightvela-intl-home .cta__acts {
+    grid-column: 2;
+    margin-top: 20px;
+    align-self: end;
+  }
+
+  #lightvela-intl-home .cta__acts .btn-dark {
+    min-height: 44px;
+    padding-inline: 18px;
+    white-space: nowrap;
+  }
+
+  #lightvela-intl-home .foot {
+    padding: 88px 16px 64px;
+  }
+
+  #lightvela-intl-home .foot__top {
+    min-height: 160px;
+    gap: 22px;
+  }
+
+  #lightvela-intl-home .foot__title {
+    max-width: 100%;
+    font-size: clamp(25px, 8.4vw, 36px);
+    line-height: 1.08;
+    text-wrap: balance;
+  }
+
+  #lightvela-intl-home .foot__links {
+    max-width: 100%;
+    margin-top: 72px;
+  }
+
+  #lightvela-intl-home .foot__links-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 30px 22px;
+  }
+
+  #lightvela-intl-home .foot__brand {
+    grid-column: 1 / -1;
+  }
+
+  #lightvela-intl-home .foot__links h3 {
+    font-size: 13.5px;
+  }
+
+  #lightvela-intl-home .foot__links ul {
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  #lightvela-intl-home .foot__links a {
+    font-size: 12.5px;
+    line-height: 1.4;
+  }
+
+  #lightvela-intl-home .foot__links-grid > div:nth-child(2) a {
+    white-space: normal;
   }
 }

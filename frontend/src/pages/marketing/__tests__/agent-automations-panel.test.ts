@@ -78,6 +78,7 @@ import { isGlobal } from "@/lib/region";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   cronClientMocks.createCronJobWithContextAndScriptRollback.mockResolvedValue("created-job");
   cronClientMocks.createCronJobWithScriptRollback.mockResolvedValue(undefined);
   cronClientMocks.detectCronContextFromCapability.mockResolvedValue("supported");
@@ -179,6 +180,121 @@ describe("automation scenario templates section", () => {
 
     expect(screen.getByText("2 / 2")).toBeTruthy();
     expect(screen.getByRole("button", { name: "启用每日工作小结" })).toBeTruthy();
+  });
+
+  it("opens on first visit and remembers when templates are collapsed", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+    const onEnable = vi.fn();
+
+    const { unmount } = render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable }));
+
+    expect(screen.getByRole("button", { name: "启用喝水与吃药提醒" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起任务模板" }));
+
+    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+
+    unmount();
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable }));
+
+    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "展开任务模板" }));
+    expect(screen.getByRole("button", { name: "启用喝水与吃药提醒" })).toBeTruthy();
+  });
+
+  it("keeps templates usable when browser storage is unavailable", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+    const getItemSpy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Blocked", "SecurityError");
+    });
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Blocked", "SecurityError");
+    });
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+
+    expect(screen.getByRole("button", { name: "启用喝水与吃药提醒" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起任务模板" }));
+    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+
+    getItemSpy.mockRestore();
+    setItemSpy.mockRestore();
+  });
+
+  it("renders templates without an outer card frame", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+
+    const region = screen.getByRole("region", { name: "任务模板" });
+    const enableButton = screen.getByRole("button", { name: "启用喝水与吃药提醒" });
+    const collapseButton = screen.getByRole("button", { name: "收起任务模板" });
+    const iconBox = enableButton.querySelector("span");
+
+    expect(region).toHaveClass("border-0", "bg-transparent", "p-0", "shadow-none");
+    expect(region).not.toHaveClass("rounded-sm", "rounded-xl", "rounded-lg", "rounded-full", "border", "bg-white", "p-4");
+    expect(enableButton).toHaveClass("rounded-sm");
+    expect(collapseButton).toHaveClass("rounded-sm");
+    expect(iconBox).toHaveClass("rounded-sm");
+    expect(enableButton).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
+    expect(collapseButton).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
+    expect(iconBox).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
+  });
+
+  it("keeps collapse and expand controls beside the subtitle", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+
+    const title = screen.getByRole("heading", { name: "任务模板" });
+    const collapseButton = screen.getByRole("button", { name: "收起任务模板" });
+    const expandedControls = title.parentElement;
+
+    expect(expandedControls).toContainElement(collapseButton);
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+
+    fireEvent.click(collapseButton);
+
+    const expandButton = screen.getByRole("button", { name: "展开任务模板" });
+
+    expect(expandedControls).toContainElement(expandButton);
+    expect(expandButton).toHaveClass("h-6", "border-0", "text-[11px]", "text-black/40");
+  });
+
+  it("keeps unselected template cards white instead of pressed-looking", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+
+    const enableButton = screen.getByRole("button", { name: "启用喝水与吃药提醒" });
+
+    expect(enableButton).toHaveClass("bg-white", "border-black/[0.04]", "hover:bg-white", "hover:border-black/[0.08]");
+    expect(enableButton).not.toHaveClass("bg-black/[0.015]", "hover:bg-black/[0.035]", "border-black/[0.06]");
+  });
+
+  it("turns the collapsed template area into a quiet subtitle row", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+
+    fireEvent.click(screen.getByRole("button", { name: "收起任务模板" }));
+
+    const region = screen.getByRole("region", { name: "任务模板" });
+    const title = screen.getByRole("heading", { name: "任务模板" });
+    const expandButton = screen.getByRole("button", { name: "展开任务模板" });
+
+    expect(region).toHaveClass("border-0", "bg-transparent", "p-0", "shadow-none");
+    expect(region).not.toHaveClass("rounded-sm", "border", "bg-white", "p-4");
+    expect(title).toHaveClass("text-xs", "text-black/45");
+    expect(expandButton).toHaveClass("h-6", "border-0", "text-[11px]", "text-black/40");
+    expect(expandButton).not.toHaveClass("rounded-full", "bg-white", "border");
+    expect(screen.queryByText("从常用场景开始，确认内容后启用。")).toBeNull();
+    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
   });
 });
 

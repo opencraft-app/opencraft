@@ -1,14 +1,13 @@
 ---
 name: mr-auto-submit
-description: '团队扩展 Skill - 通过 Gongfeng MCP 创建 Merge Request 并关联 TAPD（commit/MR 文案规范以 global.md G14 + quality.md 5.2 为准）'
-extends: finishing-a-development-branch
+description: '团队扩展 Skill - 通过 Gongfeng MCP 创建 Merge Request 并关联 TAPD（commit/MR 文案规范以 team-conventions.md「commit 规范」为准）'
 ---
 
 # 自动创建 Merge Request
 
 ## 概述
 
-本 Skill 仅负责"读配置 → 调 MCP 创建 MR"这一硬动作。**Conventional Commits 格式、commit 中文化要求等通用规范以 `global.md` G14 与 `quality.md` 5.2 为准**，本文件不再罗列。
+本 Skill 仅负责"读配置 → 调 MCP 创建 MR"这一硬动作。**Conventional Commits 格式、commit 语言与项目规范优先等通用规范以 `../feai-native/references/team-conventions.md` 的「commit 规范」一节为准**，本文件不再罗列。
 
 > 🔴 **强制规则**：创建 MR 是**不可逆操作**，无论是否开启信任模式（`--yes`），都**必须先展示 MR 配置信息，征得用户确认后才能执行**。禁止自动创建 MR。
 
@@ -73,10 +72,10 @@ create_merge_request({
 ## 交互流程
 
 1. 解析配置（projectId / defaultBranch）
-2. 自检（参考 `requesting-code-review`：lint / test / 自测过）
+2. 自检（lint / test / 自测过，验证证据见 change 的 `report.md`）
 3. 展示 MR 配置卡片 → 等待用户确认（即使 `--yes` 也不可跳过）
 4. 调用 `create_merge_request` MCP
-5. 返回 MR 链接 + 下一步指引（建议执行 `/feai-archive`）
+5. 返回 MR 链接 + 下一步指引（用户明确确认后执行 `feai native archive` 归档）
 
 ### 确认模板
 
@@ -98,8 +97,8 @@ create_merge_request({
 ## 与其他 Skills 的协作
 
 ```
-git commit (按 global.md G14 / quality.md 5.2 中文规范) →
-requesting-code-review → mr-auto-submit
+git commit (按 team-conventions.md「commit 规范」) →
+verify 验证通过 → mr-auto-submit
 ```
 
 ## 相关 Skills

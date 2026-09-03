@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { BlogPage } from "@/pages/marketing/blog-page";
@@ -38,6 +38,18 @@ describe("BlogPage", () => {
       "href",
       "/blog/recreated-claude-tag-with-lightvela",
     );
+    expect(screen.getByRole("link", { name: /I Vibe-Coded My Own Basketball Shoe Storefront/ })).toHaveAttribute(
+      "href",
+      "/blog/basketball-shoe-storefront-with-lightvela-workbench",
+    );
+    expect(screen.getByRole("link", { name: /LightVela Introduces Workbench/ })).toHaveAttribute(
+      "href",
+      "/blog/lightvela-workbench-ai-vibe-your-own-website",
+    );
+    const workbenchCard = screen.getByRole("link", { name: /I Vibe-Coded My Own Basketball Shoe Storefront/ });
+    expect(workbenchCard.querySelector("time")).toHaveTextContent("September 3, 2026");
+    expect(within(workbenchCard).queryByText("Cassidy Shi")).not.toBeInTheDocument();
+    expect(screen.queryAllByText("Cassidy Shi")).toHaveLength(0);
     const latestCard = screen.getAllByRole("link", { name: /I Recreated Claude Tag with LightVela/ }).at(-1);
     if (!latestCard) throw new Error("Expected the localized latest Blog card to be rendered");
     expect(screen.queryByText(/I host my mega Discord server with over 600 users/)).not.toBeInTheDocument();
@@ -50,6 +62,7 @@ describe("BlogPage", () => {
 
     expect(screen.getByRole("button", { name: "产品" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("link", { name: /LightVela Introduces Workbench/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Using Hermes Agent as a Discord bot/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "使用场景" }));

@@ -1,14 +1,13 @@
 ---
 name: unit-test-development
-description: '团队扩展 Skill - 单元测试开发，整合 Superpowers TDD 理念和团队单测规范'
-extends: test-driven-development
+description: '团队扩展 Skill - 单元测试开发，整合 TDD 理念和团队单测规范'
 ---
 
 # 单元测试开发规范
 
 ## 概述
 
-此 Skill 是对 Superpowers `test-driven-development` 的团队扩展，整合团队的单元测试规范和最佳实践。
+此 Skill 整合团队的单元测试规范和最佳实践；是否采用 TDD 由你按需求风险自决（native 工作流不强制方法论）。
 
 ## 适用场景
 
@@ -65,7 +64,7 @@ src/
 2. 🟢 **GREEN**：写最少的代码让测试通过
 3. ♻️ **REFACTOR**：优化代码，确保测试仍然通过，补充边界用例
 
-> 💡 具体的 TDD 流程和代码示例请参考 Superpowers 原生的 `test-driven-development` Skill。
+> 💡 具体的 TDD 节奏和代码示例由你按项目测试框架与需求复杂度自行把握。
 
 ---
 
@@ -130,7 +129,7 @@ describe('formatDate', () => {
 ## 与其他 Skills 的协作
 
 ```
-writing-plans (任务拆分)
+shape 阶段（任务拆分，写 brief.md）
          │
          ▼
 ┌─────────────────────────────────────┐
@@ -141,7 +140,7 @@ writing-plans (任务拆分)
 └─────────────────┬───────────────────┘
          │
          ▼
-   executing-plans → git commit（参考 ai-usage-tracking 的 FE-AI 标记规范 + global.md G14）
+   build 实现 → git commit（参考 ai-usage-tracking 的 FE-AI 标记规范 + `../feai-native/references/team-conventions.md` 的「commit 规范」）
 ```
 
 ---

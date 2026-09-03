@@ -710,6 +710,35 @@ def find_configured(config, provider_key, model_id, base_url=None, route_base_ur
     if len(matches) > 1: raise ValueError("model identity is ambiguous")
     raise ValueError("model is not saved")
 
+def find_assignable(config, provider_key, model_id, base_url=None, route_base_url=None):
+    try:
+        return find_configured(config, provider_key, model_id, base_url, route_base_url)
+    except ValueError as error:
+        if str(error) != "model is not saved": raise
+    matches = [
+        model for model in read_snapshot(config)["configuredModels"]
+        if model["providerKey"].strip().lower() == provider_key.strip().lower()
+    ]
+    if route_base_url is not None:
+        target_url = normalized_route_base_url(route_base_url)
+        matches = [model for model in matches if route_identity(model)[2] == target_url]
+    elif base_url:
+        target_url = normalized_route_base_url(base_url)
+        matches = [model for model in matches if normalized_route_base_url(model.get("baseUrl")) == target_url]
+    identities = {
+        (
+            normalized_route_base_url(model.get("routeBaseUrl") or model.get("baseUrl")),
+            str(model.get("apiMode") or "").strip().lower(),
+            str(model.get("keyEnv") or "").strip(),
+        )
+        for model in matches
+    }
+    if not matches: raise ValueError("model is not saved")
+    if len(identities) != 1: raise ValueError("provider identity is ambiguous")
+    model = dict(matches[0])
+    model["id"] = model_id
+    return model
+
 def save_and_reload(config):
     save_config(config)
     saved = load_config() or {}
@@ -761,11 +790,16 @@ def add_provider_model(provider, model_id):
     models.setdefault(model_id, {})
     provider["models"] = models
 
-def ensure_provider_model(config, model, discover_models=None):
+def ensure_provider_model(config, model, discover_models=None, preserve_credentials=False):
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
     existing = providers.get(model["providerKey"])
     provider = dict(existing) if isinstance(existing, dict) else {}
-    for alias in ("display_name", "api", "url", "api_mode", "api_key", "api_key_env"):
+    existing_declares_credentials = isinstance(existing, dict) and any(
+        key in existing for key in ("api_key", "key_env", "api_key_env", "key_cmd")
+    )
+    aliases = ["display_name", "api", "url", "api_mode"]
+    if not preserve_credentials: aliases.extend(["api_key", "api_key_env"])
+    for alias in aliases:
         provider.pop(alias, None)
     provider["name"] = model["providerName"]
     if model.get("baseUrl"): provider["base_url"] = model["baseUrl"]
@@ -774,7 +808,8 @@ def ensure_provider_model(config, model, discover_models=None):
     provider["transport"] = TRANSPORTS[model["apiMode"]]
     if isinstance(discover_models, bool): provider["discover_models"] = discover_models
     else: provider.setdefault("discover_models", True)
-    if model.get("keyEnv"): provider["key_env"] = model["keyEnv"]
+    if model.get("keyEnv") and (not preserve_credentials or not existing_declares_credentials):
+        provider["key_env"] = model["keyEnv"]
     add_provider_model(provider, model["id"])
     providers[model["providerKey"]] = provider
     config["providers"] = providers
@@ -935,14 +970,14 @@ def execute(action):
     if kind == "assign":
         original_config = copy.deepcopy(config)
         route_base_url = text(action.get("routeBaseUrl"), "routeBaseUrl", required=False) if "routeBaseUrl" in action else None
-        model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
+        model = find_assignable(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         purpose = text(action.get("purpose"), "purpose")
         before = read_snapshot(config)
         if purpose == "fallback" and same_runtime_deployment(before["primary"], model): raise ValueError("role conflict")
         if purpose == "idle" and same_route(before["primary"], model): raise ValueError("cannot idle primary")
         if model.get("requiresSetup"): raise ValueError("model setup is incomplete")
         if not provider_schema_supported(config): raise ValueError("Hermes provider schema is unavailable")
-        ensure_provider_model(config, model)
+        ensure_provider_model(config, model, preserve_credentials=True)
         remove_legacy_configured_model(config, model)
         remove_legacy_custom_provider(config, model)
         if purpose == "primary":
@@ -961,7 +996,7 @@ def execute(action):
         model = find_configured(config, text(action.get("providerKey"), "providerKey"), text(action.get("modelId"), "modelId"), text(action.get("baseUrl"), "baseUrl", required=False), route_base_url)
         if model.get("requiresSetup"): raise ValueError("model setup is incomplete")
         if not provider_schema_supported(config): raise ValueError("Hermes provider schema is unavailable")
-        ensure_provider_model(config, model)
+        ensure_provider_model(config, model, preserve_credentials=True)
         remove_legacy_configured_model(config, model)
         remove_legacy_custom_provider(config, model)
         remove_fallback(config, model)
