@@ -132,8 +132,19 @@ frontend/.edgeone/*
 .codebuddy/mcp.json
 .codebuddy/project.local.json
 .codebuddy/project.local.json.backup
-# 本地运行态
+# 本地运行态（Classic runtime 已退役，存量残留忽略）
 .workflow/runtime/
+# native 文档层（changes/<name>/{brief,plan,report}.md 与 archive）随 Git 共享；
+# 仅忽略不可跨机复用的状态/锁/审计，避免幻影状态与锁楔死。
+.workflow/native/current.json
+.workflow/native/changes/**/state.yaml
+.workflow/native/changes/**/audit.log
+.workflow/native/changes/**/.lock
+.workflow/native/changes/**/runtime/
+.workflow/native/archive/**/state.yaml
+.workflow/native/archive/**/audit.log
+.workflow/native/archive/**/.lock
+.workflow/native/archive/**/runtime/
 # superpowers v6+ 运行态（brainstorm visual companion / SDD scratch）
 .superpowers/
 # 工具内部基线/临时备份

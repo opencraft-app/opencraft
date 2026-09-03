@@ -1,0 +1,34 @@
+# feai-native 工作流定义。纯数据；修改无需改引擎。
+name: feai-native
+version: 0.1.0
+approvals:
+  contract: brief.md        # require_approval 的 basis → change 目录内文件
+steps:
+  - id: shape
+    next: build
+    guards:
+      - require_approval: contract
+  - id: build
+    next: verify
+    guards:
+      - require_field: summary
+      - require_approval: contract
+  - id: verify
+    outcomes: [pass, fail]
+    guards:
+      - require_field: report
+    on:
+      pass: archive
+      fail:
+        to: build
+        guard: repeated-failure
+  - id: archive
+    outcomes: [done]
+    on:
+      done: null
+guards:
+  repeated-failure:
+    warnAt: 2
+    stopAt: 3
+    hardStopAtTotal: 12
+    allowOverridePerSignature: true
