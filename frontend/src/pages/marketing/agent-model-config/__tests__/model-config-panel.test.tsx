@@ -404,6 +404,8 @@ describe("AgentModelConfigPanel", () => {
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(primaryProviderLabel.parentElement).toHaveClass("flex-col");
     expect(fallbackProviderLabel).toHaveClass(
+      "border",
+      "border-[var(--border-subtle)]",
       "bg-[var(--surface-muted)]",
       "text-[var(--text-secondary)]",
     );
@@ -416,6 +418,8 @@ describe("AgentModelConfigPanel", () => {
     const secondAlphaRow = screen.getByText("model-alpha-2").closest("li") as HTMLElement;
     const fallbackRowLabel = within(secondAlphaRow).getByText("备用模型");
     expect(fallbackRowLabel).toHaveClass(
+      "border",
+      "border-[var(--border-subtle)]",
       "bg-[var(--surface-muted)]",
       "text-[var(--text-secondary)]",
     );

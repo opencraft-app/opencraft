@@ -669,7 +669,7 @@ export function AgentModelConfigPanel({
                         {fallbackModels.length > 0 ? (
                           <Badge
                             variant="neutral"
-                            className="justify-end whitespace-normal break-all text-right leading-tight"
+                            className="justify-end whitespace-normal break-all border border-[var(--border-subtle)] text-right leading-tight"
                           >
                             {t("备用模型：{{models}}", {
                               models: fallbackModels.map(displayConfiguredModelName).join("、"),
@@ -717,7 +717,10 @@ export function AgentModelConfigPanel({
                                     <span className="break-all text-xs font-normal text-black/85">
                                       {displayConfiguredModelName(model)}
                                     </span>
-                                    <Badge variant={primary ? "success" : "neutral"}>
+                                    <Badge
+                                      variant={primary ? "success" : "neutral"}
+                                      className={fallback ? "border border-[var(--border-subtle)]" : undefined}
+                                    >
                                       {role === "primary"
                                         ? t("主模型")
                                         : role === "fallback"

@@ -175,6 +175,24 @@ git diff --check
 - 浏览器：global 静态 `/agents/models/` 可达，1280px 与 390px 均无横向溢出、无新增 console error；本地账号没有 Agent，页面停留在创建入口。
 - `git diff --check`：通过。
 
+## Task 16：为备用模型 neutral 标签补充灰色边框
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] 在现有 Provider 标题和模型行备用标签断言中补充 `border border-[var(--border-subtle)]`，运行专项测试并确认旧实现因没有边框按预期 RED。
+- [x] 仅为备用模型的两处 neutral Badge 增加主题灰色边框；不修改共享 Badge 的 neutral variant，避免可选模型、未启用等其他状态被统一加框。
+- [x] 运行模型配置目录完整回归、`pnpm check` 和 `git diff --check`。
+- [ ] 刷新本地 Mock 预览确认标签框视觉效果；本地开发服务已恢复，但自动化浏览器被本地 URL 安全策略拦截，保留给人工确认。
+
+增量验证记录：
+
+- RED：目标测试 1 failed / 33 skipped，实际 class 缺少 `border border-[var(--border-subtle)]`。
+- GREEN：目标测试 1 passed / 33 skipped。
+- 完整回归：模型配置目录 137 项通过，另 1 项按环境跳过；`pnpm check` 通过，TypeScript 0 条新增诊断；`git diff --check` 通过。
+
 ## Task 13：将添加模型按钮移到表单右下角
 
 **Files:**
