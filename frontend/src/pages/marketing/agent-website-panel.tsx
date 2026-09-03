@@ -831,8 +831,21 @@ export const AgentWebsitePanel = () => {
           <WebsiteShareDialog
             site={shareTarget}
             onClose={() => setShareTarget(null)}
-            onChanged={() => {
-              void fetchData();
+            onChanged={(next) => {
+              const siteID = shareTarget?.SiteID;
+              if (!siteID) return;
+              setSites((prev) =>
+                prev.map((item) =>
+                  item.SiteID === siteID
+                    ? { ...item, AccessMode: next.mode, ShareExpiresAt: next.expiresAt }
+                    : item,
+                ),
+              );
+              setShareTarget((prev) =>
+                prev && prev.SiteID === siteID
+                  ? { ...prev, AccessMode: next.mode, ShareExpiresAt: next.expiresAt }
+                  : prev,
+              );
             }}
           />
         )}

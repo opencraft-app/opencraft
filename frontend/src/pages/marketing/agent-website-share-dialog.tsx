@@ -20,8 +20,8 @@ export interface ShareDialogSite {
 interface WebsiteShareDialogProps {
   site: ShareDialogSite;
   onClose: () => void;
-  /** 分享状态（开启/重置/停止）变更后回调，用于父组件刷新列表 */
-  onChanged: () => void;
+  /** 分享状态（开启/重置/停止）变更后回调，用于父组件同步站点分享字段 */
+  onChanged: (next: { mode: "share_code" | "owner_only"; expiresAt: string | null }) => void;
 }
 
 interface ShareAccessResponse {
@@ -57,12 +57,14 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
   const [expiresAt, setExpiresAt] = useState<string | null>(site.ShareExpiresAt ?? null);
   /** 本次会话中用户点了「停止分享」：用于覆盖后端返回的分享态 */
   const [stopped, setStopped] = useState(false);
+  /** 本次会话点过「开启分享」：兜底确保开启后立即进入已分享态，不依赖父组件 site.AccessMode 同步 */
+  const [hasEnabled, setHasEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   /** 是否处于分享中：本次会话拿到过明文码，或后端返回的站点本就是 share_code 模式 */
-  const isSharing = !stopped && (code !== null || site.AccessMode === "share_code");
+  const isSharing = !stopped && (code !== null || site.AccessMode === "share_code" || hasEnabled);
 
   const callAccess = useCallback(
     async (path: string, init?: RequestInit): Promise<ShareAccessResponse> => {
@@ -85,6 +87,7 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
   const handleEnable = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setStopped(false);
     try {
       const data = await callAccess(`/v1/websites/${site.SiteID}/access`, {
         method: "PUT",
@@ -93,7 +96,8 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
       });
       setCode(data.code ?? null);
       setExpiresAt(data.expires_at ?? null);
-      onChanged();
+      setHasEnabled(true);
+      onChanged({ mode: "share_code", expiresAt: data.expires_at ?? null });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -104,13 +108,14 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
   const handleReset = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setStopped(false);
     try {
       const data = await callAccess(`/v1/websites/${site.SiteID}/share-code/reset`, {
         method: "POST",
       });
       setCode(data.code ?? null);
       setExpiresAt(data.expires_at ?? null);
-      onChanged();
+      onChanged({ mode: "share_code", expiresAt: data.expires_at ?? null });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -130,7 +135,7 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
       setStopped(true);
       setCode(null);
       setExpiresAt(null);
-      onChanged();
+      onChanged({ mode: "owner_only", expiresAt: null });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -185,6 +190,7 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
   const handleCopyWithReset = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setStopped(false);
     try {
       const data = await callAccess(`/v1/websites/${site.SiteID}/share-code/reset`, {
         method: "POST",
@@ -193,7 +199,7 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
       const newExpiresAt = data.expires_at ?? null;
       setCode(newCode);
       setExpiresAt(newExpiresAt);
-      onChanged();
+      onChanged({ mode: "share_code", expiresAt: newExpiresAt });
 
       if (newCode) {
         const text = `hello，我使用LightVela给你分享了一个网站，点击输入分享码可以查看：\n${site.PublicURL}\n分享码：${newCode}\n有效期至：${formatDateTime(newExpiresAt ?? "")}`;
@@ -311,7 +317,28 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
           ) : shownCode ? (
             /* 已分享 + 有明文码（刚开启/重置后） */
             <div className="mt-4">
-              <div className="rounded-xl px-4 py-3.5 text-center" style={{ background: "rgba(0,0,0,0.04)" }}>
+              <div className="relative rounded-xl px-4 py-3.5 text-center" style={{ background: "rgba(0,0,0,0.04)" }}>
+                <div className="group absolute right-2 top-2">
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    disabled={loading}
+                    aria-label={t("重置分享码")}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-black/40 transition-colors group-hover:bg-black/[0.05] disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  </button>
+                  <div
+                    role="tooltip"
+                    className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-[rgba(0,0,0,0.08)] bg-white px-2.5 py-1 text-[11px] font-medium text-[#333] opacity-0 shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-opacity duration-150 group-hover:opacity-100"
+                  >
+                    {t("重置分享码")}
+                    <span
+                      aria-hidden
+                      className="absolute left-1/2 top-full h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[rgba(0,0,0,0.08)] bg-white"
+                    />
+                  </div>
+                </div>
                 <p className="mb-1.5 text-[11px]" style={{ color: "#999" }}>
                   {t("分享码")}
                 </p>
@@ -335,24 +362,15 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
                 </button>
                 <button
                   type="button"
-                  onClick={handleReset}
+                  onClick={handleStop}
                   disabled={loading}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
-                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
+                  title={t("停止分享")}
+                  className="flex flex-1 items-center justify-center rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
+                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--danger)" }}
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {t("重置")}
+                  {t("停止分享")}
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={handleStop}
-                disabled={loading}
-                className="mt-2.5 w-full rounded-lg py-2 text-sm font-medium transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
-                style={{ color: "#999" }}
-              >
-                {t("停止分享")}
-              </button>
             </div>
           ) : (
             /* 已分享 + 无明文码（二次打开） */
@@ -380,7 +398,7 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
                 )}
               </div>
               <p className="mt-2.5 text-[11px] leading-relaxed" style={{ color: "#999" }}>
-                {t("点击「复制分享信息」将生成新分享码并复制完整文案，原分享码立即失效。")}
+                {t("点击「复制分享信息」会重置分享码并复制新的分享信息，原分享码将立即失效。")}
               </p>
               <div className="mt-2.5 flex gap-2.5">
                 <button
@@ -402,7 +420,7 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
                   type="button"
                   onClick={handleStop}
                   disabled={loading}
-                  className="flex flex-1 items-center justify-center rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] disabled:opacity-50"
+                  className="flex flex-1 items-center justify-center rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
                   style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--danger)" }}
                 >
                   {t("停止分享")}
