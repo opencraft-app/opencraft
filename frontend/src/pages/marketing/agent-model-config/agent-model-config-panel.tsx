@@ -167,6 +167,11 @@ function modelMatchesProductProvider(model: HermesConfiguredModel, provider: Mod
     && model.apiMode.trim().toLowerCase() === provider.apiMode.trim().toLowerCase();
 }
 
+function isBuiltInProviderGroup(group: ConfiguredProviderGroup) {
+  return group.providerName.trim().toLowerCase() === "custom"
+    && group.models.some((model) => displayConfiguredModelId(model.id) === "Auto");
+}
+
 function groupConfiguredModelsByProvider(
   models: HermesConfiguredModel[],
   providers: ModelProviderOption[],
@@ -214,15 +219,19 @@ function groupConfiguredModelsByProvider(
       group.models.push(candidate);
     }
   }
-  return [...groups.values()];
+  const orderedGroups = [...groups.values()];
+  return [
+    ...orderedGroups.filter(isBuiltInProviderGroup),
+    ...orderedGroups.filter((group) => !isBuiltInProviderGroup(group)),
+  ];
 }
 
-function displayConfiguredModelId(modelId: string) {
-  return !modelId.trim() || ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? "Auto" : modelId;
+function displayConfiguredModelId(modelId: string, autoLabel = "Auto") {
+  return !modelId.trim() || ["auto", "default", "自动"].includes(modelId.trim().toLowerCase()) ? autoLabel : modelId;
 }
 
-function displayConfiguredModelName(model: ConfiguredModelListItem) {
-  return model.catalogName?.trim() || displayConfiguredModelId(model.id);
+function displayConfiguredModelName(model: ConfiguredModelListItem, autoLabel = "Auto") {
+  return model.catalogName?.trim() || displayConfiguredModelId(model.id, autoLabel);
 }
 
 function displayError(message: string, localizedFallback: string) {
@@ -261,6 +270,7 @@ export function AgentModelConfigPanel({
   isGlobalRegion?: boolean;
 }) {
   const t = useT();
+  const autoModelDisplayName = t("自动");
   const controller = useModelConfig({ botId, execDebugCommand });
   const addSectionRef = useRef<HTMLElement>(null);
   const configuredHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -629,6 +639,10 @@ export function AgentModelConfigPanel({
               const fallbackModels = group.models.filter((model) => (
                 snapshot.fallbacks.some((candidate) => sameModel(candidate, model))
               ));
+              const legacyCustomProvider = group.providerName.trim().toLowerCase() === "custom";
+              const providerDisplayName = legacyCustomProvider
+                ? (isBuiltInProviderGroup(group) ? t("内置模型") : t("自定义模型"))
+                : group.providerName;
               const retainedSelectedModel = group.models.find(
                 (model) => getHermesModelIdentity(model) === selectedConfiguredModelByProvider[group.key],
               );
@@ -654,7 +668,7 @@ export function AgentModelConfigPanel({
                       aria-hidden="true"
                     />
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold text-black/85">
-                      {group.providerName}
+                      {providerDisplayName}
                     </span>
                     {primaryModel || fallbackModels.length > 0 ? (
                       <span className="flex max-w-[60%] shrink-0 flex-row flex-wrap items-center justify-end gap-1">
@@ -663,7 +677,9 @@ export function AgentModelConfigPanel({
                             variant="success"
                             className="justify-end whitespace-normal break-all text-right leading-tight"
                           >
-                            {t("主模型：{{model}}", { model: displayConfiguredModelName(primaryModel) })}
+                            {t("主模型：{{model}}", {
+                              model: displayConfiguredModelName(primaryModel, autoModelDisplayName),
+                            })}
                           </Badge>
                         ) : null}
                         {fallbackModels.length > 0 ? (
@@ -672,7 +688,9 @@ export function AgentModelConfigPanel({
                             className="justify-end whitespace-normal break-all border border-[var(--border-subtle)] text-right leading-tight"
                           >
                             {t("备用模型：{{models}}", {
-                              models: fallbackModels.map(displayConfiguredModelName).join("、"),
+                              models: fallbackModels
+                                .map((model) => displayConfiguredModelName(model, autoModelDisplayName))
+                                .join("、"),
                             })}
                           </Badge>
                         ) : null}
@@ -684,7 +702,7 @@ export function AgentModelConfigPanel({
                     <div
                       id={groupPanelId}
                       role="group"
-                      aria-label={`${group.providerName} ${t("已配置模型")}`}
+                      aria-label={`${providerDisplayName} ${t("已配置模型")}`}
                       className="border-t border-black/[0.06] bg-black/[0.015] px-4 py-4 sm:px-5"
                     >
                       <ul className="overflow-hidden rounded-md border border-black/[0.06] bg-white divide-y divide-black/[0.06]">
@@ -702,7 +720,7 @@ export function AgentModelConfigPanel({
                                 <input
                                   type="radio"
                                   name={`configured-model-${groupIndex}`}
-                                  aria-label={displayConfiguredModelName(model)}
+                                  aria-label={displayConfiguredModelName(model, autoModelDisplayName)}
                                   value={modelIdentity}
                                   checked={selectedIdentity === modelIdentity}
                                   disabled={busy}
@@ -715,7 +733,7 @@ export function AgentModelConfigPanel({
                                 <span className="min-w-0">
                                   <span className="flex flex-wrap items-center gap-2">
                                     <span className="break-all text-xs font-normal text-black/85">
-                                      {displayConfiguredModelName(model)}
+                                      {displayConfiguredModelName(model, autoModelDisplayName)}
                                     </span>
                                     {!model.catalogOnly ? (
                                       <Badge
@@ -726,7 +744,7 @@ export function AgentModelConfigPanel({
                                           ? t("主模型")
                                           : role === "fallback"
                                             ? t("备用模型")
-                                            : t("未启用")}
+                                            : t("已添加")}
                                       </Badge>
                                     ) : null}
                                   </span>
@@ -738,7 +756,7 @@ export function AgentModelConfigPanel({
                                   <Button
                                     type="button"
                                     size="sm"
-                                    variant={primary ? "secondary" : "outline"}
+                                    variant="outline"
                                     className="rounded-md text-xs font-normal"
                                     disabled={busy || model.requiresSetup === true || primary}
                                     onClick={() => void controller.assign(model, "primary")}
@@ -751,7 +769,7 @@ export function AgentModelConfigPanel({
                                   <Button
                                     type="button"
                                     size="sm"
-                                    variant={fallback ? "secondary" : "outline"}
+                                    variant="outline"
                                     className="rounded-md text-xs font-normal"
                                     disabled={busy || primary}
                                     onClick={() => void (fallback
@@ -1034,7 +1052,7 @@ export function AgentModelConfigPanel({
                     onPointerDownCapture={captureAgentSidebarPosition}
                     onKeyDownCapture={captureAgentSidebarPosition}
                   >
-                    <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
+                    <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("暂无可用模型")} />
                   </SelectTrigger>
                   <SelectContent
                     position="popper"
@@ -1138,8 +1156,8 @@ export function AgentModelConfigPanel({
             >
               {controller.operation === "add"
                 ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                : <Plus className="size-4" aria-hidden="true" />}
-              {t("添加模型")}
+                : null}
+              {t("确认配置")}
             </Button>
           </div>
           </TabsContent>

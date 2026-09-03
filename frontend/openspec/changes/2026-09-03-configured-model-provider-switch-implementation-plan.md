@@ -175,6 +175,11 @@ git diff --check
 - 浏览器：global 静态 `/agents/models/` 可达，1280px 与 390px 均无横向溢出、无新增 console error；本地账号没有 Agent，页面停留在创建入口。
 - `git diff --check`：通过。
 
+### Task 29：移除确认配置按钮加号
+
+- [x] 补充按钮常态不渲染图标的组件断言。
+- [x] 移除“确认配置”常态加号，保留提交中的加载图标。
+
 ## Task 17：主备模型标签默认同排并按需换行
 
 **Files:**
@@ -248,6 +253,63 @@ git diff --check
 - RED：模型行排版专项 1 failed / 51 skipped，实际模型名称仍为 `text-sm`。
 - GREEN：模型行排版专项 1 passed / 51 skipped。
 - 完整回归：模型配置目录 155 项通过，另 1 项按环境跳过；`pnpm check` 通过，TypeScript 0 条新增诊断且多语言结构错误 0；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
+
+## Task 21：统一模型文字操作按钮边框
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] 先在角色操作用例中要求禁用的“设为主模型 / 设为备用模型”和可用的“设为主模型 / 取消备用”均包含 outline 边框样式，运行专项测试并确认旧实现按预期 RED。
+- [x] 将主模型与备用模型文字操作按钮固定为现有 `outline` variant；保留 disabled 置灰规则、禁用条件、Tooltip 和点击行为。
+- [x] 运行模型配置目录完整回归、`pnpm check`、`git diff --check`，并确认本地 Mock 预览地址可达。
+- [ ] 刷新本地 Mock 预览，人工确认三种按钮文案均显示边框，禁用按钮保留边框并置灰。
+
+增量验证记录：
+
+- RED：角色操作专项 1 failed / 51 skipped，禁用的主模型操作仍使用无边框 secondary 样式。
+- GREEN：角色操作专项 1 passed / 51 skipped。
+- 完整回归：模型配置目录 155 项通过，另 1 项按环境跳过；`pnpm check` 通过，TypeScript 0 条新增诊断且多语言结构错误 0；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
+
+## Task 22：隐藏历史 custom Provider 原始名称
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `src/i18n/generated/*.json`
+
+- [x] 先锁定 `custom + Auto` 的专用展示名、其他 `custom` 显示“自定义模型”，运行两个专项测试并确认旧实现按预期 RED。
+- [x] 只在 Provider 标题与对应可访问名称中映射展示文案，不修改真实 Provider 配置、模型身份和操作参数。
+- [x] 通过项目脚本注册新文案，并补齐简中、繁中、英语、西语、日语、韩语和印尼语展示。
+- [x] 运行模型配置完整回归、`pnpm check`、`git diff --check`，并确认本地 Mock 预览可达。
+
+增量验证记录：
+
+- RED：两个 Provider 标题专项 2 failed / 51 skipped，页面仍分别显示原始 `custom` 与 `Custom`。
+- GREEN：两个 Provider 标题专项 2 passed / 51 skipped。
+- 完整回归：模型配置目录 159 项通过；`pnpm check` 通过，TypeScript 0 条新增诊断、多语言结构错误 0、新增文案 7 个展示语言均已补齐；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
+
+## Task 23：将闲置模型状态改为“已添加”
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/agent-model-config.id-ID.test.ts`
+- Modify: `src/i18n/generated/*.json`
+
+- [x] 先要求已保存模型取消备用后显示“已添加”，运行专项测试并确认旧实现按预期 RED。
+- [x] 仅将已保存闲置模型的状态文案从“未启用”替换为“已添加”；主模型、备用模型及目录候选状态规则保持不变。
+- [x] 通过项目脚本注册新文案，并补齐简中、繁中、英语、西语、日语、韩语和印尼语展示。
+- [x] 运行模型配置完整回归、`pnpm check`、`git diff --check`，并确认本地 Mock 预览可达。
+
+增量验证记录：
+
+- RED：取消备用专项 1 failed / 52 skipped，模型行仍显示“未启用”。
+- GREEN：取消备用专项 1 passed / 52 skipped。
+- 完整回归：模型配置目录 159 项通过；`pnpm check` 通过，TypeScript 0 条新增诊断、多语言结构错误 0、新增状态文案 7 个展示语言均已补齐；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
 
 ## Task 16：为备用模型 neutral 标签补充灰色边框
 
@@ -332,6 +394,105 @@ Expected: 全部命令 exit 0，TypeScript 无新增诊断，i18n 无新增缺�
 - `pnpm check`：通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0。
 - `pnpm i18n:check`：通过，2699 条文案；印尼语既有缺口 174 条。
 - `git diff --check`：通过。
+
+### Task 28：模型 API 统一使用七彩石模型目录
+
+- [x] 调整适配层测试，要求所有 `api` Provider 输出 `discoveryStrategy: "catalog"`、`supportsLiveModelRefresh: false`，并保留模型目录为空的 Provider。
+- [x] 运行适配层测试确认旧逻辑失败。
+- [x] 最小修改 `product-provider-adapter.ts`，移除按 Provider 区分的实时模型发现策略。
+- [x] 补充面板测试，验证预置 API Provider 直接展示七彩石目录、不展示“获取可用模型”，目录为空时选择器置灰并显示“暂无可用模型”。
+- [x] 保持 `custom` 页签的实时模型探测与手动输入逻辑不变。
+- [x] 运行模型配置专项、i18n、`pnpm check`、`git diff --check`，并刷新本地预览。
+
+增量验证记录：
+
+- 适配层 RED：2 failed / 11 passed，确认旧逻辑仍把多数 API Provider 标记为 `live`。
+- 目标 GREEN：5 passed / 63 skipped，覆盖目录直出、隐藏实时获取按钮和空目录禁用态。
+- 模型配置完整专项：163/163 passed（使用显式 `127.0.0.1` 与工作区 Python 运行时）。
+- `pnpm check`：通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved。
+- i18n：2694 条文案；本次新增 7 种语言均已补齐；结构错误 0，既有告警 48，印尼语既有缺口 174。
+- `git diff --check`：通过。
+
+## Task 24：本地化默认模型的 Auto 展示名
+
+- [x] 将默认模型行的预期展示从固定 `Auto` 改为中文“自动”，并确认实现前专项测试失败。
+- [x] 仅在展示层为 Auto/default ID 注入本地化名称；Provider 匹配、模型 ID 和提交参数继续使用 `auto`。
+- [x] 运行模型配置完整专项、前端门禁和本地预览验收。
+
+验证记录：RED 专项 1 failed / 52 skipped；GREEN 专项 1 passed / 52 skipped；模型配置完整专项 159 passed；`pnpm check` 通过（TypeScript 0 个新增诊断，i18n 0 个错误）；本地预览 HTTP 200。
+
+## Task 25：将添加表单提交按钮改为“确认配置”
+
+- [x] 先将布局测试预期改为“确认配置”，确认实现前专项测试失败。
+- [x] 仅替换提交按钮展示文案，并同步简中、繁中、英、西、印尼、日、韩翻译。
+- [x] 运行模型配置完整专项、前端门禁和本地预览验收。
+
+验证记录：RED 专项 1 failed / 52 skipped；GREEN 专项 1 passed / 52 skipped；模型配置完整专项 159 passed；`pnpm check` 通过（TypeScript 0 个新增诊断，i18n 0 个错误）；`git diff --check` 通过；本地预览 HTTP 200。
+
+## Task 26：将 `custom + Auto` 分组命名为“内置模型”
+
+- [x] 先将分组标题测试预期改为“内置模型”，确认实现前专项测试失败。
+- [x] 仅替换 `custom + Auto` 的展示名称；其他 `custom` 仍显示“自定义模型”，配置身份不变。
+- [x] 同步简中、繁中、英、西、印尼、日、韩翻译。
+- [x] 运行模型配置完整专项、前端门禁和本地预览验收。
+
+验证记录：RED 专项 1 failed / 52 skipped；GREEN 专项 1 passed / 52 skipped；模型配置完整专项 159 passed；`pnpm check` 通过（TypeScript 0 个新增诊断，i18n 0 个错误）；`git diff --check` 通过；本地预览 HTTP 200。
+
+## Task 27：稳定已配置 Provider 的展示顺序
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+**Interfaces:**
+
+- Consumes: Hermes `managed.configured_models` 持久顺序、`groupConfiguredModelsByProvider(models, providers)`。
+- Produces: `read_snapshot(config).configuredModels` 以持久配置顺序为基线；分组结果仅将包含标准化 Auto 的 `custom` 分组置顶。
+
+- [x] **Step 1：先写命令层失败测试**
+
+构造持久顺序为 `Provider B → custom/auto → Provider A`、但主模型为 Provider A、备用模型为 Provider B 的配置；断言 snapshot 的 `configuredModels` 仍保持持久顺序。
+
+- [x] **Step 2：运行命令层专项并确认 RED**
+
+Run: `pnpm vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts -t "preserves configured model order across role changes"`
+
+Expected: FAIL，现有 `read_snapshot` 按主模型、备用模型、其余模型重排。
+
+- [x] **Step 3：最小调整 snapshot 投影顺序并确认 GREEN**
+
+在 `read_snapshot` 中先投影 `configured_models(config)`，再补充未进入持久列表的主模型和备用模型；沿用现有 deployment identity 去重逻辑。
+
+- [x] **Step 4：先写前端内置模型置顶失败测试**
+
+输入顺序为普通 Provider、`custom + Auto`、另一普通 Provider；断言 Provider 按钮顺序为“内置模型”、第一个普通 Provider、第二个普通 Provider。再变更主、备用角色，断言顺序不变。
+
+- [x] **Step 5：运行面板专项并确认 RED**
+
+Run: `pnpm vitest run src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx -t "keeps the built-in provider first without reordering other providers"`
+
+Expected: FAIL，现有分组完全沿用输入顺序，内置模型不置顶。
+
+- [x] **Step 6：最小实现稳定分组排序并确认 GREEN**
+
+在 `groupConfiguredModelsByProvider` 返回前做稳定分区：包含标准化 Auto 的 `custom` 分组在前，其余分组保留 Map 插入顺序；不按主、备用角色排序。
+
+- [x] **Step 7：运行完整回归与门禁**
+
+Run:
+
+```bash
+pnpm test:model-config
+pnpm check
+git diff --check
+```
+
+Expected: 模型配置专项全部通过，TypeScript 0 个新增诊断，i18n 0 个错误，差异检查通过。
+
+验证记录：命令层 RED 收到 `provider-a → provider-b`，GREEN 保持持久顺序 `provider-b → provider-a`；面板 RED 证明内置模型未置顶，GREEN 后内置模型第一且角色切换前后其他 Provider 顺序不变；模型配置完整专项 161 passed；`pnpm check` 通过（TypeScript 0 个新增诊断，i18n 0 个错误）；`git diff --check` 通过；本地预览 HTTP 200。
 
 ## Task 14：降低模型行名称与操作按钮的字体强调
 

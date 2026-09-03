@@ -666,10 +666,10 @@ describe("Hermes model configuration client", () => {
     expect(projected.configuredModels.map((item) => item.id)).toEqual([
       "main-model",
       "fallback-model",
-      "legacy-fallback-model",
       "saved-model",
       "legacy-saved-model",
       "history-model",
+      "legacy-fallback-model",
     ]);
     expect(projected.configuredModels).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "main-catalog-only" }),
@@ -801,8 +801,6 @@ describe("Hermes model configuration client", () => {
       id: "fallback-model",
     }));
     expect(snapshot.configuredModels.map((item) => item.providerKey)).toEqual([
-      "active-stale",
-      "fallback-missing-key",
       "idle-env-key",
       "idle-live-list",
       "idle-command-key",
@@ -811,9 +809,57 @@ describe("Hermes model configuration client", () => {
       "Unnamed Provider",
       "idle-dynamic-metadata",
       "idle-keyless",
+      "active-stale",
+      "fallback-missing-key",
     ]);
     expect(result.config).toEqual(config);
     expect(result.events).toEqual([]);
+  });
+
+  it("preserves configured model order across role changes", () => {
+    const config = {
+      model: {
+        provider: "provider-a",
+        default: "model-a",
+        base_url: "https://a.example.com/v1",
+      },
+      fallback_providers: [{
+        provider: "provider-b",
+        model: "model-b",
+        base_url: "https://b.example.com/v1",
+      }],
+      providers: {
+        "provider-b": {
+          name: "Provider B",
+          base_url: "https://b.example.com/v1",
+          model: "model-b",
+          models: ["model-b"],
+          transport: "openai",
+          key_env: "PROVIDER_B_KEY",
+        },
+        "provider-a": {
+          name: "Provider A",
+          base_url: "https://a.example.com/v1",
+          model: "model-a",
+          models: ["model-a"],
+          transport: "openai",
+          key_env: "PROVIDER_A_KEY",
+        },
+      },
+    };
+
+    const result = runHelper(
+      { type: "read" },
+      config,
+      {},
+      { PROVIDER_A_KEY: "provider-a-secret", PROVIDER_B_KEY: "provider-b-secret" },
+    );
+    const projected = parseHermesModelConfigResponse(result.output);
+
+    expect(projected.configuredModels.map((item) => item.providerKey)).toEqual([
+      "provider-b",
+      "provider-a",
+    ]);
   });
 
   it("keeps uncertain idle providers when older Hermes versions lack credential-pool helpers", () => {

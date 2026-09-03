@@ -693,8 +693,6 @@ def read_snapshot(config):
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
     provider_keys = configured_provider_keys(config)
     projected = []
-    append_projected(projected, primary, provider_keys)
-    for candidate in fallbacks: append_projected(projected, candidate, provider_keys)
 
     for provider_key, provider in providers.items():
         try:
@@ -710,6 +708,8 @@ def read_snapshot(config):
         append_projected(projected, candidate, provider_keys)
 
     for candidate in configured_models(config): append_projected(projected, candidate, provider_keys)
+    append_projected(projected, primary, provider_keys)
+    for candidate in fallbacks: append_projected(projected, candidate, provider_keys)
     return {"primary": primary, "fallbacks": fallbacks, "configuredModels": projected}
 
 def find_configured(config, provider_key, model_id, base_url=None, route_base_url=None):
