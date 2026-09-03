@@ -7,7 +7,7 @@ owner: wisp/mono2-maintainers
 authority: derived
 source_of_truth:
   - .ci/docs/README.md
-  - .ci/catalog-info.yaml
+  - .ci/catalog-info.manifest
   - .ci/AGENTS.md
   - .ci
 status: active

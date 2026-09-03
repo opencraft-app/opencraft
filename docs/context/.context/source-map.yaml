@@ -16,7 +16,7 @@
     "release-gitops": ["docs/engineering/domains/release-gitops.md", "docs/context/domains/release-gitops.md"]
   },
   "services": {
-    "ci": [".ci/catalog-info.yaml", ".ci/docs/README.md", "docs/context/project/services/ci.md"],
+    "ci": [".ci/catalog-info.manifest", ".ci/docs/README.md", "docs/context/project/services/ci.md"],
     "admin-gateway": ["admin-gateway/catalog-info.yaml", "admin-gateway/docs/README.md", "docs/context/project/services/admin-gateway.md"],
     "ai-gateway": ["ai-gateway/catalog-info.yaml", "ai-gateway/docs/README.md", "docs/context/project/services/ai-gateway.md"],
     "cloudagent": ["cloudagent/catalog-info.yaml", "cloudagent/docs/README.md", "docs/context/project/services/cloudagent.md"],

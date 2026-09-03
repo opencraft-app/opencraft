@@ -104,7 +104,7 @@ class DocumentationSystemContract(unittest.TestCase):
         for service_id, service_path in PRIMARY_SERVICES.items():
             root = REPO_ROOT / service_path
             with self.subTest(service=service_id):
-                self.assertTrue((root / "catalog-info.yaml").is_file())
+                self.assertTrue((root / validator.catalog_filename(service_id)).is_file())
                 self.assertTrue((root / "README.md").is_file())
                 self.assertTrue((root / "AGENTS.md").is_file())
                 self.assertTrue((root / "docs/README.md").is_file())

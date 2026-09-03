@@ -18,7 +18,7 @@ mono2 有大量一方、产品、工作、上游和生成文档，但缺少统�
 
 ## 后果
 
-- 每个主要服务必须有 `README.md`、短 `AGENTS.md`、`catalog-info.yaml`、`docs/README.md`。
+- 每个主要服务必须有 `README.md`、短 `AGENTS.md`、`catalog-info.yaml`（同一 JSON 契约，`.ci` 因 BK-CI 对 `.ci/**/*.yaml` 的特殊处理而使用 `catalog-info.manifest`）、`docs/README.md`。
 - 跨服务事实只在一个 canonical 工程文档维护，Context Pack 回链并标为 derived。
 - vendor/subtree、生成物、评测和 archive 进入文档地图但不按一方正文重写。
 - 全仓文档覆盖与 Context 控制面分开评分，避免少量 Pack 100% 覆盖冒充仓库文档成熟。

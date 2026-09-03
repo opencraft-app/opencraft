@@ -1,7 +1,7 @@
 {
   "version": 1,
   "services": [
-    {"id": "ci", "path": ".ci", "catalog": ".ci/catalog-info.yaml"},
+    {"id": "ci", "path": ".ci", "catalog": ".ci/catalog-info.manifest"},
     {"id": "admin-gateway", "path": "admin-gateway", "catalog": "admin-gateway/catalog-info.yaml"},
     {"id": "ai-gateway", "path": "ai-gateway", "catalog": "ai-gateway/catalog-info.yaml"},
     {"id": "cloudagent", "path": "cloudagent", "catalog": "cloudagent/catalog-info.yaml"},

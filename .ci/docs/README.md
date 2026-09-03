@@ -5,7 +5,7 @@
 ## 权威入口
 
 - [目录说明](../README.md) 与 [Agent 约束](../AGENTS.md)
-- [服务目录记录](../catalog-info.yaml)
+- [服务目录记录](../catalog-info.manifest)
 - [发布与 GitOps 领域](../../docs/engineering/domains/release-gitops.md)
 
 ## 变更边界

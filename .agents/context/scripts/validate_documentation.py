@@ -38,6 +38,19 @@ PRIMARY_SERVICES = {
     "workers": "workers",
 }
 
+# BK-CI treats any file under .ci/**/*.yaml as a pipeline candidate, so the
+# `.ci` service catalog record cannot use the `.yaml` extension like every
+# other service. `catalog_filename()` centralizes this single exception so
+# the rest of the validator, the central catalog, and Context Packs stay in
+# sync with the actual on-disk filename per service.
+CATALOG_FILENAME_OVERRIDES = {
+    "ci": "catalog-info.manifest",
+}
+
+
+def catalog_filename(service_id: str) -> str:
+    return CATALOG_FILENAME_OVERRIDES.get(service_id, "catalog-info.yaml")
+
 DOMAIN_DOCS = {
     "identity-access",
     "subscription-entitlements",
@@ -265,11 +278,12 @@ def validate_service_catalog(repo: Path, errors: list[str]) -> dict[str, dict[st
     service_records: dict[str, dict[str, Any]] = {}
     for service_id, service_path in PRIMARY_SERVICES.items():
         root = repo / service_path
-        entry_files = ("catalog-info.yaml", "README.md", "AGENTS.md", "docs/README.md")
+        catalog_entry = catalog_filename(service_id)
+        entry_files = (catalog_entry, "README.md", "AGENTS.md", "docs/README.md")
         for entry_file in entry_files:
             if not (root / entry_file).is_file():
                 errors.append(f"{service_id}: missing {service_path}/{entry_file}")
-        catalog_path = root / "catalog-info.yaml"
+        catalog_path = root / catalog_entry
         if not catalog_path.exists():
             continue
         try:
@@ -279,23 +293,23 @@ def validate_service_catalog(repo: Path, errors: list[str]) -> dict[str, dict[st
             continue
         missing = sorted(SERVICE_REQUIRED_FIELDS - set(record))
         if missing:
-            errors.append(f"{service_path}/catalog-info.yaml missing fields: {', '.join(missing)}")
+            errors.append(f"{service_path}/{catalog_entry} missing fields: {', '.join(missing)}")
         if record.get("id") != service_id or record.get("path") != service_path:
-            errors.append(f"{service_path}/catalog-info.yaml id/path do not match the central contract")
+            errors.append(f"{service_path}/{catalog_entry} id/path do not match the central contract")
         if record.get("owner") not in owners:
-            errors.append(f"{service_path}/catalog-info.yaml references unknown owner {record.get('owner')!r}")
+            errors.append(f"{service_path}/{catalog_entry} references unknown owner {record.get('owner')!r}")
         domains = record.get("domains")
         if not isinstance(domains, list) or not domains or not set(domains).issubset(DOMAIN_DOCS):
-            errors.append(f"{service_path}/catalog-info.yaml has invalid domains {domains!r}")
+            errors.append(f"{service_path}/{catalog_entry} has invalid domains {domains!r}")
         for field in ("interfaces", "dependencies", "source_docs", "deploy", "generated_paths"):
             if not isinstance(record.get(field), list):
-                errors.append(f"{service_path}/catalog-info.yaml field {field} must be an array")
+                errors.append(f"{service_path}/{catalog_entry} field {field} must be an array")
         if record.get("agent_entry") != f"{service_path}/AGENTS.md":
-            errors.append(f"{service_path}/catalog-info.yaml has an invalid agent_entry")
+            errors.append(f"{service_path}/{catalog_entry} has an invalid agent_entry")
         if record.get("service_docs") != f"{service_path}/docs/README.md":
-            errors.append(f"{service_path}/catalog-info.yaml has an invalid service_docs")
+            errors.append(f"{service_path}/{catalog_entry} has an invalid service_docs")
         central = central_map.get(service_id, {})
-        expected_catalog = f"{service_path}/catalog-info.yaml"
+        expected_catalog = f"{service_path}/{catalog_entry}"
         if central.get("catalog") != expected_catalog:
             errors.append(f"central catalog pointer for {service_id} must be {expected_catalog}")
         service_records[service_id] = record
@@ -405,7 +419,7 @@ def validate_service_context(repo: Path, errors: list[str]) -> dict[str, list[st
         sources = metadata.get("source_of_truth", [])
         expected_sources = {
             f"{service_path}/docs/README.md",
-            f"{service_path}/catalog-info.yaml",
+            f"{service_path}/{catalog_filename(service_id)}",
         }
         if (
             metadata.get("type") != "service"
@@ -542,8 +556,11 @@ def validate_repository(repo: Path) -> dict[str, Any]:
         errors.append(f"unclassified documentation files: {', '.join(unclassified[:20])}")
 
     complete_entries = sum(
-        all((repo / service_path / entry).is_file() for entry in ("catalog-info.yaml", "README.md", "AGENTS.md", "docs/README.md"))
-        for service_path in PRIMARY_SERVICES.values()
+        all(
+            (repo / service_path / entry).is_file()
+            for entry in (catalog_filename(service_id), "README.md", "AGENTS.md", "docs/README.md")
+        )
+        for service_id, service_path in PRIMARY_SERVICES.items()
     )
     derived_complete = len(DOMAIN_DOCS) - len(context_derived["missing"]) - len(context_derived["invalid"])
     routed_services = len(PRIMARY_SERVICES) - len(service_context["missing_routes"])

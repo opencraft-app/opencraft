@@ -17,7 +17,7 @@
 | 服务入口 | 这个服务做什么，去哪里继续读 | `<service>/README.md` | 面向所有贡献者的稳定入口，不承载 Agent 专属规则 |
 | Agent 入口 | 当前路径有哪些硬约束，要加载什么 | 最近的 `<path>/AGENTS.md` | 只做短路由，不写百科全书 |
 | 服务知识 | 服务边界、权威入口、验证与运维去哪里 | `<service>/docs/README.md` 及必要子文档 | 与服务代码共置；复杂服务按架构、how-to、reference、runbook 拆分 |
-| 服务目录 | Owner、lifecycle、domain、依赖、接口、发布与生成路径 | `<service>/catalog-info.yaml` 与 `docs/engineering/catalog/` | 机器可读责任和关系，不复制正文 |
+| 服务目录 | Owner、lifecycle、domain、依赖、接口、发布与生成路径 | `<service>/catalog-info.yaml` 与 `docs/engineering/catalog/`（`.ci` 例外：BK-CI 把 `.ci/**/*.yaml` 当流水线候选，改用 `.ci/catalog-info.manifest`，内容仍是同一 JSON 契约） | 机器可读责任和关系，不复制正文 |
 | 系统架构 | 系统、组件、部署和权威关系如何组成 | `docs/engineering/architecture/` | 跨服务稳定结构，回链机器契约 |
 | Domain | 稳定业务概念、归属与跨服务不变量是什么 | `docs/engineering/domains/` | 一个 Domain 一个 canonical 入口 |
 | Journey | 一个用户或系统流程如何跨越多个服务 | `docs/engineering/journeys/` | 聚焦顺序、失败边界和端到端验证 |
