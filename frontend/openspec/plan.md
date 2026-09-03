@@ -102,6 +102,24 @@
 
 **Verification:** Provider 能力用例先出现 1 个预期 RED；面板成功/失败链路先出现 2 个预期 RED。最小实现后模型配置标准套件 7 个文件 126/126 GREEN，本地 Hy4 整体失败兜底测试 1/1 GREEN；面板测试同时覆盖探测命令异常不保存且保留表单。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。标准套件首次执行因系统 Python 缺少 `cryptography` 产生环境级级联失败，改用 Codex 工作区自带 Python 后全部通过。
 
+## 线上重复配置回归修复
+
+- [x] **Developer｜测试先行修复已配置主模型再次输入 Key 时用途误落到“仅添加”的问题：保持当前主模型用途，完成添加前检测后更新配置，并验证首次添加与其他用途不受影响。**
+
+**线上证据（2026-09-03）：** 同一 Hy4 Preview 独立连通性检测通过（约 0.9 秒），证明 API Key、七彩石模型名和 Token Plan 请求地址有效；失败表单同时显示该模型已经是主模型、用途却默认选中“仅添加”，故故障位于重复配置的用途校验而非模型接口。
+
+**Follow-up verification:** 新增回归用例先按预期 RED（当前主模型被错误选为“仅添加”），最小实现后自动保持“设为主模型”并禁用无效的“仅添加”；模型面板 32/32、模型配置目录 128/128（另 1 条按环境跳过）通过。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）。本机 `/etc/hosts` 缺少 localhost 映射，Vitest 运行时临时指定 `127.0.0.1` 后已还原；Hermes 客户端套件使用 Codex 工作区 Python 以满足既有 `cryptography` 测试依赖。本地页面可达但未登录，交互回归由聚焦组件测试覆盖。
+
+## Coding Plan 直接添加模型
+
+**Status:** 实现与自动化验证完成，用户已确认提交。
+
+**Detailed plan:** `openspec/changes/2026-09-03-coding-plan-direct-add-implementation-plan.md`
+
+- [x] **Developer｜测试先行移除 Coding Plan 添加前自动检测：添加直接保存，保留独立“检测模型状态”，删除 `validateBeforeAdd` 及其专用状态，并完成聚焦回归与 `pnpm check`。**
+
+**Verification:** 新增直接添加断言先按预期 RED，确认旧实现仍发出 `connectivityProbe`；Provider 适配断言同时因残留 `validateBeforeAdd` 失败。最小实现后聚焦测试 40/40 GREEN，模型配置目录回归 125/125 GREEN（另 1 条按环境跳过）。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；独立“检测模型状态”测试继续覆盖 `model_request`。本机 Vitest 临时使用 `127.0.0.1` 绕过 `localhost` 解析异常，验证后已还原配置。
+
 ---
 
 # Hy Token Plan 七彩石模型目录 Implementation Plan

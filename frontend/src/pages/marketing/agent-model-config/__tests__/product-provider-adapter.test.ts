@@ -51,7 +51,8 @@ describe("adaptProductModelProviders", () => {
         apiKeyUrl: "https://alpha.example.com/keys",
         baseUrl: "https://alpha.example.com/v1",
         apiMode: "chat_completions",
-        discoveryStrategy: "live",
+        discoveryStrategy: "catalog",
+        fixedModelSelection: true,
         catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
       },
       expect.objectContaining({
@@ -101,7 +102,6 @@ describe("adaptProductModelProviders", () => {
       providerKey: "tencent_hy_token_plan",
       discoveryStrategy: "catalog",
       fixedModelSelection: true,
-      validateBeforeAdd: true,
       description: "七彩石最新模型说明",
       catalogModels: [
         { id: "hy4-preview", name: "Hy4 Preview" },
@@ -122,6 +122,46 @@ describe("adaptProductModelProviders", () => {
       api: "openai-completions",
       models: [{ id: "  ", name: "无效模型" }],
     }])).toEqual([]);
+  });
+
+  it("hides every Coding Plan provider when its Rainbow catalog has no valid models", () => {
+    expect(adaptProductModelProviders([{
+      value: "empty-coding-plan",
+      category: "coding_plan",
+      provider: "empty",
+      provider_name: "Empty Coding Plan",
+      description: "暂无模型",
+      api_key_url: "",
+      base_url: "https://empty.example.com/v1",
+      api: "openai-completions",
+      models: [{ id: " ", name: "Invalid" }],
+    }])).toEqual([]);
+  });
+
+  it("filters malformed Rainbow model entries without crashing the model page", () => {
+    const malformedProvider = {
+      value: "partially-valid-plan",
+      category: "coding_plan",
+      provider: "partial",
+      provider_name: "Partially Valid Plan",
+      description: "",
+      api_key_url: "",
+      base_url: "https://partial.example.com/v1",
+      api: "openai-completions",
+      models: [
+        null,
+        { id: null, name: "Missing ID" },
+        { id: 42, name: "Numeric ID" },
+        { id: "valid-model", name: null },
+      ],
+    } as unknown as IModelProvider;
+
+    expect(adaptProductModelProviders([malformedProvider])).toEqual([
+      expect.objectContaining({
+        providerKey: "partially-valid-plan",
+        catalogModels: [{ id: "valid-model", name: "valid-model" }],
+      }),
+    ]);
   });
 
   it("does not inject the Hy Token Plan provider when Rainbow omits it", () => {
