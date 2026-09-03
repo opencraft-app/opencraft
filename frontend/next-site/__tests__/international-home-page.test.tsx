@@ -170,6 +170,9 @@ describe("international v2 homepage artifact", () => {
       expect(
         Array.from(document.querySelectorAll(".nav__links a"), (anchor) => anchor.textContent?.trim()),
       ).toEqual(expectedNavLabels[locale]);
+      const navLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>(".nav__links a"));
+      expect(navLinks[0]?.getAttribute("aria-current"), `${locale} homepage nav current`).toBe("page");
+      expect(navLinks.slice(1).every((anchor) => !anchor.hasAttribute("aria-current")), `${locale} secondary nav current`).toBe(true);
       for (const assetName of expectedCardAssets[locale]) {
         expect(html).toContain(`/lightvela-intl-home/assets/${assetName}`);
         expect(existsSync(path.join(homeRoot, "assets", assetName)), `missing ${assetName}`).toBe(true);
@@ -490,6 +493,8 @@ describe("international v2 homepage artifact", () => {
     );
 
     expect(css).toMatch(/\.hero__line--main\s*\{[^}]*font-size:\s*50px;[^}]*font-weight:\s*500;[^}]*white-space:\s*normal;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.nav__links a\s*\{[^}]*font-weight:\s*400;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.nav__links a\[aria-current='page'\]\s*\{[^}]*font-weight:\s*600;/s);
     expect(editorialHeroRules.some((rule) => (
       rule.includes("font-family: var(--font-cover-en);")
       && rule.includes("max-width: min(1180px, calc(100vw - 120px));")

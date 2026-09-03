@@ -7300,8 +7300,13 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   color: rgba(33, 26, 42, 0.88);
   font-family: var(--font-ui);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0;
+}
+
+#lightvela-intl-home .nav__links a[aria-current='page'] {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 #lightvela-intl-home .nav__links a::after {
