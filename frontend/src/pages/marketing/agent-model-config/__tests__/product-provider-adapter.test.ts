@@ -81,19 +81,19 @@ describe("adaptProductModelProviders", () => {
     }));
   });
 
-  it("keeps the Hy Token Plan personal catalog fixed when Rainbow still returns Hy3", () => {
+  it("uses the Rainbow Hy Token Plan catalog while keeping fixed selection", () => {
     const [adaptedProvider] = adaptProductModelProviders([{
       value: "tencent_hy_token_plan",
       category: "coding_plan",
       provider: "tencenthytokenplan",
       provider_name: "腾讯云 Hy Token Plan（个人版）",
-      description: "远端旧说明：集成 Hy3 模型",
+      description: "七彩石最新模型说明",
       api_key_url: "https://console.cloud.tencent.com/tokenhub/tokenplan/hy",
       base_url: "https://api.lkeap.cloud.tencent.com/plan/v3",
       api: "openai-completions",
       models: [
         { id: "hy4-preview", name: "Hy4 Preview", isDefault: true },
-        { id: "hy3", name: "Hy3" },
+        { id: "hy-next", name: "Hy Next" },
       ],
     }]);
 
@@ -101,10 +101,31 @@ describe("adaptProductModelProviders", () => {
       providerKey: "tencent_hy_token_plan",
       discoveryStrategy: "catalog",
       fixedModelSelection: true,
-      description: expect.stringContaining("Hy4 Preview"),
-      catalogModels: [{ id: "hy4-preview", name: "hy4-preview" }],
+      validateBeforeAdd: true,
+      description: "七彩石最新模型说明",
+      catalogModels: [
+        { id: "hy4-preview", name: "Hy4 Preview" },
+        { id: "hy-next", name: "Hy Next" },
+      ],
     }));
-    expect(adaptedProvider?.description).not.toContain("Hy3");
+  });
+
+  it("hides the Rainbow Hy Token Plan provider when it has no valid models", () => {
+    expect(adaptProductModelProviders([{
+      value: "tencent_hy_token_plan",
+      category: "coding_plan",
+      provider: "tencenthytokenplan",
+      provider_name: "腾讯云 Hy Token Plan（个人版）",
+      description: "暂无模型",
+      api_key_url: "",
+      base_url: "https://api.lkeap.cloud.tencent.com/plan/v3",
+      api: "openai-completions",
+      models: [{ id: "  ", name: "无效模型" }],
+    }])).toEqual([]);
+  });
+
+  it("does not inject the Hy Token Plan provider when Rainbow omits it", () => {
+    expect(adaptProductModelProviders([])).toEqual([]);
   });
 
   it("extracts untrusted provider HTML without writing through element innerHTML", () => {

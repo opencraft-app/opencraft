@@ -194,6 +194,7 @@ export function AgentModelConfigPanel({
   const activeProvider = category === "custom"
     ? null
     : providerOptions.find((provider) => provider.providerKey === providerKey) ?? null;
+  const validateBeforeAdd = activeProvider?.validateBeforeAdd === true;
   const fixedModelOptions = useMemo<ModelOption[]>(
     () => activeProvider?.fixedModelSelection
       ? (activeProvider.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" }))
@@ -349,9 +350,26 @@ export function AgentModelConfigPanel({
   };
 
   const handleAdd = async () => {
-    if (!selectedModel || !apiKey.trim()) return;
+    const normalizedApiKey = apiKey.trim();
+    if (!selectedModel || !normalizedApiKey || !credentialMatchesProvider) return;
+    if (validateBeforeAdd) {
+      const requestFingerprint = providerFingerprint;
+      const revision = probeUiRevision.current;
+      setConnectionResult(null);
+      const result = await controller.testConnection({
+        apiKey: normalizedApiKey,
+        model: selectedModel,
+        strategy: "model_request",
+      });
+      if (revision !== probeUiRevision.current || requestFingerprint !== providerFingerprintRef.current) return;
+      if (!result) return;
+      if (!result.success) {
+        setConnectionResult(result);
+        return;
+      }
+    }
     const nextSnapshot = await controller.add({
-      apiKey: apiKey.trim(),
+      apiKey: normalizedApiKey,
       model: selectedModel,
       purpose,
       discoverModels: category === "custom" || activeProvider?.discoveryStrategy !== "catalog",
@@ -762,19 +780,21 @@ export function AgentModelConfigPanel({
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                type="button"
-                variant="outline"
-                className={compoundActionClassName}
-                disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy}
-                onClick={() => void handleConnectivityTest()}
-              >
-                <ModelCompoundActionContent
-                  idleLabel={t("检测模型状态")}
-                  loadingLabel={t("检测中...")}
-                  loading={controller.operation === "connectivity-probe"}
-                />
-              </Button>
+              {!validateBeforeAdd ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={compoundActionClassName}
+                  disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy}
+                  onClick={() => void handleConnectivityTest()}
+                >
+                  <ModelCompoundActionContent
+                    idleLabel={t("检测模型状态")}
+                    loadingLabel={t("检测中...")}
+                    loading={controller.operation === "connectivity-probe"}
+                  />
+                </Button>
+              ) : null}
             </div>
           </div>
 
@@ -838,7 +858,7 @@ export function AgentModelConfigPanel({
               disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (purpose === "fallback" && fallbackPurposeDisabled)}
               onClick={() => void handleAdd()}
             >
-              {controller.operation === "add"
+              {controller.operation === "add" || (validateBeforeAdd && controller.operation === "connectivity-probe")
                 ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 : <Plus className="size-4" aria-hidden="true" />}
               {t("添加模型")}

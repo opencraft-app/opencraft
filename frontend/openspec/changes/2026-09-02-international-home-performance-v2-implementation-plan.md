@@ -266,4 +266,4 @@ Expected: 无 whitespace error；只包含本计划列出的源码、测试、�
 - fragment 实验：Server Component 直出版本的 `__PAGE__.txt` 仍为 102,321 B 且代表性正文命中 1 次，最终 HTML 仍含正文和内嵌 Flight 两份；无 97 KB 网络收益，已撤回生产代码。
 - 浏览器：最终 `out/` 在 1440×900 英文和 390×844 西语通过；正文、18 个场景按钮、语言/账号头部、Cookie locale 正常，click / Enter / Space 均切换对应 panel，横向 overflow 为 0，console warning/error 与 framework overlay 均为 0。
 - CR：`public-site-providers.tsx` 不再 re-export `PublicSiteAppProviders`，对应测试改从新边界直接导入；9 份 fragment 共 162 个 `.scene__sub` 均含静态 `aria-pressed`，每份 6 个初始 `true`；helper 单测覆盖每组唯一选中、无关标记保留与二次执行字节一致。CR 后 `pnpm check` 与 `pnpm build:global` 再次通过。
-- 已将静态资源版本提升为 `20260902-home-performance-v2`，避免边缘缓存继续返回旧 runtime。MR !3533 已存在；本轮 CR 修正尚未 commit/push，远端 master 已前进至 `aafc32ed`，待用户确认后同步并复验。
+- 已将静态资源版本提升为 `20260902-home-performance-v2`，避免边缘缓存继续返回旧 runtime。MR !3533 已存在；本轮 CR 修正已提交并同步最新 `origin/master`（`aafc32ed`），合并后聚焦测试、`pnpm check` 与 global build 均通过，等待 push 更新 MR。

@@ -16,7 +16,7 @@
 
 # 国际站 V2 首页性能优化 Implementation Plan
 
-**Status:** MR !3533 的 CR 修正已实现并完成本地验证，等待用户确认 commit、同步最新 master 并 push 更新 MR；当前未发布。
+**Status:** MR !3533 的 CR 修正已提交并同步最新 master，合并后复验完成，等待 push 更新 MR；当前未发布。
 
 **Size:** M。范围限定在国际站 V2 首页 client boundary、评价头像和场景子按钮；fragment 输出建议已实测无收益并撤回。不修改完整 marketing layout、动效生命周期或发布缓存。
 
@@ -35,7 +35,7 @@
 
 **Acceptance:** 首页 global 构建只包含一份完整 eager 字典 key 集合；fragment 实验以真实 RSC 证据撤回且不虚报 97 KB 收益；评价头像 lazy 并引用 64×64 WebP；18 个 `.scene__sub` 可通过 hover、click、Enter/Space 激活；七 locale、header 与首页视觉不变。
 
-**Verification:** MR 基线 `origin/master`（`4b6cb083e`）已完成原始复验。CR 修正先得到 2 个预期失败，再恢复为聚焦测试 10 文件 117 项通过；`pnpm check`（0 new diagnostics）、`pnpm build:global`（592/592）通过。9 份 fragment 共 162 个场景按钮均含静态 `aria-pressed`，每份 6 个初始选中态；helper 单测覆盖每组唯一选中、无关标记保留和二次执行字节一致。同提交纯 master 对照下，首页本地 JS 为 4,075,348 → 3,051,382 B raw、1,014,547 → 778,284 B Brotli，完整 2,693-key 字典 2 → 1；12 个唯一评价头像 1,248,169 → 25,056 B。英文桌面和西语 390px 浏览器 smoke 无 console error、无横向溢出，click/Enter/Space 均通过。远端 master 现已前进至 `aafc32ed`，待提交确认后同步并复验再更新 MR。
+**Verification:** MR 基线 `origin/master`（`4b6cb083e`）已完成原始复验，CR 修正后已同步最新 `origin/master`（`aafc32ed`）。CR 修正先得到 2 个预期失败，合并后聚焦测试 10 文件 117 项、`pnpm check`（0 new diagnostics）和 `pnpm build:global`（592/592）通过。9 份 fragment 共 162 个场景按钮均含静态 `aria-pressed`，每份 6 个初始选中态；helper 单测覆盖每组唯一选中、无关标记保留和二次执行字节一致。同提交纯 master 对照下，首页本地 JS 为 4,075,348 → 3,051,382 B raw、1,014,547 → 778,284 B Brotli，完整 2,693-key 字典 2 → 1；12 个唯一评价头像 1,248,169 → 25,056 B。英文桌面和西语 390px 浏览器 smoke 无 console error、无横向溢出，click/Enter/Space 均通过。
 
 **Out of scope:** 动效 IIFE cleanup、打字机布局优化、缓存头、完整 marketing layout、i18n 异步协议、API/鉴权/计费/发布。
 
@@ -79,6 +79,50 @@
 - [x] **Task 1：测试先行修正 Blog 外链、英文正文 alternates、分类类型和本地化日期，并完成国际站与国内站构建验证。**
 
 **Verification:** Blog 专项断言先按预期 RED（6 个失败），实现后 6 个测试文件共 40 个断言 GREEN。`pnpm i18n:check`、`pnpm check`、`pnpm build:global`、`pnpm build:cn` 与 `git diff --check` 均通过；类型基线为 206 current / 276 baseline / 0 new / 70 resolved。
+
+---
+
+# Hy Token Plan 添加前自动验证 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收；尚未创建分支或提交。
+
+**Size:** S。仅调整 Hy Token Plan 个人版的模型状态检测入口和添加动作时序；不修改七彩石、Hermes 协议或其他 Provider。
+
+**Goal:** 隐藏 Hy 的独立“检测模型状态”按钮，点击“添加模型”时先真实验证，成功后才保存，失败时保留表单且不写配置。
+
+**Design:** `openspec/changes/2026-09-02-hy-token-plan-validate-on-add-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-hy-token-plan-validate-on-add-implementation-plan.md`
+
+- [x] **Developer｜测试先行为 Hy 增加添加前验证能力，隐藏独立检测按钮，串行执行 `connectivityProbe -> add`，覆盖失败不保存和其他 Provider 不变，并完成聚焦回归、类型与差异检查。**
+
+**Acceptance:** Hy 点击添加时使用当前模型和 API Key 执行 `model_request`；成功直接保存且不弹检测成功框；失败不产生 `add`、不清空表单；其他 Provider 的独立检测与添加流程不变。
+
+**Out of scope:** 不改变七彩石目录/缓存/兜底，不删除底层检测能力，不增加验证缓存、轮询或新接口；未经确认不创建分支、commit、push 或 MR。
+
+**Verification:** Provider 能力用例先出现 1 个预期 RED；面板成功/失败链路先出现 2 个预期 RED。最小实现后模型配置标准套件 7 个文件 126/126 GREEN，本地 Hy4 整体失败兜底测试 1/1 GREEN；面板测试同时覆盖探测命令异常不保存且保留表单。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。标准套件首次执行因系统 Python 缺少 `cryptography` 产生环境级级联失败，改用 Codex 工作区自带 Python 后全部通过。
+
+---
+
+# Hy Token Plan 七彩石模型目录 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收；尚未创建分支或提交。
+
+**Size:** S。仅调整 Hy Token Plan 个人版在产品 Provider 适配层的数据来源与空目录过滤；不修改七彩石接口、模型配置协议或其他 Provider 行为。
+
+**Goal:** 七彩石成功时由远端决定 Hy Token Plan 的存在性、说明和模型列表；整体失败时保留本地 Hy4 兜底，并继续使用固定目录交互。
+
+**Design:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-catalog-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-catalog-implementation-plan.md`
+
+- [x] **Developer｜测试先行取消 Hy 成功态本地目录覆盖，过滤空模型 Provider，保留本地 Hy4 兜底和固定选择交互，并完成聚焦回归、类型与差异检查。**
+
+**Acceptance:** 远端 Hy 目录与说明原样进入 LightVela；远端缺失或模型为空时不展示；七彩石整体失败仍由现有 Hook 回退本地 Hy4；无模型发现入口，检测与添加协议不变。
+
+**Out of scope:** 不增加实时刷新、缓存 TTL、轮询、已保存配置迁移、SDK 依赖升级或其他 Provider 行为调整；未经确认不创建分支、commit、push 或 MR。
+
+**Verification:** 新适配用例先出现 2 个预期 RED，分别证明远端目录/说明被本地 Hy4 覆盖以及空目录被错误补回；最小实现后 3 个聚焦测试文件 38/38 GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。
 
 ---
 
