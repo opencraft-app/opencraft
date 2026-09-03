@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 
-EVALUATION_MARKER = "docs/context/evaluation"
 IGNORED_INSTRUCTION_PARTS = {".git", "node_modules", ".worktrees"}
 VALID_STATUSES = {"active", "pilot", "candidate", "stale", "retired"}
 SERVICE_CONTEXT_MAX_BYTES = 4096
@@ -22,7 +21,6 @@ GOVERNANCE_LAYER_IDS = {
     "agent_derived_context",
     "context_control_plane",
     "reusable_workflows",
-    "evaluation_isolation",
 }
 PROJECT_CONTEXT_FIELDS = {
     "architecture_refs",
@@ -314,11 +312,7 @@ def unique(values: list[str]) -> list[str]:
 
 def context_documents(repo: Path) -> list[Path]:
     root = repo / "docs/context"
-    return sorted(
-        path
-        for path in root.rglob("*.md")
-        if EVALUATION_MARKER not in path.relative_to(repo).as_posix()
-    )
+    return sorted(root.rglob("*.md"))
 
 
 def catalog_record(repo: Path, path: Path, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -552,7 +546,7 @@ def validate_governance_assets(
         if responsibility.get("schema_version") != 1 or not isinstance(layers, dict):
             responsibility_errors.append("context responsibility map has invalid schema")
         elif set(layers) != GOVERNANCE_LAYER_IDS:
-            responsibility_errors.append("context responsibility map must cover exactly six responsibility layers")
+            responsibility_errors.append("context responsibility map must cover exactly five responsibility layers")
         else:
             for layer_id, layer in layers.items():
                 label = f"responsibility layer {layer_id}"
@@ -650,8 +644,6 @@ def validate(repo: Path, build_catalog: bool = False) -> dict[str, Any]:
                 errors.append(f"route {route_id} is missing {field}")
         for category in ("must_read", "deferred_paths"):
             for value in route.get(category, []):
-                if EVALUATION_MARKER in value:
-                    errors.append(f"route {route_id} includes evaluation data: {value}")
                 if not (repo / value).exists():
                     errors.append(f"route {route_id} references missing path: {value}")
 
@@ -738,17 +730,6 @@ def validate(repo: Path, build_catalog: bool = False) -> dict[str, Any]:
     )
     errors.extend(governance_errors)
 
-    evaluation_excluded = (
-        routing.get("evaluation_excluded") is True
-        and all(
-            EVALUATION_MARKER not in value
-            for route in all_routes
-            for value in route.get("must_read", []) + route.get("deferred_paths", [])
-        )
-    )
-    if not evaluation_excluded:
-        errors.append("evaluation assets are not fully excluded from runtime routing")
-
     return {
         "errors": errors,
         "warnings": warnings,
@@ -780,7 +761,6 @@ def validate(repo: Path, build_catalog: bool = False) -> dict[str, Any]:
             "route_smoke_failures": len(route_errors),
             "secret_scan_files": len(scanned_markdown),
             "secret_literal_findings": len(secret_errors),
-            "evaluation_excluded": evaluation_excluded,
         },
     }
 

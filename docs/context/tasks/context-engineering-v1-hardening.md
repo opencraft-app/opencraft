@@ -32,7 +32,6 @@ derived: false
 ## requirement_ids / requirement_refs / requirement_excerpt
 
 - `context-engineering-v1-hardening`
-- [Context Engineering V2 初建 Pack](context-engineering-v2-refactor.md)
 - [设计历史与 docs-impact ADR](../../engineering/decisions/ADR-0002-design-history-and-docs-impact.md)
 
 需求摘要：让后续 Agent 先定位当前设计和受影响历史，而不是全仓扫描；让受影响代码与至少一份对应正式设计文档在同一变更中演进。
@@ -107,7 +106,7 @@ python3 -m unittest discover -s .agents/context/tests -v
 
 ## scan_scope / scan_output
 
-- 扫描 `.agents/context/`、`docs/context/`、`docs/engineering/` 和 CI guard 配置；排除 `docs/context/evaluation/`。
+- 扫描 `.agents/context/`、`docs/context/`、`docs/engineering/` 和 CI guard 配置。
 - 只保留 Validator JSON 摘要、失败路径和可定位来源；不内联全仓扫描或评测结果。
 
 ## handoff

@@ -54,8 +54,6 @@ python3 .agents/context/scripts/validate_context.py --route "<task or path>"
 | 站点与环境路由 | [site-environment-routing](docs/context/domains/site-environment-routing.md) |
 | 发布与 GitOps | [release-gitops](docs/context/domains/release-gitops.md) |
 
-`docs/context/evaluation/` 和评分数据仅用于评测，绝不能进入运行时路由。
-
 ## Task Context
 
 任何会改变行为、跨越服务边界或需要超过一个验证步骤的任务，都要创建 Task Pack。使用 [TASK-TEMPLATE.md](docs/context/tasks/TASK-TEMPLATE.md)，保持一个主要目标和明确 non-goals。

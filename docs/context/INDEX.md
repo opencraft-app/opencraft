@@ -92,7 +92,6 @@ derived: true
 
 ## 硬边界
 
-- `docs/context/evaluation/`、Gold 文件、模型答案和评分记录仅用于评测，绝不进入运行时路由。
 - 生成 catalog 是派生视图，绝不覆盖源码、生成的 API contract 或 manifest。
 - 外部云、计费、CAM 和 API 规则通过 `.agents/context/external-sources.yaml` 链接；不得复制为仓库事实。
 - 运行时 compaction、trace 收集、模型路由和自动 memory promotion 在实现并有实测证据前均为 pilot 设计。

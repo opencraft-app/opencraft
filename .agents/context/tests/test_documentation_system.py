@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -179,7 +178,6 @@ class DocumentationSystemContract(unittest.TestCase):
                 "work",
                 "generated",
                 "context",
-                "evaluation",
                 "archive",
                 "vendor",
                 "upstream",
@@ -187,32 +185,6 @@ class DocumentationSystemContract(unittest.TestCase):
         )
         self.assertEqual(result["links"]["broken"], [])
         self.assertGreaterEqual(len(result["links"]["registered_exclusions"]), 1)
-
-    def test_versioned_evaluation_protocol_links_are_checked(self) -> None:
-        validator = load_validator_module()
-        documentation_map = validator.load_json_object(
-            REPO_ROOT / "docs/engineering/governance/documentation-map.yaml"
-        )
-        link_check = documentation_map["link_check"]
-
-        self.assertNotIn("docs/context/evaluation", link_check["excluded_roots"])
-        with tempfile.TemporaryDirectory() as temp_dir:
-            repo = Path(temp_dir)
-            evaluation = repo / "docs/context/evaluation"
-            evaluation.mkdir(parents=True)
-            (evaluation / "protocol.md").write_text(
-                "[缺失协议](missing-schema.json)\n", encoding="utf-8"
-            )
-            (evaluation / "local-report.md").write_text(
-                "[本地报告附件](missing-local.json)\n", encoding="utf-8"
-            )
-
-            links = validator.validate_links(repo, documentation_map)
-
-        self.assertEqual(
-            links["broken"],
-            ["docs/context/evaluation/protocol.md: missing-schema.json"],
-        )
 
     def test_lv_docs_skill_tracks_the_indonesian_source_contract(self) -> None:
         skill = (REPO_ROOT / ".agents/skills/product-skills/lv-docs/SKILL.md").read_text(

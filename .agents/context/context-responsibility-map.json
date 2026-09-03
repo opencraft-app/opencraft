@@ -48,15 +48,6 @@
       "authority": "workflow",
       "source_links": [".agents/skills/context-audit/SKILL.md"],
       "validators": ["python3 -m unittest discover -s .agents/skills/context-audit/tests -v"]
-    },
-    "evaluation_isolation": {
-      "status": "implemented",
-      "locations": ["docs/context/evaluation/"],
-      "entrypoints": ["docs/context/evaluation/README.md"],
-      "owner_refs": ["docs/engineering/governance/documentation-map.yaml"],
-      "authority": "non_runtime",
-      "source_links": ["docs/context/evaluation/README.md"],
-      "validators": ["python3 .agents/context/scripts/validate_context.py --repo . --format json"]
     }
   }
 }

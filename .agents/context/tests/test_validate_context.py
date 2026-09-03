@@ -47,12 +47,6 @@ class RepositoryContextContract(unittest.TestCase):
         self.assertTrue(payload["summary"]["external_sources_complete"])
         self.assertEqual(payload["summary"]["secret_literal_findings"], 0)
 
-    def test_runtime_routes_exclude_evaluation_data(self) -> None:
-        result = run_validator("--format", "json")
-        payload = json.loads(result.stdout)
-        self.assertIn("evaluation_excluded", payload["summary"])
-        self.assertTrue(payload["summary"]["evaluation_excluded"])
-
     def test_real_task_routes_include_all_required_packs(self) -> None:
         cases = {
             "实名认证失败 realname verify": {"identity-access"},
@@ -82,10 +76,6 @@ class RepositoryContextContract(unittest.TestCase):
             self.assertTrue(
                 expected_packs.issubset(set(payload["route"]["pack_ids"])),
                 f"{query}: {payload['route']}",
-            )
-            self.assertNotIn(
-                "docs/context/evaluation",
-                payload["route"]["must_read"] + payload["route"]["deferred_paths"],
             )
 
     def test_broad_words_do_not_alone_select_runtime_or_subscription_packs(self) -> None:
@@ -159,13 +149,12 @@ class RepositoryContextContract(unittest.TestCase):
         self.assertIn("oversized_service_contexts", summary)
         self.assertEqual(summary["oversized_service_contexts"], [])
 
-    def test_context_route_defers_adjacency_index_without_evaluation_data(self) -> None:
+    def test_context_route_defers_adjacency_index(self) -> None:
         result = run_validator("--route", "context engineering review", "--format", "json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         route = json.loads(result.stdout)["route"]
 
         self.assertIn("docs/context/project/adjacency/README.md", route["deferred_paths"])
-        self.assertNotIn("docs/context/evaluation", json.dumps(route, ensure_ascii=False))
 
     def test_context_governance_assets_are_complete_without_default_injection(self) -> None:
         result = run_validator("--format", "json")

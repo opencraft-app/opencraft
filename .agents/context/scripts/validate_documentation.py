@@ -76,7 +76,6 @@ DOCUMENTATION_CLASSES = {
     "work",
     "generated",
     "context",
-    "evaluation",
     "archive",
     "vendor",
     "upstream",

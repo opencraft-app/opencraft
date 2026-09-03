@@ -182,16 +182,6 @@ frontend/.workflow/
 .playwright-mcp/
 docs/harness/
 
-# 上下文工程实验本地产物：模型结果、报告、审计与运行回执不入库。
-# 数据集、冻结清单、来源记录、Schema、脚本和运行说明仍保留追踪。
-/docs/context/evaluation/runs/
-/docs/context/evaluation/*-results.jsonl
-/docs/context/evaluation/execution-events.jsonl
-/docs/context/evaluation/*-report.md
-/docs/context/evaluation/*-audit.md
-/docs/context/evaluation/case-studies.md
-/docs/context/evaluation/*-experiment-summary.html
-
 # teamai（ClawPro）本地状态目录与注入的工具 hooks —— 机器本地配置，不入库
 .teamai/
 .codebuddy/settings.json

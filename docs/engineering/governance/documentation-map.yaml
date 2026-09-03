@@ -6,13 +6,11 @@
     "work": "方案、计划、交接和会议等阶段性工作产物。",
     "generated": "由构建或内容管线生成，不直接编辑。",
     "context": "从正式知识派生、供 Agent 路由消费的短 Context Pack。",
-    "evaluation": "评测数据、模型输出与评分证据，禁止进入运行时路由。",
     "archive": "仅供追溯、默认不代表当前事实。",
     "vendor": "第三方 vendored 内容，由上游负责正文。",
     "upstream": "以 subtree 或固定上游谱系维护的项目内容。"
   },
   "rules": [
-    {"class": "evaluation", "patterns": ["docs/context/evaluation/**"]},
     {"class": "generated", "patterns": ["frontend/src/.fumadocs-content/**", "**/generated/**"]},
     {"class": "vendor", "patterns": ["**/vendor/**", "third_party/**"]},
     {"class": "archive", "patterns": ["docs/archive/**", "docs/**/archive/**", "docs/international-doc-stash/**"]},
@@ -32,12 +30,7 @@
       "docs/proposals",
       "docs/handover"
     ],
-    "excluded_patterns": [
-      "docs/context/evaluation/runs/**",
-      "docs/context/evaluation/*-report.md",
-      "docs/context/evaluation/*-audit.md",
-      "docs/context/evaluation/case-studies.md"
-    ],
+    "excluded_patterns": [],
     "excluded_links": [
       {
         "source": "new-api/README.md",

@@ -1,6 +1,5 @@
 {
   "version": 3,
-  "evaluation_excluded": true,
   "default": {
     "must_read": [],
     "deferred_paths": [

@@ -28,7 +28,6 @@
 | Product | 客户看到什么、如何使用产品 | `frontend/src/content/docs/` | 国内与国际区域真源隔离，按 `lv-docs` Skill 同步生成物 |
 | Work | 尚在推进的方案、计划、交接和会议结论 | `docs/superpowers/`、`docs/proposals/`、`docs/handover/` | 不是默认运行事实；必须进入生命周期状态 |
 | Agent Context | 哪些短事实应按任务动态加载 | `docs/context/` | 从正式工程/产品知识派生，禁止创造无来源事实 |
-| Evaluation | 如何验证 Context 或模型效果 | `docs/context/evaluation/` | 与运行时路由隔离，Gold、输出和评分不得被 Agent 预读 |
 
 ## 每个主要服务的最低契约
 

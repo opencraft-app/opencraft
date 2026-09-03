@@ -54,6 +54,5 @@
     "upstream-subtrees": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md"],
     "context-governance": [".agents/context", "docs/context/23-rules-matrix.md", "docs/context/project/adjacency/README.md", "docs/context/project/overview.md"]
   },
-  "external": [".agents/context/external-sources.yaml"],
-  "evaluation_only": ["docs/context/evaluation"]
+  "external": [".agents/context/external-sources.yaml"]
 }
