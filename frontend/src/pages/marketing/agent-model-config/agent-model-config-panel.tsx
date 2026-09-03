@@ -56,6 +56,7 @@ import {
 type ProviderCategory = "coding_plan" | "api" | "custom";
 type ConfigurePurpose = "primary" | "fallback" | "idle";
 type ModelOption = { id: string; name: string; source: "live" | "catalog" };
+type ModelOptionsOrigin = ModelOption["source"];
 type ConfiguredModelListItem = HermesConfiguredModel & {
   catalogName?: string;
   catalogOnly?: true;
@@ -231,6 +232,10 @@ function displayError(message: string, localizedFallback: string) {
   return message;
 }
 
+function supportsModelRequestProbe(apiMode: string) {
+  return apiMode === "chat_completions" || apiMode === "anthropic_messages";
+}
+
 function ModelConfigLoading() {
   const t = useT();
   return (
@@ -270,6 +275,7 @@ export function AgentModelConfigPanel({
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customApiMode, setCustomApiMode] = useState("chat_completions");
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const modelOptionsOriginRef = useRef<ModelOptionsOrigin>("catalog");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [purpose, setPurpose] = useState<ConfigurePurpose>("primary");
   const [connectionResult, setConnectionResult] = useState<HermesConnectionProbeResult | null>(null);
@@ -297,6 +303,9 @@ export function AgentModelConfigPanel({
       ? []
       : (activeProvider?.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" as const })),
     [activeProvider, category],
+  );
+  const catalogModelFingerprint = JSON.stringify(
+    catalogModelOptions.map(({ id, name }) => [id, name]),
   );
   const availableModelOptions = activeProvider?.fixedModelSelection ? fixedModelOptions : modelOptions;
   const effectiveSelectedModelId = activeProvider?.fixedModelSelection
@@ -337,6 +346,7 @@ export function AgentModelConfigPanel({
 
   const restoreCatalogModelOptions = () => {
     probeUiRevision.current += 1;
+    modelOptionsOriginRef.current = "catalog";
     setModelOptions(catalogModelOptions);
     setSelectedModelId(catalogModelOptions[0]?.id ?? "");
     setConnectionResult(null);
@@ -363,6 +373,7 @@ export function AgentModelConfigPanel({
     : "";
   const providerFingerprintRef = useRef(providerFingerprint);
   const previousProviderFingerprintRef = useRef(providerFingerprint);
+  const previousCatalogModelFingerprintRef = useRef(catalogModelFingerprint);
   providerFingerprintRef.current = providerFingerprint;
   const credentialScope = category === "custom" ? CUSTOM_CREDENTIAL_SCOPE : providerFingerprint;
   const previousCredentialScopeRef = useRef(credentialScope);
@@ -370,7 +381,10 @@ export function AgentModelConfigPanel({
     ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
   const selectedModelIsPrimary = sameModel(controller.snapshot?.primary, selectedModel);
-  const credentialMatchesProvider = !!credentialScope && apiKeyTarget === credentialScope;
+  const customCredentialIsUnbound = category === "custom" && apiKeyTarget === CUSTOM_CREDENTIAL_SCOPE;
+  const credentialMatchesProvider = category === "custom"
+    ? customCredentialIsUnbound || (!!providerFingerprint && apiKeyTarget === providerFingerprint)
+    : !!credentialScope && apiKeyTarget === credentialScope;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
   const snapshot = controller.snapshot ?? { primary: null, fallbacks: [], configuredModels: [] };
@@ -412,16 +426,27 @@ export function AgentModelConfigPanel({
   }, [credentialScope]);
 
   useEffect(() => {
-    if (previousProviderFingerprintRef.current === providerFingerprint) return;
+    const providerChanged = previousProviderFingerprintRef.current !== providerFingerprint;
+    const catalogChanged = previousCatalogModelFingerprintRef.current !== catalogModelFingerprint;
+    if (!providerChanged && !catalogChanged) return;
     previousProviderFingerprintRef.current = providerFingerprint;
+    previousCatalogModelFingerprintRef.current = catalogModelFingerprint;
     providerFingerprintRef.current = providerFingerprint;
+    if (!providerChanged && modelOptionsOriginRef.current === "live") return;
     probeUiRevision.current += 1;
     controller.cancelProbe();
     controller.clearOperationError();
+    modelOptionsOriginRef.current = "catalog";
     setModelOptions(catalogModelOptions);
     setSelectedModelId(catalogModelOptions[0]?.id ?? "");
     setConnectionResult(null);
-  }, [catalogModelOptions, controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
+  }, [
+    catalogModelFingerprint,
+    catalogModelOptions,
+    controller.cancelProbe,
+    controller.clearOperationError,
+    providerFingerprint,
+  ]);
 
   useEffect(() => {
     setPurpose(selectedModelIsPrimary ? "primary" : controller.snapshot?.primary ? "idle" : "primary");
@@ -437,6 +462,10 @@ export function AgentModelConfigPanel({
     restoreCatalogModelOptions();
   };
 
+  const bindCustomCredentialToProvider = () => {
+    if (customCredentialIsUnbound) setApiKeyTarget(providerFingerprint);
+  };
+
   const handleProbe = async () => {
     if (!providerDraft || !canProbe) return;
     const requestFingerprint = providerFingerprint;
@@ -444,7 +473,8 @@ export function AgentModelConfigPanel({
     setConnectionResult(null);
     controller.clearOperationError();
     // 探测结果整体替换当前列表，不与七彩石目录合并，也不用目录补空。
-    const applyModelOptions = (nextOptions: ModelOption[]) => {
+    const applyModelOptions = (nextOptions: ModelOption[], origin: ModelOptionsOrigin) => {
+      modelOptionsOriginRef.current = origin;
       setModelOptions(nextOptions);
       setSelectedModelId(nextOptions[0]?.id ?? "");
       if (nextOptions.length > 0) {
@@ -455,9 +485,10 @@ export function AgentModelConfigPanel({
       }
     };
     if (activeProvider?.discoveryStrategy === "catalog") {
-      applyModelOptions(catalogModelOptions);
+      applyModelOptions(catalogModelOptions, "catalog");
       return;
     }
+    bindCustomCredentialToProvider();
     const probeResult = await controller.probe({
       apiKey: apiKey.trim(),
       baseUrl: providerDraft.baseUrl,
@@ -473,12 +504,13 @@ export function AgentModelConfigPanel({
       toast.error(t("未获取到可用模型，请检查API Key是否正确或有效"));
       return;
     }
-    applyModelOptions(probeResult.models.map((id) => ({ id, name: id, source: "live" as const })));
+    applyModelOptions(probeResult.models.map((id) => ({ id, name: id, source: "live" as const })), "live");
   };
 
   const handleAdd = async () => {
     const normalizedApiKey = apiKey.trim();
     if (!selectedModel || !normalizedApiKey || !credentialMatchesProvider) return;
+    bindCustomCredentialToProvider();
     const nextSnapshot = await controller.add({
       apiKey: normalizedApiKey,
       model: selectedModel,
@@ -498,13 +530,21 @@ export function AgentModelConfigPanel({
 
   const handleConnectivityTest = async () => {
     if (!selectedModel || !apiKey.trim() || !credentialMatchesProvider) return;
+    bindCustomCredentialToProvider();
     const requestFingerprint = providerFingerprint;
     const revision = probeUiRevision.current;
+    const selectedCustomModelWasDiscovered = category === "custom"
+      && modelOptions.some((modelOption) => modelOption.id === selectedModelId);
     setConnectionResult(null);
     const result = await controller.testConnection({
       apiKey: apiKey.trim(),
       model: selectedModel,
-      strategy: activeProvider?.discoveryStrategy === "catalog" ? "model_request" : "model_list",
+      strategy: activeProvider?.discoveryStrategy === "catalog"
+        || (category === "custom"
+          && !selectedCustomModelWasDiscovered
+          && supportsModelRequestProbe(providerDraft?.apiMode ?? ""))
+        ? "model_request"
+        : "model_list",
     });
     if (result && revision === probeUiRevision.current && requestFingerprint === providerFingerprintRef.current) {
       setConnectionResult(result);

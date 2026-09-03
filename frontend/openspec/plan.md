@@ -1,3 +1,29 @@
+# MR !3566 CR Follow-up Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认 commit；尚未 push 或更新 MR。
+
+**Size:** S。仅修复模型配置面板的目录同步、凭据端点绑定与手填模型检测策略；不新增 UI、文案或 Hermes 协议。
+
+**Goal:** 修复 MR !3566 中三个评审问题，同时保持实时探测结果、自定义草稿编辑体验和预置供应商行为不变。
+
+**Decision:**
+- 当当前列表仍来自产品目录时，同步同一 Provider 的异步目录更新；已有实时探测结果时不覆盖。
+- 自定义 API Key 首次发起网络请求时绑定当前端点指纹；端点变化后保留输入但禁止复用，重新编辑 Key 才授权新端点。
+- 自定义手填模型在 Chat Completions / Anthropic Messages 模式下使用 `model_request` 检测；探测所得模型及暂不支持模型请求的模式继续使用 `model_list`。
+
+**Files:**
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] **Task 1：测试先行覆盖同 Provider 异步目录更新，且不覆盖已有实时探测结果。**
+- [x] **Task 2：测试先行绑定自定义凭据到首次请求端点，端点变化后必须重新编辑 Key 才能继续。**
+- [x] **Task 3：测试先行让支持的手填模型通过 `model_request` 检测，并保持发现模型的原策略。**
+- [x] **Task 4：运行模型配置定向回归、`pnpm check` 与 `git diff --check`，展示提交范围等待确认。**
+
+**Verification:** 3 条缺陷回归断言先按预期 RED，最小实现后新增 6 条用例全部通过；模型配置、Provider Hook 与 SDK 边界共 158 passed / 1 skipped。`pnpm check` 通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0，49 个告警与 id-ID 174 条待翻译均为既有基线；`git diff --check` 通过。
+
+---
+
 # 模型配置范围收窄至 API 与自定义分类 Implementation Plan
 
 **Status:** 已按新范围完成并通过门禁，等待用户确认；不自动 commit、push。

@@ -906,6 +906,59 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions.some((action) => action.type === "probe")).toBe(false);
   });
 
+  it("syncs an asynchronously refreshed catalog when the current models still come from the catalog", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
+    const view = render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
+    );
+    await screen.findByText("暂未配置模型");
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Catalog First");
+
+    view.rerender(
+      <AgentModelConfigPanel
+        botId="bot-1"
+        execDebugCommand={remote.execDebugCommand}
+        providers={[{
+          ...catalogPlan,
+          catalogModels: [{ id: "catalog-refreshed", name: "Catalog Refreshed" }],
+        }]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Catalog Refreshed");
+    });
+    expect(screen.queryByText("Catalog First")).not.toBeInTheDocument();
+  });
+
+  it("does not overwrite live probe results when the product catalog refreshes", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["live-only-model"]);
+    const view = render(
+      <AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={[catalogPlan]} />,
+    );
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model");
+    });
+
+    view.rerender(
+      <AgentModelConfigPanel
+        botId="bot-1"
+        execDebugCommand={remote.execDebugCommand}
+        providers={[{
+          ...catalogPlan,
+          catalogModels: [{ id: "catalog-refreshed", name: "Catalog Refreshed" }],
+        }]}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model");
+    expect(screen.queryByText("Catalog Refreshed")).not.toBeInTheDocument();
+  });
+
   it("shows the first Coding Plan catalog model without model discovery", async () => {
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
     render(
@@ -1487,6 +1540,47 @@ describe("AgentModelConfigPanel", () => {
     }));
   });
 
+  it("tests a hand-written custom model with a model request when the API mode supports it", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
+    renderPanel(remote);
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    await userEvent.type(screen.getByLabelText("Provider 名称"), "Private Relay");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
+    await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
+    await userEvent.type(screen.getByLabelText("模型"), "relay-gpt-4o");
+    await userEvent.click(screen.getByRole("button", { name: "检测模型状态" }));
+
+    expect(await screen.findByRole("dialog", { name: "模型可用性检测通过" })).toBeInTheDocument();
+    expect(remote.actions).toContainEqual(expect.objectContaining({
+      type: "connectivityProbe",
+      strategy: "model_request",
+      model: expect.objectContaining({ id: "relay-gpt-4o" }),
+    }));
+  });
+
+  it("falls back to model-list validation when a hand-written model does not support model requests", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
+    renderPanel(remote);
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    await userEvent.type(screen.getByLabelText("Provider 名称"), "Codex Relay");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://codex-relay.example.com/v1");
+    await selectOption("兼容协议", "OpenAI Responses");
+    await userEvent.type(screen.getByLabelText("API Key"), "codex-relay-secret");
+    await userEvent.type(screen.getByLabelText("模型"), "codex-mini");
+    await userEvent.click(screen.getByRole("button", { name: "检测模型状态" }));
+
+    expect(await screen.findByRole("dialog", { name: "模型可用性检测通过" })).toBeInTheDocument();
+    expect(remote.actions).toContainEqual(expect.objectContaining({
+      type: "connectivityProbe",
+      strategy: "model_list",
+      model: expect.objectContaining({ id: "codex-mini", apiMode: "codex_responses" }),
+    }));
+  });
+
   it("still offers discovered models as suggestions for a custom Provider", async () => {
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["relay-model-a", "relay-model-b"]);
     renderPanel(remote);
@@ -1507,6 +1601,27 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions).toContainEqual(expect.objectContaining({
       type: "add",
       discoverModels: true,
+      model: expect.objectContaining({ id: "relay-model-a" }),
+    }));
+  });
+
+  it("keeps model-list validation for a discovered custom model", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["relay-model-a"]);
+    renderPanel(remote);
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    await userEvent.type(screen.getByLabelText("Provider 名称"), "Private Relay");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
+    await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveValue("relay-model-a"));
+    await userEvent.click(screen.getByRole("button", { name: "检测模型状态" }));
+
+    expect(await screen.findByRole("dialog", { name: "模型可用性检测通过" })).toBeInTheDocument();
+    expect(remote.actions).toContainEqual(expect.objectContaining({
+      type: "connectivityProbe",
+      strategy: "model_list",
       model: expect.objectContaining({ id: "relay-model-a" }),
     }));
   });
@@ -1532,6 +1647,29 @@ describe("AgentModelConfigPanel", () => {
     const probeAction = remote.actions.find((item): item is Extract<HermesModelConfigAction, { type: "probe" }> => item.type === "probe");
     expect(probeAction?.baseUrl).toBe("https://relay.example.com/v1/v2");
     expect(probeAction?.apiMode).toBe("anthropic_messages");
+  });
+
+  it("requires re-authorizing a custom credential after its bound endpoint changes", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["custom-model"]);
+    renderPanel(remote);
+    await screen.findByText("暂未配置模型");
+
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    await userEvent.type(screen.getByLabelText("Provider 名称"), "Private Relay");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://relay-a.example.com/v1");
+    await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveValue("custom-model"));
+
+    await userEvent.clear(screen.getByLabelText("Base URL"));
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://relay-b.example.com/v1");
+
+    expect(screen.getByLabelText("API Key")).toHaveValue("relay-secret");
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "添加模型" })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText("API Key"), "-for-relay-b");
+    expect(screen.getByRole("button", { name: "获取可用模型" })).toBeEnabled();
   });
 
   it("still drops the credential when the preset Provider or category changes", async () => {
