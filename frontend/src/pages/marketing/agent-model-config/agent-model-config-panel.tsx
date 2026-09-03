@@ -363,7 +363,6 @@ export function AgentModelConfigPanel({
     () => groupConfiguredModelsByProvider(configuredModels, providers),
     [configuredModels, providers],
   );
-  const configuredModelCount = configuredProviderGroups.reduce((count, group) => count + group.models.length, 0);
   const primaryConfiguredProviderKey = snapshot.primary
     ? getConfiguredProviderGroupKey(snapshot.primary)
     : null;
@@ -541,9 +540,6 @@ export function AgentModelConfigPanel({
               <CircleHelp className="size-3.5 text-black/35" aria-hidden="true" />
             </ModelActionTooltip>
           </div>
-          <span className="shrink-0 text-xs font-medium text-black/35">
-            {t("共 {{count}} 个", { count: configuredModelCount })}
-          </span>
         </div>
 
         {controller.operationError && ["assign-primary", "assign-fallback", "remove-fallback"].includes(controller.operationErrorOperation ?? "") ? (
@@ -567,7 +563,10 @@ export function AgentModelConfigPanel({
           <ul className="divide-y divide-black/[0.06]">
             {configuredProviderGroups.map((group, groupIndex) => {
               const expanded = effectiveExpandedConfiguredProviderKey === group.key;
-              const groupIsPrimary = group.models.some((model) => sameModel(snapshot.primary, model));
+              const primaryModel = group.models.find((model) => sameModel(snapshot.primary, model)) ?? null;
+              const fallbackModels = group.models.filter((model) => (
+                snapshot.fallbacks.some((candidate) => sameModel(candidate, model))
+              ));
               const retainedSelectedModel = group.models.find(
                 (model) => getHermesModelIdentity(model) === selectedConfiguredModelByProvider[group.key],
               );
@@ -595,8 +594,28 @@ export function AgentModelConfigPanel({
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold text-black/85">
                       {group.providerName}
                     </span>
-                    {groupIsPrimary ? <Badge variant="success">{t("当前生效")}</Badge> : null}
-                    <span className="shrink-0 text-xs text-black/35">{group.models.length}</span>
+                    {primaryModel || fallbackModels.length > 0 ? (
+                      <span className="flex max-w-[60%] shrink-0 flex-col items-end gap-1">
+                        {primaryModel ? (
+                          <Badge
+                            variant="success"
+                            className="justify-end whitespace-normal break-all text-right leading-tight"
+                          >
+                            {t("主模型：{{model}}", { model: displayConfiguredModelName(primaryModel) })}
+                          </Badge>
+                        ) : null}
+                        {fallbackModels.length > 0 ? (
+                          <Badge
+                            variant="warning"
+                            className="justify-end whitespace-normal break-all text-right leading-tight"
+                          >
+                            {t("备用模型：{{models}}", {
+                              models: fallbackModels.map(displayConfiguredModelName).join("、"),
+                            })}
+                          </Badge>
+                        ) : null}
+                      </span>
+                    ) : null}
                   </button>
 
                   {expanded ? (

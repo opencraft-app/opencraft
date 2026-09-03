@@ -10,7 +10,7 @@
 
 **Design:** `openspec/changes/2026-09-03-configured-model-provider-switch-design.md`
 
-**Status:** Provider 分组与行内操作布局均已按 TDD 完成，等待用户验收。
+**Status:** Provider 分组、目录模型切换、行内操作布局、数量移除和带模型名称的 Provider 角色标签均已按 TDD 完成，等待提交确认。
 
 ## 全局约束
 
@@ -19,6 +19,7 @@
 - 保留备用模型、取消备用、删除、主模型不可删除、空态和错误态。
 - 所有新增可见文案使用 `t(...)`，按钮文案固定为“设为主模型”。
 - 不引入新依赖，不为单处逻辑建立跨模块抽象。
+- Provider 标题以“主模型：模型名称”“备用模型：模型名称”聚合展示组内角色；同组同时承担主备角色时分两行展示，主模型在上；多个备用模型名称合并到备用模型标签中。
 
 ## Task 1：用失败测试锁定 Provider 分组和跨 Provider 切换
 
@@ -173,6 +174,41 @@ git diff --check
 - `pnpm build:cn`：94/94 静态页；`pnpm build:global`：592/592 静态页。
 - 浏览器：global 静态 `/agents/models/` 可达，1280px 与 390px 均无横向溢出、无新增 console error；本地账号没有 Agent，页面停留在创建入口。
 - `git diff --check`：通过。
+
+## Task 10：移除误导性的模型数量
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+
+- [x] 增加失败断言：标题区不存在“共 N 个”，Provider 展开按钮的可访问名称不包含分组模型数量。
+- [x] 运行面板专项测试，确认旧实现因顶部总数和 Provider 行数量仍存在而按预期 RED。
+- [x] 删除 `configuredModelCount` 派生值、标题右侧总数和 Provider 行右侧数量；保留当前生效徽标、展开状态与列表内容。
+- [x] 运行面板专项、模型配置完整测试、`pnpm check` 和 `git diff --check`。
+- [x] 刷新本地 Mock 预览，确认标题和 Provider 行均无数量，模型切换与状态徽标保持不变。
+
+## Task 11：将 Provider 的“当前生效”改为主备角色标签
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Verify: `src/i18n/generated/*.json`
+
+- [x] 先调整面板测试：主模型 Provider 显示带模型名称的“主模型”标签，备用模型 Provider 显示带模型名称的“备用模型”标签；同一 Provider 同时承载主、备模型时分两行显示且主模型在上，多个备用模型合并显示；断言 Provider 标题不再出现“当前生效”。
+- [x] 运行面板专项测试，确认现有实现因仍渲染“当前生效”而按预期 RED。
+- [x] 在 Provider 分组渲染中分别派生主模型、备用模型列表，复用目录展示名并按主上备下渲染 Badge；保持默认展开仍由主模型身份决定。
+- [x] 运行 i18n 提取并补齐所有支持语言的带模型名标签，再运行面板专项、模型配置完整测试和 `pnpm i18n:check`。
+- [x] 刷新本地 Mock 预览，检查单角色与双角色标签、桌面和窄屏换行，以及“当前生效”已消失。
+
+增量验证记录：
+
+- RED：面板 4 项因旧实现仍显示“当前生效”、未显示带模型名称的主备标签而按预期失败，其余 30 项通过。
+- GREEN：面板 34/34；使用隔离的 `cryptography` 测试依赖环境后，模型配置目录 132/132，另 1 条按环境跳过。
+- `pnpm i18n:extract` 生成 2 个带模型名称的新词条，en-US、zh-Hant、id-ID、es、ja-JP、ko-KR 均已补齐；`pnpm i18n:check` 通过。
+- `pnpm check`：TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0。
+- 浏览器：同一 Provider 显示“主模型：Hy4 Preview”和“备用模型：Hy3”两行，主模型在上；390px 下页面宽度与视口均为 390px，无横向溢出。
 
 ## Task 4：把“设为主模型”收回模型行操作区
 

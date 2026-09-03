@@ -70,6 +70,11 @@ const secondAlphaModel: HermesConfiguredModel = {
   routeBaseUrl: "HTTPS://ALPHA.EXAMPLE.COM/v1/",
 };
 
+const thirdAlphaModel: HermesConfiguredModel = {
+  ...primaryModel,
+  id: "model-alpha-3",
+};
+
 const idleModel: HermesConfiguredModel = {
   id: "model-idle",
   providerKey: "lightvela-gamma",
@@ -322,7 +327,12 @@ describe("AgentModelConfigPanel", () => {
     const alphaTrigger = await screen.findByRole("button", { name: /Alpha API/ });
     const betaTrigger = screen.getByRole("button", { name: /Beta API/ });
     expect(alphaTrigger).toHaveAttribute("aria-expanded", "true");
-    expect(alphaTrigger.closest("li")).toHaveTextContent("当前生效");
+    expect(alphaTrigger).toHaveAccessibleName("Alpha API主模型：model-primary");
+    expect(betaTrigger).toHaveAccessibleName("Beta API备用模型：model-fallback");
+    expect(screen.queryByText(/^共 \d+ 个$/)).not.toBeInTheDocument();
+    expect(within(alphaTrigger).getByText("主模型：model-primary")).toBeInTheDocument();
+    expect(within(betaTrigger).getByText("备用模型：model-fallback")).toBeInTheDocument();
+    expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
     expect(betaTrigger).toHaveAttribute("aria-expanded", "false");
 
     await userEvent.click(betaTrigger);
@@ -332,7 +342,14 @@ describe("AgentModelConfigPanel", () => {
     const secondBetaRow = screen.getByText("model-beta-2").closest("li") as HTMLElement;
     await userEvent.click(within(secondBetaRow).getByRole("button", { name: "设为主模型" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: /Beta API/ }).closest("li")).toHaveTextContent("当前生效"));
+    const updatedBetaTrigger = await screen.findByRole("button", {
+      name: "Beta API主模型：model-beta-2备用模型：model-fallback",
+    });
+    const primaryProviderLabel = within(updatedBetaTrigger).getByText("主模型：model-beta-2");
+    const fallbackProviderLabel = within(updatedBetaTrigger).getByText("备用模型：model-fallback");
+    expect(primaryProviderLabel.compareDocumentPosition(fallbackProviderLabel))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(primaryProviderLabel.parentElement).toHaveClass("flex-col");
     expect(within(screen.getByRole("group", { name: "Beta API 已配置模型" })).getByText("model-beta-2").closest("li")).toHaveTextContent("主模型");
     expect(remote.actions.filter((action) => action.type === "assign")).toEqual([
       expect.objectContaining({
@@ -350,12 +367,19 @@ describe("AgentModelConfigPanel", () => {
   it("keeps models with the same Provider identity in one radio group", async () => {
     const remote = createRemote({
       primary: primaryModel,
-      fallbacks: [],
-      configuredModels: [primaryModel, secondAlphaModel],
+      fallbacks: [secondAlphaModel, thirdAlphaModel],
+      configuredModels: [primaryModel, secondAlphaModel, thirdAlphaModel],
     });
     renderPanel(remote, true);
 
-    expect(await screen.findAllByRole("button", { name: /Alpha API/ })).toHaveLength(1);
+    const alphaTrigger = await screen.findByRole("button", {
+      name: "Alpha API主模型：model-primary备用模型：model-alpha-2、model-alpha-3",
+    });
+    const primaryProviderLabel = within(alphaTrigger).getByText("主模型：model-primary");
+    const fallbackProviderLabel = within(alphaTrigger).getByText("备用模型：model-alpha-2、model-alpha-3");
+    expect(primaryProviderLabel.compareDocumentPosition(fallbackProviderLabel))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(primaryProviderLabel.parentElement).toHaveClass("flex-col");
     const alphaGroup = screen.getByRole("group", { name: "Alpha API 已配置模型" });
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     const secondAlphaRow = screen.getByText("model-alpha-2").closest("li") as HTMLElement;
@@ -384,7 +408,7 @@ describe("AgentModelConfigPanel", () => {
     });
     renderPanel(remote, false, [fixedHyProvider]);
 
-    expect(await screen.findByText("共 2 个")).toBeInTheDocument();
+    expect(await screen.findAllByText("Hy4 Preview")).toHaveLength(2);
     const providerGroup = screen.getByRole("group", {
       name: `${fixedHyProvider.providerName} 已配置模型`,
     });
@@ -432,7 +456,9 @@ describe("AgentModelConfigPanel", () => {
     });
     renderPanel(remote, false, [fixedHyProvider]);
 
-    expect(await screen.findByText("共 1 个")).toBeInTheDocument();
+    expect(await screen.findByRole("button", {
+      name: `${fixedHyProvider.providerName}主模型：hy4-preview`,
+    })).toBeInTheDocument();
     expect(screen.queryByText("hy-next")).not.toBeInTheDocument();
   });
 
