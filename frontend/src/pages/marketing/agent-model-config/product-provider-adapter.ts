@@ -86,6 +86,7 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
         isCodingPlan || CATALOG_DISCOVERY_PROVIDERS.has(providerId.toLowerCase())
           ? "catalog"
           : "live",
+      ...(isCodingPlan ? { fixedModelSelection: true } : {}),
       supportsLiveModelRefresh: providerSupportsLiveModelRefresh(providerKey),
       description: toPlainText(readString(provider.description)) || undefined,
       apiKeyUrl: readString(provider.api_key_url).trim() || undefined,

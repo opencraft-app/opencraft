@@ -115,10 +115,12 @@ const providers: [ModelProviderOption, ModelProviderOption] = [
   },
 ];
 
+/** `api` 分类的目录型供应商：Coding Plan 由 fixedModelSelection 接管，不在本组用例范围内。 */
 const catalogPlan: ModelProviderOption = {
-  ...providers[1],
+  ...providers[0],
   providerKey: "catalog-plan",
   providerName: "Catalog Plan",
+  apiKeyUrl: undefined,
   catalogModels: [
     { id: "catalog-first", name: "Catalog First" },
     { id: "catalog-second", name: "Catalog Second" },
@@ -128,7 +130,7 @@ const catalogPlan: ModelProviderOption = {
 const tencentPlan: ModelProviderOption = {
   ...catalogPlan,
   providerKey: "tencent-plan",
-  providerName: "Tencent Token Plan",
+  providerName: "Tencent TokenHub",
   supportsLiveModelRefresh: false,
 };
 
@@ -139,6 +141,7 @@ const fixedHyProvider: ModelProviderOption = {
   baseUrl: "https://api.lkeap.cloud.tencent.com/plan/v3",
   apiMode: "chat_completions",
   discoveryStrategy: "catalog",
+  fixedModelSelection: true,
   supportsLiveModelRefresh: false,
   catalogModels: [
     { id: "hy4-preview", name: "Hy4 Preview" },
@@ -1028,7 +1031,7 @@ describe("AgentModelConfigPanel", () => {
       <AgentModelConfigPanel
         botId="bot-1"
         execDebugCommand={remote.execDebugCommand}
-        providers={[tencentPlan, { ...catalogPlan, category: "api" }]}
+        providers={[tencentPlan, catalogPlan]}
       />,
     );
     await screen.findByText("暂未配置模型");
@@ -1036,7 +1039,7 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Catalog First");
     expect(screen.queryByRole("button", { name: "获取可用模型" })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("tab", { name: "模型 API" }));
+    await selectOption("模型服务商", "Catalog Plan");
     expect(screen.getByRole("button", { name: "获取可用模型" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
@@ -1056,7 +1059,7 @@ describe("AgentModelConfigPanel", () => {
       <AgentModelConfigPanel
         botId="bot-1"
         execDebugCommand={remote.execDebugCommand}
-        providers={[catalogPlan, secondPlan, { ...catalogPlan, providerKey: "catalog-api", category: "api" }]}
+        providers={[catalogPlan, secondPlan]}
       />,
     );
     await screen.findByText("暂未配置模型");
@@ -1070,10 +1073,12 @@ describe("AgentModelConfigPanel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("live-only-model"));
-    await selectOption("Coding Plan 套餐", "Catalog Plan 2");
+    await selectOption("模型服务商", "Catalog Plan 2");
     expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Second Plan Model");
     expect(screen.getByLabelText("API Key")).toHaveValue("");
 
+    await userEvent.click(screen.getByRole("tab", { name: "自定义模型" }));
+    expect(screen.getByLabelText("模型")).toHaveValue("");
     await userEvent.click(screen.getByRole("tab", { name: "模型 API" }));
     expect(screen.getByRole("combobox", { name: "模型" })).toHaveTextContent("Catalog First");
   });
@@ -1544,7 +1549,7 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.getByLabelText("API Key")).toHaveValue("plan-secret");
     expect(screen.getByRole("button", { name: "获取可用模型" })).toBeEnabled();
 
-    await selectOption("Coding Plan 套餐", "Catalog Plan 2");
+    await selectOption("模型服务商", "Catalog Plan 2");
     expect(screen.getByLabelText("API Key")).toHaveValue("");
     expect(screen.getByRole("button", { name: "获取可用模型" })).toBeDisabled();
 

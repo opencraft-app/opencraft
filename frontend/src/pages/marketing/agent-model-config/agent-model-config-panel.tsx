@@ -285,13 +285,27 @@ export function AgentModelConfigPanel({
   const activeProvider = category === "custom"
     ? null
     : providerOptions.find((provider) => provider.providerKey === providerKey) ?? null;
+  const fixedModelOptions = useMemo<ModelOption[]>(
+    () => activeProvider?.fixedModelSelection
+      ? (activeProvider.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" }))
+      : [],
+    [activeProvider],
+  );
+  /** Coding Plan 由 fixedModelSelection 接管；这里只为 `api` 分类预置七彩石目录，自定义分类恒为空。 */
   const catalogModelOptions = useMemo<ModelOption[]>(
-    () => category === "custom"
+    () => category === "custom" || activeProvider?.fixedModelSelection
       ? []
       : (activeProvider?.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" as const })),
     [activeProvider, category],
   );
-  const canRefreshModels = category === "custom" || (activeProvider?.supportsLiveModelRefresh ?? true);
+  const availableModelOptions = activeProvider?.fixedModelSelection ? fixedModelOptions : modelOptions;
+  const effectiveSelectedModelId = activeProvider?.fixedModelSelection
+    ? fixedModelOptions.some((model) => model.id === selectedModelId)
+      ? selectedModelId
+      : fixedModelOptions[0]?.id ?? ""
+    : selectedModelId;
+  const canRefreshModels = !activeProvider?.fixedModelSelection
+    && (category === "custom" || (activeProvider?.supportsLiveModelRefresh ?? true));
 
   const compoundControlClassName = cn(
     MODEL_COMPOUND_CONTROL_BASE_CLASS,
@@ -352,8 +366,8 @@ export function AgentModelConfigPanel({
   providerFingerprintRef.current = providerFingerprint;
   const credentialScope = category === "custom" ? CUSTOM_CREDENTIAL_SCOPE : providerFingerprint;
   const previousCredentialScopeRef = useRef(credentialScope);
-  const selectedModel = providerDraft && selectedModelId
-    ? { ...providerDraft, id: selectedModelId, keyEnv: "" }
+  const selectedModel = providerDraft && effectiveSelectedModelId
+    ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
   const selectedModelIsPrimary = sameModel(controller.snapshot?.primary, selectedModel);
   const credentialMatchesProvider = !!credentialScope && apiKeyTarget === credentialScope;
@@ -962,8 +976,8 @@ export function AgentModelConfigPanel({
                 </>
               ) : (
                 <Select
-                  value={selectedModelId}
-                  disabled={busy || modelOptions.length === 0}
+                  value={effectiveSelectedModelId}
+                  disabled={busy || availableModelOptions.length === 0}
                   onValueChange={(value) => {
                     setSelectedModelId(value);
                     setConnectionResult(null);
@@ -977,14 +991,14 @@ export function AgentModelConfigPanel({
                     onPointerDownCapture={captureAgentSidebarPosition}
                     onKeyDownCapture={captureAgentSidebarPosition}
                   >
-                    <SelectValue placeholder={modelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
+                    <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("请先获取可用模型")} />
                   </SelectTrigger>
                   <SelectContent
                     position="popper"
                     className={MODEL_SELECT_CONTENT_CLASS}
                     style={MODEL_SELECT_CONTENT_STYLE}
                   >
-                    {modelOptions.map((modelOption) => (
+                    {availableModelOptions.map((modelOption) => (
                       <SelectItem key={modelOption.id} value={modelOption.id}>
                         {modelOption.name}
                       </SelectItem>

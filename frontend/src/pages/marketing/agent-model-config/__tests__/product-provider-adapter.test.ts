@@ -52,6 +52,7 @@ describe("adaptProductModelProviders", () => {
         baseUrl: "https://alpha.example.com/v1",
         apiMode: "chat_completions",
         discoveryStrategy: "catalog",
+        fixedModelSelection: true,
         supportsLiveModelRefresh: true,
         catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
       },
@@ -119,6 +120,7 @@ describe("adaptProductModelProviders", () => {
     expect(adaptedProvider).toEqual(expect.objectContaining({
       providerKey: "tencent_hy_token_plan",
       discoveryStrategy: "catalog",
+      fixedModelSelection: true,
       supportsLiveModelRefresh: false,
       description: "七彩石最新模型说明",
       catalogModels: [

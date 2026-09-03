@@ -1,3 +1,30 @@
+# 模型配置范围收窄至 API 与自定义分类 Implementation Plan
+
+**Status:** 已按新范围完成并通过门禁，等待用户确认；不自动 commit、push。
+
+**Size:** S。仅调整既有改动的作用范围，不新增功能、不新增文案。
+
+**Goal:** Coding Plan 交由 master 的 `fixedModelSelection` 方案接管，本分支只负责 `api` 分类与自定义模型。
+
+**背景:** 本分支的 `supportsLiveModelRefresh` 与 master 的 `fixedModelSelection` 原本是同一问题的两套竞品方案（详见 `2026-09-02-coding-plan-rainbow-catalog-design.md`）。产品侧确认 Coding Plan 不再改动后，两套机制不再冲突，可各管一段。
+
+**方案:**
+- 恢复 `ModelProviderOption.fixedModelSelection` 与适配层对 Coding Plan 的赋值，面板重新使用 master 的
+  `fixedModelOptions` / `availableModelOptions` / `effectiveSelectedModelId`。
+- `catalogModelOptions` 收窄为「非 `fixedModelSelection` 且非自定义」，即只服务 `api` 分类。
+- `canRefreshModels` 叠加 `!fixedModelSelection`：Coding Plan 按 master 规则隐藏按钮，`api` 分类内的
+  腾讯系（TokenHub）按本分支规则隐藏。
+- 自定义模型的凭据作用域与手输能力不受影响，master 明确将其划为「流程不变」。
+- 测试夹具 `catalogPlan` / `tencentPlan` 从 `coding_plan` 改为 `api`，避免断言现实中不存在的状态。
+
+- [x] **Task 1：恢复 `fixedModelSelection` 字段、适配层赋值与面板渲染层覆盖。**
+- [x] **Task 2：收窄 `catalogModelOptions` 与 `canRefreshModels` 至 `api` 与自定义分类。**
+- [x] **Task 3：测试夹具改判为 `api` 分类并修正联动断言。**
+
+**Verification:** `agent-model-config` 目录 146 passed / 1 skipped；叠加 `agent-config` 与 sdk-boundary 共 152 passed / 1 skipped。`pnpm check` 退出码 0，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；`git diff --check` 退出码 0。
+
+---
+
 # 自定义模型支持手动填写模型 ID Implementation Plan
 
 **Status:** 规划完成，进入 TDD 实现。
