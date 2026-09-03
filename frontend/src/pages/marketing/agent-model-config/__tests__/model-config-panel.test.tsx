@@ -461,7 +461,7 @@ describe("AgentModelConfigPanel", () => {
     expect(within(providerGroup).getByText("Hy4 Preview")).toBeInTheDocument();
     expect(within(providerGroup).queryByText("hy4-preview")).not.toBeInTheDocument();
     const catalogRow = within(providerGroup).getByText("Hy Next").closest("li") as HTMLElement;
-    expect(within(catalogRow).getByText("可选模型")).toBeInTheDocument();
+    expect(within(catalogRow).queryByText("可选模型")).not.toBeInTheDocument();
     expect(within(catalogRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
     expect(within(catalogRow).getByRole("button", { name: "设为备用模型" })).toBeEnabled();
     expect(within(catalogRow).queryByRole("button", { name: "删除" })).not.toBeInTheDocument();

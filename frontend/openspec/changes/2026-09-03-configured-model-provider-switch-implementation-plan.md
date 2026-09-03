@@ -211,6 +211,26 @@ git diff --check
 - GREEN：删除操作专项 1 passed / 51 skipped。
 - 完整回归：模型配置目录 156 项通过，另 1 项按环境跳过；`pnpm check` 通过，TypeScript 0 条新增诊断且多语言结构错误 0；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
 
+## Task 19：移除目录候选的“可选模型”标签
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/agent-model-config.id-ID.test.ts`
+
+- [x] 先将目录候选用例改为要求候选行不出现“可选模型”，运行专项测试并确认旧实现按预期 RED。
+- [x] 目录候选行不再渲染状态 Badge；已保存模型的主模型、备用模型和未启用状态保持不变，候选模型操作逻辑保持不变。
+- [x] 从模型配置页的印尼语覆盖清单中移除已不再使用的“可选模型”文案，不手工修改生成资源。
+- [x] 运行模型配置完整回归、`pnpm check` 和 `git diff --check`，并确认本地 Mock 预览地址可达。
+- [ ] 刷新本地 Mock 预览，人工确认目录候选模型行不再显示状态标签且排版正常。
+
+增量验证记录：
+
+- RED：目录候选专项 1 failed / 51 skipped，实际仍渲染“可选模型”Badge。
+- GREEN：目录候选专项 1 passed / 51 skipped。
+- 完整回归：模型配置目录 155 项通过，另 1 项按环境跳过；`pnpm check` 通过，TypeScript 0 条新增诊断，i18n 源文案减少为 2693 条且结构错误 0；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
+
 ## Task 16：为备用模型 neutral 标签补充灰色边框
 
 **Files:**

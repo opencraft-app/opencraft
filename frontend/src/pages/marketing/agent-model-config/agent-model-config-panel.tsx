@@ -717,18 +717,18 @@ export function AgentModelConfigPanel({
                                     <span className="break-all text-xs font-normal text-black/85">
                                       {displayConfiguredModelName(model)}
                                     </span>
-                                    <Badge
-                                      variant={primary ? "success" : "neutral"}
-                                      className={fallback ? "border border-[var(--border-subtle)]" : undefined}
-                                    >
-                                      {role === "primary"
-                                        ? t("主模型")
-                                        : role === "fallback"
-                                          ? t("备用模型")
-                                          : model.catalogOnly
-                                            ? t("可选模型")
+                                    {!model.catalogOnly ? (
+                                      <Badge
+                                        variant={primary ? "success" : "neutral"}
+                                        className={fallback ? "border border-[var(--border-subtle)]" : undefined}
+                                      >
+                                        {role === "primary"
+                                          ? t("主模型")
+                                          : role === "fallback"
+                                            ? t("备用模型")
                                             : t("未启用")}
-                                    </Badge>
+                                      </Badge>
+                                    ) : null}
                                   </span>
                                 </span>
                               </label>
