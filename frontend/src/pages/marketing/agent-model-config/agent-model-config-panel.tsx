@@ -184,10 +184,8 @@ export function AgentModelConfigPanel({
   const [selectedModelId, setSelectedModelId] = useState("");
   const [purpose, setPurpose] = useState<ConfigurePurpose>("primary");
   const [connectionResult, setConnectionResult] = useState<HermesConnectionProbeResult | null>(null);
-  const [validatingBeforeAdd, setValidatingBeforeAdd] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<HermesConfiguredModel | null>(null);
   const probeUiRevision = useRef(0);
-  const validationRequestRef = useRef<symbol | null>(null);
 
   const providerOptions = useMemo(
     () => providers.filter((provider) => provider.category === category),
@@ -196,7 +194,6 @@ export function AgentModelConfigPanel({
   const activeProvider = category === "custom"
     ? null
     : providerOptions.find((provider) => provider.providerKey === providerKey) ?? null;
-  const validateBeforeAdd = activeProvider?.validateBeforeAdd === true;
   const fixedModelOptions = useMemo<ModelOption[]>(
     () => activeProvider?.fixedModelSelection
       ? (activeProvider.catalogModels ?? []).map(({ id, name }) => ({ id, name, source: "catalog" }))
@@ -240,11 +237,9 @@ export function AgentModelConfigPanel({
 
   const resetProbeResult = () => {
     probeUiRevision.current += 1;
-    validationRequestRef.current = null;
     setModelOptions([]);
     setSelectedModelId("");
     setConnectionResult(null);
-    setValidatingBeforeAdd(false);
     controller.clearOperationError();
   };
 
@@ -272,12 +267,7 @@ export function AgentModelConfigPanel({
   const selectedModel = providerDraft && effectiveSelectedModelId
     ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
-  const selectedModelTarget = selectedModel
-    ? [providerFingerprint, selectedModel.id].join("\n")
-    : "";
-  const selectedModelTargetRef = useRef(selectedModelTarget);
-  selectedModelTargetRef.current = selectedModelTarget;
-  const fallbackPurposeDisabled = sameModel(controller.snapshot?.primary, selectedModel);
+  const selectedModelIsPrimary = sameModel(controller.snapshot?.primary, selectedModel);
   const credentialMatchesProvider = !!providerFingerprint && apiKeyTarget === providerFingerprint;
   const canProbe = !!providerDraft?.providerName && !!providerDraft.baseUrl && !!apiKey.trim() && credentialMatchesProvider;
   const busy = controller.operation !== null;
@@ -301,13 +291,11 @@ export function AgentModelConfigPanel({
     setModelOptions([]);
     setSelectedModelId("");
     setConnectionResult(null);
-    validationRequestRef.current = null;
-    setValidatingBeforeAdd(false);
   }, [controller.cancelProbe, controller.clearOperationError, providerFingerprint]);
 
   useEffect(() => {
-    setPurpose(controller.snapshot?.primary ? "idle" : "primary");
-  }, [controller.snapshot?.primary]);
+    setPurpose(selectedModelIsPrimary ? "primary" : controller.snapshot?.primary ? "idle" : "primary");
+  }, [controller.snapshot?.primary, selectedModelIsPrimary]);
 
   const handleCategoryChange = (nextCategory: ProviderCategory) => {
     setCategory(nextCategory);
@@ -365,34 +353,6 @@ export function AgentModelConfigPanel({
   const handleAdd = async () => {
     const normalizedApiKey = apiKey.trim();
     if (!selectedModel || !normalizedApiKey || !credentialMatchesProvider) return;
-    if (validateBeforeAdd) {
-      const requestFingerprint = providerFingerprint;
-      const revision = probeUiRevision.current;
-      const validationTarget = selectedModelTarget;
-      const validationRequest = Symbol("validate-before-add");
-      validationRequestRef.current = validationRequest;
-      setConnectionResult(null);
-      setValidatingBeforeAdd(true);
-      const result = await controller.testConnection({
-        apiKey: normalizedApiKey,
-        model: selectedModel,
-        strategy: "model_request",
-      });
-      const ownsValidation = validationRequestRef.current === validationRequest;
-      if (ownsValidation) {
-        validationRequestRef.current = null;
-        setValidatingBeforeAdd(false);
-      }
-      if (!ownsValidation
-        || revision !== probeUiRevision.current
-        || requestFingerprint !== providerFingerprintRef.current
-        || validationTarget !== selectedModelTargetRef.current) return;
-      if (!result) return;
-      if (!result.success) {
-        setConnectionResult(result);
-        return;
-      }
-    }
     const nextSnapshot = await controller.add({
       apiKey: normalizedApiKey,
       model: selectedModel,
@@ -815,7 +775,7 @@ export function AgentModelConfigPanel({
                 <ModelCompoundActionContent
                   idleLabel={t("检测模型状态")}
                   loadingLabel={t("检测中...")}
-                  loading={controller.operation === "connectivity-probe" && !validatingBeforeAdd}
+                  loading={controller.operation === "connectivity-probe"}
                 />
               </Button>
             </div>
@@ -829,7 +789,7 @@ export function AgentModelConfigPanel({
                 { value: "fallback", label: "设为备用模型" },
                 { value: "idle", label: "仅添加" },
               ] satisfies Array<{ value: ConfigurePurpose; label: string }>).map((item) => {
-                const disabled = busy || (item.value === "fallback" && fallbackPurposeDisabled);
+                const disabled = busy || (selectedModelIsPrimary && item.value !== "primary");
                 const active = purpose === item.value;
                 return (
                   <label
@@ -847,7 +807,13 @@ export function AgentModelConfigPanel({
                       value={item.value}
                       checked={active}
                       disabled={disabled}
-                      aria-describedby={item.value === "fallback" && fallbackPurposeDisabled ? "fallback-purpose-help" : undefined}
+                      aria-describedby={selectedModelIsPrimary
+                        ? item.value === "fallback"
+                          ? "fallback-purpose-help"
+                          : item.value === "idle"
+                            ? "primary-idle-purpose-help"
+                            : undefined
+                        : undefined}
                       onChange={() => setPurpose(item.value)}
                     />
                     {item.value === "primary"
@@ -859,10 +825,15 @@ export function AgentModelConfigPanel({
                 );
               })}
             </div>
-            {fallbackPurposeDisabled ? (
-              <p id="fallback-purpose-help" className="text-xs text-black/45">
-                {t("主模型不能同时设为备用模型。")}
-              </p>
+            {selectedModelIsPrimary ? (
+              <>
+                <p id="fallback-purpose-help" className="text-xs text-black/45">
+                  {t("主模型不能同时设为备用模型。")}
+                </p>
+                <p id="primary-idle-purpose-help" className="sr-only">
+                  {t("当前模型已经是主模型")}
+                </p>
+              </>
             ) : null}
           </fieldset>
 
@@ -878,10 +849,10 @@ export function AgentModelConfigPanel({
             <Button
               type="button"
               className="rounded-md"
-              disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (purpose === "fallback" && fallbackPurposeDisabled)}
+              disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (selectedModelIsPrimary && purpose !== "primary")}
               onClick={() => void handleAdd()}
             >
-              {controller.operation === "add" || validatingBeforeAdd
+              {controller.operation === "add"
                 ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 : <Plus className="size-4" aria-hidden="true" />}
               {t("添加模型")}

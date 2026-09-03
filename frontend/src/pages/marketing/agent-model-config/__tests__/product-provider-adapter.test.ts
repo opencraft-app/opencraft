@@ -53,7 +53,6 @@ describe("adaptProductModelProviders", () => {
         apiMode: "chat_completions",
         discoveryStrategy: "catalog",
         fixedModelSelection: true,
-        validateBeforeAdd: true,
         catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
       },
       expect.objectContaining({
@@ -103,7 +102,6 @@ describe("adaptProductModelProviders", () => {
       providerKey: "tencent_hy_token_plan",
       discoveryStrategy: "catalog",
       fixedModelSelection: true,
-      validateBeforeAdd: true,
       description: "七彩石最新模型说明",
       catalogModels: [
         { id: "hy4-preview", name: "Hy4 Preview" },
