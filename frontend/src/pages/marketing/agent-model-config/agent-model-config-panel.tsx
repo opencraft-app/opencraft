@@ -714,7 +714,7 @@ export function AgentModelConfigPanel({
                                 />
                                 <span className="min-w-0">
                                   <span className="flex flex-wrap items-center gap-2">
-                                    <span className="break-all text-xs font-normal text-black/85">
+                                    <span className="break-all text-sm font-normal text-black/85">
                                       {displayConfiguredModelName(model)}
                                     </span>
                                     {!model.catalogOnly ? (
@@ -739,7 +739,7 @@ export function AgentModelConfigPanel({
                                     type="button"
                                     size="sm"
                                     variant={primary ? "secondary" : "outline"}
-                                    className="rounded-md font-normal"
+                                    className="rounded-md text-sm font-normal"
                                     disabled={busy || model.requiresSetup === true || primary}
                                     onClick={() => void controller.assign(model, "primary")}
                                   >
@@ -752,7 +752,7 @@ export function AgentModelConfigPanel({
                                     type="button"
                                     size="sm"
                                     variant={fallback ? "secondary" : "outline"}
-                                    className="rounded-md font-normal"
+                                    className="rounded-md text-sm font-normal"
                                     disabled={busy || primary}
                                     onClick={() => void (fallback
                                       ? controller.removeFallback(model)

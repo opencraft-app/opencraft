@@ -523,8 +523,14 @@ describe("AgentModelConfigPanel", () => {
 
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     const primaryModelName = within(primaryRow).getByText("model-primary");
-    expect(primaryModelName).toHaveClass("text-xs", "font-normal");
-    expect(primaryModelName).not.toHaveClass("text-sm", "font-semibold");
+    expect(primaryModelName).toHaveClass("text-sm", "font-normal");
+    expect(primaryModelName).not.toHaveClass("text-xs", "font-semibold");
+    const primaryAction = within(primaryRow).getByRole("button", { name: "设为主模型" });
+    const fallbackAction = within(primaryRow).getByRole("button", { name: "设为备用模型" });
+    for (const action of [primaryAction, fallbackAction]) {
+      expect(action).toHaveClass("text-sm", "font-normal");
+      expect(action).not.toHaveClass("text-xs", "font-semibold");
+    }
     for (const action of within(primaryRow).getAllByRole("button")) {
       expect(action).toHaveClass("font-normal");
       expect(action).not.toHaveClass("font-semibold");
