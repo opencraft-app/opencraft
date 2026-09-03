@@ -637,7 +637,13 @@ export function AgentModelConfigPanel({
                                       {displayConfiguredModelName(model)}
                                     </span>
                                     <Badge variant={primary ? "success" : fallback ? "warning" : "neutral"}>
-                                      {role === "primary" ? t("主模型") : role === "fallback" ? t("备用模型") : t("未启用")}
+                                      {role === "primary"
+                                        ? t("主模型")
+                                        : role === "fallback"
+                                          ? t("备用模型")
+                                          : model.catalogOnly
+                                            ? t("可选模型")
+                                            : t("未启用")}
                                     </Badge>
                                   </span>
                                 </span>

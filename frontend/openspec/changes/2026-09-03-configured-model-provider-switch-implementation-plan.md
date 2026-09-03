@@ -291,3 +291,49 @@ PATH=/Users/pablozhong/.cache/codex-runtimes/codex-primary-runtime/dependencies/
 - 切换只出现 `assign`，不出现重新添加、探测、连接检测或 API Key 交互。
 - `pnpm check`、`pnpm i18n:check`、模型配置测试和 `git diff --check` 全部通过。
 - 最终 diff 严格限定在面板、对应测试、必要 i18n 资源和本次 OpenSpec 文档。
+
+## Task 9：区分目录候选与已保存闲置模型状态
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Modify: `src/i18n/generated/{zh-CN,zh-Hant,en-US,id-ID,es,ja-JP,ko-KR,zh-to-key}.json`
+
+- [x] 将目录候选断言从“未启用”改为“可选模型”，并保留真实已保存闲置模型仍显示“未启用”的既有断言。
+- [x] 运行面板专项测试，确认旧实现因目录候选仍显示“未启用”而按预期 RED。
+- [x] 在模型角色徽标中仅对 `catalogOnly` 项显示 `t("可选模型")`；主模型、备用模型和已保存闲置模型的既有状态保持不变。
+- [x] 运行 `pnpm i18n:extract` 生成新 key，并补齐中文简体、中文繁体、英语、印度尼西亚语、西班牙语、日语和韩语译文。
+- [x] 运行面板专项、模型配置完整测试、`pnpm i18n:check`、`pnpm check` 和 `git diff --check`。
+- [x] 刷新本地 Mock 预览，确认目录候选显示“可选模型”、已保存闲置模型显示“未启用”，操作按钮和删除规则不变。
+
+关键渲染形态：
+
+```tsx
+const roleLabel = role === "primary"
+  ? t("主模型")
+  : role === "fallback"
+    ? t("备用模型")
+    : model.catalogOnly
+      ? t("可选模型")
+      : t("未启用");
+```
+
+多语言文案：
+
+- `zh-CN`: `可选模型`
+- `zh-Hant`: `可選模型`
+- `en-US`: `Available model`
+- `id-ID`: `Model tersedia`
+- `es`: `Modelo disponible`
+- `ja-JP`: `選択可能なモデル`
+- `ko-KR`: `선택 가능 모델`
+
+增量验证记录：
+
+- RED：面板 1 项按预期失败，目录候选实际仍显示“未启用”；其余 33 项通过。
+- GREEN：面板 34/34；模型配置目录 133/133，另 1 条按环境跳过；字典完整性 18/18。
+- `pnpm i18n:check`：英语、繁中、西语、日语、韩语 2694/2694，印尼语 2520/2694，既有缺口保持 174 条、未新增翻译债务。
+- `pnpm check`：TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0。
+- 浏览器：目录候选 `Hy3` 显示“可选模型”且仍无删除按钮，已保存 `Hy4 Preview` 的操作规则未变化。
+- `git diff --check`：通过。
