@@ -372,7 +372,8 @@ describe("AgentModelConfigPanel", () => {
     const fallbackProviderLabel = within(updatedBetaTrigger).getByText("备用模型：model-fallback");
     expect(primaryProviderLabel.compareDocumentPosition(fallbackProviderLabel))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(primaryProviderLabel.parentElement).toHaveClass("flex-col");
+    expect(primaryProviderLabel.parentElement).toHaveClass("flex-row", "flex-wrap", "justify-end");
+    expect(primaryProviderLabel.parentElement).not.toHaveClass("flex-col");
     expect(within(screen.getByRole("group", { name: "Beta API 已配置模型" })).getByText("model-beta-2").closest("li")).toHaveTextContent("主模型");
     expect(remote.actions.filter((action) => action.type === "assign")).toEqual([
       expect.objectContaining({
@@ -402,7 +403,8 @@ describe("AgentModelConfigPanel", () => {
     const fallbackProviderLabel = within(alphaTrigger).getByText("备用模型：model-alpha-2、model-alpha-3");
     expect(primaryProviderLabel.compareDocumentPosition(fallbackProviderLabel))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(primaryProviderLabel.parentElement).toHaveClass("flex-col");
+    expect(primaryProviderLabel.parentElement).toHaveClass("flex-row", "flex-wrap", "justify-end");
+    expect(primaryProviderLabel.parentElement).not.toHaveClass("flex-col");
     expect(fallbackProviderLabel).toHaveClass(
       "border",
       "border-[var(--border-subtle)]",
@@ -532,7 +534,11 @@ describe("AgentModelConfigPanel", () => {
     expect(within(primaryRow).getAllByRole("button")).toHaveLength(3);
     expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
     expect(within(primaryRow).getByRole("button", { name: "设为备用模型" })).toBeDisabled();
-    expect(within(primaryRow).getByRole("button", { name: "删除" })).toBeDisabled();
+    const deleteButton = within(primaryRow).getByRole("button", { name: "删除" });
+    expect(deleteButton).toBeDisabled();
+    expect(deleteButton).toHaveAttribute("aria-label", "删除");
+    expect(deleteButton).toHaveClass("size-8", "p-0");
+    expect(deleteButton).not.toHaveTextContent("删除");
     const primaryTooltipTrigger = within(primaryRow).getByRole("group", { name: "当前模型已经是主模型" });
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     await userEvent.hover(primaryTooltipTrigger);

@@ -19,7 +19,7 @@
 - 保留备用模型、取消备用、删除、主模型不可删除、空态和错误态。
 - 所有新增可见文案使用 `t(...)`，按钮文案固定为“设为主模型”。
 - 不引入新依赖，不为单处逻辑建立跨模块抽象。
-- Provider 标题以“主模型：模型名称”“备用模型：模型名称”聚合展示组内角色；同组同时承担主备角色时分两行展示，主模型在上；多个备用模型名称合并到备用模型标签中。
+- Provider 标题以“主模型：模型名称”“备用模型：模型名称”聚合展示组内角色；同组同时承担主备角色时默认同排、空间不足时自动换行；多个备用模型名称合并到备用模型标签中。
 
 ## Task 1：用失败测试锁定 Provider 分组和跨 Provider 切换
 
@@ -174,6 +174,42 @@ git diff --check
 - `pnpm build:cn`：94/94 静态页；`pnpm build:global`：592/592 静态页。
 - 浏览器：global 静态 `/agents/models/` 可达，1280px 与 390px 均无横向溢出、无新增 console error；本地账号没有 Agent，页面停留在创建入口。
 - `git diff --check`：通过。
+
+## Task 17：主备模型标签默认同排并按需换行
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] 先将现有双角色 Provider 用例改为要求标签容器包含 `flex-row flex-wrap justify-end` 且不包含 `flex-col`，运行专项测试并确认旧实现固定纵向排列而按预期 RED。
+- [x] 将标签容器最小改为横向可换行布局；空间充足时主、备用模型标签同排，空间不足时由 `flex-wrap` 自然换行。
+- [x] 运行模型配置完整回归、`pnpm check` 和 `git diff --check`，并确认本地 Mock 预览地址可达。
+- [ ] 刷新本地 Mock 预览，人工检查桌面下标签同排、窄屏空间不足时自然换行；自动化浏览器受本地 URL 安全策略限制。
+
+增量验证记录：
+
+- RED：双角色专项 2 failed / 50 skipped，实际容器仍为 `flex-col items-end`。
+- GREEN：双角色专项 2 passed / 50 skipped。
+- 完整回归：模型配置目录 156 项通过，另 1 项按环境跳过；`pnpm check` 通过，TypeScript 0 条新增诊断；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
+
+## Task 18：模型行删除按钮仅显示图标
+
+**Files:**
+
+- Modify: `src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+- [x] 先增加删除按钮必须具有多语言 `aria-label`、32px 方形尺寸且不包含可见“删除”文字的断言，运行专项测试并确认旧实现按预期 RED。
+- [x] 删除按钮中的可见文案，仅保留现有 `Trash2` 图标；使用 `aria-label={t("删除")}` 保持读屏名称，不修改删除确认弹窗及删除逻辑。
+- [x] 运行模型配置完整回归、`pnpm check` 和 `git diff --check`，并确认本地 Mock 预览地址可达。
+- [ ] 刷新本地 Mock 预览，人工确认删除按钮仅显示图标且操作区排版正常。
+
+增量验证记录：
+
+- RED：删除操作专项 1 failed / 51 skipped，实际按钮没有 `aria-label`。
+- GREEN：删除操作专项 1 passed / 51 skipped。
+- 完整回归：模型配置目录 156 项通过，另 1 项按环境跳过；`pnpm check` 通过，TypeScript 0 条新增诊断且多语言结构错误 0；`git diff --check` 通过；本地 Mock 预览返回 HTTP 200。
 
 ## Task 16：为备用模型 neutral 标签补充灰色边框
 

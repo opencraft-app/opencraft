@@ -657,7 +657,7 @@ export function AgentModelConfigPanel({
                       {group.providerName}
                     </span>
                     {primaryModel || fallbackModels.length > 0 ? (
-                      <span className="flex max-w-[60%] shrink-0 flex-col items-end gap-1">
+                      <span className="flex max-w-[60%] shrink-0 flex-row flex-wrap items-center justify-end gap-1">
                         {primaryModel ? (
                           <Badge
                             variant="success"
@@ -767,7 +767,8 @@ export function AgentModelConfigPanel({
                                       type="button"
                                       size="sm"
                                       variant="ghost"
-                                      className="rounded-md font-normal"
+                                      className="size-8 rounded-md p-0 font-normal"
+                                      aria-label={t("删除")}
                                       disabled={busy || primary}
                                       onClick={() => {
                                         controller.clearOperationError();
@@ -775,7 +776,6 @@ export function AgentModelConfigPanel({
                                       }}
                                     >
                                       <Trash2 className="size-3.5" aria-hidden="true" />
-                                      {t("删除")}
                                     </Button>
                                   </ModelActionTooltip>
                                 ) : null}
