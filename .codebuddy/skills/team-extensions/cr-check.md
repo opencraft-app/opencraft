@@ -1,14 +1,14 @@
 # 代码审查 (CR) 检查规范
 
 > 本 Skill 有两种触发方式：
-> 1. **主动 CR**（开发流程内置）：`/feai-start` 阶段 4C 自动触发，对本次所有改动进行检查，在提交代码前发现并修复问题
+> 1. **主动 CR**（开发流程内置）：native 工作流 verify 阶段自动触发，对本次所有改动进行检查，在提交代码前发现并修复问题
 > 2. **手动 CR**（用户主动请求）：用户在对话中请求对指定文件或 MR 进行代码审查
 
 ---
 
 ## 主动 CR 流程（开发流程内置）
 
-在 `/feai-start` 开发流程的阶段 4C 中自动执行，位于代码实现完成后、`git commit` 之前。
+在 native 工作流的 verify 阶段自动执行，位于代码实现完成后、`git commit` 之前。
 
 ### 执行步骤
 
@@ -20,7 +20,7 @@
    - P1（性能/错误处理）→ 列出问题和建议，询问用户是否修复
    - P2（规范/可维护性）→ 在报告中列出，不阻塞流程
 4. 输出 CR 报告 → 无论是否有问题都输出简要报告
-5. CR 通过 → 继续执行 git commit（参考 `ai-usage-tracking` 的 FE-AI 标记规范 + global.md G14）
+5. CR 通过 → 继续执行 git commit（参考 `ai-usage-tracking` 的 FE-AI 标记规范 + `../feai-native/references/team-conventions.md` 的「commit 规范」）
 ```
 
 ### 主动 CR 报告模板
