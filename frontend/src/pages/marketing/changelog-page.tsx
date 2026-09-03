@@ -48,8 +48,8 @@ type ChangelogEntry = {
   title: string;
   desc?: string;
   badge?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -62,14 +62,18 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
   const useGlobalChineseAsset = i18n.language.startsWith("zh");
   /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
-    variant === "cloudStorage"
+    variant === "instanceStorage"
+      ? useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-instance-storage-zh.png"
+        : "/assets/changelog/lightvela-instance-storage-en.png"
+      : variant === "cloudStorage"
       ? useGlobalAssets
         ? "/assets/changelog/lightvela-cloud-storage-en.png"
         : "/assets/changelog/lightvela-cloud-storage.webp"
@@ -169,7 +173,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
           : "/assets/changelog/lightvela-launch-global-en.webp"
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
-    variant === "cloudStorage"
+    variant === "instanceStorage"
+      ? t("LightVela 支持查看 Agent 实例存储空间")
+      : variant === "cloudStorage"
       ? t("LightVela 支持云存储管理")
       : variant === "workbench"
       ? t("LightVela 支持创建和发布工作台")
@@ -217,7 +223,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         ? t("Soul 人设能力上线")
         : t("LightVela 产品公测上线");
   const aspectRatio =
-    variant === "cloudStorage"
+    variant === "instanceStorage"
+      ? useGlobalChineseAsset ? "2372 / 1262" : "2367 / 1259"
+      : variant === "cloudStorage"
       ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
       : variant === "workbench"
       ? isGlobal && !useGlobalChineseAsset ? "2372 / 1226" : "2372 / 1221"
@@ -311,6 +319,12 @@ function ChangelogContent() {
   const skillsPageDesc = isGlobal
     ? t("支持从 ClawHub 和 skills.sh 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。")
     : t("支持从 SkillHub 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。");
+  const instanceStorageEntry: ChangelogEntry = {
+    id: "instance-storage",
+    title: t("LightVela 支持查看 Agent 实例存储空间"),
+    desc: t("云存储页面现在会显示 Agent 实例的总容量、已用容量和可用容量，并将 Agent 运行环境、系统预留空间和云存储文件计入使用量计算。"),
+    visual: "instanceStorage",
+  };
 
   const changelogGroups: ChangelogMonthGroup[] = [
     ...(isGlobal
@@ -319,6 +333,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: t("2026 年 9 月"),
             entries: [
+              instanceStorageEntry,
               {
                 id: "workbench",
                 title: t("LightVela 支持创建和发布工作台"),
@@ -401,6 +416,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: t("2026 年 9 月"),
             entries: [
+              instanceStorageEntry,
               {
                 id: "workbench",
                 title: t("LightVela 支持创建和发布工作台"),
