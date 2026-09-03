@@ -128,7 +128,10 @@
       }));
       function render(index, animate) {
         active = index;
-        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
+        subs.forEach(function (btn, i) {
+          btn.classList.toggle('on', i === active);
+          btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');
+        });
         chats.forEach(function (chat, i) {
           chat.style.display = i === active ? '' : 'none';
           if (i === active) {
@@ -139,10 +142,18 @@
         });
       }
       subs.forEach(function (btn, i) {
-        btn.addEventListener('mouseenter', function () {
+        function activate() {
           if (active === i) return;
           render(i, true);
-        });
+        }
+        function activateFromKeyboard(event) {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          activate();
+        }
+        btn.addEventListener('mouseenter', activate);
+        btn.addEventListener('click', activate);
+        btn.addEventListener('keydown', activateFromKeyboard);
       });
       render(active, false);
 

@@ -2502,7 +2502,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         for script_name in ("build", "build:cn", "build:global"):
             self.assertIn("next build", frontend_scripts[script_name])
             self.assertNotIn("--webpack", frontend_scripts[script_name])
-        self.assertIn("next build --webpack", frontend_scripts["build:next"])
+        self.assertIn("next build", frontend_scripts["build:next"])
+        self.assertNotIn("--webpack", frontend_scripts["build:next"])
         self.assertIn('["exec", "next", "build"]', artifact_builder_text)
         self.assertNotIn("--webpack", artifact_builder_text)
         recursive_pnpm_scripts = {
@@ -2571,7 +2572,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(template_stages[4].get("if"), "${{ variables.MIGRATION_DECISION }} == run_migration")
         self.assertNotIn("${{ci.actor}}", template_text)
         self.assertNotIn("${{ ci.actor }}", template_text)
-        self.assertIn('reviewers: [ "skipzhang", "xinqishang" ]', template_text)
+        self.assertIn('reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]', template_text)
         self.assertIn("请先检查上一阶段 dry-run 日志中的执行计划", template_text)
         self.assertEqual(template_text.count("run_prod_db_migration.py"), 2)
         self.assertIn("SKIP_IF_NO_MIGRATION_CHANGE", template_text)
@@ -2829,7 +2830,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         on_config = workflow.get("on") or workflow.get(True) or {}
         watched_paths = ((on_config.get("push") or {}).get("paths") or [])
 
-        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu", "lhuigou"]')
+        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu", "lhuigou", "mingyuxiao"]')
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "devcloud-dep,shprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "devcloud-dep")
         self.assertEqual(devcloud_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudagent-gateway")
@@ -3036,7 +3037,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         second_approval_reviews = (((second_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
         template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
-        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang"]')
+        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang", "mingyuxiao"]')
         self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertEqual(second_approval_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertIn("reviewers: ${{ parameters.PROD_REVIEWERS }}", template_text)
@@ -3048,6 +3049,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("若本服务启用生产 DB migration，会先发起 shprod / sgprod DB 子流水线", template_text)
+
         self.assertIn("若本服务未启用生产 DB migration，会直接进入生产镜像升级二次确认", template_text)
         self.assertIn("本次镜像 tag / SOURCE_SHA 确实允许进入 shprod / sgprod GitOps 待同步流程", template_text)
         self.assertIn("若本服务启用生产 DB migration，shprod / sgprod DB 子流水线已经完成", template_text)
@@ -3081,6 +3083,22 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(template_text.count('value: "true"'), 2)
         self.assertIn('value: "shprod"', template_text)
         self.assertIn('value: "sgprod"', template_text)
+
+    def test_frontend_template_consumers_keep_frontend_prod_reviewers(self) -> None:
+        frontend_reviewers = '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
+        workflows = [
+            ".ci/nextgen-dashboard.yml",
+            ".ci/tokyo-nextgen-dashboard.yml",
+            ".ci/gateway-dashboard.yml",
+            ".ci/tokyo-gateway-dashboard.yml",
+            ".ci/tokyo-frontend.yml",
+        ]
+
+        for workflow_path in workflows:
+            with self.subTest(workflow=workflow_path):
+                workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                parameters = (workflow.get("extends") or {}).get("parameters") or {}
+                self.assertEqual(parameters.get("PROD_REVIEWERS"), frontend_reviewers)
 
     def test_db_contract_workflows_enable_prod_db_migration_child_pipelines(self) -> None:
         for workflow_path in sorted(PROD_DB_MIGRATION_WORKFLOWS):

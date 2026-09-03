@@ -84,3 +84,34 @@ DESIRED_CONFIG_SET_IDS_JSON='["set-auto-000001","set-auto-000002"]' \
 - `no persisted immutable revision`：停止发布，检查 control MySQL 和 control 日志。
 - `release ... error/partial`：到管理台查看 release item，修复目标 Set 后重试；不要直接设置 `force_drift=true`。
 - Admission 未通过：检查渠道同步、定价完整性和权益 Plan 同步，不能手工把状态改成 passed。
+
+## 7. 增量接入模型渠道并推广到其他集群
+
+新增渠道仍以 `golden-channels` 为唯一期望态，不允许把逐 Set 调用 new-api
+`/api/channel/` 或 `/api/option/` 当作发布方式。逐 Set 直写会绕过 revision、漂移保护和
+失败停止，也无法保证后续新 Set 自动继承。
+
+标准流程：
+
+1. 先直接调用供应商接口，验证 endpoint、上游模型 ID、非流式响应和 usage 字段。
+2. 在来源集群的黄金配置中增加渠道。对统一公开模型名（例如 `auto`），渠道的
+   `models` 只填写公开名，`model_mapping` 将公开名映射到真实上游模型 ID。
+3. 使用稳定且跨 Set 一致的渠道逻辑 ID。优先级数值越大越优先；相同优先级再按
+   weight 选择。
+4. 先调用 `/api/channel-bundles/golden-channels/plan` 检查每个目标 Set。允许的非
+   noop 变化必须只有本次新增或更新的渠道；任何 option 变化、其他渠道变化或 drift
+   都应停止。
+5. 使用 `/api/channel-bundles/golden-channels/releases` 批量发布，固定
+   `force_drift=false`、`stop_on_failure=true`。Control 内部负责 root 登录、2FA、
+   access token 和各 Set 写入；操作者不得绕过 Control 代理直写。
+6. 发布完成后重新检查 delivery status，要求所有目标 Set 为 `synced`，再通过稳定
+   traffic 域名执行公开模型名的真实请求。不要直接调用 Set 地址验收。
+7. 推广到另一个生产集群时，从已验收的来源集群导出完整 DesiredConfig，在目标
+   Control 导入为新 revision，检查 diff 后再发布。不要手工重建渠道 JSON。
+
+计费按用户请求的公开模型名解析。同一个 `auto` 下的多个渠道共享 `auto` 的归一
+价格；上游模型映射不会改变用户价格。若需要不同用户价格，必须使用不同公开模型名，
+不能依赖命中渠道隐式改变账单。
+
+如果发布在 option 同步阶段返回 401，说明 Control 的登录凭据没有随 option 请求
+生效。应修复或升级 Control 后重试同一 release，不要通过逐 Set 直写绕过失败。

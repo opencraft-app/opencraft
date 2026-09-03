@@ -22,7 +22,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260901-remote-7127eb5-id-headings"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260902-home-performance-v2"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion, always here, always evolving with you");
     expect(markup).toContain('href="/subscribe"');

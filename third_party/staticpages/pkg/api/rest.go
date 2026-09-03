@@ -25,18 +25,20 @@ const (
 
 // RestApi represents a RESTful API server encapsulating an HTTP server, router, and static page configuration.
 type RestApi struct {
-	srv    *http.Server
-	router *gin.Engine
-	conf   config.StaticPagesConfig
-	tracer trace.Tracer
+	srv                 *http.Server
+	router              *gin.Engine
+	conf                config.StaticPagesConfig
+	tracer              trace.Tracer
+	releaseStoreFactory releaseStoreFactory
 }
 
 // NewRestApi initializes and returns a new RestApi instance configured with the provided StaticPagesConfig.
 func NewRestApi(conf config.StaticPagesConfig) *RestApi {
 	r := &RestApi{
-		srv:    nil,
-		conf:   conf,
-		tracer: otel.Tracer("StaticPages-API"),
+		srv:                 nil,
+		conf:                conf,
+		tracer:              otel.Tracer("StaticPages-API"),
+		releaseStoreFactory: newS3ReleaseStore,
 	}
 
 	// Setup Gin router
@@ -51,6 +53,8 @@ func NewRestApi(conf config.StaticPagesConfig) *RestApi {
 	r.router.HEAD("/healthz", r.HealthHandler)
 	r.router.OPTIONS("/api/upload", r.PreflightHandler)
 	r.router.POST("/api/upload", r.UploadHandler)
+	r.router.POST("/api/releases", r.CreateReleaseHandler)
+	r.router.POST("/api/releases/:releaseID/commit", r.CommitReleaseHandler)
 
 	// Setup otelgin to expose Open Telemetry
 	r.router.Use(otelgin.Middleware("StaticPages-API"))

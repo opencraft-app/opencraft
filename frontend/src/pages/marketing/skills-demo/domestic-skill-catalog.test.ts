@@ -9,12 +9,12 @@ import { CURATED_SKILL_OVERVIEWS_ZH } from "./curated-skill-overviews.zh";
 describe("domestic SkillHub catalog", () => {
   it("keeps the manually curated featured list", () => {
     expect(DOMESTIC_FEATURED_SKILLS.map(({ skill }) => skill.rawId)).toEqual([
+      "lh6-anniversary-blessing",
       "find-skill-skillhub",
       "image-prompt-skill",
       "poster",
       "ecommerce-product-selector",
       "tencent-news",
-      "weather",
     ]);
     expect(DOMESTIC_FEATURED_SKILLS.every(({ skill }) => skill.registry === "skillhub")).toBe(true);
   });

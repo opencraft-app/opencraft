@@ -21,6 +21,14 @@ type PublicRule struct {
 	Path   string `yaml:"path"`
 }
 
+// CORSRule grants additional browser origins to one method/path without
+// widening the route-level or global CORS allowlist.
+type CORSRule struct {
+	Method         string   `yaml:"method"`
+	Path           string   `yaml:"path"`
+	AllowedOrigins []string `yaml:"allowed_origins"`
+}
+
 type PathPolicy string
 
 const (
@@ -36,6 +44,7 @@ type Route struct {
 	UpstreamBearerTokenEnv string       `yaml:"upstream_bearer_token_env"`
 	Access                 Access       `yaml:"access"`
 	AllowedOrigins         []string     `yaml:"allowed_origins"`
+	CORSAllow              []CORSRule   `yaml:"cors_allow"`
 	PathPolicy             PathPolicy   `yaml:"path_policy"`
 	PathAllow              []PublicRule `yaml:"path_allow"`
 	PublicAllow            []PublicRule `yaml:"public_allow"`

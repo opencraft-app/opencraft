@@ -1,20 +1,12 @@
 'use client';
 
-import React, { Suspense, type ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
 
-import { OpenClawProvider } from '@/contexts/agent-context';
-import { RepositoryProvider } from '@/contexts/repository-context';
-import { RuntimeConfigProvider } from '@/contexts/runtime-config-context';
-import { SessionProvider } from '@/contexts/session-context';
 import { LocaleOverrideProvider, type I18nLocale } from '@/i18n/t';
-import { DatongPageEffect } from '@/observability/datong-page-effect';
-import { DatongTrackerBridge } from '@/observability/datong-tracker-bridge';
-import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
-import { RumUserBridge } from '@/observability/rum-user-bridge';
-import { CookieConsentBanner } from '@/components/site/cookie-consent-banner';
 import { localeDefinition } from '@/i18n/locales.config';
 
 import type { PublicRouteLocale } from './public-locale';
+import { PublicSiteAppProviders } from './public-site-app-providers';
 
 type Locale = PublicRouteLocale['locale'];
 
@@ -41,27 +33,6 @@ export function PublicSiteLocaleBridge({ locale, children }: { locale: Locale; c
   }, [targetLocale]);
 
   return <LocaleOverrideProvider locale={targetLocale}>{children}</LocaleOverrideProvider>;
-}
-
-export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
-  return (
-    <RepositoryProvider>
-      <RuntimeConfigProvider>
-        <SessionProvider>
-          <RumUserBridge />
-          <ProductAnalyticsBridge />
-          <DatongTrackerBridge />
-          <Suspense fallback={null}>
-            <DatongPageEffect />
-          </Suspense>
-          <OpenClawProvider>
-            <CookieConsentBanner />
-            {children}
-          </OpenClawProvider>
-        </SessionProvider>
-      </RuntimeConfigProvider>
-    </RepositoryProvider>
-  );
 }
 
 export function PublicSiteProviders({ locale, children }: { locale: Locale; children: ReactNode }) {

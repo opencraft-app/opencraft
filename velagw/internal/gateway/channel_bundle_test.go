@@ -958,7 +958,7 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 		case "POST /api/user/login":
 			optionSessionLoggedIn = true
 			http.SetCookie(w, &http.Cookie{Name: "session", Value: "root-session", Path: "/"})
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default"}})
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default", "access_token": "fresh-admin-token"}})
 		case "GET /api/channel/search":
 			items := []map[string]any{}
 			if channelCreated {
@@ -976,8 +976,8 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 		case "GET /api/option/":
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []any{}})
 		case "PUT /api/option/":
-			if r.Header.Get("Authorization") != "" || !optionSessionLoggedIn {
-				t.Fatalf("bundle options must use dashboard session auth, authorization=%q logged_in=%v", r.Header.Get("Authorization"), optionSessionLoggedIn)
+			if r.Header.Get("Authorization") != "Bearer fresh-admin-token" || !optionSessionLoggedIn {
+				t.Fatalf("bundle options must use login access token, authorization=%q logged_in=%v", r.Header.Get("Authorization"), optionSessionLoggedIn)
 			}
 			if channelCreated {
 				t.Fatal("bundle options must be synced before channels")
@@ -1140,13 +1140,16 @@ func TestChannelBundleRejectsReservedBYOKGroupRatioKeys(t *testing.T) {
 }
 
 func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
-	var twoFACompleted bool
+	var loginCount int
+	var twoFACount int
 	var optionUpdated bool
+	var optionUpdateCount int
 	var channelCreated bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
 		case "POST /api/user/login":
+			loginCount++
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{
 				"require_2fa": true,
 				"flow_token":  "flow-123",
@@ -1160,8 +1163,8 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 			if req.FlowToken != "flow-123" || strings.TrimSpace(req.Code) == "" {
 				t.Fatalf("unexpected 2fa login request: %+v", req)
 			}
-			twoFACompleted = true
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default"}})
+			twoFACount++
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default", "access_token": "fresh-admin-token"}})
 		case "GET /api/channel/search":
 			items := []map[string]any{}
 			if channelCreated {
@@ -1179,10 +1182,11 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 		case "GET /api/option/":
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []any{}})
 		case "PUT /api/option/":
-			if r.Header.Get("Authorization") != "" || !twoFACompleted {
-				t.Fatalf("bundle options must use completed dashboard session, authorization=%q twoFACompleted=%v", r.Header.Get("Authorization"), twoFACompleted)
+			if r.Header.Get("Authorization") != "Bearer fresh-admin-token" || twoFACount != 1 {
+				t.Fatalf("bundle options must reuse one completed login, authorization=%q twoFACount=%d", r.Header.Get("Authorization"), twoFACount)
 			}
 			optionUpdated = true
+			optionUpdateCount++
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
 		case "POST /api/channel/":
 			channelCreated = true
@@ -1214,7 +1218,11 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 		ID:   "golden",
 		Name: "Golden config",
 		Spec: ChannelBundleSpec{
-			Options: []ChannelBundleOption{{Key: "ModelRatio", Value: `{"llmgw-mock-chat":1}`}},
+			Options: []ChannelBundleOption{
+				{Key: "ModelRatio", Value: `{"llmgw-mock-chat":1}`},
+				{Key: "CompletionRatio", Value: `{"llmgw-mock-chat":1}`},
+				{Key: "GroupRatio", Value: `{"default":1}`},
+			},
 			Channels: []ChannelBundleChannel{{
 				ID:      "mock",
 				Name:    "Mock",
@@ -1235,8 +1243,8 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != ChannelSyncStatusSynced || !twoFACompleted || !optionUpdated {
-		t.Fatalf("state=%+v twoFACompleted=%v optionUpdated=%v", state, twoFACompleted, optionUpdated)
+	if state.Status != ChannelSyncStatusSynced || loginCount != 1 || twoFACount != 1 || !optionUpdated || optionUpdateCount != 3 {
+		t.Fatalf("state=%+v loginCount=%d twoFACount=%d optionUpdated=%v optionUpdateCount=%d", state, loginCount, twoFACount, optionUpdated, optionUpdateCount)
 	}
 }
 

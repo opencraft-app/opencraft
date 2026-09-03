@@ -394,6 +394,33 @@ export function buildPublicAlternates(path: string): Record<string, string> {
   return alternates;
 }
 
+/** Global-only public pages must not advertise a China-site hreflang target. */
+export function buildGlobalPublicAlternates(path: string): Record<string, string> {
+  const publicPath = stripPublicLocalePrefix(path);
+  const alternates: Record<string, string> = {
+    'x-default': absolutePageUrlForSeoRegion('global', localizedPublicPath(publicPath, 'default')),
+  };
+
+  for (const lang of SEO_PUBLIC_URL_LANGS) {
+    const locale = localeFromUrlLang(lang);
+    const localizedPath = usesBarePathForUrlLang(lang) ? publicPath : localizedPublicPath(publicPath, lang);
+    alternates[locale] = absolutePageUrlForUrlLang(lang, localizedPath);
+  }
+
+  return alternates;
+}
+
+/** English-only content keeps localized UI routes without declaring untranslated content as another language. */
+export function buildGlobalEnglishContentAlternates(path: string): Record<string, string> {
+  const publicPath = stripPublicLocalePrefix(path);
+  const englishUrl = absolutePageUrlForSeoRegion('global', localizedPublicPath(publicPath, 'default'));
+
+  return {
+    'x-default': englishUrl,
+    'en-US': englishUrl,
+  };
+}
+
 export function buildDocsAlternates(
   slug: readonly string[],
   availableLocales: readonly DocsRouteLocale[],

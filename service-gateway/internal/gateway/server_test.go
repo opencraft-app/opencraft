@@ -393,6 +393,162 @@ func TestRouteSpecificAllowedOriginsOverrideGlobalOrigins(t *testing.T) {
 	}
 }
 
+func TestPathSpecificCORSOriginsAreAdditiveAndScoped(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"session":{"user":{"id":"usr_123","email":"ops@example.com"}}}`))
+	}))
+	defer auth.Close()
+
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		AllowedOrigins: []string{"https://lightvela.com"},
+		Routes: []Route{{
+			Name:       "ctl",
+			Prefix:     "/v1/instances",
+			Methods:    []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+			Upstream:   upstream.URL,
+			Access:     AccessAuthenticated,
+			PathPolicy: PathPolicyAllowlist,
+			PathAllow: []PublicRule{
+				{Method: http.MethodPost, Path: "/v1/instances/{instance_id}/tat/session"},
+				{Method: http.MethodPost, Path: "/v1/instances/{instance_id}/debug/exec"},
+			},
+			CORSAllow: []CORSRule{{
+				Method:         http.MethodPost,
+				Path:           "/v1/instances/{instance_id}/tat/session",
+				AllowedOrigins: []string{"https://chat.lightvela.com", "https://localhost.lightvela.com"},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name            string
+		origin          string
+		path            string
+		requestedMethod string
+		wantStatus      int
+		wantOrigin      string
+	}{
+		{
+			name:            "global origin remains allowed on sibling path",
+			origin:          "https://lightvela.com",
+			path:            "/v1/instances/ins-1/debug/exec",
+			requestedMethod: http.MethodPost,
+			wantStatus:      http.StatusNoContent,
+			wantOrigin:      "https://lightvela.com",
+		},
+		{
+			name:            "additional origin is allowed on matching path",
+			origin:          "https://chat.lightvela.com",
+			path:            "/v1/instances/ins-1/tat/session",
+			requestedMethod: http.MethodPost,
+			wantStatus:      http.StatusNoContent,
+			wantOrigin:      "https://chat.lightvela.com",
+		},
+		{
+			name:            "localhost origin is allowed on matching path",
+			origin:          "https://localhost.lightvela.com",
+			path:            "/v1/instances/ins-1/tat/session",
+			requestedMethod: http.MethodPost,
+			wantStatus:      http.StatusNoContent,
+			wantOrigin:      "https://localhost.lightvela.com",
+		},
+		{
+			name:            "additional origin is denied on sibling path",
+			origin:          "https://chat.lightvela.com",
+			path:            "/v1/instances/ins-1/debug/exec",
+			requestedMethod: http.MethodPost,
+			wantStatus:      http.StatusNoContent,
+		},
+		{
+			name:            "additional origin is denied for a different method",
+			origin:          "https://chat.lightvela.com",
+			path:            "/v1/instances/ins-1/tat/session",
+			requestedMethod: http.MethodGet,
+			wantStatus:      http.StatusNotFound,
+		},
+		{
+			name:            "unknown origin is denied on matching path",
+			origin:          "https://attacker.example",
+			path:            "/v1/instances/ins-1/tat/session",
+			requestedMethod: http.MethodPost,
+			wantStatus:      http.StatusNoContent,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodOptions, tc.path, nil)
+			req.Header.Set("Origin", tc.origin)
+			req.Header.Set("Access-Control-Request-Method", tc.requestedMethod)
+			req.Header.Set("Access-Control-Request-Headers", "authorization,content-type")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("expected %d, got %d body=%s", tc.wantStatus, rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != tc.wantOrigin {
+				t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, tc.wantOrigin)
+			}
+		})
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/tat/session", nil)
+	req.Header.Set("Origin", "https://chat.lightvela.com")
+	req.Header.Set("Authorization", "Bearer session-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://chat.lightvela.com" {
+		t.Fatalf("Access-Control-Allow-Origin = %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q", got)
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("upstream calls = %d, want 1", upstreamCalls)
+	}
+}
+
+func TestPathSpecificCORSRuleMustReferenceAllowedRoutePath(t *testing.T) {
+	_, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.example.test",
+		Routes: []Route{{
+			Name:       "ctl",
+			Prefix:     "/v1/instances",
+			Methods:    []string{http.MethodPost, http.MethodOptions},
+			Upstream:   "http://ctl.example.test",
+			Access:     AccessAuthenticated,
+			PathPolicy: PathPolicyAllowlist,
+			PathAllow: []PublicRule{{
+				Method: http.MethodPost,
+				Path:   "/v1/instances/{instance_id}/tat/session",
+			}},
+			CORSAllow: []CORSRule{{
+				Method:         http.MethodPost,
+				Path:           "/v1/instances/{instance_id}/debug/exec",
+				AllowedOrigins: []string{"https://chat.lightvela.com"},
+			}},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "must reference an allowed route path") {
+		t.Fatalf("expected scoped CORS path validation error, got %v", err)
+	}
+}
+
 func TestRoutePathAllowlistScopesCORSPreflight(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("preflight must not reach upstream")

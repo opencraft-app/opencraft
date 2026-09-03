@@ -21,6 +21,46 @@ export const MODEL_PROVIDER_RAINBOW_KEY = {
   en: 'model_provider_list_en.json',
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function normalizeProvider(value: unknown): IModelProvider | null {
+  if (!isRecord(value) || !Array.isArray(value.models)) return null;
+  const providerValue = readString(value.value).trim();
+  const category = value.category;
+  const baseUrl = readString(value.base_url).trim();
+  const api = readString(value.api).trim();
+  if (!providerValue || (category !== 'coding_plan' && category !== 'api') || !baseUrl || !api) return null;
+
+  const provider = readString(value.provider).trim() || providerValue;
+  const providerName = readString(value.provider_name).trim() || provider;
+  const models = value.models.flatMap((model) => {
+    if (!isRecord(model)) return [];
+    const id = readString(model.id).trim();
+    if (!id) return [];
+    const name = readString(model.name).trim() || id;
+    return [{ ...model, id, name }];
+  });
+
+  return {
+    ...value,
+    value: providerValue,
+    category,
+    provider,
+    provider_name: providerName,
+    description: sanitizeHtml(readString(value.description)),
+    api_key_url: readString(value.api_key_url).trim(),
+    base_url: baseUrl,
+    api,
+    models,
+  } as IModelProvider;
+}
+
 /**
  * 从 keyValues 中按语言选 key，解析出模型列表
  *
@@ -41,13 +81,10 @@ export function parseRainbowModelProviders(
   try {
     const parsed = JSON.parse(matched.value);
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    // 逐项校验最小必需字段，过滤掉结构异常的项
+    // 逐项校验连接所需字段；整组均无效时返回 null，让上层使用本地兜底。
     const valid = parsed
-      .filter((item): item is IModelProvider => !!item && typeof item.value === 'string' && Array.isArray(item.models))
-      // XSS 防护：对 description 字段做 HTML 白名单过滤（仅允许 <a href target>）
-      .map((item) =>
-        typeof item.description === 'string' ? { ...item, description: sanitizeHtml(item.description) } : item,
-      );
+      .map(normalizeProvider)
+      .filter((item): item is IModelProvider => item !== null);
     return valid.length > 0 ? valid : null;
   } catch {
     return null;

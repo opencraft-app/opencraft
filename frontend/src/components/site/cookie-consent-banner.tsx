@@ -68,7 +68,7 @@ const hasCookieCopy = (locale: string | undefined): locale is CookieCopyLocale =
 
 export const CookieConsentBanner = () => {
   const pathname = usePathname();
-  const { i18n } = useTranslation();
+  const { i18n } = useTranslation(undefined, { useSuspense: false });
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {

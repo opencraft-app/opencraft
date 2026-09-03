@@ -205,6 +205,7 @@ const SPANISH_STATIC_PAGE_TITLES: Record<string, string> = {
   "/auth/sign-in": "Iniciar sesión",
   "/auth/sign-up": "Crear una cuenta",
   "/auth/sign-up-code": "Verificar código",
+  "/blog": "Blog",
   "/changelog": "Novedades",
   "/cookie-policy": "Política de cookies",
   "/dashboard/create": "Crear un agente",
@@ -254,6 +255,8 @@ const SPANISH_DOC_PAGE_TITLES: Record<string, string> = {
 const SPANISH_PAGE_DESCRIPTIONS: Record<string, string> = {
   "/about":
     "Conoce cómo LightVela acerca los agentes de IA en la nube a más personas mediante una experiencia gestionada y sencilla.",
+  "/blog":
+    "El Blog de LightVela compartirá anuncios de producto, actualizaciones y casos de uso de agentes de IA alojados en la nube.",
   "/changelog":
     "Consulta las actualizaciones del producto, las nuevas funciones y las mejoras de experiencia de LightVela.",
   "/cookie-policy":
@@ -325,12 +328,16 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "为 Hermes 配置技能（Skills）：基于腾讯 SkillHub 的可调用能力包，覆盖待办整理、日报、网页浏览、新闻搜索、图像生成等，支持管理台与对话两种安装方式。",
     "/docs/configuration/deepseek-harness":
       "在 LightVela 中安装和管理 DeepSeek Harness，了解模型提供商、插件、工作区、WebUI 和独立运行边界。",
+    "/docs/configuration/workbench":
+      "在 LightVela 中使用 AI Agent 创建、部署和管理静态网站，了解模板、发布状态、配额和托管边界。",
     "/docs/faq":
       "LightVela 使用过程中的常见问题汇总：账号登录、实名认证、套餐积分、模型与通道配置、对话与记忆机制等。",
   },
   global: {
     "/about":
       "Built by the Tencent Lighthouse team, LightVela was born from a question: what should AI become? We believe AI should not be just a cold tool, but a long-term presence that knows you, remembers you, and grows with you.",
+    "/blog":
+      "The LightVela Blog will share product announcements, updates, and use cases for cloud-hosted AI Agents.",
     "/changelog":
       "Track LightVela product updates, new capabilities, and experience improvements, including cloud storage, achievements, web chat, memory views, and automations.",
 
@@ -385,6 +392,8 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "Switch between configured models in LightVela when you need a different balance of capability, speed, cost, or provider availability.",
     "/docs/configuration/deepseek-harness":
       "Install and manage DeepSeek Harness in LightVela as a separate Labs environment alongside Hermes Agent, with model providers, plugins, workspaces, and a controlled WebUI.",
+    "/docs/configuration/workbench":
+      "Build, deploy, and manage static websites with an AI Agent in LightVela, including templates, deployment status, quotas, and hosting boundaries.",
     "/docs/configuration/automation":
       "Set up Hermes automations: schedule recurring tasks (reminders, daily reports, news tracking, content publishing) by time or trigger, with templates and lifecycle management.",
     "/docs/configuration/agent-chat":
@@ -421,6 +430,7 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
   },
   global: {
     "/about": "About LightVela",
+    "/blog": "Blog",
     "/changelog": "Changelog",
     "/privacy-policy": "Privacy Policy",
     "/terms-of-service": "Terms of Service",
@@ -512,6 +522,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/skill": "配置技能",
     "/docs/configuration/deepseek-harness": "DeepSeek Harness",
+    "/docs/configuration/workbench": "工作台",
     "/docs/plans": "套餐管理",
     "/docs/announcements/public-beta": "LightVela 付费版本公告",
     "/docs/faq": "常见问题 FAQ",
@@ -528,6 +539,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/diagnostics": "Diagnostics",
     "/docs/configuration/multiple-models": "Model Switching",
     "/docs/configuration/deepseek-harness": "DeepSeek Harness",
+    "/docs/configuration/workbench": "Workbench",
     "/docs/configuration/channel-wechat": "WeChat",
     "/docs/configuration/channel-telegram": "Telegram",
     "/docs/configuration/channel-whatsapp": "WhatsApp",

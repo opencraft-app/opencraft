@@ -24,6 +24,7 @@ export const JAPANESE_STATIC_PAGE_TITLES: Record<string, string> = {
   "/auth/sign-in": "ログイン",
   "/auth/sign-up": "アカウントを作成",
   "/auth/sign-up-code": "認証コードを確認",
+  "/blog": "ブログ",
   "/changelog": "更新情報",
   "/cookie-policy": "Cookieポリシー",
   "/dashboard/create": "エージェントを作成",
@@ -74,6 +75,7 @@ export const JAPANESE_DOC_PAGE_TITLES: Record<string, string> = {
 export const JAPANESE_PAGE_DESCRIPTIONS: Record<string, string> = {
   "/about":
     "LightVelaが、クラウドAIエージェントを分かりやすいマネージド体験として提供する理由と目指す未来を紹介します。",
+  "/blog": "LightVelaのブログでは、クラウドでホストされるAIエージェントの製品発表、更新、活用事例を紹介します。",
   "/changelog":
     "LightVelaの新機能、製品アップデート、使いやすさの改善内容を確認できます。",
   "/cookie-policy":
@@ -94,6 +96,7 @@ export const JAPANESE_PAGE_DESCRIPTIONS: Record<string, string> = {
 export type JapanesePublicRoutePath =
   | "/"
   | "/about"
+  | "/blog"
   | "/changelog"
   | "/cookie-policy"
   | "/open-source-licenses"

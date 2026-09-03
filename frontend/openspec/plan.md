@@ -1,6 +1,167 @@
+# 高级设置关闭审批状态提示移除 Implementation Plan
+
+**Status:** 已实现并通过 RED/GREEN、多语言、前端门禁与本地组件页面验收，准备提交。
+
+**Design:** `openspec/changes/2026-08-30-approval-off-warning-copy-removal-design.md`
+
+**Detailed plan:** `openspec/changes/2026-08-30-approval-off-warning-copy-removal-implementation-plan.md`
+
+- [x] 删除关闭审批状态提示及七种语言资源，保留选项、保存与确认弹窗。
+- [x] 完成 RED/GREEN、多语言校验、前端门禁和浏览器验收。
+
+**Verification:** 目标测试先按七种语言准确 RED（7 failed / 41 passed），实现后 48/48 GREEN；`pnpm i18n:check`、`pnpm check` 与 `git diff --check` 通过。应用内浏览器使用临时本地组件预览验证“关闭审批”仍显示、风险确认弹窗仍出现、确认后目标提示计数为 0，控制台新增错误为 0；预览路由已删除，未进入最终 diff。
+
+---
+
+# 国际站 Blog 入口与页面头部统一 Implementation Plan
+
+**Status:** 实现中，等待用户验收；不自动 commit、push 或创建 MR。
+
+**Goal:** 让国际站所有公开页共享 Blog 顶部入口，并让首页与 Blog 页保持一致的国际站 Footer，同时保留 Blog 页当前透明头部效果。
+
+**Design:** `openspec/changes/2026-09-02-global-blog-navigation-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-global-blog-navigation-implementation-plan.md`
+
+- [x] 注册国际站 Blog 顶部导航项，验证桌面导航、移动菜单、语言前缀和国内站隔离。
+- [x] 验证国际站首页与 Blog 页 Footer 入口及 Blog 页透明头部回归。
+- [x] 完成定向测试、国际化检查、类型检查、双区域构建和浏览器验收。
+
+---
+
+# 国际站 V2 首页性能优化 Implementation Plan
+
+**Status:** MR !3533 的 CR 修正已提交并同步最新 master，合并后复验完成，等待 push 更新 MR；当前未发布。
+
+**Size:** M。范围限定在国际站 V2 首页 client boundary、评价头像和场景子按钮；fragment 输出建议已实测无收益并撤回。不修改完整 marketing layout、动效生命周期或发布缓存。
+
+**Goal:** 去除一份重复 i18n client chunk，延迟并缩小评价头像，修复 18 个场景子按钮的 click/Enter/Space 操作，并用真实 RSC 产物校正无效的 fragment 优化建议。
+
+**Design:** `openspec/changes/2026-09-02-international-home-performance-v2-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-international-home-performance-v2-implementation-plan.md`
+
+- [x] **Task 1：测试先行拆分持久 App Provider client boundary；根据首次构建证据移除 repository 对全量 `@/i18n/t` 的单条默认名称依赖，并用真实 global 构建验证完整字典 chunk 数。**
+- [x] **Task 2：实现 Server Component 直出实验并用真实 RSC 产物确认载荷未减少，撤回无收益生产改动。**
+- [x] **Task 3：测试先行生成评价头像 64×64 WebP，并为全部 locale fragment 添加 lazy、async decoding 和真实展示尺寸。**
+- [x] **Task 4：以真实 runtime 行为测试锁定并修复 18 个场景子按钮的 hover、click、Enter、Space 与 `aria-pressed`。**
+- [x] **Task 5：完成聚焦回归、i18n、类型、global build、bundle/HTML/RSC/头像字节对比和双视口浏览器 smoke。**
+- [x] **Task 6：处理 MR CR：移除旧 Provider re-export，并让 9 份静态 fragment 在脚本执行前携带正确的初始 `aria-pressed`。**
+
+**Acceptance:** 首页 global 构建只包含一份完整 eager 字典 key 集合；fragment 实验以真实 RSC 证据撤回且不虚报 97 KB 收益；评价头像 lazy 并引用 64×64 WebP；18 个 `.scene__sub` 可通过 hover、click、Enter/Space 激活；七 locale、header 与首页视觉不变。
+
+**Verification:** MR 基线 `origin/master`（`4b6cb083e`）已完成原始复验，CR 修正后已同步最新 `origin/master`（`aafc32ed`）。CR 修正先得到 2 个预期失败，合并后聚焦测试 10 文件 117 项、`pnpm check`（0 new diagnostics）和 `pnpm build:global`（592/592）通过。9 份 fragment 共 162 个场景按钮均含静态 `aria-pressed`，每份 6 个初始选中态；helper 单测覆盖每组唯一选中、无关标记保留和二次执行字节一致。同提交纯 master 对照下，首页本地 JS 为 4,075,348 → 3,051,382 B raw、1,014,547 → 778,284 B Brotli，完整 2,693-key 字典 2 → 1；12 个唯一评价头像 1,248,169 → 25,056 B。英文桌面和西语 390px 浏览器 smoke 无 console error、无横向溢出，click/Enter/Space 均通过。
+
+**Out of scope:** 动效 IIFE cleanup、打字机布局优化、缓存头、完整 marketing layout、i18n 异步协议、API/鉴权/计费/发布。
+
+---
+
+# 云存储实例容量展示 Implementation Plan
+
+**Status:** 容量展示、系统预留口径及 CR 修正已实现；已合并最新 `master` 并完成复验，等待更新 MR !3499。
+
+**Size:** S。单一云存储页面增强；业务逻辑和测试各 1 个文件，i18n 资源由脚本机械生成，不新增后端、公共接口、权限、计费或依赖。
+
+**Goal:** 国内站和国际站云存储页面显示实例磁盘已用、总量和剩余容量，并在进入页面、手动刷新、上传成功和删除成功后更新。
+
+**PRD:** `../wiki/prd-docs/2026-09-02-cloud-storage-capacity.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-cloud-storage-capacity-implementation-plan.md`
+
+- [x] **Developer｜修改 `tat-file-manager-panel.tsx`、对应组件测试及生成 i18n 资源：先以失败测试锁定固定 TAT/TSSH 容量查询、展示、错误隔离与刷新时机，再最小实现并完成聚焦测试、i18n、类型、双区域构建和页面 smoke。**
+- [x] **Developer｜根据真实实例验收修正统计口径：先以失败测试锁定 `已用 = 总容量 - 普通用户可用容量`、文案“可用”及新进度值，再最小修改固定命令和 i18n 文案并完成验证。**
+- [x] **Developer｜处理 CR：测试先行兼容 TAT 缺失退出码、用双哨兵从 PTY 噪声中提取容量 JSON、记录脱敏失败原因并恢复重命名单次调用断言；同步澄清真实实例验收记录。**
+- [x] **Developer｜合并最新 `origin/master`，只解决 `openspec/plan.md` 热点文件冲突，再完成聚焦测试、`pnpm check`、双区域构建和 MR 状态核验。**
+
+**Acceptance:** 容量卡片展示 `/home/agentuser` 所在文件系统的已用/总量、普通用户可用空间及可访问进度条；系统预留计入“已用”，满足 `总容量 = 已用容量 + 可用容量`；首次进入、手动刷新、上传成功和删除成功后重查；查询失败不影响文件管理；命令固定只读且无用户输入；国内站和国际站均生效。
+
+**Out of scope:** 目录大小汇总、业务配额、扩容、告警、历史趋势、轮询、新后端接口及其他文件管理行为调整。
+
+**Verification:** 既有文件管理器基线 24/24 通过；新增 5 个容量场景先 RED，最小实现后总计 29/29 GREEN。系统预留口径修正前先确认基线 29/29，通过新增断言得到 1 个预期 RED，最小修查询公式与文案后恢复 29/29 GREEN。CR 回归新增 TAT 缺失退出码、PTY 杂音与诊断日志脱敏场景：旧实现先得到 4 个预期失败，额外安全断言再得到 1 个预期失败，最小修复后组件测试 32/32 GREEN。合并最新 `master` 后复验：组件测试 32/32、`pnpm check` 通过（TypeScript diagnostics 206 current / 276 baseline / 0 new / 70 resolved），i18n 结构错误 0，所有新增文案覆盖 6 个必填翻译 locale；`build:cn` 93/93、`build:global` 585/585 静态页生成通过。本地直连账号没有 Agent，页面停留在“Create Now”；另通过用户已登录的预览页面与本地代理捕获到真实 Agent 的 TAT 容量响应，确认 Python、权限与 `statvfs` 字段可用，并据此完成系统预留口径修正。
+
+---
+
+# 国际站 Blog 评审修正 Implementation Plan
+
+**Status:** 实现与验证完成，等待提交并更新 MR。
+
+**Size:** S。
+仅修正国际站 Blog 的英文外链、英文正文 SEO 语义、分类类型与本地化日期格式。
+不翻译博客正文，不移除语言前缀路由，不改国内站公开路由。
+
+**Goal:** 让英文正文只声明英文 hreflang，使用可访问的 HTTPS 外链，并让日期按当前界面语言和北京时间格式化。
+
+- [x] **Task 1：测试先行修正 Blog 外链、英文正文 alternates、分类类型和本地化日期，并完成国际站与国内站构建验证。**
+
+**Verification:** Blog 专项断言先按预期 RED（6 个失败），实现后 6 个测试文件共 40 个断言 GREEN。`pnpm i18n:check`、`pnpm check`、`pnpm build:global`、`pnpm build:cn` 与 `git diff --check` 均通过；类型基线为 206 current / 276 baseline / 0 new / 70 resolved。
+
+---
+
+# Hy Token Plan 添加前自动验证 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收；尚未创建分支或提交。
+
+**Size:** S。仅调整 Hy Token Plan 个人版的模型状态检测入口和添加动作时序；不修改七彩石、Hermes 协议或其他 Provider。
+
+**Goal:** 隐藏 Hy 的独立“检测模型状态”按钮，点击“添加模型”时先真实验证，成功后才保存，失败时保留表单且不写配置。
+
+**Design:** `openspec/changes/2026-09-02-hy-token-plan-validate-on-add-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-hy-token-plan-validate-on-add-implementation-plan.md`
+
+- [x] **Developer｜测试先行为 Hy 增加添加前验证能力，隐藏独立检测按钮，串行执行 `connectivityProbe -> add`，覆盖失败不保存和其他 Provider 不变，并完成聚焦回归、类型与差异检查。**
+
+**Acceptance:** Hy 点击添加时使用当前模型和 API Key 执行 `model_request`；成功直接保存且不弹检测成功框；失败不产生 `add`、不清空表单；其他 Provider 的独立检测与添加流程不变。
+
+**Out of scope:** 不改变七彩石目录/缓存/兜底，不删除底层检测能力，不增加验证缓存、轮询或新接口；未经确认不创建分支、commit、push 或 MR。
+
+**Verification:** Provider 能力用例先出现 1 个预期 RED；面板成功/失败链路先出现 2 个预期 RED。最小实现后模型配置标准套件 7 个文件 126/126 GREEN，本地 Hy4 整体失败兜底测试 1/1 GREEN；面板测试同时覆盖探测命令异常不保存且保留表单。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。标准套件首次执行因系统 Python 缺少 `cryptography` 产生环境级级联失败，改用 Codex 工作区自带 Python 后全部通过。
+
+## 线上重复配置回归修复
+
+- [x] **Developer｜测试先行修复已配置主模型再次输入 Key 时用途误落到“仅添加”的问题：保持当前主模型用途，完成添加前检测后更新配置，并验证首次添加与其他用途不受影响。**
+
+**线上证据（2026-09-03）：** 同一 Hy4 Preview 独立连通性检测通过（约 0.9 秒），证明 API Key、七彩石模型名和 Token Plan 请求地址有效；失败表单同时显示该模型已经是主模型、用途却默认选中“仅添加”，故故障位于重复配置的用途校验而非模型接口。
+
+**Follow-up verification:** 新增回归用例先按预期 RED（当前主模型被错误选为“仅添加”），最小实现后自动保持“设为主模型”并禁用无效的“仅添加”；模型面板 32/32、模型配置目录 128/128（另 1 条按环境跳过）通过。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）。本机 `/etc/hosts` 缺少 localhost 映射，Vitest 运行时临时指定 `127.0.0.1` 后已还原；Hermes 客户端套件使用 Codex 工作区 Python 以满足既有 `cryptography` 测试依赖。本地页面可达但未登录，交互回归由聚焦组件测试覆盖。
+
+## Coding Plan 直接添加模型
+
+**Status:** 实现与自动化验证完成，用户已确认提交。
+
+**Detailed plan:** `openspec/changes/2026-09-03-coding-plan-direct-add-implementation-plan.md`
+
+- [x] **Developer｜测试先行移除 Coding Plan 添加前自动检测：添加直接保存，保留独立“检测模型状态”，删除 `validateBeforeAdd` 及其专用状态，并完成聚焦回归与 `pnpm check`。**
+
+**Verification:** 新增直接添加断言先按预期 RED，确认旧实现仍发出 `connectivityProbe`；Provider 适配断言同时因残留 `validateBeforeAdd` 失败。最小实现后聚焦测试 40/40 GREEN，模型配置目录回归 125/125 GREEN（另 1 条按环境跳过）。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；独立“检测模型状态”测试继续覆盖 `model_request`。本机 Vitest 临时使用 `127.0.0.1` 绕过 `localhost` 解析异常，验证后已还原配置。
+
+---
+
+# Hy Token Plan 七彩石模型目录 Implementation Plan
+
+**Status:** 实现与自动化验证完成，等待用户验收；尚未创建分支或提交。
+
+**Size:** S。仅调整 Hy Token Plan 个人版在产品 Provider 适配层的数据来源与空目录过滤；不修改七彩石接口、模型配置协议或其他 Provider 行为。
+
+**Goal:** 七彩石成功时由远端决定 Hy Token Plan 的存在性、说明和模型列表；整体失败时保留本地 Hy4 兜底，并继续使用固定目录交互。
+
+**Design:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-catalog-design.md`
+
+**Detailed plan:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-catalog-implementation-plan.md`
+
+- [x] **Developer｜测试先行取消 Hy 成功态本地目录覆盖，过滤空模型 Provider，保留本地 Hy4 兜底和固定选择交互，并完成聚焦回归、类型与差异检查。**
+
+**Acceptance:** 远端 Hy 目录与说明原样进入 LightVela；远端缺失或模型为空时不展示；七彩石整体失败仍由现有 Hook 回退本地 Hy4；无模型发现入口，检测与添加协议不变。
+
+**Out of scope:** 不增加实时刷新、缓存 TTL、轮询、已保存配置迁移、SDK 依赖升级或其他 Provider 行为调整；未经确认不创建分支、commit、push 或 MR。
+
+**Verification:** 新适配用例先出现 2 个预期 RED，分别证明远端目录/说明被本地 Hy4 覆盖以及空目录被错误补回；最小实现后 3 个聚焦测试文件 38/38 GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0），`git diff --check` 无输出。
+
+---
+
 # Hy Token Plan 个人版固定模型 Implementation Plan
 
-**Status:** 实现与自动化验证完成；本地浏览器账号无智能体，只完成路由可达性与无控制台错误 smoke，等待用户验收；不自动 commit、push 或创建 MR。
+**Status:** 七彩石覆盖回归已完成实现与自动化验证，等待提交 MR。
 
 **Size:** S。仅调整腾讯云 Hy Token Plan（个人版）的模型选择策略与 Hy4 目录文案，不改变其他 Provider、连接检测协议或添加模型生效流程。
 
@@ -10,7 +171,16 @@
 
 **Detailed plan:** `openspec/changes/2026-09-01-hy-token-plan-fixed-model-implementation-plan.md`
 
+**Follow-up plan:** `openspec/changes/2026-09-02-hy-token-plan-rainbow-override-implementation-plan.md`
+
 - [x] **测试先行实现 Hy4 固定目录、状态检测与添加生效，完成 i18n、类型、专项回归、双区域构建和国内站页面可达性 smoke。**
+- [x] **测试先行修复七彩石覆盖：即使远端仍返回 Hy4 Preview 与 Hy3，Hy 个人版也只展示本地 `hy4-preview` 并使用 Hy4 说明；保持模型状态检测与添加模型协议不变。**
+
+**Follow-up 执行记录（2026-09-02）：**
+
+- RED：按现网七彩石返回 `hy4-preview + hy3` 与旧 Hy3 说明构造回归用例，适配器按预期失败并暴露两个远端模型。
+- GREEN：Hy 个人版在适配层改用本地固定目录与说明，适配器和模型面板聚焦回归 35/35 通过；模型状态检测仍为 `model_request`，添加模型仍为 `discoverModels: false`。
+- 质量门禁：`pnpm check` 通过（0 个新增 TypeScript 诊断、i18n 结构错误 0）；`pnpm build:cn` 生成 90/90 页面，`pnpm build:global` 生成 564/564 页面；`git diff --check` 无输出。
 
 **执行记录（2026-09-01）：**
 

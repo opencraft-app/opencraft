@@ -35,3 +35,4 @@ extends:
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
     PLAYGROUND_BUILD_ENVS: auto
     PLAYGROUND_AUTO_PIN_ENVS: auto
+    PROD_REVIEWERS: '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
