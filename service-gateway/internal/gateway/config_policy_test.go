@@ -329,14 +329,18 @@ func TestProductionChatOriginsAreScopedToBotListAndTATSession(t *testing.T) {
 			wantOrigins: map[string]struct{}{
 				"https://chat.lightvela.com":      {},
 				"https://localhost.lightvela.com": {},
+				"https://chat.lightvela.ai":       {},
+				"https://localhost.lightvela.ai":  {},
 			},
 		},
 		{
 			name:       "Singapore",
 			configPath: "argocd/services/service-gateway/sgprod/config.yaml",
 			wantOrigins: map[string]struct{}{
-				"https://chat.lightvela.ai":      {},
-				"https://localhost.lightvela.ai": {},
+				"https://chat.lightvela.com":      {},
+				"https://localhost.lightvela.com": {},
+				"https://chat.lightvela.ai":       {},
+				"https://localhost.lightvela.ai":  {},
 			},
 		},
 	}
