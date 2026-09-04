@@ -7,7 +7,11 @@ readonly RUNTIME_USER="agentuser"
 readonly DSH_PORT="3080"
 readonly SERVICE_NAME="deepseek-harness.service"
 readonly NPM_REGISTRY="https://registry.npmjs.org/"
-readonly DSH_SPEC="@deepseek-ai/dsh@latest"
+# DSH 0.1.2 requires a process launch token that the LightVela reverse proxy
+# cannot exchange yet. Keep the last verified proxy-compatible package family
+# until that authentication handoff is implemented end to end.
+readonly DSH_COMPAT_VERSION="0.1.1-rc.2"
+readonly DSH_SPEC="@deepseek-ai/dsh@${DSH_COMPAT_VERSION}"
 readonly SKILLHUB_SPEC="@cocofhu/skillhub@latest"
 readonly QQBOT_SPEC="deepseek-harness-qqbot@latest"
 readonly WEIXIN_SPEC="deepseek-harness-weixin@latest"
@@ -397,7 +401,7 @@ resolve_latest_snapshot() {
   python3 - "${dsh_metadata}" "${skillhub_metadata}" \
     "${qqbot_metadata}" "${weixin_metadata}" "${wecom_metadata}" \
     "${lark_metadata}" "${dingtalk_metadata}" "${manifest_path}" \
-    "${PNPM_VERSION}" "${TRUSTED_BROWSER_HOST}" <<'PY'
+    "${PNPM_VERSION}" "${TRUSTED_BROWSER_HOST}" "${DSH_COMPAT_VERSION}" <<'PY'
 import json
 import re
 import sys
@@ -406,9 +410,10 @@ from datetime import datetime, timezone
 (
     dsh_path, skillhub_path, qqbot_path, weixin_path, wecom_path,
     lark_path, dingtalk_path, output_path, pnpm_version, trusted_browser_host,
+    dsh_requested_version,
 ) = sys.argv[1:]
 
-def registry(path, expected_name):
+def registry(path, expected_name, requested="latest"):
     with open(path, encoding="utf-8") as handle:
         value = json.load(handle)
     version = value.get("version")
@@ -422,7 +427,7 @@ def registry(path, expected_name):
         raise SystemExit(f"invalid npm tarball for {expected_name}")
     return {
         "package": expected_name,
-        "requested": "latest",
+        "requested": requested,
         "version": version,
         "integrity": integrity,
         "tarball": tarball,
@@ -439,7 +444,7 @@ manifest = {
         "version": 1,
         "hostname": trusted_browser_host,
     },
-    "runtime": registry(dsh_path, "@deepseek-ai/dsh"),
+    "runtime": registry(dsh_path, "@deepseek-ai/dsh", dsh_requested_version),
     "profile": {
         "name": "web",
         "builtInBundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"],
