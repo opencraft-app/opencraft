@@ -49,7 +49,7 @@ if [ "${1:-}" = "view" ]; then
     exit 69
   fi
   case "${specification}" in
-    '@deepseek-ai/dsh@latest') package_name='@deepseek-ai/dsh'; version='0.1.1-rc.2'; integrity='sha512-runtime' ;;
+    '@deepseek-ai/dsh@0.1.1-rc.2') package_name='@deepseek-ai/dsh'; version='0.1.1-rc.2'; integrity='sha512-runtime' ;;
     '@cocofhu/skillhub@latest') package_name='@cocofhu/skillhub'; version='0.2.16'; integrity='sha512-skillhub' ;;
     'deepseek-harness-qqbot@latest') package_name='deepseek-harness-qqbot'; version='0.1.5'; integrity='sha512-qqbot' ;;
     'deepseek-harness-weixin@latest') package_name='deepseek-harness-weixin'; version='0.2.5'; integrity='sha512-weixin' ;;
@@ -392,8 +392,10 @@ import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as handle:
-    patch = json.load(handle)["browserTrustPatch"]
+    manifest = json.load(handle)
+patch = manifest["browserTrustPatch"]
 assert patch == {"version": 1, "hostname": sys.argv[2]}, patch
+assert manifest["runtime"]["requested"] == "0.1.1-rc.2", manifest["runtime"]
 PY
 
 printf '%s\n' 'custom-provider-patch' >"${profile}/cordis.patch.yml"
