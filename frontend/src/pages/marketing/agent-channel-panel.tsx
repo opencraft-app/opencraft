@@ -9,8 +9,10 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import './agent-config/styles-index.css';
 import { t } from "@/i18n/t";
+import { resolveAgentConsoleCollectionLabel } from '@/pages/marketing/agent-provider-locale';
 import { Info, Eye, EyeOff } from 'lucide-react';
 import {
   useChannelOperations,
@@ -120,6 +122,7 @@ function getTokenChannelMeta(kind: 'telegram' | 'discord' | 'slack' | 'dingtalk'
 
 export function ChannelPanel(props: ChannelPanelProps) {
   const { className, ...baseProps } = props;
+  const { i18n } = useTranslation();
 
   const ops = useChannelOperations(baseProps);
 
@@ -296,7 +299,9 @@ export function ChannelPanel(props: ChannelPanelProps) {
     <div
       className={`${CLS} ${ops.productConfig.isI18n ? `${CLS}--i18n` : ''} ${className || ''}`}
     >
-      <h2 className={`${CLS}__title`}>{t('通道')}</h2>
+      <h2 className={`${CLS}__title`}>
+        {resolveAgentConsoleCollectionLabel('channel', i18n.language, t)}
+      </h2>
 
       {/* 提示条 */}
       <div className={`${CLS}__hint-bar`}>

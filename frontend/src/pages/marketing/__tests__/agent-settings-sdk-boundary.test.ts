@@ -10,6 +10,13 @@ const readSource = (relativePath: string) =>
 // 真实 debug exec adapter 定义在 agent-tat-adapter，
 // authApiBaseUrl 空值守卫收敛到 repositories 层。
 describe("agent settings TEA SDK boundary", () => {
+  it("uses contextual collection labels for the channel and model navigation", () => {
+    const page = readSource("src/pages/marketing/agent-settings-page.tsx");
+
+    expect(page).toContain('resolveAgentConsoleCollectionLabel("channel", i18n.language, t)');
+    expect(page).toContain('resolveAgentConsoleCollectionLabel("model", i18n.language, t)');
+  });
+
   it("keeps panel inputs stable so background refreshes cannot remount ready content as loading", () => {
     const page = readSource("src/pages/marketing/agent-settings-page.tsx");
 

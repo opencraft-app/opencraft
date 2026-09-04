@@ -3537,6 +3537,9 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   inset: 0;
   justify-content: center;
   max-width: none;
+  box-sizing: border-box;
+  padding-inline: 18px;
+  overflow: hidden;
   opacity: 0;
   transform: translateY(6px);
   filter: blur(3px);
@@ -3643,6 +3646,13 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.soul-strip__cap--secondary > .soul-strip__copy {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.soul-strip__cap--secondary > .soul-strip__icons {
+  flex: 0 0 auto;
 }
 @keyframes soul-strip-primary {
   0%,

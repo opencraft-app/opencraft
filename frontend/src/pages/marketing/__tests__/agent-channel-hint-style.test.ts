@@ -63,7 +63,7 @@ describe("Channel panel hint", () => {
     ]);
 
     expect(channelPanelSource).toMatch(
-      /<h2 className=\{`\$\{CLS\}__title`\}>\{t\('通道'\)\}<\/h2>/,
+      /resolveAgentConsoleCollectionLabel\('channel', i18n\.language, t\)/,
     );
     expect(titleRule).toBeDefined();
     expect(titleRule).toContain("margin: 0 0 4px;");

@@ -222,10 +222,6 @@ export function splitHermesMemoryEntries(text: string): string[] {
     .filter(Boolean);
 }
 
-export function toSingleLineMemoryEntry(entry: string): string {
-  return entry.replace(/\s+/g, " ").trim();
-}
-
 export function getMemoryUsagePercent(used: number, limit: number): number {
   if (limit <= 0) return 0;
   return Math.min(100, Math.max(0, Math.round((used / limit) * 100)));

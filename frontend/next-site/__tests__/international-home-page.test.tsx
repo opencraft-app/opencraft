@@ -427,6 +427,8 @@ describe("international v2 homepage artifact", () => {
     expect(importer).toContain("btn.addEventListener('click', activate);");
     expect(importer).toContain("btn.addEventListener('keydown', activateFromKeyboard);");
     expect(importer).toContain("Unable to add accessible activation to homepage scene buttons");
+    expect(importer).toContain("Your AI companion—always on, always evolving with you.");
+    expect(importer).not.toContain("Your AI companion, always here, always evolving with you");
   });
 
   it("connects the approved homepage navigation to production destinations", () => {
@@ -440,13 +442,22 @@ describe("international v2 homepage artifact", () => {
 
   it("ships localized fragments for each published international homepage locale", () => {
     const expectedCopy = {
-      "en-US": "Your AI companion, always here, always evolving with you",
+      "en-US": "Your AI companion—always on, always evolving with you.",
       "zh-SG": "越用越懂你，长期在线的 AI 伙伴",
       "zh-Hant": "越用越懂你，長期在線的 AI 夥伴",
       "id-ID": "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
       es: "Cuanto más lo uses, mejor te entenderá, tu compañero de IA siempre en línea",
       "ja-JP": "使うほどあなたを理解する、ずっとオンラインのAIパートナー",
       "ko-KR": "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
+    } as const;
+    const expectedAlwaysOnCopy = {
+      "en-US": "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.",
+      "zh-SG": "云端 7×24 小时在线",
+      "zh-Hant": "雲端 7×24 小時在線",
+      "id-ID": "di cloud dan tersedia 24/7",
+      es: "en la nube y estoy disponible 24/7",
+      "ja-JP": "クラウドで24時間365日稼働する",
+      "ko-KR": "클라우드에서 24시간 연중무휴로 실행",
     } as const;
     const expectedCardAssets = {
       "en-US": ["wcard-apps-en.png", "wcard-folder-en.webp", "wcard-hub-v3-en.webp"],
@@ -484,6 +495,7 @@ describe("international v2 homepage artifact", () => {
       expect(document.querySelector("#lightvela-intl-home")?.getAttribute("data-locale")).toBe(locale);
       expect(document.querySelector(".nav__brand b"), `${locale} duplicate brand label`).toBeNull();
       expect(html).toContain(expectedCopy[locale]);
+      expect(document.body.textContent).toContain(expectedAlwaysOnCopy[locale]);
       expect(
         Array.from(document.querySelectorAll(".nav__links a"), (anchor) => anchor.textContent?.trim()),
       ).toEqual(expectedNavLabels[locale]);
@@ -748,6 +760,20 @@ describe("international v2 homepage artifact", () => {
     ]);
     expect(footer?.querySelectorAll(".foot__links-grid ul")).toHaveLength(5);
     expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(21);
+    expect(
+      Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:nth-child(4) a") ?? [], (anchor) =>
+        anchor.textContent,
+      ),
+    ).toEqual(["X / Twitter", "Discord", "WhatsApp", "YouTube"]);
+    expect(
+      Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:last-child a") ?? [], (anchor) => [
+        anchor.textContent,
+        anchor.getAttribute("href"),
+      ]),
+    ).toEqual([
+      ["Tencent EdgeOne", "https://edgeone.ai/"],
+      ["Tencent CloudBase", "https://tcb.cloud.tencent.com/en/?from=lightvela"],
+    ]);
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.textContent).toBe("Blog");
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/blog");
     expect(footer?.textContent).toContain("14-day free trial");
@@ -769,13 +795,13 @@ describe("international v2 homepage artifact", () => {
 
   it("emphasizes the always-on card phrases across homepage locales", () => {
     const expectedBoldPhrases = {
-      "en-US": ["in the cloud", "as a new rule and follow your preference next time"],
-      "zh-SG": ["云端", "新规则，下次直接按你的习惯做"],
-      "zh-Hant": ["雲端", "新規則，下次直接按你的習慣做"],
-      "id-ID": ["di cloud", "sebagai aturan baru dan mengikuti preferensi Anda berikutnya"],
-      es: ["en la nube", "como una regla para la próxima vez"],
-      "ja-JP": ["クラウド", "新しいルールとして保存し、次回はあなたの好みに沿って動きます"],
-      "ko-KR": ["클라우드", "새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다"],
+      "en-US": ["available 24/7 in the cloud", "turn your feedback into a new rule"],
+      "zh-SG": ["云端 7×24 小时在线", "新规则，下次直接按你的习惯做"],
+      "zh-Hant": ["雲端 7×24 小時在線", "新規則，下次直接按你的習慣做"],
+      "id-ID": ["di cloud dan tersedia 24/7", "sebagai aturan baru dan mengikuti preferensi Anda berikutnya"],
+      es: ["en la nube y estoy disponible 24/7", "como una regla para la próxima vez"],
+      "ja-JP": ["クラウドで24時間365日稼働する", "新しいルールとして保存し、次回はあなたの好みに沿って動きます"],
+      "ko-KR": ["클라우드에서 24시간 연중무휴로 실행", "새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다"],
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -1175,6 +1201,13 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/#lightvela-intl-home \.about,\s*#lightvela-intl-home \.scenes,\s*#lightvela-intl-home \.deploy\s*\{[^}]*padding-left:\s*16px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.about__head \.k,\s*#lightvela-intl-home \.scenes__title,\s*#lightvela-intl-home \.deploy__lead\s*\{[^}]*font-size:\s*clamp\(22px, 6vw, 28px\);/s);
     expect(css).toMatch(/#lightvela-intl-home \.about__head::after\s*\{[^}]*content:\s*'Swipe left or right to switch cards';/s);
+    expect(css).toMatch(
+      /\.soul-strip__cap--secondary\s*\{[^}]*box-sizing:\s*border-box;[^}]*padding-inline:\s*18px;[^}]*overflow:\s*hidden;/s,
+    );
+    expect(css).toMatch(
+      /\.soul-strip__cap--secondary > \.soul-strip__copy\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow:\s*hidden;/s,
+    );
+    expect(css).toMatch(/\.soul-strip__cap--secondary > \.soul-strip__icons\s*\{[^}]*flex:\s*0 0 auto;/s);
     expect(css).toMatch(
       /#lightvela-intl-home \.soul-strip\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*height:\s*auto;/s,
     );

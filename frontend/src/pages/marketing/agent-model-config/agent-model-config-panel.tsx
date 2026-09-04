@@ -15,6 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
 
 import type {
   HermesConnectionProbeResult,
@@ -271,6 +273,7 @@ export function AgentModelConfigPanel({
   isGlobalRegion?: boolean;
 }) {
   const t = useT();
+  const { i18n } = useTranslation();
   const autoModelDisplayName = t("自动");
   const controller = useModelConfig({ botId, execDebugCommand });
   const addSectionRef = useRef<HTMLElement>(null);
@@ -413,7 +416,7 @@ export function AgentModelConfigPanel({
     : null;
   const pageHeader = (
     <AgentSectionHeader
-      title={t("模型")}
+      title={resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
       description={t("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")}
     />
   );

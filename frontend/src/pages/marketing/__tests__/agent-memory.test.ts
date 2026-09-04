@@ -19,7 +19,6 @@ import {
   isHermesMemoryLimitNearUsage,
   parseHermesMemorySnapshot,
   splitHermesMemoryEntries,
-  toSingleLineMemoryEntry,
   validateHermesMemoryLimit,
 } from "../agent-memory";
 
@@ -271,12 +270,6 @@ describe("splitHermesMemoryEntries", () => {
 
   it("drops empty entries created by repeated delimiters", () => {
     expect(splitHermesMemoryEntries("§ alpha §  § beta §")).toEqual(["alpha", "beta"]);
-  });
-});
-
-describe("toSingleLineMemoryEntry", () => {
-  it("normalizes multiline memories for single-row cards", () => {
-    expect(toSingleLineMemoryEntry("alpha\n  beta\tgamma")).toBe("alpha beta gamma");
   });
 });
 

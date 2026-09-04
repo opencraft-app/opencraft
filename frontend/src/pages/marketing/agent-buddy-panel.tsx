@@ -1025,26 +1025,14 @@ export function BuddyPanel({
         <h2 className="mb-1 text-balance text-lg font-semibold leading-6 text-black/95">
           {t("人设")}
         </h2>
-        <div className="flex items-center justify-between gap-4">
-          <p className="min-w-0 text-pretty text-sm font-medium leading-6 text-black/50">
-            {t("为你的 Agent 解锁独特灵魂，让它从此与众不同")}
-          </p>
-          <a
-            href="https://skillhub.cn/soul"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="lv-buddy-panel__source ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
-            style={{ color: "rgba(0,0,0,0.55)" }}
-          >
-            {t("灵感来自 SkillHub")}
-            <ExternalLink className="size-3" />
-          </a>
-        </div>
+        <p className="text-pretty text-sm font-medium leading-6 text-black/50">
+          {t("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式")}
+        </p>
       </header>
 
       <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
-      <div className="lv-buddy-panel__toolbar flex items-center justify-center px-6 pt-5 pb-3">
+      <div className="lv-buddy-panel__toolbar relative flex items-center justify-center px-6 pt-5 pb-3">
         <h3
           className="text-balance text-base font-semibold"
           style={{
@@ -1059,6 +1047,16 @@ export function BuddyPanel({
         >
           {t("人设卡片")}
         </h3>
+        <a
+          href="https://skillhub.cn/soul"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="lv-buddy-panel__source absolute inset-y-0 right-6 inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+          style={{ color: "rgba(0,0,0,0.55)" }}
+        >
+          {t("灵感来自 SkillHub")}
+          <ExternalLink className="size-3" />
+        </a>
       </div>
 
       {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}

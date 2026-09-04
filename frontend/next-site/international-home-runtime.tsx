@@ -66,6 +66,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
           appearance="immersive"
           locale={locale}
           showLanguageSwitcher
+          showProductEntry
           loginOnly
         />
       </div>

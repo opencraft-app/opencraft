@@ -24,3 +24,5 @@ derived: false
 ## 后果
 
 Agent 在通用指令上消耗更少 Token，并获得具体服务边界、外部 contract 和验证门禁。内容 owner 必须审阅 active Pack。未验证的模型路由和 compaction 功能只能是 pilot 设计，不能宣称为运行时能力。
+
+Task Pack 的元数据进入 `docs/context/.context/catalog.jsonl`；新增或更新 Pack 后必须通过 Context Validator 重建 catalog，catalog 只提供可定位索引，不替代 Task Pack 正文。
