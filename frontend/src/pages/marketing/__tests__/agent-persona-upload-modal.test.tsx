@@ -159,7 +159,9 @@ describe("PersonaUploadModal", () => {
     expect(within(dialog).getByText("人设内容建议")).toBeInTheDocument();
     expect(within(dialog).queryByText("人设完善建议")).not.toBeInTheDocument();
     expect(within(dialog).queryByText("提示：")).not.toBeInTheDocument();
-    expect(within(dialog).getByText(/建议补充 Name 字段$/)).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      /建议补充顶部 Name 字段，页面将用它展示人设名称$/,
+    )).toBeInTheDocument();
     expect(within(dialog).getByText(/建议补充角色定位（Identity）$/)).toBeInTheDocument();
     expect(within(dialog).getByText(/建议补充沟通风格（Communication Style）$/)).toBeInTheDocument();
     expect(within(dialog).getByText(/建议补充工作原则（Working Principles）$/)).toBeInTheDocument();

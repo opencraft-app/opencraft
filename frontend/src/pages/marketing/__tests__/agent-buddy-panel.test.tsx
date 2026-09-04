@@ -352,11 +352,109 @@ describe("BuddyPanel P1 stability", () => {
 
     expect(await screen.findByText("Extra Soul", {}, { timeout: 3_000 })).toBeInTheDocument();
     expect(screen.getByLabelText("当前已注入到 Agent")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("已注入：Extra Soul");
     expect(screen.queryByRole("button", { name: "注入抽卡结果" })).not.toBeInTheDocument();
     await waitFor(() => expect(mockedSaveBuddyState).toHaveBeenCalledWith("agent-a", {
       drawnSouls: expect.arrayContaining([fixtures.agentA, fixtures.extra]),
       appliedSlug: fixtures.extra.slug,
     }));
+  });
+
+  it("restores the injected persona summary from the real SOUL.md slug", async () => {
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [fixtures.agentA],
+      appliedSlug: null,
+    });
+    repositoryMocks.execDebugCommand.mockResolvedValue(successResult([
+      "Exists: yes",
+      `Slug: ${fixtures.agentA.slug}`,
+      "Name: Agent A Soul",
+    ].join("\n")));
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("已注入：Agent A Soul");
+  });
+
+  it("turns an edited recommended persona into a downloadable custom persona", async () => {
+    const currentMarkdown = [
+      "# Soul",
+      `Slug: ${fixtures.agentA.slug}`,
+      "Name: Agent A Soul",
+      "",
+      "## Identity",
+      "先给结论。",
+    ].join("\n");
+    let saved = false;
+    let writtenCommand = "";
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [fixtures.agentA],
+      appliedSlug: null,
+    });
+    repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => {
+      if (command.includes("ContentBase64:")) return soulContentResult(currentMarkdown);
+      if (command.includes("base64 -d")) {
+        writtenCommand = command;
+        saved = true;
+        return successResult();
+      }
+      if (command.includes("in_metadata && /^Name:/")) {
+        return successResult(saved
+          ? [
+            "Exists: yes",
+            `Slug: ${fixtures.agentA.slug}`,
+            "LightVela-Source: custom-upload",
+            "Name: 我的 Agent A Soul",
+          ].join("\n")
+          : [
+            "Exists: yes",
+            `Slug: ${fixtures.agentA.slug}`,
+            "Name: Agent A Soul",
+          ].join("\n"));
+      }
+      return successResult();
+    });
+
+    render(<BuddyPanel botId="agent-a" />);
+    await screen.findByText("已注入：Agent A Soul");
+    expect(screen.queryByRole("button", { name: "下载自定义人设" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑人设文件" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "编辑人设文件" });
+    expect(within(dialog).getByLabelText("人设内容")).toHaveValue(currentMarkdown);
+    fireEvent.change(within(dialog).getByLabelText("人设内容"), {
+      target: {
+        value: currentMarkdown
+          .replace("Name: Agent A Soul", "Name: 我的 Agent A Soul")
+          .replace("先给结论。", "先确认目标，再给结论。"),
+      },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存修改" }));
+
+    expect(await screen.findByText("已注入：自定义人设 · 我的 Agent A Soul"))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑自定义人设" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载自定义人设" })).toBeInTheDocument();
+    expect(atob(writtenCommand.match(/\n([A-Za-z0-9+/=]+)\n__CTL_SOUL_EOF__/)?.[1] ?? ""))
+      .toContain("LightVela-Source: custom-upload");
+  });
+
+  it("uses the real SOUL.md Name for an edited recommended persona", async () => {
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [fixtures.agentA],
+      appliedSlug: fixtures.agentA.slug,
+    });
+    repositoryMocks.execDebugCommand.mockResolvedValue(successResult([
+      "Exists: yes",
+      `Slug: ${fixtures.agentA.slug}`,
+      "Name: Agent A Soul 达人版",
+    ].join("\n")));
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    expect(await screen.findByText("已注入：Agent A Soul 达人版")).toBeInTheDocument();
+    expect(screen.getByText("Agent A Soul 达人版")).toBeInTheDocument();
+    expect(screen.queryByText("Agent A Soul")).not.toBeInTheDocument();
   });
 
   it("keeps the draw result open and out of the grid when direct injection falls back", async () => {

@@ -77,6 +77,44 @@ describe("CustomPersonaFileModal", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
 
+  it("prompts for a top-level Name before saving", async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    render(
+      <CustomPersonaFileModal
+        open
+        initialMarkdown={initialMarkdown}
+        onClose={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+
+    const editor = screen.getByLabelText("人设内容");
+    const missingNameMarkdown = initialMarkdown
+      .replace("Name: 冷静的项目搭档\n", "")
+      .replace("先给结论。", "先确认目标。");
+    fireEvent.change(editor, { target: { value: missingNameMarkdown } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "请补充顶部 Name 字段，页面将用它展示人设名称",
+    );
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.change(editor, {
+      target: {
+        value: missingNameMarkdown.replace(
+          "Slug: custom-upload",
+          "Slug: custom-upload\nName: 冷静的项目搭档",
+        ),
+      },
+    });
+    expect(screen.queryByText("请补充顶部 Name 字段，页面将用它展示人设名称"))
+      .not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  });
+
   it("disables saving for empty, control-character, and oversized edits", () => {
     render(
       <CustomPersonaFileModal
