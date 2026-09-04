@@ -53,6 +53,86 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("shows the newest September instance storage update in every visible locale", async () => {
+    const instanceStorageCopies = [
+      {
+        locale: "zh-CN",
+        month: "2026 年 9 月",
+        title: "LightVela 支持查看 Agent 实例存储空间",
+        description:
+          "云存储页面现在会显示 Agent 实例的总容量、已用容量和可用容量，并将 Agent 运行环境、系统预留空间和云存储文件计入使用量计算。",
+        image: "/assets/changelog/lightvela-instance-storage-zh.png",
+      },
+      {
+        locale: "zh-Hant",
+        month: "2026 年 9 月",
+        title: "LightVela 支持查看 Agent 實例存儲空間",
+        description:
+          "雲存儲頁面現在會顯示 Agent 實例的總容量、已用容量和可用容量，並將 Agent 運行環境、系統預留空間和雲存儲文件計入使用量計算。",
+        image: "/assets/changelog/lightvela-instance-storage-zh.png",
+      },
+      {
+        locale: "en-US",
+        month: "September 2026",
+        title: "View Your Agent Instance Storage at a Glance",
+        description:
+          "The Cloud Storage page now shows your Agent instance's total, used, and available storage, including the Agent runtime environment, system-reserved space, and cloud storage files in the usage calculation.",
+        image: "/assets/changelog/lightvela-instance-storage-en.png",
+      },
+      {
+        locale: "id-ID",
+        month: "September 2026",
+        title: "Lihat Penyimpanan Instans Agent Anda Sekilas",
+        description:
+          "Halaman Cloud Storage kini menampilkan total, penggunaan, dan ketersediaan penyimpanan instans Agent Anda, termasuk lingkungan runtime Agent, ruang yang dicadangkan sistem, dan file penyimpanan cloud dalam perhitungan penggunaan.",
+        image: "/assets/changelog/lightvela-instance-storage-en.png",
+      },
+      {
+        locale: "es",
+        month: "Septiembre de 2026",
+        title: "Consulta de un Vistazo el Almacenamiento de tu Instancia de Agent",
+        description:
+          "La página de almacenamiento en la nube ahora muestra el almacenamiento total, usado y disponible de tu instancia de Agent, e incluye el entorno de ejecución de Agent, el espacio reservado del sistema y los archivos del almacenamiento en la nube en el cálculo del uso.",
+        image: "/assets/changelog/lightvela-instance-storage-en.png",
+      },
+      {
+        locale: "ja-JP",
+        month: "2026年9月",
+        title: "Agent インスタンスのストレージをひと目で確認",
+        description:
+          "クラウドストレージページで、Agent インスタンスの合計、使用済み、利用可能なストレージを確認できるようになりました。使用量にはAgentの実行環境、システム予約領域、クラウドストレージファイルが含まれます。",
+        image: "/assets/changelog/lightvela-instance-storage-en.png",
+      },
+      {
+        locale: "ko-KR",
+        month: "2026년 9월",
+        title: "Agent 인스턴스 저장 공간을 한눈에 확인",
+        description:
+          "이제 클라우드 스토리지 페이지에서 Agent 인스턴스의 전체, 사용 중, 사용 가능한 저장 공간을 확인할 수 있으며, 사용량 계산에는 Agent 런타임 환경, 시스템 예약 공간 및 클라우드 스토리지 파일이 포함됩니다.",
+        image: "/assets/changelog/lightvela-instance-storage-en.png",
+      },
+    ] as const;
+
+    for (const copy of instanceStorageCopies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      const septemberSection = screen.getByText(copy.month).closest("section");
+      expect(septemberSection).not.toBeNull();
+      const headings = within(septemberSection!).getAllByRole("heading");
+      expect(headings[0]).toHaveTextContent(copy.title);
+      expect(within(septemberSection!).getByRole("heading", { name: copy.title })).toBeInTheDocument();
+      expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(screen.getByAltText(copy.title)).toHaveAttribute("src", expect.stringContaining(copy.image));
+      cleanup();
+    }
+  });
+
   it("shows the September Workbench update with localized copy and the correct screenshot", async () => {
     const workbenchCopies = [
       {
