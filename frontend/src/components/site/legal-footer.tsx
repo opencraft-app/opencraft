@@ -53,20 +53,20 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
           style={{ maxWidth: "1440px" }}
         >
           <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:text-xs md:leading-[1.5]">
-            <span>Copyright © {currentYear} LightVela. All rights reserved. Powered by Tencent Lighthouse.</span>
+            <span>{t("Copyright © {{year}} LightVela 版权所有，腾讯轻量云出品", { year: currentYear })}</span>
             {showLinks && (
               <>
                 <span className="inline-flex flex-wrap items-center gap-x-1">
                   <a href={privacyPolicyPath} className={footerLinkClass}>
-                    Privacy Policy
+                    {t("隐私政策")}
                   </a>
                   <span aria-hidden="true">·</span>
                   <a href={termsOfServicePath} className={footerLinkClass}>
-                    Terms of Service
+                    {t("服务条款")}
                   </a>
                   <span aria-hidden="true">·</span>
                   <a href={openSourceLicensesPath} className={footerLinkClass}>
-                    Open Source Notice
+                    {t("开源声明")}
                   </a>
                 </span>
                 <a
@@ -75,7 +75,7 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
                   rel="noopener noreferrer"
                   className={footerLinkClass}
                 >
-                  Join Community
+                  {t("加入交流群")}
                 </a>
               </>
             )}

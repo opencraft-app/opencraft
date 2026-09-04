@@ -28,7 +28,16 @@
 
 ### 2. 用 docs-impact 约束“代码变更—当前设计真源”
 
-`.agents/context/change-impact.json` 将高风险路径映射到相关正式 Domain、Journey、架构或 ADR。`validate_change_impact.py` 对变更清单做确定性检查：命中规则的代码或控制面改动，必须同时修改至少一份该规则的正式设计文档；否则本地 pre-commit 与已注册的 MR guard 失败。
+`.agents/context/change-impact.json` 将高风险路径映射到相关正式 Domain、Journey、架构或 ADR。`validate_change_impact.py` 对变更清单做确定性检查：命中规则的代码或控制面改动，必须同时修改至少一份该规则的正式设计文档。
+
+门禁强度按 `risk` 分级，不是一律阻断：
+
+- `risk: high` 的责任面缺少映射设计文档时，本地 pre-commit 与已注册的 MR guard 失败。
+- `risk: normal` 只打印提示并继续。责任根目录必然同时覆盖架构面与表层改动，把后者也硬性阻断，只会诱导作者为通过门禁而修改无关的架构文档，或干脆绕过整个 guard；两种结果都比提示更差。
+
+每条规则可用 `exclude_paths` 移除位于责任根目录之下、但不承载架构语义的表层文件，例如生成的 i18n 资源包、营销文案页、测试与固件、二进制资产。规则命中要求至少有一个变更路径在排除之后仍然存在。规则的 `paths` 应指向真正的架构面，而不是整个顶层服务目录：`site-environment-routing` 因此收窄到前端的配置、应用装配、服务与仓储层，不再覆盖 `frontend/**` 全域。
+
+这两项修正来自一次真实的假阳性：一个只改 changelog 文案、生成 i18n 与两张图片的前端 MR，被 `frontend/**` 判定必须更新站点环境路由的架构文档。
 
 这不是用脚本替代语义评审。脚本只能证明“映射的设计文档与代码同一变更集出现”，不能证明文档内容已经正确解释所有行为变化。任务实施仍须由 Agent 依据 Task Pack、源码和历史证据决定影响；高风险变更应由仓库平台把对应 Owner 加入 MR 审阅。当前仓库没有受保护 MR 审批回执 adapter，因此该平台级 Owner 确认仍标为待接入，不能伪称已自动完成。
 

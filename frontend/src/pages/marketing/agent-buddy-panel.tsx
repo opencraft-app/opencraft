@@ -322,11 +322,13 @@ export function BuddyPanel({
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   /** 上一次成功应用到 Agent 的 slug —— 用于按钮上展示「已应用」反馈 */
   const [appliedSlug, setAppliedSlug] = useState<string | null>(null);
+  const [appliedPersonaFileName, setAppliedPersonaFileName] = useState<string | null>(null);
   const [customPersonaName, setCustomPersonaName] = useState<string | null>(null);
   const [customPersonaFileAction, setCustomPersonaFileAction] = useState<
     "idle" | "editing" | "downloading"
   >("idle");
   const [customPersonaEditorMarkdown, setCustomPersonaEditorMarkdown] = useState<string | null>(null);
+  const [customPersonaEditorWasDrawn, setCustomPersonaEditorWasDrawn] = useState(false);
   const invalidateCustomPersonaFileRead = useCallback(() => {
     customPersonaFileReqIdRef.current += 1;
     setCustomPersonaFileAction("idle");
@@ -386,9 +388,11 @@ export function BuddyPanel({
     setLoadStatus("loading");
     setDrawnSouls([]);
     setAppliedSlug(null);
+    setAppliedPersonaFileName(null);
     setCustomPersonaName(null);
     setCustomPersonaFileAction("idle");
     setCustomPersonaEditorMarkdown(null);
+    setCustomPersonaEditorWasDrawn(false);
     setHasExistingSoul(false);
     setEquippedStatus("loading");
     setSelectedSlug(null);
@@ -518,6 +522,7 @@ export function BuddyPanel({
   useEffect(() => {
     if (appliedSlug && !drawnSouls.some((s) => s.slug === appliedSlug)) {
       setAppliedSlug(null);
+      setAppliedPersonaFileName(null);
     }
   }, [drawnSouls, appliedSlug]);
 
@@ -611,6 +616,7 @@ export function BuddyPanel({
           params: { bot_id: requestBotId, persona_id: canonical, persona_source: "draw" },
         });
         setAppliedSlug(canonical);
+        setAppliedPersonaFileName(null);
         setCustomPersonaName(null);
         setHasExistingSoul(true);
         // 文件已写入 → 触发重新读取真实 SOUL.md，同步 Equipped 指示器。
@@ -647,6 +653,7 @@ export function BuddyPanel({
       downloadAnchor.click();
       if (!requestBotId) {
         setAppliedSlug(canonical);
+        setAppliedPersonaFileName(null);
       } else {
         // 下载只是一份本地兜底文件，真实 Agent 人设并未改变。
         setEquippedRefreshTick((tick) => tick + 1);
@@ -746,6 +753,7 @@ export function BuddyPanel({
     if (!activeBotId) {
       if (equippedReqIdRef.current !== reqId) return;
       setAppliedSlug(null);
+      setAppliedPersonaFileName(null);
       setCustomPersonaName(null);
       setHasExistingSoul(false);
       setEquippedStatus("ready");
@@ -765,10 +773,12 @@ export function BuddyPanel({
       setHasExistingSoul(identity.exists);
       if (identity.source === CUSTOM_PERSONA_SOURCE || identity.slug === CUSTOM_PERSONA_SLUG) {
         setAppliedSlug(null);
+        setAppliedPersonaFileName(null);
         setCustomPersonaName(identity.name ?? t("自定义人设"));
       } else {
         setCustomPersonaName(null);
         setAppliedSlug(identity.slug ? toCanonicalSlug(identity.slug) : null);
+        setAppliedPersonaFileName(identity.name);
       }
       setEquippedStatus("ready");
     } catch (err) {
@@ -781,12 +791,13 @@ export function BuddyPanel({
 
   const writeCustomPersona = useCallback(async (
     { markdown, displayName }: CustomPersonaSavePayload,
-    source: "upload" | "edit",
+    source: "upload" | "edit-custom" | "edit-drawn",
   ): Promise<boolean> => {
     if (!botId) throw new Error("Agent is required");
     invalidateCustomPersonaFileRead();
     const requestId = ++operationReqIdRef.current;
     const requestBotId = botId;
+    const editedDrawnSlug = source === "edit-drawn" ? appliedSlug : null;
     const isCurrentRequest = () => (
       operationReqIdRef.current === requestId
       && activeBotIdRef.current === requestBotId
@@ -810,17 +821,18 @@ export function BuddyPanel({
         pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
         params: {
           bot_id: requestBotId,
-          persona_id: CUSTOM_PERSONA_SLUG,
-          persona_source: source,
+          persona_id: editedDrawnSlug ?? CUSTOM_PERSONA_SLUG,
+          persona_source: source === "upload" ? "upload" : "edit",
           duration_ms: Date.now() - startedAt,
         },
       });
       setAppliedSlug(null);
+      setAppliedPersonaFileName(null);
       setCustomPersonaName(displayName);
       setHasExistingSoul(true);
       setEquippedRefreshTick((tick) => tick + 1);
       setConfirmState({
-        kind: source === "edit" ? "customSaveSuccess" : "applySuccess",
+        kind: source === "upload" ? "applySuccess" : "customSaveSuccess",
       });
       return true;
     } catch (err) {
@@ -831,14 +843,14 @@ export function BuddyPanel({
         pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
         params: {
           bot_id: requestBotId,
-          persona_id: CUSTOM_PERSONA_SLUG,
+          persona_id: editedDrawnSlug ?? CUSTOM_PERSONA_SLUG,
           error_code: "inject_failed",
           duration_ms: Date.now() - startedAt,
         },
       });
       throw err;
     }
-  }, [botId, invalidateCustomPersonaFileRead, repositories]);
+  }, [appliedSlug, botId, invalidateCustomPersonaFileRead, repositories]);
 
   const handleCustomPersonaInject = useCallback(
     async (payload: CustomPersonaSavePayload) => {
@@ -848,8 +860,11 @@ export function BuddyPanel({
   );
 
   const handleCustomPersonaSave = useCallback(
-    (payload: CustomPersonaSavePayload) => writeCustomPersona(payload, "edit"),
-    [writeCustomPersona],
+    (payload: CustomPersonaSavePayload) => writeCustomPersona(
+      payload,
+      customPersonaEditorWasDrawn ? "edit-drawn" : "edit-custom",
+    ),
+    [customPersonaEditorWasDrawn, writeCustomPersona],
   );
 
   const readCurrentCustomPersona = useCallback(async (
@@ -907,12 +922,13 @@ export function BuddyPanel({
     }
   }, [botId, repositories, showToast, t]);
 
-  const handleEditCustomPersona = useCallback(async () => {
+  const handleEditCurrentPersona = useCallback(async () => {
     const content = await readCurrentCustomPersona("editing");
     if (content?.status === "ready") {
+      setCustomPersonaEditorWasDrawn(customPersonaName === null && appliedSlug !== null);
       setCustomPersonaEditorMarkdown(content.markdown);
     }
-  }, [readCurrentCustomPersona]);
+  }, [appliedSlug, customPersonaName, readCurrentCustomPersona]);
 
   const handleDownloadCustomPersona = useCallback(async () => {
     const content = await readCurrentCustomPersona("downloading");
@@ -980,6 +996,7 @@ export function BuddyPanel({
       if (isAppliedTarget) {
         const cleared = await clearSandboxSoul();
         if (!cleared) return;
+        setAppliedPersonaFileName(null);
         setCustomPersonaName(null);
         setHasExistingSoul(false);
         // SOUL.md 已删除 → 触发重新读取，让 Equipped 指示器回到「无」。
@@ -993,6 +1010,14 @@ export function BuddyPanel({
 
   const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
   const isApplyDisabled = !selectedSlug || toast.kind === "applying" || loadStatus !== "loaded";
+  const appliedPersonaName = appliedSlug
+    ? appliedPersonaFileName ?? localizedDrawnSouls.find(
+      (soul) => toCanonicalSlug(soul.slug) === toCanonicalSlug(appliedSlug),
+    )?.displayName ?? null
+    : null;
+  const editPersonaLabel = customPersonaName
+    ? t("编辑自定义人设")
+    : t("编辑人设文件");
 
   return (
     <>
@@ -1079,26 +1104,31 @@ export function BuddyPanel({
             canReroll={canReroll}
             selectedSlug={selectedSlug ? (isGlobal ? toEnglishSlug(selectedSlug) : selectedSlug) : null}
             appliedSlug={appliedSlug ? (isGlobal ? toEnglishSlug(appliedSlug) : appliedSlug) : null}
+            appliedPersonaName={appliedPersonaName}
             onPreview={(slug) => setPreviewSoulSlug(slug)}
           />
         )}
       </div>
 
-      {customPersonaName && (
+      {(customPersonaName || appliedPersonaName) && (
         <div
           className="mx-auto mt-3 flex max-w-[816px] items-center justify-center gap-2 px-6 text-sm text-[var(--text-secondary)]"
         >
           <div role="status" className="inline-flex items-center gap-2">
             <Check className="size-4" aria-hidden="true" />
-            <span>{t("已注入：自定义人设 · {{name}}", { name: customPersonaName })}</span>
+            <span>
+              {customPersonaName
+                ? t("已注入：自定义人设 · {{name}}", { name: customPersonaName })
+                : t("已注入：{{name}}", { name: appliedPersonaName })}
+            </span>
           </div>
           <div className="inline-flex items-center gap-0">
             <div className="group relative inline-flex">
               <button
                 type="button"
-                aria-label={t("编辑自定义人设")}
+                aria-label={editPersonaLabel}
                 disabled={customPersonaFileAction !== "idle"}
-                onClick={() => void handleEditCustomPersona()}
+                onClick={() => void handleEditCurrentPersona()}
                 className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {customPersonaFileAction === "editing" ? (
@@ -1108,29 +1138,31 @@ export function BuddyPanel({
                 )}
               </button>
               <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
-                {t("编辑自定义人设")}
+                {editPersonaLabel}
                 <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
               </div>
             </div>
-            <div className="group relative inline-flex">
-              <button
-                type="button"
-                aria-label={t("下载自定义人设")}
-                disabled={customPersonaFileAction !== "idle"}
-                onClick={() => void handleDownloadCustomPersona()}
-                className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {customPersonaFileAction === "downloading" ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Download className="size-3.5" aria-hidden="true" />
-                )}
-              </button>
-              <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
-                {t("下载自定义人设")}
-                <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+            {customPersonaName && (
+              <div className="group relative inline-flex">
+                <button
+                  type="button"
+                  aria-label={t("下载自定义人设")}
+                  disabled={customPersonaFileAction !== "idle"}
+                  onClick={() => void handleDownloadCustomPersona()}
+                  className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {customPersonaFileAction === "downloading" ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download className="size-3.5" aria-hidden="true" />
+                  )}
+                </button>
+                <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+                  {t("下载自定义人设")}
+                  <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1434,6 +1466,7 @@ function SoulSlotGrid({
   canReroll,
   selectedSlug,
   appliedSlug,
+  appliedPersonaName,
   onPreview,
 }: {
   drawnSouls: SkillHubSoul[];
@@ -1447,6 +1480,7 @@ function SoulSlotGrid({
   canReroll: boolean;
   selectedSlug: string | null;
   appliedSlug: string | null;
+  appliedPersonaName: string | null;
   onPreview: (slug: string) => void;
 }) {
   if (loading) return <CenterLoader />;
@@ -1458,12 +1492,15 @@ function SoulSlotGrid({
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         if (soul) {
+          const applied = appliedSlug === soul.slug;
           return (
             <FilledSlot
               key={soul.slug}
-              soul={soul}
+              soul={applied && appliedPersonaName
+                ? { ...soul, displayName: appliedPersonaName }
+                : soul}
               selected={selectedSlug === soul.slug}
-              applied={appliedSlug === soul.slug}
+              applied={applied}
               onClick={() => onClickFilled(soul.slug)}
               onReroll={() => onReroll(soul.slug)}
               onDelete={() => onDelete(soul.slug)}

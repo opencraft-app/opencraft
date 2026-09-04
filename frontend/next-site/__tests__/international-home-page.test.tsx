@@ -9,6 +9,7 @@ const homeRoot = path.join(publicRoot, "lightvela-intl-home");
 const fragmentPath = path.join(homeRoot, "index-fragment.html");
 const stylesheetPath = path.join(homeRoot, "style.css");
 const runtimePath = path.join(homeRoot, "runtime.js");
+const domesticHomeScope = String.raw`#lightvela-intl-home\[data-locale="zh-CN"\]`;
 const publishedInternationalLocales = ["en-US", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"] as const;
 const generatedFragmentNames = [
   "index-fragment.html",
@@ -63,6 +64,14 @@ function readLocaleFragment(locale: (typeof publishedInternationalLocales)[numbe
 
 function parseFragment(): Document {
   return new DOMParser().parseFromString(readFragment(), "text/html");
+}
+
+function domesticHeroRule(selectorPattern: string, declarationPattern: string): RegExp {
+  const scopedSelectorPattern = selectorPattern.replace(
+    /\\\.hero__frame/g,
+    `${domesticHomeScope} \\.hero__frame`,
+  );
+  return new RegExp(`${scopedSelectorPattern}\\s*\\{[^}]*${declarationPattern}`, "s");
 }
 
 describe("international v2 homepage selection", () => {
@@ -147,36 +156,66 @@ describe("international v2 homepage artifact", () => {
     expect(document.querySelector("#panel-dc .dingtalk__search")?.textContent).toContain("搜索");
     expect(css).not.toContain("#0d83f2");
     expect(css).toMatch(
-      /\.hero__frame #panel-dc \.dingtalk__titlebar\s*\{[^}]*background:\s*var\(--paper-3\)/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dingtalk__titlebar`,
+        String.raw`background:\s*var\(--paper-3\)`,
+      ),
     );
     expect(css).toMatch(
-      /\.hero__frame #panel-wa \.native__side,\s*\.hero__frame #panel-tg \.native__side\s*\{[^}]*width:\s*184px/s,
-    );
-    expect(css).toMatch(/\.hero__frame #panel-qq \.native__side\s*\{[^}]*width:\s*152px/s);
-    expect(css).toMatch(
-      /\.hero__frame #panel-wa \.native__side,\s*\.hero__frame #panel-tg \.native__side\s*\{[^}]*background:\s*#f9f9fa/s,
-    );
-    expect(css).toMatch(/\.hero__frame #panel-qq \.native__side\s*\{[^}]*background:\s*#f6f6f7/s);
-    expect(css).toMatch(/\.hero__frame #panel-qq \.native__head\s*\{[^}]*height:\s*46px/s);
-    expect(css).toMatch(
-      /\.hero__frame #panel-wa \.native__thread,\s*\.hero__frame #panel-qq \.native__thread\s*\{[^}]*margin:\s*0/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-wa \.native__side,\s*\.hero__frame #panel-tg \.native__side`,
+        String.raw`width:\s*184px`,
+      ),
     );
     expect(css).toMatch(
-      /\.hero__frame #panel-wa \.native__thread,\s*\.hero__frame #panel-qq \.native__thread\s*\{[^}]*padding:\s*0/s,
+      domesticHeroRule(String.raw`\.hero__frame #panel-qq \.native__side`, String.raw`width:\s*152px`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-wa \.native__side,\s*\.hero__frame #panel-tg \.native__side`,
+        String.raw`background:\s*#f9f9fa`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-qq \.native__side`,
+        String.raw`background:\s*#f6f6f7`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-qq \.native__head`, String.raw`height:\s*46px`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-wa \.native__thread,\s*\.hero__frame #panel-qq \.native__thread`,
+        String.raw`margin:\s*0`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-wa \.native__thread,\s*\.hero__frame #panel-qq \.native__thread`,
+        String.raw`padding:\s*0`,
+      ),
     );
     expect(css).not.toMatch(/#panel-qq \.native__thread\s*\{[^}]*margin-left:\s*clamp/s);
     expect(css).not.toMatch(/#panel-wa \.native__thread\s*\{[^}]*padding-left:\s*clamp/s);
     expect(css).toMatch(
-      /\.hero__frame #panel-dc \.dingtalk__titlebar\s*\{[^}]*height:\s*24px/s,
+      domesticHeroRule(String.raw`\.hero__frame #panel-dc \.dingtalk__titlebar`, String.raw`height:\s*24px`),
     );
     expect(css).toMatch(
-      /\.hero__frame #panel-dc \.dingtalk__app\s*\{[^}]*color:\s*var\(--ink-60\)/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dingtalk__app`,
+        String.raw`color:\s*var\(--ink-60\)`,
+      ),
     );
     expect(css).toMatch(
-      /\.hero__frame #panel-dc \.dingtalk__search\s*\{[^}]*color:\s*var\(--ink-35\)/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dingtalk__search`,
+        String.raw`color:\s*var\(--ink-35\)`,
+      ),
     );
     expect(css).toMatch(
-      /\.hero__frame #panel-sl \.dc__side-ws b\s*\{[^}]*font-size:\s*12px/s,
+      domesticHeroRule(String.raw`\.hero__frame #panel-sl \.dc__side-ws b`, String.raw`font-size:\s*12px`),
     );
     expect(document.querySelector("#panel-sl .dc__side-ws")?.textContent?.trim()).toBe("消息");
     expect(wechatPanelText).toContain("纳斯达克热门板块速览");
@@ -184,11 +223,20 @@ describe("international v2 homepage artifact", () => {
     expect(qqPanelText).toContain("周五夜间竞技赛提醒");
     expect(qqPanelText).toContain("那开赛前再提醒我们一次");
     expect(document.querySelector('#panel-qq .bub--me p[data-full-html="那开赛前再提醒我们一次。"]')).not.toBeNull();
-    expect(css).toMatch(/\.hero__frame #panel-wa \.bub--me\s*\{[^}]*justify-content:\s*flex-end/s);
-    expect(css).toMatch(/\.hero__frame #panel-qq \.bub--me\s*\{[^}]*justify-content:\s*flex-end/s);
-    expect(css).toMatch(/\.hero__frame #panel-tg \.bub--me\s*\{[^}]*justify-content:\s*flex-end/s);
     expect(css).toMatch(
-      /\.hero__frame #panel-dc \.dc__msg--me,\s*\.hero__frame #panel-sl \.dc__msg--me\s*\{[^}]*justify-content:\s*flex-end/s,
+      domesticHeroRule(String.raw`\.hero__frame #panel-wa \.bub--me`, String.raw`justify-content:\s*flex-end`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-qq \.bub--me`, String.raw`justify-content:\s*flex-end`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-tg \.bub--me`, String.raw`justify-content:\s*flex-end`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dc__msg--me,\s*\.hero__frame #panel-sl \.dc__msg--me`,
+        String.raw`justify-content:\s*flex-end`,
+      ),
     );
     expect(wecomPanelText).toContain("@LightVela 翻一下最近一周的讨论");
     expect(wecomPanelText).toContain("最卡的是定价页文案");
@@ -200,7 +248,10 @@ describe("international v2 homepage artifact", () => {
     expect(dingtalkPanelText).toContain("我会每 15 分钟复查一次");
     expect(dingtalkPanelText).not.toContain("定价页改版纪要");
     expect(css).toMatch(
-      /\.hero__frame #panel-dc \.dc__msg--me > div,\s*\.hero__frame #panel-dc \.dc__msg--me > div > p\s*\{[^}]*color:\s*#202124 !important/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dc__msg--me > div,\s*\.hero__frame #panel-dc \.dc__msg--me > div > p`,
+        String.raw`color:\s*#202124 !important`,
+      ),
     );
     expect(feishuPanelText).toContain("DSH 已经在隔离分支复现");
     expect(qqPanelText).not.toContain("Discord");
@@ -214,16 +265,28 @@ describe("international v2 homepage artifact", () => {
     expect(domesticHomepageMarkupAndStyles).not.toContain("rgba(106, 79, 222, 0.1)");
     expect(heroDemoMarkup).not.toMatch(/#(?:25d366|21a366|00a884|d1f4cc|e7f5ee|f0f7f4)/i);
     expect(css).toMatch(
-      /\.hero__frame \.native__head \.peer \.av-c,\s*\.hero__frame \.chat-row \.av-c,\s*\.hero__frame \.bub > \.av-c,\s*\.hero__frame \.dc__msg > \.av-c,\s*\.hero__frame \.dc__me\s*\{[^}]*display:\s*none/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame \.native__head \.peer \.av-c,\s*\.hero__frame \.chat-row \.av-c,\s*\.hero__frame \.bub > \.av-c,\s*\.hero__frame \.dc__msg > \.av-c,\s*\.hero__frame \.dc__me`,
+        String.raw`display:\s*none`,
+      ),
     );
     expect(css).toMatch(
-      /\.hero__frame \.bub__box,\s*\.hero__frame \.dc__msg > div\s*\{[^}]*background:\s*#fff/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame \.bub__box,\s*\.hero__frame \.dc__msg > div`,
+        String.raw`background:\s*#fff`,
+      ),
     );
     expect(css).toMatch(
-      /\.hero__frame \.bub--me \.bub__box,\s*\.hero__frame \.dc__msg--me > div\s*\{[^}]*background:\s*#f7f7f8/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame \.bub--me \.bub__box,\s*\.hero__frame \.dc__msg--me > div`,
+        String.raw`background:\s*#f7f7f8`,
+      ),
     );
     expect(css).toMatch(
-      /\.hero__frame \.bub--ai \.bub__name,\s*\.hero__frame \.dc__bot b,\s*\.hero__frame \.hero-live-reply-name\s*\{[^}]*color:\s*var\(--brand\)/s,
+      domesticHeroRule(
+        String.raw`\.hero__frame \.bub--ai \.bub__name,\s*\.hero__frame \.dc__bot b,\s*\.hero__frame \.hero-live-reply-name`,
+        String.raw`color:\s*var\(--brand\)`,
+      ),
     );
     expect(css).not.toContain(".hero__frame .av-c {\n  display: flex !important;");
     expect(brand?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toBe("/lightvela-logo.svg");
@@ -296,6 +359,38 @@ describe("international v2 homepage artifact", () => {
     expect(footerText).not.toContain("Genspark");
     expect(footerText).not.toContain("开源声明");
     expect(footerText).not.toContain("相关产品");
+  });
+
+  it("scopes domestic IM chrome overrides away from published international fragments", () => {
+    const css = readFileSync(stylesheetPath, "utf8");
+    const globalDocument = new DOMParser().parseFromString(readLocaleFragment("en-US"), "text/html");
+
+    expect(globalDocument.querySelector("#lightvela-intl-home")?.getAttribute("data-locale")).toBe("en-US");
+    expect(globalDocument.querySelector(".hero__frame .native__rail")).not.toBeNull();
+    expect(globalDocument.querySelector(".hero__frame .dc__rail")).not.toBeNull();
+    expect(css).toMatch(
+      new RegExp(
+        `${domesticHomeScope} \\.hero__frame \\.native__rail,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.dc__rail\\s*\\{[^}]*display:\\s*none`,
+        "s",
+      ),
+    );
+    expect(css).toMatch(
+      new RegExp(
+        `${domesticHomeScope} \\.hero__frame \\.native__head \\.peer \\.av-c,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.chat-row \\.av-c,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.bub > \\.av-c,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.dc__msg > \\.av-c,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.dc__me\\s*\\{[^}]*display:\\s*none`,
+        "s",
+      ),
+    );
+    expect(css).not.toMatch(
+      /(?:^|\n)\.hero__frame \.native__rail,\s*\.hero__frame \.dc__rail\s*\{[^}]*display:\s*none/s,
+    );
+    expect(css).not.toMatch(
+      /(?:^|\n)\.hero__frame \.native__head \.peer \.av-c,\s*\.hero__frame \.chat-row \.av-c,\s*\.hero__frame \.bub > \.av-c,\s*\.hero__frame \.dc__msg > \.av-c,\s*\.hero__frame \.dc__me\s*\{[^}]*display:\s*none/s,
+    );
   });
 
   it("contains a script-free fragment with only resolved links and resources", () => {
@@ -637,8 +732,8 @@ describe("international v2 homepage artifact", () => {
     const css = readFileSync(stylesheetPath, "utf8");
 
     expect(footer?.querySelector<HTMLImageElement>(".foot__brand img")?.getAttribute("src")).toBe("/lightvela-logo.svg");
-    expect(footer?.querySelector(".foot__title em.foot__signature")?.textContent).toBe("Hermes");
-    expect(footer?.querySelector(".foot__title")?.textContent).toContain("Hand your ideas to Hermes,");
+    expect(footer?.querySelector(".foot__title em.foot__signature")?.textContent).toBe("Hermes Agent");
+    expect(footer?.querySelector(".foot__title")?.textContent).toContain("Hand your ideas to Hermes Agent,");
     expect(footer?.querySelector(".foot__title")?.textContent).toContain("keep them moving in the cloud.");
     expect(footer?.querySelector(".foot__cta a")?.textContent).toContain("My AI companion");
     expect(footer?.querySelector(".foot__cta a span")).not.toBeNull();

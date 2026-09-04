@@ -119,7 +119,7 @@ export function getPersonaDisplayName(
   fileName: string,
   fallbackDisplayName = "Custom persona",
 ): string {
-  const metadataName = markdown.match(/^\s*Name\s*:\s*(.*?)\s*$/im)?.[1]?.trim();
+  const metadataName = getTopLevelSoulName(markdown);
   const fileNameWithoutExtension = fileName.replace(/\.md$/i, "").trim();
   const fallback = fallbackDisplayName
     .replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")
@@ -135,7 +135,7 @@ export function getPersonaStructureWarnings(
   markdown: string,
 ): PersonaStructureWarning[] {
   const warnings: PersonaStructureWarning[] = [];
-  if (!/^\s*Name\s*:\s*\S+/im.test(markdown)) warnings.push("missing_name");
+  if (!hasTopLevelSoulName(markdown)) warnings.push("missing_name");
   if (!/(^#{1,6}\s*(身份|角色定位|角色|identity|role|identitas|posisi\s+peran)(?:\s|$|[:：])|身份\s*[:：]|角色\s*[:：])/im.test(markdown)) {
     warnings.push("missing_identity");
   }
@@ -152,6 +152,25 @@ export function getPersonaStructureWarnings(
     warnings.push("content_too_short");
   }
   return warnings;
+}
+
+export function hasTopLevelSoulName(markdown: string): boolean {
+  return getTopLevelSoulName(markdown) !== null;
+}
+
+export function getTopLevelSoulName(markdown: string): string | null {
+  const lines = stripBom(markdown).replace(/\r\n?/g, "\n").split("\n");
+  const soulHeadingIndex = lines.findIndex((line) => /^#\s+Soul\s*$/i.test(line));
+  if (
+    soulHeadingIndex < 0
+    || lines.slice(0, soulHeadingIndex).some((line) => line.trim())
+  ) return null;
+  for (const line of lines.slice(soulHeadingIndex + 1)) {
+    if (/^##\s+/.test(line)) return null;
+    const match = /^\s*Name\s*:\s*(\S.*?)\s*$/i.exec(line);
+    if (match) return match[1]!.trim();
+  }
+  return null;
 }
 
 export function buildCustomSoulMarkdown(

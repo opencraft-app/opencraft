@@ -68,7 +68,7 @@ export function BlogPage({
       <main className="relative isolate flex flex-1 overflow-hidden bg-white pt-[60px]">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] opacity-70 [background:repeating-linear-gradient(90deg,rgba(17,24,39,0.08)_0_1px,transparent_1px_16px)] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.7)_0%,rgba(0,0,0,0.45)_58%,transparent_100%)]"
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] opacity-70 [background:repeating-linear-gradient(90deg,var(--border-strong)_0_1px,transparent_1px_16px)] [mask-image:linear-gradient(180deg,var(--text-primary)_0%,var(--text-tertiary)_58%,transparent_100%)]"
         />
         <section
           aria-labelledby="blog-heading"

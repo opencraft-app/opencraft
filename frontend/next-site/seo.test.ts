@@ -38,8 +38,8 @@ async function importSeoWithRegion(region: "cn" | "global") {
 
 type JsonLdElement = {
   props: {
-    dangerouslySetInnerHTML: {
-      __html: string;
+    dangerouslySetInnerHTML?: {
+      __html?: string;
     };
   };
 };
@@ -55,7 +55,11 @@ type JsonLdWrapperElement = {
 function jsonLdData(node: unknown): unknown {
   const wrapper = node as JsonLdWrapperElement;
   const element = wrapper.type(wrapper.props) as JsonLdElement;
-  return JSON.parse(element.props.dangerouslySetInnerHTML.__html);
+  const json = element.props.dangerouslySetInnerHTML?.__html;
+  if (typeof json !== "string") {
+    throw new Error("Expected JSON-LD data to render through dangerouslySetInnerHTML.__html");
+  }
+  return JSON.parse(json);
 }
 
 describe("next-site SEO origin", () => {

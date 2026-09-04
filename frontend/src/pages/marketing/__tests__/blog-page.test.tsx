@@ -24,6 +24,11 @@ describe("BlogPage", () => {
     expect(screen.getByRole("heading", { name: "博客" })).toBeInTheDocument();
     expect(screen.getByRole("banner")).toHaveAttribute("data-appearance", "immersive");
     expect(screen.getByRole("main")).toHaveClass("bg-white");
+    const gridBackdrop = screen.getByRole("main").querySelector("[aria-hidden='true']");
+    expect(gridBackdrop).toHaveClass(
+      "[background:repeating-linear-gradient(90deg,var(--border-strong)_0_1px,transparent_1px_16px)]",
+    );
+    expect(gridBackdrop?.getAttribute("class")).not.toContain("rgba(17,24,39");
     expect(screen.getByRole("region", { name: "博客" })).toHaveClass("pb-96");
     expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "公告" })).toHaveAttribute("aria-pressed", "false");
