@@ -86,6 +86,7 @@ import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
 import {
+  resolveAgentConsoleCollectionLabel,
   resolveAgentDisplayName,
   resolveAgentSessionTitle,
   shouldUseEnglishProviderData,
@@ -831,7 +832,7 @@ const MemoryPanel = ({
     <div className="space-y-4">
       <AgentSectionHeader
         title={t("持久记忆")}
-        description={t("查看当前 Hermes Agent 的记忆和用户画像文件")}
+        description={t("查看当前 Hermes Agent 的持久记忆和用户画像文件")}
         actions={(
           <button
             type="button"
@@ -4613,8 +4614,8 @@ export const AgentSettingsPage = ({
                   id: "setup",
                   label: t("配置"),
                   sections: [
-                    { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
-                    { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
+                    { id: "channel", label: resolveAgentConsoleCollectionLabel("channel", i18n.language, t), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    { id: "model", label: resolveAgentConsoleCollectionLabel("model", i18n.language, t), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
                   ],
                 },
                 {

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, Globe, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
+import { Bot, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect } from "react";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
@@ -7,7 +7,7 @@ import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, WEBSITES_PATH, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
 
 type RevealWorkbenchHost = Window & {
@@ -158,6 +158,14 @@ export const UserAvatarMenu = () => {
                 <Bot className={menuIconClass} />
                 {t("我的智能体伙伴")}
               </a>
+              <a
+                href="/account"
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <User className={menuIconClass} />
+                {t("账号管理")}
+              </a>
               {showWorkbenchEntry ? (
                 <a
                   href={AGENT_SECTION_PATH_BY_ID.workbench}
@@ -168,22 +176,6 @@ export const UserAvatarMenu = () => {
                   {t("工作台")}
                 </a>
               ) : null}
-              <a
-                href="/account"
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <User className={menuIconClass} />
-                {t("账号管理")}
-              </a>
-              <a
-                href={WEBSITES_PATH}
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <Globe className={menuIconClass} />
-                {t("我的工作台")}
-              </a>
               {hiddenEntriesRevealed && !isGlobal ? (
                 <a
                   href={PRODUCT_FEEDBACK_URL}

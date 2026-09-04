@@ -180,7 +180,7 @@ describe("BuddyPanel P1 stability", () => {
     const { container } = render(<BuddyPanel botId="agent-a" />);
 
     const title = screen.getByRole("heading", { level: 2, name: "人设" });
-    const description = screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众不同");
+    const description = screen.getByText("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式");
     const card = container.querySelector(".lv-buddy-panel");
 
     expect(title).toHaveClass(
@@ -205,7 +205,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(container.querySelector(".lv-buddy-panel__title")).not.toBeInTheDocument();
   });
 
-  it("places the SkillHub source to the right of the page description", () => {
+  it("places the SkillHub source at the card heading height", () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
@@ -213,12 +213,14 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
 
-    const description = screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众不同");
+    const description = screen.getByText("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式");
     const source = screen.getByRole("link", { name: "灵感来自 SkillHub" });
+    const cardHeading = screen.getByRole("heading", { level: 3, name: "人设卡片" });
 
-    expect(description.parentElement).toHaveClass("flex", "items-center", "justify-between");
-    expect(source.parentElement).toBe(description.parentElement);
-    expect(source).toHaveClass("ml-auto", "shrink-0");
+    expect(source.parentElement).toBe(cardHeading.parentElement);
+    expect(source.parentElement).toHaveClass("relative", "items-center", "justify-center");
+    expect(source).toHaveClass("absolute", "inset-y-0", "right-6", "items-center");
+    expect(description.parentElement).not.toBe(source.parentElement);
   });
 
   it("renders the persona card heading with the historical slogan typography", () => {

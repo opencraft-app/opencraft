@@ -359,7 +359,7 @@ const coreCopyByLocale = {
     "I will pull conversion data this afternoon.": "Saya akan menarik data konversi sore ini.",
     "read the last week of messages. What is blocking us right now?": "baca pesan minggu lalu. Apa yang sedang menghambat kita?",
     "Done. Lin sends design a usable copy draft today; you add conversion data this afternoon; Alex books the first customer today and the other two tomorrow and Thursday. I will @ each owner before their deadline.": "Selesai. Lin mengirim draf copy yang siap dipakai hari ini; Anda menambahkan data konversi sore ini; Alex menjadwalkan pelanggan pertama hari ini dan dua lainnya besok serta Kamis. Saya akan @ tiap owner sebelum tenggat.",
-    "Your AI companion, always here, always evolving with you": "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
+    "Your AI companion—always on, always evolving with you.": "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
     "LightVela can become your": "LightVela dapat menjadi",
     "knowledge base": "basis pengetahuan",
     "My AI Companion": "Pendamping AI saya",
@@ -394,7 +394,7 @@ const coreCopyByLocale = {
     "Add Soul, Skills, and Automations so I learn faster.": "Tambahkan Automations, Workbench, dan DeepSeek Harness agar saya belajar lebih cepat.",
     "Long memory, quick recall, fast response.": "Memori panjang, cepat mengingat, cepat merespons.",
     "After that, I stay always on": "Setelah itu, saya tetap selalu aktif",
-    "I run in the cloud, so your computer does not need to stay on. Each time you correct me, I save it as a new rule and follow your preference next time.": "Saya berjalan di cloud, jadi komputer Anda tidak perlu terus menyala. Setiap kali Anda mengoreksi saya, saya menyimpannya sebagai aturan baru dan mengikuti preferensi Anda berikutnya.",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "Saya berjalan di cloud dan tersedia 24/7, jadi komputer Anda tidak perlu terus menyala. Setiap kali Anda mengoreksi saya, saya menyimpannya sebagai aturan baru dan mengikuti preferensi Anda berikutnya.",
     "I organize group context and unanswered threads.": "Saya menata konteks grup dan utas yang belum terjawab.",
     "Scheduled work runs by itself.": "Pekerjaan terjadwal berjalan sendiri.",
     "For real decisions, I ask you first.": "Untuk keputusan penting, saya bertanya kepada Anda lebih dulu.",
@@ -534,7 +534,7 @@ const coreCopyByLocale = {
     "I will pull conversion data this afternoon.": "Esta tarde prepararé los datos de conversión.",
     "read the last week of messages. What is blocking us right now?": "lee los mensajes de la última semana. ¿Qué nos bloquea ahora?",
     "Done. Lin sends design a usable copy draft today; you add conversion data this afternoon; Alex books the first customer today and the other two tomorrow and Thursday. I will @ each owner before their deadline.": "Listo. Lin envía hoy un borrador usable al equipo de diseño; tú añades datos de conversión esta tarde; Alex agenda el primer cliente hoy y los otros dos mañana y el jueves. Mencionaré a cada responsable antes de su fecha límite.",
-    "Your AI companion, always here, always evolving with you": "Cuanto más lo uses, mejor te entenderá, tu compañero de IA siempre en línea",
+    "Your AI companion—always on, always evolving with you.": "Cuanto más lo uses, mejor te entenderá, tu compañero de IA siempre en línea",
     "LightVela can become your": "LightVela puede ser tu",
     "knowledge base": "base de conocimiento",
     "My AI Companion": "Mi compañero de IA",
@@ -569,7 +569,7 @@ const coreCopyByLocale = {
     "Add Soul, Skills, and Automations so I learn faster.": "Añade Automations, Workbench y DeepSeek Harness para que aprenda más rápido.",
     "Long memory, quick recall, fast response.": "Memoria larga, recuperación rápida y respuesta ágil.",
     "After that, I stay always on": "Después, sigo siempre activo",
-    "I run in the cloud, so your computer does not need to stay on. Each time you correct me, I save it as a new rule and follow your preference next time.": "Funciono en la nube, así que tu ordenador no tiene que quedar encendido. Cada corrección se guarda como una regla para la próxima vez.",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "Funciono en la nube y estoy disponible 24/7, así que tu ordenador no tiene que quedar encendido. Cada corrección se guarda como una regla para la próxima vez.",
     "I organize group context and unanswered threads.": "Organizo el contexto del grupo y los hilos sin responder.",
     "Scheduled work runs by itself.": "El trabajo programado se ejecuta solo.",
     "For real decisions, I ask you first.": "Para decisiones reales, te pregunto primero.",
@@ -711,7 +711,7 @@ Object.assign(coreCopyByLocale, {
     "I will pull conversion data this afternoon.": "午後にコンバージョンデータを出します。",
     "read the last week of messages. What is blocking us right now?": "先週のメッセージを読んで、今のボトルネックを教えて。",
     "Done. Lin sends design a usable copy draft today; you add conversion data this afternoon; Alex books the first customer today and the other two tomorrow and Thursday. I will @ each owner before their deadline.": "完了です。Linは今日デザイン向けに使えるコピー案を送り、あなたは午後にコンバージョンデータを追加し、Alexは今日1件目の顧客を予約、残り2件は明日と木曜に回します。締切前に各担当者へメンションします。",
-    "Your AI companion, always here, always evolving with you": "使うほどあなたを理解する、ずっとオンラインのAIパートナー",
+    "Your AI companion—always on, always evolving with you.": "使うほどあなたを理解する、ずっとオンラインのAIパートナー",
     "LightVela can become your": "LightVelaはあなたの",
     "knowledge base": "ナレッジベース",
     "My AI Companion": "私のAIパートナー",
@@ -763,7 +763,7 @@ Object.assign(coreCopyByLocale, {
     "Add Soul, Skills, and Automations so I learn faster.": "Automations、Workbench、DeepSeek Harnessを追加すると、より早く学習します。",
     "Long memory, quick recall, fast response.": "長い記憶、素早い想起、高速な応答。",
     "After that, I stay always on": "その後は、ずっと稼働し続けます",
-    "I run in the cloud, so your computer does not need to stay on. Each time you correct me, I save it as a new rule and follow your preference next time.": "私はクラウドで動くので、あなたのコンピューターを起動し続ける必要はありません。修正されるたびに新しいルールとして保存し、次回はあなたの好みに沿って動きます。",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "私はクラウドで24時間365日稼働するので、あなたのコンピューターを起動し続ける必要はありません。修正されるたびに新しいルールとして保存し、次回はあなたの好みに沿って動きます。",
     "I organize group context and unanswered threads.": "グループの文脈と未返信スレッドを整理します。",
     "Scheduled work runs by itself.": "定時の作業は自動で実行されます。",
     "For real decisions, I ask you first.": "重要な判断は、必ず先に確認します。",
@@ -906,7 +906,7 @@ Object.assign(coreCopyByLocale, {
     "I will pull conversion data this afternoon.": "오늘 오후에 전환 데이터를 가져오겠습니다.",
     "read the last week of messages. What is blocking us right now?": "지난주 메시지를 읽고 지금 무엇이 막고 있는지 알려줘.",
     "Done. Lin sends design a usable copy draft today; you add conversion data this afternoon; Alex books the first customer today and the other two tomorrow and Thursday. I will @ each owner before their deadline.": "완료했습니다. Lin은 오늘 디자인팀에 사용할 수 있는 카피 초안을 보내고, 당신은 오후에 전환 데이터를 추가하며, Alex는 오늘 첫 고객을 예약하고 나머지 두 건은 내일과 목요일에 진행합니다. 마감 전에 각 담당자를 멘션하겠습니다.",
-    "Your AI companion, always here, always evolving with you": "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
+    "Your AI companion—always on, always evolving with you.": "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     "LightVela can become your": "LightVela는 당신의",
     "knowledge base": "지식 베이스",
     "My AI Companion": "내 AI 파트너",
@@ -958,7 +958,7 @@ Object.assign(coreCopyByLocale, {
     "Add Soul, Skills, and Automations so I learn faster.": "Automations, Workbench, DeepSeek Harness를 추가하면 더 빨리 학습합니다.",
     "Long memory, quick recall, fast response.": "긴 기억, 빠른 회상, 빠른 응답.",
     "After that, I stay always on": "그 후에는 언제나 켜져 있습니다",
-    "I run in the cloud, so your computer does not need to stay on. Each time you correct me, I save it as a new rule and follow your preference next time.": "저는 클라우드에서 실행되므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 당신이 한 번 수정할 때마다 새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다.",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "저는 클라우드에서 24시간 연중무휴로 실행되므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 당신이 한 번 수정할 때마다 새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다.",
     "I organize group context and unanswered threads.": "그룹 맥락과 답하지 않은 스레드를 정리합니다.",
     "Scheduled work runs by itself.": "예약된 작업은 자동으로 실행됩니다.",
     "For real decisions, I ask you first.": "중요한 결정은 반드시 먼저 묻습니다.",
@@ -3680,25 +3680,25 @@ function normalizeHeroDemo(document) {
 
 const alwaysOnEmphasisByLocale = {
   "en-US": [
-    ["I run ", "in the cloud", ", so your computer does not need to stay on. Each time you correct me, I save it ", "as a new rule and follow your preference next time", "."],
+    ["I stay ", "available 24/7 in the cloud", ", so you never need to leave your computer running. Whenever you correct me, I ", "turn your feedback into a new rule", " and apply it next time."],
   ],
   "zh-SG": [
-    ["我在", "云端", "，不用你电脑开着。你每纠正我一次，我就把它记成", "新规则，下次直接按你的习惯做", "。"],
+    ["我在", "云端 7×24 小时在线", "，不用一直开着你的电脑。你每纠正我一次，我就把它记成", "新规则，下次直接按你的习惯做", "。"],
   ],
   "zh-Hant": [
-    ["我在", "雲端", "，不用你電腦開著。你每糾正我一次，我就把它記成", "新規則，下次直接按你的習慣做", "。"],
+    ["我在", "雲端 7×24 小時在線", "，不用一直開著你的電腦。你每糾正我一次，我就把它記成", "新規則，下次直接按你的習慣做", "。"],
   ],
   "id-ID": [
-    ["Saya berjalan ", "di cloud", ", jadi komputer Anda tidak perlu terus menyala. Setiap kali Anda mengoreksi saya, saya menyimpannya ", "sebagai aturan baru dan mengikuti preferensi Anda berikutnya", "."],
+    ["Saya berjalan ", "di cloud dan tersedia 24/7", ", jadi komputer Anda tidak perlu terus menyala. Setiap kali Anda mengoreksi saya, saya menyimpannya ", "sebagai aturan baru dan mengikuti preferensi Anda berikutnya", "."],
   ],
   es: [
-    ["Funciono ", "en la nube", ", así que tu ordenador no tiene que quedar encendido. Cada corrección se guarda ", "como una regla para la próxima vez", "."],
+    ["Funciono ", "en la nube y estoy disponible 24/7", ", así que tu ordenador no tiene que quedar encendido. Cada corrección se guarda ", "como una regla para la próxima vez", "."],
   ],
   "ja-JP": [
-    ["私は", "クラウド", "で動くので、あなたのコンピューターを起動し続ける必要はありません。修正されるたびに", "新しいルールとして保存し、次回はあなたの好みに沿って動きます", "。"],
+    ["私は", "クラウドで24時間365日稼働する", "ので、あなたのコンピューターを起動し続ける必要はありません。修正されるたびに", "新しいルールとして保存し、次回はあなたの好みに沿って動きます", "。"],
   ],
   "ko-KR": [
-    ["저는 ", "클라우드", "에서 실행되므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 당신이 한 번 수정할 때마다 ", "새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다", "."],
+    ["저는 ", "클라우드에서 24시간 연중무휴로 실행", "되므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 당신이 한 번 수정할 때마다 ", "새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다", "."],
   ],
 };
 
@@ -3920,9 +3920,9 @@ function applyFooterLayout(document) {
     <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.</p></div>
     <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Analysis</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Self-hosting analysis</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Hostinger analysis</a></li><li><a href="/docs/compare/lightvela-vs-manus">Manus analysis</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">ChatGPT analysis</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Genspark analysis</a></li></ul></div>
-    <div><h3>Community</h3><ul><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://www.youtube.com/@TencentLightVela" target="_blank" rel="noreferrer">YouTube</a></li></ul></div>
+    <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li><li><a href="https://www.youtube.com/@TencentLightVela" target="_blank" rel="noreferrer">YouTube</a></li></ul></div>
     <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
-    <div><h3>Related products</h3><ul><li><a href="https://tcb.cloud.tencent.com/en/?from=lightvela" target="_blank" rel="noreferrer">Tencent CloudBase</a></li><li><a href="https://edgeone.ai/" target="_blank" rel="noreferrer">Tencent EdgeOne</a></li></ul></div>
+    <div><h3>Related products</h3><ul><li><a href="https://edgeone.ai/" target="_blank" rel="noreferrer">Tencent EdgeOne</a></li><li><a href="https://tcb.cloud.tencent.com/en/?from=lightvela" target="_blank" rel="noreferrer">Tencent CloudBase</a></li></ul></div>
   </div></div>
 `;
 }

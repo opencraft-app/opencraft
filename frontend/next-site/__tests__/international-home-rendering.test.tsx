@@ -25,7 +25,7 @@ describe("international v2 homepage rendering", () => {
     expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260903-home-mobile-fit"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
-    expect(markup).toContain("Your AI companion, always here, always evolving with you");
+    expect(markup).toContain("Your AI companion—always on, always evolving with you.");
     expect(markup).toContain('href="/subscribe"');
   });
 
@@ -103,6 +103,7 @@ describe("international v2 homepage rendering", () => {
     expect(runtimeSource).toContain("script[data-lightvela-intl-home-script]");
     expect(runtimeSource).toContain("}, [locale]);");
     expect(runtimeSource).toContain("loginOnly");
+    expect(runtimeSource).toContain("showProductEntry");
     expect(runtimeSource).not.toContain("promoteFreeTrial");
     expect(runtimeSource).not.toContain("createPortal");
   });
@@ -118,6 +119,7 @@ describe("international v2 homepage rendering", () => {
         locale: "es",
         loginOnly: true,
         showLanguageSwitcher: true,
+        showProductEntry: true,
       }),
       undefined,
     );

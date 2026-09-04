@@ -31,7 +31,7 @@ LightVela 国内站和国际站首页在登录态恢复完成后，顶部导航�
 采用“首页显式开启 + 登录态动作区渲染”的方案：
 
 1. 为 `PublicHeaderAuthIsland` 增加首页产品入口开关，默认关闭。
-2. 仅 `PublicHomePage` 开启该开关，避免共享 Auth Island 让其他公共页面意外出现按钮。
+2. 国内站 `PublicHomePage` 与国际站 `InternationalHomeRuntime` 开启该开关，避免共享 Auth Island 让其他公共页面意外出现按钮。
 3. 登录态桌面端和移动端均在 `UserAvatarMenu` 左侧渲染入口。
 4. 使用原生 `<a href="/agents">` 进入产品壳，延续当前静态导出页面跨应用壳导航的可靠做法。
 
@@ -67,7 +67,7 @@ LightVela 国内站和国际站首页在登录态恢复完成后，顶部导航�
 
 ## 状态与数据流
 
-1. `PublicHomePage` 向 `PublicHeaderAuthIsland` 传入首页入口开关。
+1. 国内站 `PublicHomePage` 与国际站 `InternationalHomeRuntime` 向 `PublicHeaderAuthIsland` 传入首页入口开关。
 2. Auth Island 等待 Session 恢复；加载态继续显示现有骨架，不提前展示入口。
 3. 未登录态继续展示现有免费试用和登录动作。
 4. 登录态根据当前 locale 读取入口文案，渲染桌面和移动链接。
