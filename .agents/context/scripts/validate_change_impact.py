@@ -19,6 +19,7 @@ from typing import Any
 
 VALID_RISKS = {"normal", "high"}
 REQUIRED_RULE_FIELDS = {"id", "paths", "design_docs", "risk", "owner"}
+OPTIONAL_RULE_FIELDS = {"exclude_paths"}
 
 
 def load_json(path: Path, label: str) -> dict[str, Any]:
@@ -64,8 +65,15 @@ def validate_manifest(repo: Path, payload: dict[str, Any]) -> list[dict[str, Any
     ids: set[str] = set()
     for index, raw_rule in enumerate(raw_rules):
         label = f"rules[{index}]"
-        if not isinstance(raw_rule, dict) or set(raw_rule) != REQUIRED_RULE_FIELDS:
-            raise ValueError(f"{label} 必须只包含 {sorted(REQUIRED_RULE_FIELDS)}")
+        if not isinstance(raw_rule, dict):
+            raise ValueError(f"{label} 必须是 JSON object")
+        present = set(raw_rule)
+        if not REQUIRED_RULE_FIELDS <= present:
+            missing_fields = sorted(REQUIRED_RULE_FIELDS - present)
+            raise ValueError(f"{label} 缺少必填字段 {missing_fields}")
+        unknown_fields = sorted(present - REQUIRED_RULE_FIELDS - OPTIONAL_RULE_FIELDS)
+        if unknown_fields:
+            raise ValueError(f"{label} 包含未知字段 {unknown_fields}")
         rule_id = raw_rule.get("id")
         if not isinstance(rule_id, str) or not rule_id.strip() or rule_id in ids:
             raise ValueError(f"{label}.id 必须是唯一非空字符串")
@@ -74,6 +82,9 @@ def validate_manifest(repo: Path, payload: dict[str, Any]) -> list[dict[str, Any
             values = raw_rule.get(field)
             if not isinstance(values, list) or not values or not all(isinstance(item, str) and item.strip() for item in values):
                 raise ValueError(f"{label}.{field} 必须是非空字符串数组")
+        excludes = raw_rule.get("exclude_paths", [])
+        if not isinstance(excludes, list) or not all(isinstance(item, str) and item.strip() for item in excludes):
+            raise ValueError(f"{label}.exclude_paths 必须是字符串数组")
         for path in raw_rule["design_docs"]:
             normalized = repo_relative(path, f"{label}.design_docs")
             if not (repo / normalized).is_file():
@@ -108,13 +119,43 @@ def changed_files(args: argparse.Namespace, repo: Path) -> list[str]:
     return list(dict.fromkeys(changed))
 
 
-def assess(rules: list[dict[str, Any]], changed: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    matched = [rule for rule in rules if any(matches(path, rule["paths"]) for path in changed)]
-    missing = [
+def rule_triggers(rule: dict[str, Any], changed: list[str]) -> list[str]:
+    """Return the changed paths that make this rule responsible for a design update.
+
+    ``exclude_paths`` removes surfaces that live under a responsibility root but carry
+    no architectural meaning, for example generated locale bundles, marketing copy,
+    test fixtures and binary assets.  A rule only triggers when at least one changed
+    path survives the exclusion filter.
+    """
+    excludes = rule.get("exclude_paths", [])
+    return [
+        path for path in changed
+        if matches(path, rule["paths"]) and not matches(path, excludes)
+    ]
+
+
+def assess(
+    rules: list[dict[str, Any]], changed: list[str]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split matched rules into blocking failures and advisory reminders.
+
+    ``risk: high`` rules block the change set, matching ADR-0002: a protected surface
+    must not move without its formal design document.  ``risk: normal`` rules only
+    remind, because a coarse responsibility root also covers low-risk edits whose
+    architecture documents genuinely should not change.  Hard-blocking those would
+    push authors to edit design documents for no reason, or to bypass the guard.
+    """
+    matched: list[dict[str, Any]] = []
+    for rule in rules:
+        if rule_triggers(rule, changed):
+            matched.append(rule)
+    undocumented = [
         rule for rule in matched
         if not any(matches(path, rule["design_docs"]) for path in changed)
     ]
-    return matched, missing
+    blocking = [rule for rule in undocumented if rule["risk"] == "high"]
+    advisory = [rule for rule in undocumented if rule["risk"] != "high"]
+    return matched, blocking, advisory
 
 
 def main() -> int:
@@ -141,19 +182,31 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    matched, missing = assess(rules, changed)
-    if missing:
+    matched, blocking, advisory = assess(rules, changed)
+    if blocking:
         print("docs-impact: failed", file=sys.stderr)
-        print("需要同步更新以下正式设计文档（每个命中规则至少一份）：", file=sys.stderr)
-        for rule in missing:
+        print("高风险变更必须同步更新以下正式设计文档（每个命中规则至少一份）：", file=sys.stderr)
+        for rule in blocking:
             print(f"- {rule['id']}: {', '.join(rule['design_docs'])}", file=sys.stderr)
+        print(
+            "若确认本次变更不改变该责任面的架构语义，请收窄规则 paths 或补充 exclude_paths，"
+            "不要为通过门禁而修改无关设计文档。",
+            file=sys.stderr,
+        )
         return 1
+
+    for rule in advisory:
+        print(
+            f"docs-impact: 提示 {rule['id']} 命中但未更新设计文档"
+            f"（risk=normal，不阻断）：{', '.join(rule['design_docs'])}"
+        )
 
     high_risk = [rule for rule in matched if rule["risk"] == "high"]
     payload = {
         "status": "passed",
         "changed_files": changed,
         "matched_rules": [rule["id"] for rule in matched],
+        "advisory_rules": [rule["id"] for rule in advisory],
         "owner_review_required": [
             {"rule_id": rule["id"], "owner": rule["owner"]} for rule in high_risk
         ],

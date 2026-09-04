@@ -577,9 +577,13 @@ def validate_governance_assets(
                 if not isinstance(rule, dict):
                     impact_errors.append(f"{label} must be an object")
                     continue
-                if set(rule) != {"id", "paths", "design_docs", "risk", "owner"}:
+                required = {"id", "paths", "design_docs", "risk", "owner"}
+                optional = {"exclude_paths"}
+                if not required <= set(rule) or set(rule) - required - optional:
                     impact_errors.append(f"{label} has unexpected fields")
                     continue
+                if not isinstance(rule.get("exclude_paths", []), list):
+                    impact_errors.append(f"{label}.exclude_paths must be an array")
                 if not isinstance(rule["id"], str) or not rule["id"] or rule["id"] in ids:
                     impact_errors.append(f"{label}.id must be unique")
                 else:
