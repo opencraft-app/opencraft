@@ -2,12 +2,22 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { render, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
+const regionMock = vi.hoisted(() => ({ isGlobal: false }));
+const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
+vi.mock("@/contexts/session-context", () => ({
+  useSession: () => sessionMock,
+}));
+vi.mock("@/lib/region", () => ({
+  get isGlobal() {
+    return regionMock.isGlobal;
+  },
+}));
 
 import { InternationalHomePage } from "@next-site/international-home-page";
 import {
@@ -16,6 +26,17 @@ import {
 } from "@next-site/international-home-runtime";
 
 const frontendRoot = process.cwd();
+const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-domestic-home-hero-cta class="btn-dark" href="/subscribe"><span data-domestic-home-hero-cta-label>免费试用</span></a></div></main>';
+
+beforeEach(() => {
+  regionMock.isGlobal = false;
+  sessionMock.authReady = true;
+  sessionMock.isAuthenticated = false;
+});
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("international v2 homepage rendering", () => {
   it("server-renders the approved homepage content and stylesheet", () => {
@@ -104,7 +125,7 @@ describe("international v2 homepage rendering", () => {
     expect(runtimeSource).toContain("}, [locale]);");
     expect(runtimeSource).toContain("loginOnly");
     expect(runtimeSource).toContain("showProductEntry");
-    expect(runtimeSource).not.toContain("promoteFreeTrial");
+    expect(runtimeSource).toContain("promoteFreeTrial");
     expect(runtimeSource).not.toContain("createPortal");
   });
 
@@ -118,8 +139,74 @@ describe("international v2 homepage rendering", () => {
       expect.objectContaining({
         locale: "es",
         loginOnly: true,
+        promoteFreeTrial: false,
         showLanguageSwitcher: true,
         showProductEntry: true,
+      }),
+      undefined,
+    );
+  });
+
+  it("restores the domestic anonymous header and hero free-trial actions", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = false;
+    headerAuthMock.mockClear();
+
+    render(
+      <InternationalHomeRuntime
+        locale="zh-CN"
+        markup={domesticHeroMarkup}
+      />,
+    );
+
+    expect(headerAuthMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        locale: "zh-CN",
+        loginOnly: false,
+        promoteFreeTrial: true,
+        showProductEntry: true,
+      }),
+      undefined,
+    );
+    await waitFor(() => {
+      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("免费试用");
+    });
+    expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
+  });
+
+  it("switches the domestic hero action to the signed-in product entry", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+
+    render(
+      <InternationalHomeRuntime
+        locale="zh-CN"
+        markup={domesticHeroMarkup}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("开始使用");
+    });
+    expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/agents");
+  });
+
+  it("keeps the global zh-CN runtime on the international login-only treatment", () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = true;
+    headerAuthMock.mockClear();
+
+    renderToStaticMarkup(<InternationalHomeRuntime locale="zh-CN" markup="<main />" />);
+
+    expect(headerAuthMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        locale: "zh-CN",
+        loginOnly: true,
+        promoteFreeTrial: false,
       }),
       undefined,
     );

@@ -125,6 +125,9 @@ describe("international v2 homepage artifact", () => {
     expect(hrefs).toContain("https://wj.qq.com/s2/27184784/6d06/");
     expect(hrefs).toContain("https://beian.miit.gov.cn/#/Integrated/index");
     expect(hrefs.every((href) => !href.startsWith("/zh-cn"))).toBe(true);
+    expect(document.querySelector(".hero__cta .btn-dark")?.textContent).toContain("免费试用");
+    expect(document.querySelector(".hero__cta .btn-dark")?.getAttribute("href")).toBe("/subscribe");
+    expect(document.querySelector("[data-domestic-home-hero-cta-label]")?.textContent).toBe("免费试用");
     expect(tabLabels).toEqual(["微信", "QQ", "企业微信", "钉钉", "飞书"]);
     expect(document.querySelector(".wcard__thumb--1 img")?.getAttribute("alt")).toBe(
       "微信、企业微信、钉钉、飞书、QQ 等当前支持的平台",

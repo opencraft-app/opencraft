@@ -3,7 +3,10 @@
 import { useEffect } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
+import { useSession } from '@/contexts/session-context';
+import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from '@/lib/agent-routes';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { isGlobal } from '@/lib/region';
 
 export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/runtime.js',
@@ -18,6 +21,9 @@ function versionedInternationalHomeAsset(source: string) {
 }
 
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
+  const { authReady, isAuthenticated } = useSession();
+  const isDomesticHomepage = !isGlobal && locale === 'zh-CN';
+
   useEffect(() => {
     let cancelled = false;
     const mountedScripts: HTMLScriptElement[] = [];
@@ -52,6 +58,17 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
     };
   }, [locale]);
 
+  useEffect(() => {
+    if (!isDomesticHomepage || !authReady) return;
+
+    const heroAction = document.querySelector<HTMLAnchorElement>('[data-domestic-home-hero-cta]');
+    const heroActionLabel = heroAction?.querySelector<HTMLElement>('[data-domestic-home-hero-cta-label]');
+    if (!heroAction || !heroActionLabel) return;
+
+    heroAction.href = isAuthenticated ? AGENTS_HOME_PATH : SUBSCRIBE_PATH;
+    heroActionLabel.textContent = isAuthenticated ? '开始使用' : '免费试用';
+  }, [authReady, isAuthenticated, isDomesticHomepage]);
+
   return (
     <>
       <link
@@ -67,7 +84,8 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
           locale={locale}
           showLanguageSwitcher
           showProductEntry
-          loginOnly
+          loginOnly={!isDomesticHomepage}
+          promoteFreeTrial={isDomesticHomepage}
         />
       </div>
     </>
