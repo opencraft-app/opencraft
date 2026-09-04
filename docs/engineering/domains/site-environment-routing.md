@@ -25,6 +25,14 @@
 
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。
 
+## 公开营销页区域边界
+
+- 国内站和国际站可复用同一套公开营销页组件或静态 fragment，但必须在 `frontend/next-site/international-home-routing.ts`、`frontend/src/app/(site)/page.next.tsx` 和对应测试里显式区分站点入口、locale、CTA、文档链接和合规页脚。
+- 国内站 `lightvela.com/` 默认使用国内语境的 `zh-CN` 首页内容；可以复用国际站中文版的视觉结构，但链接必须落到国内裸路径，不输出国际站 locale 前缀或海外渠道主入口。
+- 国际站 `lightvela.ai/` 负责默认英文和多语言公开首页；权益文案、AI companion 语境和静态图片资源需要按 locale 同步验证，不能只改默认英文。
+- Blog 当前属于国际站公开内容入口；`/blog` 和本地化 Blog 路由在国内站构建下应保持不可访问，除非另有国内站 Blog 产品需求和路由设计。
+- 首页静态 fragment 的链接、图片版本参数、合规信息和客户端演示外壳属于站点路由责任面；修改后必须同步更新正式设计文档，并用静态链接检查、前端测试和本地/预览环境证明没有跨站点串链。
+
 ## Agent 模型配置区域边界
 
 - 国内站与国际站复用同一套模型配置交互，界面名称和操作提示通过前端 i18n 展示；持久化配置始终使用原始 Provider key 和模型 ID，不写入本地化名称。
