@@ -415,8 +415,8 @@ describe("international v2 homepage artifact", () => {
     const css = readFileSync(stylesheetPath, "utf8");
 
     expect(footer?.querySelector<HTMLImageElement>(".foot__brand img")?.getAttribute("src")).toBe("/lightvela-logo.svg");
-    expect(footer?.querySelector(".foot__title em.foot__signature")?.textContent).toBe("Hermes");
-    expect(footer?.querySelector(".foot__title")?.textContent).toContain("Hand your ideas to Hermes,");
+    expect(footer?.querySelector(".foot__title em.foot__signature")?.textContent).toBe("Hermes Agent");
+    expect(footer?.querySelector(".foot__title")?.textContent).toContain("Hand your ideas to Hermes Agent,");
     expect(footer?.querySelector(".foot__title")?.textContent).toContain("keep them moving in the cloud.");
     expect(footer?.querySelector(".foot__cta a")?.textContent).toContain("My AI companion");
     expect(footer?.querySelector(".foot__cta a span")).not.toBeNull();
