@@ -51,7 +51,7 @@ describe("international v2 homepage rendering", () => {
       "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     );
     expect(renderToStaticMarkup(<InternationalHomePage locale="zh-SG" />)).toContain(
-      'src="/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260903-home-mobile-fit"',
+      'src="/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260904-harness-sharp"',
     );
   });
 

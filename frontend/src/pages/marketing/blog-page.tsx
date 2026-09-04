@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 
-import { LightVelaFooter, type RenderFooterLink } from "@/components/site/lightvela-footer";
+import { LegalFooter } from "@/components/site/legal-footer";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import { useT } from "@/i18n/t";
@@ -49,10 +49,6 @@ export function BlogPage({
 }: BlogPageProps = {}) {
   const t = useT();
   const [activeCategory, setActiveCategory] = useState<BlogCategory>("all");
-  const renderFooterLink: RenderFooterLink | undefined = renderLink
-    ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
-        renderLink({ ariaLabel, children, className, href, onClick })
-    : undefined;
   const visiblePosts = BLOG_POSTS.filter(
     (post) => activeCategory === "all" || post.category === activeCategory,
   );
@@ -69,15 +65,14 @@ export function BlogPage({
         renderLink={renderLink}
         renderLanguageSwitcher={renderLanguageSwitcher}
       />
-      <main
-        className="flex flex-1 bg-white pt-[60px]"
-        style={{
-          backgroundImage: "linear-gradient(to bottom, #b9c8f8 0%, #edf2ff 26%, #ffffff 70%)",
-        }}
-      >
+      <main className="relative isolate flex flex-1 overflow-hidden bg-white pt-[60px]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] opacity-70 [background:repeating-linear-gradient(90deg,var(--border-strong)_0_1px,transparent_1px_16px)] [mask-image:linear-gradient(180deg,var(--text-primary)_0%,var(--text-tertiary)_58%,transparent_100%)]"
+        />
         <section
           aria-labelledby="blog-heading"
-          className="mx-auto flex w-full max-w-5xl flex-col items-center px-6 pb-96 pt-[clamp(8rem,20vh,14rem)] text-center"
+          className="mx-auto flex w-full max-w-[1360px] flex-col items-center px-6 pb-96 pt-[clamp(8rem,20vh,14rem)] text-center"
         >
           <h1 id="blog-heading" className="text-balance text-5xl font-semibold sm:text-6xl">
             {t("博客")}
@@ -103,7 +98,7 @@ export function BlogPage({
               );
             })}
           </nav>
-          <div className="mt-16 grid w-full gap-x-8 gap-y-12 text-left sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-16 grid w-full gap-x-11 gap-y-16 text-left sm:grid-cols-2 lg:grid-cols-3">
             {visiblePosts.map((post) => {
               const href = publicLocale
                 ? publicSiteHref(`/blog/${post.slug}`, publicLocale, { localized: publicLocalized })
@@ -112,17 +107,20 @@ export function BlogPage({
                 <a
                   key={post.slug}
                   href={href}
-                  className="group block text-left focus-visible:outline-none focus-visible:underline focus-visible:underline-offset-8"
+                  className="group block rounded-md border border-black/[0.08] bg-white p-3 text-left shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-offset-2"
                 >
                   <img
                     src={post.coverImage}
                     alt=""
-                    className="aspect-[16/9] w-full rounded-md object-cover transition-opacity group-hover:opacity-80"
+                    className="aspect-[16/9] w-full rounded-md bg-white object-cover transition-opacity group-hover:opacity-80"
                   />
-                  <h2 lang="en" className="mt-4 min-h-[2.5rem] line-clamp-2 text-pretty text-base font-medium leading-5 text-black">
+                  <h2
+                    lang="en"
+                    className="mt-4 min-h-[2.5rem] px-1 line-clamp-2 text-pretty text-base font-medium leading-5 text-black"
+                  >
                     {post.title}
                   </h2>
-                  <div className="mt-2 flex items-center gap-2 text-sm text-black/50">
+                  <div className="mt-2 flex items-center gap-2 px-1 pb-1 text-sm text-black/50">
                     <span>{blogCategoryLabel(t, post.category)}</span>
                     <span aria-hidden="true">·</span>
                     <time dateTime={post.publishedAt}>{formatBlogPublishedDate(post.publishedAt, publicLocale)}</time>
@@ -133,7 +131,7 @@ export function BlogPage({
           </div>
         </section>
       </main>
-      <LightVelaFooter renderLink={renderFooterLink} />
+      <LegalFooter />
     </div>
   );
 }

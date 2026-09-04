@@ -61,7 +61,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela, from a starter template or a blank workbench to a published site.",
     publishedAt: "2026-09-03T12:11:11+08:00",
-    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover.png",
+    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover-light.png",
     content: [
       {
         type: "image",
@@ -385,7 +385,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "I used LightVela Workbench’s Campaign Hub template to turn a basketball shoe launch idea into a premium storefront with a clear product story, guided comparisons, and a focused path to purchase.",
     publishedAt: "2026-09-03T11:31:46+08:00",
-    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.png",
+    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.png",
     content: [
       {
         type: "image",
@@ -648,7 +648,7 @@ Keep all product content editable and do not use fake business data.`,
     excerpt:
       "Anthropic’s Claude Tag points to a new way of working in Slack, so I recreated the idea with LightVela and built a digital employee for my team...",
     publishedAt: "2026-09-01T20:35:43+08:00",
-    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover.png",
+    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover-light.png",
     content: [
       {
         type: "image",
@@ -879,7 +879,7 @@ Keep all product content editable and do not use fake business data.`,
     excerpt:
       "I host my mega Discord server with over 600 users, revolving around DWS, Minecraft, and Palworld...",
     publishedAt: "2026-09-01T18:28:41+08:00",
-    coverImage: "/assets/blog/discord-hermes/cover.png",
+    coverImage: "/assets/blog/discord-hermes/cover-light.png",
     content: [
       {
         type: "image",

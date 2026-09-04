@@ -7,8 +7,8 @@ vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => text,
 }));
 
-vi.mock("@/components/site/lightvela-footer", () => ({
-  LightVelaFooter: () => <footer>footer</footer>,
+vi.mock("@/components/site/legal-footer", () => ({
+  LegalFooter: () => <footer>footer</footer>,
 }));
 
 vi.mock("@/components/site/public-site-header", () => ({
@@ -23,10 +23,12 @@ describe("BlogPage", () => {
 
     expect(screen.getByRole("heading", { name: "博客" })).toBeInTheDocument();
     expect(screen.getByRole("banner")).toHaveAttribute("data-appearance", "immersive");
-    expect(screen.getByRole("main")).toHaveStyle({
-      backgroundImage: "linear-gradient(to bottom, #b9c8f8 0%, #edf2ff 26%, #ffffff 70%)",
-    });
     expect(screen.getByRole("main")).toHaveClass("bg-white");
+    const gridBackdrop = screen.getByRole("main").querySelector("[aria-hidden='true']");
+    expect(gridBackdrop).toHaveClass(
+      "[background:repeating-linear-gradient(90deg,var(--border-strong)_0_1px,transparent_1px_16px)]",
+    );
+    expect(gridBackdrop?.getAttribute("class")).not.toContain("rgba(17,24,39");
     expect(screen.getByRole("region", { name: "博客" })).toHaveClass("pb-96");
     expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "公告" })).toHaveAttribute("aria-pressed", "false");
@@ -53,8 +55,11 @@ describe("BlogPage", () => {
     const latestCard = screen.getAllByRole("link", { name: /I Recreated Claude Tag with LightVela/ }).at(-1);
     if (!latestCard) throw new Error("Expected the localized latest Blog card to be rendered");
     expect(screen.queryByText(/I host my mega Discord server with over 600 users/)).not.toBeInTheDocument();
-    expect(latestCard.querySelector("img")).toHaveClass("rounded-md");
-    expect(latestCard.querySelector("h2")).toHaveClass("line-clamp-2", "min-h-[2.5rem]", "text-pretty");
+    expect(latestCard).toHaveClass("rounded-md", "border", "border-black/[0.08]", "bg-white", "p-3", "shadow-sm");
+    expect(latestCard.querySelector("img")).toHaveAttribute("src", "/assets/blog/lightvela-slack-digital-employee/cover-light.png");
+    expect(latestCard.querySelector("img")).toHaveClass("rounded-md", "bg-white", "object-cover");
+    expect(latestCard.querySelector("h2")).toHaveClass("line-clamp-2", "min-h-[2.5rem]", "px-1", "text-pretty");
+    expect(latestCard.querySelector("div")).toHaveClass("px-1", "pb-1");
     expect(latestCard.querySelector("time")).toHaveTextContent("September 1, 2026");
     expect(latestCard.parentElement).toHaveClass("lg:grid-cols-3");
 
