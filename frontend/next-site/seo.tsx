@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
 
 import { isGlobal, type Region } from '@/lib/region';
 
@@ -67,6 +67,16 @@ const DEFAULT_OG_IMAGE_PATH = '/lightvela-social-preview.png';
 const BAIDU_SITE_VERIFICATION = 'codeva-ip0AdXURxG';
 const WECHAT_SITE_VERIFICATION = 'pKLUCg80PuWPBYLB';
 const DEFAULT_THEME_COLOR = '#f7f4ff';
+const GLOBAL_ORGANIZATION_SAME_AS = [
+  'https://discord.gg/Myh58xEMe2',
+  'https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b',
+  'https://x.com/agentlightvela',
+  'https://www.youtube.com/@TencentLightVela',
+] as const;
+const GLOBAL_OFFICIAL_PROFILE_SAME_AS = [
+  'https://x.com/agentlightvela',
+  'https://www.youtube.com/@TencentLightVela',
+] as const;
 
 /**
  * 结构化数据用的套餐报价（schema.org AggregateOffer）。
@@ -504,6 +514,7 @@ export function createPublicMetadata({
 export function SiteJsonLd() {
   const url = siteUrl();
   const logo = absoluteUrl('/lightvela-logo.jpg');
+  const sameAs = isGlobal ? GLOBAL_ORGANIZATION_SAME_AS : undefined;
   const data = [
     {
       '@context': 'https://schema.org',
@@ -511,12 +522,7 @@ export function SiteJsonLd() {
       name: SITE_NAME,
       url,
       logo,
-      sameAs: [
-        'https://discord.gg/Myh58xEMe2',
-        'https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b',
-        'https://x.com/agentlightvela',
-        'https://www.youtube.com/@TencentLightVela',
-      ],
+      ...(sameAs ? { sameAs: [...sameAs] } : {}),
     },
     {
       '@context': 'https://schema.org',
@@ -556,6 +562,8 @@ export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE
  * cn / global 构建均渲染；url / logo 由 siteUrl() 与 og 图按区域自动分叉。
  */
 export function OrganizationJsonLd() {
+  const sameAs = isGlobal ? GLOBAL_OFFICIAL_PROFILE_SAME_AS : undefined;
+
   return (
     <JsonLd
       id="lightvela-organization-jsonld"
@@ -565,7 +573,7 @@ export function OrganizationJsonLd() {
         name: SITE_NAME,
         url: siteUrl(),
         logo: absoluteUrl(DEFAULT_OG_IMAGE_PATH),
-        sameAs: ['https://x.com/agentlightvela', 'https://www.youtube.com/@TencentLightVela'],
+        ...(sameAs ? { sameAs: [...sameAs] } : {}),
       }}
     />
   );
@@ -608,15 +616,13 @@ export function BreadcrumbJsonLd({ items }: { items: readonly { name: string; pa
 }
 
 function JsonLd({ id, data }: { id: string; data: unknown }): ReactNode {
-  return (
-    <script
-      id={id}
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{
-        __html: JSON.stringify(data).replace(/</g, '\\u003c'),
-      }}
-    />
-  );
+  return React.createElement('script', {
+    id,
+    type: 'application/ld+json',
+    dangerouslySetInnerHTML: {
+      __html: JSON.stringify(data).replace(/</g, '\\u003c'),
+    },
+  });
 }
 
 export function absoluteUrl(path: string): string {

@@ -36,6 +36,32 @@ async function importSeoWithRegion(region: "cn" | "global") {
   return import("./seo");
 }
 
+type JsonLdElement = {
+  props: {
+    dangerouslySetInnerHTML?: {
+      __html?: string;
+    };
+  };
+};
+
+type JsonLdWrapperElement = {
+  type: (props: { id: string; data: unknown }) => unknown;
+  props: {
+    id: string;
+    data: unknown;
+  };
+};
+
+function jsonLdData(node: unknown): unknown {
+  const wrapper = node as JsonLdWrapperElement;
+  const element = wrapper.type(wrapper.props) as JsonLdElement;
+  const json = element.props.dangerouslySetInnerHTML?.__html;
+  if (typeof json !== "string") {
+    throw new Error("Expected JSON-LD data to render through dangerouslySetInnerHTML.__html");
+  }
+  return JSON.parse(json);
+}
+
 describe("next-site SEO origin", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -52,6 +78,43 @@ describe("next-site SEO origin", () => {
     const { siteUrl } = await importSeoWithRegion("cn");
 
     expect(siteUrl()).toBe("https://lightvela.com");
+  });
+
+  it("omits international social sameAs links from cn structured data", async () => {
+    const { OrganizationJsonLd, SiteJsonLd } = await importSeoWithRegion("cn");
+
+    const siteData = jsonLdData(SiteJsonLd());
+    const organizationData = jsonLdData(OrganizationJsonLd());
+
+    expect(siteData).toEqual([
+      expect.not.objectContaining({
+        sameAs: expect.arrayContaining([
+          "https://discord.gg/Myh58xEMe2",
+          "https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b",
+        ]),
+      }),
+      expect.any(Object),
+    ]);
+    expect(organizationData).not.toHaveProperty("sameAs");
+  });
+
+  it("keeps global structured data linked to official international profiles", async () => {
+    const { OrganizationJsonLd, SiteJsonLd } = await importSeoWithRegion("global");
+
+    const [siteOrganization] = jsonLdData(SiteJsonLd()) as [{ sameAs: string[] }];
+    const organization = jsonLdData(OrganizationJsonLd()) as { sameAs: string[] };
+
+    expect(siteOrganization.sameAs).toEqual(
+      expect.arrayContaining([
+        "https://discord.gg/Myh58xEMe2",
+        "https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b",
+        "https://x.com/agentlightvela",
+        "https://www.youtube.com/@TencentLightVela",
+      ]),
+    );
+    expect(organization.sameAs).toEqual(
+      expect.arrayContaining(["https://x.com/agentlightvela", "https://www.youtube.com/@TencentLightVela"]),
+    );
   });
 });
 

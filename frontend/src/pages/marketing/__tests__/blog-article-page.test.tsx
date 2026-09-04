@@ -15,8 +15,8 @@ vi.mock("@/i18n/t", () => ({
   },
 }));
 
-vi.mock("@/components/site/lightvela-footer", () => ({
-  LightVelaFooter: () => <footer>footer</footer>,
+vi.mock("@/components/site/legal-footer", () => ({
+  LegalFooter: () => <footer>footer</footer>,
 }));
 
 vi.mock("@/components/site/public-site-header", () => ({
@@ -115,7 +115,7 @@ describe("BlogArticlePage", () => {
     const images = within(article).getAllByRole("img");
     expect(images).toHaveLength(8);
     expect(images.map((image) => image.getAttribute("src"))).toEqual([
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.png",
       "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.png",
       "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.png",
       "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.png",
