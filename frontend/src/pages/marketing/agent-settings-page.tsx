@@ -96,7 +96,6 @@ import {
   getMemoryUsagePercent,
   isHermesMemoryLimitNearUsage,
   splitHermesMemoryEntries,
-  toSingleLineMemoryEntry,
   validateHermesMemoryLimit,
   type HermesMemorySnapshot,
   type HermesMemoryLimitTarget,
@@ -786,18 +785,14 @@ const MemoryEntries = ({
 
   return (
     <div className="space-y-2">
-      {entries.map((entry, index) => {
-        const preview = toSingleLineMemoryEntry(entry);
-        return (
-          <div
-            key={`${index}-${preview.slice(0, 24)}`}
-            title={entry}
-            className="flex min-h-11 items-center rounded-md border border-black/[0.06] bg-white px-3 text-sm text-black/75 shadow-[0_1px_2px_rgba(15,23,42,0.02)]"
-          >
-            <span className="min-w-0 flex-1 truncate">{preview}</span>
-          </div>
-        );
-      })}
+      {entries.map((entry, index) => (
+        <div
+          key={`${index}-${entry.slice(0, 24)}`}
+          className="min-h-11 rounded-md border border-black/[0.06] bg-white px-3 py-3 text-sm leading-relaxed text-black/75 shadow-[0_1px_2px_rgba(15,23,42,0.02)]"
+        >
+          <p className="whitespace-pre-wrap break-words text-pretty">{entry}</p>
+        </div>
+      ))}
     </div>
   );
 };

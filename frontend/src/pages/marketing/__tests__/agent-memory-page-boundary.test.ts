@@ -37,6 +37,19 @@ describe("Agent memory page async boundary", () => {
     expect(page).not.toContain('t("暂无用户画像。")');
   });
 
+  it("preserves line breaks and wraps long memory content", () => {
+    const page = readPageSource();
+    const memoryEntries = page.slice(
+      page.indexOf("const MemoryEntries ="),
+      page.indexOf("const MemoryPanel ="),
+    );
+
+    expect(memoryEntries).toContain("whitespace-pre-wrap");
+    expect(memoryEntries).toContain("break-words");
+    expect(memoryEntries).not.toContain("truncate");
+    expect(memoryEntries).not.toContain("toSingleLineMemoryEntry");
+  });
+
   it("uses the automations icon-only refresh button style", () => {
     const page = readPageSource();
     const memoryPanel = page.slice(
