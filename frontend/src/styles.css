@@ -2086,6 +2086,17 @@ html[lang="ko-KR"] .landing-page span {
     padding-right: 1rem;
   }
 
+  .lv-buddy-panel__toolbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .lv-buddy-panel__source {
+    position: static;
+    width: 100%;
+    justify-content: center;
+  }
+
   .lv-buddy-panel__grid {
     max-width: 396px;
     gap: 0.75rem;
@@ -2106,12 +2117,6 @@ html[lang="ko-KR"] .landing-page span {
   .lv-buddy-panel__action-buttons > .group > button {
     width: 100%;
     justify-content: center;
-  }
-
-  .lv-buddy-panel__progress {
-    position: static;
-    transform: none;
-    align-self: flex-end;
   }
 
 }

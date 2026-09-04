@@ -217,7 +217,7 @@ describe("BuddyPanel P1 stability", () => {
     const source = screen.getByRole("link", { name: "灵感来自 SkillHub" });
     const cardHeading = screen.getByRole("heading", { level: 3, name: "人设卡片" });
 
-    expect(source.parentElement).toBe(cardHeading.parentElement);
+    expect(source.parentElement).toBe(cardHeading.parentElement?.parentElement);
     expect(source.parentElement).toHaveClass("relative", "items-center", "justify-center");
     expect(source).toHaveClass("absolute", "inset-y-0", "right-6", "items-center");
     expect(description.parentElement).not.toBe(source.parentElement);
@@ -245,6 +245,27 @@ describe("BuddyPanel P1 stability", () => {
     expect(cardHeading.style.backgroundImage).toContain("linear-gradient");
     expect(cardHeading.style.backgroundClip).toBe("text");
     expect(cardHeading.style.color).toBe("transparent");
+    expect(screen.queryByText("已抽")).not.toBeInTheDocument();
+  });
+
+  it("places the drawn-card count immediately after the persona card heading", async () => {
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [fixtures.agentA],
+      appliedSlug: null,
+    });
+
+    const { container } = render(<BuddyPanel botId="agent-a" />);
+    await screen.findByText("Agent A Soul");
+
+    const cardHeading = screen.getByRole("heading", { level: 3, name: "人设卡片" });
+    const progressChip = screen.getByText("已抽").parentElement;
+
+    expect(progressChip).not.toBeNull();
+    expect(progressChip).toHaveTextContent("已抽1/8");
+    expect(cardHeading.parentElement).toHaveClass("lv-buddy-panel__heading");
+    expect(cardHeading.nextElementSibling).toBe(progressChip);
+    expect(container.querySelector(".lv-buddy-panel__actions")).not.toContainElement(progressChip);
+    expect(container.querySelector(".lv-buddy-panel__progress")).not.toBeInTheDocument();
   });
 
   it("ignores an old Agent injection result after the user switches Agents", async () => {
