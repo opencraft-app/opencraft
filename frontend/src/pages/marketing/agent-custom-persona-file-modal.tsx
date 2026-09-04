@@ -11,6 +11,7 @@ import {
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import {
+  hasTopLevelSoulName,
   validateCustomSoulMarkdown,
   type PersonaMarkdownErrorCode,
 } from "@/pages/marketing/agent-persona-upload";
@@ -50,12 +51,14 @@ export function CustomPersonaFileModal({
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [showNameWarning, setShowNameWarning] = useState(false);
   const saveRequestIdRef = useRef(0);
   const validation = useMemo(
     () => validateCustomSoulMarkdown(markdown, "SOUL.md", t("自定义人设")),
     [markdown, t],
   );
   const unchanged = markdown === initialMarkdown;
+  const hasName = useMemo(() => hasTopLevelSoulName(markdown), [markdown]);
 
   useEffect(() => {
     saveRequestIdRef.current += 1;
@@ -63,6 +66,7 @@ export function CustomPersonaFileModal({
     setMarkdown(initialMarkdown);
     setSaving(false);
     setSaveError(false);
+    setShowNameWarning(false);
   }, [initialMarkdown, open]);
 
   useEffect(() => () => {
@@ -75,6 +79,10 @@ export function CustomPersonaFileModal({
 
   const save = async () => {
     if (!validation.valid || unchanged || saving) return;
+    if (!hasName) {
+      setShowNameWarning(true);
+      return;
+    }
     const requestId = ++saveRequestIdRef.current;
     setSaving(true);
     setSaveError(false);
@@ -136,6 +144,7 @@ export function CustomPersonaFileModal({
               onChange={(event) => {
                 setMarkdown(event.target.value);
                 setSaveError(false);
+                setShowNameWarning(false);
               }}
               spellCheck={false}
               className={cn(
@@ -155,6 +164,12 @@ export function CustomPersonaFileModal({
               <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>{validationMessage(t, validation.code)}</span>
+              </div>
+            )}
+            {showNameWarning && (
+              <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>{t("请补充顶部 Name 字段，页面将用它展示人设名称")}</span>
               </div>
             )}
             {saveError && (

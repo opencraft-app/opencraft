@@ -154,7 +154,7 @@ describe("uploaded persona Markdown", () => {
   });
 
   it("bounds a display name by UTF-8 bytes without splitting characters", () => {
-    const name = getPersonaDisplayName(`Name: ${"你".repeat(100)}`, "fallback.md");
+    const name = getPersonaDisplayName(`# Soul\nName: ${"你".repeat(100)}`, "fallback.md");
 
     expect(new TextEncoder().encode(name).byteLength)
       .toBeLessThanOrEqual(PERSONA_DISPLAY_NAME_MAX_BYTES);
@@ -184,6 +184,16 @@ describe("uploaded persona Markdown", () => {
       "在不确定信息上明确说明假设和依据，并在执行高风险操作前征求用户确认。",
       "持续保持清晰、可靠和克制的表达，不虚构结果，也不泄露任何敏感信息。",
     ].join("\n"))).toEqual([]);
+  });
+
+  it("requires Name in the top-level Soul metadata for display guidance", () => {
+    expect(getPersonaStructureWarnings([
+      "# Soul",
+      "Slug: project-partner",
+      "",
+      "## Identity",
+      "Name: 这只是正文内容",
+    ].join("\n"))).toContain("missing_name");
   });
 
   it.each([
