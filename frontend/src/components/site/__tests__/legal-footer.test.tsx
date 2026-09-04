@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 
@@ -16,11 +16,25 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-vi.mock("@/lib/region", () => ({
+const regionState = vi.hoisted(() => ({
   isCN: true,
   isGlobal: false,
+}));
+
+vi.mock("@/lib/region", () => ({
+  get isCN() {
+    return regionState.isCN;
+  },
+  get isGlobal() {
+    return regionState.isGlobal;
+  },
   localizedPath: (path: string) => path,
 }));
+
+beforeEach(() => {
+  regionState.isCN = true;
+  regionState.isGlobal = false;
+});
 
 afterEach(() => {
   cleanup();
@@ -45,5 +59,22 @@ describe("LegalFooter", () => {
     expect(instruction).toHaveClass("max-w-full", "whitespace-normal", "text-center", "text-pretty");
     expect(instruction).not.toHaveClass("whitespace-nowrap", "tracking-wider");
     expect(instruction.parentElement).toHaveClass("w-60", "max-w-[calc(100vw-2rem)]");
+  });
+
+  it("renders the compact international footer without the logo block", () => {
+    regionState.isCN = false;
+    regionState.isGlobal = true;
+
+    render(<LegalFooter />);
+
+    expect(screen.getByText("Copyright © 2026 LightVela. All rights reserved. Powered by Tencent Lighthouse.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy-policy");
+    expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms-of-service");
+    expect(screen.getByRole("link", { name: "Open Source Notice" })).toHaveAttribute("href", "/open-source-licenses");
+    expect(screen.getByRole("link", { name: "Join Community" })).toHaveAttribute(
+      "href",
+      "https://discord.gg/Myh58xEMe2",
+    );
+    expect(screen.queryByRole("link", { name: "LightVela" })).not.toBeInTheDocument();
   });
 });

@@ -10,6 +10,12 @@ const INTERNATIONAL_V2_HOME_LOCALES = new Set<PublicSiteLocale>([
   "ko-KR",
 ]);
 
+const DOMESTIC_V2_HOME_LOCALES = new Set<PublicSiteLocale>(["zh-CN"]);
+
 export function shouldUseInternationalV2Home(isGlobalBuild: boolean, locale: PublicSiteLocale): boolean {
-  return isGlobalBuild && INTERNATIONAL_V2_HOME_LOCALES.has(locale);
+  if (!isGlobalBuild) {
+    return DOMESTIC_V2_HOME_LOCALES.has(locale);
+  }
+
+  return INTERNATIONAL_V2_HOME_LOCALES.has(locale);
 }

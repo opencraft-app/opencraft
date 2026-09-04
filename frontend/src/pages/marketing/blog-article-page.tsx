@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { LightVelaFooter, type RenderFooterLink } from "@/components/site/lightvela-footer";
+import { LegalFooter } from "@/components/site/legal-footer";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import { useT } from "@/i18n/t";
@@ -126,10 +126,6 @@ export function BlogArticlePage({
 }: BlogArticlePageProps) {
   const t = useT();
   const post = getBlogPost(slug);
-  const renderFooterLink: RenderFooterLink | undefined = renderLink
-    ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
-        renderLink({ ariaLabel, children, className, href, onClick })
-    : undefined;
 
   if (!post) return null;
 
@@ -180,7 +176,7 @@ export function BlogArticlePage({
           <BlogShareActions path={articlePath} title={post.title} />
         </article>
       </main>
-      <LightVelaFooter renderLink={renderFooterLink} />
+      <LegalFooter />
     </div>
   );
 }

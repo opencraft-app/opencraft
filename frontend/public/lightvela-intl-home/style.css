@@ -1342,6 +1342,7 @@
 /* 选中/悬停时恢复 logo 原色 */
 .hero__tabs label:hover img,
 .hero__stage:has(#tab-wa:checked) .hero__tabs label[for='tab-wa'] img,
+.hero__stage:has(#tab-qq:checked) .hero__tabs label[for='tab-qq'] img,
 .hero__stage:has(#tab-tg:checked) .hero__tabs label[for='tab-tg'] img,
 .hero__stage:has(#tab-dc:checked) .hero__tabs label[for='tab-dc'] img,
 .hero__stage:has(#tab-sl:checked) .hero__tabs label[for='tab-sl'] img {
@@ -1350,12 +1351,14 @@
 
 /* 选中态：文字加深 + 底部横线展开（颜色取自小圆点） */
 .hero__stage:has(#tab-wa:checked) .hero__tabs label[for='tab-wa'],
+.hero__stage:has(#tab-qq:checked) .hero__tabs label[for='tab-qq'],
 .hero__stage:has(#tab-tg:checked) .hero__tabs label[for='tab-tg'],
 .hero__stage:has(#tab-dc:checked) .hero__tabs label[for='tab-dc'],
 .hero__stage:has(#tab-sl:checked) .hero__tabs label[for='tab-sl'] {
   color: var(--ink);
 }
 .hero__stage:has(#tab-wa:checked) .hero__tabs label[for='tab-wa']::after,
+.hero__stage:has(#tab-qq:checked) .hero__tabs label[for='tab-qq']::after,
 .hero__stage:has(#tab-tg:checked) .hero__tabs label[for='tab-tg']::after,
 .hero__stage:has(#tab-dc:checked) .hero__tabs label[for='tab-dc']::after,
 .hero__stage:has(#tab-sl:checked) .hero__tabs label[for='tab-sl']::after {
@@ -1388,6 +1391,7 @@
 }
 
 .hero__stage:has(#tab-wa:checked) #panel-wa,
+.hero__stage:has(#tab-qq:checked) #panel-qq,
 .hero__stage:has(#tab-tg:checked) #panel-tg,
 .hero__stage:has(#tab-dc:checked) #panel-dc,
 .hero__stage:has(#tab-sl:checked) #panel-sl {
@@ -3033,7 +3037,7 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   box-shadow: 0 8px 28px rgba(20, 24, 31, 0.06);
 }
 
-/* Homepage WhatsApp: self-chat style, all messages sent from one side */
+/* Homepage WeChat: incoming messages stay left, my own messages stay right. */
 #panel-wa .native--wa .native__body {
   background: #fffeff;
   background-image: none;
@@ -3042,18 +3046,21 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
 #panel-wa .native__thread {
   max-width: none;
   width: 100%;
-  padding-left: clamp(18px, 5vw, 72px);
+  padding-left: 0;
   padding-right: 0;
   align-items: stretch;
 }
 #panel-wa .bub {
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0;
+}
+#panel-wa .bub--me {
+  justify-content: flex-end;
 }
 #panel-wa .bub > .av-c {
   display: none;
 }
-/* AI 气泡固定宽度、右对齐：打字时宽度不变，不会从右侧滑入 */
+/* AI 气泡固定宽度：打字时宽度不变，不会左右跳动 */
 #panel-wa .bub--ai .bub__box {
   width: min(76%, 720px);
   max-width: min(76%, 720px);
@@ -3062,10 +3069,14 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   max-width: min(76%, 720px);
   padding: 9px 13px 8px;
   border: 0;
-  border-radius: 12px 12px 2px 12px;
+  border-radius: 12px 12px 12px 2px;
   background: #fff;
   color: #111b21;
   box-shadow: 0 3px 12px rgba(11, 20, 26, 0.04), 0 1px 2px rgba(11, 20, 26, 0.03);
+}
+#panel-wa .bub--me .bub__box {
+  border-radius: 12px 12px 2px 12px;
+  background: #f7f7f8;
 }
 #panel-wa .bub__box--report {
   width: min(76%, 720px);
@@ -4336,7 +4347,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   background: var(--lilac);
 }
 .line--ai .line__box {
-  background: #f6f4ff;
+  background: var(--paper-3);
   border-left: 2px solid var(--brand);
   color: var(--ink);
 }
@@ -6499,6 +6510,76 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   padding: 8px 10px;
   font-size: 11px;
 }
+.hero__frame .native__side-searchbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 70px;
+  padding: 14px;
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(23, 21, 26, 0.04);
+}
+.hero__frame .native__side-searchbar .native__search {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 13px;
+  background: #f0f0f1;
+  color: #8c8f95;
+  font-size: 16px;
+  font-weight: 700;
+}
+.hero__frame .native__side-searchbar .native__search .icon {
+  width: 20px;
+  height: 20px;
+  color: #8c8f95;
+  stroke-width: 1.8;
+}
+.hero__frame .native__side-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 13px;
+  background: #f0f0f1;
+  color: #8c8f95;
+}
+.hero__frame .native__side-add .icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.8;
+}
+.hero__frame #panel-wa .native__side,
+.hero__frame #panel-qq .native__side,
+.hero__frame #panel-tg .native__side {
+  width: 208px;
+  flex: 0 0 208px;
+}
+.hero__frame #panel-wa .native__side-searchbar,
+.hero__frame #panel-qq .native__side-searchbar,
+.hero__frame #panel-tg .native__side-searchbar {
+  height: 56px;
+  padding: 10px;
+  gap: 8px;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__search,
+.hero__frame #panel-qq .native__side-searchbar .native__search,
+.hero__frame #panel-tg .native__side-searchbar .native__search {
+  height: 34px;
+  padding-inline: 10px;
+  font-size: 13px;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__side-add,
+.hero__frame #panel-qq .native__side-searchbar .native__side-add,
+.hero__frame #panel-tg .native__side-searchbar .native__side-add {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+}
 .hero__frame .native--tg .native__search {
   margin: 18px 12px 16px;
   background: #f2f3f6;
@@ -6824,6 +6905,14 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 .hero__frame .native__side,
 .hero__frame .dc__side {
   width: 250px;
+  display: flex;
+}
+.hero__frame .native__rail,
+.hero__frame .dc__rail {
+  display: none !important;
+}
+.hero__frame .dc__members {
+  display: none !important;
 }
 .hero__frame #panel-dc .dc__side {
   width: 190px;
@@ -6833,6 +6922,118 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 .hero__frame #panel-dc .dc__members {
   width: 126px;
+}
+.hero__frame #panel-dc .dc--dingtalk {
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow: hidden;
+  background: #fff;
+}
+.hero__frame #panel-dc .dingtalk__titlebar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: 0 0 100%;
+  height: 32px;
+  padding: 0 11px;
+  background: var(--paper-3);
+  color: var(--ink-35);
+  box-sizing: border-box;
+}
+.hero__frame #panel-dc .dingtalk__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 176px;
+  flex: 0 0 176px;
+}
+.hero__frame #panel-dc .dingtalk__logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink-48);
+}
+.hero__frame #panel-dc .dingtalk__logo .icon {
+  width: 18px;
+  height: 18px;
+}
+.hero__frame #panel-dc .dingtalk__divider,
+.hero__frame #panel-dc .dingtalk__tools span {
+  width: 1px;
+  height: 16px;
+  background: var(--line-2);
+}
+.hero__frame #panel-dc .dingtalk__app {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-60);
+}
+.hero__frame #panel-dc .dingtalk__app .icon {
+  width: 14px;
+  height: 14px;
+}
+.hero__frame #panel-dc .dingtalk__search {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: min(280px, 34%);
+  height: 22px;
+  margin-inline: auto;
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink-35);
+  font-size: 12px;
+  font-weight: 600;
+}
+.hero__frame #panel-dc .dingtalk__search .icon {
+  width: 13px;
+  height: 13px;
+}
+.hero__frame #panel-dc .dingtalk__tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 176px;
+  flex: 0 0 176px;
+  color: var(--ink-35);
+}
+.hero__frame #panel-dc .dingtalk__tools .icon {
+  width: 13px;
+  height: 13px;
+}
+.hero__frame #panel-dc .dc__side,
+.hero__frame #panel-dc .dc__main {
+  height: calc(100% - 32px);
+}
+.hero__frame #panel-sl .dc__side-head {
+  justify-content: space-between;
+  height: 52px;
+  padding-inline: 14px;
+}
+.hero__frame #panel-sl .dc__side-ws {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #202124;
+}
+.hero__frame #panel-sl .dc__side-ws .icon {
+  width: 18px;
+  height: 18px;
+  color: #202124 !important;
+}
+.hero__frame #panel-sl .dc__side-ws b {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 .hero__frame .av-c,
 .hero__frame .native__rail-av,
@@ -6914,6 +7115,30 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   background: #f2f3f6;
   border-radius: 8px;
 }
+.hero__frame .native--wa .native__side-searchbar .native__search,
+.hero__frame .native--wa .native__side-searchbar .native__side-add {
+  background: #f0f0f1;
+  border-radius: 13px;
+}
+.hero__frame #panel-wa .native__side {
+  background: #f9f9fa;
+}
+.hero__frame #panel-wa .native__side-searchbar {
+  border-bottom: 0;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__search {
+  background: #fff;
+  color: #8d9096;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__side-add {
+  background: transparent;
+  color: #373a40;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__side-add .icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.9;
+}
 .hero__frame .native--wa .chat-row,
 .hero__frame .native--tg .chat-row {
   min-height: 66px;
@@ -6975,7 +7200,61 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   background: #f9f9fa;
 }
 
-/* Telegram carries a denser engineering thread than the other channel previews. */
+/* Domestic previews keep real IM chrome while the conversation follows the international no-avatar style. */
+.hero__frame .native__head .peer .av-c,
+.hero__frame .chat-row .av-c,
+.hero__frame .bub > .av-c,
+.hero__frame .dc__msg > .av-c,
+.hero__frame .dc__me {
+  display: none !important;
+}
+.hero__frame .native__head .peer,
+.hero__frame .bub,
+.hero__frame .dc__msg {
+  gap: 0 !important;
+}
+.hero__frame .bub__box,
+.hero__frame .dc__msg > div {
+  background: #fff !important;
+  border: 0;
+  border-radius: 12px;
+  color: #202124;
+  box-shadow: 0 10px 30px rgba(27, 22, 52, 0.06), 0 1px 2px rgba(27, 22, 52, 0.04);
+}
+.hero__frame .dc__msg > div {
+  width: fit-content;
+  max-width: min(760px, 92%);
+  padding: 12px 14px;
+}
+.hero__frame .bub--me .bub__box,
+.hero__frame .dc__msg--me > div {
+  background: #f7f7f8 !important;
+}
+.hero__frame .dc__msg:not(.dc__bot) > div {
+  background: #f7f7f8 !important;
+}
+.hero__frame .bub--ai .bub__name,
+.hero__frame .dc__bot b,
+.hero__frame .hero-live-reply-name {
+  color: var(--brand) !important;
+}
+.hero__frame .dc__app {
+  background: rgba(106, 79, 222, 0.12);
+  color: var(--brand);
+}
+.hero__frame .dc__mention {
+  background: var(--paper-3);
+  color: var(--brand);
+}
+.hero__frame #panel-wa .native__filters button.on,
+.hero__frame #panel-qq .native__filters button.on,
+.hero__frame #panel-wa .native__rail button.on,
+.hero__frame #panel-qq .native__rail button.on {
+  background: #eeeeef;
+  color: #202124;
+}
+
+/* Enterprise WeChat carries a denser engineering thread than the other channel previews. */
 .hero__frame #panel-tg .native__body {
   padding: 12px 32px;
 }
@@ -7035,6 +7314,287 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 .hero__frame .dc--sl .dc__composer-row button .icon {
   color: #202124 !important;
 }
+
+/* Final domestic IM chrome scale: lock the realistic client proportions after the generic skin rules. */
+.hero__frame #panel-wa .native__side,
+.hero__frame #panel-tg .native__side {
+  width: 184px;
+  flex: 0 0 184px;
+  background: #f9f9fa;
+}
+.hero__frame #panel-qq .native__side {
+  width: 152px;
+  flex: 0 0 152px;
+  background: #f6f6f7;
+}
+.hero__frame #panel-wa .native__side-searchbar,
+.hero__frame #panel-qq .native__side-searchbar,
+.hero__frame #panel-tg .native__side-searchbar {
+  height: 44px;
+  padding: 7px 9px;
+  gap: 7px;
+  background: #f9f9fa;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__search,
+.hero__frame #panel-qq .native__side-searchbar .native__search,
+.hero__frame #panel-tg .native__side-searchbar .native__search {
+  height: 28px;
+  padding-inline: 9px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__search .icon,
+.hero__frame #panel-qq .native__side-searchbar .native__search .icon,
+.hero__frame #panel-tg .native__side-searchbar .native__search .icon {
+  width: 13px;
+  height: 13px;
+  stroke-width: 1.8;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__side-add,
+.hero__frame #panel-qq .native__side-searchbar .native__side-add,
+.hero__frame #panel-tg .native__side-searchbar .native__side-add {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 8px;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__side-add .icon,
+.hero__frame #panel-qq .native__side-searchbar .native__side-add .icon,
+.hero__frame #panel-tg .native__side-searchbar .native__side-add .icon {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.8;
+}
+.hero__frame #panel-wa .native__side-searchbar .native__side-add {
+  background: transparent;
+  color: #373a40;
+}
+.hero__frame #panel-wa .bub {
+  justify-content: flex-start;
+  width: 100%;
+}
+.hero__frame #panel-wa .bub--me {
+  justify-content: flex-end;
+}
+.hero__frame #panel-qq .native__side-searchbar {
+  height: 36px;
+  padding: 5px 6px;
+  gap: 6px;
+  background: #f6f6f7;
+}
+.hero__frame #panel-qq .native__side-searchbar .native__search {
+  height: 25px;
+  padding-inline: 8px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #fff;
+  color: #8e9299;
+}
+.hero__frame #panel-qq .native__side-searchbar .native__search .icon {
+  width: 12px;
+  height: 12px;
+}
+.hero__frame #panel-qq .native__side-searchbar .native__side-add {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
+  border-radius: 7px;
+  background: #eeeeef;
+  color: #777b83;
+}
+.hero__frame #panel-qq .native__side-searchbar .native__side-add .icon {
+  width: 13px;
+  height: 13px;
+}
+.hero__frame #panel-qq .chat-row {
+  min-height: 48px;
+  margin: 0;
+  padding: 7px 8px;
+  gap: 8px;
+  border-radius: 0;
+}
+.hero__frame #panel-qq .chat-row.on {
+  background: #f0f1f3;
+}
+.hero__frame #panel-qq .chat-row__top b {
+  font-size: 10.5px;
+}
+.hero__frame #panel-qq .chat-row__top span {
+  font-size: 8.5px;
+}
+.hero__frame #panel-qq .chat-row__body p {
+  margin-top: 2px;
+  font-size: 9px;
+}
+.hero__frame #panel-qq .chat-row__badge {
+  right: 8px;
+  bottom: 8px;
+  min-width: 18px;
+  height: 18px;
+  font-size: 10px;
+  background: #202124 !important;
+}
+.hero__frame #panel-qq .native__head {
+  height: 46px;
+  padding-inline: 12px;
+}
+.hero__frame #panel-qq .native__head h4 {
+  font-size: 12px;
+}
+.hero__frame #panel-qq .native__head .acts button {
+  padding: 6px;
+}
+.hero__frame #panel-qq .native__head .icon {
+  width: 15px;
+  height: 15px;
+}
+.hero__frame #panel-qq .native__body {
+  padding: 16px 24px;
+}
+.hero__frame #panel-qq .native__thread {
+  max-width: 720px;
+  margin-left: 0;
+  margin-right: auto;
+  gap: 12px;
+}
+.hero__frame #panel-wa .native__body {
+  padding: 14px 24px;
+}
+.hero__frame #panel-wa .native__thread,
+.hero__frame #panel-qq .native__thread {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.hero__frame #panel-qq .day-chip {
+  padding: 3px 11px;
+  font-size: 8.5px;
+}
+.hero__frame #panel-qq .bub {
+  justify-content: flex-start;
+  width: 100%;
+}
+.hero__frame #panel-qq .bub--me {
+  justify-content: flex-end;
+}
+.hero__frame #panel-qq .bub__box {
+  max-width: min(76%, 560px);
+  padding: 8px 11px;
+  border-radius: 12px;
+}
+.hero__frame #panel-qq .bub--me .bub__box {
+  max-width: min(64%, 420px);
+  border-radius: 12px 12px 2px 12px;
+  background: #f7f7f8 !important;
+}
+.hero__frame #panel-qq .bub__name {
+  font-size: 10px;
+}
+.hero__frame #panel-qq .bub__box p {
+  font-size: 11.5px;
+  line-height: 1.46;
+}
+.hero__frame #panel-qq .bub__time {
+  font-size: 8px;
+}
+.hero__frame #panel-dc .dingtalk__titlebar {
+  gap: 12px;
+  height: 24px;
+  padding: 0 7px;
+  background: var(--paper-3);
+  color: var(--ink-35);
+}
+.hero__frame #panel-dc .dingtalk__brand {
+  gap: 6px;
+  width: 144px;
+  flex-basis: 144px;
+}
+.hero__frame #panel-dc .dingtalk__logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--ink-48);
+}
+.hero__frame #panel-dc .dingtalk__logo .icon {
+  width: 13px;
+  height: 13px;
+}
+.hero__frame #panel-dc .dingtalk__divider,
+.hero__frame #panel-dc .dingtalk__tools span {
+  height: 12px;
+}
+.hero__frame #panel-dc .dingtalk__app {
+  gap: 4px;
+  font-size: 10px;
+  color: var(--ink-60);
+}
+.hero__frame #panel-dc .dingtalk__app .icon {
+  width: 11px;
+  height: 11px;
+}
+.hero__frame #panel-dc .dingtalk__search {
+  width: min(220px, 30%);
+  height: 18px;
+  gap: 5px;
+  border-radius: 4px;
+  color: var(--ink-35);
+  font-size: 10px;
+}
+.hero__frame #panel-dc .dingtalk__search .icon {
+  width: 11px;
+  height: 11px;
+}
+.hero__frame #panel-dc .dingtalk__tools {
+  gap: 8px;
+  width: 144px;
+  flex-basis: 144px;
+  color: var(--ink-35);
+}
+.hero__frame #panel-dc .dingtalk__tools .icon {
+  width: 11px;
+  height: 11px;
+}
+.hero__frame #panel-dc .dc__side,
+.hero__frame #panel-dc .dc__main {
+  height: calc(100% - 24px);
+}
+.hero__frame #panel-dc .dc__side {
+  width: 176px;
+  flex: 0 0 176px;
+}
+.hero__frame #panel-dc .dc__side-head {
+  height: 38px;
+  padding-inline: 10px;
+}
+.hero__frame #panel-dc .dc__side-head b {
+  font-size: 11px;
+}
+.hero__frame #panel-sl .dc__side {
+  width: 176px;
+  flex: 0 0 176px;
+}
+.hero__frame #panel-sl .dc__side-head {
+  height: 38px;
+  padding-inline: 10px;
+}
+.hero__frame #panel-sl .dc__side-ws {
+  gap: 5px;
+}
+.hero__frame #panel-sl .dc__side-ws .icon {
+  width: 12px;
+  height: 12px;
+}
+.hero__frame #panel-sl .dc__side-ws b {
+  font-size: 12px;
+  font-weight: 800;
+}
+.hero__frame #panel-sl .dc__side-head button .icon {
+  width: 13px !important;
+  height: 13px !important;
+}
 @media (max-width: 640px) {
   .hero__tabs {
     justify-content: flex-start;
@@ -7091,7 +7651,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   display: none;
 }
 
-/* Discord keeps Chat clear and dissolves every channel below it. */
+/* DingTalk keeps the active group clear and dissolves lower groups. */
 .hero__frame #panel-dc .dc__side {
   overflow: hidden;
 }
@@ -7128,7 +7688,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   opacity: 0.06;
 }
 
-/* Slack keeps To Do clear and dissolves Pricing and every channel below it. */
+/* Feishu keeps the active project chat clear and dissolves lower chats. */
 .hero__frame .dc--sl .dc__side {
   overflow: hidden;
 }
@@ -7145,41 +7705,6 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   opacity: 0.08;
 }
 
-/* Keep the conversation hierarchy typographic; only the header brand mark remains. */
-.hero__frame .av-c {
-  display: none !important;
-}
-.hero__frame .native__head .peer {
-  gap: 10px !important;
-}
-.hero__frame .native__head .peer .av-c:has(img) {
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  width: 38px !important;
-  height: 38px !important;
-  background: transparent !important;
-  border-radius: 0 !important;
-  overflow: visible !important;
-}
-.hero__frame .native__head .peer .av-c img {
-  display: block;
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: contain !important;
-  object-position: 50% 50% !important;
-  filter: none;
-}
-.hero__frame .chat-row .av-c img,
-.hero__frame .bub .av-c img,
-.hero__frame .dc__msg .av-c img {
-  object-position: 50% 42% !important;
-}
-.hero__frame .dc__bot b,
-.hero__frame .bub--ai .bub__name,
-.hero__frame .hero-live-reply-name {
-  color: var(--brand) !important;
-}
 #panel-tg .tg__bot-name,
 #panel-tg .bub--ai .hero-live-reply-name {
   color: var(--brand) !important;
@@ -7232,11 +7757,15 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 .hero__frame #panel-dc .dc__msg--me > div > p {
   margin: 0;
-  color: #fff !important;
+  color: #202124 !important;
 }
 .hero__frame #panel-sl .dc__msg--me > div > p {
   margin: 0;
   color: #1d1c1d !important;
+}
+.hero__frame #panel-dc .dc__msg--me > div,
+.hero__frame #panel-dc .dc__msg--me > div > p {
+  color: #202124 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7817,6 +8346,64 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   display: none;
 }
 
+#lightvela-intl-home .foot--domestic .foot__links {
+  max-width: min(1380px, calc(100vw - 96px));
+}
+
+#lightvela-intl-home .foot--domestic .foot__links-grid {
+  grid-template-columns: minmax(300px, 360px) minmax(250px, 280px) minmax(220px, 250px) minmax(140px, 158px) minmax(160px, 190px);
+  column-gap: clamp(14px, 1.2vw, 24px);
+}
+
+#lightvela-intl-home .foot--domestic .foot__brand {
+  gap: 12px;
+}
+
+#lightvela-intl-home .foot--domestic .foot__brand-link img {
+  width: 112px;
+  max-width: 100%;
+}
+
+#lightvela-intl-home .foot--domestic .foot__brand-copy {
+  max-width: 320px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.7;
+  color: rgba(23, 21, 26, 0.42);
+}
+
+#lightvela-intl-home .foot--domestic .foot__links h3 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+#lightvela-intl-home .foot--domestic .foot__links ul {
+  gap: 14px;
+  margin-top: 22px;
+}
+
+#lightvela-intl-home .foot--domestic .foot__links a {
+  font-size: 14px;
+  line-height: 1.45;
+  color: rgba(23, 21, 26, 0.66);
+}
+
+#lightvela-intl-home .foot--domestic .foot__brand-copy .foot__icp {
+  display: inline-block;
+  max-width: none;
+  margin-top: 6px;
+  font: inherit;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#lightvela-intl-home .foot--domestic .foot__brand-copy .foot__icp:hover {
+  color: rgba(23, 21, 26, 0.56);
+}
+
 @media (max-width: 900px) {
   #lightvela-intl-home .foot {
     padding-top: 92px;
@@ -7861,6 +8448,36 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
     padding-bottom: 24px;
     border-bottom: 1px solid rgba(23, 21, 26, 0.08);
   }
+
+  #lightvela-intl-home .foot--domestic .foot__links {
+    max-width: min(100%, calc(100vw - 36px));
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 42px 28px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__brand {
+    grid-column: 1 / -1;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__brand-link img {
+    width: 112px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__brand-copy {
+    max-width: 100%;
+    font-size: 12px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links h3 {
+    font-size: 14px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links a {
+    font-size: 14px;
+  }
 }
 
 @media (max-width: 560px) {
@@ -7871,6 +8488,31 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   #lightvela-intl-home .foot__brand {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links h3 {
+    font-size: 14px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links a {
+    font-size: 13px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__brand {
+    gap: 12px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__brand-link img {
+    width: 108px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__brand-copy {
+    font-size: 12px;
+    line-height: 1.55;
   }
 }
 
@@ -8359,14 +9001,44 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
     line-height: 1.42;
   }
 
+  #lightvela-intl-home .hero__frame .native__rail,
+  #lightvela-intl-home .hero__frame .native__side {
+    display: none;
+  }
+
   #lightvela-intl-home .hero__frame .dc__rail,
   #lightvela-intl-home .hero__frame .dc__side,
   #lightvela-intl-home .hero__frame .dc__members {
     display: none;
   }
 
+  #lightvela-intl-home .hero__frame .native__main,
   #lightvela-intl-home .hero__frame .dc__main {
     min-width: 0;
+    width: 100%;
+  }
+
+  #lightvela-intl-home #panel-wa .native__thread,
+  #lightvela-intl-home #panel-qq .native__thread {
+    padding-left: 0;
+  }
+
+  #lightvela-intl-home #panel-wa .bub__box,
+  #lightvela-intl-home #panel-wa .bub--ai .bub__box,
+  #lightvela-intl-home #panel-wa .bub__box--report,
+  #lightvela-intl-home #panel-qq .bub__box,
+  #lightvela-intl-home #panel-qq .bub--ai .bub__box {
+    width: min(100%, 620px) !important;
+    max-width: min(100%, 620px) !important;
+  }
+
+  #lightvela-intl-home #panel-wa .native__body,
+  #lightvela-intl-home #panel-qq .native__body {
+    padding: 12px;
+  }
+
+  #lightvela-intl-home #panel-wa .bub,
+  #lightvela-intl-home #panel-qq .bub {
     width: 100%;
   }
 

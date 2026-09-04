@@ -45,6 +45,46 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
   const showInlineICP = showICP && icpPlacement === "inline";
   const showRightICP = showICP && icpPlacement === "right";
 
+  if (isGlobal) {
+    return (
+      <footer className="border-t border-black/8 bg-white">
+        <div
+          className="mx-auto px-6 py-5 md:px-10 lg:px-[80px]"
+          style={{ maxWidth: "1440px" }}
+        >
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:text-xs md:leading-[1.5]">
+            <span>Copyright © {currentYear} LightVela. All rights reserved. Powered by Tencent Lighthouse.</span>
+            {showLinks && (
+              <>
+                <span className="inline-flex flex-wrap items-center gap-x-1">
+                  <a href={privacyPolicyPath} className={footerLinkClass}>
+                    Privacy Policy
+                  </a>
+                  <span aria-hidden="true">·</span>
+                  <a href={termsOfServicePath} className={footerLinkClass}>
+                    Terms of Service
+                  </a>
+                  <span aria-hidden="true">·</span>
+                  <a href={openSourceLicensesPath} className={footerLinkClass}>
+                    Open Source Notice
+                  </a>
+                </span>
+                <a
+                  href={DISCORD_INVITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={footerLinkClass}
+                >
+                  Join Community
+                </a>
+              </>
+            )}
+          </div>
+        </div>
+      </footer>
+    );
+  }
+
   return (
     <footer className="border-t border-black/8 bg-white">
       <div
