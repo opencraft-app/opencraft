@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LegalFooter } from "@/components/site/legal-footer";
+import zhCN from "@/i18n/generated/zh-CN.json";
+import zhToKey from "@/i18n/generated/zh-to-key.json";
 
 vi.mock("@/i18n/t", () => ({
   useT: () => (text: string, values?: Record<string, number>) =>
@@ -27,6 +29,15 @@ afterEach(() => {
 });
 
 describe("LegalFooter", () => {
+  it("separates the domestic copyright and attribution with a middle dot", () => {
+    const source = "Copyright © {{year}} LightVela 版权所有，腾讯轻量云出品";
+    const key = zhToKey[source as keyof typeof zhToKey];
+
+    expect(zhCN[key as keyof typeof zhCN]).toBe(
+      ["Copyright © {{year}} LightVela 版权所有", "腾讯轻量云出品"].join(" · "),
+    );
+  });
+
   it("links domestic product feedback to the Tencent questionnaire", () => {
     render(<LegalFooter />);
 

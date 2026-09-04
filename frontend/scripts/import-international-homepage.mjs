@@ -147,7 +147,7 @@ const coreCopyByLocale = {
   },
   "zh-CN": {
     "LightVela · AI companion in the cloud": "LightVela · 云端 AI 伙伴",
-    "Hand your ideas to Hermes,": "把想法交给 Hermes，",
+    "Hand your ideas to Hermes Agent,": "把想法交给 Hermes Agent，",
     "keep them moving in the cloud.": "让它们在云端持续推进。",
     "My AI companion": "我的智能体伙伴",
     "Thank you Hermes for the technical support provided to LightVela.": "感谢 Hermes 为 LightVela 提供技术支持。",
@@ -212,7 +212,7 @@ const coreCopyByLocale = {
   },
   "zh-SG": {
     "LightVela · AI companion in the cloud": "LightVela · 云端 AI 伙伴",
-    "Hand your ideas to Hermes,": "把想法交给 Hermes，",
+    "Hand your ideas to Hermes Agent,": "把想法交给 Hermes Agent，",
     "keep them moving in the cloud.": "让它们在云端持续推进。",
     "My AI companion": "我的智能体伙伴",
     "Thank you Hermes for the technical support provided to LightVela.": "感谢 Hermes 为 LightVela 提供技术支持。",
@@ -277,7 +277,7 @@ const coreCopyByLocale = {
   },
   "zh-Hant": {
     "LightVela · AI companion in the cloud": "LightVela · 雲端 AI 夥伴",
-    "Hand your ideas to Hermes,": "把想法交給 Hermes，",
+    "Hand your ideas to Hermes Agent,": "把想法交給 Hermes Agent，",
     "keep them moving in the cloud.": "讓它們在雲端持續推進。",
     "My AI companion": "我的智能體夥伴",
     "Thank you Hermes for the technical support provided to LightVela.": "感謝 Hermes 為 LightVela 提供技術支援。",
@@ -478,7 +478,7 @@ const coreCopyByLocale = {
     "Waits for your approval before sending, changing, or acting externally": "Menunggu persetujuan Anda sebelum mengirim, mengubah, atau bertindak keluar",
     "Adapts to how you work": "Menyesuaikan cara kerja Anda",
     "Turns your feedback into rules for the next task": "Mengubah masukan Anda menjadi aturan untuk tugas berikutnya",
-    "Hand your ideas to Hermes,": "Serahkan ide Anda ke Hermes,",
+    "Hand your ideas to Hermes Agent,": "Serahkan ide Anda ke Hermes Agent,",
     "keep them moving in the cloud.": "biarkan terus bergerak di cloud.",
     "My AI companion": "Pendamping AI saya",
     "Thank you Hermes for the technical support provided to LightVela.": "Terima kasih kepada Hermes atas dukungan teknis untuk LightVela.",
@@ -653,7 +653,7 @@ const coreCopyByLocale = {
     "Waits for your approval before sending, changing, or acting externally": "Espera tu aprobación antes de enviar, cambiar o actuar fuera",
     "Adapts to how you work": "Se adapta a tu forma de trabajar",
     "Turns your feedback into rules for the next task": "Convierte tu feedback en reglas para la próxima tarea",
-    "Hand your ideas to Hermes,": "Entrega tus ideas a Hermes,",
+    "Hand your ideas to Hermes Agent,": "Entrega tus ideas a Hermes Agent,",
     "keep them moving in the cloud.": "y mantenlas avanzando en la nube.",
     "My AI companion": "Mi compañero de IA",
     "Thank you Hermes for the technical support provided to LightVela.": "Gracias a Hermes por el soporte técnico proporcionado a LightVela.",
@@ -850,7 +850,7 @@ Object.assign(coreCopyByLocale, {
     "Waits for your approval before sending, changing, or acting externally": "送信、変更、外部操作の前に承認を待ちます",
     "Adapts to how you work": "あなたの働き方に適応します",
     "Turns your feedback into rules for the next task": "フィードバックを次のタスクのルールに変換します",
-    "Hand your ideas to Hermes,": "アイデアをHermesに預けて、",
+    "Hand your ideas to Hermes Agent,": "アイデアをHermes Agentに預けて、",
     "keep them moving in the cloud.": "クラウドで動かし続けましょう。",
     "My AI companion": "私のAIパートナー",
     "Thank you Hermes for the technical support provided to LightVela.": "LightVelaへの技術支援を提供してくれたHermesに感謝します。",
@@ -1045,7 +1045,7 @@ Object.assign(coreCopyByLocale, {
     "Waits for your approval before sending, changing, or acting externally": "보내기, 변경, 외부 작업 전에 승인을 기다립니다",
     "Adapts to how you work": "당신의 일하는 방식에 맞춰집니다",
     "Turns your feedback into rules for the next task": "피드백을 다음 작업의 규칙으로 바꿉니다",
-    "Hand your ideas to Hermes,": "아이디어는 Hermes에게 맡기고,",
+    "Hand your ideas to Hermes Agent,": "아이디어는 Hermes Agent에게 맡기고,",
     "keep them moving in the cloud.": "클라우드에서 계속 움직이게 하세요.",
     "My AI companion": "내 AI 파트너",
     "Thank you Hermes for the technical support provided to LightVela.": "LightVela에 기술 지원을 제공해 준 Hermes에게 감사합니다.",
@@ -3913,7 +3913,7 @@ function applyFooterLayout(document) {
 
   footer.innerHTML = `
   <div class="foot__top">
-    <h2 class="foot__title"><span class="row">Hand your ideas to Hermes,</span><br><span class="row">keep them moving in the cloud.</span></h2>
+    <h2 class="foot__title"><span class="row">Hand your ideas to Hermes Agent,</span><br><span class="row">keep them moving in the cloud.</span></h2>
     <div class="foot__cta"><a href="/agents">My AI companion <span><svg class="icon"><use href="#i-arrow-ur"></use></svg></span></a></div>
   </div>
   <div class="foot__links"><div class="foot__links-grid">
@@ -3937,17 +3937,18 @@ function emphasizeFooterHermes(document) {
 
   for (const node of textNodes) {
     const text = node.nodeValue ?? "";
-    const index = text.indexOf("Hermes");
+    const signatureText = "Hermes Agent";
+    const index = text.indexOf(signatureText);
     if (index === -1) continue;
 
     const fragment = document.createDocumentFragment();
     if (index > 0) fragment.append(document.createTextNode(text.slice(0, index)));
     const signature = document.createElement("em");
     signature.className = "foot__signature";
-    signature.textContent = "Hermes";
+    signature.textContent = signatureText;
     fragment.append(signature);
-    if (index + "Hermes".length < text.length) {
-      fragment.append(document.createTextNode(text.slice(index + "Hermes".length)));
+    if (index + signatureText.length < text.length) {
+      fragment.append(document.createTextNode(text.slice(index + signatureText.length)));
     }
     node.replaceWith(fragment);
     return;
