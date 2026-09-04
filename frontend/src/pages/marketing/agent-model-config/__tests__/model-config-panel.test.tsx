@@ -431,7 +431,15 @@ describe("AgentModelConfigPanel", () => {
       "bg-[color-mix(in_oklab,var(--warning)_20%,white)]",
       "text-[var(--warning)]",
     );
-    expect(within(primaryRow).getByRole("radio", { name: "model-primary" })).toBeChecked();
+    const configuredModelRadio = within(primaryRow).getByRole("radio", { name: "model-primary" });
+    expect(configuredModelRadio).toBeChecked();
+    expect(configuredModelRadio).toHaveClass(
+      "appearance-none",
+      "checked:border-[#2F6BFF]",
+      "checked:bg-[#2F6BFF]",
+      "checked:shadow-[inset_0_0_0_3px_white]",
+    );
+    expect(configuredModelRadio).not.toHaveClass("accent-[#2F6BFF]");
     expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
     expect(within(secondAlphaRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
 
@@ -810,7 +818,14 @@ describe("AgentModelConfigPanel", () => {
     expect(addButton).not.toHaveClass("w-full");
 
     const purposeGroup = screen.getByRole("group", { name: "选择用途" });
-    const purposeOptions = within(purposeGroup).getByRole("radio", { name: "设为主模型" }).parentElement?.parentElement;
+    const purposeRadio = within(purposeGroup).getByRole("radio", { name: "设为主模型" });
+    expect(purposeRadio).toHaveClass(
+      "appearance-none",
+      "checked:border-[#2F6BFF]",
+      "checked:bg-[#2F6BFF]",
+      "checked:shadow-[inset_0_0_0_3px_white]",
+    );
+    const purposeOptions = purposeRadio.parentElement?.parentElement;
     expect(purposeOptions).toHaveClass("mt-2");
 
     const sidebar = document.createElement("aside");

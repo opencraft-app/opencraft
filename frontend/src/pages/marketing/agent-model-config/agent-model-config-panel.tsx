@@ -87,6 +87,7 @@ const MODEL_COMPOUND_CONTROL_BASE_CLASS = "min-w-0 overflow-hidden rounded-md bo
 const MODEL_COMPOUND_FIELD_BASE_CLASS = "min-w-0 rounded-none border-0 bg-transparent shadow-none outline-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0";
 const MODEL_COMPOUND_ACTION_BASE_CLASS = "shrink-0 whitespace-nowrap rounded-none border-0 bg-white px-3 shadow-none hover:translate-y-0 hover:border-black/10 hover:bg-black/[0.025] focus-visible:ring-inset";
 const MODEL_SELECT_CONTENT_CLASS = "max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-md";
+const MODEL_RADIO_CLASS = "shrink-0 appearance-none rounded-full border border-black/20 bg-white checked:border-[#2F6BFF] checked:bg-[#2F6BFF] checked:shadow-[inset_0_0_0_3px_white] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/30 focus-visible:ring-offset-2";
 const MODEL_SELECT_CONTENT_STYLE = {
   width: "var(--radix-select-trigger-width)",
   minWidth: "var(--radix-select-trigger-width)",
@@ -719,7 +720,7 @@ export function AgentModelConfigPanel({
                                     ...current,
                                     [group.key]: modelIdentity,
                                   }))}
-                                  className="size-4 shrink-0 accent-[#2F6BFF]"
+                                  className={cn(MODEL_RADIO_CLASS, "size-4")}
                                 />
                                 <span className="min-w-0">
                                   <span className="flex flex-wrap items-center gap-2">
@@ -1096,7 +1097,7 @@ export function AgentModelConfigPanel({
                     <input
                       type="radio"
                       name="model-purpose"
-                      className="size-3.5"
+                      className={cn(MODEL_RADIO_CLASS, "size-3.5")}
                       value={item.value}
                       checked={active}
                       disabled={disabled}
