@@ -17,7 +17,13 @@ guards:
       - velalink/**
       - workers/**
       - new-api/**
-      - frontend/**
+      - frontend/src/config/**
+      - frontend/src/app/**
+      - frontend/src/services/**
+      - frontend/src/repositories/**
+      - frontend/src/lib/env*
+      - frontend/*.config.*
+      - frontend/src/app-env.d.ts
       - admin-gateway/**
       - gateway-dashboard/**
       - nextgen-dashboard/**

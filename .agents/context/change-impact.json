@@ -3,10 +3,12 @@
   "owner": "wisp/mono2-maintainers",
   "reviewed_at": "2026-09-01",
   "review_due": "2026-11-30",
+  "exclusion_rationale": "责任根目录同时覆盖架构面与无架构语义的表层改动。生成的 i18n 资源、营销文案、测试与二进制资产不改变责任边界，硬性要求它们同步正式设计文档会诱导为过门禁而修改无关文档，或整体绕过门禁。",
   "rules": [
     {
       "id": "identity-access",
       "paths": ["user/auth/**", "shadow/**", "service-gateway/**"],
+      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md"],
       "design_docs": ["docs/engineering/domains/identity-access.md", "docs/engineering/journeys/account-to-agent.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"
@@ -14,6 +16,7 @@
     {
       "id": "subscription-entitlements",
       "paths": ["subscription/**", "payment/**", "trade/**", "cloudladdergateway/**"],
+      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md"],
       "design_docs": ["docs/engineering/domains/subscription-entitlements.md", "docs/engineering/journeys/subscription-purchase-renewal.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"
@@ -21,13 +24,15 @@
     {
       "id": "agent-gateway-runtime",
       "paths": ["cloudagent/**", "ai-gateway/**", "ctl/**", "sandbox/**", "velagw/**", "velalink/**", "workers/**", "new-api/**"],
+      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md"],
       "design_docs": ["docs/engineering/domains/agent-gateway-runtime.md", "docs/engineering/journeys/agent-request-streaming.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"
     },
     {
       "id": "site-environment-routing",
-      "paths": ["frontend/**", "admin-gateway/**", "gateway-dashboard/**", "nextgen-dashboard/**"],
+      "paths": ["frontend/src/config/**", "frontend/src/app/**", "frontend/src/services/**", "frontend/src/repositories/**", "frontend/src/lib/env*", "frontend/*.config.*", "frontend/src/app-env.d.ts", "admin-gateway/**", "gateway-dashboard/**", "nextgen-dashboard/**"],
+      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md", "**/i18n/**", "**/pages/marketing/**", "**/public/assets/**", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.svg", "**/*.gif", "**/*.webp", "**/*.ico"],
       "design_docs": ["docs/engineering/domains/site-environment-routing.md", "docs/engineering/journeys/dual-site-request-routing.md"],
       "risk": "normal",
       "owner": "wisp/mono2-maintainers"
@@ -35,6 +40,7 @@
     {
       "id": "release-gitops",
       "paths": [".ci/runtime/**", "argocd/**", "infra_pulumi/**", "codesign/**"],
+      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md"],
       "design_docs": ["docs/engineering/domains/release-gitops.md", "docs/engineering/journeys/source-to-production.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"
@@ -42,6 +48,7 @@
     {
       "id": "context-engineering",
       "paths": ["AGENTS.md", ".agents/context/**", "docs/context/decisions/**", "docs/context/project/overview.md", "docs/context/23-rules-matrix.md", "docs/context/.context/**", ".agents/skills/context-audit/**"],
+      "exclude_paths": ["**/tests/**", "docs/context/.context/**"],
       "design_docs": ["docs/context/decisions/ADR-0001-context-engineering-v2.md", "docs/engineering/decisions/ADR-0002-design-history-and-docs-impact.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"

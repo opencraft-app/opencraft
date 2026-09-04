@@ -190,7 +190,7 @@ class RepositoryContextContract(unittest.TestCase):
             text=True,
         )
         self.assertEqual(missing_design_doc.returncode, 1)
-        self.assertIn("需要同步更新以下正式设计文档", missing_design_doc.stderr)
+        self.assertIn("必须同步更新以下正式设计文档", missing_design_doc.stderr)
 
         covered_change = subprocess.run(
             [
@@ -204,6 +204,71 @@ class RepositoryContextContract(unittest.TestCase):
         )
         self.assertEqual(covered_change.returncode, 0, covered_change.stdout + covered_change.stderr)
         self.assertIn("docs-impact: passed", covered_change.stdout)
+
+    def _run_impact(self, *changed: str) -> subprocess.CompletedProcess[str]:
+        script = REPO_ROOT / ".agents/context/scripts/validate_change_impact.py"
+        command = ["python3", str(script), "--repo", str(REPO_ROOT)]
+        for path in changed:
+            command.extend(["--changed-file", path])
+        return subprocess.run(command, check=False, capture_output=True, text=True)
+
+    def test_docs_impact_excludes_surfaces_without_architectural_meaning(self) -> None:
+        """A responsibility root also covers copy, locales, assets and tests.
+
+        Those carry no architectural meaning, so they must not demand a design
+        document update.  This mirrors a real false positive on a changelog MR.
+        """
+        marketing_only = self._run_impact(
+            "frontend/src/pages/marketing/changelog-page.tsx",
+            "frontend/src/i18n/generated/zh-CN.json",
+            "frontend/public/assets/changelog/instance-storage-zh.png",
+            "frontend/src/pages/marketing/__tests__/global-changelog.test.tsx",
+        )
+        self.assertEqual(marketing_only.returncode, 0, marketing_only.stderr)
+        self.assertEqual(json.loads(marketing_only.stdout.splitlines()[-1])["matched_rules"], [])
+
+        tests_only = self._run_impact("user/auth/internal/session/service_test.go")
+        self.assertEqual(tests_only.returncode, 0, tests_only.stderr)
+        self.assertEqual(json.loads(tests_only.stdout.splitlines()[-1])["matched_rules"], [])
+
+    def test_docs_impact_blocks_high_risk_and_only_advises_normal_risk(self) -> None:
+        """``risk`` must decide guard strength, per ADR-0002.
+
+        A high-risk surface may not move without its formal design document.  A
+        normal-risk surface only reminds, so a coarse root cannot force authors to
+        edit unrelated architecture documents just to pass the guard.
+        """
+        normal_risk = self._run_impact("frontend/src/config/environment.ts")
+        self.assertEqual(normal_risk.returncode, 0, normal_risk.stderr)
+        self.assertIn("risk=normal，不阻断", normal_risk.stdout)
+        payload = json.loads(normal_risk.stdout.splitlines()[-1])
+        self.assertIn("site-environment-routing", payload["advisory_rules"])
+
+        high_risk = self._run_impact("argocd/apps/testing/kustomization.yaml")
+        self.assertEqual(high_risk.returncode, 1, high_risk.stdout)
+        self.assertIn("release-gitops", high_risk.stderr)
+
+    def test_docs_impact_manifest_rejects_unknown_rule_fields(self) -> None:
+        manifest = json.loads(
+            (REPO_ROOT / ".agents/context/change-impact.json").read_text(encoding="utf-8")
+        )
+        manifest["rules"][0]["surprise_field"] = ["x"]
+        with tempfile.TemporaryDirectory() as raw_dir:
+            bad_manifest = Path(raw_dir) / "change-impact.json"
+            bad_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+            script = REPO_ROOT / ".agents/context/scripts/validate_change_impact.py"
+            result = subprocess.run(
+                [
+                    "python3", str(script), "--repo", str(REPO_ROOT),
+                    "--manifest", str(bad_manifest),
+                    "--changed-file", "user/auth/internal/session/service.go",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("未知字段", result.stderr)
 
     def test_human_facing_context_docs_are_chinese_first(self) -> None:
         documents = []
