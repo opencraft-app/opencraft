@@ -7,11 +7,14 @@ defaults:
 items:
   - id: gateway-dashboard-runtime-secrets
     secret_name: mono-beijing-sandbox-gateway-dashboard-runtime-secrets
+    version_id: ctl-ops-20260907
     namespace: ai-gateway
     kubernetes_resource_name: gateway-dashboard-runtime-secrets
     kubernetes_resource_kind: Secret
     output_path: argocd/secrets/beijing-sandbox/gateway-dashboard-runtime-secrets.sops.yaml
     secret_type: Opaque
+    required_keys:
+      - CTL_INTERNAL_TOKEN
     labels:
       app.kubernetes.io/name: gateway-dashboard
       app.kubernetes.io/managed-by: argocd
