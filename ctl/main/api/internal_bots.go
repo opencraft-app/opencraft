@@ -2,8 +2,10 @@ package main
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -166,6 +168,10 @@ func (h *instanceHandler) handleInternalInstanceSubresource(w http.ResponseWrite
 		return
 	}
 	parts := strings.Split(path, "/")
+	if len(parts) == 3 && parts[1] == "gateway" && parts[2] == "migrate" {
+		h.handleInternalGatewayMigration(w, r, strings.TrimSpace(parts[0]))
+		return
+	}
 	if len(parts) == 3 && parts[1] == "chatclaw" && parts[2] == "runtime-bootstrap" && r.Method == http.MethodGet {
 		if !requireInternalBearer(r) {
 			writeHTTPError(w, r, errcode.ErrUnauthorized)
@@ -189,6 +195,88 @@ func (h *instanceHandler) handleInternalInstanceSubresource(w http.ResponseWrite
 
 	w.Header().Set("Allow", http.MethodGet)
 	writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+}
+
+func (h *instanceHandler) handleInternalUserSubresource(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/internal/users/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 4 || parts[1] != "gateway" || parts[2] != "quota" || parts[3] != "reset" {
+		writeHTTPError(w, r, errcode.ErrNotFound)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	if !requireConfiguredInternalBearer(r) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	userID, err := url.PathUnescape(strings.TrimSpace(parts[0]))
+	if err != nil || strings.TrimSpace(userID) == "" {
+		writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+		return
+	}
+	var req transport.UserGatewayQuotaResetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceInvalidParam, "invalid json: %v", err))
+		return
+	}
+	clone := r.Clone(r.Context())
+	clone.Header = r.Header.Clone()
+	clone.Header.Set(headerUserID, userID)
+	ctx, ok := newRequestContext(clone)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+		return
+	}
+	resp, err := h.logic.ResetLLMGatewayUserQuota(ctx, req.DryRun)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, resp)
+}
+
+func (h *instanceHandler) handleInternalGatewayMigration(w http.ResponseWriter, r *http.Request, instanceID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	if !requireConfiguredInternalBearer(r) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	if instanceID == "" {
+		writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+		return
+	}
+	var req transport.InstanceGatewayMigrationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceInvalidParam, "invalid json: %v", err))
+		return
+	}
+	req.UserID = strings.TrimSpace(req.UserID)
+	if req.UserID == "" {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceInvalidParam, "user_id is required"))
+		return
+	}
+	clone := r.Clone(r.Context())
+	clone.Header = r.Header.Clone()
+	clone.Header.Set(headerUserID, req.UserID)
+	ctx, ok := newRequestContext(clone)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+		return
+	}
+	resp, err := h.logic.MigrateInstanceToLLMGateway(ctx, instanceID, req.DryRun)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, resp)
 }
 
 func (h *instanceHandler) handleInternalBot(w http.ResponseWriter, r *http.Request) {
