@@ -666,10 +666,10 @@ describe("Hermes model configuration client", () => {
     expect(projected.configuredModels.map((item) => item.id)).toEqual([
       "main-model",
       "fallback-model",
-      "legacy-fallback-model",
       "saved-model",
       "legacy-saved-model",
       "history-model",
+      "legacy-fallback-model",
     ]);
     expect(projected.configuredModels).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "main-catalog-only" }),
@@ -801,8 +801,6 @@ describe("Hermes model configuration client", () => {
       id: "fallback-model",
     }));
     expect(snapshot.configuredModels.map((item) => item.providerKey)).toEqual([
-      "active-stale",
-      "fallback-missing-key",
       "idle-env-key",
       "idle-live-list",
       "idle-command-key",
@@ -811,9 +809,57 @@ describe("Hermes model configuration client", () => {
       "Unnamed Provider",
       "idle-dynamic-metadata",
       "idle-keyless",
+      "active-stale",
+      "fallback-missing-key",
     ]);
     expect(result.config).toEqual(config);
     expect(result.events).toEqual([]);
+  });
+
+  it("preserves configured model order across role changes", () => {
+    const config = {
+      model: {
+        provider: "provider-a",
+        default: "model-a",
+        base_url: "https://a.example.com/v1",
+      },
+      fallback_providers: [{
+        provider: "provider-b",
+        model: "model-b",
+        base_url: "https://b.example.com/v1",
+      }],
+      providers: {
+        "provider-b": {
+          name: "Provider B",
+          base_url: "https://b.example.com/v1",
+          model: "model-b",
+          models: ["model-b"],
+          transport: "openai",
+          key_env: "PROVIDER_B_KEY",
+        },
+        "provider-a": {
+          name: "Provider A",
+          base_url: "https://a.example.com/v1",
+          model: "model-a",
+          models: ["model-a"],
+          transport: "openai",
+          key_env: "PROVIDER_A_KEY",
+        },
+      },
+    };
+
+    const result = runHelper(
+      { type: "read" },
+      config,
+      {},
+      { PROVIDER_A_KEY: "provider-a-secret", PROVIDER_B_KEY: "provider-b-secret" },
+    );
+    const projected = parseHermesModelConfigResponse(result.output);
+
+    expect(projected.configuredModels.map((item) => item.providerKey)).toEqual([
+      "provider-b",
+      "provider-a",
+    ]);
   });
 
   it("keeps uncertain idle providers when older Hermes versions lack credential-pool helpers", () => {
@@ -1161,6 +1207,54 @@ describe("Hermes model configuration client", () => {
     expect(parseHermesModelConfigResponse(removed.output).fallbacks).toEqual([
       expect.objectContaining({ providerKey: hyProviderKey, id: "hy4-preview" }),
     ]);
+  });
+
+  it("keeps an idle model projected after assigning another model from the same Provider as fallback", () => {
+    const providerKey = "lightvela-minimax-coding";
+    const baseUrl = "https://api.minimaxi.com/anthropic";
+    const config = {
+      providers: {
+        [providerKey]: {
+          name: "MiniMax Token Plan（国内）",
+          base_url: baseUrl,
+          model: "MiniMax-M3",
+          models: { "MiniMax-M3": {} },
+          key_env: "MINIMAX_CODING_KEY",
+          transport: "anthropic_messages",
+          discover_models: false,
+        },
+      },
+    };
+
+    const assigned = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "MiniMax-M2.7",
+      purpose: "fallback",
+    }, config, {}, { MINIMAX_CODING_KEY: "minimax-secret" });
+    const snapshot = parseHermesModelConfigResponse(assigned.output);
+
+    expect(snapshot.fallbacks).toContainEqual(expect.objectContaining({
+      providerKey,
+      id: "MiniMax-M2.7",
+    }));
+    expect(snapshot.configuredModels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerKey, id: "MiniMax-M3" }),
+      expect.objectContaining({ providerKey, id: "MiniMax-M2.7" }),
+    ]));
+
+    const removed = runHelper({
+      type: "remove",
+      providerKey,
+      modelId: "MiniMax-M2.7",
+    }, assigned.config, {}, assigned.credentials);
+    const removedSnapshot = parseHermesModelConfigResponse(removed.output);
+
+    expect((removed.config.providers as Record<string, unknown>)[providerKey]).toBeDefined();
+    expect(removedSnapshot.configuredModels).toContainEqual(expect.objectContaining({
+      providerKey,
+      id: "MiniMax-M3",
+    }));
   });
 
   it("rejects unsaved model assignment when the Provider endpoint differs or its saved identity is ambiguous", () => {

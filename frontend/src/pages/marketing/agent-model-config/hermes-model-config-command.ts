@@ -500,8 +500,8 @@ def provider_credential_pool_state(provider_key, provider):
     except Exception:
         return None
 
-def idle_provider_is_usable(provider_key, provider):
-    model_id = provider_model_id(provider)
+def idle_provider_is_usable(provider_key, provider, model_id=None):
+    model_id = model_id or provider_model_id(provider)
     key_env = text(provider.get("key_env") or provider.get("api_key_env"), "provider.key_env", required=False)
     key_cmd = text(provider.get("key_cmd"), "provider.key_cmd", required=False)
     inline_key = text(provider.get("api_key"), "provider.api_key", required=False)
@@ -527,10 +527,10 @@ def idle_provider_is_usable(provider_key, provider):
     if credential_declared and credential_state is False: return False
     return True
 
-def model_from_provider(provider_key, provider):
+def model_from_provider(provider_key, provider, model_id=None):
     if not isinstance(provider, dict): return None
     if provider.get("enabled") is False: return None
-    model_id = provider_model_id(provider)
+    model_id = model_id or provider_model_id(provider)
     if not model_id: return None
     return {
         "id": model_id,
@@ -693,15 +693,30 @@ def read_snapshot(config):
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
     provider_keys = configured_provider_keys(config)
     projected = []
-    append_projected(projected, primary, provider_keys)
-    for candidate in fallbacks: append_projected(projected, candidate, provider_keys)
 
     for provider_key, provider in providers.items():
+        provider_models = provider.get("models") if isinstance(provider, dict) else None
+        discover_models = provider.get("discover_models", True) if isinstance(provider, dict) else True
+        if isinstance(discover_models, str):
+            discover_models = discover_models.strip().lower() not in ("false", "no", "0")
+        managed_models = (
+            isinstance(provider_models, dict)
+            and provider_models.get("__discovered_model_catalog__") is not True
+            and provider.get("models_discovered") is not True
+            and discover_models is False
+        )
+        model_ids = provider_catalog_model_ids(provider) if managed_models else []
+        projected_model_id = provider_model_id(provider) or (model_ids[0] if model_ids else "")
         try:
-            candidate = model_from_provider(str(provider_key), provider)
-            if candidate and not idle_provider_is_usable(str(provider_key), provider): candidate = None
+            candidate = model_from_provider(str(provider_key), provider, projected_model_id)
+            if candidate and not idle_provider_is_usable(str(provider_key), provider, projected_model_id): candidate = None
         except (KeyError, TypeError, ValueError): candidate = None
         append_projected(projected, candidate, provider_keys)
+        if candidate and managed_models:
+            for model_id in model_ids:
+                configured = dict(candidate)
+                configured["id"] = model_id
+                append_projected(projected, configured, provider_keys)
 
     custom_providers = config.get("custom_providers") if isinstance(config.get("custom_providers"), list) else []
     for provider in custom_providers:
@@ -710,6 +725,8 @@ def read_snapshot(config):
         append_projected(projected, candidate, provider_keys)
 
     for candidate in configured_models(config): append_projected(projected, candidate, provider_keys)
+    append_projected(projected, primary, provider_keys)
+    for candidate in fallbacks: append_projected(projected, candidate, provider_keys)
     return {"primary": primary, "fallbacks": fallbacks, "configuredModels": projected}
 
 def find_configured(config, provider_key, model_id, base_url=None, route_base_url=None):
