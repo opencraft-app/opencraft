@@ -1,14 +1,14 @@
 ---
 id: fix-cn-home-cta-2026-09-04
 type: task
-scope: 修复国内站新版首页 Header 与 Hero 的认证态 CTA 回归。
+scope: 修复国内站新版首页认证态 CTA 回归，并同步当前免费体验主文案。
 status: ready-for-review
 owner: wisp/mono2-maintainers
 ---
 
 ## goal
 
-恢复国内站新版首页的状态化转化入口：未登录 Header 与 Hero 显示“免费试用”，已登录显示“开始使用”，同时保持国际站现有行为不变。
+恢复国内站新版首页的状态化转化入口：未登录 Header 与 Hero 显示“免费试用”，已登录显示“开始使用”；将下方免费体验主文案更新为“免费体验，10秒极速开通”，同时保持国际站现有行为不变。
 
 ## non_goals
 
@@ -19,6 +19,7 @@ owner: wisp/mono2-maintainers
 ## requirement_ids / requirement_refs / requirement_excerpt
 
 - 用户现场反馈（2026-09-04）：发布国内站新版首页后，未登录首页“免费试用”按钮消失。
+- 用户文案确认（2026-09-05）：国内站首页“免费体验，30秒极速部署”调整为“免费体验，10秒极速开通”。
 - `wiki/prd-docs/2026-09-04-domestic-homepage-international-zh-adaptation.md`：CTA 对未登录、未订阅、已订阅用户进入正确国内站路径。
 - `frontend/openspec/changes/2026-08-31-homepage-auth-entry-design.md`：未登录保持“免费试用”，登录态入口使用“开始使用”。
 
@@ -40,6 +41,7 @@ owner: wisp/mono2-maintainers
 - 国内未登录 Hero 显示“免费试用”，链接为 `/subscribe`。
 - 国内已登录 Header 和 Hero 显示“开始使用”，链接为 `/agents`。
 - 国际站 Header 继续 `loginOnly`，国际站 Hero 文案与链接不变。
+- 国内站下方免费体验主标题显示“免费体验，10秒极速开通”，国际站对应文案不变。
 - 聚焦测试、`pnpm i18n:check`、`pnpm check`、`git diff --check` 通过。
 
 ## affected_paths
@@ -49,6 +51,7 @@ owner: wisp/mono2-maintainers
 - `frontend/next-site/__tests__/international-home-rendering.test.tsx`
 - `frontend/next-site/__tests__/international-home-page.test.tsx`
 - `docs/engineering/domains/site-environment-routing.md`
+- `wiki/prd-docs/2026-09-04-homepage-copy-deepseek-and-blog-visual-refresh.md`
 - `docs/context/tasks/2026-09-04-fix-cn-home-cta.md`
 
 ## required_context
@@ -79,6 +82,7 @@ owner: wisp/mono2-maintainers
 - `pnpm build:global` 通过：606 个静态页面，国际站首页继续输出既有 Hero 文案及 `/agents` 链接，无国内 CTA 标记。
 - 本地国内站真实登录会话验证：桌面 Header 与 Hero 均显示“开始使用”并指向 `/agents`，布局正常。
 - 匿名态由静态构建产物及组件集成测试验证；本机浏览器会被现有 API 会话恢复，未取得独立匿名截图。
+- 国内站免费体验主标题已更新为“免费体验，10秒极速开通”；聚焦页面测试 31/31 通过，国内构建产物只包含新标题。
 
 ## risks
 
@@ -93,6 +97,7 @@ owner: wisp/mono2-maintainers
 - [x] `pnpm check`
 - [x] `pnpm build:cn`
 - [x] `pnpm build:global`
+- [x] 文案增量：聚焦页面测试 31/31、`pnpm i18n:check`、`pnpm check` 与 `pnpm build:cn` 通过。
 - [x] 国内站桌面真实登录会话浏览器验证。
 - [x] 匿名态构建产物与组件集成测试验证。
 - [ ] 独立匿名浏览器截图与 390px 移动视口截图；不阻塞本次代码门禁，列入发布回归。

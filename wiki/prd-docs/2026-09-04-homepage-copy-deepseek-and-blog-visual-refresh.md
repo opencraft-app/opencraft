@@ -4,12 +4,12 @@
 - 当前产品：LightVela
 - 需求单状态：已确认，按用户要求由原第 2 / 3 / 4 项合并
 - 创建人：Keria / Codex
-- 创建日期 / 最后更新时间：2026-09-04 / 2026-09-04
+- 创建日期 / 最后更新时间：2026-09-04 / 2026-09-05
 
 ## 需求背景
 本次需求来自同一轮官网体验走查，核心问题集中在首页对外口径和国际站内容页观感：
 
-- 国内站与国际站首页的免费体验权益表达需要差异化：国际站 AI Token 套餐免费体验从 3 天调整为 7 天；国内站仍保持 3 天，但主 CTA 需要强化“免费体验，30秒极速部署”。
+- 国内站与国际站首页的免费体验权益表达需要差异化：国际站 AI Token 套餐免费体验从 3 天调整为 7 天；国内站仍保持 3 天，但主 CTA 需要强化“免费体验，10秒极速开通”。
 - 国际站英文首页中 “working partner” 会把 LightVela 过度限制在工作场景，需要统一为 AI companion / AI 伙伴语境，多语言也需要避免只表达成工作助手。
 - 国内站和国际站首页 DeepSeek Harness 模块截图偏模糊，影响用户理解 Labs 新能力。
 - 国际站 `lightvela.ai/blog/` 的旧蓝色背景和深色封面与新版首页不搭，需要调整为更清爽、接近首页的白底轻质感。
@@ -30,7 +30,7 @@
 ## 目标
 - 产品结果：
   - 国际站 AI Token 套餐免费体验统一展示为 7 天，国内站仍展示 3 天。
-  - 国内站首页主 CTA 展示“免费体验，30秒极速部署”。
+  - 国内站首页主 CTA 展示“免费体验，10秒极速开通”。
   - 英文和多语言首页定位统一为 AI companion / AI 伙伴，不限定为工作伙伴。
   - DeepSeek Harness 首页展示图在国内站和国际站各 locale 下清晰可辨。
   - 国际站 Blog 列表页与新版首页视觉一致，白底、轻竖线、浅色封面和独立文章卡片。
@@ -39,7 +39,7 @@
 ## 范围
 - 本次包含：
   - 国际站默认英文、`en-US` 及已发布 locale 首页：AI Token plan free 从 3 days 改为 7 days。
-  - 国内站 `zh-CN` 首页：主 CTA 改为“免费体验，30秒极速部署”，并保留“AI Token 套餐免费体验 3 天”。
+  - 国内站 `zh-CN` 首页：主 CTA 改为“免费体验，10秒极速开通”，并保留“AI Token 套餐免费体验 3 天”。
   - 首页英文 “Then I become your best working partner” 改为 “Then I become your AI companion”，多语言同步调整为 AI companion / AI 伙伴语境。
   - 国内站和国际站所有 locale 的 DeepSeek Harness 首页展示图替换为更高清版本，并更新图片缓存版本参数。
   - 国际站 Blog 列表页移除旧蓝色背景，改为白底和首页同体系轻竖线背景层。
@@ -63,7 +63,7 @@
   - 国际站简中：`AI Token 套餐免费体验 7 天`
   - 国际站繁中：`AI Token 套餐免費體驗 7 天`
   - 印尼语、西语、日语、韩语同步改为 7 天口径。
-  - 国内站简中：`免费体验，30秒极速部署` + `AI Token 套餐免费体验 3 天`。
+  - 国内站简中：`免费体验，10秒极速开通` + `AI Token 套餐免费体验 3 天`。
   - 英文定位：`Then I become your AI companion`；其他语言使用对应 AI companion / AI 伙伴表达。
 - DeepSeek Harness 首页图：
   - 重新导出 `deepseek-harness-*.webp` 为更清晰版本。
@@ -155,7 +155,7 @@
 ## 验收标准
 - 验收 1：国际站默认英文和 `en-US` 首页展示 `Try an AI token plan free for 7 days.`，不再出现 3 天 AI Token 文案。
 - 验收 2：国际站 `zh-SG`、`zh-Hant`、`id-ID`、`es`、`ja-JP`、`ko-KR` 首页均展示 AI Token 7 天免费体验。
-- 验收 3：国内站 `zh-CN` 首页展示 `免费体验，30秒极速部署`，并保留 `AI Token 套餐免费体验 3 天`，不出现 AI Token 7 天免费体验文案。
+- 验收 3：国内站 `zh-CN` 首页展示 `免费体验，10秒极速开通`，并保留 `AI Token 套餐免费体验 3 天`，不出现 AI Token 7 天免费体验文案。
 - 验收 4：英文首页不再出现 `Then I become your best working partner`，多语言同位置不再出现工作伙伴限定语境，统一为 AI companion / AI 伙伴表达。
 - 验收 5：国内站 `zh-CN` 与国际站默认英文、`en-US`、`zh-SG`、`zh-Hant`、`id-ID`、`es`、`ja-JP`、`ko-KR` 的 DeepSeek Harness 图片清晰可辨，图片 URL 均带 `v=20260904-harness-sharp`。
 - 验收 6：国际站 `/blog/` 不再使用旧蓝色渐变背景或额外绿色光影，页面背景与首页白底、轻竖线一致。

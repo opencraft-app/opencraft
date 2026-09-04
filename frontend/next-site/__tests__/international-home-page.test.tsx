@@ -931,7 +931,7 @@ describe("international v2 homepage artifact", () => {
     }
 
     const domesticDocument = new DOMParser().parseFromString(domesticHtml, "text/html");
-    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，30秒极速部署");
+    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，10秒极速开通");
     expect(Array.from(domesticDocument.querySelectorAll(".cta__copy li"), (item) => item.textContent?.trim())).toEqual([
       "LightVela免费体验 14 天",
       "AI Token 套餐免费体验 3 天",
@@ -971,7 +971,7 @@ describe("international v2 homepage artifact", () => {
       },
       "index-fragment.zh-CN.html": {
         h1: "LightVela · 云端 AI 伙伴",
-        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，30秒极速部署"],
+        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
       },
       "index-fragment.zh-SG.html": {
         h1: "LightVela · 云端 AI 伙伴",
