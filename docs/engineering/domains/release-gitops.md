@@ -29,6 +29,21 @@ master 源码
 - 未经用户明确授权，不构建付费制品、不更新 GitOps、不 apply、不发布。
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
 
+## CloudLadder Gateway 回调环境
+
+`tkexgz` 的三个 CloudLadder Gateway workload 共享路由定义，但通过各自
+StatefulSetPlus manifest 中的
+`CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL` 隔离默认计费回调环境：
+
+- `lightvela-proxy`：回调北京环境 `https://lightclaw.tech`。
+- `lightvela-proxy-staging`：回调北京环境 `https://lightclaw.tech`。
+- `lightvela-proxy-testing`：回调北京7环境
+  `https://api-sandbox-bj-7.lightclaw.tech`。
+
+环境差异必须保留在 `argocd/services/cloudladdergateway/tkexgz/` 下对应的
+`statefulsetplus*.yaml` 中，不通过修改共享路由默认值实现。修改 testing 默认回调时，
+不得连带修改 prod、staging 或地域专用的 `jifei-callback-<region>` 路由。
+
 ## Secret 交付
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
