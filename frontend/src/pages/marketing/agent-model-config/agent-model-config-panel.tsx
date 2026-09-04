@@ -290,7 +290,7 @@ export function AgentModelConfigPanel({
   const [purpose, setPurpose] = useState<ConfigurePurpose>("primary");
   const [connectionResult, setConnectionResult] = useState<HermesConnectionProbeResult | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<HermesConfiguredModel | null>(null);
-  const [expandedConfiguredProviderKey, setExpandedConfiguredProviderKey] = useState<string | null | undefined>(undefined);
+  const [expandedConfiguredProviderKey, setExpandedConfiguredProviderKey] = useState<string | null>(null);
   const [selectedConfiguredModelByProvider, setSelectedConfiguredModelByProvider] = useState<Record<string, string>>({});
   const probeUiRevision = useRef(0);
 
@@ -406,19 +406,10 @@ export function AgentModelConfigPanel({
     () => groupConfiguredModelsByProvider(configuredModels, providers),
     [configuredModels, providers],
   );
-  const primaryConfiguredProviderKey = snapshot.primary
-    ? getConfiguredProviderGroupKey(snapshot.primary)
+  const effectiveExpandedConfiguredProviderKey = expandedConfiguredProviderKey !== null
+    && configuredProviderGroups.some((group) => group.key === expandedConfiguredProviderKey)
+    ? expandedConfiguredProviderKey
     : null;
-  const defaultExpandedConfiguredProviderKey = configuredProviderGroups.some(
-    (group) => group.key === primaryConfiguredProviderKey,
-  )
-    ? primaryConfiguredProviderKey
-    : configuredProviderGroups[0]?.key ?? null;
-  const effectiveExpandedConfiguredProviderKey = expandedConfiguredProviderKey === undefined
-    || (expandedConfiguredProviderKey !== null
-      && !configuredProviderGroups.some((group) => group.key === expandedConfiguredProviderKey))
-    ? defaultExpandedConfiguredProviderKey
-    : expandedConfiguredProviderKey;
   const pageHeader = (
     <AgentSectionHeader
       title={t("模型")}

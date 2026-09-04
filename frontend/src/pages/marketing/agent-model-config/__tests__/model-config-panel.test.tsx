@@ -349,7 +349,8 @@ describe("AgentModelConfigPanel", () => {
 
     const alphaTrigger = await screen.findByRole("button", { name: /Alpha API/ });
     const betaTrigger = screen.getByRole("button", { name: /Beta API/ });
-    expect(alphaTrigger).toHaveAttribute("aria-expanded", "true");
+    expect(alphaTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("group", { name: "Alpha API 已配置模型" })).not.toBeInTheDocument();
     expect(alphaTrigger).toHaveAccessibleName("Alpha API主模型：model-primary");
     expect(betaTrigger).toHaveAccessibleName("Beta API备用模型：model-fallback");
     expect(screen.queryByText(/^共 \d+ 个$/)).not.toBeInTheDocument();
@@ -415,6 +416,7 @@ describe("AgentModelConfigPanel", () => {
       "bg-[color-mix(in_oklab,var(--warning)_20%,white)]",
       "text-[var(--warning)]",
     );
+    await userEvent.click(alphaTrigger);
     const alphaGroup = screen.getByRole("group", { name: "Alpha API 已配置模型" });
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     const secondAlphaRow = screen.getByText("model-alpha-2").closest("li") as HTMLElement;
@@ -454,7 +456,11 @@ describe("AgentModelConfigPanel", () => {
     });
     renderPanel(remote, false, [fixedHyProvider]);
 
-    expect(await screen.findAllByText("Hy4 Preview")).toHaveLength(2);
+    const providerTrigger = await screen.findByRole("button", {
+      name: (name) => name.startsWith(fixedHyProvider.providerName),
+    });
+    await userEvent.click(providerTrigger);
+    expect(screen.getAllByText("Hy4 Preview")).toHaveLength(2);
     const providerGroup = screen.getByRole("group", {
       name: `${fixedHyProvider.providerName} 已配置模型`,
     });
@@ -519,6 +525,7 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
     expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")).toBeInTheDocument();
     expect(screen.getByText("正在读取模型配置")).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /Alpha API/ }));
     expect(await screen.findByText("model-primary")).toBeInTheDocument();
 
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
@@ -596,7 +603,7 @@ describe("AgentModelConfigPanel", () => {
     });
     renderPanel(remote);
 
-    expect(await screen.findByRole("button", { name: /内置模型/ })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /内置模型/ }));
     expect(screen.queryByText("custom")).not.toBeInTheDocument();
     const autoRow = (await screen.findByText("自动")).closest("li") as HTMLElement;
     expect(autoRow).toBeInTheDocument();
@@ -688,6 +695,7 @@ describe("AgentModelConfigPanel", () => {
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [importedModel] });
     renderPanel(remote);
 
+    await userEvent.click(await screen.findByRole("button", { name: /Manual Provider/ }));
     const importedRow = (await screen.findByText("manual-model")).closest("li") as HTMLElement;
     expect(screen.getByRole("button", { name: "设为主模型" })).toBeEnabled();
     expect(within(importedRow).getByRole("button", { name: "设为备用模型" })).toBeEnabled();
@@ -702,7 +710,7 @@ describe("AgentModelConfigPanel", () => {
       configuredModels: [primaryModel, fallbackModel],
     });
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await userEvent.click(await screen.findByRole("button", { name: /Alpha API/ }));
 
     expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
     expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")).toBeInTheDocument();
@@ -882,7 +890,7 @@ describe("AgentModelConfigPanel", () => {
   it("requires credentials, probes models, and invalidates stale results", async () => {
     const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel] });
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     const probeButton = screen.getByRole("button", { name: "获取可用模型" });
     const connectivityButton = screen.getByRole("button", { name: "检测模型状态" });
@@ -923,7 +931,7 @@ describe("AgentModelConfigPanel", () => {
   it("keeps the full idle action width while model discovery is loading", async () => {
     const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel] });
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     const execute = remote.execDebugCommand.getMockImplementation();
     if (!execute) throw new Error("Missing remote command implementation");
@@ -1153,7 +1161,9 @@ describe("AgentModelConfigPanel", () => {
         providers={[fixedHyProvider]}
       />,
     );
-    expect(await screen.findAllByText("Hy4 Preview")).toHaveLength(2);
+    expect(await screen.findByRole("button", {
+      name: (name) => name.startsWith(fixedHyProvider.providerName),
+    })).toBeInTheDocument();
 
     expect(screen.getByRole("radio", { name: "设为主模型" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "仅添加" })).not.toBeChecked();
@@ -1435,7 +1445,7 @@ describe("AgentModelConfigPanel", () => {
   it("adds a probed model with the selected purpose and clears the key", async () => {
     const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel] });
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
@@ -1462,7 +1472,7 @@ describe("AgentModelConfigPanel", () => {
       configuredModels: [primaryModel, fallbackModel, idleModel],
     });
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     await userEvent.click(screen.getByRole("button", { name: /Gamma API/ }));
     let idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
@@ -1488,7 +1498,7 @@ describe("AgentModelConfigPanel", () => {
       configuredModels: [primaryModel, idleModel],
     });
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     await userEvent.click(screen.getByRole("button", { name: /Gamma API/ }));
     const idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
@@ -1503,6 +1513,7 @@ describe("AgentModelConfigPanel", () => {
     await waitFor(() => expect(screen.queryByText("model-idle")).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole("heading", { name: "已配置模型" })).toHaveFocus());
     expect(remote.actions).toContainEqual({ type: "remove", providerKey: idleModel.providerKey, modelId: idleModel.id, baseUrl: idleModel.baseUrl, routeBaseUrl: idleModel.baseUrl });
+    await userEvent.click(screen.getByRole("button", { name: /Alpha API/ }));
     const primaryRow = screen.getByText("model-primary").closest("li") as HTMLElement;
     expect(within(primaryRow).getByRole("button", { name: "删除" })).toBeDisabled();
   });
@@ -1514,7 +1525,7 @@ describe("AgentModelConfigPanel", () => {
       configuredModels: [primaryModel, fallbackModel],
     });
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     await userEvent.click(screen.getByRole("button", { name: /Beta API/ }));
     const fallbackRow = screen.getByText("model-fallback").closest("li") as HTMLElement;
@@ -1531,7 +1542,7 @@ describe("AgentModelConfigPanel", () => {
       [primaryModel.id, "another-model"],
     );
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     await userEvent.click(screen.getByRole("tab", { name: "模型 API" }));
     await userEvent.type(screen.getByLabelText("API Key"), "secret-value");
@@ -1593,7 +1604,7 @@ describe("AgentModelConfigPanel", () => {
     const view = render(
       <AgentModelConfigPanel botId="bot-1" execDebugCommand={execDebugCommand} providers={[initialProvider]} />,
     );
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     await userEvent.type(screen.getByLabelText("API Key"), "provider-a-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
@@ -1652,7 +1663,7 @@ describe("AgentModelConfigPanel", () => {
     const view = render(
       <AgentModelConfigPanel botId="bot-1" execDebugCommand={execDebugCommand} providers={[initialProvider]} />,
     );
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     await userEvent.type(screen.getByLabelText("API Key"), "provider-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
@@ -1871,7 +1882,7 @@ describe("AgentModelConfigPanel", () => {
   it("keeps the API key available for correction when add fails", async () => {
     const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel] });
     renderPanel(remote);
-    await screen.findByText("model-primary");
+    await screen.findByRole("button", { name: /Alpha API/ });
 
     await userEvent.type(screen.getByLabelText("API Key"), "retry-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
@@ -1887,7 +1898,7 @@ describe("AgentModelConfigPanel", () => {
   it("keeps delete failures inside the confirmation dialog for retry", async () => {
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [idleModel] });
     renderPanel(remote);
-    await screen.findByText("model-idle");
+    await userEvent.click(await screen.findByRole("button", { name: /Gamma API/ }));
 
     const idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
     await userEvent.click(within(idleRow).getByRole("button", { name: "删除" }));
