@@ -205,7 +205,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(container.querySelector(".lv-buddy-panel__title")).not.toBeInTheDocument();
   });
 
-  it("places the SkillHub source at the card heading height", () => {
+  it("aligns the SkillHub source with the persona card grid bounds", () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
@@ -218,8 +218,14 @@ describe("BuddyPanel P1 stability", () => {
     const cardHeading = screen.getByRole("heading", { level: 3, name: "人设卡片" });
 
     expect(source.parentElement).toBe(cardHeading.parentElement?.parentElement);
-    expect(source.parentElement).toHaveClass("relative", "items-center", "justify-center");
-    expect(source).toHaveClass("absolute", "inset-y-0", "right-6", "items-center");
+    expect(source.parentElement).toHaveClass(
+      "lv-buddy-panel__toolbar-inner",
+      "relative",
+      "items-center",
+      "justify-center",
+    );
+    expect(source).toHaveClass("absolute", "inset-y-0", "right-0", "items-center");
+    expect(source).not.toHaveClass("right-6");
     expect(description.parentElement).not.toBe(source.parentElement);
   });
 
@@ -240,7 +246,7 @@ describe("BuddyPanel P1 stability", () => {
       "font-semibold",
       "text-balance",
     );
-    expect(cardHeading).not.toHaveClass("text-lg", "text-xl");
+    expect(cardHeading).not.toHaveClass("text-base", "text-xl");
     expect(cardHeading.style.letterSpacing).toBe("-0.2px");
     expect(cardHeading.style.backgroundImage).toContain("linear-gradient");
     expect(cardHeading.style.backgroundClip).toBe("text");

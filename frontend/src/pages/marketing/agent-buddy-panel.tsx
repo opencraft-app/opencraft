@@ -1032,36 +1032,38 @@ export function BuddyPanel({
 
       <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
-      <div className="lv-buddy-panel__toolbar relative flex items-center justify-center px-6 pt-5 pb-3">
-        <div className="lv-buddy-panel__heading inline-flex items-center justify-center gap-2">
-          <h3
-            className="text-balance text-lg font-semibold"
-            style={{
-              letterSpacing: "-0.2px",
-              backgroundImage:
-                "linear-gradient(95deg, rgba(0,0,0,0.92) 0%, #6B4FE0 45%, #F4B43A 100%)",
-              backgroundClip: "text",
-              WebkitBackgroundClip: "text",
-              color: "transparent",
-              WebkitTextFillColor: "transparent",
-            }}
+      <div className="lv-buddy-panel__toolbar px-6 pt-5 pb-3">
+        <div className="lv-buddy-panel__toolbar-inner relative mx-auto flex w-full items-center justify-center">
+          <div className="lv-buddy-panel__heading inline-flex items-center justify-center gap-2">
+            <h3
+              className="text-balance text-lg font-semibold"
+              style={{
+                letterSpacing: "-0.2px",
+                backgroundImage:
+                  "linear-gradient(95deg, rgba(0,0,0,0.92) 0%, #6B4FE0 45%, #F4B43A 100%)",
+                backgroundClip: "text",
+                WebkitBackgroundClip: "text",
+                color: "transparent",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              {t("人设卡片")}
+            </h3>
+            {drawnSouls.length > 0 && (
+              <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
+            )}
+          </div>
+          <a
+            href="https://skillhub.cn/soul"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="lv-buddy-panel__source absolute inset-y-0 right-0 inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+            style={{ color: "rgba(0,0,0,0.55)" }}
           >
-            {t("人设卡片")}
-          </h3>
-          {drawnSouls.length > 0 && (
-            <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
-          )}
+            {t("灵感来自 SkillHub")}
+            <ExternalLink className="size-3" />
+          </a>
         </div>
-        <a
-          href="https://skillhub.cn/soul"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="lv-buddy-panel__source absolute inset-y-0 right-6 inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
-          style={{ color: "rgba(0,0,0,0.55)" }}
-        >
-          {t("灵感来自 SkillHub")}
-          <ExternalLink className="size-3" />
-        </a>
       </div>
 
       {/* 内容区：人设抽卡槽 */}

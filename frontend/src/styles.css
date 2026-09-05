@@ -2040,6 +2040,10 @@ html[lang="ko-KR"] .landing-page span {
   white-space: nowrap;
 }
 
+.lv-buddy-panel__toolbar-inner {
+  max-width: 816px;
+}
+
 .lv-buddy-panel__grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -2068,8 +2072,12 @@ html[lang="ko-KR"] .landing-page span {
 }
 
 @container (max-width: 820px) {
+  .lv-buddy-panel__toolbar-inner,
   .lv-buddy-panel__grid {
     max-width: 616px;
+  }
+
+  .lv-buddy-panel__grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -2086,9 +2094,10 @@ html[lang="ko-KR"] .landing-page span {
     padding-right: 1rem;
   }
 
-  .lv-buddy-panel__toolbar {
+  .lv-buddy-panel__toolbar-inner {
     flex-wrap: wrap;
     gap: 0.5rem;
+    max-width: 396px;
   }
 
   .lv-buddy-panel__source {
