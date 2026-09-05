@@ -37,6 +37,20 @@ const repositoryMocks = vi.hoisted(() => ({
   execDebugCommand: vi.fn(),
 }));
 
+const regionState = vi.hoisted(() => ({
+  isGlobal: false,
+}));
+
+vi.mock("@/lib/region", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/region")>(),
+  get isCN() {
+    return !regionState.isGlobal;
+  },
+  get isGlobal() {
+    return regionState.isGlobal;
+  },
+}));
+
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     bots: {
@@ -146,6 +160,7 @@ describe("BuddyPanel P1 stability", () => {
 
   beforeEach(() => {
     now = 0;
+    regionState.isGlobal = false;
     vi.spyOn(Date, "now").mockImplementation(() => now);
     repositoryMocks.execDebugCommand.mockReset();
     mockedLoadBuddyState.mockReset();
@@ -205,7 +220,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(container.querySelector(".lv-buddy-panel__title")).not.toBeInTheDocument();
   });
 
-  it("places the SkillHub source at the card heading height", () => {
+  it("aligns the SkillHub source with the persona card grid bounds", () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
@@ -217,10 +232,28 @@ describe("BuddyPanel P1 stability", () => {
     const source = screen.getByRole("link", { name: "灵感来自 SkillHub" });
     const cardHeading = screen.getByRole("heading", { level: 3, name: "人设卡片" });
 
-    expect(source.parentElement).toBe(cardHeading.parentElement);
-    expect(source.parentElement).toHaveClass("relative", "items-center", "justify-center");
-    expect(source).toHaveClass("absolute", "inset-y-0", "right-6", "items-center");
+    expect(source.parentElement).toBe(cardHeading.parentElement?.parentElement);
+    expect(source.parentElement).toHaveClass(
+      "lv-buddy-panel__toolbar-inner",
+      "relative",
+      "items-center",
+      "justify-center",
+    );
+    expect(source).toHaveClass("absolute", "inset-y-0", "right-0", "items-center");
+    expect(source).not.toHaveClass("right-6");
     expect(description.parentElement).not.toBe(source.parentElement);
+  });
+
+  it("hides the SkillHub source on the international site", () => {
+    regionState.isGlobal = true;
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [],
+      appliedSlug: null,
+    });
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    expect(screen.queryByRole("link", { name: "灵感来自 SkillHub" })).not.toBeInTheDocument();
   });
 
   it("renders the persona card heading with the historical slogan typography", () => {
@@ -236,15 +269,36 @@ describe("BuddyPanel P1 stability", () => {
     const cardHeading = within(card as HTMLElement).getByRole("heading", { level: 3, name: "人设卡片" });
 
     expect(cardHeading).toHaveClass(
-      "text-base",
+      "text-lg",
       "font-semibold",
       "text-balance",
     );
-    expect(cardHeading).not.toHaveClass("text-lg", "text-xl");
+    expect(cardHeading).not.toHaveClass("text-base", "text-xl");
     expect(cardHeading.style.letterSpacing).toBe("-0.2px");
     expect(cardHeading.style.backgroundImage).toContain("linear-gradient");
     expect(cardHeading.style.backgroundClip).toBe("text");
     expect(cardHeading.style.color).toBe("transparent");
+    expect(screen.queryByText("已抽")).not.toBeInTheDocument();
+  });
+
+  it("places the drawn-card count immediately after the persona card heading", async () => {
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [fixtures.agentA],
+      appliedSlug: null,
+    });
+
+    const { container } = render(<BuddyPanel botId="agent-a" />);
+    await screen.findByText("Agent A Soul");
+
+    const cardHeading = screen.getByRole("heading", { level: 3, name: "人设卡片" });
+    const progressChip = screen.getByText("已抽").parentElement;
+
+    expect(progressChip).not.toBeNull();
+    expect(progressChip).toHaveTextContent("已抽1/8");
+    expect(cardHeading.parentElement).toHaveClass("lv-buddy-panel__heading");
+    expect(cardHeading.nextElementSibling).toBe(progressChip);
+    expect(container.querySelector(".lv-buddy-panel__actions")).not.toContainElement(progressChip);
+    expect(container.querySelector(".lv-buddy-panel__progress")).not.toBeInTheDocument();
   });
 
   it("ignores an old Agent injection result after the user switches Agents", async () => {
