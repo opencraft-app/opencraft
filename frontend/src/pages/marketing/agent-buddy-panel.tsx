@@ -1035,7 +1035,7 @@ export function BuddyPanel({
       <div className="lv-buddy-panel__toolbar relative flex items-center justify-center px-6 pt-5 pb-3">
         <div className="lv-buddy-panel__heading inline-flex items-center justify-center gap-2">
           <h3
-            className="text-balance text-base font-semibold"
+            className="text-balance text-lg font-semibold"
             style={{
               letterSpacing: "-0.2px",
               backgroundImage:

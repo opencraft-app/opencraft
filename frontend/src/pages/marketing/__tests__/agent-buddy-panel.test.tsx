@@ -236,7 +236,7 @@ describe("BuddyPanel P1 stability", () => {
     const cardHeading = within(card as HTMLElement).getByRole("heading", { level: 3, name: "人设卡片" });
 
     expect(cardHeading).toHaveClass(
-      "text-base",
+      "text-lg",
       "font-semibold",
       "text-balance",
     );
