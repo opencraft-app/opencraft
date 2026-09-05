@@ -2851,14 +2851,14 @@ const longLocaleDesktopHeadingCss = `
 `;
 const footerRefreshCss = `
 #lightvela-intl-home .foot {
-  padding-top: 118px;
+  padding-top: 72px;
   padding-bottom: 78px;
   background: #fff;
 }
 
 #lightvela-intl-home .foot__top {
   max-width: var(--shell);
-  min-height: 230px;
+  min-height: 184px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2940,7 +2940,7 @@ const footerRefreshCss = `
 
 #lightvela-intl-home .foot__links {
   max-width: min(1380px, calc(100vw - 96px));
-  margin: 150px auto 0;
+  margin: 96px auto 0;
   padding-top: 0;
   border-top: 0;
 }
@@ -3016,11 +3016,11 @@ const footerRefreshCss = `
 
 @media (max-width: 900px) {
   #lightvela-intl-home .foot {
-    padding-top: 92px;
+    padding-top: 64px;
   }
 
   #lightvela-intl-home .foot__top {
-    min-height: 180px;
+    min-height: 152px;
   }
 
   #lightvela-intl-home .foot__cta a {
@@ -3041,7 +3041,7 @@ const footerRefreshCss = `
   }
 
   #lightvela-intl-home .foot__links {
-    margin-top: 96px;
+    margin-top: 64px;
   }
 
   #lightvela-intl-home .foot__links-grid {
