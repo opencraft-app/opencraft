@@ -27,6 +27,7 @@
 
 ## 官网首页展示产物
 
+- 国内站与国际站共享同一组 LightVela favicon 资源与浏览器页签品牌形象；`layout.next.tsx` 的 icon/shortcut/apple 声明和 `manifest.webmanifest` 必须引用同一版本化 URL。图标内容更新时应同步更换版本标识，避免任一生产域名继续命中旧 favicon 缓存。
 - 国内站与国际站根路由分别以默认 `zh-CN` / `en-US` locale 直接渲染 `InternationalHomePage` 的已提交静态片段，不再静态引入旧 `PublicHomePage`；带 locale 的路由仍保留 V2 选择与旧页面 fallback。
 - 国际站首页使用 `frontend/scripts/import-international-homepage.mjs` 维护导入与本地化规则，运行时消费 `frontend/public/lightvela-intl-home/index-fragment*.html` 中已提交的多语言静态片段。
 - 国际站首页文案或结构变更必须同步导入脚本、所有开放 locale 的静态片段与 `international-home-page` 聚焦测试；不得只修改默认英文片段。
