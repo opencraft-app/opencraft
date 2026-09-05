@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,8 +53,21 @@ afterEach(() => {
 });
 
 describe("PublicHeaderAuthIsland", () => {
+  it("keeps locale dictionaries and closed auth UI out of the initial header chunk", () => {
+    const source = readFileSync(
+      path.join(process.cwd(), "next-site/public-header-auth-island.tsx"),
+      "utf8",
+    );
+
+    expect(source).not.toContain('import { useTranslation } from \'react-i18next\'');
+    expect(source).not.toContain("import { LoginModal }");
+    expect(source).not.toContain("import { UserAvatarMenu }");
+    expect(source).toContain("import('@/components/site/login-modal')");
+    expect(source).toContain("import('@/components/site/user-avatar-menu')");
+  });
+
   it("uses the homepage language-and-login treatment across international public pages", () => {
-    render(<PublicHeaderAuthIsland showLanguageSwitcher={false} />);
+    render(<PublicHeaderAuthIsland locale="es" showLanguageSwitcher={false} />);
 
     expect(screen.queryByRole("button", { name: "Crear ahora" })).not.toBeInTheDocument();
     for (const button of screen.getAllByRole("button", { name: "Iniciar sesión" })) {

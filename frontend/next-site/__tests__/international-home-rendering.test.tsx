@@ -84,6 +84,14 @@ describe("international v2 homepage rendering", () => {
     ]);
   });
 
+  it("starts all homepage motion script requests without waiting for earlier scripts", () => {
+    render(<InternationalHomeRuntime locale="en-US" markup="<main />" />);
+
+    expect(document.querySelectorAll('script[data-lightvela-intl-home-script]')).toHaveLength(
+      INTERNATIONAL_HOME_SCRIPT_SOURCES.length,
+    );
+  });
+
   it("rebinds homepage motion scripts when the active locale changes", async () => {
     const { rerender, unmount } = render(
       <InternationalHomeRuntime locale="ko-KR" markup='<main id="locale-ko" />' />,
@@ -212,17 +220,22 @@ describe("international v2 homepage rendering", () => {
     );
   });
 
-  it("routes both root and localized homepages through the international-only selector", () => {
+  it("keeps the root route on V2 without importing the legacy homepage client barrel", () => {
     const rootRoute = readFileSync(path.join(frontendRoot, "src/app/(site)/page.next.tsx"), "utf8");
+
+    expect(rootRoute).toContain("InternationalHomePage");
+    expect(rootRoute).not.toContain("PublicHomePage");
+    expect(rootRoute).not.toContain("shouldUseInternationalV2Home");
+  });
+
+  it("keeps the localized route fallback for locales that are not on V2", () => {
     const localizedRoute = readFileSync(
       path.join(frontendRoot, "src/app/(site)/[lang]/page.intl.tsx"),
       "utf8",
     );
 
-    for (const routeSource of [rootRoute, localizedRoute]) {
-      expect(routeSource).toContain("shouldUseInternationalV2Home");
-      expect(routeSource).toContain("InternationalHomePage");
-      expect(routeSource).toContain("PublicHomePage");
-    }
+    expect(localizedRoute).toContain("shouldUseInternationalV2Home");
+    expect(localizedRoute).toContain("InternationalHomePage");
+    expect(localizedRoute).toContain("PublicHomePage");
   });
 });
