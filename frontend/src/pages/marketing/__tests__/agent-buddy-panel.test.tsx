@@ -37,6 +37,20 @@ const repositoryMocks = vi.hoisted(() => ({
   execDebugCommand: vi.fn(),
 }));
 
+const regionState = vi.hoisted(() => ({
+  isGlobal: false,
+}));
+
+vi.mock("@/lib/region", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/region")>(),
+  get isCN() {
+    return !regionState.isGlobal;
+  },
+  get isGlobal() {
+    return regionState.isGlobal;
+  },
+}));
+
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     bots: {
@@ -146,6 +160,7 @@ describe("BuddyPanel P1 stability", () => {
 
   beforeEach(() => {
     now = 0;
+    regionState.isGlobal = false;
     vi.spyOn(Date, "now").mockImplementation(() => now);
     repositoryMocks.execDebugCommand.mockReset();
     mockedLoadBuddyState.mockReset();
@@ -227,6 +242,18 @@ describe("BuddyPanel P1 stability", () => {
     expect(source).toHaveClass("absolute", "inset-y-0", "right-0", "items-center");
     expect(source).not.toHaveClass("right-6");
     expect(description.parentElement).not.toBe(source.parentElement);
+  });
+
+  it("hides the SkillHub source on the international site", () => {
+    regionState.isGlobal = true;
+    mockedLoadBuddyState.mockResolvedValue({
+      drawnSouls: [],
+      appliedSlug: null,
+    });
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    expect(screen.queryByRole("link", { name: "灵感来自 SkillHub" })).not.toBeInTheDocument();
   });
 
   it("renders the persona card heading with the historical slogan typography", () => {

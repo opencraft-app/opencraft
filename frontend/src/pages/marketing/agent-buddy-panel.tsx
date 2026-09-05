@@ -1053,16 +1053,18 @@ export function BuddyPanel({
               <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
             )}
           </div>
-          <a
-            href="https://skillhub.cn/soul"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="lv-buddy-panel__source absolute inset-y-0 right-0 inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
-            style={{ color: "rgba(0,0,0,0.55)" }}
-          >
-            {t("灵感来自 SkillHub")}
-            <ExternalLink className="size-3" />
-          </a>
+          {!isGlobal && (
+            <a
+              href="https://skillhub.cn/soul"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="lv-buddy-panel__source absolute inset-y-0 right-0 inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+              style={{ color: "rgba(0,0,0,0.55)" }}
+            >
+              {t("灵感来自 SkillHub")}
+              <ExternalLink className="size-3" />
+            </a>
+          )}
         </div>
       </div>
 

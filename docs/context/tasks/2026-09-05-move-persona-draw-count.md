@@ -1,14 +1,14 @@
 ---
 id: move-persona-draw-count-2026-09-05
 type: task
-scope: 调整人设页抽卡标题区的计数与 SkillHub 入口布局。
+scope: 调整人设页抽卡标题区的计数与 SkillHub 入口区域化布局。
 status: ready-for-review
 owner: wisp/mono2-maintainers
 ---
 
 ## goal
 
-把“已抽 x/8”从底部操作区移动到“人设卡片”标题后紧邻展示，并让 SkillHub 入口右对齐卡片网格最右列，保持桌面与窄屏布局清晰。
+把“已抽 x/8”从底部操作区移动到“人设卡片”标题后紧邻展示；国内站让 SkillHub 入口右对齐卡片网格最右列，国际站移除该入口，并保持桌面与窄屏布局清晰。
 
 ## non_goals
 
@@ -20,6 +20,7 @@ owner: wisp/mono2-maintainers
 
 - 用户截图反馈（2026-09-05）：红框内“已抽 xxx”标签挪到上方，放在“人设卡片”文案后展示。
 - 用户截图反馈（2026-09-05）：同步 master 后，将“灵感来自 SkillHub”入口从面板最右侧移到卡片网格范围内，并与最右边第 4 张卡片右边缘对齐。
+- 用户补充反馈（2026-09-05）：国际站人设页去掉“灵感来自 SkillHub”跳转按钮。
 
 ## interface_refs / data_structure_refs
 
@@ -39,6 +40,7 @@ owner: wisp/mono2-maintainers
 - 无已抽卡片时不显示进度标签。
 - 小容器下标题组和 SkillHub 来源不重叠。
 - 桌面 4 列、窄屏 3 列和 2 列布局下，SkillHub 来源右边缘跟随卡片网格最右列。
+- 国内站保留 SkillHub 来源入口，国际站不渲染该入口。
 - 聚焦测试、`pnpm i18n:check`、`pnpm check`、`git diff --check` 通过。
 
 ## affected_paths
@@ -73,6 +75,9 @@ owner: wisp/mono2-maintainers
 - GREEN：`agent-buddy-panel.test.tsx` 34/34 通过，覆盖有卡时标题邻接、底部移除及无卡时不显示。
 - 最新 `origin/master@f426ee746` 已无冲突合入当前分支。
 - SkillHub 入口移入与网格同宽的 toolbar inner，桌面最大宽度 816px，3 列和 2 列断点分别跟随 616px、396px。
+- 入口使用既有 `isGlobal` 站点真源门禁，避免通过 locale 或域名猜测区域。
+- 聚焦测试 35/35 通过，新增国内站入口存在、国际站入口不存在的双区域断言。
+- `pnpm build:global` 串行重跑通过；首次并行执行与 `pnpm check` 竞争清理 `.fumadocs-content`，属于本地命令竞争而非代码错误。
 - `pnpm check` 通过：i18n 结构错误 0、既有告警 48，TypeScript 相对基线 0 个新增诊断。
 - 本地隔离预览 `/agents/persona/?preview=mr3615` 返回 200；桌面 1720px 与窄屏 680px 截图确认入口跟随卡片网格右边缘，未触发生产写入。
 
@@ -84,17 +89,21 @@ owner: wisp/mono2-maintainers
 ## validation
 
 - [x] 聚焦 `agent-buddy-panel.test.tsx`：34/34。
+- [x] 补充国际站门禁后聚焦 `agent-buddy-panel.test.tsx`：35/35。
 - [x] `pnpm i18n:check`（由 `pnpm check` 覆盖）。
 - [x] `pnpm check`。
 - [x] `git diff --check` 与 change-impact 门禁。
 - [x] 窄容器规则检查：标题/计数保持同组，SkillHub 来源取消绝对定位并独占下一行。
 - [x] 隔离预览桌面 1720px 与窄屏 680px 截图；使用 2 张测试卡片，无生产写入。
+- [x] `pnpm build:global`。
+- [ ] 国际站已登录人设面板截图；无痕与当前 in-app 会话均被登录门禁拦截，代码门禁由组件测试和 global 构建闭环。
 
 ## decisions
 
 - 复用现有 `ProgressChip`，不新增状态或组件。
 - 标题与 Chip 使用同一个 inline flex 容器；SkillHub 链接保持 toolbar 邻居。
 - toolbar inner 与卡片网格共享 816px / 616px / 396px 响应式宽度，来源入口以 `right: 0` 对齐其最右边缘。
+- SkillHub 来源只属于国内站产品面；国际站保持标题与计数，不展示该外链。
 
 ## scan_scope
 
