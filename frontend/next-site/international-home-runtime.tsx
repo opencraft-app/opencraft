@@ -28,30 +28,26 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
     let cancelled = false;
     const mountedScripts: HTMLScriptElement[] = [];
 
-    async function loadScripts() {
+    function loadScripts() {
       document.querySelectorAll('script[data-lightvela-intl-home-script]').forEach((script) => script.remove());
 
       for (const source of INTERNATIONAL_HOME_SCRIPT_SOURCES) {
         if (cancelled) return;
         const scriptSource = versionedInternationalHomeAsset(source);
 
-        await new Promise<void>((resolve) => {
-          const script = document.createElement('script');
-          script.src = scriptSource;
-          script.dataset.lightvelaIntlHomeScript = scriptSource;
-          script.dataset.lightvelaIntlHomeLocale = locale;
-          script.onload = () => resolve();
-          script.onerror = () => {
-            console.error(`Failed to load international homepage script: ${scriptSource}`);
-            resolve();
-          };
-          document.body.appendChild(script);
-          mountedScripts.push(script);
-        });
+        const script = document.createElement('script');
+        script.src = scriptSource;
+        script.dataset.lightvelaIntlHomeScript = scriptSource;
+        script.dataset.lightvelaIntlHomeLocale = locale;
+        script.onerror = () => {
+          console.error(`Failed to load international homepage script: ${scriptSource}`);
+        };
+        document.body.appendChild(script);
+        mountedScripts.push(script);
       }
     }
 
-    void loadScripts();
+    loadScripts();
     return () => {
       cancelled = true;
       mountedScripts.forEach((script) => script.remove());
