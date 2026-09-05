@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { DEFAULT_PUBLIC_ROUTE_LOCALE, EN_US_LOCALE } from '@next-site/public-locale';
 import { siteUrl, siteVerification, themeColor } from '@next-site/seo';
+import { LIGHTVELA_ICON_PNG_URL, LIGHTVELA_ICON_SVG_URL } from '@next-site/site-icons';
 
 const defaultEnglish = DEFAULT_PUBLIC_ROUTE_LOCALE.locale === EN_US_LOCALE;
 
@@ -30,11 +31,11 @@ export const metadata: Metadata = {
   verification: siteVerification(),
   icons: {
     icon: [
-      { url: '/lightvela-icon.png', type: 'image/png' },
-      { url: '/lightvela-icon.svg', type: 'image/svg+xml' },
+      { url: LIGHTVELA_ICON_PNG_URL, type: 'image/png' },
+      { url: LIGHTVELA_ICON_SVG_URL, type: 'image/svg+xml' },
     ],
-    shortcut: '/lightvela-icon.png',
-    apple: '/lightvela-icon.png',
+    shortcut: LIGHTVELA_ICON_PNG_URL,
+    apple: LIGHTVELA_ICON_PNG_URL,
   },
   appleWebApp: {
     capable: true,
