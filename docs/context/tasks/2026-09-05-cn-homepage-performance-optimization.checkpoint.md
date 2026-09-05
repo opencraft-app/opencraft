@@ -1,5 +1,5 @@
 ## stage
-实现和本地验证完成；下一道门禁是最终 diff/context 检查，之后等待用户授权提交或提 MR。
+实现、本地验证、提交、推送与 MR 创建完成；当前等待 MR !3618 的 CI 与人工评审。
 
 ## verified
 - 隔离 worktree 基于 `origin/master@65784cf2e6ae16c5687919b2b01f25febf0096b8`，主工作区未被修改。
@@ -10,7 +10,7 @@
 
 ## unverified
 - 未做线上真实网络环境的 RUM/LCP/INP 对照，也未验证 CDN/EdgeOne 缓存与压缩头。
-- 尚未运行远端 CI，代码也未提交、推送、创建 MR 或发布。
+- 远端 CI 已触发但仍为 `pending` / blocking；MR 尚未合并或发布。
 
 ## discard
 - 默认 Turbopack 构建在本机无输出挂起，不能作为代码失败证据。
@@ -24,4 +24,4 @@
 - 对比与报告目录：`/tmp/lightvela-cn-home-optimization-20260905/`。
 
 ## next_action
-- 更新验证报告，运行最终 `git diff --check`、context/documentation 检查与工作区审计，然后等待用户决定是否提交。
+- 后续只读回查 MR !3618 的 CI、mergeability 与人工评审；没有用户明确授权不合并或发布。

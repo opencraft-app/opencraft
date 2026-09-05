@@ -99,7 +99,8 @@
 - 预算测试覆盖轻量产物通过、旧 `PublicHomePage`/`LandingPageView` chunk 回归失败、初始 Next 脚本超过 22 个失败；没有自动串入默认 build 链，因为本地默认 Turbopack 构建未形成可复现完成证据。
 
 ## handoff
-- 状态：实现与验证完成，尚未提交、推送或创建 MR。
+- 状态：实现与验证完成；提交 `37cdefe0ba59e8119c47b7bfac07f1d6df3625f9` 已推送并创建 MR !3618（global ID `27060824`）。
 - 验证：聚焦 Vitest 6 files / 66 tests 通过；`pnpm check` 与 `pnpm check:homepage-performance` 通过；CN 96/96、Global 606/606 静态导出通过；桌面 1280×720 与移动 390×844 浏览器回归通过，console 无 warning/error，移动端无横向溢出。
 - 浏览器补充：三段首页运行时脚本均存在，QQ 渠道切换后内容正确更新；移动长截图中的重复粘性片段属于 full-page 截图拼接现象，DOM 中对应区块标题各只有一个实例。
-- 下一步：用户确认后再展示提交范围、建议 commit message，并执行 commit/push/MR。
+- 远端状态：MR `opened` / `can_be_merged`；最后回查 CI 为 `pending` 且 `commit_check_block=true`，尚未合并或发布。
+- 下一步：等待 CI 与人工评审；没有用户明确授权不合并或发布。
