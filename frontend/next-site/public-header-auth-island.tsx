@@ -1,12 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useTranslation } from 'react-i18next';
 
-import { LoginModal } from '@/components/site/login-modal';
 import type { HeaderAppearance } from '@/components/site/public-site-header';
-import { UserAvatarMenu } from '@/components/site/user-avatar-menu';
 import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { oauthErrorMessage } from '@/lib/oauth';
@@ -16,14 +14,15 @@ import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
 import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
-import { parseLocaleCode } from '@/i18n/locales.config';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
-import {
-  EN_US_LOCALE,
-  ZH_CN_LOCALE,
-  ZH_SG_LOCALE,
-} from './public-locale';
+
+const LoginModal = dynamic(() =>
+  import('@/components/site/login-modal').then((module) => module.LoginModal),
+);
+const UserAvatarMenu = dynamic(() =>
+  import('@/components/site/user-avatar-menu').then((module) => module.UserAvatarMenu),
+);
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
@@ -84,23 +83,9 @@ const copyByLocale: Record<
   },
 };
 
-/**
- * 未显式传入 `locale` prop 时的兜底：从运行时 `i18n.language` 推断当前 locale。
- *
- * 注意繁体必须优先于「以 zh 开头」的简体判断 —— 否则 `zh-Hant` 会误落到
- * 简体 `ZH_SG_LOCALE`，导致繁体站头部按钮显示简体文案（「立即创建/登录」
- * 而非「立即創建/登入」）。
- */
-function inferLocaleFromI18n(language: string | undefined): PublicSiteLocale {
-  const locale = parseLocaleCode(language);
-  if (!locale) return EN_US_LOCALE;
-  if (locale === ZH_CN_LOCALE || locale === ZH_SG_LOCALE) return ZH_SG_LOCALE;
-  return locale;
-}
-
 type PublicHeaderAuthIslandProps = {
   appearance?: HeaderAppearance;
-  locale?: PublicSiteLocale;
+  locale: PublicSiteLocale;
   oauthError?: string | null;
   showLanguageSwitcher?: boolean;
   showProductEntry?: boolean;
@@ -123,12 +108,11 @@ function PublicHeaderAuthControls({
   loginOnly = isGlobal,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
-  const { i18n } = useTranslation(undefined, { useSuspense: false });
   const { authReady, isAuthenticated } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
-  const activeLocale: PublicSiteLocale = locale ?? inferLocaleFromI18n(i18n.language);
+  const activeLocale = locale;
   const copy = copyByLocale[activeLocale];
   // 未登录转化引导：主按钮文案改为当前 locale 的「免费试用」。
   const createLabel = promoteFreeTrial ? copy.freeTrial : copy.createNow;
@@ -276,14 +260,16 @@ function PublicHeaderAuthControls({
           {copy.login}
         </button>
       </div>
-      <LoginModal
-        open={showLogin}
-        onClose={() => setShowLogin(false)}
-        initialError={loginErrorMessage}
-        onSuccess={() => {
-          router.push(AGENTS_HOME_PATH);
-        }}
-      />
+      {showLogin && (
+        <LoginModal
+          open
+          onClose={() => setShowLogin(false)}
+          initialError={loginErrorMessage}
+          onSuccess={() => {
+            router.push(AGENTS_HOME_PATH);
+          }}
+        />
+      )}
     </>
   );
 }

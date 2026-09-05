@@ -131,13 +131,17 @@ describe("PublicSiteAppProviders", () => {
     expect(registration).not.toContain("setDefaults");
     expect(registration).not.toMatch(/generated\/|@\/i18n\/(?:index|t)/);
 
-    for (const shellComponent of [
-      "src/components/site/cookie-consent-banner.tsx",
-      "next-site/public-header-auth-island.tsx",
-    ]) {
-      const source = readFileSync(path.join(frontendRoot, shellComponent), "utf8");
-      expect(source).toMatch(/useTranslation\(undefined,\s*\{\s*useSuspense:\s*false\s*\}\)/);
-    }
+    const cookieConsent = readFileSync(
+      path.join(frontendRoot, "src/components/site/cookie-consent-banner.tsx"),
+      "utf8",
+    );
+    expect(cookieConsent).toMatch(/useTranslation\(undefined,\s*\{\s*useSuspense:\s*false\s*\}\)/);
+
+    const publicHeader = readFileSync(
+      path.join(frontendRoot, "next-site/public-header-auth-island.tsx"),
+      "utf8",
+    );
+    expect(publicHeader).not.toContain("useTranslation");
 
     const httpRepositories = readFileSync(
       path.join(frontendRoot, "src/repositories/http-repositories.ts"),
