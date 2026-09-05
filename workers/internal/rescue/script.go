@@ -1,6 +1,7 @@
 package rescue
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -208,6 +209,7 @@ type uploadMarker struct {
 	Device    string `json:"device"`
 	Bytes     int64  `json:"bytes"`
 	SHA256    string `json:"sha256"`
+	Parts     int    `json:"parts"`
 }
 
 func ParseArchiveMarker(output string) (archiveMarker, error) {
@@ -237,17 +239,17 @@ func ParseUploadMarker(output string) (uploadMarker, error) {
 }
 
 func BuildUploaderRunScript(binaryURL string, configJSON string) string {
+	encodedConfig := base64.StdEncoding.EncodeToString([]byte(configJSON))
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
+umask 077
 workdir="$(mktemp -d /root/rescue-uploader.XXXXXX)"
 cleanup() {
   rm -rf "$workdir" || true
 }
 trap cleanup EXIT
 cd "$workdir"
-cat > config.json <<'RESCUE_UPLOADER_CONFIG'
-%s
-RESCUE_UPLOADER_CONFIG
+printf '%%s' %s | base64 -d > config.json
 if command -v curl >/dev/null 2>&1; then
   curl -fL --connect-timeout 20 --max-time 300 -o rescue-uploader %s
 elif command -v wget >/dev/null 2>&1; then
@@ -258,7 +260,7 @@ else
 fi
 chmod 700 rescue-uploader
 ./rescue-uploader config.json
-`, configJSON, shellQuote(binaryURL), shellQuote(binaryURL))
+`, shellQuote(encodedConfig), shellQuote(binaryURL), shellQuote(binaryURL))
 }
 
 func shellQuoteList(values []string) string {
