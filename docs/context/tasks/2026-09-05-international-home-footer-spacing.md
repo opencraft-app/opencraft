@@ -56,8 +56,8 @@
 - `pnpm check`：追加修正后通过；TypeScript 0 个新增诊断，现有 i18n 告警 48 个。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：错误 0、告警 0、失效链接 0。
 - `git diff --check`：通过。
-- 1687×972 国内站桌面预览：上一段 CTA 底部与 Footer 顶部的总布局留白由 192px 收紧为 80px，标题/按钮仍居中，无横向溢出。
-- 390×844 国内站移动预览：对应总布局留白为 72px，无横向溢出，Footer 两列布局正常。
+- 1687×972 国内站桌面预览：上一段 CTA 底部与 Footer 顶部的总布局留白由 192px 收紧为 104px，标题/按钮仍居中，无横向溢出。
+- 390×844 国内站移动预览：对应总布局留白为 88px，无横向溢出，Footer 两列布局正常。
 - 931×909 国内站页尾复核：`.cta__stage` 为 `opacity: 1`、`transform: none`，免费体验 CTA 可见，不再以透明内容占据整段高度。
 - CSS 与首页脚本资源版本更新为 `20260906-home-footer-spacing`，本地实际加载 URL 已核对。
 - 本地预览同时出现与本次样式改动无关的认证服务不可用及 fragment script 开发态告警；页面主体与本次目标区块仍正常渲染。

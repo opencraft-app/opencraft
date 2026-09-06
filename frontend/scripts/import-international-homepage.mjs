@@ -2851,7 +2851,7 @@ const longLocaleDesktopHeadingCss = `
 `;
 const footerRefreshCss = `
 #lightvela-intl-home .cta {
-  padding-bottom: 48px;
+  padding-bottom: 64px;
 }
 
 #lightvela-intl-home .cta__stage.sr {
@@ -2862,7 +2862,7 @@ const footerRefreshCss = `
 }
 
 #lightvela-intl-home .foot {
-  padding-top: 32px;
+  padding-top: 40px;
   padding-bottom: 78px;
   background: #fff;
 }
@@ -3027,11 +3027,11 @@ const footerRefreshCss = `
 
 @media (max-width: 900px) {
   #lightvela-intl-home .cta {
-    padding-bottom: 40px;
+    padding-bottom: 48px;
   }
 
   #lightvela-intl-home .foot {
-    padding-top: 32px;
+    padding-top: 40px;
   }
 
   #lightvela-intl-home .foot__top {
