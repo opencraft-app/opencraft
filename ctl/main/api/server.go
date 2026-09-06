@@ -48,6 +48,11 @@ const (
 	sessionCookieName = "lc_session"
 )
 
+func zeroTokenAutomationsEnabled() bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv("CTL_ZERO_TOKEN_AUTOMATIONS_ENABLED")))
+	return err == nil && enabled
+}
+
 type apiServer struct {
 	httpServer *http.Server
 }
@@ -191,6 +196,7 @@ func newRouterWithWebsiteAuth(
 			"features": map[string]bool{
 				"paidBillingEnabled":               true,
 				"realnamePhoneVerificationEnabled": true,
+				"zeroTokenAutomationsEnabled":      zeroTokenAutomationsEnabled(),
 			},
 		})
 	})

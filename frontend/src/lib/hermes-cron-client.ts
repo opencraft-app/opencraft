@@ -45,12 +45,26 @@ export interface CronJob {
   context_from_hydrated?: boolean;
   /** jobs.json 中的任务级推理绑定；null 表示当前无法安全确认。 */
   inference_config: CronInferenceConfig | null;
+  /** LightVela 能安全识别的 0 Token 产品配置；外部 no_agent 任务也会有只读兜底。 */
+  zero_token_config?: CronZeroTokenConfig | null;
 }
 
 export interface CronInferenceConfig {
   provider: string | null;
   model: string | null;
   no_agent: boolean;
+}
+
+export type CronZeroTokenKind = "fixed_notification" | "script";
+export type CronScriptLanguage = "bash" | "python";
+
+export interface CronZeroTokenConfig {
+  kind: CronZeroTokenKind;
+  language: CronScriptLanguage;
+  /** 只有 LightVela 受管理脚本才返回正文；外部脚本保持 null，避免误判所有权。 */
+  content: string | null;
+  managed: boolean;
+  editable: boolean;
 }
 
 export type CronContextCapability = "supported" | "unsupported" | "unknown";
@@ -95,6 +109,12 @@ export interface CronLightVelaScriptConfig extends CronEffectiveWindow {
   daily_times?: string[] | null;
 }
 
+export interface CronZeroTokenScriptConfig extends CronLightVelaScriptConfig {
+  kind: CronZeroTokenKind;
+  language: CronScriptLanguage;
+  content: string;
+}
+
 export interface CronRunRecord {
   id: string;
   job_id: string;
@@ -106,6 +126,8 @@ export interface CronRunRecord {
   run_at: string;
   status: string | null;
   output_path: string;
+  /** 该次执行所属的 0 Token 产品类型；普通 Agent 任务不设置。 */
+  zero_token_config?: CronZeroTokenConfig | null;
   skip_reason?: "model_changed";
 }
 
@@ -114,7 +136,7 @@ export interface CreateCronJobInput {
   /** Hermes schedule 字符串，例：`0 9 * * *` / `every 2h` / `2026-05-26T09:00:00` */
   schedule: string;
   /** 任务提示词 */
-  prompt: string;
+  prompt?: string;
   /** 任务名称 */
   name: string;
   /** 可选附加技能 slug 列表 */
@@ -123,6 +145,8 @@ export interface CreateCronJobInput {
   deliver?: string;
   /** 可选 pre-run script 文件名，文件需位于 ~/.hermes/scripts/ */
   script?: string;
+  /** Hermes script-only 模式；必须提供 script，且不携带 prompt/Skill/model。 */
+  noAgent?: boolean;
   /**
    * 创建后尽力把任务模型显式钉住（避免后续切换全局默认模型导致 fail-closed 停跑）。
    * 默认 false，避免影响旧调用方与单测语义。
@@ -201,6 +225,10 @@ interface CronRunFileRow {
   job_deliver?: unknown;
   job_last_run_at?: unknown;
   job_last_status?: unknown;
+  job_no_agent?: unknown;
+  job_script?: unknown;
+  job_zero_token_kind?: unknown;
+  job_zero_token_language?: unknown;
 }
 
 /** 把命令 output 末尾几行清洗成 toast 文案 */
@@ -326,23 +354,23 @@ export async function detectCronContextFromCapability(botId: string): Promise<Cr
 
 /** 拼装一条 hermes cron 命令行 */
 export function buildCreateCommand(input: CreateCronJobInput): string {
-  const parts = [
-    "hermes",
-    "cron",
-    "create",
-    shellQuote(input.schedule),
-    shellQuote(input.prompt),
-    "--name",
-    shellQuote(input.name),
-  ];
-  for (const skill of input.skills ?? []) {
-    parts.push("--skill", shellQuote(skill));
+  const parts = ["hermes", "cron", "create", shellQuote(input.schedule)];
+  if (input.noAgent) {
+    if (!input.script) throw new Error("no-agent cron job requires a script");
+    parts.push("--no-agent", "--script", shellQuote(input.script));
+  } else {
+    if (!input.prompt?.trim()) throw new Error("agent cron job requires a prompt");
+    parts.push(shellQuote(input.prompt), "--name", shellQuote(input.name));
+    for (const skill of input.skills ?? []) {
+      parts.push("--skill", shellQuote(skill));
+    }
   }
+  if (input.noAgent) parts.push("--name", shellQuote(input.name));
   // deliver=local 是 hermes CLI 默认，省略以减少噪声
   if (input.deliver && input.deliver !== "local") {
     parts.push("--deliver", shellQuote(input.deliver));
   }
-  if (input.script) {
+  if (input.script && !input.noAgent) {
     parts.push("--script", shellQuote(input.script));
   }
   return parts.join(" ");
@@ -746,6 +774,10 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "                'job_deliver': job.get('deliver') or job.get('job_deliver') or '',",
     "                'job_last_run_at': job.get('last_run_at') or job.get('job_last_run_at') or '',",
     "                'job_last_status': job.get('last_status') or job.get('job_last_status') or '',",
+    "                'job_no_agent': job.get('no_agent') is True or job.get('job_no_agent') is True,",
+    "                'job_script': job.get('script') or job.get('job_script') or '',",
+    "                'job_zero_token_kind': job.get('zero_token_kind') or job.get('job_zero_token_kind') or '',",
+    "                'job_zero_token_language': job.get('zero_token_language') or job.get('job_zero_token_language') or '',",
     "            }",
     "try:",
     "    absorb(json.loads(archive_path.read_text(encoding='utf-8')))",
@@ -821,7 +853,7 @@ function buildListRecentCronRunsCommand(limit: number): string {
 
 function buildArchiveCronJobMetadataCommand(): string {
   const script = [
-    "import json",
+    "import base64, json, re",
     "from pathlib import Path",
     "cron_dir = Path.home() / '.hermes' / 'cron'",
     "jobs_path = cron_dir / 'jobs.json'",
@@ -843,6 +875,21 @@ function buildArchiveCronJobMetadataCommand(): string {
     "        job_id = str(job.get('id') or '')",
     "        if not job_id:",
     "            continue",
+    "        script_name = str(job.get('script') or '')",
+    "        no_agent = job.get('no_agent') is True",
+    "        zero_token_kind = ''",
+    "        zero_token_language = ''",
+    "        if no_agent and re.fullmatch(r'lightvela-zero-token-[a-z0-9-]+\\.py', script_name):",
+    "            try:",
+    "                script_text = (Path.home() / '.hermes' / 'scripts' / script_name).read_text(encoding='utf-8')",
+    "                match = re.search(r'^META_B64 = \"([A-Za-z0-9+/=]+)\"$', script_text, re.MULTILINE)",
+    "                meta = json.loads(base64.b64decode(match.group(1)).decode('utf-8')) if match else {}",
+    "                if meta.get('kind') in ('fixed_notification', 'script'):",
+    "                    zero_token_kind = meta.get('kind')",
+    "                if meta.get('language') in ('bash', 'python'):",
+    "                    zero_token_language = meta.get('language')",
+    "            except Exception:",
+    "                pass",
     "        archive[job_id] = {",
     "            'id': job_id,",
     "            'name': job.get('name') or '',",
@@ -852,6 +899,10 @@ function buildArchiveCronJobMetadataCommand(): string {
     "            'deliver': job.get('deliver') or '',",
     "            'last_run_at': job.get('last_run_at') or '',",
     "            'last_status': job.get('last_status') or '',",
+    "            'no_agent': no_agent,",
+    "            'script': script_name,",
+    "            'zero_token_kind': zero_token_kind,",
+    "            'zero_token_language': zero_token_language,",
     "        }",
     "cron_dir.mkdir(parents=True, exist_ok=True)",
     "archive_path.write_text(json.dumps(archive, ensure_ascii=False), encoding='utf-8')",
@@ -917,6 +968,23 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
     const jobPrompt = modelChanged
       ? firstNonModelConfigDriftText(job?.prompt, row.job_prompt)
       : job?.prompt || stringValue(row.job_prompt);
+    const rowNoAgent = row.job_no_agent === true;
+    const isZeroToken = job?.inference_config?.no_agent === true || rowNoAgent;
+    const archivedScript = stringValue(row.job_script);
+    const archivedKind = row.job_zero_token_kind === "fixed_notification" ? "fixed_notification" : "script";
+    const archivedLanguage = row.job_zero_token_language === "bash"
+      || (!row.job_zero_token_language && /\.(?:sh|bash)$/i.test(archivedScript))
+      ? "bash"
+      : "python";
+    const zeroTokenConfig = job?.zero_token_config ?? (isZeroToken
+      ? {
+          kind: archivedKind,
+          language: archivedLanguage,
+          content: null,
+          managed: false,
+          editable: false,
+        } satisfies CronZeroTokenConfig
+      : null);
     // 「测试运行」创建的临时任务是内部实现细节，不应出现在「最近执行」里：它的
     // cron output 目录在任务删除后仍存在，archive/jobs_meta 里也可能留有其 meta，
     // 导致这里解析出带零宽 marker 的临时任务名/临时 job id。凡是 job.name 或
@@ -936,6 +1004,7 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
       run_at: runAt,
       status: modelChanged ? "not_executed" : inferredStatus,
       output_path: outputPath,
+      ...(zeroTokenConfig ? { zero_token_config: zeroTokenConfig } : {}),
       ...(modelChanged ? { skip_reason: "model_changed" as const } : {}),
     });
   }
@@ -1102,6 +1171,7 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     context_from: p.context_from || null,
     context_from_hydrated: p.context_from_hydrated === true,
     inference_config: p.inference_config || null,
+    zero_token_config: p.zero_token_config || null,
   };
 }
 
@@ -1159,6 +1229,136 @@ export function buildEffectiveWindowScript(args: CronLightVelaScriptConfig): str
   ].join("\n");
 }
 
+interface ZeroTokenScriptMetadata {
+  version: 1;
+  kind: CronZeroTokenKind;
+  language: CronScriptLanguage;
+  content: string;
+  start_at: string;
+  end_at: string;
+  weekdays: number[];
+  daily_times: string[];
+}
+
+const ZERO_TOKEN_SCRIPT_MARKER = "lightvela-zero-token-v1";
+const ZERO_TOKEN_METADATA_PREFIX = "META_B64 = ";
+
+function encodeBase64Utf8(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function decodeBase64Utf8(value: string): string {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new TextDecoder().decode(bytes);
+}
+
+function normalizeZeroTokenMetadata(args: CronZeroTokenScriptConfig): ZeroTokenScriptMetadata {
+  const weekdays = Array.isArray(args.weekdays)
+    ? Array.from(new Set(args.weekdays.filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)))
+      .sort((left, right) => left - right)
+    : [];
+  return {
+    version: 1,
+    kind: args.kind,
+    language: args.language,
+    content: args.content,
+    start_at: args.start_at ?? "",
+    end_at: args.end_at ?? "",
+    weekdays,
+    daily_times: normalizeDailyScriptTimes(args.daily_times),
+  };
+}
+
+/** 构建 LightVela 自有的 no-agent wrapper；正文只作为 base64 JSON 数据，不参与代码拼接。 */
+export function buildZeroTokenScript(args: CronZeroTokenScriptConfig): string {
+  const metadata = normalizeZeroTokenMetadata(args);
+  const encodedMetadata = encodeBase64Utf8(JSON.stringify(metadata));
+  return [
+    "#!/usr/bin/env python3",
+    `# ${ZERO_TOKEN_SCRIPT_MARKER}`,
+    "import base64",
+    "import datetime",
+    "import json",
+    "import subprocess",
+    "import sys",
+    "",
+    `${ZERO_TOKEN_METADATA_PREFIX}${JSON.stringify(encodedMetadata)}`,
+    "meta = json.loads(base64.b64decode(META_B64).decode('utf-8'))",
+    "now = datetime.datetime.now()",
+    "start_at = datetime.datetime.fromisoformat(meta['start_at']) if meta['start_at'] else None",
+    "end_at = datetime.datetime.fromisoformat(meta['end_at']) if meta['end_at'] else None",
+    "allowed = True",
+    "if start_at is not None and now < start_at:",
+    "    allowed = False",
+    "if end_at is not None and now > end_at:",
+    "    allowed = False",
+    "if meta['weekdays'] and now.isoweekday() % 7 not in meta['weekdays']:",
+    "    allowed = False",
+    "if meta['daily_times'] and now.strftime('%H:%M') not in meta['daily_times']:",
+    "    allowed = False",
+    "if not allowed:",
+    "    raise SystemExit(0)",
+    "if meta['kind'] == 'fixed_notification':",
+    "    sys.stdout.write(meta['content'])",
+    "    raise SystemExit(0)",
+    "command = ['bash'] if meta['language'] == 'bash' else [sys.executable]",
+    "completed = subprocess.run(command, input=meta['content'], text=True, check=False)",
+    "raise SystemExit(completed.returncode)",
+    "",
+  ].join("\n");
+}
+
+export function parseZeroTokenScript(content: string): {
+  zeroTokenConfig: CronZeroTokenConfig;
+  effectiveWindow: CronEffectiveWindow | null;
+  lightvelaSchedule: CronLightVelaSchedule | null;
+} | null {
+  if (!content.includes(ZERO_TOKEN_SCRIPT_MARKER)) return null;
+  const encoded = new RegExp(`^${ZERO_TOKEN_METADATA_PREFIX}"([A-Za-z0-9+/=]+)"$`, "m")
+    .exec(content)?.[1];
+  if (!encoded) return null;
+  try {
+    const raw = JSON.parse(decodeBase64Utf8(encoded)) as Partial<ZeroTokenScriptMetadata>;
+    if (raw.version !== 1
+      || (raw.kind !== "fixed_notification" && raw.kind !== "script")
+      || (raw.language !== "bash" && raw.language !== "python")
+      || typeof raw.content !== "string") return null;
+    const weekdays = Array.isArray(raw.weekdays)
+      ? Array.from(new Set(raw.weekdays.filter((value): value is number =>
+        Number.isInteger(value) && value >= 0 && value <= 6))).sort((left, right) => left - right)
+      : [];
+    const dailyTimes = normalizeDailyScriptTimes(raw.daily_times);
+    const startAt = typeof raw.start_at === "string" ? raw.start_at : "";
+    const endAt = typeof raw.end_at === "string" ? raw.end_at : "";
+    return {
+      zeroTokenConfig: {
+        kind: raw.kind,
+        language: raw.language,
+        content: raw.content,
+        managed: true,
+        editable: true,
+      },
+      effectiveWindow: !startAt && !endAt && weekdays.length === 0
+        ? null
+        : {
+            start_at: startAt || null,
+            end_at: endAt || null,
+            ...(weekdays.length > 0 ? { weekdays } : {}),
+          },
+      lightvelaSchedule: dailyTimes.length > 0
+        ? { kind: "daily_times", times: dailyTimes }
+        : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function parseLightVelaCronScript(content: string): {
   effectiveWindow: CronEffectiveWindow | null;
   lightvelaSchedule: CronLightVelaSchedule | null;
@@ -1202,8 +1402,21 @@ export function createEffectiveWindowScriptName(seed: string): string {
   return `lightvela-effective-window-${suffix}.py`;
 }
 
+export function createZeroTokenScriptName(seed: string): string {
+  const normalized = seed.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `lightvela-zero-token-${normalized || "job"}.py`;
+}
+
 function isLightVelaEffectiveWindowScript(script: string): boolean {
   return /^lightvela-effective-window-[a-z0-9-]+\.py$/.test(script);
+}
+
+export function isLightVelaZeroTokenScriptName(script: string): boolean {
+  return /^lightvela-zero-token-[a-z0-9-]+\.py$/.test(script);
+}
+
+function isLightVelaManagedScript(script: string): boolean {
+  return isLightVelaEffectiveWindowScript(script) || isLightVelaZeroTokenScriptName(script);
 }
 
 export async function writeEffectiveWindowScript(
@@ -1231,20 +1444,60 @@ export async function removeEffectiveWindowScript(botId: string, scriptName: str
   await execCommand(botId, `rm -f ~/.hermes/scripts/${scriptName}`);
 }
 
-async function readEffectiveWindowScripts(botId: string, scriptNames: string[]): Promise<Map<string, {
+export async function writeZeroTokenScript(
+  botId: string,
+  scriptName: string,
+  config: CronZeroTokenScriptConfig,
+): Promise<void> {
+  if (!isLightVelaZeroTokenScriptName(scriptName)) {
+    throw new Error("invalid LightVela zero-token script name");
+  }
+  const content = buildZeroTokenScript(config);
+  const path = `~/.hermes/scripts/${scriptName}`;
+  const command = [
+    "mkdir -p ~/.hermes/scripts",
+    `printf %s ${shellQuote(content)} > ${path}`,
+    `chmod 600 ${path}`,
+  ].join(" && ");
+  await execCommand(botId, command);
+}
+
+export async function removeZeroTokenScript(botId: string, scriptName: string): Promise<void> {
+  if (!isLightVelaZeroTokenScriptName(scriptName)) {
+    throw new Error("invalid LightVela zero-token script name");
+  }
+  await execCommand(botId, `rm -f ~/.hermes/scripts/${scriptName}`);
+}
+
+interface LightVelaScriptMetadata {
   effectiveWindow: CronEffectiveWindow | null;
   lightvelaSchedule: CronLightVelaSchedule | null;
-}>> {
-  const safeNames = scriptNames.filter(isLightVelaEffectiveWindowScript);
-  const result = new Map<string, {
-    effectiveWindow: CronEffectiveWindow | null;
-    lightvelaSchedule: CronLightVelaSchedule | null;
-  }>();
+  zeroTokenConfig: CronZeroTokenConfig | null;
+}
+
+async function readLightVelaScripts(
+  botId: string,
+  scriptNames: string[],
+): Promise<Map<string, LightVelaScriptMetadata>> {
+  const safeNames = scriptNames.filter(isLightVelaManagedScript);
+  const result = new Map<string, LightVelaScriptMetadata>();
   for (const scriptName of safeNames) {
     try {
       const payload = await execCommand(botId, `cat ~/.hermes/scripts/${scriptName} 2>/dev/null || true`);
-      const parsed = parseLightVelaCronScript(payload.output || "");
-      if (parsed.effectiveWindow || parsed.lightvelaSchedule) result.set(scriptName, parsed);
+      const content = payload.output || "";
+      const zeroToken = parseZeroTokenScript(content);
+      if (zeroToken) {
+        result.set(scriptName, {
+          effectiveWindow: zeroToken.effectiveWindow,
+          lightvelaSchedule: zeroToken.lightvelaSchedule,
+          zeroTokenConfig: zeroToken.zeroTokenConfig,
+        });
+        continue;
+      }
+      const parsed = parseLightVelaCronScript(content);
+      if (parsed.effectiveWindow || parsed.lightvelaSchedule) {
+        result.set(scriptName, { ...parsed, zeroTokenConfig: null });
+      }
     } catch {
       /* ignore individual script read failures */
     }
@@ -1256,14 +1509,25 @@ async function hydrateEffectiveWindows(botId: string, jobs: CronJob[]): Promise<
   const scriptNames = Array.from(new Set(
     jobs
       .map((job) => job.script)
-      .filter(isLightVelaEffectiveWindowScript),
+      .filter(isLightVelaManagedScript),
   ));
-  if (scriptNames.length === 0) return;
-  const metadata = await readEffectiveWindowScripts(botId, scriptNames);
+  const metadata = scriptNames.length > 0
+    ? await readLightVelaScripts(botId, scriptNames)
+    : new Map<string, LightVelaScriptMetadata>();
   for (const job of jobs) {
     const scriptMetadata = metadata.get(job.script);
     if (scriptMetadata?.effectiveWindow) job.effective_window = scriptMetadata.effectiveWindow;
     if (scriptMetadata?.lightvelaSchedule) job.lightvela_schedule = scriptMetadata.lightvelaSchedule;
+    if (scriptMetadata?.zeroTokenConfig) job.zero_token_config = scriptMetadata.zeroTokenConfig;
+    if (job.inference_config?.no_agent && !job.zero_token_config) {
+      job.zero_token_config = {
+        kind: "script",
+        language: /\.(?:sh|bash)$/i.test(job.script) ? "bash" : "python",
+        content: null,
+        managed: false,
+        editable: false,
+      };
+    }
   }
 }
 
@@ -1376,7 +1640,7 @@ export async function createCronJob(botId: string, input: CreateCronJobInput): P
       exitCode: payload.exit_code ?? 0,
     });
   }
-  if (input.pinCurrentModel) {
+  if (input.pinCurrentModel && !input.noAgent) {
     await pinCronJobModelBestEffort(botId, input.name);
   }
   await archiveCronJobMetadata(botId);
@@ -1390,9 +1654,13 @@ export async function createCronJobWithScriptRollback(
   try {
     await createCronJob(botId, input);
   } catch (err) {
-    if (rollbackScript && isLightVelaEffectiveWindowScript(rollbackScript)) {
+    if (rollbackScript && isLightVelaManagedScript(rollbackScript)) {
       try {
-        await removeEffectiveWindowScript(botId, rollbackScript);
+        if (isLightVelaZeroTokenScriptName(rollbackScript)) {
+          await removeZeroTokenScript(botId, rollbackScript);
+        } else {
+          await removeEffectiveWindowScript(botId, rollbackScript);
+        }
       } catch {
         /* keep the original create error */
       }
@@ -1405,11 +1673,12 @@ function buildCronjobCreatePayload(input: CreateCronJobInput, upstreamId: string
   const payload: CronjobToolPayload = {
     action: "create",
     schedule: input.schedule,
-    prompt: input.prompt,
     name: input.name,
     context_from: [upstreamId],
   };
-  if (input.skills !== undefined) payload.skills = input.skills;
+  if (input.prompt !== undefined) payload.prompt = input.prompt;
+  if (input.noAgent) payload.no_agent = true;
+  if (input.skills !== undefined && !input.noAgent) payload.skills = input.skills;
   if (input.deliver !== undefined) payload.deliver = input.deliver;
   if (input.script !== undefined) payload.script = input.script;
   return payload;
@@ -1437,13 +1706,17 @@ export async function createCronJobWithContextAndScriptRollback(
     const nestedJobId = typeof result.job?.id === "string" ? result.job.id.trim() : "";
     const jobId = result.job_id ?? nestedJobId;
     if (!jobId) throw cronjobToolOutputError("missing created job id");
-    if (input.pinCurrentModel) await pinCronJobModelByIdBestEffort(botId, jobId);
+    if (input.pinCurrentModel && !input.noAgent) await pinCronJobModelByIdBestEffort(botId, jobId);
     await archiveCronJobMetadata(botId);
     return jobId;
   } catch (error) {
-    if (rollbackScript && isLightVelaEffectiveWindowScript(rollbackScript)) {
+    if (rollbackScript && isLightVelaManagedScript(rollbackScript)) {
       try {
-        await removeEffectiveWindowScript(botId, rollbackScript);
+        if (isLightVelaZeroTokenScriptName(rollbackScript)) {
+          await removeZeroTokenScript(botId, rollbackScript);
+        } else {
+          await removeEffectiveWindowScript(botId, rollbackScript);
+        }
       } catch {
         /* keep the original create error */
       }
@@ -1960,36 +2233,63 @@ export interface StartedCronTestRun {
  */
 export async function startCronTestRun(botId: string, job: CronJob): Promise<StartedCronTestRun> {
   const deliver = await resolveConcreteDeliverForTestRun(botId, job);
+  const noAgent = job.inference_config?.no_agent === true;
   // 真正的测试执行要等临时任务被调度器 tick 到（约 2 分钟起步）。在挂任务之前，先用
   // `hermes send` 往同一个 IM 通道即时回一句「已收到」，让用户立刻知道请求已进入处理，
   // UI 随即就能撤掉转圈。这条回执是 best-effort：发不出去（比如通道未配置）也绝不能影响
   // 后面真正的测试运行，因此单独 try/catch 吞掉错误。
-  await sendHermesChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
-    /* 即时回执发送失败不影响测试运行主流程 */
-  });
+  if (!noAgent) {
+    await sendHermesChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
+      /* 即时回执发送失败不影响测试运行主流程 */
+    });
+  }
   const marker = buildTestRunMarker(job.id, job.name);
+  let temporaryScript: string | null = null;
+  let testScript = noAgent ? job.script : undefined;
+  if (noAgent && job.zero_token_config?.managed && job.zero_token_config.content !== null) {
+    temporaryScript = createZeroTokenScriptName(
+      `test-${job.id}-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`,
+    );
+    await writeZeroTokenScript(botId, temporaryScript, {
+      kind: job.zero_token_config.kind,
+      language: job.zero_token_config.language,
+      content: job.zero_token_config.content,
+      start_at: null,
+      end_at: null,
+    });
+    testScript = temporaryScript;
+  }
+  if (noAgent && !testScript) {
+    throw new Error("测试运行失败：0 Token 任务缺少可执行脚本");
+  }
   const input: CreateCronJobInput = {
     schedule: buildImmediateOnceSchedule(),
-    prompt: job.prompt,
     name: marker,
-    skills: job.skills,
     deliver,
-    // 有意不传 script：跳过生效窗口/daily_times 门控，保证到点真实执行一次
+    ...(noAgent
+      ? { noAgent: true, script: testScript }
+      : { prompt: job.prompt, skills: job.skills }),
+    // Agent 任务有意不传 script；受管理 no-agent 任务使用无门控的临时 wrapper。
   };
-  const upstreamId = job.context_from?.length === 1 ? job.context_from[0]?.trim() : "";
+  const upstreamId = noAgent ? "" : job.context_from?.length === 1 ? job.context_from[0]?.trim() : "";
   let tempId: string | null = null;
   try {
     if (upstreamId) {
       // 表单试跑必须使用当前尚未保存的上游选择；structured cronjob create 会直接返回临时任务 id。
       tempId = await createCronJobWithContextAndScriptRollback(botId, input, upstreamId);
     } else {
-      await createCronJob(botId, input);
+      await createCronJobWithScriptRollback(botId, input, temporaryScript ?? undefined);
       tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
     }
   } catch {
     await removeCronJobByExactName(botId, marker).catch(() => {
       /* 兜底清理失败不影响中文错误上抛 */
     });
+    if (temporaryScript) {
+      await removeZeroTokenScript(botId, temporaryScript).catch(() => {
+        /* 兜底清理失败不影响中文错误上抛 */
+      });
+    }
     throw new Error("临时测试任务创建异常，已尝试清理，请稍后重试");
   }
   // create 已成功 → 临时任务几乎肯定已经落进 cron。从这里开始，任何后续失败都必须
@@ -2006,6 +2306,11 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
     await removeCronJobByExactName(botId, marker).catch(() => {
       /* 兜底清理失败不影响错误上抛 */
     });
+    if (temporaryScript) {
+      await removeZeroTokenScript(botId, temporaryScript).catch(() => {
+        /* 兜底清理失败不影响错误上抛 */
+      });
+    }
     throw new Error("测试运行失败：未能定位临时任务，已尝试清理，请稍后重试");
   }
   // 前置阶段到此结束（这些都很快）。剩下的长跑阶段封进 completion，交给调用方处理。
@@ -2023,6 +2328,11 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
       return { output, deliveryError };
     } finally {
       await removeCronJob(botId, tempId).catch(() => { /* 清理失败不影响本次结果 */ });
+      if (temporaryScript) {
+        await removeZeroTokenScript(botId, temporaryScript).catch(() => {
+          /* 清理失败不影响本次结果 */
+        });
+      }
     }
   })();
   return { completion };
@@ -2041,6 +2351,25 @@ export async function runCronJobAsTest(botId: string, job: CronJob): Promise<Cro
 
 export async function removeCronJob(botId: string, id: string): Promise<void> {
   await execCommand(botId, `hermes cron remove ${shellQuote(id)}`);
+}
+
+/** Cron 已成功删除后，才清理可证明归属且未被其它任务引用的 LightVela 脚本。 */
+export async function removeManagedCronScriptIfUnreferenced(
+  botId: string,
+  removedJob: CronJob,
+  jobsBeforeRemoval: readonly CronJob[],
+): Promise<void> {
+  const scriptName = removedJob.script;
+  if (!isLightVelaManagedScript(scriptName)) return;
+  if (jobsBeforeRemoval.some((job) => job.id !== removedJob.id && job.script === scriptName)) return;
+  if (isLightVelaZeroTokenScriptName(scriptName)) {
+    // 文件名只是候选边界；只有成功解析出 LightVela marker/metadata 的脚本才可证明归属。
+    // 外部工具可能碰巧使用同名前缀，绝不能仅凭名称删除用户脚本。
+    if (removedJob.zero_token_config?.managed !== true) return;
+    await removeZeroTokenScript(botId, scriptName);
+  } else {
+    await removeEffectiveWindowScript(botId, scriptName);
+  }
 }
 
 async function rollbackCronDependentBindings(

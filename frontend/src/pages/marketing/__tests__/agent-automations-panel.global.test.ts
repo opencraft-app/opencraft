@@ -12,8 +12,13 @@ const cronClientMocks = vi.hoisted(() => ({
   listCronJobs: vi.fn(),
   listRecentCronRuns: vi.fn(),
   removeCronJob: vi.fn(),
+  removeManagedCronScriptIfUnreferenced: vi.fn(),
   removeCronJobWithDependentRollback: vi.fn(),
+  sendHermesChatNotice: vi.fn(),
+  writeZeroTokenScript: vi.fn(),
 }));
+
+const runtimeConfigMocks = vi.hoisted(() => ({ zeroTokenAutomationsEnabled: true }));
 
 const skillsClientMocks = vi.hoisted(() => ({
   listInstalledSkillSlugs: vi.fn(),
@@ -37,6 +42,11 @@ vi.mock("@/lib/hermes-skills-client", async () => ({
   ...skillsClientMocks,
 }));
 
+vi.mock("@/contexts/runtime-config-context", async () => ({
+  ...await vi.importActual<typeof import("@/contexts/runtime-config-context")>("@/contexts/runtime-config-context"),
+  useZeroTokenAutomationsEnabled: () => runtimeConfigMocks.zeroTokenAutomationsEnabled,
+}));
+
 import type { CronJob } from "@/lib/hermes-cron-client";
 import { HermesAgentAutomationsPanel } from "../agent-automations-panel";
 
@@ -54,7 +64,10 @@ beforeEach(() => {
   cronClientMocks.editCronJob.mockResolvedValue(undefined);
   cronClientMocks.editCronJobWithContext.mockResolvedValue(undefined);
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
+  cronClientMocks.removeManagedCronScriptIfUnreferenced.mockResolvedValue(undefined);
   cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
+  cronClientMocks.sendHermesChatNotice.mockResolvedValue({ sent: 0, failed: 0 });
+  cronClientMocks.writeZeroTokenScript.mockResolvedValue(undefined);
   skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue([]);
 });
 
@@ -63,6 +76,42 @@ afterEach(() => {
 });
 
 describe("HermesAgentAutomationsPanel global upstream context", () => {
+  it("creates a zero-token fixed notification with English copy and global channels", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([]);
+    cronClientMocks.execCommand.mockResolvedValue({
+      status: "SUCCESS",
+      exit_code: 0,
+      output: JSON.stringify({ success: true, data: { platforms: ["telegram"] } }),
+    });
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+    fireEvent.click(screen.getByRole("button", { name: /Zero-token task/ }));
+    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
+      target: { value: "Hydration reminder" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Time for some water/), {
+      target: { value: "Time to drink water" },
+    });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.writeZeroTokenScript).toHaveBeenCalledWith(
+        "bot-1",
+        expect.stringMatching(/^lightvela-zero-token-/),
+        expect.objectContaining({
+          kind: "fixed_notification",
+          content: "Time to drink water",
+        }),
+      );
+    });
+    expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+      "bot-1",
+      expect.objectContaining({ noAgent: true, name: "Hydration reminder" }),
+      expect.stringMatching(/^lightvela-zero-token-/),
+    );
+  });
+
   it("hydrates and exposes upstream job context on the global site", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
       makeCronJob({ id: "downstream", name: "Downstream", context_from: ["upstream"] }),

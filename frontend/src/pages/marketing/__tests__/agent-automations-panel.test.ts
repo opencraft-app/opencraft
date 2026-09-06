@@ -12,11 +12,15 @@ const cronClientMocks = vi.hoisted(() => ({
   listCronJobs: vi.fn(),
   listRecentCronRuns: vi.fn(),
   removeCronJob: vi.fn(),
+  removeManagedCronScriptIfUnreferenced: vi.fn(),
   removeCronJobWithDependentRollback: vi.fn(),
   sendHermesChatNotice: vi.fn(),
   startCronTestRun: vi.fn(),
   writeEffectiveWindowScript: vi.fn(),
+  writeZeroTokenScript: vi.fn(),
 }));
+
+const runtimeConfigMocks = vi.hoisted(() => ({ zeroTokenAutomationsEnabled: true }));
 
 const skillsClientMocks = vi.hoisted(() => ({
   listInstalledSkillSlugs: vi.fn(),
@@ -30,6 +34,11 @@ vi.mock("@/lib/hermes-cron-client", async () => ({
 vi.mock("@/lib/hermes-skills-client", async () => ({
   ...await vi.importActual<typeof import("@/lib/hermes-skills-client")>("@/lib/hermes-skills-client"),
   ...skillsClientMocks,
+}));
+
+vi.mock("@/contexts/runtime-config-context", async () => ({
+  ...await vi.importActual<typeof import("@/contexts/runtime-config-context")>("@/contexts/runtime-config-context"),
+  useZeroTokenAutomationsEnabled: () => runtimeConfigMocks.zeroTokenAutomationsEnabled,
 }));
 
 import {
@@ -79,6 +88,7 @@ import { isGlobal } from "@/lib/region";
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
+  runtimeConfigMocks.zeroTokenAutomationsEnabled = true;
   cronClientMocks.createCronJobWithContextAndScriptRollback.mockResolvedValue("created-job");
   cronClientMocks.createCronJobWithScriptRollback.mockResolvedValue(undefined);
   cronClientMocks.detectCronContextFromCapability.mockResolvedValue("supported");
@@ -92,12 +102,14 @@ beforeEach(() => {
   cronClientMocks.listCronJobs.mockResolvedValue([]);
   cronClientMocks.listRecentCronRuns.mockResolvedValue([]);
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
+  cronClientMocks.removeManagedCronScriptIfUnreferenced.mockResolvedValue(undefined);
   cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
   cronClientMocks.sendHermesChatNotice.mockResolvedValue({ sent: 0, failed: 0 });
   cronClientMocks.startCronTestRun.mockResolvedValue({
     completion: Promise.resolve({ output: "ok", deliveryError: null }),
   });
   cronClientMocks.writeEffectiveWindowScript.mockResolvedValue(undefined);
+  cronClientMocks.writeZeroTokenScript.mockResolvedValue(undefined);
   skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue([]);
 });
 
@@ -374,6 +386,31 @@ describe("recent run limit hint", () => {
     expect(screen.getByText("调用技能")).toBeTruthy();
     expect(screen.getByText("未配置")).toBeTruthy();
   });
+
+  it("shows the 0 Token subtype in the recent-run list and hides Agent-only detail rows", () => {
+    render(createElement(RecentCronRunsPanel, {
+      runs: [makeCronRun({
+        job_name: "喝水提醒",
+        job_prompt: "",
+        zero_token_config: {
+          kind: "fixed_notification",
+          language: "python",
+          content: "该喝水了",
+          managed: true,
+          editable: true,
+        },
+      })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    expect(screen.getByText("0 Token · 固定通知")).toBeTruthy();
+    expect(screen.getByText("该喝水了")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "查看任务详情" })[0]!);
+    expect(screen.getAllByText("0 Token · 固定通知")).toHaveLength(2);
+    expect(screen.queryByText("任务说明")).toBeNull();
+    expect(screen.queryByText("调用技能")).toBeNull();
+    expect(screen.getByText("通知内容")).toBeTruthy();
+  });
 });
 
 describe("automation Skill form mapping", () => {
@@ -514,6 +551,35 @@ describe("cron context relationship helpers", () => {
 });
 
 describe("cron context panel integration", () => {
+  it("labels zero-token tasks on cards and in details without Agent-only fields", async () => {
+    const zeroTokenJob = makeCronJob({
+      id: "zero-fixed",
+      name: "喝水提醒",
+      prompt: "",
+      script: "lightvela-zero-token-water.py",
+      inference_config: { provider: null, model: null, no_agent: true },
+      zero_token_config: {
+        kind: "fixed_notification",
+        language: "python",
+        content: "该喝水啦 💧",
+        managed: true,
+        editable: true,
+      },
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([zeroTokenJob]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const card = await getCronJobCard("喝水提醒");
+    expect(card).toHaveTextContent("0 Token · 固定通知");
+    expect(card).toHaveTextContent("该喝水啦 💧");
+    fireEvent.click(within(card).getByRole("button", { name: "查看" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("不调用模型，不消耗模型 Token")).toBeInTheDocument();
+    expect(within(dialog).queryByText("调用技能")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("上游任务")).not.toBeInTheDocument();
+  });
+
   it.each(["create", "edit"] as const)("uses the wider responsive form in $mode mode", (mode) => {
     renderAutomationForm({
       mode,
@@ -2220,6 +2286,121 @@ describe("automation form test run", () => {
     const button = screen.getByRole("button", { name: /测试运行|Test run/ });
     expect(button).toBeDisabled();
     expect(button.querySelector(".animate-spin")).not.toBeNull();
+  });
+});
+
+describe("zero-token automation form", () => {
+  it("creates a fixed notification through a managed no-agent script", async () => {
+    const onSaved = vi.fn();
+    renderAutomationForm({
+      enabledChannels: new Set(["wecom"]),
+      onSaved,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /0 Token 任务/ }));
+    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), {
+      target: { value: "喝水提醒" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/该喝水啦/), {
+      target: { value: "该喝水啦 💧" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /企业微信/ }));
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+
+    await waitFor(() => expect(cronClientMocks.writeZeroTokenScript).toHaveBeenCalledWith(
+      "bot-1",
+      expect.stringMatching(/^lightvela-zero-token-[a-z0-9-]+\.py$/),
+      expect.objectContaining({
+        kind: "fixed_notification",
+        language: "python",
+        content: "该喝水啦 💧",
+      }),
+    ));
+    expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+      "bot-1",
+      expect.objectContaining({
+        name: "喝水提醒",
+        noAgent: true,
+        deliver: "wecom",
+      }),
+      expect.stringMatching(/^lightvela-zero-token-[a-z0-9-]+\.py$/),
+    );
+    expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires the host-execution acknowledgement before testing a script task", () => {
+    const onTestRun = vi.fn();
+    renderAutomationForm({ onTestRun });
+
+    fireEvent.click(screen.getByRole("button", { name: /0 Token 任务/ }));
+    fireEvent.click(screen.getByRole("button", { name: "脚本任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bash" }));
+    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), {
+      target: { value: "磁盘检查" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("echo 'Disk usage is high'"), {
+      target: { value: "df -h" },
+    });
+
+    const testButton = screen.getByRole("button", { name: "测试运行" });
+    expect(testButton).toBeDisabled();
+    expect(testButton).toHaveAccessibleDescription("请先确认脚本运行安全提示");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /并非独立安全沙箱/ }));
+    fireEvent.click(testButton);
+
+    expect(onTestRun).toHaveBeenCalledWith(expect.objectContaining({
+      name: "磁盘检查",
+      prompt: "",
+      skills: [],
+      context_from: null,
+      inference_config: { provider: null, model: null, no_agent: true },
+      zero_token_config: {
+        kind: "script",
+        language: "bash",
+        content: "df -h",
+        managed: true,
+        editable: true,
+      },
+    }));
+  });
+
+  it("keeps shared notification selections while switching task types", () => {
+    renderAutomationForm({ enabledChannels: new Set(["wecom"]) });
+    const channel = screen.getByRole("checkbox", { name: /企业微信/ });
+    fireEvent.click(channel);
+    fireEvent.click(screen.getByRole("button", { name: /0 Token 任务/ }));
+    expect(channel).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: /Agent 任务/ }));
+    expect(channel).toBeChecked();
+  });
+
+  it("hides only the new zero-token entry when the feature flag is off", () => {
+    runtimeConfigMocks.zeroTokenAutomationsEnabled = false;
+    const { unmount } = renderAutomationForm();
+    expect(screen.queryByRole("button", { name: /0 Token 任务/ })).not.toBeInTheDocument();
+    unmount();
+
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({
+        id: "external-no-agent",
+        name: "External watchdog",
+        script: "watchdog.sh",
+        inference_config: { provider: null, model: null, no_agent: true },
+        zero_token_config: {
+          kind: "script",
+          language: "bash",
+          content: null,
+          managed: false,
+          editable: false,
+        },
+      }),
+    });
+    expect(screen.getByText("0 Token 任务")).toBeInTheDocument();
+    expect(screen.getByText(/无法确认脚本归属/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 });
 

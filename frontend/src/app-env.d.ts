@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_REGION?: "cn" | "global";
   readonly VITE_AUTH_API_BASE_URL?: string;
   readonly VITE_PAID_BILLING_ENABLED?: string;
+  readonly VITE_ZERO_TOKEN_AUTOMATIONS_ENABLED?: string;
   readonly VITE_LOCAL_PREVIEW_AUTH?: string;
   readonly VITE_OAUTH_RELAY_ISSUER_BASE_URL?: string;
   readonly VITE_AEGIS_ENABLED?: string;

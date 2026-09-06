@@ -5,6 +5,7 @@ const {
   applyRuntimeOverrides,
   normalizeRuntimeConfig,
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
+  ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
   shouldSkipRemoteRuntimeConfig,
@@ -14,6 +15,7 @@ describe("runtime config normalization", () => {
   it("defaults paid billing to enabled for missing or malformed payloads", () => {
     expect(normalizeRuntimeConfig(null).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig(null).features.realnamePhoneVerificationEnabled).toBe(true);
+    expect(normalizeRuntimeConfig(null).features.zeroTokenAutomationsEnabled).toBe(false);
     expect(normalizeRuntimeConfig({}).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: null }).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: { paidBillingEnabled: "true" } }).features.paidBillingEnabled).toBe(false);
@@ -22,6 +24,34 @@ describe("runtime config normalization", () => {
         .features
         .realnamePhoneVerificationEnabled,
     ).toBe(false);
+  });
+
+  it("fails closed unless zero-token automations are explicitly enabled", () => {
+    expect(
+      normalizeRuntimeConfig({ features: { zeroTokenAutomationsEnabled: true } })
+        .features.zeroTokenAutomationsEnabled,
+    ).toBe(true);
+    expect(
+      normalizeRuntimeConfig({ features: { zeroTokenAutomationsEnabled: "true" } })
+        .features.zeroTokenAutomationsEnabled,
+    ).toBe(false);
+    expect(normalizeRuntimeConfig({}).features.zeroTokenAutomationsEnabled).toBe(false);
+  });
+
+  it("allows a local emergency override for the zero-token creation entry", () => {
+    window.localStorage.setItem(ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY, "false");
+    expect(
+      applyRuntimeOverrides(normalizeRuntimeConfig({ features: { zeroTokenAutomationsEnabled: true } }))
+        .features.zeroTokenAutomationsEnabled,
+    ).toBe(false);
+    window.localStorage.removeItem(ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY);
+
+    window.localStorage.setItem(ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY, "true");
+    expect(
+      applyRuntimeOverrides(normalizeRuntimeConfig({ features: { zeroTokenAutomationsEnabled: false } }))
+        .features.zeroTokenAutomationsEnabled,
+    ).toBe(false);
+    window.localStorage.removeItem(ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY);
   });
 
   it("enables paid billing only for an explicit boolean true", () => {
