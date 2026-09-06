@@ -2854,6 +2854,13 @@ const footerRefreshCss = `
   padding-bottom: 48px;
 }
 
+#lightvela-intl-home .cta__stage.sr {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
+}
+
 #lightvela-intl-home .foot {
   padding-top: 32px;
   padding-bottom: 78px;

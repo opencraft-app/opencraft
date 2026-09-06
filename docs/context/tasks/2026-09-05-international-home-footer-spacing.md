@@ -32,6 +32,8 @@
 
 - `frontend/scripts/import-international-homepage.mjs`
 - `frontend/public/lightvela-intl-home/style.css`
+- `frontend/next-site/international-home-runtime.tsx`
+- `frontend/next-site/__tests__/international-home-rendering.test.tsx`
 - `frontend/next-site/__tests__/international-home-page.test.tsx`
 
 ## required_context
@@ -56,6 +58,8 @@
 - `git diff --check`：通过。
 - 1687×972 国内站桌面预览：上一段 CTA 底部与 Footer 顶部的总布局留白由 192px 收紧为 80px，标题/按钮仍居中，无横向溢出。
 - 390×844 国内站移动预览：对应总布局留白为 72px，无横向溢出，Footer 两列布局正常。
+- 931×909 国内站页尾复核：`.cta__stage` 为 `opacity: 1`、`transform: none`，免费体验 CTA 可见，不再以透明内容占据整段高度。
+- CSS 与首页脚本资源版本更新为 `20260906-home-footer-spacing`，本地实际加载 URL 已核对。
 - 本地预览同时出现与本次样式改动无关的认证服务不可用及 fragment script 开发态告警；页面主体与本次目标区块仍正常渲染。
 
 ## risks
@@ -81,7 +85,7 @@
 
 ## scan_output
 
-- 精确搜索和桌面端几何测量确认，大空洞由上一段 `.cta` 的 `padding-bottom: 120px` 与 `.foot` 顶部留白叠加产生；所有 locale 共用 `style.css`。
+- 精确搜索和浏览器状态确认，大空洞还包含 `.cta__stage.sr` 保持 `opacity: 0` 后形成的隐形占位；同时静态资源 URL 沿用旧版本号，存在浏览器/CDN 继续命中旧 CSS 的风险。所有 locale 共用 `style.css`。
 
 ## handoff
 
