@@ -790,9 +790,9 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.textContent).not.toContain("Thank you Hermes for the technical support provided to LightVela.");
     expect(footer?.textContent).not.toContain("Ready to set off with you at any time.");
     expect(footer?.textContent).not.toContain("My AI partners");
-    expect(css).toMatch(/#lightvela-intl-home \.cta\s*\{[^}]*padding-bottom:\s*64px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.cta\s*\{[^}]*padding-bottom:\s*80px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.cta__stage\.sr\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*none;[^}]*transition:\s*none;/s);
-    expect(css).toMatch(/#lightvela-intl-home \.foot\s*\{[^}]*padding-top:\s*40px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot\s*\{[^}]*padding-top:\s*48px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.foot__top\s*\{[^}]*min-height:\s*184px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.foot__links\s*\{[^}]*max-width:\s*min\(1380px,\s*calc\(100vw - 96px\)\);[^}]*margin:\s*96px auto 0;/s);
     expect(css).toMatch(/#lightvela-intl-home \.foot__links-grid\s*\{[^}]*grid-template-columns:\s*minmax\(300px,\s*360px\) minmax\(250px,\s*280px\) minmax\(150px,\s*168px\) minmax\(140px,\s*158px\) minmax\(140px,\s*158px\) minmax\(220px,\s*250px\);/s);

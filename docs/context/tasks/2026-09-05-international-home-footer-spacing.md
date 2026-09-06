@@ -11,6 +11,7 @@
 
 - 用户截图（2026-09-05）：`把想法交给 Hermes Agent，让它们在云端持续推进。` 板块上下空白间距调小。
 - 用户国内站截图（2026-09-06）：上一段 CTA 与 Hermes Agent 标题之间仍有大面积留白，需继续收紧。
+- 用户本地预览反馈（2026-09-06）：在已收紧基础上，将 Hermes Agent 标题上方间距连续调大。
 
 ## interface_refs / data_structure_refs
 
@@ -24,7 +25,8 @@
 
 ## acceptance
 
-- 桌面端上一段 CTA 与 Hermes Agent 标题之间、Hermes Agent CTA 与 Footer 链接区之间的留白均小于当前值。
+- 桌面端上一段 CTA 与 Hermes Agent 标题之间的最终留白为 128px，手机端为 104px。
+- Hermes Agent 标题、按钮与 Footer 链接区之间的内部间距保持不变。
 - 平板和手机断点继续按比例收紧，无横向布局变化。
 - 国际站首页聚焦测试、前端检查与 diff 检查通过。
 
@@ -52,14 +54,14 @@
 
 ## evidence
 
-- `pnpm exec vitest run next-site/__tests__/international-home-page.test.tsx`：追加修正后 31/31 通过。
-- `pnpm check`：追加修正后通过；TypeScript 0 个新增诊断，现有 i18n 告警 48 个。
+- `pnpm exec vitest run next-site/__tests__/international-home-page.test.tsx next-site/__tests__/international-home-rendering.test.tsx`：最终微调后 43/43 通过。
+- `pnpm check`：最终微调后通过；TypeScript 0 个新增诊断，现有 i18n 告警 48 个。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：错误 0、告警 0、失效链接 0。
 - `git diff --check`：通过。
-- 1687×972 国内站桌面预览：上一段 CTA 底部与 Footer 顶部的总布局留白由 192px 收紧为 104px，标题/按钮仍居中，无横向溢出。
-- 390×844 国内站移动预览：对应总布局留白为 88px，无横向溢出，Footer 两列布局正常。
+- 931×909 国内站桌面预览：上一段 CTA 内容底部至 Hermes Agent 标题的最终布局留白为 128px，标题/按钮仍居中，无横向溢出。
+- 390×844 国内站移动样式：对应布局留白由 88px 调整为 104px，Footer 两列布局规则未变。
 - 931×909 国内站页尾复核：`.cta__stage` 为 `opacity: 1`、`transform: none`，免费体验 CTA 可见，不再以透明内容占据整段高度。
-- CSS 与首页脚本资源版本更新为 `20260906-home-footer-spacing`，本地实际加载 URL 已核对。
+- CSS 与首页脚本资源版本更新为 `20260906-home-footer-spacing-v2`，本地实际加载新样式已核对。
 - 本地预览同时出现与本次样式改动无关的认证服务不可用及 fragment script 开发态告警；页面主体与本次目标区块仍正常渲染。
 
 ## risks
