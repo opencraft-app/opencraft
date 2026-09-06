@@ -43,7 +43,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260903-home-mobile-fit"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260906-home-rotator-layout-v2"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -119,6 +119,33 @@ describe("international v2 homepage rendering", () => {
     expect(document.querySelectorAll('script[data-lightvela-intl-home-script]')).toHaveLength(0);
   });
 
+  it("rebinds homepage motion scripts when imported markup changes in the same locale", async () => {
+    const { rerender } = render(
+      <InternationalHomeRuntime locale="zh-CN" markup='<main id="home-before" />' />,
+    );
+    const initialScript = document.querySelector('script[data-lightvela-intl-home-script]');
+
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup='<main id="home-after" />' />);
+
+    await waitFor(() => {
+      expect(document.querySelector("#home-after")).not.toBeNull();
+      expect(initialScript?.isConnected).toBe(false);
+    });
+    expect(document.querySelector('script[data-lightvela-intl-home-script]')).not.toBe(initialScript);
+  });
+
+  it("preserves runtime-owned homepage DOM when unrelated state rerenders the wrapper", () => {
+    const markup = '<main id="runtime-owned"><span id="hero-rotator">工作搭档</span></main>';
+    const { rerender } = render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    const runtimeNode = document.querySelector("#hero-rotator");
+    if (runtimeNode) runtimeNode.textContent = "开发搭子";
+
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+
+    expect(document.querySelector("#hero-rotator")).toBe(runtimeNode);
+    expect(document.querySelector("#hero-rotator")).toHaveTextContent("开发搭子");
+  });
+
   it("mounts the production header actions into the imported navigation", () => {
     const runtimeSource = readFileSync(
       path.join(frontendRoot, "next-site/international-home-runtime.tsx"),
@@ -130,7 +157,7 @@ describe("international v2 homepage rendering", () => {
     expect(runtimeSource).toContain("locale={locale}");
     expect(runtimeSource).toContain("script.dataset.lightvelaIntlHomeLocale = locale");
     expect(runtimeSource).toContain("script[data-lightvela-intl-home-script]");
-    expect(runtimeSource).toContain("}, [locale]);");
+    expect(runtimeSource).toContain("}, [locale, markup]);");
     expect(runtimeSource).toContain("loginOnly");
     expect(runtimeSource).toContain("showProductEntry");
     expect(runtimeSource).toContain("promoteFreeTrial");

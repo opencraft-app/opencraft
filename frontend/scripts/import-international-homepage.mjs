@@ -61,14 +61,14 @@ const publicLocalizedPaths = [
   "/terms-of-service",
 ];
 const rotatorWordsByLocale = {
-  "en-US": ["knowledge base", "monitoring radar", "reminder scheduler", "business assistant", "life concierge", "work assistant"],
-  "zh-CN": ["知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家", "工作助理"],
-  "zh-SG": ["知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家", "工作助理"],
-  "zh-Hant": ["知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家", "工作助理"],
-  "id-ID": ["basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup", "asisten kerja"],
-  es: ["base de conocimiento", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal", "asistente de trabajo"],
-  "ja-JP": ["ナレッジベース", "監視レーダー", "予約リマインダー", "ビジネスアシスタント", "生活マネージャー", "仕事アシスタント"],
-  "ko-KR": ["지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저", "업무 어시스턴트"],
+  "en-US": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion", "content manager"],
+  "zh-CN": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者", "自媒体运营官"],
+  "zh-SG": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者", "自媒体运营官"],
+  "zh-Hant": ["工作夥伴", "開發夥伴", "生活管家", "理財助理", "計畫執行官", "創意同行者", "自媒體營運官"],
+  "id-ID": ["rekan kerja", "teman pengembang", "pengelola hidup", "asisten keuangan", "pelaksana rencana", "rekan kreatif", "manajer konten"],
+  es: ["compañero de trabajo", "compañero de desarrollo", "gestor personal", "asistente financiero", "ejecutor de planes", "compañero creativo", "gestor de contenido"],
+  "ja-JP": ["仕事の相棒", "開発仲間", "暮らしのコンシェルジュ", "資産管理アシスタント", "計画実行役", "クリエイティブパートナー", "コンテンツマネージャー"],
+  "ko-KR": ["업무 파트너", "개발 동료", "생활 매니저", "재무 어시스턴트", "계획 실행자", "창의적 동반자", "콘텐츠 매니저"],
 };
 const heroLiveCopyByLocale = {
   "en-US": {
@@ -146,7 +146,7 @@ const coreCopyByLocale = {
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.",
   },
   "zh-CN": {
-    "LightVela · AI companion in the cloud": "LightVela · 云端 AI 伙伴",
+    "LightVela · AI companion in the cloud": "LightVela · 云端 Hermes Agent",
     "Hand your ideas to Hermes Agent,": "把想法交给 Hermes Agent，",
     "keep them moving in the cloud.": "让它们在云端持续推进。",
     "My AI companion": "我的智能体伙伴",
@@ -211,7 +211,7 @@ const coreCopyByLocale = {
     "Tencent EdgeOne": "Tencent EdgeOne",
   },
   "zh-SG": {
-    "LightVela · AI companion in the cloud": "LightVela · 云端 AI 伙伴",
+    "LightVela · AI companion in the cloud": "LightVela · 云端 Hermes Agent",
     "Hand your ideas to Hermes Agent,": "把想法交给 Hermes Agent，",
     "keep them moving in the cloud.": "让它们在云端持续推进。",
     "My AI companion": "我的智能体伙伴",
@@ -276,7 +276,7 @@ const coreCopyByLocale = {
     "Tencent EdgeOne": "Tencent EdgeOne",
   },
   "zh-Hant": {
-    "LightVela · AI companion in the cloud": "LightVela · 雲端 AI 夥伴",
+    "LightVela · AI companion in the cloud": "LightVela · 雲端 Hermes Agent",
     "Hand your ideas to Hermes Agent,": "把想法交給 Hermes Agent，",
     "keep them moving in the cloud.": "讓它們在雲端持續推進。",
     "My AI companion": "我的智能體夥伴",
@@ -2811,6 +2811,13 @@ const plainHeroEyebrowCss = `
   }
 }
 `;
+const domesticStableHeroPrefixCss = `
+#lightvela-intl-home[data-locale='zh-CN'] .hero__line--dynamic {
+  width: 17.25em;
+  max-width: 92vw;
+  justify-content: flex-start;
+}
+`;
 const longLocaleDesktopHeadingCss = `
 @media (min-width: 1024px) {
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
@@ -2850,8 +2857,19 @@ const longLocaleDesktopHeadingCss = `
 }
 `;
 const footerRefreshCss = `
+#lightvela-intl-home .cta {
+  padding-bottom: 80px;
+}
+
+#lightvela-intl-home .cta__stage.sr {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
+}
+
 #lightvela-intl-home .foot {
-  padding-top: 72px;
+  padding-top: 48px;
   padding-bottom: 78px;
   background: #fff;
 }
@@ -3015,8 +3033,12 @@ const footerRefreshCss = `
 }
 
 @media (max-width: 900px) {
+  #lightvela-intl-home .cta {
+    padding-bottom: 56px;
+  }
+
   #lightvela-intl-home .foot {
-    padding-top: 64px;
+    padding-top: 48px;
   }
 
   #lightvela-intl-home .foot__top {
@@ -3175,6 +3197,30 @@ function isolateHomepageBaseStyles(source) {
 }`,
     "/* Final calibration: realistic chat density; preserve the source hero motion. */",
   );
+
+  css += `
+
+@keyframes hero-rotator-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+#lightvela-intl-home .hero__rotator.is-changing {
+  animation: hero-rotator-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__rotator.is-changing {
+    animation: none;
+  }
+}
+`;
 
   return css;
 }
@@ -3652,7 +3698,7 @@ function normalizeHeroDemo(document) {
     }
     return next
       .replaceAll("LightVela · Hermes Agent in the Cloud", "LightVela · AI companion in the cloud")
-      .replaceAll("LightVela · 云端 Hermes Agent", "LightVela · 云端 AI 伙伴")
+      .replaceAll("LightVela · 云端 Hermes Agent", "LightVela · AI companion in the cloud")
       .replaceAll("Nasdaq Brief Assistant", "Market Brief")
       .replaceAll("Hermes Agent: Nasdaq sector brief is ready", "LightVela: market brief is ready")
       .replaceAll("Hermes Agent：纳斯达克热门板块速览已生成", "LightVela：纳斯达克热门板块速览已生成")
@@ -4190,10 +4236,40 @@ const editorialLocaleSelector = "#lightvela-intl-home:is([data-locale^='en'], [d
 const localizedBaseCss = isolateHomepageBaseStyles(cssSource)
   .replaceAll("html[lang='en']", "#lightvela-intl-home[data-locale^='en']")
   .replaceAll("#lightvela-intl-home[data-locale^='en']", editorialLocaleSelector);
-const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}`;
+const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}`;
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
-  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
+  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion', 'content manager'];",
+).replace(
+  `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    function rotate() {
+      index = (index + 1) % words.length;
+      el.textContent = words[index];
+      wrap.style.width = measure(words[index]) + 'px';
+      setTimeout(rotate, 2200);
+    }`,
+  `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var rotatorVisible = true;
+    if (typeof IntersectionObserver !== 'undefined') {
+      var rotatorObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.target === wrap) rotatorVisible = entry.isIntersecting;
+        });
+      }, { threshold: 0.01 });
+      rotatorObserver.observe(wrap);
+    }
+    function rotate() {
+      if (!rotatorVisible) {
+        setTimeout(rotate, 2200);
+        return;
+      }
+      index = (index + 1) % words.length;
+      el.textContent = words[index];
+      wrap.style.width = measure(words[index]) + 'px';
+      el.classList.add('is-changing');
+      setTimeout(function () { el.classList.remove('is-changing'); }, 180);
+      setTimeout(rotate, 2200);
+    }`,
 ).replace(
   `        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
         chats.forEach(function (chat, i) {`,
@@ -4228,6 +4304,8 @@ if (
   !runtimeSource.includes("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');")
   || !runtimeSource.includes("btn.addEventListener('click', activate);")
   || !runtimeSource.includes("btn.addEventListener('keydown', activateFromKeyboard);")
+  || !runtimeSource.includes("el.classList.add('is-changing');")
+  || !runtimeSource.includes("rotatorVisible = entry.isIntersecting;")
 ) {
   throw new Error("Unable to add accessible activation to homepage scene buttons");
 }

@@ -7796,6 +7796,27 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 
+@keyframes hero-rotator-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+#lightvela-intl-home .hero__rotator.is-changing {
+  animation: hero-rotator-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__rotator.is-changing {
+    animation: none;
+  }
+}
+
 #lightvela-intl-home .nav {
   pointer-events: none;
   padding: 0;
@@ -8137,6 +8158,13 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 
+#lightvela-intl-home[data-locale='zh-CN'] .hero__line--dynamic {
+  width: 17.25em;
+  max-width: 92vw;
+  justify-content: flex-start;
+}
+
+
 @media (min-width: 1024px) {
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
     max-width: min(1680px, calc(100vw - 64px));
@@ -8175,8 +8203,19 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 
+#lightvela-intl-home .cta {
+  padding-bottom: 80px;
+}
+
+#lightvela-intl-home .cta__stage.sr {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
+}
+
 #lightvela-intl-home .foot {
-  padding-top: 72px;
+  padding-top: 48px;
   padding-bottom: 78px;
   background: #fff;
 }
@@ -8415,8 +8454,12 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 @media (max-width: 900px) {
+  #lightvela-intl-home .cta {
+    padding-bottom: 56px;
+  }
+
   #lightvela-intl-home .foot {
-    padding-top: 64px;
+    padding-top: 48px;
   }
 
   #lightvela-intl-home .foot__top {
@@ -9433,7 +9476,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 
   #lightvela-intl-home .cta {
-    padding: 76px 16px;
+    padding: 76px 16px 56px;
   }
 
   #lightvela-intl-home .cta__card {
@@ -9472,7 +9515,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 
   #lightvela-intl-home .foot {
-    padding: 88px 16px 64px;
+    padding: 48px 16px 64px;
   }
 
   #lightvela-intl-home .foot__top {

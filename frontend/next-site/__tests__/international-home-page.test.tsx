@@ -302,13 +302,13 @@ describe("international v2 homepage artifact", () => {
       {
         heading: "产品",
         links: [
-          "14 天免费试用",
-          "定价",
-          "接入 QQ 指引",
+          "免费试用",
+          "产品定价",
           "接入微信指引",
+          "接入飞书指引",
+          "接入 QQ 指引",
           "接入企微指引",
           "接入钉钉指引",
-          "接入飞书指引",
         ],
       },
       {
@@ -790,7 +790,9 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.textContent).not.toContain("Thank you Hermes for the technical support provided to LightVela.");
     expect(footer?.textContent).not.toContain("Ready to set off with you at any time.");
     expect(footer?.textContent).not.toContain("My AI partners");
-    expect(css).toMatch(/#lightvela-intl-home \.foot\s*\{[^}]*padding-top:\s*72px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.cta\s*\{[^}]*padding-bottom:\s*80px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.cta__stage\.sr\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*none;[^}]*transition:\s*none;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot\s*\{[^}]*padding-top:\s*48px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.foot__top\s*\{[^}]*min-height:\s*184px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.foot__links\s*\{[^}]*max-width:\s*min\(1380px,\s*calc\(100vw - 96px\)\);[^}]*margin:\s*96px auto 0;/s);
     expect(css).toMatch(/#lightvela-intl-home \.foot__links-grid\s*\{[^}]*grid-template-columns:\s*minmax\(300px,\s*360px\) minmax\(250px,\s*280px\) minmax\(150px,\s*168px\) minmax\(140px,\s*158px\) minmax\(140px,\s*158px\) minmax\(220px,\s*250px\);/s);
@@ -829,6 +831,34 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/\.international-home-header-actions-layer\s*\{[^}]*position:\s*fixed;/s);
   });
 
+  it("uses the approved companion roles in every localized hero rotator", () => {
+    const expectedWordsByFragment = {
+      "index-fragment.html": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion", "content manager"],
+      "index-fragment.en-US.html": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion", "content manager"],
+      "index-fragment.zh-CN.html": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者", "自媒体运营官"],
+      "index-fragment.zh-SG.html": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者", "自媒体运营官"],
+      "index-fragment.zh-Hant.html": ["工作夥伴", "開發夥伴", "生活管家", "理財助理", "計畫執行官", "創意同行者", "自媒體營運官"],
+      "index-fragment.id-ID.html": ["rekan kerja", "teman pengembang", "pengelola hidup", "asisten keuangan", "pelaksana rencana", "rekan kreatif", "manajer konten"],
+      "index-fragment.es.html": ["compañero de trabajo", "compañero de desarrollo", "gestor personal", "asistente financiero", "ejecutor de planes", "compañero creativo", "gestor de contenido"],
+      "index-fragment.ja-JP.html": ["仕事の相棒", "開発仲間", "暮らしのコンシェルジュ", "資産管理アシスタント", "計画実行役", "クリエイティブパートナー", "コンテンツマネージャー"],
+      "index-fragment.ko-KR.html": ["업무 파트너", "개발 동료", "생활 매니저", "재무 어시스턴트", "계획 실행자", "창의적 동반자", "콘텐츠 매니저"],
+    } as const;
+
+    for (const [fragmentName, expectedWords] of Object.entries(expectedWordsByFragment)) {
+      const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
+      const document = new DOMParser().parseFromString(html, "text/html");
+      const root = document.querySelector("#lightvela-intl-home");
+      const words = JSON.parse(root?.getAttribute("data-rotator-words") ?? "[]") as unknown;
+
+      expect(words).toEqual(expectedWords);
+      expect(document.querySelector("#hero-rotator")?.textContent).toBe(expectedWords[0]);
+    }
+
+    expect(readFileSync(runtimePath, "utf8")).toContain(
+      "if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion', 'content manager'];",
+    );
+  });
+
   it("keeps the remote animated headline and the plain eyebrow exception", () => {
     const css = readFileSync(stylesheetPath, "utf8");
     const runtime = readFileSync(runtimePath, "utf8");
@@ -851,6 +881,9 @@ describe("international v2 homepage artifact", () => {
       && rule.includes("line-height: 1.2;")
     ))).toBe(true);
     expect(css).toMatch(/\.hero__line--dynamic\s*\{[^}]*display:\s*inline-flex;[^}]*font-style:\s*italic;[^}]*line-height:\s*1\.32;/s);
+    expect(css).toMatch(
+      /#lightvela-intl-home\[data-locale='zh-CN'\] \.hero__line--dynamic\s*\{[^}]*width:\s*17\.25em;[^}]*max-width:\s*92vw;[^}]*justify-content:\s*flex-start;/s,
+    );
     expect(css).toMatch(/@media \(max-width: 768px\)[\s\S]*\.hero__line--main\s*\{[^}]*font-size:\s*30px;/);
     expect(editorialHeroRules.some((rule) => rule.includes("font-size: 24px;"))).toBe(true);
     expect(css).toMatch(/#lightvela-intl-home \.hero__eyebrow\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*background:\s*transparent;/s);
@@ -861,6 +894,12 @@ describe("international v2 homepage artifact", () => {
     expect(runtime).not.toContain("document.createTextNode(part)");
     expect(runtime).toContain("text[i] === ' ' ? '\\u00a0'");
     expect(runtime).toContain("dataset?.rotatorWords");
+    expect(runtime).toContain("el.classList.add('is-changing')");
+    expect(runtime).toContain("el.classList.remove('is-changing')");
+    expect(runtime).toContain("rotatorVisible = entry.isIntersecting");
+    expect(css).toMatch(/@keyframes hero-rotator-in\s*\{[\s\S]*opacity:\s*0;[\s\S]*translateY\(6px\)[\s\S]*opacity:\s*1;[\s\S]*transform:\s*none;/);
+    expect(css).toMatch(/\.hero__rotator\.is-changing\s*\{[^}]*animation:\s*hero-rotator-in 180ms ease-out;/s);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.hero__rotator\.is-changing\s*\{[^}]*animation:\s*none;/);
     expect(runtime).toContain("btn.addEventListener('mouseenter'");
     expect(runtime).toContain("fadeInThread(thread)");
     expect(runtime).toContain("b.style.transitionDelay = (i * FADE_STEP) + 'ms'");
@@ -972,15 +1011,15 @@ describe("international v2 homepage artifact", () => {
         h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
       },
       "index-fragment.zh-CN.html": {
-        h1: "LightVela · 云端 AI 伙伴",
+        h1: "LightVela · 云端 Hermes Agent",
         h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
       },
       "index-fragment.zh-SG.html": {
-        h1: "LightVela · 云端 AI 伙伴",
+        h1: "LightVela · 云端 Hermes Agent",
         h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，无需信用卡"],
       },
       "index-fragment.zh-Hant.html": {
-        h1: "LightVela · 雲端 AI 夥伴",
+        h1: "LightVela · 雲端 Hermes Agent",
         h2: ["從認識，到成為你的夥伴", "如何擁有？", "免費體驗，無需信用卡"],
       },
       "index-fragment.id-ID.html": {
@@ -1010,7 +1049,10 @@ describe("international v2 homepage artifact", () => {
       expect(h1s, fragmentName).toHaveLength(1);
       expect(h1s[0]?.classList.contains("hero__title"), fragmentName).toBe(true);
       expect(h1s[0]?.querySelector(".sr-only")?.textContent?.trim(), fragmentName).toBe(headings.h1);
-      expect(document.querySelector(".hero__eyebrow")?.tagName, fragmentName).toBe("DIV");
+      const eyebrow = document.querySelector(".hero__eyebrow");
+      expect(eyebrow?.tagName, fragmentName).toBe("DIV");
+      expect(eyebrow?.getAttribute("aria-label"), fragmentName).toBe(headings.h1);
+      expect(eyebrow?.textContent?.trim(), fragmentName).toBe(headings.h1);
       for (const heading of headings.h2) {
         expect(h2s, `${fragmentName} h2`).toContain(heading);
       }
