@@ -37,10 +37,25 @@
     el.textContent = words[index];
     wrap.style.width = measure(words[index]) + 'px';
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var rotatorVisible = true;
+    if (typeof IntersectionObserver !== 'undefined') {
+      var rotatorObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.target === wrap) rotatorVisible = entry.isIntersecting;
+        });
+      }, { threshold: 0.01 });
+      rotatorObserver.observe(wrap);
+    }
     function rotate() {
+      if (!rotatorVisible) {
+        setTimeout(rotate, 2200);
+        return;
+      }
       index = (index + 1) % words.length;
       el.textContent = words[index];
       wrap.style.width = measure(words[index]) + 'px';
+      el.classList.add('is-changing');
+      setTimeout(function () { el.classList.remove('is-changing'); }, 180);
       setTimeout(rotate, 2200);
     }
     setTimeout(rotate, 2600);

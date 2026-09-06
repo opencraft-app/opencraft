@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { memo, useEffect } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
 import { useSession } from '@/contexts/session-context';
@@ -14,11 +14,15 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260906-home-rotator-v6';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260906-home-rotator-layout-v2';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
 }
+
+const InternationalHomeMarkup = memo(function InternationalHomeMarkup({ markup }: { markup: string }) {
+  return <div dangerouslySetInnerHTML={{ __html: markup }} />;
+});
 
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
   const { authReady, isAuthenticated } = useSession();
@@ -52,7 +56,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       cancelled = true;
       mountedScripts.forEach((script) => script.remove());
     };
-  }, [locale]);
+  }, [locale, markup]);
 
   useEffect(() => {
     if (!isDomesticHomepage || !authReady) return;
@@ -73,7 +77,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
         precedence="lightvela-intl-home"
       />
       {/* The fragment is generated from a reviewed, repository-owned static source. */}
-      <div dangerouslySetInnerHTML={{ __html: markup }} />
+      <InternationalHomeMarkup markup={markup} />
       <div className="international-home-header-actions-layer">
         <PublicHeaderAuthIsland
           appearance="immersive"

@@ -7796,6 +7796,27 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 
+@keyframes hero-rotator-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+#lightvela-intl-home .hero__rotator.is-changing {
+  animation: hero-rotator-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__rotator.is-changing {
+    animation: none;
+  }
+}
+
 #lightvela-intl-home .nav {
   pointer-events: none;
   padding: 0;
@@ -8134,6 +8155,13 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   #lightvela-intl-home .hero__eyebrow {
     font-size: 13px;
   }
+}
+
+
+#lightvela-intl-home[data-locale='zh-CN'] .hero__line--dynamic {
+  width: 17.25em;
+  max-width: 92vw;
+  justify-content: flex-start;
 }
 
 

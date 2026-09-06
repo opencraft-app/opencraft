@@ -146,7 +146,7 @@ const coreCopyByLocale = {
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.",
   },
   "zh-CN": {
-    "LightVela · AI companion in the cloud": "LightVela · 云端 AI 伙伴",
+    "LightVela · AI companion in the cloud": "LightVela · 云端 Hermes Agent",
     "Hand your ideas to Hermes Agent,": "把想法交给 Hermes Agent，",
     "keep them moving in the cloud.": "让它们在云端持续推进。",
     "My AI companion": "我的智能体伙伴",
@@ -211,7 +211,7 @@ const coreCopyByLocale = {
     "Tencent EdgeOne": "Tencent EdgeOne",
   },
   "zh-SG": {
-    "LightVela · AI companion in the cloud": "LightVela · 云端 AI 伙伴",
+    "LightVela · AI companion in the cloud": "LightVela · 云端 Hermes Agent",
     "Hand your ideas to Hermes Agent,": "把想法交给 Hermes Agent，",
     "keep them moving in the cloud.": "让它们在云端持续推进。",
     "My AI companion": "我的智能体伙伴",
@@ -276,7 +276,7 @@ const coreCopyByLocale = {
     "Tencent EdgeOne": "Tencent EdgeOne",
   },
   "zh-Hant": {
-    "LightVela · AI companion in the cloud": "LightVela · 雲端 AI 夥伴",
+    "LightVela · AI companion in the cloud": "LightVela · 雲端 Hermes Agent",
     "Hand your ideas to Hermes Agent,": "把想法交給 Hermes Agent，",
     "keep them moving in the cloud.": "讓它們在雲端持續推進。",
     "My AI companion": "我的智能體夥伴",
@@ -2811,6 +2811,13 @@ const plainHeroEyebrowCss = `
   }
 }
 `;
+const domesticStableHeroPrefixCss = `
+#lightvela-intl-home[data-locale='zh-CN'] .hero__line--dynamic {
+  width: 17.25em;
+  max-width: 92vw;
+  justify-content: flex-start;
+}
+`;
 const longLocaleDesktopHeadingCss = `
 @media (min-width: 1024px) {
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
@@ -3190,6 +3197,30 @@ function isolateHomepageBaseStyles(source) {
 }`,
     "/* Final calibration: realistic chat density; preserve the source hero motion. */",
   );
+
+  css += `
+
+@keyframes hero-rotator-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+#lightvela-intl-home .hero__rotator.is-changing {
+  animation: hero-rotator-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__rotator.is-changing {
+    animation: none;
+  }
+}
+`;
 
   return css;
 }
@@ -3667,7 +3698,7 @@ function normalizeHeroDemo(document) {
     }
     return next
       .replaceAll("LightVela · Hermes Agent in the Cloud", "LightVela · AI companion in the cloud")
-      .replaceAll("LightVela · 云端 Hermes Agent", "LightVela · 云端 AI 伙伴")
+      .replaceAll("LightVela · 云端 Hermes Agent", "LightVela · AI companion in the cloud")
       .replaceAll("Nasdaq Brief Assistant", "Market Brief")
       .replaceAll("Hermes Agent: Nasdaq sector brief is ready", "LightVela: market brief is ready")
       .replaceAll("Hermes Agent：纳斯达克热门板块速览已生成", "LightVela：纳斯达克热门板块速览已生成")
@@ -4205,10 +4236,40 @@ const editorialLocaleSelector = "#lightvela-intl-home:is([data-locale^='en'], [d
 const localizedBaseCss = isolateHomepageBaseStyles(cssSource)
   .replaceAll("html[lang='en']", "#lightvela-intl-home[data-locale^='en']")
   .replaceAll("#lightvela-intl-home[data-locale^='en']", editorialLocaleSelector);
-const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}`;
+const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}`;
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
   "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion', 'content manager'];",
+).replace(
+  `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    function rotate() {
+      index = (index + 1) % words.length;
+      el.textContent = words[index];
+      wrap.style.width = measure(words[index]) + 'px';
+      setTimeout(rotate, 2200);
+    }`,
+  `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var rotatorVisible = true;
+    if (typeof IntersectionObserver !== 'undefined') {
+      var rotatorObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.target === wrap) rotatorVisible = entry.isIntersecting;
+        });
+      }, { threshold: 0.01 });
+      rotatorObserver.observe(wrap);
+    }
+    function rotate() {
+      if (!rotatorVisible) {
+        setTimeout(rotate, 2200);
+        return;
+      }
+      index = (index + 1) % words.length;
+      el.textContent = words[index];
+      wrap.style.width = measure(words[index]) + 'px';
+      el.classList.add('is-changing');
+      setTimeout(function () { el.classList.remove('is-changing'); }, 180);
+      setTimeout(rotate, 2200);
+    }`,
 ).replace(
   `        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
         chats.forEach(function (chat, i) {`,
@@ -4243,6 +4304,8 @@ if (
   !runtimeSource.includes("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');")
   || !runtimeSource.includes("btn.addEventListener('click', activate);")
   || !runtimeSource.includes("btn.addEventListener('keydown', activateFromKeyboard);")
+  || !runtimeSource.includes("el.classList.add('is-changing');")
+  || !runtimeSource.includes("rotatorVisible = entry.isIntersecting;")
 ) {
   throw new Error("Unable to add accessible activation to homepage scene buttons");
 }
