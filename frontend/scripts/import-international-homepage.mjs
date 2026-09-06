@@ -2850,8 +2850,12 @@ const longLocaleDesktopHeadingCss = `
 }
 `;
 const footerRefreshCss = `
+#lightvela-intl-home .cta {
+  padding-bottom: 48px;
+}
+
 #lightvela-intl-home .foot {
-  padding-top: 72px;
+  padding-top: 32px;
   padding-bottom: 78px;
   background: #fff;
 }
@@ -3015,8 +3019,12 @@ const footerRefreshCss = `
 }
 
 @media (max-width: 900px) {
+  #lightvela-intl-home .cta {
+    padding-bottom: 40px;
+  }
+
   #lightvela-intl-home .foot {
-    padding-top: 64px;
+    padding-top: 32px;
   }
 
   #lightvela-intl-home .foot__top {

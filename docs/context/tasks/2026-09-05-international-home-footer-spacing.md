@@ -1,15 +1,16 @@
 ## goal
 
-收紧国际站首页底部 Hermes Agent CTA 与前后内容之间的纵向留白。
+收紧国内站与国际站首页底部 Hermes Agent CTA 与前后内容之间的纵向留白。
 
 ## non_goals
 
-- 不修改文案、字体、按钮、Footer 链接或国内站页面。
+- 不修改文案、字体、按钮或 Footer 链接。
 - 不改动其他首页区块的布局。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 
 - 用户截图（2026-09-05）：`把想法交给 Hermes Agent，让它们在云端持续推进。` 板块上下空白间距调小。
+- 用户国内站截图（2026-09-06）：上一段 CTA 与 Hermes Agent 标题之间仍有大面积留白，需继续收紧。
 
 ## interface_refs / data_structure_refs
 
@@ -23,7 +24,7 @@
 
 ## acceptance
 
-- 桌面端 CTA 顶部、CTA 与 Footer 链接区之间的留白均小于当前值。
+- 桌面端上一段 CTA 与 Hermes Agent 标题之间、Hermes Agent CTA 与 Footer 链接区之间的留白均小于当前值。
 - 平板和手机断点继续按比例收紧，无横向布局变化。
 - 国际站首页聚焦测试、前端检查与 diff 检查通过。
 
@@ -49,12 +50,12 @@
 
 ## evidence
 
-- `pnpm exec vitest run next-site/__tests__/international-home-page.test.tsx`：基于最新 `origin/master`，31/31 通过。
-- `pnpm check`：通过；TypeScript 0 个新增诊断，现有 i18n 告警 48 个。
+- `pnpm exec vitest run next-site/__tests__/international-home-page.test.tsx`：追加修正后 31/31 通过。
+- `pnpm check`：追加修正后通过；TypeScript 0 个新增诊断，现有 i18n 告警 48 个。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：错误 0、告警 0、失效链接 0。
 - `git diff --check`：通过。
-- 1644×944 国际站桌面预览：CTA 与 Footer 链接区纵向留白收紧，标题/按钮仍居中。
-- 390×844 国际站移动预览：无横向溢出（`scrollWidth === clientWidth === 390`），Footer 两列布局正常。
+- 1687×972 国内站桌面预览：上一段 CTA 底部与 Footer 顶部的总布局留白由 192px 收紧为 80px，标题/按钮仍居中，无横向溢出。
+- 390×844 国内站移动预览：对应总布局留白为 72px，无横向溢出，Footer 两列布局正常。
 - 本地预览同时出现与本次样式改动无关的认证服务不可用及 fragment script 开发态告警；页面主体与本次目标区块仍正常渲染。
 
 ## risks
@@ -70,7 +71,7 @@
 
 ## decisions
 
-- 仅调整 `.foot`、`.foot__top`、`.foot__links` 的纵向尺寸，不改内容或交互。
+- 调整上一段 `.cta` 的底部留白，以及 `.foot`、`.foot__top`、`.foot__links` 的纵向尺寸，不改内容或交互。
 
 ## scan_scope
 
@@ -80,7 +81,7 @@
 
 ## scan_output
 
-- 精确搜索确认 CTA 由 `footerRefreshCss` 生成，所有 locale 共用 `style.css`。
+- 精确搜索和桌面端几何测量确认，大空洞由上一段 `.cta` 的 `padding-bottom: 120px` 与 `.foot` 顶部留白叠加产生；所有 locale 共用 `style.css`。
 
 ## handoff
 

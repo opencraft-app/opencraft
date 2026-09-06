@@ -8175,8 +8175,12 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 
+#lightvela-intl-home .cta {
+  padding-bottom: 48px;
+}
+
 #lightvela-intl-home .foot {
-  padding-top: 72px;
+  padding-top: 32px;
   padding-bottom: 78px;
   background: #fff;
 }
@@ -8415,8 +8419,12 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 @media (max-width: 900px) {
+  #lightvela-intl-home .cta {
+    padding-bottom: 40px;
+  }
+
   #lightvela-intl-home .foot {
-    padding-top: 64px;
+    padding-top: 32px;
   }
 
   #lightvela-intl-home .foot__top {
@@ -9433,7 +9441,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 
   #lightvela-intl-home .cta {
-    padding: 76px 16px;
+    padding: 76px 16px 40px;
   }
 
   #lightvela-intl-home .cta__card {
@@ -9472,7 +9480,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 
   #lightvela-intl-home .foot {
-    padding: 88px 16px 64px;
+    padding: 32px 16px 64px;
   }
 
   #lightvela-intl-home .foot__top {
