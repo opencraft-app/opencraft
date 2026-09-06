@@ -201,6 +201,7 @@ type PreparedArchive struct {
 	MountedDevice string
 	SHA256        string
 	ByteSize      int64
+	PartCount     int
 	RemoteOutput  string
 	ObjectURL     string
 	DownloadURL   string
@@ -227,6 +228,7 @@ type PreparedTATArchive struct {
 	MountedDevice string
 	SHA256        string
 	ByteSize      int64
+	UploadID      string
 }
 
 type SCPResult struct {

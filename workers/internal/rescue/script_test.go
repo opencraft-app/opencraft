@@ -55,7 +55,7 @@ RESCUE_EXPORT_RESULT={"archive":"/tmp/a.tar.gz","device":"/dev/vda1","bytes":12,
 
 func TestParseUploadMarker(t *testing.T) {
 	marker, err := ParseUploadMarker(`noise
-RESCUE_UPLOAD_RESULT={"object_url":"https://bucket.cos.ap-beijing.myqcloud.com/a.tgz","device":"/dev/vda1","bytes":34,"sha256":"def"}
+RESCUE_UPLOAD_RESULT={"object_url":"https://bucket.cos.ap-beijing.myqcloud.com/a.tgz","device":"/dev/vda1","bytes":34,"sha256":"def","parts":2}
 `)
 	if err != nil {
 		t.Fatal(err)
@@ -63,14 +63,21 @@ RESCUE_UPLOAD_RESULT={"object_url":"https://bucket.cos.ap-beijing.myqcloud.com/a
 	if marker.ObjectURL == "" || marker.Device != "/dev/vda1" || marker.Bytes != 34 || marker.SHA256 != "def" {
 		t.Fatalf("unexpected marker: %+v", marker)
 	}
+	if marker.Parts != 2 {
+		t.Fatalf("parts = %d", marker.Parts)
+	}
 }
 
 func TestBuildUploaderRunScript(t *testing.T) {
-	script := BuildUploaderRunScript("https://example.com/uploader?q=1", `{"upload_url":"https://example.com/archive"}`)
-	for _, want := range []string{"curl -fL", "wget -O rescue-uploader", "./rescue-uploader config.json", "RESCUE_UPLOADER_CONFIG"} {
+	config := "{\"remote_paths\":[\"/tmp/RESCUE_UPLOADER_CONFIG\\nuntrusted\"]}"
+	script := BuildUploaderRunScript("https://example.com/uploader?q=1", config)
+	for _, want := range []string{"umask 077", "base64 -d > config.json", "curl -fL", "wget -O rescue-uploader", "./rescue-uploader config.json"} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q:\n%s", want, script)
 		}
+	}
+	if strings.Contains(script, config) || strings.Contains(script, "untrusted") {
+		t.Fatalf("raw config must not be interpolated into the shell script:\n%s", script)
 	}
 }
 

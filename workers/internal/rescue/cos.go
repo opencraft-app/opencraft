@@ -5,6 +5,8 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	cos "github.com/tencentyun/cos-go-sdk-v5"
 )
 
 type COSUploadTarget struct {
@@ -21,6 +25,193 @@ type COSUploadTarget struct {
 	ObjectURL string
 	SignedURL string
 	ExpiresAt time.Time
+}
+
+type COSFederationCredentials struct {
+	TmpSecretID  string
+	TmpSecretKey string
+	Token        string
+	ExpiredTime  int64
+}
+
+type COSMultipartSession struct {
+	BucketURL string
+	ObjectKey string
+	ObjectURL string
+	UploadID  string
+}
+
+const (
+	stsEndpoint = "sts.tencentcloudapi.com"
+	stsVersion  = "2018-08-13"
+)
+
+func GenerateCOSMultipartCredentials(ctx context.Context, cfg TencentConfig, req ExportRequest, key string) (COSFederationCredentials, error) {
+	resource, err := cosObjectResource(req.COSUploadBucket, req.COSUploadRegion, key)
+	if err != nil {
+		return COSFederationCredentials{}, err
+	}
+	policy, err := buildCOSMultipartUploadPolicy(resource)
+	if err != nil {
+		return COSFederationCredentials{}, err
+	}
+	client, err := NewTencentClient(cfg, req.COSUploadRegion)
+	if err != nil {
+		return COSFederationCredentials{}, err
+	}
+	response, err := client.Call(ctx, stsEndpoint, stsVersion, "GetFederationToken", map[string]any{
+		"Name":            "rescuemultipart",
+		"Policy":          policy,
+		"DurationSeconds": cosMultipartCredentialTTL(req.CommandTimeoutSeconds),
+	}, false)
+	if err != nil {
+		return COSFederationCredentials{}, err
+	}
+	return parseFederationCredentials(response)
+}
+
+func InitiateCOSMultipartUpload(ctx context.Context, cfg TencentConfig, req ExportRequest, key string) (COSMultipartSession, error) {
+	client, bucketURL, err := newCOSSDKClient(cfg, req.COSUploadBucket)
+	if err != nil {
+		return COSMultipartSession{}, err
+	}
+	result, _, err := client.Object.InitiateMultipartUpload(ctx, key, &cos.InitiateMultipartUploadOptions{
+		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{ContentType: archiveContentType(req.ArchiveMode)},
+	})
+	if err != nil {
+		return COSMultipartSession{}, err
+	}
+	if result == nil || strings.TrimSpace(result.UploadID) == "" {
+		return COSMultipartSession{}, fmt.Errorf("InitiateMultipartUpload returned no upload ID")
+	}
+	return COSMultipartSession{
+		BucketURL: bucketURL,
+		ObjectKey: key,
+		ObjectURL: bucketURL + "/" + escapeCOSPath(key),
+		UploadID:  result.UploadID,
+	}, nil
+}
+
+func AbortCOSMultipartUpload(ctx context.Context, cfg TencentConfig, session COSMultipartSession) error {
+	client, _, err := newCOSSDKClient(cfg, session.BucketURL)
+	if err != nil {
+		return err
+	}
+	_, err = client.Object.AbortMultipartUpload(ctx, session.ObjectKey, session.UploadID)
+	if err == nil {
+		return nil
+	}
+	var responseErr *cos.ErrorResponse
+	if errors.As(err, &responseErr) && responseErr.Response != nil && responseErr.Response.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return err
+}
+
+func newCOSSDKClient(cfg TencentConfig, rawBucketURL string) (*cos.Client, string, error) {
+	secretID, secretKey, err := resolveTencentCredentials(cfg)
+	if err != nil {
+		return nil, "", err
+	}
+	bucketURL := strings.TrimRight(strings.TrimSpace(rawBucketURL), "/")
+	parsed, err := url.Parse(bucketURL)
+	if err != nil {
+		return nil, "", err
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return nil, "", fmt.Errorf("COS bucket URL must use https")
+	}
+	transport := &cos.AuthorizationTransport{SecretID: secretID, SecretKey: secretKey}
+	return cos.NewClient(&cos.BaseURL{BucketURL: parsed}, &http.Client{Transport: transport}), bucketURL, nil
+}
+
+func archiveContentType(mode string) string {
+	if normalizeArchiveMode(mode) == ArchiveModeHermes {
+		return "application/zip"
+	}
+	return "application/gzip"
+}
+
+func cosObjectResource(bucketURL, region, key string) (string, error) {
+	parsed, err := url.Parse(strings.TrimRight(bucketURL, "/"))
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return "", fmt.Errorf("COS bucket URL must use https")
+	}
+	hostParts := strings.Split(parsed.Hostname(), ".")
+	if len(hostParts) == 0 {
+		return "", fmt.Errorf("COS bucket host is invalid")
+	}
+	bucketWithAppID := hostParts[0]
+	separator := strings.LastIndex(bucketWithAppID, "-")
+	if separator <= 0 || separator == len(bucketWithAppID)-1 {
+		return "", fmt.Errorf("COS bucket host must include APPID suffix")
+	}
+	bucketName := bucketWithAppID[:separator]
+	appID := bucketWithAppID[separator+1:]
+	for _, char := range appID {
+		if char < '0' || char > '9' {
+			return "", fmt.Errorf("COS bucket APPID suffix is invalid")
+		}
+	}
+	key = strings.TrimLeft(strings.TrimSpace(key), "/")
+	if key == "" || strings.ContainsAny(key, "*?\r\n") || strings.Contains(key, "../") {
+		return "", fmt.Errorf("COS object key is unsafe for temporary authorization")
+	}
+	region = strings.TrimSpace(region)
+	if region == "" {
+		return "", fmt.Errorf("COS region is required")
+	}
+	return fmt.Sprintf("qcs::cos:%s:uid/%s:prefix//%s/%s/%s", region, appID, appID, bucketName, key), nil
+}
+
+func buildCOSMultipartUploadPolicy(resource string) (string, error) {
+	policy := map[string]any{
+		"version": "2.0",
+		"statement": []map[string]any{{
+			"effect": "allow",
+			"action": []string{
+				"name/cos:UploadPart",
+				"name/cos:CompleteMultipartUpload",
+			},
+			"resource": []string{resource},
+		}},
+	}
+	data, err := json.Marshal(policy)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func cosMultipartCredentialTTL(commandTimeoutSeconds int) int {
+	if commandTimeoutSeconds <= 0 {
+		return 1800
+	}
+	ttl := commandTimeoutSeconds + 600
+	if ttl < 1800 {
+		return 1800
+	}
+	if ttl > 7200 {
+		return 7200
+	}
+	return ttl
+}
+
+func parseFederationCredentials(response map[string]any) (COSFederationCredentials, error) {
+	raw, _ := response["Credentials"].(map[string]any)
+	credentials := COSFederationCredentials{
+		TmpSecretID:  stringValue(raw["TmpSecretId"]),
+		TmpSecretKey: stringValue(raw["TmpSecretKey"]),
+		Token:        stringValue(raw["Token"]),
+		ExpiredTime:  int64(intValue(response["ExpiredTime"])),
+	}
+	if credentials.TmpSecretID == "" || credentials.TmpSecretKey == "" || credentials.Token == "" {
+		return COSFederationCredentials{}, fmt.Errorf("GetFederationToken returned incomplete credentials")
+	}
+	return credentials, nil
 }
 
 func GenerateCOSUploadTarget(ctx context.Context, cfg TencentConfig, req ExportRequest, key string, method string) (COSUploadTarget, error) {

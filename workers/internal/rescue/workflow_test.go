@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 )
 
 func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
@@ -90,6 +91,177 @@ func TestExportWorkflowFailureSendsNotification(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
+func TestExportWorkflowAbortsMultipartWhenTATFails(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(ExportWorkflow)
+	acts := Activities{}
+	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
+	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
+	env.RegisterActivityWithOptions(acts.WaitRescueRunning, ActivityOptions("WaitRescueRunning"))
+	env.RegisterActivityWithOptions(acts.WaitRescueTAT, ActivityOptions("WaitRescueTAT"))
+	env.RegisterActivityWithOptions(acts.PrepareMultipartArchive, ActivityOptions("PrepareMultipartArchive"))
+	env.RegisterActivityWithOptions(acts.StartMultipartTATCommand, ActivityOptions("StartMultipartTATCommand"))
+	env.RegisterActivityWithOptions(acts.WaitTATCommand, ActivityOptions("WaitTATCommand"))
+	env.RegisterActivityWithOptions(acts.AbortMultipartArchive, ActivityOptions("AbortMultipartArchive"))
+	env.RegisterActivityWithOptions(acts.ExitRescueMode, ActivityOptions("ExitRescueMode"))
+	env.RegisterActivityWithOptions(acts.WaitInstanceRunning, ActivityOptions("WaitInstanceRunning"))
+	env.RegisterActivityWithOptions(acts.SendFailureNotification, ActivityOptions("SendFailureNotification"))
+
+	req := NormalizeExportRequest(ExportRequest{
+		InstanceID:            "ins-test",
+		Execute:               true,
+		CommandTransport:      "tat",
+		WaitTimeoutSeconds:    30,
+		CommandTimeoutSeconds: 30,
+		TATWaitTimeoutSeconds: 30,
+		COSUploadBucket:       "https://bucket-123.cos.ap-beijing.myqcloud.com",
+		COSUploadRegion:       "ap-beijing",
+	})
+	cfg := TencentConfig{}
+	instance := InstanceInfo{InstanceID: req.InstanceID, Region: "ap-beijing", State: "RUNNING"}
+	prepared := PreparedTATArchive{
+		InstanceID: req.InstanceID,
+		Region:     instance.Region,
+		Mode:       "multipart-upload",
+		ObjectURL:  req.COSUploadBucket + "/rescue/a.zip",
+		ObjectKey:  "rescue/a.zip",
+		Bucket:     req.COSUploadBucket,
+		UploadID:   "upload-test",
+	}
+	submitted := TATCommandResult{CommandID: "cmd-test", InvocationID: "inv-test", TaskStatus: "RUNNING"}
+	waitErr := errors.New("part upload failed")
+
+	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
+	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("WaitRescueRunning", mock.Anything, req, cfg, instance.Region).Return("RESCUE_MODE", nil).Once()
+	env.OnActivity("WaitRescueTAT", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("PrepareMultipartArchive", mock.Anything, req, cfg, instance.Region).Return(prepared, nil).Once()
+	env.OnActivity("StartMultipartTATCommand", mock.Anything, req, cfg, instance.Region, prepared).Return(submitted, nil).Once()
+	env.OnActivity("WaitTATCommand", mock.Anything, req, cfg, instance.Region, submitted).Return(TATCommandResult{}, waitErr).Times(3)
+	env.OnActivity("AbortMultipartArchive", mock.Anything, cfg, prepared).Return(nil).Once()
+	env.OnActivity("ExitRescueMode", mock.Anything, req, cfg, instance.Region).Return(true, nil).Once()
+	env.OnActivity("WaitInstanceRunning", mock.Anything, req, cfg, instance.Region).Return("RUNNING", nil).Once()
+	env.OnActivity("SendFailureNotification", mock.Anything, mock.Anything, cfg).Return(FailureNotificationResult{}, nil).Once()
+
+	env.ExecuteWorkflow(ExportWorkflow, req, cfg)
+
+	if !env.IsWorkflowCompleted() || env.GetWorkflowError() == nil {
+		t.Fatalf("workflow completed=%v error=%v", env.IsWorkflowCompleted(), env.GetWorkflowError())
+	}
+	env.AssertExpectations(t)
+}
+
+func TestExportWorkflowAbortsMultipartWhenTATSubmissionFails(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(ExportWorkflow)
+	acts := Activities{}
+	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
+	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
+	env.RegisterActivityWithOptions(acts.WaitRescueRunning, ActivityOptions("WaitRescueRunning"))
+	env.RegisterActivityWithOptions(acts.WaitRescueTAT, ActivityOptions("WaitRescueTAT"))
+	env.RegisterActivityWithOptions(acts.PrepareMultipartArchive, ActivityOptions("PrepareMultipartArchive"))
+	env.RegisterActivityWithOptions(acts.StartMultipartTATCommand, ActivityOptions("StartMultipartTATCommand"))
+	env.RegisterActivityWithOptions(acts.AbortMultipartArchive, ActivityOptions("AbortMultipartArchive"))
+	env.RegisterActivityWithOptions(acts.ExitRescueMode, ActivityOptions("ExitRescueMode"))
+	env.RegisterActivityWithOptions(acts.WaitInstanceRunning, ActivityOptions("WaitInstanceRunning"))
+	env.RegisterActivityWithOptions(acts.SendFailureNotification, ActivityOptions("SendFailureNotification"))
+
+	req := NormalizeExportRequest(ExportRequest{
+		InstanceID:            "ins-submit-failure",
+		Execute:               true,
+		CommandTransport:      "tat",
+		WaitTimeoutSeconds:    30,
+		CommandTimeoutSeconds: 30,
+		TATWaitTimeoutSeconds: 30,
+		COSUploadBucket:       "https://bucket-123.cos.ap-beijing.myqcloud.com",
+		COSUploadRegion:       "ap-beijing",
+	})
+	cfg := TencentConfig{}
+	instance := InstanceInfo{InstanceID: req.InstanceID, Region: "ap-beijing", State: "RUNNING"}
+	prepared := PreparedTATArchive{
+		InstanceID: req.InstanceID,
+		Region:     instance.Region,
+		Mode:       "multipart-upload",
+		ObjectURL:  req.COSUploadBucket + "/rescue/a.zip",
+		ObjectKey:  "rescue/a.zip",
+		Bucket:     req.COSUploadBucket,
+		UploadID:   "upload-before-submit",
+	}
+	startErr := errors.New("TAT response lost")
+
+	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
+	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("WaitRescueRunning", mock.Anything, req, cfg, instance.Region).Return("RESCUE_MODE", nil).Once()
+	env.OnActivity("WaitRescueTAT", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("PrepareMultipartArchive", mock.Anything, req, cfg, instance.Region).Return(prepared, nil).Once()
+	env.OnActivity("StartMultipartTATCommand", mock.Anything, req, cfg, instance.Region, prepared).Return(TATCommandResult{}, startErr).Once()
+	env.OnActivity("AbortMultipartArchive", mock.Anything, cfg, prepared).Return(nil).Once()
+	env.OnActivity("ExitRescueMode", mock.Anything, req, cfg, instance.Region).Return(true, nil).Once()
+	env.OnActivity("WaitInstanceRunning", mock.Anything, req, cfg, instance.Region).Return("RUNNING", nil).Once()
+	env.OnActivity("SendFailureNotification", mock.Anything, mock.Anything, cfg).Return(FailureNotificationResult{}, nil).Once()
+
+	env.ExecuteWorkflow(ExportWorkflow, req, cfg)
+	if !env.IsWorkflowCompleted() || env.GetWorkflowError() == nil {
+		t.Fatalf("workflow completed=%v error=%v", env.IsWorkflowCompleted(), env.GetWorkflowError())
+	}
+	env.AssertExpectations(t)
+}
+
+func TestExportWorkflowDefaultVersionKeepsLegacyTATSequence(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(ExportWorkflow)
+	acts := Activities{}
+	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
+	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
+	env.RegisterActivityWithOptions(acts.WaitRescueRunning, ActivityOptions("WaitRescueRunning"))
+	env.RegisterActivityWithOptions(acts.WaitRescueTAT, ActivityOptions("WaitRescueTAT"))
+	env.RegisterActivityWithOptions(acts.PrepareArchiveTATCommand, ActivityOptions("PrepareArchiveTATCommand"))
+	env.RegisterActivityWithOptions(acts.StartTATCommand, ActivityOptions("StartTATCommand"))
+	env.RegisterActivityWithOptions(acts.ExitRescueMode, ActivityOptions("ExitRescueMode"))
+	env.RegisterActivityWithOptions(acts.WaitInstanceRunning, ActivityOptions("WaitInstanceRunning"))
+	env.RegisterActivityWithOptions(acts.SendFailureNotification, ActivityOptions("SendFailureNotification"))
+
+	req := NormalizeExportRequest(ExportRequest{
+		InstanceID:            "ins-legacy",
+		Execute:               true,
+		CommandTransport:      "tat",
+		WaitTimeoutSeconds:    30,
+		CommandTimeoutSeconds: 30,
+		TATWaitTimeoutSeconds: 30,
+		COSUploadBucket:       "https://bucket-123.cos.ap-beijing.myqcloud.com",
+		COSUploadRegion:       "ap-beijing",
+	})
+	cfg := TencentConfig{}
+	instance := InstanceInfo{InstanceID: req.InstanceID, Region: "ap-beijing", State: "RUNNING"}
+	prepared := PreparedTATArchive{
+		InstanceID: req.InstanceID,
+		Region:     instance.Region,
+		Mode:       "stream-upload",
+		Command:    TATCommandRequest{CommandName: "legacy", Script: "true", TimeoutSeconds: 30},
+	}
+	startErr := errors.New("legacy start failed")
+
+	env.OnGetVersion(multipartExportChangeID, workflow.DefaultVersion, 1).Return(workflow.DefaultVersion).Once()
+	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
+	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("WaitRescueRunning", mock.Anything, req, cfg, instance.Region).Return("RESCUE_MODE", nil).Once()
+	env.OnActivity("WaitRescueTAT", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("PrepareArchiveTATCommand", mock.Anything, req, cfg, instance.Region).Return(prepared, nil).Once()
+	env.OnActivity("StartTATCommand", mock.Anything, req, cfg, instance.Region, prepared.Command).Return(TATCommandResult{}, startErr).Once()
+	env.OnActivity("ExitRescueMode", mock.Anything, req, cfg, instance.Region).Return(true, nil).Once()
+	env.OnActivity("WaitInstanceRunning", mock.Anything, req, cfg, instance.Region).Return("RUNNING", nil).Once()
+	env.OnActivity("SendFailureNotification", mock.Anything, mock.Anything, cfg).Return(FailureNotificationResult{}, nil).Once()
+
+	env.ExecuteWorkflow(ExportWorkflow, req, cfg)
+	if !env.IsWorkflowCompleted() || env.GetWorkflowError() == nil {
+		t.Fatalf("workflow completed=%v error=%v", env.IsWorkflowCompleted(), env.GetWorkflowError())
+	}
+	env.AssertExpectations(t)
+}
+
 func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -100,9 +272,10 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
 	env.RegisterActivityWithOptions(acts.WaitRescueRunning, ActivityOptions("WaitRescueRunning"))
 	env.RegisterActivityWithOptions(acts.WaitRescueTAT, ActivityOptions("WaitRescueTAT"))
-	env.RegisterActivityWithOptions(acts.PrepareArchiveTATCommand, ActivityOptions("PrepareArchiveTATCommand"))
-	env.RegisterActivityWithOptions(acts.StartTATCommand, ActivityOptions("StartTATCommand"))
+	env.RegisterActivityWithOptions(acts.PrepareMultipartArchive, ActivityOptions("PrepareMultipartArchive"))
+	env.RegisterActivityWithOptions(acts.StartMultipartTATCommand, ActivityOptions("StartMultipartTATCommand"))
 	env.RegisterActivityWithOptions(acts.WaitTATCommand, ActivityOptions("WaitTATCommand"))
+	env.RegisterActivityWithOptions(acts.AbortMultipartArchive, ActivityOptions("AbortMultipartArchive"))
 	env.RegisterActivityWithOptions(acts.FinalizeArchiveOverTAT, ActivityOptions("FinalizeArchiveOverTAT"))
 	env.RegisterActivityWithOptions(acts.SCPArchive, ActivityOptions("SCPArchive"))
 	env.RegisterActivityWithOptions(acts.SendExportNotificationEmail, ActivityOptions("SendExportNotificationEmail"))
@@ -133,7 +306,7 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 		DownloadURL: req.COSUploadBucket + "/rescue/a.zip?q-signature=abc",
 		ObjectKey:   "rescue/a.zip",
 		Bucket:      req.COSUploadBucket,
-		Command:     TATCommandRequest{CommandName: "rescue-export-stream-upload", Script: "true", TimeoutSeconds: 30},
+		UploadID:    "upload-test",
 	}
 	submitted := TATCommandResult{CommandID: "cmd-test", InvocationID: "inv-test", TaskStatus: "SUCCESS"}
 	archive := PreparedArchive{
@@ -157,8 +330,8 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	env.OnActivity("EnterRescueMode", mock.Anything, normalizedReq, cfg, instance.Region).Return(nil).Once()
 	env.OnActivity("WaitRescueRunning", mock.Anything, normalizedReq, cfg, instance.Region).Return("RESCUE_MODE", nil).Once()
 	env.OnActivity("WaitRescueTAT", mock.Anything, normalizedReq, cfg, instance.Region).Return(nil).Once()
-	env.OnActivity("PrepareArchiveTATCommand", mock.Anything, normalizedReq, cfg, instance.Region).Return(prepared, nil).Once()
-	env.OnActivity("StartTATCommand", mock.Anything, normalizedReq, cfg, instance.Region, prepared.Command).Return(submitted, nil).Once()
+	env.OnActivity("PrepareMultipartArchive", mock.Anything, normalizedReq, cfg, instance.Region).Return(prepared, nil).Once()
+	env.OnActivity("StartMultipartTATCommand", mock.Anything, normalizedReq, cfg, instance.Region, prepared).Return(submitted, nil).Once()
 	env.OnActivity("WaitTATCommand", mock.Anything, normalizedReq, cfg, instance.Region, submitted).Return(submitted, nil).Once()
 	env.OnActivity("FinalizeArchiveOverTAT", mock.Anything, normalizedReq, prepared, submitted).Return(archive, nil).Once()
 	env.OnActivity("SCPArchive", mock.Anything, normalizedReq, cfg, instance, archive).Return(scp, nil).Once()
