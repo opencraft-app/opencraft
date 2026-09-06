@@ -1,6 +1,6 @@
 ## goal
 
-将国内站和国际站首页首屏轮播统一为六个经过确认的 AI 伙伴场景角色。
+将国内站和国际站首页首屏轮播统一为七个经过确认的 AI 伙伴场景角色。
 
 ## non_goals
 
@@ -11,6 +11,7 @@
 
 - 用户本地预览反馈（2026-09-06）：首页首屏轮播中的“知识库先不用了”。
 - 用户本地预览反馈（2026-09-06）：最终确认国内站文案为“工作搭档 / 开发搭子 / 生活管家 / 理财助理 / 计划执行官 / 创意同行者”，并要求同步国内站和国际站。
+- 用户追加反馈（2026-09-06）：新增“自媒体运营官”，英文使用两个单词的“content manager”。
 
 ## interface_refs / data_structure_refs
 
@@ -25,8 +26,8 @@
 
 ## acceptance
 
-- 所有 locale 均按相同场景与顺序展示六项轮播文案。
-- 国内站精确使用用户确认的六项文案，首屏默认展示“工作搭档”。
+- 所有 locale 均按相同场景与顺序展示七项轮播文案。
+- 国内站精确使用用户确认的七项文案，首屏默认展示“工作搭档”。
 - 首页聚焦测试、前端检查和文档门禁通过。
 
 ## affected_paths
@@ -54,12 +55,12 @@
 
 ## evidence
 
-- 九个生成 fragment 的 `data-rotator-words` 均为六项，首项与 `#hero-rotator` 一致。
+- 九个生成 fragment 的 `data-rotator-words` 均为七项，首项与 `#hero-rotator` 一致。
 - `pnpm exec vitest run --api.host=127.0.0.1 next-site/__tests__/international-home-page.test.tsx next-site/__tests__/international-home-rendering.test.tsx`：44/44 通过；显式指定地址用于绕过本机 `localhost` 解析异常。
 - `pnpm check`：通过；TypeScript 新增诊断 0，现有 i18n 告警 48 个。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：错误 0、告警 0、失效链接 0。
 - `git diff --check`：通过。
-- 772px 宽国内站本地预览：默认显示“工作搭档”，实际轮播数据精确为六项，页面宽度 772px、滚动宽度 772px，无横向溢出。
+- 772px 宽国内站本地预览：默认显示“工作搭档”，实际轮播数据精确为七项，页面宽度 772px、滚动宽度 772px，无横向溢出。
 
 ## risks
 

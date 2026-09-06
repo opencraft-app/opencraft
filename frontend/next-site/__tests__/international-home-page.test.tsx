@@ -833,15 +833,15 @@ describe("international v2 homepage artifact", () => {
 
   it("uses the approved companion roles in every localized hero rotator", () => {
     const expectedWordsByFragment = {
-      "index-fragment.html": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion"],
-      "index-fragment.en-US.html": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion"],
-      "index-fragment.zh-CN.html": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者"],
-      "index-fragment.zh-SG.html": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者"],
-      "index-fragment.zh-Hant.html": ["工作夥伴", "開發夥伴", "生活管家", "理財助理", "計畫執行官", "創意同行者"],
-      "index-fragment.id-ID.html": ["rekan kerja", "teman pengembang", "pengelola hidup", "asisten keuangan", "pelaksana rencana", "rekan kreatif"],
-      "index-fragment.es.html": ["compañero de trabajo", "compañero de desarrollo", "gestor personal", "asistente financiero", "ejecutor de planes", "compañero creativo"],
-      "index-fragment.ja-JP.html": ["仕事の相棒", "開発仲間", "暮らしのコンシェルジュ", "資産管理アシスタント", "計画実行役", "クリエイティブパートナー"],
-      "index-fragment.ko-KR.html": ["업무 파트너", "개발 동료", "생활 매니저", "재무 어시스턴트", "계획 실행자", "창의적 동반자"],
+      "index-fragment.html": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion", "content manager"],
+      "index-fragment.en-US.html": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion", "content manager"],
+      "index-fragment.zh-CN.html": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者", "自媒体运营官"],
+      "index-fragment.zh-SG.html": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者", "自媒体运营官"],
+      "index-fragment.zh-Hant.html": ["工作夥伴", "開發夥伴", "生活管家", "理財助理", "計畫執行官", "創意同行者", "自媒體營運官"],
+      "index-fragment.id-ID.html": ["rekan kerja", "teman pengembang", "pengelola hidup", "asisten keuangan", "pelaksana rencana", "rekan kreatif", "manajer konten"],
+      "index-fragment.es.html": ["compañero de trabajo", "compañero de desarrollo", "gestor personal", "asistente financiero", "ejecutor de planes", "compañero creativo", "gestor de contenido"],
+      "index-fragment.ja-JP.html": ["仕事の相棒", "開発仲間", "暮らしのコンシェルジュ", "資産管理アシスタント", "計画実行役", "クリエイティブパートナー", "コンテンツマネージャー"],
+      "index-fragment.ko-KR.html": ["업무 파트너", "개발 동료", "생활 매니저", "재무 어시스턴트", "계획 실행자", "창의적 동반자", "콘텐츠 매니저"],
     } as const;
 
     for (const [fragmentName, expectedWords] of Object.entries(expectedWordsByFragment)) {
@@ -855,7 +855,7 @@ describe("international v2 homepage artifact", () => {
     }
 
     expect(readFileSync(runtimePath, "utf8")).toContain(
-      "if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion'];",
+      "if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion', 'content manager'];",
     );
   });
 
