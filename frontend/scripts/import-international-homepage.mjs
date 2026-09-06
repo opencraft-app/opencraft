@@ -61,14 +61,14 @@ const publicLocalizedPaths = [
   "/terms-of-service",
 ];
 const rotatorWordsByLocale = {
-  "en-US": ["knowledge base", "monitoring radar", "reminder scheduler", "business assistant", "life concierge", "work assistant"],
-  "zh-CN": ["知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家", "工作助理"],
-  "zh-SG": ["知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家", "工作助理"],
-  "zh-Hant": ["知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家", "工作助理"],
-  "id-ID": ["basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup", "asisten kerja"],
-  es: ["base de conocimiento", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal", "asistente de trabajo"],
-  "ja-JP": ["ナレッジベース", "監視レーダー", "予約リマインダー", "ビジネスアシスタント", "生活マネージャー", "仕事アシスタント"],
-  "ko-KR": ["지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저", "업무 어시스턴트"],
+  "en-US": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion"],
+  "zh-CN": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者"],
+  "zh-SG": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者"],
+  "zh-Hant": ["工作夥伴", "開發夥伴", "生活管家", "理財助理", "計畫執行官", "創意同行者"],
+  "id-ID": ["rekan kerja", "teman pengembang", "pengelola hidup", "asisten keuangan", "pelaksana rencana", "rekan kreatif"],
+  es: ["compañero de trabajo", "compañero de desarrollo", "gestor personal", "asistente financiero", "ejecutor de planes", "compañero creativo"],
+  "ja-JP": ["仕事の相棒", "開発仲間", "暮らしのコンシェルジュ", "資産管理アシスタント", "計画実行役", "クリエイティブパートナー"],
+  "ko-KR": ["업무 파트너", "개발 동료", "생활 매니저", "재무 어시스턴트", "계획 실행자", "창의적 동반자"],
 };
 const heroLiveCopyByLocale = {
   "en-US": {
@@ -4208,7 +4208,7 @@ const localizedBaseCss = isolateHomepageBaseStyles(cssSource)
 const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}`;
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
-  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
+  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion'];",
 ).replace(
   `        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
         chats.forEach(function (chat, i) {`,

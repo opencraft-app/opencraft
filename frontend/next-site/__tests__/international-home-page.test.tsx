@@ -831,6 +831,34 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/\.international-home-header-actions-layer\s*\{[^}]*position:\s*fixed;/s);
   });
 
+  it("uses the approved companion roles in every localized hero rotator", () => {
+    const expectedWordsByFragment = {
+      "index-fragment.html": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion"],
+      "index-fragment.en-US.html": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion"],
+      "index-fragment.zh-CN.html": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者"],
+      "index-fragment.zh-SG.html": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者"],
+      "index-fragment.zh-Hant.html": ["工作夥伴", "開發夥伴", "生活管家", "理財助理", "計畫執行官", "創意同行者"],
+      "index-fragment.id-ID.html": ["rekan kerja", "teman pengembang", "pengelola hidup", "asisten keuangan", "pelaksana rencana", "rekan kreatif"],
+      "index-fragment.es.html": ["compañero de trabajo", "compañero de desarrollo", "gestor personal", "asistente financiero", "ejecutor de planes", "compañero creativo"],
+      "index-fragment.ja-JP.html": ["仕事の相棒", "開発仲間", "暮らしのコンシェルジュ", "資産管理アシスタント", "計画実行役", "クリエイティブパートナー"],
+      "index-fragment.ko-KR.html": ["업무 파트너", "개발 동료", "생활 매니저", "재무 어시스턴트", "계획 실행자", "창의적 동반자"],
+    } as const;
+
+    for (const [fragmentName, expectedWords] of Object.entries(expectedWordsByFragment)) {
+      const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
+      const document = new DOMParser().parseFromString(html, "text/html");
+      const root = document.querySelector("#lightvela-intl-home");
+      const words = JSON.parse(root?.getAttribute("data-rotator-words") ?? "[]") as unknown;
+
+      expect(words).toEqual(expectedWords);
+      expect(document.querySelector("#hero-rotator")?.textContent).toBe(expectedWords[0]);
+    }
+
+    expect(readFileSync(runtimePath, "utf8")).toContain(
+      "if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion'];",
+    );
+  });
+
   it("keeps the remote animated headline and the plain eyebrow exception", () => {
     const css = readFileSync(stylesheetPath, "utf8");
     const runtime = readFileSync(runtimePath, "utf8");

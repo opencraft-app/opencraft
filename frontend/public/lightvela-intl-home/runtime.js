@@ -27,7 +27,7 @@
     if (!el) return;
     var wrap = el.closest('.hero__rotator-wrap');
     var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');
-    if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];
+    if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion'];
     var index = 0;
     var measurer = el.cloneNode(false);
     measurer.removeAttribute('id');
