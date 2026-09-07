@@ -7904,6 +7904,20 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 }
 
+body.lw-has-announcement #lightvela-intl-home .nav {
+  top: 36px;
+}
+
+body.lw-has-announcement .international-home-header-actions-layer {
+  top: 50px;
+}
+
+@media (max-width: 1099px) {
+  body.lw-has-announcement .international-home-header-actions-layer {
+    top: 48px;
+  }
+}
+
 
 #lightvela-intl-home #pl-4:checked ~ .plays__tabs label[for='pl-4'] {
   border-color: transparent;

@@ -15,6 +15,7 @@ import (
 	"ctl/pkg/adapter/sts"
 	"ctl/pkg/adapter/trade"
 	"ctl/pkg/adapter/whitelist"
+	"ctl/pkg/config"
 
 	"go.uber.org/zap"
 )
@@ -70,14 +71,15 @@ func (s *entitlementStubAiGateway) GetActiveSubscription(context.Context, string
 }
 
 type entitlementStubAdapterFactory struct {
-	aigateway aigateway.Adapter
+	aigateway  aigateway.Adapter
+	llmgateway llmgateway.Adapter
 }
 
 func (f *entitlementStubAdapterFactory) SandboxAdapter() sandbox.Adapter                 { return nil }
 func (f *entitlementStubAdapterFactory) StsAdapter() sts.Adapter                         { return nil }
 func (f *entitlementStubAdapterFactory) WhitelistAdapter() whitelist.Adapter             { return nil }
 func (f *entitlementStubAdapterFactory) AiGatewayAdapter() aigateway.Adapter             { return f.aigateway }
-func (f *entitlementStubAdapterFactory) LLMGatewayAdapter() llmgateway.Adapter           { return nil }
+func (f *entitlementStubAdapterFactory) LLMGatewayAdapter() llmgateway.Adapter           { return f.llmgateway }
 func (f *entitlementStubAdapterFactory) OpenClawGatewayAdapter() openclawgateway.Adapter { return nil }
 func (f *entitlementStubAdapterFactory) ShadowAdapter() shadow.Adapter                   { return nil }
 func (f *entitlementStubAdapterFactory) TradeAdapter() trade.Adapter                     { return nil }
@@ -85,6 +87,62 @@ func (f *entitlementStubAdapterFactory) TradeAdapter() trade.Adapter            
 func installEntitlementStub(stub *entitlementStubAiGateway) func() {
 	original := adapterfactory.DefaultAdapterFactory
 	adapterfactory.DefaultAdapterFactory = &entitlementStubAdapterFactory{aigateway: stub}
+	return func() {
+		adapterfactory.DefaultAdapterFactory = original
+	}
+}
+
+type entitlementStubLLMGateway struct {
+	cancelCalls         int
+	cancelUser          string
+	cancelSelectedCalls int
+	cancelSelectedReq   *llmgateway.CancelSelectedSubscriptionsRequest
+	cancelSelectedErr   error
+}
+
+func (s *entitlementStubLLMGateway) CreateApiKey(context.Context, string, string) (*llmgateway.CreateApiKeyResponse, error) {
+	return nil, fmt.Errorf("CreateApiKey not configured")
+}
+
+func (s *entitlementStubLLMGateway) EnsureUser(context.Context, string, string) (*llmgateway.EnsureUserResponse, error) {
+	return nil, fmt.Errorf("EnsureUser not configured")
+}
+
+func (s *entitlementStubLLMGateway) GetUserUsage(context.Context, string) (*llmgateway.UserUsageResponse, error) {
+	return nil, fmt.Errorf("GetUserUsage not configured")
+}
+
+func (s *entitlementStubLLMGateway) GetPlan(context.Context, string) (*llmgateway.Plan, error) {
+	return nil, fmt.Errorf("GetPlan not configured")
+}
+
+func (s *entitlementStubLLMGateway) ApplySubscription(context.Context, *llmgateway.ApplySubscriptionRequest) (*llmgateway.Subscription, error) {
+	return nil, fmt.Errorf("ApplySubscription not configured")
+}
+
+func (s *entitlementStubLLMGateway) CancelSubscription(_ context.Context, userID string) error {
+	s.cancelCalls++
+	s.cancelUser = userID
+	return nil
+}
+
+func (s *entitlementStubLLMGateway) CancelSelectedSubscriptions(_ context.Context, req *llmgateway.CancelSelectedSubscriptionsRequest) error {
+	s.cancelSelectedCalls++
+	s.cancelSelectedReq = req
+	return s.cancelSelectedErr
+}
+
+func (s *entitlementStubLLMGateway) GetActiveSubscription(context.Context, string) (*llmgateway.Subscription, error) {
+	return nil, nil
+}
+
+func (s *entitlementStubLLMGateway) ListActiveSubscriptions(context.Context, string) (*llmgateway.ActiveSubscriptionList, error) {
+	return nil, fmt.Errorf("ListActiveSubscriptions not configured")
+}
+
+func installEntitlementFactory(aigw aigateway.Adapter, llmgw llmgateway.Adapter) func() {
+	original := adapterfactory.DefaultAdapterFactory
+	adapterfactory.DefaultAdapterFactory = &entitlementStubAdapterFactory{aigateway: aigw, llmgateway: llmgw}
 	return func() {
 		adapterfactory.DefaultAdapterFactory = original
 	}
@@ -124,6 +182,42 @@ func TestCancelAiGatewayEntitlementIsReliable(t *testing.T) {
 	}
 	if stub.cancelCalls != 1 || stub.cancelUser != "user-1" {
 		t.Fatalf("cancel calls=%d user=%q", stub.cancelCalls, stub.cancelUser)
+	}
+}
+
+func TestCancelAiGatewayEntitlementUsesSelectedCancelForLLMGateway(t *testing.T) {
+	originalConfig := config.ServerConf
+	config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
+		LLMGateway: &config.LLMGatewayConfig{
+			Enabled:                    true,
+			NewAllocationUserAllowlist: []string{"*"},
+		},
+	}}
+	t.Cleanup(func() { config.ServerConf = originalConfig })
+
+	llmStub := &entitlementStubLLMGateway{}
+	t.Cleanup(installEntitlementFactory(nil, llmStub))
+
+	err := CancelAiGatewayEntitlement(zap.NewNop(), "user-1")
+	if err != nil {
+		t.Fatalf("cancel entitlement: %v", err)
+	}
+	if llmStub.cancelCalls != 0 {
+		t.Fatalf("full cancel must not be called, calls=%d user=%q", llmStub.cancelCalls, llmStub.cancelUser)
+	}
+	if llmStub.cancelSelectedCalls != 1 || llmStub.cancelSelectedReq == nil {
+		t.Fatalf("selected cancel calls=%d req=%+v", llmStub.cancelSelectedCalls, llmStub.cancelSelectedReq)
+	}
+	if llmStub.cancelSelectedReq.UserID != "user-1" {
+		t.Fatalf("selected cancel user_id=%q", llmStub.cancelSelectedReq.UserID)
+	}
+	if len(llmStub.cancelSelectedReq.SubscriptionNamePrefixes) != 2 ||
+		llmStub.cancelSelectedReq.SubscriptionNamePrefixes[0] != "package:" ||
+		llmStub.cancelSelectedReq.SubscriptionNamePrefixes[1] != "free-credit:" {
+		t.Fatalf("selected cancel prefixes=%+v", llmStub.cancelSelectedReq.SubscriptionNamePrefixes)
+	}
+	if !llmStub.cancelSelectedReq.IncludeLegacyPackageSubscription {
+		t.Fatalf("selected cancel must include legacy unnamed package subscriptions")
 	}
 }
 

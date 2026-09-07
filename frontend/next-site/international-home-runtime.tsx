@@ -4,6 +4,8 @@ import { memo, useEffect } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
 import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
+import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
+import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 import { useSession } from '@/contexts/session-context';
 import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from '@/lib/agent-routes';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
@@ -15,7 +17,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260907-home-refinements-v11';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260907-home-refinements-v12';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -78,6 +80,9 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
         href={versionedInternationalHomeAsset('/lightvela-intl-home/style.css')}
         precedence="lightvela-intl-home"
       />
+      <PublicSiteLocaleBridge locale={locale}>
+        <MaintenanceAnnouncementBanner />
+      </PublicSiteLocaleBridge>
       {/* The fragment is generated from a reviewed, repository-owned static source. */}
       <InternationalHomeMarkup markup={markup} />
       <div className="international-home-header-actions-layer">
