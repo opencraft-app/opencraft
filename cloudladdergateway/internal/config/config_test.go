@@ -481,6 +481,48 @@ func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {
 	}
 }
 
+func TestExampleConfigIncludesCreditRegionalJifeiCallbacks(t *testing.T) {
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+
+	wantRoutes := map[string]bool{
+		"jifei-credit-callback-bj":  false,
+		"jifei-credit-callback-sh":  false,
+		"jifei-credit-callback-gz":  false,
+		"jifei-credit-callback-cd":  false,
+		"jifei-credit-callback-nj":  false,
+		"jifei-credit-callback-hk":  false,
+		"jifei-credit-callback-jp":  false,
+		"jifei-credit-callback-kr":  false,
+		"jifei-credit-callback-jkt": false,
+		"jifei-credit-callback-sg":  false,
+		"jifei-credit-callback-th":  false,
+	}
+
+	for _, route := range cfg.Routes {
+		if _, ok := wantRoutes[route.ID]; !ok {
+			continue
+		}
+		if route.Condition != `request.method == "POST"` {
+			t.Fatalf("route %q condition = %q", route.ID, route.Condition)
+		}
+		if got := route.Upstream.BaseURL; got != "https://lightclaw.tech" {
+			t.Fatalf("route %q base_url = %q, want Beijing pre-production", route.ID, got)
+		}
+		if len(route.Upstream.AllowedMethods) != 1 || route.Upstream.AllowedMethods[0] != "POST" {
+			t.Fatalf("route %q allowed_methods = %#v", route.ID, route.Upstream.AllowedMethods)
+		}
+		wantRoutes[route.ID] = true
+	}
+	for routeID, found := range wantRoutes {
+		if !found {
+			t.Fatalf("example config missing Credit callback route %q", routeID)
+		}
+	}
+}
+
 func TestLoadValidatesSignedHTTPRouteMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(`

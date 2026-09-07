@@ -972,6 +972,108 @@ routes:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  # Credit 资源包使用独立的地域回调路由，避免与 Pass 回调配置互相影响。
+  # 联调阶段所有地域统一路由到北京预发布；验证完成后再单独把
+  # jifei-credit-callback-sh 切换到上海正式环境。
+  - id: jifei-credit-callback-bj
+    description: "Credit 北京地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-sh
+    description: "Credit 上海地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-gz
+    description: "Credit 广州地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-cd
+    description: "Credit 成都地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-nj
+    description: "Credit 南京地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-hk
+    description: "Credit 香港地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-jp
+    description: "Credit 东京地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-kr
+    description: "Credit 首尔地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-jkt
+    description: "Credit 雅加达地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-sg
+    description: "Credit 新加坡地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-th
+    description: "Credit 曼谷地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - id: tcapi-account-cn-dev
     description: "Signed tunnel for TencentCloud account API domestic dev endpoint."
     mode: signed_http_tunnel
