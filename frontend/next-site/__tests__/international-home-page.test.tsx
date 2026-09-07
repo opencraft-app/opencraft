@@ -444,7 +444,7 @@ describe("international v2 homepage artifact", () => {
 
   it("ships localized fragments for each published international homepage locale", () => {
     const expectedCopy = {
-      "en-US": "Your AI companion, always here, always evolving with you",
+      "en-US": "Your AI companion—always on, always evolving with you.",
       "zh-SG": "越用越懂你，长期在线的 AI 伙伴",
       "zh-Hant": "越用越懂你，長期在線的 AI 夥伴",
       "id-ID": "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
@@ -1008,11 +1008,11 @@ describe("international v2 homepage artifact", () => {
   it("uses SEO-friendly homepage heading levels in every localized fragment", () => {
     const expectedHeadings = {
       "index-fragment.html": {
-        h1: "Your AI companion, always here, always evolving with you",
+        h1: "Your AI companion—always on, always evolving with you.",
         h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
       },
       "index-fragment.en-US.html": {
-        h1: "Your AI companion, always here, always evolving with you",
+        h1: "Your AI companion—always on, always evolving with you.",
         h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
       },
       "index-fragment.zh-CN.html": {
