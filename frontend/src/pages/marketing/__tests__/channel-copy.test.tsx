@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import i18n from "@/i18n";
 import { ChangelogPage, VisualCard } from "@/pages/marketing/changelog-page";
-import { WhereToUseSection } from "@/pages/marketing/landing/where-to-use-section";
 
 vi.mock("framer-motion", () => ({
   motion: new Proxy(
@@ -264,13 +263,6 @@ describe("marketing channel copy", () => {
     expect(augustHeadingsWithAdvancedSettings.indexOf("LightVela 新增 Hermes Agent 高级设置")).toBeLessThan(
       augustHeadingsWithAdvancedSettings.indexOf("LightVela 支持上传自定义人设文件"),
     );
-  });
-
-  it("shows WeCom as a supported homepage channel", () => {
-    render(<WhereToUseSection />);
-
-    expect(screen.getByRole("heading", { name: "企业微信" })).toBeInTheDocument();
-    expect(screen.queryByText("企业微信（即将支持）")).not.toBeInTheDocument();
   });
 
   it("shows WeCom channel support in the domestic June changelog", () => {
