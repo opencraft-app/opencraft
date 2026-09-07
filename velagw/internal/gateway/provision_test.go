@@ -291,7 +291,6 @@ func TestBootstrapSetCompletesTwoFALoginWhenManagedRootAlreadyRequiresIt(t *test
 }
 
 func TestGetManagedChannelKeyUsesStoredRootTOTPSecret(t *testing.T) {
-	var verified bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
@@ -302,20 +301,16 @@ func TestGetManagedChannelKeyUsesStoredRootTOTPSecret(t *testing.T) {
 			var req struct {
 				Method string `json:"method"`
 				Code   string `json:"code"`
+				Scope  string `json:"scope"`
 			}
 			decodeTestJSON(t, r, &req)
-			if req.Method != "2fa" || len(req.Code) != 6 || strings.Trim(req.Code, "0123456789") != "" {
+			if req.Method != "2fa" || len(req.Code) != 6 || strings.Trim(req.Code, "0123456789") != "" || req.Scope != "channel.key.read" {
 				t.Fatalf("unexpected verify request: %+v", req)
 			}
-			http.SetCookie(w, &http.Cookie{Name: "session", Value: "verified-session", Path: "/"})
-			verified = true
-			writeTestJSON(t, w, map[string]any{"success": true})
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "managed-proof"}})
 		case "POST /api/channel/17/key":
-			if !verified {
-				t.Fatalf("key fetched before secure verification")
-			}
-			if cookie, err := r.Cookie("session"); err != nil || cookie.Value != "verified-session" {
-				t.Fatalf("missing verified session: cookie=%v err=%v", cookie, err)
+			if r.Header.Get("X-Security-Proof") != "managed-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
 			}
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-provider"}})
 		default:
