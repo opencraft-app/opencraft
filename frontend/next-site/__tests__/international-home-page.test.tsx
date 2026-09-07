@@ -701,13 +701,13 @@ describe("international v2 homepage artifact", () => {
     const css = readFileSync(stylesheetPath, "utf8");
 
     expect(css).toMatch(
-      /body\.lw-has-announcement #lightvela-intl-home \.nav\s*\{[^}]*top:\s*36px;/s,
+      /body\.lw-has-announcement\.lw-announcement-in-viewport #lightvela-intl-home \.nav\s*\{[^}]*top:\s*36px;/s,
     );
     expect(css).toMatch(
-      /body\.lw-has-announcement \.international-home-header-actions-layer\s*\{[^}]*top:\s*50px;/s,
+      /body\.lw-has-announcement\.lw-announcement-in-viewport \.international-home-header-actions-layer\s*\{[^}]*top:\s*50px;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width:\s*1099px\)[\s\S]*body\.lw-has-announcement \.international-home-header-actions-layer\s*\{[^}]*top:\s*48px;/s,
+      /@media \(max-width:\s*1099px\)[\s\S]*body\.lw-has-announcement\.lw-announcement-in-viewport \.international-home-header-actions-layer\s*\{[^}]*top:\s*48px;/s,
     );
   });
 
@@ -934,7 +934,7 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/\.hero__title\s*\{[^}]*font-family:\s*var\(--font-hero\);/s);
     expect(css).toContain(`${editorialSelector} .hero__line--main`);
     expect(css).toContain(`${editorialSelector} .about__head .k`);
-    expect(css).toContain(`${editorialSelector} .scenes__title`);
+    expect(css).not.toContain(`${editorialSelector} .scenes__title`);
     expect(css).toContain(`${editorialSelector} .cta__title`);
     expect(editorialSelector).not.toContain("data-locale^='zh'");
     expect(css).toMatch(/#lightvela-intl-home \.foot__title,[\s\S]*font-family:\s*"STXingkai"/);

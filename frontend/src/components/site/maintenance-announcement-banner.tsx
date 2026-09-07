@@ -10,7 +10,7 @@
 
 import { Megaphone, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n/t";
 import { stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
 import { isCN, isGlobal } from "@/lib/region";
@@ -44,9 +44,16 @@ function getStorageKey(id: string) {
   return `lw-announcement-dismissed:${id}`;
 }
 
-export function MaintenanceAnnouncementBanner() {
+type MaintenanceAnnouncementBannerProps = {
+  trackViewport?: boolean;
+};
+
+export function MaintenanceAnnouncementBanner({
+  trackViewport = false,
+}: MaintenanceAnnouncementBannerProps = {}) {
   const t = useT();
   const pathname = usePathname();
+  const bannerRef = useRef<HTMLDivElement>(null);
   const announcement: AnnouncementItem = {
     id: HERMES_UPGRADE_ANNOUNCEMENT_ID,
     expiresAt: HERMES_UPGRADE_EXPIRES_AT,
@@ -107,6 +114,38 @@ export function MaintenanceAnnouncementBanner() {
     };
   }, [visible]);
 
+  useEffect(() => {
+    if (!visible || !trackViewport) {
+      document.body.classList.remove("lw-announcement-in-viewport");
+      return;
+    }
+
+    const banner = bannerRef.current;
+    if (!banner) return;
+
+    const setInViewport = (inViewport: boolean) => {
+      document.body.classList.toggle(
+        "lw-announcement-in-viewport",
+        inViewport,
+      );
+    };
+
+    setInViewport(true);
+    if (!("IntersectionObserver" in window)) {
+      return () => setInViewport(false);
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setInViewport(entry?.isIntersecting === true);
+    });
+    observer.observe(banner);
+
+    return () => {
+      observer.disconnect();
+      setInViewport(false);
+    };
+  }, [trackViewport, visible]);
+
   if (!visible) return null;
 
   const dismissActiveAnnouncement = () => {
@@ -124,6 +163,7 @@ export function MaintenanceAnnouncementBanner() {
 
   return (
     <div
+      ref={bannerRef}
       // 公告条强制 36px 单行高（h-9）。正文在可用宽度内居中；过长时
       // 自动外边距归零，从开头横向滚动。左右等宽安全区确保视觉中心
       // 与页面中心一致，并避免关闭按钮遮住文案。

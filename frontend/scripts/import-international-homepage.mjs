@@ -83,6 +83,56 @@ const trialTitleCopyByLocale = {
   "zh-SG": "免费体验，无需信用卡",
   "zh-Hant": "免費體驗，無需信用卡",
 };
+const soulStripSecondaryCopyByLocale = {
+  "en-US": {
+    memoryTitle: "Memory",
+    memoryDescription: "Project facts, agreements, and lessons.",
+    userTitle: "User Profile",
+    userDescription: "Preferences, habits, and communication style.",
+  },
+  "zh-CN": {
+    memoryTitle: "记忆",
+    memoryDescription: "项目事实、工作约定和经验教训。",
+    userTitle: "用户画像",
+    userDescription: "偏好、使用习惯和沟通方式。",
+  },
+  "zh-SG": {
+    memoryTitle: "记忆",
+    memoryDescription: "项目事实、工作约定和经验教训。",
+    userTitle: "用户画像",
+    userDescription: "偏好、使用习惯和沟通方式。",
+  },
+  "zh-Hant": {
+    memoryTitle: "記憶",
+    memoryDescription: "專案事實、工作約定和經驗教訓。",
+    userTitle: "使用者畫像",
+    userDescription: "偏好、使用習慣和溝通方式。",
+  },
+  "id-ID": {
+    memoryTitle: "Memori",
+    memoryDescription: "Fakta proyek, kesepakatan, dan pelajaran.",
+    userTitle: "Profil Pengguna",
+    userDescription: "Preferensi, kebiasaan, dan gaya komunikasi.",
+  },
+  es: {
+    memoryTitle: "Memoria",
+    memoryDescription: "Hechos, acuerdos y aprendizajes del proyecto.",
+    userTitle: "Perfil de usuario",
+    userDescription: "Preferencias, hábitos y estilo de comunicación.",
+  },
+  "ja-JP": {
+    memoryTitle: "記憶",
+    memoryDescription: "プロジェクト事実、約束、学び。",
+    userTitle: "ユーザープロフィール",
+    userDescription: "好み、利用習慣、話し方。",
+  },
+  "ko-KR": {
+    memoryTitle: "기억",
+    memoryDescription: "프로젝트 사실, 약속, 배운 점.",
+    userTitle: "사용자 프로필",
+    userDescription: "선호, 사용 습관, 소통 방식.",
+  },
+};
 const heroLiveCopyByLocale = {
   "en-US": {
     replyText: "Your AI companion is waiting to start. Create it in Workbench. If your plan is not active yet, go to Pricing first.",
@@ -2405,6 +2455,20 @@ const headerActionsLayerCss = `
     right: 16px;
   }
 }
+
+body.lw-has-announcement.lw-announcement-in-viewport #lightvela-intl-home .nav {
+  top: 36px;
+}
+
+body.lw-has-announcement.lw-announcement-in-viewport .international-home-header-actions-layer {
+  top: 50px;
+}
+
+@media (max-width: 1099px) {
+  body.lw-has-announcement.lw-announcement-in-viewport .international-home-header-actions-layer {
+    top: 48px;
+  }
+}
 `;
 const breakableAnimatedHeadlineCss = `
 #lightvela-intl-home .hero__line--main,
@@ -2556,7 +2620,6 @@ const unifiedHomepageTitleFontCss = `
 #lightvela-intl-home .hero__title *,
 #lightvela-intl-home .about__head .k,
 #lightvela-intl-home .wcard__body h4,
-#lightvela-intl-home .scenes__title,
 #lightvela-intl-home .scenes__panel-title,
 #lightvela-intl-home .deploy__lead,
 #lightvela-intl-home .track__body h3,
@@ -2573,7 +2636,6 @@ const unifiedHomepageTitleFontCss = `
 const englishEditorialTitleFontCss = `
 #lightvela-intl-home[data-locale^='en'] .about__head .k,
 #lightvela-intl-home[data-locale^='en'] .wcard__body h4,
-#lightvela-intl-home[data-locale^='en'] .scenes__title,
 #lightvela-intl-home[data-locale^='en'] .scenes__panel-title,
 #lightvela-intl-home[data-locale^='en'] .deploy__lead,
 #lightvela-intl-home[data-locale^='en'] .track__body h3,
@@ -3909,6 +3971,86 @@ function highlightHeroLightVelaMentions(document) {
   }
 }
 
+function createSoulStripIcon(document, href) {
+  const item = document.createElement("i");
+  item.innerHTML = `<svg class="icon"><use href="${href}"></use></svg>`;
+  return item;
+}
+
+function createSoulStripMore(document) {
+  const item = document.createElement("i");
+  item.className = "soul-strip__more";
+  item.textContent = "...";
+  return item;
+}
+
+function createSoulStripSecondaryCap(document, options) {
+  const cap = document.createElement("p");
+  cap.className = "soul-strip__cap soul-strip__cap--secondary";
+
+  const copy = document.createElement("span");
+  copy.className = `soul-strip__copy${options.copyRight ? " soul-strip__copy--right" : ""}`;
+
+  const state = document.createElement("span");
+  state.className = "soul-strip__state soul-strip__state--secondary";
+  state.setAttribute("aria-label", `${options.title}：${options.description}`);
+  state.setAttribute("title", `${options.title}：${options.description}`);
+
+  const label = document.createElement("span");
+  label.className = "soul-strip__label";
+  label.textContent = options.title;
+  const divider = document.createElement("i");
+  const description = document.createElement("b");
+  description.textContent = options.description;
+  state.append(label, divider, description);
+  copy.append(state);
+
+  const icons = document.createElement("span");
+  icons.className = `soul-strip__icons${options.soul ? " soul-strip__icons--soul" : ""} soul-strip__icons--secondary`;
+  icons.setAttribute("aria-hidden", "true");
+  for (const href of options.icons) icons.append(createSoulStripIcon(document, href));
+  icons.append(createSoulStripMore(document));
+
+  if (options.copyRight) {
+    cap.append(copy, icons);
+  } else {
+    cap.append(icons, copy);
+  }
+
+  return cap;
+}
+
+function ensureSoulStripSecondaryStates(document, locale) {
+  const copy = soulStripSecondaryCopyByLocale[locale] ?? soulStripSecondaryCopyByLocale["en-US"];
+  const halves = Array.from(document.querySelectorAll(".soul-strip__half"));
+  if (halves.length < 2) return;
+
+  const definitions = [
+    {
+      title: copy.memoryTitle,
+      description: copy.memoryDescription,
+      icons: ["#i-archive", "#i-book", "#i-clock"],
+    },
+    {
+      title: copy.userTitle,
+      description: copy.userDescription,
+      icons: ["#i-user", "#i-heart", "#i-settings"],
+      soul: true,
+      copyRight: true,
+    },
+  ];
+
+  halves.slice(0, 2).forEach((half, index) => {
+    const current = half.querySelector(".soul-strip__cap--secondary");
+    const replacement = createSoulStripSecondaryCap(document, definitions[index]);
+    if (current) {
+      current.replaceWith(replacement);
+    } else {
+      half.append(replacement);
+    }
+  });
+}
+
 function prepareDocumentForLocale(document, locale) {
   document.querySelector('.nav__links a')?.setAttribute('aria-current', 'page');
   document.querySelectorAll('.scene__sub').forEach((button) => {
@@ -3924,6 +4066,7 @@ function prepareDocumentForLocale(document, locale) {
   localizeDocumentText(document, locale);
   applyLocalizedAssets(document, locale);
   emphasizeAlwaysOnCard(document, locale);
+  ensureSoulStripSecondaryStates(document, locale);
   highlightHeroLightVelaMentions(document);
   revealHeroDemoMessages(document);
   const tokenTrial = document.querySelector(".cta__copy li:nth-child(2)");
@@ -4246,7 +4389,8 @@ for (const assetPath of assetPaths) {
 const editorialLocaleSelector = "#lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es'], [data-locale^='ja'], [data-locale^='ko'])";
 const localizedBaseCss = isolateHomepageBaseStyles(cssSource)
   .replaceAll("html[lang='en']", "#lightvela-intl-home[data-locale^='en']")
-  .replaceAll("#lightvela-intl-home[data-locale^='en']", editorialLocaleSelector);
+  .replaceAll("#lightvela-intl-home[data-locale^='en']", editorialLocaleSelector)
+  .replaceAll(`${editorialLocaleSelector} .scenes__title,\n`, "");
 const heroChromeStart = cssSource.indexOf("/* Hero messaging previews: one monochrome system and one medium information density. */");
 const heroChromeEnd = cssSource.indexOf("@media (prefers-reduced-motion: reduce)", heroChromeStart);
 if (heroChromeStart < 0 || heroChromeEnd < 0) {
