@@ -906,6 +906,14 @@ func TestInternalSubscriptionEndpointsUseAIGatewayCompatibleShapes(t *testing.T)
 	if applyRec.Code != http.StatusOK || !bytes.Contains(applyRec.Body.Bytes(), []byte(`"token_balance":1000`)) {
 		t.Fatalf("apply response status=%d body=%s", applyRec.Code, applyRec.Body.String())
 	}
+
+	cancelSelectedReq := httptest.NewRequest(http.MethodPost, "/api/internal/subscriptions/cancel-selected", bytes.NewBufferString(`{"user_id":"user-1","subscription_name_prefixes":["package:","free-credit:"],"include_legacy_package_subscription":true}`))
+	cancelSelectedReq.Header.Set("Authorization", "Bearer cluster-token")
+	cancelSelectedRec := httptest.NewRecorder()
+	handler.ServeHTTP(cancelSelectedRec, cancelSelectedReq)
+	if cancelSelectedRec.Code != http.StatusOK {
+		t.Fatalf("cancel-selected response status=%d body=%s", cancelSelectedRec.Code, cancelSelectedRec.Body.String())
+	}
 }
 
 func TestInternalUserAssignmentDefaultsOldAndCanBeSetNew(t *testing.T) {

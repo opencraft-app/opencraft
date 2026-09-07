@@ -1274,6 +1274,158 @@ func TestCancelSubscriptionInvalidatesAllActiveNewAPISubscriptions(t *testing.T)
 	}
 }
 
+func TestCancelSelectedSubscriptionsPreservesCreditPackageSubscriptions(t *testing.T) {
+	fixture := newSubscriptionFixture(t)
+	fixture.existingSubscriptionNames[3] = "package:user-1:pass-old"
+	fixture.createdPlanIDs = []int{8, 9}
+	fixture.createdSubscriptionNames = []string{"free-credit:campaign:grant-1", "credit-package:cpkg-paid-1"}
+	defer fixture.server.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	fixture.registerBootstrappedSet(t, svc, store)
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "user-1",
+		SetID:          "set-a",
+		UpstreamUserID: 42,
+		Username:       "sgw-user-1",
+		Password:       "user-pass-123",
+		LastPlanID:     "plan-pro",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range []SubscriptionProjection{
+		{ExternalUserID: "user-1", SetID: "set-a", UpstreamSubscriptionID: 3, SubscriptionName: "package:user-1:pass-old", PlanID: "plan-pass", UpstreamPlanID: 7, PeriodEnd: time.Now().Add(time.Hour)},
+		{ExternalUserID: "user-1", SetID: "set-a", UpstreamSubscriptionID: 10, SubscriptionName: "free-credit:campaign:grant-1", PlanID: "plan-free", UpstreamPlanID: 8, PeriodEnd: time.Now().Add(time.Hour)},
+		{ExternalUserID: "user-1", SetID: "set-a", UpstreamSubscriptionID: 11, SubscriptionName: "credit-package:cpkg-paid-1", PlanID: "plan-paid", UpstreamPlanID: 9, PeriodEnd: time.Now().Add(time.Hour)},
+	} {
+		if err := store.SaveSubscriptionProjection(t.Context(), projection); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := svc.CancelSelectedSubscriptions(t.Context(), CancelSelectedSubscriptionsRequest{
+		UserID:                           "user-1",
+		SubscriptionNamePrefixes:         []string{"package:", "free-credit:"},
+		IncludeLegacyPackageSubscription: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fixture.invalidated[3] || !fixture.invalidated[10] {
+		t.Fatalf("package and free-credit subscriptions should be invalidated: %+v", fixture.invalidated)
+	}
+	if fixture.invalidated[11] {
+		t.Fatalf("credit-package subscription must be preserved: %+v", fixture.invalidated)
+	}
+	projections, err := store.ListSubscriptionProjections(t.Context(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projections) != 1 || projections[0].SubscriptionName != "credit-package:cpkg-paid-1" {
+		t.Fatalf("unexpected projections after selected cancel: %+v", projections)
+	}
+}
+
+func TestCancelSelectedCreditPackagePreservesPassPeriodOverlay(t *testing.T) {
+	fixture := newSubscriptionFixture(t)
+	fixture.existingSubscriptionNames[3] = "package:user-1:pass-active"
+	fixture.createdPlanIDs = []int{9}
+	fixture.createdSubscriptionNames = []string{"credit-package:cpkg-paid-1"}
+	defer fixture.server.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	fixture.registerBootstrappedSet(t, svc, store)
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "user-1",
+		SetID:          "set-a",
+		UpstreamUserID: 42,
+		Username:       "sgw-user-1",
+		Password:       "user-pass-123",
+		LastPlanID:     "plan-pro",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range []SubscriptionProjection{
+		{ExternalUserID: "user-1", SetID: "set-a", UpstreamSubscriptionID: 3, SubscriptionName: "package:user-1:pass-active", PlanID: "plan-pass", UpstreamPlanID: 7, PeriodEnd: time.Now().Add(time.Hour)},
+		{ExternalUserID: "user-1", SetID: "set-a", UpstreamSubscriptionID: 10, SubscriptionName: "credit-package:cpkg-paid-1", PlanID: "plan-paid", UpstreamPlanID: 9, PeriodEnd: time.Now().Add(time.Hour)},
+	} {
+		if err := store.SaveSubscriptionProjection(t.Context(), projection); err != nil {
+			t.Fatal(err)
+		}
+	}
+	periodEnd := time.Now().Add(24 * time.Hour).UTC()
+	if err := store.SaveSubscriptionPeriodOverlay(t.Context(), SubscriptionPeriodOverlay{
+		ExternalUserID: "user-1",
+		SetID:          "set-a",
+		PeriodEnd:      periodEnd,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := svc.CancelSelectedSubscriptions(t.Context(), CancelSelectedSubscriptionsRequest{
+		UserID:            "user-1",
+		SubscriptionNames: []string{"credit-package:cpkg-paid-1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fixture.invalidated[10] || fixture.invalidated[3] {
+		t.Fatalf("only the selected credit package should be invalidated: %+v", fixture.invalidated)
+	}
+	if _, ok, err := store.GetSubscriptionPeriodOverlay(t.Context(), "user-1"); err != nil || !ok {
+		t.Fatalf("pass period overlay must be preserved, ok=%v err=%v", ok, err)
+	}
+	projections, err := store.ListSubscriptionProjections(t.Context(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projections) != 1 || projections[0].SubscriptionName != "package:user-1:pass-active" {
+		t.Fatalf("unexpected projections after exact cancellation: %+v", projections)
+	}
+}
+
+func TestCreditPackageSubscriptionIsAdditiveWhenApplyingUniquePass(t *testing.T) {
+	fixture := newSubscriptionFixture(t)
+	fixture.existingSubscriptionNames[3] = "credit-package:cpkg-paid-1"
+	defer fixture.server.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	fixture.registerBootstrappedSet(t, svc, store)
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "user-1",
+		SetID:          "set-a",
+		UpstreamUserID: 42,
+		Username:       "sgw-user-1",
+		Password:       "user-pass-123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePlanMapping(t.Context(), PlanMapping{
+		ID: "plan-pro", Name: "Pro", MonthlyTokens: 1000,
+		PeriodValue: 1, PeriodUnit: "months", IsActive: true,
+		UpstreamPlanIDs: map[string]int{"set-a": 9},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.ApplySubscription(t.Context(), ApplySubscriptionRequest{
+		IdempotencyKey:   "trade:deal-preserve-credit-package",
+		UserID:           "user-1",
+		PlanID:           "plan-pro",
+		SubscriptionName: "package:user-1:pass-new",
+		IsUnique:         true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.invalidated[3] {
+		t.Fatalf("credit-package subscription must survive unique pass apply: %+v", fixture.invalidated)
+	}
+}
+
 func TestCancelSubscriptionMissingUserIsNoop(t *testing.T) {
 	svc := NewService(NewMemoryStore(), nil, Options{})
 

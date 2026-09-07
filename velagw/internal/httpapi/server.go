@@ -2255,6 +2255,8 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalApplySubscription(w, r)
 	case r.Method == http.MethodPost && path == "subscriptions/cancel":
 		s.internalCancelSubscription(w, r)
+	case r.Method == http.MethodPost && path == "subscriptions/cancel-selected":
+		s.internalCancelSelectedSubscriptions(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "admin-commands/"):
 		s.internalGetAdminCommand(w, r, strings.TrimPrefix(path, "admin-commands/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions/active"):
@@ -2819,6 +2821,24 @@ func (s *Server) internalCancelSubscription(w http.ResponseWriter, r *http.Reque
 	if command != nil {
 		w.Header().Set("Location", "/api/internal/admin-commands/"+url.PathEscape(command.ID))
 		writeJSON(w, http.StatusAccepted, response{Success: true, Data: command})
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true, Data: map[string]string{"status": "ok"}})
+}
+
+func (s *Server) internalCancelSelectedSubscriptions(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "invalid request body")
+		return
+	}
+	var req gateway.CancelSelectedSubscriptionsRequest
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&req); err != nil || strings.TrimSpace(req.UserID) == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required field: user_id")
+		return
+	}
+	if err := s.svc.CancelSelectedSubscriptions(r.Context(), req); err != nil {
+		writeInternalServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, response{Success: true, Data: map[string]string{"status": "ok"}})

@@ -39,6 +39,7 @@ func tradeSubscriptionIdempotencyKey(dealName string) string {
 }
 
 const (
+	packageSubscriptionNamePrefix    = "package:"
 	freeCreditSubscriptionNamePrefix = "free-credit:"
 	// International payment URL generation can include auth credential
 	// exchange, card lookup, order lookup, and CreatePayUrl. Keep the budget
@@ -47,7 +48,7 @@ const (
 )
 
 func packageSubscriptionName(userID, passID string) string {
-	return "package:" + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
+	return packageSubscriptionNamePrefix + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
 }
 
 func freeCreditSubscriptionName(source, idempotencyKey string) string {

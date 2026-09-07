@@ -76,6 +76,13 @@ type CancelSubscriptionRequest struct {
 	UserID string `json:"user_id"`
 }
 
+type CancelSelectedSubscriptionsRequest struct {
+	UserID                           string   `json:"user_id"`
+	SubscriptionNames                []string `json:"subscription_names,omitempty"`
+	SubscriptionNamePrefixes         []string `json:"subscription_name_prefixes,omitempty"`
+	IncludeLegacyPackageSubscription bool     `json:"include_legacy_package_subscription,omitempty"`
+}
+
 // Subscription llmgateway 订阅返回体（精简）
 type Subscription struct {
 	ID           string `json:"id"`
