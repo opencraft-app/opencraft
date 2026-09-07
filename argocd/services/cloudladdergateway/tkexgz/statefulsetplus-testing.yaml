@@ -75,7 +75,7 @@ spec:
               name: cloudladdergateway-krsbx-callback-secrets
               key: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL
-          value: https://lightclaw.tech
+          value: https://api-sandbox-bj-7.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BJ_BASE_URL
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_SH_BASE_URL
@@ -87,7 +87,7 @@ spec:
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_NJ_BASE_URL
           value: https://lightclaw.tech
         # 按影子账号 uin 把 jifei 回调分派到各开发者的个人测试环境。
-        # 表里没有的 uin 走 jifei-callback 自身的 base_url 兜底（beijing-sandbox）。
+        # 表里没有的 uin 走 jifei-callback 自身的 base_url 兜底（sandbox-bj-7）。
         # 加人时改这一行 + 对应 DEV_<N>_BASE_URL 即可，不需要重建镜像。
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_UIN_ROUTES
           value: 700003135209=jifei-callback-dev-1
