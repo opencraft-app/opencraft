@@ -68,6 +68,10 @@ func (s *automationLLMGatewayAdapterStub) CancelSubscription(_ context.Context, 
 	return nil
 }
 
+func (s *automationLLMGatewayAdapterStub) CancelSelectedSubscriptions(_ context.Context, _ *pllmgateway.CancelSelectedSubscriptionsRequest) error {
+	return nil
+}
+
 func (s *automationLLMGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
 }
