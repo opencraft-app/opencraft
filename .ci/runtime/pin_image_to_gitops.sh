@@ -299,6 +299,35 @@ git -C "$REPO_ROOT" config user.email "$COMMITTER_EMAIL"
 
 project_and_pin_gitops_state "$REPO_ROOT" true
 
+if [[ "$BUNDLE_SERVICE" == "velagw" && "$SERVICE_ARG" == "velagw" ]]; then
+  pin_diff_output="$(
+    python3 "$RUNTIME_COMMAND_DIR/check_pin_only_promote_diff.py" \
+      --repo-root "$REPO_ROOT" \
+      --env "$ENV_NAME"
+  )"
+  pin_diff_state="${pin_diff_output%%$'\n'*}"
+  pin_diff_reason="${pin_diff_output#*$'\n'}"
+  if [[ "$pin_diff_state" != "true" ]]; then
+    pin_diff_reason="${pin_diff_reason:-unexpected staged diff}"
+    echo "VelaGW promote 包含非镜像变化：${pin_diff_reason}"
+    GATE_AUTO_MERGE_ALLOWED=false
+    GATE_AUTO_SYNC_ALLOWED=false
+    GATE_ARGO_SYNC=manual
+    GATE_MANUAL_ACTIONS="$(python3 - "$GATE_MANUAL_ACTIONS" "$pin_diff_reason" <<'PY'
+import json
+import sys
+
+actions = json.loads(sys.argv[1] or "[]")
+actions.append(
+    "VelaGW promote 包含非镜像 GitOps 变化，必须审查差异、回填 master 真源后重新生成候选："
+    + sys.argv[2]
+)
+print(json.dumps(actions, ensure_ascii=False, separators=(",", ":")))
+PY
+)"
+  fi
+fi
+
 deployed_at_only_diff="$(python3 "$RUNTIME_COMMAND_DIR/detect_deployed_at_only_diff.py" --repo-root "$REPO_ROOT")"
 if [[ "$deployed_at_only_diff" == "true" ]]; then
   gitops_skip_notice "仅 *_DEPLOYED_AT 时间戳变化，镜像 pin 与 deploy-facing 配置未变化。"
