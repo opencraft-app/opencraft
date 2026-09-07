@@ -4122,8 +4122,8 @@ export function AutomationFormModal({
         />
       )}
       <div
-        className="relative min-w-0 w-full max-w-[680px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl"
-        style={{ boxSizing: "border-box", width: "min(680px, calc(100vw - 32px))", maxHeight: "calc(100dvh - 24px)" }}
+        className="relative min-w-0 w-full max-w-[760px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"
+        style={{ boxSizing: "border-box", width: "min(760px, calc(100vw - 32px))", maxHeight: "min(860px, calc(100dvh - 32px))" }}
       >
         <button
           type="button"
@@ -4139,7 +4139,7 @@ export function AutomationFormModal({
         </h2>
 
         {canSelectZeroToken ? (
-          <fieldset className="mt-5">
+          <fieldset className="mt-4">
             <legend className="text-sm font-medium text-black/80">{t("任务类型")}</legend>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {([
@@ -4151,27 +4151,27 @@ export function AutomationFormModal({
                   type="button"
                   aria-pressed={executionMode === value}
                   onClick={() => setExecutionMode(value)}
-                  className={`rounded-lg border px-3 py-2.5 text-left transition ${executionMode === value
+                  className={`rounded-lg border px-3 py-2 text-left transition ${executionMode === value
                     ? "border-black/35 bg-black/[0.035]"
                     : "border-black/10 hover:border-black/20"}`}
                 >
                   <span className="block text-balance text-sm font-semibold text-black/85">{label}</span>
-                  <span className="mt-1 block text-pretty text-xs leading-5 text-black/45">{description}</span>
+                  <span className="mt-0.5 block text-pretty text-xs leading-4 text-black/45">{description}</span>
                 </button>
               ))}
             </div>
           </fieldset>
         ) : mode === "edit" && executionMode === "zero_token" ? (
-          <div className="mt-5 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] px-3 py-2.5">
+          <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] px-3 py-2">
             <p className="text-sm font-semibold text-emerald-900">{t("0 Token 任务")}</p>
-            <p className="mt-0.5 text-pretty text-xs leading-5 text-emerald-900/65">
+            <p className="mt-0.5 text-pretty text-xs leading-4 text-emerald-900/65">
               {t("不调用模型，执行不消耗模型 Token，但仍会使用运行资源")}
             </p>
           </div>
         ) : null}
 
         {executionMode === "zero_token" && (
-          <div className="mt-4">
+          <div className="mt-3">
             <label className="block text-sm font-medium text-black/80">{t("0 Token 类型")}</label>
             {mode === "create" ? (
               <div className="mt-1.5 inline-flex rounded-lg bg-black/[0.04] p-1">
@@ -4202,7 +4202,7 @@ export function AutomationFormModal({
         )}
 
         {/* 名称 */}
-        <div className={canSelectZeroToken || executionMode === "zero_token" ? "mt-4" : "mt-5"}>
+        <div className={canSelectZeroToken || executionMode === "zero_token" ? "mt-3" : "mt-4"}>
           <label className="block text-sm font-medium text-black/80">{t("名称")}</label>
           <input
             type="text"
@@ -4216,7 +4216,7 @@ export function AutomationFormModal({
         </div>
 
         {/* 执行时间 */}
-        <div className="mt-4">
+        <div className="mt-3">
           <label className="block text-sm font-medium text-black/80">{t("执行时间")}</label>
           <div className="mt-1.5 inline-flex rounded-lg bg-black/[0.04] p-1">
             {(["once", "recurring", "interval"] as FrequencyKind[]).map((k) => (
@@ -4235,7 +4235,7 @@ export function AutomationFormModal({
               </button>
             ))}
           </div>
-          <div className="mt-3">
+          <div className="mt-2">
             {scheduleUneditable ? (
               <div className="rounded-lg bg-[#FFF7E6] px-3 py-2 text-xs leading-relaxed text-[#8A5A00]">
                 {t("当前调度表达式 {{expr}} 暂不支持在 UI 编辑，如需修改请使用 hermes CLI", { expr: initialScheduleSource })}
@@ -4279,7 +4279,7 @@ export function AutomationFormModal({
         {executionMode === "agent" ? (
           <>
           {/* 任务说明 */}
-          <div className="mt-4">
+          <div className="mt-3">
           <div className="flex items-baseline justify-between">
             <label className="block text-sm font-medium text-black/80">{t("任务说明")}</label>
             <span className="text-[11px] text-black/40">{prompt.length}/{AUTOMATION_PROMPT_MAX_LENGTH}</span>
@@ -4287,7 +4287,7 @@ export function AutomationFormModal({
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value.slice(0, AUTOMATION_PROMPT_MAX_LENGTH))}
-            rows={5}
+            rows={4}
             maxLength={AUTOMATION_PROMPT_MAX_LENGTH}
             placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等")}
             className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
@@ -4301,46 +4301,9 @@ export function AutomationFormModal({
             onChange={setSelectedSkill}
             onRetry={() => void onRefreshSkills()}
           />
-
-          <div className="mt-4">
-          <label className="block text-sm font-medium text-black/80">
-            {t("上游任务")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
-          </label>
-          <div className="mt-2">
-            {externalMultipleUpstreams ? (
-              <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs text-amber-800">
-                <p className="font-medium">{t("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")}</p>
-                <ul className="mt-1 space-y-1 text-amber-800/75">
-                  {externalMultipleUpstreams.map((job, index) => (
-                    <li key={index} className="break-words">
-                      {job?.name ?? t("上游任务已不可用")}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : (
-              <AutomationUpstreamPicker
-                value={selectedUpstream}
-                options={pickerUpstreams}
-                state={contextCapability}
-                onRetry={onRetryContextCapability}
-                onChange={(jobId) => {
-                  setSelectedUpstream(jobId);
-                  setUpstreamChanged(true);
-                  setUpstreamError(null);
-                }}
-              />
-            )}
-          </div>
-          {upstreamError && (
-            <p role="alert" className="mt-2 text-pretty text-xs leading-5 text-[#B91C1C]">
-              {upstreamError}
-            </p>
-          )}
-          </div>
           </>
         ) : (
-          <div className="mt-4">
+          <div className="mt-3">
             <div className="flex items-baseline justify-between">
               <label className="block text-sm font-medium text-black/80">
                 {zeroTokenKind === "fixed_notification" ? t("通知内容") : t("脚本内容")}
@@ -4379,7 +4342,7 @@ export function AutomationFormModal({
                     ? FIXED_NOTIFICATION_MAX_LENGTH
                     : AUTOMATION_SCRIPT_MAX_LENGTH,
                 ))}
-                rows={zeroTokenKind === "fixed_notification" ? 4 : 9}
+                rows={zeroTokenKind === "fixed_notification" ? 3 : 6}
                 spellCheck={zeroTokenKind === "fixed_notification"}
                 maxLength={zeroTokenKind === "fixed_notification"
                   ? FIXED_NOTIFICATION_MAX_LENGTH
@@ -4402,7 +4365,7 @@ export function AutomationFormModal({
                 {t("通知内容会按原文发送，不经过模型改写。没有模型调用，但仍会使用 Agent 运行资源。")}
               </p>
             ) : (
-              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2.5 text-pretty text-xs leading-5 text-amber-900/80">
+              <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs leading-4 text-amber-900/80">
                 <input
                   type="checkbox"
                   checked={scriptSafetyConfirmed}
@@ -4417,7 +4380,7 @@ export function AutomationFormModal({
 
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (
-          <div className="mt-4">
+          <div className="mt-3">
             <div className="flex flex-wrap items-center gap-2">
               <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
               <button
@@ -4496,7 +4459,7 @@ export function AutomationFormModal({
          *   - 国内站（isCN）：weixin / qqbot / wecom / feishu / dingtalk
          *   - 国际站（isGlobal）：telegram / whatsapp / discord / slack / weixin / qqbot / wecom / feishu
          */}
-        <div className="mt-4">
+        <div className="mt-3">
           <label className="block text-sm font-medium text-black/80">
             {t("通知方式")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
           </label>
@@ -4699,8 +4662,53 @@ export function AutomationFormModal({
           ) : null}
         </div>
 
+        {executionMode === "agent" && (
+          <details className="group mt-3 overflow-hidden rounded-lg border border-black/10 bg-black/[0.015]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-black/70 [&::-webkit-details-marker]:hidden">
+              <span>{t("高级设置")}</span>
+              <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-black/40 group-open:rotate-180" />
+            </summary>
+            <div className="border-t border-black/[0.06] px-3 pb-3 pt-2.5">
+              <label className="block text-sm font-medium text-black/80">
+                {t("上游任务")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
+              </label>
+              <div className="mt-2">
+                {externalMultipleUpstreams ? (
+                  <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs text-amber-800">
+                    <p className="font-medium">{t("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")}</p>
+                    <ul className="mt-1 space-y-1 text-amber-800/75">
+                      {externalMultipleUpstreams.map((job, index) => (
+                        <li key={index} className="break-words">
+                          {job?.name ?? t("上游任务已不可用")}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <AutomationUpstreamPicker
+                    value={selectedUpstream}
+                    options={pickerUpstreams}
+                    state={contextCapability}
+                    onRetry={onRetryContextCapability}
+                    onChange={(jobId) => {
+                      setSelectedUpstream(jobId);
+                      setUpstreamChanged(true);
+                      setUpstreamError(null);
+                    }}
+                  />
+                )}
+              </div>
+              {upstreamError && (
+                <p role="alert" className="mt-2 text-pretty text-xs leading-5 text-[#B91C1C]">
+                  {upstreamError}
+                </p>
+              )}
+            </div>
+          </details>
+        )}
+
         {/* 操作 */}
-        <div className="mt-6 flex items-center justify-end gap-2">
+        <div className="mt-4 flex items-center justify-end gap-2">
           <span className="inline-flex" title={testRunDisabledReason ?? undefined}>
             <button
               type="button"

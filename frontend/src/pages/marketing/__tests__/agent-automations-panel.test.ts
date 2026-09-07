@@ -580,13 +580,15 @@ describe("cron context panel integration", () => {
     expect(within(dialog).queryByText("上游任务")).not.toBeInTheDocument();
   });
 
-  it.each(["create", "edit"] as const)("uses the wider responsive form in $mode mode", (mode) => {
+  it.each(["create", "edit"] as const)("uses the compact responsive form in $mode mode", (mode) => {
     renderAutomationForm({
       mode,
       initialJob: mode === "edit" ? makeCronJob({ id: "edit-width", name: "编辑宽度任务" }) : undefined,
     });
 
-    expect(screen.getByRole("dialog").firstElementChild).toHaveClass("w-full", "max-w-[680px]");
+    const form = screen.getByRole("dialog").firstElementChild;
+    expect(form).toHaveClass("w-full", "max-w-[760px]", "p-5");
+    expect(form).toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
   });
 
   it("uses the new copy for the blank create entry and modal title", async () => {
@@ -653,7 +655,7 @@ describe("cron context panel integration", () => {
     expect(refreshButton.querySelector("svg")).not.toHaveClass("animate-spin");
   });
 
-  it("renders the Skill picker before the upstream task picker", async () => {
+  it("places the upstream task below notifications in collapsed advanced settings", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([]);
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
@@ -663,11 +665,18 @@ describe("cron context panel integration", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
-    const skillLabel = await screen.findByText("调用技能");
-    const upstreamLabel = screen.getByText("上游任务");
+    const advancedSummary = await screen.findByText("高级设置");
+    const advancedSettings = advancedSummary.closest("details");
+    expect(advancedSettings).not.toBeNull();
+    expect(advancedSettings).not.toHaveAttribute("open");
+
+    const notificationLabel = screen.getByText("通知方式");
     expect(
-      skillLabel.compareDocumentPosition(upstreamLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      notificationLabel.compareDocumentPosition(advancedSettings!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+
+    openAdvancedSettings();
+    expect(screen.getByRole("combobox", { name: "上游任务" })).toBeTruthy();
   });
 
   it("detects capability for the current bot and keeps its upstream explanation inside the picker", async () => {
@@ -679,6 +688,7 @@ describe("cron context panel integration", () => {
       expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
     });
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
+    openAdvancedSettings();
 
     const upstreamLabel = (await screen.findByText("上游任务")).closest("label");
     expect(upstreamLabel).not.toBeNull();
@@ -709,6 +719,7 @@ describe("cron context panel integration", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
     fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "保留中的草稿" } });
+    openAdvancedSettings();
 
     fireEvent.click(await screen.findByRole("button", { name: "重试" }));
 
@@ -742,6 +753,7 @@ describe("cron context panel integration", () => {
     });
     resolveFirst?.("unknown");
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
+    openAdvancedSettings();
 
     expect(await screen.findByRole("combobox", { name: "上游任务" })).toBeEnabled();
   });
@@ -897,6 +909,7 @@ describe("cron context panel integration", () => {
   it("shows a missing single upstream and allows clearing it", async () => {
     const downstream = makeCronJob({ id: "downstream", name: "下游任务", context_from: ["deleted-upstream"] });
     renderAutomationForm({ mode: "edit", initialJob: downstream, jobs: [downstream] });
+    openAdvancedSettings();
 
     expect(screen.getByRole("combobox", { name: "上游任务" })).toHaveTextContent("上游任务已不可用");
     clearUpstream();
@@ -1017,6 +1030,7 @@ describe("cron context panel integration", () => {
       jobs,
       onRefreshJobs: vi.fn().mockResolvedValue(jobs),
     });
+    openAdvancedSettings();
 
     expect(screen.getByText("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")).toBeTruthy();
     expect(screen.getByText("上游任务 A")).toBeTruthy();
@@ -2342,6 +2356,7 @@ describe("zero-token automation form", () => {
     fireEvent.change(screen.getByPlaceholderText("echo 'Disk usage is high'"), {
       target: { value: "df -h" },
     });
+    expect(screen.getByPlaceholderText("echo 'Disk usage is high'")).toHaveAttribute("rows", "6");
 
     const testButton = screen.getByRole("button", { name: "测试运行" });
     expect(testButton).toBeDisabled();
@@ -2526,12 +2541,22 @@ function fillCreateFields(name = "下游任务") {
 }
 
 function chooseUpstream(optionName: string) {
+  openAdvancedSettings();
   fireEvent.click(screen.getByRole("combobox", { name: "上游任务" }));
   fireEvent.click(screen.getByRole("option", { name: new RegExp(optionName) }));
 }
 
 function clearUpstream() {
+  openAdvancedSettings();
   fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
+}
+
+function openAdvancedSettings() {
+  const summary = screen.getByText("高级设置").closest("summary");
+  if (!(summary instanceof HTMLElement)) throw new Error("Advanced settings summary not found");
+  const details = summary.closest("details");
+  if (!(details instanceof HTMLDetailsElement)) throw new Error("Advanced settings details not found");
+  if (!details.open) fireEvent.click(summary);
 }
 
 async function getCronJobCard(jobName: string): Promise<HTMLElement> {
