@@ -438,6 +438,9 @@
     }
   }
   labels.forEach(function (label, index) {
+    label.addEventListener('mouseenter', function () {
+      if (!phoneMedia.matches) showTab(index);
+    });
     label.addEventListener('click', function () { showTab(index); });
   });
   plays.addEventListener('change', function (event) {

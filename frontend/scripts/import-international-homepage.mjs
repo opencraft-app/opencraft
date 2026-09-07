@@ -61,14 +61,14 @@ const publicLocalizedPaths = [
   "/terms-of-service",
 ];
 const rotatorWordsByLocale = {
-  "en-US": ["work partner", "developer buddy", "plan executor", "life concierge", "financial assistant", "creative companion", "content manager"],
-  "zh-CN": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
-  "zh-SG": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
-  "zh-Hant": ["工作夥伴", "開發夥伴", "計畫執行官", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
-  "id-ID": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
-  es: ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
-  "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
-  "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
+  "en-US": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
+  "zh-CN": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
+  "zh-SG": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
+  "zh-Hant": ["工作助理", "知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家"],
+  "id-ID": ["asisten kerja", "basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup"],
+  es: ["asistente de trabajo", "base de conocimientos", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal"],
+  "ja-JP": ["仕事のアシスタント", "ナレッジベース", "監視レーダー", "リマインダー", "ビジネスアシスタント", "生活アシスタント"],
+  "ko-KR": ["업무 어시스턴트", "지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저"],
 };
 const tokenTrialCopyByLocale = {
   "en-US": "Try an AI token plan free for 7 days.",
@@ -3127,7 +3127,7 @@ const footerRefreshCss = `
 }
 
 #lightvela-intl-home .foot--domestic .foot__links-grid {
-  grid-template-columns: minmax(220px, 280px) repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(280px, 2fr) repeat(4, minmax(0, 1fr));
   column-gap: clamp(16px, 1.4vw, 24px);
 }
 
@@ -3928,6 +3928,14 @@ function prepareDocumentForLocale(document, locale) {
   const rotator = document.querySelector("#hero-rotator");
   const words = rotatorWordsByLocale[locale] ?? rotatorWordsByLocale["en-US"];
   if (rotator) rotator.textContent = words[0];
+  const suffixText = locale === "ja-JP" ? "になります" : locale === "ko-KR" ? "입니다" : "";
+  const dynamicLine = document.querySelector(".hero__line--dynamic");
+  if (suffixText && dynamicLine) {
+    const suffix = dynamicLine.querySelector(".hero__suffix") ?? document.createElement("span");
+    suffix.className = "hero__suffix";
+    suffix.textContent = suffixText;
+    dynamicLine.appendChild(suffix);
+  }
   if (root) {
     root.setAttribute("data-locale", locale);
     root.setAttribute("data-rotator-words", JSON.stringify(words));
@@ -4656,6 +4664,9 @@ const playHoverRuntime = `
     }
   }
   labels.forEach(function (label, index) {
+    label.addEventListener('mouseenter', function () {
+      if (!phoneMedia.matches) showTab(index);
+    });
     label.addEventListener('click', function () { showTab(index); });
   });
   plays.addEventListener('change', function (event) {

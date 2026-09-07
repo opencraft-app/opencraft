@@ -63,9 +63,17 @@ describe('homepage play reading time', () => {
     expect(selected()).toBe('pl-2');
     expect(playsRuntime).not.toContain('scrollIntoView');
   });
-  it('does not select a tab just because the pointer passes across it', () => {
+  it('restores desktop hover activation for every play tab', () => {
     start();
-    document.querySelector('label[for="pl-4"]')!.dispatchEvent(new MouseEvent('mouseenter'));
+    for (const id of ['pl-3', 'pl-4', 'pl-2']) {
+      document.querySelector(`label[for="${id}"]`)!.dispatchEvent(new MouseEvent('mouseenter'));
+      expect(selected()).toBe(id);
+    }
+  });
+  it('ignores synthetic hover on phones', () => {
+    phone = true;
+    start();
+    document.querySelector('label[for="pl-3"]')!.dispatchEvent(new MouseEvent('mouseenter'));
     expect(selected()).toBe('pl-2');
   });
   it('keeps vertical touch gestures native and handles horizontal swipes only in the tab strip', () => {

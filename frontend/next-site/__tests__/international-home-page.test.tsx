@@ -838,15 +838,15 @@ describe("international v2 homepage artifact", () => {
 
   it("uses the approved companion roles in every localized hero rotator", () => {
     const expectedWordsByFragment = {
-      "index-fragment.html": ["work partner", "developer buddy", "plan executor", "life concierge", "financial assistant", "creative companion", "content manager"],
-      "index-fragment.en-US.html": ["work partner", "developer buddy", "plan executor", "life concierge", "financial assistant", "creative companion", "content manager"],
-      "index-fragment.zh-CN.html": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
-      "index-fragment.zh-SG.html": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
-      "index-fragment.zh-Hant.html": ["工作夥伴", "開發夥伴", "計畫執行官", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
-      "index-fragment.id-ID.html": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
-      "index-fragment.es.html": ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
-      "index-fragment.ja-JP.html": ["仕事の相棒", "開発仲間", "計画実行役", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
-      "index-fragment.ko-KR.html": ["업무 파트너", "개발 동료", "계획 실행자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
+      "index-fragment.html": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
+      "index-fragment.en-US.html": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
+      "index-fragment.zh-CN.html": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
+      "index-fragment.zh-SG.html": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
+      "index-fragment.zh-Hant.html": ["工作助理", "知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家"],
+      "index-fragment.id-ID.html": ["asisten kerja", "basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup"],
+      "index-fragment.es.html": ["asistente de trabajo", "base de conocimientos", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal"],
+      "index-fragment.ja-JP.html": ["仕事のアシスタント", "ナレッジベース", "監視レーダー", "リマインダー", "ビジネスアシスタント", "生活アシスタント"],
+      "index-fragment.ko-KR.html": ["업무 어시스턴트", "지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저"],
     } as const;
 
     for (const [fragmentName, expectedWords] of Object.entries(expectedWordsByFragment)) {
@@ -857,6 +857,8 @@ describe("international v2 homepage artifact", () => {
 
       expect(words).toEqual(expectedWords);
       expect(document.querySelector("#hero-rotator")?.textContent).toBe(expectedWords[0]);
+      const suffix = fragmentName.includes("ja-JP") ? "になります" : fragmentName.includes("ko-KR") ? "입니다" : undefined;
+      expect(document.querySelector(".hero__suffix")?.textContent).toBe(suffix);
     }
 
     expect(readFileSync(runtimePath, "utf8")).toContain(
