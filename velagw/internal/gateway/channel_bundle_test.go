@@ -1314,13 +1314,17 @@ func TestImportChannelBundleFromSetReadsRemoteChannelsAndSecrets(t *testing.T) {
 			var req struct {
 				Method string `json:"method"`
 				Code   string `json:"code"`
+				Scope  string `json:"scope"`
 			}
 			decodeGatewayChannelJSON(t, r, &req)
-			if req.Method != "2fa" || req.Code == "" {
+			if req.Method != "2fa" || req.Code == "" || req.Scope != "channel.key.read" {
 				t.Fatalf("unexpected verify request: %+v", req)
 			}
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"verified": true}})
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "import-proof"}})
 		case "POST /api/channel/17/key":
+			if r.Header.Get("X-Security-Proof") != "import-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
+			}
 			keyFetched = true
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-provider"}})
 		default:
@@ -1414,8 +1418,16 @@ func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer export-access" {
 				t.Fatalf("verify authorization = %q", r.Header.Get("Authorization"))
 			}
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
+			var req newapi.VerifyRequest
+			decodeGatewayChannelJSON(t, r, &req)
+			if req.Scope != "channel.key.read" {
+				t.Fatalf("verify scope = %q", req.Scope)
+			}
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "export-proof"}})
 		case "POST /api/channel/17/key":
+			if r.Header.Get("X-Security-Proof") != "export-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
+			}
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-plain-backup"}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -1488,8 +1500,16 @@ func TestDesiredConfigExportRetriesWhenProviderKeyChangesMidSnapshot(t *testing.
 		case "GET /api/option/":
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []map[string]any{}})
 		case "POST /api/verify":
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
+			var req newapi.VerifyRequest
+			decodeGatewayChannelJSON(t, r, &req)
+			if req.Scope != "channel.key.read" {
+				t.Fatalf("verify scope = %q", req.Scope)
+			}
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "retry-proof"}})
 		case "POST /api/channel/17/key":
+			if r.Header.Get("X-Security-Proof") != "retry-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
+			}
 			keyReads++
 			key := "sk-new"
 			if keyReads == 1 {

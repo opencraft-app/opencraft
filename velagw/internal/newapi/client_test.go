@@ -954,8 +954,7 @@ func TestClientListChannelsRescansAndDeduplicatesChangingPages(t *testing.T) {
 	}
 }
 
-func TestClientSecureChannelKeyUsesVerificationSession(t *testing.T) {
-	var verified bool
+func TestClientSecureChannelKeyUsesScopedSecurityProof(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer admin-access-token" || r.Header.Get("New-Api-User") != "1" {
@@ -965,19 +964,13 @@ func TestClientSecureChannelKeyUsesVerificationSession(t *testing.T) {
 		case "POST /api/verify":
 			var req VerifyRequest
 			decodeJSON(t, r, &req)
-			if req.Method != "2fa" || req.Code != "123456" {
+			if req.Method != "2fa" || req.Code != "123456" || req.Scope != "channel.key.read" {
 				t.Fatalf("unexpected verify request: %+v", req)
 			}
-			http.SetCookie(w, &http.Cookie{Name: "session", Value: "verified-session", Path: "/"})
-			verified = true
-			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{"verified": true}})
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "proof-123", "scope": "channel.key.read"}})
 		case "POST /api/channel/17/key":
-			if !verified {
-				t.Fatalf("channel key fetched before secure verification")
-			}
-			cookie, err := r.Cookie("session")
-			if err != nil || cookie.Value != "verified-session" {
-				t.Fatalf("missing verified session cookie: cookie=%v err=%v", cookie, err)
+			if r.Header.Get("X-Security-Proof") != "proof-123" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
 			}
 			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-provider"}})
 		default:
