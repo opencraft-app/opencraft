@@ -32,6 +32,7 @@
 - 其他国际语言使用同六类能力对应词；不得把标签中的孤立“知识”直接拼进“成为你的……”句子。
 - 西语、印尼语使用句中小写；日语使用“LightVelaはあなたの……になります”，韩语使用“LightVela는 당신의……입니다”。
 - 保留斜体、Vela 紫、下划线及已确认动效，处理轮播宽度测量、字形裁切、初始化与离开页面后的清理。
+- 首次打开或刷新时，按“静态主标题 → `LightVela 可以成为你的`（各语言对应前缀）→ 首个角色词”的顺序完成入场；首个角色词完整展示后才开始循环，不得被 `pageshow` 或页面可见性事件提前切换。
 - 初次加载、刷新应能启动；不可见页面及减少动态效果场景采用运行时既有降级策略。
 - 静态主标题和眉题文案不纳入本次调整范围，不借本次角色词调整重写品牌标语。
 
@@ -99,11 +100,11 @@
 | 样式、轮播及滚动交互 | `frontend/public/lightvela-intl-home/style.css`、`runtime.js` |
 | 片段生成及语言配置 | `frontend/scripts/import-international-homepage.mjs` |
 | 客户端挂载和移动导航 | `frontend/next-site/international-home-runtime.tsx`、`home-mobile-navigation.tsx` |
-| 验证 | `frontend/next-site/__tests__/international-home-page.test.tsx`、`international-home-rendering.test.tsx`、`home-localized-copy.test.ts`、`home-play-badges.test.ts`、`home-plays-motion.test.ts` |
+| 验证 | `frontend/next-site/__tests__/international-home-page.test.tsx`、`international-home-rendering.test.tsx`、`home-localized-copy.test.ts`、`home-play-badges.test.ts`、`home-plays-motion.test.ts`、`home-hero-headline-order.test.ts` |
 
 ## 测试与验收状态
 
-- 2026-09-07 本轮运行以上 5 个测试文件，85 项通过。
+- 2026-09-07 本轮运行以上 6 个测试文件，86 项通过。
 - `pnpm typecheck` 通过基线门禁：191 项既有诊断、276 项基线，0 项新增；并非全仓零诊断。
 - `git diff --check` 通过；修改过的 JavaScript 和生成器已做语法检查。
 - 双站最新词表已在浏览器读取核对。悬停恢复有失败后通过的回归测试；不宣称已完成全浏览器实鼠标、全部移动设备或登录态 E2E。

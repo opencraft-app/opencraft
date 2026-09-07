@@ -41,6 +41,7 @@
     var changeTimer = 0;
     var sweepTimer = 0;
     var sweepFrame = 0;
+    var initialRotationPending = true;
     var rotatorVisible = !document.hidden;
     if (typeof IntersectionObserver !== 'undefined') {
       var rotatorObserver = new IntersectionObserver(function (entries) {
@@ -77,6 +78,7 @@
         scheduleRotate(900);
         return;
       }
+      initialRotationPending = false;
       index = (index + 1) % words.length;
       sweepToWord(words[index]);
       scheduleRotate(2200);
@@ -85,15 +87,18 @@
       rotatorVisible = !document.hidden;
       if (rotatorVisible) {
         applyWord(words[index]);
-        scheduleRotate(420);
+        if (!initialRotationPending) scheduleRotate(420);
       }
     });
     window.addEventListener('pageshow', function () {
       rotatorVisible = !document.hidden;
       applyWord(words[index]);
-      scheduleRotate(520);
+      if (!initialRotationPending) scheduleRotate(520);
     });
-    scheduleRotate(2600);
+    window.setTimeout(function () {
+      var revealDelay = parseInt(wrap.style.getPropertyValue('--rotator-delay'), 10) || 0;
+      scheduleRotate(revealDelay + 2200);
+    }, 0);
   })();
 
   (function () {

@@ -4597,6 +4597,7 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
     var changeTimer = 0;
     var sweepTimer = 0;
     var sweepFrame = 0;
+    var initialRotationPending = true;
     var rotatorVisible = !document.hidden;
     if (typeof IntersectionObserver !== 'undefined') {
       var rotatorObserver = new IntersectionObserver(function (entries) {
@@ -4633,6 +4634,7 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
         scheduleRotate(900);
         return;
       }
+      initialRotationPending = false;
       index = (index + 1) % words.length;
       sweepToWord(words[index]);
       scheduleRotate(2200);
@@ -4641,15 +4643,18 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
       rotatorVisible = !document.hidden;
       if (rotatorVisible) {
         applyWord(words[index]);
-        scheduleRotate(420);
+        if (!initialRotationPending) scheduleRotate(420);
       }
     });
     window.addEventListener('pageshow', function () {
       rotatorVisible = !document.hidden;
       applyWord(words[index]);
-      scheduleRotate(520);
+      if (!initialRotationPending) scheduleRotate(520);
     });
-    scheduleRotate(2600);`,
+    window.setTimeout(function () {
+      var revealDelay = parseInt(wrap.style.getPropertyValue('--rotator-delay'), 10) || 0;
+      scheduleRotate(revealDelay + 2200);
+    }, 0);`,
 ).replace(
   `        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
         chats.forEach(function (chat, i) {`,
@@ -4687,6 +4692,8 @@ if (
   || !runtimeSource.includes("wrap.classList.add('is-sweeping');")
   || !runtimeSource.includes("sweepTimer = window.setTimeout(function () { wrap.classList.remove('is-sweeping'); }, 680);")
   || !runtimeSource.includes("function scheduleRotate(delay)")
+  || !runtimeSource.includes("scheduleRotate(revealDelay + 2200)")
+  || !runtimeSource.includes("if (!initialRotationPending) scheduleRotate(520)")
   || !runtimeSource.includes("document.addEventListener('visibilitychange'")
   || !runtimeSource.includes("window.addEventListener('pageshow'")
   || !runtimeSource.includes("rotatorVisible = !document.hidden")
