@@ -1932,6 +1932,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS",
             "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC",
             "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT",
+            "VELAGW_NEWAPI_IMAGE",
+            "VELAGW_NEWAPI_RELEASE_ID",
+            "VELAGW_NEWAPI_RELEASE_VERSION",
         }
         expected_region_values = {
             "shprod": {
@@ -1957,6 +1960,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     {key: platform[key] for key in expected},
                     expected,
                 )
+                kustomization = yaml.safe_load(
+                    (REPO_ROOT / "argocd/services/velagw" / env / "kustomization.yaml").read_text()
+                )
+                replacement_sources = {
+                    (replacement.get("source") or {}).get("fieldPath"): replacement
+                    for replacement in kustomization.get("replacements", [])
+                }
+                for field_path in (
+                    "data.VELAGW_NEWAPI_IMAGE",
+                    "data.VELAGW_NEWAPI_RELEASE_ID",
+                    "data.VELAGW_NEWAPI_RELEASE_VERSION",
+                ):
+                    self.assertIn(field_path, replacement_sources)
 
     def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
         marker = {}

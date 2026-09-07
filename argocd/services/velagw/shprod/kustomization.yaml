@@ -163,3 +163,41 @@ replacements:
           - spec.resources.[id=newapiAdminMasterDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
           - spec.resources.[id=newapiVersionedTrafficDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
           - spec.resources.[id=newapiTrafficDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_NEWAPI_IMAGE
+    targets:
+      - select:
+          kind: ResourceGraphDefinition
+          name: llmfleets.llmgateway.io
+        fieldPaths:
+          - spec.schema.spec.newapiImage
+        options:
+          delimiter: '"'
+          index: 1
+      - select:
+          kind: Job
+          name: llmgateway-release-bootstrap
+        fieldPaths:
+          - spec.template.spec.containers.[name=bootstrap].env.[name=LLMGATEWAY_RELEASE_IMAGE].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_NEWAPI_RELEASE_ID
+    targets:
+      - select:
+          kind: Job
+          name: llmgateway-release-bootstrap
+        fieldPaths:
+          - spec.template.spec.containers.[name=bootstrap].env.[name=LLMGATEWAY_RELEASE_ID].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_NEWAPI_RELEASE_VERSION
+    targets:
+      - select:
+          kind: Job
+          name: llmgateway-release-bootstrap
+        fieldPaths:
+          - spec.template.spec.containers.[name=bootstrap].env.[name=LLMGATEWAY_RELEASE_VERSION].value
