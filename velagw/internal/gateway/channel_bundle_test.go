@@ -1368,9 +1368,30 @@ func TestImportChannelBundleFromSetReadsRemoteChannelsAndSecrets(t *testing.T) {
 }
 
 func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
+	var loginCount int
+	var twoFACount int
+	var logoutCount int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			loginCount++
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+				"flow_token":  "export-flow",
+			}})
+		case "POST /api/user/login/2fa":
+			twoFACount++
+			http.SetCookie(w, &http.Cookie{Name: "new-api-refresh", Value: "export-refresh", Path: "/"})
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default", "access_token": "export-access",
+			}})
+		case "POST /api/user/auth/logout":
+			if r.Header.Get("Authorization") != "Bearer export-access" {
+				t.Fatalf("logout authorization = %q", r.Header.Get("Authorization"))
+			}
+			logoutCount++
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
 		case "GET /api/channel/search":
 			writeGatewayChannelJSON(t, w, map[string]any{
 				"success": true,
@@ -1390,6 +1411,9 @@ func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
 				},
 			})
 		case "POST /api/verify":
+			if r.Header.Get("Authorization") != "Bearer export-access" {
+				t.Fatalf("verify authorization = %q", r.Header.Get("Authorization"))
+			}
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
 		case "POST /api/channel/17/key":
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-plain-backup"}})
@@ -1400,7 +1424,7 @@ func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
 	defer upstream.Close()
 
 	sourceStore := NewMemoryStore()
-	sourceService := NewService(sourceStore, upstream.Client().Transport, Options{})
+	sourceService := NewService(sourceStore, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "root-password"})
 	saveReadySet(t, sourceStore, "set-a", upstream.URL)
 	set, _, _ := sourceStore.GetSet(t.Context(), "set-a")
 	set.AdminTOTPSecret = "JBSWY3DPEHPK3PXP"
@@ -1425,6 +1449,9 @@ func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
 	}
 	if len(manifest.GlobalOptions) != 2 || len(manifest.ChannelBundles) != 1 {
 		t.Fatalf("unexpected desired config export: %+v", manifest)
+	}
+	if loginCount != 1 || twoFACount != 1 || logoutCount != 1 {
+		t.Fatalf("login=%d twoFA=%d logout=%d, want one temporary export session", loginCount, twoFACount, logoutCount)
 	}
 
 	targetStore := NewMemoryStore()
