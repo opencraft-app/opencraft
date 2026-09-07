@@ -36,6 +36,15 @@ type stubLogic struct {
 	resetConfigResp                        *transport.InstanceConfigResetResponse
 	resetConfigErr                         error
 	resetConfigInstanceID                  string
+	migrateGatewayResp                     *transport.InstanceGatewayMigrationResponse
+	migrateGatewayErr                      error
+	migrateGatewayUserID                   string
+	migrateGatewayInstanceID               string
+	migrateGatewayDryRun                   bool
+	resetGatewayQuotaResp                  *transport.UserGatewayQuotaResetResponse
+	resetGatewayQuotaErr                   error
+	resetGatewayQuotaUserID                string
+	resetGatewayQuotaDryRun                bool
 	listSoulResp                           *transport.ListSoulTemplatesResponse
 	listSoulErr                            error
 	usageResp                              *transport.UserUsageResponse
@@ -160,6 +169,19 @@ func (s *stubLogic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*t
 		return s.resetConfigResp, s.resetConfigErr
 	}
 	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) MigrateInstanceToLLMGateway(ctx pctx.Context, instanceID string, dryRun bool) (*transport.InstanceGatewayMigrationResponse, error) {
+	s.migrateGatewayUserID = ctx.GetUserID()
+	s.migrateGatewayInstanceID = instanceID
+	s.migrateGatewayDryRun = dryRun
+	return s.migrateGatewayResp, s.migrateGatewayErr
+}
+
+func (s *stubLogic) ResetLLMGatewayUserQuota(ctx pctx.Context, dryRun bool) (*transport.UserGatewayQuotaResetResponse, error) {
+	s.resetGatewayQuotaUserID = ctx.GetUserID()
+	s.resetGatewayQuotaDryRun = dryRun
+	return s.resetGatewayQuotaResp, s.resetGatewayQuotaErr
 }
 
 func (s *stubLogic) ListSoulTemplates(ctx pctx.Context) (*transport.ListSoulTemplatesResponse, error) {

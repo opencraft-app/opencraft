@@ -197,6 +197,7 @@ func newRouterWithWebsiteAuth(
 	mux.HandleFunc("/internal/bots", handler.handleInternalBots)
 	mux.HandleFunc("/internal/bots/", handler.handleInternalBotSubresource)
 	mux.HandleFunc("/internal/instances/", handler.handleInternalInstanceSubresource)
+	mux.HandleFunc("/internal/users/", handler.handleInternalUserSubresource)
 	mux.Handle("/internal/ctl/instances/", &websiteCredentialHandler{
 		store:     credentialStore,
 		instances: instanceReader,
@@ -394,6 +395,12 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/chatclaw/runtime-bootstrap") {
 		return "/internal/instances/{id}/chatclaw/runtime-bootstrap"
+	}
+	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/gateway/migrate") {
+		return "/internal/instances/{id}/gateway/migrate"
+	}
+	if strings.HasPrefix(path, "/internal/users/") && strings.HasSuffix(path, "/gateway/quota/reset") {
+		return "/internal/users/{id}/gateway/quota/reset"
 	}
 	if strings.HasPrefix(path, "/internal/ctl/bundles/") {
 		return "/internal/ctl/bundles/{bundleId}"

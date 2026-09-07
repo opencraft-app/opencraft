@@ -80,6 +80,49 @@ type InstanceConfigResetResponse struct {
 	Config    *InstanceConfigResetProvider `json:"config"`
 }
 
+// InstanceGatewayMigrationRequest scopes an operator migration to one user.
+type InstanceGatewayMigrationRequest struct {
+	UserID string `json:"user_id"`
+	DryRun bool   `json:"dry_run"`
+}
+
+// InstanceGatewayMigrationResponse reports only non-secret migration state.
+type InstanceGatewayMigrationResponse struct {
+	UserID           string `json:"user_id"`
+	InstanceID       string `json:"instance_id"`
+	PreviousGateway  string `json:"previous_gateway"`
+	TargetGateway    string `json:"target_gateway"`
+	DryRun           bool   `json:"dry_run"`
+	Migrated         bool   `json:"migrated"`
+	AlreadyMigrated  bool   `json:"already_migrated,omitempty"`
+	KeyID            string `json:"key_id,omitempty"`
+	KeyPrefix        string `json:"key_prefix,omitempty"`
+	LegacyKeyRevoked bool   `json:"legacy_key_revoked,omitempty"`
+}
+
+// UserGatewayQuotaResetRequest controls a read-only preview or one-user reset.
+type UserGatewayQuotaResetRequest struct {
+	DryRun bool `json:"dry_run"`
+}
+
+// UserGatewayQuotaResetResponse contains no API key or other secret material.
+type UserGatewayQuotaResetResponse struct {
+	UserID            string `json:"user_id"`
+	Gateway           string `json:"gateway"`
+	SetID             string `json:"set_id"`
+	UpstreamUserID    int    `json:"upstream_user_id"`
+	PlanID            string `json:"plan_id"`
+	UpstreamPlanID    int    `json:"upstream_plan_id"`
+	SubscriptionID    string `json:"subscription_id"`
+	AmountUsedBefore  int64  `json:"amount_used_before"`
+	AmountUsedAfter   int64  `json:"amount_used_after"`
+	NextResetTime     int64  `json:"next_reset_time"`
+	EndTime           int64  `json:"end_time"`
+	DryRun            bool   `json:"dry_run"`
+	Status            string `json:"status"`
+	ScheduleUnchanged bool   `json:"schedule_unchanged"`
+}
+
 // TerminalSessionResponse returns a bot-scoped TAT websocket bootstrap.
 // It intentionally omits the underlying sandbox id; callers only need the TAT session fields.
 type TerminalSessionResponse struct {

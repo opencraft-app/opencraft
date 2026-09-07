@@ -60,6 +60,8 @@ type Logic interface {
 	GetCreatePrerequisites(ctx pctx.Context) (*transport.CreatePrerequisitesResponse, error)
 	UpdateInstance(ctx pctx.Context, instanceID string, req *transport.UpdateInstanceRequest) (*transport.InstanceResponse, error)
 	ResetInstanceConfig(ctx pctx.Context, instanceID string) (*transport.InstanceConfigResetResponse, error)
+	MigrateInstanceToLLMGateway(ctx pctx.Context, instanceID string, dryRun bool) (*transport.InstanceGatewayMigrationResponse, error)
+	ResetLLMGatewayUserQuota(ctx pctx.Context, dryRun bool) (*transport.UserGatewayQuotaResetResponse, error)
 	ListSoulTemplates(ctx pctx.Context) (*transport.ListSoulTemplatesResponse, error)
 	GetUserUsage(ctx pctx.Context) (*transport.UserUsageResponse, error)
 	GetInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)

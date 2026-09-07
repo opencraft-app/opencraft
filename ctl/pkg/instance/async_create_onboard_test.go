@@ -20,12 +20,23 @@ import (
 type createTaskInstanceDaoStub struct {
 	modelinstance.Dao
 	entity    *modelinstance.Entity
+	allByUser []*modelinstance.Entity
 	updateErr error
 	updates   []map[string]interface{}
 }
 
 func (s *createTaskInstanceDaoStub) GetByInstanceID(_ pctx.Context, _ string) (*modelinstance.Entity, error) {
 	return s.entity, nil
+}
+
+func (s *createTaskInstanceDaoStub) ListAllByUserIDForIsolate(_ string) ([]*modelinstance.Entity, error) {
+	if s.allByUser != nil {
+		return s.allByUser, nil
+	}
+	if s.entity == nil {
+		return nil, nil
+	}
+	return []*modelinstance.Entity{s.entity}, nil
 }
 
 func (s *createTaskInstanceDaoStub) UpdateWithStatusPrecondition(_ pctx.Context, _ int64, _ []string, updates map[string]interface{}) error {
@@ -198,6 +209,7 @@ type createTaskLLMGatewayAdapterStub struct {
 	}
 	revokeErrByKeyID map[string]error
 	revoked          []string
+	activeResp       *pllmgateway.Subscription
 }
 
 func (s *createTaskLLMGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
@@ -230,7 +242,7 @@ func (s *createTaskLLMGatewayAdapterStub) GetUserUsage(_ context.Context, _ stri
 	return &pllmgateway.UserUsageResponse{}, nil
 }
 func (s *createTaskLLMGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
-	return nil, nil
+	return s.activeResp, nil
 }
 func (s *createTaskLLMGatewayAdapterStub) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
 	return &pllmgateway.ActiveSubscriptionList{Subscriptions: []pllmgateway.Subscription{}}, nil
