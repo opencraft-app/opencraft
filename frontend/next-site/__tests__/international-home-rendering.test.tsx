@@ -14,6 +14,7 @@ vi.mock("@/contexts/session-context", () => ({
   useSession: () => sessionMock,
 }));
 vi.mock("@/lib/region", () => ({
+  DEFAULT_LOCALE: 'zh-CN',
   get isGlobal() {
     return regionMock.isGlobal;
   },
@@ -29,6 +30,8 @@ const frontendRoot = process.cwd();
 const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-domestic-home-hero-cta class="btn-dark" href="/subscribe"><span data-domestic-home-hero-cta-label>免费试用</span></a></div></main>';
 
 beforeEach(() => {
+  (globalThis as { React?: typeof React }).React = React;
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   regionMock.isGlobal = false;
   sessionMock.authReady = true;
   sessionMock.isAuthenticated = false;
@@ -36,17 +39,36 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe("international v2 homepage rendering", () => {
+  it("keeps homepage header actions inside their existing right gutter", () => {
+    for (const file of ['public/lightvela-intl-home/style.css', 'scripts/import-international-homepage.mjs']) {
+      const source = readFileSync(path.join(frontendRoot, file), 'utf8');
+      const rule = source.match(/\.international-home-header-actions-layer > div\s*\{([^}]+)\}/)?.[1];
+      expect(rule).toMatch(/translate:\s*none\s*!important/);
+      expect(source).toContain('right: max(24px, calc((100% - 1440px) / 2));');
+    }
+  });
+  it("preserves the domestic channels and native public routes", () => {
+    const document = new DOMParser().parseFromString(readFileSync(path.join(frontendRoot, 'public/lightvela-intl-home/index-fragment.zh-CN.html'), 'utf8'), 'text/html');
+    expect(Array.from(document.querySelectorAll('.hero__tabs label'), (label) => label.textContent?.trim())).toEqual(['微信', 'QQ', '企业微信', '钉钉', '飞书']);
+    expect(document.querySelector('.nav__links a[href="/subscribe"]')?.textContent).toBe('定价');
+    expect(document.querySelector('a[href^="/zh-cn"]')).toBeNull();
+    expect(document.querySelector('#panel-qq .native--qq')).not.toBeNull();
+    expect(document.querySelector('#panel-tg .native--wecom')).not.toBeNull();
+    expect(document.querySelector('#panel-dc .dc--dingtalk')).not.toBeNull();
+    expect(document.querySelector('#panel-sl .dc--feishu')).not.toBeNull();
+  });
   it("server-renders the approved homepage content and stylesheet", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260906-home-rotator-layout-v2"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260907-home-refinements-v11"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
-    expect(markup).toContain("Your AI companion—always on, always evolving with you.");
+    expect(markup).toContain("Your AI companion, always here, always evolving with you");
     expect(markup).toContain('href="/subscribe"');
   });
 
@@ -72,7 +94,7 @@ describe("international v2 homepage rendering", () => {
       "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     );
     expect(renderToStaticMarkup(<InternationalHomePage locale="zh-SG" />)).toContain(
-      'src="/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260904-harness-sharp"',
+      'src="/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260904-harness-sharp"',
     );
   });
 
@@ -182,7 +204,7 @@ describe("international v2 homepage rendering", () => {
     );
   });
 
-  it("restores the domestic anonymous header and hero free-trial actions", async () => {
+  it("keeps domestic free trial in the hero and uses the shared login-only header", async () => {
     (globalThis as { React?: typeof React }).React = React;
     regionMock.isGlobal = false;
     sessionMock.authReady = true;
@@ -199,8 +221,8 @@ describe("international v2 homepage rendering", () => {
     expect(headerAuthMock).toHaveBeenCalledWith(
       expect.objectContaining({
         locale: "zh-CN",
-        loginOnly: false,
-        promoteFreeTrial: true,
+        loginOnly: true,
+        promoteFreeTrial: false,
         showProductEntry: true,
       }),
       undefined,

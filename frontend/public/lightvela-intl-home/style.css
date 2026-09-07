@@ -3537,9 +3537,6 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   inset: 0;
   justify-content: center;
   max-width: none;
-  box-sizing: border-box;
-  padding-inline: 18px;
-  overflow: hidden;
   opacity: 0;
   transform: translateY(6px);
   filter: blur(3px);
@@ -3646,13 +3643,6 @@ html[lang='zh-CN'] .dc--sl .dc__fmt button .icon {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-.soul-strip__cap--secondary > .soul-strip__copy {
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-.soul-strip__cap--secondary > .soul-strip__icons {
-  flex: 0 0 auto;
 }
 @keyframes soul-strip-primary {
   0%,
@@ -7796,27 +7786,6 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 
-@keyframes hero-rotator-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-#lightvela-intl-home .hero__rotator.is-changing {
-  animation: hero-rotator-in 180ms ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #lightvela-intl-home .hero__rotator.is-changing {
-    animation: none;
-  }
-}
-
 #lightvela-intl-home .nav {
   pointer-events: none;
   padding: 0;
@@ -7903,6 +7872,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 .international-home-header-actions-layer > div {
   gap: 8px !important;
   transform: none !important;
+  translate: none !important;
 }
 
 .international-home-header-actions-layer button,
@@ -7946,6 +7916,12 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   display: flex;
 }
 
+#lightvela-intl-home .plays__tabs label[for='pl-2'],
+#lightvela-intl-home .plays__tabs label[for='pl-3'] {
+  position: relative;
+  overflow: visible;
+}
+
 #lightvela-intl-home .plays__tabs label[for='pl-4'] {
   position: relative;
   padding-right: 30px;
@@ -7973,6 +7949,8 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   box-shadow: 0 6px 16px rgba(33, 26, 42, 0.14);
 }
 
+#lightvela-intl-home #pl-2:checked ~ .plays__tabs label[for='pl-2'] .play__new-badge,
+#lightvela-intl-home #pl-3:checked ~ .plays__tabs label[for='pl-3'] .play__new-badge,
 #lightvela-intl-home #pl-4:checked ~ .plays__tabs label[for='pl-4'] .play__new-badge {
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
@@ -8158,13 +8136,6 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 
-#lightvela-intl-home[data-locale='zh-CN'] .hero__line--dynamic {
-  width: 17.25em;
-  max-width: 92vw;
-  justify-content: flex-start;
-}
-
-
 @media (min-width: 1024px) {
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
     max-width: min(1680px, calc(100vw - 64px));
@@ -8203,26 +8174,15 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 
-#lightvela-intl-home .cta {
-  padding-bottom: 80px;
-}
-
-#lightvela-intl-home .cta__stage.sr {
-  opacity: 1;
-  transform: none;
-  transition: none;
-  will-change: auto;
-}
-
 #lightvela-intl-home .foot {
-  padding-top: 48px;
+  padding-top: 118px;
   padding-bottom: 78px;
   background: #fff;
 }
 
 #lightvela-intl-home .foot__top {
   max-width: var(--shell);
-  min-height: 184px;
+  min-height: 230px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -8321,17 +8281,22 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
 #lightvela-intl-home .foot__links {
   max-width: min(1380px, calc(100vw - 96px));
-  margin: 96px auto 0;
+  margin: 150px auto 0;
   padding-top: 0;
   border-top: 0;
 }
 
 #lightvela-intl-home .foot__links-grid {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(250px, 280px) minmax(150px, 168px) minmax(140px, 158px) minmax(140px, 158px) minmax(220px, 250px);
-  column-gap: clamp(14px, 1.2vw, 24px);
+  grid-template-columns: minmax(220px, 280px) repeat(5, minmax(0, 1fr));
+  column-gap: clamp(16px, 1.4vw, 24px);
   row-gap: 42px;
   align-items: start;
+}
+
+#lightvela-intl-home .foot--domestic .foot__links-grid {
+  grid-template-columns: minmax(220px, 280px) repeat(5, minmax(0, 1fr));
+  column-gap: clamp(16px, 1.4vw, 24px);
 }
 
 #lightvela-intl-home .foot__brand {
@@ -8400,8 +8365,8 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 #lightvela-intl-home .foot--domestic .foot__links-grid {
-  grid-template-columns: minmax(300px, 360px) minmax(250px, 280px) minmax(220px, 250px) minmax(140px, 158px) minmax(160px, 190px);
-  column-gap: clamp(14px, 1.2vw, 24px);
+  grid-template-columns: minmax(220px, 280px) repeat(5, minmax(0, 1fr));
+  column-gap: clamp(16px, 1.4vw, 24px);
 }
 
 #lightvela-intl-home .foot--domestic .foot__brand {
@@ -8454,16 +8419,12 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 @media (max-width: 900px) {
-  #lightvela-intl-home .cta {
-    padding-bottom: 56px;
-  }
-
   #lightvela-intl-home .foot {
-    padding-top: 48px;
+    padding-top: 92px;
   }
 
   #lightvela-intl-home .foot__top {
-    min-height: 152px;
+    min-height: 180px;
   }
 
   #lightvela-intl-home .foot__cta a {
@@ -8484,10 +8445,15 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 
   #lightvela-intl-home .foot__links {
-    margin-top: 64px;
+    margin-top: 96px;
   }
 
   #lightvela-intl-home .foot__links-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 42px 28px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 42px 28px;
   }
@@ -8535,6 +8501,10 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
 @media (max-width: 560px) {
   #lightvela-intl-home .foot__links-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links-grid {
     grid-template-columns: 1fr;
   }
 
@@ -9476,7 +9446,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 
   #lightvela-intl-home .cta {
-    padding: 76px 16px 56px;
+    padding: 76px 16px;
   }
 
   #lightvela-intl-home .cta__card {
@@ -9515,7 +9485,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 
   #lightvela-intl-home .foot {
-    padding: 48px 16px 64px;
+    padding: 88px 16px 64px;
   }
 
   #lightvela-intl-home .foot__top {
@@ -9560,5 +9530,1052 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
   #lightvela-intl-home .foot__links-grid > div:nth-child(2) a {
     white-space: normal;
+  }
+}
+
+/* BEGIN canonical 5173 hero channel preview */
+/* Hero messaging previews: one monochrome system and one medium information density. */
+#lightvela-intl-home .hero__frame .native,
+#lightvela-intl-home .hero__frame .dc,
+#lightvela-intl-home .hero__frame .native__side,
+#lightvela-intl-home .hero__frame .native__rail,
+#lightvela-intl-home .hero__frame .native__head,
+#lightvela-intl-home .hero__frame .native__body,
+#lightvela-intl-home .hero__frame .native__foot,
+#lightvela-intl-home .hero__frame .dc__rail,
+#lightvela-intl-home .hero__frame .dc__side,
+#lightvela-intl-home .hero__frame .dc__head,
+#lightvela-intl-home .hero__frame .dc__body,
+#lightvela-intl-home .hero__frame .dc__members,
+#lightvela-intl-home .hero__frame .dc__tabs,
+#lightvela-intl-home .hero__frame .dc__composer {
+  background-color: #fffeff;
+  background-image: none;
+  color: #202124;
+}
+#lightvela-intl-home .hero__frame .native__side,
+#lightvela-intl-home .hero__frame .dc__side,
+#lightvela-intl-home .hero__frame .dc__members,
+#lightvela-intl-home .hero__frame .native__rail,
+#lightvela-intl-home .hero__frame .dc__rail {
+  background-color: #f9f9fa;
+}
+#lightvela-intl-home .hero__frame .native__body,
+#lightvela-intl-home .hero__frame .dc__body {
+  background-color: #fffeff;
+}
+/* Discord 底部输入框与 WhatsApp/Telegram 输入胶囊统一为 #f9f9fa */
+#lightvela-intl-home .hero__frame .dc__composer {
+  background-color: #f9f9fa;
+}
+#lightvela-intl-home .hero__frame .native__side,
+#lightvela-intl-home .hero__frame .dc__side {
+  width: 250px;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side {
+  width: 190px;
+}
+#lightvela-intl-home .hero__frame #panel-sl .dc__side {
+  width: 206px;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__members {
+  width: 126px;
+}
+#lightvela-intl-home .hero__frame .av-c,
+#lightvela-intl-home .hero__frame .native__rail-av,
+#lightvela-intl-home .hero__frame .dc__rail-ws,
+#lightvela-intl-home .hero__frame .dc__rail-me,
+#lightvela-intl-home .hero__frame .dc__welcome span {
+  background: #e7e7e9 !important;
+  color: #202124 !important;
+}
+#lightvela-intl-home .hero__frame .av-c img {
+  filter: grayscale(1);
+}
+#lightvela-intl-home .hero__frame .native__filters button,
+#lightvela-intl-home .hero__frame .native__rail button,
+#lightvela-intl-home .hero__frame .dc__rail button,
+#lightvela-intl-home .hero__frame .dc__chan button,
+#lightvela-intl-home .hero__frame .dc__tabs button {
+  color: #6f7176;
+}
+#lightvela-intl-home .hero__frame .native__filters button.on,
+#lightvela-intl-home .hero__frame .native__rail button.on,
+#lightvela-intl-home .hero__frame .dc__rail button.on,
+#lightvela-intl-home .hero__frame .dc__chan button.on {
+  background: #eeeeef;
+  border-color: #202124;
+  color: #202124;
+}
+#lightvela-intl-home .hero__frame .dc__tabs button.on {
+  background: transparent;
+  color: #202124;
+}
+#lightvela-intl-home .hero__frame .native--wa .chat-row.on,
+#lightvela-intl-home .hero__frame .native--tg .chat-row.on {
+  background: #f2f3f6;
+  color: #202124;
+}
+#lightvela-intl-home .hero__frame .native--tg .chat-row.on .chat-row__top b,
+#lightvela-intl-home .hero__frame .native--tg .chat-row.on .chat-row__top span,
+#lightvela-intl-home .hero__frame .native--tg .chat-row.on p {
+  color: #202124;
+}
+#lightvela-intl-home .hero__frame .chat-row__badge,
+#lightvela-intl-home .hero__frame .native__send {
+  background: #202124 !important;
+  color: #fff !important;
+}
+#lightvela-intl-home .hero__frame .dc__app {
+  background: #eeeeef !important;
+  color: #202124 !important;
+}
+#lightvela-intl-home .hero__frame .dc__bot b,
+#lightvela-intl-home .hero__frame .dc__members li:first-of-type,
+#lightvela-intl-home .hero__frame .dc__mention,
+#lightvela-intl-home .hero__frame .bub__name,
+#lightvela-intl-home .hero__frame .line__file-body b,
+#lightvela-intl-home .hero__frame .dc__board b {
+  color: #202124 !important;
+}
+#lightvela-intl-home .hero__frame .dc__mention,
+#lightvela-intl-home .hero__frame .dc__reaction,
+#lightvela-intl-home .hero__frame .line__file,
+#lightvela-intl-home .hero__frame .dc__board {
+  border-color: #d7d7da;
+  background: #f9f9fa;
+  color: #202124;
+}
+#lightvela-intl-home .hero__frame .dc__quote {
+  border-left-color: #202124;
+  background: #f9f9fa;
+  color: #55575b;
+}
+#lightvela-intl-home .hero__frame .day-chip,
+#lightvela-intl-home .hero__frame .native__search,
+#lightvela-intl-home .hero__frame .dc__fmt {
+  background: #fff;
+  color: #77797e;
+}
+#lightvela-intl-home .hero__frame .native--wa .native__search {
+  background: #f2f3f6;
+  border-radius: 8px;
+}
+#lightvela-intl-home .hero__frame .native--wa .chat-row,
+#lightvela-intl-home .hero__frame .native--tg .chat-row {
+  min-height: 66px;
+  padding-block: 12px;
+}
+#lightvela-intl-home .hero__frame .chat-row .av-c {
+  width: 36px;
+  height: 36px;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__body {
+  gap: 16px;
+  padding: 14px 32px;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__msg,
+#lightvela-intl-home .hero__frame #panel-dc .dc__msg p {
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__msg b {
+  font-size: 12px;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__chan > p,
+#lightvela-intl-home .hero__frame #panel-sl .dc__chan > p {
+  margin-bottom: 8px;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__chan button {
+  min-height: 31px;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__chan button.on,
+#lightvela-intl-home .hero__frame #panel-dc .dc__chan button:hover,
+#lightvela-intl-home .hero__frame .dc--sl .dc__chan button.on,
+#lightvela-intl-home .hero__frame .dc--sl .dc__chan button:hover {
+  background: #eeeeef;
+  color: #202124;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__mention,
+#lightvela-intl-home .hero__frame .dc--sl .dc__mention {
+  background: #f9f9fa;
+  color: #202124;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side-head .icon,
+#lightvela-intl-home .hero__frame #panel-dc .dc__head .icon,
+#lightvela-intl-home .hero__frame #panel-dc .dc__head button,
+#lightvela-intl-home .hero__frame .dc--sl .dc__side-head .icon,
+#lightvela-intl-home .hero__frame .dc--sl .dc__side-head button .icon,
+#lightvela-intl-home .hero__frame .dc--sl .dc__chan button .icon,
+#lightvela-intl-home .hero__frame .dc--sl .dc__rail button.on,
+#lightvela-intl-home .hero__frame .dc--sl .dc__rail button.on .icon {
+  color: #686a70 !important;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__me small,
+#lightvela-intl-home .hero__frame .dc--sl .dc__me small {
+  color: #77797e;
+}
+#lightvela-intl-home .hero__frame .bub__file {
+  border-color: #d7d7da;
+  background: #f9f9fa;
+}
+
+/* Telegram carries a denser engineering thread than the other channel previews. */
+#lightvela-intl-home .hero__frame #panel-tg .native__body {
+  padding: 12px 32px;
+}
+#lightvela-intl-home .hero__frame #panel-tg .native__thread {
+  gap: 12px;
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+#lightvela-intl-home .hero__frame #panel-tg .bub {
+  gap: 7px;
+}
+#lightvela-intl-home .hero__frame #panel-tg .bub > .av-c {
+  width: 28px;
+  height: 28px;
+  font-size: 10px;
+}
+#lightvela-intl-home .hero__frame #panel-tg .bub__box {
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 2px 12px 12px 12px;
+  box-shadow: 0 3px 12px rgba(11, 20, 26, 0.04), 0 1px 2px rgba(11, 20, 26, 0.03);
+}
+#lightvela-intl-home .hero__frame #panel-tg .bub__box p,
+#lightvela-intl-home .hero__frame #panel-tg .bub__name,
+#lightvela-intl-home .hero__frame #panel-tg .bub__time,
+#lightvela-intl-home .hero__frame #panel-tg .bub__file b,
+#lightvela-intl-home .hero__frame #panel-tg .bub__file small {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+#lightvela-intl-home .hero__frame #panel-tg .bub__name {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+#lightvela-intl-home .hero__frame #panel-tg .bub__time {
+  margin-left: 8px;
+}
+#lightvela-intl-home .hero__frame #panel-tg .bub__file {
+  margin-top: 5px;
+  padding: 6px 8px;
+}
+/* 文件卡片下方的时间：左对齐正文，并与卡片留间距 */
+#lightvela-intl-home .hero__frame #panel-tg .bub__file + .bub__time {
+  display: block;
+  margin-left: 0;
+  margin-top: 8px;
+}
+#lightvela-intl-home .hero__frame .bub__file > span,
+#lightvela-intl-home .hero__frame .line__file-ico {
+  background: #202124 !important;
+  color: #fff !important;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__rail .a,
+#lightvela-intl-home .hero__frame #panel-dc .dc__rail .a .icon,
+#lightvela-intl-home .hero__frame .dc--sl .dc__composer-row button,
+#lightvela-intl-home .hero__frame .dc--sl .dc__composer-row button .icon {
+  color: #202124 !important;
+}
+@media (max-width: 640px) {
+  #lightvela-intl-home .hero__tabs {
+    justify-content: flex-start;
+    width: 100%;
+    padding-inline: 12px;
+    scroll-padding-inline: 12px;
+  }
+}
+
+/* Only secondary conversation/channel lists fade away; the chat itself stays clear. */
+/* 聊天内容区可独立滚动；内容少或滚动到顶/底后，滚轮冒泡滚动整个页面 */
+#lightvela-intl-home .hero__frame .native__body,
+#lightvela-intl-home .hero__frame .dc__body {
+  overscroll-behavior: auto;
+}
+#lightvela-intl-home .hero__frame .native__chats {
+  position: relative;
+  overflow: clip;
+}
+#lightvela-intl-home .hero__frame .native__chats::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 58px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(247, 247, 248, 0.04) 0%,
+    rgba(247, 247, 248, 0.18) 24%,
+    rgba(247, 247, 248, 0.56) 62%,
+    rgba(247, 247, 248, 0.98) 100%
+  );
+}
+#lightvela-intl-home .hero__frame .native__chats .chat-row:nth-child(2) {
+  filter: blur(1.1px);
+  opacity: 0.58;
+}
+#lightvela-intl-home .hero__frame .native__chats .chat-row:nth-child(3) {
+  filter: blur(1.8px);
+  opacity: 0.36;
+}
+#lightvela-intl-home .hero__frame .native__chats .chat-row:nth-child(4) {
+  filter: blur(2.8px);
+  opacity: 0.18;
+}
+#lightvela-intl-home .hero__frame .native__chats .chat-row:nth-child(5) {
+  filter: blur(4px);
+  opacity: 0.07;
+}
+#lightvela-intl-home .hero__frame .native__chats .chat-row:nth-child(n + 6) {
+  display: none;
+}
+
+/* Discord keeps Chat clear and dissolves every channel below it. */
+#lightvela-intl-home .hero__frame #panel-dc .dc__side {
+  overflow: hidden;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side .dc__chan:nth-child(2) button:nth-of-type(2) {
+  filter: blur(1.1px);
+  opacity: 0.58;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side .dc__chan:nth-child(2) button:nth-of-type(3) {
+  filter: blur(1.8px);
+  opacity: 0.36;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side .dc__chan:nth-child(2) button:nth-of-type(4) {
+  filter: blur(2.8px);
+  opacity: 0.18;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side .dc__chan:nth-child(2) button:nth-of-type(5) {
+  filter: blur(4px);
+  opacity: 0.07;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side .dc__chan:nth-of-type(3) > p {
+  filter: blur(2.2px);
+  opacity: 0.25;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side .dc__chan:nth-of-type(3) button:nth-of-type(1) {
+  filter: blur(2.7px);
+  opacity: 0.18;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side .dc__chan:nth-of-type(3) button:nth-of-type(2) {
+  filter: blur(3.4px);
+  opacity: 0.11;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__side .dc__chan:nth-of-type(3) button:nth-of-type(3) {
+  filter: blur(4px);
+  opacity: 0.06;
+}
+
+/* Slack keeps To Do clear and dissolves Pricing and every channel below it. */
+#lightvela-intl-home .hero__frame .dc--sl .dc__side {
+  overflow: hidden;
+}
+#lightvela-intl-home .hero__frame .dc--sl .dc__side > .dc__chan button:nth-of-type(2) {
+  filter: blur(1.2px);
+  opacity: 0.52;
+}
+#lightvela-intl-home .hero__frame .dc--sl .dc__side > .dc__chan button:nth-of-type(3) {
+  filter: blur(2.6px);
+  opacity: 0.24;
+}
+#lightvela-intl-home .hero__frame .dc--sl .dc__side > .dc__chan button:nth-of-type(n + 4) {
+  filter: blur(4px);
+  opacity: 0.08;
+}
+
+/* Keep the conversation hierarchy typographic; only the header brand mark remains. */
+#lightvela-intl-home .hero__frame .av-c {
+  display: none !important;
+}
+#lightvela-intl-home .hero__frame .native__head .peer {
+  gap: 10px !important;
+}
+#lightvela-intl-home .hero__frame .native__head .peer .av-c:has(img) {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 38px !important;
+  height: 38px !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+#lightvela-intl-home .hero__frame .native__head .peer .av-c img {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  object-position: 50% 50% !important;
+  filter: none;
+}
+#lightvela-intl-home .hero__frame .chat-row .av-c img,
+#lightvela-intl-home .hero__frame .bub .av-c img,
+#lightvela-intl-home .hero__frame .dc__msg .av-c img {
+  object-position: 50% 42% !important;
+}
+#lightvela-intl-home .hero__frame .dc__bot b,
+#lightvela-intl-home .hero__frame .bub--ai .bub__name,
+#lightvela-intl-home .hero__frame .hero-live-reply-name {
+  color: var(--brand) !important;
+}
+#lightvela-intl-home #panel-tg .tg__bot-name,
+#lightvela-intl-home #panel-tg .bub--ai .hero-live-reply-name {
+  color: var(--brand) !important;
+}
+#lightvela-intl-home .hero__frame .hero-live-link {
+  display: inline-flex;
+  margin-top: 7px;
+  border-bottom: 1px solid currentColor;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+#lightvela-intl-home .hero__frame .hero-live-link:hover {
+  color: var(--brand-strong);
+}
+
+/* New messages follow each platform's self-message alignment. */
+#lightvela-intl-home .hero__frame #panel-tg .bub--me {
+  justify-content: flex-end;
+}
+#lightvela-intl-home .hero__frame #panel-tg .bub--me .bub__box {
+  border-radius: 12px 12px 2px 12px;
+  background: #f7f7f7;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__msg--me,
+#lightvela-intl-home .hero__frame #panel-sl .dc__msg--me {
+  align-self: flex-end;
+  justify-content: flex-end;
+  width: min(74%, 520px);
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__msg--me > div {
+  padding: 9px 12px;
+  border-radius: 12px 12px 4px 12px;
+  background: #6b6865;
+  color: #fff;
+  text-align: left;
+}
+#lightvela-intl-home .hero__frame #panel-sl .dc__msg--me > div {
+  padding: 9px 12px;
+  border-radius: 12px 12px 2px 12px;
+  background: #f7f7f7;
+  color: #1d1c1d;
+  text-align: left;
+  box-shadow: 0 3px 12px rgba(11, 20, 26, 0.04), 0 1px 2px rgba(11, 20, 26, 0.03);
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__msg--me > div > b,
+#lightvela-intl-home .hero__frame #panel-sl .dc__msg--me > div > b {
+  display: none;
+}
+#lightvela-intl-home .hero__frame #panel-dc .dc__msg--me > div > p {
+  margin: 0;
+  color: #fff !important;
+}
+#lightvela-intl-home .hero__frame #panel-sl .dc__msg--me > div > p {
+  margin: 0;
+  color: #1d1c1d !important;
+}
+/* END canonical 5173 hero channel preview */
+
+/* Preserve the approved standalone preview inside the host app's global reset. */
+#lightvela-intl-home .hero__stage > input,
+#lightvela-intl-home .hero__stage .native__composer input,
+#lightvela-intl-home .hero__stage .dc__composer input {
+  color: #000;
+  border-color: #000;
+}
+
+#lightvela-intl-home #panel-wa .native__side-head .acts .icon,
+#lightvela-intl-home #panel-wa .native__head .acts .icon,
+#lightvela-intl-home #panel-wa .native__composer .icon,
+#lightvela-intl-home #panel-sl .dc__side-head > button .icon {
+  display: inline;
+}
+
+#lightvela-intl-home #panel-wa .native__thread {
+  padding-left: clamp(18px, 5vw, 72px);
+}
+
+#lightvela-intl-home #panel-wa .bub--me .bub__box {
+  background: #fff;
+}
+
+#lightvela-intl-home #panel-wa .bub--ai {
+  justify-content: flex-end;
+}
+
+#lightvela-intl-home #panel-wa .bub--ai .bub__box {
+  border-radius: 12px 12px 2px 12px;
+}
+
+#lightvela-intl-home #panel-wa .bub__report code {
+  border-radius: 0;
+  background: transparent;
+}
+
+#lightvela-intl-home #panel-tg .native__search--top {
+  background: #f2f3f6;
+}
+
+#lightvela-intl-home #panel-dc .dc--discord,
+#lightvela-intl-home #panel-dc .dc__side-head,
+#lightvela-intl-home #panel-dc .dc__chan,
+#lightvela-intl-home #panel-dc .dc__main {
+  color: #20242a;
+  border-color: #20242a;
+}
+
+#lightvela-intl-home #panel-dc .dc__chan button:not(.on) {
+  color: #626b77;
+  border-color: #626b77;
+}
+
+#lightvela-intl-home #panel-dc .dc__side {
+  color: #20242a;
+  border-color: #f5f5f5;
+}
+
+#lightvela-intl-home #panel-dc .dc__side-head {
+  border-color: #20242a #20242a #f5f5f5;
+}
+
+#lightvela-intl-home #panel-dc .dc__composer input {
+  color: #20242a;
+  border-color: #20242a;
+}
+
+#lightvela-intl-home #panel-dc .dc--discord,
+#lightvela-intl-home #panel-dc .dc__head {
+  background: #fff;
+}
+
+#lightvela-intl-home #panel-dc .dc__composer {
+  background: transparent;
+}
+
+#lightvela-intl-home #panel-sl .dc__side-head > button {
+  height: 22px;
+}
+
+#lightvela-intl-home #panel-sl .dc__composer--rich {
+  background: #fff;
+}
+
+/* BEGIN approved homepage refinements 1 2 4 5 6 */
+#lightvela-intl-home .hero__eyebrow {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-hero);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: rgba(33, 26, 42, 0.38);
+}
+
+@media (max-width: 768px) {
+  #lightvela-intl-home .hero__eyebrow {
+    font-size: 13px;
+  }
+}
+
+#lightvela-intl-home .hero__rotator {
+  color: var(--brand);
+  box-sizing: content-box;
+  padding-inline: 0.12em;
+  margin-inline: -0.12em;
+  background-image: none;
+  background-clip: initial;
+  -webkit-background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+}
+
+#lightvela-intl-home .hero__rotator::after {
+  content: attr(data-word);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: inherit;
+  justify-content: inherit;
+  padding: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: inherit;
+  color: transparent;
+  background-image: linear-gradient(100deg, transparent 35%, rgba(255, 255, 255, 0.24) 50%, transparent 65%);
+  background-size: 220% 100%;
+  background-position: 115% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#lightvela-intl-home .hero__rotator-wrap.is-sweeping .hero__rotator::after {
+  opacity: 1;
+  animation: hero-rotator-text-sheen 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes hero-rotator-text-sheen {
+  0% {
+    background-position: 115% 50%;
+  }
+  100% {
+    background-position: -15% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__rotator-wrap.is-sweeping .hero__rotator::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+#lightvela-intl-home[data-locale='zh-CN'] .hero__line--dynamic {
+  width: 17.25em;
+  max-width: 92vw;
+  justify-content: flex-start;
+}
+
+#lightvela-intl-home .cta {
+  padding-bottom: 80px;
+}
+
+#lightvela-intl-home .cta__stage.sr {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
+}
+
+#lightvela-intl-home .foot {
+  padding-top: 48px;
+  padding-bottom: 78px;
+  background: #fff;
+}
+
+#lightvela-intl-home .foot__top {
+  max-width: var(--shell);
+  min-height: 184px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 28px;
+  text-align: center;
+}
+
+#lightvela-intl-home .foot__title,
+#lightvela-intl-home .foot__title .row {
+  width: auto;
+  max-width: 920px;
+  font-family: "STXingkai", "Xingkai SC", "Kaiti SC", "STKaiti", "KaiTi", var(--font-hero) !important;
+  font-size: clamp(24px, 2.55vw, 36px);
+  font-weight: 400;
+  line-height: 1.12;
+  color: #17151a;
+}
+
+#lightvela-intl-home .foot__title .row {
+  display: inline;
+  font-style: italic;
+}
+
+#lightvela-intl-home .foot__title em {
+  display: inline-block;
+  margin-inline: 0.08em;
+  font-family: "Snell Roundhand", "Brush Script MT", "Segoe Script", cursive !important;
+  font-size: 1.08em;
+  font-style: italic !important;
+  font-weight: 500;
+  color: #17151a;
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+  transform: rotate(-1deg) translateY(0.02em);
+}
+
+#lightvela-intl-home .foot__cta a {
+  display: inline-flex;
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  height: 46px;
+  margin-top: 0;
+  padding: 0 50px 0 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #17151a;
+  color: #fff;
+  font-size: clamp(15px, 1.05vw, 17px);
+  font-weight: 700;
+  letter-spacing: 0;
+  box-shadow: 0 14px 30px rgba(23, 21, 26, 0.12);
+}
+
+#lightvela-intl-home .foot__cta a span {
+  display: grid;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff;
+  color: #17151a;
+  flex: 0 0 auto;
+  transform: translateY(-50%);
+}
+
+#lightvela-intl-home .foot__cta a .icon {
+  width: 19px;
+  height: 19px;
+  stroke-width: 2.4;
+}
+
+#lightvela-intl-home .foot__links {
+  max-width: min(1380px, calc(100vw - 96px));
+  margin: 96px auto 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+#lightvela-intl-home .foot__links-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) repeat(5, minmax(0, 1fr));
+  column-gap: clamp(16px, 1.4vw, 24px);
+  row-gap: 42px;
+  align-items: start;
+}
+
+#lightvela-intl-home .foot--domestic .foot__links-grid {
+  grid-template-columns: minmax(220px, 280px) repeat(5, minmax(0, 1fr));
+  column-gap: clamp(16px, 1.4vw, 24px);
+}
+
+#lightvela-intl-home .foot__links-grid > div {
+  min-width: 0;
+}
+
+#lightvela-intl-home .foot__brand {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+#lightvela-intl-home .foot__brand-link {
+  display: inline-flex;
+  align-items: center;
+  color: #17151a;
+}
+
+#lightvela-intl-home .foot__brand-link img {
+  width: 128px;
+  height: auto;
+  display: block;
+}
+
+#lightvela-intl-home .foot__brand-word {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+#lightvela-intl-home .foot__copyright {
+  max-width: 360px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  color: rgba(23, 21, 26, 0.44);
+}
+
+#lightvela-intl-home .foot__links h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #17151a;
+}
+
+#lightvela-intl-home .foot__links ul {
+  gap: 14px;
+  margin-top: 22px;
+}
+
+#lightvela-intl-home .foot__links a {
+  font-size: 14px;
+  color: rgba(23, 21, 26, 0.66);
+}
+
+#lightvela-intl-home .foot__links-grid > div:nth-child(2) a {
+  white-space: nowrap;
+}
+
+#lightvela-intl-home .foot__bar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  #lightvela-intl-home .cta {
+    padding-bottom: 56px;
+  }
+
+  #lightvela-intl-home .foot {
+    padding-top: 48px;
+  }
+
+  #lightvela-intl-home .foot__top {
+    min-height: 152px;
+  }
+
+  #lightvela-intl-home .foot__cta a {
+    height: 44px;
+    padding: 0 48px 0 22px;
+    font-size: 15px;
+  }
+
+  #lightvela-intl-home .foot__cta a span {
+    right: 6px;
+    width: 34px;
+    height: 34px;
+  }
+
+  #lightvela-intl-home .foot__cta a .icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  #lightvela-intl-home .foot__links {
+    margin-top: 64px;
+  }
+
+  #lightvela-intl-home .foot__links-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 42px 28px;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 42px 28px;
+  }
+
+  #lightvela-intl-home .foot__brand {
+    grid-column: 1 / -1;
+    min-height: auto;
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid rgba(23, 21, 26, 0.08);
+  }
+}
+
+@media (max-width: 560px) {
+  #lightvela-intl-home .foot__links-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #lightvela-intl-home .foot--domestic .foot__links-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #lightvela-intl-home .foot__brand {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+  }
+}
+
+#lightvela-intl-home .voice {
+  min-height: auto;
+  margin-top: 28px;
+  padding: 72px 0 84px;
+  overflow: hidden;
+  background: #fff;
+}
+
+#lightvela-intl-home .voice .marquee__rows {
+  display: flex;
+  min-height: 340px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+}
+
+#lightvela-intl-home .voice .mrow {
+  min-height: 148px;
+  overflow: hidden;
+}
+
+#lightvela-intl-home .voice .mrow__track {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  width: max-content;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+#lightvela-intl-home .voice .tcard {
+  width: 288px;
+  min-height: 132px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+#lightvela-intl-home .voice .tcard__head i {
+  width: 30px;
+  height: 30px;
+}
+
+#lightvela-intl-home .voice .tcard__head b {
+  font-size: 12.5px;
+}
+
+#lightvela-intl-home .voice .tcard p {
+  flex: 1;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  #lightvela-intl-home .voice {
+    padding: 72px 0 84px;
+  }
+
+  #lightvela-intl-home .voice .marquee__rows {
+    min-height: 316px;
+  }
+
+  #lightvela-intl-home .voice .mrow {
+    min-height: 138px;
+  }
+
+  #lightvela-intl-home .voice .tcard {
+    width: 250px;
+    min-height: 122px;
+    padding: 14px;
+  }
+}
+/* END approved homepage refinements 1 2 4 5 6 */
+
+/* Homepage navigation and reading-safe play switching. */
+.home-mobile-menu-trigger {
+  display: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  border: 0;
+  background: transparent;
+  color: #211a2a;
+  cursor: pointer;
+}
+.home-mobile-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgb(0 0 0 / 20%);
+}
+.home-mobile-menu {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  z-index: 90;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 52px 20px 16px;
+  border: 1px solid #ededed;
+  border-radius: 8px;
+  background: #fff;
+  color: #211a2a;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+}
+.home-mobile-menu-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.home-mobile-menu nav {
+  display: flex;
+  flex-direction: column;
+}
+.home-mobile-menu nav a {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 8px;
+  font-size: 16px;
+  line-height: 1.5;
+  text-decoration: none;
+  color: inherit;
+  border-top: 1px solid #f2f2f2;
+}
+.home-mobile-menu :focus-visible,
+.home-mobile-menu-trigger:focus-visible {
+  outline: 2px solid #6a4fde;
+  outline-offset: 2px;
+}
+@media (max-width: 1099px) {
+  .home-mobile-menu-trigger { display: inline-flex; }
+}
+@media (min-width: 641px) {
+  #lightvela-intl-home .plays__stage { display: grid; }
+  #lightvela-intl-home .plays__stage > .play {
+    display: flex;
+    grid-area: 1 / 1;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  #lightvela-intl-home #pl-2:checked ~ .plays__stage #play-2,
+  #lightvela-intl-home #pl-3:checked ~ .plays__stage #play-3,
+  #lightvela-intl-home #pl-4:checked ~ .plays__stage #play-4 {
+    visibility: visible;
+    pointer-events: auto;
+  }
+}
+@media (max-width: 640px) {
+  #lightvela-intl-home .plays__tabs {
+    margin-top: 8px;
+    padding-top: 16px;
+  }
+  #lightvela-intl-home[data-locale="zh-CN"] .hero__frame .native__side,
+  #lightvela-intl-home[data-locale="zh-CN"] .hero__frame .dc__side {
+    display: none;
   }
 }

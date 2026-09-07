@@ -3,6 +3,7 @@
 import { memo, useEffect } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
+import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
 import { useSession } from '@/contexts/session-context';
 import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from '@/lib/agent-routes';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
@@ -14,7 +15,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260906-home-rotator-layout-v2';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260907-home-refinements-v11';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -54,6 +55,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
     loadScripts();
     return () => {
       cancelled = true;
+      document.dispatchEvent(new Event('lightvela-home-dispose'));
       mountedScripts.forEach((script) => script.remove());
     };
   }, [locale, markup]);
@@ -84,9 +86,10 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
           locale={locale}
           showLanguageSwitcher
           showProductEntry
-          loginOnly={!isDomesticHomepage}
-          promoteFreeTrial={isDomesticHomepage}
+          loginOnly
+          promoteFreeTrial={false}
         />
+        <HomeMobileNavigation locale={locale} />
       </div>
     </>
   );

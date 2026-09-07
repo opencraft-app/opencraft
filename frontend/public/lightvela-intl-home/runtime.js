@@ -27,7 +27,7 @@
     if (!el) return;
     var wrap = el.closest('.hero__rotator-wrap');
     var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');
-    if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion', 'content manager'];
+    if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];
     var index = 0;
     var measurer = el.cloneNode(false);
     measurer.removeAttribute('id');
@@ -37,28 +37,63 @@
     el.textContent = words[index];
     wrap.style.width = measure(words[index]) + 'px';
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var rotatorVisible = true;
+    var rotateTimer = 0;
+    var changeTimer = 0;
+    var sweepTimer = 0;
+    var sweepFrame = 0;
+    var rotatorVisible = !document.hidden;
     if (typeof IntersectionObserver !== 'undefined') {
       var rotatorObserver = new IntersectionObserver(function (entries) {
         entries.forEach(function (entry) {
-          if (entry.target === wrap) rotatorVisible = entry.isIntersecting;
+          if (entry.target === wrap) rotatorVisible = entry.isIntersecting && !document.hidden;
         });
       }, { threshold: 0.01 });
       rotatorObserver.observe(wrap);
     }
+    function applyWord(word) {
+      el.textContent = word;
+      el.setAttribute('data-word', word);
+      var width = measure(word);
+      if (width > 0) wrap.style.width = width + 'px';
+    }
+    applyWord(words[index]);
+    function scheduleRotate(delay) {
+      window.clearTimeout(rotateTimer);
+      rotateTimer = window.setTimeout(rotate, delay);
+    }
+    function sweepToWord(word) {
+      window.clearTimeout(changeTimer);
+      window.clearTimeout(sweepTimer);
+      window.cancelAnimationFrame(sweepFrame);
+      wrap.classList.remove('is-sweeping');
+      sweepFrame = window.requestAnimationFrame(function () {
+        wrap.classList.add('is-sweeping');
+      });
+      changeTimer = window.setTimeout(function () { applyWord(word); }, 260);
+      sweepTimer = window.setTimeout(function () { wrap.classList.remove('is-sweeping'); }, 680);
+    }
     function rotate() {
       if (!rotatorVisible) {
-        setTimeout(rotate, 2200);
+        scheduleRotate(900);
         return;
       }
       index = (index + 1) % words.length;
-      el.textContent = words[index];
-      wrap.style.width = measure(words[index]) + 'px';
-      el.classList.add('is-changing');
-      setTimeout(function () { el.classList.remove('is-changing'); }, 180);
-      setTimeout(rotate, 2200);
+      sweepToWord(words[index]);
+      scheduleRotate(2200);
     }
-    setTimeout(rotate, 2600);
+    document.addEventListener('visibilitychange', function () {
+      rotatorVisible = !document.hidden;
+      if (rotatorVisible) {
+        applyWord(words[index]);
+        scheduleRotate(420);
+      }
+    });
+    window.addEventListener('pageshow', function () {
+      rotatorVisible = !document.hidden;
+      applyWord(words[index]);
+      scheduleRotate(520);
+    });
+    scheduleRotate(2600);
   })();
 
   (function () {
@@ -282,39 +317,140 @@
   })();
 
 (function () {
-  var labels = Array.prototype.slice.call(document.querySelectorAll('.plays__tabs label[for]'));
-  if (!labels.length) return;
-  var phoneMedia = window.matchMedia('(max-width: 640px)');
-  function isPhone() {
-    return phoneMedia.matches;
+  var voice = document.querySelector('#lightvela-intl-home .voice');
+  if (!voice || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var rows = Array.prototype.slice.call(voice.querySelectorAll('.mrow'));
+  if (!rows.length) return;
+  rows.forEach(function (row) {
+    var track = row.querySelector('.mrow__track');
+    if (track) track.style.animation = 'none';
+  });
+  var voiceFrame = 0;
+  var isActive = false;
+  function renderVoiceMotion() {
+    voiceFrame = 0;
+    var rect = voice.getBoundingClientRect();
+    var viewport = window.innerHeight || document.documentElement.clientHeight || 1;
+    var progress = (viewport - rect.top) / (viewport + rect.height);
+    var clamped = Math.max(0, Math.min(1, progress));
+    var measurements = rows.map(function (row) {
+      var track = row.querySelector('.mrow__track');
+      if (!track) return null;
+      return {
+        track: track,
+        maxOffset: Math.max(0, track.scrollWidth - row.clientWidth),
+        reverse: row.classList.contains('mrow--r')
+      };
+    });
+    measurements.forEach(function (measurement) {
+      if (!measurement) return;
+      var offset = measurement.reverse
+        ? (-measurement.maxOffset + clamped * measurement.maxOffset).toFixed(2)
+        : (-clamped * measurement.maxOffset).toFixed(2);
+      measurement.track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
+    });
   }
+  function requestVoiceMotion() {
+    if (!isActive || voiceFrame) return;
+    voiceFrame = window.requestAnimationFrame(renderVoiceMotion);
+  }
+  function startVoiceMotion() {
+    if (isActive) return;
+    isActive = true;
+    window.addEventListener('scroll', requestVoiceMotion, { passive: true });
+    window.addEventListener('resize', requestVoiceMotion);
+    requestVoiceMotion();
+  }
+  function stopVoiceMotion() {
+    if (!isActive) return;
+    isActive = false;
+    window.removeEventListener('scroll', requestVoiceMotion);
+    window.removeEventListener('resize', requestVoiceMotion);
+    if (voiceFrame) {
+      window.cancelAnimationFrame(voiceFrame);
+      voiceFrame = 0;
+    }
+  }
+  if (typeof IntersectionObserver === 'undefined') {
+    startVoiceMotion();
+    return;
+  }
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) startVoiceMotion();
+      else stopVoiceMotion();
+    });
+  }, { rootMargin: '120px 0px', threshold: 0 });
+  observer.observe(voice);
+})();
+
+(function () {
+  var labels = Array.prototype.slice.call(document.querySelectorAll('.plays__tabs label[for]'));
+  var plays = document.querySelector('.plays');
+  var stage = document.querySelector('.plays__stage');
+  if (!labels.length || !plays || !stage) return;
+  var phoneMedia = window.matchMedia('(max-width: 640px)');
+  var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var timer = 0;
+  var readable = false;
+  var manualSelection = false;
+  var pointerInside = false;
+  var advancing = false;
+  var disposed = false;
   function getCheckedIndex() {
-    var checked = document.querySelector('.plays input[type="radio"]:checked');
+    var checked = plays.querySelector('input[type="radio"]:checked');
     return Math.max(0, labels.findIndex(function (label) {
       return checked && label.htmlFor === checked.id;
     }));
   }
-  function activate(index) {
-    if (!labels[index]) return;
+  function stopTimer() {
+    if (timer) window.clearTimeout(timer);
+    timer = 0;
+  }
+  function schedule() {
+    stopTimer();
+    if (disposed || !readable || manualSelection || pointerInside || phoneMedia.matches ||
+        reducedMotion.matches || document.hidden || plays.contains(document.activeElement)) return;
+    timer = window.setTimeout(function () {
+      timer = 0;
+      if (!plays.isConnected) { dispose(); return; }
+      advancing = true;
+      var next = (getCheckedIndex() + 1) % labels.length;
+      document.getElementById(labels[next].htmlFor).click();
+      advancing = false;
+      schedule();
+    }, 8000);
+  }
+  function showTab(index) {
+    manualSelection = true;
+    stopTimer();
     var input = document.getElementById(labels[index].htmlFor);
     if (input && !input.checked) input.click();
-    if (isPhone()) {
-      try {
-        labels[index].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-      } catch (_) {
-        labels[index].scrollIntoView();
-      }
+    // Only move the horizontal tab strip; never scroll the document during a swipe.
+    if (phoneMedia.matches) {
+      var tabs = labels[index].parentElement;
+      var tabRect = labels[index].getBoundingClientRect();
+      var tabsRect = tabs.getBoundingClientRect();
+      if (tabs.scrollTo) tabs.scrollTo({
+        left: tabs.scrollLeft + tabRect.left - tabsRect.left - (tabsRect.width - tabRect.width) / 2,
+        behavior: reducedMotion.matches ? 'auto' : 'smooth'
+      });
     }
   }
-  labels.forEach(function (label, i) {
-    label.addEventListener('mouseenter', function () {
-      activate(i);
-    });
+  labels.forEach(function (label, index) {
+    label.addEventListener('click', function () { showTab(index); });
   });
-  var stage = document.querySelector('.plays__stage');
+  plays.addEventListener('change', function (event) {
+    if (advancing || !event.target.matches('input[type="radio"]')) return;
+    manualSelection = true;
+    stopTimer();
+  });
+  plays.addEventListener('mouseenter', function () { pointerInside = true; stopTimer(); });
+  plays.addEventListener('mouseleave', function () { pointerInside = false; schedule(); });
+  plays.addEventListener('focusin', stopTimer);
+  plays.addEventListener('focusout', schedule);
   var startX = 0;
   var startY = 0;
-  if (!stage) return;
   stage.addEventListener('touchstart', function (event) {
     var touch = event.changedTouches && event.changedTouches[0];
     if (!touch) return;
@@ -322,16 +458,35 @@
     startY = touch.clientY;
   }, { passive: true });
   stage.addEventListener('touchend', function (event) {
-    if (!isPhone()) return;
+    if (!phoneMedia.matches) return;
     var touch = event.changedTouches && event.changedTouches[0];
     if (!touch) return;
     var dx = touch.clientX - startX;
     var dy = touch.clientY - startY;
     if (Math.abs(dx) < 42 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
-    var current = getCheckedIndex();
-    var next = dx < 0 ? current + 1 : current - 1;
-    if (next < 0) next = labels.length - 1;
-    if (next >= labels.length) next = 0;
-    activate(next);
+    showTab((getCheckedIndex() + (dx < 0 ? 1 : labels.length - 1)) % labels.length);
   }, { passive: true });
+  if (typeof IntersectionObserver === 'undefined') return;
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!plays.isConnected) { dispose(); return; }
+      readable = entry.isIntersecting && entry.intersectionRatio >= 0.75;
+      if (!entry.isIntersecting) manualSelection = false;
+      schedule();
+    });
+  }, { threshold: [0, 0.75], rootMargin: '-64px 0px 0px 0px' });
+  observer.observe(stage);
+  document.addEventListener('visibilitychange', schedule);
+  phoneMedia.addEventListener('change', schedule);
+  reducedMotion.addEventListener('change', schedule);
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    stopTimer();
+    observer.disconnect();
+    document.removeEventListener('visibilitychange', schedule);
+    phoneMedia.removeEventListener('change', schedule);
+    reducedMotion.removeEventListener('change', schedule);
+  }
+  document.addEventListener('lightvela-home-dispose', dispose, { once: true });
 })();
