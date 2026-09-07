@@ -952,6 +952,7 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 	var optionKeys []string
 	var channelCreated bool
 	var optionSessionLoggedIn bool
+	var optionSessionLoggedOut bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
@@ -988,6 +989,9 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 			}
 			decodeGatewayChannelJSON(t, r, &req)
 			optionKeys = append(optionKeys, req.Key)
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
+		case "POST /api/user/auth/logout":
+			optionSessionLoggedOut = true
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
 		case "POST /api/channel/":
 			channelCreated = true
@@ -1051,6 +1055,9 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 	}
 	if !channelCreated {
 		t.Fatal("channel was not created")
+	}
+	if !optionSessionLoggedOut {
+		t.Fatal("temporary option session was not logged out")
 	}
 }
 
@@ -1142,6 +1149,7 @@ func TestChannelBundleRejectsReservedBYOKGroupRatioKeys(t *testing.T) {
 func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 	var loginCount int
 	var twoFACount int
+	var logoutCount int
 	var optionUpdated bool
 	var optionUpdateCount int
 	var channelCreated bool
@@ -1164,7 +1172,20 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 				t.Fatalf("unexpected 2fa login request: %+v", req)
 			}
 			twoFACount++
+			http.SetCookie(w, &http.Cookie{Name: "new-api-refresh", Value: "refresh-123", Path: "/"})
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default", "access_token": "fresh-admin-token"}})
+		case "POST /api/user/auth/logout":
+			if r.Header.Get("Authorization") != "Bearer fresh-admin-token" {
+				t.Fatalf("logout authorization = %q", r.Header.Get("Authorization"))
+			}
+			if r.Header.Get("Origin") != "http://"+r.Host {
+				t.Fatalf("logout origin = %q, want %q", r.Header.Get("Origin"), "http://"+r.Host)
+			}
+			if cookie, err := r.Cookie("new-api-refresh"); err != nil || cookie.Value != "refresh-123" {
+				t.Fatalf("logout refresh cookie = %v, err = %v", cookie, err)
+			}
+			logoutCount++
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
 		case "GET /api/channel/search":
 			items := []map[string]any{}
 			if channelCreated {
@@ -1243,8 +1264,8 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != ChannelSyncStatusSynced || loginCount != 1 || twoFACount != 1 || !optionUpdated || optionUpdateCount != 3 {
-		t.Fatalf("state=%+v loginCount=%d twoFACount=%d optionUpdated=%v optionUpdateCount=%d", state, loginCount, twoFACount, optionUpdated, optionUpdateCount)
+	if state.Status != ChannelSyncStatusSynced || loginCount != 1 || twoFACount != 1 || logoutCount != 1 || !optionUpdated || optionUpdateCount != 3 {
+		t.Fatalf("state=%+v loginCount=%d twoFACount=%d logoutCount=%d optionUpdated=%v optionUpdateCount=%d", state, loginCount, twoFACount, logoutCount, optionUpdated, optionUpdateCount)
 	}
 }
 

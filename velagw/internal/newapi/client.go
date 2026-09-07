@@ -376,6 +376,21 @@ func (c *Client) Complete2FALogin(ctx context.Context, flowToken string, code st
 	}, nil
 }
 
+func (c *Client) Logout(ctx context.Context, auth AdminAuth) error {
+	headers := adminHeaders(auth)
+	if parsed, err := url.Parse(c.baseURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		headers["Origin"] = parsed.Scheme + "://" + parsed.Host
+	}
+	var resp apiResponse[any]
+	if err := c.do(ctx, http.MethodPost, "/api/user/auth/logout", headers, nil, &resp); err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("new-api logout failed: %s", resp.Message)
+	}
+	return nil
+}
+
 func (c *Client) GenerateAccessToken(ctx context.Context, userID int, bearerToken ...string) (string, error) {
 	headers := map[string]string{"New-Api-User": strconv.Itoa(userID)}
 	if token := firstNonEmpty(bearerToken...); token != "" {

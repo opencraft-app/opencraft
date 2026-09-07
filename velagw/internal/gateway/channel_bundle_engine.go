@@ -753,7 +753,7 @@ func (s *Service) releaseChannelBundleOperationLock(bundleID string, owner strin
 	}
 }
 
-func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelBundle, setID string) error {
+func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelBundle, setID string) (resultErr error) {
 	if len(bundle.Spec.Options) == 0 {
 		return nil
 	}
@@ -768,9 +768,16 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 		return fmt.Errorf("set %q is not active and bootstrapped", set.ID)
 	}
 	client := s.newAPIClient(set.BaseURL)
-	optionAuth, err := s.resolveSetOptionAuth(ctx, client, set)
+	optionAuth, temporarySession, err := s.resolveSetOptionAuth(ctx, client, set)
 	if err != nil {
 		return err
+	}
+	if temporarySession {
+		defer func() {
+			if err := client.Logout(ctx, optionAuth); err != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("close temporary option session for set %s failed: %w", set.ID, err))
+			}
+		}()
 	}
 	var groupRatioOption *ChannelBundleOption
 	for _, option := range bundle.Spec.Options {
@@ -798,15 +805,22 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 	return nil
 }
 
-func (s *Service) updateSetOption(ctx context.Context, client *newapi.Client, set Set, key string, value any) error {
-	auth, err := s.resolveSetOptionAuth(ctx, client, set)
+func (s *Service) updateSetOption(ctx context.Context, client *newapi.Client, set Set, key string, value any) (resultErr error) {
+	auth, temporarySession, err := s.resolveSetOptionAuth(ctx, client, set)
 	if err != nil {
 		return err
+	}
+	if temporarySession {
+		defer func() {
+			if err := client.Logout(ctx, auth); err != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("close temporary option session for set %s failed: %w", set.ID, err))
+			}
+		}()
 	}
 	return client.UpdateOptionWithAuth(ctx, auth, key, value)
 }
 
-func (s *Service) resolveSetOptionAuth(ctx context.Context, client *newapi.Client, set Set) (newapi.AdminAuth, error) {
+func (s *Service) resolveSetOptionAuth(ctx context.Context, client *newapi.Client, set Set) (newapi.AdminAuth, bool, error) {
 	username := strings.TrimSpace(set.AdminUsername)
 	if username == "" {
 		username = strings.TrimSpace(s.options.RootUsername)
@@ -815,23 +829,23 @@ func (s *Service) resolveSetOptionAuth(ctx context.Context, client *newapi.Clien
 	if username != "" && password != "" {
 		session, err := client.Login(ctx, username, password)
 		if err != nil {
-			return newapi.AdminAuth{}, err
+			return newapi.AdminAuth{}, false, err
 		}
 		if session.Require2FA && strings.TrimSpace(set.AdminTOTPSecret) != "" {
 			code, err := generateTOTPCode(set.AdminTOTPSecret, s.nowUTC())
 			if err != nil {
-				return newapi.AdminAuth{}, err
+				return newapi.AdminAuth{}, false, err
 			}
 			session, err = client.Complete2FALogin(ctx, session.TwoFAFlowToken, code)
 			if err != nil {
-				return newapi.AdminAuth{}, err
+				return newapi.AdminAuth{}, false, err
 			}
 		}
 		if session.UserID > 0 {
-			return newapi.AdminAuth{UserID: session.UserID, AccessToken: session.AccessToken}, nil
+			return newapi.AdminAuth{UserID: session.UserID, AccessToken: session.AccessToken}, true, nil
 		}
 	}
-	return adminAuthForSet(set), nil
+	return adminAuthForSet(set), false, nil
 }
 
 func (s *Service) markChannelBundlePendingForSyncTargets(ctx context.Context, bundle ChannelBundle) error {
