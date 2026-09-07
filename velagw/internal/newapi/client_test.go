@@ -1065,7 +1065,7 @@ func TestDeleteUserTokenTreatsNotFoundAsAlreadyDeleted(t *testing.T) {
 
 func TestClientCreatesAndUpdatesMultiKeyChannel(t *testing.T) {
 	var create AddChannelRequest
-	var update UpdateChannelRequest
+	var update map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
@@ -1074,6 +1074,9 @@ func TestClientCreatesAndUpdatesMultiKeyChannel(t *testing.T) {
 			writeJSON(t, w, map[string]any{"success": true})
 		case "PUT /api/channel/":
 			decodeJSON(t, r, &update)
+			if _, exists := update["status"]; exists {
+				t.Fatal("channel update must not include status; status has a dedicated API")
+			}
 			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 17}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -1098,11 +1101,11 @@ func TestClientCreatesAndUpdatesMultiKeyChannel(t *testing.T) {
 	if create.Mode != "multi_to_single" || create.MultiKeyMode != "random" {
 		t.Fatalf("unexpected multi-key create request: %+v", create)
 	}
-	if update.MultiKeyMode == nil || *update.MultiKeyMode != "random" || update.KeyMode == nil || *update.KeyMode != "replace" {
+	if update["multi_key_mode"] != "random" || update["key_mode"] != "replace" {
 		t.Fatalf("unexpected multi-key update request: %+v", update)
 	}
-	if update.Channel.Status != ChannelStatusManuallyDisabled || update.Channel.Key != "sk-one\nsk-two" {
-		t.Fatalf("multi-key channel payload was not preserved: %+v", update.Channel)
+	if update["key"] != "sk-one\nsk-two" {
+		t.Fatalf("multi-key channel payload was not preserved: %+v", update)
 	}
 }
 

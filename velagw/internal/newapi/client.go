@@ -228,6 +228,20 @@ type UpdateChannelRequest struct {
 	KeyMode      *string `json:"key_mode,omitempty"`
 }
 
+func (request UpdateChannelRequest) MarshalJSON() ([]byte, error) {
+	type updateChannelRequestAlias UpdateChannelRequest
+	raw, err := json.Marshal(updateChannelRequestAlias(request))
+	if err != nil {
+		return nil, err
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+	delete(payload, "status")
+	return json.Marshal(payload)
+}
+
 type FetchModelsRequest struct {
 	BaseURL string `json:"base_url"`
 	Type    int    `json:"type"`
