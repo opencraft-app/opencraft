@@ -28,6 +28,7 @@ master 源码
 - DB migration/seed 不塞进应用启动；使用受控 GitOps job 与明确回滚。
 - 未经用户明确授权，不构建付费制品、不更新 GitOps、不 apply、不发布。
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
+- 接管已经存在的 Deployment、StatefulSet 或 StatefulSetPlus 时，GitOps manifest 必须沿用 live 对象的 `spec.selector`；该字段不可变，不能为了补充组织标签而扩展。新增标签只能放在允许变更的 metadata/Pod template，并确保 Pod labels 继续匹配 selector。发现 selector 漂移时先修 `master` 真源，再由流水线投影到 `gitops`，不直接热修 `gitops`。
 
 ## CloudLadder Gateway 回调环境
 
