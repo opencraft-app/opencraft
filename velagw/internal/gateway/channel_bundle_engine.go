@@ -119,7 +119,7 @@ func (s *Service) ImportChannelBundleFromSet(ctx context.Context, input ImportCh
 	return s.UpsertChannelBundle(ctx, bundle)
 }
 
-func (s *Service) channelBundleSnapshotFromSet(ctx context.Context, input ImportChannelBundleInput) (ChannelBundle, error) {
+func (s *Service) channelBundleSnapshotFromSet(ctx context.Context, input ImportChannelBundleInput) (_ ChannelBundle, resultErr error) {
 	input.SourceSetID = strings.TrimSpace(input.SourceSetID)
 	input.ID = strings.TrimSpace(input.ID)
 	input.Name = strings.TrimSpace(input.Name)
@@ -144,7 +144,17 @@ func (s *Service) channelBundleSnapshotFromSet(ctx context.Context, input Import
 		return ChannelBundle{}, fmt.Errorf("set %q is not active and bootstrapped", set.ID)
 	}
 	client := s.newAPIClient(set.BaseURL)
-	auth := adminAuthForSet(set)
+	auth, temporarySession, err := s.resolveSetAdminAuth(ctx, client, set)
+	if err != nil {
+		return ChannelBundle{}, err
+	}
+	if temporarySession {
+		defer func() {
+			if err := client.Logout(ctx, auth); err != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("close temporary export session for set %s failed: %w", set.ID, err))
+			}
+		}()
+	}
 	const maxSnapshotAttempts = 3
 	for attempt := 1; attempt <= maxSnapshotAttempts; attempt++ {
 		remotes, err := client.ListChannelsStable(ctx, auth)
@@ -768,7 +778,7 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 		return fmt.Errorf("set %q is not active and bootstrapped", set.ID)
 	}
 	client := s.newAPIClient(set.BaseURL)
-	optionAuth, temporarySession, err := s.resolveSetOptionAuth(ctx, client, set)
+	optionAuth, temporarySession, err := s.resolveSetAdminAuth(ctx, client, set)
 	if err != nil {
 		return err
 	}
@@ -806,7 +816,7 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 }
 
 func (s *Service) updateSetOption(ctx context.Context, client *newapi.Client, set Set, key string, value any) (resultErr error) {
-	auth, temporarySession, err := s.resolveSetOptionAuth(ctx, client, set)
+	auth, temporarySession, err := s.resolveSetAdminAuth(ctx, client, set)
 	if err != nil {
 		return err
 	}
@@ -820,7 +830,7 @@ func (s *Service) updateSetOption(ctx context.Context, client *newapi.Client, se
 	return client.UpdateOptionWithAuth(ctx, auth, key, value)
 }
 
-func (s *Service) resolveSetOptionAuth(ctx context.Context, client *newapi.Client, set Set) (newapi.AdminAuth, bool, error) {
+func (s *Service) resolveSetAdminAuth(ctx context.Context, client *newapi.Client, set Set) (newapi.AdminAuth, bool, error) {
 	username := strings.TrimSpace(set.AdminUsername)
 	if username == "" {
 		username = strings.TrimSpace(s.options.RootUsername)
