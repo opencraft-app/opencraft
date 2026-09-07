@@ -26,7 +26,6 @@
 **Verification:** 定向 Vitest 5 files / 58 tests 通过；`pnpm i18n:check`、`pnpm i18n:zh-hant:check` 和 `pnpm check` 通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0；`pnpm build:cn` 生成 96 个静态页面，`pnpm build:global` 生成 606 个静态页面；国内/国际站桌面 1280×720 与移动端 390×844 共 4 个浏览器用例通过，公告文案、36px 导航偏移和页面无横向溢出均有截图与 DOM 尺寸证据；独立只读代码审查无 Critical / Important / Minor 问题；`git diff --check` 通过。
 
 **Task 2 Verification:** 回归测试经历 RED（2 tests failed）后转为 GREEN（5 files / 58 tests passed）；`pnpm check` exit 0，TypeScript diagnostics 0 new，i18n 结构错误 0；国际站 1280px 浏览器实测正文中心偏差 0px、页面宽度 1280px、旧公测文案和轮播按钮均为 0，856px 窄窗口从正文开头横向滚动且页面宽度未溢出。
-
 ---
 
 # MR !3566 CR Follow-up Implementation Plan

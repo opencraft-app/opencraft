@@ -265,4 +265,59 @@ describe("SubscribePage", () => {
     });
     expect(createDianshiPassOrderAndPayMock).not.toHaveBeenCalled();
   });
+
+  it("refreshes passes when an authenticated user opens the subscribe page", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { realnameVerified: true };
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    await waitFor(() => {
+      expect(openClawState.refreshPasses).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("disables subscription actions when an active pass is already present", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.activePass = {
+      pass_id: "pass-existing",
+      bundle_id: "bundle_cruise_ai_01",
+    };
+    sessionState.isAuthenticated = true;
+    sessionState.user = { realnameVerified: true };
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    expect(await screen.findByRole("button", { name: "当前订阅" })).toBeDisabled();
+  });
+
+  it("refreshes pass state and closes checkout when ordering reports an existing pass", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { realnameVerified: true };
+    createPassOrderMock.mockRejectedValue(
+      Object.assign(new Error("pass already exists"), { code: "PASS_ALREADY_EXISTS" }),
+    );
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const user = userEvent.setup();
+    render(<SubscribePage />);
+
+    await waitFor(() => {
+      expect(openClawState.refreshPasses).toHaveBeenCalledTimes(1);
+    });
+    await user.click(await screen.findByRole("button", { name: /订阅|开通/ }));
+    await user.click(screen.getByRole("button", { name: /支付/ }));
+
+    await waitFor(() => {
+      expect(openClawState.refreshPasses).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "确认订单" })).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("您已有有效套餐，无需重复购买。")).not.toBeInTheDocument();
+  });
 });
