@@ -16,6 +16,7 @@
 
 - 支付成功、订单成功和权益生效是不同阶段，必须分别建模和验证。
 - 回调、权益应用和开通都必须幂等；失败补偿不能重复创建外部资源。
+- 外部计费入向回调按产品类型隔离地域 route：Pass 使用 `jifei-callback-{region}`，Credit 使用 `jifei-credit-callback-{region}`；调整 Credit 的环境落点不能改变 Pass 路由。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
 - 外部计费价格、活动和 API 规则属于外部 authority，不从历史文档直接采用。
 - 前端只呈现服务返回的订阅/配额状态，不能成为唯一门禁。
