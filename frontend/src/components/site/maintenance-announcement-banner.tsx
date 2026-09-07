@@ -25,7 +25,7 @@ type AnnouncementItem = {
 };
 
 /** 公告顺序即轮播顺序。 */
-const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0822-hermes-agent-upgrade";
+const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0907-hermes-agent-upgrade";
 const GLOBAL_PUBLIC_BETA_BILLING_ANNOUNCEMENT_ID =
   "0818-global-public-beta-billing-announcement";
 const ANNOUNCEMENT_IDS = [
@@ -33,12 +33,12 @@ const ANNOUNCEMENT_IDS = [
   GLOBAL_PUBLIC_BETA_BILLING_ANNOUNCEMENT_ID,
 ] as const;
 
-/** 北京时间 / 新加坡时间 2026-08-23 06:00:00 = UTC 2026-08-22 22:00:00 */
+/** 北京时间 / 新加坡时间 2026-09-08 02:00:00 = UTC 2026-09-07 18:00:00 */
 const HERMES_UPGRADE_EXPIRES_AT = Date.UTC(
   2026,
-  7 /* 0-indexed: August */,
-  22,
-  22,
+  8 /* 0-indexed: September */,
+  7,
+  18,
   0,
   0,
 );
@@ -73,10 +73,10 @@ export function MaintenanceAnnouncementBanner() {
       expiresAt: HERMES_UPGRADE_EXPIRES_AT,
       message: isGlobal
         ? t(
-            "LightVela 将于新加坡时间 2026 年 8 月 22 日 22:00-次日 06:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+            "LightVela 将于新加坡时间 2026 年 9 月 7 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
           )
         : t(
-            "LightVela 将于北京时间 2026 年 8 月 22 日 22:00-次日 06:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+            "LightVela 将于北京时间 2026 年 9 月 7 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
           ),
     },
     ...(isGlobal
@@ -157,6 +157,13 @@ export function MaintenanceAnnouncementBanner() {
     VISIBLE_PATHS.has(stripPublicSiteLocalePrefix(pathname)) &&
     visibleAnnouncements.length > 0;
 
+  useEffect(() => {
+    document.body.classList.toggle("lw-has-announcement", visible);
+    return () => {
+      document.body.classList.remove("lw-has-announcement");
+    };
+  }, [visible]);
+
   const activeAnnouncement =
     visibleAnnouncements[activeIndex] ?? visibleAnnouncements[0];
 
@@ -189,7 +196,7 @@ export function MaintenanceAnnouncementBanner() {
   return (
     <div
       // 公告条强制 36px 单行高（h-9）。喇叭和文案打成一个 inline-flex 整体，
-      // 窄屏时左对齐横向滚动，避免长文案被居中溢出截掉开头；右侧用 margin
+      // 长文案左对齐横向滚动，避免居中溢出时截掉开头；右侧用 margin
       // 给 absolute 按钮留安全区，避免文字被关闭/轮播按钮遮挡。
       className="relative flex h-9 items-center justify-center border-b border-amber-300 bg-amber-50 px-4 text-sm text-amber-950 shadow-sm"
       role="status"
@@ -201,7 +208,7 @@ export function MaintenanceAnnouncementBanner() {
     >
       <div
         className={cn(
-          "mr-8 flex min-w-0 flex-1 justify-start overflow-x-auto whitespace-nowrap sm:justify-center",
+          "mr-8 flex min-w-0 flex-1 justify-start overflow-x-auto whitespace-nowrap",
           showCarouselControls ? "sm:mr-24" : null,
         )}
       >
