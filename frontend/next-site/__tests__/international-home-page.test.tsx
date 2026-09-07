@@ -1058,6 +1058,12 @@ describe("international v2 homepage artifact", () => {
       const eyebrow = document.querySelector(".hero__eyebrow");
       expect(eyebrow?.tagName, fragmentName).toBe("DIV");
       expect(eyebrow?.getAttribute("aria-label"), fragmentName).toBe(eyebrow?.textContent?.trim());
+      expect(document.querySelector('.nav__links a')?.getAttribute('aria-current'), fragmentName).toBe('page');
+      expect(document.querySelector('.about__head .k')?.tagName, fragmentName).toBe('H2');
+      expect(document.querySelector('.deploy__lead')?.tagName, fragmentName).toBe('H2');
+      for (const button of document.querySelectorAll('.scene__sub')) {
+        expect(button.getAttribute('aria-pressed'), fragmentName).toBe(button.classList.contains('on') ? 'true' : 'false');
+      }
     }
   });
 

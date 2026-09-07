@@ -3910,6 +3910,16 @@ function highlightHeroLightVelaMentions(document) {
 }
 
 function prepareDocumentForLocale(document, locale) {
+  document.querySelector('.nav__links a')?.setAttribute('aria-current', 'page');
+  document.querySelectorAll('.scene__sub').forEach((button) => {
+    button.setAttribute('aria-pressed', button.classList.contains('on') ? 'true' : 'false');
+  });
+  document.querySelectorAll('.about__head p.k, p.deploy__lead').forEach((paragraph) => {
+    const heading = document.createElement('h2');
+    for (const attribute of paragraph.attributes) heading.setAttribute(attribute.name, attribute.value);
+    heading.append(...paragraph.childNodes);
+    paragraph.replaceWith(heading);
+  });
   normalizeHeroDemo(document);
   localizeDocumentText(document, locale);
   applyLocalizedAssets(document, locale);
