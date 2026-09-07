@@ -1,3 +1,23 @@
+# 已有 Pass 仍可重复下单修复 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户确认；尚未 commit 或 push。
+
+**Size:** S。仅修正订阅页的 pass 状态同步、按钮锁定和下单冲突处理，不改后端协议与计费流程。
+
+**Goal:** 已有有效 pass 的用户进入订阅页后不能再次下单；即使页面状态短暂过期，后端返回 `PASS_ALREADY_EXISTS` 后也应刷新权益并退出支付流程。
+
+**Files:**
+- Modify: `next-site/subscribe-page.tsx`
+- Modify: `next-site/__tests__/subscribe-page.test.tsx`
+
+- [x] **Task 1：测试先行覆盖登录后主动刷新 pass、activePass 锁定订阅按钮。**
+- [x] **Task 2：测试先行覆盖下单返回 `PASS_ALREADY_EXISTS` 时刷新 pass 并关闭支付流程。**
+- [x] **Task 3：运行定向 Vitest、前端检查与 diff 检查。**
+
+**Verification:** 3 条回归用例先按预期 RED，实现后订阅页 6/6 通过；`pnpm check` 通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved；i18n 结构错误 0，48 个告警与 id-ID 174 条待翻译均为既有基线；`git diff --check` 通过。
+
+---
+
 # MR !3566 CR Follow-up Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认 commit；尚未 push 或更新 MR。
