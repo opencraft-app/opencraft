@@ -2714,6 +2714,14 @@ export const SubscribePage = ({
      国际站已全量放开，付费开关只由后端 features 熔断；
      任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
   const freeGuideAllowed = !paidBillingActive && !realnamePhoneVerificationEnabled;
+
+  /* OpenClawProvider 的首轮请求可能早于登录态稳定或遭遇瞬时失败。
+     订阅页是创建订单的入口，进入登录态后主动刷新一次 pass，避免用陈旧状态开放购买按钮。 */
+  useEffect(() => {
+    if (!authReady || !isAuthenticated) return;
+    void refreshPasses();
+  }, [authReady, isAuthenticated, refreshPasses]);
+
   const header = (
     <SubscribePageHeader
       authControls={authControls}
@@ -3044,8 +3052,8 @@ export const SubscribePage = ({
    * 安全：二维码里**只有 deal_name + auth_code + expires_at**，无 Bearer token、无 pay_url；
    * auth_code 是一次性 ticket（TTL ≤10 分钟），截图泄漏的最坏后果是替受害者发起一次支付。
    *
-   * 注意：如果用户已拥有 active pass（互斥占用规则），trade 会返回 PASS_ALREADY_EXISTS，
-   * 此时跳过下单、直接走 finalizeBot（与免费链路一致）。
+   * 注意：如果页面 pass 状态过期，trade 仍会用 PASS_ALREADY_EXISTS 阻止重复下单；
+   * executeCreateBot 会刷新 pass 并退出支付流程。
    */
   const startPaidPassOrder = useCallback(async (plan: PlanInfo) => {
     trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
@@ -3330,6 +3338,16 @@ export const SubscribePage = ({
     } catch (err) {
       const code = getBillingErrorCode(err);
       const fallbackMsg = err instanceof Error ? err.message : t("创建失败，请稍后重试。");
+      /* 后端的单 pass 约束是最终防线。命中冲突说明页面权益状态已过期，
+         立即刷新并关闭支付上下文，让卡片切回「当前订阅」，不把幂等结果展示成下单失败。 */
+      if (isPassConflictError(code)) {
+        await refreshPasses();
+        setError(null);
+        setModalStep("closed");
+        setSelectedPlan(null);
+        setPaymentContext(null);
+        return;
+      }
       console.error("[subscribe] create bot failed", err instanceof RepositoryError
         ? { status: err.status, code: err.code, message: err.message }
         : err);
@@ -3386,7 +3404,7 @@ export const SubscribePage = ({
     } finally {
       setSubscribingPlanId(null);
     }
-  }, [paidBillingActive, startDianshiOrderAndPay, startPaidPassOrder, startIntlCardPay, startTrialPass, t]);
+  }, [paidBillingActive, startDianshiOrderAndPay, startPaidPassOrder, startIntlCardPay, startTrialPass, refreshPasses, t]);
 
   const handleSubscribe = useCallback((planId: string) => {
     const plan = planList.find((p) => p.id === planId);
@@ -3398,6 +3416,13 @@ export const SubscribePage = ({
       /* 未登录：弹出登录弹窗引导登录（OAuth 整页跳转）。
          登录回跳后进入已登录态定价页，用户再次点「订阅」即走下方实名判断链路。 */
       setShowLoginModal(true);
+      return;
+    }
+
+    /* UI disabled 之外的业务兜底：已有 pass / 订阅 / 实例时不允许进入确认订单。
+       refreshPasses 用来收敛可能陈旧的权益快照，后端仍保留 PASS_ALREADY_EXISTS 最终保护。 */
+    if (isSubscribed || activePass || bots.length > 0) {
+      void refreshPasses();
       return;
     }
 
@@ -3447,7 +3472,7 @@ export const SubscribePage = ({
     /* 付费套餐：进入确认订单弹窗 */
     setSelectedPlan(plan);
     setModalStep("confirm");
-  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, realnamePhoneVerificationEnabled, navigate]);
+  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, isSubscribed, activePass, refreshPasses, realnamePhoneVerificationEnabled, navigate]);
 
   /* 邀请码激活成功后：自动继续用户之前点击的套餐流程 */
   const handleInviteSuccess = useCallback(() => {
@@ -3737,8 +3762,8 @@ export const SubscribePage = ({
                     subscribingPlanId={subscribingPlanId}
                     currentBots={bots.length}
                     reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
-                    /* 已有生效订阅或有智能体：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
-                    subscriptionLocked={isSubscribed || bots.length > 0}
+                    /* 已有生效订阅、pass 或智能体：暂不支持升级/更换套餐，所有卡按钮禁用。 */
+                    subscriptionLocked={isSubscribed || activePass !== null || bots.length > 0}
                   />
                 ))}
               </motion.div>
