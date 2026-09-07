@@ -39,6 +39,8 @@ test("three hosts agree on branding but retain installed application identity", 
   assert.equal(desktopProduct.profileDirectoryName, "@vela/workbench-electron");
   const main = read("apps/workbench-electron/src/main.ts");
   assert.ok(main.indexOf('app.setPath("userData"') < main.indexOf("app.requestSingleInstanceLock()"));
+  assert.ok(main.indexOf("mkdirSync(userDataDirectory") < main.indexOf('app.setPath("userData"'));
+  assert.match(main, /getSwitchValue\("user-data-dir"\)/u);
 });
 
 test("rebranding does not change conversation identity or external capability negotiation", () => {

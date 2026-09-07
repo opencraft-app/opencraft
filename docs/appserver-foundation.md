@@ -83,7 +83,7 @@ physical adapter; that does not change the semantic boundary.
 
 The initial model was checked against r1116. The ownership review was rechecked
 against the current fixed point at
-`/data/mia/.runtime/source-tree-build-r2030-eager-immediate-compact`. The newer
+`reference://codex/.runtime/source-tree-build-r2030-eager-immediate-compact`. The newer
 source preserves the same ownership and adds a clearly recovered bounded
 request recorder. Recovered code is a behavioral reference, not a runtime
 dependency:

@@ -3,7 +3,7 @@
 `useStableEvent` restores the public behavior of Codex Desktop's stable/latest
 callback boundary from:
 
-- `/data/mia/.runtime/source-tree-build-r1973-initializer-state-control-closure/shared/use-latest-callback.js:10-38`
+- `reference://codex/.runtime/source-tree-build-r1973-initializer-state-control-closure/shared/use-latest-callback.js:10-38`
 
 The wrapper has one identity for a mounted component, while `useInsertionEffect`
 publishes the implementation from the latest committed render. OpenCraft does not

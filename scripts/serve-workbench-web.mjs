@@ -66,7 +66,7 @@ function bridgeAppServerSocket(client, request, options) {
   const upstreamOptions = {
     handshakeTimeout: 10_000,
     headers: {
-      "x-hypernode-user": options.hyperNodeUser,
+      ...(options.hyperNodeUser ? { "x-hypernode-user": options.hyperNodeUser } : {}),
     },
   };
   const upstream = protocols.length > 0
@@ -168,7 +168,7 @@ async function serveFile(request, response, path, pathname) {
 export async function createWorkbenchWebServer({
   root,
   appServerTarget = "ws://127.0.0.1:9988/rpc",
-  hyperNodeUser = "skipzhang",
+  hyperNodeUser = "",
 } = {}) {
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
@@ -304,7 +304,7 @@ if (isMain) {
     const webServer = await createWorkbenchWebServer({
       root: process.env.OPENCRAFT_WEB_ROOT || join(repositoryRoot, "apps/workbench-web/dist"),
       appServerTarget: process.env.OPENCRAFT_APPSERVER_URL || "ws://127.0.0.1:9988/rpc",
-      hyperNodeUser: process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "skipzhang",
+      hyperNodeUser: process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "",
     });
     const address = await webServer.listen({ host, port });
     console.log(`[opencraft static] ${webServer.staticRoot} -> http://${host}:${address.port}`);

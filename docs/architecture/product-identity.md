@@ -36,9 +36,8 @@ Third-party DSH, Hermes and Codex reference sources are not rebranded.
 
 ## Checkout and release
 
-The existing physical checkouts remain `/vela` and
-`/Users/skipzhang/Developer/vela`; the product does not depend on the checkout
-basename. Deployment directories and running installations are not moved by
+The product does not depend on the physical checkout path or its basename.
+Deployment directories and running installations are not moved by
 source rebranding. Mac builds now produce `OpenCraft.app`, and scripts use
-`OPENCRAFT_MAC_*` settings. Builds must be deployed separately; source renaming
+explicit `OPENCRAFT_MAC_*` settings. Builds must be deployed separately; source renaming
 does not replace the running production website or Mac application.

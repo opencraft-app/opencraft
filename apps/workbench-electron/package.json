@@ -40,6 +40,7 @@
     "productName": "OpenCraft",
     "asar": true,
     "npmRebuild": false,
+    "beforePack": "../../scripts/check-desktop-target.cjs",
     "directories": {
       "output": "release"
     },
@@ -62,8 +63,7 @@
         "to": "runtime/dsh",
         "filter": [
           "package.json",
-          "package-lock.json",
-          ".opencraft-dsh-version"
+          "package-lock.json"
         ]
       },
       {

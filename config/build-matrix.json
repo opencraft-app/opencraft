@@ -47,10 +47,10 @@
     },
     {
       "id": "electron-macos-arm64-zip",
-      "platforms": ["linux", "darwin"],
+      "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:arm64:zip"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-arm64.zip"],
-      "description": "Unsigned Apple Silicon application ZIP; cross-buildable on Linux"
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-mac-arm64.zip"],
+      "description": "Unsigned Apple Silicon application ZIP; build natively on an arm64 Mac"
     },
     {
       "id": "electron-macos-arm64-dmg",
@@ -61,10 +61,10 @@
     },
     {
       "id": "electron-macos-x64-zip",
-      "platforms": ["linux", "darwin"],
+      "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:x64:zip"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-x64.zip"],
-      "description": "Unsigned Intel macOS application ZIP; cross-buildable on Linux"
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-mac-x64.zip"],
+      "description": "Unsigned Intel macOS application ZIP; build natively on an x64 Mac"
     },
     {
       "id": "electron-macos-x64-dmg",

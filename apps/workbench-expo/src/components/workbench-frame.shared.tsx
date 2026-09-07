@@ -159,7 +159,7 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
 
   const createTask = () => {
     const activeProtocolThread = catalog.protocolThreads.find((thread) => thread.id === snapshot.activeThreadId);
-    const cwd = activeProtocolThread?.cwd ?? "/vela";
+    const cwd = activeProtocolThread?.cwd;
     void workbench.openDraft(cwd);
     if (!split) setSidebarOpen(false);
   };

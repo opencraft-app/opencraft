@@ -52,7 +52,7 @@ interface WorkbenchRuntimeContextValue {
   readonly composerController: ComposerController;
   submit(intent: SubmitIntent): Promise<SubmissionReceipt>;
   activateThread(threadId: string): Promise<boolean>;
-  openDraft(cwd: string): Promise<void>;
+  openDraft(cwd?: string): Promise<void>;
 }
 
 export interface ExpoWorkbenchApplication {
@@ -85,7 +85,8 @@ function appServerUrl(): string {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     return `${protocol}//${location.hostname}:9988/rpc`;
   }
-  return "ws://9.134.163.40:9988/rpc";
+  // A physical device must configure its own reachable AppServer endpoint.
+  return "ws://127.0.0.1:9988/rpc";
 }
 
 function getHttpStatus(error: unknown): number | null {
@@ -122,7 +123,7 @@ export function createExpoWorkbenchApplication(): ExpoWorkbenchApplication {
         entrypoint: "home",
         execution: {
           hostId,
-          workspace: { cwd: "/vela", runtimeWorkspaceRoots: ["/vela"] },
+          workspace: { cwd: null, runtimeWorkspaceRoots: [] },
         },
       },
     });
@@ -135,7 +136,7 @@ export function createExpoWorkbenchApplication(): ExpoWorkbenchApplication {
         kind: "remote-control",
         transportEndpoint: appServerUrl(),
         executionLocation: "AppServer",
-        workspaceBrowseRoots: ["/vela"],
+        workspaceBrowseRoots: [],
       },
       createRuntime: () => runtime,
     }]);
@@ -268,7 +269,7 @@ export function WorkbenchRuntimeProvider({
       const opened = application.conversationScopes.openDraft({
         execution: {
           hostId: runtime.getSnapshot().hostId,
-          workspace: { cwd, runtimeWorkspaceRoots: [cwd] },
+          workspace: { cwd: cwd ?? null, runtimeWorkspaceRoots: cwd ? [cwd] : [] },
         },
         entrypoint: "new-chat",
       });

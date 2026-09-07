@@ -11,18 +11,18 @@
 
 ## 固定的原版证据
 
-审计基线已固定到 `/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1`，较早的 r257/r312/r1329 不再作为行为权威。
+审计基线已固定到 `reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1`，较早的 r257/r312/r1329 不再作为行为权威。
 
 | 原版模块 | 负责行为 | SHA-256 |
 | --- | --- | --- |
-| [thread-scroll-layout-xQ2_L08y.js](/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/thread-scroll-layout-xQ2_L08y.js) | 倒置滚动容器、输入来源、布局保持、Footer、历史装载 | `5f646eaaa0190189ee5d7120bb31466fdb86e49e8817d2e6002aa9111f83f190` |
-| [open-sources-side-panel-tab-CfgjOF5O.js](/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js) | `VirtualizedTurnList`、测量事务、恢复窗口、目标滚动 | `962c30d218119e93fc2585e3020885f2d370c449443d98e78509ad3e6c90af96` |
-| [local-conversation-thread-CShhuS2f.js](/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/local-conversation-thread-CShhuS2f.js) | follow reducer、新 Turn placement、response spacer、持久化恢复 | `543f6739a018c55aa166032071f172c6bdf408175ac9566e6aae0f1e51d8935b` |
-| [thread-virtualizer-D5BSbZuA.js](/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/thread-virtualizer-D5BSbZuA.js) | 虚拟窗口原语 | `c38373408eecfddc6b44f74a73167c02fa6ad228f214a740a78c9561b951e419` |
-| [local-conversation-thread-turn-entries-BNYVWqua.js](/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/local-conversation-thread-turn-entries-BNYVWqua.js) | Turn entry 边界 | `4ea5f4f5560ff963d13643b8e70402f6718b75edf89fb43b6174ece8975b40e9` |
-| [thread-scroll-controller-context-value-B_r__Jnq.js](/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/thread-scroll-controller-context-value-B_r__Jnq.js) | imperative scroll controller contract | `15d47c460c9d6b460a53529db6939c25f368b15317aae4d14bfc7329ae16da0b` |
-| [local-conversation-turn-CaFyDx7G.js](/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/local-conversation-turn-CaFyDx7G.js) | Turn 分片、commentary/final answer、Activity 编排 | `2352867e2ad7f97246bda32959532f428ff22345a6da02e251719c468e2770d3` |
-| [subagent-activity-chip-group-CC185tmV.js](/data/mia/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/subagent-activity-chip-group-CC185tmV.js) | Agent Activity 折叠真值表 | `e5a9da5c6cd608d865eefbcf9356dcb16e54c1974a752c7718c1d5c616fd64fa` |
+| [thread-scroll-layout-xQ2_L08y.js](reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/thread-scroll-layout-xQ2_L08y.js) | 倒置滚动容器、输入来源、布局保持、Footer、历史装载 | `5f646eaaa0190189ee5d7120bb31466fdb86e49e8817d2e6002aa9111f83f190` |
+| [open-sources-side-panel-tab-CfgjOF5O.js](reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js) | `VirtualizedTurnList`、测量事务、恢复窗口、目标滚动 | `962c30d218119e93fc2585e3020885f2d370c449443d98e78509ad3e6c90af96` |
+| [local-conversation-thread-CShhuS2f.js](reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/local-conversation-thread-CShhuS2f.js) | follow reducer、新 Turn placement、response spacer、持久化恢复 | `543f6739a018c55aa166032071f172c6bdf408175ac9566e6aae0f1e51d8935b` |
+| [thread-virtualizer-D5BSbZuA.js](reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/thread-virtualizer-D5BSbZuA.js) | 虚拟窗口原语 | `c38373408eecfddc6b44f74a73167c02fa6ad228f214a740a78c9561b951e419` |
+| [local-conversation-thread-turn-entries-BNYVWqua.js](reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/local-conversation-thread-turn-entries-BNYVWqua.js) | Turn entry 边界 | `4ea5f4f5560ff963d13643b8e70402f6718b75edf89fb43b6174ece8975b40e9` |
+| [thread-scroll-controller-context-value-B_r__Jnq.js](reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/thread-scroll-controller-context-value-B_r__Jnq.js) | imperative scroll controller contract | `15d47c460c9d6b460a53529db6939c25f368b15317aae4d14bfc7329ae16da0b` |
+| [local-conversation-turn-CaFyDx7G.js](reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/local-conversation-turn-CaFyDx7G.js) | Turn 分片、commentary/final answer、Activity 编排 | `2352867e2ad7f97246bda32959532f428ff22345a6da02e251719c468e2770d3` |
+| [subagent-activity-chip-group-CC185tmV.js](reference://codex/.runtime/partition-r1343-lifecycle-direct-import-v1/lazy/app-initial/subagent-activity-chip-group-CC185tmV.js) | Agent Activity 折叠真值表 | `e5a9da5c6cd608d865eefbcf9356dcb16e54c1974a752c7718c1d5c616fd64fa` |
 
 相关 source map 已检查：r1343 chunk 留有 `sourceMappingURL`，但对应 `.map` 不在产物中。因此分析依据是恢复树中的实际运行代码、模块闭包、独立 VM 执行与真实浏览器交叉验证，不是假定存在的上游 TypeScript。
 

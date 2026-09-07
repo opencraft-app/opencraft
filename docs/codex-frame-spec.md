@@ -3,7 +3,7 @@
 The OpenCraft frame follows the latest fixed-point Codex recovery, not an earlier
 screenshot approximation. Its source baseline is:
 
-`/data/mia/.runtime/partition-r822-shared-owner-semantic-locals`
+`reference://codex/.runtime/partition-r822-shared-owner-semantic-locals`
 
 The downstream acceptance lineage is r823 (audit), r824 (build), r825
 (browser differential), and r826 (hydration). Physical CSS is the r258 asset;

@@ -125,7 +125,7 @@ test("WebSocket connection provider enforces the browser security boundary", () 
     /must not be embedded/u,
   );
   assert.throws(
-    () => WebSocketHostConnectionProvider.validate({ url: "ws://http://9.134.163.40:9989/rpc" }, context),
+    () => WebSocketHostConnectionProvider.validate({ url: "ws://http://192.0.2.10:9989/rpc" }, context),
     /more than one protocol/u,
   );
   assert.throws(

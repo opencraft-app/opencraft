@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { mkdirSync } from "node:fs";
 import { desktopProduct } from "./product-identity.js";
 
 import {
@@ -32,7 +33,13 @@ import {
 // Resolve storage before requestSingleInstanceLock, session creation or the daemon.
 // A brand change must not create a second runtime owner for the same local work.
 app.setName(desktopProduct.displayName);
-app.setPath("userData", join(app.getPath("appData"), desktopProduct.profileDirectoryName));
+const requestedProfile = app.commandLine.getSwitchValue("user-data-dir");
+const userDataDirectory = requestedProfile
+  ? resolve(requestedProfile)
+  : join(app.getPath("appData"), desktopProduct.profileDirectoryName);
+// Electron rejects setPath for a missing directory on a fresh machine.
+mkdirSync(userDataDirectory, { recursive: true });
+app.setPath("userData", userDataDirectory);
 
 let mainWindow: BrowserWindow | null = null;
 let mainWebContents: WebContents | null = null;

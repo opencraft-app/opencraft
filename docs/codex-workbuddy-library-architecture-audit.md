@@ -4,8 +4,8 @@
 
 ## 审计基线
 
-- Codex 最新语义源码树：`/data/mia/.runtime/source-tree-build-r1316-owner-adoption-abi`
-- Codex 最近分区证据：`/data/mia/.runtime/partition-r1309-owner-adoption-v1`
+- Codex 最新语义源码树：`reference://codex/.runtime/source-tree-build-r1316-owner-adoption-abi`
+- Codex 最近分区证据：`reference://codex/.runtime/partition-r1309-owner-adoption-v1`
 - WorkBuddy 最新固定点源码树：`/data/wbwell/output/workbuddy-monorepo-v8-source-layout183-compound-npm-fixed-point`
 
 本审计只把真实业务调用计入结论。仅存在于 `vendor`、`.generated` 或清单中的包，不视为架构依赖。

@@ -1,11 +1,11 @@
 {
   "baseline": {
-    "sourceTree": "/data/mia/.runtime/partition-r822-shared-owner-semantic-locals",
-    "sourceAudit": "/data/mia/.runtime/source-tree-audit-r823.json",
-    "buildVerification": "/data/mia/.runtime/source-tree-verify-r824.json",
-    "browserDifferential": "/data/mia/.runtime/shared-owner-semantics-browser-differential-r825.json",
-    "rendererHydration": "/data/mia/.runtime/renderer-hydrate-r826.json",
-    "physicalCss": "/data/mia/recovered/assets/visual-r258/physical/app-initial-JeCCd060.css",
+    "sourceTree": "reference://codex/.runtime/partition-r822-shared-owner-semantic-locals",
+    "sourceAudit": "reference://codex/.runtime/source-tree-audit-r823.json",
+    "buildVerification": "reference://codex/.runtime/source-tree-verify-r824.json",
+    "browserDifferential": "reference://codex/.runtime/shared-owner-semantics-browser-differential-r825.json",
+    "rendererHydration": "reference://codex/.runtime/renderer-hydrate-r826.json",
+    "physicalCss": "reference://codex/recovered/assets/visual-r258/physical/app-initial-JeCCd060.css",
     "physicalCssSha256": "45319f7732413435efebe336871815ba6a97665a6efdb075faf0a9223496064d"
   },
   "modules": {

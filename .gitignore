@@ -15,7 +15,11 @@ Pods/
 .vela/
 .runtime/
 .edgeone/
-/runtime/
+/runtime/*
+!/runtime/dsh/
+/runtime/dsh/*
+!/runtime/dsh/package.json
+!/runtime/dsh/package-lock.json
 .env
 .env.*
 !.env.example

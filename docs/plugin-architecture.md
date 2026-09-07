@@ -89,7 +89,7 @@ Contribution 仍不会因为安装或激活而自动进入模型上下文。
 
 参考资料：
 
-- Codex 恢复源码：`/data/mia/.runtime/partition-r2440-lifecycle-owner-adoption`；
+- Codex 恢复源码：`reference://codex/.runtime/partition-r2440-lifecycle-owner-adoption`；
 - Obsidian 恢复源码：`/data/obsidian/recovered-standard-js/web/app/renderer.js`；
 - [Obsidian 插件生命周期](https://docs.obsidian.md/plugins/guides/lifecycle-management)；
 - [Firefox 扩展结构](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Anatomy_of_a_WebExtension)；

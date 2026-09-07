@@ -4,8 +4,8 @@
 
 ## 权威基线
 
-- 恢复树：`/data/mia/.runtime/partition-r1442-zod-upstream-v1`
-- 物理样式：`/data/mia/recovered/assets/visual-r258/physical/app-initial-JeCCd060.css`
+- 恢复树：`reference://codex/.runtime/partition-r1442-zod-upstream-v1`
+- 物理样式：`reference://codex/recovered/assets/visual-r258/physical/app-initial-JeCCd060.css`
 - Markdown 根：`editor/markdown-renderer-08130.tsx`
 - 流式 Markdown：`editor/flatten-streaming-markdown-tokens-07989.ts`、`shared/generate-streaming-token-key-08113.ts`、`conversations/preprocess-chat-message-markdown-00606.ts`
 - 流式淡入：`shared/render-text-with-fade-segments-08010.ts`、`shared/create-fade-timeline-00595.ts`

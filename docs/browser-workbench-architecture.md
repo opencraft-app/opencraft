@@ -117,7 +117,7 @@ sheet、safe area 和 native gesture。
 参考源码根目录：
 
 ```text
-/data/mia/.runtime/source-tree-build-r2030-eager-immediate-compact
+reference://codex/.runtime/source-tree-build-r2030-eager-immediate-compact
 ```
 
 ### 3.2 WorkBuddy 提供的证据

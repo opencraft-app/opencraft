@@ -12,13 +12,78 @@ for the OpenCraft naming policy and the identifiers intentionally kept stable.
 
 ## Run
 
+Use Node **26.7.0** (`nvm install && nvm use`) and npm 11. Public npm access is
+required; desktop packaging also downloads Electron and builder tools from
+their upstream release servers. No private package registry or reference
+source tree is required. Do not copy `node_modules` from another computer.
+
 ```bash
-npm install
-npm run dev -- --host 0.0.0.0 --port 10000
-npm run dev:expo:web
-# macOS with Xcode and CocoaPods:
-npm run dev:expo:ios
+git clone git@git.woa.com:wisp/opencraft.git
+cd opencraft
+npm ci
+npm run dev:web
 ```
+
+The browser UI starts without a configured model account. To execute agent
+tasks, add your own AppServer in **Settings → Connections**, or use the desktop
+app's built-in Local Agent. Model credentials are runtime configuration, not
+build inputs and never part of this repository.
+
+### Desktop with the bundled Local Agent
+
+On the target machine (macOS or Linux with a desktop session):
+
+```bash
+npm ci
+npm run dev:electron
+```
+
+This builds the renderer and main process and prepares DSH from the committed
+`runtime/dsh/package.json` and `package-lock.json`. The runtime uses an isolated
+`npm ci`; it never installs into the root workspace. Open **Settings → Local
+Agent** to configure your provider/model credentials. Building and the startup
+smoke test do not require an API key.
+
+For distribution, build on the **same OS and CPU architecture** as the target:
+
+```bash
+# Apple Silicon Mac; use :x64: instead on an Intel Mac
+npm run package:electron:mac:arm64:zip
+npm run package:electron:mac:arm64:dmg
+# Linux x64
+npm run package:electron:linux:x64:appimage
+```
+
+Native dependencies may need Python 3 and a C/C++ toolchain (Xcode Command Line
+Tools on macOS; make/g++ on Linux). DMG and native iOS builds require macOS;
+iOS also needs Xcode and CocoaPods. macOS signing/notarization credentials are
+optional for local unsigned builds, and required for trusted public distribution.
+Cross-OS/CPU desktop packaging is rejected because DSH contains native modules.
+
+### Expo
+
+```bash
+npm run dev:expo:web
+# On macOS with Xcode/CocoaPods; use an endpoint reachable from the device
+EXPO_PUBLIC_APPSERVER_WS_URL=ws://YOUR_SERVER:9988/rpc npm run dev:expo:ios
+```
+
+Native Expo defaults to loopback, not a developer's server. Set the URL on a
+physical device; loopback there refers to the device itself. Workspace paths
+come from the connected host, not from this checkout.
+
+### Clean-checkout verification
+
+```bash
+npm ci
+npm test
+npm run matrix:build -- web-browser electron-renderer electron-host expo-web expo-ios-bundle
+npm run prepare:dsh-runtime
+npm run smoke:local-agent
+```
+
+See [fresh-machine builds](docs/fresh-machine-builds.md) for platform boundaries,
+optional remote-Mac setup, and what is intentionally not committed.
 
 The Web workbench treats every execution node as a complete Host runtime. A
 single same-origin AppServer is discovered automatically. Multiple nodes can be
@@ -44,7 +109,7 @@ r826 audit, build, browser-differential, and hydration gates.
 ## Workspace
 
 - `apps/workbench-web`: React DOM + Vite renderer for browser and Electron.
-- `apps/workbench-desktop`: Electron main/preload host without a second UI.
+- `apps/workbench-electron`: Electron main/preload host without a second UI.
 - `apps/workbench-expo`: Expo Router host for native and Expo Web.
 - `packages/appserver-protocol`: host-aware Codex app-server transport types.
 - `packages/chat-core`: typed `Turn -> DisplayItem` projection.

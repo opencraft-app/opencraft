@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run matrix:check
@@ -23,19 +23,19 @@ jobs:
 
   macos-electron:
     runs-on: macos-15
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [electron-macos-arm64-dmg, electron-macos-x64-dmg]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run matrix:build -- ${{ matrix.target }}
+      - run: npm run test:identity
+      - run: npm run prepare:dsh-runtime
+      - run: npm run smoke:local-agent
+      - run: npm run build:electron:release
+      - run: npm exec --workspace @opencraft/workbench-electron -- electron-builder --mac dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}
+          name: electron-macos-native
           path: apps/workbench-electron/release/OpenCraft-*

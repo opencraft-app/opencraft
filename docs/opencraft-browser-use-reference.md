@@ -78,7 +78,7 @@ Browser Use 传输协议和生命周期实现。公开入口见
 本书使用的最新本地参考树是：
 
 ```text
-/data/mia/.runtime/source-tree-build-r2030-eager-immediate-compact
+reference://codex/.runtime/source-tree-build-r2030-eager-immediate-compact
 ```
 
 关键证据文件：

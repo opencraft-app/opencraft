@@ -7,8 +7,8 @@ repo_root="$(cd -- "${script_dir}/.." && pwd -P)"
 
 mac_ssh_host="${OPENCRAFT_MAC_SSH_HOST:-127.0.0.1}"
 mac_ssh_port="${OPENCRAFT_MAC_SSH_PORT:-1234}"
-mac_ssh_user="${OPENCRAFT_MAC_SSH_USER:-skipzhang}"
-mac_repo="${OPENCRAFT_MAC_REPO:-/Users/skipzhang/Developer/vela}"
+mac_ssh_user="${OPENCRAFT_MAC_SSH_USER:-}"
+mac_repo="${OPENCRAFT_MAC_REPO:-}"
 mac_node_bin="${OPENCRAFT_MAC_NODE_BIN:-/opt/homebrew/bin}"
 debug_port="${OPENCRAFT_MAC_DEBUG_PORT:-9223}"
 
@@ -33,11 +33,13 @@ Usage:
   npm run update:mac
   bash scripts/update-local-mac.sh
 
+Required environment variables:
+  OPENCRAFT_MAC_SSH_USER    SSH user on the build Mac
+  OPENCRAFT_MAC_REPO        absolute checkout path on the build Mac
+
 Optional environment variables:
   OPENCRAFT_MAC_SSH_HOST    SSH host (default: 127.0.0.1)
   OPENCRAFT_MAC_SSH_PORT    SSH port (default: 1234)
-  OPENCRAFT_MAC_SSH_USER    SSH user (default: skipzhang)
-  OPENCRAFT_MAC_REPO        repository path on macOS
   OPENCRAFT_MAC_NODE_BIN    directory containing node/npm on macOS
   OPENCRAFT_MAC_DEBUG_PORT  Electron remote-debugging port (default: 9223)
 EOF
@@ -49,6 +51,11 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 fi
 if [[ $# -ne 0 ]]; then
   usage >&2
+  exit 2
+fi
+
+if [[ -z "${mac_ssh_user}" || "${mac_repo}" != /* ]]; then
+  printf 'Set OPENCRAFT_MAC_SSH_USER and an absolute OPENCRAFT_MAC_REPO before using remote Mac builds.\n' >&2
   exit 2
 fi
 
@@ -88,7 +95,7 @@ rsync -az \
 
 status "building macOS arm64 release"
 if ! ssh "${ssh_args[@]}" "${remote}" \
-  "export PATH=${q_mac_node_bin}:\$PATH; cd ${q_mac_repo}; : > ${q_build_log}; { npm install --prefer-offline --no-audit --no-fund && npm run build:electron:release && cd apps/workbench-electron && CSC_IDENTITY_AUTO_DISCOVERY=false ../../node_modules/.bin/electron-builder --mac dir --arm64; } >> ${q_build_log} 2>&1"; then
+  "export PATH=${q_mac_node_bin}:\$PATH; cd ${q_mac_repo}; : > ${q_build_log}; { npm ci --no-audit --no-fund && npm run build:electron:release && cd apps/workbench-electron && CSC_IDENTITY_AUTO_DISCOVERY=false ../../node_modules/.bin/electron-builder --mac dir --arm64; } >> ${q_build_log} 2>&1"; then
   printf '[opencraft-mac] build failed; remote log follows:\n' >&2
   ssh "${ssh_args[@]}" "${remote}" "tail -n 160 ${q_build_log}" >&2 || true
   exit 1

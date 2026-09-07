@@ -23,14 +23,13 @@ export class DshSupervisor {
     if (this.child !== null) throw new Error("DSH is already starting");
 
     const repository = this.options.repository
-      ?? process.env.OPENCRAFT_DSH_REPOSITORY?.trim()
-      ?? "/data/deepseek-harness";
-    const sourceEntry = join(repository, "apps/cli/src/bin.ts");
+      ?? process.env.OPENCRAFT_DSH_REPOSITORY?.trim();
+    const sourceEntry = repository ? join(repository, "apps/cli/src/bin.ts") : null;
     const packagedEntry = this.options.executable
       ?? process.env.OPENCRAFT_DSH_EXECUTABLE?.trim()
       ?? join(process.cwd(), "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js");
     const usePackaged = await exists(packagedEntry);
-    const useSource = !usePackaged && await exists(sourceEntry);
+    const useSource = !usePackaged && sourceEntry !== null && await exists(sourceEntry);
     if (!usePackaged && !useSource) {
       throw new Error("OpenCraft DSH runtime is missing; run npm run prepare:dsh-runtime before packaging");
     }
@@ -40,7 +39,7 @@ export class DshSupervisor {
     // Keep this as a Node runtime argument (before the entry point), exactly as a
     // standalone DSH host expects; it is not a OpenCraft or web-app flag.
     const args = useSource
-      ? ["--expose-internals", tsxEntry, sourceEntry, "web", "--host", "127.0.0.1", "--port", "0", "--no-open"]
+      ? ["--expose-internals", tsxEntry, sourceEntry!, "web", "--host", "127.0.0.1", "--port", "0", "--no-open"]
       : ["--expose-internals", packagedEntry, "web", "--host", "127.0.0.1", "--port", "0", "--no-open"];
     const child = spawn(command, args, {
       cwd: useSource ? repository : process.cwd(),

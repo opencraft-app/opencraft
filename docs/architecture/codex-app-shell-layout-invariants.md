@@ -1,7 +1,7 @@
 # Codex AppShell layout invariants
 
 This note records behavior recovered from the current Codex source tree at
-`/data/mia/.runtime/source-tree-build-r1884-popcorn-lineage-full`. The goal is
+`reference://codex/.runtime/source-tree-build-r1884-popcorn-lineage-full`. The goal is
 not to copy local component names. It is to preserve the constraints that make
 the shell remain lossless while panels animate, resize, disappear, or change
 route.

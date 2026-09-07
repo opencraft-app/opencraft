@@ -89,8 +89,8 @@ Codex Renderer 侧的 first-party bridge 只在对应 Plugin 已安装、启用�
 
 参考：
 
-- `/data/mia/.runtime/source-tree-build-r2030-eager-immediate-compact/shared/create-plugin-bridge-manager-07301.js`；
-- `/data/mia/.runtime/source-tree-build-r2030-eager-immediate-compact/service/mcp-app-sandbox-renderer-07461.js`；
+- `reference://codex/.runtime/source-tree-build-r2030-eager-immediate-compact/shared/create-plugin-bridge-manager-07301.js`；
+- `reference://codex/.runtime/source-tree-build-r2030-eager-immediate-compact/service/mcp-app-sandbox-renderer-07461.js`；
 - `packages/appserver-protocol/src/generated/ClientRequest.ts`；
 - [ChatGPT 与 Codex Plugins](https://help.openai.com/en/articles/20001256-plugins-in-codexOpenAI)。
 
