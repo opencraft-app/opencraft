@@ -53,15 +53,21 @@ describe("MaintenanceAnnouncementBanner route locale", () => {
         /LightVela will upgrade the Hermes Agent version from 22:00 on Sep 7, 2026 to 02:00 the next day \(SGT\)/,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("status").firstElementChild).toHaveClass(
-      "justify-start",
-    );
-    expect(screen.getByRole("status").firstElementChild).not.toHaveClass(
-      "sm:justify-center",
-    );
+    expect(
+      screen.getByText(
+        /LightVela will upgrade the Hermes Agent version from 22:00 on Sep 7, 2026 to 02:00 the next day \(SGT\)/,
+      ),
+    ).toHaveClass("mx-auto");
+    expect(screen.getByRole("status").firstElementChild).toHaveClass("mx-8");
+    expect(
+      screen.queryByRole("button", { name: /previous announcement/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /next announcement/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("renders the global homepage announcement from the route locale", async () => {
+  it("does not render the retired public beta announcement after the Hermes notice expires", async () => {
     vi.mocked(Date.now).mockReturnValue(Date.UTC(2026, 8, 8, 0, 0, 0));
 
     render(
@@ -70,12 +76,10 @@ describe("MaintenanceAnnouncementBanner route locale", () => {
       </LocaleOverrideProvider>,
     );
 
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(
-      await screen.findByText(
-        /LightVela public beta and billing start Aug 18, 2026/,
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("View details")).toBeInTheDocument();
-    expect(screen.queryByText(/公测并计费/)).not.toBeInTheDocument();
+      screen.queryByText(/LightVela public beta and billing start Aug 18, 2026/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("View details")).not.toBeInTheDocument();
   });
 });
