@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -10,13 +10,28 @@ const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
 const regionMock = vi.hoisted(() => ({ isGlobal: false }));
 const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
+vi.mock("@/components/site/maintenance-announcement-banner", async () => {
+  const ReactRuntime = await import("react");
+  const { useLocaleOverride } = await import("@/i18n/t");
+  return {
+    MaintenanceAnnouncementBanner: () =>
+      ReactRuntime.createElement(
+        "div",
+        { "data-testid": "maintenance-announcement-locale" },
+        useLocaleOverride(),
+      ),
+  };
+});
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => sessionMock,
 }));
 vi.mock("@/lib/region", () => ({
+  DEFAULT_LOCALE: "en-US",
+  REGION: "global",
   get isGlobal() {
     return regionMock.isGlobal;
   },
+  readLocaleFromPath: () => null,
 }));
 
 import { InternationalHomePage } from "@next-site/international-home-page";
@@ -39,11 +54,18 @@ afterEach(() => {
 });
 
 describe("international v2 homepage rendering", () => {
+  it("mounts the maintenance announcement with the active homepage locale", () => {
+    (globalThis as { React?: typeof React }).React = React;
+    render(<InternationalHomeRuntime locale="es" markup="<main />" />);
+
+    expect(screen.getByTestId("maintenance-announcement-locale")).toHaveTextContent("es");
+  });
+
   it("server-renders the approved homepage content and stylesheet", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260906-home-rotator-layout-v2"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260907-hermes-announcement-offset"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
