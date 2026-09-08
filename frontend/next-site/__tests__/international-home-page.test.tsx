@@ -697,20 +697,6 @@ describe("international v2 homepage artifact", () => {
     );
   });
 
-  it("offsets the fixed homepage header while the announcement is visible", () => {
-    const css = readFileSync(stylesheetPath, "utf8");
-
-    expect(css).toMatch(
-      /body\.lw-has-announcement\.lw-announcement-in-viewport #lightvela-intl-home \.nav\s*\{[^}]*top:\s*36px;/s,
-    );
-    expect(css).toMatch(
-      /body\.lw-has-announcement\.lw-announcement-in-viewport \.international-home-header-actions-layer\s*\{[^}]*top:\s*50px;/s,
-    );
-    expect(css).toMatch(
-      /@media \(max-width:\s*1099px\)[\s\S]*body\.lw-has-announcement\.lw-announcement-in-viewport \.international-home-header-actions-layer\s*\{[^}]*top:\s*48px;/s,
-    );
-  });
-
   it("preserves the remote hero channel panels", () => {
     const html = readFragment();
     const document = parseFragment();

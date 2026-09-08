@@ -2456,19 +2456,6 @@ const headerActionsLayerCss = `
   }
 }
 
-body.lw-has-announcement.lw-announcement-in-viewport #lightvela-intl-home .nav {
-  top: 36px;
-}
-
-body.lw-has-announcement.lw-announcement-in-viewport .international-home-header-actions-layer {
-  top: 50px;
-}
-
-@media (max-width: 1099px) {
-  body.lw-has-announcement.lw-announcement-in-viewport .international-home-header-actions-layer {
-    top: 48px;
-  }
-}
 `;
 const breakableAnimatedHeadlineCss = `
 #lightvela-intl-home .hero__line--main,
@@ -2929,48 +2916,6 @@ const plainHeroEyebrowCss = `
   #lightvela-intl-home .hero__eyebrow {
     font-size: 13px;
   }
-}
-`;
-const channelMentionRestoreCss = `
-#lightvela-intl-home .hero__frame .lv-mention {
-  display: inline;
-  padding-inline: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--brand) !important;
-  font-weight: 500;
-}
-
-#lightvela-intl-home .hero__frame .dc__mention.lv-mention {
-  display: inline;
-  padding: 0;
-  border-radius: 0;
-  background: transparent !important;
-  color: var(--brand) !important;
-  font-weight: 500;
-}
-
-#lightvela-intl-home .hero__frame .dc__bot b {
-  color: var(--brand) !important;
-}
-
-#lightvela-intl-home .hero__frame .dc__bot b .lv-name {
-  color: var(--brand) !important;
-}
-
-#lightvela-intl-home .hero__frame .tg__bot-name {
-  color: var(--brand) !important;
-}
-
-#lightvela-intl-home .hero__frame .bub--ai .bub__name,
-#lightvela-intl-home .hero__frame .hero-live-reply-name {
-  color: var(--brand) !important;
-}
-
-#lightvela-intl-home .hero__frame #panel-dc .dc__mention:not(.lv-mention),
-#lightvela-intl-home .hero__frame #panel-sl .dc__mention:not(.lv-mention),
-#lightvela-intl-home .hero__frame .dc--sl .dc__mention:not(.lv-mention) {
-  color: #202124 !important;
 }
 `;
 const heroRotatorSweepCss = `
@@ -3472,13 +3417,6 @@ function scopeInternationalHeroChannelCss(source, rootSelector = "#lightvela-int
       /^(\s*)(\.hero__frame|#panel-tg|\.hero__tabs)/gm,
       `$1${rootSelector} $2`,
     );
-}
-
-function forceImportantCssDeclarations(source) {
-  return source.replace(/(:\s*[^;{}]+)(;)/g, (match, declaration, semicolon) => {
-    if (declaration.includes("!important")) return match;
-    return `${declaration} !important${semicolon}`;
-  });
 }
 
 function sourceLocaleFor(locale) {

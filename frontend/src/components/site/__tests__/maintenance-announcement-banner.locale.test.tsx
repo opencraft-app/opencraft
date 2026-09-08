@@ -1,5 +1,5 @@
 import React from "react";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import i18n from "@/i18n";
@@ -34,7 +34,6 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   window.localStorage.clear();
 });
@@ -66,53 +65,6 @@ describe("MaintenanceAnnouncementBanner route locale", () => {
     expect(
       screen.queryByRole("button", { name: /next announcement/i }),
     ).not.toBeInTheDocument();
-  });
-
-  it("tracks whether the global announcement is still inside the viewport", async () => {
-    let observerCallback: IntersectionObserverCallback | undefined;
-    const observe = vi.fn();
-    const disconnect = vi.fn();
-
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(callback: IntersectionObserverCallback) {
-          observerCallback = callback;
-        }
-
-        observe = observe;
-        disconnect = disconnect;
-      },
-    );
-
-    const { unmount } = render(
-      <LocaleOverrideProvider locale="en-US">
-        <MaintenanceAnnouncementBanner trackViewport />
-      </LocaleOverrideProvider>,
-    );
-    const banner = await screen.findByRole("status");
-
-    expect(observe).toHaveBeenCalledWith(banner);
-
-    act(() => {
-      observerCallback?.(
-        [{ isIntersecting: true } as IntersectionObserverEntry],
-        {} as IntersectionObserver,
-      );
-    });
-    expect(document.body).toHaveClass("lw-announcement-in-viewport");
-
-    act(() => {
-      observerCallback?.(
-        [{ isIntersecting: false } as IntersectionObserverEntry],
-        {} as IntersectionObserver,
-      );
-    });
-    expect(document.body).not.toHaveClass("lw-announcement-in-viewport");
-
-    unmount();
-    expect(disconnect).toHaveBeenCalledOnce();
-    expect(document.body).not.toHaveClass("lw-announcement-in-viewport");
   });
 
   it("does not render the retired public beta announcement after the Hermes notice expires", async () => {

@@ -81,7 +81,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
         precedence="lightvela-intl-home"
       />
       <PublicSiteLocaleBridge locale={locale}>
-        <MaintenanceAnnouncementBanner trackViewport={isGlobal} />
+        <MaintenanceAnnouncementBanner />
       </PublicSiteLocaleBridge>
       {/* The fragment is generated from a reviewed, repository-owned static source. */}
       <InternationalHomeMarkup markup={markup} />
