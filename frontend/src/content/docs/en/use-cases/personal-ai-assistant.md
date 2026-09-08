@@ -71,7 +71,7 @@ Start with deadlines and meetings, then suggest three focused next actions.
 
 Set the schedule and notification channel in [Scheduled Tasks](https://lightvela.ai/docs/configuration/automation). Keep the first scheduled task small; you can refine the instruction after you have seen a few real results.
 
-![The Scheduled Tasks page in the LightVela console](../images/personal-ai-assistant-scheduled tasks.webp)
+![The Scheduled Tasks page in the LightVela console](../images/personal-ai-assistant-automations.webp)
 
 ## FAQ
 

@@ -78,7 +78,7 @@ important next actions. Send it as concise bullet points.
 
 Set this up in [Scheduled Tasks](../configuration/automation.md). Review the first few runs and adjust the wording if the summary is too broad, too long, or missing the right context.
 
-![A scheduled daily summary scheduled task](../images/use-case-daily-summary-scheduled task.png)
+![A scheduled daily summary scheduled task](../images/use-case-daily-summary-automation.png)
 
 ## FAQ
 

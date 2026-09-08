@@ -35,6 +35,7 @@ Unify the user-facing LightVela feature name from “自动任务 / Automations�
 - Changelog source, alt text, localized dictionaries, and regression tests use the new product name.
 - Current OpenSpec product/marketing specs and formal engineering boundary documents were updated. Historical implementation plans and third-party product names such as “Grok Automations” remain unchanged for traceability and accuracy.
 - Internal API names, TypeScript identifiers, telemetry keys, file names, asset paths, and `/agents/automations` routes remain unchanged.
+- CI exposed four English Markdown image paths that had been changed by the terminology replacement even though the underlying asset filenames are internal compatibility identifiers; those paths were restored while retaining the new localized alt text.
 
 ## Validation plan
 
@@ -45,7 +46,8 @@ Unify the user-facing LightVela feature name from “自动任务 / Automations�
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`: passed with 0 broken first-party links and 0 warnings.
 - `validate_change_impact.py` over the complete working-tree change list: passed; the CTL responsibility surface is paired with an update to `docs/engineering/domains/agent-gateway-runtime.md`.
 - Final terminology, route/asset integrity, and `git diff --check` scans passed.
+- The CI frontend guard failure was reproduced in `scripts/international-docs-parity.test.ts`: Spanish, Japanese, and Korean source parity stopped at the first corrupted English image target. Restoring all four affected English asset paths makes the visible product terminology and the unchanged asset identifiers consistent.
 
 ## Status
 
-Implementation and local validation complete. No commit, push, MR, or release performed.
+Implementation and local validation complete. MR !3712 is open; this CI follow-up is not yet committed or pushed, and no merge or release was performed.

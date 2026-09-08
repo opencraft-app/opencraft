@@ -62,7 +62,7 @@ calendar priorities, open follow-ups, and the first action to take.
 
 Create the schedule in [Scheduled Tasks](../configuration/automation.md), select a notification channel if appropriate, and check the first few runs. If the result is too broad, make the instruction more specific rather than adding another scheduled task immediately.
 
-![Recent scheduled task runs from a Hermes Agent](../images/use-case-hermes-online-scheduled task.png)
+![Recent scheduled task runs from a Hermes Agent](../images/use-case-hermes-online-automation.png)
 
 ## FAQ
 
