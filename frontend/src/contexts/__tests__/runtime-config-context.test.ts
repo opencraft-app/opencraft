@@ -3,6 +3,7 @@ import { __runtimeConfigTestHooks } from "@/contexts/runtime-config-context";
 
 const {
   applyRuntimeOverrides,
+  getEdgeOnePreviewRuntimeConfig,
   normalizeRuntimeConfig,
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
@@ -124,5 +125,10 @@ describe("runtime config normalization", () => {
     });
 
     expect(shouldSkipRemoteRuntimeConfig()).toBe(true);
+    expect(getEdgeOnePreviewRuntimeConfig().features.zeroTokenAutomationsEnabled).toBe(true);
+
+    window.localStorage.setItem(ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY, "false");
+    expect(getEdgeOnePreviewRuntimeConfig().features.zeroTokenAutomationsEnabled).toBe(false);
+    window.localStorage.removeItem(ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY);
   });
 });

@@ -42,10 +42,12 @@ const readBuildTimePaidBillingRaw = (): boolean | null =>
 
 const readBuildTimePaidBillingDefault = (): boolean => readBuildTimePaidBillingRaw() ?? true;
 
-const readBuildTimeZeroTokenAutomationsDefault = (): boolean =>
+const readBuildTimeZeroTokenAutomationsRaw = (): boolean | null =>
   readBooleanLike(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_ZERO_TOKEN_AUTOMATIONS_ENABLED : undefined) ??
-  readBooleanLike(import.meta.env?.VITE_ZERO_TOKEN_AUTOMATIONS_ENABLED) ??
-  false;
+  readBooleanLike(import.meta.env?.VITE_ZERO_TOKEN_AUTOMATIONS_ENABLED);
+
+const readBuildTimeZeroTokenAutomationsDefault = (): boolean =>
+  readBuildTimeZeroTokenAutomationsRaw() ?? false;
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
@@ -122,9 +124,18 @@ const shouldSkipRemoteRuntimeConfig = (): boolean => {
   return isLightVelaEdgeOnePreviewHostname(window.location.hostname);
 };
 
+const getEdgeOnePreviewRuntimeConfig = (): RuntimeConfig =>
+  applyRuntimeOverrides({
+    ...DEFAULT_RUNTIME_CONFIG,
+    features: {
+      ...DEFAULT_RUNTIME_CONFIG.features,
+      zeroTokenAutomationsEnabled: readBuildTimeZeroTokenAutomationsRaw() ?? true,
+    },
+  });
+
 const fetchRuntimeConfig = async (): Promise<RuntimeConfig> => {
   if (shouldSkipRemoteRuntimeConfig()) {
-    return applyRuntimeOverrides(DEFAULT_RUNTIME_CONFIG);
+    return getEdgeOnePreviewRuntimeConfig();
   }
   const baseUrl = resolveConfiguredAuthApiBaseUrl();
   if (baseUrl === null) {
@@ -207,6 +218,7 @@ export const __runtimeConfigTestHooks = {
   REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY,
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
   applyRuntimeOverrides,
+  getEdgeOnePreviewRuntimeConfig,
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,

@@ -14,15 +14,18 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, ArrowRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronUp, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, ArrowRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/i18n/t";
 import { useZeroTokenAutomationsEnabled } from "@/contexts/runtime-config-context";
 import { parseLocaleCode } from "@/i18n/locales.config";
 import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
+import { cn } from "@/lib/utils";
 import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import {
   listInstalledSkillSlugs,
@@ -95,13 +98,25 @@ const MODAL_COMPACT_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, li
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
 const AUTOMATION_PROMPT_MAX_LENGTH = 1000;
-const FIXED_NOTIFICATION_MAX_LENGTH = 2000;
+const FIXED_NOTIFICATION_MAX_LENGTH = 1000;
 const AUTOMATION_SCRIPT_MAX_LENGTH = 20_000;
+const PYTHON_SCRIPT_PLACEHOLDER = [
+  "import shutil",
+  'usage = shutil.disk_usage("/")',
+  'if usage.used / usage.total > 0.8: print("Disk usage exceeds 80%")',
+].join("\n");
+const BASH_SCRIPT_PLACEHOLDER = [
+  "usage=$(df / | awk 'NR==2 {print $5}')",
+  "threshold=80",
+  '[ "${usage%%%}" -gt "$threshold" ] && echo "Disk usage is high: $usage"',
+].join("\n");
 const CHAT_ID_MAX_LENGTH = 60;
 const AUTOMATION_FORM_TEST_JOB_ID = "automation-form-test-run";
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
 type AutomationTestState = "idle" | "running" | "ok" | "fail";
+type ActiveTaskFilter = "all" | "agent" | CronZeroTokenKind;
+type CreateTaskKind = "agent" | CronZeroTokenKind;
 /**
  * 自动任务展示所用的 locale，直接复用注册表类型。
  *
@@ -670,6 +685,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
   const [activeView, setActiveView] = useState<"created" | "ended" | "recent">("created");
+  const [activeTaskFilter, setActiveTaskFilter] = useState<ActiveTaskFilter>("all");
   const [creating, setCreating] = useState(false);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
   const [scenarioInstallPack, setScenarioInstallPack] = useState<ScenarioTaskPack | null>(null);
@@ -710,7 +726,19 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     () => jobs.filter(isCronJobEnded),
     [jobs],
   );
-  const displayedJobs = activeView === "ended" ? endedJobs : activeJobs;
+  const filteredActiveJobs = useMemo(
+    () => activeJobs.filter((job) => {
+      if (activeTaskFilter === "all") return true;
+      if (activeTaskFilter === "agent") {
+        return job.inference_config?.no_agent !== true && !job.zero_token_config;
+      }
+      return job.zero_token_config?.kind === activeTaskFilter;
+    }),
+    [activeJobs, activeTaskFilter],
+  );
+  const displayedJobs = activeView === "ended"
+    ? endedJobs
+    : filteredActiveJobs;
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const jobLimitReached = activeJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getUnifiedAutomationTemplates(t, displayLocale), [displayLocale, t]);
@@ -1200,7 +1228,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         />
       )}
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-lg bg-black/[0.04] p-1">
           <button
             type="button"
@@ -1227,16 +1255,42 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             {t("最近执行")}
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleManualRefresh()}
-          disabled={loadingJobs || loadingRecentRuns || manualRefreshing}
-          className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
-          aria-label={t("刷新")}
-          title={t("刷新")}
-        >
-          <RefreshCw className={`h-4 w-4 ${manualRefreshing ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          {activeView === "created" && (
+            <Select
+              value={activeTaskFilter}
+              onValueChange={(value) => setActiveTaskFilter(value as ActiveTaskFilter)}
+            >
+              <SelectTrigger
+                aria-label={t("任务类型")}
+                className="h-8 w-auto justify-start gap-1.5 rounded-md border-black/10 bg-white px-2.5 py-1.5 text-xs font-medium text-black/65 shadow-none"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                position="popper"
+                sideOffset={6}
+                align="end"
+                className="min-w-[120px] rounded-md border-black/10 bg-white shadow-lg"
+              >
+                <SelectItem value="all" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("全部")}</SelectItem>
+                <SelectItem value="agent" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("智能任务")}</SelectItem>
+                <SelectItem value="fixed_notification" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("通知任务")}</SelectItem>
+                <SelectItem value="script" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("脚本任务")}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleManualRefresh()}
+            disabled={loadingJobs || loadingRecentRuns || manualRefreshing}
+            className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
+            aria-label={t("刷新")}
+            title={t("刷新")}
+          >
+            <RefreshCw className={`size-4 ${manualRefreshing ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
 
       <div className={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? "rounded-xl p-4" : ""} style={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? PANEL_CARD_STYLE : undefined}>
@@ -1274,6 +1328,8 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             <Clock className="mb-2 h-6 w-6 opacity-50" />
             {activeView === "ended" ? (
               <p>{t("暂无已结束任务")}</p>
+            ) : activeTaskFilter !== "all" ? (
+              <p>{t("暂无符合条件的任务")}</p>
             ) : (
               <p>
                 {t("暂无自动任务，")}
@@ -1506,7 +1562,7 @@ export function RecentCronRunsPanel({
                 ? run.zero_token_config.kind === "fixed_notification"
                   ? t("0 Token · 固定通知")
                   : t("0 Token · 脚本任务")
-                : t("Agent 任务");
+                : t("智能任务");
               const summary = run.zero_token_config?.kind === "fixed_notification"
                 ? run.zero_token_config.content || ""
                 : presentation.prompt;
@@ -1657,7 +1713,7 @@ function RecentCronRunDetailModal({
               ? zeroTokenConfig.kind === "fixed_notification"
                 ? t("0 Token · 固定通知")
                 : t("0 Token · 脚本任务")
-              : t("Agent 任务")}
+              : t("智能任务")}
           />
           {zeroTokenConfig ? (
             <DetailRow
@@ -1739,11 +1795,6 @@ function CronJobCard({
   const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
   const fullName = presentation.name || t("未命名任务");
   const zeroTokenConfig = job.zero_token_config;
-  const taskTypeLabel = zeroTokenConfig
-    ? zeroTokenConfig.kind === "fixed_notification"
-      ? t("0 Token · 固定通知")
-      : t("0 Token · 脚本任务")
-    : t("Agent 任务");
   const taskSummary = zeroTokenConfig
     ? zeroTokenConfig.kind === "fixed_notification"
       ? zeroTokenConfig.content || t("固定通知")
@@ -1766,12 +1817,6 @@ function CronJobCard({
           </span>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-            <span className={`rounded-full px-2 py-0.5 text-xs ${zeroTokenConfig
-              ? "bg-emerald-500/10 text-emerald-800"
-              : "bg-sky-500/10 text-sky-800"}`}
-            >
-              {taskTypeLabel}
-            </span>
             {running && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("执行中")}
@@ -2185,9 +2230,9 @@ function CronJobDetailModal({
             label={t("任务类型")}
             value={job.zero_token_config
               ? job.zero_token_config.kind === "fixed_notification"
-                ? t("0 Token · 固定通知")
-                : t("0 Token · 脚本任务")
-              : t("Agent 任务")}
+                ? t("通知任务")
+                : t("脚本任务")
+              : t("智能任务")}
           />
           {job.zero_token_config ? (
             <>
@@ -2197,10 +2242,6 @@ function CronJobDetailModal({
                   ? job.zero_token_config.content || t("内容仅可在创建它的工具中查看")
                   : job.zero_token_config.language === "bash" ? "Bash" : "Python"}
                 pre={job.zero_token_config.kind === "fixed_notification"}
-              />
-              <DetailRow
-                label={t("模型调用")}
-                value={t("不调用模型，不消耗模型 Token")}
               />
             </>
           ) : (
@@ -2730,6 +2771,7 @@ type IntervalUnit = "m" | "h" | "d";
 const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0] as const;
 const MONTHDAY_VALUES = Array.from({ length: 31 }, (_, i) => i + 1);
 const MAX_DAILY_TIME_POINTS = 12;
+const WEIXIN_MIN_INTERVAL_MINUTES = 150;
 const CLOCK_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const CLOCK_MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
 const GLOBAL_NOTIFICATION_CHANNELS = [
@@ -3504,6 +3546,7 @@ export function AutomationFormModal({
   const t = useT();
   const zeroTokenAutomationsEnabled = useZeroTokenAutomationsEnabled();
   const testRunHintId = useId();
+  const notificationHelpTooltip = useHoverTooltipPosition<HTMLButtonElement>();
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
   const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
@@ -3515,6 +3558,9 @@ export function AutomationFormModal({
   const [zeroTokenKind, setZeroTokenKind] = useState<CronZeroTokenKind>(
     initialJob?.zero_token_config?.kind ?? "fixed_notification",
   );
+  const selectedCreateTaskKind: CreateTaskKind = executionMode === "agent"
+    ? "agent"
+    : zeroTokenKind;
   const [scriptLanguage, setScriptLanguage] = useState<CronScriptLanguage>(
     initialJob?.zero_token_config?.language ?? "python",
   );
@@ -3659,7 +3705,7 @@ export function AutomationFormModal({
     : null;
   const intervalMinutes = useMemo(() => getIntervalMinutes(intervalNum, intervalUnit), [intervalNum, intervalUnit]);
   const weixinBlockedByFrequency = kind === "interval"
-    && intervalMinutes < 15
+    && intervalMinutes < WEIXIN_MIN_INTERVAL_MINUTES
     && isHermesNotificationChannelConfigured(enabledChannels, "weixin");
   const availableNotificationChannels = (isGlobal
     ? GLOBAL_NOTIFICATION_CHANNELS
@@ -4122,7 +4168,7 @@ export function AutomationFormModal({
         />
       )}
       <div
-        className="relative min-w-0 w-full max-w-[760px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"
+        className="relative min-w-0 w-full max-w-[800px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"
         style={{ boxSizing: "border-box", width: "min(760px, calc(100vw - 32px))", maxHeight: "min(860px, calc(100dvh - 32px))" }}
       >
         <button
@@ -4141,63 +4187,58 @@ export function AutomationFormModal({
         {canSelectZeroToken ? (
           <fieldset className="mt-4">
             <legend className="text-sm font-medium text-black/80">{t("任务类型")}</legend>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="mt-2 grid grid-cols-1 items-start gap-2 sm:grid-cols-3">
               {([
-                ["agent", t("Agent 任务"), t("由模型理解并执行任务，可使用 Skill 和上游上下文")],
-                ["zero_token", t("0 Token 任务"), t("不调用模型，执行不消耗模型 Token，但仍会使用运行资源")],
-              ] as const).map(([value, label, description]) => (
+                ["agent", t("智能任务"), t("由 AI 理解你的需求并自动完成任务"), t("AI 驱动"), "bg-indigo-600 text-white"],
+                ["fixed_notification", t("通知任务"), t("按原文发送通知，不调用模型"), "0 Token", "bg-blue-50 text-blue-700"],
+                ["script", t("脚本任务"), t("运行预设脚本，适合开发者"), "0 Token", "bg-blue-50 text-blue-700"],
+              ] as const).map(([value, label, description, tokenLabel, tokenLabelClassName]) => (
                 <button
                   key={value}
                   type="button"
-                  aria-pressed={executionMode === value}
-                  onClick={() => setExecutionMode(value)}
-                  className={`rounded-lg border px-3 py-2 text-left transition ${executionMode === value
-                    ? "border-black/35 bg-black/[0.035]"
+                  aria-label={label}
+                  aria-pressed={selectedCreateTaskKind === value}
+                  onClick={() => {
+                    if (value === "agent") {
+                      setExecutionMode("agent");
+                      return;
+                    }
+                    setExecutionMode("zero_token");
+                    setZeroTokenKind(value);
+                    setScriptSafetyConfirmed(false);
+                  }}
+                  className={`rounded-md border px-3 py-2 text-left transition ${selectedCreateTaskKind === value
+                    ? "border-blue-300 bg-blue-50"
                     : "border-black/10 hover:border-black/20"}`}
                 >
-                  <span className="block text-balance text-sm font-semibold text-black/85">{label}</span>
-                  <span className="mt-0.5 block text-pretty text-xs leading-4 text-black/45">{description}</span>
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="text-balance text-sm font-semibold text-black/85">{label}</span>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-4 ${tokenLabelClassName}`}>
+                      {tokenLabel}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-pretty text-xs leading-4 text-black/45">
+                    {description}
+                  </span>
                 </button>
               ))}
             </div>
           </fieldset>
         ) : mode === "edit" && executionMode === "zero_token" ? (
-          <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] px-3 py-2">
-            <p className="text-sm font-semibold text-emerald-900">{t("0 Token 任务")}</p>
-            <p className="mt-0.5 text-pretty text-xs leading-4 text-emerald-900/65">
+          <div className="mt-4 rounded-md border border-black/10 bg-black/[0.025] px-3 py-2">
+            <p className="text-sm font-semibold text-black/80">{t("0 Token 任务")}</p>
+            <p className="mt-0.5 text-pretty text-xs leading-4 text-black/50">
               {t("不调用模型，执行不消耗模型 Token，但仍会使用运行资源")}
             </p>
           </div>
         ) : null}
 
-        {executionMode === "zero_token" && (
+        {mode === "edit" && executionMode === "zero_token" && (
           <div className="mt-3">
-            <label className="block text-sm font-medium text-black/80">{t("0 Token 类型")}</label>
-            {mode === "create" ? (
-              <div className="mt-1.5 inline-flex rounded-lg bg-black/[0.04] p-1">
-                {(["fixed_notification", "script"] as CronZeroTokenKind[]).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={zeroTokenKind === value}
-                    onClick={() => {
-                      setZeroTokenKind(value);
-                      setScriptSafetyConfirmed(false);
-                    }}
-                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${zeroTokenKind === value
-                      ? "bg-white text-black/90 shadow-sm"
-                      : "text-black/50 hover:text-black/80"}`}
-                  >
-                    {value === "fixed_notification" ? t("固定通知") : t("脚本任务")}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-1.5 text-sm text-black/65">
-                {zeroTokenKind === "fixed_notification" ? t("固定通知") : t("脚本任务")}
-                <span className="ml-2 text-xs text-black/40">{t("创建后不可更改类型")}</span>
-              </p>
-            )}
+            <p className="text-sm text-black/65">
+              {zeroTokenKind === "fixed_notification" ? t("通知任务") : t("脚本任务")}
+              <span className="ml-2 text-xs text-black/40">{t("创建后不可更改类型")}</span>
+            </p>
           </div>
         )}
 
@@ -4218,7 +4259,7 @@ export function AutomationFormModal({
         {/* 执行时间 */}
         <div className="mt-3">
           <label className="block text-sm font-medium text-black/80">{t("执行时间")}</label>
-          <div className="mt-1.5 inline-flex rounded-lg bg-black/[0.04] p-1">
+          <div className="mt-1.5 inline-flex rounded-md bg-black/[0.04] p-1">
             {(["once", "recurring", "interval"] as FrequencyKind[]).map((k) => (
               <button
                 key={k}
@@ -4237,7 +4278,7 @@ export function AutomationFormModal({
           </div>
           <div className="mt-2">
             {scheduleUneditable ? (
-              <div className="rounded-lg bg-[#FFF7E6] px-3 py-2 text-xs leading-relaxed text-[#8A5A00]">
+              <div className="rounded-md bg-[#FFF7E6] px-3 py-2 text-xs leading-relaxed text-[#8A5A00]">
                 {t("当前调度表达式 {{expr}} 暂不支持在 UI 编辑，如需修改请使用 hermes CLI", { expr: initialScheduleSource })}
               </div>
             ) : kind === "recurring" && (
@@ -4289,8 +4330,8 @@ export function AutomationFormModal({
             onChange={(e) => setPrompt(e.target.value.slice(0, AUTOMATION_PROMPT_MAX_LENGTH))}
             rows={4}
             maxLength={AUTOMATION_PROMPT_MAX_LENGTH}
-            placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等")}
-            className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            placeholder={t("请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展")}
+            className="mt-1.5 w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
           </div>
@@ -4308,8 +4349,8 @@ export function AutomationFormModal({
               <label className="block text-sm font-medium text-black/80">
                 {zeroTokenKind === "fixed_notification" ? t("通知内容") : t("脚本内容")}
               </label>
-              {zeroTokenScriptEditable ? (
-                <span className="text-[11px] text-black/40">
+              {zeroTokenScriptEditable && zeroTokenKind === "fixed_notification" ? (
+                <span className="tabular-nums text-[11px] text-black/40">
                   {zeroTokenContent.length}/{zeroTokenKind === "fixed_notification"
                     ? FIXED_NOTIFICATION_MAX_LENGTH
                     : AUTOMATION_SCRIPT_MAX_LENGTH}
@@ -4317,20 +4358,25 @@ export function AutomationFormModal({
               ) : null}
             </div>
             {zeroTokenKind === "script" && zeroTokenScriptEditable ? (
-              <div className="mt-1.5 inline-flex rounded-lg bg-black/[0.04] p-1">
-                {(["python", "bash"] as CronScriptLanguage[]).map((language) => (
-                  <button
-                    key={language}
-                    type="button"
-                    aria-pressed={scriptLanguage === language}
-                    onClick={() => setScriptLanguage(language)}
-                    className={`rounded-md px-3 py-1 text-xs font-medium transition ${scriptLanguage === language
-                      ? "bg-white text-black/90 shadow-sm"
-                      : "text-black/50 hover:text-black/80"}`}
-                  >
-                    {language === "python" ? "Python" : "Bash"}
-                  </button>
-                ))}
+              <div className="mt-1.5 flex items-center justify-between gap-3">
+                <div className="inline-flex rounded-md bg-black/[0.04] p-1">
+                  {(["python", "bash"] as CronScriptLanguage[]).map((language) => (
+                    <button
+                      key={language}
+                      type="button"
+                      aria-pressed={scriptLanguage === language}
+                      onClick={() => setScriptLanguage(language)}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition ${scriptLanguage === language
+                        ? "bg-white text-black/90 shadow-sm"
+                        : "text-black/50 hover:text-black/80"}`}
+                    >
+                      {language === "python" ? "Python" : "Bash"}
+                    </button>
+                  ))}
+                </div>
+                <span className="tabular-nums text-[11px] text-black/40">
+                  {zeroTokenContent.length}/{AUTOMATION_SCRIPT_MAX_LENGTH}
+                </span>
               </div>
             ) : null}
             {zeroTokenScriptEditable ? (
@@ -4348,15 +4394,15 @@ export function AutomationFormModal({
                   ? FIXED_NOTIFICATION_MAX_LENGTH
                   : AUTOMATION_SCRIPT_MAX_LENGTH}
                 placeholder={zeroTokenKind === "fixed_notification"
-                  ? t("例如：该喝水啦，休息一下再继续吧 💧")
-                  : scriptLanguage === "python"
-                    ? "print('Disk usage is high')"
-                    : "echo 'Disk usage is high'"}
+                  ? t("例如：该喝水啦，休息一下再继续吧")
+                  : `${t("示例脚本：")}\n${scriptLanguage === "python"
+                    ? PYTHON_SCRIPT_PLACEHOLDER
+                    : BASH_SCRIPT_PLACEHOLDER}`}
                 className={`mt-1.5 w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none ${zeroTokenKind === "script" ? "font-mono" : ""}`}
                 style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
               />
             ) : (
-              <div className="mt-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2.5 text-pretty text-xs leading-5 text-amber-900/75">
+              <div className="mt-1.5 rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2.5 text-pretty text-xs leading-5 text-amber-900/75">
                 {t("该任务由 Hermes CLI 或其他工具创建。LightVela 无法确认脚本归属，因此不会读取、覆盖或删除脚本内容。你仍可修改名称、时间和通知方式。")}
               </div>
             )}
@@ -4365,14 +4411,14 @@ export function AutomationFormModal({
                 {t("通知内容会按原文发送，不经过模型改写。没有模型调用，但仍会使用 Agent 运行资源。")}
               </p>
             ) : (
-              <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs leading-4 text-amber-900/80">
+              <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs leading-4 text-amber-900/80">
                 <input
                   type="checkbox"
                   checked={scriptSafetyConfirmed}
                   onChange={(event) => setScriptSafetyConfirmed(event.target.checked)}
                   className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-700/30 accent-black"
                 />
-                <span>{t("我了解脚本会以 Hermes 运行用户身份在 Agent 环境中执行，并非独立安全沙箱；我只会运行可信代码。")}</span>
+                <span>{t("我已了解风险：脚本会直接在云端 Agent 环境中运行，并非独立安全沙箱；请仅运行你信任的脚本。")}</span>
               </label>
             )}
           </div>
@@ -4417,7 +4463,7 @@ export function AutomationFormModal({
                   onChange={(e) => setEffectiveStartAt(e.target.value)}
                   disabled={!canEditEffectiveWindow}
                   style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
                   aria-label={t("生效开始时间")}
                 />
                 <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
@@ -4427,7 +4473,7 @@ export function AutomationFormModal({
                   onChange={(e) => setEffectiveEndAt(e.target.value)}
                   disabled={!canEditEffectiveWindow}
                   style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
                   aria-label={t("生效结束时间")}
                 />
                 <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
@@ -4458,11 +4504,40 @@ export function AutomationFormModal({
          * 区域可见性：
          *   - 国内站（isCN）：weixin / qqbot / wecom / feishu / dingtalk
          *   - 国际站（isGlobal）：telegram / whatsapp / discord / slack / weixin / qqbot / wecom / feishu
-         */}
+        */}
         <div className="mt-3">
-          <label className="block text-sm font-medium text-black/80">
-            {t("通知方式")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
-          </label>
+          <div className="flex items-center gap-1 text-sm font-medium text-black/80">
+            <span>{t("通知方式")}</span>
+            <span className="relative inline-flex">
+              <button
+                ref={notificationHelpTooltip.triggerRef}
+                type="button"
+                aria-label={t("通知方式")}
+                aria-describedby={notificationHelpTooltip.open ? notificationHelpTooltip.tooltipId : undefined}
+                onMouseEnter={notificationHelpTooltip.showTooltip}
+                onMouseLeave={notificationHelpTooltip.scheduleClose}
+                onFocus={notificationHelpTooltip.showTooltip}
+                onBlur={notificationHelpTooltip.scheduleClose}
+                className="inline-flex size-4 items-center justify-center rounded-full text-black/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+              >
+                <CircleHelp className="size-3.5" aria-hidden="true" />
+              </button>
+              {notificationHelpTooltip.open && (
+                <FloatingTooltip
+                  id={notificationHelpTooltip.tooltipId}
+                  position={notificationHelpTooltip.position}
+                  className="w-72 whitespace-normal text-pretty text-left"
+                  onMouseEnter={notificationHelpTooltip.showTooltip}
+                  onMouseLeave={notificationHelpTooltip.scheduleClose}
+                >
+                  {executionMode === "zero_token"
+                    ? t("如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。")
+                    : t("如不选，智能体只会在后台执行任务，不发通知。")}
+                </FloatingTooltip>
+              )}
+            </span>
+            <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
+          </div>
           {channelStatus === "loading" ? (
             <div className="mt-2 inline-flex min-h-6 items-center gap-1.5 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -4580,7 +4655,7 @@ export function AutomationFormModal({
                           maxLength={CHAT_ID_MAX_LENGTH}
                           onChange={(e) => handleChatIdChange(key, e.target.value)}
                           placeholder={t("可留空，即通过默认的 home 对话通知；也可指定 Chat ID 通知")}
-                          className="min-w-0 flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+                          className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
                           style={{ fontSize: 12, lineHeight: "18px" }}
                         />
                       </div>
@@ -4642,33 +4717,15 @@ export function AutomationFormModal({
               })}
             </div>
           )}
-          {hasAvailableNotificationChannel ? (
-            <>
-              {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
-              <div aria-hidden="true" style={{ height: 4 }} />
-              {deliverPlatforms.length === 0 ? (
-                <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                  {executionMode === "zero_token"
-                    ? t("如不选，脚本只在后台执行并写入日志，不发通知。")
-                    : t("如不选，智能体只会在后台执行任务，不发通知。")}
-                </p>
-              ) : (
-                // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
-                <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                  {"\u00A0"}
-                </p>
-              )}
-            </>
-          ) : null}
         </div>
 
         {executionMode === "agent" && (
-          <details className="group mt-3 overflow-hidden rounded-lg border border-black/10 bg-black/[0.015]">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-black/70 [&::-webkit-details-marker]:hidden">
+          <details className="group mt-3">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1.5 text-sm font-medium text-black/70 hover:text-black/90 [&::-webkit-details-marker]:hidden">
               <span>{t("高级设置")}</span>
               <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-black/40 group-open:rotate-180" />
             </summary>
-            <div className="border-t border-black/[0.06] px-3 pb-3 pt-2.5">
+            <div className="pt-3">
               <label className="block text-sm font-medium text-black/80">
                 {t("上游任务")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
               </label>
@@ -4715,8 +4772,7 @@ export function AutomationFormModal({
               disabled={!canTestRun}
               onClick={handleTestRun}
               aria-describedby={testRunDisabledReason ? testRunHintId : undefined}
-              style={MODAL_CONTROL_TEXT_STYLE}
-              className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-4 py-2 text-base font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {testState === "running" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -4736,8 +4792,7 @@ export function AutomationFormModal({
           <button
             type="button"
             onClick={onClose}
-            style={MODAL_CONTROL_TEXT_STYLE}
-            className="rounded-lg border border-black/10 px-4 py-2 text-base font-medium text-black/70 transition hover:bg-black/[0.04]"
+            className="rounded-lg border border-black/10 px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-black/[0.04]"
           >
             {t("取消")}
           </button>
@@ -4745,8 +4800,7 @@ export function AutomationFormModal({
             type="button"
             disabled={!canSubmit}
             onClick={handleSubmit}
-            style={MODAL_CONTROL_TEXT_STYLE}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-base font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {mode === "create" ? t("新建") : t("保存")}
@@ -5076,7 +5130,7 @@ function RecurringPicker({
         <div ref={weekdayPickerRef} className="relative w-[360px] max-w-full">
           <div
             onClick={() => setWeekdayPickerOpen((open) => !open)}
-            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
+            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
           >
             <div
@@ -5266,7 +5320,7 @@ function RecurringPicker({
           value={time}
           onChange={(e) => onTime(e.target.value)}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="w-[100px] rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
+          className="w-[100px] rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
         />
       )}
     </div>
@@ -5391,14 +5445,14 @@ function IntervalPicker({
           value={num}
           onChange={(e) => onNum(Math.max(1, Number(e.target.value) || 1))}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="h-9 w-16 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
+          className="h-9 w-16 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
         />
         <div ref={unitPickerRef} className="relative w-[76px]">
           <button
             type="button"
             onClick={() => setUnitPickerOpen((open) => !open)}
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-            className="flex min-h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
+            className="flex min-h-9 w-full items-center justify-between rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
             aria-haspopup="listbox"
             aria-expanded={unitPickerOpen}
           >
@@ -5443,19 +5497,236 @@ function IntervalPicker({
   );
 }
 
+type OncePickerDraft = {
+  date: string;
+  hour: string;
+  minute: string;
+  month: Date;
+};
+
+function formatLocalDateInputValue(date: Date): string {
+  return [
+    String(date.getFullYear()).padStart(4, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function parseOncePickerDraft(value: string): OncePickerDraft {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  const fallback = new Date();
+  const year = match ? Number(match[1]) : fallback.getFullYear();
+  const monthIndex = match ? Number(match[2]) - 1 : fallback.getMonth();
+  const day = match ? Number(match[3]) : fallback.getDate();
+  const candidate = new Date(year, monthIndex, day);
+  const validDate = candidate.getFullYear() === year
+    && candidate.getMonth() === monthIndex
+    && candidate.getDate() === day;
+  const date = validDate ? candidate : fallback;
+  const hour = match && CLOCK_HOUR_OPTIONS.includes(match[4] ?? "")
+    ? match[4]!
+    : String(fallback.getHours()).padStart(2, "0");
+  const minute = match && CLOCK_MINUTE_OPTIONS.includes(match[5] ?? "")
+    ? match[5]!
+    : String(fallback.getMinutes()).padStart(2, "0");
+
+  return {
+    date: formatLocalDateInputValue(date),
+    hour,
+    minute,
+    month: new Date(date.getFullYear(), date.getMonth(), 1),
+  };
+}
+
+function getCalendarGridDays(month: Date): Date[] {
+  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+  const gridStart = new Date(firstDay.getFullYear(), firstDay.getMonth(), 1 - firstDay.getDay());
+  return Array.from({ length: 42 }, (_, index) => (
+    new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index)
+  ));
+}
+
+function formatOncePickerValue(value: string): string {
+  const draft = parseOncePickerDraft(value);
+  return `${draft.date.replaceAll("-", "/")} ${draft.hour}:${draft.minute}`;
+}
+
 function OncePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const t = useT();
+  const { i18n } = useTranslation();
+  const selectedDayRef = useRef<HTMLButtonElement | null>(null);
+  const initialDraft = useMemo(() => parseOncePickerDraft(value), [value]);
+  const [open, setOpen] = useState(false);
+  const [draftDate, setDraftDate] = useState(initialDraft.date);
+  const [draftHour, setDraftHour] = useState(initialDraft.hour);
+  const [draftMinute, setDraftMinute] = useState(initialDraft.minute);
+  const [visibleMonth, setVisibleMonth] = useState(initialDraft.month);
+  const displayLocale = getAutomationDisplayLocale(i18n.language);
+  const calendarDays = useMemo(() => getCalendarGridDays(visibleMonth), [visibleMonth]);
+  const monthLabel = useMemo(() => new Intl.DateTimeFormat(displayLocale, {
+    year: "numeric",
+    month: "long",
+  }).format(visibleMonth), [displayLocale, visibleMonth]);
+  const fullDateFormatter = useMemo(() => new Intl.DateTimeFormat(displayLocale, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  }), [displayLocale]);
+  const weekdayLabels = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(displayLocale, { weekday: "narrow" });
+    return Array.from({ length: 7 }, (_, index) => formatter.format(new Date(2024, 0, 7 + index)));
+  }, [displayLocale]);
+
+  const resetDraft = useCallback(() => {
+    const next = parseOncePickerDraft(value);
+    setDraftDate(next.date);
+    setDraftHour(next.hour);
+    setDraftMinute(next.minute);
+    setVisibleMonth(next.month);
+  }, [value]);
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen) resetDraft();
+    setOpen(nextOpen);
+  }, [resetDraft]);
+
+  const changeMonth = useCallback((offset: number) => {
+    setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  }, []);
+
+  const todayValue = formatLocalDateInputValue(new Date());
 
   return (
-    <input
-      type="datetime-local"
-      step={60}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label={t("执行时间")}
-      style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-      className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
-    />
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={t("执行时间")}
+          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+          className="flex h-9 min-w-[220px] items-center justify-between gap-4 rounded-md border border-black/10 bg-white px-3 text-left text-sm tabular-nums transition hover:border-black/20 focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
+        >
+          <span>{formatOncePickerValue(value)}</span>
+          <CalendarDays className="size-4 shrink-0 text-black/75" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        role="dialog"
+        aria-label={t("执行时间")}
+        className="w-[342px] max-w-[calc(100vw-32px)] p-3"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          selectedDayRef.current?.focus();
+        }}
+      >
+        <div className="flex items-center justify-between gap-3 pb-2">
+          <span className="text-sm font-semibold text-black/85">{monthLabel}</span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label={t("上一页")}
+              onClick={() => changeMonth(-1)}
+              className="inline-flex size-8 items-center justify-center rounded-md text-black/60 transition hover:bg-black/[0.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+            >
+              <ChevronLeft className="size-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={t("下一页")}
+              onClick={() => changeMonth(1)}
+              className="inline-flex size-8 items-center justify-center rounded-md text-black/60 transition hover:bg-black/[0.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+            >
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1" aria-hidden="true">
+          {weekdayLabels.map((label, index) => (
+            <span key={`${label}-${index}`} className="flex h-7 items-center justify-center text-xs text-black/45">
+              {label}
+            </span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {calendarDays.map((date) => {
+            const dateValue = formatLocalDateInputValue(date);
+            const isSelected = dateValue === draftDate;
+            const isCurrentMonth = date.getMonth() === visibleMonth.getMonth();
+            const isToday = dateValue === todayValue;
+            return (
+              <button
+                key={dateValue}
+                ref={isSelected ? selectedDayRef : undefined}
+                type="button"
+                aria-label={fullDateFormatter.format(date)}
+                aria-pressed={isSelected}
+                aria-current={isToday ? "date" : undefined}
+                onClick={() => {
+                  setDraftDate(dateValue);
+                  if (!isCurrentMonth) {
+                    setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+                  }
+                }}
+                className={cn(
+                  "inline-flex size-9 items-center justify-center rounded-md text-sm tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35",
+                  isSelected
+                    ? "bg-[#2F7BFF] font-semibold text-white hover:bg-[#276FE8]"
+                    : isCurrentMonth
+                      ? "text-black/80 hover:bg-black/[0.05]"
+                      : "text-black/30 hover:bg-black/[0.04]",
+                  isToday && !isSelected ? "font-semibold text-[#245FCE]" : "",
+                )}
+              >
+                {date.getDate()}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 border-t border-black/[0.06] pt-3">
+          <Clock className="size-4 text-black/45" aria-hidden="true" />
+          <select
+            value={draftHour}
+            onChange={(event) => setDraftHour(event.target.value)}
+            aria-label={t("小时")}
+            className="h-9 rounded-md border border-black/10 bg-white px-2 text-sm tabular-nums focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
+          >
+            {CLOCK_HOUR_OPTIONS.map((hour) => <option key={hour} value={hour}>{hour}</option>)}
+          </select>
+          <span className="text-sm text-black/45" aria-hidden="true">:</span>
+          <select
+            value={draftMinute}
+            onChange={(event) => setDraftMinute(event.target.value)}
+            aria-label={t("分钟")}
+            className="h-9 rounded-md border border-black/10 bg-white px-2 text-sm tabular-nums focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
+          >
+            {CLOCK_MINUTE_OPTIONS.map((minute) => <option key={minute} value={minute}>{minute}</option>)}
+          </select>
+        </div>
+
+        <div className="mt-3 flex items-center justify-end gap-2 border-t border-black/[0.06] pt-3">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-black/10 bg-white px-4 text-sm font-medium text-black/75 transition hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+          >
+            {t("取消")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange(`${draftDate}T${draftHour}:${draftMinute}`);
+              setOpen(false);
+            }}
+            className="inline-flex h-9 items-center justify-center rounded-lg bg-black px-4 text-sm font-medium text-white transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+          >
+            {t("确认")}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

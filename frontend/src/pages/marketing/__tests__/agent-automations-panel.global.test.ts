@@ -86,7 +86,23 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
-    fireEvent.click(screen.getByRole("button", { name: /Zero-token task/ }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Job type")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /AI-powered/ })).toBeInTheDocument();
+    expect(screen.getByText("AI understands your needs and completes tasks automatically")).not.toHaveClass("min-h-8");
+    expect(screen.getByText("Sends notifications as-is; no model")).not.toHaveClass("min-h-8");
+    expect(screen.getByText("Run preset scripts, ideal for developers")).not.toHaveClass("min-h-8");
+    expect(screen.queryByText("No model-token usage")).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText("AI-powered", { selector: "span" })).toHaveLength(2);
+    expect(within(dialog).getAllByText("AI-powered", { selector: "span" })[1]).toHaveClass("bg-indigo-600", "text-white");
+    expect(within(dialog).getAllByText("0 Token")).toHaveLength(2);
+    within(dialog).getAllByText("0 Token").forEach((label) => {
+      expect(label).toHaveClass("bg-blue-50", "text-blue-700");
+    });
+    expect(within(dialog).queryByRole("button", { name: /0 Token/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Notification task/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Script task/ })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Notification task/ }));
     fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
       target: { value: "Hydration reminder" },
     });
@@ -171,7 +187,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
       target: { value: "Global downstream" },
     });
-    fireEvent.change(screen.getByPlaceholderText(/Describe the task as a prompt/), {
+    fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
       target: { value: "Summarize upstream output" },
     });
     fireEvent.click(screen.getByRole("combobox", { name: "Upstream Job" }));
@@ -225,7 +241,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
       target: { value: "Global task" },
     });
-    fireEvent.change(screen.getByPlaceholderText(/Describe the task as a prompt/), {
+    fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
       target: { value: "Summarize updates" },
     });
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
@@ -269,7 +285,13 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByRole("button", { name: "Current Jobs" })).toBeInTheDocument();
+    const currentTab = await screen.findByRole("button", { name: "Current Jobs" });
+    const taskTypeFilter = screen.getByRole("combobox", { name: "Job type" });
+    expect(taskTypeFilter).toHaveTextContent("All");
+    fireEvent.click(taskTypeFilter);
+    expect(screen.getByRole("option", { name: "AI-powered" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "All" }));
+    expect(taskTypeFilter.parentElement).not.toBe(currentTab.parentElement);
     expect(screen.getByRole("button", { name: "Ended Jobs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Recent Runs" })).toBeInTheDocument();
     expect(screen.getByText("Active task")).toBeInTheDocument();
