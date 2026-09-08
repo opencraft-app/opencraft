@@ -1288,7 +1288,7 @@ input.lh-std-input::placeholder {
 .lh-std-channel-panel__guide-btn {
   display: inline-flex;
   align-items: center;
-  min-height: 38px;
+  min-height: 36px;
   padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
@@ -1310,7 +1310,7 @@ input.lh-std-input::placeholder {
 }
 
 .lh-std-channel-panel__card-unbind {
-  min-height: 38px;
+  min-height: 36px;
   padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
@@ -1334,7 +1334,7 @@ input.lh-std-input::placeholder {
 }
 
 .lh-std-channel-panel__connect-btn {
-  min-height: 38px;
+  min-height: 36px;
   padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
