@@ -706,9 +706,10 @@ describe("cron context panel integration", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     expect(await screen.findByRole("heading", { name: isGlobal ? "Task Templates" : "任务模板" })).toBeTruthy();
-    expect(await screen.findByText(
+    const templateHint = await screen.findByText(
       isGlobal ? "quickly enable one from the task templates above" : "可从上方任务模板快速启用",
-    )).toBeTruthy();
+    );
+    expect(templateHint).not.toHaveClass("font-medium", "text-black/70");
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
 

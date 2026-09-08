@@ -53,7 +53,7 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
           style={{ maxWidth: "1440px" }}
         >
           <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:text-xs md:leading-[1.5]">
-            <span>{t("Copyright © {{year}} LightVela 版权所有，腾讯轻量云出品", { year: currentYear })}</span>
+            <span>{t("© {{year}} LightVela · 腾讯轻量云出品", { year: currentYear })}</span>
             {showLinks && (
               <>
                 <span className="inline-flex flex-wrap items-center gap-x-1">
@@ -93,7 +93,7 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
           <span>
-            {t("Copyright © {{year}} LightVela 版权所有，腾讯轻量云出品", { year: currentYear })}
+            {t("© {{year}} LightVela · 腾讯轻量云出品", { year: currentYear })}
             {showInlineICP && (
               <>
                 {" "}

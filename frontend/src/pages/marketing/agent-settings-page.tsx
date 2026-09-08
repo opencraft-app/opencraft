@@ -302,7 +302,7 @@ function TeaSdkSettingsPanel({
         fallback={
           <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {t("正在加载配置面板…")}
+            {t("正在加载...")}
           </div>
         }
       >

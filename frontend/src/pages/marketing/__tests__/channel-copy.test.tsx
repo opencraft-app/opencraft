@@ -55,6 +55,30 @@ afterEach(() => {
 });
 
 describe("marketing channel copy", () => {
+  it("announces zero-token notification and script tasks in the September changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    const septemberSection = screen.getByText("2026 年 9 月").closest("section");
+    expect(septemberSection).not.toBeNull();
+    const heading = within(septemberSection!).getByRole("heading", {
+      name: "定时任务新增通知任务和脚本任务",
+    });
+    expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+    expect(
+      within(septemberSection!).getByText(
+        "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByAltText("定时任务新增通知任务和脚本任务")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/scheduled-tasks-notification-zh-CN.png"),
+    );
+  });
+
   it("shows the Workbench update with the domestic Chinese screenshot", () => {
     render(
       <MemoryRouter>
@@ -68,7 +92,7 @@ describe("marketing channel copy", () => {
       name: "LightVela 支持创建和发布工作台Beta",
     });
     expect(within(septemberSection!).getByText(
-      "现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。",
+      "支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。",
     )).toBeInTheDocument();
     expect(within(heading.closest("article")!).getByText("Beta")).toBeInTheDocument();
     expect(screen.getByAltText("LightVela 支持创建和发布工作台")).toHaveAttribute(
@@ -88,7 +112,7 @@ describe("marketing channel copy", () => {
     expect(skillPackageImage.parentElement).toHaveStyle({ aspectRatio: "1166 / 680" });
   });
 
-  it("announces reliable Skill invocation for automations in the July changelog", () => {
+  it("announces reliable Skill invocation for scheduled tasks in the July changelog", () => {
     render(
       <MemoryRouter>
         <ChangelogPage />
@@ -146,7 +170,7 @@ describe("marketing channel copy", () => {
     expect(launchHeading.closest("article")?.querySelector("img")).toBeNull();
   });
 
-  it("shows the domestic August updates with DeepSeek Harness first and no automation template", () => {
+  it("shows the domestic August updates with DeepSeek Harness first and no scheduled task template", () => {
     render(
       <MemoryRouter>
         <ChangelogPage />
@@ -313,7 +337,7 @@ describe("marketing channel copy", () => {
     expect(screen.queryByRole("heading", { name: "新增技能包功能" })).not.toBeInTheDocument();
   });
 
-  it("mentions automations in the May changelog", () => {
+  it("mentions scheduled tasks in the May changelog", () => {
     render(
       <MemoryRouter>
         <ChangelogPage />
@@ -324,6 +348,7 @@ describe("marketing channel copy", () => {
     expect(screen.getByRole("heading", { name: "LightVela 支持查看 Hermes Agent 记忆" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "LightVela 支持设置定时任务" })).toBeInTheDocument();
     expect(screen.getByText("为 Agent 设置周期、间隔或单次定时任务，让它按计划执行提醒、总结、通知等日常工作。")).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("自动任务");
   });
 
   it("describes the April launch with channels, model APIs, and Skill support", () => {
@@ -380,5 +405,6 @@ describe("marketing channel copy", () => {
       "src",
       expect.stringContaining("/assets/changelog/automation-skill-invocation-en.png"),
     );
+    expect(document.body).not.toHaveTextContent("Automations");
   });
 });

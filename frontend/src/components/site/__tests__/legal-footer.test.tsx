@@ -3,7 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LegalFooter } from "@/components/site/legal-footer";
+import enUS from "@/i18n/generated/en-US.json";
+import es from "@/i18n/generated/es.json";
+import idID from "@/i18n/generated/id-ID.json";
+import jaJP from "@/i18n/generated/ja-JP.json";
+import koKR from "@/i18n/generated/ko-KR.json";
 import zhCN from "@/i18n/generated/zh-CN.json";
+import zhHant from "@/i18n/generated/zh-Hant.json";
 import zhToKey from "@/i18n/generated/zh-to-key.json";
 
 const localeState = vi.hoisted(() => ({
@@ -12,16 +18,16 @@ const localeState = vi.hoisted(() => ({
 
 const footerTranslations = vi.hoisted(() => ({
   "en-US": {
-    "Copyright © {{year}} LightVela 版权所有，腾讯轻量云出品":
-      "Copyright © {{year}} LightVela. All rights reserved. Powered by Tencent Lighthouse.",
+    "© {{year}} LightVela · 腾讯轻量云出品":
+      "© {{year}} LightVela · Built by Tencent Lighthouse",
     加入交流群: "Join Community",
     开源声明: "Open Source Notice",
     服务条款: "Terms of Service",
     隐私政策: "Privacy Policy",
   },
   "zh-CN": {
-    "Copyright © {{year}} LightVela 版权所有，腾讯轻量云出品":
-      "Copyright © {{year}} LightVela 版权所有 · 腾讯轻量云出品",
+    "© {{year}} LightVela · 腾讯轻量云出品":
+      "© {{year}} LightVela · 腾讯轻量云出品",
   },
 }));
 
@@ -77,13 +83,23 @@ afterEach(() => {
 });
 
 describe("LegalFooter", () => {
-  it("separates the domestic copyright and attribution with a middle dot", () => {
-    const source = "Copyright © {{year}} LightVela 版权所有，腾讯轻量云出品";
+  it("uses concise copyright attribution in every locale", () => {
+    const source = "© {{year}} LightVela · 腾讯轻量云出品";
     const key = zhToKey[source as keyof typeof zhToKey];
 
-    expect(zhCN[key as keyof typeof zhCN]).toBe(
-      ["Copyright © {{year}} LightVela 版权所有", "腾讯轻量云出品"].join(" · "),
-    );
+    const localizedCopy = [
+      [zhCN, "© {{year}} LightVela · 腾讯轻量云出品"],
+      [zhHant, "© {{year}} LightVela · 騰訊輕量雲出品"],
+      [enUS, "© {{year}} LightVela · Built by Tencent Lighthouse"],
+      [es, "© {{year}} LightVela · Creado por Tencent Lighthouse"],
+      [idID, "© {{year}} LightVela · Dibuat oleh Tencent Lighthouse"],
+      [jaJP, "© {{year}} LightVela · Tencent Lighthouse が開発"],
+      [koKR, "© {{year}} LightVela · Tencent Lighthouse에서 제작"],
+    ] as const;
+
+    for (const [dictionary, expected] of localizedCopy) {
+      expect(dictionary[key as keyof typeof dictionary]).toBe(expected);
+    }
   });
 
   it("links domestic product feedback to the Tencent questionnaire", () => {
@@ -114,7 +130,7 @@ describe("LegalFooter", () => {
     render(<LegalFooter />);
 
     expect(
-      screen.getByText("Copyright © 2026 LightVela. All rights reserved. Powered by Tencent Lighthouse."),
+      screen.getByText("© 2026 LightVela · Built by Tencent Lighthouse"),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy-policy");
     expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms-of-service");
@@ -136,7 +152,7 @@ describe("LegalFooter", () => {
 
     render(<LegalFooter />);
 
-    expect(screen.getByText("Copyright © 2026 LightVela 版权所有 · 腾讯轻量云出品")).toBeInTheDocument();
+    expect(screen.getByText("© 2026 LightVela · 腾讯轻量云出品")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "隐私政策" })).toHaveAttribute("href", "/zh-sg/privacy-policy");
     expect(screen.getByRole("link", { name: "服务条款" })).toHaveAttribute("href", "/zh-sg/terms-of-service");
     expect(screen.getByRole("link", { name: "开源声明" })).toHaveAttribute(
