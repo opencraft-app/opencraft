@@ -125,50 +125,6 @@ type stubRetryAfterError struct {
 	seconds int
 }
 
-func TestZeroTokenAutomationsEnabled(t *testing.T) {
-	t.Run("defaults off", func(t *testing.T) {
-		t.Setenv("CTL_ZERO_TOKEN_AUTOMATIONS_ENABLED", "")
-		if zeroTokenAutomationsEnabled() {
-			t.Fatal("expected zero-token automations to fail closed")
-		}
-	})
-
-	t.Run("accepts explicit true", func(t *testing.T) {
-		t.Setenv("CTL_ZERO_TOKEN_AUTOMATIONS_ENABLED", "true")
-		if !zeroTokenAutomationsEnabled() {
-			t.Fatal("expected explicit true to enable zero-token automations")
-		}
-	})
-
-	t.Run("rejects malformed values", func(t *testing.T) {
-		t.Setenv("CTL_ZERO_TOKEN_AUTOMATIONS_ENABLED", "enabled")
-		if zeroTokenAutomationsEnabled() {
-			t.Fatal("expected malformed value to fail closed")
-		}
-	})
-}
-
-func TestRuntimeConfigIncludesZeroTokenAutomationFlag(t *testing.T) {
-	t.Setenv("CTL_ZERO_TOKEN_AUTOMATIONS_ENABLED", "true")
-	req := httptest.NewRequest(http.MethodGet, "/v1/frontend/runtime-config", nil)
-	rec := httptest.NewRecorder()
-
-	newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
-	var payload struct {
-		Features map[string]bool `json:"features"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode runtime config: %v", err)
-	}
-	if !payload.Features["zeroTokenAutomationsEnabled"] {
-		t.Fatalf("expected zeroTokenAutomationsEnabled=true, got %#v", payload.Features)
-	}
-}
-
 func (e *stubRetryAfterError) Error() string {
 	return errcode.ErrInstanceChurnLimited.Message
 }

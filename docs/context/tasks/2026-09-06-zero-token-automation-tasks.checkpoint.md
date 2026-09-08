@@ -3,7 +3,7 @@ FE-AI Native `build` 收尾；实现与本地验证已完成，下一道门禁�
 
 ## verified
 - `frontend/src/lib/hermes-cron-client.ts` 已将固定通知和 Bash/Python 脚本映射为受管理脚本 + Hermes `--no-agent --script`，并保护未知所有权脚本。
-- CN/global UI 已复用既有定时、生效窗口和通知渠道；创建开关只门控新的 0 Token 创建入口，正式环境默认关闭，EdgeOne 预览因跳过远端 runtime config 而默认开启并保留显式关闭通道。
+- CN/global UI 已复用既有定时、生效窗口和通知渠道；后续产品决策已将新的 0 Token 创建入口改为前端默认开启，CN/global/EdgeOne 均保留显式关闭通道。
 - 最新产品复核已移除任务卡片类型标签、保留详情类型并新增当前任务类型筛选；创建弹窗改为直接选择智能任务、通知任务或脚本任务，不再经过“0 Token 任务”中间层。
 - 三张创建类型卡片的解释文案使用完整语句并按卡片宽度自然换行；卡片高度随各自内容自适应，一行文案更紧凑，两行文案仅增高自身；通知任务和脚本任务已移除重复的“不消耗模型 Token”文案。
 - 新建与编辑共用弹窗的桌面端最大宽度已从 760px 微调至 800px，移动端视口留白规则不变。
@@ -24,7 +24,7 @@ FE-AI Native `build` 收尾；实现与本地验证已完成，下一道门禁�
 - 尚未在真实登录账号的 `/agents/automations` 页面执行创建、编辑、测试、启停和删除。
 - 尚未在目标 Hermes 发布镜像验证 `no_agent` 版本、真实调度、stdout 投递、失败/超时告警和渠道送达。
 - 全量 `pnpm test` 受仓库既有依赖/环境问题影响：232 个文件通过、11 个失败、1 个跳过；2784 个测试通过、54 个失败、1 个跳过，并有一次 worker OOM。
-- 发布时需要显式设置 `CTL_ZERO_TOKEN_AUTOMATIONS_ENABLED=true`；当前未修改部署配置。
+- 原计划通过 CTL 环境变量开放入口，后续产品决策已废弃该方案；当前实现不再要求 CTL 部署配置。
 
 ## discard
 - 首次 global 构建的终端会话记录已丢失，已由第二次 `exit 0` 构建替代。
@@ -64,3 +64,25 @@ FE-AI Native `build` 收尾；实现与本地验证已完成，下一道门禁�
 
 ### next_action
 - 获得明确提交授权后，复核最终 diff、创建提交并推送现有 MR !3633；提交、CI、合并与发布状态分别确认。
+
+## 2026-09-08 default-on production follow-up
+
+### stage
+- MR !3633 已合并且前端已发布；因生产 runtime-config 不可用或缺少字段，两站仍显示旧创建表单，当前在独立 worktree 实施前端默认开启修复。
+
+### verified
+- 国内站生产 API `https://api.lightvela.com/v1/frontend/runtime-config` 返回 404 `route_not_found`。
+- 国际站生产 API `https://api.lightvela.ai/v1/frontend/runtime-config` 返回 200，但未包含 `zeroTokenAutomationsEnabled`。
+- 产品确认三类任务创建入口默认开启，不依赖 CTL 新增字段或 CTL 发布；保留显式布尔 `false`、构建期 `false` 和本地紧急关闭通道。
+- 前端默认值与缺失/异常字段回退均已改为开启；与国际站生产返回结构一致的回归断言已加入，明确远端布尔 `false` 仍可关闭。
+- MR !3633 新增的 CTL 专用环境变量解析、响应字段和对应测试已移除；既有 runtime-config 接口及其他功能字段保持不变。
+- `pnpm check` 通过，新增 TypeScript diagnostics 为 0；runtime config 与 CN/global 自动任务聚焦 Vitest 180/180 通过。
+- `GOCACHE=/private/tmp/lightvela-default-enable-gocache CGO_ENABLED=0 go test ./main/api/...` 通过；首次使用系统 Go cache 的失败仅为 worktree 沙箱无写权限，改用临时 cache 后通过。
+- 文档校验为 0 错误、0 警告；change-impact 校验通过；`git diff --check` 通过。
+
+### restore
+- 工作目录：`/Users/pablozhong/codex/lightvela/.worktrees/default-enable-zero-token-automations`；分支：`codex/default-enable-zero-token-automations`；基线：`origin/master@d0ce209eb`。
+- FE-AI change：`default-enable-zero-token-automations`。
+
+### next_action
+- 等待产品复核本地变更；获得单独授权后再提交、推送、创建后续 MR 或发布。
