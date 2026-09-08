@@ -10,7 +10,7 @@ if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
 from contracts.bundles import load_bundle, load_manifest  # noqa: E402
-from contracts.release_plan import plan_release_gates  # noqa: E402
+from contracts.release_plan import changed_files_for_revision, plan_release_gates  # noqa: E402
 
 
 class ReleaseGatePlannerTests(unittest.TestCase):
@@ -47,6 +47,83 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertFalse(plan.auto_merge_allowed)
         self.assertFalse(plan.auto_sync_allowed)
         self.assertIn("run_gitops_db_job.py", "\n".join(plan.manual_actions))
+
+    def test_merge_commit_migration_change_requires_beijing_db_job(self) -> None:
+        migration_path = "payment/migrations/202604290001_add_table.up.sql"
+        with TempGitMergeRepo(feature_path=migration_path) as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="payment",
+                env="beijing-sandbox",
+                source_sha=source_sha,
+                image="example.com/payment:test",
+                pin_targets="payment",
+            )
+
+        self.assertIn(migration_path, plan.changed_files)
+        self.assertTrue(plan.migration_changed)
+        self.assertTrue(plan.requires_db_job)
+        self.assertTrue(plan.requires_db_readiness)
+        self.assertFalse(plan.auto_merge_allowed)
+        self.assertFalse(plan.auto_sync_allowed)
+
+    def test_merge_commit_ignores_migration_already_on_first_parent(self) -> None:
+        migration_path = "payment/migrations/202604290001_add_table.up.sql"
+        with TempGitMergeRepo(
+            feature_path="payment/internal/api.go",
+            first_parent_path=migration_path,
+        ) as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="payment",
+                env="beijing-sandbox",
+                source_sha=source_sha,
+                image="example.com/payment:test",
+                pin_targets="payment",
+            )
+
+        self.assertNotIn(migration_path, plan.changed_files)
+        self.assertFalse(plan.migration_changed)
+        self.assertFalse(plan.requires_db_job)
+
+    def test_shallow_clone_missing_parent_history_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            origin = Path(tmp) / "origin"
+            clone = Path(tmp) / "clone"
+            origin.mkdir()
+            subprocess.run(["git", "init"], cwd=origin, check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "config", "user.email", "ci@example.com"],
+                cwd=origin,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "CI"],
+                cwd=origin,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            (origin / "README.md").write_text("base\n")
+            subprocess.run(["git", "add", "."], cwd=origin, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "commit", "-m", "base"], cwd=origin, check=True, capture_output=True, text=True)
+            (origin / "README.md").write_text("change\n")
+            subprocess.run(["git", "add", "."], cwd=origin, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "commit", "-m", "change"], cwd=origin, check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "clone", "--depth", "1", origin.as_uri(), str(clone)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            source_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=clone, text=True).strip()
+
+            with self.assertRaisesRegex(RuntimeError, "failed to inspect changed files"):
+                changed_files_for_revision(clone, source_sha)
 
     def test_payment_db_gate_pass_enables_beijing_auto_merge_and_sync(self) -> None:
         with self._repo_with_commit("payment/migrations/202604290001_add_table.up.sql") as (repo_root, source_sha):
@@ -357,6 +434,56 @@ class TempGitRepo:
     def __exit__(self, *_exc_info: object) -> None:
         if self.tempdir is not None:
             self.tempdir.cleanup()
+
+    def _git(self, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=self.repo_root, check=True, capture_output=True, text=True)
+
+    def _git_output(self, *args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=self.repo_root, text=True).strip()
+
+
+class TempGitMergeRepo:
+    def __init__(self, *, feature_path: str, first_parent_path: str = "") -> None:
+        self.feature_path = feature_path
+        self.first_parent_path = first_parent_path
+        self.tempdir: tempfile.TemporaryDirectory[str] | None = None
+        self.repo_root: Path | None = None
+
+    def __enter__(self) -> tuple[Path, str]:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self.tempdir.name)
+        self._git("init")
+        self._git("config", "user.email", "ci@example.com")
+        self._git("config", "user.name", "CI")
+        (self.repo_root / "README.md").write_text("base\n")
+        self._git("add", ".")
+        self._git("commit", "-m", "base")
+        first_parent_branch = self._git_output("branch", "--show-current")
+
+        self._git("checkout", "-b", "feature")
+        self._write(self.feature_path)
+        self._git("add", ".")
+        self._git("commit", "-m", "feature change")
+
+        self._git("checkout", first_parent_branch)
+        if self.first_parent_path:
+            self._write(self.first_parent_path)
+            self._git("add", ".")
+            self._git("commit", "-m", "first-parent change")
+
+        self._git("merge", "--no-ff", "feature", "-m", "merge feature")
+        return self.repo_root, self._git_output("rev-parse", "HEAD")
+
+    def __exit__(self, *_exc_info: object) -> None:
+        if self.tempdir is not None:
+            self.tempdir.cleanup()
+
+    def _write(self, relative_path: str) -> None:
+        if self.repo_root is None:
+            raise RuntimeError("temporary git repository is not initialized")
+        path = self.repo_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("test\n")
 
     def _git(self, *args: str) -> None:
         subprocess.run(["git", *args], cwd=self.repo_root, check=True, capture_output=True, text=True)
