@@ -3,6 +3,7 @@
 import { memo, useEffect } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
+import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 import { useSession } from '@/contexts/session-context';
@@ -16,7 +17,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260907-hermes-announcement-offset';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260908-home-refinements-v16';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -56,6 +57,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
     loadScripts();
     return () => {
       cancelled = true;
+      document.dispatchEvent(new Event('lightvela-home-dispose'));
       mountedScripts.forEach((script) => script.remove());
     };
   }, [locale, markup]);
@@ -89,9 +91,10 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
           locale={locale}
           showLanguageSwitcher
           showProductEntry
-          loginOnly={!isDomesticHomepage}
-          promoteFreeTrial={isDomesticHomepage}
+          loginOnly
+          promoteFreeTrial={false}
         />
+        <HomeMobileNavigation locale={locale} />
       </div>
     </>
   );

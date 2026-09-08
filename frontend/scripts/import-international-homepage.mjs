@@ -40,7 +40,7 @@ const sourceFileByLocale = {
 };
 const publicPrefixByLocale = {
   "en-US": "",
-  "zh-CN": "/zh-cn",
+  "zh-CN": "",
   "zh-SG": "/zh-sg",
   "zh-Hant": "/zh-hant",
   "id-ID": "/id-id",
@@ -61,14 +61,77 @@ const publicLocalizedPaths = [
   "/terms-of-service",
 ];
 const rotatorWordsByLocale = {
-  "en-US": ["work partner", "developer buddy", "life concierge", "financial assistant", "plan executor", "creative companion", "content manager"],
-  "zh-CN": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者", "自媒体运营官"],
-  "zh-SG": ["工作搭档", "开发搭子", "生活管家", "理财助理", "计划执行官", "创意同行者", "自媒体运营官"],
-  "zh-Hant": ["工作夥伴", "開發夥伴", "生活管家", "理財助理", "計畫執行官", "創意同行者", "自媒體營運官"],
-  "id-ID": ["rekan kerja", "teman pengembang", "pengelola hidup", "asisten keuangan", "pelaksana rencana", "rekan kreatif", "manajer konten"],
-  es: ["compañero de trabajo", "compañero de desarrollo", "gestor personal", "asistente financiero", "ejecutor de planes", "compañero creativo", "gestor de contenido"],
-  "ja-JP": ["仕事の相棒", "開発仲間", "暮らしのコンシェルジュ", "資産管理アシスタント", "計画実行役", "クリエイティブパートナー", "コンテンツマネージャー"],
-  "ko-KR": ["업무 파트너", "개발 동료", "생활 매니저", "재무 어시스턴트", "계획 실행자", "창의적 동반자", "콘텐츠 매니저"],
+  "en-US": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
+  "zh-CN": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
+  "zh-SG": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
+  "zh-Hant": ["工作助理", "知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家"],
+  "id-ID": ["asisten kerja", "basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup"],
+  es: ["asistente de trabajo", "base de conocimientos", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal"],
+  "ja-JP": ["仕事のアシスタント", "ナレッジベース", "監視レーダー", "リマインダー", "ビジネスアシスタント", "生活アシスタント"],
+  "ko-KR": ["업무 어시스턴트", "지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저"],
+};
+const tokenTrialCopyByLocale = {
+  "en-US": "Try an AI token plan free for 7 days.",
+  "zh-SG": "AI Token 套餐免费体验 7 天",
+  "zh-Hant": "AI Token 套餐免費體驗 7 天",
+  "id-ID": "Coba paket AI Token gratis selama 7 hari.",
+  es: "Prueba un plan de tokens de IA gratis durante 7 días.",
+  "ja-JP": "AI Tokenプランを7日間無料でお試しいただけます。",
+  "ko-KR": "AI Token 플랜을 7일 동안 무료로 사용해 보세요.",
+};
+const trialTitleCopyByLocale = {
+  "zh-SG": "免费体验，无需信用卡",
+  "zh-Hant": "免費體驗，無需信用卡",
+};
+const soulStripSecondaryCopyByLocale = {
+  "en-US": {
+    memoryTitle: "Memory",
+    memoryDescription: "Project facts, agreements, and lessons.",
+    userTitle: "User Profile",
+    userDescription: "Preferences, habits, and communication style.",
+  },
+  "zh-CN": {
+    memoryTitle: "记忆",
+    memoryDescription: "项目事实、工作约定和经验教训。",
+    userTitle: "用户画像",
+    userDescription: "偏好、使用习惯和沟通方式。",
+  },
+  "zh-SG": {
+    memoryTitle: "记忆",
+    memoryDescription: "项目事实、工作约定和经验教训。",
+    userTitle: "用户画像",
+    userDescription: "偏好、使用习惯和沟通方式。",
+  },
+  "zh-Hant": {
+    memoryTitle: "記憶",
+    memoryDescription: "專案事實、工作約定和經驗教訓。",
+    userTitle: "使用者畫像",
+    userDescription: "偏好、使用習慣和溝通方式。",
+  },
+  "id-ID": {
+    memoryTitle: "Memori",
+    memoryDescription: "Fakta proyek, kesepakatan, dan pelajaran.",
+    userTitle: "Profil Pengguna",
+    userDescription: "Preferensi, kebiasaan, dan gaya komunikasi.",
+  },
+  es: {
+    memoryTitle: "Memoria",
+    memoryDescription: "Hechos, acuerdos y aprendizajes del proyecto.",
+    userTitle: "Perfil de usuario",
+    userDescription: "Preferencias, hábitos y estilo de comunicación.",
+  },
+  "ja-JP": {
+    memoryTitle: "記憶",
+    memoryDescription: "プロジェクト事実、約束、学び。",
+    userTitle: "ユーザープロフィール",
+    userDescription: "好み、利用習慣、話し方。",
+  },
+  "ko-KR": {
+    memoryTitle: "기억",
+    memoryDescription: "프로젝트 사실, 약속, 배운 점.",
+    userTitle: "사용자 프로필",
+    userDescription: "선호, 사용 습관, 소통 방식.",
+  },
 };
 const heroLiveCopyByLocale = {
   "en-US": {
@@ -1084,16 +1147,49 @@ Object.assign(coreCopyByLocale, {
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 모든 권리 보유. Tencent Lighthouse에서 제작.",
   },
 });
-Object.assign(coreCopyByLocale, {
+for (const [locale, copy] of Object.entries({
   "en-US": { Blog: "Blog" },
   "zh-CN": { Blog: "博客" },
   "zh-SG": { Blog: "博客" },
   "zh-Hant": { Blog: "博客" },
-  "id-ID": { Blog: "Blog" },
-  es: { Blog: "Blog" },
-  "ja-JP": { Blog: "ブログ" },
-  "ko-KR": { Blog: "블로그" },
-});
+  "id-ID": {
+    Blog: "Blog",
+    "Try LightVela free for 14 days.": "Coba LightVela gratis selama 14 hari.",
+    "Try an AI token plan free for 3 days.": "Coba paket AI Token gratis selama 3 hari.",
+    "© 2026 LightVela. All rights reserved.": "© 2026 LightVela. Semua hak dilindungi.",
+    "Built by Tencent Lighthouse.": "Dibangun oleh Tencent Lighthouse.",
+  },
+  es: {
+    Blog: "Blog",
+    "Try LightVela free for 14 days.": "Prueba LightVela gratis durante 14 días.",
+    "Try an AI token plan free for 3 days.": "Prueba un plan de tokens de IA gratis durante 3 días.",
+    "© 2026 LightVela. All rights reserved.": "© 2026 LightVela. Todos los derechos reservados.",
+    "Built by Tencent Lighthouse.": "Creado por Tencent Lighthouse.",
+  },
+  "ja-JP": {
+    Blog: "ブログ",
+    "Try LightVela free for 14 days.": "LightVelaを14日間無料でお試しいただけます。",
+    "Try an AI token plan free for 3 days.": "AI Tokenプランを3日間無料でお試しいただけます。",
+    "© 2026 LightVela. All rights reserved.": "© 2026 LightVela. 無断転載を禁じます。",
+    "Built by Tencent Lighthouse.": "Tencent Lighthouseが開発。",
+  },
+  "ko-KR": {
+    Blog: "블로그",
+    "Try LightVela free for 14 days.": "LightVela를 14일 동안 무료로 사용해 보세요.",
+    "Try an AI token plan free for 3 days.": "AI Token 플랜을 3일 동안 무료로 사용해 보세요.",
+    "© 2026 LightVela. All rights reserved.": "© 2026 LightVela. 모든 권리 보유.",
+    "Built by Tencent Lighthouse.": "Tencent Lighthouse에서 제작.",
+  },
+})) {
+  Object.assign(coreCopyByLocale[locale], copy);
+}
+// The approved source uses updated English wording; retain the existing translations.
+for (const locale of ["id-ID", "es", "ja-JP", "ko-KR"]) {
+  const copy = coreCopyByLocale[locale];
+  copy["Your AI companion, always here, always evolving with you"] = copy["Your AI companion—always on, always evolving with you."];
+  copy["LightVela · Hermes Agent in the Cloud"] = copy["LightVela · AI companion in the cloud"];
+  copy["I run in the cloud, so your computer does not need to stay on. Each time you correct me, I save it as a new rule and follow your preference next time."] = copy["I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time."];
+}
 const cardAltCopyByLocale = {
   "zh-CN": {
     "Messaging platforms": "消息平台",
@@ -2328,6 +2424,7 @@ const headerActionsLayerCss = `
 .international-home-header-actions-layer > div {
   gap: 8px !important;
   transform: none !important;
+  translate: none !important;
 }
 
 .international-home-header-actions-layer button,
@@ -2358,6 +2455,7 @@ const headerActionsLayerCss = `
     right: 16px;
   }
 }
+
 `;
 const breakableAnimatedHeadlineCss = `
 #lightvela-intl-home .hero__line--main,
@@ -2509,7 +2607,6 @@ const unifiedHomepageTitleFontCss = `
 #lightvela-intl-home .hero__title *,
 #lightvela-intl-home .about__head .k,
 #lightvela-intl-home .wcard__body h4,
-#lightvela-intl-home .scenes__title,
 #lightvela-intl-home .scenes__panel-title,
 #lightvela-intl-home .deploy__lead,
 #lightvela-intl-home .track__body h3,
@@ -2526,7 +2623,6 @@ const unifiedHomepageTitleFontCss = `
 const englishEditorialTitleFontCss = `
 #lightvela-intl-home[data-locale^='en'] .about__head .k,
 #lightvela-intl-home[data-locale^='en'] .wcard__body h4,
-#lightvela-intl-home[data-locale^='en'] .scenes__title,
 #lightvela-intl-home[data-locale^='en'] .scenes__panel-title,
 #lightvela-intl-home[data-locale^='en'] .deploy__lead,
 #lightvela-intl-home[data-locale^='en'] .track__body h3,
@@ -2600,6 +2696,12 @@ const playTabsExpansionCss = `
   display: flex;
 }
 
+#lightvela-intl-home .plays__tabs label[for='pl-2'],
+#lightvela-intl-home .plays__tabs label[for='pl-3'] {
+  position: relative;
+  overflow: visible;
+}
+
 #lightvela-intl-home .plays__tabs label[for='pl-4'] {
   position: relative;
   padding-right: 30px;
@@ -2627,6 +2729,8 @@ const playTabsExpansionCss = `
   box-shadow: 0 6px 16px rgba(33, 26, 42, 0.14);
 }
 
+#lightvela-intl-home #pl-2:checked ~ .plays__tabs label[for='pl-2'] .play__new-badge,
+#lightvela-intl-home #pl-3:checked ~ .plays__tabs label[for='pl-3'] .play__new-badge,
 #lightvela-intl-home #pl-4:checked ~ .plays__tabs label[for='pl-4'] .play__new-badge {
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
@@ -2795,6 +2899,7 @@ const heroIntegrationLinkCss = `
 `;
 const plainHeroEyebrowCss = `
 #lightvela-intl-home .hero__eyebrow {
+  display: inline-flex;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -2803,11 +2908,68 @@ const plainHeroEyebrowCss = `
   font-family: var(--font-hero);
   font-size: 16px;
   font-weight: 500;
+  line-height: 1.25;
+  color: rgba(33, 26, 42, 0.38);
 }
 
 @media (max-width: 768px) {
   #lightvela-intl-home .hero__eyebrow {
     font-size: 13px;
+  }
+}
+`;
+const heroRotatorSweepCss = `
+#lightvela-intl-home .hero__rotator {
+  color: var(--brand);
+  box-sizing: content-box;
+  padding-inline: 0.12em;
+  margin-inline: -0.12em;
+  background-image: none;
+  background-clip: initial;
+  -webkit-background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+}
+
+#lightvela-intl-home .hero__rotator::after {
+  content: attr(data-word);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: inherit;
+  justify-content: inherit;
+  padding: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: inherit;
+  color: transparent;
+  background-image: linear-gradient(100deg, transparent 35%, rgba(255, 255, 255, 0.24) 50%, transparent 65%);
+  background-size: 220% 100%;
+  background-position: 115% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#lightvela-intl-home .hero__rotator-wrap.is-sweeping .hero__rotator::after {
+  opacity: 1;
+  animation: hero-rotator-text-sheen 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes hero-rotator-text-sheen {
+  0% {
+    background-position: 115% 50%;
+  }
+  100% {
+    background-position: -15% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__rotator-wrap.is-sweeping .hero__rotator::after {
+    animation: none;
+    opacity: 0;
   }
 }
 `;
@@ -2965,18 +3127,27 @@ const footerRefreshCss = `
 
 #lightvela-intl-home .foot__links-grid {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(250px, 280px) minmax(150px, 168px) minmax(140px, 158px) minmax(140px, 158px) minmax(220px, 250px);
-  column-gap: clamp(14px, 1.2vw, 24px);
+  grid-template-columns: minmax(220px, 280px) repeat(5, minmax(0, 1fr));
+  column-gap: clamp(16px, 1.4vw, 24px);
   row-gap: 42px;
   align-items: start;
 }
 
+#lightvela-intl-home .foot--domestic .foot__links-grid {
+  grid-template-columns: minmax(280px, 2fr) repeat(4, minmax(0, 1fr));
+  column-gap: clamp(16px, 1.4vw, 24px);
+}
+
+#lightvela-intl-home .foot__links-grid > div {
+  min-width: 0;
+}
+
 #lightvela-intl-home .foot__brand {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: flex-start;
-  gap: 18px;
+  gap: 16px;
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
@@ -3001,10 +3172,11 @@ const footerRefreshCss = `
 }
 
 #lightvela-intl-home .foot__copyright {
-  max-width: 220px;
+  max-width: 360px;
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
+  text-align: left;
   color: rgba(23, 21, 26, 0.44);
 }
 
@@ -3071,9 +3243,15 @@ const footerRefreshCss = `
     gap: 42px 28px;
   }
 
+  #lightvela-intl-home .foot--domestic .foot__links-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 42px 28px;
+  }
+
   #lightvela-intl-home .foot__brand {
     grid-column: 1 / -1;
     min-height: auto;
+    width: 100%;
     flex-direction: column;
     align-items: flex-start;
     gap: 14px;
@@ -3087,30 +3265,36 @@ const footerRefreshCss = `
     grid-template-columns: 1fr;
   }
 
+  #lightvela-intl-home .foot--domestic .foot__links-grid {
+    grid-template-columns: 1fr;
+  }
+
   #lightvela-intl-home .foot__brand {
     flex-direction: column;
     align-items: flex-start;
+    width: 100%;
   }
 }
 `;
 const voiceSectionRestoreCss = `
 #lightvela-intl-home .voice {
   min-height: auto;
-  padding: 96px 0 104px;
+  margin-top: 28px;
+  padding: 72px 0 84px;
   overflow: hidden;
   background: #fff;
 }
 
 #lightvela-intl-home .voice .marquee__rows {
   display: flex;
-  min-height: 420px;
+  min-height: 340px;
   flex-direction: column;
   justify-content: center;
-  gap: 20px;
+  gap: 16px;
 }
 
 #lightvela-intl-home .voice .mrow {
-  min-height: 190px;
+  min-height: 148px;
   overflow: hidden;
 }
 
@@ -3119,16 +3303,32 @@ const voiceSectionRestoreCss = `
   align-items: stretch;
   gap: 16px;
   width: max-content;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
 }
 
 #lightvela-intl-home .voice .tcard {
-  min-height: 168px;
+  width: 288px;
+  min-height: 132px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
 }
 
+#lightvela-intl-home .voice .tcard__head i {
+  width: 30px;
+  height: 30px;
+}
+
+#lightvela-intl-home .voice .tcard__head b {
+  font-size: 12.5px;
+}
+
 #lightvela-intl-home .voice .tcard p {
   flex: 1;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 @media (max-width: 720px) {
@@ -3137,7 +3337,17 @@ const voiceSectionRestoreCss = `
   }
 
   #lightvela-intl-home .voice .marquee__rows {
-    min-height: 380px;
+    min-height: 316px;
+  }
+
+  #lightvela-intl-home .voice .mrow {
+    min-height: 138px;
+  }
+
+  #lightvela-intl-home .voice .tcard {
+    width: 250px;
+    min-height: 122px;
+    padding: 14px;
   }
 }
 `;
@@ -3180,8 +3390,7 @@ function isolateHomepageBaseStyles(source) {
     ".foot__bar img {\n  width: 128px;\n  height: 44px;",
     ".foot__bar img {\n  width: 128px;\n  height: auto;",
   );
-  css = replaceRequired(
-    css,
+  css = css.replace(
     `/* Final calibration: complete headline and realistic chat density. */
 .hero__line--main .hero__char,
 .hero__line--dynamic .hero__char,
@@ -3198,31 +3407,16 @@ function isolateHomepageBaseStyles(source) {
     "/* Final calibration: realistic chat density; preserve the source hero motion. */",
   );
 
-  css += `
-
-@keyframes hero-rotator-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-#lightvela-intl-home .hero__rotator.is-changing {
-  animation: hero-rotator-in 180ms ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #lightvela-intl-home .hero__rotator.is-changing {
-    animation: none;
-  }
-}
-`;
-
   return css;
+}
+
+function scopeInternationalHeroChannelCss(source, rootSelector = "#lightvela-intl-home") {
+  return source
+    .replace(/#lightvela-intl-home\[data-locale=(["'])zh-CN\1\]\s+/g, "")
+    .replace(
+      /^(\s*)(\.hero__frame|#panel-tg|\.hero__tabs)/gm,
+      `$1${rootSelector} $2`,
+    );
 }
 
 function sourceLocaleFor(locale) {
@@ -3319,7 +3513,6 @@ function restoreHeroSurfacePanels(document, panels, locale) {
     }
   }
   applyLocalizedAssets(document, locale);
-  revealHeroDemoMessages(document);
 }
 
 function localizePublicHref(href, locale) {
@@ -3429,301 +3622,9 @@ function applyLocalizedAssets(document, locale) {
   }
 }
 
-function normalizeHeroDemo(document) {
-  for (const badge of document.querySelectorAll(".chat-row__badge")) {
-    badge.remove();
-  }
-
-  const comments = [];
-  const commentWalker = document.createTreeWalker(document.body, 128);
-  while (commentWalker.nextNode()) comments.push(commentWalker.currentNode);
-  comments.forEach((comment) => comment.remove());
-
-  const sourceIsChinese = document.documentElement.lang?.startsWith("zh");
-  const setHeroParagraphs = (selector, englishTexts, chineseTexts) => {
-    const texts = sourceIsChinese ? chineseTexts : englishTexts;
-    const paragraphs = Array.from(document.querySelectorAll(selector));
-    paragraphs.forEach((paragraph, index) => {
-      if (!texts[index]) return;
-      paragraph.textContent = texts[index];
-      paragraph.setAttribute("data-full-html", texts[index]);
-    });
-  };
-  const trimHeroMessages = (selector, limit) => {
-    Array.from(document.querySelectorAll(selector)).slice(limit).forEach((message) => message.remove());
-  };
-
-  setHeroParagraphs(
-    "#panel-tg .native__thread .bub p:not(.bub__time)",
-    [
-      "@LightVela are you ready? Help me start my AI companion.",
-      "I want it to answer in my style and keep working in the cloud.",
-      "Your AI companion is waiting to start. Create it in Workbench; if your plan is not active yet, go to Pricing first.",
-      "Take me to Workbench so I can set it up.",
-      "If my plan is not active, show me Pricing first.",
-      "Connect WhatsApp, Telegram, Discord, and Slack after creation.",
-      "Done. I will guide you to Workbench when you are ready, and to Pricing when a plan is required.",
-      "Open Workbench to create your companion. If a plan is required, open Pricing first, then come back and connect your channels.",
-    ],
-    [
-      "@LightVela 你准备好了吗？帮我启动我的 AI 伙伴。",
-      "希望它按我的习惯回复，并且在云端持续运行。",
-      "你的 AI 伙伴等待启动中。请先去工作台创建；如果还没有购买，先去购买页。",
-      "带我去工作台，我现在就想创建。",
-      "如果还没购买，先带我去购买页。",
-      "创建后帮我把 WhatsApp、Telegram、Discord、Slack 都接上。",
-      "好的。准备好后我带你去工作台；需要订阅时我会先带你去购买页。",
-      "请打开工作台创建你的 AI 伙伴。若需要订阅，先进入购买页，完成后再回来连接各个通道。",
-    ],
-  );
-
-  setHeroParagraphs(
-    "#panel-dc .dc__body .dc__msg p",
-    [
-      "LightVela setup channel: create your AI companion in Workbench, then connect this community for reminders and Q&A.",
-      "@LightVela can you join this Discord server after I create you?",
-      "Yes. Create me in Workbench first, then add the Discord channel. If your plan is not active, open Pricing before connecting.",
-      "@LightVela What can you do here once connected?",
-      "I can answer common questions, summarize long threads, and send reminders without asking people to leave Discord.",
-      "Can Slack work the same way?",
-      "Yes. Slack, WhatsApp, Telegram, and Discord can all become places where your companion listens and responds.",
-      "Create the companion first, then connect channels.",
-      "Set it up in Workbench; check Pricing first if the plan is not active.",
-    ],
-    [
-      "LightVela 设置频道：先在工作台创建你的 AI 伙伴，再把这个社区接上，用来做提醒和问答。",
-      "@LightVela 创建完成后，你能加入这个 Discord 服务器吗？",
-      "可以。请先在工作台创建我，再添加 Discord 通道。如果套餐还没启用，连接前先打开购买页。",
-      "@LightVela 接入以后你在这里能做什么？",
-      "我可以回答常见问题、总结长讨论、发提醒，不需要大家离开 Discord。",
-      "Slack 也能这样用吗？",
-      "可以。Slack、WhatsApp、Telegram、Discord 都能成为你的 AI 伙伴倾听和回复的地方。",
-      "先创建 AI 伙伴，再连接通道。",
-      "去工作台设置；如果套餐还没启用，先去购买页。",
-    ],
-  );
-  trimHeroMessages("#panel-dc .dc__body .dc__msg", 7);
-
-  setHeroParagraphs(
-    "#panel-sl .dc__body .dc__msg p",
-    [
-      "@LightVela we are setting up the team workspace. What comes first?",
-      "Create your AI companion in Workbench first. I will keep the setup small: name, model, and the first channel.",
-      "I want WhatsApp, Telegram, Discord, and Slack connected.",
-      "If the plan is not active, send me to Pricing.",
-      "Good. After creation, connect each channel once. I will answer in the right place and keep shared context together.",
-      "Create it in Workbench; check Pricing first if the plan is not active.",
-      "Understood. I will send you to Pricing first, then back to Workbench to finish channel setup.",
-    ],
-    [
-      "@LightVela 我们在设置团队工作区，第一步是什么？",
-      "先在工作台创建你的 AI 伙伴。我会把设置控制得很简单：名称、模型、第一个通道。",
-      "我想把 WhatsApp、Telegram、Discord、Slack 都接上。",
-      "如果套餐没启用，先带我去购买页。",
-      "好。创建后每个通道连接一次。我会在正确的地方回复，并把共享上下文放在一起。",
-      "先去工作台创建；如果套餐未启用，先去购买页。",
-      "明白。我会先带你去购买页，再回到工作台完成通道接入。",
-    ],
-  );
-  trimHeroMessages("#panel-sl .dc__body .dc__msg", 7);
-
-  const exactHeroReplacements = [
-    ["LightVela Dev", "AI Companion Setup"],
-    ["Hermes Dev", "AI Companion Setup"],
-    ["LightVela Issues", "Plan Status"],
-    ["Hermes Issues", "Plan Status"],
-    ["LightVela：DSH 已完成 patch，等你 review", "LightVela：准备好创建"],
-    ["DSH finished the patch.", "Ready to create."],
-    ["dsh-runner", "Workbench"],
-    ["fix/memory-dedupe pushed", "Start from Workbench"],
-    ["memory-dedupe pushed", "Start from Workbench"],
-    ["#337 skill follow-up", "Pricing check"],
-    ["#337 skill optimization follow-up", "Pricing check"],
-    ["CI Alerts", "Channel Setup"],
-    ["memory provider tests passed", "Channels ready"],
-    ["All checks passed.", "Channels ready"],
-    ["Release Notes", "Assistant Notes"],
-    ["v2.4.0 draft is ready.", "Preferences saved."],
-    ["v2.4.0 draft ready for review", "Preferences saved."],
-    ["Ops Monitor", "Cloud Status"],
-    ["API latency is back to normal.", "Running in the cloud."],
-    ["API latency returned to normal", "Running in the cloud."],
-    ["Design Review", "Skills"],
-    ["2 comments still need responses", "Knowledge and automations"],
-    ["Two comments need responses.", "Knowledge and automations"],
-    ["Support Digest", "Help Digest"],
-    ["weekly issue summary is ready", "Setup tips are ready."],
-    ["The weekly summary is ready.", "Setup tips are ready."],
-    ["API Changes", "Integrations"],
-    ["three endpoints were updated", "Supported channels connected."],
-    ["Three endpoints were updated.", "Supported channels connected."],
-    ["announcements", "setup"],
-    ["tournament-help", "help"],
-    ["公告", "设置"],
-    ["赛事帮助", "帮助"],
-    [
-      "@LightVela ask DSH to fix LightVela: memory provider occasionally writes duplicate records. Reproduce first, then patch.",
-      "@LightVela are you ready? Help me start my AI companion.",
-    ],
-    [
-      "@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.",
-      "@LightVela are you ready? Help me start my AI companion.",
-    ],
-    [
-      "@LightVela 用 DSH 修一下 Hermes：memory provider 偶发重复写入，先复现再给 patch。",
-      "@LightVela 你准备好了吗？帮我启动我的 AI 伙伴。",
-    ],
-    [
-      "Keep it small. Check provider sync and the session-end hook first.",
-      "I want it to answer in my style and keep working in the cloud.",
-    ],
-    ["别大改，优先看 sync 和 session end hook。", "希望它按我的习惯回复，并且在云端持续运行。"],
-    [
-      "DSH reproduced it in an isolated branch. It happens when provider sync and session end fire together.",
-      "Your AI companion is waiting to start. Create it in Workbench; if your plan is not active yet, go to Pricing first.",
-    ],
-    [
-      "DSH 已经在隔离分支复现。问题出现在 provider sync 与 session end 同时触发时。",
-      "你的 AI 伙伴等待启动中。请先去工作台创建；如果还没有购买，先去购买页。",
-    ],
-    [
-      "Post the patch and test results here. We will merge tonight.",
-      "Take me to Workbench so I can set it up.",
-    ],
-    ["把修复文件和测试结果发群里，今晚合并。", "带我去工作台，我现在就想创建。"],
-    [
-      "Do not change the storage schema. Contain the concurrent write first.",
-      "If my plan is not active, show me Pricing first.",
-    ],
-    ["不要改存储结构，先把并发写入收口。", "如果还没购买，先带我去购买页。"],
-    [
-      "Add a regression case where sync and session end fire together.",
-      "Connect WhatsApp, Telegram, Discord, and Slack after creation.",
-    ],
-    ["回归里加一次 sync 和 session end 同时触发。", "创建后帮我把 WhatsApp、Telegram、Discord、Slack 都接上。"],
-    [
-      "Added. Twenty concurrent runs now produce one record each.",
-      "Done. I will guide you to Workbench when you are ready, and to Pricing when a plan is required.",
-    ],
-    ["已加并发用例，连续跑 20 次都只写入一条记录。", "好的。准备好后我带你去工作台；需要订阅时我会先带你去购买页。"],
-    [
-      "The minimal fix is ready with a regression test. Unit, integration, and CI all pass. Review only provider sync and the session-end hook.",
-      "Open Workbench to create your companion. If a plan is required, open Pricing first, then come back and connect your channels.",
-    ],
-    [
-      "最小修复已完成，并补了 regression test；unit、integration 和 CI 均已通过。建议只 review provider sync 与 session end hook 两处改动。",
-      "请打开工作台创建你的 AI 伙伴。若需要订阅，先进入购买页，完成后再回来连接各个通道。",
-    ],
-    ["fix/memory-provider-dedupe.diff", "lightvela-companion-setup.guide"],
-    ["patch · tests passed", "Workbench · Pricing · Channels"],
-    [
-      "Friday Night Arena reminder: Rift Clash starts Friday at 8:00 PM GMT+8. Register in ",
-      "LightVela setup channel: create your AI companion in Workbench, then connect this community for reminders and Q&A. ",
-    ],
-    ["周五夜间竞技赛提醒：裂隙对决社区赛周五 20:00 GMT+8 开始。报名在 ", "LightVela 设置频道：先在工作台创建你的 AI 伙伴，再把这个社区接上，用来做提醒和问答。"],
-    [
-      "When does the tournament start in my time zone?",
-      "can you join this Discord server after I create you?",
-    ],
-    ["这次比赛换算到我的时区是几点开始？", "创建完成后，你能加入这个 Discord 服务器吗？"],
-    [
-      "The tournament starts Friday at 8:00 PM GMT+8. For you, that's 10:00 PM AEST.",
-      "Yes. Create me in Workbench first, then add the Discord channel. If your plan is not active, open Pricing before connecting.",
-    ],
-    ["比赛周五晚上 8 点 GMT+8 开始。", "可以。请先在工作台创建我，再添加 Discord 通道。"],
-    ["换到你的时区是 AEST 晚上 10 点。", "如果套餐还没启用，连接前先打开购买页。"],
-    ["What do I need before joining tonight's raid?", "What can you do here once connected?"],
-    ["今晚进团前我需要先做什么？", "接入以后你在这里能做什么？"],
-    [
-      "Make sure you're registered, read the rules in ",
-      "I can answer common questions, summarize long threads, and send reminders without asking people to leave Discord. ",
-    ],
-    ["进团前先确认已报名，阅读 ", "我可以回答常见问题、总结长讨论、发提醒，不需要大家离开 Discord。"],
-    ["What if I registered but have not been assigned a team?", "Can Slack work the same way?"],
-    ["如果我报名后还没分到队怎么办？", "Slack 也能这样用吗？"],
-    [
-      "Check in at ",
-      "Yes. Slack, WhatsApp, Telegram, and Discord can all become places where your companion listens and responds. ",
-    ],
-    ["开赛前 30 分钟到 ", "可以。Slack、WhatsApp、Telegram、Discord 都能成为你的 AI 伙伴倾听和回复的地方。"],
-    ["Moderators will fill open spots, and I will summarize which teams still need players.", "",],
-    ["管理员会按空位补队。我也会把缺人的队伍整理出来。", ""],
-    ["Remind us once more before it starts.", "Create the companion first, then connect channels."],
-    ["那开赛前再提醒我们一次。", "先创建 AI 伙伴，再连接通道。"],
-    [
-      "Scheduled. At 7:30 PM Friday, I will remind registered members in ",
-      "Set it up in Workbench; check Pricing first if the plan is not active. ",
-    ],
-    ["已安排。周五 19:30 我会在 ", "去工作台设置；如果套餐还没启用，先去购买页。"],
-    ["and share the check-in and team links.", "",],
-    ["并同步签到和组队入口。", ""],
-    [
-      "@LightVela read the last week of messages. What is blocking us right now?",
-      "@LightVela we are setting up the team workspace. What comes first?",
-    ],
-    ["@LightVela 翻一下最近一周的讨论，先说现在最卡哪一步。", "@LightVela 我们在设置团队工作区，第一步是什么？"],
-    [
-      "Pricing-page copy is the main blocker. It is due Friday, and both design and the conversion analysis are waiting for it.",
-      "Create your AI companion in Workbench first. I will keep the setup small: name, model, and the first channel.",
-    ],
-    ["最卡的是定价页文案。周五要交，设计和注册转化分析都在等这版。", "先在工作台创建你的 AI 伙伴。我会把设置控制得很简单：名称、模型、第一个通道。"],
-    ["I still owe three customer follow-ups. I can only book one today.", "I want WhatsApp, Telegram, Discord, and Slack connected."],
-    ["客户回访还欠三家，我今天只能先约一家。", "我想把 WhatsApp、Telegram、Discord、Slack 都接上。"],
-    [
-      "I will pull conversion data this afternoon. @LightVela reorder the work and remind each owner before the deadline.",
-      "If the plan is not active, send me to Pricing.",
-    ],
-    ["转化数据我下午拉。@LightVela 照这个重排，截止前提醒负责人。", "如果套餐没启用，先带我去购买页。"],
-    [
-      "Done. Lin sends design a usable copy draft today; you add conversion data this afternoon; Alex books the first customer today and the other two tomorrow and Thursday. I will @ each owner before their deadline.",
-      "Good. After creation, connect each channel once. I will answer in the right place and keep shared context together.",
-    ],
-    ["好。先由小林今天给设计一版可用文案；你下午补转化数据；阿哲今天约第一家，另外两家放到明后天。我会在各自截止前 @ 对应的人。", "好。创建后每个通道连接一次。我会在正确的地方回复，并把共享上下文放在一起。"],
-    [
-      "Next time, do not split customer follow-ups by day. Rank them by renewal risk first.",
-      "Create it in Workbench; check Pricing first if the plan is not active.",
-    ],
-    ["以后客户回访别按每天一家排，先看续费风险。", "先去工作台创建；如果套餐未启用，先去购买页。"],
-    [
-      "Got it. From now on I will rank customer follow-ups by renewal risk before delay, and I have reordered this list using that rule.",
-      "Understood. I will send you to Pricing first, then back to Workbench to finish channel setup.",
-    ],
-    ["记住了。以后排客户回访，我会先看续费风险，再看拖延时间；这次也按这个新规则重排。", "明白。我会先带你去购买页，再回到工作台完成通道接入。"],
-  ];
-
-  const replaceHeroCopy = (value) => {
-    let next = value;
-    for (const [from, to] of exactHeroReplacements) {
-      next = next.replaceAll(from, to);
-    }
-    return next
-      .replaceAll("LightVela · Hermes Agent in the Cloud", "LightVela · AI companion in the cloud")
-      .replaceAll("LightVela · 云端 Hermes Agent", "LightVela · AI companion in the cloud")
-      .replaceAll("Nasdaq Brief Assistant", "Market Brief")
-      .replaceAll("Hermes Agent: Nasdaq sector brief is ready", "LightVela: market brief is ready")
-      .replaceAll("Hermes Agent：纳斯达克热门板块速览已生成", "LightVela：纳斯达克热门板块速览已生成")
-      .replaceAll("Nasdaq sector brief is ready:", "Market brief is ready:")
-      .replaceAll("Hermes Agent", "LightVela")
-      .replaceAll("Hermes updated", "LightVela updated")
-      .replaceAll("fix Hermes", "fix LightVela");
-  };
-
-  const walker = document.createTreeWalker(document.body, 4);
-  const textNodes = [];
-  while (walker.nextNode()) textNodes.push(walker.currentNode);
-  for (const node of textNodes) {
-    node.nodeValue = replaceHeroCopy(node.nodeValue);
-  }
-
-  for (const element of document.querySelectorAll("[aria-label], [alt], [placeholder], [data-full-html]")) {
-    for (const attribute of ["aria-label", "alt", "placeholder", "data-full-html"]) {
-      const value = element.getAttribute(attribute);
-      if (!value) continue;
-      element.setAttribute(attribute, replaceHeroCopy(value));
-    }
-  }
+function normalizeHeroDemo(_document) {
+  // Preserve the MR !3490 channel-preview stories and chrome; locale text updates run downstream.
 }
-
 const alwaysOnEmphasisByLocale = {
   "en-US": [
     ["I stay ", "available 24/7 in the cloud", ", so you never need to leave your computer running. Whenever you correct me, I ", "turn your feedback into a new rule", " and apply it next time."],
@@ -3866,10 +3767,33 @@ const deepSeekHarnessVisualByLocale = {
   "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.png?v=20260901-deepseek-ui",
 };
 
+const automationIntroByLocale = {
+  "en-US": "Install templates directly from the library. Notification and script tasks consume no tokens.",
+  "zh-CN": "有模版库，直接装。通知任务&脚本任务无需消耗任何token。",
+  "zh-SG": "有模版库，直接装。通知任务&脚本任务无需消耗任何token。",
+  "zh-Hant": "有模版庫，直接裝。通知任務&腳本任務無需消耗任何token。",
+  "id-ID": "Pasang template langsung dari pustaka. Tugas notifikasi dan skrip tidak mengonsumsi token.",
+  "es": "Instala plantillas directamente desde la biblioteca. Las tareas de notificación y de scripts no consumen tokens.",
+  "ja-JP": "ライブラリからテンプレートを直接インストール。通知タスクとスクリプトタスクはトークンを消費しません。",
+  "ko-KR": "라이브러리에서 템플릿을 바로 설치하세요. 알림 및 스크립트 작업은 토큰을 소비하지 않습니다."
+};
+
 function addDeepSeekHarnessPlay(document, locale) {
   const plays = document.querySelector(".plays");
   const tabs = plays?.querySelector(".plays__tabs");
   const stage = plays?.querySelector(".plays__stage");
+  const automationIntro = stage?.querySelector('#play-2 .play__text > p');
+  if (automationIntro) {
+    automationIntro.textContent = automationIntroByLocale[locale] ?? automationIntroByLocale["en-US"];
+  }
+  for (const [id, text] of [["pl-2", "0 Token"], ["pl-3", "New"]]) {
+    const tab = tabs?.querySelector(`label[for="${id}"]`);
+    if (!tab || tab.querySelector(".play__new-badge")) continue;
+    const badge = document.createElement("em");
+    badge.className = "play__new-badge";
+    badge.textContent = text;
+    tab.appendChild(badge);
+  }
   if (!plays || !tabs || !stage || plays.querySelector("#pl-4")) return;
 
   const copy = deepSeekHarnessPlayByLocale[locale] ?? deepSeekHarnessPlayByLocale["en-US"];
@@ -3937,16 +3861,172 @@ function alignHeaderNavigation(document) {
   links.insertBefore(document.createTextNode("\n      "), docs);
 }
 
+function highlightLightVelaMentionHtml(value) {
+  return value.replaceAll("@LightVela", '<span class="lv-mention">@LightVela</span>');
+}
+
+function replaceLightVelaMentionText(document, root) {
+  const walker = document.createTreeWalker(root, 4);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+  for (const node of textNodes) {
+    if (!node.nodeValue?.includes("@LightVela")) continue;
+    if (node.parentElement?.closest(".lv-mention")) continue;
+
+    const parts = node.nodeValue.split("@LightVela");
+    const fragment = document.createDocumentFragment();
+    parts.forEach((part, index) => {
+      if (part) fragment.append(document.createTextNode(part));
+      if (index === parts.length - 1) return;
+      const mention = document.createElement("span");
+      mention.className = "lv-mention";
+      mention.textContent = "@LightVela";
+      fragment.append(mention);
+    });
+    node.replaceWith(fragment);
+  }
+}
+
+function highlightHeroLightVelaMentions(document) {
+  for (const panel of document.querySelectorAll(".hero__frame :is(#panel-wa, #panel-tg, #panel-dc, #panel-sl)")) {
+    for (const mention of panel.querySelectorAll(".dc__mention")) {
+      if (mention.textContent?.trim() === "@LightVela") mention.classList.add("lv-mention");
+    }
+    for (const botName of panel.querySelectorAll(".dc__bot b")) {
+      const firstChild = botName.firstChild;
+      if (!firstChild || firstChild.nodeType !== 3 || firstChild.nodeValue.trim() !== "LightVela") continue;
+      const label = document.createElement("span");
+      label.className = "lv-name";
+      label.textContent = "LightVela";
+      firstChild.replaceWith(label);
+    }
+    for (const copy of panel.querySelectorAll("p[data-full-html]")) {
+      const html = copy.getAttribute("data-full-html");
+      if (html?.includes("@LightVela")) copy.setAttribute("data-full-html", highlightLightVelaMentionHtml(html));
+    }
+    replaceLightVelaMentionText(document, panel);
+  }
+}
+
+function createSoulStripIcon(document, href) {
+  const item = document.createElement("i");
+  item.innerHTML = `<svg class="icon"><use href="${href}"></use></svg>`;
+  return item;
+}
+
+function createSoulStripMore(document) {
+  const item = document.createElement("i");
+  item.className = "soul-strip__more";
+  item.textContent = "...";
+  return item;
+}
+
+function createSoulStripSecondaryCap(document, options) {
+  const cap = document.createElement("p");
+  cap.className = "soul-strip__cap soul-strip__cap--secondary";
+
+  const copy = document.createElement("span");
+  copy.className = `soul-strip__copy${options.copyRight ? " soul-strip__copy--right" : ""}`;
+
+  const state = document.createElement("span");
+  state.className = "soul-strip__state soul-strip__state--secondary";
+  state.setAttribute("aria-label", `${options.title}：${options.description}`);
+  state.setAttribute("title", `${options.title}：${options.description}`);
+
+  const label = document.createElement("span");
+  label.className = "soul-strip__label";
+  label.textContent = options.title;
+  const divider = document.createElement("i");
+  const description = document.createElement("b");
+  description.textContent = options.description;
+  state.append(label, divider, description);
+  copy.append(state);
+
+  const icons = document.createElement("span");
+  icons.className = `soul-strip__icons${options.soul ? " soul-strip__icons--soul" : ""} soul-strip__icons--secondary`;
+  icons.setAttribute("aria-hidden", "true");
+  for (const href of options.icons) icons.append(createSoulStripIcon(document, href));
+  icons.append(createSoulStripMore(document));
+
+  if (options.copyRight) {
+    cap.append(copy, icons);
+  } else {
+    cap.append(icons, copy);
+  }
+
+  return cap;
+}
+
+function ensureSoulStripSecondaryStates(document, locale) {
+  const copy = soulStripSecondaryCopyByLocale[locale] ?? soulStripSecondaryCopyByLocale["en-US"];
+  const halves = Array.from(document.querySelectorAll(".soul-strip__half"));
+  if (halves.length < 2) return;
+
+  const definitions = [
+    {
+      title: copy.memoryTitle,
+      description: copy.memoryDescription,
+      icons: ["#i-archive", "#i-book", "#i-clock"],
+    },
+    {
+      title: copy.userTitle,
+      description: copy.userDescription,
+      icons: ["#i-user", "#i-heart", "#i-settings"],
+      soul: true,
+      copyRight: true,
+    },
+  ];
+
+  halves.slice(0, 2).forEach((half, index) => {
+    const current = half.querySelector(".soul-strip__cap--secondary");
+    const replacement = createSoulStripSecondaryCap(document, definitions[index]);
+    if (current) {
+      current.replaceWith(replacement);
+    } else {
+      half.append(replacement);
+    }
+  });
+}
+
 function prepareDocumentForLocale(document, locale) {
+  document.querySelector('.nav__links a')?.setAttribute('aria-current', 'page');
+  document.querySelectorAll('.scene__sub').forEach((button) => {
+    button.setAttribute('aria-pressed', button.classList.contains('on') ? 'true' : 'false');
+  });
+  document.querySelectorAll('.about__head p.k, p.deploy__lead').forEach((paragraph) => {
+    const heading = document.createElement('h2');
+    for (const attribute of paragraph.attributes) heading.setAttribute(attribute.name, attribute.value);
+    heading.append(...paragraph.childNodes);
+    paragraph.replaceWith(heading);
+  });
   normalizeHeroDemo(document);
   localizeDocumentText(document, locale);
   applyLocalizedAssets(document, locale);
   emphasizeAlwaysOnCard(document, locale);
+  ensureSoulStripSecondaryStates(document, locale);
+  highlightHeroLightVelaMentions(document);
   revealHeroDemoMessages(document);
+  const tokenTrial = document.querySelector(".cta__copy li:nth-child(2)");
+  if (tokenTrial && tokenTrialCopyByLocale[locale]) {
+    tokenTrial.textContent = tokenTrialCopyByLocale[locale];
+  }
+  const trialTitle = document.querySelector(".cta__title");
+  if (trialTitle && trialTitleCopyByLocale[locale]) {
+    trialTitle.textContent = trialTitleCopyByLocale[locale];
+  }
   const root = document.querySelector("#lightvela-intl-home");
   const rotator = document.querySelector("#hero-rotator");
   const words = rotatorWordsByLocale[locale] ?? rotatorWordsByLocale["en-US"];
   if (rotator) rotator.textContent = words[0];
+  const suffixText = locale === "ja-JP" ? "になります" : locale === "ko-KR" ? "입니다" : "";
+  const dynamicLine = document.querySelector(".hero__line--dynamic");
+  if (suffixText && dynamicLine) {
+    const suffix = dynamicLine.querySelector(".hero__suffix") ?? document.createElement("span");
+    suffix.className = "hero__suffix";
+    suffix.textContent = suffixText;
+    dynamicLine.appendChild(suffix);
+  }
   if (root) {
     root.setAttribute("data-locale", locale);
     root.setAttribute("data-rotator-words", JSON.stringify(words));
@@ -3963,7 +4043,7 @@ function applyFooterLayout(document) {
     <div class="foot__cta"><a href="/agents">My AI companion <span><svg class="icon"><use href="#i-arrow-ur"></use></svg></span></a></div>
   </div>
   <div class="foot__links"><div class="foot__links-grid">
-    <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.</p></div>
+    <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved.<br>Built by Tencent Lighthouse.</p></div>
     <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Analysis</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Self-hosting analysis</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Hostinger analysis</a></li><li><a href="/docs/compare/lightvela-vs-manus">Manus analysis</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">ChatGPT analysis</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Genspark analysis</a></li></ul></div>
     <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li><li><a href="https://www.youtube.com/@TencentLightVela" target="_blank" rel="noreferrer">YouTube</a></li></ul></div>
@@ -4088,6 +4168,14 @@ for (const match of cssSource.matchAll(/url\(\s*(['"]?)(assets\/[^'")]+)\1\s*\)/
 
 let inlineScripts = [];
 
+// This importer owns international layouts, not the approved domestic channels.
+const domesticFragment = await readFile(path.join(targetRoot, "index-fragment.zh-CN.html"), "utf8");
+const domesticDocument = new JSDOM(domesticFragment).window.document;
+const domesticChannels = Array.from(domesticDocument.querySelectorAll(".hero__tabs label"), (label) => label.textContent.trim());
+if (domesticChannels.join(",") !== "微信,QQ,企业微信,钉钉,飞书" || domesticFragment.includes('href="/zh-cn')) {
+  throw new Error("Domestic homepage must retain its approved channels and unprefixed routes before international import");
+}
+
 const preservedHarnessAssets = await Promise.all(
   preservedHarnessAssetNames.map(async (assetName) => [
     assetName,
@@ -4103,6 +4191,10 @@ await Promise.all(
 );
 
 for (const locale of supportedLocales) {
+  if (locale === "zh-CN") {
+    await writeFile(path.join(targetRoot, "index-fragment.zh-CN.html"), domesticFragment);
+    continue;
+  }
   const html = await readFile(path.join(sourceRoot, sourceFileByLocale[locale]), "utf8");
   const dom = new JSDOM(html);
   const { document } = dom.window;
@@ -4235,11 +4327,210 @@ for (const assetPath of assetPaths) {
 const editorialLocaleSelector = "#lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es'], [data-locale^='ja'], [data-locale^='ko'])";
 const localizedBaseCss = isolateHomepageBaseStyles(cssSource)
   .replaceAll("html[lang='en']", "#lightvela-intl-home[data-locale^='en']")
-  .replaceAll("#lightvela-intl-home[data-locale^='en']", editorialLocaleSelector);
-const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}`;
+  .replaceAll("#lightvela-intl-home[data-locale^='en']", editorialLocaleSelector)
+  .replaceAll(`${editorialLocaleSelector} .scenes__title,\n`, "");
+const heroChromeStart = cssSource.indexOf("/* Hero messaging previews: one monochrome system and one medium information density. */");
+const heroChromeEnd = cssSource.indexOf("@media (prefers-reduced-motion: reduce)", heroChromeStart);
+if (heroChromeStart < 0 || heroChromeEnd < 0) {
+  throw new Error("Unable to derive the original hero channel preview scheme");
+}
+const internationalHeroChannelSourceCss = cssSource.slice(heroChromeStart, heroChromeEnd);
+const internationalHeroChannelChromeCss = scopeInternationalHeroChannelCss(internationalHeroChannelSourceCss);
+const internationalHeroChannelParityCss = `
+/* Preserve the approved standalone preview inside the host app's global reset. */
+#lightvela-intl-home .hero__stage > input,
+#lightvela-intl-home .hero__stage .native__composer input,
+#lightvela-intl-home .hero__stage .dc__composer input {
+  color: #000;
+  border-color: #000;
+}
+
+#lightvela-intl-home #panel-wa .native__side-head .acts .icon,
+#lightvela-intl-home #panel-wa .native__head .acts .icon,
+#lightvela-intl-home #panel-wa .native__composer .icon,
+#lightvela-intl-home #panel-sl .dc__side-head > button .icon {
+  display: inline;
+}
+
+#lightvela-intl-home #panel-wa .native__thread {
+  padding-left: clamp(18px, 5vw, 72px);
+}
+
+#lightvela-intl-home #panel-wa .bub--me .bub__box {
+  background: #fff;
+}
+
+#lightvela-intl-home #panel-wa .bub--ai {
+  justify-content: flex-end;
+}
+
+#lightvela-intl-home #panel-wa .bub--ai .bub__box {
+  border-radius: 12px 12px 2px 12px;
+}
+
+#lightvela-intl-home #panel-wa .bub__report code {
+  border-radius: 0;
+  background: transparent;
+}
+
+#lightvela-intl-home #panel-tg .native__search--top {
+  background: #f2f3f6;
+}
+
+#lightvela-intl-home #panel-dc .dc--discord,
+#lightvela-intl-home #panel-dc .dc__side-head,
+#lightvela-intl-home #panel-dc .dc__chan,
+#lightvela-intl-home #panel-dc .dc__main {
+  color: #20242a;
+  border-color: #20242a;
+}
+
+#lightvela-intl-home #panel-dc .dc__chan button:not(.on) {
+  color: #626b77;
+  border-color: #626b77;
+}
+
+#lightvela-intl-home #panel-dc .dc__side {
+  color: #20242a;
+  border-color: #f5f5f5;
+}
+
+#lightvela-intl-home #panel-dc .dc__side-head {
+  border-color: #20242a #20242a #f5f5f5;
+}
+
+#lightvela-intl-home #panel-dc .dc__composer input {
+  color: #20242a;
+  border-color: #20242a;
+}
+
+#lightvela-intl-home #panel-dc .dc--discord,
+#lightvela-intl-home #panel-dc .dc__head {
+  background: #fff;
+}
+
+#lightvela-intl-home #panel-dc .dc__composer {
+  background: transparent;
+}
+
+#lightvela-intl-home #panel-sl .dc__side-head > button {
+  height: 22px;
+}
+
+#lightvela-intl-home #panel-sl .dc__composer--rich {
+  background: #fff;
+}
+`;
+const homepageReadingCss = `
+/* Homepage navigation and reading-safe play switching. */
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero__cta,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero__tabs,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
+  animation: none;
+  opacity: 0;
+  transform: translateY(24px);
+}
+
+.home-mobile-menu-trigger {
+  display: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  border: 0;
+  background: transparent;
+  color: #211a2a;
+  cursor: pointer;
+}
+.home-mobile-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgb(0 0 0 / 20%);
+}
+.home-mobile-menu {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  z-index: 90;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 52px 20px 16px;
+  border: 1px solid #ededed;
+  border-radius: 8px;
+  background: #fff;
+  color: #211a2a;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+}
+.home-mobile-menu-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.home-mobile-menu nav {
+  display: flex;
+  flex-direction: column;
+}
+.home-mobile-menu nav a {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 8px;
+  font-size: 16px;
+  line-height: 1.5;
+  text-decoration: none;
+  color: inherit;
+  border-top: 1px solid #f2f2f2;
+}
+.home-mobile-menu :focus-visible,
+.home-mobile-menu-trigger:focus-visible {
+  outline: 2px solid #6a4fde;
+  outline-offset: 2px;
+}
+@media (max-width: 1099px) {
+  .home-mobile-menu-trigger { display: inline-flex; }
+}
+@media (min-width: 641px) {
+  #lightvela-intl-home .plays__stage { display: grid; }
+  #lightvela-intl-home .plays__stage > .play {
+    display: flex;
+    grid-area: 1 / 1;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  #lightvela-intl-home #pl-2:checked ~ .plays__stage #play-2,
+  #lightvela-intl-home #pl-3:checked ~ .plays__stage #play-3,
+  #lightvela-intl-home #pl-4:checked ~ .plays__stage #play-4 {
+    visibility: visible;
+    pointer-events: auto;
+  }
+}
+@media (max-width: 640px) {
+  #lightvela-intl-home .plays__tabs {
+    margin-top: 8px;
+    padding-top: 16px;
+  }
+  #lightvela-intl-home[data-locale="zh-CN"] .hero__frame .native__side,
+  #lightvela-intl-home[data-locale="zh-CN"] .hero__frame .dc__side {
+    display: none;
+  }
+}
+`;
+const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${heroRotatorSweepCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}\n${internationalHeroChannelChromeCss}\n${internationalHeroChannelParityCss}\n${homepageReadingCss}`;
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
-  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'life concierge', 'financial assistant', 'plan executor', 'creative companion', 'content manager'];",
+  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
 ).replace(
   `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     function rotate() {
@@ -4249,27 +4540,101 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
       setTimeout(rotate, 2200);
     }`,
   `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var rotatorVisible = true;
+    var rotateTimer = 0;
+    var changeTimer = 0;
+    var sweepTimer = 0;
+    var sweepFrame = 0;
+    var initialRotationPending = true;
+    var rotatorVisible = !document.hidden;
     if (typeof IntersectionObserver !== 'undefined') {
       var rotatorObserver = new IntersectionObserver(function (entries) {
         entries.forEach(function (entry) {
-          if (entry.target === wrap) rotatorVisible = entry.isIntersecting;
+          if (entry.target === wrap) rotatorVisible = entry.isIntersecting && !document.hidden;
         });
       }, { threshold: 0.01 });
       rotatorObserver.observe(wrap);
     }
+    function applyWord(word) {
+      el.textContent = word;
+      el.setAttribute('data-word', word);
+      var width = measure(word);
+      if (width > 0) wrap.style.width = width + 'px';
+    }
+    applyWord(words[index]);
+    function scheduleRotate(delay) {
+      window.clearTimeout(rotateTimer);
+      rotateTimer = window.setTimeout(rotate, delay);
+    }
+    function sweepToWord(word) {
+      window.clearTimeout(changeTimer);
+      window.clearTimeout(sweepTimer);
+      window.cancelAnimationFrame(sweepFrame);
+      wrap.classList.remove('is-sweeping');
+      sweepFrame = window.requestAnimationFrame(function () {
+        wrap.classList.add('is-sweeping');
+      });
+      changeTimer = window.setTimeout(function () { applyWord(word); }, 260);
+      sweepTimer = window.setTimeout(function () { wrap.classList.remove('is-sweeping'); }, 680);
+    }
     function rotate() {
       if (!rotatorVisible) {
-        setTimeout(rotate, 2200);
+        scheduleRotate(900);
         return;
       }
+      initialRotationPending = false;
       index = (index + 1) % words.length;
-      el.textContent = words[index];
-      wrap.style.width = measure(words[index]) + 'px';
-      el.classList.add('is-changing');
-      setTimeout(function () { el.classList.remove('is-changing'); }, 180);
-      setTimeout(rotate, 2200);
-    }`,
+      sweepToWord(words[index]);
+      scheduleRotate(2200);
+    }
+    document.addEventListener('visibilitychange', function () {
+      rotatorVisible = !document.hidden;
+      if (rotatorVisible) {
+        applyWord(words[index]);
+        if (!initialRotationPending) scheduleRotate(420);
+      }
+    });
+    window.addEventListener('pageshow', function () {
+      rotatorVisible = !document.hidden;
+      applyWord(words[index]);
+      if (!initialRotationPending) scheduleRotate(520);
+    });
+    window.setTimeout(function () {
+      var revealDelay = parseInt(wrap.style.getPropertyValue('--rotator-delay'), 10) || 0;
+      scheduleRotate(revealDelay + 2200);
+    }, 0);`,
+).replace(
+  `    var INITIAL = 100;
+    var STEP = 30;
+    var shouldKeepNaturalText`,
+  `    var INITIAL = 100;
+    var STEP = 30;
+    var CHAR_DURATION = 500;
+    var SEGMENT_GAP = 80;
+    var shouldKeepNaturalText`,
+).replace(
+  "      return startDelay + text.length * STEP;",
+  "      return startDelay + Math.max(0, text.length - 1) * STEP + CHAR_DURATION;",
+).replace(
+  `    var next = INITIAL;
+    if (!shouldKeepNaturalText && main) next = splitChars(main, next);
+    if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + 60);
+    if (wrap) wrap.style.setProperty('--rotator-delay', next + 'ms');
+    var root = document.documentElement;
+    var afterText = next + 200;
+    root.style.setProperty('--cta-delay', afterText + 'ms');
+    root.style.setProperty('--tabs-delay', (afterText + 160) + 'ms');
+    root.style.setProperty('--frame-delay', (afterText + 320) + 'ms');`,
+  `    var next = INITIAL;
+    if (!shouldKeepNaturalText && main) next = splitChars(main, next);
+    if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + SEGMENT_GAP);
+    var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;
+    if (wrap) wrap.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
+    var root = document.documentElement;
+    var afterText = rotatorDelay + (shouldKeepNaturalText ? 0 : 600) + 200;
+    root.style.setProperty('--cta-delay', afterText + 'ms');
+    root.style.setProperty('--tabs-delay', (afterText + 160) + 'ms');
+    root.style.setProperty('--frame-delay', (afterText + 320) + 'ms');
+    root.classList.add('hero-sequence-ready');`,
 ).replace(
   `        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
         chats.forEach(function (chat, i) {`,
@@ -4304,22 +4669,203 @@ if (
   !runtimeSource.includes("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');")
   || !runtimeSource.includes("btn.addEventListener('click', activate);")
   || !runtimeSource.includes("btn.addEventListener('keydown', activateFromKeyboard);")
-  || !runtimeSource.includes("el.classList.add('is-changing');")
-  || !runtimeSource.includes("rotatorVisible = entry.isIntersecting;")
+  || !runtimeSource.includes("wrap.classList.add('is-sweeping');")
+  || !runtimeSource.includes("sweepTimer = window.setTimeout(function () { wrap.classList.remove('is-sweeping'); }, 680);")
+  || !runtimeSource.includes("function scheduleRotate(delay)")
+  || !runtimeSource.includes("scheduleRotate(revealDelay + 2200)")
+  || !runtimeSource.includes("if (!initialRotationPending) scheduleRotate(520)")
+  || !runtimeSource.includes("var CHAR_DURATION = 500;")
+  || !runtimeSource.includes("var SEGMENT_GAP = 80;")
+  || !runtimeSource.includes("var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;")
+  || !runtimeSource.includes("root.classList.add('hero-sequence-ready');")
+  || !runtimeSource.includes("document.addEventListener('visibilitychange'")
+  || !runtimeSource.includes("window.addEventListener('pageshow'")
+  || !runtimeSource.includes("rotatorVisible = !document.hidden")
+  || !runtimeSource.includes("if (width > 0) wrap.style.width = width + 'px';")
 ) {
   throw new Error("Unable to add accessible activation to homepage scene buttons");
 }
-const playHoverRuntime = `
+const voiceScrollRuntime = `
 (function () {
-  document.querySelectorAll('.plays__tabs label[for]').forEach(function (label) {
-    label.addEventListener('mouseenter', function () {
-      var input = document.getElementById(label.htmlFor);
-      if (input && !input.checked) input.click();
-    });
+  var voice = document.querySelector('#lightvela-intl-home .voice');
+  if (!voice || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var rows = Array.prototype.slice.call(voice.querySelectorAll('.mrow'));
+  if (!rows.length) return;
+  rows.forEach(function (row) {
+    var track = row.querySelector('.mrow__track');
+    if (track) track.style.animation = 'none';
   });
+  var voiceFrame = 0;
+  var isActive = false;
+  function renderVoiceMotion() {
+    voiceFrame = 0;
+    var rect = voice.getBoundingClientRect();
+    var viewport = window.innerHeight || document.documentElement.clientHeight || 1;
+    var progress = (viewport - rect.top) / (viewport + rect.height);
+    var clamped = Math.max(0, Math.min(1, progress));
+    var measurements = rows.map(function (row) {
+      var track = row.querySelector('.mrow__track');
+      if (!track) return null;
+      return {
+        track: track,
+        maxOffset: Math.max(0, track.scrollWidth - row.clientWidth),
+        reverse: row.classList.contains('mrow--r')
+      };
+    });
+    measurements.forEach(function (measurement) {
+      if (!measurement) return;
+      var offset = measurement.reverse
+        ? (-measurement.maxOffset + clamped * measurement.maxOffset).toFixed(2)
+        : (-clamped * measurement.maxOffset).toFixed(2);
+      measurement.track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
+    });
+  }
+  function requestVoiceMotion() {
+    if (!isActive || voiceFrame) return;
+    voiceFrame = window.requestAnimationFrame(renderVoiceMotion);
+  }
+  function startVoiceMotion() {
+    if (isActive) return;
+    isActive = true;
+    window.addEventListener('scroll', requestVoiceMotion, { passive: true });
+    window.addEventListener('resize', requestVoiceMotion);
+    requestVoiceMotion();
+  }
+  function stopVoiceMotion() {
+    if (!isActive) return;
+    isActive = false;
+    window.removeEventListener('scroll', requestVoiceMotion);
+    window.removeEventListener('resize', requestVoiceMotion);
+    if (voiceFrame) {
+      window.cancelAnimationFrame(voiceFrame);
+      voiceFrame = 0;
+    }
+  }
+  if (typeof IntersectionObserver === 'undefined') {
+    startVoiceMotion();
+    return;
+  }
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) startVoiceMotion();
+      else stopVoiceMotion();
+    });
+  }, { rootMargin: '120px 0px', threshold: 0 });
+  observer.observe(voice);
 })();
 `;
-const runtime = `/* Generated from the approved international homepage motion. */\n${runtimeSource}\n${playHoverRuntime}\n`;
+const playHoverRuntime = `
+(function () {
+  var labels = Array.prototype.slice.call(document.querySelectorAll('.plays__tabs label[for]'));
+  var plays = document.querySelector('.plays');
+  var stage = document.querySelector('.plays__stage');
+  if (!labels.length || !plays || !stage) return;
+  var phoneMedia = window.matchMedia('(max-width: 640px)');
+  var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var timer = 0;
+  var readable = false;
+  var manualSelection = false;
+  var pointerInside = false;
+  var advancing = false;
+  var disposed = false;
+  function getCheckedIndex() {
+    var checked = plays.querySelector('input[type="radio"]:checked');
+    return Math.max(0, labels.findIndex(function (label) {
+      return checked && label.htmlFor === checked.id;
+    }));
+  }
+  function stopTimer() {
+    if (timer) window.clearTimeout(timer);
+    timer = 0;
+  }
+  function schedule() {
+    stopTimer();
+    if (disposed || !readable || manualSelection || pointerInside || phoneMedia.matches ||
+        reducedMotion.matches || document.hidden || plays.contains(document.activeElement)) return;
+    timer = window.setTimeout(function () {
+      timer = 0;
+      if (!plays.isConnected) { dispose(); return; }
+      advancing = true;
+      var next = (getCheckedIndex() + 1) % labels.length;
+      document.getElementById(labels[next].htmlFor).click();
+      advancing = false;
+      schedule();
+    }, 8000);
+  }
+  function showTab(index) {
+    manualSelection = true;
+    stopTimer();
+    var input = document.getElementById(labels[index].htmlFor);
+    if (input && !input.checked) input.click();
+    // Only move the horizontal tab strip; never scroll the document during a swipe.
+    if (phoneMedia.matches) {
+      var tabs = labels[index].parentElement;
+      var tabRect = labels[index].getBoundingClientRect();
+      var tabsRect = tabs.getBoundingClientRect();
+      if (tabs.scrollTo) tabs.scrollTo({
+        left: tabs.scrollLeft + tabRect.left - tabsRect.left - (tabsRect.width - tabRect.width) / 2,
+        behavior: reducedMotion.matches ? 'auto' : 'smooth'
+      });
+    }
+  }
+  labels.forEach(function (label, index) {
+    label.addEventListener('mouseenter', function () {
+      if (!phoneMedia.matches) showTab(index);
+    });
+    label.addEventListener('click', function () { showTab(index); });
+  });
+  plays.addEventListener('change', function (event) {
+    if (advancing || !event.target.matches('input[type="radio"]')) return;
+    manualSelection = true;
+    stopTimer();
+  });
+  plays.addEventListener('mouseenter', function () { pointerInside = true; stopTimer(); });
+  plays.addEventListener('mouseleave', function () { pointerInside = false; schedule(); });
+  plays.addEventListener('focusin', stopTimer);
+  plays.addEventListener('focusout', schedule);
+  var startX = 0;
+  var startY = 0;
+  stage.addEventListener('touchstart', function (event) {
+    var touch = event.changedTouches && event.changedTouches[0];
+    if (!touch) return;
+    startX = touch.clientX;
+    startY = touch.clientY;
+  }, { passive: true });
+  stage.addEventListener('touchend', function (event) {
+    if (!phoneMedia.matches) return;
+    var touch = event.changedTouches && event.changedTouches[0];
+    if (!touch) return;
+    var dx = touch.clientX - startX;
+    var dy = touch.clientY - startY;
+    if (Math.abs(dx) < 42 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+    showTab((getCheckedIndex() + (dx < 0 ? 1 : labels.length - 1)) % labels.length);
+  }, { passive: true });
+  if (typeof IntersectionObserver === 'undefined') return;
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!plays.isConnected) { dispose(); return; }
+      readable = entry.isIntersecting && entry.intersectionRatio >= 0.75;
+      if (!entry.isIntersecting) manualSelection = false;
+      schedule();
+    });
+  }, { threshold: [0, 0.75], rootMargin: '-64px 0px 0px 0px' });
+  observer.observe(stage);
+  document.addEventListener('visibilitychange', schedule);
+  phoneMedia.addEventListener('change', schedule);
+  reducedMotion.addEventListener('change', schedule);
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    stopTimer();
+    observer.disconnect();
+    document.removeEventListener('visibilitychange', schedule);
+    phoneMedia.removeEventListener('change', schedule);
+    reducedMotion.removeEventListener('change', schedule);
+  }
+  document.addEventListener('lightvela-home-dispose', dispose, { once: true });
+})();
+`;
+const runtime = `/* Generated from the approved international homepage motion. */\n${runtimeSource}\n${voiceScrollRuntime}\n${playHoverRuntime}\n`;
 const heroChatCopies = JSON.stringify(heroLiveCopyByLocale);
 const heroChat = (await readFile(path.join(sourceRoot, "assets/hero-chat.js"), "utf8"))
   .replace(
