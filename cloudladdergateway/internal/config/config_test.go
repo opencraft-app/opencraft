@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+func TestValidateRejectsUnknownAuthMode(t *testing.T) {
+	cfg := Config{Auth: AuthConfig{Mode: "sometimes", TimestampSkew: "5m"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want invalid auth.mode error")
+	}
+}
+
 func TestLoadEnablesOTLPAuditFromStandardEnv(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://otel-collector:4318/v1/logs")
 	path := filepath.Join(t.TempDir(), "config.yaml")

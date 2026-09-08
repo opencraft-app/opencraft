@@ -65,6 +65,11 @@ spec:
             secretKeyRef:
               key: CLOUDLADDER_PAYMENT_HMAC_SECRET
               name: cloudladdergateway-runtime-secrets
+        - name: CLOUDLADDER_TRADE_HMAC_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: CLOUDLADDER_PAYMENT_HMAC_SECRET
+              name: cloudladdergateway-runtime-secrets
         - name: CLOUDLADDER_SHADOW_HMAC_SECRET
           valueFrom:
             secretKeyRef:

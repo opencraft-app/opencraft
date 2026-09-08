@@ -70,6 +70,11 @@ type Config struct {
 	JifeiBillingAppID     string // jifei 计费网关分配的 appid
 	JifeiBillingAppSecret string // jifei 计费网关分配的 appSecret（HMAC-SHA256 签名密钥；通过 SSM + sops 注入）
 
+	// CloudLadderHMACSecret authenticates every trade -> CloudLadder route.
+	// TRADE_CLOUDLADDER_HMAC_SECRET is preferred; the historical Billing-only
+	// variable remains a compatibility fallback during migration.
+	CloudLadderHMACSecret string
+
 	// 国际站获取支付链接走计费 CloudAPI CreatePayUrl；请求密钥由 user/auth
 	// 按订单用户即时签发，这里只保留 Billing endpoint 与 CloudLadder 路由配置。
 	BillingCloudAPIRegion                string
@@ -172,7 +177,14 @@ func Load() (Config, error) {
 			os.Getenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID"),
 			"tcapi-billing-trade-intl-test",
 		),
-		BillingCloudAPICloudLadderHMACSecret: strings.TrimSpace(os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET")),
+		CloudLadderHMACSecret: firstNonEmpty(
+			os.Getenv("TRADE_CLOUDLADDER_HMAC_SECRET"),
+			os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET"),
+		),
+		BillingCloudAPICloudLadderHMACSecret: firstNonEmpty(
+			os.Getenv("TRADE_CLOUDLADDER_HMAC_SECRET"),
+			os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET"),
+		),
 		BillingCloudAPIXQCloudUserID: firstNonEmpty(
 			os.Getenv("TRADE_BILLING_X_QCLOUD_USER_ID"),
 			os.Getenv("JIFEI_CGW_X_QCLOUD_USER_ID"),
