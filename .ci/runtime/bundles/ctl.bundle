@@ -10,8 +10,8 @@ bundles:
       - ctl/migrations/**
       expected_migration_source: ctl/migrations
       expected_migration_version_by_env:
-        shprod: 29
-        sgprod: 29
+        shprod: 30
+        sgprod: 30
       db_job_secret_resolver: ctl_db_password
       secret_resolvers:
         ctl_db_password:
