@@ -47,6 +47,17 @@ master 源码
 - 测试环境验证必须记录订单/flow、业务实体、权益和底层资源联合终态。国内与国际是独立
   发布面；国内灰度稳定观察完成前，不用国内结果替代国际站放行。
 
+### Credit 积分包交付
+
+- Credit 作为独立服务交付，镜像同时包含 API、migration、每日用量 worker 和生命周期 worker
+  入口；常驻进程不能代替 migration Job 执行 schema 变更。
+- 环境启用顺序为 Credit/Trade schema、LLMGateway plan 与 Trade 商品定义、服务和 worker、
+  Service Gateway 用户路由，最后才开放真实购买流量。
+- `sandbox-bj-7` 是首个接线环境；其它环境必须在该环境完成购买、用量、退款隔离与自然到期回归后
+  单独补齐 source-facing 和 deploy-facing 配置，不能沿用测试环境的路由或 Secret。
+- Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
+  状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
+
 ## CloudLadder Gateway 回调环境
 
 `tkexgz` 的三个 CloudLadder Gateway workload 共享路由定义，但通过各自

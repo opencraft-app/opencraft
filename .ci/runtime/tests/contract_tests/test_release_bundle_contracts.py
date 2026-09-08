@@ -1063,6 +1063,26 @@ class ReleaseBundleContractTests(unittest.TestCase):
             with self.subTest(env=malformed):
                 self.assertFalse(is_playground_env(malformed))
 
+    def test_credit_build_metadata_is_limited_to_beijing(self) -> None:
+        manifest = load_manifest()
+
+        require_build_metadata(load_bundle(manifest, "credit", PLAYGROUND_ENV))
+        for env in (KOREA_PLAYGROUND_ENV, JAPAN_PLAYGROUND_ENV):
+            with self.subTest(env=env):
+                with self.assertRaisesRegex(ValueError, "does not define docker build inputs"):
+                    require_build_metadata(load_bundle(manifest, "credit", env))
+
+    def test_credit_pipeline_builds_from_master_and_beijing_playground(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/credit.yml").read_text()) or {}
+
+        self.assertEqual(
+            self.push_config(workflow).get("branches"),
+            ["master", "playground/sandbox-bj-*"],
+        )
+        parameters = ((workflow.get("extends") or {}).get("parameters") or {})
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "sandbox-bj-7")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "sandbox-bj-7")
+
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
         actual_buildable: set[str] = set()

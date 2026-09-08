@@ -17,6 +17,7 @@ PRIMARY_SERVICES = {
     "cloudagent": "cloudagent",
     "cloudladdergateway": "cloudladdergateway",
     "codesign": "codesign",
+    "credit": "credit",
     "ctl": "ctl",
     "frontend": "frontend",
     "gateway-dashboard": "gateway-dashboard",
@@ -84,7 +85,7 @@ class DocumentationSystemContract(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["errors"], [])
-        self.assertEqual(payload["summary"]["service_records"], 23)
+        self.assertEqual(payload["summary"]["service_records"], 24)
         self.assertEqual(payload["summary"]["service_entry_coverage"], 1.0)
         self.assertEqual(payload["summary"]["service_documentation_contract_coverage"], 1.0)
         self.assertEqual(payload["summary"]["context_derived_coverage"], 1.0)

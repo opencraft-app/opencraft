@@ -23,7 +23,7 @@ derived: true
 | `frontend/`, `frontend-ds/`, dashboards | 用户界面和设计系统 |
 | `user/auth/`, `shadow/` | 身份、会话、实名和影子账户行为 |
 | `service-gateway/`, `site-gateway/`, other gateways | 公共入口、路由和上游策略 |
-| `subscription/`, `payment/`, `trade/` | 套餐、支付、结算和商业流程 |
+| `subscription/`, `payment/`, `trade/`, `credit/` | 套餐、支付、结算、积分包和商业流程 |
 | `cloudagent/`, `ai-gateway/`, `velagw/`, `velalink/` | Agent 运行时、模型/provider 平面和聊天运行时 |
 | `ctl/`, `sandbox/` | 实例控制和沙箱编排 |
 | `infra_pulumi/`, `argocd/`, `.ci/` | 基础设施、GitOps 和交付自动化 |

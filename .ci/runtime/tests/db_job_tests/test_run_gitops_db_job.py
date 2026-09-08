@@ -262,6 +262,7 @@ class RunGitopsDbJobTests(unittest.TestCase):
             (("lightclaw-auth", "seed"), "LIGHTCLAW_MYSQL_DSN", "/usr/local/bin/lightclaw-auth-seed"),
             (("ai-gateway", "migration"), "AI_GATEWAY_MIGRATE_DSN", "/usr/local/bin/ai-gateway-migrate"),
             (("subscription", "migration"), "SUBSCRIPTION_MYSQL_DSN", "/usr/local/bin/subscription-migrate"),
+            (("credit", "migration"), "CREDIT_MYSQL_DSN", "/usr/local/bin/credit-migrate"),
         )
 
         for key, dsn_env, binary in cases:
@@ -286,7 +287,7 @@ class RunGitopsDbJobTests(unittest.TestCase):
         argv = [
             "run_gitops_db_job.py",
             "--service",
-            "lightclaw-auth",
+            "credit",
             "--operation",
             "migration",
             "--env",

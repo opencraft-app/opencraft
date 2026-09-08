@@ -18,6 +18,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/activity"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditusage"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
 	"git.woa.com/wisp/mono/trade/internal/store"
@@ -321,6 +322,15 @@ type fakeDianshiClient struct {
 	lastRequest        *dianshiclient.DoGoodsRequest
 }
 
+type fakeCreditUsageReporter struct {
+	request creditusage.ReportRequest
+}
+
+func (f *fakeCreditUsageReporter) Report(_ context.Context, req creditusage.ReportRequest) (json.RawMessage, error) {
+	f.request = req
+	return json.RawMessage(`{"retCode":0}`), nil
+}
+
 func (f *fakeDianshiClient) GetActivityPrice(context.Context, *dianshiclient.GetPriceRequest) (*dianshiclient.GetPriceResponse, error) {
 	return nil, errors.New("GetActivityPrice not used in internalapi handler test")
 }
@@ -467,6 +477,40 @@ func TestAuth_EmptyConfiguredToken(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 when token not configured, got %d", rec.Code)
+	}
+}
+
+func TestCreditUsageReport(t *testing.T) {
+	ctl := &fakeCTL{}
+	bundle := &fakeBundleStore{}
+	jifei := &fakeJifei{}
+	orderWriter := &fakeOrderWriter{}
+	orderStore := &fakeOrderStore{}
+	reporter := &fakeCreditUsageReporter{}
+	router := gin.New()
+	Install(router, Deps{
+		InternalServiceToken: "test-token",
+		Inquiry:              inquiry.New(inquiry.Deps{CTLClient: ctl, BundleStore: bundle, JifeiClient: jifei}),
+		PlaceOrder:           placeorder.New(placeorder.Deps{CTLClient: ctl, BundleStore: bundle, JifeiClient: jifei, OrderWriter: orderWriter, OrderStore: orderStore}),
+		CreditUsage:          reporter,
+	})
+	var body bytes.Buffer
+	_ = json.NewEncoder(&body).Encode(map[string]any{
+		"package_id": "cpkg-1", "product_id": "credit-1", "deal_name": "deal-1", "uin": "700000164995",
+		"app_id": 1300000001, "usage_date": "2026-09-03", "calc_date": "2026-09-04",
+		"package_expired_time": "2026-10-03T00:00:00Z",
+		"credit_total":         10.0, "credit_used_day": 0.0, "credit_left": 10.0,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/trade/credit/resources/usage/report", &body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if reporter.request.PackageID != "cpkg-1" || reporter.request.CreditUsedDay.String() != "0" {
+		t.Fatalf("unexpected request: %+v", reporter.request)
 	}
 }
 

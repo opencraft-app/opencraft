@@ -43,6 +43,7 @@ data:
   # --- 跨服务反向 RPC base url ---
   # ctl-api / shadow svc 名按 mono 各自仓 k8s/base 真源；端口走 svc 80 → 容器 8080
   CTL_INTERNAL_BASE_URL: "http://ctl-api.ctl.svc.cluster.local"
+  CREDIT_INTERNAL_BASE_URL: ""
   SHADOW_INTERNAL_BASE_URL: "http://shadow.shadow.svc.cluster.local"
 
   # --- jifei 出向（Q51 / Q58 / Q60；联调期由 overlay configmap-patch 覆盖为真实值）---
@@ -59,6 +60,9 @@ data:
   # trade-platform-values configmap 通过 replacements 注入。
   # 该 key 必须显式存在（即使空串），否则 kustomize replacement 找不到 target field 报错。
   JIFEI_BILLING_APIGW_URL: ""
+  CREDIT_SEND_RESOURCE_URL: ""
+  CREDIT_SEND_RESOURCE_HOST: ""
+  CREDIT_SEND_RESOURCE_CID: "101433"
 
   # --- 国际站支付链接 CloudAPI（CreatePayUrl）---
   # 非敏感项由 trade-platform.env 注入；CloudLadder HMAC 密钥走

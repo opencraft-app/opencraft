@@ -138,6 +138,30 @@ routes:
     path: /v1/passes/order-url
   - method: POST
     path: /v1/passes/{pass_id}/renew/order-url
+- name: credit
+  prefix: /v1/credit
+  methods:
+  - GET
+  - POST
+  - OPTIONS
+  upstream: http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local
+  access: authenticated
+  require_realname: true
+  auth_strategy: session
+  path_policy: allowlist
+  path_allow:
+  - method: GET
+    path: /v1/credit/products
+  - method: POST
+    path: /v1/credit/inquiry
+  - method: POST
+    path: /v1/credit/packages/order
+  - method: POST
+    path: /v1/credit/packages/order-and-pay
+  - method: GET
+    path: /v1/credit/packages
+  - method: POST
+    path: /v1/credit/packages/{package_id}/refund
 - name: subscriptions
   prefix: /subscriptions
   methods:

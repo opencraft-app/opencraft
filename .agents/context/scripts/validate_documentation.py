@@ -19,6 +19,7 @@ PRIMARY_SERVICES = {
     "cloudagent": "cloudagent",
     "cloudladdergateway": "cloudladdergateway",
     "codesign": "codesign",
+    "credit": "credit",
     "ctl": "ctl",
     "frontend": "frontend",
     "gateway-dashboard": "gateway-dashboard",
@@ -272,7 +273,9 @@ def validate_service_catalog(repo: Path, errors: list[str]) -> dict[str, dict[st
         central_map[service_id] = record
 
     if {service_id: record.get("path") for service_id, record in central_map.items()} != PRIMARY_SERVICES:
-        errors.append("central services catalog does not match the 23 primary service paths")
+        errors.append(
+            f"central services catalog does not match the {len(PRIMARY_SERVICES)} primary service paths"
+        )
 
     service_records: dict[str, dict[str, Any]] = {}
     for service_id, service_path in PRIMARY_SERVICES.items():
@@ -597,7 +600,7 @@ def render_text(result: dict[str, Any]) -> str:
     lines = [
         "# Vela 全仓文档系统校验",
         "",
-        f"- 服务目录：{summary['service_records']}/23",
+        f"- 服务目录：{summary['service_records']}/{len(PRIMARY_SERVICES)}",
         f"- 服务入口覆盖：{summary['service_entry_coverage']:.1%}",
         f"- 服务文档契约覆盖：{summary['service_documentation_contract_coverage']:.1%}",
         f"- Context 派生覆盖：{summary['context_derived_coverage']:.1%}",

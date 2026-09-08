@@ -9,6 +9,7 @@
 | `subscription` | 套餐、当前订阅、续费和权益应用 |
 | `payment` | 支付链接/回调 contract 与支付侧幂等 |
 | `trade` | 订单、计费 provider 和成功后的开通编排 |
+| `credit` | 付费积分商品、积分包生命周期、精确积分用量与每日推量 |
 | `cloudladdergateway` | 到 IDC/计费上游的强认证代理与审计 |
 | `ctl` | 在商业 contract 成功后执行实例/能力开通 |
 
@@ -16,6 +17,11 @@
 
 - 支付成功、订单成功和权益生效是不同阶段，必须分别建模和验证。
 - 回调、权益应用和开通都必须幂等；失败补偿不能重复创建外部资源。
+- Credit 积分包是无续费能力的一次性资源包。Trade 只承载订单和外部计费协议，Credit 持有商品、
+  live/history 积分包和用量真源；自然到期由 Credit 删除对应 LLMGateway 订阅并原子归档，计费隔离
+  回调采用相同的同步销毁语义。
+- 积分包用量使用定点小数存储，并通过带 CAS 租约的每日 outbox 调用 `sendResource`；普通零用量
+  也要上报，到期或已归档资源不再推量。
 - 外部计费入向回调按产品类型隔离地域 route：Pass 使用 `jifei-callback-{region}`，Credit 使用 `jifei-credit-callback-{region}`；调整 Credit 的环境落点不能改变 Pass 路由。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
 - 同 SP 升配是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
@@ -27,7 +33,7 @@
 
 ## 机器契约与验证
 
-API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复。同 SP 升配还须覆盖 `modifyResource` 早于/晚于订单落库两种竞态、CTL 完成回调重试，以及订单、flow、Pass、配额和网关权益的联合终态。
+API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明，积分包 contract 由 `credit/AGENTS.md`、Credit/Trade 实现与测试共同证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复；积分包还需覆盖重复购买、退款隔离、精确订阅删除、自然到期归档、零用量推量和多 Pod 抢占。同 SP 升配还须覆盖 `modifyResource` 早于/晚于订单落库两种竞态、CTL 完成回调重试，以及订单、flow、Pass、配额和网关权益的联合终态。
 
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 
