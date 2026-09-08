@@ -9,7 +9,7 @@ import {
 } from "./scenario-packs";
 
 /**
- * 自动任务展示所用的 locale。
+ * 定时任务展示所用的 locale。
  *
  * 直接复用注册表的 `PublicSiteLocaleCode`，不再自持一份联合类型副本
  * （此前本文件与 `agent-automations-panel.tsx` 各维护一份，属于典型的

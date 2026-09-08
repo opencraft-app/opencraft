@@ -1,6 +1,6 @@
 ## Ringkasan
 
-**Satu Agent dapat muncul di beberapa aplikasi pesan karena aplikasi tersebut hanyalah pintu masuk — Agent-lah yang sebenarnya bekerja. Gateway pesan melakukan tiga tugas: menormalkan pesan yang berbeda secara struktural dari Telegram, WhatsApp, Discord, Slack, WeChat, dan lainnya menjadi satu format permintaan; merutekan setiap permintaan ke Agent yang sama berdasarkan konfigurasi koneksi Anda, alih-alih mengkloning kepribadian dan memori per platform; lalu setelah eksekusi mengantarkan hasilnya kembali ke percakapan persis tempat ia berasal. Karena identitas (`SOUL.md`), memori (`USER.md`, `MEMORY.md`), skill (`skills/`), dan otomasi semuanya hidup di luar lapisan kanal, sesuatu yang Anda sebutkan di Telegram tetap diketahui saat Anda menindaklanjutinya di WhatsApp. Namun terpadu tidak berarti tanpa batas: setiap kanal memiliki alur otorisasi, format pesan, dan batas pengiriman sendiri, kumpulan kanal yang didukung berbeda antara region global dan Tiongkok, dan setelah menghubungkan kanal baru Anda harus mengirim pesan uji untuk memastikan balasan mendarat di percakapan yang diharapkan.**
+**Satu Agent dapat muncul di beberapa aplikasi pesan karena aplikasi tersebut hanyalah pintu masuk — Agent-lah yang sebenarnya bekerja. Gateway pesan melakukan tiga tugas: menormalkan pesan yang berbeda secara struktural dari Telegram, WhatsApp, Discord, Slack, WeChat, dan lainnya menjadi satu format permintaan; merutekan setiap permintaan ke Agent yang sama berdasarkan konfigurasi koneksi Anda, alih-alih mengkloning kepribadian dan memori per platform; lalu setelah eksekusi mengantarkan hasilnya kembali ke percakapan persis tempat ia berasal. Karena identitas (`SOUL.md`), memori (`USER.md`, `MEMORY.md`), skill (`skills/`), dan tugas terjadwal semuanya hidup di luar lapisan kanal, sesuatu yang Anda sebutkan di Telegram tetap diketahui saat Anda menindaklanjutinya di WhatsApp. Namun terpadu tidak berarti tanpa batas: setiap kanal memiliki alur otorisasi, format pesan, dan batas pengiriman sendiri, kumpulan kanal yang didukung berbeda antara region global dan Tiongkok, dan setelah menghubungkan kanal baru Anda harus mengirim pesan uji untuk memastikan balasan mendarat di percakapan yang diharapkan.**
 
 ---
 
@@ -74,7 +74,7 @@ Ini penting karena ia menentukan apakah aset jangka panjang dibagikan atau terfr
 | Profil pengguna | `USER.md` | Satu salinan, dibagikan semua kanal |
 | Fakta lintas sesi | `MEMORY.md` / `memories/` | Satu salinan, dibagikan semua kanal |
 | Metode yang tertangkap | `skills/` | Satu salinan, dibagikan semua kanal |
-| Otomasi | Konfigurasi lapisan Agent | Terpisah dari kanal; target pengiriman dapat dikonfigurasi |
+| Tugas Terjadwal | Konfigurasi lapisan Agent | Terpisah dari kanal; target pengiriman dapat dikonfigurasi |
 
 Karena semuanya berada di luar lapisan kanal, "ia masih tahu nama proyek yang saya sebutkan di Telegram" bukan fitur sinkronisasi yang harus dibangun seseorang — itu konsekuensi alami dari hanya adanya satu salinan.
 
@@ -153,7 +153,7 @@ Baris ketiga patut diperhatikan: **"tidak mengenal saya" di sini bermakna berbed
 Hermes memisahkan kanal dari Agent pada tingkat mekanisme, tetapi menghubungkan setiap platform tetap berarti menangani kredensial, callback, dan runtime sendiri. Arah LightVela adalah menjadikan lapisan itu sebagai pintu masuk yang terproduktisasi dan dapat dipasang-lepas:
 
 - **Kanal adalah pengaturan** — hubungkan atau lepaskan di bawah satu Agent, tanpa perlu membuat Agent terpisah per platform.
-- **Aset dibagikan secara default** — satu kepribadian, memori, kumpulan skill, dan kumpulan otomasi; kanal baru langsung memakainya kembali, tanpa ada yang perlu dimigrasikan.
+- **Aset dibagikan secara default** — satu kepribadian, memori, kumpulan skill, dan kumpulan tugas terjadwal; kanal baru langsung memakainya kembali, tanpa ada yang perlu dimigrasikan.
 - **Status koneksi terlihat** — konsol menampilkan apakah sebuah kanal terhubung, memudahkan Anda membedakan "belum pernah berhasil terhubung" dari "terhubung tetapi tidak membalas."
 - **Perbedaan regional bersifat eksplisit** — region global dan Tiongkok masing-masing mencantumkan kanal yang didukungnya, mencegah kekeliruan lintas region.
 - **Masalah dapat dilacak** — log terbaru di Diagnostik membantu memisahkan masalah otorisasi dari masalah pengiriman dan masalah tugas.
@@ -164,6 +164,6 @@ Hermes memisahkan kanal dari Agent pada tingkat mekanisme, tetapi menghubungkan 
 
 - Kanal adalah pintu masuk; Agent adalah subjeknya. Banyak kanal berbagi satu Agent alih-alih satu bot per platform.
 - Gateway melakukan tiga hal: **menormalkan** perbedaan platform, **merutekan** ke Agent yang sama, dan **mengantarkan** kembali ke percakapan asal.
-- Identitas, memori, skill, dan otomasi hidup di luar lapisan kanal, sehingga kesinambungan lintas kanal adalah konsekuensi arsitektural, bukan fitur sinkronisasi tambahan.
+- Identitas, memori, skill, dan tugas terjadwal hidup di luar lapisan kanal, sehingga kesinambungan lintas kanal adalah konsekuensi arsitektural, bukan fitur sinkronisasi tambahan.
 - Terpadu tidak berarti tanpa batas: otorisasi, dukungan regional, konteks grup, dan batas pengiriman berbeda per kanal.
 - Setelah menghubungkan sebuah kanal, verifikasi dua hal: bahwa balasan mendarat di percakapan yang diharapkan, dan bahwa ia benar-benar berbagi memori yang sama.

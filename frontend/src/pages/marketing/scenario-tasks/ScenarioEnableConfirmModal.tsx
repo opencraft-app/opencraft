@@ -27,9 +27,9 @@ export function ScenarioEnableConfirmModal({
       <DialogContent className="w-[calc(100vw-2rem)] max-w-[520px] rounded-lg bg-white p-6 shadow-2xl md:w-[520px]">
         <DialogHeader className="mb-5 pr-8">
           <p className="text-xs font-medium text-black/42">{pack.name}</p>
-          <DialogTitle className="mt-1 text-lg font-semibold text-black/90">{t("添加为自动任务")}</DialogTitle>
+          <DialogTitle className="mt-1 text-lg font-semibold text-black/90">{t("添加为定时任务")}</DialogTitle>
           <DialogDescription className="mt-1 text-sm leading-6 text-black/55">
-            {t("确认后会按这份任务说明创建自动任务。")}
+            {t("确认后会按这份任务说明创建定时任务。")}
           </DialogDescription>
         </DialogHeader>
 

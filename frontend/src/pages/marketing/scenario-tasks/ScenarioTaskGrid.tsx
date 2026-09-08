@@ -38,7 +38,7 @@ export function ScenarioTaskGrid({
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-black/90">{t("场景任务")}</h3>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-black/50">
-            {t("先让 Hermes Agent 替你长期盯一件事；选一个场景先跑一次，结果有用后再添加为自动任务。")}
+            {t("先让 Hermes Agent 替你长期盯一件事；选一个场景先跑一次，结果有用后再添加为定时任务。")}
           </p>
         </div>
       </div>

@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Pilih LightVela jika Anda menginginkan AI Agent pribadi yang praktis dan selalu online, dapat diakses melalui aplikasi pesan, dikonfigurasi dengan berbagai model, diperluas melalui Skills, dan dijalankan dengan Automations terjadwal.** Pilih Today.AI jika Anda menginginkan pengalaman yang lebih berpusat pada aplikasi, dibangun sebagai sistem operasi pribadi berdasarkan data harian dan saran proaktif.
+**Pilih LightVela jika Anda menginginkan AI Agent pribadi yang praktis dan selalu online, dapat diakses melalui aplikasi pesan, dikonfigurasi dengan berbagai model, diperluas melalui Skills, dan dijalankan dengan Tugas Terjadwal.** Pilih Today.AI jika Anda menginginkan pengalaman yang lebih berpusat pada aplikasi, dibangun sebagai sistem operasi pribadi berdasarkan data harian dan saran proaktif.
 
 Model produk LightVela yang terdokumentasi berpusat pada Hermes Agent berbasis cloud, sedangkan positioning publik Today.AI menekankan konteks pribadi, bantuan proaktif, dan dukungan lintas perangkat.
 LightVela adalah pilihan yang lebih mudah dipahami jika Anda membutuhkan hosting Agent persisten dan kontrol yang jelas.
@@ -20,8 +20,8 @@ Informasi publik tentang Today.AI masih lebih terbatas daripada dokumentasi prod
 | **Bentuk produk** | Hermes Agent berbasis cloud | Visi asisten AI pribadi dan OS yang native AI |
 | **Model akses utama** | Channels pesan dan konsol web | Aplikasi native dan pengalaman lintas perangkat |
 | **Memori** | Memori Agent persisten di berbagai percakapan | Memori hidup yang dibangun dari konteks pribadi |
-| **Pekerjaan proaktif** | Automations dan tugas terjadwal yang jelas | Dirancang untuk bertindak sebelum pengguna meminta |
-| **Ekstensibilitas** | Model, Channels, Skills, dan Automations | Detail model dan ekosistem masih berkembang |
+| **Pekerjaan proaktif** | Tugas Terjadwal yang jelas | Dirancang untuk bertindak sebelum pengguna meminta |
+| **Ekstensibilitas** | Model, Channels, Skills, dan Tugas Terjadwal | Detail model dan ekosistem masih berkembang |
 | **Paling sesuai untuk** | Pengguna yang ingin Agent selalu aktif dan dapat digunakan sekarang | Early adopter yang ingin menjelajahi OS pribadi proaktif |
 
 ## Apa yang berubah dalam penggunaan sehari-hari
@@ -35,7 +35,7 @@ Halaman [publik Today.AI](https://today.ai/landing) menampilkan pengalaman yang 
 Halaman tersebut juga menampilkan memori hidup, saran proaktif, konektor aplikasi, komputer cloud, dan kontrol lintas perangkat sebagai bagian dari pengalaman asisten yang sama.
 
 Dengan LightVela, Anda mendefinisikan lingkungan kerja asisten dengan lebih jelas.
-Anda menghubungkan model, memilih Channel, memasang [Skills yang berguna](../configuration/skill.md), dan membuat tugas terjadwal seperti pengingat, digest, atau riset berulang melalui [Automations](../configuration/automation.md).
+Anda menghubungkan model, memilih Channel, memasang [Skills yang berguna](../configuration/skill.md), dan membuat tugas terjadwal seperti pengingat, digest, atau riset berulang melalui [Tugas Terjadwal](../configuration/automation.md).
 Hasilnya terasa lebih seperti Agent yang dapat diandalkan dan sengaja Anda bentuk, bukan seperti sistem operasi yang mengamati seluruh hari Anda.
 
 Perbedaan ini memengaruhi kepercayaan dan prediktabilitas.
@@ -55,12 +55,12 @@ Asisten berbasis laptop mungkin kuat selama sesi aktif, tetapi menjadi tidak ter
 LightVela membuat Agent berjalan secara independen, sehingga tugas terjadwal dan percakapan berikutnya tidak bergantung pada perangkat pribadi yang sedang online.
 
 LightVela juga lebih jelas dalam menentukan batas konfigurasi.
-Modelnya memisahkan bagian utama menjadi Hermes Agent, model, Channels, Skills, dan Automations.
+Modelnya memisahkan bagian utama menjadi Hermes Agent, model, Channels, Skills, dan Tugas Terjadwal.
 Beberapa Channels dapat terhubung ke Agent yang sama dan berbagi memori serta perilakunya, sementara Skills menambahkan kemampuan yang dapat digunakan kembali untuk alur kerja tertentu.
 
 Ini memberi Anda jenis kontrol yang berguna.
 Anda dapat mengganti model tanpa membangun ulang Agent, menambahkan Channel tanpa membuat persona kedua, dan memasang Skill saat membutuhkan alur kerja yang berulang.
-Automations menyediakan lapisan penjadwalan untuk pengingat, rangkuman, notifikasi, dan tugas berulang lainnya.
+Tugas Terjadwal menyediakan lapisan penjadwalan untuk pengingat, rangkuman, notifikasi, dan tugas berulang lainnya.
 
 LightVela sangat menarik jika AI Anda memang seharusnya hadir di tools komunikasi.
 Alih-alih membuka dashboard mandiri lain, Anda dapat bertanya kepada Agent yang sama di Telegram, melanjutkan di Channel lain, dan mempertahankan percakapan dalam satu identitas serta memori persisten.
@@ -92,7 +92,7 @@ Pilih LightVela jika Anda:
 
 - **Menginginkan Agent yang selalu aktif:** Anda tidak ingin bergantung pada laptop atau ponsel yang tetap menyala.
 - **Menyukai akses yang familiar:** Anda ingin memakai Channels pesan daripada bergantung pada aplikasi mandiri baru.
-- **Menginginkan kontrol yang jelas:** Anda ingin mengatur model, Skills, Channels, memori, dan Automations terjadwal.
+- **Menginginkan kontrol yang jelas:** Anda ingin mengatur model, Skills, Channels, memori, dan Tugas Terjadwal.
 - **Mengutamakan penyiapan terdokumentasi:** Anda ingin memahami, mengulangi, dan menyesuaikan jalur konfigurasi.
 - **Ingin mulai sekarang:** Anda ingin Hermes Agent berbasis cloud yang sudah berjalan dan dapat berkembang bersama Anda.
 

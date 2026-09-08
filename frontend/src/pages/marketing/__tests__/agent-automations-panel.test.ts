@@ -713,7 +713,7 @@ describe("cron context panel integration", () => {
     fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText(isGlobal ? "Create Job" : "新建自动任务")).toBeTruthy();
+    expect(within(dialog).getByText(isGlobal ? "Create Job" : "新建定时任务")).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: isGlobal ? "Create" : "新建" })).toBeTruthy();
   });
 
@@ -833,7 +833,7 @@ describe("cron context panel integration", () => {
       expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledTimes(1);
     });
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
-    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "保留中的草稿" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "保留中的草稿" } });
     openAdvancedSettings();
 
     fireEvent.click(await screen.findByRole("button", { name: "重试" }));
@@ -889,7 +889,7 @@ describe("cron context panel integration", () => {
       if (mode === "create") {
         fillCreateFields();
       } else {
-        fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "普通任务已更新" } });
+        fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "普通任务已更新" } });
       }
       fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
@@ -991,7 +991,7 @@ describe("cron context panel integration", () => {
       onRefreshJobs: vi.fn().mockResolvedValue([downstream, upstream]),
     });
 
-    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "下游任务已更新" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "下游任务已更新" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
@@ -1011,7 +1011,7 @@ describe("cron context panel integration", () => {
       onRefreshJobs,
     });
 
-    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "下游任务已更新" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "下游任务已更新" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
@@ -1091,7 +1091,7 @@ describe("cron context panel integration", () => {
 
     const dialog = screen.getByRole("dialog");
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(message);
-    expect(within(dialog).getByText("新建自动任务")).toBeTruthy();
+    expect(within(dialog).getByText("新建定时任务")).toBeTruthy();
     expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
   });
 
@@ -1124,7 +1124,7 @@ describe("cron context panel integration", () => {
       expect(await within(dialog).findByRole("alert")).toHaveTextContent(
         "所选上游任务已删除或过期，请重新选择或解除关联",
       );
-      expect(within(dialog).getByText(mode === "create" ? "新建自动任务" : "编辑自动任务")).toBeTruthy();
+      expect(within(dialog).getByText(mode === "create" ? "新建定时任务" : "编辑定时任务")).toBeTruthy();
       expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
       expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
       expect(onSaved).not.toHaveBeenCalled();
@@ -1153,7 +1153,7 @@ describe("cron context panel integration", () => {
     expect(screen.queryByText("missing-upstream")).toBeNull();
     expect(screen.queryByRole("combobox", { name: "上游任务" })).toBeNull();
 
-    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "外部任务已更新" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "外部任务已更新" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
@@ -2415,7 +2415,7 @@ describe("automation form test run", () => {
       skillLoadState: { status: "ready", slugs: ["news"], error: null },
     });
 
-    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "未保存名称" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "未保存名称" } });
     fireEvent.change(screen.getByPlaceholderText(/请描述需要智能体理解并执行的任务/), { target: { value: "未保存说明" } });
     chooseUpstream("上游任务 A");
     fireEvent.click(screen.getByRole("button", { name: "调用技能" }));
@@ -2435,7 +2435,7 @@ describe("automation form test run", () => {
     expect(onSaved).not.toHaveBeenCalled();
     expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
     expect(cronClientMocks.createCronJobWithScriptRollback).not.toHaveBeenCalled();
-    expect(screen.getByText("新建自动任务")).toBeInTheDocument();
+    expect(screen.getByText("新建定时任务")).toBeInTheDocument();
   });
 
   it("test-runs unsaved edit values and keeps save separate", () => {
@@ -2565,7 +2565,7 @@ describe("zero-token automation form", () => {
     expect(notificationContent).toHaveAttribute("maxLength", "1000");
     fireEvent.change(notificationContent, { target: { value: "a".repeat(1001) } });
     expect(notificationContent).toHaveValue("a".repeat(1000));
-    fireEvent.change(screen.getByPlaceholderText(localizedText("请输入自动任务名称", "Enter the job name")), {
+    fireEvent.change(screen.getByPlaceholderText(localizedText("请输入定时任务名称", "Enter the job name")), {
       target: { value: "Hydration test" },
     });
     fireEvent.change(notificationContent, {
@@ -2620,7 +2620,7 @@ describe("zero-token automation form", () => {
     expect(scriptCounter.parentElement).toContainElement(screen.getByRole("button", { name: "Python" }));
     expect(screen.getByPlaceholderText(/import shutil/)).toHaveAttribute("placeholder", pythonPlaceholder);
     fireEvent.click(screen.getByRole("button", { name: "Bash" }));
-    fireEvent.change(screen.getByPlaceholderText(localizedText("请输入自动任务名称", "Enter the job name")), {
+    fireEvent.change(screen.getByPlaceholderText(localizedText("请输入定时任务名称", "Enter the job name")), {
       target: { value: "磁盘检查" },
     });
     const bashEditor = screen.getByPlaceholderText(/usage=\$\(df/);
@@ -2886,9 +2886,9 @@ describe("automation notification channel options", () => {
       expect(cronClientMocks.sendHermesChatNotice).toHaveBeenCalledWith(
         "bot-1",
         "qqbot,wecom",
-        "LightVela 已新建自动任务「下游任务」。",
+        "LightVela 已新建定时任务「下游任务」。",
       );
-      expect(onError).toHaveBeenCalledWith("自动任务已新建，但部分通知通道发送确认消息失败。");
+      expect(onError).toHaveBeenCalledWith("定时任务已新建，但部分通知通道发送确认消息失败。");
     });
   });
 
@@ -2919,7 +2919,7 @@ describe("automation notification channel options", () => {
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith("自动任务已新建，但部分通知通道发送确认消息失败。");
+      expect(onError).toHaveBeenCalledWith("定时任务已新建，但部分通知通道发送确认消息失败。");
     });
   });
 
@@ -2932,7 +2932,7 @@ describe("automation notification channel options", () => {
       onSaved,
     });
 
-    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "已编辑任务" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "已编辑任务" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -2941,7 +2941,7 @@ describe("automation notification channel options", () => {
 });
 
 function fillCreateFields(name = "下游任务") {
-  fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: name } });
+  fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: name } });
   fireEvent.change(screen.getByPlaceholderText(/请描述需要智能体理解并执行的任务/), { target: { value: "整理上游结果" } });
 }
 

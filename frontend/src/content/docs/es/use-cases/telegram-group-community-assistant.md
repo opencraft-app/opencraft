@@ -57,10 +57,10 @@ Use instrucciones explícitas en el grupo para que los participantes sepan cuán
 |---|---|---|
 | Preguntas frecuentes | `@bot_username responde solo con la información de las preguntas frecuentes preparadas` | La respuesta utiliza el material preparado o solicita claramente la intervención de una persona |
 | Resumen de la conversación | `@bot_username resume las decisiones, tareas, responsables y preguntas pendientes` | La respuesta separa las decisiones confirmadas de los asuntos sin resolver |
-| Borrador de recordatorio | `@bot_username redacta un recordatorio con hora, audiencia, propósito y método de cancelación` | Revise el borrador antes de utilizar cualquier automatización para enviarlo |
+| Borrador de recordatorio | `@bot_username redacta un recordatorio con hora, audiencia, propósito y método de cancelación` | Revise el borrador antes de utilizar cualquier tarea programada para enviarlo |
 
 Para recuperación de información, resúmenes o contenido programado, elija una Skill de confianza y revise sus permisos en [Configurar Skills](../configuration/skill.md).
-Valide una automatización por separado en un canal de destino compatible antes de depender de ella para mensajes programados.
+Valide una tarea programada por separado en un canal de destino compatible antes de depender de ella para mensajes programados.
 
 ## Límites de seguridad y operación
 

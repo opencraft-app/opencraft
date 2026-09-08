@@ -112,7 +112,7 @@ Turn it back on before changing them.
 ### When should I turn off approvals?
 
 When approvals are Off, high-risk operations no longer request your approval.
-Unless you are performing deliberate automation in a trusted environment, keep Smart selected or choose Always Ask.
+Unless you are performing deliberate scheduled task in a trusted environment, keep Smart selected or choose Always Ask.
 
 ### What should I do if saving reports a restart or verification failure?
 

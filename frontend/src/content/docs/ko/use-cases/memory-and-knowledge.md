@@ -67,7 +67,7 @@ and keep weekly summaries to five bullets.
 
 [채팅](../configuration/agent-chat.md) 페이지나 연결된 채널에서 문서와 메모리를 구체적인 작업으로 연결하세요. 비교표, 개요, 미해결 질문 목록, 특정 회의용 요약처럼 결과 형태를 명확히 요청하면 Hermes가 올바른 맥락을 사용했는지 확인하기 쉽습니다.
 
-검토가 반복되는 리듬을 따르는 경우 [자동 작업](../configuration/automation.md)를 통해 폴더를 다시 방문하거나 정기적인 요약을 준비하도록 상기시켜 줄 수 있습니다. 광범위하고 개방형 작업을 부여하기보다는 간단한 알림이나 요약으로 시작하십시오.
+검토가 반복되는 리듬을 따르는 경우 [예약 작업](../configuration/automation.md)를 통해 폴더를 다시 방문하거나 정기적인 요약을 준비하도록 상기시켜 줄 수 있습니다. 광범위하고 개방형 작업을 부여하기보다는 간단한 알림이나 요약으로 시작하십시오.
 
 ![정리된 프로젝트 지식을 활용한 Hermes Agent 대화](../images/use-case-memory-knowledge-automation.png)
 

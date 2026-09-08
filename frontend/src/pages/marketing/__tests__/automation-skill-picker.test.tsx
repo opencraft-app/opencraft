@@ -250,7 +250,7 @@ describe("AutomationSkillPicker", () => {
     renderPicker();
 
     expect(
-      screen.queryByText("自动任务在非交互环境中运行，请确认该 Skill 支持无人值守执行"),
+      screen.queryByText("定时任务在非交互环境中运行，请确认该 Skill 支持无人值守执行"),
     ).not.toBeInTheDocument();
   });
 });
@@ -283,7 +283,7 @@ describe("AutomationFormModal", () => {
 
   it("matches the Name and Skill control radius to the task description", () => {
     renderAutomationFormModal();
-    const name = screen.getByPlaceholderText("请输入自动任务名称");
+    const name = screen.getByPlaceholderText("请输入定时任务名称");
     const prompt = screen.getByPlaceholderText("请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展");
     const skill = screen.getByRole("button", { name: "调用技能" });
 

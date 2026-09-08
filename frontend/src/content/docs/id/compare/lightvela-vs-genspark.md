@@ -45,9 +45,9 @@ Anda mungkin memakai Hermes untuk:
 - Melacak informasi seiring waktu.
 - Menjawab pertanyaan dari Telegram, WhatsApp, Discord, Slack, atau WeChat.
 - Memakai Skill untuk memperluas apa yang dapat ia lakukan.
-- Menjalankan [otomasi](https://lightvela.ai/docs/configuration/automation) sesuai jadwal.
+- Menjalankan [tugas terjadwal](https://lightvela.ai/docs/configuration/automation) sesuai jadwal.
 
-Halaman otomasi sangat relevan di sini. Intinya bukan hanya meminta laporan kepada Hermes hari ini, melainkan agar Agent terus menangani jenis pekerjaan yang sama besok.
+Halaman tugas terjadwal sangat relevan di sini. Intinya bukan hanya meminta laporan kepada Hermes hari ini, melainkan agar Agent terus menangani jenis pekerjaan yang sama besok.
 
 Itu jenis kegunaan yang berbeda dari model "satu prompt, pekerjaan jadi" milik Genspark.
 
@@ -94,7 +94,7 @@ Pilih LightVela jika Anda:
 - **Menginginkan host khusus:** Anda ingin meng-hosting Hermes Agent pribadi.
 - **Menginginkan kesinambungan:** Anda ingin Agent tetap tersedia 24/7.
 - **Lebih suka pesan:** Anda ingin menjangkau Agent melalui kanal sehari-hari.
-- **Menginginkan kendali langsung:** Anda ingin mengelola model, persona, Skill, dan otomasinya.
+- **Menginginkan kendali langsung:** Anda ingin mengelola model, persona, Skill, dan tugas terjadwalnya.
 - **Menginginkan relasi jangka panjang:** Anda peduli membangun kebiasaan di sekitar satu Agent yang konsisten.
 
 Pilih Genspark jika Anda:

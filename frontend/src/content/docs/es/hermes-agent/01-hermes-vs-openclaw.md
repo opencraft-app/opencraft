@@ -1,6 +1,6 @@
 ## Resumen
 
-**La diferencia fundamental entre Hermes Agent y OpenClaw es "acumulación" versus "conexión":** Hermes, construido por Nous Research, es un Agent autoevolutivo diseñado para entenderlo mejor con el tiempo. Trata la memoria a largo plazo (`USER.md` / `MEMORY.md` / SQLite+FTS5 / Skills) como un ciudadano de primera clase, y el Agent mismo decide qué recordar y cuándo promover algo en una Skill. OpenClaw, liderado por Peter Steinberger, es un Agent centrado en local y pasarela de automatización diseñada para "conectar todo": más de 25 modelos y más de 20 plataformas de mensajería pueden conectarse, mientras que las Skills se escriben a mano por los usuarios y se distribuyen a través de ClawHub. Elegir Hermes significa elegir una contraparte que se vuelve más fuerte con el tiempo; elegir OpenClaw significa elegir un panel de control que pueda conectarse a cualquier cosa.
+**La diferencia fundamental entre Hermes Agent y OpenClaw es "acumulación" versus "conexión":** Hermes, construido por Nous Research, es un Agent autoevolutivo diseñado para entenderlo mejor con el tiempo. Trata la memoria a largo plazo (`USER.md` / `MEMORY.md` / SQLite+FTS5 / Skills) como un ciudadano de primera clase, y el Agent mismo decide qué recordar y cuándo promover algo en una Skill. OpenClaw, liderado por Peter Steinberger, es un Agent centrado en local y pasarela de tarea programada diseñada para "conectar todo": más de 25 modelos y más de 20 plataformas de mensajería pueden conectarse, mientras que las Skills se escriben a mano por los usuarios y se distribuyen a través de ClawHub. Elegir Hermes significa elegir una contraparte que se vuelve más fuerte con el tiempo; elegir OpenClaw significa elegir un panel de control que pueda conectarse a cualquier cosa.
 
 ---
 
@@ -27,7 +27,7 @@ Las secciones a continuación recorren esa diferencia a través de seis dimensio
 | Dimensión | Hermes Agent | OpenClaw |
 |---|---|---|
 | Construido por | Nous Research | Peter Steinberger (desarrollador independiente, Austria) |
-| Posicionamiento | Agent de IA autoevolutivo | Agent centrado en local y plataforma de automatización |
+| Posicionamiento | Agent de IA autoevolutivo | Agent centrado en local y plataforma de tarea programada |
 | Filosofía central | Aprendizaje Primero | Control Primero |
 | Foso de atracción | "Acumulación" — más fuerte cuanto más lo uses | "Conexión" — se conecta a todo |
 | En una línea | Resuelve el problema de **acumulación** | Resuelve el problema de **conexión** |
@@ -48,7 +48,7 @@ Gateway → Agent → Skills → Memory
 
 Su valor de ingeniería central reside en la Pasarela: ya sea que el usuario llegue desde WhatsApp, Telegram, Slack, Discord o correo electrónico, todo converge en la misma sesión del Agent. El plano de control es limpio, y las permisos, auditoría y enrutamiento todos viven en la capa de pasarela.
 
-**Hermes Agent es una estructura integrada:** la inferencia de modelos, ejecución de terminal, operaciones de archivo, automatización de navegador, recuperación web, memoria a largo plazo, tareas programadas y mensajería multiplataforma se construyen como módulos de **el mismo proceso**. Se comporta menos como un enrutador de mensajes y más como un asistente que viaja con usted — uno con un cerebro, manos y un cuaderno.
+**Hermes Agent es una estructura integrada:** la inferencia de modelos, ejecución de terminal, operaciones de archivo, tarea programada de navegador, recuperación web, memoria a largo plazo, tareas programadas y mensajería multiplataforma se construyen como módulos de **el mismo proceso**. Se comporta menos como un enrutador de mensajes y más como un asistente que viaja con usted — uno con un cerebro, manos y un cuaderno.
 
 La consecuencia: **si quiere conectar más plataformas, OpenClaw es mejor en ello; si quiere que el Agent mismo se vuelva más fuerte, Hermes es mejor en ello.**
 

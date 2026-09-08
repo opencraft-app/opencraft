@@ -166,7 +166,7 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
     'AI 伙伴',
     'Hermes Agent',
     'Agent 托管',
-    '自动任务',
+    '定时任务',
     '微信 Agent',
     'QQ 机器人',
   ],
@@ -236,7 +236,7 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
     'AI 어시스턴트',
     'Hermes Agent',
     'AI 에이전트 호스팅',
-    '자동 작업',
+    '예약 작업',
     '스킬',
   ],
 };

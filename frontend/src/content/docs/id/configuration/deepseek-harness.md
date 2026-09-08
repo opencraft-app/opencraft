@@ -79,7 +79,7 @@ Anda dapat mengunjungi Plugin Plaza dengan mengeklik Plugin Plaza di kiri bawah 
 
 ### Memasang dan menggunakan plugin
 
-Dari Plugin Plaza, Anda dapat menjelajahi kemampuan tambahan untuk lingkungan DeepSeek Harness, seperti alat browser, memori, otomasi, peningkatan UI, dan integrasi eksternal.
+Dari Plugin Plaza, Anda dapat menjelajahi kemampuan tambahan untuk lingkungan DeepSeek Harness, seperti alat browser, memori, tugas terjadwal, peningkatan UI, dan integrasi eksternal.
 
 ![Pencarian Plugin Plaza](../images/deepseek-harness-08.png)
 

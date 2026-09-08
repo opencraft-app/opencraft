@@ -48,7 +48,7 @@ Dengan LightVela, Anda mungkin menghubungkan Hermes ke Telegram, memberinya alur
 
 LightVela juga mengekspos konfigurasi Agent secara lebih langsung. Anda dapat memilih [model](https://lightvela.ai/docs/configuration/model), menghubungkan [Kanal](https://lightvela.ai/docs/configuration), dan memperluas Hermes melalui [Skill](https://lightvela.ai/docs/configuration/skill) di konsol konfigurasi.
 
-Jika Agent perlu melakukan jenis pekerjaan yang sama berulang kali, [otomasi](https://lightvela.ai/docs/configuration/automation) LightVela menjadikan pola itu bagian dari rutinitas operasional Agent alih-alih sesuatu yang Anda mulai ulang secara manual setiap kali.
+Jika Agent perlu melakukan jenis pekerjaan yang sama berulang kali, [tugas terjadwal](https://lightvela.ai/docs/configuration/automation) LightVela menjadikan pola itu bagian dari rutinitas operasional Agent alih-alih sesuatu yang Anda mulai ulang secara manual setiap kali.
 
 ## Di mana ChatGPT menjadi pilihan yang lebih baik
 

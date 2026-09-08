@@ -1,34 +1,34 @@
-# Otomasi
+# Tugas Terjadwal
 
 ## Ringkasan
 
-**Otomasi membuat Hermes Agent menjalankan pekerjaan secara proaktif pada waktu tetap, interval, atau jadwal satu kali, lalu mengirimkan hasilnya ke kanal notifikasi yang dipilih. Anda dapat mulai dari templat, atau menyesuaikan nama, aturan eksekusi, instruksi tugas, periode berlaku, dan pengaturan notifikasi, lalu terus mengelola statusnya dari daftar tugas.**
+**Tugas Terjadwal membuat Hermes Agent menjalankan pekerjaan secara proaktif pada waktu tetap, interval, atau jadwal satu kali, lalu mengirimkan hasilnya ke kanal notifikasi yang dipilih. Anda dapat mulai dari templat, atau menyesuaikan nama, aturan eksekusi, instruksi tugas, periode berlaku, dan pengaturan notifikasi, lalu terus mengelola statusnya dari daftar tugas.**
 
-Saat membuat atau mengedit otomasi, Anda juga dapat menghubungkannya dengan tugas upstream. Eksekusi berikutnya akan memakai output selesai terbaru dari tugas upstream sebagai konteks tambahan. Ini cocok untuk memecah alur berurutan seperti “kumpulkan informasi terlebih dahulu, lalu buat ringkasan” menjadi beberapa langkah.
+Saat membuat atau mengedit tugas terjadwal, Anda juga dapat menghubungkannya dengan tugas upstream. Eksekusi berikutnya akan memakai output selesai terbaru dari tugas upstream sebagai konteks tambahan. Ini cocok untuk memecah alur berurutan seperti “kumpulkan informasi terlebih dahulu, lalu buat ringkasan” menjadi beberapa langkah.
 
-Otomasi memungkinkan Hermes Agent menjalankan pekerjaan tertentu sesuai jadwal atau kondisi pemicu yang sudah ditetapkan, sehingga Anda tidak perlu mengulang operasi yang sama secara manual. Skenario umumnya mencakup pengingat terjadwal, pembuatan laporan harian, pemantauan berita, dan publikasi konten.
+Tugas Terjadwal memungkinkan Hermes Agent menjalankan pekerjaan tertentu sesuai jadwal atau kondisi pemicu yang sudah ditetapkan, sehingga Anda tidak perlu mengulang operasi yang sama secara manual. Skenario umumnya mencakup pengingat terjadwal, pembuatan laporan harian, pemantauan berita, dan publikasi konten.
 
 Setiap tugas dapat mengatur penjadwalan dan aturan eksekusi secara fleksibel, sehingga asisten AI Anda dapat terus bekerja secara proaktif.
 
 ## Yang Dibahas di Halaman Ini
 
-- Menambahkan otomasi
+- Menambahkan tugas terjadwal
 - Menghubungkan tugas upstream
 - Menggunakan templat tugas
-- Mengelola otomasi
+- Mengelola tugas terjadwal
 
-## Menambahkan Otomasi
+## Menambahkan Tugas Terjadwal
 
-- **Nama**: Nama rencana otomasi.
+- **Nama**: Nama rencana tugas terjadwal.
 - **Jadwal**: Atur siklus eksekusi tugas. Pilih salah satu dari hari tetap, interval tetap, atau eksekusi satu kali.
-- **Instruksi tugas**: Tulis prompt yang digunakan agen untuk menjalankan otomasi.
+- **Instruksi tugas**: Tulis prompt yang digunakan agen untuk menjalankan tugas terjadwal.
 - **Tugas upstream**: Opsional. Setelah dihubungkan, tugas ini memakai output selesai terbaru dari tugas upstream sebagai konteks saat berjalan.
 - **Periode berlaku**: Batasi rentang waktu saat tugas dapat berjalan. Biarkan kosong agar tugas berjalan sepanjang waktu.
 - **Notifikasi**: Pengalih opsional untuk memilih kanal yang menerima notifikasi eksekusi tugas.
 
 Untuk membuat job kustom, klik “Buat” alih-alih memulai dari templat, lalu isi formulir kosong dengan jadwal dan instruksi Anda sendiri.
 
-![Dialog Buat Job untuk mengonfigurasi otomasi](../images/automation-create-job.webp)
+![Dialog Buat Job untuk mengonfigurasi tugas terjadwal](../images/automation-create-job.webp)
 
 ## Menghubungkan Tugas Upstream
 
@@ -50,9 +50,9 @@ Instruksi tugas tetap perlu menjelaskan cara memakai output upstream. Contohnya:
 
 ## Templat Tugas
 
-Jika belum yakin otomasi apa yang perlu dikonfigurasi, gunakan Area Templat di halaman “Otomasi”. Pilih kartu seperti Pengingat minum air & obat, Pengingat sewa, Pengingat kurs target, atau Ringkasan info saham, lalu klik “Aktifkan” untuk meninjau jadwal dan instruksi sebelum membuat job.
+Jika belum yakin tugas terjadwal apa yang perlu dikonfigurasi, gunakan Area Templat di halaman “Tugas Terjadwal”. Pilih kartu seperti Pengingat minum air & obat, Pengingat sewa, Pengingat kurs target, atau Ringkasan info saham, lalu klik “Aktifkan” untuk meninjau jadwal dan instruksi sebelum membuat job.
 
-![Area Templat dengan kartu otomasi siap pakai](../images/automation-template-area.webp)
+![Area Templat dengan kartu tugas terjadwal siap pakai](../images/automation-template-area.webp)
 
 Saat membuka templat, formulir Buat Job akan terisi otomatis. Templat Ringkasan info saham, misalnya, mengisi nama job, jadwal harian, dan instruksi ringkasan informasi pasar, sehingga Anda masih dapat mengedit detail sebelum menguji atau membuat job.
 
@@ -62,15 +62,15 @@ Saat membuka templat, formulir Buat Job akan terisi otomatis. Templat Ringkasan 
 
 </div>
 
-## Mengelola Otomasi
+## Mengelola Tugas Terjadwal
 
-Setelah otomasi dibuat, Anda dapat melihat tugas yang sudah diaktifkan di halaman “Automations”.
+Setelah tugas terjadwal dibuat, Anda dapat melihat tugas yang sudah diaktifkan di halaman “Tugas Terjadwal”.
 
 Gunakan tab di atas daftar untuk berpindah antara “Job Saat Ini”, “Job Berakhir”, dan “Eksekusi terbaru”. “Job Berakhir” mengumpulkan tugas yang selesai, gagal, dan kedaluwarsa, sementara tugas yang masih berjalan tetap berada di “Job Saat Ini”.
 
 <div style={{ maxWidth: "420px" }}>
 
-![Halaman Automations dengan tab Job Saat Ini, Job Berakhir, dan Eksekusi terbaru](../images/automation-current-jobs.webp)
+![Halaman Tugas Terjadwal dengan tab Job Saat Ini, Job Berakhir, dan Eksekusi terbaru](../images/automation-current-jobs.webp)
 
 </div>
 
@@ -78,19 +78,19 @@ Setelah job mulai berjalan, job tersebut muncul sebagai kartu di “Job Saat Ini
 
 <div style={{ maxWidth: "520px" }}>
 
-![Kartu otomasi yang sedang berjalan di Job Saat Ini](../images/automation-running-job.webp)
+![Kartu tugas terjadwal yang sedang berjalan di Job Saat Ini](../images/automation-running-job.webp)
 
 </div>
 
-Dari halaman ini, Anda dapat melihat detail otomasi, mengedit tugas, menjedanya, atau menghapusnya sesuai kebutuhan.
+Dari halaman ini, Anda dapat melihat detail tugas terjadwal, mengedit tugas, menjedanya, atau menghapusnya sesuai kebutuhan.
 
 Untuk tugas yang saling terhubung, periksa apakah ada tugas downstream yang masih bergantung pada output selesai terbaru tugas upstream sebelum menghapus tugas upstream tersebut.
 
 ## Validasi
 
-Setelah membuat atau mengedit otomasi, jangan berhenti pada “berhasil disimpan”. Konfirmasi hal-hal berikut:
+Setelah membuat atau mengedit tugas terjadwal, jangan berhenti pada “berhasil disimpan”. Konfirmasi hal-hal berikut:
 
-1. Tugas muncul di daftar otomasi, dan statusnya sesuai harapan.
+1. Tugas muncul di daftar tugas terjadwal, dan statusnya sesuai harapan.
 2. Jadwal, periode berlaku, dan pengaturan notifikasi sudah benar.
 3. Jika tugas upstream dihubungkan, tugas upstream sudah memiliki output selesai terbaru.
 4. Setelah satu eksekusi nyata, periksa catatan eksekusi terbaru.

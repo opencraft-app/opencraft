@@ -1,6 +1,6 @@
 ## Resumen
 
-Un **Agent** puede aparecer en varias aplicaciones de mensajería porque las aplicaciones son solo puntos de entrada — el Agent es lo que realmente funciona. El pasarela de mensajes realiza tres tareas: normaliza estructuralmente mensajes diferentes de Telegram, WhatsApp, Discord, Slack, WeChat y otros en un formato de solicitud único; enruta cada solicitud al mismo Agent basado en su configuración de conexión, en lugar de clonar una personalidad y memoria por plataforma; y después de la ejecución, devuelve el resultado a la conversación exacta de la que vino. Como la identidad (`SOUL.md`), la memoria (`USER.md`, `MEMORY.md`), las Skills (`skills/`) y las automatizaciones viven fuera de la capa de canal, algo que mencionaste en Telegram sigue siendo conocido cuando sigues el hilo en WhatsApp. Sin embargo, lo unificado no significa ilimitado: cada canal tiene su propio flujo de autorización, formato de mensaje y límites de entrega; el conjunto de canales soportados difiere entre las regiones global y China; y después de conectar un nuevo canal, debes enviar un mensaje de prueba para confirmar que las respuestas llegan a la conversación esperada.
+Un **Agent** puede aparecer en varias aplicaciones de mensajería porque las aplicaciones son solo puntos de entrada — el Agent es lo que realmente funciona. El pasarela de mensajes realiza tres tareas: normaliza estructuralmente mensajes diferentes de Telegram, WhatsApp, Discord, Slack, WeChat y otros en un formato de solicitud único; enruta cada solicitud al mismo Agent basado en su configuración de conexión, en lugar de clonar una personalidad y memoria por plataforma; y después de la ejecución, devuelve el resultado a la conversación exacta de la que vino. Como la identidad (`SOUL.md`), la memoria (`USER.md`, `MEMORY.md`), las Skills (`skills/`) y las tareas programadas viven fuera de la capa de canal, algo que mencionaste en Telegram sigue siendo conocido cuando sigues el hilo en WhatsApp. Sin embargo, lo unificado no significa ilimitado: cada canal tiene su propio flujo de autorización, formato de mensaje y límites de entrega; el conjunto de canales soportados difiere entre las regiones global y China; y después de conectar un nuevo canal, debes enviar un mensaje de prueba para confirmar que las respuestas llegan a la conversación esperada.
 
 ---
 
@@ -74,7 +74,7 @@ Esto importa porque decide si los activos a largo plazo se comparten o se fragme
 | Perfil de usuario | `USER.md` | Una copia, compartida por todos los canales |
 | Hechos entre sesiones | `MEMORY.md` / `memories/` | Una copia, compartida por todos los canales |
 | Métodos capturados | `skills/` | Una copia, compartida por todos los canales |
-| Automatizaciones | Configuración de capa de Agent | Desacoplado de los canales; objetivo de entrega configurable |
+| Tareas programadas | Configuración de capa de Agent | Desacoplado de los canales; objetivo de entrega configurable |
 
 Como todos estos se sitúan fuera de la capa de canal, "sigue sabiendo el nombre del proyecto que mencioné en Telegram" no es una característica de sincronización que alguien tuvo que construir — es una consecuencia natural de que solo haya una copia.
 
@@ -153,7 +153,7 @@ La tercera fila merece atención: **"no me conoce" significa algo diferente aqu�
 Hermes separa los canales del Agent en el nivel de mecanismo, pero conectar cada plataforma aún significa manejar credenciales, callbacks y tiempo de ejecución usted mismo. La dirección de LightVela es hacer de esa capa un punto de entrada productizado y pluggable:
 
 - **Los canales son configuraciones** — conéctelos o desconéctelos bajo un Agent, sin necesidad de crear un Agent separado por plataforma.
-- **Los activos se comparten por defecto** — una personalidad, conjunto de memoria, conjunto de Skills y conjunto de automatizaciones; un nuevo canal reutiliza ellos inmediatamente, sin nada que migrar.
+- **Los activos se comparten por defecto** — una personalidad, conjunto de memoria, conjunto de Skills y conjunto de tareas programadas; un nuevo canal reutiliza ellos inmediatamente, sin nada que migrar.
 - **El estado de conexión es visible** — la consola muestra si un canal está conectado, facilitando distinguir "nunca conectado con éxito" de "conectado pero no respondiendo".
 - **Las diferencias regionales son explícitas** — la región global y China listan sus propios canales soportados, previniendo errores de región a región.
 - **Los problemas son rastreables** — los registros recientes en Diagnostics ayudan a separar problemas de autorización de problemas de entrega de problemas de tarea.
@@ -164,6 +164,6 @@ Hermes separa los canales del Agent en el nivel de mecanismo, pero conectar cada
 
 - Los canales son puntos de entrada; el Agent es el sujeto. Muchos canales comparten un Agent en lugar de un bot por plataforma.
 - La pasarela hace tres cosas: **normaliza** las diferencias de plataforma, **enruta** al mismo Agent y **entrega** de nuevo a la conversación original.
-- La identidad, la memoria, las Skills y las automatizaciones viven fuera de la capa de canal, así que la continuidad entre canales es una consecuencia arquitectónica, no una característica de sincronización añadida.
+- La identidad, la memoria, las Skills y las tareas programadas viven fuera de la capa de canal, así que la continuidad entre canales es una consecuencia arquitectónica, no una característica de sincronización añadida.
 - Lo unificado no significa ilimitado: la autorización, el soporte regional, el contexto de grupo y los límites de entrega difieren por canal.
 - Después de conectar un canal, verifique dos cosas: que las respuestas lleguen a la conversación esperada, y que realmente comparta la misma memoria.

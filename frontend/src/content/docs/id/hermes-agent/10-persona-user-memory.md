@@ -129,7 +129,7 @@ Hermes memisahkan ketiga lapisan ini dengan jelas, tetapi ia masih menyasar oran
 - **Memori dapat dilihat di konsol** — halaman memori menampilkan apa yang dipertahankan Agent, dengan tab terpisah untuk Memory dan User Profile, sesuai pemisahan antara fakta dan preferensi stabil.
 - **Penambahan dan penghapusan terjadi melalui percakapan** — Anda tidak perlu sengaja "mengisi" memori. Selama percakapan normal Hermes memutuskan apa yang layak dipertahankan; ketika Anda ingin ia mengingat atau melupakan sesuatu, cukup katakan di chat.
 - **Kapasitas dapat disesuaikan** — konsol memungkinkan Anda menaikkan atau menurunkan batas kapasitas memori, mencegah konteks jangka panjang tumbuh tanpa batas.
-- **Stabil lintas model** — mengganti model tidak menghapus memori, skill, maupun otomasi, sehingga kestabilan kepribadian tidak bergantung pada model tertentu.
+- **Stabil lintas model** — mengganti model tidak menghapus memori, skill, maupun tugas terjadwal, sehingga kestabilan kepribadian tidak bergantung pada model tertentu.
 - **Konsisten lintas kanal** — satu Agent berbagi memori dan persona yang sama di setiap kanal yang terhubung; berganti ponsel atau kanal tidak menghilangkannya, dan tidak ada yang perlu diduplikasi per platform.
 
 ---

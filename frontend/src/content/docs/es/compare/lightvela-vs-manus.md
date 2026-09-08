@@ -42,7 +42,7 @@ Un Hermes Agent alojado es útil cuando quieres un lugar familiar al que volver:
 
 Esa es una otra clase de conveniencia de "completa esta tarea por mí". Está más cerca de tener un asistente persistente al que puedes enviar mensajes cuando aparezca un pensamiento.
 
-LightVela también es el ajuste más limpio si te importa dar forma al Agent alrededor de tus propios hábitos: configurar modelos, elegir dónde ocurren las conversaciones y extender Hermes con Skills. Si el trabajo recurrente es parte de la ecuación, también puedes configurar [automatizaciones](https://lightvela.ai/docs/configuration/automation) en lugar de tratar cada solicitud como un proyecto nuevo.
+LightVela también es el ajuste más limpio si te importa dar forma al Agent alrededor de tus propios hábitos: configurar modelos, elegir dónde ocurren las conversaciones y extender Hermes con Skills. Si el trabajo recurrente es parte de la ecuación, también puedes configurar [tareas programadas](https://lightvela.ai/docs/configuration/automation) en lugar de tratar cada solicitud como un proyecto nuevo.
 
 ## ¿Dónde Manus es el mejor ajuste?
 

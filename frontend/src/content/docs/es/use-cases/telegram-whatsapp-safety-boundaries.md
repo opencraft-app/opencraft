@@ -79,13 +79,13 @@ El Agent puede leer material, organizar riesgos y redactar una propuesta primero
 
 No trates una pregunta del usuario como autorización para ejecutar una acción.
 
-### 6. Agregar límites para Skills y automatizaciones
+### 6. Agregar límites para Skills y tareas programadas
 
 Antes de instalar una Skill, confirma su fuente, permisos, APIs externas, acceso a archivos y capacidad de mensajes proactivos.
 
 Prueba nuevas Skills en una conversación 1 a 1 con material de bajo riesgo antes de expandir su uso.
 
-Cada automatización necesita un horario explícito, ventana de tiempo activa, método de notificación, canal objetivo y método de pausa.
+Cada tarea programada necesita un horario explícito, ventana de tiempo activa, método de notificación, canal objetivo y método de pausa.
 
 Para mensajes proactivos de WhatsApp, también considera ventanas de conversación y plantillas de mensajes en lugar de asumir que el texto ordinario siempre se enviará.
 
@@ -104,7 +104,7 @@ Si las credenciales pueden haberse expuesto, deja de usar el canal afectado y re
 - ¿Has confirmado que el flujo de trabajo actual usa conversaciones 1 a 1 en lugar de tratar chats de grupo no soportados como disponibles?
 - ¿Has definido qué memoria puede retener, qué archivos pueden acceder y cómo funciona la eliminación?
 - ¿Las acciones sensibles, mensajes externos y cambios irreversibles requieren confirmación?
-- ¿Las Skills y automatizaciones tienen mínimo privilegio, un canal objetivo explícito y un método de pausa?
+- ¿Las Skills y tareas programadas tienen mínimo privilegio, un canal objetivo explícito y un método de pausa?
 - ¿Tienes procedimientos para credenciales expuestas, mensajes erróneos y transferencia humana?
 
 ## Preguntas frecuentes

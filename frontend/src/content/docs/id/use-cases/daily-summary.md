@@ -2,13 +2,13 @@
 
 Bagian yang berguna dari sebuah ringkasan harian bukanlah panjangnya, melainkan bahwa ia memberi Anda konteks yang tepat sebelum Anda harus menanyakannya: apa yang berubah, apa yang butuh perhatian, dan apa yang bisa menunggu.
 
-Hermes dapat mengubah peninjauan yang berulang menjadi rutinitas asisten AI harian. LightVela menyediakan Agent yang di-hosting di cloud, kanal untuk pengiriman, Skill opsional untuk informasi yang Anda butuhkan, dan otomasi untuk penjadwalannya. Anda yang menentukan apa yang dihitung sebagai "ringkasan berguna hari ini".
+Hermes dapat mengubah peninjauan yang berulang menjadi rutinitas asisten AI harian. LightVela menyediakan Agent yang di-hosting di cloud, kanal untuk pengiriman, Skill opsional untuk informasi yang Anda butuhkan, dan tugas terjadwal untuk penjadwalannya. Anda yang menentukan apa yang dihitung sebagai "ringkasan berguna hari ini".
 
 ![Ringkasan harian yang dikirim oleh Hermes Agent](../images/use-case-daily-summaries.webp)
 
 ## Ringkasan
 
-**Sebuah ringkasan harian mendapatkan nilainya bukan dari panjangnya, melainkan dari menyerahkan konteks yang tepat kepada Anda sebelum Anda bertanya, dan cara mencapainya adalah mengubah peninjauan manual menjadi otomasi tersimpan.** Anda memerlukan empat hal: Hermes Agent di cloud dengan model yang sudah dikonfigurasi, kanal terhubung untuk menerima hasilnya, Skill opsional untuk mengumpulkan informasi, dan sebuah otomasi (kolomnya adalah nama, jadwal, instruksi tugas, jendela waktu aktif, dan kanal notifikasi). Keberhasilan bergantung pada instruksi tugasnya: karena tidak ada yang hadir untuk memperjelas saat eksekusi, prompt tersebut harus membawa sendiri tujuannya, batas cakupannya (rentang waktu dan batas jumlah item), format keluarannya, dan apa yang harus dilakukan ketika tidak ada yang perlu dilaporkan. Uji prompt-nya secara manual di chat lebih dulu, lalu buat otomasinya, dan tinjau keluarannya setelah eksekusi nyata pertamanya.
+**Sebuah ringkasan harian mendapatkan nilainya bukan dari panjangnya, melainkan dari menyerahkan konteks yang tepat kepada Anda sebelum Anda bertanya, dan cara mencapainya adalah mengubah peninjauan manual menjadi tugas terjadwal tersimpan.** Anda memerlukan empat hal: Hermes Agent di cloud dengan model yang sudah dikonfigurasi, kanal terhubung untuk menerima hasilnya, Skill opsional untuk mengumpulkan informasi, dan sebuah tugas terjadwal (kolomnya adalah nama, jadwal, instruksi tugas, jendela waktu aktif, dan kanal notifikasi). Keberhasilan bergantung pada instruksi tugasnya: karena tidak ada yang hadir untuk memperjelas saat eksekusi, prompt tersebut harus membawa sendiri tujuannya, batas cakupannya (rentang waktu dan batas jumlah item), format keluarannya, dan apa yang harus dilakukan ketika tidak ada yang perlu dilaporkan. Uji prompt-nya secara manual di chat lebih dulu, lalu buat tugas terjadwalnya, dan tinjau keluarannya setelah eksekusi nyata pertamanya.
 
 ## Untuk siapa ini
 
@@ -24,7 +24,7 @@ Ringkasan pertama yang terbaik memiliki tujuan yang sempit. "Rangkum semuanya" b
 
 - Sumber konteks yang jelas. Ini bisa berupa material yang Anda tempelkan ke sebuah percakapan, file yang Anda kelola di Cloud Storage, atau informasi yang dapat diakses oleh Skill yang relevan dan terpercaya.
 
-- Jadwal otomasi opsional jika Anda ingin ringkasannya berjalan tanpa prompt manual.
+- Jadwal tugas terjadwal opsional jika Anda ingin ringkasannya berjalan tanpa prompt manual.
 
 ## Langkah / konsep kunci
 
@@ -72,7 +72,7 @@ Halaman [Chat](../configuration/agent-chat.md) adalah tempat yang baik untuk men
 
 ### 4. Jadwalkan versi yang sudah terbukti berhasil
 
-Ketika prompt manual menghasilkan hasil yang Anda percayai, buat sebuah otomasi. Beri ia waktu yang spesifik dan instruksi yang eksplisit, lalu pilih kanal notifikasi terhubung jika Anda ingin hasilnya dikirim ke sana.
+Ketika prompt manual menghasilkan hasil yang Anda percayai, buat sebuah tugas terjadwal. Beri ia waktu yang spesifik dan instruksi yang eksplisit, lalu pilih kanal notifikasi terhubung jika Anda ingin hasilnya dikirim ke sana.
 
 ```text
 Setiap hari kerja pukul 18.00, siapkan ringkasan proyek harian dari
@@ -80,9 +80,9 @@ pembaruan yang saya bagikan hari ini. Sertakan perubahan, hambatan, dan tiga
 tindakan berikutnya yang paling penting. Kirim sebagai poin-poin yang ringkas.
 ```
 
-Siapkan ini di [Otomasi](../configuration/automation.md). Tinjau beberapa eksekusi pertama lalu sesuaikan kalimatnya jika ringkasannya terlalu luas, terlalu panjang, atau kehilangan konteks yang tepat.
+Siapkan ini di [Tugas Terjadwal](../configuration/automation.md). Tinjau beberapa eksekusi pertama lalu sesuaikan kalimatnya jika ringkasannya terlalu luas, terlalu panjang, atau kehilangan konteks yang tepat.
 
-![Otomasi ringkasan harian yang terjadwal](../images/use-case-daily-summary-automation.png)
+![Tugas Terjadwal ringkasan harian yang terjadwal](../images/use-case-daily-summary-automation.png)
 
 ## FAQ
 
@@ -100,7 +100,7 @@ Tidak. Uji prompt-nya secara manual lebih dulu. Begitu Anda dapat mengenali hasi
 
 ### Bagaimana jika ringkasannya tidak datang?
 
-Periksa status otomasi dan kanal notifikasinya, lalu pastikan Hermes masih dapat membalas dalam percakapan normal. Bila perlu, tinjau [Diagnostik](../configuration/diagnostics.md) sebelum membuat tugas lain.
+Periksa status tugas terjadwal dan kanal notifikasinya, lalu pastikan Hermes masih dapat membalas dalam percakapan normal. Bila perlu, tinjau [Diagnostik](../configuration/diagnostics.md) sebelum membuat tugas lain.
 
 ## Langkah berikutnya
 
@@ -108,4 +108,4 @@ Periksa status otomasi dan kanal notifikasinya, lalu pastikan Hermes masih dapat
 
 - [Konfigurasi Skill](../configuration/skill.md) — tambahkan kemampuan terpercaya ketika ringkasan Anda membutuhkan sumber informasi tertentu.
 
-- [Otomasi](../configuration/automation.md) — kirimkan ringkasan yang sudah Anda uji sesuai jadwal.
+- [Tugas Terjadwal](../configuration/automation.md) — kirimkan ringkasan yang sudah Anda uji sesuai jadwal.

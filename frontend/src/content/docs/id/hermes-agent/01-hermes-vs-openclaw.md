@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Perbedaan mendasar antara Hermes Agent dan OpenClaw adalah "akumulasi" versus "koneksi": Hermes, yang dibangun oleh Nous Research, adalah agent yang berkembang sendiri dan dirancang untuk makin memahami Anda seiring waktu. Hermes memperlakukan memori jangka panjang (`USER.md` / `MEMORY.md` / SQLite+FTS5 / Skill) sebagai warga kelas satu, dan agent itu sendiri yang memutuskan apa yang perlu diingat dan kapan sesuatu dinaikkan menjadi Skill. OpenClaw, yang dipimpin Peter Steinberger, adalah agent local-first sekaligus gateway otomasi yang dirancang untuk "menghubungkan segalanya": 25+ model dan 20+ platform pesan dapat dipasang, sementara Skill ditulis tangan oleh pengguna dan didistribusikan melalui ClawHub. Memilih Hermes berarti memilih mitra yang makin kuat seiring waktu; memilih OpenClaw berarti memilih meja kendali yang dapat terhubung ke apa pun.**
+**Perbedaan mendasar antara Hermes Agent dan OpenClaw adalah "akumulasi" versus "koneksi": Hermes, yang dibangun oleh Nous Research, adalah agent yang berkembang sendiri dan dirancang untuk makin memahami Anda seiring waktu. Hermes memperlakukan memori jangka panjang (`USER.md` / `MEMORY.md` / SQLite+FTS5 / Skill) sebagai warga kelas satu, dan agent itu sendiri yang memutuskan apa yang perlu diingat dan kapan sesuatu dinaikkan menjadi Skill. OpenClaw, yang dipimpin Peter Steinberger, adalah agent local-first sekaligus gateway tugas terjadwal yang dirancang untuk "menghubungkan segalanya": 25+ model dan 20+ platform pesan dapat dipasang, sementara Skill ditulis tangan oleh pengguna dan didistribusikan melalui ClawHub. Memilih Hermes berarti memilih mitra yang makin kuat seiring waktu; memilih OpenClaw berarti memilih meja kendali yang dapat terhubung ke apa pun.**
 
 ---
 
@@ -29,7 +29,7 @@ Bagian berikut menelusuri perbedaan itu dari enam dimensi: **positioning, arsite
 | Dimensi | Hermes Agent | OpenClaw |
 |---|---|---|
 | Dibangun oleh | Nous Research | Peter Steinberger (developer independen, Austria) |
-| Positioning | AI agent yang berkembang sendiri | Platform agent dan otomasi local-first |
+| Positioning | AI agent yang berkembang sendiri | Platform agent dan tugas terjadwal local-first |
 | Filosofi inti | Learning Loop First | Control Plane First |
 | Keunggulan bertahan | "Akumulasi" — makin kuat makin sering dipakai | "Koneksi" — dapat dipasang ke apa pun |
 | Dalam satu baris | Menyelesaikan masalah **akumulasi** | Menyelesaikan masalah **koneksi** |
@@ -50,7 +50,7 @@ Gateway → Agent → Skills → Memory
 
 Nilai rekayasa intinya ada di Gateway: entah pengguna datang dari WhatsApp, Telegram, Slack, Discord, atau email, semuanya bermuara ke sesi agent yang sama. Control plane-nya bersih, dan izin, audit, serta routing semuanya berada di lapisan gateway.
 
-**Hermes Agent memakai struktur terintegrasi**: inferensi model, eksekusi terminal, operasi file, otomasi browser, pencarian web, memori jangka panjang, tugas terjadwal, dan pesan lintas platform dibangun sebagai modul dari **proses yang sama**. Perilakunya lebih mirip asisten yang ikut bepergian bersama Anda — lengkap dengan otak, tangan, dan buku catatan — dibandingkan sebuah router pesan.
+**Hermes Agent memakai struktur terintegrasi**: inferensi model, eksekusi terminal, operasi file, tugas terjadwal browser, pencarian web, memori jangka panjang, tugas terjadwal, dan pesan lintas platform dibangun sebagai modul dari **proses yang sama**. Perilakunya lebih mirip asisten yang ikut bepergian bersama Anda — lengkap dengan otak, tangan, dan buku catatan — dibandingkan sebuah router pesan.
 
 Konsekuensinya: **jika Anda ingin menghubungkan lebih banyak platform, OpenClaw lebih unggul; jika Anda ingin agent itu sendiri yang makin kuat, Hermes lebih unggul.**
 

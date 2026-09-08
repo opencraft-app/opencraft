@@ -1,6 +1,6 @@
 ## Ringkasan
 
-**Hermes Agent dapat menjangkau Anda sesuai jadwal bukan karena ia menunggu di jendela chat, melainkan karena sebuah otomasi menyimpan tiga hal — kapan dijalankan, apa yang dilakukan, dan ke mana hasilnya dikirim — sebagai konfigurasi yang dapat dijadwalkan berulang kali. Ketika waktunya tiba, penjadwal memulai eksekusi yang independen: ia tidak memutar ulang percakapan lama, ia mengerjakan ulang pekerjaannya dari instruksi tugas lalu mengantarkan keluarannya sesuai pengaturan notifikasi Anda. Di LightVela sebuah otomasi terdiri dari: nama, jadwal (hari tetap dalam seminggu, interval tetap, atau sekali jalan — pilih salah satu), instruksi tugas, jendela waktu aktif, dan kanal notifikasi. Satu koreksi atas klaim yang tersebar luas: tidak ada kolom "sematkan tugas ini ke model tertentu", sehingga saran untuk menyinkronkan ulang model otomasi setelah mengganti model tidak berlaku. Bagian yang menentukan keandalan adalah instruksi tugasnya — karena tidak ada yang hadir untuk memperjelas saat eksekusi, prompt tersebut harus membawa sendiri tujuan, batasan, dan format keluarannya.**
+**Hermes Agent dapat menjangkau Anda sesuai jadwal bukan karena ia menunggu di jendela chat, melainkan karena sebuah tugas terjadwal menyimpan tiga hal — kapan dijalankan, apa yang dilakukan, dan ke mana hasilnya dikirim — sebagai konfigurasi yang dapat dijadwalkan berulang kali. Ketika waktunya tiba, penjadwal memulai eksekusi yang independen: ia tidak memutar ulang percakapan lama, ia mengerjakan ulang pekerjaannya dari instruksi tugas lalu mengantarkan keluarannya sesuai pengaturan notifikasi Anda. Di LightVela sebuah tugas terjadwal terdiri dari: nama, jadwal (hari tetap dalam seminggu, interval tetap, atau sekali jalan — pilih salah satu), instruksi tugas, jendela waktu aktif, dan kanal notifikasi. Satu koreksi atas klaim yang tersebar luas: tidak ada kolom "sematkan tugas ini ke model tertentu", sehingga saran untuk menyinkronkan ulang model tugas terjadwal setelah mengganti model tidak berlaku. Bagian yang menentukan keandalan adalah instruksi tugasnya — karena tidak ada yang hadir untuk memperjelas saat eksekusi, prompt tersebut harus membawa sendiri tujuan, batasan, dan format keluarannya.**
 
 ---
 
@@ -14,9 +14,9 @@ Jadi bagian sulit dari "proaktif" bukan pemicu terjadwalnya — itu bagian yang 
 
 ---
 
-## 1. Apa yang sebenarnya dimuat sebuah otomasi
+## 1. Apa yang sebenarnya dimuat sebuah tugas terjadwal
 
-Membuat otomasi di LightVela melibatkan kolom-kolom berikut.
+Membuat tugas terjadwal di LightVela melibatkan kolom-kolom berikut.
 
 | Kolom | Pertanyaan yang dijawabnya | Catatan |
 |---|---|---|
@@ -26,7 +26,7 @@ Membuat otomasi di LightVela melibatkan kolom-kolom berikut.
 | **Jendela waktu aktif** | Pada jam berapa ia berlaku? | Membatasi kapan tugas boleh berjalan; membiarkannya kosong berarti sepanjang waktu |
 | **Kanal notifikasi** | Ke mana hasilnya pergi? | Pengalih opsional untuk memilih kanal mana yang menerima notifikasi eksekusi |
 
-**Satu poin yang patut disampaikan terang-terangan: tidak ada kolom "model".** Sebuah otomasi tidak disematkan ke model tertentu, sehingga saran yang sering diulang bahwa Anda harus meninjau dan menyinkronkan ulang model setiap otomasi setelah mengganti model tidak berlaku untuk bentuk produk ini. Yang layak ditinjau setelah penggantian model adalah **kualitas** keluaran, bukan kolom yang tidak ada. Untuk pelapisan di baliknya, lihat "Bisakah Otak Hermes Agent Diganti? Lapisan Model vs Lapisan Agent."
+**Satu poin yang patut disampaikan terang-terangan: tidak ada kolom "model".** Sebuah tugas terjadwal tidak disematkan ke model tertentu, sehingga saran yang sering diulang bahwa Anda harus meninjau dan menyinkronkan ulang model setiap tugas terjadwal setelah mengganti model tidak berlaku untuk bentuk produk ini. Yang layak ditinjau setelah penggantian model adalah **kualitas** keluaran, bukan kolom yang tidak ada. Untuk pelapisan di baliknya, lihat "Bisakah Otak Hermes Agent Diganti? Lapisan Model vs Lapisan Agent."
 
 Perhatikan juga bahwa jadwalnya adalah pilihan di antara hari tetap dalam seminggu, interval tetap, dan sekali jalan — bukan ekspresi cron sembarang. Mengetahui ini sejak awal menyelamatkan Anda dari merancang jadwal berbentuk cron lalu mendapati tidak ada tempat untuk memasukkannya.
 
@@ -124,19 +124,19 @@ Prinsip umum saat menelusuri masalah: **pisahkan dulu "tidak berjalan" dari "ber
 
 Hermes mendukung pekerjaan terjadwal pada tingkat mekanisme, tetapi menjaga runtime dan penjadwalannya tetap andal diserahkan kepada operatornya. Arah LightVela adalah menjadikan ini kemampuan produk yang dapat dikonfigurasi dan ditinjau:
 
-- **Templat menurunkan biaya awal** — ketika Anda belum yakin apa yang perlu diotomasikan, mulai dari templat siap pakai lalu sesuaikan.
+- **Templat menurunkan biaya awal** — ketika Anda belum yakin apa yang perlu ditugas terjadwalkan, mulai dari templat siap pakai lalu sesuaikan.
 - **Siklus hidup tugas dapat dikelola** — lihat detail, sunting, jeda, atau hapus setelah pembuatan, tanpa perlu membangun ulang tugas hanya untuk mengubah satu kondisi.
 - **Pengiriman dapat dipilih** — kanal notifikasi berupa pengalih opsional, sehingga hasil mendarat di tempat yang benar-benar Anda baca.
-- **Terpisah dari kemampuan lain** — otomasi, model, skill, dan cloud storage dikonfigurasi secara independen, dan mengganti model tidak mengubah pengaturan otomasi.
+- **Terpisah dari kemampuan lain** — tugas terjadwal, model, skill, dan cloud storage dikonfigurasi secara independen, dan mengganti model tidak mengubah pengaturan tugas terjadwal.
 - **Kegagalan dapat dilacak** — gabungkan anomali eksekusi dengan log terbaru di Diagnostik untuk menemukan penyebabnya.
 
 ---
 
 ## Poin penting
 
-- Sebuah otomasi pada dasarnya adalah konfigurasi tersimpan dan dapat diulang tentang kapan dijalankan, apa yang dilakukan, dan ke mana diantarkan.
+- Sebuah tugas terjadwal pada dasarnya adalah konfigurasi tersimpan dan dapat diulang tentang kapan dijalankan, apa yang dilakukan, dan ke mana diantarkan.
 - Kolomnya adalah: nama, jadwal (hari tetap dalam seminggu / interval tetap / sekali jalan), instruksi tugas, jendela waktu aktif, kanal notifikasi.
-- **Tidak ada kolom "model"**, sehingga "sinkronkan ulang model otomasi setelah penggantian" tidak akurat; jadwalnya juga bukan ekspresi cron sembarang.
+- **Tidak ada kolom "model"**, sehingga "sinkronkan ulang model tugas terjadwal setelah penggantian" tidak akurat; jadwalnya juga bukan ekspresi cron sembarang.
 - Pemicunya memulai **eksekusi yang independen**, bukan pemutaran ulang percakapan lama, sehingga instruksinya harus berdiri sendiri.
 - Instruksi yang andal memuat empat bagian: tindakan target, batas cakupan, format keluaran, penanganan pengecualian.
 - Langkah penggelaran yang menentukan adalah yang terakhir: **tunggu eksekusi nyata lalu tinjau catatannya**, alih-alih berhenti di "tugas sudah dibuat."

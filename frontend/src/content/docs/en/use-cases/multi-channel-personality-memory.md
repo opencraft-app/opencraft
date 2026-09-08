@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Telegram and WhatsApp can serve as two entry points to the same Hermes Agent. As long as both channels connect to the same Agent, they share Agent-level persona, Skills, automations, and long-term memory, with no configuration to duplicate per platform.** But "unified" has a defined scope: what is shared is Agent-level assets, while each channel keeps its own authorisation flow and message limits, so connecting them is two independent authorisation steps. The most direct way to verify sharing is to state something on one channel and ask about it on the other — a correct answer proves both entry points resolve to the same Agent. After connecting, also confirm replies land in the conversation you messaged from rather than another one.
+**Telegram and WhatsApp can serve as two entry points to the same Hermes Agent. As long as both channels connect to the same Agent, they share Agent-level persona, Skills, scheduled tasks, and long-term memory, with no configuration to duplicate per platform.** But "unified" has a defined scope: what is shared is Agent-level assets, while each channel keeps its own authorisation flow and message limits, so connecting them is two independent authorisation steps. The most direct way to verify sharing is to state something on one channel and ask about it on the other — a correct answer proves both entry points resolve to the same Agent. After connecting, also confirm replies land in the conversation you messaged from rather than another one.
 
 ![One Agent connected to Telegram and WhatsApp with one personality and long-term memory](../images/use-case-07-multi-channel-personality-memory.png)
 
@@ -112,11 +112,11 @@ The personality and long-term memory should remain consistent, but message forma
     ├── one SOUL.md
     ├── one Agent memory and user profile
     ├── one set of installed Skills
-    ├── one set of automations
+    ├── one set of scheduled tasks
     ├── Telegram entry point
     └── WhatsApp entry point
 
-Automation notification methods still need an explicit target channel.
+Scheduled Task notification methods still need an explicit target channel.
 
 Do not assume that a shared Agent causes every reminder to be sent to both Telegram and WhatsApp.
 
@@ -147,11 +147,11 @@ Telegram supports group messages after you disable Group Privacy, add the Bot to
 
 Multi-channel sharing keeps the Agent layer consistent, but it does not change each channel's own setup conditions or capability boundaries.
 
-### Will an automation send to both channels automatically?
+### Will a scheduled task send to both channels automatically?
 
 No.
 
-When you create or edit an automation, confirm its notification method and target channel, then test the delivery result separately.
+When you create or edit a scheduled task, confirm its notification method and target channel, then test the delivery result separately.
 
 ## Next steps
 

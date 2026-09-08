@@ -98,13 +98,13 @@ Untuk pendamping AI, mulai dengan:
 
 Periksa apakah Agent memanggil Skill yang diharapkan, memakai material referensi yang tepat, dan berhenti untuk menjelaskan keterbatasan ketika ia tidak yakin.
 
-### 5. Pakai otomasi untuk pekerjaan yang berulang
+### 5. Pakai tugas terjadwal untuk pekerjaan yang berulang
 
 Pesan sambutan, FAQ, ringkasan, dan pengingat dapat memakai pemicu yang berbeda.
 
-Gunakan [Otomasi](../configuration/automation.md) untuk pekerjaan yang seharusnya berjalan pada waktu tetap, seperti mengirim ringkasan komunitas harian atau mengingatkan tim dukungan tentang kasus yang belum selesai.
+Gunakan [Tugas Terjadwal](../configuration/automation.md) untuk pekerjaan yang seharusnya berjalan pada waktu tetap, seperti mengirim ringkasan komunitas harian atau mengingatkan tim dukungan tentang kasus yang belum selesai.
 
-Pastikan metode notifikasi dan kanal tujuan untuk setiap otomasi alih-alih mengasumsikan setiap kanal dapat menerima jenis pesan proaktif yang sama.
+Pastikan metode notifikasi dan kanal tujuan untuk setiap tugas terjadwal alih-alih mengasumsikan setiap kanal dapat menerima jenis pesan proaktif yang sama.
 
 ## Rekomendasi per skenario
 

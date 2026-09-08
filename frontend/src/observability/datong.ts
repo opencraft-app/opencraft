@@ -167,7 +167,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
   agent_models: "模型配置页",
   agent_skills: "技能页",
   agent_persona: "人设页",
-  agent_automations: "自动任务页",
+  agent_automations: "定时任务页",
   agent_memory: "记忆页",
   agent_files: "云存储页",
   agent_diagnostics: "诊断页",
@@ -222,8 +222,8 @@ const ELEMENT_NAME_MAP: Record<string, string> = {
   persona_select_card: "人设选择卡片",
   persona_inject_btn: "人设注入按钮",
   // Automations 页
-  automation_template_card: "自动任务模板卡片",
-  automation_create_btn: "添加自动任务按钮",
+  automation_template_card: "定时任务模板卡片",
+  automation_create_btn: "添加定时任务按钮",
 };
 
 /** 根据 eid 解析中文元素名，未匹配时回退为 eid 英文原值。 */

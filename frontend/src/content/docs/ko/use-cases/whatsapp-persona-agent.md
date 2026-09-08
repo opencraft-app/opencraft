@@ -106,7 +106,7 @@ This request might trigger an external action. List the risks and what you need 
 ## 고객 서비스 워크플로와 페르소나를 구분합니다
 
 페르소나는 에이전트의 역할과 말투를 정의합니다.
-스킬은 특정 작업을 수행하는 방법을 제공하고, 자동 작업은 언제 선제적으로 일을 시작할지 정합니다.
+스킬은 특정 작업을 수행하는 방법을 제공하고, 예약 작업은 언제 선제적으로 일을 시작할지 정합니다.
 메모리와 사용자 프로필은 장기적으로 유지할 맥락을 담당합니다.
 
 예를 들어, 따뜻한 고객 서비스 성격은 주문 조회, 지식 기반 검색 또는 환불 기능을 자동으로 제공하지 않습니다.
@@ -135,7 +135,7 @@ This request might trigger an external action. List the risks and what you need 
 ### WhatsApp 에이전트가 먼저 메시지를 보낼 수 있나요?
 
 선제 메시지에는 WhatsApp 메시지 템플릿과 대화 가능 시간 규칙도 적용됩니다.
-예약된 알림을 원할 경우 [자동 작업](../configuration/automation.md)를 읽고 전달 방법이 실제 WhatsApp 채널 한도에 맞는지 확인하세요.
+예약된 알림을 원할 경우 [예약 작업](../configuration/automation.md)를 읽고 전달 방법이 실제 WhatsApp 채널 한도에 맞는지 확인하세요.
 
 ## 다음 단계
 
@@ -145,4 +145,4 @@ This request might trigger an external action. List the risks and what you need 
 
 - [채널 구성 - WhatsApp](../configuration/channel-whatsapp.md) - 전체 WhatsApp 인증 및 문제 해결 흐름을 따르세요.
 
-- [자동 작업](../configuration/automation.md) - 대화에서 이미 테스트된 알림 또는 리뷰를 예약합니다.
+- [예약 작업](../configuration/automation.md) - 대화에서 이미 테스트된 알림 또는 리뷰를 예약합니다.

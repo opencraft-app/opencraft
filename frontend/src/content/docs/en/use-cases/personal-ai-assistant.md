@@ -2,7 +2,7 @@
 
 ## Summary
 
-**The right order for building a personal AI assistant is not automating everything at once. Start by making a cloud Hermes Agent reachable in the chat app you already use, then layer on memory, skills, and automations.** Five building blocks each solve one problem: the model determines reasoning quality, the channel determines where you reach it, memory lets it retain how you work, skills give it reusable methods, and automations let it complete agreed work while you are absent. For the first week, do only three things: configure one model, connect one channel, and verify memory genuinely persists across sessions. Once that path is reliable, add skills and automations — this way, when something breaks, you can tell which layer caused it.
+**The right order for building a personal AI assistant is not automating everything at once. Start by making a cloud Hermes Agent reachable in the chat app you already use, then layer on memory, skills, and scheduled tasks.** Five building blocks each solve one problem: the model determines reasoning quality, the channel determines where you reach it, memory lets it retain how you work, skills give it reusable methods, and scheduled tasks let it complete agreed work while you are absent. For the first week, do only three things: configure one model, connect one channel, and verify memory genuinely persists across sessions. Once that path is reliable, add skills and scheduled tasks — this way, when something breaks, you can tell which layer caused it.
 
 ![A personal AI assistant with LightVela across channels](../images/use-case-personal-ai-assistant.webp)
 
@@ -60,7 +60,7 @@ Browse a suitable option in ClawHub, then use [Configure Skills](https://lightve
 
 ### 4. Turn a useful conversation into a repeatable check-in
 
-Once a prompt is reliably useful, decide whether it should run on a schedule. A simple automation can ask Hermes for a morning plan, an end-of-day review, or a weekly reset without you remembering to start the conversation.
+Once a prompt is reliably useful, decide whether it should run on a schedule. A simple scheduled task can ask Hermes for a morning plan, an end-of-day review, or a weekly reset without you remembering to start the conversation.
 
 For example:
 
@@ -69,15 +69,15 @@ Every weekday at 8:00 AM, prepare a concise plan for today.
 Start with deadlines and meetings, then suggest three focused next actions.
 ```
 
-Set the schedule and notification channel in [Automations](https://lightvela.ai/docs/configuration/automation). Keep the first automation small; you can refine the instruction after you have seen a few real results.
+Set the schedule and notification channel in [Scheduled Tasks](https://lightvela.ai/docs/configuration/automation). Keep the first scheduled task small; you can refine the instruction after you have seen a few real results.
 
-![The Automations page in the LightVela console](../images/personal-ai-assistant-automations.webp)
+![The Scheduled Tasks page in the LightVela console](../images/personal-ai-assistant-scheduled tasks.webp)
 
 ## FAQ
 
 ### Do I need to configure every feature before Hermes is useful?
 
-No. A channel and a working model are enough to begin. Add memory, skills, and automations gradually as you discover which repeated tasks are worth keeping.
+No. A channel and a working model are enough to begin. Add memory, skills, and scheduled tasks gradually as you discover which repeated tasks are worth keeping.
 
 ### Will Hermes remember every message I send?
 
@@ -97,4 +97,4 @@ Choose a task you already repeat at a predictable time. Morning planning, a shor
 
 - [Memory Management](https://lightvela.ai/docs/configuration/memory) — review what your assistant retains across conversations.
 
-- [Automations](https://lightvela.ai/docs/configuration/automation) — schedule the routines that prove useful.
+- [Scheduled Tasks](https://lightvela.ai/docs/configuration/automation) — schedule the routines that prove useful.

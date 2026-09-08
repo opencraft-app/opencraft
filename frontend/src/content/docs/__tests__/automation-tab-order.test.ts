@@ -54,7 +54,7 @@ function assertTabOrder(line: string, tabs: readonly [string, string, string]): 
   expect(endedIndex).toBeLessThan(recentIndex);
 }
 
-describe("自动任务文档页签顺序", () => {
+describe("定时任务文档页签顺序", () => {
   it.each(AUTOMATION_DOCS)(
     "$path 的正文、图片说明与结果校验保持完整",
     ({ path, tabs, validationHeading }) => {

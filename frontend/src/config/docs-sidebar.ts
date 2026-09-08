@@ -82,7 +82,7 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/skill", title: "配置技能" },
       { slug: "configuration/personality", title: "人设" },
       { slug: "configuration/memory", title: "记忆管理" },
-      { slug: "configuration/automation", title: "自动任务" },
+      { slug: "configuration/automation", title: "定时任务" },
       { slug: "configuration/files", title: "云存储" },
       { slug: "configuration/agent-chat", title: "对话" },
       { slug: "configuration/diagnostics", title: "诊断中心" },
@@ -182,7 +182,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
       { slug: "configuration/personality", title: "人设", titleEn: "Souls" },
       { slug: "configuration/memory", title: "记忆管理", titleEn: "Memory Management" },
-      { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
+      { slug: "configuration/automation", title: "定时任务", titleEn: "Scheduled Tasks" },
       { slug: "configuration/files", title: "云存储", titleEn: "Cloud Storage" },
       { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
       { slug: "configuration/diagnostics", title: "诊断中心", titleEn: "Diagnostics" },
@@ -251,7 +251,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       {
         slug: "use-cases/whatsapp-24-7-customer-service",
         title: "如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化？",
-        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Automations",
+        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Scheduled Tasks",
       },
       {
         slug: "use-cases/lifelike-im-agent-rhythm-social-memory",

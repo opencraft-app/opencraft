@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Choose LightVela if you want a practical, always-online personal AI Agent that you can reach through messaging apps, configure with different models, extend with Skills, and schedule with Automations.** Choose Today.AI if you want a more app-centric personal operating system built around your daily data and proactive suggestions.
+**Choose LightVela if you want a practical, always-online personal AI Agent that you can reach through messaging apps, configure with different models, extend with Skills, and schedule with Scheduled Tasks.** Choose Today.AI if you want a more app-centric personal operating system built around your daily data and proactive suggestions.
 
 LightVela’s documented product model centers on a cloud-hosted Hermes Agent, while Today.AI’s public positioning emphasizes personal context, proactive help, and cross-device assistance.
 LightVela is the more immediately understandable choice for persistent Agent hosting and explicit control.
@@ -20,8 +20,8 @@ The public information available for Today.AI is still more limited than the pro
 | **Product shape** | Cloud-hosted Hermes Agent | Personal AI assistant and AI-native OS vision |
 | **Main access model** | Messaging Channels plus web console | Native app and cross-device experience |
 | **Memory** | Persistent Agent memory across conversations | Living memory built from personal context |
-| **Proactive work** | Explicit Automations and scheduled jobs | Designed to act before the user asks |
-| **Extensibility** | Models, Channels, Skills, and Automations | Model and ecosystem details still developing |
+| **Proactive work** | Explicit Scheduled Tasks and scheduled jobs | Designed to act before the user asks |
+| **Extensibility** | Models, Channels, Skills, and Scheduled Tasks | Model and ecosystem details still developing |
 | **Best fit** | Users who want a usable always-on Agent now | Early adopters seeking a proactive personal OS |
 
 ## What changes in everyday use
@@ -35,7 +35,7 @@ Today.AI’s public [landing page](https://today.ai/landing) shows an intended e
 It also presents living memory, proactive suggestions, app connectors, cloud computers, and cross-device control as parts of the same assistant experience.
 
 With LightVela, you define the assistant’s working environment more explicitly.
-You connect a model, choose a Channel, install useful [Skills](../configuration/skill.md), and create scheduled jobs such as reminders, digests, or recurring research through [Automations](../configuration/automation.md).
+You connect a model, choose a Channel, install useful [Skills](../configuration/skill.md), and create scheduled jobs such as reminders, digests, or recurring research through [Scheduled Tasks](../configuration/automation.md).
 The result feels less like an operating system that observes your entire day and more like a dependable Agent that you deliberately shape.
 
 That difference affects trust and predictability.
@@ -55,12 +55,12 @@ A laptop-based assistant may be powerful during an active session, but it become
 LightVela keeps the Agent running independently, so scheduled tasks and future conversations do not depend on whether your personal device is online.
 
 LightVela is also clearer about configuration boundaries.
-Its model separates the main building blocks into Hermes Agent, models, Channels, Skills, and Automations.
+Its model separates the main building blocks into Hermes Agent, models, Channels, Skills, and Scheduled Tasks.
 Multiple Channels can connect to the same Agent and share its memory and behavior, while Skills add reusable capabilities for specific workflows.
 
 This gives you a useful kind of control.
 You can change the model without rebuilding the Agent, add a Channel without creating a second personality, and install a Skill when you need a repeatable workflow.
-Automations then provide the scheduling layer for reminders, summaries, notifications, and other recurring tasks.
+Scheduled Tasks then provide the scheduling layer for reminders, summaries, notifications, and other recurring tasks.
 
 LightVela is particularly attractive if your AI already belongs in your communication tools.
 Instead of opening another standalone dashboard, you can ask the same Agent a question in Telegram, continue on another connected Channel, and keep the conversation attached to one persistent identity and memory.
@@ -92,7 +92,7 @@ Choose LightVela if you:
 
 - **Want an always-on Agent:** You want an AI Agent that does not depend on your laptop or phone staying awake.
 - **Prefer familiar access:** You want to use messaging Channels instead of relying on one new standalone app.
-- **Want explicit control:** You want to configure models, Skills, Channels, memory, and scheduled Automations.
+- **Want explicit control:** You want to configure models, Skills, Channels, memory, and scheduled Scheduled Tasks.
 - **Value documented setup:** You want configuration paths that you can understand, repeat, and adjust.
 - **Want to start now:** You prefer a working cloud-hosted Hermes Agent while the product grows with you.
 

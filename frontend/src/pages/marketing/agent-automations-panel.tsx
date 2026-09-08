@@ -1,5 +1,5 @@
 /**
- * 自动化任务（Hermes Cron）面板
+ * 定时任务（Hermes Cron）面板
  *
  * 在 Hermes 实例 Settings 内新增的「定时」tab，提供 cron 任务的浏览 / 创建 /
  * 暂停 / 恢复 / 删除。
@@ -118,7 +118,7 @@ type AutomationTestState = "idle" | "running" | "ok" | "fail";
 type ActiveTaskFilter = "all" | "agent" | CronZeroTokenKind;
 type CreateTaskKind = "agent" | CronZeroTokenKind;
 /**
- * 自动任务展示所用的 locale，直接复用注册表类型。
+ * 定时任务展示所用的 locale，直接复用注册表类型。
  *
  * 此前本文件自持 `"zh-CN" | "zh-SG" | "en-US" | "id-ID"` 联合类型副本，
  * 与 `scenario-job-presentation.ts` 中的同名类型构成镜像，新增语种时
@@ -132,12 +132,12 @@ type ScenarioReminderNotice = {
 };
 
 /**
- * 把 i18next 的运行时语言收敛为自动任务展示 locale。
+ * 把 i18next 的运行时语言收敛为定时任务展示 locale。
  *
  * ⚠️ 刻意使用注册表白名单校验（`parseLocaleCode`）而非
  * `language?.startsWith("en")` 一类前缀猜测。前缀猜测的问题：
  *   - 新增语种时不会报错，只会静默落到最后的 `return "zh-CN"`，
- *     用户侧表现为「界面已切日语，自动任务区却仍是中文」；
+ *     用户侧表现为「界面已切日语，定时任务区却仍是中文」；
  *   - `startsWith("en")` 会把任何以 en 开头的值都当成英文。
  *
  * 无法识别的语言（含被篡改的 localStorage 值）回退到区域默认语言。
@@ -303,7 +303,7 @@ function ScenarioReminderBanner({
           <h3 className="truncate font-semibold text-black/88" title={notice.draft.generatedName}>
             {isPreview
               ? t("已开始试跑：{{name}}", { name: notice.draft.generatedName })
-              : t("已新建自动任务：{{name}}", { name: notice.draft.generatedName })}
+              : t("已新建定时任务：{{name}}", { name: notice.draft.generatedName })}
           </h3>
           <p className="mt-1 text-xs leading-5 text-black/55">
             {isPreview
@@ -319,7 +319,7 @@ function ScenarioReminderBanner({
             onClick={onEnable}
             className="inline-flex h-8 items-center justify-center rounded-md bg-black px-3 text-xs font-semibold text-white transition hover:bg-black/85"
           >
-            {t("添加为自动任务")}
+            {t("添加为定时任务")}
           </button>
         )}
         <button
@@ -976,7 +976,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const handleScenarioRunOnce = useCallback(async (draft: ScenarioTaskDraft) => {
     if (!botId) return;
     if (jobLimitReached) {
-      showError(t("自动任务数量已达上限，请先删除不需要的任务后再试跑场景"));
+      showError(t("定时任务数量已达上限，请先删除不需要的任务后再试跑场景"));
       return;
     }
     const pack = getScenarioTaskPack(draft.scenarioId);
@@ -1022,7 +1022,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     if (!botId || !scenarioDraft) return;
     const scenarioTrialJob = jobsRef.current.find((job) => job.name === scenarioDraft.oneShotJobName && isOnceCronJob(job));
     if (jobLimitReached && !scenarioTrialJob) {
-      showError(t("自动任务数量已达上限，请先删除不需要的任务后再启用场景"));
+      showError(t("定时任务数量已达上限，请先删除不需要的任务后再启用场景"));
       return;
     }
     setScenarioPreviewStatus("enabling");
@@ -1041,11 +1041,11 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       await refreshAll();
       setScenarioPreviewStatus(null);
       setScenarioReminderNotice({ draft: scenarioDraft, kind: "recurring" });
-      showNotice(t("已添加为自动任务，后续会按设置频率提醒"), "success");
+      showNotice(t("已添加为定时任务，后续会按设置频率提醒"), "success");
     } catch (err) {
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       setScenarioPreviewStatus(null);
-      showError(t("添加场景自动任务失败：{{message}}", { message }));
+      showError(t("添加场景定时任务失败：{{message}}", { message }));
     }
   }, [botId, jobLimitReached, refreshAll, scenarioDraft, showError, showNotice, t]);
 
@@ -1193,7 +1193,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       {notice && <ErrorToast message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}
 
       <AgentSectionHeader
-        title={t("自动任务")}
+        title={t("定时任务")}
         description={t("让你的智能体伙伴按计划自动执行任务")}
         actions={(
           <div className="inline-flex items-center gap-2.5">
@@ -1302,7 +1302,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         ) : activeView !== "recent" && listError ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm">
             <AlertTriangle className="mb-2 h-6 w-6 text-[#B91C1C] opacity-80" />
-            <p className="text-black/70">{t("加载自动任务失败")}</p>
+            <p className="text-black/70">{t("加载定时任务失败")}</p>
             <p className="mt-1 max-w-md break-all px-4 text-center text-xs text-black/40">{listError}</p>
             <button
               type="button"
@@ -1332,7 +1332,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
               <p>{t("暂无符合条件的任务")}</p>
             ) : (
               <p>
-                {t("暂无自动任务，")}
+                {t("暂无定时任务，")}
                 <span className="font-medium text-black/70">{t("可从上方任务模板快速启用")}</span>
               </p>
             )}
@@ -2215,7 +2215,7 @@ function CronJobDetailModal({
 
         <div className="mb-4 pr-10">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{t("自动任务详情")}</h2>
+            <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{t("定时任务详情")}</h2>
             {paused && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("已暂停")}
@@ -2481,7 +2481,7 @@ function ConfirmDeleteModal({
         className="relative w-full max-w-[400px] rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-balance text-base font-semibold text-black/90">{t("删除自动任务")}</h3>
+        <h3 className="text-balance text-base font-semibold text-black/90">{t("删除定时任务")}</h3>
         <p className="mt-2 text-pretty text-sm text-black/65">
           {t("确定要删除「{{name}}」吗？此操作无法恢复。", { name: jobName || t("未命名任务") })}
         </p>
@@ -2547,9 +2547,9 @@ function ConfirmCreateOverLimitModal({
         className="relative w-full max-w-[420px] rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold text-black/90">{t("自动任务数量提醒")}</h3>
+        <h3 className="text-base font-semibold text-black/90">{t("定时任务数量提醒")}</h3>
         <p className="mt-2 text-sm leading-relaxed text-black/65">
-          {t("当前生效中的自动任务数量已经达到 20 个以上，建议你删除不需要的任务后再继续。")}
+          {t("当前生效中的定时任务数量已经达到 20 个以上，建议你删除不需要的任务后再继续。")}
         </p>
         <div className="mt-5 flex items-center justify-end gap-2">
           <button
@@ -3872,7 +3872,7 @@ export function AutomationFormModal({
     try {
       await execCommand(
         botId,
-        buildHermesSendTestCommand(channel, deliverChatIds[channel] ?? "", t("LightVela 自动任务测试消息：通知通道已连接。")),
+        buildHermesSendTestCommand(channel, deliverChatIds[channel] ?? "", t("LightVela 定时任务测试消息：通知通道已连接。")),
       );
       setTestSendResults((prev) => {
         const { [channel]: _removed, ...rest } = prev;
@@ -4024,8 +4024,8 @@ export function AutomationFormModal({
           await createCronJobWithScriptRollback(botId, createInput, script);
           onSaved();
           if (deliver !== "local") {
-            const deliveryWarning = t("自动任务已新建，但部分通知通道发送确认消息失败。");
-            void sendHermesChatNotice(botId, deliver, t("LightVela 已新建自动任务「{{name}}」。", {
+            const deliveryWarning = t("定时任务已新建，但部分通知通道发送确认消息失败。");
+            void sendHermesChatNotice(botId, deliver, t("LightVela 已新建定时任务「{{name}}」。", {
               name: createInput.name,
             }))
               .then(({ failed }) => {
@@ -4057,8 +4057,8 @@ export function AutomationFormModal({
         }
         onSaved();
         if (deliver !== "local") {
-          const deliveryWarning = t("自动任务已新建，但部分通知通道发送确认消息失败。");
-          void sendHermesChatNotice(botId, deliver, t("LightVela 已新建自动任务「{{name}}」。", {
+          const deliveryWarning = t("定时任务已新建，但部分通知通道发送确认消息失败。");
+          void sendHermesChatNotice(botId, deliver, t("LightVela 已新建定时任务「{{name}}」。", {
             name: createInput.name,
           }))
             .then(({ failed }) => {
@@ -4160,8 +4160,8 @@ export function AutomationFormModal({
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       onError(
         mode === "create"
-          ? t("创建自动任务失败：{{message}}", { message })
-          : t("编辑自动任务失败：{{message}}", { message }),
+          ? t("创建定时任务失败：{{message}}", { message })
+          : t("编辑定时任务失败：{{message}}", { message }),
       );
     } finally {
       setSubmitting(false);
@@ -4191,7 +4191,7 @@ export function AutomationFormModal({
         </button>
 
         <h2 className="text-balance text-lg font-semibold text-black/90">
-          {mode === "create" ? t("新建自动任务") : t("编辑自动任务")}
+          {mode === "create" ? t("新建定时任务") : t("编辑定时任务")}
         </h2>
 
         {canSelectZeroToken ? (
@@ -4260,7 +4260,7 @@ export function AutomationFormModal({
             value={name}
             onChange={(e) => setName(e.target.value.slice(0, 60))}
             maxLength={60}
-            placeholder={t("请输入自动任务名称")}
+            placeholder={t("请输入定时任务名称")}
             className="mt-1.5 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />

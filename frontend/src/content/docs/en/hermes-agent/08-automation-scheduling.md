@@ -1,6 +1,6 @@
 ## Summary
 
-**A Hermes Agent can reach you on schedule not because it sits waiting in a chat window, but because an automation saves three things — when to run, what to do, and where to send the result — as a configuration that can be scheduled repeatedly. When the time arrives, the scheduler starts an independent run: it does not replay an old conversation, it redoes the work from the task instructions and then delivers the output according to your notification settings. On LightVela an automation consists of: name, schedule (fixed weekdays, fixed interval, or one-time — choose one), task instructions, active time window, and notification channels. One correction to a widespread claim: there is no "pin this task to a specific model" field, so the advice to re-sync automation models after switching models does not apply. The part that determines reliability is the task instructions — because nobody is present to clarify at run time, the prompt must carry its own goal, boundaries, and output format.**
+**A Hermes Agent can reach you on schedule not because it sits waiting in a chat window, but because a scheduled task saves three things — when to run, what to do, and where to send the result — as a configuration that can be scheduled repeatedly. When the time arrives, the scheduler starts an independent run: it does not replay an old conversation, it redoes the work from the task instructions and then delivers the output according to your notification settings. On LightVela a scheduled task consists of: name, schedule (fixed weekdays, fixed interval, or one-time — choose one), task instructions, active time window, and notification channels. One correction to a widespread claim: there is no "pin this task to a specific model" field, so the advice to re-sync scheduled task models after switching models does not apply. The part that determines reliability is the task instructions — because nobody is present to clarify at run time, the prompt must carry its own goal, boundaries, and output format.**
 
 ---
 
@@ -14,9 +14,9 @@ So the hard part of "proactive" is not the timed trigger — that is the easy pi
 
 ---
 
-## 1. What an automation actually contains
+## 1. What a scheduled task actually contains
 
-Creating an automation on LightVela involves these fields.
+Creating a scheduled task on LightVela involves these fields.
 
 | Field | The question it answers | Notes |
 |---|---|---|
@@ -26,7 +26,7 @@ Creating an automation on LightVela involves these fields.
 | **Active time window** | During which hours is it valid? | Restricts when the task may run; leaving it empty means around the clock |
 | **Notification channels** | Where does the result go? | Optional toggles selecting which channels receive execution notices |
 
-**One point worth stating plainly: there is no "model" field.** An automation is not pinned to a specific model, so the commonly repeated advice that you must review and re-sync each automation's model after switching models does not apply to this product shape. What is worth reviewing after a model switch is output **quality**, not a field that does not exist. For the layering behind this, see "Can a Hermes Agent's Brain Be Replaced? Model Layer vs Agent Layer."
+**One point worth stating plainly: there is no "model" field.** A scheduled task is not pinned to a specific model, so the commonly repeated advice that you must review and re-sync each scheduled task's model after switching models does not apply to this product shape. What is worth reviewing after a model switch is output **quality**, not a field that does not exist. For the layering behind this, see "Can a Hermes Agent's Brain Be Replaced? Model Layer vs Agent Layer."
 
 Also note that the schedule is a choice among fixed weekdays, fixed interval, and one-time — not an arbitrary cron expression. Knowing this upfront saves you from designing a cron-shaped schedule and then discovering there is nowhere to enter it.
 
@@ -127,17 +127,16 @@ Hermes supports scheduled work at the mechanism level, but keeping the runtime a
 - **Templates lower the starting cost** — when you are unsure what to automate, start from a ready-made template and adjust it.
 - **Task lifecycle is manageable** — view details, edit, pause, or delete after creation, with no need to rebuild a task to change one condition.
 - **Delivery is selectable** — notification channels are optional toggles, so results land where you actually read them.
-- **Decoupled from other capabilities** — automations, models, skills, and cloud storage are configured independently, and switching models does not alter automation settings.
+- **Decoupled from other capabilities** — scheduled tasks, models, skills, and cloud storage are configured independently, and switching models does not alter scheduled task settings.
 - **Failures are traceable** — combine execution anomalies with recent logs in Diagnostics to locate the cause.
 
 ---
 
 ## Key points
 
-- An automation is fundamentally a saved, repeatable configuration of when to run, what to do, and where to deliver.
+- A scheduled task is fundamentally a saved, repeatable configuration of when to run, what to do, and where to deliver.
 - The fields are: name, schedule (fixed weekdays / fixed interval / one-time), task instructions, active time window, notification channels.
-- **There is no "model" field**, so "re-sync automation models after switching" is inaccurate; schedules are also not arbitrary cron expressions.
+- **There is no "model" field**, so "re-sync scheduled task models after switching" is inaccurate; schedules are also not arbitrary cron expressions.
 - The trigger starts an **independent run**, not a replay of an old conversation, so instructions must be self-contained.
 - Reliable instructions contain four parts: target action, scope boundaries, output format, exception handling.
 - The decisive rollout step is the last one: **wait for a real run and review the record**, rather than stopping at "task created."
-

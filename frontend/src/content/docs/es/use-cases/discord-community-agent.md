@@ -13,7 +13,7 @@ LightVela trae ese patrón a las comunidades de Discord sin requerir que constru
 
 Este caso de uso es para comunidades de gaming, comunidades de desarrolladores, grupos de interés y servidores de eventos que desean un asistente de IA confiable en el espacio de conversación que ya utilizan.
 
-El resultado esperado es un Agent de Discord bien instruido que pueda responder preguntas aprobadas, indicar a los miembros el canal correcto o información de eventos, apoyar la incorporación y enviar recordatorios configurados cuando una Automatización es apropiada.
+El resultado esperado es un Agent de Discord bien instruido que pueda responder preguntas aprobadas, indicar a los miembros el canal correcto o información de eventos, apoyar la incorporación y enviar recordatorios configurados cuando una Tarea programada es apropiada.
 
 No es un reemplazo para moderadores humanos.
 Las decisiones de moderación sensibles, acciones de cuenta, disputas y cualquier cosa fuera del límite de conocimiento aprobado deben ir a un humano.
@@ -28,7 +28,7 @@ Las decisiones de moderación sensibles, acciones de cuenta, disputas y cualquie
 
 - Un límite claro de lo que el Agent puede responder, lo que debe rechazar y cuándo debe escalar.
 
-- La [guía de configuración de canal de Discord](../configuration/channel-discord.md) y la [guía de Automatización](../configuration/automation.md) disponibles para referencia.
+- La [guía de configuración de canal de Discord](../configuration/channel-discord.md) y la [guía de Tarea programada](../configuration/automation.md) disponibles para referencia.
 
 ## Pasos
 
@@ -95,8 +95,8 @@ Si el bot no responde, primero confirme que el canal de Discord se muestra como 
 
 ### 5. Agregue soporte recurrente solo después de que la ruta principal funcione
 
-Una vez que la respuesta de preguntas sea confiable, agregue una Automatización estrecha para trabajo recurrente como un recordatorio de registro, un contador de eventos o un resumen de moderador.
-Las Automatizaciones de LightVela soportan una ejecución única, días fijos de la semana o intervalos fijos, con una ventana de efectividad opcional y canales de notificación.
+Una vez que la respuesta de preguntas sea confiable, agregue una Tarea programada estrecha para trabajo recurrente como un recordatorio de registro, un contador de eventos o un resumen de moderador.
+Las Tareas programadas de LightVela soportan una ejecución única, días fijos de la semana o intervalos fijos, con una ventana de efectividad opcional y canales de notificación.
 
 Por ejemplo, podría configurar:
 
@@ -108,7 +108,7 @@ If any detail is missing, say which detail needs a moderator update instead of g
 ```
 
 Comience con un solo recordatorio y revise su salida antes de agregar más trabajo programado.
-Vea [Automatizaciones](../configuration/automation.md) para los ajustes de horario y notificación disponibles.
+Vea [Tareas programadas](../configuration/automation.md) para los ajustes de horario y notificación disponibles.
 
 ## Lista de verificación práctica
 
@@ -117,8 +117,8 @@ Vea [Automatizaciones](../configuration/automation.md) para los ajustes de horar
 | Definir | Escriba el rol de la comunidad, hechos aprobados y reglas de escalación | Instrucciones del Agent | Un moderador puede explicar qué puede y qué no puede responder el Agent |
 | Conectar | Agregue el token de Bot de Discord e invite el bot con permisos de mínimo privilegio | Canal de Discord | Discord aparece como conectado y el bot está presente en el servidor |
 | Probar | Haga una pregunta de FAQ conocida y una pregunta desconocida o sensible | Conversación de Discord | El primero obtiene una respuesta fundamentada y el segundo se rechaza o se escala |
-| Repetir | Agregue un recordatorio o resumen con un horario estrecho | Automatización | El mensaje llega en el canal de notificación seleccionado en la hora esperada |
-| Revisar | Verifique respuestas, horarios e información de eventos cambiada | Gestión de Agent y Automatización | Reglas y anuncios obsoletos se corrigen antes de que causen confusión |
+| Repetir | Agregue un recordatorio o resumen con un horario estrecho | Tarea programada | El mensaje llega en el canal de notificación seleccionado en la hora esperada |
+| Revisar | Verifique respuestas, horarios e información de eventos cambiada | Gestión de Agent y Tarea programada | Reglas y anuncios obsoletos se corrigen antes de que causen confusión |
 
 ## Qué puede ayudar un Agent de Discord compartido
 
@@ -163,7 +163,7 @@ LightVela comienza con el Agent y le permite describir su comportamiento en la c
 | --- | --- |
 | Escriba comandos y manejadores de eventos | Describa qué debe hacer el Agent |
 | Almacene preguntas frecuentes y reglas en código o base de datos | Dé al Agent contexto y límites aprobados |
-| Construya programadores para recordatorios | Cree Automatizaciones en la consola |
+| Construya programadores para recordatorios | Cree Tareas programadas en la consola |
 | Despliegue cambios de comportamiento | Actualice las instrucciones del Agent y revise el resultado |
 | Mantenga infraestructura de bot y lógica | Enfóquese en operaciones de comunidad y moderación |
 
@@ -197,7 +197,7 @@ Hágalo indicar a los miembros a un moderador humano cuando la regla es poco cla
 ### ¿Puede enviar recordatorios de eventos automáticamente?
 
 Sí, la documentación del canal de Discord lista mensajes proactivos como soportados en la capa de canal.
-Use [Automatizaciones](../configuration/automation.md) para definir el horario, instrucciones de tarea, ventana de efectividad y canal de notificación.
+Use [Tareas programadas](../configuration/automation.md) para definir el horario, instrucciones de tarea, ventana de efectividad y canal de notificación.
 
 ### ¿Debería el Agent tomar decisiones de moderación?
 
@@ -206,7 +206,7 @@ No.
 
 ## Conclusión
 
-Cree el Hermes Agent, déle contexto de comunidad aprobado, conecte Discord, invite el bot y pruébelo con preguntas reales antes de agregar Automatización.
+Cree el Hermes Agent, déle contexto de comunidad aprobado, conecte Discord, invite el bot y pruébelo con preguntas reales antes de agregar Tarea programada.
 Esa secuencia transforma un Agent de IA privado en un útil asistente enfocado a la comunidad mientras mantiene las reglas del servidor, permisos y límites de escalación humana bajo su control.
 
 Para una versión más enfocada de este patrón, vea [Potencie su Bot de Eventos de Discord con Capacidades Agénticas de IA](./discord-event-agent.md).

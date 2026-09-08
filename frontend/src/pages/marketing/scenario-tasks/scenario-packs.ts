@@ -493,7 +493,7 @@ const todoAutomationFields: ScenarioTaskField[] = [
     type: "time",
     defaultValue: "09:00",
     required: true,
-    helpText: "每个工作日在这个时间整理一次；可在自动任务里继续修改。",
+    helpText: "每个工作日在这个时间整理一次；可在定时任务里继续修改。",
   },
 ];
 

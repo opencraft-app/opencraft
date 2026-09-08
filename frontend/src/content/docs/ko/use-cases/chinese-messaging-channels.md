@@ -96,4 +96,4 @@ Hi Hermes. Please reply with the channel you received this from.
 
 - [메모리 관리](../configuration/memory.md) - 연결된 채널이 공유하는 컨텍스트를 관리합니다.
 
-- [자동 작업](../configuration/automation.md) - 적절한 경우 일정에 따른 업데이트를 연결된 채널로 전송합니다.
+- [예약 작업](../configuration/automation.md) - 적절한 경우 일정에 따른 업데이트를 연결된 채널로 전송합니다.

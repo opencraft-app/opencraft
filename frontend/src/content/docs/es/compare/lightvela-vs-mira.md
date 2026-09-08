@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Elige LightVela si quieres un Hermes Agent personal configurado para tus rutinas, con Skills reutilizables, Automatizaciones y los canales de mensajería que prefieras.** Elige Mira si Telegram es el lugar donde ya ocurre tu trabajo y tus comunidades, y quieres convertir las conversaciones en seguimientos, resúmenes, recordatorios y acciones.
+**Elige LightVela si quieres un Hermes Agent personal configurado para tus rutinas, con Skills reutilizables, Tareas programadas y los canales de mensajería que prefieras.** Elige Mira si Telegram es el lugar donde ya ocurre tu trabajo y tus comunidades, y quieres convertir las conversaciones en seguimientos, resúmenes, recordatorios y acciones.
 
 Ambos productos van más allá de una ventana de chat, pero parten de centros distintos: Mira es un asistente centrado en Telegram, mientras que LightVela es un Agent personal configurable que puede crecer hasta convertirse en un sistema de flujos de trabajo más amplio.
 
@@ -14,7 +14,7 @@ Ambos productos van más allá de una ventana de chat, pero parten de centros di
 | - | - | - |
 | **Mejor para** | Un AI Agent personal de larga duración | Un asistente personal o de equipo dentro de Telegram |
 | **Experiencia principal** | Configurar un Agent según tus rutinas y preferencias | Pedirle a un Agent que entienda los chats y actúe desde la conversación |
-| **Enfoque de configuración** | Skills, Automatizaciones, memoria, personalidad, modelos y canales | Chats de Telegram, contexto de grupos, herramientas conectadas y acciones recurrentes |
+| **Enfoque de configuración** | Skills, Tareas programadas, memoria, personalidad, modelos y canales | Chats de Telegram, contexto de grupos, herramientas conectadas y acciones recurrentes |
 | **Valor diario** | Un Agent constante que sigue trabajando más allá de una conversación | Menos cambios de contexto entre chats, tareas y herramientas conectadas |
 | **Caso de uso más fuerte** | Flujos personales que mejoran con el tiempo | Seguimientos, informes, contenido y coordinación de equipos desde el chat |
 
@@ -24,7 +24,7 @@ La diferencia práctica no es qué producto da una respuesta mejor a un único p
 La cuestión es dónde vive el Agent en tu día y cuánto quieres definir tú de su forma de trabajar.
 
 Con LightVela, configuras un Hermes Agent alojado según tu manera de trabajar y sigues hablando con el mismo Agent a medida que evolucionan tus necesidades.
-Puedes instalar [Skills reutilizables](../configuration/skill.md), programar [Automatizaciones](../configuration/automation.md), elegir un [modelo](../configuration/model.md) y conectar los canales que realmente utilizas.
+Puedes instalar [Skills reutilizables](../configuration/skill.md), programar [Tareas programadas](../configuration/automation.md), elegir un [modelo](../configuration/model.md) y conectar los canales que realmente utilizas.
 Así, una interacción útil puede convertirse en un flujo de trabajo que continúa funcionando para ti.
 
 Puedes pedir un informe diario, una lista de seguimiento recurrente, un borrador de contenido o un recordatorio sin reconstruir el proceso cada vez.
@@ -48,8 +48,8 @@ Puedes pedirle que revise información cada mañana, vigile a la competencia, co
 Lo importante no es una respuesta perfecta.
 Es poder transformar una interacción útil en algo que siga funcionando.
 
-Ahí es donde importan las Skills y las Automatizaciones.
-Una Skill proporciona una capacidad reutilizable, mientras que una Automatización permite que el trabajo rutinario ocurra según un horario sin depender de que recuerdes enviar el prompt en el momento exacto.
+Ahí es donde importan las Skills y las Tareas programadas.
+Una Skill proporciona una capacidad reutilizable, mientras que una Tarea programada permite que el trabajo rutinario ocurra según un horario sin depender de que recuerdes enviar el prompt en el momento exacto.
 Puedes empezar con un informe matutino, añadir una Skill de investigación y enviar el resultado por el canal que más probablemente vayas a consultar.
 
 LightVela también es la opción más directa si quieres configurar el papel del Agent en lugar de aceptar una experiencia fija.
@@ -75,7 +75,7 @@ La documentación oficial de Mira también destaca una amplia capa de herramient
 
 El límite está en el enfoque.
 Mira está optimizada para la interfaz de Telegram y el contexto social que contiene.
-Si quieres diseñar a largo plazo la personalidad, el modelo, las Skills, las Automatizaciones y los canales de un Agent personal, LightVela ofrece un control más explícito.
+Si quieres diseñar a largo plazo la personalidad, el modelo, las Skills, las Tareas programadas y los canales de un Agent personal, LightVela ofrece un control más explícito.
 
 ## ¿Cuál deberías elegir?
 
@@ -83,7 +83,7 @@ Elige LightVela si:
 
 - **Quieres un Agent personal:** Quieres un Hermes Agent alojado que sea más útil a medida que lo configuras.
 - **Valoras la continuidad:** Quieres que el mismo Agent siga disponible y conserve tu configuración.
-- **Prefieres rutinas configurables:** Quieres Skills reutilizables y Automatizaciones recurrentes basadas en tus hábitos.
+- **Prefieres rutinas configurables:** Quieres Skills reutilizables y Tareas programadas recurrentes basadas en tus hábitos.
 - **Quieres acceso flexible:** Quieres llegar a tu Agent a través de los canales que encajan con tu flujo de trabajo.
 - **Quieres control directo:** Quieres gestionar el modelo, la personalidad, las capacidades y la forma del flujo.
 

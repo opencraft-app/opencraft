@@ -40,7 +40,7 @@ export const JAPANESE_STATIC_PAGE_TITLES: Record<string, string> = {
 
 const JAPANESE_AGENT_SECTION_TITLES: Record<string, string> = {
   achievements: "実績",
-  automations: "自動化",
+  automations: "スケジュールタスク",
   channels: "チャネル",
   chat: "チャット",
   files: "ファイル",
@@ -66,7 +66,7 @@ export const JAPANESE_DOC_PAGE_TITLES: Record<string, string> = {
   "/docs/configuration": "設定",
   "/docs/configuration/model": "モデル設定",
   "/docs/configuration/skill": "スキル設定",
-  "/docs/configuration/automation": "自動化",
+  "/docs/configuration/automation": "スケジュールタスク",
   "/docs/configuration/agent-chat": "チャット",
   "/docs/faq": "よくある質問",
   "/docs/plans": "料金プラン",

@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Pilih LightVela jika Anda menginginkan satu Hermes Agent pribadi yang dapat dikonfigurasi sesuai rutinitas, diperluas dengan Skill yang dapat digunakan kembali, dan terus bekerja melalui otomasi serta kanal yang Anda pilih.** Pilih Grok Bot jika Anda menginginkan rekan AI berbasis cloud yang persisten, dapat bekerja lintas aplikasi, menggunakan komputer cloud, dan menjalankan tugas yang didelegasikan secara paralel. Keduanya melampaui chatbot biasa, tetapi keduanya dirancang untuk jenis pekerjaan yang berbeda.
+**Pilih LightVela jika Anda menginginkan satu Hermes Agent pribadi yang dapat dikonfigurasi sesuai rutinitas, diperluas dengan Skill yang dapat digunakan kembali, dan terus bekerja melalui Tugas Terjadwal serta kanal yang Anda pilih.** Pilih Grok Bot jika Anda menginginkan rekan AI berbasis cloud yang persisten, dapat bekerja lintas aplikasi, menggunakan komputer cloud, dan menjalankan tugas yang didelegasikan secara paralel. Keduanya melampaui chatbot biasa, tetapi keduanya dirancang untuk jenis pekerjaan yang berbeda.
 
 ![Perbandingan LightVela dan Grok Bot untuk menjalankan AI Agent pribadi](../images/lightvela-vs-grok-bot.png)
 
@@ -12,7 +12,7 @@
 | - | - | - |
 | **Paling sesuai untuk** | AI Agent pribadi yang berjalan jangka panjang | Pekerjaan yang didelegasikan lintas aplikasi dan situs web |
 | **Pengalaman utama** | Agent yang Anda konfigurasi dan tersedia saat dibutuhkan | Bot persisten yang dapat diperlakukan seperti rekan kerja |
-| **Fokus penyiapan** | Skill, otomasi, memori, persona, model, dan kanal | Bot, komputer cloud, konektor, rutinitas, dan persetujuan |
+| **Fokus penyiapan** | Skill, Tugas Terjadwal, memori, persona, model, dan kanal | Bot, komputer cloud, konektor, rutinitas, dan persetujuan |
 | **Akses sehari-hari** | Kanal pesan dan workspace Agent yang persisten | Pengalaman Grok Bot di desktop dan iOS |
 | **Kasus terkuat** | Alur kerja pribadi yang terus membaik untuk Anda | Pekerjaan multi-langkah yang memerlukan browser dan aplikasi |
 
@@ -20,7 +20,7 @@
 
 Perbedaannya bukan terutama tentang sistem mana yang terdengar lebih pintar dalam satu prompt. Perbedaannya adalah di mana Agent hadir dalam keseharian Anda, dan apakah Anda ingin membentuk satu asisten persisten atau mendelegasikan pekerjaan kepada beberapa Bot bernama.
 
-Dengan LightVela, Anda mengonfigurasi Hermes Agent yang di-host di cloud sesuai cara kerja Anda, lalu terus berbicara dengan Agent yang sama seiring kebutuhan berkembang. Anda dapat memasang [Skill yang dapat digunakan kembali](../configuration/skill.md), menjadwalkan [otomasi](../configuration/automation.md), memilih [model](../configuration/model.md), dan menghubungkan kanal yang benar-benar Anda gunakan. Interaksi satu kali yang bermanfaat dapat berubah menjadi alur kerja yang terus berjalan.
+Dengan LightVela, Anda mengonfigurasi Hermes Agent yang di-host di cloud sesuai cara kerja Anda, lalu terus berbicara dengan Agent yang sama seiring kebutuhan berkembang. Anda dapat memasang [Skill yang dapat digunakan kembali](../configuration/skill.md), menjadwalkan [Tugas Terjadwal](../configuration/automation.md), memilih [model](../configuration/model.md), dan menghubungkan kanal yang benar-benar Anda gunakan. Interaksi satu kali yang bermanfaat dapat berubah menjadi alur kerja yang terus berjalan.
 
 Anda dapat meminta ringkasan harian, daftar pantauan berkala, draf konten, atau pengingat tanpa membangun ulang alurnya setiap kali. LightVela dirancang untuk kesinambungan itu: satu Agent, satu konfigurasi yang terus berkembang, dan satu cara kolaborasi yang dapat Anda perbaiki.
 
@@ -34,7 +34,7 @@ LightVela lebih sesuai jika Anda ingin AI Agent menjadi bagian yang konsisten da
 
 Anda dapat menggunakan Agent untuk memeriksa informasi setiap pagi, memantau kompetitor, mengubah pembaruan produk menjadi posting media sosial, atau merangkum topik riset setiap minggu. Nilai utamanya bukan satu jawaban yang sempurna. Nilainya adalah mengubah interaksi yang berguna menjadi sesuatu yang terus berjalan.
 
-Di sinilah Skill dan otomasi membuat perbedaan. Skill memberi Agent kemampuan yang dapat digunakan kembali, sedangkan otomasi membuat pekerjaan rutin berjalan sesuai jadwal tanpa mengandalkan ingatan Anda untuk mengirim prompt pada waktu yang tepat. Anda dapat memulai dengan briefing pagi, menambahkan Skill riset, lalu mengirim hasilnya melalui kanal yang paling mungkin Anda lihat.
+Di sinilah Skill dan Tugas Terjadwal membuat perbedaan. Skill memberi Agent kemampuan yang dapat digunakan kembali, sedangkan Tugas Terjadwal membuat pekerjaan rutin berjalan sesuai jadwal tanpa mengandalkan ingatan Anda untuk mengirim prompt pada waktu yang tepat. Anda dapat memulai dengan briefing pagi, menambahkan Skill riset, lalu mengirim hasilnya melalui kanal yang paling mungkin Anda lihat.
 
 LightVela juga merupakan pilihan yang lebih langsung jika Anda ingin mengatur peran Agent, bukan menerima pengalaman produk yang tetap. Anda memilih model, perilaku yang ingin dibentuk, kemampuan yang ingin ditambahkan, dan kanal tempat Agent akan hadir. [Ringkasan LightVela](../01-overview.md) menjelaskan bagaimana bagian-bagian itu saling terhubung.
 
@@ -56,7 +56,7 @@ Pilih LightVela jika Anda:
 
 - **Menginginkan Agent pribadi:** Anda ingin Hermes Agent yang di-host dan menjadi lebih berguna saat disempurnakan.
 - **Mengutamakan kesinambungan:** Anda ingin Agent yang sama tetap tersedia dan menyimpan konfigurasi Anda.
-- **Menyukai rutinitas yang dapat dikonfigurasi:** Anda ingin Skill yang dapat digunakan kembali dan otomasi berkala sesuai kebiasaan Anda.
+- **Menyukai rutinitas yang dapat dikonfigurasi:** Anda ingin Skill yang dapat digunakan kembali dan Tugas Terjadwal berulang sesuai kebiasaan Anda.
 - **Menyukai akses melalui pesan:** Anda ingin menghubungi Agent melalui kanal yang sudah Anda gunakan.
 - **Menginginkan kontrol langsung:** Anda ingin mengelola model, persona, kemampuan, dan bentuk alur kerjanya.
 

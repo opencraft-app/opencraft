@@ -130,14 +130,14 @@ describe("model switch automation synchronization", () => {
         onChoose,
       }));
 
-    expect(screen.getByRole("dialog", { name: "自动任务更新提示" })).toBeVisible();
-    expect(screen.getByText("检测到 2 个自动任务需要更新。")).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "定时任务更新提示" })).toBeVisible();
+    expect(screen.getByText("检测到 2 个定时任务需要更新。")).toBeVisible();
     expect(screen.getByText("切换模型后，如不同时更新任务使用的模型，这些任务将无法正常执行。建议同步更新，后续执行时将按新模型来消耗 Token。")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "仅切换对话模型" }));
     expect(onChoose).toHaveBeenLastCalledWith("switch-only");
 
-    await user.click(screen.getByRole("button", { name: "同步更新自动任务" }));
+    await user.click(screen.getByRole("button", { name: "同步更新定时任务" }));
     expect(onChoose).toHaveBeenLastCalledWith("sync-automations");
   });
 
@@ -164,12 +164,12 @@ describe("model switch automation synchronization", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText("检测到 1 个自动任务需要更新。")).toBeVisible();
+    expect(screen.getByText("检测到 1 个定时任务需要更新。")).toBeVisible();
     const cancelled = expect(beforeExecute).rejects.toThrow("已取消模型切换");
     await user.click(screen.getByRole("button", { name: "Close" }));
     await cancelled;
 
-    expect(screen.queryByText(/暂时无法检查自动任务/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/暂时无法检查定时任务/)).not.toBeInTheDocument();
     expect(mocks.listCronJobs).toHaveBeenCalledTimes(1);
   });
 });

@@ -156,6 +156,6 @@ Hermes 会理解你的意图，更新对应的记忆条目并告知结果。
 
 - [配置技能](./skill.md) - 为 Hermes 扩展查天气、发简报、浏览网页等具体能力
 
-- [自动任务](./automation.md) - 让 Hermes 定时主动为你做事
+- [定时任务](./automation.md) - 让 Hermes 定时主动为你做事
 
 - [配置总览](../05-configuration.md)

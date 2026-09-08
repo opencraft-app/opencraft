@@ -78,7 +78,7 @@ You are ready to use Cloud Storage when:
 - you can open or download the file successfully; and
 - the folder names make it clear which material belongs to the current task.
 
-You can now return to [Chat](./agent-chat.md) and tell the Agent what you want to do with the files. For repeatable work, combine the same instructions with [Automations](./automation.md) or [Skills](./skill.md).
+You can now return to [Chat](./agent-chat.md) and tell the Agent what you want to do with the files. For repeatable work, combine the same instructions with [Scheduled Tasks](./automation.md) or [Skills](./skill.md).
 
 ## FAQ
 

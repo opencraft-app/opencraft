@@ -4,102 +4,35 @@ import enUS from "@/i18n/generated/en-US.json";
 import idID from "@/i18n/generated/id-ID.json";
 import zhToKey from "@/i18n/generated/zh-to-key.json";
 
-const JOB_COPY = [
-  ["自动任务检查失败", "Failed to check jobs", "Gagal memeriksa job"],
-  ["模型已切换，并同步更新 {{count}} 个自动任务。", "Model switched and {{count}} jobs synchronized.", "Model diganti dan {{count}} job disinkronkan."],
-  ["模型已切换；自动任务同步成功 {{succeeded}} 个，失败 {{failed}} 个。", "Model switched; {{succeeded}} jobs synchronized and {{failed}} failed.", "Model diganti; {{succeeded}} job disinkronkan dan {{failed}} gagal."],
-  ["模型已切换，但自动任务同步失败：{{message}}", "Model switched, but job synchronization failed: {{message}}", "Model diganti, tetapi sinkronisasi job gagal: {{message}}"],
-  ["自动任务更新提示", "Job Update Notice", "Pemberitahuan Pembaruan Job"],
-  ["检测到 {{count}} 个自动任务需要更新。", "Detected {{count}} jobs that need to be updated.", "Terdeteksi {{count}} job yang perlu diperbarui."],
-  ["切换模型后，如不同时更新任务使用的模型，这些任务将无法正常执行。建议同步更新，后续执行时将按新模型来消耗 Token。", "After switching models, these jobs may fail unless their model configuration is updated at the same time. We recommend syncing them. Future runs will consume tokens using the new model.", "Setelah mengganti model, job ini dapat gagal kecuali konfigurasi modelnya diperbarui sekaligus. Kami menyarankan untuk menyinkronkannya. Eksekusi berikutnya akan memakai token dari model baru."],
-  ["暂时无法检查自动任务。为避免误改任务，只能继续切换聊天模型或取消。", "Jobs could not be checked. To avoid unintended changes to jobs, you can only switch the chat model or cancel.", "Job tidak dapat diperiksa. Untuk menghindari perubahan job yang tidak diinginkan, Anda hanya dapat mengganti model obrolan atau membatalkan."],
-  ["有 {{count}} 个自动任务的模型绑定状态暂时无法确认，本次不会修改这些任务。", "The model binding status of {{count}} jobs could not be confirmed. These jobs will not be changed.", "Status pengikatan model dari {{count}} job tidak dapat dipastikan. Job ini tidak akan diubah."],
-  ["同步更新自动任务", "Sync jobs", "Sinkronkan job"],
-  ["添加为自动任务", "Create Job", "Buat Job"],
-  ["确认后会按这份任务说明创建自动任务。", "Confirm to create a job with these instructions.", "Konfirmasi untuk membuat job dengan instruksi ini."],
-  ["任务名称", "Job name", "Nama job"],
-  ["任务备注", "Notes", "Catatan"],
-  ["自动任务数量已达上限，请先删除不需要的任务后再执行。", "Job limit reached. Delete an unused job before running another one.", "Batas job sudah tercapai. Hapus satu job yang tidak digunakan sebelum menjalankan yang lain."],
-  ["自动任务模板", "Ready-Made Job Templates", "Templat Job Siap Pakai"],
-  ["相同设置已在运行，请到“我的自动任务”中修改。", "This exact setup is already running. Edit it under Current Jobs.", "Konfigurasi yang sama sudah berjalan. Edit di Job Saat Ini."],
-  ["自动任务支持关联上游任务", "Jobs Can Now Link to Upstream Jobs", "Job Kini Dapat Ditautkan ke Job Upstream"],
-  ["先让 Hermes Agent 替你长期盯一件事；选一个场景先跑一次，结果有用后再添加为自动任务。", "Let Hermes Agent keep watch on one thing for you; run a scenario once first, then create a job if the result is useful.", "Biarkan Hermes Agent memantau satu hal untuk Anda; jalankan skenario sekali dulu, lalu buat job jika hasilnya bermanfaat."],
-  ["自动任务调用技能设置", "Job Skill Invocation Settings", "Pengaturan Pemanggilan Skill untuk Job"],
-  ["选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。", "Choose a ready-made job template, run it once, and turn it into an ongoing job when it works for you.", "Pilih templat job siap pakai, jalankan sekali untuk memeriksa hasilnya, lalu ubah menjadi job berkelanjutan jika sudah sesuai."],
-  ["管理我的自动任务", "Manage my jobs", "Kelola job saya"],
-  ["创建或编辑自动任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助自动任务更稳定地调用技能。", "When creating or editing a job, you can choose the Skill it should use. The Agent loads the Skill before running the job to make Skill invocation more reliable.", "Saat membuat atau mengedit job, Anda dapat memilih Skill yang akan digunakan. Agent memuat Skill sebelum menjalankan job agar pemanggilan Skill lebih andal."],
-  ["为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。", "Set recurring, interval-based, or one-time jobs for your Agent, so it can handle reminders, summaries, notifications, and other daily work on schedule.", "Atur job berulang, berbasis interval, atau sekali jalan untuk Agent agar dapat menjalankan pengingat, ringkasan, notifikasi, dan pekerjaan harian lain sesuai jadwal."],
-  ["创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。", "When creating or editing a job, you can link an upstream job. When the job runs later, it uses the upstream job's most recent output as context.", "Saat membuat atau mengedit job, Anda dapat menautkan satu job upstream. Saat job dijalankan nanti, output terbaru dari job upstream akan digunakan sebagai konteks."],
-  ["正在检测上游任务能力...", "Checking upstream job support...", "Memeriksa dukungan job upstream..."],
-  ["当前 Hermes 版本不支持上游任务，请升级后重试。", "This Hermes version does not support upstream jobs. Upgrade and try again.", "Versi Hermes saat ini tidak mendukung job upstream. Tingkatkan versi lalu coba lagi."],
-  ["暂时无法确认 Hermes 是否支持上游任务。", "Could not confirm whether Hermes supports upstream jobs.", "Dukungan Hermes untuk job upstream belum dapat dikonfirmasi."],
-  ["本任务执行时，将使用上游任务最近的输出作为上下文", "When this job runs, it uses the upstream job's latest output as context.", "Saat job ini berjalan, output terbaru dari job upstream akan digunakan sebagai konteks"],
-  ["搜索上游任务", "Search upstream jobs", "Cari job upstream"],
-  ["可选上游任务", "Available upstream jobs", "Job upstream yang tersedia"],
-  ["暂无可关联的上游任务", "No upstream jobs available", "Tidak ada job upstream yang dapat ditautkan"],
-  ["没有匹配的上游任务", "No matching upstream jobs", "Tidak ada job upstream yang cocok"],
-  ["已新建自动任务：{{name}}", "Job created: {{name}}", "Job dibuat: {{name}}"],
-  ["已在后台执行，请在你的 IM 软件中查看运行结果", "Running in the background — please check the result in your IM app.", "Sedang berjalan di latar belakang. Cek hasilnya di aplikasi chat Anda."],
-  ["后续会按{{frequency}}自动提醒，也可以在已生效任务里管理。", "It will remind you automatically on the {{frequency}} schedule. You can manage it in Current Jobs.", "Pengingat akan dikirim otomatis sesuai jadwal {{frequency}}. Anda dapat mengelolanya di Job Saat Ini."],
-  ["查看已生效任务", "View current jobs", "Lihat job saat ini"],
-  ["自动任务数量已达上限，请先删除不需要的任务后再试跑场景", "You have reached the job limit. Delete an unused job before trying this scenario.", "Anda telah mencapai batas job. Hapus job yang tidak digunakan sebelum mencoba skenario ini."],
-  ["自动任务数量已达上限，请先删除不需要的任务后再启用场景", "You have reached the job limit. Delete an unused job before enabling this scenario.", "Anda telah mencapai batas job. Hapus job yang tidak digunakan sebelum mengaktifkan skenario ini."],
-  ["已添加为自动任务，后续会按设置频率提醒", "Job added. Future reminders will follow the configured schedule.", "Job ditambahkan. Pengingat berikutnya akan mengikuti jadwal yang dikonfigurasi."],
-  ["添加场景自动任务失败：{{message}}", "Failed to add scenario job: {{message}}", "Gagal menambahkan job skenario: {{message}}"],
-  ["任务依赖关系已变化，请确认最新受影响任务后再次删除", "Job dependencies changed. Review the latest affected jobs, then delete again.", "Dependensi job telah berubah. Tinjau kembali job yang terdampak, lalu hapus lagi."],
-  ["任务已执行，但通知投递失败：{{message}}", "The job ran, but notification delivery failed: {{message}}", "Job dijalankan, tetapi pengiriman notifikasi gagal: {{message}}"],
-  ["后台执行未能确认结果：{{message}}。即时回执已发出，任务可能仍在后台运行，请稍后在 IM 中确认。", "The background run did not confirm the result: {{message}}. An immediate acknowledgment was sent; the job may still be running in the background, please check IM later.", "Eksekusi latar belakang tidak mengonfirmasi hasil: {{message}}. Konfirmasi langsung telah dikirim; job mungkin masih berjalan di latar belakang, silakan periksa IM nanti."],
-  ["当前任务", "Current Jobs", "Job Saat Ini"],
-  ["已结束任务", "Ended Jobs", "Job Berakhir"],
-  ["加载自动任务失败", "Failed to load jobs", "Gagal memuat job"],
-  ["暂无已结束任务", "No ended jobs", "Belum ada job yang berakhir"],
-  ["暂无自动任务，", "No jobs yet, ", "Belum ada job, "],
-  ["问题原因：模型切换导致任务未执行", "Reason: The job did not run because the model changed", "Alasan: Job tidak berjalan karena model berubah"],
-  ["查看任务详情", "View job details", "Lihat detail job"],
-  ["当前关联上游", "Currently linked upstream job", "Job upstream yang saat ini ditautkan"],
-  ["任务 ID", "Job ID", "ID Job"],
-  ["上游任务：{{name}}", "Upstream job: {{name}}", "Job upstream: {{name}}"],
-  ["来自：上游任务已不可用", "From: upstream job unavailable", "Dari: job upstream tidak tersedia"],
-  ["上游任务：已不可用", "Upstream job: unavailable", "Job upstream: tidak tersedia"],
-  ["自动任务详情", "Job Details", "Detail Job"],
-  ["本任务执行时，将使用上游任务最近一次的输出作为上下文。", "When this job runs, it will use the most recent output from the upstream job as context.", "Saat job ini berjalan, output terakhir dari job upstream akan digunakan sebagai konteks."],
-  ["任务已暂停，但仍可能使用最近一次完成输出", "The job is paused, but its latest completed output may still be used.", "Job dijeda, tetapi output terakhir yang selesai mungkin masih digunakan."],
-  ["暂无完成记录，下游任务会在无上游上下文的情况下继续执行", "No completed run is available. The downstream job will continue without upstream context.", "Belum ada eksekusi yang selesai. Job downstream akan terus berjalan tanpa konteks upstream."],
-  ["原对话（创建任务的聊天通道）", "Original chat (where the job was created)", "Obrolan asal (tempat job dibuat)"],
-  ["任务名称与ID", "Job name and ID", "Nama dan ID job"],
-  ["删除后将解除上游绑定并继续独立执行", "After deletion, their upstream links will be removed and they will continue running independently.", "Setelah dihapus, tautan job upstream akan dilepas dan job downstream akan terus berjalan secara mandiri."],
-  ["删除失败，请检查以下任务：{{names}}", "Deletion failed. Check these jobs: {{names}}", "Penghapusan gagal. Periksa job berikut: {{names}}"],
-  ["删除自动任务", "Delete job", "Hapus Job"],
-  ["受影响的直接下游任务", "Affected direct downstream jobs", "Job downstream langsung yang terdampak"],
-  ["自动任务数量提醒", "Job count reminder", "Pengingat jumlah job"],
-  ["当前生效中的自动任务数量已经达到 20 个以上，建议你删除不需要的任务后再继续。", "There are currently 20 or more active jobs. We recommend deleting jobs you no longer need before continuing.", "Saat ini ada 20 atau lebih job aktif. Sebaiknya hapus job yang tidak lagi diperlukan sebelum melanjutkan."],
-  ["当前任务包含自定义脚本，暂不支持在 UI 配置多个时间点", "This job has a custom script, so multiple time points cannot be configured in the UI yet.", "Job ini memiliki skrip khusus, sehingga beberapa titik waktu belum dapat dikonfigurasi melalui antarmuka."],
-  ["暂时无法刷新上游任务，请重试", "Could not refresh upstream jobs. Try again.", "Job upstream belum dapat dimuat ulang. Coba lagi."],
-  ["暂时无法确认最新依赖关系，请重试", "Unable to confirm the latest job dependencies. Try again.", "Dependensi job terbaru belum dapat dikonfirmasi. Coba lagi."],
-  ["所选上游任务已删除或过期，请重新选择或解除关联", "The selected upstream job was deleted or expired. Choose another job or unlink it.", "Job upstream yang dipilih telah dihapus atau kedaluwarsa. Pilih job lain atau lepaskan tautannya."],
-  ["所选上游任务已暂停，请重新选择或解除关联", "The selected upstream job is paused. Choose another job or unlink it.", "Job upstream yang dipilih sedang dijeda. Pilih job lain atau lepaskan tautannya."],
-  ["所选上游任务会形成循环，请重新选择或解除关联", "The selected upstream job would create a cycle. Choose another job or unlink it.", "Job upstream yang dipilih akan membentuk siklus. Pilih job lain atau lepaskan tautannya."],
-  ["创建自动任务失败：{{message}}", "Failed to create job: {{message}}", "Gagal membuat job: {{message}}"],
-  ["编辑自动任务失败：{{message}}", "Failed to edit job: {{message}}", "Gagal mengedit job: {{message}}"],
-  ["新建", "Create", "Buat"],
-  ["新建自动任务", "Create Job", "Buat Job"],
-  ["编辑自动任务", "Edit Job", "Edit Job"],
-  ["请输入自动任务名称", "Enter the job name", "Masukkan nama job"],
-  ["任务说明", "Instructions", "Instruksi"],
-  ["上游任务", "Upstream Job", "Job upstream"],
-  ["当前任务配置了多个上游，暂不支持在 LightVela 中编辑", "This job has multiple upstream jobs, which cannot currently be edited in LightVela", "Job ini memiliki beberapa job upstream dan belum dapat diedit di LightVela"],
-  ["上游任务已不可用", "Upstream job unavailable", "Job upstream tidak tersedia"],
-  ["可选，不配置代表任务一直生效", "Optional. If not configured, the job remains active indefinitely.", "Opsional. Jika tidak dikonfigurasi, job tetap aktif tanpa batas waktu."],
-  ["超出生效时间段时，任务不会执行", "Jobs will not run outside the effective time period.", "Job tidak akan berjalan di luar periode waktu aktif."],
-  ["如不选，智能体只会在后台执行任务，不发通知。", "If none are selected, the agent will only run the job in the background without sending notifications.", "Jika tidak ada yang dipilih, agent hanya akan menjalankan job di latar belakang tanpa mengirim notifikasi."],
-] as const;
+const NON_PRODUCT_COPY = new Set([
+  "多次使用计划任务或自主定时任务。",
+  "定时任务唤醒师",
+]);
 
-describe("Agent automations Job terminology", () => {
-  it.each(JOB_COPY)("uses Job terminology for %s", (source, expectedEnglish, expectedIndonesian) => {
-    const key = (zhToKey as Record<string, string>)[source];
+const SCHEDULED_TASK_COPY = Object.entries(zhToKey).filter(
+  ([source]) => source.includes("定时任务") && !NON_PRODUCT_COPY.has(source),
+);
 
-    expect(key).toBeTruthy();
-    expect((enUS as Record<string, string>)[key!]).toBe(expectedEnglish);
-    expect((idID as Record<string, string>)[key!]).toBe(expectedIndonesian);
+describe("Scheduled Tasks product terminology", () => {
+  it("uses Scheduled Task terminology in every affected English string", () => {
+    expect(SCHEDULED_TASK_COPY.length).toBeGreaterThan(40);
+
+    for (const [source, key] of SCHEDULED_TASK_COPY) {
+      const translation = (enUS as Record<string, string>)[key];
+
+      expect(translation, source).toMatch(/scheduled tasks?/i);
+      expect(translation, source).not.toMatch(/\bautomations?\b/i);
+    }
+  });
+
+  it("uses Tugas Terjadwal terminology in every affected Indonesian string", () => {
+    expect(SCHEDULED_TASK_COPY.length).toBeGreaterThan(40);
+
+    for (const [source, key] of SCHEDULED_TASK_COPY) {
+      const translation = (idID as Record<string, string>)[key];
+
+      expect(translation, source).toMatch(/tugas terjadwal/i);
+      expect(translation, source).not.toMatch(/\botomasi\b/i);
+    }
   });
 });

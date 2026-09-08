@@ -1972,7 +1972,7 @@ describe("runCronJobAsTest", () => {
   });
 
   it("falls back to a connected home channel when deliver is `origin` but the origin context is null", async () => {
-    // 复现线上真实故障：在网页「自动任务」面板/无会话上下文下创建的任务，
+    // 复现线上真实故障：在网页「定时任务」面板/无会话上下文下创建的任务，
     // deliver 存成 `origin` 但 origin 落库为 null。若原样保留 `origin`，临时
     // 任务投递会静默丢弃（任务照记 ok，用户啥也收不到）。修复后应兜底到该
     // bot 已连接的 home channel（此处 wecom）。
@@ -2241,7 +2241,7 @@ describe("sendHermesChatNotice", () => {
     await expect(client.sendHermesChatNotice(
       "bot-1",
       "wecom,qqbot:chat-1",
-      "LightVela 已添加新的自动任务。",
+      "LightVela 已添加新的定时任务。",
     )).resolves.toEqual({ sent: 1, failed: 1 });
 
     const commands = fetchMock.mock.calls.map((call) => {
@@ -2251,6 +2251,6 @@ describe("sendHermesChatNotice", () => {
     expect(commands).toHaveLength(2);
     expect(commands.some((command) => command.includes("--to 'wecom'"))).toBe(true);
     expect(commands.some((command) => command.includes("--to 'qqbot:chat-1'"))).toBe(true);
-    expect(commands.every((command) => command.includes("LightVela 已添加新的自动任务。"))).toBe(true);
+    expect(commands.every((command) => command.includes("LightVela 已添加新的定时任务。"))).toBe(true);
   });
 });

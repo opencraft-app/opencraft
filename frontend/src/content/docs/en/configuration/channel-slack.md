@@ -2,11 +2,11 @@
 
 ## Summary
 
-**The Slack channel connects with a bot token and an app token, which suits bringing your Hermes Agent into team channels, direct messages, and automated task notifications: create an app in the Slack app management console, configure its permissions, obtain both tokens, and paste them into the Channels section of the LightVela console. You need a Slack workspace where you can install apps and a configured model (or simply the monthly model credits included with your plan). Both tokens are sensitive credentials — never share them publicly. Once connected, the agent in Slack shares the same persona and long-term memory as your other channels.**
+**The Slack channel connects with a bot token and an app token, which suits bringing your Hermes Agent into team channels, direct messages, and scheduled task notifications: create an app in the Slack app management console, configure its permissions, obtain both tokens, and paste them into the Channels section of the LightVela console. You need a Slack workspace where you can install apps and a configured model (or simply the monthly model credits included with your plan). Both tokens are sensitive credentials — never share them publicly. Once connected, the agent in Slack shares the same persona and long-term memory as your other channels.**
 
 ---
 
-Slack uses a Bot Token and an App Token to connect Hermes Agent to team channels, direct messages, and automated task notifications.
+Slack uses a Bot Token and an App Token to connect Hermes Agent to team channels, direct messages, and scheduled task notifications.
 
 ## This page covers
 
@@ -224,7 +224,7 @@ After Slack is connected, the channel supports these messaging scenarios:
 | Receive text mentions in channels | ✅ Supported |
 | Receive direct-message text in App Home | ✅ Supported |
 | Reply with text in channels and direct messages | ✅ Supported |
-| Send proactive messages, such as automated task notifications | ✅ Supported |
+| Send proactive messages, such as scheduled task notifications | ✅ Supported |
 
 > ℹ️ **Actual task handling depends on the model**
 >
@@ -254,6 +254,6 @@ After Slack is connected, the channel supports these messaging scenarios:
 
 - [Configure Channel - Discord](./channel-discord.md) — Community operations and developer communities
 
-- [Configure Automations](./automation.md) — Send scheduled reminders and task results to Slack
+- [Configure Scheduled Tasks](./automation.md) — Send scheduled reminders and task results to Slack
 
 - [Configure Skills](./skill.md) — Extend Hermes Agent capabilities
