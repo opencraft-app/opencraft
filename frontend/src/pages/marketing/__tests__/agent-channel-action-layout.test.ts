@@ -109,7 +109,7 @@ describe("channel card action button radius", () => {
         "border-radius: 999px;",
       );
       expect(getRuleBody(standardPanelStyles, selector)).toContain(
-        "min-height: 40px;",
+        "min-height: 38px;",
       );
     }
   });
