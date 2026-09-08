@@ -68,6 +68,11 @@ type EnableTwoFARequest struct {
 type VerifyRequest struct {
 	Method string `json:"method"`
 	Code   string `json:"code,omitempty"`
+	Scope  string `json:"scope"`
+}
+
+type securityProofData struct {
+	ProofToken string `json:"proof_token"`
 }
 
 type UpdateOptionRequest struct {
@@ -532,42 +537,51 @@ func (c *Client) Enable2FA(ctx context.Context, userID int, accessToken string, 
 	return nil
 }
 
-func (c *Client) Verify2FA(ctx context.Context, auth AdminAuth, code string) error {
+func (c *Client) VerifyChannelKeyRead2FA(ctx context.Context, auth AdminAuth, code string) (string, error) {
 	if auth.UserID <= 0 {
-		return fmt.Errorf("new-api user id is required")
+		return "", fmt.Errorf("new-api user id is required")
 	}
 	if strings.TrimSpace(code) == "" {
-		return fmt.Errorf("new-api 2fa code is required")
+		return "", fmt.Errorf("new-api 2fa code is required")
 	}
-	var resp apiResponse[json.RawMessage]
-	if err := c.do(ctx, http.MethodPost, "/api/verify", adminHeaders(auth), VerifyRequest{Method: "2fa", Code: code}, &resp); err != nil {
-		return err
+	var resp apiResponse[securityProofData]
+	if err := c.do(ctx, http.MethodPost, "/api/verify", adminHeaders(auth), VerifyRequest{Method: "2fa", Code: code, Scope: "channel.key.read"}, &resp); err != nil {
+		return "", err
 	}
 	if !resp.Success {
-		return fmt.Errorf("new-api secure verification failed: %s", resp.Message)
+		return "", fmt.Errorf("new-api secure verification failed: %s", resp.Message)
 	}
-	return nil
+	if strings.TrimSpace(resp.Data.ProofToken) == "" {
+		return "", fmt.Errorf("new-api secure verification returned empty proof token")
+	}
+	return resp.Data.ProofToken, nil
 }
 
 func (c *Client) GetChannelKey(ctx context.Context, auth AdminAuth, channelID int, code string) (string, error) {
 	if channelID <= 0 {
 		return "", fmt.Errorf("new-api channel id is required")
 	}
-	if err := c.Verify2FA(ctx, auth, code); err != nil {
+	proofToken, err := c.VerifyChannelKeyRead2FA(ctx, auth, code)
+	if err != nil {
 		return "", err
 	}
-	return c.GetVerifiedChannelKey(ctx, auth, channelID)
+	return c.GetVerifiedChannelKey(ctx, auth, channelID, proofToken)
 }
 
-// GetVerifiedChannelKey reuses an already verified admin session. Callers that
-// export many channels should verify once and fetch every key through this API.
-func (c *Client) GetVerifiedChannelKey(ctx context.Context, auth AdminAuth, channelID int) (string, error) {
+// GetVerifiedChannelKey reuses a scoped security proof. Callers that export many
+// channels should verify once and fetch every key through this API.
+func (c *Client) GetVerifiedChannelKey(ctx context.Context, auth AdminAuth, channelID int, proofToken string) (string, error) {
 	if channelID <= 0 {
 		return "", fmt.Errorf("new-api channel id is required")
 	}
+	if strings.TrimSpace(proofToken) == "" {
+		return "", fmt.Errorf("new-api channel key security proof is required")
+	}
 	var resp apiResponse[tokenKeyData]
 	path := fmt.Sprintf("/api/channel/%d/key", channelID)
-	if err := c.do(ctx, http.MethodPost, path, adminHeaders(auth), nil, &resp); err != nil {
+	headers := adminHeaders(auth)
+	headers["X-Security-Proof"] = proofToken
+	if err := c.do(ctx, http.MethodPost, path, headers, nil, &resp); err != nil {
 		return "", err
 	}
 	if !resp.Success {

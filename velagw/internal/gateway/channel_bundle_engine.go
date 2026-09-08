@@ -242,6 +242,7 @@ func platformChannelSnapshot(channels []newapi.Channel) []newapi.Channel {
 func (s *Service) fetchChannelSnapshotKeys(ctx context.Context, client *newapi.Client, auth newapi.AdminAuth, set Set, channels []newapi.Channel, includeDisabled bool) (map[int]string, error) {
 	keys := make(map[int]string, len(channels))
 	requiresSecureFetch := false
+	securityProof := ""
 	for _, channel := range channels {
 		if !includeDisabled && channel.Status != newapi.ChannelStatusEnabled {
 			continue
@@ -259,7 +260,8 @@ func (s *Service) fetchChannelSnapshotKeys(ctx context.Context, client *newapi.C
 		if err != nil {
 			return nil, err
 		}
-		if err := client.Verify2FA(ctx, auth, code); err != nil {
+		securityProof, err = client.VerifyChannelKeyRead2FA(ctx, auth, code)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -270,7 +272,7 @@ func (s *Service) fetchChannelSnapshotKeys(ctx context.Context, client *newapi.C
 		key := channel.Key
 		if key == "" && channel.ID > 0 {
 			var err error
-			key, err = client.GetVerifiedChannelKey(ctx, auth, channel.ID)
+			key, err = client.GetVerifiedChannelKey(ctx, auth, channel.ID, securityProof)
 			if err != nil {
 				return nil, fmt.Errorf("fetch channel key for %q failed: %w", channel.Name, err)
 			}

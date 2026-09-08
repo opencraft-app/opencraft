@@ -1298,8 +1298,20 @@ func TestAdminChannelBundlesImportFromManagedSet(t *testing.T) {
 				},
 			})
 		case "POST /api/verify":
-			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
+			var req struct {
+				Scope string `json:"scope"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			if req.Scope != "channel.key.read" {
+				t.Fatalf("verify scope = %q", req.Scope)
+			}
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "http-proof"}})
 		case "POST /api/channel/17/key":
+			if r.Header.Get("X-Security-Proof") != "http-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
+			}
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-provider"}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
