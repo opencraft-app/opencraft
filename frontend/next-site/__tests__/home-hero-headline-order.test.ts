@@ -59,7 +59,7 @@ describe("homepage hero headline order", () => {
 
     const rotator = document.querySelector<HTMLElement>("#hero-rotator")!;
     const wrap = document.querySelector<HTMLElement>(".hero__rotator-wrap")!;
-    const suffix = document.querySelector<HTMLElement>(".hero__suffix")!;
+    const suffix = document.querySelector<HTMLElement>(".hero__suffix");
     const mainChars = Array.from(
       document.querySelectorAll<HTMLElement>(".hero__line--main .hero__char"),
     );
@@ -80,7 +80,8 @@ describe("homepage hero headline order", () => {
     expect(revealDelay).toBe(
       readDelay(prefixChars.at(-1)!) + 500 + 80,
     );
-    expect(suffix.style.getPropertyValue("--rotator-delay")).toBe(
+    expect(suffix).not.toBeNull();
+    expect(suffix?.style.getPropertyValue("--rotator-delay")).toBe(
       wrap.style.getPropertyValue("--rotator-delay"),
     );
 
