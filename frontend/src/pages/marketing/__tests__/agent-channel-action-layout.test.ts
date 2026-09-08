@@ -74,3 +74,17 @@ describe("international connected channel card actions", () => {
     expect(connectedButtonRule).toContain("min-width: 0;");
   });
 });
+
+describe("channel card action button radius", () => {
+  it("uses the larger shared radius token for every card action", () => {
+    for (const selector of [
+      ".lh-std-channel-panel__guide-btn",
+      ".lh-std-channel-panel__card-unbind",
+      ".lh-std-channel-panel__connect-btn",
+    ]) {
+      expect(getRuleBody(standardPanelStyles, selector)).toContain(
+        "border-radius: var(--lh-std-radius-lg);",
+      );
+    }
+  });
+});
