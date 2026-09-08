@@ -53,7 +53,79 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
-  it("shows the newest September instance storage update in every visible locale", async () => {
+  it("announces zero-token notification and script tasks in every visible locale", async () => {
+    const scheduledTaskCopies = [
+      {
+        locale: "zh-CN",
+        month: "2026 年 9 月",
+        title: "定时任务新增通知任务和脚本任务",
+        description:
+          "现在可以创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
+      },
+      {
+        locale: "zh-Hant",
+        month: "2026 年 9 月",
+        title: "定時任務新增通知任務和腳本任務",
+        description:
+          "現在可以創建通知任務和腳本任務：按原文發送通知，或按計劃運行預設腳本。兩種任務均不調用模型，模型 Token 消耗為 0。",
+      },
+      {
+        locale: "en-US",
+        month: "September 2026",
+        title: "Scheduled Tasks Now Support Notification and Script Tasks",
+        description:
+          "Create Notification Tasks to send text exactly as written or Script Tasks to run preset scripts on a schedule. Neither task type calls a model, so model token usage is zero.",
+      },
+      {
+        locale: "id-ID",
+        month: "September 2026",
+        title: "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip",
+        description:
+          "Buat Tugas Notifikasi untuk mengirim teks persis seperti yang ditulis, atau Tugas Skrip untuk menjalankan skrip siap pakai sesuai jadwal. Keduanya tidak memanggil model, sehingga penggunaan token model adalah nol.",
+      },
+      {
+        locale: "es",
+        month: "Septiembre de 2026",
+        title: "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script",
+        description:
+          "Crea Tareas de Notificación para enviar texto exactamente como está escrito o Tareas de Script para ejecutar scripts predefinidos según una programación. Ninguno de los dos tipos llama a un modelo, por lo que el consumo de tokens del modelo es cero.",
+      },
+      {
+        locale: "ja-JP",
+        month: "2026年9月",
+        title: "スケジュールタスクに通知タスクとスクリプトタスクを追加",
+        description:
+          "通知タスクでは入力したテキストをそのまま送信し、スクリプトタスクではプリセットスクリプトをスケジュール実行できます。どちらもモデルを呼び出さないため、モデルのトークン消費はゼロです。",
+      },
+      {
+        locale: "ko-KR",
+        month: "2026년 9월",
+        title: "예약 작업에 알림 작업 및 스크립트 작업 추가",
+        description:
+          "알림 작업은 작성한 텍스트를 그대로 전송하고, 스크립트 작업은 사전 설정된 스크립트를 일정에 따라 실행합니다. 두 유형 모두 모델을 호출하지 않으므로 모델 토큰 사용량은 0입니다.",
+      },
+    ] as const;
+
+    for (const copy of scheduledTaskCopies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      const septemberSection = screen.getByText(copy.month).closest("section");
+      expect(septemberSection).not.toBeNull();
+      const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
+      expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(heading.closest("article")?.querySelector("img")).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("shows the September instance storage update in every visible locale", async () => {
     const instanceStorageCopies = [
       {
         locale: "zh-CN",
@@ -125,7 +197,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const headings = within(septemberSection!).getAllByRole("heading");
-      expect(headings[0]).toHaveTextContent(copy.title);
+      expect(headings[1]).toHaveTextContent(copy.title);
       expect(within(septemberSection!).getByRole("heading", { name: copy.title })).toBeInTheDocument();
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute("src", expect.stringContaining(copy.image));
@@ -532,6 +604,7 @@ describe("global changelog skill package entry", () => {
       ),
     ).toBeInTheDocument();
     expect(enTestRunHeading.closest("article")?.querySelector("img")).toBeNull();
+    expect(document.body).not.toHaveTextContent("Automations");
 
     cleanup();
     await i18n.changeLanguage("zh-Hant");

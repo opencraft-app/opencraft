@@ -325,6 +325,12 @@ function ChangelogContent() {
     desc: t("云存储页面现在会显示 Agent 实例的总容量、已用容量和可用容量，并将 Agent 运行环境、系统预留空间和云存储文件计入使用量计算。"),
     visual: "instanceStorage",
   };
+  const zeroTokenScheduledTasksEntry: ChangelogEntry = {
+    id: "zero-token-scheduled-tasks",
+    title: t("定时任务新增通知任务和脚本任务"),
+    desc: t("现在可以创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
+    visual: "none",
+  };
 
   const changelogGroups: ChangelogMonthGroup[] = [
     ...(isGlobal
@@ -333,6 +339,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: t("2026 年 9 月"),
             entries: [
+              zeroTokenScheduledTasksEntry,
               instanceStorageEntry,
               {
                 id: "workbench",
@@ -416,6 +423,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: t("2026 年 9 月"),
             entries: [
+              zeroTokenScheduledTasksEntry,
               instanceStorageEntry,
               {
                 id: "workbench",
