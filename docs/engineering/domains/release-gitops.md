@@ -26,6 +26,10 @@ master 源码
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - Secret 值不进 Git、日志、渲染输出或文档。
 - DB migration/seed 不塞进应用启动；使用受控 GitOps job 与明确回滚。
+- migration version 一旦被任一长期环境记入 `schema_migrations` 即视为已占用；后续把该 SQL
+  合并进较早版本或从源码删除，都不能再次复用这个编号。新 schema 变更使用未占用的新版本，
+  版本号允许不连续；环境已紧急补过同一 DDL 时，forward migration 应幂等收敛并正常推进版本，
+  不直接删除或伪造迁移记账。
 - release plan 检查 merge commit 的 source diff 时，必须比较 merge 结果与第一父提交；不能依赖
   `git diff-tree <merge-commit>` 的默认输出，否则文件变更可能被静默识别为空，导致依赖 source diff
   的 migration 与依赖门禁漏报。

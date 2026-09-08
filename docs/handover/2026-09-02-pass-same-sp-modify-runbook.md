@@ -93,7 +93,7 @@ WHERE bundle_id IN (
 
 | 服务 | migration | 内容 |
 |---|---|---|
-| ctl | `000029_add_pass_modify_fields` | `pass` 增 `modify_flow_id`、`modify_target_bundle_id` |
+| ctl | `000030_add_pass_modify_fields` | `pass` 增 `modify_flow_id`、`modify_target_bundle_id`；避开历史库已占用的 version 29 |
 | sandbox | `000009_create_modify_operations` | 新建 `modify_operations` 变配台账表 |
 | sandbox | `000010_enforce_single_running_modify_operation` | fail-closed 检查历史重复 running 台账，并保证每实例最多一份 running 台账 |
 | trade | `000009_add_modify_support` | `trade_order.order_type` / `trade_flow.flow_type` 注释补 modify 取值（无结构变更） |
