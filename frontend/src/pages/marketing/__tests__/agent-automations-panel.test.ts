@@ -2515,14 +2515,15 @@ describe("zero-token automation form", () => {
       name: new RegExp(localizedText("智能任务", "AI-powered")),
     });
     expect(agentTaskButton).toHaveClass("border-blue-300", "bg-blue-50");
-    expect(agentTaskButton.parentElement).toHaveClass("items-start");
+    expect(agentTaskButton.parentElement).toHaveClass("items-stretch");
+    expect(agentTaskButton).toHaveClass("flex", "flex-col", "justify-start");
     expect(screen.getByText(localizedText(
       "由 AI 理解你的需求并自动完成任务",
       "AI understands your needs and completes tasks automatically",
     ))).not.toHaveClass("min-h-8");
     expect(screen.getByText(localizedText(
       "按原文发送通知，不调用模型",
-      "Sends notifications as-is; no model",
+      "Sends notifications as written, without calling a model",
     ))).not.toHaveClass("min-h-8");
     expect(screen.getByText(localizedText(
       "运行预设脚本，适合开发者",

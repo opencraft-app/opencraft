@@ -4197,7 +4197,7 @@ export function AutomationFormModal({
         {canSelectZeroToken ? (
           <fieldset className="mt-4">
             <legend className="text-sm font-medium text-black/80">{t("任务类型")}</legend>
-            <div className="mt-2 grid grid-cols-1 items-start gap-2 sm:grid-cols-3">
+            <div className="mt-2 grid grid-cols-1 items-stretch gap-2 sm:grid-cols-3">
               {([
                 ["agent", t("智能任务"), t("由 AI 理解你的需求并自动完成任务"), t("AI 驱动"), "bg-indigo-600 text-white"],
                 ["fixed_notification", t("通知任务"), t("按原文发送通知，不调用模型"), "0 Token", "bg-blue-50 text-blue-700"],
@@ -4217,7 +4217,7 @@ export function AutomationFormModal({
                     setZeroTokenKind(value);
                     setScriptSafetyConfirmed(false);
                   }}
-                  className={`rounded-md border px-3 py-2 text-left transition ${selectedCreateTaskKind === value
+                  className={`flex flex-col justify-start rounded-md border px-3 py-2 text-left transition ${selectedCreateTaskKind === value
                     ? "border-blue-300 bg-blue-50"
                     : "border-black/10 hover:border-black/20"}`}
                 >

@@ -167,7 +167,7 @@
   "k_0ef3d6bd": "What health habit do you want to build?",
   "k_0f3415c4": "You can now connect your Hermes Agent to DingTalk and chat with your cloud-based intelligent companion directly in DingTalk.",
   "k_0f4bfb20": "Paste an idea, product update, interview notes, or an existing long-form draft.",
-  "k_0f72642a": "Sends notifications as-is; no model",
+  "k_0f72642a": "Sends notifications as written, without calling a model",
   "k_0f8b206b": "Copper → Silver → Gold → Diamond → Master",
   "k_0f8e143e": "Daily AI news summary",
   "k_0fa491ef": "Deleting will remove the current model provider configuration. API keys saved by LightVela will also be removed. Keys stored in environment variables will not be deleted.",

@@ -90,7 +90,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(within(dialog).getByText("Job type")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: /AI-powered/ })).toBeInTheDocument();
     expect(screen.getByText("AI understands your needs and completes tasks automatically")).not.toHaveClass("min-h-8");
-    expect(screen.getByText("Sends notifications as-is; no model")).not.toHaveClass("min-h-8");
+    expect(screen.getByText("Sends notifications as written, without calling a model")).not.toHaveClass("min-h-8");
     expect(screen.getByText("Run preset scripts, ideal for developers")).not.toHaveClass("min-h-8");
     expect(screen.queryByText("No model-token usage")).not.toBeInTheDocument();
     expect(within(dialog).getAllByText("AI-powered", { selector: "span" })).toHaveLength(2);
