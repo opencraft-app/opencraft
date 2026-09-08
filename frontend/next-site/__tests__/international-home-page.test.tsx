@@ -453,13 +453,13 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     } as const;
     const expectedAlwaysOnCopy = {
-      "en-US": "I run in the cloud, so your computer does not need to stay on. Each time you correct me, I save it as a new rule and follow your preference next time.",
-      "zh-SG": "我在云端，不用你电脑开着。你每纠正我一次，我就把它记成新规则，下次直接按你的习惯做。",
-      "zh-Hant": "我在雲端，不用你電腦開著。你每糾正我一次，我就把它記成新規則，下次直接按你的習慣做。",
-      "id-ID": "di cloud dan tersedia 24/7",
-      es: "en la nube y estoy disponible 24/7",
-      "ja-JP": "クラウドで24時間365日稼働する",
-      "ko-KR": "클라우드에서 24시간 연중무휴로 실행",
+      "en-US": "I stay available 24/7 in the cloud, so your computer can stay off. As we work together, I learn your preferences and adapt to your feedback.",
+      "zh-SG": "我在云端 7×24 小时在线，不用你一直开着电脑。协作越久，我越懂你的偏好，也会根据反馈持续调整。",
+      "zh-Hant": "我在雲端 7×24 小時在線，不用你一直開著電腦。協作越久，我越懂你的偏好，也會根據回饋持續調整。",
+      "id-ID": "Saya tersedia 24/7 di cloud, jadi komputer Anda tidak perlu terus menyala. Seiring kita bekerja bersama, saya memahami preferensi Anda dan menyesuaikan diri dengan masukan.",
+      es: "Estoy disponible 24/7 en la nube, así que no necesitas mantener tu ordenador encendido. Al trabajar juntos, comprendo tus preferencias y me adapto a tus comentarios.",
+      "ja-JP": "私はクラウドで24時間365日稼働するため、パソコンを起動したままにする必要はありません。協力するほど好みを理解し、フィードバックに合わせて調整します。",
+      "ko-KR": "저는 클라우드에서 24시간 연중무휴로 작동하므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 함께할수록 선호를 더 잘 이해하고 피드백에 맞춰 조정합니다.",
     } as const;
     const expectedCardAssets = {
       "en-US": ["wcard-apps-en.png", "wcard-folder-en.png", "wcard-hub-v3-en.png"],
@@ -791,14 +791,14 @@ describe("international v2 homepage artifact", () => {
   });
 
   it("keeps the always-on card localized across homepage locales", () => {
-    const expectedCopy = {
-      "en-US": "I run in the cloud, so your computer does not need to stay on.",
-      "zh-SG": "我在云端，不用你电脑开着。",
-      "zh-Hant": "我在雲端，不用你電腦開著。",
-      "id-ID": "Saya berjalan di cloud dan tersedia 24/7",
-      es: "Funciono en la nube y estoy disponible 24/7",
-      "ja-JP": "私はクラウドで24時間365日稼働する",
-      "ko-KR": "저는 클라우드에서 24시간 연중무휴로 실행",
+    const expectedEmphasis = {
+      "en-US": ["available 24/7 in the cloud", "adapt to your feedback"],
+      "zh-SG": ["云端 7×24 小时在线", "根据反馈持续调整"],
+      "zh-Hant": ["雲端 7×24 小時在線", "根據回饋持續調整"],
+      "id-ID": ["tersedia 24/7 di cloud", "menyesuaikan diri dengan masukan"],
+      es: ["disponible 24/7 en la nube", "me adapto a tus comentarios"],
+      "ja-JP": ["クラウドで24時間365日稼働する", "フィードバックに合わせて調整します"],
+      "ko-KR": ["클라우드에서 24시간 연중무휴로 작동", "피드백에 맞춰 조정합니다"],
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -806,7 +806,11 @@ describe("international v2 homepage artifact", () => {
         readFileSync(path.join(homeRoot, `index-fragment.${locale}.html`), "utf8"),
         "text/html",
       );
-      expect(document.querySelectorAll(".wcard__body p")[2]?.textContent).toContain(expectedCopy[locale]);
+      expect(
+        Array.from(document.querySelectorAll(".wcard__body p")[2]?.querySelectorAll("b") ?? [], (element) =>
+          element.textContent?.trim(),
+        ),
+      ).toEqual(expectedEmphasis[locale]);
     }
   });
 
