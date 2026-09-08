@@ -2,7 +2,7 @@
   "LightVela 支持设置自动任务": "LightVela ahora admite automatizaciones",
   "自动任务": "Automatizaciones",
   "自动任务支持调用技能": "Las automatizaciones ahora admiten invocar Skills",
-  "自动任务示例模板": "Plantillas de Jobs",
+  "任务模板": "Plantillas de tareas",
   "LightVela 自动任务测试消息：通知通道已连接。": "Mensaje de prueba de automatizaciones de LightVela: el canal de notificaciones está conectado.",
   "最近执行": "Ejecuciones recientes",
   "删除后将解除上游绑定并继续独立执行": "Al eliminarlo, se desvinculará del Job upstream y continuará ejecutándose de forma independiente",

@@ -13,6 +13,7 @@ import { isCN } from "@/lib/region";
 export interface RuntimeFeatureFlags {
   paidBillingEnabled: boolean;
   realnamePhoneVerificationEnabled: boolean;
+  zeroTokenAutomationsEnabled: boolean;
 }
 
 export interface RuntimeConfig {
@@ -41,15 +42,24 @@ const readBuildTimePaidBillingRaw = (): boolean | null =>
 
 const readBuildTimePaidBillingDefault = (): boolean => readBuildTimePaidBillingRaw() ?? true;
 
+const readBuildTimeZeroTokenAutomationsRaw = (): boolean | null =>
+  readBooleanLike(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_ZERO_TOKEN_AUTOMATIONS_ENABLED : undefined) ??
+  readBooleanLike(import.meta.env?.VITE_ZERO_TOKEN_AUTOMATIONS_ENABLED);
+
+const readBuildTimeZeroTokenAutomationsDefault = (): boolean =>
+  readBuildTimeZeroTokenAutomationsRaw() ?? false;
+
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
     paidBillingEnabled: readBuildTimePaidBillingDefault(),
     realnamePhoneVerificationEnabled: true,
+    zeroTokenAutomationsEnabled: readBuildTimeZeroTokenAutomationsDefault(),
   },
 };
 
 const PAID_BILLING_OVERRIDE_STORAGE_KEY = "lightclaw:features.paidBillingEnabled";
 const REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY = "lightclaw:features.realnamePhoneVerificationEnabled";
+const ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY = "lightclaw:features.zeroTokenAutomationsEnabled";
 
 const RuntimeConfigContext = createContext<RuntimeConfigState>({
   config: DEFAULT_RUNTIME_CONFIG,
@@ -72,6 +82,8 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
         (features as { paidBillingEnabled?: unknown }).paidBillingEnabled === true,
       realnamePhoneVerificationEnabled:
         (features as { realnamePhoneVerificationEnabled?: unknown }).realnamePhoneVerificationEnabled === true,
+      zeroTokenAutomationsEnabled:
+        (features as { zeroTokenAutomationsEnabled?: unknown }).zeroTokenAutomationsEnabled === true,
     },
   };
 };
@@ -90,7 +102,10 @@ const readBooleanOverride = (storageKey: string): boolean | null => {
 const applyRuntimeOverrides = (config: RuntimeConfig): RuntimeConfig => {
   const paidBillingOverride = readBooleanOverride(PAID_BILLING_OVERRIDE_STORAGE_KEY);
   const realnamePhoneVerificationOverride = readBooleanOverride(REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY);
-  if (paidBillingOverride == null && realnamePhoneVerificationOverride == null) return config;
+  const zeroTokenAutomationsOverride = readBooleanOverride(ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY);
+  if (paidBillingOverride == null
+    && realnamePhoneVerificationOverride == null
+    && zeroTokenAutomationsOverride == null) return config;
   return {
     ...config,
     features: {
@@ -98,6 +113,8 @@ const applyRuntimeOverrides = (config: RuntimeConfig): RuntimeConfig => {
       paidBillingEnabled: paidBillingOverride ?? config.features.paidBillingEnabled,
       realnamePhoneVerificationEnabled:
         realnamePhoneVerificationOverride ?? config.features.realnamePhoneVerificationEnabled,
+      zeroTokenAutomationsEnabled:
+        zeroTokenAutomationsOverride === false ? false : config.features.zeroTokenAutomationsEnabled,
     },
   };
 };
@@ -107,9 +124,18 @@ const shouldSkipRemoteRuntimeConfig = (): boolean => {
   return isLightVelaEdgeOnePreviewHostname(window.location.hostname);
 };
 
+const getEdgeOnePreviewRuntimeConfig = (): RuntimeConfig =>
+  applyRuntimeOverrides({
+    ...DEFAULT_RUNTIME_CONFIG,
+    features: {
+      ...DEFAULT_RUNTIME_CONFIG.features,
+      zeroTokenAutomationsEnabled: readBuildTimeZeroTokenAutomationsRaw() ?? true,
+    },
+  });
+
 const fetchRuntimeConfig = async (): Promise<RuntimeConfig> => {
   if (shouldSkipRemoteRuntimeConfig()) {
-    return applyRuntimeOverrides(DEFAULT_RUNTIME_CONFIG);
+    return getEdgeOnePreviewRuntimeConfig();
   }
   const baseUrl = resolveConfiguredAuthApiBaseUrl();
   if (baseUrl === null) {
@@ -181,11 +207,18 @@ export const useRealnamePhoneVerificationEnabled = (): boolean => {
   return resolveRealnamePhoneVerificationEnabled(config, isCN);
 };
 
+export const useZeroTokenAutomationsEnabled = (): boolean => {
+  const { config } = useRuntimeConfig();
+  return config.features.zeroTokenAutomationsEnabled === true;
+};
+
 export const __runtimeConfigTestHooks = {
   DEFAULT_RUNTIME_CONFIG,
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
   REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY,
+  ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
   applyRuntimeOverrides,
+  getEdgeOnePreviewRuntimeConfig,
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,

@@ -14,14 +14,18 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, ArrowRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronUp, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, ArrowRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/i18n/t";
+import { useZeroTokenAutomationsEnabled } from "@/contexts/runtime-config-context";
 import { parseLocaleCode } from "@/i18n/locales.config";
 import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
+import { cn } from "@/lib/utils";
 import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import {
   listInstalledSkillSlugs,
@@ -51,16 +55,20 @@ import {
   createCronJobWithContextAndScriptRollback,
   createCronJobWithScriptRollback,
   createEffectiveWindowScriptName,
+  createZeroTokenScriptName,
   detectCronContextFromCapability,
   editCronJob,
   editCronJobWithContext,
   execCommand,
   listCronJobs,
   listRecentCronRuns,
+  isLightVelaZeroTokenScriptName,
   isTestRunMarkerName,
   pauseCronJob,
   writeEffectiveWindowScript,
+  writeZeroTokenScript,
   removeCronJob,
+  removeManagedCronScriptIfUnreferenced,
   removeCronJobWithDependentRollback,
   resumeCronJob,
   sendHermesChatNotice,
@@ -71,6 +79,9 @@ import {
   type CronContextCapability,
   type CronJob,
   type CronLightVelaScriptConfig,
+  type CronZeroTokenScriptConfig,
+  type CronScriptLanguage,
+  type CronZeroTokenKind,
   type CronRunRecord,
 } from "@/lib/hermes-cron-client";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -87,11 +98,25 @@ const MODAL_COMPACT_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, li
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
 const AUTOMATION_PROMPT_MAX_LENGTH = 1000;
+const FIXED_NOTIFICATION_MAX_LENGTH = 1000;
+const AUTOMATION_SCRIPT_MAX_LENGTH = 20_000;
+const PYTHON_SCRIPT_PLACEHOLDER = [
+  "import shutil",
+  'usage = shutil.disk_usage("/")',
+  'if usage.used / usage.total > 0.8: print("Disk usage exceeds 80%")',
+].join("\n");
+const BASH_SCRIPT_PLACEHOLDER = [
+  "usage=$(df / | awk 'NR==2 {print $5}')",
+  "threshold=80",
+  '[ "${usage%%%}" -gt "$threshold" ] && echo "Disk usage is high: $usage"',
+].join("\n");
 const CHAT_ID_MAX_LENGTH = 60;
 const AUTOMATION_FORM_TEST_JOB_ID = "automation-form-test-run";
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
 type AutomationTestState = "idle" | "running" | "ok" | "fail";
+type ActiveTaskFilter = "all" | "agent" | CronZeroTokenKind;
+type CreateTaskKind = "agent" | CronZeroTokenKind;
 /**
  * 自动任务展示所用的 locale，直接复用注册表类型。
  *
@@ -660,6 +685,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
   const [activeView, setActiveView] = useState<"created" | "ended" | "recent">("created");
+  const [activeTaskFilter, setActiveTaskFilter] = useState<ActiveTaskFilter>("all");
   const [creating, setCreating] = useState(false);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
   const [scenarioInstallPack, setScenarioInstallPack] = useState<ScenarioTaskPack | null>(null);
@@ -700,7 +726,19 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     () => jobs.filter(isCronJobEnded),
     [jobs],
   );
-  const displayedJobs = activeView === "ended" ? endedJobs : activeJobs;
+  const filteredActiveJobs = useMemo(
+    () => activeJobs.filter((job) => {
+      if (activeTaskFilter === "all") return true;
+      if (activeTaskFilter === "agent") {
+        return job.inference_config?.no_agent !== true && !job.zero_token_config;
+      }
+      return job.zero_token_config?.kind === activeTaskFilter;
+    }),
+    [activeJobs, activeTaskFilter],
+  );
+  const displayedJobs = activeView === "ended"
+    ? endedJobs
+    : filteredActiveJobs;
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const jobLimitReached = activeJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getUnifiedAutomationTemplates(t, displayLocale), [displayLocale, t]);
@@ -1023,10 +1061,21 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       else if (action === "resume") await resumeCronJob(botId, job.id);
       else if (dependents.length > 0) await removeCronJobWithDependentRollback(botId, job.id, dependents);
       else await removeCronJob(botId, job.id);
+      let scriptCleanupFailed = false;
+      if (action === "remove") {
+        try {
+          await removeManagedCronScriptIfUnreferenced(botId, job, jobs);
+        } catch {
+          scriptCleanupFailed = true;
+        }
+      }
       await refreshAll();
       if (action === "remove") {
         setDeleteError(null);
         setConfirmDeleteJob(null);
+        if (scriptCleanupFailed) {
+          showError(t("任务已删除，但关联脚本未能清理；不会影响其他任务，请稍后重试。"));
+        }
       }
     } catch (err) {
       if (action === "remove" && dependents.length > 0) {
@@ -1043,7 +1092,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     } finally {
       setBusyId(null);
     }
-  }, [botId, refreshAll, showError, t]);
+  }, [botId, jobs, refreshAll, showError, t]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!botId || !confirmDeleteJob) return;
@@ -1179,7 +1228,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         />
       )}
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-lg bg-black/[0.04] p-1">
           <button
             type="button"
@@ -1206,16 +1255,42 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             {t("最近执行")}
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleManualRefresh()}
-          disabled={loadingJobs || loadingRecentRuns || manualRefreshing}
-          className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
-          aria-label={t("刷新")}
-          title={t("刷新")}
-        >
-          <RefreshCw className={`h-4 w-4 ${manualRefreshing ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          {activeView === "created" && (
+            <Select
+              value={activeTaskFilter}
+              onValueChange={(value) => setActiveTaskFilter(value as ActiveTaskFilter)}
+            >
+              <SelectTrigger
+                aria-label={t("任务类型")}
+                className="h-8 w-auto justify-start gap-1.5 rounded-md border-black/10 bg-white px-2.5 py-1.5 text-xs font-medium text-black/65 shadow-none"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                position="popper"
+                sideOffset={6}
+                align="end"
+                className="min-w-[120px] rounded-md border-black/10 bg-white shadow-lg"
+              >
+                <SelectItem value="all" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("全部")}</SelectItem>
+                <SelectItem value="agent" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("智能任务")}</SelectItem>
+                <SelectItem value="fixed_notification" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("通知任务")}</SelectItem>
+                <SelectItem value="script" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("脚本任务")}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleManualRefresh()}
+            disabled={loadingJobs || loadingRecentRuns || manualRefreshing}
+            className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
+            aria-label={t("刷新")}
+            title={t("刷新")}
+          >
+            <RefreshCw className={`size-4 ${manualRefreshing ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
 
       <div className={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? "rounded-xl p-4" : ""} style={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? PANEL_CARD_STYLE : undefined}>
@@ -1253,6 +1328,8 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             <Clock className="mb-2 h-6 w-6 opacity-50" />
             {activeView === "ended" ? (
               <p>{t("暂无已结束任务")}</p>
+            ) : activeTaskFilter !== "all" ? (
+              <p>{t("暂无符合条件的任务")}</p>
             ) : (
               <p>
                 {t("暂无自动任务，")}
@@ -1481,6 +1558,14 @@ export function RecentCronRunsPanel({
           <div className="divide-y divide-black/[0.06] px-4">
             {runs.map((run) => {
               const presentation = getScenarioRunPresentation(run, displayLocale);
+              const taskTypeLabel = run.zero_token_config
+                ? run.zero_token_config.kind === "fixed_notification"
+                  ? t("0 Token · 固定通知")
+                  : t("0 Token · 脚本任务")
+                : t("智能任务");
+              const summary = run.zero_token_config?.kind === "fixed_notification"
+                ? run.zero_token_config.content || ""
+                : presentation.prompt;
               return (
                 <div key={run.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3">
                   <div className="min-w-0">
@@ -1498,9 +1583,9 @@ export function RecentCronRunsPanel({
                         <Eye className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    {presentation.prompt && (
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-black/55" title={presentation.prompt}>
-                        {presentation.prompt}
+                    {summary && (
+                      <p className="mt-1 line-clamp-2 text-pretty text-xs leading-relaxed text-black/55" title={summary}>
+                        {summary}
                       </p>
                     )}
                     {run.skip_reason === "model_changed" && (
@@ -1510,6 +1595,12 @@ export function RecentCronRunsPanel({
                     )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${run.zero_token_config
+                      ? "bg-emerald-500/10 text-emerald-800"
+                      : "bg-sky-500/10 text-sky-800"}`}
+                    >
+                      {taskTypeLabel}
+                    </span>
                     <button
                       type="button"
                       onClick={() => setViewingRun(run)}
@@ -1566,7 +1657,10 @@ function runToCronJob(run: CronRunRecord): CronJob {
     effective_window: null,
     lightvela_schedule: null,
     context_from: null,
-    inference_config: null,
+    inference_config: run.zero_token_config
+      ? { provider: null, model: null, no_agent: true }
+      : null,
+    zero_token_config: run.zero_token_config ?? null,
   };
 }
 
@@ -1584,6 +1678,7 @@ function RecentCronRunDetailModal({
   const t = useT();
   const { i18n } = useTranslation();
   const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
+  const zeroTokenConfig = run.zero_token_config;
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -1605,23 +1700,43 @@ function RecentCronRunDetailModal({
         </button>
 
         <div className="flex items-center gap-2 pr-8">
-          <h2 className="truncate text-lg font-semibold text-black/90">{presentation.name || t("未命名任务")}</h2>
+          <h2 className="truncate text-balance text-lg font-semibold text-black/90">{presentation.name || t("未命名任务")}</h2>
           <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55">
             {run.status ? formatLastStatus(run.status, t) : t("已执行")}
           </span>
         </div>
 
         <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
-          <DetailRow label={t("任务说明")} value={presentation.prompt || "—"} pre />
           <DetailRow
-            label={t("调用技能")}
-            value={(
-              <AutomationSkillBindingSummary
-                value={run.skills[0] ?? ""}
-                loadState={skillLoadState}
-              />
-            )}
+            label={t("任务类型")}
+            value={zeroTokenConfig
+              ? zeroTokenConfig.kind === "fixed_notification"
+                ? t("0 Token · 固定通知")
+                : t("0 Token · 脚本任务")
+              : t("智能任务")}
           />
+          {zeroTokenConfig ? (
+            <DetailRow
+              label={zeroTokenConfig.kind === "fixed_notification" ? t("通知内容") : t("脚本语言")}
+              value={zeroTokenConfig.kind === "fixed_notification"
+                ? zeroTokenConfig.content || t("内容仅可在创建它的工具中查看")
+                : zeroTokenConfig.language === "bash" ? "Bash" : "Python"}
+              pre={zeroTokenConfig.kind === "fixed_notification"}
+            />
+          ) : (
+            <>
+              <DetailRow label={t("任务说明")} value={presentation.prompt || "—"} pre />
+              <DetailRow
+                label={t("调用技能")}
+                value={(
+                  <AutomationSkillBindingSummary
+                    value={run.skills[0] ?? ""}
+                    loadState={skillLoadState}
+                  />
+                )}
+              />
+            </>
+          )}
           <DetailRow label={t("执行时间")} value={run.schedule ? formatScheduleFriendly(runToCronJob(run), t) : "—"} />
           <DetailRow label={t("本次执行")} value={formatTime(run.run_at)} />
           {currentUpstream && (
@@ -1679,6 +1794,14 @@ function CronJobCard({
   const hasEffectiveWindow = effectiveStatus !== "always";
   const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
   const fullName = presentation.name || t("未命名任务");
+  const zeroTokenConfig = job.zero_token_config;
+  const taskSummary = zeroTokenConfig
+    ? zeroTokenConfig.kind === "fixed_notification"
+      ? zeroTokenConfig.content || t("固定通知")
+      : t("{{language}} 脚本；标准输出非空时原样通知", {
+          language: zeroTokenConfig.language === "bash" ? "Bash" : "Python",
+        })
+    : presentation.prompt;
   const scheduleLabel = formatScheduleFriendly(job, t);
   const scheduleTooltipLabel = formatScheduleTooltip(job, t);
   return (
@@ -1693,8 +1816,7 @@ function CronJobCard({
             {fullName}
           </span>
         </div>
-        {(running || endedLabel || expiredLabel || paused || disabled || effectiveStatus === "ended") && (
-          <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
             {running && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("执行中")}
@@ -1725,11 +1847,10 @@ function CronJobCard({
                 {t("已暂停")}
               </span>
             )}
-          </div>
-        )}
+        </div>
       </div>
 
-      <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{presentation.prompt}</p>
+      <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{taskSummary}</p>
 
       {job.context_from?.length === 1 && (
         <p className="mt-2 truncate text-xs text-black/45">
@@ -2105,31 +2226,53 @@ function CronJobDetailModal({
 
         <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <NameIdDetailRow name={name} id={job.id} />
-          <DetailRow label={t("任务说明")} value={presentation.prompt || "—"} pre />
           <DetailRow
-            label={t("调用技能")}
-            value={(
-              <AutomationSkillBindingSummary
-                value={job.skills[0] ?? ""}
-                loadState={skillLoadState}
+            label={t("任务类型")}
+            value={job.zero_token_config
+              ? job.zero_token_config.kind === "fixed_notification"
+                ? t("通知任务")
+                : t("脚本任务")
+              : t("智能任务")}
+          />
+          {job.zero_token_config ? (
+            <>
+              <DetailRow
+                label={job.zero_token_config.kind === "fixed_notification" ? t("通知内容") : t("脚本语言")}
+                value={job.zero_token_config.kind === "fixed_notification"
+                  ? job.zero_token_config.content || t("内容仅可在创建它的工具中查看")
+                  : job.zero_token_config.language === "bash" ? "Bash" : "Python"}
+                pre={job.zero_token_config.kind === "fixed_notification"}
               />
-            )}
-          />
-          <DetailRow
-            label={t("上游任务")}
-            value={upstreamIds.length === 0 ? t("未配置") : (
-              <div className="space-y-2">
-                {upstreamJobs.map((upstream, index) => (
-                  <div key={upstreamIds[index]}>
-                    {upstream ? <UpstreamCurrentState job={upstream} /> : t("上游任务已不可用")}
+            </>
+          ) : (
+            <>
+              <DetailRow label={t("任务说明")} value={presentation.prompt || "—"} pre />
+              <DetailRow
+                label={t("调用技能")}
+                value={(
+                  <AutomationSkillBindingSummary
+                    value={job.skills[0] ?? ""}
+                    loadState={skillLoadState}
+                  />
+                )}
+              />
+              <DetailRow
+                label={t("上游任务")}
+                value={upstreamIds.length === 0 ? t("未配置") : (
+                  <div className="space-y-2">
+                    {upstreamJobs.map((upstream, index) => (
+                      <div key={upstreamIds[index]}>
+                        {upstream ? <UpstreamCurrentState job={upstream} /> : t("上游任务已不可用")}
+                      </div>
+                    ))}
+                    <p className="text-pretty text-xs text-black/45">
+                      {t("本任务执行时，将使用上游任务最近一次的输出作为上下文。")}
+                    </p>
                   </div>
-                ))}
-                <p className="text-pretty text-xs text-black/45">
-                  {t("本任务执行时，将使用上游任务最近一次的输出作为上下文。")}
-                </p>
-              </div>
-            )}
-          />
+                )}
+              />
+            </>
+          )}
           <DetailRow label={t("执行时间")} value={formatScheduleDetailValue(job, t)} />
           {lastAgentRun && (
             <DetailRow
@@ -2628,6 +2771,7 @@ type IntervalUnit = "m" | "h" | "d";
 const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0] as const;
 const MONTHDAY_VALUES = Array.from({ length: 31 }, (_, i) => i + 1);
 const MAX_DAILY_TIME_POINTS = 12;
+const WEIXIN_MIN_INTERVAL_MINUTES = 150;
 const CLOCK_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const CLOCK_MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
 const GLOBAL_NOTIFICATION_CHANNELS = [
@@ -3400,10 +3544,32 @@ export function AutomationFormModal({
   onError: (message: string) => void;
 }) {
   const t = useT();
+  const zeroTokenAutomationsEnabled = useZeroTokenAutomationsEnabled();
   const testRunHintId = useId();
+  const notificationHelpTooltip = useHoverTooltipPosition<HTMLButtonElement>();
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
   const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
+  const initialIsZeroToken = initialJob?.inference_config?.no_agent === true
+    || Boolean(initialJob?.zero_token_config);
+  const [executionMode, setExecutionMode] = useState<"agent" | "zero_token">(
+    initialIsZeroToken ? "zero_token" : "agent",
+  );
+  const [zeroTokenKind, setZeroTokenKind] = useState<CronZeroTokenKind>(
+    initialJob?.zero_token_config?.kind ?? "fixed_notification",
+  );
+  const selectedCreateTaskKind: CreateTaskKind = executionMode === "agent"
+    ? "agent"
+    : zeroTokenKind;
+  const [scriptLanguage, setScriptLanguage] = useState<CronScriptLanguage>(
+    initialJob?.zero_token_config?.language ?? "python",
+  );
+  const [zeroTokenContent, setZeroTokenContent] = useState(
+    initialJob?.zero_token_config?.content ?? "",
+  );
+  const [scriptSafetyConfirmed, setScriptSafetyConfirmed] = useState(false);
+  const canSelectZeroToken = mode === "create" && !template && zeroTokenAutomationsEnabled;
+  const zeroTokenScriptEditable = mode === "create" || initialJob?.zero_token_config?.editable === true;
   const initialContextFrom = initialJob?.context_from ?? null;
   const initialSelectedUpstream = initialContextFrom?.[0] ?? "";
   const [selectedUpstream, setSelectedUpstream] = useState(initialSelectedUpstream);
@@ -3488,7 +3654,9 @@ export function AutomationFormModal({
   const [effectiveStartAt, setEffectiveStartAt] = useState(() => normalizeEffectiveWindowInput(initialJob?.effective_window?.start_at ?? ""));
   const [effectiveEndAt, setEffectiveEndAt] = useState(() => normalizeEffectiveWindowInput(initialJob?.effective_window?.end_at ?? ""));
   const [effectiveWindowEnabled, setEffectiveWindowEnabled] = useState(() => Boolean(initialJob?.effective_window?.start_at || initialJob?.effective_window?.end_at));
-  const canEditEffectiveWindow = !initialJob?.script || isLightVelaEffectiveWindowScriptName(initialJob.script);
+  const canEditEffectiveWindow = !initialJob?.script
+    || isLightVelaEffectiveWindowScriptName(initialJob.script)
+    || initialJob.zero_token_config?.managed === true;
   const shouldShowEffectiveWindow = kind !== "once";
   const [chatIdErrors, setChatIdErrors] = useState<Record<string, string>>({});
   const [testSendResults, setTestSendResults] = useState<Record<string, { status: "sending" }>>({});
@@ -3537,7 +3705,7 @@ export function AutomationFormModal({
     : null;
   const intervalMinutes = useMemo(() => getIntervalMinutes(intervalNum, intervalUnit), [intervalNum, intervalUnit]);
   const weixinBlockedByFrequency = kind === "interval"
-    && intervalMinutes < 15
+    && intervalMinutes < WEIXIN_MIN_INTERVAL_MINUTES
     && isHermesNotificationChannelConfigured(enabledChannels, "weixin");
   const availableNotificationChannels = (isGlobal
     ? GLOBAL_NOTIFICATION_CHANNELS
@@ -3588,17 +3756,35 @@ export function AutomationFormModal({
     schedule,
     originalSchedule,
   }), [mode, scheduleUneditable, kind, onceDate, initial?.onceDate, schedule, originalSchedule]);
+  const taskContentReady = executionMode === "agent"
+    ? mode === "edit" || prompt.trim().length > 0
+    : zeroTokenScriptEditable
+      ? zeroTokenContent.trim().length > 0
+      : Boolean(initialJob?.script);
+  const testContentReady = executionMode === "agent"
+    ? prompt.trim().length > 0
+    : taskContentReady;
+  const scriptSafetyReady = executionMode !== "zero_token"
+    || zeroTokenKind !== "script"
+    || !zeroTokenScriptEditable
+    || scriptSafetyConfirmed;
   const canSubmit = !submitting
     && name.trim().length > 0
-    && (mode === "edit" || prompt.trim().length > 0)
+    && taskContentReady
+    && scriptSafetyReady
     && (scheduleUneditable || schedule.length > 0);
   const canTestRun = !submitting
     && testState !== "running"
     && name.trim().length > 0
-    && prompt.trim().length > 0;
-  const testRunDisabledReason = !name.trim() || !prompt.trim()
-    ? t("请先填写名称和任务说明")
-    : null;
+    && testContentReady
+    && scriptSafetyReady;
+  const testRunDisabledReason = !name.trim() || !testContentReady
+    ? executionMode === "agent"
+      ? t("请先填写名称和任务说明")
+      : t("请先填写名称和任务内容")
+    : !scriptSafetyReady
+      ? t("请先确认脚本运行安全提示")
+      : null;
 
   const handleTestRun = useCallback(() => {
     if (!canTestRun) return;
@@ -3622,25 +3808,40 @@ export function AutomationFormModal({
       context_from: null,
       context_from_hydrated: true,
       inference_config: null,
+      zero_token_config: null,
     };
     onTestRun({
       ...baseJob,
       id: initialJob?.id ?? AUTOMATION_FORM_TEST_JOB_ID,
       name: name.trim(),
-      prompt: prompt.trim(),
+      prompt: executionMode === "agent" ? prompt.trim() : "",
       schedule: initialJob?.schedule ?? { kind: "", expr: schedule, display: schedule },
-      skills: selectedSkill ? [selectedSkill] : [],
+      skills: executionMode === "agent" && selectedSkill ? [selectedSkill] : [],
       deliver,
       // 测试运行忽略正式任务的生效窗口脚本，保证当前表单内容可以立即执行。
-      script: "",
+      script: executionMode === "zero_token" ? initialJob?.script ?? "" : "",
       effective_window: null,
       lightvela_schedule: null,
-      context_from: externalMultipleUpstreams
-        ? initialContextFrom
-        : selectedUpstream ? [selectedUpstream] : null,
+      context_from: executionMode === "agent"
+        ? externalMultipleUpstreams
+          ? initialContextFrom
+          : selectedUpstream ? [selectedUpstream] : null
+        : null,
       context_from_hydrated: true,
+      inference_config: executionMode === "zero_token"
+        ? { provider: null, model: null, no_agent: true }
+        : baseJob.inference_config,
+      zero_token_config: executionMode === "zero_token"
+        ? {
+            kind: zeroTokenKind,
+            language: zeroTokenKind === "fixed_notification" ? "python" : scriptLanguage,
+            content: zeroTokenScriptEditable ? zeroTokenContent : null,
+            managed: zeroTokenScriptEditable,
+            editable: zeroTokenScriptEditable,
+          }
+        : null,
     });
-  }, [canTestRun, deliverChatIds, deliverPlatforms, externalMultipleUpstreams, initialContextFrom, initialJob, name, onTestRun, prompt, schedule, selectedSkill, selectedUpstream]);
+  }, [canTestRun, deliverChatIds, deliverPlatforms, executionMode, externalMultipleUpstreams, initialContextFrom, initialJob, name, onTestRun, prompt, schedule, scriptLanguage, selectedSkill, selectedUpstream, zeroTokenContent, zeroTokenKind, zeroTokenScriptEditable]);
 
   const handleChatIdChange = useCallback((channel: string, value: string) => {
     const nextValue = value.slice(0, CHAT_ID_MAX_LENGTH);
@@ -3729,13 +3930,19 @@ export function AutomationFormModal({
       onError(t("不能选择早于当前的时间"));
       return;
     }
+    let zeroTokenRollback: { script: string; config: CronZeroTokenScriptConfig } | null = null;
     setSubmitting(true);
     try {
-      const contextPatch = externalMultipleUpstreams
-        ? undefined
-        : toCronContextPatch(initialContextFrom, selectedUpstream, upstreamChanged);
+      const contextPatch = executionMode === "agent"
+        ? externalMultipleUpstreams
+          ? undefined
+          : toCronContextPatch(initialContextFrom, selectedUpstream, upstreamChanged)
+        : undefined;
       setUpstreamError(null);
-      if (selectedUpstream && !externalMultipleUpstreams && (mode === "create" || upstreamChanged)) {
+      if (executionMode === "agent"
+        && selectedUpstream
+        && !externalMultipleUpstreams
+        && (mode === "create" || upstreamChanged)) {
         const latestJobs = await onRefreshJobs();
         if (!latestJobs) {
           setUpstreamError(t("暂时无法刷新上游任务，请重试"));
@@ -3763,16 +3970,18 @@ export function AutomationFormModal({
       const initialSkills = initialJob?.skills ?? [];
       const skillSelectionChanged = selectedSkill !== (initialSkills[0] ?? "");
       let verificationState = skillLoadState;
-      if (selectedSkill && (mode === "create" || skillSelectionChanged || initialSkillWasAvailableRef.current === true)) {
+      if (executionMode === "agent"
+        && selectedSkill
+        && (mode === "create" || skillSelectionChanged || initialSkillWasAvailableRef.current === true)) {
         verificationState = await onRefreshSkills();
       }
-      const skillSelectionIssue = getAutomationSkillSelectionIssue({
+      const skillSelectionIssue = executionMode === "agent" ? getAutomationSkillSelectionIssue({
         mode,
         initialSkills,
         selectedSkill,
         initialSkillWasAvailable: initialSkillWasAvailableRef.current,
         verificationState,
-      });
+      }) : null;
       if (skillSelectionIssue === "unavailable") {
         onError(t("所选 Skill 已不可用，请重新选择或取消绑定"));
         return;
@@ -3792,6 +4001,40 @@ export function AutomationFormModal({
         }
         : null;
       if (mode === "create") {
+        if (executionMode === "zero_token") {
+          const script = createZeroTokenScriptName(
+            `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          );
+          await writeZeroTokenScript(botId, script, {
+            kind: zeroTokenKind,
+            language: zeroTokenKind === "fixed_notification" ? "python" : scriptLanguage,
+            content: zeroTokenContent,
+            start_at: scriptConfig?.start_at ?? null,
+            end_at: scriptConfig?.end_at ?? null,
+            ...(scriptConfig?.weekdays?.length ? { weekdays: scriptConfig.weekdays } : {}),
+            ...(scriptConfig?.daily_times?.length ? { daily_times: scriptConfig.daily_times } : {}),
+          });
+          const createInput = {
+            name: name.trim(),
+            schedule,
+            deliver,
+            script,
+            noAgent: true,
+          };
+          await createCronJobWithScriptRollback(botId, createInput, script);
+          onSaved();
+          if (deliver !== "local") {
+            const deliveryWarning = t("自动任务已新建，但部分通知通道发送确认消息失败。");
+            void sendHermesChatNotice(botId, deliver, t("LightVela 已新建自动任务「{{name}}」。", {
+              name: createInput.name,
+            }))
+              .then(({ failed }) => {
+                if (failed > 0) onError(deliveryWarning);
+              })
+              .catch(() => onError(deliveryWarning));
+          }
+          return;
+        }
         const script = scriptConfig
           ? createEffectiveWindowScriptName(`${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
           : undefined;
@@ -3826,6 +4069,52 @@ export function AutomationFormModal({
             .catch(() => onError(deliveryWarning));
         }
         return;
+      } else if (initialJob && executionMode === "zero_token") {
+        const patch: Parameters<typeof editCronJob>[2] = {};
+        const nextName = name.trim();
+        if (nextName !== initialJob.name) patch.name = nextName;
+        if (!scheduleUneditable && scheduleChanged) patch.schedule = schedule;
+        if (deliver !== (initialJob.deliver || "")) patch.deliver = deliver;
+        const originalConfig = initialJob.zero_token_config;
+        if (originalConfig?.managed
+          && originalConfig.content !== null
+          && isLightVelaZeroTokenScriptName(initialJob.script)) {
+          const nextLanguage = zeroTokenKind === "fixed_notification" ? "python" : scriptLanguage;
+          const originalDailyTimes = initialJob.lightvela_schedule?.kind === "daily_times"
+            ? initialJob.lightvela_schedule.times
+            : null;
+          const scriptChanged = originalConfig.kind !== zeroTokenKind
+            || originalConfig.language !== nextLanguage
+            || originalConfig.content !== zeroTokenContent
+            || !areEffectiveWindowsEqual(effectiveWindow, initialJob.effective_window)
+            || !areDailyTimesEqual(dailyTimesForScript, originalDailyTimes);
+          if (scriptChanged) {
+            zeroTokenRollback = {
+              script: initialJob.script,
+              config: {
+                kind: originalConfig.kind,
+                language: originalConfig.language,
+                content: originalConfig.content,
+                start_at: initialJob.effective_window?.start_at ?? null,
+                end_at: initialJob.effective_window?.end_at ?? null,
+                ...(initialJob.effective_window?.weekdays?.length
+                  ? { weekdays: initialJob.effective_window.weekdays }
+                  : {}),
+                ...(originalDailyTimes?.length ? { daily_times: originalDailyTimes } : {}),
+              },
+            };
+            await writeZeroTokenScript(botId, initialJob.script, {
+              kind: zeroTokenKind,
+              language: nextLanguage,
+              content: zeroTokenContent,
+              start_at: scriptConfig?.start_at ?? null,
+              end_at: scriptConfig?.end_at ?? null,
+              ...(scriptConfig?.weekdays?.length ? { weekdays: scriptConfig.weekdays } : {}),
+              ...(scriptConfig?.daily_times?.length ? { daily_times: scriptConfig.daily_times } : {}),
+            });
+          }
+        }
+        if (Object.keys(patch).length > 0) await editCronJob(botId, initialJob.id, patch);
       } else if (initialJob) {
         const patch: Parameters<typeof editCronJob>[2] = {};
         const nextName = name.trim();
@@ -3863,6 +4152,11 @@ export function AutomationFormModal({
       }
       onSaved();
     } catch (err) {
+      if (zeroTokenRollback) {
+        await writeZeroTokenScript(botId, zeroTokenRollback.script, zeroTokenRollback.config).catch(() => {
+          /* 保留原始编辑错误；刷新后由服务端真实状态兜底。 */
+        });
+      }
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       onError(
         mode === "create"
@@ -3872,7 +4166,7 @@ export function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, selectedSkill, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t]);
+  }, [botId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, selectedSkill, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t, executionMode, scriptLanguage, zeroTokenContent, zeroTokenKind]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
@@ -3883,7 +4177,10 @@ export function AutomationFormModal({
           onClose={() => setTestSendToast(null)}
         />
       )}
-      <div className="relative max-h-[calc(100vh-24px)] w-full max-w-[680px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
+      <div
+        className="relative min-w-0 w-full max-w-[800px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"
+        style={{ boxSizing: "border-box", width: "min(760px, calc(100vw - 32px))", maxHeight: "min(860px, calc(100dvh - 32px))" }}
+      >
         <button
           type="button"
           onClick={onClose}
@@ -3893,12 +4190,70 @@ export function AutomationFormModal({
           <X className="h-4 w-4" />
         </button>
 
-        <h2 className="text-lg font-semibold text-black/90">
+        <h2 className="text-balance text-lg font-semibold text-black/90">
           {mode === "create" ? t("新建自动任务") : t("编辑自动任务")}
         </h2>
 
+        {canSelectZeroToken ? (
+          <fieldset className="mt-4">
+            <legend className="text-sm font-medium text-black/80">{t("任务类型")}</legend>
+            <div className="mt-2 grid grid-cols-1 items-start gap-2 sm:grid-cols-3">
+              {([
+                ["agent", t("智能任务"), t("由 AI 理解你的需求并自动完成任务"), t("AI 驱动"), "bg-indigo-600 text-white"],
+                ["fixed_notification", t("通知任务"), t("按原文发送通知，不调用模型"), "0 Token", "bg-blue-50 text-blue-700"],
+                ["script", t("脚本任务"), t("运行预设脚本，适合开发者"), "0 Token", "bg-blue-50 text-blue-700"],
+              ] as const).map(([value, label, description, tokenLabel, tokenLabelClassName]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-label={label}
+                  aria-pressed={selectedCreateTaskKind === value}
+                  onClick={() => {
+                    if (value === "agent") {
+                      setExecutionMode("agent");
+                      return;
+                    }
+                    setExecutionMode("zero_token");
+                    setZeroTokenKind(value);
+                    setScriptSafetyConfirmed(false);
+                  }}
+                  className={`rounded-md border px-3 py-2 text-left transition ${selectedCreateTaskKind === value
+                    ? "border-blue-300 bg-blue-50"
+                    : "border-black/10 hover:border-black/20"}`}
+                >
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="text-balance text-sm font-semibold text-black/85">{label}</span>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-4 ${tokenLabelClassName}`}>
+                      {tokenLabel}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-pretty text-xs leading-4 text-black/45">
+                    {description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        ) : mode === "edit" && executionMode === "zero_token" ? (
+          <div className="mt-4 rounded-md border border-black/10 bg-black/[0.025] px-3 py-2">
+            <p className="text-sm font-semibold text-black/80">{t("0 Token 任务")}</p>
+            <p className="mt-0.5 text-pretty text-xs leading-4 text-black/50">
+              {t("不调用模型，执行不消耗模型 Token，但仍会使用运行资源")}
+            </p>
+          </div>
+        ) : null}
+
+        {mode === "edit" && executionMode === "zero_token" && (
+          <div className="mt-3">
+            <p className="text-sm text-black/65">
+              {zeroTokenKind === "fixed_notification" ? t("通知任务") : t("脚本任务")}
+              <span className="ml-2 text-xs text-black/40">{t("创建后不可更改类型")}</span>
+            </p>
+          </div>
+        )}
+
         {/* 名称 */}
-        <div className="mt-5">
+        <div className={canSelectZeroToken || executionMode === "zero_token" ? "mt-3" : "mt-4"}>
           <label className="block text-sm font-medium text-black/80">{t("名称")}</label>
           <input
             type="text"
@@ -3912,9 +4267,9 @@ export function AutomationFormModal({
         </div>
 
         {/* 执行时间 */}
-        <div className="mt-4">
+        <div className="mt-3">
           <label className="block text-sm font-medium text-black/80">{t("执行时间")}</label>
-          <div className="mt-1.5 inline-flex rounded-lg bg-black/[0.04] p-1">
+          <div className="mt-1.5 inline-flex rounded-md bg-black/[0.04] p-1">
             {(["once", "recurring", "interval"] as FrequencyKind[]).map((k) => (
               <button
                 key={k}
@@ -3931,9 +4286,9 @@ export function AutomationFormModal({
               </button>
             ))}
           </div>
-          <div className="mt-3">
+          <div className="mt-2">
             {scheduleUneditable ? (
-              <div className="rounded-lg bg-[#FFF7E6] px-3 py-2 text-xs leading-relaxed text-[#8A5A00]">
+              <div className="rounded-md bg-[#FFF7E6] px-3 py-2 text-xs leading-relaxed text-[#8A5A00]">
                 {t("当前调度表达式 {{expr}} 暂不支持在 UI 编辑，如需修改请使用 hermes CLI", { expr: initialScheduleSource })}
               </div>
             ) : kind === "recurring" && (
@@ -3972,8 +4327,10 @@ export function AutomationFormModal({
           </div>
         </div>
 
-        {/* 任务说明 */}
-        <div className="mt-4">
+        {executionMode === "agent" ? (
+          <>
+          {/* 任务说明 */}
+          <div className="mt-3">
           <div className="flex items-baseline justify-between">
             <label className="block text-sm font-medium text-black/80">{t("任务说明")}</label>
             <span className="text-[11px] text-black/40">{prompt.length}/{AUTOMATION_PROMPT_MAX_LENGTH}</span>
@@ -3981,61 +4338,103 @@ export function AutomationFormModal({
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value.slice(0, AUTOMATION_PROMPT_MAX_LENGTH))}
-            rows={5}
+            rows={4}
             maxLength={AUTOMATION_PROMPT_MAX_LENGTH}
-            placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等")}
-            className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            placeholder={t("请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展")}
+            className="mt-1.5 w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
-        </div>
-
-        <AutomationSkillPicker
-          value={selectedSkill}
-          loadState={skillLoadState}
-          onChange={setSelectedSkill}
-          onRetry={() => void onRefreshSkills()}
-        />
-
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-black/80">
-            {t("上游任务")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
-          </label>
-          <div className="mt-2">
-            {externalMultipleUpstreams ? (
-              <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs text-amber-800">
-                <p className="font-medium">{t("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")}</p>
-                <ul className="mt-1 space-y-1 text-amber-800/75">
-                  {externalMultipleUpstreams.map((job, index) => (
-                    <li key={index} className="break-words">
-                      {job?.name ?? t("上游任务已不可用")}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : (
-              <AutomationUpstreamPicker
-                value={selectedUpstream}
-                options={pickerUpstreams}
-                state={contextCapability}
-                onRetry={onRetryContextCapability}
-                onChange={(jobId) => {
-                  setSelectedUpstream(jobId);
-                  setUpstreamChanged(true);
-                  setUpstreamError(null);
-                }}
-              />
-            )}
           </div>
-          {upstreamError && (
-            <p role="alert" className="mt-2 text-pretty text-xs leading-5 text-[#B91C1C]">
-              {upstreamError}
-            </p>
-          )}
-        </div>
+
+          <AutomationSkillPicker
+            value={selectedSkill}
+            loadState={skillLoadState}
+            onChange={setSelectedSkill}
+            onRetry={() => void onRefreshSkills()}
+          />
+          </>
+        ) : (
+          <div className="mt-3">
+            <div className="flex items-baseline justify-between">
+              <label className="block text-sm font-medium text-black/80">
+                {zeroTokenKind === "fixed_notification" ? t("通知内容") : t("脚本内容")}
+              </label>
+              {zeroTokenScriptEditable && zeroTokenKind === "fixed_notification" ? (
+                <span className="tabular-nums text-[11px] text-black/40">
+                  {zeroTokenContent.length}/{FIXED_NOTIFICATION_MAX_LENGTH}
+                </span>
+              ) : null}
+            </div>
+            {zeroTokenKind === "script" && zeroTokenScriptEditable ? (
+              <div className="mt-1.5 flex items-center justify-between gap-3">
+                <div className="inline-flex rounded-md bg-black/[0.04] p-1">
+                  {(["python", "bash"] as CronScriptLanguage[]).map((language) => (
+                    <button
+                      key={language}
+                      type="button"
+                      aria-pressed={scriptLanguage === language}
+                      onClick={() => setScriptLanguage(language)}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition ${scriptLanguage === language
+                        ? "bg-white text-black/90 shadow-sm"
+                        : "text-black/50 hover:text-black/80"}`}
+                    >
+                      {language === "python" ? "Python" : "Bash"}
+                    </button>
+                  ))}
+                </div>
+                <span className="tabular-nums text-[11px] text-black/40">
+                  {zeroTokenContent.length}/{AUTOMATION_SCRIPT_MAX_LENGTH}
+                </span>
+              </div>
+            ) : null}
+            {zeroTokenScriptEditable ? (
+              <textarea
+                value={zeroTokenContent}
+                onChange={(event) => setZeroTokenContent(event.target.value.slice(
+                  0,
+                  zeroTokenKind === "fixed_notification"
+                    ? FIXED_NOTIFICATION_MAX_LENGTH
+                    : AUTOMATION_SCRIPT_MAX_LENGTH,
+                ))}
+                rows={zeroTokenKind === "fixed_notification" ? 3 : 6}
+                spellCheck={zeroTokenKind === "fixed_notification"}
+                maxLength={zeroTokenKind === "fixed_notification"
+                  ? FIXED_NOTIFICATION_MAX_LENGTH
+                  : AUTOMATION_SCRIPT_MAX_LENGTH}
+                placeholder={zeroTokenKind === "fixed_notification"
+                  ? t("例如：该喝水啦，休息一下再继续吧")
+                  : `${t("示例脚本：")}\n${scriptLanguage === "python"
+                    ? PYTHON_SCRIPT_PLACEHOLDER
+                    : BASH_SCRIPT_PLACEHOLDER}`}
+                className={`mt-1.5 w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none ${zeroTokenKind === "script" ? "font-mono" : ""}`}
+                style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
+              />
+            ) : (
+              <div className="mt-1.5 rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2.5 text-pretty text-xs leading-5 text-amber-900/75">
+                {t("该任务由 Hermes CLI 或其他工具创建。LightVela 无法确认脚本归属，因此不会读取、覆盖或删除脚本内容。你仍可修改名称、时间和通知方式。")}
+              </div>
+            )}
+            {zeroTokenKind === "fixed_notification" ? (
+              <p className="mt-1.5 text-pretty text-xs leading-5 text-black/40">
+                {t("通知内容会按原文发送，不经过模型改写。没有模型调用，但仍会使用 Agent 运行资源。")}
+              </p>
+            ) : zeroTokenScriptEditable ? (
+              <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs leading-4 text-amber-900/80">
+                <input
+                  type="checkbox"
+                  checked={scriptSafetyConfirmed}
+                  onChange={(event) => setScriptSafetyConfirmed(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-700/30 accent-black"
+                />
+                <span>{t("我已了解风险：脚本会直接在云端 Agent 环境中运行，并非独立安全沙箱；请仅运行你信任的脚本。")}</span>
+              </label>
+            ) : null}
+          </div>
+        )}
 
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (
-          <div className="mt-4">
+          <div className="mt-3">
             <div className="flex flex-wrap items-center gap-2">
               <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
               <button
@@ -4072,7 +4471,7 @@ export function AutomationFormModal({
                   onChange={(e) => setEffectiveStartAt(e.target.value)}
                   disabled={!canEditEffectiveWindow}
                   style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
                   aria-label={t("生效开始时间")}
                 />
                 <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
@@ -4082,7 +4481,7 @@ export function AutomationFormModal({
                   onChange={(e) => setEffectiveEndAt(e.target.value)}
                   disabled={!canEditEffectiveWindow}
                   style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
                   aria-label={t("生效结束时间")}
                 />
                 <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
@@ -4113,11 +4512,40 @@ export function AutomationFormModal({
          * 区域可见性：
          *   - 国内站（isCN）：weixin / qqbot / wecom / feishu / dingtalk
          *   - 国际站（isGlobal）：telegram / whatsapp / discord / slack / weixin / qqbot / wecom / feishu
-         */}
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-black/80">
-            {t("通知方式")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
-          </label>
+        */}
+        <div className="mt-3">
+          <div className="flex items-center gap-1 text-sm font-medium text-black/80">
+            <span>{t("通知方式")}</span>
+            <span className="relative inline-flex">
+              <button
+                ref={notificationHelpTooltip.triggerRef}
+                type="button"
+                aria-label={t("通知方式")}
+                aria-describedby={notificationHelpTooltip.open ? notificationHelpTooltip.tooltipId : undefined}
+                onMouseEnter={notificationHelpTooltip.showTooltip}
+                onMouseLeave={notificationHelpTooltip.scheduleClose}
+                onFocus={notificationHelpTooltip.showTooltip}
+                onBlur={notificationHelpTooltip.scheduleClose}
+                className="inline-flex size-4 items-center justify-center rounded-full text-black/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+              >
+                <CircleHelp className="size-3.5" aria-hidden="true" />
+              </button>
+              {notificationHelpTooltip.open && (
+                <FloatingTooltip
+                  id={notificationHelpTooltip.tooltipId}
+                  position={notificationHelpTooltip.position}
+                  className="w-72 whitespace-normal text-pretty text-left"
+                  onMouseEnter={notificationHelpTooltip.showTooltip}
+                  onMouseLeave={notificationHelpTooltip.scheduleClose}
+                >
+                  {executionMode === "zero_token"
+                    ? t("如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。")
+                    : t("如不选，智能体只会在后台执行任务，不发通知。")}
+                </FloatingTooltip>
+              )}
+            </span>
+            <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
+          </div>
           {channelStatus === "loading" ? (
             <div className="mt-2 inline-flex min-h-6 items-center gap-1.5 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -4235,7 +4663,7 @@ export function AutomationFormModal({
                           maxLength={CHAT_ID_MAX_LENGTH}
                           onChange={(e) => handleChatIdChange(key, e.target.value)}
                           placeholder={t("可留空，即通过默认的 home 对话通知；也可指定 Chat ID 通知")}
-                          className="min-w-0 flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+                          className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
                           style={{ fontSize: 12, lineHeight: "18px" }}
                         />
                       </div>
@@ -4297,34 +4725,62 @@ export function AutomationFormModal({
               })}
             </div>
           )}
-          {hasAvailableNotificationChannel ? (
-            <>
-              {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
-              <div aria-hidden="true" style={{ height: 4 }} />
-              {deliverPlatforms.length === 0 ? (
-                <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                  {t("如不选，智能体只会在后台执行任务，不发通知。")}
-                </p>
-              ) : (
-                // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
-                <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                  {"\u00A0"}
-                </p>
-              )}
-            </>
-          ) : null}
         </div>
 
+        {executionMode === "agent" && (
+          <details className="group mt-3">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1.5 text-sm font-medium text-black/70 hover:text-black/90 [&::-webkit-details-marker]:hidden">
+              <span>{t("高级设置")}</span>
+              <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-black/40 group-open:rotate-180" />
+            </summary>
+            <div className="pt-3">
+              <label className="block text-sm font-medium text-black/80">
+                {t("上游任务")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
+              </label>
+              <div className="mt-2">
+                {externalMultipleUpstreams ? (
+                  <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs text-amber-800">
+                    <p className="font-medium">{t("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")}</p>
+                    <ul className="mt-1 space-y-1 text-amber-800/75">
+                      {externalMultipleUpstreams.map((job, index) => (
+                        <li key={index} className="break-words">
+                          {job?.name ?? t("上游任务已不可用")}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <AutomationUpstreamPicker
+                    value={selectedUpstream}
+                    options={pickerUpstreams}
+                    state={contextCapability}
+                    onRetry={onRetryContextCapability}
+                    onChange={(jobId) => {
+                      setSelectedUpstream(jobId);
+                      setUpstreamChanged(true);
+                      setUpstreamError(null);
+                    }}
+                  />
+                )}
+              </div>
+              {upstreamError && (
+                <p role="alert" className="mt-2 text-pretty text-xs leading-5 text-[#B91C1C]">
+                  {upstreamError}
+                </p>
+              )}
+            </div>
+          </details>
+        )}
+
         {/* 操作 */}
-        <div className="mt-6 flex items-center justify-end gap-2">
+        <div className="mt-4 flex items-center justify-end gap-2">
           <span className="inline-flex" title={testRunDisabledReason ?? undefined}>
             <button
               type="button"
               disabled={!canTestRun}
               onClick={handleTestRun}
               aria-describedby={testRunDisabledReason ? testRunHintId : undefined}
-              style={MODAL_CONTROL_TEXT_STYLE}
-              className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-4 py-2 text-base font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {testState === "running" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -4344,8 +4800,7 @@ export function AutomationFormModal({
           <button
             type="button"
             onClick={onClose}
-            style={MODAL_CONTROL_TEXT_STYLE}
-            className="rounded-lg border border-black/10 px-4 py-2 text-base font-medium text-black/70 transition hover:bg-black/[0.04]"
+            className="rounded-lg border border-black/10 px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-black/[0.04]"
           >
             {t("取消")}
           </button>
@@ -4353,8 +4808,7 @@ export function AutomationFormModal({
             type="button"
             disabled={!canSubmit}
             onClick={handleSubmit}
-            style={MODAL_CONTROL_TEXT_STYLE}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-base font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {mode === "create" ? t("新建") : t("保存")}
@@ -4684,7 +5138,7 @@ function RecurringPicker({
         <div ref={weekdayPickerRef} className="relative w-[360px] max-w-full">
           <div
             onClick={() => setWeekdayPickerOpen((open) => !open)}
-            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
+            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
           >
             <div
@@ -4874,7 +5328,7 @@ function RecurringPicker({
           value={time}
           onChange={(e) => onTime(e.target.value)}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="w-[100px] rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
+          className="w-[100px] rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
         />
       )}
     </div>
@@ -4999,14 +5453,14 @@ function IntervalPicker({
           value={num}
           onChange={(e) => onNum(Math.max(1, Number(e.target.value) || 1))}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="h-9 w-16 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
+          className="h-9 w-16 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
         />
         <div ref={unitPickerRef} className="relative w-[76px]">
           <button
             type="button"
             onClick={() => setUnitPickerOpen((open) => !open)}
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-            className="flex min-h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
+            className="flex min-h-9 w-full items-center justify-between rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
             aria-haspopup="listbox"
             aria-expanded={unitPickerOpen}
           >
@@ -5051,19 +5505,236 @@ function IntervalPicker({
   );
 }
 
+type OncePickerDraft = {
+  date: string;
+  hour: string;
+  minute: string;
+  month: Date;
+};
+
+function formatLocalDateInputValue(date: Date): string {
+  return [
+    String(date.getFullYear()).padStart(4, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function parseOncePickerDraft(value: string): OncePickerDraft {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  const fallback = new Date();
+  const year = match ? Number(match[1]) : fallback.getFullYear();
+  const monthIndex = match ? Number(match[2]) - 1 : fallback.getMonth();
+  const day = match ? Number(match[3]) : fallback.getDate();
+  const candidate = new Date(year, monthIndex, day);
+  const validDate = candidate.getFullYear() === year
+    && candidate.getMonth() === monthIndex
+    && candidate.getDate() === day;
+  const date = validDate ? candidate : fallback;
+  const hour = match && CLOCK_HOUR_OPTIONS.includes(match[4] ?? "")
+    ? match[4]!
+    : String(fallback.getHours()).padStart(2, "0");
+  const minute = match && CLOCK_MINUTE_OPTIONS.includes(match[5] ?? "")
+    ? match[5]!
+    : String(fallback.getMinutes()).padStart(2, "0");
+
+  return {
+    date: formatLocalDateInputValue(date),
+    hour,
+    minute,
+    month: new Date(date.getFullYear(), date.getMonth(), 1),
+  };
+}
+
+function getCalendarGridDays(month: Date): Date[] {
+  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+  const gridStart = new Date(firstDay.getFullYear(), firstDay.getMonth(), 1 - firstDay.getDay());
+  return Array.from({ length: 42 }, (_, index) => (
+    new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index)
+  ));
+}
+
+function formatOncePickerValue(value: string): string {
+  const draft = parseOncePickerDraft(value);
+  return `${draft.date.replaceAll("-", "/")} ${draft.hour}:${draft.minute}`;
+}
+
 function OncePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const t = useT();
+  const { i18n } = useTranslation();
+  const selectedDayRef = useRef<HTMLButtonElement | null>(null);
+  const initialDraft = useMemo(() => parseOncePickerDraft(value), [value]);
+  const [open, setOpen] = useState(false);
+  const [draftDate, setDraftDate] = useState(initialDraft.date);
+  const [draftHour, setDraftHour] = useState(initialDraft.hour);
+  const [draftMinute, setDraftMinute] = useState(initialDraft.minute);
+  const [visibleMonth, setVisibleMonth] = useState(initialDraft.month);
+  const displayLocale = getAutomationDisplayLocale(i18n.language);
+  const calendarDays = useMemo(() => getCalendarGridDays(visibleMonth), [visibleMonth]);
+  const monthLabel = useMemo(() => new Intl.DateTimeFormat(displayLocale, {
+    year: "numeric",
+    month: "long",
+  }).format(visibleMonth), [displayLocale, visibleMonth]);
+  const fullDateFormatter = useMemo(() => new Intl.DateTimeFormat(displayLocale, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  }), [displayLocale]);
+  const weekdayLabels = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(displayLocale, { weekday: "narrow" });
+    return Array.from({ length: 7 }, (_, index) => formatter.format(new Date(2024, 0, 7 + index)));
+  }, [displayLocale]);
+
+  const resetDraft = useCallback(() => {
+    const next = parseOncePickerDraft(value);
+    setDraftDate(next.date);
+    setDraftHour(next.hour);
+    setDraftMinute(next.minute);
+    setVisibleMonth(next.month);
+  }, [value]);
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen) resetDraft();
+    setOpen(nextOpen);
+  }, [resetDraft]);
+
+  const changeMonth = useCallback((offset: number) => {
+    setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  }, []);
+
+  const todayValue = formatLocalDateInputValue(new Date());
 
   return (
-    <input
-      type="datetime-local"
-      step={60}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label={t("执行时间")}
-      style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-      className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
-    />
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={t("执行时间")}
+          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+          className="flex h-9 min-w-[220px] items-center justify-between gap-4 rounded-md border border-black/10 bg-white px-3 text-left text-sm tabular-nums transition hover:border-black/20 focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
+        >
+          <span>{formatOncePickerValue(value)}</span>
+          <CalendarDays className="size-4 shrink-0 text-black/75" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        role="dialog"
+        aria-label={t("执行时间")}
+        className="w-[342px] max-w-[calc(100vw-32px)] p-3"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          selectedDayRef.current?.focus();
+        }}
+      >
+        <div className="flex items-center justify-between gap-3 pb-2">
+          <span className="text-sm font-semibold text-black/85">{monthLabel}</span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label={t("上一页")}
+              onClick={() => changeMonth(-1)}
+              className="inline-flex size-8 items-center justify-center rounded-md text-black/60 transition hover:bg-black/[0.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+            >
+              <ChevronLeft className="size-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={t("下一页")}
+              onClick={() => changeMonth(1)}
+              className="inline-flex size-8 items-center justify-center rounded-md text-black/60 transition hover:bg-black/[0.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+            >
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1" aria-hidden="true">
+          {weekdayLabels.map((label, index) => (
+            <span key={`${label}-${index}`} className="flex h-7 items-center justify-center text-xs text-black/45">
+              {label}
+            </span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {calendarDays.map((date) => {
+            const dateValue = formatLocalDateInputValue(date);
+            const isSelected = dateValue === draftDate;
+            const isCurrentMonth = date.getMonth() === visibleMonth.getMonth();
+            const isToday = dateValue === todayValue;
+            return (
+              <button
+                key={dateValue}
+                ref={isSelected ? selectedDayRef : undefined}
+                type="button"
+                aria-label={fullDateFormatter.format(date)}
+                aria-pressed={isSelected}
+                aria-current={isToday ? "date" : undefined}
+                onClick={() => {
+                  setDraftDate(dateValue);
+                  if (!isCurrentMonth) {
+                    setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+                  }
+                }}
+                className={cn(
+                  "inline-flex size-9 items-center justify-center rounded-md text-sm tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35",
+                  isSelected
+                    ? "bg-[#2F7BFF] font-semibold text-white hover:bg-[#276FE8]"
+                    : isCurrentMonth
+                      ? "text-black/80 hover:bg-black/[0.05]"
+                      : "text-black/30 hover:bg-black/[0.04]",
+                  isToday && !isSelected ? "font-semibold text-[#245FCE]" : "",
+                )}
+              >
+                {date.getDate()}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 border-t border-black/[0.06] pt-3">
+          <Clock className="size-4 text-black/45" aria-hidden="true" />
+          <select
+            value={draftHour}
+            onChange={(event) => setDraftHour(event.target.value)}
+            aria-label={t("小时")}
+            className="h-9 rounded-md border border-black/10 bg-white px-2 text-sm tabular-nums focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
+          >
+            {CLOCK_HOUR_OPTIONS.map((hour) => <option key={hour} value={hour}>{hour}</option>)}
+          </select>
+          <span className="text-sm text-black/45" aria-hidden="true">:</span>
+          <select
+            value={draftMinute}
+            onChange={(event) => setDraftMinute(event.target.value)}
+            aria-label={t("分钟")}
+            className="h-9 rounded-md border border-black/10 bg-white px-2 text-sm tabular-nums focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
+          >
+            {CLOCK_MINUTE_OPTIONS.map((minute) => <option key={minute} value={minute}>{minute}</option>)}
+          </select>
+        </div>
+
+        <div className="mt-3 flex items-center justify-end gap-2 border-t border-black/[0.06] pt-3">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-black/10 bg-white px-4 text-sm font-medium text-black/75 transition hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+          >
+            {t("取消")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange(`${draftDate}T${draftHour}:${draftMinute}`);
+              setOpen(false);
+            }}
+            className="inline-flex h-9 items-center justify-center rounded-lg bg-black px-4 text-sm font-medium text-white transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+          >
+            {t("确认")}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

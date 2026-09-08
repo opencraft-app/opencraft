@@ -256,33 +256,35 @@ describe("AutomationSkillPicker", () => {
 });
 
 describe("AutomationFormModal", () => {
-  it("keeps the one-time date and time in one minute-precision control", () => {
+  it("opens the controlled one-time date and time picker", async () => {
+    const user = userEvent.setup();
     renderAutomationFormModal();
 
-    const dateTime = screen.getByLabelText("执行时间");
-    expect(dateTime).toHaveAttribute("type", "datetime-local");
-    expect(dateTime).toHaveAttribute("step", "60");
+    await user.click(screen.getByRole("button", { name: "执行时间" }));
+
+    const picker = screen.getByRole("dialog", { name: "执行时间" });
+    expect(within(picker).getByRole("combobox", { name: "小时" })).toBeInTheDocument();
+    expect(within(picker).getByRole("combobox", { name: "分钟" })).toBeInTheDocument();
+    expect(within(picker).getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(within(picker).getByRole("button", { name: "确认" })).toBeInTheDocument();
   });
 
-  it("matches the effective-window date-time control styling", () => {
+  it("matches the task form control radius", () => {
     renderAutomationFormModal();
 
-    expect(screen.getByLabelText("执行时间")).toHaveClass(
-      "rounded-lg",
+    expect(screen.getByRole("button", { name: "执行时间" })).toHaveClass(
+      "rounded-md",
       "border-black/10",
       "bg-white",
       "px-3",
-      "py-2",
       "text-sm",
-      "focus:border-black/30",
-      "focus:outline-none",
     );
   });
 
   it("matches the Name and Skill control radius to the task description", () => {
     renderAutomationFormModal();
     const name = screen.getByPlaceholderText("请输入自动任务名称");
-    const prompt = screen.getByPlaceholderText("请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等");
+    const prompt = screen.getByPlaceholderText("请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展");
     const skill = screen.getByRole("button", { name: "调用技能" });
 
     expect(prompt).toHaveClass("rounded-md");
@@ -295,7 +297,7 @@ describe("AutomationFormModal", () => {
   it("does not generate a task description after selecting a Skill", async () => {
     const user = userEvent.setup();
     renderAutomationFormModal();
-    const prompt = screen.getByPlaceholderText("请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等");
+    const prompt = screen.getByPlaceholderText("请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展");
 
     await user.click(screen.getByRole("button", { name: "调用技能" }));
     await user.click(screen.getByRole("option", { name: /Builder Radar.*builder-radar/ }));
@@ -309,7 +311,7 @@ describe("AutomationFormModal", () => {
   it("keeps the task description unchanged when selecting, switching or clearing Skills", async () => {
     const user = userEvent.setup();
     renderAutomationFormModal();
-    const prompt = screen.getByPlaceholderText("请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等");
+    const prompt = screen.getByPlaceholderText("请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展");
     await user.type(prompt, "只整理我关注的产品动态");
 
     await user.click(screen.getByRole("button", { name: "调用技能" }));
