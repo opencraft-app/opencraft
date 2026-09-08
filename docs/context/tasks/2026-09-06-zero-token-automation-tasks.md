@@ -16,8 +16,7 @@
 ## interface_refs / data_structure_refs
 - `frontend/src/lib/hermes-cron-client.ts`：`CronJob`、`CronInferenceConfig`、`CreateCronJobInput`、Hermes CLI 命令构造、脚本文件生命周期、测试任务生命周期。
 - `frontend/src/pages/marketing/agent-automations-panel.tsx`：创建/编辑表单、任务卡片、详情、最近运行、双站通知渠道。
-- `frontend/src/contexts/runtime-config-context.tsx`：创建入口的 runtime feature flag；关闭时不得隐藏已有任务管理能力。
-- `ctl/main/api/server.go`：`GET /v1/frontend/runtime-config` 的 feature contract。
+- `frontend/src/contexts/runtime-config-context.tsx`：创建入口默认开启；显式构建期或本地紧急关闭时不得隐藏已有任务管理能力。
 - Hermes contract：`no_agent=true` 时必须有脚本，不创建 Agent 会话，不使用 prompt/skills/model；stdout 非空才投递，空 stdout 静默，失败与超时告警。
 
 ## history_context
@@ -33,7 +32,7 @@
 - 单次执行时间使用站内受控日期时间弹层；日期与时间先保存在临时草稿中，右下角“确认”后才写回，点“取消”、Esc 或弹层外部不改变表单原值。
 - 已有外部 `no_agent` 任务识别为脚本任务；无法确认 LightVela 所有权的脚本只读，不要求确认不可见脚本的运行风险，但任务仍可编辑允许的元数据、启停和删除。
 - 功能开关只控制新的 0 Token 创建入口；已有任务管理入口始终保留。
-- EdgeOne 预览域名因不读取远端 runtime config，默认展示三种创建类型供产品验收；显式构建期关闭或本地紧急关闭仍优先。正式环境继续失败关闭并由后端开关控制。
+- 国内站、国际站和 EdgeOne 预览默认展示三种创建类型；远端 runtime config 缺少字段、字段异常或请求失败时保持默认开启，显式布尔 `false`、构建期关闭或本地紧急关闭仍优先。
 - 新增中英文及开放 locale 文案通过生成资源检查；新增行为有聚焦单元/组件测试和双站可视验证。
 - 当前任务卡片不展示类型标签；任务详情仅展示“智能任务 / 通知任务 / 脚本任务”，不附加“0 Token”或单独展示“模型调用”字段；“当前任务”视图右上角提供默认“全部”的类型下拉，可过滤智能任务、固定通知和脚本任务。
 - 创建弹窗直接展示智能任务、通知任务和脚本任务，不展示“0 Token 任务”的中间选择层级。
@@ -65,8 +64,6 @@
 - `frontend/src/contexts/runtime-config-context.tsx`
 - `frontend/src/contexts/__tests__/runtime-config-context.test.ts`
 - `frontend/src/locales/**`
-- `ctl/main/api/server.go`
-- `ctl/main/api/*test.go`
 - `docs/engineering/domains/site-environment-routing.md`
 - `docs/engineering/domains/agent-gateway-runtime.md`
 
@@ -101,13 +98,12 @@
 - 创建 Cron 与写脚本是跨步骤操作；失败按所有权回滚，仅删除本次创建且可证明归属的脚本。
 - 外部脚本可能被共享或手工管理；未知所有权脚本永不自动删除或覆盖。
 - 目标 Hermes 镜像可能落后于官方主分支；本地代码完成不等于发布可用，发布前必须以目标镜像实测。
-- runtime flag 默认值或请求失败回退错误可能提前暴露入口；正式环境新增 flag 采用失败关闭，EdgeOne 预览仅为产品验收默认开启，已有任务识别和管理不受 flag 影响。
+- 创建入口默认开启；为保留紧急止损能力，显式远端布尔 `false`、构建期 `false` 与本地紧急关闭仍可隐藏新建入口，已有任务识别和管理不受影响。
 
 ## validation
-- 前端聚焦 Vitest：Hermes Cron client、runtime config、自动任务 CN/global 组件测试。
+- 前端聚焦 Vitest：runtime config、自动任务 CN/global 组件测试。
 - 前端 lint、typecheck、test、build 与仓库 `pnpm check` 对应门禁；共享生成目录的命令串行执行。
 - locale 生成与校验按现有 package scripts 执行，生成资源不手工编辑。
-- `cd ctl && go test ./main/api/...`，必要时扩展为 `go test ./...`。
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`。
 - 双站桌面/移动端创建、切换、测试反馈、列表和详情截图验证。
@@ -116,7 +112,7 @@
 - 固定通知是 LightVela 产品子类型，运行时仍为受管理 Python 脚本 + Hermes `no_agent`。
 - 脚本任务统一通过受管理 Python wrapper 承载元数据、生效窗口和 Bash/Python 子进程；stdout/stderr/退出码按 Hermes script-only contract 传递。
 - 任务类型创建后不可转换；外部 `no_agent` 任务按脚本任务显示且脚本只读，不要求用户为不可见的脚本内容勾选风险确认。
-- feature flag 只门控创建入口，正式环境默认失败关闭；EdgeOne 预览域名默认开启但保留显式关闭通道。内部账号灰度属于发布配置/身份策略，不在前端伪造账号判断。
+- 创建入口由前端默认开启，不依赖 CTL 新增 feature 字段或 CTL 发布；显式远端布尔 `false`、构建期关闭和本地紧急关闭仍可门控新建入口。
 - 不修改 Hermes 运行时；目标镜像能力验证留作发布门禁。
 - 列表类型信息采用“卡片减法、详情保留、下拉筛选”的层级：卡片仅保留运行状态标签，类型在详情与最近执行中展示，筛选器不与状态 Tab 同级且不显示冗余标题。
 
@@ -124,7 +120,6 @@
 - `frontend/src/lib/hermes-cron-client.ts`
 - `frontend/src/pages/marketing/agent-automations-panel.tsx`
 - `frontend/src/contexts/runtime-config-context.tsx`
-- `ctl/main/api/server.go`
 - 对应聚焦测试与正式设计文档。
 
 ## scan_output
@@ -132,7 +127,7 @@
 
 ## handoff
 - 当前处于 FE-AI Native `build` 阶段，已在独立 worktree 完成实现与本地验证，待登记 build 证据后进入 verify。
-- 实现覆盖受管理固定通知、Bash/Python 脚本、所有权保护、测试运行、列表/详情/最近运行类型呈现，以及正式环境默认关闭、EdgeOne 预览默认开启的 runtime 创建开关；Agent 任务路径保持原行为。
+- 实现覆盖受管理固定通知、Bash/Python 脚本、所有权保护、测试运行、列表/详情/最近运行类型呈现，以及 CN/global/EdgeOne 默认开启并保留显式关闭通道的前端创建开关；Agent 任务路径保持原行为。
 - `pnpm check`、282 个聚焦前端测试、CTL API Go 测试、文档校验、变更影响校验和 CN/global Webpack 构建均通过；双站桌面/390px 移动端原型验证无横向溢出。
 - 全量 `pnpm test` 的需求相关用例通过，但仓库其余基线仍有 54 个失败并触发一次 4GB worker OOM；标准 Turbopack 构建在本机无进展，改用显式 Webpack 构建取得双站 `exit 0` 证据。
 - 真实账号下的 `/agents/automations`、目标 Hermes 镜像中的 `no_agent` 调度/投递和发布配置尚未验证，不能将本地完成描述为运行态或发布完成。

@@ -47,7 +47,7 @@ const readBuildTimeZeroTokenAutomationsRaw = (): boolean | null =>
   readBooleanLike(import.meta.env?.VITE_ZERO_TOKEN_AUTOMATIONS_ENABLED);
 
 const readBuildTimeZeroTokenAutomationsDefault = (): boolean =>
-  readBuildTimeZeroTokenAutomationsRaw() ?? false;
+  readBuildTimeZeroTokenAutomationsRaw() ?? true;
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
@@ -76,6 +76,8 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
   if (!features || typeof features !== "object") {
     return DEFAULT_RUNTIME_CONFIG;
   }
+  const zeroTokenAutomationsEnabled =
+    (features as { zeroTokenAutomationsEnabled?: unknown }).zeroTokenAutomationsEnabled;
   return {
     features: {
       paidBillingEnabled:
@@ -83,7 +85,9 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
       realnamePhoneVerificationEnabled:
         (features as { realnamePhoneVerificationEnabled?: unknown }).realnamePhoneVerificationEnabled === true,
       zeroTokenAutomationsEnabled:
-        (features as { zeroTokenAutomationsEnabled?: unknown }).zeroTokenAutomationsEnabled === true,
+        typeof zeroTokenAutomationsEnabled === "boolean"
+          ? zeroTokenAutomationsEnabled
+          : DEFAULT_RUNTIME_CONFIG.features.zeroTokenAutomationsEnabled,
     },
   };
 };

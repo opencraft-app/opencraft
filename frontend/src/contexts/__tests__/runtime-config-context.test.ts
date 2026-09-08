@@ -16,7 +16,7 @@ describe("runtime config normalization", () => {
   it("defaults paid billing to enabled for missing or malformed payloads", () => {
     expect(normalizeRuntimeConfig(null).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig(null).features.realnamePhoneVerificationEnabled).toBe(true);
-    expect(normalizeRuntimeConfig(null).features.zeroTokenAutomationsEnabled).toBe(false);
+    expect(normalizeRuntimeConfig(null).features.zeroTokenAutomationsEnabled).toBe(true);
     expect(normalizeRuntimeConfig({}).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: null }).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: { paidBillingEnabled: "true" } }).features.paidBillingEnabled).toBe(false);
@@ -27,7 +27,7 @@ describe("runtime config normalization", () => {
     ).toBe(false);
   });
 
-  it("fails closed unless zero-token automations are explicitly enabled", () => {
+  it("defaults zero-token automations on unless explicitly disabled", () => {
     expect(
       normalizeRuntimeConfig({ features: { zeroTokenAutomationsEnabled: true } })
         .features.zeroTokenAutomationsEnabled,
@@ -35,8 +35,20 @@ describe("runtime config normalization", () => {
     expect(
       normalizeRuntimeConfig({ features: { zeroTokenAutomationsEnabled: "true" } })
         .features.zeroTokenAutomationsEnabled,
+    ).toBe(true);
+    expect(
+      normalizeRuntimeConfig({ features: { zeroTokenAutomationsEnabled: false } })
+        .features.zeroTokenAutomationsEnabled,
     ).toBe(false);
-    expect(normalizeRuntimeConfig({}).features.zeroTokenAutomationsEnabled).toBe(false);
+    expect(normalizeRuntimeConfig({}).features.zeroTokenAutomationsEnabled).toBe(true);
+    expect(
+      normalizeRuntimeConfig({
+        features: {
+          paidBillingEnabled: true,
+          realnamePhoneVerificationEnabled: true,
+        },
+      }).features.zeroTokenAutomationsEnabled,
+    ).toBe(true);
   });
 
   it("allows a local emergency override for the zero-token creation entry", () => {
