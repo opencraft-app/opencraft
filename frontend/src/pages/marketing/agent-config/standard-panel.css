@@ -1288,7 +1288,8 @@ input.lh-std-input::placeholder {
 .lh-std-channel-panel__guide-btn {
   display: inline-flex;
   align-items: center;
-  padding: 7px 16px;
+  min-height: 40px;
+  padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
   color: #1f2937;
@@ -1309,7 +1310,8 @@ input.lh-std-input::placeholder {
 }
 
 .lh-std-channel-panel__card-unbind {
-  padding: 6px 12px;
+  min-height: 40px;
+  padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
   color: var(--lh-std-text-secondary);
@@ -1332,7 +1334,8 @@ input.lh-std-input::placeholder {
 }
 
 .lh-std-channel-panel__connect-btn {
-  padding: 7px 16px;
+  min-height: 40px;
+  padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
   color: #fff;
