@@ -357,7 +357,7 @@ export function buildCreateCommand(input: CreateCronJobInput): string {
   const parts = ["hermes", "cron", "create", shellQuote(input.schedule)];
   if (input.noAgent) {
     if (!input.script) throw new Error("no-agent cron job requires a script");
-    parts.push("--no-agent", "--script", shellQuote(input.script));
+    parts.push("--no-agent", "--script", shellQuote(input.script), "--name", shellQuote(input.name));
   } else {
     if (!input.prompt?.trim()) throw new Error("agent cron job requires a prompt");
     parts.push(shellQuote(input.prompt), "--name", shellQuote(input.name));
@@ -365,7 +365,6 @@ export function buildCreateCommand(input: CreateCronJobInput): string {
       parts.push("--skill", shellQuote(skill));
     }
   }
-  if (input.noAgent) parts.push("--name", shellQuote(input.name));
   // deliver=local 是 hermes CLI 默认，省略以减少噪声
   if (input.deliver && input.deliver !== "local") {
     parts.push("--deliver", shellQuote(input.deliver));
@@ -972,8 +971,8 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
     const isZeroToken = job?.inference_config?.no_agent === true || rowNoAgent;
     const archivedScript = stringValue(row.job_script);
     const archivedKind = row.job_zero_token_kind === "fixed_notification" ? "fixed_notification" : "script";
-    const archivedLanguage = row.job_zero_token_language === "bash"
-      || (!row.job_zero_token_language && /\.(?:sh|bash)$/i.test(archivedScript))
+    const archivedLanguage = (row.job_zero_token_language === "bash"
+      || (!row.job_zero_token_language && /\.(?:sh|bash)$/i.test(archivedScript)))
       ? "bash"
       : "python";
     const zeroTokenConfig = job?.zero_token_config ?? (isZeroToken

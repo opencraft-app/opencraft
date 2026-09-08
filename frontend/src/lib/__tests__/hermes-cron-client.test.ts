@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -720,6 +724,31 @@ describe("buildCreateCommand", () => {
     );
   });
 
+  it("does not inspect or pin a model after creating a no-agent job", async () => {
+    const commands: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      return okExec(command.startsWith("hermes cron create") ? "Created job" : "");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createCronJob("bot-1", {
+      schedule: "every 30m",
+      name: "disk watchdog",
+      script: "lightvela-zero-token-job-1.py",
+      noAgent: true,
+      pinCurrentModel: true,
+    })).resolves.toBeUndefined();
+
+    expect(commands[0]).toBe(
+      "hermes cron create 'every 30m' --no-agent --script 'lightvela-zero-token-job-1.py' --name 'disk watchdog'",
+    );
+    expect(commands).not.toContain("cat ~/.hermes/cron/jobs.json 2>/dev/null || echo ''");
+    expect(commands.some((command) => command.startsWith("hermes cron edit") && command.includes("--model")))
+      .toBe(false);
+  });
+
   it("rejects a no-agent job without a script", () => {
     expect(() => buildCreateCommand({
       schedule: "every 30m",
@@ -903,6 +932,31 @@ describe("zero-token managed script", () => {
     expect(script).toContain("command = ['bash']");
     expect(script).toContain("subprocess.run(command, input=meta['content'], text=True, check=False)");
     expect(script).not.toContain("shell=True");
+  });
+
+  it("executes only when the current weekday passes the wrapper gate", () => {
+    const taskTempDir = mkdtempSync(join(tmpdir(), "lightvela-zero-token-gate-"));
+    const currentWeekday = new Date().getDay();
+    const otherWeekday = (currentWeekday + 1) % 7;
+    const run = (weekdays: number[]) => {
+      const scriptPath = join(taskTempDir, `gate-${weekdays.join("-")}.py`);
+      writeFileSync(scriptPath, buildZeroTokenScript({
+        kind: "fixed_notification",
+        language: "python",
+        content: "gate passed",
+        start_at: "2000-01-01T00:00",
+        end_at: "2100-01-01T00:00",
+        weekdays,
+      }), "utf8");
+      return execFileSync("python3", [scriptPath], { encoding: "utf8" });
+    };
+
+    try {
+      expect(run([0, 1, 2, 3, 4, 5, 6])).toBe("gate passed");
+      expect(run([otherWeekday])).toBe("");
+    } finally {
+      rmSync(taskTempDir, { recursive: true, force: true });
+    }
   });
 
   it("ignores unowned or malformed scripts", () => {

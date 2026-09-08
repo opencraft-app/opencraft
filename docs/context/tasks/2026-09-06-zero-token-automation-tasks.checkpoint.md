@@ -40,3 +40,27 @@ FE-AI Native `build` 收尾；实现与本地验证已完成，下一道门禁�
 
 ## next_action
 - 等待产品确认本地 UI 复核结果；获得明确授权后再提交并更新 MR !3633。
+
+## 2026-09-08 MR !3633 CR remediation
+
+### stage
+- FE-AI Native `verify` 已完成；本轮仅处理 CR 中由 MR 新增的问题，尚未提交或推送。
+
+### verified
+- 新增的共享自动任务组件测试已按 CN/global locale 使用对应文案、可访问名称与通知渠道；global 运行结果为 162 条中 101 通过、61 条失败，相比 merge base 的 62 条既有失败没有新增失败，并修复了其中 1 条既有失败。
+- 编辑受管理的 0 Token 任务时，仅名称或通知目标变化不会调用 `writeZeroTokenScript`；正文变化仍会重写脚本并保留回滚路径。
+- 外部只读脚本不再展示不可操作的风险确认框，也不会因未确认不可见代码而阻断允许的元数据保存；LightVela 可编辑脚本仍要求风险确认。
+- Hermes client 新增 no-agent + 当前模型固定的回归测试，确认不会读取 `jobs.json` 或追加模型编辑；wrapper 星期门禁新增真实 Python 执行测试。
+- `pnpm check` 通过；自动任务/client 聚焦 Vitest 280/280 通过；文档校验 0 错误、0 警告；change-impact 校验通过；`git diff --check` 通过。
+- PRD 与 Task Pack 已同步本轮脚本写盘、外部只读脚本和 global 测试验收规则。
+
+### unverified
+- 仓库共享 global 测试仍有 merge base 已存在的失败，本轮不扩大范围处理历史债务。
+- 尚未在真实 Hermes 实例回归外部脚本元数据编辑与受管理脚本回滚。
+
+### restore
+- 工作目录：`/Users/pablozhong/codex/lightvela/.worktrees/zero-token-automation-tasks`；分支：`feat/zero-token-automation-0906-tasks`。
+- FE-AI change：`mr3633-cr-remediation`；当前等待产品决定是否提交并推送到已有 MR !3633。
+
+### next_action
+- 获得明确提交授权后，复核最终 diff、创建提交并推送现有 MR !3633；提交、CI、合并与发布状态分别确认。

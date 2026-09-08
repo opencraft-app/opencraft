@@ -3766,6 +3766,7 @@ export function AutomationFormModal({
     : taskContentReady;
   const scriptSafetyReady = executionMode !== "zero_token"
     || zeroTokenKind !== "script"
+    || !zeroTokenScriptEditable
     || scriptSafetyConfirmed;
   const canSubmit = !submitting
     && name.trim().length > 0
@@ -4078,31 +4079,40 @@ export function AutomationFormModal({
         if (originalConfig?.managed
           && originalConfig.content !== null
           && isLightVelaZeroTokenScriptName(initialJob.script)) {
-          zeroTokenRollback = {
-            script: initialJob.script,
-            config: {
-              kind: originalConfig.kind,
-              language: originalConfig.language,
-              content: originalConfig.content,
-              start_at: initialJob.effective_window?.start_at ?? null,
-              end_at: initialJob.effective_window?.end_at ?? null,
-              ...(initialJob.effective_window?.weekdays?.length
-                ? { weekdays: initialJob.effective_window.weekdays }
-                : {}),
-              ...(initialJob.lightvela_schedule?.times?.length
-                ? { daily_times: initialJob.lightvela_schedule.times }
-                : {}),
-            },
-          };
-          await writeZeroTokenScript(botId, initialJob.script, {
-            kind: zeroTokenKind,
-            language: zeroTokenKind === "fixed_notification" ? "python" : scriptLanguage,
-            content: zeroTokenContent,
-            start_at: scriptConfig?.start_at ?? null,
-            end_at: scriptConfig?.end_at ?? null,
-            ...(scriptConfig?.weekdays?.length ? { weekdays: scriptConfig.weekdays } : {}),
-            ...(scriptConfig?.daily_times?.length ? { daily_times: scriptConfig.daily_times } : {}),
-          });
+          const nextLanguage = zeroTokenKind === "fixed_notification" ? "python" : scriptLanguage;
+          const originalDailyTimes = initialJob.lightvela_schedule?.kind === "daily_times"
+            ? initialJob.lightvela_schedule.times
+            : null;
+          const scriptChanged = originalConfig.kind !== zeroTokenKind
+            || originalConfig.language !== nextLanguage
+            || originalConfig.content !== zeroTokenContent
+            || !areEffectiveWindowsEqual(effectiveWindow, initialJob.effective_window)
+            || !areDailyTimesEqual(dailyTimesForScript, originalDailyTimes);
+          if (scriptChanged) {
+            zeroTokenRollback = {
+              script: initialJob.script,
+              config: {
+                kind: originalConfig.kind,
+                language: originalConfig.language,
+                content: originalConfig.content,
+                start_at: initialJob.effective_window?.start_at ?? null,
+                end_at: initialJob.effective_window?.end_at ?? null,
+                ...(initialJob.effective_window?.weekdays?.length
+                  ? { weekdays: initialJob.effective_window.weekdays }
+                  : {}),
+                ...(originalDailyTimes?.length ? { daily_times: originalDailyTimes } : {}),
+              },
+            };
+            await writeZeroTokenScript(botId, initialJob.script, {
+              kind: zeroTokenKind,
+              language: nextLanguage,
+              content: zeroTokenContent,
+              start_at: scriptConfig?.start_at ?? null,
+              end_at: scriptConfig?.end_at ?? null,
+              ...(scriptConfig?.weekdays?.length ? { weekdays: scriptConfig.weekdays } : {}),
+              ...(scriptConfig?.daily_times?.length ? { daily_times: scriptConfig.daily_times } : {}),
+            });
+          }
         }
         if (Object.keys(patch).length > 0) await editCronJob(botId, initialJob.id, patch);
       } else if (initialJob) {
@@ -4351,9 +4361,7 @@ export function AutomationFormModal({
               </label>
               {zeroTokenScriptEditable && zeroTokenKind === "fixed_notification" ? (
                 <span className="tabular-nums text-[11px] text-black/40">
-                  {zeroTokenContent.length}/{zeroTokenKind === "fixed_notification"
-                    ? FIXED_NOTIFICATION_MAX_LENGTH
-                    : AUTOMATION_SCRIPT_MAX_LENGTH}
+                  {zeroTokenContent.length}/{FIXED_NOTIFICATION_MAX_LENGTH}
                 </span>
               ) : null}
             </div>
@@ -4410,7 +4418,7 @@ export function AutomationFormModal({
               <p className="mt-1.5 text-pretty text-xs leading-5 text-black/40">
                 {t("通知内容会按原文发送，不经过模型改写。没有模型调用，但仍会使用 Agent 运行资源。")}
               </p>
-            ) : (
+            ) : zeroTokenScriptEditable ? (
               <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs leading-4 text-amber-900/80">
                 <input
                   type="checkbox"
@@ -4420,7 +4428,7 @@ export function AutomationFormModal({
                 />
                 <span>{t("我已了解风险：脚本会直接在云端 Agent 环境中运行，并非独立安全沙箱；请仅运行你信任的脚本。")}</span>
               </label>
-            )}
+            ) : null}
           </div>
         )}
 
