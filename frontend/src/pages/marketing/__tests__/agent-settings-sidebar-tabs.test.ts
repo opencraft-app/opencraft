@@ -116,6 +116,21 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('lv-agents-session-item');
   });
 
+  it("shows restart and delete as top-level agent icon actions", () => {
+    const page = readPageSource();
+    const profile = page.slice(
+      page.indexOf('className="lv-agent-actions"'),
+      page.indexOf("{visibleBots.length > 1 &&", page.indexOf('className="lv-agent-actions"')),
+    );
+
+    expect(profile).toContain("setShowRestartConfirm(true)");
+    expect(profile).toContain("setShowDeleteConfirm(true)");
+    expect(profile).toContain("<RefreshCw");
+    expect(profile).toContain("<Trash2");
+    expect(profile).not.toContain("lv-agent-action-menu");
+    expect(profile).not.toContain('t("更多操作")');
+  });
+
   it("normalizes backend and SDK default copy before rendering the sidebar", () => {
     const page = readPageSource();
 

@@ -324,7 +324,7 @@ a {
   width: var(--lv-agents-nav-width);
   min-height: 44px;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   border-radius: 6px;
   color: #1f1f1f;
   transition: background 0.15s ease;
@@ -432,72 +432,43 @@ a {
 
 .lv-agent-actions {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
   flex: 0 0 auto;
 }
 
-.lv-agent-more {
+.lv-agent-action-button {
   display: inline-flex;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   align-items: center;
   justify-content: center;
   border: 0;
   border-radius: 4px;
-  color: #111111;
+  color: rgb(0 0 0 / 62%);
   background: #f2f4f8;
 }
 
-.lv-agent-more:hover,
-.lv-agent-more:focus-visible {
+.lv-agent-action-button:hover,
+.lv-agent-action-button:focus-visible {
+  color: rgb(0 0 0 / 82%);
   background: #e9ecf1;
   outline: none;
 }
 
-.lv-agent-action-menu {
-  position: absolute;
-  top: 28px;
-  right: 0;
-  z-index: 30;
-  display: flex;
-  width: 136px;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 0;
-  border: 1px solid rgb(0 0 0 / 4%);
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 14px 32px rgb(15 23 42 / 12%);
-}
-
-.lv-agent-action-menu button {
-  width: 100%;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 0;
-  color: rgb(0 0 0 / 72%);
-  background: transparent;
-  font-size: 13px;
-  line-height: 20px;
-  text-align: left;
-}
-
-.lv-agent-action-menu button:hover,
-.lv-agent-action-menu button:focus-visible {
-  background: #f7f8fb;
-  outline: none;
-}
-
-.lv-agent-action-menu button:disabled {
+.lv-agent-action-button:disabled {
   cursor: not-allowed;
   color: rgb(0 0 0 / 28%);
+  background: #f2f4f8;
 }
 
-.lv-agent-action-menu button.is-danger {
+.lv-agent-action-button.is-danger {
   color: #e5484d;
 }
 
-.lv-agent-action-menu button.is-danger:disabled {
+.lv-agent-action-button.is-danger:disabled {
   color: rgb(0 0 0 / 28%);
 }
 

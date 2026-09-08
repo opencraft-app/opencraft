@@ -33,6 +33,7 @@ import {
   Wand2,
   Wrench,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
@@ -2565,7 +2566,6 @@ export const AgentSettingsPage = ({
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
-  const [isAgentActionMenuOpen, setIsAgentActionMenuOpen] = useState(false);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
 
   /* ── 侧边栏「探索/对话」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
@@ -2738,27 +2738,6 @@ export const AgentSettingsPage = ({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [openSessionMenuChatId]);
-
-  const agentActionMenuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!isAgentActionMenuOpen) return undefined;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!agentActionMenuRef.current?.contains(event.target as Node)) {
-        setIsAgentActionMenuOpen(false);
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsAgentActionMenuOpen(false);
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isAgentActionMenuOpen]);
 
   // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
   useEffect(() => {
@@ -4793,7 +4772,6 @@ export const AgentSettingsPage = ({
                           </span>
                         </span>
                         <div
-                          ref={agentActionMenuRef}
                           className="lv-agent-actions"
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {
@@ -4803,49 +4781,33 @@ export const AgentSettingsPage = ({
                         >
                           <button
                             type="button"
-                            aria-expanded={isAgentActionMenuOpen}
-                            aria-haspopup="menu"
-                            aria-label={t("更多操作")}
-                            className="lv-agent-more"
+                            aria-label={restartTooltip}
+                            title={restartTooltip}
+                            disabled={isRestartDisabled}
+                            className="lv-agent-action-button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              setIsAgentActionMenuOpen((open) => !open);
+                              if (isRestartDisabled) return;
+                              setShowRestartConfirm(true);
                             }}
                           >
-                            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                            <RefreshCw className={cn("h-4 w-4", isActiveBotRestarting && "animate-spin")} aria-hidden="true" />
                           </button>
-                          {isAgentActionMenuOpen && (
-                            <div role="menu" className="lv-agent-action-menu" onClick={(event) => event.stopPropagation()}>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                aria-label={restartTooltip}
-                                disabled={isRestartDisabled}
-                                onClick={() => {
-                                  setIsAgentActionMenuOpen(false);
-                                  if (isRestartDisabled) return;
-                                  setShowRestartConfirm(true);
-                                }}
-                              >
-                                {t("重启")}
-                              </button>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                aria-label={deleteTooltip}
-                                disabled={deleteDisabled}
-                                className="is-danger"
-                                onClick={() => {
-                                  setIsAgentActionMenuOpen(false);
-                                  if (deleteDisabled) return;
-                                  setDeleteInput("");
-                                  setShowDeleteConfirm(true);
-                                }}
-                              >
-                                {t("删除")}
-                              </button>
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            aria-label={deleteTooltip}
+                            title={deleteTooltip}
+                            disabled={deleteDisabled}
+                            className="lv-agent-action-button is-danger"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (deleteDisabled) return;
+                              setDeleteInput("");
+                              setShowDeleteConfirm(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
                         </div>
                         {visibleBots.length > 1 && (
                           <ChevronDown
