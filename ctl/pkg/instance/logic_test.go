@@ -2990,3 +2990,11 @@ func TestFailedOperationRecordsErrorInHistory(t *testing.T) {
 		t.Fatal("expected non-empty error_message for failed operation")
 	}
 }
+
+func (s *sandboxAdapterStub) Modify(context.Context, string, *psandbox.ModifyRequest) (*psandbox.ModifyOperation, error) {
+	panic("unexpected call")
+}
+
+func (s *sandboxAdapterStub) GetModifyOperation(context.Context, string) (*psandbox.ModifyOperation, error) {
+	panic("unexpected call")
+}

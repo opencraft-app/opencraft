@@ -45,7 +45,8 @@ func TestVerifySchemaRequiresExpectedTables(t *testing.T) {
 		AddRow("vpc_shard_blueprint_snapshots").
 		AddRow("vpc_shard_provision_progress").
 		AddRow("vpc_shard_create_locks").
-		AddRow("vpc_shard_cleanup_resources")
+		AddRow("vpc_shard_cleanup_resources").
+		AddRow("modify_operations")
 	mock.ExpectQuery("SELECT table_name FROM information_schema.tables").
 		WithArgs("sandbox_test").
 		WillReturnRows(rows)
@@ -76,6 +77,8 @@ func TestSandboxMigrationsPresent(t *testing.T) {
 		"000007_add_pool_system_disk_size.down.sql",
 		"000008_add_sku_system_disk_size.up.sql",
 		"000008_add_sku_system_disk_size.down.sql",
+		"000009_create_modify_operations.up.sql",
+		"000009_create_modify_operations.down.sql",
 	} {
 		path := filepath.Join("..", "..", "migrations", name)
 		if _, err := os.Stat(path); err != nil {

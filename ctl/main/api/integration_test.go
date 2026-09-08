@@ -1664,3 +1664,11 @@ func TestInternalPassesResourceQueryRequiresBearer(t *testing.T) {
 		_ = readBody(t, respOK)
 	}
 }
+
+func (a *integrationSandboxAdapter) Modify(context.Context, string, *psandbox.ModifyRequest) (*psandbox.ModifyOperation, error) {
+	return &psandbox.ModifyOperation{}, nil
+}
+
+func (a *integrationSandboxAdapter) GetModifyOperation(context.Context, string) (*psandbox.ModifyOperation, error) {
+	return &psandbox.ModifyOperation{}, nil
+}

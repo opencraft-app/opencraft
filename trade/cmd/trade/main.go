@@ -169,6 +169,7 @@ func main() {
 		// 点石活动接入（设计稿 §5.4）：同进同退，都为 nil 时 placeorder 走 jifei 单路径。
 		ActivityResolver: activityResolver,
 		DianshiClient:    dianshiClient,
+		ModifyFlowReader: mysqlStore,
 	})
 
 	// v1.7.32：订单状态反查业务 service（设计稿 .tmp/ctl-order-status-query-design.md §5.2）。

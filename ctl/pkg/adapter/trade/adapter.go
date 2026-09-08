@@ -420,6 +420,21 @@ type Adapter interface {
 	// PlaceOrderAndPay 同语义）。
 	PlaceRenewOrderAndPay(ctx context.Context, req *PlaceRenewOrderRequest) (*PlaceOrderResult, error)
 
+	// InquiryModify 调 trade POST /internal/trade/inquiry/modify 询同 SP 升配差价。
+	// 需求：TAPD 1010132091137784162 §5.1
+	//
+	// 差价、税费和币种全部由 jifei 计算，trade 只负责按站点 BundleDefinition 构造
+	// oldConfig/newConfig。结果形态与续费询价一致（Prices[0]）。
+	InquiryModify(ctx context.Context, req *ModifyOrderRequest) (*InquiryModifyResult, error)
+
+	// PlaceModifyOrder 调 trade POST /internal/trade/orders/modify 创建升配订单。
+	// 两步式生产链路：本接口只建单，调用方再走 GeneratePayURL 拉支付页。
+	PlaceModifyOrder(ctx context.Context, req *ModifyOrderRequest) (*PlaceOrderResult, error)
+
+	// PlaceModifyOrderAndPay 调 trade POST /internal/trade/orders/modify/place-and-pay
+	// 一体化建单 + 代扣，仅用于联调 / e2e（与 PlaceOrderAndPay 同语义，现网不暴露）。
+	PlaceModifyOrderAndPay(ctx context.Context, req *ModifyOrderRequest) (*PlaceOrderResult, error)
+
 	// GeneratePayURL 调 trade POST /internal/trade/orders/{dealName}/pay-url
 	// 生成 / 反查支付页 URL。
 	//

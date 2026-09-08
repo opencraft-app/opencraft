@@ -19,6 +19,12 @@ const (
 	ColumnDeletedTime  = "deleted_time"  // 预留：销毁设计走物理 DELETE + history_pass，本字段未使用
 	ColumnRenewFlag    = "renew_flag"    // v4 收敛：billing-integration B2 新增
 	ColumnStatus       = "status"        // trade-pass-isolate Q8/Q23：隔离生命周期状态列
+
+	// 同 SP 变配（升配）中间态字段。与 isolate/renew 只用 status 占位不同，变配必须持久化
+	// 在飞的 flow：计费重投会带着同一个 trade_flow_id 再来，而"另一个 flow 想插队"必须被拒绝，
+	// 这个区分只能靠比对 pass 上记着的 flow id。
+	ColumnModifyFlowID         = "modify_flow_id"
+	ColumnModifyTargetBundleID = "modify_target_bundle_id"
 )
 
 // RenewFlag 取值枚举（v4 收敛：billing-integration 子需求 B2）
@@ -59,6 +65,9 @@ const (
 //	（不存在 isolated → active 的直接边；外部如需"复活"必须经 renewing 中间态）
 //	（active → renewing 不存在；提前续费走 active 路径同步直接 UPDATE expired_time，不切 status）
 //	（不存在 deleting → isolated 的回滚边；trade.DeleteResource 失败时 pass 留在 deleting，监控兜底）
+//	active ──[ModifyPass.TryAcquireSlotForModify]──▶ modifying
+//	modifying ──[变配父 task 全链路收敛]──▶ active（同时写新 bundle_id、清 modify_* 中间字段）
+//	（不存在 modifying → active 的失败回滚边；系统盘扩容不可逆，只能前滚收敛，见 §8.3）
 const (
 	StatusActive      = "active"
 	StatusIsolating   = "isolating"
@@ -66,6 +75,9 @@ const (
 	StatusRenewing    = "renewing"
 	StatusDeleting    = "deleting"
 	StatusTerminating = "terminating"
+	// StatusModifying 同 SP 变配进行中；ModifyPass CAS：active → modifying，父 task 全链路
+	// 收敛后 CAS 回 active。期间禁止建实例、隔离、续费、销毁等冲突操作。
+	StatusModifying = "modifying"
 	// StatusDeleted 销毁主链终态值，仅写入 history_pass.status 列，pass 表的 status 列不会出现该值。
 	// 详见上方 Status 注释中关于 StatusDeleted 的说明（history 维度的终态枚举）。
 	StatusDeleted = "deleted"
@@ -85,6 +97,11 @@ type Entity struct {
 	DeletedTime  *time.Time `gorm:"column:deleted_time"`            // 预留：销毁设计走物理 DELETE，本字段未使用
 	RenewFlag    string     `gorm:"column:renew_flag"`              // v4 收敛：MANUAL_RENEW / AUTO_RENEW
 	Status       string     `gorm:"column:status;index:idx_status"` // trade-pass-isolate：active / isolating / isolated
+
+	// ModifyFlowID / ModifyTargetBundleID 只在 status='modifying' 期间有值，收尾时清零。
+	// 变配受理靠它们区分"计费重投同一单"和"另一个单想插队"。
+	ModifyFlowID         int64  `gorm:"column:modify_flow_id"`
+	ModifyTargetBundleID string `gorm:"column:modify_target_bundle_id"`
 }
 
 func (Entity) TableName() string {

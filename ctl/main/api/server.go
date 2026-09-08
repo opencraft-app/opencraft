@@ -437,6 +437,17 @@ func normalizePath(path string) string {
 	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/price") {
 		return "/admin/api/ctl/passes/{passId}/renew/price"
 	}
+	// 同 SP 升配入口路径归一（TAPD 1010132091137784162 §5.1）：
+	//   /v1/passes/{pass_id}/modify/{bundles|order|order-url|order-and-pay}
+	// 四个后缀分开归一而不是折成 /modify/{action}：升配链路上"查询失败"和"下单失败"
+	// 是完全不同的告警，合并会让指标看不出用户卡在哪一步。
+	if strings.HasPrefix(path, "/v1/passes/") {
+		for _, action := range []string{"bundles", "order-url", "order-and-pay", "order"} {
+			if strings.HasSuffix(path, "/modify/"+action) {
+				return "/v1/passes/{passId}/modify/" + action
+			}
+		}
+	}
 	// D-2.3 主动销毁触发入口路径归一（trade-pass-destroy §4.5.1）：
 	//   /v1/passes/{pass_id}/delete             → /v1/passes/{passId}/delete
 	//   /admin/api/ctl/passes/{pass_id}/delete  → /admin/api/ctl/passes/{passId}/delete

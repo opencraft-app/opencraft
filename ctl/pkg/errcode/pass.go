@@ -105,4 +105,34 @@ var (
 	// 退款所需的"用户实名 + 资源归属"前提。在 ctl 入口处统一拦截，避免请求穿透到 trade/jifei
 	// 后被业务码 100151 等模糊错误拒绝。
 	ErrPassTrialNotRefundable = Register(New("PASS_TRIAL_NOT_REFUNDABLE", 400, "free trial pass is not refundable via jifei OnlineRefund"))
+
+	// === 同 SP 变配（升配）===
+	// 需求：TAPD 1010132091137784162 §6 前置校验 / §8.1 幂等
+	//
+	// trade 侧把这些 4xx 码当作业务永久错：checkModify 阶段直接映射为 data.status != 0，
+	// modifyResource 阶段才是「是否退款」的判断依据，别在这里替 trade 决定退款。
+
+	// ErrPassModifying pass 正在变配中（status='modifying'）。
+	//   - CreateInstance / resume 等路径下与 isolating 同语义拦截：底层机器规格正在变，
+	//     此时新建实例可能拿到源规格池，用户会看到「已付费升配但开出来还是小机器」
+	//   - 变配入口下表示另一笔变配在跑；同一笔计费重投不会返此码（按 modify_flow_id 区分）
+	ErrPassModifying = Register(New("PASS_MODIFYING", 403, "user pass is being modified, please wait"))
+
+	// ErrPassNotModifiable pass 状态不在可变配集合（仅 active）中。
+	// isolating/isolated/renewing/deleting/terminating 均返此码：变配要求资源处于正常可用态。
+	ErrPassNotModifiable = Register(New("PASS_NOT_MODIFIABLE", 403, "pass status not modifiable"))
+
+	// ErrPassModifyTargetNotAllowed source → target 不在本期允许的升配关系中。
+	// 覆盖降配、跨 SP、通用↔AI 互切，以及目标套餐不存在/已下线。
+	ErrPassModifyTargetNotAllowed = Register(New("PASS_MODIFY_TARGET_NOT_ALLOWED", 400, "modify from source bundle to target bundle is not allowed"))
+
+	// ErrPassModifyConfigMismatch 计费传入的 oldConfig / curDeadline / SP / PID 与 ctl 侧
+	// 现状不一致，说明询价后状态发生漂移（用户又续费了、又变配了、或计费配置改了）。
+	// 此时继续发货会让两边账不平，必须拒绝让计费重新询价。
+	ErrPassModifyConfigMismatch = Register(New("PASS_MODIFY_CONFIG_MISMATCH", 409, "billing config does not match current pass state"))
+
+	// ErrPassModifyInstanceNotReady pass 下存在非终态实例但不是全部 Running。
+	// Paused 表示 pass 已隔离，Creating/Resuming/Deleting 等表示有别的操作在跑；
+	// 两种情况都不能变配——升配要停机改规格，此时插进去会和在跑的操作互相打断。
+	ErrPassModifyInstanceNotReady = Register(New("PASS_MODIFY_INSTANCE_NOT_READY", 409, "pass instances are not all running, cannot modify"))
 )

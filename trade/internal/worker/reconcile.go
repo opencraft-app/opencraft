@@ -96,6 +96,18 @@ const DefaultBatchLimit = 100
 //   - 由人工介入排查（ctl 是否真的卡住 / 是否需要手工补尾）
 const RenewStaleAlertThreshold = 365 * 24 * time.Hour
 
+// ModifyStaleAlertThreshold 是 modify_resource 链路 in_progress 记录的告警阈值。
+//
+// 取 6 小时：变配的正常收敛时长由腾讯云侧"停机 → 改规格 → 扩盘 → 开机"决定，
+// 单台十几分钟，多实例串行也在小时级以内。滞留超过这个量级说明 CTL 变配父 task
+// 卡住了（实例状态异常、目标 pool 无容量等），需要人看。
+//
+// 不用 renew 那个 12 个月阈值：那是计费续费协议的重投窗口，与"我们这边多久算卡住"
+// 无关。变配的重投由 CTL 父 task 自己负责，trade 这边的阈值只服务于告警。
+//
+// 行为约束与 renew 分支一致：仅告警，不 markFailed，不构造退款响应体。
+const ModifyStaleAlertThreshold = 6 * time.Hour
+
 // ResourceProber 抽象"反查 ctl 中 pass 实际状态"的能力。
 //
 // 本期（迭代 7）注入 nil 即可 — worker 退化为"仅扫描 + 告警"模式，
@@ -303,6 +315,17 @@ func (w *Worker) reconcileOne(ctx context.Context, f *store.Flow) {
 		return
 	}
 
+	// 变配链路同样是 trade-side passive（TAPD 1010132091137784162 §7.1）：
+	// 用户已支付差价，且变配没有回滚链路——系统盘扩完不能缩回去。trade 这边
+	// 主动 markFailed 只会造出"trade=failed 但机器已经是巡游规格"的不一致账。
+	// CTL 变配父 task 永不放弃（max=1<<30），终态时回调
+	// POST /internal/trade/flows/{id}/complete 把 trade_flow 推到 completed；
+	// 本分支只负责按 age 分级告警，把卡住的单暴露给人。
+	if f.FlowType == store.FlowTypeModifyResource {
+		w.reconcileModifyResource(f)
+		return
+	}
+
 	if w.cfg.Prober == nil {
 		// 保守模式（仅 createResource / isolateResource 路径生效）：
 		// 仅日志，不动状态。日志中暴露 ID + flow_type 方便 SRE 反查。
@@ -487,6 +510,26 @@ func (w *Worker) reconcileRenewResource(_ context.Context, f *store.Flow) {
 
 	// age < 12 月：普通滞留日志（与 isolate Q11 修订版同语义；保持 in_progress 让下轮再观察）
 	w.logger.Printf("trade_flow reconcile: renew orphan still pending id=%d resource_id=%s app_id=%s deal_name=%s age=%v — keep in_progress (Q13 trade-side passive)",
+		f.ID, resourceID, f.AppID, f.DealName, age)
+}
+
+// reconcileModifyResource 处理 modify_resource 链路的孤儿记录（TAPD 1010132091137784162 §7.1）。
+//
+// 与 renew 分支同范式（trade-side passive，只告警不改状态），阈值不同：
+// 变配的收敛时长由"停机 → 改规格 → 扩盘 → 开机"决定，腾讯云侧单台十几分钟，
+// 多实例串行也就是小时级。滞留超过 ModifyStaleAlertThreshold 说明 CTL 父 task
+// 卡住了，需要人看，而不是继续等一个自然不会到来的回调。
+func (w *Worker) reconcileModifyResource(f *store.Flow) {
+	resourceID := derefResourceID(f.ResourceID)
+	age := w.now().Sub(f.CreatedTime)
+
+	if age >= ModifyStaleAlertThreshold {
+		w.logger.Printf("trade_flow reconcile: ALERT modify_resource_alert orphan id=%d resource_id=%s app_id=%s deal_name=%s age=%v threshold=%v — ctl modify parent task appears stuck, manual intervention required (trade does NOT auto markFailed: no rollback path for disk resize)",
+			f.ID, resourceID, f.AppID, f.DealName, age, ModifyStaleAlertThreshold)
+		return
+	}
+
+	w.logger.Printf("trade_flow reconcile: modify orphan still pending id=%d resource_id=%s app_id=%s deal_name=%s age=%v — keep in_progress (trade-side passive)",
 		f.ID, resourceID, f.AppID, f.DealName, age)
 }
 

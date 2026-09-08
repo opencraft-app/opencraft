@@ -31,6 +31,7 @@ type fakeFlowStoreCallback struct {
 	// R-MR-5（2026-05-24）：跟踪 MarkFailedByID 调用。
 	markFailedByIDFn func(ctx context.Context, id int64, body []byte) error
 	failedCalls      []markCompletedByIDCall
+	getByIDFn        func(ctx context.Context, id int64) (*store.Flow, error)
 }
 
 type markCompletedByIDCall struct {
@@ -78,7 +79,11 @@ func (f *fakeFlowStoreCallback) DeleteByID(_ context.Context, _ int64) error {
 func (f *fakeFlowStoreCallback) GetFlow(_ context.Context, _, _, _ string) (*store.Flow, error) {
 	return nil, store.ErrFlowNotFound
 }
-func (f *fakeFlowStoreCallback) GetByID(_ context.Context, _ int64) (*store.Flow, error) {
+
+func (f *fakeFlowStoreCallback) GetByID(ctx context.Context, id int64) (*store.Flow, error) {
+	if f.getByIDFn != nil {
+		return f.getByIDFn(ctx, id)
+	}
 	return nil, store.ErrFlowNotFound
 }
 func (f *fakeFlowStoreCallback) ListInProgressBefore(_ context.Context, _ time.Time, _ int) ([]*store.Flow, error) {
@@ -88,6 +93,14 @@ func (f *fakeFlowStoreCallback) ListInProgressBefore(_ context.Context, _ time.T
 // ===== test env with FlowStore ===============================================
 
 func newCallbackEnv(t *testing.T, flow *fakeFlowStoreCallback) *gin.Engine {
+	return newCallbackEnvWithOrderUpdater(t, flow, nil)
+}
+
+func newCallbackEnvWithOrderUpdater(
+	t *testing.T,
+	flow *fakeFlowStoreCallback,
+	orders OrderProvisionUpdater,
+) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -108,8 +121,26 @@ func newCallbackEnv(t *testing.T, flow *fakeFlowStoreCallback) *gin.Engine {
 		Inquiry:              inq,
 		PlaceOrder:           po,
 		FlowStore:            flow,
+		OrderUpdater:         orders,
 	})
 	return r
+}
+
+type fakeModifyOrderUpdater struct {
+	err        error
+	dealName   string
+	resourceID string
+	calls      int
+}
+
+func (f *fakeModifyOrderUpdater) MarkOrderProvisioned(
+	_ context.Context,
+	dealName, resourceID string,
+) error {
+	f.calls++
+	f.dealName = dealName
+	f.resourceID = resourceID
+	return f.err
 }
 
 func doCallbackJSON(r *gin.Engine, flowID string, body any, withAuth bool) *httptest.ResponseRecorder {
@@ -166,6 +197,77 @@ func TestFlowComplete_HappyPath(t *testing.T) {
 	}
 	if !strings.Contains(string(flow.calls[0].body), "completed") {
 		t.Errorf("expected body to contain 'completed', got %s", string(flow.calls[0].body))
+	}
+}
+
+func TestFlowComplete_ModifyPromotesOrderAndPreservesAcceptanceResponse(t *testing.T) {
+	resourceID := "pass-1"
+	acceptedBody := []byte(`{"returnCode":0,"returnValue":0,"data":{"flowId":4242}}`)
+	flow := &fakeFlowStoreCallback{
+		getByIDFn: func(_ context.Context, id int64) (*store.Flow, error) {
+			return &store.Flow{
+				ID: id, DealName: "deal-1", ResourceID: &resourceID,
+				FlowType: store.FlowTypeModifyResource, Status: store.FlowStatusInProgress,
+				ResponseBody: acceptedBody,
+			}, nil
+		},
+	}
+	orders := &fakeModifyOrderUpdater{}
+	r := newCallbackEnvWithOrderUpdater(t, flow, orders)
+
+	rec := doCallbackJSON(r, "4242", map[string]any{"result": "completed"}, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if orders.calls != 1 || orders.dealName != "deal-1" || orders.resourceID != resourceID {
+		t.Fatalf("unexpected order promotion: %+v", orders)
+	}
+	if len(flow.calls) != 1 || !bytes.Equal(flow.calls[0].body, acceptedBody) {
+		t.Fatalf("completion must preserve accepted framework body, got %+v", flow.calls)
+	}
+}
+
+func TestFlowComplete_ModifyOrderFailureKeepsCallbackRetryable(t *testing.T) {
+	resourceID := "pass-1"
+	flow := &fakeFlowStoreCallback{
+		getByIDFn: func(_ context.Context, id int64) (*store.Flow, error) {
+			return &store.Flow{
+				ID: id, DealName: "deal-before-insert", ResourceID: &resourceID,
+				FlowType: store.FlowTypeModifyResource, Status: store.FlowStatusInProgress,
+				ResponseBody: []byte(`{"returnCode":0,"returnValue":0}`),
+			}, nil
+		},
+	}
+	orders := &fakeModifyOrderUpdater{err: store.ErrTradeOrderNotFound}
+	r := newCallbackEnvWithOrderUpdater(t, flow, orders)
+
+	rec := doCallbackJSON(r, "4243", map[string]any{"result": "completed"}, true)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(flow.calls) != 0 {
+		t.Fatalf("flow must remain in_progress until order promotion succeeds")
+	}
+}
+
+func TestFlowComplete_ModifyWaitsForAcceptanceMetadata(t *testing.T) {
+	flow := &fakeFlowStoreCallback{
+		getByIDFn: func(_ context.Context, id int64) (*store.Flow, error) {
+			return &store.Flow{
+				ID: id, DealName: "deal-1", FlowType: store.FlowTypeModifyResource,
+				Status: store.FlowStatusInProgress,
+			}, nil
+		},
+	}
+	orders := &fakeModifyOrderUpdater{}
+	r := newCallbackEnvWithOrderUpdater(t, flow, orders)
+
+	rec := doCallbackJSON(r, "4244", map[string]any{"result": "completed"}, true)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if orders.calls != 0 || len(flow.calls) != 0 {
+		t.Fatalf("must not complete before modifyResource acceptance is recorded")
 	}
 }
 

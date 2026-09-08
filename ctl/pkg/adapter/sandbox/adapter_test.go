@@ -274,3 +274,56 @@ func TestStreamPtyCommandConsumesNDJSON(t *testing.T) {
 		t.Fatalf("unexpected events: %+v", events)
 	}
 }
+
+func TestModifySurfacesSandboxErrorCode(t *testing.T) {
+	// sandbox 的 modify 端点用 {"code","error"} 回错，而历史路由用 {"code":<int>,"message"}。
+	// ctl 的子 task 按 code 字符串决定"已收敛/永久失败/可重试"，所以这里锁定
+	// code 必须出现在最终 error 文案里。
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "already applied",
+			body: `{"code":"MODIFY_TARGET_ALREADY_APPLIED","error":"modify target spec is already applied"}`,
+			want: "MODIFY_TARGET_ALREADY_APPLIED",
+		},
+		{
+			name: "conflict",
+			body: `{"code":"MODIFY_OPERATION_CONFLICT","error":"idempotency key reused with a different target"}`,
+			want: "MODIFY_OPERATION_CONFLICT",
+		},
+		{
+			name: "codeless error field",
+			body: `{"error":"instance is not in a modifiable state"}`,
+			want: "instance is not in a modifiable state",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			adapter := NewSandboxAdapter(&config.SandboxConfig{
+				BaseURL: server.URL,
+				APIKey:  "test-api-key",
+				Timeout: 2,
+			}, zap.NewNop())
+			_, err := adapter.Modify(context.Background(), "sbx-1", &ModifyRequest{
+				IdempotencyKey: "task-1",
+				TargetPoolID:   "pool-1",
+			})
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %q does not contain %q", err.Error(), tc.want)
+			}
+		})
+	}
+}

@@ -33,6 +33,7 @@ var (
 	defaultBindingSyncInterval = 5 * time.Second
 	defaultBundleSyncInterval  = 15 * time.Second
 	defaultSKURolloutInterval  = 5 * time.Second
+	defaultModifyInterval      = 10 * time.Second
 	defaultOrphanSGTTL         = 100 * time.Second
 	defaultCreateVerifyRetries = 3
 	defaultCreateVerifyBackoff = 5 * time.Second
@@ -205,6 +206,8 @@ func main() {
 	bindingSyncInterval := flag.Duration("binding-sync-interval", defaultBindingSyncInterval, "interval for template binding admission reconciliation; 0 to disable")
 	bundleSyncInterval := flag.Duration("bundle-sync-interval", defaultBundleSyncInterval, "interval for warm capacity bundle reconciliation; 0 to disable")
 	skuRolloutInterval := flag.Duration("sku-rollout-interval", defaultSKURolloutInterval, "interval for serialized SKU rollout reconciliation; 0 to disable")
+	modifyInterval := flag.Duration("modify-interval", defaultModifyInterval, "interval for same-SP instance upgrade reconciliation; 0 to disable")
+	modifyBatch := flag.Int("modify-batch", 20, "max modify operations advanced per sweep")
 	flag.Parse()
 
 	if *shardTotal > 0 && (*shardIndex < 0 || *shardIndex >= *shardTotal) {
@@ -305,6 +308,17 @@ func main() {
 		emitWorkerEvent(baseCtx, "sandbox.worker.loop_skipped", "当前 worker 不是 leader shard，因此跳过 sku rollout loop。", attribute.String("loop", "sku_rollout"), attribute.Int("shard_index", *shardIndex), attribute.Int("shard_total", *shardTotal))
 	}
 
+	// 升配账本按 operation id 分片，所以每个 worker 只推进自己分片的操作。
+	if *modifyInterval > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runModifyLoop(shardCtx, svc, cp, *modifyInterval, *modifyBatch)
+		}()
+	} else {
+		emitWorkerEvent(baseCtx, "sandbox.worker.loop_disabled", "modify loop 已被显式关闭，因为 interval 小于等于 0。", attribute.String("loop", "modify"))
+	}
+
 	if *waterlineInterval > 0 {
 		wg.Add(1)
 		go func() {
@@ -399,6 +413,36 @@ func runCapacityBundleLoop(ctx context.Context, svc *service.Service, cp provide
 		case <-time.After(interval):
 		case <-ctx.Done():
 			emitWorkerEvent(ctx, "sandbox.worker.loop_stopped", "capacity bundle loop 已停止。", attribute.String("loop", "capacity_bundle"), attribute.String("reason", ctx.Err().Error()))
+			return
+		}
+	}
+}
+
+// runModifyLoop 推进同 SP 升配账本。云侧步骤（停机、改规格、扩盘、开机）总耗时
+// 远超 HTTP 超时，所以 api-gin 只落账本，实际执行放在这里单向续跑。
+func runModifyLoop(ctx context.Context, svc *service.Service, cp provider.CloudProvider, interval time.Duration, batch int) {
+	if _, ok := cp.(provider.InstanceSpecResizer); !ok {
+		emitWorkerEvent(ctx, "sandbox.worker.loop_disabled", "modify loop 已关闭，因为当前 provider 不支持 InstanceSpecResizer。", attribute.String("loop", "modify"))
+		return
+	}
+	emitWorkerEvent(ctx, "sandbox.worker.loop_started", "modify loop 已启动，worker 会周期性推进同 SP 升配操作。", attribute.String("loop", "modify"), attribute.String("interval", interval.String()))
+	runOnce := interval <= 0
+	for {
+		completed, err := svc.ReconcileModifyOperations(ctx, cp, batch)
+		if err != nil {
+			// 单步失败是常态（云侧还在收敛），账本已记 last_error，下一轮继续。
+			emitWorkerEvent(ctx, "sandbox.worker.loop_failed", "modify loop 有升配操作本轮未推进成功，账本保持 running 等待下一轮续跑。", attribute.String("loop", "modify"), attribute.String("error", err.Error()))
+		}
+		if completed > 0 {
+			emitWorkerEvent(ctx, "sandbox.modify.operations_completed", "本轮 modify loop 有升配操作收敛完成。", attribute.Int("completed", completed))
+		}
+		if runOnce {
+			return
+		}
+		select {
+		case <-time.After(interval):
+		case <-ctx.Done():
+			emitWorkerEvent(ctx, "sandbox.worker.loop_stopped", "modify loop 已停止。", attribute.String("loop", "modify"), attribute.String("reason", ctx.Err().Error()))
 			return
 		}
 	}

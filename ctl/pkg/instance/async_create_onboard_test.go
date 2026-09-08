@@ -471,3 +471,11 @@ func TestRunCreateInstanceTaskFailsWhenEnsureAiGatewayUserFails(t *testing.T) {
 		t.Fatalf("expected created sandbox to be cleaned up, got %+v", sandboxAdapter.deletedIDs)
 	}
 }
+
+func (s *createTaskSandboxAdapterStub) Modify(context.Context, string, *psandbox.ModifyRequest) (*psandbox.ModifyOperation, error) {
+	panic("unexpected call")
+}
+
+func (s *createTaskSandboxAdapterStub) GetModifyOperation(context.Context, string) (*psandbox.ModifyOperation, error) {
+	panic("unexpected call")
+}
