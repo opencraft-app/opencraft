@@ -5,12 +5,12 @@
 ## non_goals
 
 - 不修改定时任务业务逻辑、接口或产品界面。
-- 不为本次动态复用无法展示新任务类型的旧截图。
+- 不复用无法展示新任务类型的旧截图。
 - 不合并 MR 或发布到生产环境。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 
-- 用户需求（2026-09-08）：新增两种新类型的定时任务——通知任务、脚本任务；不需要调用模型，0 Token 消耗；更新国内站、国际站 Changelog；历史动态统一为“定时任务”；单独提交新 MR。
+- 用户需求（2026-09-08）：新增两种新类型的定时任务——通知任务、脚本任务；不需要调用模型，0 Token 消耗；更新国内站、国际站 Changelog；历史动态统一为“定时任务”；单独提交新 MR；9 月工作台动态改为强调在 LightVela 中创建个人工作台并以静态网站形式管理。
 
 ## interface_refs / data_structure_refs
 
@@ -28,7 +28,7 @@
 - 国内站 2026 年 9 月分组首条展示通知任务、脚本任务及 0 Token 说明。
 - 国际站同一动态覆盖简体中文、繁体中文、英语、印度尼西亚语、西班牙语、日语和韩语。
 - 国内站与国际站历史任务动态继续使用“定时任务 / Scheduled Tasks”，不回退到“自动任务 / Automations”。
-- 动态不展示不准确的旧配图。
+- 国内站使用简体中文通知任务弹窗截图；国际站随当前语言展示对应的通知任务弹窗截图。
 - 国内站、国际站聚焦测试与 i18n 门禁通过。
 
 ## affected_paths
@@ -37,6 +37,7 @@
 - `frontend/src/pages/marketing/__tests__/channel-copy.test.tsx`
 - `frontend/src/pages/marketing/__tests__/global-changelog.test.tsx`
 - `frontend/src/i18n/generated/`
+- `frontend/public/assets/changelog/scheduled-tasks-notification-*.png`
 - `docs/context/tasks/2026-09-08-zero-token-scheduled-tasks-changelog.md`
 
 ## required_context
@@ -57,9 +58,10 @@
 ## evidence
 
 - `origin/master@1c223852a` 已统一历史 Changelog 的定时任务命名；新分支直接从该提交创建，未携带 MR !3712 的其他改动。
-- 国内站与国际站 `2026-09` 分组首位复用同一条新动态，使用 `visual: "none"`，不展示不准确的旧截图。
+- 国内站与国际站 `2026-09` 分组首位复用同一条新动态；使用真实的“新建定时任务”弹窗并选中“通知任务”，国内站使用简体中文图，国际站覆盖全部七种可见语言。
 - 新增两条中文源文案；英语、印度尼西亚语、西班牙语、日语和韩语手工补齐，繁体中文由仓库脚本生成。
-- 回归测试覆盖国内站顺序、0 Token 文案、无配图、国际站七种可见语言，以及历史命名不得回退。
+- 9 月工作台动态的国内站和国际站七种语言已同步改为“在 LightVela 中创建个人工作台，并以静态网站形式发布和管理”的产品表述。
+- 回归测试覆盖国内站顺序、0 Token 文案、国内站截图、国际站七种语言截图，以及历史命名不得回退。
 - 国内站与国际站聚焦测试共 20 个用例通过；`pnpm check` 通过，TypeScript 0 个新增诊断，现有 51 个 i18n 告警未新增错误。
 - 文档完整性校验通过：0 个 first-party 断链、0 个 warning。
 
@@ -77,7 +79,7 @@
 ## decisions
 
 - 两种任务类型作为同一条产品动态发布，避免拆分同一能力。
-- 使用 `visual: "none"`，直到有准确展示新任务类型的正式配图。
+- 截图只裁取新建弹窗，避免把账号任务数据带入产品动态；各语言截图保持相同尺寸和“通知任务”选中状态。
 - 英文标题采用 Title Case；英文正文明确“不调用模型”和“模型 Token 消耗为 0”。
 
 ## scan_scope

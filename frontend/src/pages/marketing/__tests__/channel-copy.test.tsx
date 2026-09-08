@@ -70,10 +70,13 @@ describe("marketing channel copy", () => {
     expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
     expect(
       within(septemberSection!).getByText(
-        "现在可以创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
+        "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
       ),
     ).toBeInTheDocument();
-    expect(heading.closest("article")?.querySelector("img")).toBeNull();
+    expect(screen.getByAltText("定时任务新增通知任务和脚本任务")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/scheduled-tasks-notification-zh-CN.png"),
+    );
   });
 
   it("shows the Workbench update with the domestic Chinese screenshot", () => {
@@ -89,7 +92,7 @@ describe("marketing channel copy", () => {
       name: "LightVela 支持创建和发布工作台Beta",
     });
     expect(within(septemberSection!).getByText(
-      "现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。",
+      "支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。",
     )).toBeInTheDocument();
     expect(within(heading.closest("article")!).getByText("Beta")).toBeInTheDocument();
     expect(screen.getByAltText("LightVela 支持创建和发布工作台")).toHaveAttribute(

@@ -60,14 +60,16 @@ describe("global changelog skill package entry", () => {
         month: "2026 年 9 月",
         title: "定时任务新增通知任务和脚本任务",
         description:
-          "现在可以创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
+          "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
+        image: "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
       },
       {
         locale: "zh-Hant",
         month: "2026 年 9 月",
         title: "定時任務新增通知任務和腳本任務",
         description:
-          "現在可以創建通知任務和腳本任務：按原文發送通知，或按計劃運行預設腳本。兩種任務均不調用模型，模型 Token 消耗為 0。",
+          "支持創建通知任務和腳本任務：按原文發送通知，或按計劃運行預設腳本。兩種任務均不調用模型，模型 Token 消耗為 0。",
+        image: "/assets/changelog/scheduled-tasks-notification-zh-Hant.png",
       },
       {
         locale: "en-US",
@@ -75,6 +77,7 @@ describe("global changelog skill package entry", () => {
         title: "Scheduled Tasks Now Support Notification and Script Tasks",
         description:
           "Create Notification Tasks to send text exactly as written or Script Tasks to run preset scripts on a schedule. Neither task type calls a model, so model token usage is zero.",
+        image: "/assets/changelog/scheduled-tasks-notification-en-US.png",
       },
       {
         locale: "id-ID",
@@ -82,6 +85,7 @@ describe("global changelog skill package entry", () => {
         title: "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip",
         description:
           "Buat Tugas Notifikasi untuk mengirim teks persis seperti yang ditulis, atau Tugas Skrip untuk menjalankan skrip siap pakai sesuai jadwal. Keduanya tidak memanggil model, sehingga penggunaan token model adalah nol.",
+        image: "/assets/changelog/scheduled-tasks-notification-id-ID.png",
       },
       {
         locale: "es",
@@ -89,6 +93,7 @@ describe("global changelog skill package entry", () => {
         title: "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script",
         description:
           "Crea Tareas de Notificación para enviar texto exactamente como está escrito o Tareas de Script para ejecutar scripts predefinidos según una programación. Ninguno de los dos tipos llama a un modelo, por lo que el consumo de tokens del modelo es cero.",
+        image: "/assets/changelog/scheduled-tasks-notification-es.png",
       },
       {
         locale: "ja-JP",
@@ -96,6 +101,7 @@ describe("global changelog skill package entry", () => {
         title: "スケジュールタスクに通知タスクとスクリプトタスクを追加",
         description:
           "通知タスクでは入力したテキストをそのまま送信し、スクリプトタスクではプリセットスクリプトをスケジュール実行できます。どちらもモデルを呼び出さないため、モデルのトークン消費はゼロです。",
+        image: "/assets/changelog/scheduled-tasks-notification-ja-JP.png",
       },
       {
         locale: "ko-KR",
@@ -103,6 +109,7 @@ describe("global changelog skill package entry", () => {
         title: "예약 작업에 알림 작업 및 스크립트 작업 추가",
         description:
           "알림 작업은 작성한 텍스트를 그대로 전송하고, 스크립트 작업은 사전 설정된 스크립트를 일정에 따라 실행합니다. 두 유형 모두 모델을 호출하지 않으므로 모델 토큰 사용량은 0입니다.",
+        image: "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
       },
     ] as const;
 
@@ -120,7 +127,10 @@ describe("global changelog skill package entry", () => {
       const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
       expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
-      expect(heading.closest("article")?.querySelector("img")).toBeNull();
+      expect(screen.getByAltText(copy.title)).toHaveAttribute(
+        "src",
+        expect.stringContaining(copy.image),
+      );
       cleanup();
     }
   });
@@ -212,7 +222,7 @@ describe("global changelog skill package entry", () => {
         month: "2026 年 9 月",
         title: "LightVela 支持创建和发布工作台",
         description:
-          "现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。",
+          "支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。",
         image: "/assets/changelog/lightvela-workbench-zh.png",
       },
       {
@@ -220,7 +230,7 @@ describe("global changelog skill package entry", () => {
         month: "2026 年 9 月",
         title: "LightVela 支持創建和發佈工作台",
         description:
-          "現在可以通過 Agent 選擇模板或從零開始創建靜態網站，並在 LightVela 中直接發佈、預覽、更新和管理自己的工作台。",
+          "支持在 LightVela 中選擇模板或從零開始創建個人工作台，並以靜態網站的形式直接發佈、預覽、更新和管理自己的工作台。",
         image: "/assets/changelog/lightvela-workbench-zh.png",
       },
       {
@@ -228,7 +238,7 @@ describe("global changelog skill package entry", () => {
         month: "September 2026",
         title: "LightVela Supports Building and Publishing Workbenches",
         description:
-          "Build static websites with an Agent from a starter template or from scratch, then publish, preview, update, and manage your workbenches directly in LightVela.",
+          "Build a personal workbench in LightVela from a template or from scratch, then publish, preview, update, and manage it directly as a static website.",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
       {
@@ -236,7 +246,7 @@ describe("global changelog skill package entry", () => {
         month: "September 2026",
         title: "LightVela Mendukung Pembuatan dan Publikasi Workbench",
         description:
-          "Buat situs web statis dengan Agent dari templat awal atau dari nol, lalu publikasikan, pratinjau, perbarui, dan kelola workbench Anda langsung di LightVela.",
+          "Buat workbench pribadi di LightVela dari templat atau dari nol, lalu publikasikan, pratinjau, perbarui, dan kelola langsung sebagai situs web statis.",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
       {
@@ -244,7 +254,7 @@ describe("global changelog skill package entry", () => {
         month: "Septiembre de 2026",
         title: "LightVela Permite Crear y Publicar Workbenches",
         description:
-          "Crea sitios web estáticos con un Agent a partir de una plantilla inicial o desde cero, y publícalos, previsualízalos, actualízalos y gestiónalos directamente en LightVela.",
+          "Crea un workbench personal en LightVela a partir de una plantilla o desde cero, y publícalo, previsualízalo, actualízalo y gestiónalo directamente como un sitio web estático.",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
       {
@@ -252,7 +262,7 @@ describe("global changelog skill package entry", () => {
         month: "2026年9月",
         title: "LightVelaでワークベンチの作成と公開に対応",
         description:
-          "スターターテンプレートまたはゼロからAgentで静的Webサイトを作成し、LightVela上で直接公開、プレビュー、更新、管理できます。",
+          "LightVelaでテンプレートを選ぶかゼロから個人用ワークベンチを作成し、静的Webサイトとして直接公開、プレビュー、更新、管理できます。",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
       {
@@ -260,7 +270,7 @@ describe("global changelog skill package entry", () => {
         month: "2026년 9월",
         title: "LightVela에서 워크벤치 생성 및 게시 지원",
         description:
-          "시작 템플릿을 선택하거나 처음부터 Agent로 정적 웹사이트를 만든 다음 LightVela에서 직접 게시, 미리보기, 업데이트 및 관리할 수 있습니다.",
+          "LightVela에서 템플릿을 선택하거나 처음부터 개인 워크벤치를 만들고, 정적 웹사이트 형태로 직접 게시, 미리보기, 업데이트 및 관리할 수 있습니다.",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
     ] as const;
