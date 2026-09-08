@@ -156,6 +156,6 @@ La memoria ayuda a Hermes a recordarte. A continuación, dale más formas de act
 
 - [Configurar Skills](./skill.md) — Agrega capacidades como búsqueda de clima, resúmenes y navegación web
 
-- [Automatizaciones](./automation.md) — Permite que Hermes ejecute tareas proactivamente según un horario
+- [Tareas programadas](./automation.md) — Permite que Hermes ejecute tareas proactivamente según un horario
 
 - [Resumen de configuración](../05-configuration.md)

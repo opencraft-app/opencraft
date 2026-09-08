@@ -1,8 +1,8 @@
-# How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Automations
+# How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Scheduled Tasks
 
 ## Summary
 
-**WhatsApp can serve as a one-to-one entry point between customers and a Hermes Agent, useful for answering recurring questions, capturing customer needs, and drafting responses. But "24/7" here means it can respond whenever the service is running, the model is available, and the channel is connected — it is not an uninterrupted-service guarantee or a human-support SLA.** A second constraint matters just as much: proactive messaging on WhatsApp remains subject to conversation windows, template messages, and channel configuration, so automated reminders must be designed separately from customer-initiated conversations rather than assuming you can push at will. Build in four layers, in order: the persona sets voice and escalation conditions, knowledge captures FAQs, skills add reusable procedures, and automations handle scheduled summaries.
+**WhatsApp can serve as a one-to-one entry point between customers and a Hermes Agent, useful for answering recurring questions, capturing customer needs, and drafting responses. But "24/7" here means it can respond whenever the service is running, the model is available, and the channel is connected — it is not an uninterrupted-service guarantee or a human-support SLA.** A second constraint matters just as much: proactive messaging on WhatsApp remains subject to conversation windows, template messages, and channel configuration, so automated reminders must be designed separately from customer-initiated conversations rather than assuming you can push at will. Build in four layers, in order: the persona sets voice and escalation conditions, knowledge captures FAQs, skills add reusable procedures, and scheduled tasks handle scheduled summaries.
 
 ![Configuring 24/7 AI customer service in WhatsApp](../images/use-case-09-whatsapp-24-7-customer-service.png)
 
@@ -33,7 +33,7 @@ It is especially useful for teams that need consistent support language, maintai
 | Knowledge | Product FAQs, policies, service hours, and escalation paths | Reference files in [Cloud Storage](../configuration/files.md) |
 | Skills | Retrieval, organization, drafting, and other concrete actions | [Skills](../configuration/skill.md) |
 | Memory | Confirmed customer preferences and durable collaboration context | [Memory Management](../configuration/memory.md) |
-| Automations | Scheduled checks, internal reminders, and proactive notices | [Automations](../configuration/automation.md) |
+| Scheduled Tasks | Scheduled checks, internal reminders, and proactive notices | [Scheduled Tasks](../configuration/automation.md) |
 
 Do not put a large product knowledge base into the personality, and do not treat unconfirmed customer content as long-term memory.
 
@@ -102,11 +102,11 @@ Passwords, verification codes, payment details, full identity information, and u
 
 Ask Hermes in conversation to remember or forget a preference, and periodically review the [Memory Management](../configuration/memory.md) page in the console.
 
-### 6. Configure automations and proactive messages
+### 6. Configure scheduled tasks and proactive messages
 
-Good automation candidates include internal task reminders, unresolved-case checks, and daily service summaries.
+Good scheduled task candidates include internal task reminders, unresolved-case checks, and daily service summaries.
 
-Configure the schedule, active time window, and notification method in [Automations](../configuration/automation.md).
+Configure the schedule, active time window, and notification method in [Scheduled Tasks](../configuration/automation.md).
 
 WhatsApp proactive messages may be limited by conversation windows or approved message templates, so do not assume that a normal text can always be delivered when the customer has not started a conversation.
 
@@ -166,4 +166,4 @@ By default, let the Skill create a draft or internal reminder, then have a human
 
 - [How to Define an IM Agent's Role, Personality, and Voice with SOUL.md](./im-agent-persona-soul-md.md) - Define the support personality and behavioral boundary.
 
-- [Automations](../configuration/automation.md) - Configure internal reminders and scheduled summaries.
+- [Scheduled Tasks](../configuration/automation.md) - Configure internal reminders and scheduled summaries.

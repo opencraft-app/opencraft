@@ -90,7 +90,7 @@ Kanal adalah pintu masuk dari platform chat tempat pengguna berbicara dengan Her
 | Kanal | Cara akses | Cocok untuk |
 |---|---|---|
 | WeChat | Otorisasi kode QR | Penggunaan pribadi sehari-hari, terutama untuk pengguna di Tiongkok |
-| Telegram | Akses Bot Token | Pesan pribadi atau tim, setup sederhana, cocok untuk otomasi ringan |
+| Telegram | Akses Bot Token | Pesan pribadi atau tim, setup sederhana, cocok untuk tugas terjadwal ringan |
 | WhatsApp | Akses WhatsApp Business API | Komunikasi pengguna internasional, layanan pelanggan, notifikasi, dan pengingat |
 | Discord | Akses Bot Token | Operasi komunitas, komunitas developer, gim, atau grup minat |
 | Slack | Akses Bot Token / App Token | Kolaborasi tim, notifikasi workspace, dan workflow berbasis channel |

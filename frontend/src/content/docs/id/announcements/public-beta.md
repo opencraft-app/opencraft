@@ -23,7 +23,7 @@ Sejak akses beta dibuka, kami menerima banyak saran dan laporan pemakaian nyata 
 ## Kemampuan produk yang terus kami bangun
 
 - Persona dan konfigurasi Agent pribadi: konfigurasikan nama Agent, persona, model, dan preferensi Anda.
-- Otomasi: jalankan pengingat, ringkasan, notifikasi, dan tugas lain sesuai jadwal atau interval.
+- Tugas Terjadwal: jalankan pengingat, ringkasan, notifikasi, dan tugas lain sesuai jadwal atau interval.
 - Memori dan konteks: tinjau dan kelola memori serta konteks yang dikumpulkan Agent Anda.
 - Cloud storage dan file: lihat dan kelola file cloud yang dipakai Agent Anda.
 - Chat web dan kanal pesan: mengobrol di web dan menghubungkan kanal seperti Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, dan Lark.
@@ -64,4 +64,4 @@ Kami juga berharap dapat terus mendengar masukan dari pengguna beta.
 
 - Peningkatan diri dan pembelajaran: membantu Agent memahami kebiasaan pengguna, mempertahankan pengalaman tugas, dan meningkatkan kualitas eksekusi seiring waktu.
 - Skill, tool, dan plugin yang lebih kuat: terus meningkatkan pemakaian tool, integrasi plugin, dan koneksi kemampuan eksternal sehingga LightVela dapat mendukung lebih banyak alur kerja nyata.
-- Otomasi dan kolaborasi multi-Agent: meningkatkan orkestrasi tugas, kolaborasi multi-Agent, dan eksekusi jangka panjang sehingga tugas kompleks dapat direncanakan, dijalankan, dan dilacak dengan lebih andal.
+- Tugas Terjadwal dan kolaborasi multi-Agent: meningkatkan orkestrasi tugas, kolaborasi multi-Agent, dan eksekusi jangka panjang sehingga tugas kompleks dapat direncanakan, dijalankan, dan dilacak dengan lebih andal.

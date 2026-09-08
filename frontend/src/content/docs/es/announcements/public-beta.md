@@ -23,7 +23,7 @@ Desde que se abrió el acceso beta, hemos recibido muchas sugerencias y informes
 ## Capacidades del producto que continuaremos construyendo
 
 - Configuración de Agent personal y de persona: configure el nombre, la persona, el modelo y las preferencias de su Agent.
-- Automatizaciones: ejecute recordatorios, resúmenes, notificaciones y otras tareas en un horario o intervalo.
+- Tareas programadas: ejecute recordatorios, resúmenes, notificaciones y otras tareas en un horario o intervalo.
 - Memoria y contexto: revise y gestione las memorias y el contexto acumulado por su Agent.
 - Almacenamiento en la nube y archivos: visualice y gestione los archivos en la nube utilizados por su Agent.
 - Chat web y canales de mensajería: chatee en la web y conecte canales como Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom y Lark.
@@ -64,4 +64,4 @@ También esperamos seguir escuchando a los usuarios beta.
 
 - Automejoramiento y aprendizaje: ayude al Agent a comprender los hábitos del usuario, retener la experiencia de tareas y mejorar la calidad de ejecución con el tiempo.
 - Skills, herramientas y plugins más fuertes: continúe mejorar el uso de herramientas, la integración de plugins y las conexiones de capacidades externas para que LightVela pueda soportar más flujos de trabajo reales.
-- Automatización y colaboración multi-Agent: mejore la orquestación de tareas, la colaboración multi-Agent y la ejecución de larga duración para que las tareas complejas puedan planificarse, ejecutarse y rastrearse de manera más confiable.
+- Tarea programada y colaboración multi-Agent: mejore la orquestación de tareas, la colaboración multi-Agent y la ejecución de larga duración para que las tareas complejas puedan planificarse, ejecutarse y rastrearse de manera más confiable.

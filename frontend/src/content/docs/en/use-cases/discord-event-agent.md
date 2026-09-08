@@ -2,7 +2,7 @@
 
 ## Summary
 
-**A Discord event bot becomes more useful when it can explain approved event information, answer repeat questions, support onboarding, and send scheduled reminders from one configured Hermes Agent.** In LightVela, the practical path is to connect Discord, give the Agent an event brief and safety boundaries, test it against real participant questions, and add narrow Automations for reminders or summaries.
+**A Discord event bot becomes more useful when it can explain approved event information, answer repeat questions, support onboarding, and send scheduled reminders from one configured Hermes Agent.** In LightVela, the practical path is to connect Discord, give the Agent an event brief and safety boundaries, test it against real participant questions, and add narrow Scheduled Tasks for reminders or summaries.
 
 This pattern is best for recurring tournaments, raids, study groups, community launches, and other events where the same information must be repeated across many conversations.
 
@@ -25,7 +25,7 @@ It should reduce repetitive coordination work without becoming the source of tru
 
 - A moderator or organizer who owns updates to the schedule and approves announcements.
 
-- The [Discord channel configuration guide](../configuration/channel-discord.md) and [Automations guide](../configuration/automation.md).
+- The [Discord channel configuration guide](../configuration/channel-discord.md) and [Scheduled Tasks guide](../configuration/automation.md).
 
 ## Steps
 
@@ -117,12 +117,12 @@ Do not assume that every server channel or group-chat mode has the same behavior
 
 ### 5. Add scheduled reminders and summaries
 
-Use an Automation when the event has a predictable cadence.
+Use a Scheduled Task when the event has a predictable cadence.
 LightVela supports one-time runs, fixed weekdays, and fixed intervals, as well as an optional effective window and notification channels.
 You can choose a fixed weekday, fixed interval, or one-time execution.
-You can also pause, edit, or delete an automation later.
+You can also pause, edit, or delete a scheduled task later.
 
-![Configure an automated task for a Discord event](../images/automation-2-global-en.webp)
+![Configure a scheduled task for a Discord event](../images/automation-2-global-en.webp)
 
 ```text
 One day before the tournament, remind the event channel about the start time, time zone, registration deadline, and rules channel.
@@ -130,7 +130,7 @@ Use only the approved event brief.
 If the brief is missing a detail, tell the organizer which detail needs review.
 ```
 
-In this example, the bot is running the "Game tournament reminder" automation.
+In this example, the bot is running the "Game tournament reminder" scheduled task.
 
 ![A Discord bot sending a tournament reminder](../images/discord-event-reminder.webp)
 
@@ -142,7 +142,7 @@ Do not infer winners, penalties, or policy decisions from incomplete information
 ```
 
 Review the first scheduled output before adding a series of reminders.
-The [Automation configuration guide](../configuration/automation.md) explains where to set the schedule, task instructions, effective window, and notification settings.
+The [Scheduled Task configuration guide](../configuration/automation.md) explains where to set the schedule, task instructions, effective window, and notification settings.
 
 ## Practical checklist
 
@@ -151,8 +151,8 @@ The [Automation configuration guide](../configuration/automation.md) explains wh
 | Before launch | Add the reviewed schedule, time zone, rules, links, and escalation path | Agent context | Participants can get the same approved answer |
 | Connection | Invite the Bot and test it in the intended conversation | Discord channel | The Bot replies and has only the permissions it needs |
 | Participant support | Ask schedule, registration, and preparation questions | Hermes Agent | Answers are concise, specific, and grounded in the brief |
-| Reminder | Schedule one pre-event message | Automation | The message arrives in the selected channel at the expected time |
-| After the event | Generate a summary for organizers | Automation or Chat | The summary separates known results, open questions, and human follow-up |
+| Reminder | Schedule one pre-event message | Scheduled Task | The message arrives in the selected channel at the expected time |
+| After the event | Generate a summary for organizers | Scheduled Task or Chat | The summary separates known results, open questions, and human follow-up |
 
 ## Validation and boundaries
 
@@ -180,10 +180,10 @@ Human organizers remain responsible for the event's official source of truth.
 It can explain a published event time when the event brief includes the source time zone and the participant provides a target time zone.
 Ask it to include both the original time and the converted time so participants can verify the result.
 
-### Can an Automation send a Discord event reminder?
+### Can a Scheduled Task send a Discord event reminder?
 
 Yes, the Discord channel documentation lists proactive messages as supported at the channel layer.
-Create an Automation with the reminder text, schedule, effective window, and notification channel, then test the first delivery before relying on it for a critical deadline.
+Create a Scheduled Task with the reminder text, schedule, effective window, and notification channel, then test the first delivery before relying on it for a critical deadline.
 
 ### Can the Agent update the event schedule by itself?
 
@@ -199,7 +199,7 @@ A custom bot may be better for deeply specific commands, database-backed registr
 
 ## Conclusion
 
-Give the Agent a reviewed event brief, connect it to Discord, test real participant questions, and add one narrow Automation for reminders or summaries.
+Give the Agent a reviewed event brief, connect it to Discord, test real participant questions, and add one narrow Scheduled Task for reminders or summaries.
 That sequence adds useful AI-agent behavior to an event bot while leaving event authority, policy changes, and sensitive decisions with the human organizers.
 
 For the broader community pattern, see [Meet LightVela for Discord: Your AI Agent Discord Bot Serving Your Channel](./discord-community-agent.md).

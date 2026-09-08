@@ -9,7 +9,7 @@ export const KOREAN_SEO_KEYWORDS = [
   "AI 어시스턴트",
   "Hermes Agent",
   "AI 에이전트 호스팅",
-  "자동 작업",
+  "예약 작업",
   "Telegram 봇",
   "WhatsApp 봇",
 ].join(", ");
@@ -40,7 +40,7 @@ export const KOREAN_STATIC_PAGE_TITLES: Record<string, string> = {
 
 const KOREAN_AGENT_SECTION_TITLES: Record<string, string> = {
   achievements: "성과",
-  automations: "자동 작업",
+  automations: "예약 작업",
   channels: "채널",
   chat: "채팅",
   files: "파일",
@@ -66,7 +66,7 @@ export const KOREAN_DOC_PAGE_TITLES: Record<string, string> = {
   "/docs/configuration": "설정",
   "/docs/configuration/model": "모델 설정",
   "/docs/configuration/skill": "스킬 설정",
-  "/docs/configuration/automation": "자동 작업",
+  "/docs/configuration/automation": "예약 작업",
   "/docs/configuration/agent-chat": "채팅",
   "/docs/faq": "자주 묻는 질문",
   "/docs/plans": "요금제",
@@ -83,7 +83,7 @@ export const KOREAN_PAGE_DESCRIPTIONS: Record<string, string> = {
   "/subscribe": "Hermes Agent 사용 방식에 맞는 LightVela 플랜을 선택하세요.",
   "/support": "LightVela에 피드백, 문제 신고, 기능 요청을 보낼 수 있습니다.",
   "/terms-of-service": "LightVela 플랫폼의 접속과 이용에 적용되는 서비스 이용약관입니다.",
-  "/docs": "빠른 시작, 핵심 개념, 모델, 채널, 스킬, 자동 작업 설정 방법을 안내하는 LightVela 문서입니다.",
+  "/docs": "빠른 시작, 핵심 개념, 모델, 채널, 스킬, 예약 작업 설정 방법을 안내하는 LightVela 문서입니다.",
   "/docs/overview":
     "LightVela가 Hermes Agent를 클라우드에서 호스팅해 메모리와 여러 채널을 갖춘 상시 실행 개인 AI 에이전트를 제공하는 방식을 소개합니다.",
 };

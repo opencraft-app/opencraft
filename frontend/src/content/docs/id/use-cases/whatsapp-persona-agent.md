@@ -112,7 +112,7 @@ Jika Agent membutuhkan konteks proyek yang stabil, pakai kemampuan [Pengelolaan 
 
 Kepribadian mendefinisikan peran dan suara yang dipakai Agent.
 Skill mendefinisikan apakah ia dapat melakukan tugas tertentu.
-Otomasi mendefinisikan kapan ia mulai bekerja secara proaktif.
+Tugas Terjadwal mendefinisikan kapan ia mulai bekerja secara proaktif.
 Memori dan profil pengguna mendefinisikan konteks jangka panjang mana yang seharusnya ia pertahankan.
 
 Misalnya, kepribadian layanan pelanggan yang hangat tidak otomatis menyediakan kemampuan pencarian pesanan, penelusuran basis pengetahuan, atau pengembalian dana.
@@ -141,7 +141,7 @@ Periksa [Kanal WhatsApp](../configuration/channel-whatsapp.md) untuk batasan kan
 ### Bisakah Agent WhatsApp mengirim pesan secara proaktif?
 
 Pesan proaktif juga tunduk pada aturan templat pesan dan jendela percakapan WhatsApp.
-Jika Anda menginginkan pengingat terjadwal, baca [Otomasi](../configuration/automation.md) lalu pastikan metode pengirimannya sesuai dengan batas kanal WhatsApp yang sebenarnya.
+Jika Anda menginginkan pengingat terjadwal, baca [Tugas Terjadwal](../configuration/automation.md) lalu pastikan metode pengirimannya sesuai dengan batas kanal WhatsApp yang sebenarnya.
 
 ## Langkah berikutnya
 
@@ -151,4 +151,4 @@ Jika Anda menginginkan pengingat terjadwal, baca [Otomasi](../configuration/auto
 
 - [Kanal WhatsApp](../configuration/channel-whatsapp.md) — Ikuti alur otorisasi dan penelusuran masalah WhatsApp secara lengkap.
 
-- [Otomasi](../configuration/automation.md) — Jadwalkan pengingat atau tinjauan yang sudah diuji dalam percakapan.
+- [Tugas Terjadwal](../configuration/automation.md) — Jadwalkan pengingat atau tinjauan yang sudah diuji dalam percakapan.

@@ -22,7 +22,7 @@ Kredit model adalah satuan yang digunakan LightVela untuk mengukur penggunaan mo
 
 ## Apa itu kredit model?
 
-Kredit model adalah **satuan pengukuran** untuk pemanggilan language model oleh Hermes Agent. Setiap kali Agent Anda membalas dalam percakapan, menjalankan [otomasi](./configuration/automation.md), atau menggunakan Skill, ia mengirim permintaan ke model yang mendasarinya. Token yang digunakan oleh permintaan tersebut dikonversi menjadi kredit.
+Kredit model adalah **satuan pengukuran** untuk pemanggilan language model oleh Hermes Agent. Setiap kali Agent Anda membalas dalam percakapan, menjalankan [tugas terjadwal](./configuration/automation.md), atau menggunakan Skill, ia mengirim permintaan ke model yang mendasarinya. Token yang digunakan oleh permintaan tersebut dikonversi menjadi kredit.
 
 Konversi perkiraannya adalah **1 kredit ≈ 10.000 token**. Token adalah satuan dasar teks yang diproses oleh model. Baik input—konten yang Anda kirim ke Agent Anda—maupun output—balasan yang dihasilkannya—dihitung sebagai penggunaan.
 
@@ -49,7 +49,7 @@ Kredit dikonsumsi dalam situasi berikut karena masing-masing membutuhkan Hermes 
 
 - **Mengobrol dengan Agent Anda** — Mengirim pesan melalui Telegram, WhatsApp, Discord, Slack, WeChat, atau kanal lain yang didukung
 
-- **Menjalankan otomasi** — Membiarkan Agent Anda mengeksekusi [tugas terjadwal](./configuration/automation.md)
+- **Menjalankan tugas terjadwal** — Membiarkan Agent Anda mengeksekusi [tugas terjadwal](./configuration/automation.md)
 
 - **Menggunakan Skill** — Mengizinkan Skill memanggil model untuk melakukan reasoning saat eksekusi
 

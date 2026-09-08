@@ -112,7 +112,7 @@ export function OverviewAutomationTasksSection(props: OverviewAutomationTasksSec
             href={myTasksHref}
             className="inline-flex items-center gap-2 text-sm font-medium text-black/55 transition hover:text-black"
           >
-            {t("管理我的自动任务")}
+            {t("管理我的定时任务")}
             <ArrowRight className="h-4 w-4" />
           </a>
         </div>

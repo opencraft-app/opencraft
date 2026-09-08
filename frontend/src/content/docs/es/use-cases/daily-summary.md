@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Un resumen diario gana su valor no por su longitud, sino al entregarte el contexto adecuado antes de que lo pidas, y la forma de lograrlo es transformar una revisión manual en una automatización guardada.** Necesitas cuatro elementos: un Hermes Agent en la nube con un modelo configurado, un canal conectado para recibir los resultados, Skills opcionales para recopilar información y una automatización (sus campos son nombre, horario, instrucciones de tarea, ventana de tiempo activa y canales de notificación). El éxito depende de las instrucciones de la tarea: como nadie está presente para aclarar en tiempo de ejecución, la instrucción debe llevar su propio objetivo, límites de alcance (rango de tiempo y tope de elementos), formato de salida y qué hacer cuando no hay nada que reportar. Prueba la instrucción manualmente en el chat primero, luego crea la automatización y revisa la salida después de su primera ejecución real.
+**Un resumen diario gana su valor no por su longitud, sino al entregarte el contexto adecuado antes de que lo pidas, y la forma de lograrlo es transformar una revisión manual en una tarea programada guardada.** Necesitas cuatro elementos: un Hermes Agent en la nube con un modelo configurado, un canal conectado para recibir los resultados, Skills opcionales para recopilar información y una tarea programada (sus campos son nombre, horario, instrucciones de tarea, ventana de tiempo activa y canales de notificación). El éxito depende de las instrucciones de la tarea: como nadie está presente para aclarar en tiempo de ejecución, la instrucción debe llevar su propio objetivo, límites de alcance (rango de tiempo y tope de elementos), formato de salida y qué hacer cuando no hay nada que reportar. Prueba la instrucción manualmente en el chat primero, luego crea la tarea programada y revisa la salida después de su primera ejecución real.
 
 ![Un resumen diario entregado por Hermes Agent](../images/use-case-daily-summaries.webp)
 
@@ -20,7 +20,7 @@ El mejor primer resumen tiene un propósito estrecho. "Resumir todo" suele ser d
 
 - Una fuente clara de contexto. Esto podría ser material que pegues en una conversación, archivos que gestionas en Cloud Storage o información que una Skill confiable y relevante puede acceder.
 
-- Un horario de automatización opcional si deseas que el resumen se ejecute sin una instrucción manual.
+- Un horario de tarea programada opcional si deseas que el resumen se ejecute sin una instrucción manual.
 
 ## Pasos / conceptos clave
 
@@ -68,7 +68,7 @@ La página [Chat](../configuration/agent-chat.md) es un buen lugar para iterar s
 
 ### 4. Programa la versión que ya funciona
 
-Cuando la instrucción manual produzca un resultado que confíes, crea una automatización. Asigna un tiempo específico e una instrucción explícita, luego selecciona un canal de notificación conectado si deseas que el resultado se entregue allí.
+Cuando la instrucción manual produzca un resultado que confíes, crea una tarea programada. Asigna un tiempo específico e una instrucción explícita, luego selecciona un canal de notificación conectado si deseas que el resultado se entregue allí.
 
 ```text
 Every weekday at 6:00 PM, prepare a daily project summary from the
@@ -76,9 +76,9 @@ updates I shared today. Include changes, blockers, and the three most
 important next actions. Send it as concise bullet points.
 ```
 
-Configura esto en [Automatizaciones](../configuration/automation.md). Revisa los primeros varios ejecuciones y ajusta la redacción si el resumen es demasiado amplio, demasiado largo o falta el contexto correcto.
+Configura esto en [Tareas programadas](../configuration/automation.md). Revisa los primeros varios ejecuciones y ajusta la redacción si el resumen es demasiado amplio, demasiado largo o falta el contexto correcto.
 
-![Una automatización de resumen diario programada](../images/use-case-daily-summary-automation.png)
+![Una tarea programada de resumen diario programada](../images/use-case-daily-summary-automation.png)
 
 ## Preguntas frecuentes
 
@@ -96,7 +96,7 @@ No. Prueba la instrucción manualmente primero. Una vez que puedas reconocer un 
 
 ### ¿Qué pasa si el resumen no llegó?
 
-Revisa el estado de la automatización y el canal de notificación, luego confirma que Hermes aún pueda responder en una conversación normal. Si es necesario, revisa [Diagnósticos](../configuration/diagnostics.md) antes de crear otra tarea.
+Revisa el estado de la tarea programada y el canal de notificación, luego confirma que Hermes aún pueda responder en una conversación normal. Si es necesario, revisa [Diagnósticos](../configuration/diagnostics.md) antes de crear otra tarea.
 
 ## Siguientes pasos
 
@@ -104,4 +104,4 @@ Revisa el estado de la automatización y el canal de notificación, luego confir
 
 - [Configurar Skills](../configuration/skill.md) — añade una capacidad confiable cuando tu resumen necesita una fuente de información específica.
 
-- [Automatizaciones](../configuration/automation.md) — entrega tu resumen probado en un horario.
+- [Tareas programadas](../configuration/automation.md) — entrega tu resumen probado en un horario.

@@ -129,7 +129,7 @@ Hermes separa claramente estas tres capas, pero aún apunta a personas editando 
 - **La memoria es visible en la consola** — la página de memoria muestra lo que el Agent ha retenido, con pestañas separadas para Memoria y Perfil de Usuario, coincidiendo con la división entre hechos y preferencias estables.
 - **Las adiciones y remociones ocurren a través de la conversación** — no necesitas deliberadamente "llenar" la memoria. Durante la conversación normal Hermes decide qué vale la pena retener; cuando quieres que recuerde u olvide algo, solo di eso en el chat.
 - **La capacidad es ajustable** — la consola te permite aumentar o disminuir el límite de capacidad de memoria, previniendo que el contexto a largo plazo crezca sin límites.
-- **Estable a través de modelos** — cambiar de modelo no borra la memoria, las Skills o automatizaciones, por lo que la estabilidad de la personalidad no depende de un modelo específico.
+- **Estable a través de modelos** — cambiar de modelo no borra la memoria, las Skills o tareas programadas, por lo que la estabilidad de la personalidad no depende de un modelo específico.
 - **Consistente a través de canales** — un Agent comparte la misma memoria y personalidad en cada canal conectado; cambiar teléfonos o canales no lo pierde, y nada necesita duplicarse por plataforma.
 
 ---

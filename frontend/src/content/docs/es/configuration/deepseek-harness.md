@@ -79,7 +79,7 @@ Puede visitar Plugin Plaza haciendo clic en Plugin Plaza en la esquina inferior 
 
 ### Instalar y usar un plugin
 
-Desde Plugin Plaza, puede explorar capacidades adicionales para su entorno de DeepSeek Harness, como herramientas de navegador, memoria, automatización, mejoras de UI e integraciones externas.
+Desde Plugin Plaza, puede explorar capacidades adicionales para su entorno de DeepSeek Harness, como herramientas de navegador, memoria, tarea programada, mejoras de UI e integraciones externas.
 
 ![Búsqueda de Plugin Plaza](../images/deepseek-harness-08.png)
 

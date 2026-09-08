@@ -42,7 +42,7 @@ A hosted Hermes Agent is useful when you want a familiar place to return to: the
 
 That is a different kind of convenience from “complete this task for me.” It is closer to having a persistent assistant you can message whenever a thought appears.
 
-LightVela is also the cleaner fit if you care about shaping the Agent around your own habits: configuring models, choosing where conversations happen, and extending Hermes with skills. If recurring work is part of the picture, you can also set up [automations](https://lightvela.ai/docs/configuration/automation) rather than treating every request as a fresh project.
+LightVela is also the cleaner fit if you care about shaping the Agent around your own habits: configuring models, choosing where conversations happen, and extending Hermes with skills. If recurring work is part of the picture, you can also set up [scheduled tasks](https://lightvela.ai/docs/configuration/automation) rather than treating every request as a fresh project.
 
 ## Where Manus is the better fit
 

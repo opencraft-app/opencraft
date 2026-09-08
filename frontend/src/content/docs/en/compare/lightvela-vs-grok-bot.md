@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Choose LightVela if you want one personal Hermes Agent that you can configure around your routines, equip with reusable Skills, and keep working through Automations and the channels you choose.** Choose Grok Bot if you want persistent cloud-based AI teammates that can work across apps, use a cloud computer, and run delegated jobs in parallel. Both products go beyond a normal chatbot, but they organize that capability around different jobs.
+**Choose LightVela if you want one personal Hermes Agent that you can configure around your routines, equip with reusable Skills, and keep working through Scheduled Tasks and the channels you choose.** Choose Grok Bot if you want persistent cloud-based AI teammates that can work across apps, use a cloud computer, and run delegated jobs in parallel. Both products go beyond a normal chatbot, but they organize that capability around different jobs.
 
 ![LightVela compared with Grok Bot for running a personal AI agent](../images/lightvela-vs-grok-bot.png)
 
@@ -12,7 +12,7 @@
 | - | - | - |
 | **Best for** | A personal, long-running AI Agent | Delegated work across apps and websites |
 | **Core feeling** | Your configured Agent, available when you need it | A persistent Bot you can treat like a teammate |
-| **Setup focus** | Skills, Automations, memory, persona, models, and Channels | Bots, cloud computers, connectors, routines, and approvals |
+| **Setup focus** | Skills, Scheduled Tasks, memory, persona, models, and Channels | Bots, cloud computers, connectors, routines, and approvals |
 | **Everyday access** | Messaging Channels and a persistent Agent workspace | Grok Bot desktop and iOS experiences |
 | **Strongest use case** | Personal workflows that should keep getting better for you | Multi-step work that needs browser and app interaction |
 
@@ -20,7 +20,7 @@
 
 The difference is less about which system sounds smarter in one prompt. It is about where the Agent lives in your day, and whether you want to shape one persistent assistant or delegate work to named Bots.
 
-With LightVela, you configure a hosted Hermes Agent around how you work, then keep talking to the same Agent as your needs evolve. You can install reusable [Skills](../configuration/skill.md), schedule [Automations](../configuration/automation.md), choose a [model](../configuration/model.md), and connect the Channels you actually use. That turns a useful one-off interaction into a workflow that can keep working for you.
+With LightVela, you configure a hosted Hermes Agent around how you work, then keep talking to the same Agent as your needs evolve. You can install reusable [Skills](../configuration/skill.md), create [Scheduled Tasks](../configuration/automation.md), choose a [model](../configuration/model.md), and connect the Channels you actually use. That turns a useful one-off interaction into a workflow that can keep working for you.
 
 You might ask for a daily briefing, a recurring watchlist, a content draft, or a reminder without rebuilding the workflow every time. LightVela is designed around that continuity: one Agent, one evolving setup, and one place to refine how it should help.
 
@@ -34,7 +34,7 @@ LightVela is the better fit if you want your AI Agent to feel like a consistent 
 
 You might want an Agent that checks information every morning, watches competitors, turns product updates into social posts, or summarizes a research topic each week. The useful part is not one perfect answer. It is being able to turn a useful interaction into something that keeps working.
 
-That is where Skills and Automations make the difference. A Skill gives your Agent a reusable capability, while an Automation lets routine work happen on a schedule instead of relying on you to remember the prompt at exactly the right time. You can start with a morning briefing, add a research Skill, and send the result through the Channel you are most likely to see.
+That is where Skills and Scheduled Tasks make the difference. A Skill gives your Agent a reusable capability, while a Scheduled Task lets routine work happen on a schedule instead of relying on you to remember the prompt at exactly the right time. You can start with a morning briefing, add a research Skill, and send the result through the Channel you are most likely to see.
 
 LightVela is also the more direct choice if you care about configuring the Agent's role rather than accepting a fixed product experience. You choose the model, the behavior you want to encourage, the capabilities you want to add, and the Channels where the Agent should show up. The [LightVela overview](../01-overview.md) explains how those pieces fit together.
 
@@ -56,7 +56,7 @@ Choose LightVela if you:
 
 - **Want one personal Agent:** You want a hosted Hermes Agent that becomes more useful as you refine it.
 - **Want continuity:** You want the same Agent to stay available and keep your setup over time.
-- **Prefer configurable routines:** You want reusable Skills and recurring Automations around your own habits.
+- **Prefer configurable routines:** You want reusable Skills and recurring Scheduled Tasks around your own habits.
 - **Prefer messaging access:** You want to reach your Agent through the Channels you already use.
 - **Want direct control:** You want to manage the model, persona, capabilities, and workflow shape.
 

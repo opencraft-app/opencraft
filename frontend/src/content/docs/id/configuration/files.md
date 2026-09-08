@@ -78,7 +78,7 @@ Cloud Storage siap Anda gunakan ketika:
 - Anda dapat membuka atau mengunduh file tersebut dengan berhasil; dan
 - nama folder memperjelas bahan mana yang termasuk dalam tugas saat ini.
 
-Sekarang Anda dapat kembali ke [Chat Agent](./agent-chat.md) dan memberi tahu Agent apa yang ingin Anda lakukan dengan file tersebut. Untuk pekerjaan yang berulang, gabungkan instruksi yang sama dengan [Otomasi](./automation.md) atau [Skill](./skill.md).
+Sekarang Anda dapat kembali ke [Chat Agent](./agent-chat.md) dan memberi tahu Agent apa yang ingin Anda lakukan dengan file tersebut. Untuk pekerjaan yang berulang, gabungkan instruksi yang sama dengan [Tugas Terjadwal](./automation.md) atau [Skill](./skill.md).
 
 ## FAQ
 

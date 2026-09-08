@@ -148,7 +148,7 @@ const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
     "OpenClaw",
     "智能助手",
     "AI 助手",
-    "自动任务",
+    "定时任务",
     "多渠道接入",
     "QQ 机器人",
     "微信 Agent",
@@ -221,7 +221,7 @@ const SPANISH_STATIC_PAGE_TITLES: Record<string, string> = {
 
 const SPANISH_AGENT_SECTION_TITLES: Record<string, string> = {
   achievements: "Logros",
-  automations: "Automatizaciones",
+  automations: "Tareas programadas",
   channels: "Canales",
   chat: "Chat",
   files: "Archivos",
@@ -247,7 +247,7 @@ const SPANISH_DOC_PAGE_TITLES: Record<string, string> = {
   "/docs/configuration": "Configuración",
   "/docs/configuration/model": "Configurar modelos",
   "/docs/configuration/skill": "Configurar habilidades",
-  "/docs/configuration/automation": "Automatizaciones",
+  "/docs/configuration/automation": "Tareas programadas",
   "/docs/configuration/agent-chat": "Chat",
   "/docs/faq": "Preguntas frecuentes",
 };
@@ -291,7 +291,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/about":
       "LightVela 由腾讯轻量云团队打造，源于对「AI 该长成什么样」的反复思考——我们相信 AI 不应只是冷冰冰的工具，而应是认识你、记得你、越聊越懂你的长期伙伴。",
     "/changelog":
-      "记录 LightVela 的产品更新、能力上线与体验改进，了解云存储、成就模块、网页对话、记忆查看与自动任务等最新迭代。",
+      "记录 LightVela 的产品更新、能力上线与体验改进，了解云存储、成就模块、网页对话、记忆查看与定时任务等最新迭代。",
 
     // 文档首页与综述页
     "/docs":
@@ -339,7 +339,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/blog":
       "The LightVela Blog will share product announcements, updates, and use cases for cloud-hosted AI Agents.",
     "/changelog":
-      "Track LightVela product updates, new capabilities, and experience improvements, including cloud storage, achievements, web chat, memory views, and automations.",
+      "Track LightVela product updates, new capabilities, and experience improvements, including cloud storage, achievements, web chat, memory views, and Scheduled Tasks.",
 
     // Docs index & overview
     "/docs":
@@ -353,7 +353,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/announcements/public-beta":
       "LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch free for 14 days after public beta and billing start.",
     "/docs/credits":
-      "Learn how LightVela model credits measure Hermes usage across conversations, automations, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
+      "Learn how LightVela model credits measure Hermes usage across conversations, Scheduled Tasks, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
     "/docs/create-first-hermes":
       "Activate your first Hermes instance: sign in with Google or GitHub, choose an available plan on Subscribe, and let LightVela provision it. International beta access is limited and free while available, with no China real-name verification required.",
     "/docs/core-concepts":
@@ -395,7 +395,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/workbench":
       "Build, deploy, and manage static websites with an AI Agent in LightVela, including templates, deployment status, quotas, and hosting boundaries.",
     "/docs/configuration/automation":
-      "Set up Hermes automations: schedule recurring tasks (reminders, daily reports, news tracking, content publishing) by time or trigger, with templates and lifecycle management.",
+      "Set up Hermes Scheduled Tasks: schedule recurring work such as reminders, daily reports, news tracking, and content publishing, with templates and lifecycle management.",
     "/docs/configuration/agent-chat":
       "Talk to Hermes in the Chat page: long-term memory accumulation, MEMORY.md / USER.md split, and how Hermes evolves with every conversation.",
     "/docs/faq":
@@ -462,7 +462,7 @@ const AGENT_SECTION_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> 
     models: "模型配置",
     skills: "技能配置",
     persona: "人设配置",
-    automations: "自动任务",
+    automations: "定时任务",
     memory: "记忆管理",
     achievements: "成就",
     files: "文件管理",
@@ -474,7 +474,7 @@ const AGENT_SECTION_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> 
     models: "Models",
     skills: "Skills",
     persona: "Persona",
-    automations: "Automations",
+    automations: "Scheduled Tasks",
     memory: "Memory",
     achievements: "Achievements",
     files: "Files",
@@ -549,7 +549,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/channel-wecom": "WeCom",
     "/docs/configuration/channel-feishu": "Lark",
     "/docs/configuration/skill": "Configure Skills",
-    "/docs/configuration/automation": "Automations",
+    "/docs/configuration/automation": "Scheduled Tasks",
     "/docs/configuration/agent-chat": "Chat",
     "/docs/faq": "FAQ",
     "/docs/plans": "Plans",

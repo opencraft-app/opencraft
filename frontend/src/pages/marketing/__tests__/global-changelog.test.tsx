@@ -367,31 +367,31 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-zh.png"),
     );
     expect(zhPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1282 / 644" });
-    expect(screen.getByRole("heading", { name: "自动任务支持关联上游任务" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "定时任务支持关联上游任务" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。",
+        "创建或编辑定时任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "LightVela 支持钉钉通道" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "技能页面支持批量安装与来源查看" })).toBeInTheDocument();
     expect(screen.getByText("安装多个 Skill 时可以查看实时进度，并从技能页面直接打开 ClawHub 或 skills.sh 的原始来源页面。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "自动任务模板" })).toBeInTheDocument();
-    expect(screen.getByText("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "定时任务模板" })).toBeInTheDocument();
+    expect(screen.getByText("选择一个现成的定时任务模板，先运行一次，确认效果后再将其转为持续执行的定时任务。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 机器人" })).toBeInTheDocument();
     expect(screen.getByText("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持繁体中文" })).toBeInTheDocument();
     expect(screen.getByText("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。")).toBeInTheDocument();
-    expect(screen.getByAltText("自动任务支持关联上游任务")).toHaveAttribute(
+    expect(screen.getByAltText("定时任务支持关联上游任务")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.png"),
     );
-    expect(screen.getByAltText("自动任务支持关联上游任务").parentElement).toHaveStyle({ aspectRatio: "718 / 234" });
+    expect(screen.getByAltText("定时任务支持关联上游任务").parentElement).toHaveStyle({ aspectRatio: "718 / 234" });
     expect(screen.getByAltText("技能页面支持批量安装与来源查看")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
     );
-    expect(screen.getByAltText("自动任务模板")).toHaveAttribute(
+    expect(screen.getByAltText("定时任务模板")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
     );
@@ -404,13 +404,13 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
     );
     const zhTestRunHeading = within(zhAugustSection!).getByRole("heading", {
-      name: "自动任务支持测试运行",
+      name: "定时任务支持测试运行",
     });
     const zhAugustHeadings = within(zhAugustSection!).getAllByRole("heading");
     expect(zhAugustHeadings[1]).toBe(zhTestRunHeading);
     expect(
       within(zhAugustSection!).getByText(
-        "创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。",
+        "创建或编辑定时任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。",
       ),
     ).toBeInTheDocument();
     expect(zhTestRunHeading.closest("article")?.querySelector("img")).toBeNull();
@@ -430,7 +430,7 @@ describe("global changelog skill package entry", () => {
     expect(augustSection).not.toBeNull();
     expect(julySection).not.toBeNull();
     expect(
-      within(augustSection!).queryByRole("heading", { name: "Ready-Made Job Templates" }),
+      within(augustSection!).queryByRole("heading", { name: "Scheduled Task Templates" }),
     ).not.toBeInTheDocument();
     const enDeepSeekHarnessHeading = within(augustSection!).getByRole("heading", {
       name: /DeepSeek Harness Is Now Available in LightVela Labs/,
@@ -450,7 +450,7 @@ describe("global changelog skill package entry", () => {
     );
     expect(enDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2168 / 1287" });
     expect(
-      within(julySection!).getByRole("heading", { name: "Ready-Made Job Templates" }),
+      within(julySection!).getByRole("heading", { name: "Scheduled Task Templates" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "LightVela Now Supports Custom Persona File Uploads" }),
@@ -486,23 +486,23 @@ describe("global changelog skill package entry", () => {
     );
     expect(enPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
     expect(
-      screen.getByRole("heading", { name: "Jobs Can Now Link to Upstream Jobs" }),
+      screen.getByRole("heading", { name: "Scheduled Tasks Can Now Link to Upstream Scheduled Tasks" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "When creating or editing a job, you can link an upstream job. When the job runs later, it uses the upstream job's most recent output as context.",
+        "When creating or editing a scheduled task, you can link an upstream scheduled task. When the scheduled task runs later, it uses the upstream scheduled task's most recent output as context.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Skills Page Gets Faster Installs and Clearer Sources" })).toBeInTheDocument();
     expect(screen.getByText("Install multiple Skills with live progress and open their original ClawHub or skills.sh source pages directly from the Skills page.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ready-Made Job Templates" })).toBeInTheDocument();
-    expect(screen.getByText("Choose a ready-made job template, run it once, and turn it into an ongoing job when it works for you.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Scheduled Task Templates" })).toBeInTheDocument();
+    expect(screen.getByText("Choose a ready-made scheduled task template, run it once, and turn it into an ongoing scheduled task when it works for you.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "QQ Group @Mentions Are Now Supported" })).toBeInTheDocument();
     expect(screen.getByText("Add your Hermes Agent to a QQ group and @mention it to start a conversation.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Traditional Chinese Is Now Available" })).toBeInTheDocument();
     expect(screen.getByText("Browse LightVela's public pages, documentation, and account flows in Traditional Chinese.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Pricing Is Now Available with More Flexible Billing" })).not.toBeInTheDocument();
-    expect(screen.getByAltText("Jobs Can Now Link to Upstream Jobs")).toHaveAttribute(
+    expect(screen.getByAltText("Scheduled Tasks Can Now Link to Upstream Scheduled Tasks")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.png"),
     );
@@ -510,7 +510,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-en.png"),
     );
-    expect(screen.getByAltText("Ready-Made Job Templates")).toHaveAttribute(
+    expect(screen.getByAltText("Scheduled Task Templates")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-en.png"),
     );
@@ -523,12 +523,12 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
     );
     const enTestRunHeading = within(augustSection!).getByRole("heading", {
-      name: "Jobs Now Support Test Runs",
+      name: "Scheduled Tasks Now Support Test Runs",
     });
     expect(within(augustSection!).getAllByRole("heading")[1]).toBe(enTestRunHeading);
     expect(
       within(augustSection!).getByText(
-        "When creating or editing a job, you can run the current job once without saving it, review the result, and then decide whether to create or update the job.",
+        "When creating or editing a scheduled task, you can run the current scheduled task once without saving it, review the result, and then decide whether to create or update the scheduled task.",
       ),
     ).toBeInTheDocument();
     expect(enTestRunHeading.closest("article")?.querySelector("img")).toBeNull();
@@ -574,16 +574,16 @@ describe("global changelog skill package entry", () => {
     expect(screen.getByAltText("LightVela 支持上傳自定義人設文件").parentElement).toHaveStyle({
       aspectRatio: "1282 / 644",
     });
-    expect(screen.getByRole("heading", { name: "自動任務支持關聯上游任務" })).toBeInTheDocument();
-    expect(screen.getByAltText("自動任務支持關聯上游任務")).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: "定時任務支持關聯上游任務" })).toBeInTheDocument();
+    expect(screen.getByAltText("定時任務支持關聯上游任務")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.png"),
     );
-    expect(screen.getByAltText("自動任務支持關聯上游任務").parentElement).toHaveStyle({
+    expect(screen.getByAltText("定時任務支持關聯上游任務").parentElement).toHaveStyle({
       aspectRatio: "718 / 234",
     });
     expect(screen.getByRole("heading", { name: "技能頁面支持批量安裝與來源查看" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "自動任務模板" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "定時任務模板" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 機器人" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持繁體中文" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "定價支持更多套餐與訂閲方式" })).not.toBeInTheDocument();
@@ -591,7 +591,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
     );
-    expect(screen.getByAltText("自動任務模板")).toHaveAttribute(
+    expect(screen.getByAltText("定時任務模板")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
     );
@@ -654,7 +654,7 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
     );
     expect(
-      screen.getByRole("heading", { name: "Job Kini Dapat Ditautkan ke Job Upstream" }),
+      screen.getByRole("heading", { name: "Tugas Terjadwal Kini Dapat Ditautkan ke Tugas Terjadwal Upstream" }),
     ).toBeInTheDocument();
   });
 

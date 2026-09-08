@@ -107,7 +107,7 @@ Si el Agent necesita contexto de proyecto estable, use las capacidades de [Gesti
 
 La personalidad define el rol y la voz que usa el Agent.
 Las Skills definen si puede realizar una tarea particular.
-Las automatizaciones definen cuándo inicia el trabajo proactivamente.
+Las tareas programadas definen cuándo inicia el trabajo proactivamente.
 La memoria y el perfil de usuario definen qué contexto a largo plazo debe retener.
 
 Por ejemplo, una personalidad cálida de servicio al cliente no proporciona automáticamente búsqueda de pedidos, búsqueda en base de conocimientos o capacidades de reembolso.
@@ -136,7 +136,7 @@ Consulte [Configurar Canal - WhatsApp](../configuration/channel-whatsapp.md) par
 ### ¿Puede un Agent de WhatsApp enviar mensajes proactivamente?
 
 Los mensajes proactivos también están sujetos a las reglas de plantilla de mensaje y ventana de conversación de WhatsApp.
-Si desea recordatorios programados, lea [Automatizaciones](../configuration/automation.md) y confirme que el método de entrega se ajusta a los límites reales del canal de WhatsApp.
+Si desea recordatorios programados, lea [Tareas programadas](../configuration/automation.md) y confirme que el método de entrega se ajusta a los límites reales del canal de WhatsApp.
 
 ## Próximos pasos
 
@@ -146,4 +146,4 @@ Si desea recordatorios programados, lea [Automatizaciones](../configuration/auto
 
 - [Configurar Canal - WhatsApp](../configuration/channel-whatsapp.md) - Siga el flujo completo de autorización y solución de problemas de WhatsApp.
 
-- [Automatizaciones](../configuration/automation.md) - Programar recordatorios o revisiones que ya se han probado en conversación.
+- [Tareas programadas](../configuration/automation.md) - Programar recordatorios o revisiones que ya se han probado en conversación.

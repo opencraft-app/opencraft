@@ -107,7 +107,7 @@ This request might trigger an external action. List the risks and what you need 
 
 パーソナリティはエージェントが使用する役割と言葉遣いを定義します。
 スキルは特定のタスクを実行できるかどうかを定義します。
-オートメーションはエージェントが自発的に作業を開始するタイミングを定義します。
+スケジュールタスクはエージェントが自発的に作業を開始するタイミングを定義します。
 メモリとユーザープロファイルは、どの長期的なコンテキストを保持すべきかを定義します。
 
 例えば、親しみやすいカスタマーサービスの人格があるからといって、自動的に注文照会、ナレッジベース検索、返金機能が提供されるわけではありません。
@@ -136,7 +136,7 @@ This request might trigger an external action. List the risks and what you need 
 ### WhatsAppエージェントは、能動的にメッセージを送信できますか？
 
 能動的メッセージも、WhatsAppのメッセージテンプレートと会話ウィンドウのルールの対象となります。
-スケジュールされたリマインダーを希望する場合は、こちらを読んでください[自動化](../configuration/automation.md)そして、配信方法が実際のWhatsAppチャネルの制限に合っていることを確認してください。
+スケジュールされたリマインダーを希望する場合は、こちらを読んでください[スケジュールタスク](../configuration/automation.md)そして、配信方法が実際のWhatsAppチャネルの制限に合っていることを確認してください。
 
 ## 次のステップ
 
@@ -146,4 +146,4 @@ This request might trigger an external action. List the risks and what you need 
 
 - [チャンネルを設定 - WhatsApp](../configuration/channel-whatsapp.md)- 完全なWhatsApp認証およびトラブルシューティングの手順に従ってください。
 
-- [自動化](../configuration/automation.md)- すでに会話でテストされたリマインダーやレビューをスケジュールします。
+- [スケジュールタスク](../configuration/automation.md)- すでに会話でテストされたリマインダーやレビューをスケジュールします。

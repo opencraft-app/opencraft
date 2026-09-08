@@ -1,6 +1,6 @@
 ## Summary
 
-**One Agent can appear across several messaging apps because the apps are only entry points — the Agent is the thing that actually works. The message gateway does three jobs: it normalises structurally different messages from Telegram, WhatsApp, Discord, Slack, WeChat and others into one request format; it routes each request to the same Agent based on your connection configuration, instead of cloning a personality and memory per platform; and after execution it delivers the result back to the exact conversation it came from. Because identity (`SOUL.md`), memory (`USER.md`, `MEMORY.md`), skills (`skills/`), and automations all live outside the channel layer, something you mentioned on Telegram is still known when you follow up on WhatsApp. But unified does not mean unbounded: every channel has its own authorisation flow, message format, and delivery limits, the supported channel set differs between the global and China regions, and after connecting a new channel you must send a test message to confirm replies land in the expected conversation.**
+**One Agent can appear across several messaging apps because the apps are only entry points — the Agent is the thing that actually works. The message gateway does three jobs: it normalises structurally different messages from Telegram, WhatsApp, Discord, Slack, WeChat and others into one request format; it routes each request to the same Agent based on your connection configuration, instead of cloning a personality and memory per platform; and after execution it delivers the result back to the exact conversation it came from. Because identity (`SOUL.md`), memory (`USER.md`, `MEMORY.md`), skills (`skills/`), and scheduled tasks all live outside the channel layer, something you mentioned on Telegram is still known when you follow up on WhatsApp. But unified does not mean unbounded: every channel has its own authorisation flow, message format, and delivery limits, the supported channel set differs between the global and China regions, and after connecting a new channel you must send a test message to confirm replies land in the expected conversation.**
 
 ---
 
@@ -74,7 +74,7 @@ This matters because it decides whether long-term assets are shared or fragmente
 | User profile | `USER.md` | One copy, shared by all channels |
 | Cross-session facts | `MEMORY.md` / `memories/` | One copy, shared by all channels |
 | Captured methods | `skills/` | One copy, shared by all channels |
-| Automations | Agent-layer configuration | Decoupled from channels; delivery target configurable |
+| Scheduled Tasks | Agent-layer configuration | Decoupled from channels; delivery target configurable |
 
 Because all of these sit outside the channel layer, "it still knows the project name I mentioned on Telegram" is not a synchronisation feature someone had to build — it is a natural consequence of there only ever being one copy.
 
@@ -153,7 +153,7 @@ Row three deserves attention: **"doesn't know me" means something different here
 Hermes separates channels from the Agent at the mechanism level, but connecting each platform still means handling credentials, callbacks, and runtime yourself. LightVela's direction is to make that layer a productised, pluggable entry point:
 
 - **Channels are settings** — connect or disconnect them under one Agent, with no need to create a separate Agent per platform.
-- **Assets are shared by default** — one personality, memory, skill set, and automation set; a new channel reuses them immediately, with nothing to migrate.
+- **Assets are shared by default** — one personality, memory, skill set, and scheduled task set; a new channel reuses them immediately, with nothing to migrate.
 - **Connection state is visible** — the console shows whether a channel is connected, making it easy to distinguish "never connected successfully" from "connected but not replying."
 - **Regional differences are explicit** — the global and China regions each list their own supported channels, preventing cross-region mistakes.
 - **Problems are traceable** — recent logs in Diagnostics help separate authorisation issues from delivery issues from task issues.
@@ -164,6 +164,6 @@ Hermes separates channels from the Agent at the mechanism level, but connecting 
 
 - Channels are entry points; the Agent is the subject. Many channels share one Agent rather than one bot per platform.
 - The gateway does three things: **normalise** platform differences, **route** to the same Agent, and **deliver** back to the original conversation.
-- Identity, memory, skills, and automations live outside the channel layer, so cross-channel continuity is an architectural consequence, not an added sync feature.
+- Identity, memory, skills, and scheduled tasks live outside the channel layer, so cross-channel continuity is an architectural consequence, not an added sync feature.
 - Unified does not mean unbounded: authorisation, regional support, group context, and delivery limits differ per channel.
 - After connecting a channel, verify two things: that replies land in the expected conversation, and that it genuinely shares the same memory.

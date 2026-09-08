@@ -98,4 +98,4 @@ Hindari itu kecuali platform dan alur kerja yang Anda maksudkan jelas mendukungn
 
 - [Pengelolaan Memori](../configuration/memory.md) — kelola konteks yang dibagikan oleh kanal-kanal terhubung Anda.
 
-- [Otomasi](../configuration/automation.md) — kirimkan pembaruan terjadwal ke kanal terhubung bila sesuai.
+- [Tugas Terjadwal](../configuration/automation.md) — kirimkan pembaruan terjadwal ke kanal terhubung bila sesuai.

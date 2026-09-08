@@ -1,6 +1,6 @@
 ## Summary
 
-**Switching models does not make a Hermes Agent forget you, because the model, the persona, and the memory are three separately stored layers: the model handles reasoning and generation, `SOUL.md` defines the role and expression boundaries, and `USER.md` plus `MEMORY.md` (with `memories/`) hold the user profile and cross-session facts. On LightVela, switching models only changes the engine behind subsequent replies — it does not clear memory, cloud storage files, skills, or automation settings, and it does not move chat history. It may genuinely "feel different" afterwards, but that comes from the new model's instruction-following, context-compression, verbosity, and tool-call tendencies, not from data loss. There is exactly one way to tell them apart: ask about a fact you are certain it should know. If it answers, you are seeing a style difference; if it cannot, then investigate the memory layer.**
+**Switching models does not make a Hermes Agent forget you, because the model, the persona, and the memory are three separately stored layers: the model handles reasoning and generation, `SOUL.md` defines the role and expression boundaries, and `USER.md` plus `MEMORY.md` (with `memories/`) hold the user profile and cross-session facts. On LightVela, switching models only changes the engine behind subsequent replies — it does not clear memory, cloud storage files, skills, or scheduled task settings, and it does not move chat history. It may genuinely "feel different" afterwards, but that comes from the new model's instruction-following, context-compression, verbosity, and tool-call tendencies, not from data loss. There is exactly one way to tell them apart: ask about a fact you are certain it should know. If it answers, you are seeing a style difference; if it cannot, then investigate the memory layer.**
 
 ---
 
@@ -30,7 +30,7 @@ First, be precise about what the act of "switching models" actually changes.
 
 The key point: **the last four layers all live outside the model.** When the model is replaced, those files and directories stay exactly where they were, and the new model reads and applies them.
 
-This is why the documentation can state plainly that switching models does not clear an Agent's memory, cloud storage files, skills, or automation settings — that is not a protective feature someone added, it is a natural consequence of layered storage. For the full division of labour, see "Can a Hermes Agent's Brain Be Replaced? Model Layer vs Agent Layer."
+This is why the documentation can state plainly that switching models does not clear an Agent's memory, cloud storage files, skills, or scheduled task settings — that is not a protective feature someone added, it is a natural consequence of layered storage. For the full division of labour, see "Can a Hermes Agent's Brain Be Replaced? Model Layer vs Agent Layer."
 
 ---
 
@@ -101,10 +101,10 @@ This order covers the vast majority of cases.
 3. **Run the known-fact test** — verify the memory layer using section 3.
 4. **Check the persona still matches expectations** — watch whether tone and limits stay within `SOUL.md`. If the drift is obvious, make the key constraints more specific.
 5. **Spot-check that a skill still triggers** — try one in its matching situation and confirm the skill loads.
-6. **Review automation output quality** — note that you are reviewing **output quality**, not syncing a model field. Automations have no "pinned model" setting.
+6. **Review scheduled task output quality** — note that you are reviewing **output quality**, not syncing a model field. Scheduled Tasks have no "pinned model" setting.
 7. **Confirm cloud storage files are intact** — switching does not rewrite them; this is only verification.
 
-Step 6 deserves emphasis, because a widely circulated claim says you must re-sync each automation's model after switching. In reality an automation consists of name, schedule (fixed weekdays, fixed interval, or one-time), task instructions, active time window, and notification channels — **with no model field**. So the correct action is to wait for one real run and check whether the output quality still meets expectations.
+Step 6 deserves emphasis, because a widely circulated claim says you must re-sync each scheduled task's model after switching. In reality a scheduled task consists of name, schedule (fixed weekdays, fixed interval, or one-time), task instructions, active time window, and notification channels — **with no model field**. So the correct action is to wait for one real run and check whether the output quality still meets expectations.
 
 ---
 
@@ -149,7 +149,7 @@ The phrase "the same test message" in the fourth row matters: if you compare mod
 Hermes achieves the layer separation at the mechanism level, but managing model access and environment is still on the operator. LightVela's direction is to make switching a routine, low-risk, verifiable operation:
 
 - **One Agent has one active model at a time** — switching means selecting, with no need for a separate Agent per model.
-- **Assets stay stable across switches** — memory, cloud storage files, skills, and automation settings are unaffected, and chat history is not moved.
+- **Assets stay stable across switches** — memory, cloud storage files, skills, and scheduled task settings are unaffected, and chat history is not moved.
 - **Switches are verifiable** — the console shows the active model, and one test message confirms success.
 - **Failures are locatable** — Diagnostics keeps recent logs to separate model, configuration, and task issues.
 - **Single-factor changes are encouraged** — changing one thing at a time and testing immediately is the documented recommendation.
@@ -159,9 +159,9 @@ Hermes achieves the layer separation at the mechanism level, but managing model 
 ## Key points
 
 - Model, persona, user profile, memory, and skills are five independent layers; switching replaces only the first.
-- Documented behaviour: switching does not clear memory, cloud storage, skills, or automations, and does not move chat history.
+- Documented behaviour: switching does not clear memory, cloud storage, skills, or scheduled tasks, and does not move chat history.
 - "Feels different" comes from five expression-layer differences: instruction following, context compression, verbosity, tool-call tendency, language style.
 - **Determining real memory loss takes one step**: ask about a definite known fact.
-- Automations have no pinned-model field; after switching, review output quality rather than hunting for that field.
+- Scheduled Tasks have no pinned-model field; after switching, review output quality rather than hunting for that field.
 - While troubleshooting, hold to one rule: change one factor at a time and test immediately.
 

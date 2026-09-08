@@ -90,7 +90,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(within(dialog).getByText("Job type")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: /AI-powered/ })).toBeInTheDocument();
     expect(screen.getByText("AI understands your needs and completes tasks automatically")).not.toHaveClass("min-h-8");
-    expect(screen.getByText("Sends notifications as-is; no model")).not.toHaveClass("min-h-8");
+    expect(screen.getByText("Sends notifications as written, without calling a model")).not.toHaveClass("min-h-8");
     expect(screen.getByText("Run preset scripts, ideal for developers")).not.toHaveClass("min-h-8");
     expect(screen.queryByText("No model-token usage")).not.toBeInTheDocument();
     expect(within(dialog).getAllByText("AI-powered", { selector: "span" })).toHaveLength(2);
@@ -103,7 +103,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(within(dialog).getByRole("button", { name: /Notification task/ })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: /Script task/ })).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: /Notification task/ }));
-    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
+    fireEvent.change(screen.getByPlaceholderText("Enter the scheduled task name"), {
       target: { value: "Hydration reminder" },
     });
     fireEvent.change(screen.getByPlaceholderText(/Time for some water/), {
@@ -143,7 +143,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(await screen.findByText("From: Upstream")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Create|新建/ }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Create Job");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Create Scheduled Task");
     expect(screen.getByRole("dialog")).toHaveTextContent("Instructions");
     expect(screen.getByRole("combobox", { name: "Upstream Job" })).toBeInTheDocument();
   });
@@ -157,7 +157,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const upstreamCard = await getCronJobCard("Upstream");
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /View|查看/ }));
-    expect(within(screen.getByRole("dialog")).getByText("Job Details")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Scheduled Task Details")).toBeInTheDocument();
     expect(within(screen.getByRole("dialog")).getByText("Upstream Job")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Close|关闭/ }));
 
@@ -184,7 +184,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
-    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
+    fireEvent.change(screen.getByPlaceholderText("Enter the scheduled task name"), {
       target: { value: "Global downstream" },
     });
     fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
@@ -221,7 +221,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const card = await getCronJobCard("Downstream");
     fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Job");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Scheduled Task");
     expect(screen.getByRole("combobox", { name: "Upstream Job" })).toHaveTextContent("Upstream");
     fireEvent.click(screen.getByRole("button", { name: "Deselect" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -238,7 +238,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
-    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
+    fireEvent.change(screen.getByPlaceholderText("Enter the scheduled task name"), {
       target: { value: "Global task" },
     });
     fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
@@ -261,8 +261,8 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const card = await getCronJobCard("Ordinary task");
     fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Job");
-    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
+    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Scheduled Task");
+    fireEvent.change(screen.getByPlaceholderText("Enter the scheduled task name"), {
       target: { value: "Updated global task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

@@ -24,7 +24,7 @@ LightVela menyediakan dua tingkat paket, **Launch** dan **Cruise**, untuk kebutu
 
 Paket adalah kumpulan sumber daya yang mengaktifkan Hermes Agent di LightVela. Setelah Anda mengaktifkan salah satu paket yang tersedia, LightVela memberi Anda **runtime cloud khusus** dengan CPU, memori, dan penyimpanan sendiri. Hermes Agent Anda dapat tetap online 24/7 tanpa perlu membeli server atau melakukan deployment lokal.
 
-Perbedaan utama antar paket ada pada **sumber daya runtime, penyimpanan khusus, dan alokasi kredit model bulanan**. Kemampuan inti Agent, termasuk perilaku adaptif, multi-kanal, Skill, otomasi, dan memori jangka panjang, tetap tersedia di semua tingkat paket.
+Perbedaan utama antar paket ada pada **sumber daya runtime, penyimpanan khusus, dan alokasi kredit model bulanan**. Kemampuan inti Agent, termasuk perilaku adaptif, multi-kanal, Skill, tugas terjadwal, dan memori jangka panjang, tetap tersedia di semua tingkat paket.
 
 LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan, dan pengguna baru dapat mencoba Launch gratis selama 14 hari atau Launch AI gratis selama 7 hari pada pesanan pertama. Periksa [halaman Subscribe](/subscribe) untuk ketersediaan dan harga terbaru. Nilai di bawah menjelaskan struktur sumber daya dan kredit saat ini.
 
@@ -76,7 +76,7 @@ Setiap Hermes Agent memiliki kemampuan inti yang sama; perbedaan paket hanya ada
 
 - **Persona kustom** — Tentukan peran dan gaya komunikasi Agent
 
-- **Otomasi** — Jalankan tugas sesuai jadwal dari konsol
+- **Tugas Terjadwal** — Jalankan tugas sesuai jadwal dari konsol
 
 - **Memori jangka panjang** — Simpan riwayat percakapan dan preferensi yang berguna
 

@@ -2,7 +2,7 @@
 
 ## Summary
 
-**A daily summary earns its value not by length but by handing you the right context before you ask for it, and the way to get there is turning a manual review into a saved automation.** You need four things: a cloud Hermes Agent with a configured model, a connected channel to receive results, optional skills for gathering information, and an automation (its fields are name, schedule, task instructions, active time window, and notification channels). Success hinges on the task instructions: since nobody is present to clarify at run time, the prompt must carry its own goal, scope boundaries (time range and item caps), output format, and what to do when there is nothing to report. Test the prompt manually in chat first, then create the automation, and review the output after its first real run.
+**A daily summary earns its value not by length but by handing you the right context before you ask for it, and the way to get there is turning a manual review into a saved scheduled task.** You need four things: a cloud Hermes Agent with a configured model, a connected channel to receive results, optional skills for gathering information, and a scheduled task (its fields are name, schedule, task instructions, active time window, and notification channels). Success hinges on the task instructions: since nobody is present to clarify at run time, the prompt must carry its own goal, scope boundaries (time range and item caps), output format, and what to do when there is nothing to report. Test the prompt manually in chat first, then create the scheduled task, and review the output after its first real run.
 
 ![A daily summary delivered by Hermes Agent](../images/use-case-daily-summaries.webp)
 
@@ -20,7 +20,7 @@ The best first summary has a narrow purpose. “Summarize everything” is usual
 
 - A clear source of context. This might be material you paste into a conversation, files you manage in Cloud Storage, or information a trusted, relevant skill can access.
 
-- An optional automation schedule if you want the summary to run without a manual prompt.
+- An optional scheduled task schedule if you want the summary to run without a manual prompt.
 
 ## Steps / key concepts
 
@@ -68,7 +68,7 @@ The [Chat](../configuration/agent-chat.md) page is a good place to iterate on th
 
 ### 4. Schedule the version that already works
 
-When the manual prompt produces a result you trust, create an automation. Give it a specific time and an explicit instruction, then select a connected notification channel if you want the result delivered there.
+When the manual prompt produces a result you trust, create a scheduled task. Give it a specific time and an explicit instruction, then select a connected notification channel if you want the result delivered there.
 
 ```text
 Every weekday at 6:00 PM, prepare a daily project summary from the
@@ -76,9 +76,9 @@ updates I shared today. Include changes, blockers, and the three most
 important next actions. Send it as concise bullet points.
 ```
 
-Set this up in [Automations](../configuration/automation.md). Review the first few runs and adjust the wording if the summary is too broad, too long, or missing the right context.
+Set this up in [Scheduled Tasks](../configuration/automation.md). Review the first few runs and adjust the wording if the summary is too broad, too long, or missing the right context.
 
-![A scheduled daily summary automation](../images/use-case-daily-summary-automation.png)
+![A scheduled daily summary scheduled task](../images/use-case-daily-summary-automation.png)
 
 ## FAQ
 
@@ -96,7 +96,7 @@ No. Test the prompt manually first. Once you can recognize a good result, schedu
 
 ### What if the summary did not arrive?
 
-Check the automation status and notification channel, then confirm that Hermes can still reply in a normal conversation. If needed, review [Diagnostics](../configuration/diagnostics.md) before creating another task.
+Check the scheduled task status and notification channel, then confirm that Hermes can still reply in a normal conversation. If needed, review [Diagnostics](../configuration/diagnostics.md) before creating another task.
 
 ## Next steps
 
@@ -104,4 +104,4 @@ Check the automation status and notification channel, then confirm that Hermes c
 
 - [Configure Skills](../configuration/skill.md) — add a trusted capability when your summary needs a specific information source.
 
-- [Automations](../configuration/automation.md) — deliver your tested summary on a schedule.
+- [Scheduled Tasks](../configuration/automation.md) — deliver your tested summary on a schedule.

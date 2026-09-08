@@ -107,7 +107,7 @@ If the Agent needs stable project context, use the [Memory Management](../config
 
 Personality defines the role and voice the Agent uses.
 Skills define whether it can perform a particular task.
-Automations define when it proactively starts work.
+Scheduled Tasks define when it proactively starts work.
 Memory and the user profile define which long-term context it should retain.
 
 For example, a warm customer-service personality does not automatically provide order lookup, knowledge-base search, or refund capabilities.
@@ -136,7 +136,7 @@ Check [Configure Channel - WhatsApp](../configuration/channel-whatsapp.md) for t
 ### Can a WhatsApp Agent send messages proactively?
 
 Proactive messages are also subject to WhatsApp message-template and conversation-window rules.
-If you want scheduled reminders, read [Automations](../configuration/automation.md) and confirm that the delivery method fits the actual WhatsApp channel limits.
+If you want scheduled reminders, read [Scheduled Tasks](../configuration/automation.md) and confirm that the delivery method fits the actual WhatsApp channel limits.
 
 ## Next steps
 
@@ -146,4 +146,4 @@ If you want scheduled reminders, read [Automations](../configuration/automation.
 
 - [Configure Channel - WhatsApp](../configuration/channel-whatsapp.md) - Follow the full WhatsApp authorization and troubleshooting flow.
 
-- [Automations](../configuration/automation.md) - Schedule reminders or reviews that have already been tested in conversation.
+- [Scheduled Tasks](../configuration/automation.md) - Schedule reminders or reviews that have already been tested in conversation.

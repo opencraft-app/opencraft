@@ -2,7 +2,7 @@
 
 ## Summary
 
-**LightVela offers four plans—Launch, Cruise, Launch AI, and Cruise AI—covering everything from a light first try to high-frequency use. Each plan activates a Hermes Agent in a dedicated cloud runtime with its own CPU, memory, and storage, where the agent stays online 24/7 without a server to buy or a local deployment to maintain. Plans differ in runtime resources, storage capacity, and monthly AI credits, while core capabilities such as self-improvement, multi-channel access, skills, automated tasks, and long-term memory remain available across tiers. This page also explains refund rules and the email-based application process. Live pricing and availability are shown on the subscribe page.**
+**LightVela offers four plans—Launch, Cruise, Launch AI, and Cruise AI—covering everything from a light first try to high-frequency use. Each plan activates a Hermes Agent in a dedicated cloud runtime with its own CPU, memory, and storage, where the agent stays online 24/7 without a server to buy or a local deployment to maintain. Plans differ in runtime resources, storage capacity, and monthly AI credits, while core capabilities such as self-improvement, multi-channel access, skills, scheduled tasks, and long-term memory remain available across tiers. This page also explains refund rules and the email-based application process. Live pricing and availability are shown on the subscribe page.**
 
 ---
 
@@ -26,7 +26,7 @@ LightVela offers four plan tiers—**Launch, Cruise, Launch AI, and Cruise AI**�
 
 A plan is the resource package that activates a Hermes Agent on LightVela. After you activate any currently available plan, LightVela assigns you a **dedicated cloud runtime** with its own CPU, memory, and storage. Your Hermes Agent can stay online 24/7 without requiring you to buy a server or deploy anything locally.
 
-The main differences between tiers are the **runtime resources, dedicated storage, and monthly AI-credit allocation**. Core Agent capabilities—including adaptive behavior, multiple channels, skills, automations, and long-term memory—remain available across tiers.
+The main differences between tiers are the **runtime resources, dedicated storage, and monthly AI-credit allocation**. Core Agent capabilities—including adaptive behavior, multiple channels, skills, scheduled tasks, and long-term memory—remain available across tiers.
 
 Real-time prices, inventory, discounts, and purchase availability are shown on the [Subscribe page](/subscribe). The values below describe the current resource structure, standard list prices, and AI-credit allocation.
 
@@ -34,7 +34,7 @@ Real-time prices, inventory, discounts, and purchase availability are shown on t
 
 ## Plan details
 
-Four plans are currently available: **Launch, Cruise, Launch AI, and Cruise AI**. Launch and Cruise are for users who already have their own large-model API Key. Launch AI and Cruise AI provide higher AI-credit allocations for more frequent conversations, skills, and automations.
+Four plans are currently available: **Launch, Cruise, Launch AI, and Cruise AI**. Launch and Cruise are for users who already have their own large-model API Key. Launch AI and Cruise AI provide higher AI-credit allocations for more frequent conversations, skills, and scheduled tasks.
 
 Real-time prices, inventory, discounts, and purchase availability are shown on the [Subscribe page](/subscribe). The table below lists only the current standard list prices.
 
@@ -47,7 +47,7 @@ Real-time prices, inventory, discounts, and purchase availability are shown on t
 | Launch | Users who already have their own large-model API Key and want to get an Agent running at a lower cost | 1 | 2 CPU cores, 4 GB memory | 50 GB | 100 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
 | Cruise | Users who already have their own large-model API Key and want more resources for regular daily use | 1 | 4 CPU cores, 8 GB memory | 80 GB | 200 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
 | Launch AI | Lightweight usage with more AI credits | 1 | 2 CPU cores, 4 GB memory | 50 GB | 4,500 credits / month |
-| Cruise AI | High-frequency conversations, skills, and automations | 1 | 4 CPU cores, 8 GB memory | 80 GB | 10,000 credits / month |
+| Cruise AI | High-frequency conversations, skills, and scheduled tasks | 1 | 4 CPU cores, 8 GB memory | 80 GB | 10,000 credits / month |
 
 </div>
 
@@ -84,7 +84,7 @@ Every Hermes Agent includes the following core capabilities:
 
 - **Curated skills and skill packs** — Install reusable capabilities for your Agent
 
-- **Custom persona, automations, long-term memory, and diagnostics** — Cover daily use, scheduled execution, context accumulation, and runtime troubleshooting
+- **Custom persona, scheduled tasks, long-term memory, and diagnostics** — Cover daily use, scheduled execution, context accumulation, and runtime troubleshooting
 
 For how AI credits are allocated and consumed, see [Credits](./credits.md).
 
@@ -116,7 +116,7 @@ Whether a refund application is approved depends on the LightVela support team's
 
 1. Check the refund rules and confirm that you meet the relevant conditions.
 
-2. Send an email to [lightvela@tencent.com](mailto:lightvela@tencent.com). In the email, clearly provide your account information, such as sign-in email / sign-in method, LightVela user ID, plan name, and order time; the reason for the refund; and the current usage status of your account, such as whether an Agent has been created or run, whether AI credits have been used, and whether channels, skills, or automations have been connected.
+2. Send an email to [lightvela@tencent.com](mailto:lightvela@tencent.com). In the email, clearly provide your account information, such as sign-in email / sign-in method, LightVela user ID, plan name, and order time; the reason for the refund; and the current usage status of your account, such as whether an Agent has been created or run, whether AI credits have been used, and whether channels, skills, or scheduled tasks have been connected.
 
 3. The LightVela support team will process your application within **3 working days**.
 

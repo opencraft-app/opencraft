@@ -84,13 +84,13 @@ The Agent can read material, organize risks, and draft a proposal first, but it 
 
 Do not treat a user's question as authorization to execute an action.
 
-### 6. Add boundaries for Skills and automations
+### 6. Add boundaries for Skills and scheduled tasks
 
 Before installing a Skill, confirm its source, permissions, external APIs, file access, and proactive-message capability.
 
 Test new Skills in a 1-to-1 conversation with low-risk material before expanding their use.
 
-Every automation needs an explicit schedule, active time window, notification method, target channel, and pause method.
+Every scheduled task needs an explicit schedule, active time window, notification method, target channel, and pause method.
 
 For WhatsApp proactive messages, also account for conversation windows and message templates instead of assuming that ordinary text will always be delivered.
 
@@ -114,7 +114,7 @@ If credentials may have been exposed, stop using the affected channel and revoke
 
 - Do sensitive actions, external messages, and irreversible changes require confirmation?
 
-- Do Skills and automations have least privilege, an explicit target channel, and a pause method?
+- Do Skills and scheduled tasks have least privilege, an explicit target channel, and a pause method?
 
 - Do you have procedures for exposed credentials, mistaken messages, and human handoff?
 

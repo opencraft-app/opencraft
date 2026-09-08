@@ -112,7 +112,7 @@ Vuelva a activarla antes de cambiarlos.
 ### ¿Cuándo debo desactivar las aprobaciones?
 
 Cuando las aprobaciones están desactivadas, las operaciones de alto riesgo ya no solicitan su aprobación.
-A menos que esté realizando automatización deliberada en un entorno confiable, mantenga seleccionado Smart o elija Siempre preguntar.
+A menos que esté realizando tarea programada deliberada en un entorno confiable, mantenga seleccionado Smart o elija Siempre preguntar.
 
 ### ¿Qué debo hacer si la guarda reporta un fallo de reinicio o verificación?
 

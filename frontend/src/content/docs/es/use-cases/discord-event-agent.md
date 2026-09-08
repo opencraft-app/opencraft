@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Un bot de eventos de Discord se vuelve más útil cuando puede explicar información de eventos aprobada, responder preguntas repetitivas, apoyar el onboarding y enviar recordatorios programados desde un único Hermes Agent configurado.** En LightVela, la ruta práctica consiste en conectar Discord, proporcionar al Agent un breve del evento y límites de seguridad, probarlo contra preguntas reales de participantes y agregar Automatizaciones estrechas para recordatorios o resúmenes.
+**Un bot de eventos de Discord se vuelve más útil cuando puede explicar información de eventos aprobada, responder preguntas repetitivas, apoyar el onboarding y enviar recordatorios programados desde un único Hermes Agent configurado.** En LightVela, la ruta práctica consiste en conectar Discord, proporcionar al Agent un breve del evento y límites de seguridad, probarlo contra preguntas reales de participantes y agregar Tareas programadas estrechas para recordatorios o resúmenes.
 
 Este patrón es ideal para torneos recurrentes, raids, grupos de estudio, lanzamientos comunitarios y otros eventos donde la misma información debe repetirse en muchas conversaciones.
 
@@ -25,7 +25,7 @@ Debe reducir el trabajo de coordinación repetitivo sin convertirse en la fuente
 
 - Un moderador o organizador que posea actualizaciones al calendario y apruebe anuncios.
 
-- La [guía de configuración de canal de Discord](../configuration/channel-discord.md) y la [guía de Automatizaciones](../configuration/automation.md).
+- La [guía de configuración de canal de Discord](../configuration/channel-discord.md) y la [guía de Tareas programadas](../configuration/automation.md).
 
 ## Pasos
 
@@ -117,10 +117,10 @@ No asumas que cada canal de servidor o modo de chat de grupo tenga el mismo comp
 
 ### 5. Agrega recordatorios programados y resúmenes
 
-Usa una Automatización cuando el evento tenga un ritmo predecible.
+Usa una Tarea programada cuando el evento tenga un ritmo predecible.
 LightVela soporta ejecuciones únicas, días fijos de la semana e intervalos fijos, así como una ventana de efectividad opcional y canales de notificación.
 Puedes elegir un día fijo de la semana, un intervalo fijo o una ejecución única.
-También puedes pausar, editar o eliminar una automatización más tarde.
+También puedes pausar, editar o eliminar una tarea programada más tarde.
 
 ![Configura una tarea automatizada para un evento de Discord](../images/automation-2-global-en.webp)
 
@@ -130,7 +130,7 @@ Use only the approved event brief.
 If the brief is missing a detail, tell the organizer which detail needs review.
 ```
 
-En este ejemplo, el bot está ejecutando la automatización "Recordatorio de torneo de juego".
+En este ejemplo, el bot está ejecutando la tarea programada "Recordatorio de torneo de juego".
 
 ![Un bot de Discord que envía un recordatorio de torneo](../images/discord-event-reminder.webp)
 
@@ -142,7 +142,7 @@ Do not infer winners, penalties, or policy decisions from incomplete information
 ```
 
 Revisa la primera salida programada antes de agregar una serie de recordatorios.
-La [guía de configuración de Automatización](../configuration/automation.md) explica dónde establecer el calendario, instrucciones de tarea, ventana de efectividad y configuración de notificaciones.
+La [guía de configuración de Tarea programada](../configuration/automation.md) explica dónde establecer el calendario, instrucciones de tarea, ventana de efectividad y configuración de notificaciones.
 
 ## Lista de verificación práctica
 
@@ -151,8 +151,8 @@ La [guía de configuración de Automatización](../configuration/automation.md) 
 | Antes del lanzamiento | Agrega el calendario revisado, zona horaria, reglas, enlaces y ruta de escalada | Contexto del Agent | Los participantes pueden obtener la misma respuesta aprobada |
 | Conexión | Invita el Bot y pruébalo en la conversación intencionada | Canal de Discord | El Bot responde y solo tiene los permisos que necesita |
 | Apoyo de participantes | Pregunta sobre calendario, registro y preparación | Hermes Agent | Las respuestas son concisas, específicas y fundamentadas en el breve |
-| Recordatorio | Programa un mensaje pre-evento | Automatización | El mensaje llega en el canal seleccionado en la hora esperada |
-| Después del evento | Genera un resumen para organizadores | Automatización o Chat | El resumen separa resultados conocidos, preguntas abiertas y seguimiento humano |
+| Recordatorio | Programa un mensaje pre-evento | Tarea programada | El mensaje llega en el canal seleccionado en la hora esperada |
+| Después del evento | Genera un resumen para organizadores | Tarea programada o Chat | El resumen separa resultados conocidos, preguntas abiertas y seguimiento humano |
 
 ## Validación y límites
 
@@ -180,10 +180,10 @@ Los organizadores humanos permanecen responsables de la fuente de verdad oficial
 Puede explicar una hora de evento publicada cuando el breve del evento incluye la zona horaria de origen y el participante proporciona una zona horaria objetivo.
 Pídele que incluya tanto la hora original como la hora convertida para que los participantes puedan verificar el resultado.
 
-### ¿Puede una Automatización enviar un recordatorio de evento de Discord?
+### ¿Puede una Tarea programada enviar un recordatorio de evento de Discord?
 
 Sí, la documentación del canal de Discord lista mensajes proactivos como soportados en la capa de canal.
-Crea una Automatización con el texto del recordatorio, calendario, ventana de efectividad y canal de notificación, luego prueba la primera entrega antes de confiar en ella para una fecha límite crítica.
+Crea una Tarea programada con el texto del recordatorio, calendario, ventana de efectividad y canal de notificación, luego prueba la primera entrega antes de confiar en ella para una fecha límite crítica.
 
 ### ¿Puede el Agent actualizar el calendario del evento por sí mismo?
 
@@ -199,7 +199,7 @@ Un bot personalizado puede ser mejor para comandos altamente específicos, regis
 
 ## Conclusión
 
-Proporciona al Agent un breve de evento revisado, conéctalo a Discord, prueba preguntas reales de participantes y agrega una Automatización estrecha para recordatorios o resúmenes.
+Proporciona al Agent un breve de evento revisado, conéctalo a Discord, prueba preguntas reales de participantes y agrega una Tarea programada estrecha para recordatorios o resúmenes.
 Esa secuencia agrega comportamiento útil de Agent de IA a un bot de evento mientras deja la autoridad del evento, cambios de política y decisiones sensibles con los organizadores humanos.
 
 Para el patrón de comunidad más amplio, consulta [Conoce a LightVela para Discord: Tu Bot de Discord de IA que Siente tu Canal](./discord-community-agent.md).

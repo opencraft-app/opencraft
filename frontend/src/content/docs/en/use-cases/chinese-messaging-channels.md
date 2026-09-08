@@ -96,4 +96,4 @@ Avoid doing so unless the platform and your intended workflow clearly support it
 
 - [Memory Management](../configuration/memory.md) - manage the context shared by your connected channels.
 
-- [Automations](../configuration/automation.md) - deliver scheduled updates to a connected channel when appropriate.
+- [Scheduled Tasks](../configuration/automation.md) - deliver scheduled updates to a connected channel when appropriate.

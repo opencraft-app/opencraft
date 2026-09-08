@@ -129,7 +129,7 @@ Hermes separates these three layers clearly, but it still targets people editing
 - **Memory is viewable in the console** — the memory page shows what the Agent has retained, with separate tabs for Memory and User Profile, matching the split between facts and stable preferences.
 - **Additions and removals happen through conversation** — you do not need to deliberately "fill in" memory. During normal conversation Hermes decides what is worth retaining; when you want it to remember or forget something, just say so in chat.
 - **Capacity is adjustable** — the console lets you raise or lower the memory capacity limit, preventing long-term context from growing without bound.
-- **Stable across models** — switching models does not clear memory, skills, or automations, so personality stability does not depend on a specific model.
+- **Stable across models** — switching models does not clear memory, skills, or scheduled tasks, so personality stability does not depend on a specific model.
 - **Consistent across channels** — one Agent shares the same memory and persona across every connected channel; switching phones or channels does not lose it, and nothing needs duplicating per platform.
 
 ---

@@ -48,7 +48,7 @@ LightVela에서는 Hermes를 Telegram에 연결하고 반복 워크플로를 부
 
 LightVela는 에이전트 설정도 더 직접적으로 제공합니다. 설정 콘솔에서 [모델](https://lightvela.ai/docs/configuration/model)을 선택하고, [채널](https://lightvela.ai/docs/configuration)을 연결하고, [스킬](https://lightvela.ai/docs/configuration/skill)로 Hermes를 확장할 수 있습니다.
 
-에이전트가 같은 유형의 작업을 반복해야 한다면 LightVela의 [자동 작업](https://lightvela.ai/docs/configuration/automation)을 통해 매번 수동으로 다시 시작하는 대신 해당 패턴을 에이전트의 운영 루틴으로 만들 수 있습니다.
+에이전트가 같은 유형의 작업을 반복해야 한다면 LightVela의 [예약 작업](https://lightvela.ai/docs/configuration/automation)을 통해 매번 수동으로 다시 시작하는 대신 해당 패턴을 에이전트의 운영 루틴으로 만들 수 있습니다.
 
 ## ChatGPT가 더 적합한 경우
 

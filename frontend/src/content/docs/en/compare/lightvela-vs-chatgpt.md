@@ -48,7 +48,7 @@ With LightVela, you might connect Hermes to Telegram, give it a recurring workfl
 
 LightVela also exposes the Agent’s configuration more directly. You can choose the [model](https://lightvela.ai/docs/configuration/model), connect [Channels](https://lightvela.ai/docs/configuration), and extend Hermes through [Skills](https://lightvela.ai/docs/configuration/skill) in the configuration console.
 
-If the Agent needs to do the same kind of work repeatedly, LightVela’s [automations](https://lightvela.ai/docs/configuration/automation) make that pattern part of the Agent’s operating routine instead of something you manually restart every time.
+If the Agent needs to do the same kind of work repeatedly, LightVela’s [scheduled tasks](https://lightvela.ai/docs/configuration/automation) make that pattern part of the Agent’s operating routine instead of something you manually restart every time.
 
 ## Where ChatGPT is the better choice
 

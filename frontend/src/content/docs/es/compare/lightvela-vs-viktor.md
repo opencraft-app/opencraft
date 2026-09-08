@@ -16,7 +16,7 @@ La cuestión es dónde vive el Agent, a quién pertenece y qué tipo de trabajo 
 | **Papel principal** | AI Agent personal en la nube | Compañero de IA compartido para equipos |
 | **Interfaz principal** | Consola web y canales de mensajería | Slack, Microsoft Teams, aplicación web y Discord |
 | **Modelo de memoria** | Memoria del Agent personal entre conversaciones y canales | Contexto y memoria compartidos del espacio de trabajo |
-| **Integraciones** | Canales de mensajería, Skills, Automatizaciones y proveedores de modelos | Más de 3.200 integraciones de herramientas empresariales |
+| **Integraciones** | Canales de mensajería, Skills, Tareas programadas y proveedores de modelos | Más de 3.200 integraciones de herramientas empresariales |
 | **Modelo de configuración** | Agent alojado y gestionado sin mantenimiento de servidores | Conectar Viktor, autorizar herramientas y delegar trabajo |
 | **Mejor encaje** | Asistencia personal y colaboración a largo plazo | Operaciones empresariales entre varias herramientas |
 
@@ -24,7 +24,7 @@ La cuestión es dónde vive el Agent, a quién pertenece y qué tipo de trabajo 
 
 LightVela se basa en la idea de tener un Agent personal de larga duración.
 Tu Hermes Agent funciona en la nube, permanece disponible cuando tus dispositivos están desconectados y puede recibir mensajes a través de los canales compatibles.
-Su memoria, personalidad, modelo, Skills y Automatizaciones se configuran alrededor de una relación continua.
+Su memoria, personalidad, modelo, Skills y Tareas programadas se configuran alrededor de una relación continua.
 La [visión general de LightVela](../01-overview.md) explica cómo encajan estas piezas.
 
 Viktor.com adopta un enfoque distinto.
@@ -41,12 +41,12 @@ Mira parte de las conversaciones de Telegram, mientras que Viktor parte de espac
 ## Cuándo encaja mejor LightVela
 
 LightVela encaja muy bien cuando tu Agent debe estar disponible en los lugares donde ya te comunicas.
-Puedes conectar canales, configurar un modelo, instalar [Skills](../configuration/skill.md) y crear [Automatizaciones](../configuration/automation.md) recurrentes desde LightVela.
+Puedes conectar canales, configurar un modelo, instalar [Skills](../configuration/skill.md) y crear [Tareas programadas](../configuration/automation.md) recurrentes desde LightVela.
 El mismo Agent puede ayudarte con recordatorios, investigación, organización de información, contenido y conversaciones diarias sin que tengas que mantener un servidor.
 
 El modelo también es flexible de forma intencionada.
 Puedes configurar proveedores de modelos compatibles y cambiar la capa de modelos sin reconstruir la relación con el Agent.
-Las Skills amplían lo que Hermes puede hacer, mientras que las Automatizaciones determinan cuándo debe ejecutar trabajo de forma proactiva.
+Las Skills amplían lo que Hermes puede hacer, mientras que las Tareas programadas determinan cuándo debe ejecutar trabajo de forma proactiva.
 
 LightVela también te permite explorar más de un runtime de Agent dentro del mismo entorno alojado en la nube.
 [DeepSeek Harness](../configuration/deepseek-harness.md) funciona junto a Hermes Agent como un servicio gestionado por separado, con su propio WebUI, configuración de proveedores y perfil habilitado para plugins.
@@ -94,7 +94,7 @@ Elige LightVela si:
 - **Quieres un Agent personal:** Quieres un compañero de IA que esté disponible y sea más útil alrededor de tus rutinas.
 - **Valoras la continuidad:** La memoria a largo plazo y una relación continua con el Agent importan más que el contexto compartido del equipo.
 - **Prefieres acceder por mensajería:** Quieres contactar con el Agent mediante los canales que ya utilizas.
-- **Quieres controlar la configuración:** Quieres gestionar modelos, Skills, Automatizaciones y comportamiento según tu flujo.
+- **Quieres controlar la configuración:** Quieres gestionar modelos, Skills, Tareas programadas y comportamiento según tu flujo.
 - **Quieres flexibilidad de runtime:** Quieres explorar Hermes y otros runtimes desde un mismo entorno alojado en la nube.
 
 Elige Viktor.com si:

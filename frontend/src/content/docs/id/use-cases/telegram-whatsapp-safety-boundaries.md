@@ -92,13 +92,13 @@ Agent dapat membaca material, menata risiko, dan menyusun usulan lebih dulu, tet
 
 Jangan memperlakukan pertanyaan pengguna sebagai otorisasi untuk mengeksekusi sebuah tindakan.
 
-### 6. Tambahkan batasan untuk Skill dan otomasi
+### 6. Tambahkan batasan untuk Skill dan tugas terjadwal
 
 Sebelum memasang Skill, pastikan sumbernya, izinnya, API eksternalnya, akses filenya, dan kemampuan pesan proaktifnya.
 
 Uji Skill baru dalam percakapan satu lawan satu dengan material berisiko rendah sebelum memperluas pemakaiannya.
 
-Setiap otomasi membutuhkan jadwal, jendela waktu aktif, metode notifikasi, kanal tujuan, dan cara menjeda yang eksplisit.
+Setiap tugas terjadwal membutuhkan jadwal, jendela waktu aktif, metode notifikasi, kanal tujuan, dan cara menjeda yang eksplisit.
 
 Untuk pesan proaktif WhatsApp, perhitungkan juga jendela percakapan dan templat pesan alih-alih mengasumsikan teks biasa akan selalu terkirim.
 
@@ -122,7 +122,7 @@ Jika kredensial mungkin sudah terekspos, hentikan pemakaian kanal yang terdampak
 
 - Apakah tindakan sensitif, pesan eksternal, dan perubahan tak dapat dibalik membutuhkan konfirmasi?
 
-- Apakah Skill dan otomasi memiliki hak akses minimum, kanal tujuan yang eksplisit, dan cara menjeda?
+- Apakah Skill dan tugas terjadwal memiliki hak akses minimum, kanal tujuan yang eksplisit, dan cara menjeda?
 
 - Apakah Anda memiliki prosedur untuk kredensial yang terekspos, pesan yang salah kirim, dan pengalihan ke manusia?
 

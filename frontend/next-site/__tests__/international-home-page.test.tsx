@@ -592,7 +592,7 @@ describe("international v2 homepage artifact", () => {
   it("keeps international homepage demos localized", () => {
     const bannedEnglishDemoCopy = [
       "We just finished the pricing-page meeting. Can you sort the notes and tasks?",
-      "Show me the automation templates. I want to set up the common ones.",
+      "Show me the Scheduled Task templates. I want to set up the common ones.",
       "Turn PDFs, contracts, notes, and links into searchable memory",
       "Watch news, releases, price changes, and filings in the background",
       "Put family calendars, tasks, school events, and chores in one place",
@@ -608,22 +608,22 @@ describe("international v2 homepage artifact", () => {
     const expectedLocalizedCopy = {
       "id-ID": [
         "Kami baru selesai rapat halaman pricing. Bisa rapikan catatan dan tugasnya?",
-        "Tampilkan template automations. Saya ingin mengatur yang umum.",
+        "Tampilkan template tugas terjadwal. Saya ingin mengatur yang umum.",
         "Ubah PDF, kontrak, catatan, dan tautan menjadi memori yang bisa dicari",
       ],
       es: [
         "Acabamos la reunión de la página de precios. ¿Puedes ordenar notas y tareas?",
-        "Muéstrame las plantillas de automatización. Quiero configurar las comunes.",
+        "Muéstrame las plantillas de tarea programada. Quiero configurar las comunes.",
         "Convierte PDF, contratos, notas y enlaces en memoria consultable",
       ],
       "ja-JP": [
         "料金ページの会議が終わりました。メモとタスクを整理できますか？",
-        "自動化テンプレートを見せて。よく使うものを設定したい。",
+        "スケジュールタスクテンプレートを見せて。よく使うものを設定したい。",
         "PDF、契約書、メモ、リンクを検索できる記憶に変換",
       ],
       "ko-KR": [
         "요금 페이지 회의가 막 끝났어. 메모와 작업을 정리해 줄래?",
-        "자동화 템플릿을 보여줘. 자주 쓰는 것을 설정하고 싶어.",
+        "예약 작업 템플릿을 보여줘. 자주 쓰는 것을 설정하고 싶어.",
         "PDF, 계약서, 메모, 링크를 검색 가능한 기억으로 변환",
       ],
     } as const;
@@ -1055,14 +1055,14 @@ describe("international v2 homepage artifact", () => {
 
   it("localizes owned product UI labels by locale while preserving brand names", () => {
     const expectedProductTabLabels = {
-      "en-US": ["Automations", "Workbench", "DeepSeek Harness"],
-      "zh-CN": ["自动任务", "工作台", "DeepSeek Harness"],
-      "zh-SG": ["自动任务", "工作台", "DeepSeek Harness"],
-      "zh-Hant": ["自動任務", "工作臺", "DeepSeek Harness"],
-      "id-ID": ["Otomatisasi", "Ruang kerja", "DeepSeek Harness"],
-      es: ["Automatizaciones", "Área de trabajo", "DeepSeek Harness"],
-      "ja-JP": ["自動タスク", "ワークベンチ", "DeepSeek Harness"],
-      "ko-KR": ["자동 작업", "워크벤치", "DeepSeek Harness"],
+      "en-US": ["Scheduled Tasks", "Workbench", "DeepSeek Harness"],
+      "zh-CN": ["定时任务", "工作台", "DeepSeek Harness"],
+      "zh-SG": ["定时任务", "工作台", "DeepSeek Harness"],
+      "zh-Hant": ["定時任務", "工作臺", "DeepSeek Harness"],
+      "id-ID": ["Tugas Terjadwal", "Ruang kerja", "DeepSeek Harness"],
+      es: ["Tareas programadas", "Área de trabajo", "DeepSeek Harness"],
+      "ja-JP": ["スケジュールタスク", "ワークベンチ", "DeepSeek Harness"],
+      "ko-KR": ["예약 작업", "워크벤치", "DeepSeek Harness"],
     } as const;
 
     const expectedCtaLabels = {

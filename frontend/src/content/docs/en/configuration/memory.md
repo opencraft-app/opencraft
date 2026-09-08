@@ -156,6 +156,6 @@ Memory helps Hermes remember you. Next, give it more ways to act:
 
 - [Configure Skills](./skill.md) — Add capabilities such as weather lookup, briefings, and web browsing
 
-- [Automations](./automation.md) — Let Hermes run tasks proactively on a schedule
+- [Scheduled Tasks](./automation.md) — Let Hermes run tasks proactively on a schedule
 
 - [Configuration Overview](../05-configuration.md)

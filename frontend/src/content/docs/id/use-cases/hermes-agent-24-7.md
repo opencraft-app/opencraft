@@ -8,7 +8,7 @@ Hermes Agent adalah AI agent berbasis cloud di LightVela. Begitu model dan kanal
 
 ## Ringkasan
 
-**Hermes Agent tetap tersedia sepanjang waktu karena ia berjalan di instans cloud alih-alih mesin lokal Anda. Begitu sebuah model dan setidaknya satu kanal dikonfigurasi, ia memakai memori dan perilaku yang sama tidak peduli dari pintu masuk mana Anda mengirim pesan.** Tiga hal harus tersedia untuk ketersediaan jangka panjang yang sesungguhnya: model terkonfigurasi dengan kuota akun yang dapat dipakai (kredit uji coba yang habis menyebabkan tidak-membalas tanpa suara), setidaknya satu kanal yang tampil sebagai terhubung, dan otomasi untuk menangani pekerjaan terjadwal saat Anda tidak ada. Jangan menilai ketersediaan dari status konsol saja — kirim pesan nyata melalui kanal yang sebenarnya. Ketika ada yang bermasalah, lihat dan ekspor log terbaru di Diagnostik (rentang 1, 3, 6, 12, atau 24 jam yang dapat dipilih) untuk menemukan penyebabnya.
+**Hermes Agent tetap tersedia sepanjang waktu karena ia berjalan di instans cloud alih-alih mesin lokal Anda. Begitu sebuah model dan setidaknya satu kanal dikonfigurasi, ia memakai memori dan perilaku yang sama tidak peduli dari pintu masuk mana Anda mengirim pesan.** Tiga hal harus tersedia untuk ketersediaan jangka panjang yang sesungguhnya: model terkonfigurasi dengan kuota akun yang dapat dipakai (kredit uji coba yang habis menyebabkan tidak-membalas tanpa suara), setidaknya satu kanal yang tampil sebagai terhubung, dan tugas terjadwal untuk menangani pekerjaan terjadwal saat Anda tidak ada. Jangan menilai ketersediaan dari status konsol saja — kirim pesan nyata melalui kanal yang sebenarnya. Ketika ada yang bermasalah, lihat dan ekspor log terbaru di Diagnostik (rentang 1, 3, 6, 12, atau 24 jam yang dapat dipilih) untuk menemukan penyebabnya.
 
 ## Untuk siapa ini
 
@@ -57,16 +57,16 @@ Ini membuat pesan yang dikirim dari perangkat atau kanal lain yang didukung dapa
 
 ### 4. Tambahkan tugas terjadwal ketika ketersediaan seharusnya berujung pada tindakan
 
-Hermes yang online dapat menunggu pesan Anda, tetapi otomasi kecil membuatnya dapat memulai rutinitas yang sudah diketahui pada waktu yang tepat. Mulai dengan satu tugas yang punya kondisi keberhasilan yang jelas:
+Hermes yang online dapat menunggu pesan Anda, tetapi tugas terjadwal kecil membuatnya dapat memulai rutinitas yang sudah diketahui pada waktu yang tepat. Mulai dengan satu tugas yang punya kondisi keberhasilan yang jelas:
 
 ```text
 Setiap hari kerja pukul 08.30, siapkan briefing singkat berisi prioritas
 kalender hari ini, tindak lanjut yang masih terbuka, dan tindakan pertama yang perlu diambil.
 ```
 
-Buat jadwalnya di [Otomasi](../configuration/automation.md), pilih kanal notifikasi bila sesuai, lalu periksa beberapa eksekusi pertama. Jika hasilnya terlalu luas, buat instruksinya lebih spesifik alih-alih langsung menambahkan otomasi lain.
+Buat jadwalnya di [Tugas Terjadwal](../configuration/automation.md), pilih kanal notifikasi bila sesuai, lalu periksa beberapa eksekusi pertama. Jika hasilnya terlalu luas, buat instruksinya lebih spesifik alih-alih langsung menambahkan tugas terjadwal lain.
 
-![Eksekusi otomasi terbaru dari sebuah Hermes Agent](../images/use-case-hermes-online-automation.png)
+![Eksekusi tugas terjadwal terbaru dari sebuah Hermes Agent](../images/use-case-hermes-online-automation.png)
 
 ## FAQ
 
@@ -82,13 +82,13 @@ Pertama pastikan koneksi kanal dan status model aktif atau kredit uji coba Anda.
 
 Bisa. Kanal yang didukung dapat mengarah ke Hermes Agent yang sama. Semuanya berbagi perilaku dan memori Agent yang sama, jadi pilih satu kanal default lalu tambahkan yang lain hanya ketika mereka menjawab kebutuhan akses yang nyata.
 
-### Apakah Agent 24/7 aman untuk diotomasikan?
+### Apakah Agent 24/7 aman untuk ditugas terjadwalkan?
 
-Pakai hanya instruksi yang cakupannya jelas dan Skill yang terpercaya. Mulai dengan rutinitas yang bersifat baca-saja atau berisiko rendah, tinjau keluarannya, dan hindari memberi otomasi wewenang untuk melakukan tindakan yang tidak ingin Anda ulangi secara otomatis.
+Pakai hanya instruksi yang cakupannya jelas dan Skill yang terpercaya. Mulai dengan rutinitas yang bersifat baca-saja atau berisiko rendah, tinjau keluarannya, dan hindari memberi tugas terjadwal wewenang untuk melakukan tindakan yang tidak ingin Anda ulangi secara otomatis.
 
 ## Langkah berikutnya
 
-- [Otomasi](../configuration/automation.md) — jadwalkan pekerjaan yang seharusnya terjadi tanpa prompt manual.
+- [Tugas Terjadwal](../configuration/automation.md) — jadwalkan pekerjaan yang seharusnya terjadi tanpa prompt manual.
 
 - [Pengelolaan Memori](../configuration/memory.md) — jaga preferensi yang berguna tetap tersedia lintas percakapan.
 

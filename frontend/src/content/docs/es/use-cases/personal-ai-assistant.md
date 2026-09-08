@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**El orden correcto para construir un asistente personal de IA no es automatizar todo de una vez. Comience haciendo que un Hermes Agent en la nube sea accesible en la aplicación de chat que ya utiliza, luego capas de memoria, Skills y automatizaciones.** Cada uno de los cinco bloques de construcción resuelve un problema: el modelo determina la calidad del razonamiento, el canal determina dónde lo accede, la memoria le permite retener cómo trabaja, las Skills le dan métodos reutilizables y las automatizaciones le permiten completar trabajos acordados mientras usted está ausente. Durante la primera semana, haga solo tres cosas: configure un modelo, conecte un canal y verifique que la memoria persista realmente entre sesiones. Una vez que esta ruta sea confiable, agregue Skills y automatizaciones; de esta manera, cuando algo falle, podrá indicar qué capa lo causó.
+**El orden correcto para construir un asistente personal de IA no es automatizar todo de una vez. Comience haciendo que un Hermes Agent en la nube sea accesible en la aplicación de chat que ya utiliza, luego capas de memoria, Skills y tareas programadas.** Cada uno de los cinco bloques de construcción resuelve un problema: el modelo determina la calidad del razonamiento, el canal determina dónde lo accede, la memoria le permite retener cómo trabaja, las Skills le dan métodos reutilizables y las tareas programadas le permiten completar trabajos acordados mientras usted está ausente. Durante la primera semana, haga solo tres cosas: configure un modelo, conecte un canal y verifique que la memoria persista realmente entre sesiones. Una vez que esta ruta sea confiable, agregue Skills y tareas programadas; de esta manera, cuando algo falle, podrá indicar qué capa lo causó.
 
 ![Un asistente personal de IA con LightVela a través de varios canales](../images/use-case-personal-ai-assistant.webp)
 
@@ -60,7 +60,7 @@ Navegue por una opción adecuada en ClawHub, luego utilice [Configure Skills](ht
 
 ### 4. Convertir una conversación útil en una revisión repetible
 
-Una vez que un prompt sea confiablemente útil, decida si debe ejecutarse en un horario. Una automatización simple puede pedirle a Hermes un plan matutino, una revisión al final del día o un reinicio semanal sin que tenga que recordar iniciar la conversación.
+Una vez que un prompt sea confiablemente útil, decida si debe ejecutarse en un horario. Una tarea programada simple puede pedirle a Hermes un plan matutino, una revisión al final del día o un reinicio semanal sin que tenga que recordar iniciar la conversación.
 
 Por ejemplo:
 
@@ -69,15 +69,15 @@ Every weekday at 8:00 AM, prepare a concise plan for today.
 Start with deadlines and meetings, then suggest three focused next actions.
 ```
 
-Establezca el horario y el canal de notificación en [Automations](https://lightvela.ai/docs/configuration/automation). Mantenga la primera automatización pequeña; puede refinar la instrucción después de haber visto unos pocos resultados reales.
+Establezca el horario y el canal de notificación en [Tareas programadas](https://lightvela.ai/docs/configuration/automation). Mantenga la primera tarea programada pequeña; puede refinar la instrucción después de haber visto unos pocos resultados reales.
 
-![La página de Automatizaciones en la consola de LightVela](../images/personal-ai-assistant-automations.webp)
+![La página de Tareas programadas en la consola de LightVela](../images/personal-ai-assistant-automations.webp)
 
 ## Preguntas frecuentes
 
 ### ¿Necesito configurar cada característica antes de que Hermes sea útil?
 
-No. Un canal y un modelo funcional son suficientes para comenzar. Agregue memoria, Skills y automatizaciones gradualmente a medida que descubra qué tareas repetidas valen la pena mantener.
+No. Un canal y un modelo funcional son suficientes para comenzar. Agregue memoria, Skills y tareas programadas gradualmente a medida que descubra qué tareas repetidas valen la pena mantener.
 
 ### ¿Recordará Hermes cada mensaje que envíe?
 
@@ -97,4 +97,4 @@ Elija una tarea que ya repita en un horario predecible. La planificación matuti
 
 - [Memory Management](https://lightvela.ai/docs/configuration/memory) — revise lo que su asistente retiene entre conversaciones.
 
-- [Automations](https://lightvela.ai/docs/configuration/automation) — programe las rutinas que demuestran ser útiles.
+- [Tareas programadas](https://lightvela.ai/docs/configuration/automation) — programe las rutinas que demuestran ser útiles.

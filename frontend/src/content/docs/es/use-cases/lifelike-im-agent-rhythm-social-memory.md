@@ -113,13 +113,13 @@ Si un canal objetivo futuro soporte explícitamente grupos, defina al menos:
 
 Las normas de grupo pertenecen a las reglas del canal y de operación y no deben depender únicamente de un prompt de personalidad.
 
-### 6. Use automatizaciones para controlar el ritmo proactivo
+### 6. Use tareas programadas para controlar el ritmo proactivo
 
 Los mensajes proactivos necesitan una frecuencia explícita, una ventana de tiempo, un canal objetivo y un método de pausa.
 
-Utilice [Automatizaciones](../configuration/automation.md) para recordatorios personales, resúmenes internos o revisiones periódicas.
+Utilice [Tareas programadas](../configuration/automation.md) para recordatorios personales, resúmenes internos o revisiones periódicas.
 
-Establezca horas de silencio para cada automatización y confirme que el canal objetivo soporte el método de entrega proactiva relevante.
+Establezca horas de silencio para cada tarea programada y confirme que el canal objetivo soporte el método de entrega proactiva relevante.
 
 No cree una sensación de compañía mediante mensajes de alta frecuencia y no haga que los recordatorios sean difíciles de detener.
 

@@ -48,7 +48,7 @@ type ChangelogEntry = {
   title: string;
   desc?: string;
   badge?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
   visual: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
 };
 
@@ -188,9 +188,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "skillsBulkInstall"
       ? t("技能页面支持批量安装与来源查看")
       : variant === "automationUpstream"
-      ? t("自动任务支持关联上游任务")
+      ? t("定时任务支持关联上游任务")
       : variant === "automationTemplates"
-      ? t("自动任务模板")
+      ? t("定时任务模板")
       : variant === "qqGroupMentions"
       ? t("支持在 QQ 群聊中 @ 机器人")
       : variant === "traditionalChinese"
@@ -214,9 +214,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "memory"
       ? t("LightVela 支持查看 Hermes Agent 记忆")
       : variant === "schedule"
-      ? t("LightVela 支持设置自动任务")
+      ? t("LightVela 支持设置定时任务")
       : variant === "automationSkill"
-      ? t("自动任务调用技能设置")
+      ? t("定时任务调用技能设置")
       : variant === "skill-package"
       ? t("LightVela 支持技能包")
       : variant === "soul"
@@ -356,8 +356,8 @@ function ChangelogContent() {
               },
               {
                 id: "automation-form-test-run",
-                title: t("自动任务支持测试运行"),
-                desc: t("创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
+                title: t("定时任务支持测试运行"),
+                desc: t("创建或编辑定时任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
                 visual: "none" as const,
               },
               {
@@ -374,8 +374,8 @@ function ChangelogContent() {
               },
               {
                 id: "automation-upstream-task",
-                title: t("自动任务支持关联上游任务"),
-                desc: t("创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
+                title: t("定时任务支持关联上游任务"),
+                desc: t("创建或编辑定时任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
                 visual: "automationUpstream" as const,
               },
               {
@@ -439,8 +439,8 @@ function ChangelogContent() {
               },
               {
                 id: "automation-form-test-run",
-                title: t("自动任务支持测试运行"),
-                desc: t("创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
+                title: t("定时任务支持测试运行"),
+                desc: t("创建或编辑定时任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
                 visual: "none" as const,
               },
               {
@@ -457,8 +457,8 @@ function ChangelogContent() {
               },
               {
                 id: "automation-upstream-task",
-                title: t("自动任务支持关联上游任务"),
-                desc: t("创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
+                title: t("定时任务支持关联上游任务"),
+                desc: t("创建或编辑定时任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
                 visual: "automationUpstream" as const,
               },
               {
@@ -496,16 +496,16 @@ function ChangelogContent() {
               },
               {
                 id: "automation-templates",
-                title: t("自动任务模板"),
-                desc: t("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。"),
+                title: t("定时任务模板"),
+                desc: t("选择一个现成的定时任务模板，先运行一次，确认效果后再将其转为持续执行的定时任务。"),
                 visual: "automationTemplates" as const,
               },
             ]
           : []),
         {
           id: "automation-skill-invocation",
-          title: t("自动任务支持调用技能"),
-          desc: t("创建或编辑自动任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助自动任务更稳定地调用技能。"),
+          title: t("定时任务支持调用技能"),
+          desc: t("创建或编辑定时任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助定时任务更稳定地调用技能。"),
           visual: "automationSkill",
         },
         ...(!isGlobal
@@ -584,8 +584,8 @@ function ChangelogContent() {
         },
         {
           id: "scheduled-tasks",
-          title: t("LightVela 支持设置自动任务"),
-          desc: t("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。"),
+          title: t("LightVela 支持设置定时任务"),
+          desc: t("为 Agent 设置周期、间隔或单次定时任务，让它按计划执行提醒、总结、通知等日常工作。"),
           visual: "schedule",
         },
       ],

@@ -78,7 +78,7 @@ Está listo para usar Almacenamiento en la nube cuando:
 - puede abrir o descargar el archivo con éxito; y
 - los nombres de carpeta hacen claro qué material pertenece a la tarea actual.
 
-Ahora puede volver a [Chat](./agent-chat.md) y decirle al Agent qué desea hacer con los archivos. Para trabajos repetibles, combine las mismas instrucciones con [Automations](./automation.md) o [Skills](./skill.md).
+Ahora puede volver a [Chat](./agent-chat.md) y decirle al Agent qué desea hacer con los archivos. Para trabajos repetibles, combine las mismas instrucciones con [Tareas programadas](./automation.md) o [Skills](./skill.md).
 
 ## Preguntas frecuentes
 

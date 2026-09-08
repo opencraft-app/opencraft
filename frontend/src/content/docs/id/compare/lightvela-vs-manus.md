@@ -42,7 +42,7 @@ Hermes Agent yang di-hosting berguna ketika Anda menginginkan tempat familier un
 
 Itu jenis kemudahan yang berbeda dari "selesaikan tugas ini untuk saya". Ia lebih dekat ke memiliki asisten yang bertahan dan dapat Anda kirimi pesan kapan pun sebuah pikiran muncul.
 
-LightVela juga lebih pas jika Anda peduli membentuk Agent di sekitar kebiasaan Anda sendiri: mengonfigurasi model, memilih di mana percakapan terjadi, dan memperluas Hermes dengan Skill. Jika pekerjaan berulang termasuk dalam gambarannya, Anda juga dapat menyiapkan [otomasi](https://lightvela.ai/docs/configuration/automation) alih-alih memperlakukan setiap permintaan sebagai proyek baru.
+LightVela juga lebih pas jika Anda peduli membentuk Agent di sekitar kebiasaan Anda sendiri: mengonfigurasi model, memilih di mana percakapan terjadi, dan memperluas Hermes dengan Skill. Jika pekerjaan berulang termasuk dalam gambarannya, Anda juga dapat menyiapkan [tugas terjadwal](https://lightvela.ai/docs/configuration/automation) alih-alih memperlakukan setiap permintaan sebagai proyek baru.
 
 ## Di mana Manus lebih sesuai
 

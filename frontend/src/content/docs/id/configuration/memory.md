@@ -156,6 +156,6 @@ Memori membantu Hermes mengingat Anda. Selanjutnya, beri ia lebih banyak cara un
 
 - [Konfigurasi Skill](./skill.md) — Tambahkan kemampuan seperti pencarian cuaca, ringkasan, dan penjelajahan web
 
-- [Otomasi](./automation.md) — Biarkan Hermes menjalankan tugas secara proaktif sesuai jadwal
+- [Tugas Terjadwal](./automation.md) — Biarkan Hermes menjalankan tugas secara proaktif sesuai jadwal
 
 - [Ringkasan Konfigurasi](../05-configuration.md)

@@ -67,7 +67,7 @@ Memory works best when it stays current. Remove or correct context that would le
 
 Use the [Chat](../configuration/agent-chat.md) page or a connected channel to turn documents and memory into a concrete next step. Ask for a comparison, an outline, a set of open questions, or a recap for a specific meeting. The more specific the immediate outcome, the easier it is to verify that Hermes has the right context.
 
-If your review follows a recurring rhythm, an [Automation](../configuration/automation.md) can remind you to revisit a folder or prepare a regular recap. Begin with a simple reminder or summary rather than granting a broad, open-ended task.
+If your review follows a recurring rhythm, a [Scheduled Task](../configuration/automation.md) can remind you to revisit a folder or prepare a regular recap. Begin with a simple reminder or summary rather than granting a broad, open-ended task.
 
 ![A Hermes Agent conversation using organized project knowledge](../images/use-case-memory-knowledge-automation.png)
 

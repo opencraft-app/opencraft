@@ -85,7 +85,7 @@ Los canales son los puntos de entrada de plataforma de mensajería donde los usu
 | Canal | Método de acceso | Caso de uso |
 |---|---|---|
 | WeChat | Autorización mediante código QR | Uso personal diario, adecuado para usuarios en China |
-| Telegram | Acceso mediante Token de Bot | Mensajería personal o de equipo, configuración simple, adecuado para automatización ligera |
+| Telegram | Acceso mediante Token de Bot | Mensajería personal o de equipo, configuración simple, adecuado para tarea programada ligera |
 | WhatsApp | Acceso mediante API de WhatsApp Business | Comunicación con usuarios internacionales, servicio al cliente, notificaciones y recordatorios |
 | Discord | Acceso mediante Token de Bot | Operaciones comunitarias, comunidades de desarrolladores, grupos de juego o de intereses |
 | Slack | Acceso mediante Token de Bot / Token de Aplicación | Colaboración de equipo, notificaciones de espacio de trabajo y flujos basados en canales |
