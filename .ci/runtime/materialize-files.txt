@@ -14,6 +14,7 @@
 .ci/runtime/commands/configure_playground_dns.py
 .ci/runtime/commands/diagnose_playground_environment.py
 .ci/runtime/commands/detect_deployed_at_only_diff.py
+.ci/runtime/commands/check_pin_only_promote_diff.py
 .ci/runtime/commands/describe_gitops_promotion.py
 .ci/runtime/commands/ensure_playground_frontend_image.py
 .ci/runtime/commands/extract_hermes_image_env.py
@@ -77,6 +78,7 @@
 .ci/runtime/gitops/argocd.py
 .ci/runtime/gitops/argocd_target_cluster.py
 .ci/runtime/gitops/deployed_at_diff.py
+.ci/runtime/gitops/pin_only_promote_diff.py
 .ci/runtime/gitops/gitops_cleanup_source_branch.py
 .ci/runtime/gitops/gitops_drift_audit.py
 .ci/runtime/gitops/gitops_kustomize_validation.py

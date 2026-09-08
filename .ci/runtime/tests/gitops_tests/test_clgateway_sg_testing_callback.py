@@ -19,6 +19,30 @@ def is_dev_override(name: str) -> bool:
 
 
 class CloudLadderSGCallbackTests(unittest.TestCase):
+    def test_sg_devtunnel_selector_matches_existing_tkex_object(self) -> None:
+        documents = yaml.safe_load_all(
+            (
+                REPO_ROOT
+                / "argocd/services/cloudladdergateway/tkexsg/devtunnel-testing.yaml"
+            ).read_text()
+        )
+        manifest = next(documents)
+        expected_labels = {
+            "clusterId": "cls-hq6qk3i6",
+            "env": "production",
+            "k8s-app": "devtunnel-testing",
+            "qcloud-app": "devtunnel-testing",
+            "region": "ap-singapore",
+            "workload-kind": "statefulsetplus",
+        }
+        self.assertEqual(manifest["metadata"]["labels"], expected_labels)
+        self.assertEqual(
+            manifest["spec"]["selector"]["matchLabels"], expected_labels
+        )
+        self.assertEqual(
+            manifest["spec"]["template"]["metadata"]["labels"], expected_labels
+        )
+
     def backend_base_urls(self, filename: str) -> dict[str, str]:
         manifest = yaml.safe_load(
             (

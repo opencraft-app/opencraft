@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Bot, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowRightLeft, MoreHorizontal, Bot, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,9 +22,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataTable } from "@/components/shared/data-table";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { GatewayOperationDialog } from "@/components/ctl/gateway-operation-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { formatDateTime } from "@/lib/utils";
 import { CtlBot, useCtlBots, useDeleteCtlBot } from "@/lib/queries/use-ctl-bots";
+import { canRunGatewayOperation, migrationNeedsLegacyKeyCleanup } from "@/lib/queries/gateway-operation-policy";
+import {
+  type GatewayOperation,
+  useMigrateCtlBot,
+  useResetCtlUserQuota,
+} from "@/lib/queries/gateway-operations";
 
 const statusOptions = [
   { label: "全部状态", value: "all" },
@@ -59,6 +66,8 @@ export default function CtlBotsPage() {
   const [userIDFilter, setUserIDFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deleteTarget, setDeleteTarget] = useState<CtlBot | null>(null);
+  const [gatewayTarget, setGatewayTarget] = useState<{ bot: CtlBot; operation: GatewayOperation } | null>(null);
+  const [gatewayPreviewError, setGatewayPreviewError] = useState<string>();
 
   const { data, isLoading, isFetching, refetch } = useCtlBots({
     page,
@@ -67,6 +76,46 @@ export default function CtlBotsPage() {
     status: statusFilter === "all" ? "" : statusFilter,
   });
   const deleteBot = useDeleteCtlBot();
+  const migrateBot = useMigrateCtlBot();
+  const resetQuota = useResetCtlUserQuota();
+
+  const openGatewayOperation = useCallback(async (bot: CtlBot, operation: GatewayOperation) => {
+    setGatewayPreviewError(undefined);
+    migrateBot.reset();
+    resetQuota.reset();
+    setGatewayTarget({ bot, operation });
+    try {
+      if (operation === "migrate") {
+        await migrateBot.mutateAsync({ instanceID: bot.instance_id, userID: bot.user_id, dryRun: true });
+      } else {
+        await resetQuota.mutateAsync({ userID: bot.user_id, dryRun: true });
+      }
+    } catch (error) {
+      setGatewayPreviewError(error instanceof Error ? error.message : "预检失败");
+    }
+  }, [migrateBot, resetQuota]);
+
+  async function executeGatewayOperation() {
+    if (!gatewayTarget) return;
+    const { bot, operation } = gatewayTarget;
+    try {
+      if (operation === "migrate") {
+        const result = await migrateBot.mutateAsync({ instanceID: bot.instance_id, userID: bot.user_id, dryRun: false });
+        if (migrationNeedsLegacyKeyCleanup(result.previous_gateway, result.legacy_key_revoked)) {
+          toast.warning("迁移已完成，但旧网关 Key 撤销失败，需要人工清理");
+        } else {
+          toast.success("用户及 Running Bot 已迁移到 VelaGW");
+        }
+      } else {
+        const result = await resetQuota.mutateAsync({ userID: bot.user_id, dryRun: false });
+        toast.success(result.status === "already_reset" ? "额度已经是 0，无需重置" : "VelaGW 额度已重置");
+      }
+      setGatewayTarget(null);
+      await refetch();
+    } catch (error) {
+      setGatewayPreviewError(error instanceof Error ? error.message : "操作失败");
+    }
+  }
 
   async function handleDeleteBot() {
     if (!deleteTarget) {
@@ -131,7 +180,19 @@ export default function CtlBotsPage() {
               >
                 <MoreHorizontal className="h-4 w-4" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="min-w-48">
+                {canRunGatewayOperation(row.original.status) ? (
+                  <>
+                    <DropdownMenuItem onClick={() => void openGatewayOperation(row.original, "migrate")}>
+                      <ArrowRightLeft className="mr-2 h-4 w-4" />
+                      迁移到 VelaGW
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void openGatewayOperation(row.original, "reset_quota")}>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      重置 VelaGW 额度
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
                 <DropdownMenuItem
                   variant="destructive"
                   onClick={() => setDeleteTarget(row.original)}
@@ -145,7 +206,7 @@ export default function CtlBotsPage() {
         },
       },
     ],
-    []
+    [openGatewayOperation]
   );
 
   const items = data?.items ?? [];
@@ -223,6 +284,19 @@ export default function CtlBotsPage() {
         onConfirm={handleDeleteBot}
         loading={deleteBot.isPending}
       />
+
+      {gatewayTarget ? (
+        <GatewayOperationDialog
+          key={`${gatewayTarget.operation}:${gatewayTarget.bot.instance_id}`}
+          target={gatewayTarget.bot}
+          operation={gatewayTarget.operation}
+          preview={gatewayTarget.operation === "migrate" ? migrateBot.data : resetQuota.data}
+          previewError={gatewayPreviewError}
+          loading={migrateBot.isPending || resetQuota.isPending}
+          onClose={() => setGatewayTarget(null)}
+          onExecute={() => void executeGatewayOperation()}
+        />
+      ) : null}
     </div>
   );
 }

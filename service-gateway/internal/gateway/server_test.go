@@ -1088,6 +1088,9 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 	if exportReq.StopType != "SOFT_FIRST" || exportReq.WaitTimeoutSeconds != 400 {
 		t.Fatalf("unexpected rescue mode defaults: stop_type=%s wait_timeout=%d", exportReq.StopType, exportReq.WaitTimeoutSeconds)
 	}
+	if exportReq.CommandTimeoutSeconds != 6600 {
+		t.Fatalf("unexpected rescue export command timeout: %d", exportReq.CommandTimeoutSeconds)
+	}
 	if !exportReq.Execute || !exportReq.Confirmed {
 		t.Fatalf("expected real export request, got execute=%v confirmed=%v", exportReq.Execute, exportReq.Confirmed)
 	}

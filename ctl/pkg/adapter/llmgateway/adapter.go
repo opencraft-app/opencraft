@@ -36,6 +36,8 @@ type Adapter interface {
 	ApplySubscription(ctx context.Context, req *ApplySubscriptionRequest) (*Subscription, error)
 	// CancelSubscription 调用 LLMGateway Internal API 取消用户当前订阅
 	CancelSubscription(ctx context.Context, userID string) error
+	// CancelSelectedSubscriptions 调用 LLMGateway Internal API 按订阅名或前缀取消订阅
+	CancelSelectedSubscriptions(ctx context.Context, req *CancelSelectedSubscriptionsRequest) error
 	// GetActiveSubscription 调用 LLMGateway Internal API 查询用户当前活跃订阅
 	// 无订阅时返回 (nil, nil)
 	GetActiveSubscription(ctx context.Context, userID string) (*Subscription, error)
@@ -466,6 +468,60 @@ func (a *LLMGatewayAdapter) CancelSubscription(ctx context.Context, userID strin
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("cancel-subscription returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// CancelSelectedSubscriptions 调用 POST /api/internal/subscriptions/cancel-selected
+func (a *LLMGatewayAdapter) CancelSelectedSubscriptions(ctx context.Context, req *CancelSelectedSubscriptionsRequest) error {
+	if a.baseURL == "" {
+		return fmt.Errorf("llmgateway base_url not configured")
+	}
+	if a.internalToken == "" {
+		return fmt.Errorf("llmgateway internal_service_token not configured")
+	}
+	if req == nil {
+		return fmt.Errorf("llmgateway cancel-selected-subscriptions req is nil")
+	}
+	req.UserID = strings.TrimSpace(req.UserID)
+	if req.UserID == "" {
+		return fmt.Errorf("llmgateway user_id is required")
+	}
+
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal cancel-selected-subscriptions request: %w", err)
+	}
+
+	reqURL := a.baseURL + "/api/internal/subscriptions/cancel-selected"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("create cancel-selected-subscriptions request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+	a.applyInternalAuth(httpReq)
+
+	start := time.Now()
+	resp, err := a.httpClient.Do(httpReq)
+	duration := time.Since(start)
+	if err != nil {
+		a.logger.Warn("llmgateway cancel-selected-subscriptions request failed",
+			zap.String("url", reqURL), zap.Duration("duration", duration), zap.Error(err))
+		return fmt.Errorf("cancel-selected-subscriptions request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read cancel-selected-subscriptions response: %w", err)
+	}
+
+	a.logger.Info("llmgateway cancel-selected-subscriptions response",
+		zap.String("url", reqURL), zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("cancel-selected-subscriptions returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
 }

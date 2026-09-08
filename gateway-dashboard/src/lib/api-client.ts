@@ -7,7 +7,9 @@ export class ApiError extends Error {
   constructor(status: number, data: unknown) {
     const message = typeof data === "object" && data !== null && "error" in data
       ? String((data as { error: string }).error)
-      : `API error ${status}`;
+      : typeof data === "object" && data !== null && "message" in data
+        ? String((data as { message: string }).message)
+        : `API error ${status}`;
     super(message);
     this.status = status;
     this.data = data;

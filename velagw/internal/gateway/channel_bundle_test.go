@@ -952,6 +952,7 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 	var optionKeys []string
 	var channelCreated bool
 	var optionSessionLoggedIn bool
+	var optionSessionLoggedOut bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
@@ -988,6 +989,9 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 			}
 			decodeGatewayChannelJSON(t, r, &req)
 			optionKeys = append(optionKeys, req.Key)
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
+		case "POST /api/user/auth/logout":
+			optionSessionLoggedOut = true
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
 		case "POST /api/channel/":
 			channelCreated = true
@@ -1051,6 +1055,9 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 	}
 	if !channelCreated {
 		t.Fatal("channel was not created")
+	}
+	if !optionSessionLoggedOut {
+		t.Fatal("temporary option session was not logged out")
 	}
 }
 
@@ -1142,6 +1149,7 @@ func TestChannelBundleRejectsReservedBYOKGroupRatioKeys(t *testing.T) {
 func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 	var loginCount int
 	var twoFACount int
+	var logoutCount int
 	var optionUpdated bool
 	var optionUpdateCount int
 	var channelCreated bool
@@ -1164,7 +1172,20 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 				t.Fatalf("unexpected 2fa login request: %+v", req)
 			}
 			twoFACount++
+			http.SetCookie(w, &http.Cookie{Name: "new-api-refresh", Value: "refresh-123", Path: "/"})
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default", "access_token": "fresh-admin-token"}})
+		case "POST /api/user/auth/logout":
+			if r.Header.Get("Authorization") != "Bearer fresh-admin-token" {
+				t.Fatalf("logout authorization = %q", r.Header.Get("Authorization"))
+			}
+			if r.Header.Get("Origin") != "http://"+r.Host {
+				t.Fatalf("logout origin = %q, want %q", r.Header.Get("Origin"), "http://"+r.Host)
+			}
+			if cookie, err := r.Cookie("new-api-refresh"); err != nil || cookie.Value != "refresh-123" {
+				t.Fatalf("logout refresh cookie = %v, err = %v", cookie, err)
+			}
+			logoutCount++
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
 		case "GET /api/channel/search":
 			items := []map[string]any{}
 			if channelCreated {
@@ -1243,8 +1264,8 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != ChannelSyncStatusSynced || loginCount != 1 || twoFACount != 1 || !optionUpdated || optionUpdateCount != 3 {
-		t.Fatalf("state=%+v loginCount=%d twoFACount=%d optionUpdated=%v optionUpdateCount=%d", state, loginCount, twoFACount, optionUpdated, optionUpdateCount)
+	if state.Status != ChannelSyncStatusSynced || loginCount != 1 || twoFACount != 1 || logoutCount != 1 || !optionUpdated || optionUpdateCount != 3 {
+		t.Fatalf("state=%+v loginCount=%d twoFACount=%d logoutCount=%d optionUpdated=%v optionUpdateCount=%d", state, loginCount, twoFACount, logoutCount, optionUpdated, optionUpdateCount)
 	}
 }
 
@@ -1293,13 +1314,17 @@ func TestImportChannelBundleFromSetReadsRemoteChannelsAndSecrets(t *testing.T) {
 			var req struct {
 				Method string `json:"method"`
 				Code   string `json:"code"`
+				Scope  string `json:"scope"`
 			}
 			decodeGatewayChannelJSON(t, r, &req)
-			if req.Method != "2fa" || req.Code == "" {
+			if req.Method != "2fa" || req.Code == "" || req.Scope != "channel.key.read" {
 				t.Fatalf("unexpected verify request: %+v", req)
 			}
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"verified": true}})
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "import-proof"}})
 		case "POST /api/channel/17/key":
+			if r.Header.Get("X-Security-Proof") != "import-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
+			}
 			keyFetched = true
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-provider"}})
 		default:
@@ -1347,9 +1372,30 @@ func TestImportChannelBundleFromSetReadsRemoteChannelsAndSecrets(t *testing.T) {
 }
 
 func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
+	var loginCount int
+	var twoFACount int
+	var logoutCount int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			loginCount++
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+				"flow_token":  "export-flow",
+			}})
+		case "POST /api/user/login/2fa":
+			twoFACount++
+			http.SetCookie(w, &http.Cookie{Name: "new-api-refresh", Value: "export-refresh", Path: "/"})
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default", "access_token": "export-access",
+			}})
+		case "POST /api/user/auth/logout":
+			if r.Header.Get("Authorization") != "Bearer export-access" {
+				t.Fatalf("logout authorization = %q", r.Header.Get("Authorization"))
+			}
+			logoutCount++
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
 		case "GET /api/channel/search":
 			writeGatewayChannelJSON(t, w, map[string]any{
 				"success": true,
@@ -1369,8 +1415,19 @@ func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
 				},
 			})
 		case "POST /api/verify":
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
+			if r.Header.Get("Authorization") != "Bearer export-access" {
+				t.Fatalf("verify authorization = %q", r.Header.Get("Authorization"))
+			}
+			var req newapi.VerifyRequest
+			decodeGatewayChannelJSON(t, r, &req)
+			if req.Scope != "channel.key.read" {
+				t.Fatalf("verify scope = %q", req.Scope)
+			}
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "export-proof"}})
 		case "POST /api/channel/17/key":
+			if r.Header.Get("X-Security-Proof") != "export-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
+			}
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-plain-backup"}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -1379,7 +1436,7 @@ func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
 	defer upstream.Close()
 
 	sourceStore := NewMemoryStore()
-	sourceService := NewService(sourceStore, upstream.Client().Transport, Options{})
+	sourceService := NewService(sourceStore, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "root-password"})
 	saveReadySet(t, sourceStore, "set-a", upstream.URL)
 	set, _, _ := sourceStore.GetSet(t.Context(), "set-a")
 	set.AdminTOTPSecret = "JBSWY3DPEHPK3PXP"
@@ -1404,6 +1461,9 @@ func TestDesiredConfigExportAndImportPreservesPlaintextKeys(t *testing.T) {
 	}
 	if len(manifest.GlobalOptions) != 2 || len(manifest.ChannelBundles) != 1 {
 		t.Fatalf("unexpected desired config export: %+v", manifest)
+	}
+	if loginCount != 1 || twoFACount != 1 || logoutCount != 1 {
+		t.Fatalf("login=%d twoFA=%d logout=%d, want one temporary export session", loginCount, twoFACount, logoutCount)
 	}
 
 	targetStore := NewMemoryStore()
@@ -1440,8 +1500,16 @@ func TestDesiredConfigExportRetriesWhenProviderKeyChangesMidSnapshot(t *testing.
 		case "GET /api/option/":
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []map[string]any{}})
 		case "POST /api/verify":
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
+			var req newapi.VerifyRequest
+			decodeGatewayChannelJSON(t, r, &req)
+			if req.Scope != "channel.key.read" {
+				t.Fatalf("verify scope = %q", req.Scope)
+			}
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "retry-proof"}})
 		case "POST /api/channel/17/key":
+			if r.Header.Get("X-Security-Proof") != "retry-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
+			}
 			keyReads++
 			key := "sk-new"
 			if keyReads == 1 {

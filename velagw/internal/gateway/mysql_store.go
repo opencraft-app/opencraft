@@ -4111,6 +4111,41 @@ func (s *MySQLStore) DeleteSubscriptionProjections(ctx context.Context, external
 	return err
 }
 
+func (s *MySQLStore) DeleteSubscriptionProjectionsByUpstreamIDs(ctx context.Context, externalUserID string, upstreamSubscriptionIDs []int) error {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" || len(upstreamSubscriptionIDs) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(upstreamSubscriptionIDs))
+	seen := make(map[int]struct{}, len(upstreamSubscriptionIDs))
+	for _, id := range upstreamSubscriptionIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, externalUserID)
+	for _, id := range ids {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(
+		`DELETE FROM llmgateway_subscription_projections WHERE external_user_id = ? AND upstream_subscription_id IN (%s)`,
+		strings.Join(placeholders, ","),
+	)
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
+}
+
 func (s *MySQLStore) SaveUserAssignment(ctx context.Context, assignment UserAssignment) error {
 	assignment.ExternalUserID = strings.TrimSpace(assignment.ExternalUserID)
 	assignment.Backend = strings.TrimSpace(strings.ToLower(assignment.Backend))
