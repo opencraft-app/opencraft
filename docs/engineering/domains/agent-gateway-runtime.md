@@ -24,6 +24,8 @@
 - 同 SP 升配依赖 CTL `pass` 表持久化在飞 flow 与目标 Bundle；发布 CTL 常驻 workload 前
   必须确认目标环境 schema 已具备对应字段。测试环境发生过紧急补列时，后续正式 migration
   必须可重入并推进迁移版本，不能把 workload Ready 或一次业务成功当作 schema 已由发布链路收敛。
+  已被任一环境写入 `schema_migrations` 的历史版本还必须永久保留配对的 up/down 文件；即使原结构
+  变更已折叠到更早版本，也应以 no-op tombstone 保持 golang-migrate 的连续升级链。
 - 流式/非流式、provider fallback、错误映射和渠道行为由运行时代码与 contract 拥有。
 - CloudAgent gateway 镜像与 Wisp/runtime artifact 是两个发布面，跨越时分别验证。
 - 运行问题先定位入口接收、编排、实例、生成、渠道/出口的失败边界，不从最终“无回复”猜根因。
