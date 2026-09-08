@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +25,20 @@ type modifyFixture struct {
 type resizeStopProvider struct {
 	*provider.MockCloudProvider
 	resizeStopped bool
+}
+
+type guardedModifyProvider struct {
+	*provider.MockCloudProvider
+	beforeStop func() error
+	stopCalls  int
+}
+
+func (p *guardedModifyProvider) StopInstanceForResize(context.Context, string) error {
+	p.stopCalls++
+	if p.beforeStop != nil {
+		return p.beforeStop()
+	}
+	return nil
 }
 
 func (p *resizeStopProvider) StopInstance(context.Context, string) error {
@@ -182,6 +198,61 @@ func TestBeginModifyAdoptsRunningOperationForNewIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreCreateModifyOperationAllowsOnlyOneRunningLedgerPerInstance(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+	now := time.Now().UTC()
+	base := core.ModifyOperation{
+		SandboxID:    "sb-1",
+		InstanceID:   "inst-1",
+		SourcePoolID: "pool-old",
+		TargetPoolID: "pool-new",
+		TargetSKUID:  "sku-new",
+		Status:       core.ModifyOperationStatusRunning,
+		StartedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	type result struct {
+		op      core.ModifyOperation
+		created bool
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	for i := 1; i <= 2; i++ {
+		candidate := base
+		candidate.ID = fmt.Sprintf("mod-%d", i)
+		candidate.IdempotencyKey = fmt.Sprintf("task-%d", i)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			op, created, err := st.CreateModifyOperation(ctx, candidate)
+			results <- result{op: op, created: created, err: err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	createdCount := 0
+	operationIDs := make(map[string]struct{})
+	for got := range results {
+		if got.err != nil {
+			t.Fatalf("create running ledger: %v", got.err)
+		}
+		if got.created {
+			createdCount++
+		}
+		operationIDs[got.op.ID] = struct{}{}
+	}
+	if createdCount != 1 || len(operationIDs) != 1 {
+		t.Fatalf("created=%d distinct_operations=%d, want one shared running ledger", createdCount, len(operationIDs))
+	}
+}
+
 // 在跑的账本目标不同，说明有另一笔变配插了进来，必须拒绝而不是并行改同一台机器。
 func TestBeginModifyRejectsConcurrentDifferentTarget(t *testing.T) {
 	ctx := context.Background()
@@ -324,6 +395,106 @@ func TestRunModifyConvergesAndRebindsToTargetPool(t *testing.T) {
 	}
 	if sb.PoolID != f.targetPool.ID || sb.TemplateClassID != f.targetPool.TemplateClassID {
 		t.Fatalf("expected sandbox routing moved to target class, got pool=%s class=%s", sb.PoolID, sb.TemplateClassID)
+	}
+}
+
+func TestRunModifyReconcilesAllocatedInstanceBeforeCloudMutation(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-crash-window")
+	if _, err := f.svc.store.UpdateInstanceState(ctx, f.instanceID, core.StateModifying, core.StateAllocated); err != nil {
+		t.Fatalf("rewind instance state: %v", err)
+	}
+
+	cp := &guardedModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		beforeStop: func() error {
+			inst, err := f.svc.GetInstance(ctx, f.instanceID)
+			if err != nil {
+				return err
+			}
+			if inst.State != core.StateModifying {
+				return fmt.Errorf("cloud mutation observed instance state %s, want MODIFYING", inst.State)
+			}
+			return nil
+		},
+	}
+	got, err := f.svc.RunModifyOperation(ctx, cp, op.ID)
+	if err != nil {
+		t.Fatalf("run modify after ledger/state crash window: %v", err)
+	}
+	if got.Status != core.ModifyOperationStatusCompleted || cp.stopCalls != 1 {
+		t.Fatalf("status=%s stop_calls=%d, want completed with one guarded stop", got.Status, cp.stopCalls)
+	}
+}
+
+func TestRunModifyRejectsUnexpectedInstanceStateBeforeCloudMutation(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-invalid-state")
+	if _, err := f.svc.store.UpdateInstanceState(ctx, f.instanceID, core.StateModifying, core.StatePausing); err != nil {
+		t.Fatalf("move instance to competing lifecycle state: %v", err)
+	}
+	cp := &guardedModifyProvider{MockCloudProvider: provider.NewMockCloudProvider()}
+
+	_, err := f.svc.RunModifyOperation(ctx, cp, op.ID)
+	if !errors.Is(err, core.ErrInvalidTransition) {
+		t.Fatalf("expected invalid transition, got %v", err)
+	}
+	if cp.stopCalls != 0 {
+		t.Fatalf("cloud stop called %d times for an instance outside MODIFYING", cp.stopCalls)
+	}
+}
+
+func TestRunModifyRejectsLostSandboxOwnershipBeforeCloudMutation(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-lost-sandbox")
+	if err := f.svc.DeleteSandbox(ctx, f.sandboxID); err != nil {
+		t.Fatalf("delete sandbox: %v", err)
+	}
+	cp := &guardedModifyProvider{MockCloudProvider: provider.NewMockCloudProvider()}
+
+	_, err := f.svc.RunModifyOperation(ctx, cp, op.ID)
+	if !errors.Is(err, core.ErrSandboxNotFound) {
+		t.Fatalf("expected lost sandbox ownership to stop modify, got %v", err)
+	}
+	if cp.stopCalls != 0 {
+		t.Fatalf("cloud stop called %d times after sandbox ownership was lost", cp.stopCalls)
+	}
+}
+
+func TestRunModifyFinalizesPersistedRebindAfterInstancePauses(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-finalize-rebind")
+	if _, err := f.svc.RunModifyOperation(ctx, provider.NewMockCloudProvider(), op.ID); err != nil {
+		t.Fatalf("complete initial modify: %v", err)
+	}
+	if _, err := f.svc.store.UpdateModifyOperationProgress(ctx, store.ModifyOperationProgress{
+		ID:          op.ID,
+		Status:      core.ModifyOperationStatusRunning,
+		CurrentStep: core.ModifyStepRebindPool,
+	}); err != nil {
+		t.Fatalf("restore post-rebind crash window: %v", err)
+	}
+	if _, err := f.svc.Pause(ctx, f.instanceID); err != nil {
+		t.Fatalf("pause rebound instance: %v", err)
+	}
+	if _, err := f.svc.MarkPaused(ctx, f.instanceID); err != nil {
+		t.Fatalf("mark rebound instance paused: %v", err)
+	}
+	cp := &guardedModifyProvider{MockCloudProvider: provider.NewMockCloudProvider()}
+
+	got, err := f.svc.RunModifyOperation(ctx, cp, op.ID)
+	if err != nil {
+		t.Fatalf("finalize persisted rebind: %v", err)
+	}
+	if got.Status != core.ModifyOperationStatusCompleted || got.CurrentStep != core.ModifyStepDone {
+		t.Fatalf("status=%s step=%s, want completed/done", got.Status, got.CurrentStep)
+	}
+	if cp.stopCalls != 0 {
+		t.Fatalf("cloud stop called %d times after rebind was already persisted", cp.stopCalls)
 	}
 }
 

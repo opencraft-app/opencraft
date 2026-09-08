@@ -11,6 +11,10 @@ owner: shawnmy
 
 ## 当前检查点（2026-09-07 19:10）
 
+> **2026-09-08 上线前复审增量（当前优先）**：Sandbox 新增 `000010_enforce_single_running_modify_operation`，用于给已执行旧版 `000009` 的环境补每实例唯一 running 台账约束。若发现历史重复 running 记录，迁移会 fail closed 并保持原数据不动，必须由 owner 核对目标和云侧步骤后显式处理。当前发布目标版本更新为 **CTL 29 / Sandbox 10 / Trade 9**；生产只读回读为 **28 / 8 / 8**，北京共享环境为 **29 / 8 / 8**。合并后必须由正常服务流水线先执行受控 DB Job 与 readiness，再推进北京 GitOps，不允许手工发镜像或手工 Sync。
+
+> **2026-09-08 12:35 最终复审证据**：Sandbox `GOWORK=off go test ./... -count=1`、`go vet ./...`、受影响包 race 均通过；真实 MySQL 8 覆盖 rebind 恢复、不同 key 并发唯一 running、旧表重复 running 时迁移原子失败且保留原数据，全部通过；CI runtime **485 tests + materialized smoke** 通过；`docs-impact` 与 `git diff --check` 通过。北京 bj-7 与韩国 kr-1 的 Sandbox 库只读回读均为 **9/0**，历史重复 running 分组均为 **0**，因此可安全进入 `000010`，但在迁移和 readiness 成功前不得部署新 Sandbox 镜像。
+
 > **19:37候选更新（优先）**：finalized修复CTL digest `2a9b8ed7103d2ee0ef3c358c82458af83368d940150358b2b1977aea0387aa62`已部署北京/韩国，各api/service/bypass均Ready。新候选已有下述现场验证，但跨renewing/isolated/later-bundle仍仅本地RED→GREEN。韩国新购另有一条已发布旧链路的异常观察，保留证据并另行交给对应 owner，不作为本次同 SP 升配 MR 的阻塞项。
 
 > 后续审查新增跨状态风险（源级修复后按P1验收跟踪）：旧完成态receipt与worker完成重试要求Pass保持active，升配后转renewing/isolated或后续套餐会破坏原单重投。现源码已用同事务`task_params.entitlements_finalized`与Pass/quota收敛、worker从DB凭证恢复完成通知、加锁合并保留marker修复；renewing/isolated/later-bundle三场景已RED→GREEN，CTL新full/vet与四个受影响包race通过，无需migration。新镜像已两站部署并完成上述限定现场验证；**跨状态现场覆盖仍不足，不能签署全部门禁通过**。
@@ -36,7 +40,7 @@ owner: shawnmy
 - CTL：`GET /v1/passes/{pass_id}/modify/bundles`、`POST /modify/order[-url|-and-pay]`、`POST /internal/ctl/passes/{pass_id}/modify`。
 - Trade：`POST /internal/trade/inquiry/modify`、`POST /internal/trade/orders/modify[/place-and-pay]`、`POST /internal/trade/flows/{id}/complete`、jifei `checkModify/modifyResource`。
 - 状态不变量：扣款后先 `paid_pending_provision`；仅 CTL 父任务完成并收敛 Pass/实例/权益后才进入 `trade_flow=completed`、`trade_order=provisioned`。
-- Migration：CTL `000029`、Sandbox `000009`、Trade `000009`。
+- Migration：CTL `000029`、Sandbox `000009` + `000010`、Trade `000009`。
 
 ## history_context
 

@@ -64,6 +64,17 @@ func (s *MemoryStore) CreateModifyOperation(_ context.Context, op core.ModifyOpe
 		}
 		return existing, false, nil
 	}
+	if op.Status == core.ModifyOperationStatusRunning {
+		for _, existing := range s.modifyOperations {
+			if existing.InstanceID != op.InstanceID || existing.Status != core.ModifyOperationStatusRunning {
+				continue
+			}
+			if err := assertSameModifyTarget(existing, op); err != nil {
+				return core.ModifyOperation{}, false, err
+			}
+			return existing, false, nil
+		}
+	}
 	s.modifyOperations[op.ID] = op
 	s.modifyOperationKeys[op.IdempotencyKey] = op.ID
 	return op, true, nil

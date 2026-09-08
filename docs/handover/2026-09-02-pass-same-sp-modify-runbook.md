@@ -95,9 +95,10 @@ WHERE bundle_id IN (
 |---|---|---|
 | ctl | `000029_add_pass_modify_fields` | `pass` 增 `modify_flow_id`、`modify_target_bundle_id` |
 | sandbox | `000009_create_modify_operations` | 新建 `modify_operations` 变配台账表 |
+| sandbox | `000010_enforce_single_running_modify_operation` | fail-closed 检查历史重复 running 台账，并保证每实例最多一份 running 台账 |
 | trade | `000009_add_modify_support` | `trade_order.order_type` / `trade_flow.flow_type` 注释补 modify 取值（无结构变更） |
 
-三份都有配套 `.down.sql`。ctl 的两列可空、sandbox 是新表、trade 只改注释，回滚不丢已有数据。
+四份都有配套 `.down.sql`。ctl 的两列可空、sandbox 先建表再补数据库并发唯一约束、trade 只改注释。Sandbox `000010` 若发现旧环境已有重复 running 台账会直接失败并保持原数据不动，必须由 owner 核对各账本目标和云侧进度后显式处理，再重试迁移；down 只移除结构约束，不会恢复人工处理过的数据。
 
 ### 3.1 必须先迁移再发镜像（否则会以难排查的形态失败）
 
@@ -106,12 +107,12 @@ WHERE bundle_id IN (
 
 后果：先发镜像后迁移不会 crash-loop，而是正常启动，然后所有读写 pass 的请求在运行时报 `Unknown column 'modify_flow_id' in 'field list'`。看起来像代码 bug，实际是顺序问题。
 
-**常驻环境的迁移是 K8s Job，Job 名不变就不会重跑。**
-Job 是不可变对象，Argo 见到同名已存在的 Job 就认为无需变更，迁移永远不执行，随后 sandbox 变配接口报 `modify_operations` 表不存在。sandbox 侧 Job 名在 `argocd/services/sandbox/<env>/kustomization.yaml` patch 成固定后缀（`beijing-sandbox` = `sandbox-db-migrate-v4`，`beijing-sandbox-2` / `shprod` / `sgprod` = `-v3`），**要应用 000009 必须把目标环境的后缀往上 bump 一位**；ctl 侧 Job 名取自 `argocd/services/ctl/<env>/ctl-platform.env` 的 `REPLACE_CTL_MIGRATION_JOB_NAME`（shprod / sgprod 当前均为 `ctl-migrate-20260330155152`），需换成新时间戳才会重跑。本改动集不含任何 bump，放行常驻环境部署时才提交。
+**常驻环境必须走服务正常流水线里的受控 DB Job，不手工 bump Job 或直接执行迁移。**
+当前 `service-release` 在 GitOps pin 之前按本次提交识别 migration 变化，调用 `run_gitops_db_job.py --apply --wait`，再执行 DB readiness `--apply --wait`；任一步失败都会阻断候选分支和自动收敛。北京 `beijing-sandbox` 属于自动收敛环境，生产 `shprod/sgprod` 还会停在独立人工审批门禁，不会因为合并 master 自动迁移或发布生产。
 
-**但 §10.3 指定的两个测试环境都不走 Argo 迁移，bump 对它们无效。** 两边的 playground overlay 都把迁移 Job 显式删掉了——`argocd/services/sandbox/sandbox-bj-7/delete-migration-job.yaml` 对 `sandbox-db-migrate-v2` 打 `$patch: delete`，ctl 侧则按 `argocd/services/ctl/sandbox-bj-7/README.md`「steady-state sync 只接管常驻 workload，不接 migration job」复用 `beijing-sandbox` overlay 的同名删除。所以 **bj-7 / kr-1 的 000029 与 000009 都必须手工 `migrate up` 执行**，在这两个环境里去 bump Job 名是无效动作。
+**但 §10.3 指定的两个 playground 测试环境都不走 Argo 迁移，bump 对它们无效。** 两边的 overlay 都把迁移 Job 显式删掉了。因此 **bj-7 / kr-1 的 CTL 000029、Sandbox 000009/000010 与 Trade 000009 必须由受控测试操作显式执行**，在这两个环境里去 bump Job 名是无效动作。
 
-正确顺序：**先把迁移跑到 000029 / 000009（测试环境手工执行，常驻环境 bump Job 名并确认 Job 完成）→ 再发三个服务的镜像 → 最后 seed 运营数据**。
+正确顺序：**常驻环境由正常流水线把迁移跑到 CTL 29 / Sandbox 10 / Trade 9 并通过 readiness → 再推进三个服务镜像和 GitOps 收敛 → 最后在确认计费正式 CategoryID 后 seed 运营数据**。playground 只允许使用受控测试迁移流程，不复用生产数据库或计费路由。
 
 ### 3.1.1 kr-1 的源码声明与实时环境不一致，联调必须先做运行态回读
 
@@ -273,7 +274,7 @@ kr-1 的验收不能只停在零实例：国际通用和国际 AI 都要真实�
 
 ### 3.4 §3.1 之外的四处补充（本轮核查新增）
 
-1. **本改动集含三份迁移，不是两份。** 除 ctl `000029` 与 sandbox `000009` 外还有 `trade/migrations/000009_add_modify_support`。三份编号在 `origin/master` 上都不存在（master 最高分别为 ctl 000028 / sandbox 000008 / trade 000008），无撞号。
+1. **本改动集当前含四份迁移、涉及三个服务。** 除 ctl `000029`、sandbox `000009` 外，还有 sandbox `000010` 的每实例 running 台账唯一约束，以及 `trade/migrations/000009_add_modify_support`。生产当前仍分别停在 CTL 28 / Sandbox 8 / Trade 8，必须由正常流水线按序迁移。
 2. **bj-7 的 trade 迁移 Job 没有被删除，但同样不会重跑。** `argocd/services/trade/sandbox-bj-7/kustomization.yaml:13` 把 `trade-migration-job.yaml` 作为 resource 引入，Job 名固定 `trade-migrate`、镜像 pin 在 `trade:trade-ecedf932d2b4`。Job 是不可变对象，名字不变 Argo 就不会重建，且该镜像里不含 000009。这与 ctl / sandbox 在 bj-7 被 `$patch: delete` 的机制不同，但结论相同：**要应用 trade 000009 得手工跑或同时改 Job 名与镜像。**
 3. **bj-7 的 ctl 没有 rewrite `[adapter.trade].base_url`。** kr-1（`argocd/services/ctl/sandbox-kr-1/patch-ctl-conf-rewrite.yaml:93-94`）和 sgprod 都显式写了，bj-7 的 `patch-ctl-conf-rewrite.yaml` 里没有该段；`ctl/conf/server/common/server_conf.toml:284-287` 的默认值是空串。它可能由 SOPS 加密的 `ctl-conf-common` 覆盖（本地无法解密核对），**联调前必须在 bj-7 的运行 Pod 里回读实际生效值**，否则 ctl 侧调 trade 的链路会打到空地址：
 
@@ -397,7 +398,7 @@ SELECT status, resource_id FROM trade_order WHERE deal_name = '<dealName>';
 - ctl 父 task 的完成判定只看每个实例**最新**那次派发：重派留下的历史失败子 task 不再阻塞权益提交，否则 pass 会永久停在 `modifying`。
 - ctl 父 task：`pass.status = active && bundle_id = target` 时短路补回调并终态成功。
 
-排查提示：一台实例出现多份 `running` 账本属于异常（本设计不应产生），按 `started_at` 最早的那份为准继续观察，其余需人工核对后收尾。
+排查提示：一台实例出现多份 `running` 账本属于异常（本设计不应产生）。不得按创建时间自动选择目标；先停止该实例的变配推进，由 owner 对照目标 Pool/SKU、`current_step` 和云侧实际规格逐条核对，显式处理冲突项后再重试迁移。
 
 ```sql
 SELECT instance_id, COUNT(*) FROM modify_operations
@@ -409,14 +410,22 @@ WHERE status = 'running' GROUP BY instance_id HAVING COUNT(*) > 1;
 | 状态 | 事项 |
 |---|---|
 | [x] | 四个测试/预发 Modify CategoryID 已从接入单回读并固化到 seed 脚本；生产仍未发布 |
-| [ ] | 完成本地全量 test/vet/race、三份 migration up/down、seed/重复 seed/rollback/重复 scene 拒绝误删、Kustomize/contract/change-impact 门禁 |
-| [ ] | bj-7 升到 CTL 29 / Sandbox 9 / Trade 9，部署三服务，seed 国内通用/AI，并完成零实例、有实例真实支付闭环；仅在实际 Pass 配额与产品模型支持多实例时增加多实例用例 |
-| [ ] | kr-1 升到 CTL 29 / Sandbox 9 / Trade 9，部署三服务，修正并激活 `pool-kr-4c8g-01` 容量，seed 国际通用/AI，并完成零实例与有实例真实支付闭环 |
+| [ ] | 完成本地全量 test/vet/race、四份 migration up/down、seed/重复 seed/rollback/重复 scene 拒绝误删、Kustomize/contract/change-impact 门禁 |
+| [ ] | bj-7 升到 CTL 29 / Sandbox 10 / Trade 9，部署三服务，seed 国内通用/AI，并完成零实例、有实例真实支付闭环；仅在实际 Pass 配额与产品模型支持多实例时增加多实例用例 |
+| [ ] | kr-1 升到 CTL 29 / Sandbox 10 / Trade 9，部署三服务，修正并激活 `pool-kr-4c8g-01` 容量，seed 国际通用/AI，并完成零实例与有实例真实支付闭环 |
 | [ ] | 为 kr-1 补齐 Sandbox 的正式测试环境声明/部署归属；当前运行态与本仓库 GitOps catalog 不一致（见 §3.1.1） |
 | [x] | 本期后端暗发，不做前端页面；保留 `/v1/passes/{pass_id}/modify/*` API，其中 `order-and-pay` 仅联调/e2e 使用 |
 | [ ] | bj-7 的 ctl 实际生效的 `[adapter.trade].base_url` 需在 Pod 内回读确认（本仓库 rewrite 未写该段，common 为 SOPS 加密，见 §3.4） |
-| [ ] | 常驻环境部署时把 trade 的 `trade-migrate` Job 名与镜像一并 bump，或明确记录手工执行（见 §3.4） |
+| [ ] | 常驻环境只走正常服务流水线，确认受控 DB Job 与 readiness 成功后再进入 GitOps pin；禁止手工发镜像或 App 级手工 Sync |
 | [ ] | 回读巡游 / 巡游 AI 的 `ai_gateway_plan_id` 在目标环境 newapi 侧是否 active（见 §3.4） |
 | [ ] | 四个 CategoryID 的生产变更单正式发布并完成预付费财管审批；此前严禁生产 seed |
 | [ ] | 国内生产先灰度并观察至少 24 小时；告警、订单/flow、Pass/实例/权益无异常后，再单独评估国际站生产发布 |
 | [ ] | 联调通过后再评估是否放开降配与跨 SP（当前 `allowedModifyTargets` 只有两条升配边） |
+
+### 7.1 2026-09-08 合并前最终复审
+
+- Sandbox 全量 test、vet、受影响包 race：通过。
+- 真实 MySQL 8：rebind 恢复、不同 key 并发唯一 running、旧表重复 running 的 fail-closed 迁移与人工处理后重试：通过。
+- CI runtime：485 项测试及 materialized runtime smoke：通过。
+- `docs-impact`、`git diff --check`：通过。
+- bj-7、kr-1 Sandbox 只读回读：均为 schema `9/0`，重复 running 分组均为 `0`。两处仍需在部署新 Sandbox 镜像前先执行 `000010`；本次只读检查未执行迁移。

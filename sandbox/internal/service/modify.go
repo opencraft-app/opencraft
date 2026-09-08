@@ -170,25 +170,45 @@ func (s *Service) RunModifyOperation(ctx context.Context, cp provider.CloudProvi
 	if err != nil {
 		return core.ModifyOperation{}, err
 	}
+	sb, err := s.store.GetSandbox(ctx, op.SandboxID)
+	if err != nil {
+		return s.recordModifyOperationError(ctx, op, err)
+	}
+	if sb.InstanceID != op.InstanceID {
+		return s.recordModifyOperationError(ctx, op, fmt.Errorf(
+			"modify operation %s lost sandbox ownership: sandbox %s owns instance %s, expected %s",
+			op.ID, sb.ID, sb.InstanceID, op.InstanceID))
+	}
+
+	// A crash can occur after the running ledger is committed but before the API
+	// parks the instance in MODIFYING. The worker is also an entry point, so it
+	// must close that window itself before issuing any cloud mutation.
+	if op.CurrentStep != core.ModifyStepRebindPool {
+		switch inst.State {
+		case core.StateAllocated:
+			inst, err = s.store.UpdateInstanceState(ctx, inst.ID, core.StateAllocated, core.StateModifying)
+			if err != nil {
+				return s.recordModifyOperationError(ctx, op, err)
+			}
+		case core.StateModifying:
+			// Expected steady state while cloud steps are in progress.
+		default:
+			return s.recordModifyOperationError(ctx, op, fmt.Errorf(
+				"%w: modify operation %s requires instance %s in ALLOCATED or MODIFYING, got %s",
+				core.ErrInvalidTransition, op.ID, inst.ID, inst.State))
+		}
+	} else if inst.PoolID != op.TargetPoolID || sb.PoolID != op.TargetPoolID {
+		return s.recordModifyOperationError(ctx, op, fmt.Errorf(
+			"%w: completed rebind for operation %s requires instance and sandbox in pool %s, got instance=%s sandbox=%s",
+			core.ErrInvalidTransition, op.ID, op.TargetPoolID, inst.PoolID, sb.PoolID))
+	}
 	if strings.TrimSpace(inst.CloudID) == "" {
 		return s.failModifyOperation(ctx, op, errors.New("instance has no cloud id"))
 	}
 
 	for _, step := range remainingModifySteps(op.CurrentStep) {
 		if err := s.runModifyStep(ctx, cp, resizer, op, inst, step); err != nil {
-			if time.Since(op.StartedAt) > modifyOperationStaleAfter {
-				return s.failModifyOperation(ctx, op, err)
-			}
-			progressed, updateErr := s.store.UpdateModifyOperationProgress(ctx, store.ModifyOperationProgress{
-				ID:          op.ID,
-				Status:      core.ModifyOperationStatusRunning,
-				CurrentStep: op.CurrentStep,
-				LastError:   err.Error(),
-			})
-			if updateErr != nil {
-				return core.ModifyOperation{}, updateErr
-			}
-			return progressed, err
+			return s.recordModifyOperationError(ctx, op, err)
 		}
 		op, err = s.store.UpdateModifyOperationProgress(ctx, store.ModifyOperationProgress{
 			ID:          op.ID,
@@ -207,6 +227,22 @@ func (s *Service) RunModifyOperation(ctx context.Context, cp provider.CloudProvi
 		CurrentStep: core.ModifyStepDone,
 		CompletedAt: &completedAt,
 	})
+}
+
+func (s *Service) recordModifyOperationError(ctx context.Context, op core.ModifyOperation, cause error) (core.ModifyOperation, error) {
+	if time.Since(op.StartedAt) > modifyOperationStaleAfter {
+		return s.failModifyOperation(ctx, op, cause)
+	}
+	progressed, err := s.store.UpdateModifyOperationProgress(ctx, store.ModifyOperationProgress{
+		ID:          op.ID,
+		Status:      core.ModifyOperationStatusRunning,
+		CurrentStep: op.CurrentStep,
+		LastError:   cause.Error(),
+	})
+	if err != nil {
+		return core.ModifyOperation{}, err
+	}
+	return progressed, cause
 }
 
 func (s *Service) runModifyStep(ctx context.Context, cp provider.CloudProvider, resizer provider.InstanceSpecResizer,

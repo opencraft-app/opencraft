@@ -89,27 +89,50 @@ func (s *MySQLStore) CreateModifyOperation(ctx context.Context, op core.ModifyOp
 	if strings.TrimSpace(op.ID) == "" || strings.TrimSpace(op.IdempotencyKey) == "" {
 		return core.ModifyOperation{}, false, errors.New("modify operation requires id and idempotency key")
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO modify_operations (`+modifyOperationColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, op.ID, op.IdempotencyKey, op.SandboxID, op.InstanceID, op.SourcePoolID, op.TargetPoolID, op.TargetSKUID,
-		op.TargetTemplateClassID, op.TargetInstanceType, op.TargetSystemDiskSize, op.Status, op.CurrentStep,
-		nullableString(op.LastError), op.StartedAt, op.UpdatedAt, op.CompletedAt)
-	if err == nil {
-		s.logf("CreateModifyOperation id=%s key=%s sandbox=%s", op.ID, op.IdempotencyKey, op.SandboxID)
-		return op, true, nil
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO modify_operations (`+modifyOperationColumns+`)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, op.ID, op.IdempotencyKey, op.SandboxID, op.InstanceID, op.SourcePoolID, op.TargetPoolID, op.TargetSKUID,
+			op.TargetTemplateClassID, op.TargetInstanceType, op.TargetSystemDiskSize, op.Status, op.CurrentStep,
+			nullableString(op.LastError), op.StartedAt, op.UpdatedAt, op.CompletedAt)
+		if err == nil {
+			s.logf("CreateModifyOperation id=%s key=%s sandbox=%s", op.ID, op.IdempotencyKey, op.SandboxID)
+			return op, true, nil
+		}
+		if !isDuplicateKeyError(err) {
+			return core.ModifyOperation{}, false, err
+		}
+
+		// A duplicate can be either an idempotency replay or the per-instance
+		// running-ledger guard. Resolve both to the canonical operation.
+		existing, getErr := s.getModifyOperationByIdempotencyKey(ctx, op.IdempotencyKey)
+		if getErr == nil {
+			if err := assertSameModifyTarget(existing, op); err != nil {
+				return core.ModifyOperation{}, false, err
+			}
+			return existing, false, nil
+		}
+		if !errors.Is(getErr, core.ErrModifyOperationNotFound) {
+			return core.ModifyOperation{}, false, getErr
+		}
+		if existing, found, runningErr := s.GetRunningModifyOperationByInstance(ctx, op.InstanceID); runningErr != nil {
+			return core.ModifyOperation{}, false, runningErr
+		} else if found {
+			if err := assertSameModifyTarget(existing, op); err != nil {
+				return core.ModifyOperation{}, false, err
+			}
+			return existing, false, nil
+		}
+
+		// The competing running row may have completed between the duplicate-key
+		// error and the lookup. Retry once so the released generated unique key can
+		// admit the new operation; a primary-key collision still fails deterministically.
+		if attempt == 1 {
+			return core.ModifyOperation{}, false, err
+		}
 	}
-	if !isDuplicateKeyError(err) {
-		return core.ModifyOperation{}, false, err
-	}
-	existing, getErr := s.getModifyOperationByIdempotencyKey(ctx, op.IdempotencyKey)
-	if getErr != nil {
-		return core.ModifyOperation{}, false, getErr
-	}
-	if err := assertSameModifyTarget(existing, op); err != nil {
-		return core.ModifyOperation{}, false, err
-	}
-	return existing, false, nil
+	return core.ModifyOperation{}, false, errors.New("unreachable modify operation insert")
 }
 
 func (s *MySQLStore) GetModifyOperation(ctx context.Context, id string) (core.ModifyOperation, error) {
