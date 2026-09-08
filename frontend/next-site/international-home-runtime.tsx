@@ -17,7 +17,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260907-home-refinements-v14';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260908-home-refinements-v16';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;

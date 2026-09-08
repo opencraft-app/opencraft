@@ -104,6 +104,8 @@
   (function () {
     var INITIAL = 100;
     var STEP = 30;
+    var CHAR_DURATION = 500;
+    var SEGMENT_GAP = 80;
     var shouldKeepNaturalText = window.matchMedia('(max-width: 640px), (prefers-reduced-motion: reduce)').matches;
     function splitChars(el, startDelay) {
       var text = el.textContent;
@@ -115,20 +117,22 @@
         ch.style.setProperty('--cd', (startDelay + i * STEP) + 'ms');
         el.appendChild(ch);
       }
-      return startDelay + text.length * STEP;
+      return startDelay + Math.max(0, text.length - 1) * STEP + CHAR_DURATION;
     }
     var main = document.querySelector('.hero__line--main');
     var prefix = document.querySelector('.hero__line--dynamic .hero__prefix');
     var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
     var next = INITIAL;
     if (!shouldKeepNaturalText && main) next = splitChars(main, next);
-    if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + 60);
-    if (wrap) wrap.style.setProperty('--rotator-delay', next + 'ms');
+    if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + SEGMENT_GAP);
+    var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;
+    if (wrap) wrap.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
     var root = document.documentElement;
-    var afterText = next + 200;
+    var afterText = rotatorDelay + (shouldKeepNaturalText ? 0 : 600) + 200;
     root.style.setProperty('--cta-delay', afterText + 'ms');
     root.style.setProperty('--tabs-delay', (afterText + 160) + 'ms');
     root.style.setProperty('--frame-delay', (afterText + 320) + 'ms');
+    root.classList.add('hero-sequence-ready');
   })();
 
   (function () {

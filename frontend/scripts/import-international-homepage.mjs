@@ -4485,6 +4485,15 @@ const internationalHeroChannelParityCss = `
 `;
 const homepageReadingCss = `
 /* Homepage navigation and reading-safe play switching. */
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero__cta,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero__tabs,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
+  animation: none;
+  opacity: 0;
+  transform: translateY(24px);
+}
+
 .home-mobile-menu-trigger {
   display: none;
   width: 36px;
@@ -4656,6 +4665,39 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
       scheduleRotate(revealDelay + 2200);
     }, 0);`,
 ).replace(
+  `    var INITIAL = 100;
+    var STEP = 30;
+    var shouldKeepNaturalText`,
+  `    var INITIAL = 100;
+    var STEP = 30;
+    var CHAR_DURATION = 500;
+    var SEGMENT_GAP = 80;
+    var shouldKeepNaturalText`,
+).replace(
+  "      return startDelay + text.length * STEP;",
+  "      return startDelay + Math.max(0, text.length - 1) * STEP + CHAR_DURATION;",
+).replace(
+  `    var next = INITIAL;
+    if (!shouldKeepNaturalText && main) next = splitChars(main, next);
+    if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + 60);
+    if (wrap) wrap.style.setProperty('--rotator-delay', next + 'ms');
+    var root = document.documentElement;
+    var afterText = next + 200;
+    root.style.setProperty('--cta-delay', afterText + 'ms');
+    root.style.setProperty('--tabs-delay', (afterText + 160) + 'ms');
+    root.style.setProperty('--frame-delay', (afterText + 320) + 'ms');`,
+  `    var next = INITIAL;
+    if (!shouldKeepNaturalText && main) next = splitChars(main, next);
+    if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + SEGMENT_GAP);
+    var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;
+    if (wrap) wrap.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
+    var root = document.documentElement;
+    var afterText = rotatorDelay + (shouldKeepNaturalText ? 0 : 600) + 200;
+    root.style.setProperty('--cta-delay', afterText + 'ms');
+    root.style.setProperty('--tabs-delay', (afterText + 160) + 'ms');
+    root.style.setProperty('--frame-delay', (afterText + 320) + 'ms');
+    root.classList.add('hero-sequence-ready');`,
+).replace(
   `        subs.forEach(function (btn, i) { btn.classList.toggle('on', i === active); });
         chats.forEach(function (chat, i) {`,
   `        subs.forEach(function (btn, i) {
@@ -4694,6 +4736,10 @@ if (
   || !runtimeSource.includes("function scheduleRotate(delay)")
   || !runtimeSource.includes("scheduleRotate(revealDelay + 2200)")
   || !runtimeSource.includes("if (!initialRotationPending) scheduleRotate(520)")
+  || !runtimeSource.includes("var CHAR_DURATION = 500;")
+  || !runtimeSource.includes("var SEGMENT_GAP = 80;")
+  || !runtimeSource.includes("var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;")
+  || !runtimeSource.includes("root.classList.add('hero-sequence-ready');")
   || !runtimeSource.includes("document.addEventListener('visibilitychange'")
   || !runtimeSource.includes("window.addEventListener('pageshow'")
   || !runtimeSource.includes("rotatorVisible = !document.hidden")
