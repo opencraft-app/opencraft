@@ -531,7 +531,7 @@ describe("AgentModelConfigPanel", () => {
     renderPanel(remote);
 
     expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
-    expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")).toBeInTheDocument();
+    expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型")).toBeInTheDocument();
     expect(screen.getByText("正在读取模型配置")).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: /Alpha API/ }));
     expect(await screen.findByText("model-primary")).toBeInTheDocument();
@@ -543,6 +543,7 @@ describe("AgentModelConfigPanel", () => {
     expect(within(primaryRow).getByText("主模型")).toHaveClass("text-xs");
     const primaryAction = within(primaryRow).getByRole("button", { name: "设为主模型" });
     const fallbackAction = within(primaryRow).getByRole("button", { name: "设为备用模型" });
+    expect(primaryAction.querySelector("svg")).toBeNull();
     const outlinedActionClasses = ["border", "border-[var(--border-strong)]"];
     for (const action of [primaryAction, fallbackAction]) {
       expect(action).toHaveClass("text-xs", "font-normal");
@@ -721,7 +722,7 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /Alpha API/ }));
 
     expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
-    expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")).toBeInTheDocument();
+    expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型")).toBeInTheDocument();
     const configuredHelp = screen.getByRole("group", { name: "你可以配置一个主模型，并可同时设置多个备用模型。" });
     expect(configuredHelp).not.toHaveAttribute("title");
     expect(screen.queryByText("你可以配置一个主模型，并可同时设置多个备用模型。")).not.toBeInTheDocument();

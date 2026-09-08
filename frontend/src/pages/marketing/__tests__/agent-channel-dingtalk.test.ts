@@ -31,7 +31,7 @@ describe("DingTalk channel QR binding", () => {
     );
     // 卡片描述体现双方式
     expect(channelPanelSource).toContain(
-      "if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 绑定');",
+      "if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 连接');",
     );
     // 手动路径保留 token 表单元数据
     expect(channelPanelSource).toMatch(/case 'dingtalk':/);
@@ -39,6 +39,13 @@ describe("DingTalk channel QR binding", () => {
     expect(channelPanelSource).toContain(
       "dingtalk: 'https://lightvela.ai/docs/configuration/channel-dingtalk',",
     );
+  });
+
+  it("uses connection language consistently in channel card descriptions", () => {
+    expect(channelPanelSource).toContain("if (channelType === 'qqbot') return t('扫码或通过 App ID / Secret 连接');");
+    expect(channelPanelSource).toContain("if (channelType === 'telegram') return t('通过 Bot Token 连接');");
+    expect(channelPanelSource).toContain("if (channelType === 'slack') return t('通过 Bot Token 和 App Token 连接');");
+    expect(channelPanelSource).toContain("if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 连接');");
   });
 
   it("uses the standard dialog radius instead of the Skills panel private token", () => {

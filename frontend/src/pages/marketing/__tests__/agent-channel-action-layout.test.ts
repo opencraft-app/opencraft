@@ -62,28 +62,51 @@ describe("international connected channel card actions", () => {
 
     expect(connectedActionRule).toContain("flex-wrap: wrap;");
     expect(connectedActionRule).toContain("min-width: 0;");
-    expect(connectedGuideRule).toContain("flex: 1 1 112px;");
-    expect(connectedGuideRule).toContain("min-width: 112px;");
+    expect(connectedGuideRule).toContain("flex: 0 0 auto;");
+    expect(connectedGuideRule).toContain("min-width: 0;");
     expect(connectedGuideRule).toContain("text-align: center;");
-    expect(connectedActionGroupRule).toContain("flex: 1 0 220px;");
-    expect(connectedActionGroupRule).toContain(
-      "min-width: min(220px, 100%);",
-    );
-    expect(connectedActionGroupRule).toContain("margin-left: 0;");
-    expect(connectedButtonRule).toContain("flex: 1 1 0;");
+    expect(connectedActionGroupRule).toContain("flex: 0 1 100%;");
+    expect(connectedActionGroupRule).toContain("min-width: 0;");
+    expect(connectedActionGroupRule).toContain("justify-content: flex-end;");
+    expect(connectedActionGroupRule).toContain("margin-left: auto;");
+    expect(connectedButtonRule).toContain("flex: 0 0 auto;");
     expect(connectedButtonRule).toContain("min-width: 0;");
   });
 });
 
+describe("channel card action placement", () => {
+  it("keeps actions at the card bottom and groups guide with connect on the right", () => {
+    const actionRule = getRuleBody(
+      standardPanelStyles,
+      ".lh-std-channel-panel__card-action",
+    );
+    const actionGroupRule = getRuleBody(
+      standardPanelStyles,
+      ".lh-std-channel-panel__card-action-right",
+    );
+
+    expect(actionRule).toContain("justify-content: flex-end;");
+    expect(actionRule).toContain("margin-top: auto;");
+    expect(actionGroupRule).toContain("justify-content: flex-end;");
+    expect(actionGroupRule).toContain("flex-wrap: wrap;");
+    expect(channelPanelSource).toMatch(
+      /__card-action-right`}>[\s\S]*?__guide-btn`}[\s\S]*?__connect-btn/,
+    );
+  });
+});
+
 describe("channel card action button radius", () => {
-  it("uses the larger shared radius token for every card action", () => {
+  it("uses a consistent larger radius for the card and every card action", () => {
+    expect(getRuleBody(standardPanelStyles, ".lh-std-channel-panel__card")).toContain(
+      "border-radius: 16px;",
+    );
     for (const selector of [
       ".lh-std-channel-panel__guide-btn",
       ".lh-std-channel-panel__card-unbind",
       ".lh-std-channel-panel__connect-btn",
     ]) {
       expect(getRuleBody(standardPanelStyles, selector)).toContain(
-        "border-radius: var(--lh-std-radius-lg);",
+        "border-radius: 14px;",
       );
     }
   });
