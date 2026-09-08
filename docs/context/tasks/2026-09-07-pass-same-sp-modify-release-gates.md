@@ -11,7 +11,9 @@ owner: shawnmy
 
 ## 当前检查点（2026-09-07 19:10）
 
-> **2026-09-08 上线前复审增量（当前优先）**：Sandbox 新增 `000010_enforce_single_running_modify_operation`，用于给已执行旧版 `000009` 的环境补每实例唯一 running 台账约束。若发现历史重复 running 记录，迁移会 fail closed 并保持原数据不动，必须由 owner 核对目标和云侧步骤后显式处理。当前发布目标版本更新为 **CTL 29 / Sandbox 10 / Trade 9**；生产只读回读为 **28 / 8 / 8**，北京共享环境为 **29 / 8 / 8**。合并后必须由正常服务流水线先执行受控 DB Job 与 readiness，再推进北京 GitOps，不允许手工发镜像或手工 Sync。
+> **2026-09-08 22:08 CTL migration 链修复（当前优先）**：`master@1c223852` 的流水线 #322 在北京受控 DB Job 失败；真实 Pod 事件确认调度、镜像拉取和 MySQL 初始化均成功，保留失败 Pod 后取得根因：北京 DB 已记录 `schema_migrations=29/dirty=0`，但仓库只保留 `000030`，golang-migrate 报 `no migration found for version 29: read down for version 29`。修复方案为恢复 `000029_preserve_historical_version` 的 no-op up/down，并保留 `000030_add_pass_modify_fields` 承载真实列变更；新增连续性契约测试先 RED（缺 up/down 29）后 GREEN。将两份 29 文件临时注入隔离 CI workspace 后，北京真实受控 Job 成功执行 `30/u add_pass_modify_fields`，DB readiness 回读 expected version 30 成功；另用一次性北京测试库模拟生产当前 version 28，日志明确依次执行 `29/u preserve_historical_version` 与 `30/u add_pass_modify_fields` 并成功。临时数据库、Job/Secret/ConfigMap、诊断脚本与 workspace 文件均已清理。提交前复核已通过 CTL 全量 `go test -p 4 ./... -count=1`、`go vet ./...`、2 个 migration 契约测试、CI runtime 489 tests + materialized smoke、`docs-impact` 与 `git diff --check`；独立复审指出的重复版本漏检和 CTL 29/30 文档冲突也已修复并复审关闭。当前仍未创建新的 Git commit/push/MR，也未触碰生产 DB/GitOps/Pod。
+
+> **2026-09-08 上线前复审增量（历史快照，版本目标已由 22:08 检查点修正）**：Sandbox 新增 `000010_enforce_single_running_modify_operation`，用于给已执行旧版 `000009` 的环境补每实例唯一 running 台账约束。若发现历史重复 running 记录，迁移会 fail closed 并保持原数据不动，必须由 owner 核对目标和云侧步骤后显式处理。当前发布目标版本为 **CTL 30 / Sandbox 10 / Trade 9**；生产只读回读快照为 **28 / 8 / 8**，北京共享环境已由后续受控 Job 推进为 **30 / 8 / 8**。合并后必须由正常服务流水线先执行受控 DB Job 与 readiness，再推进北京 GitOps，不允许手工发镜像或手工 Sync。
 
 > **2026-09-08 12:35 最终复审证据**：Sandbox `GOWORK=off go test ./... -count=1`、`go vet ./...`、受影响包 race 均通过；真实 MySQL 8 覆盖 rebind 恢复、不同 key 并发唯一 running、旧表重复 running 时迁移原子失败且保留原数据，全部通过；CI runtime **485 tests + materialized smoke** 通过；`docs-impact` 与 `git diff --check` 通过。北京 bj-7 与韩国 kr-1 的 Sandbox 库只读回读均为 **9/0**，历史重复 running 分组均为 **0**，因此可安全进入 `000010`，但在迁移和 readiness 成功前不得部署新 Sandbox 镜像。
 
@@ -40,7 +42,7 @@ owner: shawnmy
 - CTL：`GET /v1/passes/{pass_id}/modify/bundles`、`POST /modify/order[-url|-and-pay]`、`POST /internal/ctl/passes/{pass_id}/modify`。
 - Trade：`POST /internal/trade/inquiry/modify`、`POST /internal/trade/orders/modify[/place-and-pay]`、`POST /internal/trade/flows/{id}/complete`、jifei `checkModify/modifyResource`。
 - 状态不变量：扣款后先 `paid_pending_provision`；仅 CTL 父任务完成并收敛 Pass/实例/权益后才进入 `trade_flow=completed`、`trade_order=provisioned`。
-- Migration：CTL `000029`、Sandbox `000009` + `000010`、Trade `000009`。
+- Migration：CTL `000029_preserve_historical_version`（历史 no-op）+ `000030_add_pass_modify_fields`、Sandbox `000009` + `000010`、Trade `000009`。
 
 ## history_context
 
