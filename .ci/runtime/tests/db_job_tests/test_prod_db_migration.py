@@ -93,6 +93,10 @@ class ProdDbMigrationTests(unittest.TestCase):
         self.assertEqual(prod_db_migration.map_service("user-auth"), ("user-auth", "lightclaw-auth"))
         self.assertEqual(prod_db_migration.map_service("lightclaw-auth"), ("user-auth", "lightclaw-auth"))
 
+    def test_trade_uses_its_registered_migration_job_runner(self) -> None:
+        self.assertIn("trade", prod_db_migration.SUPPORTED_SERVICES)
+        self.assertEqual(prod_db_migration.map_service("trade"), ("trade", "trade"))
+
     def test_rejects_unknown_service(self) -> None:
         with self.assertRaisesRegex(ValueError, "SERVICE must be one of"):
             prod_db_migration.map_service("frontend")
