@@ -2276,7 +2276,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
         self.assertEqual(
             approval_reviews.get("reviewers"),
-            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"],
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
         )
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
@@ -2313,6 +2313,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA", template.get("variables") or {})
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF", template.get("variables") or {})
         self.assertIn("check-in", stages[0])
+        release_reviews = (((stages[0].get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        self.assertEqual(
+            release_reviews.get("reviewers"),
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
+        )
         self.assertNotIn("if:", template_text)
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
         self.assertIn("POSTHOG_PROJECT_TOKEN: ${{ settings.POSTHOG_PROJECT_TOKEN }}", template_text)
