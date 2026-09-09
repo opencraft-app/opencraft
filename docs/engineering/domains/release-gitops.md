@@ -117,6 +117,11 @@ CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直�
 用环境级追加项临时豁免 `jifei-test`，但不得豁免任何生产计费路由。发布后须验证无签名
 `jifei-prod` 返回 401、带签名生产请求为 200、计费回调仍为 200，并持续检查 401/5xx。
 
+新加坡验证完成后，广州生产 StatefulSetPlus 可独立设置相同的 `required` 覆盖；广州 staging
+和 testing 继续保持 `optional`。切换前须确认北京测试与上海正式 Trade 的 HMAC 均与 tkexgz
+网关匹配，并已在 optional 阶段观察到签名请求成功。广州生产不追加 `jifei-test` 例外，
+sandbox-bj-7 继续使用独立 testing 入口。
+
 ## Native OIDC 配置与镜像门禁
 
 原生客户端复用现有 OIDC 登录渠道，不是新增身份渠道。国际站仅登记

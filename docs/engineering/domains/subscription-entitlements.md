@@ -59,6 +59,10 @@ jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们
 韩国测试 Trade 仍经新加坡生产 CLB 访问 `jifei-test` 时，只允许为该测试路由追加临时匿名
 兼容，不能因此放开 `jifei-prod`。韩国完成签名版本发布后必须删除此临时例外。
 
+广州生产严格模式覆盖上海正式与北京测试的生产计费出向；两者必须先完成 Trade 签名发布和
+密钥一致性校验。广州 staging/testing 不随生产切换，sandbox-bj-7 的测试计费路径继续由
+testing 入口承载，不应成为广州生产匿名例外。
+
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 
 ## 同 SP 升配回调参数边界（2026-09-07）
