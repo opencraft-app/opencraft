@@ -9,6 +9,33 @@ CALLBACK_BASE_URL_ENV = "CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL"
 
 
 class CloudLadderGZCallbackTests(unittest.TestCase):
+    def workload_env(self, filename: str) -> dict[str, str | None]:
+        manifest = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/cloudladdergateway/tkexgz"
+                / filename
+            ).read_text()
+        )
+        return {
+            item["name"]: item.get("value")
+            for item in manifest["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
+
+    def test_only_gz_prod_enables_required_cloudladder_auth(self) -> None:
+        prod = self.workload_env("statefulsetplus.yaml")
+        staging = self.workload_env("statefulsetplus-staging.yaml")
+        testing = self.workload_env("statefulsetplus-testing.yaml")
+
+        self.assertEqual(prod["CLOUDLADDERGATEWAY_AUTH_MODE"], "required")
+        self.assertNotIn(
+            "CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", prod
+        )
+        self.assertNotIn("CLOUDLADDERGATEWAY_AUTH_MODE", staging)
+        self.assertNotIn("CLOUDLADDERGATEWAY_AUTH_MODE", testing)
+
     def callback_base_url(self, filename: str) -> str:
         manifest = yaml.safe_load(
             (
