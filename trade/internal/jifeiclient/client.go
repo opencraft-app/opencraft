@@ -50,6 +50,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"git.woa.com/wisp/mono/trade/internal/cloudladderauth"
 )
 
 // 协议层常量（与设计稿 §3.5.5 / Q47 / Q51 严格对齐）。
@@ -255,6 +257,12 @@ type Options struct {
 	// NowProvider 允许测试注入确定性时间戳。生产留空走 time.Now。
 	NowProvider func() time.Time
 
+	// CloudLadderHMACSecret enables caller authentication on the outer
+	// trade -> CloudLadder hop. It is independent from the optional jifei
+	// interface.auth signature carried inside the request body. Empty keeps
+	// the historical unsigned CloudLadder behavior during staged rollout.
+	CloudLadderHMACSecret string
+
 	// ===== 销毁链路（Q-D-SIG-1~6）专用 — 计费网关协议三件套 =====
 	//
 	// 与 "jifei-test" CGW 路由（询价 / 下单 / 支付） 严格区分：
@@ -293,11 +301,12 @@ type Options struct {
 }
 
 type client struct {
-	baseURL         string
-	xQCloudUserID   string
-	httpClient      *http.Client
-	eventIDProvider func() int64
-	nowProvider     func() time.Time
+	baseURL               string
+	xQCloudUserID         string
+	httpClient            *http.Client
+	eventIDProvider       func() int64
+	nowProvider           func() time.Time
+	cloudLadderHMACSecret string
 
 	// 销毁链路签名路径配置（Q-D-SIG-1~6）；空值表示未启用签名路径。
 	billingBaseURL   string
@@ -342,6 +351,7 @@ func New(baseURL, xQCloudUserID string, opts ...Options) Client {
 		if o.NowProvider != nil {
 			c.nowProvider = o.NowProvider
 		}
+		c.cloudLadderHMACSecret = strings.TrimSpace(o.CloudLadderHMACSecret)
 		c.billingBaseURL = strings.TrimRight(strings.TrimSpace(o.BillingAPIGWBaseURL), "/")
 		c.billingAppID = strings.TrimSpace(o.BillingAppID)
 		c.billingAppSecret = strings.TrimSpace(o.BillingAppSecret)
@@ -648,6 +658,19 @@ func (c *client) doWithRoute(
 	// （由部署侧出口 IP 鉴权）。Host header 不再主动注入 — 由 clgateway upstream 段重写。
 	if c.xQCloudUserID != "" {
 		req.Header.Set(CGWUserIDHeader, c.xQCloudUserID)
+	}
+	if c.cloudLadderHMACSecret != "" {
+		if err := cloudladderauth.SignProxyURLHeaders(
+			c.cloudLadderHMACSecret,
+			"lightvela-trade",
+			req.Header,
+			req.Method,
+			req.URL,
+			bodyBytes,
+			c.nowProvider(),
+		); err != nil {
+			return fmt.Errorf("jifeiclient: sign cloudladder request (interface=%s): %w", interfaceName, err)
+		}
 	}
 	// v1.7.28 BUG-05 排障：注入 X-QCloud-Transaction-ID (32 字符 UUID hex) + X-QCloud-Component-ID
 	// header 让 jifei 计费侧能基于 transaction_id 在内部链路追踪系统反查请求路径，便于联调期

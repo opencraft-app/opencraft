@@ -8,6 +8,63 @@ import (
 	"testing"
 )
 
+func TestValidateRejectsUnknownAuthMode(t *testing.T) {
+	cfg := Config{Auth: AuthConfig{Mode: "sometimes", TimestampSkew: "5m"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want invalid auth.mode error")
+	}
+}
+
+func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	allowUnauthenticated := make(map[string]struct{}, len(cfg.Auth.AllowUnauthenticated))
+	for _, routeID := range cfg.Auth.AllowUnauthenticated {
+		allowUnauthenticated[routeID] = struct{}{}
+	}
+	registeredCallers := make(map[string]struct{}, len(cfg.Auth.Callers))
+	for _, caller := range cfg.Auth.Callers {
+		registeredCallers[caller.ID] = struct{}{}
+	}
+
+	for _, route := range cfg.Routes {
+		isExternalCallback := route.ID == "jifei-callback" ||
+			strings.HasPrefix(route.ID, "jifei-callback-") ||
+			strings.HasPrefix(route.ID, "jifei-credit-callback-") ||
+			strings.HasPrefix(route.ID, "tencentcloud-account-callback-") ||
+			route.ID == "devtunnel"
+		if isExternalCallback {
+			if _, ok := allowUnauthenticated[route.ID]; !ok {
+				t.Errorf("external callback route %q would be blocked by required auth", route.ID)
+			}
+		}
+		if _, anonymous := allowUnauthenticated[route.ID]; !anonymous {
+			for _, caller := range route.Callers {
+				if _, ok := registeredCallers[caller]; !ok {
+					t.Errorf("route %q references unregistered caller %q", route.ID, caller)
+				}
+			}
+		}
+	}
+
+	sensitiveOutbound := []string{
+		"jifei-test", "jifei-prod",
+		"jifei-billing-apigw-test", "jifei-billing-apigw-prod",
+		"dianshi-price", "dianshi-order",
+		"tcapi-billing-trade-intl-test", "tcapi-billing-trade-intl-prod",
+		"billing-query-via-polaris",
+		"billing-trade-cn-test", "billing-trade-cn-pre", "billing-trade-cn-prod",
+		"billing-trade-intl-test", "billing-trade-intl-pre", "billing-trade-intl-prod",
+	}
+	for _, routeID := range sensitiveOutbound {
+		if _, ok := allowUnauthenticated[routeID]; ok {
+			t.Errorf("sensitive outbound route %q remains anonymously accessible", routeID)
+		}
+	}
+}
+
 func TestLoadEnablesOTLPAuditFromStandardEnv(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://otel-collector:4318/v1/logs")
 	path := filepath.Join(t.TempDir(), "config.yaml")

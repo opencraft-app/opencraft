@@ -33,6 +33,9 @@ master 源码
 - release plan 检查 merge commit 的 source diff 时，必须比较 merge 结果与第一父提交；不能依赖
   `git diff-tree <merge-commit>` 的默认输出，否则文件变更可能被静默识别为空，导致依赖 source diff
   的 migration 与依赖门禁漏报。
+- `.ci/runtime/bundles/*.bundle` 是 release bundle 的拆分真源，必须全部登记在
+  `.ci/runtime/materialize-files.txt` 中。GitOps promotion 从物化后的 runtime snapshot 生成
+  `release-bundles.manifest`；新增 bundle 却未登记会让发布候选在前置验收阶段失去对应路径契约。
 - 未经用户明确授权，不构建付费制品、不更新 GitOps、不 apply、不发布。
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
 - 接管已经存在的 Deployment、StatefulSet 或 StatefulSetPlus 时，GitOps manifest 必须沿用 live 对象的 `spec.selector`；该字段不可变，不能为了补充组织标签而扩展。新增标签只能放在允许变更的 metadata/Pod template，并确保 Pod labels 继续匹配 selector。发现 selector 漂移时先修 `master` 真源，再由流水线投影到 `gitops`，不直接热修 `gitops`。
@@ -51,6 +54,19 @@ master 源码
 - 测试环境验证必须记录订单/flow、业务实体、权益和底层资源联合终态。国内与国际是独立
   发布面；国内灰度稳定观察完成前，不用国内结果替代国际站放行。
 
+### Credit 积分包交付
+
+- Credit 作为独立服务交付，镜像同时包含 API、migration、每日用量 worker 和生命周期 worker
+  入口；常驻进程不能代替 migration Job 执行 schema 变更。
+- 环境启用顺序为 Credit/Trade schema、LLMGateway plan 与 Trade 商品定义、服务和 worker、
+  Service Gateway 用户路由，最后才开放真实购买流量。
+- `sandbox-bj-7` 是首个验证环境；北京验证通过后由 `master` 为 `beijing-sandbox` 构建并
+  auto-pin Credit。北京使用独立 `credit` 库/用户和 SSM Secret，不沿用 playground 敏感输入。
+- 上海 Credit 仍按生产晋级流程单独接线；在上海验证完成前，Credit 的地域计费回调统一指向
+  北京预发布，之后只把 `jifei-credit-callback-sh` 切到 `https://api.lightvela.com`。
+- Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
+  状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
+
 ## CloudLadder Gateway 回调环境
 
 `tkexgz` 的三个 CloudLadder Gateway workload 共享路由定义，但通过各自
@@ -65,6 +81,26 @@ StatefulSetPlus manifest 中的
 环境差异必须保留在 `argocd/services/cloudladdergateway/tkexgz/` 下对应的
 `statefulsetplus*.yaml` 中，不通过修改共享路由默认值实现。修改 testing 默认回调时，
 不得连带修改 prod、staging 或地域专用的 `jifei-callback-<region>` 路由。
+
+Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与 Pass 的
+`jifei-callback-<region>` 共用目标配置。`tkexgz` 与 `tkexsg` 生产 workload 必须显式声明
+全部 Credit 地域回调目标；北京联调阶段统一为 `https://lightclaw.tech`，避免依赖镜像内默认值。
+
+## CloudLadder HMAC 分阶段发布
+
+CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直接全局切换到 `required`：
+
+1. 先发布 `optional` 网关。无签名旧客户端继续工作，携带部分或错误签名的请求被拒绝。
+2. 再发布 Trade 等调用方签名，并从网关审计确认正常请求稳定显示已验证 caller。
+3. 为每个环境核对调用方 Secret 与对应 tkex 网关 Secret 的安全摘要一致；不得输出明文。
+4. 将计费、Credit、账号回调和测试 devtunnel 明确归入兼容路由，避免强认证误拦外部回调。
+5. 从匿名白名单移除 jifei、点石和 Billing CloudAPI 等敏感出向路由，完成负向探测后再切
+   `required`。
+
+密钥交付继续遵循 SSM → `master` SOPS → `gitops` SOPS → Argo Sync。只更新 SSM 不会改变
+运行中 Pod；只发布 Trade 而未发布支持相同签名协议的 CloudLadder，也不能作为切换完成。
+`required` 放行前必须同时证明：匿名敏感路由返回 401、合法签名请求成功、计费回调仍成功，
+并检查目标环境没有遗留未配置 HMAC 的 Trade 实例。
 
 ## Secret 交付
 

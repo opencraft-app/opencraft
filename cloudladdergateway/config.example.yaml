@@ -355,35 +355,69 @@ backends:
         X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
 
 auth:
-  # **联调期全局禁用 HMAC**（按 .tmp/integration-plan-2026-05-18.md §10 Q-INT-14=a +
-  # P4-followup=a 拍板）。lightvela trade → clgateway → jifei 联调链路本期不签名，
-  # 用 IP 白名单 + VPC 隔离做边界。**prod 切换前必须改回 true** 并完成 trade 端
-  # HMAC 客户端改造（pkg/clientauth 加 SignHTTPRequest helper + jifeiclient.do
-  # 注入 X-CloudLadder-Caller / Timestamp / Signature 3 个 header）。
-  #
-  # 注：master 代码引入了 allow_unauthenticated 白名单机制（精细化签名管控），
-  # 但联调期保持 enabled=false 简化路径，不依赖白名单。后续 prod 切换时再改为
-  # enabled=true + 配置 allow_unauthenticated 列表。
+  # HMAC 迁移状态机：
+  #   disabled：兼容旧 enabled=false，完全不校验。
+  #   optional：无签名请求暂时放行；出现任一认证头时必须完整验签。
+  #   required：除 allow_unauthenticated 外均强制验签，并要求所有 caller 密钥存在。
+  # 当前先进入 optional；全部调用方完成迁移后切为 required 并清理匿名白名单。
+  mode: optional
+  # 兼容旧配置。mode 非空时优先于 enabled；后续完成迁移后可删除本字段。
   enabled: false
   timestamp_skew: 5m
-  # 历史 trade/jifei 联调链路还没有接入 HMAC，继续允许无签名访问；
-  # shadow → TencentCloud API 隧道不在此列表内，必须使用 shadow caller 签名。
+  # 本列表仅在 required 模式生效，用于最终切换期间兼容尚未迁移的路由。
   allow_unauthenticated:
     - sandbox-cn
-    - billing-trade-cn-test
-    - billing-trade-cn-pre
-    - billing-trade-cn-prod
-    - billing-trade-intl-test
-    - billing-trade-intl-pre
-    - billing-trade-intl-prod
-    - jifei-test
+    # Tencent billing callbacks cannot produce CloudLadder HMAC headers.
+    # They remain reachable in required mode and must be authenticated by
+    # their native body signature at the receiving service.
+    - jifei-callback
+    - jifei-callback-dev-1
+    - jifei-callback-dev-2
+    - jifei-callback-dev-3
+    - jifei-callback-bj
+    - jifei-callback-sh
+    - jifei-callback-gz
+    - jifei-callback-cd
+    - jifei-callback-nj
+    - jifei-callback-hk
+    - jifei-callback-jp
+    - jifei-callback-kr
+    - jifei-callback-jkt
+    - jifei-callback-sg
+    - jifei-callback-th
+    - jifei-credit-callback-bj
+    - jifei-credit-callback-sh
+    - jifei-credit-callback-gz
+    - jifei-credit-callback-cd
+    - jifei-credit-callback-nj
+    - jifei-credit-callback-hk
+    - jifei-credit-callback-jp
+    - jifei-credit-callback-kr
+    - jifei-credit-callback-jkt
+    - jifei-credit-callback-sg
+    - jifei-credit-callback-th
+    # TencentCloud SaaS callbacks use their own callback token/body contract.
     - tencentcloud-account-callback-bjsbx
     - tencentcloud-account-callback-krsbx
     - tencentcloud-account-callback-jpsbx
+    - tencentcloud-account-callback-sgprod
     - tencentcloud-account-callback-shprod
+    # Testing-only reverse tunnel has its own DEVTUNNEL_TOKEN authentication.
+    - devtunnel
     - lightvela-cloudapi-bj
     - lightvela-cloudapi-sh
   callers:
+    - id: payment
+      secret_env: CLOUDLADDER_PAYMENT_HMAC_SECRET
+      routes:
+        - sandbox-cn
+        - billing-query-via-polaris
+        - billing-trade-cn-test
+        - billing-trade-cn-pre
+        - billing-trade-cn-prod
+        - billing-trade-intl-test
+        - billing-trade-intl-pre
+        - billing-trade-intl-prod
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
       routes:

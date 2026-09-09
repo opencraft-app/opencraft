@@ -57,6 +57,11 @@ spec:
             secretKeyRef:
               name: cloudladdergateway-runtime-secrets
               key: CLOUDLADDER_PAYMENT_HMAC_SECRET
+        - name: CLOUDLADDER_TRADE_HMAC_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: cloudladdergateway-runtime-secrets
+              key: CLOUDLADDER_PAYMENT_HMAC_SECRET
         - name: CLOUDLADDER_SHADOW_HMAC_SECRET
           valueFrom:
             secretKeyRef:
@@ -95,6 +100,29 @@ spec:
           value: https://api.lightvela.ai
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_TH_BASE_URL
           value: https://api-sandbox-jp-1.lightclaw.tech
+        # Credit 资源包回调与 Pass 隔离；北京验证完成前所有地域统一回北京预发布。
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_BJ_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_SH_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_GZ_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_CD_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_NJ_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_HK_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_JP_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_KR_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_JKT_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_SG_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_TH_BASE_URL
+          value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER
           value: test.trade-intl.billing.tencentyun.com
         - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_PRICE_BASE_URL

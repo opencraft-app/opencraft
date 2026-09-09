@@ -57,6 +57,10 @@ type Config struct {
 	InternalServiceToken          string
 	CtlInternalBaseURL            string
 	AccountBindingInternalBaseURL string
+	CreditInternalBaseURL         string
+	CreditSendResourceURL         string
+	CreditSendResourceHost        string
+	CreditSendResourceCID         string
 
 	JifeiCGWGatewayURL        string
 	JifeiCGWHostHeader        string
@@ -69,6 +73,11 @@ type Config struct {
 	JifeiBillingAPIGWURL  string // jifei 计费网关 ModifyResourceStatus 入口 URL
 	JifeiBillingAppID     string // jifei 计费网关分配的 appid
 	JifeiBillingAppSecret string // jifei 计费网关分配的 appSecret（HMAC-SHA256 签名密钥；通过 SSM + sops 注入）
+
+	// CloudLadderHMACSecret authenticates every trade -> CloudLadder route.
+	// TRADE_CLOUDLADDER_HMAC_SECRET is preferred; the historical Billing-only
+	// variable remains a compatibility fallback during migration.
+	CloudLadderHMACSecret string
 
 	// 国际站获取支付链接走计费 CloudAPI CreatePayUrl；请求密钥由 user/auth
 	// 按订单用户即时签发，这里只保留 Billing endpoint 与 CloudLadder 路由配置。
@@ -143,8 +152,12 @@ func Load() (Config, error) {
 				strings.TrimSpace(os.Getenv("TRADE_DB")),
 			),
 		),
-		InternalServiceToken: strings.TrimSpace(os.Getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN")),
-		CtlInternalBaseURL:   strings.TrimSpace(os.Getenv("CTL_INTERNAL_BASE_URL")),
+		InternalServiceToken:   strings.TrimSpace(os.Getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN")),
+		CtlInternalBaseURL:     strings.TrimSpace(os.Getenv("CTL_INTERNAL_BASE_URL")),
+		CreditInternalBaseURL:  strings.TrimSpace(os.Getenv("CREDIT_INTERNAL_BASE_URL")),
+		CreditSendResourceURL:  strings.TrimSpace(os.Getenv("CREDIT_SEND_RESOURCE_URL")),
+		CreditSendResourceHost: strings.TrimSpace(os.Getenv("CREDIT_SEND_RESOURCE_HOST")),
+		CreditSendResourceCID:  envOrDefault("CREDIT_SEND_RESOURCE_CID", "101433"),
 		AccountBindingInternalBaseURL: firstNonEmpty(
 			strings.TrimSpace(os.Getenv("ACCOUNT_BINDING_INTERNAL_BASE_URL")),
 			strings.TrimSpace(os.Getenv("SHADOW_INTERNAL_BASE_URL")),
@@ -172,7 +185,14 @@ func Load() (Config, error) {
 			os.Getenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID"),
 			"tcapi-billing-trade-intl-test",
 		),
-		BillingCloudAPICloudLadderHMACSecret: strings.TrimSpace(os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET")),
+		CloudLadderHMACSecret: firstNonEmpty(
+			os.Getenv("TRADE_CLOUDLADDER_HMAC_SECRET"),
+			os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET"),
+		),
+		BillingCloudAPICloudLadderHMACSecret: firstNonEmpty(
+			os.Getenv("TRADE_CLOUDLADDER_HMAC_SECRET"),
+			os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET"),
+		),
 		BillingCloudAPIXQCloudUserID: firstNonEmpty(
 			os.Getenv("TRADE_BILLING_X_QCLOUD_USER_ID"),
 			os.Getenv("JIFEI_CGW_X_QCLOUD_USER_ID"),

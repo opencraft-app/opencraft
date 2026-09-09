@@ -205,6 +205,7 @@ const coreCopyByLocale = {
     "Market brief is ready:": "Market brief is ready:",
     "LightVela: market brief is ready": "LightVela: market brief is ready",
     "Add Soul, Skills, and Automations so I learn faster.": "Add Automations, Workbench, and DeepSeek Harness so I learn faster.",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "I stay available 24/7 in the cloud, so your computer can stay off. As we work together, I learn your preferences and adapt to your feedback.",
     Workbench: "Workbench",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.",
   },
@@ -215,6 +216,7 @@ const coreCopyByLocale = {
     "My AI companion": "我的智能体伙伴",
     "Thank you Hermes for the technical support provided to LightVela.": "感谢 Hermes 为 LightVela 提供技术支持。",
     "Ready to set off with you at any time.": "随时准备和你一起启程。",
+    "我在云端，不用你电脑开着。你每纠正我一次，我就把它记成新规则，下次直接按你的习惯做。": "我在云端 7×24 小时在线，不用你一直开着电脑。协作越久，我越懂你的偏好，也会根据反馈持续调整。",
     "Nasdaq Brief": "市场简报",
     "Market brief is ready:": "市场简报已生成：",
     "LightVela: market brief is ready": "LightVela：市场简报已生成",
@@ -280,6 +282,7 @@ const coreCopyByLocale = {
     "My AI companion": "我的智能体伙伴",
     "Thank you Hermes for the technical support provided to LightVela.": "感谢 Hermes 为 LightVela 提供技术支持。",
     "Ready to set off with you at any time.": "随时准备和你一起启程。",
+    "我在云端，不用你电脑开着。你每纠正我一次，我就把它记成新规则，下次直接按你的习惯做。": "我在云端 7×24 小时在线，不用你一直开着电脑。协作越久，我越懂你的偏好，也会根据反馈持续调整。",
     "Nasdaq Brief": "市场简报",
     "Market brief is ready:": "市场简报已生成：",
     "LightVela: market brief is ready": "LightVela：市场简报已生成",
@@ -345,6 +348,7 @@ const coreCopyByLocale = {
     "My AI companion": "我的智能體夥伴",
     "Thank you Hermes for the technical support provided to LightVela.": "感謝 Hermes 為 LightVela 提供技術支援。",
     "Ready to set off with you at any time.": "隨時準備和你一起啟程。",
+    "我在云端，不用你电脑开着。你每纠正我一次，我就把它记成新规则，下次直接按你的习惯做。": "我在雲端 7×24 小時在線，不用你一直開著電腦。協作越久，我越懂你的偏好，也會根據回饋持續調整。",
     "Nasdaq Brief": "市場簡報",
     "Market brief is ready:": "市場簡報已生成：",
     "LightVela: market brief is ready": "LightVela：市場簡報已生成",
@@ -457,7 +461,7 @@ const coreCopyByLocale = {
     "Add Soul, Skills, and Automations so I learn faster.": "Tambahkan Automations, Workbench, dan DeepSeek Harness agar saya belajar lebih cepat.",
     "Long memory, quick recall, fast response.": "Memori panjang, cepat mengingat, cepat merespons.",
     "After that, I stay always on": "Setelah itu, saya tetap selalu aktif",
-    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "Saya berjalan di cloud dan tersedia 24/7, jadi komputer Anda tidak perlu terus menyala. Setiap kali Anda mengoreksi saya, saya menyimpannya sebagai aturan baru dan mengikuti preferensi Anda berikutnya.",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "Saya tersedia 24/7 di cloud, jadi komputer Anda tidak perlu terus menyala. Seiring kita bekerja bersama, saya memahami preferensi Anda dan menyesuaikan diri dengan masukan.",
     "I organize group context and unanswered threads.": "Saya menata konteks grup dan utas yang belum terjawab.",
     "Scheduled work runs by itself.": "Pekerjaan terjadwal berjalan sendiri.",
     "For real decisions, I ask you first.": "Untuk keputusan penting, saya bertanya kepada Anda lebih dulu.",
@@ -632,7 +636,7 @@ const coreCopyByLocale = {
     "Add Soul, Skills, and Automations so I learn faster.": "Añade Automations, Workbench y DeepSeek Harness para que aprenda más rápido.",
     "Long memory, quick recall, fast response.": "Memoria larga, recuperación rápida y respuesta ágil.",
     "After that, I stay always on": "Después, sigo siempre activo",
-    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "Funciono en la nube y estoy disponible 24/7, así que tu ordenador no tiene que quedar encendido. Cada corrección se guarda como una regla para la próxima vez.",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "Estoy disponible 24/7 en la nube, así que no necesitas mantener tu ordenador encendido. Al trabajar juntos, comprendo tus preferencias y me adapto a tus comentarios.",
     "I organize group context and unanswered threads.": "Organizo el contexto del grupo y los hilos sin responder.",
     "Scheduled work runs by itself.": "El trabajo programado se ejecuta solo.",
     "For real decisions, I ask you first.": "Para decisiones reales, te pregunto primero.",
@@ -826,7 +830,7 @@ Object.assign(coreCopyByLocale, {
     "Add Soul, Skills, and Automations so I learn faster.": "Automations、Workbench、DeepSeek Harnessを追加すると、より早く学習します。",
     "Long memory, quick recall, fast response.": "長い記憶、素早い想起、高速な応答。",
     "After that, I stay always on": "その後は、ずっと稼働し続けます",
-    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "私はクラウドで24時間365日稼働するので、あなたのコンピューターを起動し続ける必要はありません。修正されるたびに新しいルールとして保存し、次回はあなたの好みに沿って動きます。",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "私はクラウドで24時間365日稼働するため、パソコンを起動したままにする必要はありません。協力するほど好みを理解し、フィードバックに合わせて調整します。",
     "I organize group context and unanswered threads.": "グループの文脈と未返信スレッドを整理します。",
     "Scheduled work runs by itself.": "定時の作業は自動で実行されます。",
     "For real decisions, I ask you first.": "重要な判断は、必ず先に確認します。",
@@ -1021,7 +1025,7 @@ Object.assign(coreCopyByLocale, {
     "Add Soul, Skills, and Automations so I learn faster.": "Automations, Workbench, DeepSeek Harness를 추가하면 더 빨리 학습합니다.",
     "Long memory, quick recall, fast response.": "긴 기억, 빠른 회상, 빠른 응답.",
     "After that, I stay always on": "그 후에는 언제나 켜져 있습니다",
-    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "저는 클라우드에서 24시간 연중무휴로 실행되므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 당신이 한 번 수정할 때마다 새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다.",
+    "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time.": "저는 클라우드에서 24시간 연중무휴로 작동하므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 함께할수록 선호를 더 잘 이해하고 피드백에 맞춰 조정합니다.",
     "I organize group context and unanswered threads.": "그룹 맥락과 답하지 않은 스레드를 정리합니다.",
     "Scheduled work runs by itself.": "예약된 작업은 자동으로 실행됩니다.",
     "For real decisions, I ask you first.": "중요한 결정은 반드시 먼저 묻습니다.",
@@ -1190,6 +1194,11 @@ for (const locale of ["id-ID", "es", "ja-JP", "ko-KR"]) {
   copy["LightVela · Hermes Agent in the Cloud"] = copy["LightVela · AI companion in the cloud"];
   copy["I run in the cloud, so your computer does not need to stay on. Each time you correct me, I save it as a new rule and follow your preference next time."] = copy["I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time."];
 }
+coreCopyByLocale["en-US"][
+  "I run in the cloud, so your computer does not need to stay on. Each time you correct me, I save it as a new rule and follow your preference next time."
+] = coreCopyByLocale["en-US"][
+  "I stay available 24/7 in the cloud, so you never need to leave your computer running. Whenever you correct me, I turn your feedback into a new rule and apply it next time."
+];
 const cardAltCopyByLocale = {
   "zh-CN": {
     "Messaging platforms": "消息平台",
@@ -3627,25 +3636,28 @@ function normalizeHeroDemo(_document) {
 }
 const alwaysOnEmphasisByLocale = {
   "en-US": [
-    ["I stay ", "available 24/7 in the cloud", ", so you never need to leave your computer running. Whenever you correct me, I ", "turn your feedback into a new rule", " and apply it next time."],
+    ["I stay ", "available 24/7 in the cloud", ", so your computer can stay off. As we work together, I learn your preferences and ", "adapt to your feedback", "."],
+  ],
+  "zh-CN": [
+    ["我在", "云端 7×24 小时在线", "，不用你一直开着电脑。协作越久，我越懂你的偏好，也会", "根据反馈持续调整", "。"],
   ],
   "zh-SG": [
-    ["我在", "云端 7×24 小时在线", "，不用一直开着你的电脑。你每纠正我一次，我就把它记成", "新规则，下次直接按你的习惯做", "。"],
+    ["我在", "云端 7×24 小时在线", "，不用你一直开着电脑。协作越久，我越懂你的偏好，也会", "根据反馈持续调整", "。"],
   ],
   "zh-Hant": [
-    ["我在", "雲端 7×24 小時在線", "，不用一直開著你的電腦。你每糾正我一次，我就把它記成", "新規則，下次直接按你的習慣做", "。"],
+    ["我在", "雲端 7×24 小時在線", "，不用你一直開著電腦。協作越久，我越懂你的偏好，也會", "根據回饋持續調整", "。"],
   ],
   "id-ID": [
-    ["Saya berjalan ", "di cloud dan tersedia 24/7", ", jadi komputer Anda tidak perlu terus menyala. Setiap kali Anda mengoreksi saya, saya menyimpannya ", "sebagai aturan baru dan mengikuti preferensi Anda berikutnya", "."],
+    ["Saya ", "tersedia 24/7 di cloud", ", jadi komputer Anda tidak perlu terus menyala. Seiring kita bekerja bersama, saya memahami preferensi Anda dan ", "menyesuaikan diri dengan masukan", "."],
   ],
   es: [
-    ["Funciono ", "en la nube y estoy disponible 24/7", ", así que tu ordenador no tiene que quedar encendido. Cada corrección se guarda ", "como una regla para la próxima vez", "."],
+    ["Estoy ", "disponible 24/7 en la nube", ", así que no necesitas mantener tu ordenador encendido. Al trabajar juntos, comprendo tus preferencias y ", "me adapto a tus comentarios", "."],
   ],
   "ja-JP": [
-    ["私は", "クラウドで24時間365日稼働する", "ので、あなたのコンピューターを起動し続ける必要はありません。修正されるたびに", "新しいルールとして保存し、次回はあなたの好みに沿って動きます", "。"],
+    ["私は", "クラウドで24時間365日稼働する", "ため、パソコンを起動したままにする必要はありません。協力するほど好みを理解し、", "フィードバックに合わせて調整します", "。"],
   ],
   "ko-KR": [
-    ["저는 ", "클라우드에서 24시간 연중무휴로 실행", "되므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 당신이 한 번 수정할 때마다 ", "새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다", "."],
+    ["저는 ", "클라우드에서 24시간 연중무휴로 작동", "하므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 함께할수록 선호를 더 잘 이해하고 ", "피드백에 맞춰 조정합니다", "."],
   ],
 };
 
@@ -4036,6 +4048,7 @@ function prepareDocumentForLocale(document, locale) {
 function applyFooterLayout(document) {
   const footer = document.querySelector("footer.foot");
   if (!footer) throw new Error("Missing homepage footer");
+  footer.classList.remove("foot--domestic");
 
   footer.innerHTML = `
   <div class="foot__top">
@@ -4423,13 +4436,31 @@ const internationalHeroChannelParityCss = `
 `;
 const homepageReadingCss = `
 /* Homepage navigation and reading-safe play switching. */
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__cta,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__tabs,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
-  animation: none;
-  opacity: 0;
-  transform: translateY(24px);
+/* Japanese and Korean sentence endings enter with the rotating role. */
+#lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+#lightvela-intl-home .hero__line--dynamic .hero__suffix {
+  animation: hero-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) var(--rotator-delay, 0.5s) both;
+}
+
+@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__suffix,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__cta,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__tabs,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
+    animation: none;
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  #lightvela-intl-home .hero__line--dynamic .hero__suffix {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .home-mobile-menu-trigger {
@@ -4517,6 +4548,12 @@ html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
   }
 }
 @media (max-width: 640px) {
+  #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  #lightvela-intl-home .hero__line--dynamic .hero__suffix {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
   #lightvela-intl-home .plays__tabs {
     margin-top: 8px;
     padding-top: 16px;
@@ -4615,6 +4652,12 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
   "      return startDelay + text.length * STEP;",
   "      return startDelay + Math.max(0, text.length - 1) * STEP + CHAR_DURATION;",
 ).replace(
+  `    var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
+    var next = INITIAL;`,
+  `    var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
+    var suffix = document.querySelector('.hero__line--dynamic .hero__suffix');
+    var next = INITIAL;`,
+).replace(
   `    var next = INITIAL;
     if (!shouldKeepNaturalText && main) next = splitChars(main, next);
     if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + 60);
@@ -4629,6 +4672,7 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
     if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + SEGMENT_GAP);
     var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;
     if (wrap) wrap.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
+    if (suffix) suffix.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
     var root = document.documentElement;
     var afterText = rotatorDelay + (shouldKeepNaturalText ? 0 : 600) + 200;
     root.style.setProperty('--cta-delay', afterText + 'ms');

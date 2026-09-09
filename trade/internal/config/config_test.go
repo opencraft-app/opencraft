@@ -72,6 +72,23 @@ func TestLoadFallsBackToLegacyShadowInternalBaseURL(t *testing.T) {
 	}
 }
 
+func TestLoadCreditSendResourceSettings(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.local")
+	t.Setenv("CREDIT_SEND_RESOURCE_URL", "http://9.139.137.40/feev2/sendResource.php")
+	t.Setenv("CREDIT_SEND_RESOURCE_HOST", "qbilling.itd.com")
+	t.Setenv("CREDIT_SEND_RESOURCE_CID", "101433")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.CreditSendResourceURL != "http://9.139.137.40/feev2/sendResource.php" ||
+		cfg.CreditSendResourceHost != "qbilling.itd.com" || cfg.CreditSendResourceCID != "101433" {
+		t.Fatalf("unexpected sendResource config: %+v", cfg)
+	}
+}
+
 // TestNormalizeSiteKind 验证 LIGHTVELA_SITE_KIND env 字面量到 trade 内部规范化字面量
 // 的映射（v1.7.x 国际站接入新增）。
 //
@@ -317,7 +334,28 @@ func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "trade-hmac" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
 	}
+	if cfg.CloudLadderHMACSecret != "trade-hmac" {
+		t.Fatalf("CloudLadderHMACSecret fallback = %q", cfg.CloudLadderHMACSecret)
+	}
 	if cfg.BillingCloudAPIXQCloudUserID != "800000294207" {
 		t.Fatalf("BillingCloudAPIXQCloudUserID = %q", cfg.BillingCloudAPIXQCloudUserID)
+	}
+}
+
+func TestLoad_CloudLadderHMACSecretPrefersGeneralName(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("TRADE_CLOUDLADDER_HMAC_SECRET", "general-secret")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "legacy-secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.CloudLadderHMACSecret != "general-secret" {
+		t.Fatalf("CloudLadderHMACSecret = %q", cfg.CloudLadderHMACSecret)
+	}
+	if cfg.BillingCloudAPICloudLadderHMACSecret != "general-secret" {
+		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
 	}
 }

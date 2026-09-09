@@ -1466,7 +1466,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             ) : (
               <p>
                 {t("暂无定时任务，")}
-                <span className="font-medium text-black/70">{t("可从上方任务模板快速启用")}</span>
+                <span>{t("可从上方任务模板快速启用")}</span>
               </p>
             )}
           </div>

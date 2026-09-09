@@ -371,6 +371,28 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.auto_sync_allowed)
         self.assertNotIn("检测到同批依赖服务变更", "\n".join(plan.manual_actions))
 
+    def test_credit_release_ignores_trade_source_changes(self) -> None:
+        manifest = load_manifest()
+        self.assertEqual((manifest["bundles"]["credit"].get("release_dependencies") or []), [])
+
+        with self._repo_with_commit("trade/internal/api.go") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="credit",
+                env="sandbox-bj-7",
+                source_sha=source_sha,
+                image="example.com/credit:test",
+                pin_targets="credit",
+                db_status="passed",
+            )
+
+        self.assertFalse(plan.release_dependency_changed)
+        self.assertEqual(plan.release_dependencies, [])
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
+        self.assertNotIn("检测到同批依赖服务变更", "\n".join(plan.manual_actions))
+
     def test_dependency_trigger_marker_does_not_block_service_gateway_auto_sync(self) -> None:
         with self._repo_with_commit("payment/.ci-trigger") as (repo_root, source_sha):
             plan = plan_release_gates(

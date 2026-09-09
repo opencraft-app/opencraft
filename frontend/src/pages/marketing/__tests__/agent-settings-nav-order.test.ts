@@ -55,7 +55,8 @@ describe("Agent settings navigation groups", () => {
     expect(use).toMatch(/id: "skill"[\s\S]*id: "automations"/);
     expect(use).not.toContain('id: "website"');
     expect(use).not.toContain('id: "chat"');
-    expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"[\s\S]*id: "achievement"/);
+    expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"/);
+    expect(growth).not.toContain('id: "achievement"');
     expect(manage).toMatch(/id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "settings"/);
     expect(manage).not.toContain('id: "labs"');
     expect(labs).toMatch(/id: "website"[\s\S]*id: "deepseek-harness"/);

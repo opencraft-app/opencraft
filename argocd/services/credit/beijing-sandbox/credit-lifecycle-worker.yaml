@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit-lifecycle-worker
+  labels:
+    app: credit-lifecycle-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: credit-lifecycle-worker
+  template:
+    metadata:
+      labels:
+        app: credit-lifecycle-worker
+    spec:
+      nodeSelector:
+        pool: REPLACE_CREDIT_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: credit-lifecycle-worker
+      containers:
+        - name: credit-lifecycle-worker
+          image: REPLACE_CREDIT_IMAGE
+          imagePullPolicy: Always
+          command:
+            - /usr/local/bin/credit-lifecycle-worker
+          envFrom:
+            - configMapRef:
+                name: credit-config
+            - secretRef:
+                name: credit-runtime-secrets
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

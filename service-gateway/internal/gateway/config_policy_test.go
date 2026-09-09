@@ -188,6 +188,74 @@ func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
 	t.Fatal("auth-payment-methods route not found")
 }
 
+func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, wantUpstream string) {
+	t.Helper()
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	wantPaths := map[string]struct{}{
+		http.MethodGet + " /v1/credit/products":                      {},
+		http.MethodPost + " /v1/credit/inquiry":                      {},
+		http.MethodPost + " /v1/credit/packages/order":               {},
+		http.MethodPost + " /v1/credit/packages/order-and-pay":       {},
+		http.MethodGet + " /v1/credit/packages":                      {},
+		http.MethodPost + " /v1/credit/packages/{package_id}/refund": {},
+	}
+	for _, route := range cfg.Routes {
+		if route.Name != "credit" {
+			continue
+		}
+		if route.Prefix != "/v1/credit" || route.Access != AccessAuthenticated {
+			t.Fatalf("credit route must use authenticated session access: %+v", route)
+		}
+		if route.Upstream != wantUpstream {
+			t.Fatalf("credit upstream=%q", route.Upstream)
+		}
+		if !route.RequireRealname {
+			t.Fatal("credit route must require realname")
+		}
+		if route.PathPolicy != PathPolicyAllowlist {
+			t.Fatalf("credit path_policy=%q, want allowlist", route.PathPolicy)
+		}
+		gotPaths := make(map[string]struct{}, len(route.PathAllow))
+		for _, rule := range route.PathAllow {
+			gotPaths[rule.Method+" "+rule.Path] = struct{}{}
+		}
+		if len(gotPaths) != len(wantPaths) {
+			t.Fatalf("credit allowlist=%+v, want=%+v", gotPaths, wantPaths)
+		}
+		for path := range wantPaths {
+			if _, exists := gotPaths[path]; !exists {
+				t.Fatalf("credit allowlist missing %s", path)
+			}
+		}
+		return
+	}
+	t.Fatal("credit route not found")
+}
+
+func TestBeijing7CreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/sandbox-bj-7/config.yaml",
+		"http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local",
+	)
+}
+
+func TestBeijingCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
+		"http://credit.credit.svc.cluster.local",
+	)
+}
+
 func TestDeployConfigsScopePhoneAuthPublicRoutes(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {

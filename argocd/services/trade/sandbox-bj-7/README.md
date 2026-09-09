@@ -37,8 +37,8 @@ GRANT ALL PRIVILEGES ON trade.* TO 'trade'@'%';
 FLUSH PRIVILEGES;
 ```
 
-**migration**: trade 当前用 GORM AutoMigrate（详见 trade/internal/store/db.go），
-首次启动自动建表。如未来切换为显式 migration，需在此处补充 `migrate up` 步骤。
+**migration**: 与 ctl 一致，由发布流水线执行受控 migration；Argo 应用不管理固定名
+迁移 Job，避免镜像更新时触发 Kubernetes Job `spec.template` 不可变冲突。
 
 ### B. SSM secret 预置（迭代 9C 人工动作）
 

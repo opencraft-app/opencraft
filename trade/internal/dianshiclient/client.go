@@ -32,6 +32,8 @@ import (
 	neturl "net/url"
 	"strings"
 	"time"
+
+	"git.woa.com/wisp/mono/trade/internal/cloudladderauth"
 )
 
 // 协议层常量（与点石协议样例 / 设计稿 §5.1 严格对齐）。
@@ -228,19 +230,21 @@ type Client interface {
 
 // Options 是 Client 可选构造参数。
 type Options struct {
-	HTTPClient      *http.Client
-	EventIDProvider func() int64
-	NowProvider     func() time.Time
-	Preview         int
+	HTTPClient            *http.Client
+	EventIDProvider       func() int64
+	NowProvider           func() time.Time
+	Preview               int
+	CloudLadderHMACSecret string
 }
 
 type client struct {
-	priceBaseURL    string
-	orderBaseURL    string
-	httpClient      *http.Client
-	eventIDProvider func() int64
-	nowProvider     func() time.Time
-	preview         int
+	priceBaseURL          string
+	orderBaseURL          string
+	httpClient            *http.Client
+	eventIDProvider       func() int64
+	nowProvider           func() time.Time
+	preview               int
+	cloudLadderHMACSecret string
 }
 
 // New 构造点石 client。
@@ -271,6 +275,7 @@ func New(priceBaseURL, orderBaseURL string, opts ...Options) Client {
 		if o.NowProvider != nil {
 			c.nowProvider = o.NowProvider
 		}
+		c.cloudLadderHMACSecret = strings.TrimSpace(o.CloudLadderHMACSecret)
 	}
 	return c
 }
@@ -416,6 +421,19 @@ func (c *client) do(
 		return fmt.Errorf("dianshiclient: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.cloudLadderHMACSecret != "" {
+		if err := cloudladderauth.SignProxyURLHeaders(
+			c.cloudLadderHMACSecret,
+			"lightvela-trade",
+			req.Header,
+			req.Method,
+			req.URL,
+			bodyBytes,
+			c.nowProvider(),
+		); err != nil {
+			return fmt.Errorf("dianshiclient: sign cloudladder request (interface=%s): %w", interfaceName, err)
+		}
+	}
 
 	// 联调期临时 dump（与 jifeiclient v1.7.28 同款思路），便于排障。联调结束后可删。
 	log.Printf("[dianshi-out] interface=%s eventId=%d url=%s body=%s",
