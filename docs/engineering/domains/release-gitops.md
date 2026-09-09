@@ -122,6 +122,18 @@ CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直�
 网关匹配，并已在 optional 阶段观察到签名请求成功。广州生产不追加 `jifei-test` 例外，
 sandbox-bj-7 继续使用独立 testing 入口。
 
+## Native OIDC 配置与镜像门禁
+
+原生客户端复用现有 OIDC 登录渠道，不是新增身份渠道。国际站仅登记
+`opencraft-native-v1` 与精确回调 `opencraft://auth/lightvela`，保留既有
+`site-gateway` 的两个精确 HTTPS 回调；网关仅公开 `POST /auth/native/token`。
+
+sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，提前加入 native client
+会使整个 OIDC 配置失效。因此必须先完成支持 MR !3762 的 Auth 镜像晋级和环境门禁，
+再批准包含新 registry 的部署候选；配置与镜像一起审核，不能把“源码已合入”当作部署前置完成。
+配置先回填 `master`，再通过正常晋级或经审核的 `gitops` MR 下发，禁止仅改 live。
+回滚至旧镜像前须移除 native client。发布验收同时覆盖 App 回跳/兑换和存量 Sites 登录。
+
 ## Secret 交付
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
