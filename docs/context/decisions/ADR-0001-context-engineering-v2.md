@@ -26,3 +26,7 @@ derived: false
 Agent 在通用指令上消耗更少 Token，并获得具体服务边界、外部 contract 和验证门禁。内容 owner 必须审阅 active Pack。未验证的模型路由和 compaction 功能只能是 pilot 设计，不能宣称为运行时能力。
 
 Task Pack 的元数据进入 `docs/context/.context/catalog.jsonl`；新增或更新 Pack 后必须通过 Context Validator 重建 catalog，catalog 只提供可定位索引，不替代 Task Pack 正文。
+
+新增一级服务必须原子登记服务本地 catalog、中央 Service Catalog、派生 service Context Pack 和
+`service-<id>` 路由，并同步校验器的一级服务集合。服务数量由该集合派生，错误和报告不得再写死
+固定数量；这样新增 Credit 等服务时，入口覆盖检查会明确指出缺失项，而不是要求维护孤立的计数。

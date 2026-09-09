@@ -1,0 +1,18 @@
+{
+  "id": "credit",
+  "name": "积分服务",
+  "kind": "service",
+  "path": "credit",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["subscription-entitlements", "release-gitops"],
+  "summary": "负责付费积分商品、积分包生命周期、精确用量和每日计费推量。",
+  "runtime": "Go HTTP 服务与后台 worker",
+  "interfaces": ["积分包用户 API", "Trade 内部 API", "LLMGateway subscription"],
+  "dependencies": ["trade", "velagw", "service-gateway", "external-billing"],
+  "source_docs": ["credit/AGENTS.md"],
+  "agent_entry": "credit/AGENTS.md",
+  "service_docs": "credit/docs/README.md",
+  "deploy": ["credit/k8s", "argocd/services/credit"],
+  "generated_paths": []
+}

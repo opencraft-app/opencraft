@@ -1,0 +1,6 @@
+service: credit
+env: beijing-sandbox
+project: beijing-sandbox
+destinationName: beijing-sandbox
+namespace: credit
+sourcePath: argocd/services/credit/beijing-sandbox

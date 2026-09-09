@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"git.woa.com/wisp/mono/trade/internal/creditclient"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/httpapi/internalapi"
 	"git.woa.com/wisp/mono/trade/internal/httpapi/jifei"
@@ -14,6 +15,9 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/checkmodify"
 	"git.woa.com/wisp/mono/trade/internal/logic/checkrenew"
 	"git.woa.com/wisp/mono/trade/internal/logic/createresource"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditorder"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditresource"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditusage"
 	"git.woa.com/wisp/mono/trade/internal/logic/destroyresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/isolateresource"
@@ -55,13 +59,16 @@ type ServerConfig struct {
 	// OrderStore / BundleStore / CTLClient / FlowStore / InquiryService / PlaceOrderService
 	// 必填，nil 视为编程错（没接好线），NewRouter 会 panic 让启动期立即暴露。
 	// OrderUpdater 允许 nil（向后兼容旧调用方；迭代 8A 起 main.go 应注入 mysqlStore）。
-	OrderStore        store.OrderStore
-	BundleStore       store.BundleDefinitionStore
-	CTLClient         ctlclient.Client
-	FlowStore         store.FlowStore
-	OrderUpdater      createresource.OrderProvisionUpdater
-	InquiryService    *inquiry.Service
-	PlaceOrderService *placeorder.Service
+	OrderStore            store.OrderStore
+	BundleStore           store.BundleDefinitionStore
+	CTLClient             ctlclient.Client
+	FlowStore             store.FlowStore
+	OrderUpdater          createresource.OrderProvisionUpdater
+	InquiryService        *inquiry.Service
+	PlaceOrderService     *placeorder.Service
+	CreditOrderService    *creditorder.Service
+	CreditUsageService    *creditusage.Service
+	CreditDefinitionStore store.CreditDefinitionStore
 
 	// ActivityStore 是点石活动写端（设计稿 .tmp/dianshi-activity-bundle-design.md §5.6.1 / §3.2）。
 	// 允许 nil；nil 时 createResource handler 跳过 INSERT participation 分支，
@@ -97,6 +104,7 @@ type ServerConfig struct {
 	// 允许 nil（向后兼容仅承载旧调用方）；nil 时
 	// /internal/trade/orders/:dealName/query-status 路由不挂载。
 	OrderStatusService *orderstatus.Service
+	CreditClient       creditclient.Client
 
 	// SiteKind（v1.7.x 国际站接入 A6.3 新增）：trade 内部部署站点语义字面量。
 	//
@@ -281,6 +289,18 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 		BundleStore: cfg.BundleStore,
 	})
 
+	if cfg.CreditClient != nil {
+		creditresource.Install(dispatcher, creditresource.Deps{
+			FlowStore:             cfg.FlowStore,
+			OrderStore:            cfg.OrderStore,
+			CreditDefinitionStore: cfg.CreditDefinitionStore,
+			CreditClient:          cfg.CreditClient,
+			Builder:               builder,
+			SiteKind:              cfg.SiteKind,
+			RegionOverride:        cfg.RegionOverride,
+		})
+	}
+
 	router.POST("/trade/jifei/callback", jifei.CallbackHandler(dispatcher))
 
 	// 6. 注册内部 RPC（迭代 8A + Sub-4 callback）。
@@ -290,11 +310,14 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 	if cfg.InquiryService != nil && cfg.PlaceOrderService != nil {
 		provisionedOrderStore, _ := cfg.OrderStore.(store.ProvisionedCreateOrderStore)
 		internalapi.Install(router, internalapi.Deps{
-			InternalServiceToken: cfg.InternalServiceToken,
-			Inquiry:              cfg.InquiryService,
-			PlaceOrder:           cfg.PlaceOrderService,
-			FlowStore:            cfg.FlowStore,
-			OrderUpdater:         cfg.OrderUpdater,
+			InternalServiceToken:  cfg.InternalServiceToken,
+			Inquiry:               cfg.InquiryService,
+			PlaceOrder:            cfg.PlaceOrderService,
+			CreditOrder:           cfg.CreditOrderService,
+			CreditUsage:           cfg.CreditUsageService,
+			CreditDefinitionStore: cfg.CreditDefinitionStore,
+			FlowStore:             cfg.FlowStore,
+			OrderUpdater:          cfg.OrderUpdater,
 			// D-2 销毁链路用户主动入口（设计稿 §3.5 + §11-A Q26）：BundleStore + JifeiClient
 			// 任一 nil 时 internalapi 不挂载 /internal/trade/resources/:resourceID/delete 路由。
 			BundleStore: cfg.BundleStore,

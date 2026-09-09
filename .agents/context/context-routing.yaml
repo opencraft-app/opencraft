@@ -31,7 +31,7 @@
       "triggers": ["subscription", "pass", "renewal", "renew", "quota", "entitlement", "payment", "套餐", "续费", "权益", "订阅", "支付", "计费"],
       "weak_triggers": ["billing"],
       "symbols": ["/subscriptions/current", "/internal/subscriptions/apply-payment", "AutoRenewFlag", "agent_quota", "CreatePayUrl"],
-      "path_prefixes": ["subscription/", "payment/", "trade/"],
+      "path_prefixes": ["subscription/", "payment/", "trade/", "credit/"],
       "must_read": ["docs/context/domains/subscription-entitlements.md"],
       "deferred_paths": ["subscription/api/openapi.yaml", "payment/api/openapi.yaml"]
     },
@@ -200,6 +200,15 @@
       "path_prefixes": ["codesign/"],
       "must_read": ["docs/context/project/services/codesign.md"],
       "deferred_paths": ["codesign/docs/README.md", "codesign/AGENTS.md"]
+    },
+    {
+      "id": "service-credit",
+      "scope": "付费积分商品、资源包生命周期、用量查询与每日计费推量服务入口。",
+      "triggers": ["credit service", "积分服务", "积分包"],
+      "symbols": ["credit_package", "sendResource", "getUsedAmount"],
+      "path_prefixes": ["credit/"],
+      "must_read": ["docs/context/project/services/credit.md"],
+      "deferred_paths": ["credit/docs/README.md", "credit/AGENTS.md"]
     },
     {
       "id": "service-ctl",

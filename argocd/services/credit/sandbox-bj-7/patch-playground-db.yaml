@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: credit-config
+  namespace: credit
+data:
+  CREDIT_DB: credit_sandbox_bj_7
+  CREDIT_TOKEN_RATIO: "10000"
+  CREDIT_USAGE_WORKER_POLL_INTERVAL: "10s"
+  CREDIT_USAGE_WORKER_LEASE_DURATION: "30s"
+  CREDIT_USAGE_WORKER_BATCH_SIZE: "50"

@@ -64,6 +64,14 @@ const (
 	//   反向调 ctl /internal/ctl/passes/{pass_id}/modify 推进 pass.status active → modifying CAS
 	InterfaceNameCheckModify    = "lightvela.pass.checkModify"
 	InterfaceNameModifyResource = "lightvela.pass.modifyResource"
+
+	InterfaceNameCreditCheckCreate      = "lightvela.credit.checkCreate"
+	InterfaceNameCreditCreateResource   = "lightvela.credit.createResource"
+	InterfaceNameCreditGetAllAppIDs     = "lightvela.credit.getAllAppIds"
+	InterfaceNameCreditGetUserResources = "lightvela.credit.getUserResources"
+	InterfaceNameCreditQueryResource    = "lightvela.credit.queryResource"
+	InterfaceNameCreditIsolateResource  = "lightvela.credit.isolateResource"
+	InterfaceNameCreditGetUsedAmount    = "lightvela.credit.getUsedAmount"
 )
 
 // InstallStubHandlers 把仍未落地的 handler stub 注册到 dispatcher；
