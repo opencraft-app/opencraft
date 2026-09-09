@@ -7,7 +7,7 @@ import type { Pass, PassModifyOption, PassOrderStatus } from '@/domain/types';
 import { useT } from '@/i18n/t';
 import { getBillingErrorCode, resolveBillingErrorMessage } from '@/lib/billing-error';
 import { isGlobal } from '@/lib/region';
-import { isPassUpgradeVisible } from '@/lib/pass-upgrade-rollout';
+import { usePassUpgradeVisible } from '@/lib/pass-upgrade-rollout';
 import { buildPayPlan, type PayPlan } from '@/lib/wx-pay';
 import { isUpgradeDelivered, readUpgradeCheckout, saveUpgradeCheckout, upgradeCheckoutKey, validUpgradeQuote, type UpgradeCheckoutRecord } from '@/lib/upgrade-checkout';
 
@@ -19,7 +19,8 @@ const quoteFingerprint = (option: PassModifyOption) => JSON.stringify([option.ta
 /** Reuses the existing checkout visual language; no alternate catalog or payment mock. */
 export function UpgradePassModal({ pass, targetBundleId, onClose, onSuccess }: Props) {
   const { session } = useSession();
-  if (!isPassUpgradeVisible(session.user?.id)) return null;
+  const visible = usePassUpgradeVisible(session.user?.id);
+  if (!visible) return null;
   return <UpgradePassModalContent pass={pass} targetBundleId={targetBundleId} onClose={onClose} onSuccess={onSuccess} />;
 }
 
