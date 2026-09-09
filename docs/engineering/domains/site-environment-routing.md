@@ -1,5 +1,7 @@
 # 站点与环境路由领域
 
+Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url` 可选认证入口转交 CTL 验证短期票据；modify 桥接请求不附带另一浏览器用户的 Bearer/cookie。建单、恢复订单和重签票据仍要求登录，不能扩大到整个 Pass 路由。前端 API 和扫码域名必须属于同一目标测试环境。
+
 本领域覆盖国内/国际站、域名、locale、区域功能差异、环境 inventory 和对应 GitOps overlay。
 
 ## 稳定身份

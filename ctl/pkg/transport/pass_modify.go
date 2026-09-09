@@ -6,11 +6,11 @@ package transport
 //
 //	GET  /v1/passes/{pass_id}/modify/bundles      可变配套餐 + 实时差价
 //	POST /v1/passes/{pass_id}/modify/order        建单，返订单号
-//	POST /v1/passes/{pass_id}/modify/order-url    建单 + 拉支付页 URL
+//	POST /v1/passes/{pass_id}/modify/order-url    已有订单拉支付页 URL
 //	POST /v1/passes/{pass_id}/modify/order-and-pay 建单 + 代扣（仅联调 / e2e）
 //
-// 鉴权 X-User-Id，与续费三兄弟同范式。order / order-url 的分工沿用新购链路：
-// 前者只落单，后者一次拿到可直接跳转的支付页。
+// order 只落单；order-url 使用 X-User-Id 或绑定订单/pass 的 auth_code
+// 为已有订单拉支付页。payment-authorization 必须使用 X-User-Id。
 
 // ModifyBundleSetResult 是 GET /modify/bundles 的响应。
 //
@@ -46,7 +46,7 @@ type ModifyBundleDetail struct {
 	Credit         int64  `json:"credit"`           // 目标套餐的完整积分额度
 }
 
-// ModifyPassOrderRequest 是 /modify/order 与 /modify/order-url 的共用入参。
+// ModifyPassOrderRequest 是 /modify/order 的入参。
 //
 // 只带 target_bundle_id：source bundle、curDeadline、uin/appId 全部由 ctl 从 pass 实体
 // 反查，不接受前端透传——它们是计费账单的一部分，前端传错等于扣错钱。
@@ -56,9 +56,11 @@ type ModifyPassOrderRequest struct {
 }
 
 // ModifyPassOrderUrlResult 两步式下单的响应：订单号 + 支付页 URL。
-type ModifyPassOrderUrlResult struct {
-	DealName string `json:"deal_name"`
-	PayURL   string `json:"pay_url"`
+type ModifyPassOrderUrlRequest = CreatePassOrderUrlRequest
+type ModifyPassOrderUrlResult = CreatePassOrderUrlResult
+
+type ModifyPaymentAuthorizationResult struct {
+	AuthCode string `json:"auth_code"`
 }
 
 // ModifyPassOrderResult 是 /modify/order 与 /modify/order-and-pay 的共用响应。
@@ -67,6 +69,8 @@ type ModifyPassOrderUrlResult struct {
 // 一次完成下单 + 支付 + 触发 modifyResource 回调，本就没有支付页概念。
 // BigOrderID 只用于反查计费控制台排障。
 type ModifyPassOrderResult struct {
-	DealName   string `json:"deal_name"`
-	BigOrderID string `json:"big_order_id"`
+	DealName   string   `json:"deal_name"`
+	BigOrderID string   `json:"big_order_id"`
+	DealNames  []string `json:"deal_names"`
+	AuthCode   string   `json:"auth_code,omitempty"`
 }

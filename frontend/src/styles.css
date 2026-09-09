@@ -45,6 +45,21 @@
   --realname-control-border: #E9ECF1;
   --realname-control-muted: #F2F4F8;
 
+  --automation-tone-daily-bg: #F8F1ED;
+  --automation-tone-daily-text: #9A604A;
+  --automation-tone-productivity-bg: #F7F4EE;
+  --automation-tone-productivity-text: #8A6A2B;
+  --automation-tone-monitoring-bg: #EFF4F7;
+  --automation-tone-monitoring-text: #55708A;
+  --automation-tone-wellbeing-bg: #EFF7F2;
+  --automation-tone-wellbeing-text: #4A7A5F;
+  --automation-tone-learning-bg: #F2F0F7;
+  --automation-tone-learning-text: #6A5B8C;
+  --automation-skill-chip-bg: rgba(0, 0, 0, 0.055);
+  --automation-skill-chip-text: rgba(0, 0, 0, 0.75);
+  --automation-skill-unavailable-bg: rgba(245, 158, 11, 0.10);
+  --automation-skill-unavailable-text: #92400E;
+
   --accent-purple: #dcc6ff;
   --accent-purple-bg: rgba(219, 197, 255, 0.16);
   --accent-green-bg: #90fffd;

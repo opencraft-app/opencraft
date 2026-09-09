@@ -19,6 +19,23 @@ var oauthReturnToAllowedBaseDomains = []string{
 	"lightvela.com",
 }
 
+// Provider failures must return to the existing authorization transaction page,
+// not strand an App browser on the homepage. Never redirect directly to a native
+// scheme here: the public OIDC page owns cancellation after context validation.
+func (h *Handler) oauthFailureURL(request *http.Request, cookieName, fallback string) string {
+	target := h.readValidatedOAuthReturnToCookie(request, cookieName)
+	parsed, err := url.Parse(target)
+	failure, failureErr := url.Parse(fallback)
+	if err != nil || failureErr != nil || parsed.Scheme != "https" || parsed.Path != "/auth/federation/authorize" || parsed.Query().Get("response_type") != "code" {
+		return fallback
+	}
+	code := failure.Query().Get("oauth_error")
+	if code == "" {
+		return fallback
+	}
+	return appendOAuthErrorToReturnTo(target, code)
+}
+
 type oauthAllowedHostPattern struct {
 	prefix string
 	suffix string

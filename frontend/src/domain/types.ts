@@ -282,6 +282,33 @@ export interface BundlePrice {
   tax_price?: number;
 }
 
+/** ctl/pkg/transport/pass_modify.go: authoritative upgrade targets and live prices. */
+export interface PassModifyOption {
+  target_bundle_id: string;
+  bundle: { bundle_id: string; bundle_name: string; cpu: number; memory: number; system_disk_size: number; credit: number };
+  modify_price: BundlePrice;
+}
+export interface PassModifyBundles {
+  source_bundle_id: string;
+  modify_bundle_set: PassModifyOption[];
+}
+export interface PassModifyOrder {
+  deal_name: string;
+  big_order_id: string;
+  auth_code?: string;
+}
+export interface PassModifyCheckout {
+  checkout: { deal_name: string; big_order_id: string; target_bundle_id: string; local_status: string } | null;
+}
+/** ctl/pkg/transport/order.go; success alone does not guarantee local delivery. */
+export interface PassOrderStatus {
+  deal_name: string;
+  order_type: string;
+  status: 'pending' | 'paid' | 'success' | 'cancelled' | 'failed';
+  local_status?: string;
+  source: string;
+}
+
 export interface Bundle {
   bundle_id: string;
   bundle_name: string;
@@ -315,6 +342,8 @@ export interface Bundle {
 }
 
 export interface Pass {
+  /** Explicit lifecycle from ctl; upgrade completion must not infer it from expiry. */
+  status?: string;
   pass_id: string;
   user_id: string;
   bundle_id: string;

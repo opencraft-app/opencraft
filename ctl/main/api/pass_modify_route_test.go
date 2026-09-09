@@ -1,6 +1,8 @@
 package main
 
 import (
+	tradeadapter "ctl/pkg/adapter/trade"
+	"ctl/pkg/authcode"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +24,7 @@ type recordingModifyPassLogic struct {
 	lastUserID   string
 	lastPassID   string
 	lastOrderReq *transport.ModifyPassOrderRequest
+	lastURLReq   *transport.ModifyPassOrderUrlRequest
 }
 
 func (l *recordingModifyPassLogic) ListPassModifyBundles(userID, passID string) (*transport.ModifyBundleSetResult, error) {
@@ -66,14 +69,68 @@ func (l *recordingModifyPassLogic) ModifyPassOrderAndPay(
 }
 
 func (l *recordingModifyPassLogic) ModifyPassOrderUrl(
-	userID, passID string, req *transport.ModifyPassOrderRequest,
+	userID, passID string, req *transport.ModifyPassOrderUrlRequest,
 ) (*transport.ModifyPassOrderUrlResult, error) {
-	l.lastUserID, l.lastPassID, l.lastOrderReq = userID, passID, req
+	l.lastUserID, l.lastPassID, l.lastURLReq = userID, passID, req
 	return &transport.ModifyPassOrderUrlResult{DealName: "DEAL-MODIFY-1", PayURL: "https://pay.example/x"}, nil
+}
+
+func (l *recordingModifyPassLogic) ModifyPassPaymentAuthorization(userID, passID string, req *transport.ModifyPassOrderUrlRequest) (*transport.ModifyPaymentAuthorizationResult, error) {
+	l.lastUserID, l.lastPassID, l.lastURLReq = userID, passID, req
+	return &transport.ModifyPaymentAuthorizationResult{AuthCode: "fresh-ticket"}, nil
+}
+
+func TestModifyPaymentAuthorizationRequiresBearer(t *testing.T) {
+	for _, bearer := range []bool{false, true} {
+		l := &recordingModifyPassLogic{}
+		r := httptest.NewRequest(http.MethodPost, "/v1/passes/lhpass-r1/modify/payment-authorization", strings.NewReader(`{"deal_names":["existing-deal"],"auth_code":"old-ticket"}`))
+		if bearer {
+			r.Header.Set("X-User-Id", "usr_test")
+		}
+		w := httptest.NewRecorder()
+		modifyRouter(l).ServeHTTP(w, r)
+		want := http.StatusUnauthorized
+		if bearer {
+			want = http.StatusOK
+		}
+		if w.Code != want {
+			t.Fatalf("bearer=%v status=%d body=%s", bearer, w.Code, w.Body.String())
+		}
+		if bearer && (l.lastPassID != "lhpass-r1" || l.lastURLReq.DealNames[0] != "existing-deal") {
+			t.Fatal("refresh not forwarded")
+		}
+	}
 }
 
 func modifyRouter(l passlogic.Logic) http.Handler {
 	return newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{logic: l})
+}
+
+func (l *recordingModifyPassLogic) GetModifyCheckout(userID, passID string) (*tradeadapter.ModifyCheckoutResult, error) {
+	l.lastUserID, l.lastPassID = userID, passID
+	return &tradeadapter.ModifyCheckoutResult{}, nil
+}
+
+func TestModifyCheckoutRecoveryBearerOnly(t *testing.T) {
+	for _, loggedIn := range []bool{false, true} {
+		l := &recordingModifyPassLogic{}
+		r := httptest.NewRequest(http.MethodGet, "/v1/passes/pass/modify/checkout", nil)
+		if loggedIn {
+			r.Header.Set("X-User-Id", "owner")
+		}
+		w := httptest.NewRecorder()
+		modifyRouter(l).ServeHTTP(w, r)
+		want := http.StatusUnauthorized
+		if loggedIn {
+			want = http.StatusOK
+		}
+		if w.Code != want {
+			t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+		}
+		if loggedIn && (!strings.Contains(w.Body.String(), `"checkout":null`) || l.lastUserID != "owner" || l.lastPassID != "pass") {
+			t.Fatalf("bad recovery: %s", w.Body.String())
+		}
+	}
 }
 
 // TestModifyBundlesResponseMatchesAgreedShape 把 §5.1 的响应 JSON 逐字段钉死。
@@ -163,7 +220,6 @@ func TestModifyOrderRoutesForwardTargetBundle(t *testing.T) {
 		wantPayURL   string
 	}{
 		{"/v1/passes/lhpass-r1/modify/order", "DEAL-MODIFY-1", ""},
-		{"/v1/passes/lhpass-r1/modify/order-url", "DEAL-MODIFY-1", "https://pay.example/x"},
 		{"/v1/passes/lhpass-r1/modify/order-and-pay", "DEAL-MODIFY-PAID", ""},
 	}
 	for _, tc := range cases {
@@ -198,6 +254,21 @@ func TestModifyOrderRoutesForwardTargetBundle(t *testing.T) {
 				t.Errorf("pay_url = %q, want %q", envelope.Data.PayURL, tc.wantPayURL)
 			}
 		})
+	}
+}
+
+func TestModifyOrderURLUsesExistingOrderAndAuthCode(t *testing.T) {
+	store := &fakeAuthCodeStore{consumeRet: &authcode.Ticket{UserID: "usr_test", PassID: "lhpass-r1", DealNames: []string{"DEAL-MODIFY-1"}}}
+	withAuthCodeStore(t, store)
+	l := &recordingModifyPassLogic{}
+	r := httptest.NewRequest(http.MethodPost, "/v1/passes/lhpass-r1/modify/order-url", strings.NewReader(`{"deal_names":["DEAL-MODIFY-1"],"auth_code":"ticket","platform":"mobile","wx_open_id":"openid"}`))
+	w := httptest.NewRecorder()
+	modifyRouter(l).ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if l.lastURLReq == nil || l.lastURLReq.DealNames[0] != "DEAL-MODIFY-1" || l.lastUserID != "usr_test" || l.lastPassID != "lhpass-r1" {
+		t.Fatalf("incorrect checkout forwarding: %+v", l)
 	}
 }
 

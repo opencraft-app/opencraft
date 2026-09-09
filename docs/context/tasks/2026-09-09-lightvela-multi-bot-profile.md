@@ -106,6 +106,6 @@
 - Graphify 结果仅用于定位；行为结论以当前源码、Hermes 当前源码和测试为准。
 
 ## handoff
-- FE-AI 阶段：Hermes Profile 直读实现与本地验证完成，准备进入 verify 完成态。
+- FE-AI verify 已通过；archive 仍等待用户另行明确授权。
 - 当前步骤：已移除 Bot/Channel Binding 数据库 migration 与 DAO；前端、CTL、service-gateway、文档门禁与 5174 浏览器回归完成。
-- 未授权 commit、push、MR、发布或生产操作。
+- 用户已授权 commit、push 和创建 MR；MR !3801 已创建并同步最新 `master`，尚未合并、发布或执行生产操作。

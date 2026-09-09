@@ -83,6 +83,11 @@ routes:
           - https://localhost.lightvela.com
           - https://chat.lightvela.ai
           - https://localhost.lightvela.ai
+      - method: POST
+        path: "/v1/instances/{instance_id}/debug/exec"
+        allowed_origins:
+          - https://chat.lightvela.com
+          - https://chat.lightvela.ai
     require_realname: true
     response_header_timeout: 60s
   - name: sandbox-legacy
@@ -182,6 +187,8 @@ routes:
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: authenticated
     public_allow:
+      - method: POST
+        path: /auth/native/token
       - method: GET
         path: /auth/federation/context
       - method: POST

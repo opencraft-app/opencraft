@@ -42,6 +42,8 @@ import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { SavedCardsSection } from "./saved-cards-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
+import { usePassUpgrade } from "@/lib/use-pass-upgrade";
+import { UpgradePassModal } from "@/pages/marketing/upgrade-pass-modal";
 
 /* ─── animation variants ─── */
 
@@ -806,6 +808,10 @@ const SubscriptionSection = ({
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
   const canRenew = (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
   const canDelete = paidBillingActive && operablePass != null && canDeletePass(operablePass);
+  const upgrade = usePassUpgrade({ userId: session.user?.id, passId: operablePass?.pass_id, currentPass: operablePass, enabled: paidBillingActive });
+  const [showUpgradeProgress, setShowUpgradeProgress] = useState(false);
+  const [upgradeSucceededFor, setUpgradeSucceededFor] = useState<string | null>(null);
+  useEffect(() => { setShowUpgradeProgress(false); }, [upgrade.revisionKey]);
 
   const handleRenewSuccess = useCallback(async () => {
     setRenewModalOpen(false);
@@ -936,7 +942,7 @@ const SubscriptionSection = ({
           {t("订阅套餐")}
         </h3>
         {canRenew && operablePass && (
-          <div className="shrink-0">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {!renewalAvailable ? (
               <RenewComingSoonButton
                 label={t("立即续费")}
@@ -953,10 +959,18 @@ const SubscriptionSection = ({
                 {t("立即续费")}
               </button>
             )}
+            {upgrade.pass && upgrade.options.length > 0 && (
+              <AppLink to={`/subscribe/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`} className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-[#202020] transition-colors hover:bg-black/5">
+                {t("升级套餐")}
+              </AppLink>
+            )}
+            {upgrade.resume && <button type="button" className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-[#202020]" onClick={() => setShowUpgradeProgress(true)}>{t("查看升级进度")}</button>}
           </div>
         )}
       </div>
       <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">
+        {upgradeSucceededFor && upgradeSucceededFor === session.user?.id && <p role="status" className="text-sm">{t("套餐升级成功")}</p>}
+        {upgrade.error && <p role="alert" className="text-sm">{t("升级资格加载失败，请重试")} <button type="button" className="underline" onClick={upgrade.retry}>{t("重试")}</button></p>}
         {/* Current plan */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1114,6 +1128,7 @@ const SubscriptionSection = ({
 
       {/* 续费 / 销毁弹窗 — 国际站续费入口由 paidBillingEnabled 控制。 */}
       <AnimatePresence>
+        {showUpgradeProgress && upgrade.resume && <UpgradePassModal pass={upgrade.resume.pass} targetBundleId={upgrade.resume.record.targetBundleId} onClose={() => setShowUpgradeProgress(false)} onSuccess={async () => { setUpgradeSucceededFor(session.user?.id ?? null); setShowUpgradeProgress(false); await refreshPasses(); upgrade.retry(); }} />}
         {renewModalOpen && renewalAvailable && operablePass && (
           <RenewPassModal
             key="renew"

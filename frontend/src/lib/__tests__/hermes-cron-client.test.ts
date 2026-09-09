@@ -10,6 +10,7 @@ import {
   buildCronjobToolCommand,
   buildCreateCommand,
   buildEditCommand,
+  buildListAutomationBlueprintsCommand,
   buildTestRunMarker,
   buildZeroTokenScript,
   createCronJob,
@@ -29,6 +30,7 @@ import {
   parseLightVelaCronScript,
   parseZeroTokenScript,
   parseCronListOutput,
+  parseAutomationBlueprintCatalog,
   pickFallbackChannelFromStatusOutput,
   removeCronJobWithDependentRollback,
   removeManagedCronScriptIfUnreferenced,
@@ -46,6 +48,100 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   writeStoredAuthToken(null);
+});
+
+describe("Hermes automation blueprint catalog", () => {
+  it("builds one read-only runtime command for catalog entries and default Cron specs", () => {
+    const command = buildListAutomationBlueprintsCommand();
+
+    expect(command).toContain("from cron.blueprint_catalog import CATALOG, blueprint_catalog_entry, fill_blueprint");
+    expect(command).toContain('row["spec"] = fill_blueprint(blueprint, {})');
+    expect(command).toContain("except Exception:");
+    expect(command).toContain("continue");
+    expect(command).toContain("json.dumps(rows, ensure_ascii=False)");
+    expect(command).toContain("./venv/bin/python -B -c");
+    expect(command).not.toContain("write_text");
+    expect(command).not.toContain("create_job");
+  });
+
+  it("parses valid runtime blueprints and skips malformed rows", () => {
+    const result = parseAutomationBlueprintCatalog(JSON.stringify([
+      {
+        key: "morning-brief",
+        title: "Morning briefing",
+        description: "Calendar, weather, and urgent items.",
+        category: "daily",
+        tags: ["daily", "briefing"],
+        fields: [{
+          name: "time",
+          type: "time",
+          label: "What time?",
+          default: "08:00",
+          options: [],
+          optional: false,
+          strict: true,
+          help: "24h local time",
+        }],
+        scheduleHuman: "daily at 08:00",
+        spec: {
+          name: "Morning briefing",
+          prompt: "Produce a concise briefing.",
+          schedule: "0 8 * * *",
+          deliver: "origin",
+          skills: ["google-workspace"],
+        },
+      },
+      { key: "broken", title: "Broken" },
+    ]));
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      key: "morning-brief",
+      tags: ["daily", "briefing"],
+      spec: {
+        name: "Morning briefing",
+        schedule: "0 8 * * *",
+        deliver: "origin",
+        skills: ["google-workspace"],
+      },
+    });
+  });
+
+  it("normalizes optional runtime values without trusting invalid arrays", () => {
+    const [result] = parseAutomationBlueprintCatalog(JSON.stringify([{
+      key: "custom-reminder",
+      title: "Custom reminder",
+      description: "A reminder.",
+      category: "general",
+      tags: "reminder",
+      fields: [],
+      scheduleHuman: "daily at 14:00",
+      spec: {
+        name: "Custom reminder",
+        prompt: "Remember this.",
+        schedule: "0 14 * * *",
+      },
+    }]));
+
+    expect(result?.tags).toEqual([]);
+    expect(result?.spec.deliver).toBe("local");
+    expect(result?.spec.skills).toEqual([]);
+  });
+
+  it("parses the marked JSON payload even when the runtime prints a warning first", () => {
+    const [result] = parseAutomationBlueprintCatalog(`runtime warning\nLIGHTVELA_AUTOMATION_BLUEPRINT_CATALOG=${JSON.stringify([{
+      key: "morning-brief",
+      title: "Morning briefing",
+      description: "A briefing.",
+      category: "daily",
+      tags: [],
+      fields: [],
+      scheduleHuman: "daily at 08:00",
+      spec: { name: "Morning briefing", prompt: "Brief me.", schedule: "0 8 * * *" },
+    }])}`);
+
+    expect(result?.key).toBe("morning-brief");
+  });
 });
 
 describe("parseCronListOutput", () => {
