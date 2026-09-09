@@ -7,7 +7,7 @@ ROOT = next(p for p in Path(__file__).resolve().parents if (p / '.ci/runtime').i
 
 class UpgradeCheckoutGatewayTests(unittest.TestCase):
     def test_beijing_only_payment_url_allows_ticket_auth(self):
-        config = yaml.safe_load((ROOT / 'argocd/services/service-gateway/sandbox-bj-7/config.yaml').read_text())
+        config = yaml.safe_load((ROOT / 'argocd/services/service-gateway/beijing-sandbox/config.yaml').read_text())
         route = next(route for route in config['routes'] if route['name'] == 'ctl-passes')
         self.assertEqual(route['access'], 'authenticated')
         optional = {(rule['method'], rule['path']) for rule in route['optional_auth_allow']}

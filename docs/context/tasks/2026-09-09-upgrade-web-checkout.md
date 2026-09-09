@@ -1,6 +1,7 @@
 # 升配 Web checkout 与北京测试闭环
 
 ## 范围与基线
+- 发布目标：`beijing-sandbox` / `https://lightclaw.tech` API，原 `https://lightclaw.pages.dev` 测试前端。`playground/sandbox-bj-7` 存在同事积分包分支独立改动且缺少升配基线；只在本地检验合并后撤销，未向该分支推送，禁止覆盖其配置。
 - 用户授权：保留现有样式，完成账号升级入口、合法目标选择联动、实时差价确认、安全微信/国际支付、交付状态确认，并发布北京测试前后端。
 - 基线：master `56a28c9f8`；分支 `codex/pass-upgrade-web-checkout`；工作目录 `/private/tmp/mono2-release-check-630f`。
 - 不做：生产部署、计费配置/审批、新购业务重设计；不使用生产账号创建验证订单。
