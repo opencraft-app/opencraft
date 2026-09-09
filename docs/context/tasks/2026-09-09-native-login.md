@@ -1,10 +1,10 @@
 # Native Expo login callback
 
 ## goal
-Complete the Expo → Google OAuth → native callback → session exchange contract.
+Extend the existing unified OIDC authorization flow to Expo, including mobile layout and transaction ownership.
 
 ## non_goals
-- Production/GitOps changes, OIDC registry changes, TAT device registration.
+- Production/GitOps changes, new authentication providers, TAT device registration.
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - Current user request: fix native login returning to the website instead of the app.
@@ -18,7 +18,7 @@ Complete the Expo → Google OAuth → native callback → session exchange cont
 ## history_context
 - current_design_refs: `docs/engineering/domains/identity-access.md`.
 - relevant_evolution: current native client requests `opencraft://auth/lightvela`; production clears this return_to cookie. HTTPS return_to is retained (read-only probes on 2026-09-09).
-- superseded_refs: none.
+- superseded_refs: Google-only native start and provider callback overrides from 9c657c758; removed in this follow-up.
 
 ## acceptance
 - Exact redirect validation; failed PKCE and replay rejected; independent handlers share code state.
@@ -38,30 +38,35 @@ Complete the Expo → Google OAuth → native callback → session exchange cont
 | File | Reason | Use |
 |---|---|---|
 | `AGENTS.md` | repository rules | no production writes |
+| `frontend/AGENTS.md` | mobile authorization UI | focused tests and viewport validation |
+| `frontend/openspec/changes/2026-08-24-oidc-site-auth-spec.md` | existing OIDC design | extend clients, not providers |
 | `user/auth/AGENTS.md` | service rules | Argo-only release |
 | `service-gateway/AGENTS.md` | gateway policy tests | no direct production mutation |
 | `docs/context/domains/identity-access.md` | routed context | auth owns sessions |
 | `docs/engineering/domains/identity-access.md` | design | minimal, expiring credentials |
 | `docs/context/tasks/TASK-TEMPLATE.md` | task contract | this record |
 | `docs/context/tasks/CHECKPOINT-TEMPLATE.md` | checkpoint contract | handoff |
-| `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md` | nearest auth UI neighbor | inspected frontend/vitest.config.ts; no frontend changes planned |
+| `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md` | nearest auth UI neighbor | inspected frontend/vitest.config.ts and existing authorization tests; reuse authorization page |
 | `.agents/context/change-impact.json` | design impact | update identity design |
 
 ## evidence
 - Production start response clears native return_to; source only accepts allowed HTTP(S) targets.
 
 ## risks
-- Production code store must be shared MySQL, never per-process memory. Native namespace cannot consume OIDC codes.
+- Production code store must be shared MySQL. Native session adapter may consume only the registered native OIDC client grants; native JWT redemption is rejected.
 
 ## validation
-- `GOWORK=off go test ./...` and `go vet ./...` in user/auth and service-gateway passed with cached Go 1.25.4 (system Go 1.24.4 is too old).
-- Auth tests cover real stub-provider OAuth round trip, exact callback, S256 failure, expiry, namespace isolation, eight concurrent consumers/one success, provider error callback and OpenAPI validity.
-- Gateway tests prove only GET start and POST token bypass existing-session checks; wrong methods and /auth/session stay protected.
-- Expo PKCE unit tests 5/5, typecheck and native Release simulator build passed. Build is installed on iPhone 17 Pro; no claim of live login success before backend deployment.
-- Documentation validation passed; staged design-impact check is required before commit.
+- Latest auth and service-gateway full Go tests and vet pass with cached Go 1.25.4, GOWORK=off.
+- Auth covers unified authorize page without Google, unauthenticated denial, exact native callback, wrong verifier, expiry, eight concurrent consumers/one success, foreign-client isolation, disabled/unregistered native capability, and provider-error return preservation.
+- Expo native tests 8/8 pass; typecheck passes. Includes retired-owner cleanup and stale-callback saved-session restoration.
+- Frontend focused tests 37/37 pass; typecheck has 0 new diagnostics against the existing baseline (191 current, 276 baseline); full production build passes.
+- Chromium mobile geometry/click fixtures pass 320x568, 390x844, 844x390 and 390x280. Real authorization components/CSS, mocked account context and inactive login modal; not live provider authentication or an iOS keyboard test.
+- Logs: /tmp/native-oidc-{auth-all,auth-vet,gateway-all,gateway-vet,ui-tests,ui-types,ui-build,mobile-browser}.log; screenshots /tmp/native-oidc-browser.l10V2u/.
+- No frontend lint script exists. Generated font/next-env build changes restored; no unrelated generated files retained.
+- Previous simulator build was Google-only; this follow-up has NOT been rebuilt/installed on the Mac.
 
 ## decisions
-- Reuse the existing authorization-code storage primitive; isolate native-login client identity and exchange endpoint from OIDC token issuance.
+- Reuse OIDC authorization page, provider, registry and code store. A registered first-party session adapter is the only native redemption path; no new login page.
 
 ## scan_scope
 - auth HTTP, code store, bootstrap; Expo native account/routes.
@@ -70,20 +75,20 @@ Complete the Expo → Google OAuth → native callback → session exchange cont
 - No credential values retained.
 
 ## handoff
-- User authorized a backend MR. Prepare source MR to master; do not merge or change production/GitOps.
-- Deployment must expose GET /auth/native/start and POST /auth/native/token in the /auth public_allow policy and deploy the auth image. Current live 404 is expected until then.
+- User authorized local commits on 2026-09-09. Commit the OIDC follow-up and the separate Expo changes; do not push, merge or deploy.
+- Deployment must register the native OIDC client, preserve sites redirects, expose existing /oauth2 paths and only POST /auth/native/token in /auth public_allow. Remove old native/start deployment instructions.
 - Existing migration 000018 owns the reused authorization-code table; verify it exists in the target environment, do not auto-run migrations.
 - App source changes reside in /vela; backend MR does not include that separate repository.
 
 ## stage
-Implementation verified; preparing backend source MR.
+OIDC follow-up implemented and tested; preparing user-authorized local commits after staged checks.
 
 ## verified
-- Native credentials are issued only by the PKCE exchange; generic web return_to still rejects custom schemes.
+- Native credentials are issued only by the registered-client PKCE session adapter; generic web return_to still rejects custom schemes.
 - Source checkout began clean; all modifications in this MR belong to this task.
 
 ## unverified
-- Production rollout, real Google login through the updated public gateway, and live MySQL integration are not claimed.
+- Production rollout, actual IdP login/native callback, iOS binary build and live MySQL integration are not claimed for this follow-up.
 
 ## discard
 - Do not widen the domain allowlist or reuse TAT device-bind tokens for app login.
@@ -92,4 +97,4 @@ Implementation verified; preparing backend source MR.
 - Mac build: /Users/skipzhang/Developer/opencraft-expo-build; source app: /vela.
 
 ## next_action
-- Submit backend branch/MR, report release prerequisites without performing rollout.
+- Owner review and separately authorized push/release with OIDC client registration. No production or simulator rollout is implied by these local commits.

@@ -23,20 +23,35 @@
 
 ### 原生 App 登录
 
-原生登录的 HTTP 契约在 `user/auth/api/native-login.openapi.yaml`。注册回调固定为
-`opencraft://auth/lightvela`，不扩展通用 Web `return_to` 白名单。App 生成随机 state
-和 PKCE verifier，只把 S256 challenge 交给认证服务。Google 身份验证仍复用现有流程。
-原生回调只携带 code/state（失败时 error/state），不能携带 session_token。
-App 校验地址与 state 后，通过 TLS POST `/auth/native/token` 携 verifier 兑换正常会话。
+原生 App 是现有 OIDC 的第一方 public client，不是登录渠道。App 使用现有
+GET `/oauth2/authorize`，统一 `/auth/federation/authorize` 页面复用 LoginModal
+及其地区可用渠道；渠道成功返回该 HTTPS 页面后，经用户确认再由公共 OIDC
+POST `/oauth2/authorize` 签发 code。不新增登录页、Google 专属启动入口或 provider 回调分支。
 
-授权码属于认证服务，用现有 MySQL `oidc_authorization_codes` 存储和事务消费能力，
-固定独立 client/scope，120 秒过期且只能兑换一次。生产无进程内存降级，未配置共享
-存储时返回 503；不改变 OIDC registry、OIDC access token 或 TAT 设备绑定权限。
-App 的待完成事务保存在 SecureStore，10 分钟后过期；取消、完成和失败清理 verifier。
+在 `LIGHTCLAW_OIDC_CLIENTS_JSON` 中显式注册：
+`{"id":"opencraft-native-v1","display_name":"Vela","redirect_uris":["opencraft://auth/lightvela"]}`。
+保留 site-gateway 原有两个精确 HTTPS callback。只有该 native client 的这个精确
+自定义协议地址被允许；通用 Web return_to 不变，不支持通配、查询、fragment 或路径变体。
+OIDC 未启用、无 MySQL 或客户端未注册时不降级到其他认证实现。
 
-发布时需同步网关 `/auth` 路由的 `public_allow`：GET `/auth/native/start`、POST
-`/auth/native/token`。这两条公开入口分别由 OAuth state 和 PKCE 授权，不绕过其他
-业务 API 的会话门禁。当前源码实现不代表已更新生产网关或认证服务；需另行授权发布。
+App 持有随机 state/verifier，使用 S256、nonce、response_type=code、scope=openid profile。
+OIDC 服务校验客户端/地址/参数，MySQL 存储授权码及绑定关系并原子消费。原生 code 为
+256-bit base64url，120 秒过期；site-gateway 保留原有 5 秒寿命。
+原生回调仅 code/state 或 error/state。App 在 TLS POST `/auth/native/token` 携 verifier
+兑换正常 session（契约 `user/auth/api/native-login.openapi.yaml`）；这是受限的第一方
+会话适配器，不是第二个发码器。它固定 native client 并使用同一 OIDC Provider 消费。
+该客户端在标准 `/oauth2/token` 被拒绝，不能另取 JWT；其他 OIDC client 不能兑换普通
+App session。消费时重新核验 registry，不把 OIDC JWT 冒充现有 API session_token。
+
+SecureStore 待完成事务寿命 10 分钟。进程共享存储串行化写入及 compare/delete，
+旧 owner 仅可删除自己创建的记录；过期/伪造 callback 不得阻断已有 session 恢复。
+授权页与登录弹窗共用受 visualViewport 约束的可滚动容器，支持小屏、键盘和长账号。
+取消返回已经由服务端校验的 callback/state，不绕过移动浏览器的微信渠道限制。
+
+部署需单独授权：启用现有 OIDC 配置和 MySQL code table，增加 native client 注册，
+确保既有 /oauth2 路由可达，并仅增加 POST /auth/native/token 的公开兑换规则。
+不要公开整个 /auth，不再增加 GET /auth/native/start。服务端、授权页面及 App
+须一起验证；源码测试不等于生产发布或真实 IdP 登录成功。
 
 API 真源是 `user/auth/api/openapi.yaml`，Shadow 的实现/架构在 `shadow/internal/` 和 `shadow/ARCHITECTURE.md`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
 

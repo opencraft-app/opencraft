@@ -20,7 +20,7 @@ func TestNativeLoginPublicRulesAreExact(t *testing.T) {
 	defer auth.Close()
 	handler, err := NewHandler(Config{AuthServiceURL: auth.URL, Routes: []Route{{
 		Name: "auth", Prefix: "/auth/", Upstream: upstream.URL, Access: AccessAuthenticated,
-		PublicAllow: []PublicRule{{Method: "GET", Path: "/auth/native/start"}, {Method: "POST", Path: "/auth/native/token"}},
+		PublicAllow: []PublicRule{{Method: "POST", Path: "/auth/native/token"}},
 	}}})
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestNativeLoginPublicRulesAreExact(t *testing.T) {
 		method, path string
 		allowed      bool
 	}{
-		{"GET", "/auth/native/start", true}, {"POST", "/auth/native/token", true},
+		{"GET", "/auth/native/start", false}, {"POST", "/auth/native/token", true},
 		{"GET", "/auth/native/token", false}, {"POST", "/auth/native/start", false}, {"GET", "/auth/session", false},
 	} {
 		before := calls

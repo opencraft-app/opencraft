@@ -1,8 +1,9 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
+	"crypto/ed25519"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/gin-gonic/gin"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/oidc"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 )
@@ -28,139 +28,174 @@ func TestNativeLoginOpenAPIContract(t *testing.T) {
 	}
 }
 
-func nativeTestParams() url.Values {
-	return url.Values{"redirect_uri": {nativeRedirectURI}, "state": {strings.Repeat("s", 43)}, "code_challenge": {oidc.S256Challenge(strings.Repeat("v", 43))}, "code_challenge_method": {"S256"}}
+func TestProviderFailurePreservesOnlyValidatedOIDCPage(t *testing.T) {
+	h := NewHandler(nil, true, http.SameSiteLaxMode, time.Hour, nil, nil, nil, nil, "", nil)
+	fallback := "https://lightvela.com/?oauth_error=login_failed"
+	target := "https://lightvela.com/auth/federation/authorize?response_type=code&state=app-state&code_challenge=challenge"
+	for _, name := range []string{googleOAuthReturnToCookieName, githubOAuthReturnToCookieName, qqOAuthReturnToCookieName, wechatOAuthReturnToCookieName} {
+		request := httptest.NewRequest("GET", "https://api.lightvela.com/callback", nil)
+		request.AddCookie(&http.Cookie{Name: name, Value: target})
+		result, _ := url.Parse(h.oauthFailureURL(request, name, fallback))
+		if result.Path != "/auth/federation/authorize" || result.Query().Get("state") != "app-state" || result.Query().Get("code_challenge") != "challenge" || result.Query().Get("oauth_error") != "login_failed" {
+			t.Fatal("lost OIDC transaction")
+		}
+		for _, bad := range []string{oidc.NativeRedirectURI, "https://evil.example/auth/federation/authorize?response_type=code"} {
+			req := httptest.NewRequest("GET", "https://api.lightvela.com/callback", nil)
+			req.AddCookie(&http.Cookie{Name: name, Value: bad})
+			if got := h.oauthFailureURL(req, name, fallback); got != fallback {
+				t.Fatal("unsafe failure redirect")
+			}
+		}
+	}
 }
 
-func TestNativeLoginRoundTripAcrossHandlers(t *testing.T) {
-	store := service.NewMemoryStore(service.StoreOptions{SeedDefaultInvites: true})
-	svc := service.NewWithStore(store, service.Options{SessionTTL: time.Hour})
-	codes := oidc.NewMemoryCodeStore(time.Now)
-	config := ServerConfig{SessionTTL: time.Hour, NativeLoginCodes: codes, GoogleOAuth: &GoogleOAuthConfig{
-		ClientID: "test-client", ClientSecret: "test-secret", RedirectURI: "https://api.lightvela.ai/auth/oauth/google/callback",
-		FrontendBaseURL: "https://lightvela.ai", Client: &stubGoogleOAuthClient{},
-	}}
-	router := NewRouter(svc, config)
-	start := performJSONRequest(t, router, "GET", "/auth/native/start?"+nativeTestParams().Encode(), nil)
-	if start.Code != 307 {
-		t.Fatalf("start status %d", start.Code)
+func TestNativeOIDCUsesUnifiedAuthorizationAndSessionAdapter(t *testing.T) {
+	now := time.Now().UTC()
+	registry, err := oidc.NewRegistry([]oidc.Client{
+		{ID: oidc.NativeClientID, DisplayName: "Vela", RedirectURIs: []string{oidc.NativeRedirectURI}},
+		{ID: "web", DisplayName: "Web", RedirectURIs: []string{"https://web.example/callback"}},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	provider, _ := url.Parse(start.Header().Get("Location"))
-	callback := performJSONRequest(t, router, "GET", "/auth/oauth/google/callback?code=test&state="+url.QueryEscape(provider.Query().Get("state")), nil, start.Result().Cookies()...)
-	if callback.Code != 307 {
-		t.Fatalf("callback status %d", callback.Code)
+	provider := oidc.NewProvider(oidc.ProviderConfig{
+		Issuer: "https://auth.example", Registry: registry,
+		CodeStore:    oidc.NewMemoryCodeStore(func() time.Time { return now }),
+		SigningKeyID: "test", SigningKey: ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, 32)),
+		Now: func() time.Time { return now }, CodeTTL: 5 * time.Second,
+	})
+	svc := service.NewWithStore(service.NewMemoryStore(service.StoreOptions{SeedDefaultInvites: true}), service.Options{SessionTTL: time.Hour})
+	config := ServerConfig{FrontendBaseURL: "https://lightvela.ai", SessionTTL: time.Hour, OIDC: &OIDCConfig{Provider: provider}}
+	router, other := NewRouter(svc, config), NewRouter(svc, config)
+	// No Google/provider configuration: any existing authenticated web session works.
+	signUp := performJSONRequest(t, router, "POST", "/auth/password/sign-up", map[string]any{
+		"name": "Native", "email": "native@example.com", "password": "password123", "inviteCode": "VALID2026",
+	})
+	cookie := sessionCookieFromRecorder(t, signUp)
+	params := url.Values{
+		"client_id": {oidc.NativeClientID}, "redirect_uri": {oidc.NativeRedirectURI},
+		"response_type": {"code"}, "scope": {"openid profile"}, "state": {"test-state"}, "nonce": {"test-nonce"},
+		"code_challenge": {oidc.S256Challenge(strings.Repeat("v", 43))}, "code_challenge_method": {"S256"},
 	}
-	target, _ := url.Parse(callback.Header().Get("Location"))
-	if target.Scheme != "opencraft" || target.Host != "auth" || target.Path != "/lightvela" || target.Fragment != "" || len(target.Query()) != 2 || target.Query().Get("state") != nativeTestParams().Get("state") || len(target.Query().Get("code")) != 64 {
-		t.Fatal("callback must carry only a native code and correlated state")
+	start := performJSONRequest(t, router, "GET", "/oauth2/authorize?"+params.Encode(), nil)
+	if start.Code != 302 {
+		t.Fatalf("start: %d", start.Code)
 	}
-	// A new handler/replica sees the same authoritative code store.
-	other := NewRouter(svc, config)
-	body := map[string]any{"code": target.Query().Get("code"), "code_verifier": strings.Repeat("x", 43), "redirect_uri": nativeRedirectURI}
-	wrong := performJSONRequest(t, other, "POST", "/auth/native/token", body)
-	if wrong.Code != 400 {
-		t.Fatalf("wrong verifier status %d", wrong.Code)
+	target, _ := url.Parse(start.Header().Get("Location"))
+	if target.Host != "lightvela.ai" || target.Path != "/auth/federation/authorize" || target.Query().Encode() != params.Encode() {
+		t.Fatal("must reuse unified OIDC page")
 	}
-	body["code_verifier"] = strings.Repeat("v", 43)
-	var success atomic.Int32
+	request := map[string]any{}
+	for k, v := range params {
+		request[k] = v[0]
+	}
+	denied := performJSONRequest(t, router, "POST", "/oauth2/authorize", request)
+	if denied.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated grant: %d", denied.Code)
+	}
+	issue := func() string {
+		result := performJSONRequest(t, router, "POST", "/oauth2/authorize", request, cookie)
+		if result.Code != 200 {
+			t.Fatalf("authorize: %d", result.Code)
+		}
+		var body struct {
+			RedirectURL string `json:"redirect_url"`
+		}
+		decodeJSONResponse(t, result, &body)
+		callback, _ := url.Parse(body.RedirectURL)
+		if callback.Scheme != "opencraft" || callback.Query().Get("state") != "test-state" || len(callback.Query()) != 2 {
+			t.Fatal("invalid callback")
+		}
+		return callback.Query().Get("code")
+	}
+	code := issue()
+	input := map[string]any{"code": code, "code_verifier": strings.Repeat("x", 43), "redirect_uri": oidc.NativeRedirectURI}
+	if result := performJSONRequest(t, other, "POST", "/auth/native/token", input); result.Code != 400 {
+		t.Fatal("wrong verifier accepted")
+	}
+	// Native code cannot also mint site/OIDC JWTs.
+	jwt := performFormRequest(t, other, "POST", "/oauth2/token", url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {oidc.NativeClientID}, "redirect_uri": {oidc.NativeRedirectURI},
+		"code": {code}, "code_verifier": {strings.Repeat("v", 43)},
+	})
+	if jwt.Code != 400 {
+		t.Fatal("native JWT redemption accepted")
+	}
+	input["code_verifier"] = strings.Repeat("v", 43)
+	now = now.Add(10 * time.Second) // Must survive mobile cold-start delay, unlike sites' five-second TTL.
+	var successes atomic.Int32
 	var wg sync.WaitGroup
-	for range 8 {
+	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r := performJSONRequest(t, other, "POST", "/auth/native/token", body)
-			if r.Code == 200 {
-				success.Add(1)
-				var result struct {
+			result := performJSONRequest(t, other, "POST", "/auth/native/token", input)
+			if result.Code == 200 {
+				successes.Add(1)
+				if result.Header().Get("Cache-Control") != "no-store" || len(result.Result().Cookies()) != 0 {
+					t.Error("unsafe credential response")
+				}
+				var body struct {
 					Token string `json:"session_token"`
 				}
-				if json.Unmarshal(r.Body.Bytes(), &result) != nil || result.Token == "" {
-					t.Error("missing exchanged session")
+				decodeJSONResponse(t, result, &body)
+				if _, err := svc.CurrentSession(context.Background(), body.Token); err != nil {
+					t.Error("invalid session")
 				}
-				if _, err := svc.CurrentSession(context.Background(), result.Token); err != nil {
-					t.Error("exchanged session is not usable")
-				}
-				if r.Header().Get("Cache-Control") != "no-store" {
-					t.Error("credential response must not be cached")
-				}
-			} else if r.Code != 400 {
-				t.Errorf("exchange status %d", r.Code)
+			} else if result.Code != 400 {
+				t.Errorf("exchange: %d", result.Code)
 			}
 		}()
 	}
 	wg.Wait()
-	if success.Load() != 1 {
-		t.Fatalf("successful exchanges %d", success.Load())
+	if successes.Load() != 1 {
+		t.Fatal("grant must be consumed once across handlers")
 	}
-	// Provider failures must also return to the native owner, not strand a browser.
-	badStart := performJSONRequest(t, router, "GET", "/auth/native/start?"+nativeTestParams().Encode(), nil)
-	failed := performJSONRequest(t, router, "GET", "/auth/oauth/google/callback?error=access_denied", nil, badStart.Result().Cookies()...)
-	errorTarget, _ := url.Parse(failed.Header().Get("Location"))
-	if errorTarget.Scheme != "opencraft" || errorTarget.Query().Get("error") != "login_failed" || errorTarget.Query().Get("state") != nativeTestParams().Get("state") {
-		t.Fatal("provider failure must return a correlated native error")
+	input["code"] = issue()
+	now = now.Add(121 * time.Second)
+	if result := performJSONRequest(t, other, "POST", "/auth/native/token", input); result.Code != 400 {
+		t.Fatal("expired code accepted")
+	}
+	webSession, err := svc.CurrentSession(context.Background(), cookie.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	webCode, err := provider.CreateAuthorizationCode(context.Background(), webSession.User.ID, oidc.AuthorizeRequest{
+		ClientID: "web", RedirectURI: "https://web.example/callback", ResponseType: "code",
+		Scope: "openid", State: "web-state", Nonce: "web-nonce",
+		CodeChallenge: oidc.S256Challenge(strings.Repeat("v", 43)), CodeChallengeMethod: "S256",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input["code"] = webCode.Code
+	if result := performJSONRequest(t, other, "POST", "/auth/native/token", input); result.Code != 400 {
+		t.Fatal("web grant minted native session")
+	}
+	if _, err := provider.ConsumeAuthorizationCode(context.Background(), oidc.TokenRequest{
+		GrantType: "authorization_code", ClientID: "web", RedirectURI: "https://web.example/callback",
+		Code: webCode.Code, CodeVerifier: strings.Repeat("v", 43),
+	}); err != nil {
+		t.Fatal("wrong client attempt burned the web grant")
+	}
+	if result := performJSONRequest(t, router, "GET", "/auth/native/start", nil); result.Code != 404 {
+		t.Fatal("legacy Google entry still exposed")
+	}
+	if got := NewHandler(svc, true, http.SameSiteLaxMode, time.Hour, nil, nil, nil, nil, "", nil).validatedReturnToURL(oidc.NativeRedirectURI); got != "" {
+		t.Fatal("web allowlist widened")
 	}
 }
 
-func TestNativeLoginRejectsUnsafeTargets(t *testing.T) {
-	params := nativeTestParams()
-	params.Del("redirect_uri")
-	valid := nativeRedirectURI + "?" + params.Encode()
-	if _, ok := nativeLoginTarget(valid); !ok {
-		t.Fatal("valid target rejected")
-	}
-	for _, raw := range []string{
-		strings.Replace(valid, "opencraft:", "evil:", 1), strings.Replace(valid, "//auth/", "//auth.evil/", 1),
-		strings.Replace(valid, "//auth/", "//user@auth/", 1), strings.Replace(valid, "/lightvela?", "/lightvela/../other?", 1),
-		valid + "&state=other", valid + "&session_token=bad", valid + "#fragment", strings.Replace(valid, "S256", "plain", 1),
-		nativeRedirectURI, strings.Replace(valid, "/lightvela?", "/%6cightvela?", 1),
-	} {
-		if _, ok := nativeLoginTarget(raw); ok {
-			t.Fatal("unsafe native callback accepted")
-		}
-	}
-	if validatedReturnToURL(valid) != "" {
-		t.Fatal("native target leaked into generic session-token redirect allowlist")
-	}
-}
-
-func TestNativeLoginExpiryNamespaceAndDisabled(t *testing.T) {
-	codes := oidc.NewMemoryCodeStore(time.Now)
-	router := NewRouter(nil, ServerConfig{NativeLoginCodes: codes})
-	for _, tc := range []struct {
-		name, client string
-		expiry       time.Time
-	}{
-		{"expired", nativeClientID, time.Now().Add(-time.Second)},
-		{"oidc", "site-gateway", time.Now().Add(time.Minute)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			code := strings.Repeat("a", 64)
-			_ = codes.CreateAuthorizationCode(context.Background(), oidc.CreateAuthorizationCodeInput{
-				Code: code, ClientID: tc.client, UserID: "user", RedirectURI: nativeRedirectURI,
-				CodeChallenge: oidc.S256Challenge(strings.Repeat("v", 43)), Scope: "native:session", ExpiresAt: tc.expiry,
-			})
-			r := performJSONRequest(t, router, "POST", "/auth/native/token", map[string]any{"code": code, "code_verifier": strings.Repeat("v", 43), "redirect_uri": nativeRedirectURI})
-			if r.Code != 400 {
-				t.Fatalf("status %d", r.Code)
-			}
-		})
+func TestNativeSessionExchangeFailsClosedWithoutOIDC(t *testing.T) {
+	router, _ := newOIDCHTTPTestRouter(t) // Contains only site-gateway, not the native client.
+	result := performJSONRequest(t, router, "POST", "/auth/native/token", map[string]any{
+		"code": strings.Repeat("a", 43), "code_verifier": strings.Repeat("v", 43), "redirect_uri": oidc.NativeRedirectURI,
+	})
+	if result.Code != 400 {
+		t.Fatalf("unregistered client: %d", result.Code)
 	}
 	disabled := NewRouter(nil, ServerConfig{})
-	for _, methodPath := range [][2]string{{"GET", "/auth/native/start"}, {"POST", "/auth/native/token"}} {
-		r := httptest.NewRecorder()
-		req := httptest.NewRequest(methodPath[0], methodPath[1], nil)
-		disabled.ServeHTTP(r, req)
-		if r.Code != http.StatusServiceUnavailable {
-			t.Fatalf("disabled status %d", r.Code)
-		}
-	}
-	// Start validates before invoking the provider.
-	h := &Handler{nativeCodes: codes, googleOAuth: &googleOAuth{}}
-	r := gin.New()
-	r.GET("/auth/native/start", h.StartNativeLogin)
-	p := nativeTestParams()
-	p.Set("redirect_uri", "evil://auth/lightvela")
-	if out := performJSONRequest(t, r, "GET", "/auth/native/start?"+p.Encode(), nil); out.Code != 400 {
-		t.Fatal("unsafe redirect accepted")
+	if result := performJSONRequest(t, disabled, "POST", "/auth/native/token", nil); result.Code != 503 {
+		t.Fatal("disabled OIDC did not fail closed")
 	}
 }

@@ -2,6 +2,24 @@ package oidc
 
 import "testing"
 
+func TestNativeRedirectIsAnExplicitClientCapability(t *testing.T) {
+	registry, err := NewRegistry([]Client{{ID: NativeClientID, DisplayName: "Vela", RedirectURIs: []string{NativeRedirectURI}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.ValidateRedirectURI(NativeClientID, NativeRedirectURI); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{"opencraft://evil/lightvela", NativeRedirectURI + "?x=1", NativeRedirectURI + "/", "opencraft://auth/%6cightvela", "opencraft://user@auth/lightvela"} {
+		if _, err := registry.ValidateRedirectURI(NativeClientID, raw); err == nil {
+			t.Fatal("nonexact callback accepted")
+		}
+	}
+	if _, err := NewRegistry([]Client{{ID: "web", DisplayName: "Web", RedirectURIs: []string{NativeRedirectURI}}}); err == nil {
+		t.Fatal("custom scheme allowed for web client")
+	}
+}
+
 func TestRegistryAcceptsExactRedirectURIsOnly(t *testing.T) {
 	t.Parallel()
 

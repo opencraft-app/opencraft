@@ -14,7 +14,6 @@ import (
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
-	"github.com/openclaw/openclaw/mono/backend/auth/internal/oidc"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
@@ -42,7 +41,6 @@ type Handler struct {
 	frontendBaseURL   string
 	federation        *FederationConfig
 	oidc              *OIDCConfig
-	nativeCodes       oidc.CodeStore
 }
 
 type invitePrepareRequest struct {
@@ -88,11 +86,6 @@ func NewHandler(authService *service.Service, cookieSecure bool, cookieSameSite 
 func (h *Handler) validatedReturnToURL(rawURL string) string {
 	if h == nil {
 		return validatedReturnToURL(rawURL)
-	}
-	if h.nativeCodes != nil {
-		if _, ok := nativeLoginTarget(rawURL); ok {
-			return rawURL
-		}
 	}
 	return validatedReturnToURLWithAllowlist(rawURL, h.returnToAllow)
 }
