@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -236,13 +236,14 @@ describe("AccountPage global renewal action", () => {
     expect(await screen.findByRole("link", { name: "升级套餐" })).toHaveAttribute("href", "/subscribe/?upgrade_pass_id=pass_global_renew");
     expect(screen.getByRole("button", { name: "立即续费" })).toBeEnabled();
   });
-  it("can reopen a pending upgrade while the source pass is modifying", async () => {
+  it("does not expose a progress button or reopen payment automatically", async () => {
     activePass = { ...buildActivePass(), status: "modifying" };
     listMyPasses.mockResolvedValue([activePass]);
     saveUpgradeCheckout(window.localStorage, currentUser.id, activePass.pass_id, { phase: "ordered", targetBundleId: "target", dealName: "deal" });
     renderAccountPage();
-    await userEvent.click(await screen.findByRole("button", { name: "查看升级进度" }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent("Upgrade target");
+    await waitFor(() => expect(listMyPasses).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "查看升级进度" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "升级套餐" })).not.toBeInTheDocument();
   });
 
