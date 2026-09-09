@@ -29,6 +29,22 @@
 
 API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复。同 SP 升配还须覆盖 `modifyResource` 早于/晚于订单落库两种竞态、CTL 完成回调重试，以及订单、flow、Pass、配额和网关权益的联合终态。
 
+## 计费代理认证边界
+
+Trade 到 CloudLadder Gateway 的计费出向请求使用调用方 HMAC，签名覆盖 caller、route、
+HTTP method、上游 path、query、时间戳和 body SHA256。签名只保护 Trade 到代理这一跳，
+不等同于 jifei 请求体内的 `interface.auth`，也不能替代腾讯云 API 自身签名。
+
+CloudLadder 认证按 `disabled`、`optional`、`required` 三态迁移。`optional` 允许完全无签名
+请求继续通过，但只要出现任一认证头，就必须完整验签；因此它用于确认合法流量已标记为
+`caller=lightvela-trade`，不能宣称已经阻断匿名访问。只有客户端、环境密钥和路由授权全部
+收敛后才能切 `required`，敏感计费出向路由不得保留在匿名白名单。
+
+jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们在 `required` 阶段必须
+作为明确的回调路由豁免，不能因出向认证收口而中断；回调真实性由各自原生回调协议负责。
+在 `billing_auth` 算法和真实样本尚未完成一致性验证前，不得猜测实现并直接拒绝生产回调。
+匿名豁免只解决兼容性，不代表回调来源已经可信。
+
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 
 ## 同 SP 升配回调参数边界（2026-09-07）

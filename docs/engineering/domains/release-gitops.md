@@ -66,6 +66,22 @@ StatefulSetPlus manifest 中的
 `statefulsetplus*.yaml` 中，不通过修改共享路由默认值实现。修改 testing 默认回调时，
 不得连带修改 prod、staging 或地域专用的 `jifei-callback-<region>` 路由。
 
+## CloudLadder HMAC 分阶段发布
+
+CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直接全局切换到 `required`：
+
+1. 先发布 `optional` 网关。无签名旧客户端继续工作，携带部分或错误签名的请求被拒绝。
+2. 再发布 Trade 等调用方签名，并从网关审计确认正常请求稳定显示已验证 caller。
+3. 为每个环境核对调用方 Secret 与对应 tkex 网关 Secret 的安全摘要一致；不得输出明文。
+4. 将计费、Credit、账号回调和测试 devtunnel 明确归入兼容路由，避免强认证误拦外部回调。
+5. 从匿名白名单移除 jifei、点石和 Billing CloudAPI 等敏感出向路由，完成负向探测后再切
+   `required`。
+
+密钥交付继续遵循 SSM → `master` SOPS → `gitops` SOPS → Argo Sync。只更新 SSM 不会改变
+运行中 Pod；只发布 Trade 而未发布支持相同签名协议的 CloudLadder，也不能作为切换完成。
+`required` 放行前必须同时证明：匿名敏感路由返回 401、合法签名请求成功、计费回调仍成功，
+并检查目标环境没有遗留未配置 HMAC 的 Trade 实例。
+
 ## Secret 交付
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
