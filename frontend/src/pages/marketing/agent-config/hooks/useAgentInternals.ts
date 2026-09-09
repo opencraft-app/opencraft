@@ -33,7 +33,10 @@ export interface IAgentInternalsResult {
 
 export function useAgentInternals(props: IAgentComponentBaseProps): IAgentInternalsResult {
   const productConfig = props.productConfig ?? createLighthouseConfig();
-  const internalScriptCommands = useMemo(() => createAgentScriptCommands(), []);
+  const internalScriptCommands = useMemo(
+    () => createAgentScriptCommands(props.instance.ProfileId),
+    [props.instance.ProfileId],
+  );
   const scriptCommands = props.scriptCommands ?? internalScriptCommands;
   const executor = useMemo<ICommandExecutor>(
     () => props.commandExecutor ?? {

@@ -37,7 +37,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(tabsStart).toBeGreaterThanOrEqual(0);
     expect(navStart).toBeGreaterThan(tabsStart);
     expect(page).toContain('role="tablist"');
-    expect(page).toContain('aria-selected={sidebarTab === "chat"}');
+    expect(page).toContain('aria-selected={sidebarTab === "chat" && isActiveBotDefault}');
     expect(page).toContain('aria-selected={sidebarTab === "settings"}');
   });
 
@@ -105,6 +105,19 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("setSelectedChatId(chatSessions[0]?.chatId)");
   });
 
+  it("restricts AgentChat to the main Bot", () => {
+    const page = readPageSource();
+    const styles = readStylesSource();
+
+    expect(page).toContain("if (!isActiveBotDefault) return;");
+    expect(page).toContain('disabled={!isActiveBotDefault}');
+    expect(page).toContain('t("AgentChat 目前仅支持主 Bot")');
+    expect(page).toContain('activeSection !== "chat" || !isActiveBotDefault');
+    expect(page).toContain('activeSection === "chat" && isActiveBotDefault &&');
+    expect(page).toContain('activeSection === "chat" && !selectedBot?.isDefault ? "channel" : activeSection');
+    expect(styles).toContain(".lv-agents-sidebar-tab:disabled");
+  });
+
   it("derives the initial tab from the current route", () => {
     expect(readPageSource()).toContain(
       'activeSection === "chat" ? "chat" : "settings"',
@@ -132,6 +145,44 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(profile).toContain("<Trash2");
     expect(profile).not.toContain("lv-agent-action-menu");
     expect(profile).not.toContain('t("更多操作")');
+  });
+
+  it("renders the Bot switcher as an overlay popover instead of in sidebar flow", () => {
+    const page = readPageSource();
+
+    expect(page).toContain("<Popover");
+    expect(page).toContain("<PopoverTrigger asChild>");
+    expect(page).toContain("<PopoverContent");
+    expect(page).toContain("w-[var(--radix-popover-trigger-width)]");
+    expect(page).toContain("bg-white/[0.46]");
+    expect(page).toContain("backdrop-blur-sm");
+    expect(page).not.toContain("visibleBots.length > 1 && isAgentMenuOpen &&");
+  });
+
+  it("creates another Bot inside an existing instance without requiring a new subscription", () => {
+    const page = readPageSource();
+
+    expect(page).toContain("if (activeBot || isSubscribed)");
+    expect(page).toContain('navigate("/subscribe")');
+    expect(page).toContain("max-w-[42rem]");
+    expect(page).not.toContain('t("用途说明")');
+    expect(page).toContain("isCreateAdvancedOpen");
+    expect(page).toContain('aria-controls="create-bot-advanced-settings"');
+    expect(page).toContain('className="flex w-full items-center gap-1.5 text-sm font-medium');
+    expect(page).toContain('className="mt-5 flex justify-end gap-2"');
+    expect(page).toContain("const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id)");
+    expect(page).toContain('isActiveBotDefault ? "grid-cols-2" : "grid-cols-3"');
+    expect(page).toContain('isActiveBotDefault ? t("复制当前（主 Bot）") : t("复制当前")');
+    expect(page).toContain('...(!isActiveBotDefault ? [["clone-main", t("复制主 Bot")] as const] : [])');
+    expect(page).toContain('>{t("创建 Bot")}</h3>');
+    expect(page).toContain(': t("确认创建")}');
+    expect(page.match(/t\("新建 Bot"\)/g)).toHaveLength(1);
+    expect(page).not.toContain('className="lv-agent-create-button"');
+    expect(page).not.toContain('t("立即创建")');
+    expect(page).not.toContain('t("创建智能体")');
+    expect(page).toContain('t("新 Bot 会继承模型、人设、技能、用户偏好和长期记忆；不会继承当前对话、历史会话、运行状态或通道连接。")');
+    expect(page).not.toContain("Memory、User Profile");
+    expect(page).not.toContain("Channel 凭证或 Home Channel");
   });
 
   it("normalizes backend and SDK default copy before rendering the sidebar", () => {
@@ -188,9 +239,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
       styles.indexOf(".lv-agent-create-button"),
     );
 
-    expect(page).toContain("const restartTooltip = t(\"重启\")");
-    expect(page).toContain("const deleteTooltip = t(\"删除\")");
-    expect(page).toContain('className={cn("h-3.5 w-3.5", isActiveBotRestarting && "animate-spin")}');
+    expect(page).toContain('const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启")');
+    expect(page).toContain('const deleteTooltip = activeBot.isDefault ? t("默认 Bot 不能删除") : t("删除")');
+    expect(page).toContain('className={cn("h-3.5 w-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")}');
     expect(page).toContain('className="h-3.5 w-3.5"');
     expect(page).toContain('className="lv-agent-action-item"');
     expect(page).toContain('className="lv-agent-action-tooltip"');

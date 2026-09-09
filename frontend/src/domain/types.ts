@@ -53,6 +53,18 @@ export const REALNAME_LEVEL = {
 
 export interface Bot {
   id: string;
+  instanceId?: string;
+  profileId?: string;
+  isDefault?: boolean;
+  description?: string;
+  createdFrom?: "blank" | "clone";
+  sourceBotId?: string;
+  weixinOwner?: {
+    botId: string;
+    profileId: string;
+    botName?: string;
+    status: string;
+  };
   sandboxId?: string;
   name: string;
   type: "sales" | "support" | "ops" | "research";

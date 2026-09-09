@@ -67,6 +67,14 @@ type Logic interface {
 	GetInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
 	StartTerminalSession(ctx pctx.Context, instanceID string) (*transport.TerminalSessionResponse, error)
 	ListInstances(ctx pctx.Context, page, pageSize int) (*transport.ListInstancesResponse, error)
+	ListInstanceBots(ctx pctx.Context, instanceID string) (*transport.ListInstanceBotsResponse, error)
+	CreateInstanceBot(ctx pctx.Context, instanceID string, req *transport.CreateInstanceBotRequest) (*transport.InstanceBotResponse, error)
+	UpdateInstanceBot(ctx pctx.Context, instanceID, botID string, req *transport.UpdateInstanceBotRequest) (*transport.InstanceBotResponse, error)
+	DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error)
+	RetryInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error)
+	ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) (*transport.InstanceChannelBindingResponse, error)
+	ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error
+	ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error
 	DestroyInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
 	PauseInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
 	ResumeInstance(ctx pctx.Context, instanceID string, req *transport.ResumeInstanceRequest) (*transport.InstanceResponse, error)
@@ -103,7 +111,7 @@ type Logic interface {
 	GetChatClawRuntimeBootstrap(ctx pctx.Context, instanceID, conversationID string) (*transport.ChatClawRuntimeBootstrapResponse, error)
 	CreateAgentChatLaunchToken(ctx pctx.Context, instanceID string) (*transport.AgentChatLaunchTokenResponse, error)
 	IntrospectAgentChatLaunchToken(ctx pctx.Context, req *transport.AgentChatIntrospectRequest) (*transport.AgentChatIntrospectResponse, error)
-	CreateWeixinLoginSession(ctx pctx.Context, instanceID string) (*transport.CreateWeixinLoginSessionResponse, error)
+	CreateWeixinLoginSession(ctx pctx.Context, instanceID string, req *transport.CreateWeixinLoginSessionRequest) (*transport.CreateWeixinLoginSessionResponse, error)
 	GetWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, error)
 	CancelWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, error)
 	SubscribeWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, <-chan transport.WeixinLoginSessionEvent, func(), error)
@@ -2196,6 +2204,9 @@ func (l *logic) ConfigureChannel(ctx pctx.Context, instanceID string, req *trans
 	if err := l.requireActivePass(ctx); err != nil {
 		return nil, activePassGuardError("configure channel", err)
 	}
+	if profileID := strings.TrimSpace(req.ProfileID); profileID != "" {
+		return l.configureHermesProfileChannel(ctx, instanceID, profileID, req)
+	}
 
 	if strings.EqualFold(strings.TrimSpace(req.Channel), "qqbot") {
 		pluginResult, pluginErr := l.execSandboxProcessCommand(ctx, entity.SandboxId, "configure_channel_plugin_qqbot", &psandbox.ProcessStartRequest{
@@ -2283,5 +2294,62 @@ func (l *logic) ConfigureChannel(ctx pctx.Context, instanceID string, req *trans
 		Channel:          req.Channel,
 		GatewayRestarted: gatewayRestarted,
 		Output:           strings.TrimSpace(output),
+	}, nil
+}
+
+func (l *logic) configureHermesProfileChannel(
+	ctx pctx.Context,
+	instanceID string,
+	profileID string,
+	req *transport.ConfigureChannelRequest,
+) (*transport.ConfigureChannelResponse, error) {
+	bot, err := l.getInstanceBotByProfileID(ctx, instanceID, profileID)
+	if err != nil {
+		return nil, err
+	}
+	if bot.Status != instanceBotStatusReady {
+		return nil, errcode.Wrap(errcode.ErrInstanceBotConflict, "bot status is %s", bot.Status)
+	}
+	if !strings.EqualFold(strings.TrimSpace(req.Channel), "qqbot") {
+		return nil, errcode.Wrap(errcode.ErrChannelInvalidParam, "profile-scoped channel %q is not supported by this endpoint", req.Channel)
+	}
+	appID, clientSecret, ok := strings.Cut(req.Token, ":")
+	if !ok || strings.TrimSpace(appID) == "" || strings.TrimSpace(clientSecret) == "" {
+		return nil, errcode.ErrChannelInvalidParam
+	}
+	configured, err := l.ExecDebugCommand(
+		ctx,
+		instanceID,
+		fmt.Sprintf(
+			"acli configure gateway qqbot --app-id %s --client-secret %s --agent %s",
+			shellQuoteArg(strings.TrimSpace(appID)),
+			shellQuoteArg(strings.TrimSpace(clientSecret)),
+			shellQuoteArg(profileID),
+		),
+		"agentuser",
+	)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "configure profile channel: %v", err)
+	}
+	if configured == nil || configured.ExitCode != 0 {
+		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "configure profile channel failed")
+	}
+	restarted, err := l.ExecDebugCommand(
+		ctx,
+		instanceID,
+		fmt.Sprintf("acli gateway restart --agent %s", shellQuoteArg(profileID)),
+		"agentuser",
+	)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "restart profile gateway: %v", err)
+	}
+	if restarted == nil || restarted.ExitCode != 0 {
+		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "restart profile gateway failed")
+	}
+	return &transport.ConfigureChannelResponse{
+		Status:           "Succeeded",
+		Channel:          req.Channel,
+		GatewayRestarted: true,
+		Output:           strings.TrimSpace(configured.Output + "\n" + restarted.Output),
 	}, nil
 }

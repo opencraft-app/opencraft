@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_LAB_SECTION_ID_BY_SLUG,
   AGENT_SECTION_PATH_BY_ID,
+  getAgentBotSectionHref,
   getAgentCreatingPath,
   getAgentLabSectionFromSlug,
   getAgentSectionFromSlug,
@@ -63,5 +64,10 @@ describe("agent route constants", () => {
         new URLSearchParams("creating=ins-123&plan=bundle_cruise_01&from=subscribe"),
       ),
     ).toBe("/agents/models");
+  });
+
+  it("persists the backend bot id after creation completes", () => {
+    expect(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, "bot/sales east"))
+      .toBe("/agents/channels?bot=bot%2Fsales+east");
   });
 });

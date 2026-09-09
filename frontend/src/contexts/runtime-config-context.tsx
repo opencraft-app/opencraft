@@ -14,6 +14,7 @@ export interface RuntimeFeatureFlags {
   paidBillingEnabled: boolean;
   realnamePhoneVerificationEnabled: boolean;
   zeroTokenAutomationsEnabled: boolean;
+  multiBotEnabled: boolean;
 }
 
 export interface RuntimeConfig {
@@ -49,11 +50,18 @@ const readBuildTimeZeroTokenAutomationsRaw = (): boolean | null =>
 const readBuildTimeZeroTokenAutomationsDefault = (): boolean =>
   readBuildTimeZeroTokenAutomationsRaw() ?? true;
 
+const readBuildTimeMultiBotRaw = (): boolean | null =>
+  readBooleanLike(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_MULTI_BOT_ENABLED : undefined) ??
+  readBooleanLike(import.meta.env?.VITE_MULTI_BOT_ENABLED);
+
+const readBuildTimeMultiBotDefault = (): boolean => readBuildTimeMultiBotRaw() ?? true;
+
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
     paidBillingEnabled: readBuildTimePaidBillingDefault(),
     realnamePhoneVerificationEnabled: true,
     zeroTokenAutomationsEnabled: readBuildTimeZeroTokenAutomationsDefault(),
+    multiBotEnabled: readBuildTimeMultiBotDefault(),
   },
 };
 
@@ -78,6 +86,7 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
   }
   const zeroTokenAutomationsEnabled =
     (features as { zeroTokenAutomationsEnabled?: unknown }).zeroTokenAutomationsEnabled;
+  const multiBotEnabled = (features as { multiBotEnabled?: unknown }).multiBotEnabled;
   return {
     features: {
       paidBillingEnabled:
@@ -88,6 +97,10 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
         typeof zeroTokenAutomationsEnabled === "boolean"
           ? zeroTokenAutomationsEnabled
           : DEFAULT_RUNTIME_CONFIG.features.zeroTokenAutomationsEnabled,
+      multiBotEnabled:
+        typeof multiBotEnabled === "boolean"
+          ? multiBotEnabled
+          : DEFAULT_RUNTIME_CONFIG.features.multiBotEnabled,
     },
   };
 };
@@ -214,6 +227,11 @@ export const useRealnamePhoneVerificationEnabled = (): boolean => {
 export const useZeroTokenAutomationsEnabled = (): boolean => {
   const { config } = useRuntimeConfig();
   return config.features.zeroTokenAutomationsEnabled === true;
+};
+
+export const useMultiBotEnabled = (): boolean => {
+  const { config } = useRuntimeConfig();
+  return isCN && config.features.multiBotEnabled === true;
 };
 
 export const __runtimeConfigTestHooks = {

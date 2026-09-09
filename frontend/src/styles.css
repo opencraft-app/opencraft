@@ -594,8 +594,13 @@ a {
     color 0.15s ease;
 }
 
-.lv-agents-sidebar-tab:hover {
+.lv-agents-sidebar-tab:hover:not(:disabled) {
   color: rgb(0 0 0 / 80%);
+}
+
+.lv-agents-sidebar-tab:disabled {
+  cursor: not-allowed;
+  color: rgb(0 0 0 / 28%);
 }
 
 .lv-agents-sidebar-tab.is-active {

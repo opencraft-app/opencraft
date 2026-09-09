@@ -24,6 +24,13 @@ describe("getAgentCreateErrorMessage", () => {
     expect(getAgentCreateErrorMessage(new Error("request rejected"))).toBe("request rejected");
   });
 
+  it("将 Profile capability 错误转成升级提示", () => {
+    const error = Object.assign(new Error("Hermes profile capability is unavailable"), {
+      code: "INSTANCE_BOT_UNSUPPORTED",
+    });
+    expect(getAgentCreateErrorMessage(error)).toBe("当前实例版本暂不支持多 Bot，请升级 Agent 后重试。");
+  });
+
   it("空错误使用通用创建失败提示", () => {
     expect(getAgentCreateErrorMessage(null)).toBe("创建失败，请稍后重试。");
   });
@@ -36,6 +43,7 @@ describe("getAgentCreateErrorMessage", () => {
       "当前资源暂时售罄，请稍后再试。",
       "创建超时，请稍后重试。",
       "网络异常，请检查网络后重试。",
+      "当前实例版本暂不支持多 Bot，请升级 Agent 后重试。",
       "创建失败，请稍后重试。",
     ].forEach((message) => {
       expect(zhToKeyMap[message]).toEqual(expect.stringMatching(/^k_/));

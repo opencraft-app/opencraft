@@ -480,6 +480,7 @@ export interface IFeatureFlags {
 // Instance info interface
 export interface IInstanceInfo {
   InstanceId: string;
+  ProfileId?: string;
   RegionId: number;
   PlatformType?: string;
   Zone?: string;

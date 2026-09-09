@@ -1,4 +1,8 @@
 import { normalizeHermesApi } from "./utils/hermes-parsers";
+import {
+  DEFAULT_HERMES_AGENT_ID,
+  withHermesAgent,
+} from "@/lib/hermes-agent-command";
 
 const ACLI_INSTALL_SCRIPT_URL = "https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh";
 
@@ -52,68 +56,69 @@ export function getHermesBootstrapAcliCommand(product: HermesAcliProduct = "ligh
   );
 }
 
-export function createHermesCommandBuilder() {
+export function createHermesCommandBuilder(agentId: string = DEFAULT_HERMES_AGENT_ID) {
+  const scoped = (command: string) => withHermesAgent(command, agentId);
   const channelConnect = (platform: string, arguments_: string[]) => (
-    ["acli channel connect", `--platform ${platform}`, ...arguments_].join(" ")
+    scoped(["acli channel connect", `--platform ${platform}`, ...arguments_].join(" "))
   );
 
   const model = {
     getProviderSaveCommand(params: HermesProviderSaveConfig) {
-      return [
+      return scoped([
         "acli provider save",
         `--name ${shellQuote(params.name)}`,
         `--base-url ${shellQuote(params.baseUrl)}`,
         `--api ${shellQuote(normalizeHermesApi(params.api))}`,
         `--api-key ${shellQuote(params.apiKey)}`,
         `--models-json ${shellQuote(JSON.stringify(params.models ?? []))}`,
-      ].join(" ");
+      ].join(" "));
     },
     getModelSwitchCommand(modelFullId: string) {
-      return `acli model switch --model ${shellQuote(modelFullId)}`;
+      return scoped(`acli model switch --model ${shellQuote(modelFullId)}`);
     },
     getModelProbeCommand(params?: HermesModelProbeConfig) {
-      if (!params) return "acli model probe";
-      return [
+      if (!params) return scoped("acli model probe");
+      return scoped([
         "acli model probe",
         `--provider ${shellQuote(params.provider)}`,
         `--model ${shellQuote(params.model)}`,
         `--base-url ${shellQuote(params.baseUrl)}`,
         `--api-key ${shellQuote(params.apiKey)}`,
         `--api ${shellQuote(params.api)}`,
-      ].join(" ");
+      ].join(" "));
     },
     getListCommand() {
-      return "acli provider list";
+      return scoped("acli provider list");
     },
     getDeleteCommand(params: { providerName: string }) {
-      return `acli provider delete --name ${shellQuote(params.providerName)}`;
+      return scoped(`acli provider delete --name ${shellQuote(params.providerName)}`);
     },
   };
 
   const channel = {
     getListCommand() {
-      return "acli channel status";
+      return scoped("acli channel status");
     },
     getQQBotConfigCommand(params: { appId: string; clientSecret: string }) {
-      return [
+      return scoped([
         "acli configure gateway qqbot",
         `--app-id ${shellQuote(params.appId)}`,
         `--client-secret ${shellQuote(params.clientSecret)}`,
-      ].join(" ");
+      ].join(" "));
     },
     getWecomConfigCommand(params: { appId: string; clientSecret: string }) {
-      return [
+      return scoped([
         "acli configure gateway wecom",
         `--app-id ${shellQuote(params.appId)}`,
         `--client-secret ${shellQuote(params.clientSecret)}`,
-      ].join(" ");
+      ].join(" "));
     },
     getYuanbaoConfigCommand(params: { appKey: string; appSecret: string }) {
-      return [
+      return scoped([
         "acli configure gateway yuanbao",
         `--app-key ${shellQuote(params.appKey)}`,
         `--app-secret ${shellQuote(params.appSecret)}`,
-      ].join(" ");
+      ].join(" "));
     },
     getChannelConnectCommand(platform: string, token: string) {
       return channelConnect(platform, [`--app-secret ${shellQuote(token)}`]);
@@ -150,17 +155,17 @@ export function createHermesCommandBuilder() {
         if (params.bindId) parts.push(`--bind-id ${shellQuote(params.bindId)}`);
         if (params.ip) parts.push(`--ip ${shellQuote(params.ip)}`);
       }
-      return parts.join(" ");
+      return scoped(parts.join(" "));
     },
     getDeleteCommand(platform: string) {
-      return `acli channel delete --platform ${shellQuote(platform)}`;
+      return scoped(`acli channel delete --platform ${shellQuote(platform)}`);
     },
   };
 
   const gateway = {
     getRuntimeCheckCommand: () => "acli backend runtime-check",
-    getStatusCommand: () => "acli gateway status",
-    getRestartCommand: () => "acli gateway restart",
+    getStatusCommand: () => scoped("acli gateway status"),
+    getRestartCommand: () => scoped("acli gateway restart"),
     getBootstrapCommand: getHermesBootstrapAcliCommand,
   };
 
@@ -178,19 +183,19 @@ export interface AgentScriptCommands {
   };
 }
 
-export function createAgentScriptCommands(): AgentScriptCommands {
+export function createAgentScriptCommands(agentId: string = DEFAULT_HERMES_AGENT_ID): AgentScriptCommands {
   return {
-    hermes: createHermesCommandBuilder(),
+    hermes: createHermesCommandBuilder(agentId),
     openclaw: {
       gateway: {
-        STATUS_COMMAND: "acli gateway status",
-        RESTART_COMMAND: "acli gateway restart",
+        STATUS_COMMAND: withHermesAgent("acli gateway status", agentId),
+        RESTART_COMMAND: withHermesAgent("acli gateway restart", agentId),
       },
       config: {
-        GET_OPENCLAW_CONFIG_COMMAND: "acli config get --section models,channels,gateway,agents",
+        GET_OPENCLAW_CONFIG_COMMAND: withHermesAgent("acli config get --section models,channels,gateway,agents", agentId),
       },
       channel: {
-        GET_WEIXIN_ACCOUNTS_COMMAND: "acli channel status --platform weixin",
+        GET_WEIXIN_ACCOUNTS_COMMAND: withHermesAgent("acli channel status --platform weixin", agentId),
       },
     },
   };

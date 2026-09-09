@@ -1240,12 +1240,14 @@ function LearnSkillDialog({
 
 export interface HermesAgentSkillsPanelProps {
   botId: string;
+  profileId?: string;
   execDebugCommand: ExpertsExecDebugCommand;
   initialSectionSlug?: string;
 }
 
 export function HermesAgentSkillsPanel({
   botId,
+  profileId,
   execDebugCommand,
   initialSectionSlug,
 }: HermesAgentSkillsPanelProps) {
@@ -1291,6 +1293,7 @@ export function HermesAgentSkillsPanel({
         <SkillsDemoPanel
           key={`${botId}-${skillsPanelRevision}`}
           botId={botId}
+          profileId={profileId}
           execDebugCommand={execDebugCommand}
           execDebugCommandStream={repositories.bots.execDebugCommandStream}
           mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
@@ -1298,6 +1301,7 @@ export function HermesAgentSkillsPanel({
           expertsPanel={(
             <ExpertsPanel
               botId={botId}
+              profileId={profileId}
               execDebugCommand={execDebugCommand}
               execDebugCommandStream={repositories.bots.execDebugCommandStream}
               lang={isGlobal ? globalExpertLanguage : undefined}
