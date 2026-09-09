@@ -25,12 +25,44 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 function mount(onSuccess = vi.fn()) { render(<UpgradePassModal pass={pass} targetBundleId="target" onClose={vi.fn()} onSuccess={onSuccess} />); return onSuccess; }
 describe('upgrade checkout modal', () => {
-  it('clears only a server-confirmed cancelled checkout so the user can quote again', async () => {
+  it('opens a fresh confirmation after closing and creates a new order only on another explicit click', async () => {
+    region.global = false;
+    mount();
+    await screen.findByText('USD 1.67');
+    expect(plans.createModifyOrder).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' }));
+    await screen.findByLabelText('微信扫码支付');
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
+    cleanup();
+    mount();
+    await screen.findByText('USD 1.67');
+    expect(screen.queryByLabelText('微信扫码支付')).toBeNull();
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
+    plans.createModifyOrder.mockResolvedValue({ deal_name: 'd2', big_order_id: 'b2', auth_code: 'test-only-2' });
+    fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' }));
+    await screen.findByLabelText('微信扫码支付');
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(2);
+    expect(plans.getModifyCheckout).not.toHaveBeenCalled();
+  });
+  it('does not submit twice for two rapid clicks on the same confirmation', async () => {
+    let resolveOrder!: (value: unknown) => void;
+    plans.createModifyOrder.mockReturnValue(new Promise(resolve => { resolveOrder = resolve; }));
+    mount();
+    await screen.findByText('USD 1.67');
+    const button = screen.getByRole('button', { name: '确认升级并支付' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(plans.createModifyOrder).toHaveBeenCalledTimes(1));
+    await act(async () => resolveOrder({ deal_name: 'd', big_order_id: 'b', auth_code: 'test-only' }));
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
+  });
+  it('ignores a historical order and asks for a new confirmation', async () => {
     window.localStorage.setItem('lightvela-upgrade-v1:u:p', JSON.stringify({ targetBundleId: 'target', phase: 'ordered', dealName: 'd' }));
     plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', status: 'cancelled', local_status: 'cancelled', source: 'local' });
     mount();
     await screen.findByText('USD 1.67');
-    expect(window.localStorage.getItem('lightvela-upgrade-v1:u:p')).toBeNull();
+    expect(plans.getOrderStatus).not.toHaveBeenCalled();
+    expect(plans.getModifyCheckout).not.toHaveBeenCalled();
     expect(plans.createModifyOrder).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '确认升级并支付' })).toBeTruthy();
   });
@@ -65,6 +97,19 @@ describe('upgrade checkout modal', () => {
     plans.listMyPasses.mockResolvedValue([{ ...pass, bundle_id: 'target' }]);
     await waitFor(() => expect(success).toHaveBeenCalledTimes(1), { timeout: 4500 });
   });
+  it('does not clear another tab submission when this order completes', async () => {
+    region.global = false;
+    const success = mount();
+    await screen.findByText('USD 1.67');
+    fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' }));
+    await screen.findByLabelText('微信扫码支付');
+    const newer = JSON.stringify({ targetBundleId: 'target', phase: 'creating' });
+    window.localStorage.setItem('lightvela-upgrade-v1:u:p', newer);
+    plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', local_status: 'provisioned', status: 'success', source: 'local' });
+    plans.listMyPasses.mockResolvedValue([{ ...pass, bundle_id: 'target' }]);
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1), { timeout: 4500 });
+    expect(window.localStorage.getItem('lightvela-upgrade-v1:u:p')).toBe(newer);
+  });
   it('requires confirmation again if the fresh quote changes', async () => {
     mount(); await screen.findByText('USD 1.67');
     plans.listModifyBundles.mockResolvedValue({ source_bundle_id: 'source', modify_bundle_set: [{ ...option, modify_price: { ...option.modify_price, real_total_cost: 200 } }] });
@@ -87,23 +132,29 @@ describe('upgrade checkout modal', () => {
     await screen.findByRole('alert');
     expect(plans.createModifyOrder).not.toHaveBeenCalled();
   });
-  it('restores a server order on another device without placing a new one', async () => {
+  it('requires price confirmation before submitting an existing checkout to the server', async () => {
     plans.getModifyCheckout.mockResolvedValue({ checkout: { deal_name: 'd', big_order_id: 'b', target_bundle_id: 'target', local_status: 'pending_pay' } });
     mount();
+    await screen.findByText('USD 1.67');
+    expect(plans.getModifyOrderUrl).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' }));
     await screen.findByText('等待支付');
-    expect(plans.createModifyOrder).not.toHaveBeenCalled();
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(plans.getModifyOrderUrl).toHaveBeenCalledWith('p', expect.objectContaining({ deal_names: ['d'] })));
   });
-  it('automatically shows the restored domestic QR without manual payment controls', async () => {
+  it('shows the domestic QR only after confirmation without extra payment controls', async () => {
     region.global = false;
     plans.refreshModifyPaymentAuthorization.mockResolvedValue({ auth_code: 'test-only' });
     plans.getModifyCheckout.mockResolvedValue({ checkout: { deal_name: 'd', target_bundle_id: 'target', local_status: 'pending_pay' } });
     mount();
+    await screen.findByText('USD 1.67');
+    expect(screen.queryByLabelText('微信扫码支付')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' }));
     await screen.findByLabelText('微信扫码支付');
     expect(screen.queryByRole('link', { name: '已在微信中？点击支付' })).toBeNull();
     expect(screen.queryByRole('button', { name: '继续支付' })).toBeNull();
     expect(screen.queryByRole('button', { name: '刷新升级结果' })).toBeNull();
-    expect(plans.createModifyOrder).not.toHaveBeenCalled();
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
   });
   it('refreshes an expired QR for the same order and keeps polling beyond ten minutes until delivery', async () => {
     vi.useFakeTimers(); region.global = false;
@@ -111,10 +162,11 @@ describe('upgrade checkout modal', () => {
     plans.getModifyCheckout.mockResolvedValue({ checkout: { deal_name: 'd', target_bundle_id: 'target', local_status: 'pending_pay' } });
     const success = vi.fn();
     await act(async () => { mount(success); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' })); });
     expect(screen.getByLabelText('微信扫码支付')).toBeTruthy();
     await act(async () => { await vi.advanceTimersByTimeAsync(11 * 60 * 1000); });
-    expect(plans.refreshModifyPaymentAuthorization).toHaveBeenCalledTimes(2);
-    expect(plans.createModifyOrder).not.toHaveBeenCalled();
+    expect(plans.refreshModifyPaymentAuthorization).toHaveBeenCalledTimes(1);
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
     plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', local_status: 'provisioned', status: 'success', source: 'local' });
     plans.listMyPasses.mockResolvedValue([{ ...pass, bundle_id: 'target' }]);
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
@@ -127,6 +179,7 @@ describe('upgrade checkout modal', () => {
     vi.useFakeTimers();
     plans.getModifyCheckout.mockResolvedValue({ checkout: { deal_name: 'd', target_bundle_id: 'target', local_status: 'pending_pay' } });
     await act(async () => { mount(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' })); });
     cleanup();
     const calls = plans.getOrderStatus.mock.calls.length;
     await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
@@ -135,9 +188,8 @@ describe('upgrade checkout modal', () => {
   it('keeps an unknown creation locked when no durable server order can be found', async () => {
     window.localStorage.setItem('lightvela-upgrade-v1:u:p', JSON.stringify({ targetBundleId: 'target', phase: 'creating' }));
     mount();
-    await screen.findByText('暂时无法前往支付，请先查询订单状态。');
-    fireEvent.click(screen.getByRole('button', { name: '查询订单状态' }));
-    await screen.findByRole('alert');
+    await screen.findByText('暂时无法确认订单状态，请稍后查询，避免重复付款。');
+    expect(screen.queryByRole('button', { name: '查询订单状态' })).toBeNull();
     expect(plans.createModifyOrder).not.toHaveBeenCalled();
   });
 });

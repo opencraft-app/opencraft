@@ -150,29 +150,11 @@ func (l *logic) ModifyPassOrder(
 	if req == nil || strings.TrimSpace(req.TargetBundleID) == "" {
 		return nil, errcode.ErrPassInvalidParam
 	}
-	previous, err := l.GetModifyCheckout(userID, passID)
+	// Each explicit checkout starts a new billing order, as in purchase.
+	// Ownership, current Pass state and legal targets remain server-validated.
+	result, err := l.placeModifyOrder(userID, passID, req, "modify_pass_order", adapterfactory.DefaultAdapterFactory.TradeAdapter().PlaceModifyOrder)
 	if err != nil {
 		return nil, err
-	}
-	var result *transport.ModifyPassOrderResult
-	if previous.Checkout != nil {
-		checkout := previous.Checkout
-		if checkout.TargetBundleID != strings.TrimSpace(req.TargetBundleID) {
-			return nil, errcode.ErrModifyCheckoutConflict
-		}
-		if checkout.LocalStatus != "pending_pay" {
-			return nil, errcode.ErrOrderNotPayable
-		}
-		// Revalidate current ownership/target policy before reissuing a ticket.
-		if _, err := l.modifyPassCheckout(userID, passID, &transport.ModifyPassOrderUrlRequest{DealNames: []string{checkout.DealName}}, true); err != nil {
-			return nil, err
-		}
-		result = &transport.ModifyPassOrderResult{DealName: checkout.DealName, DealNames: []string{checkout.DealName}, BigOrderID: checkout.BigOrderID}
-	} else {
-		result, err = l.placeModifyOrder(userID, passID, req, "modify_pass_order", adapterfactory.DefaultAdapterFactory.TradeAdapter().PlaceModifyOrder)
-		if err != nil {
-			return nil, err
-		}
 	}
 	if store := authcode.DefaultStore; store != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

@@ -3,12 +3,14 @@ package pass
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	adapterfactory "ctl/pkg/adapter/factory"
 	tradeadapter "ctl/pkg/adapter/trade"
 	"ctl/pkg/authcode"
 	"ctl/pkg/errcode"
+	bundlemodel "ctl/pkg/model/bundle"
 	passmodel "ctl/pkg/model/pass"
 	"ctl/pkg/transport"
 	"ctl/test/testutil"
@@ -20,6 +22,7 @@ type modifyCheckoutTrade struct {
 	opts     *tradeadapter.GeneratePayURLOptions
 	payErr   error
 	recovery *tradeadapter.ModifyCheckoutResult
+	orders   int
 }
 
 func (s *modifyCheckoutTrade) FindModifyCheckout(context.Context, string, string) (*tradeadapter.ModifyCheckoutResult, error) {
@@ -35,7 +38,8 @@ func (s *modifyCheckoutTrade) GeneratePayURL(_ context.Context, deal string, opt
 	return &tradeadapter.PayURLResult{NeedCharge: 0}, s.payErr
 }
 func (s *modifyCheckoutTrade) PlaceModifyOrder(context.Context, *tradeadapter.ModifyOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
-	panic("checkout must not create another order")
+	s.orders++
+	return &tradeadapter.PlaceOrderResult{DealName: fmt.Sprintf("new-deal-%d", s.orders), BigOrderID: "big"}, nil
 }
 
 type modifyCheckoutTickets struct{ ticket *authcode.Ticket }
@@ -50,7 +54,10 @@ func (*modifyCheckoutTickets) Consume(context.Context, string) (*authcode.Ticket
 func (*modifyCheckoutTickets) Revoke(context.Context, string) error { return nil }
 
 func TestModifyCheckoutRetryAndTicketRefreshUseExistingOrder(t *testing.T) {
-	db := testutil.NewSQLiteDB(t, &passmodel.Entity{})
+	db := testutil.NewSQLiteDB(t, &passmodel.Entity{}, &bundlemodel.Entity{})
+	if err := db.Create(&bundlemodel.Entity{BundleID: "bundle_cruise_01"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(modifyTestPass()).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -101,15 +108,13 @@ func TestModifyCheckoutRetryAndTicketRefreshUseExistingOrder(t *testing.T) {
 	}
 	stub.payErr = nil
 	stub.recovery = &tradeadapter.ModifyCheckoutResult{Checkout: &tradeadapter.ModifyCheckout{DealName: "existing-deal", BigOrderID: "big", TargetBundleID: "bundle_cruise_01", LocalStatus: "pending_pay"}}
-	reused, err := l.ModifyPassOrder("usr_test", "lhpass-r1", &transport.ModifyPassOrderRequest{TargetBundleID: "bundle_cruise_01"})
-	if err != nil || reused.DealName != "existing-deal" || reused.AuthCode != "fresh-ticket" {
-		t.Fatalf("reused=%+v err=%v", reused, err)
+	for i := 1; i <= 2; i++ {
+		created, err := l.ModifyPassOrder("usr_test", "lhpass-r1", &transport.ModifyPassOrderRequest{TargetBundleID: "bundle_cruise_01"})
+		if err != nil || created.DealName != fmt.Sprintf("new-deal-%d", i) || created.AuthCode != "fresh-ticket" {
+			t.Fatalf("explicit checkout %d: result=%+v err=%v", i, created, err)
+		}
 	}
-	if _, err := l.ModifyPassOrder("usr_test", "lhpass-r1", &transport.ModifyPassOrderRequest{TargetBundleID: "other"}); !errors.Is(err, errcode.ErrModifyCheckoutConflict) {
-		t.Fatalf("target conflict=%v", err)
-	}
-	stub.recovery.Checkout.LocalStatus = "paid_pending_provision"
-	if _, err := l.ModifyPassOrder("usr_test", "lhpass-r1", &transport.ModifyPassOrderRequest{TargetBundleID: "bundle_cruise_01"}); !errors.Is(err, errcode.ErrOrderNotPayable) {
-		t.Fatalf("paid order reuse=%v", err)
+	if _, err := l.ModifyPassOrder("usr_test", "lhpass-r1", &transport.ModifyPassOrderRequest{TargetBundleID: "other"}); !errors.Is(err, errcode.ErrPassModifyTargetNotAllowed) {
+		t.Fatalf("illegal target=%v", err)
 	}
 }

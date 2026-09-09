@@ -95,36 +95,38 @@ describe("upgrade eligibility", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1001); });
     expect(result.current.options).toEqual([]);
   });
-  it("restores a pending checkout on a modifying pass without offering another upgrade", async () => {
+  it("does not restore a pending checkout or offer another upgrade while modifying", async () => {
     const modifying = { ...pass, status: "modifying" };
     listMyPasses.mockResolvedValue([modifying]);
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "target", dealName: "deal", phase: "ordered" });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true, currentPass: modifying }));
-    await waitFor(() => expect(result.current.resume?.record.dealName).toBe("deal"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.resume).toBeNull();
     expect(result.current.options).toEqual([]);
     expect(listModifyBundles).not.toHaveBeenCalled();
   });
-  it("restores the server checkout on a new device and prioritizes it over a stale local target", async () => {
+  it("does not query server checkout or overwrite a local unknown submission", async () => {
     listMyPasses.mockResolvedValue([{ ...pass, status: "modifying" }]);
     getModifyCheckout.mockResolvedValue({ checkout: { deal_name: "server-deal", target_bundle_id: "server-target", big_order_id: "big", local_status: "pending" } });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
-    await waitFor(() => expect(result.current.resume?.record.dealName).toBe("server-deal"));
-    expect(result.current.resume?.record.targetBundleId).toBe("server-target");
-    expect(readUpgradeCheckout(window.localStorage, "u1", "p1")?.dealName).toBe("server-deal");
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.resume).toBeNull();
+    expect(getModifyCheckout).not.toHaveBeenCalled();
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "stale-target", phase: "creating" });
     act(() => result.current.retry());
-    await waitFor(() => expect(result.current.resume?.record.targetBundleId).toBe("server-target"));
-    expect(readUpgradeCheckout(window.localStorage, "u1", "p1")?.targetBundleId).toBe("server-target");
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(readUpgradeCheckout(window.localStorage, "u1", "p1")?.targetBundleId).toBe("stale-target");
   });
   it("preserves an unknown local creating record when the server has no recoverable order", async () => {
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "target", phase: "creating" });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
-    await waitFor(() => expect(result.current.resume?.record.phase).toBe("creating"));
+    await waitFor(() => expect(result.current.options).toEqual([target]));
+    expect(readUpgradeCheckout(window.localStorage, "u1", "p1")?.phase).toBe("creating");
   });
-  it("surfaces recovery API failures instead of treating them as no pending order", async () => {
+  it("does not let historical order recovery block eligibility", async () => {
     getModifyCheckout.mockRejectedValue(new Error("network"));
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", enabled: true }));
-    await waitFor(() => expect(result.current.error).toBe(true));
-    expect(result.current.options).toEqual([]);
+    await waitFor(() => expect(result.current.options).toEqual([target]));
+    expect(getModifyCheckout).not.toHaveBeenCalled();
   });
 });
