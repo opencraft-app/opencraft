@@ -75,4 +75,28 @@ Secret 键：
 
 ## Note
 
+### Native OIDC rollout prerequisite
+
+Do not merge or sync the native client registry with the old Auth image.
+The previous sgprod image (source `bf1c36960ed4`) accepts exactly one
+`site-gateway` client; adding a second client disables OIDC, including Sites login.
+
+Before enabling `opencraft-native-v1`, promote an sgprod Auth image containing
+MR !3762 (source merge `9de5a0e95b76`) or a verified descendant, using the normal
+release gates. Tokyo sandbox promotion is not proof of production readiness.
+The candidate must include the verified sgprod image digest; do not substitute
+a Tokyo registry image or guess a digest. The configuration-only candidate is
+blocked until this prerequisite is satisfied.
+
+The native client is public (no client secret), with the sole exact callback
+`opencraft://auth/lightvela`. It reuses the existing OIDC authorization page and
+login channels. Only `POST /auth/native/token` is public at Service Gateway;
+the Auth handler still requires a valid one-time code and matching PKCE verifier.
+Do not allow a native path prefix or add the callback to generic web return-to hosts.
+
+Apply source configuration on `master` before production promotion so subsequent
+releases retain the registry and route. After approved rollout, verify both
+native login and existing Sites login, plus Argo revision/image and Synced/Healthy.
+Before rolling back to an old Auth image, remove the native registry entry.
+
 `user-auth` namespace 和默认 `ServiceAccount` 已被更早接入的 app 共享持有，所以这只 app 不再试图接管这两个资源。
