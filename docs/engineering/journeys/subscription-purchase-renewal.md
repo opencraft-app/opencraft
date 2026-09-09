@@ -23,6 +23,7 @@
 ## Pass 升配 Web checkout
 
 - 账号页和定价页仅对后端返回的合法 Bundle 关系展示升级入口与选择联动；展示资格不能代替 CTL 下单前的 owner、Pass 状态和目标校验。
+- 可升级目标使用原有主按钮高亮，不套用新购席位已满的灰色样式。账号页与定价页不提供独立进度按钮，也不自动弹出未支付订单；用户主动点击升级后才恢复未过期原单，服务端确认原单已取消后可重新询价下单。
 - Web 升配入口由 `frontend/src/lib/pass-upgrade-rollout.ts` 集中控制：国内正式站默认隐藏，任意登录用户可在浏览器 Console 执行 `show()` 临时显示，`hide()` 隐藏，刷新后重置；国际正式站关闭，明确列出的本地与北京前端测试域名允许登录用户验证。账号页、定价页、订单恢复与升级弹窗共用该判断；这是 UI 发布开关，不替代后端授权。正式验收通过后再独立调整默认开放范围。
 - `GET /v1/passes/{pass_id}/modify/bundles` 返回实时差价；`POST .../modify/order` 只创建订单并返回 `deal_name`、`big_order_id` 和可选支付票据。
 - `POST .../modify/order-url` 接收原 `deal_names` 获取支付链接，不再创建订单。微信桥使用绑定用户、Pass、订单的短期票据；`POST .../modify/payment-authorization` 仅供已登录本人重签原订单票据。
