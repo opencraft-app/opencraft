@@ -27,7 +27,6 @@ import {
   Plus,
   RefreshCw,
   Stethoscope,
-  Trophy,
   UploadCloud,
   UserRound,
   Wand2,
@@ -4620,7 +4619,6 @@ export const AgentSettingsPage = ({
                   sections: [
                     { id: "buddy", label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
                     { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
-                    { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
                   ],
                 },
                 {
