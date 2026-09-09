@@ -36,7 +36,6 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
   const [pricing, setPricing] = useState(true);
   const [recovering, setRecovering] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [orderStatus, setOrderStatus] = useState<PassOrderStatus | null>(null);
@@ -47,6 +46,7 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
   const [now, setNow] = useState(Date.now());
   const inFlight = useRef(false);
   const statusInFlight = useRef(false);
+  const paymentRetryAt = useRef(0);
   const finished = useRef(false);
   const alive = useRef(true);
   const callbacks = useRef({ onSuccess });
@@ -89,7 +89,7 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
 
   const checkStatus = useCallback(async () => {
     if (!record?.dealName || statusInFlight.current || finished.current) return;
-    statusInFlight.current = true; setChecking(true);
+    statusInFlight.current = true;
     try {
       const [status, passes] = await Promise.all([plans.getOrderStatus(record.dealName), plans.listMyPasses()]);
       if (!alive.current) return;
@@ -109,19 +109,18 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
       }
     } catch (err) {
       if (alive.current) setStatusError(resolveBillingErrorMessage(err, t('暂时无法确认升级结果，请稍后刷新。')));
-    } finally { statusInFlight.current = false; if (alive.current) setChecking(false); }
+    } finally { statusInFlight.current = false; }
   }, [pass.pass_id, plans, record, t, userId]);
 
   useEffect(() => {
-    if (!record?.dealName || done) return;
+    if (!record?.dealName || done || orderStatus?.status === 'failed') return;
     void checkStatus();
-    const start = Date.now();
     const timer = window.setInterval(() => {
       setNow(Date.now());
-      if (Date.now() - start < 10 * 60 * 1000) void checkStatus();
+      void checkStatus();
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [checkStatus, done, record?.dealName]);
+  }, [checkStatus, done, record?.dealName, orderStatus?.status]);
 
   function persist(next: UpgradeCheckoutRecord) {
     saveUpgradeCheckout(window.localStorage, userId, pass.pass_id, next);
@@ -129,6 +128,7 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
   }
 
   async function preparePayment(dealName: string, authCode?: string) {
+    paymentRetryAt.current = Date.now() + 3000;
     if (isGlobal) {
       const returnUrl = `${window.location.origin}${window.location.pathname}`;
       const result = await plans.getModifyOrderUrl(pass.pass_id, { deal_names: [dealName], platform: 'pc', return_url: returnUrl, cancel_url: returnUrl });
@@ -228,6 +228,16 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
   const paid = zeroPaid || orderStatus?.status === 'paid' || orderStatus?.status === 'success';
   const terminal = orderStatus?.status === 'cancelled' || orderStatus?.status === 'failed';
   const bridgeExpired = bridge !== null && now >= bridge.expiresAt;
+  // Restore/refresh only this order's payment authorization. Never create another order.
+  const resumePayment = useRef(continuePayment);
+  resumePayment.current = continuePayment;
+  useEffect(() => {
+    if (!record?.dealName || recovering || busy || done || paid || terminal || orderStatus?.status !== 'pending') return;
+    if (isGlobal ? Boolean(payUrl) : Boolean(bridge && !bridgeExpired)) return;
+    if (Date.now() < paymentRetryAt.current) return;
+    paymentRetryAt.current = Date.now() + 3000;
+    void resumePayment.current();
+  }, [record?.dealName, recovering, busy, done, paid, terminal, orderStatus?.status, payUrl, bridge, bridgeExpired, now]);
   return <Dialog open onOpenChange={open => { if (!open && !inFlight.current) onClose(); }}>
     <DialogContent className="max-h-[90dvh] overflow-y-auto rounded-xl border-[#E6E9EF] bg-white p-7 text-[#333] md:w-[480px]">
       <DialogHeader><DialogTitle>{done ? t('升级成功') : t('升级套餐')}</DialogTitle><DialogDescription>
@@ -251,12 +261,10 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
           {record.dealName && <p className="break-all text-xs text-[#999]">{t('订单号')}：{record.dealName}</p>}
           <p role="status" className="font-semibold">{done ? t('目标套餐已生效') : terminal ? t('订单已关闭或失败，请联系支持确认后再操作。') : paid ? t('已支付，套餐升级中') : record.phase === 'creating' ? t('暂时无法前往支付，请先查询订单状态。') : t('等待支付')}</p>
           {!done && !terminal && !paid && record.dealName && <>
-            {bridge && !bridgeExpired && <div className="flex flex-col items-center gap-3"><QRCodeSVG value={bridge.bridgeUrl} size={192} aria-label={t('微信扫码支付')} /><p className="text-sm text-[#999]">{t('请使用微信扫码支付')}</p><a className="text-sm text-[#333] underline" href={bridge.bridgeUrl}>{t('已在微信中？点击支付')}</a></div>}
-            {bridgeExpired && <p className="text-sm text-[#999]">{t('支付二维码已过期，请重新获取。')}</p>}
+            {bridge && !bridgeExpired && <div className="flex flex-col items-center gap-3"><QRCodeSVG value={bridge.bridgeUrl} size={192} aria-label={t('微信扫码支付')} /><p className="text-sm text-[#999]">{t('请使用微信扫码支付')}</p></div>}
+            {(!bridge || bridgeExpired) && !payUrl && <p className="text-sm text-[#999]">{t('正在处理...')}</p>}
             {payUrl && <a className="block rounded-full bg-[#202020] px-5 py-3 text-center text-sm font-semibold text-white" href={payUrl} target="_blank" rel="noopener noreferrer">{t('前往支付')}</a>}
-            <button className={secondaryButton} disabled={busy} onClick={() => void continuePayment()}>{busy ? t('正在处理...') : t('继续支付')}</button>
           </>}
-          {record.dealName && !done && <button className={secondaryButton} disabled={checking} onClick={() => void checkStatus()}>{checking ? t('正在查询...') : t('刷新升级结果')}</button>}
           {!record.dealName && <button className={secondaryButton} disabled={busy} onClick={() => void recoverOrder()}>{t('查询订单状态')}</button>}
           {done && <button className={primaryButton} onClick={onClose}>{t('完成')}</button>}
         </>}
