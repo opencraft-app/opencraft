@@ -62,6 +62,14 @@ spec:
             secretKeyRef:
               name: cloudladdergateway-runtime-secrets
               key: CLOUDLADDER_PAYMENT_HMAC_SECRET
+        # Production-only enforcement. The shared image remains optional so
+        # tkexsg testing and tkexgz can migrate independently.
+        - name: CLOUDLADDERGATEWAY_AUTH_MODE
+          value: required
+        # sandbox-kr-1 still reaches this production CLB for the test CGW
+        # route. Keep only that test route compatible until its Trade rolls.
+        - name: CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND
+          value: jifei-test
         - name: CLOUDLADDER_SHADOW_HMAC_SECRET
           valueFrom:
             secretKeyRef:

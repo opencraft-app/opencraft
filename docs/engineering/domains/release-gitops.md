@@ -105,6 +105,12 @@ CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直�
 `required` 放行前必须同时证明：匿名敏感路由返回 401、合法签名请求成功、计费回调仍成功，
 并检查目标环境没有遗留未配置 HMAC 的 Trade 实例。
 
+首次严格模式只在 `tkexsg` 的生产 StatefulSetPlus 上通过
+`CLOUDLADDERGATEWAY_AUTH_MODE=required` 启用；共享镜像配置、`tkexsg` testing 和 `tkexgz`
+继续保持 `optional`，避免跨环境联动。若韩国测试 Trade 尚未升级，可在该生产 workload 上
+用环境级追加项临时豁免 `jifei-test`，但不得豁免任何生产计费路由。发布后须验证无签名
+`jifei-prod` 返回 401、带签名生产请求为 200、计费回调仍为 200，并持续检查 401/5xx。
+
 ## Secret 交付
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
