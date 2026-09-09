@@ -3152,7 +3152,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"', template_text)
         self.assertIn('PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"', template_text)
         self.assertIn('bash "$PROMOTE_BUNDLE_SCRIPT"', template_text)
-        self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
+        release_image_dir = (
+            'RELEASE_IMAGE_DIR="${TMPDIR:-/tmp}/lightclaw-ci/release-images/'
+            '${BK_CI_BUILD_ID:?BK_CI_BUILD_ID is required}/'
+            '${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}"'
+        )
+        self.assertEqual(template_text.count(release_image_dir), 2)
+        self.assertNotIn('RELEASE_IMAGE_DIR=".ci/.release-images/', template_text)
         self.assertIn("SubPipelineExecStream@1.*", template_text)
         self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
         self.assertIn('buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)
