@@ -54,6 +54,11 @@ jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们
 在 `billing_auth` 算法和真实样本尚未完成一致性验证前，不得猜测实现并直接拒绝生产回调。
 匿名豁免只解决兼容性，不代表回调来源已经可信。
 
+新加坡生产可独立于 testing 和国内环境切换 `required`。其生产计费路由
+`jifei-prod`、点石和 Billing CloudAPI 必须验签；计费/账号回调继续使用上述明确豁免。
+韩国测试 Trade 仍经新加坡生产 CLB 访问 `jifei-test` 时，只允许为该测试路由追加临时匿名
+兼容，不能因此放开 `jifei-prod`。韩国完成签名版本发布后必须删除此临时例外。
+
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 
 ## 同 SP 升配回调参数边界（2026-09-07）
