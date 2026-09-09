@@ -172,6 +172,7 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/orders/modify", placeModifyOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/modify/place-and-pay", placeModifyOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/orders/:dealName/pay-url", payURLHandler(deps.PlaceOrder))
+	group.POST("/modify-checkout", modifyCheckoutHandler(deps.PlaceOrder))
 	if deps.CreditOrder != nil {
 		group.POST("/credit/inquiry", creditInquiryHandler(deps.CreditOrder))
 		group.POST("/credit/orders", creditPlaceOrderHandler(deps.CreditOrder))
@@ -1151,22 +1152,32 @@ func payURLHandler(svc *placeorder.Service) gin.HandlerFunc {
 		// v1.7.31 接口拆分：解析可选 body（body 为空 / nil 时兼容现有行为）
 		var opts *placeorder.GeneratePayURLOptions
 		var body struct {
-			Platform  string `json:"platform"`
-			WxOpenID  string `json:"wx_open_id"`
-			WxAppID   string `json:"wx_app_id"`
-			CancelURL string `json:"cancel_url"`
-			ReturnURL string `json:"return_url"`
+			AuthorizationOnly bool     `json:"authorization_only"`
+			ExternalUserID    string   `json:"external_user_id"`
+			ResourceID        string   `json:"resource_id"`
+			OrderType         string   `json:"order_type"`
+			AllowedBundleIDs  []string `json:"allowed_bundle_ids"`
+			Platform          string   `json:"platform"`
+			WxOpenID          string   `json:"wx_open_id"`
+			WxAppID           string   `json:"wx_app_id"`
+			CancelURL         string   `json:"cancel_url"`
+			ReturnURL         string   `json:"return_url"`
 		}
 		// 尝试解析 body；忽略 EOF / 空 body 错误（兼容无 body 调用）
 		if err := c.ShouldBindJSON(&body); err == nil {
 			if body.Platform != "" || body.WxOpenID != "" || body.WxAppID != "" ||
-				body.CancelURL != "" || body.ReturnURL != "" {
+				body.CancelURL != "" || body.ReturnURL != "" || body.OrderType != "" {
 				opts = &placeorder.GeneratePayURLOptions{
-					Platform:  body.Platform,
-					WxOpenID:  body.WxOpenID,
-					WxAppID:   body.WxAppID,
-					CancelURL: body.CancelURL,
-					ReturnURL: body.ReturnURL,
+					AuthorizationOnly: body.AuthorizationOnly,
+					ExternalUserID:    body.ExternalUserID,
+					ResourceID:        body.ResourceID,
+					OrderType:         body.OrderType,
+					AllowedBundleIDs:  body.AllowedBundleIDs,
+					Platform:          body.Platform,
+					WxOpenID:          body.WxOpenID,
+					WxAppID:           body.WxAppID,
+					CancelURL:         body.CancelURL,
+					ReturnURL:         body.ReturnURL,
 				}
 			}
 		}
@@ -1194,6 +1205,10 @@ func payURLHandler(svc *placeorder.Service) gin.HandlerFunc {
 
 func classifyPayURLError(err error) (string, int) {
 	switch {
+	case errors.Is(err, placeorder.ErrModifyOrderNotPayable):
+		return "OrderNotPayable", http.StatusConflict
+	case errors.Is(err, placeorder.ErrModifyCheckoutNotFound):
+		return "OrderNotFound", http.StatusNotFound
 	case errors.Is(err, placeorder.ErrInvalidInput):
 		return "InvalidRequest", http.StatusBadRequest
 	case errors.Is(err, placeorder.ErrPayURLUnavailable):

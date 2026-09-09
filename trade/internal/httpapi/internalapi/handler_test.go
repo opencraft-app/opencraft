@@ -1031,6 +1031,39 @@ func TestPayURL_HappyPath(t *testing.T) {
 	}
 }
 
+func TestModifyPayURLBindingSurvivesHTTP(t *testing.T) {
+	env := newTestEnv(t)
+	env.orderStore.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{ExternalUserID: "owner", ResourceID: "pass", BundleID: "target", OrderType: store.OrderTypeModify, Status: store.OrderStatusPendingPay}, nil
+	}
+	for _, owner := range []string{"owner", "other"} {
+		response := env.doJSON(http.MethodPost, "/internal/trade/orders/deal/pay-url", map[string]interface{}{"external_user_id": owner, "resource_id": "pass", "order_type": "modify", "allowed_bundle_ids": []string{"target"}, "authorization_only": true}, true)
+		want := http.StatusOK
+		if owner == "other" {
+			want = http.StatusNotFound
+		}
+		if response.Code != want {
+			t.Fatalf("owner=%s status=%d body=%s", owner, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestModifyPayURLNonPendingReturnsConflict(t *testing.T) {
+	env := newTestEnv(t)
+	env.orderStore.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{ExternalUserID: "owner", ResourceID: "pass", BundleID: "target", OrderType: store.OrderTypeModify, Status: store.OrderStatusCancelled}, nil
+	}
+	for _, authorizationOnly := range []bool{false, true} {
+		response := env.doJSON(http.MethodPost, "/internal/trade/orders/deal/pay-url", map[string]interface{}{"external_user_id": "owner", "resource_id": "pass", "order_type": "modify", "allowed_bundle_ids": []string{"target"}, "authorization_only": authorizationOnly}, true)
+		if response.Code != http.StatusConflict {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		if body := decodeBody(t, response); body["code"] != "OrderNotPayable" {
+			t.Fatalf("unexpected code: %v", body["code"])
+		}
+	}
+}
+
 func TestPayURL_PayURLNotCached_CallsJifei(t *testing.T) {
 	// 8B-1.6：trade_order 存在但 pay_url 列空时，调 jifei `qcloud.margin.getMidasEarmarking`
 	// 拿真实 URL，HTTP 200 并写回 trade_order.pay_url 缓存。

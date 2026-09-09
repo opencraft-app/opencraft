@@ -33,7 +33,7 @@ vi.mock("@/contexts/agent-context", () => ({
 const sessionState = {
   authReady: true,
   isAuthenticated: false,
-  user: null as { realnameVerified?: boolean } | null,
+  user: null as { id?: string; realnameVerified?: boolean } | null,
 };
 
 vi.mock("@/contexts/session-context", () => ({
@@ -51,11 +51,18 @@ vi.mock("@/contexts/session-context", () => ({
 const listBundlesMock = vi.fn();
 const createPassOrderMock = vi.fn();
 const createDianshiPassOrderAndPayMock = vi.fn();
+const listMyPassesMock = vi.fn();
+const listModifyBundlesMock = vi.fn();
+const getModifyCheckoutMock = vi.fn();
+vi.mock("@/pages/marketing/upgrade-pass-modal", () => ({ UpgradePassModal: ({ targetBundleId }: { targetBundleId: string }) => <div role="dialog">Upgrade {targetBundleId}</div> }));
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     plans: {
       listBundles: listBundlesMock,
+      listMyPasses: listMyPassesMock,
+      listModifyBundles: listModifyBundlesMock,
+      getModifyCheckout: getModifyCheckoutMock,
       createPassOrder: createPassOrderMock,
       createDianshiPassOrderAndPay: createDianshiPassOrderAndPayMock,
     },
@@ -140,6 +147,9 @@ const resetState = () => {
   sessionState.isAuthenticated = false;
   sessionState.user = null;
   listBundlesMock.mockReset();
+  listMyPassesMock.mockReset().mockResolvedValue([]);
+  listModifyBundlesMock.mockReset().mockResolvedValue({ source_bundle_id: "", modify_bundle_set: [] });
+  getModifyCheckoutMock.mockReset().mockResolvedValue({ checkout: null });
   createPassOrderMock.mockReset();
   createPassOrderMock.mockResolvedValue({
     deal_names: ["legacy-deal-1"],
@@ -292,6 +302,107 @@ describe("SubscribePage", () => {
     render(<SubscribePage />);
 
     expect(await screen.findByRole("button", { name: "当前订阅" })).toBeDisabled();
+  });
+
+  it("selects source and legal target by bundle ID, enabling only the upgrade checkout", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "启航", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("unrelated-ai", "启航 Launch"), credit: 4500 },
+      { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+      { ...buildBundle("unrelated-target", "巡游 Cruise"), credit: 10000 },
+    ]);
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", credit: 200 }, modify_price: { real_total_cost: 100 } }] });
+    window.history.replaceState({}, "", "/subscribe/?upgrade_pass_id=p1");
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { rerender } = render(<SubscribePage />);
+    const upgrade = await screen.findByRole("button", { name: "升级套餐" });
+    expect(upgrade).toBeEnabled();
+    expect(screen.getByRole("button", { name: "当前订阅" })).toBeDisabled();
+    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
+    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
+    // Unrelated variants remain independent. Selecting a legal target restores its source.
+    await userEvent.click(getCreditTab("4500"));
+    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(getCreditTab("10000"));
+    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: "升级套餐" })).not.toBeInTheDocument();
+    await userEvent.click(getCreditTab("200"));
+    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
+    // The inverse direction is also a click interaction, not just an initial default.
+    await userEvent.click(getCreditTab("10000"));
+    await userEvent.click(getCreditTab("4500"));
+    await userEvent.click(getCreditTab("100"));
+    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(upgrade);
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Upgrade target");
+    expect(createPassOrderMock).not.toHaveBeenCalled();
+    sessionState.isAuthenticated = false;
+    rerender(<SubscribePage />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    sessionState.isAuthenticated = true;
+    rerender(<SubscribePage />);
+    await screen.findByRole("button", { name: "升级套餐" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("allows a backend-approved target in the same card without a tier or SP assumption", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("same-card-target", "启航 Launch"), credit: 4500 },
+      { ...buildBundle("unrelated", "巡游 Cruise"), credit: 10000 },
+    ]);
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "same-card-target", bundle: { bundle_id: "same-card-target", credit: 4500 }, modify_price: { real_total_cost: 100 } }] });
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await waitFor(() => expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true"));
+    await userEvent.click(getCreditTab("4500"));
+    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(getCreditTab("100"));
+    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: "升级套餐" })).not.toBeInTheDocument();
+    await userEvent.click(getCreditTab("4500"));
+    await userEvent.click(screen.getByRole("button", { name: "升级套餐" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Upgrade same-card-target");
+  });
+
+  it("leaves original AI defaults and locked actions unchanged when backend returns no targets", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("unrelated", "启航 Launch"), credit: 4500 },
+      { ...buildBundle("cruise-standard", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+      { ...buildBundle("cruise-ai", "巡游 Cruise"), credit: 10000 },
+    ]);
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [] });
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await waitFor(() => expect(listModifyBundlesMock).toHaveBeenCalledWith("p1"));
+    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: "升级套餐" })).not.toBeInTheDocument();
+    await userEvent.click(getCreditTab("100"));
+    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(getCreditTab("200"));
+    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
   });
 
   it("refreshes pass state and closes checkout when ordering reports an existing pass", async () => {

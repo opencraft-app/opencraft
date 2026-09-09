@@ -125,6 +125,20 @@ func newTestService(t *testing.T, store *fakeOrderStore, writer *fakeOrderWriter
 	})
 }
 
+func TestModifyOrderStatusKeepsOwnershipAndProvisionedBoundary(t *testing.T) {
+	s := &fakeOrderStore{getOrderFn: func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: "deal", ExternalUserID: "owner", OrderType: store.OrderTypeModify, Status: store.OrderStatusProvisioned}, nil
+	}}
+	svc := newTestService(t, s, &fakeOrderWriter{}, &fakeJifei{})
+	if _, err := svc.QueryStatus(context.Background(), QueryStatusInput{DealName: "deal", ExternalUserID: "other"}); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("owner bypass: %v", err)
+	}
+	out, err := svc.QueryStatus(context.Background(), QueryStatusInput{DealName: "deal", ExternalUserID: "owner"})
+	if err != nil || out.OrderType != "modify" || out.Status != StatusSuccess || out.LocalStatus != store.OrderStatusProvisioned {
+		t.Fatalf("out=%+v err=%v", out, err)
+	}
+}
+
 // fixedTradeOrder 构造一条标准 trade_order 流水（创建态新购订单），便于复用。
 func fixedTradeOrder(dealName, userID, status string) *store.TradeOrder {
 	return &store.TradeOrder{

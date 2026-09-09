@@ -404,8 +404,10 @@ type Logic interface {
 	// ctl.AcceptPassModify 链路触发。
 	ModifyPassOrder(userID, passID string, req *transport.ModifyPassOrderRequest) (*transport.ModifyPassOrderResult, error)
 
-	// ModifyPassOrderUrl 创建升配订单并直接返回支付页 URL（前端主链路）。
-	ModifyPassOrderUrl(userID, passID string, req *transport.ModifyPassOrderRequest) (*transport.ModifyPassOrderUrlResult, error)
+	// ModifyPassOrderUrl 为已有升配订单生成支付页，不重新下单。
+	ModifyPassOrderUrl(userID, passID string, req *transport.ModifyPassOrderUrlRequest) (*transport.ModifyPassOrderUrlResult, error)
+	GetModifyCheckout(userID, passID string) (*tradeadapter.ModifyCheckoutResult, error)
+	ModifyPassPaymentAuthorization(userID, passID string, req *transport.ModifyPassOrderUrlRequest) (*transport.ModifyPaymentAuthorizationResult, error)
 
 	// ModifyPassOrderAndPay 一体化创建升配订单 + 代扣，跳过支付页。
 	//

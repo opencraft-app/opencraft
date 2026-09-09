@@ -138,6 +138,8 @@ routes:
     path: /v1/passes/order-url
   - method: POST
     path: /v1/passes/{pass_id}/renew/order-url
+  - method: POST
+    path: /v1/passes/{pass_id}/modify/order-url
 - name: credit
   prefix: /v1/credit
   methods:

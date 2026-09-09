@@ -950,6 +950,15 @@ export const createFakeRepositories = (): Repositories => {
       },
     },
     plans: {
+      async listModifyBundles(passId) {
+        const pass = readStoredPasses().find(item => item.pass_id === passId);
+        return { source_bundle_id: pass?.bundle_id ?? '', modify_bundle_set: [] };
+      },
+      async createModifyOrder() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async getModifyCheckout() { return { checkout: null }; },
+      async getModifyOrderUrl() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async refreshModifyPaymentAuthorization() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async getOrderStatus() { throw new Error('Order status requires a connected billing service'); },
       async getCurrentSubscription() {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();
