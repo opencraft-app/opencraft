@@ -51,6 +51,8 @@ export interface PayPlan {
 }
 
 export interface BuildPayPlanInput {
+  /** Explicit operation; omitted preserves the existing create/renew bridge contract. */
+  operation?: 'modify';
   /** 阶段一下单返回的 jifei 订单号（取 deal_names[0]） */
   dealName: string;
   /**
@@ -101,6 +103,7 @@ export interface BuildPayPlanInput {
  *   - 携带 passId 用于区分新购/续费路由（pid 为空 → 新购；非空 → 续费）
  */
 export const BRIDGE_QUERY_KEYS = {
+  operation: 'op',
   dealName: "d",    // jifei 订单号（中转页阶段二回传给后端拉 pay_url）
   authCode: "ac",   // CodeBuddy 同款一次性鉴权 ticket（无主站 token 时用）
   expiresAt: "e",   // unix ms（前端 UX 提示用，与 auth_code TTL 对齐）
@@ -135,6 +138,9 @@ export function buildPayPlan(input: BuildPayPlanInput): PayPlan {
   if (!input.dealName) {
     throw new Error("buildPayPlan: dealName 不能为空");
   }
+  if (input.operation === 'modify' && (!input.passId || !input.authCode)) {
+    throw new Error('Upgrade payment requires a pass and payment authorization');
+  }
 
   const bridgeUrl = buildBridgeUrl({ ...input, expiresAt });
   /* CodeBuddy 模式下 need_charge 在中转页判定，PC 端恒认为需要支付（渲染二维码） */
@@ -151,6 +157,7 @@ function buildBridgeUrl(input: BuildPayPlanInput & { expiresAt: number }): strin
   params.set(BRIDGE_QUERY_KEYS.expiresAt, String(input.expiresAt));
   if (input.authCode) params.set(BRIDGE_QUERY_KEYS.authCode, input.authCode);
   if (input.passId) params.set(BRIDGE_QUERY_KEYS.passId, input.passId);
+  if (input.operation) params.set(BRIDGE_QUERY_KEYS.operation, input.operation);
   if (sandbox) params.set(BRIDGE_QUERY_KEYS.sandbox, "1");
   if (input.bundleName) params.set(BRIDGE_QUERY_KEYS.bundleName, input.bundleName);
   return `${baseUrl}?${params.toString()}`;

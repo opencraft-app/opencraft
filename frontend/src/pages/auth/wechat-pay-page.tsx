@@ -71,6 +71,7 @@ type BridgeStage = "loading" | "expired" | "success" | "error" | "openid-only";
 
 /** 从二维码 query 解析出的支付上下文（CodeBuddy AuthCode 模型，最小必要字段） */
 interface BridgeOrder {
+  operation?: 'modify';
   /** jifei 订单号（来自 PC 端 createPassOrder/createRenewOrder 返回的 deal_names[0]） */
   dealName: string;
   /** CodeBuddy 同款一次性鉴权 ticket（PC 端阶段一返回；后端未实现时为空，由后端兼容处理） */
@@ -216,6 +217,16 @@ export const WeChatPayPage = () => {
     }
 
     /* 完整支付链路 */
+    if (order.operation === 'modify' && (!order.passId || !order.authCode)) {
+      setStage('error');
+      setErrorMessage('升级支付信息不完整，请返回原页面重新获取二维码。');
+      return;
+    }
+    if (order.operation === 'modify' && !inWeChat) {
+      setStage('error');
+      setErrorMessage('请在微信中打开此页面，或返回电脑使用微信扫码。');
+      return;
+    }
     if (Date.now() > order.expiresAt) {
       setStage("expired");
       return;
@@ -518,6 +529,7 @@ function parseBridgeOrder(search: string): BridgeOrder | null {
     dealName,
     authCode: params.get(BRIDGE_QUERY_KEYS.authCode) ?? "",
     passId: params.get(BRIDGE_QUERY_KEYS.passId) ?? "",
+    operation: params.get(BRIDGE_QUERY_KEYS.operation) === 'modify' ? 'modify' : undefined,
     expiresAt,
     sandbox: params.get(BRIDGE_QUERY_KEYS.sandbox) === "1",
     bundleName: params.get(BRIDGE_QUERY_KEYS.bundleName) ?? "",
@@ -581,6 +593,9 @@ async function fetchOrderUrl(
   order: BridgeOrder,
   openId: string,
 ): Promise<CreatePassOrderUrlResult> {
+  if (order.operation === 'modify' && (!order.passId || !order.authCode)) {
+    throw new Error('升级支付信息不完整，请返回原页面重新获取二维码。');
+  }
   const baseInput = {
     deal_names: [order.dealName],
     platform: "mobile" as const,
@@ -589,8 +604,11 @@ async function fetchOrderUrl(
   };
 
   if (order.passId) {
+    if (order.operation === 'modify' && !order.authCode) {
+      throw new Error('升级支付凭证缺失，请回到原页面重新获取支付二维码。');
+    }
     return requestWechatPayEnvelope<CreatePassOrderUrlResult>(
-      `/v1/passes/${encodeURIComponent(order.passId)}/renew/order-url`,
+      `/v1/passes/${encodeURIComponent(order.passId)}/${order.operation === 'modify' ? 'modify' : 'renew'}/order-url`,
       baseInput,
     );
   }
@@ -609,7 +627,9 @@ async function requestWechatPayJSON<T>(path: string, body: unknown): Promise<T> 
   }
 
   const headers = new Headers({ "Content-Type": "application/json" });
-  const authToken = readStoredAuthToken();
+  // Upgrade bridge authenticates the intended order with its scoped ticket, not another mobile session.
+  const isUpgradePayment = /\/modify\/order-url$/.test(path);
+  const authToken = isUpgradePayment ? null : readStoredAuthToken();
   if (authToken) {
     headers.set("Authorization", `Bearer ${authToken}`);
   }
@@ -618,7 +638,7 @@ async function requestWechatPayJSON<T>(path: string, body: unknown): Promise<T> 
   try {
     response = await fetch(`${baseUrl}${path}`, {
       method: "POST",
-      credentials: "include",
+      credentials: isUpgradePayment ? 'omit' : 'include',
       headers,
       body: JSON.stringify(body),
     });

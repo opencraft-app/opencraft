@@ -120,6 +120,11 @@ type Config struct {
 	// 该值贯穿与 SiteKind 同样的 7 处下游 Deps 注入点。
 	RegionOverride string
 
+	// CreditRegionOverride 是积分包专用的计费地域 override，由环境变量
+	// LIGHTVELA_CREDIT_REGION 注入。未配置时继承 RegionOverride，保证已有环境
+	// 无需新增配置即可保持原行为；配置后仅影响 Credit 询价、下单、退款、资源回调和用量上报。
+	CreditRegionOverride string
+
 	// 询价专用影子账号兜底身份。仅 trade/inquiry.Quote 在用户未绑定 shadow binding 时用于展示价格；
 	// 下单 / 下单并支付 / 续费下单仍由 placeorder 包强校验真实 shadow binding。
 	// 两个 env 必须同进同退；都为空时禁用兜底并保持历史错误语义。
@@ -213,6 +218,8 @@ func Load() (Config, error) {
 
 		// 北京 2 预发布接入（2026-06-12）：region 字段 override，未配则按 SiteKind 兜底
 		RegionOverride: strings.TrimSpace(os.Getenv("LIGHTVELA_TRADE_REGION")),
+		// 积分包可与 Pass 使用不同计费地域；空值在校验前回退到 RegionOverride。
+		CreditRegionOverride: strings.TrimSpace(os.Getenv("LIGHTVELA_CREDIT_REGION")),
 
 		// 询价专用兜底账号：未绑定 shadow binding 时仅用于 Quote 拿价格，不影响付费下单强校验。
 		InquiryFallbackUin:   strings.TrimSpace(os.Getenv("TRADE_INQUIRY_FALLBACK_UIN")),
@@ -244,14 +251,26 @@ func Load() (Config, error) {
 	if cfg.AccountBindingInternalBaseURL == "" {
 		return Config{}, fmt.Errorf("ACCOUNT_BINDING_INTERNAL_BASE_URL is required")
 	}
-	// LIGHTVELA_TRADE_REGION fail-fast：未注册 region 字面量会让 trade 出向 jifei 协议
-	// regionId 落零值被 800200 拒回，启动期直接拦截，避免运行时排障困难。
-	if cfg.RegionOverride != "" {
-		if _, ok := region.LookupByRegion(cfg.RegionOverride); !ok {
+	if cfg.CreditRegionOverride == "" {
+		cfg.CreditRegionOverride = cfg.RegionOverride
+	}
+	// Region override fail-fast：未注册字面量会让 trade 出向 jifei 协议 regionId
+	// 落零值被 800200 拒回，启动期直接拦截，避免运行时排障困难。
+	for _, setting := range []struct {
+		name  string
+		value string
+	}{
+		{name: "LIGHTVELA_TRADE_REGION", value: cfg.RegionOverride},
+		{name: "LIGHTVELA_CREDIT_REGION", value: cfg.CreditRegionOverride},
+	} {
+		if setting.value != "" {
+			if _, ok := region.LookupByRegion(setting.value); ok {
+				continue
+			}
 			return Config{}, fmt.Errorf(
-				"LIGHTVELA_TRADE_REGION=%q is not a registered region; "+
+				"%s=%q is not a registered region; "+
 					"supported: ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore / ap-seoul",
-				cfg.RegionOverride)
+				setting.name, setting.value)
 		}
 	}
 	if (cfg.InquiryFallbackUin == "") != (cfg.InquiryFallbackAppID == "") {

@@ -23,6 +23,10 @@ import type {
   InviteCodeValidation,
   KnowledgeSource,
   Pass,
+  PassModifyBundles,
+  PassModifyOrder,
+  PassModifyCheckout,
+  PassOrderStatus,
   PassRenewPrice,
   PlanOption,
   PlanTier,
@@ -220,6 +224,12 @@ export interface AuthRepository {
 }
 
 export interface PlanRepository {
+  listModifyBundles(passId: string): Promise<PassModifyBundles>;
+  getModifyCheckout(passId: string): Promise<PassModifyCheckout>;
+  createModifyOrder(passId: string, input: { target_bundle_id: string }): Promise<PassModifyOrder>;
+  getModifyOrderUrl(passId: string, input: CreatePassOrderUrlInput): Promise<CreatePassOrderUrlResult>;
+  refreshModifyPaymentAuthorization(passId: string, input: { deal_names: string[] }): Promise<{ auth_code: string }>;
+  getOrderStatus(dealName: string): Promise<PassOrderStatus>;
   getCurrentSubscription(): Promise<CurrentSubscription | null>;
   getPlanPreview(): Promise<{
     currentCandidate: PlanTier;

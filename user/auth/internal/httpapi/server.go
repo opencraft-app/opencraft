@@ -84,6 +84,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	handler.federation = config.Federation
 	handler.oidc = config.OIDC
+	router.POST("/auth/native/token", handler.ExchangeNativeLogin)
 	registerOAuthRoutes(router, handler)
 	registerFederationSwitchRoutes(router, handler)
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)

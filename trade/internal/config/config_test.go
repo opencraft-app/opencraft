@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -221,6 +222,48 @@ func TestLoad_RegionOverrideFromEnv(t *testing.T) {
 			}
 			if cfg.RegionOverride != tc.wantVal {
 				t.Errorf("cfg.RegionOverride = %q, want %q", cfg.RegionOverride, tc.wantVal)
+			}
+		})
+	}
+}
+
+func TestLoad_CreditRegionOverrideFromEnv(t *testing.T) {
+	tests := []struct {
+		name        string
+		tradeValue  string
+		creditValue string
+		want        string
+		wantErr     bool
+	}{
+		{name: "credit override is independent", tradeValue: "ap-guangzhou", creditValue: "ap-beijing", want: "ap-beijing"},
+		{name: "unset credit override inherits trade", tradeValue: "ap-singapore", want: "ap-singapore"},
+		{name: "both unset keep override empty", want: ""},
+		{name: "surrounding whitespace trimmed", tradeValue: "ap-guangzhou", creditValue: "  ap-beijing  ", want: "ap-beijing"},
+		{name: "unknown credit region fails fast", tradeValue: "ap-guangzhou", creditValue: "ap-tokyo", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setRequiredLoadEnv(t)
+			t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+			t.Setenv("LIGHTVELA_TRADE_REGION", tt.tradeValue)
+			t.Setenv("LIGHTVELA_CREDIT_REGION", tt.creditValue)
+
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Load() expected error, got CreditRegionOverride=%q", cfg.CreditRegionOverride)
+				}
+				if !strings.Contains(err.Error(), "LIGHTVELA_CREDIT_REGION") {
+					t.Fatalf("Load() error = %q, want LIGHTVELA_CREDIT_REGION", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.CreditRegionOverride != tt.want {
+				t.Fatalf("CreditRegionOverride = %q, want %q", cfg.CreditRegionOverride, tt.want)
 			}
 		})
 	}

@@ -22,6 +22,7 @@ import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
+  oauthErrorMessage,
   redirectToOAuthStart,
   VISIBLE_OAUTH_PROVIDERS,
   wechatOAuthStartTargetForUserAgent,
@@ -269,6 +270,9 @@ export const LoginModal = ({
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) setError(oauthErrorMessage(new URLSearchParams(window.location.search).get("oauth_error")));
+  }, [open]);
   const [domesticLoginMethod, setDomesticLoginMethod] = useState<DomesticLoginMethod>("wechat");
   const [wechatMobileGuideUrl, setWechatMobileGuideUrl] = useState<string | null>(null);
   const [shouldFocusWechatMobileGuide, setShouldFocusWechatMobileGuide] = useState(false);

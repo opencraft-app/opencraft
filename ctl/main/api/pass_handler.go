@@ -1234,6 +1234,12 @@ func (h *passHandler) handleUserPassesByID(w http.ResponseWriter, r *http.Reques
 	// 同 SP 升配（TAPD 1010132091137784162 §5.1）
 	if len(parts) == 3 && parts[1] == "modify" {
 		switch parts[2] {
+		case "checkout":
+			h.userGetModifyCheckout(w, r, parts[0])
+			return
+		case "payment-authorization":
+			h.userModifyPassPaymentAuthorization(w, r, parts[0])
+			return
 		case "bundles":
 			h.userListPassModifyBundles(w, r, parts[0])
 			return
@@ -1323,13 +1329,67 @@ func (h *passHandler) userModifyOrderEntry(
 	writeSuccess(w, r, http.StatusOK, result)
 }
 
-// userModifyPassOrderUrl POST /v1/passes/{pass_id}/modify/order-url — 建单 + 返支付页 URL。
-func (h *passHandler) userModifyPassOrderUrl(w http.ResponseWriter, r *http.Request, passID string) {
-	req, userID, ok := decodeModifyOrderRequest(w, r)
-	if !ok {
+// userModifyPassOrderUrl generates a payment URL for an existing modify order.
+func (h *passHandler) userModifyPassPaymentAuthorization(w http.ResponseWriter, r *http.Request, passID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
 		return
 	}
-	result, err := h.logic.ModifyPassOrderUrl(userID, passID, req)
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	var req transport.ModifyPassOrderUrlRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.ErrInvalidParam)
+		return
+	}
+	result, err := h.logic.ModifyPassPaymentAuthorization(ctx.GetUserID(), passID, &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+func (h *passHandler) userGetModifyCheckout(w http.ResponseWriter, r *http.Request, passID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	result, err := h.logic.GetModifyCheckout(ctx.GetUserID(), passID)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+func (h *passHandler) userModifyPassOrderUrl(w http.ResponseWriter, r *http.Request, passID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	var req transport.ModifyPassOrderUrlRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	userID, err := resolveOrderUrlAuth(r, req.AuthCode, req.DealNames, passID)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	result, err := h.logic.ModifyPassOrderUrl(userID, passID, &req)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return

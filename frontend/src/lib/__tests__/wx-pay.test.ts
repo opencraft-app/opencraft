@@ -24,6 +24,12 @@ const baseInput: BuildPayPlanInput = {
 };
 
 describe("wx-pay / buildPayPlan", () => {
+  it('marks upgrade intent without changing legacy renewal links', () => {
+    const plan = buildPayPlan({ dealName: 'upgrade-1', authCode: 'test-ticket', passId: 'pass-1', operation: 'modify' });
+    expect(new URL(plan.bridgeUrl).searchParams.get('op')).toBe('modify');
+    const legacy = buildPayPlan({ dealName: 'renew-1', passId: 'pass-1' });
+    expect(new URL(legacy.bridgeUrl).searchParams.has('op')).toBe(false);
+  });
   beforeEach(() => {
     vi.unstubAllEnvs();
   });
