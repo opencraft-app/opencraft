@@ -51,10 +51,15 @@ class CommandWrapperTests(unittest.TestCase):
             str(path.relative_to(REPO_ROOT))
             for path in (RUNTIME_DIR / "harness_ci").rglob("*.py")
         )
+        expected_bundle_sources = {
+            str(path.relative_to(REPO_ROOT))
+            for path in (RUNTIME_DIR / "bundles").glob("*.bundle")
+        }
 
         self.assertFalse(any(".secret" in entry or "kubeconfig" in entry for entry in manifest_entries))
         self.assertTrue(all(entry.startswith(".ci/runtime/") for entry in manifest_entries))
         self.assertTrue(expected_python.issubset(manifest_entries))
+        self.assertTrue(expected_bundle_sources.issubset(manifest_entries))
         self.assertFalse(any("/db_gates/" in entry for entry in manifest_entries))
         self.assertNotIn(".ci/runtime/release-bundles.manifest", manifest_entries)
 
