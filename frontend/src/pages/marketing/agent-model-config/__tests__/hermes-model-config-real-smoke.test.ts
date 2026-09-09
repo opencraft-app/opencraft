@@ -136,6 +136,22 @@ describe.skipIf(!hermesSource)("Hermes model configuration real-source smoke", (
       expect(envText).toContain("HERMES_CUSTOM_LIGHTVELA_SMOKE_FALLBACK_PROVIDER_API_KEY=");
       expect(envText).toContain("HERMES_CUSTOM_LIGHTVELA_SMOKE_SECOND_FALLBACK_PROVIDER_API_KEY=");
 
+      const anchor = afterSecondFallback.primary!;
+      const appended = runAction(hermesSource!, home, {
+        type: "appendProviderModel", anchor, modelId: "smoke-additional-model",
+      });
+      expect(appended.primary).toEqual(afterSecondFallback.primary);
+      expect(appended.fallbacks).toEqual(afterSecondFallback.fallbacks);
+      expect(appended.configuredModels).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: primary.id }),
+        expect.objectContaining({ id: "smoke-additional-model", providerKey: anchor.providerKey }),
+      ]));
+      const afterAppendConfig = readHermesConfig(hermesSource!, home);
+      expect(afterAppendConfig.model).toEqual(persistedConfig.model);
+      expect(afterAppendConfig.lightvela).toEqual(persistedConfig.lightvela);
+      expect(readFileSync(join(home, ".env"), "utf8")).toBe(envText);
+      expect(runAction(hermesSource!, home, { type: "read" }).configuredModels).toEqual(appended.configuredModels);
+
       const afterDetach = runAction(hermesSource!, home, {
         type: "removeFallback",
         providerKey: "lightvela-smoke-fallback-provider",

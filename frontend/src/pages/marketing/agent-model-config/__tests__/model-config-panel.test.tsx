@@ -214,7 +214,7 @@ function createRemote(
     if (action.type === "prepareCredentialEnvelope") {
       return { status: "Succeeded", exitCode: 0, output: preparationOutput };
     }
-    if (action.type === "probe") {
+    if (action.type === "probe" || action.type === "probeConfiguredProvider") {
       return {
         status: "SUCCESS",
         exitCode: 0,
@@ -227,6 +227,14 @@ function createRemote(
         exitCode: 0,
         output: connectionOutput(snapshot),
       };
+    }
+    if (action.type === "probeConfiguredModel") {
+      return { status: "SUCCESS", exitCode: 0, output: [HERMES_MODEL_CONFIG_JSON_START, JSON.stringify({ok: true, connection: {
+        success: true, provider: action.anchor.providerKey, model: action.modelId, baseUrl: action.anchor.baseUrl, timeMs: 100,
+      }}), HERMES_MODEL_CONFIG_JSON_END].join("\n") };
+    }
+    if (action.type === "appendProviderModel") {
+      snapshot.configuredModels.push({ ...action.anchor, id: action.modelId });
     }
     if (action.type === "add") {
       const nextModel = action.model;
@@ -339,6 +347,73 @@ describe("AgentModelConfigPanel", () => {
     vi.clearAllMocks();
   });
 
+  it("appends a custom model inside its Provider without asking for credentials or changing the primary", async () => {
+    const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, idleModel] });
+    renderPanel(remote);
+    const trigger = await screen.findByRole("button", { name: "Gamma API" });
+    const groupRow = trigger.closest("li")!;
+    await userEvent.click(within(groupRow).getByRole("button", { name: "添加模型" }));
+    const form = within(groupRow).getByRole("group", { name: "添加模型" });
+    expect(form.closest("li")?.parentElement?.tagName).toBe("UL");
+    for (const name of ["保存", "取消"]) {
+      expect(within(form).getByRole("button", { name })).toHaveClass("rounded-md", "text-xs", "font-normal");
+    }
+    expect(within(form).queryByLabelText("API Key")).not.toBeInTheDocument();
+    expect(within(form).queryByRole("button", { name: "获取可用模型" })).not.toBeInTheDocument();
+    expect(remote.actions).toContainEqual({ type: "probeConfiguredProvider", anchor: idleModel });
+    expect(within(form).getByRole("button", { name: "检测模型状态" })).toBeDisabled();
+    await userEvent.click(within(form).getByRole("combobox", { name: "模型" }));
+    await userEvent.click(screen.getByRole("option", { name: "model-new" }));
+    await userEvent.click(within(form).getByRole("button", { name: "检测模型状态" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("模型可用性检测通过");
+    expect(screen.getByRole("dialog")).toHaveTextContent("model-new");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确定" }));
+    await userEvent.click(within(form).getByRole("button", { name: "保存" }));
+    expect(await within(groupRow).findByText("model-new")).toBeInTheDocument();
+    expect(within(groupRow).getByText("model-idle")).toBeInTheDocument();
+    expect(remote.actions).toContainEqual({ type: "appendProviderModel", anchor: idleModel, modelId: "model-new" });
+    expect(remote.actions).toContainEqual({ type: "probeConfiguredModel", anchor: idleModel, modelId: "model-new" });
+    expect(remote.actions.some((action) => ["prepareCredentialEnvelope", "add", "assign"].includes(action.type))).toBe(false);
+    expect(screen.getByText("主模型：model-primary")).toBeInTheDocument();
+  });
+
+  it("retains the custom draft on collapse, blocks duplicates, and cancels without writing", async () => {
+    const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, idleModel] }, []);
+    renderPanel(remote);
+    const trigger = await screen.findByRole("button", { name: "Gamma API" });
+    const row = trigger.closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+    let form = within(row).getByRole("group", { name: "添加模型" });
+    await userEvent.type(await within(form).findByPlaceholderText("输入模型 ID"), idleModel.id);
+    expect(within(form).getByRole("button", { name: "保存" })).toBeDisabled();
+    await userEvent.click(trigger);
+    await userEvent.click(trigger);
+    form = within(row).getByRole("group", { name: "添加模型" });
+    expect(within(form).getByLabelText("模型")).toHaveValue(idleModel.id);
+    await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+    await userEvent.click(within(screen.getByRole("button", { name: /Alpha API/ }).closest("li")!).getByRole("button", { name: "添加模型" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("放弃当前添加？");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "取消" }));
+    await userEvent.click(within(form).getByRole("button", { name: "取消" }));
+    expect(remote.actions.map((action) => action.type)).toEqual(["read", "probeConfiguredProvider"]);
+  });
+
+  it("uses the existing product catalog when adding inside a predefined Provider", async () => {
+    const anchor = { ...primaryModel, providerKey: "lightvela-catalog-plan", id: "catalog-first" };
+    const remote = createRemote({ primary: anchor, fallbacks: [], configuredModels: [anchor] });
+    renderPanel(remote, false, [catalogPlan]);
+    const row = (await screen.findByRole("button", { name: /Alpha API/ })).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+    const form = within(row).getByRole("group", { name: "添加模型" });
+    expect(within(form).queryByRole("button", { name: "获取可用模型" })).not.toBeInTheDocument();
+    await userEvent.click(within(form).getByRole("combobox", { name: "模型" }));
+    expect(screen.getByRole("option", { name: "Catalog First (已添加)" })).toHaveAttribute("data-disabled");
+    await userEvent.click(screen.getByRole("option", { name: "Catalog Second" }));
+    await userEvent.click(within(form).getByRole("button", { name: "保存" }));
+    expect(remote.actions.map((action) => action.type)).toEqual(["read", "appendProviderModel"]);
+    expect(remote.actions.at(-1)).toMatchObject({ modelId: "catalog-second", anchor });
+  });
+
   it("groups configured models by Provider and switches the primary model without re-adding credentials", async () => {
     const remote = createRemote({
       primary: primaryModel,
@@ -361,8 +436,7 @@ describe("AgentModelConfigPanel", () => {
 
     await userEvent.click(betaTrigger);
     const betaGroup = screen.getByRole("group", { name: "Beta API 已配置模型" });
-    expect(within(betaGroup).getByRole("radio", { name: "model-fallback" })).toBeChecked();
-    await userEvent.click(within(betaGroup).getByRole("radio", { name: "model-beta-2" }));
+    expect(within(betaGroup).queryByRole("radio")).not.toBeInTheDocument();
     const secondBetaRow = screen.getByText("model-beta-2").closest("li") as HTMLElement;
     await userEvent.click(within(secondBetaRow).getByRole("button", { name: "设为主模型" }));
 
@@ -373,7 +447,7 @@ describe("AgentModelConfigPanel", () => {
     const fallbackProviderLabel = within(updatedBetaTrigger).getByText("备用模型：model-fallback");
     expect(primaryProviderLabel.compareDocumentPosition(fallbackProviderLabel))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(primaryProviderLabel.parentElement).toHaveClass("flex-row", "flex-wrap", "justify-end");
+    expect(primaryProviderLabel.parentElement).toHaveClass("flex-row", "flex-wrap", "w-full", "sm:justify-end");
     expect(primaryProviderLabel.parentElement).not.toHaveClass("flex-col");
     expect(within(screen.getByRole("group", { name: "Beta API 已配置模型" })).getByText("model-beta-2").closest("li")).toHaveTextContent("主模型");
     expect(remote.actions.filter((action) => action.type === "assign")).toEqual([
@@ -389,7 +463,7 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions.some((action) => ["add", "probe", "connectivityProbe"].includes(action.type))).toBe(false);
   });
 
-  it("keeps models with the same Provider identity in one radio group", async () => {
+  it("shows real model roles within a Provider without a separate radio selection", async () => {
     const remote = createRemote({
       primary: primaryModel,
       fallbacks: [secondAlphaModel, thirdAlphaModel],
@@ -404,7 +478,7 @@ describe("AgentModelConfigPanel", () => {
     const fallbackProviderLabel = within(alphaTrigger).getByText("备用模型：model-alpha-2、model-alpha-3");
     expect(primaryProviderLabel.compareDocumentPosition(fallbackProviderLabel))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(primaryProviderLabel.parentElement).toHaveClass("flex-row", "flex-wrap", "justify-end");
+    expect(primaryProviderLabel.parentElement).toHaveClass("flex-row", "flex-wrap", "w-full", "sm:justify-end");
     expect(primaryProviderLabel.parentElement).not.toHaveClass("flex-col");
     expect(fallbackProviderLabel).toHaveClass(
       "border",
@@ -431,20 +505,11 @@ describe("AgentModelConfigPanel", () => {
       "bg-[color-mix(in_oklab,var(--warning)_20%,white)]",
       "text-[var(--warning)]",
     );
-    const configuredModelRadio = within(primaryRow).getByRole("radio", { name: "model-primary" });
-    expect(configuredModelRadio).toBeChecked();
-    expect(configuredModelRadio).toHaveClass(
-      "appearance-none",
-      "checked:border-[#2F6BFF]",
-      "checked:bg-[#2F6BFF]",
-      "checked:shadow-[inset_0_0_0_3px_white]",
-    );
-    expect(configuredModelRadio).not.toHaveClass("accent-[#2F6BFF]");
-    expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
+    expect(within(alphaGroup).queryByRole("radio")).not.toBeInTheDocument();
+    expect(within(primaryRow).getByRole("button", { name: "已是主模型" })).toBeDisabled();
     expect(within(secondAlphaRow).getByRole("button", { name: "设为主模型" })).toBeEnabled();
 
-    await userEvent.click(within(alphaGroup).getByRole("radio", { name: "model-alpha-2" }));
-    expect(within(secondAlphaRow).getByRole("radio", { name: "model-alpha-2" })).toBeChecked();
+    expect(within(secondAlphaRow).getByRole("button", { name: "设为主模型" }).querySelector("svg")).toBeNull();
   });
 
   it("shows catalog models inside an already configured Provider and assigns them without credentials", async () => {
@@ -541,7 +606,7 @@ describe("AgentModelConfigPanel", () => {
     expect(primaryModelName).toHaveClass("text-sm", "font-normal");
     expect(primaryModelName).not.toHaveClass("text-xs", "font-semibold");
     expect(within(primaryRow).getByText("主模型")).toHaveClass("text-xs");
-    const primaryAction = within(primaryRow).getByRole("button", { name: "设为主模型" });
+    const primaryAction = within(primaryRow).getByRole("button", { name: "已是主模型" });
     const fallbackAction = within(primaryRow).getByRole("button", { name: "设为备用模型" });
     expect(primaryAction.querySelector("svg")).toBeNull();
     const outlinedActionClasses = ["border", "border-[var(--border-strong)]"];
@@ -557,7 +622,7 @@ describe("AgentModelConfigPanel", () => {
     expect(primaryRow).not.toHaveClass("bg-black/[0.015]");
     expect(within(primaryRow).getByText("主模型")).toBeInTheDocument();
     expect(within(primaryRow).getAllByRole("button")).toHaveLength(3);
-    expect(within(primaryRow).getByRole("button", { name: "设为主模型" })).toBeDisabled();
+    expect(within(primaryRow).getByRole("button", { name: "已是主模型" })).toBeDisabled();
     expect(within(primaryRow).getByRole("button", { name: "设为备用模型" })).toBeDisabled();
     const deleteButton = within(primaryRow).getByRole("button", { name: "删除" });
     expect(deleteButton).toBeDisabled();
@@ -618,7 +683,7 @@ describe("AgentModelConfigPanel", () => {
     expect(autoRow).toBeInTheDocument();
     expect(within(autoRow).queryByText("auto")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "设为主模型" }));
+    expect(screen.getByRole("button", { name: "已是主模型" })).toBeDisabled();
     expect(remote.actions).not.toContainEqual(expect.objectContaining({ type: "assign" }));
   });
 

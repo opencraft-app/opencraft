@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from "node:crypto";
 
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -60,6 +60,29 @@ function decodeAction(command: string): HermesModelConfigAction {
 }
 
 describe("useModelConfig", () => {
+  it("discards a cancelled saved-model check and allows the next operation", async () => {
+    let finish: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
+    const pending = new Promise<{ status: string; exitCode: number; output: string }>((resolve) => { finish = resolve; });
+    const execDebugCommand = vi.fn(async (_id: string, command: string) => {
+      const action = decodeAction(command);
+      if (action.type === "probeConfiguredModel") return pending;
+      return { status: "Succeeded", exitCode: 0, output: output(initialSnapshot) };
+    });
+    const { result } = renderHook(() => useModelConfig({ botId: "bot-1", execDebugCommand }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    let response: Promise<unknown>;
+    act(() => { response = result.current.testConnection({ anchor: model, modelId: "model-new" }); });
+    expect(result.current.operation).toBe("configured-connectivity-probe");
+    act(() => result.current.cancelProbe());
+    expect(result.current.operation).toBeNull();
+    await act(async () => {
+      finish!({ status: "Succeeded", exitCode: 0, output: payloadOutput({connection: { success: true, provider: model.providerKey, model: "model-new", baseUrl: model.baseUrl }}) });
+      expect(await response!).toBeNull();
+    });
+    expect(result.current.snapshot).toEqual(initialSnapshot);
+    expect(result.current.operationError).toBeNull();
+  });
+
   it("does not reload when only the execDebugCommand reference changes", async () => {
     const execDebugCommandA = vi.fn(async () => ({
       status: "Succeeded",

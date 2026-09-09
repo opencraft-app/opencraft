@@ -12,7 +12,10 @@ type ModelPurpose = "primary" | "fallback" | "idle";
 
 export type ModelConfigOperation =
   | "probe"
+  | "configured-probe"
+  | "append"
   | "connectivity-probe"
+  | "configured-connectivity-probe"
   | "add"
   | "assign-primary"
   | "assign-fallback"
@@ -114,21 +117,22 @@ export function useModelConfig({
     }
   }, []);
 
-  const probe = useCallback(async (input: { apiKey: string; baseUrl: string; apiMode: string }) => {
+  const probe = useCallback(async (input: { apiKey: string; baseUrl: string; apiMode: string } | { anchor: HermesConfiguredModel }) => {
     if (activeOperation.current) return null;
-    const token = Symbol("probe");
-    activeOperation.current = { token, kind: "probe" };
+    const kind = "anchor" in input ? "configured-probe" : "probe";
+    const token = Symbol(kind);
+    activeOperation.current = { token, kind };
     const revision = ++probeRevision.current;
-    setOperation("probe");
+    setOperation(kind);
     setOperationError(null);
     setOperationErrorOperation(null);
     try {
-      const result = await client.probe(input);
+      const result = "anchor" in input ? await client.probeConfigured(input.anchor) : await client.probe(input);
       return revision === probeRevision.current && activeOperation.current?.token === token ? result : null;
     } catch (error) {
       if (revision === probeRevision.current && activeOperation.current?.token === token) {
         setOperationError(getErrorMessage(error));
-        setOperationErrorOperation("probe");
+        setOperationErrorOperation(kind);
       }
       return null;
     } finally {
@@ -143,20 +147,21 @@ export function useModelConfig({
     apiKey: string;
     model: HermesConfiguredModel;
     strategy?: "model_list" | "model_request";
-  }): Promise<HermesConnectionProbeResult | null> => {
+  } | { anchor: HermesConfiguredModel; modelId: string }): Promise<HermesConnectionProbeResult | null> => {
     if (activeOperation.current) return null;
-    const token = Symbol("connectivity-probe");
-    activeOperation.current = { token, kind: "connectivity-probe" };
-    setOperation("connectivity-probe");
+    const kind = "anchor" in input ? "configured-connectivity-probe" : "connectivity-probe";
+    const token = Symbol(kind);
+    activeOperation.current = { token, kind };
+    setOperation(kind);
     setOperationError(null);
     setOperationErrorOperation(null);
     try {
-      const result = await client.testConnection(input);
+      const result = "anchor" in input ? await client.testConfiguredConnection(input.anchor, input.modelId) : await client.testConnection(input);
       return activeOperation.current?.token === token ? result : null;
     } catch (error) {
       if (activeOperation.current?.token === token) {
         setOperationError(getErrorMessage(error));
-        setOperationErrorOperation("connectivity-probe");
+        setOperationErrorOperation(kind);
       }
       return null;
     } finally {
@@ -169,10 +174,10 @@ export function useModelConfig({
 
   const cancelProbe = useCallback(() => {
     probeRevision.current += 1;
-    if (activeOperation.current?.kind === "probe") activeOperation.current = null;
-    setOperation((current) => current === "probe" ? null : current);
+    if (["probe", "configured-probe", "configured-connectivity-probe"].includes(activeOperation.current?.kind ?? "")) activeOperation.current = null;
+    setOperation((current) => current === "probe" || current === "configured-probe" || current === "configured-connectivity-probe" ? null : current);
     setOperationErrorOperation((current) => {
-      if (current === "probe") {
+      if (current === "probe" || current === "configured-probe" || current === "configured-connectivity-probe") {
         setOperationError(null);
         return null;
       }
@@ -191,6 +196,9 @@ export function useModelConfig({
     purpose: ModelPurpose;
     discoverModels?: boolean;
   }) => runMutation("add", () => client.add(input)), [client, runMutation]);
+
+  const append = useCallback((model: HermesConfiguredModel, modelId: string) =>
+    runMutation("append", () => client.append(model, modelId)), [client, runMutation]);
 
   const assign = useCallback((model: HermesConfiguredModel, purpose: "primary" | "fallback") =>
     runMutation(
@@ -239,6 +247,7 @@ export function useModelConfig({
     cancelProbe,
     clearOperationError,
     add,
+    append,
     assign,
     removeFallback,
     remove,
