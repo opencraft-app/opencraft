@@ -232,6 +232,7 @@ func Load(path string) (Config, error) {
 	if !cfg.Audit.Stdout && !cfg.Audit.OTLP.Enabled {
 		cfg.Audit.Stdout = true
 	}
+	applyAuthEnvOverrides(&cfg)
 	applyBackendEnvOverrides(&cfg)
 	applyRouteEnvOverrides(&cfg)
 	if err := cfg.Validate(); err != nil {
@@ -475,6 +476,31 @@ func applyBackendEnvOverrides(cfg *Config) {
 			}
 			cfg.Backends[i].Upstream.Headers["Host"] = value
 		}
+	}
+}
+
+func applyAuthEnvOverrides(cfg *Config) {
+	if mode := strings.TrimSpace(os.Getenv("CLOUDLADDERGATEWAY_AUTH_MODE")); mode != "" {
+		cfg.Auth.Mode = strings.ToLower(mode)
+	}
+	appendRaw := strings.TrimSpace(os.Getenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND"))
+	if appendRaw == "" {
+		return
+	}
+	seen := make(map[string]struct{}, len(cfg.Auth.AllowUnauthenticated))
+	for _, routeID := range cfg.Auth.AllowUnauthenticated {
+		seen[routeID] = struct{}{}
+	}
+	for _, routeID := range strings.Split(appendRaw, ",") {
+		routeID = strings.TrimSpace(routeID)
+		if routeID == "" {
+			continue
+		}
+		if _, ok := seen[routeID]; ok {
+			continue
+		}
+		cfg.Auth.AllowUnauthenticated = append(cfg.Auth.AllowUnauthenticated, routeID)
+		seen[routeID] = struct{}{}
 	}
 }
 

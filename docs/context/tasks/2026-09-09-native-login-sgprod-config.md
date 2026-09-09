@@ -104,6 +104,7 @@ Prepare reviewed source and GitOps changes registering the native public client 
 - MCP CLI unavailable and BK_CI_ACCESS_TOKEN absent; no authenticated MR/CI API operations.
 
 ## checkpoint
+- Conflict follow-up: merge master 7f1d4dc52 into source branch; only release-gitops.md conflicts. Preserve the upstream HMAC rollout paragraph and the Native OIDC section separately. No deployment or login behavior changed by conflict resolution.
 - Configurations and rollout prerequisite written to isolated source and GitOps worktrees.
 - Initial Go invocations hit workspace Go 1.26 requirement/toolchain download environment; resolved by using installed Go 1.25.4 with module-local mode (both go.mod require 1.25).
 - No production image pin changed, no live calls made, no new credential requested for local work.
