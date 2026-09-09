@@ -76,6 +76,7 @@
 - Bot 切换器改为 Radix Popover 浮层，最终使用 46% 半透明白底、8px 背景模糊和 8px 圆角；浏览器测量展开前后创建按钮、页签、导航的纵坐标均保持 `178 / 243 / 297`，位移为 0，并验证 Bot 切换与 Escape 关闭。
 - 已有实例创建的是实例内 Bot/Profile，不复用首台实例的订阅跳转：存在当前 Bot 时直接打开创建弹窗；仅没有 Bot 且未订阅时进入 `/subscribe`。本地无 Pass 预览已验证 URL 留在 `/agents/channels/?bot=bot_local_preview`。
 - 创建弹窗首屏精简为 Bot 名称、创建方式和复制范围，标题使用“创建 Bot”以避免与 Agent 实例创建混淆，主操作使用“确认创建”；复制提示以用户语义说明继承模型、人设、技能、用户偏好和长期记忆，不继承当前对话、历史会话、运行状态或通道连接，不暴露内部文件与 Channel/Home Channel 术语。初始人设默认收进可展开的“高级设置”，标题不使用分隔线，箭头紧随标题。取消和确认创建改为右下角 36px 高紧凑按钮。当前 Bot 是主 Bot 时合并重复克隆来源，仅显示“复制当前（主 Bot）”与“空白创建”；切换到其他 Bot 时仍显示复制当前、复制主 Bot、空白创建。浏览器验证默认态不渲染人设输入框，展开后通过 `aria-expanded` 和 `aria-controls` 显示对应区域，按钮仍保持右对齐。
+- CR 回归验证通过：国际站的微信唯一绑定协调方法不再请求国内站 nested Bot API，国内站 repository 用例 60 个通过、国际站 59 个通过；CTL 新增默认 Bot 不可删除和微信 owner Bot 不可删除的行为测试并通过。
 - 完整变更集执行 `validate_change_impact.py` 通过，命中 `agent-gateway-runtime`、`site-environment-routing`、`release-gitops`，高风险边界需 maintainer review；`git diff --check` 通过。
 
 ## risks

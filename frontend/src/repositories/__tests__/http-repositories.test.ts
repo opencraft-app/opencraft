@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
+import { isGlobal } from "@/lib/region";
 import {
   AUTH_SERVICE_UNAVAILABLE_MESSAGE,
   AUTH_UNAUTHORIZED_EVENT,
@@ -542,7 +543,7 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
-  it("loads nested product bots and routes unique channels by stable bot id", async () => {
+  it.skipIf(isGlobal)("loads nested product bots and routes unique channels by stable bot id", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: Array<{ url: string; method: string }> = [];
     const jsonResponse = (data: unknown) => new Response(
@@ -652,7 +653,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it("does not hide nested bot authorization failures behind the legacy fallback", async () => {
+  it.skipIf(isGlobal)("does not hide nested bot authorization failures behind the legacy fallback", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(
@@ -679,6 +680,18 @@ describe("http repositories auth token bootstrap", () => {
       status: 403,
       code: "FORBIDDEN",
     });
+  });
+
+  it.skipIf(!isGlobal)("keeps unique channel coordination on the legacy global path", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await repositories.bots.claimUniqueChannel("ins-global", "weixin");
+    await repositories.bots.confirmUniqueChannel("ins-global", "weixin");
+    await repositories.bots.releaseUniqueChannel("ins-global", "weixin");
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses ctl instance name before stale local bot drafts", async () => {

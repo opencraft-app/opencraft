@@ -3,10 +3,18 @@ package instance
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+
+	psandbox "ctl/pkg/adapter/sandbox"
+	pctx "ctl/pkg/context"
+	"ctl/pkg/errcode"
+	modelinstance "ctl/pkg/model/instance"
+
+	"go.uber.org/zap"
 )
 
 func TestBuildHermesProfileCreateCommandCreatesBlankProfileWithMetadata(t *testing.T) {
@@ -147,6 +155,60 @@ func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *tes
 	run("release", "bot-1", "profile-1")
 	if current := run("get", "", ""); current.BotID != "" {
 		t.Fatalf("expected released binding, got %+v", current)
+	}
+}
+
+func TestDeleteInstanceBotRejectsDefaultBot(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		processBatches: [][]psandbox.ProcessStreamEvent{{
+			{Stdout: `{"items":[{"native_id":"default","display_name":"Main","is_default":true}]}`},
+			{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+		}},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	_, err := logic.DeleteInstanceBot(pctx.NewContext(nil).WithUserID("user-1"), "ins-1", "ins-1")
+	if !errors.Is(err, errcode.ErrInstanceBotDefaultDelete) {
+		t.Fatalf("expected default Bot delete rejection, got %v", err)
+	}
+	if len(adapter.processCalls) != 1 {
+		t.Fatalf("default Bot rejection must not run delete or binding commands, got %d calls", len(adapter.processCalls))
+	}
+}
+
+func TestDeleteInstanceBotRejectsWeixinOwner(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		processBatches: [][]psandbox.ProcessStreamEvent{
+			{
+				{Stdout: `{"items":[{"native_id":"sales-123","display_name":"Sales","is_default":false}]}`},
+				{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+			},
+			{
+				{Stdout: `{"ok":true,"channel":"weixin","bot_id":"sales-123","profile_id":"sales-123","status":"connected"}`},
+				{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+			},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	_, err := logic.DeleteInstanceBot(pctx.NewContext(nil).WithUserID("user-1"), "ins-1", "sales-123")
+	if !errors.Is(err, errcode.ErrChannelOccupied) {
+		t.Fatalf("expected connected Weixin owner rejection, got %v", err)
+	}
+	if len(adapter.processCalls) != 2 {
+		t.Fatalf("connected Weixin owner rejection must not run profile delete, got %d calls", len(adapter.processCalls))
 	}
 }
 

@@ -1145,6 +1145,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async claimUniqueChannel(botId, channel) {
+      if (isGlobal) return;
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "PUT",
@@ -1152,6 +1153,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async confirmUniqueChannel(botId, channel) {
+      if (isGlobal) return;
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "POST",
@@ -1159,6 +1161,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async releaseUniqueChannel(botId, channel) {
+      if (isGlobal) return;
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "DELETE",
