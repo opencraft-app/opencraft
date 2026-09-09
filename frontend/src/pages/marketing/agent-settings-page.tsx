@@ -2285,7 +2285,7 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => setShowDeleteConfirm(false)}
         >
-          <div className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: "rgba(238,238,238,0.4)" }} onClick={(e) => e.stopPropagation()}>
+          <div className="mx-4 w-full max-w-[28rem] rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: "rgba(238,238,238,0.4)" }} onClick={(e) => e.stopPropagation()}>
             {/* 头部 */}
             <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
@@ -2294,14 +2294,18 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
             </div>
             {/* 风险说明 */}
-            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              {t("删除后会话将立即断开，数据将无法恢复。请谨慎操作！")}
+            <p className="rounded-xl border border-red-100 bg-red-50/70 px-3.5 py-3 text-sm leading-relaxed text-red-700" style={{ marginBottom: "6px" }}>
+              <span className="block font-semibold">{t("风险提示：")}</span>
+              <span className="mt-1 block">{t("删除后会话将立即断开，智能体的配置、已安装技能、记忆等相关数据将无法恢复。请谨慎操作！")}</span>
             </p>
-            {/* 操作引导 */}
-            <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称")}{" "}
-              <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
-                {bot.name}
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
+              <span className="block">{t("已购买的套餐不受影响，不会因删除智能体而失效。")}</span>
+              <span className="block">
+                {t("如确认删除智能体，请输入名称")}{" "}
+                <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
+                  {bot.name}
+                </span>
+                。
               </span>
             </p>
             <input type="text" placeholder={t("请输入 {{name}}", { name: bot.name })} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
@@ -2309,7 +2313,7 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
             {/* 按钮组：上下排列 */}
             <div className="flex flex-col gap-2">
               <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed", fontSize: "16px" }}>
-                {deleting ? t("删除中...") : t("确认删除")}
+                {deleting ? t("删除中...") : t("我已知晓风险，确认删除")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
@@ -4247,7 +4251,7 @@ export const AgentSettingsPage = ({
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl"
+            className="mx-4 w-full max-w-[28rem] rounded-2xl border bg-white p-6 shadow-2xl"
             style={{ borderColor: "rgba(238,238,238,0.4)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -4257,13 +4261,18 @@ export const AgentSettingsPage = ({
               </div>
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
             </div>
-            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              {t("删除后会话将立即断开，数据将无法恢复。请谨慎操作！")}
+            <p className="rounded-xl border border-red-100 bg-red-50/70 px-3.5 py-3 text-sm leading-relaxed text-red-700" style={{ marginBottom: "6px" }}>
+              <span className="block font-semibold">{t("风险提示：")}</span>
+              <span className="mt-1 block">{t("删除后会话将立即断开，智能体的配置、已安装技能、记忆等相关数据将无法恢复。请谨慎操作！")}</span>
             </p>
-            <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称")}{" "}
-              <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
-                {activeBot.name}
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
+              <span className="block">{t("已购买的套餐不受影响，不会因删除智能体而失效。")}</span>
+              <span className="block">
+                {t("如确认删除智能体，请输入名称")}{" "}
+                <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
+                  {activeBot.name}
+                </span>
+                。
               </span>
             </p>
             <input
@@ -4286,7 +4295,7 @@ export const AgentSettingsPage = ({
                   fontSize: "16px",
                 }}
               >
-                {t("确认删除")}
+                {t("我已知晓风险，确认删除")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
@@ -4645,7 +4654,7 @@ export const AgentSettingsPage = ({
                 },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
-              const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
+              const restartTooltip = t("重启");
               const resetBlockReason = getResetBlockReason(activeBot, resetting);
               const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
               const resetTooltip =
@@ -4659,7 +4668,7 @@ export const AgentSettingsPage = ({
                   ? t("请稍后")
                   : t("重装 Agent（保留数据）");
               const deleteDisabled = resettingAcli;
-              const deleteTooltip = deleteDisabled ? t("请稍后") : t("删除");
+              const deleteTooltip = t("删除");
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
@@ -4779,35 +4788,45 @@ export const AgentSettingsPage = ({
                             }
                           }}
                         >
-                          <button
-                            type="button"
-                            aria-label={restartTooltip}
-                            title={restartTooltip}
-                            disabled={isRestartDisabled}
-                            className="lv-agent-action-button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (isRestartDisabled) return;
-                              setShowRestartConfirm(true);
-                            }}
-                          >
-                            <RefreshCw className={cn("h-4 w-4", isActiveBotRestarting && "animate-spin")} aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={deleteTooltip}
-                            title={deleteTooltip}
-                            disabled={deleteDisabled}
-                            className="lv-agent-action-button is-danger"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (deleteDisabled) return;
-                              setDeleteInput("");
-                              setShowDeleteConfirm(true);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          </button>
+                          <span className="lv-agent-action-item">
+                            <button
+                              type="button"
+                              aria-label={restartTooltip}
+                              disabled={isRestartDisabled}
+                              className="lv-agent-action-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (isRestartDisabled) return;
+                                setShowRestartConfirm(true);
+                              }}
+                            >
+                              <RefreshCw className={cn("h-3.5 w-3.5", isActiveBotRestarting && "animate-spin")} aria-hidden="true" />
+                            </button>
+                            <span className="lv-agent-action-tooltip">
+                              {restartTooltip}
+                              <span className="lv-agent-action-tooltip-arrow" />
+                            </span>
+                          </span>
+                          <span className="lv-agent-action-item">
+                            <button
+                              type="button"
+                              aria-label={deleteTooltip}
+                              disabled={deleteDisabled}
+                              className="lv-agent-action-button is-danger"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (deleteDisabled) return;
+                                setDeleteInput("");
+                                setShowDeleteConfirm(true);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                            <span className="lv-agent-action-tooltip">
+                              {deleteTooltip}
+                              <span className="lv-agent-action-tooltip-arrow" />
+                            </span>
+                          </span>
                         </div>
                         {visibleBots.length > 1 && (
                           <ChevronDown

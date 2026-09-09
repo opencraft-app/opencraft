@@ -439,6 +439,11 @@ a {
   flex: 0 0 auto;
 }
 
+.lv-agent-action-item {
+  position: relative;
+  display: inline-flex;
+}
+
 .lv-agent-action-button {
   display: inline-flex;
   width: 24px;
@@ -446,30 +451,86 @@ a {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 4px;
-  color: rgb(0 0 0 / 62%);
-  background: #f2f4f8;
+  border-radius: 6px;
+  cursor: pointer;
+  color: rgb(0 0 0 / 50%);
+  background: transparent;
+  transition:
+    color 75ms ease,
+    background-color 75ms ease,
+    opacity 75ms ease;
 }
 
 .lv-agent-action-button:hover,
 .lv-agent-action-button:focus-visible {
-  color: rgb(0 0 0 / 82%);
-  background: #e9ecf1;
+  color: rgb(0 0 0 / 80%);
+  background: rgb(0 0 0 / 4%);
   outline: none;
+}
+
+.lv-agent-action-button:focus-visible {
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 15%);
 }
 
 .lv-agent-action-button:disabled {
   cursor: not-allowed;
-  color: rgb(0 0 0 / 28%);
-  background: #f2f4f8;
+  color: rgb(0 0 0 / 50%);
+  background: transparent;
+  opacity: 0.4;
+  box-shadow: none;
 }
 
 .lv-agent-action-button.is-danger {
-  color: #e5484d;
+  color: rgb(0 0 0 / 50%);
+}
+
+.lv-agent-action-button.is-danger:hover,
+.lv-agent-action-button.is-danger:focus-visible {
+  color: rgb(0 0 0 / 80%);
 }
 
 .lv-agent-action-button.is-danger:disabled {
-  color: rgb(0 0 0 / 28%);
+  color: rgb(0 0 0 / 50%);
+}
+
+.lv-agent-action-tooltip {
+  pointer-events: auto;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  z-index: 30;
+  margin-top: 6px;
+  transform: translateX(-50%);
+  user-select: text;
+  white-space: nowrap;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: white;
+  padding: 4px 10px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  opacity: 0;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+  transition: opacity 75ms ease;
+}
+
+.lv-agent-action-item:hover .lv-agent-action-tooltip,
+.lv-agent-action-item:focus-within .lv-agent-action-tooltip {
+  opacity: 1;
+}
+
+.lv-agent-action-tooltip-arrow {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, 50%) rotate(45deg);
+  border-left: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-subtle);
+  background: white;
 }
 
 .lv-agent-create-button {
