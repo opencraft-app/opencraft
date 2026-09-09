@@ -26,6 +26,20 @@ export interface TurnScrollControllerSnapshot extends TurnViewportMetrics {
   readonly isScrollAnimationActive: boolean;
 }
 
+export interface TurnPlatformScrollChange {
+  readonly previousDistanceFromBottomPx: number;
+  readonly currentDistanceFromBottomPx: number;
+}
+
+export type TurnScrollOriginResolver = (
+  change: TurnPlatformScrollChange,
+) => TurnScrollOrigin;
+
+export interface TurnPlatformScrollReport extends TurnScrollControllerSnapshot {
+  readonly origin: TurnScrollOrigin;
+  readonly previousDistanceFromBottomPx: number;
+}
+
 type ScrollListener = (snapshot: TurnScrollControllerSnapshot) => void;
 type UserScrollListener = (
   distanceFromBottomPx: number,
@@ -76,12 +90,30 @@ export class TurnScrollController {
     return () => this.#userListeners.delete(listener);
   }
 
-  reportPlatformScroll(origin: TurnScrollOrigin): TurnScrollControllerSnapshot {
+  /**
+   * Atomically reconciles a physical scroll event. Pending layout preservation
+   * is applied before the platform is measured and before origin is resolved,
+   * so every observer receives one coherent previous/current/origin tuple.
+   */
+  reportPlatformScroll(
+    originOrResolver: TurnScrollOrigin | TurnScrollOriginResolver,
+  ): TurnPlatformScrollReport {
     this.#restorePendingLayoutBeforeScrollEvent();
     const previous = this.#distanceFromBottomPx;
-    this.#distanceFromBottomPx = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
+    const current = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
+    const origin = typeof originOrResolver === "function"
+      ? originOrResolver({
+          previousDistanceFromBottomPx: previous,
+          currentDistanceFromBottomPx: current,
+        })
+      : originOrResolver;
+    this.#distanceFromBottomPx = current;
     if (this.#distanceFromBottomPx <= CODEX_SCROLL_NEAR_BOTTOM_PX) this.cancelScrollAnimation();
-    const snapshot = this.getSnapshot();
+    const snapshot: TurnPlatformScrollReport = {
+      ...this.getSnapshot(),
+      origin,
+      previousDistanceFromBottomPx: previous,
+    };
     for (const listener of this.#listeners) listener(snapshot);
     if (origin === "user" && previous !== this.#distanceFromBottomPx) {
       for (const listener of this.#userListeners) {
@@ -104,7 +136,7 @@ export class TurnScrollController {
     this.#distanceFromBottomPx = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
     const snapshot = this.getSnapshot();
     for (const listener of this.#listeners) listener(snapshot);
-    if (origin === "user") {
+    if (origin === "user" && previous !== this.#distanceFromBottomPx) {
       for (const listener of this.#userListeners) listener(this.#distanceFromBottomPx, previous);
     }
   }
@@ -120,7 +152,10 @@ export class TurnScrollController {
       this.#host.cancelFrame(this.#preserveFrame);
       this.#preserveFrame = null;
     }
-    const initialDistance = this.#distanceFromBottomPx;
+    // r3562 Ge reads u(element) at command time. The confirmed distance owns
+    // cross-event layout preservation, but must not become a stale animation
+    // origin when the browser has moved before delivering its scroll event.
+    const initialDistance = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
     if (initialDistance <= CODEX_SCROLL_NEAR_BOTTOM_PX) {
       this.#host.writeDistanceFromBottomPx(0, "instant");
       this.#distanceFromBottomPx = 0;
@@ -214,7 +249,6 @@ export class TurnScrollController {
       preserved.distanceFromBottomPx + preserved.wheelDistanceFromBottomPx,
     );
     this.#host.writeDistanceFromBottomPx(distance, "instant");
-    this.#distanceFromBottomPx = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
   }
 
   #cancelPendingLayoutPreservation(): void {

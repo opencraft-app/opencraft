@@ -1,5 +1,6 @@
 import type { ConversationKey, ItemId, TurnId } from "./identity";
 import type { HookStats } from "./hook-stats";
+import type { WorkStatusItem } from "./work-status";
 
 export type ConversationPhase = "empty" | "painted" | "syncing" | "live" | "offline" | "error";
 export type TimelineStatus = "pending" | "streaming" | "complete" | "failed" | "interrupted";
@@ -19,6 +20,9 @@ export interface TimelineBlockBase<TType extends string> {
 export interface TextTimelineBlock extends TimelineBlockBase<"text"> {
   readonly text: string;
   readonly streaming: boolean;
+  readonly completed?: boolean;
+  readonly hasStructuredOutput?: boolean;
+  readonly sentAtMs?: number | null;
   /** Codex keeps commentary inside Agent Activity and renders final_answer separately. */
   readonly phase?: "commentary" | "final_answer" | null;
 }
@@ -103,7 +107,7 @@ export interface UserMessageTimelineBlock extends TimelineBlockBase<"user-messag
   /** Turn start time for the leading message; steering/hook messages may be timeless. */
   readonly sentAtMs: number | null;
   /** Transport/domain state. Null means the host did not provide a state. */
-  readonly deliveryStatus: "sending" | "sent" | "not-sent" | "failed" | null;
+  readonly deliveryStatus: "sending" | "sent" | "not-sent" | "failed" | "unknown" | null;
   readonly referencesPriorConversation: boolean;
   readonly reviewMode: boolean;
   readonly pullRequestFixMode: boolean;
@@ -161,6 +165,7 @@ export interface AutomaticApprovalReview {
 }
 
 export interface CommandExecutionTimelineBlock extends TimelineBlockBase<"command-execution"> {
+  readonly resultMissing?: boolean;
   readonly callId: string | null;
   readonly command: string;
   readonly cwd: string | null;
@@ -254,6 +259,19 @@ export interface WebMcpToolSurfaceCall {
 }
 
 export interface ToolCallTimelineBlock extends TimelineBlockBase<"tool-call"> {
+  readonly resultMissing?: boolean;
+  readonly activityPresentation?: {
+    readonly operation: "read" | "search" | "other";
+    readonly grouping: "groupable" | "standalone";
+    readonly icon: "read" | "search" | "wrench";
+    readonly active: string | null;
+    readonly completed: string | null;
+  } | null;
+  /** Optional provider-authored tool display information, never execution authority. */
+  readonly toolContext?: string | null;
+  readonly toolSummary?: string | null;
+  readonly progressText?: string | null;
+  readonly inlineDiff?: string | null;
   readonly callId: string | null;
   readonly kind: "mcp" | "dynamic" | "web-search" | "image-view";
   readonly name: string;
@@ -326,7 +344,14 @@ export interface AutoReviewInterruptionWarningTimelineBlock extends TimelineBloc
 export interface PlanTimelineBlock extends TimelineBlockBase<"plan"> {
   readonly title: string | null;
   readonly text: string;
-  readonly implemented: boolean;
+  readonly completed: boolean;
+}
+
+/** An implementation record is a fact, not a second proposal or a success label. */
+export interface PlanImplementationTimelineBlock extends TimelineBlockBase<"plan-implementation"> {
+  readonly turnId: string | null;
+  readonly planContent: string;
+  readonly isCompleted: boolean;
 }
 
 export interface TodoEntry {
@@ -337,6 +362,7 @@ export interface TodoEntry {
 
 export interface TodoTimelineBlock extends TimelineBlockBase<"todo"> {
   readonly entries: readonly TodoEntry[];
+  readonly explanation: string | null;
 }
 
 export interface SubagentTimelineBlock extends TimelineBlockBase<"subagent"> {
@@ -490,6 +516,8 @@ export interface ErrorTimelineBlock extends TimelineBlockBase<"error"> {
 
 export interface CompactionTimelineBlock extends TimelineBlockBase<"compaction"> {
   readonly summary: string | null;
+  readonly completed: boolean;
+  readonly source: "manual" | "automatic";
 }
 
 export interface ImageTimelineBlock extends TimelineBlockBase<"image"> {
@@ -525,6 +553,7 @@ export type TimelineBlock =
   | AutomaticApprovalReviewTimelineBlock
   | AutoReviewInterruptionWarningTimelineBlock
   | PlanTimelineBlock
+  | PlanImplementationTimelineBlock
   | TodoTimelineBlock
   | SubagentTimelineBlock
   | ApprovalTimelineBlock
@@ -543,8 +572,10 @@ interface TimelineFrameBase<TType extends string> {
   readonly id: string;
   readonly turnId: TurnId;
   readonly status: TimelineStatus;
-  /** AppServer Turn wall-clock duration, used by Codex's outer Activity divider. */
+  /** AppServer Turn duration: disclosure-label fallback only, not the work clock. */
   readonly durationMs: number | null;
+  readonly workStatus?: WorkStatusItem | null;
+  readonly interruptedByThisClient?: boolean;
   /** Turn-scoped hook lifecycle summary rendered in the response action row. */
   readonly hookStats: HookStats | null;
   readonly anchors: readonly TimelineAnchor[];

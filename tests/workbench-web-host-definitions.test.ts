@@ -134,10 +134,11 @@ test("WebSocket connection provider enforces the browser security boundary", () 
   );
 });
 
-test("built-in WebSocket provider is owned and retired by one extension activation", async () => {
+for (const platform of ["web", "electron"] as const) {
+test(`built-in WebSocket provider is owned and retired by one ${platform} extension activation`, async () => {
   const providers = new HostConnectionProviderRegistry();
   const extensions = new ExtensionSupervisor({
-    platform: "web",
+    platform,
     createActivationId: () => "websocket-activation",
     internalContributions: {
       hostConnectionProvider: createHostConnectionProviderContributionAdapter(providers),
@@ -149,7 +150,7 @@ test("built-in WebSocket provider is owned and retired by one extension activati
     ownerId: "websocket-activation",
   }]);
 
-  const lease = providers.acquire("vela.websocket", "web");
+  const lease = providers.acquire("vela.websocket", platform);
   let retired = false;
   const retirement = extensions.deactivate("vela.websocket-host").then(() => { retired = true; });
   for (let index = 0; index < 10 && providers.getSnapshot().providers.length > 0; index += 1) {
@@ -163,6 +164,7 @@ test("built-in WebSocket provider is owned and retired by one extension activati
   await extensions.dispose();
   await providers.close();
 });
+}
 
 test("HyperNode owns both its transport provider and ephemeral Host profile", async () => {
   const providers = new HostConnectionProviderRegistry();

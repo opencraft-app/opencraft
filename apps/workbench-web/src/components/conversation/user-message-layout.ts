@@ -38,6 +38,7 @@ export function deriveUserMessageWebLayout(block: UserMessageTimelineBlock): Use
   const mcpContexts = block.attachments.filter((attachment): attachment is UserMessageMcpContextAttachment => attachment.type === "mcp-context");
   const hasText = block.message.trim().length > 0;
   const hasStatus = block.deliveryStatus === "not-sent"
+    || block.deliveryStatus === "unknown"
     || block.deliveryStatus === "sending"
     || block.deliveryStatus === "failed"
     || block.goal

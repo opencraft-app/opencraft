@@ -89,6 +89,11 @@ test("a pre-source Resume failure preserves painted entities and becomes visible
     assert.equal(replica.getSnapshot().authoritative, false);
     assert.equal(replica.getSnapshot().lastError?.message, "resume unavailable");
     assert.deepEqual(replica.get("thread-one"), value("painted"));
+    replica.reportSyncStarted();
+    assert.equal(replica.getSnapshot().phase, "syncing");
+    assert.equal(replica.getSnapshot().authoritative, false);
+    assert.equal(replica.getSnapshot().lastError, null);
+    assert.deepEqual(replica.get("thread-one"), value("painted"));
   } finally {
     replica.dispose();
   }

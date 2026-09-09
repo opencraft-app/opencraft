@@ -32,7 +32,6 @@ export interface BotConversationViewport {
   readonly gapPx: number;
   readonly units: readonly BotTimelineUnit[];
   observeUnit(unitKey: string, element: HTMLDivElement | null): void;
-  onScroll(): void;
   followLatest(options?: { readonly smooth?: boolean }): void;
 }
 
@@ -44,6 +43,7 @@ export interface BotConversationViewport {
 export function useBotConversationViewport(
   identity: string,
   units: readonly BotTimelineUnit[],
+  onUserScrollToTop?: () => void,
 ): BotConversationViewport {
   const entries = useMemo<readonly VirtualizedBotUnit[]>(
     () => units.map((unit) => ({
@@ -76,16 +76,18 @@ export function useBotConversationViewport(
   const layoutRef = useRef(layout);
   const viewportRef = useRef(viewport);
   const measuredRef = useRef(measuredHeights);
+  const onUserScrollToTopRef = useRef(onUserScrollToTop);
   entriesRef.current = entries;
   layoutRef.current = layout;
   viewportRef.current = viewport;
   measuredRef.current = measuredHeights;
+  onUserScrollToTopRef.current = onUserScrollToTop;
 
-  const updateFromPlatform = useCallback((origin: "user" | "system") => {
+  const updateFromSnapshot = useCallback((snapshot: {
+    readonly distanceFromBottomPx: number;
+  }) => {
     const element = owner.scrollElementRef.current;
     if (element === null) return;
-    const snapshot = owner.scrollController.reportPlatformScroll(origin);
-    setFollowing(!snapshot.isScrolledFromBottom);
     setViewport((current) =>
       updateTimelineViewportState(
         current,
@@ -94,6 +96,9 @@ export function useBotConversationViewport(
         element.clientHeight,
       )
     );
+  }, [owner]);
+  const updateFromPlatform = useCallback((origin: "user" | "system") => {
+    owner.scrollController.reportPlatformScroll(origin);
   }, [owner]);
 
   useLayoutEffect(() => {
@@ -137,8 +142,12 @@ export function useBotConversationViewport(
         currentDistanceFromBottomPx:
           owner.scrollController.getLastScrollDistanceFromBottomPx(),
         bottomPaddingPx: 0,
-        preserveMeasuredViewport: true,
-        pendingRestoreScrollDistanceFromBottomPx: null,
+        // Generic anchor preservation and follow-to-latest are mutually
+        // exclusive layout owners. Codex disables virtualizer preservation
+        // while the latest surface owns follow; Bot applies the same invariant
+        // without importing Turn semantics into its domain model.
+        preserveMeasuredViewport: !following,
+        getPendingRestoreScrollDistanceFromBottomPx: null,
       });
       if (transaction === null) return;
       measuredRef.current = transaction.measuredHeightsByKey;
@@ -156,28 +165,34 @@ export function useBotConversationViewport(
       }
     });
     return () => owner.setMeasurementListener(null);
-  }, [owner]);
+  }, [following, owner]);
+
+  useLayoutEffect(() => {
+    const releaseViewport = owner.scrollController.subscribe(updateFromSnapshot);
+    const releaseUserScroll = owner.scrollController.addUserScrollListener((distance) => {
+      setFollowing(distance <= 24);
+    });
+    return () => {
+      releaseViewport();
+      releaseUserScroll();
+    };
+  }, [owner, updateFromSnapshot]);
 
   useEffect(() => {
     const releaseGeometry = owner.observeViewportGeometry(() =>
       updateFromPlatform("system")
     );
-    const releaseInput = owner.bindScrollPortListeners({
-      keydown: () => owner.scrollController.cancelPendingLayoutPreservation(),
-      pointerdown: () => owner.scrollController.cancelPendingLayoutPreservation(),
-      touchstart: () => owner.scrollController.cancelPendingLayoutPreservation(),
-      wheel: (event) => {
-        owner.scrollController.cancelScrollAnimation();
-        owner.scrollController.recordWheelDelta(event.deltaY);
-      },
+    const releaseInput = owner.bindScrollBehavior({
+      onUserScrollToTop: () => onUserScrollToTopRef.current?.(),
     });
     updateFromPlatform("system");
     return () => {
       releaseGeometry();
       releaseInput();
-      owner.dispose();
     };
   }, [owner, updateFromPlatform]);
+
+  useEffect(() => () => owner.dispose(), [owner]);
 
   const followLatest = useCallback((options?: { readonly smooth?: boolean }) => {
     setFollowing(true);
@@ -187,7 +202,6 @@ export function useBotConversationViewport(
       owner.scrollController.scrollToBottom();
     }
   }, [owner]);
-  const onScroll = useCallback(() => updateFromPlatform("user"), [updateFromPlatform]);
   const observeUnit = useCallback(
     (unitKey: string, element: HTMLDivElement | null) =>
       owner.observeEntry(unitKey, element),
@@ -207,7 +221,6 @@ export function useBotConversationViewport(
     gapPx: windowSlice.gapPx,
     units: windowSlice.entries.map((entry) => entry.unit),
     observeUnit,
-    onScroll,
     followLatest,
   };
 }

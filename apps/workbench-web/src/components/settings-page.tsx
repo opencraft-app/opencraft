@@ -1,4 +1,23 @@
-import { ArrowLeft, Blocks, Cable, Palette, Plus, RefreshCw, Server, Trash2 } from "lucide-react";
+import {
+  Activity,
+  ArrowLeft,
+  Blocks,
+  Bot,
+  Brain,
+  Cable,
+  CalendarClock,
+  Cloud,
+  Cpu,
+  Database,
+  MessageCircle,
+  Palette,
+  Plus,
+  RefreshCw,
+  Server,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import type { FormEvent } from "react";
 import { useMemo, useState, useSyncExternalStore } from "react";
 
@@ -51,6 +70,8 @@ export interface SettingsNavigationProps {
   readonly section: SettingsSection;
   readonly onSectionChange: (section: SettingsSection) => void;
   readonly extensionContributions: ExtensionContributionStore;
+  readonly profiles: readonly HostConnectionProfile[];
+  readonly activeHostId: string;
   readonly onBack: () => void;
 }
 
@@ -95,11 +116,64 @@ export function SettingsNavigation({
   section,
   onSectionChange,
   extensionContributions,
+  profiles,
+  activeHostId,
   onBack,
 }: SettingsNavigationProps) {
   const extensionPages = useSettingsExtensionPages(extensionContributions, currentPlatform());
+  const selectedPage = extensionPages.find((page) => page.id === section) ?? null;
+  const managementFamilyId = selectedPage?.management?.familyId ?? null;
+  const managementPages = managementFamilyId === null
+    ? []
+    : extensionPages.filter((page) => page.management?.familyId === managementFamilyId);
+  // Compatibility projection until the AppServer directory supplies an
+  // explicit selected Agent identity. The profile remains the Host authority;
+  // it is used only as the visible label for today's single Agent deployment.
+  const activeProfile = profiles.find((profile) => profile.hostId === activeHostId) ?? profiles[0] ?? null;
+
+  if (managementFamilyId !== null) {
+    const agentPages = managementPages.filter((page) => page.management?.scope === "agent");
+    const hostPages = managementPages.filter((page) => page.management?.scope === "host");
+    return (
+      <div className="settings-page__navigation settings-page__navigation--management" data-selection="chrome">
+        <nav aria-label="Agent management">
+          <button type="button" className="settings-page__back" onClick={onBack}>
+            <ArrowLeft size={15} />
+            <span>Back to workbench</span>
+          </button>
+
+          <div className="management-navigation__subject" aria-label="Current agent">
+            <span className="management-navigation__avatar"><Bot size={19} /></span>
+            <span className="management-navigation__subject-copy">
+              <strong>{activeProfile?.displayName ?? "My Hermes"}</strong>
+              <small><i aria-hidden="true" /> Agent · via {activeProfile?.hostId ?? "Hermes cloud"}</small>
+            </span>
+          </div>
+
+          <div className="management-navigation__mode" role="group" aria-label="Workbench mode">
+            <button type="button" onClick={onBack}>Work</button>
+            <button type="button" aria-current="page">Manage</button>
+          </div>
+
+          <ManagementNavigationGroup
+            title="Agent"
+            pages={agentPages}
+            section={section}
+            onSectionChange={onSectionChange}
+          />
+          <ManagementNavigationGroup
+            title="Host"
+            pages={hostPages}
+            section={section}
+            onSectionChange={onSectionChange}
+          />
+        </nav>
+      </div>
+    );
+  }
+
   return (
-    <div className="settings-page__navigation">
+    <div className="settings-page__navigation" data-selection="chrome">
       <nav aria-label="Settings sections">
         <button type="button" className="settings-page__back" onClick={onBack}>
           <ArrowLeft size={15} />
@@ -131,7 +205,9 @@ export function SettingsNavigation({
             <Blocks size={16} />
             <span>Plugins</span>
           </button>
-          {extensionPages.map((page) => (
+          {extensionPages.filter((page) => page.management === undefined).map((page, index, pages) => (
+            <div key={page.id}>
+            {page.group && pages[index - 1]?.group !== page.group ? <div className="settings-page__navigation-heading">{page.group}</div> : null}
             <button
               key={page.id}
               type="button"
@@ -141,6 +217,7 @@ export function SettingsNavigation({
               <Blocks size={16} />
               <span>{page.title}</span>
             </button>
+            </div>
           ))}
         </div>
       </nav>
@@ -148,9 +225,57 @@ export function SettingsNavigation({
   );
 }
 
+function settingsNavigationIcon(icon: string | undefined) {
+  const Icon = icon === "bot" ? Bot
+    : icon === "message-circle" ? MessageCircle
+      : icon === "brain" ? Brain
+        : icon === "sparkles" ? Sparkles
+          : icon === "calendar" ? CalendarClock
+            : icon === "database" ? Database
+              : icon === "activity" ? Activity
+                : icon === "cloud" ? Cloud
+                  : icon === "cpu" ? Cpu
+                    : icon === "sliders" ? SlidersHorizontal
+                      : icon === "server" ? Server
+                        : Blocks;
+  return <Icon size={16} />;
+}
+
+function ManagementNavigationGroup({
+  title,
+  pages,
+  section,
+  onSectionChange,
+}: {
+  readonly title: string;
+  readonly pages: ReturnType<typeof useSettingsExtensionPages>;
+  readonly section: SettingsSection;
+  readonly onSectionChange: (section: SettingsSection) => void;
+}) {
+  if (pages.length === 0) return null;
+  return (
+    <section className="management-navigation__group">
+      <div className="settings-page__navigation-heading">{title}</div>
+      <div className="settings-page__navigation-list">
+        {pages.map((page) => (
+          <button
+            key={page.id}
+            type="button"
+            aria-current={section === page.id ? "page" : undefined}
+            onClick={() => onSectionChange(page.id)}
+          >
+            {settingsNavigationIcon(page.icon)}
+            <span>{page.title}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /**
- * Route-owned settings body. This is the sole vertical viewport; extension
- * pages contribute flow content and never own application geometry.
+ * Route-owned settings body. The shell chooses document or shared master-detail
+ * scrolling; extensions contribute content, never application geometry.
  */
 export function SettingsContent({
   section,
@@ -236,7 +361,7 @@ export function SettingsContent({
   };
 
   return (
-    <div className="settings-page__viewport">
+    <div className="settings-page__viewport" data-selection="chrome" data-layout={selectedExtensionPage?.layout ?? "document"}>
             <div className="settings-page__content">
               {selectedExtensionView !== null ? (
                 SelectedExtensionComponent === null ? (
@@ -513,7 +638,7 @@ export function SettingsContent({
                       )}
                       <SettingsActions>
                         <SettingsButton type="submit" variant="primary" disabled={pending}>
-                          {pending ? "Adding…" : "Add host"}
+                          {pending ? "Verifying connection…" : "Verify and add host"}
                         </SettingsButton>
                       </SettingsActions>
                     </form>

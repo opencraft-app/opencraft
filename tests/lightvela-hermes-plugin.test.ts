@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import type { AppServerTurn } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
 import { deserialize, serialize } from "bson";
+import { IDBFactory } from "fake-indexeddb";
 
 import {
   ExtensionSupervisor,
@@ -13,17 +16,26 @@ import {
   type PlatformViewRendererContribution,
 } from "@opencraft/extension-react";
 import {
+  createLightVelaHermesHostProvider,
   createLightVelaHermesExtension,
+  IndexedDbHermesSessionTokenCache,
   LIGHTVELA_ACTIVE_BOT_KEY,
   LIGHTVELA_HERMES_HOST_ID,
   LightVelaAccountService,
   LightVelaHermesTransport,
   LIGHTVELA_TOKEN_KEY,
 } from "@opencraft/plugin-lightvela-hermes";
-import type { HostConnectionProvider } from "@opencraft/workbench-runtime";
-import { ensureHermesDashboard } from "../plugins/lightvela-hermes/src/lib/hermes-dashboard-ensure";
-import { TencentTatSessionMultiplexer } from "../plugins/lightvela-hermes/src/lib/tencent-tat-session-multiplexer";
-import { HermesAppServerAdapter } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
+import { preflightHostConnection, type HostConnectionProvider } from "@opencraft/workbench-runtime";
+import {
+  createHermesDashboardEnsureCommand,
+  ensureHermesDashboard,
+} from "../plugins/lightvela-hermes/src/lib/hermes-dashboard-ensure";
+import {
+  TencentTatProxyConnection,
+  TencentTatSessionMultiplexer,
+} from "../plugins/lightvela-hermes/src/lib/tencent-tat-session-multiplexer";
+import { createTatWebSocketConstructor } from "../plugins/lightvela-hermes/src/lib/tat-websocket";
+import { HermesAppServerAdapter, mapMessages } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
 import { HermesBotAppServerHandler } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/bot-protocol-handler";
 import { BrowserHermesAppServerBridge } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/index";
 import { encodeHermesModelSelection } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/model-catalog";
@@ -89,6 +101,84 @@ class FakeTatWebSocket {
 
 const FakeTatWebSocketImpl = FakeTatWebSocket as unknown as typeof WebSocket;
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
+
+test("Hermes dashboard ensure detaches the Host backend from the transient TAT PTY", () => {
+  const command = createHermesDashboardEnsureCommand();
+  assert.match(command, /command -v setsid/u);
+  assert.match(command, /"\$opencraft_detacher" sh -c 'exec 9>&-; exec "\$@"'/u);
+  assert.match(command, /opencraft-hermes "\$opencraft_hermes_bin" serve/u);
+  assert.doesNotMatch(command, /nohup "\$opencraft_hermes_bin" serve/u);
+});
+
+test("a failed TAT proxy stream can close without masking its transport error", async () => {
+  const connection = new TencentTatProxyConnection(
+    "proxy-1",
+    "channel-1",
+    {} as TencentTatSessionMultiplexer,
+  );
+  const reader = connection.readable.getReader();
+  connection.markReady();
+  connection.fail(new Error("original transport failure"));
+  await assert.rejects(reader.read(), /original transport failure/u);
+  assert.doesNotThrow(() => connection.markClosed());
+});
+
+test("TAT WebSocket preserves native open-before-first-message task ordering", async () => {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let answeredHandshake = false;
+  const connection = {
+    readable: new ReadableStream<Uint8Array>({
+      start(value) { controller = value; },
+    }),
+    write(data: string | Uint8Array | ArrayBuffer) {
+      if (answeredHandshake) return true;
+      answeredHandshake = true;
+      const bytes = typeof data === "string"
+        ? new TextEncoder().encode(data)
+        : data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+      const request = new TextDecoder().decode(bytes);
+      const key = /Sec-WebSocket-Key:\s*([^\r\n]+)/iu.exec(request)?.[1]?.trim();
+      assert.ok(key);
+      const accept = createHash("sha1")
+        .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest("base64");
+      const payload = new TextEncoder().encode(JSON.stringify({
+        jsonrpc: "2.0",
+        method: "event",
+        params: { type: "gateway.ready", payload: { heartbeat: true } },
+      }));
+      assert.equal(payload.byteLength < 126, true);
+      const responseHead = new TextEncoder().encode([
+        "HTTP/1.1 101 Switching Protocols",
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        `Sec-WebSocket-Accept: ${accept}`,
+        "",
+        "",
+      ].join("\r\n"));
+      const frame = new Uint8Array(2 + payload.byteLength);
+      frame[0] = 0x81;
+      frame[1] = payload.byteLength;
+      frame.set(payload, 2);
+      const combined = new Uint8Array(responseHead.byteLength + frame.byteLength);
+      combined.set(responseHead);
+      combined.set(frame, responseHead.byteLength);
+      queueMicrotask(() => controller.enqueue(combined));
+      return true;
+    },
+    close() {},
+  };
+  const TatWebSocket = createTatWebSocketConstructor({
+    async openProxy() { return connection; },
+  } as never, { origin: "https://chat.lightvela.com" });
+  const socket = new TatWebSocket("ws://127.0.0.1:9119/api/ws");
+  await new Promise<void>((resolve) => socket.addEventListener("open", () => resolve(), { once: true }));
+  const firstMessage = await new Promise<MessageEvent>((resolve) => {
+    socket.addEventListener("message", (event) => resolve(event as MessageEvent), { once: true });
+  });
+  assert.equal(JSON.parse(String(firstMessage.data)).params.type, "gateway.ready");
+  socket.close();
+});
 
 function proxyResponse(type: string, proxyId: string): Uint8Array {
   return serialize({
@@ -312,22 +402,26 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   }));
 
   const views = supervisor.contributions.getSnapshot().views;
-  assert.equal(views.length, 2);
-  assert.deepEqual(
-    views.map(({ contribution }) => [contribution.id, contribution.viewType]),
-    [
-      ["lightvela.hermes.settings-view", "lightvela.hermes.settings"],
-      ["lightvela.hermes.empty-view", "lightvela.hermes.empty-workbench"],
-    ],
+  assert.equal(views.length, 11);
+  assert.ok(views.some(({ contribution }) => contribution.viewType === "lightvela.hermes.models"));
+  assert.ok(views.some(({ contribution }) => contribution.viewType === "lightvela.hermes.diagnostics"));
+  assert.ok(supervisor.contributions.getSnapshot().settingsPages.some(({ contribution }) => contribution.viewId === "lightvela.hermes.settings-view"));
+  assert.ok(supervisor.contributions.getSnapshot().settingsPages.some(({ contribution }) => contribution.viewId === "lightvela.hermes.connectors-view"));
+  const managementPages = supervisor.contributions.getSnapshot().settingsPages.filter(
+    ({ contribution }) => contribution.management?.familyId === "lightvela.hermes.manage",
   );
-  assert.equal(supervisor.contributions.getSnapshot().settingsPages[0]?.contribution.viewId, "lightvela.hermes.settings-view");
+  assert.equal(managementPages.length, 9);
+  assert.equal(managementPages.filter(({ contribution }) => contribution.management?.scope === "agent").length, 6);
+  assert.equal(managementPages.filter(({ contribution }) => contribution.management?.scope === "host").length, 3);
   assert.equal(supervisor.contributions.getSnapshot().workbenchSurfaces[0]?.contribution.viewId, "lightvela.hermes.empty-view");
   // The extension contributes transport/settings only. Bot identity is
   // discovered from the AppServer `bot/*` catalog after the Host connects.
   assert.deepEqual(supervisor.contributions.getSnapshot().bots, []);
   assert.equal(renderers.resolve("lightvela.hermes.settings") !== null, true);
+  assert.equal(renderers.resolve("lightvela.hermes.models") !== null, true);
   assert.equal(renderers.resolve("lightvela.hermes.empty-workbench") !== null, true);
   assert.equal(provider?.id, "lightvela.hermes");
+  assert.equal(provider?.settingsPageId, "lightvela.hermes.settings");
   assert.deepEqual(provider?.targets, ["web", "electron"]);
   assert.deepEqual(
     provider?.validate({ botId: " bot-1 " }, { platform: "web", hostId: LIGHTVELA_HERMES_HOST_ID, profileRevision: 1 }),
@@ -341,6 +435,52 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   assert.equal(renderers.resolve("lightvela.hermes.empty-workbench"), null);
   assert.equal(supervisor.contributions.getSnapshot().views.length, 0);
   await supervisor.dispose();
+});
+
+test("LightVela Host preflight validates the selected Bot without minting a TAT session", async () => {
+  const storage = new MemoryStorage();
+  storage.setItem(LIGHTVELA_TOKEN_KEY, "secret-token");
+  const requests: string[] = [];
+  const account = new LightVelaAccountService({
+    storage,
+    location: {
+      origin: "https://localhost.lightvela.ai",
+      pathname: "/",
+      search: "",
+      hash: "",
+      assign: () => undefined,
+    },
+    history: { state: null, replaceState: () => undefined },
+    fetchImpl: async (input) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify({
+        code: "OK",
+        message: "ok",
+        data: {
+          items: [{
+            created_at: "2026-09-07T00:00:00Z",
+            instance_id: "bot-a",
+            name: "A",
+            status: "RUNNING",
+          }],
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  await account.refreshBots();
+  const provider = createLightVelaHermesHostProvider(account);
+  const context = {
+    platform: "web" as const,
+    hostId: LIGHTVELA_HERMES_HOST_ID,
+    profileRevision: 0,
+  };
+
+  await preflightHostConnection(provider, provider.validate({}, context), context);
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.includes("/v1/instances?page=1&page_size=100"), true);
+  assert.equal(requests.some((url) => url.includes("/tat/session")), false);
+  account.dispose();
 });
 
 test("platform View renderer registry enforces unique ownership and idempotent disposal", () => {
@@ -558,10 +698,36 @@ test("dashboard ensure surfaces a remote startup failure without waiting for its
   assert.equal(released, true);
 });
 
+test("cached Hermes tokens are scoped by physical instance", async () => {
+  const cache = new IndexedDbHermesSessionTokenCache({
+    databaseName: `hermes-token-cache-${Date.now()}-${Math.random()}`,
+    factory: new IDBFactory(),
+  });
+  await cache.put("instance-a", "token-a");
+  await cache.put("instance-b", "token-b");
+  assert.equal(await cache.get("instance-a"), "token-a");
+  assert.equal(await cache.get("instance-b"), "token-b");
+  cache.close();
+});
+
+test("a stale tab cannot delete a newer cached Hermes token", async () => {
+  const cache = new IndexedDbHermesSessionTokenCache({
+    databaseName: `hermes-token-race-${Date.now()}-${Math.random()}`,
+    factory: new IDBFactory(),
+  });
+  await cache.put("instance-a", "old-token");
+  await cache.put("instance-a", "new-token");
+  await cache.remove("instance-a", "old-token");
+  assert.equal(await cache.get("instance-a"), "new-token");
+  cache.close();
+});
+
 test("Hermes Host creates one TAT bootstrap and shares its proxy owner", () => {
   assert.equal(lightOpenCraftTransportSource.match(/await createSession\(\)/gu)?.length, 1);
   assert.match(lightOpenCraftTransportSource, /resolveActiveBot\(\)/u);
   assert.doesNotMatch(lightOpenCraftTransportSource, /options\.botId/u);
+  assert.match(lightOpenCraftTransportSource, /openDashboardSocket/u);
+  assert.match(lightOpenCraftTransportSource, /Hermes session rejected/u);
   assert.match(lightOpenCraftTransportSource, /sessionToken = await ensureHermesDashboard\(proxy\)/u);
   assert.match(lightOpenCraftTransportSource, /\{ proxyClient: proxy, sessionToken \}/u);
   assert.match(lightOpenCraftTransportSource, /createTatWebSocketConstructor\(proxy/u);
@@ -710,6 +876,210 @@ test("Hermes paginated resume exposes a cursor and hydrates stored history", asy
   ]);
 });
 
+test("Hermes durable projection joins tool declarations and results by tool_call_id", () => {
+  const turns = mapMessages("stored-tools", [
+    { role: "system", content: "private model scaffolding", id: 1 },
+    { role: "user", content: "inspect it", id: 2 },
+    {
+      role: "assistant",
+      content: "I will inspect it.",
+      reasoning: "Need to read the file.",
+      reasoning_content: "Need to read the file.",
+      finish_reason: "tool_calls",
+      tool_calls: [{
+        id: "call-read",
+        type: "function",
+        function: { name: "read_file", arguments: "{\"path\":\"README.md\"}" },
+      }],
+      id: 3,
+    },
+    {
+      role: "tool",
+      tool_call_id: "call-read",
+      tool_name: "read_file",
+      content: "file contents",
+      id: 4,
+    },
+    { role: "assistant", content: "I will inspect it.", finish_reason: "stop", id: 5 },
+    { role: "assistant", content: "Done.", finish_reason: "stop", id: 6 },
+    { role: "assistant", content: "must stay private", display_kind: "hidden", id: 7 },
+  ]);
+
+  assert.equal(turns.length, 1);
+  assert.deepEqual(turns[0]?.items.map(({ type }) => type), [
+    "userMessage",
+    "reasoning",
+    "dynamicToolCall",
+    "agentMessage",
+    "agentMessage",
+  ]);
+  assert.deepEqual(turns[0]?.items[1], {
+    type: "reasoning",
+    id: "hermes-reasoning-stored-tools-3",
+    summary: [],
+    content: ["Need to read the file."],
+  });
+  assert.deepEqual(turns[0]?.items[2], {
+    type: "dynamicToolCall",
+    id: "hermes-tool-stored-tools-call-read",
+    namespace: "hermes",
+    tool: "read_file",
+    arguments: { path: "README.md" },
+    status: "completed",
+    contentItems: [{ type: "inputText", text: "file contents" }],
+    success: true,
+    durationMs: null,
+  });
+  assert.equal(turns[0]?.items[3]?.text, "I will inspect it.");
+  assert.equal(turns[0]?.items[3]?.phase, "final_answer");
+  assert.equal(turns[0]?.items[4]?.text, "Done.");
+});
+
+test("Hermes durable projection gives final text ownership over repeated reasoning", () => {
+  const turns = mapMessages("stored-repeated-reasoning", [
+    { role: "user", content: "hello", id: 1 },
+    {
+      role: "assistant",
+      reasoning: "Hello. How can I help?",
+      content: "Hello. How can I help?",
+      finish_reason: "stop",
+      id: 2,
+    },
+  ]);
+
+  assert.deepEqual(turns[0]?.items.map(({ type }) => type), ["userMessage", "agentMessage"]);
+  assert.equal(turns[0]?.items[1]?.text, "Hello. How can I help?");
+});
+
+test("Hermes durable history restores Turn wall-clock duration without inventing missing time", () => {
+  const turns = mapMessages("stored-timing", [
+    { role: "user", content: "first", id: 1, timestamp: 100.125 },
+    { role: "assistant", content: "working", id: 2, timestamp: 101.25 },
+    { role: "tool", content: "done", id: 3, timestamp: 102.5 },
+    { role: "assistant", content: "finished", id: 4, timestamp: 103.875 },
+    { role: "user", content: "second", id: 5 },
+    { role: "assistant", content: "unknown", id: 6 },
+  ]);
+
+  assert.deepEqual(
+    turns.map(({ startedAt, completedAt, durationMs }) => ({ startedAt, completedAt, durationMs })),
+    [
+      { startedAt: 100.125, completedAt: 103.875, durationMs: 3_750 },
+      { startedAt: null, completedAt: null, durationMs: null },
+    ],
+  );
+
+  const running = mapMessages("stored-running-timing", [
+    { role: "user", content: "still working", id: 1, timestamp: 200 },
+    { role: "assistant", content: "partial", id: 2, timestamp: 201 },
+  ], true);
+  assert.deepEqual(
+    running.map(({ status, startedAt, completedAt, durationMs }) => ({ status, startedAt, completedAt, durationMs })),
+    [{ status: "inProgress", startedAt: 200, completedAt: null, durationMs: null }],
+  );
+});
+
+test("Hermes pending clarify is restored as an AppServer question and answered on its owning Gateway", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string, params?: unknown): Promise<T> {
+      const request = (params ?? {}) as Record<string, unknown>;
+      calls.push({ method, params: request });
+      if (method === "session.resume") {
+        return {
+          session_id: "live-clarify",
+          stored_session_id: "stored-clarify",
+          message_count: 2,
+          messages: [],
+          running: false,
+          info: { cwd: "/workspace" },
+          pending_clarify: {
+            request_id: "gateway-request",
+            question: "Which note?",
+            choices: ["Memory", "Document"],
+          },
+        } as T;
+      }
+      if (method === "session.list") {
+        return { sessions: [{
+          id: "stored-clarify",
+          title: "Clarify",
+          preview: "Which note?",
+          started_at: 1_788_000_000,
+          message_count: 2,
+          source: "desktop",
+        }] } as T;
+      }
+      if (method === "profiles.list") {
+        return { profiles: [{ name: "default", is_default: true }] } as T;
+      }
+      if (method === "clarify.respond") return { ok: true } as T;
+      throw new Error(`Unexpected Hermes call: ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const history: HermesHistoryClient = {
+    async readMessages(sessionId, request) {
+      return {
+        session_id: sessionId,
+        messages: [
+          { role: "user", content: "Which one?", row_id: 10, timestamp: 100 },
+          {
+            role: "assistant",
+            content: "",
+            row_id: 11,
+            timestamp: 102,
+            finish_reason: "tool_calls",
+            tool_calls: [{
+              id: "model-tool-call",
+              type: "function",
+              function: { name: "clarify", arguments: "{\"question\":\"Which note?\"}" },
+            }],
+          },
+        ],
+        pagination: { ...request, returned: 2 },
+      };
+    },
+    dispose() {},
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace", history);
+  const interactions: Array<Parameters<Parameters<typeof adapter.subscribeServerRequest>[0]>[0]> = [];
+  adapter.subscribeServerRequest((request) => interactions.push(request));
+
+  await dispatchAppServerRequest(adapter, {
+    id: 1,
+    method: "thread/resume",
+    params: { threadId: "stored-clarify" },
+  });
+
+  assert.equal(interactions.length, 1);
+  const interaction = interactions[0]!;
+  assert.equal(interaction.method, "item/tool/requestUserInput");
+  assert.equal(interaction.params.threadId, "stored-clarify");
+  assert.equal(interaction.params.turnId, "hermes-turn-stored-clarify-10");
+  assert.equal(interaction.params.itemId, "hermes-tool-stored-clarify-model-tool-call");
+  assert.deepEqual(interaction.params.questions, [{
+    id: "answer",
+    header: "Clarify",
+    question: "Which note?",
+    isOther: true,
+    isSecret: false,
+    options: [
+      { label: "Memory", description: "" },
+      { label: "Document", description: "" },
+    ],
+  }]);
+
+  assert.equal(await adapter.respondServerRequest(interaction.id, {
+    answers: { answer: { answers: ["Document"] } },
+  }), true);
+  assert.deepEqual(calls.filter(({ method }) => method === "clarify.respond"), [{
+    method: "clarify.respond",
+    params: { request_id: "gateway-request", answer: "Document" },
+  }]);
+  adapter.dispose();
+});
+
 test("Hermes tail resume keeps thread turns excluded but fills initialTurnsPage", async () => {
   const harness = createHermesHistoryHarness();
   const resumed = await dispatchAppServerRequest(harness.adapter, {
@@ -729,6 +1099,99 @@ test("Hermes tail resume keeps thread turns excluded but fills initialTurnsPage"
   assert.equal(resumed.initialTurnsPage.nextCursor, null);
   assert.equal(harness.calls.filter(({ method }) => method === "session.history").length, 0);
   assert.equal(harness.historyCalls.length, 1);
+});
+
+test("Hermes first-Turn promotion treats only an unmaterialized empty history row as empty", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string, params?: unknown): Promise<T> {
+      const request = (params ?? {}) as Record<string, unknown>;
+      calls.push({ method, params: request });
+      if (method === "session.create") {
+        return {
+          session_id: "live-fresh",
+          stored_session_id: "stored-fresh",
+          message_count: 0,
+          messages: [],
+          info: { cwd: "/workspace" },
+        } as T;
+      }
+      if (method === "session.list") return { sessions: [] } as T;
+      if (method === "prompt.submit") return { status: "running" } as T;
+      throw new Error(`Unexpected Hermes call: ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const history: HermesHistoryClient = {
+    async readMessages() {
+      throw new Error('HTTP 404: {"detail":"Session not found"}');
+    },
+    dispose() {},
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace", history);
+  const created = await dispatchAppServerRequest(adapter, {
+    id: 1,
+    method: "thread/start",
+    params: { cwd: "/workspace" },
+  }) as { thread: { id: string } };
+
+  const resumed = await dispatchAppServerRequest(adapter, {
+    id: 2,
+    method: "thread/resume",
+    params: { threadId: created.thread.id, excludeTurns: true },
+  }) as { thread: { turns: unknown[] }; turnsBackwardsCursor: string | null };
+
+  assert.deepEqual(resumed.thread.turns, []);
+  assert.equal(resumed.turnsBackwardsCursor, null);
+
+  await dispatchAppServerRequest(adapter, {
+    id: 3,
+    method: "turn/start",
+    params: {
+      threadId: created.thread.id,
+      input: [{ type: "text", text: "first message" }],
+      clientUserMessageId: "client-first",
+    },
+  });
+  assert.deepEqual(
+    calls.filter(({ method }) => method === "prompt.submit").map(({ params }) => params),
+    [{ session_id: "live-fresh", text: "first message", queued: true }],
+  );
+});
+
+test("Hermes resume does not hide a missing durable history that should contain messages", async () => {
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      if (method === "session.resume") {
+        return {
+          session_id: "live-materialized",
+          stored_session_id: "stored-materialized",
+          message_count: 2,
+          messages: [],
+        } as T;
+      }
+      if (method === "session.list") return { sessions: [] } as T;
+      if (method === "profiles.list") return { profiles: [{ name: "default" }] } as T;
+      throw new Error(`Unexpected Hermes call: ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const history: HermesHistoryClient = {
+    async readMessages() {
+      throw new Error('HTTP 404: {"detail":"Session not found"}');
+    },
+    dispose() {},
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace", history);
+
+  await assert.rejects(
+    dispatchAppServerRequest(adapter, {
+      id: 1,
+      method: "thread/resume",
+      params: { threadId: "stored-materialized", excludeTurns: true },
+    }),
+    /HTTP 404.*Session not found/u,
+  );
 });
 
 test("Hermes history cursor pages by durable message offset without reloading the full transcript", async () => {
@@ -837,6 +1300,70 @@ test("Hermes model.options is projected as a provider-safe AppServer catalog", a
   assert.equal(response.data[0]?.isDefault, true);
   assert.deepEqual(response.data[0]?.inputModalities, ["text", "image"]);
   assert.deepEqual(calls, [{ method: "model.options", params: { explicit_only: true } }]);
+});
+
+test("Hermes model catalog is scoped to the owning Thread profile and live session", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string, params?: unknown): Promise<T> {
+      const value = params as Record<string, unknown>;
+      calls.push({ method, params: value });
+      if (method === "session.resume") {
+        return {
+          session_id: "live-owner",
+          stored_session_id: "stored-owner",
+          message_count: 0,
+          messages: [],
+          info: { cwd: "/workspace", model: "owned-model", provider: "owned-provider" },
+        } as T;
+      }
+      if (method === "session.list") {
+        return {
+          sessions: [{
+            id: "stored-owner",
+            title: "Owned",
+            preview: "",
+            started_at: 1,
+            message_count: 0,
+            source: "desktop",
+            profile: "team-profile",
+          }],
+        } as T;
+      }
+      if (method === "model.options") {
+        return {
+          model: "owned-model",
+          provider: "owned-provider",
+          providers: [{
+            slug: "owned-provider",
+            name: "Owned Provider",
+            authenticated: true,
+            models: ["owned-model"],
+          }],
+        } as T;
+      }
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+
+  await adapter.loadThread("stored-owner", false, "team-profile");
+  calls.length = 0;
+  await dispatchAppServerRequest(adapter, {
+    id: 1,
+    method: "model/list",
+    params: { cursor: null, limit: 100, includeHidden: false, threadId: "stored-owner" },
+  });
+
+  assert.deepEqual(calls, [{
+    method: "model.options",
+    params: {
+      explicit_only: true,
+      session_id: "live-owner",
+      profile: "team-profile",
+    },
+  }]);
 });
 
 test("Hermes model selection is decoded for session creation and live turn switching", async () => {
@@ -1038,19 +1565,171 @@ test("Hermes cold deep links recover an unlisted lazy named session by authorita
 });
 
 class FakeHermesRpcSocket extends EventTarget {
-  readonly readyState = WebSocket.OPEN;
-  readonly requests: Array<{ id: number; method: string; params: Record<string, unknown> }> = [];
+  readyState = WebSocket.OPEN;
+  readonly requests: Array<{ id: number | string; method: string; params: Record<string, unknown> }> = [];
   send(data: string): void {
-    this.requests.push(JSON.parse(data) as { id: number; method: string; params: Record<string, unknown> });
+    this.requests.push(JSON.parse(data) as { id: number | string; method: string; params: Record<string, unknown> });
   }
   receive(value: unknown): void {
     this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) }));
   }
+  close(): void {
+    this.readyState = WebSocket.CLOSED;
+    this.dispatchEvent(new CloseEvent("close", { code: 1000, wasClean: true }));
+  }
 }
+
+test("Hermes RPC transport owns the advertised Gateway heartbeat lifecycle", async () => {
+  const socket = new FakeHermesRpcSocket();
+  const rpc = new HermesRpcWebSocketTransport(socket, {
+    heartbeatIntervalMs: 5,
+    heartbeatDeadlineMs: 100,
+  });
+
+  socket.receive({
+    jsonrpc: "2.0",
+    method: "event",
+    params: { type: "gateway.ready", payload: { heartbeat: true } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 18));
+  const heartbeats = socket.requests.filter(({ method }) => method === "gateway.ping");
+  assert.equal(heartbeats.length >= 2, true);
+  assert.equal(String(heartbeats[0]?.id).startsWith("heartbeat-"), true);
+
+  rpc.dispose();
+  const countAfterDispose = socket.requests.length;
+  await new Promise((resolve) => setTimeout(resolve, 12));
+  assert.equal(socket.requests.length, countAfterDispose);
+});
+
+test("Hermes browser Handler keeps the dormant Bot protocol out of its public capability surface", async () => {
+  const socket = new FakeHermesRpcSocket();
+  const bridge = new BrowserHermesAppServerBridge(socket);
+
+  const initialized = await bridge.request("initialize", {}) as {
+    capabilities: { extensions: Record<string, unknown> };
+  };
+  assert.deepEqual(initialized.capabilities.extensions, {
+    "opencraft/scoped-model-catalog": { version: 1 },
+  });
+
+  const response = await bridge.handle({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "bot/list",
+    params: {},
+  });
+  assert.equal("error" in response && response.error.code, -32601);
+  assert.equal(socket.requests.length, 0);
+  bridge.dispose();
+});
+
+test("Hermes browser Handler routes live clarify through an AppServer server request", async () => {
+  const socket = new FakeHermesRpcSocket();
+  const bridge = new BrowserHermesAppServerBridge(socket);
+  const outbound: Array<{ id?: string | number; method: string; params: unknown }> = [];
+  bridge.onNotification((frame) => outbound.push(frame));
+
+  const starting = bridge.request("thread/start", { cwd: "/workspace" }) as Promise<{ thread: { id: string } }>;
+  await flush();
+  const create = socket.requests.at(-1)!;
+  assert.equal(create.method, "session.create");
+  socket.receive({ jsonrpc: "2.0", id: create.id, result: {
+    session_id: "live-question",
+    stored_session_id: "stored-question",
+    message_count: 0,
+    messages: [],
+    running: false,
+    info: { cwd: "/workspace" },
+  } });
+  const thread = (await starting).thread;
+
+  const submitting = bridge.request("turn/start", {
+    threadId: thread.id,
+    input: [{ type: "text", text: "Ask me" }],
+    clientUserMessageId: "client-question",
+  });
+  await flush();
+  const prompt = socket.requests.at(-1)!;
+  assert.equal(prompt.method, "prompt.submit");
+  socket.receive({ jsonrpc: "2.0", id: prompt.id, result: { status: "accepted" } });
+  const submitted = await submitting as { turn: { id: string } };
+
+  socket.receive({
+    jsonrpc: "2.0",
+    method: "event",
+    params: {
+      type: "clarify.request",
+      session_id: "live-question",
+      payload: {
+        request_id: "clarify-live-1",
+        question: "Continue?",
+        choices: ["Yes", "No"],
+      },
+    },
+  });
+  await flush();
+  const question = outbound.find((frame) => frame.method === "item/tool/requestUserInput");
+  assert.ok(question?.id);
+  assert.equal((question.params as { turnId: string }).turnId, submitted.turn.id);
+
+  socket.receive({
+    jsonrpc: "2.0",
+    method: "event",
+    params: {
+      type: "session.info",
+      session_id: "live-question",
+      payload: { running: false },
+    },
+  });
+  await flush();
+  assert.equal(outbound.some((frame) => frame.method === "turn/completed"), false);
+
+  const answering = bridge.handleResponse({
+    jsonrpc: "2.0",
+    id: question.id,
+    result: { answers: { answer: { answers: ["Yes"] } } },
+  });
+  await flush();
+  const response = socket.requests.at(-1)!;
+  assert.equal(response.method, "clarify.respond");
+  assert.deepEqual(response.params, { request_id: "clarify-live-1", answer: "Yes" });
+  socket.receive({ jsonrpc: "2.0", id: response.id, result: { ok: true } });
+  assert.equal(await answering, true);
+  socket.receive({
+    jsonrpc: "2.0",
+    method: "event",
+    params: {
+      type: "tool.complete",
+      session_id: "live-question",
+      payload: { tool_id: "clarify-tool", name: "clarify", result: "Yes" },
+    },
+  });
+  socket.receive({
+    jsonrpc: "2.0",
+    method: "event",
+    params: {
+      type: "message.complete",
+      session_id: "live-question",
+      payload: { text: "Continuing." },
+    },
+  });
+  await flush();
+  assert.equal(outbound.filter((frame) => frame.method === "turn/completed").length, 1);
+  bridge.dispose();
+});
 
 test("Hermes browser Handler advertises and serves the engine-neutral Bot extension", async () => {
   const socket = new FakeHermesRpcSocket();
-  const bridge = new BrowserHermesAppServerBridge(socket);
+  const bridge = new BrowserHermesAppServerBridge(socket, {
+    enableBotConversations: true,
+    history: {
+      async readMessages() {
+        throw new Error('HTTP 404: {"detail":"Session not found"}');
+      },
+      dispose() {},
+    },
+  });
 
   const initialized = await bridge.request("initialize", {}) as {
     capabilities: { extensions: Record<string, { version: number; topologies: string[] }> };
@@ -1068,6 +1747,10 @@ test("Hermes browser Handler advertises and serves the engine-neutral Bot extens
     ],
   } });
   const catalog = await catalogRequest;
+
+  assert.deepEqual(initialized.capabilities.extensions["opencraft/scoped-model-catalog"], {
+    version: 1,
+  });
 
   assert.deepEqual(initialized.capabilities.extensions["vela/bot-conversations"], {
     version: 1,
@@ -1216,7 +1899,7 @@ test("Hermes browser Handler advertises and serves the engine-neutral Bot extens
 
 test("Hermes Bot creation adopts the server-owned named session after a create race", async () => {
   const socket = new FakeHermesRpcSocket();
-  const bridge = new BrowserHermesAppServerBridge(socket);
+  const bridge = new BrowserHermesAppServerBridge(socket, { enableBotConversations: true });
   const created = bridge.request("bot/conversation/create", {
     clientRequestId: "racing-create",
     topology: "direct",
@@ -1285,18 +1968,44 @@ test("Hermes replay reports a bounded-ring gap so the projection can re-snapshot
   checkpoint.lastSeenSeq.set("live-1", 1);
   const socket = new FakeHermesRpcSocket();
   const rpc = new HermesRpcWebSocketTransport(socket, { replayCheckpoint: checkpoint });
+  const observed: unknown[] = [];
+  rpc.onEvent(event => observed.push(event));
   const replay = rpc.catchUpSession("live-1");
   await flush();
   const request = socket.requests.at(-1)!;
+  socket.receive({ jsonrpc: "2.0", method: "event", params: { type: "message.delta", session_id: "live-1", seq: 801, payload: { text: "racing" } } });
   socket.receive({ jsonrpc: "2.0", id: request.id, result: {
-    events: [], latest_seq: 800, truncated: true, epoch: "epoch-a",
+    events: [{ type: "message.delta", session_id: "live-1", seq: 800, payload: { text: "partial" } }], latest_seq: 800, truncated: true, epoch: "epoch-a",
   } });
   assert.deepEqual(await replay, { complete: false });
   assert.equal(checkpoint.lastSeenSeq.has("live-1"), false);
+  assert.deepEqual(observed, [], "neither partial replay nor racing live frames may extend a gapped replica");
   rpc.dispose();
 });
 
-test("Hermes reconnect rebuilds the active Turn before releasing replayed events", async () => {
+test("Hermes snapshot release waits for its projection owner", async () => {
+  const socket = new FakeHermesRpcSocket();
+  const rpc = new HermesRpcWebSocketTransport(socket);
+  const observed: unknown[] = [];
+  rpc.onEvent(event => observed.push(event));
+  const snapshot = rpc.snapshotSession("live-1");
+  await flush();
+  const request = socket.requests.at(-1)!;
+  assert.equal(request.method, "session.activate");
+  socket.receive({ jsonrpc: "2.0", id: request.id, result: {
+    session_id: "live-1", messages: [], message_count: 1, running: true,
+    inflight: { user: "hello", assistant: "world", streaming: true },
+  } });
+  socket.receive({ jsonrpc: "2.0", method: "event", params: { type: "message.delta", session_id: "live-1", seq: 4, payload: { text: "!" } } });
+  await snapshot;
+  await flush();
+  assert.deepEqual(observed, []);
+  rpc.releaseSnapshot("live-1");
+  assert.equal(observed.length, 1);
+  rpc.dispose();
+});
+
+test("Hermes cold recovery adopts inflight without applying a detached replay cursor", async () => {
   let eventListener: ((event: Record<string, unknown>) => void) | null = null;
   const rpc: HermesRpcClient = {
     async call<T>(method: string): Promise<T> {
@@ -1316,9 +2025,11 @@ test("Hermes reconnect rebuilds the active Turn before releasing replayed events
       return () => { eventListener = null; };
     },
     async catchUpSession() {
-      eventListener?.({ type: "message.start", session_id: "live-1", payload: {} });
-      eventListener?.({ type: "message.delta", session_id: "live-1", payload: { text: "world" } });
-      return { complete: true };
+      throw new Error("no retained owner: replay must not run");
+    },
+    async snapshotSession() {
+      return { session_id: "live-1", stored_session_id: "stored-1", messages: [], message_count: 1, running: true,
+        inflight: { user: "hello", assistant: "world", streaming: true } };
     },
   };
   const history: HermesHistoryClient = {
@@ -1334,12 +2045,16 @@ test("Hermes reconnect rebuilds the active Turn before releasing replayed events
   const adapter = new HermesAppServerAdapter(rpc, "/workspace", history);
   const notifications: Array<{ method: string; params: unknown }> = [];
   adapter.subscribeNotification((method, params) => notifications.push({ method, params }));
-  await dispatchAppServerRequest(adapter, {
+  const resumed = await dispatchAppServerRequest(adapter, {
     id: 1,
     method: "thread/resume",
     params: { threadId: "stored-1", excludeTurns: true, initialTurnsPage: { limit: 5, sortDirection: "desc" } },
   });
-  assert.deepEqual(notifications.map(({ method }) => method), ["turn/started", "item/started", "item/agentMessage/delta"]);
+  assert.deepEqual(notifications, []);
+  const restored = (resumed as { initialTurnsPage: { data: AppServerTurn[] } }).initialTurnsPage.data[0];
+  assert.equal(restored.items.at(-1)?.text, "world");
+  eventListener?.({ type: "message.delta", session_id: "live-1", payload: { text: "!" } });
+  assert.equal(restored.items.at(-1)?.text, "world!");
   assert.equal(
     (notifications.at(-1)?.params as { turnId?: string }).turnId,
     "hermes-turn-stored-1-1",
@@ -1405,6 +2120,39 @@ test("Hermes adapter publishes accepted work without waiting for message.start",
     "item/started",
     "item/agentMessage/delta",
   ]);
+});
+
+test("Hermes AppServer turn/start preserves the client message identity before its receipt", async () => {
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      if (method === "session.create") {
+        return {
+          session_id: "live-client-identity",
+          stored_session_id: "stored-client-identity",
+          message_count: 0,
+          messages: [],
+          info: { cwd: "/workspace" },
+        } as T;
+      }
+      if (method === "prompt.submit") return { status: "accepted" } as T;
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  await adapter.startThread();
+  const response = await dispatchAppServerRequest(adapter, {
+    id: 1,
+    method: "turn/start",
+    params: {
+      threadId: "stored-client-identity",
+      clientUserMessageId: "client-first-message",
+      input: [{ type: "text", text: "hello" }],
+    },
+  }) as { turn: { items: Array<{ type: string; clientId?: string | null }> } };
+
+  assert.equal(response.turn.items[0]?.type, "userMessage");
+  assert.equal(response.turn.items[0]?.clientId, "client-first-message");
 });
 
 test("Hermes Bot follow-ups inherit the Gateway strict queue lease", async () => {
@@ -1766,6 +2514,110 @@ test("Hermes reasoning and tool events preserve AppServer Item boundaries", () =
   assert.deepEqual(duplicateCompletion, []);
 });
 
+test("Hermes live completion removes reasoning repeated by the final answer", () => {
+  const turn = {
+    id: "turn-repeated-reasoning",
+    items: [],
+    itemsView: "full" as const,
+    status: "inProgress" as const,
+    error: null,
+    startedAt: 10,
+    completedAt: null,
+    durationMs: null,
+  };
+  let id = 0;
+  const projection = new HermesTurnEventStateMachine("thread-repeated-reasoning", turn, () => String(++id));
+  projection.accept(10_000);
+  projection.project({ type: "reasoning.available", payload: { text: "Hello. How can I help?" } }, 11_000);
+  projection.project({ type: "message.delta", payload: { text: "Hello. How can I help?" } }, 12_000);
+  const completed = projection.project({
+    type: "message.complete",
+    payload: { text: "Hello. How can I help?" },
+  }, 13_000);
+
+  assert.deepEqual(turn.items.map(({ type }) => type), ["agentMessage"]);
+  assert.equal(turn.items[0]?.text, "Hello. How can I help?");
+  assert.equal(completed.at(-1)?.method, "turn/completed");
+  assert.deepEqual(
+    (completed.at(-1)?.params.turn as { items: Array<{ type: string }> }).items.map(({ type }) => type),
+    ["agentMessage"],
+  );
+});
+
+test("Hermes live completion gives one final Item ownership over a repeated interim", () => {
+  const turn = {
+    id: "turn-repeated-interim",
+    items: [],
+    itemsView: "full" as const,
+    status: "inProgress" as const,
+    error: null,
+    startedAt: 10,
+    completedAt: null,
+    durationMs: null,
+  };
+  let id = 0;
+  const projection = new HermesTurnEventStateMachine("thread-repeated-interim", turn, () => String(++id));
+  projection.accept(10_000);
+  projection.project({ type: "message.delta", payload: { text: "I did not use any tools." } }, 11_000);
+  projection.project({ type: "message.interim", payload: { text: "I did not use any tools." } }, 12_000);
+  // A provider reasoning frame is a presentation phase, not permission to
+  // orphan the interim Item as a second owner of the eventual final text.
+  projection.project({ type: "reasoning.available", payload: { text: "Check whether tools ran." } }, 13_000);
+  const completed = projection.project({
+    type: "message.complete",
+    payload: { text: "I did not use any tools.", status: "complete" },
+  }, 14_000);
+
+  const messages = turn.items.filter(({ type }) => type === "agentMessage");
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0]?.phase, "final_answer");
+  assert.equal(messages[0]?.text, "I did not use any tools.");
+  const tombstone = completed.find(({ method, params }) => (
+    method === "item/completed"
+      && (params.item as { type?: string; phase?: string; text?: string } | undefined)?.type === "agentMessage"
+      && (params.item as { phase?: string } | undefined)?.phase === "commentary"
+  ));
+  assert.equal((tombstone?.params.item as { text?: string } | undefined)?.text, "");
+  assert.deepEqual(
+    (completed.at(-1)?.params.turn as { items: Array<{ type: string; phase?: string | null }> }).items
+      .filter(({ type }) => type === "agentMessage")
+      .map(({ phase }) => phase),
+    ["final_answer"],
+  );
+});
+
+test("Hermes settles only the latest prefix-continuous interim into the final Item", () => {
+  const turn = {
+    id: "turn-prefix-interim",
+    items: [],
+    itemsView: "full" as const,
+    status: "inProgress" as const,
+    error: null,
+    startedAt: 10,
+    completedAt: null,
+    durationMs: null,
+  };
+  let id = 0;
+  const projection = new HermesTurnEventStateMachine("thread-prefix-interim", turn, () => String(++id));
+  projection.accept(10_000);
+  projection.project({ type: "message.interim", payload: { text: "Earlier real narration." } }, 11_000);
+  projection.project({ type: "tool.start", payload: { tool_id: "tool-1", name: "inspect" } }, 12_000);
+  projection.project({ type: "tool.complete", payload: { tool_id: "tool-1", name: "inspect", result: "ok" } }, 13_000);
+  projection.project({ type: "message.interim", payload: { text: "Partial answer" } }, 14_000);
+  projection.project({ type: "reasoning.available", payload: { text: "Verify the result." } }, 15_000);
+  projection.project({
+    type: "message.complete",
+    payload: { text: "Partial answer with more detail", status: "complete" },
+  }, 16_000);
+
+  const messages = turn.items.filter(({ type }) => type === "agentMessage");
+  assert.deepEqual(messages.map(({ text }) => text), [
+    "Earlier real narration.",
+    "Partial answer with more detail",
+  ]);
+  assert.deepEqual(messages.map(({ phase }) => phase), ["commentary", "final_answer"]);
+});
+
 test("Hermes projection ignores a pre-start idle heartbeat but converges after live work", () => {
   const turn = {
     id: "turn-heartbeat",
@@ -1927,7 +2779,7 @@ test("Hermes promotes an interim preview into the authoritative final Item", () 
 
   assert.deepEqual(completed.map(({ method }) => method), ["item/completed", "turn/completed"]);
   assert.equal(turn.items.length, 1);
-  assert.equal(turn.items[0]?.phase, null);
+  assert.equal(turn.items[0]?.phase, "final_answer");
   assert.equal(turn.items[0]?.text, "北京今天天气：晴朗");
 });
 
@@ -1952,7 +2804,7 @@ test("Hermes replaces a non-prefix interim completion without creating a duplica
 
   assert.equal(turn.items.length, 1);
   assert.equal(turn.items[0]?.id, "hermes-agent-turn-interim-replacement-1-stable");
-  assert.equal(turn.items[0]?.phase, null);
+  assert.equal(turn.items[0]?.phase, "final_answer");
   assert.equal(turn.items[0]?.text, "authoritative answer");
 });
 
@@ -1987,7 +2839,7 @@ test("Hermes seals real pre-tool commentary before creating the final answer", (
   const messages = turn.items.filter(({ type }) => type === "agentMessage");
   assert.equal(messages.length, 2);
   assert.equal(messages[0]?.phase, "commentary");
-  assert.equal(messages[1]?.phase, null);
+  assert.equal(messages[1]?.phase, "final_answer");
 });
 
 test("Hermes Dashboard history client requests authenticated bounded transcript pages", async () => {

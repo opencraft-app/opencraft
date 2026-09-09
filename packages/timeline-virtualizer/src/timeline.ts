@@ -203,7 +203,7 @@ export function createTimelineMeasurementTransaction<
   currentDistanceFromBottomPx,
   bottomPaddingPx,
   preserveMeasuredViewport,
-  pendingRestoreScrollDistanceFromBottomPx,
+  getPendingRestoreScrollDistanceFromBottomPx,
   config = TIMELINE_VIRTUALIZER_CONFIG,
 }: {
   readonly entries: readonly TEntry[];
@@ -214,7 +214,7 @@ export function createTimelineMeasurementTransaction<
   readonly currentDistanceFromBottomPx: number;
   readonly bottomPaddingPx: number;
   readonly preserveMeasuredViewport: boolean;
-  readonly pendingRestoreScrollDistanceFromBottomPx: number | null;
+  readonly getPendingRestoreScrollDistanceFromBottomPx: (() => number | null) | null;
   readonly config?: Readonly<TimelineVirtualizerConfig>;
 }): TimelineMeasurementTransaction | null {
   const transaction: TurnMeasurementTransaction | null = createTurnMeasurementTransaction({
@@ -229,7 +229,7 @@ export function createTimelineMeasurementTransaction<
     currentDistanceFromBottomPx,
     bottomPaddingPx,
     preserveMeasuredTurnViewport: preserveMeasuredViewport,
-    pendingRestoreScrollDistanceFromBottomPx,
+    getPendingRestoreScrollDistanceFromBottomPx,
     config: toTurnConfig(config),
   });
   if (transaction === null) return null;

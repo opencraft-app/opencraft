@@ -1,3 +1,4 @@
+import type { LatestTurnPlacementSnapshot } from "./follow";
 import type { TurnGeometry, VirtualizedTurnViewportState } from "./types";
 
 export type TurnScrollBehavior = "instant" | "smooth";
@@ -111,8 +112,10 @@ export interface TurnLayoutScheduler {
 }
 
 export interface TurnConversationScrollApi {
-  clearPendingLatestTurnSubmitPlacement(): void;
-  prepareLatestTurnSubmitPlacement(): void;
+  /** Capture geometry at submit; the caller owns it until one Conversation consumes it. */
+  captureLatestTurnSubmitPlacement(): LatestTurnPlacementSnapshot | null;
+  /** Release platform preservation acquired while capturing, without owning the snapshot. */
+  releaseLatestTurnSubmitPlacementCapture(): void;
   scrollToBottom(): void;
 }
 

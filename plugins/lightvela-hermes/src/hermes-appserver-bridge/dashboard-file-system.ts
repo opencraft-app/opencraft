@@ -16,9 +16,9 @@ export interface HermesHostDirectoryEntry {
 
 export interface HermesHostFileSystem {
   readonly codexHome: string;
-  getMetadata(path: string): Promise<HermesHostFileMetadata>;
+  getMetadata(path: string, signal?: AbortSignal): Promise<HermesHostFileMetadata>;
   readDirectory(path: string): Promise<{ readonly entries: readonly HermesHostDirectoryEntry[] }>;
-  readFile(path: string): Promise<{ readonly dataBase64: string }>;
+  readFile(path: string, signal?: AbortSignal): Promise<{ readonly dataBase64: string }>;
   writeFile(path: string, dataBase64: string): Promise<void>;
   dispose(): void;
 }
@@ -77,10 +77,11 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
     this.codexHome = root === "/" ? "/.hermes" : `${root}/.hermes`;
   }
 
-  async getMetadata(path: string): Promise<HermesHostFileMetadata> {
+  async getMetadata(path: string, signal?: AbortSignal): Promise<HermesHostFileMetadata> {
+    signal?.throwIfAborted();
     if (path === "/") return this.metadata(true);
     const { parent, name } = parentAndName(path);
-    const entries = (await this.list(parent)).entries ?? [];
+    const entries = (await this.list(parent, signal)).entries ?? [];
     const entry = entries.find((candidate) => candidate.name === name);
     if (!entry) throw new Error(`Hermes path does not exist: ${path}`);
     return this.metadata(entry.isDirectory);
@@ -98,16 +99,23 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
     };
   }
 
-  async readFile(path: string) {
+  async readFile(path: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     try {
       const response = await this.get<{ readonly dataUrl: string }>(
         `/api/fs/read-data-url?path=${encodePath(path)}`,
+        signal,
       );
       return { dataBase64: base64FromDataUrl(response.dataUrl) };
     } catch (primaryError) {
+      signal?.throwIfAborted();
+      // Only a missing route warrants trying the older endpoint. An expired
+      // read or a transport failure must never start a second download.
+      if (!(primaryError instanceof Error) || !/^HTTP (404|405|501):/.test(primaryError.message)) throw primaryError;
       try {
         const response = await this.get<{ readonly data_url: string }>(
           `/api/files/read?path=${encodePath(path)}`,
+          signal,
         );
         return { dataBase64: base64FromDataUrl(response.data_url) };
       } catch {
@@ -142,13 +150,15 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
     };
   }
 
-  private async list(path: string): Promise<HermesFsListResponse> {
+  private async list(path: string, signal?: AbortSignal): Promise<HermesFsListResponse> {
     try {
-      return await this.get<HermesFsListResponse>(`/api/fs/list?path=${encodePath(path)}`);
+      return await this.get<HermesFsListResponse>(`/api/fs/list?path=${encodePath(path)}`, signal);
     } catch (primaryError) {
+      signal?.throwIfAborted();
       try {
         const fallback = await this.get<HermesManagedFileListResponse>(
           `/api/files?path=${encodePath(path)}`,
+          signal,
         );
         return {
           entries: (fallback.entries ?? []).map((entry) => ({
@@ -162,9 +172,10 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
     }
   }
 
-  private get<T>(path: string): Promise<T> {
+  private get<T>(path: string, signal?: AbortSignal): Promise<T> {
     return this.client.fetchJson<T>(path, {
       headers: { "X-Hermes-Session-Token": this.sessionToken },
+      signal,
     });
   }
 }

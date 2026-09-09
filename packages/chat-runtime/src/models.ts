@@ -50,7 +50,7 @@ export interface PendingSubmission {
   readonly clientMessageId: string;
   readonly turnId: TurnId | null;
   readonly preview: string;
-  readonly state: "submitting" | "accepted" | "failed";
+  readonly state: "submitting" | "accepted" | "failed" | "unknown";
   readonly createdAt: number;
   readonly error: Error | null;
 }

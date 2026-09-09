@@ -1,4 +1,5 @@
 // @refresh reset
+import { preflightHostConnection } from "@opencraft/workbench-runtime";
 import {
   QueryClient,
   QueryClientProvider,
@@ -12,11 +13,13 @@ import {
 } from "@opencraft/appserver-client";
 import {
   AppServerBotDirectory,
-  createAppServerBotConversationSource,
-  createAppServerBotConversationResolver,
   createCordisBotConversationRuntime,
 } from "@opencraft/bot-conversation-appserver";
 import type { Context as CordisContext } from "@deepseek-ai/cordis";
+import { BlobResourceService } from "@opencraft/blob-resources";
+import { ImageProcessingService } from "@opencraft/image-processing";
+import { processBrowserImage } from "@opencraft/image-processing/browser";
+import { IndexedDbBlobStorage } from "@opencraft/blob-resources/browser";
 import {
   installBrowserDynamicToolHandler,
   OPENCRAFT_BROWSER_CAPABILITY,
@@ -45,8 +48,7 @@ import type {
 import {
   OPENCRAFT_AGENT_CATALOG_CAPABILITY,
   OPENCRAFT_AGENT_CATALOG_EXTENSION,
-  OPENCRAFT_BOT_CONVERSATIONS_CAPABILITY,
-  OPENCRAFT_BOT_CONVERSATIONS_EXTENSION,
+  OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
   type AgentCatalogEntry,
 } from "@opencraft/appserver-protocol";
 import {
@@ -81,6 +83,7 @@ import {
   type CordisHostConnectionProviderRuntime,
   type HostConnectionJson,
   type HostConnectionProfile,
+  type HostConnectionProviderDescriptor,
   type HostConnectionProfileStore,
   HOST_PROFILE_CONTRIBUTION_CHANNEL,
   type ProvisionHostInput,
@@ -139,6 +142,8 @@ export interface AppServerHostCatalog {
   readonly selectedHostId: string;
   readonly hosts: readonly HostRuntimeDescriptor[];
   readonly profiles: readonly HostConnectionProfile[];
+  /** Provider-owned navigation metadata projected for Host-scoped chrome. */
+  readonly connectionProviders: readonly HostConnectionProviderDescriptor[];
   readonly extensionContributions: ExtensionContributionStore;
   readonly extensionManager: ExtensionManager;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
@@ -194,6 +199,8 @@ export interface WebWorkbenchCommands {
 }
 
 interface AppServerApplicationContextValue extends AppServerHostCatalog {
+  readonly blobs: BlobResourceService;
+  readonly images: ImageProcessingService;
   readonly registry: HostRuntimeRegistry<AppServerWorkbenchRuntime>;
   readonly conversationScopes: ConversationScopeRegistry;
   readonly conversationBindings: ConversationBindingStore;
@@ -436,6 +443,8 @@ async function disposeOwnedSteps(
 }
 
 interface WebWorkbenchApplicationBase {
+  readonly blobs: BlobResourceService;
+  readonly images: ImageProcessingService;
   readonly cordis: CordisContext;
   readonly appServerRegistry: CordisAppServerRegistryRuntime;
   readonly connectionProviders: CordisHostConnectionProviderRuntime;
@@ -519,6 +528,9 @@ async function persistProvisionedHost(
       platform,
       hostId,
       profileRevision: 0,
+    });
+    await preflightHostConnection(providerLease.provider, providerConfig, {
+      platform, hostId, profileRevision: 0,
     });
   } finally {
     providerLease.release();
@@ -799,6 +811,14 @@ export async function createWebWorkbenchApplicationSupervisor(
 ): Promise<WebWorkbenchApplicationSupervisor> {
   const startupRollback: Array<() => void | Promise<void>> = [];
   try {
+    const blobFiber = cordis.plugin(BlobResourceService, { storage: new IndexedDbBlobStorage() });
+    startupRollback.push(() => blobFiber.dispose());
+    await blobFiber;
+    const blobs = cordis.blobResources;
+    const imageFiber = cordis.plugin(ImageProcessingService, { process: processBrowserImage });
+    startupRollback.push(() => imageFiber.dispose());
+    await imageFiber;
+    const images = cordis.imageProcessing;
     const appServerRegistry = await createCordisAppServerRegistry(cordis);
     startupRollback.push(() => appServerRegistry.dispose());
     const botConversations = await createCordisBotConversationRuntime(cordis);
@@ -849,20 +869,6 @@ export async function createWebWorkbenchApplicationSupervisor(
       await import("@opencraft/plugin-voice-input/runtime-entry")
     ).default;
     await extensions.activate(createVoiceInputExtension());
-    const createBotChatExtension = (
-      await import("@opencraft/plugin-bot-chat/runtime-entry")
-    ).default;
-    const botConversationSource = createAppServerBotConversationSource(
-      botConversations.service,
-    );
-    const botConversationResolver = createAppServerBotConversationResolver(
-      botConversations.service,
-    );
-    startupRollback.push(() => botConversationSource.dispose());
-    await extensions.activate(createBotChatExtension({
-      resolver: botConversationResolver,
-      source: botConversationSource,
-    }));
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true") {
       const { createBuiltinAgentsExtension } = await import("@opencraft/plugin-builtin-agents");
       await extensions.activate(createBuiltinAgentsExtension({
@@ -926,6 +932,8 @@ export async function createWebWorkbenchApplicationSupervisor(
       connectionProviders.providers,
     );
     const hostless: HostlessWebWorkbenchApplicationSupervisor = {
+      blobs,
+      images,
       mode: "hostless",
       cordis,
       appServerRegistry,
@@ -958,6 +966,8 @@ export async function createWebWorkbenchApplicationSupervisor(
           () => appServerRegistry.dispose(),
           () => electronAppHost?.close(),
           () => connectionProviders.dispose(),
+          () => blobFiber.dispose(),
+          () => imageFiber.dispose(),
         ], "Failed to dispose hostless Web Workbench supervisor");
       },
     };
@@ -1017,7 +1027,6 @@ export async function createWebWorkbenchApplicationSupervisor(
             extensions: {
               [OPENCRAFT_BROWSER_EXTENSION]: OPENCRAFT_BROWSER_CAPABILITY,
               [OPENCRAFT_AGENT_CATALOG_EXTENSION]: OPENCRAFT_AGENT_CATALOG_CAPABILITY,
-              [OPENCRAFT_BOT_CONVERSATIONS_EXTENSION]: OPENCRAFT_BOT_CONVERSATIONS_CAPABILITY,
             },
           },
         },
@@ -1097,7 +1106,6 @@ export async function createWebWorkbenchApplicationSupervisor(
   const conversationLeases = createConversationScopeLeaseRegistry({
     onDisposeScope(scopeId) {
       disposeScopeResources(scopeId);
-      conversationBindings.remove(scopeId);
     },
   });
   startupRollback.push(() => conversationLeases.dispose());
@@ -1138,6 +1146,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     connectionProviders: connectionProviders.providers,
   });
   const supervisor: WebWorkbenchApplicationSupervisor = {
+    blobs,
+    images,
     mode: "active",
     cordis,
     appServerRegistry,
@@ -1189,6 +1199,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         () => botConversations.dispose(),
         () => appServerRegistry.dispose(),
         () => connectionProviders.dispose(),
+        () => blobFiber.dispose(),
+        () => imageFiber.dispose(),
       ], "Failed to dispose Web Workbench supervisor");
     },
   };
@@ -1255,6 +1267,11 @@ export function AppServerRuntimeProvider({
     hostProfiles.getSnapshot,
     hostProfiles.getSnapshot,
   );
+  const connectionProviderSnapshot = useSyncExternalStore(
+    supervisor.connectionProviders.providers.subscribe,
+    supervisor.connectionProviders.providers.getSnapshot,
+    supervisor.connectionProviders.providers.getSnapshot,
+  );
   const runtime = coordinator.getRuntime();
   const activeThreadLease = coordinator.getActiveThreadLease();
   const activeConversationScopeId = conversationActivation.scopeIdFor(coordinatorSnapshot.location);
@@ -1266,6 +1283,8 @@ export function AppServerRuntimeProvider({
   }
   const composerController = conversationView.composer;
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
+    blobs: supervisor.blobs,
+    images: supervisor.images,
     conversationScopes,
     conversationBindings,
     extensionSettings,
@@ -1284,6 +1303,7 @@ export function AppServerRuntimeProvider({
     currentLocation: coordinatorSnapshot.location,
     hosts: registrySnapshot.hosts,
     profiles: hostProfileSnapshot.profiles,
+    connectionProviders: connectionProviderSnapshot.providers,
     selectHost: commands.selectHost,
     navigate: commands.navigate,
     openDraft: commands.openDraft,
@@ -1293,6 +1313,8 @@ export function AppServerRuntimeProvider({
     addWebSocketHost: commands.addWebSocketHost,
     removeHost: commands.removeHost,
   }), [
+    supervisor.blobs,
+    supervisor.images,
     conversationBindings,
     extensionSettings,
     extensionManager,
@@ -1304,6 +1326,7 @@ export function AppServerRuntimeProvider({
     commands,
     registrySnapshot.hosts,
     hostProfileSnapshot.profiles,
+    connectionProviderSnapshot.providers,
     navigation,
   ]);
   const viewContextValue = useMemo<ConversationViewRuntimeContextValue>(() => ({
@@ -1335,6 +1358,18 @@ export function AppServerRuntimeProvider({
   );
 }
 
+export function useBlobResources(): BlobResourceService {
+  const context = useContext(ApplicationRuntimeContext);
+  if (!context) throw new Error("Blob resources require the application provider");
+  return context.blobs;
+}
+
+export function useImageProcessing(): ImageProcessingService {
+  const context = useContext(ApplicationRuntimeContext);
+  if (context === null) throw new Error("AppServer runtime is unavailable");
+  return context.images;
+}
+
 export function useAppServerRuntime(): AppServerWorkbenchRuntime {
   const value = useContext(ConversationViewRuntimeContext);
   if (value === null) throw new Error("ConversationViewRuntimeProvider is missing");
@@ -1351,6 +1386,31 @@ export function useAppServerHosts(): AppServerHostCatalog {
   const value = useContext(ApplicationRuntimeContext);
   if (value === null) throw new Error("AppServerRuntimeProvider is missing");
   return value;
+}
+
+/** Observe one Host, independently of the currently presented conversation. */
+export function useHostConnectionPhase(hostId: string) {
+  const application = useContext(ApplicationRuntimeContext);
+  if (application === null) throw new Error("AppServerRuntimeProvider is missing");
+  const registry = application.registry;
+  return useSyncExternalStore(
+    (listener) => {
+      let runtime = registry.peekRuntime(hostId);
+      let unsubscribe = runtime?.subscribe(listener);
+      const removeRegistry = registry.subscribe(() => {
+        const next = registry.peekRuntime(hostId);
+        if (next !== runtime) {
+          unsubscribe?.();
+          runtime = next;
+          unsubscribe = runtime?.subscribe(listener);
+        }
+        listener();
+      });
+      return () => { removeRegistry(); unsubscribe?.(); };
+    },
+    () => registry.peekRuntime(hostId)?.getSnapshot().phase ?? "idle",
+    () => "idle",
+  );
 }
 
 export function useConversationScopeRegistry(): ConversationScopeRegistry {
@@ -1565,10 +1625,18 @@ function errorOrNull(error: unknown): Error | null {
  * not Replica entities: the server owns availability and cwd requirements,
  * while the immutable SubmitIntent records the user's concrete selection.
  */
-export function useComposerCatalog(cwd: string | null): ComposerCatalogSnapshot {
+export function useComposerCatalog(
+  cwd: string | null,
+  threadId: string | null = null,
+): ComposerCatalogSnapshot {
   const runtime = useAppServerRuntime();
   const snapshot = useAppServerSnapshot();
   const enabled = snapshot.phase === "ready" || snapshot.phase === "reconnecting";
+  const supportsScopedModelCatalog =
+    runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.[
+      OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION
+    ] !== undefined;
+  const modelCatalogOwner = supportsScopedModelCatalog ? threadId : null;
   const agents = useInfiniteQuery({
     queryKey: ["appserver", snapshot.hostId, "agents"] as const,
     enabled,
@@ -1582,13 +1650,19 @@ export function useComposerCatalog(cwd: string | null): ComposerCatalogSnapshot 
     retry: false,
   });
   const models = useInfiniteQuery({
-    queryKey: ["appserver", snapshot.hostId, "composer-models"] as const,
+    queryKey: [
+      "appserver",
+      snapshot.hostId,
+      "composer-models",
+      modelCatalogOwner ?? "host",
+    ] as const,
     enabled,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => runtime.resources.composerCatalog.listModels({
       cursor: pageParam,
       limit: 100,
       includeHidden: false,
+      ...(modelCatalogOwner === null ? {} : { threadId: modelCatalogOwner }),
     }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 60_000,

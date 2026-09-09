@@ -8,13 +8,32 @@ import { WebSocketServer } from "ws";
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.js";
 
 async function fakeDsh() {
+  const responses: Array<Record<string, any>> = [];
   const streams = new Map<WebSocket, string>();
   const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
+  const activeSessions = new Set<string>();
+  const queues = new Map<string, Array<Record<string, any>>>();
+  let nextQueueId = 1;
+  const publishMux = (payload: Record<string, unknown>) => {
+    const frame = JSON.stringify({ payload });
+    for (const [stream, path] of streams) if (path === "/api/events.mux") stream.send(frame);
+  };
+  const publishQueue = (sessionId: string) => publishMux({
+    type: "session/queue",
+    sessionId,
+    items: queues.get(sessionId) ?? [],
+  });
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     const envelope = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { method: string; payload: Record<string, unknown>; rpcId: string };
+    if (url.pathname === "/api/respond") {
+      responses.push(envelope);
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ accepted: true }));
+      return;
+    }
     calls.push({ method: envelope.method, payload: envelope.payload });
     let value: unknown = {};
     if (envelope.method === "host.describe") value = {
@@ -68,7 +87,7 @@ async function fakeDsh() {
       events: [
         { event: { type: "turn/start", seq: 0, time: 1_788_000_000_000, data: { turn: 1 } } },
         { event: { type: "step/start", seq: 1, time: 1_788_000_000_001, data: { turn: 1, step: 1 } } },
-        { event: { type: "user/message", seq: 2, time: 1_788_000_000_002, data: { id: "m-user", role: "user", content: [{ type: "text", text: "hello" }], source: { kind: "human" } } } },
+        { event: { type: "user/message", seq: 2, time: 1_788_000_000_002, data: { id: "m-user", role: "user", content: [{ type: "text", text: "hello" }], source: { kind: "human", rpcId: "history-client-message" } } } },
         { event: { type: "user/message", seq: 3, time: 1_788_000_000_002, data: { id: "m-system", role: "user", content: [{ type: "text", text: "runtime context" }], source: { kind: "plugin", plugin: "system-prompt" } } } },
         { event: { type: "assistant/message", seq: 4, time: 1_788_000_000_003, data: { turn: 1, step: 1, message: { id: "m-agent", role: "assistant", content: [{ type: "reasoning", text: "think" }, { type: "text", text: "world" }] } } } },
         { event: { type: "turn/end", seq: 5, time: 1_788_000_000_004, data: { turn: 1, reason: "completed" } } },
@@ -79,23 +98,58 @@ async function fakeDsh() {
     if (envelope.method === "session.models") value = {
       current: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "high" },
       routable: true,
-      groups: [{ id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash" }] }],
+      groups: [
+        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash" }] },
+        { id: "custom:test", name: "Custom", models: [{ id: "hy4-preview", name: "HY4 Preview" }] },
+      ],
       failures: [],
     };
     if (envelope.method === "session.create") value = { sessionId: "s-new", agentPreset: "standard" };
     if (envelope.method === "session.prompt") {
       value = { accepted: true };
-      setTimeout(() => {
-        const frame = JSON.stringify({ payload: {
+      const sessionId = String(envelope.payload.sessionId);
+      if (envelope.payload.mode === "queue" && activeSessions.has(sessionId)) {
+        const item = {
+          id: `queued-${nextQueueId++}`,
+          placement: "queued",
+          message: {
+            id: `queued-message-${nextQueueId}`,
+            role: "user",
+            content: envelope.payload.content,
+            source: { kind: "user", rpcId: envelope.rpcId },
+          },
+        };
+        queues.set(sessionId, [...(queues.get(sessionId) ?? []), item]);
+        setTimeout(() => publishQueue(sessionId), 0);
+      } else if (envelope.payload.mode === "queue") {
+        activeSessions.add(sessionId);
+        setTimeout(() => publishMux({
           type: "session/event",
-          sessionId: "s-new",
+          sessionId,
           event: { type: "turn/start", seq: 10, time: 1_788_000_000_100, data: { turn: 1 } },
-        } });
-        for (const [stream, path] of streams) if (path === "/api/events.mux") stream.send(frame);
-      }, 0);
+        }), 0);
+      }
+    }
+    if (envelope.method === "session.updateQueue") {
+      value = { accepted: true };
+      const sessionId = String(envelope.payload.sessionId);
+      const itemId = String(envelope.payload.itemId);
+      const action = envelope.payload.action as { kind: string; content?: unknown[] };
+      const current = queues.get(sessionId) ?? [];
+      if (action.kind === "edit") {
+        queues.set(sessionId, current.map((item) => item.id === itemId
+          ? { ...item, message: { ...item.message, content: action.content } }
+          : item));
+      } else {
+        queues.set(sessionId, current.filter((item) => item.id !== itemId));
+      }
+      setTimeout(() => publishQueue(sessionId), 0);
     }
     if (envelope.method === "llm.models") value = {
-      groups: [{ id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash" }] }],
+      groups: [
+        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash" }] },
+        { id: "custom:test", name: "Custom", models: [{ id: "hy4-preview", name: "HY4 Preview" }] },
+      ],
       failures: [],
     };
     if (envelope.method === "llm.discoverModels") value = {
@@ -127,6 +181,10 @@ async function fakeDsh() {
   return {
     url: `http://127.0.0.1:${address.port}`,
     calls,
+    responses,
+    publish(envelope: Record<string, unknown>) {
+      for (const [stream, path] of streams) if (path === "/api/events.mux") stream.send(JSON.stringify(envelope));
+    },
     async close() {
       for (const stream of streams.keys()) stream.close();
       downlinks.close();
@@ -156,6 +214,78 @@ function request(socket: WebSocket, id: number, method: string, params: unknown 
   });
 }
 
+test("DSH questions cross the real mux and AppServer WebSocket, survive reconnect, and return native responses", async () => {
+  const dsh = await fakeDsh();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url });
+  let socket = await connect(host.websocketUrl);
+  const next = (method: string) => new Promise<any>((resolve, reject) => {
+    const target = socket;
+    const timer = setTimeout(() => { target.off("message", listener); reject(new Error(`Timed out waiting for ${method}`)); }, 3000);
+    const listener = (raw: WebSocket.RawData) => {
+      const frame = JSON.parse(raw.toString());
+      if (frame.method !== method) return;
+      clearTimeout(timer); target.off("message", listener); resolve(frame);
+    };
+    target.on("message", listener);
+  });
+  const preflight = await connect(host.websocketUrl);
+  const preflightRequests: unknown[] = [];
+  preflight.on("message", raw => { const frame = JSON.parse(raw.toString()); if (frame.method === "item/tool/requestUserInput") preflightRequests.push(frame); });
+  try {
+    await request(preflight, 99, "initialize", {});
+    await request(socket, 1, "initialize", {});
+    await request(socket, 4, "thread/resume", { threadId: "s1" });
+    dsh.publish({ payload: { type: "session/event", sessionId: "s1", event: { type: "turn/start", seq: 90, time: 100, data: { turn: 2 } } } });
+    const incoming = next("item/tool/requestUserInput");
+    dsh.publish({ rpcId: "native-question", payload: { type: "question/requested", sessionId: "s1", questions: [{ id: "choose", question: "Which?", options: [{ label: "A" }] }] } });
+    const ask = await incoming;
+    assert.equal(ask.id, "native-question");
+    assert.equal(ask.params.turnId, "dsh-turn-s1-2");
+    await request(preflight, 100, "thread/list", {});
+    assert.deepEqual(preflightRequests, []);
+    await new Promise<void>(resolve => { socket.once("close", resolve); socket.close(); });
+    socket = await connect(host.websocketUrl);
+    const replay = next("item/tool/requestUserInput");
+    await request(socket, 2, "initialize", {});
+    await request(socket, 5, "thread/resume", { threadId: "s1" });
+    assert.equal((await replay).id, ask.id);
+    const resolved = next("serverRequest/resolved");
+    socket.send(JSON.stringify({ jsonrpc: "2.0", id: ask.id, result: { answers: { choose: { answers: ["A"] } } } }));
+    assert.equal((await resolved).params.requestId, ask.id);
+    assert.deepEqual(dsh.responses, [{ type: "client-response", rpcId: "native-question", result: { ok: true, value: {
+      sessionId: "s1", answer: { answers: [{ id: "choose", selected: ["A"] }] },
+    } } }]);
+    socket.send(JSON.stringify({ jsonrpc: "2.0", method: "initialized" }));
+    assert.ok(await request(socket, 3, "thread/list", {}));
+  } finally { preflight.close(); socket.close(); await host.close(); await dsh.close(); }
+});
+
+test("process RPC survives WebSocket replacement without contacting the Agent harness", async () => {
+  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", token: "process-test" });
+  let socket = await connect(host.websocketUrl);
+  try {
+    await request(socket, 1, "process/spawn", {
+      processHandle: "persistent-shell", command: ["/bin/bash", "--noprofile", "--norc"],
+      tty: true, size: { cols: 80, rows: 24 },
+    });
+    await request(socket, 2, "process/writeStdin", { processHandle: "persistent-shell", deltaBase64: Buffer.from("export RPC_STATE=alive\n").toString("base64") });
+    await new Promise<void>(resolve => { socket.once("close", () => resolve()); socket.close(); });
+    socket = await connect(host.websocketUrl);
+    const listed = await request(socket, 3, "process/list");
+    assert.equal(listed.processes[0].processHandle, "persistent-shell");
+    assert.equal(listed.processes[0].phase, "running");
+    await request(socket, 4, "process/writeStdin", { processHandle: "persistent-shell", deltaBase64: Buffer.from("printf 'RPC_%s\\n' \"$RPC_STATE\"; exit 0\n").toString("base64") });
+    let snapshot;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      snapshot = await request(socket, 10 + attempt, "process/attach", { processHandle: "persistent-shell", afterSequence: 0 });
+      if (snapshot.phase === "exited") break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(snapshot.phase, "exited");
+    assert.match(snapshot.output.map((c: { deltaBase64: string }) => Buffer.from(c.deltaBase64, "base64").toString()).join(""), /RPC_alive/);
+  } finally { socket.close(); await host.close(); }
+});
+
 test("local Agent Host authenticates and projects DSH history into stable AppServer turns", async () => {
   const dsh = await fakeDsh();
   const host = await startLocalAgentHost({ dshUrl: dsh.url, token: "test-token" });
@@ -170,10 +300,21 @@ test("local Agent Host authenticates and projects DSH history into stable AppSer
       const models = await request(socket, 4, "model/list", { limit: 10 });
       assert.equal(models.data[0].displayName, "V4 Flash");
       assert.equal(models.data[0].isDefault, true);
+      const agents = await request(socket, 40, "agent/list", { limit: 10 });
+      assert.deepEqual(agents.data[0].modelIds, models.data.map((model: { id: string }) => model.id));
+      assert.equal(agents.data[0].modelIds.includes("dsh-model:custom%3Atest:hy4-preview"), true);
+      const selectable = models.data.filter((model: { id: string; model: string }) =>
+        agents.data[0].modelIds.includes(model.id) || agents.data[0].modelIds.includes(model.model));
+      assert.equal(selectable.length, 2, "Composer's agent filter must retain both providers");
+      assert.equal(selectable[1].displayName, "HY4 Preview");
+      const firstPage = await request(socket, 41, "model/list", { limit: 1 });
+      assert.equal(agents.data[0].modelIds.length, 2, "agent capabilities must not be limited to a model page");
+      assert.equal(firstPage.data.length, 1);
       const resumed = await request(socket, 3, "thread/resume", { threadId: "s1" });
       assert.equal(resumed.thread.turns.length, 1);
       assert.deepEqual(resumed.thread.turns[0].items.map((item: { type: string }) => item.type), ["userMessage", "reasoning", "agentMessage"]);
       assert.equal(resumed.thread.turns[0].items[0].content[0].text, "hello");
+      assert.equal(resumed.thread.turns[0].items[0].clientId, "history-client-message");
       assert.equal(resumed.thread.turns[0].items[2].text, "world");
     } finally {
       socket.close();
@@ -218,6 +359,68 @@ test("local Agent Host applies the selected DSH model before opening a real even
   }
 });
 
+test("local Agent Host projects DSH's authoritative queue and translates queue controls", async () => {
+  const dsh = await fakeDsh();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, token: "queue-token" });
+  try {
+    const socket = await connect(host.websocketUrl);
+    try {
+      const initialized = await request(socket, 50, "initialize", {});
+      assert.deepEqual(initialized.capabilities.extensions["opencraft/thread-queue"], {
+        version: 1,
+        reorder: false,
+      });
+      const started = await request(socket, 51, "thread/start", { cwd: "/workspace/demo" });
+      await request(socket, 52, "turn/start", {
+        threadId: started.thread.id,
+        clientUserMessageId: "initial-client-message",
+        input: [{ type: "text", text: "start", text_elements: [] }],
+      });
+
+      const added = await request(socket, 53, "thread/queue/add", {
+        threadId: started.thread.id,
+        clientUserMessageId: "queued-client-message",
+        input: [{ type: "text", text: "follow up", text_elements: [] }],
+      });
+      assert.equal(added.queuedSubmission.clientUserMessageId, "queued-client-message");
+      assert.equal(added.queuedSubmission.input[0].text, "follow up");
+
+      const listed = await request(socket, 54, "thread/queue/list", { threadId: started.thread.id });
+      assert.deepEqual(listed.data, [added.queuedSubmission]);
+
+      const updated = await request(socket, 55, "thread/queue/update", {
+        threadId: started.thread.id,
+        queuedSubmissionId: added.queuedSubmission.id,
+        input: [{ type: "text", text: "edited", text_elements: [] }],
+      });
+      assert.equal(updated.queuedSubmission.input[0].text, "edited");
+
+      const steered = await request(socket, 56, "turn/steer", {
+        threadId: started.thread.id,
+        expectedTurnId: `dsh-turn-${started.thread.id}-1`,
+        clientUserMessageId: "queued-client-message",
+        input: updated.queuedSubmission.input,
+      });
+      assert.equal(steered.turnId, `dsh-turn-${started.thread.id}-1`);
+      assert.equal(dsh.calls.findLast((call) => call.method === "session.updateQueue")?.payload.action.kind, "steer");
+      assert.equal(dsh.calls.filter((call) => call.method === "session.prompt" && call.payload.mode === "steer").length, 0);
+
+      const deletedAfterAtomicSteer = await request(socket, 57, "thread/queue/delete", {
+        threadId: started.thread.id,
+        queuedSubmissionId: added.queuedSubmission.id,
+      });
+      assert.equal(deletedAfterAtomicSteer.deleted, true);
+      const empty = await request(socket, 58, "thread/queue/list", { threadId: started.thread.id });
+      assert.deepEqual(empty.data, []);
+    } finally {
+      socket.close();
+    }
+  } finally {
+    await host.close();
+    await dsh.close();
+  }
+});
+
 test("local Agent Host exposes generic runtime settings without leaking DSH method names to the client", async () => {
   const dsh = await fakeDsh();
   const host = await startLocalAgentHost({ dshUrl: dsh.url, token: "settings-token" });
@@ -245,6 +448,7 @@ test("local Agent Host exposes generic runtime settings without leaking DSH meth
       });
       await request(socket, 25, "runtime/credentials/set", { ref: "DEEPSEEK_API_KEY", value: "write-only" });
       const discovered = await request(socket, 26, "runtime/models/discover", {
+        source: "catalog",
         settingsNs: "llm-pi-ai",
         provider: "openai",
         apiKey: "probe-only",
@@ -260,7 +464,7 @@ test("local Agent Host exposes generic runtime settings without leaking DSH meth
       );
       assert.deepEqual(
         dsh.calls.findLast((call) => call.method === "llm.discoverModels")?.payload,
-        { settingsNs: "llm-pi-ai", provider: "openai", apiKey: "probe-only" },
+        { settingsNs: "llm-pi-ai", provider: "openai" },
       );
       assert.deepEqual(
         dsh.calls.findLast((call) => call.method === "credentials.set")?.payload,

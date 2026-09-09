@@ -175,6 +175,20 @@ export class ReplicaClient<TValue extends ReplicaJsonValue = ReplicaJsonValue> {
     });
   }
 
+  /** Resume has started, but no authoritative source has been attached yet. */
+  reportSyncStarted(): void {
+    this.assertActive();
+    this.publish({ phase: "syncing", authoritative: false, lastError: null });
+  }
+
+  /** Paint-only data during Resume. It must never advance a replay cursor or
+   * authorize commands; only synchronize() can establish those facts. */
+  reportPreview(entityId: string, value: TValue): void {
+    this.assertActive();
+    if (this.snapshot.authoritative) return;
+    this.publish({ entities: new Map(this.snapshot.entities).set(entityId, value) });
+  }
+
   async clear(): Promise<void> {
     this.disconnect();
     try {

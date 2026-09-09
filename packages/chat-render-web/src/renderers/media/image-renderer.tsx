@@ -66,8 +66,11 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
     useEffect(() => {
       if (!mustLoadThroughHost || decision.target === null || context.loadMediaSource === undefined) return;
       let active = true;
+      const controller = new AbortController();
+      let release: (() => void) | undefined;
       setMediaState({ key: loadKey, source: null, status: "loading" });
       void context.loadMediaSource({
+        signal: controller.signal,
         source: node.src,
         resolvedTarget: decision.target,
         resourceKind: decision.kind!,
@@ -76,7 +79,8 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
         hostId: context.hostId ?? null,
         cwd: context.cwd ?? null,
       }).then((result) => {
-        if (!active) return;
+        if (!active) { result?.release?.(); return; }
+        release = result?.release;
         setMediaState({
           key: loadKey,
           source: result?.source ?? null,
@@ -88,7 +92,7 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
         setMediaState({ key: loadKey, source: null, status: "unavailable" });
         context.requestMeasurement?.({ geometryChanged: true, reason: "resource-resolve" });
       });
-      return () => { active = false; };
+      return () => { active = false; controller.abort(); release?.(); };
     }, [
       context.conversationId,
       context.cwd,

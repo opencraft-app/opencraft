@@ -17,6 +17,7 @@ import {
   type NewThreadDraftSnapshot,
 } from "@opencraft/workbench-runtime";
 import { menuGeometry } from "@opencraft/design-system/tokens";
+import { ConnectionStatus } from "./target-connection-status";
 import {
   Check,
   ChevronDown,
@@ -68,6 +69,7 @@ export interface NewThreadDraftPageProps {
   readonly onResolveAttachment?: (
     file: File,
     pending: ComposerAttachment,
+    signal?: AbortSignal,
   ) => ComposerAttachment | Promise<ComposerAttachment>;
   readonly composerEndActions?: ReactNode;
   readonly onSubmit: (
@@ -205,7 +207,7 @@ function ExecutionUtilityBar({
   );
   const project = selectedWorkspace?.label ?? workspaceLabel(workspace.cwd);
   const activeHost = useMemo(
-    () => hostOptions.find((host) => host.id === activeHostId) ?? hostOptions[0] ?? null,
+    () => hostOptions.find((host) => host.id === activeHostId) ?? null,
     [activeHostId, hostOptions],
   );
   const canBrowseWorkspace = (activeHost?.workspaceBrowseRoots.length ?? 0) > 0
@@ -320,8 +322,9 @@ function ExecutionUtilityBar({
           >
             <Globe2 size={15} />
             <span>{switchingHostId === null
-              ? activeHost === null ? "No node" : hostKindLabel(activeHost.kind)
+              ? activeHost === null ? "Unavailable target" : activeHost.label
               : "Connecting…"}</span>
+            <ConnectionStatus phase={switchingHostId === null ? connectionPhase : "connecting"} />
             <ChevronDown size={12} />
           </button>
         </DropdownMenu.Trigger>
@@ -380,13 +383,6 @@ function ExecutionUtilityBar({
           <GitBranch size={14} /><span>{selectedWorkspace.branch}</span>
         </span>
       ) : null}
-      <span
-        className="new-thread-context-endpoint"
-        title={activeHost?.executionLocation ?? activeHost?.transportEndpoint ?? activeHost?.label ?? "AppServer"}
-      >
-        <span>{activeHost?.executionLocation ?? activeHost?.transportEndpoint ?? activeHost?.label ?? "AppServer"}</span>
-        <i data-phase={connectionPhase} />
-      </span>
     </ComposerUtilityScrollArea>
   );
 }
@@ -454,6 +450,7 @@ export function NewThreadDraftPage({
                     />
                   )}
                   disabled={draftSubmissionOwnsNavigation(draft.phase)}
+                  submissionDisabled={connectionPhase !== "ready"}
                   isStreaming={false}
                   placeholder="Ask OpenCraft to work on anything"
                   onResolveAttachment={onResolveAttachment}

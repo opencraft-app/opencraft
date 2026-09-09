@@ -52,6 +52,31 @@ export interface TimelineTurnView {
   readonly frames: readonly TimelineFrame[];
 }
 
+/**
+ * Identity of the latest visual Activity inside a Turn.
+ *
+ * Codex deliberately does not use `turnKey` alone here: steering appends work
+ * to an existing Turn, so the Turn row remains stable while latest-response
+ * placement must run again. Source Item identity is the durable protocol key;
+ * the projected block id is only a defensive fallback for synthetic frames.
+ */
+export function deriveTimelineLatestTurnActivityKey(
+  turn: TimelineTurnView | null | undefined,
+): string | null {
+  if (turn == null) return null;
+  for (let frameIndex = turn.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
+    const frame = turn.frames[frameIndex];
+    if (frame === undefined) continue;
+    for (let blockIndex = frame.blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+      const block = frame.blocks[blockIndex];
+      if (block?.type !== "user-message" || block.messageKind !== "steering") continue;
+      const steeringKey = block.sourceItemIds[0] ?? block.id;
+      return `${turn.turnKey}:${steeringKey}`;
+    }
+  }
+  return turn.turnKey;
+}
+
 export interface TimelineHistoryGapView {
   readonly type: "history-gap";
   readonly turnKey: string;
@@ -85,7 +110,8 @@ export type TimelineLatestTurnPhase = "idle" | "prework" | "final_answer";
 
 /**
  * Renderer-neutral equivalent of Codex's latest Turn phase classifier. A
- * projected assistant text block is the final-answer boundary; reasoning,
+ * projected assistant Item is the final-answer boundary even before its
+ * first text delta (Codex AD classifies by Item phase, not text length); reasoning,
  * tools and interaction/event work remain prework while the Turn is active.
  */
 export function deriveTimelineLatestTurnPhase(
@@ -101,7 +127,6 @@ export function deriveTimelineLatestTurnPhase(
         frame.type === "assistant"
         && block.type === "text"
         && block.phase !== "commentary"
-        && block.text.trim().length > 0
       ) {
         return "final_answer";
       }

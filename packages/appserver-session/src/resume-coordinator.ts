@@ -3,7 +3,7 @@ import type { AppServerClient } from "@opencraft/appserver-client";
 import { buildResumeHistoryRequest, type AppServerThread, type ThreadResumeParams, type ThreadResumeResponse } from "@opencraft/appserver-protocol";
 
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
-import { mergeTurns } from "./merge-turns";
+import { mergeTurns, reconcileHistoryWindow } from "./merge-turns";
 import type { ThreadStreamRole, ThreadView } from "./models";
 import { resolveThreadId } from "./notification-buffer";
 
@@ -95,6 +95,8 @@ export class ThreadResumeCoordinatorService extends Service {
   private readonly backgroundHistory = new Map<string, Promise<void>>();
   private readonly olderPageRequests = new Map<string, Promise<ThreadView>>();
   private disposed = false;
+  private previewSequence = 0;
+  private readonly previewTokens = new Map<string, string>();
 
   constructor(ctx: Context, config: ThreadResumeCoordinatorConfig) {
     super(ctx, "threadResume");
@@ -110,6 +112,16 @@ export class ThreadResumeCoordinatorService extends Service {
     const removeNotification = this.client.subscribeNotification((notification) => {
       const threadId = resolveThreadId(notification.params);
       if (threadId === null || ctx.threadViews.get(threadId) === null) return;
+      if (notification.method === "thread/history/preview") {
+        const params = notification.params;
+        if (!isRecord(params) || typeof params.token !== "string" || params.token !== this.previewTokens.get(threadId) || !Array.isArray(params.turns)) return;
+        const turns = params.turns as AppServerThread["turns"];
+        if (turns.some(turn => !isRecord(turn) || typeof turn.id !== "string" || !Array.isArray(turn.items))) return;
+        ctx.threadViews.update(threadId, current => ({
+          ...current, historySource: "message-window", turns: reconcileHistoryWindow(current.turns, turns),
+        }));
+        return;
+      }
       ctx.threadViews.update(threadId, (current) => ctx.threadNotificationProjectors.project(current, notification));
     });
     const removeStatus = this.client.subscribeStatus((status) => {
@@ -131,6 +143,7 @@ export class ThreadResumeCoordinatorService extends Service {
       this.historyContexts.clear();
       this.backgroundHistory.clear();
       this.olderPageRequests.clear();
+      this.previewTokens.clear();
     });
   }
 
@@ -267,9 +280,16 @@ export class ThreadResumeCoordinatorService extends Service {
         ...(options.developerInstructions === undefined ? {} : { developerInstructions: options.developerInstructions }),
         ...(options.personality === undefined ? {} : { personality: options.personality }),
         ...historyRequest,
+        ...(historyMode === "message-window" ? {
+          historyPreviewToken: `${generation}:${++this.previewSequence}`,
+        } : {}),
       };
+      if (typeof params.historyPreviewToken === "string") this.previewTokens.set(threadId, params.historyPreviewToken);
       const response = requireResumeResponse(await this.client.request("thread/resume", params, {
-        timeoutMs: this.requestTimeoutMs,
+        // The message-window provider owns independent gateway and HTTP-idle
+        // deadlines. An outer wall-clock limit would cancel a healthy body
+        // download merely because its transport is slow.
+        timeoutMs: historyMode === "message-window" ? 0 : this.requestTimeoutMs,
         priority: "user-blocking",
       }), threadId);
       this.ensureGeneration(generation);
@@ -291,7 +311,9 @@ export class ThreadResumeCoordinatorService extends Service {
 
       const committed = this.ctx.threadViews.update(threadId, (current) => {
         const projected = this.ctx.threadResumeProjectors.project(current, { metadata, response });
-        const turns = mergeTurns(projected.turns, history.turns, { placement: "prepend" });
+        const turns = history.source === "message-window"
+          ? reconcileHistoryWindow(projected.turns, history.turns, initial.turns)
+          : mergeTurns(projected.turns, history.turns, { placement: "prepend" });
         const oldestLoadedTurnId = turns[0]?.id ?? null;
         return {
           ...projected,
@@ -331,6 +353,8 @@ export class ThreadResumeCoordinatorService extends Service {
       }));
       this.ctx.resumeNotificationBuffer.release(threadId);
       throw failure;
+    } finally {
+      this.previewTokens.delete(threadId);
     }
   }
 
@@ -392,9 +416,14 @@ export class ThreadResumeCoordinatorService extends Service {
     try {
       const page = await this.ctx.threadHistoryStrategies.loadOlder(context, cursor);
       this.ensureGeneration(current.connectionGeneration);
+      if (this.historyContexts.get(threadId) !== context || this.ctx.threadViews.get(threadId)?.resumeState !== "resumed") {
+        return this.ctx.threadViews.get(threadId) ?? current;
+      }
       return this.ctx.threadViews.update(threadId, (view) => ({
         ...view,
-        turns: mergeTurns(view.turns, page.turns, { placement: "prepend" }),
+        turns: page.source === "message-window"
+          ? reconcileHistoryWindow(view.turns, page.turns)
+          : mergeTurns(view.turns, page.turns, { placement: "prepend" }),
         tailHydrationComplete: page.complete,
         turnsPagination: {
           olderCursor: page.olderCursor,

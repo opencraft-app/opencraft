@@ -8,8 +8,10 @@ import type { ComponentType } from "react";
 
 export interface PanelRendererProps {
   readonly tab: PanelTabDescriptor;
-  /** The View-local panel owner. Logical resources must never infer this from DOM. */
+  /** Stable Conversation owner of panel state and logical resources. */
   readonly ownerId: string;
+  /** Ephemeral Route/View surface presenting the stable panel state. */
+  readonly presentationId: string;
 }
 
 export interface PanelRendererRegistration {

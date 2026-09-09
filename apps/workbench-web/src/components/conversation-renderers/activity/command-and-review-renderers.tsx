@@ -5,6 +5,7 @@ import {
   formatCommandActivitySummary,
   isAutomaticApprovalReviewWarning,
   summarizeAutomaticApprovalReviewAction,
+  skillReadPresentation,
   type AutomaticApprovalReview,
   type TimelineBlock,
 } from "@opencraft/chat-core";
@@ -13,6 +14,7 @@ import {
   normalizeTerminalOutput,
   resolveStandardChatResource,
   writeTextToClipboard,
+  writeToClipboard,
 } from "@opencraft/chat-render-web";
 import {
   AlertCircle,
@@ -39,7 +41,7 @@ import {
   CadencedShimmer,
   useCodexActivityOpen,
 } from "./activity-disclosure";
-import { useToolActivityPresentation } from "../render-contexts";
+import { useToolActivityPresentation, ConversationDetailContext } from "../render-contexts";
 
 function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reasoning" }> }) {
   const [open, setOpen] = useCodexActivityOpen(block.streaming);
@@ -191,21 +193,22 @@ function ShellCopyButton({ className = "", label, value }: { readonly className?
   );
 }
 
-function AssistantCopyButton({ value }: { readonly value: string }) {
+function AssistantCopyButton({ value, getHtml, label = "Copy response" }: { readonly value: string; readonly getHtml?: () => string | null; readonly label?: string }) {
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<number | null>(null);
   useEffect(() => () => {
     if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
   }, []);
   const copy = useCallback(() => {
-    void writeTextToClipboard(value).then(() => {
+    const html = getHtml?.();
+    void writeToClipboard(html ? { "text/plain": value, "text/html": html } : value).then(() => {
       setCopied(true);
       if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
       timeoutRef.current = window.setTimeout(() => setCopied(false), 1_500);
     }).catch(() => setCopied(false));
-  }, [value]);
+  }, [value, getHtml]);
   return (
-    <button aria-label={copied ? "Copied" : "Copy response"} onClick={copy} title={copied ? "Copied" : "Copy response"} type="button">
+    <button aria-label={copied ? "Copied" : label} onClick={copy} title={copied ? "Copied" : label} type="button">
       {copied ? <Check size={13} /> : <Copy size={13} />}
     </button>
   );
@@ -215,7 +218,7 @@ function EmbeddedShellOutput({ block }: { block: Extract<TimelineBlock, { type: 
   const running = block.status === "pending" || block.status === "running";
   const command = unwrapShellCommand(block.command);
   const output = normalizeTerminalOutput(block.output ?? "");
-  const displayOutput = /\S/u.test(output) ? output : running ? "" : "No output";
+  const displayOutput = /\S/u.test(output) ? output : running ? "" : block.resultMissing ? "Execution result unavailable" : "No output";
   const outputRef = useRef<HTMLPreElement>(null);
   const followsOutputRef = useRef(true);
   const updateFollowIntent = useCallback(() => {
@@ -228,6 +231,7 @@ function EmbeddedShellOutput({ block }: { block: Extract<TimelineBlock, { type: 
     if (element !== null && followsOutputRef.current) element.scrollTop = element.scrollHeight;
   }, [displayOutput]);
   const footer = running ? null
+    : block.resultMissing ? <span>Result unknown</span>
     : block.status === "interrupted" ? <span>Stopped</span>
     : block.exitCode === 0 ? <span><Check size={11} /> Success</span>
     : <span>Exit code {block.exitCode ?? "unknown"}</span>;
@@ -250,6 +254,8 @@ function EmbeddedShellOutput({ block }: { block: Extract<TimelineBlock, { type: 
 
 function CommandBlock({ block }: { block: Extract<TimelineBlock, { type: "command-execution" }> }) {
   const presentation = useToolActivityPresentation(block);
+  const detailLevel = useContext(ConversationDetailContext);
+  const skill = skillReadPresentation(block, detailLevel);
   const documentContext = useContext(ConversationDocumentContext);
   // ExecShellContainer owns one persistent disclosure state. Unlike generic
   // Activity rows, a running command starts collapsed and does not switch to
@@ -258,10 +264,10 @@ function CommandBlock({ block }: { block: Extract<TimelineBlock, { type: "comman
   const elapsedLabel = useCommandElapsedLabel(block, presentation.state === "running");
   const action = block.actions.length === 1 ? block.actions[0] : undefined;
   const semanticAction = action !== undefined && action.type !== "unknown";
-  const summary = semanticAction
+  const summary = skill?.summary ?? (semanticAction
     ? presentation.summary
-    : formatCommandActivitySummary(block, presentation.state, { expanded: open, elapsedLabel });
-  const detail = action?.type === "read" && action.path.trim().length > 0 ? (
+    : formatCommandActivitySummary(block, presentation.state, { expanded: open, elapsedLabel }));
+  const detail = skill?.detail ?? (action?.type === "read" && action.path.trim().length > 0 ? (
     <button
       className="thread-activity-item__file-link"
       onClick={(event) => {
@@ -276,8 +282,9 @@ function CommandBlock({ block }: { block: Extract<TimelineBlock, { type: "comman
       }}
       type="button"
     >{presentation.detail ?? action.path}</button>
-  ) : semanticAction ? presentation.detail : null;
+  ) : semanticAction ? presentation.detail : null);
   const hasAuxiliaryBody = block.automaticApprovalReviews.length > 0;
+  if (skill?.visible === false) return null;
   return (
     <ActivityDisclosure
       accessory={block.automaticApprovalReviews.length > 0 ? <AutomaticApprovalReviewIcon /> : null}

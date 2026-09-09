@@ -36,8 +36,9 @@ export interface ConversationScopeLeaseRegistryConfig {
 
 /**
  * Owns semantic resources for a stable Conversation Scope. A Draft promotion
- * changes the canonical target without changing the Scope identity. UI state
- * belongs to a Conversation View and therefore is deliberately absent here.
+ * changes the canonical target without changing the Scope identity. Retained
+ * conversation UI state (for example panel layout) may use this lifetime;
+ * route-local Composer, scroll and physical presentation state may not.
  */
 export function createConversationScopeLeaseRegistry(
   config: ConversationScopeLeaseRegistryConfig,

@@ -30,6 +30,7 @@ import type {
   QueuedSubmission,
 } from "./models";
 import { createInterruptInteractionResponse } from "./interaction-lifecycle";
+import { ContinuationCommandError, SubmissionOutcomeUnknownError } from "./ports";
 import type {
   ConversationCommandPort,
   ConversationHistoryPort,
@@ -212,6 +213,8 @@ function sourceTurns(
           number(candidate.completedAtMs) ??
           (completedAtSeconds === null ? null : completedAtSeconds * 1_000),
         durationMs: number(candidate.durationMs),
+        firstTurnWorkItemStartedAtMs: number(candidate.firstTurnWorkItemStartedAtMs),
+        finalAssistantStartedAtMs: number(candidate.finalAssistantStartedAtMs),
         hookStats: summarizeHookRuns(candidate.hookRuns),
         params: candidate.params,
         mcpAppModelContextAttachments: candidate.mcpAppModelContextAttachments,
@@ -890,7 +893,7 @@ function optimisticItem(state: OptimisticSubmissionState): TimelineSourceItem {
       attachments: [...state.attachments],
       status: state.state === "failed" ? "cancelled" : "pending",
       deliveryStatus:
-        state.state === "failed"
+        state.state === "unknown" ? "unknown" : state.state === "failed"
           ? "failed"
           : state.state === "accepted"
             ? "sent"
@@ -957,7 +960,7 @@ function pruneAcknowledgedSubmissions(
   const turnIds = new Set(turns.map((turn) => String(turn.id)));
   for (const [commandId, state] of submissions) {
     if (
-      state.state === "accepted" &&
+      (state.state === "accepted" || state.state === "unknown") &&
       (clientIds.has(state.clientMessageId) ||
         (state.turnId !== null && turnIds.has(String(state.turnId))))
     ) {
@@ -980,6 +983,9 @@ export function createReplicaConversationRuntime(
   let loadingOlder = false;
   let historyError: Error | null = null;
   let interruptingTurnId: TurnId | null = null;
+  // The statement "You stopped" belongs to this client's command intent,
+  // not every remote/interrupted Turn. Never persist it as a server fact.
+  const interruptedByThisClient = new Set<string>();
   let queuePausedReason: "interrupted" | null = null;
   let disposed = false;
   let snapshot: ConversationRuntimeSnapshot;
@@ -999,7 +1005,8 @@ export function createReplicaConversationRuntime(
     const pendingInteractions = sourcePendingInteractions(
       view.pendingInteractions,
     );
-    const source = sourceTurns(view.turns ?? thread.turns);
+    const source = sourceTurns(view.turns ?? thread.turns).map((turn) =>
+      interruptedByThisClient.has(turn.id) ? { ...turn, interruptedByThisClient: true } : turn);
     pruneAcknowledgedSubmissions(source, pendingSubmissions);
     const reviewedTurns = attachGuardianApprovalReviews(
       mergeOptimisticSubmissions(source, pendingSubmissions.values()),
@@ -1026,6 +1033,11 @@ export function createReplicaConversationRuntime(
       .find((turn) => turn.status === "streaming" || turn.status === "pending");
     const error = replica.lastError;
     const latest = source.at(-1);
+    if (replica.authoritative && latest && continuedFromTurnId !== null &&
+      latest.id !== continuedFromTurnId) {
+      continuedFromTurnId = null;
+      continuationError = null;
+    }
     // Codex offers empty-turn continuation for overload, not arbitrary failures
     // (e.g. missing credentials). Eligibility is runtime policy, not banner style.
     const recoverableFailure = timeline.frames.some((frame) =>
@@ -1135,6 +1147,12 @@ export function createReplicaConversationRuntime(
     },
     async submit(intent) {
       assertIntentTarget(config.key, intent);
+      if ([...pendingSubmissions.values()].some((submission) => submission.state === "unknown")) {
+        throw new SubmissionOutcomeUnknownError();
+      }
+      if (continuationPending || continuedFromTurnId !== null) {
+        throw new Error("Waiting for continuation to be confirmed by the conversation host");
+      }
       const preview =
         composerDocumentToPlainText(intent.document).trim() ||
         (intent.attachments.length > 0
@@ -1219,7 +1237,7 @@ export function createReplicaConversationRuntime(
           if (previous !== undefined) {
             pendingSubmissions.set(intent.commandId, {
               ...previous,
-              state: "failed",
+              state: error instanceof SubmissionOutcomeUnknownError ? "unknown" : "failed",
               error: submissionError,
             });
           }
@@ -1232,6 +1250,7 @@ export function createReplicaConversationRuntime(
     },
     async interrupt(turnId) {
       interruptingTurnId = turnId;
+      interruptedByThisClient.add(turnId);
       localRevision += 1;
       publish();
       try {
@@ -1254,6 +1273,9 @@ export function createReplicaConversationRuntime(
         ) {
           queuePausedReason = "interrupted";
         }
+      } catch (error) {
+        interruptedByThisClient.delete(turnId);
+        throw error;
       } finally {
         interruptingTurnId = null;
         localRevision += 1;
@@ -1273,6 +1295,11 @@ export function createReplicaConversationRuntime(
         continuedFromTurnId = turnId;
         return receipt;
       } catch (cause) {
+        // A timeout/disconnect does not prove the host rejected turn/start.
+        // Fence this source turn until authoritative progress is observed.
+        if (!(cause instanceof ContinuationCommandError) || cause.outcome === "unknown") {
+          continuedFromTurnId = turnId;
+        }
         continuationError = cause instanceof Error ? cause : new Error(String(cause));
         throw cause;
       } finally {

@@ -99,6 +99,7 @@ test("dynamic browser tools authorize logical Tab IDs, then operate their Pages"
       openedViews.push(viewId);
       return { id: `browser:${params.browserTabId}` };
     },
+    ensureOwner() { return undefined; },
     dispatch() { return undefined; },
     close() { return undefined; },
   };
@@ -117,7 +118,7 @@ test("dynamic browser tools authorize logical Tab IDs, then operate their Pages"
 
     const listed = await host.browserUse(context, { action: "list_tabs" }) as { tabs: readonly { tabId: string }[] };
     assert.deepEqual(createdOwners, [ownedScope, "scope-other"]);
-    assert.deepEqual(openedViews, ["view-owned"]);
+    assert.deepEqual(openedViews, [ownedScope, "scope-other"]);
     assert.deepEqual(listed.tabs.map((entry) => entry.tabId), [opened.tabId]);
     await assert.rejects(
       Promise.resolve(host.browserUse(context, { action: "inspect", tab_id: other.tabId })),

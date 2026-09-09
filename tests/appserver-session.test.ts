@@ -376,6 +376,25 @@ test("notifications and server requests stay buffered until the View commit", as
   }
 });
 
+test("plan notifications become ordered todo observations through the session runtime", async () => {
+  const harness = await createHarness({ useTailHydration: false, responseTurns: [{ id: "turn-plan", status: "inProgress", items: [] }] });
+  try {
+    await harness.runtime.resume.resume({ threadId: "thread-one" });
+    for (const status of ["pending", "completed"]) await harness.emit("turn/plan/updated", {
+      threadId: "thread-one", turnId: "turn-plan", explanation: "Inspect first", plan: [{ step: "Read source", status }],
+    });
+    const turn = harness.runtime.views.get("thread-one")!.turns[0]!;
+    const items = turn.items as readonly Record<string, any>[];
+    assert.equal(items.length, 2);
+    assert.notEqual(items[0]!.id, items[1]!.id);
+    assert.deepEqual(items.map((item) => [item.type, item.explanation, item.plan[0].step, item.plan[0].status]), [
+      ["todo-list", "Inspect first", "Read source", "pending"], ["todo-list", "Inspect first", "Read source", "completed"],
+    ]);
+    assert.equal(turn.status, "inProgress");
+    assert.equal(turn.plan, undefined);
+  } finally { await harness.close(); }
+});
+
 test("streaming Item deltas update in place without reordering the Turn", async () => {
   const harness = await createHarness({
     useTailHydration: false,
@@ -738,6 +757,42 @@ test("failed Turn notifications retain the top-level AppServer error", async () 
   }
 });
 
+test("a completed full Turn snapshot owns Item membership and removes stale live Items", async () => {
+  const harness = await createHarness({
+    useTailHydration: false,
+    responseTurns: [{
+      id: "turn-authoritative-completion",
+      itemsView: "full",
+      status: "inProgress",
+      items: [
+        { id: "interim", type: "agentMessage", text: "same answer", phase: "commentary" },
+        { id: "final", type: "agentMessage", text: "same answer", phase: null },
+      ],
+    }],
+  });
+  try {
+    await harness.runtime.resume.resume({ threadId: "thread-one" });
+    await harness.emit("turn/completed", {
+      threadId: "thread-one",
+      turn: {
+        id: "turn-authoritative-completion",
+        itemsView: "full",
+        status: "completed",
+        items: [{ id: "final", type: "agentMessage", text: "same answer", phase: null }],
+        error: null,
+        startedAt: 10,
+        completedAt: 12,
+        durationMs: 2_000,
+      },
+    });
+
+    const turn = harness.runtime.views.get("thread-one")?.turns[0];
+    assert.deepEqual(turn?.items?.map(({ id }) => id), ["final"]);
+  } finally {
+    await harness.close();
+  }
+});
+
 test("a follower uses its owner projection and never sends thread/resume", async () => {
   const harness = await createHarness();
   try {
@@ -746,6 +801,54 @@ test("a follower uses its owner projection and never sends thread/resume", async
     assert.deepEqual(view.streamRole, { role: "follower", ownerClientId: "window-a" });
     assert.equal(view.resumeState, "resumed");
     assert.equal(harness.requests.some((entry) => entry.method === "thread/resume"), false);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("item/updated patches preserve lifecycle and identity without restarting work", async () => {
+  const harness = await createHarness({ useTailHydration: false });
+  try {
+    await harness.runtime.resume.resume({ threadId: "thread-one" });
+    await harness.emit("turn/started", { threadId: "thread-one", turn: { id: "updated", status: "inProgress", items: [] } });
+    await harness.emit("item/started", { threadId: "thread-one", turnId: "updated", startedAtMs: 100,
+      item: { id: "tool", type: "dynamicToolCall", namespace: "hermes", tool: "terminal", arguments: { command: "ls" }, status: "inProgress" } });
+    await harness.emit("item/updated", { threadId: "thread-one", turnId: "updated",
+      item: { id: "tool", type: "dynamicToolCall", progressText: "Reading directory" } });
+    const turn = harness.runtime.views.get("thread-one")?.turns.find(turn => turn.id === "updated");
+    assert.equal(turn?.items.length, 1);
+    assert.equal(turn?.items[0]?.startedAtMs, 100);
+    assert.equal(turn?.items[0]?.tool, "terminal");
+    assert.equal(turn?.items[0]?.progressText, "Reading directory");
+    assert.equal(turn?.items[0]?.status, "inProgress");
+  } finally { await harness.close(); }
+});
+
+test("work clocks survive completion membership replacement without reviving obsolete content", async () => {
+  const harness = await createHarness({ useTailHydration: false });
+  try {
+    await harness.runtime.resume.resume({ threadId: "thread-one" });
+    await harness.emit("turn/started", { threadId: "thread-one", turn: { id: "timed", status: "inProgress", startedAt: 10, items: [] } });
+    await harness.emit("item/started", { threadId: "thread-one", turnId: "timed", startedAtMs: 10_100, item: { id: "work", type: "reasoning", summary: [] } });
+    await harness.emit("item/started", { threadId: "thread-one", turnId: "timed", startedAtMs: 12_600, item: { id: "answer", type: "agentMessage", phase: "final_answer", text: "" } });
+    // Replaying the same started Item must not move its start clock.
+    await harness.emit("item/started", { threadId: "thread-one", turnId: "timed", startedAtMs: 13_600, item: { id: "answer", type: "agentMessage", phase: "final_answer", text: "" } });
+    await harness.emit("turn/completed", { threadId: "thread-one", turn: {
+      id: "timed", status: "completed", itemsView: "full", durationMs: 20_000,
+      items: [{ id: "answer", type: "agentMessage", phase: "final_answer", text: "Done" }],
+    } });
+    const turn = harness.runtime.views.get("thread-one")?.turns.find((turn) => turn.id === "timed");
+    assert.equal(turn?.turnStartedAtMs, 10_000);
+    assert.equal(turn?.firstTurnWorkItemStartedAtMs, 10_100);
+    assert.equal(turn?.finalAssistantStartedAtMs, 12_600);
+    assert.deepEqual(turn?.items?.map((item) => item.id), ["answer"]);
+    assert.equal(turn?.items?.[0]?.startedAtMs, 12_600);
+    assert.equal(turn?.items?.[0]?.text, "Done");
+    // A later Turn gets independent clocks even for identical text/phase.
+    await harness.emit("turn/started", { threadId: "thread-one", turn: { id: "next", status: "inProgress", startedAt: 40, items: [] } });
+    const next = harness.runtime.views.get("thread-one")?.turns.find((turn) => turn.id === "next");
+    assert.equal(next?.turnStartedAtMs, 40_000);
+    assert.equal(next?.firstTurnWorkItemStartedAtMs, undefined);
   } finally {
     await harness.close();
   }

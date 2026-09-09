@@ -7,6 +7,7 @@ import {
   Database,
   Folder,
   HardDrive,
+  Monitor,
   Plus,
   Server,
   Settings,
@@ -20,6 +21,7 @@ import type {
 } from "@opencraft/sidebar-layout";
 import type { ReactNode } from "react";
 import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
+import { groupThreadsByTarget } from "../sidebar-target-groups";
 
 interface SidebarThread extends WorkbenchThread {
   readonly hostId: string;
@@ -57,6 +59,9 @@ interface SidebarProps {
   botCreation?: SidebarEntityCreationCommand | null;
   onSelectThread(hostId: string, id: string): void;
   onNewTask(): void;
+  onNewTaskForTarget?(hostId: string): Promise<unknown>;
+  onOpenTargetSettings?(hostId: string): void;
+  renderTargetStatus?(hostId: string): ReactNode;
   onOpenSettings(): void;
 }
 
@@ -125,9 +130,18 @@ export function Sidebar({
   botCreation = null,
   onSelectThread,
   onNewTask,
+  onNewTaskForTarget,
+  onOpenTargetSettings,
+  renderTargetStatus,
   onOpenSettings,
 }: SidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [collapsedTargets, setCollapsedTargets] = useState<ReadonlySet<string>>(new Set());
+  const [expandedTargets, setExpandedTargets] = useState<ReadonlySet<string>>(new Set());
+  const groups = groupThreadsByTarget(threads);
+  const [creatingTarget, setCreatingTarget] = useState<string | null>(null);
+  const creatingRef = useRef(false);
+  const [creationError, setCreationError] = useState<{ hostId: string; message: string } | null>(null);
   const selectedThreadKey =
     pendingThreadId === null
       ? `${activeHostId}:${activeThreadId}`
@@ -182,17 +196,46 @@ export function Sidebar({
         ))}
 
         <section className="sidebar-tasks" aria-label="Tasks">
-          <div className="sidebar-section-heading">
-            <button type="button">
-              <ChevronDown size={12} />
-              <span>Tasks</span>
-            </button>
-            <button type="button" aria-label="New task" onClick={onNewTask}>
-              <Plus size={13} />
-            </button>
-          </div>
-          <div className="sidebar-thread-list">
-            {threads.map((thread) => {
+          {groups.length === 0 ? <div className="sidebar-target-empty">No tasks yet</div> : null}
+          {groups.map(group => {
+            const collapsed = collapsedTargets.has(group.id);
+            const expanded = expandedTargets.has(group.id);
+            const selectedId = pendingThreadId ?? activeThreadId;
+            const selectedHost = pendingThreadId === null ? activeHostId : pendingHostId ?? activeHostId;
+            const visible = expanded ? group.threads : group.threads.filter((thread, index) =>
+              index < 6 || (thread.hostId === selectedHost && thread.id === selectedId));
+            return <section className="sidebar-target-group" key={group.id} aria-label={group.label}>
+              <div className="sidebar-target-heading-row">
+              <button type="button" className="sidebar-target-heading" aria-expanded={!collapsed}
+                title={group.id} onClick={() => setCollapsedTargets(previous => {
+                  const next = new Set(previous);
+                  if (next.has(group.id)) next.delete(group.id); else next.add(group.id);
+                  return next;
+                })}>
+                <ChevronDown size={12} className={collapsed ? "is-collapsed" : undefined} />
+                <Monitor size={15} />
+                <span>{group.label}</span>
+                {renderTargetStatus?.(group.id)}
+              </button>
+              {onOpenTargetSettings ? <button type="button" className="sidebar-target-action"
+                aria-label={`Settings for ${group.label}`} title={`Settings for ${group.label}`}
+                onClick={() => onOpenTargetSettings(group.id)}><Settings size={14} /></button> : null}
+              {onNewTaskForTarget ? <button type="button" className="sidebar-target-new"
+                aria-label={`New task on ${group.label}`} title={`New task on ${group.label}`}
+                disabled={creatingTarget !== null} aria-busy={creatingTarget === group.id}
+                onClick={() => {
+                  if (creatingRef.current) return;
+                  creatingRef.current = true;
+                  setCreatingTarget(group.id);
+                  setCreationError(null);
+                  void Promise.resolve().then(() => onNewTaskForTarget(group.id)).catch(error => {
+                    setCreationError({ hostId: group.id, message: error instanceof Error ? error.message : String(error) });
+                  }).finally(() => { creatingRef.current = false; setCreatingTarget(null); });
+                }}><Plus size={14} /></button> : null}
+              </div>
+              {creationError?.hostId === group.id ? <div role="alert" className="sidebar-target-empty">{creationError.message}</div> : null}
+          {!collapsed ? <div className="sidebar-thread-list">
+            {visible.map((thread) => {
             const threadKey = `${thread.hostId}:${thread.id}`;
             const active =
               thread.hostId === activeHostId && thread.id === activeThreadId;
@@ -219,12 +262,6 @@ export function Sidebar({
                 <ThreadActivity status={thread.status} />
                 <span className="sidebar-thread__copy">
                   <span className="sidebar-thread__label">{thread.title}</span>
-                  <small>
-                    {thread.project} · {thread.hostLabel}
-                    {thread.lineage === "root"
-                      ? null
-                      : ` · ${thread.lineage} ${thread.id.slice(-6)}`}
-                  </small>
                 </span>
                 {thread.unread ? (
                   <span className="sidebar-thread__unread" />
@@ -232,7 +269,15 @@ export function Sidebar({
               </button>
             );
             })}
-          </div>
+            {group.threads.length > 6 ? <button type="button" className="sidebar-target-more"
+              onClick={() => setExpandedTargets(previous => {
+                const next = new Set(previous);
+                if (next.has(group.id)) next.delete(group.id); else next.add(group.id);
+                return next;
+              })}>{expanded ? "Show less" : "Show more"}</button> : null}
+          </div> : null}
+          </section>;
+          })}
         </section>
       </div>
 

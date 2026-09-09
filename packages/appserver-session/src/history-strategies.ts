@@ -204,7 +204,10 @@ async function fetchTurns(
     limit,
     itemsView,
     sortDirection: "desc",
-  }, { timeoutMs: context.requestTimeoutMs, priority: "background" }), "thread/turns/list");
+  }, {
+    timeoutMs: context.response.thread.historyMode === "message-window" ? 0 : context.requestTimeoutMs,
+    priority: "background",
+  }), "thread/turns/list");
 }
 
 async function loadPaginatedTurnItems(
@@ -273,6 +276,28 @@ async function drainTailHistory(
 
 export function registerBuiltinThreadHistoryStrategies(ctx: Context): () => void {
   const remove = [
+    ctx.threadHistoryStrategies.register({
+      name: "message-window",
+      priority: 50,
+      matches: context => context.response.thread.historyMode === "message-window",
+      async load(context) {
+        const initial = context.response.initialTurnsPage;
+        const page = initial ?? await fetchTurns(context, context.response.turnsBackwardsCursor ?? null, null, "full");
+        return {
+          source: "message-window", turns: page.data.slice().reverse(),
+          complete: page.nextCursor === null, olderCursor: page.nextCursor,
+          itemsPaginationByTurnId: {},
+        };
+      },
+      async loadOlder(context, cursor) {
+        const page = await fetchTurns(context, cursor, null, "full");
+        return {
+          source: "message-window", turns: page.data.slice().reverse(),
+          complete: page.nextCursor === null, olderCursor: page.nextCursor,
+          itemsPaginationByTurnId: {},
+        };
+      },
+    }),
     ctx.threadHistoryStrategies.register({
       name: "durable",
       priority: 40,

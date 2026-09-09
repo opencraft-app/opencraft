@@ -73,7 +73,7 @@ function browserTabIdFromPanel(tab: PanelRendererProps["tab"]): BrowserTabId {
   return tab.resource as BrowserTabId;
 }
 
-function BrowserPanel({ tab: panelTab, ownerId }: PanelRendererProps) {
+function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
   const tabId = browserTabIdFromPanel(panelTab);
   const pages = useWebBrowserPageRuntime();
   const workbench = useBrowserWorkbench();
@@ -97,7 +97,7 @@ function BrowserPanel({ tab: panelTab, ownerId }: PanelRendererProps) {
     const presentation = presentations.present({
       pageId: tab.pageId,
       tabId: tab.id,
-      viewId: ownerId,
+      viewId: presentationId,
       surface: "right-panel",
       slot,
       viewportMode: tab.viewportMode,
@@ -120,7 +120,7 @@ function BrowserPanel({ tab: panelTab, ownerId }: PanelRendererProps) {
       presentation.dispose();
     };
   }, [
-    ownerId,
+    presentationId,
     page === null,
     pageId,
     presentations,
@@ -225,32 +225,35 @@ export function createBrowserWorkbenchPanelPlugin(
   workbench: BrowserWorkbenchCoordinator,
   onCreateTab: (context: PanelToolbarActionContext) => void = () => undefined,
 ) {
+  const browserPanelTab = (browserTabId: string) => {
+    const tabId = browserTabId as BrowserTabId;
+    const page = workbench.pageForTab(tabId);
+    return {
+      id: `browser:${tabId}`,
+      kind: "browser",
+      region: "right" as const,
+      title: page?.title ?? "Browser",
+      icon: "browser",
+      resource: tabId,
+      closable: true,
+      preview: false,
+      durableRoute: {
+        kind: "browser-tab",
+        params: { browserTabId: tabId },
+        payloadVersion: 1,
+      },
+    };
+  };
   return Object.assign(function BrowserWorkbenchPanelPlugin(ctx: Context) {
     const remove = [
       ctx.workbenchPanels.register<{ readonly browserTabId: string }>({
         kind: "browser",
-        createTab: ({ browserTabId }) => {
-          const tabId = browserTabId as BrowserTabId;
-          const page = workbench.pageForTab(tabId);
-          return {
-            id: `browser:${tabId}`,
-            kind: "browser",
-            region: "right",
-            title: page?.title ?? "Browser",
-            icon: "browser",
-            resource: tabId,
-            closable: true,
-            preview: false,
-            durableRoute: {
-              kind: "browser-tab",
-              params: { browserTabId: tabId },
-              payloadVersion: 1,
-            },
-          };
-        },
-        disposeTab: (tab, viewId, reason) => {
+        restoreTabs: (ownerId) => workbench.listForOwner(ownerId)
+          .map(({ tab }) => browserPanelTab(tab.id)),
+        createTab: ({ browserTabId }) => browserPanelTab(browserTabId),
+        disposeTab: (tab, ownerId, reason) => {
           if (tab.resource !== undefined)
-            workbench.releasePresentation(viewId, tab.resource as BrowserTabId, reason === "close");
+            workbench.releasePanel(ownerId, tab.resource as BrowserTabId, reason === "close");
         },
       }),
       ctx.workbenchPanelRenderers.register({ kind: "browser", Component: BrowserPanel }),
@@ -259,6 +262,7 @@ export function createBrowserWorkbenchPanelPlugin(
         region: "right",
         order: 100,
         label: "New browser tab",
+        creationLabel: "Browser",
         icon: "browser",
         run: onCreateTab,
       }),

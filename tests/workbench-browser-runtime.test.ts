@@ -45,7 +45,7 @@ test("browser pages retain stable ownership independently from Workbench tabs", 
   }
 });
 
-test("one logical Browser Tab has independent View panel presentations", () => {
+test("Browser resources and panel state are Scope-owned while Views are disposable presentations", () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", {
     configurable: true,
@@ -60,6 +60,7 @@ test("one logical Browser Tab has independent View panel presentations", () => {
       openedViews.push(viewId);
       return { id: `browser:${params.browserTabId}` };
     },
+    ensureOwner() { return undefined; },
     dispatch() { return undefined; },
     close() { return undefined; },
   };
@@ -72,9 +73,9 @@ test("one logical Browser Tab has independent View panel presentations", () => {
     const scopeId = asConversationScopeId("conversation:browser-shared");
     coordinator.bindView(scopeId, "view-a");
     coordinator.bindView(scopeId, "view-b");
-    const opened = coordinator.open(scopeId, { panelOwnerId: "view-a" });
+    const opened = coordinator.open(scopeId);
     coordinator.bindView(scopeId, "view-b");
-    assert.deepEqual(openedViews, ["view-a", "view-b"]);
+    assert.deepEqual(openedViews, [scopeId]);
 
     coordinator.setViewportMode(opened.tabId, {
       type: "device",
@@ -90,9 +91,9 @@ test("one logical Browser Tab has independent View panel presentations", () => {
     });
     assert.equal("viewportMode" in (runtime.getSnapshot(opened.pageId) ?? {}), false);
 
-    coordinator.releasePresentation("view-a", opened.tabId, true);
+    coordinator.releaseView("view-a");
     assert.notEqual(runtime.getSnapshot(opened.pageId), null);
-    coordinator.releasePresentation("view-b", opened.tabId, true);
+    coordinator.releasePanel(scopeId, opened.tabId, true);
     assert.equal(runtime.getSnapshot(opened.pageId), null);
   } finally {
     runtime.dispose();

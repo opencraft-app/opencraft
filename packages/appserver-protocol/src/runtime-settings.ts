@@ -61,14 +61,50 @@ export interface RuntimeProviderView {
   readonly settingsNs: string;
   readonly settingsPath: readonly string[];
   readonly active: boolean;
+  readonly configured?: boolean;
+  readonly enabled?: boolean;
   readonly declared?: boolean;
+  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly canToggle?: boolean };
 }
 
 export interface RuntimeProvidersListResponse {
   readonly providers: readonly RuntimeProviderView[];
+  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeOpenAIProtocol[] };
+}
+
+export type RuntimeOpenAIProtocol = "openai-completions" | "openai-responses";
+
+/** Host application command: credentials and settings are coordinated behind this boundary. */
+export interface RuntimeProviderApplyParams {
+  readonly target: { readonly kind: "create"; readonly id: string } | { readonly kind: "update"; readonly id: string };
+  readonly expectedRevision: number;
+  readonly baseURL: string;
+  readonly displayName?: string;
+  readonly api?: RuntimeOpenAIProtocol;
+  readonly models?: readonly RuntimeDiscoveredModelView[];
+  readonly enabled?: boolean;
+  readonly credential: { readonly kind: "keep"; readonly allowEndpointChange?: boolean }
+    | { readonly kind: "replace"; readonly value: string }
+    | { readonly kind: "reference"; readonly ref: string }
+    | { readonly kind: "none" };
+}
+
+export interface RuntimeProviderApplyResponse {
+  readonly provider: string;
+  readonly revision: number;
+  /** Persisted config does not guarantee endpoint availability or successful inference. */
+  readonly saved: true;
+}
+
+export interface RuntimeProviderSetEnabledParams {
+  readonly provider: string;
+  readonly enabled: boolean;
+  readonly expectedRevision: number;
 }
 
 export interface RuntimeModelView {
+  readonly enabled?: boolean;
+  readonly source?: "builtin" | "custom";
   readonly id: string;
   readonly name: string;
   readonly description?: string;
@@ -76,6 +112,13 @@ export interface RuntimeModelView {
     readonly efforts: readonly { readonly id: string; readonly name: string; readonly description?: string }[];
     readonly defaultEffort?: string;
   };
+}
+
+/** Selection policy, not deletion of the upstream catalog or conversation history. */
+export interface RuntimeModelMutationParams {
+  readonly provider: string;
+  readonly model: string;
+  readonly expectedRevision: number;
 }
 
 export interface RuntimeModelGroupView {
@@ -90,6 +133,7 @@ export interface RuntimeModelsListResponse {
 }
 
 export interface RuntimeModelsDiscoverParams {
+  readonly source: "catalog" | "endpoint";
   readonly settingsNs: string;
   readonly provider?: string;
   readonly baseURL?: string;

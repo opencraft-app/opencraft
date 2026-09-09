@@ -16,6 +16,7 @@ export interface SettingsPageHeaderProps {
   readonly description?: ReactNode;
 }
 
+
 /** Route content heading. Settings routes own the viewport; this owns title rhythm only. */
 export function SettingsPageHeader({ title, description }: SettingsPageHeaderProps) {
   return (

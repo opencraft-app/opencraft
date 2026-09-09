@@ -3,6 +3,12 @@ import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 
 import { DshClient, type DshEvent, type DshHistoryEntry } from "./dsh-client.js";
+import { RuntimeProviderService } from "./runtime-provider-service.js";
+import { DshInteractions } from "./dsh-interactions.js";
+import { DshTurnProjection } from "./dsh-turn-projection.js";
+import { projectDshGoal } from "./dsh-goal-projection.js";
+import { OPENCRAFT_THREAD_QUEUE_EXTENSION } from "@opencraft/appserver-protocol";
+import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
 
 type RecordValue = Record<string, unknown>;
 
@@ -24,25 +30,31 @@ interface DshHistoryPage {
 }
 
 interface DshModelCatalog {
-  groups: Array<{
+  groups: ReadonlyArray<{
     id: string;
     name: string;
-    models: Array<{
+    models: ReadonlyArray<{
       id: string;
       name: string;
       description?: string;
       reasoning?: {
-        efforts: Array<{ id: string; name: string; description?: string }>;
+        efforts: ReadonlyArray<{ id: string; name: string; description?: string }>;
         defaultEffort?: string;
       };
     }>;
   }>;
-  failures: Array<{ id: string; name: string; message: string }>;
+  failures: ReadonlyArray<{ id: string; name: string; message: string }>;
 }
 
 interface DshSessionModels extends DshModelCatalog {
   current?: { provider: string; model: string; reasoningEffort?: string };
   routable: boolean;
+}
+
+interface QueuedSubmission {
+  id: string;
+  input: RecordValue[];
+  clientUserMessageId: string;
 }
 
 const object = (value: unknown): RecordValue => (
@@ -144,35 +156,18 @@ function blockId(sessionId: string, turn: number, step: number, index: number, t
   return `dsh-${type}-${sessionId}-${turn}-${step}-${index}`;
 }
 
-function toolItem(sessionId: string, data: RecordValue, completed: boolean): RecordValue {
-  const callId = string(data.callId) || string(object(data.message).toolCallId) || "unknown";
-  let args: unknown = string(data.arguments);
-  try { args = JSON.parse(string(data.arguments)); } catch { /* preserve malformed provider JSON */ }
-  const message = object(data.message);
-  return {
-    type: "dynamicToolCall",
-    id: `dsh-tool-${sessionId}-${callId}`,
-    namespace: "dsh",
-    tool: string(data.name, "tool"),
-    arguments: args,
-    status: completed ? "completed" : "inProgress",
-    contentItems: completed ? [{ type: "inputText", text: contentText(message.content) }] : null,
-    success: completed ? data.error === undefined : null,
-    durationMs: null,
-  };
-}
-
 function eventItems(sessionId: string, event: DshEvent, turnOverride?: number, stepOverride?: number): RecordValue[] {
   const data = object(event.data);
   const turn = number(data.turn, turnOverride ?? 0);
   const step = number(data.step, stepOverride ?? 0);
   if (event.type === "user/message") {
-    const sourceKind = string(object(data.source).kind);
+    const source = object(data.source);
+    const sourceKind = string(source.kind);
     if (sourceKind !== "user" && sourceKind !== "human") return [];
     return [{
       type: "userMessage",
       id: string(data.id) || blockId(sessionId, turn, step, event.seq, "user"),
-      clientId: null,
+      clientId: typeof source.rpcId === "string" ? source.rpcId : null,
       content: userContent(data.content),
     }];
   }
@@ -197,8 +192,6 @@ function eventItems(sessionId: string, event: DshEvent, turnOverride?: number, s
       return [];
     });
   }
-  if (event.type === "tool/call") return [toolItem(sessionId, data, false)];
-  if (event.type === "tool/result") return [toolItem(sessionId, data, true)];
   return [];
 }
 
@@ -239,8 +232,9 @@ interface TurnAccumulator {
   durationMs: number | null;
 }
 
-function mapEvents(sessionId: string, entries: readonly DshHistoryEntry[], running = false): TurnAccumulator[] {
+function mapEvents(sessionId: string, entries: readonly DshHistoryEntry[], running = false, cwd = homedir()): TurnAccumulator[] {
   const turns = new Map<number, TurnAccumulator>();
+  const toolProjections = new Map<number, DshTurnProjection>();
   const ordered = [...entries].sort((a, b) => a.event.seq - b.event.seq);
   let activeTurn = -1;
   let activeStep = 0;
@@ -266,10 +260,21 @@ function mapEvents(sessionId: string, entries: readonly DshHistoryEntry[], runni
       turn.completedAt = appTimestamp(event.time);
       if (turn.startedAt !== null) turn.durationMs = Math.max(0, (turn.completedAt - turn.startedAt) * 1_000);
     }
-    for (const item of eventItems(sessionId, event, index, activeStep)) {
+    let tools = toolProjections.get(index);
+    if (!tools) { tools = new DshTurnProjection(sessionId, turn.id, cwd); toolProjections.set(index, tools); }
+    const projection = tools.project(event, eventItems(sessionId, event, index, activeStep));
+    const projected = [...projection.completed, ...projection.started];
+    for (const item of projected) {
       const existing = turn.items.findIndex((candidate) => candidate.id === item.id);
       if (existing >= 0) turn.items[existing] = item;
       else turn.items.push(item);
+    }
+  }
+  for (const [index, projection] of toolProjections) {
+    const turn = turns.get(index)!;
+    for (const item of projection.snapshotPending()) {
+      const existing = turn.items.findIndex(candidate => candidate.id === item.id);
+      if (existing >= 0) turn.items[existing] = item; else turn.items.push(item);
     }
   }
   const result = [...turns.entries()].sort(([left], [right]) => left - right).map(([, turn]) => turn);
@@ -348,7 +353,7 @@ function decodeModel(value: unknown): { provider: string; model: string } | null
   return { provider, model };
 }
 
-function mapModels(catalog: DshModelCatalog, current?: { provider: string; model: string }): RecordValue[] {
+function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: string; model: string }): RecordValue[] {
   const first = catalog.groups[0]?.models[0];
   const defaultProvider = current?.provider ?? catalog.groups[0]?.id;
   const defaultModel = current?.model ?? first?.id;
@@ -386,10 +391,28 @@ export class DshAppServerAdapter {
   private streamsStarted = false;
   private readonly livePosition = new Map<string, { turn: number; step: number }>();
   private readonly liveItemIds = new Set<string>();
+  private readonly liveTools = new Map<string, DshTurnProjection>();
+  readonly interactions: DshInteractions;
   private readonly nextTurnWaiters = new Map<string, Set<(turn: number) => void>>();
+  /** Read-through projection of DSH's authoritative session/queue snapshots. */
+  private readonly queues = new Map<string, QueuedSubmission[]>();
+  private readonly queueItemWaiters = new Map<string, Map<string, Set<(item: QueuedSubmission) => void>>>();
+  /** Correlates the generic AppServer steer-then-delete pair with one atomic DSH steer. */
+  private readonly atomicallySteeredQueueItems = new Set<string>();
   private streamsReady: Promise<void> | null = null;
 
-  constructor(readonly client: DshClient) {}
+  private readonly providers: RuntimeProviderService;
+  constructor(readonly client: DshClient) {
+    this.providers = new RuntimeProviderService(client);
+    this.interactions = new DshInteractions(client, async sessionId => {
+      const position = this.livePosition.get(sessionId);
+      if (position && position.turn >= 0) return { turnId: turnId(sessionId, position.turn) };
+      const page = await this.history(sessionId, null, 100);
+      const last = page.turns.at(-1);
+      if (!last) throw new Error(`Cannot correlate DSH interaction to a turn: ${sessionId}`);
+      return { turnId: last.id };
+    }, params => this.emit("serverRequest/resolved", params));
+  }
 
   subscribe(sink: NotificationSink): () => void {
     this.sinks.add(sink);
@@ -429,8 +452,8 @@ export class DshAppServerAdapter {
         }
       };
       const tasks = [
-        this.client.stream("/api/events.mux", (frame) => this.onMuxFrame(frame), generation.signal, onOpen),
-        this.client.stream("/api/events.host", (frame) => this.onHostFrame(frame), generation.signal, onOpen),
+        this.client.stream("/api/events.mux", (frame) => this.onMuxFrame({ ...frame.payload, rpcId: frame.rpcId }), generation.signal, onOpen),
+        this.client.stream("/api/events.host", (frame) => this.onHostFrame(frame.payload), generation.signal, onOpen),
       ];
       try {
         await Promise.race(tasks);
@@ -440,6 +463,14 @@ export class DshAppServerAdapter {
         generation.abort();
         await Promise.allSettled(tasks);
         this.abort.signal.removeEventListener("abort", stopGeneration);
+        // DSH omits empty queues from a reconnect baseline. Invalidate the
+        // old generation immediately so absence cannot leave stale rows.
+        const projectedSessions = [...this.queues.keys()];
+        this.queues.clear();
+        this.atomicallySteeredQueueItems.clear();
+        for (const threadId of projectedSessions) {
+          this.emit("thread/queue/changed", { threadId });
+        }
       }
       if (this.abort.signal.aborted) return;
       await new Promise((resolve) => setTimeout(resolve, backoffMs));
@@ -447,7 +478,7 @@ export class DshAppServerAdapter {
     }
   }
 
-  close(): void { this.abort.abort(); this.sinks.clear(); }
+  close(): void { this.abort.abort(); this.interactions.close(); this.liveTools.clear(); this.sinks.clear(); }
 
   private emit(method: string, params: unknown): void {
     for (const sink of this.sinks) sink(method, params);
@@ -472,6 +503,40 @@ export class DshAppServerAdapter {
   }
 
   private onMuxFrame(frame: RecordValue): void {
+    if (typeof frame.type === "string" && (frame.type.startsWith("question/") || frame.type.startsWith("approval/"))) {
+      void this.interactions.receive(frame).catch(error => console.error("[opencraft local host] interaction projection", error));
+      return;
+    }
+    if (frame.type === "session/queue") {
+      const sessionId = string(frame.sessionId);
+      if (sessionId === "") return;
+      const submissions = (Array.isArray(frame.items) ? frame.items : []).flatMap<QueuedSubmission>((raw) => {
+        const item = object(raw);
+        if (item.placement !== "queued") return [];
+        const message = object(item.message);
+        const id = string(item.id) || string(message.id);
+        if (id === "") return [];
+        const source = object(message.source);
+        return [{
+          id,
+          input: userContent(message.content),
+          clientUserMessageId: string(source.rpcId, id),
+        }];
+      });
+      this.queues.set(sessionId, submissions);
+      const waiters = this.queueItemWaiters.get(sessionId);
+      if (waiters !== undefined) {
+        for (const submission of submissions) {
+          const matching = waiters.get(submission.clientUserMessageId);
+          if (matching === undefined) continue;
+          for (const resolve of matching) resolve(submission);
+          waiters.delete(submission.clientUserMessageId);
+        }
+        if (waiters.size === 0) this.queueItemWaiters.delete(sessionId);
+      }
+      this.emit("thread/queue/changed", { threadId: sessionId });
+      return;
+    }
     if (frame.type !== "session/event") return;
     const sessionId = string(frame.sessionId);
     const event = object(frame.event) as unknown as DshEvent;
@@ -481,6 +546,12 @@ export class DshAppServerAdapter {
     if (event.type === "step/start") position.step = number(data.step, 0);
     this.livePosition.set(sessionId, position);
     const turn = number(data.turn, position.turn);
+    if (event.type === "goal/change" && sessionId !== "") {
+      const goal = projectDshGoal(sessionId, data);
+      if (goal) this.emit("thread/goal/updated", { threadId: sessionId, turnId: turn < 0 ? null : turnId(sessionId, turn), goal });
+      else if (data.operation === "clear") this.emit("thread/goal/cleared", { threadId: sessionId });
+      return;
+    }
     if (sessionId === "" || turn < 0) return;
     const appTurn = { id: turnId(sessionId, turn), items: [], itemsView: "full", status: "inProgress", error: null, startedAt: appTimestamp(event.time), completedAt: null, durationMs: null };
     if (event.type === "turn/start") {
@@ -488,8 +559,16 @@ export class DshAppServerAdapter {
       for (const resolve of this.nextTurnWaiters.get(sessionId) ?? []) resolve(turn);
       this.nextTurnWaiters.delete(sessionId);
     }
-    for (const item of eventItems(sessionId, event, turn, position.step)) {
-      this.emit(event.type === "assistant/message" || event.type === "tool/result" || event.type === "user/message" ? "item/completed" : "item/started", {
+    const toolScope = appTurn.id;
+    let tools = this.liveTools.get(toolScope);
+    if (!tools) { tools = new DshTurnProjection(sessionId, appTurn.id, this.summaries.get(sessionId)?.cwd ?? homedir()); this.liveTools.set(toolScope, tools); }
+    const projection = tools.project(event, eventItems(sessionId, event, turn, position.step));
+    if (event.type === "turn/end") {
+      this.liveTools.delete(toolScope);
+    }
+    for (const notification of projection.notifications) this.emit(notification.method, notification.params);
+    for (const [method, items] of [["item/completed", projection.completed], ["item/started", projection.started]] as const) for (const item of items) {
+      this.emit(method, {
         threadId: sessionId,
         turnId: appTurn.id,
         item,
@@ -561,6 +640,68 @@ export class DshAppServerAdapter {
     return { promise, cancel };
   }
 
+  private waitForQueueItem(
+    sessionId: string,
+    clientUserMessageId: string,
+    timeoutMs = 10_000,
+  ): { promise: Promise<QueuedSubmission>; cancel: () => void } {
+    const present = this.queues.get(sessionId)?.find(
+      (item) => item.clientUserMessageId === clientUserMessageId,
+    );
+    if (present !== undefined) return { promise: Promise.resolve(present), cancel: () => {} };
+    let cancel = () => {};
+    const promise = new Promise<QueuedSubmission>((resolve, reject) => {
+      const byClientId = this.queueItemWaiters.get(sessionId) ?? new Map();
+      const waiters = byClientId.get(clientUserMessageId) ?? new Set();
+      let settled = false;
+      const finish = (item: QueuedSubmission) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        waiters.delete(finish);
+        resolve(item);
+      };
+      waiters.add(finish);
+      byClientId.set(clientUserMessageId, waiters);
+      this.queueItemWaiters.set(sessionId, byClientId);
+      const cleanup = () => {
+        waiters.delete(finish);
+        if (waiters.size === 0) byClientId.delete(clientUserMessageId);
+        if (byClientId.size === 0) this.queueItemWaiters.delete(sessionId);
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error("DSH accepted the follow-up but did not publish it in session/queue"));
+      }, timeoutMs);
+      cancel = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+      };
+    });
+    return { promise, cancel };
+  }
+
+  private queue(sessionId: string): QueuedSubmission[] {
+    return this.queues.get(sessionId) ?? [];
+  }
+
+  private inProgressTurn(sessionId: string, turn: number): RecordValue {
+    return {
+      id: turnId(sessionId, turn),
+      items: [],
+      itemsView: "full",
+      status: "inProgress",
+      error: null,
+      startedAt: appTimestamp(Date.now()),
+      completedAt: null,
+      durationMs: null,
+    };
+  }
+
   private async sessionModels(sessionId: string): Promise<DshSessionModels> {
     return this.client.call<DshSessionModels>("session.models", { sessionId });
   }
@@ -568,6 +709,13 @@ export class DshAppServerAdapter {
   private async selectModel(sessionId: string, requested: unknown, effort?: unknown): Promise<DshSessionModels> {
     const selection = decodeModel(requested);
     if (selection !== null) {
+      const selectable = await this.providers.models();
+      if (!selectable.groups.some(group => group.id === selection.provider && group.models.some(model => model.id === selection.model))) {
+        const current = await this.sessionModels(sessionId);
+        if (current.current?.provider !== selection.provider || current.current.model !== selection.model) throw new Error("Selected model is disabled or unavailable");
+        // A selection preference must not interrupt an already-bound conversation.
+        if (effort === undefined || effort === current.current.reasoningEffort) return current;
+      }
       await this.client.call("session.selectModel", {
         sessionId,
         provider: selection.provider,
@@ -605,14 +753,29 @@ export class DshAppServerAdapter {
     }
     const firstSeq = history.events.reduce((minimum, entry) => Math.min(minimum, entry.event.seq), Number.POSITIVE_INFINITY);
     return {
-      turns: mapEvents(sessionId, history.events, (await this.summary(sessionId)).running),
+      turns: mapEvents(sessionId, history.events, (await this.summary(sessionId)).running, (await this.summary(sessionId)).cwd),
       nextCursor: history.hasMore && Number.isFinite(firstSeq) ? `dsh-seq:${firstSeq}` : null,
     };
   }
 
+  private settingsWrites: Promise<unknown> = Promise.resolve();
   async dispatch(method: string, params: unknown): Promise<unknown> {
+    if (/^runtime\/(settings\/mutate|providers\/(apply|setEnabled)|models\/(setEnabled|delete))$/.test(method)) {
+      const next = this.settingsWrites.then(() => this.dispatchCommand(method, params));
+      this.settingsWrites = next.catch(() => {});
+      return next;
+    }
+    return this.dispatchCommand(method, params);
+  }
+
+  private async dispatchCommand(method: string, params: unknown): Promise<unknown> {
     const value = object(params);
     switch (method) {
+      case "thread/goal/get": {
+        const threadId = string(value.threadId);
+        const history = await this.client.call<DshHistoryPage>("session.history", { sessionId: threadId, maxMessages: 1 });
+        return { goal: projectDshGoal(threadId, history.projections?.values.goal) };
+      }
       case "runtime/status/read": {
         const host = await this.client.call<RecordValue>("host.describe");
         return {
@@ -627,6 +790,20 @@ export class DshAppServerAdapter {
       case "runtime/settings/describe":
         return this.client.call("settings.describe");
       case "runtime/settings/mutate":
+        if (value.ns === "llm-pi-ai") throw new Error("Use runtime provider/model commands to change model configuration");
+        if (value.ns === "agent-default-model") {
+          const settings = await this.client.call<{ namespaces: Array<{ ns: string; value: unknown }> }>("settings.describe");
+          const next = { ...object(settings.namespaces.find(entry => entry.ns === value.ns)?.value) };
+          if (!Array.isArray(value.ops)) throw new Error("Invalid default model settings");
+          for (const operation of value.ops) {
+            const op = object(operation);
+            if (!Array.isArray(op.path) || op.path.length !== 1 || typeof op.path[0] !== "string") throw new Error("Invalid default model path");
+            if (op.op === "unset") delete next[op.path[0]];
+            else next[op.path[0]] = op.value;
+          }
+          const catalog = await this.providers.models();
+          if (!catalog.groups.some(group => group.id === next.provider && group.models.some(model => model.id === next.model))) throw new Error("Default model must be enabled and available");
+        }
         return this.client.call("settings.mutate", value);
       case "runtime/credentials/describe":
         return this.client.call("credentials.describe", value);
@@ -635,18 +812,40 @@ export class DshAppServerAdapter {
       case "runtime/credentials/unset":
         return this.client.call("credentials.unset", value);
       case "runtime/providers/list":
-        return this.client.call("llm.providers");
+        return this.providers.list();
+      case "runtime/providers/apply":
+        return this.providers.apply(params as RuntimeProviderApplyParams);
+      case "runtime/providers/setEnabled":
+        return this.providers.setEnabled(params as RuntimeProviderSetEnabledParams);
       case "runtime/models/list":
-        return this.client.call("llm.models");
+        return this.providers.models(value.includeDisabled === true);
+      case "runtime/models/setEnabled":
+        if (typeof value.enabled !== "boolean") throw new Error("Invalid model enabled state");
+        return this.providers.mutateModel(params as RuntimeModelMutationParams, value.enabled);
+      case "runtime/models/delete":
+        return this.providers.mutateModel(params as RuntimeModelMutationParams);
       case "runtime/models/discover":
-        return this.client.call("llm.discoverModels", value);
+        return this.providers.discover(params as RuntimeModelsDiscoverParams);
       case "initialize": {
         const host = await this.client.call<RecordValue>("host.describe");
         await this.startStreams();
-        return { codexHome: string(host.home, homedir()), platformFamily: "unix", platformOs: process.platform, userAgent: "opencraft-daemon/0.1.0" };
+        return {
+          codexHome: string(host.home, homedir()),
+          platformFamily: "unix",
+          platformOs: process.platform,
+          userAgent: "opencraft-daemon/0.1.0",
+          capabilities: {
+            extensions: {
+              [OPENCRAFT_THREAD_QUEUE_EXTENSION]: { version: 1, reorder: false },
+            },
+          },
+        };
       }
-      case "agent/list":
-        return { data: [{ id: "dsh", displayName: "DeepSeek Harness", description: "OpenCraft built-in coding agent", engineKind: "dsh", isDefault: true, defaultModel: null, modelIds: [], available: true }], nextCursor: null };
+      case "agent/list": {
+        const catalog = await this.providers.models();
+        const modelIds = catalog.groups.flatMap(group => group.models.map(model => encodeModel(group.id, model.id)));
+        return page([{ id: "dsh", displayName: "DeepSeek Harness", description: "OpenCraft built-in coding agent", engineKind: "dsh", isDefault: true, defaultModel: null, modelIds, available: true }], value.cursor, value.limit);
+      }
       case "thread/list": {
         const all = (await this.summariesList()).filter((entry) => !entry.blank).map((entry) => makeThread(entry));
         const sorted = all.sort((left, right) => number(right.updatedAt) - number(left.updatedAt));
@@ -687,6 +886,86 @@ export class DshAppServerAdapter {
         return { data, nextCursor: history.nextCursor, backwardsCursor: null, itemsPaginationByTurnId: {} };
       }
       case "thread/items/list": return { data: [], nextCursor: null };
+      case "thread/queue/list":
+        return page(this.queue(string(value.threadId)), value.cursor, value.limit);
+      case "thread/queue/add": {
+        const sessionId = string(value.threadId);
+        const clientUserMessageId = string(value.clientUserMessageId);
+        if (clientUserMessageId === "") throw new Error("Queued submissions require clientUserMessageId");
+        const pending = this.waitForQueueItem(sessionId, clientUserMessageId);
+        try {
+          await this.client.call(
+            "session.prompt",
+            {
+              sessionId,
+              mode: "queue",
+              content: await promptContent(value.input),
+              clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            },
+            undefined,
+            clientUserMessageId,
+          );
+        } catch (error) {
+          pending.cancel();
+          throw error;
+        }
+        return { queuedSubmission: await pending.promise };
+      }
+      case "thread/queue/update": {
+        const sessionId = string(value.threadId);
+        const queuedSubmissionId = string(value.queuedSubmissionId);
+        const previous = this.queue(sessionId).find((item) => item.id === queuedSubmissionId);
+        if (previous === undefined) return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is no longer pending`));
+        const content = await promptContent(value.input);
+        const input = userContent(content);
+        await this.client.call("session.updateQueue", {
+          sessionId,
+          itemId: queuedSubmissionId,
+          action: { kind: "edit", content },
+        });
+        return { queuedSubmission: { ...previous, input } };
+      }
+      case "thread/queue/delete": {
+        const sessionId = string(value.threadId);
+        const queuedSubmissionId = string(value.queuedSubmissionId);
+        if (this.atomicallySteeredQueueItems.delete(queuedSubmissionId)) return { deleted: true };
+        if (!this.queue(sessionId).some((item) => item.id === queuedSubmissionId)) return { deleted: false };
+        await this.client.call("session.updateQueue", {
+          sessionId,
+          itemId: queuedSubmissionId,
+          action: { kind: "remove" },
+        });
+        return { deleted: true };
+      }
+      case "thread/queue/reorder": {
+        const sessionId = string(value.threadId);
+        const requested = Array.isArray(value.queuedSubmissionIds)
+          ? value.queuedSubmissionIds.map((id) => string(id))
+          : [];
+        const authoritative = this.queue(sessionId).map((item) => item.id);
+        if (requested.length === authoritative.length && requested.every((id, index) => id === authoritative[index])) return {};
+        throw new Error("DeepSeek Harness owns a strict FIFO queue and does not support reordering");
+      }
+      case "thread/queue/start": {
+        const sessionId = string(value.threadId);
+        const queue = this.queue(sessionId);
+        const target = typeof value.queuedSubmissionId === "string"
+          ? queue.find((item) => item.id === value.queuedSubmissionId)
+          : queue[0];
+        if (target === undefined) throw new Error("Queued submission is no longer pending");
+        const liveTurn = this.livePosition.get(sessionId)?.turn ?? -1;
+        if (liveTurn >= 0) {
+          await this.client.call("session.updateQueue", {
+            sessionId,
+            itemId: target.id,
+            action: { kind: "steer" },
+          });
+          return { turn: this.inProgressTurn(sessionId, liveTurn) };
+        }
+        if (target !== queue[0]) throw new Error("DeepSeek Harness resumes queued work in FIFO order");
+        const nextTurn = this.waitForNextTurn(sessionId);
+        return { turn: this.inProgressTurn(sessionId, await nextTurn.promise) };
+      }
       case "thread/start": {
         const created = await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", {
           ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
@@ -709,23 +988,60 @@ export class DshAppServerAdapter {
         await this.selectModel(sessionId, value.model, value.effort);
         const nextTurn = this.waitForNextTurn(sessionId);
         try {
-          await this.client.call("session.prompt", { sessionId, mode: "queue", content, clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+          await this.client.call(
+            "session.prompt",
+            { sessionId, mode: "queue", content, clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+            undefined,
+            string(value.clientUserMessageId) || undefined,
+          );
         } catch (error) {
           nextTurn.cancel();
           throw error;
         }
         const turnNumber = await nextTurn.promise;
-        const turn = { id: turnId(sessionId, turnNumber), items: [], itemsView: "full", status: "inProgress", error: null, startedAt: appTimestamp(Date.now()), completedAt: null, durationMs: null };
-        return { turn };
+        return { turn: this.inProgressTurn(sessionId, turnNumber) };
       }
       case "turn/steer": {
-        const content = await promptContent(value.input);
-        await this.client.call("session.prompt", { sessionId: string(value.threadId), mode: "steer", content, clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
-        return {};
+        const sessionId = string(value.threadId);
+        const expectedTurnId = string(value.expectedTurnId);
+        const liveTurn = this.livePosition.get(sessionId)?.turn ?? -1;
+        if (liveTurn >= 0 && expectedTurnId !== turnId(sessionId, liveTurn)) {
+          throw new Error(`Active DSH turn changed; expected ${expectedTurnId}`);
+        }
+        const clientUserMessageId = string(value.clientUserMessageId);
+        const queued = clientUserMessageId === "" ? undefined : this.queue(sessionId).find(
+          (item) => item.clientUserMessageId === clientUserMessageId,
+        );
+        if (queued !== undefined) {
+          this.atomicallySteeredQueueItems.add(queued.id);
+          try {
+            await this.client.call("session.updateQueue", {
+              sessionId,
+              itemId: queued.id,
+              action: { kind: "steer" },
+            });
+          } catch (error) {
+            this.atomicallySteeredQueueItems.delete(queued.id);
+            throw error;
+          }
+        } else {
+          await this.client.call(
+            "session.prompt",
+            {
+              sessionId,
+              mode: "steer",
+              content: await promptContent(value.input),
+              clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            },
+            undefined,
+            clientUserMessageId || undefined,
+          );
+        }
+        return { turnId: expectedTurnId || (liveTurn >= 0 ? turnId(sessionId, liveTurn) : "") };
       }
       case "turn/interrupt": await this.client.call("session.cancel", { sessionId: string(value.threadId) }); return {};
       case "model/list": {
-        const catalog = await this.client.call<DshModelCatalog>("llm.models");
+        const catalog = await this.providers.models();
         return page(mapModels(catalog), value.cursor, value.limit);
       }
       case "permissionProfile/list": return { data: [{ id: "default", label: "Default permissions", description: "Use the built-in DSH policy", allowed: true }], nextCursor: null };

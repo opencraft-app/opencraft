@@ -95,6 +95,7 @@ function ResolvedWebChatDocument(props: WebChatDocumentProps) {
   return (
     <div
       className="opencraft-chat-document"
+      data-selection="text"
       data-chat-document-dialect={props.dialect ?? "assistant"}
       data-markdown-animated={props.streaming || undefined}
       data-markdown-text-style="prose"

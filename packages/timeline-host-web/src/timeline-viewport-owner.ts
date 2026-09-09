@@ -1,6 +1,6 @@
 import {
   createWebConversationViewportOwner,
-  type WebConversationScrollPortListeners,
+  type WebConversationScrollBehavior,
   type WebConversationViewportOwner,
 } from "./conversation-viewport-owner";
 
@@ -24,6 +24,10 @@ export interface TimelineScrollSnapshot {
 
 export interface TimelineScrollController {
   reportPlatformScroll(origin: "system" | "user"): TimelineScrollSnapshot;
+  subscribe(listener: (snapshot: TimelineScrollSnapshot) => void): () => void;
+  addUserScrollListener(
+    listener: (distanceFromBottomPx: number, previousDistanceFromBottomPx: number) => void,
+  ): () => void;
   getLastScrollDistanceFromBottomPx(): number;
   scrollToDistanceFromBottomPx(
     distanceFromBottomPx: number,
@@ -74,8 +78,8 @@ export class WebTimelineViewportOwner {
     this.native.observeTurn(timelineKey, element);
   }
 
-  bindScrollPortListeners(listeners: WebConversationScrollPortListeners): () => void {
-    return this.native.bindScrollPortListeners(listeners);
+  bindScrollBehavior(callbacks: WebConversationScrollBehavior): () => void {
+    return this.native.bindScrollBehavior(callbacks);
   }
 
   observeViewportGeometry(onChange: () => void): () => void {

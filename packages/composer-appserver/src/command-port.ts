@@ -1,4 +1,5 @@
-import type { AppServerClient } from "@opencraft/appserver-client";
+import { AppServerClientError, AppServerRpcError, type AppServerClient } from "@opencraft/appserver-client";
+import { ContinuationCommandError, SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
 import type {
   ThreadForkParams,
   TurnStartParams,
@@ -279,7 +280,18 @@ export function createAppServerConversationCommandPort(
 
   return {
     createThread,
-    submit: execute,
+    async submit(intent) {
+      try { return await execute(intent); }
+      catch (cause) {
+        const hermesCode = cause instanceof AppServerRpcError
+          ? (cause.data as { hermesCode?: unknown } | undefined)?.hermesCode : undefined;
+        if ((cause instanceof AppServerClientError && ["TIMEOUT", "TRANSPORT_ERROR", "ABORTED"].includes(cause.code))
+          || ["timeout", "disconnected", "disposed"].includes(String(hermesCode))) {
+          throw new SubmissionOutcomeUnknownError({ cause });
+        }
+        throw cause;
+      }
+    },
     async interrupt(key, turnId) {
       if (key.hostId !== config.hostId) {
         throw new AppServerConversationCommandError(
@@ -300,6 +312,13 @@ export function createAppServerConversationCommandPort(
         threadId: key.threadId,
         input: [],
         clientUserMessageId: clientMessageId,
+      }).catch((cause: unknown) => {
+        const rejected = cause instanceof AppServerRpcError;
+        throw new ContinuationCommandError(
+          rejected ? "rejected" : "unknown",
+          rejected ? cause.message : "Could not confirm continuation. Wait for the host to reconnect before sending again.",
+          { cause },
+        );
       });
       return {
         commandId, clientMessageId, hostId: key.hostId,

@@ -11,14 +11,26 @@ import type {
   AppServerTurn,
   HermesMessage,
   HermesModelOptionsPayload,
+  HermesPendingClarify,
   HermesProfileSummary,
   HermesSessionPayload,
   HermesSessionSummary,
   QueuedSubmission,
 } from "./types";
 import { HermesTurnEventStateMachine } from "./turn-event-state-machine";
+import { toolOutcome } from "./tool-outcome";
+import { projectHermesTool } from "./tool-semantics";
+import { HermesTranscriptWindow, type HermesTranscriptWindowSnapshot } from "./transcript-window";
+import { appendLiveSessionProjection } from "./live-session-projection";
+import type { HermesProjectionRecovery } from "./projection-recovery";
+import {
+  MemoryHermesComposerQueueStore,
+  type HermesComposerQueueStore,
+} from "./composer-queue-store";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_AUTO_QUEUE_DRAIN_ATTEMPTS = 4;
+const AUTO_QUEUE_DRAIN_RETRY_MS = 750;
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunkSize = 0x8000;
@@ -50,6 +62,7 @@ function text(value: unknown): string {
 }
 
 function messageText(message: HermesMessage): string {
+  if (message.display_content !== undefined) return text(message.display_content);
   return typeof message.text === "string" ? message.text : text(message.content);
 }
 
@@ -234,17 +247,215 @@ function timestamp(value: number): number {
   return value > 10_000_000_000 ? Math.floor(value / 1000) : Math.floor(value);
 }
 
-function itemFor(message: HermesMessage, sessionId: string, index: number) {
-  const body = messageText(message);
-  const address = message.row_id ?? message._row_id ?? index;
-  if (message.role === "user") return { type: "userMessage", id: `hermes-${sessionId}-${address}`, clientId: null, content: userMessageContent(message) };
-  if (message.role === "tool") return {
-    type: "dynamicToolCall", id: `hermes-${sessionId}-${address}`, namespace: "hermes",
-    tool: typeof message.name === "string" ? message.name : "tool", arguments: record(message.args),
-    status: "completed", contentItems: typeof message.context === "string" ? [{ type: "inputText", text: message.context }] : null,
-    success: true, durationMs: null,
-  };
-  return { type: "agentMessage", id: `hermes-${sessionId}-${address}`, text: body, phase: message.role === "assistant" ? null : message.role, memoryCitation: null };
+function messageAddress(message: HermesMessage, index: number): string | number {
+  return message.row_id ?? message._row_id ?? (typeof message.id === "number" ? message.id : index);
+}
+
+function parseObject(value: unknown): Record<string, unknown> {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== "string" || value.trim() === "") return {};
+  try {
+    return record(JSON.parse(value));
+  } catch {
+    return {};
+  }
+}
+
+function reasoningText(message: HermesMessage): string {
+  // Hermes aliases the same provider reasoning into more than one durable
+  // column. These fields are alternatives, not independent transcript rows.
+  for (const value of [message.reasoning, message.reasoning_content, message.reasoning_details]) {
+    const body = text(value).trim();
+    if (body !== "") return body;
+  }
+  return "";
+}
+
+interface StoredToolCall {
+  readonly id: string;
+  readonly name: string;
+  readonly arguments: Record<string, unknown>;
+}
+
+function storedToolCalls(message: HermesMessage, address: string | number): StoredToolCall[] {
+  if (!Array.isArray(message.tool_calls)) return [];
+  return message.tool_calls.map((value, index) => {
+    const row = record(value);
+    const fn = record(row.function);
+    const input = record(row.input);
+    const id = typeof row.id === "string" && row.id !== ""
+      ? row.id
+      : typeof row.tool_call_id === "string" && row.tool_call_id !== ""
+        ? row.tool_call_id
+        : `${address}-${index}`;
+    const name = [row.name, row.tool_name, fn.name, input.name]
+      .find((candidate): candidate is string => typeof candidate === "string" && candidate !== "") ?? "tool";
+    const argumentsValue = [fn.arguments, row.arguments, row.args, row.input]
+      .map(parseObject)
+      .find((candidate) => Object.keys(candidate).length > 0) ?? {};
+    return { id, name, arguments: argumentsValue };
+  });
+}
+
+function toolResultText(message: HermesMessage): string {
+  const value = message.content ?? message.text ?? message.context;
+  if (typeof value === "string") return value;
+  if (value === undefined || value === null) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function toolFailed(message: HermesMessage, resultText: string): boolean {
+  const disposition = typeof message.effect_disposition === "string" ? message.effect_disposition.toLowerCase() : "";
+  if (["error", "failed", "denied", "rejected"].includes(disposition)) return true;
+  try {
+    const result = record(JSON.parse(resultText));
+    return toolOutcome(result) === false;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeVisibleText(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * Project Hermes' durable transcript protocol into AppServer Items.
+ *
+ * A persisted assistant row owns a tool declaration; the following `tool`
+ * row owns only its result. `tool_call_id` is therefore the identity join,
+ * never the physical database row. This mirrors Hermes Desktop hydration and
+ * keeps live and restored conversations on the same Item model.
+ */
+function projectTurnItems(sessionId: string, entries: Array<{ message: HermesMessage; index: number }>): AppServerTurn["items"] {
+  const items: AppServerTurn["items"] = [];
+  const toolsByCallId = new Map<string, number>();
+
+  for (const { message, index } of entries) {
+    if (message.display_kind === "hidden") continue;
+    const address = messageAddress(message, index);
+
+    if (message.role === "user") {
+      items.push({
+        type: "userMessage",
+        id: `hermes-${sessionId}-${address}`,
+        clientId: null,
+        content: userMessageContent({ ...message, content: message.display_content ?? message.content }),
+      });
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      const reasoning = reasoningText(message);
+      if (reasoning !== "") {
+        items.push({
+          type: "reasoning",
+          id: `hermes-reasoning-${sessionId}-${address}`,
+          summary: [],
+          content: [reasoning],
+        });
+      }
+
+      const calls = storedToolCalls(message, address);
+      const body = messageText(message).trim();
+      if (body !== "") {
+        items.push({
+          type: "agentMessage",
+          id: `hermes-agent-${sessionId}-${address}`,
+          text: body,
+          // Text emitted on a tool-call round is narration inside Activity;
+          // only a terminal assistant row owns the final answer lane.
+          phase: calls.length > 0 || message.finish_reason === "tool_calls" ? "commentary" : "final_answer",
+          memoryCitation: null,
+        });
+      }
+
+      for (const call of calls) {
+        const itemIndex = items.length;
+        toolsByCallId.set(call.id, itemIndex);
+        items.push({
+          type: "dynamicToolCall",
+          id: `hermes-tool-${sessionId}-${call.id}`,
+          callId: call.id,
+          namespace: "hermes",
+          tool: call.name,
+          arguments: call.arguments,
+          status: "inProgress",
+          contentItems: null,
+          success: null,
+          durationMs: null,
+        });
+      }
+      continue;
+    }
+
+    if (message.role === "tool") {
+      const callId = typeof message.tool_call_id === "string" && message.tool_call_id !== ""
+        ? message.tool_call_id
+        : null;
+      const resultText = toolResultText(message);
+      const failed = toolFailed(message, resultText);
+      const existingIndex = callId === null ? undefined : toolsByCallId.get(callId);
+      if (existingIndex !== undefined) {
+        const existing = items[existingIndex]!;
+        items[existingIndex] = {
+          ...existing,
+          status: failed ? "failed" : "completed",
+          contentItems: resultText === "" ? [] : [{ type: "inputText", text: resultText }],
+          success: failed ? false : toolOutcome(resultText),
+        };
+      } else {
+        const fallbackId = callId ?? String(address);
+        const name = [message.tool_name, message.name]
+          .find((candidate): candidate is string => typeof candidate === "string" && candidate !== "") ?? "tool";
+        const argumentsValue = parseObject(message.args);
+        items.push({
+          type: "dynamicToolCall",
+          id: `hermes-tool-${sessionId}-${fallbackId}`,
+          callId: fallbackId,
+          namespace: "hermes",
+          tool: name,
+          arguments: argumentsValue,
+          status: failed ? "failed" : "completed",
+          contentItems: resultText === "" ? [] : [{ type: "inputText", text: resultText }],
+          success: failed ? false : toolOutcome(resultText),
+          durationMs: null,
+        });
+      }
+    }
+  }
+
+  // Only the terminal text tail can reconcile a repeated final preview.
+  // Tool boundaries retain independent narration even when text is equal.
+  const lastToolIndex = items.findLastIndex(item => item.type === "dynamicToolCall");
+  const lastAgentByText = new Map<string, number>();
+  const finalAgentTexts: string[] = [];
+  items.forEach((item, index) => {
+    if (item.type !== "agentMessage" || typeof item.text !== "string") return;
+    const key = normalizeVisibleText(item.text);
+    if (key !== "") lastAgentByText.set(key, index);
+    if (item.phase === "final_answer" && key !== "") finalAgentTexts.push(key);
+  });
+  return items.filter((item, index) => {
+    if (item.type === "agentMessage" && typeof item.text === "string") {
+      const key = normalizeVisibleText(item.text);
+      // Equal narration across distinct tool rounds is not duplicate identity.
+      // Restrict final-preview reconciliation to the tail after the last tool.
+      return index <= lastToolIndex || key === "" || lastAgentByText.get(key) === index;
+    }
+    if (item.type === "reasoning" && Array.isArray(item.content)) {
+      const key = normalizeVisibleText(item.content.filter((value): value is string => typeof value === "string").join("\n"));
+      // Same ownership rule as Hermes Desktop's final-text merge: the final
+      // answer supersedes reasoning only when it fully starts with it. A short
+      // final must never erase a longer, genuinely distinct reasoning trace.
+      return index <= lastToolIndex || key === "" || !finalAgentTexts.some((finalText) => finalText.startsWith(key));
+    }
+    return true;
+  }).map(projectHermesTool);
 }
 
 interface MappedTurnRange {
@@ -253,15 +464,55 @@ interface MappedTurnRange {
   end: number;
 }
 
+function durableMessageTime(message: HermesMessage): number | null {
+  return typeof message.timestamp === "number"
+    && Number.isFinite(message.timestamp)
+    && message.timestamp > 0
+    ? message.timestamp
+    : null;
+}
+
+function applyDurableTurnTime(
+  turn: AppServerTurn,
+  entries: readonly { message: HermesMessage; index: number }[],
+): void {
+  const startedAt = entries
+    .map(({ message }) => durableMessageTime(message))
+    .find((value): value is number => value !== null) ?? null;
+  const completedAt = entries
+    .filter(({ message }) => message.role === "assistant" || message.role === "tool")
+    .map(({ message }) => durableMessageTime(message))
+    .filter((value): value is number => value !== null)
+    .at(-1) ?? null;
+  turn.startedAt = startedAt;
+  turn.completedAt = startedAt !== null && completedAt !== null && completedAt >= startedAt
+    ? completedAt
+    : null;
+  turn.durationMs = turn.completedAt === null
+    ? null
+    : Math.round((turn.completedAt - startedAt!) * 1_000);
+}
+
 function mapMessageRanges(sessionId: string, messages: HermesMessage[], running = false): MappedTurnRange[] {
   const turns: MappedTurnRange[] = [];
+  let entries: Array<{ message: HermesMessage; index: number }> = [];
+  const flush = () => {
+    const current = turns.at(-1);
+    if (current !== undefined) {
+      current.turn.items = projectTurnItems(sessionId, entries);
+      applyDurableTurnTime(current.turn, entries);
+    }
+    entries = [];
+  };
   for (const [index, message] of messages.entries()) {
+    if (message.display_kind === "hidden" || message.role === "system") continue;
     if (message.role === "user" || turns.length === 0) {
+      if (turns.length > 0) flush();
       turns.push({
         start: index,
         end: index + 1,
         turn: {
-          id: `hermes-turn-${sessionId}-${message.row_id ?? message._row_id ?? index}`,
+          id: `hermes-turn-${sessionId}-${messageAddress(message, index)}`,
           items: [], itemsView: "full", status: "completed", error: null,
           startedAt: null, completedAt: null, durationMs: null,
         },
@@ -269,11 +520,15 @@ function mapMessageRanges(sessionId: string, messages: HermesMessage[], running 
     }
     const current = turns.at(-1)!;
     current.end = index + 1;
-    if (message.role === "user" || message.role === "tool" || messageText(message) !== "") {
-      current.turn.items.push(itemFor(message, sessionId, index));
-    }
+    entries.push({ message, index });
   }
-  if (running && turns.length > 0) turns.at(-1)!.turn.status = "inProgress";
+  flush();
+  if (running && turns.length > 0) {
+    const active = turns.at(-1)!.turn;
+    active.status = "inProgress";
+    active.completedAt = null;
+    active.durationMs = null;
+  }
   return turns;
 }
 
@@ -291,17 +546,39 @@ function makeThread(summary: HermesSessionSummary, cwd: string, turns: AppServer
       profile: summary.profile ?? "default",
     } },
     forkedFromId: null, parentThreadId: null, preview: title, ephemeral: false, section: null, sectionEnteredAt: null,
-    projectId: null, historyMode: "paginated", modelProvider: "hermes", createdAt: when, updatedAt: when, recencyAt: when,
+    projectId: null, historyMode: "message-window", modelProvider: "hermes", createdAt: when, updatedAt: when, recencyAt: when,
     status: running ? { type: "active", activeFlags: [] } : { type: "idle" }, path: null, cwd,
     cliVersion: "hemesclient/0.2.0", source: { custom: "hermes" }, canAcceptDirectInput: true, threadSource: null,
     agentNickname: null, agentRole: null, gitInfo: null, name: title, turns,
   };
 }
 
-function isSessionNotFound(error: unknown): boolean {
+export function isHermesSessionNotFound(error: unknown): boolean {
   return error instanceof HermesRpcError
     ? error.code === 4007
     : /session not found/iu.test(error instanceof Error ? error.message : String(error));
+}
+
+export function hermesThreadMessageCount(thread: AppServerThread): number | null {
+  const extra = record(thread.extra);
+  const hermes = record(extra.hermes);
+  return typeof hermes.messageCount === "number" ? hermes.messageCount : null;
+}
+
+/**
+ * A freshly-created Hermes runtime is addressable over the Gateway before its
+ * first message materializes a Dashboard history row. In that one state, a
+ * history 404 means "empty transcript", not "missing conversation".
+ *
+ * The resumed Thread is the existence authority. Never apply this rule when
+ * Hermes reports stored messages, because that would hide a wrong-backend or
+ * deleted-history failure behind an empty conversation.
+ */
+export function isUnmaterializedHermesHistory(
+  thread: AppServerThread,
+  error: unknown,
+): boolean {
+  return hermesThreadMessageCount(thread) === 0 && isHermesSessionNotFound(error);
 }
 
 interface ThreadListParams {
@@ -347,6 +624,33 @@ export interface HermesTurnSubmission {
   readonly disposition: "running" | "queued";
 }
 
+export interface HermesAppServerInteractionRequest {
+  readonly id: string;
+  readonly method: "item/tool/requestUserInput";
+  readonly params: {
+    readonly threadId: string;
+    readonly turnId: string;
+    readonly itemId: string;
+    readonly questions: Array<{
+      readonly id: string;
+      readonly header: string;
+      readonly question: string;
+      readonly isOther: boolean;
+      readonly isSecret: boolean;
+      readonly options: Array<{ readonly label: string; readonly description: string }> | null;
+    }>;
+    readonly isBlocking: true;
+    readonly autoResolutionMs: null;
+  };
+}
+
+interface PendingClarifyOwnership {
+  readonly appServerRequest: HermesAppServerInteractionRequest;
+  readonly hermesRequestId: string;
+  readonly liveSessionId: string;
+  readonly payload: HermesPendingClarify;
+}
+
 export class HermesAppServerAdapter {
   private readonly liveByStored = new Map<string, string>();
   private readonly payloadByStored = new Map<string, HermesSessionPayload>();
@@ -362,11 +666,11 @@ export class HermesAppServerAdapter {
    * this owner during `thread/resume` would replay the same physical response
    * through a second AppServer Item identity.
    */
-  private readonly activeByLive = new Map<string, HermesTurnEventStateMachine>();
+  private readonly activeByLive: Map<string, HermesTurnEventStateMachine>;
   /** Server-accepted follow-ups waiting behind the physical session lease. */
-  private readonly pendingByLive = new Map<string, HermesTurnEventStateMachine[]>();
+  private readonly pendingByLive: Map<string, HermesTurnEventStateMachine[]>;
   /** A queued Turn cannot consume frames until the previous run's idle boundary. */
-  private readonly queuedBoundaryPendingByLive = new Set<string>();
+  private readonly queuedBoundaryPendingByLive: Set<string>;
   /** Serializes admission only; it never waits for the running Turn to finish. */
   private readonly submissionTailByLive = new Map<string, Promise<void>>();
   /**
@@ -376,9 +680,18 @@ export class HermesAppServerAdapter {
    */
   private readonly admissionByLive = new Map<string, HermesAdmissionProjection>();
   private readonly settlementTimerByLive = new Map<string, unknown>();
-  private readonly queuedByStored = new Map<string, QueuedSubmission[]>();
+  private readonly composerQueue: HermesComposerQueueStore;
+  /** One accepted queue submission per durable Thread at a time. */
+  private readonly drainingQueueByStored = new Set<string>();
+  private readonly scheduledQueueDrainByStored = new Set<string>();
+  /** Explicit Stop/Esc intent; deliberately not persisted across a new bridge. */
+  private readonly parkedQueueByStored = new Set<string>();
+  private readonly queueDrainFailuresBySubmission = new Map<string, number>();
+  private readonly queueRetryTimerByStored = new Map<string, unknown>();
   private readonly itemsByTurnId = new Map<string, AppServerTurn["items"]>();
   private readonly itemCacheOrder: string[] = [];
+  private readonly transcriptWindows = new Map<string, HermesTranscriptWindow>();
+  private readonly transcriptSnapshots: Map<string, HermesTranscriptWindowSnapshot>;
   /** One cursor-zero history page shared by Resume and its first page read. */
   private readonly preparedHistoryByStored = new Map<string, {
     readonly limit: number;
@@ -390,28 +703,109 @@ export class HermesAppServerAdapter {
     };
   }>();
   private readonly notificationListeners = new Set<(method: string, params: unknown) => void>();
+  private readonly serverRequestListeners = new Set<(request: HermesAppServerInteractionRequest) => void>();
+  private readonly pendingClarifyByRequest = new Map<string, PendingClarifyOwnership>();
+  /** `running=false` means waiting-for-input while this barrier exists, not Turn completion. */
   private readonly stopGatewayEvents: () => void;
+  private readonly stopComposerQueue: () => void;
 
   constructor(
     private readonly gateway: HermesRpcClient,
     private readonly defaultCwd: string,
     private readonly history?: HermesHistoryClient,
     private readonly projectionScheduler: HermesProjectionScheduler = DEFAULT_PROJECTION_SCHEDULER,
+    recovery?: HermesProjectionRecovery,
+    composerQueue: HermesComposerQueueStore = new MemoryHermesComposerQueueStore(),
   ) {
+    this.composerQueue = composerQueue;
+    this.activeByLive = recovery?.owners ?? new Map();
+    this.pendingByLive = recovery?.pending ?? new Map();
+    this.queuedBoundaryPendingByLive = recovery?.queuedBoundaries ?? new Set();
+    this.transcriptSnapshots = recovery?.transcriptWindows ?? new Map();
     this.stopGatewayEvents = gateway.onEvent((event) => this.projectGatewayEvent(event));
+    this.stopComposerQueue = composerQueue.subscribe((threadId) => this.emitQueueChanged(threadId));
   }
 
   dispose(): void {
+    for (const window of this.transcriptWindows.values()) window.invalidate();
+    this.transcriptWindows.clear();
+    this.preparedHistoryByStored.clear();
     this.stopGatewayEvents();
+    this.stopComposerQueue();
     for (const handle of this.settlementTimerByLive.values()) this.projectionScheduler.cancel(handle);
     this.settlementTimerByLive.clear();
+    for (const handle of this.queueRetryTimerByStored.values()) this.projectionScheduler.cancel(handle);
+    this.queueRetryTimerByStored.clear();
     this.admissionByLive.clear();
     this.notificationListeners.clear();
+    this.serverRequestListeners.clear();
+    this.pendingClarifyByRequest.clear();
   }
 
   subscribeNotification(listener: (method: string, params: unknown) => void): () => void {
     this.notificationListeners.add(listener);
     return () => this.notificationListeners.delete(listener);
+  }
+
+  /** AppServer, not the transcript, owns blocking user interaction lifecycle. */
+  subscribeServerRequest(listener: (request: HermesAppServerInteractionRequest) => void): () => void {
+    this.serverRequestListeners.add(listener);
+    for (const pending of this.pendingClarifyByRequest.values()) listener(pending.appServerRequest);
+    return () => this.serverRequestListeners.delete(listener);
+  }
+
+  async respondServerRequest(requestId: string, result: unknown): Promise<boolean> {
+    const pending = this.pendingClarifyByRequest.get(requestId);
+    if (pending === undefined) return false;
+    const response = record(result);
+    const answers = record(response.answers);
+    const questions = pending.appServerRequest.params.questions;
+    const rawQuestions = Array.isArray(pending.payload.questions)
+      ? pending.payload.questions.map(record)
+      : [];
+
+    if (rawQuestions.length > 0) {
+      for (const [index, question] of questions.entries()) {
+        const values = record(answers[question.id]).answers;
+        const selected = Array.isArray(values)
+          ? values.filter((value): value is string => typeof value === "string")
+          : [];
+        const raw = rawQuestions[index] ?? {};
+        const answer = raw.multi_select === true && selected.length > 1
+          ? JSON.stringify(selected)
+          : selected[0] ?? "";
+        await this.gateway.call("clarify.respond", {
+          request_id: pending.hermesRequestId,
+          question_id: question.id,
+          answer,
+        });
+      }
+    } else {
+      const values = record(answers.answer).answers;
+      const selected = Array.isArray(values)
+        ? values.filter((value): value is string => typeof value === "string")
+        : [];
+      const answer = pending.payload.multi_select === true && selected.length > 1
+        ? JSON.stringify(selected)
+        : selected[0] ?? "";
+      await this.gateway.call("clarify.respond", {
+        request_id: pending.hermesRequestId,
+        answer,
+      });
+    }
+    this.expirePendingClarify(pending.liveSessionId, pending.hermesRequestId);
+    return true;
+  }
+
+  rejectServerRequest(requestId: string, error: unknown): boolean {
+    const pending = this.pendingClarifyByRequest.get(requestId);
+    if (pending === undefined) return false;
+    // A presentation failure does not answer the backend's blocking request.
+    this.emit("error", {
+      threadId: pending.appServerRequest.params.threadId,
+      error: { message: `Could not present Hermes clarification: ${JSON.stringify(error)}` },
+    });
+    return true;
   }
 
   async listThreads(params: ThreadListParams = {}) {
@@ -443,11 +837,23 @@ export class HermesAppServerAdapter {
     };
   }
 
-  async loadThread(threadId: string, includeTurns: boolean, requestedProfile?: string | null): Promise<AppServerThread> {
+  async readThreadMetadata(threadId: string, signal?: AbortSignal): Promise<AppServerThread> {
+    const profile = await this.resolveThreadProfile(threadId);
+    signal?.throwIfAborted();
+    const list = await this.gateway.call<{ sessions: HermesSessionSummary[] }>("session.list", { profile, limit: 1000 });
+    signal?.throwIfAborted();
+    const summary = list.sessions.find(session => session.id === threadId);
+    if (!summary) throw new Error(`Hermes session not found: ${threadId}`);
+    return makeThread(summary, this.payloadByStored.get(threadId)?.info?.cwd ?? this.defaultCwd);
+  }
+
+  async loadThread(threadId: string, includeTurns: boolean, requestedProfile?: string | null, signal?: AbortSignal): Promise<AppServerThread> {
+    signal?.throwIfAborted();
     const profile = requestedProfile?.trim()
       || this.profileByStored.get(threadId)
       || await this.resolveThreadProfile(threadId);
-    const historyPromise = includeTurns ? this.readTurnsPage(threadId, 0, 120, "desc") : null;
+    this.profileByStored.set(threadId, profile);
+    const historyPromise = includeTurns ? this.readTurnsPage(threadId, 0, 120, "desc", signal) : null;
     const [payload, list, historyPage] = await Promise.all([
       this.resume(threadId, profile),
       this.gateway.call<{ sessions: HermesSessionSummary[] }>("session.list", {
@@ -456,6 +862,7 @@ export class HermesAppServerAdapter {
       }),
       historyPromise,
     ]);
+    signal?.throwIfAborted();
     const summary = list.sessions.find((row) => row.id === threadId) ?? {
       id: threadId, title: "New chat", preview: "", started_at: Date.now() / 1000,
       message_count: payload.message_count, source: "desktop", profile: profile ?? "default",
@@ -476,7 +883,7 @@ export class HermesAppServerAdapter {
         profile,
       });
     } catch (error) {
-      if (isSessionNotFound(error)) return null;
+      if (isHermesSessionNotFound(error)) return null;
       throw error;
     }
     const stored = payload.stored_session_id?.trim() || payload.resumed?.trim();
@@ -501,22 +908,23 @@ export class HermesAppServerAdapter {
     offset: number,
     limit: number,
     sortDirection: "asc" | "desc",
+    signal?: AbortSignal,
   ): Promise<{
     data: AppServerTurn[];
     chronological: AppServerTurn[];
     nextOffset: number | null;
   }> {
+    signal?.throwIfAborted();
     const prepared = this.preparedHistoryByStored.get(threadId);
     if (
       offset === 0
       && prepared !== undefined
-      && prepared.limit === limit
       && prepared.sortDirection === sortDirection
     ) {
       this.preparedHistoryByStored.delete(threadId);
       return prepared.page;
     }
-    return this.fetchTurnsPage(threadId, offset, limit, sortDirection);
+    return this.fetchTurnsPage(threadId, offset, limit, sortDirection, signal);
   }
 
   /**
@@ -528,12 +936,14 @@ export class HermesAppServerAdapter {
     threadId: string,
     limit: number,
     sortDirection: "asc" | "desc",
+    signal?: AbortSignal,
   ): Promise<{
     data: AppServerTurn[];
     chronological: AppServerTurn[];
     nextOffset: number | null;
   }> {
-    const page = await this.fetchTurnsPage(threadId, 0, limit, sortDirection);
+    const page = await this.fetchTurnsPage(threadId, 0, limit, sortDirection, signal);
+    signal?.throwIfAborted();
     this.preparedHistoryByStored.set(threadId, { limit, sortDirection, page });
     return page;
   }
@@ -543,37 +953,41 @@ export class HermesAppServerAdapter {
     offset: number,
     limit: number,
     sortDirection: "asc" | "desc",
+    signal?: AbortSignal,
   ): Promise<{
     data: AppServerTurn[];
     chronological: AppServerTurn[];
     nextOffset: number | null;
   }> {
     if (!this.history) throw new Error("Hermes durable history port is unavailable");
-    const turnLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
-    const messageLimit = Math.min(Math.max(turnLimit * 8, 120), 500);
-    const page = await this.history.readMessages(threadId, {
-      limit: messageLimit,
-      offset: Math.max(Math.floor(offset), 0),
-      order: sortDirection === "desc" ? "latest" : "oldest",
-      includeCompacted: true,
-    });
-    const ranges = mapMessageRanges(threadId, page.messages);
-    const selected = sortDirection === "desc"
-      ? ranges.slice(-turnLimit)
-      : ranges.slice(0, turnLimit);
-    const chronological = selected.map(({ turn }) => turn);
+    // Desktop paginates transcript rows, never scans for a complete execution
+    // Turn. A window may start inside an assistant/tool sequence. Its groups
+    // are presentation projections and can regroup when older rows arrive.
+    const profile = this.profileByStored.get(threadId) ?? await this.resolveThreadProfile(threadId);
+    signal?.throwIfAborted();
+    const key = JSON.stringify([profile, threadId]);
+    let window = this.transcriptWindows.get(key);
+    if (!window) {
+      window = new HermesTranscriptWindow(this.history, threadId, profile, this.transcriptSnapshots.get(key));
+      this.transcriptWindows.set(key, window);
+    }
+    const page = offset === 0 ? await window.readTail(signal) : await window.readOlder(signal, offset);
+    signal?.throwIfAborted();
+    if (this.transcriptWindows.get(key) !== window) throw new Error("Hermes history window was invalidated");
+    this.transcriptSnapshots.delete(key);
+    this.transcriptSnapshots.set(key, page);
+    // Desktop's transcript-tail bookkeeping is bounded to 256 scoped entries.
+    while (this.transcriptSnapshots.size > 256) {
+      const oldest = this.transcriptSnapshots.keys().next().value!;
+      this.transcriptSnapshots.delete(oldest);
+      this.transcriptWindows.get(oldest)?.invalidate();
+      this.transcriptWindows.delete(oldest);
+    }
+    const chronological = mapMessages(threadId, [...page.messages]).map(turn => ({
+      ...turn, historyWindowId: key,
+    }));
     for (const turn of chronological) this.cacheTurnItems(turn);
-    const consumedRows = selected.length === 0
-      ? page.messages.length
-      : sortDirection === "desc"
-        ? page.messages.length - selected[0]!.start
-        : selected.at(-1)!.end;
-    const pageLimit = page.pagination?.limit ?? messageLimit;
-    const hasMoreInsidePage = selected.length < ranges.length;
-    const possiblyMoreOnServer = page.messages.length >= pageLimit;
-    const nextOffset = hasMoreInsidePage || possiblyMoreOnServer
-      ? Math.max(Math.floor(offset), 0) + consumedRows
-      : null;
+    const nextOffset = page.possiblyTruncated ? page.nextOffset : null;
     return {
       data: sortDirection === "desc" ? [...chronological].reverse() : chronological,
       chronological,
@@ -582,9 +996,15 @@ export class HermesAppServerAdapter {
   }
 
   async activateProjection(threadId: string, turns: AppServerTurn[]): Promise<{ replayComplete: boolean }> {
-    const payload = this.payloadByStored.get(threadId);
+    let payload = this.payloadByStored.get(threadId);
     if (!payload) throw new Error(`Hermes runtime is not bound for Thread ${threadId}`);
     const live = payload.session_id;
+    this.offerPendingClarify(
+      live,
+      threadId,
+      turns.at(-1) ?? null,
+      payload.pending_clarify,
+    );
     const owned = this.activeByLive.get(live);
 
     // A locally-started Turn already owns this Hermes stream. Activation only
@@ -594,19 +1014,55 @@ export class HermesAppServerAdapter {
     // owner instead of being projected as a second response.
     if (owned !== undefined) {
       const replay = await this.gateway.catchUpSession?.(live) ?? { complete: true };
-      if (owned.isCompleted) this.activeByLive.delete(live);
-      return { replayComplete: replay.complete };
+      if (replay.complete && this.activeByLive.get(live) === owned) {
+        const index = turns.findIndex(turn => turn.id === owned.turn.id);
+        const tail = turns.at(-1);
+        if (index >= 0) turns[index] = owned.turn;
+        else if (tail && !tail.items.some(item => item.type === "agentMessage" && item.phase !== "commentary")) turns[turns.length - 1] = owned.turn;
+        else if (!owned.isCompleted) turns.push(owned.turn);
+        this.cacheTurnItems(owned.turn);
+        if (owned.isCompleted && !this.pendingByLive.get(live)?.length) {
+          this.activeByLive.delete(live);
+          this.gateway.discardReplay?.(live);
+        }
+        return { replayComplete: true };
+      }
+      // A truncated window/changed epoch cannot extend the retained replica.
+      this.activeByLive.delete(live);
+      this.pendingByLive.delete(live);
+      this.queuedBoundaryPendingByLive.delete(live);
     }
+
+    // No matching replica: never apply an old receive watermark to a history
+    // snapshot. Like Desktop's cold activate, read the backend's live tail
+    // after REST hydration; events before this response belong to that tail.
+    this.gateway.discardReplay?.(live);
+    if (this.gateway.snapshotSession && (owned !== undefined || payload.running === true || payload.inflight || payload.pending_clarify)) {
+      payload = await this.gateway.snapshotSession(live);
+      this.payloadByStored.set(threadId, payload);
+    }
+    const restored = appendLiveSessionProjection(turns, payload);
+    if (restored) this.cacheTurnItems(restored);
+    // The fresh snapshot owns pending input on cold recovery. Do not retain a
+    // request that disappeared while this client was disconnected.
+    for (const pending of this.pendingClarifyByRequest.values()) {
+      if (pending.liveSessionId === live && pending.hermesRequestId !== payload.pending_clarify?.request_id) {
+        this.expirePendingClarify(live, pending.hermesRequestId);
+      }
+    }
+    this.offerPendingClarify(live, threadId, restored ?? turns.at(-1) ?? null, payload.pending_clarify);
 
     // An idle durable snapshot owns its own presentation. There is no live
     // Turn to adopt, so installing a projector on its last completed Turn
     // would incorrectly turn history into an active response during replay.
-    if (payload.running !== true) {
-      const replay = await this.gateway.catchUpSession?.(live) ?? { complete: true };
-      return { replayComplete: replay.complete };
+    // `pending_clarify` is the intentional exception: Hermes reports idle
+    // while its physical Turn is blocked inside the clarify tool.
+    if (payload.running !== true && payload.pending_clarify === undefined) {
+      this.gateway.releaseSnapshot?.(live);
+      return { replayComplete: true };
     }
 
-    const lastTurn = turns.at(-1) ?? {
+    const lastTurn = restored ?? turns.at(-1) ?? {
       id: `hermes-turn-${threadId}-live`,
       items: [],
       itemsView: "full" as const,
@@ -620,11 +1076,9 @@ export class HermesAppServerAdapter {
     // Install its sole owner before releasing replay.
     this.activeByLive.set(live, new HermesTurnEventStateMachine(threadId, lastTurn));
     lastTurn.status = "inProgress";
-    const replay = await this.gateway.catchUpSession?.(live) ?? { complete: true };
-    if (this.activeByLive.get(live)?.isCompleted === true) {
-      this.activeByLive.delete(live);
-    }
-    return { replayComplete: replay.complete };
+    if (!turns.includes(lastTurn)) turns.push(lastTurn);
+    this.gateway.releaseSnapshot?.(live);
+    return { replayComplete: true };
   }
 
   readTurnItems(turnId: string): AppServerTurn["items"] {
@@ -633,14 +1087,32 @@ export class HermesAppServerAdapter {
     return items;
   }
 
+  publishHistoryPreview(threadId: string, token: string, turns: readonly AppServerTurn[]): void {
+    this.emit("thread/history/preview", { threadId, token, turns });
+  }
+
   async listModels(params: {
     cursor?: unknown;
     limit?: unknown;
     includeHidden?: unknown;
+    threadId?: unknown;
   } = {}) {
+    const threadId = typeof params.threadId === "string" && params.threadId.trim() !== ""
+      ? params.threadId.trim()
+      : null;
+    const profile = threadId === null
+      ? null
+      : this.profileByStored.get(threadId) ?? await this.resolveThreadProfile(threadId);
+    const liveSessionId = threadId === null
+      ? null
+      : this.liveByStored.get(threadId) ?? threadId;
     const payload = await this.gateway.call<HermesModelOptionsPayload>(
       "model.options",
-      { explicit_only: params.includeHidden !== true },
+      {
+        explicit_only: params.includeHidden !== true,
+        ...(liveSessionId === null ? {} : { session_id: liveSessionId }),
+        ...(profile === null ? {} : { profile }),
+      },
     );
     const all = mapHermesModelOptions(payload).filter(
       (model) => params.includeHidden === true || !model.hidden,
@@ -733,13 +1205,14 @@ export class HermesAppServerAdapter {
     input: unknown,
     requestedModel?: unknown,
     requestedProfile?: string | null,
+    clientUserMessageId: string | null = null,
   ): Promise<AppServerTurn> {
     const submission = await this.submitTurn(
       threadId,
       input,
       requestedModel,
       requestedProfile,
-      null,
+      clientUserMessageId,
       false,
     );
     return submission.turn;
@@ -773,7 +1246,7 @@ export class HermesAppServerAdapter {
     requestedModel: unknown,
     requestedProfile: string | null | undefined,
     clientUserMessageId: string | null,
-    allowWhileLocallyBusy: boolean,
+    allowWhileTurnUnsettled: boolean,
   ): Promise<HermesTurnSubmission> {
     const parsed = await parseInput(input);
     if (parsed.body.trim() === "" && parsed.images.length === 0) throw new Error("Hermes input is empty");
@@ -785,7 +1258,7 @@ export class HermesAppServerAdapter {
         parsed,
         requestedModel,
         clientUserMessageId,
-        allowWhileLocallyBusy,
+        allowWhileTurnUnsettled,
       );
     });
   }
@@ -796,15 +1269,16 @@ export class HermesAppServerAdapter {
     parsed: Awaited<ReturnType<typeof parseInput>>,
     requestedModel: unknown,
     clientUserMessageId: string | null,
-    allowWhileLocallyBusy: boolean,
+    allowWhileTurnUnsettled: boolean,
   ): Promise<HermesTurnSubmission> {
     const previousOwner = this.activeByLive.get(live);
-    const payload = this.payloadByStored.get(threadId);
-    const knownBusy = (previousOwner !== undefined && !previousOwner.isCompleted)
-      || payload?.running === true
-      || this.queuedBoundaryPendingByLive.has(live)
+    // AppServer admission is owned by unsettled logical Turns, not by a
+    // cached physical-process heartbeat. A completed owner can coexist with
+    // running=true while Hermes releases its lease; prompt.submit(queued)
+    // alone decides whether the next Turn runs immediately or waits FIFO.
+    const hasUnsettledTurn = (previousOwner !== undefined && !previousOwner.isCompleted)
       || (this.pendingByLive.get(live)?.length ?? 0) > 0;
-    if (!allowWhileLocallyBusy && knownBusy) {
+    if (!allowWhileTurnUnsettled && hasUnsettledTurn) {
       throw new Error(`Hermes thread is already running: ${threadId}`);
     }
     await this.applyModelSelection(threadId, live, requestedModel);
@@ -819,7 +1293,7 @@ export class HermesAppServerAdapter {
       itemsView: "full", status: "inProgress", error: null, startedAt: Math.floor(Date.now() / 1000), completedAt: null, durationMs: null,
     };
     const projection = new HermesTurnEventStateMachine(threadId, turn);
-    if (!knownBusy) {
+    if (!hasUnsettledTurn) {
       this.admissionByLive.set(live, { projection, events: [] });
     }
     let stagedPaths: string[] = [];
@@ -835,11 +1309,19 @@ export class HermesAppServerAdapter {
         queued: true,
       });
       if (result.status === "queued") {
-        this.releaseAdmission(live, projection);
+        const admission = this.releaseAdmission(live, projection);
         const pending = this.pendingByLive.get(live) ?? [];
         pending.push(projection);
         this.pendingByLive.set(live, pending);
         this.queuedBoundaryPendingByLive.add(live);
+        // The previous idle boundary and even the queued Turn's entire
+        // response can arrive before the RPC receipt. Install its pending
+        // identity first, then release those frames in their original order.
+        if (admission !== undefined) {
+          for (const { event, occurredAtMs } of admission.events) {
+            this.routeProjectionEvent(live, event, occurredAtMs);
+          }
+        }
         return { turn, disposition: "queued" };
       }
       const admission = this.releaseAdmission(live, projection);
@@ -888,15 +1370,9 @@ export class HermesAppServerAdapter {
     projection: HermesTurnEventStateMachine,
     events: HermesAdmissionProjection["events"],
   ): void {
-    // Old-process tail frames can cross the RPC boundary. Only a positive live
-    // boundary can establish that the remaining frames belong to this Turn.
-    const firstOwnedIndex = events.findIndex(({ event }) => (
-      event.type === "message.start"
-      || (event.type === "session.info"
-        && typeof event.payload === "object"
-        && event.payload !== null
-        && (event.payload as Record<string, unknown>).running === true)
-    ));
+    // A busy heartbeat can still belong to the previous process. Only the
+    // message boundary, not running=true, establishes this submission's stream.
+    const firstOwnedIndex = events.findIndex(({ event }) => event.type === "message.start");
     if (firstOwnedIndex < 0) return;
     for (const { event, occurredAtMs } of events.slice(firstOwnedIndex)) {
       if (this.activeByLive.get(live) !== projection || projection.isCompleted) break;
@@ -916,6 +1392,10 @@ export class HermesAppServerAdapter {
     if (expectedTurnId !== null && expectedTurnId !== active.turn.id) {
       throw new Error(`Hermes active turn changed: expected ${expectedTurnId}, got ${active.turn.id}`);
     }
+    // Like Desktop's typed follow-up, skip only Clarify before steering.
+    // Both calls use this session's owning Gateway and are issued in order;
+    // do not await the skip and leave a window for duplicate submissions.
+    this.skipPendingClarify(live);
     const result = await this.gateway.call<{ status?: string }>("session.steer", { session_id: live, text: parsed.body });
     if (result.status === "rejected") throw new Error("Hermes rejected the active-turn steer");
     return { turnId: active.turn.id };
@@ -928,15 +1408,16 @@ export class HermesAppServerAdapter {
       input: Array.isArray(input) ? structuredClone(input) : [],
       clientUserMessageId,
     };
-    const queue = this.queuedByStored.get(threadId) ?? [];
-    queue.push(submission);
-    this.queuedByStored.set(threadId, queue);
-    this.emitQueueChanged(threadId);
+    const queue = this.composerQueue.read(threadId);
+    this.composerQueue.replace(threadId, [...queue, submission]);
+    // Like Hermes Desktop, queueing fresh work resumes a previously parked
+    // queue. A stale Stop must not silently hold new user intent.
+    this.parkedQueueByStored.delete(threadId);
     return structuredClone(submission);
   }
 
   listQueuedSubmissions(threadId: string, cursor: string | null, limit: number | null) {
-    const queue = this.queuedByStored.get(threadId) ?? [];
+    const queue = this.composerQueue.read(threadId);
     const offset = cursor?.startsWith("hermes-queue:") ? Number(cursor.slice(13)) || 0 : 0;
     const size = Math.min(Math.max(limit ?? 50, 1), 200);
     return {
@@ -947,26 +1428,27 @@ export class HermesAppServerAdapter {
 
   updateQueuedSubmission(threadId: string, queuedSubmissionId: string, input: unknown): QueuedSubmission {
     this.validateQueuedInput(input);
-    const queue = this.queuedByStored.get(threadId) ?? [];
+    const queue = this.composerQueue.read(threadId);
     const index = queue.findIndex((item) => item.id === queuedSubmissionId);
     if (index < 0) throw new Error(`Hermes queued submission not found: ${queuedSubmissionId}`);
     const updated = { ...queue[index]!, input: Array.isArray(input) ? structuredClone(input) : [] };
     queue[index] = updated;
-    this.emitQueueChanged(threadId);
+    this.composerQueue.replace(threadId, queue);
     return structuredClone(updated);
   }
 
   deleteQueuedSubmission(threadId: string, queuedSubmissionId: string): boolean {
-    const queue = this.queuedByStored.get(threadId) ?? [];
+    const queue = this.composerQueue.read(threadId);
     const index = queue.findIndex((item) => item.id === queuedSubmissionId);
     if (index < 0) return false;
     queue.splice(index, 1);
-    this.emitQueueChanged(threadId);
+    this.composerQueue.replace(threadId, queue);
+    if (queue.length === 0) this.parkedQueueByStored.delete(threadId);
     return true;
   }
 
   reorderQueuedSubmissions(threadId: string, queuedSubmissionIds: string[]): void {
-    const queue = this.queuedByStored.get(threadId) ?? [];
+    const queue = this.composerQueue.read(threadId);
     if (queuedSubmissionIds.length !== queue.length || new Set(queuedSubmissionIds).size !== queue.length) {
       throw new Error("queuedSubmissionIds must contain every queued submission exactly once");
     }
@@ -976,38 +1458,56 @@ export class HermesAppServerAdapter {
       if (item === undefined) throw new Error(`Hermes queued submission not found: ${id}`);
       return item;
     });
-    this.queuedByStored.set(threadId, reordered);
-    this.emitQueueChanged(threadId);
+    this.composerQueue.replace(threadId, reordered);
   }
 
   async startQueuedSubmission(threadId: string, queuedSubmissionId?: string | null): Promise<AppServerTurn> {
-    const live = await this.ensureLive(threadId);
-    const owner = this.activeByLive.get(live);
-    if (owner !== undefined && !owner.isCompleted) {
-      throw new Error(`Hermes thread is already running: ${threadId}`);
+    if (this.drainingQueueByStored.has(threadId)) {
+      throw new Error(`Hermes thread queue is already advancing: ${threadId}`);
     }
-    const queue = this.queuedByStored.get(threadId) ?? [];
-    const index = queuedSubmissionId == null ? 0 : queue.findIndex((item) => item.id === queuedSubmissionId);
-    if (index < 0 || queue[index] === undefined) throw new Error("Hermes queue is empty or the submission no longer exists");
-    const [submission] = queue.splice(index, 1);
-    this.emitQueueChanged(threadId);
+    const retryHandle = this.queueRetryTimerByStored.get(threadId);
+    if (retryHandle !== undefined) {
+      this.projectionScheduler.cancel(retryHandle);
+      this.queueRetryTimerByStored.delete(threadId);
+    }
+    this.drainingQueueByStored.add(threadId);
     try {
-      return (await this.submitTurn(
+      const live = await this.ensureLive(threadId);
+      const owner = this.activeByLive.get(live);
+      if (owner !== undefined && !owner.isCompleted) {
+        throw new Error(`Hermes thread is already running: ${threadId}`);
+      }
+      const queue = this.composerQueue.read(threadId);
+      const index = queuedSubmissionId == null ? 0 : queue.findIndex((item) => item.id === queuedSubmissionId);
+      const submission = queue[index];
+      if (index < 0 || submission === undefined) {
+        throw new Error("Hermes queue is empty or the submission no longer exists");
+      }
+      const turn = (await this.submitTurn(
         threadId,
-        submission!.input,
+        submission.input,
         undefined,
         undefined,
-        submission!.clientUserMessageId,
+        submission.clientUserMessageId,
         true,
       )).turn;
-    } catch (error) {
-      queue.splice(index, 0, submission!);
-      this.emitQueueChanged(threadId);
-      throw error;
+      // Hermes Desktop's invariant is send-then-remove. Read the latest queue
+      // again so an edit/reorder in another View is not overwritten while the
+      // Gateway admission was pending.
+      this.composerQueue.replace(
+        threadId,
+        this.composerQueue.read(threadId).filter((item) => item.id !== submission.id),
+      );
+      this.parkedQueueByStored.delete(threadId);
+      this.queueDrainFailuresBySubmission.delete(submission.id);
+      return turn;
+    } finally {
+      this.drainingQueueByStored.delete(threadId);
     }
   }
 
   async cancelTurn(threadId: string): Promise<void> {
+    if (this.composerQueue.read(threadId).length > 0) this.parkedQueueByStored.add(threadId);
     await this.gateway.call("session.interrupt", { session_id: await this.ensureLive(threadId) });
   }
 
@@ -1163,7 +1663,7 @@ export class HermesAppServerAdapter {
             profile: name,
           });
         } catch (error) {
-          if (isSessionNotFound(error)) continue;
+          if (isHermesSessionNotFound(error)) continue;
           throw error;
         }
         this.bindSession(threadId, payload, name);
@@ -1264,8 +1764,145 @@ export class HermesAppServerAdapter {
     for (const listener of this.notificationListeners) listener(method, params);
   }
 
+  private offerPendingClarify(
+    liveSessionId: string,
+    threadId: string,
+    turn: AppServerTurn | null,
+    payload: HermesPendingClarify | undefined,
+  ): void {
+    if (payload === undefined || typeof payload.request_id !== "string" || payload.request_id.trim() === "") return;
+    const hermesRequestId = payload.request_id.trim();
+    const appServerRequestId = `hermes-clarify:${encodeURIComponent(threadId)}:${encodeURIComponent(hermesRequestId)}`;
+    if (this.pendingClarifyByRequest.has(appServerRequestId)) return;
+
+    const rawQuestions = Array.isArray(payload.questions)
+      ? payload.questions.map(record)
+      : [];
+    const questions = rawQuestions.flatMap((candidate, index) => {
+      const question = typeof candidate.question === "string" ? candidate.question.trim() : "";
+      if (question === "") return [];
+      const choices = Array.isArray(candidate.choices)
+        ? candidate.choices.filter((choice): choice is string => typeof choice === "string" && choice.trim() !== "")
+        : [];
+      return [{
+        id: typeof candidate.qid === "string" && candidate.qid.trim() !== ""
+          ? candidate.qid.trim()
+          : `q${index}`,
+        header: `Question ${index + 1}`,
+        question,
+        isOther: true,
+        isSecret: false,
+        options: choices.length === 0
+          ? null
+          : choices.map((label) => ({ label, description: "" })),
+      }];
+    });
+    if (questions.length === 0) {
+      const question = typeof payload.question === "string" ? payload.question.trim() : "";
+      if (question === "") return;
+      const choices = Array.isArray(payload.choices)
+        ? payload.choices.filter((choice): choice is string => typeof choice === "string" && choice.trim() !== "")
+        : [];
+      questions.push({
+        id: "answer",
+        header: "Clarify",
+        question,
+        isOther: true,
+        isSecret: false,
+        options: choices.length === 0
+          ? null
+          : choices.map((label) => ({ label, description: "" })),
+      });
+    }
+
+    const ownerTurn = turn ?? this.activeByLive.get(liveSessionId)?.turn ?? null;
+    const clarifyTool = ownerTurn === null
+      ? undefined
+      : [...ownerTurn.items].reverse().find((item) => (
+          item.type === "dynamicToolCall"
+          && item.namespace === "hermes"
+          && item.tool === "clarify"
+          && item.status === "inProgress"
+        ));
+    const request: HermesAppServerInteractionRequest = {
+      id: appServerRequestId,
+      method: "item/tool/requestUserInput",
+      params: {
+        threadId,
+        turnId: ownerTurn?.id ?? `hermes-turn-${threadId}-clarify`,
+        itemId: clarifyTool?.id ?? `hermes-clarify-${threadId}-${hermesRequestId}`,
+        questions,
+        isBlocking: true,
+        autoResolutionMs: null,
+      },
+    };
+    const pending: PendingClarifyOwnership = {
+      appServerRequest: request,
+      hermesRequestId,
+      liveSessionId,
+      payload,
+    };
+    // One current request per runtime session, matching Desktop. A superseded
+    // card cannot retain a second, invisible blocking owner.
+    this.clearSessionClarify(liveSessionId);
+    this.pendingClarifyByRequest.set(appServerRequestId, pending);
+    for (const listener of this.serverRequestListeners) listener(request);
+  }
+
+  private expirePendingClarify(liveSessionId: string, hermesRequestId: string): void {
+    for (const [requestId, pending] of this.pendingClarifyByRequest) {
+      if (pending.liveSessionId !== liveSessionId || pending.hermesRequestId !== hermesRequestId) continue;
+      this.pendingClarifyByRequest.delete(requestId);
+      this.emit("serverRequest/resolved", {
+        requestId: pending.appServerRequest.id,
+        threadId: pending.appServerRequest.params.threadId,
+      });
+    }
+    const stored = this.storedByLive.get(liveSessionId);
+    const session = stored === undefined ? undefined : this.payloadByStored.get(stored);
+    if (session?.pending_clarify?.request_id === hermesRequestId) delete session.pending_clarify;
+  }
+
+  private clearSessionClarify(liveSessionId: string): void {
+    for (const pending of this.pendingClarifyByRequest.values()) {
+      if (pending.liveSessionId === liveSessionId) this.expirePendingClarify(liveSessionId, pending.hermesRequestId);
+    }
+  }
+
+  private hasPendingClarify(liveSessionId: string): boolean {
+    return [...this.pendingClarifyByRequest.values()].some(pending => pending.liveSessionId === liveSessionId);
+  }
+
+  private skipPendingClarify(liveSessionId: string): void {
+    for (const pending of this.pendingClarifyByRequest.values()) {
+      if (pending.liveSessionId !== liveSessionId) continue;
+      this.expirePendingClarify(liveSessionId, pending.hermesRequestId);
+      // Desktop's skip is best effort: failure must not swallow the user's
+      // follow-up. Never apply this policy to approval/secret requests.
+      void this.gateway.call("clarify.respond", { request_id: pending.hermesRequestId, answer: "" }).catch(() => {});
+    }
+  }
+
   private emitQueueChanged(threadId: string): void {
     this.emit("thread/queue/changed", { threadId });
+  }
+
+  /**
+   * Called only after a Thread activation response has been delivered to the
+   * AppServer client. An idle restored queue is level-triggered: it must flow
+   * even when reconnect swallowed the previous busy -> idle edge.
+   */
+  resumeQueuedSubmissions(threadId: string): void {
+    const payload = this.payloadByStored.get(threadId);
+    const live = this.liveByStored.get(threadId);
+    const owner = live === undefined ? undefined : this.activeByLive.get(live);
+    if (
+      payload === undefined
+      || payload.running === true
+      || payload.pending_clarify !== undefined
+      || (owner !== undefined && !owner.isCompleted)
+    ) return;
+    this.drainQueue(threadId);
   }
 
   private emitProjection(notifications: ReturnType<HermesTurnEventStateMachine["project"]>): void {
@@ -1305,13 +1942,39 @@ export class HermesAppServerAdapter {
   }
 
   private drainQueue(threadId: string): void {
-    if ((this.queuedByStored.get(threadId)?.length ?? 0) === 0) return;
+    const entry = this.composerQueue.read(threadId)[0];
+    if (
+      entry === undefined
+      || this.drainingQueueByStored.has(threadId)
+      || this.scheduledQueueDrainByStored.has(threadId)
+      || this.parkedQueueByStored.has(threadId)
+      || this.queueRetryTimerByStored.has(threadId)
+      || (this.queueDrainFailuresBySubmission.get(entry.id) ?? 0) >= MAX_AUTO_QUEUE_DRAIN_ATTEMPTS
+    ) return;
+    this.scheduledQueueDrainByStored.add(threadId);
     queueMicrotask(() => {
-      void this.startQueuedSubmission(threadId).catch((error) => {
-        this.emit("error", {
-          error: { message: error instanceof Error ? error.message : String(error) },
-          threadId,
-        });
+      this.scheduledQueueDrainByStored.delete(threadId);
+      void this.startQueuedSubmission(threadId, entry.id).catch((error) => {
+        if (!this.composerQueue.read(threadId).some((candidate) => candidate.id === entry.id)) {
+          this.queueDrainFailuresBySubmission.delete(entry.id);
+          this.drainQueue(threadId);
+          return;
+        }
+        const failures = (this.queueDrainFailuresBySubmission.get(entry.id) ?? 0) + 1;
+        this.queueDrainFailuresBySubmission.set(entry.id, failures);
+        if (failures >= MAX_AUTO_QUEUE_DRAIN_ATTEMPTS) {
+          this.emit("error", {
+            error: { message: error instanceof Error ? error.message : String(error) },
+            threadId,
+          });
+          return;
+        }
+        const handle = this.projectionScheduler.schedule(() => {
+          if (this.queueRetryTimerByStored.get(threadId) !== handle) return;
+          this.queueRetryTimerByStored.delete(threadId);
+          this.drainQueue(threadId);
+        }, AUTO_QUEUE_DRAIN_RETRY_MS);
+        this.queueRetryTimerByStored.set(threadId, handle);
       });
     });
   }
@@ -1321,8 +1984,24 @@ export class HermesAppServerAdapter {
     const threadId = this.storedByLive.get(live);
     if (threadId === undefined) return;
     const occurredAtMs = this.projectionScheduler.now();
+    const eventPayload = record(event.payload);
+    if (event.type === "clarify.request") {
+      this.offerPendingClarify(
+        live,
+        threadId,
+        this.activeByLive.get(live)?.turn
+          ?? this.admissionByLive.get(live)?.projection.turn
+          ?? null,
+        eventPayload as unknown as HermesPendingClarify,
+      );
+    } else if (event.type === "clarify.expire" && typeof eventPayload.request_id === "string") {
+      this.expirePendingClarify(live, eventPayload.request_id);
+    }
     const payload = this.payloadByStored.get(threadId);
     if (payload !== undefined) {
+      if (event.type === "clarify.request") {
+        payload.pending_clarify = eventPayload as unknown as HermesPendingClarify;
+      }
       if (event.type === "message.start") payload.running = true;
       if (event.type === "message.complete" || event.type === "error") payload.running = false;
     }
@@ -1335,14 +2014,39 @@ export class HermesAppServerAdapter {
           ...info,
         };
       }
-      if ((event.payload as Record<string, unknown>).running === false) {
-        this.queuedBoundaryPendingByLive.delete(live);
+    }
+    if (event.type === "tool.complete" && typeof eventPayload.tool_id === "string") {
+      for (const pending of this.pendingClarifyByRequest.values()) {
+        const ownerItem = this.activeByLive.get(live)?.turn.items.find(item => item.id === pending.appServerRequest.params.itemId);
+        if (pending.liveSessionId === live && (ownerItem?.callId ?? pending.appServerRequest.params.itemId) === eventPayload.tool_id) {
+          this.expirePendingClarify(live, pending.hermesRequestId);
+        }
       }
+    }
+    if (event.type === "message.complete" || event.type === "error") {
+      this.clearSessionClarify(live);
+    }
+    if (
+      event.type === "session.info"
+      && eventPayload.running === false
+      && this.hasPendingClarify(live)
+    ) {
+      return;
     }
     const admission = this.admissionByLive.get(live);
     if (admission !== undefined) {
       admission.events.push({ event: structuredClone(event), occurredAtMs });
       return;
+    }
+    this.routeProjectionEvent(live, event, occurredAtMs);
+  }
+
+  private routeProjectionEvent(live: string, event: Record<string, unknown>, occurredAtMs: number): void {
+    // Apply stream ownership boundaries when frames are consumed, not when
+    // they are buffered awaiting admission. Replaying them must not repeat
+    // cache updates or clarify side effects in projectGatewayEvent.
+    if (event.type === "session.info" && record(event.payload).running === false) {
+      this.queuedBoundaryPendingByLive.delete(live);
     }
     let projection = this.activeByLive.get(live);
     if (

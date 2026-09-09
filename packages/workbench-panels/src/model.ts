@@ -201,7 +201,8 @@ function reduceRegionAction(
         tabs,
         recentTabIds,
         activeTabId,
-        open: tabs.length > 0 && region.open,
+        // The right outlet owns its visibility independently of its content.
+        open: action.region === "right" ? region.open : tabs.length > 0 && region.open,
       };
     }
     case "update-tab": {
@@ -306,13 +307,6 @@ export function reduceConversationPanelState(
       next = updateRegion(state, action.region, (region) =>
         reduceRegionAction(region, action),
       );
-      if (
-        (action.type === "close-tab" || action.type === "force-close-tab") &&
-        action.region === "right" &&
-        next.right.tabs.length === 0
-      ) {
-        next = { ...next, rightPanelFullWidth: false };
-      }
       break;
     case "set-region-open": {
       next = updateRegion(state, action.region, (region) =>
@@ -327,7 +321,8 @@ export function reduceConversationPanelState(
       break;
     }
     case "toggle-right-full-width":
-      if (state.right.tabs.length > 0) {
+      // Width belongs to the open outlet, not to the presence of a content tab.
+      if (state.right.open || state.right.tabs.length > 0) {
         next = {
           ...state,
           right: { ...state.right, open: true },

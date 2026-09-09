@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { TargetConnectionStatus } from "./components/target-connection-status";
 import {
   retargetSubmitIntentForFollowUp,
   type ComposerFollowUpAction,
@@ -15,7 +16,10 @@ import {
 import { asHostId, findPendingInteraction } from "@opencraft/chat-core";
 import type { ChatResourceDecision } from "@opencraft/chat-render-web";
 import type { PlatformViewHost } from "@opencraft/extension-react";
-import type { TimelineSurfaceCapabilities } from "@opencraft/timeline-virtualizer";
+import type {
+  LatestTurnPlacementSnapshot,
+  TimelineSurfaceCapabilities,
+} from "@opencraft/timeline-virtualizer";
 import { useStableEvent } from "@opencraft/react-runtime";
 import {
   isRightPanelResponsiveBlocked,
@@ -26,7 +30,9 @@ import {
   createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
   draftSubmissionOwnsNavigation,
+  findHostConnectionInterventionError,
 } from "@opencraft/workbench-runtime";
+import { OPENCRAFT_THREAD_QUEUE_EXTENSION } from "@opencraft/appserver-protocol";
 import {
   lazy,
   Suspense,
@@ -40,6 +46,7 @@ import {
 } from "react";
 
 import { withBrowserAmbientContext } from "./browser/browser-ambient-context";
+import { useSettingsPresentation } from "./components/use-settings-presentation";
 import {
   useBrowserWorkbench,
 } from "./browser/browser-runtime-context";
@@ -87,6 +94,7 @@ import {
 } from "./appearance-theme";
 import { resolveBrowserAttachment } from "./runtime/browser-attachment-resolver";
 import { createAppServerMediaSourceLoader } from "./runtime/appserver-media-loader";
+import { useBlobResources, useImageProcessing } from "./runtime/appserver-runtime-context";
 import {
   buildDraftWorkspaceOptions,
   resolveProjectCwd,
@@ -217,6 +225,14 @@ export function App() {
   const conversationViewIdentity = useConversationViewIdentity();
   const conversationViewActivation = useConversationViewActivation();
   const snapshot = useAppServerSnapshot();
+  const queueExtension = runtime.resources.host.getInitializeResult()
+    ?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION];
+  const queueReorderable = !(
+    typeof queueExtension === "object" &&
+    queueExtension !== null &&
+    "reorder" in queueExtension &&
+    queueExtension.reorder === false
+  );
   const activeHost =
     hostCatalog.hosts.find((host) => host.hostId === snapshot.hostId) ??
     hostCatalog.hosts[0]!;
@@ -234,13 +250,15 @@ export function App() {
     [hostCatalog.hosts],
   );
   const queryClient = useQueryClient();
+  const blobs = useBlobResources();
+  const images = useImageProcessing();
   const loadMediaSource = useMemo(
     () =>
-      createAppServerMediaSourceLoader(runtime, queryClient, snapshot.hostId),
-    [queryClient, runtime, snapshot.hostId],
+      createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
+    [blobs, runtime, snapshot.hostId],
   );
   const resolveActiveHostAttachment = useCallback(
-    (file: File, pending: Parameters<typeof resolveBrowserAttachment>[1]) => {
+    (file: File, pending: Parameters<typeof resolveBrowserAttachment>[1], signal?: AbortSignal) => {
       const initialize = runtime.resources.host.getInitializeResult();
       return resolveBrowserAttachment(file, pending, {
         directory:
@@ -252,9 +270,9 @@ export function App() {
             ? null
             : (path, dataBase64) =>
                 runtime.resources.fileSystem.writeFile(path, dataBase64),
-      });
+      }, images, signal);
     },
-    [runtime],
+    [runtime, images],
   );
   const catalog = useThreadCatalog();
   const multiHostCatalog = useMultiHostThreadCatalog();
@@ -311,6 +329,23 @@ export function App() {
     ConversationRestoreSnapshot
   >;
   const conversationScrollApiRef = useRef<ConversationScrollApi | null>(null);
+  const pendingLatestTurnPlacementRef = useRef<LatestTurnPlacementSnapshot | null>(null);
+  const captureLatestTurnPlacement = useCallback(() => {
+    const placement = conversationScrollApiRef.current?.captureLatestTurnSubmitPlacement() ?? null;
+    pendingLatestTurnPlacementRef.current = placement;
+    return placement;
+  }, []);
+  const clearLatestTurnPlacement = useCallback((placement: LatestTurnPlacementSnapshot | null) => {
+    if (placement !== null && pendingLatestTurnPlacementRef.current === placement) {
+      pendingLatestTurnPlacementRef.current = null;
+      conversationScrollApiRef.current?.releaseLatestTurnSubmitPlacementCapture();
+    }
+  }, []);
+  const consumeLatestTurnPlacement = useCallback(() => {
+    const placement = pendingLatestTurnPlacementRef.current;
+    pendingLatestTurnPlacementRef.current = null;
+    return placement;
+  }, []);
   const activeThreadId = snapshot.activeThreadId;
   const workbenchNavigation = hostCatalog.navigation;
   const workbenchNavigationSnapshot = useSyncExternalStore(
@@ -322,6 +357,8 @@ export function App() {
   const canGoForward = workbenchNavigationSnapshot.canGoForward;
   const settingsOpen =
     workbenchNavigationSnapshot.applicationRoute.kind === "settings";
+  const settingsPresentation = useSettingsPresentation(sidebarWidth);
+  const shellSidebarOpen = settingsOpen ? settingsPresentation.showIndex : sidebarOpen;
   const extensionViewOpen =
     workbenchNavigationSnapshot.applicationRoute.kind === "extension-view";
   const conversationRouteOpen =
@@ -358,12 +395,29 @@ export function App() {
     openSettings: workbenchNavigation.openSettings,
     openView: workbenchNavigation.openExtensionView,
   });
+  const connectionIntervention = findHostConnectionInterventionError(
+    conversationViewActivation.error,
+  );
+  const activeHostProviderId = hostCatalog.profiles.find(
+    (profile) => profile.hostId === activeHost.hostId,
+  )?.providerId ?? null;
+  const connectionInterventionNode = connectionIntervention === null
+    || connectionIntervention.providerId !== activeHostProviderId
+    ? null
+    : extensionProjection.connectionInterventions.find(
+        (surface) => surface.providerId === connectionIntervention.providerId
+          && surface.intervention === connectionIntervention.code,
+      )?.node ?? null;
   useEffect(() => {
     if (extensionViewOpen && extensionProjection.activeView === null) {
       workbenchNavigation.closeExtensionView();
     }
   }, [extensionProjection.activeView, extensionViewOpen, workbenchNavigation]);
   const activeConversationRestoreKey = conversationViewIdentity.viewId;
+  useEffect(() => () => {
+    pendingLatestTurnPlacementRef.current = null;
+    conversationScrollApiRef.current?.releaseLatestTurnSubmitPlacementCapture();
+  }, [activeConversationRestoreKey]);
   const lastDraftWorkspaceRef = useRef(
     draft?.target.execution.workspace ?? {
       cwd: null,
@@ -392,7 +446,10 @@ export function App() {
   );
 
   const conversationResourceOwnerId = conversationViewIdentity.scopeId;
-  const panelOwnerId = conversationViewIdentity.viewId;
+  // Navigation entries are replaceable presentations of one conversation.
+  // Layout and resource tabs belong to the stable conversation, not that entry.
+  const panelOwnerId = conversationResourceOwnerId;
+  const panelPresentationId = conversationViewIdentity.viewId;
   const panelRuntime = useWorkbenchPanelRuntime();
   const browserWorkbench = useBrowserWorkbench();
   const panelState = useConversationPanelState(panelOwnerId);
@@ -483,8 +540,13 @@ export function App() {
       intent: SubmitIntent,
       context: { readonly followUpAction: ComposerFollowUpAction | null },
     ): boolean | Promise<boolean> => {
+      // Host connectivity gates command admission, never Draft editability.
+      // Re-check at the semantic boundary as the status can change between a
+      // rendered enabled button and its click handler.
+      if (snapshot.phase !== "ready") return false;
       const currentConversation = activeThreadLease?.getSnapshot() ?? null;
       let submittedIntent = intent;
+      let submittedPlacement: LatestTurnPlacementSnapshot | null = null;
       const followsActiveTurn =
         context.followUpAction !== null &&
         currentConversation?.activeTurn !== null &&
@@ -496,17 +558,28 @@ export function App() {
           currentConversation.activeTurn.turnId,
           context.followUpAction!,
         );
-      } else if (intent.target.type !== "new-thread") {
+      }
+      if (
+        intent.target.type !== "new-thread"
+        && (!followsActiveTurn || context.followUpAction === "steer")
+      ) {
         // The response may finish between the render and the click. In that
         // race the user's message becomes a normal next turn instead of being
-        // rejected or lost.
-        conversationScrollApiRef.current?.prepareLatestTurnSubmitPlacement();
+        // rejected or lost. Steering also creates a new latest Activity inside
+        // the same Turn, so it owns the identical placement transaction.
+        submittedPlacement = captureLatestTurnPlacement();
       }
-      submittedIntent = withBrowserAmbientContext(
-        submittedIntent,
-        browserWorkbench.listForOwner(conversationResourceOwnerId),
-      );
-      const submission = hostCatalog.submit(submittedIntent);
+      let submission: ReturnType<typeof hostCatalog.submit>;
+      try {
+        submittedIntent = withBrowserAmbientContext(
+          submittedIntent,
+          browserWorkbench.listForOwner(conversationResourceOwnerId),
+        );
+        submission = hostCatalog.submit(submittedIntent);
+      } catch (error) {
+        clearLatestTurnPlacement(submittedPlacement);
+        throw error;
+      }
 
       if (intent.target.type !== "new-thread") {
         // The active Conversation Runtime synchronously publishes an optimistic
@@ -515,9 +588,7 @@ export function App() {
         // not retain the same text in the EditorView while a remote Host (for
         // example Hermes over TAT) is still acknowledging the command.
         void submission.catch(() => {
-          if (!followsActiveTurn) {
-            conversationScrollApiRef.current?.clearPendingLatestTurnSubmitPlacement();
-          }
+          clearLatestTurnPlacement(submittedPlacement);
           // Failure presentation belongs to the Conversation Runtime's
           // optimistic item. A later Composer draft must remain untouched.
         });
@@ -529,9 +600,7 @@ export function App() {
       // immediately; thread creation, promotion and a failed first Turn are
       // projected by that same Scope instead of retaining duplicate editor text.
       void submission.catch(() => {
-        if (!followsActiveTurn) {
-          conversationScrollApiRef.current?.clearPendingLatestTurnSubmitPlacement();
-        }
+        clearLatestTurnPlacement(submittedPlacement);
       });
       return true;
     },
@@ -542,7 +611,10 @@ export function App() {
       conversationResourceOwnerId,
       queryClient,
       activeThreadLease,
+      captureLatestTurnPlacement,
+      clearLatestTurnPlacement,
       snapshot.hostId,
+      snapshot.phase,
     ],
   );
   const respondToInteraction = useCallback(
@@ -622,9 +694,9 @@ export function App() {
     [browserWorkbench, conversationResourceOwnerId, panelOwnerId],
   );
 
-  useEffect(() => {
-    browserWorkbench.bindView(conversationResourceOwnerId, panelOwnerId);
-  }, [browserWorkbench, conversationResourceOwnerId, panelOwnerId]);
+  useLayoutEffect(() => {
+    browserWorkbench.bindView(conversationResourceOwnerId, panelPresentationId);
+  }, [browserWorkbench, conversationResourceOwnerId, panelPresentationId]);
 
   const openChatResource = useCallback(
     (target: string, decision: ChatResourceDecision) => {
@@ -742,6 +814,7 @@ export function App() {
       draft?.target.execution.workspace.cwd ??
       activeHost.workspaceBrowseRoots[0] ??
       null,
+    draft === null ? activeThreadId : null,
   );
   const composerWorkspaceRoots = useMemo<readonly string[]>(() => {
     if (draft !== null) {
@@ -858,20 +931,28 @@ export function App() {
     draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ??
     null;
   const closeSettings = () => {
+    settingsPresentation.openContent();
     workbenchNavigation.closeSettings();
+  };
+  const selectSettingsSection = (section: string) => {
+    workbenchNavigation.openSettings(section);
+    settingsPresentation.openContent();
   };
   const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
       <SettingsNavigation
         section={settingsSection}
-        onSectionChange={workbenchNavigation.openSettings}
+        onSectionChange={selectSettingsSection}
         extensionContributions={hostCatalog.extensionContributions}
+        profiles={hostCatalog.profiles}
+        activeHostId={snapshot.hostId}
         onBack={closeSettings}
       />
     </Suspense>
   ) : null;
   const settingsRoute = settingsOpen ? (
-    <section className="settings-page" aria-label="Settings">
+    <section className="settings-page" aria-label="Settings" inert={settingsPresentation.indexOnly || undefined} aria-hidden={settingsPresentation.indexOnly || undefined}>
+      {settingsPresentation.compact ? <nav className="settings-page__compact-navigation" aria-label="Settings navigation"><button className="settings-navigation-link" type="button" onClick={settingsPresentation.openIndex}><span aria-hidden="true">‹</span>Settings</button></nav> : null}
       <Suspense
         fallback={
           <div className="settings-page-loading" role="status">
@@ -881,7 +962,7 @@ export function App() {
       >
         <SettingsContent
           section={settingsSection}
-          onSectionChange={workbenchNavigation.openSettings}
+          onSectionChange={selectSettingsSection}
           profiles={hostCatalog.profiles}
           activeHostId={snapshot.hostId}
           onAdd={hostCatalog.addWebSocketHost}
@@ -930,7 +1011,7 @@ export function App() {
             ? (activeThread?.project ?? "OpenCraft")
             : null
       }
-      sidebarOpen={settingsOpen || sidebarOpen}
+      sidebarOpen={shellSidebarOpen}
       rightPanelOpen={conversationRouteOpen && presentedRightPanelOpen}
       rightPanelFullWidth={conversationRouteOpen && presentedRightPanelFullWidth}
       showRightPanelAction={conversationRouteOpen}
@@ -948,9 +1029,12 @@ export function App() {
   return (
     <>
       <AppShell
-          sidebarOpen={settingsOpen || sidebarOpen}
+          layoutScope={`${workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
+          sidebarOpen={shellSidebarOpen}
+          sidebarTransientEnabled={!settingsOpen}
+          sidebarResizable={!settingsOpen}
           sidebarCollapsible={!settingsOpen}
-          sidebarWidth={sidebarWidth}
+          sidebarWidth={settingsOpen ? settingsPresentation.sidebarWidth : sidebarWidth}
           windowChrome={windowChrome}
           onSidebarCollapse={settingsOpen ? () => undefined : collapseSidebar}
           onSidebarExpand={expandSidebar}
@@ -982,6 +1066,23 @@ export function App() {
           leftPanel={
             settingsOpen ? settingsNavigation : <Sidebar
               threads={multiHostCatalog.threads}
+              renderTargetStatus={(hostId) => <TargetConnectionStatus hostId={hostId} />}
+              onNewTaskForTarget={(hostId) => hostCatalog.openDraft({
+                execution: {
+                  hostId: asHostId(hostId),
+                  workspace: { cwd: null, runtimeWorkspaceRoots: [] },
+                },
+                entrypoint: "new-chat",
+              })}
+              onOpenTargetSettings={(hostId) => {
+                const providerId = hostCatalog.profiles.find(
+                  (profile) => profile.hostId === hostId,
+                )?.providerId;
+                const settingsPageId = hostCatalog.connectionProviders.find(
+                  (provider) => provider.id === providerId,
+                )?.settingsPageId;
+                workbenchNavigation.openSettings(settingsPageId ?? "connections");
+              }}
               primaryActions={extensionProjection.primaryActions}
               footerActions={extensionProjection.footerActions}
               catalogs={extensionProjection.catalogs}
@@ -989,7 +1090,7 @@ export function App() {
               sidebarLayout={hostCatalog.sidebarLayout}
               botCreation={extensionProjection.botCreation}
               activeHostId={snapshot.hostId}
-              activeThreadId={activeThreadId ?? ""}
+              activeThreadId={draft === null ? activeThreadId ?? "" : ""}
               pendingHostId={
                 hostCatalog.pendingLocation?.kind === "thread"
                   ? hostCatalog.pendingLocation.key.hostId
@@ -1027,8 +1128,12 @@ export function App() {
           rightPanel={
             <RightPanel
               state={panelState}
+              presentationId={panelPresentationId}
               renderers={panelRenderers}
-              toolbarActions={panelToolbarActions}
+              // Route ownership gates launchers even while the panel's exit
+              // animation keeps its physical surface mounted. Do not unregister
+              // plugins or close their resources when entering Settings.
+              toolbarActions={conversationRouteOpen ? panelToolbarActions : []}
               toolbarActionContext={{
                 ownerId: panelOwnerId,
                 resourceOwnerId: conversationResourceOwnerId,
@@ -1092,7 +1197,11 @@ export function App() {
         ) : (
           <div className="local-conversation-page">
             {activeThreadLease === null ? (
-              <section className="conversation-hydration" role="status">
+              connectionInterventionNode !== null ? (
+                <div className="hostless-workbench__empty-stage">
+                  {connectionInterventionNode}
+                </div>
+              ) : <section className="conversation-hydration" role="status">
                 <span
                   className="conversation-hydration__pulse"
                   aria-hidden="true"
@@ -1125,6 +1234,7 @@ export function App() {
               </section>
             ) : (
               <Conversation
+                scrollPolicy="response-placement"
                 key={activeConversationRestoreKey ?? "empty"}
                 documentContext={{
                   conversationId: activeThreadId,
@@ -1135,6 +1245,7 @@ export function App() {
                   theme: appearanceTheme.resolvedTheme,
                 }}
                 timeline={timeline}
+                consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
                 navigationSource={navigationSource}
                 initialRestoreSnapshot={
                   activeThreadId === null
@@ -1160,10 +1271,9 @@ export function App() {
                 }}
                 continuableTurnId={snapshot.conversation?.continuation.turnId}
                 onContinueTurn={(turnId) => {
-                  const scrollApi = conversationScrollApiRef.current;
-                  scrollApi?.prepareLatestTurnSubmitPlacement();
+                  const placement = captureLatestTurnPlacement();
                   void activeThreadLease?.continueTurn(turnId).catch(() => {
-                    scrollApi?.clearPendingLatestTurnSubmitPlacement();
+                    clearLatestTurnPlacement(placement);
                   });
                 }}
                 onRespondInteraction={respondToInteraction}
@@ -1176,6 +1286,19 @@ export function App() {
                     className="thread-composer-region"
                     data-thread-find-composer="true"
                   >
+                    {!snapshot.conversation?.authoritative ? (
+                      <section className="conversation-hydration" role={snapshot.conversation?.error ? "alert" : "status"}>
+                        <div>
+                          <strong>{snapshot.conversation?.error ? "Could not restore this conversation" : "Restoring conversation"}</strong>
+                          <p>{snapshot.conversation?.error?.message ?? "Loading conversation history…"}</p>
+                        </div>
+                        {snapshot.conversation?.error ? (
+                          <button type="button" onClick={() => { void activeThreadLease?.retryRestore().catch(() => undefined); }}>
+                            Try again
+                          </button>
+                        ) : null}
+                      </section>
+                    ) : null}
                     {snapshot.conversation?.continuation.error ? (
                       <p role="alert">{snapshot.conversation.continuation.error.message}</p>
                     ) : null}
@@ -1183,6 +1306,7 @@ export function App() {
                       <CodexComposer
                         controller={composerController}
                         isStreaming={isStreaming}
+                        submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
                         queuePausedReason={
                           snapshot.conversation?.queue.pausedReason ?? null
                         }
@@ -1196,6 +1320,7 @@ export function App() {
                           state: submission.state,
                           operation: submission.operation,
                           actionable: submission.serverSubmissionId !== null,
+                          reorderable: queueReorderable,
                           editableContent: restoreQueuedInput(submission.input),
                           error: submission.error?.message ?? null,
                         }))}

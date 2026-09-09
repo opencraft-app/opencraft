@@ -24,6 +24,7 @@ const builtinTimelineRenderers: readonly TimelineBlockRendererRegistration[] = [
   { name: "automatic-approval-review", priority: 0, types: ["automatic-approval-review"], component: component.automaticApprovalReview },
   { name: "auto-review-warning", priority: 0, types: ["auto-review-interruption-warning"], component: component.autoReviewWarning },
   { name: "plan", priority: 0, types: ["plan"], component: component.plan },
+  { name: "plan-implementation", priority: 0, types: ["plan-implementation"], component: component["plan-implementation"] },
   { name: "todo", priority: 0, types: ["todo"], component: component.todo },
   { name: "subagent", priority: 0, types: ["subagent"], component: component.subagent },
   { name: "interaction", priority: 0, types: ["approval", "question", "option-picker", "elicitation"], component: component.interaction },

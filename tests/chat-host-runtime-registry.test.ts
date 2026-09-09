@@ -96,6 +96,24 @@ function registration(hostId: string, runtime: FakeHostRuntime) {
   };
 }
 
+test("passive Host observation does not create a runtime and sees its later creation", async () => {
+  const registry = new HostRuntimeRegistry<FakeHostRuntime>();
+  const runtime = new FakeHostRuntime("remote");
+  registry.register(registration("remote", runtime));
+  let notifications = 0;
+  const unsubscribe = registry.subscribe(() => { notifications++; });
+  assert.equal(registry.peekRuntime("remote"), null);
+  assert.equal(runtime.starts, 0);
+  assert.equal(notifications, 0);
+  assert.equal(registry.getRuntime("remote"), runtime);
+  assert.equal(notifications, 1);
+  registry.getRuntime("remote");
+  assert.equal(notifications, 1);
+  assert.equal(runtime.starts, 0);
+  unsubscribe();
+  await registry.dispose();
+});
+
 test("Host registry is a lazy runtime index with deduplicated startup", async () => {
   const local = new FakeHostRuntime("local", true);
   const remote = new FakeHostRuntime("remote");
@@ -139,7 +157,7 @@ test("Host registry dynamically publishes registration and fences a removed in-f
     assert.throws(() => registry.getRuntime("remote"), /Unknown Host/u);
     remote.release();
     await assert.rejects(connecting, /removed during connection/u);
-    assert.deepEqual(revisions, [1, 2]);
+    assert.deepEqual(revisions, [1, 2, 3], "registration, runtime creation, removal");
   } finally {
     removeListener();
     await registry.dispose();
@@ -177,11 +195,16 @@ test("Connection provider retirement waits for Host-owned leases and rejects new
   const unregister = registry.register("vela.test", {
     id: "vela.test.websocket",
     label: "Test socket",
+    settingsPageId: "vela.test.settings",
     targets: ["web"],
     configVersion: 1,
     validate: (config) => config,
     createTransport: () => transport,
   });
+  assert.equal(
+    registry.getSnapshot().providers[0]?.settingsPageId,
+    "vela.test.settings",
+  );
   const lease = registry.acquire("vela.test.websocket", "web");
   let retired = false;
   const retirement = unregister().then(() => { retired = true; });
@@ -196,6 +219,19 @@ test("Connection provider retirement waits for Host-owned leases and rejects new
   await retirement;
   assert.equal(retired, true);
   await registry.close();
+});
+
+test("Connection providers reject an empty target settings identity", () => {
+  const registry = new HostConnectionProviderRegistry();
+  assert.throws(() => registry.register("vela.test", {
+    id: "vela.test.invalid-settings",
+    label: "Invalid settings",
+    settingsPageId: "   ",
+    targets: ["web"],
+    configVersion: 1,
+    validate: (config) => config,
+    createTransport: () => { throw new Error("unreachable"); },
+  }), /empty settings page ID/u);
 });
 
 test("Host profile boundary separates transport provider from semantic Host kind", () => {

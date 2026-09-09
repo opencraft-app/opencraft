@@ -150,6 +150,7 @@ test("V3 source enumerates lightweight Turns and hydrates only the hovered Turn"
   };
   let view: ThreadView = {
     ...createEmptyThreadView("ssh:fixture", "thread-one"),
+    resumeState: "resumed",
     connectionGeneration: 7,
     turns: [turn("turn-3", "Newest", "latest response")],
   };
@@ -267,7 +268,7 @@ test("V3 source enumerates lightweight Turns and hydrates only the hovered Turn"
 });
 
 test("V3 source fails closed when the bounded prompt-index scan is incomplete", async () => {
-  const view = createEmptyThreadView("local", "long-thread");
+  const view = { ...createEmptyThreadView("local", "long-thread"), resumeState: "resumed" as const };
   const source = createCodexV3ConversationNavigationSource({
     threadId: "long-thread",
     maxPages: 2,

@@ -80,6 +80,7 @@ export interface ChatResourceDecision {
 }
 
 export interface ChatMediaSourceRequest {
+  readonly signal?: AbortSignal;
   readonly source: string;
   readonly resolvedTarget: string;
   readonly resourceKind: ChatResourceKind;
@@ -90,6 +91,7 @@ export interface ChatMediaSourceRequest {
 }
 
 export interface ChatMediaSourceResult {
+  readonly release?: () => void;
   /** Browser-readable `data:`, `blob:`, or HTTP(S) source. */
   readonly source: string;
 }

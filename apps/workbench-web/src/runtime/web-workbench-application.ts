@@ -123,11 +123,20 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       browserToolHost,
       conversationBindings,
       cordis,
-      (scopeId) => browserWorkbench.disposeOwner(scopeId),
-      (viewId) => {
-        panelRuntime.panels.releaseOwner(viewId);
-        browserWorkbench.releaseView(viewId);
+      (scopeId) => {
+        panelRuntime.panels.releaseOwner(scopeId);
+        const binding = conversationBindings.resolve(
+          scopeId as Parameters<typeof conversationBindings.resolve>[0],
+        );
+        // A bound Thread outlives its evictable UI cache. An unbound Draft has
+        // been dismissed, so its application resources have no reconstruction key.
+        if (binding?.conversationKey === null) {
+          browserWorkbench.disposeOwner(scopeId);
+          terminalSessions?.releaseOwner(scopeId);
+          conversationBindings.remove(binding.scopeId);
+        }
       },
+      (viewId) => browserWorkbench.releaseView(viewId),
     );
     if (supervisor.mode === "active") {
       const activeSupervisor = supervisor;
@@ -141,7 +150,6 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       await panelRuntime.install(
         createTerminalWorkbenchPanelPlugin(terminalSessions),
       );
-      browserWorkbench.attachScopeLeases(supervisor.conversationLeases);
       browserWorkbench.restorePersistedTabs();
     }
   } catch (error) {

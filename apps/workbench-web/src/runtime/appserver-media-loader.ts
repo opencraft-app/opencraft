@@ -1,4 +1,5 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { BlobResourceService } from "@opencraft/blob-resources";
+import { acquireFileBlob, fileBlobUrls } from "./blob-files";
 import type { ChatMediaSourceLoader } from "@opencraft/chat-render-web";
 import type { AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 
@@ -32,26 +33,22 @@ export function mediaMimeType(path: string): string {
 }
 
 /**
- * Codex-equivalent host boundary: React renders media state, TanStack owns
- * deduplication/lifetime, and AppServer remains the only filesystem authority.
+ * React owns a consumer lease; the Cordis Blob service owns shared downloads
+ * and cache policy. AppServer remains the only filesystem authority.
  */
 export function createAppServerMediaSourceLoader(
   runtime: AppServerWorkbenchRuntime,
-  queryClient: QueryClient,
+  blobs: BlobResourceService,
   hostId: string,
 ): ChatMediaSourceLoader {
-  return async ({ resolvedTarget }) => {
+  return async ({ resolvedTarget, signal }) => {
     const path = appServerMediaPath(resolvedTarget);
     if (path === null) return null;
-    const response = await queryClient.fetchQuery({
-      queryKey: ["markdown-media", hostId, path],
-      queryFn: () => runtime.resources.fileSystem.readFile(path),
-      staleTime: Infinity,
-      gcTime: 15_000,
-    });
-    if (response.dataBase64.length === 0) return null;
-    return {
-      source: `data:${mediaMimeType(path)};base64,${response.dataBase64}`,
-    };
+    const lease = acquireFileBlob(blobs, runtime, hostId, path, { signal, priority: 1 });
+    try {
+      const blob = await lease.promise;
+      if (blob.size === 0) return null;
+      return fileBlobUrls.acquire(blob.slice(0, blob.size, mediaMimeType(path)));
+    } finally { lease.release(); }
   };
 }

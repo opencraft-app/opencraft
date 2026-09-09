@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { prepareDshRuntime } from "../scripts/prepare-dsh-runtime.mjs";
 import checkDesktopTarget from "../scripts/check-desktop-target.cjs";
+import { providerLifecycleEdits, patchDshProviderLifecycle } from "../scripts/patch-dsh-provider-lifecycle.mjs";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "opencraft-dsh-test-"));
@@ -26,9 +27,25 @@ async function fixture(t) {
     await mkdir(join(entry, "lib"), { recursive: true });
     await writeFile(join(entry, "package.json"), '{"version":"0.1.1-rc.2"}');
     await writeFile(join(entry, "lib/bin.js"), "// fixture");
+    const pi = join(runtime, "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib");
+    await mkdir(pi, { recursive: true });
+    await writeFile(join(pi, "index.js"), providerLifecycleEdits.map(([before]) => before).join("\n"));
   }
   return { root, runtime, install, installs: () => installs };
 }
+
+test("provider lifecycle patch is idempotent and rejects upstream drift", async t => {
+  const f = await fixture(t);
+  await f.install(f.runtime);
+  await patchDshProviderLifecycle(f.runtime);
+  const path = join(f.runtime, "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js");
+  const once = await readFile(path, "utf8");
+  await patchDshProviderLifecycle(f.runtime);
+  assert.equal(await readFile(path, "utf8"), once);
+  await writeFile(path, "// unsupported upstream revision");
+  await assert.rejects(patchDshProviderLifecycle(f.runtime), /no longer matches/);
+  assert.equal(await readFile(path, "utf8"), "// unsupported upstream revision");
+});
 
 test("missing manifest fails before npm can fall back to the root project", async t => {
   const f = await fixture(t);

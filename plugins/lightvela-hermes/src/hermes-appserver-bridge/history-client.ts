@@ -6,10 +6,11 @@ export interface HermesHistoryPageRequest {
   readonly offset: number;
   readonly order: "latest" | "oldest";
   readonly includeCompacted: boolean;
+  readonly profile?: string | null;
 }
 
 export interface HermesHistoryClient {
-  readMessages(sessionId: string, request: HermesHistoryPageRequest): Promise<HermesMessagesPage>;
+  readMessages(sessionId: string, request: HermesHistoryPageRequest, signal?: AbortSignal): Promise<HermesMessagesPage>;
   dispose(): void;
 }
 
@@ -22,16 +23,18 @@ export class HermesDashboardHistoryClient implements HermesHistoryClient {
     private readonly sessionToken: string,
   ) {}
 
-  async readMessages(sessionId: string, request: HermesHistoryPageRequest): Promise<HermesMessagesPage> {
+  async readMessages(sessionId: string, request: HermesHistoryPageRequest, signal?: AbortSignal): Promise<HermesMessagesPage> {
+    signal?.throwIfAborted();
     const query = new URLSearchParams({
       limit: String(Math.min(Math.max(Math.floor(request.limit), 1), 500)),
       offset: String(Math.max(Math.floor(request.offset), 0)),
       order: request.order,
       include_compacted: String(request.includeCompacted),
     });
+    if (request.profile) query.set("profile", request.profile);
     return this.client.fetchJson<HermesMessagesPage>(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages?${query.toString()}`,
-      { headers: { "x-hermes-session-token": this.sessionToken } },
+      { headers: { "x-hermes-session-token": this.sessionToken }, signal },
     );
   }
 

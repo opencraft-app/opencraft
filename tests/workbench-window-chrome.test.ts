@@ -9,6 +9,12 @@ import {
   resolveWindowChrome,
 } from "../apps/workbench-web/src/window-chrome";
 
+test("workspace panel launchers follow route visibility, not panel animation lifetime", () => {
+  const app = readFileSync(new URL("../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
+  assert.match(app, /toolbarActions=\{conversationRouteOpen \? panelToolbarActions : \[\]\}/);
+  assert.match(app, /rightPanelOpen=\{conversationRouteOpen && presentedRightPanelOpen\}/);
+});
+
 test("renderer host identity is installed above body for the viewport contract", () => {
   const root = { dataset: {} as DOMStringMap };
 

@@ -147,7 +147,22 @@ test("responsive suppression is Window-owned and never mutates Conversation pane
   assert.equal(open.right.open, true, "viewport policy cannot rewrite Conversation state");
 });
 
-test("closing the last tab exits full-width mode", () => {
+test("an open empty outlet can maximize and restore without manufacturing a tab", () => {
+  let state = createConversationPanelState({ ownerId: "empty" });
+  state = reduceConversationPanelState(state, { type: "set-region-open", region: "right", open: true, reason: "manual", allowEmpty: true });
+  state = reduceConversationPanelState(state, { type: "toggle-right-full-width" });
+  assert.equal(state.rightPanelFullWidth, true);
+  assert.equal(state.right.open, true);
+  assert.equal(state.right.tabs.length, 0);
+  state = reduceConversationPanelState(state, { type: "toggle-right-full-width" });
+  assert.equal(state.rightPanelFullWidth, false);
+  assert.equal(state.right.open, true);
+  state = reduceConversationPanelState(state, { type: "toggle-right-full-width" });
+  state = reduceConversationPanelState(state, { type: "set-region-open", region: "right", open: false, reason: "manual" });
+  assert.equal(state.rightPanelFullWidth, false);
+});
+
+test("closing the last tab preserves the outlet and its width for the launcher", () => {
   let state = createConversationPanelState({
     ownerId: "thread-a",
     initialTabs: [tab("changes")],
@@ -159,8 +174,10 @@ test("closing the last tab exits full-width mode", () => {
     region: "right",
     tabId: "changes",
   });
-  assert.equal(state.right.open, false);
-  assert.equal(state.rightPanelFullWidth, false);
+  assert.equal(state.right.open, true);
+  assert.equal(state.rightPanelFullWidth, true);
+  assert.equal(state.right.activeTabId, null);
+  assert.equal(state.right.tabs.length, 0);
 });
 
 test("Codex may reveal an empty right-panel outlet without inventing a tab", () => {
@@ -218,7 +235,7 @@ test("Codex right panel geometry retains content reserve and magnetic shelf", ()
   );
 });
 
-test("Cordis panel service keeps independent Conversation View projections", async () => {
+test("Cordis panel service keeps independent Conversation Scope projections", async () => {
   const context = new Context();
   const fiber = context.plugin(WorkbenchPanelService, {
     defaultRightPanelOpen: true,
@@ -294,7 +311,7 @@ test("panel toolbar actions are plugin-owned, ordered contributions", async () =
   await fiber.dispose();
 });
 
-test("logical panel state remains attached to one stable Conversation View", async () => {
+test("logical panel state remains attached to one stable Conversation Scope", async () => {
   const context = new Context();
   const fiber = context.plugin(WorkbenchPanelService);
   await fiber;

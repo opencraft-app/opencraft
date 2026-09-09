@@ -144,6 +144,16 @@ export function extractMarkdownSelection(
   return { htmlText: serializeFragment(root.ownerDocument, output), plainText };
 }
 
+/** Copy a rendered message without touching the user's selection. */
+export function extractMarkdownElement(root: HTMLElement): MarkdownClipboardContent {
+  const fragment = root.ownerDocument.createDocumentFragment();
+  for (const child of Array.from(root.childNodes)) {
+    const rebuilt = rebuildNode(root.ownerDocument, child);
+    if (rebuilt !== null) fragment.append(rebuilt);
+  }
+  return { htmlText: serializeFragment(root.ownerDocument, fragment), plainText: collectText(fragment).trim() };
+}
+
 export function handleMarkdownCopy(event: ClipboardEvent, root: HTMLElement): void {
   if (event.defaultPrevented || event.clipboardData === null) return;
   const content = extractMarkdownSelection(root);

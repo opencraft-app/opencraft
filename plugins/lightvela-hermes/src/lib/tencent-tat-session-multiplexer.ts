@@ -22,6 +22,9 @@ export interface TsshProxyClientOptions {
   onStateChange?: (state: TsshProxyClientState) => void;
   onError?: (message: string) => void;
   onClose?: (event: CloseEvent) => void;
+  /** Reports evidence, never schedules or performs a new TAT session. */
+  onUnhealthy?: () => void;
+  diagnosticContext?: { readonly hostId: string; readonly generation: number };
 }
 
 export interface TsshProxyTarget {
@@ -212,7 +215,7 @@ export class TencentTatProxyConnection {
   }
 
   receive(data: Uint8Array) {
-    if (this.state === "closed") {
+    if (this.state === "closed" || this.state === "error") {
       return;
     }
     this.handlers.onData?.(data);
@@ -225,7 +228,9 @@ export class TencentTatProxyConnection {
     }
     this.setState("error");
     this.handlers.onError?.(error.message);
-    this.controller?.error(error);
+    const controller = this.controller;
+    this.controller = null;
+    controller?.error(error);
     this.rejectClosed?.(error);
   }
 
@@ -234,7 +239,9 @@ export class TencentTatProxyConnection {
       return;
     }
     this.setState("closed");
-    this.controller?.close();
+    const controller = this.controller;
+    this.controller = null;
+    controller?.close();
     this.handlers.onClose?.();
     this.resolveClosed?.();
   }
@@ -260,6 +267,9 @@ export class TencentTatSessionMultiplexer {
   private rejectPtyReady: ((error: Error) => void) | null = null;
   private ptyReadyTimer: ReturnType<typeof setTimeout> | null = null;
   private lastInboundSequence = -1;
+  private inboundRevision = 0;
+  private healthProbe: Promise<void> | null = null;
+  private retired = false;
 
   private readonly connectDelayMs: number;
   private readonly requestTimeoutMs: number;
@@ -297,6 +307,7 @@ export class TencentTatSessionMultiplexer {
   }
 
   connect() {
+    if (this.retired) return Promise.reject(new Error("TAT tunnel is retired"));
     if (this.readyPromise) {
       if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
         return this.readyPromise;
@@ -432,7 +443,7 @@ export class TencentTatSessionMultiplexer {
     return this.readyPromise;
   }
 
-  async openProxy(target: TsshProxyTarget, handlers: TsshProxyConnectionHandlers = {}) {
+  async openProxy(target: TsshProxyTarget, handlers: TsshProxyConnectionHandlers = {}, healthProbe = false) {
     await this.connect();
     const proxyId = target.proxyId ?? makeProxyId();
     const channelId = target.channelId ?? proxyId;
@@ -459,6 +470,8 @@ export class TencentTatSessionMultiplexer {
         }, error);
         connection.fail(error);
         reject(error);
+        this.sendBson("PtyProxyClose", channelId, { ProxyId: proxyId });
+        if (!healthProbe) this.checkHealth(target);
       }, this.requestTimeoutMs);
 
       this.pending.set(proxyId, { proxyId, resolve, reject, timer, connection });
@@ -486,6 +499,31 @@ export class TencentTatSessionMultiplexer {
         reject(error);
       }
     });
+  }
+
+  private checkHealth(target: TsshProxyTarget): void {
+    if (this.retired || this.healthProbe !== null) return;
+    const inboundRevision = this.inboundRevision;
+    console.log("[tat-health] suspect", { ...this.options.diagnosticContext, reason: "open_proxy_timeout", targetPort: target.port });
+    // A fresh logical TCP channel checks the existing tunnel without minting a
+    // session, touching the PTY, or replaying the failed business request.
+    const operation = this.openProxy({ ip: target.ip, port: target.port }, {}, true)
+      .then(connection => {
+        connection.close();
+        if (!this.retired) console.log("[tat-health] recovered", { ...this.options.diagnosticContext, evidence: "proxy_ready" });
+      }, () => {
+        if (this.retired) return;
+        if (this.inboundRevision !== inboundRevision) {
+          console.log("[tat-health] degraded", { ...this.options.diagnosticContext, reason: "proxy_unavailable_but_tunnel_receiving" });
+          return;
+        }
+        console.log("[tat-health] unhealthy", { ...this.options.diagnosticContext, reason: "probe_failed_without_inbound_progress" });
+        this.close();
+        this.options.onUnhealthy?.();
+      }).finally(() => {
+        if (this.healthProbe === operation) this.healthProbe = null;
+      });
+    this.healthProbe = operation;
   }
 
   /**
@@ -566,6 +604,15 @@ export class TencentTatSessionMultiplexer {
   }
 
   close() {
+    if (this.retired) return;
+    this.retired = true;
+    const error = new TatTransportError("connection_lost", "TAT tunnel retired", { phase: "websocket" });
+    for (const pending of this.pending.values()) {
+      globalThis.clearTimeout(pending.timer);
+      pending.connection.fail(error);
+      pending.reject(error);
+    }
+    this.pending.clear();
     for (const connection of this.connections.values()) {
       this.closeProxy(connection);
     }
@@ -582,6 +629,7 @@ export class TencentTatSessionMultiplexer {
   private async handleMessage(data: string | Blob | ArrayBuffer) {
     try {
       const message = await decodeTencentTatFrame(data);
+      if (this.retired) return;
       const sequence = isRecord(message) && typeof message.Seq === "number"
         ? message.Seq
         : null;
@@ -590,6 +638,7 @@ export class TencentTatSessionMultiplexer {
         this.lastInboundSequence = sequence;
       }
       const type = getFrameType(message);
+      this.inboundRevision += 1;
       const envelope = getEnvelope(message);
       const payload = getPayload(message);
 
@@ -648,6 +697,9 @@ export class TencentTatSessionMultiplexer {
         const proxyId = asString(payload?.ProxyId);
         const pending = this.pending.get(proxyId);
         if (!pending) {
+          if (!this.connections.has(proxyId)) {
+            this.sendBson("PtyProxyClose", asString(envelope?.ChannelId, proxyId), { ProxyId: proxyId });
+          }
           return;
         }
         globalThis.clearTimeout(pending.timer);

@@ -12,7 +12,6 @@ import { createConversationKey, encodeConversationKey } from "@opencraft/chat-co
 import type { WorkbenchPanelService } from "@opencraft/workbench-panels";
 import {
   type ConversationBindingStore,
-  type ConversationScopeLeaseRegistry,
   type ConversationScopeId,
 } from "@opencraft/workbench-runtime";
 
@@ -44,12 +43,10 @@ export class BrowserWorkbenchCoordinator {
   private readonly tabs = new Map<BrowserTabId, BrowserTabSnapshot>();
   private readonly tabListeners = new Map<BrowserTabId, Set<() => void>>();
   private readonly pageSubscriptions = new Map<BrowserTabId, () => void>();
-  private readonly tabRetainers = new Map<BrowserTabId, () => void>();
-  private readonly presentationViews = new Map<BrowserTabId, Set<string>>();
+  /** Panel projections are cache entries. Browser tabs remain application-owned. */
+  private readonly panelOwners = new Map<BrowserTabId, Set<string>>();
   private readonly scopeByView = new Map<string, ConversationScopeId>();
-  private readonly preferredViewByScope = new Map<ConversationScopeId, string>();
   private readonly closingTabs = new Set<BrowserTabId>();
-  private leases: ConversationScopeLeaseRegistry | null = null;
 
   constructor(
     private readonly pages: WebBrowserPageRuntime,
@@ -57,12 +54,6 @@ export class BrowserWorkbenchCoordinator {
     private readonly bindings: ConversationBindingStore,
   ) {
     this.restoreTabs();
-  }
-
-  attachScopeLeases(leases: ConversationScopeLeaseRegistry): void {
-    if (this.leases !== null && this.leases !== leases)
-      throw new Error("Browser Workbench already belongs to another Conversation Scope registry");
-    this.leases = leases;
   }
 
   getTabSnapshot = (tabId: BrowserTabId): BrowserTabSnapshot | null =>
@@ -105,34 +96,27 @@ export class BrowserWorkbenchCoordinator {
     const currentScope = this.scopeByView.get(viewId);
     if (currentScope !== undefined && currentScope !== scopeId)
       throw new Error(`Browser View ${viewId} already belongs to Scope ${currentScope}`);
-    if (this.leases?.get(scopeId) === null)
-      throw new Error(`Conversation Scope ${scopeId} is unavailable`);
     this.scopeByView.set(viewId, scopeId);
-    this.preferredViewByScope.set(scopeId, viewId);
+    // Panel definitions reconstruct their cache from this resource directory.
+    // Binding a physical View must not activate, reorder, or reopen a tab.
+    this.panels.ensureOwner(scopeId);
     for (const { tab } of this.listForOwner(scopeId)) {
-      this.presentTab(viewId, tab.id, false);
+      const owners = this.panelOwners.get(tab.id) ?? new Set<string>();
+      owners.add(scopeId);
+      this.panelOwners.set(tab.id, owners);
       this.observeTab(tab.id);
     }
   }
 
-  releasePresentation(viewId: string, tabId: BrowserTabId, closeWhenUnpresented = false): void {
-    const views = this.presentationViews.get(tabId);
-    if (views === undefined) return;
-    views.delete(viewId);
-    if (views.size !== 0) return;
-    this.presentationViews.delete(tabId);
-    if (closeWhenUnpresented && !this.closingTabs.has(tabId)) this.destroyTab(tabId);
+  releasePanel(ownerId: string, tabId: BrowserTabId, closeResource = false): void {
+    const owners = this.panelOwners.get(tabId);
+    owners?.delete(ownerId);
+    if (owners?.size === 0) this.panelOwners.delete(tabId);
+    if (closeResource && !this.closingTabs.has(tabId)) this.destroyTab(tabId);
   }
 
   releaseView(viewId: string): void {
-    const scopeId = this.scopeByView.get(viewId);
     this.scopeByView.delete(viewId);
-    if (scopeId !== undefined && this.preferredViewByScope.get(scopeId) === viewId)
-      this.preferredViewByScope.delete(scopeId);
-    for (const [tabId, views] of this.presentationViews) {
-      views.delete(viewId);
-      if (views.size === 0) this.presentationViews.delete(tabId);
-    }
   }
 
   scopeForThread(context: BrowserDynamicToolContext): ConversationScopeId {
@@ -191,9 +175,8 @@ export class BrowserWorkbenchCoordinator {
       tab = this.requireOwnedTab(ownerId, options.tabId).tab;
     }
     try {
-      const panelOwnerId = options.panelOwnerId
-        ?? this.preferredViewByScope.get(ownerId as ConversationScopeId);
-      const panelTab = panelOwnerId === undefined ? null : this.presentTab(panelOwnerId, tab.id, true);
+      const panelOwnerId = options.panelOwnerId ?? ownerId;
+      const panelTab = this.presentTab(panelOwnerId, tab.id, true);
       this.observeTab(tab.id);
       if (!created && normalizedUrl !== undefined) this.pages.navigate(tab.pageId, normalizedUrl);
       return { tabId: tab.id, pageId: tab.pageId, tab: panelTab };
@@ -214,30 +197,29 @@ export class BrowserWorkbenchCoordinator {
         this.destroyTab(tab.id);
         continue;
       }
-      if (this.leases !== null && this.leases.get(scopeId) !== null) this.observeTab(tab.id);
+      this.observeTab(tab.id);
     }
   }
 
   close(ownerId: string, tabId: BrowserTabId): void {
     this.requireOwnedTab(ownerId, tabId);
     this.closingTabs.add(tabId);
-    const views = [...(this.presentationViews.get(tabId) ?? [])];
-    this.presentationViews.delete(tabId);
-    for (const viewId of views) this.panels.close(viewId, "right", `browser:${tabId}`);
+    const panelOwners = [...(this.panelOwners.get(tabId) ?? [])];
+    this.panelOwners.delete(tabId);
+    for (const panelOwnerId of panelOwners)
+      this.panels.close(panelOwnerId, "right", `browser:${tabId}`);
     this.closingTabs.delete(tabId);
     this.destroyTab(tabId);
   }
 
   disposeOwner(ownerId: string): void {
     for (const { tab } of [...this.listForOwner(ownerId)]) this.close(ownerId, tab.id);
-    this.preferredViewByScope.delete(ownerId as ConversationScopeId);
   }
 
   dispose(): void {
     for (const tabId of [...this.tabs.keys()]) this.stopObserving(tabId);
-    this.presentationViews.clear();
+    this.panelOwners.clear();
     this.scopeByView.clear();
-    this.preferredViewByScope.clear();
     this.tabListeners.clear();
   }
 
@@ -253,8 +235,8 @@ export class BrowserWorkbenchCoordinator {
     const synchronize = () => {
       const page = this.pages.getSnapshot(tab.pageId);
       if (page === null) return;
-      for (const viewId of this.presentationViews.get(tabId) ?? []) {
-        this.panels.dispatch(viewId, {
+      for (const panelOwnerId of this.panelOwners.get(tabId) ?? []) {
+        this.panels.dispatch(panelOwnerId, {
           type: "update-tab",
           region: "right",
           tabId: `browser:${tabId}`,
@@ -263,24 +245,19 @@ export class BrowserWorkbenchCoordinator {
       }
     };
     this.pageSubscriptions.set(tabId, this.pages.subscribe(tab.pageId, synchronize));
-    const scopeId = tab.ownerId as ConversationScopeId;
-    if (!this.tabRetainers.has(tabId) && this.leases !== null && this.leases.get(scopeId) !== null)
-      this.tabRetainers.set(tabId, this.leases.retain(scopeId, `browser-tab:${tabId}`));
     synchronize();
   }
 
   private stopObserving(tabId: BrowserTabId): void {
     this.pageSubscriptions.get(tabId)?.();
     this.pageSubscriptions.delete(tabId);
-    this.tabRetainers.get(tabId)?.();
-    this.tabRetainers.delete(tabId);
   }
 
   private destroyTab(tabId: BrowserTabId): void {
     const tab = this.tabs.get(tabId);
     if (tab === undefined) return;
     this.stopObserving(tabId);
-    this.presentationViews.delete(tabId);
+    this.panelOwners.delete(tabId);
     this.tabs.delete(tabId);
     this.tabListeners.get(tabId)?.clear();
     this.tabListeners.delete(tabId);
@@ -289,16 +266,19 @@ export class BrowserWorkbenchCoordinator {
     this.persistTabs();
   }
 
-  private presentTab(viewId: string, tabId: BrowserTabId, activate: boolean) {
-    const scopeId = this.scopeByView.get(viewId);
+  private presentTab(panelOwnerId: string, tabId: BrowserTabId, activate: boolean) {
     const tab = this.requireTab(tabId);
-    if (scopeId === undefined) throw new Error(`Browser View ${viewId} is not bound`);
-    if (tab.ownerId !== scopeId)
-      throw new Error(`Browser tab ${tabId} does not belong to View ${viewId}`);
-    const panelTab = this.panels.open(viewId, "browser", { browserTabId: tabId }, { activate });
-    const views = this.presentationViews.get(tabId) ?? new Set<string>();
-    views.add(viewId);
-    this.presentationViews.set(tabId, views);
+    if (tab.ownerId !== panelOwnerId)
+      throw new Error(`Browser tab ${tabId} does not belong to panel owner ${panelOwnerId}`);
+    const panelTab = this.panels.open(
+      panelOwnerId,
+      "browser",
+      { browserTabId: tabId },
+      { activate },
+    );
+    const owners = this.panelOwners.get(tabId) ?? new Set<string>();
+    owners.add(panelOwnerId);
+    this.panelOwners.set(tabId, owners);
     return panelTab;
   }
 

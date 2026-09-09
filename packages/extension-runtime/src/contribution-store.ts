@@ -150,13 +150,41 @@ function validateSettingsPage(owner: ExtensionActivationIdentity, value: Setting
   assertOwnedContributionId(owner.extensionId, value.id);
   assertOwnedContributionId(owner.extensionId, value.viewId);
   requireLabel(value.title, `Settings page ${value.id} title`);
+  if (value.layout !== undefined && value.layout !== "document" && value.layout !== "master-detail") throw new RangeError("Invalid settings page layout");
+  if (value.management !== undefined) {
+    assertOwnedContributionId(owner.extensionId, value.management.familyId);
+    if (value.management.scope !== "agent" && value.management.scope !== "host") {
+      throw new RangeError(`Settings page ${value.id} has an invalid management scope`);
+    }
+  }
 }
 
 function validateWorkbenchSurface(owner: ExtensionActivationIdentity, value: WorkbenchSurfaceContribution): void {
-  assertOwnedContributionId(owner.extensionId, value.id);
-  assertOwnedContributionId(owner.extensionId, value.viewId);
-  if (value.surface !== "empty-workbench") {
-    throw new RangeError(`Workbench surface ${value.id} has an invalid surface`);
+  // Contributions can originate in dynamically loaded JavaScript; validate a
+  // structural view even though trusted TypeScript callers receive the tighter
+  // discriminated union.
+  const candidate = value as {
+    readonly id: string;
+    readonly viewId: string;
+    readonly surface: string;
+    readonly providerId?: string;
+    readonly intervention?: string;
+  };
+  assertOwnedContributionId(owner.extensionId, candidate.id);
+  assertOwnedContributionId(owner.extensionId, candidate.viewId);
+  if (candidate.surface !== "empty-workbench" && candidate.surface !== "host-connection-intervention") {
+    throw new RangeError(`Workbench surface ${candidate.id} has an invalid surface`);
+  }
+  if (candidate.surface === "host-connection-intervention") {
+    if (candidate.providerId === undefined) {
+      throw new RangeError(`Workbench surface ${candidate.id} requires a provider ID`);
+    }
+    assertOwnedContributionId(owner.extensionId, candidate.providerId);
+    if (candidate.intervention !== "authentication-required" && candidate.intervention !== "configuration-required") {
+      throw new RangeError(`Workbench surface ${candidate.id} has an invalid intervention`);
+    }
+  } else if (candidate.providerId !== undefined || candidate.intervention !== undefined) {
+    throw new RangeError(`Workbench surface ${candidate.id} cannot target a provider intervention`);
   }
 }
 
@@ -289,6 +317,18 @@ function freezeBot(value: BotContribution): BotContribution {
     avatar: Object.freeze({ ...value.avatar }),
     action: Object.freeze({ ...value.action }),
     ...(value.platforms === undefined ? {} : { platforms: Object.freeze([...value.platforms]) }),
+  });
+}
+
+function freezeSettingsPage(value: SettingsPageContribution): SettingsPageContribution {
+  return Object.freeze({
+    ...value,
+    ...(value.management === undefined
+      ? {}
+      : { management: Object.freeze({ ...value.management }) }),
+    ...(value.platforms === undefined
+      ? {}
+      : { platforms: Object.freeze([...value.platforms]) }),
   });
 }
 
@@ -435,7 +475,7 @@ export class ExtensionContributionStore {
         this.sidebarCatalogs.set(contribution.id, { owner, contribution: freezePlatforms(contribution) });
       }
       for (const contribution of batch.settingsPages) {
-        this.settingsPages.set(contribution.id, { owner, contribution: freezePlatforms(contribution) });
+        this.settingsPages.set(contribution.id, { owner, contribution: freezeSettingsPage(contribution) });
       }
       for (const contribution of batch.workbenchSurfaces) {
         this.workbenchSurfaces.set(contribution.id, { owner, contribution: freezePlatforms(contribution) });

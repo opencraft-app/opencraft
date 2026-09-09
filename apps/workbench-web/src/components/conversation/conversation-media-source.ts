@@ -77,8 +77,11 @@ export function useConversationMediaSource(
       || resolution.decision.kind === undefined
       || context.loadMediaSource === undefined) return;
     let active = true;
+    const controller = new AbortController();
+    let release: (() => void) | undefined;
     setLoaded({ key: loadKey, source: null, status: "loading" });
     void context.loadMediaSource({
+      signal: controller.signal,
       source,
       resolvedTarget: resolution.decision.target,
       resourceKind: resolution.decision.kind,
@@ -87,7 +90,8 @@ export function useConversationMediaSource(
       hostId: context.hostId,
       cwd: context.cwd,
     }).then((result) => {
-      if (!active) return;
+      if (!active) { result?.release?.(); return; }
+      release = result?.release;
       setLoaded({
         key: loadKey,
         source: result?.source ?? null,
@@ -99,7 +103,7 @@ export function useConversationMediaSource(
       setLoaded({ key: loadKey, source: null, status: "unavailable" });
       requestMeasurement("resource-resolve");
     });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); release?.(); };
   }, [
     context.conversationId,
     context.cwd,

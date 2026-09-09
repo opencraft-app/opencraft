@@ -13,7 +13,7 @@ export interface HermesDashboardEnsureOptions {
   timeoutMs?: number;
 }
 
-const createEnsureCommand = () => [
+export const createHermesDashboardEnsureCommand = () => [
   // Tencent TAT guarantees an interactive POSIX shell, not Bash. Keep this
   // bootstrap free of arrays, here-strings and `local` so a syntax error can
   // never silently consume the whole browser-side deadline.
@@ -58,9 +58,16 @@ const createEnsureCommand = () => [
   'if command -v flock >/dev/null 2>&1; then exec 9>"$opencraft_ensure_lock"; if ! flock -w 5 9; then if opencraft_is_backend; then printf "%s%s\\n" "$opencraft_ready_marker" "$opencraft_session_token"; else printf "%slock_timeout\\n" "$opencraft_error_marker"; fi; return; fi; opencraft_lock_held=1; fi;',
   'if opencraft_is_backend; then printf "%s%s\\n" "$opencraft_ready_marker" "$opencraft_session_token"; [ "$opencraft_lock_held" = 1 ] && flock -u 9 >/dev/null 2>&1; return; fi;',
   'if opencraft_health_probe; then if opencraft_adopt_running_backend; then printf "%s%s\\n" "$opencraft_ready_marker" "$opencraft_session_token"; [ "$opencraft_lock_held" = 1 ] && flock -u 9 >/dev/null 2>&1; return; elif ! opencraft_retire_owned_backend; then printf "%sforeign_backend\\n" "$opencraft_error_marker"; [ "$opencraft_lock_held" = 1 ] && flock -u 9 >/dev/null 2>&1; return; fi; fi;',
+  // The Host owns the backend; the short-lived browser/TAT PTY only ensures
+  // that it exists. Match Hermes Desktop's POSIX lifecycle boundary: Linux
+  // starts a new session with setsid, while platforms without it fall back to
+  // HUP immunity. Plain nohup is insufficient under TAT because PtyStop may
+  // reap the PTY's entire process session after a browser tab disconnects.
+  'opencraft_detacher="$(command -v setsid 2>/dev/null || command -v nohup 2>/dev/null)";',
+  'if [ -z "$opencraft_detacher" ]; then printf "%sdetach_unavailable\n" "$opencraft_error_marker"; [ "$opencraft_lock_held" = 1 ] && flock -u 9 >/dev/null 2>&1; return; fi;',
   // Hermes Desktop owns a headless `hermes serve` process. Only runtimes that
   // predate the serve command fall back to the old dashboard entry point.
-  'if "$opencraft_hermes_bin" serve --help >/dev/null 2>&1; then HERMES_DASHBOARD_SESSION_TOKEN="$opencraft_session_token" nohup "$opencraft_hermes_bin" serve --host 127.0.0.1 --port 9119 </dev/null >"$opencraft_backend_log" 2>&1 & else HERMES_DASHBOARD_SESSION_TOKEN="$opencraft_session_token" nohup "$opencraft_hermes_bin" dashboard --no-open --host 127.0.0.1 --port 9119 </dev/null >"$opencraft_backend_log" 2>&1 & fi;',
+  'if "$opencraft_hermes_bin" serve --help >/dev/null 2>&1; then HERMES_DASHBOARD_SESSION_TOKEN="$opencraft_session_token" "$opencraft_detacher" sh -c \'exec 9>&-; exec "$@"\' opencraft-hermes "$opencraft_hermes_bin" serve --host 127.0.0.1 --port 9119 </dev/null >"$opencraft_backend_log" 2>&1 & else HERMES_DASHBOARD_SESSION_TOKEN="$opencraft_session_token" "$opencraft_detacher" sh -c \'exec 9>&-; exec "$@"\' opencraft-hermes "$opencraft_hermes_bin" dashboard --no-open --host 127.0.0.1 --port 9119 </dev/null >"$opencraft_backend_log" 2>&1 & fi;',
   "opencraft_backend_child=$!;",
   "opencraft_backend_ready=0;",
   "opencraft_backend_exited=0;",
@@ -108,7 +115,7 @@ export const ensureHermesDashboard = async (
         if (failure) finish(new Error(`Hermes dashboard failed to start (${failure}).`));
       },
     });
-    if (!channel.sendInput(`${createEnsureCommand()}\r`)) {
+    if (!channel.sendInput(`${createHermesDashboardEnsureCommand()}\r`)) {
       finish(new Error("TAT terminal was not ready to ensure the Hermes dashboard."));
     }
     return await completion;

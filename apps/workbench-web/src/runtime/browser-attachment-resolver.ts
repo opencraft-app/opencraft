@@ -1,4 +1,5 @@
 import type { ComposerAttachment } from "@opencraft/composer-core";
+import type { ImageProcessingService } from "@opencraft/image-processing";
 
 /**
  * Inline images stay host-independent: the same payload works for a local,
@@ -61,6 +62,8 @@ export async function resolveBrowserAttachment(
   file: File,
   pending: ComposerAttachment,
   staging: BrowserAttachmentStagingOptions = { directory: null, writeFile: null },
+  images?: Pick<ImageProcessingService, "compress">,
+  signal?: AbortSignal,
 ): Promise<ComposerAttachment> {
   if (file.size === 0) {
     throw new BrowserAttachmentError(
@@ -81,19 +84,31 @@ export async function resolveBrowserAttachment(
     );
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  signal?.throwIfAborted();
+  const processed = file.type.startsWith("image/") && images ? await images.compress(file, { signal }) : null;
+  const upload = processed?.blob ?? file;
+  const mimeType = processed?.changed ? upload.type : file.type;
+  const uploadName = processed?.changed
+    ? `${file.name.replace(/\.[^.]+$/u, "")}.${mimeType === "image/png" ? "png" : "jpg"}`
+    : file.name;
+  const bytes = new Uint8Array(await upload.arrayBuffer());
+  signal?.throwIfAborted();
   const dataBase64 = bytesToBase64(bytes);
   if (file.type.startsWith("image/")) {
     return {
       ...pending,
-      mimeType: file.type,
-      uri: `data:${file.type};base64,${dataBase64}`,
+      name: uploadName,
+      size: upload.size,
+      mimeType,
+      uri: `data:${mimeType};base64,${dataBase64}`,
       lifecycle: "ready",
       error: null,
       metadata: {
         ...pending.metadata,
         source: "browser-inline",
         transport: "codex-image-url",
+        originalBytes: file.size,
+        compression: processed?.reason ?? "not-requested",
       },
     };
   }

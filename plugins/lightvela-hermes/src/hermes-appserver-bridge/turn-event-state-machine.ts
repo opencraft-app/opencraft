@@ -1,4 +1,7 @@
 import type { AppServerThreadItem, AppServerTurn } from "./types";
+import { toolOutcome } from "./tool-outcome";
+import { resolveToolIdentity } from "./tool-identity";
+import { isHermesToolItem, projectHermesTool } from "./tool-semantics";
 
 export interface HermesProjectionNotification {
   readonly method: string;
@@ -71,6 +74,10 @@ export class HermesTurnEventStateMachine {
    * rather than in a volatile session flag that `message.start` can reset.
    */
   private interimAssistant: TextItemState | null = null;
+  // Display completion does not revoke the last stream's reconciliation
+  // identity. Only a new text/reasoning stream supersedes that identity.
+  private streamedAssistant: TextItemState | null = null;
+  private streamedAssistantHasToolBoundary = false;
   private reasoning: TextItemState | null = null;
   private readonly tools = new Map<string, AppServerThreadItem>();
 
@@ -81,12 +88,16 @@ export class HermesTurnEventStateMachine {
   ) {
     const lastItem = turn.items.at(-1);
     const lastAssistant = [...turn.items].reverse().find((item) => item.type === "agentMessage");
-    if (lastAssistant !== undefined && lastAssistant.phase !== "commentary") {
+    if (lastItem?.type === "agentMessage" && lastItem.phase == null && lastItem.completed === true) {
+      this.interimAssistant = { id: lastItem.id, text: typeof lastItem.text === "string" ? lastItem.text : "", started: true };
+      this.streamedAssistant = this.interimAssistant;
+    } else if (lastAssistant === lastItem && lastAssistant !== undefined && lastAssistant.phase == null && lastAssistant.completed === false) {
       this.assistant = {
         id: lastAssistant.id,
         text: typeof lastAssistant.text === "string" ? lastAssistant.text : "",
         started: true,
       };
+      this.streamedAssistant = this.assistant;
     } else if (lastItem?.type === "agentMessage" && lastItem.phase === "commentary") {
       // An active replay can resume after an interim preview but before its
       // authoritative completion. Preserve that Item as the completion target.
@@ -96,7 +107,7 @@ export class HermesTurnEventStateMachine {
         started: true,
       };
     }
-    const lastReasoning = [...turn.items].reverse().find((item) => item.type === "reasoning");
+    const lastReasoning = lastItem?.type === "reasoning" && lastItem.completed === false ? lastItem : undefined;
     if (lastReasoning !== undefined) {
       this.reasoning = {
         id: lastReasoning.id,
@@ -105,7 +116,7 @@ export class HermesTurnEventStateMachine {
       };
     }
     for (const item of turn.items) {
-      if (item.type === "dynamicToolCall") this.tools.set(item.id, item);
+      if (isHermesToolItem(item)) this.tools.set(typeof item.callId === "string" ? item.callId : item.id, item);
     }
   }
 
@@ -168,31 +179,53 @@ export class HermesTurnEventStateMachine {
         this.phase = "thinking";
         break;
       case "reasoning.delta":
-        this.sealInterimAssistant();
+        this.streamedAssistant = null;
+        this.classifyInterimAsCommentary(output);
         this.completeAssistant(output, "commentary");
         this.phase = "reasoning";
         this.appendReasoning(eventText(payload), output, occurredAtMs);
         break;
       case "reasoning.available":
-        this.sealInterimAssistant();
+        // Hermes emits this as a fallback preview of assistant_message.content,
+        // not a reasoning delta. Match Desktop's replace-preview guard: once
+        // this stream owns body text, the preview cannot seal it or discard its
+        // identity before message.interim(already_streamed) reconciles it.
+        if (!eventText(payload) || this.assistant?.text.trim()) break;
+        this.streamedAssistant = null;
+        this.classifyInterimAsCommentary(output);
         this.completeAssistant(output, "commentary");
         this.phase = "reasoning";
         this.reconcileReasoning(eventText(payload), output, occurredAtMs);
         break;
       case "message.delta":
+        if (this.assistant === null) this.classifyInterimAsCommentary(output);
         this.completeReasoning(output);
         this.phase = "composing";
         this.appendAssistant(eventText(payload), output, occurredAtMs);
         break;
       case "message.interim":
+        if (eventText(payload) === "") break;
         this.completeReasoning(output);
         this.phase = "composing";
+        if (payload.already_streamed === true && (this.assistant ?? this.streamedAssistant) !== null) {
+          // The source explicitly identifies this as the streamed segment's
+          // authoritative snapshot, including non-prefix corrections.
+          this.assistant = { ...(this.assistant ?? this.streamedAssistant)!, text: eventText(payload) };
+          this.streamedAssistant = this.assistant;
+        } else if (this.assistant === null) {
+          // An unstreamed segment after a tool owns its own completion target.
+          this.streamedAssistant = null;
+          this.streamedAssistantHasToolBoundary = false;
+        }
         this.reconcileAssistant(eventText(payload), output, occurredAtMs);
-        this.completeAssistant(output, "commentary", true);
+        // Sealing a transport segment does not classify it as tool commentary:
+        // Hermes also seals final previews before verification completes.
+        this.completeAssistant(output, this.streamedAssistantHasToolBoundary ? "commentary" : null, !this.streamedAssistantHasToolBoundary);
         this.phase = "thinking";
         break;
       case "tool.start":
-        this.sealInterimAssistant();
+        this.streamedAssistantHasToolBoundary = true;
+        this.classifyInterimAsCommentary(output);
         this.completeReasoning(output);
         this.completeAssistant(output, "commentary");
         this.phase = "tool";
@@ -204,13 +237,18 @@ export class HermesTurnEventStateMachine {
         this.phase = "tool";
         break;
       case "tool.progress":
-        this.sealInterimAssistant();
+        this.streamedAssistantHasToolBoundary = true;
+        this.classifyInterimAsCommentary(output);
         this.completeReasoning(output);
         this.completeAssistant(output, "commentary");
         this.phase = "tool";
         this.progressTool(payload, output, occurredAtMs);
         break;
       case "tool.complete":
+        this.streamedAssistantHasToolBoundary = true;
+        this.classifyInterimAsCommentary(output);
+        this.completeReasoning(output);
+        this.completeAssistant(output, "commentary");
         this.phase = "tool";
         this.completeTool(payload, output, occurredAtMs);
         if (![...this.tools.values()].some((item) => item.status === "inProgress")) this.phase = "thinking";
@@ -218,6 +256,7 @@ export class HermesTurnEventStateMachine {
       case "message.complete":
         this.completeReasoning(output);
         this.completeFinalAssistant(eventText(payload), output, occurredAtMs);
+        this.suppressTransientTextCoveredByFinal(output);
         this.finish(statusFor(payload), payload, output, occurredAtMs);
         break;
       case "session.info":
@@ -290,9 +329,11 @@ export class HermesTurnEventStateMachine {
 
   private appendAssistant(delta: string, output: HermesProjectionNotification[], occurredAtMs: number): void {
     if (delta === "") return;
+    if (this.assistant === null) this.streamedAssistantHasToolBoundary = false;
     const state = this.ensureAssistant(output, occurredAtMs);
     state.text += delta;
-    this.upsertItem({ type: "agentMessage", id: state.id, text: state.text, phase: null, memoryCitation: null });
+    this.streamedAssistant = state;
+    this.upsertItem({ type: "agentMessage", id: state.id, text: state.text, phase: null, completed: false, memoryCitation: null });
     output.push(this.notification("item/agentMessage/delta", { turnId: this.turn.id, itemId: state.id, delta }));
   }
 
@@ -312,7 +353,7 @@ export class HermesTurnEventStateMachine {
 
   private completeAssistant(
     output: HermesProjectionNotification[],
-    phase: "commentary" | null,
+    phase: "commentary" | "final_answer" | null,
     retainsInterimOwnership = false,
   ): void {
     const state = this.assistant;
@@ -320,23 +361,29 @@ export class HermesTurnEventStateMachine {
       this.assistant = null;
       return;
     }
-    const item = { type: "agentMessage", id: state.id, text: state.text, phase, memoryCitation: null };
+    const item = { type: "agentMessage", id: state.id, text: state.text, phase, completed: true, memoryCitation: null };
     this.upsertItem(item);
     output.push(this.notification("item/completed", { turnId: this.turn.id, item }));
-    this.interimAssistant = phase === "commentary" && retainsInterimOwnership
+    this.interimAssistant = retainsInterimOwnership
       ? { ...state }
       : null;
     this.assistant = null;
   }
 
-  private sealInterimAssistant(): void {
+  private classifyInterimAsCommentary(output: HermesProjectionNotification[]): void {
+    if (this.interimAssistant !== null) {
+      const item = { type: "agentMessage", id: this.interimAssistant.id, text: this.interimAssistant.text, phase: "commentary", completed: true, memoryCitation: null };
+      this.upsertItem(item);
+      output.push(this.notification("item/completed", { turnId: this.turn.id, item }));
+    }
     this.interimAssistant = null;
   }
 
   /**
    * Hermes `message.complete` is authoritative state, not another message.
    * When an interim preview exists, complete that same stable Item and promote
-   * it from commentary to final—even across an intervening `message.start`.
+   * it from an unclassified sealed preview to final—even across an intervening
+   * `message.start`. Actual work boundaries separately classify commentary.
    */
   private completeFinalAssistant(
     authoritative: string,
@@ -345,7 +392,7 @@ export class HermesTurnEventStateMachine {
   ): void {
     if (this.assistant !== null) {
       this.reconcileAssistant(authoritative, output, occurredAtMs);
-      this.completeAssistant(output, null);
+      this.completeAssistant(output, "final_answer");
       return;
     }
     const interim = this.interimAssistant;
@@ -356,7 +403,7 @@ export class HermesTurnEventStateMachine {
         type: "agentMessage",
         id: interim.id,
         text: interim.text,
-        phase: null,
+        phase: "final_answer",
         memoryCitation: null,
       };
       this.upsertItem(item);
@@ -364,7 +411,63 @@ export class HermesTurnEventStateMachine {
       return;
     }
     this.reconcileAssistant(authoritative, output, occurredAtMs);
-    this.completeAssistant(output, null);
+    this.completeAssistant(output, "final_answer");
+  }
+
+  /**
+   * Hermes can preview one response through either `message.interim` or the
+   * reasoning channel before publishing its authoritative completion. Text
+   * continuity (same text, or a prefix in either direction) means these are
+   * two protocol phases of one visible message, not two transcript owners.
+   * Distinct pre-tool narration and distinct reasoning remain independent.
+   *
+   * This mirrors Hermes Desktop's `finalContinuesInterim` rule. The cleared
+   * completion is a live tombstone for incremental replicas; the following
+   * full `turn/completed` snapshot owns the final Item membership.
+   */
+  private suppressTransientTextCoveredByFinal(output: HermesProjectionNotification[]): void {
+    const final = this.turn.items.findLast((item) => (
+      item.type === "agentMessage" && item.phase === "final_answer" && typeof item.text === "string" && item.text.trim() !== ""
+    ));
+    if (final === undefined || typeof final.text !== "string") return;
+    const finalText = final.text.replace(/\s+/gu, " ").trim();
+    // Legacy snapshots without segment IDs may reconcile only within the
+    // current tool-free segment. Equal text before a tool is independent work.
+    const boundary = this.turn.items.findLastIndex(isHermesToolItem);
+    const lastInterim = this.turn.items.slice(boundary + 1).findLast((item) => (
+      item.type === "agentMessage" && item.phase === "commentary"
+        && typeof item.text === "string" && item.text.trim() !== ""
+    ));
+    const retained: AppServerThreadItem[] = [];
+    for (const item of this.turn.items) {
+      if (item.id === lastInterim?.id && typeof item.text === "string") {
+        const commentary = item.text.replace(/\s+/gu, " ").trim();
+        if (finalText.startsWith(commentary) || commentary.startsWith(finalText)) {
+          output.push(this.notification("item/completed", { turnId: this.turn.id, item: { ...item, text: "" } }));
+          continue;
+        }
+      }
+      if (item.type !== "reasoning" || !Array.isArray(item.content)) {
+        retained.push(item);
+        continue;
+      }
+      const reasoning = item.content
+        .filter((value): value is string => typeof value === "string")
+        .join("\n")
+        .replace(/\s+/gu, " ")
+        .trim();
+      if (reasoning === "" || !finalText.startsWith(reasoning)) {
+        retained.push(item);
+        continue;
+      }
+      // Clear the live replica first; the immediately following terminal Turn
+      // snapshot then removes the redundant Item from durable presentation.
+      output.push(this.notification("item/completed", {
+        turnId: this.turn.id,
+        item: { ...item, summary: [], content: [] },
+      }));
+    }
+    this.turn.items = retained;
   }
 
   private ensureReasoning(output: HermesProjectionNotification[], occurredAtMs: number): TextItemState {
@@ -389,7 +492,7 @@ export class HermesTurnEventStateMachine {
     if (delta === "") return;
     const state = this.ensureReasoning(output, occurredAtMs);
     state.text += delta;
-    this.upsertItem({ type: "reasoning", id: state.id, summary: [], content: [state.text] });
+    this.upsertItem({ type: "reasoning", id: state.id, summary: [], content: [state.text], completed: false });
     output.push(this.notification("item/reasoning/textDelta", {
       turnId: this.turn.id,
       itemId: state.id,
@@ -416,40 +519,47 @@ export class HermesTurnEventStateMachine {
       this.reasoning = null;
       return;
     }
-    const item = { type: "reasoning", id: state.id, summary: [], content: state.text === "" ? [] : [state.text] };
+    const item = { type: "reasoning", id: state.id, summary: [], content: state.text === "" ? [] : [state.text], completed: true };
     this.upsertItem(item);
     output.push(this.notification("item/completed", { turnId: this.turn.id, item }));
     this.reasoning = null;
   }
 
-  private toolId(payload: Record<string, unknown>): string {
-    return typeof payload.tool_id === "string" && payload.tool_id !== ""
-      ? payload.tool_id
-      : `hermes-tool-${this.createId()}`;
+  private toolId(payload: Record<string, unknown>, phase: "start" | "update" = "update"): string {
+    return resolveToolIdentity(this.tools, payload, phase, () => `hermes-tool-${this.createId()}`);
   }
 
   private toolItem(payload: Record<string, unknown>, id: string, status: string): AppServerThreadItem {
-    const result = record(payload.result);
-    const failed = status === "failed" || result.error !== undefined;
-    return {
+    const previous = this.tools.get(id);
+    const failed = status === "failed" || toolOutcome(payload.result) === false;
+    return projectHermesTool({
       type: "dynamicToolCall",
-      id,
+      ...previous,
+      id: previous?.id ?? id,
+      callId: id,
+      sourceIdentitySynthetic: previous?.sourceIdentitySynthetic ?? !(typeof payload.tool_id === "string" && payload.tool_id),
       namespace: "hermes",
-      tool: typeof payload.name === "string" ? payload.name : "tool",
-      arguments: record(payload.args),
+      tool: typeof payload.name === "string" ? payload.name : previous?.tool ?? "tool",
+      arguments: Object.hasOwn(payload, "args") ? record(payload.args) : previous?.arguments ?? {},
+      toolContext: typeof payload.context === "string" ? payload.context : previous?.toolContext ?? null,
+      toolSummary: typeof payload.summary === "string" ? payload.summary : previous?.toolSummary ?? null,
+      inlineDiff: typeof payload.inline_diff === "string" ? payload.inline_diff : previous?.inlineDiff ?? null,
+      progressText: typeof payload.message === "string" ? payload.message
+        : typeof payload.preview === "string" ? payload.preview : previous?.progressText ?? null,
+      structuredResult: Object.hasOwn(payload, "result") ? payload.result : previous?.structuredResult ?? null,
       status: failed ? "failed" : status,
       contentItems: payload.result === undefined
-        ? null
+        ? previous?.contentItems ?? null
         : [{ type: "inputText", text: typeof payload.result === "string" ? payload.result : JSON.stringify(payload.result) }],
-      success: status === "inProgress" ? null : !failed,
-      durationMs: typeof payload.duration_s === "number" ? Math.round(payload.duration_s * 1_000) : null,
-    };
+      success: status === "inProgress" ? null : toolOutcome(payload.result),
+      durationMs: typeof payload.duration_s === "number" ? Math.round(payload.duration_s * 1_000) : previous?.durationMs ?? null,
+    });
   }
 
   private startTool(payload: Record<string, unknown>, output: HermesProjectionNotification[], occurredAtMs: number): void {
-    const id = this.toolId(payload);
+    const id = this.toolId(payload, "start");
     if (this.tools.has(id)) return;
-    const item = this.toolItem(payload, id, "inProgress");
+    const item = { ...this.toolItem(payload, id, "inProgress"), startedAtMs: occurredAtMs };
     this.tools.set(id, item);
     this.upsertItem(item);
     output.push(this.notification("item/started", { turnId: this.turn.id, item, startedAtMs: occurredAtMs }));
@@ -463,13 +573,14 @@ export class HermesTurnEventStateMachine {
     const item = { ...previous, ...this.toolItem(payload, id, "inProgress") };
     this.tools.set(id, item);
     this.upsertItem(item);
+    output.push(this.notification("item/updated", { turnId: this.turn.id, item }));
   }
 
   private completeTool(payload: Record<string, unknown>, output: HermesProjectionNotification[], occurredAtMs: number): void {
     const id = this.toolId(payload);
     if (!this.tools.has(id)) this.startTool({ ...payload, tool_id: id }, output, occurredAtMs);
     if (this.tools.get(id)?.status !== "inProgress") return;
-    const item = this.toolItem(payload, id, record(payload.result).error === undefined ? "completed" : "failed");
+    const item = this.toolItem(payload, id, toolOutcome(payload.result) === false ? "failed" : "completed");
     this.tools.set(id, item);
     this.upsertItem(item);
     output.push(this.notification("item/completed", { turnId: this.turn.id, item }));
@@ -490,7 +601,7 @@ export class HermesTurnEventStateMachine {
     if (this.completed) return;
     for (const [id, tool] of this.tools) {
       if (tool.status !== "inProgress") continue;
-      const item = { ...tool, status: status === "failed" ? "failed" : "completed", success: status !== "failed" };
+      const item = { ...tool, status: "completed", success: null, resultMissing: true };
       this.tools.set(id, item);
       this.upsertItem(item);
       output.push(this.notification("item/completed", { turnId: this.turn.id, item }));

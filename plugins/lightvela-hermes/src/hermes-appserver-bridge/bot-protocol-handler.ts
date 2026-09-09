@@ -11,7 +11,10 @@ import type {
   AppServerBotPresenceFact,
 } from "@opencraft/appserver-protocol";
 
-import { HermesAppServerAdapter } from "./adapter";
+import {
+  HermesAppServerAdapter,
+  isUnmaterializedHermesHistory,
+} from "./adapter";
 import type {
   AppServerThread,
   AppServerThreadItem,
@@ -215,11 +218,6 @@ function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function hermesMessageCount(thread: AppServerThread): number | null {
-  const hermes = asRecord(asRecord(thread.extra).hermes);
-  return typeof hermes.messageCount === "number" ? hermes.messageCount : null;
-}
-
 interface IdempotentEntry<T> { readonly params: unknown; readonly result: T }
 interface InFlightIdempotentEntry<T> { readonly params: unknown; readonly result: Promise<T> }
 interface UploadedAttachment { readonly descriptor: AppServerBotAttachment; readonly dataUri: string }
@@ -312,7 +310,7 @@ export class HermesBotAppServerHandler {
       this.emitPresence(conversationId, turn.id, "thinking", "Thinking", bot);
       return;
     }
-    if (method === "item/started" && item?.type === "dynamicToolCall") {
+    if (method === "item/started" && (item?.type === "dynamicToolCall" || item?.type === "commandExecution")) {
       this.emitPresence(conversationId, turn.id, "working", typeof item.tool === "string" ? item.tool : "Using a tool", bot);
       return;
     }
@@ -572,7 +570,7 @@ export class HermesBotAppServerHandler {
       // Hermes creates a REST history row. Resume owns existence; REST owns
       // only materialized messages, so its 404 is an empty snapshot iff the
       // authoritative Resume reports zero messages.
-      if (hermesMessageCount(thread) === 0) {
+      if (isUnmaterializedHermesHistory(thread, historyResult.error)) {
         return { data: [], chronological: [], nextOffset: null };
       }
       throw historyResult.error;

@@ -4,6 +4,7 @@ import type {
 } from "@opencraft/workbench-runtime";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
+import type { HermesSessionTokenCache } from "../lib/hermes-session-token-cache";
 import { LightVelaHermesTransport } from "../transport/lightvela-hermes-transport";
 
 export interface LightVelaHermesHostConfig {
@@ -27,18 +28,31 @@ function validateConfig(config: HostConnectionJson): LightVelaHermesHostConfig &
 
 export function createLightVelaHermesHostProvider(
   account: LightVelaAccountService,
+  sessionTokenCache?: HermesSessionTokenCache,
 ): HostConnectionProvider {
   return {
     id: "lightvela.hermes",
     label: "LightVela Hermes",
+    settingsPageId: "lightvela.hermes.settings",
     targets: ["web", "electron"],
     configVersion: 1,
     validate: validateConfig,
+    preflight(_config, _context, { signal }) {
+      signal.throwIfAborted();
+      const snapshot = account.getSnapshot();
+      const activeBot = snapshot.activeBotId === null
+        ? undefined
+        : snapshot.bots.find((bot) => bot.instanceId === snapshot.activeBotId);
+      if (snapshot.phase !== "authenticated" || activeBot === undefined) {
+        throw new Error("No running LightVela Hermes Bot is available");
+      }
+    },
     createTransport(config) {
       const normalized = validateConfig(config);
       return new LightVelaHermesTransport({
         account,
         dashboardUrl: normalized.dashboardUrl,
+        sessionTokenCache,
       });
     },
   };

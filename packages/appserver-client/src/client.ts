@@ -61,6 +61,7 @@ export type AppServerServerRequestInterceptor = (
 ) => unknown | Promise<unknown>;
 
 interface PendingRequest {
+  controller: AbortController;
   id: JsonRpcId;
   method: string;
   priority: AppServerRequestOptions["priority"];
@@ -261,6 +262,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
       options.signal?.addEventListener("abort", abort, { once: true });
 
       const pending: PendingRequest = {
+        controller: new AbortController(),
         id,
         method,
         priority: options.priority,
@@ -303,7 +305,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         timeoutMs,
       });
 
-      void this.transport.send(encodeJsonRpcMessage(request)).catch((error: unknown) => {
+      void this.transport.send(encodeJsonRpcMessage(request), pending.controller.signal).catch((error: unknown) => {
         this.rejectPending(
           id,
           new AppServerClientError("TRANSPORT_ERROR", `Failed to send AppServer request ${method}`, {
@@ -555,6 +557,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     const pending = this.pending.get(id);
     if (pending === undefined) return;
     this.cleanupPending(id, pending);
+    pending.controller.abort(error);
     pending.reject(error);
     const endedAtMs = this.clock.now();
     this.emitRequestLifecycle({

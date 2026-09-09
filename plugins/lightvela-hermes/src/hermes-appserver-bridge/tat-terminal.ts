@@ -50,6 +50,9 @@ export interface HermesTatTerminalOptions {
 }
 
 interface OwnedProcess {
+  ready: Promise<void>;
+  markReady(): void;
+  rejectReady(error: Error): void;
   readonly processId: string;
   multiplexer: TencentTatSessionMultiplexer | null;
   channel: TatPtyChannel | null;
@@ -138,7 +141,8 @@ function commandScript(params: HermesCommandExecParams, marker: string): string 
     command,
     ");",
     "opencraft_command_status=$?;",
-    `printf '\\n%s%s\\n' ${shellQuote(marker)} \"$opencraft_command_status\"`,
+    // Assemble the sentinel only in output: an interactive PTY echoes the command.
+    `printf '\\n%s%s%s\\n' ${shellQuote(marker.slice(0, 20))} ${shellQuote(marker.slice(20))} "$opencraft_command_status"`,
   ].join(" ");
 }
 
@@ -177,7 +181,12 @@ export class HermesTatTerminalService implements HermesHostTerminal {
     const marker = randomMarker();
 
     return new Promise((resolve, reject) => {
+      let markReady!: () => void;
+      let rejectReady!: (error: Error) => void;
+      const ready = new Promise<void>((resolve, reject) => { markReady = resolve; rejectReady = reject; });
+      void ready.catch(() => undefined);
       const owned: OwnedProcess = {
+        ready, markReady, rejectReady,
         processId,
         multiplexer: null,
         channel: null,
@@ -255,6 +264,7 @@ export class HermesTatTerminalService implements HermesHostTerminal {
           return;
         }
       }
+      owned.markReady();
     } catch (error) {
       this.fail(owned, error instanceof Error ? error : new Error(String(error)));
     }
@@ -276,6 +286,10 @@ export class HermesTatTerminalService implements HermesHostTerminal {
         throw new Error(`Terminal ${owned.processId} could not close stdin`);
       }
     }
+  }
+
+  whenReady(processId: string): Promise<void> {
+    return this.requireProcess(processId).ready;
   }
 
   async resize(params: Record<string, unknown>): Promise<void> {
@@ -363,6 +377,7 @@ export class HermesTatTerminalService implements HermesHostTerminal {
   private finish(owned: OwnedProcess, exitCode: number): void {
     if (owned.settled) return;
     owned.settled = true;
+    owned.rejectReady(new Error("Terminal exited before becoming ready"));
     this.emitOutput(owned.processId, owned.markerBuffer);
     owned.markerBuffer = "";
     owned.pendingInput.length = 0;
@@ -376,6 +391,7 @@ export class HermesTatTerminalService implements HermesHostTerminal {
   private fail(owned: OwnedProcess, error: Error): void {
     if (owned.settled) return;
     owned.settled = true;
+    owned.rejectReady(error);
     this.emitOutput(owned.processId, owned.markerBuffer);
     owned.markerBuffer = "";
     owned.pendingInput.length = 0;

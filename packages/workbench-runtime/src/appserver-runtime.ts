@@ -56,6 +56,7 @@ import {
   createCordisThreadSessionRuntime,
   createThreadViewReplicaProjectionBarrier,
   mergeTurns,
+  projectThreadViewForReplica,
   type AppServerHostKind,
   type CordisThreadSessionRuntime,
 } from "@opencraft/appserver-session";
@@ -67,6 +68,7 @@ import {
 } from "@opencraft/chat-core";
 import {
   createReplicaConversationRuntime,
+  type ConversationCommandPort,
   type ConversationRuntime,
   type ConversationRuntimeSnapshot,
   type InteractionResponse,
@@ -193,12 +195,13 @@ export interface AppServerProjectResourcePort {
 /** Read-only physical Host facts established by the initialize handshake. */
 export interface AppServerHostResourcePort {
   getInitializeResult(): AppServerInitializeResponse | null;
+  getConnectionGeneration?(): number;
 }
 
 export interface AppServerFileSystemResourcePort {
-  getMetadata(path: string): Promise<FsGetMetadataResponse>;
+  getMetadata(path: string, signal?: AbortSignal): Promise<FsGetMetadataResponse>;
   readDirectory(path: string): Promise<FsReadDirectoryResponse>;
-  readFile(path: string): Promise<FsReadFileResponse>;
+  readFile(path: string, signal?: AbortSignal): Promise<FsReadFileResponse>;
   writeFile(path: string, dataBase64: string): Promise<FsWriteFileResponse>;
   watch(
     path: string,
@@ -241,6 +244,8 @@ export interface AppServerThreadRuntimeLease {
   readonly threadId: string;
   getSnapshot(): ConversationRuntimeSnapshot;
   subscribe(listener: () => void): () => void;
+  /** Retry this Thread's baseline without navigating or reconnecting its Host. */
+  retryRestore(): Promise<void>;
   submit(intent: SubmitIntent): Promise<SubmissionReceipt>;
   interrupt(turnId: TurnId): Promise<void>;
   continueTurn(turnId: TurnId): Promise<SubmissionReceipt>;
@@ -437,6 +442,7 @@ export function createAppServerWorkbenchRuntime(
 
   const clearReconnectTimer = () => {
     if (reconnectTimer === null) return;
+    console.log("[appserver-reconnect] cancelled", { hostId, attempt: reconnectAttempt });
     clock.clearTimeout(reconnectTimer);
     reconnectTimer = null;
   };
@@ -448,6 +454,7 @@ export function createAppServerWorkbenchRuntime(
       reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)] ??
       5_000;
     reconnectAttempt += 1;
+    console.log("[appserver-reconnect] scheduled", { hostId, attempt: reconnectAttempt, delayMs: delay });
     reconnectTimer = clock.setTimeout(() => {
       reconnectTimer = null;
       void runtime.reconnect().catch(() => scheduleReconnect());
@@ -541,6 +548,7 @@ export function createAppServerWorkbenchRuntime(
     const currentClient = requireClient();
     if (commandPort === null)
       throw new Error("AppServer command port is unavailable");
+    const currentCommandPort = commandPort;
     const replica = new ReplicaClient<ReplicaJsonValue>({
       scope: codexThreadReplicaScope(hostId, threadId),
       storageKey: storageKey(hostId, threadId),
@@ -551,10 +559,48 @@ export function createAppServerWorkbenchRuntime(
     let navigation: ConversationNavigationController | null = null;
     try {
       await replica.prepare();
+      const afterAuthoritativeBaseline = async <T>(operation: () => Promise<T>): Promise<T> => {
+        const owner = bindings.get(threadId);
+        if (owner === undefined || owner.disposed) {
+          throw new Error(`Thread ${threadId} is unavailable`);
+        }
+        // A local optimistic Item may paint immediately, but no AppServer
+        // mutation may overtake the Thread's initial Resume. Otherwise a
+        // concurrently completing snapshot and the live notification stream
+        // can each publish the first user message, and a backend such as
+        // Hermes cannot reconcile them because durable history has no client
+        // message identity. Resume is the single baseline owner.
+        if (!owner.runtime.getSnapshot().authoritative) {
+          await hydrateBinding(owner, false);
+        }
+        return operation();
+      };
+      const baselineGatedCommands: ConversationCommandPort = {
+        ...currentCommandPort,
+        submit: (intent) => afterAuthoritativeBaseline(() => currentCommandPort.submit(intent)),
+        interrupt: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.interrupt(key, turnId)),
+        continueTurn: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.continueTurn(key, turnId)),
+        respond: (key, response) => afterAuthoritativeBaseline(() => currentCommandPort.respond(key, response)),
+        updateQueuedSubmission: (key, id, input) => afterAuthoritativeBaseline(
+          () => currentCommandPort.updateQueuedSubmission(key, id, input),
+        ),
+        deleteQueuedSubmission: (key, id) => afterAuthoritativeBaseline(
+          () => currentCommandPort.deleteQueuedSubmission(key, id),
+        ),
+        reorderQueuedSubmissions: (key, ids) => afterAuthoritativeBaseline(
+          () => currentCommandPort.reorderQueuedSubmissions(key, ids),
+        ),
+        startQueuedSubmission: (key, id) => afterAuthoritativeBaseline(
+          () => currentCommandPort.startQueuedSubmission(key, id),
+        ),
+        steerQueuedSubmission: (key, submission, activeTurnId) => afterAuthoritativeBaseline(
+          () => currentCommandPort.steerQueuedSubmission(key, submission, activeTurnId),
+        ),
+      };
       conversation = createReplicaConversationRuntime({
         key: createConversationKey(hostId, threadId),
         replica,
-        commands: commandPort,
+        commands: baselineGatedCommands,
         history: {
           loadOlder: async () => {
             await currentSession.resume.loadOlder(threadId);
@@ -643,7 +689,7 @@ export function createAppServerWorkbenchRuntime(
           }
         }
         touchBinding(binding);
-        if (binding.phase !== "hydrating" && binding.phase !== "reconnecting") {
+        if (binding.phase !== "hydrating" && binding.phase !== "reconnecting" && binding.phase !== "error") {
           binding.phase = hasHardResidencyReason(binding)
             ? "resident"
             : "evictable";
@@ -750,16 +796,22 @@ export function createAppServerWorkbenchRuntime(
     }
     binding.hydrationForReconnect = force;
     binding.phase = force ? "reconnecting" : "hydrating";
+    binding.replica.reportSyncStarted();
     touchBinding(binding);
     publish();
     const operation = Promise.resolve()
       .then(async () => {
         const currentSession = requireSession();
         if (force) binding.replica.disconnect();
-        await currentSession.resume.resume({
-          threadId: binding.threadId,
-          force,
+        const stopPreview = currentSession.views.subscribeThread(binding.threadId, () => {
+          const view = currentSession.views.get(binding.threadId);
+          if (!binding.disposed && !disposed && view?.resumeState === "resuming" && view.historySource === "message-window") {
+            binding.replica.reportPreview(binding.threadId, projectThreadViewForReplica(view));
+          }
         });
+        try {
+          await currentSession.resume.resume({ threadId: binding.threadId, force });
+        } finally { stopPreview(); }
         const source = createCodexThreadReplicaSource(
           currentSession.views,
           hostId,
@@ -800,7 +852,6 @@ export function createAppServerWorkbenchRuntime(
     const currentClient = requireClient();
     await currentClient.connect(config.initialize ?? defaultInitialize);
     ensureLifecycle(generation);
-    reconnectAttempt = 0;
     clearReconnectTimer();
   };
 
@@ -858,6 +909,7 @@ export function createAppServerWorkbenchRuntime(
         )
           return;
         if (status.state === "closed" || status.state === "failed") {
+          console.log("[appserver-reconnect] transport-unavailable", { hostId, state: status.state });
           phase = "reconnecting";
           error = status.reason === undefined ? null : new Error(status.reason);
           for (const binding of bindings.values()) binding.replica.disconnect();
@@ -926,6 +978,7 @@ export function createAppServerWorkbenchRuntime(
   const runtime: AppServerWorkbenchRuntime = {
     resources: {
       host: {
+        getConnectionGeneration() { return client?.connectionGeneration ?? 0; },
         getInitializeResult() {
           return client?.initializeResult ?? null;
         },
@@ -978,11 +1031,11 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       fileSystem: {
-        async getMetadata(path) {
-          return requireClient().request("fs/getMetadata", { path });
+        async getMetadata(path, signal) {
+          return requireClient().request("fs/getMetadata", { path }, { signal });
         },
-        async readFile(path) {
-          return requireClient().request("fs/readFile", { path });
+        async readFile(path, signal) {
+          return requireClient().request("fs/readFile", { path }, { signal });
         },
         async readDirectory(path) {
           return requireClient().request("fs/readDirectory", { path });
@@ -1071,6 +1124,14 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       terminal: {
+        attach(processId) {
+          if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
+          return terminalController.attach(processId);
+        },
+        list() {
+          if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
+          return terminalController.list();
+        },
         open(options) {
           if (phase !== "ready") {
             throw new Error(`AppServer Host is not ready for a terminal (${phase})`);
@@ -1121,6 +1182,10 @@ export function createAppServerWorkbenchRuntime(
       if (disposed)
         return Promise.reject(new Error("AppServer Workbench is disposed"));
       if (reconnectOperation !== null) return reconnectOperation;
+      clearReconnectTimer();
+      const reconnectStartedAt = Date.now();
+      const attempt = reconnectAttempt || 1;
+      console.log("[appserver-reconnect] started", { hostId, attempt });
       phase = "reconnecting";
       error = null;
       publish();
@@ -1129,6 +1194,7 @@ export function createAppServerWorkbenchRuntime(
         try {
           await initializeServices();
           await connectPhysicalHost(generation);
+          await terminalController?.reconnect();
           await restoreFileSystemWatches();
           ensureLifecycle(generation);
           const currentSession = requireSession();
@@ -1140,8 +1206,12 @@ export function createAppServerWorkbenchRuntime(
           }
           phase = "ready";
           error = null;
+          clearReconnectTimer();
+          reconnectAttempt = 0;
+          console.log("[appserver-reconnect] succeeded", { hostId, attempt, elapsedMs: Date.now() - reconnectStartedAt });
           publish();
         } catch (cause) {
+          console.log("[appserver-reconnect] failed", { hostId, attempt, errorType: cause instanceof Error ? cause.name : "Error", elapsedMs: Date.now() - reconnectStartedAt });
           error = cause instanceof Error ? cause : new Error(String(cause));
           phase = "error";
           publish();
@@ -1173,6 +1243,10 @@ export function createAppServerWorkbenchRuntime(
       return {
         threadId,
         getSnapshot: binding.runtime.getSnapshot,
+        retryRestore() {
+          if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
+          return hydrateBinding(binding, false);
+        },
         subscribe(listener) {
           if (released || binding.disposed)
             throw new Error(`Thread ${threadId} lease is released`);

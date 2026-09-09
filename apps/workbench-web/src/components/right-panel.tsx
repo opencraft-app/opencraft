@@ -17,12 +17,14 @@ import {
   X,
 } from "lucide-react";
 import { motion, useTransform } from "motion/react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useRef, useState } from "react";
 
 import { useAppShellLayoutMotion } from "./app-shell";
 
 interface RightPanelProps {
   readonly state: ConversationPanelState;
+  readonly presentationId: string;
   readonly renderers: readonly PanelRendererRegistration[];
   onAction(action: PanelAction): void;
   onCloseTab(tab: PanelTabDescriptor): void;
@@ -36,6 +38,66 @@ function ToolbarActionIcon({ icon }: { readonly icon: string }) {
   return <Plus size={14} />;
 }
 
+function PanelToolbarAction({ action, context, launcher = false }: {
+  action: PanelToolbarActionDefinition;
+  context: PanelToolbarActionContext;
+  launcher?: boolean;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const run = (operation: (context: PanelToolbarActionContext) => void | Promise<void>) => {
+    setError(null);
+    void Promise.resolve().then(() => operation(context)).catch(cause => {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    });
+  };
+  const trigger = <button className={launcher ? "right-panel-launcher-action" : "chrome-button"} type="button" aria-label={action.label}
+    title={action.label} onClick={() => run(action.run)}>
+    <ToolbarActionIcon icon={action.icon} />
+    {launcher ? <span>{action.creationLabel}</span> : null}
+  </button>;
+  return <>
+    {trigger}
+    {error ? <span role="alert" className="panel-toolbar-error">{error}</span> : null}
+  </>;
+}
+
+function PanelCreationMenu({ actions, context }: {
+  actions: readonly PanelToolbarActionDefinition[];
+  context: PanelToolbarActionContext;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const pending = useRef<PanelToolbarActionDefinition | null>(null);
+  return <>
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" className="chrome-button right-panel-new-tab"
+          aria-label="New tab" title="New tab"><Plus size={14} /></button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="right-panel-creation-menu" align="start" sideOffset={6}
+          onCloseAutoFocus={event => {
+            const action = pending.current;
+            pending.current = null;
+            if (!action) return;
+            // Close the picker before handing focus to the newly opened panel.
+            event.preventDefault();
+            setError(null);
+            void Promise.resolve().then(() => action.run(context)).catch(cause => {
+              setError(cause instanceof Error ? cause.message : String(cause));
+            });
+          }}>
+          {actions.length === 0 ? <DropdownMenu.Item disabled>No types available</DropdownMenu.Item> :
+            actions.map(action => <DropdownMenu.Item key={action.id}
+              className="right-panel-creation-menu__item" onSelect={() => { pending.current = action; }}>
+              <ToolbarActionIcon icon={action.icon} /><span>{action.creationLabel}</span>
+            </DropdownMenu.Item>)}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+    {error ? <span role="alert" className="panel-toolbar-error">{error}</span> : null}
+  </>;
+}
+
 function PanelIcon({ tab }: { readonly tab: PanelTabDescriptor }) {
   if (tab.icon === "changes") return <GitBranch size={13} />;
   if (tab.icon === "terminal") return <TerminalSquare size={13} />;
@@ -45,6 +107,7 @@ function PanelIcon({ tab }: { readonly tab: PanelTabDescriptor }) {
 
 export function RightPanel({
   state,
+  presentationId,
   renderers,
   onAction,
   onCloseTab,
@@ -65,6 +128,9 @@ export function RightPanel({
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const activeTab =
     state.right.tabs.find((tab) => tab.id === state.right.activeTabId) ?? null;
+  const creationActions = toolbarActions.filter(action =>
+    action.region === "right" && action.creationLabel !== undefined &&
+    (action.isAvailable?.(toolbarActionContext) ?? true));
   const ActivePanel =
     activeTab === null
       ? null
@@ -200,6 +266,8 @@ export function RightPanel({
               </motion.div>
             );
           })}
+          {state.right.tabs.length > 0 ? <PanelCreationMenu key={state.ownerId}
+            actions={creationActions} context={toolbarActionContext} /> : null}
           <div
             className="right-panel-tab-strip__drop-tail"
             onDragOver={(event) => {
@@ -236,20 +304,7 @@ export function RightPanel({
               action.region === "right"
               && (action.isAvailable?.(toolbarActionContext) ?? true))
             .map((action) => (
-              <button
-                className="chrome-button"
-                type="button"
-                aria-label={action.label}
-                title={action.label}
-                key={action.id}
-                onClick={() => {
-                  void Promise.resolve(action.run(toolbarActionContext)).catch((error) => {
-                    console.error(`Panel action ${action.id} failed`, error);
-                  });
-                }}
-              >
-                <ToolbarActionIcon icon={action.icon} />
-              </button>
+              <PanelToolbarAction key={action.id} action={action} context={toolbarActionContext} />
             ))}
           <button
             className="chrome-button"
@@ -258,6 +313,8 @@ export function RightPanel({
               state.rightPanelFullWidth ? "Restore panel" : "Maximize panel"
             }
             onClick={() => onAction({ type: "toggle-right-full-width" })}
+            aria-label={state.rightPanelFullWidth ? "Restore panel" : "Maximize panel"}
+            aria-pressed={state.rightPanelFullWidth}
           >
             {state.rightPanelFullWidth ? (
               <Minimize2 size={14} />
@@ -280,8 +337,10 @@ export function RightPanel({
         role="tabpanel"
       >
         {activeTab === null ? (
-          <div className="right-panel-empty">
-            <strong>No panel selected</strong>
+          <div className="right-panel-launcher" role="group" aria-label="Open a panel">
+            {creationActions.length > 0 ? creationActions.map(action => (
+              <PanelToolbarAction key={action.id} action={action} context={toolbarActionContext} launcher />
+            )) : <p>No panel actions available for this host.</p>}
           </div>
         ) : ActivePanel === null ? (
           <div className="right-panel-empty">
@@ -289,7 +348,11 @@ export function RightPanel({
             <p>The renderer plugin for this tab is not installed.</p>
           </div>
         ) : (
-          <ActivePanel tab={activeTab} ownerId={state.ownerId} />
+          <ActivePanel
+            tab={activeTab}
+            ownerId={state.ownerId}
+            presentationId={presentationId}
+          />
         )}
       </div>
     </div>

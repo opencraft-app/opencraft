@@ -44,11 +44,13 @@ import { AppShellRightPanel } from "./app-shell-right-panel";
 import { SidebarResizeHandle } from "./sidebar-resize-handle";
 import {
   usePanelAnimation,
+  usePanelFullWidthAnimation,
   usePanelVisibilityAnimation,
 } from "./use-panel-animation";
 import { useSidebarDockIntent } from "./use-sidebar-dock-intent";
 
 interface AppShellProps {
+  layoutScope: string;
   header: ReactNode;
   floatingSidebarHeader(onDock: () => void): ReactNode;
   leftPanel: ReactNode;
@@ -56,6 +58,8 @@ interface AppShellProps {
   rightPanelOpen: boolean;
   rightPanelFullWidth: boolean;
   sidebarCollapsible?: boolean;
+  sidebarTransientEnabled?: boolean;
+  sidebarResizable?: boolean;
   sidebarOpen: boolean;
   sidebarWidth: number;
   windowChrome: WindowChromeSnapshot;
@@ -96,6 +100,7 @@ export function ApplicationShellRoot({
     <div
       ref={rootRef}
       className={["app-shell-root", className].filter(Boolean).join(" ")}
+      data-selection="chrome"
       data-codex-window-type={windowChrome.kind}
       data-codex-os={windowChrome.platform}
       data-sidebar-open={sidebarOpen}
@@ -177,6 +182,7 @@ export function useAppShellLayoutMotion(): AppShellLayoutMotion {
 }
 
 export function AppShell({
+  layoutScope,
   header,
   floatingSidebarHeader,
   leftPanel,
@@ -184,6 +190,8 @@ export function AppShell({
   rightPanelOpen,
   rightPanelFullWidth,
   sidebarCollapsible = true,
+  sidebarTransientEnabled = true,
+  sidebarResizable = true,
   sidebarOpen,
   sidebarWidth,
   windowChrome,
@@ -203,6 +211,7 @@ export function AppShell({
   );
   const sidebarAnimation = useMotionValue(sidebarOpen ? 1 : 0);
   const rightPanelAnimation = useMotionValue(rightPanelOpen ? 1 : 0);
+  const fullWidthProgress = usePanelFullWidthAnimation(rightPanelFullWidth, layoutScope, rightPanelOpen);
   const zeroWidth = useMotionValue(0);
   const rightPanelLayoutTick = useMotionValue(0);
   const [rightPanelPresentationActive, setRightPanelPresentationActive] =
@@ -272,19 +281,21 @@ export function AppShell({
     ([contentWidth, ratio]) =>
       interpolateRightPanelWidth(Number(ratio), Number(contentWidth)),
   );
-  // Full-width is a semantic layout mode, not an asynchronously mirrored
-  // MotionValue. Select the physical width in the same React render that hides
-  // the conversation header and viewport. This is Codex's widthMode invariant:
-  // there is never a frame in which regular chrome and full-width panel chrome
-  // can both own the center toolbar.
-  const rightPanelWidth = rightPanelFullWidth
-    ? mainContentWidth
-    : regularRightPanelWidth;
+  // Semantic mode changes immediately; physical geometry follows one progress
+  // value. Reversing the gesture retargets that value rather than resetting it.
+  const rightPanelWidth = useTransform(
+    [mainContentWidth, regularRightPanelWidth, fullWidthProgress],
+    ([total, regular, progress]) => Number(regular) + (Number(total) - Number(regular)) * Math.max(0, Math.min(1, Number(progress))),
+  );
+  const mainViewportWidth = useTransform(
+    [mainContentWidth, rightPanelWidth, rightPanelAnimation],
+    ([total, panel, visibility]) => Math.max(0, Number(total) - Number(panel) * Math.max(0, Math.min(1, Number(visibility)))),
+  );
   // This is the width owned by surrounding chrome, not the physical aside.
   // Full-width mode replaces the main viewport and therefore reserves no
   // separate header/floating-bounds gutter in the original AppShell.
   const regularRightPanelAnimatedWidth = useTransform(
-    [rightPanelAnimation, regularRightPanelWidth],
+    [rightPanelAnimation, rightPanelWidth],
     ([progress, width]) =>
       Math.max(0, Math.min(1, Number(progress))) * Number(width),
   );
@@ -415,7 +426,7 @@ export function AppShell({
 
   const floatingIntent = useSidebarDockIntent({
     docked: sidebarOpen,
-    enabled: true,
+    enabled: sidebarTransientEnabled,
     getPanelWidth: getLiveSidebarWidth,
     lockOpen: floatingResizing,
   });
@@ -450,7 +461,7 @@ export function AppShell({
         sidebarPresentation={sidebarPresentation}
         style={shellStyle}
       >
-        {mountFloatingPresenceOwner ? (
+        {sidebarTransientEnabled && mountFloatingPresenceOwner ? (
           <FloatingLeftPanel
             header={floatingSidebarHeader(dockFloatingSidebar)}
             visible={showFloatingSidebar}
@@ -479,7 +490,7 @@ export function AppShell({
                 >
                   {leftPanel}
                 </motion.div>
-                <SidebarResizeHandle
+                {sidebarResizable ? <SidebarResizeHandle
                   collapsible={sidebarCollapsible}
                   getCurrentWidth={getLiveSidebarWidth}
                   width={sidebarWidth}
@@ -488,7 +499,7 @@ export function AppShell({
                   onResize={resizeSidebar}
                   onResizeEnd={finishSidebarResize}
                   onResizingChange={setLayoutResizing}
-                />
+                /> : null}
               </motion.aside>
             ) : null}
           </AnimatePresence>
@@ -504,9 +515,12 @@ export function AppShell({
               {header}
             </motion.div>
             <div className="main-content-body">
-              <div
+              <motion.div
                 ref={mainContentViewportRef}
                 className="main-content-viewport"
+                style={{ width: mainViewportWidth, flex: "0 0 auto", overflow: "hidden" }}
+                inert={rightPanelFullWidth || undefined}
+                aria-hidden={rightPanelFullWidth || undefined}
                 data-app-shell-main-content-layout="thread-edge-scroll"
                 data-app-shell-thread-edge-scroll={isHeaderEdgeScroll}
                 data-app-shell-right-panel-full-width={rightPanelFullWidth}
@@ -524,7 +538,7 @@ export function AppShell({
                     <div className="main-content-slot">{children}</div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
               <AppShellRightPanel
                 animation={rightPanelAnimation}
                 fullWidth={rightPanelFullWidth}

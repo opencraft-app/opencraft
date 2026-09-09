@@ -54,7 +54,9 @@ export interface ConversationViewRegistryConfig {
 /**
  * Owns presentation state for one concrete route/tab surface. Multiple Views
  * may observe the same Conversation Scope while keeping independent Composer,
- * scroll, panel and focus state. Each cached View retains its semantic Scope.
+ * scroll and physical presentation state. Conversation panel state belongs to
+ * the parent Scope and is deliberately absent here. Each cached View retains
+ * its semantic Scope.
  */
 export function createConversationViewRegistry(
   config: ConversationViewRegistryConfig,

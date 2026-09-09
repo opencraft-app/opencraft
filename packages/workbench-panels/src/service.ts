@@ -14,6 +14,8 @@ export interface PanelTypeDefinition<TParams extends Readonly<Record<string, unk
     readonly order: number;
     readonly params: TParams;
   };
+  /** Rebuilds cached panel chrome from an application-owned resource directory. */
+  restoreTabs?(ownerId: string): readonly PanelTabDescriptor[];
   createTab(params: TParams): PanelTabDescriptor;
   /** Releases the logical resource represented by a tab. Renderers never own it. */
   disposeTab?(tab: PanelTabDescriptor, ownerId: string, reason: PanelDisposeReason): void;
@@ -32,6 +34,8 @@ export interface PanelToolbarActionDefinition {
   readonly order: number;
   readonly label: string;
   readonly icon: string;
+  /** Opt in to both the new-tab picker and empty-panel launcher. */
+  readonly creationLabel?: string;
   isAvailable?(context: PanelToolbarActionContext): boolean;
   run(context: PanelToolbarActionContext): void | Promise<void>;
 }
@@ -181,9 +185,22 @@ export class WorkbenchPanelService extends Service {
       .filter((definition) => definition.initialTab !== undefined)
       .sort((left, right) => (left.initialTab?.order ?? 0) - (right.initialTab?.order ?? 0))
       .map((definition) => definition.createTab(definition.initialTab!.params));
+    const restoredTabs = [...this.definitions.values()].flatMap((definition) =>
+      definition.restoreTabs?.(ownerId) ?? []);
+    const tabsById = new Map<string, PanelTabDescriptor>();
+    for (const tab of [...initialTabs, ...restoredTabs]) {
+      const existing = tabsById.get(tab.id);
+      if (
+        existing !== undefined
+        && (existing.kind !== tab.kind || existing.resource !== tab.resource)
+      ) {
+        throw new Error(`Panel restore produced conflicting tab ${tab.id}`);
+      }
+      tabsById.set(tab.id, tab);
+    }
     const initialized = createConversationPanelState({
       ownerId,
-      initialTabs,
+      initialTabs: [...tabsById.values()],
       rightPanelOpen: this.defaultRightPanelOpen,
     });
     this.initializedOwners.add(ownerId);
@@ -202,7 +219,7 @@ export class WorkbenchPanelService extends Service {
     };
   };
 
-  /** Releases presentation resources before forgetting a Conversation View. */
+  /** Forget a logical panel owner, not a navigation entry. Not a user close. */
   releaseOwner(ownerId: string): void {
     const state = this.ownerStates.get(ownerId);
     if (state !== undefined) this.disposeOwnerTabs(state, "owner-release");

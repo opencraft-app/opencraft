@@ -5,6 +5,8 @@ import type { HostConnectionProfile, ProvisionHostInput } from "@opencraft/workb
 
 export * from "./composer-actions";
 export * from "./settings-controls";
+export * from "./adaptive-panel";
+export * from "./settings-search-select";
 
 export type { ProvisionHostInput } from "@opencraft/workbench-runtime";
 

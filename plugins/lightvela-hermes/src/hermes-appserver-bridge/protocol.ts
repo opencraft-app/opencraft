@@ -1,6 +1,14 @@
-import { HermesAppServerAdapter } from "./adapter";
+import {
+  HermesAppServerAdapter,
+  isUnmaterializedHermesHistory,
+} from "./adapter";
+import {
+  OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY,
+  OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
+} from "@opencraft/appserver-protocol";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
 import type { HermesHostTerminal } from "./tat-terminal";
+import type { HermesProcessService } from "./process-service";
 import type { AppServerTurn, JsonRpcRequest } from "./types";
 import type { HermesBotAppServerHandler } from "./bot-protocol-handler";
 
@@ -44,14 +52,20 @@ export const dispatchAppServerRequest = async (
   adapter: HermesAppServerAdapter,
   request: JsonRpcRequest,
   services: {
+    readonly signal?: AbortSignal;
     readonly fileSystem?: HermesHostFileSystem;
     readonly terminal?: HermesHostTerminal;
+    readonly processes?: HermesProcessService;
     readonly bots?: HermesBotAppServerHandler;
   } = {},
 ): Promise<unknown> => {
+  services.signal?.throwIfAborted();
   const value = requestParams(request);
-  if (request.method.startsWith("bot/")) {
-    if (!services.bots) throw new Error("Hermes Bot handler is unavailable");
+  if (request.method.startsWith("process/")) {
+    if (!services.processes) throw new Error("Hermes process service is unavailable");
+    return services.processes.dispatch(request.method, value);
+  }
+  if (request.method.startsWith("bot/") && services.bots !== undefined) {
     return services.bots.handle(request.method, value);
   }
   switch (request.method) {
@@ -64,26 +78,31 @@ export const dispatchAppServerRequest = async (
         serverInfo: { name: "opencraft-hermes-browser-handler", version: "0.1.0" },
         capabilities: {
           extensions: {
-            "vela/bot-conversations": {
-              version: 1,
-              topologies: ["direct"],
-              features: {
-                messageStreaming: true,
-                executionCancellation: true,
-                attachments: true,
-                interactions: false,
-                botManagement: true,
-                botAssets: false,
-                groupMembership: false,
-                configuration: false,
-                routines: false,
+            "opencraft/message-window-history": { version: 1, pageRows: 120, previewNotification: "thread/history/preview" },
+            [OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION]:
+              OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY,
+            ...(services.bots === undefined ? {} : {
+              "vela/bot-conversations": {
+                version: 1,
+                topologies: ["direct"],
+                features: {
+                  messageStreaming: true,
+                  executionCancellation: true,
+                  attachments: true,
+                  interactions: false,
+                  botManagement: true,
+                  botAssets: false,
+                  groupMembership: false,
+                  configuration: false,
+                  routines: false,
+                },
+                limits: {
+                  maxPageSize: 100,
+                  maxInlineAttachmentBytes: 10485760,
+                  maxParticipants: 2,
+                },
               },
-              limits: {
-                maxPageSize: 100,
-                maxInlineAttachmentBytes: 10485760,
-                maxParticipants: 2,
-              },
-            },
+            }),
           },
         },
       };
@@ -91,7 +110,9 @@ export const dispatchAppServerRequest = async (
       return adapter.listThreads(value);
     case "thread/read": {
       const threadId = String(value.threadId ?? "");
-      return { thread: await adapter.loadThread(threadId, value.includeTurns === true) };
+      return { thread: value.includeTurns === true
+        ? await adapter.loadThread(threadId, true, null, services.signal)
+        : await adapter.readThreadMetadata(threadId, services.signal) };
     }
     case "thread/resume": {
       const threadId = String(value.threadId ?? "");
@@ -107,14 +128,43 @@ export const dispatchAppServerRequest = async (
       // Cursor-only Resume still needs the authoritative tail to seed replay.
       // Prime the same page that thread/turns/list will consume, avoiding a
       // second REST snapshot and a second history authority.
-      const historyPromise = cursorOnlyResume
-        ? adapter.prepareTurnsPage(threadId, requestedLimit, "desc")
-        : adapter.readTurnsPage(threadId, 0, requestedLimit, "desc");
-      const [loadedThread, historyPage] = await Promise.all([
-        adapter.loadThread(threadId, false),
-        historyPromise,
+      const historyRead = cursorOnlyResume
+        ? adapter.prepareTurnsPage(threadId, requestedLimit, "desc", services.signal)
+        : adapter.readTurnsPage(threadId, 0, requestedLimit, "desc", services.signal);
+      const historyPromise = historyRead.then(page => {
+        services.signal?.throwIfAborted();
+        if (typeof value.historyPreviewToken === "string") {
+          adapter.publishHistoryPreview(threadId, value.historyPreviewToken, page.chronological);
+        }
+        return page;
+      });
+      const [runtimeResult, historyResult] = await Promise.all([
+        adapter.loadThread(threadId, false, null, services.signal)
+          .then(thread => ({ thread, error: null as unknown }))
+          .catch((error: unknown) => ({ thread: null, error })),
+        historyPromise
+          .then((page) => ({ page, error: null as unknown }))
+          .catch((error: unknown) => ({ page: null, error })),
       ]);
+      services.signal?.throwIfAborted();
+      // A failed runtime activation must not revoke an independent REST
+      // preview still in flight. Settle both legs, then report readiness error.
+      if (runtimeResult.thread === null) throw runtimeResult.error;
+      const loadedThread = runtimeResult.thread;
+      const historyWasUnmaterialized = historyResult.page === null
+        && isUnmaterializedHermesHistory(loadedThread, historyResult.error);
+      if (historyResult.page === null && !historyWasUnmaterialized) {
+        throw historyResult.error;
+      }
+      const historyPage = historyResult.page ?? {
+        data: [],
+        chronological: [],
+        nextOffset: null,
+      };
       await adapter.activateProjection(threadId, historyPage.chronological);
+      // Recovery may replace the durable tail with its retained live owner or
+      // append backend inflight. Both bootstrap paths must expose that array.
+      historyPage.data.splice(0, historyPage.data.length, ...[...historyPage.chronological].reverse());
       const thread = includeThreadTurns
         ? { ...loadedThread, turns: historyPage?.chronological ?? [] }
         : { ...loadedThread, turns: [] };
@@ -139,7 +189,9 @@ export const dispatchAppServerRequest = async (
         runtimeWorkspaceRoots: [thread.cwd],
         // A non-null bootstrap cursor tells paginated clients to ask for the
         // first history page. `local:0` is opaque outside this bridge.
-        turnsBackwardsCursor: !includeThreadTurns && initialTurnsRequest === null
+        turnsBackwardsCursor: !historyWasUnmaterialized
+          && !includeThreadTurns
+          && initialTurnsRequest === null
           ? "hermes-messages:0"
           : historyCursor(historyPage.nextOffset),
         itemsBackwardsCursor: null,
@@ -161,6 +213,7 @@ export const dispatchAppServerRequest = async (
         historyOffset(value.cursor),
         typeof value.limit === "number" ? value.limit : 50,
         sortDirection,
+        services.signal,
       );
       return {
         data: page.data,
@@ -207,6 +260,10 @@ export const dispatchAppServerRequest = async (
           String(value.threadId ?? ""),
           value.input,
           value.model,
+          undefined,
+          typeof value.clientUserMessageId === "string"
+            ? value.clientUserMessageId
+            : null,
         ),
       };
     case "turn/steer":
@@ -262,13 +319,13 @@ export const dispatchAppServerRequest = async (
       return {};
     case "fs/getMetadata":
       if (!services.fileSystem) throw new Error("Hermes Host filesystem is unavailable");
-      return services.fileSystem.getMetadata(String(value.path ?? ""));
+      return services.fileSystem.getMetadata(String(value.path ?? ""), services.signal);
     case "fs/readDirectory":
       if (!services.fileSystem) throw new Error("Hermes Host filesystem is unavailable");
       return services.fileSystem.readDirectory(String(value.path ?? ""));
     case "fs/readFile":
       if (!services.fileSystem) throw new Error("Hermes Host filesystem is unavailable");
-      return services.fileSystem.readFile(String(value.path ?? ""));
+      return services.fileSystem.readFile(String(value.path ?? ""), services.signal);
     case "fs/writeFile":
       if (!services.fileSystem) throw new Error("Hermes Host filesystem is unavailable");
       await services.fileSystem.writeFile(

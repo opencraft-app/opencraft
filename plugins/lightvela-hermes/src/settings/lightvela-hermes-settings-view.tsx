@@ -1,4 +1,4 @@
-import { Bot, LogIn, LogOut, RefreshCw, ServerCog } from "lucide-react";
+import { Bot, LogOut, RefreshCw, ServerCog } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
@@ -12,6 +12,7 @@ import {
 } from "@opencraft/extension-react";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
+import { LightVelaLoginOptions } from "./lightvela-login-options";
 
 export const LIGHTVELA_HERMES_HOST_ID = "velahermes0";
 
@@ -20,11 +21,11 @@ export function createLightVelaHermesSettingsView(account: LightVelaAccountServi
     const accountSnapshot = useSyncExternalStore(account.subscribe, account.getSnapshot, account.getSnapshot);
     const [pendingBotId, setPendingBotId] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [signingOut, setSigningOut] = useState(false);
     const installed = host.profiles.find((profile) => profile.hostId === LIGHTVELA_HERMES_HOST_ID) ?? null;
 
     useEffect(() => {
-      account.bootstrapOAuthFragment();
-      void account.refreshBots().catch(() => undefined);
+      if (account.hasStoredSession()) void account.refreshBots().catch(() => undefined);
     }, []);
 
     const attach = async (botId: string) => {
@@ -57,7 +58,7 @@ export function createLightVelaHermesSettingsView(account: LightVelaAccountServi
 
     return (
       <>
-        <SettingsPageHeader title="LightVela" description="Use a running LightVela Bot as the Hermes execution Host." />
+        <SettingsPageHeader title="Overview" description="Manage the selected Hermes Agent and its current Host deployment." />
 
         <SettingsSection
           title="Account"
@@ -74,27 +75,34 @@ export function createLightVelaHermesSettingsView(account: LightVelaAccountServi
                     ? "Checking account…"
                     : accountSnapshot.phase === "authenticated"
                       ? `${accountSnapshot.bots.length} running Bot${accountSnapshot.bots.length === 1 ? "" : "s"}`
-                      : "Sign in with the international LightVela account"}
+                      : "Choose a LightVela region to sign in"}
                 </>
               )}
-              actions={accountSnapshot.phase === "authenticated" ? (
-                <SettingsButton variant="ghost" type="button" title="Sign out" aria-label="Sign out" onClick={() => account.signOut()}>
+              actions={accountSnapshot.phase === "authenticated" || account.hasStoredSession() ? (
+                <SettingsButton variant="ghost" type="button" title="Sign out" aria-label="Sign out" disabled={signingOut} onClick={() => {
+                  setSigningOut(true);
+                  setActionError(null);
+                  void account.signOut().catch(() => setActionError("本地已登出，但服务器会话注销失败；其他已登录客户端可能仍在线。"))
+                    .finally(() => setSigningOut(false));
+                }}>
                   <LogOut size={15} />
                 </SettingsButton>
-              ) : (
-                <SettingsButton type="button" onClick={() => account.signIn()}>
-                  <LogIn size={15} /> Sign in
-                </SettingsButton>
-              )}
+              ) : undefined}
             />
+            {accountSnapshot.phase === "authenticated" || account.hasStoredSession() ? null : (
+              <LightVelaLoginOptions account={account} snapshot={accountSnapshot} disabled={signingOut} />
+            )}
           </SettingsGroup>
-          {accountSnapshot.error !== null ? <SettingsNotice tone="error">{accountSnapshot.error}</SettingsNotice> : null}
+          {accountSnapshot.error !== null && accountSnapshot.phase !== "anonymous"
+            ? <SettingsNotice tone="error">{accountSnapshot.error}</SettingsNotice>
+            : null}
+          {actionError !== null ? <SettingsNotice tone="error">{actionError}</SettingsNotice> : null}
         </SettingsSection>
 
         {accountSnapshot.phase === "authenticated" ? (
           <SettingsSection
-            title="Running Bots"
-            description={<>Selecting a Bot provisions the single persistent Host <code>{LIGHTVELA_HERMES_HOST_ID}</code>.</>}
+            title="Agent deployment"
+            description={<>Bind the selected Hermes Agent to the stable Host <code>{LIGHTVELA_HERMES_HOST_ID}</code>.</>}
             action={(
               <SettingsButton
                 type="button"

@@ -63,10 +63,13 @@ function validateConfig(config: HostConnectionJson): WebSocketHostConnectionConf
   }) as WebSocketHostConnectionConfig & HostConnectionJson;
 }
 
+// Activation and transport acquisition describe the same supported hosts.
+const WEBSOCKET_HOST_PLATFORMS = ["web", "electron"] as const;
+
 export const WebSocketHostConnectionProvider: HostConnectionProvider = {
   id: "vela.websocket",
   label: "WebSocket",
-  targets: ["web"],
+  targets: WEBSOCKET_HOST_PLATFORMS,
   configVersion: 1,
   validate: validateConfig,
   createTransport(config) {
@@ -115,7 +118,7 @@ export const BuiltinWebSocketHostConnectionExtension: TrustedExtensionDefinition
     version: "1.0.0",
     apiVersion: 1,
     trust: "trusted",
-    platforms: ["web", "electron"],
+    platforms: WEBSOCKET_HOST_PLATFORMS,
     activationEvents: ["onStartupFinished"],
   },
   activate(api) {

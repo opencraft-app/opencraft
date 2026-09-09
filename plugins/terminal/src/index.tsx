@@ -13,6 +13,7 @@ import {
 } from "react";
 
 export interface WorkbenchTerminalOpenOptions {
+  readonly resourceOwnerId?: string;
   readonly hostId: string;
   readonly cwd: string | null;
   readonly cols?: number;
@@ -20,6 +21,7 @@ export interface WorkbenchTerminalOpenOptions {
 }
 
 interface OwnedTerminalSession {
+  readonly ownerId: string | null;
   readonly hostId: string;
   readonly session: AppServerTerminalSession;
 }
@@ -32,15 +34,6 @@ export class WorkbenchTerminalSessionRegistry {
     private readonly resolveRuntime: (hostId: string) => AppServerWorkbenchRuntime,
   ) {}
 
-  isAvailable(hostId: string): boolean {
-    if (this.disposed) return false;
-    try {
-      return this.resolveRuntime(hostId).getSnapshot().phase === "ready";
-    } catch {
-      return false;
-    }
-  }
-
   open(options: WorkbenchTerminalOpenOptions): string {
     if (this.disposed) throw new Error("Workbench terminal registry is disposed");
     const runtime = this.resolveRuntime(options.hostId);
@@ -50,22 +43,55 @@ export class WorkbenchTerminalSessionRegistry {
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
     });
-    this.sessions.set(session.processId, {
+    const key = JSON.stringify([options.hostId, session.processId]);
+    this.sessions.set(key, {
+      ownerId: options.resourceOwnerId ?? null,
       hostId: options.hostId,
       session,
     });
-    return session.processId;
+    return key;
   }
 
   get(sessionId: string): AppServerTerminalSession | null {
     return this.sessions.get(sessionId)?.session ?? null;
   }
 
+  listForOwner(ownerId: string): readonly string[] {
+    return [...this.sessions.entries()].flatMap(([sessionId, owned]) =>
+      owned.ownerId === ownerId ? [sessionId] : []);
+  }
+
+  releaseOwner(ownerId: string): void {
+    for (const sessionId of this.listForOwner(ownerId)) this.release(sessionId);
+  }
+
+  async restore(hostId: string): Promise<string[]> {
+    if (this.disposed) throw new Error("Terminal registry is disposed");
+    const terminal = this.resolveRuntime(hostId).resources.terminal;
+    const { processes } = await terminal.list();
+    if (this.disposed) return [];
+    return processes.filter(process => process.phase === "running").map(process => {
+      const id = process.processHandle;
+      const key = JSON.stringify([hostId, id]);
+      if (!this.sessions.has(key)) this.sessions.set(key, {
+        ownerId: null,
+        hostId,
+        session: terminal.attach(id),
+      });
+      return key;
+    });
+  }
+
   release(sessionId: string): void {
     const owned = this.sessions.get(sessionId);
     if (owned === undefined) return;
     this.sessions.delete(sessionId);
-    void owned.session.dispose();
+    void owned.session.terminate().then(async () => {
+      await owned.session.dispose();
+    }).catch(() => {
+      if (!this.disposed) this.sessions.set(sessionId, owned);
+      else void owned.session.dispose();
+    });
   }
 
   async dispose(): Promise<void> {
@@ -259,7 +285,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
     const error = presentationError ?? snapshot.error;
     return (
       <section className="terminal-panel" data-phase={snapshot.phase}>
-        <div className="terminal-panel__viewport" ref={slotRef} />
+        <div className="terminal-panel__viewport" data-selection="text" ref={slotRef} />
         {error !== null ? (
           <div className="terminal-panel__status" role="status">
             {error.message}
@@ -278,22 +304,25 @@ export function createTerminalWorkbenchPanelPlugin(
   registry: WorkbenchTerminalSessionRegistry,
 ) {
   const TerminalPanel = createTerminalPanel(registry);
+  const terminalTab = (sessionId: string) => ({
+    id: `terminal:${sessionId}`,
+    kind: "terminal",
+    region: "right" as const,
+    title: "Terminal",
+    icon: "terminal",
+    resource: sessionId,
+    closable: true,
+    preview: false,
+  });
   return Object.assign(function TerminalWorkbenchPanelPlugin(ctx: Context) {
     const remove = [
       ctx.workbenchPanels.register<{ readonly sessionId: string }>({
         kind: "terminal",
-        createTab: ({ sessionId }) => ({
-          id: `terminal:${sessionId}`,
-          kind: "terminal",
-          region: "right",
-          title: "Terminal",
-          icon: "terminal",
-          resource: sessionId,
-          closable: true,
-          preview: false,
-        }),
-        disposeTab: (tab) => {
-          if (tab.resource !== undefined) registry.release(tab.resource);
+        restoreTabs: (ownerId) => registry.listForOwner(ownerId).map(terminalTab),
+        createTab: ({ sessionId }) => terminalTab(sessionId),
+        disposeTab: (tab, _ownerId, reason) => {
+          // Unmount/owner eviction/plugin replacement is not user intent to kill.
+          if (reason === "close" && tab.resource !== undefined) registry.release(tab.resource);
         },
       }),
       ctx.workbenchPanelRenderers.register({
@@ -306,12 +335,10 @@ export function createTerminalWorkbenchPanelPlugin(
         order: 200,
         label: "New terminal",
         icon: "terminal",
-        isAvailable: ({ hostId }) => registry.isAvailable(hostId),
+        creationLabel: "Terminal",
         run: (context) => {
-          const sessionId = registry.open({
-            hostId: context.hostId,
-            cwd: context.cwd,
-          });
+          const sessionId = registry.open({ hostId: context.hostId, cwd: context.cwd,
+            resourceOwnerId: context.resourceOwnerId });
           ctx.workbenchPanels.open(context.ownerId, "terminal", { sessionId });
         },
       }),

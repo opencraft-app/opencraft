@@ -1,15 +1,15 @@
 import { join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 import { desktopProduct } from "./product-identity.js";
+import { DesktopLifecycle } from "./desktop-lifecycle.js";
+import { createDesktopTray } from "./desktop-tray.js";
 
 import {
   BrowserWindow,
-  Menu,
   Tray,
   app,
   dialog,
   ipcMain,
-  nativeImage,
   nativeTheme,
   shell,
   session,
@@ -43,12 +43,10 @@ app.setPath("userData", userDataDirectory);
 
 let mainWindow: BrowserWindow | null = null;
 let mainWebContents: WebContents | null = null;
-let mainWindowCreation: Promise<void> | null = null;
 let tray: Tray | null = null;
 let loopbackHost: WorkbenchStaticServer | null = null;
 let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
-let shutdownStarted = false;
 const daemonBridges = new Set<{ close(): void }>();
 
 function rejectAppHostPort(
@@ -302,6 +300,7 @@ async function createMainWindow(): Promise<void> {
   });
   const webContents = window.webContents;
   mainWindow = window;
+  lifecycle.bindWindow(window);
   mainWebContents = webContents;
 
   const refreshWindowAppearance = () => {
@@ -354,52 +353,29 @@ async function createMainWindow(): Promise<void> {
   }
 }
 
-function ensureMainWindow(): Promise<void> {
-  if (shutdownStarted) return Promise.resolve();
-  const existing = mainWindow;
-  if (existing !== null && !existing.isDestroyed()) {
-    existing.show();
-    existing.focus();
-    return Promise.resolve();
-  }
-  if (mainWindowCreation !== null) return mainWindowCreation;
-  const creation = createMainWindow().finally(() => {
-    if (mainWindowCreation === creation) mainWindowCreation = null;
-  });
-  mainWindowCreation = creation;
-  return creation;
-}
+function ensureMainWindow(): Promise<void> { return lifecycle.show(); }
 
-function createTrayIcon(): Electron.NativeImage {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
-      <path fill="black" d="M9 1.4a7.6 7.6 0 1 0 0 15.2A7.6 7.6 0 0 0 9 1.4Zm-3.2 5A1.6 1.6 0 1 1 9 6.4a1.6 1.6 0 0 1-3.2 0Zm5.1 5.9c-2.5 1.1-5.1.1-6.3-1.4l1.2-1c.8 1 2.7 1.8 4.5 1 1.1-.5 1.8-1.5 2-2.8l1.6.2c-.2 1.8-1.3 3.3-3 4Z"/>
-    </svg>`;
-  const icon = nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`,
-  );
-  if (process.platform === "darwin") icon.setTemplateImage(true);
-  return icon;
-}
-
-function ensureTray(): void {
-  if (tray !== null && !tray.isDestroyed()) return;
-  const nextTray = new Tray(createTrayIcon());
-  nextTray.setToolTip("OpenCraft Daemon");
-  nextTray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: "Open OpenCraft",
-      click: () => void ensureMainWindow(),
-    },
-    { type: "separator" },
-    {
-      label: "Quit OpenCraft",
-      click: () => app.quit(),
-    },
-  ]));
-  nextTray.on("click", () => void ensureMainWindow());
-  tray = nextTray;
-}
+const lifecycle = new DesktopLifecycle({
+  getWindow: () => mainWindow,
+  createWindow: createMainWindow,
+  showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
+  hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
+  stopRuntime: async () => {
+    const daemon = daemonManager;
+    const loopback = loopbackHost;
+    for (const bridge of [...daemonBridges]) bridge.close();
+    daemonBridges.clear();
+    daemonManager = null;
+    loopbackHost = null;
+    rendererOrigin = null;
+    const results = await Promise.allSettled([daemon?.shutdown(), loopback?.close()]);
+    const errors = results.filter(result => result.status === "rejected");
+    if (errors.length) throw new AggregateError(errors.map(result => result.reason), "Desktop shutdown failed");
+  },
+  destroyTray: () => { if (tray && !tray.isDestroyed()) tray.destroy(); tray = null; },
+  reportError: error => console.error("Desktop lifecycle:", error),
+  exit: code => app.exit(code),
+});
 
 async function bootstrap(): Promise<void> {
   const singleInstance = app.requestSingleInstanceLock();
@@ -408,16 +384,10 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
-  app.on("second-instance", () => {
-    const window = mainWindow;
-    if (window === null || window.isDestroyed()) {
-      void ensureMainWindow();
-      return;
-    }
-    if (window.isMinimized()) window.restore();
-    window.show();
-    window.focus();
-  });
+  app.on("second-instance", () => { void ensureMainWindow().catch(console.error); });
+  app.on("activate", () => { void ensureMainWindow().catch(console.error); });
+  app.on("before-quit", event => { event.preventDefault(); void lifecycle.quit(); });
+  app.on("window-all-closed", () => { /* Resident host; only explicit Quit stops runtime. */ });
 
   await app.whenReady();
   daemonManager = new OpenCraftDaemonClientManager({
@@ -431,7 +401,7 @@ async function bootstrap(): Promise<void> {
     dataDirectory: join(app.getPath("userData"), "dsh"),
     executable: process.execPath,
   });
-  ensureTray();
+  tray = createDesktopTray({ open: () => { void lifecycle.show().catch(console.error); }, quit: () => { void lifecycle.quit(); } });
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const trustedRenderer = rendererOrigin !== null
       && webContents === mainWebContents
@@ -449,39 +419,10 @@ async function bootstrap(): Promise<void> {
   });
   await ensureMainWindow();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void ensureMainWindow();
-  });
 }
 
 void bootstrap().catch((error: unknown) => {
   const message = error instanceof Error ? `${error.message}\n\n${error.stack ?? ""}` : String(error);
   dialog.showErrorBox("OpenCraft failed to start", message);
   app.exit(1);
-});
-
-app.on("window-all-closed", () => {
-  // Closing the last window releases presentation resources only. The tray
-  // keeps Electron alive and the independent OpenCraft Daemon retains native work.
-});
-
-app.on("before-quit", (event) => {
-  if (shutdownStarted) return;
-  shutdownStarted = true;
-  event.preventDefault();
-  const loopback = loopbackHost;
-  const daemon = daemonManager;
-  const bridges = [...daemonBridges];
-  const activeTray = tray;
-  daemonBridges.clear();
-  loopbackHost = null;
-  daemonManager = null;
-  tray = null;
-  rendererOrigin = null;
-  if (activeTray !== null && !activeTray.isDestroyed()) activeTray.destroy();
-  for (const bridge of bridges) bridge.close();
-  void Promise.allSettled([
-    loopback?.close(),
-    daemon?.shutdown(),
-  ]).finally(() => app.quit());
 });

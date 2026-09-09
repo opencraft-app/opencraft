@@ -8,7 +8,10 @@
     "./theme-engine": "./src/theme-engine.ts",
     "./tokens": "./src/tokens.shared.ts",
     "./tokens.native": "./src/tokens.native.ts",
-    "./tokens.web": "./src/tokens.web.scss"
+    "./tokens.web": "./src/tokens.web.scss",
+    "./menu.web": "./src/menu.web.scss",
+    "./selection.web": "./src/selection.web.scss",
+    "./controls.web": "./src/controls.web.scss"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

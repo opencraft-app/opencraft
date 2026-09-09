@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { QueryClient } from "@tanstack/react-query";
+import { Context } from "@deepseek-ai/cordis";
+import { BlobResourceService } from "@opencraft/blob-resources";
 import type { ComposerAttachment } from "@opencraft/composer-core";
 import type { AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 
@@ -42,6 +43,8 @@ test("browser images become host-independent Codex image URLs", async () => {
   assert.deepEqual(resolved.metadata, {
     source: "browser-inline",
     transport: "codex-image-url",
+    originalBytes: 3,
+    compression: "not-requested",
   });
 });
 
@@ -136,10 +139,11 @@ test("Markdown media paths remain Host filesystem paths, not browser file URLs",
   assert.equal(mediaMimeType("/tmp/unknown.bin"), "application/octet-stream");
 });
 
-test("Markdown AppServer media reads are cached per Host and become data URLs", async () => {
+test("Markdown AppServer media reads share Blob cache and release their object URLs", async () => {
   let reads = 0;
   const runtime = {
     resources: {
+      host: {},
       fileSystem: {
         async readFile(path: string) {
           reads += 1;
@@ -149,8 +153,8 @@ test("Markdown AppServer media reads are cached per Host and become data URLs", 
       },
     },
   } as unknown as AppServerWorkbenchRuntime;
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const load = createAppServerMediaSourceLoader(runtime, queryClient, "ssh:demo");
+  const ctx = new Context(); const fiber = ctx.plugin(BlobResourceService); await fiber;
+  const load = createAppServerMediaSourceLoader(runtime, ctx.blobResources, "ssh:demo");
   const request = {
     conversationId: "thread-1",
     cwd: "/workspace/demo",
@@ -161,10 +165,12 @@ test("Markdown AppServer media reads are cached per Host and become data URLs", 
     source: "preview.png",
   };
 
-  assert.deepEqual(await load(request), { source: "data:image/png;base64,AQID" });
-  assert.deepEqual(await load(request), { source: "data:image/png;base64,AQID" });
+  const first = (await load(request))!; const second = (await load(request))!;
+  assert.ok(first.source.startsWith("blob:"));
+  assert.deepEqual(new Uint8Array(await (await fetch(first.source)).arrayBuffer()), new Uint8Array([1, 2, 3]));
+  first.release?.(); second.release?.();
   assert.equal(reads, 1);
-  queryClient.clear();
+  await fiber.dispose();
 });
 
 test("historical user attachments use the same Host media boundary as Markdown", () => {

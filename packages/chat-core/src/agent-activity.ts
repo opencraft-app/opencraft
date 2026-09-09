@@ -9,6 +9,9 @@ import type {
   UserTimelineFrame,
 } from "./timeline";
 import type { TimelineTurnView } from "./timeline-turns";
+import type { WorkStatusItem } from "./work-status";
+import type { ConversationDetailLevel } from "./conversation-presentation";
+import { skillReadPresentation } from "./conversation-presentation";
 import { summarizeAutomaticApprovalReviewAction } from "./automatic-approval-review";
 import { parseSkillPath } from "./skill-path";
 import {
@@ -68,6 +71,7 @@ export interface AgentActivityGroupLifecycle {
 }
 
 export interface AgentActivityUnitPartitions {
+  readonly workedForItem: WorkStatusItem | null;
   readonly collapsibleUnits: readonly AgentActivityContentUnit[];
   readonly expandedUnits: readonly AgentActivityContentUnit[];
   readonly persistentUnits: readonly AgentActivityContentUnit[];
@@ -119,7 +123,13 @@ export interface AgentActivityStandaloneContentUnit {
   readonly block: TimelineBlock;
 }
 
-export type AgentActivityContentUnit = AgentActivityGroupContentUnit | AgentActivityStandaloneContentUnit;
+export interface AgentActivityWorkStatusContentUnit {
+  readonly type: "worked-for";
+  readonly id: string;
+  readonly item: WorkStatusItem;
+}
+
+export type AgentActivityContentUnit = AgentActivityGroupContentUnit | AgentActivityStandaloneContentUnit | AgentActivityWorkStatusContentUnit;
 
 export interface AgentActivityDisclosureInput {
   readonly hasFinalAssistantStarted: boolean;
@@ -137,6 +147,8 @@ export interface AgentActivityDisclosureState {
 
 export interface AgentActivityLayout {
   readonly showToggle: boolean;
+  /** Extracted metadata belongs to the toggle, never its expanded body. */
+  readonly workedForItem: WorkStatusItem | null;
   readonly isCollapsed: boolean;
   readonly preToggleUnits: readonly AgentActivityContentUnit[];
   readonly persistentUnits: readonly AgentActivityContentUnit[];
@@ -187,6 +199,7 @@ export interface TimelineTurnPresentationPlan {
   readonly auxiliaryFrames: readonly (EventTimelineFrame | InteractionTimelineFrame)[];
   readonly showThinking: boolean;
   readonly thinkingId: string;
+  readonly thinkingLabel: "Thinking" | "Planning";
   readonly topLevelSlotCount: number;
 }
 
@@ -206,6 +219,7 @@ export function isAgentActivityBlock(block: TimelineBlock): boolean {
     || block.type === "subagent"
     || block.type === "realtime-transcript"
     || block.type === "compaction"
+    || block.type === "todo"
     || (block.type === "image" && block.generated
       && (block.status === "pending" || block.status === "running"))
     || (block.type === "user-message" && (block.steeringStatus !== null || block.hookFeedback))
@@ -229,7 +243,9 @@ export function isGroupableAgentActivityBlock(
 export function isVisibleAgentActivityRow(
   block: TimelineBlock,
   registry?: ToolActivityPresenterRegistry,
+  detailLevel: ConversationDetailLevel = "STEPS_COMMANDS",
 ): boolean {
+  if (block.type === "command-execution" && skillReadPresentation(block, detailLevel)?.visible === false) return false;
   // Reasoning participates in the live Thinking state but Codex's Item
   // classifier returns null for it. It must never leak as a "Thought" row.
   if (block.type === "reasoning") return false;
@@ -254,7 +270,7 @@ function classifyAgentActivityItem(
   if (block.type === "reasoning") return "hidden";
   if (block.type === "patch" && block.changes.length === 0) return "hidden";
   if (block.type === "realtime-transcript") return "standalone";
-  if (block.type === "compaction" || block.type === "image") return "standalone";
+  if (block.type === "compaction" || block.type === "image" || block.type === "todo") return "standalone";
   if (block.type === "text") return block.phase === "commentary" ? "standalone" : "hidden";
   if (block.type === "user-message") {
     return block.steeringStatus !== null || block.hookFeedback ? "standalone" : "hidden";
@@ -354,7 +370,8 @@ export function createAgentActivityContentUnits(
     if (unit.blocks.length === 1 && !shouldKeepSingleItemGroup(unit.blocks[0]!, lifecycle, registry)) {
       const block = unit.blocks[0]!;
       if (isVisibleAgentActivityRow(block, registry)) {
-        result.push({ type: "standalone", id: `agent-activity-standalone:${block.id}`, block });
+        // r3562 je: demotion changes presentation, not the Unit's identity.
+        result.push({ type: "standalone", id: unit.id, block });
       }
       return result;
     }
@@ -400,7 +417,12 @@ export function partitionAgentActivityContentUnits(
   const collapsibleUnits: AgentActivityContentUnit[] = [];
   const expandedUnits: AgentActivityContentUnit[] = [];
   const preToggleUnits: AgentActivityContentUnit[] = [];
+  let workedForItem: WorkStatusItem | null = null;
   for (const unit of units) {
+    if (unit.type === "worked-for") {
+      workedForItem = unit.item;
+      continue;
+    }
     if (unit.type === "standalone" && unit.block.type === "realtime-transcript") {
       // r2440 fA: the leading voice handoff introduces the Activity before
       // the toggle. A later transcript remains visible while collapsed and
@@ -417,6 +439,7 @@ export function partitionAgentActivityContentUnits(
     else collapsibleUnits.push(unit);
   }
   return {
+    workedForItem,
     collapsibleUnits,
     expandedUnits,
     persistentUnits,
@@ -475,10 +498,16 @@ export function hasContinuingLiveDynamicToolActivity(
   return last !== undefined && presentToolActivity(last, registry).continuesLiveActivityBetweenCalls;
 }
 
-function isFinalAssistantText(block: TimelineBlock): block is TextTimelineBlock {
+function isDisplayableAssistantText(block: TimelineBlock): block is TextTimelineBlock {
   return block.type === "text"
-    && block.text.trim().length > 0
+    && (block.text.trim().length > 0 || block.completed === true || block.hasStructuredOutput === true)
     && block.phase !== "commentary";
+}
+
+function isFinalAssistantText(block: TimelineBlock): block is TextTimelineBlock {
+  // r3562 hasDisplayableContent / isFinalAnswerPhase are separate predicates.
+  // Rendering unphased text does not give it authority to close work.
+  return isDisplayableAssistantText(block) && block.phase === "final_answer";
 }
 
 function summarize(blocks: readonly TimelineBlock[]): AgentActivitySummary {
@@ -502,6 +531,7 @@ function isActiveAgentActivityBlock(
   registry?: ToolActivityPresenterRegistry,
 ): boolean {
   switch (block.type) {
+    case "compaction": return !block.completed;
     case "text": return block.streaming;
     case "reasoning": return block.streaming;
     case "command-execution":
@@ -543,6 +573,7 @@ function textHeader(
 function activePresentation(
   block: TimelineBlock,
   registry?: ToolActivityPresenterRegistry,
+  detailLevel: ConversationDetailLevel = "STEPS_COMMANDS",
 ): AgentActivityHeaderPresentation {
   if (block.type === "reasoning") {
     return textHeader("thinking", "thinking", block.summary || "Thinking", null);
@@ -558,6 +589,10 @@ function activePresentation(
   }
   if (isToolActivityBlock(block)) {
     const presentation = presentToolActivity(block, registry);
+    if (block.type === "command-execution"
+      && !block.actions.some((action) => action.type === "read" || action.type === "search" || action.type === "list-files")) {
+      return textHeader("active", `active:${block.id}`, detailLevel === "STEPS_PROSE" ? "Running command" : `Running ${block.command.trim() || "command"}`, presentation.icon);
+    }
     const text = presentation.detail === null
       ? presentation.summary
       : `${presentation.summary} ${presentation.detail}`;
@@ -573,6 +608,7 @@ function activePresentation(
 export function deriveAgentActivityHeaderPresentation(
   unit: Pick<AgentActivityGroupContentUnit, "blocks" | "lifecycle">,
   registry?: ToolActivityPresenterRegistry,
+  detailLevel: ConversationDetailLevel = "STEPS_COMMANDS",
 ): AgentActivityHeaderPresentation {
   const { blocks, lifecycle } = unit;
   if (lifecycle.isLatestVisibleUnit && lifecycle.inProgress && !lifecycle.isActivitySliceClosed) {
@@ -581,13 +617,13 @@ export function deriveAgentActivityHeaderPresentation(
         const block = blocks[index];
         if (block?.type === "command-execution"
           && block.actions.some((action) => action.type === "read" || action.type === "search" || action.type === "list-files")) {
-          return activePresentation(block, registry);
+          return activePresentation(block, registry, detailLevel);
         }
       }
     }
     for (let index = blocks.length - 1; index >= 0; index -= 1) {
       const block = blocks[index];
-      if (isActiveAgentActivityBlock(block, registry)) return activePresentation(block, registry);
+      if (isActiveAgentActivityBlock(block, registry)) return activePresentation(block, registry, detailLevel);
     }
     return textHeader("thinking", "thinking", "Thinking", null);
   }
@@ -623,6 +659,8 @@ export function deriveAgentActivityHeaderPresentation(
     const presentation = presentToolActivity(block, registry);
     if (block.kind === "web-search") {
       webSearchCount += 1;
+    } else if (block.activityPresentation?.operation === "read" || block.activityPresentation?.operation === "search") {
+      explorationCount += 1;
     } else if (block.kind === "image-view") {
       imageViewCount += 1;
     } else if (block.kind === "mcp") {
@@ -707,7 +745,7 @@ function isPendingNonActivityBlock(block: TimelineBlock): boolean {
     return block.state === "pending";
   }
   if (block.type === "image") return block.status === "pending" || block.status === "running";
-  if (block.type === "plan") return !block.implemented;
+  if (block.type === "plan") return !block.completed;
   return false;
 }
 
@@ -721,9 +759,14 @@ export function shouldRenderAgentThinkingPlaceholder(
   registry?: ToolActivityPresenterRegistry,
 ): boolean {
   if (frame.status !== "pending" && frame.status !== "streaming") return false;
-  if (frame.blocks.some(isFinalAssistantText)) return false;
+  if (frame.blocks.some(isDisplayableAssistantText)) return false;
   if (frame.blocks.some((block) => isActiveAgentActivityBlock(block, registry))) return false;
   if (frame.blocks.some(isPendingNonActivityBlock)) return false;
+  // Todo records are immutable observations. Only a trailing observation can
+  // describe current work; an earlier unfinished snapshot cannot stay active
+  // after a newer update or another Item has taken over.
+  const trailing = frame.blocks.filter(isAgentActivityBlock).at(-1);
+  if (trailing?.type === "todo" && trailing.entries.some((entry) => entry.status !== "complete")) return false;
   return !hasContinuingLiveDynamicToolActivity(frame.blocks, frame.status, registry);
 }
 
@@ -767,6 +810,7 @@ export function createAssistantTurnPresentationPlan(
   const postAssistantSubagentBlocks: SubagentTimelineBlock[] = [];
   const automationBlocks: TimelineBlock[] = [];
   const assistantContentBlocks: TimelineBlock[] = [];
+  let proposedPlan: Extract<TimelineBlock, { type: "plan" }> | null = null;
   const hasFinalAssistantStarted = frame.blocks.some(isFinalAssistantText);
   let passedFinalAssistant = false;
 
@@ -777,7 +821,27 @@ export function createAssistantTurnPresentationPlan(
   ): AgentActivityRenderUnit | null => {
     const isActivitySliceClosed = frame.status !== "pending" && frame.status !== "streaming"
       || (phase === "before-final-answer" && hasFinalAssistantStarted);
-    const contentUnits = createAgentActivityContentUnits(blocks, frame.status, registry, isActivitySliceClosed);
+    const contentUnits = [...createAgentActivityContentUnits(blocks, frame.status, registry, isActivitySliceClosed)];
+    const workStatus = phase !== "before-final-answer" ? null
+      : frame.status === "interrupted" && frame.interruptedByThisClient && frame.durationMs !== null
+        ? { type: "worked-for" as const, status: "stopped" as const, startedAtMs: 0, completedAtMs: frame.durationMs }
+        : frame.workStatus ?? null;
+    if (workStatus !== null) {
+      const workUnit: AgentActivityWorkStatusContentUnit = { type: "worked-for", id: `${frame.turnId}:worked-for`, item: workStatus };
+      // The live divider precedes work; a settled Turn places it immediately
+      // before the answer. Partitioning later extracts it for the disclosure.
+      // Locate the boundary before filtering hidden rows. Hidden reasoning
+      // before a transcript still starts work before that transcript.
+      const firstWorkBlockIndex = blocks.findIndex((block) =>
+        block.type !== "realtime-transcript" && block.type !== "user-message");
+      const firstWorkIndex = firstWorkBlockIndex < 0 ? -1 : contentUnits.findIndex((unit) => {
+        const unitBlocks = unit.type === "group" ? unit.blocks : unit.type === "standalone" ? [unit.block] : [];
+        return unitBlocks.some((block) => blocks.indexOf(block) >= firstWorkBlockIndex);
+      });
+      const insertionIndex = frame.status === "streaming" || frame.status === "pending"
+        ? firstWorkIndex < 0 ? contentUnits.length : firstWorkIndex : contentUnits.length;
+      contentUnits.splice(insertionIndex, 0, workUnit);
+    }
     if (contentUnits.length === 0 && subagentBlocks.length === 0) return null;
     const partitions = partitionAgentActivityContentUnits(contentUnits, partitionOptions);
     const inlineSubagentActivity = subagentBlocks.length === 0 ? null : {
@@ -796,7 +860,7 @@ export function createAssistantTurnPresentationPlan(
         + (inlineSubagentActivity === null ? 0 : 1),
       phase,
       status: frame.status,
-      workedDurationMs: frame.durationMs,
+      workedDurationMs: phase === "before-final-answer" ? frame.durationMs : null,
       hasFinalAssistantStarted,
       // Partitioning is a disclosure-only projection. When the Turn cannot
       // collapse, Codex renders the original Unit stream, including a leading
@@ -815,6 +879,10 @@ export function createAssistantTurnPresentationPlan(
   };
 
   for (const block of frame.blocks) {
+    // Original Turn classifier extracts the latest proposal into its own slot;
+    // implementation records remain facts and never become a second card.
+    if (block.type === "plan-implementation") continue;
+    if (block.type === "plan") { proposedPlan = block; continue; }
     // Registered dynamic renderers may intentionally reject malformed tool
     // arguments. Codex does not leak those calls through its generic row.
     if (block.type === "tool-call" && isToolActivityPresentationSuppressed(block, registry)) continue;
@@ -845,7 +913,7 @@ export function createAssistantTurnPresentationPlan(
     }
     if (block.type === "automation-update") automationBlocks.push(block);
     else assistantContentBlocks.push(block);
-    if (isFinalAssistantText(block)) passedFinalAssistant = true;
+    if (isDisplayableAssistantText(block)) passedFinalAssistant = true;
   }
 
   const before = createActivitySlot(beforeFinalActivity, "before-final-answer", inlineSubagentBlocks);
@@ -858,6 +926,7 @@ export function createAssistantTurnPresentationPlan(
   }
   const after = createActivitySlot(afterFinalActivity, "after-final-answer", postAssistantSubagentBlocks);
   if (after !== null) slots.push(after);
+  if (proposedPlan !== null) slots.push({ type: "assistant-content", id: `${frame.turnId}:slot:proposed-plan`, block: proposedPlan });
   return { slots };
 }
 
@@ -897,6 +966,8 @@ export function createTimelineTurnPresentationPlan(
         turnId: turn.turnId,
         status: turn.status,
         durationMs: [...assistantFrames].reverse().find((frame) => frame.durationMs !== null)?.durationMs ?? null,
+        workStatus: assistantFrames.find((frame) => frame.workStatus != null)?.workStatus ?? null,
+        interruptedByThisClient: turn.frames.some((frame) => frame.interruptedByThisClient),
         hookStats: [...assistantFrames].reverse().find((frame) => frame.hookStats !== null)?.hookStats ?? null,
         anchors: assistantFrames.flatMap((frame) => frame.anchors),
         blocks: assistantFrames.flatMap((frame) => frame.blocks),
@@ -907,10 +978,14 @@ export function createTimelineTurnPresentationPlan(
     : createAssistantTurnPresentationPlan(assistantFrame, registry, partitionOptions);
   const hasPendingInteraction = auxiliaryFrames.some((frame) =>
     frame.type === "interaction" && frame.blocks.some(isPendingNonActivityBlock));
+  const latestProposal = assistantFrame?.blocks.filter((block) => block.type === "plan").at(-1);
+  const isPlanning = turnIsActive && latestProposal?.type === "plan" && !latestProposal.completed
+    && !assistantFrame?.blocks.some((block) => block.type === "command-execution"
+      && block.actions.some((action) => action.type === "read" || action.type === "search" || action.type === "list-files")
+      && isActiveAgentActivityBlock(block, registry));
   const showThinking = isMostRecentTurn
-    && !hasPendingInteraction
     && assistantFrame !== null
-    && shouldRenderAgentThinkingPlaceholder(assistantFrame, registry);
+    && (isPlanning || (!hasPendingInteraction && shouldRenderAgentThinkingPlaceholder(assistantFrame, registry)));
   const topLevelSlotCount = userFrames.reduce(
     (count, frame) => count + (frame.blocks.length > 0 ? 1 : 0),
     0,
@@ -925,6 +1000,7 @@ export function createTimelineTurnPresentationPlan(
     auxiliaryFrames,
     showThinking,
     thinkingId: `${turn.turnKey}:slot:thinking-placeholder`,
+    thinkingLabel: isPlanning ? "Planning" : "Thinking",
     topLevelSlotCount,
   };
 }
@@ -933,17 +1009,19 @@ export function shouldAllowAgentActivityCollapse(unit: AgentActivityRenderUnit):
   return resolveAgentActivityLayout(unit, false).showToggle;
 }
 
-/** Pure reconstruction of r2440 DA's final node-ownership calculation. */
+/** Pure reconstruction of r3562 DA's final node-ownership calculation. */
 export function resolveAgentActivityLayout(
   unit: AgentActivityRenderUnit,
-  effectiveCollapsed: boolean,
+  persistedCollapsed: boolean | undefined,
 ): AgentActivityLayout {
-  const disclosure = resolveAgentActivityDisclosure(unit);
+  // r3562 DA: preserve raw user intent through partitioning. The effective
+  // visibility of the toggle/body is an OUTPUT, never fed back as a choice.
+  const disclosure = resolveAgentActivityDisclosure({ ...unit, persistedCollapsed });
   const partitioned = !unit.forceExpanded && disclosure.shouldAllowCollapse;
   let visibleUnits = partitioned
-    ? effectiveCollapsed ? unit.partitions.collapsibleUnits : unit.partitions.expandedUnits
+    ? disclosure.isCollapsed ? unit.partitions.collapsibleUnits : unit.partitions.expandedUnits
     : unit.contentUnits;
-  const persistentUnits = partitioned && effectiveCollapsed
+  const persistentUnits = partitioned && disclosure.isCollapsed
     ? unit.partitions.persistentUnits
     : [];
   const preToggleUnits = partitioned ? unit.partitions.preToggleUnits : [];
@@ -971,20 +1049,12 @@ export function resolveAgentActivityLayout(
 
   return {
     showToggle: effectiveShowToggle,
-    isCollapsed: effectiveShowToggle && effectiveCollapsed,
+    workedForItem: partitioned ? unit.partitions.workedForItem : null,
+    isCollapsed: effectiveShowToggle && disclosure.isCollapsed,
     preToggleUnits,
     persistentUnits,
     visibleUnits,
     collapsedItemCount,
     showInlineSubagentActivity: unit.inlineSubagentActivity !== null,
   };
-}
-
-/** Persisted user choice wins exactly where the original renderer permits collapse. */
-export function isAgentActivityCollapsed(
-  unit: AgentActivityRenderUnit,
-  persistedCollapsed: boolean | undefined,
-): boolean {
-  const collapsed = resolveAgentActivityDisclosure({ ...unit, persistedCollapsed }).isCollapsed;
-  return resolveAgentActivityLayout(unit, collapsed).isCollapsed;
 }

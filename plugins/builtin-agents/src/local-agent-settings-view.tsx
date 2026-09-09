@@ -1,181 +1,126 @@
-import { Bot, KeyRound, RefreshCw, Save, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-
-import type { RuntimeCredentialView, RuntimeDiscoveredModelView, RuntimeProviderView } from "@opencraft/appserver-protocol";
+import { Bot } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
-  SettingsActions,
-  SettingsButton,
-  SettingsGroup,
-  SettingsListItem,
-  SettingsNotice,
-  SettingsPageHeader,
-  SettingsRow,
-  SettingsSection,
-  SettingsSelect,
-  SettingsTextInput,
-  type ExtensionSettingsViewProps,
+  SettingsActions, SettingsButton, SettingsGroup, AdaptivePanelView, SettingsNotice,
+  SettingsPageHeader, SettingsRow, SettingsSection, SettingsSelect, SettingsSearchSelect,
+  type ExtensionSettingsViewProps, type AdaptivePanelPage,
 } from "@opencraft/extension-react";
-import type { LocalAgentSettingsService, SaveRuntimeProviderInput } from "./local-agent-settings-service";
+import type { LocalAgentSettingsService } from "./local-agent-settings-service";
+import { BrandIcon } from "./brand-icon";
+import { ProviderListPage } from "./provider-list-page";
+import { ProviderDetailPage } from "./provider-detail-page";
+import { ProviderCreatePage } from "./provider-create-page";
 
 function record(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+function errorText(error: unknown) { return error instanceof Error ? error.message : String(error); }
+function useSnapshot(service: LocalAgentSettingsService) {
+  const snapshot = useSyncExternalStore(service.subscribe, service.getSnapshot, service.getSnapshot);
+  useEffect(() => { void service.refresh(); }, [service]);
+  return snapshot;
 }
 
-const OAUTH_ONLY_PROVIDERS = new Set(["openai-codex"]);
-
-export function createLocalAgentSettingsView(service: LocalAgentSettingsService) {
-  return function LocalAgentSettingsView(_props: ExtensionSettingsViewProps) {
-    const snapshot = useSyncExternalStore(service.subscribe, service.getSnapshot, service.getSnapshot);
-    const defaultNamespace = snapshot.settings?.namespaces.find((entry) => entry.ns === "agent-default-model") ?? null;
-    const defaults = record(defaultNamespace?.value);
-    const [provider, setProvider] = useState("");
-    const [model, setModel] = useState("");
-    const [effort, setEffort] = useState("");
-    const [editorProviderId, setEditorProviderId] = useState("deepseek");
-    const [baseURL, setBaseURL] = useState("");
-    const [credentialRef, setCredentialRef] = useState("");
-    const [apiKey, setApiKey] = useState("");
-    const [credential, setCredential] = useState<RuntimeCredentialView | null>(null);
-    const [discovered, setDiscovered] = useState<readonly RuntimeDiscoveredModelView[] | null>(null);
-    const [saving, setSaving] = useState<"model" | "provider" | "credential" | "discover" | null>(null);
-    const [actionError, setActionError] = useState<string | null>(null);
-
-    useEffect(() => { void service.refresh(); }, []);
+export function createLocalAgentDefaultModelView(service: LocalAgentSettingsService) {
+  return function DefaultModelView(_props: ExtensionSettingsViewProps) {
+    const snapshot = useSnapshot(service);
+    const ns = snapshot.settings?.namespaces.find((entry) => entry.ns === "agent-default-model");
+    const [selection, setSelection] = useState({ provider: "", model: "", effort: "" });
+    const [dirty, setDirty] = useState(false);
+    const [baseRevision, setBaseRevision] = useState(-1);
+    const [pending, setPending] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     useEffect(() => {
-      if (snapshot.phase !== "ready") return;
-      setProvider(typeof defaults.provider === "string" ? defaults.provider : snapshot.status?.provider ?? "");
-      setModel(typeof defaults.model === "string" ? defaults.model : snapshot.status?.model ?? "");
-      setEffort(typeof defaults.reasoningEffort === "string" ? defaults.reasoningEffort : "high");
-    }, [snapshot.phase, defaultNamespace?.revision]);
-
-    const providerDirectory = useMemo(() => {
-      const unique = new Map<string, RuntimeProviderView>();
-      for (const entry of snapshot.providers?.providers ?? []) {
-        const current = unique.get(entry.provider);
-        if (!current || (!current.active && entry.active)) unique.set(entry.provider, entry);
-      }
-      return [...unique.values()];
-    }, [snapshot.providers]);
-    const editorProvider = providerDirectory.find((entry) => entry.provider === editorProviderId) ?? providerDirectory[0] ?? null;
-    useEffect(() => {
-      if (!editorProvider) return;
-      const config = service.providerConfiguration(editorProvider);
-      setBaseURL(config.baseURL);
-      setCredentialRef(config.credentialRef);
-      setApiKey("");
-      setDiscovered(null);
-      setCredential(null);
-      if (!OAUTH_ONLY_PROVIDERS.has(editorProvider.provider)) {
-        void service.describeCredential(config.credentialRef).then(setCredential, () => setCredential(null));
-      }
-    }, [editorProvider?.provider, snapshot.settings]);
-
-    const activeGroup = useMemo(
-      () => snapshot.models?.groups.find((group) => group.id === provider) ?? snapshot.models?.groups[0] ?? null,
-      [snapshot.models, provider],
-    );
-    const selectedModel = activeGroup?.models.find((entry) => entry.id === model) ?? activeGroup?.models[0] ?? null;
-    const efforts = selectedModel?.reasoning?.efforts ?? [];
-    const writable = snapshot.settings?.writable === true && snapshot.phase === "ready";
-    const oauthOnly = editorProvider !== null && OAUTH_ONLY_PROVIDERS.has(editorProvider.provider);
-    const editorInput = (): SaveRuntimeProviderInput => ({ baseURL, credentialRef, apiKey });
-
-    const run = async (kind: NonNullable<typeof saving>, action: () => Promise<void>) => {
-      setSaving(kind); setActionError(null);
-      try { await action(); } catch (error) { setActionError(error instanceof Error ? error.message : String(error)); }
-      finally { setSaving(null); }
-    };
-
+      if (!ns || dirty) return;
+      const value = record(ns.value);
+      setSelection({ provider: String(value.provider ?? ""), model: String(value.model ?? ""), effort: String(value.reasoningEffort ?? "") });
+      setBaseRevision(ns.revision);
+    }, [ns?.revision, dirty]);
+    const group = snapshot.models?.groups.find((entry) => entry.id === selection.provider);
+    const model = group?.models.find((entry) => entry.id === selection.model);
+    const invalidEffort = selection.effort !== "" && !!model && !model.reasoning?.efforts.some(entry => entry.id === selection.effort);
+    const conflict = dirty && baseRevision !== ns?.revision;
     return <>
-      <SettingsPageHeader
-        title="Local Agent"
-        description="Configure the Agent runtime bundled with this desktop app. Configuration stays on this device."
-      />
-
-      <SettingsSection
-        title="Runtime"
-        icon={<Bot size={15} />}
-        description="The extension edits runtime-owned settings through the local AppServer protocol."
-        action={(
-          <SettingsButton type="button" disabled={snapshot.phase === "loading"} onClick={() => void service.refresh()}>
-            <RefreshCw size={14} /> Refresh
-          </SettingsButton>
-        )}
-      >
+      <SettingsPageHeader title="Default model" description="Used for new conversations. Existing sessions keep their own selection." />
+      {snapshot.error || error ? <SettingsNotice tone="error">{error ?? snapshot.error}</SettingsNotice> : null}
+      {invalidEffort ? <SettingsNotice tone="error">The saved reasoning effort is not supported by this model. Clear it and save to use the model default.<SettingsButton onClick={() => { setSelection({ ...selection, effort: "" }); setDirty(true); }}>Use model default</SettingsButton></SettingsNotice> : null}
+      {conflict ? <SettingsNotice tone="error">Settings changed elsewhere. Reload before saving.<SettingsButton onClick={() => setDirty(false)}>Reload</SettingsButton></SettingsNotice> : null}
+      <SettingsSection title="Model">
         <SettingsGroup>
-          <SettingsListItem
-            icon={<Bot size={16} />}
-            label={snapshot.status?.displayName ?? "DeepSeek Harness"}
-            description={snapshot.phase === "loading" ? "Connecting…" : snapshot.phase === "error" ? "Unavailable" : `Version ${snapshot.status?.version ?? "unknown"}`}
-            metadata={snapshot.status?.cwd ?? "Local runtime"}
-          />
-        </SettingsGroup>
-        {snapshot.error ? <SettingsNotice tone="error">{snapshot.error}</SettingsNotice> : null}
-      </SettingsSection>
-
-      <SettingsSection title="Default model" description="Only active providers appear here. Existing sessions keep their own selection.">
-        <SettingsGroup>
-          <SettingsRow label="Provider" htmlFor="local-agent-default-provider"><SettingsSelect id="local-agent-default-provider" value={provider} disabled={!writable} onChange={(event) => {
-            const nextProvider = event.target.value;
-            const nextGroup = snapshot.models?.groups.find((group) => group.id === nextProvider);
-            setProvider(nextProvider); setModel(nextGroup?.models[0]?.id ?? "");
-            setEffort(nextGroup?.models[0]?.reasoning?.defaultEffort ?? nextGroup?.models[0]?.reasoning?.efforts[0]?.id ?? "off");
-          }}>{(snapshot.models?.groups ?? []).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</SettingsSelect></SettingsRow>
-          <SettingsRow label="Model" htmlFor="local-agent-default-model"><SettingsSelect id="local-agent-default-model" value={model} disabled={!writable || activeGroup === null} onChange={(event) => {
-            const next = activeGroup?.models.find((entry) => entry.id === event.target.value);
-            setModel(event.target.value); setEffort(next?.reasoning?.defaultEffort ?? next?.reasoning?.efforts[0]?.id ?? "off");
-          }}>{(activeGroup?.models ?? []).map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</SettingsSelect></SettingsRow>
-          <SettingsRow label="Reasoning" htmlFor="local-agent-default-reasoning"><SettingsSelect id="local-agent-default-reasoning" value={effort} disabled={!writable || efforts.length === 0} onChange={(event) => setEffort(event.target.value)}>
-            {efforts.length === 0 ? <option value="off">Off</option> : efforts.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+          <SettingsRow label="Model" htmlFor="local-agent-default-model">
+            <SettingsSearchSelect id="local-agent-default-model" label="Models"
+              value={selection.model ? JSON.stringify([selection.provider, selection.model]) : ""}
+              disabled={pending || !snapshot.settings?.writable}
+              groups={(snapshot.models?.groups ?? []).map(group => ({
+                id: group.id, label: group.name, icon: <BrandIcon id={group.id} />,
+                options: group.models.filter(model => model.enabled !== false && snapshot.providers?.providers.some(provider => provider.provider === group.id && provider.active)).map(model => ({
+                  value: JSON.stringify([group.id, model.id]), label: model.name,
+                  description: model.description ?? model.id, icon: <BrandIcon id={model.id} model />,
+                  badge: model.reasoning ? "Reasoning" : undefined,
+                })),
+              }))}
+              onChange={value => {
+                const [providerId, modelId] = JSON.parse(value) as [string, string];
+                const chosen = snapshot.models?.groups.find(g => g.id === providerId)?.models.find(m => m.id === modelId);
+                if (!chosen) return;
+                setSelection({ provider: providerId, model: modelId, effort: "" });
+                setDirty(true);
+              }} />
+          </SettingsRow>
+          <SettingsRow label="Reasoning" htmlFor="local-agent-default-reasoning"><SettingsSelect id="local-agent-default-reasoning" value={selection.effort} disabled={pending || !model?.reasoning} onChange={(event) => { setSelection({ ...selection, effort: event.target.value }); setDirty(true); }}>
+            <option value="">Model default</option>
+            {invalidEffort ? <option value={selection.effort} disabled>Unsupported: {selection.effort}</option> : null}
+            {model?.reasoning?.efforts.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
           </SettingsSelect></SettingsRow>
         </SettingsGroup>
-        <SettingsActions><SettingsButton variant="primary" type="button" disabled={!writable || !provider || !model || saving !== null}
-            onClick={() => void run("model", () => service.saveDefaultModel(provider, model, effort || "off"))}>
-            <Save size={14} /> {saving === "model" ? "Saving…" : "Save model"}</SettingsButton></SettingsActions>
+        <SettingsActions><SettingsButton variant="primary" disabled={!dirty || conflict || invalidEffort || !model || pending || !snapshot.settings?.writable} onClick={async () => {
+          setPending(true); setError(null);
+          try { await service.saveDefaultModel(selection.provider, selection.model, selection.effort || undefined, baseRevision); setDirty(false); }
+          catch (error) { setError(errorText(error)); } finally { setPending(false); }
+        }}>Save default model</SettingsButton></SettingsActions>
       </SettingsSection>
-
-      <SettingsSection
-        title="Providers"
-        icon={<KeyRound size={15} />}
-        description="Installed adapters expose their own configuration address. Saving a dormant provider activates it live."
-      >
-        <SettingsGroup>
-          <SettingsRow label="Provider" htmlFor="local-agent-provider"><SettingsSelect id="local-agent-provider" value={editorProvider?.provider ?? ""} disabled={!writable} onChange={(event) => setEditorProviderId(event.target.value)}>
-            {providerDirectory.map((entry) => <option key={`${entry.settingsNs}:${entry.provider}`} value={entry.provider}>
-              {entry.displayName}{entry.active ? " · Active" : ""}
-            </option>)}</SettingsSelect></SettingsRow>
-          {oauthOnly ? <SettingsRow label="Authorization" layout="stacked" controlWidth="wide"><SettingsNotice>
-            <strong>ChatGPT sign-in required</strong>
-            <span>DSH and pi-ai support Codex through OAuth. OpenCraft has not connected the interactive authorization session yet, so this route cannot be activated safely from this screen.</span>
-          </SettingsNotice></SettingsRow> : <>
-            <SettingsRow label="Base URL" htmlFor="local-agent-provider-url"><SettingsTextInput id="local-agent-provider-url" value={baseURL} disabled={!writable} placeholder="Use provider default" onChange={(event) => setBaseURL(event.target.value)} /></SettingsRow>
-            <SettingsRow label="Credential reference" htmlFor="local-agent-provider-credential"><SettingsTextInput id="local-agent-provider-credential" value={credentialRef} disabled={!writable} placeholder="PROVIDER_API_KEY" onChange={(event) => setCredentialRef(event.target.value)} /></SettingsRow>
-            <SettingsRow label="API key" htmlFor="local-agent-provider-key" description={credential?.configured ? `Configured${credential.source ? ` from ${credential.source}` : ""}` : "Write-only credential"}>
-              <SettingsTextInput id="local-agent-provider-key" type="password" value={apiKey} disabled={!writable} autoComplete="new-password"
-                placeholder={credential?.configured ? "Configured — enter to replace" : "Not configured"} onChange={(event) => setApiKey(event.target.value)} />
-            </SettingsRow>
-            {discovered ? <SettingsRow label="Discovered models" layout="stacked" controlWidth="wide"><SettingsNotice>
-              <strong>{discovered.length} models discovered</strong>
-              <span>{discovered.slice(0, 8).map((entry) => entry.name ?? entry.id).join(", ")}{discovered.length > 8 ? "…" : ""}</span>
-            </SettingsNotice></SettingsRow> : null}
-          </>}
-        </SettingsGroup>
-        {actionError ? <SettingsNotice tone="error">{actionError}</SettingsNotice> : null}
-        {!oauthOnly ? <SettingsActions align="between">
-          <div>{credential?.configured && credential.writable ? <SettingsButton variant="danger" type="button" disabled={saving !== null}
-            onClick={() => void run("credential", () => service.clearCredential(credentialRef))}><Trash2 size={13} /> Remove key</SettingsButton> : null}</div>
-          <div className="settings-control-actions__cluster">
-            {editorProvider?.active && editorProvider.settingsPath.length > 0 ? <SettingsButton type="button" disabled={saving !== null}
-              onClick={() => void run("provider", () => service.disableProvider(editorProvider))}>Disable</SettingsButton> : null}
-            <SettingsButton type="button" disabled={!writable || editorProvider === null || saving !== null}
-              onClick={() => void run("discover", async () => setDiscovered(await service.discoverModels(editorProvider!, editorInput())))}>
-              <Search size={14} /> {saving === "discover" ? "Inspecting…" : "Inspect models"}</SettingsButton>
-            <SettingsButton variant="primary" type="button" disabled={!writable || editorProvider === null || saving !== null}
-              onClick={() => void run("provider", async () => { await service.saveProvider(editorProvider!, editorInput()); setApiKey(""); })}>
-              <Save size={14} /> {saving === "provider" ? "Saving…" : editorProvider?.active ? "Save provider" : "Activate provider"}</SettingsButton>
-          </div>
-        </SettingsActions> : null}
+      <SettingsSection title="Runtime" icon={<Bot size={16} />} description={snapshot.status?.displayName}>
+        <p className="provider-settings__muted" data-selection="text">{snapshot.status?.cwd}</p>
       </SettingsSection>
     </>;
+  };
+}
+
+
+/** Panel composition only. Geometry never changes selection or editor ownership. */
+export function createLocalAgentSettingsView(service: LocalAgentSettingsService) {
+  return function ProviderSettingsView(_props: ExtensionSettingsViewProps) {
+    const snapshot = useSnapshot(service);
+    const panel = useSyncExternalStore(service.panel.subscribe, service.panel.getSnapshot, service.panel.getSnapshot);
+    const leaf = panel.secondaryId ?? "providers";
+    const selected = leaf.startsWith("provider:") ? leaf.slice("provider:".length) : null;
+    const firstProvider = snapshot.providers?.providers.find(entry => entry.configured)?.provider;
+    useEffect(() => { if (firstProvider) service.panel.seed(`provider:${firstProvider}`); }, [service, firstProvider]);
+    const providerId = selected ?? undefined;
+    const [pending, setPending] = useState(false);
+    const [dirty, setDirty] = useState(false);
+    const [editEpoch, setEditEpoch] = useState(0);
+    const leave = () => {
+      if (pending || (dirty && !window.confirm("Discard unsaved provider changes?"))) return false;
+      if (dirty && providerId) { service.discardEditor(providerId); setEditEpoch(value => value + 1); }
+      setDirty(false);
+      return true;
+    };
+    const enter = (id: string) => service.panel.select(id);
+    const pages: [AdaptivePanelPage, ...AdaptivePanelPage[]] = [{
+      id: "providers", title: "Model services", minWidth: 220, layout: "collection" as const,
+      content: <ProviderListPage service={service} selectedId={providerId} pending={pending}
+        onSelect={id => { if (selected === id || leave()) enter(`provider:${id}`); }}
+        onCreate={() => { if (leaf === "create-provider" || leave()) enter("create-provider"); }} />,
+    }, ...(leaf === "create-provider" ? [{
+      id: "create-provider", title: "Add model service", minWidth: 360,
+      content: <ProviderCreatePage service={service} onDirty={setDirty} onPending={setPending}
+        onCancel={() => { if (leave()) { service.panel.clear(); if (firstProvider) service.panel.seed(`provider:${firstProvider}`); } }}
+        onCreated={id => { setDirty(false); setPending(false); enter(`provider:${id}`); }} />,
+    }] : providerId ? [{
+      id: `provider:${providerId}`, title: "Model service", minWidth: 360,
+      content: <ProviderDetailPage key={`${providerId}:${editEpoch}`} service={service} providerId={providerId} onDirty={setDirty} onPending={setPending} />,
+    }] : [])];
+    return <AdaptivePanelView controller={service.panel} pages={pages} />;
   };
 }

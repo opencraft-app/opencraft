@@ -1,3 +1,4 @@
+import type { AppServerProcessMethodMap } from "./process";
 import type {
   ThreadResumeHistoryRequest,
   ThreadResumeHistoryResponse,
@@ -91,6 +92,10 @@ import type {
   RuntimeModelsDiscoverParams,
   RuntimeModelsDiscoverResponse,
   RuntimeProvidersListResponse,
+  RuntimeProviderApplyParams,
+  RuntimeProviderApplyResponse,
+  RuntimeProviderSetEnabledParams,
+  RuntimeModelMutationParams,
   RuntimeSettingsDescribeResponse,
   RuntimeSettingsMutateParams,
   RuntimeSettingsNamespaceView,
@@ -129,8 +134,17 @@ export interface AppServerInitializeResponse {
 
 export type ThreadResumeParams = ThreadResumeHistoryRequest & {
   threadId: string;
+  /** message-window extension: correlate non-authoritative REST paint with
+   * this exact Resume. Other providers need not implement it. */
+  historyPreviewToken?: string;
   [field: string]: unknown;
 };
+
+export interface ThreadHistoryPreviewParams {
+  threadId: string;
+  token: string;
+  turns: readonly AppServerTurn[];
+}
 
 export type ThreadResumeResponse = ThreadResumeHistoryResponse<AppServerTurn> & {
   approvalPolicy: unknown;
@@ -167,7 +181,13 @@ export type ThreadStartParams = GeneratedThreadStartParams & {
   agentId?: string | null;
 };
 export type ThreadStartResponse = GeneratedThreadStartResponse;
-export type ModelListParams = GeneratedModelListParams;
+export type ModelListParams = GeneratedModelListParams & {
+  /**
+   * Optional catalog owner. Clients send this only when the Host advertises
+   * `opencraft/scoped-model-catalog`; unextended AppServers remain untouched.
+   */
+  threadId?: string | null;
+};
 export type ModelListResponse = GeneratedModelListResponse;
 export type PermissionProfileListParams = GeneratedPermissionProfileListParams;
 export type PermissionProfileListResponse = GeneratedPermissionProfileListResponse;
@@ -251,7 +271,7 @@ export interface ThreadArchiveParams {
  * packages can add protocol methods without introducing an untyped index
  * signature into the core client.
  */
-export interface AppServerMethodMap extends AppServerBotMethodMap {
+export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProcessMethodMap {
   "runtime/status/read": {
     params: Record<string, never>;
     result: RuntimeStatusResponse;
@@ -280,9 +300,25 @@ export interface AppServerMethodMap extends AppServerBotMethodMap {
     params: Record<string, never>;
     result: RuntimeProvidersListResponse;
   };
+  "runtime/providers/apply": {
+    params: RuntimeProviderApplyParams;
+    result: RuntimeProviderApplyResponse;
+  };
+  "runtime/providers/setEnabled": {
+    params: RuntimeProviderSetEnabledParams;
+    result: RuntimeProviderApplyResponse;
+  };
   "runtime/models/list": {
-    params: Record<string, never>;
+    params: { readonly includeDisabled?: boolean };
     result: RuntimeModelsListResponse;
+  };
+  "runtime/models/setEnabled": {
+    params: RuntimeModelMutationParams & { readonly enabled: boolean };
+    result: RuntimeProviderApplyResponse;
+  };
+  "runtime/models/delete": {
+    params: RuntimeModelMutationParams;
+    result: RuntimeProviderApplyResponse;
   };
   "runtime/models/discover": {
     params: RuntimeModelsDiscoverParams;

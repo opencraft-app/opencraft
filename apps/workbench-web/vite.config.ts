@@ -242,6 +242,15 @@ export default defineConfig({
     strictPort: true,
     proxy: appServerProxy,
   },
+  worker: {
+    rollupOptions: {
+      output: {
+        entryFileNames: "assets/a-[hash].js",
+        chunkFileNames: "assets/a-[hash].js",
+        assetFileNames: "assets/a-[hash][extname]",
+      },
+    },
+  },
   build: {
     target: "es2022",
     // Vite 8 uses Rolldown + Oxc. Release builds select Rolldown's full

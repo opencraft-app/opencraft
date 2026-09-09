@@ -234,6 +234,36 @@ async function waitForAuthoritative(
   throw new Error(`Timed out waiting for authoritative Thread ${lease.threadId}`);
 }
 
+test("failed baseline remains an error and retries on the same lease without reconnect", async () => {
+  const harness = createHarness(false, true);
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, requestTimeoutMs: 100, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("thread-created");
+    const until = async (predicate: () => boolean) => {
+      const deadline = Date.now() + 2000;
+      while (!predicate()) {
+        assert.ok(Date.now() < deadline, "timed out waiting for recovery state");
+        await new Promise(resolve => setTimeout(resolve, 1));
+      }
+    };
+    await until(() => lease.getSnapshot().phase === "error");
+    assert.equal(runtime.getSnapshot().phase, "ready");
+    assert.equal(runtime.getThreadResidency(lease.threadId)?.phase, "error");
+    const generation = runtime.getSnapshot().connectionGeneration;
+    const resumes = harness.requests.filter(r => r.method === "thread/resume").length;
+    const retry = lease.retryRestore();
+    assert.equal(lease.getSnapshot().phase, "syncing");
+    assert.equal(lease.getSnapshot().error, null);
+    await until(() => harness.requests.filter(r => r.method === "thread/resume").length > resumes);
+    harness.releaseResume();
+    await retry;
+    assert.equal(lease.getSnapshot().authoritative, true);
+    assert.equal(runtime.getSnapshot().connectionGeneration, generation);
+    lease.release();
+  } finally { await runtime.dispose(); }
+});
+
 test("Workbench starts on a client Draft without listing or creating a server Thread", async () => {
   const harness = createHarness();
   let nextDraft = 0;
@@ -564,7 +594,7 @@ test("Thread acquisition stays empty until its single authoritative Resume promo
     await runtime.connect();
     const lease = await runtime.acquireThread("thread-painted-first");
     assert.equal(lease.getSnapshot().authoritative, false);
-    assert.equal(lease.getSnapshot().phase, "empty");
+    assert.equal(lease.getSnapshot().phase, "syncing");
     assert.equal(lease.getSnapshot().timeline.frames.length, 0);
     assert.equal(runtime.getThreadResidency("thread-painted-first")?.hydrating, true);
     let visibleTimelinePromotions = 0;
@@ -583,6 +613,63 @@ test("Thread acquisition stays empty until its single authoritative Resume promo
     assert.equal(lease.getSnapshot().timeline.frames.length, 1);
     assert.equal(visibleTimelinePromotions, 1);
     unsubscribe();
+    lease.release();
+  } finally {
+    await runtime.dispose();
+  }
+});
+
+test("a first Turn paints optimistically but cannot overtake its authoritative Resume baseline", async () => {
+  const harness = createHarness(false, true);
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local",
+    transport: harness.transport,
+    autoReconnect: false,
+  });
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("thread-created");
+    await waitForRequest(harness, "thread/resume");
+    const submission: SubmitIntent = {
+      ...intent({
+        type: "new-thread",
+        draftId: "draft-promoted",
+        execution: {
+          hostId: "local",
+          workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+        },
+      }),
+      target: {
+        type: "existing-thread",
+        key: createConversationKey("local", "thread-created"),
+      },
+    };
+
+    const submitting = lease.submit(submission);
+    assert.equal(
+      lease.getSnapshot().timeline.frames
+        .flatMap((frame) => frame.blocks)
+        .filter((block) => block.type === "user-message").length,
+      1,
+      "the local first message paints before remote hydration",
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(
+      harness.requests.filter((request) => request.method === "turn/start").length,
+      0,
+      "the transport write cannot race the unfinished Resume snapshot",
+    );
+
+    harness.releaseResume();
+    await waitForRequest(harness, "turn/start");
+    await submitting;
+    assert.equal(lease.getSnapshot().authoritative, true);
+    assert.equal(
+      lease.getSnapshot().timeline.frames
+        .flatMap((frame) => frame.blocks)
+        .filter((block) => block.type === "user-message").length,
+      1,
+    );
     lease.release();
   } finally {
     await runtime.dispose();

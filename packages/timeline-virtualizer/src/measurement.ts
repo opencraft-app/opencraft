@@ -7,6 +7,8 @@ import type {
 import {
   buildTurnLayout,
   CODEX_TURN_VIRTUALIZER_CONFIG,
+  compensateDistanceFromBottom,
+  findMeasuredViewportAnchor,
   updateTurnViewportState,
 } from "./virtualizer";
 import { distanceExcludingBottomPadding, isAtVirtualizedBottom } from "./scroll";
@@ -43,9 +45,65 @@ export interface CreateTurnMeasurementTransactionOptions<TEntry extends Virtuali
   readonly currentDistanceFromBottomPx: number;
   readonly bottomPaddingPx: number;
   readonly preserveMeasuredTurnViewport: boolean;
-  readonly pendingRestoreScrollDistanceFromBottomPx: number | null;
+  /** Stable delegation to the latest-Turn owner. Presence survives restoration. */
+  readonly getPendingRestoreScrollDistanceFromBottomPx: (() => number | null) | null;
   readonly previousPendingTransaction?: TurnMeasurementTransaction | null;
   readonly config?: Readonly<TurnVirtualizerConfig>;
+}
+
+export interface ReconcileTurnLayoutViewportOptions {
+  readonly previousLayout: TurnLayout;
+  readonly nextLayout: TurnLayout;
+  readonly measuredHeightsByKey: Readonly<Record<string, number>>;
+  readonly currentDistanceFromBottomPx: number;
+  readonly viewportHeightPx: number;
+  readonly bottomPaddingPx: number;
+  /** False while follow/response placement owns the viewport. */
+  readonly preserveViewport: boolean;
+  /** A measurement transaction already issued the sole correction for this layout. */
+  readonly layoutOwnedByMeasurement: boolean;
+  /** Restore owns the next platform position and fences normal compensation. */
+  readonly restorePending: boolean;
+}
+
+/**
+ * Reconcile an entry-list layout change that did not originate in a
+ * measurement batch. This is the virtualizer's only non-measurement scroll
+ * decision; renderers execute its result but do not select anchors themselves.
+ */
+export function reconcileTurnLayoutViewport({
+  previousLayout,
+  nextLayout,
+  measuredHeightsByKey,
+  currentDistanceFromBottomPx,
+  viewportHeightPx,
+  bottomPaddingPx,
+  preserveViewport,
+  layoutOwnedByMeasurement,
+  restorePending,
+}: ReconcileTurnLayoutViewportOptions): number | null {
+  if (!preserveViewport || layoutOwnedByMeasurement || restorePending) return null;
+  if (isAtVirtualizedBottom(currentDistanceFromBottomPx, bottomPaddingPx)) return null;
+  const virtualDistance = distanceExcludingBottomPadding(
+    currentDistanceFromBottomPx,
+    bottomPaddingPx,
+  );
+  const anchorKey = findMeasuredViewportAnchor(
+    previousLayout,
+    nextLayout,
+    measuredHeightsByKey,
+    virtualDistance,
+    viewportHeightPx,
+  );
+  if (anchorKey === null) return null;
+  const compensated = compensateDistanceFromBottom(
+    anchorKey,
+    virtualDistance,
+    previousLayout,
+    nextLayout,
+  );
+  if (compensated === null || compensated === virtualDistance) return null;
+  return compensated + Math.max(0, bottomPaddingPx);
 }
 
 function positiveHeight(value: number): number {
@@ -66,7 +124,7 @@ export function createTurnMeasurementTransaction<TEntry extends VirtualizedTurnE
   currentDistanceFromBottomPx,
   bottomPaddingPx,
   preserveMeasuredTurnViewport,
-  pendingRestoreScrollDistanceFromBottomPx,
+  getPendingRestoreScrollDistanceFromBottomPx,
   previousPendingTransaction = null,
   config = CODEX_TURN_VIRTUALIZER_CONFIG,
 }: CreateTurnMeasurementTransactionOptions<TEntry>): TurnMeasurementTransaction | null {
@@ -78,6 +136,9 @@ export function createTurnMeasurementTransaction<TEntry extends VirtualizedTurnE
   let heightDeltaBelowViewportPx = 0;
   let changedCount = 0;
   const virtualDistance = distanceExcludingBottomPadding(currentDistanceFromBottomPx, bottomPaddingPx);
+  const pendingRestoreScrollDistanceFromBottomPx = preserveMeasuredTurnViewport
+    ? null
+    : getPendingRestoreScrollDistanceFromBottomPx?.() ?? null;
   const compensationDistance = previousPendingTransaction === null
     ? virtualDistance
     : viewport.distanceFromBottomPx;
@@ -93,7 +154,9 @@ export function createTurnMeasurementTransaction<TEntry extends VirtualizedTurnE
     changedCount += 1;
 
     const isLatestTurn = index === layout.turnKeys.length - 1;
-    const measuredDelta = heightPx - (previousMeasuredHeight ?? 0);
+    // r3562: learning a height is not content growth. Estimate correction is
+    // computed separately below, against the previous virtual layout.
+    const measuredDelta = previousMeasuredHeight === undefined ? 0 : heightPx - previousMeasuredHeight;
     if (isLatestTurn) {
       latestTurnChanged = true;
       latestTurnHeightDeltaPx += measuredDelta;
@@ -106,7 +169,7 @@ export function createTurnMeasurementTransaction<TEntry extends VirtualizedTurnE
     if (
       layoutDelta !== 0
       && bottomOffsetPx <= compensationDistance
-      && (preserveMeasuredTurnViewport || (pendingRestoreScrollDistanceFromBottomPx !== null && !isLatestTurn))
+      && (preserveMeasuredTurnViewport || (getPendingRestoreScrollDistanceFromBottomPx !== null && !isLatestTurn))
     ) {
       heightDeltaBelowViewportPx += layoutDelta;
     }
@@ -149,7 +212,7 @@ export function createTurnMeasurementTransaction<TEntry extends VirtualizedTurnE
     latestTurnHeightChange: latestTurnChanged && latestTurnHeightPx !== null
       ? {
           turnKey: layout.turnKeys.at(-1)!,
-          heightDeltaPx: latestTurnHeightDeltaPx,
+          heightDeltaPx: (previousPendingTransaction?.latestTurnHeightChange?.heightDeltaPx ?? 0) + latestTurnHeightDeltaPx,
           heightPx: latestTurnHeightPx,
         }
       : previousPendingTransaction?.latestTurnHeightChange ?? null,

@@ -1,14 +1,19 @@
 type JsonObject = Record<string, unknown>;
+import type { HermesSessionPayload } from "./types";
 
 export interface HermesSocket extends EventTarget {
   readonly readyState: number;
   send(data: string): void;
+  close?(): void;
 }
 
 export interface HermesRpcClient {
   call<T>(method: string, params?: unknown, signal?: AbortSignal): Promise<T>;
   onEvent(listener: (event: JsonObject) => void): () => void;
   catchUpSession?(sessionId: string): Promise<{ complete: boolean }>;
+  discardReplay?(sessionId: string): void;
+  snapshotSession?(sessionId: string): Promise<HermesSessionPayload>;
+  releaseSnapshot?(sessionId: string): void;
 }
 
 /** Survives replacement WebSocket instances owned by one Host connection. */
@@ -25,6 +30,8 @@ export class HermesReplayCheckpoint {
 export interface HermesRpcTransportOptions {
   timeoutMs?: number;
   replayCheckpoint?: HermesReplayCheckpoint;
+  heartbeatIntervalMs?: number;
+  heartbeatDeadlineMs?: number;
 }
 
 interface PendingCall {
@@ -64,12 +71,23 @@ export class HermesRpcWebSocketTransport implements HermesRpcClient {
   private readonly replayCheckpoint: HermesReplayCheckpoint;
   private readonly replayPending: Set<string>;
   private readonly replayHolds = new Map<string, JsonObject[]>();
+  private readonly snapshotRequests = new Map<number, string>();
+  private readonly heartbeatIntervalMs: number;
+  private readonly heartbeatDeadlineMs: number;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatSequence = 0;
+  private lastInboundAt = 0;
 
   constructor(
     private readonly socket: HermesSocket,
     options: HermesRpcTransportOptions = {},
   ) {
     this.timeoutMs = options.timeoutMs ?? 30_000;
+    // Keep this identical to Hermes Desktop's advertised `gateway.ping`
+    // contract. TAT owns its own transport liveness; the application layer
+    // must not invent a second, more aggressive lifecycle policy.
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
+    this.heartbeatDeadlineMs = options.heartbeatDeadlineMs ?? 45_000;
     this.replayCheckpoint = options.replayCheckpoint ?? new HermesReplayCheckpoint();
     this.replayPending = new Set(this.replayCheckpoint.lastSeenSeq.keys());
     socket.addEventListener("message", this.handleMessage);
@@ -97,14 +115,23 @@ export class HermesRpcWebSocketTransport implements HermesRpcClient {
       });
       if (typeof result.epoch === "string" && result.epoch !== "") {
         if (this.replayCheckpoint.epoch !== null && this.replayCheckpoint.epoch !== result.epoch) {
-          this.replayCheckpoint.lastSeenSeq.clear();
+          this.discardReplay(sessionId);
+          this.replayCheckpoint.reset();
+          this.replayCheckpoint.epoch = result.epoch;
+          return { complete: false };
         }
         this.replayCheckpoint.epoch = result.epoch;
       }
       const complete = result.truncated !== true;
-      if (!complete) this.replayCheckpoint.lastSeenSeq.delete(sessionId);
+      if (!complete) {
+        this.discardReplay(sessionId);
+        return { complete: false };
+      }
       for (const event of result.events ?? []) this.dispatchIfNewer(event);
       return { complete };
+    } catch {
+      this.discardReplay(sessionId);
+      return { complete: false };
     } finally {
       this.replayPending.delete(sessionId);
       this.flushHeld(sessionId);
@@ -114,6 +141,32 @@ export class HermesRpcWebSocketTransport implements HermesRpcClient {
   onEvent(listener: (event: JsonObject) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  discardReplay(sessionId: string): void {
+    this.replayCheckpoint.lastSeenSeq.delete(sessionId);
+    this.replayPending.delete(sessionId);
+    this.replayHolds.delete(sessionId);
+  }
+
+  async snapshotSession(sessionId: string): Promise<HermesSessionPayload> {
+    this.discardReplay(sessionId);
+    this.replayPending.add(sessionId);
+    const requestId = this.nextId;
+    this.snapshotRequests.set(requestId, sessionId);
+    try {
+      return await this.call("session.activate", { session_id: sessionId, omit_messages: true });
+    } catch (error) {
+      this.discardReplay(sessionId);
+      throw error;
+    } finally {
+      this.snapshotRequests.delete(requestId);
+    }
+  }
+
+  releaseSnapshot(sessionId: string): void {
+    this.replayPending.delete(sessionId);
+    this.flushHeld(sessionId);
   }
 
   async call<T>(method: string, params: unknown = {}, signal?: AbortSignal): Promise<T> {
@@ -159,11 +212,13 @@ export class HermesRpcWebSocketTransport implements HermesRpcClient {
     this.disposed = true;
     this.socket.removeEventListener("message", this.handleMessage);
     this.socket.removeEventListener("close", this.handleClose);
+    this.stopHeartbeat();
     this.rejectPending(new HermesRpcError("disposed", "Hermes bridge is detached"));
     this.listeners.clear();
   }
 
   private readonly handleMessage = (event: Event): void => {
+    this.lastInboundAt = Date.now();
     const data = (event as MessageEvent).data;
     void frameText(data).then((frame) => {
       if (frame !== null && !this.disposed) this.handleFrame(frame);
@@ -171,6 +226,7 @@ export class HermesRpcWebSocketTransport implements HermesRpcClient {
   };
 
   private readonly handleClose = (): void => {
+    this.stopHeartbeat();
     this.rejectPending(new HermesRpcError("disconnected", "Hermes WebSocket disconnected"));
   };
 
@@ -184,6 +240,12 @@ export class HermesRpcWebSocketTransport implements HermesRpcClient {
     if (typeof value.id === "number") {
       const pending = this.pending.get(value.id);
       if (!pending) return;
+      const snapshotSession = this.snapshotRequests.get(value.id);
+      if (snapshotSession !== undefined) {
+        // The response replaces the pre-response projection. Preserve frames
+        // after the response until the adapter has installed its stream owner.
+        this.replayHolds.delete(snapshotSession);
+      }
       this.pending.delete(value.id);
       clearTimeout(pending.timer);
       const error = typeof value.error === "object" && value.error !== null
@@ -210,10 +272,11 @@ export class HermesRpcWebSocketTransport implements HermesRpcClient {
       const payload = typeof event.payload === "object" && event.payload !== null
         ? event.payload as JsonObject
         : {};
+      if (payload.heartbeat === true) this.startHeartbeat();
       const epoch = payload.replay_epoch;
       if (typeof epoch === "string" && epoch !== "") {
         if (this.replayCheckpoint.epoch !== null && this.replayCheckpoint.epoch !== epoch) {
-          this.replayCheckpoint.lastSeenSeq.clear();
+          this.replayCheckpoint.reset();
           this.replayPending.clear();
           this.replayHolds.clear();
         }
@@ -253,5 +316,36 @@ export class HermesRpcWebSocketTransport implements HermesRpcClient {
       pending.reject(error);
       this.pending.delete(id);
     }
+  }
+
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer !== null) return;
+    this.lastInboundAt = Date.now();
+    if (this.heartbeatIntervalMs <= 0 || this.heartbeatDeadlineMs <= 0) return;
+    this.heartbeatTimer = setInterval(() => {
+      if (this.disposed || this.socket.readyState !== WebSocket.OPEN) return;
+      if (Date.now() - this.lastInboundAt >= this.heartbeatDeadlineMs) {
+        this.stopHeartbeat();
+        this.socket.close?.();
+        return;
+      }
+      try {
+        this.socket.send(JSON.stringify({
+          jsonrpc: "2.0",
+          id: `heartbeat-${++this.heartbeatSequence}`,
+          method: "gateway.ping",
+          params: {},
+        }));
+      } catch {
+        this.stopHeartbeat();
+        this.socket.close?.();
+      }
+    }, this.heartbeatIntervalMs);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer === null) return;
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
   }
 }

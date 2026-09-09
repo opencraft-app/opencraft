@@ -1,4 +1,6 @@
 export * from "./display-turn";
+export * from "./work-status";
+export * from "./conversation-presentation";
 export * from "./agent-activity";
 export * from "./approval-request";
 export * from "./builtin-projectors";

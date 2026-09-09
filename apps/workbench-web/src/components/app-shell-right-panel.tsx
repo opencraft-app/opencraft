@@ -70,6 +70,11 @@ export function AppShellRightPanel({
       }),
     [progress, rightPanelLayoutTick],
   );
+  // Full-width transitions change the surface while visibility stays at one.
+  // Portalled browser surfaces must observe those geometry frames as well.
+  useLayoutEffect(() => rightPanelWidth.on("change", () => {
+    rightPanelLayoutTick.set(rightPanelLayoutTick.get() + 1);
+  }), [rightPanelWidth, rightPanelLayoutTick]);
 
   const motionStyle: RightPanelMotionStyle = {
     opacity: progress,

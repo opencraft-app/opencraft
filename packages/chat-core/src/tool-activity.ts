@@ -10,6 +10,7 @@ import type {
 import { deriveSubagentActivityPresentation, subagentInlineStatusLabel } from "./subagent-activity";
 import { threadHandoffToolResult } from "./codex-app-tools";
 import { parseSkillPath } from "./skill-path";
+import { formatCodexDuration } from "./format-duration";
 
 export type ToolActivityState = "running" | "completed" | "failed" | "interrupted";
 export type ToolActivityGrouping = "groupable" | "standalone";
@@ -524,6 +525,7 @@ function contentParts(value: unknown, role: ToolCallContentRole): readonly ToolC
 /** Removes MCP transport envelopes while preserving every user-visible body. */
 export function extractToolCallContentParts(block: ToolCallTimelineBlock): readonly ToolCallContentPart[] {
   const parts: ToolCallContentPart[] = [];
+  if (block.inlineDiff) parts.push({ kind: "text", role: "output", text: block.inlineDiff });
   if (block.errorMessage !== null) parts.push({ kind: "text", role: "error", text: block.errorMessage });
   parts.push(...contentParts(block.input, "input"));
   const output = object(block.output);
@@ -596,6 +598,7 @@ function commandActionPresentation(
     return {
       icon: state === "interrupted" ? "stop" : skill?.isSkillDefinitionFile === true ? "wrench" : "read",
       summary: state === "running" ? "Reading"
+        : state === "failed" ? "Couldn’t read"
         : state === "interrupted" ? "Stopped reading"
         : "Read",
       // Codex displays the parsed read label/name while retaining `path` only
@@ -609,6 +612,7 @@ function commandActionPresentation(
     return {
       icon: state === "interrupted" ? "stop" : "files",
       summary: state === "running" ? "Listing files"
+        : state === "failed" ? "Couldn’t list files"
         : state === "interrupted" ? "Stopped listing files"
         : "Listed files",
       detail: action.path === null ? null : `in ${action.path}`,
@@ -621,6 +625,7 @@ function commandActionPresentation(
     return {
       icon: state === "interrupted" ? "stop" : "search",
       summary: state === "running" ? (action.query === null ? "Searching for files" : "Searching")
+        : state === "failed" ? "Search failed"
         : state === "interrupted" ? "Stopped searching"
         : action.query === null ? "Searched for files" : "Searched",
       detail,
@@ -629,28 +634,9 @@ function commandActionPresentation(
   return null;
 }
 
-function formatNarrowUnit(value: number, unit: Intl.NumberFormatOptions["unit"], locale: string): string {
-  return new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "narrow" }).format(value);
-}
-
 /** Exact duration shape used by Codex command Activity (`1m 0s`, null below 1s). */
 export function formatCodexToolDuration(durationMs: number, locale = "en"): string | null {
-  const seconds = Math.floor(Math.max(durationMs, 0) / 1_000);
-  if (seconds < 1) return null;
-  if (seconds < 60) return formatNarrowUnit(seconds, "second", locale);
-  const days = Math.floor(seconds / 86_400);
-  const hours = Math.floor(seconds / 3_600) % 24;
-  const minutes = Math.floor((seconds % 3_600) / 60);
-  const remainingSeconds = seconds % 60;
-  if (days > 0 || hours > 0) {
-    return [
-      ...(days > 0 ? [formatNarrowUnit(days, "day", locale)] : []),
-      formatNarrowUnit(hours, "hour", locale),
-      formatNarrowUnit(minutes, "minute", locale),
-      formatNarrowUnit(remainingSeconds, "second", locale),
-    ].join(" ");
-  }
-  return `${formatNarrowUnit(minutes, "minute", locale)} ${formatNarrowUnit(remainingSeconds, "second", locale)}`;
+  return formatCodexDuration(durationMs, { locale });
 }
 
 function isCurrentDateCommand(command: string): boolean {
@@ -995,6 +981,7 @@ export function presentToolActivity(
       grouping: "groupable",
       icon: semantic?.icon ?? (state === "interrupted" ? "stop" : "terminal"),
       summary: semantic?.summary ?? (state === "running" ? "Running command"
+        : state === "failed" ? "Command failed"
         : state === "interrupted" ? "Stopped command"
         : "Ran command"),
       detail: semantic?.detail ?? null,
@@ -1092,6 +1079,23 @@ export function presentToolActivity(
     };
   }
   if (block.kind === "dynamic") {
+    if (block.activityPresentation) {
+      const input = object(block.input);
+      const target = block.progressText || block.toolContext
+        || nonEmptyString(input?.command) || nonEmptyString(input?.path)
+        || nonEmptyString(input?.query) || nonEmptyString(input?.url);
+      return {
+        state,
+        grouping: block.appResourceUri ? "standalone" : block.activityPresentation.grouping,
+        icon: block.activityPresentation.icon,
+        summary: (state === "running" ? block.activityPresentation.active
+          : state === "completed" ? block.activityPresentation.completed : null) ?? formatDynamicToolActivityLabel(block, state),
+        detail: block.resultMissing ? "Execution result unavailable" : (state === "running" ? target : block.toolSummary || target)?.slice(0, 180) ?? null,
+        canExpand: hasValue(block.input) || hasValue(block.output) || Boolean(block.inlineDiff) || block.errorMessage !== null,
+        durationMs: block.durationMs,
+        ...genericFields(block.id),
+      };
+    }
     return {
       state,
       grouping: "groupable",

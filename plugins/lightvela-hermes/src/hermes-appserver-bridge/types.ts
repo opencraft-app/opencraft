@@ -8,6 +8,29 @@ export interface JsonRpcFailure {
 }
 export type JsonRpcResponse = JsonRpcSuccess | JsonRpcFailure;
 export interface AppServerNotification { jsonrpc: "2.0"; method: string; params: unknown }
+export interface AppServerServerRequest {
+  jsonrpc: "2.0";
+  id: JsonRpcId;
+  method: string;
+  params: unknown;
+}
+export type AppServerOutboundMessage = AppServerNotification | AppServerServerRequest;
+
+export interface HermesClarifyQuestion {
+  qid?: string;
+  question: string;
+  choices?: unknown;
+  multi_select?: boolean;
+}
+
+export interface HermesPendingClarify {
+  request_id: string;
+  question?: string;
+  choices?: unknown;
+  multi_select?: boolean;
+  questions?: unknown;
+  answers?: unknown;
+}
 
 export interface HermesSessionSummary {
   id: string;
@@ -21,10 +44,29 @@ export interface HermesSessionSummary {
   source: string;
   profile?: string;
 }
-export interface HermesMessage { role: string; text?: string; content?: unknown; row_id?: number; _row_id?: number; [key: string]: unknown }
+export interface HermesMessage {
+  role: string;
+  text?: string;
+  content?: unknown;
+  row_id?: number;
+  _row_id?: number;
+  /** Durable Hermes message time in Unix seconds, with optional fractions. */
+  timestamp?: number;
+  [key: string]: unknown;
+}
 export interface HermesSessionPayload {
   session_id: string; stored_session_id?: string; resumed?: string; message_count: number; messages: HermesMessage[];
   running?: boolean; status?: string; info?: { cwd?: string; model?: string; provider?: string; [key: string]: unknown };
+  /** Server-owned blocking prompt replayed by session.resume after reconnect. */
+  pending_clarify?: HermesPendingClarify;
+  turn_started_at?: number;
+  inflight?: {
+    user?: string; assistant?: string; streaming?: boolean;
+    corrections?: string[]; correction_offsets?: number[];
+    error?: string; status?: string; recoverable?: boolean;
+    error_surface?: Record<string, unknown>;
+  } | null;
+  queued?: { user?: string } | null;
 }
 
 export interface HermesProfileSummary {
@@ -112,7 +154,7 @@ export interface AppServerTurn {
 }
 export interface AppServerThread {
   id: string; extra: Record<string, unknown> | null; sessionId: string; forkedFromId: string | null; parentThreadId: string | null;
-  preview: string; ephemeral: boolean; section: null; sectionEnteredAt: null; projectId: null; historyMode: "paginated";
+  preview: string; ephemeral: boolean; section: null; sectionEnteredAt: null; projectId: null; historyMode: "message-window";
   modelProvider: string; createdAt: number; updatedAt: number; recencyAt: number;
   status: { type: "idle" | "active" | "notLoaded"; activeFlags?: unknown[] }; path: null; cwd: string; cliVersion: string;
   source: { custom: string }; canAcceptDirectInput: boolean; threadSource: null; agentNickname: null; agentRole: null;

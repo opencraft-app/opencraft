@@ -645,6 +645,8 @@ export interface ComposerQueuedSubmissionPresentation {
   readonly state: "submitting" | "queued" | "failed";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  /** Whether this runtime permits changing authoritative queue order. */
+  readonly reorderable?: boolean;
   readonly editableContent: ComposerQueuedSubmissionContent;
   readonly error?: string | null;
 }
@@ -664,6 +666,12 @@ export interface CodexComposerProps {
   catalog?: ComposerCatalog;
   isStreaming: boolean;
   disabled?: boolean;
+  /**
+   * Blocks command admission without taking ownership of the editable Draft.
+   * Use this for a temporarily unavailable execution Host: the user may keep
+   * composing while the immutable intent must not cross the transport seam.
+   */
+  submissionDisabled?: boolean;
   placeholder?: string;
   selectionCatalog?: ComposerSelectionCatalog;
   effectiveSelections?: ComposerEffectiveSelections;
@@ -683,6 +691,7 @@ export interface CodexComposerProps {
   onResolveAttachment?: (
     file: File,
     pending: ComposerAttachment,
+    signal?: AbortSignal,
   ) => ComposerAttachment | Promise<ComposerAttachment>;
   /**
    * Hands an immutable intent to its command owner. A synchronous non-false
@@ -708,6 +717,7 @@ export const CodexComposer = forwardRef<
     catalog,
     isStreaming,
     disabled = false,
+    submissionDisabled = false,
     placeholder = "Ask for follow-up changes",
     selectionCatalog,
     effectiveSelections,
@@ -727,9 +737,20 @@ export const CodexComposer = forwardRef<
   forwardedRef,
 ) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const attachmentJobs = useRef(new Map<string, AbortController>());
+  useEffect(() => {
+    const cancelRemoved = () => {
+      const ids = new Set(controller.getSnapshot().draft.attachments.map(attachment => attachment.id));
+      for (const [id, job] of attachmentJobs.current) if (!ids.has(id)) { job.abort(); attachmentJobs.current.delete(id); }
+    };
+    const unsubscribe = controller.subscribe(cancelRemoved);
+    return () => { unsubscribe(); for (const job of attachmentJobs.current.values()) job.abort(); attachmentJobs.current.clear(); };
+  }, [controller]);
   const editorViewRef = useRef<EditorView | null>(null);
   const editorControllerRef = useRef<ComposerController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // A native picker may outlive the Composer that opened it.
+  const attachmentPickerOwnerRef = useRef<EditorView | null>(null);
   const suggestionQueryRef = useRef<SuggestionQuery | null>(null);
   const filteredSuggestionsRef = useRef<readonly Suggestion[]>([]);
   const suggestionLoadingRef = useRef(false);
@@ -902,7 +923,9 @@ export const CodexComposer = forwardRef<
 
   const appendFiles = useCallback(
     (files: File[]) => {
-      if (files.length === 0) return;
+      const view = editorViewRef.current;
+      if (files.length === 0 || disabledRef.current || view === null ||
+        view.isDestroyed || !view.dom.isConnected || editorControllerRef.current !== controller) return;
       for (const file of files) {
         const pending: ComposerAttachment = {
           id: createClientId(),
@@ -918,9 +941,12 @@ export const CodexComposer = forwardRef<
         };
         controller.dispatch({ type: "add-attachment", attachment: pending });
         if (onResolveAttachment === undefined) continue;
-        void Promise.resolve(onResolveAttachment(file, pending))
+        const job = new AbortController();
+        attachmentJobs.current.set(pending.id, job);
+        void Promise.resolve().then(() => onResolveAttachment(file, pending, job.signal))
           .then(
             (resolved) => {
+              if (job.signal.aborted) return;
               const { id: _resolvedId, ...patch } = resolved;
               controller.dispatch({
                 type: "update-attachment",
@@ -928,7 +954,8 @@ export const CodexComposer = forwardRef<
                 patch,
               });
             },
-            (error: unknown) =>
+            (error: unknown) => {
+              if (job.signal.aborted) return;
               controller.dispatch({
                 type: "update-attachment",
                 id: pending.id,
@@ -936,17 +963,29 @@ export const CodexComposer = forwardRef<
                   lifecycle: "failed",
                   error: error instanceof Error ? error.message : String(error),
                 },
-              }),
+              });
+            },
           )
           .catch(() => {
             // The owning Conversation View may have been evicted while the host
             // attachment resolver was still completing. Its disposed Controller
             // deliberately rejects late writes.
-          });
+          }).finally(() => attachmentJobs.current.delete(pending.id));
+      }
+      // Focus belongs to the initiating interaction, not upload completion.
+      // Keep ProseMirror's selection; do not move the caret or schedule a late focus.
+      if (editorViewRef.current === view && !view.isDestroyed && view.dom.isConnected) {
+        view.focus();
       }
     },
     [controller, onResolveAttachment],
   );
+
+  const openAttachmentPicker = () => {
+    if (disabledRef.current) return;
+    attachmentPickerOwnerRef.current = editorViewRef.current;
+    fileInputRef.current?.click();
+  };
 
   const replaceComposerContent = useCallback(
     (content: ComposerQueuedSubmissionContent) => {
@@ -1023,6 +1062,7 @@ export const CodexComposer = forwardRef<
         view.isDestroyed ||
         editorControllerRef.current !== controller ||
         disabled ||
+        submissionDisabled ||
         !composerSnapshot.canSubmit ||
         pendingSubmissionRef.current?.controller === controller
       )
@@ -1127,6 +1167,7 @@ export const CodexComposer = forwardRef<
       controller,
       defaultFollowUpAction,
       disabled,
+      submissionDisabled,
       isStreaming,
       onSubmit,
       onUpdateQueuedSubmission,
@@ -1575,7 +1616,7 @@ export const CodexComposer = forwardRef<
 
   const primaryAction = resolveComposerPrimaryAction({
     isResponseInProgress: isStreaming,
-    canSubmit: !disabled && composerSnapshot.canSubmit,
+    canSubmit: !disabled && !submissionDisabled && composerSnapshot.canSubmit,
     defaultFollowUpAction,
   });
   const primaryActionLabel =
@@ -1591,8 +1632,9 @@ export const CodexComposer = forwardRef<
   const inverseFollowUpAction = invertComposerFollowUpAction(
     defaultFollowUpAction,
   );
-  const primaryActionTitle =
-    isStreaming && primaryAction !== "stop"
+  const primaryActionTitle = submissionDisabled && primaryAction !== "stop"
+    ? "Waiting for execution host"
+    : isStreaming && primaryAction !== "stop"
       ? `${primaryActionLabel} (⌘/Ctrl+Enter to ${inverseFollowUpAction})`
       : primaryActionLabel;
   return (
@@ -1783,7 +1825,7 @@ export const CodexComposer = forwardRef<
               className="codex-composer-icon-button"
               type="button"
               aria-label="Add attachment"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={openAttachmentPicker}
             >
               <Plus size={16} />
             </button>
@@ -1793,7 +1835,11 @@ export const CodexComposer = forwardRef<
               multiple
               type="file"
               onChange={(event) => {
-                appendFiles(Array.from(event.currentTarget.files ?? []));
+                const owner = attachmentPickerOwnerRef.current;
+                attachmentPickerOwnerRef.current = null;
+                if (owner !== null && owner === editorViewRef.current) {
+                  appendFiles(Array.from(event.currentTarget.files ?? []));
+                }
                 event.currentTarget.value = "";
               }}
             />
@@ -2076,7 +2122,7 @@ export const CodexComposer = forwardRef<
               className="codex-composer-icon-button codex-composer-icon-button--context"
               type="button"
               title="Attach files"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={openAttachmentPicker}
             >
               <Paperclip size={15} />
             </button>
@@ -2101,7 +2147,7 @@ export const CodexComposer = forwardRef<
                 aria-label={primaryActionLabel}
                 title={primaryActionTitle}
                 data-composer-primary-action={primaryAction}
-                disabled={disabled || !composerSnapshot.canSubmit}
+                disabled={disabled || submissionDisabled || !composerSnapshot.canSubmit}
                 onPointerDown={(event) => {
                   if (event.button === 0) event.preventDefault();
                 }}

@@ -101,7 +101,11 @@ export class HostRuntimeRegistry<
     const record = this.records.get(hostId);
     if (record === undefined) throw new Error(`Unknown Host runtime ${hostId}`);
     if (record.removed) throw new Error(`Host runtime ${hostId} is being removed`);
-    record.runtime ??= record.createRuntime();
+    if (record.runtime === null) {
+      record.runtime = record.createRuntime();
+      // Let passive observers attach to a newly created Runtime.
+      this.publish();
+    }
     return record.runtime;
   }
 

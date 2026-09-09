@@ -36,7 +36,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type UIEvent,
 } from "react";
 
 import { BotAvatar } from "./bot-avatar";
@@ -159,6 +158,7 @@ function MessageBubble({
   return (
     <article
       className="bot-chat-message"
+      data-selection="text"
       data-author-kind={message.author.kind}
       data-continued-next={projection.continuedToNext || undefined}
       data-continued-prev={projection.continuedFromPrevious || undefined}
@@ -563,14 +563,20 @@ export function createBotChatView(
       latestBotPresenceFacts(effectivePresence).some(
         (fact) => fact.phase !== "idle",
       ) || hasStreamingMessage;
+    const loadOlderAtTop = useCallback(() => {
+      if (
+        snapshot.history.hasOlder &&
+        !snapshot.history.loadingOlder
+      ) void source.loadOlder(key).catch(() => undefined);
+    }, [identity, snapshot.history.hasOlder, snapshot.history.loadingOlder]);
     const viewport = useBotConversationViewport(
       `${identity}:${replayEnabled ? "replay" : "live"}`,
       timeline.units,
+      loadOlderAtTop,
     );
     const {
       following,
       followLatest,
-      onScroll: updateFollowing,
       transcriptRef,
     } = viewport;
 
@@ -650,14 +656,6 @@ export function createBotChatView(
       },
       [followLatest, identity, replay, replayEnabled],
     );
-    const onTranscriptScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
-      updateFollowing();
-      if (
-        event.currentTarget.scrollTop < 240 &&
-        snapshot.history.hasOlder &&
-        !snapshot.history.loadingOlder
-      ) void source.loadOlder(key).catch(() => undefined);
-    }, [identity, snapshot.history.hasOlder, snapshot.history.loadingOlder, updateFollowing]);
     const cancel = useCallback(() => {
       if (replay !== undefined && replayEnabled) {
         replay.pause();
@@ -791,7 +789,6 @@ export function createBotChatView(
           </header>
           <div
             className="bot-chat-transcript"
-            onScroll={onTranscriptScroll}
             ref={transcriptRef}
             role="log"
           >

@@ -140,18 +140,43 @@ export interface SettingsPageContribution {
   readonly order?: number;
   readonly icon?: string;
   readonly platforms?: readonly ExtensionPlatform[];
+  /** The settings shell owns viewport geometry for collection/detail pages. */
+  readonly layout?: "document" | "master-detail";
+  readonly group?: string;
+  /**
+   * Declares that this page belongs to one target-management surface instead
+   * of the device-global Settings index. Pages in the same family share the
+   * shell's selected Agent/Host context; the extension still owns their data
+   * and rendering.
+   */
+  readonly management?: {
+    readonly familyId: string;
+    readonly scope: "agent" | "host";
+  };
 }
 
-export type WorkbenchSurface = "empty-workbench";
+export type WorkbenchSurface = "empty-workbench" | "host-connection-intervention";
 
-/** A presentation request for a host-owned Workbench surface. */
-export interface WorkbenchSurfaceContribution {
+interface WorkbenchSurfaceContributionBase {
   readonly id: string;
   readonly viewId: string;
-  readonly surface: WorkbenchSurface;
   readonly order?: number;
   readonly platforms?: readonly ExtensionPlatform[];
 }
+
+/** A presentation request for a host-owned Workbench surface. */
+export type WorkbenchSurfaceContribution = WorkbenchSurfaceContributionBase & (
+  | {
+      readonly surface: "empty-workbench";
+      readonly providerId?: never;
+      readonly intervention?: never;
+    }
+  | {
+      readonly surface: "host-connection-intervention";
+      readonly providerId: string;
+      readonly intervention: "authentication-required" | "configuration-required";
+    }
+);
 
 export type BotAvatarContribution =
   | {

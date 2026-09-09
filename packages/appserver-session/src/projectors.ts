@@ -93,7 +93,7 @@ function record(value: unknown): Record<string, unknown> | null {
 function notificationTurn(params: unknown): AppServerTurn | null {
   const source = record(params);
   const turn = record(source?.turn);
-  if (turn !== null && typeof turn.id === "string") return turn as AppServerTurn;
+  if (turn !== null && typeof turn.id === "string") return { ...turn } as AppServerTurn;
   if (source !== null && typeof source.turnId === "string") {
     return { id: source.turnId, ...source } as AppServerTurn;
   }
@@ -562,7 +562,34 @@ export function registerBuiltinThreadProjectors(ctx: Context): () => void {
           return view;
         }
         const turn = notificationTurn(notification.params);
-        return turn === null ? view : { ...view, turns: mergeTurns(view.turns, [turn]) };
+        if (turn === null) return view;
+        if (notification.method === "turn/plan/updated") {
+          // A plan update is an ordered observation, not Turn metadata and not
+          // a proposed plan. Each observation owns an immutable todo snapshot.
+          const params = record(notification.params);
+          return mergeProjectedItem(view, turn.id, {
+            id: `todo-list:${crypto.randomUUID()}`,
+            type: "todo-list",
+            explanation: params?.explanation ?? null,
+            plan: params?.plan ?? [],
+          });
+        }
+        if (notification.method === "turn/started") {
+          // Lifecycle observation belongs to this session, never a mounted
+          // renderer. Prefer the server clock when it is available.
+          const previous = view.turns.find((candidate) => candidate.id === turn.id);
+          turn.turnStartedAtMs = previous?.turnStartedAtMs
+            ?? turn.turnStartedAtMs
+            ?? (typeof turn.startedAt === "number" ? turn.startedAt * 1_000 : Date.now());
+        }
+        const ownsFullItemMembership = notification.method === "turn/completed"
+          && turn.itemsView === "full";
+        return {
+          ...view,
+          turns: mergeTurns(view.turns, [turn], {
+            itemsMode: ownsFullItemMembership ? "replace" : "merge",
+          }),
+        };
       },
     }),
     ctx.threadNotificationProjectors.register({
@@ -600,21 +627,39 @@ export function registerBuiltinThreadProjectors(ctx: Context): () => void {
         if (deltaProjection !== null) return deltaProjection;
         const projected = notificationItem(notification.params);
         if (projected === null) return view;
+        const previousTurn = view.turns.find((turn) => turn.id === projected.turnId);
+        const previousItem = previousTurn?.items?.find((item) => item.id === projected.item.id);
+        const params = record(notification.params);
+        const eventAtMs = typeof params?.startedAtMs === "number" ? params.startedAtMs
+          : typeof params?.completedAtMs === "number" ? params.completedAtMs : Date.now();
         const item: AppServerThreadItem = {
+          ...(notification.method === "item/updated" ? previousItem : {}),
           ...projected.item,
           ...(notification.method === "item/started" ? {
             status: "inProgress",
             completed: false,
-            ...(typeof record(notification.params)?.startedAtMs === "number"
-              ? { startedAtMs: record(notification.params)!.startedAtMs }
-              : {}),
+            startedAtMs: previousItem?.startedAtMs ?? projected.item.startedAtMs ?? eventAtMs,
           } : {}),
           ...(notification.method === "item/completed" ? {
             completed: true,
+            completedAtMs: eventAtMs,
             ...(projected.item.status === undefined ? { status: "completed" } : {}),
           } : {}),
         };
-        return mergeProjectedItem(view, projected.turnId, item);
+        const projectedView = mergeProjectedItem(view, projected.turnId, item);
+        if (notification.method !== "item/started" && notification.method !== "item/completed") return projectedView;
+        return {
+          ...projectedView,
+          turns: projectedView.turns.map((turn) => turn.id !== projected.turnId ? turn : {
+            ...turn,
+            ...(item.type !== "userMessage" && item.type !== "hookPrompt" ? {
+              firstTurnWorkItemStartedAtMs: turn.firstTurnWorkItemStartedAtMs ?? item.startedAtMs ?? eventAtMs,
+            } : {}),
+            ...(notification.method === "item/started" && item.type === "agentMessage" ? {
+              finalAssistantStartedAtMs: item.startedAtMs,
+            } : {}),
+          }),
+        };
       },
     }),
   ];

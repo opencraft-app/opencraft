@@ -8,7 +8,7 @@ import {
 } from "@opencraft/workbench-runtime";
 
 import { LocalAgentSettingsService, type HostProtocolRequest } from "./local-agent-settings-service";
-import { createLocalAgentSettingsView } from "./local-agent-settings-view";
+import { createLocalAgentSettingsView, createLocalAgentDefaultModelView } from "./local-agent-settings-view";
 
 type LocalAgentConfig = Readonly<Record<string, never>>;
 
@@ -51,23 +51,28 @@ export function createBuiltinAgentsExtension(options: BuiltinAgentsExtensionOpti
     activate(api) {
       api.views.register({
         id: "vela.builtin-agents.settings-view",
-        title: "Local Agent",
+        title: "Model services",
         viewType: "vela.builtin-agents.settings",
         icon: "bot",
         platforms: ["electron"],
       });
       api.settings.registerPage({
         id: "vela.builtin-agents.settings",
-        title: "Local Agent",
+        title: "Model services",
         viewId: "vela.builtin-agents.settings-view",
         icon: "bot",
         order: 250,
+        layout: "master-detail",
+        group: "Local Agent",
         platforms: ["electron"],
       });
       api.internal.register("platformViewRenderer", {
         viewType: "vela.builtin-agents.settings",
         Component: SettingsView,
       });
+      api.views.register({ id: "vela.builtin-agents.defaults-view", title: "Default model", viewType: "vela.builtin-agents.defaults", platforms: ["electron"] });
+      api.settings.registerPage({ id: "vela.builtin-agents.defaults", title: "Default model", viewId: "vela.builtin-agents.defaults-view", order: 249, group: "Local Agent", platforms: ["electron"] });
+      api.internal.register("platformViewRenderer", { viewType: "vela.builtin-agents.defaults", Component: createLocalAgentDefaultModelView(settings) });
       api.internal.register("hostConnectionProvider", hostProvider);
       api.internal.register(HOST_PROFILE_CONTRIBUTION_CHANNEL, {
         profile: {

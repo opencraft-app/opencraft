@@ -6,6 +6,8 @@ import type { ReplicaClientSnapshot } from "@opencraft/appserver-replica";
 import { asTurnId, createConversationKey } from "@opencraft/chat-core";
 import {
   createReplicaConversationRuntime,
+  ContinuationCommandError,
+  SubmissionOutcomeUnknownError,
   type ConversationCommandPort,
   type ConversationReplicaReader,
 } from "@opencraft/chat-runtime";
@@ -163,6 +165,23 @@ function commands(
     ...overrides,
   };
 }
+
+test("Replica work clocks survive a fresh runtime and stay independent from Turn duration", () => {
+  const replica = new FakeReplica(threadView({ pendingInteractions: [], turns: [{
+    id: "timed", status: "completed", turnStartedAtMs: 10_000,
+    firstTurnWorkItemStartedAtMs: 10_100, finalAssistantStartedAtMs: 12_600,
+    durationMs: 20_000,
+    items: [{ id: "work", type: "reasoning", summary: [] }, { id: "answer", type: "agentMessage", text: "Done", phase: "final_answer", completed: true }],
+  }] }));
+  for (let mount = 0; mount < 2; mount += 1) {
+    const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica, commands: commands(), history: { async loadOlder() {} } });
+    try {
+      const frame = runtime.getSnapshot().timeline.frames.find((frame) => frame.type === "assistant");
+      assert.deepEqual(frame?.workStatus, { type: "worked-for", status: "worked", startedAtMs: 10_000, completedAtMs: 12_600 });
+      assert.equal(frame?.durationMs, 20_000);
+    } finally { runtime.dispose(); }
+  }
+});
 
 test("Conversation Runtime derives its complete UI snapshot from Replica authority", () => {
   const replica = new FakeReplica(threadView());
@@ -1060,6 +1079,13 @@ test("continuation owns eligibility and blocks historical, duplicate and stale-s
   let resolve!: (value: SubmissionReceipt) => void;
   let calls = 0;
   const replica = new FakeReplica(failedConversation());
+  const composer = createComposerController({
+    type: "existing-thread", key: createConversationKey("local", "thread-one"),
+  }, { now: () => 100, createId: () => "next-message" });
+  composer.dispatch({ type: "set-document", document: {
+    version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Next message" }] }],
+  } });
+  const nextMessage = composer.createSubmitIntent();
   const runtime = createReplicaConversationRuntime({
     key: createConversationKey("local", "thread-one"), replica,
     commands: commands({ continueTurn: async () => {
@@ -1072,19 +1098,21 @@ test("continuation owns eligibility and blocks historical, duplicate and stale-s
     await assert.rejects(runtime.continueTurn(asTurnId("older")));
     const pending = runtime.continueTurn(asTurnId("failed"));
     assert.equal(runtime.getSnapshot().continuation.pending, true);
+    await assert.rejects(runtime.submit(nextMessage), /Waiting for continuation/);
     await assert.rejects(runtime.continueTurn(asTurnId("failed")));
     assert.equal(calls, 1);
     resolve(receipt("continue", "continue-message"));
     await pending;
     assert.equal(runtime.getSnapshot().continuation.pending, false);
     assert.equal(runtime.getSnapshot().continuation.turnId, null);
+    await assert.rejects(runtime.submit(nextMessage), /Waiting for continuation/);
     await assert.rejects(runtime.continueTurn(asTurnId("failed")));
     assert.equal(calls, 1);
   } finally { runtime.dispose(); }
 });
 
 test("continuation rejection is observable and does not silently disappear", async () => {
-  const failure = new Error("Host rejected continuation");
+  const failure = new ContinuationCommandError("rejected", "Host rejected continuation");
   const runtime = createReplicaConversationRuntime({
     key: createConversationKey("local", "thread-one"),
     replica: new FakeReplica(failedConversation()),
@@ -1095,6 +1123,24 @@ test("continuation rejection is observable and does not silently disappear", asy
     await assert.rejects(runtime.continueTurn(asTurnId("failed")), failure);
     assert.equal(runtime.getSnapshot().continuation.error, failure);
     assert.equal(runtime.getSnapshot().continuation.pending, false);
+    assert.equal(runtime.getSnapshot().continuation.turnId, "failed");
+  } finally { runtime.dispose(); }
+});
+
+test("a lost continuation acknowledgement is not permission to send it again", async () => {
+  const replica = new FakeReplica(failedConversation());
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"), replica,
+    commands: commands({ async continueTurn() {
+      throw new ContinuationCommandError("unknown", "Lost acknowledgement");
+    } }), history: { async loadOlder() {} },
+  });
+  try {
+    await assert.rejects(runtime.continueTurn(asTurnId("failed")));
+    assert.equal(runtime.getSnapshot().continuation.turnId, null);
+    await assert.rejects(runtime.continueTurn(asTurnId("failed")));
+    replica.setEntity(threadView());
+    assert.equal(runtime.getSnapshot().continuation.error, null);
   } finally { runtime.dispose(); }
 });
 
@@ -1181,6 +1227,34 @@ test("a failed AppServer Turn preserves the protocol error discriminant and deta
   } finally {
     runtime.dispose();
   }
+});
+
+test("unknown delivery is fenced until an authoritative Item acknowledges it", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(threadView());
+  let calls = 0;
+  const runtime = createReplicaConversationRuntime({ key, replica,
+    commands: commands({ submit: async () => { calls++; throw new SubmissionOutcomeUnknownError(); } }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "existing-thread", key }, { now: () => 100, createId: () => "unknown-submission" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Hello" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+  assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.state, "unknown");
+  const user = runtime.getSnapshot().timeline.frames.flatMap(f => f.blocks).find(b => b.type === "user-message" && b.message === "Hello");
+  assert.equal(user?.type === "user-message" && user.deliveryStatus, "unknown");
+  await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+  assert.equal(calls, 1);
+  runtime.dismissFailedSubmission(intent.commandId);
+  assert.equal(runtime.getSnapshot().pendingSubmissions.length, 1);
+  replica.setEntity(threadView({ turns: [{ id: "confirmed", status: "inProgress", items: [
+    { id: "confirmed-user", type: "userMessage", clientId: intent.clientMessageId, content: [{ type: "text", text: "Hello" }] },
+  ] }] }));
+  assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+  runtime.dispose();
 });
 
 test("ordinary submission is an optimistic Turn and never a queued follow-up", async () => {
@@ -1275,7 +1349,6 @@ test("authoritative Turn acknowledgement retires the optimistic submission", asy
         {
           id: "turn-two",
           status: "inProgress",
-          params: { clientUserMessageId: intent.clientMessageId },
           items: [
             {
               id: "user-two",
@@ -1287,6 +1360,15 @@ test("authoritative Turn acknowledgement retires the optimistic submission", asy
         },
       ],
     }),
+  );
+  assert.equal(
+    runtime.getSnapshot().timeline.frames
+      .flatMap((frame) => frame.blocks)
+      .filter(
+        (block) => block.type === "user-message" && block.message === "Hello",
+      ).length,
+    1,
+    "the server Item identity suppresses the optimistic row before turn/start resolves",
   );
   resolveSubmission({
     commandId: intent.commandId,

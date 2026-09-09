@@ -1,10 +1,11 @@
-import { Bot, LogIn, RefreshCw } from "lucide-react";
+import { Bot, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import type { ExtensionSettingsViewProps } from "@opencraft/extension-react";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
 import { LIGHTVELA_HERMES_HOST_ID } from "./lightvela-hermes-settings-view";
+import { LightVelaLoginOptions } from "./lightvela-login-options";
 
 /**
  * LightVela owns its zero-Host experience. The Workbench core supplies only
@@ -21,9 +22,7 @@ export function createLightVelaHermesEmptyView(account: LightVelaAccountService)
     useEffect(() => {
       if (started.current) return;
       started.current = true;
-      const acceptedCallback = account.bootstrapOAuthFragment();
-      if (!acceptedCallback && !account.hasStoredSession()) {
-        account.signIn();
+      if (!account.hasStoredSession()) {
         return;
       }
       void account.refreshBots().catch(() => undefined);
@@ -52,7 +51,7 @@ export function createLightVelaHermesEmptyView(account: LightVelaAccountService)
       });
     }, [host, installed, snapshot]);
 
-    const error = provisionError ?? snapshot.error;
+    const error = provisionError ?? (snapshot.phase === "anonymous" ? null : snapshot.error);
     const waiting = snapshot.phase === "loading"
       || (snapshot.phase === "authenticated" && snapshot.bots.length > 0 && error === null);
 
@@ -74,9 +73,7 @@ export function createLightVelaHermesEmptyView(account: LightVelaAccountService)
                 <RefreshCw size={15} /> Refresh
               </button>
             ) : (
-              <button type="button" onClick={() => account.signIn()}>
-                <LogIn size={15} /> Sign in
-              </button>
+              <LightVelaLoginOptions account={account} snapshot={snapshot} />
             )}
           </div>
         ) : <i className="hostless-empty-view__spinner" aria-hidden="true" />}

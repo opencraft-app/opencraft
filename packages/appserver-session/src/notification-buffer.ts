@@ -39,7 +39,9 @@ export class ResumeNotificationBufferService extends Service {
     const removeNotification = config.client.interceptNotification((notification, next) => {
       const threadId = resolveThreadId(notification.params);
       const buffer = threadId === null ? undefined : this.buffers.get(threadId);
-      if (buffer === undefined) next();
+      // Request-scoped paint data is not execution replay. The coordinator
+      // checks its token; buffering it would make REST paint wait for Resume.
+      if (buffer === undefined || notification.method === "thread/history/preview") next();
       else buffer.push({ type: "notification", replay: next });
     });
     const removeRequest = config.client.interceptServerRequest((request, next) => {

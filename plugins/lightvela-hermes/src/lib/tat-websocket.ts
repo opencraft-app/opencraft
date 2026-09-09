@@ -317,6 +317,12 @@ export const createTatWebSocketConstructor = (
         this.protocol = negotiated.protocol;
         this.readyState = OPEN;
         this.emit(new Event("open"));
+        // Native WebSocket dispatches `open` and the first `message` as
+        // separate event-loop tasks. The TAT tunnel can deliver the HTTP 101
+        // and gateway.ready frame in one chunk; yielding here preserves the
+        // browser contract so an `await open` continuation can attach its
+        // message listener before buffered frames are published.
+        await Promise.resolve();
         if (bodyPrefix.byteLength > 0) {
           this.processFrames(this.decoder.push(bodyPrefix));
         }

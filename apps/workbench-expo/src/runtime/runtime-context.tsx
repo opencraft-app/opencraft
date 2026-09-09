@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import type { Thread } from "@opencraft/appserver-protocol/generated/v2";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
+import type { DuplexTransport } from "@opencraft/appserver-client/transport";
 import { asHostId, createConversationKey } from "@opencraft/chat-core";
 import {
   createClientId,
@@ -111,11 +112,19 @@ function createWorkbenchQueryClient(): QueryClient {
   });
 }
 
-export function createExpoWorkbenchApplication(): ExpoWorkbenchApplication {
-    const hostId = asHostId(process.env.EXPO_PUBLIC_APPSERVER_HOST_ID ?? "local");
+export interface ExpoWorkbenchApplicationOptions {
+  readonly hostId?: string;
+  readonly hostLabel?: string;
+  readonly transport?: DuplexTransport;
+  readonly transportEndpoint?: string | null;
+}
+
+export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplicationOptions = {}): ExpoWorkbenchApplication {
+    const hostId = asHostId(options.hostId ?? process.env.EXPO_PUBLIC_APPSERVER_HOST_ID ?? "local");
+    const transport = options.transport ?? new WebSocketTransport({ url: appServerUrl() });
     const runtime = createAppServerWorkbenchRuntime({
       hostId,
-      transport: new WebSocketTransport({ url: appServerUrl() }),
+      transport,
       autoReconnect: true,
     });
     const conversationScopes = createConversationScopeRegistry({
@@ -132,10 +141,10 @@ export function createExpoWorkbenchApplication(): ExpoWorkbenchApplication {
     const registry = new HostRuntimeRegistry([{
       descriptor: {
         hostId,
-        label: "AppServer",
+        label: options.hostLabel ?? "AppServer",
         kind: "remote-control",
-        transportEndpoint: appServerUrl(),
-        executionLocation: "AppServer",
+        transportEndpoint: options.transportEndpoint === undefined ? appServerUrl() : options.transportEndpoint,
+        executionLocation: options.hostLabel ?? "AppServer",
         workspaceBrowseRoots: [],
       },
       createRuntime: () => runtime,
@@ -156,6 +165,10 @@ export function createExpoWorkbenchApplication(): ExpoWorkbenchApplication {
       leases,
       views,
     );
+    // Native React renders immediately. Publish the locally owned Draft/View
+    // identity synchronously; Host connection and hydration may finish later.
+    // Supplying an initial coordinator viewId alone does not create its View.
+    const initialActivation = conversationActivation.presentInitial(initialLocation, initialViewId);
     const queryClient = createWorkbenchQueryClient();
     const submissionPipeline = createWorkbenchSubmissionPipeline({
       scopes: conversationScopes,
@@ -205,10 +218,8 @@ export function createExpoWorkbenchApplication(): ExpoWorkbenchApplication {
       submissionPipeline,
       start() {
         if (disposed) return Promise.reject(new Error("Expo Workbench application is disposed"));
-        startPromise ??= conversationActivation.prepare(coordinator.getSnapshot().location).then((prepared) => {
-          if (prepared === null || !prepared.commit(encodeWorkbenchLocation(prepared.location))) {
-            throw coordinator.getSnapshot().error ?? new Error("Initial activation failed");
-          }
+        startPromise ??= initialActivation.then((activated) => {
+          if (!activated) throw coordinator.getSnapshot().error ?? new Error("Initial activation failed");
         });
         return startPromise;
       },

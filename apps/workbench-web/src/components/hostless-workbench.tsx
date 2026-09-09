@@ -1,4 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
+import { useSettingsPresentation } from "./use-settings-presentation";
 import type { PlatformViewHost } from "@opencraft/extension-react";
 import {
   useCallback,
@@ -88,6 +89,7 @@ export function HostlessWorkbench({
   );
   const settingsSection = applicationRoute.kind === "settings" ? applicationRoute.slug : null;
   const settingsOpen = settingsSection !== null;
+  const settingsPresentation = useSettingsPresentation(sidebarWidth);
   const applicationReturnsToPreviousEntry = useRef(
     applicationRoute.kind !== "conversation" && hasHostlessApplicationReturn(window.history.state),
   );
@@ -209,7 +211,8 @@ export function HostlessWorkbench({
     openSettings,
     openView: openExtensionView,
   });
-  const sharedSidebarOpen = settingsOpen || sidebarOpen;
+  const sharedSidebarOpen = settingsOpen ? settingsPresentation.showIndex : sidebarOpen;
+  const selectSettingsSection = (section: string) => { openSettings(section); settingsPresentation.openContent(); };
   const collapseSidebar = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
   const expandSidebar = useCallback(() => setSidebarOpen(true), [setSidebarOpen]);
   const commitSidebarWidth = useCallback((width: number, persist: boolean) => {
@@ -244,16 +247,18 @@ export function HostlessWorkbench({
       canGoForward={canGoForward}
       onBack={navigateBack}
       onForward={navigateForward}
-      navigationActions={chromePolicy.leadingNavigationActions}
+      navigationActions={settingsOpen ? [] : chromePolicy.leadingNavigationActions}
     />
   );
   const leftPanel = settingsOpen ? (
     <Suspense fallback={null}>
       <SettingsNavigation
         section={settingsSection ?? "connections"}
-        onSectionChange={openSettings}
+        onSectionChange={selectSettingsSection}
         extensionContributions={supervisor.extensions.contributions}
-        onBack={closeApplicationRoute}
+        profiles={profileSnapshot.profiles}
+        activeHostId=""
+        onBack={() => { settingsPresentation.openContent(); closeApplicationRoute(); }}
       />
     </Suspense>
   ) : (
@@ -276,6 +281,7 @@ export function HostlessWorkbench({
   return (
     <QueryClientProvider client={supervisor.queryClient}>
       <AppShell
+        layoutScope="hostless"
         header={header}
         floatingSidebarHeader={(onDock) => (
           <AppShellNavigationControls
@@ -295,8 +301,10 @@ export function HostlessWorkbench({
         rightPanelOpen={false}
         rightPanelFullWidth={false}
         sidebarCollapsible={!settingsOpen}
+        sidebarTransientEnabled={!settingsOpen}
+        sidebarResizable={!settingsOpen}
         sidebarOpen={sharedSidebarOpen}
-        sidebarWidth={sidebarWidth}
+        sidebarWidth={settingsOpen ? settingsPresentation.sidebarWidth : sidebarWidth}
         windowChrome={windowChrome}
         onSidebarCollapse={settingsOpen ? () => undefined : collapseSidebar}
         onSidebarExpand={expandSidebar}
@@ -311,7 +319,8 @@ export function HostlessWorkbench({
           }
         >
             {settingsOpen ? (
-              <section className="settings-page" aria-label="Settings">
+              <section className="settings-page" aria-label="Settings" inert={settingsPresentation.indexOnly || undefined} aria-hidden={settingsPresentation.indexOnly || undefined}>
+                {settingsPresentation.compact ? <nav className="settings-page__compact-navigation" aria-label="Settings navigation"><button className="settings-navigation-link" type="button" onClick={settingsPresentation.openIndex}><span aria-hidden="true">‹</span>Settings</button></nav> : null}
                 <Suspense
                   fallback={
                     <div className="settings-page-loading" role="status">
@@ -321,7 +330,7 @@ export function HostlessWorkbench({
                 >
                   <SettingsContent
                     section={settingsSection ?? "connections"}
-                    onSectionChange={openSettings}
+                    onSectionChange={selectSettingsSection}
                     activeHostId=""
                     extensionContributions={supervisor.extensions.contributions}
                     extensionManager={supervisor.extensionManager}

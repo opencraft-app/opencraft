@@ -90,6 +90,20 @@ const webViewportOwnerSource = readFileSync(
   ),
   "utf8",
 );
+const botConversationViewportSource = readFileSync(
+  new URL(
+    "../plugins/bot-chat/src/conversation-viewport.ts",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const botChatViewSource = readFileSync(
+  new URL(
+    "../plugins/bot-chat/src/bot-chat-view.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const expoFrameSource = readFileSync(
   new URL(
     "../apps/workbench-expo/src/components/workbench-frame.shared.tsx",
@@ -143,6 +157,15 @@ const rightPanelTabsSource = readFileSync(
   ),
   "utf8",
 );
+
+test("panel creation picker is outlet-owned and shares its actions with the empty state", () => {
+  assert.doesNotMatch(rightPanelTabsSource, /action\.tabKind|emptyPanelActions|emptyPanelLabel/);
+  assert.match(rightPanelTabsSource, /state\.right\.tabs\.length > 0 \? <PanelCreationMenu/);
+  assert.match(rightPanelTabsSource, /actions=\{creationActions\}/);
+  assert.match(rightPanelTabsSource, /creationActions\.map\(action/);
+  assert.match(rightPanelTabsSource, /aria-label="New tab"/);
+  assert.match(rightPanelTabsSource, /onCloseAutoFocus=\{event =>/);
+});
 const browserPanelSource = readFileSync(
   new URL(
     "../apps/workbench-web/src/browser/browser-panel-plugin.tsx",
@@ -347,6 +370,106 @@ test("renderer measurement requests are generation fenced before Web layout work
   );
 });
 
+const webResponseSource = readFileSync(new URL("../apps/workbench-web/src/components/conversation/response-positioned-turns.tsx", import.meta.url), "utf8");
+
+const webVirtualizedTurnsSource = readFileSync(new URL("../apps/workbench-web/src/components/conversation/virtualized-conversation-turns.tsx", import.meta.url), "utf8");
+
+test("row height and follow-content observations share one policy consumer without conflating their facts", () => {
+  assert.match(webResponseSource, /onLatestTurnMeasurement=\{handleLatestTurnMeasurement\}/u);
+  assert.match(webVirtualizedTurnsSource, /setLatestTurnMeasurementListener\(onLatestTurnMeasurement \?\? null\)/u);
+  assert.doesNotMatch(webResponseSource, /latestTurnFollowContentHeightRef\.current = change\.heightPx/u);
+  assert.match(
+    webResponseSource,
+    /const restoredLatestTurnHeightBaselineRef = useRef<number \| null>[\s\S]{0,180}?isViewportPreservingTurnFollowMode/u,
+    "only a viewport-preserving restored latest Turn may provide the one-shot height baseline",
+  );
+  assert.match(
+    webResponseSource,
+    /if \(change\.kind === "turn-height"\) \{[\s\S]{0,180}?restoredLatestTurnHeightBaselineRef\.current = null;/u,
+    "the restored height baseline must be consumed exactly once",
+  );
+  assert.match(
+    webVirtualizedTurnsSource,
+    /viewportOwner\.publishLatestTurnHeightChange\(\s*transaction\.latestTurnHeightChange,?\s*\)/u,
+  );
+  assert.match(
+    webVirtualizedTurnsSource,
+    /createTurnMeasurementTransaction\(\{[\s\S]{0,650}?currentDistanceFromBottomPx:\s*scrollController\.getLastScrollDistanceFromBottomPx\(\)/u,
+    "measurement transactions must read the controller's synchronous distance, not an event-lagging mirror",
+  );
+  assert.match(
+    webResponseSource,
+    /targetDistance < 0[\s\S]{0,220}?Math\.max\(0, targetDistance\)/u,
+    "response-spacer ownership must observe signed underflow before the platform scroll is clamped",
+  );
+});
+
+test("footer geometry and response placement have disjoint Codex owners", () => {
+  assert.match(webViewportOwnerSource, /readonly attachFooterElement/u);
+  assert.match(
+    webViewportOwnerSource,
+    /observeBorderBoxHeight\(footer,[\s\S]{0,520}?--thread-scroll-padding-bottom/u,
+    "the platform layout owner writes footer padding in the ResizeObserver transaction",
+  );
+  assert.doesNotMatch(
+    webConversationSource,
+    /measuredFooterScrollPaddingPx|setMeasuredFooterScrollPaddingPx|bottomPaddingRef/u,
+    "footer geometry must not create a React render or enter a shared padding register",
+  );
+  assert.match(
+    webVirtualizedTurnsSource,
+    /createTurnMeasurementTransaction\(\{[\s\S]{0,520}?bottomPaddingPx: getBottomScrollPaddingPx\(\)/u,
+    "the virtualizer bottom coordinate is the response spacer only",
+  );
+  assert.match(
+    webResponseSource,
+    /maximumResponseSpacerHeightPx\(\{[\s\S]{0,180}?scrollPaddingBottomPx: viewportOwner\.getFooterScrollPaddingPx\(\)/u,
+    "follow policy reads footer padding directly from the platform owner",
+  );
+  assert.doesNotMatch(expoConversationSource, /bottomScrollPaddingPx|bottomPaddingRef/u);
+  assert.match(expoConversationSource, /footerPaddingRef = useRef\(footerScrollPaddingPx\)/u);
+  assert.match(
+    expoConversationSource,
+    /reconcileTurnLayoutViewport\(\{[\s\S]{0,420}?bottomPaddingPx: responseSpacerHeightRef\.current/u,
+    "Native uses the same footer/response-spacer ownership boundary",
+  );
+});
+
+test("physical scroll distance and input classification have one platform transaction owner", () => {
+  assert.doesNotMatch(webConversationSource, /distanceRef|inputDirectionRef|touchPointRef|previousPointerSnapshotRef/u);
+  assert.doesNotMatch(expoConversationSource, /distanceRef/u);
+  assert.doesNotMatch(botConversationViewportSource, /distanceRef/u);
+
+  assert.match(
+    webViewportOwnerSource,
+    /private bindScrollPortListeners[\s\S]*?bindScrollBehavior\(callbacks:/u,
+    "raw DOM listeners must remain an implementation detail of the Web viewport owner",
+  );
+  assert.match(
+    webViewportOwnerSource,
+    /reportPlatformScroll\(\(change\)\s*=>[\s\S]{0,220}?resolveScrollOrigin\([\s\S]{0,180}?change\.previousDistanceFromBottomPx[\s\S]{0,100}?change\.currentDistanceFromBottomPx/u,
+    "origin must be resolved inside the controller transaction after pending layout restoration",
+  );
+  assert.match(webConversationSource, /viewportOwner\.bindScrollBehavior\(/u);
+  assert.match(webResponseSource, /scrollController\.subscribe\(handlePlatformScroll\)/u);
+  assert.match(webResponseSource, /scrollController\.addUserScrollListener\(handleUserScroll\)/u);
+  assert.match(expoConversationSource, /scrollController\.addUserScrollListener\(handleUserScroll\)/u);
+  assert.match(botConversationViewportSource, /owner\.bindScrollBehavior\(/u);
+  assert.doesNotMatch(botConversationViewportSource, /scrollTop\s*</u);
+  assert.doesNotMatch(botChatViewSource, /onTranscriptScroll|onScroll=\{onTranscriptScroll\}/u);
+  assert.match(botConversationViewportSource, /owner\.scrollController\.addUserScrollListener/u);
+  assert.match(
+    botConversationViewportSource,
+    /preserveMeasuredViewport: !following/u,
+    "Bot follow and generic virtualizer preservation must never own the same layout transaction",
+  );
+  assert.doesNotMatch(
+    botConversationViewportSource,
+    /reportPlatformScroll\("user"\)/u,
+    "a React onScroll callback must not relabel every Bot layout scroll as user-owned",
+  );
+});
+
 test("Composer menus live in the root overlay plane with Codex viewport constraints", () => {
   assert.equal(
     Array.from(composerSource.matchAll(/<DropdownMenu\.Portal>/gu)).length,
@@ -362,8 +485,14 @@ test("Composer menus live in the root overlay plane with Codex viewport constrai
   );
   assert.match(
     workbenchStyles,
-    /\.codex-composer-selection-menu\s*\{[^}]*--radix-dropdown-menu-content-available-width[^}]*--radix-dropdown-menu-content-available-height/u,
+    /\.codex-composer-selection-menu\s*\{[^}]*@include menu\.surface/u,
   );
+  assert.match(workbenchStyles, /\.right-panel-creation-menu\s*\{[^}]*@include menu\.surface/u);
+  const menuStyles = readFileSync(new URL("../packages/design-system/src/menu.web.scss", import.meta.url), "utf8");
+  assert.match(menuStyles, /--radix-dropdown-menu-content-available-width/);
+  assert.match(menuStyles, /--radix-dropdown-menu-content-available-height/);
+  assert.match(menuStyles, /prefers-reduced-motion: no-preference/);
+  assert.match(menuStyles, /font-size: 13px/);
   assert.doesNotMatch(
     workbenchStyles,
     /\.codex-composer-selection-menu\s*\{[^}]*position:\s*absolute/u,
@@ -459,7 +588,7 @@ test("Composer submission preserves View-owned focus across primary action swaps
 test("an existing Thread adopts a submission before remote acknowledgement", () => {
   assert.match(
     workbenchApp,
-    /const submission = hostCatalog\.submit\(submittedIntent\);[\s\S]{0,220}?intent\.target\.type !== "new-thread"[\s\S]{0,520}?void submission\.catch[\s\S]{0,360}?return true;/u,
+    /submission = hostCatalog\.submit\(submittedIntent\);[\s\S]{0,360}?intent\.target\.type !== "new-thread"[\s\S]{0,620}?void submission\.catch[\s\S]{0,420}?return true;/u,
   );
   assert.match(
     workbenchApp,
@@ -471,6 +600,60 @@ test("an existing Thread adopts a submission before remote acknowledgement", () 
     /const sendMessage = useCallback\(\s*async/u,
     "an async wrapper would make every existing-Thread handoff look remotely pending to the Composer",
   );
+});
+
+test("local-submit placement is page-owned and consumed once by the Conversation", () => {
+  assert.match(workbenchApp, /pendingLatestTurnPlacementRef = useRef<LatestTurnPlacementSnapshot \| null>/u);
+  assert.match(workbenchApp, /captureLatestTurnSubmitPlacement\(\)/u);
+  assert.match(workbenchApp, /consumePendingLatestTurnSubmitPlacement=\{consumeLatestTurnPlacement\}/u);
+  assert.match(
+    webResponseSource,
+    /captureLatestTurnSubmitPlacement:[\s\S]{0,280}?distanceFromBottomPx: scrollController\.getLastScrollDistanceFromBottomPx\(\)/u,
+    "submit placement snapshots share the same authoritative distance clock as measurement",
+  );
+  assert.match(
+    webResponseSource,
+    /consumePendingLatestTurnSubmitPlacement !== undefined && placement === null && !allowInitialPlacement\) \{\s*return;/u,
+    "an unowned replica Turn must not acquire local-submit follow policy",
+  );
+  assert.match(
+    webVirtualizedTurnsSource,
+    /preserveViewport: preserveMeasuredTurnViewport/u,
+    "rejecting latest-Turn policy must not suppress virtualizer-owned anchor reconciliation",
+  );
+  assert.doesNotMatch(webResponseSource, /pendingLatestTurnPlacementRef/u);
+  assert.match(expoFrameSource, /pendingLatestTurnPlacementRef = useRef<LatestTurnPlacementSnapshot \| null>/u);
+  assert.doesNotMatch(expoConversationSource, /pendingPlacementRef/u);
+  assert.match(workbenchApp, /!followsActiveTurn \|\| context\.followUpAction === "steer"/u);
+  assert.match(expoFrameSource, /!followsActiveTurn \|\| context\.followUpAction === "steer"/u);
+  assert.match(webResponseSource, /deriveTimelineLatestTurnActivityKey\(latestTurn\)/u);
+  assert.match(expoConversationSource, /deriveTimelineLatestTurnActivityKey\(latestTurn\)/u);
+  assert.match(
+    webResponseSource,
+    /previousLatestTurnActivityKey !== latestTurnActivityKey/u,
+    "steering must advance placement identity without replacing the Turn row",
+  );
+});
+
+test("response lifecycle keeps row identity and uses one mount/submit transition", () => {
+  assert.match(webConversationSource, /style=\{\{ y: offset \?\? 0 \}\}/u);
+  assert.doesNotMatch(webConversationSource, /return offset === null/u);
+  assert.equal(webResponseSource.match(/consumePendingLatestTurnSubmitPlacement\?\.\(\)/gu)?.length, 1);
+  assert.equal(webResponseSource.match(/scrollToDistanceFromBottomPx\(1, "instant"\)/gu)?.length, 1);
+  assert.match(webResponseSource, /initialPlacementPendingRef\.current = false;\s*const placement = consumePendingLatestTurnSubmitPlacement/u);
+  assert.match(webResponseSource, /const scrollHeightDelta = element\.scrollHeight - placement\.scrollHeightPx;/u);
+  assert.match(webResponseSource, /previousInProgress && !isLatestTurnInProgress\) \{\s*stopResponseAnimations\(\);\s*latestTurnOffset\.set\(0\);\s*\}/u);
+  assert.doesNotMatch(webResponseSource, /stopResponseAnimations\((?:true|false)\)/u);
+  assert.match(webResponseSource, /<VirtualizedConversationTurns/u);
+  assert.doesNotMatch(webResponseSource, /pendingMeasurementTransactionRef|measuredHeightsByKey|layoutRef|viewportRef|reconcileTurnLayoutViewport|handledLatestTurnLayout/u);
+  assert.doesNotMatch(webVirtualizedTurnsSource, /followStateRef|latestTurnActivityKey|consumePendingLatestTurnSubmitPlacement|useMotionValue/u);
+  assert.match(webVirtualizedTurnsSource, /viewportOwner\.measureNewlyMountedTurns\(\)/u);
+});
+
+test("response observation follows the controller boundary, not button visibility", () => {
+  assert.match(webResponseSource, /setIsScrolledFromBottom\(snapshot\.isScrolledFromBottom\)/u);
+  assert.match(webResponseSource, /\[isScrolledFromBottom, responseSpacerHeight, shrinkResponseSpacer, viewportOwner\]/u);
+  assert.doesNotMatch(webResponseSource, /\[showScrollToBottom, responseSpacerHeight, shrinkResponseSpacer, viewportOwner\]/u);
 });
 
 test("a new-thread workspace is an optional execution override, not Composer ownership", () => {
@@ -625,7 +808,12 @@ test("a full-width right panel exclusively owns the center toolbar", () => {
 test("right-panel maximize is one semantic-to-motion geometry transaction", () => {
   assert.match(
     appShellSource,
-    /const rightPanelWidth = rightPanelFullWidth\s*\? mainContentWidth\s*:\s*regularRightPanelWidth/u,
+    /const rightPanelWidth = useTransform\(\s*\[mainContentWidth, regularRightPanelWidth, fullWidthProgress\][\s\S]{0,240}?Number\(regular\)[\s\S]{0,160}?Number\(progress\)/u,
+  );
+  assert.doesNotMatch(
+    appShellSource,
+    /const rightPanelWidth = rightPanelFullWidth\s*\?/u,
+    "semantic maximize must retarget one continuous physical width signal",
   );
   assert.match(
     appShellSource,
@@ -799,10 +987,8 @@ test("history pagination keeps one callback identity across viewport measurement
     assert.doesNotMatch(source, /loadOlderPendingRef/u);
   }
   assert.match(webConversationSource, /historyBackfill\.invalidate\(\);/u);
-  assert.match(
-    webViewportOwnerSource,
-    /previousClientHeightPx === clientHeightPx[\s\S]*?previousScrollHeightPx === scrollHeightPx/u,
-  );
+  assert.doesNotMatch(webViewportOwnerSource, /observer\.observe\(element\.firstElementChild\)/u);
+  assert.match(webConversationSource, /onContentLayoutCommitted=\{loadOlderUntilScrollable\}/u);
 });
 
 test("right-panel resize interaction is owned only by its edge handle", () => {
@@ -1062,4 +1248,41 @@ test("the conversation scrollport terminates browser boundary scrolling", () => 
 test("reflow pinning follows Codex window-zoom compensation", () => {
   assert.equal(timelineReflowScrollAdjustment(200, 260), 60);
   assert.equal(timelineReflowScrollAdjustment(200, 260, 1.5), 40);
+});
+
+test("response spacer mutation stays private behind a read/subscribe API", () => {
+  const apiContract = webResponseSource.slice(
+    webResponseSource.indexOf("export interface ResponsePositionedTurnsApi"),
+    webResponseSource.indexOf("export function ResponsePositionedTurns"),
+  );
+  assert.match(apiContract, /getSpacerHeightPx\(\): number/u);
+  assert.match(apiContract, /subscribeSpacerHeight\(listener: \(\) => void\): \(\) => void/u);
+  assert.doesNotMatch(apiContract, /MotionValue|readonly spacerHeight/u);
+  const apiImplementation = webResponseSource.slice(
+    webResponseSource.indexOf("const responseApi = useMemo"),
+    webResponseSource.indexOf("onResponseApiChange(responseApi)"),
+  );
+  assert.match(apiImplementation, /getSpacerHeightPx: \(\) => responseSpacerHeight\.get\(\)/u);
+  assert.match(apiImplementation, /subscribeSpacerHeight: \(listener\) => responseSpacerHeight\.on\("change", listener\)/u);
+  assert.doesNotMatch(apiImplementation, /spacerHeight: responseSpacerHeight/u);
+  assert.match(webConversationSource, /responseApi\?\.subscribeSpacerHeight\(listener\)/u);
+  assert.match(webConversationSource, /responseApi\?\.getSpacerHeightPx\(\)/u);
+  assert.doesNotMatch(webConversationSource, /responseApi\?\.spacerHeight/u);
+});
+
+test("the Web host explicitly selects Codex response placement without a hidden policy default", () => {
+  assert.match(workbenchApp, /scrollPolicy="response-placement"/u);
+  assert.match(workbenchApp, /consumePendingLatestTurnSubmitPlacement=\{consumeLatestTurnPlacement\}/u);
+  assert.match(webConversationSource, /readonly scrollPolicy: ConversationScrollPolicy/u);
+  assert.doesNotMatch(webConversationSource, /scrollPolicy = "natural"/u);
+});
+
+test("natural policy mounts the virtualizer without constructing response owners", () => {
+  assert.doesNotMatch(webConversationSource, /useMotionValue|followStateRef|reduceTurnFollowState|thread-response-spacer/u);
+  const naturalList = webConversationSource.slice(webConversationSource.lastIndexOf("<VirtualizedConversationTurns"));
+  assert.match(naturalList, /preserveMeasuredTurnViewport\s/u);
+  assert.doesNotMatch(naturalList, /onLatestTurnMeasurement=|getBottomScrollPaddingPx=|getPendingRestoreScrollDistanceFromBottomPx=|restoreScrollDistanceFromBottomPx=|consumePendingLatestTurnSubmitPlacement=/u);
+  assert.match(webResponseSource, /preserveMeasuredTurnViewport=\{!isLatestTurnInProgress\}/u);
+  assert.match(webConversationSource, /turnFollow: responseRestore\?\.turnFollow \?\? null/u);
+  assert.doesNotMatch(webResponseSource, /viewportOwner\.dispose\(/u, "policy must not dispose the shared platform owner");
 });

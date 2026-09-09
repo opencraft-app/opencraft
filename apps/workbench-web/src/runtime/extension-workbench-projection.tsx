@@ -30,6 +30,11 @@ export interface ExtensionWorkbenchProjection {
   readonly activeView: ViewContribution | null;
   readonly activeViewNode: ReactNode;
   readonly emptyWorkbenchNode: ReactNode;
+  readonly connectionInterventions: readonly {
+    readonly providerId: string;
+    readonly intervention: "authentication-required" | "configuration-required";
+    readonly node: ReactNode;
+  }[];
 }
 
 export interface ExtensionWorkbenchProjectionOptions {
@@ -215,6 +220,20 @@ export function useExtensionWorkbenchProjection({
           supportsPlatform(surface, host.platform),
       )
       .sort(byOrderThenId)[0] ?? null;
+    const connectionInterventions = contributionSnapshot.workbenchSurfaces
+      .map(({ contribution }) => contribution)
+      .filter(
+        (surface) =>
+          supportsPlatform(surface, host.platform),
+      )
+      .sort(byOrderThenId)
+      .flatMap((surface) => surface.surface === "host-connection-intervention"
+        ? [{
+            providerId: surface.providerId,
+            intervention: surface.intervention,
+            node: renderView(surface.viewId),
+          }]
+        : []);
 
     return {
       primaryActions: navigation
@@ -243,6 +262,7 @@ export function useExtensionWorkbenchProjection({
               : null,
           ),
       emptyWorkbenchNode: emptySurface === null ? null : renderView(emptySurface.viewId),
+      connectionInterventions,
     };
   }, [
     applicationRoute,

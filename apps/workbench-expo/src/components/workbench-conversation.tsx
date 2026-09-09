@@ -1,5 +1,10 @@
 import {
   createTimelineTurnPresentationPlan,
+  assistantMessageActions,
+  compactionLabel,
+  todoSummary,
+  skillReadPresentation,
+  type ConversationDetailLevel,
   createDefaultToolActivityPresenterRegistry,
   codexAppThreadNavigationTarget,
   createdThreadToolResult,
@@ -9,17 +14,20 @@ import {
   agentActivityHeaderAccessibleLabel,
   deriveAgentActivityHeaderPresentation,
   deriveSubagentActivityGroupPresentation,
+  deriveTimelineLatestTurnActivityKey,
   deriveTimelineLatestTurnPhase,
   extractToolCallContentParts,
   formatThreadHandoffStepLabel,
   formatCodexToolDuration,
+  formatWorkDuration,
+  workStatusLabelText,
+  resolveAgentActivityLayout,
   formatCommandActivitySummary,
   formatHookEventName,
   formatHookSource,
   formatAutomaticApprovalReviewSummary,
   formatAutomaticApprovalReviewTitle,
   groupTimelineFramesByTurn,
-  isAgentActivityCollapsed,
   isAutomaticApprovalReviewWarning,
   isCodexAppThreadTool,
   isVisibleAgentActivityRow,
@@ -32,6 +40,9 @@ import {
   threadHandoffToolResult,
   visibleThreadHandoffSteps,
   type AgentActivityRenderUnit,
+  type AgentActivityGroupContentUnit,
+  type AgentActivityContentUnit,
+  type WorkStatusItem,
   type AssistantTurnPresentationPlan,
   type AutomaticApprovalReview,
   type AutomationUpdateTimelineBlock,
@@ -58,13 +69,13 @@ import { NativeChatDocument } from "@opencraft/chat-render-native";
 import { useTurnHistoryBackfill } from "@opencraft/timeline-react";
 import {
   TimelineBlockView,
+  useWorkStatusLabel,
   type TimelineBlockRendererProps,
   type TimelineBlockRendererRegistration,
 } from "@opencraft/timeline-render-react";
 import {
   buildTurnLayout,
   CODEX_TURN_VIRTUALIZER_CONFIG,
-  compensateDistanceFromBottom,
   createInitialTurnFollowState,
   createLatestTurnPlacementSnapshot,
   createTurnFollowState,
@@ -73,7 +84,6 @@ import {
   distanceExcludingBottomPadding,
   distanceFromBottomToCenterTurn,
   distanceFromBottomToTopTurn,
-  findMeasuredViewportAnchor,
   getTurnGeometry,
   isViewportPreservingTurnFollowMode,
   maximumResponseSpacerHeightPx,
@@ -81,6 +91,7 @@ import {
   normalizeInitialScrollDistance,
   normalizeTurnViewportMetrics,
   reconcileRenderedRangeForEntries,
+  reconcileTurnLayoutViewport,
   resolveTimelineViewportPolicy,
   reduceTurnFollowState,
   serializeTurnRestoreState,
@@ -90,6 +101,7 @@ import {
   TurnScrollController,
   type TurnConversationScrollApi,
   type TurnFollowRestoreState,
+  type LatestTurnPlacementSnapshot,
   type VirtualizedTurnRestoreState,
   type VirtualizedTurnListApi,
   type VirtualizedTurnViewportState,
@@ -112,8 +124,6 @@ import {
   ListChecks,
   MessageSquare,
   Monitor,
-  MoreHorizontal,
-  RotateCcw,
   Search,
   ShieldCheck,
   Globe2,
@@ -167,6 +177,8 @@ function JsonPreview({ value }: { value: unknown }) {
 
 const DEFAULT_TOOL_ACTIVITY_PRESENTERS = createDefaultToolActivityPresenterRegistry();
 const NativeToolActivityPresenterContext = createContext<ToolActivityPresenterRegistry>(DEFAULT_TOOL_ACTIVITY_PRESENTERS);
+const NativeConversationDetailContext = createContext<ConversationDetailLevel>("STEPS_COMMANDS");
+const NativeCopyTextContext = createContext<((text: string) => Promise<void>) | null>(null);
 
 export type NativeToolCallContentRenderer = (
   block: Extract<TimelineBlock, { type: "tool-call" }>,
@@ -381,13 +393,16 @@ function NativeAutoReviewInterruptionWarningBlock({ block }: { readonly block: E
 function CommandBlock({ block }: { block: Extract<TimelineBlock, { type: "command-execution" }> }) {
   const { theme } = useUnistyles();
   const presentation = useToolActivityPresentation(block);
+  const detailLevel = useContext(NativeConversationDetailContext);
+  const skill = skillReadPresentation(block, detailLevel);
   const semanticAction = block.actions.length === 1 && block.actions[0]?.type !== "unknown";
-  const summary = semanticAction
+  const summary = skill ? `${skill.summary} ${skill.detail}` : semanticAction
     ? `${presentation.summary}${presentation.detail ? ` ${presentation.detail}` : ""}`
     : formatCommandActivitySummary(block, presentation.state, {
         expanded: false,
         elapsedLabel: formatCodexToolDuration(block.durationMs ?? 0),
       });
+  if (skill?.visible === false) return null;
   return (
     <View style={styles.toolCard}>
       <View style={styles.toolHeader}>
@@ -775,35 +790,21 @@ function NativeSubagentActivity({ unit }: { readonly unit: SubagentActivityRende
   );
 }
 
-function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit }) {
+function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupContentUnit }) {
   const { theme } = useUnistyles();
   const registry = useContext(NativeToolActivityPresenterContext);
+  const detailLevel = useContext(NativeConversationDetailContext);
   const version = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
-  const headerUnit = useMemo(() => {
-    for (let index = unit.contentUnits.length - 1; index >= 0; index -= 1) {
-      const candidate = unit.contentUnits[index];
-      if (candidate?.type === "group") return candidate;
-    }
-    return {
-      blocks: unit.blocks,
-      lifecycle: {
-        isLatestVisibleUnit: true,
-        isActivitySliceClosed: unit.status !== "pending" && unit.status !== "streaming",
-        isExploring: false,
-        inProgress: unit.preventAutoCollapse,
-      },
-    };
-  }, [unit.blocks, unit.contentUnits, unit.preventAutoCollapse, unit.status]);
   const header = useMemo(
-    () => deriveAgentActivityHeaderPresentation(headerUnit, registry),
-    [headerUnit, registry, version],
+    () => deriveAgentActivityHeaderPresentation(unit, registry, detailLevel),
+    [unit, registry, version, detailLevel],
   );
   const visibleBlocks = useMemo(
-    () => unit.blocks.filter((block) => isVisibleAgentActivityRow(block, registry)),
-    [registry, unit.blocks, version],
+    () => unit.blocks.filter((block) => isVisibleAgentActivityRow(block, registry, detailLevel)),
+    [registry, unit.blocks, version, detailLevel],
   );
-  const [open, setOpen] = useState(!isAgentActivityCollapsed(unit, undefined));
-  const hasExpandableContent = visibleBlocks.length > 0 || unit.inlineSubagentActivity !== null;
+  const [open, setOpen] = useState(false);
+  const hasExpandableContent = visibleBlocks.length > 0;
   return (
     <View style={styles.agentActivity}>
       <Pressable disabled={!hasExpandableContent} onPress={() => setOpen((value) => !value)} style={({ pressed }) => [styles.reasoningButton, pressed && styles.pressed]}>
@@ -814,11 +815,89 @@ function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit 
       {open && hasExpandableContent ? (
         <View style={styles.agentActivityRows}>
           {visibleBlocks.map((block) => <Block block={block} key={block.id} />)}
-          {unit.inlineSubagentActivity === null ? null : <NativeSubagentActivity unit={unit.inlineSubagentActivity} />}
         </View>
       ) : null}
     </View>
   );
+}
+
+function NativeWorkStatusLabel({ item }: { readonly item: WorkStatusItem }) {
+  const label = useWorkStatusLabel(item);
+  return <Text style={styles.workStatusLabel}>{workStatusLabelText(label)}</Text>;
+}
+
+function useWorkStatusReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (live) setReduced(value); });
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduced);
+    return () => { live = false; subscription.remove(); };
+  }, []);
+  return reduced;
+}
+
+function NativeWorkStatusDivider({ item }: { readonly item: WorkStatusItem }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const [height, setHeight] = useState<number>();
+  const reduced = useWorkStatusReducedMotion();
+  useEffect(() => {
+    if (height === undefined) return;
+    const animation = Animated.timing(progress, { toValue: 1, duration: reduced ? 0 : 300, easing: Easing.bezier(0.19, 1, 0.22, 1), useNativeDriver: false });
+    animation.start();
+    return () => animation.stop();
+  }, [height, progress, reduced]);
+  return <Animated.View style={{ overflow: "hidden", opacity: progress, height: height === undefined ? undefined : progress.interpolate({ inputRange: [0, 1], outputRange: [0, height] }) }}>
+    <View onLayout={(event) => setHeight(event.nativeEvent.layout.height)} style={styles.workStatusDivider}>
+      <NativeWorkStatusLabel item={item} />
+      <View style={styles.workStatusRule} />
+    </View>
+  </Animated.View>;
+}
+
+function NativeActivityExpansion({ children }: { readonly children: ReactNode }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const reduced = useWorkStatusReducedMotion();
+  useEffect(() => {
+    const animation = Animated.timing(progress, { toValue: 1, duration: reduced ? 120 : 220, easing: Easing.bezier(0.33, 1, 0.68, 1), useNativeDriver: true });
+    animation.start();
+    return () => animation.stop();
+  }, [progress, reduced]);
+  return <Animated.View style={[styles.activityContent, { opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [reduced ? 0 : -8, 0] }) }] }]}>{children}</Animated.View>;
+}
+
+function NativeActivityContent({ units }: { readonly units: readonly AgentActivityContentUnit[] }) {
+  return <View style={styles.activityContent}>{units.map((unit) =>
+    unit.type === "worked-for" ? <NativeWorkStatusDivider key={unit.id} item={unit.item} />
+      : unit.type === "group" ? <NativeAgentActivityGroup key={unit.id} unit={unit} />
+        : <Block key={unit.id} block={unit.block} />)}</View>;
+}
+
+function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit }) {
+  const { theme } = useUnistyles();
+  const [persistedCollapsed, setPersistedCollapsed] = useState<boolean>();
+  // Native consumes the same disclosure/partition authority as Web. A local
+  // `open` initialized once cannot own completion-triggered auto-collapse.
+  const layout = resolveAgentActivityLayout(unit, persistedCollapsed);
+  return <View style={styles.activityContent}>
+    {layout.preToggleUnits.length > 0 ? <NativeActivityContent units={layout.preToggleUnits} /> : null}
+    {layout.showToggle ? <View>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: !layout.isCollapsed }}
+        onPress={() => setPersistedCollapsed(!layout.isCollapsed)} style={styles.workStatusButton}>
+        {layout.workedForItem !== null ? <NativeWorkStatusLabel item={layout.workedForItem} />
+          : <Text style={styles.workStatusLabel}>{unit.workedDurationMs !== null
+            ? `Worked for ${formatWorkDuration(unit.workedDurationMs)}`
+            : `${layout.collapsedItemCount} previous message${layout.collapsedItemCount === 1 ? "" : "s"}`}</Text>}
+        <ChevronRight size={12} color={theme.color.icon.tertiary} style={!layout.isCollapsed ? styles.chevronOpen : undefined} />
+      </Pressable>
+      <View style={styles.workStatusRuleRow}><View style={styles.workStatusRule} /></View>
+    </View> : null}
+    {layout.persistentUnits.length > 0 ? <NativeActivityContent units={layout.persistentUnits} /> : null}
+    {!layout.isCollapsed ? <NativeActivityExpansion>
+      {layout.visibleUnits.length > 0 ? <NativeActivityContent units={layout.visibleUnits} /> : null}
+      {unit.inlineSubagentActivity !== null ? <NativeSubagentActivity unit={unit.inlineSubagentActivity} /> : null}
+    </NativeActivityExpansion> : null}
+  </View>;
 }
 
 const NativePendingSurfaceContext = createContext(false);
@@ -1394,14 +1473,25 @@ function NativeTextTimelineRenderer({ block, richText }: TimelineBlockRendererPr
 }
 
 function NativePlanTimelineRenderer({ block }: TimelineBlockRendererProps) {
+  const [collapsed, setCollapsed] = useState(block.type === "plan" && !block.completed);
   if (block.type !== "plan") return null;
-  return <SemanticCard title={block.title ?? "Plan"} status={block.implemented ? "Implemented" : undefined}><Text style={styles.semanticBody}>{block.text}</Text></SemanticCard>;
+  return <SemanticCard title={block.completed ? block.title ?? "Plan" : "Writing plan"}>
+    <View style={collapsed ? { height: 320, overflow: "hidden" } : undefined}><NativeChatDocument documentId={block.id} source={block.text} streaming={!block.completed} /></View>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: !collapsed }} onPress={() => setCollapsed(!collapsed)}><Text>{collapsed ? "Expand plan" : "Collapse plan"}</Text></Pressable>
+    {block.completed && block.text.trim() ? <NativeResponseCopyButton text={block.text} label="Copy plan" /> : null}
+  </SemanticCard>;
 }
 
 function NativeTodoTimelineRenderer({ block }: TimelineBlockRendererProps) {
   const { theme } = useUnistyles();
+  const [open, setOpen] = useState(false);
   if (block.type !== "todo") return null;
-  return <SemanticCard icon={<ListChecks color={theme.color.icon.secondary} size={theme.metrics.control.iconSmall} />} title="Tasks">{block.entries.map((entry) => <Text key={entry.id} style={styles.semanticBody}>• {entry.text} · {entry.status}</Text>)}</SemanticCard>;
+  if (block.entries.length === 0) return null;
+  return <View><Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)}><Text style={styles.semanticBody}>{todoSummary(block)}</Text></Pressable>{open ? <SemanticCard icon={<ListChecks color={theme.color.icon.secondary} size={theme.metrics.control.iconSmall} />} title={block.explanation ?? "Steps"}>{block.entries.map((entry) => <Text key={entry.id} style={styles.semanticBody}>{entry.status === "complete" ? "✓" : "○"} {entry.text}</Text>)}</SemanticCard> : null}</View>;
+}
+
+function NativeCompactionBlock({ block }: { block: Extract<TimelineBlock, { type: "compaction" }> }) {
+  return <NativeCadencedText active={!block.completed} style={styles.eventText}>{compactionLabel(block)}</NativeCadencedText>;
 }
 
 function NativeSubagentTimelineRenderer({ block }: TimelineBlockRendererProps) {
@@ -1446,7 +1536,8 @@ const nativeBuiltinTimelineRenderers: readonly TimelineBlockRendererRegistration
   { name: "native-subagent", priority: 0, types: ["subagent"], component: NativeSubagentTimelineRenderer },
   { name: "native-interaction", priority: 0, types: ["approval", "question", "option-picker", "elicitation"], component: NativeInteractionTimelineRenderer },
   { name: "native-error", priority: 0, types: ["error"], component: NativeErrorTimelineRenderer },
-  { name: "native-compaction", priority: 0, types: ["compaction"], component: nativeComponentRenderer("compaction", (block) => <View style={styles.eventDivider}><View style={styles.eventLine} /><Text style={styles.eventText}>{block.summary ?? "Earlier context was compacted"}</Text><View style={styles.eventLine} /></View>) },
+  { name: "native-compaction", priority: 0, types: ["compaction"], component: nativeComponentRenderer("compaction", (block) => <NativeCompactionBlock block={block} />) },
+  { name: "native-plan-implementation", priority: 0, types: ["plan-implementation"], component: () => null },
   { name: "native-image", priority: 0, types: ["image"], component: nativeComponentRenderer("image", (block) => <NativeGeneratedImageBlock block={block} />) },
   { name: "native-unknown", priority: 0, types: ["unknown"], component: nativeComponentRenderer("unknown", (block) => <SemanticCard title={`Unsupported AppServer item: ${block.itemType}`}><JsonPreview value={block.payload} /></SemanticCard>) },
 ];
@@ -1463,7 +1554,7 @@ function Block({ block, richText = true }: { block: TimelineBlock; richText?: bo
   return <TimelineBlockView block={block} richText={richText} />;
 }
 
-export type NativeConversationDetailLevel = "STEPS_PROSE" | "STEPS_COMMANDS" | "STEPS_EXECUTION";
+export type NativeConversationDetailLevel = ConversationDetailLevel;
 
 function NativeHookLifecycleIcon({ color }: { readonly color: string }) {
   return (
@@ -1521,21 +1612,41 @@ function NativeHookStatsSummary({
   );
 }
 
+function NativeResponseCopyButton({ text, label = "Copy response" }: { text: string; label?: string }) {
+  const { theme } = useUnistyles();
+  const copyText = useContext(NativeCopyTextContext);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setCopied(false); }, [text]);
+  useEffect(() => {
+    if (!copied) return;
+    const timeout = setTimeout(() => setCopied(false), 1_500);
+    return () => clearTimeout(timeout);
+  }, [copied]);
+  if (copyText === null) return null;
+  return <Pressable accessibilityLabel={copied ? "Copied" : label} accessibilityRole="button" hitSlop={8}
+    onPress={() => { void copyText(text).then(() => setCopied(true)).catch(() => setCopied(false)); }}>
+    {copied ? <Check color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} /> : <Copy color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} />}
+  </Pressable>;
+}
+
 function Frame({
   assistantPlan,
   frame,
   thinkingId,
+  thinkingLabel = "Thinking",
   showActions,
   threadDetailLevel,
 }: {
   assistantPlan: AssistantTurnPresentationPlan | null;
   frame: TimelineFrame;
   thinkingId: string | null;
+  thinkingLabel?: "Thinking" | "Planning";
   showActions: boolean;
   threadDetailLevel: NativeConversationDetailLevel;
 }) {
   const { theme } = useUnistyles();
   const [showHookStats, setShowHookStats] = useState(false);
+  const actions = frame.type === "assistant" ? assistantMessageActions(frame) : null;
   const visibleBlocks = frame.blocks;
   const visibleFrame = frame;
   const units = assistantPlan?.slots ?? null;
@@ -1552,18 +1663,17 @@ function Frame({
           : unit.type === "subagent-activity"
             ? <NativeSubagentActivity key={unit.id} unit={unit} />
             : <View key={unit.id}><Block block={unit.block} /></View>)}
-      {thinkingId === null ? null : <NativeThinkingPlaceholder key={thinkingId} />}
-      {frame.type === "assistant" && frame.status === "complete" && showActions ? (
+      {thinkingId === null ? null : <NativeThinkingPlaceholder key={thinkingId} label={thinkingLabel} />}
+      {frame.type === "assistant" && showActions && (actions?.completed || frame.hookStats != null) ? (
         <>
           <View style={styles.messageActions}>
-            <Copy color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} />
-            <RotateCcw color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} />
+            {actions?.completed && actions.copyText ? <NativeResponseCopyButton text={actions.copyText} /> : null}
             {frame.hookStats == null ? null : (
               <Pressable accessibilityLabel="Hooks" accessibilityRole="button" hitSlop={8} onPress={() => setShowHookStats((current) => !current)}>
                 <NativeHookLifecycleIcon color={theme.color.icon.tertiary} />
               </Pressable>
             )}
-            <MoreHorizontal color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} />
+            {actions?.sentAtMs == null ? null : <Text style={styles.eventText}>{new Date(actions.sentAtMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>}
           </View>
           {showHookStats && frame.hookStats != null ? <NativeHookStatsSummary detailLevel={threadDetailLevel} stats={frame.hookStats} /> : null}
         </>
@@ -1572,8 +1682,8 @@ function Frame({
   );
 }
 
-function NativeThinkingPlaceholder() {
-  return <View accessibilityLiveRegion="polite" style={styles.thinkingPlaceholder}><NativeCadencedText active style={styles.thinkingPlaceholderText}>Thinking</NativeCadencedText></View>;
+function NativeThinkingPlaceholder({ label = "Thinking" }: { label?: "Thinking" | "Planning" }) {
+  return <View accessibilityLiveRegion="polite" style={styles.thinkingPlaceholder}><NativeCadencedText active style={styles.thinkingPlaceholderText}>{label}</NativeCadencedText></View>;
 }
 
 function Turn({
@@ -1603,6 +1713,7 @@ function Turn({
           key={presentation.assistantFrame.id}
           showActions
           thinkingId={presentation.showThinking ? presentation.thinkingId : null}
+          thinkingLabel={presentation.thinkingLabel}
           threadDetailLevel={threadDetailLevel}
         />
       )}
@@ -1657,11 +1768,12 @@ export interface WorkbenchConversationRestoreSnapshot {
 interface WorkbenchConversationProps {
   readonly timeline: TimelineSnapshot | null;
   readonly onSuggestion: (text: string) => void;
-  readonly bottomScrollPaddingPx?: number;
+  readonly footerScrollPaddingPx?: number;
   readonly initialRestoreSnapshot?: WorkbenchConversationRestoreSnapshot | null;
   readonly onRestoreSnapshotChange?: (snapshot: WorkbenchConversationRestoreSnapshot) => void;
   readonly onLoadOlder?: () => void | "stop" | Promise<void | "stop">;
   readonly onConversationScrollApiChange?: (api: TurnConversationScrollApi | null) => void;
+  readonly consumePendingLatestTurnSubmitPlacement?: () => LatestTurnPlacementSnapshot | null;
   readonly onVirtualizedTurnListApiChange?: (api: VirtualizedTurnListApi | null) => void;
   readonly onRespondInteraction?: NativeInteractionResponder;
   readonly onOpenSubagent?: (threadId: string, displayName: string) => void;
@@ -1674,16 +1786,18 @@ interface WorkbenchConversationProps {
   readonly renderToolCallContent?: NativeToolCallContentRenderer;
   readonly renderToolCallIcon?: NativeToolCallIconRenderer;
   readonly threadDetailLevel?: NativeConversationDetailLevel;
+  readonly onCopyText?: (text: string) => Promise<void>;
 }
 
 export function WorkbenchConversation({
   timeline,
   onSuggestion,
-  bottomScrollPaddingPx = 0,
+  footerScrollPaddingPx = 0,
   initialRestoreSnapshot = null,
   onRestoreSnapshotChange,
   onLoadOlder,
   onConversationScrollApiChange,
+  consumePendingLatestTurnSubmitPlacement,
   onVirtualizedTurnListApiChange,
   onRespondInteraction,
   onOpenSubagent,
@@ -1696,6 +1810,7 @@ export function WorkbenchConversation({
   renderToolCallContent,
   renderToolCallIcon,
   threadDetailLevel = "STEPS_COMMANDS",
+  onCopyText,
 }: WorkbenchConversationProps) {
   const viewportPolicy = resolveTimelineViewportPolicy({
     kind: Platform.OS === "web" ? "browser" : "native",
@@ -1708,15 +1823,19 @@ export function WorkbenchConversation({
   const entries = useMemo(() => timeline === null ? [] : groupTimelineFramesByTurn(timeline), [timeline]);
   const latestTurn = entries.length === 0 ? null : entries[entries.length - 1] ?? null;
   const latestTurnKey = latestTurn?.turnKey ?? null;
+  const latestTurnActivityKey = deriveTimelineLatestTurnActivityKey(latestTurn);
   const latestTurnPhase = deriveTimelineLatestTurnPhase(latestTurn);
   const isLatestTurnInProgress = latestTurn?.status === "pending" || latestTurn?.status === "streaming";
+  const initialDistanceFromBottomPx = normalizeInitialScrollDistance(
+    initialRestoreSnapshot?.distanceFromBottomPx,
+  );
   const [measuredHeightsByKey, setMeasuredHeightsByKey] = useState<Readonly<Record<string, number>>>(() => initialRestoreSnapshot?.virtualizedTurnList?.turnHeightsByKey ?? {});
   const layout = useMemo(() => buildTurnLayout(entries, measuredHeightsByKey), [entries, measuredHeightsByKey]);
   const [viewport, setViewport] = useState<VirtualizedTurnViewportState>(() => createTurnViewportState(
     layout,
     distanceExcludingBottomPadding(
-      normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx),
-      bottomScrollPaddingPx,
+      initialDistanceFromBottomPx,
+      0,
     ),
     CODEX_TURN_VIRTUALIZER_CONFIG.fallbackViewportHeightPx,
     initialRestoreSnapshot?.virtualizedTurnList ?? null,
@@ -1725,25 +1844,24 @@ export function WorkbenchConversation({
   const contentHeightRef = useRef(0);
   const viewportHeightRef = useRef(CODEX_TURN_VIRTUALIZER_CONFIG.fallbackViewportHeightPx);
   const topOffsetRef = useRef(0);
-  const distanceRef = useRef(normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx));
-  const bottomPaddingRef = useRef(bottomScrollPaddingPx);
-  bottomPaddingRef.current = bottomScrollPaddingPx;
+  const footerPaddingRef = useRef(footerScrollPaddingPx);
+  footerPaddingRef.current = footerScrollPaddingPx;
   const restoredFollow = initialRestoreSnapshot?.turnFollow?.turnKey === latestTurnKey
     ? initialRestoreSnapshot.turnFollow.followMode
     : null;
   const followStateRef = useRef(createInitialTurnFollowState({
-    distanceFromBottomPx: distanceRef.current,
+    distanceFromBottomPx: initialDistanceFromBottomPx,
     isLatestTurnInProgress,
     latestTurnPhase,
     restoredFollowMode: restoredFollow,
   }));
   const latestTurnKeyRef = useRef(latestTurnKey);
+  const latestTurnActivityKeyRef = useRef(latestTurnActivityKey);
   const latestTurnPhaseRef = useRef(latestTurnPhase);
   const latestTurnInProgressRef = useRef(isLatestTurnInProgress);
   const didRestoreRef = useRef(false);
   const isDraggingRef = useRef(false);
   const isMomentumScrollingRef = useRef(false);
-  const pendingPlacementRef = useRef<ReturnType<typeof createLatestTurnPlacementSnapshot> | null>(null);
   const pendingNonPlacementRef = useRef<ReturnType<typeof createLatestTurnPlacementSnapshot> | null>(null);
   const pendingRestoreDistanceRef = useRef<number | null>(normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx));
   const responseSpacerHeightRef = useRef(0);
@@ -1776,27 +1894,22 @@ export function WorkbenchConversation({
       now: () => performance.now(),
       requestFrame: (callback) => requestAnimationFrame(callback),
       cancelFrame: (handle) => cancelAnimationFrame(handle),
-    }, distanceRef.current);
+    }, initialDistanceFromBottomPx);
   }
   const scrollController = scrollControllerRef.current;
 
   const applyDistance = useCallback((distance: number) => {
     scrollController.scrollToDistanceFromBottomPx(distance, "instant");
-    distanceRef.current = Math.max(0, distance);
   }, [scrollController]);
   const updateViewport = useCallback((distance: number) => {
-    distanceRef.current = Math.max(0, distance);
+    const normalizedDistance = Math.max(0, distance);
     setViewport((current) => updateTurnViewportState(
       current,
       layoutRef.current,
-      distanceExcludingBottomPadding(distanceRef.current, bottomPaddingRef.current),
+      distanceExcludingBottomPadding(normalizedDistance, responseSpacerHeightRef.current),
       viewportHeightRef.current,
     ));
   }, []);
-
-  useLayoutEffect(() => {
-    updateViewport(distanceRef.current);
-  }, [bottomScrollPaddingPx, updateViewport]);
 
   const historyBackfill = useTurnHistoryBackfill({
     historyKey: timeline === null
@@ -1804,7 +1917,7 @@ export function WorkbenchConversation({
       : JSON.stringify([timeline.key.hostId, timeline.key.threadId]),
     loadPage: onLoadOlder,
     readMetrics: () => ({
-      distanceFromBottomPx: distanceRef.current,
+      distanceFromBottomPx: scrollController.getLastScrollDistanceFromBottomPx(),
       viewportHeightPx: viewportHeightRef.current,
       scrollHeightPx: contentHeightRef.current,
     }),
@@ -1823,47 +1936,54 @@ export function WorkbenchConversation({
     latestTurnOffset.setValue(0);
     responseSpacerHeightRef.current = next;
     responseSpacerHeight.setValue(next);
-    applyDistance(Math.max(0, distanceRef.current + next - current));
-  }, [applyDistance, latestTurnOffset, responseSpacerHeight]);
+    applyDistance(Math.max(
+      0,
+      scrollController.getLastScrollDistanceFromBottomPx() + next - current,
+    ));
+  }, [applyDistance, latestTurnOffset, responseSpacerHeight, scrollController]);
+
+  const handleUserScroll = useCallback((distance: number, previousDistance: number) => {
+    if (distance <= 24 && previousDistance > 24 && isLatestTurnInProgress) {
+      followStateRef.current = reduceTurnFollowState(followStateRef.current, {
+        type: "scroll_to_bottom",
+        latestTurnPhase,
+      });
+    } else if (distance > 24) {
+      followStateRef.current = reduceTurnFollowState(followStateRef.current, {
+        type: "scroll_distance_changed",
+        distanceFromBottomPx: distance,
+        latestTurnPhase,
+      });
+      if (responseSpacerHeightRef.current > 24 && distance > previousDistance) {
+        shrinkResponseSpacer(responseSpacerHeightRef.current - distance);
+      }
+    }
+    if (topOffsetRef.current <= 64) void loadOlderUntilScrollable();
+  }, [isLatestTurnInProgress, latestTurnPhase, loadOlderUntilScrollable, shrinkResponseSpacer]);
+
+  useLayoutEffect(() => {
+    const releaseViewport = scrollController.subscribe((snapshot) => {
+      updateViewport(snapshot.distanceFromBottomPx);
+    });
+    const releaseUserScroll = scrollController.addUserScrollListener(handleUserScroll);
+    return () => {
+      releaseViewport();
+      releaseUserScroll();
+    };
+  }, [handleUserScroll, scrollController, updateViewport]);
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     contentHeightRef.current = contentSize.height;
     viewportHeightRef.current = layoutMeasurement.height;
     topOffsetRef.current = contentOffset.y;
-    const previousDistance = distanceRef.current;
     const origin = isDraggingRef.current || isMomentumScrollingRef.current ? "user" : "system";
-    const distanceBeforeController = normalizeTurnViewportMetrics({
-      contentHeightPx: contentSize.height,
-      viewportHeightPx: layoutMeasurement.height,
-      topOffsetPx: contentOffset.y,
-    }).distanceFromBottomPx;
-    distanceRef.current = distanceBeforeController;
-    const distance = scrollController.reportPlatformScroll(origin).distanceFromBottomPx;
-    if (origin === "user" && distance !== previousDistance) {
-      if (distance <= 24 && previousDistance > 24 && isLatestTurnInProgress) {
-        followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-          type: "scroll_to_bottom",
-          latestTurnPhase,
-        });
-      } else if (distance > 24) {
-        followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-          type: "scroll_distance_changed",
-          distanceFromBottomPx: distance,
-          latestTurnPhase,
-        });
-        if (responseSpacerHeightRef.current > 24 && distance > previousDistance) {
-          shrinkResponseSpacer(responseSpacerHeightRef.current - distance);
-        }
-      }
-    }
-    updateViewport(distance);
-    if (origin === "user" && contentOffset.y <= 64) void loadOlderUntilScrollable();
-  }, [isLatestTurnInProgress, latestTurnPhase, loadOlderUntilScrollable, scrollController, shrinkResponseSpacer, updateViewport]);
+    scrollController.reportPlatformScroll(origin);
+  }, [scrollController]);
   const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {
     viewportHeightRef.current = event.nativeEvent.layout.height;
-    updateViewport(distanceRef.current);
-  }, [updateViewport]);
+    updateViewport(scrollController.getLastScrollDistanceFromBottomPx());
+  }, [scrollController, updateViewport]);
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     contentHeightRef.current = height;
     const nonPlacement = pendingNonPlacementRef.current;
@@ -1921,7 +2041,7 @@ export function WorkbenchConversation({
         return;
       }
       followStateRef.current = createTurnFollowState("static");
-      applyDistance(distance);
+      applyDistance(distance + responseSpacerHeightRef.current);
       setViewport((current) => updateTurnViewportState(
         current,
         currentLayout,
@@ -1938,14 +2058,14 @@ export function WorkbenchConversation({
   }, [onVirtualizedTurnListApiChange, virtualizedTurnListApi]);
 
   const conversationScrollApi = useMemo<TurnConversationScrollApi>(() => ({
-    clearPendingLatestTurnSubmitPlacement: () => { pendingPlacementRef.current = null; },
-    prepareLatestTurnSubmitPlacement: () => {
-      pendingPlacementRef.current = createLatestTurnPlacementSnapshot({
-        distanceFromBottomPx: distanceRef.current,
+    captureLatestTurnSubmitPlacement: () => {
+      return createLatestTurnPlacementSnapshot({
+        distanceFromBottomPx: scrollController.getLastScrollDistanceFromBottomPx(),
         responseSpacerHeightPx: responseSpacerHeightRef.current,
         scrollHeightPx: contentHeightRef.current,
       });
     },
+    releaseLatestTurnSubmitPlacementCapture: () => undefined,
     scrollToBottom: () => {
       if (isLatestTurnInProgress) {
         responseSpacerHeight.stopAnimation();
@@ -1974,51 +2094,56 @@ export function WorkbenchConversation({
     previousLayout.current = layout;
     if (!didRestoreRef.current) return;
     const frame = requestAnimationFrame(() => {
-      const previousLatestTurnKey = latestTurnKeyRef.current;
+      const previousLatestTurnActivityKey = latestTurnActivityKeyRef.current;
       const previousLatestTurnPhase = latestTurnPhaseRef.current;
       latestTurnKeyRef.current = latestTurnKey;
+      latestTurnActivityKeyRef.current = latestTurnActivityKey;
       latestTurnPhaseRef.current = latestTurnPhase;
+      let ownsLatestTurnPolicy = true;
 
-      if (previousLatestTurnKey !== latestTurnKey) {
-        const placement = pendingPlacementRef.current;
-        pendingPlacementRef.current = null;
-        followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-          type: latestTurnKey === null ? "latest_turn_removed" : "latest_turn_placed",
-        });
-        if (latestTurnKey === null) {
-          responseSpacerHeight.stopAnimation();
-          latestTurnOffset.stopAnimation();
-          responseSpacerHeightRef.current = 0;
-          responseSpacerHeight.setValue(0);
-          latestTurnOffset.setValue(0);
-        } else if (!(placement?.shouldPlaceLatestTurn ?? true)) {
-          pendingNonPlacementRef.current = placement;
+      if (previousLatestTurnActivityKey !== latestTurnActivityKey) {
+        const placement = consumePendingLatestTurnSubmitPlacement?.() ?? null;
+        if (latestTurnKey !== null && consumePendingLatestTurnSubmitPlacement !== undefined && placement === null) {
+          ownsLatestTurnPolicy = false;
         } else {
-          const maximumSpacer = maximumResponseSpacerHeightPx({
-            scrollElementHeightPx: viewportHeightRef.current,
-            scrollPaddingBottomPx: bottomPaddingRef.current,
+          followStateRef.current = reduceTurnFollowState(followStateRef.current, {
+            type: latestTurnKey === null ? "latest_turn_removed" : "latest_turn_placed",
           });
-          const currentSpacer = responseSpacerHeightRef.current;
-          latestTurnOffset.setValue(currentSpacer);
-          applyDistance(1);
-          responseSpacerHeightRef.current = maximumSpacer;
-          Animated.parallel([
-            Animated.timing(latestTurnOffset, {
-              duration: 500,
-              easing: Easing.out(Easing.cubic),
-              toValue: 0,
-              useNativeDriver: true,
-            }),
-            Animated.timing(responseSpacerHeight, {
-              duration: 500,
-              easing: Easing.out(Easing.cubic),
-              toValue: maximumSpacer,
-              useNativeDriver: false,
-            }),
-          ]).start();
+          if (latestTurnKey === null) {
+            responseSpacerHeight.stopAnimation();
+            latestTurnOffset.stopAnimation();
+            responseSpacerHeightRef.current = 0;
+            responseSpacerHeight.setValue(0);
+            latestTurnOffset.setValue(0);
+          } else if (!(placement?.shouldPlaceLatestTurn ?? true)) {
+            pendingNonPlacementRef.current = placement;
+          } else {
+            const maximumSpacer = maximumResponseSpacerHeightPx({
+              scrollElementHeightPx: viewportHeightRef.current,
+              scrollPaddingBottomPx: footerPaddingRef.current,
+            });
+            const currentSpacer = responseSpacerHeightRef.current;
+            latestTurnOffset.setValue(currentSpacer);
+            applyDistance(1);
+            responseSpacerHeightRef.current = maximumSpacer;
+            Animated.parallel([
+              Animated.timing(latestTurnOffset, {
+                duration: 500,
+                easing: Easing.out(Easing.cubic),
+                toValue: 0,
+                useNativeDriver: true,
+              }),
+              Animated.timing(responseSpacerHeight, {
+                duration: 500,
+                easing: Easing.out(Easing.cubic),
+                toValue: maximumSpacer,
+                useNativeDriver: false,
+              }),
+            ]).start();
+          }
         }
       }
-      if (previousLatestTurnPhase !== latestTurnPhase) {
+      if (ownsLatestTurnPolicy && previousLatestTurnPhase !== latestTurnPhase) {
         followStateRef.current = reduceTurnFollowState(followStateRef.current, {
           type: "latest_turn_phase_changed",
           previousLatestTurnPhase,
@@ -2029,39 +2154,48 @@ export function WorkbenchConversation({
       const latestTurnIndex = latestTurnKey === null ? -1 : layout.turnIndexByKey.get(latestTurnKey) ?? -1;
       const latestTurnIsMounted = latestTurnIndex >= viewportRef.current.renderedRange.startIndex
         && latestTurnIndex < viewportRef.current.renderedRange.endIndex;
-      if (latestTurnIsMounted && followStateRef.current.followMode === "prework_watch") {
+      if (ownsLatestTurnPolicy && latestTurnIsMounted && followStateRef.current.followMode === "prework_watch") {
         followStateRef.current = reduceTurnFollowState(followStateRef.current, {
           type: "latest_turn_follow_content_changed",
           latestTurnPhase,
-          followContentOverflowPx: distanceRef.current,
+          followContentOverflowPx: scrollController.getLastScrollDistanceFromBottomPx(),
         });
       }
 
-      if (shouldFollowLatestTurn(followStateRef.current, latestTurnPhase)) {
+      if (ownsLatestTurnPolicy && shouldFollowLatestTurn(followStateRef.current, latestTurnPhase)) {
         applyDistance(0);
         updateViewport(0);
         return;
       }
-      const anchorKey = findMeasuredViewportAnchor(previous, layout, measuredHeightsByKey, distanceRef.current, viewportHeightRef.current);
-      const compensated = anchorKey === null ? null : compensateDistanceFromBottom(anchorKey, distanceRef.current, previous, layout);
+      const compensated = reconcileTurnLayoutViewport({
+        previousLayout: previous,
+        nextLayout: layout,
+        measuredHeightsByKey,
+        currentDistanceFromBottomPx: scrollController.getLastScrollDistanceFromBottomPx(),
+        viewportHeightPx: viewportHeightRef.current,
+        bottomPaddingPx: responseSpacerHeightRef.current,
+        preserveViewport: !isLatestTurnInProgress,
+        layoutOwnedByMeasurement: false,
+        restorePending: false,
+      });
       if (compensated !== null) {
         applyDistance(compensated);
         updateViewport(compensated);
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [applyDistance, isLatestTurnInProgress, latestTurnKey, latestTurnOffset, latestTurnPhase, layout, measuredHeightsByKey, responseSpacerHeight, updateViewport]);
+  }, [applyDistance, consumePendingLatestTurnSubmitPlacement, isLatestTurnInProgress, latestTurnActivityKey, latestTurnKey, latestTurnOffset, latestTurnPhase, layout, measuredHeightsByKey, responseSpacerHeight, scrollController, updateViewport]);
 
   const restoreCallbackRef = useRef(onRestoreSnapshotChange);
   restoreCallbackRef.current = onRestoreSnapshotChange;
   latestTurnInProgressRef.current = isLatestTurnInProgress;
   useEffect(() => () => {
-    scrollController.dispose();
+    const distanceFromBottomPx = scrollController.getLastScrollDistanceFromBottomPx();
     const normalized = normalizeFollowRestorePosition({
-      distanceFromBottomPx: distanceRef.current,
+      distanceFromBottomPx,
       latestTurnPhase: latestTurnPhaseRef.current,
       responseSpacerHeightPx: responseSpacerHeightRef.current,
-      scrollPaddingBottomPx: bottomPaddingRef.current,
+      scrollPaddingBottomPx: footerPaddingRef.current,
       scrollState: followStateRef.current,
     });
     const currentLatestKey = latestTurnKeyRef.current;
@@ -2083,11 +2217,14 @@ export function WorkbenchConversation({
         latestTurnFollowContentHeightPx: measuredHeightsRef.current[currentLatestKey] ?? null,
       },
     });
+    scrollController.dispose();
   }, [scrollController]);
 
   const renderedRange = reconcileRenderedRangeForEntries(viewport, layout);
   const windowSlice = createTurnWindowSlice(entries, layout, renderedRange);
   return (
+    <NativeConversationDetailContext.Provider value={threadDetailLevel}>
+    <NativeCopyTextContext.Provider value={onCopyText ?? null}>
     <NativeToolActivityPresenterContext.Provider value={toolActivityPresenterRegistry}>
     <NativeToolCallIconRendererContext.Provider value={renderToolCallIcon ?? null}>
     <NativeToolCallContentRendererContext.Provider value={renderToolCallContent ?? null}>
@@ -2101,7 +2238,7 @@ export function WorkbenchConversation({
       alwaysBounceVertical={viewportPolicy.localElasticEffect}
       automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       bounces={viewportPolicy.localElasticEffect}
-      contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomScrollPaddingPx }]}
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: footerScrollPaddingPx }]}
       keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
       keyboardShouldPersistTaps="handled"
       onContentSizeChange={handleContentSizeChange}
@@ -2142,6 +2279,8 @@ export function WorkbenchConversation({
     </NativeToolCallContentRendererContext.Provider>
     </NativeToolCallIconRendererContext.Provider>
     </NativeToolActivityPresenterContext.Provider>
+    </NativeCopyTextContext.Provider>
+    </NativeConversationDetailContext.Provider>
   );
 }
 
@@ -2276,6 +2415,12 @@ const styles = StyleSheet.create((theme) => ({
   semanticStatus: { color: theme.color.text.tertiary, ...theme.platformTypography.sidebarMeta },
   semanticBody: { color: theme.color.text.secondary, ...theme.platformTypography.body },
   agentActivity: { gap: theme.spacing[1] },
+  activityContent: { gap: 16 },
+  workStatusLabel: { color: theme.color.text.secondary, ...theme.platformTypography.body, fontVariant: ["tabular-nums"] },
+  workStatusButton: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 4, borderWidth: 1, borderColor: "transparent", borderRadius: 6 },
+  workStatusRuleRow: { paddingTop: 4 },
+  workStatusRule: { width: "100%", borderTopWidth: 1, borderColor: theme.color.border.default },
+  workStatusDivider: { gap: 8, overflow: "hidden" },
   agentActivityRows: { gap: theme.spacing[2], paddingLeft: theme.spacing[4] },
   subagentActivity: { gap: theme.spacing[2] },
   subagentHeader: { minHeight: theme.metrics.toolbar.touchTarget, flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },

@@ -13,7 +13,7 @@ delete process.env.OPENCRAFT_DSH_URL;
 delete process.env.OPENCRAFT_DSH_REPOSITORY;
 let host: Awaited<ReturnType<typeof startLocalAgentHost>> | undefined;
 let socket: WebSocket | undefined;
-async function request(id: number, method: string) {
+async function request(id: number, method: string, params: Record<string, unknown> = {}) {
   const client = socket!;
   return new Promise<any>((resolveResponse, reject) => {
     const timeout = setTimeout(() => {
@@ -29,7 +29,7 @@ async function request(id: number, method: string) {
       else resolveResponse(frame.result);
     };
     client.on("message", listener);
-    client.send(JSON.stringify({ jsonrpc: "2.0", id, method, params: {} }));
+    client.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
   });
 }
 try {
@@ -47,7 +47,55 @@ try {
   const threads = await request(2, "thread/list");
   assert.ok(Array.isArray(threads.data));
   assert.equal(threads.data.length, 0, "Smoke host must not reuse existing session data");
-  console.log("Local Agent smoke passed: real DSH → AppServer → WebSocket, fresh data, no model request.");
+  const before = await request(3, "runtime/settings/describe");
+  const defaults = before.namespaces.find((entry: any) => entry.ns === "agent-default-model").value;
+  let id = 4;
+  for (const api of ["openai-completions", "openai-responses"]) {
+    const directory = await request(id++, "runtime/providers/list");
+    assert.ok(directory.creation.apis.includes(api));
+    const saved = await request(id++, "runtime/providers/apply", {
+      target: { kind: "create", id: `smoke-${api}` }, expectedRevision: directory.creation.revision,
+      displayName: `Smoke ${api}`, baseURL: "http://127.0.0.1:1/v1", api,
+      models: [{ id: `smoke-model-${api}`, contextWindow: 8192, maxTokens: 1024 }],
+      credential: { kind: "replace", value: "synthetic-smoke-key-not-a-real-secret" },
+    });
+    assert.equal(saved.saved, true);
+    const disabled = await request(id++, "runtime/providers/list");
+    const connection = disabled.providers.find((entry: any) => entry.provider === `smoke-${api}`);
+    assert.equal(connection.configured, true);
+    assert.equal(connection.enabled, false);
+    assert.equal(connection.active, false);
+    await request(id++, "runtime/providers/setEnabled", { provider: `smoke-${api}`, enabled: true, expectedRevision: saved.revision });
+    const enabledDirectory = await request(id++, "runtime/providers/list");
+    const stopped = await request(id++, "runtime/providers/setEnabled", { provider: `smoke-${api}`, enabled: false, expectedRevision: enabledDirectory.creation.revision });
+    const stoppedDirectory = await request(id++, "runtime/providers/list");
+    const retained = stoppedDirectory.providers.find((entry: any) => entry.provider === `smoke-${api}`);
+    assert.equal(retained.configured, true);
+    assert.equal(retained.active, false);
+    const stoppedModels = await request(id++, "runtime/models/list");
+    assert.equal(stoppedModels.groups.some((group: any) => group.id === `smoke-${api}`), false);
+    await request(id++, "runtime/providers/setEnabled", { provider: `smoke-${api}`, enabled: true, expectedRevision: stopped.revision });
+  }
+  const models = await request(id++, "runtime/models/list");
+  for (const api of ["openai-completions", "openai-responses"]) {
+    assert.ok(models.groups.find((group: any) => group.id === `smoke-${api}`)?.models.some((model: any) => model.id === `smoke-model-${api}`));
+  }
+  const after = await request(id++, "runtime/settings/describe");
+  assert.deepEqual(after.namespaces.find((entry: any) => entry.ns === "agent-default-model").value, defaults);
+  assert.equal(JSON.stringify(after).includes("synthetic-smoke-key-not-a-real-secret"), false);
+  await request(id++, "runtime/models/setEnabled", { provider: "smoke-openai-responses", model: "smoke-model-openai-responses", enabled: false,
+    expectedRevision: after.namespaces.find((entry: any) => entry.ns === "llm-pi-ai").revision });
+  socket.terminate();
+  await host.close();
+  host = await startLocalAgentHost({ dshExecutable: resolve(root, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"), dataDirectory });
+  socket = new WebSocket(host.websocketUrl);
+  await new Promise<void>((resolveOpen, reject) => { socket!.once("open", resolveOpen); socket!.once("error", reject); });
+  const restored = await request(id++, "runtime/models/list");
+  assert.ok(restored.groups.some((group: any) => group.id === "smoke-openai-responses"));
+  assert.equal(restored.groups.find((group: any) => group.id === "smoke-openai-responses").models.length, 0);
+  const managed = await request(id++, "runtime/models/list", { includeDisabled: true });
+  assert.equal(managed.groups.find((group: any) => group.id === "smoke-openai-responses").models[0].enabled, false);
+  console.log("Local Agent smoke passed: real DSH → AppServer → WebSocket, both custom protocols registered, restart persistence, unchanged defaults, no external model request.");
 } finally {
   socket?.terminate();
   await host?.close();

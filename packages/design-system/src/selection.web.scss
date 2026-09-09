@@ -1,0 +1,26 @@
+// Selection is a surface capability, independent of focus and window dragging.
+// Shells opt into chrome; document owners opt back into text. Do not disable
+// selection on every descendant: nested content and native editors must work.
+:where([data-selection="chrome"]) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:where([data-selection="text"], pre, [role="alert"]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+// Controls retain their interaction semantics inside otherwise selectable prose
+// and in portals outside the shell. Do not use pointer/copy event cancellation.
+:where(button, select, summary, [role="button"], [role="tab"],
+  [role="menu"], [role="menuitem"], [role="option"], [role="listbox"]) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+// Editable values remain selectable, including inputs inside menus/dialogs.
+:where(input, textarea, [contenteditable]:not([contenteditable="false"])) {
+  -webkit-user-select: text;
+  user-select: text;
+}

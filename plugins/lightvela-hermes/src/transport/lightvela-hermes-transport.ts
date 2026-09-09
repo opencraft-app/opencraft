@@ -1,24 +1,39 @@
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 
 import type { BotTerminalSession } from "../domain/types";
+import { HermesProcessService } from "../hermes-appserver-bridge/process-service";
 import {
   BrowserHermesAppServerBridge,
   HermesDashboardFileSystem,
   HermesDashboardHistoryClient,
-  HermesReplayCheckpoint,
+  HermesProjectionRecovery,
   HermesTatTerminalService,
+  browserHermesComposerQueueStore,
+  type HermesComposerQueueStorage,
+  type HermesComposerQueueStore,
 } from "../hermes-appserver-bridge";
 import { ensureHermesDashboard } from "../lib/hermes-dashboard-ensure";
+import type { HermesSessionTokenCache } from "../lib/hermes-session-token-cache";
 import { resolveHermesDashboardWebSocketUrl } from "../lib/hermes-dashboard-session";
 import { createTatWebSocketConstructor } from "../lib/tat-websocket";
 import { TatHttpVirtualClient } from "../lib/tat-http-virtual-client";
 import { TencentTatSessionMultiplexer } from "../lib/tencent-tat-session-multiplexer";
-import type { LightVelaAccountService } from "../account/lightvela-account-service";
+import type { LightVelaBotInstance } from "../account/lightvela-account-service";
+
+export interface LightVelaAccountPort {
+  getSnapshot(): { readonly phase: string; readonly activeBotId: string | null; readonly authGeneration?: number; readonly credentialScope?: string };
+  subscribe(listener: () => void): () => void;
+  request<T>(path: string, init?: RequestInit): Promise<T>;
+  resolveActiveBot(): Promise<LightVelaBotInstance>;
+}
 
 export interface LightVelaHermesTransportOptions {
-  readonly account: LightVelaAccountService;
+  readonly account: LightVelaAccountPort;
   readonly dashboardUrl?: string;
   readonly WebSocketImpl?: typeof WebSocket;
+  readonly sessionTokenCache?: HermesSessionTokenCache;
+  /** Test/platform override. Browsers default to their origin-local storage. */
+  readonly composerQueueStorage?: HermesComposerQueueStorage;
 }
 
 function abortError(): Error {
@@ -59,16 +74,21 @@ export class LightVelaHermesTransport implements DuplexTransport {
   private connectPromise: Promise<void> | null = null;
   private generation = 0;
   private bridge: BrowserHermesAppServerBridge | null = null;
-  private readonly replayCheckpoint = new HermesReplayCheckpoint();
+  private readonly replayCheckpoint = new HermesProjectionRecovery();
   private socket: WebSocket | null = null;
   private proxy: TencentTatSessionMultiplexer | null = null;
   private boundBotId: string | null = null;
   private resolvingBinding = false;
   private disposed = false;
+  private processes: HermesProcessService | null = null;
   private readonly removeAccountListener: () => void;
   private connectionStartedAt = 0;
+  private accountGeneration: number | undefined;
+  private composerQueue: HermesComposerQueueStore | null = null;
+  private composerQueueScope: string | null = null;
 
   constructor(private readonly options: LightVelaHermesTransportOptions) {
+    this.accountGeneration = options.account.getSnapshot().authGeneration;
     this.removeAccountListener = options.account.subscribe(() => this.reconcileAccountBinding());
   }
 
@@ -100,25 +120,30 @@ export class LightVelaHermesTransport implements DuplexTransport {
     return this.connectPromise;
   }
 
-  async send(frame: string): Promise<void> {
+  async send(frame: string, signal?: AbortSignal): Promise<void> {
     const bridge = this.bridge;
     if (this.currentStatus.state !== "open" || bridge === null) {
       throw new Error("LightVela Hermes transport is not open");
     }
     let request: unknown;
     try { request = JSON.parse(frame); } catch { throw new TypeError("AppServer frame is not valid JSON"); }
+    if (await bridge.handleResponse(request)) return;
     const method = request !== null && typeof request === "object" && "method" in request
       ? String((request as { method?: unknown }).method ?? "")
       : "";
     const requestStartedAt = Date.now();
     if (method === "initialize") this.logConnection("appserver:initialize:start", this.generation);
-    const response = await bridge.handle(request);
+    const response = await bridge.handle(request, signal);
+    // A response from an expired request or detached bridge has no owner.
+    // Turn notifications remain independent and reconcile accepted work.
+    if (signal?.aborted || this.bridge !== bridge) return;
     if (method === "initialize") {
       this.logConnection("appserver:initialize:ready", this.generation, {
         stageMs: Date.now() - requestStartedAt,
       });
     }
     this.emit(JSON.stringify(response));
+    bridge.didDeliverResponse(request, response);
   }
 
   subscribeMessage(listener: (frame: string) => void): () => void {
@@ -136,6 +161,11 @@ export class LightVelaHermesTransport implements DuplexTransport {
     if (this.disposed) return;
     this.disposed = true;
     this.removeAccountListener();
+    this.processes?.dispose();
+    this.processes = null;
+    this.composerQueue?.dispose();
+    this.composerQueue = null;
+    this.composerQueueScope = null;
     this.generation += 1;
     this.connectPromise = null;
     this.setStatus({ state: "closing" });
@@ -168,34 +198,93 @@ export class LightVelaHermesTransport implements DuplexTransport {
       { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
     );
     const WebSocketImpl = this.options.WebSocketImpl ?? globalThis.WebSocket;
+    const scope = this.options.account.getSnapshot().credentialScope;
+    const cacheKey = scope ? `${scope}:${botId}` : botId;
+    if (this.composerQueueScope !== cacheKey) {
+      this.composerQueue?.dispose();
+      this.composerQueue = browserHermesComposerQueueStore(
+        cacheKey,
+        this.options.composerQueueStorage,
+      );
+      this.composerQueueScope = cacheKey;
+    }
     stageStartedAt = Date.now();
     const bootstrap = await createSession();
     this.logConnection("tat:session-created", generation, { stageMs: Date.now() - stageStartedAt });
     if (signal?.aborted || generation !== this.generation) throw abortError();
-    const proxy = new TencentTatSessionMultiplexer(bootstrap, { WebSocketImpl });
+    const proxy = new TencentTatSessionMultiplexer(bootstrap, {
+      WebSocketImpl,
+      diagnosticContext: { hostId: "velahermes0", generation },
+      onUnhealthy: () => {
+        if (this.disposed || generation !== this.generation) return;
+        const retiredGeneration = ++this.generation;
+        this.connectPromise = null;
+        this.logConnection("tat:unhealthy", generation, { reason: "probe_failed_without_inbound_progress" });
+        void this.releasePhysicalConnection().finally(() => {
+          if (this.disposed || retiredGeneration !== this.generation) return;
+          this.setStatus({ state: "failed", reason: "TAT tunnel health probe failed" });
+        });
+      },
+    });
     this.proxy = proxy;
     stageStartedAt = Date.now();
-    const sessionToken = await ensureHermesDashboard(proxy);
-    this.logConnection("hermes:backend-ready", generation, { stageMs: Date.now() - stageStartedAt });
-    stageStartedAt = Date.now();
-    const dashboardUrl = await resolveHermesDashboardWebSocketUrl(
-      bootstrap,
-      this.options.dashboardUrl ?? "ws://127.0.0.1:9119/api/ws",
-      { proxyClient: proxy, sessionToken },
-    );
-    this.logConnection("hermes:endpoint-resolved", generation, { stageMs: Date.now() - stageStartedAt });
+    let sessionToken: string | null = null;
+    try {
+      sessionToken = (await this.options.sessionTokenCache?.get(cacheKey))?.trim() || null;
+    } catch {
+      // IndexedDB is a performance hint and never blocks Host connection.
+    }
     if (signal?.aborted || generation !== this.generation) throw abortError();
-    const TatWebSocket = createTatWebSocketConstructor(proxy, { origin: `http://${dashboardUrl.host}` });
-    const socket = new TatWebSocket(dashboardUrl);
-    socket.binaryType = "arraybuffer";
-    this.socket = socket;
-    stageStartedAt = Date.now();
-    await waitForOpen(socket, signal);
-    this.logConnection("hermes:websocket-open", generation, { stageMs: Date.now() - stageStartedAt });
+    let socket: WebSocket | null = null;
+    if (sessionToken !== null) {
+      try {
+        socket = await this.openDashboardSocket(
+          bootstrap,
+          proxy,
+          sessionToken,
+          WebSocketImpl,
+          signal,
+        );
+        this.logConnection("hermes:backend-adopted", generation, {
+          stageMs: Date.now() - stageStartedAt,
+        });
+      } catch {
+        if (signal?.aborted || generation !== this.generation) throw abortError();
+        try {
+          // Compare-and-delete prevents a stale tab from erasing a token that
+          // another tab has already refreshed for this physical instance.
+          await this.options.sessionTokenCache?.remove(cacheKey, sessionToken);
+        } catch {
+          // Cache invalidation is best-effort.
+        }
+        this.socket = null;
+        sessionToken = null;
+      }
+    }
+    if (sessionToken === null) {
+      sessionToken = await ensureHermesDashboard(proxy);
+      if (signal?.aborted || generation !== this.generation) throw abortError();
+      this.logConnection("hermes:backend-ready", generation, { stageMs: Date.now() - stageStartedAt });
+      try {
+        await this.options.sessionTokenCache?.put(cacheKey, sessionToken);
+      } catch {
+        // Token persistence is an optimization, never part of Host readiness.
+      }
+    }
+    if (socket === null) {
+      socket = await this.openDashboardSocket(
+        bootstrap,
+        proxy,
+        sessionToken,
+        WebSocketImpl,
+        signal,
+      );
+    }
     if (generation !== this.generation) throw abortError();
+    this.processes ??= new HermesProcessService(new HermesTatTerminalService({ createSession, WebSocketImpl }));
     const bridge = new BrowserHermesAppServerBridge(socket, {
       defaultCwd: bootstrap.workingDirectory ?? "/",
-      replayCheckpoint: this.replayCheckpoint,
+      projectionRecovery: this.replayCheckpoint,
       fileSystem: new HermesDashboardFileSystem(
         new TatHttpVirtualClient(bootstrap, {
           proxyClient: proxy,
@@ -207,19 +296,26 @@ export class LightVelaHermesTransport implements DuplexTransport {
         new TatHttpVirtualClient(bootstrap, {
           proxyClient: proxy,
           target: { host: "127.0.0.1", port: 9119 },
+          // Desktop fetchJson uses req.setTimeout(30s): inactivity, not the
+          // total duration of an actively progressing transcript download.
+          responseHeaderTimeoutMs: 30_000,
+          responseBodyChunkTimeoutMs: 30_000,
         }),
         sessionToken,
       ),
-      terminal: new HermesTatTerminalService({
-        createSession,
-        WebSocketImpl,
-      }),
+      processes: this.processes,
+      composerQueue: this.composerQueue ?? undefined,
     });
     bridge.onNotification((notification) => this.emit(JSON.stringify(notification)));
     this.bridge = bridge;
     socket.addEventListener("close", (event) => {
       if (generation !== this.generation) return;
       const closeEvent = event as CloseEvent;
+      this.logConnection("hermes:websocket-closed", generation, {
+        code: closeEvent.code,
+        reason: closeEvent.reason,
+        wasClean: closeEvent.wasClean,
+      });
       this.bridge?.dispose();
       this.bridge = null;
       this.socket = null;
@@ -232,6 +328,44 @@ export class LightVelaHermesTransport implements DuplexTransport {
     });
     this.logConnection("connect:open", generation);
     this.setStatus({ state: "open" });
+  }
+
+  private async openDashboardSocket(
+    bootstrap: BotTerminalSession,
+    proxy: TencentTatSessionMultiplexer,
+    sessionToken: string,
+    WebSocketImpl: typeof WebSocket,
+    signal?: AbortSignal,
+  ): Promise<WebSocket> {
+    let stageStartedAt = Date.now();
+    const dashboardUrl = await resolveHermesDashboardWebSocketUrl(
+      bootstrap,
+      this.options.dashboardUrl ?? "ws://127.0.0.1:9119/api/ws",
+      { proxyClient: proxy, sessionToken },
+    );
+    this.logConnection("hermes:endpoint-resolved", this.generation, {
+      stageMs: Date.now() - stageStartedAt,
+    });
+    const TatWebSocket = createTatWebSocketConstructor(proxy, {
+      origin: `http://${dashboardUrl.host}`,
+      onError: (error) => this.logConnection("hermes:websocket-error", this.generation, {
+        reason: error.message.replace(/([?&]token=)[^&\s]+/g, "$1[redacted]"),
+      }),
+    });
+    const socket = new TatWebSocket(dashboardUrl);
+    socket.binaryType = "arraybuffer";
+    this.socket = socket;
+    stageStartedAt = Date.now();
+    try {
+      await waitForOpen(socket, signal);
+    } catch (error) {
+      try { socket.close(1000, "Hermes session rejected"); } catch { /* best effort */ }
+      throw error;
+    }
+    this.logConnection("hermes:websocket-open", this.generation, {
+      stageMs: Date.now() - stageStartedAt,
+    });
+    return socket;
   }
 
   private async releasePhysicalConnection(): Promise<void> {
@@ -272,11 +406,21 @@ export class LightVelaHermesTransport implements DuplexTransport {
   }
 
   private reconcileAccountBinding(): void {
-    if (this.disposed || this.resolvingBinding || this.boundBotId === null) return;
+    if (this.disposed) return;
     const snapshot = this.options.account.getSnapshot();
-    if (snapshot.phase !== "authenticated" && snapshot.phase !== "anonymous") return;
-    if (snapshot.activeBotId === this.boundBotId) return;
+    const authorityChanged = snapshot.authGeneration !== this.accountGeneration;
+    this.accountGeneration = snapshot.authGeneration;
+    if (!authorityChanged) {
+      if (this.resolvingBinding || this.boundBotId === null) return;
+      if (snapshot.phase !== "authenticated" && snapshot.phase !== "anonymous") return;
+      if (snapshot.activeBotId === this.boundBotId) return;
+    }
     const retiredBotId = this.boundBotId;
+    this.processes?.dispose();
+    this.processes = null;
+    this.composerQueue?.dispose();
+    this.composerQueue = null;
+    this.composerQueueScope = null;
     const generation = ++this.generation;
     this.connectPromise = null;
     this.boundBotId = null;

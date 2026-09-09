@@ -9,6 +9,25 @@ import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
 import type { InteractionResponse } from "./models";
 
+/** Transport adapters distinguish rejection from a lost acknowledgement. */
+export class SubmissionOutcomeUnknownError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Could not confirm whether the host accepted this message. Reconnect to reconcile before sending again.", options);
+    this.name = "SubmissionOutcomeUnknownError";
+  }
+}
+
+export class ContinuationCommandError extends Error {
+  constructor(
+    readonly outcome: "rejected" | "unknown",
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "ContinuationCommandError";
+  }
+}
+
 export interface ConversationReplicaReader {
   getSnapshot(): ReplicaClientSnapshot<ReplicaJsonValue>;
   subscribe(listener: () => void): () => void;

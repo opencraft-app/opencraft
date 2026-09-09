@@ -301,6 +301,19 @@ export function createCodexV3ConversationNavigationSource(
 
   const prepare = (): Promise<void> => {
     if (disposed) return Promise.resolve();
+    const view = config.port.getView();
+    // Resume owns discovery of the history model. Enumerating before it has
+    // settled can accidentally turn a message-window provider into a second
+    // all-history reader, competing with foreground hydration.
+    if (view === null || view.resumeState !== "resumed") return Promise.resolve();
+    if (view.historyMode === "message-window") {
+      locators = [];
+      completeness = view.tailHydrationComplete ? "complete" : "partial";
+      phase = view.tailHydrationComplete ? "ready" : "degraded";
+      preparedGeneration = generation();
+      publish();
+      return Promise.resolve();
+    }
     if (preparedGeneration === generation() && (phase === "ready" || phase === "degraded")) {
       return Promise.resolve();
     }
@@ -369,6 +382,12 @@ export function createCodexV3ConversationNavigationSource(
 
   const removeViewListener = config.port.subscribeView(() => {
     if (disposed) return;
+    const view = config.port.getView();
+    if (view?.historyMode === "message-window" || (preparedGeneration === null && view?.resumeState === "resumed")) {
+      publish();
+      void prepare();
+      return;
+    }
     const nextGeneration = generation();
     if (preparedGeneration !== null && nextGeneration !== preparedGeneration) {
       locators = [];

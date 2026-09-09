@@ -2,6 +2,7 @@ import {
   createDefaultToolActivityPresenterRegistry,
   presentToolActivity,
   type TimelineBlock,
+  type ConversationDetailLevel,
   type ToolActivityPresentation,
   type ToolActivityPresenterRegistry,
 } from "@opencraft/chat-core";
@@ -25,6 +26,7 @@ export interface ConversationInteractionContextValue {
 }
 
 export const ConversationInteractionContext = createContext<ConversationInteractionContextValue>({ respond: null });
+export const ConversationDetailContext = createContext<ConversationDetailLevel>("STEPS_COMMANDS");
 
 export interface SetupCodexContextCatalogValue {
   readonly sources: readonly SetupCodexContextSource[];

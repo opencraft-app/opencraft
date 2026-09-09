@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { BlobProgress } from "@opencraft/blob-resources";
 import type { FuzzyFileSearchResult } from "@opencraft/appserver-protocol/generated";
 import type { FsReadDirectoryEntry } from "@opencraft/appserver-protocol/generated/v2";
 import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
@@ -26,10 +27,11 @@ import {
 import {
   useAppServerRuntime,
   useAppServerSnapshot,
+  useBlobResources,
 } from "../runtime/appserver-runtime-context";
+import { acquireFileBlob, fileBlobResource, fileBlobUrls } from "../runtime/blob-files";
 import {
   MAX_EDITABLE_FILE_BYTES,
-  decodeBase64Bytes,
   decodeWorkspaceText,
   encodeBase64Text,
   joinWorkspacePath,
@@ -42,7 +44,7 @@ import {
 } from "./workspace-resource-model";
 
 interface LoadedWorkspaceResource {
-  readonly dataBase64: string | null;
+  readonly blob: Blob | null;
   readonly isDirectory: boolean;
   readonly isFile: boolean;
   readonly modifiedAtMs: number;
@@ -143,6 +145,7 @@ function DirectoryNode({
 }
 
 function useWorkspaceFileWatches(paths: readonly string[]) {
+  const blobs = useBlobResources();
   const runtime = useAppServerRuntime();
   const snapshot = useAppServerSnapshot();
   const queryClient = useQueryClient();
@@ -153,10 +156,10 @@ function useWorkspaceFileWatches(paths: readonly string[]) {
     const leases: Array<{ dispose(): Promise<void> }> = [];
     const uniquePaths = [...new Set(paths.filter(Boolean))];
     void Promise.all(uniquePaths.map(async (path) => {
-      const lease = await runtime.resources.fileSystem.watch(path, () => {
-        void queryClient.invalidateQueries({
+      const lease = await runtime.resources.fileSystem.watch(path, (changedPaths) => {
+        void Promise.all(changedPaths.map(changed => blobs.invalidate(fileBlobResource(runtime, snapshot.hostId, changed)))).then(() => queryClient.invalidateQueries({
           queryKey: ["appserver-fs", snapshot.hostId],
-        });
+        }));
       });
       if (!active) {
         await lease.dispose().catch(() => undefined);
@@ -168,7 +171,7 @@ function useWorkspaceFileWatches(paths: readonly string[]) {
       active = false;
       for (const lease of leases) void lease.dispose().catch(() => undefined);
     };
-  }, [key, queryClient, runtime, snapshot.hostId]);
+  }, [blobs, key, queryClient, runtime, snapshot.hostId]);
 }
 
 function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
@@ -227,6 +230,7 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
 }
 
 export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
+  const blobs = useBlobResources();
   const initialLocation = useMemo(
     () => parseWorkspaceResource(tab.resource ?? ""),
     [tab.resource],
@@ -239,6 +243,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [savedText, setSavedText] = useState("");
+  const [readProgress, setReadProgress] = useState<{ path: string; progress: BlobProgress } | null>(null);
 
   useEffect(() => {
     setSelectedPath(initialLocation.path);
@@ -259,12 +264,12 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   const search = useFuzzyWorkspaceFiles(roots, searchQuery);
 
   const resource = useQuery<LoadedWorkspaceResource>({
-    queryKey: ["appserver-fs", snapshot.hostId, "resource", selectedPath],
-    queryFn: async () => {
-      const metadata = await runtime.resources.fileSystem.getMetadata(selectedPath);
+    queryKey: ["appserver-fs", snapshot.hostId, "resource", selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope],
+    queryFn: async ({ signal }) => {
+      const metadata = await runtime.resources.fileSystem.getMetadata(selectedPath, signal);
       if (!metadata.isFile) {
         return {
-          dataBase64: null,
+          blob: null,
           isDirectory: metadata.isDirectory,
           isFile: false,
           modifiedAtMs: metadata.modifiedAtMs,
@@ -272,20 +277,38 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
           text: null,
         };
       }
-      const response = await runtime.resources.fileSystem.readFile(selectedPath);
-      const bytes = decodeBase64Bytes(response.dataBase64);
+      const lease = acquireFileBlob(blobs, runtime, snapshot.hostId, selectedPath, { signal, priority: 2 });
+      const report = () => setReadProgress({ path: selectedPath, progress: lease.getProgress() });
+      report();
+      const unsubscribe = lease.subscribe(report);
+      let blob: Blob;
+      try { blob = await lease.promise; } finally { unsubscribe(); lease.release(); }
+      const bytes = blob.size > MAX_EDITABLE_FILE_BYTES || workspaceImageMime(selectedPath)
+        ? null : new Uint8Array(await blob.arrayBuffer());
       return {
-        dataBase64: response.dataBase64,
+        blob,
         isDirectory: false,
         isFile: true,
         modifiedAtMs: metadata.modifiedAtMs,
-        size: bytes.byteLength,
-        text: bytes.byteLength > MAX_EDITABLE_FILE_BYTES ? null : decodeWorkspaceText(bytes),
+        size: blob.size,
+        text: bytes === null ? null : decodeWorkspaceText(bytes),
       };
     },
     enabled: selectedPath.length > 0,
     staleTime: 10_000,
+    gcTime: 15_000,
+    retry: false,
   });
+
+  const [imageSource, setImageSource] = useState<{ blob: Blob; url: string } | null>(null);
+  useEffect(() => {
+    const blob = resource.data?.blob;
+    const mime = workspaceImageMime(selectedPath);
+    if (!blob || !mime) { setImageSource(null); return; }
+    const handle = fileBlobUrls.acquire(blob.slice(0, blob.size, mime));
+    setImageSource({ blob, url: handle.source });
+    return handle.release;
+  }, [resource.data?.blob, selectedPath]);
 
   useEffect(() => {
     if (resource.data?.text === null || resource.data?.text === undefined) return;
@@ -297,6 +320,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   const save = useMutation({
     mutationFn: async () => {
       await runtime.resources.fileSystem.writeFile(selectedPath, encodeBase64Text(draft));
+      await blobs.invalidate(fileBlobResource(runtime, snapshot.hostId, selectedPath));
     },
     onSuccess: async () => {
       setSavedText(draft);
@@ -390,14 +414,18 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
           ) : null}
         </header>
         {resource.isPending ? (
-          <div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} /> Reading file…</div>
+          <div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />
+            {readProgress?.path !== selectedPath ? "Checking file…"
+              : readProgress.progress.phase === "queued" ? "Queued for download…"
+              : readProgress.progress.phase === "cache" ? "Checking cache…" : "Reading file…"}
+          </div>
         ) : resource.isError ? (
           <div className="workspace-file-viewer__state is-error"><AlertTriangle size={18} />{resource.error.message}</div>
         ) : resource.data?.isDirectory ? (
           <div className="workspace-file-viewer__state"><FolderOpen size={20} />Select a file from this directory.</div>
-        ) : imageMime !== null && resource.data?.dataBase64 !== null ? (
+        ) : imageMime !== null && resource.data?.blob && imageSource?.blob === resource.data.blob ? (
           <div className="workspace-file-viewer__image">
-            <img alt={workspaceResourceBasename(selectedPath)} src={`data:${imageMime};base64,${resource.data.dataBase64}`} />
+            <img alt={workspaceResourceBasename(selectedPath)} src={imageSource.url} />
             <small><ImageIcon size={12} /> {resource.data.size.toLocaleString()} bytes</small>
           </div>
         ) : resource.data?.text !== null && resource.data?.text !== undefined ? (
@@ -420,4 +448,3 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
     </div>
   );
 }
-

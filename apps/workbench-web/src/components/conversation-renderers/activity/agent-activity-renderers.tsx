@@ -10,6 +10,7 @@ import {
   type AgentActivityRenderUnit,
   type HookStats,
   type TimelineBlock,
+  type ConversationDetailLevel,
 } from "@opencraft/chat-core";
 import { TimelineBlockView } from "@opencraft/timeline-render-react";
 import { ChevronRight } from "lucide-react";
@@ -24,28 +25,17 @@ import {
 } from "react";
 
 import { AgentActivityGroupDisclosure } from "../../agent-activity-group-disclosure";
+import { useLatestTurnFollowContentRef } from "../../latest-turn-follow-content";
 import { activityIcon } from "./activity-icon";
 import {
   CadencedShimmer,
 } from "./activity-disclosure";
 import { SubagentActivityGroup } from "../tool/tool-renderers";
-import { ToolActivityPresenterContext } from "../render-contexts";
+import { ToolActivityPresenterContext, ConversationDetailContext } from "../render-contexts";
+import { ActivityDisclosureHeader, WorkStatusDivider } from "./work-status";
 
 function GenericBlock({ block, onRetry, richText = true }: { block: TimelineBlock; onRetry?: () => void; richText?: boolean }): ReactNode {
   return <TimelineBlockView block={block} onRetry={onRetry} richText={richText} />;
-}
-
-function formatWorkedDuration(durationMs: number | null): string | null {
-  if (durationMs === null || durationMs < 0) return null;
-  if (durationMs < 1_000) return "less than a second";
-  const seconds = Math.round(durationMs / 1_000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  if (minutes < 60) return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
 }
 
 function AgentActivitySummaryView({ summary }: { readonly summary: AgentActivityHeaderSummary }) {
@@ -75,14 +65,15 @@ function AgentActivityGroup({
   onRetry?: () => void;
 }) {
   const registry = useContext(ToolActivityPresenterContext);
+  const detailLevel = useContext(ConversationDetailContext);
   const version = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
   const header = useMemo(
-    () => deriveAgentActivityHeaderPresentation(group, registry),
-    [group, registry, version],
+    () => deriveAgentActivityHeaderPresentation(group, registry, detailLevel),
+    [group, registry, version, detailLevel],
   );
   const visibleBlocks = useMemo(
-    () => group.blocks.filter((block) => isVisibleAgentActivityRow(block, registry)),
-    [group.blocks, registry, version],
+    () => group.blocks.filter((block) => isVisibleAgentActivityRow(block, registry, detailLevel)),
+    [group.blocks, registry, version, detailLevel],
   );
   return (
     <div className="thread-agent-activity__group" data-activity-group-id={group.id}>
@@ -111,16 +102,21 @@ function AgentActivityContent({
   contentUnits: readonly AgentActivityContentUnit[];
   onRetry?: () => void;
 }) {
+  const followContentRef = useLatestTurnFollowContentRef();
+  const followUnit = contentUnits.findLast((unit) => unit.type === "group"
+    || (unit.type === "standalone" && unit.block.type !== "user-message"));
   return (
     <div className="thread-agent-activity__content" data-unit-count={contentUnits.length}>
       {contentUnits.map((contentUnit) => (
         <div
           className="thread-agent-activity__unit"
+          ref={contentUnit === followUnit ? followContentRef : undefined}
           key={contentUnit.id}
         >
           {contentUnit.type === "group"
             ? <AgentActivityGroup group={contentUnit} onRetry={onRetry} />
-            : <GenericBlock block={contentUnit.block} onRetry={onRetry} />}
+            : contentUnit.type === "worked-for" ? <WorkStatusDivider item={contentUnit.item} />
+              : <GenericBlock block={contentUnit.block} onRetry={onRetry} />}
         </div>
       ))}
     </div>
@@ -128,24 +124,20 @@ function AgentActivityContent({
 }
 
 function AgentActivity({
-  collapsed,
+  persistedCollapsed,
   onCollapsedChange,
   onRetry,
   unit,
 }: {
-  collapsed: boolean;
+  persistedCollapsed: boolean | undefined;
   onCollapsedChange: (collapsed: boolean) => void;
   onRetry?: () => void;
   unit: AgentActivityRenderUnit;
 }) {
   const prefersReducedMotion = useReducedMotion();
-  const layout = resolveAgentActivityLayout(unit, collapsed);
+  const layout = resolveAgentActivityLayout(unit, persistedCollapsed);
   const open = !layout.isCollapsed;
   const inlineSubagentActivity = unit.inlineSubagentActivity;
-  const duration = formatWorkedDuration(unit.workedDurationMs);
-  const label = duration === null
-    ? `${layout.collapsedItemCount} previous message${layout.collapsedItemCount === 1 ? "" : "s"}`
-    : `Worked for ${duration}`;
   return (
     <section
       className="thread-agent-activity"
@@ -160,15 +152,13 @@ function AgentActivity({
           {layout.showToggle ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
         </div>
       ) : null}
-      {layout.showToggle ? (
-        <div className="thread-agent-activity__turn-header">
-          <button aria-expanded={open} onClick={() => onCollapsedChange(open)} type="button">
-            <strong>{label}</strong>
-            <ChevronRight className={open ? "is-open" : undefined} size={13} />
-          </button>
-          <span aria-hidden="true" />
-        </div>
-      ) : null}
+      {layout.showToggle ? <ActivityDisclosureHeader
+        item={layout.workedForItem}
+        durationMs={unit.workedDurationMs}
+        count={layout.collapsedItemCount}
+        open={open}
+        onToggle={() => onCollapsedChange(open)}
+      /> : null}
       {layout.persistentUnits.length > 0 ? (
         <div className="thread-agent-activity__persistent-content">
           {layout.showToggle ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
@@ -220,7 +210,7 @@ function hookStatsEntryLabel(kind: HookStats["entries"][number]["kind"]): string
 }
 
 /** Codex keeps hook lifecycle details in a rich hover/focus tooltip. */
-export type ConversationDetailLevel = "STEPS_PROSE" | "STEPS_COMMANDS" | "STEPS_EXECUTION";
+export type { ConversationDetailLevel } from "@opencraft/chat-core";
 
 function HookStatsSummary({ stats }: { readonly stats: HookStats }) {
   return (

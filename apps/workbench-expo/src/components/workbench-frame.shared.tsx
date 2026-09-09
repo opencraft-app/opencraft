@@ -5,7 +5,10 @@ import {
 } from "@opencraft/composer-core";
 import { findPendingInteraction } from "@opencraft/chat-core";
 import { useStableEvent } from "@opencraft/react-runtime";
-import type { TurnConversationScrollApi } from "@opencraft/timeline-virtualizer";
+import type {
+  LatestTurnPlacementSnapshot,
+  TurnConversationScrollApi,
+} from "@opencraft/timeline-virtualizer";
 import {
   createInteractionResponse,
   createWorkbenchThreadLocation,
@@ -13,6 +16,7 @@ import {
   type WorkbenchInteractionAction,
 } from "@opencraft/workbench-runtime";
 import { demoChangedFiles } from "@opencraft/workbench-runtime/demo";
+import { setStringAsync } from "expo-clipboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -42,6 +46,11 @@ interface WorkbenchFrameSharedProps {
   platformLayout: "native" | "web";
 }
 
+// Clipboard ownership stays in the platform host; ChatUI only requests a copy.
+async function copyConversationText(text: string): Promise<void> {
+  if (!await setStringAsync(text)) throw new Error("Clipboard write was not accepted");
+}
+
 export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedProps) {
   const runtime = useWorkbenchRuntime();
   const activeThreadLease = useActiveWorkbenchThread();
@@ -64,6 +73,12 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
   const previousSplit = useRef(split);
   const conversationRestoreSnapshots = useRef(new Map<string, WorkbenchConversationRestoreSnapshot>());
   const conversationScrollApiRef = useRef<TurnConversationScrollApi | null>(null);
+  const pendingLatestTurnPlacementRef = useRef<LatestTurnPlacementSnapshot | null>(null);
+  const consumeLatestTurnPlacement = useCallback(() => {
+    const placement = pendingLatestTurnPlacementRef.current;
+    pendingLatestTurnPlacementRef.current = null;
+    return placement;
+  }, []);
   const [composerHeight, setComposerHeight] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(split);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -73,6 +88,10 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
     : encodeWorkbenchLocation(
         createWorkbenchThreadLocation(snapshot.hostId, snapshot.activeThreadId),
       );
+  useEffect(() => () => {
+    pendingLatestTurnPlacementRef.current = null;
+    conversationScrollApiRef.current?.releaseLatestTurnSubmitPlacementCapture();
+  }, [activeConversationRestoreKey]);
   const timeline = snapshot.conversation?.timeline ?? null;
   const pendingInteraction = findPendingInteraction(timeline);
   const isStreaming = snapshot.conversation?.activeTurn !== null && snapshot.conversation?.activeTurn !== undefined;
@@ -99,6 +118,7 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
   ) => {
     const currentConversation = activeThreadLease?.getSnapshot() ?? null;
     let submittedIntent = intent;
+    let submittedPlacement: LatestTurnPlacementSnapshot | null = null;
     const followsActiveTurn = context.followUpAction !== null
       && currentConversation?.activeTurn !== null
       && currentConversation?.activeTurn !== undefined;
@@ -109,15 +129,21 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
         currentConversation.activeTurn.turnId,
         context.followUpAction!,
       );
-    } else if (intent.target.type !== "new-thread") {
-      conversationScrollApiRef.current?.prepareLatestTurnSubmitPlacement();
+    }
+    if (
+      intent.target.type !== "new-thread"
+      && (!followsActiveTurn || context.followUpAction === "steer")
+    ) {
+      submittedPlacement = conversationScrollApiRef.current?.captureLatestTurnSubmitPlacement() ?? null;
+      pendingLatestTurnPlacementRef.current = submittedPlacement;
     }
     try {
       await workbench.submit(submittedIntent);
       return true;
     } catch (error) {
-      if (!followsActiveTurn) {
-        conversationScrollApiRef.current?.clearPendingLatestTurnSubmitPlacement();
+      if (submittedPlacement !== null && pendingLatestTurnPlacementRef.current === submittedPlacement) {
+        pendingLatestTurnPlacementRef.current = null;
+        conversationScrollApiRef.current?.releaseLatestTurnSubmitPlacementCapture();
       }
       throw error;
     }
@@ -197,7 +223,8 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
 
           <View style={styles.threadSurface}>
             <WorkbenchConversation
-              bottomScrollPaddingPx={composerHeight + 16}
+              onCopyText={copyConversationText}
+              footerScrollPaddingPx={composerHeight + 16}
               key={activeConversationRestoreKey ?? "empty"}
               initialRestoreSnapshot={activeConversationRestoreKey === null ? null : conversationRestoreSnapshots.current.get(activeConversationRestoreKey)}
               onLoadOlder={snapshot.conversation?.history.hasOlder ? loadOlderConversation : undefined}
@@ -205,6 +232,7 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
               onConversationScrollApiChange={(api) => {
                 conversationScrollApiRef.current = api;
               }}
+              consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
               onSuggestion={submitSuggestion}
               onRestoreSnapshotChange={(restoreSnapshot) => {
                 if (activeConversationRestoreKey !== null) conversationRestoreSnapshots.current.set(activeConversationRestoreKey, restoreSnapshot);

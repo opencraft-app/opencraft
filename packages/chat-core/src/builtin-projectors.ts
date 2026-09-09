@@ -254,8 +254,8 @@ function steeringStatus(value: unknown): "pending" | "accepted" | "declined" | "
   return value === "pending" || value === "accepted" || value === "declined" || value === "cancelled" ? value : null;
 }
 
-function userMessageDeliveryStatus(value: unknown): "sending" | "sent" | "not-sent" | "failed" | null {
-  return value === "sending" || value === "sent" || value === "not-sent" || value === "failed" ? value : null;
+function userMessageDeliveryStatus(value: unknown): "sending" | "sent" | "not-sent" | "failed" | "unknown" | null {
+  return value === "sending" || value === "sent" || value === "not-sent" || value === "failed" || value === "unknown" ? value : null;
 }
 
 function firstUserMessageIndex(context: TimelineProjectionContext): number {
@@ -343,6 +343,13 @@ function stateStatus(value: unknown): TimelineStatus {
     case "streaming": return "streaming";
     default: return "pending";
   }
+}
+
+/** Completion belongs to the Item; Turn terminality closes legacy history Items. */
+function isDisplayItemCompleted(source: Record<string, unknown>, context: TimelineProjectionContext): boolean {
+  if (context.turn.status !== "streaming" && context.turn.status !== "pending") return true;
+  if (source.completed === true || source.status === "completed") return true;
+  return context.itemIndex < context.turn.items.length - 1;
 }
 
 function simpleProjector(
@@ -543,7 +550,7 @@ function todoEntries(value: unknown): readonly TodoEntry[] {
     const rawStatus = string(source.status);
     return {
       id: string(source.id) ?? `todo-${index}`,
-      text: string(source.text) ?? string(source.title) ?? textFrom(source.content),
+      text: string(source.step) ?? string(source.text) ?? string(source.title) ?? textFrom(source.content),
       status: rawStatus === "completed" || rawStatus === "complete" ? "complete"
         : rawStatus === "inProgress" || rawStatus === "in-progress" ? "in-progress"
         : "pending",
@@ -753,12 +760,17 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         },
       };
     }),
-    simpleProjector("assistant-message", ["agentMessage", "assistantMessage"], (item, source) => ({
+    simpleProjector("assistant-message", ["agentMessage", "assistantMessage"], (item, source, context) => ({
       lane: "assistant",
       block: {
         ...blockBase(item, "text"),
         text: textFrom(source.content ?? source.text ?? source.message),
-        streaming: stateStatus(source.status) === "streaming" || boolean(source.completed) === false,
+        streaming: !isDisplayItemCompleted(source, context),
+        completed: isDisplayItemCompleted(source, context),
+        sentAtMs: number(source.sentAtMs) ?? number(source.startedAtMs) ??
+          (context.itemIndex === context.turn.items.map((candidate) => candidate.type === "agentMessage" || candidate.type === "assistantMessage").lastIndexOf(true)
+            ? context.turn.finalAssistantStartedAtMs ?? null : null),
+        hasStructuredOutput: source.structuredOutput != null,
         phase: source.phase === "commentary" || source.phase === "final_answer" ? source.phase : null,
       },
     })),
@@ -775,6 +787,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
       lane: "assistant",
       block: {
         ...blockBase(item, "command-execution"),
+        resultMissing: source.resultMissing === true,
         callId: string(source.callId) ?? item.id,
         command: textFrom(source.command ?? source.commandLine),
         cwd: string(source.cwd),
@@ -874,6 +887,19 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
           ...blockBase(item, "tool-call"),
           callId,
           kind,
+          activityPresentation: (() => {
+            const display = record(source.activityPresentation);
+            if (display.grouping !== "groupable" && display.grouping !== "standalone") return null;
+            return { grouping: display.grouping,
+              operation: display.operation === "read" || display.operation === "search" ? display.operation : "other" as const,
+              icon: display.icon === "read" || display.icon === "search" ? display.icon : "wrench" as const,
+              active: string(display.active), completed: string(display.completed) };
+          })(),
+          toolContext: string(source.toolContext),
+          resultMissing: source.resultMissing === true,
+          toolSummary: string(source.toolSummary),
+          progressText: string(source.progressText),
+          inlineDiff: string(source.inlineDiff),
           name: item.type === "sleep" ? "sleep"
             : item.type === "imageView" ? "view_image"
             : string(source.tool) ?? string(source.name) ?? (kind === "web-search" ? "Web search" : item.type),
@@ -882,7 +908,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
           input: item.type === "sleep" ? null : item.type === "imageView" ? { path: source.path ?? null } : kind === "web-search"
             ? { query: source.query ?? null, action: source.action ?? null }
             : (source.arguments ?? source.input ?? null),
-          output: item.type === "imageView" ? null : source.result ?? source.contentItems ?? source.results ?? source.output ?? null,
+          output: item.type === "imageView" ? null : source.structuredResult ?? source.result ?? source.contentItems ?? source.results ?? source.output ?? null,
           errorMessage: string(error.message),
           durationMs: number(source.durationMs),
           readOnlyHint: item.type === "imageView" ? true : boolean(source.readOnlyHint),
@@ -930,18 +956,27 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         detail: "Auto-review stopped this turn after repeated denials. Add more context or choose a different permission mode to continue.",
       },
     })),
-    simpleProjector("plan", ["plan", "proposedPlan", "planImplementation"], (item, source) => ({
+    simpleProjector("plan", ["plan", "proposedPlan"], (item, source, context) => ({
       lane: "assistant",
       block: {
         ...blockBase(item, "plan"),
         title: string(source.title),
         text: textFrom(source.plan ?? source.content ?? source.text),
-        implemented: item.type === "planImplementation" || boolean(source.implemented) === true,
+        completed: isDisplayItemCompleted(source, context),
+      },
+    })),
+    simpleProjector("plan-implementation", ["planImplementation"], (item, source) => ({
+      lane: "assistant",
+      block: {
+        ...blockBase(item, "plan-implementation"),
+        turnId: string(source.turnId),
+        planContent: textFrom(source.planContent),
+        isCompleted: source.isCompleted === true,
       },
     })),
     simpleProjector("todo", ["todo-list", "todoList"], (item, source) => ({
       lane: "assistant",
-      block: { ...blockBase(item, "todo"), entries: todoEntries(source.items ?? source.todos) },
+      block: { ...blockBase(item, "todo"), explanation: string(source.explanation), entries: todoEntries(source.plan ?? source.items ?? source.todos) },
     })),
     simpleProjector("subagent", ["collabAgentToolCall", "subAgentActivity", "multiAgentAction"], (item, source) => ({
       lane: "assistant",
@@ -1103,12 +1138,16 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         additionalDetails: string(source.additionalDetails),
       },
     })),
-    simpleProjector("compaction", ["contextCompaction"], (item, source) => ({
+    simpleProjector("compaction", ["contextCompaction"], (item, source, context) => ({
       // Context compaction participates in the Turn-level Activity plan. The
       // renderer suppresses a redundant Worked-for toggle when it is the only
       // collapsible item, matching Codex's fixed-slot planner.
       lane: "assistant",
-      block: { ...blockBase(item, "compaction"), summary: string(source.summary) },
+      block: { ...blockBase(item, "compaction"), summary: string(source.summary),
+        // Unlike streamed text, historical compaction items can omit this flag.
+        // Only an explicit false on an active Turn denotes ongoing compaction.
+        completed: (context.turn.status !== "streaming" && context.turn.status !== "pending") || source.completed !== false,
+        source: source.source === "manual" ? "manual" : "automatic" },
     })),
     simpleProjector("image", ["imageGeneration"], (item, source) => ({
       lane: "assistant",

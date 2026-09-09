@@ -177,25 +177,6 @@ export function shouldPlaceLatestTurnFromPendingSubmit(
   return placement?.shouldPlaceLatestTurn === true;
 }
 
-/**
- * Height discovery for a completed latest Turn must keep an already-bottomed
- * viewport at zero. When the user is reading above it, the same delta is
- * added to retain the visible content while the Turn below is remeasured.
- */
-export function distanceAfterLatestTurnHeightChange({
-  bottomPaddingPx,
-  currentDistanceFromBottomPx,
-  heightDeltaPx,
-}: {
-  readonly bottomPaddingPx: number;
-  readonly currentDistanceFromBottomPx: number;
-  readonly heightDeltaPx: number;
-}): number {
-  const distance = Math.max(0, currentDistanceFromBottomPx);
-  const bottomThreshold = bottomPaddingPx > 0 ? 0 : CODEX_FOLLOW_DISTANCE_THRESHOLD_PX;
-  return distance <= bottomThreshold ? 0 : Math.max(0, distance + heightDeltaPx);
-}
-
 /** Exact typed form of the recovered response-spacer height clamp (recovered dO). */
 export function maximumResponseSpacerHeightPx({
   scrollElementHeightPx,

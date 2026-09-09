@@ -1,10 +1,13 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 
 import { HermesAppServerAdapter } from "./adapter";
+import { HermesProjectionRecovery } from "./projection-recovery";
 import { HermesBotAppServerHandler } from "./bot-protocol-handler";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
 import type { HermesHistoryClient } from "./history-client";
 import type { HermesHostTerminal } from "./tat-terminal";
+import type { HermesProcessService } from "./process-service";
+import type { HermesComposerQueueStore } from "./composer-queue-store";
 import { dispatchAppServerRequest } from "./protocol";
 import {
   HermesRpcError,
@@ -14,16 +17,24 @@ import {
 } from "./rpc-transport";
 import type {
   AppServerNotification,
+  AppServerOutboundMessage,
   JsonRpcFailure,
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./types";
 
-export interface BrowserHermesBridgeOptions extends HermesRpcTransportOptions {
+export interface BrowserHermesBridgeOptions extends Omit<HermesRpcTransportOptions, "replayCheckpoint"> {
+  projectionRecovery?: HermesProjectionRecovery;
+  /** Bot protocol is dormant until the Bot product surface is enabled again. */
+  enableBotConversations?: boolean;
   defaultCwd?: string;
   fileSystem?: HermesHostFileSystem;
   history?: HermesHistoryClient;
   terminal?: HermesHostTerminal;
+  /** Borrowed from the Host transport; a bridge only owns its subscription. */
+  processes?: HermesProcessService;
+  /** Client-owned editable queue; survives Gateway/WebSocket bridge renewal. */
+  composerQueue?: HermesComposerQueueStore;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => (
@@ -45,30 +56,52 @@ const failure = (
 export class BrowserHermesAppServerBridge {
   private readonly transport: HermesRpcWebSocketTransport;
   private readonly adapter: HermesAppServerAdapter;
-  private readonly bots: HermesBotAppServerHandler;
-  private readonly notificationListeners = new Set<(event: AppServerNotification) => void>();
+  private readonly bots: HermesBotAppServerHandler | null;
+  private readonly notificationListeners = new Set<(event: AppServerOutboundMessage) => void>();
   private readonly stopNotifications: () => void;
+  private readonly stopServerRequests: () => void;
   private readonly stopTerminalNotifications: () => void;
+  private readonly stopProcessNotifications: () => void;
   private disposed = false;
 
   constructor(socket: HermesSocket, private readonly options: BrowserHermesBridgeOptions = {}) {
-    this.transport = new HermesRpcWebSocketTransport(socket, options);
-    this.adapter = new HermesAppServerAdapter(this.transport, options.defaultCwd ?? "/", options.history);
-    this.bots = new HermesBotAppServerHandler(this.adapter, (event) => {
-      const notification: AppServerNotification = { jsonrpc: "2.0", ...event };
-      for (const listener of this.notificationListeners) listener(notification);
+    options.projectionRecovery?.prepareReconnect();
+    this.transport = new HermesRpcWebSocketTransport(socket, {
+      ...options,
+      // A bridge has a fresh adapter unless its matching owners survived.
+      replayCheckpoint: options.projectionRecovery ?? new HermesProjectionRecovery(),
     });
+    this.adapter = new HermesAppServerAdapter(this.transport, options.defaultCwd ?? "/", options.history,
+      undefined, options.projectionRecovery, options.composerQueue);
+    this.bots = options.enableBotConversations === true
+      ? new HermesBotAppServerHandler(this.adapter, (event) => {
+          const notification: AppServerNotification = { jsonrpc: "2.0", ...event };
+          for (const listener of this.notificationListeners) listener(notification);
+        })
+      : null;
     this.stopNotifications = this.adapter.subscribeNotification((method, params) => {
-      this.bots.observeAppServerNotification(method, params);
+      this.bots?.observeAppServerNotification(method, params);
       const notification: AppServerNotification = { jsonrpc: "2.0", method, params };
       for (const listener of this.notificationListeners) listener(notification);
+    });
+    this.stopServerRequests = this.adapter.subscribeServerRequest((request) => {
+      const frame: AppServerOutboundMessage = {
+        jsonrpc: "2.0",
+        id: request.id,
+        method: request.method,
+        params: request.params,
+      };
+      for (const listener of this.notificationListeners) listener(frame);
     });
     this.stopTerminalNotifications = options.terminal?.subscribeNotification((notification) => {
       for (const listener of this.notificationListeners) listener(notification);
     }) ?? (() => undefined);
+    this.stopProcessNotifications = options.processes?.subscribeNotification((notification) => {
+      for (const listener of this.notificationListeners) listener(notification);
+    }) ?? (() => undefined);
   }
 
-  onNotification(listener: (event: AppServerNotification) => void): () => void {
+  onNotification(listener: (event: AppServerOutboundMessage) => void): () => void {
     this.notificationListeners.add(listener);
     return () => this.notificationListeners.delete(listener);
   }
@@ -78,11 +111,12 @@ export class BrowserHermesAppServerBridge {
     return dispatchAppServerRequest(this.adapter, { jsonrpc: "2.0", id: 0, method, params }, {
       fileSystem: this.options.fileSystem,
       terminal: this.options.terminal,
-      bots: this.bots,
+      processes: this.options.processes,
+      ...(this.bots === null ? {} : { bots: this.bots }),
     });
   }
 
-  async handle(value: unknown): Promise<JsonRpcResponse> {
+  async handle(value: unknown, signal?: AbortSignal): Promise<JsonRpcResponse> {
     if (!isObject(value) || typeof value.method !== "string") {
       return failure(null, -32600, "invalid AppServer JSON-RPC request");
     }
@@ -99,9 +133,11 @@ export class BrowserHermesAppServerBridge {
         jsonrpc: "2.0",
         id,
         result: await dispatchAppServerRequest(this.adapter, request, {
+          signal,
           fileSystem: this.options.fileSystem,
           terminal: this.options.terminal,
-          bots: this.bots,
+          processes: this.options.processes,
+          ...(this.bots === null ? {} : { bots: this.bots }),
         }),
       };
     } catch (error) {
@@ -115,11 +151,36 @@ export class BrowserHermesAppServerBridge {
     }
   }
 
+  /** AppServer response delivery owns restored-queue activation ordering. */
+  didDeliverResponse(value: unknown, response: JsonRpcResponse): void {
+    if (!isObject(value) || "error" in response) return;
+    if (value.method !== "thread/resume" && value.method !== "thread/read") return;
+    const params = isObject(value.params) ? value.params : {};
+    const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+    if (threadId !== "") this.adapter.resumeQueuedSubmissions(threadId);
+  }
+
+  /** Consume a client answer to a server-initiated interaction request. */
+  async handleResponse(value: unknown): Promise<boolean> {
+    if (!isObject(value) || typeof value.method === "string") return false;
+    const id = typeof value.id === "string" || typeof value.id === "number" ? value.id : null;
+    if (id === null) return false;
+    if (Object.hasOwn(value, "result")) {
+      return this.adapter.respondServerRequest(String(id), value.result);
+    }
+    if (Object.hasOwn(value, "error")) {
+      return this.adapter.rejectServerRequest(String(id), value.error);
+    }
+    return false;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.stopNotifications();
+    this.stopServerRequests();
     this.stopTerminalNotifications();
+    this.stopProcessNotifications();
     this.notificationListeners.clear();
     this.adapter.dispose();
     this.options.fileSystem?.dispose();
@@ -158,8 +219,9 @@ declare module "@deepseek-ai/cordis" {
   }
 }
 
-export type { AppServerNotification, JsonRpcRequest, JsonRpcResponse } from "./types";
+export type { AppServerNotification, AppServerOutboundMessage, JsonRpcRequest, JsonRpcResponse } from "./types";
 export { HermesRpcError } from "./rpc-transport";
+export { HermesProjectionRecovery } from "./projection-recovery";
 export { HermesDashboardFileSystem } from "./dashboard-file-system";
 export type { HermesHostFileSystem } from "./dashboard-file-system";
 export { HermesDashboardHistoryClient } from "./history-client";
@@ -167,3 +229,12 @@ export type { HermesHistoryClient, HermesHistoryPageRequest } from "./history-cl
 export { HermesTatTerminalService } from "./tat-terminal";
 export type { HermesHostTerminal } from "./tat-terminal";
 export { HermesReplayCheckpoint } from "./rpc-transport";
+export {
+  browserHermesComposerQueueStore,
+  LocalStorageHermesComposerQueueStore,
+  MemoryHermesComposerQueueStore,
+} from "./composer-queue-store";
+export type {
+  HermesComposerQueueStorage,
+  HermesComposerQueueStore,
+} from "./composer-queue-store";

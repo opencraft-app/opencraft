@@ -3,6 +3,7 @@ import type { DuplexTransport } from "@opencraft/appserver-client/transport";
 import type { AppServerHostKind } from "@opencraft/appserver-session";
 
 export type HostConnectionPlatform = "web" | "electron" | "expo";
+export type HostConnectionIntervention = "authentication-required" | "configuration-required";
 export type HostConnectionJson =
   | null
   | boolean
@@ -11,10 +12,58 @@ export type HostConnectionJson =
   | readonly HostConnectionJson[]
   | { readonly [key: string]: HostConnectionJson };
 
+/**
+ * A provider-owned prerequisite that requires user action rather than a retry.
+ * The shell may route this to a provider-contributed intervention surface,
+ * while ordinary transport failures continue through generic recovery UI.
+ */
+export class HostConnectionInterventionError extends Error {
+  readonly code: HostConnectionIntervention;
+  readonly providerId: string;
+
+  constructor(input: {
+    readonly code: HostConnectionIntervention;
+    readonly providerId: string;
+    readonly message: string;
+    readonly cause?: unknown;
+  }) {
+    super(input.message, input.cause === undefined ? undefined : { cause: input.cause });
+    this.name = "HostConnectionInterventionError";
+    this.code = input.code;
+    this.providerId = input.providerId;
+  }
+}
+
+export function isHostConnectionInterventionError(value: unknown): value is HostConnectionInterventionError {
+  if (value instanceof HostConnectionInterventionError) return true;
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { readonly name?: unknown; readonly code?: unknown; readonly providerId?: unknown };
+  return candidate.name === "HostConnectionInterventionError"
+    && (candidate.code === "authentication-required" || candidate.code === "configuration-required")
+    && typeof candidate.providerId === "string";
+}
+
+export function findHostConnectionInterventionError(value: unknown): HostConnectionInterventionError | null {
+  let current = value;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 8 && current !== null && current !== undefined; depth += 1) {
+    if (isHostConnectionInterventionError(current)) return current;
+    if (typeof current !== "object" || seen.has(current)) return null;
+    seen.add(current);
+    current = (current as { readonly cause?: unknown }).cause;
+  }
+  return null;
+}
+
 export interface HostConnectionProviderContext {
   readonly platform: HostConnectionPlatform;
   readonly hostId: string;
   readonly profileRevision: number;
+}
+
+export interface HostConnectionPreflightContext {
+  /** Provisioning owns this cancellation scope; providers must not retain it. */
+  readonly signal: AbortSignal;
 }
 
 /**
@@ -24,15 +73,35 @@ export interface HostConnectionProviderContext {
 export interface HostConnectionProvider<TConfig extends HostConnectionJson = HostConnectionJson> {
   readonly id: string;
   readonly label: string;
+  /**
+   * Settings page contributed by the same extension for Hosts created by this
+   * provider. The shell treats this as navigation metadata only; the provider
+   * never owns application routing or presentation.
+   */
+  readonly settingsPageId?: string;
   readonly targets: readonly HostConnectionPlatform[];
   readonly configVersion: number;
   validate(config: HostConnectionJson, context: HostConnectionProviderContext): TConfig;
+  /**
+   * Verifies provider-owned control-plane prerequisites before a profile is
+   * committed. This must not allocate a physical Host connection that cannot
+   * be transferred to the resident Host runtime created after provisioning.
+   *
+   * Providers without a control-plane verification path omit this hook and
+   * receive the generic disposable AppServer initialize preflight.
+   */
+  preflight?(
+    config: TConfig,
+    context: HostConnectionProviderContext,
+    preflight: HostConnectionPreflightContext,
+  ): void | Promise<void>;
   createTransport(config: TConfig, context: HostConnectionProviderContext): DuplexTransport;
 }
 
 export interface HostConnectionProviderDescriptor {
   readonly id: string;
   readonly label: string;
+  readonly settingsPageId?: string;
   readonly ownerId: string;
   readonly targets: readonly HostConnectionPlatform[];
   readonly configVersion: number;
@@ -81,16 +150,24 @@ export class HostConnectionProviderRegistry {
     this.ensureOpen();
     const normalizedOwner = ownerId.trim();
     const providerId = provider.id.trim();
+    const settingsPageId = provider.settingsPageId?.trim();
     if (normalizedOwner.length === 0) throw new RangeError("Connection provider owner ID must not be empty");
     if (providerId.length === 0) throw new RangeError("Connection provider ID must not be empty");
     if (provider.label.trim().length === 0) throw new RangeError(`Connection provider ${providerId} has no label`);
+    if (provider.settingsPageId !== undefined && settingsPageId?.length === 0) {
+      throw new RangeError(`Connection provider ${providerId} has an empty settings page ID`);
+    }
     if (provider.targets.length === 0) throw new RangeError(`Connection provider ${providerId} has no target`);
     if (!Number.isSafeInteger(provider.configVersion) || provider.configVersion < 1) {
       throw new RangeError(`Connection provider ${providerId} has an invalid config version`);
     }
     if (this.records.has(providerId)) throw new Error(`Connection provider ${providerId} is already registered`);
     const record: ProviderRecord = {
-      provider: { ...provider, id: providerId },
+      provider: {
+        ...provider,
+        id: providerId,
+        ...(settingsPageId === undefined ? {} : { settingsPageId }),
+      },
       ownerId: normalizedOwner,
       leases: 0,
       retiring: false,
@@ -168,6 +245,9 @@ export class HostConnectionProviderRegistry {
       providers: [...this.records.values()].map((record) => Object.freeze({
         id: record.provider.id,
         label: record.provider.label,
+        ...(record.provider.settingsPageId === undefined
+          ? {}
+          : { settingsPageId: record.provider.settingsPageId }),
         ownerId: record.ownerId,
         targets: [...record.provider.targets],
         configVersion: record.provider.configVersion,

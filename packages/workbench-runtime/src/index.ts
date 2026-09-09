@@ -7,12 +7,15 @@ export * from "./conversation-view-registry";
 export * from "./conversation-scope-registry";
 export * from "./host-runtime-registry";
 export * from "./host-connections";
+export * from "./host-connection-preflight";
 export * from "./workbench-location";
 export * from "./workbench-coordinator";
 export * from "./thread-catalog";
 export * from "./interaction-response";
 export * from "./setup-codex";
 export * from "./submission-pipeline";
+export * from "./adaptive-navigation";
+export * from "./adaptive-panel";
 export { getActiveTimeline } from "./models";
 export type {
   ThreadStatus,

@@ -9,6 +9,7 @@ import type {
 } from "./timeline";
 import type { HookStats } from "./hook-stats";
 import { normalizeCodexTurnUserMessages } from "./turn-user-message-normalization";
+import { deriveTurnWorkStatus } from "./work-status";
 
 export type TimelineLane = "user" | "assistant" | "event" | "interaction";
 
@@ -24,6 +25,9 @@ export interface TimelineSourceTurn {
   readonly startedAtMs?: number | null;
   readonly completedAtMs?: number | null;
   readonly durationMs?: number | null;
+  readonly firstTurnWorkItemStartedAtMs?: number | null;
+  readonly finalAssistantStartedAtMs?: number | null;
+  readonly interruptedByThisClient?: boolean;
   readonly hookStats?: HookStats | null;
   /** Complete Turn-start envelope retained for Codex UserMessage ownership. */
   readonly params?: unknown;
@@ -229,6 +233,7 @@ export function projectTimeline(
   const frames: TimelineFrame[] = [];
   for (const sourceTurn of source.turns) {
     const turn = normalizeCodexTurnUserMessages(sourceTurn);
+    const workStatus = deriveTurnWorkStatus(turn);
     let pendingLane: TimelineLane | null = null;
     let pendingBlocks: TimelineBlock[] = [];
     let pendingAnchors: TimelineAnchor[] = [];
@@ -246,6 +251,8 @@ export function projectTimeline(
         turnId: asTurnId(turn.id),
         status: turn.status,
         durationMs: turn.durationMs ?? null,
+        workStatus,
+        interruptedByThisClient: turn.interruptedByThisClient === true,
         hookStats: turn.hookStats ?? null,
         anchors: frameAnchors(turn.id, itemIds, pendingAnchors),
         blocks,

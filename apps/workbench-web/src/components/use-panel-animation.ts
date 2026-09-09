@@ -5,7 +5,22 @@ import {
   useTransform,
   type MotionValue,
 } from "motion/react";
-import { useLayoutEffect, useReducer } from "react";
+import { useLayoutEffect, useReducer, useRef } from "react";
+
+/** Shell-owned full-width progress. Route changes are placement, not gestures. */
+export function usePanelFullWidthAnimation(fullWidth: boolean, scope: string, open: boolean): MotionValue<number> {
+  const progress = useMotionValue(fullWidth ? 1 : 0);
+  const previous = useRef({ scope, open });
+  const reducedMotion = useReducedMotion();
+  useLayoutEffect(() => {
+    const snap = previous.current.scope !== scope || !previous.current.open || !open || reducedMotion;
+    previous.current = { scope, open };
+    if (snap) { progress.jump(fullWidth ? 1 : 0); return; }
+    const playback = animate(progress, fullWidth ? 1 : 0, PANEL_SPRING_TRANSITION);
+    return () => playback.stop();
+  }, [fullWidth, scope, open, reducedMotion, progress]);
+  return progress;
+}
 
 // Source-identical motion contract from the latest recovered Codex lineage:
 // settings/app-shell-layout-motion-context-04359.ts.

@@ -30,10 +30,10 @@ import {
   normalizeInitialScrollDistance,
   normalizeWheelDeltaPx,
   reconcileRenderedRangeForEntries,
+  reconcileTurnLayoutViewport,
   keyboardScrollDirection,
   directionForTouchDelta,
   distanceExcludingBottomPadding,
-  distanceAfterLatestTurnHeightChange,
   isAtVirtualizedBottom,
   shouldLoadOlderHistory,
   shouldPlaceLatestTurnFromPendingSubmit,
@@ -284,6 +284,32 @@ test("prepending hydrated history preserves the measured viewport anchor", () =>
   assert.equal(compensateDistanceFromBottom(anchor!, 100, previousLayout, nextLayout), 100);
 });
 
+test("entry-layout reconciliation has one fenced virtualizer-owned correction", () => {
+  const previousEntries = turns(3);
+  const measurements = { "turn-1": 100 };
+  const previousLayout = buildTurnLayout(previousEntries, measurements, config);
+  const nextLayout = buildTurnLayout([
+    ...previousEntries,
+    { turnKey: "turn-3", estimatedHeightPx: 100 },
+  ], measurements, config);
+  const options = {
+    previousLayout,
+    nextLayout,
+    measuredHeightsByKey: measurements,
+    currentDistanceFromBottomPx: 100,
+    viewportHeightPx: 100,
+    bottomPaddingPx: 0,
+    preserveViewport: true,
+    layoutOwnedByMeasurement: false,
+    restorePending: false,
+  };
+  assert.equal(reconcileTurnLayoutViewport(options), 200);
+  assert.equal(reconcileTurnLayoutViewport({ ...options, currentDistanceFromBottomPx: 0 }), null);
+  assert.equal(reconcileTurnLayoutViewport({ ...options, layoutOwnedByMeasurement: true }), null);
+  assert.equal(reconcileTurnLayoutViewport({ ...options, restorePending: true }), null);
+  assert.equal(reconcileTurnLayoutViewport({ ...options, preserveViewport: false }), null);
+});
+
 test("height changes below the anchor compensate distanceFromBottom", () => {
   const entries = turns(3);
   const previousLayout = buildTurnLayout(entries, {}, config);
@@ -342,24 +368,6 @@ test("only an explicit composer submit snapshot places a changed latest Turn", (
   }), false);
 });
 
-test("completed latest-Turn measurement stays bottomed but preserves an older viewport", () => {
-  assert.equal(distanceAfterLatestTurnHeightChange({
-    bottomPaddingPx: 0,
-    currentDistanceFromBottomPx: 0,
-    heightDeltaPx: 34_000,
-  }), 0);
-  assert.equal(distanceAfterLatestTurnHeightChange({
-    bottomPaddingPx: 0,
-    currentDistanceFromBottomPx: 300,
-    heightDeltaPx: 34_000,
-  }), 34_300);
-  assert.equal(distanceAfterLatestTurnHeightChange({
-    bottomPaddingPx: 200,
-    currentDistanceFromBottomPx: 1,
-    heightDeltaPx: 400,
-  }), 401);
-});
-
 test("a ResizeObserver batch commits height table, layout, window and scroll as one transaction", () => {
   const entries = turns(4);
   const previousLayout = buildTurnLayout(entries, {}, config);
@@ -373,7 +381,7 @@ test("a ResizeObserver batch commits height table, layout, window and scroll as 
     currentDistanceFromBottomPx: 100,
     bottomPaddingPx: 0,
     preserveMeasuredTurnViewport: true,
-    pendingRestoreScrollDistanceFromBottomPx: null,
+    getPendingRestoreScrollDistanceFromBottomPx: null,
     config,
   });
   assert.ok(transaction);
@@ -381,7 +389,7 @@ test("a ResizeObserver batch commits height table, layout, window and scroll as 
   assert.equal(transaction.layout.heightsPx[3], 260);
   assert.equal(transaction.scrollDistanceFromBottomPx, 260);
   assert.equal(transaction.viewport.distanceFromBottomPx, 260);
-  assert.equal(transaction.latestTurnHeightChange?.heightDeltaPx, 260);
+  assert.equal(transaction.latestTurnHeightChange?.heightDeltaPx, 0);
 });
 
 test("latest-Turn single measurement has the synchronous DOM-height fast path at bottom", () => {
@@ -397,7 +405,7 @@ test("latest-Turn single measurement has the synchronous DOM-height fast path at
     currentDistanceFromBottomPx: 0,
     bottomPaddingPx: 0,
     preserveMeasuredTurnViewport: true,
-    pendingRestoreScrollDistanceFromBottomPx: null,
+    getPendingRestoreScrollDistanceFromBottomPx: null,
     config,
   });
   assert.ok(transaction);
@@ -611,6 +619,36 @@ test("static prework watches until follow content actually overflows", () => {
   assert.equal(state.followMode, "prework_follow");
 });
 
+test("response placement does not give final-answer growth ownership of following", () => {
+  let state = reduceTurnFollowState(createTurnFollowState("user_follow"), { type: "latest_turn_placed" });
+  assert.equal(state.followMode, "static");
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_phase_changed", previousLatestTurnPhase: "idle", latestTurnPhase: "prework",
+  });
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_phase_changed", previousLatestTurnPhase: "prework", latestTurnPhase: "final_answer",
+  });
+  for (const overflow of [0, 100, 5_000, 20_000]) {
+    state = reduceTurnFollowState(state, {
+      type: "latest_turn_follow_content_changed", latestTurnPhase: "final_answer", followContentOverflowPx: overflow,
+    });
+    assert.equal(state.followMode, "static");
+    assert.equal(shouldFollowLatestTurn(state, "final_answer"), false);
+  }
+  state = reduceTurnFollowState(state, { type: "scroll_to_bottom", latestTurnPhase: "final_answer" });
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_follow_content_changed", latestTurnPhase: "final_answer", followContentOverflowPx: 30_000,
+  });
+  assert.equal(shouldFollowLatestTurn(state, "final_answer"), true);
+  state = reduceTurnFollowState(state, {
+    type: "scroll_distance_changed", latestTurnPhase: "final_answer", distanceFromBottomPx: 25,
+  });
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_follow_content_changed", latestTurnPhase: "final_answer", followContentOverflowPx: 40_000,
+  });
+  assert.equal(state.followMode, "static", "new text must not steal a detached reader's viewport");
+});
+
 test("latest Turn placement and response spacer retain recovered Codex constants", () => {
   assert.equal(createLatestTurnPlacementSnapshot({
     distanceFromBottomPx: 340,
@@ -812,8 +850,25 @@ test("layout preservation consumes wheel input before classifying the resulting 
   controller.preserveScrollPositionForNextLayout();
   controller.recordWheelDelta(-40);
   scrollHeight = 2_400;
-  const snapshot = controller.reportPlatformScroll("system");
+  const observedTransitions: Array<readonly [number, number]> = [];
+  const userTransitions: Array<readonly [number, number]> = [];
+  controller.addUserScrollListener((current, previous) => {
+    userTransitions.push([previous, current]);
+  });
+  const snapshot = controller.reportPlatformScroll((change) => {
+    observedTransitions.push([
+      change.previousDistanceFromBottomPx,
+      change.currentDistanceFromBottomPx,
+    ]);
+    return change.currentDistanceFromBottomPx > change.previousDistanceFromBottomPx
+      ? "user"
+      : "system";
+  });
   assert.equal(snapshot.distanceFromBottomPx, 340);
+  assert.equal(snapshot.previousDistanceFromBottomPx, 300);
+  assert.equal(snapshot.origin, "user");
+  assert.deepEqual(observedTransitions, [[300, 340]]);
+  assert.deepEqual(userTransitions, [[300, 340]]);
   assert.equal(distance, 340);
   assert.equal(frames.size, 0);
   controller.dispose();
@@ -843,6 +898,38 @@ test("wheel accumulation survives until the scheduled layout-preservation frame"
   assert.equal(distance, 520);
   controller.dispose();
 });
+
+for (const [confirmed, physical] of [[0, 800], [400, 800], [400, 20]] as const) {
+  test(`bottom command samples physical distance ${physical}, not confirmed distance ${confirmed}`, () => {
+    let distance: number = physical;
+    const frames = new Map<number, (nowMs: number) => void>();
+    let nextFrameId = 0;
+    const controller = new TurnScrollController({
+      getMetrics: () => ({ distanceFromBottomPx: distance, viewportHeightPx: 600, scrollHeightPx: 2_000 }),
+      writeDistanceFromBottomPx: (next) => { distance = next; },
+      now: () => 0,
+      requestFrame: (callback) => { const id = ++nextFrameId; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+    }, confirmed);
+    try {
+      // A layout/browser update happened but its scroll event is not yet
+      // confirmed. Clicking bottom starts a new command from current geometry.
+      controller.scrollToBottom();
+      if (physical <= 24) {
+        assert.equal(frames.size, 0);
+        assert.equal(distance, 0);
+      } else {
+        assert.equal(frames.size, 1);
+        const [id, callback] = frames.entries().next().value!;
+        frames.delete(id);
+        callback(130);
+        assert.equal(distance, physical / 8, "r3562 cubic animation must use the current physical origin");
+      }
+    } finally {
+      controller.dispose();
+    }
+  });
+}
 
 test("keyboard or pointer takeover cancels a pending layout preservation", () => {
   let distance = 300;
@@ -909,6 +996,12 @@ test("imperative scrolling cancels pending preservation and publishes the platfo
   controller.scrollToDistanceFromBottomPx(9_000, "instant", "user");
   assert.equal(distance, 1_400);
   assert.deepEqual(userDistances, [1_400]);
+  controller.scrollToDistanceFromBottomPx(9_000, "instant", "user");
+  assert.deepEqual(
+    userDistances,
+    [1_400],
+    "an unchanged imperative target is not a second user-scroll transaction",
+  );
   assert.equal(frames.size, 0);
   scrollHeight = 2_400;
   assert.equal(controller.reportPlatformScroll("system").distanceFromBottomPx, 1_400);

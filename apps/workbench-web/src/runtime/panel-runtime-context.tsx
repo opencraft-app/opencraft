@@ -13,6 +13,7 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useLayoutEffect,
   useSyncExternalStore,
 } from "react";
 
@@ -48,6 +49,9 @@ export function useWorkbenchPanelRuntime(): WorkbenchPanelReactRuntime {
 
 export function useConversationPanelState(ownerId: string): ConversationPanelState {
   const { panels } = useWorkbenchPanelRuntime();
+  useLayoutEffect(() => {
+    panels.ensureOwner(ownerId);
+  }, [ownerId, panels]);
   const subscribe = useCallback(
     (listener: () => void) => panels.subscribeOwner(ownerId, listener),
     [panels, ownerId],

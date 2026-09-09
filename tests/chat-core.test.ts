@@ -20,6 +20,7 @@ import {
   deriveAgentActivityHeaderPresentation,
   deriveSubagentActivityGroupPresentation,
   deriveSubagentActivityPresentation,
+  deriveTimelineLatestTurnActivityKey,
   deriveTimelineLatestTurnPhase,
   extractToolCallContentParts,
   formatCodexToolDuration,
@@ -30,7 +31,6 @@ import {
   findPendingInteraction,
   groupTimelineFramesByTurn,
   indexAttachedInteractions,
-  isAgentActivityCollapsed,
   isCodexAppThreadTool,
   isVisibleAgentActivityRow,
   isToolActivityPresentationSuppressed,
@@ -1218,7 +1218,7 @@ test("unfinished read, search and list commands stay retrospective until authori
   assert.equal(shouldRenderAgentThinkingPlaceholder(explorationOnly), false);
 });
 
-test("an unfinished SKILL.md read remains a visible active Activity row", () => {
+test("an unfinished SKILL.md read owns active state but row visibility follows detail mode", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-live-skill-read",
     status: "streaming",
@@ -1237,7 +1237,8 @@ test("an unfinished SKILL.md read remains a visible active Activity row", () => 
   if (frame?.type !== "assistant") throw new Error("Expected assistant frame");
   const block = frame.blocks[0];
   if (block?.type !== "command-execution") throw new Error("Expected command block");
-  assert.equal(isVisibleAgentActivityRow(block), true);
+  assert.equal(isVisibleAgentActivityRow(block), false);
+  assert.equal(isVisibleAgentActivityRow(block, undefined, "STEPS_PROSE"), true);
   const group = createAgentActivityContentUnits(frame.blocks, frame.status)[0];
   if (group?.type !== "group") throw new Error("Expected active Activity group");
   const header = deriveAgentActivityHeaderPresentation(group);
@@ -2539,6 +2540,14 @@ test("latest Turn phase separates prework from the first final assistant text", 
     { id: "reasoning-phase", type: "reasoning", payload: { summary: "Inspecting" } },
     { id: "assistant-phase", type: "agentMessage", payload: { text: "Ready." } },
   ])), "final_answer");
+  for (const text of ["", "   "]) {
+    assert.equal(deriveTimelineLatestTurnPhase(project("streaming", [
+      { id: "assistant-phase", type: "agentMessage", payload: { text, phase: "final_answer" } },
+    ])), "final_answer", "the final Item, not its first nonempty delta, owns the phase boundary");
+    assert.equal(deriveTimelineLatestTurnPhase(project("streaming", [
+      { id: "commentary-phase", type: "agentMessage", payload: { text, phase: "commentary" } },
+    ])), "prework");
+  }
   assert.equal(deriveTimelineLatestTurnPhase(project("complete", [
     { id: "assistant-phase", type: "agentMessage", payload: { text: "Ready." } },
   ])), "idle");
@@ -2596,10 +2605,34 @@ test("Codex commentary remains inside Agent Activity while final_answer is a sep
     "command-execution:command",
   ]);
   assert.equal(before.forceExpanded, false);
-  assert.equal(isAgentActivityCollapsed(before, undefined), true);
+  assert.equal(resolveAgentActivityLayout(before, undefined).isCollapsed, true);
   assert.equal(after.phase, "after-final-answer");
   assert.equal(after.disableCollapse, true);
-  assert.equal(isAgentActivityCollapsed(after, true), false);
+  assert.equal(resolveAgentActivityLayout(after, true).isCollapsed, false);
+});
+
+test("completed reasoning-only Activity retains a work interval without exposing reasoning", () => {
+  const snapshot = projectTimeline(source([{
+    id: "turn-reasoning-duration",
+    status: "complete",
+    durationMs: 2_021,
+    startedAtMs: 1_000,
+    firstTurnWorkItemStartedAtMs: 1_100,
+    finalAssistantStartedAtMs: 2_000,
+    items: [
+      { id: "reasoning", type: "reasoning", payload: { content: ["private chain of thought"], summary: [] } },
+      { id: "answer", type: "agentMessage", payload: { text: "在。", phase: "final_answer", completed: true } },
+    ],
+  }]), createDefaultTimelineProjectorRegistry());
+  const frame = snapshot.frames.find((candidate) => candidate.type === "assistant");
+  if (frame?.type !== "assistant") throw new Error("Expected assistant frame");
+  const activity = createAssistantTurnPresentationPlan(frame).slots[0];
+  if (activity?.type !== "agent-activity") throw new Error("Expected duration Activity");
+
+  assert.equal(activity.workedDurationMs, 2_021);
+  assert.deepEqual(activity.contentUnits.map((unit) => unit.type), ["worked-for"]);
+  assert.equal(resolveAgentActivityLayout(activity, false).showToggle, false);
+  assert.deepEqual(resolveAgentActivityLayout(activity, false).visibleUnits.map((unit) => unit.type), ["worked-for"]);
 });
 
 test("Agent Activity hides reasoning and demotes completed singleton tools around commentary", () => {
@@ -2760,7 +2793,7 @@ test("MCP App persistence requires both the feature cohort and a renderer surfac
   if (defaultOuter?.type !== "agent-activity") throw new Error("Expected Agent Activity");
   assert.deepEqual(defaultOuter.partitions.persistentUnits, []);
   assert.deepEqual(defaultOuter.partitions.collapsibleUnits.map((unit) => unit.id), [
-    "agent-activity-standalone:command-execution:command",
+    "agent-activity-group:command-execution:command",
     "agent-activity-standalone:tool-call:mcp-app",
   ]);
   const outer = createAssistantTurnPresentationPlan(frame, undefined, {
@@ -2768,10 +2801,10 @@ test("MCP App persistence requires both the feature cohort and a renderer surfac
     renderMcpApps: true,
   }).slots[0];
   if (outer?.type !== "agent-activity") throw new Error("Expected Agent Activity");
-  assert.deepEqual(outer.partitions.collapsibleUnits.map((unit) => unit.id), ["agent-activity-standalone:command-execution:command"]);
+  assert.deepEqual(outer.partitions.collapsibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
   assert.deepEqual(outer.partitions.persistentUnits.map((unit) => unit.id), ["agent-activity-standalone:tool-call:mcp-app"]);
   assert.deepEqual(outer.partitions.expandedUnits.map((unit) => unit.id), [
-    "agent-activity-standalone:command-execution:command",
+    "agent-activity-group:command-execution:command",
     "agent-activity-standalone:tool-call:mcp-app",
   ]);
 });
@@ -2794,7 +2827,7 @@ test("steering and hook feedback are assistant Activity units that persist while
   if (assistant?.type !== "assistant") throw new Error("Expected assistant frame");
   const outer = createAssistantTurnPresentationPlan(assistant).slots[0];
   if (outer?.type !== "agent-activity") throw new Error("Expected Agent Activity");
-  assert.deepEqual(outer.partitions.collapsibleUnits.map((unit) => unit.id), ["agent-activity-standalone:command-execution:command"]);
+  assert.deepEqual(outer.partitions.collapsibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
   assert.deepEqual(outer.partitions.persistentUnits.map((unit) => unit.id), [
     "agent-activity-standalone:user-message:steering",
     "agent-activity-standalone:user-message:hook",
@@ -2802,7 +2835,7 @@ test("steering and hook feedback are assistant Activity units that persist while
   const collapsedLayout = resolveAgentActivityLayout(outer, true);
   assert.equal(collapsedLayout.showToggle, true);
   assert.equal(collapsedLayout.isCollapsed, true);
-  assert.deepEqual(collapsedLayout.visibleUnits.map((unit) => unit.id), ["agent-activity-standalone:command-execution:command"]);
+  assert.deepEqual(collapsedLayout.visibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
   assert.deepEqual(collapsedLayout.persistentUnits.map((unit) => unit.id), [
     "agent-activity-standalone:user-message:steering",
     "agent-activity-standalone:user-message:hook",
@@ -2811,7 +2844,7 @@ test("steering and hook feedback are assistant Activity units that persist while
   assert.equal(expandedLayout.isCollapsed, false);
   assert.deepEqual(expandedLayout.persistentUnits, []);
   assert.deepEqual(expandedLayout.visibleUnits.map((unit) => unit.id), [
-    "agent-activity-standalone:command-execution:command",
+    "agent-activity-group:command-execution:command",
     "agent-activity-standalone:user-message:steering",
     "agent-activity-standalone:user-message:hook",
   ]);
@@ -2843,10 +2876,10 @@ test("realtime transcripts follow Codex's pre-toggle and persistent ownership", 
   const outer = createAssistantTurnPresentationPlan(frame).slots[0];
   if (outer?.type !== "agent-activity") throw new Error("Expected Agent Activity");
   assert.deepEqual(outer.partitions.preToggleUnits.map((unit) => unit.id), ["agent-activity-standalone:realtime-transcript:realtime-delegation-leading"]);
-  assert.deepEqual(outer.partitions.collapsibleUnits.map((unit) => unit.id), ["agent-activity-standalone:command-execution:command"]);
+  assert.deepEqual(outer.partitions.collapsibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
   assert.deepEqual(outer.partitions.persistentUnits.map((unit) => unit.id), ["agent-activity-standalone:realtime-transcript:realtime-delegation-handoff-1"]);
   assert.deepEqual(outer.partitions.expandedUnits.map((unit) => unit.id), [
-    "agent-activity-standalone:command-execution:command",
+    "agent-activity-group:command-execution:command",
     "agent-activity-standalone:realtime-transcript:realtime-delegation-handoff-1",
   ]);
   assert.equal(outer.collapsedItemCount, 1);
@@ -3069,6 +3102,40 @@ test("context compaction owns Activity without a redundant disclosure toggle", (
   if (activity?.type !== "agent-activity") throw new Error("Expected Activity slot");
   assert.equal(activity.contentUnits[0]?.type === "standalone" ? activity.contentUnits[0].block.type : null, "compaction");
   assert.equal(resolveAgentActivityLayout(activity, true).showToggle, false);
+});
+
+test("latest Activity identity advances for steering without replacing its Turn", () => {
+  const project = (items: TimelineProjectionSource["turns"][number]["items"]) => {
+    const timeline = projectTimeline(source([{
+      id: "turn-steering-placement",
+      status: "streaming",
+      items,
+    }]), createDefaultTimelineProjectorRegistry());
+    return groupTimelineFramesByTurn(timeline).at(-1) ?? null;
+  };
+  const initial = project([
+    { id: "prompt", type: "userMessage", payload: { content: [{ type: "text", text: "Start" }] } },
+  ]);
+  const steered = project([
+    { id: "prompt", type: "userMessage", payload: { content: [{ type: "text", text: "Start" }] } },
+    { id: "steer-1", type: "steeringUserMessage", payload: { status: "accepted", input: [{ type: "text", text: "Also test mobile" }] } },
+  ]);
+  const steeredAgain = project([
+    { id: "prompt", type: "userMessage", payload: { content: [{ type: "text", text: "Start" }] } },
+    { id: "steer-1", type: "steeringUserMessage", payload: { status: "accepted", input: [{ type: "text", text: "Also test mobile" }] } },
+    { id: "steer-2", type: "steeringUserMessage", payload: { status: "accepted", input: [{ type: "text", text: "And Web" }] } },
+  ]);
+
+  assert.equal(initial?.turnKey, steered?.turnKey);
+  assert.equal(deriveTimelineLatestTurnActivityKey(initial), "turn-steering-placement");
+  assert.equal(
+    deriveTimelineLatestTurnActivityKey(steered),
+    "turn-steering-placement:steer-1",
+  );
+  assert.equal(
+    deriveTimelineLatestTurnActivityKey(steeredAgain),
+    "turn-steering-placement:steer-2",
+  );
 });
 
 test("generated images move from live Activity to final assistant content without changing ownership early", () => {

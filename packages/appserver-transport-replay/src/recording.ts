@@ -55,9 +55,9 @@ export class RecordingTransport implements DuplexTransport {
     await this.transport.connect(signal);
   }
 
-  async send(frame: string): Promise<void> {
+  async send(frame: string, signal?: AbortSignal): Promise<void> {
     this.record("client-to-server", frame);
-    await this.transport.send(frame);
+    await this.transport.send(frame, signal);
   }
 
   subscribeMessage(listener: (frame: string) => void): () => void {

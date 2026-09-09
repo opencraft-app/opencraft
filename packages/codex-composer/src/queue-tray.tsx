@@ -32,6 +32,7 @@ export interface ComposerQueueTrayItem {
   readonly state: "submitting" | "queued" | "failed";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  readonly reorderable?: boolean;
   readonly editing: boolean;
   readonly error?: string | null;
 }
@@ -70,7 +71,8 @@ function SortableQueueItem({
   const busy = item.operation !== "idle";
   const sortable = useSortable({
     id: item.id,
-    disabled: !item.actionable || busy || item.editing,
+    disabled:
+      item.reorderable === false || !item.actionable || busy || item.editing,
   });
 
   return (
@@ -92,8 +94,8 @@ function SortableQueueItem({
         ref={sortable.setActivatorNodeRef}
         className="codex-composer-queue-item__drag"
         type="button"
-        aria-label="Reorder queued message"
-        disabled={!item.actionable || busy || item.editing}
+        aria-label={item.reorderable === false ? "Queued message" : "Reorder queued message"}
+        disabled={item.reorderable === false || !item.actionable || busy || item.editing}
         {...sortable.attributes}
         {...sortable.listeners}
       >
@@ -101,11 +103,13 @@ function SortableQueueItem({
           <CircleAlert size={12} aria-hidden="true" />
         ) : (
           <>
-            <GripVertical
-              className="codex-composer-queue-item__grip"
-              size={12}
-              aria-hidden="true"
-            />
+            {item.reorderable === false ? null : (
+              <GripVertical
+                className="codex-composer-queue-item__grip"
+                size={12}
+                aria-hidden="true"
+              />
+            )}
             <CornerDownRight
               className="codex-composer-queue-item__message-icon"
               size={13}

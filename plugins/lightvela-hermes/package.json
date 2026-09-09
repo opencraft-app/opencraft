@@ -5,19 +5,23 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./runtime-entry": "./src/runtime-entry.ts"
+    "./runtime-entry": "./src/runtime-entry.ts",
+    "./transport": "./src/transport/lightvela-hermes-transport.ts"
   },
   "dependencies": {
-    "@opencraft/bot-conversation": "0.1.0",
     "@deepseek-ai/cordis": "4.0.1",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/bot-conversation": "0.1.0",
     "@opencraft/extension-contract": "0.1.0",
-    "@opencraft/extension-runtime": "0.1.0",
     "@opencraft/extension-react": "0.1.0",
+    "@opencraft/extension-runtime": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
     "bson": "7.2.0",
     "lucide-react": "^1.35.0",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.3"
   },
   "devDependencies": {

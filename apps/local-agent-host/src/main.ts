@@ -9,12 +9,9 @@ import { WebSocket, WebSocketServer } from "ws";
 import { DshAppServerAdapter } from "./dsh-appserver-adapter.js";
 import { DshClient, DshClientError } from "./dsh-client.js";
 import { DshSupervisor } from "./dsh-supervisor.js";
+import { HostProcessService } from "./process-service.js";
 
-interface JsonRpcRequest {
-  readonly id: string | number;
-  readonly method: string;
-  readonly params?: unknown;
-}
+type JsonRpcMessage = Record<string, unknown>;
 
 function rpcError(error: unknown): { code: number; message: string; data?: unknown } {
   if (error instanceof DshClientError) return { code: -32001, message: error.message, data: { code: error.code, retryable: error.retryable } };
@@ -60,6 +57,7 @@ export async function startLocalAgentHost(options: {
   });
   const dshUrl = options.dshUrl ?? await supervisor.start();
   const adapter = new DshAppServerAdapter(new DshClient(dshUrl));
+  const processes = new HostProcessService();
   const token = options.token ?? randomBytes(24).toString("base64url");
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -84,26 +82,60 @@ export async function startLocalAgentHost(options: {
     websocketServer.handleUpgrade(request, socket, head, (client) => websocketServer.emit("connection", client, request));
   });
   websocketServer.on("connection", (socket) => {
-    const unsubscribe = adapter.subscribe((method, params) => send(socket, { jsonrpc: "2.0", method, params }));
+    const offered = new Set<string>();
+    const openedThreads = new Set<string>();
+    let unsubscribeInteractions: (() => void) | undefined;
+    const unsubscribe = adapter.subscribe((method, params) => {
+      if (method === "serverRequest/resolved") offered.delete(String((params as { requestId: unknown }).requestId));
+      send(socket, { jsonrpc: "2.0", method, params });
+    });
+    const unsubscribeProcesses = processes.subscribe((method, params) => send(socket, { jsonrpc: "2.0", method, params }));
     socket.on("message", async (data, isBinary) => {
       if (isBinary) { socket.close(1003, "Text frames only"); return; }
-      let request: JsonRpcRequest;
-      try { request = JSON.parse(data.toString("utf8")) as JsonRpcRequest; }
+      let request: JsonRpcMessage;
+      try { request = JSON.parse(data.toString("utf8")) as JsonRpcMessage; }
       catch { send(socket, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON" } }); return; }
-      if ((typeof request.id !== "string" && typeof request.id !== "number") || typeof request.method !== "string") {
+      if (request && typeof request === "object" && typeof request.id === "string" && !("method" in request) && ("result" in request || "error" in request)) {
+        if (!offered.has(request.id)) return;
+        try { await adapter.interactions.respond(request.id, request); }
+        catch (error) {
+          console.error("[opencraft local host] interaction response failed", error);
+          socket.close(1011, "Interaction response failed; reconnect to recover pending requests");
+        }
+        return;
+      }
+      // JSON-RPC notifications (including initialized) have no response.
+      if (request && typeof request === "object" && !("id" in request) && typeof request.method === "string") return;
+      if (!request || typeof request !== "object" || (typeof request.id !== "string" && typeof request.id !== "number") || typeof request.method !== "string") {
         send(socket, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid request" } });
         return;
       }
       try {
-        const result = request.method.startsWith("fs/")
+        const result = request.method.startsWith("process/")
+          ? processes.dispatch(request.method, request.params)
+          : request.method.startsWith("fs/")
           ? await fileRequest(request.method, request.params)
           : await adapter.dispatch(request.method, request.params);
         send(socket, { jsonrpc: "2.0", id: request.id, result });
+        // Initialization (including preflight) must not claim another client's
+        // user interactions. Only a connection opening a thread may answer it.
+        if (["thread/start", "thread/resume", "thread/fork", "turn/start"].includes(request.method) && socket.readyState === WebSocket.OPEN) {
+          const reply = result as { thread?: { id?: string } } | null;
+          const params = request.params as { threadId?: string } | undefined;
+          const threadId = reply?.thread?.id ?? params?.threadId;
+          if (typeof threadId === "string") openedThreads.add(threadId);
+          unsubscribeInteractions?.();
+          unsubscribeInteractions = adapter.interactions.subscribe(interaction => {
+            if (!openedThreads.has(interaction.params.threadId) || offered.has(interaction.id)) return;
+            offered.add(interaction.id);
+            send(socket, { jsonrpc: "2.0", ...interaction });
+          });
+        }
       } catch (error) {
         send(socket, { jsonrpc: "2.0", id: request.id, error: rpcError(error) });
       }
     });
-    socket.once("close", unsubscribe);
+    socket.once("close", () => { unsubscribe(); unsubscribeProcesses(); unsubscribeInteractions?.(); offered.clear(); openedThreads.clear(); });
   });
   try {
     await new Promise<void>((resolvePromise, reject) => {
@@ -115,6 +147,7 @@ export async function startLocalAgentHost(options: {
     });
   } catch (error) {
     adapter.close();
+    processes.close();
     for (const client of websocketServer.clients) client.terminate();
     websocketServer.close();
     if (server.listening) await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
@@ -129,6 +162,7 @@ export async function startLocalAgentHost(options: {
     dshUrl,
     async close(): Promise<void> {
       adapter.close();
+      processes.close();
       for (const client of websocketServer.clients) client.close(1001, "OpenCraft is quitting");
       await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
       await supervisor.stop();

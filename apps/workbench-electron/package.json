@@ -16,7 +16,7 @@
     "@opencraft/daemon-ipc": "0.1.0"
   },
   "scripts": {
-    "build:host": "npm run build --workspace @opencraft/opencraft-daemon && esbuild src/main.ts --bundle --platform=node --format=cjs --external:electron --define:import.meta.url=import_meta_url --banner:js=\"const import_meta_url = require('node:url').pathToFileURL(__filename).href;\" --outfile=dist-host/main.cjs && esbuild src/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-host/preload.cjs",
+    "build:host": "node build-tray.mjs && npm run build --workspace @opencraft/opencraft-daemon && esbuild src/main.ts --bundle --platform=node --format=cjs --external:electron --define:import.meta.url=import_meta_url --banner:js=\"const import_meta_url = require('node:url').pathToFileURL(__filename).href;\" --outfile=dist-host/main.cjs && esbuild src/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-host/preload.cjs",
     "typecheck": "tsc --noEmit",
     "start": "npm run build:host && electron .",
     "package:mac:arm64:zip": "electron-builder --mac zip --arm64",
@@ -29,16 +29,18 @@
     "package:linux:x64": "electron-builder --linux AppImage rpm deb --x64"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "@types/ws": "^8.18.1",
     "electron": "44.1.0",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
-    "@types/ws": "^8.18.1",
     "typescript": "^5.9.3"
   },
   "build": {
     "appId": "ai.lightvela.vela",
     "productName": "OpenCraft",
     "asar": true,
+    "afterPack": "../../scripts/prepare-packaged-pty.cjs",
     "npmRebuild": false,
     "beforePack": "../../scripts/check-desktop-target.cjs",
     "directories": {
@@ -49,6 +51,14 @@
       "package.json"
     ],
     "extraResources": [
+      { "from": "build/tray", "to": "tray", "filter": ["*.png"] },
+      {
+        "from": "../../node_modules/node-pty",
+        "to": "runtime/node_modules/node-pty",
+        "filter": [
+          "**/*"
+        ]
+      },
       {
         "from": "../opencraft-daemon/dist/main.cjs",
         "to": "runtime/opencraft-daemon.cjs"
@@ -56,7 +66,10 @@
       {
         "from": "../workbench-web/dist-electron",
         "to": "renderer",
-        "filter": ["**/*", "!**/*.map"]
+        "filter": [
+          "**/*",
+          "!**/*.map"
+        ]
       },
       {
         "from": "../../runtime/dsh",
@@ -69,7 +82,9 @@
       {
         "from": "../../runtime/dsh/node_modules",
         "to": "runtime/dsh/node_modules",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
@@ -77,7 +92,10 @@
       "icon": "../workbench-expo/ios/OpenCraft/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "target": ["dmg", "zip"]
+      "target": [
+        "dmg",
+        "zip"
+      ]
     },
     "linux": {
       "category": "Development",
@@ -87,7 +105,11 @@
       "vendor": "OpenCraft",
       "synopsis": "OpenCraft agent workbench",
       "syncDesktopName": true,
-      "target": ["AppImage", "rpm", "deb"]
+      "target": [
+        "AppImage",
+        "rpm",
+        "deb"
+      ]
     },
     "dmg": {
       "artifactName": "OpenCraft-${version}-${arch}.${ext}",
