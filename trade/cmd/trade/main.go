@@ -189,7 +189,7 @@ func main() {
 		OrderWriter:           mysqlStore,
 		ShadowClient:          shadowClient,
 		SiteKind:              cfg.SiteKind,
-		RegionOverride:        cfg.RegionOverride,
+		RegionOverride:        cfg.CreditRegionOverride,
 	})
 	var creditUsageSvc *creditusage.Service
 	if cfg.CreditSendResourceURL != "" {
@@ -202,7 +202,7 @@ func main() {
 			),
 			CID:            cfg.CreditSendResourceCID,
 			SiteKind:       cfg.SiteKind,
-			RegionOverride: cfg.RegionOverride,
+			RegionOverride: cfg.CreditRegionOverride,
 		})
 	}
 
@@ -262,7 +262,8 @@ func main() {
 		SiteKind: cfg.SiteKind,
 		// 北京 2 预发布接入 2026-06-12：region 字段 override，与 SiteKind 同路径贯穿到
 		// 上述 5 个下游注入点。
-		RegionOverride: cfg.RegionOverride,
+		RegionOverride:       cfg.RegionOverride,
+		CreditRegionOverride: cfg.CreditRegionOverride,
 	})
 
 	server := &http.Server{
@@ -296,13 +297,13 @@ func main() {
 		}
 	}()
 
-	// v1.7.x 国际站接入：启动日志加 site/region 一行，便于排障时一眼看出当前 Pod
-	// 跳到哪个站点 / 哪个地域（cn=广州 1/100001 / intl=Singapore 9/900001）。
-	// 北京 2 预发布接入 2026-06-12：region 字段受 LIGHTVELA_TRADE_REGION env override（例：
-	// SiteKind=cn + RegionOverride=ap-beijing → 8/800001/北京）。
-	lhRegion := region.Resolve(cfg.SiteKind, cfg.RegionOverride)
-	log.Printf("trade listening on %s (siteKind=%q regionOverride=%q regionId=%d zoneId=%d regionName=%s)",
-		cfg.Addr, cfg.SiteKind, cfg.RegionOverride, lhRegion.RegionID, lhRegion.ZoneID, lhRegion.RegionName)
+	// 启动日志同时输出 Pass/default 与 Credit 的计费地域，便于核对独立地域配置。
+	passRegion := region.Resolve(cfg.SiteKind, cfg.RegionOverride)
+	creditRegion := region.Resolve(cfg.SiteKind, cfg.CreditRegionOverride)
+	log.Printf("trade listening on %s (siteKind=%q passRegionOverride=%q passRegionId=%d passZoneId=%d passRegionName=%s creditRegionOverride=%q creditRegionId=%d creditZoneId=%d creditRegionName=%s)",
+		cfg.Addr, cfg.SiteKind,
+		cfg.RegionOverride, passRegion.RegionID, passRegion.ZoneID, passRegion.RegionName,
+		cfg.CreditRegionOverride, creditRegion.RegionID, creditRegion.ZoneID, creditRegion.RegionName)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen and serve: %v", err)
 	}

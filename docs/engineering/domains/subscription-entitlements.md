@@ -23,6 +23,9 @@
 - 积分包用量使用定点小数存储，并通过带 CAS 租约的每日 outbox 调用 `sendResource`；普通零用量
   也要上报，到期或已归档资源不再推量。
 - 外部计费入向回调按产品类型隔离地域 route：Pass 使用 `jifei-callback-{region}`，Credit 使用 `jifei-credit-callback-{region}`；调整 Credit 的环境落点不能改变 Pass 路由。
+- Trade 出向计费地域也按产品类型隔离：`LIGHTVELA_TRADE_REGION` 控制 Pass/default 链路，
+  `LIGHTVELA_CREDIT_REGION` 仅控制 Credit 询价、下单、退款、资源回调和用量上报；后者未配置时
+  继承前者。单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
 - 同 SP 升配是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
   `trade_order` 保持 `paid_pending_provision`、`trade_flow` 保持 `in_progress`；只有
