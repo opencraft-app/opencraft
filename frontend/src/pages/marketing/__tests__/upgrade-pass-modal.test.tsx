@@ -64,6 +64,7 @@ describe('upgrade checkout modal', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' }));
     await screen.findByText('已支付，套餐升级中');
     expect(success).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新升级结果' })).not.toBeDisabled());
     plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', local_status: 'provisioned', status: 'success', source: 'local' });
     plans.listMyPasses.mockResolvedValue([{ ...pass, bundle_id: 'target' }]);
     fireEvent.click(screen.getByRole('button', { name: '刷新升级结果' }));
@@ -102,8 +103,8 @@ describe('upgrade checkout modal', () => {
   it('keeps an unknown creation locked when no durable server order can be found', async () => {
     window.localStorage.setItem('lightvela-upgrade-v1:u:p', JSON.stringify({ targetBundleId: 'target', phase: 'creating' }));
     mount();
-    await screen.findByText('下单结果待确认，请勿重复下单，请联系支持核对。');
-    fireEvent.click(screen.getByRole('button', { name: '恢复已有订单' }));
+    await screen.findByText('暂时无法前往支付，请先查询订单状态。');
+    fireEvent.click(screen.getByRole('button', { name: '查询订单状态' }));
     await screen.findByRole('alert');
     expect(plans.createModifyOrder).not.toHaveBeenCalled();
   });

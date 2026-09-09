@@ -7,6 +7,7 @@ import type { Pass, PassModifyOption, PassOrderStatus } from '@/domain/types';
 import { useT } from '@/i18n/t';
 import { getBillingErrorCode, resolveBillingErrorMessage } from '@/lib/billing-error';
 import { isGlobal } from '@/lib/region';
+import { isPassUpgradeVisible } from '@/lib/pass-upgrade-rollout';
 import { buildPayPlan, type PayPlan } from '@/lib/wx-pay';
 import { isUpgradeDelivered, readUpgradeCheckout, saveUpgradeCheckout, upgradeCheckoutKey, validUpgradeQuote, type UpgradeCheckoutRecord } from '@/lib/upgrade-checkout';
 
@@ -17,6 +18,12 @@ const quoteFingerprint = (option: PassModifyOption) => JSON.stringify([option.ta
 
 /** Reuses the existing checkout visual language; no alternate catalog or payment mock. */
 export function UpgradePassModal({ pass, targetBundleId, onClose, onSuccess }: Props) {
+  const { session } = useSession();
+  if (!isPassUpgradeVisible(session.user?.id)) return null;
+  return <UpgradePassModalContent pass={pass} targetBundleId={targetBundleId} onClose={onClose} onSuccess={onSuccess} />;
+}
+
+function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: Props) {
   const t = useT();
   const { plans } = useRepositories();
   const { session } = useSession();
@@ -170,7 +177,7 @@ export function UpgradePassModal({ pass, targetBundleId, onClose, onSuccess }: P
       if (concurrentlyCreated) { setRecord(concurrentlyCreated); return; }
       persist({ targetBundleId, phase: 'creating' }); creating = true;
       const order = await plans.createModifyOrder(pass.pass_id, { target_bundle_id: targetBundleId });
-      if (!order.deal_name) throw new Error(t('下单结果待确认，请勿重复下单，请联系支持核对。'));
+      if (!order.deal_name) throw new Error(t('暂时无法确认订单状态，请稍后查询，避免重复付款。'));
       persist({ targetBundleId, phase: 'ordered', dealName: order.deal_name });
       creating = false;
       if (!alive.current) return;
@@ -182,7 +189,7 @@ export function UpgradePassModal({ pass, targetBundleId, onClose, onSuccess }: P
         window.localStorage.removeItem(upgradeCheckoutKey(userId, pass.pass_id));
         setRecord(null); setOption(null); creating = false;
       }
-      if (alive.current) setError(creating ? t('下单结果待确认，请勿重复下单，请联系支持核对。') : resolveBillingErrorMessage(err, t('升级订单处理失败，请稍后重试。')));
+      if (alive.current) setError(creating ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。') : resolveBillingErrorMessage(err, t('升级订单处理失败，请稍后重试。')));
     }
   }
 
@@ -210,7 +217,7 @@ export function UpgradePassModal({ pass, targetBundleId, onClose, onSuccess }: P
       const result = await plans.getModifyCheckout(pass.pass_id);
       if (!alive.current) return;
       if (!result.checkout) {
-        setError(t('尚未找到可恢复的订单，请勿重复下单，请联系支持核对。')); return;
+        setError(t('暂未查询到升级订单，请稍后再次查询。如仍无法支付，请联系客服。')); return;
       }
       persist({ targetBundleId: result.checkout.target_bundle_id, phase: 'ordered', dealName: result.checkout.deal_name });
     } catch (err) { if (alive.current) setError(resolveBillingErrorMessage(err, t('暂时无法确认升级结果，请稍后刷新。'))); }
@@ -223,7 +230,7 @@ export function UpgradePassModal({ pass, targetBundleId, onClose, onSuccess }: P
   return <Dialog open onOpenChange={open => { if (!open && !inFlight.current) onClose(); }}>
     <DialogContent className="max-h-[90dvh] overflow-y-auto rounded-xl border-[#E6E9EF] bg-white p-7 text-[#333] md:w-[480px]">
       <DialogHeader><DialogTitle>{done ? t('升级成功') : t('升级套餐')}</DialogTitle><DialogDescription>
-        {record ? t('支付完成后将继续确认套餐交付，请勿重复下单。') : t('按剩余有效期补差价，升级后到期时间不变。')}
+        {record ? t('支付完成后将为您升级套餐，到期时间不变。') : t('按剩余有效期补差价，升级后到期时间不变。')}
       </DialogDescription></DialogHeader>
       <div className="space-y-5">
         <div className="rounded-lg border border-[#E6E9EF] bg-[#F9F8F7] p-4 text-sm">
@@ -241,7 +248,7 @@ export function UpgradePassModal({ pass, targetBundleId, onClose, onSuccess }: P
         </>}
         {record && <>
           {record.dealName && <p className="break-all text-xs text-[#999]">{t('订单号')}：{record.dealName}</p>}
-          <p role="status" className="font-semibold">{done ? t('目标套餐已生效') : terminal ? t('订单已关闭或失败，请联系支持确认后再操作。') : paid ? t('已支付，套餐升级中') : record.phase === 'creating' ? t('下单结果待确认，请勿重复下单，请联系支持核对。') : t('等待支付')}</p>
+          <p role="status" className="font-semibold">{done ? t('目标套餐已生效') : terminal ? t('订单已关闭或失败，请联系支持确认后再操作。') : paid ? t('已支付，套餐升级中') : record.phase === 'creating' ? t('暂时无法前往支付，请先查询订单状态。') : t('等待支付')}</p>
           {!done && !terminal && !paid && record.dealName && <>
             {bridge && !bridgeExpired && <div className="flex flex-col items-center gap-3"><QRCodeSVG value={bridge.bridgeUrl} size={192} aria-label={t('微信扫码支付')} /><p className="text-sm text-[#999]">{t('请使用微信扫码支付')}</p><a className="text-sm text-[#333] underline" href={bridge.bridgeUrl}>{t('已在微信中？点击支付')}</a></div>}
             {bridgeExpired && <p className="text-sm text-[#999]">{t('支付二维码已过期，请重新获取。')}</p>}
@@ -249,7 +256,7 @@ export function UpgradePassModal({ pass, targetBundleId, onClose, onSuccess }: P
             <button className={secondaryButton} disabled={busy} onClick={() => void continuePayment()}>{busy ? t('正在处理...') : t('继续支付')}</button>
           </>}
           {record.dealName && !done && <button className={secondaryButton} disabled={checking} onClick={() => void checkStatus()}>{checking ? t('正在查询...') : t('刷新升级结果')}</button>}
-          {!record.dealName && <button className={secondaryButton} disabled={busy} onClick={() => void recoverOrder()}>{t('恢复已有订单')}</button>}
+          {!record.dealName && <button className={secondaryButton} disabled={busy} onClick={() => void recoverOrder()}>{t('查询订单状态')}</button>}
           {done && <button className={primaryButton} onClick={onClose}>{t('完成')}</button>}
         </>}
         {error && <p role="alert" className="text-pretty text-sm text-red-600">{error}</p>}
