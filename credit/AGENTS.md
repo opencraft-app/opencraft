@@ -176,6 +176,11 @@ source-facing 位于 `credit/k8s/base/`，deploy-facing 位于 `argocd/services/
 SSM `mono-beijing-sandbox-credit-runtime-secrets`，通过
 `scripts/ssm_manifest.credit.beijing-sandbox.yaml` 导出 SOPS。禁止复用北京 7 的数据库密码。
 
+北京测试环境首次初始化积分包商品时，先执行 `trade-migrate`，再分别使用对应数据库账号执行
+`scripts/seed_trade_beijing_sandbox_credit_definitions.sql` 和
+`scripts/seed_credit_beijing_sandbox_products.sql`。两份 seed 均可幂等重跑；Credit 商品复用北京 7
+已经创建在同一 LLMGateway 控制面的五个 plan。
+
 各环境的 `credit-platform.env` 必须提供 `CREDIT_REGION` 和 `CREDIT_OBJECT_ID_PASSWORD_SUFFIX`，并由公共 Kustomize component 注入运行时 `credit-config`；Credit API 启动时会校验这两个资源 ID 生成参数。
 
 ```bash

@@ -23,3 +23,4 @@ go vet ./...
 - 回调与开通变更需要幂等性测试。
 - 在 provider 的成功创建 contract 满足前，不得调用 `ctl` 开通。
 - 保留已有外部用户和订单标识；不得引入平行身份映射。
+- `trade/migrations` 的版本号必须唯一；新增 migration 前先检查同版本的 `up/down` 文件是否已存在。
