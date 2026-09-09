@@ -16,7 +16,7 @@
 
 ## 稳定不变量
 
-- Pass 升配 checkout 的下单、支付票据重签和已落库订单恢复必须由 CTL 校验本人归属；匿名微信桥仅接受精确绑定的支付票据，不得开放建单或恢复查询。具体契约见[订阅购买与续费](../journeys/subscription-purchase-renewal.md#pass-升配-web-checkout)。
+- Pass 升配 checkout 每次明确确认支付都由 CTL 校验本人归属、当前状态和合法目标后新建订单，不以历史未付款订单复用或查询作为前置条件。支付票据重签及兼容的订单恢复接口仍须校验本人归属；匿名微信桥仅接受精确绑定的支付票据，不得开放建单或恢复查询。不同订单争用同一 Pass 仍由现有 flow/CAS 保护，已交付订单仅凭匹配的持久化回执幂等重放。具体契约见[订阅购买与续费](../journeys/subscription-purchase-renewal.md#pass-升配-web-checkout)。
 
 - Sandbox 请求路径不创建/重装机器，只分配/释放；后台 worker 执行重置与补货。
 - 已分配实例的同 SP 升配走持久化变配账本，状态只允许

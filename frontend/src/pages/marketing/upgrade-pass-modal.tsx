@@ -29,12 +29,15 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
   const { plans } = useRepositories();
   const { session } = useSession();
   const userId = session.user?.id ?? '';
-  const [record, setRecord] = useState<UpgradeCheckoutRecord | null>(() => typeof window === 'undefined' ? null : readUpgradeCheckout(window.localStorage, userId, pass.pass_id));
+  const [record, setRecord] = useState<UpgradeCheckoutRecord | null>(() => {
+    const previous = typeof window === 'undefined' ? null : readUpgradeCheckout(window.localStorage, userId, pass.pass_id);
+    // An unknown submission is not a confirmed abandoned/unpaid checkout.
+    return previous?.phase === 'creating' ? previous : null;
+  });
   const effectiveTarget = record?.targetBundleId ?? targetBundleId;
   const [option, setOption] = useState<PassModifyOption | null>(null);
   const [quoteAttempt, setQuoteAttempt] = useState(0);
   const [pricing, setPricing] = useState(true);
-  const [recovering, setRecovering] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -55,24 +58,6 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
 
   useEffect(() => {
     let cancelled = false;
-    setRecovering(true);
-    void plans.getModifyCheckout(pass.pass_id).then(result => {
-      if (cancelled) return;
-      if (result.checkout) {
-        const restored: UpgradeCheckoutRecord = { targetBundleId: result.checkout.target_bundle_id, phase: 'ordered', dealName: result.checkout.deal_name };
-        saveUpgradeCheckout(window.localStorage, userId, pass.pass_id, restored);
-        setRecord(restored);
-      }
-      setRecovering(false);
-    }).catch(err => {
-      if (!cancelled) { setPricing(false); setError(resolveBillingErrorMessage(err, t('暂时无法确认升级结果，请稍后刷新。'))); }
-    });
-    return () => { cancelled = true; };
-  }, [pass.pass_id, plans, userId, quoteAttempt, t]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (recovering) return;
     if (record) { setPricing(false); return; }
     setPricing(true); setOption(null); setError(null);
     void plans.listModifyBundles(pass.pass_id).then(result => {
@@ -85,7 +70,7 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
     }).catch(err => { if (!cancelled) setError(resolveBillingErrorMessage(err, t('升级询价失败，请稍后重试。'))); })
       .finally(() => { if (!cancelled) setPricing(false); });
     return () => { cancelled = true; };
-  }, [effectiveTarget, pass.bundle_id, pass.pass_id, plans, quoteAttempt, record, recovering, t]);
+  }, [effectiveTarget, pass.bundle_id, pass.pass_id, plans, quoteAttempt, record, t]);
 
   const checkStatus = useCallback(async () => {
     if (!record?.dealName || statusInFlight.current || finished.current) return;
@@ -104,7 +89,8 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
       }
       if (isUpgradeDelivered(status, passes.find(item => item.pass_id === pass.pass_id && item.user_id === userId), pass.pass_id, record.targetBundleId)) {
         finished.current = true; setDone(true); setError(null);
-        window.localStorage.removeItem(upgradeCheckoutKey(userId, pass.pass_id));
+        const current = readUpgradeCheckout(window.localStorage, userId, pass.pass_id);
+        if (current?.dealName === record.dealName) window.localStorage.removeItem(upgradeCheckoutKey(userId, pass.pass_id));
         await callbacks.current.onSuccess();
       }
     } catch (err) {
@@ -163,7 +149,7 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
     let creating = false;
     try {
       const existing = readUpgradeCheckout(window.localStorage, userId, pass.pass_id);
-      if (existing) { setRecord(existing); return; }
+      if (existing?.phase === 'creating') { setRecord(existing); return; }
       // Requote immediately before order creation; changed amounts require another explicit click.
       const latest = await plans.listModifyBundles(pass.pass_id);
       if (!alive.current) return;
@@ -175,7 +161,7 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
         setOption(fresh); setError(t('差价已更新，请确认最新金额后再次提交。')); return;
       }
       const concurrentlyCreated = readUpgradeCheckout(window.localStorage, userId, pass.pass_id);
-      if (concurrentlyCreated) { setRecord(concurrentlyCreated); return; }
+      if (concurrentlyCreated?.phase === 'creating') { setRecord(concurrentlyCreated); return; }
       persist({ targetBundleId, phase: 'creating' }); creating = true;
       const order = await plans.createModifyOrder(pass.pass_id, { target_bundle_id: targetBundleId });
       if (!order.deal_name) throw new Error(t('暂时无法确认订单状态，请稍后查询，避免重复付款。'));
@@ -211,20 +197,6 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
     finally { inFlight.current = false; if (alive.current) setBusy(false); }
   }
 
-  async function recoverOrder() {
-    if (inFlight.current) return;
-    inFlight.current = true; setBusy(true); setError(null);
-    try {
-      const result = await plans.getModifyCheckout(pass.pass_id);
-      if (!alive.current) return;
-      if (!result.checkout) {
-        setError(t('暂未查询到升级订单，请稍后再次查询。如仍无法支付，请联系客服。')); return;
-      }
-      persist({ targetBundleId: result.checkout.target_bundle_id, phase: 'ordered', dealName: result.checkout.deal_name });
-    } catch (err) { if (alive.current) setError(resolveBillingErrorMessage(err, t('暂时无法确认升级结果，请稍后刷新。'))); }
-    finally { inFlight.current = false; if (alive.current) setBusy(false); }
-  }
-
   const paid = zeroPaid || orderStatus?.status === 'paid' || orderStatus?.status === 'success';
   const terminal = orderStatus?.status === 'cancelled' || orderStatus?.status === 'failed';
   const bridgeExpired = bridge !== null && now >= bridge.expiresAt;
@@ -232,12 +204,12 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
   const resumePayment = useRef(continuePayment);
   resumePayment.current = continuePayment;
   useEffect(() => {
-    if (!record?.dealName || recovering || busy || done || paid || terminal || orderStatus?.status !== 'pending') return;
+    if (!record?.dealName || busy || done || paid || terminal || orderStatus?.status !== 'pending') return;
     if (isGlobal ? Boolean(payUrl) : Boolean(bridge && !bridgeExpired)) return;
     if (Date.now() < paymentRetryAt.current) return;
     paymentRetryAt.current = Date.now() + 3000;
     void resumePayment.current();
-  }, [record?.dealName, recovering, busy, done, paid, terminal, orderStatus?.status, payUrl, bridge, bridgeExpired, now]);
+  }, [record?.dealName, busy, done, paid, terminal, orderStatus?.status, payUrl, bridge, bridgeExpired, now]);
   return <Dialog open onOpenChange={open => { if (!open && !inFlight.current) onClose(); }}>
     <DialogContent className="max-h-[90dvh] overflow-y-auto rounded-xl border-[#E6E9EF] bg-white p-7 text-[#333] md:w-[480px]">
       <DialogHeader><DialogTitle>{done ? t('升级成功') : t('升级套餐')}</DialogTitle><DialogDescription>
@@ -254,18 +226,17 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
             {(option.modify_price.tax_price ?? 0) > 0 && <p className="text-sm text-[#999]">{t('其中税费')}：{option.modify_price.currency} {((option.modify_price.tax_price ?? 0) / 100).toFixed(2)}</p>}
             <div className="flex items-center justify-between"><span>{t('应补差价')}</span><strong className="text-2xl">{option.modify_price.currency} {(option.modify_price.real_total_cost / 100).toFixed(2)}</strong></div>
           </div>}
-          <button className={primaryButton} disabled={busy || pricing || recovering || !option || !userId || userId !== pass.user_id} onClick={() => void submit()}>{busy ? t('正在处理...') : t('确认升级并支付')}</button>
+          <button className={primaryButton} disabled={busy || pricing || !option || !userId || userId !== pass.user_id} onClick={() => void submit()}>{busy ? t('正在处理...') : t('确认升级并支付')}</button>
           {!pricing && !option && <button className={secondaryButton} onClick={() => setQuoteAttempt(value => value + 1)}>{t('重新询价')}</button>}
         </>}
         {record && <>
           {record.dealName && <p className="break-all text-xs text-[#999]">{t('订单号')}：{record.dealName}</p>}
-          <p role="status" className="font-semibold">{done ? t('目标套餐已生效') : terminal ? t('订单已关闭或失败，请联系支持确认后再操作。') : paid ? t('已支付，套餐升级中') : record.phase === 'creating' ? t('暂时无法前往支付，请先查询订单状态。') : t('等待支付')}</p>
+          <p role="status" className="font-semibold">{done ? t('目标套餐已生效') : terminal ? t('订单已关闭或失败，请联系支持确认后再操作。') : paid ? t('已支付，套餐升级中') : record.phase === 'creating' ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。') : t('等待支付')}</p>
           {!done && !terminal && !paid && record.dealName && <>
             {bridge && !bridgeExpired && <div className="flex flex-col items-center gap-3"><QRCodeSVG value={bridge.bridgeUrl} size={192} aria-label={t('微信扫码支付')} /><p className="text-sm text-[#999]">{t('请使用微信扫码支付')}</p></div>}
             {(!bridge || bridgeExpired) && !payUrl && <p className="text-sm text-[#999]">{t('正在处理...')}</p>}
             {payUrl && <a className="block rounded-full bg-[#202020] px-5 py-3 text-center text-sm font-semibold text-white" href={payUrl} target="_blank" rel="noopener noreferrer">{t('前往支付')}</a>}
           </>}
-          {!record.dealName && <button className={secondaryButton} disabled={busy} onClick={() => void recoverOrder()}>{t('查询订单状态')}</button>}
           {done && <button className={primaryButton} onClick={onClose}>{t('完成')}</button>}
         </>}
         {error && <p role="alert" className="text-pretty text-sm text-red-600">{error}</p>}
