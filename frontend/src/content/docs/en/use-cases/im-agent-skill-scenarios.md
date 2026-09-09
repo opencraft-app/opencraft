@@ -94,13 +94,13 @@ For an AI companion, start with:
 
 Check whether the Agent called the expected Skill, used the right reference material, and stopped to explain limitations when it was uncertain.
 
-### 5. Use automations for repeatable work
+### 5. Use scheduled tasks for repeatable work
 
 Welcome messages, FAQs, summaries, and reminders can use different triggers.
 
-Use [Automations](../configuration/automation.md) for work that should run at a fixed time, such as sending a daily community summary or reminding a support team about unresolved cases.
+Use [Scheduled Tasks](../configuration/automation.md) for work that should run at a fixed time, such as sending a daily community summary or reminding a support team about unresolved cases.
 
-Confirm the notification method and target channel for each automation instead of assuming every channel can receive the same proactive message type.
+Confirm the notification method and target channel for each scheduled task instead of assuming every channel can receive the same proactive message type.
 
 ## Recommendations by scenario
 

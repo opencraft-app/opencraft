@@ -1,6 +1,6 @@
 ## Ringkasan
 
-**"Otak" sebuah Hermes Agent dapat diganti, tetapi yang diganti hanyalah lapisan model, bukan seluruh Agent. Lapisan model menentukan cara berpikir kali ini — mengurai permintaan, merencanakan langkah, memilih tool yang dipanggil, dan menyusun kalimat jawabannya. Lapisan Agent menjaga pemikiran itu berlanjut sepanjang waktu: identitas (`SOUL.md`), profil pengguna (`USER.md`), fakta lintas sesi (`MEMORY.md` dan `memories/`), metode yang tertangkap (`skills/`), kanal pesan, otomasi, dan direktori kerja semuanya hidup di luar model. Karena itulah mengganti model tidak menghapusnya. Di LightVela, satu Agent memakai tepat satu model aktif pada satu waktu, dan mengganti model tidak menghapus memori, file cloud storage, skill, maupun pengaturan otomasi — ia hanya mengubah mesin di balik balasan berikutnya. Jika sebuah Agent terasa seperti orang asing setelah penggantian, penyebabnya nyaris selalu perbedaan perilaku dalam mengikuti instruksi, mengompresi konteks, dan menyusun kalimat pada model baru, bukan memori yang hilang.**
+**"Otak" sebuah Hermes Agent dapat diganti, tetapi yang diganti hanyalah lapisan model, bukan seluruh Agent. Lapisan model menentukan cara berpikir kali ini — mengurai permintaan, merencanakan langkah, memilih tool yang dipanggil, dan menyusun kalimat jawabannya. Lapisan Agent menjaga pemikiran itu berlanjut sepanjang waktu: identitas (`SOUL.md`), profil pengguna (`USER.md`), fakta lintas sesi (`MEMORY.md` dan `memories/`), metode yang tertangkap (`skills/`), kanal pesan, tugas terjadwal, dan direktori kerja semuanya hidup di luar model. Karena itulah mengganti model tidak menghapusnya. Di LightVela, satu Agent memakai tepat satu model aktif pada satu waktu, dan mengganti model tidak menghapus memori, file cloud storage, skill, maupun pengaturan tugas terjadwal — ia hanya mengubah mesin di balik balasan berikutnya. Jika sebuah Agent terasa seperti orang asing setelah penggantian, penyebabnya nyaris selalu perbedaan perilaku dalam mengikuti instruksi, mengompresi konteks, dan menyusun kalimat pada model baru, bukan memori yang hilang.**
 
 ---
 
@@ -77,10 +77,10 @@ Memory bukan append-only selamanya. Ia dipelihara melalui operasi atomik `add` /
 
 `skills/` menyimpan prosedur standar untuk "ketika situasi X terjadi, lakukan ini." Setiap `SKILL.md` biasanya membawa YAML frontmatter yang mendeklarasikan kondisi pemicunya. Ini adalah memori prosedural, jalur yang terpisah dari Memory deklaratif — lihat "Memory Bukan Skill: Bagaimana Hermes Agent Memisahkan Memori Faktual dan Prosedural."
 
-### 3.5 Konektivitas dan penjadwalan: kanal, otomasi, direktori kerja
+### 3.5 Konektivitas dan penjadwalan: kanal, tugas terjadwal, direktori kerja
 
 - **Kanal** menentukan dari pintu masuk mana Agent menerima pesan dan ke mana hasilnya dikirimkan.
-- **Otomasi** menentukan pekerjaan apa yang ia selesaikan ketika Anda tidak menanyakan apa pun.
+- **Tugas Terjadwal** menentukan pekerjaan apa yang ia selesaikan ketika Anda tidak menanyakan apa pun.
 - **Direktori kerja** menentukan di mana input dan output tugas berada, dan di mana batasnya.
 
 Ketiganya adalah konfigurasi lapisan Agent, independen dari model mana yang sedang aktif.
@@ -107,7 +107,7 @@ Bagian di atas menjelaskan mekanismenya. Bagian ini menjelaskan perilaku produk 
 
 **Satu Agent memakai tepat satu model aktif pada satu waktu.** Mengganti berarti memilih model terkonfigurasi mana yang aktif saat ini — ini tidak membuat Agent baru. Anda tidak perlu beberapa Agent hanya untuk memakai beberapa model.
 
-**Mengganti tidak menghapus memori, file cloud storage, skill, maupun pengaturan otomasi.** Penggantian model hanya mengubah mesin yang dipakai untuk balasan berikutnya. Ia tidak memindahkan riwayat chat, tidak menulis ulang file di cloud storage, dan tidak mengubah konfigurasi skill serta otomasi.
+**Mengganti tidak menghapus memori, file cloud storage, skill, maupun pengaturan tugas terjadwal.** Penggantian model hanya mengubah mesin yang dipakai untuk balasan berikutnya. Ia tidak memindahkan riwayat chat, tidak menulis ulang file di cloud storage, dan tidak mengubah konfigurasi skill serta tugas terjadwal.
 
 **Mempersiapkan dan mengonfirmasi penggantian**, mengikuti alur yang terdokumentasi:
 
@@ -116,7 +116,7 @@ Bagian di atas menjelaskan mekanismenya. Bagian ini menjelaskan perilaku produk 
 3. Setelah berganti, kirim pesan uji itu di chat lalu pastikan Agent membalas dan konsol menampilkan model yang Anda pilih.
 4. Jika balasan pertama setelah penggantian sedikit lambat, tunggu sebentar lalu coba sekali lagi sebelum mengubah apa pun.
 
-**Satu koreksi atas miskonsepsi umum**: konfigurasi sebuah otomasi terdiri dari nama, jadwal (hari tetap dalam seminggu, interval tetap, atau sekali jalan — pilih salah satu), instruksi tugas, jendela waktu aktif, dan kanal notifikasi. **Tidak ada kolom "sematkan otomasi ini ke model tertentu".** Jadi saran bahwa Anda harus menelusuri otomasi Anda lalu menyinkronkan ulang modelnya setelah penggantian tidak berlaku. Yang layak ditinjau setelah penggantian adalah kualitas keluaran tugas, bukan kolom model yang tidak ada.
+**Satu koreksi atas miskonsepsi umum**: konfigurasi sebuah tugas terjadwal terdiri dari nama, jadwal (hari tetap dalam seminggu, interval tetap, atau sekali jalan — pilih salah satu), instruksi tugas, jendela waktu aktif, dan kanal notifikasi. **Tidak ada kolom "sematkan tugas terjadwal ini ke model tertentu".** Jadi saran bahwa Anda harus menelusuri tugas terjadwal Anda lalu menyinkronkan ulang modelnya setelah penggantian tidak berlaku. Yang layak ditinjau setelah penggantian adalah kualitas keluaran tugas, bukan kolom model yang tidak ada.
 
 ---
 
@@ -160,7 +160,7 @@ Jika Agent tidak dapat bekerja setelah penggantian, telusuri masalahnya dengan u
 Hermes memisahkan model dari Agent pada tingkat mekanisme, tetapi ia masih menyasar orang yang nyaman mengelola file Markdown dan lingkungan lokal secara langsung. Arah LightVela adalah menjadikan pemisahan itu sebagai pengalaman produk default:
 
 - **Model adalah pengaturan yang dapat diganti**, bukan keputusan sekali jalan yang terkunci saat penyiapan.
-- **Memori, skill, cloud storage, dan otomasi adalah aset pengguna** yang tetap stabil melewati penggantian model, sehingga meningkatkan versi tidak pernah berarti memulai dari awal.
+- **Memori, skill, cloud storage, dan tugas terjadwal adalah aset pengguna** yang tetap stabil melewati penggantian model, sehingga meningkatkan versi tidak pernah berarti memulai dari awal.
 - **Penggantian dapat diverifikasi**: konsol menampilkan model aktif, dan satu pesan uji di chat memastikan penggantiannya berhasil.
 - **Kegagalan dapat dilacak**: Diagnostik menyimpan log terbaru, dan itulah cara Anda mengetahui apakah masalahnya ada pada model, konfigurasinya, atau tugas itu sendiri.
 
@@ -173,6 +173,6 @@ Hasilnya, kemajuan model menjangkau Anda secara langsung, sementara apa yang sud
 - Sebuah Agent memiliki setidaknya tiga lapisan: **lapisan model** yang dapat diganti, **runtime** yang berjalan lama, dan **aset jangka panjang** yang terus terkumpul.
 - Lapisan model menangani interpretasi, perencanaan, pemanggilan tool, dan ekspresi untuk giliran saat ini. Ia tidak menyimpan preferensi, menjalankan jadwal, atau mengelola kanal.
 - `SOUL.md`, `USER.md`, `MEMORY.md`, `memories/`, `skills/`, dan direktori kerja semuanya hidup di luar model, sehingga mengganti model tidak membawanya serta.
-- Di LightVela, satu Agent memiliki satu model aktif pada satu waktu; mengganti tidak menghapus memori, cloud storage, skill, maupun otomasi.
-- Otomasi tidak memiliki pengaturan "model yang disematkan", sehingga klaim bahwa Anda harus menyinkronkan ulang model otomasi setelah penggantian tidak akurat.
+- Di LightVela, satu Agent memiliki satu model aktif pada satu waktu; mengganti tidak menghapus memori, cloud storage, skill, maupun tugas terjadwal.
+- Tugas Terjadwal tidak memiliki pengaturan "model yang disematkan", sehingga klaim bahwa Anda harus menyinkronkan ulang model tugas terjadwal setelah penggantian tidak akurat.
 - Rasa berbeda setelah penggantian biasanya berasal dari perbedaan dalam mengikuti instruksi, mengompresi konteks, dan menyusun kalimat — bukan memori yang hilang. Verifikasi dengan satu fakta yang sudah Anda ketahui.

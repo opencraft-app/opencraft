@@ -122,11 +122,13 @@
     var main = document.querySelector('.hero__line--main');
     var prefix = document.querySelector('.hero__line--dynamic .hero__prefix');
     var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
+    var suffix = document.querySelector('.hero__line--dynamic .hero__suffix');
     var next = INITIAL;
     if (!shouldKeepNaturalText && main) next = splitChars(main, next);
     if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + SEGMENT_GAP);
     var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;
     if (wrap) wrap.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
+    if (suffix) suffix.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
     var root = document.documentElement;
     var afterText = rotatorDelay + (shouldKeepNaturalText ? 0 : 600) + 200;
     root.style.setProperty('--cta-delay', afterText + 'ms');

@@ -48,7 +48,7 @@ LightVelaでは、HermesをTelegramに接続し、繰り返し行うワークフ
 
 LightVelaはまた、エージェントの設定をより直接的に示します。あなたは[モデル](https://lightvela.ai/docs/configuration/model)を選択したり、[チャンネル](https://lightvela.ai/docs/configuration)に接続したり、構成コンソールでHermesを[スキル](https://lightvela.ai/docs/configuration/skill)を通じて拡張することができます。
 
-エージェントが同じ種類の作業を繰り返し行う必要がある場合、LightVelaの[自動化](https://lightvela.ai/docs/configuration/automation)そのパターンを、毎回手動で再起動するのではなく、エージェントの操作ルーチンの一部にします。
+エージェントが同じ種類の作業を繰り返し行う必要がある場合、LightVelaの[スケジュールタスク](https://lightvela.ai/docs/configuration/automation)そのパターンを、毎回手動で再起動するのではなく、エージェントの操作ルーチンの一部にします。
 
 ## ChatGPTがより適している場合
 

@@ -26,6 +26,10 @@ master 源码
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - Secret 值不进 Git、日志、渲染输出或文档。
 - DB migration/seed 不塞进应用启动；使用受控 GitOps job 与明确回滚。
+- migration version 一旦被任一长期环境记入 `schema_migrations` 即视为已占用；后续把该 SQL
+  合并进较早版本或从源码删除，都不能再次复用这个编号。新 schema 变更使用未占用的新版本，
+  版本号允许不连续；环境已紧急补过同一 DDL 时，forward migration 应幂等收敛并正常推进版本，
+  不直接删除或伪造迁移记账。
 - release plan 检查 merge commit 的 source diff 时，必须比较 merge 结果与第一父提交；不能依赖
   `git diff-tree <merge-commit>` 的默认输出，否则文件变更可能被静默识别为空，导致依赖 source diff
   的 migration 与依赖门禁漏报。
@@ -78,6 +82,22 @@ StatefulSetPlus manifest 中的
 Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与 Pass 的
 `jifei-callback-<region>` 共用目标配置。`tkexgz` 与 `tkexsg` 生产 workload 必须显式声明
 全部 Credit 地域回调目标；北京联调阶段统一为 `https://lightclaw.tech`，避免依赖镜像内默认值。
+
+## CloudLadder HMAC 分阶段发布
+
+CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直接全局切换到 `required`：
+
+1. 先发布 `optional` 网关。无签名旧客户端继续工作，携带部分或错误签名的请求被拒绝。
+2. 再发布 Trade 等调用方签名，并从网关审计确认正常请求稳定显示已验证 caller。
+3. 为每个环境核对调用方 Secret 与对应 tkex 网关 Secret 的安全摘要一致；不得输出明文。
+4. 将计费、Credit、账号回调和测试 devtunnel 明确归入兼容路由，避免强认证误拦外部回调。
+5. 从匿名白名单移除 jifei、点石和 Billing CloudAPI 等敏感出向路由，完成负向探测后再切
+   `required`。
+
+密钥交付继续遵循 SSM → `master` SOPS → `gitops` SOPS → Argo Sync。只更新 SSM 不会改变
+运行中 Pod；只发布 Trade 而未发布支持相同签名协议的 CloudLadder，也不能作为切换完成。
+`required` 放行前必须同时证明：匿名敏感路由返回 401、合法签名请求成功、计费回调仍成功，
+并检查目标环境没有遗留未配置 HMAC 的 Trade 实例。
 
 ## Secret 交付
 

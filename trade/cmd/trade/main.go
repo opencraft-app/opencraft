@@ -85,9 +85,10 @@ func main() {
 		cfg.JifeiCGWGatewayURL,
 		cfg.JifeiCGWXQCloudUserID,
 		jifeiclient.Options{
-			BillingAPIGWBaseURL: cfg.JifeiBillingAPIGWURL,
-			BillingAppID:        cfg.JifeiBillingAppID,
-			BillingAppSecret:    cfg.JifeiBillingAppSecret,
+			BillingAPIGWBaseURL:   cfg.JifeiBillingAPIGWURL,
+			BillingAppID:          cfg.JifeiBillingAppID,
+			BillingAppSecret:      cfg.JifeiBillingAppSecret,
+			CloudLadderHMACSecret: cfg.CloudLadderHMACSecret,
 			// v1.7.x 国际站接入 A3：出向 envelope.interface.extraPara 按 site 注入
 			// site / language（intl → site="2" language="en"；cn / 空 / 非法 → 不注入）。
 			SiteKind: cfg.SiteKind,
@@ -103,7 +104,7 @@ func main() {
 			CloudLadder: cloudbillingclient.CloudLadderConfig{
 				GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
 				RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
-				Secret:         cfg.BillingCloudAPICloudLadderHMACSecret,
+				Secret:         cfg.CloudLadderHMACSecret,
 			},
 		})
 		if billingErr != nil {
@@ -129,7 +130,10 @@ func main() {
 		dianshiClient = dianshiclient.New(
 			cfg.DianshiPriceBaseURL,
 			cfg.DianshiOrderBaseURL,
-			dianshiclient.Options{Preview: cfg.DianshiPreview},
+			dianshiclient.Options{
+				Preview:               cfg.DianshiPreview,
+				CloudLadderHMACSecret: cfg.CloudLadderHMACSecret,
+			},
 		)
 		activityResolver = activity.NewResolver(mysqlStore)
 		log.Printf("[dianshi] activated: priceBaseURL=%s orderBaseURL=%s",

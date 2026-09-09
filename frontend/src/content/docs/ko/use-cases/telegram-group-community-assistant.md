@@ -57,10 +57,10 @@
 |---|---|---|
 | 자주 묻는 질문 | `@bot_username answer only from the prepared FAQ` | 답변은 준비된 자료를 사용하거나 명확하게 사람의 전달을 요청합니다 |
 | 토론 요약 | `@bot_username summarize decisions, action items, owners, and open questions` | 응답은 확인된 결정과 해결되지 않은 항목을 구분합니다 |
-| 알림 초안 | `@bot_username draft a reminder with time, audience, purpose, and cancellation method` | 자동 작업을 사용하여 보내기 전에 초안을 검토하세요 |
+| 알림 초안 | `@bot_username draft a reminder with time, audience, purpose, and cancellation method` | 예약 작업을 사용하여 보내기 전에 초안을 검토하세요 |
 
 검색, 요약 또는 예약된 콘텐츠의 경우 신뢰할 수 있는 스킬을 선택하고 [스킬 구성](../configuration/skill.md)에서 해당 권한을 검토하세요.
-예약된 메시지에 사용하기 전에 지원되는 대상 채널에서 자동 작업을 별도로 검증하세요.
+예약된 메시지에 사용하기 전에 지원되는 대상 채널에서 예약 작업을 별도로 검증하세요.
 
 ## 안전 및 작동 경계
 

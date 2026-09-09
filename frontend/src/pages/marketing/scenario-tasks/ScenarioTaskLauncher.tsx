@@ -351,7 +351,7 @@ export function ScenarioTaskLauncher({ packs, children }: ScenarioTaskLauncherPr
       return;
     }
     if (jobLimitReached) {
-      showError(t("自动任务数量已达上限，请先删除不需要的任务后再执行。"));
+      showError(t("定时任务数量已达上限，请先删除不需要的任务后再执行。"));
       return;
     }
     const pack = getScenarioTaskPack(draft.scenarioId);
@@ -364,7 +364,7 @@ export function ScenarioTaskLauncher({ packs, children }: ScenarioTaskLauncherPr
       selectedSkill: draft.skillIds[0] ?? "",
     });
     if (isDuplicateScenarioDraft(activeJobs, nextDraft)) {
-      showError(t("相同设置已在运行，请到“我的自动任务”中修改。"));
+      showError(t("相同设置已在运行，请到“我的定时任务”中修改。"));
       return;
     }
     setScenarioDraft(nextDraft);
@@ -404,13 +404,13 @@ export function ScenarioTaskLauncher({ packs, children }: ScenarioTaskLauncherPr
       return;
     }
     if (isDuplicateScenarioDraft(activeJobs, draft)) {
-      showError(t("相同设置已在运行，请到“我的自动任务”中修改。"));
+      showError(t("相同设置已在运行，请到“我的定时任务”中修改。"));
       return;
     }
     setScenarioDraft(draft);
     const scenarioTrialJob = jobs.find((job) => isScenarioPreviewJobName(draft, job.name) && isScenarioOnceCronJob(job));
     if (jobLimitReached && !scenarioTrialJob) {
-      showError(t("自动任务数量已达上限，请先删除不需要的任务后再启用场景"));
+      showError(t("定时任务数量已达上限，请先删除不需要的任务后再启用场景"));
       return;
     }
     setScenarioMutationStatus("enabling");
@@ -447,12 +447,12 @@ export function ScenarioTaskLauncher({ packs, children }: ScenarioTaskLauncherPr
       clearPendingScenarioInstall();
       setScenarioInstallPack(null);
       setScenarioMutationStatus(null);
-      showNotice(t("已添加为自动任务，后续会按设置频率提醒"), "success");
+      showNotice(t("已添加为定时任务，后续会按设置频率提醒"), "success");
     } catch (err) {
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       setScenarioMutationStatus(null);
       setScenarioInstallPack(getScenarioTaskPack(draft.scenarioId));
-      showError(t("添加场景自动任务失败：{{message}}", { message }));
+      showError(t("添加场景定时任务失败：{{message}}", { message }));
     }
   }, [activeJobs, botId, continueAfterPrerequisites, jobLimitReached, jobs, refreshJobs, showError, showNotice, t]);
 

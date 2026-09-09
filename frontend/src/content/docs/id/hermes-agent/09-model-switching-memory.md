@@ -1,6 +1,6 @@
 ## Ringkasan
 
-**Mengganti model tidak membuat Hermes Agent melupakan Anda, karena model, persona, dan memori adalah tiga lapisan yang disimpan terpisah: model menangani reasoning dan generasi, `SOUL.md` mendefinisikan peran dan batas ekspresi, dan `USER.md` plus `MEMORY.md` (dengan `memories/`) memegang profil pengguna serta fakta lintas sesi. Di LightVela, mengganti model hanya mengubah mesin di balik balasan berikutnya — ia tidak menghapus memori, file cloud storage, skill, maupun pengaturan otomasi, dan ia tidak memindahkan riwayat chat. Setelahnya mungkin memang "terasa berbeda", tetapi itu berasal dari kecenderungan model baru dalam mengikuti instruksi, mengompresi konteks, panjang jawaban, dan pemanggilan tool, bukan dari kehilangan data. Ada tepat satu cara untuk membedakannya: tanyakan fakta yang Anda yakin seharusnya ia ketahui. Jika ia menjawab, yang Anda lihat adalah perbedaan gaya; jika ia tidak bisa, baru selidiki lapisan memorinya.**
+**Mengganti model tidak membuat Hermes Agent melupakan Anda, karena model, persona, dan memori adalah tiga lapisan yang disimpan terpisah: model menangani reasoning dan generasi, `SOUL.md` mendefinisikan peran dan batas ekspresi, dan `USER.md` plus `MEMORY.md` (dengan `memories/`) memegang profil pengguna serta fakta lintas sesi. Di LightVela, mengganti model hanya mengubah mesin di balik balasan berikutnya — ia tidak menghapus memori, file cloud storage, skill, maupun pengaturan tugas terjadwal, dan ia tidak memindahkan riwayat chat. Setelahnya mungkin memang "terasa berbeda", tetapi itu berasal dari kecenderungan model baru dalam mengikuti instruksi, mengompresi konteks, panjang jawaban, dan pemanggilan tool, bukan dari kehilangan data. Ada tepat satu cara untuk membedakannya: tanyakan fakta yang Anda yakin seharusnya ia ketahui. Jika ia menjawab, yang Anda lihat adalah perbedaan gaya; jika ia tidak bisa, baru selidiki lapisan memorinya.**
 
 ---
 
@@ -30,7 +30,7 @@ Pertama, jelaskan dengan presisi apa yang sebenarnya diubah oleh tindakan "mengg
 
 Poin kuncinya: **keempat lapisan terakhir semuanya hidup di luar model.** Ketika model diganti, file dan direktori itu tetap persis di tempatnya, dan model baru membaca serta menerapkannya.
 
-Inilah sebabnya dokumentasi dapat menyatakan terang-terangan bahwa mengganti model tidak menghapus memori Agent, file cloud storage, skill, maupun pengaturan otomasi — itu bukan fitur pelindung yang ditambahkan seseorang, itu konsekuensi alami dari penyimpanan berlapis. Untuk pembagian tugas selengkapnya, lihat "Bisakah Otak Hermes Agent Diganti? Lapisan Model vs Lapisan Agent."
+Inilah sebabnya dokumentasi dapat menyatakan terang-terangan bahwa mengganti model tidak menghapus memori Agent, file cloud storage, skill, maupun pengaturan tugas terjadwal — itu bukan fitur pelindung yang ditambahkan seseorang, itu konsekuensi alami dari penyimpanan berlapis. Untuk pembagian tugas selengkapnya, lihat "Bisakah Otak Hermes Agent Diganti? Lapisan Model vs Lapisan Agent."
 
 ---
 
@@ -101,10 +101,10 @@ Urutan ini mencakup sebagian besar kasus.
 3. **Jalankan uji fakta yang sudah diketahui** — verifikasi lapisan memori memakai bagian 3.
 4. **Periksa persona masih sesuai ekspektasi** — cermati apakah nada dan batasannya tetap di dalam `SOUL.md`. Jika pergeserannya jelas, buat batasan kuncinya lebih spesifik.
 5. **Cek sampel bahwa sebuah skill masih terpicu** — coba satu pada situasi yang cocok lalu pastikan skill tersebut dimuat.
-6. **Tinjau kualitas keluaran otomasi** — perhatikan bahwa Anda meninjau **kualitas keluaran**, bukan menyinkronkan kolom model. Otomasi tidak punya pengaturan "model yang disematkan".
+6. **Tinjau kualitas keluaran tugas terjadwal** — perhatikan bahwa Anda meninjau **kualitas keluaran**, bukan menyinkronkan kolom model. Tugas Terjadwal tidak punya pengaturan "model yang disematkan".
 7. **Pastikan file cloud storage utuh** — penggantian tidak menulis ulangnya; ini hanya verifikasi.
 
-Langkah 6 patut ditegaskan, karena klaim yang tersebar luas mengatakan Anda harus menyinkronkan ulang model setiap otomasi setelah penggantian. Kenyataannya sebuah otomasi terdiri dari nama, jadwal (hari tetap dalam seminggu, interval tetap, atau sekali jalan), instruksi tugas, jendela waktu aktif, dan kanal notifikasi — **tanpa kolom model**. Jadi tindakan yang benar adalah menunggu satu eksekusi nyata lalu memeriksa apakah kualitas keluarannya masih memenuhi ekspektasi.
+Langkah 6 patut ditegaskan, karena klaim yang tersebar luas mengatakan Anda harus menyinkronkan ulang model setiap tugas terjadwal setelah penggantian. Kenyataannya sebuah tugas terjadwal terdiri dari nama, jadwal (hari tetap dalam seminggu, interval tetap, atau sekali jalan), instruksi tugas, jendela waktu aktif, dan kanal notifikasi — **tanpa kolom model**. Jadi tindakan yang benar adalah menunggu satu eksekusi nyata lalu memeriksa apakah kualitas keluarannya masih memenuhi ekspektasi.
 
 ---
 
@@ -149,7 +149,7 @@ Frasa "pesan uji yang sama" di baris keempat itu penting: jika Anda membandingka
 Hermes mewujudkan pemisahan lapisan pada tingkat mekanisme, tetapi mengelola akses model dan lingkungan tetap menjadi tanggung jawab operatornya. Arah LightVela adalah menjadikan penggantian sebagai operasi rutin, berisiko rendah, dan dapat diverifikasi:
 
 - **Satu Agent punya satu model aktif pada satu waktu** — mengganti berarti memilih, tanpa perlu Agent terpisah per model.
-- **Aset tetap stabil melewati penggantian** — memori, file cloud storage, skill, dan pengaturan otomasi tidak terpengaruh, dan riwayat chat tidak dipindahkan.
+- **Aset tetap stabil melewati penggantian** — memori, file cloud storage, skill, dan pengaturan tugas terjadwal tidak terpengaruh, dan riwayat chat tidak dipindahkan.
 - **Penggantian dapat diverifikasi** — konsol menampilkan model aktif, dan satu pesan uji memastikan keberhasilannya.
 - **Kegagalan dapat dilokalisasi** — Diagnostik menyimpan log terbaru untuk memisahkan masalah model, konfigurasi, dan tugas.
 - **Perubahan satu faktor dianjurkan** — mengubah satu hal pada satu waktu lalu segera menguji adalah rekomendasi yang terdokumentasi.
@@ -159,8 +159,8 @@ Hermes mewujudkan pemisahan lapisan pada tingkat mekanisme, tetapi mengelola aks
 ## Poin penting
 
 - Model, persona, profil pengguna, memori, dan skill adalah lima lapisan independen; penggantian hanya mengganti yang pertama.
-- Perilaku yang terdokumentasi: penggantian tidak menghapus memori, cloud storage, skill, maupun otomasi, dan tidak memindahkan riwayat chat.
+- Perilaku yang terdokumentasi: penggantian tidak menghapus memori, cloud storage, skill, maupun tugas terjadwal, dan tidak memindahkan riwayat chat.
 - "Terasa berbeda" berasal dari lima perbedaan di lapisan ekspresi: mengikuti instruksi, kompresi konteks, panjang jawaban, kecenderungan pemanggilan tool, gaya bahasa.
 - **Menentukan kehilangan memori yang nyata cukup satu langkah**: tanyakan satu fakta pasti yang sudah diketahui.
-- Otomasi tidak punya kolom model yang disematkan; setelah penggantian, tinjau kualitas keluaran alih-alih mencari kolom tersebut.
+- Tugas Terjadwal tidak punya kolom model yang disematkan; setelah penggantian, tinjau kualitas keluaran alih-alih mencari kolom tersebut.
 - Selama menelusuri masalah, pegang satu aturan: ubah satu faktor pada satu waktu lalu segera uji.

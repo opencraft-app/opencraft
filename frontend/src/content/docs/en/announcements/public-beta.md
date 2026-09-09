@@ -23,7 +23,7 @@ Since beta access opened, we have received many suggestions and real usage repor
 ## Product capabilities we are continuing to build
 
 - Persona and personal Agent configuration: configure your Agent name, persona, model, and preferences.
-- Automations: run reminders, summaries, notifications, and other tasks on a schedule or interval.
+- Scheduled Tasks: run reminders, summaries, notifications, and other tasks on a schedule or interval.
 - Memory and context: review and manage the memories and context accumulated by your Agent.
 - Cloud storage and files: view and manage cloud files used by your Agent.
 - Web chat and messaging channels: chat on the web and connect channels such as Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark.
@@ -64,4 +64,4 @@ We also hope to keep hearing from beta users.
 
 - Self-improvement and learning: help the Agent understand user habits, retain task experience, and improve execution quality over time.
 - Stronger skills, tools, and plugins: continue improving tool use, plugin integration, and external capability connections so LightVela can support more real workflows.
-- Automation and multi-Agent collaboration: improve task orchestration, multi-Agent collaboration, and long-running execution so complex tasks can be planned, run, and tracked more reliably.
+- Scheduled Task and multi-Agent collaboration: improve task orchestration, multi-Agent collaboration, and long-running execution so complex tasks can be planned, run, and tracked more reliably.

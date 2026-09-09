@@ -33,7 +33,7 @@
 | 知识 | 产品 FAQ、政策、服务时间和升级路径 | [云存储](../configuration/files.md)中的资料 |
 | 技能 | 检索、整理、生成草稿和其他具体动作 | [Skill](../configuration/skill.md) |
 | 记忆 | 已确认的客户偏好和长期协作背景 | [记忆管理](../configuration/memory.md) |
-| 自动化 | 定时检查、内部提醒和主动通知 | [自动任务](../configuration/automation.md) |
+| 自动化 | 定时检查、内部提醒和主动通知 | [定时任务](../configuration/automation.md) |
 
 不要把大量产品资料塞进人格，也不要把未经确认的客户内容直接当作长期记忆。
 
@@ -104,9 +104,9 @@
 
 ### 6. 配置自动化和主动消息
 
-适合自动任务的客服工作包括内部待办提醒、未关闭工单检查和每日服务摘要。
+适合定时任务的客服工作包括内部待办提醒、未关闭工单检查和每日服务摘要。
 
-在[自动任务](../configuration/automation.md)中设置执行时间、生效时间段和通知方式。
+在[定时任务](../configuration/automation.md)中设置执行时间、生效时间段和通知方式。
 
 WhatsApp 主动消息可能受到会话窗口或已审核模板消息限制，客户没有先发起对话时不要默认普通文本一定能投递。
 
@@ -166,4 +166,4 @@ Agent 需要运行、模型需要可用、WhatsApp 通道需要保持连接，�
 
 - [如何通过 SOUL.md 设定 IM Agent 的角色、性格与说话方式](./im-agent-persona-soul-md.md) - 定义客服人格和行为边界。
 
-- [自动任务](../configuration/automation.md) - 设置内部提醒和定时摘要。
+- [定时任务](../configuration/automation.md) - 设置内部提醒和定时摘要。

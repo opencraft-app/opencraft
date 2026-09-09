@@ -129,7 +129,7 @@ Hermes ha hecho que la separación Memoria/Skill sea lista para ingeniería, per
 - **Las Skills provienen de mercados públicos** — cada Skill proviene de Skills.sh y ClawHub, los mercados de Skills compartidos por OpenClaw y Hermes, por lo que no las escribe desde cero.
 - **Instalar y eliminar mediante conversación** — le diga a Hermes qué Skill instalar y lo maneja; la eliminación funciona de la misma manera. Verifique la disponibilidad en el chat después. La instalación desde el panel de consola llegará pronto.
 - **La Memoria es visible en la consola** — la página de memoria muestra lo que el Agent ha retenido y le permite ajustar el límite de capacidad; las adiciones y eliminaciones ocurren mediante conversación.
-- **Estable a través de modelos y canales** — cambiar modelos no elimina Skills ni automatizaciones, y cada canal conectado comparte las mismas Skills y memoria.
+- **Estable a través de modelos y canales** — cambiar modelos no elimina Skills ni tareas programadas, y cada canal conectado comparte las mismas Skills y memoria.
 - **Los fallos son rastreables** — cuando una Skill se comporta mal, vea y exporte registros recientes en Diagnóstico (seleccionable rangos de 1, 3, 6, 12 o 24 horas) para localizar el problema.
 
 En otras palabras, usar un Agent en LightVela significa acumular dos cosas: una Memoria sobre usted, y un conjunto de Skills instaladas y verificadas. **Ambas le sirven más tiempo que cualquier modelo particular.**

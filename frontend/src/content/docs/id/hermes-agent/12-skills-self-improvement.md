@@ -129,7 +129,7 @@ Hermes sudah membuat pemisahan Memory / Skill siap secara rekayasa, tetapi ia ma
 - **Skill berasal dari marketplace publik** — setiap skill berasal dari Skills.sh dan ClawHub, marketplace skill yang digunakan bersama oleh OpenClaw dan Hermes, sehingga Anda tidak menulisnya dari nol.
 - **Pasang dan hapus melalui percakapan** — beri tahu Hermes skill mana yang ingin dipasang lalu ia menanganinya; penghapusan bekerja dengan cara yang sama. Verifikasi ketersediaannya di chat setelahnya. Instalasi lewat panel konsol akan segera tersedia.
 - **Memori dapat dilihat di konsol** — halaman memori menampilkan apa yang dipertahankan Agent dan memungkinkan Anda menyesuaikan batas kapasitasnya; penambahan dan penghapusan terjadi melalui percakapan.
-- **Stabil lintas model dan kanal** — mengganti model tidak menghapus skill maupun otomasi, dan setiap kanal yang terhubung berbagi skill serta memori yang sama.
+- **Stabil lintas model dan kanal** — mengganti model tidak menghapus skill maupun tugas terjadwal, dan setiap kanal yang terhubung berbagi skill serta memori yang sama.
 - **Kegagalan dapat dilacak** — ketika sebuah skill berperilaku salah, lihat dan ekspor log terbaru di Diagnostik (rentang 1, 3, 6, 12, atau 24 jam yang dapat dipilih) untuk menemukan masalahnya.
 
 Dengan kata lain, memakai Agent di LightVela berarti mengumpulkan dua hal: sebuah Memory tentang Anda, dan sekumpulan Skill yang sudah terpasang dan terverifikasi. **Keduanya melayani Anda lebih lama daripada model mana pun.**

@@ -10483,13 +10483,31 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 /* END approved homepage refinements 1 2 4 5 6 */
 
 /* Homepage navigation and reading-safe play switching. */
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__cta,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__tabs,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
-  animation: none;
-  opacity: 0;
-  transform: translateY(24px);
+/* Japanese and Korean sentence endings enter with the rotating role. */
+#lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+#lightvela-intl-home .hero__line--dynamic .hero__suffix {
+  animation: hero-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) var(--rotator-delay, 0.5s) both;
+}
+
+@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__suffix,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__cta,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__tabs,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
+    animation: none;
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  #lightvela-intl-home .hero__line--dynamic .hero__suffix {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @media (min-width: 901px) {
@@ -10583,6 +10601,12 @@ html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
   }
 }
 @media (max-width: 640px) {
+  #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  #lightvela-intl-home .hero__line--dynamic .hero__suffix {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
   #lightvela-intl-home .plays__tabs {
     margin-top: 8px;
     padding-top: 16px;

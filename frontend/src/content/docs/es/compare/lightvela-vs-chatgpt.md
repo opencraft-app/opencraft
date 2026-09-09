@@ -48,7 +48,7 @@ Con LightVela, podrías conectar Hermes a Telegram, darle un flujo de trabajo re
 
 LightVela también expone la configuración del Asistente de forma más directa. Puedes elegir el [modelo](https://lightvela.ai/docs/configuration/model), conectar [Canales](https://lightvela.ai/docs/configuration) y extender Hermes a través de [Skills](https://lightvela.ai/docs/configuration/skill) en el console de configuración.
 
-Si el Asistente necesita realizar el mismo tipo de trabajo repetidamente, las [automatizaciones](https://lightvela.ai/docs/configuration/automation) de LightVela hacen que ese patrón sea parte de la rutina operativa del Asistente en lugar de algo que tengas que reiniciar manualmente cada vez.
+Si el Asistente necesita realizar el mismo tipo de trabajo repetidamente, las [tareas programadas](https://lightvela.ai/docs/configuration/automation) de LightVela hacen que ese patrón sea parte de la rutina operativa del Asistente en lugar de algo que tengas que reiniciar manualmente cada vez.
 
 ## Donde ChatGPT es la mejor opción
 

@@ -1,34 +1,34 @@
-# Automations
+# Scheduled Tasks
 
 ## Summary
 
-**Automations let Hermes Agent proactively run work on a fixed time, interval, or one-time schedule, then send the result to the selected notification channels. You can start from a template, or customize the name, run rules, task instructions, effective window, and notification settings, then continue managing the task status from the task list.**
+**Scheduled Tasks let Hermes Agent proactively run work on a fixed time, interval, or one-time schedule, then send the result to the selected notification channels. You can start from a template, or customize the name, run rules, task instructions, effective window, and notification settings, then continue managing the task status from the task list.**
 
-When creating or editing an automation, you can also link it to an upstream task. Later runs use the upstream task's most recent completed output as additional context. This is useful for splitting workflows such as “collect information first, then summarize it” into multiple steps.
+When creating or editing a scheduled task, you can also link it to an upstream task. Later runs use the upstream task's most recent completed output as additional context. This is useful for splitting workflows such as “collect information first, then summarize it” into multiple steps.
 
-Automations let Hermes Agent run specified work on a preset schedule or trigger condition, so you do not have to repeat the same operations manually. Typical scenarios include scheduled reminders, daily report generation, news tracking, and content publishing.
+Scheduled Tasks let Hermes Agent run specified work on a preset schedule or trigger condition, so you do not have to repeat the same operations manually. Typical scenarios include scheduled reminders, daily report generation, news tracking, and content publishing.
 
 Each task supports flexible scheduling and run rules, so your AI assistant can keep working proactively.
 
 ## What This Page Covers
 
-- Adding an automation
+- Adding a scheduled task
 - Linking an upstream task
 - Using task templates
-- Managing automations
+- Managing scheduled tasks
 
-## Adding an Automation
+## Adding a Scheduled Task
 
-- **Name**: Name the automation plan.
+- **Name**: Name the scheduled task plan.
 - **Schedule**: Set the task cadence. Choose one of fixed weekdays, fixed interval, or one-time run.
-- **Task instructions**: Write the prompt the agent uses to carry out the automation.
+- **Task instructions**: Write the prompt the agent uses to carry out the scheduled task.
 - **Upstream task**: Optional. Once linked, this task uses the upstream task's most recent completed output as context at run time.
 - **Effective window**: Limit the time range in which the task can run. Leave it empty to keep it active around the clock.
 - **Notification**: Optional toggles for selecting the channels that receive task execution notifications.
 
 To create a custom job, click “Create” instead of starting from a template, then fill in the blank dialog with your own schedule and instructions.
 
-![Create Job dialog for configuring an automation](../images/automation-create-job.webp)
+![Create Job dialog for configuring a scheduled task](../images/automation-create-job.webp)
 
 ## Linking an Upstream Task
 
@@ -50,9 +50,9 @@ The task instructions still need to explain how to use the upstream output. For 
 
 ## Task Templates
 
-If you are not sure what automation to configure, use the Template Area on the Automations page. Choose a card such as Water & medication reminders, Rent reminder, Exchange-rate alert, or Stock update digest, then click “Enable” to review the generated schedule and instructions before creating the job.
+If you are not sure what scheduled task to configure, use the Template Area on the Scheduled Tasks page. Choose a card such as Water & medication reminders, Rent reminder, Exchange-rate alert, or Stock update digest, then click “Enable” to review the generated schedule and instructions before creating the job.
 
-![Template Area showing ready-made automation cards](../images/automation-template-area.webp)
+![Template Area showing ready-made scheduled task cards](../images/automation-template-area.webp)
 
 Opening a template pre-fills the Create Job dialog. The Stock update digest template, for example, fills in the job name, a daily run schedule, and market-information instructions so you can edit the details before testing or creating the job.
 
@@ -62,15 +62,15 @@ Opening a template pre-fills the Create Job dialog. The Stock update digest temp
 
 </div>
 
-## Managing Automations
+## Managing Scheduled Tasks
 
-After an automation is created, you can view enabled tasks on the “Automations” page.
+After a scheduled task is created, you can view enabled tasks on the “Scheduled Tasks” page.
 
 Use the tabs above the list to switch between “Current Jobs,” “Ended Jobs,” and “Recent Runs.” Ended Jobs collects completed, failed, and expired tasks, while ongoing tasks stay under Current Jobs.
 
 <div style={{ maxWidth: "420px" }}>
 
-![Automations page showing Current Jobs, Ended Jobs, and Recent Runs tabs](../images/automation-current-jobs.webp)
+![Scheduled Tasks page showing Current Jobs, Ended Jobs, and Recent Runs tabs](../images/automation-current-jobs.webp)
 
 </div>
 
@@ -78,19 +78,19 @@ After a job starts running, it appears as a card under “Current Jobs” with i
 
 <div style={{ maxWidth: "520px" }}>
 
-![Running automation card in Current Jobs](../images/automation-running-job.webp)
+![Running scheduled task card in Current Jobs](../images/automation-running-job.webp)
 
 </div>
 
-From this page, you can inspect automation details, edit the task, pause it, or delete it as needed.
+From this page, you can inspect scheduled task details, edit the task, pause it, or delete it as needed.
 
 For linked tasks, check whether any downstream task still depends on the upstream task's most recent completed output before deleting the upstream task.
 
 ## Validation
 
-After creating or editing an automation, do not stop at “saved successfully.” Confirm the following:
+After creating or editing a scheduled task, do not stop at “saved successfully.” Confirm the following:
 
-1. The task appears in the automation list, and its status matches expectations.
+1. The task appears in the scheduled task list, and its status matches expectations.
 2. The schedule, effective window, and notification settings are correct.
 3. If an upstream task is linked, the upstream task already has a most recent completed output.
 4. After one real run, inspect the recent run record.

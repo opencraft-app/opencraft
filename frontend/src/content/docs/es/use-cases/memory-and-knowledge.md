@@ -67,7 +67,7 @@ La memoria funciona mejor cuando se mantiene actualizada. Elimina o corrige el c
 
 Usa la página [Chat](../configuration/agent-chat.md) o un canal conectado para convertir documentos y memoria en una siguiente acción concreta. Pide una comparación, un esquema, un conjunto de preguntas abiertas o un resumen para una reunión específica. Cuanto más específico sea el resultado inmediato, más fácil será verificar que Hermes tenga el contexto correcto.
 
-Si tu revisión sigue un ritmo recurrente, una [Automatización](../configuration/automation.md) puede recordarte para revisar una carpeta o preparar un resumen regular. Comienza con un recordatorio o resumen simple en lugar de conceder una tarea amplia y sin límites.
+Si tu revisión sigue un ritmo recurrente, una [Tarea programada](../configuration/automation.md) puede recordarte para revisar una carpeta o preparar un resumen regular. Comienza con un recordatorio o resumen simple en lugar de conceder una tarea amplia y sin límites.
 
 ![Una conversación del Agent Hermes usando conocimiento de proyecto organizado](../images/use-case-memory-knowledge-automation.png)
 

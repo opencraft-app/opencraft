@@ -54,7 +54,7 @@ Setelah instans siap, buka konsol dan selesaikan setup dasar:
 
 2. **Hubungkan kanal** — Tambahkan Telegram, WhatsApp, Discord, Slack, WeChat, atau kanal lain yang didukung, lalu bicara dengan Agent dari aplikasi chat tersebut
 
-3. **Tambahkan Skill dan otomasi bila perlu** — Perluas kemampuan Agent dari konsol
+3. **Tambahkan Skill dan tugas terjadwal bila perlu** — Perluas kemampuan Agent dari konsol
 
 Hermes Agent pertama Anda kini siap online di cloud 24/7.
 

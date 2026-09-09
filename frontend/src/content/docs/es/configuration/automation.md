@@ -1,34 +1,34 @@
-# Automatizaciones
+# Tareas programadas
 
 ## Resumen
 
-**Las automatizaciones permiten que Hermes Agent ejecute trabajos proactivamente según un horario fijo, un intervalo o un esquema de ejecución única, y luego envíe los resultados a los canales de notificación seleccionados. Puede comenzar con una plantilla, o personalizar el nombre, las reglas de ejecución, las instrucciones de la tarea, la ventana de validez y la configuración de notificaciones, y luego continuar gestionando el estado de la tarea desde la lista de tareas.**
+**Las tareas programadas permiten que Hermes Agent ejecute trabajos proactivamente según un horario fijo, un intervalo o un esquema de ejecución única, y luego envíe los resultados a los canales de notificación seleccionados. Puede comenzar con una plantilla, o personalizar el nombre, las reglas de ejecución, las instrucciones de la tarea, la ventana de validez y la configuración de notificaciones, y luego continuar gestionando el estado de la tarea desde la lista de tareas.**
 
-Al crear o editar una automatización, también puede vincularla a una tarea anterior. Las ejecuciones posteriores utilizarán la salida más reciente completada de la tarea anterior como contexto adicional. Esto es útil para dividir flujos de trabajo como "recopilar información primero, luego resumirla" en múltiples pasos.
+Al crear o editar una tarea programada, también puede vincularla a una tarea anterior. Las ejecuciones posteriores utilizarán la salida más reciente completada de la tarea anterior como contexto adicional. Esto es útil para dividir flujos de trabajo como "recopilar información primero, luego resumirla" en múltiples pasos.
 
-Las automatizaciones permiten que Hermes Agent ejecute trabajos específicos según un horario preestablecido o una condición de activación, de modo que no tenga que repetir las mismas operaciones manualmente. Los escenarios típicos incluyen recordatorios programados, generación de informes diarios, seguimiento de noticias y publicación de contenido.
+Las tareas programadas permiten que Hermes Agent ejecute trabajos específicos según un horario preestablecido o una condición de activación, de modo que no tenga que repetir las mismas operaciones manualmente. Los escenarios típicos incluyen recordatorios programados, generación de informes diarios, seguimiento de noticias y publicación de contenido.
 
 Cada tarea admite programación flexible y reglas de ejecución, de modo que su asistente de IA pueda seguir trabajando proactivamente.
 
 ## ¿Qué Cubre Esta Página
 
-- Agregar una automatización
+- Agregar una tarea programada
 - Vincular una tarea anterior
 - Usar plantillas de tareas
-- Gestionar automatizaciones
+- Gestionar tareas programadas
 
-## Agregar una Automatización
+## Agregar una Tarea programada
 
-- **Nombre**: Nombre del plan de automatización.
+- **Nombre**: Nombre del plan de tarea programada.
 - **Programación**: Establezca el ritmo de la tarea. Elija entre días fijos de la semana, intervalo fijo o ejecución única.
-- **Instrucciones de la tarea**: Escriba el prompt que el Agent utiliza para llevar a cabo la automatización.
+- **Instrucciones de la tarea**: Escriba el prompt que el Agent utiliza para llevar a cabo la tarea programada.
 - **Tarea anterior**: Opcional. Una vez vinculada, esta tarea utiliza la salida más reciente completada de la tarea anterior como contexto durante la ejecución.
 - **Ventana de validez**: Limite el rango de tiempo en el que la tarea puede ejecutarse. Déjelo vacío para mantenerlo activo las 24 horas.
 - **Notificación**: Interruptores opcionales para seleccionar los canales que reciben las notificaciones de ejecución de la tarea.
 
 Para crear un Job personalizado, haga clic en "Crear" en lugar de partir de una plantilla, y complete el formulario en blanco con su propio horario e instrucciones.
 
-![Cuadro Crear Job para configurar una automatización](../images/automation-create-job.webp)
+![Cuadro Crear Job para configurar una tarea programada](../images/automation-create-job.webp)
 
 ## Vincular una Tarea Anterior
 
@@ -50,9 +50,9 @@ Las instrucciones de la tarea aún necesitan explicar cómo utilizar la salida d
 
 ## Plantillas de Tareas
 
-Si no está seguro de qué automatización configurar, use la Zona de plantillas en la página "Automatizaciones". Elija una tarjeta como Recordatorios de agua y medicación, Recordatorio del alquiler, Alerta de tipo de cambio o Resumen bursátil, y haga clic en "Activar" para revisar el horario y las instrucciones antes de crear el Job.
+Si no está seguro de qué tarea programada configurar, use la Zona de plantillas en la página "Tareas programadas". Elija una tarjeta como Recordatorios de agua y medicación, Recordatorio del alquiler, Alerta de tipo de cambio o Resumen bursátil, y haga clic en "Activar" para revisar el horario y las instrucciones antes de crear el Job.
 
-![Zona de plantillas con tarjetas de automatización listas para usar](../images/automation-template-area.webp)
+![Zona de plantillas con tarjetas de tarea programada listas para usar](../images/automation-template-area.webp)
 
 Al abrir una plantilla, el formulario Crear Job se completa automáticamente. La plantilla Resumen bursátil, por ejemplo, rellena el nombre del Job, una programación diaria y las instrucciones de información de mercado para que pueda editar los detalles antes de probar o crear el Job.
 
@@ -62,15 +62,15 @@ Al abrir una plantilla, el formulario Crear Job se completa automáticamente. La
 
 </div>
 
-## Gestionar Automatizaciones
+## Gestionar Tareas programadas
 
-Después de crear una automatización, puede ver las tareas habilitadas en la página "Automatizaciones".
+Después de crear una tarea programada, puede ver las tareas habilitadas en la página "Tareas programadas".
 
 Use las pestañas sobre la lista para alternar entre "Jobs actuales", "Jobs finalizados" y "Ejecuciones recientes". "Jobs finalizados" reúne las tareas completadas, fallidas y vencidas, mientras que las tareas en curso permanecen en "Jobs actuales".
 
 <div style={{ maxWidth: "420px" }}>
 
-![Página de automatizaciones con las pestañas Jobs actuales, Jobs finalizados y Ejecuciones recientes](../images/automation-current-jobs.webp)
+![Página de tareas programadas con las pestañas Jobs actuales, Jobs finalizados y Ejecuciones recientes](../images/automation-current-jobs.webp)
 
 </div>
 
@@ -78,19 +78,19 @@ Cuando un Job empieza a ejecutarse, aparece como una tarjeta en "Jobs actuales" 
 
 <div style={{ maxWidth: "520px" }}>
 
-![Tarjeta de automatización en ejecución dentro de Jobs actuales](../images/automation-running-job.webp)
+![Tarjeta de tarea programada en ejecución dentro de Jobs actuales](../images/automation-running-job.webp)
 
 </div>
 
-Desde esta página, puede inspeccionar los detalles de la automatización, editar la tarea, pausarla o eliminarla según sea necesario.
+Desde esta página, puede inspeccionar los detalles de la tarea programada, editar la tarea, pausarla o eliminarla según sea necesario.
 
 Para tareas vinculadas, verifique si alguna tarea aguas abajo aún depende de la salida más reciente completada de la tarea anterior antes de eliminar la tarea anterior.
 
 ## Validación
 
-Después de crear o editar una automatización, no se detenga en "guardado con éxito". Confirme lo siguiente:
+Después de crear o editar una tarea programada, no se detenga en "guardado con éxito". Confirme lo siguiente:
 
-1. La tarea aparece en la lista de automatizaciones y su estado coincide con las expectativas.
+1. La tarea aparece en la lista de tareas programadas y su estado coincide con las expectativas.
 2. El horario, la ventana de validez y la configuración de notificación son correctos.
 3. Si se vincula una tarea anterior, la tarea anterior ya tiene una salida más reciente completada.
 4. Después de una ejecución real, inspeccione el registro de ejecución reciente.

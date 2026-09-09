@@ -53,7 +53,89 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
-  it("shows the newest September instance storage update in every visible locale", async () => {
+  it("announces zero-token notification and script tasks in every visible locale", async () => {
+    const scheduledTaskCopies = [
+      {
+        locale: "zh-CN",
+        month: "2026 年 9 月",
+        title: "定时任务新增通知任务和脚本任务",
+        description:
+          "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
+        image: "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
+      },
+      {
+        locale: "zh-Hant",
+        month: "2026 年 9 月",
+        title: "定時任務新增通知任務和腳本任務",
+        description:
+          "支持創建通知任務和腳本任務：按原文發送通知，或按計劃運行預設腳本。兩種任務均不調用模型，模型 Token 消耗為 0。",
+        image: "/assets/changelog/scheduled-tasks-notification-zh-Hant.png",
+      },
+      {
+        locale: "en-US",
+        month: "September 2026",
+        title: "Scheduled Tasks Now Support Notification and Script Tasks",
+        description:
+          "Create Notification Tasks to send text exactly as written or Script Tasks to run preset scripts on a schedule. Neither task type calls a model, so model token usage is zero.",
+        image: "/assets/changelog/scheduled-tasks-notification-en-US.png",
+      },
+      {
+        locale: "id-ID",
+        month: "September 2026",
+        title: "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip",
+        description:
+          "Buat Tugas Notifikasi untuk mengirim teks persis seperti yang ditulis, atau Tugas Skrip untuk menjalankan skrip siap pakai sesuai jadwal. Keduanya tidak memanggil model, sehingga penggunaan token model adalah nol.",
+        image: "/assets/changelog/scheduled-tasks-notification-id-ID.png",
+      },
+      {
+        locale: "es",
+        month: "Septiembre de 2026",
+        title: "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script",
+        description:
+          "Crea Tareas de Notificación para enviar texto exactamente como está escrito o Tareas de Script para ejecutar scripts predefinidos según una programación. Ninguno de los dos tipos llama a un modelo, por lo que el consumo de tokens del modelo es cero.",
+        image: "/assets/changelog/scheduled-tasks-notification-es.png",
+      },
+      {
+        locale: "ja-JP",
+        month: "2026年9月",
+        title: "スケジュールタスクに通知タスクとスクリプトタスクを追加",
+        description:
+          "通知タスクでは入力したテキストをそのまま送信し、スクリプトタスクではプリセットスクリプトをスケジュール実行できます。どちらもモデルを呼び出さないため、モデルのトークン消費はゼロです。",
+        image: "/assets/changelog/scheduled-tasks-notification-ja-JP.png",
+      },
+      {
+        locale: "ko-KR",
+        month: "2026년 9월",
+        title: "예약 작업에 알림 작업 및 스크립트 작업 추가",
+        description:
+          "알림 작업은 작성한 텍스트를 그대로 전송하고, 스크립트 작업은 사전 설정된 스크립트를 일정에 따라 실행합니다. 두 유형 모두 모델을 호출하지 않으므로 모델 토큰 사용량은 0입니다.",
+        image: "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
+      },
+    ] as const;
+
+    for (const copy of scheduledTaskCopies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      const septemberSection = screen.getByText(copy.month).closest("section");
+      expect(septemberSection).not.toBeNull();
+      const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
+      expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(screen.getByAltText(copy.title)).toHaveAttribute(
+        "src",
+        expect.stringContaining(copy.image),
+      );
+      cleanup();
+    }
+  });
+
+  it("shows the September instance storage update in every visible locale", async () => {
     const instanceStorageCopies = [
       {
         locale: "zh-CN",
@@ -125,7 +207,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const headings = within(septemberSection!).getAllByRole("heading");
-      expect(headings[0]).toHaveTextContent(copy.title);
+      expect(headings[1]).toHaveTextContent(copy.title);
       expect(within(septemberSection!).getByRole("heading", { name: copy.title })).toBeInTheDocument();
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute("src", expect.stringContaining(copy.image));
@@ -140,7 +222,7 @@ describe("global changelog skill package entry", () => {
         month: "2026 年 9 月",
         title: "LightVela 支持创建和发布工作台",
         description:
-          "现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。",
+          "支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。",
         image: "/assets/changelog/lightvela-workbench-zh.png",
       },
       {
@@ -148,7 +230,7 @@ describe("global changelog skill package entry", () => {
         month: "2026 年 9 月",
         title: "LightVela 支持創建和發佈工作台",
         description:
-          "現在可以通過 Agent 選擇模板或從零開始創建靜態網站，並在 LightVela 中直接發佈、預覽、更新和管理自己的工作台。",
+          "支持在 LightVela 中選擇模板或從零開始創建個人工作台，並以靜態網站的形式直接發佈、預覽、更新和管理自己的工作台。",
         image: "/assets/changelog/lightvela-workbench-zh.png",
       },
       {
@@ -156,7 +238,7 @@ describe("global changelog skill package entry", () => {
         month: "September 2026",
         title: "LightVela Supports Building and Publishing Workbenches",
         description:
-          "Build static websites with an Agent from a starter template or from scratch, then publish, preview, update, and manage your workbenches directly in LightVela.",
+          "Build a personal workbench in LightVela from a template or from scratch, then publish, preview, update, and manage it directly as a static website.",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
       {
@@ -164,7 +246,7 @@ describe("global changelog skill package entry", () => {
         month: "September 2026",
         title: "LightVela Mendukung Pembuatan dan Publikasi Workbench",
         description:
-          "Buat situs web statis dengan Agent dari templat awal atau dari nol, lalu publikasikan, pratinjau, perbarui, dan kelola workbench Anda langsung di LightVela.",
+          "Buat workbench pribadi di LightVela dari templat atau dari nol, lalu publikasikan, pratinjau, perbarui, dan kelola langsung sebagai situs web statis.",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
       {
@@ -172,7 +254,7 @@ describe("global changelog skill package entry", () => {
         month: "Septiembre de 2026",
         title: "LightVela Permite Crear y Publicar Workbenches",
         description:
-          "Crea sitios web estáticos con un Agent a partir de una plantilla inicial o desde cero, y publícalos, previsualízalos, actualízalos y gestiónalos directamente en LightVela.",
+          "Crea un workbench personal en LightVela a partir de una plantilla o desde cero, y publícalo, previsualízalo, actualízalo y gestiónalo directamente como un sitio web estático.",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
       {
@@ -180,7 +262,7 @@ describe("global changelog skill package entry", () => {
         month: "2026年9月",
         title: "LightVelaでワークベンチの作成と公開に対応",
         description:
-          "スターターテンプレートまたはゼロからAgentで静的Webサイトを作成し、LightVela上で直接公開、プレビュー、更新、管理できます。",
+          "LightVelaでテンプレートを選ぶかゼロから個人用ワークベンチを作成し、静的Webサイトとして直接公開、プレビュー、更新、管理できます。",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
       {
@@ -188,7 +270,7 @@ describe("global changelog skill package entry", () => {
         month: "2026년 9월",
         title: "LightVela에서 워크벤치 생성 및 게시 지원",
         description:
-          "시작 템플릿을 선택하거나 처음부터 Agent로 정적 웹사이트를 만든 다음 LightVela에서 직접 게시, 미리보기, 업데이트 및 관리할 수 있습니다.",
+          "LightVela에서 템플릿을 선택하거나 처음부터 개인 워크벤치를 만들고, 정적 웹사이트 형태로 직접 게시, 미리보기, 업데이트 및 관리할 수 있습니다.",
         image: "/assets/changelog/lightvela-workbench-global-en.png",
       },
     ] as const;
@@ -367,31 +449,31 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-zh.png"),
     );
     expect(zhPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1282 / 644" });
-    expect(screen.getByRole("heading", { name: "自动任务支持关联上游任务" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "定时任务支持关联上游任务" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。",
+        "创建或编辑定时任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "LightVela 支持钉钉通道" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "技能页面支持批量安装与来源查看" })).toBeInTheDocument();
     expect(screen.getByText("安装多个 Skill 时可以查看实时进度，并从技能页面直接打开 ClawHub 或 skills.sh 的原始来源页面。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "自动任务模板" })).toBeInTheDocument();
-    expect(screen.getByText("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "定时任务模板" })).toBeInTheDocument();
+    expect(screen.getByText("选择一个现成的定时任务模板，先运行一次，确认效果后再将其转为持续执行的定时任务。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 机器人" })).toBeInTheDocument();
     expect(screen.getByText("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持繁体中文" })).toBeInTheDocument();
     expect(screen.getByText("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。")).toBeInTheDocument();
-    expect(screen.getByAltText("自动任务支持关联上游任务")).toHaveAttribute(
+    expect(screen.getByAltText("定时任务支持关联上游任务")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.png"),
     );
-    expect(screen.getByAltText("自动任务支持关联上游任务").parentElement).toHaveStyle({ aspectRatio: "718 / 234" });
+    expect(screen.getByAltText("定时任务支持关联上游任务").parentElement).toHaveStyle({ aspectRatio: "718 / 234" });
     expect(screen.getByAltText("技能页面支持批量安装与来源查看")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
     );
-    expect(screen.getByAltText("自动任务模板")).toHaveAttribute(
+    expect(screen.getByAltText("定时任务模板")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
     );
@@ -404,13 +486,13 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
     );
     const zhTestRunHeading = within(zhAugustSection!).getByRole("heading", {
-      name: "自动任务支持测试运行",
+      name: "定时任务支持测试运行",
     });
     const zhAugustHeadings = within(zhAugustSection!).getAllByRole("heading");
     expect(zhAugustHeadings[1]).toBe(zhTestRunHeading);
     expect(
       within(zhAugustSection!).getByText(
-        "创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。",
+        "创建或编辑定时任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。",
       ),
     ).toBeInTheDocument();
     expect(zhTestRunHeading.closest("article")?.querySelector("img")).toBeNull();
@@ -430,7 +512,7 @@ describe("global changelog skill package entry", () => {
     expect(augustSection).not.toBeNull();
     expect(julySection).not.toBeNull();
     expect(
-      within(augustSection!).queryByRole("heading", { name: "Ready-Made Job Templates" }),
+      within(augustSection!).queryByRole("heading", { name: "Scheduled Task Templates" }),
     ).not.toBeInTheDocument();
     const enDeepSeekHarnessHeading = within(augustSection!).getByRole("heading", {
       name: /DeepSeek Harness Is Now Available in LightVela Labs/,
@@ -450,7 +532,7 @@ describe("global changelog skill package entry", () => {
     );
     expect(enDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2168 / 1287" });
     expect(
-      within(julySection!).getByRole("heading", { name: "Ready-Made Job Templates" }),
+      within(julySection!).getByRole("heading", { name: "Scheduled Task Templates" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "LightVela Now Supports Custom Persona File Uploads" }),
@@ -486,23 +568,23 @@ describe("global changelog skill package entry", () => {
     );
     expect(enPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
     expect(
-      screen.getByRole("heading", { name: "Jobs Can Now Link to Upstream Jobs" }),
+      screen.getByRole("heading", { name: "Scheduled Tasks Can Now Link to Upstream Scheduled Tasks" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "When creating or editing a job, you can link an upstream job. When the job runs later, it uses the upstream job's most recent output as context.",
+        "When creating or editing a scheduled task, you can link an upstream scheduled task. When the scheduled task runs later, it uses the upstream scheduled task's most recent output as context.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Skills Page Gets Faster Installs and Clearer Sources" })).toBeInTheDocument();
     expect(screen.getByText("Install multiple Skills with live progress and open their original ClawHub or skills.sh source pages directly from the Skills page.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ready-Made Job Templates" })).toBeInTheDocument();
-    expect(screen.getByText("Choose a ready-made job template, run it once, and turn it into an ongoing job when it works for you.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Scheduled Task Templates" })).toBeInTheDocument();
+    expect(screen.getByText("Choose a ready-made scheduled task template, run it once, and turn it into an ongoing scheduled task when it works for you.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "QQ Group @Mentions Are Now Supported" })).toBeInTheDocument();
     expect(screen.getByText("Add your Hermes Agent to a QQ group and @mention it to start a conversation.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Traditional Chinese Is Now Available" })).toBeInTheDocument();
     expect(screen.getByText("Browse LightVela's public pages, documentation, and account flows in Traditional Chinese.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Pricing Is Now Available with More Flexible Billing" })).not.toBeInTheDocument();
-    expect(screen.getByAltText("Jobs Can Now Link to Upstream Jobs")).toHaveAttribute(
+    expect(screen.getByAltText("Scheduled Tasks Can Now Link to Upstream Scheduled Tasks")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.png"),
     );
@@ -510,7 +592,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-en.png"),
     );
-    expect(screen.getByAltText("Ready-Made Job Templates")).toHaveAttribute(
+    expect(screen.getByAltText("Scheduled Task Templates")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-en.png"),
     );
@@ -523,15 +605,16 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
     );
     const enTestRunHeading = within(augustSection!).getByRole("heading", {
-      name: "Jobs Now Support Test Runs",
+      name: "Scheduled Tasks Now Support Test Runs",
     });
     expect(within(augustSection!).getAllByRole("heading")[1]).toBe(enTestRunHeading);
     expect(
       within(augustSection!).getByText(
-        "When creating or editing a job, you can run the current job once without saving it, review the result, and then decide whether to create or update the job.",
+        "When creating or editing a scheduled task, you can run the current scheduled task once without saving it, review the result, and then decide whether to create or update the scheduled task.",
       ),
     ).toBeInTheDocument();
     expect(enTestRunHeading.closest("article")?.querySelector("img")).toBeNull();
+    expect(document.body).not.toHaveTextContent("Automations");
 
     cleanup();
     await i18n.changeLanguage("zh-Hant");
@@ -574,16 +657,16 @@ describe("global changelog skill package entry", () => {
     expect(screen.getByAltText("LightVela 支持上傳自定義人設文件").parentElement).toHaveStyle({
       aspectRatio: "1282 / 644",
     });
-    expect(screen.getByRole("heading", { name: "自動任務支持關聯上游任務" })).toBeInTheDocument();
-    expect(screen.getByAltText("自動任務支持關聯上游任務")).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: "定時任務支持關聯上游任務" })).toBeInTheDocument();
+    expect(screen.getByAltText("定時任務支持關聯上游任務")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.png"),
     );
-    expect(screen.getByAltText("自動任務支持關聯上游任務").parentElement).toHaveStyle({
+    expect(screen.getByAltText("定時任務支持關聯上游任務").parentElement).toHaveStyle({
       aspectRatio: "718 / 234",
     });
     expect(screen.getByRole("heading", { name: "技能頁面支持批量安裝與來源查看" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "自動任務模板" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "定時任務模板" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 機器人" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "支持繁體中文" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "定價支持更多套餐與訂閲方式" })).not.toBeInTheDocument();
@@ -591,7 +674,7 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
     );
-    expect(screen.getByAltText("自動任務模板")).toHaveAttribute(
+    expect(screen.getByAltText("定時任務模板")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
     );
@@ -654,7 +737,7 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
     );
     expect(
-      screen.getByRole("heading", { name: "Job Kini Dapat Ditautkan ke Job Upstream" }),
+      screen.getByRole("heading", { name: "Tugas Terjadwal Kini Dapat Ditautkan ke Tugas Terjadwal Upstream" }),
     ).toBeInTheDocument();
   });
 

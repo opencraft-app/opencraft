@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Elige LightVela si quieres un AI Agent personal práctico y siempre conectado, accesible desde aplicaciones de mensajería, configurable con distintos modelos, ampliable mediante Skills y capaz de ejecutar Automatizaciones programadas.** Elige Today.AI si quieres una experiencia más centrada en una aplicación, concebida como un sistema operativo personal basado en tus datos diarios y en sugerencias proactivas.
+**Elige LightVela si quieres un AI Agent personal práctico y siempre conectado, accesible desde aplicaciones de mensajería, configurable con distintos modelos, ampliable mediante Skills y capaz de ejecutar Tareas programadas.** Elige Today.AI si quieres una experiencia más centrada en una aplicación, concebida como un sistema operativo personal basado en tus datos diarios y en sugerencias proactivas.
 
 El modelo de producto documentado de LightVela se centra en un Hermes Agent alojado en la nube, mientras que la propuesta pública de Today.AI pone el énfasis en el contexto personal, la ayuda proactiva y la asistencia entre dispositivos.
 LightVela es la opción más fácil de entender si necesitas alojar un Agent persistente y controlar su configuración.
@@ -20,8 +20,8 @@ La información pública disponible sobre Today.AI sigue siendo más limitada qu
 | **Forma del producto** | Hermes Agent alojado en la nube | Visión de asistente personal y sistema operativo nativo de IA |
 | **Acceso principal** | Canales de mensajería y consola web | Aplicación nativa y experiencia entre dispositivos |
 | **Memoria** | Memoria persistente del Agent entre conversaciones | Memoria viva basada en el contexto personal |
-| **Trabajo proactivo** | Automatizaciones y tareas programadas explícitas | Diseñado para actuar antes de que el usuario lo pida |
-| **Extensibilidad** | Modelos, canales, Skills y Automatizaciones | Los detalles del modelo y del ecosistema siguen evolucionando |
+| **Trabajo proactivo** | Tareas programadas y tareas programadas explícitas | Diseñado para actuar antes de que el usuario lo pida |
+| **Extensibilidad** | Modelos, canales, Skills y Tareas programadas | Los detalles del modelo y del ecosistema siguen evolucionando |
 | **Mejor encaje** | Usuarios que quieren un Agent siempre disponible y utilizable ahora | Early adopters que buscan un sistema operativo personal proactivo |
 
 ## Qué cambia en el uso diario
@@ -35,7 +35,7 @@ La [página pública de Today.AI](https://today.ai/landing) muestra una experien
 También presenta la memoria viva, las sugerencias proactivas, los conectores de aplicaciones, los ordenadores cloud y el control entre dispositivos como partes de una misma experiencia.
 
 Con LightVela, defines el entorno de trabajo del asistente de forma más explícita.
-Conectas un modelo, eliges un canal, instalas [Skills útiles](../configuration/skill.md) y creas tareas programadas como recordatorios, resúmenes o investigaciones recurrentes mediante [Automatizaciones](../configuration/automation.md).
+Conectas un modelo, eliges un canal, instalas [Skills útiles](../configuration/skill.md) y creas tareas programadas como recordatorios, resúmenes o investigaciones recurrentes mediante [Tareas programadas](../configuration/automation.md).
 El resultado se parece menos a un sistema operativo que observa todo tu día y más a un Agent fiable que puedes moldear deliberadamente.
 
 Esta diferencia afecta a la confianza y la previsibilidad.
@@ -55,12 +55,12 @@ Un asistente basado en un portátil puede ser potente durante una sesión activa
 LightVela mantiene el Agent funcionando de forma independiente, por lo que las tareas programadas y las conversaciones futuras no dependen de que tu dispositivo esté conectado.
 
 LightVela también define con más claridad los límites de configuración.
-Su modelo separa las piezas principales en Hermes Agent, modelos, canales, Skills y Automatizaciones.
+Su modelo separa las piezas principales en Hermes Agent, modelos, canales, Skills y Tareas programadas.
 Varios canales pueden conectarse al mismo Agent y compartir su memoria y comportamiento, mientras que las Skills añaden capacidades reutilizables para flujos concretos.
 
 Esto te da un tipo de control muy útil.
 Puedes cambiar el modelo sin reconstruir el Agent, añadir un canal sin crear una segunda personalidad e instalar una Skill cuando necesites un flujo repetible.
-Las Automatizaciones proporcionan la capa de programación para recordatorios, resúmenes, notificaciones y otras tareas recurrentes.
+Las Tareas programadas proporcionan la capa de programación para recordatorios, resúmenes, notificaciones y otras tareas recurrentes.
 
 LightVela resulta especialmente atractivo si tu IA ya debe estar presente en tus herramientas de comunicación.
 En lugar de abrir otro panel independiente, puedes hacer una pregunta al mismo Agent en Telegram, continuar en otro canal conectado y mantener la conversación asociada a una identidad y memoria persistentes.
@@ -92,7 +92,7 @@ Elige LightVela si:
 
 - **Quieres un Agent siempre disponible:** No quieres depender de que tu portátil o tu teléfono permanezcan encendidos.
 - **Prefieres un acceso familiar:** Quieres usar canales de mensajería en lugar de depender de una nueva aplicación independiente.
-- **Quieres control explícito:** Quieres configurar modelos, Skills, canales, memoria y Automatizaciones programadas.
+- **Quieres control explícito:** Quieres configurar modelos, Skills, canales, memoria y Tareas programadas.
 - **Valoras una configuración documentada:** Quieres entender, repetir y ajustar las rutas de configuración.
 - **Quieres empezar ahora:** Prefieres un Hermes Agent alojado y funcional mientras el producto crece contigo.
 

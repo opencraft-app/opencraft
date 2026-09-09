@@ -28,7 +28,7 @@ const COPY = {
     tagline:
       'LightVela 是面向个人 AI Agent 的云端托管与管理平台，支持 Hermes Agent 长期在线运行。',
     intro:
-      'LightVela 帮助用户配置模型、接入微信/QQ/企业微信/飞书/钉钉等渠道、安装技能、设置自动任务，并管理 Agent 的记忆与云端文件。',
+      'LightVela 帮助用户配置模型、接入微信/QQ/企业微信/飞书/钉钉等渠道、安装技能、设置定时任务，并管理 Agent 的记忆与云端文件。',
     entryHeading: '官方入口',
     factsHeading: '关键事实',
     docsHeading: '文档',
@@ -68,7 +68,7 @@ const COPY = {
     tagline:
       'LightVela is a cloud hosting and management platform for personal AI Agents, keeping the Hermes Agent online around the clock.',
     intro:
-      'LightVela helps you configure models, connect channels like Telegram/WhatsApp/Discord/Slack, install skills, set up automations, and manage your Agent\u2019s memory and cloud files.',
+      'LightVela helps you configure models, connect channels like Telegram/WhatsApp/Discord/Slack, install skills, set up Scheduled Tasks, and manage your Agent\u2019s memory and cloud files.',
     entryHeading: 'Official Entry Points',
     factsHeading: 'Key Facts',
     docsHeading: 'Documentation',

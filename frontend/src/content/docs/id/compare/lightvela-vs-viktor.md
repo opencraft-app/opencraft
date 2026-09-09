@@ -16,7 +16,7 @@ Perbedaannya adalah di mana Agent berada, siapa yang memilikinya, dan jenis peke
 | **Peran utama** | AI Agent pribadi berbasis cloud | Rekan kerja AI bersama untuk tim |
 | **Antarmuka utama** | Konsol web dan kanal pesan | Slack, Microsoft Teams, aplikasi web, dan Discord |
 | **Model memori** | Memori Agent pribadi di berbagai percakapan dan Channels | Konteks dan memori workspace bersama |
-| **Integrasi** | Kanal pesan, Skills, Automations, dan penyedia model | 3.200+ integrasi tools bisnis |
+| **Integrasi** | Kanal pesan, Skills, Tugas Terjadwal, dan penyedia model | 3.200+ integrasi tools bisnis |
 | **Model penyiapan** | Agent cloud terkelola tanpa pemeliharaan server | Hubungkan Viktor, izinkan akses tools, dan delegasikan pekerjaan |
 | **Paling sesuai untuk** | Bantuan pribadi dan kolaborasi jangka panjang | Operasi bisnis lintas tools |
 
@@ -24,7 +24,7 @@ Perbedaannya adalah di mana Agent berada, siapa yang memilikinya, dan jenis peke
 
 LightVela dibangun berdasarkan gagasan memiliki Agent pribadi yang berjalan lama.
 Hermes Agent Anda berjalan di cloud, tetap tersedia saat perangkat offline, dan dapat dihubungi melalui Channels yang didukung.
-Memori, persona, model, Skills, dan Automations-nya dikonfigurasi untuk satu hubungan yang berkelanjutan.
+Memori, persona, model, Skills, dan Tugas Terjadwal dikonfigurasi untuk satu hubungan yang berkelanjutan.
 [Ikhtisar LightVela](../01-overview.md) menjelaskan bagaimana bagian-bagian ini bekerja bersama.
 
 Viktor.com memakai pendekatan yang berbeda.
@@ -41,12 +41,12 @@ Mira berangkat dari percakapan Telegram, sedangkan Viktor berangkat dari workspa
 ## Kapan LightVela lebih sesuai
 
 LightVela cocok ketika Agent Anda perlu tersedia di berbagai tempat yang sudah Anda gunakan untuk berkomunikasi.
-Anda dapat menghubungkan Channels, mengatur model, memasang [Skills](../configuration/skill.md), dan membuat [Automations](../configuration/automation.md) berulang dari lingkungan LightVela.
+Anda dapat menghubungkan Channels, mengatur model, memasang [Skills](../configuration/skill.md), dan membuat [Tugas Terjadwal](../configuration/automation.md) berulang dari lingkungan LightVela.
 Agent yang sama dapat membantu pengingat, riset, pengaturan informasi, pekerjaan konten, dan percakapan sehari-hari tanpa mengharuskan Anda memelihara server.
 
 Modelnya juga sengaja fleksibel.
 Anda dapat mengonfigurasi penyedia model yang didukung dan mengganti lapisan model tanpa membangun ulang hubungan dengan Agent.
-Skills memperluas kemampuan Hermes, sedangkan Automations menentukan kapan Agent harus menjalankan pekerjaan secara proaktif.
+Skills memperluas kemampuan Hermes, sedangkan Tugas Terjadwal menentukan kapan Agent harus menjalankan pekerjaan secara proaktif.
 
 LightVela juga memberi ruang untuk menjelajahi lebih dari satu runtime Agent dari lingkungan cloud yang sama.
 [DeepSeek Harness](../configuration/deepseek-harness.md) berjalan bersama Hermes Agent sebagai layanan yang dikelola terpisah, dengan WebUI, konfigurasi penyedia, dan profil yang mendukung plugin.
@@ -94,7 +94,7 @@ Pilih LightVela jika Anda:
 - **Menginginkan Agent pribadi:** Anda ingin pendamping AI yang selalu tersedia dan semakin berguna mengikuti rutinitas Anda.
 - **Mengutamakan kesinambungan:** Memori jangka panjang dan satu hubungan Agent yang berkelanjutan lebih penting daripada konteks seluruh tim.
 - **Menyukai akses melalui pesan:** Anda ingin menghubungi Agent melalui Channels yang sudah Anda gunakan.
-- **Menginginkan kontrol konfigurasi:** Anda ingin mengatur model, Skills, Automations, dan perilaku Agent sesuai alur kerja Anda.
+- **Menginginkan kontrol konfigurasi:** Anda ingin mengatur model, Skills, Tugas Terjadwal, dan perilaku Agent sesuai alur kerja Anda.
 - **Menginginkan fleksibilitas runtime:** Anda ingin menjelajahi Hermes dan runtime Agent lain dari satu lingkungan cloud.
 
 Pilih Viktor.com jika Anda:

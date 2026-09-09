@@ -13,6 +13,9 @@ import { describe, expect, it } from "vitest";
 const readPageSource = () =>
   readFileSync(join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"), "utf8");
 
+const readStylesSource = () =>
+  readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
+
 const readChatPanelSource = () =>
   readFileSync(join(process.cwd(), "src/pages/marketing/agent-chat-panel.tsx"), "utf8");
 
@@ -116,6 +119,21 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('lv-agents-session-item');
   });
 
+  it("shows restart and delete as top-level agent icon actions", () => {
+    const page = readPageSource();
+    const profile = page.slice(
+      page.indexOf('className="lv-agent-actions"'),
+      page.indexOf("{visibleBots.length > 1 &&", page.indexOf('className="lv-agent-actions"')),
+    );
+
+    expect(profile).toContain("setShowRestartConfirm(true)");
+    expect(profile).toContain("setShowDeleteConfirm(true)");
+    expect(profile).toContain("<RefreshCw");
+    expect(profile).toContain("<Trash2");
+    expect(profile).not.toContain("lv-agent-action-menu");
+    expect(profile).not.toContain('t("更多操作")');
+  });
+
   it("normalizes backend and SDK default copy before rendering the sidebar", () => {
     const page = readPageSource();
 
@@ -160,6 +178,41 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("sessionToDelete");
     expect(page).toContain('t("删除会话")');
     expect(page).toContain("confirmSessionDelete");
+  });
+
+  it("keeps the agent header action icons aligned with automation card icon buttons", () => {
+    const page = readPageSource();
+    const styles = readStylesSource();
+    const actionButtonStyles = styles.slice(
+      styles.indexOf(".lv-agent-action-button {"),
+      styles.indexOf(".lv-agent-create-button"),
+    );
+
+    expect(page).toContain("const restartTooltip = t(\"重启\")");
+    expect(page).toContain("const deleteTooltip = t(\"删除\")");
+    expect(page).toContain('className={cn("h-3.5 w-3.5", isActiveBotRestarting && "animate-spin")}');
+    expect(page).toContain('className="h-3.5 w-3.5"');
+    expect(page).toContain('className="lv-agent-action-item"');
+    expect(page).toContain('className="lv-agent-action-tooltip"');
+    expect(actionButtonStyles).toContain("cursor: pointer;");
+    expect(actionButtonStyles).toContain("background: transparent;");
+    expect(actionButtonStyles).toContain("background: rgb(0 0 0 / 4%);");
+    expect(actionButtonStyles).toContain("box-shadow: 0 0 0 2px rgb(0 0 0 / 15%);");
+    expect(actionButtonStyles).toContain(".lv-agent-action-tooltip");
+    expect(actionButtonStyles).toContain("top: 100%;");
+    expect(actionButtonStyles).toContain("z-index: 30;");
+  });
+
+  it("keeps the agent delete confirmation explicit about plan safety", () => {
+    const page = readPageSource();
+
+    expect(page).toContain('t("风险提示：")');
+    expect(page).toContain('className="block font-semibold"');
+    expect(page).toContain("max-w-[28rem]");
+    expect(page).toContain('t("删除后会话将立即断开，智能体的配置、已安装技能、记忆等相关数据将无法恢复。请谨慎操作！")');
+    expect(page).toContain("rounded-xl border border-red-100 bg-red-50/70");
+    expect(page).toContain('t("已购买的套餐不受影响，不会因删除智能体而失效。")');
+    expect(page).toContain('t("我已知晓风险，确认删除")');
   });
 
   it("keeps the chat panel rendering decoupled from the sidebar tab", () => {
