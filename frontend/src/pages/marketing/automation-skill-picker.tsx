@@ -12,14 +12,14 @@ import {
 import { isGlobal } from "@/lib/region";
 
 export interface AutomationSkillPickerProps {
-  value: string;
+  value: string[];
   loadState: InstalledSkillLoadState;
-  onChange: (slug: string) => void;
+  onChange: (slugs: string[]) => void;
   onRetry: () => void;
 }
 
 export interface AutomationSkillBindingSummaryProps {
-  value: string;
+  value: string[];
   loadState: InstalledSkillLoadState;
 }
 
@@ -37,30 +37,35 @@ export function AutomationSkillBindingSummary({
   loadState,
 }: AutomationSkillBindingSummaryProps) {
   const t = useT();
-  if (!value) return <span>{t("未配置")}</span>;
-
-  const available = loadState.status === "ready" && loadState.slugs.includes(value);
-  const statusLabel = loadState.status === "ready"
-    ? available ? null : t("不可用")
-    : loadState.status === "error"
-      ? t("暂无法确认")
-      : t("状态确认中");
+  if (value.length === 0) return <span>{t("未配置")}</span>;
 
   return (
-    <span className="inline-flex max-w-full flex-col items-end">
-      <span className="inline-flex max-w-full items-center gap-1.5">
-        <span className="truncate">{getSkillLabel(value)}</span>
-        {statusLabel && (
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-            loadState.status === "ready"
-              ? "bg-amber-500/10 text-amber-700"
-              : "bg-black/[0.06] text-black/45"
-          }`}>
-            {statusLabel}
+    <span className="inline-flex max-w-full flex-col items-end gap-1.5">
+      {value.map((slug) => {
+        const available = loadState.status === "ready" && loadState.slugs.includes(slug);
+        const statusLabel = loadState.status === "ready"
+          ? available ? null : t("不可用")
+          : loadState.status === "error"
+            ? t("暂无法确认")
+            : t("状态确认中");
+        return (
+          <span key={slug} className="inline-flex max-w-full flex-col items-end">
+            <span className="inline-flex max-w-full items-center gap-1.5">
+              <span className="truncate">{getSkillLabel(slug)}</span>
+              {statusLabel && (
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                  loadState.status === "ready"
+                    ? "bg-amber-500/10 text-amber-700"
+                    : "bg-black/[0.06] text-black/45"
+                }`}>
+                  {statusLabel}
+                </span>
+              )}
+            </span>
+            <span className="break-all font-mono text-xs text-black/40">{slug}</span>
           </span>
-        )}
-      </span>
-      <span className="break-all font-mono text-xs text-black/40">{value}</span>
+        );
+      })}
     </span>
   );
 }
@@ -81,35 +86,30 @@ export function AutomationSkillPicker({
   const [query, setQuery] = useState("");
   const [helpTooltipOpen, setHelpTooltipOpen] = useState(false);
   const [helpTooltipPosition, setHelpTooltipPosition] = useState({ left: 0, top: 0 });
-  const selectedName = value
-    ? getSkillLabel(value)
-    : t("选择你希望 Agent 稳定调用的技能");
-  const selectedUnavailable = Boolean(
-    value && loadState.status === "ready" && !loadState.slugs.includes(value),
-  );
-  const selectedUnknown = Boolean(
-    value && (loadState.status === "idle" || loadState.status === "loading" || loadState.status === "error"),
-  );
   const filteredSlugs = useMemo(
     () => loadState.slugs.filter((slug) => matchesInstalledSkillSearch(slug, getSkillLabel(slug), query)),
     [loadState.slugs, query],
   );
-  const showSelectedFallback = Boolean(
-    value
-      && !loadState.slugs.includes(value)
-      && matchesInstalledSkillSearch(value, selectedName, query),
+  const selectedFallbacks = useMemo(
+    () => value.filter((slug) => (
+      !loadState.slugs.includes(slug)
+      && matchesInstalledSkillSearch(slug, getSkillLabel(slug), query)
+    )),
+    [loadState.slugs, query, value],
   );
 
   const choose = (slug: string) => {
-    onChange(slug);
-    setOpen(false);
+    const selected = value.includes(slug);
+    if (selected && isGlobal) {
+      onChange(value);
+      return;
+    }
+    onChange(selected ? value.filter((item) => item !== slug) : [...value, slug]);
     setQuery("");
   };
 
-  const clearSelection = () => {
-    onChange("");
-    setOpen(false);
-    setQuery("");
+  const removeSelection = (slug: string) => {
+    onChange(value.filter((item) => item !== slug));
   };
 
   const clearHelpCloseTimer = useCallback(() => {
@@ -217,51 +217,55 @@ export function AutomationSkillPicker({
         <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
       </div>
       <div ref={pickerRef} className="relative mt-1.5">
-        <button
-          type="button"
-          aria-label={t("调用技能")}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-controls={open ? listboxId : undefined}
-          onClick={() => {
-            setOpen((current) => !current);
-            if (open) setQuery("");
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape") return;
-            setOpen(false);
-            setQuery("");
-          }}
-          className="flex w-full items-center justify-between gap-3 rounded-md border border-black/10 bg-white py-2 pl-3 pr-11 text-left text-sm text-black/85 transition hover:border-black/20 focus:border-black/30 focus:outline-none"
-        >
-          <span className={`min-w-0 truncate ${value ? "" : "text-black/35"}`}>{selectedName}</span>
-          <span className="flex shrink-0 items-center gap-2">
-            {selectedUnavailable && (
-              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700">
-                {t("不可用")}
+        <div className="flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-md border border-black/10 bg-white p-1.5 pl-2 transition focus-within:border-black/30 hover:border-black/20">
+          {value.map((slug) => {
+            const displayName = getSkillLabel(slug);
+            const unavailable = loadState.status === "ready" && !loadState.slugs.includes(slug);
+            return (
+              <span
+                key={slug}
+                className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
+                  unavailable ? "bg-amber-500/10 text-amber-800" : "bg-black/[0.055] text-black/75"
+                }`}
+              >
+                <span className="max-w-40 truncate">{displayName}</span>
+                {unavailable && <span className="text-[10px] font-normal">{t("不可用")}</span>}
+                <button
+                  type="button"
+                  aria-label={`${t("移除技能")} ${displayName}`}
+                  onClick={() => removeSelection(slug)}
+                  className="-mr-1 inline-flex size-4 shrink-0 items-center justify-center rounded text-black/45 hover:bg-black/[0.06] hover:text-black/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
+                >
+                  <X className="size-3" aria-hidden="true" />
+                </button>
               </span>
-            )}
-            {selectedUnknown && loadState.status === "error" && (
-              <span className="text-xs text-black/40">{t("暂无法确认")}</span>
-            )}
-          </span>
-        </button>
-
-        {value ? (
+            );
+          })}
           <button
             type="button"
-            aria-label={t("移除已选择的技能")}
-            onClick={clearSelection}
-            className="group/clear absolute right-0 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-black/40 focus:outline-none focus-visible:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-black/15"
+            aria-label={t("调用技能")}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-controls={open ? listboxId : undefined}
+            onClick={() => {
+              setOpen((current) => !current);
+              if (open) setQuery("");
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              setOpen(false);
+              setQuery("");
+            }}
+            className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-sm focus:outline-none ${
+              value.length > 0 ? "text-black/55" : "text-black/35"
+            }`}
           >
-            <ChevronDown className="absolute size-4 transition-opacity duration-150 group-hover/clear:opacity-0 group-focus-visible/clear:opacity-0" />
-            <X className="size-4 opacity-0 transition-opacity duration-150 group-hover/clear:opacity-100 group-focus-visible/clear:opacity-100" />
+            <span className={`truncate ${value.length > 0 ? "text-black/55" : "text-black/35"}`}>
+              {value.length > 0 ? t("继续添加技能") : t("选择你希望 Agent 稳定调用的技能")}
+            </span>
+            <ChevronDown className={`size-4 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
           </button>
-        ) : (
-          <span className="pointer-events-none absolute right-0 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center text-black/40">
-            <ChevronDown className={`size-4 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
-          </span>
-        )}
+        </div>
 
         {open && (
           <div className="absolute z-40 mt-1.5 w-full overflow-hidden rounded-lg border border-black/10 bg-white shadow-xl">
@@ -280,41 +284,43 @@ export function AutomationSkillPicker({
               </label>
             </div>
 
-            <div id={listboxId} role="listbox" aria-label={t("已安装 Skill")} className="max-h-48 overflow-y-auto p-1">
-              {showSelectedFallback && (
+            <div id={listboxId} role="listbox" aria-multiselectable="true" aria-label={t("已安装 Skill")} className="max-h-48 overflow-y-auto p-1">
+              {selectedFallbacks.map((slug) => (
                 <button
+                  key={slug}
                   type="button"
                   role="option"
                   aria-selected="true"
-                  onClick={() => choose(value)}
+                  onClick={() => choose(slug)}
                   className="flex w-full items-center justify-between gap-3 rounded-md bg-amber-500/[0.06] px-2.5 py-1.5 text-left"
                 >
                   <span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
-                    <span className="truncate text-sm font-medium text-black/80">{selectedName}</span>
-                    <span className="truncate font-mono text-xs text-black/40">{value}</span>
+                    <span className="truncate text-sm font-medium text-black/80">{getSkillLabel(slug)}</span>
+                    <span className="truncate font-mono text-xs text-black/40">{slug}</span>
                   </span>
                   <span className="shrink-0 text-xs font-medium text-amber-700">
-                    {selectedUnavailable ? t("不可用") : t("暂无法确认")}
+                    {loadState.status === "ready" ? t("不可用") : t("暂无法确认")}
                   </span>
                 </button>
-              )}
+              ))}
 
               {filteredSlugs.map((slug) => {
                 const displayName = getSkillLabel(slug);
+                const selected = value.includes(slug);
                 return (
                   <button
                     key={slug}
                     type="button"
                     role="option"
-                    aria-selected={value === slug}
-                    onClick={() => choose(!isGlobal && value === slug ? "" : slug)}
+                    aria-selected={selected}
+                    onClick={() => choose(slug)}
                     className={`${isGlobal ? "" : "group/option "}flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left transition hover:bg-black/[0.04]${isGlobal ? "" : " focus:outline-none focus-visible:bg-black/[0.04]"}`}
                   >
                     <span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
                       <span className="truncate text-sm font-medium text-black/80">{displayName}</span>
                       <span className="truncate font-mono text-xs text-black/40">{slug}</span>
                     </span>
-                    {value === slug && (isGlobal ? (
+                    {selected && (isGlobal ? (
                       <Check className="size-4 shrink-0 text-black/70 opacity-100" />
                     ) : (
                       <span className="relative size-4 shrink-0" aria-hidden="true">
@@ -361,7 +367,7 @@ export function AutomationSkillPicker({
                 </div>
               )}
 
-              {loadState.status === "ready" && loadState.slugs.length > 0 && filteredSlugs.length === 0 && !showSelectedFallback && (
+              {loadState.status === "ready" && loadState.slugs.length > 0 && filteredSlugs.length === 0 && selectedFallbacks.length === 0 && (
                 <div className="px-2.5 py-3 text-sm text-black/45">{t("没有匹配的 Skill")}</div>
               )}
             </div>

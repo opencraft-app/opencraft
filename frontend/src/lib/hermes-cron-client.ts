@@ -20,6 +20,15 @@ import {
   writeStoredAuthToken,
 } from "@/repositories/http-repositories";
 
+const LOCAL_PREVIEW_AUTH_ENABLED =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === "1")
+  || (typeof process !== "undefined" && process.env.VITE_LOCAL_PREVIEW_AUTH === "1")
+  || import.meta.env?.VITE_LOCAL_PREVIEW_AUTH === "1";
+
+function isLocalPreviewBot(botId: string): boolean {
+  return LOCAL_PREVIEW_AUTH_ENABLED && botId === "bot_local_preview";
+}
+
 /** Hermes 单个 cron job（只挑 UI 需要的字段，多余字段忽略） */
 export interface CronJob {
   id: string;
@@ -191,6 +200,34 @@ export interface DebugExecPayload {
   end_time?: string;
 }
 
+export interface HermesAutomationBlueprintField {
+  name: string;
+  type: string;
+  label: string;
+  default: unknown;
+  options: string[];
+  optional: boolean;
+  strict: boolean;
+  help: string;
+}
+
+export interface HermesAutomationBlueprint {
+  key: string;
+  title: string;
+  description: string;
+  category: string;
+  tags: string[];
+  fields: HermesAutomationBlueprintField[];
+  scheduleHuman: string;
+  spec: {
+    name: string;
+    prompt: string;
+    schedule: string;
+    deliver: string;
+    skills: string[];
+  };
+}
+
 export interface ExecCommandStreamOptions {
   signal?: AbortSignal;
   onOutput?: (output: string) => void;
@@ -246,6 +283,107 @@ function buildErrorMessage(output: string, status: string): string {
 /** 单个 shell 参数加引号（仅处理单引号，足够给 hermes cron 用） */
 export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+const AUTOMATION_BLUEPRINT_CATALOG_MARKER = "LIGHTVELA_AUTOMATION_BLUEPRINT_CATALOG=";
+
+export function buildListAutomationBlueprintsCommand(): string {
+  const script = [
+    "import json",
+    "from cron.blueprint_catalog import CATALOG, blueprint_catalog_entry, fill_blueprint",
+    "rows = []",
+    "for blueprint in CATALOG:",
+    "    try:",
+    "        row = blueprint_catalog_entry(blueprint)",
+    '        row["spec"] = fill_blueprint(blueprint, {})',
+    "        rows.append(row)",
+    "    except Exception:",
+    "        continue",
+    `print("${AUTOMATION_BLUEPRINT_CATALOG_MARKER}" + json.dumps(rows, ensure_ascii=False))`,
+  ].join("\n");
+  return `cd "$HOME/.hermes/hermes-agent" && ./venv/bin/python -B -c ${shellQuote(script)}`;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function parseAutomationBlueprintField(value: unknown): HermesAutomationBlueprintField | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.name !== "string" || typeof value.type !== "string" || typeof value.label !== "string") {
+    return null;
+  }
+  return {
+    name: value.name,
+    type: value.type,
+    label: value.label,
+    default: value.default,
+    options: asStringArray(value.options),
+    optional: value.optional === true,
+    strict: value.strict !== false,
+    help: typeof value.help === "string" ? value.help : "",
+  };
+}
+
+export function parseAutomationBlueprintCatalog(output: string): HermesAutomationBlueprint[] {
+  const markerLine = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(AUTOMATION_BLUEPRINT_CATALOG_MARKER))
+    .at(-1);
+  const payload = markerLine
+    ? markerLine.slice(AUTOMATION_BLUEPRINT_CATALOG_MARKER.length)
+    : output.trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const blueprints: HermesAutomationBlueprint[] = [];
+  for (const value of parsed) {
+    if (!isRecord(value) || !isRecord(value.spec)) continue;
+    const spec = value.spec;
+    if (
+      typeof value.key !== "string"
+      || typeof value.title !== "string"
+      || typeof value.description !== "string"
+      || typeof value.category !== "string"
+      || typeof value.scheduleHuman !== "string"
+      || !Array.isArray(value.fields)
+      || typeof spec.name !== "string"
+      || typeof spec.prompt !== "string"
+      || typeof spec.schedule !== "string"
+    ) continue;
+    const fields = value.fields.map(parseAutomationBlueprintField);
+    if (fields.some((field) => field === null)) continue;
+    blueprints.push({
+      key: value.key,
+      title: value.title,
+      description: value.description,
+      category: value.category,
+      tags: asStringArray(value.tags),
+      fields: fields as HermesAutomationBlueprintField[],
+      scheduleHuman: value.scheduleHuman,
+      spec: {
+        name: spec.name,
+        prompt: spec.prompt,
+        schedule: spec.schedule,
+        deliver: typeof spec.deliver === "string" ? spec.deliver : "local",
+        skills: asStringArray(spec.skills),
+      },
+    });
+  }
+  return blueprints;
+}
+
+export async function listAutomationBlueprints(botId: string): Promise<HermesAutomationBlueprint[]> {
+  if (isLocalPreviewBot(botId)) return [];
+  const payload = await execCommand(botId, buildListAutomationBlueprintsCommand());
+  return parseAutomationBlueprintCatalog(payload.output || "");
 }
 
 export function normalizeCronContextFrom(value: unknown): string[] | null {
@@ -665,6 +803,7 @@ export async function listCronJobs(
   botId: string,
   { hydrateContextFrom = true }: { hydrateContextFrom?: boolean } = {},
 ): Promise<CronJob[]> {
+  if (isLocalPreviewBot(botId)) return [];
   // 必须带 --all：默认 list 只展示 active jobs，paused/disabled 的会被过滤掉，
   // 导致前端暂停操作后整张卡片消失（看起来像被删除）。
   const command = "hermes cron list --all";
