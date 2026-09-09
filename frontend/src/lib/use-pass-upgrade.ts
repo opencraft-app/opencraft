@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Pass, PassModifyOption } from "@/domain/types";
 import { useRepositories } from "@/contexts/repository-context";
 import { readUpgradeCheckout, saveUpgradeCheckout, type UpgradeCheckoutRecord } from "@/lib/upgrade-checkout";
+import { usePassUpgradeVisible } from "@/lib/pass-upgrade-rollout";
 
 const isActive = (pass: Pass) => pass.status === "active" && !pass.deleted_time && !pass.isolated_time && Date.parse(pass.expired_time) > Date.now();
 const empty = { pass: null, options: [], resume: null, error: false, loading: false };
@@ -21,7 +22,8 @@ export function usePassUpgrade({ userId, passId, enabled, currentPass }: {
   const currentInvalid = currentPass != null && (currentPass.user_id !== userId || !isActive(currentPass));
   const key = JSON.stringify([userId, passId, enabled, currentPass?.pass_id, currentPass?.bundle_id, currentPass?.status, currentPass?.expired_time, currentPass?.isolated_time, currentPass?.deleted_time, currentPass?.updated_time, currentInvalid, attempt]);
   const [state, setState] = useState<{ key: string; pass: Pass | null; options: PassModifyOption[]; resume: UpgradeResume | null; error: boolean; loading: boolean }>({ key: "", ...empty });
-  const canLoad = enabled && !!userId;
+  const upgradeVisible = usePassUpgradeVisible(userId);
+  const canLoad = enabled && upgradeVisible;
 
   useEffect(() => {
     if (!canLoad) return;

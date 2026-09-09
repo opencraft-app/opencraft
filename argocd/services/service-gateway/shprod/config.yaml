@@ -120,6 +120,8 @@ routes:
         path: /v1/passes/order-url
       - method: POST
         path: /v1/passes/{pass_id}/renew/order-url
+      - method: POST
+        path: /v1/passes/{pass_id}/modify/order-url
   - name: ctl-orders
     prefix: /v1/orders
     methods: [GET, OPTIONS]

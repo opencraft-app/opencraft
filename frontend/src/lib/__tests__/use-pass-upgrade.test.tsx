@@ -15,6 +15,16 @@ beforeEach(() => { vi.resetAllMocks(); const entries = new Map<string, string>()
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("upgrade eligibility", () => {
+  it("hides production upgrade and does not recover orders before console opt-in", () => {
+    vi.stubGlobal("location", { hostname: "lightvela.com" });
+    saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "other-sp", phase: "ordered", dealName: "old-order" });
+    const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
+    expect(result.current.pass).toBeNull();
+    expect(result.current.resume).toBeNull();
+    expect(result.current.options).toEqual([]);
+    expect(listMyPasses).not.toHaveBeenCalled();
+    expect(getModifyCheckout).not.toHaveBeenCalled();
+  });
   it("automatically loads backend targets without assuming an SP relationship", async () => {
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", enabled: true }));
     await waitFor(() => expect(result.current.options).toEqual([target]));
