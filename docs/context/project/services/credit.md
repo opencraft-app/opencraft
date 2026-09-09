@@ -13,7 +13,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-09-08
 review_due: 2026-12-07
-revision: 1.0.0
+revision: 1.1.0
 precedence: service
 derived: true
 related_packs: ["subscription-entitlements", "release-gitops"]
@@ -30,6 +30,8 @@ related_packs: ["subscription-entitlements", "release-gitops"]
 - `trade` 持有订单、外部计费定义与回调适配；Credit 不直接拼装外部计费协议。
 - 积分包没有续费能力。自然到期或计费隔离时删除精确 LLMGateway 订阅并立即归档。
 - 每日推量按 `next_retry_time` 调度，以 CAS lease 防止多 Pod 重复上报；已归档资源不再推量。
+- `sandbox-bj-7` 承担回归验证；`beijing-sandbox` 已接线 API、worker、独立 DB/SSM Secret、
+  Trade、Service Gateway 和 Credit 专用计费回调，并由 `master` 自动构建/auto-pin。
 
 ## 按需深入与验证
 

@@ -188,13 +188,14 @@ func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
 	t.Fatal("auth-payment-methods route not found")
 }
 
-func TestBeijing7CreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, wantUpstream string) {
+	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
-	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/sandbox-bj-7/config.yaml"))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
@@ -213,7 +214,7 @@ func TestBeijing7CreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
 		if route.Prefix != "/v1/credit" || route.Access != AccessAuthenticated {
 			t.Fatalf("credit route must use authenticated session access: %+v", route)
 		}
-		if route.Upstream != "http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local" {
+		if route.Upstream != wantUpstream {
 			t.Fatalf("credit upstream=%q", route.Upstream)
 		}
 		if !route.RequireRealname {
@@ -237,6 +238,22 @@ func TestBeijing7CreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
 		return
 	}
 	t.Fatal("credit route not found")
+}
+
+func TestBeijing7CreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/sandbox-bj-7/config.yaml",
+		"http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local",
+	)
+}
+
+func TestBeijingCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
+		"http://credit.credit.svc.cluster.local",
+	)
 }
 
 func TestDeployConfigsScopePhoneAuthPublicRoutes(t *testing.T) {

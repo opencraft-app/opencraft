@@ -53,8 +53,10 @@ master 源码
   入口；常驻进程不能代替 migration Job 执行 schema 变更。
 - 环境启用顺序为 Credit/Trade schema、LLMGateway plan 与 Trade 商品定义、服务和 worker、
   Service Gateway 用户路由，最后才开放真实购买流量。
-- `sandbox-bj-7` 是首个接线环境；其它环境必须在该环境完成购买、用量、退款隔离与自然到期回归后
-  单独补齐 source-facing 和 deploy-facing 配置，不能沿用测试环境的路由或 Secret。
+- `sandbox-bj-7` 是首个验证环境；北京验证通过后由 `master` 为 `beijing-sandbox` 构建并
+  auto-pin Credit。北京使用独立 `credit` 库/用户和 SSM Secret，不沿用 playground 敏感输入。
+- 上海 Credit 仍按生产晋级流程单独接线；在上海验证完成前，Credit 的地域计费回调统一指向
+  北京预发布，之后只把 `jifei-credit-callback-sh` 切到 `https://api.lightvela.com`。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
   状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
 
@@ -72,6 +74,10 @@ StatefulSetPlus manifest 中的
 环境差异必须保留在 `argocd/services/cloudladdergateway/tkexgz/` 下对应的
 `statefulsetplus*.yaml` 中，不通过修改共享路由默认值实现。修改 testing 默认回调时，
 不得连带修改 prod、staging 或地域专用的 `jifei-callback-<region>` 路由。
+
+Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与 Pass 的
+`jifei-callback-<region>` 共用目标配置。`tkexgz` 与 `tkexsg` 生产 workload 必须显式声明
+全部 Credit 地域回调目标；北京联调阶段统一为 `https://lightclaw.tech`，避免依赖镜像内默认值。
 
 ## Secret 交付
 

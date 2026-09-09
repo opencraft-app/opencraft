@@ -1066,6 +1066,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def test_credit_build_metadata_is_limited_to_beijing(self) -> None:
         manifest = load_manifest()
 
+        require_build_metadata(load_bundle(manifest, "credit", "beijing-sandbox"))
         require_build_metadata(load_bundle(manifest, "credit", PLAYGROUND_ENV))
         for env in (KOREA_PLAYGROUND_ENV, JAPAN_PLAYGROUND_ENV):
             with self.subTest(env=env):
@@ -1080,8 +1081,55 @@ class ReleaseBundleContractTests(unittest.TestCase):
             ["master", "playground/sandbox-bj-*"],
         )
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "sandbox-bj-7")
-        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "sandbox-bj-7")
+        self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-sandbox")
+        watched_paths = self.push_config(workflow).get("paths") or []
+        self.assertIn(
+            "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml",
+            watched_paths,
+        )
+
+    def test_credit_beijing_release_materials_are_complete(self) -> None:
+        expected_paths = [
+            "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml",
+            "argocd/secrets/beijing-sandbox/credit-runtime-secrets.sops.yaml",
+            "argocd/services/credit/beijing-sandbox/kustomization.yaml",
+            "argocd/services/credit/beijing-sandbox/credit-platform.env",
+            "argocd/services/credit/beijing-sandbox/credit-lifecycle-worker.yaml",
+            "argocd/services/credit/beijing-sandbox/credit-usage-worker.yaml",
+            "scripts/ssm_manifest.credit.beijing-sandbox.yaml",
+        ]
+        for relative_path in expected_paths:
+            with self.subTest(path=relative_path):
+                self.assertTrue((REPO_ROOT / relative_path).is_file(), relative_path)
+
+        catalog = yaml.safe_load(
+            (REPO_ROOT / "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml").read_text()
+        )
+        self.assertEqual(catalog["env"], "beijing-sandbox")
+        self.assertEqual(catalog["destinationName"], "beijing-sandbox")
+        self.assertEqual(catalog["namespace"], "credit")
+        self.assertEqual(catalog["sourcePath"], "argocd/services/credit/beijing-sandbox")
+
+        ssm_manifest = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.credit.beijing-sandbox.yaml").read_text()
+        )
+        self.assertEqual(ssm_manifest["defaults"]["region"], "ap-beijing")
+        self.assertEqual(
+            ssm_manifest["items"][0]["required_keys"],
+            [
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+                "CREDIT_DB_PASSWORD",
+                "LLMGATEWAY_INTERNAL_SERVICE_TOKEN",
+            ],
+        )
+
+        trade_patch = (
+            REPO_ROOT / "argocd/services/trade/beijing-sandbox/patch-credit.yaml"
+        ).read_text()
+        self.assertIn("CREDIT_INTERNAL_BASE_URL", trade_patch)
+        self.assertIn("CREDIT_SEND_RESOURCE_URL", trade_patch)
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()

@@ -10,7 +10,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-09-08
 review_due: 2026-10-08
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -22,7 +22,7 @@ derived: false
 
 ## non_goals
 - 本次不实现免费积分和套餐积分迁移。
-- 本次不接线北京预发布或上海生产环境，也不执行发布。
+- 本次接线北京 `beijing-sandbox`，但不接线上海生产环境，也不在 MR 阶段直接执行发布。
 - 本次不包含北京 7 分支上的 OAuth、实名、证书、Dashboard 或其它无关环境改动。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
@@ -35,6 +35,8 @@ derived: false
 - `credit/migrations/`：商品、live/history package、用量 outbox 和 ID 分配表。
 - `trade/internal/logic/creditorder/`、`trade/internal/logic/creditresource/`：订单与计费回调。
 - `argocd/services/credit/sandbox-bj-7/`：北京 7 API、worker 与 migration 接线。
+- `argocd/services/credit/beijing-sandbox/`：北京 API 与 worker 发布真源；独立数据库和 SSM
+  Secret 已在合入前预置。
 - 不变量：积分使用定点小数；订阅按完整名称精确匹配/删除；回调和 flow 幂等；归档后不再推量。
 
 ## history_context
@@ -45,13 +47,14 @@ derived: false
 ## acceptance
 - Credit、Trade、Service Gateway 受影响测试和 vet 通过。
 - CI runtime contract、GitOps render、YAML、secret scanner 和 docs-impact 门禁通过。
-- MR 只包含 Credit 业务、Trade 集成、北京 7 首环境接线和对应正式文档。
+- MR 只包含 Credit 业务、Trade 集成、北京 7 验证接线、北京 `beijing-sandbox` 发布接线、
+  Credit 专用现网计费回调和对应正式文档。
 
 ## affected_paths
 - `credit/`
 - `trade/`
-- `service-gateway/` 与 `argocd/services/service-gateway/sandbox-bj-7/`
-- `.ci/`、`argocd/services/credit/`、`argocd/catalogs/playground/`
+- `service-gateway/` 与北京 7/北京 `service-gateway` 配置
+- `.ci/`、`argocd/services/credit/`、北京 catalog/Secret、CloudLadderGateway 现网配置
 - `docs/engineering/`、`docs/context/tasks/`、`go.work`
 
 ## required_context
@@ -63,7 +66,7 @@ derived: false
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
 | `docs/context/domains/subscription-entitlements.md@78c77d5c6` | 权益领域边界 | 明确 Credit 与 Trade 的所有权 |
-| `docs/context/domains/release-gitops.md@78c77d5c6` | 发布边界 | 限制本次只补北京 7 真源，不执行发布 |
+| `docs/context/domains/release-gitops.md@78c77d5c6` | 发布边界 | 按 master/GitOps 模型补齐北京发布真源，不在 MR 阶段直接发布 |
 | `docs/context/project/services/trade.md@78c77d5c6` | Trade 服务约束 | 保持回调幂等和 provider 边界 |
 | `credit/AGENTS.md@working-tree` | Credit 当前设计 | 核对资源包生命周期、用量和 API |
 | `trade/AGENTS.md@working-tree` | Trade 本地规则 | 确定测试和计费集成边界 |
@@ -75,9 +78,11 @@ derived: false
 - `trade`: `go test ./... -count=1`、`go vet ./...` 通过；三个 Credit logic 包 `go test -race`
   通过。全量测试因 `httptest` 需要本地 socket 在获准环境重跑通过。
 - `service-gateway`: `go test ./internal/gateway -count=1`、`go vet ./internal/gateway` 通过。
-- CI contract 定向测试 132 项通过；`check_ci_runtime.sh` 492 项通过。
+- CI contract 定向测试 84 项通过；`check_ci_runtime.sh` 495 项通过。
 - Credit、Trade、Service Gateway 的 `sandbox-bj-7` Kustomize 均渲染通过；变更 YAML 的
   `check-yaml`、Credit SOPS secret scanner、`git diff --check` 通过。
+- 北京 `credit` 库/用户和 SSM runtime Secret 已预置；Credit、Trade、Service Gateway 的
+  `beijing-sandbox` 以及 `tkexgz`/`tkexsg` CloudLadderGateway Kustomize 渲染通过。
 - Documentation contract 8 项、Credit route、docs-impact 和全仓文档 validator 通过；Service Catalog
   为 24/24。全量 context suite 的 3 个历史 Task Pack/凭据扫描失败在原始 `master@78c77d5c6`
   基线可复现，当前变更未增加失败数。
@@ -98,10 +103,11 @@ derived: false
 
 ## decisions
 - 从最新 `master` 构建干净分支，不直接以北京 7 历史分支创建 MR。
-- 本次只保留北京 7 首环境接线；生产和其它地域待验证后独立变更。
+- 本次保留北京 7 验证接线并补齐北京 `beijing-sandbox` 发布闭环；上海和其它地域仍独立变更。
 
 ## scan_scope
-- `credit/`、Trade Credit 集成、北京 7 Credit/Trade/Service Gateway 配置、CI bundle。
+- `credit/`、Trade Credit 集成、北京 7 与北京 Credit/Trade/Service Gateway 配置、
+  CloudLadderGateway Credit 回调、CI bundle。
 
 ## scan_output
 - 以最终 staged diff、测试输出和 MR 描述为准。

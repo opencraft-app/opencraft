@@ -159,7 +159,7 @@ create/isolate 使用 `trade_flow` 的 `create_resource/isolate_resource` 做幂
 
 ## 生命周期 Worker
 
-- 独立进程：`credit-lifecycle-worker`；北京 7 部署两个 Pod。
+- 独立进程：`credit-lifecycle-worker`；北京 7 和 `beijing-sandbox` 均部署两个 Pod。
 - 默认每 10 秒扫描一次，每批最多 50 个 package，抢占 lease 为 30 秒。
 - 可通过 `CREDIT_LIFECYCLE_WORKER_POLL_INTERVAL`、`CREDIT_LIFECYCLE_WORKER_BATCH_SIZE`、
   `CREDIT_LIFECYCLE_WORKER_LEASE_DURATION` 调整。
@@ -168,7 +168,13 @@ create/isolate 使用 `trade_flow` 的 `create_resource/isolate_resource` 做幂
 
 ## 发布与命令
 
-source-facing 位于 `credit/k8s/base/`，deploy-facing 位于 `argocd/services/credit/<env>/`。当前仅北京 7 部署 `credit-usage-worker` 和 `credit-lifecycle-worker`；其它环境待北京 7 验证后再接线。
+source-facing 位于 `credit/k8s/base/`，deploy-facing 位于 `argocd/services/credit/<env>/`。北京 7
+用于回归验证；`master` 为 `beijing-sandbox` 构建镜像并自动创建 GitOps pin，API、
+`credit-usage-worker` 和 `credit-lifecycle-worker` 一并发布。上海环境仍需独立准备并人工晋级。
+
+`beijing-sandbox` 使用共享 CynosDB 中独立的 `credit` 库/用户；运行时 Secret 长期真源为
+SSM `mono-beijing-sandbox-credit-runtime-secrets`，通过
+`scripts/ssm_manifest.credit.beijing-sandbox.yaml` 导出 SOPS。禁止复用北京 7 的数据库密码。
 
 各环境的 `credit-platform.env` 必须提供 `CREDIT_REGION` 和 `CREDIT_OBJECT_ID_PASSWORD_SUFFIX`，并由公共 Kustomize component 注入运行时 `credit-config`；Credit API 启动时会校验这两个资源 ID 生成参数。
 

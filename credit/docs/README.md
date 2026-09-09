@@ -19,8 +19,9 @@ Credit 是付费积分包的业务真源。它持有积分商品、live/history 
   防并发，普通零用量也上报，已到期或已归档资源不再推量。
 - Credit 不拼外部计费协议。询价、订单、`checkCreate`、资源查询、`getUsedAmount` 和
   `sendResource` 均由 Trade 适配，跨服务调用必须保持幂等。
-- 当前只接线 `sandbox-bj-7`。其它环境必须独立准备 Secret、DB、LLMGateway plan、商品 seed、
-  回调路由和 Service Gateway 配置，不能复制测试环境敏感输入。
+- `sandbox-bj-7` 用于回归验证；`beijing-sandbox` 已接线独立 Secret、DB、worker、Trade、
+  Service Gateway 和 Credit 专用计费回调，并随 `master` 自动构建/auto-pin。上海仍需独立准备
+  Secret、DB、LLMGateway plan、商品 seed 和路由，不能复制测试环境敏感输入。
 
 ## 验证
 

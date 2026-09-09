@@ -9,6 +9,7 @@ on:
     paths:
       - credit/**
       - argocd/services/credit/**
+      - argocd/catalogs/sandbox/beijing-sandbox/credit.yaml
       - argocd/catalogs/playground/beijing-playground/*/credit.yaml
       - argocd/secrets/*/credit-runtime-secrets.sops.yaml
     paths-ignore:
@@ -28,9 +29,9 @@ extends:
     SERVICE: credit
     BUNDLE: credit
     DISPLAY_NAME: credit
-    DEFAULT_TARGET_ENV: sandbox-bj-7
-    MASTER_BUILD_ENVS: sandbox-bj-7
-    MASTER_AUTO_PIN_ENVS: sandbox-bj-7
+    DEFAULT_TARGET_ENV: beijing-sandbox
+    MASTER_BUILD_ENVS: beijing-sandbox
+    MASTER_AUTO_PIN_ENVS: beijing-sandbox
     ENABLE_MASTER_PROD_DB_MIGRATION: true
     PLAYGROUND_BUILD_ENVS: auto
     PLAYGROUND_AUTO_PIN_ENVS: auto
