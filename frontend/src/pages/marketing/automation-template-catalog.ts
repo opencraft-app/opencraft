@@ -725,6 +725,7 @@ export function toAutomationTemplateSchedule(schedule: string): AutomationTempla
       kind: "recurring",
       period: "weekly",
       time,
+      // Keep the legacy scalar for older form controls; `weekdays` retains the complete schedule.
       weekday: parsedWeekdays[0],
       weekdays: parsedWeekdays,
     };
@@ -736,6 +737,7 @@ export function toAutomationTemplateSchedule(schedule: string): AutomationTempla
       kind: "recurring",
       period: "monthly",
       time,
+      // Keep the legacy scalar for older form controls; `monthdays` retains the complete schedule.
       monthday: parsedMonthdays[0],
       monthdays: parsedMonthdays,
     };

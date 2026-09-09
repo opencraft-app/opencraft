@@ -24,9 +24,10 @@ const LOCAL_PREVIEW_AUTH_ENABLED =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === "1")
   || (typeof process !== "undefined" && process.env.VITE_LOCAL_PREVIEW_AUTH === "1")
   || import.meta.env?.VITE_LOCAL_PREVIEW_AUTH === "1";
+const LOCAL_PREVIEW_BOT_ID = "bot_local_preview";
 
 function isLocalPreviewBot(botId: string): boolean {
-  return LOCAL_PREVIEW_AUTH_ENABLED && botId === "bot_local_preview";
+  return LOCAL_PREVIEW_AUTH_ENABLED && botId === LOCAL_PREVIEW_BOT_ID;
 }
 
 /** Hermes 单个 cron job（只挑 UI 需要的字段，多余字段忽略） */

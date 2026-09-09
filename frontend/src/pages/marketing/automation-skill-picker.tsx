@@ -225,7 +225,9 @@ export function AutomationSkillPicker({
               <span
                 key={slug}
                 className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
-                  unavailable ? "bg-amber-500/10 text-amber-800" : "bg-black/[0.055] text-black/75"
+                  unavailable
+                    ? "bg-[var(--automation-skill-unavailable-bg)] text-[var(--automation-skill-unavailable-text)]"
+                    : "bg-[var(--automation-skill-chip-bg)] text-[var(--automation-skill-chip-text)]"
                 }`}
               >
                 <span className="max-w-40 truncate">{displayName}</span>

@@ -399,11 +399,11 @@ function getAutomationTemplateCategoryLabel(
 }
 
 const AUTOMATION_CATEGORY_TONES = {
-  daily: { icon: Sunrise, iconClass: "bg-[#F8F1ED] text-[#9A604A]" },
-  productivity: { icon: BriefcaseBusiness, iconClass: "bg-[#F7F4EE] text-[#8A6A2B]" },
-  monitoring: { icon: TrendingUp, iconClass: "bg-[#EFF4F7] text-[#55708A]" },
-  wellbeing: { icon: Activity, iconClass: "bg-[#EFF7F2] text-[#4A7A5F]" },
-  learning: { icon: Newspaper, iconClass: "bg-[#F2F0F7] text-[#6A5B8C]" },
+  daily: { icon: Sunrise, iconClass: "bg-[var(--automation-tone-daily-bg)] text-[var(--automation-tone-daily-text)]" },
+  productivity: { icon: BriefcaseBusiness, iconClass: "bg-[var(--automation-tone-productivity-bg)] text-[var(--automation-tone-productivity-text)]" },
+  monitoring: { icon: TrendingUp, iconClass: "bg-[var(--automation-tone-monitoring-bg)] text-[var(--automation-tone-monitoring-text)]" },
+  wellbeing: { icon: Activity, iconClass: "bg-[var(--automation-tone-wellbeing-bg)] text-[var(--automation-tone-wellbeing-text)]" },
+  learning: { icon: Newspaper, iconClass: "bg-[var(--automation-tone-learning-bg)] text-[var(--automation-tone-learning-text)]" },
 } satisfies Record<AutomationTemplateCategory, { icon: typeof Clock; iconClass: string }>;
 
 export function AutomationScenarioTemplatesSection({
