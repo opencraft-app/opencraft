@@ -14,6 +14,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/dbconfig"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/httpapi"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/oidc"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/paymentmethod"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/realname"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
@@ -122,6 +123,7 @@ func main() {
 		TrustedProxyCIDRs:          parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
 		Federation:                 buildFederationConfig(logger),
 		OIDC:                       buildOIDCConfig(logger, stores.auth),
+		NativeLoginCodes:           buildNativeLoginCodes(stores.auth),
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")
@@ -136,6 +138,15 @@ func main() {
 		slog.Error("lightclaw auth exited unexpectedly", "err", err)
 		os.Exit(1)
 	}
+}
+
+// Native login has no per-process production fallback: codes survive replica
+// changes and redemption is serialized by the existing MySQL code store.
+func buildNativeLoginCodes(store service.Store) oidc.CodeStore {
+	if mysqlStore, ok := store.(*service.MySQLStore); ok {
+		return oidc.NewMySQLCodeStore(mysqlStore.DB())
+	}
+	return nil
 }
 
 func envInt64OrDefault(key string, fallback int64) int64 {

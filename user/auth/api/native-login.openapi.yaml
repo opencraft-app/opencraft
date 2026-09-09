@@ -1,0 +1,54 @@
+openapi: 3.0.3
+info:
+  title: LightVela native login (hand-wired OAuth routes)
+  version: 1.0.0
+  description: >-
+    Companion to openapi.yaml, like the provider OAuth routes registered in server.go.
+    Only this PKCE exchange delivers native session credentials; generic web return_to
+    must never accept custom schemes. No client secret is embedded in the app.
+paths:
+  /auth/native/start:
+    get:
+      operationId: startNativeLogin
+      summary: Start Google login for the registered OpenCraft native callback
+      parameters:
+        - { name: redirect_uri, in: query, required: true, schema: { type: string, enum: ['opencraft://auth/lightvela'] } }
+        - { name: state, in: query, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43,128}$' } }
+        - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
+        - { name: code_challenge_method, in: query, required: true, schema: { type: string, enum: [S256] } }
+      responses:
+        '307':
+          description: >-
+            Redirect to Google. After provider verification, redirect to the exact app
+            callback with state and a 64-character hexadecimal code, or state and error.
+            Code expires after 120 seconds and can be redeemed exactly once.
+        '400': { description: 'Invalid or duplicate parameters or unregistered redirect' }
+        '503': { description: Native login or Google provider is not configured }
+  /auth/native/token:
+    post:
+      operationId: exchangeNativeLogin
+      summary: Redeem a native authorization code with its PKCE verifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, code_verifier, redirect_uri]
+              properties:
+                code: { type: string, pattern: '^[a-f0-9]{64}$' }
+                code_verifier: { type: string, pattern: '^[A-Za-z0-9._~-]{43,128}$' }
+                redirect_uri: { type: string, enum: ['opencraft://auth/lightvela'] }
+      responses:
+        '200':
+          description: New normal session. Cache-Control no-store; Pragma no-cache. Never sets a browser session cookie.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_token, token_type]
+                properties:
+                  session_token: { type: string }
+                  token_type: { type: string, enum: [Bearer] }
+        '400': { description: 'Invalid request, wrong verifier, expired/used code, or foreign client code' }
+        '503': { description: Shared authorization-code storage is not configured }

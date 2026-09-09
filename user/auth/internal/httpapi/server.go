@@ -44,6 +44,7 @@ type ServerConfig struct {
 	TrustedProxyCIDRs          []string
 	Federation                 *FederationConfig
 	OIDC                       *OIDCConfig
+	NativeLoginCodes           oidc.CodeStore
 }
 
 type FederationConfig struct {
@@ -84,6 +85,9 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	handler.federation = config.Federation
 	handler.oidc = config.OIDC
+	handler.nativeCodes = config.NativeLoginCodes
+	router.GET("/auth/native/start", handler.StartNativeLogin)
+	router.POST("/auth/native/token", handler.ExchangeNativeLogin)
 	registerOAuthRoutes(router, handler)
 	registerFederationSwitchRoutes(router, handler)
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)

@@ -390,6 +390,9 @@ func appendQueryParamToReturnTo(rawURL string, name string, value string) string
 }
 
 func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, validatedSuccessTarget string, defaultRedirectURL string, session *service.AuthSession) string {
+	if target, ok := nativeLoginTarget(validatedSuccessTarget); ok {
+		return h.nativeLoginSuccess(ctx, target, session)
+	}
 	if validatedSuccessTarget == "" {
 		return defaultRedirectURL
 	}
