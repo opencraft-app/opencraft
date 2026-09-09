@@ -292,7 +292,7 @@ describe("international v2 homepage artifact", () => {
     expect(css).not.toContain(".hero__frame .av-c {\n  display: flex !important;");
     expect(brand?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toBe("/lightvela-logo.svg");
     expect(brand?.querySelector(".foot__brand-copy")?.innerHTML).toContain(
-      "Copyright © 2026 LightVela 版权所有 ·<br>腾讯轻量云出品",
+      "© 2026 LightVela ·<br>腾讯轻量云出品",
     );
     expect(brand?.textContent).toContain("京ICP备11018762号-1137");
     expect(brand?.querySelector<HTMLAnchorElement>(".foot__icp")?.getAttribute("href")).toBe(
@@ -330,6 +330,8 @@ describe("international v2 homepage artifact", () => {
         ?.textContent?.trim(),
     ).toBe("与 AI Chatbot 对比");
     expect(document.querySelector(".foot__bottom")).toBeNull();
+    expect(footerText).not.toContain("Copyright © 2026 LightVela 版权所有");
+    expect(footerText).not.toContain("© 2026 LightVela 版权所有");
     expect(footerText).not.toContain("Copyright © 2026 LightVela 版权所有，腾讯轻量云出品");
     expect(document.querySelector<HTMLAnchorElement>(".foot__icp")?.textContent).toBe("京ICP备11018762号-1137");
     expect(css).toMatch(
