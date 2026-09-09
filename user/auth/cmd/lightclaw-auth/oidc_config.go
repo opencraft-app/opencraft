@@ -146,10 +146,20 @@ func validateSiteGatewayOIDCClients(clients []oidc.Client) error {
 		"https://sites-auth.lightvela.site/auth/lightvela/callback",
 		"https://sites-auth.lightvela.tech/auth/lightvela/callback",
 	}
-	if len(clients) != 1 {
-		return fmt.Errorf("expected exactly one oidc client, got %d", len(clients))
+	var sites []oidc.Client
+	for _, client := range clients {
+		if client.ID == oidc.NativeClientID {
+			if len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != oidc.NativeRedirectURI {
+				return fmt.Errorf("invalid native client redirect")
+			}
+			continue
+		}
+		sites = append(sites, client)
 	}
-	client := clients[0]
+	if len(sites) != 1 {
+		return fmt.Errorf("expected exactly one site-gateway client")
+	}
+	client := sites[0]
 	if strings.TrimSpace(client.ID) != "site-gateway" {
 		return fmt.Errorf("expected oidc client id site-gateway, got %q", client.ID)
 	}
