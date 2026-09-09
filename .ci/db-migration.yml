@@ -11,7 +11,7 @@ on:
 concurrency:
   group: mono2-prod-db-migration
   cancel-in-progress: false
-  queue-length: 1
+  queue-length: 2
   queue-timeout-minutes: 480
 
 extends:
