@@ -10,6 +10,21 @@ const readSource = (relativePath: string) =>
 // 真实 debug exec adapter 定义在 agent-tat-adapter，
 // authApiBaseUrl 空值守卫收敛到 repositories 层。
 describe("agent settings TEA SDK boundary", () => {
+  it("generates Hermes commands locally without loading the scripts SDK", () => {
+    const packageJson = JSON.parse(readSource("package.json")) as {
+      dependencies?: Record<string, string>;
+    };
+    const scriptsRuntime = readSource("src/pages/marketing/agent-config/scripts-runtime.ts");
+    const internals = readSource("src/pages/marketing/agent-config/hooks/useAgentInternals.ts");
+    const commandBuilder = readSource("src/pages/marketing/agent-config/hermes-command-builder.ts");
+
+    expect(packageJson.dependencies).not.toHaveProperty("@tencent/tea-sdk-lightclaw");
+    expect(scriptsRuntime).toContain("createHermesCommandBuilder");
+    expect(internals).toContain("createAgentScriptCommands");
+    expect(`${scriptsRuntime}\n${internals}`).not.toContain("@tencent/tea-sdk-lightclaw/scripts");
+    expect(commandBuilder).not.toContain("--agent");
+  });
+
   it("uses contextual collection labels for the channel and model navigation", () => {
     const page = readSource("src/pages/marketing/agent-settings-page.tsx");
 
