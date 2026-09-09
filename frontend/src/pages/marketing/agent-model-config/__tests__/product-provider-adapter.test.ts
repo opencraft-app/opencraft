@@ -1,5 +1,6 @@
-import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
 import { describe, expect, it } from "vitest";
+
+import type { IModelProvider } from "@/pages/marketing/agent-config/utils/model-providers";
 
 import { adaptProductModelProviders, resolveProductModelProviderOptions } from "../product-provider-adapter";
 

@@ -63,6 +63,11 @@
 - 预置 Provider 的可选模型由当前区域的产品配置目录提供，前端不使用用户 API Key 临时拉取模型列表；自定义 Provider 仍可按用户填写的端点探测或手动输入模型 ID。
 - 主模型、备用模型和仅添加模型的角色来自 Hermes 配置快照。角色切换不得改变已添加 Provider 的展示顺序，也不得把目录候选误标为已添加模型。
 
+## Agent 配置命令所有权
+
+- 国内站与国际站 Agent 设置页使用的 Hermes Provider、模型、通道和 Gateway 命令由 `frontend/src/pages/marketing/agent-config/hermes-command-builder.ts` 本地生成，不在浏览器运行时加载 Tea SDK 命令工厂。
+- 本地命令生成器应保持 acli 命令文本与既有行为兼容；Hermes Profile 路由属于独立能力，只有产品侧具备明确 Profile 标识与完整回归验证后才能统一增加 `--agent`。
+
 ## 公共账号菜单边界
 
 - 登录态头像菜单的主要入口固定为“我的智能体伙伴”与“账号管理”，并在底部保留退出登录；个人工作台仍从 Agent 控制台左侧导航进入，不在头像菜单重复展示。
