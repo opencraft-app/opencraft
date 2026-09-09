@@ -1,13 +1,14 @@
 FROM golang:1.26-bookworm AS builder
+ARG TARGETARCH
 WORKDIR /src
 
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/api ./main/api
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/service ./main/service
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/bypass ./main/bypass
+RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" go build -o /out/api ./main/api
+RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" go build -o /out/service ./main/service
+RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" go build -o /out/bypass ./main/bypass
 
 FROM alpine:3.20
 

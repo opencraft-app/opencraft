@@ -50,6 +50,7 @@ spec:
         workload-kind: statefulsetplus
     spec:
       affinity: {}
+      serviceAccountName: cloudladdergateway-devroute-testing
       containers:
       - env:
         - name: CLOUDLADDER_PAYMENT_HMAC_SECRET
@@ -99,6 +100,32 @@ spec:
         # 各开发者环境的可达地址（config.example.yaml 里是黑洞占位，必须在这里覆盖）。
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_1_BASE_URL
           value: http://9.134.214.121:18084
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ENABLED
+          value: "true"
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ROUTE_ID
+          value: jifei-callback
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_STORE
+          value: kubernetes_lease
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRATION_ROUTE
+          value: developer-route-control
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRATION_CALLER
+          value: lightclaw-auth
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_DELIVERY_MODE
+          value: direct
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_LEASE_NAMESPACE
+          value: cloudladdergateway-devroute-testing
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_CIDRS
+          value: 9.0.0.0/8
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_PORTS
+          value: "18084"
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_DEFAULT_TTL
+          value: 8h
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_MAX_TTL
+          value: 24h
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_PROBE_PATH
+          value: /healthz
+        - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_PROBE_TIMEOUT
+          value: 5s
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always
         name: gateway

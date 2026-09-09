@@ -96,6 +96,24 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 本地账号认证或信任浏览器身份头。验证至少覆盖身份头覆盖、用户凭据剥离、内部 Bearer 替换、JIT 映射
 幂等，以及独立登录路由为 404。
 
+### 个人 DevCloud testing 注册身份（2026-09-17）
+
+个人环境注册是 sandbox-only 的测试控制面，不是新的登录渠道。开发者先用国内或国际 testing 账号
+建立正常 LightVela session；`user/auth` 只从该 session 的 active shadow binding 读取 UIN，客户端不能
+提交或覆盖 UIN。注册请求只允许提交 callback 端口和 TTL，目标 IP 由 Auth 经已登记的
+Service Gateway / ingress 可信代理链计算 `ClientIP()`；直接伪造 `X-Forwarded-For`、自定义用户头或
+请求体 IP 都不能改变身份与落点。
+
+Auth 到 CloudLadder Gateway 的注册、查询和注销请求使用独立 route/caller，并在数据面处于
+`optional` 或 `disabled` 时仍强制校验 HMAC。国际站返回的 devtunnel capability 只在首次注册响应中
+短期交付给当前 DevCloud agent，后续状态接口不再返回；共享 HMAC、SOPS 和 `DEVTUNNEL_TOKEN` 不进入
+个人环境。注销或 TTL 过期必须使 capability 和动态路由同时失效。
+
+生产和 staging 不启用 `PERSONAL_DEV_ROUTE_CONTROL_ENABLED` 或 developer route store；同名 HTTP 路由
+即使存在也只返回 disabled，不得降级到客户端自报身份或共享 Secret。验收至少覆盖无 session、非 active
+binding、伪造代理头、错误 HMAC、跨 UIN、注销和过期；任何日志与测试报告都不得包含 session、密码或
+capability 明文。
+
 API 真源是 `user/auth/api/openapi.yaml`，Shadow 的实现/架构在 `shadow/internal/` 和 `shadow/ARCHITECTURE.md`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
 
 相关 Journey：[账号到 Agent](../journeys/account-to-agent.md)。Agent 摘要：[identity-access Context](../../context/domains/identity-access.md)。

@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/contentaudit"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/dbconfig"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/devroute"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/eventoutbox"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/httpapi"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
@@ -118,6 +121,11 @@ func main() {
 		},
 	})
 	avatarStore := buildAvatarStore(logger)
+	developerRouteClient, err := buildDeveloperRouteClient(publicBaseURL)
+	if err != nil {
+		logger.Error("invalid personal DevCloud route control config", "err", err)
+		os.Exit(1)
+	}
 
 	router := httpapi.NewRouter(authService, httpapi.ServerConfig{
 		CookieSecure:               envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
@@ -140,6 +148,7 @@ func main() {
 		E2EAuthToken:               envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
 		ShadowBindingInternalToken: envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
 		ShadowTencentCallbackToken: envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
+		DeveloperRouteClient:       developerRouteClient,
 		TrustedProxyCIDRs:          parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
 		Federation:                 buildFederationConfig(logger),
 		OIDC:                       buildOIDCConfig(logger, stores.auth),
@@ -158,6 +167,27 @@ func main() {
 		slog.Error("lightclaw auth exited unexpectedly", "err", err)
 		os.Exit(1)
 	}
+}
+
+func buildDeveloperRouteClient(publicBaseURL string) (*devroute.Client, error) {
+	if envOrDefault("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "false") != "true" {
+		return nil, nil
+	}
+	environment := strings.TrimSpace(os.Getenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT"))
+	if !strings.HasPrefix(environment, "sandbox-") {
+		return nil, errors.New("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT must name a sandbox environment")
+	}
+	publicURL, err := url.Parse(strings.TrimSpace(publicBaseURL))
+	if err != nil || publicURL.Scheme != "https" || publicURL.Hostname() != "api-"+environment+".lightclaw.tech" {
+		return nil, errors.New("personal DevCloud route control requires the matching sandbox HTTPS public base URL")
+	}
+	return devroute.New(devroute.Config{
+		GatewayBaseURL: envOrDefault("PERSONAL_DEV_ROUTE_CLOUDLADDER_GATEWAY_BASE_URL", envOrDefault("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL", "")),
+		RouteID:        envOrDefault("PERSONAL_DEV_ROUTE_CLOUDLADDER_ROUTE_ID", "developer-route-control"),
+		Caller:         envOrDefault("PERSONAL_DEV_ROUTE_CLOUDLADDER_CALLER", "lightclaw-auth"),
+		Secret:         envOrDefault("PERSONAL_DEV_ROUTE_CLOUDLADDER_HMAC_SECRET", envOrDefault("CLOUDLADDER_SHADOW_HMAC_SECRET", "")),
+		Timeout:        parseDurationEnv("PERSONAL_DEV_ROUTE_CLOUDLADDER_TIMEOUT", 10*time.Second),
+	})
 }
 
 func envInt64OrDefault(key string, fallback int64) int64 {

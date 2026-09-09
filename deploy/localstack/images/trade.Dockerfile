@@ -1,4 +1,5 @@
 FROM golang:1.25 AS builder
+ARG TARGETARCH
 
 WORKDIR /app
 ENV GOTOOLCHAIN=auto
@@ -8,8 +9,8 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/trade ./cmd/trade
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/trade-migrate ./cmd/trade-migrate
+RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" go build -o /out/trade ./cmd/trade
+RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" go build -o /out/trade-migrate ./cmd/trade-migrate
 
 FROM alpine:3.21
 

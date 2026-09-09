@@ -185,6 +185,25 @@ func TestAuthenticatorDisabledModePreservesLegacyBypass(t *testing.T) {
 	}
 }
 
+func TestVerifyRequiredCallerEnforcesHMACWhenGlobalAuthIsDisabled(t *testing.T) {
+	t.Setenv("DEVELOPER_ROUTE_SECRET", "developer-route-secret")
+	authenticator, err := New(config.Config{Auth: config.AuthConfig{
+		Mode: config.AuthModeDisabled, TimestampSkew: "5m",
+		Callers: []config.CallerConfig{{ID: "lightclaw-auth", SecretEnv: "DEVELOPER_ROUTE_SECRET"}},
+	}})
+	if err != nil {
+		t.Fatalf("new authenticator: %v", err)
+	}
+	req := Request{Caller: "lightclaw-auth", RouteID: "developer-route-registration", Method: "GET", Path: "/v1/dev-environments/registration", Query: "uin=450860000013", Timestamp: time.Now().UTC().Format(time.RFC3339)}
+	if err := authenticator.VerifyRequiredCaller(req, "lightclaw-auth"); !errors.Is(err, ErrMissingCredentials) {
+		t.Fatalf("unsigned request error = %v", err)
+	}
+	req.Signature = Sign("developer-route-secret", req)
+	if err := authenticator.VerifyRequiredCaller(req, "lightclaw-auth"); err != nil {
+		t.Fatalf("verify required caller: %v", err)
+	}
+}
+
 func TestAuthenticatorRejectsWrongRoute(t *testing.T) {
 	t.Setenv("PAYMENT_SECRET", "secret-123")
 	authenticator, err := New(config.Config{

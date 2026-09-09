@@ -10,6 +10,7 @@ resources:
 - statefulsetplus.yaml
 - statefulsetplus-testing.yaml
 - statefulsetplus-staging.yaml
+- developer-route-rbac-testing.yaml
 generators:
 - ksops-secret-generator.yaml
 - ksops-callback-secret-generator.yaml

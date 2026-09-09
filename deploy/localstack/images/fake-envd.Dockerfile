@@ -1,4 +1,5 @@
 FROM golang:1.26-bookworm AS builder
+ARG TARGETARCH
 
 WORKDIR /src
 COPY ctl /src/ctl
@@ -7,7 +8,7 @@ COPY deploy/local/mockservers/envd /src/deploy/local/mockservers/envd
 WORKDIR /src/deploy/local/mockservers/envd
 ENV GOWORK=off
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/fake-envd .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" go build -trimpath -ldflags="-s -w" -o /out/fake-envd .
 
 FROM alpine:3.21
 

@@ -281,6 +281,22 @@ Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与
 `https://api-sandbox-jp-1.lightclaw.tech`。映射变更必须同步更新逐地域 GitOps 契约测试，不能通过
 修改共享路由默认值或 Pass 回调配置实现。
 
+## 个人 DevCloud testing-only 发布门禁（2026-09-17）
+
+个人环境能力分三层发布：`master` 中的 Auth/CloudLadder/Skill 源码、`sandbox-bj-7` 与
+`sandbox-kr-1` Auth 配置、广州/新加坡 testing CloudLadder 运行态。只允许启用北京和韩国 sandbox
+Auth、`lightvela-proxy-testing`、`devtunnel-testing`、韩国 sandbox Service Gateway 及其专用 Lease
+namespace/RBAC；production 与 staging manifests 必须保持零 diff，运行态也不得发生变更。
+
+广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
+发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
+Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing 资源，并逐个核对 kind、
+namespace、name、目标 revision 与镜像。
+
+完成证据必须分层记录：源码合并 revision、Argo 目标 revision、精确资源 `Synced/Healthy`、运行镜像、
+国内/国际 registration、Lease/tombstone、devtunnel poll/reply、真实回调，以及 dynamic/static/shared
+优先级和 fail-closed 结果。源码合入、HTTP 200、Pod Ready 或页面可打开都不能单独作为个人环境闭环。
+
 ## CloudLadder HMAC 分阶段发布
 
 CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直接全局切换到 `required`：

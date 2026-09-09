@@ -176,6 +176,35 @@ func TestBuildPaymentMethodClientUsesBillingConfig(t *testing.T) {
 	}
 }
 
+func TestBuildDeveloperRouteClientDisabledByDefault(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "false")
+	client, err := buildDeveloperRouteClient("https://api-sandbox-bj-7.lightclaw.tech")
+	if err != nil || client != nil {
+		t.Fatalf("disabled client=%v err=%v", client, err)
+	}
+}
+
+func TestBuildDeveloperRouteClientRequiresMatchingSandboxHTTPSHost(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("PERSONAL_DEV_ROUTE_CLOUDLADDER_GATEWAY_BASE_URL", "http://gateway.testing")
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "test-secret")
+
+	for _, publicBaseURL := range []string{
+		"https://api.lightvela.com",
+		"http://api-sandbox-bj-7.lightclaw.tech",
+		"https://api-sandbox-kr-1.lightclaw.tech",
+	} {
+		if client, err := buildDeveloperRouteClient(publicBaseURL); err == nil || client != nil {
+			t.Fatalf("unsafe public base URL %q accepted, client=%v err=%v", publicBaseURL, client, err)
+		}
+	}
+	client, err := buildDeveloperRouteClient("https://api-sandbox-bj-7.lightclaw.tech")
+	if err != nil || client == nil {
+		t.Fatalf("matching sandbox config rejected, client=%v err=%v", client, err)
+	}
+}
+
 func loggingDiscardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

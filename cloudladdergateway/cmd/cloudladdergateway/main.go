@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/audit"
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/auth"
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/config"
+	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/devroute"
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/proxy"
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/server"
 )
@@ -56,11 +59,19 @@ func main() {
 			}
 		}
 	}
+	developerRoutes, registrationHandler, err := buildDeveloperRouteRuntime(cfg, authenticator, auditor)
+	if err != nil {
+		log.Fatalf("build developer route runtime: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	connectPath, connectHandler := gatewayv1connect.NewCloudLadderGatewayServiceHandler(server.NewConnectService(engine, authenticator))
 	mux.Handle(connectPath, connectHandler)
-	mux.Handle("/", server.NewGinRouterWithUinRoutes(engine, authenticator, cfg.MaxBodyBytes, uinRoutes, cfg.External...))
+	if registrationHandler != nil {
+		mux.Handle("/v1/dev-environments/registration", registrationHandler)
+		log.Printf("developer route registration enabled route=%s store=%s", cfg.DeveloperRoutes.RouteID, cfg.DeveloperRoutes.Store)
+	}
+	mux.Handle("/", server.NewGinRouterWithDeveloperRoutes(engine, authenticator, cfg.MaxBodyBytes, uinRoutes, developerRoutes, cfg.External...))
 
 	httpServer := &http.Server{
 		Addr:    cfg.Addr,
@@ -85,6 +96,78 @@ func main() {
 			log.Fatalf("server failed: %v", err)
 		}
 	}
+}
+
+func buildDeveloperRouteRuntime(cfg config.Config, authenticator *auth.Authenticator, auditor audit.Auditor) (server.DeveloperRoutes, http.Handler, error) {
+	if !cfg.DeveloperRoutes.Enabled {
+		return server.DeveloperRoutes{}, nil, nil
+	}
+	var store devroute.Store
+	switch strings.ToLower(strings.TrimSpace(cfg.DeveloperRoutes.Store)) {
+	case "memory":
+		store = devroute.NewMemoryStore()
+	case "kubernetes_lease":
+		leaseStore, err := devroute.NewInClusterKubernetesLeaseStore(
+			cfg.DeveloperRoutes.LeaseNamespace,
+			cfg.DeveloperRoutes.LeasePrefix,
+			cfg.DeveloperRoutes.AllowedCIDRs,
+			cfg.DeveloperRoutes.AllowedPorts,
+			cfg.DeveloperRoutes.DeliveryMode,
+			cfg.DeveloperRoutes.TunnelBaseURL,
+			cfg.DeveloperRoutes.TunnelHostSuffix,
+		)
+		if err != nil {
+			return server.DeveloperRoutes{}, nil, err
+		}
+		store = leaseStore
+	default:
+		return server.DeveloperRoutes{}, nil, fmt.Errorf("unsupported developer route store %q", cfg.DeveloperRoutes.Store)
+	}
+	defaultTTL, err := config.ParseDuration(cfg.DeveloperRoutes.DefaultTTL, 8*time.Hour)
+	if err != nil {
+		return server.DeveloperRoutes{}, nil, err
+	}
+	maxTTL, err := config.ParseDuration(cfg.DeveloperRoutes.MaxTTL, 24*time.Hour)
+	if err != nil {
+		return server.DeveloperRoutes{}, nil, err
+	}
+	probeTimeout, err := config.ParseDuration(cfg.DeveloperRoutes.ProbeTimeout, 5*time.Second)
+	if err != nil {
+		return server.DeveloperRoutes{}, nil, err
+	}
+	probeClient := &http.Client{Timeout: probeTimeout}
+	registrationAPI, err := devroute.NewAPI(devroute.APIOptions{
+		Store:              store,
+		Authenticator:      authenticator,
+		TargetProbe:        devroute.NewHTTPProbe(cfg.DeveloperRoutes.ProbePath, probeClient),
+		AllowedCIDRs:       cfg.DeveloperRoutes.AllowedCIDRs,
+		AllowedPorts:       cfg.DeveloperRoutes.AllowedPorts,
+		RegistrationRoute:  cfg.DeveloperRoutes.RegistrationRoute,
+		RegistrationCaller: cfg.DeveloperRoutes.RegistrationCaller,
+		DeliveryMode:       cfg.DeveloperRoutes.DeliveryMode,
+		TunnelBaseURL:      cfg.DeveloperRoutes.TunnelBaseURL,
+		TunnelHostSuffix:   cfg.DeveloperRoutes.TunnelHostSuffix,
+		Auditor:            auditor,
+		DefaultTTL:         defaultTTL,
+		MaxTTL:             maxTTL,
+	})
+	if err != nil {
+		return server.DeveloperRoutes{}, nil, err
+	}
+	tunnelAuthorization := ""
+	if strings.EqualFold(strings.TrimSpace(cfg.DeveloperRoutes.DeliveryMode), devroute.DeliveryModeDevtunnel) {
+		token := strings.TrimSpace(os.Getenv(cfg.DeveloperRoutes.TunnelTokenEnv))
+		if token == "" {
+			return server.DeveloperRoutes{}, nil, fmt.Errorf("developer route tunnel token env %s is empty", cfg.DeveloperRoutes.TunnelTokenEnv)
+		}
+		tunnelAuthorization = "Bearer " + token
+	}
+	return server.DeveloperRoutes{
+		RouteID:             cfg.DeveloperRoutes.RouteID,
+		Store:               store,
+		Auditor:             auditor,
+		TunnelAuthorization: tunnelAuthorization,
+	}, registrationAPI, nil
 }
 
 func envOrDefault(key string, fallback string) string {

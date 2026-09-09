@@ -86,6 +86,12 @@ routes:
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: public
 
+  - name: ctl-frontend-runtime-config
+    prefix: /v1/frontend/runtime-config
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: public
+
   - name: ctl
     prefix: /v1/instances
     methods: [GET, POST, PUT, DELETE, OPTIONS]

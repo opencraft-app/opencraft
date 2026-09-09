@@ -15,6 +15,20 @@ func TestValidateRejectsUnknownAuthMode(t *testing.T) {
 	}
 }
 
+func TestApplyDeveloperRouteEnvOverridesRejectsInvalidEnabled(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ENABLED", "sometimes")
+	if err := applyDeveloperRouteEnvOverrides(&Config{}); err == nil || !strings.Contains(err.Error(), "developer_routes.enabled env") {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v, want invalid enabled error", err)
+	}
+}
+
+func TestApplyDeveloperRouteEnvOverridesRejectsInvalidAllowedPort(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_PORTS", "18084,not-a-port")
+	if err := applyDeveloperRouteEnvOverrides(&Config{}); err == nil || !strings.Contains(err.Error(), "developer_routes.allowed_ports env") {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v, want invalid allowed port error", err)
+	}
+}
+
 func TestLoadAppliesAuthEnvironmentOverrides(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", " required ")
 	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "jifei-test, devtunnel, jifei-test")

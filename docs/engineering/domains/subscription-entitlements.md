@@ -90,6 +90,24 @@ Credit 每日用量的 `sendResource` 出向请求必须经过 CloudLadder，并
 密钥一致性校验。广州 staging/testing 不随生产切换，sandbox-bj-7 的测试计费路径继续由
 testing 入口承载，不应成为广州生产匿名例外。
 
+## 个人 DevCloud testing 计费回调隔离（2026-09-17）
+
+个人 DevCloud 运行 Auth、CTL、Trade、Payment、Subscription、AI Gateway、Sandbox、Service
+Gateway 和前端的当前 checkout 代码；Account 与 Billing 继续访问真实 testing 服务。计费入站回调
+按 `动态个人路由 → 既有静态 UIN 路由 → 共享 testing 默认路由` 解析，未登记的旧测试账号保持原有
+行为。某 UIN 一旦登记，注销或 TTL 过期必须保留 disabled tombstone 并 fail closed，不能把旧订单
+静默回落到共享环境。
+
+国内动态目标只接受 Auth 从可信代理链派生的 DevCloud `9.x` 地址和 callback-only 端口 `18084`；
+客户端不能提交 UIN、IP 或任意端口。国际站复用韩国 testing devtunnel，短期 capability 必须绑定
+UIN、TunnelHost 与 TTL；Kubernetes Lease 只持久化 capability 的 SHA-256 摘要，DevCloud 不获得
+共享 CloudLadder HMAC、SOPS 或 `DEVTUNNEL_TOKEN`。动态、静态和共享路径的优先级、注销、过期及
+跨 UIN 拒绝都必须有测试证据。
+
+`verify-order-no-pay` 只证明询价和 `pending_pay` 下单成功，不证明支付、计费回调、发货或权益终态。
+只有使用 testing mock 支付，并同时保存订单、真实回调和业务终态证据，才能宣称支付闭环；缺少任一
+层证据时必须明确停在哪一层。
+
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 
 ## 同 SP 升配回调参数边界（2026-09-07）
