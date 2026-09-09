@@ -841,6 +841,7 @@ describe("cron context panel integration", () => {
   });
 
   it("merges runtime-only Hermes blueprints into the template catalog", async () => {
+    skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue(["google-workspace"]);
     cronClientMocks.listAutomationBlueprints.mockResolvedValue([{
       key: "morning-brief",
       title: "Morning briefing",

@@ -174,6 +174,52 @@ describe("automation template catalog", () => {
     });
   });
 
+  it.each([
+    [
+      "es",
+      "Resumen matutino",
+      "Empieza el día con el tiempo, el calendario, las prioridades y una sugerencia práctica.",
+      "Crea el resumen de hoy con el tiempo en Shanghái, tres eventos importantes, dos prioridades y una acción.",
+      "Cada día a las 08:00",
+    ],
+    [
+      "id-ID",
+      "Ringkasan pagi",
+      "Mulai hari dengan cuaca, kalender, prioritas, dan satu saran praktis.",
+      "Buat ringkasan pagi hari ini dengan cuaca Shanghai, tiga agenda penting, dua prioritas, dan satu tindakan.",
+      "Setiap hari pukul 08:00",
+    ],
+    [
+      "ja-JP",
+      "朝のブリーフィング",
+      "天気、予定、優先事項、実用的な提案で一日を始めます。",
+      "上海の天気、重要な予定3件、優先事項2件、今日の行動1つを含む朝のブリーフィングを作成してください。",
+      "毎日 08:00",
+    ],
+    [
+      "ko-KR",
+      "아침 브리핑",
+      "날씨, 일정, 우선순위와 실용적인 제안으로 하루를 시작합니다.",
+      "상하이 날씨, 중요한 일정 3개, 우선순위 2개, 오늘의 행동 1개를 포함한 아침 브리핑을 작성하세요.",
+      "매일 08:00",
+    ],
+  ])("localizes curated Hermes template content for %s", (
+    locale,
+    expectedName,
+    expectedDescription,
+    expectedPrompt,
+    expectedScheduleLabel,
+  ) => {
+    const result = mergeAutomationTemplateCatalog([], [blueprint()], locale);
+
+    expect(result[0]).toMatchObject({
+      name: expectedName,
+      description: expectedDescription,
+      prompt: expectedPrompt,
+      scheduleLabel: expectedScheduleLabel,
+    });
+  });
+
   it("uses Traditional Chinese copy for the zh-Hant global route", () => {
     const result = mergeAutomationTemplateCatalog([], [blueprint()], "zh-Hant");
 

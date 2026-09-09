@@ -3623,8 +3623,24 @@ export function AutomationFormModal({
   const [selectedUpstream, setSelectedUpstream] = useState(initialSelectedUpstream);
   const [upstreamChanged, setUpstreamChanged] = useState(false);
   const [upstreamError, setUpstreamError] = useState<string | null>(null);
-  const initialSelectedSkills = initialJob?.skills ?? template?.skills ?? [];
+  const initialSelectedSkills = initialJob?.skills ?? (
+    skillLoadState.status === "ready"
+      ? (template?.skills ?? []).filter((slug) => skillLoadState.slugs.includes(slug))
+      : []
+  );
   const [selectedSkills, setSelectedSkills] = useState(initialSelectedSkills);
+  const templateSkillsHydratedRef = useRef(
+    mode !== "create" || !template || skillLoadState.status === "ready",
+  );
+
+  useEffect(() => {
+    if (templateSkillsHydratedRef.current || skillLoadState.status !== "ready") return;
+    templateSkillsHydratedRef.current = true;
+    const installedTemplateSkills = (template?.skills ?? [])
+      .filter((slug) => skillLoadState.slugs.includes(slug));
+    if (installedTemplateSkills.length === 0) return;
+    setSelectedSkills((current) => [...new Set([...current, ...installedTemplateSkills])]);
+  }, [skillLoadState, template]);
 
   const initialScheduleSource = useMemo(
     () => (initialJob?.schedule.display || initialJob?.schedule.expr || "").trim(),

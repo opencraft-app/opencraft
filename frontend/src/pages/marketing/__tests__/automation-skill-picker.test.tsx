@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { InstalledSkillLoadState } from "@/lib/hermes-skills-client";
 import { fetchSkillDetail, fetchSkillFile, fetchSkillFiles } from "@/lib/skillhub-api";
+import type { AutomationCatalogTemplate } from "../automation-template-catalog";
 import {
   AutomationSkillBindingSummary,
   AutomationSkillPicker,
@@ -57,18 +58,25 @@ function renderPicker({
   return { onChange, onRetry };
 }
 
-function renderAutomationFormModal() {
+function renderAutomationFormModal({
+  template,
+  skillLoadState = ready(["builder-radar", "finance-news"]),
+}: {
+  template?: AutomationCatalogTemplate;
+  skillLoadState?: InstalledSkillLoadState;
+} = {}) {
   render(
     <AutomationFormModal
       botId="bot-1"
       mode="create"
+      template={template}
       jobs={[]}
       contextCapability="supported"
       onRetryContextCapability={vi.fn()}
       enabledChannels={new Set()}
       channelStatus="ready"
-      skillLoadState={ready(["builder-radar", "finance-news"])}
-      onRefreshSkills={async () => ready(["builder-radar", "finance-news"])}
+      skillLoadState={skillLoadState}
+      onRefreshSkills={async () => skillLoadState}
       onRefreshJobs={async () => []}
       testState="idle"
       onTestRun={vi.fn()}
@@ -245,6 +253,38 @@ describe("AutomationSkillPicker", () => {
 });
 
 describe("AutomationFormModal", () => {
+  const competitorTemplate: AutomationCatalogTemplate = {
+    id: "competitor-watch",
+    source: "hermes",
+    name: "竞品动态监控",
+    description: "跟踪竞品的重要变化",
+    category: "monitoring",
+    tags: [],
+    prompt: "监控竞品的重要变化。",
+    schedule: { kind: "recurring", period: "weekly", time: "10:00" },
+    scheduleLabel: "每周定时 · 10:00",
+    skills: ["competitor-news-monitor"],
+    notificationPolicy: "only-when-needed",
+    previewKind: "monitor",
+  };
+
+  it("does not preselect a recommended template Skill that is not installed", () => {
+    renderAutomationFormModal({ template: competitorTemplate, skillLoadState: ready([]) });
+
+    expect(screen.queryByText("Competitor News Monitor")).not.toBeInTheDocument();
+    expect(screen.queryByText("不可用")).not.toBeInTheDocument();
+  });
+
+  it("preselects a recommended template Skill when it is installed", () => {
+    renderAutomationFormModal({
+      template: competitorTemplate,
+      skillLoadState: ready(["competitor-news-monitor"]),
+    });
+
+    expect(screen.getByText("Competitor News Monitor")).toBeInTheDocument();
+    expect(screen.queryByText("不可用")).not.toBeInTheDocument();
+  });
+
   it("opens the controlled one-time date and time picker", async () => {
     const user = userEvent.setup();
     renderAutomationFormModal();

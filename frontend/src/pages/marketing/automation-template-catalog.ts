@@ -298,6 +298,229 @@ const HERMES_ZH_HANT_COPY: Record<string, { name: string; description: string; p
   },
 };
 
+const HERMES_ES_COPY: Record<string, { name: string; description: string; prompt: string }> = {
+  "morning-brief": {
+    name: "Resumen matutino",
+    description: "Empieza el día con el tiempo, el calendario, las prioridades y una sugerencia práctica.",
+    prompt: "Crea el resumen de hoy con el tiempo en Shanghái, tres eventos importantes, dos prioridades y una acción.",
+  },
+  "important-mail": {
+    name: "Monitor de correos importantes",
+    description: "Revisa la bandeja de entrada y avisa solo de los correos que requieren atención.",
+    prompt: "Revisa los correos nuevos y avísame solo si hoy requieren respuesta, decisión o acción.",
+  },
+  "custom-reminder": {
+    name: "Recordatorio personalizado",
+    description: "Convierte una instrucción breve en un recordatorio recurrente útil.",
+    prompt: "Recuérdame levantarme cinco minutos y beber un vaso de agua antes de las 14:00.",
+  },
+  "evening-winddown": {
+    name: "Cierre del día",
+    description: "Revisa la agenda de mañana y lo que conviene preparar esta noche.",
+    prompt: "Resume la agenda de mañana, lo que debo preparar esta noche y una sugerencia final.",
+  },
+  "price-watch": {
+    name: "Monitor de precio y disponibilidad",
+    description: "Sigue un producto, vuelo u hotel y avisa cuando se cumpla la condición objetivo.",
+    prompt: "Vigila los AirPods Pro y avísame si el precio baja de 1.500 CNY o vuelve a haber stock.",
+  },
+  "competitor-watch": {
+    name: "Monitor de competidores",
+    description: "Sigue cambios importantes de productos, precios, financiación y negocio.",
+    prompt: "Sigue los cambios importantes de productos, precios y negocio de Alibaba Cloud, Huawei Cloud y DigitalOcean.",
+  },
+  "meal-plan": {
+    name: "Plan semanal de comidas",
+    description: "Planifica comidas sencillas según tus preferencias y crea una lista de compra única.",
+    prompt: "Planifica cinco cenas para dos: ligeras, con poco aceite, sin picante y listas en 30 minutos; añade una lista de compra.",
+  },
+  "learn-daily": {
+    name: "Aprendizaje diario",
+    description: "Aprende con una lección breve, un ejemplo real y una pregunta de repaso.",
+    prompt: "Enséñame una lección de 10 minutos sobre agentes de IA con un concepto, un ejemplo real y una pregunta de repaso.",
+  },
+  "gratitude-journal": {
+    name: "Diario de gratitud",
+    description: "Cierra el día con una pregunta amable para agradecer y reflexionar.",
+    prompt: "Pídeme anotar algo que salió bien, algo que agradezco y un pequeño logro de hoy.",
+  },
+  "on-this-day": {
+    name: "Tal día como hoy",
+    description: "Descubre cada día un hecho histórico, científico o una palabra memorable.",
+    prompt: "Comparte un hecho tecnológico o de Internet relacionado con la fecha de hoy y explica brevemente su importancia.",
+  },
+};
+
+const HERMES_ID_COPY: Record<string, { name: string; description: string; prompt: string }> = {
+  "morning-brief": {
+    name: "Ringkasan pagi",
+    description: "Mulai hari dengan cuaca, kalender, prioritas, dan satu saran praktis.",
+    prompt: "Buat ringkasan pagi hari ini dengan cuaca Shanghai, tiga agenda penting, dua prioritas, dan satu tindakan.",
+  },
+  "important-mail": {
+    name: "Pantau email penting",
+    description: "Periksa kotak masuk dan beri tahu hanya saat ada email yang perlu ditangani.",
+    prompt: "Periksa email baru dan beri tahu hanya jika hari ini perlu balasan, keputusan, atau tindakan.",
+  },
+  "custom-reminder": {
+    name: "Pengingat khusus",
+    description: "Ubah instruksi singkat menjadi pengingat berulang yang berguna.",
+    prompt: "Ingatkan saya untuk berdiri selama lima menit dan minum segelas air sebelum pukul 14.00.",
+  },
+  "evening-winddown": {
+    name: "Penutup hari",
+    description: "Tinjau jadwal besok dan hal penting yang perlu disiapkan malam ini.",
+    prompt: "Ringkas jadwal besok, hal yang perlu saya siapkan malam ini, dan satu saran penutup.",
+  },
+  "price-watch": {
+    name: "Pantau harga dan stok",
+    description: "Pantau produk, penerbangan, atau hotel dan beri tahu saat target tercapai.",
+    prompt: "Pantau AirPods Pro dan beri tahu jika harga turun di bawah CNY 1.500 atau stok tersedia kembali.",
+  },
+  "competitor-watch": {
+    name: "Pantau kompetitor",
+    description: "Ikuti perubahan penting pada produk, harga, pendanaan, dan bisnis kompetitor.",
+    prompt: "Pantau perubahan penting pada produk, harga, dan bisnis Alibaba Cloud, Huawei Cloud, serta DigitalOcean.",
+  },
+  "meal-plan": {
+    name: "Rencana makan mingguan",
+    description: "Susun menu sederhana sesuai preferensi dan gabungkan dalam satu daftar belanja.",
+    prompt: "Susun makan malam lima hari untuk dua orang: ringan, sedikit minyak, tidak pedas, maksimal 30 menit, beserta daftar belanja.",
+  },
+  "learn-daily": {
+    name: "Belajar harian",
+    description: "Bangun pengetahuan lewat pelajaran singkat, contoh nyata, dan pertanyaan ulasan.",
+    prompt: "Ajari saya satu pelajaran AI Agent selama 10 menit dengan konsep, contoh nyata, dan pertanyaan ulasan.",
+  },
+  "gratitude-journal": {
+    name: "Jurnal syukur",
+    description: "Akhiri hari dengan satu pertanyaan ringan untuk bersyukur dan berefleksi.",
+    prompt: "Minta saya mencatat satu hal yang berjalan baik, satu hal yang saya syukuri, dan satu pencapaian kecil hari ini.",
+  },
+  "on-this-day": {
+    name: "Hari ini dalam sejarah",
+    description: "Temukan peristiwa sejarah, fakta sains, atau kata menarik setiap hari.",
+    prompt: "Bagikan satu peristiwa teknologi atau internet yang terkait dengan tanggal hari ini dan jelaskan singkat maknanya.",
+  },
+};
+
+const HERMES_JA_COPY: Record<string, { name: string; description: string; prompt: string }> = {
+  "morning-brief": {
+    name: "朝のブリーフィング",
+    description: "天気、予定、優先事項、実用的な提案で一日を始めます。",
+    prompt: "上海の天気、重要な予定3件、優先事項2件、今日の行動1つを含む朝のブリーフィングを作成してください。",
+  },
+  "important-mail": {
+    name: "重要メール監視",
+    description: "受信箱を確認し、対応が必要なメールだけを通知します。",
+    prompt: "新着メールを確認し、今日中に返信、判断、対応が必要なものだけ通知してください。",
+  },
+  "custom-reminder": {
+    name: "カスタムリマインダー",
+    description: "短い指示を実用的な繰り返しリマインダーにします。",
+    prompt: "14時までに5分間立って体を動かし、水を一杯飲むよう知らせてください。",
+  },
+  "evening-winddown": {
+    name: "夜の振り返り",
+    description: "明日の予定と今夜準備する大切なことを確認します。",
+    prompt: "明日の予定、今夜準備すべきこと、最後の提案を1つまとめてください。",
+  },
+  "price-watch": {
+    name: "価格・在庫監視",
+    description: "商品、航空券、ホテルを追跡し、条件を満たした時だけ通知します。",
+    prompt: "AirPods Proを監視し、価格が1,500元未満になるか在庫が戻ったら通知してください。",
+  },
+  "competitor-watch": {
+    name: "競合動向監視",
+    description: "競合の製品、価格、資金調達、事業の重要な変化を追跡します。",
+    prompt: "Alibaba Cloud、Huawei Cloud、DigitalOceanの製品、価格、事業の重要な変化を監視してください。",
+  },
+  "meal-plan": {
+    name: "週間献立",
+    description: "好みに合う簡単な献立を作り、買い物リストを1つにまとめます。",
+    prompt: "2人分の平日夕食を、軽め、油少なめ、辛くせず、30分以内で作れる内容にし、買い物リストも作ってください。",
+  },
+  "learn-daily": {
+    name: "毎日の学習",
+    description: "短いレッスン、実例、復習問題で知識を積み上げます。",
+    prompt: "AI Agentについて、概念、実例、復習問題を含む10分間のレッスンを1つ教えてください。",
+  },
+  "gratitude-journal": {
+    name: "感謝日記",
+    description: "感謝と振り返りのための優しい問いで一日を締めくくります。",
+    prompt: "今日うまくいったこと、感謝していること、小さな達成を1つずつ尋ねてください。",
+  },
+  "on-this-day": {
+    name: "今日は何の日",
+    description: "歴史的出来事、科学の事実、印象的な言葉を毎日1つ紹介します。",
+    prompt: "今日の日付に関連する技術またはインターネットの出来事を1つ紹介し、重要性を簡潔に説明してください。",
+  },
+};
+
+const HERMES_KO_COPY: Record<string, { name: string; description: string; prompt: string }> = {
+  "morning-brief": {
+    name: "아침 브리핑",
+    description: "날씨, 일정, 우선순위와 실용적인 제안으로 하루를 시작합니다.",
+    prompt: "상하이 날씨, 중요한 일정 3개, 우선순위 2개, 오늘의 행동 1개를 포함한 아침 브리핑을 작성하세요.",
+  },
+  "important-mail": {
+    name: "중요 메일 모니터",
+    description: "받은편지함을 확인하고 처리가 필요한 메일만 알려줍니다.",
+    prompt: "새 메일을 확인하고 오늘 답장, 결정 또는 조치가 필요한 경우에만 알려주세요.",
+  },
+  "custom-reminder": {
+    name: "맞춤 알림",
+    description: "짧은 요청을 유용한 반복 알림으로 만듭니다.",
+    prompt: "오후 2시 전에 5분간 일어나 움직이고 물 한 잔을 마시도록 알려주세요.",
+  },
+  "evening-winddown": {
+    name: "저녁 마무리",
+    description: "내일 일정과 오늘 밤 준비할 중요한 일을 확인합니다.",
+    prompt: "내일 일정, 오늘 밤 준비할 일, 마무리 제안 1개를 정리해주세요.",
+  },
+  "price-watch": {
+    name: "가격 및 재고 모니터",
+    description: "상품, 항공편 또는 호텔을 추적하고 목표 조건을 충족할 때만 알려줍니다.",
+    prompt: "AirPods Pro를 모니터링하고 가격이 1,500위안 미만이거나 재입고되면 알려주세요.",
+  },
+  "competitor-watch": {
+    name: "경쟁사 동향",
+    description: "경쟁사의 제품, 가격, 투자 및 사업상 중요한 변화를 추적합니다.",
+    prompt: "Alibaba Cloud, Huawei Cloud, DigitalOcean의 제품, 가격 및 사업상 중요한 변화를 모니터링해주세요.",
+  },
+  "meal-plan": {
+    name: "주간 식단",
+    description: "취향에 맞는 간단한 식단을 짜고 장보기 목록을 하나로 정리합니다.",
+    prompt: "2인분 평일 저녁을 담백하고 기름과 매운맛은 적게, 30분 안에 만들 수 있게 계획하고 장보기 목록도 작성해주세요.",
+  },
+  "learn-daily": {
+    name: "매일 학습",
+    description: "짧은 수업, 실제 예시, 복습 질문으로 지식을 쌓습니다.",
+    prompt: "AI Agent에 대해 개념, 실제 예시, 복습 질문이 포함된 10분 수업을 하나 알려주세요.",
+  },
+  "gratitude-journal": {
+    name: "감사 일기",
+    description: "감사와 성찰을 돕는 따뜻한 질문 하나로 하루를 마무리합니다.",
+    prompt: "오늘 잘된 일, 감사한 일, 작은 성취를 하나씩 적도록 물어봐 주세요.",
+  },
+  "on-this-day": {
+    name: "오늘의 역사",
+    description: "기억할 만한 역사적 사건, 과학 사실 또는 단어를 매일 하나 소개합니다.",
+    prompt: "오늘 날짜와 관련된 기술 또는 인터넷 사건 하나를 소개하고 왜 중요한지 간단히 설명해주세요.",
+  },
+};
+
+function getHermesLocalizedCopy(locale: string) {
+  const normalizedLocale = locale.toLowerCase();
+  if (normalizedLocale.startsWith("zh-hant")) return HERMES_ZH_HANT_COPY;
+  if (normalizedLocale.startsWith("zh")) return HERMES_ZH_COPY;
+  if (normalizedLocale.startsWith("es")) return HERMES_ES_COPY;
+  if (normalizedLocale.startsWith("id")) return HERMES_ID_COPY;
+  if (normalizedLocale.startsWith("ja")) return HERMES_JA_COPY;
+  if (normalizedLocale.startsWith("ko")) return HERMES_KO_COPY;
+  return undefined;
+}
+
 const HERMES_EXECUTION_RULES_BY_KEY: Record<string, string> = {
   "morning-brief": "Use connected sources when available. If calendar or email is unavailable, provide the date and local weather, then explain how to connect it.",
   "important-mail": "Check only messages received since the previous run. Include sender, subject, why it matters, and the next action. If no message qualifies, return exactly [SILENT]. If email is not connected, explain how to connect it.",
@@ -624,8 +847,7 @@ export function mergeAutomationTemplateCatalog(
   blueprints: readonly HermesAutomationBlueprint[],
   locale: string,
 ): AutomationCatalogTemplate[] {
-  const isChinese = locale.startsWith("zh");
-  const isTraditionalChinese = locale.toLowerCase().startsWith("zh-hant");
+  const localizedCopy = getHermesLocalizedCopy(locale);
   const runtimeBlueprintsByKey = new Map(blueprints.map((blueprint) => [blueprint.key, blueprint]));
   const blueprintsByKey = new Map(HERMES_AUTOMATION_BLUEPRINT_BASELINE.map((blueprint) => [blueprint.key, blueprint]));
   for (const blueprint of blueprints) blueprintsByKey.set(blueprint.key, blueprint);
@@ -633,9 +855,7 @@ export function mergeAutomationTemplateCatalog(
     if (HERMES_BLUEPRINT_OVERLAPS.has(blueprint.key)) return [];
     const schedule = toAutomationTemplateSchedule(blueprint.spec.schedule);
     if (!schedule) return [];
-    const localized = isTraditionalChinese
-      ? HERMES_ZH_HANT_COPY[blueprint.key]
-      : isChinese ? HERMES_ZH_COPY[blueprint.key] : undefined;
+    const localized = localizedCopy?.[blueprint.key];
     const curatedBaseline = HERMES_AUTOMATION_BLUEPRINT_BASELINE.find((item) => item.key === blueprint.key);
     const prompt = (localized?.prompt ?? curatedBaseline?.spec.prompt ?? blueprint.spec.prompt)
       .slice(0, AUTOMATION_EXECUTION_PROMPT_MAX_LENGTH);
@@ -658,9 +878,7 @@ export function mergeAutomationTemplateCatalog(
       prompt,
       ...(curatedBaseline && executionRules ? { executionRules } : {}),
       schedule,
-      scheduleLabel: isTraditionalChinese
-        ? zhHantScheduleLabel(schedule)
-        : isChinese ? zhScheduleLabel(schedule) : blueprint.scheduleHuman,
+      scheduleLabel: localized ? localizedScheduleLabel(schedule, locale) : blueprint.scheduleHuman,
       deliver: blueprint.spec.deliver,
       skills: normalizeBlueprintSkills(blueprint.key, blueprint.spec.skills),
       notificationPolicy: QUIET_BLUEPRINTS.has(blueprint.key) ? "only-when-needed" : "always",
