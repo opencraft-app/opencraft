@@ -37,6 +37,7 @@ beforeEach(() => {
         <span class="hero__line hero__line--dynamic">
           <span class="hero__prefix">LightVela 可以成为你的</span>
           <span class="hero__rotator-wrap"><em id="hero-rotator">工作助理</em></span>
+          <span class="hero__suffix">になります</span>
         </span>
       </h1>
     </div>
@@ -58,6 +59,7 @@ describe("homepage hero headline order", () => {
 
     const rotator = document.querySelector<HTMLElement>("#hero-rotator")!;
     const wrap = document.querySelector<HTMLElement>(".hero__rotator-wrap")!;
+    const suffix = document.querySelector<HTMLElement>(".hero__suffix");
     const mainChars = Array.from(
       document.querySelectorAll<HTMLElement>(".hero__line--main .hero__char"),
     );
@@ -78,6 +80,10 @@ describe("homepage hero headline order", () => {
     expect(revealDelay).toBe(
       readDelay(prefixChars.at(-1)!) + 500 + 80,
     );
+    expect(suffix).not.toBeNull();
+    expect(suffix?.style.getPropertyValue("--rotator-delay")).toBe(
+      wrap.style.getPropertyValue("--rotator-delay"),
+    );
 
     vi.advanceTimersByTime(revealDelay + 2_459);
     expect(rotator.textContent).toBe("工作助理");
@@ -91,7 +97,16 @@ describe("homepage hero headline order", () => {
       "html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap",
     );
     expect(css).toMatch(
-      /html:not\(\.hero-sequence-ready\)[\s\S]*animation: none;[\s\S]*opacity: 0;/,
+      /@media \(min-width: 641px\) and \(prefers-reduced-motion: no-preference\) \{[\s\S]*html:not\(\.hero-sequence-ready\)[\s\S]*animation: none;[\s\S]*opacity: 0;/,
+    );
+    expect(css).toContain(
+      "html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__suffix",
+    );
+    expect(css).toContain(
+      "#lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,\n#lightvela-intl-home .hero__line--dynamic .hero__suffix {",
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.hero__line--dynamic \.hero__suffix \{[\s\S]*animation: hero-in[^;]*var\(--rotator-delay/,
     );
   });
 });

@@ -4048,6 +4048,7 @@ function prepareDocumentForLocale(document, locale) {
 function applyFooterLayout(document) {
   const footer = document.querySelector("footer.foot");
   if (!footer) throw new Error("Missing homepage footer");
+  footer.classList.remove("foot--domestic");
 
   footer.innerHTML = `
   <div class="foot__top">
@@ -4435,13 +4436,31 @@ const internationalHeroChannelParityCss = `
 `;
 const homepageReadingCss = `
 /* Homepage navigation and reading-safe play switching. */
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__cta,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__tabs,
-html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
-  animation: none;
-  opacity: 0;
-  transform: translateY(24px);
+/* Japanese and Korean sentence endings enter with the rotating role. */
+#lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+#lightvela-intl-home .hero__line--dynamic .hero__suffix {
+  animation: hero-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) var(--rotator-delay, 0.5s) both;
+}
+
+@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__line--dynamic .hero__suffix,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__cta,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__tabs,
+  html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
+    animation: none;
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  #lightvela-intl-home .hero__line--dynamic .hero__suffix {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .home-mobile-menu-trigger {
@@ -4529,6 +4548,12 @@ html:not(.hero-sequence-ready) #lightvela-intl-home .hero__stage .hero__frame {
   }
 }
 @media (max-width: 640px) {
+  #lightvela-intl-home .hero__line--dynamic .hero__rotator-wrap,
+  #lightvela-intl-home .hero__line--dynamic .hero__suffix {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
   #lightvela-intl-home .plays__tabs {
     margin-top: 8px;
     padding-top: 16px;
@@ -4627,6 +4652,12 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
   "      return startDelay + text.length * STEP;",
   "      return startDelay + Math.max(0, text.length - 1) * STEP + CHAR_DURATION;",
 ).replace(
+  `    var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
+    var next = INITIAL;`,
+  `    var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
+    var suffix = document.querySelector('.hero__line--dynamic .hero__suffix');
+    var next = INITIAL;`,
+).replace(
   `    var next = INITIAL;
     if (!shouldKeepNaturalText && main) next = splitChars(main, next);
     if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + 60);
@@ -4641,6 +4672,7 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
     if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + SEGMENT_GAP);
     var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;
     if (wrap) wrap.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
+    if (suffix) suffix.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
     var root = document.documentElement;
     var afterText = rotatorDelay + (shouldKeepNaturalText ? 0 : 600) + 200;
     root.style.setProperty('--cta-delay', afterText + 'ms');
