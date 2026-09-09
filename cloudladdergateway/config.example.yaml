@@ -367,20 +367,57 @@ auth:
   # 本列表仅在 required 模式生效，用于最终切换期间兼容尚未迁移的路由。
   allow_unauthenticated:
     - sandbox-cn
-    - billing-trade-cn-test
-    - billing-trade-cn-pre
-    - billing-trade-cn-prod
-    - billing-trade-intl-test
-    - billing-trade-intl-pre
-    - billing-trade-intl-prod
-    - jifei-test
+    # Tencent billing callbacks cannot produce CloudLadder HMAC headers.
+    # They remain reachable in required mode and must be authenticated by
+    # their native body signature at the receiving service.
+    - jifei-callback
+    - jifei-callback-dev-1
+    - jifei-callback-dev-2
+    - jifei-callback-dev-3
+    - jifei-callback-bj
+    - jifei-callback-sh
+    - jifei-callback-gz
+    - jifei-callback-cd
+    - jifei-callback-nj
+    - jifei-callback-hk
+    - jifei-callback-jp
+    - jifei-callback-kr
+    - jifei-callback-jkt
+    - jifei-callback-sg
+    - jifei-callback-th
+    - jifei-credit-callback-bj
+    - jifei-credit-callback-sh
+    - jifei-credit-callback-gz
+    - jifei-credit-callback-cd
+    - jifei-credit-callback-nj
+    - jifei-credit-callback-hk
+    - jifei-credit-callback-jp
+    - jifei-credit-callback-kr
+    - jifei-credit-callback-jkt
+    - jifei-credit-callback-sg
+    - jifei-credit-callback-th
+    # TencentCloud SaaS callbacks use their own callback token/body contract.
     - tencentcloud-account-callback-bjsbx
     - tencentcloud-account-callback-krsbx
     - tencentcloud-account-callback-jpsbx
+    - tencentcloud-account-callback-sgprod
     - tencentcloud-account-callback-shprod
+    # Testing-only reverse tunnel has its own DEVTUNNEL_TOKEN authentication.
+    - devtunnel
     - lightvela-cloudapi-bj
     - lightvela-cloudapi-sh
   callers:
+    - id: payment
+      secret_env: CLOUDLADDER_PAYMENT_HMAC_SECRET
+      routes:
+        - sandbox-cn
+        - billing-query-via-polaris
+        - billing-trade-cn-test
+        - billing-trade-cn-pre
+        - billing-trade-cn-prod
+        - billing-trade-intl-test
+        - billing-trade-intl-pre
+        - billing-trade-intl-prod
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
       routes:

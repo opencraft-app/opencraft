@@ -2,11 +2,52 @@ package auth
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/config"
 )
+
+func TestRequiredCutoverBlocksProxyButKeepsBillingCallback(t *testing.T) {
+	t.Setenv("CLOUDLADDER_PAYMENT_HMAC_SECRET", "payment-secret")
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "shadow-secret")
+	t.Setenv("CLOUDLADDER_TRADE_HMAC_SECRET", "trade-secret")
+	cfg, err := config.Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	cfg.Auth.Mode = config.AuthModeRequired
+	authenticator, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	proxyRequest := Request{
+		RouteID: "jifei-prod",
+		Method:  "POST",
+		Path:    "/interfaces/interface.php",
+		Body:    []byte(`{"interface":{"interfaceName":"qcloud.price.getPrice"}}`),
+	}
+	if err := authenticator.Verify(proxyRequest); !errors.Is(err, ErrMissingCredentials) {
+		t.Fatalf("unsigned jifei-prod error = %v, want ErrMissingCredentials", err)
+	}
+	proxyRequest.Caller = "lightvela-trade"
+	proxyRequest.Timestamp = time.Now().UTC().Format(time.RFC3339)
+	proxyRequest.Signature = Sign("trade-secret", proxyRequest)
+	if err := authenticator.Verify(proxyRequest); err != nil {
+		t.Fatalf("signed jifei-prod rejected: %v", err)
+	}
+
+	callbackRequest := Request{
+		RouteID: "jifei-callback-sh",
+		Method:  "POST",
+		Path:    "/trade/jifei/callback",
+	}
+	if err := authenticator.Verify(callbackRequest); err != nil {
+		t.Fatalf("unsigned billing callback rejected: %v", err)
+	}
+}
 
 func TestSignatureContractMatchesTradeClientVector(t *testing.T) {
 	req := Request{

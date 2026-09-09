@@ -14,6 +14,7 @@
 #        "TRADE_TENCENT_BILLING_SIGNATURE_KEY": "<jifei 同事提供; 用户 2026-06-12 拍板: 与 sandbox-bj-7 测试环境共用同一组真值>",
 #        "JIFEI_BILLING_APP_ID": "<销毁链路 HMAC-SHA256 签名 appid; 与 sandbox-bj-7 共用; 取自 argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml sops decrypt 后的明文>",
 #        "JIFEI_BILLING_APP_SECRET": "<销毁链路 HMAC-SHA256 签名 secret; 与 sandbox-bj-7 共用; 取自同上文件>"
+#        "TRADE_CLOUDLADDER_HMAC_SECRET": "<与 tkexgz cloudladdergateway runtime HMAC 对齐>"
 #      }
 #
 #      注: 5 个键全部是现网计费形态必需键（去掉 sandbox-bj-7 的 9B 联调期占位
@@ -44,6 +45,13 @@ defaults:
 items:
   - id: trade-runtime-secrets
     secret_name: mono-beijing-sandbox-trade-runtime-secrets
+    required_keys:
+      - TRADE_DB_PASSWORD
+      - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+      - TRADE_TENCENT_BILLING_SIGNATURE_KEY
+      - JIFEI_BILLING_APP_ID
+      - JIFEI_BILLING_APP_SECRET
+      - TRADE_CLOUDLADDER_HMAC_SECRET
     namespace: trade
     kubernetes_resource_name: trade-runtime-secrets
     kubernetes_resource_kind: Secret
