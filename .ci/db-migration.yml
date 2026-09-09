@@ -1,6 +1,10 @@
 version: v2.0
 name: 生产 DB migration
 
+# Stream snapshots the checkout revision when this YAML definition is imported.
+# Keep this entrypoint versioned with runtime DB-runner additions (including Trade)
+# so manual and sub-pipeline builds execute the matching runtime implementation.
+
 on:
   manual: enabled
 
